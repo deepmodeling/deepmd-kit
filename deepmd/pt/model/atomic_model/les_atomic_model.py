@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import Any, Optional
+from typing import (
+    Any,
+)
 
 import torch
 
@@ -35,8 +37,8 @@ class LESEnergyAtomicModel(BaseAtomicModel):
         self,
         descriptor: Any,
         type_map: list[str],
-        les_energy_fitting: Optional[LESEnergyFittingNet] = None,
-        fitting: Optional[Any] = None,
+        les_energy_fitting: LESEnergyFittingNet | None = None,
+        fitting: Any | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(type_map, **kwargs)
@@ -107,7 +109,7 @@ class LESEnergyAtomicModel(BaseAtomicModel):
     def has_default_fparam(self) -> bool:
         return self.fitting_net.has_default_fparam()
 
-    def get_default_fparam(self) -> Optional[torch.Tensor]:
+    def get_default_fparam(self) -> torch.Tensor | None:
         return self.fitting_net.get_default_fparam()
 
     def get_dim_aparam(self) -> int:
@@ -139,10 +141,10 @@ class LESEnergyAtomicModel(BaseAtomicModel):
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
         nlist: torch.Tensor,
-        mapping: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
-        comm_dict: Optional[dict[str, torch.Tensor]] = None,
+        mapping: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
     ) -> dict[str, torch.Tensor]:
         nframes, nloc, _ = nlist.shape
         atype = extended_atype[:, :nloc]
@@ -200,9 +202,9 @@ class LESEnergyAtomicModel(BaseAtomicModel):
     def compute_or_load_stat(
         self,
         sampled_func: Any,
-        stat_file_path: Optional[Any] = None,
+        stat_file_path: Any | None = None,
         compute_or_load_out_stat: bool = True,
-        preset_observed_type: Optional[list[str]] = None,
+        preset_observed_type: list[str] | None = None,
     ) -> None:
         if stat_file_path is not None and self.type_map is not None:
             stat_file_path /= " ".join(self.type_map)
@@ -240,7 +242,7 @@ class LESEnergyAtomicModel(BaseAtomicModel):
     def compute_fitting_input_stat(
         self,
         sample_merged: Any,
-        stat_file_path: Optional[Any] = None,
+        stat_file_path: Any | None = None,
     ) -> None:
         self.fitting_net.compute_input_stats(
             sample_merged,

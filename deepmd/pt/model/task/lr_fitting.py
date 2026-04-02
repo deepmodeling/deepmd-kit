@@ -1,14 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import Any, Optional, Union
-from abc import abstractmethod
+from typing import (
+    Any,
+    Optional,
+)
 
 import numpy as np
 import torch
 
-from deepmd.dpmodel import (
-    FittingOutputDef,
-    OutputVariableDef,
-)
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
@@ -37,12 +35,10 @@ from deepmd.utils.finetune import (
     get_index_between_two_maps,
     map_atom_exclude_types,
 )
-from deepmd.utils.version import (
-    check_version_compatibility,
-)
 
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
 device = env.DEVICE
+
 
 @Fitting.register("lr")
 class LRFittingNet(Fitting):
@@ -113,7 +109,7 @@ class LRFittingNet(Fitting):
         dim_out_lr: int,
         neuron_sr: list[int] = [128, 128, 128],
         neuron_lr: list[int] = [128, 128, 128],
-        bias_atom_e: Optional[torch.Tensor] = None,
+        bias_atom_e: torch.Tensor | None = None,
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
@@ -121,14 +117,14 @@ class LRFittingNet(Fitting):
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
-        rcond: Optional[float] = None,
-        seed: Optional[Union[int, list[int]]] = None,
+        rcond: float | None = None,
+        seed: int | list[int] | None = None,
         exclude_types: list[int] = [],
-        trainable: Union[bool, list[bool]] = True,
-        remove_vaccum_contribution: Optional[list[bool]] = None,
-        type_map: Optional[list[str]] = None,
+        trainable: bool | list[bool] = True,
+        remove_vaccum_contribution: list[bool] | None = None,
+        type_map: list[str] | None = None,
         use_aparam_as_mask: bool = False,
-        default_fparam: Optional[list[float]] = None,
+        default_fparam: list[float] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__()
@@ -373,7 +369,7 @@ class LRFittingNet(Fitting):
         """Check if the fitting has default frame parameters."""
         return self.default_fparam is not None
 
-    def get_default_fparam(self) -> Optional[torch.Tensor]:
+    def get_default_fparam(self) -> torch.Tensor | None:
         return self.default_fparam_tensor
 
     def get_dim_aparam(self) -> int:
@@ -457,7 +453,7 @@ class LRFittingNet(Fitting):
     def _sr_net_out_dim(self) -> int:
         """Set the SRFittingNet output dim."""
         return self.dim_out_sr
-    
+
     def _lr_net_out_dim(self) -> int:
         """Set the LR FittingNet output dim."""
         return self.dim_out_lr
@@ -465,7 +461,7 @@ class LRFittingNet(Fitting):
     def _corr_head(self, lr_out: torch.Tensor) -> torch.Tensor:
         # TODO: Add latent_charge correction logic after LR output is finalized.
         return lr_out
-    
+
     def _extend_f_avg_std(self, xx: torch.Tensor, nb: int) -> torch.Tensor:
         return torch.tile(xx.view([1, self.numb_fparam]), [nb, 1])
 
@@ -476,11 +472,11 @@ class LRFittingNet(Fitting):
         self,
         descriptor: torch.Tensor,
         atype: torch.Tensor,
-        gr: Optional[torch.Tensor] = None,
-        g2: Optional[torch.Tensor] = None,
-        h2: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        gr: torch.Tensor | None = None,
+        g2: torch.Tensor | None = None,
+        h2: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         xx = descriptor.to(self.prec)
         nf, nloc, nd = xx.shape
@@ -573,16 +569,16 @@ class LRFittingNet(Fitting):
         lr_out = self._corr_head(lr_out)
         results.update({"sr": sr_out, "lr": lr_out})
         return results
-    
+
     def _apply_networks(
         self,
         layers: NetworkCollection,
         neuron: list[int],
         dim_out: int,
         xx: torch.Tensor,
-        xx_zeros: Optional[torch.Tensor],
+        xx_zeros: torch.Tensor | None,
         atype: torch.Tensor,
-        middle_output: Optional[dict[str, torch.Tensor]],
+        middle_output: dict[str, torch.Tensor] | None,
         bool_bias: bool = False,
     ) -> torch.Tensor:
         nf, nloc, _ = xx.shape
@@ -590,9 +586,7 @@ class LRFittingNet(Fitting):
         if self.mixed_types:
             atom_property = layers.networks[0](xx)
             if self.eval_return_middle_output and middle_output is not None:
-                middle_output["middle_output"] = layers.networks[0].call_until_last(
-                    xx
-                )
+                middle_output["middle_output"] = layers.networks[0].call_until_last(xx)
             if xx_zeros is not None:
                 atom_property -= layers.networks[0](xx_zeros)
             outs = outs + atom_property
@@ -626,7 +620,9 @@ class LRFittingNet(Fitting):
                     ):
                         atom_property -= ll(xx_zeros)
                 if bool_bias:
-                    atom_property = atom_property + self.bias_atom_e[type_i].to(self.prec)
+                    atom_property = atom_property + self.bias_atom_e[type_i].to(
+                        self.prec
+                    )
                 else:
                     atom_property = atom_property
                 atom_property = torch.where(mask, atom_property, 0.0)

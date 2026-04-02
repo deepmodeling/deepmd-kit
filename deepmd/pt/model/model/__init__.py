@@ -54,6 +54,9 @@ from .ener_model import (
 from .frozen import (
     FrozenModel,
 )
+from .les_model import (
+    LESEnergyModel,
+)
 from .make_hessian_model import (
     make_hessian_model,
 )
@@ -69,15 +72,12 @@ from .polar_model import (
 from .property_model import (
     PropertyModel,
 )
-from .spin_model import (
-    SpinEnergyModel,
-    SpinModel,
-)
 from .sog_model import (
     SOGEnergyModel,
 )
-from .les_model import (
-    LESEnergyModel,
+from .spin_model import (
+    SpinEnergyModel,
+    SpinModel,
 )
 
 
@@ -319,8 +319,8 @@ __all__ = [
     "DipoleModel",
     "EnergyModel",
     "FrozenModel",
-    "LinearEnergyModel",
     "LESEnergyModel",
+    "LinearEnergyModel",
     "PolarModel",
     "SOGEnergyModel",
     "SpinEnergyModel",

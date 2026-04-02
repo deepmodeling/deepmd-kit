@@ -1,15 +1,23 @@
 #!/usr/bin/env python3
-from __future__ import annotations
+# SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
 
 import copy
 import json
-from pathlib import Path
+from pathlib import (
+    Path,
+)
 
 import torch
+from profile_sog_timing import (
+    profile,
+)
 
-from deepmd.pt.model.model import get_model
-from profile_sog_timing import profile
-
+from deepmd.pt.model.model import (
+    get_model,
+)
 
 CFG_PATH = Path("examples/water/sog/input_torch.json")
 
@@ -38,10 +46,10 @@ def run(tag: str, model_cfg: dict) -> None:
     ) * 1000.0
     print(
         f"{tag}: total={total:.3f}ms, "
-        f"lower_super={t['lower_super']*1000.0:.3f}ms, "
-        f"lower_frame_corr={t['lower_frame_corr']*1000.0:.3f}ms, "
-        f"nufft1={t.get('nufft_type1', 0.0)*1000.0:.3f}ms, "
-        f"nufft2={t.get('nufft_type2', 0.0)*1000.0:.3f}ms"
+        f"lower_super={t['lower_super'] * 1000.0:.3f}ms, "
+        f"lower_frame_corr={t['lower_frame_corr'] * 1000.0:.3f}ms, "
+        f"nufft1={t.get('nufft_type1', 0.0) * 1000.0:.3f}ms, "
+        f"nufft2={t.get('nufft_type2', 0.0) * 1000.0:.3f}ms"
     )
 
 

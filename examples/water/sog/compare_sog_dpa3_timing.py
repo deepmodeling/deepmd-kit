@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
-from __future__ import annotations
+# SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
 
 import json
 import time
-from pathlib import Path
+from pathlib import (
+    Path,
+)
 
 import torch
 
-from deepmd.pt.model.model import get_model
+from deepmd.pt.model.model import (
+    get_model,
+)
 
 
 def sync(dev: torch.device) -> None:
@@ -54,8 +61,12 @@ def bench_model(
 
 
 def main() -> None:
-    sog_cfg = json.loads(Path("examples/water/sog/input_torch.json").read_text())["model"]
-    dpa_cfg = json.loads(Path("examples/water/dpa3/input_torch_copy.json").read_text())["model"]
+    sog_cfg = json.loads(Path("examples/water/sog/input_torch.json").read_text())[
+        "model"
+    ]
+    dpa_cfg = json.loads(Path("examples/water/dpa3/input_torch_copy.json").read_text())[
+        "model"
+    ]
 
     coord, atype, box, dev = build_input()
 

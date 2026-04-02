@@ -1,24 +1,22 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    Optional,
 )
 
-import torch
 import pytorch_finufft
-
-from deepmd.pt.model.model.transform_output import (
-    communicate_extended_output,
-)
-from deepmd.pt.utils.nlist import (
-    extend_input_and_build_neighbor_list,
-)
+import torch
 
 from deepmd.pt.model.atomic_model import (
     SOGEnergyAtomicModel,
 )
 from deepmd.pt.model.model.model import (
     BaseModel,
+)
+from deepmd.pt.model.model.transform_output import (
+    communicate_extended_output,
+)
+from deepmd.pt.utils.nlist import (
+    extend_input_and_build_neighbor_list,
 )
 
 from .dp_model import (
@@ -47,7 +45,9 @@ class SOGEnergyModel(DPModelCommon, SOGEnergyModel_):
         SOGEnergyModel_.__init__(self, *args, **kwargs)
         self._hessian_enabled = False
         # Runtime-only caches for NUFFT correction path.
-        self._sog_param_cache: dict[tuple[Any, ...], tuple[torch.Tensor, torch.Tensor, torch.Tensor]] = {}
+        self._sog_param_cache: dict[
+            tuple[Any, ...], tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+        ] = {}
 
     @staticmethod
     def _device_key(device: torch.device) -> str:
@@ -69,10 +69,20 @@ class SOGEnergyModel(DPModelCommon, SOGEnergyModel_):
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         wl_raw = fitting.wl
         sl_raw = fitting.sl
-        grad_mode = torch.is_grad_enabled() and (wl_raw.requires_grad or sl_raw.requires_grad)
+        grad_mode = torch.is_grad_enabled() and (
+            wl_raw.requires_grad or sl_raw.requires_grad
+        )
 
-        wl = wl_raw if (wl_raw.device == runtime_device and wl_raw.dtype == real_dtype) else wl_raw.to(dtype=real_dtype, device=runtime_device)
-        sl = sl_raw if (sl_raw.device == runtime_device and sl_raw.dtype == real_dtype) else sl_raw.to(dtype=real_dtype, device=runtime_device)
+        wl = (
+            wl_raw
+            if (wl_raw.device == runtime_device and wl_raw.dtype == real_dtype)
+            else wl_raw.to(dtype=real_dtype, device=runtime_device)
+        )
+        sl = (
+            sl_raw
+            if (sl_raw.device == runtime_device and sl_raw.dtype == real_dtype)
+            else sl_raw.to(dtype=real_dtype, device=runtime_device)
+        )
         min_term = -1.0 / torch.exp(-2.0 * sl)
 
         # Do not cache differentiable tensors across iterations.
@@ -157,7 +167,9 @@ class SOGEnergyModel(DPModelCommon, SOGEnergyModel_):
         need_virial: bool,
     ) -> dict[str, torch.Tensor]:
         if coord.dim() != 3:
-            raise ValueError(f"`coord` should be [nf, nloc, 3], got shape {tuple(coord.shape)}")
+            raise ValueError(
+                f"`coord` should be [nf, nloc, 3], got shape {tuple(coord.shape)}"
+            )
         if latent_charge.dim() != 3:
             raise ValueError(
                 f"`latent_charge` should be [nf, nloc, nq], got shape {tuple(latent_charge.shape)}"
@@ -171,11 +183,15 @@ class SOGEnergyModel(DPModelCommon, SOGEnergyModel_):
         fitting = self.get_fitting_net()
         runtime_device = coord.device
         real_dtype = coord.dtype
-        complex_dtype = torch.complex128 if real_dtype == torch.float64 else torch.complex64
+        complex_dtype = (
+            torch.complex128 if real_dtype == torch.float64 else torch.complex64
+        )
         latent_charge = latent_charge.to(device=runtime_device, dtype=real_dtype)
         box = box.to(device=runtime_device, dtype=real_dtype)
         if box.dim() != 3 or box.shape[-2:] != (3, 3):
-            raise ValueError(f"`box` should be [nf, 3, 3], got shape {tuple(box.shape)}")
+            raise ValueError(
+                f"`box` should be [nf, 3, 3], got shape {tuple(box.shape)}"
+            )
 
         wl, _sl, min_term = self._get_cached_sog_params(
             fitting,
@@ -207,7 +223,9 @@ class SOGEnergyModel(DPModelCommon, SOGEnergyModel_):
 
             volume = torch.det(box_frame)
             if torch.abs(volume) <= torch.finfo(real_dtype).eps:
-                raise ValueError("`box` is singular (near-zero volume), cannot run NUFFT.")
+                raise ValueError(
+                    "`box` is singular (near-zero volume), cannot run NUFFT."
+                )
 
             cell_inv = torch.linalg.inv(box_frame)
             r_frac = torch.matmul(r_raw, cell_inv)
@@ -222,9 +240,15 @@ class SOGEnergyModel(DPModelCommon, SOGEnergyModel_):
 
             norms = torch.norm(box_frame, dim=1)
             nk = tuple(max(1, int(n.item() / n_dl)) for n in norms)
-            n1 = torch.arange(-nk[0], nk[0] + 1, device=runtime_device, dtype=real_dtype)
-            n2 = torch.arange(-nk[1], nk[1] + 1, device=runtime_device, dtype=real_dtype)
-            n3 = torch.arange(-nk[2], nk[2] + 1, device=runtime_device, dtype=real_dtype)
+            n1 = torch.arange(
+                -nk[0], nk[0] + 1, device=runtime_device, dtype=real_dtype
+            )
+            n2 = torch.arange(
+                -nk[1], nk[1] + 1, device=runtime_device, dtype=real_dtype
+            )
+            n3 = torch.arange(
+                -nk[2], nk[2] + 1, device=runtime_device, dtype=real_dtype
+            )
             kx_grid, ky_grid, kz_grid = torch.meshgrid(n1, n2, n3, indexing="ij")
             k_sq = kx_grid**2 + ky_grid**2 + kz_grid**2
             zero_mask = k_sq == 0
@@ -236,7 +260,11 @@ class SOGEnergyModel(DPModelCommon, SOGEnergyModel_):
             output_shape = tuple(int(x) for x in kx_grid.shape)
 
             q_t = q.transpose(0, 1).contiguous()
-            charge = torch.complex(q_t, torch.zeros_like(q_t)).to(dtype=complex_dtype).contiguous()
+            charge = (
+                torch.complex(q_t, torch.zeros_like(q_t))
+                .to(dtype=complex_dtype)
+                .contiguous()
+            )
             recon = pytorch_finufft.functional.finufft_type1(
                 nufft_points,
                 charge,
@@ -261,14 +289,20 @@ class SOGEnergyModel(DPModelCommon, SOGEnergyModel_):
                 kk3 = torch.fft.ifftshift(kz_grid, dim=2)
                 k_grid = torch.stack((kk1, kk2, kk3), dim=0)
                 g_cart = two_pi * torch.einsum("ik,k...->i...", cell_inv, k_grid)
-                grad_conv = (1j * g_cart.unsqueeze(1).to(dtype=complex_dtype)) * conv.unsqueeze(0)
+                grad_conv = (
+                    1j * g_cart.unsqueeze(1).to(dtype=complex_dtype)
+                ) * conv.unsqueeze(0)
                 grad_field = pytorch_finufft.functional.finufft_type2(
                     nufft_points,
                     grad_conv,
                     eps=1e-4,
                     isign=1,
                 )
-                force_frame = -(q_t.unsqueeze(0) * grad_field.real.to(dtype=real_dtype)).sum(dim=1).transpose(0, 1)
+                force_frame = (
+                    -(q_t.unsqueeze(0) * grad_field.real.to(dtype=real_dtype))
+                    .sum(dim=1)
+                    .transpose(0, 1)
+                )
                 force_frame = force_frame / volume
                 force_local[ff] = force_frame
 
@@ -310,7 +344,7 @@ class SOGEnergyModel(DPModelCommon, SOGEnergyModel_):
         model_ret: dict[str, torch.Tensor],
         extended_coord: torch.Tensor,
         nlist: torch.Tensor,
-        box: Optional[torch.Tensor],
+        box: torch.Tensor | None,
         do_atomic_virial: bool,
     ) -> dict[str, torch.Tensor]:
         if box is None or "latent_charge" not in model_ret:
@@ -323,7 +357,9 @@ class SOGEnergyModel(DPModelCommon, SOGEnergyModel_):
         latent_charge = model_ret["latent_charge"]
         need_force = self.do_grad_r("energy") or self.do_grad_c("energy")
         need_virial = self.do_grad_c("energy")
-        latent_charge_runtime = latent_charge if self.training else latent_charge.detach()
+        latent_charge_runtime = (
+            latent_charge if self.training else latent_charge.detach()
+        )
         corr_bundle = self._compute_sog_frame_correction_bundle(
             coord_local,
             latent_charge_runtime,
@@ -333,7 +369,9 @@ class SOGEnergyModel(DPModelCommon, SOGEnergyModel_):
         )
         corr_redu = corr_bundle["corr_redu"]
 
-        model_ret["energy_redu"] = model_ret["energy_redu"] + corr_redu.to(model_ret["energy_redu"].dtype)
+        model_ret["energy_redu"] = model_ret["energy_redu"] + corr_redu.to(
+            model_ret["energy_redu"].dtype
+        )
 
         if need_force:
             corr_force_local = corr_bundle["force_local"].to(coord_local.dtype)
@@ -345,17 +383,19 @@ class SOGEnergyModel(DPModelCommon, SOGEnergyModel_):
             )
             corr_force_ext[:, :nloc, :] = corr_force_local
             if "energy_derv_r" in model_ret:
-                model_ret["energy_derv_r"] = model_ret["energy_derv_r"] + corr_force_ext.unsqueeze(-2).to(
-                    model_ret["energy_derv_r"].dtype
-                )
+                model_ret["energy_derv_r"] = model_ret[
+                    "energy_derv_r"
+                ] + corr_force_ext.unsqueeze(-2).to(model_ret["energy_derv_r"].dtype)
 
             if need_virial:
-                corr_virial_local = corr_bundle["virial_local"].to(corr_force_local.dtype)
+                corr_virial_local = corr_bundle["virial_local"].to(
+                    corr_force_local.dtype
+                )
                 corr_virial_redu = corr_virial_local.sum(dim=1)
                 if "energy_derv_c_redu" in model_ret:
-                    model_ret["energy_derv_c_redu"] = model_ret["energy_derv_c_redu"] + corr_virial_redu.to(
-                        model_ret["energy_derv_c_redu"].dtype
-                    )
+                    model_ret["energy_derv_c_redu"] = model_ret[
+                        "energy_derv_c_redu"
+                    ] + corr_virial_redu.to(model_ret["energy_derv_c_redu"].dtype)
                 if do_atomic_virial and "energy_derv_c" in model_ret:
                     corr_atom_virial = torch.zeros(
                         (nf, nall, 1, 9),
@@ -363,9 +403,9 @@ class SOGEnergyModel(DPModelCommon, SOGEnergyModel_):
                         device=corr_virial_local.device,
                     )
                     corr_atom_virial[:, :nloc, :, :] = corr_virial_local
-                    model_ret["energy_derv_c"] = model_ret["energy_derv_c"] + corr_atom_virial.to(
-                        model_ret["energy_derv_c"].dtype
-                    )
+                    model_ret["energy_derv_c"] = model_ret[
+                        "energy_derv_c"
+                    ] + corr_atom_virial.to(model_ret["energy_derv_c"].dtype)
 
         return model_ret
 
@@ -375,13 +415,13 @@ class SOGEnergyModel(DPModelCommon, SOGEnergyModel_):
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
         nlist: torch.Tensor,
-        mapping: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        mapping: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
-        comm_dict: Optional[dict[str, torch.Tensor]] = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
         extra_nlist_sort: bool = False,
-        extended_coord_corr: Optional[torch.Tensor] = None,
+        extended_coord_corr: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         if self.do_grad_r("energy") or self.do_grad_c("energy"):
             extended_coord = extended_coord.requires_grad_(True)
@@ -412,9 +452,9 @@ class SOGEnergyModel(DPModelCommon, SOGEnergyModel_):
         self,
         coord: torch.Tensor,
         atype: torch.Tensor,
-        box: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        box: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
     ) -> dict[str, torch.Tensor]:
         cc, bb, fp, ap, input_prec = self._input_type_cast(
@@ -482,11 +522,11 @@ class SOGEnergyModel(DPModelCommon, SOGEnergyModel_):
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
         nlist: torch.Tensor,
-        mapping: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        mapping: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
-        comm_dict: Optional[dict[str, torch.Tensor]] = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
     ) -> dict[str, torch.Tensor]:
         model_ret = self.forward_common_lower(
             extended_coord,

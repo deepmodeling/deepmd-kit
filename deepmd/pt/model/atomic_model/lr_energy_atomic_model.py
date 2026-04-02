@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import Any, Iterable, Optional
+from typing import (
+    Any,
+)
+from collections.abc import Iterable
 
 import torch
 
@@ -48,7 +51,7 @@ class LREnergyAtomicModel(BaseAtomicModel):
         energy_fitting: InvarFitting,
         property_fitting: PropertyFittingNet,
         type_map: list[str],
-        correction_hidden: Optional[Iterable[int]] = None,
+        correction_hidden: Iterable[int] | None = None,
         correction_activation: str = "tanh",
         **kwargs: Any,
     ) -> None:
@@ -67,9 +70,13 @@ class LREnergyAtomicModel(BaseAtomicModel):
             )
 
         if energy_fitting.get_dim_fparam() != property_fitting.get_dim_fparam():
-            raise ValueError("energy_fitting and property_fitting must share the same dim_fparam")
+            raise ValueError(
+                "energy_fitting and property_fitting must share the same dim_fparam"
+            )
         if energy_fitting.get_dim_aparam() != property_fitting.get_dim_aparam():
-            raise ValueError("energy_fitting and property_fitting must share the same dim_aparam")
+            raise ValueError(
+                "energy_fitting and property_fitting must share the same dim_aparam"
+            )
 
         self.descriptor = descriptor
         self.energy_fitting = energy_fitting
@@ -80,7 +87,11 @@ class LREnergyAtomicModel(BaseAtomicModel):
         self.rcut = self.descriptor.get_rcut()
         self.sel = self.descriptor.get_sel()
         self.correction_activation = correction_activation
-        hidden = list(correction_hidden) if correction_hidden is not None else [property_fitting.dim_out]
+        hidden = (
+            list(correction_hidden)
+            if correction_hidden is not None
+            else [property_fitting.dim_out]
+        )
         self.correction_hidden = hidden
         self.correction_head = self._build_correction_head(
             property_fitting.dim_out, hidden, correction_activation
@@ -152,7 +163,7 @@ class LREnergyAtomicModel(BaseAtomicModel):
     def has_default_fparam(self) -> bool:
         return self.energy_fitting.has_default_fparam()
 
-    def get_default_fparam(self) -> Optional[torch.Tensor]:
+    def get_default_fparam(self) -> torch.Tensor | None:
         return self.energy_fitting.get_default_fparam()
 
     def get_dim_aparam(self) -> int:
@@ -184,10 +195,10 @@ class LREnergyAtomicModel(BaseAtomicModel):
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
         nlist: torch.Tensor,
-        mapping: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
-        comm_dict: Optional[dict[str, torch.Tensor]] = None,
+        mapping: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
     ) -> dict[str, torch.Tensor]:
         nframes, nloc, _ = nlist.shape
         atype = extended_atype[:, :nloc]
@@ -224,7 +235,9 @@ class LREnergyAtomicModel(BaseAtomicModel):
         )
 
         if self.enable_eval_fitting_last_layer_hook and "middle_output" in energy_ret:
-            self.eval_fitting_last_layer_list.append(energy_ret["middle_output"].detach())
+            self.eval_fitting_last_layer_list.append(
+                energy_ret["middle_output"].detach()
+            )
 
         q_val = prop_ret[self.property_name]
         corr_energy = self.correction_head(q_val)
@@ -251,7 +264,7 @@ class LREnergyAtomicModel(BaseAtomicModel):
     def compute_or_load_stat(
         self,
         sampled_func: Any,
-        stat_file_path: Optional[Any] = None,
+        stat_file_path: Any | None = None,
         compute_or_load_out_stat: bool = True,
     ) -> None:
         if stat_file_path is not None and self.type_map is not None:
@@ -286,7 +299,7 @@ class LREnergyAtomicModel(BaseAtomicModel):
     def compute_fitting_input_stat(
         self,
         sample_merged: Any,
-        stat_file_path: Optional[Any] = None,
+        stat_file_path: Any | None = None,
     ) -> None:
         self.energy_fitting.compute_input_stats(
             sample_merged,
@@ -315,7 +328,8 @@ class LREnergyAtomicModel(BaseAtomicModel):
                 "@variables": {
                     **dd.get("@variables", {}),
                     "correction_head": {
-                        k: to_numpy_array(v) for k, v in self.correction_head.state_dict().items()
+                        k: to_numpy_array(v)
+                        for k, v in self.correction_head.state_dict().items()
                     },
                 },
             }
@@ -331,7 +345,9 @@ class LREnergyAtomicModel(BaseAtomicModel):
         variables = data.pop("@variables", {})
         descriptor_obj = BaseDescriptor.deserialize(data.pop("descriptor"))
         energy_fitting_obj = InvarFitting.deserialize(data.pop("energy_fitting"))
-        property_fitting_obj = PropertyFittingNet.deserialize(data.pop("property_fitting"))
+        property_fitting_obj = PropertyFittingNet.deserialize(
+            data.pop("property_fitting")
+        )
         correction_hidden = data.pop("correction_hidden", None)
         correction_activation = data.pop("correction_activation", "tanh")
         obj = cls(
@@ -344,5 +360,7 @@ class LREnergyAtomicModel(BaseAtomicModel):
         )
         correction_state = variables.get("correction_head", None)
         if correction_state is not None:
-            obj.correction_head.load_state_dict({k: to_torch_tensor(v) for k, v in correction_state.items()})
+            obj.correction_head.load_state_dict(
+                {k: to_torch_tensor(v) for k, v in correction_state.items()}
+            )
         return obj

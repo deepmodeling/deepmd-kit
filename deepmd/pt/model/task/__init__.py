@@ -18,23 +18,23 @@ from .ener import (
 from .fitting import (
     Fitting,
 )
+from .les_energy_fitting import (
+    LESEnergyFittingNet,
+)
+from .lr_fitting import (
+    LRFittingNet,
+)
 from .polarizability import (
     PolarFittingNet,
 )
 from .property import (
     PropertyFittingNet,
 )
-from .type_predict import (
-    TypePredictNet,
-)
-from .lr_fitting import (
-    LRFittingNet,
-)
 from .sog_energy_fitting import (
     SOGEnergyFittingNet,
 )
-from .les_energy_fitting import (
-    LESEnergyFittingNet,
+from .type_predict import (
+    TypePredictNet,
 )
 
 __all__ = [
@@ -45,8 +45,8 @@ __all__ = [
     "EnergyFittingNet",
     "EnergyFittingNetDirect",
     "Fitting",
-    "LRFittingNet",
     "LESEnergyFittingNet",
+    "LRFittingNet",
     "PolarFittingNet",
     "PropertyFittingNet",
     "SOGEnergyFittingNet",

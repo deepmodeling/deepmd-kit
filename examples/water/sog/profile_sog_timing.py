@@ -1,24 +1,43 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Profile SOG model runtime breakdown using input_torch.json as model config."""
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import argparse
 import json
 import time
 import types
-from collections import defaultdict
-from contextlib import nullcontext
-from pathlib import Path
-from typing import Any
+from collections import (
+    defaultdict,
+)
+from contextlib import (
+    nullcontext,
+)
+from pathlib import (
+    Path,
+)
+from typing import (
+    Any,
+)
 
-import torch
 import pytorch_finufft
+import torch
 
-from deepmd.pt.model.model import get_model
-from deepmd.pt.model.model.sog_model import SOGEnergyModel_
-from deepmd.pt.model.model.transform_output import communicate_extended_output
-from deepmd.pt.utils.nlist import extend_input_and_build_neighbor_list
+from deepmd.pt.model.model import (
+    get_model,
+)
+from deepmd.pt.model.model.sog_model import (
+    SOGEnergyModel_,
+)
+from deepmd.pt.model.model.transform_output import (
+    communicate_extended_output,
+)
+from deepmd.pt.utils.nlist import (
+    extend_input_and_build_neighbor_list,
+)
 
 
 def _sync_if_cuda(device: torch.device) -> None:
@@ -88,7 +107,9 @@ def _install_fine_frame_corr_profiler(
         need_virial: bool,
     ) -> dict[str, torch.Tensor]:
         if coord.dim() != 3:
-            raise ValueError(f"`coord` should be [nf, nloc, 3], got shape {tuple(coord.shape)}")
+            raise ValueError(
+                f"`coord` should be [nf, nloc, 3], got shape {tuple(coord.shape)}"
+            )
         if latent_charge.dim() != 3:
             raise ValueError(
                 f"`latent_charge` should be [nf, nloc, nq], got shape {tuple(latent_charge.shape)}"
@@ -102,14 +123,26 @@ def _install_fine_frame_corr_profiler(
         fitting = self.get_fitting_net()
         runtime_device = coord.device
         real_dtype = coord.dtype
-        complex_dtype = torch.complex128 if real_dtype == torch.float64 else torch.complex64
-        with _time_block("fc_cast_inputs", detail_times, device) if collect_flag["on"] else nullcontext():
+        complex_dtype = (
+            torch.complex128 if real_dtype == torch.float64 else torch.complex64
+        )
+        with (
+            _time_block("fc_cast_inputs", detail_times, device)
+            if collect_flag["on"]
+            else nullcontext()
+        ):
             latent_charge = latent_charge.to(device=runtime_device, dtype=real_dtype)
             box = box.to(device=runtime_device, dtype=real_dtype)
         if box.dim() != 3 or box.shape[-2:] != (3, 3):
-            raise ValueError(f"`box` should be [nf, 3, 3], got shape {tuple(box.shape)}")
+            raise ValueError(
+                f"`box` should be [nf, 3, 3], got shape {tuple(box.shape)}"
+            )
 
-        with _time_block("fc_param_prepare", detail_times, device) if collect_flag["on"] else nullcontext():
+        with (
+            _time_block("fc_param_prepare", detail_times, device)
+            if collect_flag["on"]
+            else nullcontext()
+        ):
             wl, _sl, min_term = self._get_cached_sog_params(
                 fitting,
                 runtime_device,
@@ -118,7 +151,9 @@ def _install_fine_frame_corr_profiler(
             remove_self_interaction = bool(fitting.remove_self_interaction)
             n_dl = int(fitting.n_dl)
             pi_tensor = torch.tensor(torch.pi, dtype=real_dtype, device=runtime_device)
-            two_pi = torch.tensor(2.0 * torch.pi, dtype=real_dtype, device=runtime_device)
+            two_pi = torch.tensor(
+                2.0 * torch.pi, dtype=real_dtype, device=runtime_device
+            )
 
         nf, nloc, _ = coord.shape
         corr = torch.zeros((nf, 1), dtype=real_dtype, device=runtime_device)
@@ -138,10 +173,16 @@ def _install_fine_frame_corr_profiler(
             q = latent_charge[ff]
             box_frame = box[ff]
 
-            with _time_block("fc_geom_and_points", detail_times, device) if collect_flag["on"] else nullcontext():
+            with (
+                _time_block("fc_geom_and_points", detail_times, device)
+                if collect_flag["on"]
+                else nullcontext()
+            ):
                 volume = torch.det(box_frame)
                 if torch.abs(volume) <= torch.finfo(real_dtype).eps:
-                    raise ValueError("`box` is singular (near-zero volume), cannot run NUFFT.")
+                    raise ValueError(
+                        "`box` is singular (near-zero volume), cannot run NUFFT."
+                    )
 
                 cell_inv = torch.linalg.inv(box_frame)
                 r_frac = torch.matmul(r_raw, cell_inv)
@@ -154,27 +195,53 @@ def _install_fine_frame_corr_profiler(
                 ).contiguous()
                 nufft_points = r_in.transpose(0, 1).contiguous()
 
-            with _time_block("fc_build_k_grid", detail_times, device) if collect_flag["on"] else nullcontext():
+            with (
+                _time_block("fc_build_k_grid", detail_times, device)
+                if collect_flag["on"]
+                else nullcontext()
+            ):
                 norms = torch.norm(box_frame, dim=1)
                 nk = tuple(max(1, int(n.item() / n_dl)) for n in norms)
-                n1 = torch.arange(-nk[0], nk[0] + 1, device=runtime_device, dtype=real_dtype)
-                n2 = torch.arange(-nk[1], nk[1] + 1, device=runtime_device, dtype=real_dtype)
-                n3 = torch.arange(-nk[2], nk[2] + 1, device=runtime_device, dtype=real_dtype)
+                n1 = torch.arange(
+                    -nk[0], nk[0] + 1, device=runtime_device, dtype=real_dtype
+                )
+                n2 = torch.arange(
+                    -nk[1], nk[1] + 1, device=runtime_device, dtype=real_dtype
+                )
+                n3 = torch.arange(
+                    -nk[2], nk[2] + 1, device=runtime_device, dtype=real_dtype
+                )
                 kx_grid, ky_grid, kz_grid = torch.meshgrid(n1, n2, n3, indexing="ij")
                 k_sq = kx_grid**2 + ky_grid**2 + kz_grid**2
                 zero_mask = k_sq == 0
 
-            with _time_block("fc_build_kfac", detail_times, device) if collect_flag["on"] else nullcontext():
+            with (
+                _time_block("fc_build_kfac", detail_times, device)
+                if collect_flag["on"]
+                else nullcontext()
+            ):
                 kfac = wl.view(1, 1, 1, -1) * torch.exp(k_sq.unsqueeze(-1) * min_term)
                 kfac = kfac.sum(dim=-1)
                 kfac = kfac.to(dtype=real_dtype)
                 kfac[zero_mask] = 0.0
 
-            with _time_block("fc_prepare_charge", detail_times, device) if collect_flag["on"] else nullcontext():
+            with (
+                _time_block("fc_prepare_charge", detail_times, device)
+                if collect_flag["on"]
+                else nullcontext()
+            ):
                 q_t = q.transpose(0, 1).contiguous()
-                charge = torch.complex(q_t, torch.zeros_like(q_t)).to(dtype=complex_dtype).contiguous()
+                charge = (
+                    torch.complex(q_t, torch.zeros_like(q_t))
+                    .to(dtype=complex_dtype)
+                    .contiguous()
+                )
 
-            with _time_block("fc_nufft_type1", detail_times, device) if collect_flag["on"] else nullcontext():
+            with (
+                _time_block("fc_nufft_type1", detail_times, device)
+                if collect_flag["on"]
+                else nullcontext()
+            ):
                 recon = pytorch_finufft.functional.finufft_type1(
                     nufft_points,
                     charge,
@@ -183,23 +250,41 @@ def _install_fine_frame_corr_profiler(
                     isign=-1,
                 )
 
-            with _time_block("fc_energy_reduce", detail_times, device) if collect_flag["on"] else nullcontext():
+            with (
+                _time_block("fc_energy_reduce", detail_times, device)
+                if collect_flag["on"]
+                else nullcontext()
+            ):
                 rho_sq = recon.real.square() + recon.imag.square()
                 corr[ff, 0] = (kfac.unsqueeze(0) * rho_sq).sum() / (2.0 * volume)
 
             if need_force:
-                with _time_block("fc_prepare_force_conv", detail_times, device) if collect_flag["on"] else nullcontext():
+                with (
+                    _time_block("fc_prepare_force_conv", detail_times, device)
+                    if collect_flag["on"]
+                    else nullcontext()
+                ):
                     conv = kfac.unsqueeze(0).to(dtype=complex_dtype) * recon
 
-                with _time_block("fc_prepare_force_kgrid", detail_times, device) if collect_flag["on"] else nullcontext():
+                with (
+                    _time_block("fc_prepare_force_kgrid", detail_times, device)
+                    if collect_flag["on"]
+                    else nullcontext()
+                ):
                     kk1 = torch.fft.ifftshift(kx_grid, dim=0)
                     kk2 = torch.fft.ifftshift(ky_grid, dim=1)
                     kk3 = torch.fft.ifftshift(kz_grid, dim=2)
                     k_grid = torch.stack((kk1, kk2, kk3), dim=0)
                     g_cart = two_pi * torch.einsum("ik,k...->i...", cell_inv, k_grid)
-                    grad_conv = (1j * g_cart.unsqueeze(1).to(dtype=complex_dtype)) * conv.unsqueeze(0)
+                    grad_conv = (
+                        1j * g_cart.unsqueeze(1).to(dtype=complex_dtype)
+                    ) * conv.unsqueeze(0)
 
-                with _time_block("fc_nufft_type2_force", detail_times, device) if collect_flag["on"] else nullcontext():
+                with (
+                    _time_block("fc_nufft_type2_force", detail_times, device)
+                    if collect_flag["on"]
+                    else nullcontext()
+                ):
                     grad_field = pytorch_finufft.functional.finufft_type2(
                         nufft_points,
                         grad_conv,
@@ -207,13 +292,25 @@ def _install_fine_frame_corr_profiler(
                         isign=1,
                     )
 
-                with _time_block("fc_force_reduce", detail_times, device) if collect_flag["on"] else nullcontext():
-                    force_frame = -(q_t.unsqueeze(0) * grad_field.real.to(dtype=real_dtype)).sum(dim=1).transpose(0, 1)
+                with (
+                    _time_block("fc_force_reduce", detail_times, device)
+                    if collect_flag["on"]
+                    else nullcontext()
+                ):
+                    force_frame = (
+                        -(q_t.unsqueeze(0) * grad_field.real.to(dtype=real_dtype))
+                        .sum(dim=1)
+                        .transpose(0, 1)
+                    )
                     force_frame = force_frame / volume
                     force_local[ff] = force_frame
 
                 if need_virial:
-                    with _time_block("fc_virial_local", detail_times, device) if collect_flag["on"] else nullcontext():
+                    with (
+                        _time_block("fc_virial_local", detail_times, device)
+                        if collect_flag["on"]
+                        else nullcontext()
+                    ):
                         virial_local[ff] = torch.einsum(
                             "ai,aj->aij",
                             force_frame,
@@ -221,7 +318,11 @@ def _install_fine_frame_corr_profiler(
                         ).reshape(nloc, 1, 9)
 
             if remove_self_interaction:
-                with _time_block("fc_self_interaction", detail_times, device) if collect_flag["on"] else nullcontext():
+                with (
+                    _time_block("fc_self_interaction", detail_times, device)
+                    if collect_flag["on"]
+                    else nullcontext()
+                ):
                     diag_sum = kfac.sum(dim=-1).sum(dim=-1).sum(dim=-1) / (2.0 * volume)
                     corr[ff, 0] -= torch.sum(q**2) * diag_sum
 
@@ -240,7 +341,11 @@ def _install_fine_frame_corr_profiler(
         box: torch.Tensor | None,
         do_atomic_virial: bool,
     ) -> dict[str, torch.Tensor]:
-        with _time_block("fc_guard_and_slice", detail_times, device) if collect_flag["on"] else nullcontext():
+        with (
+            _time_block("fc_guard_and_slice", detail_times, device)
+            if collect_flag["on"]
+            else nullcontext()
+        ):
             if box is None or "latent_charge" not in model_ret:
                 return model_ret
 
@@ -251,9 +356,15 @@ def _install_fine_frame_corr_profiler(
             latent_charge = model_ret["latent_charge"]
             need_force = self.do_grad_r("energy") or self.do_grad_c("energy")
             need_virial = self.do_grad_c("energy")
-            latent_charge_runtime = latent_charge if self.training else latent_charge.detach()
+            latent_charge_runtime = (
+                latent_charge if self.training else latent_charge.detach()
+            )
 
-        with _time_block("fc_compute_corr_bundle", detail_times, device) if collect_flag["on"] else nullcontext():
+        with (
+            _time_block("fc_compute_corr_bundle", detail_times, device)
+            if collect_flag["on"]
+            else nullcontext()
+        ):
             corr_bundle = self._compute_sog_frame_correction_bundle(
                 coord_local,
                 latent_charge_runtime,
@@ -263,13 +374,23 @@ def _install_fine_frame_corr_profiler(
             )
             corr_redu = corr_bundle["corr_redu"]
 
-        with _time_block("fc_add_energy", detail_times, device) if collect_flag["on"] else nullcontext():
-            model_ret["energy_redu"] = model_ret["energy_redu"] + corr_redu.to(model_ret["energy_redu"].dtype)
+        with (
+            _time_block("fc_add_energy", detail_times, device)
+            if collect_flag["on"]
+            else nullcontext()
+        ):
+            model_ret["energy_redu"] = model_ret["energy_redu"] + corr_redu.to(
+                model_ret["energy_redu"].dtype
+            )
 
         if need_force:
             corr_force_local = corr_bundle["force_local"].to(coord_local.dtype)
 
-            with _time_block("fc_scatter_force", detail_times, device) if collect_flag["on"] else nullcontext():
+            with (
+                _time_block("fc_scatter_force", detail_times, device)
+                if collect_flag["on"]
+                else nullcontext()
+            ):
                 corr_force_ext = torch.zeros(
                     (nf, nall, 3),
                     dtype=corr_force_local.dtype,
@@ -277,18 +398,26 @@ def _install_fine_frame_corr_profiler(
                 )
                 corr_force_ext[:, :nloc, :] = corr_force_local
                 if "energy_derv_r" in model_ret:
-                    model_ret["energy_derv_r"] = model_ret["energy_derv_r"] + corr_force_ext.unsqueeze(-2).to(
+                    model_ret["energy_derv_r"] = model_ret[
+                        "energy_derv_r"
+                    ] + corr_force_ext.unsqueeze(-2).to(
                         model_ret["energy_derv_r"].dtype
                     )
 
             if need_virial:
-                corr_virial_local = corr_bundle["virial_local"].to(corr_force_local.dtype)
-                with _time_block("fc_virial_update", detail_times, device) if collect_flag["on"] else nullcontext():
+                corr_virial_local = corr_bundle["virial_local"].to(
+                    corr_force_local.dtype
+                )
+                with (
+                    _time_block("fc_virial_update", detail_times, device)
+                    if collect_flag["on"]
+                    else nullcontext()
+                ):
                     corr_virial_redu = corr_virial_local.sum(dim=1)
                     if "energy_derv_c_redu" in model_ret:
-                        model_ret["energy_derv_c_redu"] = model_ret["energy_derv_c_redu"] + corr_virial_redu.to(
-                            model_ret["energy_derv_c_redu"].dtype
-                        )
+                        model_ret["energy_derv_c_redu"] = model_ret[
+                            "energy_derv_c_redu"
+                        ] + corr_virial_redu.to(model_ret["energy_derv_c_redu"].dtype)
                     if do_atomic_virial and "energy_derv_c" in model_ret:
                         corr_atom_virial = torch.zeros(
                             (nf, nall, 1, 9),
@@ -296,9 +425,9 @@ def _install_fine_frame_corr_profiler(
                             device=corr_virial_local.device,
                         )
                         corr_atom_virial[:, :nloc, :, :] = corr_virial_local
-                        model_ret["energy_derv_c"] = model_ret["energy_derv_c"] + corr_atom_virial.to(
-                            model_ret["energy_derv_c"].dtype
-                        )
+                        model_ret["energy_derv_c"] = model_ret[
+                            "energy_derv_c"
+                        ] + corr_atom_virial.to(model_ret["energy_derv_c"].dtype)
 
         return model_ret
 
@@ -514,7 +643,7 @@ def _format_report(timings: dict[str, float]) -> str:
             ratio = (timings[k] / total * 100.0) if total > 0 else 0.0
             lines.append(f"  - {k:20s}: {ms:10.3f} ms  ({ratio:6.2f}%)")
 
-    lines.append(f"  - {'total(sum)':20s}: {total*1000.0:10.3f} ms  (100.00%)")
+    lines.append(f"  - {'total(sum)':20s}: {total * 1000.0:10.3f} ms  (100.00%)")
     return "\n".join(lines)
 
 
@@ -526,7 +655,9 @@ def main() -> None:
         default=Path("examples/water/sog/input_torch.json"),
     )
     parser.add_argument("--device", type=str, default="cuda")
-    parser.add_argument("--dtype", type=str, default="float32", choices=["float32", "float64"])
+    parser.add_argument(
+        "--dtype", type=str, default="float32", choices=["float32", "float64"]
+    )
     parser.add_argument("--nframes", type=int, default=1)
     parser.add_argument("--nloc", type=int, default=192)
     parser.add_argument("--box-len", type=float, default=20.0)

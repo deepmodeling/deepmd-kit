@@ -2,8 +2,6 @@
 import logging
 from typing import (
     Any,
-    Optional,
-    Union,
 )
 
 import numpy as np
@@ -33,35 +31,42 @@ from deepmd.pt.model.task.lr_fitting import (
     LRFittingNet,
 )
 
-
-SOG_DEFAULT_AMPLITUDE = to_numpy_array(np.array([
-    0.2750,
-    0.1375,
-    0.0688,
-    0.0344,
-    0.0172,
-    0.0086,
-    0.0043,
-    0.0021,
-    0.0011,
-    0.0005,
-    0.0003,
-    0.0001,
-]))
-SOG_DEFAULT_SHIFT = to_numpy_array(np.array([
-    2.8,
-    5.7,
-    11.4,
-    22.7,
-    45.5,
-    91.0,
-    182.0,
-    364.0,
-    728.0,
-    1456.0,
-    2912.0,
-    5823.9,
-]))
+SOG_DEFAULT_AMPLITUDE = to_numpy_array(
+    np.array(
+        [
+            0.2750,
+            0.1375,
+            0.0688,
+            0.0344,
+            0.0172,
+            0.0086,
+            0.0043,
+            0.0021,
+            0.0011,
+            0.0005,
+            0.0003,
+            0.0001,
+        ]
+    )
+)
+SOG_DEFAULT_SHIFT = to_numpy_array(
+    np.array(
+        [
+            2.8,
+            5.7,
+            11.4,
+            22.7,
+            45.5,
+            91.0,
+            182.0,
+            364.0,
+            728.0,
+            1456.0,
+            2912.0,
+            5823.9,
+        ]
+    )
+)
 
 
 @LRFittingNet.register("sog_energy")
@@ -138,7 +143,7 @@ class SOGEnergyFittingNet(LRFittingNet):
         dim_out_lr: int,
         neuron_sr: list[int] = [128, 128, 128],
         neuron_lr: list[int] = [128, 128, 128],
-        bias_atom_e: Optional[torch.Tensor] = None,
+        bias_atom_e: torch.Tensor | None = None,
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
@@ -146,16 +151,16 @@ class SOGEnergyFittingNet(LRFittingNet):
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
-        rcond: Optional[float] = None,
-        seed: Optional[Union[int, list[int]]] = None,
+        rcond: float | None = None,
+        seed: int | list[int] | None = None,
         exclude_types: list[int] = [],
-        trainable: Union[bool, list[bool]] = True,
-        remove_vaccum_contribution: Optional[list[bool]] = None,
-        type_map: Optional[list[str]] = None,
+        trainable: bool | list[bool] = True,
+        remove_vaccum_contribution: list[bool] | None = None,
+        type_map: list[str] | None = None,
         use_aparam_as_mask: bool = False,
-        default_fparam: Optional[list[float]] = None,
-        shift: Optional[Union[list[float], torch.Tensor]] = None,
-        amplitude: Optional[Union[list[float], torch.Tensor]] = None,
+        default_fparam: list[float] | None = None,
+        shift: list[float] | torch.Tensor | None = None,
+        amplitude: list[float] | torch.Tensor | None = None,
         n_dl: int = 1,
         remove_self_interaction: bool = False,
         **kwargs: Any,
@@ -236,7 +241,7 @@ class SOGEnergyFittingNet(LRFittingNet):
                     reducible=False,
                     r_differentiable=False,
                     c_differentiable=False,
-                )
+                ),
             ]
         )
 
@@ -324,11 +329,11 @@ class SOGEnergyFittingNet(LRFittingNet):
         self,
         descriptor: torch.Tensor,
         atype: torch.Tensor,
-        gr: Optional[torch.Tensor] = None,
-        g2: Optional[torch.Tensor] = None,
-        h2: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        gr: torch.Tensor | None = None,
+        g2: torch.Tensor | None = None,
+        h2: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         out = self._forward_common(
             descriptor=descriptor,
@@ -346,6 +351,6 @@ class SOGEnergyFittingNet(LRFittingNet):
         if "middle_output" in out:
             result["middle_output"] = out["middle_output"]
         return result
-    
+
     # make jit happy with torch 2.0.0
     exclude_types: list[int]

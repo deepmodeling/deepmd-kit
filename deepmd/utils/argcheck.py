@@ -2058,11 +2058,17 @@ def fitting_polar() -> list[Argument]:
 #    return fitting_polar()
 @fitting_args_plugin.register("sog_energy", doc=doc_sog)
 def fitting_sog_energy() -> list[Argument]:
-    doc_var_name = "The atomic property name used by the LR fitting net. Usually set to `energy`."
+    doc_var_name = (
+        "The atomic property name used by the LR fitting net. Usually set to `energy`."
+    )
     doc_dim_out_sr = "The output dimension of the short-range fitting branch."
     doc_dim_out_lr = "The output dimension of the long-range fitting branch."
-    doc_neuron_sr = "The number of neurons in each hidden layer of the short-range fitting net."
-    doc_neuron_lr = "The number of neurons in each hidden layer of the long-range fitting net."
+    doc_neuron_sr = (
+        "The number of neurons in each hidden layer of the short-range fitting net."
+    )
+    doc_neuron_lr = (
+        "The number of neurons in each hidden layer of the long-range fitting net."
+    )
     doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
     doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
     doc_default_fparam = "The default frame parameter. If set, when `fparam.npy` files are not included in the data system, this value will be used as the default value for the frame parameter in the fitting net."
@@ -2073,7 +2079,9 @@ def fitting_sog_energy() -> list[Argument]:
     doc_trainable = "Whether the parameters in the fitting net are trainable. This option can be bool or list[bool]. When list[bool] is given, all values must be True to make parameters trainable."
     doc_rcond = "The condition number used to determine the initial energy shift for each type of atoms. See `rcond` in :py:meth:`numpy.linalg.lstsq` for more details."
     doc_seed = "Random seed for parameter initialization of the fitting net"
-    doc_exclude_types = "The excluded atom types whose atomic contributions are set to zero."
+    doc_exclude_types = (
+        "The excluded atom types whose atomic contributions are set to zero."
+    )
     doc_use_aparam_as_mask = (
         "Whether to use the aparam as a mask in input."
         "If True, the aparam will not be used in fitting net for embedding."
@@ -2246,11 +2254,17 @@ def fitting_sog_energy() -> list[Argument]:
 
 @fitting_args_plugin.register("les_energy", doc=doc_les)
 def fitting_les_energy() -> list[Argument]:
-    doc_var_name = "The atomic property name used by the LR fitting net. Usually set to `energy`."
+    doc_var_name = (
+        "The atomic property name used by the LR fitting net. Usually set to `energy`."
+    )
     doc_dim_out_sr = "The output dimension of the short-range fitting branch."
     doc_dim_out_lr = "The output dimension of the long-range fitting branch."
-    doc_neuron_sr = "The number of neurons in each hidden layer of the short-range fitting net."
-    doc_neuron_lr = "The number of neurons in each hidden layer of the long-range fitting net."
+    doc_neuron_sr = (
+        "The number of neurons in each hidden layer of the short-range fitting net."
+    )
+    doc_neuron_lr = (
+        "The number of neurons in each hidden layer of the long-range fitting net."
+    )
     doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
     doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
     doc_default_fparam = "The default frame parameter. If set, when `fparam.npy` files are not included in the data system, this value will be used as the default value for the frame parameter in the fitting net."
@@ -2261,7 +2275,9 @@ def fitting_les_energy() -> list[Argument]:
     doc_trainable = "Whether the parameters in the fitting net are trainable. This option can be bool or list[bool]. When list[bool] is given, all values must be True to make parameters trainable."
     doc_rcond = "The condition number used to determine the initial energy shift for each type of atoms. See `rcond` in :py:meth:`numpy.linalg.lstsq` for more details."
     doc_seed = "Random seed for parameter initialization of the fitting net"
-    doc_exclude_types = "The excluded atom types whose atomic contributions are set to zero."
+    doc_exclude_types = (
+        "The excluded atom types whose atomic contributions are set to zero."
+    )
     doc_use_aparam_as_mask = (
         "Whether to use the aparam as a mask in input."
         "If True, the aparam will not be used in fitting net for embedding."
@@ -2430,7 +2446,6 @@ def fitting_les_energy() -> list[Argument]:
             doc=doc_only_pt_supported + doc_amplitude,
         ),
     ]
-
 
 
 @fitting_args_plugin.register("dipole", doc=doc_dipole)

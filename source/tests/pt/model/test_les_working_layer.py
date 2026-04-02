@@ -26,11 +26,12 @@ from deepmd.pt.utils.nlist import (
     extend_input_and_build_neighbor_list,
 )
 
-
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
 
 
-def _reduce_extended_tensor(extended_tensor: torch.Tensor, mapping: torch.Tensor, nloc: int):
+def _reduce_extended_tensor(
+    extended_tensor: torch.Tensor, mapping: torch.Tensor, nloc: int
+):
     nframes = extended_tensor.shape[0]
     ext_dims = extended_tensor.shape[2:]
     reduced_tensor = torch.zeros(
@@ -88,7 +89,11 @@ class TestLESWorkingLayer(unittest.TestCase):
             dtype=dtype,
             device=env.DEVICE,
         )
-        cell = torch.eye(3, dtype=dtype, device=env.DEVICE).unsqueeze(0).repeat(self.nf, 1, 1)
+        cell = (
+            torch.eye(3, dtype=dtype, device=env.DEVICE)
+            .unsqueeze(0)
+            .repeat(self.nf, 1, 1)
+        )
         cell = cell * 5.0
         self.coord = coord.reshape(self.nf, self.nloc * 3)
         self.cell = cell.reshape(self.nf, 9)
@@ -171,10 +176,16 @@ class TestLESWorkingLayer(unittest.TestCase):
             comm_dict={"box": cell33},
         )
 
-        torch.testing.assert_close(fw_lower["energy"], fw["energy"], rtol=1e-8, atol=1e-8)
-        torch.testing.assert_close(fw_lower["virial"], fw["virial"], rtol=1e-7, atol=1e-7)
+        torch.testing.assert_close(
+            fw_lower["energy"], fw["energy"], rtol=1e-8, atol=1e-8
+        )
+        torch.testing.assert_close(
+            fw_lower["virial"], fw["virial"], rtol=1e-7, atol=1e-7
+        )
 
-        reduced_force = _reduce_extended_tensor(fw_lower["extended_force"], mapping, self.nloc)
+        reduced_force = _reduce_extended_tensor(
+            fw_lower["extended_force"], mapping, self.nloc
+        )
         torch.testing.assert_close(reduced_force, fw["force"], rtol=1e-7, atol=1e-7)
 
     def test_long_range_params_have_gradient_path(self) -> None:

@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-from __future__ import annotations
+# SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
 
 import importlib.util
 import json
@@ -7,11 +10,15 @@ import pathlib
 
 import torch
 
-from deepmd.pt.model.model import get_model
+from deepmd.pt.model.model import (
+    get_model,
+)
 
 
 def main() -> None:
-    cfg = json.loads(pathlib.Path("examples/water/sog/input_torch.json").read_text())["model"]
+    cfg = json.loads(pathlib.Path("examples/water/sog/input_torch.json").read_text())[
+        "model"
+    ]
     dev = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = get_model(cfg).to(dev).eval()
     fit = model.get_fitting_net()
@@ -38,10 +45,14 @@ def main() -> None:
     latent = torch.randn(nf, nloc, nq, device=dev, dtype=torch.float32)
 
     with torch.no_grad():
-        corr_deepmd = model._compute_sog_frame_correction(coord, latent, box).squeeze(-1)
+        corr_deepmd = model._compute_sog_frame_correction(coord, latent, box).squeeze(
+            -1
+        )
         corr_cace = []
         for i in range(nf):
-            v = cace_sog.compute_potential_SOG_triclinic_NUFFT(coord[i], latent[i], box[i])
+            v = cace_sog.compute_potential_SOG_triclinic_NUFFT(
+                coord[i], latent[i], box[i]
+            )
             corr_cace.append(v.squeeze())
         corr_cace = torch.stack(corr_cace)
 

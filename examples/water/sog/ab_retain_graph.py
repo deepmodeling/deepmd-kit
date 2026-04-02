@@ -1,14 +1,23 @@
 #!/usr/bin/env python3
-from __future__ import annotations
+# SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
 
 import json
 import time
-from pathlib import Path
-from types import MethodType
+from pathlib import (
+    Path,
+)
+from types import (
+    MethodType,
+)
 
 import torch
 
-from deepmd.pt.model.model import get_model
+from deepmd.pt.model.model import (
+    get_model,
+)
 
 
 def sync(dev: torch.device) -> None:
@@ -65,8 +74,12 @@ def make_patched_apply():
         coord_local = extended_coord[:, :nloc, :]
         box_local = box.view(nf, 3, 3)
         latent_charge = model_ret["latent_charge"]
-        corr_redu = self._compute_sog_frame_correction(coord_local, latent_charge, box_local)
-        model_ret["energy_redu"] = model_ret["energy_redu"] + corr_redu.to(model_ret["energy_redu"].dtype)
+        corr_redu = self._compute_sog_frame_correction(
+            coord_local, latent_charge, box_local
+        )
+        model_ret["energy_redu"] = model_ret["energy_redu"] + corr_redu.to(
+            model_ret["energy_redu"].dtype
+        )
 
         if self.do_grad_r("energy") or self.do_grad_c("energy"):
             corr_force_local = -torch.autograd.grad(
@@ -83,9 +96,9 @@ def make_patched_apply():
             )
             corr_force_ext[:, :nloc, :] = corr_force_local
             if "energy_derv_r" in model_ret:
-                model_ret["energy_derv_r"] = model_ret["energy_derv_r"] + corr_force_ext.unsqueeze(-2).to(
-                    model_ret["energy_derv_r"].dtype
-                )
+                model_ret["energy_derv_r"] = model_ret[
+                    "energy_derv_r"
+                ] + corr_force_ext.unsqueeze(-2).to(model_ret["energy_derv_r"].dtype)
 
             if self.do_grad_c("energy"):
                 corr_virial_local = torch.einsum(
@@ -95,9 +108,9 @@ def make_patched_apply():
                 ).reshape(nf, nloc, 1, 9)
                 corr_virial_redu = corr_virial_local.sum(dim=1)
                 if "energy_derv_c_redu" in model_ret:
-                    model_ret["energy_derv_c_redu"] = model_ret["energy_derv_c_redu"] + corr_virial_redu.to(
-                        model_ret["energy_derv_c_redu"].dtype
-                    )
+                    model_ret["energy_derv_c_redu"] = model_ret[
+                        "energy_derv_c_redu"
+                    ] + corr_virial_redu.to(model_ret["energy_derv_c_redu"].dtype)
                 if do_atomic_virial and "energy_derv_c" in model_ret:
                     corr_atom_virial = torch.zeros(
                         (nf, nall, 1, 9),
@@ -105,9 +118,9 @@ def make_patched_apply():
                         device=corr_virial_local.device,
                     )
                     corr_atom_virial[:, :nloc, :, :] = corr_virial_local
-                    model_ret["energy_derv_c"] = model_ret["energy_derv_c"] + corr_atom_virial.to(
-                        model_ret["energy_derv_c"].dtype
-                    )
+                    model_ret["energy_derv_c"] = model_ret[
+                        "energy_derv_c"
+                    ] + corr_atom_virial.to(model_ret["energy_derv_c"].dtype)
 
         return model_ret
 

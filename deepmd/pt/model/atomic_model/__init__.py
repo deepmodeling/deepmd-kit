@@ -29,9 +29,15 @@ from .dp_atomic_model import (
 from .energy_atomic_model import (
     DPEnergyAtomicModel,
 )
+from .les_atomic_model import (
+    LESEnergyAtomicModel,
+)
 from .linear_atomic_model import (
     DPZBLLinearEnergyAtomicModel,
     LinearEnergyAtomicModel,
+)
+from .lr_energy_atomic_model import (
+    LREnergyAtomicModel,
 )
 from .pairtab_atomic_model import (
     PairTabAtomicModel,
@@ -42,14 +48,8 @@ from .polar_atomic_model import (
 from .property_atomic_model import (
     DPPropertyAtomicModel,
 )
-from .lr_energy_atomic_model import (
-    LREnergyAtomicModel,
-)
 from .sog_atomic_model import (
     SOGEnergyAtomicModel,
-)
-from .les_atomic_model import (
-    LESEnergyAtomicModel,
 )
 
 __all__ = [
@@ -61,9 +61,9 @@ __all__ = [
     "DPPolarAtomicModel",
     "DPPropertyAtomicModel",
     "DPZBLLinearEnergyAtomicModel",
-    "LinearEnergyAtomicModel",
     "LESEnergyAtomicModel",
     "LREnergyAtomicModel",
+    "LinearEnergyAtomicModel",
     "PairTabAtomicModel",
     "SOGEnergyAtomicModel",
 ]

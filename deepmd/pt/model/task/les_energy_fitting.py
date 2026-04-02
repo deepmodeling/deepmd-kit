@@ -2,8 +2,6 @@
 import logging
 from typing import (
     Any,
-    Optional,
-    Union,
 )
 
 import numpy as np
@@ -32,7 +30,6 @@ log = logging.getLogger(__name__)
 from deepmd.pt.model.task.lr_fitting import (
     LRFittingNet,
 )
-
 
 LES_DEFAULT_SIGMA = to_numpy_array(np.array(2.8 / np.sqrt(2.0)))
 
@@ -111,7 +108,7 @@ class LESEnergyFittingNet(LRFittingNet):
         dim_out_lr: int,
         neuron_sr: list[int] = [128, 128, 128],
         neuron_lr: list[int] = [128, 128, 128],
-        bias_atom_e: Optional[torch.Tensor] = None,
+        bias_atom_e: torch.Tensor | None = None,
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
@@ -119,15 +116,15 @@ class LESEnergyFittingNet(LRFittingNet):
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
-        rcond: Optional[float] = None,
-        seed: Optional[Union[int, list[int]]] = None,
+        rcond: float | None = None,
+        seed: int | list[int] | None = None,
         exclude_types: list[int] = [],
-        trainable: Union[bool, list[bool]] = True,
-        remove_vaccum_contribution: Optional[list[bool]] = None,
-        type_map: Optional[list[str]] = None,
+        trainable: bool | list[bool] = True,
+        remove_vaccum_contribution: list[bool] | None = None,
+        type_map: list[str] | None = None,
         use_aparam_as_mask: bool = False,
-        default_fparam: Optional[list[float]] = None,
-        sigma: Optional[Union[float, list[float], torch.Tensor]] = None,
+        default_fparam: list[float] | None = None,
+        sigma: float | list[float] | torch.Tensor | None = None,
         n_dl: int = 1,
         remove_self_interaction: bool = False,
         **kwargs: Any,
@@ -177,7 +174,6 @@ class LESEnergyFittingNet(LRFittingNet):
         self.remove_self_interaction = bool(remove_self_interaction)
         self._nufft_fallback_warned = False
 
-
     def output_def(self) -> FittingOutputDef:
         return FittingOutputDef(
             [
@@ -194,10 +190,10 @@ class LESEnergyFittingNet(LRFittingNet):
                     reducible=False,
                     r_differentiable=False,
                     c_differentiable=False,
-                )
+                ),
             ]
         )
-    
+
     def serialize(self) -> dict:
         data = super().serialize()
         data["type"] = "les_energy"
@@ -218,9 +214,13 @@ class LESEnergyFittingNet(LRFittingNet):
 
         with torch.no_grad():
             if sigma_tensor is None:
-                raise ValueError("LES fitting net deserialize requires `sigma` in @variables.")
+                raise ValueError(
+                    "LES fitting net deserialize requires `sigma` in @variables."
+                )
             obj.sigma.copy_(
-                sigma_tensor.to(dtype=obj.sigma.dtype, device=obj.sigma.device).reshape(1)
+                sigma_tensor.to(dtype=obj.sigma.dtype, device=obj.sigma.device).reshape(
+                    1
+                )
             )
         return obj
 
@@ -231,11 +231,11 @@ class LESEnergyFittingNet(LRFittingNet):
         self,
         descriptor: torch.Tensor,
         atype: torch.Tensor,
-        gr: Optional[torch.Tensor] = None,
-        g2: Optional[torch.Tensor] = None,
-        h2: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        gr: torch.Tensor | None = None,
+        g2: torch.Tensor | None = None,
+        h2: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         out = self._forward_common(
             descriptor=descriptor,
@@ -253,6 +253,6 @@ class LESEnergyFittingNet(LRFittingNet):
         if "middle_output" in out:
             result["middle_output"] = out["middle_output"]
         return result
-    
+
     # make jit happy with torch 2.0.0
     exclude_types: list[int]
