@@ -356,7 +356,7 @@ class EnerStdLoss(Loss):
         more_loss = {}
         if self.has_e:
             if not self.use_huber:
-                loss += atom_norm_ener * (pref_e * l2_ener_loss)
+                loss += atom_norm_ener**2 * (pref_e * l2_ener_loss)
             else:
                 l_huber_loss = custom_huber_loss(
                     atom_norm_ener * energy,
@@ -380,7 +380,9 @@ class EnerStdLoss(Loss):
             )
         if self.has_v:
             if not self.use_huber:
-                loss += global_cvt_2_ener_float(atom_norm * (pref_v * l2_virial_loss))
+                loss += global_cvt_2_ener_float(
+                    atom_norm**2 * (pref_v * l2_virial_loss)
+                )
             else:
                 l_huber_loss = custom_huber_loss(
                     atom_norm * tf.reshape(virial, [-1]),

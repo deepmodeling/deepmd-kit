@@ -260,7 +260,7 @@ class EnergyLoss(Loss):
             if self.loss_func == "mse":
                 l2_ener_loss = xp.mean(xp.square(energy - energy_hat))
                 if not self.use_huber:
-                    loss += atom_norm_ener * (pref_e * l2_ener_loss)
+                    loss += atom_norm_ener**2 * (pref_e * l2_ener_loss)
                 else:
                     l_huber_loss = custom_huber_loss(
                         atom_norm_ener * energy,
@@ -335,7 +335,7 @@ class EnergyLoss(Loss):
                     xp.square(virial_hat_reshape - virial_reshape),
                 )
                 if not self.use_huber:
-                    loss += atom_norm * (pref_v * l2_virial_loss)
+                    loss += atom_norm**2 * (pref_v * l2_virial_loss)
                 else:
                     l_huber_loss = custom_huber_loss(
                         atom_norm * virial_reshape,

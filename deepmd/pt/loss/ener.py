@@ -250,7 +250,7 @@ class EnergyStdLoss(TaskLoss):
                         l2_ener_loss.detach(), find_energy
                     )
                 if not self.use_huber:
-                    loss += atom_norm * (pref_e * l2_ener_loss)
+                    loss += atom_norm**2 * (pref_e * l2_ener_loss)
                 else:
                     l_huber_loss = custom_huber_loss(
                         atom_norm * energy_pred,
@@ -432,7 +432,7 @@ class EnergyStdLoss(TaskLoss):
                         l2_virial_loss.detach(), find_virial
                     )
                 if not self.use_huber:
-                    loss += atom_norm * (pref_v * l2_virial_loss)
+                    loss += atom_norm**2 * (pref_v * l2_virial_loss)
                 else:
                     l_huber_loss = custom_huber_loss(
                         atom_norm * model_pred["virial"].reshape(-1),
