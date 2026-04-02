@@ -322,12 +322,17 @@ def _trace_and_export(
     metadata = _collect_metadata(model)
 
     # 3. Create sample inputs on CPU for tracing
-    # Use nframes=2 so make_fx doesn't specialize on nframes=1
+    # Use nframes=5 to avoid two specialization traps:
+    #   - nframes=1 causes make_fx to specialize on the scalar case
+    #   - nframes=N where N == numb_fparam or numb_aparam causes PyTorch's
+    #     symbolic tracer to merge symbols (e.g. fparam.shape=(2,2) when
+    #     nframes=2 and numb_fparam=2), so a guard on one dim constrains
+    #     the other.  5 is unlikely to collide with typical param counts.
     _orig_device = _env.DEVICE
     _env.DEVICE = torch.device("cpu")
     try:
         ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam = _make_sample_inputs(
-            model, nframes=2
+            model, nframes=5
         )
     finally:
         _env.DEVICE = _orig_device

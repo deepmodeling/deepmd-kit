@@ -331,6 +331,76 @@ class TestEnergyModel(unittest.TestCase):
             "aparam may be baked in as a constant",
         )
 
+        # --- symbolic trace + export with dynamic shapes + .pte round-trip ---
+        # Use nf=5 to avoid two specialization traps:
+        #   nf=1 makes make_fx specialize on the scalar case;
+        #   nf=N where N matches numb_fparam or numb_aparam causes
+        #   PyTorch's symbolic tracer to merge unrelated dim symbols.
+        import tempfile
+
+        from deepmd.pt_expt.utils.serialization import (
+            _build_dynamic_shapes,
+        )
+
+        inputs_5f = tuple(
+            torch.cat([t] * 5, dim=0)
+            for t in (
+                ext_coord,
+                ext_atype,
+                nlist_t,
+                mapping_t,
+                fparam_zero,
+                aparam_zero,
+            )
+        )
+
+        traced_sym = md.forward_common_lower_exportable(
+            inputs_5f[0],
+            inputs_5f[1],
+            inputs_5f[2],
+            inputs_5f[3],
+            fparam=inputs_5f[4],
+            aparam=inputs_5f[5],
+            do_atomic_virial=True,
+            tracing_mode="symbolic",
+            _allow_non_fake_inputs=True,
+        )
+
+        dynamic_shapes = _build_dynamic_shapes(*inputs_5f)
+        exported_dyn = torch.export.export(
+            traced_sym,
+            inputs_5f,
+            dynamic_shapes=dynamic_shapes,
+            strict=False,
+            prefer_deferred_runtime_asserts_over_guards=True,
+        )
+
+        with tempfile.NamedTemporaryFile(suffix=".pte") as f:
+            torch.export.save(exported_dyn, f.name)
+            loaded = torch.export.load(f.name).module()
+
+        # Compare loaded vs eager at nf=1 (different shapes)
+        ret_common = md.forward_common_lower(
+            ext_coord.clone().requires_grad_(True),
+            ext_atype,
+            nlist_t,
+            mapping_t,
+            fparam=fparam_zero,
+            aparam=aparam_zero,
+            do_atomic_virial=True,
+        )
+        ret_loaded_1f = loaded(
+            ext_coord, ext_atype, nlist_t, mapping_t, fparam_zero, aparam_zero
+        )
+        for key in ret_common:
+            np.testing.assert_allclose(
+                ret_common[key].detach().cpu().numpy(),
+                ret_loaded_1f[key].detach().cpu().numpy(),
+                rtol=1e-10,
+                atol=1e-10,
+                err_msg=f"loaded vs eager (nf=1): {key}",
+            )
+
     def test_dp_consistency(self) -> None:
         """Test numerical consistency with dpmodel (energy values)."""
         # Build dpmodel version
