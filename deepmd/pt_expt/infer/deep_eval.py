@@ -131,12 +131,18 @@ class DeepEval(DeepEvalBackend):
 
     def _load_pte(self, model_file: str) -> None:
         """Load a .pte (torch.export) model file."""
-        extra_files = {"model.json": "", "model_def_script.json": ""}
+        extra_files = {
+            "model.json": "",
+            "model_def_script.json": "",
+            "metadata.json": "",
+        }
         exported = torch.export.load(model_file, extra_files=extra_files)
         self.exported_module = exported.module()
         self._init_from_model_json(extra_files["model.json"])
         mds = extra_files["model_def_script.json"]
         self._model_def_script = json.loads(mds) if mds else {}
+        md = extra_files["metadata.json"]
+        self.metadata = json.loads(md) if md else {}
 
     def _load_pt2(self, model_file: str) -> None:
         """Load a .pt2 (AOTInductor) model file."""
@@ -157,9 +163,13 @@ class DeepEval(DeepEvalBackend):
             mds = ""
             if "extra/model_def_script.json" in names:
                 mds = zf.read("extra/model_def_script.json").decode("utf-8")
+            md = ""
+            if "extra/metadata.json" in names:
+                md = zf.read("extra/metadata.json").decode("utf-8")
 
         self._init_from_model_json(model_json_str)
         self._model_def_script = json.loads(mds) if mds else {}
+        self.metadata = json.loads(md) if md else {}
 
         # Load the AOTInductor model package (.pt2 ZIP archive).
         # Uses torch._inductor.aoti_load_package (private API, stable since PyTorch 2.6).
