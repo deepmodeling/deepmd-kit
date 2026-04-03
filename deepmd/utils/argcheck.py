@@ -3199,6 +3199,11 @@ def loss_ener() -> list[Argument]:
         "atomic prefactor force", label="atom_pref", abbr="pf"
     )
     doc_limit_pref_pf = limit_pref("atomic prefactor force")
+    doc_use_default_pf = (
+        "If true, use default atom_pref of 1.0 for all atoms when atom_pref data is not provided. "
+        "This allows using the prefactor force loss (pf) without requiring atom_pref.npy files in training data. "
+        "When atom_pref.npy is provided, it will be used as-is regardless of this setting."
+    )
     doc_start_pref_gf = start_pref("generalized force", label="drdq", abbr="gf")
     doc_limit_pref_gf = limit_pref("generalized force")
     doc_numb_generalized_coord = "The dimension of generalized coordinates. Required when generalized force loss is used."
@@ -3312,6 +3317,13 @@ def loss_ener() -> list[Argument]:
             optional=True,
             default=0.00,
             doc=doc_limit_pref_pf,
+        ),
+        Argument(
+            "use_default_pf",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_use_default_pf,
         ),
         Argument("relative_f", [float, None], optional=True, doc=doc_relative_f),
         Argument(

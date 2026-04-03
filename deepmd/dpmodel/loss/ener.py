@@ -71,6 +71,9 @@ class EnergyLoss(Loss):
         The prefactor of generalized force loss at the end of the training.
     numb_generalized_coord : int
         The dimension of generalized coordinates.
+    use_default_pf : bool
+        If true, use default atom_pref of 1.0 for all atoms when atom_pref data is not provided.
+        This allows using the prefactor force loss (pf) without requiring atom_pref.npy files.
     use_huber : bool
         Enables Huber loss calculation for energy/force/virial terms with user-defined threshold delta (D).
         The loss function smoothly transitions between L2 and L1 loss:
@@ -116,6 +119,7 @@ class EnergyLoss(Loss):
         huber_delta: float | list[float] = 0.01,
         loss_func: str = "mse",
         f_use_norm: bool = False,
+        use_default_pf: bool = False,
         **kwargs: Any,
     ) -> None:
         # Validate loss_func
@@ -155,6 +159,7 @@ class EnergyLoss(Loss):
         self.use_huber = use_huber
         self.huber_delta = huber_delta
         self.f_use_norm = f_use_norm
+        self.use_default_pf = use_default_pf
         if self.f_use_norm and not (self.use_huber or self.loss_func == "mae"):
             raise RuntimeError(
                 "f_use_norm can only be True when use_huber or loss_func='mae'."
@@ -193,7 +198,9 @@ class EnergyLoss(Loss):
         find_force = label_dict["find_force"]
         find_virial = label_dict["find_virial"]
         find_atom_ener = label_dict["find_atom_ener"]
-        find_atom_pref = label_dict["find_atom_pref"]
+        find_atom_pref = (
+            label_dict["find_atom_pref"] if not self.use_default_pf else 1.0
+        )
         xp = array_api_compat.array_namespace(
             energy,
             force,
@@ -490,6 +497,7 @@ class EnergyLoss(Loss):
                 must=False,
                 high_prec=False,
                 repeat=3,
+                default=1.0,
             )
         )
         if self.has_gf > 0:
@@ -525,7 +533,7 @@ class EnergyLoss(Loss):
         """
         return {
             "@class": "EnergyLoss",
-            "@version": 2,
+            "@version": 3,
             "starter_learning_rate": self.starter_learning_rate,
             "start_pref_e": self.start_pref_e,
             "limit_pref_e": self.limit_pref_e,
@@ -546,6 +554,7 @@ class EnergyLoss(Loss):
             "huber_delta": self.huber_delta,
             "loss_func": self.loss_func,
             "f_use_norm": self.f_use_norm,
+            "use_default_pf": self.use_default_pf,
         }
 
     @classmethod
@@ -563,6 +572,6 @@ class EnergyLoss(Loss):
             The deserialized loss module
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 2, 1)
+        check_version_compatibility(data.pop("@version"), 3, 1)
         data.pop("@class")
         return cls(**data)
