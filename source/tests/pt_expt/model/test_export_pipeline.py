@@ -72,7 +72,6 @@ CONFIGS = {
                 "nsel": 12,
                 "neuron": [6, 12],
                 "axis_neuron": 3,
-                "seed": 1,
             },
             "repformer": {
                 "rcut": 3.0,
@@ -81,7 +80,6 @@ CONFIGS = {
                 "nlayers": 2,
                 "g1_dim": 8,
                 "g2_dim": 4,
-                "seed": 1,
             },
         },
         "fitting_net": {"neuron": [16, 16], "seed": 1},
