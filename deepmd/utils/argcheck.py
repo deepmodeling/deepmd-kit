@@ -106,7 +106,9 @@ def type_embedding_args() -> list[Argument]:
     doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
     doc_trainable = "Whether the parameters in the embedding net are trainable"
-    doc_use_econf_tebd = "Whether to use an electronic-configuration-based type embedding."
+    doc_use_econf_tebd = (
+        "Whether to use an electronic-configuration-based type embedding."
+    )
     doc_use_tebd_bias = "Whether to use a bias term in the type-embedding layer."
 
     return [
@@ -901,7 +903,9 @@ def descrpt_dpa2_args() -> list[Argument]:
     doc_trainable = "Whether the parameters in the embedding net are trainable."
     doc_seed = "Random seed for parameter initialization."
     doc_add_tebd_to_repinit_out = "Whether to add the type embedding to the output of `repinit` before passing it to `repformer`."
-    doc_use_econf_tebd = "Whether to use an electronic-configuration-based type embedding."
+    doc_use_econf_tebd = (
+        "Whether to use an electronic-configuration-based type embedding."
+    )
     doc_use_tebd_bias = "Whether to use a bias term in the type-embedding layer."
     return [
         # repinit args
@@ -990,9 +994,7 @@ def dpa2_repinit_args() -> list[Argument]:
     doc_activation_function = f"The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}."
     doc_type_one_side = r"If true, the embedding network parameters vary by types of neighbor atoms only, so there will be $N_\text{types}$ sets of embedding network parameters. Otherwise, the embedding network parameters vary by types of centric atoms and types of neighbor atoms, so there will be $N_\text{types}^2$ sets of embedding network parameters."
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection.'
-    doc_use_three_body = (
-        "Whether to concatenate an additional three-body representation to the `repinit` output descriptor."
-    )
+    doc_use_three_body = "Whether to concatenate an additional three-body representation to the `repinit` output descriptor."
     doc_three_body_neuron = (
         "Number of neurons in each hidden layer of the three-body embedding net."
         "When two layers are of the same size or one layer is twice as large as the previous layer, "
@@ -1116,12 +1118,18 @@ def dpa2_repformer_args() -> list[Argument]:
     doc_g2_dim = "Dimension of the `g2` representation, i.e., the rotationally invariant pair-atom representation."
     doc_axis_neuron = "Size of the submatrix used in the symmetrization operations."
     doc_direct_dist = "Whether to use the direct distance as input to the embedding net when building `g2`, instead of the smoothed `1/r`."
-    doc_update_g1_has_conv = "Whether to include the convolution term when updating `g1`."
+    doc_update_g1_has_conv = (
+        "Whether to include the convolution term when updating `g1`."
+    )
     doc_update_g1_has_drrd = "Whether to include the `drrd` term when updating `g1`."
     doc_update_g1_has_grrg = "Whether to include the `grrg` term when updating `g1`."
-    doc_update_g1_has_attn = "Whether to include localized self-attention when updating `g1`."
+    doc_update_g1_has_attn = (
+        "Whether to include localized self-attention when updating `g1`."
+    )
     doc_update_g2_has_g1g1 = "Whether to include the `g1 x g1` term when updating `g2`."
-    doc_update_g2_has_attn = "Whether to include gated self-attention when updating `g2`."
+    doc_update_g2_has_attn = (
+        "Whether to include gated self-attention when updating `g2`."
+    )
     doc_use_sqrt_nnei = "Whether to normalize `symmetrization_op` by the square root of the number of neighbors instead of by the number of neighbors itself."
     doc_g1_out_conv = "Whether to keep the convolutional update of `g1` as a separate branch outside the concatenated MLP update."
     doc_g1_out_mlp = "Whether to keep the self-MLP update of `g1` as a separate branch outside the concatenated MLP update."
@@ -1135,9 +1143,7 @@ def dpa2_repformer_args() -> list[Argument]:
     doc_attn2_hidden = (
         "Hidden dimension of the gated self-attention used to update `g2`."
     )
-    doc_attn2_nhead = (
-        "Number of heads in the gated self-attention used to update `g2`."
-    )
+    doc_attn2_nhead = "Number of heads in the gated self-attention used to update `g2`."
     doc_attn2_has_gate = (
         "Whether to use gating in the gated self-attention used to update `g2`."
     )
@@ -1378,7 +1384,9 @@ def descrpt_dpa3_args() -> list[Argument]:
     doc_env_protection = "Protection parameter to prevent division by zero errors during environment matrix calculations. For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection."
     doc_trainable = "Whether the parameters in the embedding net are trainable."
     doc_seed = "Random seed for parameter initialization."
-    doc_use_econf_tebd = "Whether to use an electronic-configuration-based type embedding."
+    doc_use_econf_tebd = (
+        "Whether to use an electronic-configuration-based type embedding."
+    )
     doc_use_tebd_bias = "Whether to use a bias term in the type-embedding layer."
     doc_use_loc_mapping = (
         "Whether to use local atom index mapping in training or non-parallel inference. "
@@ -1495,9 +1503,7 @@ def dpa3_repflow_args() -> list[Argument]:
         "If set to True, it forces fix_stat_std=0.3 for backward compatibility. "
         "Transition to fix_stat_std parameter immediately."
     )
-    doc_update_angle = (
-        "Whether to update the angle representation. If False, only the node and edge representations are updated."
-    )
+    doc_update_angle = "Whether to update the angle representation. If False, only the node and edge representations are updated."
     doc_update_style = (
         "Style to update a representation. "
         "Supported options are: "
