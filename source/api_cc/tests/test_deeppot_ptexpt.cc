@@ -19,6 +19,10 @@ class TestInferDeepPotAPtExpt : public ::testing::Test {
   std::vector<VALUETYPE> coord = {12.83, 2.56, 2.18, 12.09, 2.87, 2.74,
                                   00.25, 3.32, 1.68, 3.36,  3.00, 1.81,
                                   3.51,  2.51, 2.60, 4.27,  3.22, 1.56};
+  // Alternative coords for multi-frame tests (must give different energy)
+  std::vector<VALUETYPE> coord_alt = {10.06, 5.71,  11.16, 9.07, 1.22, 12.68,
+                                      9.89,  10.22, 1.67,  5.86, 4.82, 12.05,
+                                      8.37,  10.70, 5.76,  2.95, 7.21, 0.83};
   std::vector<int> atype = {0, 1, 1, 0, 1, 1};
   std::vector<VALUETYPE> box = {13., 0., 0., 0., 13., 0., 0., 0., 13.};
   // Same reference values as test_deeppot_pt.cc (model converted from .pth)
@@ -414,6 +418,9 @@ class TestInferDeepPotAPtExptNoPbc : public ::testing::Test {
   std::vector<VALUETYPE> coord = {12.83, 2.56, 2.18, 12.09, 2.87, 2.74,
                                   00.25, 3.32, 1.68, 3.36,  3.00, 1.81,
                                   3.51,  2.51, 2.60, 4.27,  3.22, 1.56};
+  std::vector<VALUETYPE> coord_alt = {10.06, 5.71,  11.16, 9.07, 1.22, 12.68,
+                                      9.89,  10.22, 1.67,  5.86, 4.82, 12.05,
+                                      8.37,  10.70, 5.76,  2.95, 7.21, 0.83};
   std::vector<int> atype = {0, 1, 1, 0, 1, 1};
   std::vector<VALUETYPE> box = {};
   // Same reference values as TestInferDeepPotAPtNoPbc in test_deeppot_pt.cc
@@ -499,4 +506,260 @@ TYPED_TEST(TestInferDeepPotAPtExptNoPbc, cpu_build_nlist) {
   for (int ii = 0; ii < 3 * 3; ++ii) {
     EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
   }
+}
+
+TYPED_TEST(TestInferDeepPotAPtExptNoPbc, cpu_build_nlist_atomic) {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE>& coord = this->coord;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  std::vector<VALUETYPE>& expected_e = this->expected_e;
+  std::vector<VALUETYPE>& expected_f = this->expected_f;
+  std::vector<VALUETYPE>& expected_v = this->expected_v;
+  int& natoms = this->natoms;
+  double& expected_tot_e = this->expected_tot_e;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
+  deepmd::DeepPot& dp = this->dp;
+  double ener;
+  std::vector<VALUETYPE> force, virial, atom_ener, atom_vir;
+  dp.compute(ener, force, virial, atom_ener, atom_vir, coord, atype, box);
+
+  EXPECT_EQ(force.size(), natoms * 3);
+  EXPECT_EQ(virial.size(), 9);
+  EXPECT_EQ(atom_ener.size(), natoms);
+  EXPECT_EQ(atom_vir.size(), natoms * 9);
+
+  EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
+  for (int ii = 0; ii < natoms * 3; ++ii) {
+    EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
+  }
+  for (int ii = 0; ii < 3 * 3; ++ii) {
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+  }
+  for (int ii = 0; ii < natoms; ++ii) {
+    EXPECT_LT(fabs(atom_ener[ii] - expected_e[ii]), EPSILON);
+  }
+  for (int ii = 0; ii < natoms * 9; ++ii) {
+    EXPECT_LT(fabs(atom_vir[ii] - expected_v[ii]), EPSILON);
+  }
+}
+
+// Multi-frame PBC test via compute_mixed_type
+TYPED_TEST(TestInferDeepPotAPtExpt, cpu_build_nlist_nframes) {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE>& coord = this->coord;
+  std::vector<VALUETYPE>& coord_alt = this->coord_alt;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  std::vector<VALUETYPE>& expected_f = this->expected_f;
+  int& natoms = this->natoms;
+  double& expected_tot_e = this->expected_tot_e;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
+  deepmd::DeepPot& dp = this->dp;
+
+  int nframes = 2;
+  // Frame 0: original coords.  Frame 1: alternative coords (coord_alt).
+  std::vector<VALUETYPE> coord_2f(coord);
+  coord_2f.insert(coord_2f.end(), coord_alt.begin(), coord_alt.end());
+  std::vector<int> atype_2f(atype);
+  atype_2f.insert(atype_2f.end(), atype.begin(), atype.end());
+  std::vector<VALUETYPE> box_2f(box);
+  box_2f.insert(box_2f.end(), box.begin(), box.end());
+
+  std::vector<double> ener;
+  std::vector<VALUETYPE> force, virial;
+  dp.compute_mixed_type(ener, force, virial, nframes, coord_2f, atype_2f,
+                        box_2f);
+
+  EXPECT_EQ(ener.size(), nframes);
+  EXPECT_EQ(force.size(), nframes * natoms * 3);
+  EXPECT_EQ(virial.size(), nframes * 9);
+
+  // Frame 0 should match reference
+  EXPECT_LT(fabs(ener[0] - expected_tot_e), EPSILON);
+  for (int ii = 0; ii < natoms * 3; ++ii) {
+    EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
+  }
+  // Frame 1 should be different (perturbed coords)
+  EXPECT_GT(fabs(ener[1] - ener[0]), 1e-10);
+}
+
+// Multi-frame NoPBC test via compute_mixed_type
+TYPED_TEST(TestInferDeepPotAPtExptNoPbc, cpu_build_nlist_nframes) {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE>& coord = this->coord;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& coord_alt = this->coord_alt;
+  std::vector<VALUETYPE>& box = this->box;  // empty
+  std::vector<VALUETYPE>& expected_f = this->expected_f;
+  int& natoms = this->natoms;
+  double& expected_tot_e = this->expected_tot_e;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
+  deepmd::DeepPot& dp = this->dp;
+
+  int nframes = 2;
+  std::vector<VALUETYPE> coord_2f(coord);
+  coord_2f.insert(coord_2f.end(), coord_alt.begin(), coord_alt.end());
+  std::vector<int> atype_2f(atype);
+  atype_2f.insert(atype_2f.end(), atype.begin(), atype.end());
+
+  std::vector<double> ener;
+  std::vector<VALUETYPE> force, virial;
+  dp.compute_mixed_type(ener, force, virial, nframes, coord_2f, atype_2f, box);
+
+  EXPECT_EQ(ener.size(), nframes);
+  EXPECT_EQ(force.size(), nframes * natoms * 3);
+  EXPECT_EQ(virial.size(), nframes * 9);
+
+  // Frame 0 should match reference
+  EXPECT_LT(fabs(ener[0] - expected_tot_e), EPSILON);
+  for (int ii = 0; ii < natoms * 3; ++ii) {
+    EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
+  }
+  // Frame 1 should be different (perturbed coords)
+  EXPECT_GT(fabs(ener[1] - ener[0]), 1e-10);
+}
+
+// ========== Parser / metadata coverage tests ==========
+
+TEST(TestDeepPotPTExptParser, load_nonexistent_file) {
+#ifndef BUILD_PYTORCH
+  GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
+#endif
+  deepmd::DeepPot dp;
+  EXPECT_THROW(dp.init("nonexistent_model.pt2"), deepmd::deepmd_exception);
+}
+
+TEST(TestDeepPotPTExptParser, load_invalid_zip) {
+#ifndef BUILD_PYTORCH
+  GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
+#endif
+  std::string tmpfile = "test_invalid.pt2";
+  {
+    std::ofstream ofs(tmpfile, std::ios::binary);
+    ASSERT_TRUE(ofs.is_open()) << "Failed to create temp file";
+    ofs << "not a zip file at all";
+  }
+  deepmd::DeepPot dp;
+  EXPECT_THROW(dp.init(tmpfile), deepmd::deepmd_exception);
+  std::remove(tmpfile.c_str());
+}
+
+TEST(TestDeepPotPTExptParser, load_tiny_file) {
+#ifndef BUILD_PYTORCH
+  GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
+#endif
+  std::string tmpfile = "test_tiny.pt2";
+  {
+    std::ofstream ofs(tmpfile, std::ios::binary);
+    ASSERT_TRUE(ofs.is_open()) << "Failed to create temp file";
+    ofs << "abc";
+  }
+  deepmd::DeepPot dp;
+  EXPECT_THROW(dp.init(tmpfile), deepmd::deepmd_exception);
+  std::remove(tmpfile.c_str());
+}
+
+// Metadata accessor tests — exercise JSON parser on a real model
+template <class VALUETYPE>
+class TestDeepPotPTExptMetadata : public ::testing::Test {
+ protected:
+  deepmd::DeepPot dp;
+  void SetUp() override {
+#ifndef BUILD_PYTORCH
+    GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
+#endif
+    dp.init("../../tests/infer/deeppot_sea.pt2");
+  };
+  void TearDown() override {};
+};
+
+TYPED_TEST_SUITE(TestDeepPotPTExptMetadata, ValueTypes);
+
+TYPED_TEST(TestDeepPotPTExptMetadata, type_map) {
+  std::string type_map;
+  this->dp.get_type_map(type_map);
+  EXPECT_NE(type_map.find("O"), std::string::npos);
+  EXPECT_NE(type_map.find("H"), std::string::npos);
+}
+
+TYPED_TEST(TestDeepPotPTExptMetadata, cutoff) {
+  EXPECT_GT(this->dp.cutoff(), 0.0);
+}
+
+TYPED_TEST(TestDeepPotPTExptMetadata, ntypes) {
+  EXPECT_EQ(this->dp.numb_types(), 2);
+}
+
+TYPED_TEST(TestDeepPotPTExptMetadata, dim_fparam_zero) {
+  EXPECT_EQ(this->dp.dim_fparam(), 0);
+}
+
+TYPED_TEST(TestDeepPotPTExptMetadata, dim_aparam_zero) {
+  EXPECT_EQ(this->dp.dim_aparam(), 0);
+}
+
+TYPED_TEST(TestDeepPotPTExptMetadata, no_default_fparam) {
+  EXPECT_FALSE(this->dp.has_default_fparam());
+}
+
+// JSON parser type-coverage via fparam model
+template <class VALUETYPE>
+class TestDeepPotPTExptJsonTypes : public ::testing::Test {
+ protected:
+  deepmd::DeepPot dp;
+  void SetUp() override {
+#ifndef BUILD_PYTORCH
+    GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
+#endif
+    dp.init("../../tests/infer/fparam_aparam.pt2");
+  };
+  void TearDown() override {};
+};
+
+TYPED_TEST_SUITE(TestDeepPotPTExptJsonTypes, ValueTypes);
+
+TYPED_TEST(TestDeepPotPTExptJsonTypes, integer_fields) {
+  EXPECT_EQ(this->dp.dim_fparam(), 1);
+  EXPECT_EQ(this->dp.dim_aparam(), 1);
+}
+
+TYPED_TEST(TestDeepPotPTExptJsonTypes, boolean_field) {
+  EXPECT_FALSE(this->dp.has_default_fparam());
+}
+
+TYPED_TEST(TestDeepPotPTExptJsonTypes, string_array) {
+  std::string type_map;
+  this->dp.get_type_map(type_map);
+  EXPECT_FALSE(type_map.empty());
+}
+
+TYPED_TEST(TestDeepPotPTExptJsonTypes, float_field) {
+  EXPECT_GT(this->dp.cutoff(), 0.0);
+  EXPECT_LT(this->dp.cutoff(), 100.0);
+}
+
+// Default fparam model — tests JSON parsing of boolean true + float array
+template <class VALUETYPE>
+class TestDeepPotPTExptJsonDefaults : public ::testing::Test {
+ protected:
+  deepmd::DeepPot dp;
+  void SetUp() override {
+#ifndef BUILD_PYTORCH
+    GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
+#endif
+    dp.init("../../tests/infer/fparam_aparam_default.pt2");
+  };
+  void TearDown() override {};
+};
+
+TYPED_TEST_SUITE(TestDeepPotPTExptJsonDefaults, ValueTypes);
+
+TYPED_TEST(TestDeepPotPTExptJsonDefaults, boolean_true) {
+  EXPECT_TRUE(this->dp.has_default_fparam());
+}
+
+TYPED_TEST(TestDeepPotPTExptJsonDefaults, default_fparam_parsed) {
+  EXPECT_EQ(this->dp.dim_fparam(), 1);
+  EXPECT_TRUE(this->dp.has_default_fparam());
 }

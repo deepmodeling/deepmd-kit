@@ -1008,6 +1008,15 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       min_z = std::min(min_z, coord_d[ii * 3 + 2]);
       max_z = std::max(max_z, coord_d[ii * 3 + 2]);
     }
+    // Shift coords so minimum is at rcut (ensures all atoms are in [0, L))
+    double shift_x = rcut - min_x;
+    double shift_y = rcut - min_y;
+    double shift_z = rcut - min_z;
+    for (int ii = 0; ii < natoms; ++ii) {
+      coord_d[ii * 3 + 0] += shift_x;
+      coord_d[ii * 3 + 1] += shift_y;
+      coord_d[ii * 3 + 2] += shift_z;
+    }
     box_d.resize(9, 0.0);
     box_d[0] = (max_x - min_x) + 2.0 * rcut;
     box_d[4] = (max_y - min_y) + 2.0 * rcut;
