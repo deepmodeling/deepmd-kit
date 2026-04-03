@@ -476,6 +476,68 @@ class TestSpinEnerModelExportable(unittest.TestCase):
                 err_msg=f"exported vs eager: {key}",
             )
 
+        # --- symbolic trace + export with dynamic shapes + .pte round-trip ---
+        import tempfile
+
+        # Use nf=2 data for tracing to avoid nframes=1 specialization
+        inputs_2f = (
+            torch.cat([ext_coord_t, ext_coord_t], dim=0),
+            torch.cat([ext_atype_t, ext_atype_t], dim=0),
+            torch.cat([ext_spin_t, ext_spin_t], dim=0),
+            torch.cat([nlist_t, nlist_t], dim=0),
+            torch.cat([mapping_t, mapping_t], dim=0),
+            None,
+            None,
+        )
+
+        traced_sym = model.forward_lower_exportable(
+            inputs_2f[0],
+            inputs_2f[1],
+            inputs_2f[2],
+            inputs_2f[3],
+            inputs_2f[4],
+            tracing_mode="symbolic",
+            _allow_non_fake_inputs=True,
+        )
+
+        # Build dynamic shapes for spin model
+        # (ext_coord, ext_atype, ext_spin, nlist, mapping, fparam, aparam)
+        nframes_dim = torch.export.Dim("nframes", min=1)
+        nall_dim = torch.export.Dim("nall", min=1)
+        nloc_dim = torch.export.Dim("nloc", min=1)
+        dynamic_shapes = (
+            {0: nframes_dim, 1: nall_dim},  # ext_coord
+            {0: nframes_dim, 1: nall_dim},  # ext_atype
+            {0: nframes_dim, 1: nall_dim},  # ext_spin
+            {0: nframes_dim, 1: nloc_dim},  # nlist
+            {0: nframes_dim, 1: nall_dim},  # mapping
+            None,  # fparam
+            None,  # aparam
+        )
+        exported_dyn = torch.export.export(
+            traced_sym,
+            inputs_2f,
+            dynamic_shapes=dynamic_shapes,
+            strict=False,
+            prefer_deferred_runtime_asserts_over_guards=True,
+        )
+
+        with tempfile.NamedTemporaryFile(suffix=".pte") as f:
+            torch.export.save(exported_dyn, f.name)
+            loaded = torch.export.load(f.name).module()
+
+        ret_loaded_1f = loaded(
+            ext_coord_t, ext_atype_t, ext_spin_t, nlist_t, mapping_t, None, None
+        )
+        for key in output_keys:
+            np.testing.assert_allclose(
+                ret_eager[key].detach().cpu().numpy(),
+                ret_loaded_1f[key].detach().cpu().numpy(),
+                rtol=1e-10,
+                atol=1e-10,
+                err_msg=f"loaded vs eager (nf=1): {key}",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
