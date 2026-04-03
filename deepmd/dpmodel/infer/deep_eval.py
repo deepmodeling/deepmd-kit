@@ -166,6 +166,16 @@ class DeepEval(DeepEvalBackend):
         """Check if the model has efield."""
         return False
 
+    def get_has_spin(self) -> bool:
+        """Check if the model has spin atom types."""
+        return hasattr(self.dp, "spin")
+
+    def get_use_spin(self) -> list[bool]:
+        """Get the per-type spin usage of this model."""
+        if hasattr(self.dp, "spin"):
+            return self.dp.spin.use_spin.tolist()
+        return []
+
     def get_ntypes_spin(self) -> int:
         """Get the number of spin atom types of this model."""
         return 0

@@ -103,6 +103,13 @@ void DeepSpinPTExpt::init(const std::string& model,
     ntypes_spin = 0;
   }
 
+  use_spin_.clear();
+  if (metadata.obj_val.count("use_spin")) {
+    for (const auto& v : metadata["use_spin"].as_array()) {
+      use_spin_.push_back(v.as_bool());
+    }
+  }
+
   if (metadata.obj_val.count("has_default_fparam")) {
     has_default_fparam_ = metadata["has_default_fparam"].as_bool();
   } else {

@@ -184,6 +184,11 @@ class DeepSpinPT : public DeepSpinBackend {
     return aparam_nall;
   };
   /**
+   * @brief Get the per-type use_spin flags.
+   * @return Empty vector — .pth backend does not store use_spin in metadata.
+   **/
+  std::vector<bool> get_use_spin() const override { return {}; };
+  /**
    * @brief Check if the model has default frame parameters.
    * @return true if the model has default frame parameters.
    **/

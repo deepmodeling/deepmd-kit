@@ -451,6 +451,13 @@ template void DeepSpin::compute<float>(std::vector<ENERGYTYPE>& dener,
                                        const std::vector<float>& fparam,
                                        const std::vector<float>& aparam_);
 
+std::vector<bool> DeepSpin::get_use_spin() const {
+  if (dp) {
+    return dp->get_use_spin();
+  }
+  return {};
+}
+
 DeepSpinModelDevi::DeepSpinModelDevi() {
   inited = false;
   numb_models = 0;
@@ -732,3 +739,10 @@ template void DeepSpinModelDevi::compute<float>(
     const int& ago,
     const std::vector<float>& fparam,
     const std::vector<float>& aparam);
+
+std::vector<bool> DeepSpinModelDevi::get_use_spin() const {
+  if (!dps.empty()) {
+    return dps[0]->get_use_spin();
+  }
+  return {};
+}

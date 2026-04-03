@@ -99,6 +99,10 @@ class DeepSpinPTExpt : public DeepSpinBackend {
     assert(inited);
     return aparam_nall;
   };
+  std::vector<bool> get_use_spin() const override {
+    assert(inited);
+    return use_spin_;
+  };
   bool has_default_fparam() const {
     assert(inited);
     return has_default_fparam_;
@@ -173,6 +177,7 @@ class DeepSpinPTExpt : public DeepSpinBackend {
   bool aparam_nall;
   bool has_default_fparam_;
   std::vector<double> default_fparam_;
+  std::vector<bool> use_spin_;
   double rcut;
   int gpu_id;
   bool gpu_enabled;

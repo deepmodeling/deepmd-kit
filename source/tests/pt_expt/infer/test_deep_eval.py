@@ -96,6 +96,10 @@ class TestDeepEvalEner(unittest.TestCase):
         sel_type = self.dp.deep_eval.get_sel_type()
         self.assertEqual(sel_type, self.model.get_sel_type())
 
+    def test_use_spin_non_spin_model(self) -> None:
+        self.assertFalse(self.dp.has_spin)
+        self.assertEqual(self.dp.use_spin, [])
+
     def test_model_type(self) -> None:
         self.assertIs(self.dp.deep_eval.model_type, DeepPot)
 
@@ -581,6 +585,10 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
     def test_get_sel_type(self) -> None:
         sel_type = self.dp.deep_eval.get_sel_type()
         self.assertEqual(sel_type, self.model.get_sel_type())
+
+    def test_use_spin_non_spin_model(self) -> None:
+        self.assertFalse(self.dp.has_spin)
+        self.assertEqual(self.dp.use_spin, [])
 
     def test_model_type(self) -> None:
         self.assertIs(self.dp.deep_eval.model_type, DeepPot)

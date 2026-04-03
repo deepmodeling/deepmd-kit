@@ -257,6 +257,7 @@ def _collect_metadata(model: torch.nn.Module, is_spin: bool = False) -> dict:
     }
     if is_spin:
         meta["ntypes_spin"] = model.spin.get_ntypes_spin()
+        meta["use_spin"] = [bool(v) for v in model.spin.use_spin]
     return meta
 
 

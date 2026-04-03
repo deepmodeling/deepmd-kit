@@ -177,6 +177,17 @@ class TestSpinInference:
         dp = DeepPot(files[ext])
         assert dp.has_spin
 
+    def test_get_use_spin(self, spin_model_files, ext) -> None:
+        """Test that use_spin returns per-type spin usage."""
+        from deepmd.infer import (
+            DeepPot,
+        )
+
+        files, _, _ = spin_model_files
+        dp = DeepPot(files[ext])
+        use_spin = dp.use_spin
+        assert use_spin == [True, False]
+
     def test_get_ntypes_spin(self, spin_model_files, ext) -> None:
         """Test that get_ntypes_spin returns 0 (new spin implementation)."""
         from deepmd.infer import (

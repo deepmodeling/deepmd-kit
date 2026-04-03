@@ -138,6 +138,14 @@ class TestInferDeepSpinDpaPtExpt : public ::testing::Test {
 
 TYPED_TEST_SUITE(TestInferDeepSpinDpaPtExpt, ValueTypes);
 
+TYPED_TEST(TestInferDeepSpinDpaPtExpt, test_get_use_spin) {
+  deepmd::DeepSpin& dp = this->dp;
+  std::vector<bool> use_spin = dp.get_use_spin();
+  EXPECT_EQ(use_spin.size(), 2);
+  EXPECT_TRUE(use_spin[0]);   // Ni has spin
+  EXPECT_FALSE(use_spin[1]);  // O has no spin
+}
+
 TYPED_TEST(TestInferDeepSpinDpaPtExpt, cpu_build_nlist) {
   using VALUETYPE = TypeParam;
   const std::vector<VALUETYPE>& coord = this->coord;
