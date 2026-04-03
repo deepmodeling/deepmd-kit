@@ -43,6 +43,7 @@ from deepmd.pt.loss import (
     PropertyLoss,
     TaskLoss,
     TensorLoss,
+    XASLoss,
 )
 from deepmd.pt.model.model import (
     get_model,
@@ -94,9 +95,13 @@ from torch.distributed.checkpoint.state_dict import (
     get_optimizer_state_dict,
     set_optimizer_state_dict,
 )
-from torch.distributed.fsdp import (
-    fully_shard,
-)
+
+try:
+    from torch.distributed.fsdp import (
+        fully_shard,
+    )
+except ImportError:
+    fully_shard = None
 from torch.distributed.optim import (
     ZeroRedundancyOptimizer,
 )
@@ -374,6 +379,14 @@ class Trainer:
                 else False,
                 preset_observed_type=model_params.get("info", {}).get("observed_type"),
             )
+            # For XAS loss: compute per-(absorbing_type, edge) reference energies
+            # from training data and store as a registered buffer in the loss module.
+            if (
+                not resuming
+                and self.rank == 0
+                and hasattr(self.loss, "compute_output_stats")
+            ):
+                self.loss.compute_output_stats(self.get_sample_func(), model=self.model)
             # Persist observed_type from stat into model_params and model_def_script
             if not resuming and self.rank == 0:
                 observed = self.model.atomic_model.observed_type
@@ -1752,6 +1765,12 @@ def get_loss(
         loss_params["var_name"] = var_name
         loss_params["intensive"] = intensive
         return PropertyLoss(**loss_params)
+    elif loss_type == "xas":
+        loss_params["task_dim"] = _model.get_task_dim()
+        loss_params["var_name"] = _model.get_var_name()
+        loss_params["ntypes"] = _ntypes
+        loss_params["nfparam"] = _model.get_fitting_net().numb_fparam
+        return XASLoss(**loss_params)
     else:
         loss_params["starter_learning_rate"] = start_lr
         return TaskLoss.get_class_by_type(loss_type).get_loss(loss_params)

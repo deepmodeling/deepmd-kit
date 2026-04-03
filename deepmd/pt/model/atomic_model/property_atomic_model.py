@@ -56,3 +56,28 @@ class DPPropertyAtomicModel(DPAtomicModel):
             for kk in self.bias_keys:
                 ret[kk] = ret[kk] * out_std[kk][0] + out_bias[kk][0]
         return ret
+
+
+class DPXASAtomicModel(DPPropertyAtomicModel):
+    """Atomic model for XAS spectrum fitting.
+
+    Extends :class:`DPPropertyAtomicModel` with a per-(absorbing_type, edge)
+    energy reference buffer ``xas_e_ref`` [ntypes, nfparam, 2].  The buffer is
+    populated by :meth:`deepmd.pt.loss.xas.XASLoss.compute_output_stats` before
+    training starts and is saved in the model checkpoint so that absolute edge
+    energies can be reconstructed at inference time without any external files.
+    """
+
+    def __init__(
+        self, descriptor: Any, fitting: Any, type_map: Any, **kwargs: Any
+    ) -> None:
+        super().__init__(descriptor, fitting, type_map, **kwargs)
+        nfparam: int = getattr(fitting, "numb_fparam", 0)
+        if nfparam > 0:
+            ntypes: int = len(type_map)
+            self.register_buffer(
+                "xas_e_ref",
+                torch.zeros(ntypes, nfparam, 2, dtype=torch.float64),
+            )
+        else:
+            self.xas_e_ref: torch.Tensor | None = None

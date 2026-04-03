@@ -1932,6 +1932,12 @@ def fitting_property() -> list[Argument]:
     doc_trainable = "Whether the parameters in the fitting net are trainable. This option can be\n\n\
 - bool: True if all parameters of the fitting net are trainable, False otherwise.\n\n\
 - list of bool: Specifies if each layer is trainable. Since the fitting net is composed by hidden layers followed by a output layer, the length of this list should be equal to len(`neuron`)+1."
+    doc_normalize_fparam = (
+        "Whether to normalize fparam by subtracting its mean and dividing by its std "
+        "computed from the training data. Set to False when fparam is a one-hot "
+        "encoding (e.g. edge-type in XAS), where normalization would distort the "
+        "discrete identity of each category."
+    )
     return [
         Argument("numb_fparam", int, optional=True, default=0, doc=doc_numb_fparam),
         Argument("numb_aparam", int, optional=True, default=0, doc=doc_numb_aparam),
@@ -1988,6 +1994,13 @@ def fitting_property() -> list[Argument]:
             optional=True,
             default=True,
             doc=doc_trainable,
+        ),
+        Argument(
+            "normalize_fparam",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_normalize_fparam,
         ),
     ]
 
@@ -3568,6 +3581,57 @@ def loss_dos() -> list[Argument]:
             optional=True,
             default=0.00,
             doc=doc_limit_pref_acdf,
+        ),
+    ]
+
+
+@loss_args_plugin.register("xas", doc=doc_only_pt_supported)
+def loss_xas() -> list[Argument]:
+    doc_loss_func = (
+        "The loss function to minimize: 'smooth_mae' (default), 'mae', 'mse', 'rmse'."
+    )
+    doc_metric = "Metrics to display during training. Supported: 'mae', 'rmse'."
+    doc_beta = "Beta parameter for smooth_l1 loss."
+    doc_pref_energy = (
+        "Weight multiplier for the two energy dimensions (E_min, E_max at indices 0-1). "
+        "Default 1.0. Decrease this if energy-shift terms dominate the loss and "
+        "spectral shape is undertrained."
+    )
+    doc_pref_spectrum = (
+        "Weight multiplier for the intensity dimensions (index 2 onward). "
+        "Default 1.0. Increase this to focus training on spectral shape."
+    )
+    doc_smooth_reg = (
+        "Coefficient of the second-order smoothness regulariser applied to the "
+        "predicted intensity dimensions. Penalises curvature "
+        "(pred[i+1] - 2*pred[i] + pred[i-1])^2 to suppress high-frequency wiggles. "
+        "0.0 disables it (default). Typical range: 1e-4 to 1e-2. "
+        "When intensity_norm is active the regulariser operates in normalised space, "
+        "making it scale-invariant."
+    )
+    doc_intensity_norm = (
+        "Normalisation applied to intensity dimensions inside the loss only "
+        "(model outputs remain in absolute units; freeze/test are unaffected). "
+        "'none' (default): no normalisation, loss dominated by high-intensity regions. "
+        "'log1p': apply log(1+x) to both predicted and label intensities before "
+        "computing loss and smooth_reg, compressing the dynamic range so that "
+        "features at 1e-2 and features at 10 receive comparable gradient signal. "
+        "'max_frame': divide each frame's intensities by its peak label intensity, "
+        "so every spectrum contributes equally regardless of absolute cross-section scale."
+    )
+    return [
+        Argument(
+            "loss_func", str, optional=True, default="smooth_mae", doc=doc_loss_func
+        ),
+        Argument("metric", list, optional=True, default=["mae"], doc=doc_metric),
+        Argument("beta", float, optional=True, default=1.0, doc=doc_beta),
+        Argument("pref_energy", float, optional=True, default=1.0, doc=doc_pref_energy),
+        Argument(
+            "pref_spectrum", float, optional=True, default=1.0, doc=doc_pref_spectrum
+        ),
+        Argument("smooth_reg", float, optional=True, default=0.0, doc=doc_smooth_reg),
+        Argument(
+            "intensity_norm", str, optional=True, default="none", doc=doc_intensity_norm
         ),
     ]
 

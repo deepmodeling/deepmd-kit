@@ -1,0 +1,77 @@
+{
+  "_comment": "XAS spectrum fitting example — Fe-O system, Fe K-edge + O K-edge",
+
+  "model": {
+    "type_map": [
+      "Fe",
+      "O"
+    ],
+    "descriptor": {
+      "type": "se_e2_a",
+      "rcut": 6.0,
+      "rcut_smth": 0.5,
+      "sel": [
+        40,
+        40
+      ],
+      "neuron": [
+        25,
+        50,
+        100
+      ],
+      "resnet_dt": false,
+      "axis_neuron": 16,
+      "seed": 1
+    },
+    "fitting_net": {
+      "_comment": "property fitting with task_dim=102: [E_min, E_max, I_0, ..., I_99]",
+      "type": "property",
+      "property_name": "xas",
+      "task_dim": 102,
+      "_comment_intensive": "intensive=true: per-atom outputs are averaged (not summed)",
+      "intensive": true,
+      "_comment_fparam": "fparam encodes edge type: 1-hot vector, e.g. [1,0,0]=K, [0,1,0]=L1, [0,0,1]=L2",
+      "numb_fparam": 3,
+      "neuron": [
+        128,
+        128,
+        128
+      ],
+      "resnet_dt": true,
+      "seed": 1
+    }
+  },
+  "loss": {
+    "_comment": "xas loss: reads sel_type.npy to select which element to reduce over",
+    "type": "xas",
+    "loss_func": "smooth_mae",
+    "metric": [
+      "mae",
+      "rmse"
+    ]
+  },
+  "learning_rate": {
+    "type": "exp",
+    "decay_steps": 5000,
+    "start_lr": 0.001,
+    "stop_lr": 1e-8,
+    "decay_rate": 0.95
+  },
+  "training": {
+    "training_data": {
+      "_comment": "one system per (element, edge) pair",
+      "systems": [
+        "./data/Fe_K/",
+        "./data/O_K/"
+      ],
+      "batch_size": "auto"
+    },
+    "numb_steps": 200000,
+    "seed": 10,
+    "disp_file": "lcurve.out",
+    "disp_freq": 1000,
+    "save_freq": 10000,
+    "save_ckpt": "model.ckpt",
+    "stat_file": "stat_files"
+  }
+}
