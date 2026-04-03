@@ -408,11 +408,11 @@ class TestInferDeepPotModeDeviPtExptPrecomputed : public ::testing::Test {
                                    0.25852028, 0.25852028, 0.25852028};
   int natoms;
   std::vector<VALUETYPE> expected_md_f = {
-      8.458165365077899029e-04, 5.029083479824372890e-04,
-      6.882240709962303546e-04};  // max min avg
+      3.443412186399823823e-04, 1.456244134905365292e-04,
+      2.585092315848599867e-04};  // max min avg
   std::vector<VALUETYPE> expected_md_v = {
-      2.467581010020606898e-04, 4.340036212959217315e-05,
-      1.286020468466399431e-04};  // max min mystd
+      1.735782978938303146e-04, 2.441022592033971239e-05,
+      7.333090508662540210e-05};  // max min mystd
 
   deepmd::DeepPot dp0;
   deepmd::DeepPot dp1;

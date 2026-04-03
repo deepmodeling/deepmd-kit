@@ -290,6 +290,83 @@ class TestModelCompression(unittest.TestCase):
             if os.path.exists(compressed_path):
                 os.unlink(compressed_path)
 
+    def test_freeze_compress_eval_pt2(self) -> None:
+        """Test pipeline: build → freeze (.pte) → compress → output (.pt2) → eval.
+
+        Verifies that compressed models can be exported to .pt2 format and
+        produce consistent results when loaded via DeepPot.
+        """
+        from deepmd.infer import (
+            DeepPot,
+        )
+        from deepmd.pt_expt.entrypoints.compress import (
+            enable_compression as compress_entry,
+        )
+
+        # 1. Build and freeze to .pte
+        md = self._make_model()
+        md.min_nbor_dist = 0.5
+        md.eval()
+        ret_frozen = self._eval_model(md)
+
+        model_data = {"model": md.serialize(), "min_nbor_dist": 0.5}
+        with tempfile.NamedTemporaryFile(suffix=".pte", delete=False) as f:
+            frozen_path = f.name
+        with tempfile.NamedTemporaryFile(suffix=".pt2", delete=False) as f:
+            compressed_pt2_path = f.name
+        try:
+            deserialize_to_file(frozen_path, model_data)
+
+            # 2. Compress with .pt2 output
+            compress_entry(
+                input_file=frozen_path,
+                output=compressed_pt2_path,
+                stride=0.01,
+                extrapolate=5,
+                check_frequency=-1,
+            )
+            self.assertTrue(os.path.exists(compressed_pt2_path))
+
+            # 3. Load .pt2 and verify metadata has compression state
+            compressed_data = serialize_from_file(compressed_pt2_path)
+            descrpt_data = compressed_data["model"]["descriptor"]
+            self.assertIn("compress", descrpt_data)
+
+            # 4. Eval via DeepPot and verify consistency
+            dp = DeepPot(compressed_pt2_path)
+            coord = self.coord.detach().cpu().numpy().reshape(-1)
+            box = self.cell.reshape(9).detach().cpu().numpy()
+            atype = self.atype[0].detach().cpu().numpy().tolist()
+            e_pt2, f_pt2, v_pt2 = dp.eval(coord, box, atype)
+            np.testing.assert_allclose(
+                ret_frozen["energy"], e_pt2, atol=1e-7, err_msg="energy"
+            )
+            np.testing.assert_allclose(
+                ret_frozen["force"], f_pt2, atol=1e-7, err_msg="force"
+            )
+            np.testing.assert_allclose(
+                ret_frozen["virial"], v_pt2, atol=1e-7, err_msg="virial"
+            )
+        finally:
+            os.unlink(frozen_path)
+            if os.path.exists(compressed_pt2_path):
+                os.unlink(compressed_pt2_path)
+
+    def test_min_nbor_dist_roundtrip_pt2(self) -> None:
+        """Test that min_nbor_dist survives freeze → load round-trip via .pt2."""
+        md = self._make_model()
+        md.min_nbor_dist = 0.5
+
+        model_data = {"model": md.serialize(), "min_nbor_dist": 0.5}
+        with tempfile.NamedTemporaryFile(suffix=".pt2", delete=False) as f:
+            pt2_path = f.name
+        try:
+            deserialize_to_file(pt2_path, model_data)
+            loaded_data = serialize_from_file(pt2_path)
+            self.assertAlmostEqual(loaded_data["min_nbor_dist"], 0.5)
+        finally:
+            os.unlink(pt2_path)
+
 
 if __name__ == "__main__":
     unittest.main()

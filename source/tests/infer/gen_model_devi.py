@@ -65,7 +65,11 @@ def main():
         },
     }
 
-    # ---- 2. Build two models with different seeds ----
+    # ---- 2. Build two models with different seeds AND fitting sizes ----
+    # Using different fitting neuron sizes ensures meaningfully different outputs
+    # (same arch + different seeds produces near-identical small random forces).
+    fitting_neurons = [[5, 5, 5], [10, 10, 10]]
+
     from deepmd.pt.utils.serialization import (  # noqa: F401
         deserialize_to_file,
     )
@@ -83,6 +87,7 @@ def main():
         cfg = copy.deepcopy(config)
         cfg["descriptor"]["seed"] = seed
         cfg["fitting_net"]["seed"] = seed
+        cfg["fitting_net"]["neuron"] = fitting_neurons[idx]
         model = get_model(cfg)
         model_dict = model.serialize()
         data = {

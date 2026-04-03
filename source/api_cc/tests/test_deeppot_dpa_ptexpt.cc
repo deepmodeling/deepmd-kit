@@ -13,7 +13,7 @@
 
 // DPA1 models need relaxed epsilon (same as test_deeppot_dpa_pt.cc)
 #undef EPSILON
-#define EPSILON (std::is_same<VALUETYPE, double>::value ? 1e-7 : 1e-1)
+#define EPSILON (std::is_same<VALUETYPE, double>::value ? 1e-10 : 1e-4)
 
 template <class VALUETYPE>
 class TestInferDeepPotDpaPtExpt : public ::testing::Test {
