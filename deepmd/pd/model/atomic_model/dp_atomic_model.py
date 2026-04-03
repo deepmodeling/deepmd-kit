@@ -65,6 +65,9 @@ class DPAtomicModel(BaseAtomicModel):
         self.sel = self.descriptor.get_sel()
         self.fitting_net = fitting
         super().init_out_stat()
+        self.add_chg_spin_ebd: bool = getattr(
+            self.descriptor, "add_chg_spin_ebd", False
+        )
         self.enable_eval_descriptor_hook = False
         self.enable_eval_fitting_last_layer_hook = False
         self.eval_descriptor_list = []
@@ -329,6 +332,7 @@ class DPAtomicModel(BaseAtomicModel):
             nlist,
             mapping=mapping,
             comm_dict=comm_dict,
+            fparam=fparam if self.add_chg_spin_ebd else None,
         )
         assert descriptor is not None
         if self.enable_eval_descriptor_hook:
