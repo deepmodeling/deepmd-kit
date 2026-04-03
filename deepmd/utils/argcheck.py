@@ -1120,7 +1120,7 @@ def dpa2_repformer_args() -> list[Argument]:
     doc_update_g1_has_drrd = "Whether to include the `drrd` term when updating `g1`."
     doc_update_g1_has_grrg = "Whether to include the `grrg` term when updating `g1`."
     doc_update_g1_has_attn = "Whether to include localized self-attention when updating `g1`."
-    doc_update_g2_has_g1g1 = "Whether to include the `g1 × g1` term when updating `g2`."
+    doc_update_g2_has_g1g1 = "Whether to include the `g1 x g1` term when updating `g2`."
     doc_update_g2_has_attn = "Whether to include gated self-attention when updating `g2`."
     doc_use_sqrt_nnei = "Whether to normalize `symmetrization_op` by the square root of the number of neighbors instead of by the number of neighbors itself."
     doc_g1_out_conv = "Whether to keep the convolutional update of `g1` as a separate branch outside the concatenated MLP update."
