@@ -55,8 +55,11 @@ def show(
             for branch in model_branches:
                 type_map = model_params["model_dict"][branch]["type_map"]
                 log.info(f"The type_map of branch {branch} is {type_map}")
-        else:
+        elif "type_map" in model_params:
             type_map = model_params["type_map"]
+            log.info(f"The type_map is {type_map}")
+        else:
+            type_map = model.get_type_map()
             log.info(f"The type_map is {type_map}")
     if "descriptor" in ATTRIBUTES:
         if model_is_multi_task:
@@ -64,9 +67,14 @@ def show(
             for branch in model_branches:
                 descriptor = model_params["model_dict"][branch]["descriptor"]
                 log.info(f"The descriptor parameter of branch {branch} is {descriptor}")
-        else:
+        elif "descriptor" in model_params:
             descriptor = model_params["descriptor"]
             log.info(f"The descriptor parameter is {descriptor}")
+        else:
+            log.warning(
+                "Descriptor parameters not available "
+                "(model was not frozen with training config)."
+            )
     if "fitting-net" in ATTRIBUTES:
         if model_is_multi_task:
             model_branches = list(model_params["model_dict"].keys())
@@ -75,9 +83,14 @@ def show(
                 log.info(
                     f"The fitting_net parameter of branch {branch} is {fitting_net}"
                 )
-        else:
+        elif "fitting_net" in model_params:
             fitting_net = model_params["fitting_net"]
             log.info(f"The fitting_net parameter is {fitting_net}")
+        else:
+            log.warning(
+                "Fitting net parameters not available "
+                "(model was not frozen with training config)."
+            )
     if "size" in ATTRIBUTES:
         size_dict = model.get_model_size()
         log_prefix = " for a single branch model" if model_is_multi_task else ""
