@@ -11,6 +11,7 @@
 #endif
 #ifdef BUILD_PYTORCH
 #include "DeepSpinPT.h"
+#include "DeepSpinPTExpt.h"
 #endif
 #include "device.h"
 
@@ -48,6 +49,14 @@ void DeepSpin::init(const std::string& model,
     dp = std::make_shared<deepmd::DeepSpinPT>(model, gpu_rank, file_content);
 #else
     throw deepmd::deepmd_exception("PyTorch backend is not built");
+#endif
+  } else if (deepmd::DPBackend::PyTorchExportable == backend) {
+#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT_SPIN
+    dp =
+        std::make_shared<deepmd::DeepSpinPTExpt>(model, gpu_rank, file_content);
+#else
+    throw deepmd::deepmd_exception(
+        "PyTorch Exportable backend is not available");
 #endif
   } else if (deepmd::DPBackend::Paddle == backend) {
     throw deepmd::deepmd_exception("PaddlePaddle backend is not supported yet");

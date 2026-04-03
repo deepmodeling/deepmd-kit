@@ -16,6 +16,7 @@ from deepmd.dpmodel.model.transform_output import (
     communicate_extended_output,
 )
 from deepmd.dpmodel.output_def import (
+    FittingOutputDef,
     ModelOutputDef,
     OutputVariableCategory,
     OutputVariableDef,
@@ -124,19 +125,54 @@ class DeepEval(DeepEvalBackend):
 
         model_dict = json.loads(model_json_str)
         model_dict = _json_to_numpy(model_dict)
-        self._dpmodel = BaseModel.deserialize(model_dict["model"])
+        model_data = model_dict["model"]
+
+        if "spin" in model_data and "backbone_model" in model_data:
+            from deepmd.pt_expt.model.spin_model import (
+                SpinModel,
+            )
+
+            self._dpmodel = SpinModel.deserialize(model_data)
+            self._is_spin = True
+        else:
+            self._dpmodel = BaseModel.deserialize(model_data)
+            self._is_spin = False
+
         self.rcut = self._dpmodel.get_rcut()
         self.type_map = self._dpmodel.get_type_map()
-        self._model_output_def = ModelOutputDef(self._dpmodel.atomic_output_def())
+        if self._is_spin:
+            self._model_output_def = ModelOutputDef(
+                FittingOutputDef(
+                    [
+                        OutputVariableDef(
+                            "energy",
+                            shape=[1],
+                            reducible=True,
+                            r_differentiable=True,
+                            c_differentiable=True,
+                            atomic=True,
+                            magnetic=True,
+                        )
+                    ]
+                )
+            )
+        else:
+            self._model_output_def = ModelOutputDef(self._dpmodel.atomic_output_def())
 
     def _load_pte(self, model_file: str) -> None:
         """Load a .pte (torch.export) model file."""
-        extra_files = {"model.json": "", "model_def_script.json": ""}
+        extra_files = {
+            "model.json": "",
+            "model_def_script.json": "",
+            "metadata.json": "",
+        }
         exported = torch.export.load(model_file, extra_files=extra_files)
         self.exported_module = exported.module()
         self._init_from_model_json(extra_files["model.json"])
         mds = extra_files["model_def_script.json"]
         self._model_def_script = json.loads(mds) if mds else {}
+        md = extra_files.get("metadata.json", "")
+        self.metadata = json.loads(md) if md else {}
 
     def _load_pt2(self, model_file: str) -> None:
         """Load a .pt2 (AOTInductor) model file."""
@@ -157,9 +193,13 @@ class DeepEval(DeepEvalBackend):
             mds = ""
             if "extra/model_def_script.json" in names:
                 mds = zf.read("extra/model_def_script.json").decode("utf-8")
+            md = ""
+            if "extra/metadata.json" in names:
+                md = zf.read("extra/metadata.json").decode("utf-8")
 
         self._init_from_model_json(model_json_str)
         self._model_def_script = json.loads(mds) if mds else {}
+        self.metadata = json.loads(md) if md else {}
 
         # Load the AOTInductor model package (.pt2 ZIP archive).
         # Uses torch._inductor.aoti_load_package (private API, stable since PyTorch 2.6).
@@ -220,8 +260,12 @@ class DeepEval(DeepEvalBackend):
         """Check if the model has efield."""
         return False
 
+    def get_has_spin(self) -> bool:
+        """Check if the model has spin atom types."""
+        return getattr(self, "_is_spin", False)
+
     def get_ntypes_spin(self) -> int:
-        """Get the number of spin atom types of this model."""
+        """Get the number of spin atom types of this model. Only used in old implement."""
         return 0
 
     def eval(
@@ -273,9 +317,16 @@ class DeepEval(DeepEvalBackend):
             coords, atom_types, len(atom_types.shape) > 1
         )
         request_defs = self._get_request_defs(atomic)
-        out = self._eval_func(self._eval_model, numb_test, natoms)(
-            coords, cells, atom_types, fparam, aparam, request_defs
-        )
+        spins = kwargs.get("spin")
+        if spins is not None:
+            spins = np.array(spins)
+            out = self._eval_func(self._eval_model_spin, numb_test, natoms)(
+                coords, cells, atom_types, spins, fparam, aparam, request_defs
+            )
+        else:
+            out = self._eval_func(self._eval_model, numb_test, natoms)(
+                coords, cells, atom_types, fparam, aparam, request_defs
+            )
         return dict(
             zip(
                 [x.name for x in request_defs],
@@ -294,6 +345,7 @@ class DeepEval(DeepEvalBackend):
                 for x in self.output_def.var_defs.values()
                 if x.category
                 in (
+                    OutputVariableCategory.OUT,
                     OutputVariableCategory.REDU,
                     OutputVariableCategory.DERV_R,
                     OutputVariableCategory.DERV_C_REDU,
@@ -655,6 +707,143 @@ class DeepEval(DeepEvalBackend):
             # odef.name is the internal key (e.g. "energy_derv_r")
             # _OUTDEF_DP2BACKEND maps it to backend name (e.g. "force")
             # but model_predict uses internal keys from communicate_extended_output
+            if odef.name in model_predict:
+                shape = self._get_output_shape(odef, nframes, natoms)
+                if model_predict[odef.name] is not None:
+                    out = model_predict[odef.name].detach().cpu().numpy().reshape(shape)
+                else:
+                    out = np.full(shape, np.nan, dtype=GLOBAL_NP_FLOAT_PRECISION)
+                results.append(out)
+            else:
+                shape = self._get_output_shape(odef, nframes, natoms)
+                results.append(
+                    np.full(np.abs(shape), np.nan, dtype=GLOBAL_NP_FLOAT_PRECISION)
+                )
+        return tuple(results)
+
+    def _eval_model_spin(
+        self,
+        coords: np.ndarray,
+        cells: np.ndarray | None,
+        atom_types: np.ndarray,
+        spins: np.ndarray,
+        fparam: np.ndarray | None,
+        aparam: np.ndarray | None,
+        request_defs: list[OutputVariableDef],
+    ) -> tuple[np.ndarray, ...]:
+        nframes = coords.shape[0]
+        if len(atom_types.shape) == 1:
+            natoms = len(atom_types)
+            atom_types = np.tile(atom_types, nframes).reshape(nframes, -1)
+        else:
+            natoms = len(atom_types[0])
+
+        from deepmd.pt_expt.utils.env import (
+            DEVICE,
+        )
+
+        coord_input = coords.reshape(nframes, natoms, 3)
+        if self.neighbor_list is not None:
+            extended_coord, extended_atype, nlist, mapping = self._build_nlist_ase(
+                coord_input,
+                cells,
+                atom_types,
+            )
+            ext_coord_t = torch.tensor(
+                extended_coord, dtype=torch.float64, device=DEVICE
+            )
+            ext_atype_t = torch.tensor(extended_atype, dtype=torch.int64, device=DEVICE)
+            nlist_t = torch.tensor(nlist, dtype=torch.int64, device=DEVICE)
+            mapping_t = torch.tensor(mapping, dtype=torch.int64, device=DEVICE)
+        else:
+            coord_t = torch.tensor(coord_input, dtype=torch.float64, device=DEVICE)
+            atype_t = torch.tensor(atom_types, dtype=torch.int64, device=DEVICE)
+            cells_t = (
+                torch.tensor(cells, dtype=torch.float64, device=DEVICE)
+                if cells is not None
+                else None
+            )
+            ext_coord_t, ext_atype_t, nlist_t, mapping_t = self._build_nlist_native(
+                coord_t,
+                cells_t,
+                atype_t,
+            )
+
+        # Extend spin to ghost atoms using mapping
+        spin_t = torch.tensor(
+            spins.reshape(nframes, natoms, 3), dtype=torch.float64, device=DEVICE
+        )
+        batch_idx = (
+            torch.arange(nframes, dtype=torch.long, device=DEVICE)
+            .unsqueeze(1)
+            .expand_as(mapping_t)
+        )
+        ext_spin_t = spin_t[batch_idx, mapping_t]
+
+        if fparam is not None:
+            fparam_t = torch.tensor(
+                fparam.reshape(nframes, self.get_dim_fparam()),
+                dtype=torch.float64,
+                device=DEVICE,
+            )
+        else:
+            fparam_t = None
+
+        if aparam is not None:
+            aparam_t = torch.tensor(
+                aparam.reshape(nframes, natoms, self.get_dim_aparam()),
+                dtype=torch.float64,
+                device=DEVICE,
+            )
+        else:
+            aparam_t = None
+
+        # Call the model with spin (7 args)
+        if self._is_pt2:
+            model_ret = self._pt2_runner(
+                ext_coord_t,
+                ext_atype_t,
+                ext_spin_t,
+                nlist_t,
+                mapping_t,
+                fparam_t,
+                aparam_t,
+            )
+        else:
+            model_ret = self.exported_module(
+                ext_coord_t,
+                ext_atype_t,
+                ext_spin_t,
+                nlist_t,
+                mapping_t,
+                fparam_t,
+                aparam_t,
+            )
+
+        # Apply communicate_extended_output to map extended atoms → local atoms
+        do_atomic_virial = any(
+            x.category == OutputVariableCategory.DERV_C for x in request_defs
+        )
+
+        # Save pre-computed reduced virial: it includes both real and virtual
+        # atom contributions.  communicate_extended_output would recompute it
+        # from only the real-atom per-atom virial, losing the virtual part.
+        saved_virial_redu = model_ret.get("energy_derv_c_redu")
+
+        model_predict = communicate_extended_output(
+            model_ret,
+            self._model_output_def,
+            mapping_t,
+            do_atomic_virial=do_atomic_virial,
+        )
+
+        # Restore the correct reduced virial (includes virtual atom contribution)
+        if saved_virial_redu is not None:
+            model_predict["energy_derv_c_redu"] = saved_virial_redu
+
+        # Translate internal keys to backend names and collect results
+        results = []
+        for odef in request_defs:
             if odef.name in model_predict:
                 shape = self._get_output_shape(odef, nframes, natoms)
                 if model_predict[odef.name] is not None:

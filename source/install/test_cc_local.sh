@@ -72,6 +72,7 @@ else:
 	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa3.py
 	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_fparam_aparam.py
 	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_model_devi.py
+	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_spin.py
 fi
 if [ "${ENABLE_PADDLE:-TRUE}" == "TRUE" ]; then
 	PADDLE_INFERENCE_DIR=${BUILD_TMP_DIR}/paddle_inference_install_dir

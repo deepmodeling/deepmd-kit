@@ -815,6 +815,13 @@ class SpinModel(NativeOP):
             and do_atomic_virial
             and model_ret.get(f"{var_name}_derv_c") is not None
         ):
+            # Compute reduced virial from BOTH real and virtual atoms BEFORE
+            # splitting.  process_spin_output_lower discards the virtual-atom
+            # contribution, so we must reduce first to get the correct total.
+            xp = array_api_compat.array_namespace(model_ret[f"{var_name}_derv_c"])
+            model_ret[f"{var_name}_derv_c_redu"] = xp.sum(
+                model_ret[f"{var_name}_derv_c"], axis=1
+            )
             (
                 model_ret[f"{var_name}_derv_c"],
                 model_ret[f"{var_name}_derv_c_mag"],
