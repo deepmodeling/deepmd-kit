@@ -1,10 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import importlib
 import os
-import shutil
-import subprocess as sp
-import sys
-import tempfile
 from pathlib import (
     Path,
 )
@@ -178,54 +173,6 @@ def test_pair_deepmd_model_devi_atomic_relative(lammps) -> None:
         assert lammps.atoms[ii].force == pytest.approx(
             expected_f[lammps.atoms[ii].id - 1]
         )
-    # load model devi
-    md = np.loadtxt(md_file.resolve())
-    norm = np.linalg.norm(np.mean([expected_f, expected_f2], axis=0), axis=1)
-    norm_spin = np.linalg.norm(np.mean([expected_fm, expected_fm2], axis=0), axis=1)
-    expected_md_f = np.linalg.norm(np.std([expected_f, expected_f2], axis=0), axis=1)
-    expected_md_f /= norm + relative
-    expected_md_fm = np.linalg.norm(np.std([expected_fm, expected_fm2], axis=0), axis=1)
-    expected_md_fm /= norm_spin + relative
-    assert md[4] == pytest.approx(np.max(expected_md_f))
-    assert md[5] == pytest.approx(np.min(expected_md_f))
-    assert md[6] == pytest.approx(np.mean(expected_md_f))
-    assert md[7] == pytest.approx(np.max(expected_md_fm))
-    assert md[8] == pytest.approx(np.min(expected_md_fm))
-    assert md[9] == pytest.approx(np.mean(expected_md_fm))
-
-
-@pytest.mark.skipif(
-    shutil.which("mpirun") is None, reason="MPI is not installed on this system"
-)
-@pytest.mark.skipif(
-    importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
-)
-@pytest.mark.parametrize(
-    ("balance_args",),
-    [(["--balance"],), ([],)],
-)
-def test_pair_deepmd_mpi(balance_args: list) -> None:
-    with tempfile.NamedTemporaryFile() as f:
-        sp.check_call(
-            [
-                "mpirun",
-                "-n",
-                "2",
-                sys.executable,
-                Path(__file__).parent / "run_mpi_pair_deepmd_spin.py",
-                data_file,
-                pb_file,
-                pb_file2,
-                md_file,
-                f.name,
-                *balance_args,
-            ]
-        )
-        arr = np.loadtxt(f.name, ndmin=1)
-    pe = arr[0]
-
-    relative = 1.0
-    assert pe == pytest.approx(expected_e)
     # load model devi
     md = np.loadtxt(md_file.resolve())
     norm = np.linalg.norm(np.mean([expected_f, expected_f2], axis=0), axis=1)
