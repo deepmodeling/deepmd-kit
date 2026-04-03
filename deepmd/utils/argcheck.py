@@ -55,7 +55,7 @@ doc_se_a_mask = "Used by the smooth edition of Deep Potential. It can accept a v
 doc_hybrid = "Concatenates a list of descriptors into a new descriptor."
 # fitting
 doc_ener = "Fit an energy model (potential energy surface)."
-doc_dos = "Fit a density of states model. The total density of states / site-projected density of states labels should be provided by `dos.npy` or `atom_dos.npy` in each data system. The file has a number of frame lines and a number of energy-grid columns (times the number of atoms in `atom_dos.npy`). See `loss` parameter."
+doc_dos = "Fit a density of states model. The total density of states / site-projected density of states labels should be provided by `dos.npy` or `atom_dos.npy` in each data system. The file has a number of frames (rows) and a number of energy-grid columns (multiplied by the number of atoms in `atom_dos.npy`). See `loss` parameter."
 doc_dipole = "Fit an atomic dipole model. Global dipole labels or atomic dipole labels for all selected atoms (see `sel_type`) should be provided by `dipole.npy` in each data system. The file should have shape `(n_frames, 3*n_selected)` for atomic dipole labels, or shape `(n_frames, 3)` for global dipole labels. See `loss` parameter."
 doc_polar = "Fit an atomic polarizability model. Global polarizability labels or atomic polarizability labels for all selected atoms (see `sel_type`) should be provided by `polarizability.npy` in each data system. The file should have shape `(n_frames, 9*n_selected)` for atomic polarizability labels, or shape `(n_frames, 9)` for global polarizability labels. See `loss` parameter."
 # modifier
