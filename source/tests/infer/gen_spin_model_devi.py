@@ -2,7 +2,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Generate deeppot_dpa_spin_md0.pt2 and deeppot_dpa_spin_md1.pt2 test models.
 
-Creates two DPA1 spin models with different seeds for model deviation testing.
+The canonical model weights are stored in .yaml files (dpmodel serialization,
+committed to git).  This script converts them to .pt2 format.
+
+If the .yaml files do not yet exist, they are created from dpmodel with
+different seeds — but this should only be done once (the .yaml files are
+then committed).
+
 Prints reference values for C++ tests.
 """
 
@@ -21,74 +27,96 @@ from gen_common import (
     print_cpp_spin_values,
 )
 
+# Model config (same architecture as gen_spin.py, different seeds)
+_BASE_CONFIG = {
+    "type_map": ["Ni", "O"],
+    "descriptor": {
+        "type": "se_atten",
+        "sel": 30,
+        "rcut_smth": 2.0,
+        "rcut": 6.0,
+        "neuron": [2, 4, 8],
+        "axis_neuron": 4,
+        "attn": 5,
+        "attn_layer": 2,
+        "attn_dotr": True,
+        "attn_mask": False,
+        "activation_function": "tanh",
+        "scaling_factor": 1.0,
+        "normalize": True,
+        "temperature": 1.0,
+        "type_one_side": True,
+    },
+    "fitting_net": {
+        "neuron": [5, 5, 5],
+        "resnet_dt": True,
+    },
+    "spin": {
+        "use_spin": [True, False],
+        "virtual_scale": [0.3140, 0.0],
+    },
+}
 
-def main():
+
+def _build_yaml(yaml_path: str, seed: int) -> None:
+    """Build a dpmodel with given seed and save as .yaml."""
     from deepmd.dpmodel.model.model import (
         get_model,
+    )
+    from deepmd.dpmodel.utils.serialization import (
+        save_dp_model,
+    )
+
+    cfg = copy.deepcopy(_BASE_CONFIG)
+    cfg["descriptor"]["seed"] = seed
+    cfg["fitting_net"]["seed"] = seed
+    model = get_model(cfg)
+    model_dict = model.serialize()
+
+    data = {
+        "model": model_dict,
+        "model_def_script": cfg,
+        "backend": "dpmodel",
+        "software": "deepmd-kit",
+        "version": "3.0.0",
+    }
+
+    print(f"Building dpmodel (seed={seed}) and saving to {yaml_path} ...")  # noqa: T201
+    save_dp_model(yaml_path, data)
+
+
+def main():
+    from deepmd.entrypoints.convert_backend import (
+        convert_backend,
     )
 
     ensure_inductor_compiler()
 
-    # ---- 1. DPA1 spin model config (same as gen_spin.py) ----
-    config = {
-        "type_map": ["Ni", "O"],
-        "descriptor": {
-            "type": "se_atten",
-            "sel": 30,
-            "rcut_smth": 2.0,
-            "rcut": 6.0,
-            "neuron": [2, 4, 8],
-            "axis_neuron": 4,
-            "attn": 5,
-            "attn_layer": 2,
-            "attn_dotr": True,
-            "attn_mask": False,
-            "activation_function": "tanh",
-            "scaling_factor": 1.0,
-            "normalize": True,
-            "temperature": 1.0,
-            "type_one_side": True,
-            "seed": 1,
-        },
-        "fitting_net": {
-            "neuron": [5, 5, 5],
-            "resnet_dt": True,
-            "seed": 1,
-        },
-        "spin": {
-            "use_spin": [True, False],
-            "virtual_scale": [0.3140, 0.0],
-        },
-    }
-
-    # ---- 2. Build two models with different seeds ----
-    from deepmd.pt_expt.utils.serialization import (
-        deserialize_to_file as pt_expt_deserialize_to_file,
-    )
-
-    # Load custom ops after deepmd.pt import to avoid double registration
-    load_custom_ops()
-
     base_dir = os.path.dirname(__file__)
 
-    models = []
-    for idx, seed in enumerate([1, 2]):
-        cfg = copy.deepcopy(config)
-        cfg["descriptor"]["seed"] = seed
-        cfg["fitting_net"]["seed"] = seed
-        model = get_model(cfg)
-        model_dict = model.serialize()
-        data = {
-            "model": model_dict,
-            "model_def_script": cfg,
-            "backend": "dpmodel",
-            "software": "deepmd-kit",
-            "version": "3.0.0",
-        }
+    # ---- 1. Ensure .yaml files exist ----
+    seeds = [1, 2]
+    yaml_paths = []
+    pt2_paths = []
+    for idx, seed in enumerate(seeds):
+        yaml_path = os.path.join(base_dir, f"deeppot_dpa_spin_md{idx}.yaml")
+        yaml_paths.append(yaml_path)
+        if not os.path.exists(yaml_path):
+            _build_yaml(yaml_path, seed)
+        else:
+            print(f"Using existing {yaml_path}")  # noqa: T201
+
+    # ---- 2. Convert .yaml -> .pt2 ----
+    # Import deepmd.pt to register the backend
+    import deepmd.pt  # noqa: F401
+
+    load_custom_ops()
+
+    for idx, yaml_path in enumerate(yaml_paths):
         pt2_path = os.path.join(base_dir, f"deeppot_dpa_spin_md{idx}.pt2")
-        print(f"Exporting to {pt2_path} ...")  # noqa: T201
-        pt_expt_deserialize_to_file(pt2_path, copy.deepcopy(data))
-        models.append(pt2_path)
+        pt2_paths.append(pt2_path)
+        print(f"Converting to {pt2_path} ...")  # noqa: T201
+        convert_backend(INPUT=yaml_path, OUTPUT=pt2_path)
 
     print("Export done.")  # noqa: T201
 
@@ -146,14 +174,13 @@ def main():
     atype = [0, 1, 1, 0, 1, 1]
     box = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0], dtype=np.float64)
 
-    for idx, pt2_path in enumerate(models):
+    for idx, pt2_path in enumerate(pt2_paths):
         dp = DeepPot(pt2_path)
         e, f, v, ae, av, fm, _ = dp.eval(coord, box, atype, atomic=True, spin=spin)
         print(f"\n// Model {idx} total energy: {e[0, 0]:.18e}")  # noqa: T201
         print_cpp_spin_values(f"Model {idx} reference values", ae, f, fm, v, av)
 
     # ---- 4. Also print LAMMPS 4-atom system reference values ----
-    # The LAMMPS spin tests use a different coordinate layout (4 atoms: 2 Ni + 2 O)
     lmp_coord = np.array(
         [
             12.83,
@@ -194,7 +221,7 @@ def main():
     )
 
     print("\n// ---- LAMMPS 4-atom system (PBC) ----")  # noqa: T201
-    for idx, pt2_path in enumerate(models):
+    for idx, pt2_path in enumerate(pt2_paths):
         dp = DeepPot(pt2_path)
         e, f, v, ae, av, fm, _ = dp.eval(
             lmp_coord, lmp_box, lmp_atype, atomic=True, spin=lmp_spin
@@ -212,7 +239,7 @@ def main():
 
     # NoPBC for LAMMPS
     print("\n// ---- LAMMPS 4-atom system (NoPBC) ----")  # noqa: T201
-    for idx, pt2_path in enumerate(models):
+    for idx, pt2_path in enumerate(pt2_paths):
         dp = DeepPot(pt2_path)
         e, f, v, ae, av, fm, _ = dp.eval(
             lmp_coord, None, lmp_atype, atomic=True, spin=lmp_spin

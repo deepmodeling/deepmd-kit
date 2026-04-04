@@ -373,7 +373,7 @@ def _trace_and_export(
     target_device = _env.DEVICE
 
     # Detect spin model
-    is_spin = "spin" in data["model"] and "backbone_model" in data["model"]
+    is_spin = data["model"].get("type") == "spin_ener"
 
     # 1. Deserialize model on CPU for make_fx tracing.
     # make_fx with _allow_non_fake_inputs=True keeps real model parameters;

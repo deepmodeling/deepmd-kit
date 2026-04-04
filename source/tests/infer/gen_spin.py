@@ -2,8 +2,14 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Generate deeppot_dpa_spin.pth and deeppot_dpa_spin.pt2 test models.
 
-Creates a DPA1 spin model from dpmodel config, serializes, and exports to both
-.pth (torch.jit) and .pt2 (torch.export) from the same weights.
+The canonical model weights are stored in ``deeppot_dpa_spin.yaml`` (dpmodel
+serialization, committed to git).  This script converts the .yaml to both
+.pth (torch.jit) and .pt2 (torch.export) formats.
+
+If the .yaml does not yet exist, it is created from a dpmodel built with
+a deterministic config+seed — but this should only be done once (the .yaml
+is then committed).
+
 Also prints reference values for C++ tests (PBC and NoPbc).
 """
 
@@ -23,14 +29,15 @@ from gen_common import (
 )
 
 
-def main():
+def _build_yaml(yaml_path: str) -> None:
+    """Build the dpmodel from config+seed and save as .yaml."""
     from deepmd.dpmodel.model.model import (
         get_model,
     )
+    from deepmd.dpmodel.utils.serialization import (
+        save_dp_model,
+    )
 
-    ensure_inductor_compiler()
-
-    # ---- 1. DPA1 spin model config ----
     config = {
         "type_map": ["Ni", "O"],
         "descriptor": {
@@ -62,7 +69,6 @@ def main():
         },
     }
 
-    # ---- 2. Build dpmodel and serialize ----
     model = get_model(copy.deepcopy(config))
     model_dict = model.serialize()
 
@@ -74,33 +80,43 @@ def main():
         "version": "3.0.0",
     }
 
-    # ---- 3. Export to .pt2 and .pth ----
-    from deepmd.pt.utils.serialization import (
-        deserialize_to_file as pt_deserialize_to_file,
-    )
-    from deepmd.pt_expt.utils.serialization import (
-        deserialize_to_file as pt_expt_deserialize_to_file,
+    print(f"Building dpmodel and saving to {yaml_path} ...")  # noqa: T201
+    save_dp_model(yaml_path, data)
+
+
+def main():
+    from deepmd.entrypoints.convert_backend import (
+        convert_backend,
     )
 
-    # Load custom ops after deepmd.pt import to avoid double registration
-    load_custom_ops()
+    ensure_inductor_compiler()
 
     base_dir = os.path.dirname(__file__)
-
-    pt2_path = os.path.join(base_dir, "deeppot_dpa_spin.pt2")
-    print(f"Exporting to {pt2_path} ...")  # noqa: T201
-    pt_expt_deserialize_to_file(pt2_path, copy.deepcopy(data))
-
+    yaml_path = os.path.join(base_dir, "deeppot_dpa_spin.yaml")
     pth_path = os.path.join(base_dir, "deeppot_dpa_spin.pth")
-    print(f"Exporting to {pth_path} ...")  # noqa: T201
-    try:
-        pt_deserialize_to_file(pth_path, copy.deepcopy(data))
-    except Exception as e:
-        print(f"WARNING: .pth export failed ({type(e).__name__}: {e}), skipping.")  # noqa: T201
+    pt2_path = os.path.join(base_dir, "deeppot_dpa_spin.pt2")
+
+    # ---- 1. Build .yaml if it doesn't exist ----
+    if not os.path.exists(yaml_path):
+        _build_yaml(yaml_path)
+    else:
+        print(f"Using existing {yaml_path}")  # noqa: T201
+
+    # ---- 2. Convert .yaml -> .pth and .yaml -> .pt2 ----
+    # Import deepmd.pt to register the backend (needed for convert_backend)
+    import deepmd.pt  # noqa: F401
+
+    load_custom_ops()
+
+    print(f"Converting to {pth_path} ...")  # noqa: T201
+    convert_backend(INPUT=yaml_path, OUTPUT=pth_path)
+
+    print(f"Converting to {pt2_path} ...")  # noqa: T201
+    convert_backend(INPUT=yaml_path, OUTPUT=pt2_path)
 
     print("Export done.")  # noqa: T201
 
-    # ---- 4. Run inference for PBC test ----
+    # ---- 3. Run inference for PBC test ----
     from deepmd.infer import (
         DeepPot,
     )
@@ -160,14 +176,14 @@ def main():
     print(f"\n// PBC total energy: {e1[0, 0]:.18e}")  # noqa: T201
     print_cpp_spin_values("PBC reference values", ae1, f1, fm1, v1, av1)
 
-    # ---- 5. Run inference for NoPbc test ----
+    # ---- 4. Run inference for NoPbc test ----
     e_np, f_np, v_np, ae_np, av_np, fm_np, _ = dp.eval(
         coord, None, atype, atomic=True, spin=spin
     )
     print(f"\n// NoPbc total energy: {e_np[0, 0]:.18e}")  # noqa: T201
     print_cpp_spin_values("NoPbc reference values", ae_np, f_np, fm_np, v_np, av_np)
 
-    # ---- 6. Verify .pth gives same results ----
+    # ---- 5. Verify .pth gives same results ----
     if os.path.exists(pth_path):
         dp_pth = DeepPot(pth_path)
         e_pth, f_pth, v_pth, ae_pth, av_pth, fm_pth, _ = dp_pth.eval(

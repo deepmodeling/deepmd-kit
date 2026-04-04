@@ -549,12 +549,15 @@ class SpinModel(NativeOP):
 
     def serialize(self) -> dict:
         return {
+            "type": "spin_ener",
             "backbone_model": self.backbone_model.serialize(),
             "spin": self.spin.serialize(),
         }
 
     @classmethod
     def deserialize(cls, data: dict) -> "SpinModel":
+        data = data.copy()
+        data.pop("type", None)
         backbone_model_obj = make_model(
             DPAtomicModel, T_Bases=(NativeOP, BaseModel)
         ).deserialize(data["backbone_model"])
@@ -646,7 +649,7 @@ class SpinModel(NativeOP):
             ) = self.process_spin_output(
                 atype,
                 model_ret[f"{var_name}_derv_c"],
-                add_mag=False,
+                add_mag=True,
                 virtual_scale=False,
             )
         # Always compute mask_mag from atom types (even when forces are unavailable)
@@ -815,13 +818,6 @@ class SpinModel(NativeOP):
             and do_atomic_virial
             and model_ret.get(f"{var_name}_derv_c") is not None
         ):
-            # Compute reduced virial from BOTH real and virtual atoms BEFORE
-            # splitting.  process_spin_output_lower discards the virtual-atom
-            # contribution, so we must reduce first to get the correct total.
-            xp = array_api_compat.array_namespace(model_ret[f"{var_name}_derv_c"])
-            model_ret[f"{var_name}_derv_c_redu"] = xp.sum(
-                model_ret[f"{var_name}_derv_c"], axis=1
-            )
             (
                 model_ret[f"{var_name}_derv_c"],
                 model_ret[f"{var_name}_derv_c_mag"],
@@ -830,7 +826,7 @@ class SpinModel(NativeOP):
                 extended_atype,
                 model_ret[f"{var_name}_derv_c"],
                 nloc,
-                add_mag=False,
+                add_mag=True,
                 virtual_scale=False,
             )
         # Always compute mask_mag from atom types (even when forces are unavailable)
