@@ -23,19 +23,19 @@ data_file = Path(__file__).parent / "data.lmp"
 md_file = Path(__file__).parent / "md.out"
 
 # Reference values from the seed=1 .pt2 model (NoPBC, Model 0)
-expected_e = 4.506368054192911310e-01
+expected_e = 3.5101080091096860e-01
 expected_f = np.array(
     [
-        [-4.3791408102373730e-03, 1.8345049340183590e-03, 8.0965764883528663e-03],
-        [4.3791408102373730e-03, -1.8345049340183590e-03, -8.0965764883528628e-03],
-        [1.8744375495035947e-04, 1.7511192896678328e-04, -2.5650198045838670e-04],
-        [-1.8744375495035947e-04, -1.7511192896678328e-04, 2.5650198045838670e-04],
+        [3.9007324220254663e-03, -1.6340906092268837e-03, 2.4784543132550553e-03],
+        [-3.9007324220254660e-03, 1.6340906092268837e-03, -2.4784543132550550e-03],
+        [1.0879565176984952e-04, 1.0163804310078055e-04, -1.4887826031663627e-04],
+        [-1.0879565176984952e-04, -1.0163804310078055e-04, 1.4887826031663627e-04],
     ]
 )
 expected_fm = np.array(
     [
-        [-4.0225421856019317e-04, 1.6851190236981042e-04, 2.2376748889882192e-03],
-        [3.1808894918962933e-03, -1.3325347871457449e-03, 1.8162613930793377e-03],
+        [3.4589594972289518e-03, -1.4490235731634794e-03, 2.3561281037953720e-03],
+        [-3.0400436796538990e-04, 1.2735318117469008e-04, -1.4949786028183132e-03],
         [0.0000000000000000e00, 0.0000000000000000e00, 0.0000000000000000e00],
         [0.0000000000000000e00, 0.0000000000000000e00, 0.0000000000000000e00],
     ]
@@ -44,17 +44,17 @@ expected_fm = np.array(
 # Reference values from the seed=2 .pt2 model (NoPBC, Model 1)
 expected_f2 = np.array(
     [
-        [-5.0313948956892344e-03, 2.1077465103562995e-03, 3.3650618879773678e-03],
-        [5.0313948956892335e-03, -2.1077465103562999e-03, -3.3650618879773678e-03],
-        [7.8146213901410743e-04, 7.3005015618423231e-04, -1.0693692428614104e-03],
-        [-7.8146213901410743e-04, -7.3005015618423231e-04, 1.0693692428614104e-03],
+        [-3.0870239868329980e-02, 1.2932127512408504e-02, 2.7561357633479750e-02],
+        [3.0870239868329978e-02, -1.2932127512408506e-02, -2.7561357633479742e-02],
+        [4.5712656471395960e-04, 4.2705244861435744e-04, -6.2554161487173430e-04],
+        [-4.5712656471395960e-04, -4.2705244861435744e-04, 6.2554161487173430e-04],
     ]
 )
 
 expected_fm2 = np.array(
     [
-        [1.4597145672945039e-03, -6.1150204846121062e-04, -1.3469050004718076e-02],
-        [-1.7167887170022188e-03, 7.1919527333876780e-04, -1.3100088729734645e-02],
+        [-7.2838456252868870e-03, 3.0513407349174793e-03, -1.9672009896273334e-02],
+        [9.7240358761389140e-03, -4.0735825967608950e-03, -1.7012161861151297e-02],
         [0.0000000000000000e00, 0.0000000000000000e00, 0.0000000000000000e00],
         [0.0000000000000000e00, 0.0000000000000000e00, 0.0000000000000000e00],
     ]
@@ -150,12 +150,13 @@ def test_pair_deepmd_model_devi(lammps) -> None:
     md = np.loadtxt(md_file.resolve())
     expected_md_f = np.linalg.norm(np.std([expected_f, expected_f2], axis=0), axis=1)
     expected_md_fm = np.linalg.norm(np.std([expected_fm, expected_fm2], axis=0), axis=1)
-    assert md[4] == pytest.approx(np.max(expected_md_f))
-    assert md[5] == pytest.approx(np.min(expected_md_f))
-    assert md[6] == pytest.approx(np.mean(expected_md_f))
-    assert md[7] == pytest.approx(np.max(expected_md_fm))
-    assert md[8] == pytest.approx(np.min(expected_md_fm))
-    assert md[9] == pytest.approx(np.mean(expected_md_fm))
+    # rel=1e-4: md.out is written with default scientific format (~6 significant digits)
+    assert md[4] == pytest.approx(np.max(expected_md_f), rel=1e-4)
+    assert md[5] == pytest.approx(np.min(expected_md_f), rel=1e-4)
+    assert md[6] == pytest.approx(np.mean(expected_md_f), rel=1e-4)
+    assert md[7] == pytest.approx(np.max(expected_md_fm), rel=1e-4)
+    assert md[8] == pytest.approx(np.min(expected_md_fm), rel=1e-4)
+    assert md[9] == pytest.approx(np.mean(expected_md_fm), rel=1e-4)
 
 
 def test_pair_deepmd_model_devi_atomic_relative(lammps) -> None:
@@ -178,9 +179,10 @@ def test_pair_deepmd_model_devi_atomic_relative(lammps) -> None:
     expected_md_f /= norm + relative
     expected_md_fm = np.linalg.norm(np.std([expected_fm, expected_fm2], axis=0), axis=1)
     expected_md_fm /= norm_spin + relative
-    assert md[4] == pytest.approx(np.max(expected_md_f))
-    assert md[5] == pytest.approx(np.min(expected_md_f))
-    assert md[6] == pytest.approx(np.mean(expected_md_f))
-    assert md[7] == pytest.approx(np.max(expected_md_fm))
-    assert md[8] == pytest.approx(np.min(expected_md_fm))
-    assert md[9] == pytest.approx(np.mean(expected_md_fm))
+    # rel=1e-4: md.out is written with default scientific format (~6 significant digits)
+    assert md[4] == pytest.approx(np.max(expected_md_f), rel=1e-4)
+    assert md[5] == pytest.approx(np.min(expected_md_f), rel=1e-4)
+    assert md[6] == pytest.approx(np.mean(expected_md_f), rel=1e-4)
+    assert md[7] == pytest.approx(np.max(expected_md_fm), rel=1e-4)
+    assert md[8] == pytest.approx(np.min(expected_md_fm), rel=1e-4)
+    assert md[9] == pytest.approx(np.mean(expected_md_fm), rel=1e-4)

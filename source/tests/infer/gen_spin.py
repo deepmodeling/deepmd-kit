@@ -39,7 +39,7 @@ def _build_yaml(yaml_path: str) -> None:
     )
 
     config = {
-        "type_map": ["Ni", "O"],
+        "type_map": ["Ni", "O", "H"],
         "descriptor": {
             "type": "se_atten",
             "sel": 30,
@@ -64,8 +64,8 @@ def _build_yaml(yaml_path: str) -> None:
             "seed": 1,
         },
         "spin": {
-            "use_spin": [True, False],
-            "virtual_scale": [0.3140, 0.0],
+            "use_spin": [True, False, False],
+            "virtual_scale": [0.3140, 0.0, 0.0],
         },
     }
 

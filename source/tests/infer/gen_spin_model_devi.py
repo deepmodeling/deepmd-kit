@@ -29,7 +29,7 @@ from gen_common import (
 
 # Model config (same architecture as gen_spin.py, different seeds)
 _BASE_CONFIG = {
-    "type_map": ["Ni", "O"],
+    "type_map": ["Ni", "O", "H"],
     "descriptor": {
         "type": "se_atten",
         "sel": 30,
@@ -52,8 +52,8 @@ _BASE_CONFIG = {
         "resnet_dt": True,
     },
     "spin": {
-        "use_spin": [True, False],
-        "virtual_scale": [0.3140, 0.0],
+        "use_spin": [True, False, False],
+        "virtual_scale": [0.3140, 0.0, 0.0],
     },
 }
 
