@@ -193,6 +193,29 @@ class TestDPFreezePtExpt(unittest.TestCase):
         np.testing.assert_allclose(f_pte, f_pt2, atol=1e-10)
         np.testing.assert_allclose(v_pte, v_pt2, atol=1e-10)
 
+    def test_nonspin_model_rejects_spin(self) -> None:
+        """Non-spin model must raise ValueError when spin is provided."""
+        import numpy as np
+
+        from deepmd.infer import (
+            DeepPot,
+        )
+
+        pt2_path = os.path.join(self.tmpdir, "nonspin_reject.pt2")
+        freeze(model=self.ckpt_file, output=pt2_path)
+
+        coord = np.array(
+            [0.0, 0.0, 0.1, 1.0, 0.3, 0.2, 0.1, 1.9, 3.4],
+            dtype=np.float64,
+        )
+        box = np.array([5.0, 0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0, 5.0], dtype=np.float64)
+        atype = [0, 1, 2]
+        spin = np.zeros(9, dtype=np.float64)
+
+        dp = DeepPot(pt2_path)
+        with self.assertRaises(ValueError):
+            dp.eval(coord, box, atype, spin=spin)
+
 
 class TestDPFreezePt2DefaultFparam(unittest.TestCase):
     """Test .pt2 with default fparam — eval without providing fparam."""
@@ -214,16 +237,16 @@ class TestDPFreezePt2DefaultFparam(unittest.TestCase):
     def tearDownClass(cls) -> None:
         shutil.rmtree(cls.tmpdir)
 
-    def test_pt2_eval_default_fparam(self) -> None:
-        """Eval .pt2 without fparam should match eval with explicit default value."""
+    def _test_eval_default_fparam(self, ext) -> None:
+        """Eval without fparam should match eval with explicit default value."""
         import numpy as np
 
         from deepmd.infer import (
             DeepPot,
         )
 
-        pt2_path = os.path.join(self.tmpdir, "dfp.pt2")
-        freeze(model=self.ckpt_file, output=pt2_path)
+        out_path = os.path.join(self.tmpdir, f"dfp{ext}")
+        freeze(model=self.ckpt_file, output=out_path)
 
         coord = np.array(
             [0.0, 0.0, 0.1, 1.0, 0.3, 0.2, 0.1, 1.9, 3.4],
@@ -232,7 +255,7 @@ class TestDPFreezePt2DefaultFparam(unittest.TestCase):
         box = np.array([5.0, 0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0, 5.0], dtype=np.float64)
         atype = [0, 1, 2]
 
-        dp = DeepPot(pt2_path)
+        dp = DeepPot(out_path)
 
         # Eval WITHOUT fparam — model should use default (0.5)
         e_no, f_no, v_no = dp.eval(coord, box, atype)
@@ -242,6 +265,12 @@ class TestDPFreezePt2DefaultFparam(unittest.TestCase):
         np.testing.assert_allclose(e_no, e_ex, atol=1e-10)
         np.testing.assert_allclose(f_no, f_ex, atol=1e-10)
         np.testing.assert_allclose(v_no, v_ex, atol=1e-10)
+
+    def test_pt2_eval_default_fparam(self) -> None:
+        self._test_eval_default_fparam(".pt2")
+
+    def test_pte_eval_default_fparam(self) -> None:
+        self._test_eval_default_fparam(".pte")
 
 
 if __name__ == "__main__":

@@ -324,6 +324,16 @@ class DeepEval(DeepEvalBackend):
         )
         request_defs = self._get_request_defs(atomic)
         spins = kwargs.get("spin")
+        if self._is_spin and spins is None:
+            raise ValueError(
+                "This is a spin model but no `spin` argument was provided. "
+                "Please call eval(..., spin=spin_array)."
+            )
+        if not self._is_spin and spins is not None:
+            raise ValueError(
+                "This is not a spin model but a `spin` argument was provided. "
+                "Please call eval(...) without the `spin` argument."
+            )
         if spins is not None:
             spins = np.array(spins)
             out = self._eval_func(self._eval_model_spin, numb_test, natoms)(

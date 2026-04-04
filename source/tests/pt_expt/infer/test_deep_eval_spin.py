@@ -198,6 +198,17 @@ class TestSpinInference:
         dp = DeepPot(files[ext])
         assert dp.get_ntypes_spin() == 0
 
+    def test_eval_spin_model_requires_spin(self, spin_model_files, ext) -> None:
+        """Spin model must raise ValueError when spin is not provided."""
+        from deepmd.infer import (
+            DeepPot,
+        )
+
+        files, _, _ = spin_model_files
+        dp = DeepPot(files[ext])
+        with pytest.raises(ValueError, match="no `spin` argument was provided"):
+            dp.eval(COORD, BOX, ATYPE)
+
     def test_eval_pbc_atomic(self, spin_model_files, ext) -> None:
         """Test PBC evaluation with atomic=True."""
         from deepmd.infer import (
@@ -381,3 +392,48 @@ class TestSpinDefaultFparam:
         np.testing.assert_allclose(f_no, f_ex, atol=1e-10)
         np.testing.assert_allclose(v_no, v_ex, atol=1e-10)
         np.testing.assert_allclose(fm_no, fm_ex, atol=1e-10)
+
+
+SPIN_APARAM_CONFIG = copy.deepcopy(SPIN_CONFIG)
+SPIN_APARAM_CONFIG["fitting_net"]["numb_aparam"] = 2
+
+
+class TestSpinAparam:
+    """Test spin model with aparam at the eager model level.
+
+    torch.export currently does not support dynamic nframes with aparam,
+    so we test at the eager pt_expt model level instead of via .pt2/.pte.
+    """
+
+    def test_aparam_takes_effect(self) -> None:
+        """Verify that different aparam values produce different outputs."""
+        dp_model = get_model_dp(copy.deepcopy(SPIN_APARAM_CONFIG))
+        pt_model = SpinEnergyModel.deserialize(dp_model.serialize()).to(env.DEVICE)
+        pt_model.eval()
+
+        natoms = len(ATYPE)
+        coord_t = torch.tensor(
+            COORD.reshape(1, natoms, 3), dtype=torch.float64, device=env.DEVICE
+        )
+        coord_t.requires_grad_(True)
+        atype_t = torch.tensor([ATYPE], dtype=torch.int64, device=env.DEVICE)
+        spin_t = torch.tensor(
+            SPIN.reshape(1, natoms, 3), dtype=torch.float64, device=env.DEVICE
+        )
+        box_t = torch.tensor(BOX.reshape(1, 9), dtype=torch.float64, device=env.DEVICE)
+
+        aparam_zero = torch.zeros(1, natoms, 2, dtype=torch.float64, device=env.DEVICE)
+        aparam_nonzero = torch.full(
+            (1, natoms, 2), 0.5, dtype=torch.float64, device=env.DEVICE
+        )
+
+        ret0 = pt_model(coord_t, atype_t, spin_t, box_t, aparam=aparam_zero)
+        ret1 = pt_model(coord_t, atype_t, spin_t, box_t, aparam=aparam_nonzero)
+
+        e0 = ret0["energy"].detach().cpu().numpy()
+        e1 = ret1["energy"].detach().cpu().numpy()
+
+        # Different aparam must produce different energy
+        assert not np.allclose(e0, e1), (
+            "Changing aparam did not change output — aparam may be ignored"
+        )
