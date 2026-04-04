@@ -321,3 +321,63 @@ class TestSpinInference:
             rtol=1e-10,
             atol=1e-10,
         )
+
+
+SPIN_FPARAM_CONFIG = copy.deepcopy(SPIN_CONFIG)
+SPIN_FPARAM_CONFIG["fitting_net"]["numb_fparam"] = 1
+SPIN_FPARAM_CONFIG["fitting_net"]["default_fparam"] = [0.5]
+
+
+@pytest.fixture(scope="module")
+def spin_fparam_model_files():
+    """Create .pt2 and .pte spin model files with default fparam."""
+    dp_model = get_model_dp(copy.deepcopy(SPIN_FPARAM_CONFIG))
+    model_dict = dp_model.serialize()
+    data = {
+        "model": model_dict,
+        "model_def_script": SPIN_FPARAM_CONFIG,
+        "backend": "dpmodel",
+        "software": "deepmd-kit",
+        "version": "3.0.0",
+    }
+    files = {}
+    tmpdir = tempfile.mkdtemp()
+    for ext in (".pt2", ".pte"):
+        path = os.path.join(tmpdir, f"spin_fparam_test{ext}")
+        deserialize_to_file(path, copy.deepcopy(data))
+        files[ext] = path
+    yield files
+    for path in files.values():
+        if os.path.exists(path):
+            os.unlink(path)
+    os.rmdir(tmpdir)
+
+
+@pytest.mark.parametrize("ext", [".pt2", ".pte"])  # model format
+class TestSpinDefaultFparam:
+    """Test spin model with default_fparam via DeepPot API."""
+
+    def test_eval_without_fparam_matches_explicit(
+        self, spin_fparam_model_files, ext
+    ) -> None:
+        """Eval without fparam should use default and match explicit fparam."""
+        from deepmd.infer import (
+            DeepPot,
+        )
+
+        files = spin_fparam_model_files
+        dp = DeepPot(files[ext])
+
+        # Eval WITHOUT fparam — should use default_fparam=[0.5]
+        e_no, f_no, v_no, fm_no, mm_no = dp.eval(
+            COORD, BOX, ATYPE, atomic=False, spin=SPIN
+        )
+        # Eval WITH explicit fparam=[0.5]
+        e_ex, f_ex, v_ex, fm_ex, mm_ex = dp.eval(
+            COORD, BOX, ATYPE, atomic=False, spin=SPIN, fparam=[0.5]
+        )
+
+        np.testing.assert_allclose(e_no, e_ex, atol=1e-10)
+        np.testing.assert_allclose(f_no, f_ex, atol=1e-10)
+        np.testing.assert_allclose(v_no, v_ex, atol=1e-10)
+        np.testing.assert_allclose(fm_no, fm_ex, atol=1e-10)

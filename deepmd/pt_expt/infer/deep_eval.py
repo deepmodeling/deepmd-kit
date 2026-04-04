@@ -670,9 +670,9 @@ class DeepEval(DeepEvalBackend):
                 dtype=torch.float64,
                 device=DEVICE,
             )
-        elif self._is_pt2 and self.get_dim_fparam() > 0:
-            # .pt2 models are compiled with fparam as a required input.
-            # When the user omits fparam, fill with default values from metadata.
+        elif self.get_dim_fparam() > 0:
+            # Exported models (.pt2/.pte) are compiled with fparam as a
+            # required input.  Fill with default values from metadata.
             default_fp = self.metadata.get("default_fparam")
             if default_fp is not None:
                 fparam_t = (
@@ -808,6 +808,22 @@ class DeepEval(DeepEvalBackend):
                 dtype=torch.float64,
                 device=DEVICE,
             )
+        elif self.get_dim_fparam() > 0:
+            # Exported models (.pt2/.pte) are compiled with fparam as a
+            # required input.  Fill with default values from metadata.
+            default_fp = self.metadata.get("default_fparam")
+            if default_fp is not None:
+                fparam_t = (
+                    torch.tensor(default_fp, dtype=torch.float64, device=DEVICE)
+                    .unsqueeze(0)
+                    .expand(nframes, -1)
+                    .contiguous()
+                )
+            else:
+                raise ValueError(
+                    f"fparam is required for this model (dim_fparam={self.get_dim_fparam()}) "
+                    "but was not provided, and no default_fparam is stored in the model."
+                )
         else:
             fparam_t = None
 
