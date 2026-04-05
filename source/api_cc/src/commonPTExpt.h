@@ -421,6 +421,12 @@ inline std::string read_zip_entry(const std::string& zip_path,
       uint16_t local_extra_len = read_u16(local_header_offset + 28);
       size_t data_offset =
           local_header_offset + 30 + local_name_len + local_extra_len;
+      // PyTorch archives (.pth, .pte, .pt2) always use ZIP STORED (compression
+      // method 0) for every entry. PyTorch needs to mmap tensor data directly
+      // from the archive without decompression, so its C++ writer
+      // (caffe2::serialize::PyTorchStreamWriter) and torch.export.save both
+      // write uncompressed entries with 64-byte alignment. No decompression is
+      // needed.
       return content.substr(data_offset, uncompressed_size);
     }
 

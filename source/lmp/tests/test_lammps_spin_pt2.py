@@ -140,6 +140,8 @@ def setup_module() -> None:
 
 def teardown_module() -> None:
     os.remove(data_file)
+    if md_file.exists():
+        os.remove(md_file)
 
 
 def _lammps(data_file, units="metal") -> PyLammps:
