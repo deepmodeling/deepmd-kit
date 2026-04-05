@@ -557,11 +557,12 @@ class DPTabulate(BaseTabulate):
                         else:
                             result["layer_" + str(layer)].append(np.array([]))
             elif self.descrpt_type == "T":
-                for ii in range(0, len(self.embedding_net_nodes)):
-                    node = self.embedding_net_nodes[ii]["layers"][layer - 1][
-                        "@variables"
-                    ][var_name]
-                    result["layer_" + str(layer)].append(node)
+                for ii in range(self.ntypes):
+                    for jj in range(ii, self.ntypes):
+                        node = self.embedding_net_nodes[jj * self.ntypes + ii][
+                            "layers"
+                        ][layer - 1]["@variables"][var_name]
+                        result["layer_" + str(layer)].append(node)
             elif self.descrpt_type == "T_TEBD":
                 node = self.embedding_net_nodes[0]["layers"][layer - 1]["@variables"][
                     var_name
@@ -583,9 +584,9 @@ class DPTabulate(BaseTabulate):
                             ii // self.ntypes,
                             ii % self.ntypes,
                         ) not in self.exclude_types:
-                            node = self.embedding_net_nodes[ii]["layers"][layer - 1][
-                                "@variables"
-                            ][var_name]
+                            node = self.embedding_net_nodes[
+                                (ii % self.ntypes) * self.ntypes + ii // self.ntypes
+                            ]["layers"][layer - 1]["@variables"][var_name]
                             result["layer_" + str(layer)].append(node)
                         else:
                             result["layer_" + str(layer)].append(np.array([]))
@@ -593,8 +594,17 @@ class DPTabulate(BaseTabulate):
                 raise RuntimeError("Unsupported descriptor")
         return result
 
-    def _get_matrix(self) -> dict:
+    def _get_bias(self) -> Any:
+        return self._get_network_variable("b")
+
+    def _get_matrix(self) -> Any:
         return self._get_network_variable("w")
 
-    def _get_bias(self) -> dict:
-        return self._get_network_variable("b")
+    def _convert_numpy_to_tensor(self) -> None:
+        """No-op: data stays as numpy arrays."""
+        pass
+
+    @cached_property
+    def _n_all_excluded(self) -> int:
+        """The number of types excluding all types."""
+        return sum(int(self._all_excluded(ii)) for ii in range(0, self.ntypes))
