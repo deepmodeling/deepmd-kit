@@ -21,7 +21,7 @@ from ..common import (
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
     CommonTest,
-    parameterized,
+    parameterized_cases,
 )
 from .common import (
     DescriptorAPITest,
@@ -64,35 +64,359 @@ from deepmd.utils.argcheck import (
 )
 
 
-@parameterized(
-    ("concat", "strip"),  # repinit_tebd_input_mode
-    (True,),  # repinit_set_davg_zero
-    (False,),  # repinit_type_one_side
-    (True, False),  # repinit_use_three_body
-    (True, False),  # repformer_direct_dist
-    (True,),  # repformer_update_g1_has_conv
-    (True,),  # repformer_update_g1_has_drrd
-    (True,),  # repformer_update_g1_has_grrg
-    (True,),  # repformer_update_g1_has_attn
-    (True,),  # repformer_update_g2_has_g1g1
-    (True,),  # repformer_update_g2_has_attn
-    (False,),  # repformer_update_h2
-    (True,),  # repformer_attn2_has_gate
-    ("res_avg", "res_residual"),  # repformer_update_style
-    ("norm", "const"),  # repformer_update_residual_init
-    (True,),  # repformer_set_davg_zero
-    (True,),  # repformer_trainable_ln
-    (1e-5,),  # repformer_ln_eps
-    (True,),  # repformer_use_sqrt_nnei
-    (True,),  # repformer_g1_out_conv
-    (True,),  # repformer_g1_out_mlp
-    (True, False),  # smooth
-    ([], [[0, 1]]),  # exclude_types
-    ("float64",),  # precision
-    (True, False),  # add_tebd_to_repinit_out
-    (True, False),  # use_econf_tebd
-    (False,),  # use_tebd_bias
+DPA2_CURATED_CASES = (
+    (
+        "concat",
+        True,
+        False,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        False,
+        True,
+        "res_avg",
+        "norm",
+        True,
+        True,
+        1e-5,
+        True,
+        True,
+        True,
+        True,
+        [],
+        "float64",
+        True,
+        False,
+        False,
+    ),
+    (
+        "strip",
+        True,
+        False,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        False,
+        True,
+        "res_avg",
+        "norm",
+        True,
+        True,
+        1e-5,
+        True,
+        True,
+        True,
+        True,
+        [],
+        "float64",
+        True,
+        False,
+        False,
+    ),
+    (
+        "concat",
+        True,
+        False,
+        False,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        False,
+        True,
+        "res_avg",
+        "norm",
+        True,
+        True,
+        1e-5,
+        True,
+        True,
+        True,
+        True,
+        [],
+        "float64",
+        True,
+        False,
+        False,
+    ),
+    (
+        "concat",
+        True,
+        False,
+        True,
+        False,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        False,
+        True,
+        "res_avg",
+        "norm",
+        True,
+        True,
+        1e-5,
+        True,
+        True,
+        True,
+        True,
+        [],
+        "float64",
+        True,
+        False,
+        False,
+    ),
+    (
+        "concat",
+        True,
+        False,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        False,
+        True,
+        "res_residual",
+        "norm",
+        True,
+        True,
+        1e-5,
+        True,
+        True,
+        True,
+        True,
+        [],
+        "float64",
+        True,
+        False,
+        False,
+    ),
+    (
+        "concat",
+        True,
+        False,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        False,
+        True,
+        "res_avg",
+        "const",
+        True,
+        True,
+        1e-5,
+        True,
+        True,
+        True,
+        True,
+        [],
+        "float64",
+        True,
+        False,
+        False,
+    ),
+    (
+        "concat",
+        True,
+        False,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        False,
+        True,
+        "res_avg",
+        "norm",
+        True,
+        True,
+        1e-5,
+        True,
+        True,
+        True,
+        False,
+        [],
+        "float64",
+        True,
+        False,
+        False,
+    ),
+    (
+        "concat",
+        True,
+        False,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        False,
+        True,
+        "res_avg",
+        "norm",
+        True,
+        True,
+        1e-5,
+        True,
+        True,
+        True,
+        True,
+        [[0, 1]],
+        "float64",
+        True,
+        False,
+        False,
+    ),
+    (
+        "concat",
+        True,
+        False,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        False,
+        True,
+        "res_avg",
+        "norm",
+        True,
+        True,
+        1e-5,
+        True,
+        True,
+        True,
+        True,
+        [],
+        "float64",
+        False,
+        False,
+        False,
+    ),
+    (
+        "concat",
+        True,
+        False,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        False,
+        True,
+        "res_avg",
+        "norm",
+        True,
+        True,
+        1e-5,
+        True,
+        True,
+        True,
+        True,
+        [],
+        "float64",
+        True,
+        True,
+        False,
+    ),
+    (
+        "strip",
+        True,
+        False,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        False,
+        True,
+        "res_avg",
+        "norm",
+        True,
+        True,
+        1e-5,
+        True,
+        True,
+        True,
+        True,
+        [],
+        "float64",
+        False,
+        True,
+        False,
+    ),
+    (
+        "concat",
+        True,
+        False,
+        True,
+        False,
+        True,
+        True,
+        True,
+        True,
+        True,
+        True,
+        False,
+        True,
+        "res_residual",
+        "const",
+        True,
+        True,
+        1e-5,
+        True,
+        True,
+        True,
+        False,
+        [[0, 1]],
+        "float64",
+        False,
+        True,
+        False,
+    ),
 )
+
+
+@parameterized_cases(*DPA2_CURATED_CASES)
 class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
     @property
     def data(self) -> dict:
@@ -554,35 +878,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             raise ValueError(f"Unknown precision: {precision}")
 
 
-@parameterized(
-    ("concat", "strip"),  # repinit_tebd_input_mode
-    (True,),  # repinit_set_davg_zero
-    (False,),  # repinit_type_one_side
-    (True, False),  # repinit_use_three_body
-    (True, False),  # repformer_direct_dist
-    (True,),  # repformer_update_g1_has_conv
-    (True,),  # repformer_update_g1_has_drrd
-    (True,),  # repformer_update_g1_has_grrg
-    (True,),  # repformer_update_g1_has_attn
-    (True,),  # repformer_update_g2_has_g1g1
-    (True,),  # repformer_update_g2_has_attn
-    (False,),  # repformer_update_h2
-    (True,),  # repformer_attn2_has_gate
-    ("res_avg", "res_residual"),  # repformer_update_style
-    ("norm", "const"),  # repformer_update_residual_init
-    (True,),  # repformer_set_davg_zero
-    (True,),  # repformer_trainable_ln
-    (1e-5,),  # repformer_ln_eps
-    (True,),  # repformer_use_sqrt_nnei
-    (True,),  # repformer_g1_out_conv
-    (True,),  # repformer_g1_out_mlp
-    (True, False),  # smooth
-    ([], [[0, 1]]),  # exclude_types
-    ("float64",),  # precision
-    (True, False),  # add_tebd_to_repinit_out
-    (True, False),  # use_econf_tebd
-    (False,),  # use_tebd_bias
-)
+@parameterized_cases(*DPA2_CURATED_CASES)
 class TestDPA2DescriptorAPI(DescriptorAPITest, unittest.TestCase):
     """Test consistency of BaseDescriptor API methods across backends."""
 

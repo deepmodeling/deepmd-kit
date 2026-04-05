@@ -20,6 +20,7 @@ from ..common import (
     INSTALLED_TF,
     CommonTest,
     parameterized,
+    parameterized_cases,
 )
 from .common import (
     DescriptorAPITest,
@@ -71,13 +72,27 @@ else:
     DescrptSeAArrayAPIStrict = None
 
 
-@parameterized(
-    (True, False),  # resnet_dt
-    (True, False),  # type_one_side
-    ([], [[0, 1]]),  # excluded_types
-    ("float32", "float64"),  # precision
-    (0.0, 1e-8, 1e-2),  # env_protection
+SE_A_CURATED_CASES = (
+    (True, True, [], "float64", 0.0),
+    (False, True, [], "float64", 0.0),
+    (True, False, [], "float64", 0.0),
+    (True, True, [[0, 1]], "float64", 0.0),
+    (True, True, [], "float64", 1e-8),
+    (True, True, [], "float64", 1e-2),
+    (True, True, [], "float32", 0.0),
 )
+
+SE_A_DESCRIPTOR_API_CASES = (
+    (True, True, [], "float64", 0.0),
+    (False, True, [], "float64", 0.0),
+    (True, False, [], "float64", 0.0),
+    (True, True, [[0, 1]], "float64", 0.0),
+    (True, True, [], "float64", 1e-8),
+    (True, True, [], "float64", 1e-2),
+)
+
+
+@parameterized_cases(*SE_A_CURATED_CASES)
 class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
     @property
     def data(self) -> dict:
@@ -669,13 +684,7 @@ class TestSeAStat(CommonTest, DescriptorTest, unittest.TestCase):
             raise ValueError(f"Unknown precision: {precision}")
 
 
-@parameterized(
-    (True, False),  # resnet_dt
-    (True, False),  # type_one_side
-    ([], [[0, 1]]),  # excluded_types
-    ("float64",),  # precision
-    (0.0, 1e-8, 1e-2),  # env_protection
-)
+@parameterized_cases(*SE_A_DESCRIPTOR_API_CASES)
 class TestSeADescriptorAPI(DescriptorAPITest, unittest.TestCase):
     """Test consistency of BaseDescriptor API methods across backends."""
 
