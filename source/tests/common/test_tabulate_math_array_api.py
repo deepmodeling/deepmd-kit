@@ -12,58 +12,78 @@ def _load_tabulate_math_module():
     root = Path(__file__).resolve().parents[3]
     module_path = root / "deepmd" / "utils" / "tabulate_math.py"
 
-    deepmd_pkg = types.ModuleType("deepmd")
-    deepmd_pkg.__path__ = []
-    sys.modules.setdefault("deepmd", deepmd_pkg)
+    managed_modules = [
+        "deepmd",
+        "deepmd.dpmodel",
+        "deepmd.dpmodel.common",
+        "deepmd.dpmodel.utils",
+        "deepmd.dpmodel.utils.network",
+        "deepmd.utils",
+        "deepmd.utils.tabulate",
+    ]
+    previous_modules = {
+        name: sys.modules.get(name) for name in managed_modules if name in sys.modules
+    }
 
-    dpmodel_pkg = types.ModuleType("deepmd.dpmodel")
-    dpmodel_pkg.__path__ = []
-    sys.modules["deepmd.dpmodel"] = dpmodel_pkg
+    try:
+        deepmd_pkg = types.ModuleType("deepmd")
+        deepmd_pkg.__path__ = []
+        sys.modules["deepmd"] = deepmd_pkg
 
-    dpmodel_common = types.ModuleType("deepmd.dpmodel.common")
-    dpmodel_common.to_numpy_array = np.asarray
-    sys.modules["deepmd.dpmodel.common"] = dpmodel_common
+        dpmodel_pkg = types.ModuleType("deepmd.dpmodel")
+        dpmodel_pkg.__path__ = []
+        sys.modules["deepmd.dpmodel"] = dpmodel_pkg
 
-    dpmodel_utils_pkg = types.ModuleType("deepmd.dpmodel.utils")
-    dpmodel_utils_pkg.__path__ = []
-    sys.modules["deepmd.dpmodel.utils"] = dpmodel_utils_pkg
+        dpmodel_common = types.ModuleType("deepmd.dpmodel.common")
+        dpmodel_common.to_numpy_array = np.asarray
+        sys.modules["deepmd.dpmodel.common"] = dpmodel_common
 
-    dpmodel_network = types.ModuleType("deepmd.dpmodel.utils.network")
+        dpmodel_utils_pkg = types.ModuleType("deepmd.dpmodel.utils")
+        dpmodel_utils_pkg.__path__ = []
+        sys.modules["deepmd.dpmodel.utils"] = dpmodel_utils_pkg
 
-    def get_activation_fn(name: str):
-        name = name.lower()
-        if name == "tanh":
-            return np.tanh
-        if name in ("none", "linear"):
-            return lambda x: x
-        raise NotImplementedError(name)
+        dpmodel_network = types.ModuleType("deepmd.dpmodel.utils.network")
 
-    dpmodel_network.get_activation_fn = get_activation_fn
-    sys.modules["deepmd.dpmodel.utils.network"] = dpmodel_network
+        def get_activation_fn(name: str):
+            name = name.lower()
+            if name == "tanh":
+                return np.tanh
+            if name in ("none", "linear"):
+                return lambda x: x
+            raise NotImplementedError(name)
 
-    utils_pkg = types.ModuleType("deepmd.utils")
-    utils_pkg.__path__ = []
-    sys.modules["deepmd.utils"] = utils_pkg
+        dpmodel_network.get_activation_fn = get_activation_fn
+        sys.modules["deepmd.dpmodel.utils.network"] = dpmodel_network
 
-    utils_tabulate = types.ModuleType("deepmd.utils.tabulate")
+        utils_pkg = types.ModuleType("deepmd.utils")
+        utils_pkg.__path__ = []
+        sys.modules["deepmd.utils"] = utils_pkg
 
-    class BaseTabulate:
-        def __init__(self, descrpt, neuron, type_one_side, exclude_types):
-            self.descrpt = descrpt
-            self.neuron = neuron
-            self.type_one_side = type_one_side
-            self.exclude_types = exclude_types
+        utils_tabulate = types.ModuleType("deepmd.utils.tabulate")
 
-    utils_tabulate.BaseTabulate = BaseTabulate
-    sys.modules["deepmd.utils.tabulate"] = utils_tabulate
+        class BaseTabulate:
+            def __init__(self, descrpt, neuron, type_one_side, exclude_types):
+                self.descrpt = descrpt
+                self.neuron = neuron
+                self.type_one_side = type_one_side
+                self.exclude_types = exclude_types
 
-    spec = importlib.util.spec_from_file_location(
-        "deepmd.utils.tabulate_math_under_test", module_path
-    )
-    module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(module)
-    return module
+        utils_tabulate.BaseTabulate = BaseTabulate
+        sys.modules["deepmd.utils.tabulate"] = utils_tabulate
+
+        spec = importlib.util.spec_from_file_location(
+            "deepmd.utils.tabulate_math_under_test", module_path
+        )
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)
+        return module
+    finally:
+        for name in managed_modules:
+            if name in previous_modules:
+                sys.modules[name] = previous_modules[name]
+            else:
+                sys.modules.pop(name, None)
 
 
 tm = _load_tabulate_math_module()
@@ -231,7 +251,8 @@ def test_grad_and_chain_rule_helpers_use_array_api(monkeypatch):
 
     np.testing.assert_allclose(
         np.asarray(dy_s),
-        (1 - np.asarray(y) ** 2) * np.broadcast_to(np.asarray(w).reshape(-1)[:2], (2, 2)),
+        (1 - np.asarray(y) ** 2)
+        * np.broadcast_to(np.asarray(w).reshape(-1)[:2], (2, 2)),
     )
     np.testing.assert_equal(np.asarray(dy2_s).shape, (2, 2))
     np.testing.assert_equal(np.asarray(dy).shape, (2, 2))
