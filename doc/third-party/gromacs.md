@@ -1,17 +1,15 @@
----
-orphan: true
----
+# Running MD with GROMACS
 
-# GROMACS support has been deprecated
+::::{important}
 
-::::{danger}
-
-:::{deprecated} next release
-The official GROMACS patch that used to live in the DeePMD-kit repository is no longer maintained and has been removed.
-
-For supported production use, prefer the official [LAMMPS interface](../install/install-lammps.md) together with the [LAMMPS runtime documentation](./lammps-command.md).
-
-If you still need a GROMACS-based workflow, consider the third-party implementation mentioned in [issue #5360](https://github.com/deepmodeling/deepmd-kit/issues/5360), which was reported at <https://arxiv.org/abs/2602.02234>.
+:::{deprecated} v3.2.0
+The official in-tree GROMACS patch has been removed from DeePMD-kit and is no longer maintained.
 :::
 
 ::::
+
+DeePMD-kit may still be used with GROMACS through third-party integrations maintained outside this repository.
+
+For supported production workflows maintained in-tree, prefer the official [LAMMPS interface](../install/install-lammps.md) together with the [LAMMPS runtime documentation](./lammps-command.md).
+
+For currently known external implementations, see [Interfaces out of DeePMD-kit](./out-of-deepmd-kit.md#third-party-gromacs-interface-to-deepmd-kit).
