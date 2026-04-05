@@ -2,6 +2,7 @@
 import inspect
 import itertools
 import os
+import re
 import sys
 import unittest
 from abc import (
@@ -685,7 +686,6 @@ def _parameterized_with_cases(full_parameterized: list[tuple]) -> Callable:
             for x in pp:
                 s = str(x)
                 # replace non-alnum with underscore, collapse multiple underscores
-                import re
                 s = re.sub(r'[^a-zA-Z0-9_]', '_', s)
                 s = re.sub(r'_+', '_', s)
                 # remove leading/trailing underscores
