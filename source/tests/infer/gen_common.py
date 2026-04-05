@@ -79,3 +79,42 @@ def print_cpp_values(label, ae, f, av):
         comma = "," if ii < len(virial_flat) - 1 else ""
         print(f"      {v:.18e}{comma}")  # noqa: T201
     print("  };")  # noqa: T201
+
+
+def print_cpp_spin_values(label, ae, f, fm, tot_v, av):
+    """Print C++ reference arrays for spin models (energy, force, force_mag, virial)."""
+    print(f"\n// ---- {label} ----")  # noqa: T201
+    atom_energy = ae[0, :, 0]
+    print("  std::vector<VALUETYPE> expected_e = {")  # noqa: T201
+    for ii, e in enumerate(atom_energy):
+        comma = "," if ii < len(atom_energy) - 1 else ""
+        print(f"      {e:.18e}{comma}")  # noqa: T201
+    print("  };")  # noqa: T201
+
+    print("  std::vector<VALUETYPE> expected_f = {")  # noqa: T201
+    force_flat = f[0].flatten()
+    for ii, fv in enumerate(force_flat):
+        comma = "," if ii < len(force_flat) - 1 else ""
+        print(f"      {fv:.18e}{comma}")  # noqa: T201
+    print("  };")  # noqa: T201
+
+    print("  std::vector<VALUETYPE> expected_fm = {")  # noqa: T201
+    fm_flat = fm[0].flatten()
+    for ii, fv in enumerate(fm_flat):
+        comma = "," if ii < len(fm_flat) - 1 else ""
+        print(f"      {fv:.18e}{comma}")  # noqa: T201
+    print("  };")  # noqa: T201
+
+    print("  std::vector<VALUETYPE> expected_tot_v = {")  # noqa: T201
+    tot_v_flat = tot_v[0].flatten()
+    for ii, v in enumerate(tot_v_flat):
+        comma = "," if ii < len(tot_v_flat) - 1 else ""
+        print(f"      {v:.18e}{comma}")  # noqa: T201
+    print("  };")  # noqa: T201
+
+    print("  std::vector<VALUETYPE> expected_atom_v = {")  # noqa: T201
+    av_flat = av[0].flatten()
+    for ii, v in enumerate(av_flat):
+        comma = "," if ii < len(av_flat) - 1 else ""
+        print(f"      {v:.18e}{comma}")  # noqa: T201
+    print("  };")  # noqa: T201

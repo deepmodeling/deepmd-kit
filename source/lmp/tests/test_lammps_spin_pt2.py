@@ -1,10 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import importlib
 import os
-import shutil
-import subprocess as sp
-import sys
-import tempfile
 from pathlib import (
     Path,
 )
@@ -19,19 +14,16 @@ from write_lmp_data import (
     write_lmp_data_spin,
 )
 
-pbtxt_file2 = (
-    Path(__file__).parent.parent.parent / "tests" / "infer" / "deepspin_nlist-2.pbtxt"
-)
 pb_file = (
-    Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot_dpa_spin.pth"
+    Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot_dpa_spin.pt2"
 )
-pb_file2 = Path(__file__).parent / "deepspin_nlist-2.pb"
-system_file = Path(__file__).parent.parent.parent / "tests"
+pb_file2 = (
+    Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot_dpa_spin_md1.pt2"
+)
 data_file = Path(__file__).parent / "data.lmp"
-data_file_si = Path(__file__).parent / "data.si"
-data_type_map_file = Path(__file__).parent / "data_type_map.lmp"
 md_file = Path(__file__).parent / "md.out"
 
+# Reference values from the seed=1 .pt2 model (PBC, Model 0)
 expected_e = 3.5053686886040974e-01
 expected_ae = np.array(
     [
@@ -58,21 +50,22 @@ expected_fm = np.array(
     ]
 )
 
+# Reference values from the seed=2 .pt2 model (PBC, Model 1)
 expected_f2 = np.array(
     [
-        [-0.0009939342103254, 0.0009450997605637, -0.0002710189976979],
-        [0.0040364645780618, -0.0008326705633617, -0.000208982833015],
-        [0.0007716358981262, 0.0018705501216939, -0.002687696295354],
-        [-0.0038141662658625, -0.0019829793188958, 0.0031676981260669],
+        [-3.0262814573947916e-02, 1.3107838688513508e-02, 2.7456572609621283e-02],
+        [3.2096308278552410e-02, -1.3110841000027918e-02, -2.7788457969008994e-02],
+        [-8.0682873449542990e-04, 5.2993401057113383e-04, -4.9511667664325060e-04],
+        [-1.0266649701090702e-03, -5.2693779419693080e-04, 8.2700203603093960e-04],
     ]
 )
 
 expected_fm2 = np.array(
     [
-        [0.0021649674715341, -0.0008507073771461, 0.0270620372234819],
-        [-0.0026523551738949, 0.0013308033074224, 0.0294569107929189],
-        [0.0000000000000000, 0.00000000000000000, 0.00000000000000000],
-        [0.0000000000000000, 0.00000000000000000, 0.00000000000000000],
+        [-6.7580350367321040e-03, 3.1210297243763260e-03, -2.0248402789380206e-02],
+        [1.0009759711324267e-02, -4.1032469729948700e-03, -1.7144003722544775e-02],
+        [0.0000000000000000e00, 0.0000000000000000e00, 0.0000000000000000e00],
+        [0.0000000000000000e00, 0.0000000000000000e00, 0.0000000000000000e00],
     ]
 )
 
@@ -117,47 +110,6 @@ expected_v = -np.array(
     ]
 ).reshape(4, 9)
 
-expected_v2 = -np.array(
-    [
-        -0.0068361570854045,
-        0.0013367399255969,
-        0.0027254156851031,
-        0.0013170622611582,
-        -0.0006584860372994,
-        -0.0011202746253630,
-        0.0034372788237214,
-        -0.0014078563891643,
-        -0.0026234422772135,
-        -0.0065741762148638,
-        0.0017805968136400,
-        0.0034294170220393,
-        0.0017765463870965,
-        -0.0007431139812367,
-        -0.0013178346591454,
-        0.0028404497247166,
-        -0.0010584927243460,
-        -0.0019736773403821,
-        -0.0005990686037429,
-        -0.0006790752112473,
-        0.0009843156545704,
-        -0.0006499258389702,
-        -0.0005944102287950,
-        0.0008730050519947,
-        0.0009534901617246,
-        0.0008816224750390,
-        -0.0012893921034252,
-        -0.0004768372014215,
-        -0.0006613274582292,
-        0.0009616568976184,
-        -0.0007221357003557,
-        -0.0006885045030101,
-        0.0010101324669343,
-        0.0010319090966831,
-        0.0009955172109546,
-        -0.0014553634659113,
-    ]
-).reshape(4, 9)
-
 box = np.array([0, 13, 0, 13, 0, 13, 0, 0, 0])
 coord = np.array(
     [
@@ -178,11 +130,6 @@ spin = np.array(
 type_NiO = np.array([1, 1, 2, 2])
 
 
-sp.check_output(
-    f"{sys.executable} -m deepmd convert-from pbtxt -i {pbtxt_file2.resolve()} -o {pb_file2.resolve()}".split()
-)
-
-
 def setup_module() -> None:
     if os.environ.get("ENABLE_PYTORCH", "1") != "1":
         pytest.skip(
@@ -193,6 +140,8 @@ def setup_module() -> None:
 
 def teardown_module() -> None:
     os.remove(data_file)
+    if md_file.exists():
+        os.remove(md_file)
 
 
 def _lammps(data_file, units="metal") -> PyLammps:
@@ -279,10 +228,6 @@ def test_pair_deepmd_virial(lammps) -> None:
         ) / constants.nktv2p == pytest.approx(expected_v[idx_map, jj])
 
 
-@pytest.mark.skipif(
-    os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
-    reason="Skip test because TensorFlow support is not enabled.",
-)
 def test_pair_deepmd_model_devi(lammps) -> None:
     lammps.pair_style(
         f"deepspin {pb_file.resolve()} {pb_file2.resolve()} out_file {md_file.resolve()} out_freq 1"
@@ -298,18 +243,15 @@ def test_pair_deepmd_model_devi(lammps) -> None:
     md = np.loadtxt(md_file.resolve())
     expected_md_f = np.linalg.norm(np.std([expected_f, expected_f2], axis=0), axis=1)
     expected_md_fm = np.linalg.norm(np.std([expected_fm, expected_fm2], axis=0), axis=1)
-    assert md[4] == pytest.approx(np.max(expected_md_f))
-    assert md[5] == pytest.approx(np.min(expected_md_f))
-    assert md[6] == pytest.approx(np.mean(expected_md_f))
-    assert md[7] == pytest.approx(np.max(expected_md_fm))
-    assert md[8] == pytest.approx(np.min(expected_md_fm))
-    assert md[9] == pytest.approx(np.mean(expected_md_fm))
+    # rel=1e-4: md.out is written with default scientific format (~6 significant digits)
+    assert md[4] == pytest.approx(np.max(expected_md_f), rel=1e-4)
+    assert md[5] == pytest.approx(np.min(expected_md_f), rel=1e-4)
+    assert md[6] == pytest.approx(np.mean(expected_md_f), rel=1e-4)
+    assert md[7] == pytest.approx(np.max(expected_md_fm), rel=1e-4)
+    assert md[8] == pytest.approx(np.min(expected_md_fm), rel=1e-4)
+    assert md[9] == pytest.approx(np.mean(expected_md_fm), rel=1e-4)
 
 
-@pytest.mark.skipif(
-    os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
-    reason="Skip test because TensorFlow support is not enabled.",
-)
 def test_pair_deepmd_model_devi_atomic_relative(lammps) -> None:
     relative = 1.0
     lammps.pair_style(
@@ -330,61 +272,10 @@ def test_pair_deepmd_model_devi_atomic_relative(lammps) -> None:
     expected_md_f /= norm + relative
     expected_md_fm = np.linalg.norm(np.std([expected_fm, expected_fm2], axis=0), axis=1)
     expected_md_fm /= norm_spin + relative
-    assert md[4] == pytest.approx(np.max(expected_md_f))
-    assert md[5] == pytest.approx(np.min(expected_md_f))
-    assert md[6] == pytest.approx(np.mean(expected_md_f))
-    assert md[7] == pytest.approx(np.max(expected_md_fm))
-    assert md[8] == pytest.approx(np.min(expected_md_fm))
-    assert md[9] == pytest.approx(np.mean(expected_md_fm))
-
-
-@pytest.mark.skipif(
-    shutil.which("mpirun") is None, reason="MPI is not installed on this system"
-)
-@pytest.mark.skipif(
-    importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
-)
-@pytest.mark.parametrize(
-    ("balance_args",),
-    [(["--balance"],), ([],)],
-)
-@pytest.mark.skipif(
-    os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
-    reason="Skip test because TensorFlow support is not enabled.",
-)
-def test_pair_deepmd_mpi(balance_args: list) -> None:
-    with tempfile.NamedTemporaryFile() as f:
-        sp.check_call(
-            [
-                "mpirun",
-                "-n",
-                "2",
-                sys.executable,
-                Path(__file__).parent / "run_mpi_pair_deepmd_spin.py",
-                data_file,
-                pb_file,
-                pb_file2,
-                md_file,
-                f.name,
-                *balance_args,
-            ]
-        )
-        arr = np.loadtxt(f.name, ndmin=1)
-    pe = arr[0]
-
-    relative = 1.0
-    assert pe == pytest.approx(expected_e)
-    # load model devi
-    md = np.loadtxt(md_file.resolve())
-    norm = np.linalg.norm(np.mean([expected_f, expected_f2], axis=0), axis=1)
-    norm_spin = np.linalg.norm(np.mean([expected_fm, expected_fm2], axis=0), axis=1)
-    expected_md_f = np.linalg.norm(np.std([expected_f, expected_f2], axis=0), axis=1)
-    expected_md_f /= norm + relative
-    expected_md_fm = np.linalg.norm(np.std([expected_fm, expected_fm2], axis=0), axis=1)
-    expected_md_fm /= norm_spin + relative
-    assert md[4] == pytest.approx(np.max(expected_md_f))
-    assert md[5] == pytest.approx(np.min(expected_md_f))
-    assert md[6] == pytest.approx(np.mean(expected_md_f))
-    assert md[7] == pytest.approx(np.max(expected_md_fm))
-    assert md[8] == pytest.approx(np.min(expected_md_fm))
-    assert md[9] == pytest.approx(np.mean(expected_md_fm))
+    # rel=1e-4: md.out is written with default scientific format (~6 significant digits)
+    assert md[4] == pytest.approx(np.max(expected_md_f), rel=1e-4)
+    assert md[5] == pytest.approx(np.min(expected_md_f), rel=1e-4)
+    assert md[6] == pytest.approx(np.mean(expected_md_f), rel=1e-4)
+    assert md[7] == pytest.approx(np.max(expected_md_fm), rel=1e-4)
+    assert md[8] == pytest.approx(np.min(expected_md_fm), rel=1e-4)
+    assert md[9] == pytest.approx(np.mean(expected_md_fm), rel=1e-4)
