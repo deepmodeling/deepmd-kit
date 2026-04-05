@@ -3,7 +3,7 @@
 ::::{important}
 
 :::{deprecated} v3.2.0
-The official in-tree GROMACS patch has been removed from DeePMD-kit and is no longer maintained.
+The official in-tree GROMACS patch was removed from DeePMD-kit in v3.2.0 and is no longer maintained.
 :::
 
 ::::

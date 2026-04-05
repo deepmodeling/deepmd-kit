@@ -2,12 +2,12 @@
 orphan: true
 ---
 
-# GROMACS patch has been deprecated
+# GROMACS patch was removed from DeePMD-kit
 
 ::::{danger}
 
 :::{deprecated} v3.2.0
-The in-tree GROMACS patch that used to ship with DeePMD-kit is no longer maintained and has been removed from the repository.
+The in-tree GROMACS patch was removed from the DeePMD-kit repository in v3.2.0 and is no longer maintained.
 
 For supported production workflows, use the official [LAMMPS interface](./install-lammps.md).
 

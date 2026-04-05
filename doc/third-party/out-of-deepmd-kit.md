@@ -14,26 +14,24 @@ It is also the first example to the DeePMD-kit [plugin mechanism](../development
 
 ### Third-party GROMACS interface to DeePMD-kit
 
-A third-party GROMACS integration based on the GROMACS Neural Network Potentials (NNPot) infrastructure is reported in [Enabling AI Deep Potentials for Ab Initio-quality Molecular Dynamics Simulations in GROMACS](https://arxiv.org/abs/2602.02234) and maintained outside the DeePMD-kit repository at [HuXioAn/gromacs/tree/deepmd-oneModel](https://github.com/HuXioAn/gromacs/tree/deepmd-oneModel).
+A third-party GROMACS interface to DeePMD-kit is available outside this repository at [HuXioAn/gromacs/tree/deepmd-oneModel](https://github.com/HuXioAn/gromacs/tree/deepmd-oneModel). It is based on the GROMACS Neural Network Potentials (NNPot) infrastructure and is described in [Enabling AI Deep Potentials for Ab Initio-quality Molecular Dynamics Simulations in GROMACS](https://arxiv.org/abs/2602.02234).
 
-According to the paper, this implementation
+According to that implementation and paper, this interface supports
 
-- couples GROMACS NNPot to the DeePMD-kit C++/CUDA inference backend;
-- enables inference for multiple DeePMD model families, including `se_e2_a`, `DPA`, `DPA2`, and `DPA3`;
-- relies on DeePMD-kit's multi-backend support, with the paper demonstrating runs with the PyTorch backend and discussing TensorFlow and JAX support through DeePMD-kit;
-- supports using DeePMD-kit for selected atom groups inside GROMACS NNPot workflows, including hybrid classical/DP simulations;
-- is demonstrated on protein-in-water systems (1YRF, 1UBQ, 3LZM, and 2PTC) on NVIDIA A100 and GH200 GPUs.
+- DeePMD-kit inference through the C++/CUDA backend;
+- multiple DeePMD model families, including `se_e2_a`, `DPA`, `DPA2`, and `DPA3`;
+- hybrid workflows where DeePMD-kit is applied to selected atom groups inside a GROMACS simulation.
 
-The paper shows a workflow where DeePMD-kit provides the short-range interactions for a selected atom group, while the remaining interactions continue to be handled by standard GROMACS force-field terms. In the reported protein-in-water examples, DeePMD-kit is used for the protein internal interactions, while water and protein-water interactions remain classical.
+The reported examples use protein-in-water systems, where DeePMD-kit is applied to the protein internal interactions while water and protein-water interactions remain classical.
 
-The same study also notes current scope limitations:
+Users should also be aware of the current scope reported by the third-party project:
 
-- the benchmarks enable DeePMD inference only in the production MD stage, not in EM/NVT/NPT;
-- the reported implementation uses single-rank inference inside the current GROMACS NNPot design;
-- scalability and domain-decomposed inference remain optimization targets;
+- the published benchmarks enable DeePMD only in the production MD stage, not in EM/NVT/NPT;
+- the reported implementation uses single-rank inference in the current GROMACS NNPot workflow;
+- scalability and domain-decomposed inference are described as future optimization targets;
 - some DPA3 benchmark cases run out of GPU memory on the tested hardware.
 
-This interface is maintained outside DeePMD-kit. Please consult the corresponding third-party repository and paper for build instructions, supported GROMACS versions, and runtime details.
+This interface is maintained outside DeePMD-kit. Please refer to the corresponding third-party repository for installation instructions, supported GROMACS versions, and runtime details.
 
 ### OpenMM plugin for DeePMD-kit
 
