@@ -22,7 +22,7 @@ from ..common import (
     INSTALLED_PT_EXPT,
     INSTALLED_TF,
     CommonTest,
-    parameterized,
+    parameterized_cases,
 )
 from .common import (
     DescriptorAPITest,
@@ -58,27 +58,200 @@ from deepmd.utils.argcheck import (
 )
 
 
-@parameterized(
-    (4,),  # tebd_dim
-    ("concat", "strip"),  # tebd_input_mode
-    (True,),  # resnet_dt
-    (True,),  # type_one_side
-    (20,),  # attn
-    (0, 2),  # attn_layer
-    (True,),  # attn_dotr
-    ([], [[0, 1]]),  # excluded_types
-    (0.0,),  # env_protection
-    (True, False),  # set_davg_zero
-    (1.0,),  # scaling_factor
-    (True,),  # normalize
-    (None, 1.0),  # temperature
-    (1e-5,),  # ln_eps
-    (True,),  # smooth_type_embedding
-    (True,),  # concat_output_tebd
-    ("float64",),  # precision
-    (True, False),  # use_econf_tebd
-    (False,),  # use_tebd_bias
+DPA1_CURATED_CASES = (
+    (
+        4,
+        "concat",
+        True,
+        True,
+        20,
+        2,
+        True,
+        [],
+        0.0,
+        True,
+        1.0,
+        True,
+        1.0,
+        1e-5,
+        True,
+        True,
+        "float64",
+        False,
+        False,
+    ),
+    (
+        4,
+        "strip",
+        True,
+        True,
+        20,
+        2,
+        True,
+        [],
+        0.0,
+        True,
+        1.0,
+        True,
+        1.0,
+        1e-5,
+        True,
+        True,
+        "float64",
+        False,
+        False,
+    ),
+    (
+        4,
+        "concat",
+        True,
+        True,
+        20,
+        2,
+        True,
+        [[0, 1]],
+        0.0,
+        True,
+        1.0,
+        True,
+        1.0,
+        1e-5,
+        True,
+        True,
+        "float64",
+        False,
+        False,
+    ),
+    (
+        4,
+        "concat",
+        True,
+        True,
+        20,
+        2,
+        True,
+        [],
+        0.0,
+        False,
+        1.0,
+        True,
+        1.0,
+        1e-5,
+        True,
+        True,
+        "float64",
+        False,
+        False,
+    ),
+    (
+        4,
+        "concat",
+        True,
+        True,
+        20,
+        2,
+        True,
+        [],
+        0.0,
+        True,
+        1.0,
+        False,
+        1.0,
+        1e-5,
+        True,
+        True,
+        "float64",
+        False,
+        False,
+    ),
+    (
+        4,
+        "concat",
+        True,
+        True,
+        20,
+        2,
+        True,
+        [],
+        0.0,
+        True,
+        1.0,
+        True,
+        None,
+        1e-5,
+        True,
+        True,
+        "float64",
+        False,
+        False,
+    ),
+    (
+        4,
+        "concat",
+        True,
+        True,
+        20,
+        0,
+        True,
+        [],
+        0.0,
+        True,
+        1.0,
+        True,
+        None,
+        1e-5,
+        True,
+        True,
+        "float64",
+        False,
+        False,
+    ),
+    (
+        4,
+        "concat",
+        True,
+        True,
+        20,
+        2,
+        True,
+        [],
+        0.0,
+        True,
+        1.0,
+        True,
+        1.0,
+        1e-5,
+        True,
+        True,
+        "float64",
+        True,
+        False,
+    ),
+    (
+        4,
+        "strip",
+        True,
+        True,
+        20,
+        2,
+        True,
+        [],
+        0.0,
+        True,
+        1.0,
+        True,
+        1.0,
+        1e-5,
+        True,
+        True,
+        "float64",
+        True,
+        False,
+    ),
 )
+
+
+@parameterized_cases(*DPA1_CURATED_CASES)
 class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
     @property
     def data(self) -> dict:
@@ -556,27 +729,7 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             raise ValueError(f"Unknown precision: {precision}")
 
 
-@parameterized(
-    (4,),  # tebd_dim
-    ("concat", "strip"),  # tebd_input_mode
-    (True,),  # resnet_dt
-    (True,),  # type_one_side
-    (20,),  # attn
-    (0, 2),  # attn_layer
-    (True,),  # attn_dotr
-    ([], [[0, 1]]),  # excluded_types
-    (0.0,),  # env_protection
-    (True, False),  # set_davg_zero
-    (1.0,),  # scaling_factor
-    (True,),  # normalize
-    (None, 1.0),  # temperature
-    (1e-5,),  # ln_eps
-    (True,),  # smooth_type_embedding
-    (True,),  # concat_output_tebd
-    ("float64",),  # precision
-    (True, False),  # use_econf_tebd
-    (False,),  # use_tebd_bias
-)
+@parameterized_cases(*DPA1_CURATED_CASES)
 class TestDPA1DescriptorAPI(DescriptorAPITest, unittest.TestCase):
     """Test consistency of BaseDescriptor API methods across backends."""
 

@@ -2,6 +2,7 @@
 import inspect
 import itertools
 import os
+import re
 import sys
 import unittest
 from abc import (
@@ -75,7 +76,9 @@ __all__ = [
     "INSTALLED_PT_EXPT",
     "INSTALLED_TF",
     "CommonTest",
-    "CommonTest",
+    "parameterized",
+    "parameterized_cases",
+    "parameterize_func",
 ]
 
 SKIP_FLAG = object()
@@ -670,6 +673,35 @@ class CommonTest(ABC):
             clear_session()
 
 
+def _parameterized_with_cases(full_parameterized: list[tuple]) -> Callable:
+    def decorator(base_class: type):
+        class_module = sys.modules[base_class.__module__].__dict__
+        for pp in full_parameterized:
+
+            class TestClass(base_class):
+                param: ClassVar = pp
+
+            # generate a safe name for the class
+            parts = []
+            for x in pp:
+                s = str(x)
+                # replace non-alnum with underscore, collapse multiple underscores
+                s = re.sub(r'[^a-zA-Z0-9_]', '_', s)
+                s = re.sub(r'_+', '_', s)
+                # remove leading/trailing underscores
+                s = s.strip('_')
+                if s == '':
+                    s = 'empty'
+                parts.append(s)
+            name = f"{base_class.__name__}_{'_'.join(parts)}"
+
+            class_module[name] = TestClass
+        # make unittest module happy by ignoring the original one
+        return object
+
+    return decorator
+
+
 def parameterized(*attrs: tuple, **subblock_attrs: tuple) -> Callable:
     """Parameterized test.
 
@@ -716,21 +748,26 @@ def parameterized(*attrs: tuple, **subblock_attrs: tuple) -> Callable:
             else []
         )
     full_parameterized = global_combine + block_combine
+    return _parameterized_with_cases(full_parameterized)
 
-    def decorator(base_class: type):
-        class_module = sys.modules[base_class.__module__].__dict__
-        for pp in full_parameterized:
 
-            class TestClass(base_class):
-                param: ClassVar = pp
+def parameterized_cases(*cases: tuple) -> Callable:
+    """Parameterized test with explicit case tuples.
 
-            name = f"{base_class.__name__}_{'_'.join(str(x) for x in pp)}"
+    This variant behaves like :func:`parameterized` but takes a curated list of
+    case tuples directly instead of computing their Cartesian product.
 
-            class_module[name] = TestClass
-        # make unittest module happy by ignoring the original one
-        return object
+    Parameters
+    ----------
+    *cases : tuple
+        Explicit case tuples.
 
-    return decorator
+    Returns
+    -------
+    object
+        The decorator.
+    """
+    return _parameterized_with_cases(list(cases))
 
 
 def parameterize_func(
