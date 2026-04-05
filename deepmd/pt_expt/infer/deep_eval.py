@@ -705,6 +705,13 @@ class DeepEval(DeepEvalBackend):
                 dtype=torch.float64,
                 device=DEVICE,
             )
+        elif self.get_dim_aparam() > 0:
+            # Exported models (.pt2/.pte) are compiled with aparam as a
+            # required positional input.  Unlike fparam, there is no default.
+            raise ValueError(
+                f"aparam is required for this model (dim_aparam={self.get_dim_aparam()}) "
+                "but was not provided."
+            )
         else:
             aparam_t = None
 
@@ -842,6 +849,11 @@ class DeepEval(DeepEvalBackend):
                 aparam.reshape(nframes, natoms, self.get_dim_aparam()),
                 dtype=torch.float64,
                 device=DEVICE,
+            )
+        elif self.get_dim_aparam() > 0:
+            raise ValueError(
+                f"aparam is required for this model (dim_aparam={self.get_dim_aparam()}) "
+                "but was not provided."
             )
         else:
             aparam_t = None

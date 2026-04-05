@@ -398,42 +398,68 @@ SPIN_APARAM_CONFIG = copy.deepcopy(SPIN_CONFIG)
 SPIN_APARAM_CONFIG["fitting_net"]["numb_aparam"] = 2
 
 
+@pytest.fixture(scope="module")
+def spin_aparam_model_files():
+    """Create .pt2 and .pte spin model files with aparam."""
+    dp_model = get_model_dp(copy.deepcopy(SPIN_APARAM_CONFIG))
+    model_dict = dp_model.serialize()
+    data = {
+        "model": model_dict,
+        "model_def_script": SPIN_APARAM_CONFIG,
+        "backend": "dpmodel",
+        "software": "deepmd-kit",
+        "version": "3.0.0",
+    }
+    files = {}
+    tmpdir = tempfile.mkdtemp()
+    for ext in (".pt2", ".pte"):
+        path = os.path.join(tmpdir, f"spin_aparam_test{ext}")
+        deserialize_to_file(path, copy.deepcopy(data))
+        files[ext] = path
+    yield files
+    for path in files.values():
+        if os.path.exists(path):
+            os.unlink(path)
+    os.rmdir(tmpdir)
+
+
+@pytest.mark.parametrize("ext", [".pt2", ".pte"])  # model format
 class TestSpinAparam:
-    """Test spin model with aparam at the eager model level.
+    """Test spin model with aparam via DeepPot API (.pt2/.pte)."""
 
-    torch.export currently does not support dynamic nframes with aparam,
-    so we test at the eager pt_expt model level instead of via .pt2/.pte.
-    """
-
-    def test_aparam_takes_effect(self) -> None:
+    def test_aparam_takes_effect(self, spin_aparam_model_files, ext) -> None:
         """Verify that different aparam values produce different outputs."""
-        dp_model = get_model_dp(copy.deepcopy(SPIN_APARAM_CONFIG))
-        pt_model = SpinEnergyModel.deserialize(dp_model.serialize()).to(env.DEVICE)
-        pt_model.eval()
+        from deepmd.infer import (
+            DeepPot,
+        )
 
+        files = spin_aparam_model_files
+        dp = DeepPot(files[ext])
         natoms = len(ATYPE)
-        coord_t = torch.tensor(
-            COORD.reshape(1, natoms, 3), dtype=torch.float64, device=env.DEVICE
-        )
-        coord_t.requires_grad_(True)
-        atype_t = torch.tensor([ATYPE], dtype=torch.int64, device=env.DEVICE)
-        spin_t = torch.tensor(
-            SPIN.reshape(1, natoms, 3), dtype=torch.float64, device=env.DEVICE
-        )
-        box_t = torch.tensor(BOX.reshape(1, 9), dtype=torch.float64, device=env.DEVICE)
 
-        aparam_zero = torch.zeros(1, natoms, 2, dtype=torch.float64, device=env.DEVICE)
-        aparam_nonzero = torch.full(
-            (1, natoms, 2), 0.5, dtype=torch.float64, device=env.DEVICE
+        aparam_zero = np.zeros(natoms * 2, dtype=np.float64)
+        aparam_nonzero = np.full(natoms * 2, 0.5, dtype=np.float64)
+
+        e0, f0, v0, fm0, mm0 = dp.eval(
+            COORD, BOX, ATYPE, atomic=False, spin=SPIN, aparam=aparam_zero
         )
-
-        ret0 = pt_model(coord_t, atype_t, spin_t, box_t, aparam=aparam_zero)
-        ret1 = pt_model(coord_t, atype_t, spin_t, box_t, aparam=aparam_nonzero)
-
-        e0 = ret0["energy"].detach().cpu().numpy()
-        e1 = ret1["energy"].detach().cpu().numpy()
+        e1, f1, v1, fm1, mm1 = dp.eval(
+            COORD, BOX, ATYPE, atomic=False, spin=SPIN, aparam=aparam_nonzero
+        )
 
         # Different aparam must produce different energy
         assert not np.allclose(e0, e1), (
             "Changing aparam did not change output — aparam may be ignored"
         )
+
+    def test_eval_without_aparam_raises(self, spin_aparam_model_files, ext) -> None:
+        """Model with dim_aparam > 0 must raise when aparam not provided."""
+        from deepmd.infer import (
+            DeepPot,
+        )
+
+        files = spin_aparam_model_files
+        dp = DeepPot(files[ext])
+
+        with pytest.raises(ValueError, match="aparam is required"):
+            dp.eval(COORD, BOX, ATYPE, atomic=False, spin=SPIN)

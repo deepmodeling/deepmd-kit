@@ -395,11 +395,26 @@ def _trace_and_export(
     metadata = _collect_metadata(model, is_spin=is_spin)
 
     # 3. Create sample inputs on CPU for tracing
-    # Use nframes=2 so make_fx doesn't specialize on nframes=1
+    # torch.export's duck-sizing unifies dimensions with the same sample value,
+    # so nframes must differ from every other dimension in the sample tensors.
+    # We first build with nframes=2, collect all non-batch dimension sizes,
+    # then rebuild if there is a collision.
     _orig_device = _env.DEVICE
     _env.DEVICE = torch.device("cpu")
     try:
-        sample_inputs = _make_sample_inputs(model, nframes=2, has_spin=is_spin)
+        nframes = 2
+        sample_inputs = _make_sample_inputs(model, nframes=nframes, has_spin=is_spin)
+        # Collect all dimension sizes except dim-0 (nframes) from every tensor
+        other_dims: set[int] = set()
+        for t in sample_inputs:
+            if t is not None:
+                other_dims.update(t.shape[1:])
+        while nframes in other_dims:
+            nframes += 1
+        if nframes != 2:
+            sample_inputs = _make_sample_inputs(
+                model, nframes=nframes, has_spin=is_spin
+            )
     finally:
         _env.DEVICE = _orig_device
 
