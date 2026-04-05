@@ -370,7 +370,9 @@ class DPTabulate(BaseTabulate):
                         matrix,
                         xbar,
                         self.functype,
-                    ) + xp.ones((1, 1), dtype=yy.dtype, device=array_api_compat.device(yy))
+                    ) + xp.ones(
+                        (1, 1), dtype=yy.dtype, device=array_api_compat.device(yy)
+                    )
                     dy2 = unaggregated_dy2_dx_s(
                         yy - xx,
                         dy,
@@ -385,7 +387,9 @@ class DPTabulate(BaseTabulate):
                         matrix,
                         xbar,
                         self.functype,
-                    ) + xp.ones((1, 2), dtype=yy.dtype, device=array_api_compat.device(yy))
+                    ) + xp.ones(
+                        (1, 2), dtype=yy.dtype, device=array_api_compat.device(yy)
+                    )
                     dy2 = unaggregated_dy2_dx_s(
                         yy - tt,
                         dy,
@@ -473,9 +477,7 @@ class DPTabulate(BaseTabulate):
         xp = array_api_compat.array_namespace(x, w, b)
         return self._activation_fn(xp.matmul(x, w) + b)
 
-    def _layer_1(
-        self, x: Any, w: Any, b: Any
-    ) -> tuple[Any, Any]:
+    def _layer_1(self, x: Any, w: Any, b: Any) -> tuple[Any, Any]:
         xp = array_api_compat.array_namespace(x, w, b)
         t = xp.concat([x, x], axis=1)
         return t, self._activation_fn(xp.matmul(x, w) + b) + t
