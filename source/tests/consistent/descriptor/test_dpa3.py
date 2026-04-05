@@ -79,6 +79,7 @@ from deepmd.utils.argcheck import (
     (1,),  # n_multi_edge_message
     ("float64",),  # precision
     (False, True),  # add_chg_spin_ebd
+    (False, True),  # sequential_update
 )
 class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
     @property
@@ -99,6 +100,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             n_multi_edge_message,
             precision,
             add_chg_spin_ebd,
+            sequential_update,
         ) = self.param
         return {
             "ntypes": self.ntypes,
@@ -130,6 +132,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
                     "update_style": "res_residual",
                     "update_residual": 0.1,
                     "update_residual_init": update_residual_init,
+                    "sequential_update": sequential_update,
                 }
             ),
             # kwargs for descriptor
@@ -160,6 +163,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             n_multi_edge_message,
             precision,
             add_chg_spin_ebd,
+            sequential_update,
         ) = self.param
         return CommonTest.skip_pt
 
@@ -181,6 +185,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             n_multi_edge_message,
             precision,
             add_chg_spin_ebd,
+            sequential_update,
         ) = self.param
         return True if add_chg_spin_ebd else CommonTest.skip_pd
 
@@ -202,6 +207,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             n_multi_edge_message,
             precision,
             add_chg_spin_ebd,
+            sequential_update,
         ) = self.param
         return CommonTest.skip_dp
 
@@ -223,6 +229,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             n_multi_edge_message,
             precision,
             add_chg_spin_ebd,
+            sequential_update,
         ) = self.param
         return True
 
@@ -288,6 +295,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             n_multi_edge_message,
             precision,
             add_chg_spin_ebd,
+            sequential_update,
         ) = self.param
         # fparam for charge=5, spin=1 when add_chg_spin_ebd is True
         self.fparam = (
@@ -394,6 +402,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             n_multi_edge_message,
             precision,
             add_chg_spin_ebd,
+            sequential_update,
         ) = self.param
         if precision == "float64":
             return 1e-10
@@ -421,6 +430,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             n_multi_edge_message,
             precision,
             add_chg_spin_ebd,
+            sequential_update,
         ) = self.param
         if precision == "float64":
             return 1e-6  # need to fix in the future, see issue https://github.com/deepmodeling/deepmd-kit/issues/3786
