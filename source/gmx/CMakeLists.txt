@@ -1,3 +1,7 @@
+message(
+  DEPRECATION
+    "The GROMACS plugin is deprecated and will be removed in a future version. "
+    "See https://arxiv.org/abs/2602.02234 for a third-party alternative.")
 message(STATUS "Build GROMACS plugin")
 
 file(GLOB PATCH_VERSIONS patches/*)
