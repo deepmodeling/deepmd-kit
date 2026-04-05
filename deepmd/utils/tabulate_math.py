@@ -258,44 +258,31 @@ class DPTabulate(BaseTabulate):
     r"""Backend-agnostic tabulation using Array API compatible math.
 
     Compress a model by tabulating the embedding-net. The table is composed
-    of fifth-order polynomial coefficients assembled from two sub-tables.
-
-    Parameters
-    ----------
-    descrpt
-        Descriptor of the original model.
-    neuron
-        Number of neurons in each hidden layer of the embedding net.
-    type_one_side
-        Try to build N_types tables. Otherwise, building N_types^2 tables.
-    exclude_types
-        Excluded type pairs with no interaction.
-    activation_fn_name
-        Name of the activation function (e.g. "tanh", "gelu", "relu").
+    of fifth-order polynomial coefficients fitted to the embedding-net output
+    and its derivatives over intervals of the environment matrix.
     """
 
     def __init__(
         self,
         descrpt: Any,
         neuron: list[int],
-        type_one_side: bool = False,
-        exclude_types: list[list[int]] | None = None,
-        activation_fn_name: str = "tanh",
+        type_one_side: bool,
+        exclude_types: list[list[int]] = [],
+        activation_fn: str = "tanh",
+        suffix: str = "",
     ) -> None:
-        exclude_types = [] if exclude_types is None else exclude_types
-        super().__init__(
-            descrpt,
-            neuron,
-            type_one_side,
-            exclude_types,
-        )
-        self._activation_fn = get_activation_fn(activation_fn_name)
-        activation_fn_name = activation_fn_name.lower()
-        if activation_fn_name not in ACTIVATION_TO_FUNCTYPE:
-            raise RuntimeError(f"Unknown activation function: {activation_fn_name}")
-        self.functype = ACTIVATION_TO_FUNCTYPE[activation_fn_name]
+        super().__init__(descrpt, neuron, type_one_side, exclude_types)
 
         self.descrpt_type = self._get_descrpt_type()
+        self.neuron = neuron
+        self.type_one_side = type_one_side
+        self.exclude_types = [tuple(et) for et in exclude_types]
+        self.suffix = suffix
+        self.activation_fn = activation_fn
+        self.functype = ACTIVATION_TO_FUNCTYPE.get(activation_fn, -1)
+        if self.functype == -1:
+            raise ValueError(f"Unsupported activation function: {activation_fn}")
+        self._activation_fn = get_activation_fn(activation_fn)
 
         supported_descrpt_type = ("Atten", "A", "T", "T_TEBD", "R")
         if self.descrpt_type in supported_descrpt_type:
@@ -342,17 +329,21 @@ class DPTabulate(BaseTabulate):
 
     @cached_property
     def _matrix_backend(self) -> dict[str, list[Any]]:
-        return {
+        matrix = {
             layer: [self._backend_asarray(value) for value in values]
             for layer, values in self.matrix.items()
         }
+        self.matrix = None
+        return matrix
 
     @cached_property
     def _bias_backend(self) -> dict[str, list[Any]]:
-        return {
+        bias = {
             layer: [self._backend_asarray(value) for value in values]
             for layer, values in self.bias.items()
         }
+        self.bias = None
+        return bias
 
     def _make_data(self, xx: np.ndarray, idx: int) -> Any:
         """Forward pass through embedding net with derivative computation."""
@@ -561,12 +552,11 @@ class DPTabulate(BaseTabulate):
                         else:
                             result["layer_" + str(layer)].append(np.array([]))
             elif self.descrpt_type == "T":
-                for ii in range(self.ntypes):
-                    for jj in range(ii, self.ntypes):
-                        node = self.embedding_net_nodes[jj * self.ntypes + ii][
-                            "layers"
-                        ][layer - 1]["@variables"][var_name]
-                        result["layer_" + str(layer)].append(node)
+                for ii in range(0, len(self.embedding_net_nodes)):
+                    node = self.embedding_net_nodes[ii]["layers"][layer - 1][
+                        "@variables"
+                    ][var_name]
+                    result["layer_" + str(layer)].append(node)
             elif self.descrpt_type == "T_TEBD":
                 node = self.embedding_net_nodes[0]["layers"][layer - 1]["@variables"][
                     var_name
@@ -588,9 +578,9 @@ class DPTabulate(BaseTabulate):
                             ii // self.ntypes,
                             ii % self.ntypes,
                         ) not in self.exclude_types:
-                            node = self.embedding_net_nodes[
-                                (ii % self.ntypes) * self.ntypes + ii // self.ntypes
-                            ]["layers"][layer - 1]["@variables"][var_name]
+                            node = self.embedding_net_nodes[ii]["layers"][layer - 1][
+                                "@variables"
+                            ][var_name]
                             result["layer_" + str(layer)].append(node)
                         else:
                             result["layer_" + str(layer)].append(np.array([]))
@@ -598,17 +588,8 @@ class DPTabulate(BaseTabulate):
                 raise RuntimeError("Unsupported descriptor")
         return result
 
-    def _get_bias(self) -> Any:
-        return self._get_network_variable("b")
-
-    def _get_matrix(self) -> Any:
+    def _get_matrix(self) -> dict:
         return self._get_network_variable("w")
 
-    def _convert_numpy_to_tensor(self) -> None:
-        """No-op: data stays as numpy arrays."""
-        pass
-
-    @cached_property
-    def _n_all_excluded(self) -> int:
-        """The number of types excluding all types."""
-        return sum(int(self._all_excluded(ii)) for ii in range(0, self.ntypes))
+    def _get_bias(self) -> dict:
+        return self._get_network_variable("b")

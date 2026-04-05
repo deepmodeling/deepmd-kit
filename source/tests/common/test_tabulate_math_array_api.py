@@ -14,7 +14,6 @@ from ..consistent.common import (
 )
 
 if INSTALLED_ARRAY_API_STRICT:
-    from .. import array_api_strict as _array_api_strict  # noqa: F401
     from ..array_api_strict.common import (
         to_array_api_strict_array,
     )
