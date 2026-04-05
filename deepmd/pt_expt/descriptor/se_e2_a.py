@@ -78,8 +78,8 @@ class DescrptSeA(DescrptSeADP):
                 ii = embedding_idx
                 ti = -1
             else:
-                ii = embedding_idx // self.ntypes
                 ti = embedding_idx % self.ntypes
+                ii = embedding_idx // self.ntypes
             if self.type_one_side:
                 net = "filter_-1_net_" + str(ii)
             else:

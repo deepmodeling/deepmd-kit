@@ -710,9 +710,10 @@ class DescrptBlockSeA(DescriptorBlock):
                 ii = embedding_idx
                 ti = -1
             else:
-                # ti: center atom type, ii: neighbor type...
-                ii = embedding_idx // self.ntypes
+                # NetworkCollection flattens tuple (ti, ii) as ti + ntypes * ii.
+                # ti: center atom type, ii: neighbor type.
                 ti = embedding_idx % self.ntypes
+                ii = embedding_idx // self.ntypes
             if self.type_one_side:
                 net = "filter_-1_net_" + str(ii)
             else:
