@@ -281,7 +281,7 @@ class DPTabulate(BaseTabulate):
         self.descrpt_type = self._get_descrpt_type()
         self.neuron = neuron
         self.type_one_side = type_one_side
-        self.exclude_types = [tuple(et) for et in exclude_types]
+        self.exclude_types = exclude_types
         self.suffix = suffix
         self.activation_fn = activation_fn
         self.functype = ACTIVATION_TO_FUNCTYPE.get(activation_fn, -1)
