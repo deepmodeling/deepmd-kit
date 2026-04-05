@@ -361,6 +361,16 @@ class DeepEvalBackend(ABC):
             The model module implemented by the deep learning framework.
         """
 
+    @abstractmethod
+    def serialize(self) -> dict[str, Any]:
+        """Serialize the loaded model to a backend-unified dictionary.
+
+        Returns
+        -------
+        dict
+            Serialized model data. Must include key ``"model"``.
+        """
+
 
 class DeepEval(ABC):
     """High-level Deep Evaluator interface.
@@ -404,6 +414,7 @@ class DeepEval(ABC):
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
         **kwargs: Any,
     ) -> None:
+        self.model_file = model_file
         self.deep_eval = DeepEvalBackend(
             model_file,
             self.output_def,
@@ -419,6 +430,10 @@ class DeepEval(ABC):
     @abstractmethod
     def output_def(self) -> ModelOutputDef:
         """Returns the output variable definitions."""
+
+    def serialize(self) -> dict[str, Any]:
+        """Serialize the loaded model to a backend-unified dictionary."""
+        return self.deep_eval.serialize()
 
     def get_rcut(self) -> float:
         """Get the cutoff radius of this model."""

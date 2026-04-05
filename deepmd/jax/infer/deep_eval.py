@@ -47,6 +47,9 @@ from deepmd.infer.deep_wfc import (
 from deepmd.jax.common import (
     to_jax_array,
 )
+from deepmd.jax.env import (
+    jax,
+)
 from deepmd.jax.model.hlo import (
     HLO,
 )
@@ -186,6 +189,19 @@ class DeepEval(DeepEvalBackend):
     def get_ntypes_spin(self) -> int:
         """Get the number of spin atom types of this model."""
         return 0
+
+    def serialize(self) -> dict[str, Any]:
+        model = self.dp
+        data: dict[str, Any] = {
+            "backend": "JAX",
+            "jax_version": jax.__version__,
+            "model": model.serialize(),
+            "model_def_script": json.loads(model.get_model_def_script()),
+            "@variables": {},
+        }
+        if model.get_min_nbor_dist() is not None:
+            data["@variables"]["min_nbor_dist"] = model.get_min_nbor_dist()
+        return data
 
     def eval(
         self,
