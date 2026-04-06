@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "DeepPot.h"
+#include "DeepPotPTExpt.h"
 #include "test_utils.h"
 
 template <class VALUETYPE>
@@ -116,13 +117,13 @@ class TestInferDeepPotAFparamAparamNFramesPtExpt : public ::testing::Test {
   static deepmd::DeepPot dp;
 
   static void SetUpTestSuite() {
-#ifdef BUILD_PYTORCH
+#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
     dp.init("../../tests/infer/fparam_aparam.pt2");
 #endif
   }
 
   void SetUp() override {
-#ifndef BUILD_PYTORCH
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
 

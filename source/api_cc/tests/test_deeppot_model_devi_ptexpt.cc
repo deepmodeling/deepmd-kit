@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "DeepPot.h"
+#include "DeepPotPTExpt.h"
 #include "neighbor_list.h"
 #include "test_utils.h"
 
@@ -37,7 +38,7 @@ class TestInferDeepPotModeDeviPtExpt : public ::testing::Test {
   static deepmd::DeepPotModelDevi dp_md;
 
   static void SetUpTestSuite() {
-#ifdef BUILD_PYTORCH
+#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
     dp0.init("../../tests/infer/model_devi_md0.pt2");
     dp1.init("../../tests/infer/model_devi_md1.pt2");
     dp_md.init(
@@ -47,7 +48,7 @@ class TestInferDeepPotModeDeviPtExpt : public ::testing::Test {
   }
 
   void SetUp() override {
-#ifndef BUILD_PYTORCH
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
     natoms = coord.size() / 3;
@@ -431,7 +432,7 @@ class TestInferDeepPotModeDeviPtExptPrecomputed : public ::testing::Test {
   static deepmd::DeepPotModelDevi dp_md;
 
   static void SetUpTestSuite() {
-#ifdef BUILD_PYTORCH
+#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
     dp0.init("../../tests/infer/model_devi_md0.pt2");
     dp1.init("../../tests/infer/model_devi_md1.pt2");
     dp_md.init(
@@ -441,7 +442,7 @@ class TestInferDeepPotModeDeviPtExptPrecomputed : public ::testing::Test {
   }
 
   void SetUp() override {
-#ifndef BUILD_PYTORCH
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
     natoms = coord.size() / 3;

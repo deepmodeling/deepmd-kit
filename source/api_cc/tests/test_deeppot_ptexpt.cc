@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "DeepPot.h"
+#include "DeepPotPTExpt.h"
 #include "neighbor_list.h"
 #include "test_utils.h"
 
@@ -57,13 +58,13 @@ class TestInferDeepPotAPtExpt : public ::testing::Test {
   static deepmd::DeepPot dp;
 
   static void SetUpTestSuite() {
-#ifdef BUILD_PYTORCH
+#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
     dp.init("../../tests/infer/deeppot_sea.pt2");
 #endif
   }
 
   void SetUp() override {
-#ifndef BUILD_PYTORCH
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
 
@@ -461,13 +462,13 @@ class TestInferDeepPotAPtExptNoPbc : public ::testing::Test {
   static deepmd::DeepPot dp;
 
   static void SetUpTestSuite() {
-#ifdef BUILD_PYTORCH
+#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
     dp.init("../../tests/infer/deeppot_sea.pt2");
 #endif
   }
 
   void SetUp() override {
-#ifndef BUILD_PYTORCH
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
 
@@ -636,7 +637,7 @@ TYPED_TEST(TestInferDeepPotAPtExptNoPbc, cpu_build_nlist_nframes) {
 // ========== Parser / metadata coverage tests ==========
 
 TEST(TestDeepPotPTExptParser, load_nonexistent_file) {
-#ifndef BUILD_PYTORCH
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
   GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
   deepmd::DeepPot dp;
@@ -644,7 +645,7 @@ TEST(TestDeepPotPTExptParser, load_nonexistent_file) {
 }
 
 TEST(TestDeepPotPTExptParser, load_invalid_zip) {
-#ifndef BUILD_PYTORCH
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
   GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
   std::string tmpfile = "test_invalid.pt2";
@@ -659,7 +660,7 @@ TEST(TestDeepPotPTExptParser, load_invalid_zip) {
 }
 
 TEST(TestDeepPotPTExptParser, load_tiny_file) {
-#ifndef BUILD_PYTORCH
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
   GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
   std::string tmpfile = "test_tiny.pt2";
@@ -679,12 +680,12 @@ class TestDeepPotPTExptMetadata : public ::testing::Test {
  protected:
   static deepmd::DeepPot dp;
   static void SetUpTestSuite() {
-#ifdef BUILD_PYTORCH
+#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
     dp.init("../../tests/infer/deeppot_sea.pt2");
 #endif
   }
   void SetUp() override {
-#ifndef BUILD_PYTORCH
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
   };
@@ -729,12 +730,12 @@ class TestDeepPotPTExptJsonTypes : public ::testing::Test {
  protected:
   static deepmd::DeepPot dp;
   static void SetUpTestSuite() {
-#ifdef BUILD_PYTORCH
+#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
     dp.init("../../tests/infer/fparam_aparam.pt2");
 #endif
   }
   void SetUp() override {
-#ifndef BUILD_PYTORCH
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
   };
@@ -772,12 +773,12 @@ class TestDeepPotPTExptJsonDefaults : public ::testing::Test {
  protected:
   static deepmd::DeepPot dp;
   static void SetUpTestSuite() {
-#ifdef BUILD_PYTORCH
+#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
     dp.init("../../tests/infer/fparam_aparam_default.pt2");
 #endif
   }
   void SetUp() override {
-#ifndef BUILD_PYTORCH
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
   };
