@@ -103,6 +103,8 @@ class TestInferDeepPotDpa1PtExpt : public ::testing::Test {
   };
 
   void TearDown() override {};
+
+  static void TearDownTestSuite() { dp = deepmd::DeepPot(); }
 };
 
 template <class VALUETYPE>
@@ -257,6 +259,8 @@ class TestInferDeepPotDpa1PtExptNoPbc : public ::testing::Test {
   };
 
   void TearDown() override {};
+
+  static void TearDownTestSuite() { dp = deepmd::DeepPot(); }
 };
 
 template <class VALUETYPE>

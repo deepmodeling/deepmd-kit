@@ -148,6 +148,8 @@ class TestInferDeepPotAFparamAparamNFramesPtExpt : public ::testing::Test {
   };
 
   void TearDown() override {};
+
+  static void TearDownTestSuite() { dp = deepmd::DeepPot(); }
 };
 
 template <class VALUETYPE>

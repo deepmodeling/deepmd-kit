@@ -85,6 +85,8 @@ class TestInferDeepPotAPtExpt : public ::testing::Test {
   };
 
   void TearDown() override {};
+
+  static void TearDownTestSuite() { dp = deepmd::DeepPot(); }
 };
 
 template <class VALUETYPE>
@@ -489,6 +491,8 @@ class TestInferDeepPotAPtExptNoPbc : public ::testing::Test {
   };
 
   void TearDown() override {};
+
+  static void TearDownTestSuite() { dp = deepmd::DeepPot(); }
 };
 
 template <class VALUETYPE>
@@ -690,6 +694,8 @@ class TestDeepPotPTExptMetadata : public ::testing::Test {
 #endif
   };
   void TearDown() override {};
+
+  static void TearDownTestSuite() { dp = deepmd::DeepPot(); }
 };
 
 template <class VALUETYPE>
@@ -740,6 +746,8 @@ class TestDeepPotPTExptJsonTypes : public ::testing::Test {
 #endif
   };
   void TearDown() override {};
+
+  static void TearDownTestSuite() { dp = deepmd::DeepPot(); }
 };
 
 template <class VALUETYPE>
@@ -783,6 +791,8 @@ class TestDeepPotPTExptJsonDefaults : public ::testing::Test {
 #endif
   };
   void TearDown() override {};
+
+  static void TearDownTestSuite() { dp = deepmd::DeepPot(); }
 };
 
 template <class VALUETYPE>

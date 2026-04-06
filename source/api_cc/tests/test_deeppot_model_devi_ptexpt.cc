@@ -55,6 +55,12 @@ class TestInferDeepPotModeDeviPtExpt : public ::testing::Test {
   };
 
   void TearDown() override {};
+
+  static void TearDownTestSuite() {
+    dp0 = deepmd::DeepPot();
+    dp1 = deepmd::DeepPot();
+    dp_md = deepmd::DeepPotModelDevi();
+  }
 };
 
 template <class VALUETYPE>
@@ -449,6 +455,12 @@ class TestInferDeepPotModeDeviPtExptPrecomputed : public ::testing::Test {
   };
 
   void TearDown() override {};
+
+  static void TearDownTestSuite() {
+    dp0 = deepmd::DeepPot();
+    dp1 = deepmd::DeepPot();
+    dp_md = deepmd::DeepPotModelDevi();
+  }
 };
 
 template <class VALUETYPE>
