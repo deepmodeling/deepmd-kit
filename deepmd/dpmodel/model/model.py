@@ -104,13 +104,14 @@ def get_standard_model(data: dict) -> EnergyModel:
     else:
         raise RuntimeError(f"Unknown fitting type: {fitting_net_type}")
 
-    model = modelcls(
-        descriptor=descriptor,
-        fitting=fitting,
-        type_map=data["type_map"],
-        atom_exclude_types=atom_exclude_types,
-        pair_exclude_types=pair_exclude_types,
-    )
+    model_kwargs: dict = {
+        "descriptor": descriptor,
+        "fitting": fitting,
+        "type_map": data["type_map"],
+        "atom_exclude_types": atom_exclude_types,
+        "pair_exclude_types": pair_exclude_types,
+    }
+    model = modelcls(**model_kwargs)
     return model
 
 
