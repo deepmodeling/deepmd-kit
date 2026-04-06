@@ -138,7 +138,7 @@ except AttributeError:
 # \3: layer index
 # The rest: types of neighbor atoms
 # IMPORTANT: the order is critical to match the pattern
-EMBEDDING_NET_PATTERN = str(
+EMBEDDING_NET_PATTERN = (
     r"filter_type_(\d+)/(matrix)_(\d+)_(\d+)|"
     r"filter_type_(\d+)/(bias)_(\d+)_(\d+)|"
     r"filter_type_(\d+)/(idt)_(\d+)_(\d+)|"
@@ -182,13 +182,13 @@ FITTING_NET_PATTERN = str(
 # subpatterns:
 # \1: weight name
 # \2: layer index
-TYPE_EMBEDDING_PATTERN = str(
+TYPE_EMBEDDING_PATTERN = (
     r"type_embed_net/(matrix)_(\d+)|"
     r"type_embed_net/(bias)_(\d+)|"
     r"type_embed_net/(idt)_(\d+)|"
 )[:-1]
 
-ATTENTION_LAYER_PATTERN = str(
+ATTENTION_LAYER_PATTERN = (
     r"attention_layer_(\d+)/(c_query)/(matrix)|"
     r"attention_layer_(\d+)/(c_query)/(bias)|"
     r"attention_layer_(\d+)/(c_key)/(matrix)|"
@@ -207,7 +207,7 @@ TRANSFER_PATTERN = (
     EMBEDDING_NET_PATTERN
     + FITTING_NET_PATTERN
     + TYPE_EMBEDDING_PATTERN
-    + str(
+    + (
         r"descrpt_attr/t_avg|"
         r"descrpt_attr/t_std|"
         r"fitting_attr/t_fparam_avg|"
