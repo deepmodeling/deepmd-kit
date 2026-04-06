@@ -309,7 +309,6 @@ class TestLmdbDataReader(unittest.TestCase):
         self.assertTrue(is_lmdb(self._lmdb_path))
         self.assertTrue(is_lmdb("something.lmdb"))
         self.assertFalse(is_lmdb("/some/npy/system"))
-        self.assertFalse(is_lmdb(["list", "of", "systems"]))
 
     def test_lmdb_test_data(self):
         td = LmdbTestData(self._lmdb_path, type_map=self._type_map, shuffle_test=False)

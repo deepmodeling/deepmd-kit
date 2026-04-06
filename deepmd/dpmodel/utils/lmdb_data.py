@@ -146,11 +146,9 @@ def _remap_keys(frame: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def is_lmdb(systems: Any) -> bool:
+def is_lmdb(systems: str) -> bool:
     """Check if systems points to an LMDB dataset."""
-    if not isinstance(systems, str):
-        return False
-    return systems.endswith(".lmdb") or Path(systems, "data.mdb").exists()
+    return systems.endswith(".lmdb") or Path(systems, "data.mdb").is_file()
 
 
 def _parse_metadata(meta: dict) -> tuple[int, str, list[int]]:

@@ -13,7 +13,6 @@ from typing import (
 import numpy as np
 
 from deepmd.common import (
-    expand_sys_str,
     j_loader,
 )
 from deepmd.dpmodel.utils.lmdb_data import (
@@ -148,11 +147,8 @@ def test(
             systems = str((root / Path(systems)).resolve())
         else:
             systems = [str((root / Path(ss)).resolve()) for ss in systems]
-        if is_lmdb(systems):
-            all_sys = [systems]
-        else:
-            patterns = data_params.get("rglob_patterns", None)
-            all_sys = process_systems(systems, patterns=patterns)
+        patterns = data_params.get("rglob_patterns", None)
+        all_sys = process_systems(systems, patterns=patterns)
     elif valid_json is not None:
         jdata = j_loader(valid_json)
         jdata = update_deepmd_input(jdata)
@@ -165,19 +161,13 @@ def test(
             systems = str((root / Path(systems)).resolve())
         else:
             systems = [str((root / Path(ss)).resolve()) for ss in systems]
-        if is_lmdb(systems):
-            all_sys = [systems]
-        else:
-            patterns = data_params.get("rglob_patterns", None)
-            all_sys = process_systems(systems, patterns=patterns)
+        patterns = data_params.get("rglob_patterns", None)
+        all_sys = process_systems(systems, patterns=patterns)
     elif datafile is not None:
         with open(datafile) as datalist:
             all_sys = datalist.read().splitlines()
     elif system is not None:
-        if is_lmdb(system):
-            all_sys = [system]
-        else:
-            all_sys = expand_sys_str(system)
+        all_sys = process_systems(system)
     else:
         raise RuntimeError("No data source specified for testing")
 
