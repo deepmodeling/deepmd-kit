@@ -6,6 +6,7 @@ import numpy as np
 from deepmd.dpmodel.array_api import (
     Array,
     xp_take_along_axis,
+    xp_take_first_n,
 )
 
 
@@ -131,18 +132,22 @@ class PairExcludeMask:
             ],
             axis=-1,
         )
-        type_i = xp.reshape(atype_ext[:, :nloc], (nf, nloc)) * (self.ntypes + 1)
-        # nf x nloc x nnei
-        index = xp.reshape(
-            xp.where(nlist == -1, xp.full_like(nlist, nall), nlist), (nf, nloc * nnei)
+        type_i = xp.reshape(xp_take_first_n(atype_ext, 1, nloc), (nf, nloc)) * (
+            self.ntypes + 1
         )
-        type_j = xp_take_along_axis(ae, index, axis=1)
+        # Map -1 entries to nall (the virtual atom index in ae)
+        nlist_for_type = xp.where(nlist == -1, xp.full_like(nlist, nall), nlist)
+        # Gather neighbor types using xp_take_along_axis along axis=1.
+        # This avoids flat (nf*(nall+1),) indexing that creates Ne(nall, nloc)
+        # constraints in torch.export, breaking NoPbc (nall == nloc).
+        nlist_for_gather = xp.reshape(nlist_for_type, (nf, nloc * nnei))
+        type_j = xp_take_along_axis(ae, nlist_for_gather, axis=1)
         type_j = xp.reshape(type_j, (nf, nloc, nnei))
         type_ij = type_i[:, :, None] + type_j
-        # nf x (nloc x nnei)
-        type_ij = xp.reshape(type_ij, (nf, nloc * nnei))
+        # (nf * nloc * nnei,)
+        type_ij_flat = xp.reshape(type_ij, (-1,))
         mask = xp.reshape(
-            xp.take(self.type_mask[...], xp.reshape(type_ij, (-1,))),
+            xp.take(self.type_mask[...], type_ij_flat),
             (nf, nloc, nnei),
         )
         return mask

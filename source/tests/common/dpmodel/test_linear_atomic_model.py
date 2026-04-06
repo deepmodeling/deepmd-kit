@@ -171,5 +171,83 @@ class TestIntegration(unittest.TestCase):
         )
 
 
+class TestLinearWeights(unittest.TestCase):
+    """Test that the weights parameter is honored by LinearEnergyAtomicModel."""
+
+    def setUp(self) -> None:
+        from deepmd.dpmodel.atomic_model.linear_atomic_model import (
+            LinearEnergyAtomicModel,
+        )
+
+        self.nloc = 3
+        self.nall = 4
+        self.coord_ext = np.array(
+            [
+                [0, 0, 0],
+                [0, 1, 0],
+                [0, 0, 1],
+                [0, -2, 0],
+            ],
+            dtype=np.float64,
+        ).reshape([1, self.nall * 3])
+        self.atype_ext = np.array([0, 0, 1, 0], dtype=int).reshape([1, self.nall])
+        sel = [5, 2]
+        self.nlist = np.array(
+            [
+                [1, 3, -1, -1, -1, 2, -1],
+                [0, -1, -1, -1, -1, 2, -1],
+                [0, 1, -1, -1, -1, -1, -1],
+            ],
+            dtype=int,
+        ).reshape([1, self.nloc, sum(sel)])
+        rcut_smth = 0.4
+        rcut = 2.2
+        nt = 2
+
+        ds1 = DescrptDPA1(rcut, rcut_smth, sum(sel), nt, seed=1)
+        ft1 = InvarFitting(
+            "energy", nt, ds1.get_dim_out(), 1, mixed_types=ds1.mixed_types(), seed=1
+        )
+        ds2 = DescrptDPA1(rcut, rcut_smth, sum(sel), nt, seed=2)
+        ft2 = InvarFitting(
+            "energy", nt, ds2.get_dim_out(), 1, mixed_types=ds2.mixed_types(), seed=2
+        )
+
+        type_map = ["foo", "bar"]
+        m1 = DPAtomicModel(ds1, ft1, type_map=type_map)
+        m2 = DPAtomicModel(ds2, ft2, type_map=type_map)
+
+        # Get individual sub-model predictions for reference
+        ret1 = m1.forward_atomic(self.coord_ext, self.atype_ext, self.nlist)
+        ret2 = m2.forward_atomic(self.coord_ext, self.atype_ext, self.nlist)
+        self.ener1 = ret1["energy"]
+        self.ener2 = ret2["energy"]
+
+        self.md_mean = LinearEnergyAtomicModel(
+            models=[m1, m2], type_map=type_map, weights="mean"
+        )
+        self.md_sum = LinearEnergyAtomicModel(
+            models=[m1, m2], type_map=type_map, weights="sum"
+        )
+        self.md_custom = LinearEnergyAtomicModel(
+            models=[m1, m2], type_map=type_map, weights=[0.3, 0.7]
+        )
+
+    def test_mean_weights(self) -> None:
+        ret = self.md_mean.forward_atomic(self.coord_ext, self.atype_ext, self.nlist)
+        expected = 0.5 * self.ener1 + 0.5 * self.ener2
+        np.testing.assert_allclose(ret["energy"], expected)
+
+    def test_sum_weights(self) -> None:
+        ret = self.md_sum.forward_atomic(self.coord_ext, self.atype_ext, self.nlist)
+        expected = self.ener1 + self.ener2
+        np.testing.assert_allclose(ret["energy"], expected)
+
+    def test_custom_weights(self) -> None:
+        ret = self.md_custom.forward_atomic(self.coord_ext, self.atype_ext, self.nlist)
+        expected = 0.3 * self.ener1 + 0.7 * self.ener2
+        np.testing.assert_allclose(ret["energy"], expected)
+
+
 if __name__ == "__main__":
     unittest.main(warnings="ignore")

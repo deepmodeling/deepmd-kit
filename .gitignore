@@ -62,6 +62,8 @@ test_dp_test_*.out
 
 # Training and model output files
 *.pth
+*.pte
+*.pt2
 *.ckpt*
 checkpoint
 lcurve.out

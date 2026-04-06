@@ -170,7 +170,18 @@ class DeepEval(DeepEvalBackend):
             if not self.input_param.get("hessian_mode") and not no_jit:
                 model = torch.jit.script(model)
             self.dp = ModelWrapper(model)
-            self.dp.load_state_dict(state_dict)
+            missing, unexpected = self.dp.load_state_dict(state_dict, strict=False)
+            if missing:
+                log.warning(
+                    "Checkpoint loaded with missing keys (likely from an older "
+                    "version): %s",
+                    missing,
+                )
+            if unexpected:
+                log.warning(
+                    "Checkpoint loaded with unexpected keys: %s",
+                    unexpected,
+                )
         elif str(self.model_path).endswith(".pth"):
             extra_files = {"data_modifier.pth": ""}
             model = torch.jit.load(

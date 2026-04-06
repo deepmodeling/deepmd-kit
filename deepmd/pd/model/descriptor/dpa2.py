@@ -643,10 +643,11 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
     def deserialize(cls, data: dict) -> "DescrptDPA2":
         data = data.copy()
         version = data.pop("@version")
-        check_version_compatibility(version, 3, 1)
+        check_version_compatibility(version, 4, 1)
         data.pop("@class")
         data.pop("type")
         repinit_variable = data.pop("repinit_variable").copy()
+        repinit_variable.pop("compress", None)  # pd uses state_dict for compression
         repformers_variable = data.pop("repformers_variable").copy()
         repinit_three_body_variable = (
             data.pop("repinit_three_body_variable").copy()
@@ -732,7 +733,14 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         nlist: paddle.Tensor,
         mapping: paddle.Tensor | None = None,
         comm_dict: list[paddle.Tensor] | None = None,
-    ) -> paddle.Tensor:
+        fparam: paddle.Tensor | None = None,
+    ) -> tuple[
+        paddle.Tensor,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+    ]:
         """Compute the descriptor.
 
         Parameters

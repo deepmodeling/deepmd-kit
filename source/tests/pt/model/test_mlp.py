@@ -24,17 +24,9 @@ from deepmd.pt.utils.env import (
     PRECISION_DICT,
 )
 
-
-def get_tols(prec):
-    if prec in ["single", "float32"]:
-        rtol, atol = 0.0, 1e-4
-    elif prec in ["double", "float64"]:
-        rtol, atol = 0.0, 1e-12
-    # elif prec in ["half", "float16"]:
-    #   rtol, atol=1e-2, 0
-    else:
-        raise ValueError(f"unknown prec {prec}")
-    return rtol, atol
+from ...common.test_mixins import (
+    get_tols,
+)
 
 
 class TestMLPLayer(unittest.TestCase):

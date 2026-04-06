@@ -16,7 +16,6 @@ from deepmd.dpmodel.model.transform_output import (
     communicate_extended_output,
 )
 from deepmd.dpmodel.output_def import (
-    FittingOutputDef,
     ModelOutputDef,
     OutputVariableCategory,
     OutputVariableDef,
@@ -59,38 +58,16 @@ if TYPE_CHECKING:
     import ase.neighborlist
 
 
-def _reconstruct_model_output_def(metadata: dict) -> ModelOutputDef:
-    """Reconstruct ModelOutputDef from stored fitting_output_defs metadata."""
-    var_defs = []
-    for vd in metadata["fitting_output_defs"]:
-        var_defs.append(
-            OutputVariableDef(
-                name=vd["name"],
-                shape=vd["shape"],
-                reducible=vd["reducible"],
-                r_differentiable=vd["r_differentiable"],
-                c_differentiable=vd["c_differentiable"],
-                atomic=vd["atomic"],
-                category=vd["category"],
-                r_hessian=vd["r_hessian"],
-                magnetic=vd["magnetic"],
-                intensive=vd["intensive"],
-            )
-        )
-    fitting_output_def = FittingOutputDef(var_defs)
-    return ModelOutputDef(fitting_output_def)
-
-
 class DeepEval(DeepEvalBackend):
     """PyTorch Exportable backend implementation of DeepEval.
 
-    Loads a .pte file containing a torch.export-ed model and evaluates
+    Loads a .pte or .pt2 file containing a torch.export-ed model and evaluates
     it using pre-built neighbor lists.
 
     Parameters
     ----------
     model_file : Path
-        The name of the .pte model file.
+        The name of the .pte or .pt2 model file.
     output_def : ModelOutputDef
         The output definition of the model.
     *args : list
@@ -117,19 +94,12 @@ class DeepEval(DeepEvalBackend):
         self.output_def = output_def
         self.model_path = model_file
         self.neighbor_list = neighbor_list
+        self._is_pt2 = model_file.endswith(".pt2")
 
-        # Load the exported program with metadata
-        extra_files = {"model_def_script.json": ""}
-        exported = torch.export.load(model_file, extra_files=extra_files)
-        self.exported_module = exported.module()
-
-        # Parse metadata
-        self.metadata = json.loads(extra_files["model_def_script.json"])
-        self.rcut = self.metadata["rcut"]
-        self.type_map = self.metadata["type_map"]
-
-        # Reconstruct the model output def from stored fitting output defs
-        self._model_output_def = _reconstruct_model_output_def(self.metadata)
+        if self._is_pt2:
+            self._load_pt2(model_file)
+        else:
+            self._load_pte(model_file)
 
         if isinstance(auto_batch_size, bool):
             if auto_batch_size:
@@ -142,6 +112,69 @@ class DeepEval(DeepEvalBackend):
             self.auto_batch_size = auto_batch_size
         else:
             raise TypeError("auto_batch_size should be bool, int, or AutoBatchSize")
+
+    def _init_from_model_json(self, model_json_str: str) -> None:
+        """Deserialize model.json and derive model API from the dpmodel instance."""
+        from deepmd.pt_expt.model.model import (
+            BaseModel,
+        )
+        from deepmd.pt_expt.utils.serialization import (
+            _json_to_numpy,
+        )
+
+        model_dict = json.loads(model_json_str)
+        model_dict = _json_to_numpy(model_dict)
+        self._dpmodel = BaseModel.deserialize(model_dict["model"])
+        self.rcut = self._dpmodel.get_rcut()
+        self.type_map = self._dpmodel.get_type_map()
+        self._model_output_def = ModelOutputDef(self._dpmodel.atomic_output_def())
+
+    def _load_pte(self, model_file: str) -> None:
+        """Load a .pte (torch.export) model file."""
+        extra_files = {
+            "model.json": "",
+            "model_def_script.json": "",
+            "metadata.json": "",
+        }
+        exported = torch.export.load(model_file, extra_files=extra_files)
+        self.exported_module = exported.module()
+        self._init_from_model_json(extra_files["model.json"])
+        mds = extra_files["model_def_script.json"]
+        self._model_def_script = json.loads(mds) if mds else {}
+        md = extra_files["metadata.json"]
+        self.metadata = json.loads(md) if md else {}
+
+    def _load_pt2(self, model_file: str) -> None:
+        """Load a .pt2 (AOTInductor) model file."""
+        import zipfile
+
+        from torch._inductor import (
+            aoti_load_package,
+        )
+
+        # Read metadata from the .pt2 ZIP archive
+        with zipfile.ZipFile(model_file, "r") as zf:
+            names = zf.namelist()
+            if "extra/model.json" not in names:
+                raise ValueError(
+                    f"Invalid .pt2 file '{model_file}': missing 'extra/model.json'"
+                )
+            model_json_str = zf.read("extra/model.json").decode("utf-8")
+            mds = ""
+            if "extra/model_def_script.json" in names:
+                mds = zf.read("extra/model_def_script.json").decode("utf-8")
+            md = ""
+            if "extra/metadata.json" in names:
+                md = zf.read("extra/metadata.json").decode("utf-8")
+
+        self._init_from_model_json(model_json_str)
+        self._model_def_script = json.loads(mds) if mds else {}
+        self.metadata = json.loads(md) if md else {}
+
+        # Load the AOTInductor model package (.pt2 ZIP archive).
+        # Uses torch._inductor.aoti_load_package (private API, stable since PyTorch 2.6).
+        self._pt2_runner = aoti_load_package(model_file)
+        self.exported_module = None
 
     def get_rcut(self) -> float:
         """Get the cutoff radius of this model."""
@@ -157,16 +190,16 @@ class DeepEval(DeepEvalBackend):
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this DP."""
-        return self.metadata["dim_fparam"]
+        return self._dpmodel.get_dim_fparam()
 
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this DP."""
-        return self.metadata["dim_aparam"]
+        return self._dpmodel.get_dim_aparam()
 
     @property
     def model_type(self) -> type["DeepEvalWrapper"]:
         """The the evaluator of the model type."""
-        model_output_type = self.metadata["model_output_type"]
+        model_output_type = self._dpmodel.model_output_type()
         if "energy" in model_output_type:
             return DeepPot
         elif "dos" in model_output_type:
@@ -187,7 +220,7 @@ class DeepEval(DeepEvalBackend):
         to the result of the model.
         If returning an empty list, all atom types are selected.
         """
-        return self.metadata["sel_type"]
+        return self._dpmodel.get_sel_type()
 
     def get_numb_dos(self) -> int:
         """Get the number of DOS."""
@@ -332,8 +365,8 @@ class DeepEval(DeepEvalBackend):
         nframes = coords.shape[0]
         natoms = coords.shape[1]
         rcut = self.rcut
-        sel = self.metadata["sel"]
-        mixed_types = self.metadata["mixed_types"]
+        sel = self._dpmodel.get_sel()
+        mixed_types = self._dpmodel.mixed_types()
 
         if cells is not None:
             box_input = cells.reshape(nframes, 3, 3)
@@ -444,8 +477,8 @@ class DeepEval(DeepEvalBackend):
         nlist : np.ndarray, shape (nloc, nsel)
         mapping : np.ndarray, shape (nall,)
         """
-        sel = self.metadata["sel"]
-        mixed_types = self.metadata["mixed_types"]
+        sel = self._dpmodel.get_sel()
+        mixed_types = self._dpmodel.mixed_types()
         nsel = sum(sel)
 
         natoms = positions.shape[0]
@@ -589,6 +622,22 @@ class DeepEval(DeepEvalBackend):
                 dtype=torch.float64,
                 device=DEVICE,
             )
+        elif self._is_pt2 and self.get_dim_fparam() > 0:
+            # .pt2 models are compiled with fparam as a required input.
+            # When the user omits fparam, fill with default values from metadata.
+            default_fp = self.metadata.get("default_fparam")
+            if default_fp is not None:
+                fparam_t = (
+                    torch.tensor(default_fp, dtype=torch.float64, device=DEVICE)
+                    .unsqueeze(0)
+                    .expand(nframes, -1)
+                    .contiguous()
+                )
+            else:
+                raise ValueError(
+                    f"fparam is required for this model (dim_fparam={self.get_dim_fparam()}) "
+                    "but was not provided, and no default_fparam is stored in the model."
+                )
         else:
             fparam_t = None
 
@@ -601,10 +650,19 @@ class DeepEval(DeepEvalBackend):
         else:
             aparam_t = None
 
-        # Call the exported module (forward_common_lower interface, internal keys)
-        model_ret = self.exported_module(
-            ext_coord_t, ext_atype_t, nlist_t, mapping_t, fparam_t, aparam_t
-        )
+        # Call the model (forward_common_lower interface, internal keys)
+        if self._is_pt2:
+            # AOTInductor's __call__ unflattens output using stored out_spec,
+            # returning a dict just like the .pte module.
+            # It also filters non-tensor args automatically, matching the
+            # export-time signature where None args were excluded.
+            model_ret = self._pt2_runner(
+                ext_coord_t, ext_atype_t, nlist_t, mapping_t, fparam_t, aparam_t
+            )
+        else:
+            model_ret = self.exported_module(
+                ext_coord_t, ext_atype_t, nlist_t, mapping_t, fparam_t, aparam_t
+            )
 
         # Apply communicate_extended_output to map extended atoms → local atoms
         do_atomic_virial = any(
@@ -662,8 +720,8 @@ class DeepEval(DeepEvalBackend):
             raise RuntimeError("unknown category")
 
     def get_model_def_script(self) -> dict:
-        """Get model definition script."""
-        return self.metadata
+        """Get model definition script (training config)."""
+        return self._model_def_script
 
     def get_model(self) -> torch.nn.Module:
         """Get the exported model module.
