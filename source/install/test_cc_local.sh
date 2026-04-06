@@ -59,6 +59,9 @@ else:
 	# runtime to be preloaded (otherwise dlopen fails).  We disable leak detection
 	# in the gen scripts to avoid false reports from torch/paddle internals.
 	INFER_SCRIPT_PATH=${SCRIPT_PATH}/../tests/infer
+	# Remove stale generated model files so they can't be accidentally reused
+	# if gen scripts change format or the code version changes.
+	rm -f ${INFER_SCRIPT_PATH}/*.pt2 ${INFER_SCRIPT_PATH}/*.pte
 	_GEN_ENV=""
 	if echo "${CXXFLAGS:-}" | grep -q fsanitize=leak; then
 		_LSAN_LIB=$(gcc -print-file-name=liblsan.so 2>/dev/null || true)
