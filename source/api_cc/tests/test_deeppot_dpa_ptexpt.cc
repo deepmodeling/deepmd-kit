@@ -70,13 +70,18 @@ class TestInferDeepPotDpaPtExpt : public ::testing::Test {
   double expected_tot_e;
   std::vector<VALUETYPE> expected_tot_v;
 
-  deepmd::DeepPot dp;
+  static deepmd::DeepPot dp;
+
+  static void SetUpTestSuite() {
+#ifdef BUILD_PYTORCH
+    dp.init("../../tests/infer/deeppot_dpa1.pt2");
+#endif
+  }
 
   void SetUp() override {
 #ifndef BUILD_PYTORCH
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
-    dp.init("../../tests/infer/deeppot_dpa1.pt2");
 
     natoms = expected_e.size();
     EXPECT_EQ(natoms * 3, expected_f.size());
@@ -96,6 +101,9 @@ class TestInferDeepPotDpaPtExpt : public ::testing::Test {
 
   void TearDown() override {};
 };
+
+template <class VALUETYPE>
+deepmd::DeepPot TestInferDeepPotDpaPtExpt<VALUETYPE>::dp;
 
 TYPED_TEST_SUITE(TestInferDeepPotDpaPtExpt, ValueTypes);
 
@@ -482,13 +490,18 @@ class TestInferDeepPotDpaPtExptNoPbc : public ::testing::Test {
   double expected_tot_e;
   std::vector<VALUETYPE> expected_tot_v;
 
-  deepmd::DeepPot dp;
+  static deepmd::DeepPot dp;
+
+  static void SetUpTestSuite() {
+#ifdef BUILD_PYTORCH
+    dp.init("../../tests/infer/deeppot_dpa1.pt2");
+#endif
+  }
 
   void SetUp() override {
 #ifndef BUILD_PYTORCH
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
-    dp.init("../../tests/infer/deeppot_dpa1.pt2");
 
     natoms = expected_e.size();
     EXPECT_EQ(natoms * 3, expected_f.size());
@@ -508,6 +521,9 @@ class TestInferDeepPotDpaPtExptNoPbc : public ::testing::Test {
 
   void TearDown() override {};
 };
+
+template <class VALUETYPE>
+deepmd::DeepPot TestInferDeepPotDpaPtExptNoPbc<VALUETYPE>::dp;
 
 TYPED_TEST_SUITE(TestInferDeepPotDpaPtExptNoPbc, ValueTypes);
 

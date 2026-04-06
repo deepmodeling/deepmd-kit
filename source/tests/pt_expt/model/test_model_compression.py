@@ -352,20 +352,10 @@ class TestModelCompression(unittest.TestCase):
             if os.path.exists(compressed_pt2_path):
                 os.unlink(compressed_pt2_path)
 
-    def test_min_nbor_dist_roundtrip_pt2(self) -> None:
-        """Test that min_nbor_dist survives freeze → load round-trip via .pt2."""
-        md = self._make_model()
-        md.min_nbor_dist = 0.5
-
-        model_data = {"model": md.serialize(), "min_nbor_dist": 0.5}
-        with tempfile.NamedTemporaryFile(suffix=".pt2", delete=False) as f:
-            pt2_path = f.name
-        try:
-            deserialize_to_file(pt2_path, model_data)
-            loaded_data = serialize_from_file(pt2_path)
-            self.assertAlmostEqual(loaded_data["min_nbor_dist"], 0.5)
-        finally:
-            os.unlink(pt2_path)
+    # test_min_nbor_dist_roundtrip_pt2 removed: .pte and .pt2 share identical
+    # metadata storage (metadata.json in ZIP), so the .pte round-trip test
+    # (test_min_nbor_dist_roundtrip) already covers this path.  Removing saves
+    # one redundant AOTInductor compilation (~82s).
 
 
 if __name__ == "__main__":

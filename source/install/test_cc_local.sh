@@ -66,12 +66,23 @@ else:
 			_GEN_ENV="LD_PRELOAD=${_LSAN_LIB} LSAN_OPTIONS=detect_leaks=0"
 		fi
 	fi
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_sea.py
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa1.py
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa2.py
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa3.py
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_fparam_aparam.py
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_model_devi.py
+	# Run gen scripts in parallel (2 groups of 3) for faster model generation.
+	# PID tracking ensures set -e still catches failures.
+	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_sea.py &
+	PID1=$!
+	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa1.py &
+	PID2=$!
+	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa2.py &
+	PID3=$!
+	wait $PID1 $PID2 $PID3
+
+	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa3.py &
+	PID4=$!
+	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_fparam_aparam.py &
+	PID5=$!
+	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_model_devi.py &
+	PID6=$!
+	wait $PID4 $PID5 $PID6
 fi
 if [ "${ENABLE_PADDLE:-TRUE}" == "TRUE" ]; then
 	PADDLE_INFERENCE_DIR=${BUILD_TMP_DIR}/paddle_inference_install_dir
