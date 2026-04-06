@@ -165,7 +165,7 @@ def get_trainer(
             )
 
         # LMDB path: single string → LmdbDataset
-        if is_lmdb(training_systems):
+        if isinstance(training_systems, str) and is_lmdb(training_systems):
             auto_prob = training_dataset_params.get("auto_prob", None)
             train_data_single = LmdbDataset(
                 training_systems,
@@ -173,7 +173,11 @@ def get_trainer(
                 training_dataset_params["batch_size"],
                 auto_prob_style=auto_prob,
             )
-            if validation_systems is not None and is_lmdb(validation_systems):
+            if (
+                validation_systems is not None
+                and isinstance(validation_systems, str)
+                and is_lmdb(validation_systems)
+            ):
                 validation_data_single = LmdbDataset(
                     validation_systems,
                     model_params_single["type_map"],
@@ -365,7 +369,11 @@ def train(
         if not multi_task:
             type_map = config["model"].get("type_map")
             training_systems = config["training"]["training_data"].get("systems")
-            if training_systems is not None and is_lmdb(training_systems):
+            if (
+                training_systems is not None
+                and isinstance(training_systems, str)
+                and is_lmdb(training_systems)
+            ):
                 from deepmd.dpmodel.utils.lmdb_data import (
                     make_neighbor_stat_data,
                 )
@@ -385,7 +393,11 @@ def train(
                 training_systems = config["training"]["data_dict"][model_item][
                     "training_data"
                 ].get("systems")
-                if training_systems is not None and is_lmdb(training_systems):
+                if (
+                    training_systems is not None
+                    and isinstance(training_systems, str)
+                    and is_lmdb(training_systems)
+                ):
                     from deepmd.dpmodel.utils.lmdb_data import (
                         make_neighbor_stat_data,
                     )
