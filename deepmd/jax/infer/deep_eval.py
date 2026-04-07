@@ -47,9 +47,6 @@ from deepmd.infer.deep_wfc import (
 from deepmd.jax.common import (
     to_jax_array,
 )
-from deepmd.jax.env import (
-    jax,
-)
 from deepmd.jax.model.hlo import (
     HLO,
 )
