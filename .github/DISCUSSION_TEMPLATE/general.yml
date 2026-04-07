@@ -1,5 +1,4 @@
-name: Usage Help
-description: Get help with using DeePMD-kit - provide reproducible examples for the best assistance
+title: "[General] "
 labels: ["help wanted", "usage"]
 body:
   - type: textarea

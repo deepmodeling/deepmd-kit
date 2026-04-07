@@ -1,5 +1,4 @@
-name: Ideas and Suggestions
-description: Share ideas for new features, improvements, or enhancements to DeePMD-kit
+title: "[Ideas] "
 labels: ["idea", "enhancement"]
 body:
   - type: textarea

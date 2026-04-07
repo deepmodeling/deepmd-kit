@@ -1,5 +1,4 @@
-name: General Question
-description: Ask a general question about DeePMD-kit usage, features, or concepts
+title: "[Q&A] "
 labels: ["question"]
 body:
   - type: textarea

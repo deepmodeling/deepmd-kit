@@ -1,5 +1,4 @@
-name: Show and Tell
-description: Share your projects, research, or achievements using DeePMD-kit
+title: "[Show and tell] "
 labels: ["show and tell"]
 body:
   - type: textarea
