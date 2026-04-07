@@ -157,7 +157,7 @@ EMBEDDING_NET_PATTERN = (
 # \1: layer index or "final"
 # \2: type of centeral atom, optional
 # the last: weight name
-FITTING_NET_PATTERN = str(
+FITTING_NET_PATTERN = (
     r"layer_(\d+)/(matrix)|"
     r"layer_(\d+)_type_(\d+)/(matrix)|"
     r"layer_(\d+)/(bias)|"
