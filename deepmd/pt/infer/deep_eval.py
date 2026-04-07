@@ -706,6 +706,7 @@ class DeepEval(DeepEvalBackend):
         model = self.dp.model["Default"]
         data: dict[str, Any] = {
             "backend": "PyTorch",
+            "pt_version": str(torch.__version__),
             "model": model.serialize(),
             "model_def_script": self.get_model_def_script(),
             "@variables": {},
