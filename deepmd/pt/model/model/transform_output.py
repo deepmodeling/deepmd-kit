@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-)
 
 import torch
 
@@ -20,7 +17,7 @@ from deepmd.pt.utils import (
 def atomic_virial_corr(
     extended_coord: torch.Tensor,
     atom_energy: torch.Tensor,
-):
+) -> torch.Tensor:
     nall = extended_coord.shape[1]
     nloc = atom_energy.shape[1]
     coord, _ = torch.split(extended_coord, [nloc, nall - nloc], dim=1)
@@ -29,7 +26,7 @@ def atomic_virial_corr(
     ce = coord * atom_energy
     sumce0, sumce1, sumce2 = torch.split(torch.sum(ce, dim=1), [1, 1, 1], dim=-1)
     faked_grad = torch.ones_like(sumce0)
-    lst = torch.jit.annotate(list[Optional[torch.Tensor]], [faked_grad])
+    lst = torch.jit.annotate(list[torch.Tensor | None], [faked_grad])
     extended_virial_corr0 = torch.autograd.grad(
         [sumce0],
         [extended_coord],
@@ -72,9 +69,9 @@ def task_deriv_one(
     do_virial: bool = True,
     do_atomic_virial: bool = False,
     create_graph: bool = True,
-):
+) -> tuple[torch.Tensor, torch.Tensor | None]:
     faked_grad = torch.ones_like(energy)
-    lst = torch.jit.annotate(list[Optional[torch.Tensor]], [faked_grad])
+    lst = torch.jit.annotate(list[torch.Tensor | None], [faked_grad])
     extended_force = torch.autograd.grad(
         [energy],
         [extended_coord],
@@ -102,7 +99,7 @@ def task_deriv_one(
 def get_leading_dims(
     vv: torch.Tensor,
     vdef: OutputVariableDef,
-):
+) -> list[int]:
     """Get the dimensions of nf x nloc."""
     vshape = vv.shape
     return list(vshape[: (len(vshape) - len(vdef.shape))])
@@ -116,7 +113,7 @@ def take_deriv(
     do_virial: bool = False,
     do_atomic_virial: bool = False,
     create_graph: bool = True,
-):
+) -> tuple[torch.Tensor, torch.Tensor | None]:
     size = 1
     for ii in vdef.shape:
         size *= ii
@@ -158,6 +155,8 @@ def fit_output_to_model_output(
     coord_ext: torch.Tensor,
     do_atomic_virial: bool = False,
     create_graph: bool = True,
+    mask: torch.Tensor | None = None,
+    extended_coord_corr: torch.Tensor | None = None,
 ) -> dict[str, torch.Tensor]:
     """Transform the output of the fitting network to
     the model output.
@@ -172,7 +171,12 @@ def fit_output_to_model_output(
         if vdef.reducible:
             kk_redu = get_reduce_name(kk)
             if vdef.intensive:
-                model_ret[kk_redu] = torch.mean(vv.to(redu_prec), dim=atom_axis)
+                if mask is not None:
+                    model_ret[kk_redu] = torch.sum(
+                        vv.to(redu_prec), dim=atom_axis
+                    ) / torch.sum(mask, dim=-1, keepdim=True)
+                else:
+                    model_ret[kk_redu] = torch.mean(vv.to(redu_prec), dim=atom_axis)
             else:
                 model_ret[kk_redu] = torch.sum(vv.to(redu_prec), dim=atom_axis)
             if vdef.r_differentiable:
@@ -189,6 +193,12 @@ def fit_output_to_model_output(
                 model_ret[kk_derv_r] = dr
                 if vdef.c_differentiable:
                     assert dc is not None
+                    if extended_coord_corr is not None:
+                        dc_corr = (
+                            dr.squeeze(-2).unsqueeze(-1)
+                            @ extended_coord_corr.unsqueeze(-2).to(dr.dtype)
+                        ).view(list(dc.shape[:-2]) + [1, 9])  # noqa: RUF005
+                        dc = dc + dc_corr
                     model_ret[kk_derv_c] = dc
                     model_ret[kk_derv_c + "_redu"] = torch.sum(
                         model_ret[kk_derv_c].to(redu_prec), dim=1

@@ -2,11 +2,13 @@
 #ifdef BUILD_PYTORCH
 #include "DeepPotPT.h"
 
+#include <torch/csrc/autograd/profiler.h>
 #include <torch/csrc/jit/runtime/jit_exception.h>
 
 #include <cstdint>
 
 #include "common.h"
+#include "commonPT.h"
 #include "device.h"
 #include "errors.h"
 
@@ -69,13 +71,9 @@ void DeepPotPT::init(const std::string& model,
   }
   deepmd::load_op_library();
   int gpu_num = torch::cuda::device_count();
-  if (gpu_num > 0) {
-    gpu_id = gpu_rank % gpu_num;
-  } else {
-    gpu_id = 0;
-  }
-  torch::Device device(torch::kCUDA, gpu_id);
+  gpu_id = (gpu_num > 0) ? (gpu_rank % gpu_num) : 0;
   gpu_enabled = torch::cuda::is_available();
+  torch::Device device(torch::kCUDA, gpu_id);
   if (!gpu_enabled) {
     device = torch::Device(torch::kCPU);
     std::cout << "load model from: " << model << " to cpu " << std::endl;
@@ -85,6 +83,37 @@ void DeepPotPT::init(const std::string& model,
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     std::cout << "load model from: " << model << " to gpu " << gpu_id
               << std::endl;
+  }
+
+  // Configure PyTorch profiler
+  const char* env_profiler = std::getenv("DP_PROFILER");
+  if (env_profiler && *env_profiler) {
+    using torch::profiler::impl::ActivityType;
+    using torch::profiler::impl::ExperimentalConfig;
+    using torch::profiler::impl::ProfilerConfig;
+    using torch::profiler::impl::ProfilerState;
+    std::set<ActivityType> activities{ActivityType::CPU};
+    if (gpu_enabled) {
+      activities.insert(ActivityType::CUDA);
+    }
+    profiler_file = std::string(env_profiler);
+    if (gpu_enabled) {
+      profiler_file += "_gpu" + std::to_string(gpu_id);
+    }
+    profiler_file += ".json";
+    ExperimentalConfig exp_cfg;
+    ProfilerConfig cfg(ProfilerState::KINETO,
+                       false,  // report_input_shapes
+                       false,  // profile_memory
+                       true,   // with_stack
+                       false,  // with_flops
+                       true,   // with_modules
+                       exp_cfg);
+    torch::autograd::profiler::prepareProfiler(cfg, activities);
+    torch::autograd::profiler::enableProfiler(cfg, activities);
+    std::cout << "PyTorch profiler enabled, output file: " << profiler_file
+              << std::endl;
+    profiler_enabled = true;
   }
   std::unordered_map<std::string, std::string> metadata = {{"type", ""}};
   module = torch::jit::load(model, device, metadata);
@@ -117,9 +146,24 @@ void DeepPotPT::init(const std::string& model,
   dfparam = module.run_method("get_dim_fparam").toInt();
   daparam = module.run_method("get_dim_aparam").toInt();
   aparam_nall = module.run_method("is_aparam_nall").toBool();
+  if (module.find_method("has_default_fparam")) {
+    has_default_fparam_ = module.run_method("has_default_fparam").toBool();
+  } else {
+    has_default_fparam_ = false;
+  }
   inited = true;
 }
-DeepPotPT::~DeepPotPT() {}
+
+DeepPotPT::~DeepPotPT() {
+  if (profiler_enabled) {
+    auto result = torch::autograd::profiler::disableProfiler();
+    if (result) {
+      result->save(profiler_file);
+    }
+    std::cout << "PyTorch profiler result saved to " << profiler_file
+              << std::endl;
+  }
+}
 
 template <typename VALUETYPE, typename ENERGYVTYPE>
 void DeepPotPT::compute(ENERGYVTYPE& ener,
@@ -160,6 +204,8 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
                           bkw_map, nall_real, nloc_real, coord, atype, aparam,
                           nghost, ntypes, 1, daparam, nall, aparam_nall);
   int nloc = nall_real - nghost_real;
+  // Detect whether any NULL-type atoms were filtered out.
+  bool has_null_atoms = (nall_real < nall);
   int nframes = 1;
   std::vector<VALUETYPE> coord_wrapped = dcoord;
   at::Tensor coord_wrapped_Tensor =
@@ -173,41 +219,19 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
     nlist_data.shuffle_exclude_empty(fwd_map);
     nlist_data.padding();
     if (do_message_passing) {
-      int nswap = lmp_list.nswap;
-      torch::Tensor sendproc_tensor =
-          torch::from_blob(lmp_list.sendproc, {nswap}, int32_option);
-      torch::Tensor recvproc_tensor =
-          torch::from_blob(lmp_list.recvproc, {nswap}, int32_option);
-      torch::Tensor firstrecv_tensor =
-          torch::from_blob(lmp_list.firstrecv, {nswap}, int32_option);
-      torch::Tensor recvnum_tensor =
-          torch::from_blob(lmp_list.recvnum, {nswap}, int32_option);
-      torch::Tensor sendnum_tensor =
-          torch::from_blob(lmp_list.sendnum, {nswap}, int32_option);
-      torch::Tensor communicator_tensor;
-      if (lmp_list.world == 0) {
-        communicator_tensor = torch::empty({1}, torch::kInt64);
+      if (has_null_atoms) {
+        build_comm_dict_with_virtual_atoms(
+            comm_dict, lmp_list, fwd_map, remapped_sendlist,
+            remapped_sendlist_ptrs, remapped_sendnum, remapped_recvnum);
       } else {
-        communicator_tensor = torch::from_blob(
-            const_cast<void*>(lmp_list.world), {1}, torch::kInt64);
+        build_comm_dict(comm_dict, lmp_list, lmp_list.sendlist,
+                        lmp_list.sendnum, lmp_list.recvnum);
       }
-
-      torch::Tensor nswap_tensor = torch::tensor(nswap, int32_option);
-      int total_send =
-          std::accumulate(lmp_list.sendnum, lmp_list.sendnum + nswap, 0);
-      torch::Tensor sendlist_tensor =
-          torch::from_blob(lmp_list.sendlist, {total_send}, int32_option);
-      comm_dict.insert("send_list", sendlist_tensor);
-      comm_dict.insert("send_proc", sendproc_tensor);
-      comm_dict.insert("recv_proc", recvproc_tensor);
-      comm_dict.insert("send_num", sendnum_tensor);
-      comm_dict.insert("recv_num", recvnum_tensor);
-      comm_dict.insert("communicator", communicator_tensor);
     }
     if (lmp_list.mapping) {
       std::vector<std::int64_t> mapping(nall_real);
       for (size_t ii = 0; ii < nall_real; ii++) {
-        mapping[ii] = lmp_list.mapping[fwd_map[ii]];
+        mapping[ii] = fwd_map[lmp_list.mapping[bkw_map[ii]]];
       }
       mapping_tensor =
           torch::from_blob(mapping.data(), {1, nall_real}, int_option)
@@ -234,7 +258,7 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
             options)
             .to(device);
   }
-  c10::Dict<c10::IValue, c10::IValue> outputs =
+  auto outputs =
       (do_message_passing)
           ? module
                 .run_method("forward_lower", coord_wrapped_Tensor, atype_Tensor,

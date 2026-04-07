@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+
+from collections.abc import (
+    Callable,
+)
 from typing import (
-    Optional,
+    Any,
 )
 
 import numpy as np
@@ -172,18 +176,18 @@ class DescrptSeA(DescrptSe):
         axis_neuron: int = 8,
         resnet_dt: bool = False,
         trainable: bool = True,
-        seed: Optional[int] = None,
+        seed: int | None = None,
         type_one_side: bool = True,
         exclude_types: list[list[int]] = [],
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
-        spin: Optional[Spin] = None,
+        spin: Spin | None = None,
         tebd_input_mode: str = "concat",
-        type_map: Optional[list[str]] = None,  # to be compat with input
+        type_map: list[str] | None = None,  # to be compat with input
         env_protection: float = 0.0,  # not implement!!
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Constructor."""
         if rcut < rcut_smth:
@@ -349,9 +353,9 @@ class DescrptSeA(DescrptSe):
         natoms_vec: list,
         mesh: list,
         input_dict: dict,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
-        """Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
+        """Compute the statistics (avg and std) of the training data. The input will be normalized by the statistics.
 
         Parameters
         ----------
@@ -377,7 +381,7 @@ class DescrptSeA(DescrptSe):
             sumr2 = []
             suma2 = []
             for cc, bb, tt, nn, mm in zip(
-                data_coord, data_box, data_atype, natoms_vec, mesh
+                data_coord, data_box, data_atype, natoms_vec, mesh, strict=True
             ):
                 sysr, sysr2, sysa, sysa2, sysn = self._compute_dstats_sys_smth(
                     cc, bb, tt, nn, mm
@@ -396,23 +400,23 @@ class DescrptSeA(DescrptSe):
             }
             self.merge_input_stats(stat_dict)
 
-    def merge_input_stats(self, stat_dict) -> None:
-        """Merge the statisitcs computed from compute_input_stats to obtain the self.davg and self.dstd.
+    def merge_input_stats(self, stat_dict: dict[str, Any]) -> None:
+        """Merge the statistics computed from compute_input_stats to obtain the self.davg and self.dstd.
 
         Parameters
         ----------
         stat_dict
-                The dict of statisitcs computed from compute_input_stats, including:
+                The dict of statistics computed from compute_input_stats, including:
             sumr
-                    The sum of radial statisitcs.
+                    The sum of radial statistics.
             suma
-                    The sum of relative coord statisitcs.
+                    The sum of relative coord statistics.
             sumn
                     The sum of neighbor numbers.
             sumr2
-                    The sum of square of radial statisitcs.
+                    The sum of square of radial statistics.
             suma2
-                    The sum of square of relative coord statisitcs.
+                    The sum of square of relative coord statistics.
         """
         all_davg = []
         all_dstd = []
@@ -448,7 +452,7 @@ class DescrptSeA(DescrptSe):
         check_frequency: int = -1,
         suffix: str = "",
     ) -> None:
-        """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+        """Receive the statistics (distance, max_nbor_size and env_mat_range) of the training data.
 
         Parameters
         ----------
@@ -547,7 +551,7 @@ class DescrptSeA(DescrptSe):
         self.davg = get_tensor_by_name_from_graph(graph, f"descrpt_attr{suffix}/t_avg")
         self.dstd = get_tensor_by_name_from_graph(graph, f"descrpt_attr{suffix}/t_std")
 
-    def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
+    def enable_mixed_precision(self, mixed_prec: dict | None = None) -> None:
         """Receive the mixed precision setting.
 
         Parameters
@@ -566,7 +570,7 @@ class DescrptSeA(DescrptSe):
         box_: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict,
-        reuse: Optional[bool] = None,
+        reuse: bool | None = None,
         suffix: str = "",
     ) -> tf.Tensor:
         """Build the computational graph for the descriptor.
@@ -666,6 +670,23 @@ class DescrptSeA(DescrptSe):
         atype_t = tf.concat([[self.ntypes], tf.reshape(self.atype, [-1])], axis=0)
         self.nei_type_vec = tf.nn.embedding_lookup(atype_t, nlist_t)
 
+        if self.spin is not None:
+            judge = tf.equal(natoms[0], natoms[1])
+            self.diff_coord = tf.cond(
+                judge,
+                lambda: self.natoms_match(coord, natoms),
+                lambda: self.natoms_not_match(coord, natoms, atype),
+            )
+            diff_coord_reshape = tf.reshape(self.diff_coord, [-1, natoms[1], 3])
+            nlist_reshaped = tf.reshape(self.nlist, [-1, natoms[0], self.nnei])
+            rj_gathered = tf.gather(
+                diff_coord_reshape, tf.maximum(nlist_reshaped, 0), axis=1, batch_dims=1
+            )
+            ri_gathered = diff_coord_reshape[:, : natoms[0], tf.newaxis, :]
+            rij_reshaped = tf.reshape(self.rij, [-1, natoms[0], self.nnei, 3])
+            rij_update = rij_reshaped - rj_gathered + ri_gathered
+            self.rij = tf.reshape(rij_update, tf.shape(self.rij))
+
         # only used when tensorboard was set as true
         tf.summary.histogram("descrpt", self.descrpt)
         tf.summary.histogram("rij", self.rij)
@@ -750,8 +771,15 @@ class DescrptSeA(DescrptSe):
         return force, virial, atom_virial
 
     def _pass_filter(
-        self, inputs, atype, natoms, input_dict, reuse=None, suffix="", trainable=True
-    ):
+        self,
+        inputs: tf.Tensor,
+        atype: tf.Tensor,
+        natoms: tf.Tensor,
+        input_dict: dict,
+        reuse: bool | None = None,
+        suffix: str = "",
+        trainable: bool = True,
+    ) -> tuple[tf.Tensor, tf.Tensor]:
         if input_dict is not None:
             type_embedding = input_dict.get("type_embedding", None)
             if type_embedding is not None:
@@ -837,8 +865,13 @@ class DescrptSeA(DescrptSe):
         return output, output_qmat
 
     def _compute_dstats_sys_smth(
-        self, data_coord, data_box, data_atype, natoms_vec, mesh
-    ):
+        self,
+        data_coord: np.ndarray,
+        data_box: np.ndarray,
+        data_atype: np.ndarray,
+        natoms_vec: np.ndarray,
+        mesh: np.ndarray,
+    ) -> tuple[list[float], list[float], list[float], list[float], list[int]]:
         dd_all = run_sess(
             self.sub_sess,
             self.stat_descrpt,
@@ -879,7 +912,7 @@ class DescrptSeA(DescrptSe):
             sysa2.append(suma2)
         return sysr, sysr2, sysa, sysa2, sysn
 
-    def _compute_std(self, sumv2, sumv, sumn):
+    def _compute_std(self, sumv2: float, sumv: float, sumn: int) -> float:
         if sumn == 0:
             return 1.0 / self.rcut_r
         val = np.sqrt(sumv2 / sumn - np.multiply(sumv / sumn, sumv / sumn))
@@ -889,11 +922,11 @@ class DescrptSeA(DescrptSe):
 
     def _concat_type_embedding(
         self,
-        xyz_scatter,
-        nframes,
-        natoms,
-        type_embedding,
-    ):
+        xyz_scatter: tf.Tensor,
+        nframes: tf.Tensor,
+        natoms: tf.Tensor,
+        type_embedding: tf.Tensor,
+    ) -> tf.Tensor:
         """Concatenate `type_embedding` of neighbors and `xyz_scatter`.
         If not self.type_one_side, concatenate `type_embedding` of center atoms as well.
 
@@ -942,21 +975,21 @@ class DescrptSeA(DescrptSe):
 
     def _filter_lower(
         self,
-        type_i,
-        type_input,
-        start_index,
-        incrs_index,
-        inputs,
-        nframes,
-        natoms,
-        type_embedding=None,
-        is_exclude=False,
-        activation_fn=None,
-        bavg=0.0,
-        stddev=1.0,
-        trainable=True,
-        suffix="",
-    ):
+        type_i: int,
+        type_input: int,
+        start_index: int,
+        incrs_index: int,
+        inputs: tf.Tensor,
+        nframes: tf.Tensor,
+        natoms: tf.Tensor,
+        type_embedding: tf.Tensor | None = None,
+        is_exclude: bool = False,
+        activation_fn: Callable[[tf.Tensor], tf.Tensor] | None = None,
+        bavg: float = 0.0,
+        stddev: float = 1.0,
+        trainable: bool = True,
+        suffix: str = "",
+    ) -> tf.Tensor:
         """Input env matrix, returns R.G."""
         outputs_size = [1, *self.filter_neuron]
         # cut-out inputs
@@ -1162,17 +1195,17 @@ class DescrptSeA(DescrptSe):
     @cast_precision
     def _filter(
         self,
-        inputs,
-        type_input,
-        natoms,
-        type_embedding=None,
-        activation_fn=tf.nn.tanh,
-        stddev=1.0,
-        bavg=0.0,
-        name="linear",
-        reuse=None,
-        trainable=True,
-    ):
+        inputs: tf.Tensor,
+        type_input: int,
+        natoms: tf.Tensor,
+        type_embedding: tf.Tensor | None = None,
+        activation_fn: Callable[[tf.Tensor], tf.Tensor] | None = tf.nn.tanh,
+        stddev: float = 1.0,
+        bavg: float = 0.0,
+        name: str = "linear",
+        reuse: bool | None = None,
+        trainable: bool = True,
+    ) -> tf.Tensor:
         nframes = tf.shape(tf.reshape(inputs, [-1, natoms[0], self.ndescrpt]))[0]
         # natom x (nei x 4)
         shape = inputs.get_shape().as_list()
@@ -1334,7 +1367,7 @@ class DescrptSeA(DescrptSe):
                 start_index_old[0] = 0
 
                 for nn, oo, ii, jj in zip(
-                    n_descpt, n_descpt_old, start_index, start_index_old
+                    n_descpt, n_descpt_old, start_index, start_index_old, strict=True
                 ):
                     if nn < oo:
                         # new size is smaller, copy part of std
@@ -1358,6 +1391,72 @@ class DescrptSeA(DescrptSe):
                 )
             )
 
+    def natoms_match(self, coord: tf.Tensor, natoms: tf.Tensor) -> tf.Tensor:
+        natoms_index = tf.concat([[0], tf.cumsum(natoms[2:])], axis=0)
+        diff_coord_loc = []
+        for i in range(self.ntypes):
+            if i + self.ntypes_spin >= self.ntypes:
+                diff_coord_loc.append(
+                    tf.slice(
+                        coord,
+                        [0, natoms_index[i] * 3],
+                        [-1, natoms[2 + i] * 3],
+                    )
+                    - tf.slice(
+                        coord,
+                        [0, natoms_index[i - len(self.spin.use_spin)] * 3],
+                        [-1, natoms[2 + i - len(self.spin.use_spin)] * 3],
+                    )
+                )
+            else:
+                diff_coord_loc.append(
+                    tf.zeros([tf.shape(coord)[0], natoms[2 + i] * 3], dtype=coord.dtype)
+                )
+        diff_coord_loc = tf.concat(diff_coord_loc, axis=1)
+        return diff_coord_loc
+
+    def natoms_not_match(
+        self, coord: tf.Tensor, natoms: tf.Tensor, atype: tf.Tensor
+    ) -> tf.Tensor:
+        diff_coord_loc = self.natoms_match(coord, natoms)
+        diff_coord_ghost = []
+        # Check that all frames have the same atype vector (homogeneous batch)
+        # to ensure ghost atom layout is consistent across frames.
+        atype_equal = tf.reduce_all(tf.equal(atype, atype[0:1, :]))
+        atype_equal = tf.Assert(
+            atype_equal,
+            ["natoms_not_match requires all frames to have the same atype vector"],
+        )
+        with tf.control_dependencies([atype_equal]):
+            aatype = atype[0, :]
+        ghost_atype = aatype[natoms[0] :]
+        _, _, ghost_natoms = tf.unique_with_counts(ghost_atype)
+        ghost_natoms_index = tf.concat([[0], tf.cumsum(ghost_natoms)], axis=0)
+        ghost_natoms_index += natoms[0]
+        for i in range(self.ntypes):
+            if i + self.ntypes_spin >= self.ntypes:
+                diff_coord_ghost.append(
+                    tf.slice(
+                        coord,
+                        [0, ghost_natoms_index[i] * 3],
+                        [-1, ghost_natoms[i] * 3],
+                    )
+                    - tf.slice(
+                        coord,
+                        [0, ghost_natoms_index[i - len(self.spin.use_spin)] * 3],
+                        [-1, ghost_natoms[i - len(self.spin.use_spin)] * 3],
+                    )
+                )
+            else:
+                diff_coord_ghost.append(
+                    tf.zeros(
+                        [tf.shape(coord)[0], ghost_natoms[i] * 3], dtype=coord.dtype
+                    )
+                )
+        diff_coord_ghost = tf.concat(diff_coord_ghost, axis=1)
+        diff_coord = tf.concat([diff_coord_loc, diff_coord_ghost], axis=1)
+        return diff_coord
+
     @property
     def explicit_ntypes(self) -> bool:
         """Explicit ntypes with type embedding."""
@@ -1366,7 +1465,7 @@ class DescrptSeA(DescrptSe):
         return False
 
     @classmethod
-    def deserialize(cls, data: dict, suffix: str = ""):
+    def deserialize(cls, data: dict, suffix: str = "") -> "DescrptSeA":
         """Deserialize the model.
 
         Parameters
@@ -1382,7 +1481,7 @@ class DescrptSeA(DescrptSe):
         if cls is not DescrptSeA:
             raise NotImplementedError(f"Not implemented in class {cls.__name__}")
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 2, 1)
+        check_version_compatibility(data.pop("@version", 1), 3, 1)
         data.pop("@class", None)
         data.pop("type", None)
         embedding_net_variables = cls.deserialize_network(
@@ -1390,6 +1489,7 @@ class DescrptSeA(DescrptSe):
         )
         data.pop("env_mat")
         variables = data.pop("@variables")
+        data.pop("compress", None)  # tf uses frozen graph for compression
         descriptor = cls(**data)
         descriptor.embedding_net_variables = embedding_net_variables
         descriptor.davg = variables["davg"].reshape(
@@ -1462,6 +1562,7 @@ class DescrptSeA(DescrptSe):
                 resnet_dt=self.filter_resnet_dt,
                 variables=self.embedding_net_variables,
                 excluded_types=self.exclude_types,
+                trainable=self.trainable,
                 suffix=suffix,
             ),
             "env_mat": EnvMat(self.rcut_r, self.rcut_r_smth).serialize(),

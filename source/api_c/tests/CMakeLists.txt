@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.9)
+cmake_minimum_required(VERSION 3.25.2)
 project(deepmd_api_c_test)
 
 file(GLOB TEST_SRC test_*.cc)
@@ -10,6 +10,19 @@ add_executable(runUnitTests_c ${TEST_SRC})
 target_link_libraries(runUnitTests_c PRIVATE GTest::gtest_main ${LIB_DEEPMD_C}
                                              coverage_config)
 target_link_libraries(runUnitTests_c PRIVATE ${LIB_DEEPMD} ${LIB_DEEPMD_CC})
+
+if(ENABLE_TENSORFLOW)
+  target_compile_definitions(runUnitTests_c PRIVATE BUILD_TENSORFLOW)
+endif()
+if(ENABLE_PYTORCH)
+  target_compile_definitions(runUnitTests_c PRIVATE BUILD_PYTORCH)
+endif()
+if(ENABLE_JAX)
+  target_compile_definitions(runUnitTests_c PRIVATE BUILD_JAX)
+endif()
+if(ENABLE_PADDLE)
+  target_compile_definitions(runUnitTests_c PRIVATE BUILD_PADDLE)
+endif()
 
 if(UNIX AND NOT APPLE)
   find_library(RT_LIBRARY rt)

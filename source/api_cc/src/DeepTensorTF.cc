@@ -7,9 +7,9 @@ using namespace tensorflow;
 
 DeepTensorTF::DeepTensorTF() : inited(false), graph_def(new GraphDef()) {}
 
-DeepTensorTF::DeepTensorTF(const std::string &model,
-                           const int &gpu_rank,
-                           const std::string &name_scope_)
+DeepTensorTF::DeepTensorTF(const std::string& model,
+                           const int& gpu_rank,
+                           const std::string& name_scope_)
     : inited(false), name_scope(name_scope_), graph_def(new GraphDef()) {
   try {
     init(model, gpu_rank, name_scope_);
@@ -22,9 +22,9 @@ DeepTensorTF::DeepTensorTF(const std::string &model,
 
 DeepTensorTF::~DeepTensorTF() { delete graph_def; }
 
-void DeepTensorTF::init(const std::string &model,
-                        const int &gpu_rank,
-                        const std::string &name_scope_) {
+void DeepTensorTF::init(const std::string& model,
+                        const int& gpu_rank,
+                        const std::string& name_scope_) {
   if (inited) {
     std::cerr << "WARNING: deepmd-kit should not be initialized twice, do "
                  "nothing at the second call of initializer"
@@ -59,7 +59,7 @@ void DeepTensorTF::init(const std::string &model,
   deepmd::check_status(session->Create(*graph_def));
   try {
     model_version = get_scalar<STRINGTYPE>("model_attr/model_version");
-  } catch (deepmd::tf_exception &e) {
+  } catch (deepmd::tf_exception& e) {
     // no model version defined in old models
     model_version = "0.0";
   }
@@ -85,23 +85,23 @@ void DeepTensorTF::init(const std::string &model,
 }
 
 template <class VT>
-VT DeepTensorTF::get_scalar(const std::string &name) const {
+VT DeepTensorTF::get_scalar(const std::string& name) const {
   return session_get_scalar<VT>(session, name, name_scope);
 }
 
 template <class VT>
-void DeepTensorTF::get_vector(std::vector<VT> &vec,
-                              const std::string &name) const {
+void DeepTensorTF::get_vector(std::vector<VT>& vec,
+                              const std::string& name) const {
   session_get_vector<VT>(vec, session, name, name_scope);
 }
 
 template <typename MODELTYPE, typename VALUETYPE>
 void DeepTensorTF::run_model(
-    std::vector<VALUETYPE> &d_tensor_,
-    Session *session,
-    const std::vector<std::pair<std::string, Tensor>> &input_tensors,
-    const AtomMap &atommap,
-    const std::vector<int> &sel_fwd,
+    std::vector<VALUETYPE>& d_tensor_,
+    Session* session,
+    const std::vector<std::pair<std::string, Tensor>>& input_tensors,
+    const AtomMap& atommap,
+    const std::vector<int>& sel_fwd,
     const int nghost) {
   unsigned nloc = atommap.get_type().size();
   unsigned nall = nloc + nghost;
@@ -139,46 +139,46 @@ void DeepTensorTF::run_model(
 }
 
 template void DeepTensorTF::run_model<double, double>(
-    std::vector<double> &d_tensor_,
-    Session *session,
-    const std::vector<std::pair<std::string, Tensor>> &input_tensors,
-    const AtomMap &atommap,
-    const std::vector<int> &sel_fwd,
+    std::vector<double>& d_tensor_,
+    Session* session,
+    const std::vector<std::pair<std::string, Tensor>>& input_tensors,
+    const AtomMap& atommap,
+    const std::vector<int>& sel_fwd,
     const int nghost);
 template void DeepTensorTF::run_model<float, double>(
-    std::vector<double> &d_tensor_,
-    Session *session,
-    const std::vector<std::pair<std::string, Tensor>> &input_tensors,
-    const AtomMap &atommap,
-    const std::vector<int> &sel_fwd,
+    std::vector<double>& d_tensor_,
+    Session* session,
+    const std::vector<std::pair<std::string, Tensor>>& input_tensors,
+    const AtomMap& atommap,
+    const std::vector<int>& sel_fwd,
     const int nghost);
 template void DeepTensorTF::run_model<double, float>(
-    std::vector<float> &d_tensor_,
-    Session *session,
-    const std::vector<std::pair<std::string, Tensor>> &input_tensors,
-    const AtomMap &atommap,
-    const std::vector<int> &sel_fwd,
+    std::vector<float>& d_tensor_,
+    Session* session,
+    const std::vector<std::pair<std::string, Tensor>>& input_tensors,
+    const AtomMap& atommap,
+    const std::vector<int>& sel_fwd,
     const int nghost);
 template void DeepTensorTF::run_model<float, float>(
-    std::vector<float> &d_tensor_,
-    Session *session,
-    const std::vector<std::pair<std::string, Tensor>> &input_tensors,
-    const AtomMap &atommap,
-    const std::vector<int> &sel_fwd,
+    std::vector<float>& d_tensor_,
+    Session* session,
+    const std::vector<std::pair<std::string, Tensor>>& input_tensors,
+    const AtomMap& atommap,
+    const std::vector<int>& sel_fwd,
     const int nghost);
 
 template <typename MODELTYPE, typename VALUETYPE>
 void DeepTensorTF::run_model(
-    std::vector<VALUETYPE> &dglobal_tensor_,
-    std::vector<VALUETYPE> &dforce_,
-    std::vector<VALUETYPE> &dvirial_,
-    std::vector<VALUETYPE> &datom_tensor_,
-    std::vector<VALUETYPE> &datom_virial_,
-    tensorflow::Session *session,
-    const std::vector<std::pair<std::string, tensorflow::Tensor>>
-        &input_tensors,
-    const AtomMap &atommap,
-    const std::vector<int> &sel_fwd,
+    std::vector<VALUETYPE>& dglobal_tensor_,
+    std::vector<VALUETYPE>& dforce_,
+    std::vector<VALUETYPE>& dvirial_,
+    std::vector<VALUETYPE>& datom_tensor_,
+    std::vector<VALUETYPE>& datom_virial_,
+    tensorflow::Session* session,
+    const std::vector<std::pair<std::string, tensorflow::Tensor>>&
+        input_tensors,
+    const AtomMap& atommap,
+    const std::vector<int>& sel_fwd,
     const int nghost) {
   unsigned nloc = atommap.get_type().size();
   unsigned nall = nloc + nghost;
@@ -282,61 +282,61 @@ void DeepTensorTF::run_model(
 }
 
 template void DeepTensorTF::run_model<double, double>(
-    std::vector<double> &dglobal_tensor_,
-    std::vector<double> &dforce_,
-    std::vector<double> &dvirial_,
-    std::vector<double> &datom_tensor_,
-    std::vector<double> &datom_virial_,
-    tensorflow::Session *session,
-    const std::vector<std::pair<std::string, tensorflow::Tensor>>
-        &input_tensors,
-    const AtomMap &atommap,
-    const std::vector<int> &sel_fwd,
+    std::vector<double>& dglobal_tensor_,
+    std::vector<double>& dforce_,
+    std::vector<double>& dvirial_,
+    std::vector<double>& datom_tensor_,
+    std::vector<double>& datom_virial_,
+    tensorflow::Session* session,
+    const std::vector<std::pair<std::string, tensorflow::Tensor>>&
+        input_tensors,
+    const AtomMap& atommap,
+    const std::vector<int>& sel_fwd,
     const int nghost);
 template void DeepTensorTF::run_model<float, double>(
-    std::vector<double> &dglobal_tensor_,
-    std::vector<double> &dforce_,
-    std::vector<double> &dvirial_,
-    std::vector<double> &datom_tensor_,
-    std::vector<double> &datom_virial_,
-    tensorflow::Session *session,
-    const std::vector<std::pair<std::string, tensorflow::Tensor>>
-        &input_tensors,
-    const AtomMap &atommap,
-    const std::vector<int> &sel_fwd,
+    std::vector<double>& dglobal_tensor_,
+    std::vector<double>& dforce_,
+    std::vector<double>& dvirial_,
+    std::vector<double>& datom_tensor_,
+    std::vector<double>& datom_virial_,
+    tensorflow::Session* session,
+    const std::vector<std::pair<std::string, tensorflow::Tensor>>&
+        input_tensors,
+    const AtomMap& atommap,
+    const std::vector<int>& sel_fwd,
     const int nghost);
 
 template void DeepTensorTF::run_model<double, float>(
-    std::vector<float> &dglobal_tensor_,
-    std::vector<float> &dforce_,
-    std::vector<float> &dvirial_,
-    std::vector<float> &datom_tensor_,
-    std::vector<float> &datom_virial_,
-    tensorflow::Session *session,
-    const std::vector<std::pair<std::string, tensorflow::Tensor>>
-        &input_tensors,
-    const AtomMap &atommap,
-    const std::vector<int> &sel_fwd,
+    std::vector<float>& dglobal_tensor_,
+    std::vector<float>& dforce_,
+    std::vector<float>& dvirial_,
+    std::vector<float>& datom_tensor_,
+    std::vector<float>& datom_virial_,
+    tensorflow::Session* session,
+    const std::vector<std::pair<std::string, tensorflow::Tensor>>&
+        input_tensors,
+    const AtomMap& atommap,
+    const std::vector<int>& sel_fwd,
     const int nghost);
 
 template void DeepTensorTF::run_model<float, float>(
-    std::vector<float> &dglobal_tensor_,
-    std::vector<float> &dforce_,
-    std::vector<float> &dvirial_,
-    std::vector<float> &datom_tensor_,
-    std::vector<float> &datom_virial_,
-    tensorflow::Session *session,
-    const std::vector<std::pair<std::string, tensorflow::Tensor>>
-        &input_tensors,
-    const AtomMap &atommap,
-    const std::vector<int> &sel_fwd,
+    std::vector<float>& dglobal_tensor_,
+    std::vector<float>& dforce_,
+    std::vector<float>& dvirial_,
+    std::vector<float>& datom_tensor_,
+    std::vector<float>& datom_virial_,
+    tensorflow::Session* session,
+    const std::vector<std::pair<std::string, tensorflow::Tensor>>&
+        input_tensors,
+    const AtomMap& atommap,
+    const std::vector<int>& sel_fwd,
     const int nghost);
 
 template <typename VALUETYPE>
-void DeepTensorTF::compute(std::vector<VALUETYPE> &dtensor_,
-                           const std::vector<VALUETYPE> &dcoord_,
-                           const std::vector<int> &datype_,
-                           const std::vector<VALUETYPE> &dbox) {
+void DeepTensorTF::compute(std::vector<VALUETYPE>& dtensor_,
+                           const std::vector<VALUETYPE>& dcoord_,
+                           const std::vector<int>& datype_,
+                           const std::vector<VALUETYPE>& dbox) {
   int nall = datype_.size();
   std::vector<VALUETYPE> dcoord, aparam, aparam_;
   std::vector<int> datype, fwd_map, bkw_map;
@@ -347,23 +347,23 @@ void DeepTensorTF::compute(std::vector<VALUETYPE> &dtensor_,
   compute_inner(dtensor_, dcoord, datype, dbox);
 }
 
-template void DeepTensorTF::compute<double>(std::vector<double> &dtensor_,
-                                            const std::vector<double> &dcoord_,
-                                            const std::vector<int> &datype_,
-                                            const std::vector<double> &dbox);
+template void DeepTensorTF::compute<double>(std::vector<double>& dtensor_,
+                                            const std::vector<double>& dcoord_,
+                                            const std::vector<int>& datype_,
+                                            const std::vector<double>& dbox);
 
-template void DeepTensorTF::compute<float>(std::vector<float> &dtensor_,
-                                           const std::vector<float> &dcoord_,
-                                           const std::vector<int> &datype_,
-                                           const std::vector<float> &dbox);
+template void DeepTensorTF::compute<float>(std::vector<float>& dtensor_,
+                                           const std::vector<float>& dcoord_,
+                                           const std::vector<int>& datype_,
+                                           const std::vector<float>& dbox);
 
 template <typename VALUETYPE>
-void DeepTensorTF::compute(std::vector<VALUETYPE> &dtensor_,
-                           const std::vector<VALUETYPE> &dcoord_,
-                           const std::vector<int> &datype_,
-                           const std::vector<VALUETYPE> &dbox,
+void DeepTensorTF::compute(std::vector<VALUETYPE>& dtensor_,
+                           const std::vector<VALUETYPE>& dcoord_,
+                           const std::vector<int>& datype_,
+                           const std::vector<VALUETYPE>& dbox,
                            const int nghost,
-                           const InputNlist &lmp_list) {
+                           const InputNlist& lmp_list) {
   int nall = datype_.size();
   std::vector<VALUETYPE> dcoord, dforce, datom_virial, aparam, aparam_;
   std::vector<int> datype, fwd_map, bkw_map;
@@ -380,29 +380,29 @@ void DeepTensorTF::compute(std::vector<VALUETYPE> &dtensor_,
   compute_inner(dtensor_, dcoord, datype, dbox, nghost_real, nlist);
 }
 
-template void DeepTensorTF::compute<double>(std::vector<double> &dtensor_,
-                                            const std::vector<double> &dcoord_,
-                                            const std::vector<int> &datype_,
-                                            const std::vector<double> &dbox,
+template void DeepTensorTF::compute<double>(std::vector<double>& dtensor_,
+                                            const std::vector<double>& dcoord_,
+                                            const std::vector<int>& datype_,
+                                            const std::vector<double>& dbox,
                                             const int nghost,
-                                            const InputNlist &lmp_list);
+                                            const InputNlist& lmp_list);
 
-template void DeepTensorTF::compute<float>(std::vector<float> &dtensor_,
-                                           const std::vector<float> &dcoord_,
-                                           const std::vector<int> &datype_,
-                                           const std::vector<float> &dbox,
+template void DeepTensorTF::compute<float>(std::vector<float>& dtensor_,
+                                           const std::vector<float>& dcoord_,
+                                           const std::vector<int>& datype_,
+                                           const std::vector<float>& dbox,
                                            const int nghost,
-                                           const InputNlist &lmp_list);
+                                           const InputNlist& lmp_list);
 
 template <typename VALUETYPE>
-void DeepTensorTF::compute(std::vector<VALUETYPE> &dglobal_tensor_,
-                           std::vector<VALUETYPE> &dforce_,
-                           std::vector<VALUETYPE> &dvirial_,
-                           std::vector<VALUETYPE> &datom_tensor_,
-                           std::vector<VALUETYPE> &datom_virial_,
-                           const std::vector<VALUETYPE> &dcoord_,
-                           const std::vector<int> &datype_,
-                           const std::vector<VALUETYPE> &dbox) {
+void DeepTensorTF::compute(std::vector<VALUETYPE>& dglobal_tensor_,
+                           std::vector<VALUETYPE>& dforce_,
+                           std::vector<VALUETYPE>& dvirial_,
+                           std::vector<VALUETYPE>& datom_tensor_,
+                           std::vector<VALUETYPE>& datom_virial_,
+                           const std::vector<VALUETYPE>& dcoord_,
+                           const std::vector<int>& datype_,
+                           const std::vector<VALUETYPE>& dbox) {
   int nall = datype_.size();
   std::vector<VALUETYPE> dcoord, dforce, datom_virial, aparam, aparam_;
   std::vector<int> datype, fwd_map, bkw_map;
@@ -434,35 +434,35 @@ void DeepTensorTF::compute(std::vector<VALUETYPE> &dglobal_tensor_,
 }
 
 template void DeepTensorTF::compute<double>(
-    std::vector<double> &dglobal_tensor_,
-    std::vector<double> &dforce_,
-    std::vector<double> &dvirial_,
-    std::vector<double> &datom_tensor_,
-    std::vector<double> &datom_virial_,
-    const std::vector<double> &dcoord_,
-    const std::vector<int> &datype_,
-    const std::vector<double> &dbox);
+    std::vector<double>& dglobal_tensor_,
+    std::vector<double>& dforce_,
+    std::vector<double>& dvirial_,
+    std::vector<double>& datom_tensor_,
+    std::vector<double>& datom_virial_,
+    const std::vector<double>& dcoord_,
+    const std::vector<int>& datype_,
+    const std::vector<double>& dbox);
 
-template void DeepTensorTF::compute<float>(std::vector<float> &dglobal_tensor_,
-                                           std::vector<float> &dforce_,
-                                           std::vector<float> &dvirial_,
-                                           std::vector<float> &datom_tensor_,
-                                           std::vector<float> &datom_virial_,
-                                           const std::vector<float> &dcoord_,
-                                           const std::vector<int> &datype_,
-                                           const std::vector<float> &dbox);
+template void DeepTensorTF::compute<float>(std::vector<float>& dglobal_tensor_,
+                                           std::vector<float>& dforce_,
+                                           std::vector<float>& dvirial_,
+                                           std::vector<float>& datom_tensor_,
+                                           std::vector<float>& datom_virial_,
+                                           const std::vector<float>& dcoord_,
+                                           const std::vector<int>& datype_,
+                                           const std::vector<float>& dbox);
 
 template <typename VALUETYPE>
-void DeepTensorTF::compute(std::vector<VALUETYPE> &dglobal_tensor_,
-                           std::vector<VALUETYPE> &dforce_,
-                           std::vector<VALUETYPE> &dvirial_,
-                           std::vector<VALUETYPE> &datom_tensor_,
-                           std::vector<VALUETYPE> &datom_virial_,
-                           const std::vector<VALUETYPE> &dcoord_,
-                           const std::vector<int> &datype_,
-                           const std::vector<VALUETYPE> &dbox,
+void DeepTensorTF::compute(std::vector<VALUETYPE>& dglobal_tensor_,
+                           std::vector<VALUETYPE>& dforce_,
+                           std::vector<VALUETYPE>& dvirial_,
+                           std::vector<VALUETYPE>& datom_tensor_,
+                           std::vector<VALUETYPE>& datom_virial_,
+                           const std::vector<VALUETYPE>& dcoord_,
+                           const std::vector<int>& datype_,
+                           const std::vector<VALUETYPE>& dbox,
                            const int nghost,
-                           const InputNlist &lmp_list) {
+                           const InputNlist& lmp_list) {
   int nall = datype_.size();
   std::vector<VALUETYPE> dcoord, dforce, datom_virial, aparam, aparam_;
   std::vector<int> datype, fwd_map, bkw_map;
@@ -493,33 +493,33 @@ void DeepTensorTF::compute(std::vector<VALUETYPE> &dglobal_tensor_,
 }
 
 template void DeepTensorTF::compute<double>(
-    std::vector<double> &dglobal_tensor_,
-    std::vector<double> &dforce_,
-    std::vector<double> &dvirial_,
-    std::vector<double> &datom_tensor_,
-    std::vector<double> &datom_virial_,
-    const std::vector<double> &dcoord_,
-    const std::vector<int> &datype_,
-    const std::vector<double> &dbox,
+    std::vector<double>& dglobal_tensor_,
+    std::vector<double>& dforce_,
+    std::vector<double>& dvirial_,
+    std::vector<double>& datom_tensor_,
+    std::vector<double>& datom_virial_,
+    const std::vector<double>& dcoord_,
+    const std::vector<int>& datype_,
+    const std::vector<double>& dbox,
     const int nghost,
-    const InputNlist &lmp_list);
+    const InputNlist& lmp_list);
 
-template void DeepTensorTF::compute<float>(std::vector<float> &dglobal_tensor_,
-                                           std::vector<float> &dforce_,
-                                           std::vector<float> &dvirial_,
-                                           std::vector<float> &datom_tensor_,
-                                           std::vector<float> &datom_virial_,
-                                           const std::vector<float> &dcoord_,
-                                           const std::vector<int> &datype_,
-                                           const std::vector<float> &dbox,
+template void DeepTensorTF::compute<float>(std::vector<float>& dglobal_tensor_,
+                                           std::vector<float>& dforce_,
+                                           std::vector<float>& dvirial_,
+                                           std::vector<float>& datom_tensor_,
+                                           std::vector<float>& datom_virial_,
+                                           const std::vector<float>& dcoord_,
+                                           const std::vector<int>& datype_,
+                                           const std::vector<float>& dbox,
                                            const int nghost,
-                                           const InputNlist &lmp_list);
+                                           const InputNlist& lmp_list);
 
 template <typename VALUETYPE>
-void DeepTensorTF::compute_inner(std::vector<VALUETYPE> &dtensor_,
-                                 const std::vector<VALUETYPE> &dcoord_,
-                                 const std::vector<int> &datype_,
-                                 const std::vector<VALUETYPE> &dbox) {
+void DeepTensorTF::compute_inner(std::vector<VALUETYPE>& dtensor_,
+                                 const std::vector<VALUETYPE>& dcoord_,
+                                 const std::vector<int>& datype_,
+                                 const std::vector<VALUETYPE>& dbox) {
   int nall = dcoord_.size() / 3;
   int nloc = nall;
   AtomMap atommap(datype_.begin(), datype_.begin() + nloc);
@@ -550,24 +550,24 @@ void DeepTensorTF::compute_inner(std::vector<VALUETYPE> &dtensor_,
 }
 
 template void DeepTensorTF::compute_inner<double>(
-    std::vector<double> &dtensor_,
-    const std::vector<double> &dcoord_,
-    const std::vector<int> &datype_,
-    const std::vector<double> &dbox);
+    std::vector<double>& dtensor_,
+    const std::vector<double>& dcoord_,
+    const std::vector<int>& datype_,
+    const std::vector<double>& dbox);
 
 template void DeepTensorTF::compute_inner<float>(
-    std::vector<float> &dtensor_,
-    const std::vector<float> &dcoord_,
-    const std::vector<int> &datype_,
-    const std::vector<float> &dbox);
+    std::vector<float>& dtensor_,
+    const std::vector<float>& dcoord_,
+    const std::vector<int>& datype_,
+    const std::vector<float>& dbox);
 
 template <typename VALUETYPE>
-void DeepTensorTF::compute_inner(std::vector<VALUETYPE> &dtensor_,
-                                 const std::vector<VALUETYPE> &dcoord_,
-                                 const std::vector<int> &datype_,
-                                 const std::vector<VALUETYPE> &dbox,
+void DeepTensorTF::compute_inner(std::vector<VALUETYPE>& dtensor_,
+                                 const std::vector<VALUETYPE>& dcoord_,
+                                 const std::vector<int>& datype_,
+                                 const std::vector<VALUETYPE>& dbox,
                                  const int nghost,
-                                 const InputNlist &nlist_) {
+                                 const InputNlist& nlist_) {
   int nall = dcoord_.size() / 3;
   int nloc = nall - nghost;
   AtomMap atommap(datype_.begin(), datype_.begin() + nloc);
@@ -608,30 +608,30 @@ void DeepTensorTF::compute_inner(std::vector<VALUETYPE> &dtensor_,
 }
 
 template void DeepTensorTF::compute_inner<double>(
-    std::vector<double> &dtensor_,
-    const std::vector<double> &dcoord_,
-    const std::vector<int> &datype_,
-    const std::vector<double> &dbox,
+    std::vector<double>& dtensor_,
+    const std::vector<double>& dcoord_,
+    const std::vector<int>& datype_,
+    const std::vector<double>& dbox,
     const int nghost,
-    const InputNlist &nlist_);
+    const InputNlist& nlist_);
 
 template void DeepTensorTF::compute_inner<float>(
-    std::vector<float> &dtensor_,
-    const std::vector<float> &dcoord_,
-    const std::vector<int> &datype_,
-    const std::vector<float> &dbox,
+    std::vector<float>& dtensor_,
+    const std::vector<float>& dcoord_,
+    const std::vector<int>& datype_,
+    const std::vector<float>& dbox,
     const int nghost,
-    const InputNlist &nlist_);
+    const InputNlist& nlist_);
 
 template <typename VALUETYPE>
-void DeepTensorTF::compute_inner(std::vector<VALUETYPE> &dglobal_tensor_,
-                                 std::vector<VALUETYPE> &dforce_,
-                                 std::vector<VALUETYPE> &dvirial_,
-                                 std::vector<VALUETYPE> &datom_tensor_,
-                                 std::vector<VALUETYPE> &datom_virial_,
-                                 const std::vector<VALUETYPE> &dcoord_,
-                                 const std::vector<int> &datype_,
-                                 const std::vector<VALUETYPE> &dbox) {
+void DeepTensorTF::compute_inner(std::vector<VALUETYPE>& dglobal_tensor_,
+                                 std::vector<VALUETYPE>& dforce_,
+                                 std::vector<VALUETYPE>& dvirial_,
+                                 std::vector<VALUETYPE>& datom_tensor_,
+                                 std::vector<VALUETYPE>& datom_virial_,
+                                 const std::vector<VALUETYPE>& dcoord_,
+                                 const std::vector<int>& datype_,
+                                 const std::vector<VALUETYPE>& dbox) {
   int nall = dcoord_.size() / 3;
   int nloc = nall;
   AtomMap atommap(datype_.begin(), datype_.begin() + nloc);
@@ -664,36 +664,36 @@ void DeepTensorTF::compute_inner(std::vector<VALUETYPE> &dglobal_tensor_,
 }
 
 template void DeepTensorTF::compute_inner<double>(
-    std::vector<double> &dglobal_tensor_,
-    std::vector<double> &dforce_,
-    std::vector<double> &dvirial_,
-    std::vector<double> &datom_tensor_,
-    std::vector<double> &datom_virial_,
-    const std::vector<double> &dcoord_,
-    const std::vector<int> &datype_,
-    const std::vector<double> &dbox);
+    std::vector<double>& dglobal_tensor_,
+    std::vector<double>& dforce_,
+    std::vector<double>& dvirial_,
+    std::vector<double>& datom_tensor_,
+    std::vector<double>& datom_virial_,
+    const std::vector<double>& dcoord_,
+    const std::vector<int>& datype_,
+    const std::vector<double>& dbox);
 
 template void DeepTensorTF::compute_inner<float>(
-    std::vector<float> &dglobal_tensor_,
-    std::vector<float> &dforce_,
-    std::vector<float> &dvirial_,
-    std::vector<float> &datom_tensor_,
-    std::vector<float> &datom_virial_,
-    const std::vector<float> &dcoord_,
-    const std::vector<int> &datype_,
-    const std::vector<float> &dbox);
+    std::vector<float>& dglobal_tensor_,
+    std::vector<float>& dforce_,
+    std::vector<float>& dvirial_,
+    std::vector<float>& datom_tensor_,
+    std::vector<float>& datom_virial_,
+    const std::vector<float>& dcoord_,
+    const std::vector<int>& datype_,
+    const std::vector<float>& dbox);
 
 template <typename VALUETYPE>
-void DeepTensorTF::compute_inner(std::vector<VALUETYPE> &dglobal_tensor_,
-                                 std::vector<VALUETYPE> &dforce_,
-                                 std::vector<VALUETYPE> &dvirial_,
-                                 std::vector<VALUETYPE> &datom_tensor_,
-                                 std::vector<VALUETYPE> &datom_virial_,
-                                 const std::vector<VALUETYPE> &dcoord_,
-                                 const std::vector<int> &datype_,
-                                 const std::vector<VALUETYPE> &dbox,
+void DeepTensorTF::compute_inner(std::vector<VALUETYPE>& dglobal_tensor_,
+                                 std::vector<VALUETYPE>& dforce_,
+                                 std::vector<VALUETYPE>& dvirial_,
+                                 std::vector<VALUETYPE>& datom_tensor_,
+                                 std::vector<VALUETYPE>& datom_virial_,
+                                 const std::vector<VALUETYPE>& dcoord_,
+                                 const std::vector<int>& datype_,
+                                 const std::vector<VALUETYPE>& dbox,
                                  const int nghost,
-                                 const InputNlist &nlist_) {
+                                 const InputNlist& nlist_) {
   int nall = dcoord_.size() / 3;
   int nloc = nall - nghost;
   AtomMap atommap(datype_.begin(), datype_.begin() + nloc);
@@ -736,41 +736,41 @@ void DeepTensorTF::compute_inner(std::vector<VALUETYPE> &dglobal_tensor_,
 }
 
 template void DeepTensorTF::compute_inner<double>(
-    std::vector<double> &dglobal_tensor_,
-    std::vector<double> &dforce_,
-    std::vector<double> &dvirial_,
-    std::vector<double> &datom_tensor_,
-    std::vector<double> &datom_virial_,
-    const std::vector<double> &dcoord_,
-    const std::vector<int> &datype_,
-    const std::vector<double> &dbox,
+    std::vector<double>& dglobal_tensor_,
+    std::vector<double>& dforce_,
+    std::vector<double>& dvirial_,
+    std::vector<double>& datom_tensor_,
+    std::vector<double>& datom_virial_,
+    const std::vector<double>& dcoord_,
+    const std::vector<int>& datype_,
+    const std::vector<double>& dbox,
     const int nghost,
-    const InputNlist &nlist_);
+    const InputNlist& nlist_);
 
 template void DeepTensorTF::compute_inner<float>(
-    std::vector<float> &dglobal_tensor_,
-    std::vector<float> &dforce_,
-    std::vector<float> &dvirial_,
-    std::vector<float> &datom_tensor_,
-    std::vector<float> &datom_virial_,
-    const std::vector<float> &dcoord_,
-    const std::vector<int> &datype_,
-    const std::vector<float> &dbox,
+    std::vector<float>& dglobal_tensor_,
+    std::vector<float>& dforce_,
+    std::vector<float>& dvirial_,
+    std::vector<float>& datom_tensor_,
+    std::vector<float>& datom_virial_,
+    const std::vector<float>& dcoord_,
+    const std::vector<int>& datype_,
+    const std::vector<float>& dbox,
     const int nghost,
-    const InputNlist &nlist_);
+    const InputNlist& nlist_);
 
-void DeepTensorTF::get_type_map(std::string &type_map) {
+void DeepTensorTF::get_type_map(std::string& type_map) {
   type_map = get_scalar<STRINGTYPE>("model_attr/tmap");
 }
 
-void DeepTensorTF::computew(std::vector<double> &global_tensor,
-                            std::vector<double> &force,
-                            std::vector<double> &virial,
-                            std::vector<double> &atom_tensor,
-                            std::vector<double> &atom_virial,
-                            const std::vector<double> &coord,
-                            const std::vector<int> &atype,
-                            const std::vector<double> &box,
+void DeepTensorTF::computew(std::vector<double>& global_tensor,
+                            std::vector<double>& force,
+                            std::vector<double>& virial,
+                            std::vector<double>& atom_tensor,
+                            std::vector<double>& atom_virial,
+                            const std::vector<double>& coord,
+                            const std::vector<int>& atype,
+                            const std::vector<double>& box,
                             const bool request_deriv) {
   if (request_deriv) {
     compute(global_tensor, force, virial, atom_tensor, atom_virial, coord,
@@ -783,14 +783,14 @@ void DeepTensorTF::computew(std::vector<double> &global_tensor,
     atom_virial.clear();
   }
 }
-void DeepTensorTF::computew(std::vector<float> &global_tensor,
-                            std::vector<float> &force,
-                            std::vector<float> &virial,
-                            std::vector<float> &atom_tensor,
-                            std::vector<float> &atom_virial,
-                            const std::vector<float> &coord,
-                            const std::vector<int> &atype,
-                            const std::vector<float> &box,
+void DeepTensorTF::computew(std::vector<float>& global_tensor,
+                            std::vector<float>& force,
+                            std::vector<float>& virial,
+                            std::vector<float>& atom_tensor,
+                            std::vector<float>& atom_virial,
+                            const std::vector<float>& coord,
+                            const std::vector<int>& atype,
+                            const std::vector<float>& box,
                             const bool request_deriv) {
   if (request_deriv) {
     compute(global_tensor, force, virial, atom_tensor, atom_virial, coord,
@@ -804,16 +804,16 @@ void DeepTensorTF::computew(std::vector<float> &global_tensor,
   }
 }
 
-void DeepTensorTF::computew(std::vector<double> &global_tensor,
-                            std::vector<double> &force,
-                            std::vector<double> &virial,
-                            std::vector<double> &atom_tensor,
-                            std::vector<double> &atom_virial,
-                            const std::vector<double> &coord,
-                            const std::vector<int> &atype,
-                            const std::vector<double> &box,
+void DeepTensorTF::computew(std::vector<double>& global_tensor,
+                            std::vector<double>& force,
+                            std::vector<double>& virial,
+                            std::vector<double>& atom_tensor,
+                            std::vector<double>& atom_virial,
+                            const std::vector<double>& coord,
+                            const std::vector<int>& atype,
+                            const std::vector<double>& box,
                             const int nghost,
-                            const InputNlist &inlist,
+                            const InputNlist& inlist,
                             const bool request_deriv) {
   if (request_deriv) {
     compute(global_tensor, force, virial, atom_tensor, atom_virial, coord,
@@ -826,16 +826,16 @@ void DeepTensorTF::computew(std::vector<double> &global_tensor,
     atom_virial.clear();
   }
 }
-void DeepTensorTF::computew(std::vector<float> &global_tensor,
-                            std::vector<float> &force,
-                            std::vector<float> &virial,
-                            std::vector<float> &atom_tensor,
-                            std::vector<float> &atom_virial,
-                            const std::vector<float> &coord,
-                            const std::vector<int> &atype,
-                            const std::vector<float> &box,
+void DeepTensorTF::computew(std::vector<float>& global_tensor,
+                            std::vector<float>& force,
+                            std::vector<float>& virial,
+                            std::vector<float>& atom_tensor,
+                            std::vector<float>& atom_virial,
+                            const std::vector<float>& coord,
+                            const std::vector<int>& atype,
+                            const std::vector<float>& box,
                             const int nghost,
-                            const InputNlist &inlist,
+                            const InputNlist& inlist,
                             const bool request_deriv) {
   if (request_deriv) {
     compute(global_tensor, force, virial, atom_tensor, atom_virial, coord,

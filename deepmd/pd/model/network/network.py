@@ -1,8 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-    Union,
-)
 
 import paddle
 import paddle.nn as nn
@@ -27,7 +23,7 @@ from deepmd.utils.version import (
 )
 
 
-def Tensor(*shape):
+def Tensor(*shape: int) -> paddle.Tensor:
     return paddle.empty(shape, dtype=env.GLOBAL_PD_FLOAT_PRECISION).to(
         device=env.DEVICE
     )
@@ -36,15 +32,16 @@ def Tensor(*shape):
 class TypeEmbedNet(nn.Layer):
     def __init__(
         self,
-        type_nums,
-        embed_dim,
-        bavg=0.0,
-        stddev=1.0,
-        precision="default",
-        seed: Optional[Union[int, list[int]]] = None,
-        use_econf_tebd=False,
+        type_nums: int,
+        embed_dim: int,
+        bavg: float = 0.0,
+        stddev: float = 1.0,
+        precision: str = "default",
+        seed: int | list[int] | None = None,
+        use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
-        type_map=None,
+        type_map: list[str] | None = None,
+        trainable: bool = True,
     ) -> None:
         """Construct a type embedding net."""
         super().__init__()
@@ -65,10 +62,11 @@ class TypeEmbedNet(nn.Layer):
             type_map=type_map,
             precision=precision,
             seed=seed,
+            trainable=trainable,
         )
         # init.normal_(self.embedding.weight[:-1], mean=bavg, std=stddev)
 
-    def forward(self, atype):
+    def forward(self, atype: paddle.Tensor) -> paddle.Tensor:
         """
         Args:
             atype: Type of each input, [nframes, nloc] or [nframes, nloc, nnei].
@@ -80,7 +78,7 @@ class TypeEmbedNet(nn.Layer):
         """
         return self.embedding(atype.place)[atype]
 
-    def get_full_embedding(self, device: str):
+    def get_full_embedding(self, device: str) -> paddle.Tensor:
         """
         Get the type embeddings of all types.
 
@@ -97,7 +95,9 @@ class TypeEmbedNet(nn.Layer):
         """
         return self.embedding(device)
 
-    def share_params(self, base_class, shared_level, resume=False) -> None:
+    def share_params(
+        self, base_class: "TypeEmbedNet", shared_level: int, resume: bool = False
+    ) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -114,7 +114,9 @@ class TypeEmbedNet(nn.Layer):
             raise NotImplementedError
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self,
+        type_map: list[str],
+        model_with_new_type_stat: "TypeEmbedNet | None" = None,
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -160,11 +162,11 @@ class TypeEmbedNetConsistent(nn.Layer):
         activation_function: str = "tanh",
         precision: str = "default",
         trainable: bool = True,
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
         padding: bool = False,
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
-        type_map: Optional[list[str]] = None,
+        type_map: list[str] | None = None,
     ) -> None:
         """Construct a type embedding net."""
         super().__init__()
@@ -195,11 +197,12 @@ class TypeEmbedNetConsistent(nn.Layer):
             self.precision,
             self.seed,
             bias=self.use_tebd_bias,
+            trainable=trainable,
         )
         for param in self.parameters():
             param.stop_gradient = not trainable
 
-    def forward(self, device: str):
+    def forward(self, device: str) -> paddle.Tensor:
         """Caulate type embedding network.
 
         Returns
@@ -208,9 +211,7 @@ class TypeEmbedNetConsistent(nn.Layer):
             Type embedding network.
         """
         if not self.use_econf_tebd:
-            embed = self.embedding_net(
-                paddle.eye(self.ntypes, dtype=self.prec).to(device=device)
-            )
+            embed = self.embedding_net(paddle.eye(self.ntypes, dtype=self.prec))
         else:
             assert self.econf_tebd is not None
             embed = self.embedding_net(self.econf_tebd.to(device))
@@ -218,15 +219,15 @@ class TypeEmbedNetConsistent(nn.Layer):
             embed = paddle.concat(
                 [
                     embed,
-                    paddle.zeros([1, embed.shape[1]], dtype=self.prec).to(
-                        device=device
-                    ),
+                    paddle.zeros([1, embed.shape[1]], dtype=self.prec),
                 ]
             )
         return embed
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self,
+        type_map: list[str],
+        model_with_new_type_stat: "TypeEmbedNetConsistent | None" = None,
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -291,7 +292,7 @@ class TypeEmbedNetConsistent(nn.Layer):
         self.ntypes = len(type_map)
 
     @classmethod
-    def deserialize(cls, data: dict):
+    def deserialize(cls, data: dict) -> "TypeEmbedNetConsistent":
         """Deserialize the model.
 
         Parameters

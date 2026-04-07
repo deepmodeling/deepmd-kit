@@ -30,7 +30,7 @@ Rules
 -----
 
 The code must be compatible with the oldest supported version of python
-which is 3.9.
+which is 3.10.
 
 The project follows the generic coding conventions as
 specified in the `Style Guide for Python Code`_, `Docstring
@@ -145,12 +145,12 @@ style with some modifications.
 Run scripts to check the code
 =============================
 
-It's a good idea to install `pre-commit <https://pre-commit.com>`_ on your repository:
+It's a good idea to install `prek <https://github.com/j178/prek>`_ on your repository:
 
 .. code-block:: bash
 
-    $ pip install pre-commit
-    $ pre-commit install
+    $ uv tool install prek
+    $ prek install
 
 The scripts will be run automatically before each commit and will fix the code style
 issues automatically.

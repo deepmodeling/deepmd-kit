@@ -7,7 +7,7 @@ from collections.abc import (
     Sequence,
 )
 from typing import (
-    Optional,
+    Any,
 )
 
 import numpy as np
@@ -32,7 +32,7 @@ def convert_number(number: int) -> float:
 
 
 def convert_matrix(
-    matrix: np.ndarray, shape: Sequence[int], dtype: Optional[type] = None
+    matrix: np.ndarray, shape: Sequence[int], dtype: type | None = None
 ) -> np.ndarray:
     """Convert matrix of integers to self defined binary format.
 
@@ -57,7 +57,7 @@ def convert_matrix(
     return conv
 
 
-def transfer(*, old_model: str, raw_model: str, output: str, **kwargs) -> None:
+def transfer(*, old_model: str, raw_model: str, output: str, **kwargs: Any) -> None:
     """Transfer operation from old from graph to new prepared raw graph.
 
     Parameters
@@ -184,11 +184,11 @@ def transform_graph(raw_graph: tf.Graph, old_graph: tf.Graph) -> tf.Graph:
 
 
 class CopyNodeAttr:
-    def __init__(self, node) -> None:
+    def __init__(self, node: tf.compat.v1.NodeDef) -> None:
         self.node = node
 
     def from_array(
-        self, tensor: np.ndarray, dtype: type, shape: Optional[Sequence[int]] = None
+        self, tensor: np.ndarray, dtype: type, shape: Sequence[int] | None = None
     ) -> None:
         if shape is None:
             shape = tensor.shape

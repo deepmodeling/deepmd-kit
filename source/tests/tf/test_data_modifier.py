@@ -19,6 +19,9 @@ from deepmd.tf.train.trainer import (
 from deepmd.tf.utils.data_system import (
     DeepmdDataSystem,
 )
+from deepmd.utils.argcheck import (
+    normalize,
+)
 
 from .common import (
     Data,
@@ -53,17 +56,18 @@ class TestDataModifier(tf.test.TestCase):
             restart=None, init_model=None, log_path=None, log_level=30, mpi_log="master"
         )
         jdata = j_loader(INPUT)
+        jdata = normalize(jdata)
         # init model
         model = DPTrainer(jdata, run_opt=run_opt)
         rcut = model.model.get_rcut()
 
         # init data system
-        systems = jdata["training"]["systems"]
+        systems = jdata["training"]["training_data"]["systems"]
         # systems[0] = tests_path / systems[0]
         systems = [tests_path / ii for ii in systems]
         set_pfx = "set"
-        batch_size = jdata["training"]["batch_size"]
-        test_size = jdata["training"]["numb_test"]
+        batch_size = jdata["training"]["training_data"]["batch_size"]
+        test_size = 1
         data = DeepmdDataSystem(
             systems, batch_size, test_size, rcut, set_prefix=set_pfx
         )

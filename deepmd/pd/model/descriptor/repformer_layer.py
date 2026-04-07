@@ -1,8 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-    Union,
-)
 
 import paddle
 import paddle.nn as nn
@@ -44,7 +40,7 @@ def get_residual(
     _mode: str = "norm",
     trainable: bool = True,
     precision: str = "float64",
-    seed: Optional[Union[int, list[int]]] = None,
+    seed: int | list[int] | None = None,
 ) -> paddle.Tensor:
     r"""
     Get residual tensor for one update vector.
@@ -162,7 +158,8 @@ class Atten2Map(paddle.nn.Layer):
         smooth: bool = True,
         attnw_shift: float = 20.0,
         precision: str = "float64",
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
+        trainable: bool = True,
     ) -> None:
         """Return neighbor-wise multi-head self-attention maps, with gate mechanism."""
         super().__init__()
@@ -175,6 +172,7 @@ class Atten2Map(paddle.nn.Layer):
             bias=False,
             precision=precision,
             seed=seed,
+            trainable=trainable,
         )
         self.has_gate = has_gate
         self.smooth = smooth
@@ -287,7 +285,8 @@ class Atten2MultiHeadApply(paddle.nn.Layer):
         input_dim: int,
         head_num: int,
         precision: str = "float64",
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
+        trainable: bool = True,
     ) -> None:
         super().__init__()
         self.input_dim = input_dim
@@ -298,12 +297,14 @@ class Atten2MultiHeadApply(paddle.nn.Layer):
             bias=False,
             precision=precision,
             seed=child_seed(seed, 0),
+            trainable=trainable,
         )
         self.head_map = MLPLayer(
             input_dim * head_num,
             input_dim,
             precision=precision,
             seed=child_seed(seed, 1),
+            trainable=trainable,
         )
         self.precision = precision
 
@@ -374,13 +375,19 @@ class Atten2EquiVarApply(paddle.nn.Layer):
         input_dim: int,
         head_num: int,
         precision: str = "float64",
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
+        trainable: bool = True,
     ) -> None:
         super().__init__()
         self.input_dim = input_dim
         self.head_num = head_num
         self.head_map = MLPLayer(
-            head_num, 1, bias=False, precision=precision, seed=seed
+            head_num,
+            1,
+            bias=False,
+            precision=precision,
+            seed=seed,
+            trainable=trainable,
         )
         self.precision = precision
 
@@ -447,7 +454,8 @@ class LocalAtten(paddle.nn.Layer):
         smooth: bool = True,
         attnw_shift: float = 20.0,
         precision: str = "float64",
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
+        trainable: bool = True,
     ) -> None:
         super().__init__()
         self.input_dim = input_dim
@@ -459,6 +467,7 @@ class LocalAtten(paddle.nn.Layer):
             bias=False,
             precision=precision,
             seed=child_seed(seed, 0),
+            trainable=trainable,
         )
         self.mapkv = MLPLayer(
             input_dim,
@@ -466,12 +475,14 @@ class LocalAtten(paddle.nn.Layer):
             bias=False,
             precision=precision,
             seed=child_seed(seed, 1),
+            trainable=trainable,
         )
         self.head_map = MLPLayer(
             input_dim * head_num,
             input_dim,
             precision=precision,
             seed=child_seed(seed, 2),
+            trainable=trainable,
         )
         self.smooth = smooth
         self.attnw_shift = attnw_shift
@@ -580,12 +591,12 @@ class LocalAtten(paddle.nn.Layer):
 class RepformerLayer(paddle.nn.Layer):
     def __init__(
         self,
-        rcut,
-        rcut_smth,
+        rcut: float,
+        rcut_smth: float,
         sel: int,
         ntypes: int,
-        g1_dim=128,
-        g2_dim=16,
+        g1_dim: int = 128,
+        g2_dim: int = 16,
         axis_neuron: int = 4,
         update_chnnl_2: bool = True,
         update_g1_has_conv: bool = True,
@@ -607,11 +618,12 @@ class RepformerLayer(paddle.nn.Layer):
         smooth: bool = True,
         precision: str = "float64",
         trainable_ln: bool = True,
-        ln_eps: Optional[float] = 1e-5,
+        ln_eps: float | None = 1e-5,
         use_sqrt_nnei: bool = True,
         g1_out_conv: bool = True,
         g1_out_mlp: bool = True,
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
+        trainable: bool = True,
     ) -> None:
         super().__init__()
         self.epsilon = 1e-4  # protection of 1./nnei
@@ -672,6 +684,7 @@ class RepformerLayer(paddle.nn.Layer):
                     self.update_residual_init,
                     precision=precision,
                     seed=child_seed(seed, 0),
+                    trainable=trainable,
                 )
             )
 
@@ -681,6 +694,7 @@ class RepformerLayer(paddle.nn.Layer):
             g1_dim,
             precision=precision,
             seed=child_seed(seed, 1),
+            trainable=trainable,
         )
         self.linear2 = None
         self.proj_g1g2 = None
@@ -697,6 +711,7 @@ class RepformerLayer(paddle.nn.Layer):
                 g2_dim,
                 precision=precision,
                 seed=child_seed(seed, 2),
+                trainable=trainable,
             )
             if self.update_style == "res_residual":
                 self.g2_residual.append(
@@ -706,6 +721,7 @@ class RepformerLayer(paddle.nn.Layer):
                         self.update_residual_init,
                         precision=precision,
                         seed=child_seed(seed, 3),
+                        trainable=trainable,
                     )
                 )
         if self.g1_out_mlp:
@@ -714,6 +730,7 @@ class RepformerLayer(paddle.nn.Layer):
                 g1_dim,
                 precision=precision,
                 seed=child_seed(seed, 15),
+                trainable=trainable,
             )
             if self.update_style == "res_residual":
                 self.g1_residual.append(
@@ -723,6 +740,7 @@ class RepformerLayer(paddle.nn.Layer):
                         self.update_residual_init,
                         precision=precision,
                         seed=child_seed(seed, 16),
+                        trainable=trainable,
                     )
                 )
         else:
@@ -735,6 +753,7 @@ class RepformerLayer(paddle.nn.Layer):
                     bias=False,
                     precision=precision,
                     seed=child_seed(seed, 4),
+                    trainable=trainable,
                 )
             else:
                 self.proj_g1g2 = MLPLayer(
@@ -743,6 +762,7 @@ class RepformerLayer(paddle.nn.Layer):
                     bias=False,
                     precision=precision,
                     seed=child_seed(seed, 4),
+                    trainable=trainable,
                 )
                 if self.update_style == "res_residual":
                     self.g1_residual.append(
@@ -752,6 +772,7 @@ class RepformerLayer(paddle.nn.Layer):
                             self.update_residual_init,
                             precision=precision,
                             seed=child_seed(seed, 17),
+                            trainable=trainable,
                         )
                     )
         if self.update_g2_has_g1g1:
@@ -761,6 +782,7 @@ class RepformerLayer(paddle.nn.Layer):
                 bias=False,
                 precision=precision,
                 seed=child_seed(seed, 5),
+                trainable=trainable,
             )
             if self.update_style == "res_residual":
                 self.g2_residual.append(
@@ -770,6 +792,7 @@ class RepformerLayer(paddle.nn.Layer):
                         self.update_residual_init,
                         precision=precision,
                         seed=child_seed(seed, 6),
+                        trainable=trainable,
                     )
                 )
         if self.update_g2_has_attn or self.update_h2:
@@ -781,10 +804,15 @@ class RepformerLayer(paddle.nn.Layer):
                 self.smooth,
                 precision=precision,
                 seed=child_seed(seed, 7),
+                trainable=trainable,
             )
             if self.update_g2_has_attn:
                 self.attn2_mh_apply = Atten2MultiHeadApply(
-                    g2_dim, attn2_nhead, precision=precision, seed=child_seed(seed, 8)
+                    g2_dim,
+                    attn2_nhead,
+                    precision=precision,
+                    seed=child_seed(seed, 8),
+                    trainable=trainable,
                 )
                 self.attn2_lm = LayerNorm(
                     g2_dim,
@@ -801,12 +829,17 @@ class RepformerLayer(paddle.nn.Layer):
                             self.update_residual_init,
                             precision=precision,
                             seed=child_seed(seed, 10),
+                            trainable=trainable,
                         )
                     )
 
             if self.update_h2:
                 self.attn2_ev_apply = Atten2EquiVarApply(
-                    g2_dim, attn2_nhead, precision=precision, seed=child_seed(seed, 11)
+                    g2_dim,
+                    attn2_nhead,
+                    precision=precision,
+                    seed=child_seed(seed, 11),
+                    trainable=trainable,
                 )
                 if self.update_style == "res_residual":
                     self.h2_residual.append(
@@ -816,6 +849,7 @@ class RepformerLayer(paddle.nn.Layer):
                             self.update_residual_init,
                             precision=precision,
                             seed=child_seed(seed, 12),
+                            trainable=trainable,
                         )
                     )
         if self.update_g1_has_attn:
@@ -826,6 +860,7 @@ class RepformerLayer(paddle.nn.Layer):
                 self.smooth,
                 precision=precision,
                 seed=child_seed(seed, 13),
+                trainable=trainable,
             )
             if self.update_style == "res_residual":
                 self.g1_residual.append(
@@ -835,6 +870,7 @@ class RepformerLayer(paddle.nn.Layer):
                         self.update_residual_init,
                         precision=precision,
                         seed=child_seed(seed, 14),
+                        trainable=trainable,
                     )
                 )
 
@@ -914,9 +950,7 @@ class RepformerLayer(paddle.nn.Layer):
             ).unsqueeze(-1)
         else:
             gg1 = _apply_switch(gg1, sw)
-            invnnei = (1.0 / float(nnei)) * paddle.ones(
-                (nb, nloc, 1), dtype=gg1.dtype
-            ).to(device=gg1.place)
+            invnnei = (1.0 / float(nnei)) * paddle.ones((nb, nloc, 1), dtype=gg1.dtype)
         if not self.g1_out_conv:
             # nb x nloc x ng2
             g1_11 = paddle.sum(g2 * gg1, axis=2) * invnnei
@@ -986,11 +1020,10 @@ class RepformerLayer(paddle.nn.Layer):
             if not use_sqrt_nnei:
                 invnnei = (1.0 / float(nnei)) * paddle.ones(
                     (nb, nloc, 1, 1), dtype=g2.dtype
-                ).to(device=g2.place)
+                )
             else:
                 invnnei = paddle.rsqrt(
-                    float(nnei)
-                    * paddle.ones([nb, nloc, 1, 1], dtype=g2.dtype).to(device=g2.place)
+                    float(nnei) * paddle.ones([nb, nloc, 1, 1], dtype=g2.dtype)
                 )
         # nb x nloc x 3 x ng2
         h2g2 = paddle.matmul(paddle.transpose(h2, [0, 1, 3, 2]), g2) * invnnei
@@ -1114,7 +1147,7 @@ class RepformerLayer(paddle.nn.Layer):
         nlist: paddle.Tensor,  # nf x nloc x nnei
         nlist_mask: paddle.Tensor,  # nf x nloc x nnei
         sw: paddle.Tensor,  # switch func, nf x nloc x nnei
-    ):
+    ) -> tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
         """
         Parameters
         ----------

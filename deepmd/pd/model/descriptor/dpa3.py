@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
+from collections.abc import (
     Callable,
-    Optional,
-    Union,
+)
+from typing import (
+    Any,
 )
 
 import paddle
@@ -31,6 +32,7 @@ from deepmd.pd.utils.update_sel import (
     UpdateSel,
 )
 from deepmd.pd.utils.utils import (
+    ActivationFn,
     to_numpy_array,
 )
 from deepmd.utils.data_system import (
@@ -91,7 +93,7 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         Whether to use bias in the type embedding layer.
     use_loc_mapping : bool, Optional
         Whether to use local atom index mapping in training or non-parallel inference.
-        Not supported yet in Paddle.
+        When True, local indexing and mapping are applied to neighbor lists and embeddings during descriptor computation.
     type_map : list[str], Optional
         A list of strings. Give the name to each type of atoms.
 
@@ -106,7 +108,7 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         self,
         ntypes: int,
         # args for repflow
-        repflow: Union[RepFlowArgs, dict],
+        repflow: RepFlowArgs | dict,
         # kwargs for descriptor
         concat_output_tebd: bool = False,
         activation_function: str = "silu",
@@ -114,15 +116,16 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         trainable: bool = True,
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
-        use_loc_mapping: bool = False,
-        type_map: Optional[list[str]] = None,
+        use_loc_mapping: bool = True,
+        type_map: list[str] | None = None,
+        add_chg_spin_ebd: bool = False,
     ) -> None:
         super().__init__()
 
-        def init_subclass_params(sub_data, sub_class):
+        def init_subclass_params(sub_data: dict | Any, sub_class: type) -> Any:
             if isinstance(sub_data, dict):
                 return sub_class(**sub_data)
             elif isinstance(sub_data, sub_class):
@@ -160,6 +163,8 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
             fix_stat_std=self.repflow_args.fix_stat_std,
             optim_update=self.repflow_args.optim_update,
             smooth_edge_update=self.repflow_args.smooth_edge_update,
+            edge_init_use_dist=self.repflow_args.edge_init_use_dist,
+            use_exp_switch=self.repflow_args.use_exp_switch,
             use_dynamic_sel=self.repflow_args.use_dynamic_sel,
             sel_reduce_factor=self.repflow_args.sel_reduce_factor,
             use_loc_mapping=use_loc_mapping,
@@ -167,12 +172,19 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
             env_protection=env_protection,
             precision=precision,
             seed=child_seed(seed, 1),
+            trainable=trainable,
         )
 
         self.use_econf_tebd = use_econf_tebd
-        self.use_tebd_bias = use_tebd_bias
+        self.add_chg_spin_ebd = add_chg_spin_ebd
         self.use_loc_mapping = use_loc_mapping
+        self.use_tebd_bias = use_tebd_bias
         self.type_map = type_map
+        if type_map is not None:
+            self.register_buffer(
+                "buffer_type_map",
+                paddle.to_tensor([ord(c) for c in " ".join(self.type_map)]),
+            )
         self.tebd_dim = self.repflow_args.n_dim
         self.type_embedding = TypeEmbedNet(
             ntypes,
@@ -182,10 +194,39 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
             use_econf_tebd=self.use_econf_tebd,
             use_tebd_bias=use_tebd_bias,
             type_map=type_map,
+            trainable=trainable,
         )
         self.concat_output_tebd = concat_output_tebd
         self.precision = precision
         self.prec = PRECISION_DICT[self.precision]
+
+        if self.add_chg_spin_ebd:
+            self.act = ActivationFn(activation_function)
+            # -100 ~ 100 is a conservative bound
+            self.chg_embedding = TypeEmbedNet(
+                200,
+                self.tebd_dim,
+                precision=precision,
+                seed=child_seed(seed, 3),
+            )
+            # 100 is a conservative upper bound
+            self.spin_embedding = TypeEmbedNet(
+                100,
+                self.tebd_dim,
+                precision=precision,
+                seed=child_seed(seed, 4),
+            )
+            self.mix_cs_mlp = MLPLayer(
+                2 * self.tebd_dim,
+                self.tebd_dim,
+                precision=precision,
+                seed=child_seed(seed, 5),
+            )
+        else:
+            self.chg_embedding = None
+            self.spin_embedding = None
+            self.mix_cs_mlp = None
+
         self.exclude_types = exclude_types
         self.env_protection = env_protection
         self.trainable = trainable
@@ -203,6 +244,9 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         self.rcut_smth = self.repflows.get_rcut_smth()
         self.sel = self.repflows.get_sel()
         self.ntypes = ntypes
+        self.register_buffer(
+            "buffer_ntypes", paddle.to_tensor(self.ntypes, dtype="int64")
+        )
 
         # set trainable
         for param in self.parameters():
@@ -217,6 +261,14 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         """Returns the radius where the neighbor information starts to smoothly decay to 0."""
         return self.rcut_smth
 
+    def get_buffer_rcut(self) -> paddle.Tensor:
+        """Returns the cut-off radius as a buffer-style Tensor."""
+        return self.repflows.get_buffer_rcut()
+
+    def get_buffer_rcut_smth(self) -> paddle.Tensor:
+        """Returns the radius where the neighbor information starts to smoothly decay to 0 as a buffer-style Tensor."""
+        return self.repflows.get_buffer_rcut_smth()
+
     def get_nsel(self) -> int:
         """Returns the number of selected atoms in the cut-off radius."""
         return sum(self.sel)
@@ -225,13 +277,29 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         """Returns the number of selected atoms for each type."""
         return self.sel
 
+    def get_buffer_sel(self) -> paddle.Tensor:
+        """Returns the number of selected atoms for each type as a buffer-style Tensor."""
+        return self.repflows.get_sel()
+
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
-        return self.ntypes
+        return self.ntypes if paddle.in_dynamic_mode() else self.buffer_ntypes
 
     def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
         return self.type_map
+
+    def get_buffer_type_map(self) -> paddle.Tensor:
+        """
+        Return the type map as a buffer-style Tensor for JIT saving.
+
+        The original type map (e.g., ['Ni', 'O']) is first joined into a single space-separated string
+        (e.g., "Ni O"). Each character in this string is then converted to its ASCII code using `ord()`,
+        and the resulting integer sequence is stored as a 1D paddle.Tensor of dtype int.
+
+        This format allows the type map to be serialized as a raw byte buffer during JIT model saving.
+        """
+        return self.buffer_type_map
 
     def get_dim_out(self) -> int:
         """Returns the output dimension of this descriptor."""
@@ -268,7 +336,9 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         """Returns the protection of building environment matrix."""
         return self.repflows.get_env_protection()
 
-    def share_params(self, base_class, shared_level, resume=False) -> None:
+    def share_params(
+        self, base_class: Any, shared_level: int, resume: bool = False
+    ) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -296,7 +366,7 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
             raise NotImplementedError
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: Any = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -325,18 +395,18 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         repflow["dstd"] = repflow["dstd"][remap_index]
 
     @property
-    def dim_out(self):
+    def dim_out(self) -> int:
         return self.get_dim_out()
 
     @property
-    def dim_emb(self):
+    def dim_emb(self) -> int:
         """Returns the embedding dimension g2."""
         return self.get_dim_emb()
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -394,9 +464,14 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
             "use_econf_tebd": self.use_econf_tebd,
             "use_tebd_bias": self.use_tebd_bias,
             "use_loc_mapping": self.use_loc_mapping,
+            "add_chg_spin_ebd": self.add_chg_spin_ebd,
             "type_map": self.type_map,
             "type_embedding": self.type_embedding.embedding.serialize(),
         }
+        if self.add_chg_spin_ebd:
+            data["chg_embedding"] = self.chg_embedding.embedding.serialize()
+            data["spin_embedding"] = self.spin_embedding.embedding.serialize()
+            data["mix_cs_mlp"] = self.mix_cs_mlp.serialize()
         repflow_variable = {
             "edge_embd": repflows.edge_embd.serialize(),
             "angle_embd": repflows.angle_embd.serialize(),
@@ -423,13 +498,25 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         data.pop("type")
         repflow_variable = data.pop("repflow_variable").copy()
         type_embedding = data.pop("type_embedding")
+        chg_embedding = data.pop("chg_embedding", None)
+        spin_embedding = data.pop("spin_embedding", None)
+        mix_cs_mlp = data.pop("mix_cs_mlp", None)
         data["repflow"] = RepFlowArgs(**data.pop("repflow_args"))
         obj = cls(**data)
         obj.type_embedding.embedding = TypeEmbedNetConsistent.deserialize(
             type_embedding
         )
 
-        def t_cvt(xx):
+        if obj.add_chg_spin_ebd and chg_embedding is not None:
+            obj.chg_embedding.embedding = TypeEmbedNetConsistent.deserialize(
+                chg_embedding
+            )
+            obj.spin_embedding.embedding = TypeEmbedNetConsistent.deserialize(
+                spin_embedding
+            )
+            obj.mix_cs_mlp = MLPLayer.deserialize(mix_cs_mlp)
+
+        def t_cvt(xx: Any) -> paddle.Tensor:
             return paddle.to_tensor(xx, dtype=obj.repflows.prec, place=env.DEVICE)
 
         # deserialize repflow
@@ -452,9 +539,16 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         extended_coord: paddle.Tensor,
         extended_atype: paddle.Tensor,
         nlist: paddle.Tensor,
-        mapping: Optional[paddle.Tensor] = None,
-        comm_dict: Optional[dict[str, paddle.Tensor]] = None,
-    ):
+        mapping: paddle.Tensor | None = None,
+        comm_dict: list[paddle.Tensor] | None = None,
+        fparam: paddle.Tensor | None = None,
+    ) -> tuple[
+        paddle.Tensor,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+    ]:
         """Compute the descriptor.
 
         Parameters
@@ -487,12 +581,30 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
             The smooth switch function. shape: nf x nloc x nnei
 
         """
+        parallel_mode = comm_dict is not None
         # cast the input to internal precsion
         extended_coord = extended_coord.to(dtype=self.prec)
         nframes, nloc, nnei = nlist.shape
         nall = extended_coord.reshape([nframes, -1]).shape[1] // 3
 
-        node_ebd_ext = self.type_embedding(extended_atype)
+        if not parallel_mode and self.use_loc_mapping:
+            node_ebd_ext = self.type_embedding(extended_atype[:, :nloc])
+        else:
+            node_ebd_ext = self.type_embedding(extended_atype)
+
+        if self.add_chg_spin_ebd:
+            assert fparam is not None
+            assert self.chg_embedding is not None
+            assert self.spin_embedding is not None
+            charge = fparam[:, 0].to(dtype=paddle.int64) + 100
+            spin = fparam[:, 1].to(dtype=paddle.int64)
+            chg_ebd = self.chg_embedding(charge)
+            spin_ebd = self.spin_embedding(spin)
+            sys_cs_embd = self.act(
+                self.mix_cs_mlp(paddle.concat([chg_ebd, spin_ebd], axis=-1))
+            )
+            node_ebd_ext = node_ebd_ext + sys_cs_embd.unsqueeze(1)
+
         node_ebd_inp = node_ebd_ext[:, :nloc, :]
         # repflows
         node_ebd, edge_ebd, h2, rot_mat, sw = self.repflows(
@@ -507,19 +619,23 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
             node_ebd = paddle.concat([node_ebd, node_ebd_inp], axis=-1)
         return (
             node_ebd.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
-            rot_mat.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
-            edge_ebd.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
-            h2.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
-            sw.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
+            rot_mat.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION)
+            if rot_mat is not None
+            else None,
+            edge_ebd.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION)
+            if edge_ebd is not None
+            else None,
+            h2.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION) if h2 is not None else None,
+            sw.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION) if sw is not None else None,
         )
 
     @classmethod
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
+from collections.abc import (
     Callable,
-    Optional,
-    Union,
+)
+from typing import (
+    Any,
 )
 
 import paddle
@@ -124,7 +125,7 @@ class DescrptSeTTebd(BaseDescriptor, paddle.nn.Layer):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[list[int], int],
+        sel: list[int] | int,
         ntypes: int,
         neuron: list = [2, 4, 8],
         tebd_dim: int = 8,
@@ -136,11 +137,11 @@ class DescrptSeTTebd(BaseDescriptor, paddle.nn.Layer):
         exclude_types: list[tuple[int, int]] = [],
         precision: str = "float64",
         trainable: bool = True,
-        seed: Optional[Union[int, list[int]]] = None,
-        type_map: Optional[list[str]] = None,
+        seed: int | list[int] | None = None,
+        type_map: list[str] | None = None,
         concat_output_tebd: bool = True,
         use_econf_tebd: bool = False,
-        use_tebd_bias=False,
+        use_tebd_bias: bool = False,
         smooth: bool = True,
     ) -> None:
         super().__init__()
@@ -160,10 +161,16 @@ class DescrptSeTTebd(BaseDescriptor, paddle.nn.Layer):
             env_protection=env_protection,
             smooth=smooth,
             seed=child_seed(seed, 1),
+            trainable=trainable,
         )
         self.prec = PRECISION_DICT[precision]
         self.use_econf_tebd = use_econf_tebd
         self.type_map = type_map
+        if type_map is not None:
+            self.register_buffer(
+                "buffer_type_map",
+                paddle.to_tensor([ord(c) for c in " ".join(type_map)]),
+            )
         self.smooth = smooth
         self.type_embedding = TypeEmbedNet(
             ntypes,
@@ -173,6 +180,7 @@ class DescrptSeTTebd(BaseDescriptor, paddle.nn.Layer):
             use_econf_tebd=use_econf_tebd,
             type_map=type_map,
             use_tebd_bias=use_tebd_bias,
+            trainable=trainable,
         )
         self.tebd_dim = tebd_dim
         self.tebd_input_mode = tebd_input_mode
@@ -205,6 +213,18 @@ class DescrptSeTTebd(BaseDescriptor, paddle.nn.Layer):
     def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
         return self.type_map
+
+    def get_buffer_type_map(self) -> paddle.Tensor:
+        """
+        Return the type map as a buffer-style Tensor for JIT saving.
+
+        The original type map (e.g., ['Ni', 'O']) is first joined into a single space-separated string
+        (e.g., "Ni O"). Each character in this string is then converted to its ASCII code using `ord()`,
+        and the resulting integer sequence is stored as a 1D paddle.Tensor of dtype int.
+
+        This format allows the type map to be serialized as a raw byte buffer during JIT model saving.
+        """
+        return self.buffer_type_map
 
     def get_dim_out(self) -> int:
         """Returns the output dimension."""
@@ -240,7 +260,9 @@ class DescrptSeTTebd(BaseDescriptor, paddle.nn.Layer):
         """Returns the protection of building environment matrix."""
         return self.se_ttebd.get_env_protection()
 
-    def share_params(self, base_class, shared_level, resume=False) -> None:
+    def share_params(
+        self, base_class: object, shared_level: int, resume: bool = False
+    ) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -268,18 +290,18 @@ class DescrptSeTTebd(BaseDescriptor, paddle.nn.Layer):
             raise NotImplementedError
 
     @property
-    def dim_out(self):
+    def dim_out(self) -> int:
         return self.get_dim_out()
 
     @property
-    def dim_emb(self):
+    def dim_emb(self) -> int:
         return self.get_dim_emb()
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
-    ):
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
+    ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
 
@@ -312,7 +334,7 @@ class DescrptSeTTebd(BaseDescriptor, paddle.nn.Layer):
         return self.se_ttebd.mean, self.se_ttebd.stddev
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: Any | None = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -378,13 +400,14 @@ class DescrptSeTTebd(BaseDescriptor, paddle.nn.Layer):
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeTTebd":
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
+        check_version_compatibility(data.pop("@version"), 2, 1)
         data.pop("@class")
         data.pop("type")
         variables = data.pop("@variables")
         embeddings = data.pop("embeddings")
         type_embedding = data.pop("type_embedding")
         env_mat = data.pop("env_mat")
+        data.pop("compress", None)  # pd uses state_dict for compression
         tebd_input_mode = data["tebd_input_mode"]
         if tebd_input_mode in ["strip"]:
             embeddings_strip = data.pop("embeddings_strip")
@@ -392,7 +415,7 @@ class DescrptSeTTebd(BaseDescriptor, paddle.nn.Layer):
             embeddings_strip = None
         obj = cls(**data)
 
-        def t_cvt(xx):
+        def t_cvt(xx: paddle.Tensor) -> paddle.Tensor:
             return paddle.to_tensor(xx, dtype=obj.se_ttebd.prec).to(device=env.DEVICE)
 
         obj.type_embedding.embedding = TypeEmbedNetConsistent.deserialize(
@@ -412,9 +435,10 @@ class DescrptSeTTebd(BaseDescriptor, paddle.nn.Layer):
         extended_coord: paddle.Tensor,
         extended_atype: paddle.Tensor,
         nlist: paddle.Tensor,
-        mapping: Optional[paddle.Tensor] = None,
-        comm_dict: Optional[dict[str, paddle.Tensor]] = None,
-    ):
+        mapping: paddle.Tensor | None = None,
+        comm_dict: list[paddle.Tensor] | None = None,
+        fparam: paddle.Tensor | None = None,
+    ) -> paddle.Tensor:
         """Compute the descriptor.
 
         Parameters
@@ -481,9 +505,9 @@ class DescrptSeTTebd(BaseDescriptor, paddle.nn.Layer):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
@@ -516,23 +540,26 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[list[int], int],
+        sel: list[int] | int,
         ntypes: int,
         neuron: list = [25, 50, 100],
         tebd_dim: int = 8,
         tebd_input_mode: str = "concat",
         set_davg_zero: bool = True,
-        activation_function="tanh",
+        activation_function: str = "tanh",
         precision: str = "float64",
         resnet_dt: bool = False,
         exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         smooth: bool = True,
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
+        trainable: bool = True,
     ) -> None:
         super().__init__()
         self.rcut = float(rcut)
+        self.register_buffer("buffer_rcut", paddle.to_tensor(self.rcut))
         self.rcut_smth = float(rcut_smth)
+        self.register_buffer("buffer_rcut_smth", paddle.to_tensor(self.rcut_smth))
         self.neuron = neuron
         self.filter_neuron = self.neuron
         self.tebd_dim = tebd_dim
@@ -550,6 +577,10 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             sel = [sel]
 
         self.ntypes = ntypes
+        self.register_buffer(
+            "buffer_ntypes", paddle.to_tensor(self.ntypes, dtype="int64")
+        )
+
         self.sel = sel
         self.sec = self.sel
         self.split_sel = self.sel
@@ -585,6 +616,7 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             precision=self.precision,
             resnet_dt=self.resnet_dt,
             seed=child_seed(self.seed, 1),
+            trainable=trainable,
         )
         self.filter_layers = filter_layers
         if self.tebd_input_mode in ["strip"]:
@@ -598,6 +630,7 @@ class DescrptBlockSeTTebd(DescriptorBlock):
                 precision=self.precision,
                 resnet_dt=self.resnet_dt,
                 seed=child_seed(self.seed, 2),
+                trainable=trainable,
             )
             self.filter_layers_strip = filter_layers_strip
         self.stats = None
@@ -610,6 +643,14 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         """Returns the radius where the neighbor information starts to smoothly decay to 0."""
         return self.rcut_smth
 
+    def get_buffer_rcut(self) -> paddle.Tensor:
+        """Returns the cut-off radius as a buffer-style Tensor."""
+        return self.buffer_rcut
+
+    def get_buffer_rcut_smth(self) -> paddle.Tensor:
+        """Returns the radius where the neighbor information starts to smoothly decay to 0 as a buffer-style Tensor."""
+        return self.buffer_rcut_smth
+
     def get_nsel(self) -> int:
         """Returns the number of selected atoms in the cut-off radius."""
         return sum(self.sel)
@@ -620,7 +661,7 @@ class DescrptBlockSeTTebd(DescriptorBlock):
 
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
-        return self.ntypes
+        return self.ntypes if paddle.in_dynamic_mode() else self.buffer_ntypes
 
     def get_dim_in(self) -> int:
         """Returns the input dimension."""
@@ -634,7 +675,7 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         """Returns the output dimension of embedding."""
         return self.filter_neuron[-1]
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: paddle.Tensor) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.mean = value
         elif key in ("std", "data_std", "dstd"):
@@ -642,7 +683,7 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> paddle.Tensor:
         if key in ("avg", "data_avg", "davg"):
             return self.mean
         elif key in ("std", "data_std", "dstd"):
@@ -667,24 +708,24 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         return self.env_protection
 
     @property
-    def dim_out(self):
+    def dim_out(self) -> int:
         """Returns the output dimension of this descriptor."""
         return self.filter_neuron[-1]
 
     @property
-    def dim_in(self):
+    def dim_in(self) -> int:
         """Returns the atomic input dimension of this descriptor."""
         return self.tebd_dim
 
     @property
-    def dim_emb(self):
+    def dim_emb(self) -> int:
         """Returns the output dimension of embedding."""
         return self.get_dim_emb()
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -746,10 +787,17 @@ class DescrptBlockSeTTebd(DescriptorBlock):
         nlist: paddle.Tensor,
         extended_coord: paddle.Tensor,
         extended_atype: paddle.Tensor,
-        extended_atype_embd: Optional[paddle.Tensor] = None,
-        mapping: Optional[paddle.Tensor] = None,
-        type_embedding: Optional[paddle.Tensor] = None,
-    ):
+        extended_atype_embd: paddle.Tensor | None = None,
+        mapping: paddle.Tensor | None = None,
+        type_embedding: paddle.Tensor | None = None,
+        fparam: paddle.Tensor | None = None,
+    ) -> tuple[
+        paddle.Tensor,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+    ]:
         """Compute the descriptor.
 
         Parameters
@@ -840,7 +888,7 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             # nb x (nloc x nnei) x nt
             # atype_tebd_nlist = paddle.take_along_axis(atype_tebd_ext, axis=1, index=index)
             atype_tebd_nlist = paddle.take_along_axis(
-                atype_tebd_ext, axis=1, indices=index
+                atype_tebd_ext, axis=1, indices=index, broadcast=False
             )
             # nb x nloc x nnei x nt
             atype_tebd_nlist = atype_tebd_nlist.reshape([nb, nloc, nnei, nt])
@@ -864,7 +912,7 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             nlist_index = nlist.reshape([nb, nloc * nnei])
             # nf x (nl x nnei)
             nei_type = paddle.take_along_axis(
-                extended_atype, indices=nlist_index, axis=1
+                extended_atype, indices=nlist_index, axis=1, broadcast=False
             )
             # nfnl x nnei
             nei_type = nei_type.reshape([nfnl, nnei])
@@ -897,7 +945,7 @@ class DescrptBlockSeTTebd(DescriptorBlock):
             ).reshape([-1, nt * 2])
             tt_full = self.filter_layers_strip.networks[0](two_side_type_embedding)
             # (nfnl x nt_i x nt_j) x ng
-            gg_t = paddle.take_along_axis(tt_full, indices=idx, axis=0)
+            gg_t = paddle.take_along_axis(tt_full, indices=idx, axis=0, broadcast=False)
             # (nfnl x nt_i x nt_j) x ng
             gg_t = gg_t.reshape([nfnl, nnei, nnei, ng])
             if self.smooth:

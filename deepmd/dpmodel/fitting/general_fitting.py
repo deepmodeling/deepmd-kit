@@ -2,10 +2,11 @@
 from abc import (
     abstractmethod,
 )
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
-    Optional,
-    Union,
 )
 
 import array_api_compat
@@ -15,6 +16,9 @@ from deepmd.dpmodel import (
     DEFAULT_PRECISION,
     PRECISION_DICT,
     NativeOP,
+)
+from deepmd.dpmodel.array_api import (
+    Array,
 )
 from deepmd.dpmodel.common import (
     get_xp_precision,
@@ -31,9 +35,15 @@ from deepmd.dpmodel.utils.seed import (
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
+from deepmd.utils.env_mat_stat import (
+    StatItem,
+)
 from deepmd.utils.finetune import (
     get_index_between_two_maps,
     map_atom_exclude_types,
+)
+from deepmd.utils.path import (
+    DPPath,
 )
 
 from .base_fitting import (
@@ -94,6 +104,9 @@ class GeneralFitting(NativeOP, BaseFitting):
             A list of strings. Give the name to each type of atoms.
     seed: Optional[Union[int, list[int]]]
         Random seed for initializing the network parameters.
+    default_fparam: list[float], optional
+        The default frame parameter. If set, when `fparam.npy` files are not included in the data system,
+        this value will be used as the default value for the frame parameter in the fitting net.
     """
 
     def __init__(
@@ -106,20 +119,21 @@ class GeneralFitting(NativeOP, BaseFitting):
         numb_fparam: int = 0,
         numb_aparam: int = 0,
         dim_case_embd: int = 0,
-        bias_atom_e: Optional[np.ndarray] = None,
-        rcond: Optional[float] = None,
+        bias_atom_e: Array | None = None,
+        rcond: float | None = None,
         tot_ener_zero: bool = False,
-        trainable: Optional[list[bool]] = None,
+        trainable: list[bool] | None = None,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
-        layer_name: Optional[list[Optional[str]]] = None,
+        layer_name: list[str | None] | None = None,
         use_aparam_as_mask: bool = False,
         spin: Any = None,
         mixed_types: bool = True,
         exclude_types: list[int] = [],
-        remove_vaccum_contribution: Optional[list[bool]] = None,
-        type_map: Optional[list[str]] = None,
-        seed: Optional[Union[int, list[int]]] = None,
+        remove_vaccum_contribution: list[bool] | None = None,
+        type_map: list[str] | None = None,
+        seed: int | list[int] | None = None,
+        default_fparam: list[float] | None = None,
     ) -> None:
         self.var_name = var_name
         self.ntypes = ntypes
@@ -129,6 +143,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         self.numb_fparam = numb_fparam
         self.numb_aparam = numb_aparam
         self.dim_case_embd = dim_case_embd
+        self.default_fparam = default_fparam
         self.rcond = rcond
         self.tot_ener_zero = tot_ener_zero
         self.trainable = trainable
@@ -177,6 +192,15 @@ class GeneralFitting(NativeOP, BaseFitting):
             self.case_embd = np.zeros(self.dim_case_embd, dtype=self.prec)
         else:
             self.case_embd = None
+
+        if self.default_fparam is not None:
+            if self.numb_fparam > 0:
+                assert len(self.default_fparam) == self.numb_fparam, (
+                    "default_fparam length mismatch!"
+                )
+            self.default_fparam_tensor = np.array(self.default_fparam, dtype=self.prec)
+        else:
+            self.default_fparam_tensor = None
         # init networks
         in_dim = (
             self.dim_descrpt
@@ -198,13 +222,189 @@ class GeneralFitting(NativeOP, BaseFitting):
                     self.precision,
                     bias_out=True,
                     seed=child_seed(seed, ii),
+                    trainable=trainable,
                 )
                 for ii in range(self.ntypes if not self.mixed_types else 1)
             ],
         )
 
+    def compute_input_stats(
+        self,
+        merged: Callable[[], list[dict]] | list[dict],
+        protection: float = 1e-2,
+        stat_file_path: DPPath | None = None,
+    ) -> None:
+        """
+        Compute the input statistics (e.g. mean and stddev) for the fittings from packed data.
+
+        Parameters
+        ----------
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `numpy.ndarray`
+                originating from the `i`-th data system.
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        protection : float
+            Divided-by-zero protection
+        stat_file_path : Optional[DPPath]
+            The path to the stat file.
+        """
+        if self.numb_fparam == 0 and self.numb_aparam == 0:
+            # skip data statistics
+            return
+        # stat fparam
+        if self.numb_fparam > 0:
+            if (
+                stat_file_path is not None
+                and stat_file_path.is_dir()
+                and (stat_file_path / "fparam").is_file()
+            ):
+                fparam_stats = self._load_param_stats_from_file(
+                    stat_file_path, "fparam", self.numb_fparam
+                )
+            else:
+                sampled = merged() if callable(merged) else merged
+                for ii, frame in enumerate(sampled):
+                    if "find_fparam" not in frame:
+                        raise ValueError(
+                            f"numb_fparam > 0 but fparam is not acquired "
+                            f"for system {ii}."
+                        )
+                    if not frame["find_fparam"]:
+                        raise ValueError(
+                            f"numb_fparam > 0 but no fparam data is provided "
+                            f"for system {ii}."
+                        )
+                xp_fp = array_api_compat.array_namespace(sampled[0]["fparam"])
+                cat_data = xp_fp.concat([frame["fparam"] for frame in sampled], axis=0)
+                cat_data = xp_fp.reshape(cat_data, (-1, self.numb_fparam))
+                fparam_stats = [
+                    StatItem(
+                        number=cat_data.shape[0],
+                        sum=float(xp_fp.sum(cat_data[:, ii])),
+                        squared_sum=float(xp_fp.sum(cat_data[:, ii] ** 2)),
+                    )
+                    for ii in range(self.numb_fparam)
+                ]
+                if stat_file_path is not None:
+                    self._save_param_stats_to_file(
+                        stat_file_path, "fparam", fparam_stats
+                    )
+            fparam_avg = np.array(
+                [s.compute_avg() for s in fparam_stats], dtype=np.float64
+            )
+            fparam_std = np.array(
+                [s.compute_std(protection=protection) for s in fparam_stats],
+                dtype=np.float64,
+            )
+            fparam_inv_std = 1.0 / fparam_std
+            xp = array_api_compat.array_namespace(self.fparam_avg)
+            self.fparam_avg = xp.asarray(
+                fparam_avg,
+                dtype=self.fparam_avg.dtype,
+                device=array_api_compat.device(self.fparam_avg),
+            )
+            self.fparam_inv_std = xp.asarray(
+                fparam_inv_std,
+                dtype=self.fparam_inv_std.dtype,
+                device=array_api_compat.device(self.fparam_inv_std),
+            )
+        # stat aparam
+        if self.numb_aparam > 0:
+            if (
+                stat_file_path is not None
+                and stat_file_path.is_dir()
+                and (stat_file_path / "aparam").is_file()
+            ):
+                aparam_stats = self._load_param_stats_from_file(
+                    stat_file_path, "aparam", self.numb_aparam
+                )
+            else:
+                sampled = merged() if callable(merged) else merged
+                for ii, frame in enumerate(sampled):
+                    if "find_aparam" not in frame:
+                        raise ValueError(
+                            f"numb_aparam > 0 but aparam is not acquired "
+                            f"for system {ii}."
+                        )
+                    if not frame["find_aparam"]:
+                        raise ValueError(
+                            f"numb_aparam > 0 but no aparam data is provided "
+                            f"for system {ii}."
+                        )
+                xp_ap = array_api_compat.array_namespace(sampled[0]["aparam"])
+                sys_sumv = []
+                sys_sumv2 = []
+                sys_sumn = []
+                for ss_ in [frame["aparam"] for frame in sampled]:
+                    ss = xp_ap.reshape(ss_, (-1, self.numb_aparam))
+                    sys_sumv.append(xp_ap.sum(ss, axis=0))
+                    sys_sumv2.append(xp_ap.sum(ss * ss, axis=0))
+                    sys_sumn.append(ss.shape[0])
+                sumv = xp_ap.sum(xp_ap.stack(sys_sumv), axis=0)
+                sumv2 = xp_ap.sum(xp_ap.stack(sys_sumv2), axis=0)
+                sumn = sum(sys_sumn)
+                aparam_stats = [
+                    StatItem(
+                        number=sumn,
+                        sum=float(sumv[ii]),
+                        squared_sum=float(sumv2[ii]),
+                    )
+                    for ii in range(self.numb_aparam)
+                ]
+                if stat_file_path is not None:
+                    self._save_param_stats_to_file(
+                        stat_file_path, "aparam", aparam_stats
+                    )
+            aparam_avg = np.array(
+                [s.compute_avg() for s in aparam_stats], dtype=np.float64
+            )
+            aparam_std = np.array(
+                [s.compute_std(protection=protection) for s in aparam_stats],
+                dtype=np.float64,
+            )
+            aparam_inv_std = 1.0 / aparam_std
+            xp = array_api_compat.array_namespace(self.aparam_avg)
+            self.aparam_avg = xp.asarray(
+                aparam_avg,
+                dtype=self.aparam_avg.dtype,
+                device=array_api_compat.device(self.aparam_avg),
+            )
+            self.aparam_inv_std = xp.asarray(
+                aparam_inv_std,
+                dtype=self.aparam_inv_std.dtype,
+                device=array_api_compat.device(self.aparam_inv_std),
+            )
+
+    @staticmethod
+    def _save_param_stats_to_file(
+        stat_file_path: DPPath,
+        name: str,
+        stats: list[StatItem],
+    ) -> None:
+        stat_file_path.mkdir(exist_ok=True, parents=True)
+        fp = stat_file_path / name
+        arr = np.array([[s.number, s.sum, s.squared_sum] for s in stats])
+        fp.save_numpy(arr)
+
+    @staticmethod
+    def _load_param_stats_from_file(
+        stat_file_path: DPPath,
+        name: str,
+        numb: int,
+    ) -> list[StatItem]:
+        fp = stat_file_path / name
+        arr = fp.load_numpy()
+        assert arr.shape == (numb, 3)
+        return [
+            StatItem(number=arr[ii][0], sum=arr[ii][1], squared_sum=arr[ii][2])
+            for ii in range(numb)
+        ]
+
     @abstractmethod
-    def _net_out_dim(self):
+    def _net_out_dim(self) -> int:
         """Set the FittingNet output dim."""
         pass
 
@@ -215,6 +415,14 @@ class GeneralFitting(NativeOP, BaseFitting):
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return self.numb_aparam
+
+    def has_default_fparam(self) -> bool:
+        """Check if the fitting has default frame parameters."""
+        return self.default_fparam is not None
+
+    def get_default_fparam(self) -> list[float] | None:
+        """Get the default frame parameters."""
+        return self.default_fparam
 
     def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
@@ -229,7 +437,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         """Get the name to each type of atoms."""
         return self.type_map
 
-    def set_case_embd(self, case_idx: int):
+    def set_case_embd(self, case_idx: int) -> None:
         """
         Set the case embedding of this fitting net by the given case_idx,
         typically concatenated with the output of the descriptor and fed into the fitting net.
@@ -237,7 +445,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         self.case_embd = np.eye(self.dim_case_embd, dtype=self.prec)[case_idx]
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: Any | None = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -251,14 +459,17 @@ class GeneralFitting(NativeOP, BaseFitting):
         self.ntypes = len(type_map)
         self.reinit_exclude(map_atom_exclude_types(self.exclude_types, remap_index))
         if has_new_type:
+            xp = array_api_compat.array_namespace(self.bias_atom_e)
             extend_shape = [len(type_map), *list(self.bias_atom_e.shape[1:])]
-            extend_bias_atom_e = np.zeros(extend_shape, dtype=self.bias_atom_e.dtype)
-            self.bias_atom_e = np.concatenate(
-                [self.bias_atom_e, extend_bias_atom_e], axis=0
+            extend_bias_atom_e = xp.zeros(
+                extend_shape,
+                dtype=self.bias_atom_e.dtype,
+                device=array_api_compat.device(self.bias_atom_e),
             )
+            self.bias_atom_e = xp.concat([self.bias_atom_e, extend_bias_atom_e], axis=0)
         self.bias_atom_e = self.bias_atom_e[remap_index]
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: Any) -> None:
         if key in ["bias_atom_e"]:
             self.bias_atom_e = value
         elif key in ["fparam_avg"]:
@@ -273,10 +484,12 @@ class GeneralFitting(NativeOP, BaseFitting):
             self.case_embd = value
         elif key in ["scale"]:
             self.scale = value
+        elif key in ["default_fparam_tensor"]:
+            self.default_fparam_tensor = value
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> Any:
         if key in ["bias_atom_e"]:
             return self.bias_atom_e
         elif key in ["fparam_avg"]:
@@ -291,6 +504,8 @@ class GeneralFitting(NativeOP, BaseFitting):
             return self.case_embd
         elif key in ["scale"]:
             return self.scale
+        elif key in ["default_fparam_tensor"]:
+            return self.default_fparam_tensor
         else:
             raise KeyError(key)
 
@@ -305,7 +520,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         """Serialize the fitting to dict."""
         return {
             "@class": "Fitting",
-            "@version": 3,
+            "@version": 4,
             "var_name": self.var_name,
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
@@ -314,6 +529,7 @@ class GeneralFitting(NativeOP, BaseFitting):
             "numb_fparam": self.numb_fparam,
             "numb_aparam": self.numb_aparam,
             "dim_case_embd": self.dim_case_embd,
+            "default_fparam": self.default_fparam,
             "rcond": self.rcond,
             "activation_function": self.activation_function,
             "precision": self.precision,
@@ -352,14 +568,14 @@ class GeneralFitting(NativeOP, BaseFitting):
 
     def _call_common(
         self,
-        descriptor: np.ndarray,
-        atype: np.ndarray,
-        gr: Optional[np.ndarray] = None,
-        g2: Optional[np.ndarray] = None,
-        h2: Optional[np.ndarray] = None,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-    ) -> dict[str, np.ndarray]:
+        descriptor: Array,
+        atype: Array,
+        gr: Array | None = None,
+        g2: Array | None = None,
+        h2: Array | None = None,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
+    ) -> dict[str, Array]:
         """Calculate the fitting.
 
         Parameters
@@ -402,6 +618,14 @@ class GeneralFitting(NativeOP, BaseFitting):
             xx_zeros = xp.zeros_like(xx)
         else:
             xx_zeros = None
+
+        if self.numb_fparam > 0 and fparam is None:
+            # use default fparam
+            assert self.default_fparam_tensor is not None
+            fparam = xp.tile(
+                xp.reshape(self.default_fparam_tensor, (1, self.numb_fparam)), (nf, 1)
+            )
+
         # check fparam dim, concate to input descriptor
         if self.numb_fparam > 0:
             assert fparam is not None, "fparam should not be None"
@@ -412,7 +636,7 @@ class GeneralFitting(NativeOP, BaseFitting):
                 )
             fparam = (fparam - self.fparam_avg[...]) * self.fparam_inv_std[...]
             fparam = xp.tile(
-                xp.reshape(fparam, [nf, 1, self.numb_fparam]), (1, nloc, 1)
+                xp.reshape(fparam, (nf, 1, self.numb_fparam)), (1, nloc, 1)
             )
             xx = xp.concat(
                 [xx, fparam],
@@ -431,7 +655,7 @@ class GeneralFitting(NativeOP, BaseFitting):
                     f"get an input aparam of dim {aparam.shape[-1]}, "
                     f"which is not consistent with {self.numb_aparam}."
                 )
-            aparam = xp.reshape(aparam, [nf, nloc, self.numb_aparam])
+            aparam = xp.reshape(aparam, (nf, nloc, self.numb_aparam))
             aparam = (aparam - self.aparam_avg[...]) * self.aparam_inv_std[...]
             xx = xp.concat(
                 [xx, aparam],
@@ -446,7 +670,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         if self.dim_case_embd > 0:
             assert self.case_embd is not None
             case_embd = xp.tile(
-                xp.reshape(self.case_embd[...], [1, 1, -1]), [nf, nloc, 1]
+                xp.reshape(self.case_embd[...], (1, 1, -1)), (nf, nloc, 1)
             )
             xx = xp.concat(
                 [xx, case_embd],
@@ -459,13 +683,16 @@ class GeneralFitting(NativeOP, BaseFitting):
                 )
 
         # calculate the prediction
+        results: dict[str, Array] = {}
         if not self.mixed_types:
             outs = xp.zeros(
-                [nf, nloc, net_dim_out], dtype=get_xp_precision(xp, self.precision)
+                [nf, nloc, net_dim_out],
+                dtype=get_xp_precision(xp, self.precision),
+                device=array_api_compat.device(descriptor),
             )
             for type_i in range(self.ntypes):
                 mask = xp.tile(
-                    xp.reshape((atype == type_i), [nf, nloc, 1]), (1, 1, net_dim_out)
+                    xp.reshape((atype == type_i), (nf, nloc, 1)), (1, 1, net_dim_out)
                 )
                 atom_property = self.nets[(type_i,)](xx)
                 if self.remove_vaccum_contribution is not None and not (
@@ -485,14 +712,15 @@ class GeneralFitting(NativeOP, BaseFitting):
         outs += xp.reshape(
             xp.take(
                 xp.astype(self.bias_atom_e[...], outs.dtype),
-                xp.reshape(atype, [-1]),
+                xp.reshape(atype, (-1,)),
                 axis=0,
             ),
-            [nf, nloc, net_dim_out],
+            (nf, nloc, net_dim_out),
         )
         # nf x nloc
         exclude_mask = self.emask.build_type_exclude_mask(atype)
         exclude_mask = xp.astype(exclude_mask, xp.bool)
         # nf x nloc x nod
         outs = xp.where(exclude_mask[:, :, None], outs, xp.zeros_like(outs))
-        return {self.var_name: outs}
+        results[self.var_name] = outs
+        return results

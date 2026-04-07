@@ -1,16 +1,24 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Optional,
-    Union,
+    Any,
 )
 
+import numpy as np
+
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
+)
 from deepmd.tf.env import (
+    GLOBAL_TF_FLOAT_PRECISION,
     MODEL_VERSION,
     global_cvt_2_ener_float,
     tf,
 )
 from deepmd.tf.utils.type_embed import (
     TypeEmbedNet,
+)
+from deepmd.utils.data_system import (
+    DeepmdDataSystem,
 )
 
 from .model import (
@@ -49,11 +57,11 @@ class TensorModel(StandardModel):
         tensor_name: str,
         descriptor: dict,
         fitting_net: dict,
-        type_embedding: Optional[Union[dict, TypeEmbedNet]] = None,
-        type_map: Optional[list[str]] = None,
+        type_embedding: dict | TypeEmbedNet | None = None,
+        type_map: list[str] | None = None,
         data_stat_nbatch: int = 10,
         data_stat_protect: float = 1e-2,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Constructor."""
         super().__init__(
@@ -67,28 +75,28 @@ class TensorModel(StandardModel):
         )
         self.model_type = tensor_name
 
-    def get_rcut(self):
+    def get_rcut(self) -> float:
         return self.rcut
 
-    def get_ntypes(self):
+    def get_ntypes(self) -> int:
         return self.ntypes
 
-    def get_type_map(self):
+    def get_type_map(self) -> list[str]:
         return self.type_map
 
-    def get_sel_type(self):
+    def get_sel_type(self) -> list[int]:
         return self.fitting.get_sel_type()
 
-    def get_out_size(self):
+    def get_out_size(self) -> int:
         return self.fitting.get_out_size()
 
-    def data_stat(self, data) -> None:
+    def data_stat(self, data: DeepmdDataSystem) -> None:
         all_stat = make_stat_input(data, self.data_stat_nbatch, merge_sys=False)
         m_all_stat = merge_sys_stat(all_stat)
         self._compute_input_stat(m_all_stat, protection=self.data_stat_protect)
         self._compute_output_stat(m_all_stat)
 
-    def _compute_input_stat(self, all_stat, protection=1e-2) -> None:
+    def _compute_input_stat(self, all_stat: dict, protection: float = 1e-2) -> None:
         self.descrpt.compute_input_stats(
             all_stat["coord"],
             all_stat["box"],
@@ -100,23 +108,23 @@ class TensorModel(StandardModel):
         if hasattr(self.fitting, "compute_input_stats"):
             self.fitting.compute_input_stats(all_stat, protection=protection)
 
-    def _compute_output_stat(self, all_stat) -> None:
+    def _compute_output_stat(self, all_stat: dict) -> None:
         if hasattr(self.fitting, "compute_output_stats"):
             self.fitting.compute_output_stats(all_stat)
 
     def build(
         self,
-        coord_,
-        atype_,
-        natoms,
-        box,
-        mesh,
-        input_dict,
-        frz_model=None,
-        ckpt_meta: Optional[str] = None,
-        suffix="",
-        reuse=None,
-    ):
+        coord_: tf.Tensor,
+        atype_: tf.Tensor,
+        natoms: tf.Tensor,
+        box: tf.Tensor,
+        mesh: tf.Tensor,
+        input_dict: dict,
+        frz_model: str | None = None,
+        ckpt_meta: str | None = None,
+        suffix: str = "",
+        reuse: bool | None = None,
+    ) -> dict:
         if input_dict is None:
             input_dict = {}
         with tf.variable_scope("model_attr" + suffix, reuse=reuse):
@@ -125,6 +133,9 @@ class TensorModel(StandardModel):
             t_mt = tf.constant(self.model_type, name="model_type", dtype=tf.string)
             t_ver = tf.constant(MODEL_VERSION, name="model_version", dtype=tf.string)
             t_od = tf.constant(self.get_out_size(), name="output_dim", dtype=tf.int32)
+
+            # Initialize out_bias and out_std for tensor models (dipole/polar)
+            self.init_out_stat(suffix=suffix)
 
         natomsel = sum(natoms[2 + type_i] for type_i in self.get_sel_type())
         nout = self.get_out_size()
@@ -164,6 +175,38 @@ class TensorModel(StandardModel):
         output = self.fitting.build(
             dout, rot_mat, natoms, input_dict, reuse=reuse, suffix=suffix
         )
+
+        # Apply out_bias and out_std directly to tensor output
+        # dipole not applying bias but polar does, per dpmodel
+        if self.model_type == "polar" and self.fitting.shift_diag:
+            v_constant_matrix = np.zeros(
+                self.ntypes,
+                dtype=GLOBAL_NP_FLOAT_PRECISION,
+            )
+            sel_type = self.get_sel_type()
+            for itype in range(len(sel_type)):
+                v_constant_matrix[sel_type[itype]] = np.mean(
+                    np.diagonal(self.out_bias[0, itype].reshape((3, 3)))
+                )
+            nframes = input_dict["nframes"]
+            nloc_mask = tf.reshape(
+                tf.tile(tf.repeat(self.fitting.sel_mask, natoms[2:]), [nframes]),
+                [nframes, -1],
+            )
+            constant_matrix = tf.reshape(
+                tf.reshape(
+                    tf.tile(tf.repeat(v_constant_matrix, natoms[2:]), [nframes]),
+                    [nframes, -1],
+                )[nloc_mask],
+                [nframes, -1],
+            )
+
+            # nf x nloc x odims, out_bias: ntypes x odims
+            output = output + tf.reshape(
+                tf.expand_dims(tf.expand_dims(constant_matrix, -1), -1)
+                * tf.eye(3, batch_shape=[1, 1], dtype=GLOBAL_TF_FLOAT_PRECISION),
+                tf.shape(output),
+            )
         framesize = nout if "global" in self.model_type else natomsel * nout
         output = tf.reshape(
             output, [-1, framesize], name="o_" + self.model_type + suffix
@@ -238,22 +281,22 @@ class TensorModel(StandardModel):
 
 
 class WFCModel(TensorModel):
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         TensorModel.__init__(self, "wfc", *args, **kwargs)
 
 
 @StandardModel.register("dipole")
 class DipoleModel(TensorModel):
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         TensorModel.__init__(self, "dipole", *args, **kwargs)
 
 
 @StandardModel.register("polar")
 class PolarModel(TensorModel):
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         TensorModel.__init__(self, "polar", *args, **kwargs)
 
 
 class GlobalPolarModel(TensorModel):
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         TensorModel.__init__(self, "global_polar", *args, **kwargs)

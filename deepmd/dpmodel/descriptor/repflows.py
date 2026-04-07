@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
+from collections.abc import (
     Callable,
-    Optional,
-    Union,
 )
 
 import array_api_compat
@@ -13,7 +11,9 @@ from deepmd.dpmodel import (
     NativeOP,
 )
 from deepmd.dpmodel.array_api import (
+    Array,
     xp_take_along_axis,
+    xp_take_first_n,
 )
 from deepmd.dpmodel.common import (
     to_numpy_array,
@@ -63,6 +63,31 @@ from .repformers import (
 class DescrptBlockRepflows(NativeOP, DescriptorBlock):
     r"""
     The repflow descriptor block.
+
+    The repflow descriptor maintains three types of representations and updates them
+    iteratively through message passing:
+
+    - **Node representation** :math:`\mathbf{n}^i \in \mathbb{R}^{n_{dim}}`: single-atom features
+    - **Edge representation** :math:`\mathbf{e}^{ij} \in \mathbb{R}^{e_{dim}}`: pair-atom features
+    - **Angle representation** :math:`\mathbf{a}^{ijk} \in \mathbb{R}^{a_{dim}}`: three-body features
+
+    The update equations for layer :math:`l` are:
+
+    .. math::
+        \mathbf{n}^{i,l+1} = \mathbf{n}^{i,l} + \text{MLP}_n\left(\sum_{j \in \mathcal{N}(i)} \mathbf{e}^{ij,l}\right),
+
+    .. math::
+        \mathbf{e}^{ij,l+1} = \mathbf{e}^{ij,l} + \text{MLP}_e\left([\mathbf{n}^{i,l}, \mathbf{n}^{j,l}, \mathbf{e}^{ij,l}, \sum_k \mathbf{a}^{ijk,l}]\right),
+
+    .. math::
+        \mathbf{a}^{ijk,l+1} = \mathbf{a}^{ijk,l} + \text{MLP}_a\left([\mathbf{e}^{ij,l}, \mathbf{e}^{ik,l}, \cos\theta_{jik}]\right).
+
+    The final descriptor is computed via symmetrization:
+
+    .. math::
+        \mathcal{D}^i = \frac{1}{N_c^2} (\mathcal{N}^i)^T \mathcal{E}^i (\mathcal{E}^i)^T \mathcal{N}^i_<,
+
+    where :math:`\mathcal{N}^i_<` denotes the first `axis_neuron` columns of :math:`\mathcal{N}^i`.
 
     Parameters
     ----------
@@ -167,15 +192,17 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection.
     seed : int, optional
         Random seed for parameter initialization.
+    trainable : bool, default: True
+        Whether the block is trainable
     """
 
     def __init__(
         self,
-        e_rcut,
-        e_rcut_smth,
+        e_rcut: float,
+        e_rcut_smth: float,
         e_sel: int,
-        a_rcut,
-        a_rcut_smth,
+        a_rcut: float,
+        a_rcut_smth: float,
         a_sel: int,
         ntypes: int,
         nlayers: int = 6,
@@ -204,7 +231,8 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         use_dynamic_sel: bool = False,
         sel_reduce_factor: float = 10.0,
         use_loc_mapping: bool = True,
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
+        trainable: bool = True,
     ) -> None:
         super().__init__()
         self.e_rcut = float(e_rcut)
@@ -269,10 +297,19 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         self.seed = seed
 
         self.edge_embd = NativeLayer(
-            1, self.e_dim, precision=precision, seed=child_seed(seed, 0)
+            1,
+            self.e_dim,
+            precision=precision,
+            seed=child_seed(seed, 0),
+            trainable=trainable,
         )
         self.angle_embd = NativeLayer(
-            1, self.a_dim, precision=precision, bias=False, seed=child_seed(seed, 1)
+            1,
+            self.a_dim,
+            precision=precision,
+            bias=False,
+            seed=child_seed(seed, 1),
+            trainable=trainable,
         )
         layers = []
         for ii in range(nlayers):
@@ -304,6 +341,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
                     sel_reduce_factor=self.sel_reduce_factor,
                     smooth_edge_update=self.smooth_edge_update,
                     seed=child_seed(child_seed(seed, 1), ii),
+                    trainable=trainable,
                 )
             )
         self.layers = layers
@@ -358,7 +396,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         """Returns the embedding dimension e_dim."""
         return self.e_dim
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: Array) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.mean = value
         elif key in ("std", "data_std", "dstd"):
@@ -366,7 +404,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> Array:
         if key in ("avg", "data_avg", "davg"):
             return self.mean
         elif key in ("std", "data_std", "dstd"):
@@ -391,24 +429,24 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         return self.env_protection
 
     @property
-    def dim_out(self):
+    def dim_out(self) -> int:
         """Returns the output dimension of this descriptor."""
         return self.n_dim
 
     @property
-    def dim_in(self):
+    def dim_in(self) -> int:
         """Returns the atomic input dimension of this descriptor."""
         return self.n_dim
 
     @property
-    def dim_emb(self):
+    def dim_emb(self) -> int:
         """Returns the embedding dimension e_dim."""
         return self.get_dim_emb()
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -426,6 +464,8 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
             The path to the stat file.
 
         """
+        if self.set_stddev_constant and self.set_davg_zero:
+            return
         env_mat_stat = EnvMatStatSe(self)
         if path is not None:
             path = path / env_mat_stat.get_hash()
@@ -441,9 +481,15 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         xp = array_api_compat.array_namespace(self.stddev)
+        device = array_api_compat.device(self.stddev)
         if not self.set_davg_zero:
-            self.mean = xp.asarray(mean, dtype=self.mean.dtype, copy=True)
-        self.stddev = xp.asarray(stddev, dtype=self.stddev.dtype, copy=True)
+            self.mean = xp.asarray(
+                mean, dtype=self.mean.dtype, copy=True, device=device
+            )
+        if not self.set_stddev_constant:
+            self.stddev = xp.asarray(
+                stddev, dtype=self.stddev.dtype, copy=True, device=device
+            )
 
     def get_stats(self) -> dict[str, StatItem]:
         """Get the statistics of the descriptor."""
@@ -462,12 +508,13 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
 
     def call(
         self,
-        nlist: np.ndarray,
-        coord_ext: np.ndarray,
-        atype_ext: np.ndarray,
-        atype_embd_ext: Optional[np.ndarray] = None,
-        mapping: Optional[np.ndarray] = None,
-    ):
+        nlist: Array,
+        coord_ext: Array,
+        atype_ext: Array,
+        atype_embd_ext: Array | None = None,
+        mapping: Array | None = None,
+        type_embedding: Array | None = None,
+    ) -> tuple[Array, Array, Array, Array, Array]:
         xp = array_api_compat.array_namespace(nlist, coord_ext, atype_ext)
         nframes, nloc, nnei = nlist.shape
         nall = xp.reshape(coord_ext, (nframes, -1)).shape[1] // 3
@@ -490,7 +537,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         sw = xp.where(nlist_mask, sw, xp.zeros_like(sw))
 
         # get angle nlist (maybe smaller)
-        a_dist_mask = (xp.linalg.vector_norm(diff, axis=-1) < self.a_rcut)[
+        a_dist_mask = (safe_for_vector_norm(diff, axis=-1) < self.a_rcut)[
             :, :, : self.a_sel
         ]
         a_nlist = nlist[:, :, : self.a_sel]
@@ -516,7 +563,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
 
         # get node embedding
         # nb x nloc x tebd_dim
-        atype_embd = atype_embd_ext[:, :nloc, :]
+        atype_embd = xp_take_first_n(atype_embd_ext, 1, nloc)
         assert list(atype_embd.shape) == [nframes, nloc, self.n_dim]
 
         node_ebd = self.act(atype_embd)
@@ -578,7 +625,12 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
             # n_angle x 1
             a_sw = (a_sw[:, :, :, None] * a_sw[:, :, None, :])[a_nlist_mask]
         else:
-            edge_index = angle_index = xp.zeros([1, 3], dtype=nlist.dtype)
+            edge_index = xp.zeros(
+                [2, 1], dtype=nlist.dtype, device=array_api_compat.device(nlist)
+            )
+            angle_index = xp.zeros(
+                [3, 1], dtype=nlist.dtype, device=array_api_compat.device(nlist)
+            )
 
         # get edge and angle embedding
         # nb x nloc x nnei x e_dim [OR] n_edge x e_dim
@@ -590,7 +642,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         angle_ebd = self.angle_embd(angle_input)
 
         # nb x nall x n_dim
-        mapping = xp.tile(xp.reshape(mapping, (nframes, -1, 1)), (1, 1, self.n_dim))
+        mapping = xp.tile(xp.expand_dims(mapping, axis=-1), (1, 1, self.n_dim))
         for idx, ll in enumerate(self.layers):
             # node_ebd:     nb x nloc x n_dim
             # node_ebd_ext: nb x nall x n_dim
@@ -622,7 +674,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
                 edge_ebd,
                 h2,
                 sw,
-                owner=edge_index[:, 0],
+                owner=edge_index[0, :],
                 num_owner=nframes * nloc,
                 nb=nframes,
                 nloc=nloc,
@@ -649,7 +701,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         return True
 
     @classmethod
-    def deserialize(cls, data):
+    def deserialize(cls, data: dict) -> "DescrptBlockRepflows":
         """Deserialize the descriptor block."""
         data = data.copy()
         edge_embd = NativeLayer.deserialize(data.pop("edge_embd"))
@@ -670,7 +722,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         obj.stddev = dstd
         return obj
 
-    def serialize(self):
+    def serialize(self) -> dict:
         """Serialize the descriptor block."""
         return {
             "e_rcut": self.e_rcut,
@@ -720,15 +772,15 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
 
 
 def _cal_hg_dynamic(
-    flat_edge_ebd: np.ndarray,
-    flat_h2: np.ndarray,
-    flat_sw: np.ndarray,
-    owner: np.ndarray,
+    flat_edge_ebd: Array,
+    flat_h2: Array,
+    flat_sw: Array,
+    owner: Array,
     num_owner: int,
     nb: int,
     nloc: int,
     scale_factor: float,
-) -> np.ndarray:
+) -> Array:
     """
     Calculate the transposed rotation matrix.
 
@@ -775,16 +827,16 @@ def _cal_hg_dynamic(
 
 
 def symmetrization_op_dynamic(
-    flat_edge_ebd: np.ndarray,
-    flat_h2: np.ndarray,
-    flat_sw: np.ndarray,
-    owner: np.ndarray,
+    flat_edge_ebd: Array,
+    flat_h2: Array,
+    flat_sw: Array,
+    owner: Array,
     num_owner: int,
     nb: int,
     nloc: int,
     scale_factor: float,
     axis_neuron: int,
-) -> np.ndarray:
+) -> Array:
     """
     Symmetrization operator to obtain atomic invariant rep.
 
@@ -836,7 +888,7 @@ class RepFlowLayer(NativeOP):
         self,
         e_rcut: float,
         e_rcut_smth: float,
-        e_sel: int,
+        e_sel: int | list[int],
         a_rcut: float,
         a_rcut_smth: float,
         a_sel: int,
@@ -859,7 +911,8 @@ class RepFlowLayer(NativeOP):
         update_residual: float = 0.1,
         update_residual_init: str = "const",
         precision: str = "float64",
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
+        trainable: bool = True,
     ) -> None:
         super().__init__()
         self.epsilon = 1e-4  # protection of 1./nnei
@@ -922,6 +975,7 @@ class RepFlowLayer(NativeOP):
             n_dim,
             precision=precision,
             seed=child_seed(seed, 0),
+            trainable=trainable,
         )
         if self.update_style == "res_residual":
             self.n_residual.append(
@@ -931,6 +985,7 @@ class RepFlowLayer(NativeOP):
                     self.update_residual_init,
                     precision=precision,
                     seed=child_seed(seed, 1),
+                    trainable=trainable,
                 )
             )
 
@@ -941,6 +996,7 @@ class RepFlowLayer(NativeOP):
             n_dim,
             precision=precision,
             seed=child_seed(seed, 2),
+            trainable=trainable,
         )
         if self.update_style == "res_residual":
             self.n_residual.append(
@@ -950,6 +1006,7 @@ class RepFlowLayer(NativeOP):
                     self.update_residual_init,
                     precision=precision,
                     seed=child_seed(seed, 3),
+                    trainable=trainable,
                 )
             )
 
@@ -959,6 +1016,7 @@ class RepFlowLayer(NativeOP):
             self.n_multi_edge_message * n_dim,
             precision=precision,
             seed=child_seed(seed, 4),
+            trainable=trainable,
         )
         if self.update_style == "res_residual":
             for head_index in range(self.n_multi_edge_message):
@@ -969,6 +1027,7 @@ class RepFlowLayer(NativeOP):
                         self.update_residual_init,
                         precision=precision,
                         seed=child_seed(child_seed(seed, 5), head_index),
+                        trainable=trainable,
                     )
                 )
 
@@ -978,6 +1037,7 @@ class RepFlowLayer(NativeOP):
             e_dim,
             precision=precision,
             seed=child_seed(seed, 6),
+            trainable=trainable,
         )
         if self.update_style == "res_residual":
             self.e_residual.append(
@@ -987,6 +1047,7 @@ class RepFlowLayer(NativeOP):
                     self.update_residual_init,
                     precision=precision,
                     seed=child_seed(seed, 7),
+                    trainable=trainable,
                 )
             )
 
@@ -1015,6 +1076,7 @@ class RepFlowLayer(NativeOP):
                         precision=precision,
                         bias=False,
                         seed=child_seed(seed, 8),
+                        trainable=trainable,
                     )
                     self.a_compress_e_linear = NativeLayer(
                         self.e_dim,
@@ -1022,6 +1084,7 @@ class RepFlowLayer(NativeOP):
                         precision=precision,
                         bias=False,
                         seed=child_seed(seed, 9),
+                        trainable=trainable,
                     )
                 else:
                     self.a_compress_n_linear = None
@@ -1033,12 +1096,14 @@ class RepFlowLayer(NativeOP):
                 self.e_dim,
                 precision=precision,
                 seed=child_seed(seed, 10),
+                trainable=trainable,
             )
             self.edge_angle_linear2 = NativeLayer(
                 self.e_dim,
                 self.e_dim,
                 precision=precision,
                 seed=child_seed(seed, 11),
+                trainable=trainable,
             )
             if self.update_style == "res_residual":
                 self.e_residual.append(
@@ -1048,6 +1113,7 @@ class RepFlowLayer(NativeOP):
                         self.update_residual_init,
                         precision=precision,
                         seed=child_seed(seed, 12),
+                        trainable=trainable,
                     )
                 )
 
@@ -1057,6 +1123,7 @@ class RepFlowLayer(NativeOP):
                 self.a_dim,
                 precision=precision,
                 seed=child_seed(seed, 13),
+                trainable=trainable,
             )
             if self.update_style == "res_residual":
                 self.a_residual.append(
@@ -1066,6 +1133,7 @@ class RepFlowLayer(NativeOP):
                         self.update_residual_init,
                         precision=precision,
                         seed=child_seed(seed, 14),
+                        trainable=trainable,
                     )
                 )
         else:
@@ -1078,11 +1146,11 @@ class RepFlowLayer(NativeOP):
 
     def optim_angle_update(
         self,
-        angle_ebd: np.ndarray,
-        node_ebd: np.ndarray,
-        edge_ebd: np.ndarray,
+        angle_ebd: Array,
+        node_ebd: Array,
+        edge_ebd: Array,
         feat: str = "edge",
-    ) -> np.ndarray:
+    ) -> Array:
         xp = array_api_compat.array_namespace(angle_ebd, node_ebd, edge_ebd)
 
         if feat == "edge":
@@ -1126,14 +1194,14 @@ class RepFlowLayer(NativeOP):
 
     def optim_angle_update_dynamic(
         self,
-        flat_angle_ebd: np.ndarray,
-        node_ebd: np.ndarray,
-        flat_edge_ebd: np.ndarray,
-        n2a_index: np.ndarray,
-        eij2a_index: np.ndarray,
-        eik2a_index: np.ndarray,
-        feat="edge",
-    ):
+        flat_angle_ebd: Array,
+        node_ebd: Array,
+        flat_edge_ebd: Array,
+        n2a_index: Array,
+        eij2a_index: Array,
+        eik2a_index: Array,
+        feat: str = "edge",
+    ) -> Array:
         xp = array_api_compat.array_namespace(
             flat_angle_ebd, node_ebd, flat_edge_ebd, n2a_index, eij2a_index, eik2a_index
         )
@@ -1185,12 +1253,12 @@ class RepFlowLayer(NativeOP):
 
     def optim_edge_update(
         self,
-        node_ebd: np.ndarray,
-        node_ebd_ext: np.ndarray,
-        edge_ebd: np.ndarray,
-        nlist: np.ndarray,
+        node_ebd: Array,
+        node_ebd_ext: Array,
+        edge_ebd: Array,
+        nlist: Array,
         feat: str = "node",
-    ) -> np.ndarray:
+    ) -> Array:
         xp = array_api_compat.array_namespace(node_ebd, node_ebd_ext, edge_ebd, nlist)
 
         if feat == "node":
@@ -1228,13 +1296,13 @@ class RepFlowLayer(NativeOP):
 
     def optim_edge_update_dynamic(
         self,
-        node_ebd: np.ndarray,
-        node_ebd_ext: np.ndarray,
-        flat_edge_ebd: np.ndarray,
-        n2e_index: np.ndarray,
-        n_ext2e_index: np.ndarray,
+        node_ebd: Array,
+        node_ebd_ext: Array,
+        flat_edge_ebd: Array,
+        n2e_index: Array,
+        n_ext2e_index: Array,
         feat: str = "node",
-    ):
+    ) -> Array:
         xp = array_api_compat.array_namespace(
             node_ebd, node_ebd_ext, flat_edge_ebd, n2e_index, n_ext2e_index
         )
@@ -1276,19 +1344,19 @@ class RepFlowLayer(NativeOP):
 
     def call(
         self,
-        node_ebd_ext: np.ndarray,  # nf x nall x n_dim
-        edge_ebd: np.ndarray,  # nf x nloc x nnei x e_dim
-        h2: np.ndarray,  # nf x nloc x nnei x 3
-        angle_ebd: np.ndarray,  # nf x nloc x a_nnei x a_nnei x a_dim
-        nlist: np.ndarray,  # nf x nloc x nnei
-        nlist_mask: np.ndarray,  # nf x nloc x nnei
-        sw: np.ndarray,  # switch func, nf x nloc x nnei
-        a_nlist: np.ndarray,  # nf x nloc x a_nnei
-        a_nlist_mask: np.ndarray,  # nf x nloc x a_nnei
-        a_sw: np.ndarray,  # switch func, nf x nloc x a_nnei
-        edge_index: np.ndarray,  # n_edge x 2
-        angle_index: np.ndarray,  # n_angle x 3
-    ):
+        node_ebd_ext: Array,  # nf x nall x n_dim
+        edge_ebd: Array,  # nf x nloc x nnei x e_dim
+        h2: Array,  # nf x nloc x nnei x 3
+        angle_ebd: Array,  # nf x nloc x a_nnei x a_nnei x a_dim
+        nlist: Array,  # nf x nloc x nnei
+        nlist_mask: Array,  # nf x nloc x nnei
+        sw: Array,  # switch func, nf x nloc x nnei
+        a_nlist: Array,  # nf x nloc x a_nnei
+        a_nlist_mask: Array,  # nf x nloc x a_nnei
+        a_sw: Array,  # switch func, nf x nloc x a_nnei
+        edge_index: Array,  # 2 x n_edge
+        angle_index: Array,  # 3 x n_angle
+    ) -> tuple[Array, Array, Array]:
         """
         Parameters
         ----------
@@ -1312,12 +1380,12 @@ class RepFlowLayer(NativeOP):
             Masks of the neighbor list for angle. real nei 1 otherwise 0
         a_sw : nf x nloc x a_nnei
             Switch function for angle.
-        edge_index : Optional for dynamic sel, n_edge x 2
+        edge_index : Optional for dynamic sel, 2 x n_edge
             n2e_index : n_edge
                 Broadcast indices from node(i) to edge(ij), or reduction indices from edge(ij) to node(i).
             n_ext2e_index : n_edge
                 Broadcast indices from extended node(j) to edge(ij).
-        angle_index : Optional for dynamic sel, n_angle x 3
+        angle_index : Optional for dynamic sel, 3 x n_angle
             n2a_index : n_angle
                 Broadcast indices from extended node(j) to angle(ijk).
             eij2a_index : n_angle
@@ -1354,7 +1422,7 @@ class RepFlowLayer(NativeOP):
         n_edge = (
             int(xp.sum(xp.astype(nlist_mask, xp.int32))) if self.use_dynamic_sel else 0
         )
-        node_ebd = node_ebd_ext[:, :nloc, :]
+        node_ebd = xp_take_first_n(node_ebd_ext, 1, nloc)
         assert (nb, nloc) == node_ebd.shape[:2]
         if not self.use_dynamic_sel:
             assert (nb, nloc, nnei) == h2.shape[:3]
@@ -1362,11 +1430,11 @@ class RepFlowLayer(NativeOP):
             assert (n_edge, 3) == h2.shape
         del a_nlist  # may be used in the future
 
-        n2e_index, n_ext2e_index = edge_index[:, 0], edge_index[:, 1]
+        n2e_index, n_ext2e_index = edge_index[0, :], edge_index[1, :]
         n2a_index, eij2a_index, eik2a_index = (
-            angle_index[:, 0],
-            angle_index[:, 1],
-            angle_index[:, 2],
+            angle_index[0, :],
+            angle_index[1, :],
+            angle_index[2, :],
         )
 
         # nb x nloc x nnei x n_dim [OR] n_edge x n_dim
@@ -1378,16 +1446,16 @@ class RepFlowLayer(NativeOP):
             )
         )
 
-        n_update_list: list[np.ndarray] = [node_ebd]
-        e_update_list: list[np.ndarray] = [edge_ebd]
-        a_update_list: list[np.ndarray] = [angle_ebd]
+        n_update_list: list[Array] = [node_ebd]
+        e_update_list: list[Array] = [edge_ebd]
+        a_update_list: list[Array] = [angle_ebd]
 
         # node self mlp
         node_self_mlp = self.act(self.node_self_mlp(node_ebd))
         n_update_list.append(node_self_mlp)
 
         # node sym (grrg + drrd)
-        node_sym_list: list[np.ndarray] = []
+        node_sym_list: list[Array] = []
         node_sym_list.append(
             symmetrization_op(
                 edge_ebd,
@@ -1677,6 +1745,7 @@ class RepFlowLayer(NativeOP):
                         xp.zeros(
                             (nb, nloc, self.nnei - self.a_sel, self.e_dim),
                             dtype=edge_ebd.dtype,
+                            device=array_api_compat.device(edge_ebd),
                         ),
                     ],
                     axis=2,
@@ -1707,6 +1776,7 @@ class RepFlowLayer(NativeOP):
                         xp.zeros(
                             (nb, nloc, self.nnei - self.a_sel),
                             dtype=a_nlist_mask.dtype,
+                            device=array_api_compat.device(a_nlist_mask),
                         ),
                     ],
                     axis=-1,
@@ -1757,15 +1827,15 @@ class RepFlowLayer(NativeOP):
 
     def list_update_res_avg(
         self,
-        update_list: list[np.ndarray],
-    ) -> np.ndarray:
+        update_list: list[Array],
+    ) -> Array:
         nitem = len(update_list)
         uu = update_list[0]
         for ii in range(1, nitem):
             uu = uu + update_list[ii]
         return uu / (float(nitem) ** 0.5)
 
-    def list_update_res_incr(self, update_list: list[np.ndarray]) -> np.ndarray:
+    def list_update_res_incr(self, update_list: list[Array]) -> Array:
         nitem = len(update_list)
         uu = update_list[0]
         scale = 1.0 / (float(nitem - 1) ** 0.5) if nitem > 1 else 0.0
@@ -1774,8 +1844,8 @@ class RepFlowLayer(NativeOP):
         return uu
 
     def list_update_res_residual(
-        self, update_list: list[np.ndarray], update_name: str = "node"
-    ) -> np.ndarray:
+        self, update_list: list[Array], update_name: str = "node"
+    ) -> Array:
         nitem = len(update_list)
         uu = update_list[0]
         if update_name == "node":
@@ -1791,9 +1861,7 @@ class RepFlowLayer(NativeOP):
             raise NotImplementedError
         return uu
 
-    def list_update(
-        self, update_list: list[np.ndarray], update_name: str = "node"
-    ) -> np.ndarray:
+    def list_update(self, update_list: list[Array], update_name: str = "node") -> Array:
         if self.update_style == "res_avg":
             return self.list_update_res_avg(update_list)
         elif self.update_style == "res_incr":

@@ -1,9 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import pathlib
-from typing import (
-    Optional,
-    Union,
-)
 
 import numpy as np
 import torch
@@ -51,10 +47,10 @@ def run_dp(cmd: str) -> int:
 
 def eval_model(
     model,
-    coords: Union[np.ndarray, torch.Tensor],
-    cells: Optional[Union[np.ndarray, torch.Tensor]],
-    atom_types: Union[np.ndarray, torch.Tensor, list[int]],
-    spins: Optional[Union[np.ndarray, torch.Tensor]] = None,
+    coords: np.ndarray | torch.Tensor,
+    cells: np.ndarray | torch.Tensor | None,
+    atom_types: np.ndarray | torch.Tensor | list[int],
+    spins: np.ndarray | torch.Tensor | None = None,
     atomic: bool = False,
     infer_batch_size: int = 2,
     denoise: bool = False,
@@ -79,7 +75,12 @@ def eval_model(
         if spins is not None:
             assert isinstance(spins, torch.Tensor), err_msg
         assert isinstance(atom_types, torch.Tensor) or isinstance(atom_types, list)
-        atom_types = torch.tensor(atom_types, dtype=torch.int32, device=DEVICE)
+        if isinstance(atom_types, torch.Tensor):
+            atom_types = (
+                atom_types.clone().detach().to(dtype=torch.int32, device=DEVICE)
+            )
+        else:
+            atom_types = torch.tensor(atom_types, dtype=torch.int32, device=DEVICE)
     elif isinstance(coords, np.ndarray):
         if cells is not None:
             assert isinstance(cells, np.ndarray), err_msg
@@ -101,28 +102,59 @@ def eval_model(
     else:
         natoms = len(atom_types[0])
 
-    coord_input = torch.tensor(
-        coords.reshape([-1, natoms, 3]), dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
-    )
-    spin_input = None
-    if spins is not None:
-        spin_input = torch.tensor(
-            spins.reshape([-1, natoms, 3]),
+    if isinstance(coords, torch.Tensor):
+        coord_input = (
+            coords.reshape([-1, natoms, 3])
+            .clone()
+            .detach()
+            .to(dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE)
+        )
+    else:
+        coord_input = torch.tensor(
+            coords.reshape([-1, natoms, 3]),
             dtype=GLOBAL_PT_FLOAT_PRECISION,
             device=DEVICE,
         )
+    spin_input = None
+    if spins is not None:
+        if isinstance(spins, torch.Tensor):
+            spin_input = (
+                spins.reshape([-1, natoms, 3])
+                .clone()
+                .detach()
+                .to(dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE)
+            )
+        else:
+            spin_input = torch.tensor(
+                spins.reshape([-1, natoms, 3]),
+                dtype=GLOBAL_PT_FLOAT_PRECISION,
+                device=DEVICE,
+            )
     has_spin = getattr(model, "has_spin", False)
     if callable(has_spin):
         has_spin = has_spin()
-    type_input = torch.tensor(atom_types, dtype=torch.long, device=DEVICE)
+    if isinstance(atom_types, torch.Tensor):
+        type_input = atom_types.clone().detach().to(dtype=torch.long, device=DEVICE)
+    else:
+        type_input = torch.tensor(atom_types, dtype=torch.long, device=DEVICE)
     box_input = None
     if cells is None:
         pbc = False
     else:
         pbc = True
-        box_input = torch.tensor(
-            cells.reshape([-1, 3, 3]), dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
-        )
+        if isinstance(cells, torch.Tensor):
+            box_input = (
+                cells.reshape([-1, 3, 3])
+                .clone()
+                .detach()
+                .to(dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE)
+            )
+        else:
+            box_input = torch.tensor(
+                cells.reshape([-1, 3, 3]),
+                dtype=GLOBAL_PT_FLOAT_PRECISION,
+                device=DEVICE,
+            )
     num_iter = int((nframes + infer_batch_size - 1) / infer_batch_size)
 
     for ii in range(num_iter):

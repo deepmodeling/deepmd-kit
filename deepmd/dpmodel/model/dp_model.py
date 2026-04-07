@@ -1,12 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
 
-from typing import (
-    Optional,
-)
-
 from deepmd.dpmodel.descriptor.base_descriptor import (
     BaseDescriptor,
+)
+from deepmd.dpmodel.fitting.base_fitting import (
+    BaseFitting,
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
@@ -15,13 +14,19 @@ from deepmd.utils.data_system import (
 
 # use "class" to resolve "Variable not allowed in type expression"
 class DPModelCommon:
+    r"""Common methods for DP models.
+
+    This class provides common functionality for DeepPot models, including
+    neighbor selection updates and fitting network access.
+    """
+
     @classmethod
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
@@ -45,3 +50,11 @@ class DPModelCommon:
             train_data, type_map, local_jdata["descriptor"]
         )
         return local_jdata_cpy, min_nbor_dist
+
+    def get_fitting_net(self) -> BaseFitting:
+        """Get the fitting network."""
+        return self.atomic_model.fitting_net
+
+    def get_descriptor(self) -> BaseDescriptor:
+        """Get the descriptor."""
+        return self.atomic_model.descriptor

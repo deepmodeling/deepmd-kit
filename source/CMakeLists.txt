@@ -1,5 +1,5 @@
-# new in 3.16: GET_RUNTIME_DEPENDENCIES, target_precompile_headers
-cmake_minimum_required(VERSION 3.16)
+# new in 3.25: RUN_OUTPUT_STDOUT_VARIABLE
+cmake_minimum_required(VERSION 3.25.2)
 project(DeePMD)
 
 option(ENABLE_TENSORFLOW "Enable TensorFlow interface" OFF)
@@ -244,8 +244,14 @@ set(DP_VARIANT "cpu")
 
 # define USE_CUDA_TOOLKIT
 if(USE_CUDA_TOOLKIT)
-  cmake_minimum_required(VERSION 3.23)
+  cmake_minimum_required(VERSION 3.25.2)
   find_package(CUDAToolkit REQUIRED)
+  # CUDA 13.0+ requires C++17
+  if(CUDAToolkit_VERSION VERSION_GREATER_EQUAL "13.0")
+    set_if_higher(CMAKE_CXX_STANDARD 17)
+    message(
+      STATUS "CUDA ${CUDAToolkit_VERSION} detected, setting C++ standard to 17")
+  endif()
   if(NOT DEFINED CMAKE_CUDA_COMPILER)
     set(CMAKE_CUDA_COMPILER ${CUDAToolkit_NVCC_EXECUTABLE})
   endif()
@@ -261,7 +267,7 @@ endif(USE_CUDA_TOOLKIT)
 
 # define USE_ROCM_TOOLKIT
 if(USE_ROCM_TOOLKIT)
-  cmake_minimum_required(VERSION 3.21)
+  cmake_minimum_required(VERSION 3.25.2)
   include(CMakeDetermineHIPCompiler)
   list(APPEND CMAKE_PREFIX_PATH ${CMAKE_HIP_COMPILER_ROCM_ROOT})
   find_package(hip REQUIRED)
@@ -373,7 +379,15 @@ if(ENABLE_PYTORCH AND NOT DEEPMD_C_ROOT)
   else()
     # Maybe in macos/windows
     if(NOT DEFINED OP_CXX_ABI)
-      set(OP_CXX_ABI 0)
+      if(UNIX
+         AND NOT APPLE
+         AND Torch_VERSION VERSION_GREATER_EQUAL "2.8.0")
+        # https://github.com/deepmodeling/deepmd-kit/issues/4877
+        # torch.compiled_with_cxx11_abi in PyTorch 2.8 always return True
+        set(OP_CXX_ABI 1)
+      else()
+        set(OP_CXX_ABI 0)
+      endif()
     endif()
     set(OP_CXX_ABI_PT "${OP_CXX_ABI}")
   endif()
@@ -520,13 +534,16 @@ if(DEEPMD_C_ROOT)
 endif()
 
 if(NOT DEEPMD_C_ROOT)
+  add_subdirectory(lib/)
   if(ENABLE_TENSORFLOW)
     add_subdirectory(op/tf/)
   endif()
   if(ENABLE_PYTORCH)
     add_subdirectory(op/pt/)
   endif()
-  add_subdirectory(lib/)
+  if(ENABLE_PADDLE)
+    add_subdirectory(op/pd/)
+  endif()
 endif()
 if(BUILD_PY_IF)
   add_subdirectory(config/)

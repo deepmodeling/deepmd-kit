@@ -7,6 +7,7 @@
 #include <cstdint>
 
 #include "common.h"
+#include "commonPT.h"
 #include "device.h"
 #include "errors.h"
 
@@ -117,6 +118,11 @@ void DeepSpinPT::init(const std::string& model,
   dfparam = module.run_method("get_dim_fparam").toInt();
   daparam = module.run_method("get_dim_aparam").toInt();
   aparam_nall = module.run_method("is_aparam_nall").toBool();
+  if (module.find_method("has_default_fparam")) {
+    has_default_fparam_ = module.run_method("has_default_fparam").toBool();
+  } else {
+    has_default_fparam_ = false;
+  }
   inited = true;
 }
 DeepSpinPT::~DeepSpinPT() {}
@@ -163,6 +169,8 @@ void DeepSpinPT::compute(ENERGYVTYPE& ener,
                           bkw_map, nall_real, nloc_real, coord, atype, aparam,
                           nghost, ntypes, 1, daparam, nall, aparam_nall);
   int nloc = nall_real - nghost_real;
+  // Detect whether any NULL-type atoms were filtered out.
+  bool has_null_atoms = (nall_real < nall);
   int nframes = 1;
   std::vector<VALUETYPE> coord_wrapped = dcoord;
   at::Tensor coord_wrapped_Tensor =
@@ -175,43 +183,30 @@ void DeepSpinPT::compute(ENERGYVTYPE& ener,
   std::vector<std::int64_t> atype_64(datype.begin(), datype.end());
   at::Tensor atype_Tensor =
       torch::from_blob(atype_64.data(), {1, nall_real}, int_option).to(device);
-  c10::optional<torch::Tensor> mapping_tensor;
   if (ago == 0) {
     nlist_data.copy_from_nlist(lmp_list, nall - nghost);
     nlist_data.shuffle_exclude_empty(fwd_map);
     nlist_data.padding();
     if (do_message_passing) {
-      int nswap = lmp_list.nswap;
-      torch::Tensor sendproc_tensor =
-          torch::from_blob(lmp_list.sendproc, {nswap}, int32_option);
-      torch::Tensor recvproc_tensor =
-          torch::from_blob(lmp_list.recvproc, {nswap}, int32_option);
-      torch::Tensor firstrecv_tensor =
-          torch::from_blob(lmp_list.firstrecv, {nswap}, int32_option);
-      torch::Tensor recvnum_tensor =
-          torch::from_blob(lmp_list.recvnum, {nswap}, int32_option);
-      torch::Tensor sendnum_tensor =
-          torch::from_blob(lmp_list.sendnum, {nswap}, int32_option);
-      torch::Tensor communicator_tensor;
-      if (lmp_list.world == 0) {
-        communicator_tensor = torch::empty({1}, torch::kInt64);
+      if (has_null_atoms) {
+        build_comm_dict_with_virtual_atoms(
+            comm_dict, lmp_list, fwd_map, remapped_sendlist,
+            remapped_sendlist_ptrs, remapped_sendnum, remapped_recvnum);
       } else {
-        communicator_tensor = torch::from_blob(
-            const_cast<void*>(lmp_list.world), {1}, torch::kInt64);
+        build_comm_dict(comm_dict, lmp_list, lmp_list.sendlist,
+                        lmp_list.sendnum, lmp_list.recvnum);
       }
-      torch::Tensor nswap_tensor = torch::tensor(nswap, int32_option);
-      int total_send =
-          std::accumulate(lmp_list.sendnum, lmp_list.sendnum + nswap, 0);
-      torch::Tensor sendlist_tensor =
-          torch::from_blob(lmp_list.sendlist, {total_send}, int32_option);
-      torch::Tensor has_spin = torch::tensor({1}, int32_option);
-      comm_dict.insert("send_list", sendlist_tensor);
-      comm_dict.insert("send_proc", sendproc_tensor);
-      comm_dict.insert("recv_proc", recvproc_tensor);
-      comm_dict.insert("send_num", sendnum_tensor);
-      comm_dict.insert("recv_num", recvnum_tensor);
-      comm_dict.insert("communicator", communicator_tensor);
-      comm_dict.insert("has_spin", has_spin);
+      // DeepSpin-specific: signal spin model to the Python side
+      comm_dict.insert_or_assign("has_spin", torch::tensor({1}, int32_option));
+    }
+    if (lmp_list.mapping) {
+      std::vector<std::int64_t> mapping(nall_real);
+      for (size_t ii = 0; ii < nall_real; ii++) {
+        mapping[ii] = fwd_map[lmp_list.mapping[bkw_map[ii]]];
+      }
+      mapping_tensor =
+          torch::from_blob(mapping.data(), {1, nall_real}, int_option)
+              .to(device);
     }
   }
   at::Tensor firstneigh = createNlistTensor2(nlist_data.jlist);
@@ -234,7 +229,7 @@ void DeepSpinPT::compute(ENERGYVTYPE& ener,
             options)
             .to(device);
   }
-  c10::Dict<c10::IValue, c10::IValue> outputs =
+  auto outputs =
       (do_message_passing)
           ? module
                 .run_method("forward_lower", coord_wrapped_Tensor, atype_Tensor,
@@ -251,8 +246,7 @@ void DeepSpinPT::compute(ENERGYVTYPE& ener,
   c10::IValue energy_ = outputs.at("energy");
   c10::IValue force_ = outputs.at("extended_force");
   c10::IValue force_mag_ = outputs.at("extended_force_mag");
-  // spin model not suported yet
-  // c10::IValue virial_ = outputs.at("virial");
+  bool has_virial = outputs.contains(c10::IValue("virial"));
   torch::Tensor flat_energy_ = energy_.toTensor().view({-1});
   torch::Tensor cpu_energy_ = flat_energy_.to(torch::kCPU);
   ener.assign(cpu_energy_.data_ptr<ENERGYTYPE>(),
@@ -267,11 +261,16 @@ void DeepSpinPT::compute(ENERGYVTYPE& ener,
   dforce_mag.assign(
       cpu_force_mag_.data_ptr<VALUETYPE>(),
       cpu_force_mag_.data_ptr<VALUETYPE>() + cpu_force_mag_.numel());
-  // spin model not suported yet
-  // torch::Tensor flat_virial_ = virial_.toTensor().view({-1}).to(floatType);
-  // torch::Tensor cpu_virial_ = flat_virial_.to(torch::kCPU);
-  // virial.assign(cpu_virial_.data_ptr<VALUETYPE>(),
-  //               cpu_virial_.data_ptr<VALUETYPE>() + cpu_virial_.numel());
+
+  if (has_virial) {
+    c10::IValue virial_ = outputs.at("virial");
+    torch::Tensor flat_virial_ = virial_.toTensor().view({-1}).to(floatType);
+    torch::Tensor cpu_virial_ = flat_virial_.to(torch::kCPU);
+    virial.assign(cpu_virial_.data_ptr<VALUETYPE>(),
+                  cpu_virial_.data_ptr<VALUETYPE>() + cpu_virial_.numel());
+  } else {
+    virial.clear();
+  }
 
   // bkw map
   force.resize(static_cast<size_t>(nframes) * fwd_map.size() * 3);
@@ -281,8 +280,6 @@ void DeepSpinPT::compute(ENERGYVTYPE& ener,
   select_map<VALUETYPE>(force_mag, dforce_mag, bkw_map, 3, nframes,
                         fwd_map.size(), nall_real);
   if (atomic) {
-    // spin model not suported yet
-    // c10::IValue atom_virial_ = outputs.at("extended_virial");
     c10::IValue atom_energy_ = outputs.at("atom_energy");
     torch::Tensor flat_atom_energy_ =
         atom_energy_.toTensor().view({-1}).to(floatType);
@@ -292,19 +289,23 @@ void DeepSpinPT::compute(ENERGYVTYPE& ener,
     datom_energy.assign(
         cpu_atom_energy_.data_ptr<VALUETYPE>(),
         cpu_atom_energy_.data_ptr<VALUETYPE>() + cpu_atom_energy_.numel());
-    // spin model not suported yet
-    // torch::Tensor flat_atom_virial_ =
-    //     atom_virial_.toTensor().view({-1}).to(floatType);
-    // torch::Tensor cpu_atom_virial_ = flat_atom_virial_.to(torch::kCPU);
-    // datom_virial.assign(
-    //     cpu_atom_virial_.data_ptr<VALUETYPE>(),
-    //     cpu_atom_virial_.data_ptr<VALUETYPE>() + cpu_atom_virial_.numel());
     atom_energy.resize(static_cast<size_t>(nframes) * fwd_map.size());
-    // atom_virial.resize(static_cast<size_t>(nframes) * fwd_map.size() * 9);
     select_map<VALUETYPE>(atom_energy, datom_energy, bkw_map, 1, nframes,
                           fwd_map.size(), nall_real);
-    // select_map<VALUETYPE>(atom_virial, datom_virial, bkw_map, 9, nframes,
-    //                       fwd_map.size(), nall_real);
+    if (outputs.contains(c10::IValue("extended_virial"))) {
+      c10::IValue atom_virial_ = outputs.at("extended_virial");
+      torch::Tensor flat_atom_virial_ =
+          atom_virial_.toTensor().view({-1}).to(floatType);
+      torch::Tensor cpu_atom_virial_ = flat_atom_virial_.to(torch::kCPU);
+      datom_virial.assign(
+          cpu_atom_virial_.data_ptr<VALUETYPE>(),
+          cpu_atom_virial_.data_ptr<VALUETYPE>() + cpu_atom_virial_.numel());
+      atom_virial.resize(static_cast<size_t>(nframes) * fwd_map.size() * 9);
+      select_map<VALUETYPE>(atom_virial, datom_virial, bkw_map, 9, nframes,
+                            fwd_map.size(), nall_real);
+    } else {
+      atom_virial.clear();
+    }
   }
 }
 template void DeepSpinPT::compute<double, std::vector<ENERGYTYPE>>(
@@ -415,8 +416,7 @@ void DeepSpinPT::compute(ENERGYVTYPE& ener,
   c10::IValue energy_ = outputs.at("energy");
   c10::IValue force_ = outputs.at("force");
   c10::IValue force_mag_ = outputs.at("force_mag");
-  // spin model not suported yet
-  // c10::IValue virial_ = outputs.at("virial");
+  bool has_virial = outputs.contains(c10::IValue("virial"));
   torch::Tensor flat_energy_ = energy_.toTensor().view({-1});
   torch::Tensor cpu_energy_ = flat_energy_.to(torch::kCPU);
   ener.assign(cpu_energy_.data_ptr<ENERGYTYPE>(),
@@ -431,13 +431,16 @@ void DeepSpinPT::compute(ENERGYVTYPE& ener,
   force_mag.assign(
       cpu_force_mag_.data_ptr<VALUETYPE>(),
       cpu_force_mag_.data_ptr<VALUETYPE>() + cpu_force_mag_.numel());
-  // spin model not suported yet
-  // torch::Tensor flat_virial_ = virial_.toTensor().view({-1}).to(floatType);
-  // torch::Tensor cpu_virial_ = flat_virial_.to(torch::kCPU);
-  // virial.assign(cpu_virial_.data_ptr<VALUETYPE>(),
-  //               cpu_virial_.data_ptr<VALUETYPE>() + cpu_virial_.numel());
+  if (has_virial) {
+    c10::IValue virial_ = outputs.at("virial");
+    torch::Tensor flat_virial_ = virial_.toTensor().view({-1}).to(floatType);
+    torch::Tensor cpu_virial_ = flat_virial_.to(torch::kCPU);
+    virial.assign(cpu_virial_.data_ptr<VALUETYPE>(),
+                  cpu_virial_.data_ptr<VALUETYPE>() + cpu_virial_.numel());
+  } else {
+    virial.clear();
+  }
   if (atomic) {
-    // c10::IValue atom_virial_ = outputs.at("atom_virial");
     c10::IValue atom_energy_ = outputs.at("atom_energy");
     torch::Tensor flat_atom_energy_ =
         atom_energy_.toTensor().view({-1}).to(floatType);
@@ -445,12 +448,17 @@ void DeepSpinPT::compute(ENERGYVTYPE& ener,
     atom_energy.assign(
         cpu_atom_energy_.data_ptr<VALUETYPE>(),
         cpu_atom_energy_.data_ptr<VALUETYPE>() + cpu_atom_energy_.numel());
-    // torch::Tensor flat_atom_virial_ =
-    //     atom_virial_.toTensor().view({-1}).to(floatType);
-    // torch::Tensor cpu_atom_virial_ = flat_atom_virial_.to(torch::kCPU);
-    // atom_virial.assign(
-    //     cpu_atom_virial_.data_ptr<VALUETYPE>(),
-    //     cpu_atom_virial_.data_ptr<VALUETYPE>() + cpu_atom_virial_.numel());
+    if (outputs.contains(c10::IValue("atom_virial"))) {
+      c10::IValue atom_virial_ = outputs.at("atom_virial");
+      torch::Tensor flat_atom_virial_ =
+          atom_virial_.toTensor().view({-1}).to(floatType);
+      torch::Tensor cpu_atom_virial_ = flat_atom_virial_.to(torch::kCPU);
+      atom_virial.assign(
+          cpu_atom_virial_.data_ptr<VALUETYPE>(),
+          cpu_atom_virial_.data_ptr<VALUETYPE>() + cpu_atom_virial_.numel());
+    } else {
+      atom_virial.clear();
+    }
   }
 }
 

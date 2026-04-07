@@ -1,10 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import functools
+from collections.abc import (
+    Callable,
+)
 from copy import (
     deepcopy,
 )
 from typing import (
-    Optional,
+    Any,
 )
 
 import torch
@@ -38,7 +41,7 @@ class SpinModel(torch.nn.Module):
 
     def __init__(
         self,
-        backbone_model,
+        backbone_model: DPAtomicModel,
         spin: Spin,
     ) -> None:
         super().__init__()
@@ -48,29 +51,63 @@ class SpinModel(torch.nn.Module):
         self.virtual_scale_mask = to_torch_tensor(self.spin.get_virtual_scale_mask())
         self.spin_mask = to_torch_tensor(self.spin.get_spin_mask())
 
-    def process_spin_input(self, coord, atype, spin):
-        """Generate virtual coordinates and types, concat into the input."""
+    def process_spin_input(
+        self, coord: torch.Tensor, atype: torch.Tensor, spin: torch.Tensor
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Generate virtual coordinates and types, concat into the input.
+
+        Returns
+        -------
+        coord_spin : torch.Tensor
+            Concatenated coordinates with shape (nframes, 2*nloc, 3).
+        atype_spin : torch.Tensor
+            Concatenated atom types with shape (nframes, 2*nloc).
+        coord_corr : torch.Tensor
+            Coordinate correction for virial with shape (nframes, 2*nloc, 3).
+        """
         nframes, nloc = atype.shape
         coord = coord.reshape(nframes, nloc, 3)
         spin = spin.reshape(nframes, nloc, 3)
         atype_spin = torch.concat([atype, atype + self.ntypes_real], dim=-1)
-        virtual_coord = coord + spin * (self.virtual_scale_mask.to(atype.device))[
-            atype
-        ].reshape([nframes, nloc, 1])
+        # spin_dist = s_i * \mu_i
+        spin_dist = spin * (self.virtual_scale_mask.to(atype.device))[atype].reshape(
+            [nframes, nloc, 1]
+        )
+        virtual_coord = coord + spin_dist
         coord_spin = torch.concat([coord, virtual_coord], dim=-2)
-        return coord_spin, atype_spin
+        # for spin virial corr
+        coord_corr = torch.concat([torch.zeros_like(coord), -spin_dist], dim=-2)
+        return coord_spin, atype_spin, coord_corr
 
     def process_spin_input_lower(
         self,
-        extended_coord,
-        extended_atype,
-        extended_spin,
-        nlist,
-        mapping: Optional[torch.Tensor] = None,
-    ):
+        extended_coord: torch.Tensor,
+        extended_atype: torch.Tensor,
+        extended_spin: torch.Tensor,
+        nlist: torch.Tensor,
+        mapping: torch.Tensor | None = None,
+    ) -> tuple[
+        torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor | None, torch.Tensor
+    ]:
         """
         Add `extended_spin` into `extended_coord` to generate virtual atoms, and extend `nlist` and `mapping`.
-        Note that the final `extended_coord_updated` with shape [nframes, nall + nall, 3] has the following order:
+
+        Returns
+        -------
+        extended_coord_updated : torch.Tensor
+            Updated coordinates with virtual atoms, shape (nframes, 2*nall, 3).
+        extended_atype_updated : torch.Tensor
+            Updated atom types with virtual atoms, shape (nframes, 2*nall).
+        nlist_updated : torch.Tensor
+            Updated neighbor list including virtual atoms.
+        mapping_updated : torch.Tensor or None
+            Updated mapping indices, or None if input mapping is None.
+        extended_coord_corr : torch.Tensor
+            Coordinate correction for virial with shape (nframes, 2*nall, 3).
+
+        Notes
+        -----
+        The final `extended_coord_updated` with shape [nframes, nall + nall, 3] has the following order:
         - [:, :nloc]: original nloc real atoms.
         - [:, nloc: nloc + nloc]: virtual atoms corresponding to nloc real atoms.
         - [:, nloc + nloc: nloc + nall]: ghost real atoms.
@@ -78,12 +115,17 @@ class SpinModel(torch.nn.Module):
         """
         nframes, nall = extended_coord.shape[:2]
         nloc = nlist.shape[1]
-        virtual_extended_coord = extended_coord + extended_spin * (
+        extended_spin_dist = extended_spin * (
             self.virtual_scale_mask.to(extended_atype.device)
         )[extended_atype].reshape([nframes, nall, 1])
+        virtual_extended_coord = extended_coord + extended_spin_dist
         virtual_extended_atype = extended_atype + self.ntypes_real
         extended_coord_updated = concat_switch_virtual(
             extended_coord, virtual_extended_coord, nloc
+        )
+        # for spin virial corr
+        extended_coord_corr = concat_switch_virtual(
+            torch.zeros_like(extended_coord), -extended_spin_dist, nloc
         )
         extended_atype_updated = concat_switch_virtual(
             extended_atype, virtual_extended_atype, nloc
@@ -100,11 +142,16 @@ class SpinModel(torch.nn.Module):
             extended_atype_updated,
             nlist_updated,
             mapping_updated,
+            extended_coord_corr,
         )
 
     def process_spin_output(
-        self, atype, out_tensor, add_mag: bool = True, virtual_scale: bool = True
-    ):
+        self,
+        atype: torch.Tensor,
+        out_tensor: torch.Tensor,
+        add_mag: bool = True,
+        virtual_scale: bool = True,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Split the output both real and virtual atoms, and scale the latter.
         add_mag: whether to add magnetic tensor onto the real tensor.
@@ -132,12 +179,12 @@ class SpinModel(torch.nn.Module):
 
     def process_spin_output_lower(
         self,
-        extended_atype,
-        extended_out_tensor,
+        extended_atype: torch.Tensor,
+        extended_out_tensor: torch.Tensor,
         nloc: int,
         add_mag: bool = True,
         virtual_scale: bool = True,
-    ):
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Split the extended output of both real and virtual atoms with switch, and scale the latter.
         add_mag: whether to add magnetic tensor onto the real tensor.
@@ -177,7 +224,7 @@ class SpinModel(torch.nn.Module):
         return extended_out_real, extended_out_mag, atomic_mask > 0.0
 
     @staticmethod
-    def extend_nlist(extended_atype, nlist):
+    def extend_nlist(extended_atype: torch.Tensor, nlist: torch.Tensor) -> torch.Tensor:
         nframes, nloc, nnei = nlist.shape
         nall = extended_atype.shape[1]
         nlist_mask = nlist != -1
@@ -207,7 +254,7 @@ class SpinModel(torch.nn.Module):
         return extended_nlist
 
     @staticmethod
-    def expand_aparam(aparam, nloc: int):
+    def expand_aparam(aparam: torch.Tensor, nloc: int) -> torch.Tensor:
         """Expand the atom parameters for virtual atoms if necessary."""
         nframes, natom, numb_aparam = aparam.shape
         if natom == nloc:  # good
@@ -239,22 +286,22 @@ class SpinModel(torch.nn.Module):
         return tmap[:ntypes]
 
     @torch.jit.export
-    def get_ntypes(self):
+    def get_ntypes(self) -> int:
         """Returns the number of element types."""
         return len(self.get_type_map())
 
     @torch.jit.export
-    def get_rcut(self):
+    def get_rcut(self) -> float:
         """Get the cut-off radius."""
         return self.backbone_model.get_rcut()
 
     @torch.jit.export
-    def get_dim_fparam(self):
+    def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this atomic model."""
         return self.backbone_model.get_dim_fparam()
 
     @torch.jit.export
-    def get_dim_aparam(self):
+    def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return self.backbone_model.get_dim_aparam()
 
@@ -285,7 +332,7 @@ class SpinModel(torch.nn.Module):
         return self.backbone_model.get_model_def_script()
 
     @torch.jit.export
-    def get_min_nbor_dist(self) -> Optional[float]:
+    def get_min_nbor_dist(self) -> float | None:
         """Get the minimum neighbor distance."""
         return self.backbone_model.get_min_nbor_dist()
 
@@ -320,7 +367,7 @@ class SpinModel(torch.nn.Module):
         """Returns whether the model needs sorted nlist when using `forward_lower`."""
         return self.backbone_model.need_sorted_nlist_for_lower()
 
-    def model_output_def(self):
+    def model_output_def(self) -> ModelOutputDef:
         """Get the output def for the model."""
         model_output_type = self.backbone_model.model_output_type()
         if "mask" in model_output_type:
@@ -330,7 +377,7 @@ class SpinModel(torch.nn.Module):
         backbone_model_atomic_output_def[var_name].magnetic = True
         return ModelOutputDef(backbone_model_atomic_output_def)
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> Any:
         """Get attribute from the wrapped model."""
         if (
             name == "backbone_model"
@@ -341,10 +388,80 @@ class SpinModel(torch.nn.Module):
         else:
             return getattr(self.backbone_model, name)
 
+    def _get_spin_sampled_func(
+        self, sampled_func: Callable[[], list[dict]]
+    ) -> Callable[[], list[dict]]:
+        @functools.lru_cache
+        def spin_sampled_func() -> list[dict]:
+            sampled = sampled_func()
+            spin_sampled = []
+            for sys in sampled:
+                coord_updated, atype_updated, _ = self.process_spin_input(
+                    sys["coord"], sys["atype"], sys["spin"]
+                )
+                tmp_dict = {
+                    "coord": coord_updated,
+                    "atype": atype_updated,
+                }
+                if "natoms" in sys:
+                    natoms = sys["natoms"]
+                    tmp_dict["natoms"] = torch.cat(
+                        [2 * natoms[:, :2], natoms[:, 2:], natoms[:, 2:]], dim=-1
+                    )
+                for item_key in sys.keys():
+                    if item_key not in ["coord", "atype", "spin", "natoms"]:
+                        tmp_dict[item_key] = sys[item_key]
+                spin_sampled.append(tmp_dict)
+            return spin_sampled
+
+        return self.backbone_model.atomic_model._make_wrapped_sampler(spin_sampled_func)
+
+    def change_out_bias(
+        self,
+        merged: Callable[[], list[dict]] | list[dict],
+        bias_adjust_mode: str = "change-by-statistic",
+    ) -> None:
+        """Change the output bias of atomic model according to the input data and the pretrained model.
+
+        Parameters
+        ----------
+        merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        bias_adjust_mode : str
+            The mode for changing output bias : ['change-by-statistic', 'set-by-statistic']
+            'change-by-statistic' : perform predictions on labels of target dataset,
+                    and do least square on the errors to obtain the target shift as bias.
+            'set-by-statistic' : directly use the statistic output bias in the target dataset.
+        """
+        spin_sampled_func = self._get_spin_sampled_func(
+            merged if callable(merged) else lambda: merged
+        )
+        self.backbone_model.change_out_bias(
+            spin_sampled_func,
+            bias_adjust_mode=bias_adjust_mode,
+        )
+
+    def change_type_map(
+        self, type_map: list[str], model_with_new_type_stat: Any = None
+    ) -> None:
+        """Change the type related params to new ones, according to `type_map` and the original one in the model.
+        If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
+        """
+        type_map_with_spin = type_map + [item + "_spin" for item in type_map]
+        self.backbone_model.change_type_map(
+            type_map_with_spin, model_with_new_type_stat
+        )
+
     def compute_or_load_stat(
         self,
-        sampled_func,
-        stat_file_path: Optional[DPPath] = None,
+        sampled_func: Callable[[], list[dict[str, Any]]],
+        stat_file_path: DPPath | None = None,
+        preset_observed_type: list[str] | None = None,
     ) -> None:
         """
         Compute or load the statistics parameters of the model,
@@ -363,42 +480,58 @@ class SpinModel(torch.nn.Module):
         """
 
         @functools.lru_cache
-        def spin_sampled_func():
+        def spin_sampled_func() -> list[dict[str, Any]]:
             sampled = sampled_func()
             spin_sampled = []
             for sys in sampled:
-                coord_updated, atype_updated = self.process_spin_input(
+                coord_updated, atype_updated, _ = self.process_spin_input(
                     sys["coord"], sys["atype"], sys["spin"]
                 )
                 tmp_dict = {
                     "coord": coord_updated,
                     "atype": atype_updated,
                 }
+                if "aparam" in sys:
+                    tmp_dict["aparam"] = self.expand_aparam(
+                        sys["aparam"], atype_updated.shape[1]
+                    )
                 if "natoms" in sys:
                     natoms = sys["natoms"]
                     tmp_dict["natoms"] = torch.cat(
                         [2 * natoms[:, :2], natoms[:, 2:], natoms[:, 2:]], dim=-1
                     )
                 for item_key in sys.keys():
-                    if item_key not in ["coord", "atype", "spin", "natoms"]:
+                    if item_key not in [
+                        "coord",
+                        "atype",
+                        "spin",
+                        "natoms",
+                        "aparam",
+                    ]:
                         tmp_dict[item_key] = sys[item_key]
                 spin_sampled.append(tmp_dict)
             return spin_sampled
 
-        self.backbone_model.compute_or_load_stat(spin_sampled_func, stat_file_path)
+        self.backbone_model.compute_or_load_stat(
+            spin_sampled_func,
+            stat_file_path,
+            preset_observed_type=preset_observed_type,
+        )
 
     def forward_common(
         self,
-        coord,
-        atype,
-        spin,
-        box: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        spin: torch.Tensor,
+        box: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
     ) -> dict[str, torch.Tensor]:
         nframes, nloc = atype.shape
-        coord_updated, atype_updated = self.process_spin_input(coord, atype, spin)
+        coord_updated, atype_updated, coord_corr_for_virial = self.process_spin_input(
+            coord, atype, spin
+        )
         if aparam is not None:
             aparam = self.expand_aparam(aparam, nloc * 2)
         model_ret = self.backbone_model.forward_common(
@@ -408,6 +541,7 @@ class SpinModel(torch.nn.Module):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
+            coord_corr_for_virial=coord_corr_for_virial,
         )
         model_output_type = self.backbone_model.model_output_type()
         if "mask" in model_output_type:
@@ -430,30 +564,31 @@ class SpinModel(torch.nn.Module):
             ) = self.process_spin_output(
                 atype,
                 model_ret[f"{var_name}_derv_c"],
-                add_mag=False,
+                add_mag=True,
                 virtual_scale=False,
             )
         return model_ret
 
     def forward_common_lower(
         self,
-        extended_coord,
-        extended_atype,
-        extended_spin,
-        nlist,
-        mapping: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        extended_coord: torch.Tensor,
+        extended_atype: torch.Tensor,
+        extended_spin: torch.Tensor,
+        nlist: torch.Tensor,
+        mapping: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
-        comm_dict: Optional[dict[str, torch.Tensor]] = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
         extra_nlist_sort: bool = False,
-    ):
+    ) -> dict[str, torch.Tensor]:
         nframes, nloc = nlist.shape[:2]
         (
             extended_coord_updated,
             extended_atype_updated,
             nlist_updated,
             mapping_updated,
+            extended_coord_corr_for_virial,
         ) = self.process_spin_input_lower(
             extended_coord, extended_atype, extended_spin, nlist, mapping=mapping
         )
@@ -469,6 +604,7 @@ class SpinModel(torch.nn.Module):
             do_atomic_virial=do_atomic_virial,
             comm_dict=comm_dict,
             extra_nlist_sort=extra_nlist_sort,
+            extended_coord_corr=extended_coord_corr_for_virial,
         )
         model_output_type = self.backbone_model.model_output_type()
         if "mask" in model_output_type:
@@ -494,7 +630,7 @@ class SpinModel(torch.nn.Module):
                 extended_atype,
                 model_ret[f"{var_name}_derv_c"],
                 nloc,
-                add_mag=False,
+                add_mag=True,
                 virtual_scale=False,
             )
         return model_ret
@@ -506,7 +642,7 @@ class SpinModel(torch.nn.Module):
         }
 
     @classmethod
-    def deserialize(cls, data) -> "SpinModel":
+    def deserialize(cls, data: dict[str, Any]) -> "SpinModel":
         backbone_model_obj = make_model(DPAtomicModel).deserialize(
             data["backbone_model"]
         )
@@ -524,12 +660,12 @@ class SpinEnergyModel(SpinModel):
 
     def __init__(
         self,
-        backbone_model,
+        backbone_model: DPAtomicModel,
         spin: Spin,
     ) -> None:
         super().__init__(backbone_model, spin)
 
-    def translated_output_def(self):
+    def translated_output_def(self) -> dict[str, Any]:
         out_def_data = self.model_output_def().get_data()
         output_def = {
             "atom_energy": out_def_data["energy"],
@@ -541,16 +677,21 @@ class SpinEnergyModel(SpinModel):
             output_def["force"].squeeze(-2)
             output_def["force_mag"] = deepcopy(out_def_data["energy_derv_r_mag"])
             output_def["force_mag"].squeeze(-2)
+        if self.do_grad_c("energy"):
+            output_def["virial"] = deepcopy(out_def_data["energy_derv_c_redu"])
+            output_def["virial"].squeeze(-2)
+            output_def["atom_virial"] = deepcopy(out_def_data["energy_derv_c"])
+            output_def["atom_virial"].squeeze(-2)
         return output_def
 
     def forward(
         self,
-        coord,
-        atype,
-        spin,
-        box: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        spin: torch.Tensor,
+        box: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
     ) -> dict[str, torch.Tensor]:
         model_ret = self.forward_common(
@@ -569,22 +710,25 @@ class SpinEnergyModel(SpinModel):
         if self.backbone_model.do_grad_r("energy"):
             model_predict["force"] = model_ret["energy_derv_r"].squeeze(-2)
             model_predict["force_mag"] = model_ret["energy_derv_r_mag"].squeeze(-2)
-        # not support virial by far
+        if self.backbone_model.do_grad_c("energy"):
+            model_predict["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
+            if do_atomic_virial:
+                model_predict["atom_virial"] = model_ret["energy_derv_c"].squeeze(-2)
         return model_predict
 
     @torch.jit.export
     def forward_lower(
         self,
-        extended_coord,
-        extended_atype,
-        extended_spin,
-        nlist,
-        mapping: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        extended_coord: torch.Tensor,
+        extended_atype: torch.Tensor,
+        extended_spin: torch.Tensor,
+        nlist: torch.Tensor,
+        mapping: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
-        comm_dict: Optional[dict[str, torch.Tensor]] = None,
-    ):
+        comm_dict: dict[str, torch.Tensor] | None = None,
+    ) -> dict[str, torch.Tensor]:
         model_ret = self.forward_common_lower(
             extended_coord,
             extended_atype,
@@ -606,5 +750,10 @@ class SpinEnergyModel(SpinModel):
             model_predict["extended_force_mag"] = model_ret[
                 "energy_derv_r_mag"
             ].squeeze(-2)
-        # not support virial by far
+        if self.backbone_model.do_grad_c("energy"):
+            model_predict["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
+            if do_atomic_virial:
+                model_predict["extended_virial"] = model_ret["energy_derv_c"].squeeze(
+                    -2
+                )
         return model_predict

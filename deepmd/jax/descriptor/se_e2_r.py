@@ -3,6 +3,10 @@ from typing import (
     Any,
 )
 
+from packaging.version import (
+    Version,
+)
+
 from deepmd.dpmodel.descriptor.se_r import DescrptSeR as DescrptSeRDP
 from deepmd.jax.common import (
     ArrayAPIVariable,
@@ -11,6 +15,10 @@ from deepmd.jax.common import (
 )
 from deepmd.jax.descriptor.base_descriptor import (
     BaseDescriptor,
+)
+from deepmd.jax.env import (
+    flax_version,
+    nnx,
 )
 from deepmd.jax.utils.exclude_mask import (
     PairExcludeMask,
@@ -29,9 +37,13 @@ class DescrptSeR(DescrptSeRDP):
             value = to_jax_array(value)
             if value is not None:
                 value = ArrayAPIVariable(value)
+            elif Version(flax_version) >= Version("0.12.0"):
+                value = nnx.data(value)
         elif name in {"embeddings"}:
             if value is not None:
                 value = NetworkCollection.deserialize(value.serialize())
+            elif Version(flax_version) >= Version("0.12.0"):
+                value = nnx.data(value)
         elif name == "env_mat":
             # env_mat doesn't store any value
             pass

@@ -1,8 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import datetime
 import functools
+import json
 import logging
 import time
 from collections.abc import (
+    Callable,
+    Generator,
     Iterable,
 )
 from copy import (
@@ -20,6 +24,11 @@ import torch
 
 from deepmd.common import (
     symlink_prefix_files,
+)
+from deepmd.dpmodel.utils import (
+    compute_total_numb_batch,
+    resolve_model_prob,
+    resolve_model_prob_from_epochs,
 )
 from deepmd.loggers.training import (
     format_training_message,
@@ -40,6 +49,8 @@ from deepmd.pt.model.model import (
     get_zbl_model,
 )
 from deepmd.pt.optimizer import (
+    AdaMuonOptimizer,
+    HybridMuonOptimizer,
     KFOptimizerWrapper,
     LKFOptimizer,
 )
@@ -50,6 +61,7 @@ from deepmd.pt.utils import (
     dp_random,
 )
 from deepmd.pt.utils.dataloader import (
+    DpLoaderSet,
     get_sampler_from_params,
 )
 from deepmd.pt.utils.env import (
@@ -60,7 +72,7 @@ from deepmd.pt.utils.env import (
     SAMPLER_RECORD,
 )
 from deepmd.pt.utils.learning_rate import (
-    LearningRateExp,
+    BaseLR,
 )
 from deepmd.pt.utils.stat import (
     make_stat_input,
@@ -76,6 +88,18 @@ if torch.__version__.startswith("2"):
     import torch._dynamo
 
 import torch.distributed as dist
+from torch.distributed.checkpoint.state_dict import (
+    StateDictOptions,
+    get_model_state_dict,
+    get_optimizer_state_dict,
+    set_optimizer_state_dict,
+)
+from torch.distributed.fsdp import (
+    fully_shard,
+)
+from torch.distributed.optim import (
+    ZeroRedundancyOptimizer,
+)
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import (
     DataLoader,
@@ -92,16 +116,16 @@ class Trainer:
     def __init__(
         self,
         config: dict[str, Any],
-        training_data,
-        stat_file_path=None,
-        validation_data=None,
-        init_model=None,
-        restart_model=None,
-        finetune_model=None,
-        force_load=False,
-        shared_links=None,
-        finetune_links=None,
-        init_frz_model=None,
+        training_data: DpLoaderSet,
+        stat_file_path: str | None = None,
+        validation_data: DpLoaderSet | None = None,
+        init_model: str | None = None,
+        restart_model: str | None = None,
+        finetune_model: str | None = None,
+        force_load: bool = False,
+        shared_links: dict[str, str] | None = None,
+        finetune_links: dict[str, str] | None = None,
+        init_frz_model: str | None = None,
     ) -> None:
         """Construct a DeePMD trainer.
 
@@ -120,26 +144,26 @@ class Trainer:
         self.restart_training = restart_model is not None
         model_params = config["model"]
         training_params = config["training"]
+        optimizer_params = config.get("optimizer", {})
         self.multi_task = "model_dict" in model_params
         self.finetune_links = finetune_links
         self.finetune_update_stat = False
         self.model_keys = (
             list(model_params["model_dict"]) if self.multi_task else ["Default"]
         )
-        self.rank = (
-            dist.get_rank() if dist.is_available() and dist.is_initialized() else 0
-        )
-        self.world_size = (
-            dist.get_world_size()
-            if dist.is_available() and dist.is_initialized()
-            else 1
-        )
+        self.is_distributed = dist.is_available() and dist.is_initialized()
+        self.rank = dist.get_rank() if self.is_distributed else 0
+        self.world_size = dist.get_world_size() if self.is_distributed else 1
         self.num_model = len(self.model_keys)
+        self.model_prob = None
 
         # Iteration config
-        self.num_steps = training_params["numb_steps"]
+        self.num_steps = training_params.get("numb_steps")
+        self.num_epoch = training_params.get("num_epoch")
+        self.num_epoch_dict = training_params.get("num_epoch_dict")
         self.disp_file = training_params.get("disp_file", "lcurve.out")
         self.disp_freq = training_params.get("disp_freq", 1000)
+        self.disp_avg = training_params.get("disp_avg", False)
         self.save_ckpt = training_params.get("save_ckpt", "model.ckpt")
         self.save_freq = training_params.get("save_freq", 1000)
         self.max_ckpt_keep = training_params.get("max_ckpt_keep", 5)
@@ -148,21 +172,36 @@ class Trainer:
         self.change_bias_after_training = training_params.get(
             "change_bias_after_training", False
         )
+        self.zero_stage = int(training_params.get("zero_stage", 0))
+        if self.zero_stage not in (0, 1, 2, 3):
+            raise ValueError(
+                f"training.zero_stage must be 0, 1, 2, or 3, got {self.zero_stage}"
+            )
+        if self.zero_stage > 0 and not self.is_distributed:
+            raise ValueError(
+                "training.zero_stage requires distributed launch via torchrun."
+            )
+        if self.zero_stage > 0 and self.change_bias_after_training:
+            raise ValueError(
+                "training.zero_stage does not support change_bias_after_training."
+            )
         self.lcurve_should_print_header = True
 
-        def get_opt_param(params):
-            opt_type = params.get("opt_type", "Adam")
-            opt_param = {
-                "kf_blocksize": params.get("kf_blocksize", 5120),
-                "kf_start_pref_e": params.get("kf_start_pref_e", 1),
-                "kf_limit_pref_e": params.get("kf_limit_pref_e", 1),
-                "kf_start_pref_f": params.get("kf_start_pref_f", 1),
-                "kf_limit_pref_f": params.get("kf_limit_pref_f", 1),
-                "weight_decay": params.get("weight_decay", 0.001),
-            }
+        def get_opt_param(params: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+            """
+            Extract optimizer parameters.
+
+            Note: Default values are already filled by argcheck.normalize()
+            before this function is called.
+            """
+            opt_type = params.get("type", "Adam")
+            if opt_type not in ("Adam", "AdamW", "LKF", "AdaMuon", "HybridMuon"):
+                raise ValueError(f"Not supported optimizer type '{opt_type}'")
+            opt_param = dict(params)
+            opt_param.pop("type", None)
             return opt_type, opt_param
 
-        def cycle_iterator(iterable: Iterable):
+        def cycle_iterator(iterable: Iterable) -> Generator[Any, None, None]:
             """
             Produces an infinite iterator by repeatedly cycling through the given iterable.
 
@@ -178,8 +217,20 @@ class Trainer:
                     it = iter(iterable)
                 yield from it
 
-        def get_data_loader(_training_data, _validation_data, _training_params):
-            def get_dataloader_and_iter(_data, _params):
+        def get_data_loader(
+            _training_data: DpLoaderSet,
+            _validation_data: DpLoaderSet | None,
+            _training_params: dict[str, Any],
+        ) -> tuple[
+            DataLoader,
+            Generator[Any, None, None],
+            DataLoader | None,
+            Generator[Any, None, None] | None,
+            int,
+        ]:
+            def get_dataloader_and_iter(
+                _data: DpLoaderSet, _params: dict[str, Any]
+            ) -> tuple[DataLoader, Generator[Any, None, None]]:
                 _sampler = get_sampler_from_params(_data, _params)
                 if _sampler is None:
                     log.warning(
@@ -194,7 +245,7 @@ class Trainer:
                     else 0,  # setting to 0 diverges the behavior of its iterator; should be >=1
                     drop_last=False,
                     collate_fn=lambda batch: batch,  # prevent extra conversion
-                    pin_memory=True,
+                    pin_memory=(DEVICE != "cpu"),  # pin memory only if not on CPU
                 )
                 _data_iter = cycle_iterator(_dataloader)
                 return _dataloader, _data_iter
@@ -226,21 +277,15 @@ class Trainer:
             )
 
         def single_model_stat(
-            _model,
-            _data_stat_nbatch,
-            _training_data,
-            _validation_data,
-            _stat_file_path,
-            _data_requirement,
-            finetune_has_new_type=False,
-        ):
-            _data_requirement += get_additional_data_requirement(_model)
-            _training_data.add_data_requirement(_data_requirement)
-            if _validation_data is not None:
-                _validation_data.add_data_requirement(_data_requirement)
-
+            _model: Any,
+            _data_stat_nbatch: int,
+            _training_data: DpLoaderSet,
+            _stat_file_path: str | None,
+            finetune_has_new_type: bool = False,
+            preset_observed_type: list[str] | None = None,
+        ) -> Callable[[], Any]:
             @functools.lru_cache
-            def get_sample():
+            def get_sample() -> Any:
                 sampled = make_stat_input(
                     _training_data.systems,
                     _training_data.dataloaders,
@@ -252,36 +297,25 @@ class Trainer:
                 _model.compute_or_load_stat(
                     sampled_func=get_sample,
                     stat_file_path=_stat_file_path,
+                    preset_observed_type=preset_observed_type,
                 )
                 if isinstance(_stat_file_path, DPH5Path):
                     _stat_file_path.root.close()
             return get_sample
 
-        def get_lr(lr_params):
-            assert lr_params.get("type", "exp") == "exp", (
-                "Only learning rate `exp` is supported!"
-            )
-            lr_params["stop_steps"] = self.num_steps - self.warmup_steps
-            lr_exp = LearningRateExp(**lr_params)
-            return lr_exp
+        def get_lr(lr_params: dict[str, Any]) -> BaseLR:
+            lr_params["num_steps"] = self.num_steps
+            lr_schedule = BaseLR(**lr_params)
+            return lr_schedule
 
         # Optimizer
-        if self.multi_task and training_params.get("optim_dict", None) is not None:
-            self.optim_dict = training_params.get("optim_dict")
-            missing_keys = [
-                key for key in self.model_keys if key not in self.optim_dict
-            ]
-            assert not missing_keys, (
-                f"These keys are not in optim_dict: {missing_keys}!"
+        self.opt_type, self.opt_param = get_opt_param(optimizer_params)
+        if self.zero_stage > 0 and self.multi_task:
+            raise ValueError(
+                "training.zero_stage is currently only supported in single-task training."
             )
-            self.opt_type = {}
-            self.opt_param = {}
-            for model_key in self.model_keys:
-                self.opt_type[model_key], self.opt_param[model_key] = get_opt_param(
-                    self.optim_dict[model_key]
-                )
-        else:
-            self.opt_type, self.opt_param = get_opt_param(training_params)
+        if self.zero_stage > 0 and self.opt_type == "LKF":
+            raise ValueError("training.zero_stage does not support LKF optimizer.")
 
         # loss_param_tmp for Hessian activation
         loss_param_tmp = None
@@ -312,10 +346,7 @@ class Trainer:
             self.loss = {}
             for model_key in self.model_keys:
                 loss_param = config["loss_dict"][model_key]
-                if config.get("learning_rate_dict", None) is not None:
-                    lr_param = config["learning_rate_dict"][model_key]["start_lr"]
-                else:
-                    lr_param = config["learning_rate"]["start_lr"]
+                lr_param = config["learning_rate"]["start_lr"]
                 ntypes = len(model_params["model_dict"][model_key]["type_map"])
                 self.loss[model_key] = get_loss(
                     loss_param, lr_param, ntypes, self.model[model_key]
@@ -323,17 +354,32 @@ class Trainer:
 
         # Data
         if not self.multi_task:
+            # add data requirement for labels
+            data_requirement = self.loss.label_requirement
+            data_requirement += get_additional_data_requirement(self.model)
+            training_data.add_data_requirement(data_requirement)
+            if validation_data is not None:
+                validation_data.add_data_requirement(data_requirement)
+            # Preload and apply modifiers to all data before computing statistics
+            training_data.preload_and_modify_all_data_torch()
+            if validation_data is not None:
+                validation_data.preload_and_modify_all_data_torch()
             self.get_sample_func = single_model_stat(
                 self.model,
                 model_params.get("data_stat_nbatch", 10),
                 training_data,
-                validation_data,
                 stat_file_path,
-                self.loss.label_requirement,
                 finetune_has_new_type=self.finetune_links["Default"].get_has_new_type()
                 if self.finetune_links is not None
                 else False,
+                preset_observed_type=model_params.get("info", {}).get("observed_type"),
             )
+            # Persist observed_type from stat into model_params and model_def_script
+            if not resuming and self.rank == 0:
+                observed = self.model.atomic_model.observed_type
+                if observed is not None:
+                    model_params.setdefault("info", {})["observed_type"] = observed
+                    self.model.model_def_script = json.dumps(model_params)
             (
                 self.training_dataloader,
                 self.training_data,
@@ -359,19 +405,46 @@ class Trainer:
                 self.get_sample_func,
             ) = {}, {}, {}, {}, {}, {}
             for model_key in self.model_keys:
+                # add data requirement for labels
+                data_requirement = self.loss[model_key].label_requirement
+                data_requirement += get_additional_data_requirement(
+                    self.model[model_key]
+                )
+                training_data[model_key].add_data_requirement(data_requirement)
+                if validation_data[model_key] is not None:
+                    validation_data[model_key].add_data_requirement(data_requirement)
+                # Preload and apply modifiers to all data before computing statistics
+                training_data[model_key].preload_and_modify_all_data_torch()
+                if validation_data[model_key] is not None:
+                    validation_data[model_key].preload_and_modify_all_data_torch()
+                _mt_user_observed = (
+                    model_params["model_dict"][model_key]
+                    .get("info", {})
+                    .get("observed_type")
+                )
                 self.get_sample_func[model_key] = single_model_stat(
                     self.model[model_key],
                     model_params["model_dict"][model_key].get("data_stat_nbatch", 10),
                     training_data[model_key],
-                    validation_data[model_key],
                     stat_file_path[model_key],
-                    self.loss[model_key].label_requirement,
                     finetune_has_new_type=self.finetune_links[
                         model_key
                     ].get_has_new_type()
                     if self.finetune_links is not None
                     else False,
+                    preset_observed_type=_mt_user_observed,
                 )
+                # Persist observed_type into model_params and model_def_script
+                if not resuming and self.rank == 0:
+                    observed = self.model[model_key].atomic_model.observed_type
+                    if observed is not None:
+                        model_params["model_dict"][model_key].setdefault("info", {})[
+                            "observed_type"
+                        ] = observed
+                        self.model[model_key].model_def_script = json.dumps(
+                            model_params["model_dict"][model_key]
+                        )
+
                 (
                     self.training_dataloader[model_key],
                     self.training_data[model_key],
@@ -399,18 +472,84 @@ class Trainer:
                         ),
                     )
 
-        # Learning rate
-        self.warmup_steps = training_params.get("warmup_steps", 0)
-        self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
-        assert self.num_steps - self.warmup_steps > 0 or self.warmup_steps == 0, (
-            "Warm up steps must be less than total training steps!"
-        )
-        if self.multi_task and config.get("learning_rate_dict", None) is not None:
-            self.lr_exp = {}
-            for model_key in self.model_keys:
-                self.lr_exp[model_key] = get_lr(config["learning_rate_dict"][model_key])
+        # Resolve training steps
+        per_task_total = []
+        if not self.multi_task:
+            if self.num_steps is None:
+                if self.num_epoch is None:
+                    raise ValueError(
+                        "Either training.numb_steps or training.num_epoch must be set."
+                    )
+                if self.num_epoch <= 0:
+                    raise ValueError("training.num_epoch must be positive.")
+                sampler_weights = to_numpy_array(
+                    self.training_dataloader.sampler.weights
+                )
+                total_numb_batch = compute_total_numb_batch(
+                    training_data.index,
+                    sampler_weights,
+                )
+                if total_numb_batch <= 0:
+                    raise ValueError(
+                        "Total number of training batches must be positive."
+                    )
+                self.num_steps = int(np.ceil(self.num_epoch * total_numb_batch))
+                log.info(
+                    "Computed num_steps=%d from num_epoch=%s and total_numb_batch=%d.",
+                    self.num_steps,
+                    self.num_epoch,
+                    total_numb_batch,
+                )
         else:
-            self.lr_exp = get_lr(config["learning_rate"])
+            if self.num_epoch_dict:
+                if self.num_steps is not None:
+                    raise ValueError(
+                        "training.numb_steps and training.num_epoch_dict "
+                        "are mutually exclusive."
+                    )
+                for model_key in self.model_keys:
+                    sampler_weights = to_numpy_array(
+                        self.training_dataloader[model_key].sampler.weights
+                    )
+                    per_task_total.append(
+                        compute_total_numb_batch(
+                            training_data[model_key].index,
+                            sampler_weights,
+                        )
+                    )
+                (
+                    self.model_prob,
+                    self.num_steps,
+                    per_task_steps,
+                ) = resolve_model_prob_from_epochs(
+                    self.model_keys,
+                    self.num_epoch_dict,
+                    np.asarray(per_task_total, dtype=np.float64),
+                )
+                log.info(
+                    "Computed model_prob=%s and num_steps=%d from num_epoch_dict=%s "
+                    "with per-task target steps: %s.",
+                    self.model_prob,
+                    self.num_steps,
+                    self.num_epoch_dict,
+                    {k: int(np.ceil(v)) for k, v in per_task_steps.items()},
+                )
+            else:
+                if self.num_steps is None:
+                    raise ValueError(
+                        "Either training.numb_steps (multi-task only) or "
+                        "training.num_epoch_dict must be set."
+                    )
+                self.model_prob = resolve_model_prob(
+                    self.model_keys,
+                    training_params.get("model_prob"),
+                    training_data,
+                    rank=self.rank,
+                )
+
+        # Learning rate
+        self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
+        self.lr_schedule = get_lr(config["learning_rate"])
 
         # JIT
         if JIT:
@@ -495,11 +634,11 @@ class Trainer:
                     state_dict = pretrained_model_wrapper.state_dict()
 
                     def collect_single_finetune_params(
-                        _model_key,
-                        _finetune_rule_single,
-                        _new_state_dict,
-                        _origin_state_dict,
-                        _random_state_dict,
+                        _model_key: str,
+                        _finetune_rule_single: Any,
+                        _new_state_dict: dict[str, Any],
+                        _origin_state_dict: dict[str, Any],
+                        _random_state_dict: dict[str, Any],
                     ) -> None:
                         _new_fitting = _finetune_rule_single.get_random_fitting()
                         _model_key_from = _finetune_rule_single.get_model_branch()
@@ -509,15 +648,31 @@ class Trainer:
                             if i != "_extra_state" and f".{_model_key}." in i
                         ]
                         for item_key in target_keys:
-                            if _new_fitting and (".descriptor." not in item_key):
+                            new_key = item_key.replace(
+                                f".{_model_key}.", f".{_model_key_from}."
+                            )
+                            use_random_initialization = _new_fitting and (
+                                ".descriptor." not in item_key
+                            )
+                            if (
+                                not use_random_initialization
+                                and new_key not in _origin_state_dict
+                            ):
+                                # for ZBL models finetuning from standard models
+                                if ".models.0." in new_key:
+                                    new_key = new_key.replace(".models.0.", ".")
+                                elif ".models.1." in new_key:
+                                    use_random_initialization = True
+                                else:
+                                    raise KeyError(
+                                        f"Key {new_key} not found in pretrained model."
+                                    )
+                            if use_random_initialization:
                                 # print(f'Keep {item_key} in old model!')
                                 _new_state_dict[item_key] = (
                                     _random_state_dict[item_key].clone().detach()
                                 )
                             else:
-                                new_key = item_key.replace(
-                                    f".{_model_key}.", f".{_model_key_from}."
-                                )
                                 # print(f'Replace {item_key} with {new_key} in pretrained_model!')
                                 _new_state_dict[item_key] = (
                                     _origin_state_dict[new_key].clone().detach()
@@ -544,10 +699,10 @@ class Trainer:
                 if finetune_model is not None:
 
                     def single_model_finetune(
-                        _model,
-                        _finetune_rule_single,
-                        _sample_func,
-                    ):
+                        _model: Any,
+                        _finetune_rule_single: Any,
+                        _sample_func: Callable,
+                    ) -> Any:
                         _model = model_change_out_bias(
                             _model,
                             _sample_func,
@@ -581,76 +736,119 @@ class Trainer:
 
         if init_frz_model is not None:
             frz_model = torch.jit.load(init_frz_model, map_location=DEVICE)
-            self.model.load_state_dict(frz_model.state_dict())
+            state = frz_model.state_dict()
+            missing, unexpected = self.model.load_state_dict(state, strict=False)
+            if missing or unexpected:
+                log.warning(
+                    f"Checkpoint loaded non-strictly. Missing keys: {missing}, Unexpected keys: {unexpected}"
+                )
 
         # Multi-task share params
         if shared_links is not None:
+            _data_stat_protect = np.array(
+                [
+                    model_params["model_dict"][ii].get("data_stat_protect", 1e-2)
+                    for ii in model_params["model_dict"]
+                ]
+            )
+            assert np.allclose(_data_stat_protect, _data_stat_protect[0]), (
+                "Model key 'data_stat_protect' must be the same in each branch when multitask!"
+            )
             self.wrapper.share_params(
                 shared_links,
                 resume=(resuming and not self.finetune_update_stat) or self.rank != 0,
+                model_key_prob_map=dict(zip(self.model_keys, self.model_prob)),
+                data_stat_protect=_data_stat_protect[0],
             )
 
-        if dist.is_available() and dist.is_initialized():
+        if self.is_distributed:
             torch.cuda.set_device(LOCAL_RANK)
-            # DDP will guarantee the model parameters are identical across all processes
-            self.wrapper = DDP(
-                self.wrapper,
-                device_ids=[LOCAL_RANK],
-                find_unused_parameters=True,
-                output_device=LOCAL_RANK,
-            )
+            if self.zero_stage >= 2:
+                # FSDP2 does NOT broadcast params (unlike DDP constructor).
+                # Ensure all ranks share identical weights before sharding.
+                for p in self.wrapper.parameters():
+                    dist.broadcast(p.data, src=0)
+                for b in self.wrapper.buffers():
+                    dist.broadcast(b.data, src=0)
+                reshard = self.zero_stage >= 3
+                self.wrapper = fully_shard(self.wrapper, reshard_after_forward=reshard)
+            else:
+                # zero_stage=0 or 1: standard DDP (ZeRO-1 will wrap the optimizer)
+                self.wrapper = DDP(
+                    self.wrapper,
+                    device_ids=[LOCAL_RANK],
+                    find_unused_parameters=True,
+                    output_device=LOCAL_RANK,
+                )
 
         # TODO add lr warmups for multitask
         # author: iProzd
-        def warm_up_linear(step, warmup_steps):
-            if step < warmup_steps:
-                return step / warmup_steps
-            else:
-                return self.lr_exp.value(step - warmup_steps) / self.lr_exp.start_lr
-
         # TODO add optimizers for multitask
         # author: iProzd
-        if self.opt_type in ["Adam", "AdamW"]:
-            if self.opt_type == "Adam":
-                self.optimizer = torch.optim.Adam(
-                    self.wrapper.parameters(),
-                    lr=self.lr_exp.start_lr,
-                    fused=False if DEVICE.type == "cpu" else True,
-                )
-            else:
-                self.optimizer = torch.optim.AdamW(
-                    self.wrapper.parameters(),
-                    lr=self.lr_exp.start_lr,
-                    weight_decay=float(self.opt_param["weight_decay"]),
-                    fused=False if DEVICE.type == "cpu" else True,
-                )
-            if optimizer_state_dict is not None and self.restart_training:
-                self.optimizer.load_state_dict(optimizer_state_dict)
-            self.scheduler = torch.optim.lr_scheduler.LambdaLR(
-                self.optimizer,
-                lambda step: warm_up_linear(step + self.start_step, self.warmup_steps),
-            )
-        elif self.opt_type == "LKF":
+        initial_lr = self.lr_schedule.value(self.start_step)
+        if self.opt_type == "LKF":
             self.optimizer = LKFOptimizer(
                 self.wrapper.parameters(), 0.98, 0.99870, self.opt_param["kf_blocksize"]
             )
         else:
-            raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
+            # === Common path for gradient-based optimizers ===
+            adam_betas = (
+                float(self.opt_param["adam_beta1"]),
+                float(self.opt_param["adam_beta2"]),
+            )
+            weight_decay = float(self.opt_param["weight_decay"])
 
-        # Get model prob for multi-task
-        if self.multi_task:
-            self.model_prob = np.array([0.0 for key in self.model_keys])
-            if training_params.get("model_prob", None) is not None:
-                model_prob = training_params["model_prob"]
-                for ii, model_key in enumerate(self.model_keys):
-                    if model_key in model_prob:
-                        self.model_prob[ii] += float(model_prob[model_key])
+            if self.opt_type in ("Adam", "AdamW"):
+                cls = torch.optim.Adam if self.opt_type == "Adam" else torch.optim.AdamW
+                extra = {"betas": adam_betas, "fused": DEVICE.type != "cpu"}
+            elif self.opt_type == "AdaMuon":
+                cls = AdaMuonOptimizer
+                extra = {
+                    "adam_betas": adam_betas,
+                    "momentum": float(self.opt_param["momentum"]),
+                    "lr_adjust": float(self.opt_param["lr_adjust"]),
+                    "lr_adjust_coeff": float(self.opt_param["lr_adjust_coeff"]),
+                }
+            elif self.opt_type == "HybridMuon":
+                cls = HybridMuonOptimizer
+                extra = {
+                    "adam_betas": adam_betas,
+                    "momentum": float(self.opt_param["momentum"]),
+                    "lr_adjust": float(self.opt_param["lr_adjust"]),
+                    "lr_adjust_coeff": float(self.opt_param["lr_adjust_coeff"]),
+                    "muon_mode": str(self.opt_param.get("muon_mode", "slice")),
+                    "named_parameters": tuple(self.wrapper.named_parameters()),
+                    "flash_muon": bool(self.opt_param.get("flash_muon", True)),
+                    "magma_muon": bool(self.opt_param.get("magma_muon", False)),
+                }
             else:
-                for ii, model_key in enumerate(self.model_keys):
-                    self.model_prob[ii] += float(len(self.training_data[model_key]))
-            sum_prob = np.sum(self.model_prob)
-            assert sum_prob > 0.0, "Sum of model prob must be larger than 0!"
-            self.model_prob = self.model_prob / sum_prob
+                raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
+
+            self.optimizer = self._create_optimizer(
+                cls,
+                lr=initial_lr,
+                weight_decay=weight_decay,
+                **extra,
+            )
+            self._load_optimizer_state(optimizer_state_dict)
+            self.scheduler = torch.optim.lr_scheduler.LambdaLR(
+                self.optimizer,
+                lambda step: (
+                    self.lr_schedule.value(step + self.start_step) / initial_lr
+                ),
+                last_epoch=self.start_step - 1,
+            )
+
+        if self.zero_stage > 0 and self.rank == 0:
+            if self.zero_stage == 1:
+                log.info("Enabled DDP + ZeRO Stage-1 Optimizer State Sharding.")
+            else:
+                stage = (
+                    "FULL_SHARD (Stage 3)"
+                    if self.zero_stage >= 3
+                    else "SHARD_GRAD_OP (Stage 2)"
+                )
+                log.info(f"Enabled FSDP2 {stage}.")
 
         # Tensorboard
         self.enable_tensorboard = training_params.get("tensorboard", False)
@@ -659,6 +857,99 @@ class Trainer:
         self.enable_profiler = training_params.get("enable_profiler", False)
         self.profiling = training_params.get("profiling", False)
         self.profiling_file = training_params.get("profiling_file", "timeline.json")
+
+        # Log model parameter count
+        if self.rank == 0:
+            self._log_parameter_count()
+
+    @staticmethod
+    def _count_parameters(model: torch.nn.Module) -> tuple[int, int]:
+        """
+        Count model parameters.
+
+        Parameters
+        ----------
+        model : torch.nn.Module
+            The model to count parameters for.
+
+        Returns
+        -------
+        tuple[int, int]
+            A tuple of (trainable, total) parameter counts.
+        """
+        trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        total = sum(p.numel() for p in model.parameters())
+        return trainable, total
+
+    def _log_parameter_count(self) -> None:
+        """Log model parameter count."""
+        if not self.multi_task:
+            trainable, total = self._count_parameters(self.model)
+            log.info(
+                f"Model Params:  {total / 1e6:.3f} M   (Trainable: {trainable / 1e6:.3f} M)"
+            )
+        else:
+            log.warning(
+                "In multitask mode, parameters may be shared across tasks. "
+                "The following per-task counts may include duplicates."
+            )
+            for model_key in self.model_keys:
+                trainable, total = self._count_parameters(self.model[model_key])
+                log.info(
+                    f"Model Params [{model_key}]: {total / 1e6:.3f} M   (Trainable: {trainable / 1e6:.3f} M)"
+                )
+
+    def _create_optimizer(
+        self,
+        optimizer_class: type[torch.optim.Optimizer],
+        **kwargs: Any,
+    ) -> torch.optim.Optimizer:
+        """
+        Construct optimizer, wrapping with ZeroRedundancyOptimizer when zero_stage=1.
+
+        Parameters
+        ----------
+        optimizer_class : type[torch.optim.Optimizer]
+            The optimizer class to instantiate.
+        **kwargs : Any
+            Keyword arguments forwarded to the optimizer constructor.
+
+        Returns
+        -------
+        torch.optim.Optimizer
+            Constructed optimizer instance.
+        """
+        if self.zero_stage == 1:
+            return ZeroRedundancyOptimizer(
+                self.wrapper.parameters(),
+                optimizer_class=optimizer_class,
+                **kwargs,
+            )
+        return optimizer_class(self.wrapper.parameters(), **kwargs)
+
+    def _get_inner_module(self) -> ModelWrapper:
+        """Unwrap DDP if needed. FSDP2 is in-place so no unwrapping required."""
+        if self.is_distributed and self.zero_stage <= 1:
+            return self.wrapper.module
+        return self.wrapper
+
+    def _load_optimizer_state(
+        self, optimizer_state_dict: dict[str, Any] | None
+    ) -> None:
+        """Load optimizer state for restart training when available."""
+        if optimizer_state_dict is None or not self.restart_training:
+            return
+        if self.zero_stage >= 2:
+            set_optimizer_state_dict(
+                self.wrapper,
+                self.optimizer,
+                optim_state_dict=optimizer_state_dict,
+                options=StateDictOptions(
+                    full_state_dict=True, broadcast_from_rank0=True
+                ),
+            )
+        else:
+            self.optimizer.load_state_dict(optimizer_state_dict)
 
     def run(self) -> None:
         fout = (
@@ -695,7 +986,8 @@ class Trainer:
             )
             prof.start()
 
-        def step(_step_id, task_key="Default") -> None:
+        def step(_step_id: int, task_key: str = "Default") -> None:
+            display_step_id = _step_id + 1
             if self.multi_task:
                 model_index = dp_random.choice(
                     np.arange(self.num_model, dtype=np.int_),
@@ -705,11 +997,7 @@ class Trainer:
             # PyTorch Profiler
             if self.enable_profiler or self.profiling:
                 prof.step()
-            if isinstance(self.lr_exp, dict):
-                _lr = self.lr_exp[task_key]
-            else:
-                _lr = self.lr_exp
-            cur_lr = _lr.value(_step_id)
+            cur_lr = self.lr_schedule.value(_step_id)
             pref_lr = cur_lr
             self.optimizer.zero_grad(set_to_none=True)
             input_dict, label_dict, log_dict = self.get_data(
@@ -719,23 +1007,58 @@ class Trainer:
                 print_str = f"Step {_step_id}: sample system{log_dict['sid']}  frame{log_dict['fid']}\n"
                 fout1.write(print_str)
                 fout1.flush()
-            if self.opt_type in ["Adam", "AdamW"]:
+            if self.opt_type in ["Adam", "AdamW", "AdaMuon", "HybridMuon"]:
                 cur_lr = self.scheduler.get_last_lr()[0]
-                if _step_id < self.warmup_steps:
-                    pref_lr = _lr.start_lr
-                else:
-                    pref_lr = cur_lr
+                pref_lr = cur_lr
                 model_pred, loss, more_loss = self.wrapper(
                     **input_dict, cur_lr=pref_lr, label=label_dict, task_key=task_key
                 )
                 loss.backward()
+                # === Initialize gradient diagnostics variables ===
+                total_norm: torch.Tensor | None = None
+                pre_clip_named_norms: list[tuple[str, float]] = []
                 if self.gradient_max_norm > 0.0:
-                    torch.nn.utils.clip_grad_norm_(
+                    # Collect per-parameter gradient norms before clipping.
+                    # NOTE: Under FSDP2 with ZeRO stage >= 2, p.grad is a sharded DTensor,
+                    # so p.grad.norm() computes the shard-local L2 norm, not the full-parameter
+                    # norm. Skip per-param collection in this case to avoid misleading values.
+                    if (
+                        self.enable_tensorboard
+                        and self.zero_stage < 2
+                        and (
+                            display_step_id % self.tensorboard_freq == 0
+                            or display_step_id == 1
+                        )
+                    ):
+                        pre_clip_named_norms = [
+                            (name, p.grad.detach().norm().item())
+                            for name, p in self.wrapper.named_parameters()
+                            if p.grad is not None
+                        ]
+                    # FSDP2 sharded DTensor gradients don't support error_if_nonfinite; use manual isfinite check instead.
+                    total_norm = torch.nn.utils.clip_grad_norm_(
                         self.wrapper.parameters(),
                         self.gradient_max_norm,
-                        error_if_nonfinite=True,
                     )
-                with torch.device("cpu"):
+                    if not torch.isfinite(total_norm):
+                        bad_params = []
+                        for name, p in self.wrapper.named_parameters():
+                            if p.grad is not None:
+                                grad_norm = p.grad.data.norm()
+                                if not torch.isfinite(grad_norm):
+                                    bad_params.append(
+                                        f"  {name}: grad_norm={grad_norm}, shape={list(p.shape)}"
+                                    )
+                        detail = (
+                            "\n".join(bad_params)
+                            if bad_params
+                            else "  (all individual grads finite, overflow in norm reduction)"
+                        )
+                        raise RuntimeError(
+                            f"Non-finite gradient norm: {total_norm}\n"
+                            f"Parameters with non-finite gradients:\n{detail}"
+                        )
+                with torch.device(DEVICE):
                     self.optimizer.step()
                 self.scheduler.step()
             elif self.opt_type == "LKF":
@@ -769,7 +1092,7 @@ class Trainer:
                         else self.wrapper
                     )
 
-                    def fake_model():
+                    def fake_model() -> dict:
                         return model_pred
 
                     _, loss, more_loss = module.loss[task_key](
@@ -808,25 +1131,80 @@ class Trainer:
             else:
                 raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
 
+            if self.disp_avg:
+                # Accumulate loss for averaging over display interval
+                self.step_count_in_interval += 1
+                if not self.multi_task:
+                    # Accumulate loss for single task
+                    if not self.train_loss_accu:
+                        # Initialize accumulator with current loss structure
+                        for item in more_loss:
+                            if "l2_" not in item:
+                                self.train_loss_accu[item] = 0.0
+                    for item in more_loss:
+                        if "l2_" not in item:
+                            self.train_loss_accu[item] += more_loss[item]
+                else:
+                    # Accumulate loss for multi-task
+                    if task_key not in self.train_loss_accu:
+                        self.train_loss_accu[task_key] = {}
+                    if task_key not in self.step_count_per_task:
+                        self.step_count_per_task[task_key] = 0
+                    self.step_count_per_task[task_key] += 1
+
+                    for item in more_loss:
+                        if "l2_" not in item:
+                            if item not in self.train_loss_accu[task_key]:
+                                self.train_loss_accu[task_key][item] = 0.0
+                            self.train_loss_accu[task_key][item] += more_loss[item]
+
             # Log and persist
-            display_step_id = _step_id + 1
             if self.display_in_training and (
                 display_step_id % self.disp_freq == 0 or display_step_id == 1
             ):
                 self.wrapper.eval()  # Will set to train mode before fininshing validation
 
-                def log_loss_train(_loss, _more_loss, _task_key="Default"):
-                    results = {}
-                    rmse_val = {
-                        item: _more_loss[item]
-                        for item in _more_loss
-                        if "l2_" not in item
-                    }
-                    for item in sorted(rmse_val.keys()):
-                        results[item] = rmse_val[item]
-                    return results
+                if self.disp_avg:
 
-                def log_loss_valid(_task_key="Default"):
+                    def log_loss_train(
+                        _loss: Any, _more_loss: Any, _task_key: str = "Default"
+                    ) -> dict:
+                        results = {}
+                        if not self.multi_task:
+                            # Use accumulated average loss for single task
+                            for item in self.train_loss_accu:
+                                results[item] = (
+                                    self.train_loss_accu[item]
+                                    / self.step_count_in_interval
+                                )
+                        else:
+                            # Use accumulated average loss for multi-task
+                            if (
+                                _task_key in self.train_loss_accu
+                                and _task_key in self.step_count_per_task
+                            ):
+                                for item in self.train_loss_accu[_task_key]:
+                                    results[item] = (
+                                        self.train_loss_accu[_task_key][item]
+                                        / self.step_count_per_task[_task_key]
+                                    )
+                        return results
+                else:
+
+                    def log_loss_train(
+                        _loss: Any, _more_loss: Any, _task_key: str = "Default"
+                    ) -> dict:
+                        results = {}
+                        rmse_val = {
+                            item: _more_loss[item]
+                            for item in _more_loss
+                            if "l2_" not in item
+                        }
+                        for item in sorted(rmse_val.keys()):
+                            results[item] = rmse_val[item]
+                        return results
+
+                def log_loss_valid(_task_key: str = "Default") -> dict:
                     single_results = {}
                     sum_natoms = 0
                     if not self.multi_task:
@@ -882,24 +1260,31 @@ class Trainer:
                 else:
                     train_results = {_key: {} for _key in self.model_keys}
                     valid_results = {_key: {} for _key in self.model_keys}
-                    train_results[task_key] = log_loss_train(
-                        loss, more_loss, _task_key=task_key
-                    )
-                    for _key in self.model_keys:
-                        if _key != task_key:
-                            self.optimizer.zero_grad()
-                            input_dict, label_dict, _ = self.get_data(
-                                is_train=True, task_key=_key
-                            )
-                            _, loss, more_loss = self.wrapper(
-                                **input_dict,
-                                cur_lr=pref_lr,
-                                label=label_dict,
-                                task_key=_key,
-                            )
+                    if self.disp_avg:
+                        # For multi-task, use accumulated average loss for all tasks
+                        for _key in self.model_keys:
                             train_results[_key] = log_loss_train(
                                 loss, more_loss, _task_key=_key
                             )
+                    else:
+                        train_results[task_key] = log_loss_train(
+                            loss, more_loss, _task_key=task_key
+                        )
+                        for _key in self.model_keys:
+                            if _key != task_key:
+                                self.optimizer.zero_grad()
+                                input_dict, label_dict, _ = self.get_data(
+                                    is_train=True, task_key=_key
+                                )
+                                _, loss, more_loss = self.wrapper(
+                                    **input_dict,
+                                    cur_lr=pref_lr,
+                                    label=label_dict,
+                                    task_key=_key,
+                                )
+                                train_results[_key] = log_loss_train(
+                                    loss, more_loss, _task_key=_key
+                                )
                         valid_results[_key] = log_loss_valid(_task_key=_key)
                         if self.rank == 0:
                             log.info(
@@ -921,26 +1306,54 @@ class Trainer:
                                 )
                 self.wrapper.train()
 
+                if self.disp_avg:
+                    # Reset loss accumulators after display
+                    if not self.multi_task:
+                        for item in self.train_loss_accu:
+                            self.train_loss_accu[item] = 0.0
+                    else:
+                        for task_key in self.model_keys:
+                            if task_key in self.train_loss_accu:
+                                for item in self.train_loss_accu[task_key]:
+                                    self.train_loss_accu[task_key][item] = 0.0
+                            if task_key in self.step_count_per_task:
+                                self.step_count_per_task[task_key] = 0
+                    self.step_count_in_interval = 0
+                    self.last_display_step = display_step_id
+
                 current_time = time.time()
                 train_time = current_time - self.t0
                 self.t0 = current_time
                 if self.rank == 0 and self.timing_in_training:
                     eta = int(
-                        (self.num_steps - display_step_id) / self.disp_freq * train_time
+                        (self.num_steps - display_step_id)
+                        / min(self.disp_freq, display_step_id - self.start_step)
+                        * train_time
                     )
                     log.info(
                         format_training_message(
                             batch=display_step_id,
                             wall_time=train_time,
                             eta=eta,
+                            current_time=datetime.datetime.fromtimestamp(
+                                current_time,
+                                tz=datetime.timezone.utc,
+                            ).astimezone(),
                         )
                     )
-                # the first training time is not accurate
                 if (
-                    (_step_id + 1 - self.start_step) > self.disp_freq
-                    or self.num_steps - self.start_step < 2 * self.disp_freq
+                    (self.num_steps - self.start_step)
+                    <= 2 * self.disp_freq  # not enough steps
+                    or (_step_id - self.start_step)
+                    >= self.disp_freq  # skip first disp_freq steps
                 ):
                     self.total_train_time += train_time
+                    if display_step_id == 1:
+                        self.timed_steps += 1
+                    else:
+                        self.timed_steps += min(
+                            self.disp_freq, _step_id - self.start_step
+                        )
 
                 if fout:
                     if self.lcurve_should_print_header:
@@ -951,22 +1364,20 @@ class Trainer:
                     )
 
             if (
-                ((_step_id + 1) % self.save_freq == 0 and _step_id != self.start_step)
-                or (_step_id + 1) == self.num_steps
-            ) and (self.rank == 0 or dist.get_rank() == 0):
-                # Handle the case if rank 0 aborted and re-assigned
-                self.latest_model = Path(self.save_ckpt + f"-{_step_id + 1}.pt")
-
-                module = (
-                    self.wrapper.module
-                    if dist.is_available() and dist.is_initialized()
-                    else self.wrapper
+                (
+                    (display_step_id) % self.save_freq == 0
+                    and _step_id != self.start_step
                 )
+                or (display_step_id) == self.num_steps
+            ) and (self.zero_stage > 0 or self.rank == 0 or dist.get_rank() == 0):
+                # Handle the case if rank 0 aborted and re-assigned
+                self.latest_model = Path(self.save_ckpt + f"-{display_step_id}.pt")
                 self.save_model(self.latest_model, lr=cur_lr, step=_step_id)
-                log.info(f"Saved model to {self.latest_model}")
-                symlink_prefix_files(self.latest_model.stem, self.save_ckpt)
-                with open("checkpoint", "w") as f:
-                    f.write(str(self.latest_model))
+                if self.rank == 0 or dist.get_rank() == 0:
+                    log.info(f"Saved model to {self.latest_model}")
+                    symlink_prefix_files(self.latest_model.stem, self.save_ckpt)
+                    with open("checkpoint", "w") as f:
+                        f.write(str(self.latest_model))
 
             # tensorboard
             if self.enable_tensorboard and (
@@ -978,10 +1389,48 @@ class Trainer:
                     writer.add_scalar(
                         f"{task_key}/{item}", more_loss[item], display_step_id
                     )
+                # === Gradient diagnostics (pre-clip) ===
+                # Only log if total_norm was computed (i.e., not LKF optimizer).
+                if self.gradient_max_norm > 0.0 and total_norm is not None:
+                    writer.add_scalar(
+                        f"{task_key}/grad/total_norm",
+                        total_norm.item(),
+                        display_step_id,
+                    )
+                    # Only log per-parameter norms if list is non-empty.
+                    if pre_clip_named_norms:
+                        # Use float32 for histogram to ensure numerical stability
+                        # when gradients are in lower precision (FP16/BF16).
+                        norms = torch.tensor(
+                            [gn for _, gn in pre_clip_named_norms],
+                            dtype=torch.float32,
+                            device="cpu",
+                        )
+                        writer.add_histogram(
+                            f"{task_key}/grad/param_norms", norms, display_step_id
+                        )
+                        # Log top-10 largest per-parameter gradient norms.
+                        pre_clip_named_norms.sort(key=lambda x: x[1], reverse=True)
+                        for name, gn in pre_clip_named_norms[:10]:
+                            writer.add_scalar(
+                                f"{task_key}/grad_top10/{name}", gn, display_step_id
+                            )
 
         self.wrapper.train()
         self.t0 = time.time()
         self.total_train_time = 0.0
+        self.timed_steps = 0
+
+        if self.disp_avg:
+            # Initialize loss accumulators
+            if not self.multi_task:
+                self.train_loss_accu = {}
+            else:
+                self.train_loss_accu = {key: {} for key in self.model_keys}
+                self.step_count_per_task = dict.fromkeys(self.model_keys, 0)
+            self.step_count_in_interval = 0
+            self.last_display_step = 0
+
         for step_id in range(self.start_step, self.num_steps):
             step(step_id)
             if JIT:
@@ -1002,43 +1451,37 @@ class Trainer:
                         _bias_adjust_mode="change-by-statistic",
                     )
             self.latest_model = Path(self.save_ckpt + f"-{self.num_steps}.pt")
-            cur_lr = self.lr_exp.value(self.num_steps - 1)
+            cur_lr = self.lr_schedule.value(self.num_steps - 1)
             self.save_model(self.latest_model, lr=cur_lr, step=self.num_steps - 1)
             log.info(f"Saved model to {self.latest_model}")
             symlink_prefix_files(self.latest_model.stem, self.save_ckpt)
             with open("checkpoint", "w") as f:
                 f.write(str(self.latest_model))
 
+        if self.num_steps == 0 and self.zero_stage > 0:
+            # ZeRO-1 / FSDP: all ranks participate in save_model (collective op)
+            self.latest_model = Path(self.save_ckpt + "-0.pt")
+            self.save_model(self.latest_model, lr=0, step=0)
+
         if (
             self.rank == 0 or dist.get_rank() == 0
         ):  # Handle the case if rank 0 aborted and re-assigned
             if self.num_steps == 0:
-                # when num_steps is 0, the checkpoint is never not saved
-                self.latest_model = Path(self.save_ckpt + "-0.pt")
-                self.save_model(self.latest_model, lr=0, step=0)
+                if self.zero_stage == 0:
+                    # When num_steps is 0, the checkpoint is never saved in the loop
+                    self.latest_model = Path(self.save_ckpt + "-0.pt")
+                    self.save_model(self.latest_model, lr=0, step=0)
                 log.info(f"Saved model to {self.latest_model}")
                 symlink_prefix_files(self.latest_model.stem, self.save_ckpt)
                 with open("checkpoint", "w") as f:
                     f.write(str(self.latest_model))
 
-            elapsed_batch = self.num_steps - self.start_step
-            if self.timing_in_training and elapsed_batch // self.disp_freq > 0:
-                if self.start_step >= 2 * self.disp_freq:
-                    log.info(
-                        "average training time: %.4f s/batch (exclude first %d batches)",
-                        self.total_train_time
-                        / (
-                            elapsed_batch // self.disp_freq * self.disp_freq
-                            - self.disp_freq
-                        ),
-                        self.disp_freq,
-                    )
-                else:
-                    log.info(
-                        "average training time: %.4f s/batch",
-                        self.total_train_time
-                        / (elapsed_batch // self.disp_freq * self.disp_freq),
-                    )
+            if self.timing_in_training and self.timed_steps:
+                msg = f"average training time: {self.total_train_time / self.timed_steps:.4f} s/batch"
+                excluded_steps = self.num_steps - self.start_step - self.timed_steps
+                if excluded_steps > 0:
+                    msg += f" ({excluded_steps} batches excluded)"
+                log.info(msg)
 
             if JIT:
                 pth_model_path = (
@@ -1062,25 +1505,43 @@ class Trainer:
                 log.info(
                     f"The profiling trace has been saved under {self.tensorboard_log_dir}"
                 )
-            if self.profiling:
+            if not self.enable_profiler and self.profiling:
                 prof.export_chrome_trace(self.profiling_file)
                 log.info(
                     f"The profiling trace has been saved to: {self.profiling_file}"
                 )
 
-    def save_model(self, save_path, lr=0.0, step=0) -> None:
-        module = (
-            self.wrapper.module
-            if dist.is_available() and dist.is_initialized()
-            else self.wrapper
-        )
+    def save_model(self, save_path: str, lr: float = 0.0, step: int = 0) -> None:
+        module = self._get_inner_module()
         module.train_infos["lr"] = float(lr)
         module.train_infos["step"] = step
-        optim_state_dict = deepcopy(self.optimizer.state_dict())
-        for item in optim_state_dict["param_groups"]:
+
+        # === Collect state dicts ===
+        if self.zero_stage >= 2:
+            # FSDP2: collective op, all ranks participate; rank 0 gets full state
+            options = StateDictOptions(full_state_dict=True, cpu_offload=True)
+            model_state = get_model_state_dict(self.wrapper, options=options)
+            optim_state = get_optimizer_state_dict(
+                self.wrapper, self.optimizer, options=options
+            )
+        elif self.zero_stage == 1:
+            # ZeRO-1: consolidate sharded optimizer state to rank 0
+            model_state = module.state_dict()
+            self.optimizer.consolidate_state_dict(to=0)
+            optim_state = (
+                deepcopy(self.optimizer.state_dict()) if self.rank == 0 else {}
+            )
+        else:
+            model_state = module.state_dict()
+            optim_state = deepcopy(self.optimizer.state_dict())
+
+        # === Only rank 0 writes to disk ===
+        if self.rank != 0:
+            return
+        for item in optim_state["param_groups"]:
             item["lr"] = float(item["lr"])
         torch.save(
-            {"model": module.state_dict(), "optimizer": optim_state_dict},
+            {"model": model_state, "optimizer": optim_state},
             save_path,
         )
         checkpoint_dir = save_path.parent
@@ -1093,7 +1554,9 @@ class Trainer:
             checkpoint_files.sort(key=lambda x: x.stat().st_mtime)
             checkpoint_files[0].unlink()
 
-    def get_data(self, is_train=True, task_key="Default"):
+    def get_data(
+        self, is_train: bool = True, task_key: str = "Default"
+    ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
         if is_train:
             iterator = self.training_data
         else:
@@ -1127,7 +1590,8 @@ class Trainer:
         label_dict = {}
         for item_key in batch_data:
             if item_key in input_keys:
-                input_dict[item_key] = batch_data[item_key]
+                if item_key != "fparam" or batch_data["find_fparam"] != 0.0:
+                    input_dict[item_key] = batch_data[item_key]
             else:
                 if item_key not in ["sid", "fid"]:
                     label_dict[item_key] = batch_data[item_key]
@@ -1137,7 +1601,9 @@ class Trainer:
         log_dict["sid"] = batch_data["sid"]
         return input_dict, label_dict, log_dict
 
-    def print_header(self, fout, train_results, valid_results) -> None:
+    def print_header(
+        self, fout: Any, train_results: dict[str, Any], valid_results: dict[str, Any]
+    ) -> None:
         train_keys = sorted(train_results.keys())
         print_str = ""
         print_str += "# {:5s}".format("step")
@@ -1169,7 +1635,12 @@ class Trainer:
         fout.flush()
 
     def print_on_training(
-        self, fout, step_id, cur_lr, train_results, valid_results
+        self,
+        fout: Any,
+        step_id: int,
+        cur_lr: float,
+        train_results: dict,
+        valid_results: dict,
     ) -> None:
         train_keys = sorted(train_results.keys())
         print_str = ""
@@ -1201,12 +1672,21 @@ class Trainer:
         fout.flush()
 
 
-def get_additional_data_requirement(_model):
+def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
     additional_data_requirement = []
     if _model.get_dim_fparam() > 0:
+        _fparam_default = (
+            _model.get_default_fparam().cpu().numpy()
+            if _model.has_default_fparam()
+            else 0.0
+        )
         fparam_requirement_items = [
             DataRequirementItem(
-                "fparam", _model.get_dim_fparam(), atomic=False, must=True
+                "fparam",
+                _model.get_dim_fparam(),
+                atomic=False,
+                must=not _model.has_default_fparam(),
+                default=_fparam_default,
             )
         ]
         additional_data_requirement += fparam_requirement_items
@@ -1228,12 +1708,14 @@ def get_additional_data_requirement(_model):
     return additional_data_requirement
 
 
-def whether_hessian(loss_params):
+def whether_hessian(loss_params: dict[str, Any]) -> bool:
     loss_type = loss_params.get("type", "ener")
     return loss_type == "ener" and loss_params.get("start_pref_h", 0.0) > 0.0
 
 
-def get_loss(loss_params, start_lr, _ntypes, _model):
+def get_loss(
+    loss_params: dict[str, Any], start_lr: float, _ntypes: int, _model: Any
+) -> TaskLoss:
     loss_type = loss_params.get("type", "ener")
     if whether_hessian(loss_params):
         loss_params["starter_learning_rate"] = start_lr
@@ -1276,8 +1758,8 @@ def get_loss(loss_params, start_lr, _ntypes, _model):
 
 
 def get_single_model(
-    _model_params,
-):
+    _model_params: dict[str, Any],
+) -> Any:
     if "use_srtab" in _model_params:
         model = get_zbl_model(deepcopy(_model_params)).to(DEVICE)
     else:
@@ -1286,10 +1768,10 @@ def get_single_model(
 
 
 def get_model_for_wrapper(
-    _model_params,
-    resuming=False,
-    _loss_params=None,
-):
+    _model_params: dict[str, Any],
+    resuming: bool = False,
+    _loss_params: dict[str, Any] | None = None,
+) -> Any:
     if "model_dict" not in _model_params:
         if _loss_params is not None and whether_hessian(_loss_params):
             _model_params["hessian_mode"] = True
@@ -1312,7 +1794,7 @@ def get_model_for_wrapper(
     return _model
 
 
-def get_case_embd_config(_model_params):
+def get_case_embd_config(_model_params: dict[str, Any]) -> tuple[bool, dict[str, int]]:
     assert "model_dict" in _model_params, (
         "Only support setting case embedding for multi-task model!"
     )
@@ -1337,10 +1819,10 @@ def get_case_embd_config(_model_params):
 
 
 def model_change_out_bias(
-    _model,
-    _sample_func,
-    _bias_adjust_mode="change-by-statistic",
-):
+    _model: Any,
+    _sample_func: Callable[[], Any],
+    _bias_adjust_mode: str = "change-by-statistic",
+) -> Any:
     old_bias = deepcopy(_model.get_out_bias())
     _model.change_out_bias(
         _sample_func,
@@ -1348,10 +1830,17 @@ def model_change_out_bias(
     )
     new_bias = deepcopy(_model.get_out_bias())
 
+    from deepmd.pt.model.model.dp_model import (
+        DPModelCommon,
+    )
+
+    if isinstance(_model, DPModelCommon) and _bias_adjust_mode == "set-by-statistic":
+        _model.get_fitting_net().compute_input_stats(_sample_func)
+
     model_type_map = _model.get_type_map()
     log.info(
         f"Change output bias of {model_type_map!s} "
-        f"from {to_numpy_array(old_bias).reshape(-1)!s} "
-        f"to {to_numpy_array(new_bias).reshape(-1)!s}."
+        f"from {to_numpy_array(old_bias).reshape(-1)[: len(model_type_map)]!s} "
+        f"to {to_numpy_array(new_bias).reshape(-1)[: len(model_type_map)]!s}."
     )
     return _model

@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import importlib
 import os
-import platform
 import site
 from functools import (
     lru_cache,
@@ -18,10 +17,6 @@ from pathlib import (
 from sysconfig import (
     get_path,
 )
-from typing import (
-    Optional,
-    Union,
-)
 
 from packaging.specifiers import (
     SpecifierSet,
@@ -30,9 +25,13 @@ from packaging.version import (
     Version,
 )
 
+from .utils import (
+    read_dependencies_from_dependency_group,
+)
+
 
 @lru_cache
-def find_pytorch() -> tuple[Optional[str], list[str]]:
+def find_pytorch() -> tuple[str | None, list[str]]:
     """Find PyTorch library.
 
     Tries to find PyTorch in the order of:
@@ -108,22 +107,24 @@ def get_pt_requirement(pt_version: str = "") -> dict:
     """
     if pt_version is None:
         return {"torch": []}
-    if (
-        os.environ.get("CIBUILDWHEEL", "0") == "1"
-        and platform.system() == "Linux"
-        and platform.machine() == "x86_64"
-    ):
+    cibw_requirement = []
+    if os.environ.get("CIBUILDWHEEL", "0") == "1":
         cuda_version = os.environ.get("CUDA_VERSION", "12.2")
         if cuda_version == "" or cuda_version in SpecifierSet(">=12,<13"):
             # CUDA 12.2, cudnn 9
-            pt_version = "2.7.0"
-        elif cuda_version in SpecifierSet(">=11,<12"):
-            # CUDA 11.8, cudnn 8
-            pt_version = "2.3.1"
+            # or CPU builds
+            cibw_requirement = read_dependencies_from_dependency_group(
+                "pin_pytorch_cpu"
+            )
         else:
             raise RuntimeError("Unsupported CUDA version") from None
     if pt_version == "":
         pt_version = os.environ.get("PYTORCH_VERSION", "")
+    if os.environ.get("CIBUILDWHEEL", "0") == "1":
+        # PyTorch OP library is built against mpich
+        mpi_requirement = ["mpich"]
+    else:
+        mpi_requirement = []
 
     return {
         "torch": [
@@ -134,13 +135,15 @@ def get_pt_requirement(pt_version: str = "") -> dict:
             f"torch=={Version(pt_version).base_version}.*"
             if pt_version != ""
             # https://github.com/pytorch/pytorch/commit/7e0c26d4d80d6602aed95cb680dfc09c9ce533bc
-            else "torch>=2.1.0"
+            else "torch>=2.1.0",
+            *mpi_requirement,
+            *cibw_requirement,
         ],
     }
 
 
 @lru_cache
-def get_pt_version(pt_path: Optional[Union[str, Path]]) -> str:
+def get_pt_version(pt_path: str | Path | None) -> str:
     """Get TF version from a TF Python library path.
 
     Parameters

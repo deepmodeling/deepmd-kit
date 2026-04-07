@@ -1,8 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    Any,
+)
 
 import array_api_compat
-import numpy as np
 
+from deepmd.dpmodel.array_api import (
+    Array,
+)
 from deepmd.dpmodel.fitting.polarizability_fitting import (
     PolarFitting,
 )
@@ -13,7 +18,9 @@ from .dp_atomic_model import (
 
 
 class DPPolarAtomicModel(DPAtomicModel):
-    def __init__(self, descriptor, fitting, type_map, **kwargs):
+    def __init__(
+        self, descriptor: Any, fitting: Any, type_map: list[str], **kwargs: Any
+    ) -> None:
         if not isinstance(fitting, PolarFitting):
             raise TypeError(
                 "fitting must be an instance of PolarFitting for DPPolarAtomicModel"
@@ -22,9 +29,9 @@ class DPPolarAtomicModel(DPAtomicModel):
 
     def apply_out_stat(
         self,
-        ret: dict[str, np.ndarray],
-        atype: np.ndarray,
-    ):
+        ret: dict[str, Array],
+        atype: Array,
+    ) -> dict[str, Array]:
         """Apply the stat to each atomic output.
 
         Parameters
@@ -38,23 +45,24 @@ class DPPolarAtomicModel(DPAtomicModel):
         xp = array_api_compat.array_namespace(atype)
         out_bias, out_std = self._fetch_out_stat(self.bias_keys)
 
-        if self.fitting.shift_diag:
+        if self.fitting_net.shift_diag:
             nframes, nloc = atype.shape
             dtype = out_bias[self.bias_keys[0]].dtype
+            device = array_api_compat.device(out_bias[self.bias_keys[0]])
             for kk in self.bias_keys:
                 ntypes = out_bias[kk].shape[0]
                 temp = xp.mean(
-                    xp.diagonal(out_bias[kk].reshape(ntypes, 3, 3), axis1=1, axis2=2),
+                    xp.diagonal(out_bias[kk].reshape(ntypes, 3, 3), 0, 1, 2),
                     axis=1,
                 )
                 modified_bias = temp[atype]
 
                 # (nframes, nloc, 1)
                 modified_bias = (
-                    modified_bias[..., xp.newaxis] * (self.fitting.scale[atype])
+                    modified_bias[..., xp.newaxis] * (self.fitting_net.scale[atype])
                 )
 
-                eye = xp.eye(3, dtype=dtype)
+                eye = xp.eye(3, dtype=dtype, device=device)
                 eye = xp.tile(eye, (nframes, nloc, 1, 1))
                 # (nframes, nloc, 3, 3)
                 modified_bias = modified_bias[..., xp.newaxis] * eye

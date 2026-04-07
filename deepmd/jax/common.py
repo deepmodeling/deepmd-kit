@@ -1,15 +1,15 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from functools import (
+    wraps,
+)
 from typing import (
     Any,
-    Optional,
+    TypeVar,
     overload,
 )
 
 import numpy as np
 
-from deepmd.dpmodel.common import (
-    NativeOP,
-)
 from deepmd.jax.env import (
     jnp,
     nnx,
@@ -24,7 +24,7 @@ def to_jax_array(array: np.ndarray) -> jnp.ndarray: ...
 def to_jax_array(array: None) -> None: ...
 
 
-def to_jax_array(array: Optional[np.ndarray]) -> Optional[jnp.ndarray]:
+def to_jax_array(array: np.ndarray | None) -> jnp.ndarray | None:
     """Convert a numpy array to a JAX array.
 
     Parameters
@@ -42,19 +42,22 @@ def to_jax_array(array: Optional[np.ndarray]) -> Optional[jnp.ndarray]:
     return jnp.array(array)
 
 
+T = TypeVar("T")
+
+
 def flax_module(
-    module: NativeOP,
-) -> nnx.Module:
+    module: type[T],
+) -> type[T]:  # runtime: actually returns type[T & nnx.Module]
     """Convert a NativeOP to a Flax module.
 
     Parameters
     ----------
-    module : NativeOP
+    module : type[NativeOP]
         The NativeOP to convert.
 
     Returns
     -------
-    flax.nnx.Module
+    type[flax.nnx.Module]
         The Flax module.
 
     Examples
@@ -70,11 +73,12 @@ def flax_module(
         metas.add(type(nnx.Module))
 
     class MixedMetaClass(*metas):
-        def __call__(self, *args, **kwargs):
+        def __call__(self, *args: Any, **kwargs: Any) -> Any:
             return type(nnx.Module).__call__(self, *args, **kwargs)
 
+    @wraps(module, updated=())
     class FlaxModule(module, nnx.Module, metaclass=MixedMetaClass):
-        def __init_subclass__(cls, **kwargs) -> None:
+        def __init_subclass__(cls, **kwargs: Any) -> None:
             return super().__init_subclass__(**kwargs)
 
         def __setattr__(self, name: str, value: Any) -> None:
@@ -84,24 +88,14 @@ def flax_module(
 
 
 class ArrayAPIVariable(nnx.Variable):
-    def __array__(self, *args, **kwargs):
+    def __array__(self, *args: Any, **kwargs: Any) -> np.ndarray:
         return self.value.__array__(*args, **kwargs)
 
-    def __array_namespace__(self, *args, **kwargs):
+    def __array_namespace__(self, *args: Any, **kwargs: Any) -> Any:
         return self.value.__array_namespace__(*args, **kwargs)
 
-    def __dlpack__(self, *args, **kwargs):
+    def __dlpack__(self, *args: Any, **kwargs: Any) -> Any:
         return self.value.__dlpack__(*args, **kwargs)
 
-    def __dlpack_device__(self, *args, **kwargs):
+    def __dlpack_device__(self, *args: Any, **kwargs: Any) -> Any:
         return self.value.__dlpack_device__(*args, **kwargs)
-
-
-def scatter_sum(input, dim, index: jnp.ndarray, src: jnp.ndarray) -> jnp.ndarray:
-    """Reduces all values from the src tensor to the indices specified in the index tensor."""
-    idx = jnp.arange(input.size, dtype=jnp.int64).reshape(input.shape)
-    new_idx = jnp.take_along_axis(idx, index, axis=dim).ravel()
-    shape = input.shape
-    input = input.ravel()
-    input = input.at[new_idx].add(src.ravel())
-    return input.reshape(shape)

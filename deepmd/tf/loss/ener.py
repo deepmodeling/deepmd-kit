@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Optional,
+    TYPE_CHECKING,
+    Any,
 )
 
 import numpy as np
@@ -16,6 +17,9 @@ from deepmd.tf.utils.sess import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
+from deepmd.utils.loss import (
+    resolve_huber_deltas,
+)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -24,8 +28,15 @@ from .loss import (
     Loss,
 )
 
+if TYPE_CHECKING:
+    from typing import (
+        TextIO,
+    )
 
-def custom_huber_loss(predictions, targets, delta=1.0):
+
+def custom_huber_loss(
+    predictions: tf.Tensor, targets: tf.Tensor, delta: float = 1.0
+) -> tf.Tensor:
     error = targets - predictions
     abs_error = tf.abs(error)
     quadratic_loss = 0.5 * tf.pow(error, 2)
@@ -79,8 +90,16 @@ class EnerStdLoss(Loss):
         - For absolute prediction errors within D: quadratic loss (0.5 * (error**2))
         - For absolute errors exceeding D: linear loss (D * |error| - 0.5 * D)
         Formula: loss = 0.5 * (error**2) if |error| <= D else D * (|error| - 0.5 * D).
-    huber_delta : float
-        The threshold delta (D) used for Huber loss, controlling transition between L2 and L1 loss.
+    huber_delta : float | list[float]
+        The threshold delta (D) used for Huber loss, controlling transition between
+        L2 and L1 loss. It can be either one float shared by all terms or a list of
+        three values ordered as [energy, force, virial].
+    loss_func : str
+        Loss function type. Options: 'mse' or 'mae'.
+        Not implemented in TF backend, only for serialization compatibility.
+    f_use_norm : bool
+        If True, use L2 norm of force vectors for loss calculation.
+        Not implemented in TF backend, only for serialization compatibility.
     **kwargs
         Other keyword arguments.
     """
@@ -98,15 +117,28 @@ class EnerStdLoss(Loss):
         limit_pref_ae: float = 0.0,
         start_pref_pf: float = 0.0,
         limit_pref_pf: float = 0.0,
-        relative_f: Optional[float] = None,
+        relative_f: float | None = None,
         enable_atom_ener_coeff: bool = False,
         start_pref_gf: float = 0.0,
         limit_pref_gf: float = 0.0,
         numb_generalized_coord: int = 0,
-        use_huber=False,
-        huber_delta=0.01,
-        **kwargs,
+        use_huber: bool = False,
+        huber_delta: float | list[float] = 0.01,
+        loss_func: str = "mse",
+        f_use_norm: bool = False,
+        **kwargs: Any,
     ) -> None:
+        if loss_func != "mse":
+            raise NotImplementedError(
+                f"TensorFlow backend only supports loss_func='mse', got '{loss_func}'."
+            )
+        self.loss_func = loss_func
+        self.f_use_norm = f_use_norm
+        if self.f_use_norm:
+            raise NotImplementedError(
+                "TensorFlow backend does not support f_use_norm=True."
+            )
+
         self.starter_learning_rate = starter_learning_rate
         self.start_pref_e = start_pref_e
         self.limit_pref_e = limit_pref_e
@@ -135,6 +167,11 @@ class EnerStdLoss(Loss):
             )
         self.use_huber = use_huber
         self.huber_delta = huber_delta
+        (
+            self._huber_delta_energy,
+            self._huber_delta_force,
+            self._huber_delta_virial,
+        ) = resolve_huber_deltas(huber_delta)
         if self.use_huber and (
             self.has_pf or self.has_gf or self.relative_f is not None
         ):
@@ -142,7 +179,14 @@ class EnerStdLoss(Loss):
                 "Huber loss is not implemented for force with atom_pref, generalized force and relative force. "
             )
 
-    def build(self, learning_rate, natoms, model_dict, label_dict, suffix):
+    def build(
+        self,
+        learning_rate: tf.Tensor,
+        natoms: tf.Tensor,
+        model_dict: dict,
+        label_dict: dict,
+        suffix: str,
+    ) -> tuple[tf.Tensor, dict[str, tf.Tensor]]:
         energy = model_dict["energy"]
         force = model_dict["force"]
         virial = model_dict["virial"]
@@ -317,7 +361,7 @@ class EnerStdLoss(Loss):
                 l_huber_loss = custom_huber_loss(
                     atom_norm_ener * energy,
                     atom_norm_ener * energy_hat,
-                    delta=self.huber_delta,
+                    delta=self._huber_delta_energy,
                 )
                 loss += pref_e * l_huber_loss
             more_loss["l2_ener_loss"] = self.display_if_exist(l2_ener_loss, find_energy)
@@ -328,7 +372,7 @@ class EnerStdLoss(Loss):
                 l_huber_loss = custom_huber_loss(
                     tf.reshape(force, [-1]),
                     tf.reshape(force_hat, [-1]),
-                    delta=self.huber_delta,
+                    delta=self._huber_delta_force,
                 )
                 loss += pref_f * l_huber_loss
             more_loss["l2_force_loss"] = self.display_if_exist(
@@ -341,7 +385,7 @@ class EnerStdLoss(Loss):
                 l_huber_loss = custom_huber_loss(
                     atom_norm * tf.reshape(virial, [-1]),
                     atom_norm * tf.reshape(virial_hat, [-1]),
-                    delta=self.huber_delta,
+                    delta=self._huber_delta_virial,
                 )
                 loss += pref_v * l_huber_loss
             more_loss["l2_virial_loss"] = self.display_if_exist(
@@ -354,7 +398,7 @@ class EnerStdLoss(Loss):
                 l_huber_loss = custom_huber_loss(
                     tf.reshape(atom_ener, [-1]),
                     tf.reshape(atom_ener_hat, [-1]),
-                    delta=self.huber_delta,
+                    delta=self._huber_delta_energy,
                 )
                 loss += pref_ae * l_huber_loss
             more_loss["l2_atom_ener_loss"] = self.display_if_exist(
@@ -405,7 +449,7 @@ class EnerStdLoss(Loss):
         self.l2_more = more_loss
         return loss, more_loss
 
-    def eval(self, sess, feed_dict, natoms):
+    def eval(self, sess: tf.Session, feed_dict: dict, natoms: np.ndarray) -> dict:
         placeholder = self.l2_l
         run_data = [
             self.l2_l,
@@ -516,6 +560,8 @@ class EnerStdLoss(Loss):
             "numb_generalized_coord": self.numb_generalized_coord,
             "use_huber": self.use_huber,
             "huber_delta": self.huber_delta,
+            "loss_func": self.loss_func,
+            "f_use_norm": self.f_use_norm,
         }
 
     @classmethod
@@ -556,10 +602,16 @@ class EnerSpinLoss(Loss):
         limit_pref_ae: float = 0.0,
         start_pref_pf: float = 0.0,
         limit_pref_pf: float = 0.0,
-        relative_f: Optional[float] = None,
+        relative_f: float | None = None,
         enable_atom_ener_coeff: bool = False,
-        use_spin: Optional[list] = None,
+        use_spin: list | None = None,
+        loss_func: str = "mse",
     ) -> None:
+        if loss_func != "mse":
+            raise NotImplementedError(
+                f"TensorFlow backend only supports loss_func='mse', got '{loss_func}'."
+            )
+        self.loss_func = loss_func
         self.starter_learning_rate = starter_learning_rate
         self.start_pref_e = start_pref_e
         self.limit_pref_e = limit_pref_e
@@ -582,7 +634,14 @@ class EnerSpinLoss(Loss):
         self.has_v = self.start_pref_v != 0.0 or self.limit_pref_v != 0.0
         self.has_ae = self.start_pref_ae != 0.0 or self.limit_pref_ae != 0.0
 
-    def build(self, learning_rate, natoms, model_dict, label_dict, suffix):
+    def build(
+        self,
+        learning_rate: tf.Tensor,
+        natoms: tf.Tensor,
+        model_dict: dict,
+        label_dict: dict,
+        suffix: str,
+    ) -> tuple[tf.Tensor, dict[str, tf.Tensor]]:
         energy_pred = model_dict["energy"]
         force_pred = model_dict["force"]
         virial_pred = model_dict["virial"]
@@ -745,7 +804,7 @@ class EnerSpinLoss(Loss):
         self.l2_more = more_loss
         return l2_loss, more_loss
 
-    def eval(self, sess, feed_dict, natoms):
+    def eval(self, sess: tf.Session, feed_dict: dict, natoms: np.ndarray) -> dict:
         placeholder = self.l2_l
         run_data = [
             self.l2_l,
@@ -771,7 +830,7 @@ class EnerSpinLoss(Loss):
             results["rmse_v"] = np.sqrt(error_v) / natoms[0]
         return results
 
-    def print_header(self):  # depreciated
+    def print_header(self) -> str:  # depreciated
         prop_fmt = "   %11s %11s"
         print_str = ""
         print_str += prop_fmt % ("rmse_tst", "rmse_trn")
@@ -788,8 +847,14 @@ class EnerSpinLoss(Loss):
         return print_str
 
     def print_on_training(
-        self, tb_writer, cur_batch, sess, natoms, feed_dict_test, feed_dict_batch
-    ):  # depreciated
+        self,
+        tb_writer: "TextIO",
+        cur_batch: int,
+        sess: "tf.Session",
+        natoms: np.ndarray,
+        feed_dict_test: dict,
+        feed_dict_batch: dict,
+    ) -> str:  # depreciated
         run_data = [
             self.l2_l,
             self.l2_more["l2_ener_loss"],
@@ -914,7 +979,14 @@ class EnerDipoleLoss(Loss):
         self.start_pref_ed = start_pref_ed
         self.limit_pref_ed = limit_pref_ed
 
-    def build(self, learning_rate, natoms, model_dict, label_dict, suffix):
+    def build(
+        self,
+        learning_rate: tf.Tensor,
+        natoms: tf.Tensor,
+        model_dict: dict,
+        label_dict: dict,
+        suffix: str,
+    ) -> tuple[tf.Tensor, dict[str, tf.Tensor]]:
         coord = model_dict["coord"]
         energy = model_dict["energy"]
         atom_ener = model_dict["atom_ener"]
@@ -992,7 +1064,7 @@ class EnerDipoleLoss(Loss):
         self.l2_more = more_loss
         return l2_loss, more_loss
 
-    def eval(self, sess, feed_dict, natoms):
+    def eval(self, sess: tf.Session, feed_dict: dict, natoms: np.ndarray) -> dict:
         run_data = [
             self.l2_l,
             self.l2_more["l2_ener_loss"],

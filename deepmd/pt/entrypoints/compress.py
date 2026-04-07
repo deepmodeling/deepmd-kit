@@ -1,9 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
 import logging
-from typing import (
-    Optional,
-)
 
 import torch
 
@@ -35,7 +32,7 @@ def enable_compression(
     stride: float = 0.01,
     extrapolate: int = 5,
     check_frequency: int = -1,
-    training_script: Optional[str] = None,
+    training_script: str | None = None,
 ) -> None:
     saved_model = torch.jit.load(input_file, map_location="cpu")
     model_def_script = json.loads(saved_model.model_def_script)

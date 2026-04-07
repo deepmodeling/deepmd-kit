@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
-    Callable,
     NoReturn,
-    Optional,
-    Union,
 )
 
 import array_api_compat
@@ -14,6 +14,9 @@ from deepmd.dpmodel import (
     DEFAULT_PRECISION,
     PRECISION_DICT,
     NativeOP,
+)
+from deepmd.dpmodel.array_api import (
+    Array,
 )
 from deepmd.dpmodel.common import (
     cast_precision,
@@ -55,6 +58,25 @@ from .base_descriptor import (
 class DescrptSeR(NativeOP, BaseDescriptor):
     r"""DeepPot-SE_R constructed from only the radial information of atomic configurations.
 
+    The descriptor :math:`\mathcal{D}^i \in \mathbb{R}^{M}` is given by
+
+    .. math::
+        \mathcal{D}^i = \frac{1}{N_c} \sum_{j=1}^{N_c} \mathcal{N}(s(r_{ji})),
+
+    where :math:`\mathcal{N}` is the embedding network, and :math:`s(r_{ji})` is the
+    smoothed radial distance between atom :math:`i` and its neighbor :math:`j`.
+
+    The switching function :math:`s(r)` is defined as:
+
+    .. math::
+        s(r)=
+        \begin{cases}
+        \frac{1}{r}, & r<r_s \\
+        \frac{1}{r} \{ {(\frac{r - r_s}{ r_c - r_s})}^3 (-6 {(\frac{r - r_s}{ r_c - r_s})}^2 +15 \frac{r - r_s}{ r_c - r_s} -10) +1 \}, & r_s \leq r<r_c \\
+        0, & r \geq r_c
+        \end{cases}
+
+    where :math:`r_c` is the cutoff radius and :math:`r_s` is the smooth cutoff parameter.
 
     Parameters
     ----------
@@ -106,6 +128,8 @@ class DescrptSeR(NativeOP, BaseDescriptor):
        Systems (NIPS'18). Curran Associates Inc., Red Hook, NY, USA, 4441-4451.
     """
 
+    _update_sel_cls = UpdateSel
+
     def __init__(
         self,
         rcut: float,
@@ -120,11 +144,11 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
-        spin: Optional[Any] = None,
-        type_map: Optional[list[str]] = None,
-        ntypes: Optional[int] = None,  # to be compat with input
+        spin: Any | None = None,
+        type_map: list[str] | None = None,
+        ntypes: int | None = None,  # to be compat with input
         # consistent with argcheck, not used though
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
     ) -> None:
         del ntypes
         ## seed, uniform_seed, not included.
@@ -149,6 +173,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         self.type_map = type_map
         self.emask = PairExcludeMask(self.ntypes, self.exclude_types)
         self.env_protection = env_protection
+        self.compress = False
 
         in_dim = 1  # not considiering type embedding
         embeddings = NetworkCollection(
@@ -166,6 +191,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
                 self.resnet_dt,
                 self.precision,
                 seed=child_seed(seed, ii),
+                trainable=trainable,
             )
         self.embeddings = embeddings
         self.env_mat = EnvMat(self.rcut, self.rcut_smth, protection=self.env_protection)
@@ -180,7 +206,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         self.sel_cumsum = [0, *np.cumsum(self.sel).tolist()]
         self.ndescrpt = self.nnei
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: Array) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.davg = value
         elif key in ("std", "data_std", "dstd"):
@@ -188,7 +214,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> Array:
         if key in ("avg", "data_avg", "davg"):
             return self.davg
         elif key in ("std", "data_std", "dstd"):
@@ -197,11 +223,11 @@ class DescrptSeR(NativeOP, BaseDescriptor):
             raise KeyError(key)
 
     @property
-    def dim_out(self):
+    def dim_out(self) -> int:
         """Returns the output dimension of this descriptor."""
         return self.get_dim_out()
 
-    def get_dim_out(self):
+    def get_dim_out(self) -> int:
         """Returns the output dimension of this descriptor."""
         return self.neuron[-1]
 
@@ -209,7 +235,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         """Returns the embedding (g2) dimension of this descriptor."""
         raise NotImplementedError
 
-    def get_rcut(self):
+    def get_rcut(self) -> float:
         """Returns cutoff radius."""
         return self.rcut
 
@@ -217,7 +243,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         """Returns the radius where the neighbor information starts to smoothly decay to 0."""
         return self.rcut_smth
 
-    def get_sel(self):
+    def get_sel(self) -> list[int]:
         """Returns cutoff radius."""
         return self.sel
 
@@ -239,7 +265,9 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         """Returns the protection of building environment matrix."""
         return self.env_protection
 
-    def share_params(self, base_class, shared_level, resume=False) -> NoReturn:
+    def share_params(
+        self, base_class: Any, shared_level: Any, resume: bool = False
+    ) -> NoReturn:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -248,7 +276,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         raise NotImplementedError
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: Any | None = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -269,8 +297,8 @@ class DescrptSeR(NativeOP, BaseDescriptor):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -303,28 +331,31 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         xp = array_api_compat.array_namespace(self.dstd)
+        device = array_api_compat.device(self.dstd)
         if not self.set_davg_zero:
-            self.davg = xp.asarray(mean, dtype=self.davg.dtype, copy=True)
-        self.dstd = xp.asarray(stddev, dtype=self.dstd.dtype, copy=True)
+            self.davg = xp.asarray(
+                mean, dtype=self.davg.dtype, copy=True, device=device
+            )
+        self.dstd = xp.asarray(stddev, dtype=self.dstd.dtype, copy=True, device=device)
 
     def set_stat_mean_and_stddev(
         self,
-        mean: np.ndarray,
-        stddev: np.ndarray,
+        mean: Array,
+        stddev: Array,
     ) -> None:
         """Update mean and stddev for descriptor."""
         self.davg = mean
         self.dstd = stddev
 
-    def get_stat_mean_and_stddev(self) -> tuple[np.ndarray, np.ndarray]:
+    def get_stat_mean_and_stddev(self) -> tuple[Array, Array]:
         """Get mean and stddev for descriptor."""
         return self.davg, self.dstd
 
     def cal_g(
         self,
-        ss,
-        ll,
-    ):
+        ss: Array,
+        ll: int,
+    ) -> Array:
         xp = array_api_compat.array_namespace(ss)
         nf, nloc, nnei = ss.shape[0:3]
         ss = xp.reshape(ss, (nf, nloc, nnei, 1))
@@ -335,11 +366,12 @@ class DescrptSeR(NativeOP, BaseDescriptor):
     @cast_precision
     def call(
         self,
-        coord_ext,
-        atype_ext,
-        nlist,
-        mapping: Optional[np.ndarray] = None,
-    ):
+        coord_ext: Array,
+        atype_ext: Array,
+        nlist: Array,
+        mapping: Array | None = None,
+        fparam: Array | None = None,
+    ) -> Array:
         """Compute the descriptor.
 
         Parameters
@@ -385,7 +417,9 @@ class DescrptSeR(NativeOP, BaseDescriptor):
 
         ng = self.neuron[-1]
         xyz_scatter = xp.zeros(
-            [nf, nloc, ng], dtype=get_xp_precision(xp, self.precision)
+            [nf, nloc, ng],
+            dtype=get_xp_precision(xp, self.precision),
+            device=array_api_compat.device(coord_ext),
         )
         exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
         rr = xp.astype(rr, xyz_scatter.dtype)
@@ -405,10 +439,10 @@ class DescrptSeR(NativeOP, BaseDescriptor):
 
     def serialize(self) -> dict:
         """Serialize the descriptor to dict."""
-        return {
+        data = {
             "@class": "Descriptor",
             "type": "se_r",
-            "@version": 2,
+            "@version": 3 if self.compress else 2,
             "rcut": self.rcut,
             "rcut_smth": self.rcut_smth,
             "sel": self.sel,
@@ -431,31 +465,49 @@ class DescrptSeR(NativeOP, BaseDescriptor):
             },
             "type_map": self.type_map,
         }
+        if self.compress:
+            data["compress"] = {
+                "@variables": {
+                    "compress_data": [to_numpy_array(d) for d in self.compress_data],
+                    "compress_info": [to_numpy_array(i) for i in self.compress_info],
+                },
+            }
+        return data
 
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeR":
         """Deserialize from dict."""
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 2, 1)
+        check_version_compatibility(data.pop("@version", 1), 3, 1)
         data.pop("@class", None)
         data.pop("type", None)
         variables = data.pop("@variables")
         embeddings = data.pop("embeddings")
         env_mat = data.pop("env_mat")
+        compress = data.pop("compress", None)
         obj = cls(**data)
 
         obj["davg"] = variables["davg"]
         obj["dstd"] = variables["dstd"]
         obj.embeddings = NetworkCollection.deserialize(embeddings)
+        if compress is not None:
+            obj._load_compress_data(compress)
         return obj
+
+    def _load_compress_data(self, compress: dict) -> None:
+        """Load compression state from serialized data."""
+        variables = compress["@variables"]
+        self.compress_data = variables["compress_data"]
+        self.compress_info = variables["compress_info"]
+        self.compress = True
 
     @classmethod
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[Array, Array]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
@@ -475,7 +527,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
             The minimum distance between two atoms
         """
         local_jdata_cpy = local_jdata.copy()
-        min_nbor_dist, local_jdata_cpy["sel"] = UpdateSel().update_one_sel(
+        min_nbor_dist, local_jdata_cpy["sel"] = cls._update_sel_cls().update_one_sel(
             train_data, type_map, local_jdata_cpy["rcut"], local_jdata_cpy["sel"], False
         )
         return local_jdata_cpy, min_nbor_dist

@@ -1,14 +1,16 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Optional,
-    Union,
+    Any,
 )
 
 import array_api_compat
-import numpy as np
 
 from deepmd.dpmodel import (
     NativeOP,
+)
+from deepmd.dpmodel.array_api import (
+    Array,
+    xp_take_first_n,
 )
 from deepmd.dpmodel.common import (
     cast_precision,
@@ -19,6 +21,7 @@ from deepmd.dpmodel.utils import (
 )
 from deepmd.dpmodel.utils.network import (
     NativeLayer,
+    get_activation_fn,
 )
 from deepmd.dpmodel.utils.seed import (
     child_seed,
@@ -57,6 +60,27 @@ from .repflows import (
 
 class RepFlowArgs:
     r"""The constructor for the RepFlowArgs class which defines the parameters of the repflow block in DPA3 descriptor.
+
+    The DPA-3 descriptor uses a repflow architecture that maintains and updates three types
+    of representations: node (:math:`\mathbf{n}`), edge (:math:`\mathbf{e}`), and angle (:math:`\mathbf{a}`).
+
+    The update equations for each layer are:
+
+    .. math::
+        \mathbf{n}^{l+1} = \text{UpdateNode}(\mathbf{n}^l, \mathbf{e}^l, \mathbf{a}^l),
+
+    .. math::
+        \mathbf{e}^{l+1} = \text{UpdateEdge}(\mathbf{n}^l, \mathbf{e}^l, \mathbf{a}^l),
+
+    .. math::
+        \mathbf{a}^{l+1} = \text{UpdateAngle}(\mathbf{n}^l, \mathbf{e}^l, \mathbf{a}^l).
+
+    The final descriptor is obtained by symmetrization:
+
+    .. math::
+        \mathcal{D}^i = \text{Symmetrize}(\mathbf{n}^L, \mathbf{e}^L),
+
+    where :math:`L` is the number of repflow layers.
 
     Parameters
     ----------
@@ -208,7 +232,7 @@ class RepFlowArgs:
         self.use_dynamic_sel = use_dynamic_sel
         self.sel_reduce_factor = sel_reduce_factor
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> Any:
         if hasattr(self, key):
             return getattr(self, key)
         else:
@@ -253,6 +277,31 @@ class RepFlowArgs:
 class DescrptDPA3(NativeOP, BaseDescriptor):
     r"""The DPA3 descriptor[1]_.
 
+    The DPA-3 descriptor uses a repflow block to iteratively update node, edge, and angle
+    representations. The descriptor is computed as:
+
+    .. math::
+        \mathcal{D}^i = \mathrm{RepFlow}(\mathcal{N}^i, \mathcal{E}^i, \mathcal{A}^i),
+
+    where :math:`\mathcal{N}^i`, :math:`\mathcal{E}^i`, and :math:`\mathcal{A}^i` are the
+    initial node, edge, and angle representations respectively.
+
+    The repflow block performs iterative updates through multiple layers:
+
+    .. math::
+        \mathcal{N}^{i,l+1} = \mathrm{UpdateNode}(\mathcal{N}^{i,l}, \mathcal{E}^{i,l}, \mathcal{A}^{i,l}),
+
+    .. math::
+        \mathcal{E}^{i,l+1} = \mathrm{UpdateEdge}(\mathcal{N}^{i,l}, \mathcal{E}^{i,l}, \mathcal{A}^{i,l}),
+
+    .. math::
+        \mathcal{A}^{i,l+1} = \mathrm{UpdateAngle}(\mathcal{N}^{i,l}, \mathcal{E}^{i,l}, \mathcal{A}^{i,l}).
+
+    The final descriptor output dimension is:
+
+    .. math::
+        \dim(\mathcal{D}^i) = \text{n\_dim} \times \text{axis\_neuron} \quad (\text{after symmetrization}).
+
     Parameters
     ----------
     repflow : Union[RepFlowArgs, dict]
@@ -290,11 +339,13 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
        arXiv preprint arXiv:2506.01686 (2025).
     """
 
+    _update_sel_cls = UpdateSel
+
     def __init__(
         self,
         ntypes: int,
         # args for repflow
-        repflow: Union[RepFlowArgs, dict],
+        repflow: RepFlowArgs | dict,
         # kwargs for descriptor
         concat_output_tebd: bool = False,
         activation_function: str = "silu",
@@ -302,15 +353,16 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         trainable: bool = True,
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
         use_loc_mapping: bool = True,
-        type_map: Optional[list[str]] = None,
+        type_map: list[str] | None = None,
+        add_chg_spin_ebd: bool = False,
     ) -> None:
         super().__init__()
 
-        def init_subclass_params(sub_data, sub_class):
+        def init_subclass_params(sub_data: dict | Any, sub_class: type) -> Any:
             if isinstance(sub_data, dict):
                 return sub_class(**sub_data)
             elif isinstance(sub_data, sub_class):
@@ -357,9 +409,11 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             env_protection=env_protection,
             precision=precision,
             seed=child_seed(seed, 1),
+            trainable=trainable,
         )
 
         self.use_econf_tebd = use_econf_tebd
+        self.add_chg_spin_ebd = add_chg_spin_ebd
         self.use_tebd_bias = use_tebd_bias
         self.use_loc_mapping = use_loc_mapping
         self.type_map = type_map
@@ -374,9 +428,42 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             use_tebd_bias=use_tebd_bias,
             type_map=type_map,
             seed=child_seed(seed, 2),
+            trainable=trainable,
         )
         self.concat_output_tebd = concat_output_tebd
         self.precision = precision
+
+        if self.add_chg_spin_ebd:
+            self.cs_activation_fn = get_activation_fn(activation_function)
+            # -100 ~ 100 is a conservative bound
+            self.chg_embedding = TypeEmbedNet(
+                ntypes=200,
+                neuron=[self.tebd_dim],
+                padding=True,
+                activation_function="Linear",
+                precision=precision,
+                seed=child_seed(seed, 3),
+            )
+            # 100 is a conservative upper bound
+            self.spin_embedding = TypeEmbedNet(
+                ntypes=100,
+                neuron=[self.tebd_dim],
+                padding=True,
+                activation_function="Linear",
+                precision=precision,
+                seed=child_seed(seed, 4),
+            )
+            self.mix_cs_mlp = NativeLayer(
+                2 * self.tebd_dim,
+                self.tebd_dim,
+                precision=precision,
+                seed=child_seed(seed, 5),
+            )
+        else:
+            self.chg_embedding = None
+            self.spin_embedding = None
+            self.mix_cs_mlp = None
+
         self.exclude_types = exclude_types
         self.env_protection = env_protection
         self.trainable = trainable
@@ -448,7 +535,9 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         """Returns the protection of building environment matrix."""
         return self.repflows.get_env_protection()
 
-    def share_params(self, base_class, shared_level, resume=False) -> None:
+    def share_params(
+        self, base_class: Any, shared_level: int, resume: bool = False
+    ) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -457,7 +546,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         raise NotImplementedError
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: Any = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -486,15 +575,17 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         repflow["dstd"] = repflow["dstd"][remap_index]
 
     @property
-    def dim_out(self):
+    def dim_out(self) -> int:
         return self.get_dim_out()
 
     @property
-    def dim_emb(self):
+    def dim_emb(self) -> int:
         """Returns the embedding dimension g2."""
         return self.get_dim_emb()
 
-    def compute_input_stats(self, merged: list[dict], path: Optional[DPPath] = None):
+    def compute_input_stats(
+        self, merged: list[dict], path: DPPath | None = None
+    ) -> None:
         """Update mean and stddev for descriptor elements."""
         descrpt_list = [self.repflows]
         for ii, descrpt in enumerate(descrpt_list):
@@ -502,8 +593,8 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
 
     def set_stat_mean_and_stddev(
         self,
-        mean: list[np.ndarray],
-        stddev: list[np.ndarray],
+        mean: list[Array],
+        stddev: list[Array],
     ) -> None:
         """Update mean and stddev for descriptor."""
         descrpt_list = [self.repflows]
@@ -511,7 +602,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             descrpt.mean = mean[ii]
             descrpt.stddev = stddev[ii]
 
-    def get_stat_mean_and_stddev(self) -> tuple[list[np.ndarray], list[np.ndarray]]:
+    def get_stat_mean_and_stddev(self) -> tuple[list[Array], list[Array]]:
         """Get mean and stddev for descriptor."""
         mean_list = [self.repflows.mean]
         stddev_list = [self.repflows.stddev]
@@ -520,11 +611,12 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
     @cast_precision
     def call(
         self,
-        coord_ext: np.ndarray,
-        atype_ext: np.ndarray,
-        nlist: np.ndarray,
-        mapping: Optional[np.ndarray] = None,
-    ):
+        coord_ext: Array,
+        atype_ext: Array,
+        nlist: Array,
+        mapping: Array | None = None,
+        fparam: Array | None = None,
+    ) -> tuple[Array, Array, Array, Array, Array]:
         """Compute the descriptor.
 
         Parameters
@@ -562,15 +654,40 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         type_embedding = self.type_embedding.call()
         if self.use_loc_mapping:
             node_ebd_ext = xp.reshape(
-                xp.take(type_embedding, xp.reshape(atype_ext[:, :nloc], [-1]), axis=0),
+                xp.take(
+                    type_embedding,
+                    xp.reshape(xp_take_first_n(atype_ext, 1, nloc), (-1,)),
+                    axis=0,
+                ),
                 (nframes, nloc, self.tebd_dim),
             )
         else:
             node_ebd_ext = xp.reshape(
-                xp.take(type_embedding, xp.reshape(atype_ext, [-1]), axis=0),
+                xp.take(type_embedding, xp.reshape(atype_ext, (-1,)), axis=0),
                 (nframes, nall, self.tebd_dim),
             )
-        node_ebd_inp = node_ebd_ext[:, :nloc, :]
+
+        if self.add_chg_spin_ebd:
+            assert fparam is not None
+            assert self.chg_embedding is not None
+            assert self.spin_embedding is not None
+            chg_tebd = self.chg_embedding.call()
+            spin_tebd = self.spin_embedding.call()
+            charge = xp.astype(fparam[:, 0], xp.int64) + 100
+            spin = xp.astype(fparam[:, 1], xp.int64)
+            chg_ebd = xp.reshape(
+                xp.take(chg_tebd, xp.reshape(charge, (-1,)), axis=0),
+                (nframes, self.tebd_dim),
+            )
+            spin_ebd = xp.reshape(
+                xp.take(spin_tebd, xp.reshape(spin, (-1,)), axis=0),
+                (nframes, self.tebd_dim),
+            )
+            cs_cat = xp.concat([chg_ebd, spin_ebd], axis=-1)
+            sys_cs_embd = self.cs_activation_fn(self.mix_cs_mlp.call(cs_cat))
+            node_ebd_ext = node_ebd_ext + xp.expand_dims(sys_cs_embd, axis=1)
+
+        node_ebd_inp = xp_take_first_n(node_ebd_ext, 1, nloc)
         # repflows
         node_ebd, edge_ebd, h2, rot_mat, sw = self.repflows(
             nlist,
@@ -600,9 +717,14 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             "use_econf_tebd": self.use_econf_tebd,
             "use_tebd_bias": self.use_tebd_bias,
             "use_loc_mapping": self.use_loc_mapping,
+            "add_chg_spin_ebd": self.add_chg_spin_ebd,
             "type_map": self.type_map,
             "type_embedding": self.type_embedding.serialize(),
         }
+        if self.add_chg_spin_ebd:
+            data["chg_embedding"] = self.chg_embedding.serialize()
+            data["spin_embedding"] = self.spin_embedding.serialize()
+            data["mix_cs_mlp"] = self.mix_cs_mlp.serialize()
         repflow_variable = {
             "edge_embd": repflows.edge_embd.serialize(),
             "angle_embd": repflows.angle_embd.serialize(),
@@ -629,9 +751,17 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         data.pop("type")
         repflow_variable = data.pop("repflow_variable").copy()
         type_embedding = data.pop("type_embedding")
+        chg_embedding = data.pop("chg_embedding", None)
+        spin_embedding = data.pop("spin_embedding", None)
+        mix_cs_mlp = data.pop("mix_cs_mlp", None)
         data["repflow"] = RepFlowArgs(**data.pop("repflow_args"))
         obj = cls(**data)
         obj.type_embedding = TypeEmbedNet.deserialize(type_embedding)
+
+        if obj.add_chg_spin_ebd and chg_embedding is not None:
+            obj.chg_embedding = TypeEmbedNet.deserialize(chg_embedding)
+            obj.spin_embedding = TypeEmbedNet.deserialize(spin_embedding)
+            obj.mix_cs_mlp = NativeLayer.deserialize(mix_cs_mlp)
 
         # deserialize repflow
         statistic_repflows = repflow_variable.pop("@variables")
@@ -654,9 +784,9 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[Array, Array]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
@@ -676,7 +806,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             The minimum distance between two atoms
         """
         local_jdata_cpy = local_jdata.copy()
-        update_sel = UpdateSel()
+        update_sel = cls._update_sel_cls()
         min_nbor_dist, repflow_e_sel = update_sel.update_one_sel(
             train_data,
             type_map,

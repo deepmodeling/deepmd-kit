@@ -1,14 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Optional,
-    Union,
+    Any,
 )
 
 import array_api_compat
 import numpy as np
 
 from deepmd.dpmodel.array_api import (
-    support_array_api,
+    Array,
 )
 from deepmd.dpmodel.common import (
     PRECISION_DICT,
@@ -63,11 +62,11 @@ class TypeEmbedNet(NativeOP):
         activation_function: str = "tanh",
         precision: str = "default",
         trainable: bool = True,
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
         padding: bool = False,
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
-        type_map: Optional[list[str]] = None,
+        type_map: list[str] | None = None,
     ) -> None:
         self.ntypes = ntypes
         self.neuron = neuron
@@ -93,24 +92,34 @@ class TypeEmbedNet(NativeOP):
             self.precision,
             seed=self.seed,
             bias=self.use_tebd_bias,
+            trainable=trainable,
         )
 
-    @support_array_api(version="2022.12")
-    def call(self) -> np.ndarray:
+    def call(self) -> Array:
         """Compute the type embedding network."""
         sample_array = self.embedding_net[0]["w"]
         xp = array_api_compat.array_namespace(sample_array)
         if not self.use_econf_tebd:
-            embed = self.embedding_net(xp.eye(self.ntypes, dtype=sample_array.dtype))
+            embed = self.embedding_net(
+                xp.eye(
+                    self.ntypes,
+                    dtype=sample_array.dtype,
+                    device=array_api_compat.device(sample_array),
+                )
+            )
         else:
             embed = self.embedding_net(self.econf_tebd)
         if self.padding:
-            embed_pad = xp.zeros((1, embed.shape[-1]), dtype=embed.dtype)
+            embed_pad = xp.zeros(
+                (1, embed.shape[-1]),
+                dtype=embed.dtype,
+                device=array_api_compat.device(embed),
+            )
             embed = xp.concat([embed, embed_pad], axis=0)
         return embed
 
     @classmethod
-    def deserialize(cls, data: dict):
+    def deserialize(cls, data: dict) -> "TypeEmbedNet":
         """Deserialize the model.
 
         Parameters
@@ -161,7 +170,7 @@ class TypeEmbedNet(NativeOP):
         }
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: Any = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -181,32 +190,50 @@ class TypeEmbedNet(NativeOP):
                 "'activation_function' must be 'Linear' when performing type changing on resnet structure!"
             )
             first_layer_matrix = self.embedding_net.layers[0].w
-            eye_vector = np.eye(self.ntypes, dtype=PRECISION_DICT[self.precision])
+            # Use array_api_compat to handle both numpy and torch
+            xp = array_api_compat.array_namespace(first_layer_matrix)
+            eye_vector = xp.eye(
+                self.ntypes,
+                dtype=first_layer_matrix.dtype,
+                device=array_api_compat.device(first_layer_matrix),
+            )
             # preprocess for resnet connection
             if self.neuron[0] == self.ntypes:
-                first_layer_matrix += eye_vector
+                first_layer_matrix = first_layer_matrix + eye_vector
             elif self.neuron[0] == self.ntypes * 2:
-                first_layer_matrix += np.concatenate([eye_vector, eye_vector], axis=-1)
+                first_layer_matrix = first_layer_matrix + xp.concat(
+                    [eye_vector, eye_vector], axis=-1
+                )
 
             # randomly initialize params for the unseen types
-            rng = np.random.default_rng()
             if has_new_type:
-                extend_type_params = rng.random(
+                # Create random params with same dtype and device as first_layer_matrix
+                extend_type_params = np.random.default_rng().random(
                     [len(type_map), first_layer_matrix.shape[-1]],
-                    dtype=first_layer_matrix.dtype,
                 )
-                first_layer_matrix = np.concatenate(
+                extend_type_params = xp.asarray(
+                    extend_type_params,
+                    dtype=first_layer_matrix.dtype,
+                    device=array_api_compat.device(first_layer_matrix),
+                )
+                first_layer_matrix = xp.concat(
                     [first_layer_matrix, extend_type_params], axis=0
                 )
 
             first_layer_matrix = first_layer_matrix[remap_index]
             new_ntypes = len(type_map)
-            eye_vector = np.eye(new_ntypes, dtype=PRECISION_DICT[self.precision])
+            eye_vector = xp.eye(
+                new_ntypes,
+                dtype=first_layer_matrix.dtype,
+                device=array_api_compat.device(first_layer_matrix),
+            )
 
             if self.neuron[0] == new_ntypes:
-                first_layer_matrix -= eye_vector
+                first_layer_matrix = first_layer_matrix - eye_vector
             elif self.neuron[0] == new_ntypes * 2:
-                first_layer_matrix -= np.concatenate([eye_vector, eye_vector], axis=-1)
+                first_layer_matrix = first_layer_matrix - xp.concat(
+                    [eye_vector, eye_vector], axis=-1
+                )
 
             self.embedding_net.layers[0].num_in = new_ntypes
             self.embedding_net.layers[0].w = first_layer_matrix
@@ -218,7 +245,9 @@ class TypeEmbedNet(NativeOP):
         self.ntypes = len(type_map)
 
 
-def get_econf_tebd(type_map, precision: str = "default"):
+def get_econf_tebd(
+    type_map: list[str], precision: str = "default"
+) -> tuple[Array, int]:
     from deepmd.utils.econf_embd import (
         ECONF_DIM,
     )

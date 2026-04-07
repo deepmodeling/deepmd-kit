@@ -14,11 +14,14 @@ from collections import (
     defaultdict,
 )
 from typing import (
-    Optional,
+    Any,
 )
 
 from deepmd.backend.backend import (
     Backend,
+)
+from deepmd.pretrained.registry import (
+    available_model_names,
 )
 
 try:
@@ -63,19 +66,31 @@ BACKEND_TABLE: dict[str, str] = {kk: vv.name.lower() for kk, vv in BACKENDS.item
 class BackendOption(argparse.Action):
     """Map backend alias to unique name."""
 
-    def __call__(self, parser, namespace, values, option_string=None):
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: Any,
+        option_string: str | None = None,
+    ) -> None:
         setattr(namespace, self.dest, BACKEND_TABLE[values])
 
 
 class DeprecateAction(argparse.Action):
     # See https://stackoverflow.com/a/69052677/9567349 by Ibolit under CC BY-SA 4.0
-    def __init__(self, *args, **kwargs) -> None:
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
         self.call_count = 0
         if "help" in kwargs:
             kwargs["help"] = f"[DEPRECATED] {kwargs['help']}"
         super().__init__(*args, **kwargs)
 
-    def __call__(self, parser, namespace, values, option_string=None):
+    def __call__(
+        self,
+        parser: argparse.ArgumentParser,
+        namespace: argparse.Namespace,
+        values: Any,
+        option_string: str | None = None,
+    ) -> None:
         if self.call_count == 0:
             warnings.warn(
                 f"The option `{option_string}` is deprecated. It will be ignored.",
@@ -112,7 +127,7 @@ def main_parser() -> argparse.ArgumentParser:
     if default_backend not in BACKEND_TABLE.keys():
         raise ValueError(
             f"Unknown backend {default_backend}. "
-            "Please set DP_BACKEND to either tensorflow or pytorch."
+            "Please set DP_BACKEND to either tensorflow, pytorch, or paddle."
         )
 
     parser_backend = parser.add_mutually_exclusive_group()
@@ -312,7 +327,7 @@ def main_parser() -> argparse.ArgumentParser:
         "--output",
         type=str,
         default="frozen_model",
-        help="Filename (prefix) of the output model file. TensorFlow backend: suffix is .pb; PyTorch backend: suffix is .pth",
+        help="Filename (prefix) of the output model file. TensorFlow backend: suffix is .pb; PyTorch backend: suffix is .pth; Paddle backend: suffix is .json and .pdiparams",
     )
     parser_frz.add_argument(
         "-n",
@@ -371,6 +386,24 @@ def main_parser() -> argparse.ArgumentParser:
         type=str,
         help="The path to the datafile, each line of which is a path to one data system.",
     )
+    parser_tst_subgroup.add_argument(
+        "--train-data",
+        dest="train_json",
+        default=None,
+        type=str,
+        help=(
+            "The input json file. Training data in the file will be used for testing."
+        ),
+    )
+    parser_tst_subgroup.add_argument(
+        "--valid-data",
+        dest="valid_json",
+        default=None,
+        type=str,
+        help=(
+            "The input json file. Validation data in the file will be used for testing."
+        ),
+    )
     parser_tst.add_argument(
         "-S",
         "--set-prefix",
@@ -414,6 +447,56 @@ def main_parser() -> argparse.ArgumentParser:
         default=None,
         type=str,
         help="(Supported backend: PyTorch) Task head (alias: model branch) to test if in multi-task mode.",
+    )
+
+    # * eval_desc script ***************************************************************
+    parser_eval_desc = subparsers.add_parser(
+        "eval-desc",
+        parents=[parser_log],
+        help="evaluate descriptors using the model",
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent(
+            """\
+        examples:
+            dp eval-desc -m graph.pb -s /path/to/system -o desc
+        """
+        ),
+    )
+    parser_eval_desc.add_argument(
+        "-m",
+        "--model",
+        default="frozen_model",
+        type=str,
+        help="Frozen model file (prefix) to import. TensorFlow backend: suffix is .pb; PyTorch backend: suffix is .pth.",
+    )
+    parser_eval_desc_subgroup = parser_eval_desc.add_mutually_exclusive_group()
+    parser_eval_desc_subgroup.add_argument(
+        "-s",
+        "--system",
+        default=".",
+        type=str,
+        help="The system dir. Recursively detect systems in this directory",
+    )
+    parser_eval_desc_subgroup.add_argument(
+        "-f",
+        "--datafile",
+        default=None,
+        type=str,
+        help="The path to the datafile, each line of which is a path to one data system.",
+    )
+    parser_eval_desc.add_argument(
+        "-o",
+        "--output",
+        default="desc",
+        type=str,
+        help="Output directory for descriptor files. Descriptors will be saved as desc/(system_name).npy",
+    )
+    parser_eval_desc.add_argument(
+        "--head",
+        "--model-branch",
+        default=None,
+        type=str,
+        help="(Supported backend: PyTorch) Task head (alias: model branch) to use if in multi-task mode.",
     )
 
     # * compress model *****************************************************************
@@ -671,12 +754,13 @@ def main_parser() -> argparse.ArgumentParser:
     parser_change_bias = subparsers.add_parser(
         "change-bias",
         parents=[parser_log],
-        help="(Supported backend: PyTorch) Change model out bias according to the input data.",
+        help="Change model out bias according to the input data.",
         formatter_class=RawTextArgumentDefaultsHelpFormatter,
         epilog=textwrap.dedent(
             """\
         examples:
-            dp change-bias model.pt -s data -n 10 -m change
+            dp --pt change-bias model.pt -s data -n 10 -m change
+            dp --tf change-bias model.ckpt -s data -n 10 -m change
         """
         ),
     )
@@ -851,13 +935,49 @@ def main_parser() -> argparse.ArgumentParser:
     )
     parser_show.add_argument(
         "ATTRIBUTES",
-        choices=["model-branch", "type-map", "descriptor", "fitting-net", "size"],
+        choices=[
+            "model-branch",
+            "type-map",
+            "descriptor",
+            "fitting-net",
+            "size",
+            "observed-type",
+        ],
         nargs="+",
     )
+
+    # pretrained
+    parser_pretrained = subparsers.add_parser(
+        "pretrained",
+        parents=[parser_log],
+        help="Manage builtin pretrained models",
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+    )
+    pretrained_subparsers = parser_pretrained.add_subparsers(
+        dest="pretrained_command",
+        required=True,
+    )
+    parser_pretrained_download = pretrained_subparsers.add_parser(
+        "download",
+        help="Download one pretrained model",
+    )
+
+    parser_pretrained_download.add_argument(
+        "MODEL",
+        choices=available_model_names(),
+        help="Pretrained model name",
+    )
+    parser_pretrained_download.add_argument(
+        "--cache-dir",
+        default=None,
+        type=str,
+        help="Optional cache directory for pretrained model files",
+    )
+
     return parser
 
 
-def parse_args(args: Optional[list[str]] = None) -> argparse.Namespace:
+def parse_args(args: list[str] | None = None) -> argparse.Namespace:
     """Parse arguments and convert argument strings to objects.
 
     Parameters
@@ -881,7 +1001,7 @@ def parse_args(args: Optional[list[str]] = None) -> argparse.Namespace:
     return parsed_args
 
 
-def main(args: Optional[list[str]] = None) -> None:
+def main(args: list[str] | None = None) -> None:
     """DeePMD-kit new entry point.
 
     Parameters
@@ -902,12 +1022,14 @@ def main(args: Optional[list[str]] = None) -> None:
 
     if args.command in (
         "test",
+        "eval-desc",
         "doc-train-input",
         "model-devi",
         "neighbor-stat",
         "gui",
         "convert-backend",
         "show",
+        "pretrained",
     ):
         # common entrypoints
         from deepmd.entrypoints.main import main as deepmd_main

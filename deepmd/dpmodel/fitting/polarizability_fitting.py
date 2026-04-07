@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    Optional,
-    Union,
 )
 
 import array_api_compat
@@ -13,6 +11,9 @@ from deepmd.common import (
 )
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
+)
+from deepmd.dpmodel.array_api import (
+    Array,
 )
 from deepmd.dpmodel.common import (
     cast_precision,
@@ -42,6 +43,35 @@ from .general_fitting import (
 @fitting_check_output
 class PolarFitting(GeneralFitting):
     r"""Fitting rotationally equivariant polarizability of the system.
+
+    The polarizability tensor :math:`\boldsymbol{\alpha} \in \mathbb{R}^{3 \times 3}` is
+    computed from the fitting network output and the rotation matrix
+    :math:`\mathbf{R}^i \in \mathbb{R}^{m_1 \times 3}` from the descriptor,
+    where :math:`m_1` is the embedding width (the dimension of the rotation matrix):
+
+    **Diagonal fitting** (when `fit_diag=True`):
+
+    .. math::
+        \boldsymbol{\alpha}^i = \mathbf{R}^{i,T} \cdot \mathrm{diag}(\mathbf{p}^i) \cdot \mathbf{R}^i,
+
+    where :math:`\mathbf{p}^i \in \mathbb{R}^{m_1}` is the diagonal elements of the
+    local-frame polarizability predicted by the fitting network.
+
+    **Full matrix fitting** (when `fit_diag=False`):
+
+    .. math::
+        \boldsymbol{\alpha}^i = \mathbf{R}^{i,T} \cdot \mathbf{P}^i \cdot \mathbf{R}^i,
+
+    where :math:`\hat{\mathbf{P}}^i \in \mathbb{R}^{m_1 \times m_1}` is the raw output of
+    the fitting network, and :math:`\mathbf{P}^i = \frac{1}{2}(\hat{\mathbf{P}}^i + \hat{\mathbf{P}}^{i,T})`
+    is the symmetrized version. Since :math:`\mathbf{P}^i` is symmetric, the resulting
+    :math:`\boldsymbol{\alpha}^i` is guaranteed to be a symmetric tensor (matrix products
+    of the form :math:`A^T S A` preserve symmetry).
+
+    The fitting network is:
+
+    .. math::
+        \mathbf{p}^i \text{ (or } \mathbf{P}^i) = \mathcal{L}^{(n)} \circ \cdots \circ \mathcal{L}^{(0)}(\mathcal{D}^i).
 
     Parameters
     ----------
@@ -90,6 +120,9 @@ class PolarFitting(GeneralFitting):
             Whether to shift the diagonal part of the polarizability matrix. The shift operation is carried out after scale.
     type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
+    default_fparam: list[float], optional
+            The default frame parameter. If set, when `fparam.npy` files are not included in the data system,
+            this value will be used as the default value for the frame parameter in the fitting net.
     """
 
     def __init__(
@@ -102,21 +135,22 @@ class PolarFitting(GeneralFitting):
         numb_fparam: int = 0,
         numb_aparam: int = 0,
         dim_case_embd: int = 0,
-        rcond: Optional[float] = None,
+        rcond: float | None = None,
         tot_ener_zero: bool = False,
-        trainable: Optional[list[bool]] = None,
+        trainable: list[bool] | None = None,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
-        layer_name: Optional[list[Optional[str]]] = None,
+        layer_name: list[str | None] | None = None,
         use_aparam_as_mask: bool = False,
         spin: Any = None,
         mixed_types: bool = False,
         exclude_types: list[int] = [],
         fit_diag: bool = True,
-        scale: Optional[list[float]] = None,
+        scale: list[float] | None = None,
         shift_diag: bool = True,
-        type_map: Optional[list[str]] = None,
-        seed: Optional[Union[int, list[int]]] = None,
+        type_map: list[str] | None = None,
+        seed: int | list[int] | None = None,
+        default_fparam: list[float] | None = None,
     ) -> None:
         if tot_ener_zero:
             raise NotImplementedError("tot_ener_zero is not implemented")
@@ -164,9 +198,10 @@ class PolarFitting(GeneralFitting):
             exclude_types=exclude_types,
             type_map=type_map,
             seed=seed,
+            default_fparam=default_fparam,
         )
 
-    def _net_out_dim(self):
+    def _net_out_dim(self) -> int:
         """Set the FittingNet output dim."""
         return (
             self.embedding_width
@@ -174,13 +209,13 @@ class PolarFitting(GeneralFitting):
             else self.embedding_width * self.embedding_width
         )
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: Array) -> None:
         if key in ["constant_matrix"]:
             self.constant_matrix = value
         else:
             super().__setitem__(key, value)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> Array:
         if key in ["constant_matrix"]:
             return self.constant_matrix
         else:
@@ -189,7 +224,7 @@ class PolarFitting(GeneralFitting):
     def serialize(self) -> dict:
         data = super().serialize()
         data["type"] = "polar"
-        data["@version"] = 4
+        data["@version"] = 5
         data["embedding_width"] = self.embedding_width
         data["fit_diag"] = self.fit_diag
         data["shift_diag"] = self.shift_diag
@@ -200,12 +235,12 @@ class PolarFitting(GeneralFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 4, 1)
+        check_version_compatibility(data.pop("@version", 1), 5, 1)
         var_name = data.pop("var_name", None)
         assert var_name == "polar"
         return super().deserialize(data)
 
-    def output_def(self):
+    def output_def(self) -> FittingOutputDef:
         return FittingOutputDef(
             [
                 OutputVariableDef(
@@ -219,7 +254,7 @@ class PolarFitting(GeneralFitting):
         )
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: Any = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -231,14 +266,21 @@ class PolarFitting(GeneralFitting):
         remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
         super().change_type_map(type_map=type_map)
         if has_new_type:
+            xp = array_api_compat.array_namespace(self.scale)
             extend_shape = [len(type_map), *list(self.scale.shape[1:])]
-            extend_scale = np.ones(extend_shape, dtype=self.scale.dtype)
-            self.scale = np.concatenate([self.scale, extend_scale], axis=0)
-            extend_shape = [len(type_map), *list(self.constant_matrix.shape[1:])]
-            extend_constant_matrix = np.zeros(
-                extend_shape, dtype=self.constant_matrix.dtype
+            extend_scale = xp.ones(
+                extend_shape,
+                dtype=self.scale.dtype,
+                device=array_api_compat.device(self.scale),
             )
-            self.constant_matrix = np.concatenate(
+            self.scale = xp.concat([self.scale, extend_scale], axis=0)
+            extend_shape = [len(type_map), *list(self.constant_matrix.shape[1:])]
+            extend_constant_matrix = xp.zeros(
+                extend_shape,
+                dtype=self.constant_matrix.dtype,
+                device=array_api_compat.device(self.constant_matrix),
+            )
+            self.constant_matrix = xp.concat(
                 [self.constant_matrix, extend_constant_matrix], axis=0
             )
         self.scale = self.scale[remap_index]
@@ -247,14 +289,14 @@ class PolarFitting(GeneralFitting):
     @cast_precision
     def call(
         self,
-        descriptor: np.ndarray,
-        atype: np.ndarray,
-        gr: Optional[np.ndarray] = None,
-        g2: Optional[np.ndarray] = None,
-        h2: Optional[np.ndarray] = None,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-    ) -> dict[str, np.ndarray]:
+        descriptor: Array,
+        atype: Array,
+        gr: Array | None = None,
+        g2: Array | None = None,
+        h2: Array | None = None,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
+    ) -> dict[str, Array]:
         """Calculate the fitting.
 
         Parameters
@@ -289,7 +331,7 @@ class PolarFitting(GeneralFitting):
         ]
         # out = out * self.scale[atype, ...]
         scale_atype = xp.reshape(
-            xp.take(xp.astype(self.scale, out.dtype), xp.reshape(atype, [-1]), axis=0),
+            xp.take(xp.astype(self.scale, out.dtype), xp.reshape(atype, (-1,)), axis=0),
             (*atype.shape, 1),
         )
         out = out * scale_atype
@@ -315,14 +357,16 @@ class PolarFitting(GeneralFitting):
             bias = xp.reshape(
                 xp.take(
                     xp.astype(self.constant_matrix, out.dtype),
-                    xp.reshape(atype, [-1]),
+                    xp.reshape(atype, (-1,)),
                     axis=0,
                 ),
                 (nframes, nloc),
             )
             # (nframes, nloc, 1)
             bias = bias[..., None] * scale_atype
-            eye = xp.eye(3, dtype=descriptor.dtype)
+            eye = xp.eye(
+                3, dtype=descriptor.dtype, device=array_api_compat.device(descriptor)
+            )
             eye = xp.tile(eye, (nframes, nloc, 1, 1))
             # (nframes, nloc, 3, 3)
             bias = bias[..., None] * eye

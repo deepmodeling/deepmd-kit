@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
+from collections.abc import (
     Callable,
-    Optional,
-    Union,
+)
+from typing import (
+    Any,
 )
 
 import torch
@@ -31,6 +32,9 @@ from deepmd.pt.utils.env_mat_stat import (
 from deepmd.pt.utils.exclude_mask import (
     PairExcludeMask,
 )
+from deepmd.pt.utils.safe_gradient import (
+    safe_for_norm,
+)
 from deepmd.pt.utils.spin import (
     concat_switch_virtual,
 )
@@ -51,15 +55,15 @@ from .repformer_layer import (
 if not hasattr(torch.ops.deepmd, "border_op"):
 
     def border_op(
-        argument0,
-        argument1,
-        argument2,
-        argument3,
-        argument4,
-        argument5,
-        argument6,
-        argument7,
-        argument8,
+        argument0: Any,
+        argument1: Any,
+        argument2: Any,
+        argument3: Any,
+        argument4: Any,
+        argument5: Any,
+        argument6: Any,
+        argument7: Any,
+        argument8: Any,
     ) -> torch.Tensor:
         raise NotImplementedError(
             "border_op is not available since customized PyTorch OP library is not built when freezing the model. "
@@ -75,13 +79,13 @@ if not hasattr(torch.ops.deepmd, "border_op"):
 class DescrptBlockRepformers(DescriptorBlock):
     def __init__(
         self,
-        rcut,
-        rcut_smth,
+        rcut: float,
+        rcut_smth: float,
         sel: int,
         ntypes: int,
         nlayers: int = 3,
-        g1_dim=128,
-        g2_dim=16,
+        g1_dim: int = 128,
+        g2_dim: int = 16,
         axis_neuron: int = 4,
         direct_dist: bool = False,
         update_g1_has_conv: bool = True,
@@ -106,11 +110,12 @@ class DescrptBlockRepformers(DescriptorBlock):
         env_protection: float = 0.0,
         precision: str = "float64",
         trainable_ln: bool = True,
-        ln_eps: Optional[float] = 1e-5,
-        seed: Optional[Union[int, list[int]]] = None,
+        ln_eps: float | None = 1e-5,
+        seed: int | list[int] | None = None,
         use_sqrt_nnei: bool = True,
         g1_out_conv: bool = True,
         g1_out_mlp: bool = True,
+        trainable: bool = True,
     ) -> None:
         r"""
         The repformer descriptor block.
@@ -197,6 +202,8 @@ class DescrptBlockRepformers(DescriptorBlock):
             The epsilon value for layer normalization.
         seed : int, optional
             Random seed for parameter initialization.
+        trainable : bool
+            Whether the block is trainable
         """
         super().__init__()
         self.rcut = float(rcut)
@@ -247,7 +254,11 @@ class DescrptBlockRepformers(DescriptorBlock):
         self.seed = seed
 
         self.g2_embd = MLPLayer(
-            1, self.g2_dim, precision=precision, seed=child_seed(seed, 0)
+            1,
+            self.g2_dim,
+            precision=precision,
+            seed=child_seed(seed, 0),
+            trainable=trainable,
         )
         layers = []
         for ii in range(nlayers):
@@ -285,6 +296,7 @@ class DescrptBlockRepformers(DescriptorBlock):
                     g1_out_conv=self.g1_out_conv,
                     g1_out_mlp=self.g1_out_mlp,
                     seed=child_seed(child_seed(seed, 1), ii),
+                    trainable=trainable,
                 )
             )
         self.layers = torch.nn.ModuleList(layers)
@@ -328,7 +340,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         """Returns the embedding dimension g2."""
         return self.g2_dim
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: Any) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.mean = value
         elif key in ("std", "data_std", "dstd"):
@@ -336,7 +348,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> Any:
         if key in ("avg", "data_avg", "davg"):
             return self.mean
         elif key in ("std", "data_std", "dstd"):
@@ -361,17 +373,17 @@ class DescrptBlockRepformers(DescriptorBlock):
         return self.env_protection
 
     @property
-    def dim_out(self):
+    def dim_out(self) -> int:
         """Returns the output dimension of this descriptor."""
         return self.g1_dim
 
     @property
-    def dim_in(self):
+    def dim_in(self) -> int:
         """Returns the atomic input dimension of this descriptor."""
         return self.g1_dim
 
     @property
-    def dim_emb(self):
+    def dim_emb(self) -> int:
         """Returns the embedding dimension g2."""
         return self.get_dim_emb()
 
@@ -387,11 +399,17 @@ class DescrptBlockRepformers(DescriptorBlock):
         nlist: torch.Tensor,
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
-        extended_atype_embd: Optional[torch.Tensor] = None,
-        mapping: Optional[torch.Tensor] = None,
-        type_embedding: Optional[torch.Tensor] = None,
-        comm_dict: Optional[dict[str, torch.Tensor]] = None,
-    ):
+        extended_atype_embd: torch.Tensor | None = None,
+        mapping: torch.Tensor | None = None,
+        type_embedding: torch.Tensor | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
+    ) -> tuple[
+        torch.Tensor,
+        torch.Tensor | None,
+        torch.Tensor | None,
+        torch.Tensor | None,
+        torch.Tensor | None,
+    ]:
         if comm_dict is None:
             assert mapping is not None
             assert extended_atype_embd is not None
@@ -431,7 +449,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         if not self.direct_dist:
             g2, h2 = torch.split(dmatrix, [1, 3], dim=-1)
         else:
-            g2, h2 = torch.linalg.norm(diff, dim=-1, keepdim=True), diff
+            g2, h2 = safe_for_norm(diff, dim=-1, keepdim=True), diff
             g2 = g2 / self.rcut
             h2 = h2 / self.rcut
         # nb x nloc x nnei x ng2
@@ -531,8 +549,8 @@ class DescrptBlockRepformers(DescriptorBlock):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.

@@ -3,11 +3,16 @@ from abc import (
     abstractmethod,
 )
 from typing import (
+    TYPE_CHECKING,
     Any,
-    Optional,
 )
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from typing_extensions import (
+        Self,
+    )
 
 from deepmd.common import (
     j_get_type,
@@ -49,7 +54,7 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
     that can be called by other classes.
     """
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: Any, **kwargs: Any) -> "Self":
         if cls is Descriptor:
             cls = cls.get_class_by_type(j_get_type(kwargs, cls.__name__))
         return super().__new__(cls)
@@ -133,9 +138,9 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
         natoms_vec: list[np.ndarray],
         mesh: list[np.ndarray],
         input_dict: dict[str, list[np.ndarray]],
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
-        """Compute the statisitcs (avg and std) of the training data. The input will be
+        """Compute the statistics (avg and std) of the training data. The input will be
         normalized by the statistics.
 
         Parameters
@@ -173,7 +178,7 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
         box_: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict[str, Any],
-        reuse: Optional[bool] = None,
+        reuse: bool | None = None,
         suffix: str = "",
     ) -> tf.Tensor:
         """Build the computational graph for the descriptor.
@@ -223,7 +228,7 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
         check_frequency: int = -1,
         suffix: str = "",
     ) -> None:
-        """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the
+        """Receive the statistics (distance, max_nbor_size and env_mat_range) of the
         training data.
 
         Parameters
@@ -253,7 +258,7 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
             f"Descriptor {type(self).__name__} doesn't support compression!"
         )
 
-    def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
+    def enable_mixed_precision(self, mixed_prec: dict | None = None) -> None:
         """Receive the mixed precision setting.
 
         Parameters
@@ -466,9 +471,9 @@ class Descriptor(PluginVariant, make_plugin_registry("descriptor")):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

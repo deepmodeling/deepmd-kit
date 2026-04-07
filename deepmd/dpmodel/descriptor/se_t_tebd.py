@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
+from collections.abc import (
     Callable,
+)
+from typing import (
     NoReturn,
     Optional,
-    Union,
 )
 
 import array_api_compat
@@ -14,6 +15,7 @@ from deepmd.dpmodel import (
     NativeOP,
 )
 from deepmd.dpmodel.array_api import (
+    Array,
     xp_take_along_axis,
 )
 from deepmd.dpmodel.common import (
@@ -68,6 +70,27 @@ from .descriptor import (
 class DescrptSeTTebd(NativeOP, BaseDescriptor):
     r"""Construct an embedding net that takes angles between two neighboring atoms and type embeddings as input.
 
+    The descriptor :math:`\mathcal{D}^i \in \mathbb{R}^{M}` is given by
+
+    .. math::
+        \mathcal{D}^i = \frac{1}{N_c^2} \sum_{j,k} \mathcal{N}(\cos\theta_{jik}, \mathcal{T}_j, \mathcal{T}_k),
+
+    where :math:`\theta_{jik}` is the angle between neighbors :math:`j` and :math:`k`
+    around the central atom :math:`i`, :math:`\mathcal{T}_j` and :math:`\mathcal{T}_k`
+    are the type embeddings of atoms :math:`j` and :math:`k`, and :math:`\mathcal{N}`
+    is the embedding network.
+
+    The cosine of the angle is computed from the normalized relative coordinates:
+
+    .. math::
+        \cos\theta_{jik} = \frac{\boldsymbol{r}_{ij} \cdot \boldsymbol{r}_{ik}}{|\boldsymbol{r}_{ij}| |\boldsymbol{r}_{ik}|}.
+
+    The type embedding can be incorporated in two modes:
+
+    - "concat": Concatenate :math:`[\cos\theta_{jik}, \mathcal{T}_j, \mathcal{T}_k]` as input to the embedding network.
+    - "strip": Use separate embedding networks for :math:`\cos\theta_{jik}` and :math:`[\mathcal{T}_j, \mathcal{T}_k]`,
+      then combine their outputs multiplicatively.
+
     Parameters
     ----------
     rcut
@@ -118,11 +141,13 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
 
     """
 
+    _update_sel_cls = UpdateSel
+
     def __init__(
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[list[int], int],
+        sel: list[int] | int,
         ntypes: int,
         neuron: list = [2, 4, 8],
         tebd_dim: int = 8,
@@ -134,11 +159,11 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         exclude_types: list[tuple[int, int]] = [],
         precision: str = "float64",
         trainable: bool = True,
-        seed: Optional[Union[int, list[int]]] = None,
-        type_map: Optional[list[str]] = None,
+        seed: int | list[int] | None = None,
+        type_map: list[str] | None = None,
         concat_output_tebd: bool = True,
         use_econf_tebd: bool = False,
-        use_tebd_bias=False,
+        use_tebd_bias: bool = False,
         smooth: bool = True,
     ) -> None:
         self.se_ttebd = DescrptBlockSeTTebd(
@@ -157,6 +182,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
             env_protection=env_protection,
             smooth=smooth,
             seed=child_seed(seed, 0),
+            trainable=trainable,
         )
         self.use_econf_tebd = use_econf_tebd
         self.type_map = type_map
@@ -171,11 +197,13 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
             use_tebd_bias=use_tebd_bias,
             type_map=type_map,
             seed=child_seed(seed, 1),
+            trainable=trainable,
         )
         self.tebd_dim = tebd_dim
         self.concat_output_tebd = concat_output_tebd
         self.trainable = trainable
         self.precision = precision
+        self.compress = False
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -235,7 +263,9 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         """Returns the protection of building environment matrix."""
         return self.se_ttebd.get_env_protection()
 
-    def share_params(self, base_class, shared_level, resume=False) -> NoReturn:
+    def share_params(
+        self, base_class: "DescrptSeTTebd", shared_level: int, resume: bool = False
+    ) -> NoReturn:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -244,18 +274,18 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         raise NotImplementedError
 
     @property
-    def dim_out(self):
+    def dim_out(self) -> int:
         return self.get_dim_out()
 
     @property
-    def dim_emb(self):
+    def dim_emb(self) -> int:
         return self.get_dim_emb()
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
-    ):
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
+    ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
 
@@ -276,19 +306,21 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
 
     def set_stat_mean_and_stddev(
         self,
-        mean: np.ndarray,
-        stddev: np.ndarray,
+        mean: Array,
+        stddev: Array,
     ) -> None:
         """Update mean and stddev for descriptor."""
         self.se_ttebd.mean = mean
         self.se_ttebd.stddev = stddev
 
-    def get_stat_mean_and_stddev(self) -> tuple[np.ndarray, np.ndarray]:
+    def get_stat_mean_and_stddev(self) -> tuple[Array, Array]:
         """Get mean and stddev for descriptor."""
         return self.se_ttebd.mean, self.se_ttebd.stddev
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self,
+        type_map: list[str],
+        model_with_new_type_stat: Optional["DescrptSeTTebd"] = None,
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -317,11 +349,12 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
     @cast_precision
     def call(
         self,
-        coord_ext,
-        atype_ext,
-        nlist,
-        mapping: Optional[np.ndarray] = None,
-    ):
+        coord_ext: Array,
+        atype_ext: Array,
+        nlist: Array,
+        mapping: Array | None = None,
+        fparam: Array | None = None,
+    ) -> tuple[Array, Array]:
         """Compute the descriptor.
 
         Parameters
@@ -358,7 +391,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         type_embedding = self.type_embedding.call()
         # nf x nall x tebd_dim
         atype_embd_ext = xp.reshape(
-            xp.take(type_embedding, xp.reshape(atype_ext, [-1]), axis=0),
+            xp.take(type_embedding, xp.reshape(atype_ext, (-1,)), axis=0),
             (nf, nall, self.tebd_dim),
         )
         # nfnl x tebd_dim
@@ -384,7 +417,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         data = {
             "@class": "Descriptor",
             "type": "se_e3_tebd",
-            "@version": 1,
+            "@version": 2 if self.compress else 1,
             "rcut": obj.rcut,
             "rcut_smth": obj.rcut_smth,
             "sel": obj.sel,
@@ -414,19 +447,32 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         }
         if obj.tebd_input_mode in ["strip"]:
             data.update({"embeddings_strip": obj.embeddings_strip.serialize()})
+        if self.compress:
+            compress_dict: dict = {
+                "@variables": {
+                    "compress_data": [to_numpy_array(d) for d in self.compress_data],
+                    "compress_info": [to_numpy_array(i) for i in self.compress_info],
+                },
+            }
+            if hasattr(self, "type_embd_data"):
+                compress_dict["@variables"]["type_embd_data"] = to_numpy_array(
+                    self.type_embd_data
+                )
+            data["compress"] = compress_dict
         return data
 
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeTTebd":
         """Deserialize from dict."""
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
+        check_version_compatibility(data.pop("@version"), 2, 1)
         data.pop("@class")
         data.pop("type")
         variables = data.pop("@variables")
         embeddings = data.pop("embeddings")
         type_embedding = data.pop("type_embedding")
         env_mat = data.pop("env_mat")
+        compress = data.pop("compress", None)
         tebd_input_mode = data["tebd_input_mode"]
         if tebd_input_mode in ["strip"]:
             embeddings_strip = data.pop("embeddings_strip")
@@ -442,16 +488,27 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
             obj.se_ttebd.embeddings_strip = NetworkCollection.deserialize(
                 embeddings_strip
             )
+        if compress is not None:
+            obj._load_compress_data(compress)
 
         return obj
+
+    def _load_compress_data(self, compress: dict) -> None:
+        """Load compression state from serialized data."""
+        variables = compress["@variables"]
+        self.compress_data = variables["compress_data"]
+        self.compress_info = variables["compress_info"]
+        if "type_embd_data" in variables:
+            self.type_embd_data = variables["type_embd_data"]
+        self.compress = True
 
     @classmethod
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[Array, Array]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
@@ -471,7 +528,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
             The minimum distance between two atoms
         """
         local_jdata_cpy = local_jdata.copy()
-        min_nbor_dist, sel = UpdateSel().update_one_sel(
+        min_nbor_dist, sel = cls._update_sel_cls().update_one_sel(
             train_data, type_map, local_jdata_cpy["rcut"], local_jdata_cpy["sel"], True
         )
         local_jdata_cpy["sel"] = sel[0]
@@ -480,23 +537,77 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
 
 @DescriptorBlock.register("se_ttebd")
 class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
+    r"""The three-body descriptor block with type embedding.
+
+    This block computes an embedding using angles between two neighboring atoms and type embeddings.
+    The descriptor is computed as:
+
+    .. math::
+        \mathcal{D}^i = \frac{1}{N_c^2} \sum_{j,k} \mathcal{N}(\cos\theta_{jik}, \mathcal{T}_j, \mathcal{T}_k),
+
+    where :math:`\theta_{jik}` is the angle between neighbors :math:`j` and :math:`k`
+    around the central atom :math:`i`, :math:`\mathcal{T}_j` and :math:`\mathcal{T}_k`
+    are the type embeddings of atoms :math:`j` and :math:`k`.
+
+    The cosine of the angle is computed from the normalized relative coordinates:
+
+    .. math::
+        \cos\theta_{jik} = \frac{\boldsymbol{r}_{ij} \cdot \boldsymbol{r}_{ik}}{|\boldsymbol{r}_{ij}| |\boldsymbol{r}_{ik}|}.
+
+    Parameters
+    ----------
+    rcut : float
+        The cut-off radius.
+    rcut_smth : float
+        Where to start smoothing.
+    sel : Union[list[int], int]
+        Maximally possible number of selected neighbors.
+    ntypes : int
+        Number of element types.
+    neuron : list[int], optional
+        Number of neurons in each hidden layer of the embedding net.
+    tebd_dim : int, optional
+        Dimension of the type embedding.
+    tebd_input_mode : str, optional
+        The input mode of the type embedding. Supported modes are ["concat", "strip"].
+    set_davg_zero : bool, optional
+        Set the shift of embedding net input to zero.
+    activation_function : str, optional
+        The activation function in the embedding net.
+    precision : str, optional
+        The precision of the embedding net parameters.
+    resnet_dt : bool, optional
+        Time-step `dt` in the resnet construction.
+    exclude_types : list[tuple[int, int]], optional
+        The excluded pairs of types which have no interaction.
+    env_protection : float, optional
+        Protection parameter to prevent division by zero.
+    smooth : bool, optional
+        Whether to use smoothness.
+    seed : int, optional
+        Random seed for parameter initialization.
+    trainable : bool, optional
+        If the parameters are trainable.
+    """
+
     def __init__(
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[list[int], int],
+        sel: list[int] | int,
         ntypes: int,
         neuron: list = [25, 50, 100],
         tebd_dim: int = 8,
         tebd_input_mode: str = "concat",
         set_davg_zero: bool = True,
-        activation_function="tanh",
+        activation_function: str = "tanh",
         precision: str = "float64",
         resnet_dt: bool = False,
         exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         smooth: bool = True,
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
+        trainable: bool = True,
     ) -> None:
         self.rcut = rcut
         self.rcut_smth = rcut_smth
@@ -542,6 +653,7 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
             self.resnet_dt,
             self.precision,
             seed=child_seed(seed, 0),
+            trainable=trainable,
         )
         self.embeddings = embeddings
         if self.tebd_input_mode in ["strip"]:
@@ -557,6 +669,7 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
                 self.resnet_dt,
                 self.precision,
                 seed=child_seed(seed, 1),
+                trainable=trainable,
             )
             self.embeddings_strip = embeddings_strip
         else:
@@ -600,7 +713,7 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
         """Returns the output dimension of embedding."""
         return self.filter_neuron[-1]
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: Array) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.mean = value
         elif key in ("std", "data_std", "dstd"):
@@ -608,7 +721,7 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> Array:
         if key in ("avg", "data_avg", "davg"):
             return self.mean
         elif key in ("std", "data_std", "dstd"):
@@ -633,24 +746,24 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
         return self.env_protection
 
     @property
-    def dim_out(self):
+    def dim_out(self) -> int:
         """Returns the output dimension of this descriptor."""
         return self.filter_neuron[-1]
 
     @property
-    def dim_in(self):
+    def dim_in(self) -> int:
         """Returns the atomic input dimension of this descriptor."""
         return self.tebd_dim
 
     @property
-    def dim_emb(self):
+    def dim_emb(self) -> int:
         """Returns the output dimension of embedding."""
         return self.get_dim_emb()
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -683,9 +796,14 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         xp = array_api_compat.array_namespace(self.stddev)
+        device = array_api_compat.device(self.stddev)
         if not self.set_davg_zero:
-            self.mean = xp.asarray(mean, dtype=self.mean.dtype, copy=True)
-        self.stddev = xp.asarray(stddev, dtype=self.stddev.dtype, copy=True)
+            self.mean = xp.asarray(
+                mean, dtype=self.mean.dtype, copy=True, device=device
+            )
+        self.stddev = xp.asarray(
+            stddev, dtype=self.stddev.dtype, copy=True, device=device
+        )
 
     def get_stats(self) -> dict[str, StatItem]:
         """Get the statistics of the descriptor."""
@@ -704,18 +822,18 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
 
     def cal_g(
         self,
-        ss,
-        embedding_idx,
-    ):
+        ss: Array,
+        embedding_idx: int,
+    ) -> Array:
         # nfnl x nt_i x nt_j x ng
         gg = self.embeddings[embedding_idx].call(ss)
         return gg
 
     def cal_g_strip(
         self,
-        ss,
-        embedding_idx,
-    ):
+        ss: Array,
+        embedding_idx: int,
+    ) -> Array:
         assert self.embeddings_strip is not None
         # nfnl x nt_i x nt_j x ng
         gg = self.embeddings_strip[embedding_idx].call(ss)
@@ -723,13 +841,13 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
 
     def call(
         self,
-        nlist: np.ndarray,
-        coord_ext: np.ndarray,
-        atype_ext: np.ndarray,
-        atype_embd_ext: Optional[np.ndarray] = None,
-        mapping: Optional[np.ndarray] = None,
-        type_embedding: Optional[np.ndarray] = None,
-    ):
+        nlist: Array,
+        coord_ext: Array,
+        atype_ext: Array,
+        atype_embd_ext: Array | None = None,
+        mapping: Array | None = None,
+        type_embedding: Array | None = None,
+    ) -> tuple[Array, Array]:
         xp = array_api_compat.array_namespace(nlist, coord_ext, atype_ext)
         # nf x nloc x nnei x 4
         dmatrix, diff, sw = self.env_mat.call(
@@ -753,7 +871,9 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
         sw = xp.where(
             nlist_mask[:, :, None],
             xp.reshape(sw, (nf * nloc, nnei, 1)),
-            xp.zeros((nf * nloc, nnei, 1), dtype=sw.dtype),
+            xp.zeros(
+                (nf * nloc, nnei, 1), dtype=sw.dtype, device=array_api_compat.device(sw)
+            ),
         )
 
         # nfnl x nnei x 4
@@ -816,6 +936,8 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
 
             # (nf x nl x nt_i x nt_j) x ng
             idx = xp.tile(xp.reshape((idx_i + idx_j), (-1, 1)), (1, ng))
+            # Cast to int64 for PyTorch backend (take_along_dim requires Long indices)
+            idx = xp.astype(idx, xp.int64)
 
             # ntypes * (ntypes) * nt
             type_embedding_i = xp.tile(

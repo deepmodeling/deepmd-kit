@@ -1,13 +1,17 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from collections.abc import (
+    Callable,
+)
 from typing import (
-    Optional,
-    Union,
+    Any,
+    NoReturn,
 )
 
 import array_api_compat
 import numpy as np
 
 from deepmd.dpmodel.array_api import (
+    Array,
     xp_take_along_axis,
 )
 from deepmd.dpmodel.output_def import (
@@ -20,6 +24,9 @@ from deepmd.dpmodel.utils.safe_gradient import (
 from deepmd.utils.pair_tab import (
     PairTab,
 )
+from deepmd.utils.path import (
+    DPPath,
+)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -31,7 +38,7 @@ from .base_atomic_model import (
 
 @BaseAtomicModel.register("pairtab")
 class PairTabAtomicModel(BaseAtomicModel):
-    """Pairwise tabulation energy model.
+    r"""Pairwise tabulation energy model.
 
     This model can be used to tabulate the pairwise energy between atoms for either
     short-range or long-range interactions, such as D3, LJ, ZBL, etc. It should not
@@ -43,6 +50,16 @@ class PairTabAtomicModel(BaseAtomicModel):
 
     At this moment, the model does not smooth the energy at the cutoff radius, so
     one needs to make sure the energy has been smoothed to zero.
+
+    The pairwise energy is computed by table lookup and interpolation:
+
+    .. math::
+        E^i = \frac{1}{2} \sum_{j \in \mathcal{N}(i)} E_{t_i, t_j}(r_{ij}),
+
+    where :math:`E_{t_i, t_j}(r)` is the tabulated pairwise energy between atom types
+    :math:`t_i` and :math:`t_j` at distance :math:`r`, obtained via cubic spline
+    interpolation from the table data. The factor of :math:`\frac{1}{2}` avoids
+    double-counting of pairwise interactions.
 
     Parameters
     ----------
@@ -61,23 +78,19 @@ class PairTabAtomicModel(BaseAtomicModel):
         self,
         tab_file: str,
         rcut: float,
-        sel: Union[int, list[int]],
+        sel: int | list[int],
         type_map: list[str],
-        rcond: Optional[float] = None,
-        atom_ener: Optional[list[float]] = None,
-        **kwargs,
+        rcond: float | None = None,
+        **kwargs: Any,
     ) -> None:
         super().__init__(type_map, **kwargs)
         super().init_out_stat()
         self.tab_file = tab_file
         self.rcut = rcut
-        self.type_map = type_map
 
         self.tab = PairTab(self.tab_file, rcut=rcut)
-        self.type_map = type_map
         self.ntypes = len(type_map)
         self.rcond = rcond
-        self.atom_ener = atom_ener
 
         if self.tab_file is not None:
             tab_info, tab_data = self.tab.get()
@@ -120,7 +133,7 @@ class PairTabAtomicModel(BaseAtomicModel):
     def get_sel(self) -> list[int]:
         return [self.sel]
 
-    def set_case_embd(self, case_idx: int):
+    def set_case_embd(self, case_idx: int) -> NoReturn:
         """
         Set the case embedding of this atomic model by the given case_idx,
         typically concatenated with the output of the descriptor and fed into the fitting net.
@@ -154,7 +167,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         return False
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: Any = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -181,7 +194,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         return dd
 
     @classmethod
-    def deserialize(cls, data) -> "PairTabAtomicModel":
+    def deserialize(cls, data: dict) -> "PairTabAtomicModel":
         data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 2, 2)
         data.pop("@class")
@@ -191,20 +204,56 @@ class PairTabAtomicModel(BaseAtomicModel):
         tab_model = super().deserialize(data)
 
         tab_model.tab = tab
-        tab_model.tab_info = tab_model.tab.tab_info
-        nspline, ntypes = tab_model.tab_info[-2:].astype(int)
-        tab_model.tab_data = tab_model.tab.tab_data.reshape(ntypes, ntypes, nspline, 4)
+        # Extract nspline/ntypes from the numpy source before setting on the
+        # model, because dpmodel_setattr may convert to torch tensor.
+        nspline, ntypes = tab.tab_info[-2:].astype(int)
+        tab_model.tab_info = tab.tab_info
+        tab_model.tab_data = tab.tab_data.reshape(ntypes, ntypes, nspline, 4)
         return tab_model
+
+    def compute_or_load_stat(
+        self,
+        sampled_func: Callable[[], list[dict]],
+        stat_file_path: DPPath | None = None,
+        compute_or_load_out_stat: bool = True,
+        preset_observed_type: list[str] | None = None,
+    ) -> None:
+        """Compute or load the statistics parameters of the model.
+
+        PairTabAtomicModel has no descriptor or fitting net input stats,
+        so this only computes output stats (energy bias) when requested.
+
+        Parameters
+        ----------
+        sampled_func
+            The lazy sampled function to get data frames from different data systems.
+        stat_file_path
+            The path to the stat file.
+        compute_or_load_out_stat : bool
+            Whether to compute the output statistics.
+        """
+        if compute_or_load_out_stat:
+            wrapped_sampler = self._make_wrapped_sampler(sampled_func)
+            self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
+
+        if stat_file_path is not None and self.type_map is not None:
+            stat_file_path /= " ".join(self.type_map)
+
+        self._collect_and_set_observed_type(
+            sampled_func if callable(sampled_func) else lambda: sampled_func,
+            stat_file_path,
+            preset_observed_type,
+        )
 
     def forward_atomic(
         self,
-        extended_coord,
-        extended_atype,
-        nlist,
-        mapping: Optional[np.ndarray] = None,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-    ) -> dict[str, np.ndarray]:
+        extended_coord: Array,
+        extended_atype: Array,
+        nlist: Array,
+        mapping: Array | None = None,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
+    ) -> dict[str, Array]:
         xp = array_api_compat.array_namespace(extended_coord, extended_atype, nlist)
         nframes, nloc, nnei = nlist.shape
         extended_coord = xp.reshape(extended_coord, (nframes, -1, 3))
@@ -219,8 +268,11 @@ class PairTabAtomicModel(BaseAtomicModel):
         )  # (nframes, nloc, nnei)
 
         # (nframes, nloc, nnei), index type is int64.
+        dev = array_api_compat.device(extended_atype)
         j_type = extended_atype[
-            xp.arange(extended_atype.shape[0], dtype=xp.int64)[:, None, None],
+            xp.arange(extended_atype.shape[0], dtype=xp.int64, device=dev)[
+                :, None, None
+            ],
             masked_nlist,
         ]
 
@@ -237,22 +289,22 @@ class PairTabAtomicModel(BaseAtomicModel):
 
     def _pair_tabulated_inter(
         self,
-        nlist: np.ndarray,
-        i_type: np.ndarray,
-        j_type: np.ndarray,
-        rr: np.ndarray,
-    ) -> np.ndarray:
+        nlist: Array,
+        i_type: Array,
+        j_type: Array,
+        rr: Array,
+    ) -> Array:
         """Pairwise tabulated energy.
 
         Parameters
         ----------
-        nlist : np.ndarray
+        nlist : Array
             The unmasked neighbour list. (nframes, nloc)
-        i_type : np.ndarray
+        i_type : Array
             The integer representation of atom type for all local atoms for all frames. (nframes, nloc)
-        j_type : np.ndarray
+        j_type : Array
             The integer representation of atom type for all neighbour atoms of all local atoms for all frames. (nframes, nloc, nnei)
-        rr : np.ndarray
+        rr : Array
             The salar distance vector between two atoms. (nframes, nloc, nnei)
 
         Returns
@@ -277,7 +329,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         hi = 1.0 / hh
 
         # jax jit does not support convert to a Python int, so we need to convert to xp.int64.
-        nspline = (self.tab_info[2] + 0.1).astype(xp.int64)
+        nspline = xp.astype(self.tab_info[2] + 0.1, xp.int64)
 
         uu = (rr - rmin) * hi  # this is broadcasted to (nframes,nloc,nnei)
 
@@ -310,12 +362,12 @@ class PairTabAtomicModel(BaseAtomicModel):
         return ener
 
     @staticmethod
-    def _get_pairwise_dist(coords: np.ndarray, nlist: np.ndarray) -> np.ndarray:
+    def _get_pairwise_dist(coords: Array, nlist: Array) -> Array:
         """Get pairwise distance `dr`.
 
         Parameters
         ----------
-        coords : np.ndarray
+        coords : Array
             The coordinate of the atoms, shape of (nframes, nall, 3).
         nlist
             The masked nlist, shape of (nframes, nloc, nnei).
@@ -326,34 +378,37 @@ class PairTabAtomicModel(BaseAtomicModel):
             The pairwise distance between the atoms (nframes, nloc, nnei).
         """
         xp = array_api_compat.array_namespace(coords, nlist)
+        dev = array_api_compat.device(nlist)
         # index type is int64
-        batch_indices = xp.arange(nlist.shape[0], dtype=xp.int64)[:, None, None]
+        batch_indices = xp.arange(nlist.shape[0], dtype=xp.int64, device=dev)[
+            :, None, None
+        ]
         neighbor_atoms = coords[batch_indices, nlist]
         loc_atoms = coords[:, : nlist.shape[1], :]
         pairwise_dr = loc_atoms[:, :, None, :] - neighbor_atoms
-        pairwise_rr = safe_for_sqrt(xp.sum(xp.power(pairwise_dr, 2), axis=-1))
+        pairwise_rr = safe_for_sqrt(xp.sum(pairwise_dr**2, axis=-1))
 
         return pairwise_rr
 
     @staticmethod
     def _extract_spline_coefficient(
-        i_type: np.ndarray,
-        j_type: np.ndarray,
-        idx: np.ndarray,
-        tab_data: np.ndarray,
+        i_type: Array,
+        j_type: Array,
+        idx: Array,
+        tab_data: Array,
         nspline: np.int64,
-    ) -> np.ndarray:
+    ) -> Array:
         """Extract the spline coefficient from the table.
 
         Parameters
         ----------
-        i_type : np.ndarray
+        i_type : Array
             The integer representation of atom type for all local atoms for all frames. (nframes, nloc)
-        j_type : np.ndarray
+        j_type : Array
             The integer representation of atom type for all neighbour atoms of all local atoms for all frames. (nframes, nloc, nnei)
-        idx : np.ndarray
+        idx : Array
             The index of the spline coefficient. (nframes, nloc, nnei)
-        tab_data : np.ndarray
+        tab_data : Array
             The table storing all the spline coefficient. (ntype, ntype, nspline, 4)
         nspline : int
             The number of splines in the table.
@@ -377,28 +432,30 @@ class PairTabAtomicModel(BaseAtomicModel):
         expanded_idx = xp.broadcast_to(
             idx[..., xp.newaxis, xp.newaxis], (*idx.shape, 1, 4)
         )
-        clipped_indices = xp.clip(expanded_idx, 0, nspline - 1).astype(int)
+        clipped_indices = xp.astype(xp.clip(expanded_idx, 0, nspline - 1), xp.int64)
 
         # (nframes, nloc, nnei, 4)
         final_coef = xp.squeeze(
-            xp_take_along_axis(expanded_tab_data, clipped_indices, 3)
+            xp_take_along_axis(expanded_tab_data, clipped_indices, 3), axis=3
         )
 
         # when the spline idx is beyond the table, all spline coefficients are set to `0`, and the resulting ener corresponding to the idx is also `0`.
         final_coef = xp.where(
-            expanded_idx.squeeze() > nspline, xp.zeros_like(final_coef), final_coef
+            xp.squeeze(expanded_idx, axis=3) > nspline,
+            xp.zeros_like(final_coef),
+            final_coef,
         )
         return final_coef
 
     @staticmethod
-    def _calculate_ener(coef: np.ndarray, uu: np.ndarray) -> np.ndarray:
+    def _calculate_ener(coef: Array, uu: Array) -> Array:
         """Calculate energy using spline coeeficients.
 
         Parameters
         ----------
-        coef : np.ndarray
+        coef : Array
             The spline coefficients. (nframes, nloc, nnei, 4)
-        uu : np.ndarray
+        uu : Array
             The atom displancemnt used in interpolation and extrapolation (nframes, nloc, nnei)
 
         Returns

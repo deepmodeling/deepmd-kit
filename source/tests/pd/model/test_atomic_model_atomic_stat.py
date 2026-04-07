@@ -5,7 +5,7 @@ from pathlib import (
     Path,
 )
 from typing import (
-    Optional,
+    NoReturn,
 )
 
 import h5py
@@ -80,11 +80,11 @@ class FooFitting(paddle.nn.Layer, BaseFitting):
         self,
         descriptor: paddle.Tensor,
         atype: paddle.Tensor,
-        gr: Optional[paddle.Tensor] = None,
-        g2: Optional[paddle.Tensor] = None,
-        h2: Optional[paddle.Tensor] = None,
-        fparam: Optional[paddle.Tensor] = None,
-        aparam: Optional[paddle.Tensor] = None,
+        gr: paddle.Tensor | None = None,
+        g2: paddle.Tensor | None = None,
+        h2: paddle.Tensor | None = None,
+        fparam: paddle.Tensor | None = None,
+        aparam: paddle.Tensor | None = None,
     ):
         nf, nloc, _ = descriptor.shape
         ret = {}
@@ -114,10 +114,10 @@ class FooFitting(paddle.nn.Layer, BaseFitting):
 
 
 class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
-    def tearDown(self):
+    def tearDown(self) -> None:
         self.tempdir.cleanup()
 
-    def setUp(self):
+    def setUp(self) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
         self.merged_output_stat = [
             {
@@ -171,7 +171,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
             pass
         self.stat_file_path = DPPath(h5file, "a")
 
-    def test_output_stat(self):
+    def test_output_stat(self) -> None:
         nf, nloc, nnei = self.nlist.shape
         ds = DescrptDPA1(
             self.rcut,
@@ -226,6 +226,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         expected_std[0, :, :1] = np.array([0.0, 0.816496]).reshape(
             2, 1
         )  # updating std for foo based on [5.0, 5.0, 5.0], [5.0, 6.0, 7.0]]
+        expected_std[1, :, :] = np.zeros([2, 2])
         np.testing.assert_almost_equal(
             to_numpy_array(md0.out_std), expected_std, decimal=4
         )
@@ -237,10 +238,12 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         expected_ret1["foo"] = ret0["foo"] + foo_bias[at]
         expected_ret1["bar"] = ret0["bar"] + bar_bias[at]
         for kk in ["foo", "bar"]:
-            np.testing.assert_almost_equal(ret1[kk], expected_ret1[kk])
+            np.testing.assert_almost_equal(
+                ret1[kk], expected_ret1[kk], err_msg=f"{kk} not equal"
+            )
 
         # 3. test bias load from file
-        def raise_error():
+        def raise_error() -> NoReturn:
             raise RuntimeError
 
         md0.compute_or_load_out_stat(raise_error, stat_file_path=self.stat_file_path)
@@ -284,10 +287,10 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
 class TestAtomicModelStatMergeGlobalAtomic(
     unittest.TestCase, TestCaseSingleFrameWithNlist
 ):
-    def tearDown(self):
+    def tearDown(self) -> None:
         self.tempdir.cleanup()
 
-    def setUp(self):
+    def setUp(self) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
         self.merged_output_stat = [
             {
@@ -341,7 +344,7 @@ class TestAtomicModelStatMergeGlobalAtomic(
             pass
         self.stat_file_path = DPPath(h5file, "a")
 
-    def test_output_stat(self):
+    def test_output_stat(self) -> None:
         nf, nloc, nnei = self.nlist.shape
         ds = DescrptDPA1(
             self.rcut,
@@ -401,7 +404,7 @@ class TestAtomicModelStatMergeGlobalAtomic(
             np.testing.assert_almost_equal(ret1[kk], expected_ret1[kk])
 
         # 3. test bias load from file
-        def raise_error():
+        def raise_error() -> NoReturn:
             raise RuntimeError
 
         md0.compute_or_load_out_stat(raise_error, stat_file_path=self.stat_file_path)

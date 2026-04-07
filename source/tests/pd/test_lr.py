@@ -9,8 +9,11 @@ tf.disable_eager_execution()
 from deepmd.dpmodel.utils.learning_rate import (
     LearningRateExp,
 )
-from deepmd.tf.utils import (
-    learning_rate,
+from deepmd.pd.utils.learning_rate import (
+    LearningRateWSD,
+)
+from deepmd.tf.utils.learning_rate import (
+    LearningRateSchedule,
 )
 
 
@@ -18,7 +21,8 @@ class TestLearningRate(unittest.TestCase):
     def setUp(self):
         self.start_lr = 0.001
         self.stop_lr = 3.51e-8
-        self.decay_steps = np.arange(400, 601, 100)
+        # decay_steps will be auto-adjusted if >= stop_steps
+        self.decay_steps = np.arange(400, 501, 100)
         self.stop_steps = np.arange(500, 1600, 500)
 
     def test_consistency(self):
@@ -30,8 +34,13 @@ class TestLearningRate(unittest.TestCase):
                 self.decay_rate_pd()
 
     def judge_it(self):
-        base_lr = learning_rate.LearningRateExp(
-            self.start_lr, self.stop_lr, self.decay_step
+        base_lr = LearningRateSchedule(
+            {
+                "type": "exp",
+                "start_lr": self.start_lr,
+                "stop_lr": self.stop_lr,
+                "decay_steps": self.decay_step,
+            }
         )
         g = tf.Graph()
         with g.as_default():
@@ -39,7 +48,10 @@ class TestLearningRate(unittest.TestCase):
             t_lr = base_lr.build(global_step, self.stop_step)
 
         my_lr = LearningRateExp(
-            self.start_lr, self.stop_lr, self.decay_step, self.stop_step
+            start_lr=self.start_lr,
+            stop_lr=self.stop_lr,
+            decay_steps=self.decay_step,
+            num_steps=self.stop_step,
         )
         with tf.Session(graph=g) as sess:
             base_vals = [
@@ -57,49 +69,107 @@ class TestLearningRate(unittest.TestCase):
 
     def decay_rate_pd(self):
         my_lr = LearningRateExp(
-            self.start_lr, self.stop_lr, self.decay_step, self.stop_step
+            start_lr=self.start_lr,
+            stop_lr=self.stop_lr,
+            decay_steps=self.decay_step,
+            num_steps=self.stop_step,
         )
 
-        default_ds = 100 if self.stop_step // 10 > 100 else self.stop_step // 100 + 1
-        if self.decay_step >= self.stop_step:
-            self.decay_step = default_ds
+        # Use the auto-adjusted decay_steps from my_lr for consistency
+        actual_decay_steps = my_lr.decay_steps
         decay_rate = np.exp(
-            np.log(self.stop_lr / self.start_lr) / (self.stop_step / self.decay_step)
+            np.log(self.stop_lr / self.start_lr) / (self.stop_step / actual_decay_steps)
         )
         my_lr_decay = LearningRateExp(
-            self.start_lr,
-            1e-10,
-            self.decay_step,
-            self.stop_step,
+            start_lr=self.start_lr,
+            stop_lr=1e-10,
+            decay_steps=actual_decay_steps,
+            num_steps=self.stop_step,
             decay_rate=decay_rate,
         )
         min_lr = 1e-5
         my_lr_decay_trunc = LearningRateExp(
-            self.start_lr,
-            min_lr,
-            self.decay_step,
-            self.stop_step,
+            start_lr=self.start_lr,
+            stop_lr=min_lr,
+            decay_steps=actual_decay_steps,
+            num_steps=self.stop_step,
             decay_rate=decay_rate,
         )
         my_vals = [
             my_lr.value(step_id)
             for step_id in range(self.stop_step)
-            if step_id % self.decay_step != 0
+            if step_id % actual_decay_steps != 0
         ]
         my_vals_decay = [
             my_lr_decay.value(step_id)
             for step_id in range(self.stop_step)
-            if step_id % self.decay_step != 0
+            if step_id % actual_decay_steps != 0
         ]
         my_vals_decay_trunc = [
             my_lr_decay_trunc.value(step_id)
             for step_id in range(self.stop_step)
-            if step_id % self.decay_step != 0
+            if step_id % actual_decay_steps != 0
         ]
         self.assertTrue(np.allclose(my_vals_decay, my_vals))
         self.assertTrue(
             np.allclose(my_vals_decay_trunc, np.clip(my_vals, a_min=min_lr, a_max=None))
         )
+
+
+class TestLearningRateWSD(unittest.TestCase):
+    def test_basic_curve(self):
+        start_lr = 1.0
+        stop_lr = 0.1
+        stop_steps = 10
+        lr = LearningRateWSD(
+            start_lr=start_lr,
+            stop_lr=stop_lr,
+            num_steps=stop_steps,
+            decay_phase_ratio=0.2,
+        )
+
+        expected_mid = 1.0 / (0.5 / stop_lr + 0.5 / start_lr)
+        self.assertTrue(np.allclose(lr.value(0), start_lr))
+        self.assertTrue(np.allclose(lr.value(8), start_lr))
+        self.assertTrue(np.allclose(lr.value(9), expected_mid))
+        self.assertTrue(np.allclose(lr.value(stop_steps), stop_lr))
+        self.assertTrue(np.allclose(lr.value(stop_steps + 5), stop_lr))
+
+    def test_cosine_curve(self):
+        start_lr = 1.0
+        stop_lr = 0.1
+        stop_steps = 10
+        lr = LearningRateWSD(
+            start_lr=start_lr,
+            stop_lr=stop_lr,
+            num_steps=stop_steps,
+            decay_phase_ratio=0.2,
+            decay_type="cosine",
+        )
+
+        expected_mid = stop_lr + (start_lr - stop_lr) * 0.5
+        self.assertTrue(np.allclose(lr.value(0), start_lr))
+        self.assertTrue(np.allclose(lr.value(8), start_lr))
+        self.assertTrue(np.allclose(lr.value(9), expected_mid))
+        self.assertTrue(np.allclose(lr.value(stop_steps), stop_lr))
+
+    def test_linear_curve(self):
+        start_lr = 1.0
+        stop_lr = 0.1
+        stop_steps = 10
+        lr = LearningRateWSD(
+            start_lr=start_lr,
+            stop_lr=stop_lr,
+            num_steps=stop_steps,
+            decay_phase_ratio=0.2,
+            decay_type="linear",
+        )
+
+        expected_mid = start_lr + (stop_lr - start_lr) * 0.5
+        self.assertTrue(np.allclose(lr.value(0), start_lr))
+        self.assertTrue(np.allclose(lr.value(8), start_lr))
+        self.assertTrue(np.allclose(lr.value(9), expected_mid))
+        self.assertTrue(np.allclose(lr.value(stop_steps), stop_lr))
 
 
 if __name__ == "__main__":

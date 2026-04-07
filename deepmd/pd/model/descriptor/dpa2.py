@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
+from collections.abc import (
     Callable,
-    Optional,
-    Union,
+)
+from typing import (
+    Any,
 )
 
 import paddle
@@ -80,9 +81,9 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         self,
         ntypes: int,
         # args for repinit
-        repinit: Union[RepinitArgs, dict],
+        repinit: RepinitArgs | dict,
         # args for repformer
-        repformer: Union[RepformerArgs, dict],
+        repformer: RepformerArgs | dict,
         # kwargs for descriptor
         concat_output_tebd: bool = True,
         precision: str = "float64",
@@ -90,11 +91,11 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         trainable: bool = True,
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
         add_tebd_to_repinit_out: bool = False,
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
-        type_map: Optional[list[str]] = None,
+        type_map: list[str] | None = None,
     ) -> None:
         r"""The DPA-2 descriptor[1]_.
 
@@ -151,7 +152,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         """
         super().__init__()
 
-        def init_subclass_params(sub_data, sub_class):
+        def init_subclass_params(sub_data: dict | Any, sub_class: type) -> Any:
             if isinstance(sub_data, dict):
                 return sub_class(**sub_data)
             elif isinstance(sub_data, sub_class):
@@ -184,6 +185,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
             smooth=smooth,
             type_one_side=self.repinit_args.type_one_side,
             seed=child_seed(seed, 0),
+            trainable=trainable,
         )
         self.use_three_body = self.repinit_args.use_three_body
         if self.use_three_body:
@@ -203,6 +205,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
                 resnet_dt=self.repinit_args.resnet_dt,
                 smooth=smooth,
                 seed=child_seed(seed, 5),
+                trainable=trainable,
             )
         else:
             self.repinit_three_body = None
@@ -243,6 +246,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
             g1_out_conv=self.repformer_args.g1_out_conv,
             g1_out_mlp=self.repformer_args.g1_out_mlp,
             seed=child_seed(seed, 1),
+            trainable=trainable,
         )
         self.rcsl_list = [
             (self.repformers.get_rcut(), self.repformers.get_nsel()),
@@ -262,6 +266,11 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         self.use_econf_tebd = use_econf_tebd
         self.use_tebd_bias = use_tebd_bias
         self.type_map = type_map
+        if type_map is not None:
+            self.register_buffer(
+                "buffer_type_map",
+                paddle.to_tensor([ord(c) for c in " ".join(type_map)]),
+            )
         self.type_embedding = TypeEmbedNet(
             ntypes,
             self.repinit_args.tebd_dim,
@@ -270,6 +279,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
             use_econf_tebd=self.use_econf_tebd,
             use_tebd_bias=use_tebd_bias,
             type_map=type_map,
+            trainable=trainable,
         )
         self.concat_output_tebd = concat_output_tebd
         self.precision = precision
@@ -295,6 +305,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
                 precision=precision,
                 init="glorot",
                 seed=child_seed(seed, 3),
+                trainable=trainable,
             )
         self.tebd_transform = None
         if self.add_tebd_to_repinit_out:
@@ -304,6 +315,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
                 bias=False,
                 precision=precision,
                 seed=child_seed(seed, 4),
+                trainable=trainable,
             )
         assert self.repinit.rcut > self.repformers.rcut
         assert self.repinit.sel[0] > self.repformers.sel[0]
@@ -312,6 +324,9 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         self.rcut = self.repinit.get_rcut()
         self.rcut_smth = self.repinit.get_rcut_smth()
         self.ntypes = ntypes
+        self.register_buffer(
+            "buffer_ntypes", paddle.to_tensor(self.ntypes, dtype="int64")
+        )
         self.sel = self.repinit.sel
         # set trainable
         for param in self.parameters():
@@ -326,6 +341,14 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         """Returns the radius where the neighbor information starts to smoothly decay to 0."""
         return self.rcut_smth
 
+    def get_buffer_rcut(self) -> paddle.Tensor:
+        """Returns the cut-off radius."""
+        return self.repinit.get_buffer_rcut()
+
+    def get_buffer_rcut_smth(self) -> paddle.Tensor:
+        """Returns the radius where the neighbor information starts to smoothly decay to 0 as a buffer-style Tensor."""
+        return self.repinit.get_buffer_rcut_smth()
+
     def get_nsel(self) -> int:
         """Returns the number of selected atoms in the cut-off radius."""
         return sum(self.sel)
@@ -336,7 +359,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
 
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
-        return self.ntypes
+        return self.ntypes if paddle.in_dynamic_mode() else self.buffer_ntypes
 
     def get_type_map(self) -> list[str]:
         """Get the name to each type of atoms."""
@@ -380,7 +403,9 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         # the env_protection of repinit is the same as that of the repformer
         return self.repinit.get_env_protection()
 
-    def share_params(self, base_class, shared_level, resume=False) -> None:
+    def share_params(
+        self, base_class: Any, shared_level: int, resume: bool = False
+    ) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -416,7 +441,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
             raise NotImplementedError
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: Any = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -471,18 +496,18 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
             repinit_three_body["dstd"] = repinit_three_body["dstd"][remap_index]
 
     @property
-    def dim_out(self):
+    def dim_out(self) -> int:
         return self.get_dim_out()
 
     @property
-    def dim_emb(self):
+    def dim_emb(self) -> int:
         """Returns the embedding dimension g2."""
         return self.get_dim_emb()
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -618,10 +643,11 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
     def deserialize(cls, data: dict) -> "DescrptDPA2":
         data = data.copy()
         version = data.pop("@version")
-        check_version_compatibility(version, 3, 1)
+        check_version_compatibility(version, 4, 1)
         data.pop("@class")
         data.pop("type")
         repinit_variable = data.pop("repinit_variable").copy()
+        repinit_variable.pop("compress", None)  # pd uses state_dict for compression
         repformers_variable = data.pop("repformers_variable").copy()
         repinit_three_body_variable = (
             data.pop("repinit_three_body_variable").copy()
@@ -652,7 +678,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         if obj.repinit.dim_out != obj.repformers.dim_in:
             obj.g1_shape_tranform = MLPLayer.deserialize(g1_shape_tranform)
 
-        def t_cvt(xx):
+        def t_cvt(xx: Any) -> paddle.Tensor:
             return paddle.to_tensor(xx, dtype=obj.repinit.prec, place=env.DEVICE)
 
         # deserialize repinit
@@ -705,9 +731,16 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         extended_coord: paddle.Tensor,
         extended_atype: paddle.Tensor,
         nlist: paddle.Tensor,
-        mapping: Optional[paddle.Tensor] = None,
-        comm_dict: Optional[dict[str, paddle.Tensor]] = None,
-    ):
+        mapping: paddle.Tensor | None = None,
+        comm_dict: list[paddle.Tensor] | None = None,
+        fparam: paddle.Tensor | None = None,
+    ) -> tuple[
+        paddle.Tensor,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+    ]:
         """Compute the descriptor.
 
         Parameters
@@ -741,7 +774,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
 
         """
         # cast the input to internal precsion
-        extended_coord = extended_coord.to(dtype=self.prec)
+        extended_coord = extended_coord.astype(dtype=self.prec)
 
         use_three_body = self.use_three_body
         nframes, nloc, nnei = nlist.shape
@@ -762,7 +795,7 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
             type_embedding = None
         g1, _, _, _, _ = self.repinit(
             nlist_dict[
-                get_multiple_nlist_key(self.repinit.get_rcut(), self.repinit.get_nsel())
+                get_multiple_nlist_key(self.repinit.rcut, sum(self.repinit.sel))
             ],
             extended_coord,
             extended_atype,
@@ -792,14 +825,15 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
             assert self.tebd_transform is not None
             g1 = g1 + self.tebd_transform(g1_inp)
         # mapping g1
-        if comm_dict is None:
-            assert mapping is not None
+        if comm_dict is None or len(comm_dict) == 0:
+            if paddle.in_dynamic_mode():
+                assert mapping is not None
             mapping_ext = (
                 mapping.reshape([nframes, nall])
                 .unsqueeze(-1)
                 .expand([-1, -1, g1.shape[-1]])
             )
-            g1_ext = paddle.take_along_axis(g1, mapping_ext, 1)
+            g1_ext = paddle.take_along_axis(g1, mapping_ext, 1, broadcast=False)
             g1 = g1_ext
         # repformer
         g1, g2, h2, rot_mat, sw = self.repformers(
@@ -817,20 +851,20 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         if self.concat_output_tebd:
             g1 = paddle.concat([g1, g1_inp], axis=-1)
         return (
-            g1.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
-            rot_mat.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
-            g2.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
-            h2.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
-            sw.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
+            g1.astype(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
+            rot_mat.astype(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
+            g2.astype(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
+            h2.astype(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
+            sw.astype(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
         )
 
     @classmethod
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

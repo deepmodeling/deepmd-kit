@@ -50,6 +50,7 @@ pair_style deepmd models ... keyword value ...
   If multiple models are provided, then only the first model serves to provide energy and force prediction for each timestep of molecular dynamics,
   and the model deviation will be computed among all models every `out_freq` timesteps.
 - keyword = _out_file_ or _out_freq_ or _fparam_ or _fparam_from_compute_ or _aparam_from_compute_ or _atomic_ or _relative_ or _relative_v_ or _aparam_ or _ttm_
+
 <pre>
     <i>out_file</i> value = filename
         filename = The file name for the model deviation output. Default is model_devi.out
@@ -91,7 +92,7 @@ compute    1 all ke/atom
 
 ### Description
 
-Evaluate the interaction of the system by using [Deep Potential][DP] or [Deep Potential Smooth Edition][DP-SE]. It is noticed that deep potential is not a "pairwise" interaction, but a multi-body interaction.
+Evaluate the interaction of the system by using [Deep Potential][dp] or [Deep Potential Smooth Edition][dp-se]. It is noticed that deep potential is not a "pairwise" interaction, but a multi-body interaction.
 
 This pair style takes the deep potential defined in a model file that usually has .pb/.pth/.savedmodel extensions. The model can be trained and frozen from multiple backends by package [DeePMD-kit](https://github.com/deepmodeling/deepmd-kit), which can have either double or single float precision interface.
 
@@ -180,7 +181,7 @@ compute    1 all ke/atom
 
 ### Description
 
-Evaluate the interaction of the system with spin by using [DeepSPIN][DPSPIN] models. It is noticed that deep spin model is not a "pairwise" interaction, but a multi-body interaction.
+Evaluate the interaction of the system with spin by using [DeepSPIN][dpspin] models. It is noticed that deep spin model is not a "pairwise" interaction, but a multi-body interaction.
 
 This pair style takes the deep spin model defined in a model file that usually has .pb/.pth/.savedmodel extensions. The model can be trained and frozen from multiple backends by package [DeePMD-kit](https://github.com/deepmodeling/deepmd-kit), which can have either double or single float precision interface.
 
@@ -229,7 +230,9 @@ dump            1 all custom 100 water.dump id type c_dipole[1] c_dipole[2] c_di
 - The `deeptensor/atom` compute is provided in the USER-DEEPMD package, which is compiled from the DeePMD-kit, visit the [DeePMD-kit website](https://github.com/deepmodeling/deepmd-kit) for more information.
 - For the issue of using a unit style for `compute deeptensor/atom`, refer to the discussions in [units](#units) of this page.
 
-## Long-range interaction
+## Combine with other commands
+
+### Long-range interaction
 
 The reciprocal space part of the long-range interaction can be calculated by LAMMPS command `kspace_style`. To use it with DeePMD-kit, one writes
 
@@ -242,7 +245,7 @@ kspace_modify	gewald 0.45
 
 Please notice that the DeePMD does nothing to the direct space part of the electrostatic interaction, because this part is assumed to be fitted in the DeePMD model (the direct space cut-off is thus the cut-off of the DeePMD model). The splitting parameter `gewald` is modified by the `kspace_modify` command.
 
-## Use of the centroid/stress/atom to get the full 3x3 "atomic-virial"
+### Use of the centroid/stress/atom to get the full 3x3 "atomic-virial"
 
 The [DeePMD-kit](https://github.com/deepmodeling/deepmd-kit) also allows the computation of per-atom stress tensor defined as:
 
@@ -262,7 +265,7 @@ see [LAMMPS doc page](https://docs.lammps.org/compute_stress_atom.html#thompson2
 v2.2.2 or previous versions passed per-atom stress (`cvatom`) with the per-atom pressure tensor, which is inconsistent with [LAMMPS's definition](https://docs.lammps.org/compute_stress_atom.html). LAMMPS defines per-atom stress as the negative of the per-atom pressure tensor. Such behavior is corrected in v2.2.3.
 :::
 
-### Examples
+#### Examples
 
 In order of computing the 9-component per-atom stress
 
@@ -274,7 +277,7 @@ Thus `c_stress` is an array with 9 components in the order `xx,yy,zz,xy,xz,yz,yx
 
 If you use this feature please cite [D. Tisi, L. Zhang, R. Bertossa, H. Wang, R. Car, S. Baroni - arXiv preprint arXiv:2108.10850, 2021](https://arxiv.org/abs/2108.10850)
 
-## Computation of heat flux
+### Computation of heat flux
 
 Using a per-atom stress tensor one can, for example, compute the heat flux defined as:
 
@@ -289,7 +292,7 @@ compute stress_ID group-ID centroid/stress/atom NULL virial
 compute flux_ID all heat/flux ke_ID pe_ID stress_ID
 ```
 
-### Examples
+#### Examples
 
 ```lammps
 compute ke all ke/atom
@@ -302,6 +305,21 @@ compute flux all heat/flux ke pe stress
 
 If you use these features please cite [D. Tisi, L. Zhang, R. Bertossa, H. Wang, R. Car, S. Baroni - arXiv preprint arXiv:2108.10850, 2021](https://arxiv.org/abs/2108.10850)
 
-[DP]: https://journals.aps.org/prl/abstract/10.1103/PhysRevLett.120.143001
-[DP-SE]: https://dl.acm.org/doi/10.5555/3327345.3327356
-[DPSPIN]: https://doi.org/10.1103/PhysRevB.110.064427
+### D3 dispersion
+
+:::{note}
+Requires LAMMPS version 4Feb2025 or newer.
+:::
+
+The DP model can be trained using plain DFT calculations without the dispersion correction, and the dispersion correction can be added during the simulation via the [`pair_style dispersion/d3` command](https://docs.lammps.org/pair_dispersion_d3.html#pair-style-dispersion-d3-command).
+For example, when `water.pb` is trained against the PBE0 functional, the simulation can be performed under the PBE0-D3 level with the following commands:
+
+```lammps
+pair_style hybrid/overlay deepmd water.pb dispersion/d3 original pbe0 30.0 20.0
+pair_coeff * * deepmd O H
+pair_coeff * * dispersion/d3 O H
+```
+
+[dp]: https://journals.aps.org/prl/abstract/10.1103/PhysRevLett.120.143001
+[dp-se]: https://dl.acm.org/doi/10.5555/3327345.3327356
+[dpspin]: https://doi.org/10.1103/PhysRevB.110.064427

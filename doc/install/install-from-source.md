@@ -1,6 +1,6 @@
 # Install from source code
 
-Please follow our [GitHub](https://github.com/deepmodeling/deepmd-kit) webpage to download the [latest released version](https://github.com/deepmodeling/deepmd-kit/tree/master) and [development version](https://github.com/deepmodeling/deepmd-kit/tree/devel).
+Please follow our [GitHub](https://github.com/deepmodeling/deepmd-kit) webpage to download the source code of a specific version or the [development version](https://github.com/deepmodeling/deepmd-kit/tree/master).
 
 Or get the DeePMD-kit source code by `git clone`
 
@@ -21,7 +21,7 @@ deepmd_source_dir=`pwd`
 ### Install Backend's Python interface
 
 First, check the Python version on your machine.
-Python 3.9 or above is required.
+Python 3.10 or above is required.
 
 ```bash
 python --version
@@ -52,7 +52,7 @@ If one does not need the GPU support of DeePMD-kit and is concerned about packag
 pip install --upgrade tensorflow-cpu
 ```
 
-One can also [use conda](https://docs.deepmodeling.org/faq/conda.html) to install TensorFlow from [conda-forge](https://conda-forge.org).
+One can also [use conda](https://docs.deepmodeling.com/faq/conda.html) to install TensorFlow from [conda-forge](https://conda-forge.org).
 
 To verify the installation, run
 
@@ -61,7 +61,6 @@ python -c "import tensorflow as tf;print(tf.reduce_sum(tf.random.normal([1000, 1
 ```
 
 One can also [build the TensorFlow Python interface from source](https://www.tensorflow.org/install/source) for customized hardware optimization, such as CUDA, ROCM, or OneDNN support.
-
 :::
 
 :::{tab-item} PyTorch {{ pytorch_icon }}
@@ -74,8 +73,7 @@ pip install torch
 
 Follow [PyTorch documentation](https://pytorch.org/get-started/locally/) to install PyTorch built against different CUDA versions or without CUDA.
 
-One can also [use conda](https://docs.deepmodeling.org/faq/conda.html) to install PyTorch from [conda-forge](https://conda-forge.org).
-
+One can also [use conda](https://docs.deepmodeling.com/faq/conda.html) to install PyTorch from [conda-forge](https://conda-forge.org).
 :::
 
 :::{tab-item} JAX {{ jax_icon }}
@@ -89,8 +87,7 @@ pip install jax-ai-stack
 One can also install packages in JAX AI Stack manually.
 Follow [JAX documentation](https://jax.readthedocs.io/en/latest/installation.html) to install JAX built against different CUDA versions or without CUDA.
 
-One can also [use conda](https://docs.deepmodeling.org/faq/conda.html) to install JAX from [conda-forge](https://conda-forge.org).
-
+One can also [use conda](https://docs.deepmodeling.com/faq/conda.html) to install JAX from [conda-forge](https://conda-forge.org).
 :::
 
 :::{tab-item} Paddle {{ paddle_icon }}
@@ -99,13 +96,17 @@ To install Paddle, run
 
 ```sh
 # cu126
-pip install paddlepaddle-gpu==3.0.0 -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
-# cu118
-pip install paddlepaddle-gpu==3.0.0 -i https://www.paddlepaddle.org.cn/packages/stable/cu118/
-# cpu
-pip install paddlepaddle==3.0.0 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
-```
+# release version
+pip install paddlepaddle-gpu==3.3.0 -i https://www.paddlepaddle.org.cn/packages/stable/cu126/
+# nightly-build version
+# pip install --pre -U paddlepaddle-gpu -i https://www.paddlepaddle.org.cn/packages/nightly/cu126/
 
+# cpu
+# release version
+pip install paddlepaddle==3.3.0 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
+# nightly-build version
+# pip install --pre -U paddlepaddle -i https://www.paddlepaddle.org.cn/packages/nightly/cpu/
+```
 :::
 
 ::::
@@ -125,7 +126,7 @@ deactivate
 If one has multiple python interpreters named something like python3.x, it can be specified by, for example
 
 ```bash
-virtualenv -p python3.9 $deepmd_venv
+virtualenv -p python3.12 $deepmd_venv
 ```
 
 One should remember to activate the virtual environment every time he/she uses DeePMD-kit.
@@ -146,14 +147,12 @@ The backend package may use a higher C++ standard version, and thus require a hi
 :::{tab-item} TensorFlow {{ tensorflow_icon }}
 
 Note that TensorFlow may have specific requirements for the compiler version to support the C++ standard version and [`_GLIBCXX_USE_CXX11_ABI`](https://gcc.gnu.org/onlinedocs/libstdc++/manual/using_dual_abi.html) used by TensorFlow. It is recommended to use [the same compiler version as TensorFlow](https://www.tensorflow.org/install/source#tested_build_configurations), which can be printed by `python -c "import tensorflow;print(tensorflow.version.COMPILER_VERSION)"`.
-
 :::
 
 :::{tab-item} PyTorch {{ pytorch_icon }}
 
 You can set the environment variable `export DP_ENABLE_PYTORCH=1` to enable customized C++ OPs in the PyTorch backend.
 Note that PyTorch may have specific requirements for the compiler version to support the C++ standard version and [`_GLIBCXX_USE_CXX11_ABI`](https://gcc.gnu.org/onlinedocs/libstdc++/manual/using_dual_abi.html) used by PyTorch.
-
 :::
 
 ::::
@@ -186,7 +185,6 @@ The path to the CUDA toolkit directory. CUDA 9.0 or later is supported. NVCC is 
 **Type**: Path; **Default**: Detected automatically
 
 The path to the ROCM toolkit directory. If `ROCM_ROOT` is not set, it will look for `ROCM_PATH`; if `ROCM_PATH` is also not set, it will be detected using `hipconfig --rocmpath`.
-
 :::
 
 :::{envvar} DP_ENABLE_TENSORFLOW
@@ -262,6 +260,12 @@ It will print the help information like
 
 ### Install horovod and mpi4py {{ tensorflow_icon }}
 
+:::{warning}
+Horovod has not released a new version for a long time.
+As of December 2025, the latest Horovod release does not support the latest TensorFlow versions.
+You can check the patches required to support the latest TensorFlow at [conda-forge/horovod-feedstock](https://github.com/conda-forge/horovod-feedstock/blob/main/recipe/meta.yaml).
+:::
+
 [Horovod](https://github.com/horovod/horovod) and [mpi4py](https://github.com/mpi4py/mpi4py) are used for parallel training. For better performance on GPU, please follow the tuning steps in [Horovod on GPU](https://github.com/horovod/horovod/blob/master/docs/gpus.rst).
 
 ```bash
@@ -284,20 +288,20 @@ $ horovodrun --check-build
 Horovod v0.22.1:
 
 Available Frameworks:
-    [X] TensorFlow
-    [X] PyTorch
-    [ ] MXNet
+[X] TensorFlow
+[X] PyTorch
+[ ] MXNet
 
 Available Controllers:
-    [X] MPI
-    [X] Gloo
+[X] MPI
+[X] Gloo
 
 Available Tensor Operations:
-    [X] NCCL
-    [ ] DDL
-    [ ] CCL
-    [X] MPI
-    [X] Gloo
+[X] NCCL
+[ ] DDL
+[ ] CCL
+[X] MPI
+[X] Gloo
 ```
 
 Since version 2.0.1, Horovod and mpi4py with MPICH support are shipped with the installer.
@@ -321,14 +325,12 @@ Since TensorFlow 2.12, TensorFlow C++ library (`libtensorflow_cc`) is packaged i
 The C++ interface of DeePMD-kit was tested with compiler GCC >= 4.8. It is noticed that the i-PI support is only compiled with GCC >= 4.8. Note that TensorFlow may have specific requirements for the compiler version.
 
 First, the C++ interface of TensorFlow should be installed. It is noted that the version of TensorFlow should be consistent with the python interface. You may follow [the instruction](install-tf.2.12.md) or run the script `$deepmd_source_dir/source/install/build_tf.py` to install the corresponding C++ interface.
-
 :::
 
 :::{tab-item} PyTorch {{ pytorch_icon }}
 
 If you have installed PyTorch using pip, you can use libtorch inside the PyTorch Python package.
 You can also download libtorch prebuilt library from the [PyTorch website](https://pytorch.org/get-started/locally/).
-
 :::
 
 :::{tab-item} JAX {{ jax_icon }}
@@ -337,21 +339,17 @@ The JAX backend only depends on the TensorFlow C API, which is included in both 
 If you want to use the TensorFlow C++ library, just enable the TensorFlow backend (which depends on the TensorFlow C++ library) and nothing else needs to do.
 If you want to use the TensorFlow C library and disable the TensorFlow backend,
 download the TensorFlow C library from [this page](https://www.tensorflow.org/install/lang_c#download_and_extract).
-
 :::
 
 :::{tab-item} Paddle {{ paddle_icon }}
 
 If you want to use C++ interface of Paddle, you need to compile the Paddle inference library(C++ interface) manually from the [linux-compile-by-make](https://www.paddlepaddle.org.cn/documentation/docs/zh/develop/install/compile/linux-compile-by-make.html), then use the `.so` and `.a` files in `Paddle/build/paddle_inference_install_dir/`.
 
-We also provide a weekly-build Paddle C++ inference library for Linux x86_64 with CUDA 11.8/12.3/CPU below:
-
-CUDA 11.8: [Cuda118_cudnn860_Trt8531_D1/latest/paddle_inference.tgz](https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cuda118_cudnn860_Trt8531_D1/latest/paddle_inference.tgz)
+We also provide a weekly-build Paddle C++ inference library for Linux x86_64 with CUDA 12.3/CPU below:
 
 CUDA 12.3: [Cuda123_cudnn900_Trt8616_D1/latest/paddle_inference.tgz](https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cuda123_cudnn900_Trt8616_D1/latest/paddle_inference.tgz)
 
 CPU: [GITHUB_Docker_Compile_Test_Cpu_Mkl_Avx_D1/latest/paddle_inference.tgz](https://paddle-qa.bj.bcebos.com/paddle-pipeline/GITHUB_Docker_Compile_Test_Cpu_Mkl_Avx_D1/latest/paddle_inference.tgz)
-
 :::
 
 ::::
@@ -366,7 +364,7 @@ mkdir build
 cd build
 ```
 
-The installation requires CMake 3.16 or later for the CPU version, CMake 3.23 or later for the CUDA support, and CMake 3.21 or later for the ROCM support. One can install CMake via `pip` if it is not installed or the installed version does not satisfy the requirement:
+The installation requires CMake 3.25.2 or later for all platforms (CPU, CUDA, and ROCM). One can install CMake via `pip` if it is not installed or the installed version does not satisfy the requirement:
 
 ```sh
 pip install -U cmake
@@ -374,7 +372,7 @@ pip install -U cmake
 
 You must enable at least one backend.
 If you enable two or more backends, these backend libraries must be built in a compatible way, e.g. using the same `_GLIBCXX_USE_CXX11_ABI` flag.
-We recommend using [conda packages](https://docs.deepmodeling.org/faq/conda.html) from [conda-forge](https://conda-forge.org), which are usually compatible to each other.
+We recommend using [conda packages](https://docs.deepmodeling.com/faq/conda.html) from [conda-forge](https://conda-forge.org), which are usually compatible to each other.
 
 ::::{tab-set}
 
@@ -387,7 +385,6 @@ cmake -DENABLE_TENSORFLOW=TRUE -DUSE_TF_PYTHON_LIBS=TRUE -DCMAKE_INSTALL_PREFIX=
 ```
 
 If you specify `-DUSE_TF_PYTHON_LIBS=FALSE`, you need to give the location where TensorFlow's C++ interface is installed to `-DTENSORFLOW_ROOT=${tensorflow_root}`.
-
 :::
 
 :::{tab-item} PyTorch {{ pytorch_icon }}
@@ -403,7 +400,6 @@ You can specify `-DUSE_PT_PYTHON_LIBS=TRUE` to use libtorch from the Python inst
 ```bash
 cmake -DENABLE_PYTORCH=TRUE -DUSE_PT_PYTHON_LIBS=TRUE -DCMAKE_INSTALL_PREFIX=$deepmd_root ..
 ```
-
 :::
 
 :::{tab-item} JAX {{ jax_icon }}
@@ -414,7 +410,6 @@ If you want to use the TensorFlow C library and disable the TensorFlow backend, 
 ```bash
 cmake -DENABLE_JAX=ON -D CMAKE_PREFIX_PATH=${tensorflow_c_root} ..
 ```
-
 :::
 
 :::{tab-item} Paddle {{ paddle_icon }}
@@ -424,7 +419,6 @@ I assume you have get the Paddle inference library(C++ interface) to `$PADDLE_IN
 ```bash
 cmake -DENABLE_PADDLE=ON -DPADDLE_INFERENCE_DIR=$PADDLE_INFERENCE_DIR -DCMAKE_INSTALL_PREFIX=$deepmd_root ..
 ```
-
 :::
 
 ::::
@@ -437,7 +431,6 @@ One may add the following CMake variables to `cmake` using the [`-D <var>=<value
 
 {{ tensorflow_icon }} {{ jax_icon }} Whether building the TensorFlow backend and the JAX backend.
 Setting this option to `ON` will also set {cmake:variable}`ENABLE_JAX` to `ON`.
-
 :::
 
 :::{cmake:variable} ENABLE_PYTORCH
@@ -445,7 +438,6 @@ Setting this option to `ON` will also set {cmake:variable}`ENABLE_JAX` to `ON`.
 **Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
 
 {{ pytorch_icon }} Whether building the PyTorch backend.
-
 :::
 
 :::{cmake:variable} ENABLE_JAX
@@ -455,7 +447,6 @@ Setting this option to `ON` will also set {cmake:variable}`ENABLE_JAX` to `ON`.
 {{ jax_icon }} Build the JAX backend.
 If {cmake:variable}`ENABLE_TENSORFLOW` is `ON`, the TensorFlow C++ library is used to build the JAX backend;
 If {cmake:variable}`ENABLE_TENSORFLOW` is `OFF`, the TensorFlow C library is used to build the JAX backend.
-
 :::
 
 :::{cmake:variable} ENABLE_PADDLE
@@ -463,7 +454,6 @@ If {cmake:variable}`ENABLE_TENSORFLOW` is `OFF`, the TensorFlow C library is use
 **Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
 
 {{ paddle_icon }} Whether building the Paddle backend.
-
 :::
 
 :::{cmake:variable} TENSORFLOW_ROOT
@@ -471,7 +461,6 @@ If {cmake:variable}`ENABLE_TENSORFLOW` is `OFF`, the TensorFlow C library is use
 **Type**: `PATH`
 
 {{ tensorflow_icon }} {{ jax_icon }} The Path to TensorFlow's C++ interface.
-
 :::
 
 :::{cmake:variable} PADDLE_INFERENCE_DIR
@@ -479,7 +468,6 @@ If {cmake:variable}`ENABLE_TENSORFLOW` is `OFF`, the TensorFlow C library is use
 **Type**: `PATH`
 
 {{ paddle_icon }} The Path to Paddle's C++ inference directory, such as `/path/to/paddle_inference_install_dir` or `/path/to/paddle_inference`.
-
 :::
 
 :::{cmake:variable} CMAKE_INSTALL_PREFIX
@@ -488,7 +476,6 @@ If {cmake:variable}`ENABLE_TENSORFLOW` is `OFF`, the TensorFlow C library is use
 
 The Path where DeePMD-kit will be installed.
 See also [CMake documentation](https://cmake.org/cmake/help/latest/variable/CMAKE_INSTALL_PREFIX.html).
-
 :::
 
 :::{cmake:variable} USE_CUDA_TOOLKIT
@@ -496,7 +483,6 @@ See also [CMake documentation](https://cmake.org/cmake/help/latest/variable/CMAK
 **Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
 
 If `TRUE`, Build GPU support with CUDA toolkit.
-
 :::
 
 :::{cmake:variable} CUDAToolkit_ROOT
@@ -505,7 +491,6 @@ If `TRUE`, Build GPU support with CUDA toolkit.
 
 The path to the CUDA toolkit directory. CUDA 9.0 or later is supported. NVCC is required.
 See also [CMake documentation](https://cmake.org/cmake/help/latest/module/FindCUDAToolkit.html).
-
 :::
 
 :::{cmake:variable} USE_ROCM_TOOLKIT
@@ -513,7 +498,6 @@ See also [CMake documentation](https://cmake.org/cmake/help/latest/module/FindCU
 **Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
 
 If `TRUE`, Build GPU support with ROCM toolkit.
-
 :::
 
 :::{cmake:variable} CMAKE_HIP_COMPILER_ROCM_ROOT
@@ -522,7 +506,6 @@ If `TRUE`, Build GPU support with ROCM toolkit.
 
 The path to the ROCM toolkit directory.
 See also [ROCm documentation](https://rocm.docs.amd.com/en/latest/conceptual/cmake-packages.html).
-
 :::
 
 :::{cmake:variable} LAMMPS_SOURCE_ROOT
@@ -533,7 +516,6 @@ Only necessary for using [LAMMPS plugin mode](./install-lammps.md#install-lammps
 The path to the [LAMMPS source code](install-lammps.md).
 LAMMPS 8Apr2021 or later is supported.
 If not assigned, the plugin mode will not be enabled.
-
 :::
 
 :::{cmake:variable} USE_TF_PYTHON_LIBS
@@ -542,7 +524,6 @@ If not assigned, the plugin mode will not be enabled.
 
 {{ tensorflow_icon }} If `TRUE`, Build C++ interface with TensorFlow's Python libraries (TensorFlow's Python Interface is required).
 There's no need for building TensorFlow's C++ interface.
-
 :::
 
 :::{cmake:variable} USE_PT_PYTHON_LIBS
@@ -551,7 +532,6 @@ There's no need for building TensorFlow's C++ interface.
 
 {{ pytorch_icon }} If `TRUE`, Build C++ interface with PyTorch's Python libraries (PyTorch's Python Interface is required).
 There's no need for downloading PyTorch's C++ libraries.
-
 :::
 
 :::{cmake:variable} ENABLE_NATIVE_OPTIMIZATION
@@ -560,10 +540,10 @@ There's no need for downloading PyTorch's C++ libraries.
 
 Enable compilation optimization for the native machine's CPU type.
 Do not enable it if generated code will run on different CPUs.
-
 :::
 
 <!-- prettier-ignore -->
+
 :::{cmake:variable} CMAKE_<LANG>_FLAGS
 
 (`<LANG>`=`CXX`, `CUDA` or `HIP`)
@@ -572,10 +552,9 @@ Do not enable it if generated code will run on different CPUs.
 
 Default compilation flags to be used when compiling `<LANG>` files.
 See also [CMake documentation](https://cmake.org/cmake/help/latest/variable/CMAKE_LANG_FLAGS.html).
-
 :::
 
----
+______________________________________________________________________
 
 If the CMake has been executed successfully, then run the following make commands to build the package:
 

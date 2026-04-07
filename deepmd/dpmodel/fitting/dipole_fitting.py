@@ -1,15 +1,15 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    Optional,
-    Union,
 )
 
 import array_api_compat
-import numpy as np
 
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
+)
+from deepmd.dpmodel.array_api import (
+    Array,
 )
 from deepmd.dpmodel.common import (
     cast_precision,
@@ -34,7 +34,24 @@ from .general_fitting import (
 @BaseFitting.register("dipole")
 @fitting_check_output
 class DipoleFitting(GeneralFitting):
-    r"""Fitting rotationally equivariant diploe of the system.
+    r"""Fitting rotationally equivariant dipole of the system.
+
+    The dipole :math:`\boldsymbol{\mu}` is computed from the fitting network output
+    and the rotation matrix:
+
+    .. math::
+        \boldsymbol{\mu}^i = \mathbf{M}^i \cdot \mathbf{R}^i,
+
+    where :math:`\mathbf{M}^i \in \mathbb{R}^{1 \times m_1}` is the output of the fitting
+    network for atom :math:`i`, :math:`\mathbf{R}^i \in \mathbb{R}^{m_1 \times 3}` is
+    the rotation matrix from the descriptor, and :math:`m_1` is the embedding width
+    (the dimension of the rotation matrix). The fitting network is:
+
+    .. math::
+        \mathbf{M}^i = \mathcal{L}^{(n)} \circ \mathcal{L}^{(n-1)} \circ \cdots \circ \mathcal{L}^{(0)}(\mathcal{D}^i),
+
+    where :math:`\mathcal{D}^i` is the descriptor and each layer :math:`\mathcal{L}^{(k)}`
+    is a fully connected layer with an activation function.
 
     Parameters
     ----------
@@ -84,6 +101,9 @@ class DipoleFitting(GeneralFitting):
             Only reducible variable are differentiable.
     type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
+    default_fparam: list[float], optional
+            The default frame parameter. If set, when `fparam.npy` files are not included in the data system,
+            this value will be used as the default value for the frame parameter in the fitting net.
     """
 
     def __init__(
@@ -96,20 +116,21 @@ class DipoleFitting(GeneralFitting):
         numb_fparam: int = 0,
         numb_aparam: int = 0,
         dim_case_embd: int = 0,
-        rcond: Optional[float] = None,
+        rcond: float | None = None,
         tot_ener_zero: bool = False,
-        trainable: Optional[list[bool]] = None,
+        trainable: list[bool] | None = None,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
-        layer_name: Optional[list[Optional[str]]] = None,
+        layer_name: list[str | None] | None = None,
         use_aparam_as_mask: bool = False,
         spin: Any = None,
         mixed_types: bool = False,
         exclude_types: list[int] = [],
         r_differentiable: bool = True,
         c_differentiable: bool = True,
-        type_map: Optional[list[str]] = None,
-        seed: Optional[Union[int, list[int]]] = None,
+        type_map: list[str] | None = None,
+        seed: int | list[int] | None = None,
+        default_fparam: list[float] | None = None,
     ) -> None:
         if tot_ener_zero:
             raise NotImplementedError("tot_ener_zero is not implemented")
@@ -144,9 +165,10 @@ class DipoleFitting(GeneralFitting):
             exclude_types=exclude_types,
             type_map=type_map,
             seed=seed,
+            default_fparam=default_fparam,
         )
 
-    def _net_out_dim(self):
+    def _net_out_dim(self) -> int:
         """Set the FittingNet output dim."""
         return self.embedding_width
 
@@ -161,12 +183,12 @@ class DipoleFitting(GeneralFitting):
     @classmethod
     def deserialize(cls, data: dict) -> "GeneralFitting":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 3, 1)
+        check_version_compatibility(data.pop("@version", 1), 4, 1)
         var_name = data.pop("var_name", None)
         assert var_name == "dipole"
         return super().deserialize(data)
 
-    def output_def(self):
+    def output_def(self) -> FittingOutputDef:
         return FittingOutputDef(
             [
                 OutputVariableDef(
@@ -182,14 +204,14 @@ class DipoleFitting(GeneralFitting):
     @cast_precision
     def call(
         self,
-        descriptor: np.ndarray,
-        atype: np.ndarray,
-        gr: Optional[np.ndarray] = None,
-        g2: Optional[np.ndarray] = None,
-        h2: Optional[np.ndarray] = None,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-    ) -> dict[str, np.ndarray]:
+        descriptor: Array,
+        atype: Array,
+        gr: Array | None = None,
+        g2: Array | None = None,
+        h2: Array | None = None,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
+    ) -> dict[str, Array]:
         """Calculate the fitting.
 
         Parameters

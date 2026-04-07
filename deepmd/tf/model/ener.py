@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Optional,
-    Union,
+    Any,
 )
 
 import numpy as np
@@ -75,18 +74,18 @@ class EnerModel(StandardModel):
         self,
         descriptor: dict,
         fitting_net: dict,
-        type_embedding: Optional[Union[dict, TypeEmbedNet]] = None,
-        type_map: Optional[list[str]] = None,
+        type_embedding: dict | TypeEmbedNet | None = None,
+        type_map: list[str] | None = None,
         data_stat_nbatch: int = 10,
         data_stat_protect: float = 1e-2,
-        use_srtab: Optional[str] = None,
-        smin_alpha: Optional[float] = None,
-        sw_rmin: Optional[float] = None,
-        sw_rmax: Optional[float] = None,
+        use_srtab: str | None = None,
+        smin_alpha: float | None = None,
+        sw_rmin: float | None = None,
+        sw_rmax: float | None = None,
         srtab_add_bias: bool = True,
-        spin: Optional[Spin] = None,
+        spin: Spin | None = None,
         data_bias_nsample: int = 10,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Constructor."""
         super().__init__(
@@ -118,13 +117,13 @@ class EnerModel(StandardModel):
         else:
             self.srtab = None
 
-    def get_rcut(self):
+    def get_rcut(self) -> float:
         return self.rcut
 
-    def get_ntypes(self):
+    def get_ntypes(self) -> int:
         return self.ntypes
 
-    def get_type_map(self):
+    def get_type_map(self) -> list:
         return self.type_map
 
     def get_numb_fparam(self) -> int:
@@ -135,7 +134,7 @@ class EnerModel(StandardModel):
         """Get the number of atomic parameters."""
         return self.numb_aparam
 
-    def data_stat(self, data) -> None:
+    def data_stat(self, data: DeepmdDataSystem) -> None:
         all_stat = make_stat_input(data, self.data_stat_nbatch, merge_sys=False)
         m_all_stat = merge_sys_stat(all_stat)
         self._compute_input_stat(
@@ -144,7 +143,9 @@ class EnerModel(StandardModel):
         self._compute_output_stat(all_stat, mixed_type=data.mixed_type)
         # self.bias_atom_e = data.compute_energy_shift(self.rcond)
 
-    def _compute_input_stat(self, all_stat, protection=1e-2, mixed_type=False) -> None:
+    def _compute_input_stat(
+        self, all_stat: dict, protection: float = 1e-2, mixed_type: bool = False
+    ) -> None:
         if mixed_type:
             self.descrpt.compute_input_stats(
                 all_stat["coord"],
@@ -167,7 +168,7 @@ class EnerModel(StandardModel):
             )
         self.fitting.compute_input_stats(all_stat, protection=protection)
 
-    def _compute_output_stat(self, all_stat, mixed_type=False) -> None:
+    def _compute_output_stat(self, all_stat: dict, mixed_type: bool = False) -> None:
         if mixed_type:
             self.fitting.compute_output_stats(all_stat, mixed_type=mixed_type)
         else:
@@ -175,23 +176,26 @@ class EnerModel(StandardModel):
 
     def build(
         self,
-        coord_,
-        atype_,
-        natoms,
-        box,
-        mesh,
-        input_dict,
-        frz_model=None,
-        ckpt_meta: Optional[str] = None,
-        suffix="",
-        reuse=None,
-    ):
+        coord_: tf.Tensor,
+        atype_: tf.Tensor,
+        natoms: tf.Tensor,
+        box: tf.Tensor,
+        mesh: tf.Tensor,
+        input_dict: dict,
+        frz_model: str | None = None,
+        ckpt_meta: str | None = None,
+        suffix: str = "",
+        reuse: bool | None = None,
+    ) -> dict:
         if input_dict is None:
             input_dict = {}
         with tf.variable_scope("model_attr" + suffix, reuse=reuse):
             t_tmap = tf.constant(" ".join(self.type_map), name="tmap", dtype=tf.string)
             t_mt = tf.constant(self.model_type, name="model_type", dtype=tf.string)
             t_ver = tf.constant(MODEL_VERSION, name="model_version", dtype=tf.string)
+
+            # Initialize out_bias and out_std for energy models
+            self.init_out_stat(suffix=suffix)
 
             if self.srtab is not None:
                 tab_info, tab_data = self.srtab.get()
@@ -253,6 +257,10 @@ class EnerModel(StandardModel):
         atom_ener = self.fitting.build(
             dout, natoms, input_dict, reuse=reuse, suffix=suffix
         )
+
+        # Apply out_bias and out_std directly to atom energy
+        atom_ener = self._apply_out_bias_std(atom_ener, atype, natoms, coord)
+
         self.atom_ener = atom_ener
 
         if self.srtab is not None:
@@ -397,7 +405,7 @@ class EnerModel(StandardModel):
                 graph, graph_def, suffix=suffix, model_type=model_type
             )
 
-    def natoms_match(self, force, natoms):
+    def natoms_match(self, force: tf.Tensor, natoms: tf.Tensor) -> tf.Tensor:
         use_spin = self.spin.use_spin
         virtual_len = self.spin.virtual_len
         spin_norm = self.spin.spin_norm
@@ -439,7 +447,9 @@ class EnerModel(StandardModel):
         force = loc_force
         return force
 
-    def natoms_not_match(self, force, natoms, atype):
+    def natoms_not_match(
+        self, force: tf.Tensor, natoms: tf.Tensor, atype: tf.Tensor
+    ) -> tf.Tensor:
         # if ghost atoms exist, compute ghost atom force and magnetic force
         # compute ghost atom force and magnetic force
         use_spin = self.spin.use_spin

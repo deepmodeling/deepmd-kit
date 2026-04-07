@@ -13,12 +13,18 @@ from pathlib import (
 
 import numpy as np
 
+from deepmd.entrypoints.convert_backend import (
+    convert_backend,
+)
 from deepmd.pt.entrypoints.main import (
     freeze,
     get_trainer,
 )
 from deepmd.pt.infer.deep_eval import (
     DeepPot,
+)
+from deepmd.tf.utils.convert import (
+    convert_pbtxt_to_pb,
 )
 
 from .common import (
@@ -29,7 +35,7 @@ from .common import (
 class TestInitFrzModel(unittest.TestCase):
     def setUp(self) -> None:
         input_json = str(Path(__file__).parent / "water/se_atten.json")
-        with open(input_json) as f:
+        with open(input_json, encoding="utf-8") as f:
             config = json.load(f)
         config["model"]["descriptor"]["smooth_type_embedding"] = True
         config["training"]["numb_steps"] = 1
@@ -58,7 +64,7 @@ class TestInitFrzModel(unittest.TestCase):
                 empty_config["model"]["fitting_net"] = {}
                 empty_config["training"]["numb_steps"] = 0
                 tmp_input = tempfile.NamedTemporaryFile(delete=False, suffix=".json")
-                with open(tmp_input.name, "w") as f:
+                with open(tmp_input.name, "w", encoding="utf-8") as f:
                     json.dump(empty_config, f, indent=4)
                 run_dp(
                     f"dp --pt train {tmp_input.name} --init-frz-model {self.models[-1]} --use-pretrain-script --skip-neighbor-stat"
@@ -129,6 +135,43 @@ class TestInitFrzModel(unittest.TestCase):
         np.testing.assert_allclose(av1, av2, rtol=1e-10, atol=1e-10)
         np.testing.assert_allclose(av1, av3, rtol=1e-10, atol=1e-10)
 
+    def test_init_frz_model_pb2pth(self) -> None:
+        """Test initialization from frozen model converted from pb."""
+        frozen_model = "frozen_model_pb2pth.pth"
+        # Convert pth model from pb model
+        convert_pbtxt_to_pb(
+            str(Path(__file__).parent / "model/models/se_e2_a.pbtxt"), "frozen_model.pb"
+        )
+        convert_backend(INPUT="frozen_model.pb", OUTPUT=frozen_model)
+
+        # Create a base model
+        input_json = str(Path(__file__).parent / "model/models/se_e2_a.json")
+        with open(input_json, encoding="utf-8") as f:
+            config = json.load(f)
+        config["training"]["save_freq"] = 1
+        config["learning_rate"]["start_lr"] = 1.0
+        config["training"]["training_data"]["systems"] = [
+            str(Path(__file__).parent / "water/data/single")
+        ]
+        config["training"]["validation_data"]["systems"] = [
+            str(Path(__file__).parent / "water/data/single")
+        ]
+        config["training"]["numb_steps"] = 0
+
+        trainer = get_trainer(config, init_frz_model=frozen_model)
+        # Explicit assertions to make test success criteria clear
+        self.assertIsNotNone(trainer, "Trainer should be successfully initialized")
+        self.assertTrue(
+            hasattr(trainer, "model"), "Trainer should have a model attribute"
+        )
+        self.assertTrue(
+            hasattr(trainer, "optimizer"), "Trainer should have an optimizer attribute"
+        )
+        # Run the trainer (this would fail if initialization was incorrect)
+        trainer.run()
+        # Verify the model was properly initialized from the frozen model
+        self.assertIsNotNone(trainer.model, "Model should be properly initialized")
+
     def tearDown(self) -> None:
         for f in os.listdir("."):
             if f.startswith("frozen_model") and f.endswith(".pth"):
@@ -139,3 +182,5 @@ class TestInitFrzModel(unittest.TestCase):
                 os.remove(f)
             if f in ["stat_files"]:
                 shutil.rmtree(f)
+            if f.startswith("frozen_model") and f.endswith(".pb"):
+                os.remove(f)

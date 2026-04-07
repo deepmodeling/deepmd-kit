@@ -1,9 +1,17 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import datetime
 import logging
 import os
 import shutil
 import time
+from typing import (
+    TYPE_CHECKING,
+    Any,
+)
+
+if TYPE_CHECKING:
+    from typing import TextIO
 
 import google.protobuf.message
 import numpy as np
@@ -52,7 +60,7 @@ from deepmd.tf.utils.graph import (
     load_graph_def,
 )
 from deepmd.tf.utils.learning_rate import (
-    LearningRateExp,
+    LearningRateSchedule,
 )
 from deepmd.tf.utils.sess import (
     run_sess,
@@ -60,6 +68,18 @@ from deepmd.tf.utils.sess import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import (
+        Callable,
+    )
+    from typing import (
+        TextIO,
+    )
+
+    from deepmd.tf.loss.loss import (
+        Loss,
+    )
 
 log = logging.getLogger(__name__)
 
@@ -69,7 +89,7 @@ from deepmd.tf.nvnmd.utils.config import (
 )
 
 
-def _is_subdir(path, directory) -> bool:
+def _is_subdir(path: str, directory: str) -> bool:
     path = os.path.realpath(path)
     directory = os.path.realpath(directory)
     if path == directory:
@@ -79,12 +99,12 @@ def _is_subdir(path, directory) -> bool:
 
 
 class DPTrainer:
-    def __init__(self, jdata, run_opt, is_compress=False) -> None:
+    def __init__(self, jdata: dict, run_opt: Any, is_compress: bool = False) -> None:
         self.run_opt = run_opt
         self._init_param(jdata)
         self.is_compress = is_compress
 
-    def _init_param(self, jdata) -> None:
+    def _init_param(self, jdata: dict) -> None:
         # model config
         model_param = jdata["model"]
 
@@ -100,7 +120,9 @@ class DPTrainer:
         self.model = Model(**model_param)
         self.fitting = self.model.get_fitting()
 
-        def get_lr_and_coef(lr_param):
+        def get_lr_and_coef(
+            lr_param: dict[str, Any],
+        ) -> tuple[LearningRateSchedule, float]:
             scale_by_worker = lr_param.get("scale_by_worker", "linear")
             if scale_by_worker == "linear":
                 scale_lr_coef = float(self.run_opt.world_size)
@@ -108,18 +130,29 @@ class DPTrainer:
                 scale_lr_coef = np.sqrt(self.run_opt.world_size).real
             else:
                 scale_lr_coef = 1.0
-            lr_type = lr_param.get("type", "exp")
-            if lr_type == "exp":
-                lr = LearningRateExp(
-                    lr_param["start_lr"], lr_param["stop_lr"], lr_param["decay_steps"]
-                )
-            else:
-                raise RuntimeError("unknown learning_rate type " + lr_type)
+            lr_params = {k: v for k, v in lr_param.items() if k != "scale_by_worker"}
+            lr = LearningRateSchedule(lr_params)
             return lr, scale_lr_coef
 
         # learning rate
         lr_param = jdata["learning_rate"]
         self.lr, self.scale_lr_coef = get_lr_and_coef(lr_param)
+        # optimizer
+        # Note: Default values are already filled by argcheck.normalize()
+        optimizer_param = jdata.get("optimizer", {})
+        self.optimizer_type = optimizer_param.get("type", "Adam")
+        self.optimizer_beta1 = float(optimizer_param.get("adam_beta1"))
+        self.optimizer_beta2 = float(optimizer_param.get("adam_beta2"))
+        self.optimizer_weight_decay = float(optimizer_param.get("weight_decay"))
+        if self.optimizer_type != "Adam":
+            raise RuntimeError(
+                f"Unsupported optimizer type {self.optimizer_type} for TensorFlow backend."
+            )
+        if self.optimizer_weight_decay != 0.0:
+            raise RuntimeError(
+                "TensorFlow Adam optimizer does not support weight_decay. "
+                "Set optimizer/weight_decay to 0."
+            )
         # loss
         # infer loss type by fitting_type
         loss_param = jdata.get("loss", {})
@@ -170,7 +203,13 @@ class DPTrainer:
         self.ckpt_meta = None
         self.model_type = None
 
-    def build(self, data=None, stop_batch=0, origin_type_map=None, suffix="") -> None:
+    def build(
+        self,
+        data: DeepmdDataSystem | None = None,
+        stop_batch: int = 0,
+        origin_type_map: list[str] | None = None,
+        suffix: str = "",
+    ) -> None:
         self.ntypes = self.model.get_ntypes()
         self.stop_batch = stop_batch
 
@@ -245,7 +284,7 @@ class DPTrainer:
         self.learning_rate = self.lr.build(self.global_step, self.stop_batch)
         log.info("built lr")
 
-    def _build_loss(self):
+    def _build_loss(self) -> tuple[None, None] | tuple[tf.Tensor, dict[str, tf.Tensor]]:
         if self.stop_batch == 0:
             # l2 is not used if stop_batch is zero
             return None, None
@@ -262,7 +301,7 @@ class DPTrainer:
 
         return l2_l, l2_more
 
-    def _build_network(self, data, suffix="") -> None:
+    def _build_network(self, data: DeepmdDataSystem, suffix: str = "") -> None:
         self.place_holders = {}
         if self.is_compress:
             for kk in ["coord", "box"]:
@@ -305,18 +344,32 @@ class DPTrainer:
 
         log.info("built network")
 
-    def _build_optimizer(self):
+    def _build_optimizer(self) -> Any:
+        if self.optimizer_type != "Adam":
+            raise RuntimeError(
+                f"Unsupported optimizer type {self.optimizer_type} for TensorFlow backend."
+            )
         if self.run_opt.is_distrib:
             if self.scale_lr_coef > 1.0:
                 log.info("Scale learning rate by coef: %f", self.scale_lr_coef)
                 optimizer = tf.train.AdamOptimizer(
-                    self.learning_rate * self.scale_lr_coef
+                    self.learning_rate * self.scale_lr_coef,
+                    beta1=self.optimizer_beta1,
+                    beta2=self.optimizer_beta2,
                 )
             else:
-                optimizer = tf.train.AdamOptimizer(self.learning_rate)
+                optimizer = tf.train.AdamOptimizer(
+                    self.learning_rate,
+                    beta1=self.optimizer_beta1,
+                    beta2=self.optimizer_beta2,
+                )
             optimizer = self.run_opt._HVD.DistributedOptimizer(optimizer)
         else:
-            optimizer = tf.train.AdamOptimizer(learning_rate=self.learning_rate)
+            optimizer = tf.train.AdamOptimizer(
+                learning_rate=self.learning_rate,
+                beta1=self.optimizer_beta1,
+                beta2=self.optimizer_beta2,
+            )
 
         if self.mixed_prec is not None:
             _TF_VERSION = Version(TF_VERSION)
@@ -408,7 +461,9 @@ class DPTrainer:
                 log.info("receive global variables from task#0")
             run_sess(self.sess, bcast_op)
 
-    def train(self, train_data=None, valid_data=None) -> None:
+    def train(
+        self, train_data: dict | None = None, valid_data: dict | None = None
+    ) -> None:
         # if valid_data is None:  # no validation set specified.
         #     valid_data = train_data  # using training set as validation set.
 
@@ -427,11 +482,9 @@ class DPTrainer:
         is_first_step = True
         self.cur_batch = cur_batch
         log.info(
-            "start training at lr %.2e (== %.2e), decay_step %d, decay_rate %f, final lr will be %.2e",
+            "start training at lr %.2e (== %.2e), final lr will be %.2e",
             run_sess(self.sess, self.learning_rate),
             self.lr.value(cur_batch),
-            self.lr.decay_steps_,
-            self.lr.decay_rate_,
             self.lr.value(stop_batch),
         )
 
@@ -551,10 +604,20 @@ class DPTrainer:
                     toc = time.time()
                     test_time = toc - tic
                     wall_time = toc - wall_time_tic
+                    displayed_batches = max(
+                        1,
+                        min(self.disp_freq, int(cur_batch - start_batch)),
+                    )
+                    eta = int((stop_batch - cur_batch) / displayed_batches * wall_time)
                     log.info(
                         format_training_message(
                             batch=cur_batch,
                             wall_time=wall_time,
+                            eta=eta,
+                            current_time=datetime.datetime.fromtimestamp(
+                                toc,
+                                tz=datetime.timezone.utc,
+                            ).astimezone(),
                         )
                     )
                     # the first training time is not accurate
@@ -648,7 +711,7 @@ class DPTrainer:
         symlink_prefix_files(ckpt_prefix, self.save_ckpt)
         log.info(f"saved checkpoint {self.save_ckpt}")
 
-    def get_feed_dict(self, batch, is_training):
+    def get_feed_dict(self, batch: dict, is_training: bool) -> dict:
         feed_dict = {}
         for kk in batch.keys():
             if kk == "find_type" or kk == "type" or kk == "real_natoms_vec":
@@ -664,7 +727,7 @@ class DPTrainer:
         feed_dict[self.place_holders["is_training"]] = is_training
         return feed_dict
 
-    def get_global_step(self):
+    def get_global_step(self) -> int:
         return run_sess(self.sess, self.global_step)
 
     # def print_head (self) :  # depreciated
@@ -677,7 +740,12 @@ class DPTrainer:
     #         fp.close ()
 
     def valid_on_the_fly(
-        self, fp, train_batches, valid_batches, print_header=False, fitting_key=None
+        self,
+        fp: "TextIO",
+        train_batches: list,
+        valid_batches: list,
+        print_header: bool = False,
+        fitting_key: str | None = None,
     ) -> None:
         train_results = self.get_evaluation_results(train_batches)
         valid_results = self.get_evaluation_results(valid_batches)
@@ -695,7 +763,9 @@ class DPTrainer:
         )
 
     @staticmethod
-    def print_header(fp, train_results, valid_results) -> None:
+    def print_header(
+        fp: "TextIO", train_results: dict, valid_results: dict | None
+    ) -> None:
         print_str = ""
         print_str += "# {:5s}".format("step")
         if valid_results is not None:
@@ -713,11 +783,11 @@ class DPTrainer:
 
     @staticmethod
     def print_on_training(
-        fp,
-        train_results,
-        valid_results,
-        cur_batch,
-        cur_lr,
+        fp: "TextIO",
+        train_results: dict,
+        valid_results: dict | None,
+        cur_batch: int,
+        cur_lr: float,
     ) -> None:
         print_str = ""
         print_str += f"{cur_batch:7d}"
@@ -752,7 +822,13 @@ class DPTrainer:
         fp.flush()
 
     @staticmethod
-    def eval_single_list(single_batch_list, loss, sess, get_feed_dict_func, prefix=""):
+    def eval_single_list(
+        single_batch_list: list | None,
+        loss: "Loss",
+        sess: tf.Session,
+        get_feed_dict_func: "Callable",
+        prefix: str = "",
+    ) -> dict | None:
         if single_batch_list is None:
             return None
         numb_batch = len(single_batch_list)
@@ -776,7 +852,7 @@ class DPTrainer:
         }
         return single_results
 
-    def get_evaluation_results(self, batch_list):
+    def get_evaluation_results(self, batch_list: list) -> dict:
         avg_results = self.eval_single_list(
             batch_list, self.loss, self.sess, self.get_feed_dict
         )
@@ -788,7 +864,7 @@ class DPTrainer:
         if self.is_compress:
             self.saver.save(self.sess, os.path.join(os.getcwd(), self.save_ckpt))
 
-    def _get_place_holders(self, data_dict) -> None:
+    def _get_place_holders(self, data_dict: dict) -> None:
         for kk in data_dict.keys():
             if kk == "type":
                 continue
@@ -837,7 +913,10 @@ class DPTrainer:
             self.ckpt_meta = ckpt_meta
 
     def _init_from_pretrained_model(
-        self, data, origin_type_map=None, bias_adjust_mode="change-by-statistic"
+        self,
+        data: DeepmdDataSystem,
+        origin_type_map: list[str] | None = None,
+        bias_adjust_mode: str = "change-by-statistic",
     ) -> None:
         """Init the embedding net variables with the given frozen model.
 
@@ -886,10 +965,10 @@ class DPTrainer:
 
     def _change_energy_bias(
         self,
-        data,
-        frozen_model,
-        origin_type_map,
-        bias_adjust_mode="change-by-statistic",
+        data: DeepmdDataSystem,
+        frozen_model: str,
+        origin_type_map: list[str] | None,
+        bias_adjust_mode: str = "change-by-statistic",
     ) -> None:
         full_type_map = data.get_type_map()
         if len(full_type_map) == 0:
@@ -967,4 +1046,4 @@ class DatasetLoader:
         dict[str, np.ndarray]
             The dict of the loaded data.
         """
-        return dict(zip(self.data_keys, batch_list))
+        return dict(zip(self.data_keys, batch_list, strict=True))

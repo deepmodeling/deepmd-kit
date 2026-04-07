@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    Any,
+)
 
 import torch
 
@@ -11,6 +14,9 @@ from deepmd.pt.utils import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 
 class TensorLoss(TaskLoss):
@@ -21,9 +27,9 @@ class TensorLoss(TaskLoss):
         label_name: str,
         pref_atomic: float = 0.0,
         pref: float = 0.0,
-        inference=False,
+        inference: bool = False,
         enable_atomic_weight: bool = False,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         r"""Construct a loss for local and global tensors.
 
@@ -64,7 +70,15 @@ class TensorLoss(TaskLoss):
             "Can not assian zero weight both to `pref` and `pref_atomic`"
         )
 
-    def forward(self, input_dict, model, label, natoms, learning_rate=0.0, mae=False):
+    def forward(
+        self,
+        input_dict: dict[str, torch.Tensor],
+        model: torch.nn.Module,
+        label: dict[str, torch.Tensor],
+        natoms: int,
+        learning_rate: float = 0.0,
+        mae: bool = False,
+    ) -> tuple[dict[str, torch.Tensor], torch.Tensor, dict[str, torch.Tensor]]:
         """Return loss on local and global tensors.
 
         Parameters
@@ -194,3 +208,24 @@ class TensorLoss(TaskLoss):
                 )
             )
         return label_requirement
+
+    def serialize(self) -> dict:
+        """Serialize the loss module."""
+        return {
+            "@class": "TensorLoss",
+            "@version": 1,
+            "tensor_name": self.tensor_name,
+            "tensor_size": self.tensor_size,
+            "label_name": self.label_name,
+            "pref_atomic": self.local_weight,
+            "pref": self.global_weight,
+            "enable_atomic_weight": self.enable_atomic_weight,
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "TensorLoss":
+        """Deserialize the loss module."""
+        data = data.copy()
+        check_version_compatibility(data.pop("@version"), 1, 1)
+        data.pop("@class")
+        return cls(**data)

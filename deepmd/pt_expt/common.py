@@ -1,0 +1,498 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
+"""Common utilities for the pt_expt backend.
+
+This module provides the core infrastructure for automatically wrapping dpmodel
+classes (array_api_compat-based) as PyTorch modules. The key insight is to
+detect attributes by their **value type** rather than by hard-coded names:
+
+- numpy arrays → torch buffers (persistent state like statistics, masks)
+- dpmodel objects → pt_expt torch.nn.Module wrappers (via registry lookup)
+- None values → clear existing buffers
+
+This eliminates the need to manually enumerate attribute names in each wrapper's
+__setattr__ method, making the codebase more maintainable when dpmodel adds
+new attributes.
+"""
+
+from collections.abc import (
+    Callable,
+)
+from functools import (
+    wraps,
+)
+from typing import (
+    Any,
+    overload,
+)
+
+import numpy as np
+import torch
+
+from deepmd.dpmodel.common import (
+    NativeOP,
+)
+
+# ---------------------------------------------------------------------------
+# dpmodel → pt_expt converter registry
+# ---------------------------------------------------------------------------
+_DPMODEL_TO_PT_EXPT: dict[type[NativeOP], Callable[[NativeOP], torch.nn.Module]] = {}
+"""Registry mapping dpmodel classes to their pt_expt converter functions.
+
+This registry is populated at module import time via `register_dpmodel_mapping`
+calls in each pt_expt wrapper module (e.g., exclude_mask.py, network.py). When
+dpmodel_setattr encounters a dpmodel object, it looks up the object's type in
+this registry to find the appropriate converter.
+
+Examples of registered mappings:
+- AtomExcludeMaskDP → lambda v: AtomExcludeMask(v.ntypes, exclude_types=...)
+- NetworkCollectionDP → lambda v: NetworkCollection.deserialize(v.serialize())
+"""
+
+
+def register_dpmodel_mapping(
+    dpmodel_cls: type[NativeOP], converter: Callable[[NativeOP], torch.nn.Module]
+) -> None:
+    """Register a converter that turns a dpmodel instance into a pt_expt Module.
+
+    This function is called at module import time by each pt_expt wrapper to
+    register how dpmodel objects should be converted when they're assigned as
+    attributes. The converter is a callable that takes a dpmodel instance and
+    returns the corresponding pt_expt torch.nn.Module wrapper.
+
+    Parameters
+    ----------
+    dpmodel_cls : type[NativeOP]
+        The dpmodel class to register (e.g., AtomExcludeMaskDP, NetworkCollectionDP).
+        This is the key used for lookup in dpmodel_setattr.
+    converter : Callable[[NativeOP], torch.nn.Module]
+        A callable that converts a dpmodel instance to a pt_expt module.
+        Common patterns:
+        - Reconstruct from constructor args: lambda v: PtExptClass(v.ntypes, ...)
+        - Round-trip via serialization: lambda v: PtExptClass.deserialize(v.serialize())
+
+    Notes
+    -----
+    This function must be called AFTER the pt_expt wrapper class is defined but
+    BEFORE dpmodel_setattr might encounter instances of dpmodel_cls. In practice,
+    this means calling it immediately after the wrapper class definition at module
+    import time.
+
+    Examples
+    --------
+    >>> register_dpmodel_mapping(
+    ...     AtomExcludeMaskDP,
+    ...     lambda v: AtomExcludeMask(
+    ...         v.ntypes, exclude_types=list(v.get_exclude_types())
+    ...     ),
+    ... )
+    """
+    _DPMODEL_TO_PT_EXPT[dpmodel_cls] = converter
+
+
+def try_convert_module(value: Any) -> torch.nn.Module | None:
+    """Convert a dpmodel object to its pt_expt wrapper.
+
+    This function looks up the exact type of *value* in the _DPMODEL_TO_PT_EXPT
+    registry. If a converter is found, it invokes it to produce a torch.nn.Module
+    wrapper.  Otherwise, if *value* is a ``NativeOP``, it is automatically
+    wrapped via ``_auto_wrap_native_op`` so that internal helper classes
+    (e.g. ``RepformerLayer``, ``DescrptBlockRepformers``) don't need explicit
+    registrations.
+
+    Returns None only for non-NativeOP values.
+
+    Parameters
+    ----------
+    value : Any
+        The value to potentially convert. Typically a dpmodel object like
+        AtomExcludeMaskDP or NetworkCollectionDP.
+
+    Returns
+    -------
+    torch.nn.Module or None
+        The converted pt_expt module if a converter is registered for value's
+        type or if the value is a NativeOP (auto-wrapped), otherwise None.
+
+    Notes
+    -----
+    For explicitly registered types, exact type matching is used (not isinstance
+    checks).  For unregistered types, isinstance(value, NativeOP) triggers the
+    auto-wrap fallback.
+
+    The function is called by dpmodel_setattr when it encounters an object that
+    might be a dpmodel instance. If conversion succeeds, the caller should use
+    the converted module instead of the original value.
+    """
+    converter = _DPMODEL_TO_PT_EXPT.get(type(value))
+    if converter is not None:
+        return converter(value)
+    if isinstance(value, NativeOP):
+        return _auto_wrap_native_op(value)
+    return None
+
+
+# Cache of auto-wrapped classes so each dpmodel class is wrapped at most once.
+_AUTO_WRAPPED_CLASSES: dict[type, type] = {}
+
+
+def _auto_wrap_native_op(value: NativeOP) -> torch.nn.Module:
+    """Auto-wrap any NativeOP as a torch.nn.Module via ``torch_module``.
+
+    Creates a subclass with a generic ``forward`` that delegates to ``call``,
+    then applies ``torch_module`` to get full ``__setattr__`` / post-init
+    list conversion.  The wrapped class is cached per dpmodel type.
+
+    Parameters
+    ----------
+    value : NativeOP
+        The dpmodel object to wrap.
+
+    Returns
+    -------
+    torch.nn.Module
+        The wrapped pt_expt module, deserialized from value's serialized state.
+    """
+    cls = type(value)
+    if cls not in _AUTO_WRAPPED_CLASSES:
+        wrapped = type(
+            cls.__name__,
+            (cls,),
+            {"forward": lambda self, *args, **kwargs: self.call(*args, **kwargs)},
+        )
+        _AUTO_WRAPPED_CLASSES[cls] = torch_module(wrapped)
+    wrapped_cls = _AUTO_WRAPPED_CLASSES[cls]
+    if not (hasattr(value, "serialize") and hasattr(wrapped_cls, "deserialize")):
+        raise TypeError(
+            f"Cannot auto-wrap {cls.__name__}: "
+            "it must implement serialize()/deserialize() or be explicitly "
+            "registered via register_dpmodel_mapping()."
+        )
+    return wrapped_cls.deserialize(value.serialize())
+
+
+def _try_convert_list(name: str, value: list) -> torch.nn.Module | None:
+    """Try to convert a plain list to ModuleList or ParameterList.
+
+    Returns the converted container, or None if no conversion is needed
+    (e.g., empty list, list of scalars/strings).
+    """
+    if not value:
+        return None
+    # List of torch.nn.Module → ModuleList
+    if all(isinstance(v, torch.nn.Module) for v in value):
+        return torch.nn.ModuleList(value)
+    # List of NativeOP (not yet Module) → convert each + ModuleList
+    if all(
+        isinstance(v, NativeOP) and not isinstance(v, torch.nn.Module) for v in value
+    ):
+        converted = []
+        for v in value:
+            c = try_convert_module(v)
+            if c is None:
+                raise TypeError(
+                    f"Failed to convert {type(v).__name__} "
+                    f"in list attribute '{name}'. Please call "
+                    f"register_dpmodel_mapping for this type."
+                )
+            converted.append(c)
+        return torch.nn.ModuleList(converted)
+    # List of numpy arrays → ParameterList
+    if all(isinstance(v, np.ndarray) for v in value):
+        from deepmd.pt_expt.utils import env  # deferred - avoids circular import
+
+        params = []
+        for v in value:
+            t = torch.as_tensor(v, device=env.DEVICE)
+            params.append(
+                torch.nn.Parameter(
+                    t, requires_grad=t.is_floating_point() or t.is_complex()
+                )
+            )
+        return torch.nn.ParameterList(params)
+    return None
+
+
+def dpmodel_setattr(obj: torch.nn.Module, name: str, value: Any) -> tuple[bool, Any]:
+    """Common __setattr__ logic for pt_expt wrappers around dpmodel classes.
+
+    This function implements automatic attribute detection by value type, eliminating
+    the need to hard-code attribute names in each wrapper's __setattr__ method. It
+    handles three cases:
+
+    1. **numpy arrays → torch buffers**: Persistent state like statistics (davg, dstd)
+       or masks that should be saved in state_dict and moved with .to(device).
+    2. **None values → clear buffers**: Setting an existing buffer to None.
+    3. **dpmodel objects → pt_expt modules**: Nested dpmodel objects like
+       AtomExcludeMaskDP or NetworkCollectionDP are converted to their pt_expt
+       wrappers via the registry.
+
+    Parameters
+    ----------
+    obj : torch.nn.Module
+        The pt_expt wrapper object whose attribute is being set. Must be a
+        torch.nn.Module (caller should verify this).
+    name : str
+        The attribute name being set.
+    value : Any
+        The value being assigned. This function inspects the type to determine
+        how to handle it.
+
+    Returns
+    -------
+    handled : bool
+        True if the attribute has been fully set (caller should NOT call
+        super().__setattr__). False if the caller should forward the (possibly
+        converted) value to super().__setattr__(name, value).
+    value : Any
+        The value to use. May be converted (e.g., dpmodel object → pt_expt module)
+        or unchanged (e.g., scalar, list, or unregistered object).
+
+    Notes
+    -----
+    **Why this design is safe:**
+
+    - In dpmodel, all persistent arrays use `self.xxx = np.array(...)`. Scalars
+      use `.item()`, lists use `.tolist()`. So `isinstance(value, np.ndarray)`
+      reliably identifies buffer-worthy attributes.
+    - torch.Tensor values assigned to existing buffers fall through to
+      torch.nn.Module.__setattr__, which correctly updates them.
+    - dpmodel objects are identified by registry lookup (exact type match), so
+      only explicitly registered types are converted.
+    - The function checks `"_buffers" in obj.__dict__` to ensure the object has
+      been initialized as a torch.nn.Module before attempting buffer operations.
+
+    **Circular import resolution:**
+
+    The function uses a deferred import `from deepmd.pt_expt.utils import env`
+    inside the function body. This breaks the circular dependency chain:
+    common.py → utils/__init__.py → exclude_mask.py → common.py. The import is
+    cached by Python after the first call, so there's no performance penalty.
+
+    **Usage pattern:**
+
+    Typical wrapper classes use this three-line pattern:
+
+    >>> class MyWrapper(MyDPModel, torch.nn.Module):
+    ...     def __setattr__(self, name, value):
+    ...         handled, value = dpmodel_setattr(self, name, value)
+    ...         if not handled:
+    ...             super().__setattr__(name, value)
+
+    Examples
+    --------
+    >>> # Case 1: numpy array → buffer
+    >>> obj.davg = np.array([1.0, 2.0])  # becomes torch.Tensor buffer
+    >>>
+    >>> # Case 2: clear buffer
+    >>> obj.davg = None  # sets buffer to None
+    >>>
+    >>> # Case 3: dpmodel object → pt_expt module
+    >>> obj.emask = AtomExcludeMaskDP(...)  # becomes AtomExcludeMask module
+    """
+    from deepmd.pt_expt.utils import env  # deferred - avoids circular import
+
+    # numpy array → torch buffer
+    if isinstance(value, np.ndarray) and "_buffers" in obj.__dict__:
+        tensor = torch.as_tensor(value, device=env.DEVICE)
+        if name in obj._buffers:
+            obj._buffers[name] = tensor
+            return True, tensor
+        # If the attribute already exists as a regular attribute (e.g. set to
+        # None during __init__ and later reassigned as an ndarray in
+        # deserialize), remove it first so register_buffer doesn't conflict.
+        if hasattr(obj, name) and name not in obj._buffers:
+            delattr(obj, name)
+        obj.register_buffer(name, tensor)
+        return True, tensor
+
+    # clear an existing buffer to None
+    if value is None and "_buffers" in obj.__dict__ and name in obj._buffers:
+        obj._buffers[name] = None
+        return True, None
+
+    # list of modules / NativeOP / numpy arrays → ModuleList / ParameterList
+    if isinstance(value, list) and "_modules" in obj.__dict__:
+        converted_list = _try_convert_list(name, value)
+        if converted_list is not None:
+            return False, converted_list
+
+    # dpmodel object → pt_expt module (uses auto-wrap for unregistered NativeOP)
+    if "_modules" in obj.__dict__:
+        if not isinstance(value, torch.nn.Module):
+            converted = try_convert_module(value)
+            if converted is not None:
+                return False, converted
+
+    return False, value
+
+
+# ---------------------------------------------------------------------------
+# Utility
+# ---------------------------------------------------------------------------
+@overload
+def to_torch_array(array: np.ndarray) -> torch.Tensor: ...
+
+
+@overload
+def to_torch_array(array: None) -> None: ...
+
+
+@overload
+def to_torch_array(array: torch.Tensor) -> torch.Tensor: ...
+
+
+def to_torch_array(array: Any) -> torch.Tensor | None:
+    """Convert input to a torch tensor on the pt_expt device.
+
+    This utility function handles conversion from various array-like types (numpy
+    arrays, torch tensors on different devices, etc.) to torch tensors on the
+    pt_expt backend's configured device.
+
+    Parameters
+    ----------
+    array : Any
+        The input to convert. Can be:
+        - None (returns None)
+        - torch.Tensor (moves to pt_expt device)
+        - numpy array or array-like (converts to torch.Tensor on pt_expt device)
+
+    Returns
+    -------
+    torch.Tensor or None
+        The input as a torch tensor on the pt_expt device (env.DEVICE), or None
+        if the input was None.
+
+    Notes
+    -----
+    This function uses the same deferred import pattern as dpmodel_setattr to
+    avoid circular dependencies. The env module determines the target device
+    (typically CPU for pt_expt).
+
+    Examples
+    --------
+    >>> import numpy as np
+    >>> arr = np.array([1.0, 2.0, 3.0])
+    >>> tensor = to_torch_array(arr)
+    >>> tensor.device
+    device(type='cpu')  # or whatever env.DEVICE is set to
+    """
+    from deepmd.pt_expt.utils import env  # deferred - avoids circular import
+
+    if array is None:
+        return None
+    if torch.is_tensor(array):
+        return array.to(device=env.DEVICE)
+    return torch.as_tensor(array, device=env.DEVICE)
+
+
+def torch_module(
+    module: type[NativeOP],
+) -> type[torch.nn.Module]:
+    """Convert a NativeOP to a torch.nn.Module.
+
+    This decorator wraps a NativeOP class to make it a PyTorch module, handling
+    initialization, attribute setting, and method delegation automatically.
+
+    **Auto-generated methods:**
+
+    - If the wrapped class has a ``call()`` method but does not explicitly define
+      ``forward()``, a ``forward()`` method will be auto-generated that delegates
+      to ``call()``.
+    - If the wrapped class has a ``call_lower()`` method but does not explicitly
+      define ``forward_lower()``, a ``forward_lower()`` method will be auto-generated
+      that delegates to ``call_lower()``.
+    - Explicit ``forward()`` or ``forward_lower()`` definitions in the wrapped class
+      are always respected and will not be overridden.
+
+    Parameters
+    ----------
+    module : type[NativeOP]
+        The NativeOP to convert.
+
+    Returns
+    -------
+    type[torch.nn.Module]
+        The torch.nn.Module with auto-generated delegation methods if applicable.
+
+    Examples
+    --------
+    >>> @torch_module
+    ... class MyModule(NativeOP):
+    ...     pass  # forward() auto-generated from call() if it exists
+    """
+
+    @wraps(module, updated=())
+    class TorchModule(module, torch.nn.Module):
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            torch.nn.Module.__init__(self)
+            module.__init__(self, *args, **kwargs)
+            # Convert any plain lists built incrementally during __init__.
+            # (list.append() bypasses __setattr__, so dpmodel_setattr never
+            # sees the complete list; we scan __dict__ here to catch them.)
+            for name in list(self.__dict__):
+                value = self.__dict__[name]
+                if isinstance(value, list):
+                    converted = _try_convert_list(name, value)
+                    if converted is not None:
+                        setattr(self, name, converted)
+
+        def __call__(self, *args: Any, **kwargs: Any) -> Any:
+            # Ensure torch.nn.Module.__call__ drives forward() for export/tracing.
+            return torch.nn.Module.__call__(self, *args, **kwargs)
+
+        def __setattr__(self, name: str, value: Any) -> None:
+            handled, value = dpmodel_setattr(self, name, value)
+            if not handled:
+                super().__setattr__(name, value)
+
+    # Auto-generate forward -> call redirect if not explicitly defined
+    if hasattr(module, "call") and "forward" not in module.__dict__:
+
+        def forward(self, *args: Any, **kwargs: Any) -> Any:  # noqa: ANN001
+            return self.call(*args, **kwargs)
+
+        TorchModule.forward = forward
+
+    # Auto-generate forward_lower -> call_lower redirect if not explicitly defined
+    if hasattr(module, "call_lower") and "forward_lower" not in module.__dict__:
+
+        def forward_lower(self, *args: Any, **kwargs: Any) -> Any:  # noqa: ANN001
+            return self.call_lower(*args, **kwargs)
+
+        TorchModule.forward_lower = forward_lower
+
+    # Auto-register dpmodel base → pt_expt converter so that auto-wrapped
+    # parent objects (e.g. atomic models) get pt_expt sub-components instead
+    # of generic dpmodel wrappers (which lack methods like enable_compression).
+    if hasattr(TorchModule, "deserialize"):
+        for base in module.__bases__:
+            if (
+                base is not NativeOP
+                and issubclass(base, NativeOP)
+                and hasattr(base, "serialize")
+                and base not in _DPMODEL_TO_PT_EXPT
+            ):
+                # Capture TorchModule in closure via default arg
+                def _converter(
+                    v: NativeOP, _cls: type = TorchModule
+                ) -> torch.nn.Module:
+                    return _cls.deserialize(v.serialize())
+
+                _DPMODEL_TO_PT_EXPT[base] = _converter
+
+    return TorchModule
+
+
+# Import utils to trigger dpmodel→pt_expt converter registrations
+# This must happen after the functions above are defined to avoid circular imports
+def _ensure_registrations() -> None:
+    """Import pt_expt.utils modules to register converters.
+
+    This function is called on module import to ensure all dpmodel→pt_expt
+    converters are registered before any descriptors/fittings try to use them.
+    """
+    # Import triggers registration of NetworkCollection, ExcludeMask, EnvMat
+    from deepmd.pt_expt import utils  # noqa: F401
+
+
+_ensure_registrations()

@@ -52,7 +52,8 @@
         "g1_out_mlp": true
       },
       "precision": "float64",
-      "add_tebd_to_repinit_out": false
+      "add_tebd_to_repinit_out": false,
+      "seed": 1
     },
     "fitting_net": {
       "neuron": [
@@ -103,7 +104,6 @@
       "_comment": "that's all"
     },
     "numb_steps": 1000000,
-    "warmup_steps": 0,
     "gradient_max_norm": 5.0,
     "seed": 10,
     "disp_file": "lcurve.out",

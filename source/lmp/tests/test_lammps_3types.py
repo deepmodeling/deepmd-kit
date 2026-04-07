@@ -253,6 +253,10 @@ sp.check_output(
 
 
 def setup_module() -> None:
+    if os.environ.get("ENABLE_TENSORFLOW", "1") != "1":
+        pytest.skip(
+            "Skip test because TensorFlow support is not enabled.",
+        )
     write_lmp_data(box, coord, type_OH, data_file)
     write_lmp_data(box, coord, type_HO, data_type_map_file)
 
@@ -320,7 +324,7 @@ def test_pair_deepmd_virial(lammps) -> None:
         assert lammps.atoms[ii].force == pytest.approx(
             expected_f[lammps.atoms[ii].id - 1]
         )
-    idx_map = lammps.lmp.numpy.extract_atom("id") - 1
+    idx_map = lammps.lmp.numpy.extract_atom("id")[: coord.shape[0]] - 1
     for ii in range(9):
         assert np.array(
             lammps.variables[f"virial{ii}"].value
@@ -371,7 +375,7 @@ def test_pair_deepmd_model_devi_virial(lammps) -> None:
         assert lammps.atoms[ii].force == pytest.approx(
             expected_f[lammps.atoms[ii].id - 1]
         )
-    idx_map = lammps.lmp.numpy.extract_atom("id") - 1
+    idx_map = lammps.lmp.numpy.extract_atom("id")[: coord.shape[0]] - 1
     for ii in range(9):
         assert np.array(
             lammps.variables[f"virial{ii}"].value

@@ -7,7 +7,6 @@ from abc import (
 )
 from typing import (
     Any,
-    Optional,
 )
 
 from deepmd.utils.data_system import (
@@ -36,14 +35,14 @@ def make_base_model() -> type[object]:
             BaseModel class for DPModel backend.
         """
 
-        def __new__(cls, *args, **kwargs):
+        def __new__(cls, *args: Any, **kwargs: Any) -> "BaseModel":
             if inspect.isabstract(cls):
                 # getting model type based on fitting type
                 model_type = kwargs.get("type", "standard")
                 if model_type == "standard":
                     model_type = kwargs.get("fitting", {}).get("type", "ener")
                 cls = cls.get_class_by_type(model_type)
-            return super().__new__(cls)
+            return object.__new__(cls)
 
         @abstractmethod
         def __call__(self, *args: Any, **kwds: Any) -> Any:
@@ -68,15 +67,15 @@ def make_base_model() -> type[object]:
             """Get the type map."""
 
         @abstractmethod
-        def get_rcut(self):
+        def get_rcut(self) -> float:
             """Get the cut-off radius."""
 
         @abstractmethod
-        def get_dim_fparam(self):
+        def get_dim_fparam(self) -> int:
             """Get the number (dimension) of frame parameters of this atomic model."""
 
         @abstractmethod
-        def get_dim_aparam(self):
+        def get_dim_aparam(self) -> int:
             """Get the number (dimension) of atomic parameters of this atomic model."""
 
         @abstractmethod
@@ -133,7 +132,7 @@ def make_base_model() -> type[object]:
 
         model_def_script: str
         """The model definition script."""
-        min_nbor_dist: Optional[float]
+        min_nbor_dist: float | None
         """The minimum distance between two atoms. Used for model compression.
         None when skipping neighbor statistics.
         """
@@ -143,9 +142,10 @@ def make_base_model() -> type[object]:
             """Get the model definition script."""
             pass
 
-        def get_min_nbor_dist(self) -> Optional[float]:
+        @abstractmethod
+        def get_min_nbor_dist(self) -> float | None:
             """Get the minimum distance between two atoms."""
-            return self.min_nbor_dist
+            pass
 
         @abstractmethod
         def get_nnei(self) -> int:
@@ -163,9 +163,9 @@ def make_base_model() -> type[object]:
         def update_sel(
             cls,
             train_data: DeepmdDataSystem,
-            type_map: Optional[list[str]],
+            type_map: list[str] | None,
             local_jdata: dict,
-        ) -> tuple[dict, Optional[float]]:
+        ) -> tuple[dict, float | None]:
             """Update the selection and perform neighbor statistics.
 
             Parameters
@@ -190,6 +190,17 @@ def make_base_model() -> type[object]:
                 model_type = local_jdata.get("fitting", {}).get("type", "ener")
             cls = cls.get_class_by_type(model_type)
             return cls.update_sel(train_data, type_map, local_jdata)
+
+        @abstractmethod
+        def get_observed_type_list(self) -> list[str]:
+            """Get observed types (elements) of the model during data statistics.
+
+            Returns
+            -------
+            list[str]
+                A list of the observed type names in this model.
+            """
+            pass
 
         def enable_compression(
             self,
@@ -256,10 +267,4 @@ class BaseModel(make_base_model()):
         Backend-independent BaseModel class.
     """
 
-    def __init__(self) -> None:
-        self.model_def_script = ""
-        self.min_nbor_dist = None
-
-    def get_model_def_script(self) -> str:
-        """Get the model definition script."""
-        return self.model_def_script
+    pass

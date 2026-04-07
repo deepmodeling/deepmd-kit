@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
+from collections.abc import (
     Callable,
-    Optional,
-    Union,
 )
 
 import paddle
@@ -56,7 +54,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[list[int], int],
+        sel: list[int] | int,
         ntypes: int,
         neuron: list = [25, 50, 100],
         axis_neuron: int = 16,
@@ -67,20 +65,21 @@ class DescrptBlockSeAtten(DescriptorBlock):
         attn_layer: int = 2,
         attn_dotr: bool = True,
         attn_mask: bool = False,
-        activation_function="tanh",
+        activation_function: str = "tanh",
         precision: str = "float64",
         resnet_dt: bool = False,
-        scaling_factor=1.0,
-        normalize=True,
-        temperature=None,
+        scaling_factor: float = 1.0,
+        normalize: bool = True,
+        temperature: float | None = None,
         smooth: bool = True,
         type_one_side: bool = False,
         exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         trainable_ln: bool = True,
-        ln_eps: Optional[float] = 1e-5,
-        seed: Optional[Union[int, list[int]]] = None,
-        type: Optional[str] = None,
+        ln_eps: float | None = 1e-5,
+        seed: int | list[int] | None = None,
+        type: str | None = None,
+        trainable: bool = True,
     ) -> None:
         r"""Construct an embedding net of type `se_atten`.
 
@@ -146,11 +145,15 @@ class DescrptBlockSeAtten(DescriptorBlock):
             If not None, the scaling of attention weights is `temperature` itself.
         seed : int, Optional
             Random seed for parameter initialization.
+        trainable : bool, default: True
+            Whether this block is trainable
         """
         super().__init__()
         del type
         self.rcut = float(rcut)
+        self.register_buffer("buffer_rcut", paddle.to_tensor(self.rcut))
         self.rcut_smth = float(rcut_smth)
+        self.register_buffer("buffer_rcut_smth", paddle.to_tensor(self.rcut_smth))
         self.neuron = neuron
         self.filter_neuron = self.neuron
         self.axis_neuron = axis_neuron
@@ -182,6 +185,10 @@ class DescrptBlockSeAtten(DescriptorBlock):
             sel = [sel]
 
         self.ntypes = ntypes
+        self.register_buffer(
+            "buffer_ntypes", paddle.to_tensor(self.ntypes, dtype="int64")
+        )
+
         self.sel = sel
         self.sec = self.sel
         self.split_sel = self.sel
@@ -205,6 +212,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
             smooth=self.smooth,
             precision=self.precision,
             seed=child_seed(self.seed, 0),
+            trainable=trainable,
         )
 
         wanted_shape = (self.ntypes, self.nnei, 4)
@@ -229,6 +237,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
             precision=self.precision,
             resnet_dt=self.resnet_dt,
             seed=child_seed(self.seed, 1),
+            trainable=trainable,
         )
         self.filter_layers = filter_layers
         if self.tebd_input_mode in ["strip"]:
@@ -242,6 +251,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 precision=self.precision,
                 resnet_dt=self.resnet_dt,
                 seed=child_seed(self.seed, 2),
+                trainable=trainable,
             )
             self.filter_layers_strip = filter_layers_strip
         self.stats = None
@@ -272,6 +282,14 @@ class DescrptBlockSeAtten(DescriptorBlock):
         """Returns the radius where the neighbor information starts to smoothly decay to 0."""
         return self.rcut_smth
 
+    def get_buffer_rcut(self) -> paddle.Tensor:
+        """Returns the cut-off radius as a buffer-style Tensor."""
+        return self.buffer_rcut
+
+    def get_buffer_rcut_smth(self) -> paddle.Tensor:
+        """Returns the radius where the neighbor information starts to smoothly decay to 0 as a buffer-style Tensor."""
+        return self.buffer_rcut_smth
+
     def get_nsel(self) -> int:
         """Returns the number of selected atoms in the cut-off radius."""
         return sum(self.sel)
@@ -282,7 +300,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
 
     def get_ntypes(self) -> int:
         """Returns the number of element types."""
-        return self.ntypes
+        return self.ntypes if paddle.in_dynamic_mode() else self.buffer_ntypes
 
     def get_dim_in(self) -> int:
         """Returns the input dimension."""
@@ -300,7 +318,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         """Returns the output dimension of embedding."""
         return self.filter_neuron[-1]
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: paddle.Tensor) -> None:
         if key in ("avg", "data_avg", "davg"):
             self.mean = value
         elif key in ("std", "data_std", "dstd"):
@@ -308,7 +326,7 @@ class DescrptBlockSeAtten(DescriptorBlock):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> paddle.Tensor:
         if key in ("avg", "data_avg", "davg"):
             return self.mean
         elif key in ("std", "data_std", "dstd"):
@@ -333,24 +351,24 @@ class DescrptBlockSeAtten(DescriptorBlock):
         return self.env_protection
 
     @property
-    def dim_out(self):
+    def dim_out(self) -> int:
         """Returns the output dimension of this descriptor."""
         return self.filter_neuron[-1] * self.axis_neuron
 
     @property
-    def dim_in(self):
+    def dim_in(self) -> int:
         """Returns the atomic input dimension of this descriptor."""
         return self.tebd_dim
 
     @property
-    def dim_emb(self):
+    def dim_emb(self) -> int:
         """Returns the output dimension of embedding."""
         return self.get_dim_emb()
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -410,10 +428,10 @@ class DescrptBlockSeAtten(DescriptorBlock):
 
     def enable_compression(
         self,
-        table_data,
-        table_config,
-        lower,
-        upper,
+        table_data: dict[str, paddle.Tensor],
+        table_config: list[float],
+        lower: dict[str, float],
+        upper: dict[str, float],
     ) -> None:
         net = "filter_net"
         self.compress_info[0] = paddle.to_tensor(
@@ -439,10 +457,12 @@ class DescrptBlockSeAtten(DescriptorBlock):
         nlist: paddle.Tensor,
         extended_coord: paddle.Tensor,
         extended_atype: paddle.Tensor,
-        extended_atype_embd: Optional[paddle.Tensor] = None,
-        mapping: Optional[paddle.Tensor] = None,
-        type_embedding: Optional[paddle.Tensor] = None,
-    ):
+        extended_atype_embd: paddle.Tensor | None = None,
+        mapping: paddle.Tensor | None = None,
+        type_embedding: paddle.Tensor | None = None,
+    ) -> tuple[
+        paddle.Tensor, paddle.Tensor | None, paddle.Tensor, paddle.Tensor, paddle.Tensor
+    ]:
         """Compute the descriptor.
 
         Parameters
@@ -519,7 +539,10 @@ class DescrptBlockSeAtten(DescriptorBlock):
             index = nlist.reshape([nb, nloc * nnei]).unsqueeze(-1).expand([-1, -1, nt])
             # nb x (nloc x nnei) x nt
             atype_tebd_nlist = paddle.take_along_axis(
-                atype_tebd_ext, axis=1, indices=index
+                atype_tebd_ext,
+                axis=1,
+                indices=index,
+                broadcast=False,
             )  # j
             # nb x nloc x nnei x nt
             atype_tebd_nlist = atype_tebd_nlist.reshape([nb, nloc, nnei, nt])
@@ -557,14 +580,16 @@ class DescrptBlockSeAtten(DescriptorBlock):
             nlist_index = nlist.reshape([nb, nloc * nnei])
             # nf x (nl x nnei)
             nei_type = paddle.take_along_axis(
-                extended_atype, indices=nlist_index, axis=1
+                extended_atype, indices=nlist_index, axis=1, broadcast=False
             )
             # (nf x nl x nnei) x ng
             nei_type_index = nei_type.reshape([-1, 1]).expand([-1, ng]).to(paddle.int64)
             if self.type_one_side:
                 tt_full = self.filter_layers_strip.networks[0](type_embedding)
                 # (nf x nl x nnei) x ng
-                gg_t = paddle.take_along_axis(tt_full, indices=nei_type_index, axis=0)
+                gg_t = paddle.take_along_axis(
+                    tt_full, indices=nei_type_index, axis=0, broadcast=False
+                )
             else:
                 idx_i = paddle.tile(
                     atype.reshape([-1, 1]) * ntypes_with_padding, [1, nnei]
@@ -588,7 +613,9 @@ class DescrptBlockSeAtten(DescriptorBlock):
                 ).reshape([-1, nt * 2])
                 tt_full = self.filter_layers_strip.networks[0](two_side_type_embedding)
                 # (nf x nl x nnei) x ng
-                gg_t = paddle.take_along_axis(tt_full, axis=0, indices=idx)
+                gg_t = paddle.take_along_axis(
+                    tt_full, axis=0, indices=idx, broadcast=False
+                )
             # (nf x nl) x nnei x ng
             gg_t = gg_t.reshape([nfnl, nnei, ng])
             if self.smooth:
@@ -649,12 +676,13 @@ class NeighborGatedAttention(nn.Layer):
         do_mask: bool = False,
         scaling_factor: float = 1.0,
         normalize: bool = True,
-        temperature: Optional[float] = None,
+        temperature: float | None = None,
         trainable_ln: bool = True,
         ln_eps: float = 1e-5,
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
+        trainable: bool = True,
     ) -> None:
         """Construct a neighbor-wise attention net."""
         super().__init__()
@@ -690,17 +718,18 @@ class NeighborGatedAttention(nn.Layer):
                     smooth=smooth,
                     precision=precision,
                     seed=child_seed(seed, i),
+                    trainable=trainable,
                 )
             )
         self.attention_layers = nn.LayerList(attention_layers)
 
     def forward(
         self,
-        input_G,
-        nei_mask,
-        input_r: Optional[paddle.Tensor] = None,
-        sw: Optional[paddle.Tensor] = None,
-    ):
+        input_G: paddle.Tensor,
+        nei_mask: paddle.Tensor,
+        input_r: paddle.Tensor | None = None,
+        sw: paddle.Tensor | None = None,
+    ) -> paddle.Tensor:
         """Compute the multi-layer gated self-attention.
 
         Parameters
@@ -719,13 +748,13 @@ class NeighborGatedAttention(nn.Layer):
             out = layer(out, nei_mask, input_r=input_r, sw=sw)
         return out
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: int) -> nn.Layer:
         if isinstance(key, int):
             return self.attention_layers[key]
         else:
             raise TypeError(key)
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: int, value: nn.Layer | dict) -> None:
         if not isinstance(key, int):
             raise TypeError(key)
         if isinstance(value, self.network_type):
@@ -791,12 +820,13 @@ class NeighborGatedAttentionLayer(nn.Layer):
         do_mask: bool = False,
         scaling_factor: float = 1.0,
         normalize: bool = True,
-        temperature: Optional[float] = None,
+        temperature: float | None = None,
         smooth: bool = True,
         trainable_ln: bool = True,
         ln_eps: float = 1e-5,
         precision: str = DEFAULT_PRECISION,
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
+        trainable: bool = True,
     ) -> None:
         """Construct a neighbor-wise attention layer."""
         super().__init__()
@@ -824,6 +854,7 @@ class NeighborGatedAttentionLayer(nn.Layer):
             smooth=smooth,
             precision=precision,
             seed=child_seed(seed, 0),
+            trainable=trainable,
         )
         self.attn_layer_norm = LayerNorm(
             self.embed_dim,
@@ -835,11 +866,11 @@ class NeighborGatedAttentionLayer(nn.Layer):
 
     def forward(
         self,
-        x,
-        nei_mask,
-        input_r: Optional[paddle.Tensor] = None,
-        sw: Optional[paddle.Tensor] = None,
-    ):
+        x: paddle.Tensor,
+        nei_mask: paddle.Tensor,
+        input_r: paddle.Tensor | None = None,
+        sw: paddle.Tensor | None = None,
+    ) -> paddle.Tensor:
         residual = x
         x, _ = self.attention_layer(x, nei_mask, input_r=input_r, sw=sw)
         x = residual + x
@@ -899,11 +930,12 @@ class GatedAttentionLayer(nn.Layer):
         do_mask: bool = False,
         scaling_factor: float = 1.0,
         normalize: bool = True,
-        temperature: Optional[float] = None,
+        temperature: float | None = None,
         bias: bool = True,
         smooth: bool = True,
         precision: str = DEFAULT_PRECISION,
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
+        trainable: bool = True,
     ) -> None:
         """Construct a multi-head neighbor-wise attention net."""
         super().__init__()
@@ -936,6 +968,7 @@ class GatedAttentionLayer(nn.Layer):
             stddev=1.0,
             precision=precision,
             seed=child_seed(seed, 0),
+            trainable=trainable,
         )
         self.out_proj = MLPLayer(
             hidden_dim,
@@ -946,16 +979,17 @@ class GatedAttentionLayer(nn.Layer):
             stddev=1.0,
             precision=precision,
             seed=child_seed(seed, 1),
+            trainable=trainable,
         )
 
     def forward(
         self,
-        query,
-        nei_mask,
-        input_r: Optional[paddle.Tensor] = None,
-        sw: Optional[paddle.Tensor] = None,
+        query: paddle.Tensor,
+        nei_mask: paddle.Tensor,
+        input_r: paddle.Tensor | None = None,
+        sw: paddle.Tensor | None = None,
         attnw_shift: float = 20.0,
-    ):
+    ) -> tuple[paddle.Tensor, paddle.Tensor]:
         """Compute the multi-head gated self-attention.
 
         Parameters

@@ -2,9 +2,6 @@
 from collections.abc import (
     Iterator,
 )
-from typing import (
-    Optional,
-)
 
 import numpy as np
 
@@ -81,8 +78,8 @@ class NeighborStat(BaseNeighborStat):
         self,
         coord: np.ndarray,
         atype: np.ndarray,
-        cell: Optional[np.ndarray],
-    ):
+        cell: np.ndarray | None,
+    ) -> tuple[np.ndarray, np.ndarray]:
         """Execute the operation.
 
         Parameters

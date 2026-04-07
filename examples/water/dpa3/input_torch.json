@@ -34,7 +34,8 @@
       "activation_function": "silut:10.0",
       "use_tebd_bias": false,
       "precision": "float32",
-      "concat_output_tebd": false
+      "concat_output_tebd": false,
+      "seed": 1
     },
     "fitting_net": {
       "neuron": [
@@ -67,6 +68,12 @@
     "limit_pref_v": 1,
     "_comment": " that's all"
   },
+  "optimizer": {
+    "type": "AdamW",
+    "adam_beta1": 0.9,
+    "adam_beta2": 0.999,
+    "weight_decay": 0.001
+  },
   "training": {
     "stat_file": "./dpa3.hdf5",
     "training_data": {
@@ -86,7 +93,6 @@
       "_comment": "that's all"
     },
     "numb_steps": 1000000,
-    "warmup_steps": 0,
     "gradient_max_norm": 5.0,
     "seed": 10,
     "disp_file": "lcurve.out",

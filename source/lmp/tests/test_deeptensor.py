@@ -66,6 +66,10 @@ sp.check_output(
 
 
 def setup_module() -> None:
+    if os.environ.get("ENABLE_TENSORFLOW", "1") != "1":
+        pytest.skip(
+            "Skip test because TensorFlow support is not enabled.",
+        )
     write_lmp_data(box, coord, type_OH, data_file)
     # TODO
     # write_lmp_data(box, coord, type_HO, data_type_map_file)
@@ -142,7 +146,7 @@ def test_compute_deeptensor_atom(lammps) -> None:
     lammps.variable("tensor atom c_tensor[1]")
     lammps.dump("1 all custom 1 dump id c_tensor[1]")
     lammps.run(0)
-    idx_map = lammps.lmp.numpy.extract_atom("id") - 1
+    idx_map = lammps.lmp.numpy.extract_atom("id")[: coord.shape[0]] - 1
     assert np.array(lammps.variables["tensor"].value) == pytest.approx(
         expected_d[idx_map]
     )
@@ -155,7 +159,7 @@ def test_compute_deeptensor_atom_si(lammps_si) -> None:
     lammps_si.variable("tensor atom c_tensor[1]")
     lammps_si.dump("1 all custom 1 dump id c_tensor[1]")
     lammps_si.run(0)
-    idx_map = lammps_si.lmp.numpy.extract_atom("id") - 1
+    idx_map = lammps_si.lmp.numpy.extract_atom("id")[: coord.shape[0]] - 1
     assert np.array(lammps_si.variables["tensor"].value) == pytest.approx(
         expected_d[idx_map] * constants.dist_metal2si
     )

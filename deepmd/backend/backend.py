@@ -2,13 +2,15 @@
 from abc import (
     abstractmethod,
 )
+from collections.abc import (
+    Callable,
+)
 from enum import (
     Flag,
     auto,
 )
 from typing import (
     TYPE_CHECKING,
-    Callable,
     ClassVar,
 )
 

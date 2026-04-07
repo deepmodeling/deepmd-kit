@@ -10,11 +10,15 @@ import logging
 import time
 from typing import (
     Any,
-    Optional,
 )
 
-from deepmd.tf.common import (
+import numpy as np
+
+from deepmd.common import (
     j_loader,
+)
+from deepmd.dpmodel.utils import (
+    compute_total_numb_batch,
 )
 from deepmd.tf.env import (
     GLOBAL_ENER_FLOAT_PRECISION,
@@ -55,18 +59,18 @@ log = logging.getLogger(__name__)
 def train(
     *,
     INPUT: str,
-    init_model: Optional[str],
-    restart: Optional[str],
+    init_model: str | None,
+    restart: str | None,
     output: str,
     init_frz_model: str,
     mpi_log: str,
     log_level: int,
-    log_path: Optional[str],
+    log_path: str | None,
     is_compress: bool = False,
     skip_neighbor_stat: bool = False,
-    finetune: Optional[str] = None,
+    finetune: str | None = None,
     use_pretrain_script: bool = False,
-    **kwargs,
+    **kwargs: Any,
 ) -> None:
     """Run DeePMD model training.
 
@@ -163,7 +167,6 @@ def train(
         jdata["model"] = json.loads(t_training_script)["model"]
 
     jdata = update_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
-
     jdata = normalize(jdata)
 
     if not is_compress and not skip_neighbor_stat:
@@ -253,7 +256,32 @@ def _do_work(
             modifier.build_fv_graph()
 
     # get training info
-    stop_batch = jdata["training"]["numb_steps"]
+    training_params = jdata["training"]
+    stop_batch = training_params.get("numb_steps")
+    num_epoch = training_params.get("numb_epoch")
+    if stop_batch is None:
+        if num_epoch is None:
+            raise ValueError(
+                "Either training.numb_steps or training.num_epoch must be set."
+            )
+        if num_epoch <= 0:
+            raise ValueError("training.num_epoch must be positive.")
+        if train_data is None:
+            raise ValueError(
+                "training.num_epoch requires training data to compute total_numb_batch."
+            )
+        total_numb_batch = compute_total_numb_batch(
+            train_data.nbatches, train_data.sys_probs
+        )
+        if total_numb_batch <= 0:
+            raise ValueError("Total number of training batches must be positive.")
+        stop_batch = int(np.ceil(num_epoch * total_numb_batch))
+        log.info(
+            "Computed numb_steps=%d from num_epoch=%s and total_numb_batch=%d.",
+            stop_batch,
+            num_epoch,
+            total_numb_batch,
+        )
     origin_type_map = jdata["model"].get("origin_type_map", None)
     if (
         origin_type_map is not None and not origin_type_map
@@ -275,8 +303,8 @@ def _do_work(
         log.info("finished compressing")
 
 
-def get_modifier(modi_data=None):
-    modifier: Optional[BaseModifier]
+def get_modifier(modi_data: dict | None = None) -> BaseModifier | None:
+    modifier: BaseModifier | None
     if modi_data is not None:
         modifier_params = copy.deepcopy(modi_data)
         modifier_type = modifier_params.pop("type")
@@ -288,7 +316,7 @@ def get_modifier(modi_data=None):
     return modifier
 
 
-def update_sel(jdata):
+def update_sel(jdata: dict) -> dict:
     log.info(
         "Calculate neighbor statistics... (add --skip-neighbor-stat to skip this step)"
     )

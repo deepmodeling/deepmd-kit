@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
-    Optional,
+    Any,
 )
 
 import numpy as np
@@ -45,6 +45,9 @@ from deepmd.tf.utils.errors import (
 from deepmd.tf.utils.graph import (
     get_fitting_net_variables_from_graph_def,
     get_tensor_by_name_from_graph,
+)
+from deepmd.tf.utils.learning_rate import (
+    LearningRateExp,
 )
 from deepmd.tf.utils.network import one_layer as one_layer_deepmd
 from deepmd.tf.utils.network import (
@@ -119,6 +122,8 @@ class EnerFitting(Fitting):
             Number of atomic parameter
     dim_case_embd
         Dimension of case specific embedding.
+    default_fparam
+        The default frame parameter. This parameter is not supported in TensorFlow.
     rcond
             The condition number for the regression of atomic energy.
     tot_ener_zero
@@ -146,6 +151,9 @@ class EnerFitting(Fitting):
     mixed_types : bool
         If true, use a uniform fitting net for all atom types, otherwise use
         different fitting nets for different atom types.
+    default_fparam: list[float], optional
+        The default frame parameter. If set, when `fparam.npy` files are not included in the data system,
+        this value will be used as the default value for the frame parameter in the fitting net.
     type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
     """
@@ -159,20 +167,21 @@ class EnerFitting(Fitting):
         numb_fparam: int = 0,
         numb_aparam: int = 0,
         dim_case_embd: int = 0,
-        rcond: Optional[float] = None,
+        rcond: float | None = None,
         tot_ener_zero: bool = False,
-        trainable: Optional[list[bool]] = None,
-        seed: Optional[int] = None,
+        trainable: list[bool] | None = None,
+        seed: int | None = None,
         atom_ener: list[float] = [],
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
-        layer_name: Optional[list[Optional[str]]] = None,
+        layer_name: list[str | None] | None = None,
         use_aparam_as_mask: bool = False,
-        spin: Optional[Spin] = None,
+        spin: Spin | None = None,
         mixed_types: bool = False,
-        type_map: Optional[list[str]] = None,  # to be compat with input
-        **kwargs,
+        type_map: list[str] | None = None,  # to be compat with input
+        default_fparam: list[float] | None = None,  # to be compat with input
+        **kwargs: Any,
     ) -> None:
         """Constructor."""
         # model param
@@ -196,6 +205,9 @@ class EnerFitting(Fitting):
         self.dim_case_embd = dim_case_embd
         if dim_case_embd > 0:
             raise ValueError("dim_case_embd is not supported in TensorFlow.")
+        self.default_fparam = default_fparam
+        if self.default_fparam is not None:
+            raise ValueError("default_fparam is not supported in TensorFlow.")
         self.n_neuron = neuron
         self.resnet_dt = resnet_dt
         self.rcond = rcond
@@ -272,7 +284,9 @@ class EnerFitting(Fitting):
             all_stat, rcond=self.rcond, mixed_type=mixed_type
         )
 
-    def _compute_output_stats(self, all_stat, rcond=1e-3, mixed_type=False):
+    def _compute_output_stats(
+        self, all_stat: dict[str, Any], rcond: float = 1e-3, mixed_type: bool = False
+    ) -> tuple:
         data = all_stat["energy"]
         # data[sys_idx][batch_idx][frame_idx]
         sys_ener = []
@@ -362,22 +376,22 @@ class EnerFitting(Fitting):
                     self.aparam_std[ii] = protection
             self.aparam_inv_std = 1.0 / self.aparam_std
 
-    def _compute_std(self, sumv2, sumv, sumn):
+    def _compute_std(self, sumv2: float, sumv: float, sumn: int) -> float:
         return np.sqrt(sumv2 / sumn - np.multiply(sumv / sumn, sumv / sumn))
 
     @cast_precision
     def _build_lower(
         self,
-        start_index,
-        natoms,
-        inputs,
-        fparam=None,
-        aparam=None,
-        bias_atom_e=0.0,
-        type_suffix="",
-        suffix="",
-        reuse=None,
-    ):
+        start_index: int,
+        natoms: tf.Tensor,
+        inputs: tf.Tensor,
+        fparam: tf.Tensor | None = None,
+        aparam: tf.Tensor | None = None,
+        bias_atom_e: float = 0.0,
+        type_suffix: str = "",
+        suffix: str = "",
+        reuse: bool | None = None,
+    ) -> tf.Tensor:
         # cut-out inputs
         inputs_i = tf.slice(inputs, [0, start_index, 0], [-1, natoms, -1])
         inputs_i = tf.reshape(inputs_i, [-1, self.dim_descrpt])
@@ -469,8 +483,8 @@ class EnerFitting(Fitting):
         self,
         inputs: tf.Tensor,
         natoms: tf.Tensor,
-        input_dict: Optional[dict] = None,
-        reuse: Optional[bool] = None,
+        input_dict: dict | None = None,
+        reuse: bool | None = None,
         suffix: str = "",
     ) -> tf.Tensor:
         """Build the computational graph for fitting net.
@@ -811,12 +825,12 @@ class EnerFitting(Fitting):
 
     def change_energy_bias(
         self,
-        data,
-        frozen_model,
-        origin_type_map,
-        full_type_map,
-        bias_adjust_mode="change-by-statistic",
-        ntest=10,
+        data: DeepmdDataSystem,
+        frozen_model: str,
+        origin_type_map: list,
+        full_type_map: list,
+        bias_adjust_mode: str = "change-by-statistic",
+        ntest: int = 10,
     ) -> None:
         dp = None
         if bias_adjust_mode == "change-by-statistic":
@@ -832,7 +846,7 @@ class EnerFitting(Fitting):
             ntest=ntest,
         )
 
-    def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
+    def enable_mixed_precision(self, mixed_prec: dict | None = None) -> None:
         """Receive the mixed precision setting.
 
         Parameters
@@ -843,14 +857,14 @@ class EnerFitting(Fitting):
         self.mixed_prec = mixed_prec
         self.fitting_precision = get_precision(mixed_prec["output_prec"])
 
-    def get_loss(self, loss: dict, lr) -> Loss:
+    def get_loss(self, loss: dict, lr: LearningRateExp) -> Loss:
         """Get the loss function.
 
         Parameters
         ----------
         loss : dict
             The loss function parameters.
-        lr : LearningRateExp
+        lr : LearningRateSchedule
             The learning rate.
 
         Returns
@@ -870,7 +884,7 @@ class EnerFitting(Fitting):
             raise RuntimeError("unknown loss type")
 
     @classmethod
-    def deserialize(cls, data: dict, suffix: str = ""):
+    def deserialize(cls, data: dict, suffix: str = "") -> "EnerFitting":
         """Deserialize the model.
 
         Parameters
@@ -884,7 +898,7 @@ class EnerFitting(Fitting):
             The deserialized model
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 3, 1)
+        check_version_compatibility(data.pop("@version", 1), 4, 1)
         fitting = cls(**data)
         fitting.fitting_net_variables = cls.deserialize_network(
             data["nets"],
@@ -910,7 +924,7 @@ class EnerFitting(Fitting):
         data = {
             "@class": "Fitting",
             "type": "ener",
-            "@version": 3,
+            "@version": 4,
             "var_name": "energy",
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt + self.tebd_dim,
@@ -921,6 +935,7 @@ class EnerFitting(Fitting):
             "numb_fparam": self.numb_fparam,
             "numb_aparam": self.numb_aparam,
             "dim_case_embd": self.dim_case_embd,
+            "default_fparam": self.default_fparam,
             "rcond": self.rcond,
             "tot_ener_zero": self.tot_ener_zero,
             "trainable": self.trainable,
@@ -944,6 +959,7 @@ class EnerFitting(Fitting):
                 activation_function=self.activation_function_name,
                 resnet_dt=self.resnet_dt,
                 variables=self.fitting_net_variables,
+                trainable=self.trainable,
                 suffix=suffix,
             ),
             "@variables": {
@@ -983,9 +999,9 @@ def change_energy_bias_lower(
     origin_type_map: list[str],
     full_type_map: list[str],
     bias_atom_e: np.ndarray,
-    bias_adjust_mode="change-by-statistic",
-    ntest=10,
-):
+    bias_adjust_mode: str = "change-by-statistic",
+    ntest: int = 10,
+) -> np.ndarray:
     """Change the energy bias according to the input data and the pretrained model.
 
     Parameters

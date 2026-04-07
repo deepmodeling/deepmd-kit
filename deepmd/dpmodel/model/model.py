@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
+from typing import (
+    Any,
+)
 
 from deepmd.dpmodel.atomic_model.dp_atomic_model import (
     DPAtomicModel,
@@ -45,7 +48,9 @@ from deepmd.utils.spin import (
 )
 
 
-def _get_standard_model_components(data, ntypes):
+def _get_standard_model_components(
+    data: dict[str, Any], ntypes: int
+) -> tuple[BaseDescriptor, BaseFitting, str]:
     # descriptor
     data["descriptor"]["ntypes"] = ntypes
     data["descriptor"]["type_map"] = copy.deepcopy(data["type_map"])
@@ -110,9 +115,12 @@ def get_standard_model(data: dict) -> EnergyModel:
 
 
 def get_zbl_model(data: dict) -> DPZBLModel:
+    data = copy.deepcopy(data)
     data["descriptor"]["ntypes"] = len(data["type_map"])
+    data["descriptor"]["type_map"] = data["type_map"]
     descriptor = BaseDescriptor(**data["descriptor"])
     fitting_type = data["fitting_net"].pop("type")
+    data["fitting_net"]["type_map"] = data["type_map"]
     if fitting_type == "ener":
         fitting = EnergyFittingNet(
             ntypes=descriptor.get_ntypes(),
@@ -156,6 +164,7 @@ def get_spin_model(data: dict) -> SpinModel:
     data : dict
         The data to construct the model.
     """
+    data = copy.deepcopy(data)
     # include virtual spin and placeholder types
     data["type_map"] += [item + "_spin" for item in data["type_map"]]
     spin = Spin(
@@ -181,7 +190,7 @@ def get_spin_model(data: dict) -> SpinModel:
     return SpinModel(backbone_model=backbone_model, spin=spin)
 
 
-def get_model(data: dict):
+def get_model(data: dict) -> BaseModel:
     """Get a model from a dictionary.
 
     Parameters

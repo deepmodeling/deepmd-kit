@@ -4,6 +4,13 @@ from abc import (
     ABC,
     abstractmethod,
 )
+from typing import (
+    Any,
+)
+
+from typing_extensions import (
+    Self,
+)
 
 from deepmd.utils.plugin import (
     PluginVariant,
@@ -15,7 +22,7 @@ def make_base_modifier() -> type[object]:
     class BaseModifier(ABC, PluginVariant, make_plugin_registry("modifier")):
         """Base class for data modifier."""
 
-        def __new__(cls, *args, **kwargs):
+        def __new__(cls, *args: Any, **kwargs: Any) -> Self:
             if cls is BaseModifier:
                 cls = cls.get_class_by_type(kwargs["type"])
             return super().__new__(cls)

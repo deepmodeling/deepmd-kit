@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
-    Optional,
+    TYPE_CHECKING,
+    Any,
 )
 
 import numpy as np
@@ -47,6 +48,11 @@ from deepmd.utils.data import (
 from deepmd.utils.out_stat import (
     compute_stats_from_redu,
 )
+
+if TYPE_CHECKING:
+    from deepmd.tf.utils.learning_rate import (
+        LearningRateExp,
+    )
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -101,6 +107,9 @@ class DOSFitting(Fitting):
     mixed_types : bool
         If true, use a uniform fitting net for all atom types, otherwise use
         different fitting nets for different atom types.
+    default_fparam: list[float], optional
+        The default frame parameter. If set, when `fparam.npy` files are not included in the data system,
+        this value will be used as the default value for the frame parameter in the fitting net.
     type_map: list[str], Optional
             A list of strings. Give the name to each type of atoms.
     """
@@ -115,17 +124,18 @@ class DOSFitting(Fitting):
         numb_aparam: int = 0,
         dim_case_embd: int = 0,
         numb_dos: int = 300,
-        rcond: Optional[float] = None,
-        trainable: Optional[list[bool]] = None,
-        seed: Optional[int] = None,
+        rcond: float | None = None,
+        trainable: list[bool] | None = None,
+        seed: int | None = None,
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
-        layer_name: Optional[list[Optional[str]]] = None,
+        layer_name: list[str | None] | None = None,
         use_aparam_as_mask: bool = False,
         mixed_types: bool = False,
-        type_map: Optional[list[str]] = None,  # to be compat with input
-        **kwargs,
+        type_map: list[str] | None = None,  # to be compat with input
+        default_fparam: list[float] | None = None,  # to be compat with input
+        **kwargs: Any,
     ) -> None:
         """Constructor."""
         # model param
@@ -136,8 +146,11 @@ class DOSFitting(Fitting):
         self.numb_fparam = numb_fparam
         self.numb_aparam = numb_aparam
         self.dim_case_embd = dim_case_embd
+        self.default_fparam = default_fparam
         if dim_case_embd > 0:
             raise ValueError("dim_case_embd is not supported in TensorFlow.")
+        if default_fparam is not None:
+            raise ValueError("default_fparam is not supported in TensorFlow.")
 
         self.numb_dos = numb_dos
 
@@ -210,7 +223,9 @@ class DOSFitting(Fitting):
             all_stat, rcond=self.rcond, mixed_type=mixed_type
         )
 
-    def _compute_output_stats(self, all_stat, rcond=1e-3, mixed_type=False):
+    def _compute_output_stats(
+        self, all_stat: dict, rcond: float = 1e-3, mixed_type: bool = False
+    ) -> np.ndarray:
         data = all_stat["dos"]
         # data[sys_idx][batch_idx][frame_idx]
         sys_dos = []
@@ -292,22 +307,24 @@ class DOSFitting(Fitting):
                     self.aparam_std[ii] = protection
             self.aparam_inv_std = 1.0 / self.aparam_std
 
-    def _compute_std(self, sumv2, sumv, sumn):
+    def _compute_std(
+        self, sumv2: np.ndarray, sumv: np.ndarray, sumn: np.ndarray
+    ) -> np.ndarray:
         return np.sqrt(sumv2 / sumn - np.multiply(sumv / sumn, sumv / sumn))
 
     @cast_precision
     def _build_lower(
         self,
-        start_index,
-        natoms,
-        inputs,
-        fparam=None,
-        aparam=None,
-        bias_dos=0.0,
-        type_suffix="",
-        suffix="",
-        reuse=None,
-    ):
+        start_index: int,
+        natoms: int,
+        inputs: tf.Tensor,
+        fparam: tf.Tensor | None = None,
+        aparam: tf.Tensor | None = None,
+        bias_dos: float = 0.0,
+        type_suffix: str = "",
+        suffix: str = "",
+        reuse: bool | None = None,
+    ) -> tf.Tensor:
         # cut-out inputs
         inputs_i = tf.slice(inputs, [0, start_index, 0], [-1, natoms, -1])
         inputs_i = tf.reshape(inputs_i, [-1, self.dim_descrpt])
@@ -399,8 +416,8 @@ class DOSFitting(Fitting):
         self,
         inputs: tf.Tensor,
         natoms: tf.Tensor,
-        input_dict: Optional[dict] = None,
-        reuse: Optional[bool] = None,
+        input_dict: dict | None = None,
+        reuse: bool | None = None,
         suffix: str = "",
     ) -> tf.Tensor:
         """Build the computational graph for fitting net.
@@ -633,7 +650,7 @@ class DOSFitting(Fitting):
             # for compatibility, old models has no t_bias_dos
             pass
 
-    def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
+    def enable_mixed_precision(self, mixed_prec: dict | None = None) -> None:
         """Receive the mixed precision setting.
 
         Parameters
@@ -644,14 +661,14 @@ class DOSFitting(Fitting):
         self.mixed_prec = mixed_prec
         self.fitting_precision = get_precision(mixed_prec["output_prec"])
 
-    def get_loss(self, loss: dict, lr) -> Loss:
+    def get_loss(self, loss: dict, lr: "LearningRateExp") -> Loss:
         """Get the loss function.
 
         Parameters
         ----------
         loss : dict
             the loss dict
-        lr : LearningRateExp
+        lr : LearningRateSchedule
             the learning rate
 
         Returns
@@ -664,7 +681,7 @@ class DOSFitting(Fitting):
         )
 
     @classmethod
-    def deserialize(cls, data: dict, suffix: str = ""):
+    def deserialize(cls, data: dict, suffix: str = "") -> "DOSFitting":
         """Deserialize the model.
 
         Parameters
@@ -678,7 +695,7 @@ class DOSFitting(Fitting):
             The deserialized model
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 3, 1)
+        check_version_compatibility(data.pop("@version", 1), 4, 1)
         data["numb_dos"] = data.pop("dim_out")
         fitting = cls(**data)
         fitting.fitting_net_variables = cls.deserialize_network(
@@ -705,7 +722,7 @@ class DOSFitting(Fitting):
         data = {
             "@class": "Fitting",
             "type": "dos",
-            "@version": 3,
+            "@version": 4,
             "var_name": "dos",
             "ntypes": self.ntypes,
             "dim_descrpt": self.dim_descrpt,
@@ -716,6 +733,7 @@ class DOSFitting(Fitting):
             "numb_fparam": self.numb_fparam,
             "numb_aparam": self.numb_aparam,
             "dim_case_embd": self.dim_case_embd,
+            "default_fparam": self.default_fparam,
             "rcond": self.rcond,
             "trainable": self.trainable,
             "activation_function": self.activation_function,
@@ -730,6 +748,7 @@ class DOSFitting(Fitting):
                 activation_function=self.activation_function,
                 resnet_dt=self.resnet_dt,
                 variables=self.fitting_net_variables,
+                trainable=self.trainable,
                 suffix=suffix,
             ),
             "@variables": {
@@ -741,6 +760,11 @@ class DOSFitting(Fitting):
                 "case_embd": None,
             },
             "type_map": self.type_map,
+            "tot_ener_zero": False,
+            "layer_name": None,
+            "use_aparam_as_mask": False,
+            "spin": None,
+            "atom_ener": None,
         }
         return data
 

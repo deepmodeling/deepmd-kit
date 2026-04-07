@@ -1,7 +1,19 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    Any,
+)
+
+from packaging.version import (
+    Version,
+)
+
 from deepmd.jax.common import (
     ArrayAPIVariable,
     to_jax_array,
+)
+from deepmd.jax.env import (
+    flax_version,
+    nnx,
 )
 from deepmd.jax.utils.exclude_mask import (
     AtomExcludeMask,
@@ -9,11 +21,13 @@ from deepmd.jax.utils.exclude_mask import (
 )
 
 
-def base_atomic_model_set_attr(name, value):
+def base_atomic_model_set_attr(name: str, value: Any) -> Any:
     if name in {"out_bias", "out_std"}:
         value = to_jax_array(value)
         if value is not None:
             value = ArrayAPIVariable(value)
+        elif Version(flax_version) >= Version("0.12.0"):
+            value = nnx.data(value)
     elif name == "pair_excl" and value is not None:
         value = PairExcludeMask(value.ntypes, value.exclude_types)
     elif name == "atom_excl" and value is not None:

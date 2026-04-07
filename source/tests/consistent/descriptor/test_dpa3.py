@@ -19,10 +19,12 @@ from ..common import (
     INSTALLED_JAX,
     INSTALLED_PD,
     INSTALLED_PT,
+    INSTALLED_PT_EXPT,
     CommonTest,
     parameterized,
 )
 from .common import (
+    DescriptorAPITest,
     DescriptorTest,
 )
 
@@ -41,6 +43,10 @@ if INSTALLED_PD:
 else:
     DescrptDPA3PD = None
 
+if INSTALLED_PT_EXPT:
+    from deepmd.pt_expt.descriptor.dpa3 import DescrptDPA3 as DescrptDPA3PTExpt
+else:
+    DescrptDPA3PTExpt = None
 if INSTALLED_ARRAY_API_STRICT:
     from ...array_api_strict.descriptor.dpa3 import DescrptDPA3 as DescrptDPA3Strict
 else:
@@ -69,9 +75,10 @@ from deepmd.utils.argcheck import (
     (True, False),  # use_exp_switch
     (True, False),  # use_dynamic_sel
     (True, False),  # use_loc_mapping
-    (0.3, 0.0),  # fix_stat_std
+    (0.3,),  # fix_stat_std
     (1,),  # n_multi_edge_message
     ("float64",),  # precision
+    (False, True),  # add_chg_spin_ebd
 )
 class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
     @property
@@ -91,6 +98,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             fix_stat_std,
             n_multi_edge_message,
             precision,
+            add_chg_spin_ebd,
         ) = self.param
         return {
             "ntypes": self.ntypes,
@@ -125,12 +133,13 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
                 }
             ),
             # kwargs for descriptor
-            "activation_function": "silu",
+            "activation_function": "relu",
             "precision": precision,
             "exclude_types": exclude_types,
             "env_protection": 0.0,
             "use_loc_mapping": use_loc_mapping,
-            "trainable": True,
+            "trainable": False,
+            "add_chg_spin_ebd": add_chg_spin_ebd,
         }
 
     @property
@@ -150,6 +159,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             fix_stat_std,
             n_multi_edge_message,
             precision,
+            add_chg_spin_ebd,
         ) = self.param
         return CommonTest.skip_pt
 
@@ -170,15 +180,9 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             fix_stat_std,
             n_multi_edge_message,
             precision,
+            add_chg_spin_ebd,
         ) = self.param
-        return (
-            not INSTALLED_PD
-            or precision == "bfloat16"
-            or edge_init_use_dist
-            or use_exp_switch
-            or use_dynamic_sel
-            or use_loc_mapping
-        )  # not supported yet
+        return True if add_chg_spin_ebd else CommonTest.skip_pd
 
     @property
     def skip_dp(self) -> bool:
@@ -197,6 +201,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             fix_stat_std,
             n_multi_edge_message,
             precision,
+            add_chg_spin_ebd,
         ) = self.param
         return CommonTest.skip_dp
 
@@ -217,15 +222,18 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             fix_stat_std,
             n_multi_edge_message,
             precision,
+            add_chg_spin_ebd,
         ) = self.param
         return True
 
     skip_jax = not INSTALLED_JAX
     skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
+    skip_pt_expt = not INSTALLED_PT_EXPT
 
     tf_class = DescrptDPA3TF
     dp_class = DescrptDPA3DP
     pt_class = DescrptDPA3PT
+    pt_expt_class = DescrptDPA3PTExpt
     pd_class = DescrptDPA3PD
     jax_class = DescrptDPA3JAX
     array_api_strict_class = DescrptDPA3Strict
@@ -279,7 +287,14 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             fix_stat_std,
             n_multi_edge_message,
             precision,
+            add_chg_spin_ebd,
         ) = self.param
+        # fparam for charge=5, spin=1 when add_chg_spin_ebd is True
+        self.fparam = (
+            np.array([[5, 1]], dtype=GLOBAL_NP_FLOAT_PRECISION)
+            if add_chg_spin_ebd
+            else None
+        )
 
     def build_tf(self, obj: Any, suffix: str) -> tuple[list, dict]:
         return self.build_tf_descriptor(
@@ -299,6 +314,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             self.atype,
             self.box,
             mixed_types=True,
+            fparam=self.fparam,
         )
 
     def eval_pt(self, pt_obj: Any) -> Any:
@@ -309,6 +325,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             self.atype,
             self.box,
             mixed_types=True,
+            fparam=self.fparam,
         )
 
     def eval_pd(self, pd_obj: Any) -> Any:
@@ -319,6 +336,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             self.atype,
             self.box,
             mixed_types=True,
+            fparam=self.fparam,
         )
 
     def eval_jax(self, jax_obj: Any) -> Any:
@@ -329,6 +347,18 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             self.atype,
             self.box,
             mixed_types=True,
+            fparam=self.fparam,
+        )
+
+    def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
+        return self.eval_pt_expt_descriptor(
+            pt_expt_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+            mixed_types=True,
+            fparam=self.fparam,
         )
 
     def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
@@ -339,6 +369,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             self.atype,
             self.box,
             mixed_types=True,
+            fparam=self.fparam,
         )
 
     def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
@@ -362,6 +393,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             fix_stat_std,
             n_multi_edge_message,
             precision,
+            add_chg_spin_ebd,
         ) = self.param
         if precision == "float64":
             return 1e-10
@@ -388,6 +420,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             fix_stat_std,
             n_multi_edge_message,
             precision,
+            add_chg_spin_ebd,
         ) = self.param
         if precision == "float64":
             return 1e-6  # need to fix in the future, see issue https://github.com/deepmodeling/deepmd-kit/issues/3786
@@ -395,3 +428,87 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             return 1e-4
         else:
             raise ValueError(f"Unknown precision: {precision}")
+
+
+@parameterized(
+    ("const",),  # update_residual_init
+    ([], [[0, 1]]),  # exclude_types
+    (True,),  # update_angle
+    (0, 1),  # a_compress_rate
+    (1, 2),  # a_compress_e_rate
+    (True,),  # a_compress_use_split
+    (True, False),  # optim_update
+    (True, False),  # edge_init_use_dist
+    (True, False),  # use_exp_switch
+    (True, False),  # use_dynamic_sel
+    (True, False),  # use_loc_mapping
+    (0.3, 0.0),  # fix_stat_std
+    (1,),  # n_multi_edge_message
+    ("float64",),  # precision
+)
+class TestDPA3DescriptorAPI(DescriptorAPITest, unittest.TestCase):
+    """Test consistency of BaseDescriptor API methods across backends."""
+
+    dp_class = DescrptDPA3DP
+    pt_class = DescrptDPA3PT
+    pt_expt_class = DescrptDPA3PTExpt
+    args = descrpt_dpa3_args().append(Argument("ntypes", int, optional=False))
+
+    @property
+    def data(self) -> dict:
+        (
+            update_residual_init,
+            exclude_types,
+            update_angle,
+            a_compress_rate,
+            a_compress_e_rate,
+            a_compress_use_split,
+            optim_update,
+            edge_init_use_dist,
+            use_exp_switch,
+            use_dynamic_sel,
+            use_loc_mapping,
+            fix_stat_std,
+            n_multi_edge_message,
+            precision,
+        ) = self.param
+        return {
+            "ntypes": self.ntypes,
+            # kwargs for repinit
+            "repflow": RepFlowArgs(
+                **{
+                    "n_dim": 20,
+                    "e_dim": 10,
+                    "a_dim": 8,
+                    "nlayers": 3,
+                    "e_rcut": 6.0,
+                    "e_rcut_smth": 5.0,
+                    "e_sel": 10,
+                    "a_rcut": 4.0,
+                    "a_rcut_smth": 3.5,
+                    "a_sel": 8,
+                    "a_compress_rate": a_compress_rate,
+                    "a_compress_e_rate": a_compress_e_rate,
+                    "a_compress_use_split": a_compress_use_split,
+                    "optim_update": optim_update,
+                    "edge_init_use_dist": edge_init_use_dist,
+                    "use_exp_switch": use_exp_switch,
+                    "use_dynamic_sel": use_dynamic_sel,
+                    "smooth_edge_update": True,
+                    "fix_stat_std": fix_stat_std,
+                    "n_multi_edge_message": n_multi_edge_message,
+                    "axis_neuron": 4,
+                    "update_angle": update_angle,
+                    "update_style": "res_residual",
+                    "update_residual": 0.1,
+                    "update_residual_init": update_residual_init,
+                }
+            ),
+            # kwargs for descriptor
+            "activation_function": "relu",
+            "precision": precision,
+            "exclude_types": exclude_types,
+            "env_protection": 0.0,
+            "use_loc_mapping": use_loc_mapping,
+            "trainable": False,
+        }

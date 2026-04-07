@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.repository_owner == 'deepmodeling' && github.event.label.name == 'Test CUDA'
     steps:
-    - uses: actions-ecosystem/action-remove-labels@v1
-      with:
-        labels: Test CUDA
-        number: ${{ github.event.pull_request.number }}
+      - uses: actions-ecosystem/action-remove-labels@v1
+        with:
+          labels: Test CUDA
+          number: ${{ github.event.pull_request.number }}

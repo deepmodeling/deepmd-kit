@@ -49,22 +49,26 @@ void DP_NlistSetMapping(DP_Nlist* nl, int* mapping) {
 void DP_DeleteNlist(DP_Nlist* nl) { delete nl; }
 
 // DP Base Model
-DP_DeepBaseModel::DP_DeepBaseModel() {}
+DP_DeepBaseModel::DP_DeepBaseModel()
+    : dfparam(0), daparam(0), aparam_nall(false), has_default_fparam(false) {}
 DP_DeepBaseModel::DP_DeepBaseModel(deepmd::DeepBaseModel& dpbase)
     : dpbase(dpbase) {
   dfparam = dpbase.dim_fparam();
   daparam = dpbase.dim_aparam();
   aparam_nall = dpbase.is_aparam_nall();
+  has_default_fparam = dpbase.has_default_fparam();
 }
 void DP_DeleteDeepBaseModel(DP_DeepBaseModel* dpbase) { delete dpbase; }
 
 // DP Base Model Devi
-DP_DeepBaseModelDevi::DP_DeepBaseModelDevi() {}
+DP_DeepBaseModelDevi::DP_DeepBaseModelDevi()
+    : dfparam(0), daparam(0), aparam_nall(false), has_default_fparam(false) {}
 DP_DeepBaseModelDevi::DP_DeepBaseModelDevi(deepmd::DeepBaseModelDevi& dpbase)
     : dpbase(dpbase) {
   dfparam = dpbase.dim_fparam();
   daparam = dpbase.dim_aparam();
   aparam_nall = dpbase.is_aparam_nall();
+  has_default_fparam = dpbase.has_default_fparam();
 }
 void DP_DeleteDeepBaseModelDevi(DP_DeepBaseModelDevi* dp) { delete dp; }
 
@@ -862,11 +866,11 @@ void DP_DeepSpinModelDeviCompute_variant(DP_DeepSpinModelDevi* dp,
     flatten_vector(fm_flat, fm);
     std::copy(fm_flat.begin(), fm_flat.end(), force_mag);
   }
-  // if (virial) {
-  //   std::vector<VALUETYPE> v_flat;
-  //   flatten_vector(v_flat, v);
-  //   std::copy(v_flat.begin(), v_flat.end(), virial);
-  // }
+  if (virial) {
+    std::vector<VALUETYPE> v_flat;
+    flatten_vector(v_flat, v);
+    std::copy(v_flat.begin(), v_flat.end(), virial);
+  }
   if (atomic_energy) {
     std::vector<VALUETYPE> ae_flat;
     flatten_vector(ae_flat, ae);
@@ -2019,6 +2023,10 @@ bool DP_DeepBaseModelIsAParamNAll(DP_DeepBaseModel* dpbase) {
   return dpbase->aparam_nall;
 }
 
+bool DP_DeepBaseModelHasDefaultFParam(DP_DeepBaseModel* dpbase) {
+  return dpbase->has_default_fparam;
+}
+
 const char* DP_DeepBaseModelCheckOK(DP_DeepBaseModel* dpbase) {
   return string_to_char(dpbase->exception);
 }
@@ -2045,6 +2053,10 @@ int DP_DeepBaseModelDeviGetDimAParam(DP_DeepBaseModelDevi* dpbase) {
 
 bool DP_DeepBaseModelDeviIsAParamNAll(DP_DeepBaseModelDevi* dpbase) {
   return dpbase->aparam_nall;
+}
+
+bool DP_DeepBaseModelDeviHasDefaultFParam(DP_DeepBaseModelDevi* dpbase) {
+  return dpbase->has_default_fparam;
 }
 
 const char* DP_DeepBaseModelDeviCheckOK(DP_DeepBaseModelDevi* dpbase) {
@@ -2080,6 +2092,10 @@ bool DP_DeepPotIsAParamNAll(DP_DeepPot* dp) {
   return DP_DeepBaseModelIsAParamNAll(static_cast<DP_DeepBaseModel*>(dp));
 }
 
+bool DP_DeepPotHasDefaultFParam(DP_DeepPot* dp) {
+  return DP_DeepBaseModelHasDefaultFParam(static_cast<DP_DeepBaseModel*>(dp));
+}
+
 const char* DP_DeepPotCheckOK(DP_DeepPot* dp) {
   return DP_DeepBaseModelCheckOK(static_cast<DP_DeepBaseModel*>(dp));
 }
@@ -2110,6 +2126,11 @@ int DP_DeepPotModelDeviGetDimAParam(DP_DeepPotModelDevi* dp) {
 
 bool DP_DeepPotModelDeviIsAParamNAll(DP_DeepPotModelDevi* dp) {
   return DP_DeepBaseModelDeviIsAParamNAll(
+      static_cast<DP_DeepBaseModelDevi*>(dp));
+}
+
+bool DP_DeepPotModelDeviHasDefaultFParam(DP_DeepPotModelDevi* dp) {
+  return DP_DeepBaseModelDeviHasDefaultFParam(
       static_cast<DP_DeepBaseModelDevi*>(dp));
 }
 
@@ -2146,6 +2167,10 @@ bool DP_DeepSpinIsAParamNAll(DP_DeepSpin* dp) {
   return DP_DeepBaseModelIsAParamNAll(static_cast<DP_DeepBaseModel*>(dp));
 }
 
+bool DP_DeepSpinHasDefaultFParam(DP_DeepSpin* dp) {
+  return DP_DeepBaseModelHasDefaultFParam(static_cast<DP_DeepBaseModel*>(dp));
+}
+
 const char* DP_DeepSpinCheckOK(DP_DeepSpin* dp) {
   return DP_DeepBaseModelCheckOK(static_cast<DP_DeepBaseModel*>(dp));
 }
@@ -2176,6 +2201,11 @@ int DP_DeepSpinModelDeviGetDimAParam(DP_DeepSpinModelDevi* dp) {
 
 bool DP_DeepSpinModelDeviIsAParamNAll(DP_DeepSpinModelDevi* dp) {
   return DP_DeepBaseModelDeviIsAParamNAll(
+      static_cast<DP_DeepBaseModelDevi*>(dp));
+}
+
+bool DP_DeepSpinModelDeviHasDefaultFParam(DP_DeepSpinModelDevi* dp) {
+  return DP_DeepBaseModelDeviHasDefaultFParam(
       static_cast<DP_DeepBaseModelDevi*>(dp));
 }
 

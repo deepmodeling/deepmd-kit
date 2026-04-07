@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from collections.abc import (
+    Callable,
+)
 from typing import (
-    Optional,
+    Any,
 )
 
 import paddle
@@ -39,7 +42,7 @@ from deepmd.utils.path import (
 )
 
 
-def make_model(T_AtomicModel: type[BaseAtomicModel]):
+def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
     """Make a model as a derived class of an atomic model.
 
     The model provide two interfaces.
@@ -65,10 +68,10 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
     class CM(BaseModel):
         def __init__(
             self,
-            *args,
+            *args: Any,
             # underscore to prevent conflict with normal inputs
-            atomic_model_: Optional[T_AtomicModel] = None,
-            **kwargs,
+            atomic_model_: T_AtomicModel | None = None,
+            **kwargs: Any,
         ) -> None:
             super().__init__(*args, **kwargs)
             if atomic_model_ is not None:
@@ -80,7 +83,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             self.global_pd_float_precision = GLOBAL_PD_FLOAT_PRECISION
             self.global_pd_ener_float_precision = GLOBAL_PD_ENER_FLOAT_PRECISION
 
-        def model_output_def(self):
+        def model_output_def(self) -> ModelOutputDef:
             """Get the output def for the model."""
             return ModelOutputDef(self.atomic_output_def())
 
@@ -127,11 +130,11 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
 
         def forward_common(
             self,
-            coord,
-            atype,
-            box: Optional[paddle.Tensor] = None,
-            fparam: Optional[paddle.Tensor] = None,
-            aparam: Optional[paddle.Tensor] = None,
+            coord: paddle.Tensor,
+            atype: paddle.Tensor,
+            box: paddle.Tensor | None = None,
+            fparam: paddle.Tensor | None = None,
+            aparam: paddle.Tensor | None = None,
             do_atomic_virial: bool = False,
         ) -> dict[str, paddle.Tensor]:
             """Return model prediction.
@@ -159,7 +162,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                 The keys are defined by the `ModelOutputDef`.
 
             """
-            cc, bb, fp, ap, input_prec = self.input_type_cast(
+            cc, bb, fp, ap, input_prec = self._input_type_cast(
                 coord, box=box, fparam=fparam, aparam=aparam
             )
             del coord, box, fparam, aparam
@@ -193,19 +196,37 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                 mapping,
                 do_atomic_virial=do_atomic_virial,
             )
-            model_predict = self.output_type_cast(model_predict, input_prec)
+            model_predict = self._output_type_cast(model_predict, input_prec)
             return model_predict
 
         def get_out_bias(self) -> paddle.Tensor:
             return self.atomic_model.get_out_bias()
+
+        def get_observed_type_list(self) -> list[str]:
+            """Get observed types (elements) of the model during data statistics.
+
+            Returns
+            -------
+            list[str]
+                A list of the observed type names in this model.
+            """
+            type_map = self.get_type_map()
+            out_bias = self.get_out_bias()[0]
+            assert out_bias is not None, "No out_bias found in the model."
+            assert out_bias.ndim == 2, "The supported out_bias should be a 2D array."
+            assert out_bias.shape[0] == len(type_map), (
+                "The out_bias shape does not match the type_map length."
+            )
+            bias_mask = paddle.any(paddle.abs(out_bias) > 1e-6, axis=-1)
+            return [type_map[i] for i in range(len(type_map)) if bias_mask[i]]
 
         def set_out_bias(self, out_bias: paddle.Tensor) -> None:
             self.atomic_model.set_out_bias(out_bias)
 
         def change_out_bias(
             self,
-            merged,
-            bias_adjust_mode="change-by-statistic",
+            merged: list[dict] | Callable[[], list[dict]],
+            bias_adjust_mode: str = "change-by-statistic",
         ) -> None:
             """Change the output bias of atomic model according to the input data and the pretrained model.
 
@@ -231,16 +252,16 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
 
         def forward_common_lower(
             self,
-            extended_coord,
-            extended_atype,
-            nlist,
-            mapping: Optional[paddle.Tensor] = None,
-            fparam: Optional[paddle.Tensor] = None,
-            aparam: Optional[paddle.Tensor] = None,
+            extended_coord: paddle.Tensor,
+            extended_atype: paddle.Tensor,
+            nlist: paddle.Tensor,
+            mapping: paddle.Tensor | None = None,
+            fparam: paddle.Tensor | None = None,
+            aparam: paddle.Tensor | None = None,
             do_atomic_virial: bool = False,
-            comm_dict: Optional[dict[str, paddle.Tensor]] = None,
+            comm_dict: list[paddle.Tensor] | None = None,
             extra_nlist_sort: bool = False,
-        ):
+        ) -> dict[str, paddle.Tensor]:
             """Return model prediction. Lower interface that takes
             extended atomic coordinates and types, nlist, and mapping
             as input, and returns the predictions on the extended region.
@@ -278,7 +299,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             nlist = self.format_nlist(
                 extended_coord, extended_atype, nlist, extra_nlist_sort=extra_nlist_sort
             )
-            cc_ext, _, fp, ap, input_prec = self.input_type_cast(
+            cc_ext, _, fp, ap, input_prec = self._input_type_cast(
                 extended_coord, fparam=fparam, aparam=aparam
             )
             del extended_coord, fparam, aparam
@@ -298,20 +319,20 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                 do_atomic_virial=do_atomic_virial,
                 create_graph=self.training,
             )
-            model_predict = self.output_type_cast(model_predict, input_prec)
+            model_predict = self._output_type_cast(model_predict, input_prec)
             return model_predict
 
-        def input_type_cast(
+        def _input_type_cast(
             self,
             coord: paddle.Tensor,
-            box: Optional[paddle.Tensor] = None,
-            fparam: Optional[paddle.Tensor] = None,
-            aparam: Optional[paddle.Tensor] = None,
+            box: paddle.Tensor | None = None,
+            fparam: paddle.Tensor | None = None,
+            aparam: paddle.Tensor | None = None,
         ) -> tuple[
             paddle.Tensor,
-            Optional[paddle.Tensor],
-            Optional[paddle.Tensor],
-            Optional[paddle.Tensor],
+            paddle.Tensor | None,
+            paddle.Tensor | None,
+            paddle.Tensor | None,
             str,
         ]:
             """Cast the input data to global float type."""
@@ -326,7 +347,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             #           " does not match"
             #           f" that of the coordinate {input_prec}"
             #         )
-            _lst: list[Optional[paddle.Tensor]] = [
+            _lst: list[paddle.Tensor | None] = [
                 vv.astype(coord.dtype) if vv is not None else None
                 for vv in [box, fparam, aparam]
             ]
@@ -346,7 +367,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                     input_prec,
                 )
 
-        def output_type_cast(
+        def _output_type_cast(
             self,
             model_ret: dict[str, paddle.Tensor],
             input_prec: str,
@@ -364,7 +385,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                     continue
                 if check_operation_applied(odef[kk], OutputVariableOperation.REDU):
                     model_ret[kk] = (
-                        model_ret[kk].to(self.global_pd_ener_float_precision)
+                        model_ret[kk].astype(self.global_pd_ener_float_precision)
                         if model_ret[kk] is not None
                         else None
                     )
@@ -380,7 +401,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             extended_atype: paddle.Tensor,
             nlist: paddle.Tensor,
             extra_nlist_sort: bool = False,
-        ):
+        ) -> paddle.Tensor:
             """Format the neighbor list.
 
             1. If the number of neighbors in the `nlist` is equal to sum(self.sel),
@@ -431,7 +452,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             nlist: paddle.Tensor,
             nnei: int,
             extra_nlist_sort: bool = False,
-        ):
+        ) -> paddle.Tensor:
             n_nf, n_nloc, n_nnei = nlist.shape
             # nf x nall x 3
             extended_coord = extended_coord.reshape([n_nf, -1, 3])
@@ -445,7 +466,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                         * paddle.ones(
                             [n_nf, n_nloc, nnei - n_nnei],
                             dtype=nlist.dtype,
-                        ).to(nlist.place),
+                        ),
                     ],
                     axis=-1,
                 )
@@ -458,17 +479,21 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
                 coord0 = extended_coord[:, :n_nloc, :]
                 # nf x (nloc x nnei) x 3
                 index = nlist.reshape([n_nf, n_nloc * n_nnei, 1]).expand([-1, -1, 3])
-                coord1 = paddle.take_along_axis(extended_coord, axis=1, indices=index)
+                coord1 = paddle.take_along_axis(
+                    extended_coord, axis=1, indices=index, broadcast=False
+                )
                 # nf x nloc x nnei x 3
                 coord1 = coord1.reshape([n_nf, n_nloc, n_nnei, 3])
                 # nf x nloc x nnei
                 rr = paddle.linalg.norm(coord0[:, :, None, :] - coord1, axis=-1)
-                rr = paddle.where(m_real_nei, rr, float("inf"))
+                rr = paddle.where(m_real_nei, rr, paddle.full_like(rr, float("inf")))
                 rr, nlist_mapping = (
                     paddle.sort(rr, axis=-1),
                     paddle.argsort(rr, axis=-1),
                 )
-                nlist = paddle.take_along_axis(nlist, axis=2, indices=nlist_mapping)
+                nlist = paddle.take_along_axis(
+                    nlist, axis=2, indices=nlist_mapping, broadcast=False
+                )
                 nlist = paddle.where(rr > rcut, paddle.full_like(nlist, -1), nlist)
                 nlist = nlist[..., :nnei]
             else:  # not extra_nlist_sort and n_nnei <= nnei:
@@ -478,7 +503,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
 
         def do_grad_r(
             self,
-            var_name: Optional[str] = None,
+            var_name: str | None = None,
         ) -> bool:
             """Tell if the output variable `var_name` is r_differentiable.
             if var_name is None, returns if any of the variable is r_differentiable.
@@ -487,7 +512,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
 
         def do_grad_c(
             self,
-            var_name: Optional[str] = None,
+            var_name: str | None = None,
         ) -> bool:
             """Tell if the output variable `var_name` is c_differentiable.
             if var_name is None, returns if any of the variable is c_differentiable.
@@ -495,7 +520,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             return self.atomic_model.do_grad_c(var_name)
 
         def change_type_map(
-            self, type_map: list[str], model_with_new_type_stat=None
+            self, type_map: list[str], model_with_new_type_stat: "CM | None" = None
         ) -> None:
             """Change the type related params to new ones, according to `type_map` and the original one in the model.
             If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -511,10 +536,10 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             return self.atomic_model.serialize()
 
         @classmethod
-        def deserialize(cls, data) -> "CM":
+        def deserialize(cls, data: dict) -> "CM":
             return cls(atomic_model_=T_AtomicModel.deserialize(data))
 
-        def set_case_embd(self, case_idx: int):
+        def set_case_embd(self, case_idx: int) -> None:
             self.atomic_model.set_case_embd(case_idx)
 
         def get_dim_fparam(self) -> int:
@@ -524,6 +549,14 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
         def get_dim_aparam(self) -> int:
             """Get the number (dimension) of atomic parameters of this atomic model."""
             return self.atomic_model.get_dim_aparam()
+
+        def get_buffer_dim_fparam(self) -> paddle.Tensor:
+            """Get the number (dimension) of frame parameters of this atomic model as a buffer-style Tensor."""
+            return self.atomic_model.get_buffer_dim_fparam()
+
+        def get_buffer_dim_aparam(self) -> paddle.Tensor:
+            """Get the number (dimension) of atomic parameters of this atomic model as a buffer-style Tensor."""
+            return self.atomic_model.get_buffer_dim_aparam()
 
         def get_sel_type(self) -> list[int]:
             """Get the selected atom types of this model.
@@ -549,6 +582,22 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
             """Get the type map."""
             return self.atomic_model.get_type_map()
 
+        def get_buffer_rcut(self) -> paddle.Tensor:
+            """Get the cut-off radius as a buffer-style Tensor."""
+            return self.atomic_model.get_buffer_rcut()
+
+        def get_buffer_type_map(self) -> paddle.Tensor:
+            """
+            Return the type map as a buffer-style Tensor for JIT saving.
+
+            The original type map (e.g., ['Ni', 'O']) is first joined into a single space-separated string
+            (e.g., "Ni O"). Each character in this string is then converted to its ASCII code using `ord()`,
+            and the resulting integer sequence is stored as a 1D paddle.Tensor of dtype int.
+
+            This format allows the type map to be serialized as a raw byte buffer during JIT model saving.
+            """
+            return self.atomic_model.get_buffer_type_map()
+
         def get_nsel(self) -> int:
             """Returns the total number of selected neighboring atoms in the cut-off radius."""
             return self.atomic_model.get_nsel()
@@ -563,9 +612,9 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
 
         def compute_or_load_stat(
             self,
-            sampled_func,
-            stat_file_path: Optional[DPPath] = None,
-        ):
+            sampled_func: Callable,
+            stat_file_path: DPPath | None = None,
+        ) -> None:
             """Compute or load the statistics."""
             return self.atomic_model.compute_or_load_stat(sampled_func, stat_file_path)
 
@@ -595,11 +644,11 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]):
 
         def forward(
             self,
-            coord,
-            atype,
-            box: Optional[paddle.Tensor] = None,
-            fparam: Optional[paddle.Tensor] = None,
-            aparam: Optional[paddle.Tensor] = None,
+            coord: paddle.Tensor,
+            atype: paddle.Tensor,
+            box: paddle.Tensor | None = None,
+            fparam: paddle.Tensor | None = None,
+            aparam: paddle.Tensor | None = None,
             do_atomic_virial: bool = False,
         ) -> dict[str, paddle.Tensor]:
             # directly call the forward_common method when no specific transform rule

@@ -32,21 +32,21 @@ data_type_map_file = Path(__file__).parent / "data_type_map.lmp"
 md_file = Path(__file__).parent / "md.out"
 
 expected_ae = np.array(
-    [-5.452114789070532, -5.480146653237549, -5.196470063744647, -5.196470063744647]
+    [-2.337313880002, -2.339828637443377, -2.358478126000974, -2.358478126000974]
 )
 expected_e = np.sum(expected_ae)
 expected_f = np.array(
     [
-        [0.1005891161568464, -0.0421386837954357, -0.1035159238420185],
-        [-0.1005891161568464, 0.0421386837954357, 0.1035159238420185],
-        [-0.0874023630887424, -0.0816522076223778, 0.1196032337003844],
-        [0.0874023630887424, 0.0816522076223778, -0.1196032337003844],
+        [0.036908169450058, -0.0154615304452946, -0.0277072310206975],
+        [-0.036908169450058, 0.0154615304452946, 0.0277072310206975],
+        [-0.001114392839443, -0.0010410775210586, 0.0015249586223957],
+        [0.001114392839443, 0.0010410775210586, -0.0015249586223957],
     ]
 )
 expected_fm = np.array(
     [
-        [0.0248296941890119, -0.0104016286467482, 0.0166496777995534],
-        [-0.0407454346265244, 0.0170690334246251, 0.0337262181162752],
+        [0.0075469514215227, -0.0031615607306379, 0.0204654183352036],
+        [-0.0074172317569893, 0.003107218709009, 0.020927678503653],
         [0.0000000000000000, 0.00000000000000000, 0.00000000000000000],
         [0.0000000000000000, 0.00000000000000000, 0.00000000000000000],
     ]
@@ -96,6 +96,10 @@ sp.check_output(
 
 
 def setup_module() -> None:
+    if os.environ.get("ENABLE_PYTORCH", "1") != "1":
+        pytest.skip(
+            "Skip test because PyTorch support is not enabled.",
+        )
     write_lmp_data_spin(box, coord, spin, type_NiO, data_file)
 
 
@@ -146,6 +150,10 @@ def test_pair_deepmd(lammps) -> None:
     lammps.run(1)
 
 
+@pytest.mark.skipif(
+    os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
+    reason="Skip test because TensorFlow support is not enabled.",
+)
 def test_pair_deepmd_model_devi(lammps) -> None:
     lammps.pair_style(
         f"deepspin {pb_file.resolve()} {pb_file2.resolve()} out_file {md_file.resolve()} out_freq 1"
@@ -169,6 +177,10 @@ def test_pair_deepmd_model_devi(lammps) -> None:
     assert md[9] == pytest.approx(np.mean(expected_md_fm))
 
 
+@pytest.mark.skipif(
+    os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
+    reason="Skip test because TensorFlow support is not enabled.",
+)
 def test_pair_deepmd_model_devi_atomic_relative(lammps) -> None:
     relative = 1.0
     lammps.pair_style(
@@ -206,6 +218,10 @@ def test_pair_deepmd_model_devi_atomic_relative(lammps) -> None:
 @pytest.mark.parametrize(
     ("balance_args",),
     [(["--balance"],), ([],)],
+)
+@pytest.mark.skipif(
+    os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
+    reason="Skip test because TensorFlow support is not enabled.",
 )
 def test_pair_deepmd_mpi(balance_args: list) -> None:
     with tempfile.NamedTemporaryFile() as f:

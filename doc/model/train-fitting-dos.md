@@ -16,7 +16,7 @@ $deepmd_source_dir/examples/dos/input.json
 
 The training and validation data are also provided our examples. But note that **the data provided along with the examples are of limited amount, and should not be used to train a production model.**
 
-Similar to the `input.json` used in `ener` mode, training JSON is also divided into {ref}`model <model>`, {ref}`learning_rate <learning_rate>`, {ref}`loss <loss>` and {ref}`training <training>`. Most keywords remain the same as `ener` mode, and their meaning can be found [here](train-se-e2-a.md). To fit the `dos`, one needs to modify {ref}`model[standard]/fitting_net <model[standard]/fitting_net>` and {ref}`loss <loss>`.
+Similar to the `input.json` used in `ener` mode, training JSON is also divided into {ref}`model <model>`, {ref}`learning_rate <learning_rate>`, {ref}`optimizer <optimizer>`, {ref}`loss <loss>` and {ref}`training <training>`. Most keywords remain the same as `ener` mode, and their meaning can be found in the [SE-E2-A guide](train-se-e2-a.md). To fit the `dos`, one needs to modify {ref}`model[standard]/fitting_net <model[standard]/fitting_net>` and {ref}`loss <loss>`.
 
 ## The fitting Network
 
@@ -89,7 +89,6 @@ The training command is the same as `ener` mode, i.e.
 ```bash
 dp --tf train input.json
 ```
-
 :::
 
 :::{tab-item} PyTorch {{ pytorch_icon }}
@@ -97,7 +96,6 @@ dp --tf train input.json
 ```bash
 dp --pt train input.json
 ```
-
 :::
 
 ::::
@@ -143,7 +141,6 @@ dp --tf freeze -o frozen_model.pb
 
 dp --tf test -m frozen_model.pb -s ../data/111/$k -d ${output_prefix} -a -n 100
 ```
-
 :::
 
 :::{tab-item} PyTorch {{ pytorch_icon }}
@@ -154,7 +151,6 @@ dp --pt freeze -o frozen_model.pth
 
 dp --pt test -m frozen_model.pth -s ../data/111/$k -d ${output_prefix} -a -n 100
 ```
-
 :::
 
 ::::

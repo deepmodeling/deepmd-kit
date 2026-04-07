@@ -2,10 +2,11 @@
 import logging
 import re
 import warnings
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
-    Optional,
-    Union,
 )
 
 import numpy as np
@@ -172,13 +173,13 @@ class DescrptSeAtten(DescrptSeA):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[list[int], int],
+        sel: list[int] | int,
         ntypes: int,
         neuron: list[int] = [25, 50, 100],
         axis_neuron: int = 8,
         resnet_dt: bool = False,
         trainable: bool = True,
-        seed: Optional[int] = None,
+        seed: int | None = None,
         type_one_side: bool = True,
         set_davg_zero: bool = True,
         exclude_types: list[list[int]] = [],
@@ -192,16 +193,16 @@ class DescrptSeAtten(DescrptSeA):
         smooth_type_embedding: bool = False,
         tebd_input_mode: str = "concat",
         # not implemented
-        scaling_factor=1.0,
-        normalize=True,
-        temperature=None,
+        scaling_factor: float = 1.0,
+        normalize: bool = True,
+        temperature: float | None = None,
         trainable_ln: bool = True,
-        ln_eps: Optional[float] = 1e-3,
+        ln_eps: float | None = 1e-3,
         concat_output_tebd: bool = True,
         env_protection: float = 0.0,  # not implement!!
-        stripped_type_embedding: Optional[bool] = None,
-        type_map: Optional[list[str]] = None,  # to be compat with input
-        **kwargs,
+        stripped_type_embedding: bool | None = None,
+        type_map: list[str] | None = None,  # to be compat with input
+        **kwargs: Any,
     ) -> None:
         # Ensure compatibility with the deprecated stripped_type_embedding option.
         if stripped_type_embedding is None:
@@ -343,10 +344,10 @@ class DescrptSeAtten(DescrptSeA):
         mesh: list,
         input_dict: dict,
         mixed_type: bool = False,
-        real_natoms_vec: Optional[list] = None,
-        **kwargs,
+        real_natoms_vec: list | None = None,
+        **kwargs: Any,
     ) -> None:
-        """Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
+        """Compute the statistics (avg and std) of the training data. The input will be normalized by the statistics.
 
         Parameters
         ----------
@@ -381,7 +382,13 @@ class DescrptSeAtten(DescrptSeA):
             if mixed_type:
                 sys_num = 0
                 for cc, bb, tt, nn, mm, r_n in zip(
-                    data_coord, data_box, data_atype, natoms_vec, mesh, real_natoms_vec
+                    data_coord,
+                    data_box,
+                    data_atype,
+                    natoms_vec,
+                    mesh,
+                    real_natoms_vec,
+                    strict=True,
                 ):
                     sysr, sysr2, sysa, sysa2, sysn = self._compute_dstats_sys_smth(
                         cc, bb, tt, nn, mm, mixed_type, r_n
@@ -394,7 +401,7 @@ class DescrptSeAtten(DescrptSeA):
                     suma2.append(sysa2)
             else:
                 for cc, bb, tt, nn, mm in zip(
-                    data_coord, data_box, data_atype, natoms_vec, mesh
+                    data_coord, data_box, data_atype, natoms_vec, mesh, strict=True
                 ):
                     sysr, sysr2, sysa, sysa2, sysn = self._compute_dstats_sys_smth(
                         cc, bb, tt, nn, mm
@@ -425,7 +432,7 @@ class DescrptSeAtten(DescrptSeA):
         suffix: str = "",
         tebd_suffix: str = "",
     ) -> None:
-        """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+        """Receive the statistics (distance, max_nbor_size and env_mat_range) of the training data.
 
         Parameters
         ----------
@@ -522,7 +529,7 @@ class DescrptSeAtten(DescrptSeA):
         box_: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict,
-        reuse: Optional[bool] = None,
+        reuse: bool | None = None,
         suffix: str = "",
     ) -> tf.Tensor:
         """Build the computational graph for the descriptor.
@@ -702,8 +709,15 @@ class DescrptSeAtten(DescrptSeA):
         return self.dout
 
     def _pass_filter(
-        self, inputs, atype, natoms, input_dict, reuse=None, suffix="", trainable=True
-    ):
+        self,
+        inputs: tf.Tensor,
+        atype: tf.Tensor,
+        natoms: tf.Tensor,
+        input_dict: dict,
+        reuse: bool | None = None,
+        suffix: str = "",
+        trainable: bool = True,
+    ) -> tuple[tf.Tensor, None]:
         assert (
             input_dict is not None
             and input_dict.get("type_embedding", None) is not None
@@ -786,14 +800,14 @@ class DescrptSeAtten(DescrptSeA):
 
     def _compute_dstats_sys_smth(
         self,
-        data_coord,
-        data_box,
-        data_atype,
-        natoms_vec,
-        mesh,
-        mixed_type=False,
-        real_natoms_vec=None,
-    ):
+        data_coord: np.ndarray,
+        data_box: np.ndarray,
+        data_atype: np.ndarray,
+        natoms_vec: np.ndarray,
+        mesh: np.ndarray,
+        mixed_type: bool = False,
+        real_natoms_vec: np.ndarray | None = None,
+    ) -> tuple[Any, Any]:
         dd_all, descrpt_deriv_t, rij_t, nlist_t, nei_type_vec_t, nmask_t = run_sess(
             self.sub_sess,
             [
@@ -882,10 +896,10 @@ class DescrptSeAtten(DescrptSeA):
 
     def _lookup_type_embedding(
         self,
-        xyz_scatter,
-        natype,
-        type_embedding,
-    ):
+        xyz_scatter: tf.Tensor,
+        natype: tf.Tensor,
+        type_embedding: tf.Tensor,
+    ) -> tf.Tensor:
         """Concatenate `type_embedding` of neighbors and `xyz_scatter`.
         If not self.type_one_side, concatenate `type_embedding` of center atoms as well.
 
@@ -931,16 +945,16 @@ class DescrptSeAtten(DescrptSeA):
 
     def _scaled_dot_attn(
         self,
-        Q,
-        K,
-        V,
-        temperature,
-        input_r,
-        dotr=False,
-        do_mask=False,
-        layer=0,
-        save_weights=True,
-    ):
+        Q: tf.Tensor,
+        K: tf.Tensor,
+        V: tf.Tensor,
+        temperature: tf.Tensor,
+        input_r: tf.Tensor,
+        dotr: bool = False,
+        do_mask: bool = False,
+        layer: int = 0,
+        save_weights: bool = True,
+    ) -> tf.Tensor:
         attn = tf.matmul(Q / temperature, K, transpose_b=True)
         if self.smooth:
             # (nb x nloc) x nsel
@@ -979,16 +993,16 @@ class DescrptSeAtten(DescrptSeA):
 
     def _attention_layers(
         self,
-        input_xyz,
-        layer_num,
-        shape_i,
-        outputs_size,
-        input_r,
-        dotr=False,
-        do_mask=False,
-        trainable=True,
-        suffix="",
-    ):
+        input_xyz: tf.Tensor,
+        layer_num: int,
+        shape_i: list[int],
+        outputs_size: list[int],
+        input_r: tf.Tensor,
+        dotr: bool = False,
+        do_mask: bool = False,
+        trainable: bool = True,
+        suffix: str = "",
+    ) -> tf.Tensor:
         sd_k = tf.sqrt(tf.cast(1.0, dtype=self.filter_precision))
         for i in range(layer_num):
             name = f"attention_layer_{i}{suffix}"
@@ -1092,22 +1106,22 @@ class DescrptSeAtten(DescrptSeA):
 
     def _filter_lower(
         self,
-        type_i,
-        type_input,
-        start_index,
-        incrs_index,
-        inputs,
-        type_embedding=None,
-        atype=None,
-        is_exclude=False,
-        activation_fn=None,
-        bavg=0.0,
-        stddev=1.0,
-        trainable=True,
-        suffix="",
-        name="filter_",
-        reuse=None,
-    ):
+        type_i: int,
+        type_input: int,
+        start_index: int,
+        incrs_index: int,
+        inputs: tf.Tensor,
+        type_embedding: tf.Tensor | None = None,
+        atype: tf.Tensor | None = None,
+        is_exclude: bool = False,
+        activation_fn: Callable[[tf.Tensor], tf.Tensor] | None = None,
+        bavg: float = 0.0,
+        stddev: float = 1.0,
+        trainable: bool = True,
+        suffix: str = "",
+        name: str = "filter_",
+        reuse: bool | None = None,
+    ) -> tf.Tensor:
         """Input env matrix, returns R.G."""
         outputs_size = [1, *self.filter_neuron]
         # cut-out inputs
@@ -1301,19 +1315,19 @@ class DescrptSeAtten(DescrptSeA):
     @cast_precision
     def _filter(
         self,
-        inputs,
-        type_input,
-        natoms,
-        type_embedding=None,
-        atype=None,
-        activation_fn=tf.nn.tanh,
-        stddev=1.0,
-        bavg=0.0,
-        suffix="",
-        name="linear",
-        reuse=None,
-        trainable=True,
-    ):
+        inputs: tf.Tensor,
+        type_input: int,
+        natoms: tf.Tensor,
+        type_embedding: tf.Tensor | None = None,
+        atype: tf.Tensor | None = None,
+        activation_fn: Callable[[tf.Tensor], tf.Tensor] | None = tf.nn.tanh,
+        stddev: float = 1.0,
+        bavg: float = 0.0,
+        suffix: str = "",
+        name: str = "linear",
+        reuse: bool | None = None,
+        trainable: bool = True,
+    ) -> tf.Tensor:
         nframes = tf.shape(tf.reshape(inputs, [-1, natoms[0], self.ndescrpt]))[0]
         # natom x (nei x 4)
         shape = inputs.get_shape().as_list()
@@ -1400,7 +1414,7 @@ class DescrptSeAtten(DescrptSeA):
             graph_def, suffix=suffix
         )
 
-        def compat_ln_pattern(old_key) -> None:
+        def compat_ln_pattern(old_key: str) -> None:
             pattern = r"attention_layer_(\d+)/(layer_normalization)_\d+"
             replacement = r"attention_layer_\1/\2"
             if bool(re.search(pattern, old_key)):
@@ -1513,9 +1527,9 @@ class DescrptSeAtten(DescrptSeA):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
@@ -1593,6 +1607,7 @@ class DescrptSeAtten(DescrptSeA):
                 bias=bias,
                 use_timestep=False,
                 precision=self.precision.name,
+                trainable=self.trainable,
             )
             matrix_list = [
                 attention_layer_params[layer_idx][key]["matrix"]
@@ -1611,6 +1626,7 @@ class DescrptSeAtten(DescrptSeA):
                 bias=bias,
                 use_timestep=False,
                 precision=self.precision.name,
+                trainable=self.trainable,
             )
             out_proj["matrix"] = attention_layer_params[layer_idx]["c_out"]["matrix"]
             if bias:
@@ -1654,6 +1670,7 @@ class DescrptSeAtten(DescrptSeA):
         variables: dict,
         suffix: str = "",
         type_one_side: bool = False,
+        trainable: bool = True,
     ) -> dict:
         """Serialize network.
 
@@ -1679,6 +1696,8 @@ class DescrptSeAtten(DescrptSeA):
             If 'False', type embeddings of both neighbor and central atoms are considered.
             If 'True', only type embeddings of neighbor atoms are considered.
             Default is 'False'.
+        trainable : bool
+            Whether the network is trainable
 
         Returns
         -------
@@ -1719,6 +1738,7 @@ class DescrptSeAtten(DescrptSeA):
                     activation_function=activation_function,
                     resnet_dt=resnet_dt,
                     precision=self.precision.name,
+                    trainable=trainable,
                 )
             assert embeddings[network_idx] is not None
             if weight_name == "idt":
@@ -1850,7 +1870,7 @@ class DescrptSeAtten(DescrptSeA):
         return embedding_net_variables
 
     @classmethod
-    def deserialize(cls, data: dict, suffix: str = ""):
+    def deserialize(cls, data: dict, suffix: str = "") -> "DescrptSeAtten":
         """Deserialize the model.
 
         Parameters
@@ -1983,6 +2003,7 @@ class DescrptSeAtten(DescrptSeA):
                 resnet_dt=self.filter_resnet_dt,
                 variables=self.embedding_net_variables,
                 excluded_types=self.exclude_types,
+                trainable=self.trainable,
                 suffix=suffix,
             ),
             "attention_layers": self.serialize_attention_layers(
@@ -2032,6 +2053,7 @@ class DescrptSeAtten(DescrptSeA):
                         variables=self.two_side_embeeding_net_variables,
                         suffix=suffix,
                         type_one_side=self.type_one_side,
+                        trainable=self.trainable,
                     )
                 }
             )
@@ -2050,7 +2072,7 @@ class DescrptSeAtten(DescrptSeA):
         )
         return data
 
-    def update_attention_layers_serialize(self, data: dict):
+    def update_attention_layers_serialize(self, data: dict) -> None:
         """Update the serialized data to be consistent with other backend references."""
         new_dict = {
             "@class": "NeighborGatedAttention",
@@ -2176,7 +2198,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[list[int], int],
+        sel: list[int] | int,
         ntypes: int,
         neuron: list[int] = [25, 50, 100],
         axis_neuron: int = 8,
@@ -2194,19 +2216,19 @@ class DescrptDPA1Compat(DescrptSeAtten):
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = "default",
-        scaling_factor=1.0,
+        scaling_factor: float = 1.0,
         normalize: bool = True,
-        temperature: Optional[float] = None,
+        temperature: float | None = None,
         trainable_ln: bool = True,
-        ln_eps: Optional[float] = 1e-3,
+        ln_eps: float | None = 1e-3,
         smooth_type_embedding: bool = True,
         concat_output_tebd: bool = True,
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
-        type_map: Optional[list[str]] = None,
-        spin: Optional[Any] = None,
+        type_map: list[str] | None = None,
+        spin: Any | None = None,
         # consistent with argcheck, not used though
-        seed: Optional[int] = None,
+        seed: int | None = None,
         uniform_seed: bool = False,
     ) -> None:
         if not normalize:
@@ -2294,7 +2316,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
         box_: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict,
-        reuse: Optional[bool] = None,
+        reuse: bool | None = None,
         suffix: str = "",
     ) -> tf.Tensor:
         type_embedding = self.type_embedding.build(self.ntypes, suffix=suffix)
@@ -2340,7 +2362,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
         suffix: str = "",
         tebd_suffix: str = "",
     ) -> None:
-        """Reveive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+        """Receive the statistics (distance, max_nbor_size and env_mat_range) of the training data.
 
         Parameters
         ----------
@@ -2400,7 +2422,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
             graph=graph, graph_def=graph_def, suffix=suffix
         )
 
-    def update_attention_layers_serialize(self, data: dict):
+    def update_attention_layers_serialize(self, data: dict) -> None:
         """Update the serialized data to be consistent with other backend references."""
         new_dict = {
             "@class": "NeighborGatedAttention",
@@ -2434,7 +2456,7 @@ class DescrptDPA1Compat(DescrptSeAtten):
         return new_dict
 
     @classmethod
-    def deserialize(cls, data: dict, suffix: str = ""):
+    def deserialize(cls, data: dict, suffix: str = "") -> "DescrptDPA1Compat":
         """Deserialize the model.
 
         Parameters

@@ -6,13 +6,26 @@ import paddle
 log = logging.getLogger(__name__)
 
 
-def compute_smooth_weight(distance, rmin: float, rmax: float):
+def compute_smooth_weight(
+    distance: paddle.Tensor, rmin: float, rmax: float
+) -> paddle.Tensor:
     """Compute smooth weight for descriptor elements."""
     if rmin >= rmax:
         raise ValueError("rmin should be less than rmax.")
-    min_mask = distance <= rmin
-    max_mask = distance >= rmax
-    mid_mask = paddle.logical_not(paddle.logical_or(min_mask, max_mask))
+    distance = paddle.clip(distance, min=rmin, max=rmax)
     uu = (distance - rmin) / (rmax - rmin)
-    vv = uu * uu * uu * (-6 * uu * uu + 15 * uu - 10) + 1
-    return vv * mid_mask.astype(vv.dtype) + min_mask.astype(vv.dtype)
+    uu2 = uu * uu
+    vv = uu2 * uu * (-6 * uu2 + 15 * uu - 10) + 1
+    return vv
+
+
+def compute_exp_sw(distance: paddle.Tensor, rmin: float, rmax: float) -> paddle.Tensor:
+    """Compute the exponential switch function for neighbor update."""
+    if rmin >= rmax:
+        raise ValueError("rmin should be less than rmax.")
+    distance = paddle.clip(distance, min=0.0, max=rmax)
+    C = 20
+    a = C / rmin
+    b = rmin
+    exp_sw = paddle.exp(-paddle.exp(a * (distance - b)))
+    return exp_sw

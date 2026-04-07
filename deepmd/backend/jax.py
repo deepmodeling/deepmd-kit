@@ -1,10 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from collections.abc import (
+    Callable,
+)
 from importlib.util import (
     find_spec,
 )
 from typing import (
     TYPE_CHECKING,
-    Callable,
     ClassVar,
 )
 

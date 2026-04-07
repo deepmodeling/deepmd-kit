@@ -19,6 +19,21 @@ e, f, v = dp.eval(coord, cell, atype)
 
 where `e`, `f` and `v` are predicted energy, force and virial of the system, respectively.
 
+One can also evaluate the descriptors of the model:
+
+```python
+from deepmd.infer import DeepPot
+import numpy as np
+
+dp = DeepPot("graph.pb")
+coord = np.array([[1, 0, 0], [0, 0, 1.5], [1, 0, 3]]).reshape([1, -1])
+cell = np.diag(10 * np.ones(3)).reshape([1, -1])
+atype = [1, 0, 1]
+descriptors = dp.eval_descriptor(coord, cell, atype)
+```
+
+where `descriptors` is the descriptor matrix of the system. This can also be done using the command line interface `dp eval-desc` as described in the [test documentation](../test/test.md).
+
 Furthermore, one can use the python interface to calculate model deviation.
 
 ```python

@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
+from collections.abc import (
     Callable,
+)
+from typing import (
+    Any,
     Optional,
-    Union,
 )
 
 import torch
@@ -66,9 +68,9 @@ class PairTabAtomicModel(BaseAtomicModel):
         self,
         tab_file: str,
         rcut: float,
-        sel: Union[int, list[int]],
+        sel: int | list[int],
         type_map: list[str],
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         super().__init__(type_map, **kwargs)
         super().init_out_stat()
@@ -129,9 +131,6 @@ class PairTabAtomicModel(BaseAtomicModel):
             ]
         )
 
-    def get_out_bias(self) -> torch.Tensor:
-        return self.out_bias
-
     def get_rcut(self) -> float:
         return self.rcut
 
@@ -141,7 +140,7 @@ class PairTabAtomicModel(BaseAtomicModel):
     def get_sel(self) -> list[int]:
         return [self.sel]
 
-    def set_case_embd(self, case_idx: int):
+    def set_case_embd(self, case_idx: int) -> None:
         """
         Set the case embedding of this atomic model by the given case_idx,
         typically concatenated with the output of the descriptor and fed into the fitting net.
@@ -175,7 +174,9 @@ class PairTabAtomicModel(BaseAtomicModel):
         return False
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self,
+        type_map: list[str],
+        model_with_new_type_stat: Optional["PairTabAtomicModel"] = None,
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -202,7 +203,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         return dd
 
     @classmethod
-    def deserialize(cls, data) -> "PairTabAtomicModel":
+    def deserialize(cls, data: dict[str, Any]) -> "PairTabAtomicModel":
         data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 2, 1)
         tab = PairTab.deserialize(data.pop("tab"))
@@ -224,37 +225,52 @@ class PairTabAtomicModel(BaseAtomicModel):
 
     def compute_or_load_stat(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        stat_file_path: Optional[DPPath] = None,
+        sampled_func: Callable[[], list[dict]] | list[dict],
+        stat_file_path: DPPath | None = None,
+        compute_or_load_out_stat: bool = True,
+        preset_observed_type: list[str] | None = None,
     ) -> None:
         """
-        Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
+        Compute or load the statistics parameters of the model,
+        such as mean and standard deviation of descriptors or the energy bias of the fitting net.
+        When `sampled` is provided, all the statistics parameters will be calculated (or re-calculated for update),
+        and saved in the `stat_file_path`(s).
+        When `sampled` is not provided, it will check the existence of `stat_file_path`(s)
+        and load the calculated statistics parameters.
 
         Parameters
         ----------
-        merged : Union[Callable[[], list[dict]], list[dict]]
-            - list[dict]: A list of data samples from various data systems.
-                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
-                originating from the `i`-th data system.
-            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
-                only when needed. Since the sampling process can be slow and memory-intensive,
-                the lazy function helps by only sampling once.
-        stat_file_path : Optional[DPPath]
-            The path to the stat file.
+        sampled_func
+            The lazy sampled function to get data frames from different data systems.
+        stat_file_path
+            The dictionary of paths to the statistics files.
+        compute_or_load_out_stat : bool
+            Whether to compute the output statistics.
+            If False, it will only compute the input statistics (e.g. mean and standard deviation of descriptors).
 
         """
-        self.compute_or_load_out_stat(merged, stat_file_path)
+        if compute_or_load_out_stat:
+            self.compute_or_load_out_stat(sampled_func, stat_file_path)
+
+        if stat_file_path is not None and self.type_map is not None:
+            stat_file_path /= " ".join(self.type_map)
+
+        self._collect_and_set_observed_type(
+            sampled_func if callable(sampled_func) else lambda: sampled_func,
+            stat_file_path,
+            preset_observed_type,
+        )
 
     def forward_atomic(
         self,
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
         nlist: torch.Tensor,
-        mapping: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        mapping: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
-        comm_dict: Optional[dict[str, torch.Tensor]] = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
     ) -> dict[str, torch.Tensor]:
         nframes, nloc, nnei = nlist.shape
         extended_coord = extended_coord.view(nframes, -1, 3)
@@ -383,6 +399,11 @@ class PairTabAtomicModel(BaseAtomicModel):
         -------
         torch.Tensor
             The pairwise distance between the atoms (nframes, nloc, nnei).
+
+        Notes
+        -----
+        Safe gradient implementation: when diff is zero (padding entries),
+            both distance and gradient are zero.
         """
         nframes, nloc, nnei = nlist.shape
         coord_l = coords[:, :nloc].view(nframes, -1, 1, 3)
@@ -390,7 +411,17 @@ class PairTabAtomicModel(BaseAtomicModel):
         coord_r = torch.gather(coords, 1, index)
         coord_r = coord_r.view(nframes, nloc, nnei, 3)
         diff = coord_r - coord_l
-        pairwise_rr = torch.linalg.norm(diff, dim=-1, keepdim=True).squeeze(-1)
+        diff_sq = torch.sum(diff * diff, dim=-1, keepdim=True)
+
+        # When diff is zero, output is zero and gradient is also zero
+        mask = diff_sq.squeeze(-1) > 0
+        pairwise_rr = torch.where(
+            mask.unsqueeze(-1),
+            torch.sqrt(
+                torch.where(mask.unsqueeze(-1), diff_sq, torch.ones_like(diff_sq))
+            ),
+            torch.zeros_like(diff_sq),
+        ).squeeze(-1)
         return pairwise_rr
 
     @staticmethod

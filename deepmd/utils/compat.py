@@ -11,8 +11,6 @@ from pathlib import (
 )
 from typing import (
     Any,
-    Optional,
-    Union,
 )
 
 import numpy as np
@@ -23,7 +21,7 @@ from deepmd.common import (
 
 
 def convert_input_v0_v1(
-    jdata: dict[str, Any], warning: bool = True, dump: Optional[Union[str, Path]] = None
+    jdata: dict[str, Any], warning: bool = True, dump: str | Path | None = None
 ) -> dict[str, Any]:
     """Convert input from v0 format to v1.
 
@@ -54,7 +52,7 @@ def convert_input_v0_v1(
     return output
 
 
-def _warning_input_v0_v1(fname: Optional[Union[str, Path]]) -> None:
+def _warning_input_v0_v1(fname: str | Path | None) -> None:
     msg = (
         "It seems that you are using a deepmd-kit input of version 0.x.x, "
         "which is deprecated. we have converted the input to >2.0.0 compatible"
@@ -288,7 +286,7 @@ def remove_decay_rate(jdata: dict[str, Any]) -> None:
 
 
 def convert_input_v1_v2(
-    jdata: dict[str, Any], warning: bool = True, dump: Optional[Union[str, Path]] = None
+    jdata: dict[str, Any], warning: bool = True, dump: str | Path | None = None
 ) -> dict[str, Any]:
     tr_cfg = jdata["training"]
     tr_data_keys = {
@@ -324,7 +322,7 @@ def convert_input_v1_v2(
     return jdata
 
 
-def _warning_input_v1_v2(fname: Optional[Union[str, Path]]) -> None:
+def _warning_input_v1_v2(fname: str | Path | None) -> None:
     msg = (
         "It seems that you are using a deepmd-kit input of version 1.x.x, "
         "which is deprecated. we have converted the input to >2.0.0 compatible"
@@ -335,7 +333,7 @@ def _warning_input_v1_v2(fname: Optional[Union[str, Path]]) -> None:
 
 
 def deprecate_numb_test(
-    jdata: dict[str, Any], warning: bool = True, dump: Optional[Union[str, Path]] = None
+    jdata: dict[str, Any], warning: bool = True, dump: str | Path | None = None
 ) -> dict[str, Any]:
     """Deprecate `numb_test` since v2.1. It has taken no effect since v2.0.
 
@@ -372,13 +370,80 @@ def deprecate_numb_test(
     return jdata
 
 
-def update_deepmd_input(
-    jdata: dict[str, Any], warning: bool = True, dump: Optional[Union[str, Path]] = None
+def migrate_training_warmup(
+    jdata: dict[str, Any], warning: bool = True
 ) -> dict[str, Any]:
-    def is_deepmd_v0_input(jdata):
+    """
+    Migrate legacy warmup settings from training to learning_rate.
+
+    Parameters
+    ----------
+    jdata : dict[str, Any]
+        Input configuration dictionary.
+    warning : bool, optional
+        Whether to show a deprecation warning, by default True.
+
+    Returns
+    -------
+    dict[str, Any]
+        Updated configuration dictionary.
+    """
+    training = jdata.get("training")
+    if not isinstance(training, dict):
+        return jdata
+
+    warmup_keys = ("warmup_steps", "warmup_ratio", "warmup_start_factor")
+    legacy_keys = [key for key in warmup_keys if key in training]
+    if not legacy_keys:
+        return jdata
+
+    lr = jdata.get("learning_rate")
+    if not isinstance(lr, dict):
+        for key in legacy_keys:
+            training.pop(key)
+        if warning:
+            warnings.warn(
+                "Found legacy warmup settings under training, but learning_rate "
+                "is missing or invalid. The warmup keys were removed from training."
+            )
+        return jdata
+
+    moved_keys = []
+    conflict_keys = []
+    # === Step 1. Check for conflicts first (read-only pass) ===
+    for key in legacy_keys:
+        if key in lr:
+            conflict_keys.append(key)
+
+    # Raise error if there are conflicting definitions before mutating
+    if conflict_keys:
+        raise ValueError(
+            "Conflicting warmup settings found in both 'training' and "
+            f"'learning_rate': {', '.join(conflict_keys)}. "
+            "Please define warmup settings only in 'learning_rate'."
+        )
+
+    # === Step 2. Move legacy warmup keys ===
+    for key in legacy_keys:
+        value = training.pop(key)
+        lr[key] = value
+        moved_keys.append(key)
+
+    if warning and moved_keys:
+        warnings.warn(
+            "Legacy warmup settings under training were moved to learning_rate: "
+            f"{', '.join(moved_keys)}."
+        )
+    return jdata
+
+
+def update_deepmd_input(
+    jdata: dict[str, Any], warning: bool = True, dump: str | Path | None = None
+) -> dict[str, Any]:
+    def is_deepmd_v0_input(jdata: dict[str, Any]) -> bool:
         return "model" not in jdata.keys()
 
-    def is_deepmd_v1_input(jdata):
+    def is_deepmd_v1_input(jdata: dict[str, Any]) -> bool:
         return "systems" in jdata["training"].keys()
 
     if is_deepmd_v0_input(jdata):
@@ -390,5 +455,94 @@ def update_deepmd_input(
         jdata = deprecate_numb_test(jdata, False, dump)
     else:
         jdata = deprecate_numb_test(jdata, warning, dump)
+
+    jdata = migrate_training_warmup(jdata, warning=warning)
+    jdata = convert_optimizer_v31_to_v32(jdata, warning=warning)
+    return jdata
+
+
+def convert_optimizer_v31_to_v32(
+    jdata: dict[str, Any], warning: bool = True
+) -> dict[str, Any]:
+    """Convert optimizer format from v3.1 to v3.2.
+
+    v3.1 format: optimizer parameters (opt_type, kf_blocksize, etc.) in training section.
+    v3.2 format: separate optimizer section with type field.
+
+    Parameters
+    ----------
+    jdata : dict[str, Any]
+        loaded json/yaml file
+    warning : bool, optional
+        whether to show deprecation warning, by default True
+
+    Returns
+    -------
+    dict[str, Any]
+        converted output with optimizer section
+    """
+    # Default optimizer values (must match argcheck.py defaults)
+    default_optimizer = {
+        "type": "Adam",
+        "adam_beta1": 0.9,
+        "adam_beta2": 0.999,
+        "weight_decay": 0.0,
+    }
+
+    training_cfg = jdata.get("training", {})
+    optimizer_cfg = jdata.get("optimizer", {})
+
+    # === Step 1. Extract legacy optimizer parameters from training ===
+    optimizer_keys = [
+        "opt_type",
+        "kf_blocksize",
+        "kf_start_pref_e",
+        "kf_limit_pref_e",
+        "kf_start_pref_f",
+        "kf_limit_pref_f",
+        "weight_decay",
+        "momentum",
+        "muon_momentum",
+        "adam_beta1",
+        "adam_beta2",
+        "lr_adjust",
+        "lr_adjust_coeff",
+        "muon_2d_only",
+        "min_2d_dim",
+    ]
+    has_legacy_optimizer = any(key in training_cfg for key in optimizer_keys)
+    if has_legacy_optimizer:
+        extracted_cfg = {}
+        for key in optimizer_keys:
+            if key in training_cfg:
+                extracted_cfg[key] = training_cfg.pop(key)
+
+        # Convert opt_type to type for new format
+        if "opt_type" in extracted_cfg:
+            extracted_cfg["type"] = extracted_cfg.pop("opt_type")
+
+        # Merge with existing optimizer config (conversion takes precedence)
+        optimizer_cfg = {**optimizer_cfg, **extracted_cfg}
+
+        if warning:
+            warnings.warn(
+                "Placing optimizer parameters (opt_type, kf_blocksize, etc.) in the training section "
+                "is deprecated. Use a separate 'optimizer' section with 'type' field instead.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
+    # === Step 2. Fill in missing defaults ===
+    if "type" not in optimizer_cfg:
+        optimizer_cfg["type"] = default_optimizer["type"]
+
+    # Fill in defaults for Adam optimizer type
+    if optimizer_cfg["type"] in ("Adam", "AdamW"):
+        for key, value in default_optimizer.items():
+            if key not in optimizer_cfg:
+                optimizer_cfg[key] = value
+
+    # Set/update the optimizer section
+    jdata["optimizer"] = optimizer_cfg
 
     return jdata

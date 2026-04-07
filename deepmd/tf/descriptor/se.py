@@ -1,8 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import re
-from typing import (
-    Optional,
-)
 
 from deepmd.dpmodel.utils.network import (
     EmbeddingNet,
@@ -154,9 +151,9 @@ class DescrptSe(Descriptor):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
@@ -192,6 +189,7 @@ class DescrptSe(Descriptor):
         resnet_dt: bool,
         variables: dict,
         excluded_types: set[tuple[int, int]] = set(),
+        trainable: bool = True,
         suffix: str = "",
     ) -> dict:
         """Serialize network.
@@ -214,6 +212,8 @@ class DescrptSe(Descriptor):
             The input variables
         excluded_types : set[tuple[int, int]], optional
             The excluded types
+        trainable : bool
+            Whether the network is trainable
         suffix : str, optional
             The suffix of the scope
 
@@ -236,6 +236,7 @@ class DescrptSe(Descriptor):
                     activation_function=activation_function,
                     resnet_dt=resnet_dt,
                     precision=self.precision.name,
+                    trainable=trainable,
                 )
                 embeddings[(type_j, type_i)] = EmbeddingNet(
                     in_dim=in_dim,
@@ -243,6 +244,7 @@ class DescrptSe(Descriptor):
                     activation_function=activation_function,
                     resnet_dt=resnet_dt,
                     precision=self.precision.name,
+                    trainable=trainable,
                 )
                 embeddings[(type_i, type_j)].clear()
                 embeddings[(type_j, type_i)].clear()
@@ -278,6 +280,7 @@ class DescrptSe(Descriptor):
                     activation_function=activation_function,
                     resnet_dt=resnet_dt,
                     precision=self.precision.name,
+                    trainable=trainable,
                 )
             assert embeddings[network_idx] is not None
             if weight_name == "idt":

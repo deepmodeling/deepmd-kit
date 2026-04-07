@@ -1,5 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import platform
+from ctypes import (
+    CDLL,
+    RTLD_GLOBAL,
+)
+from importlib import (
+    metadata,
+)
 
 import torch
 from packaging.version import (
@@ -35,6 +42,16 @@ def load_library(module_name: str) -> bool:
     module_file = (SHARED_LIB_DIR / (prefix + module_name)).with_suffix(ext).resolve()
 
     if module_file.is_file():
+        # Skip if this library was already loaded by torch.ops.load_library.
+        if str(module_file) in torch.ops.loaded_libraries:
+            return True
+        # Skip if ops were already registered via C++ shared-library linkage
+        # (e.g. LAMMPS plugin links libdeepmd_op_pt.so at the C++ level).
+        # TORCH_LIBRARY(deepmd, m) in print_summary.cc registers "enable_mpi"
+        # as the first op; if it's accessible, the library is already loaded.
+        # Calling torch.ops.load_library again would abort() the process.
+        if hasattr(torch.ops, "deepmd") and hasattr(torch.ops.deepmd, "enable_mpi"):
+            return True
         try:
             torch.ops.load_library(module_file)
         except OSError as e:
@@ -86,6 +103,29 @@ def load_library(module_name: str) -> bool:
         return True
     return False
 
+
+def load_mpi_library() -> None:
+    """Load MPI library.
+
+    When building with cibuildwheel, the link to the MPI library is lost
+    after the wheel is repaired.
+    """
+    if platform.system() == "Linux":
+        libname = "libmpi.so.*"
+    elif platform.system() == "Darwin":
+        libname = "libmpi.*.dylib"
+    else:
+        raise RuntimeError("Unsupported platform")
+    MPI_LIB = next(p for p in metadata.files("mpich") if p.match(libname)).locate()
+    # use CDLL to load the library
+    CDLL(MPI_LIB, mode=RTLD_GLOBAL)
+
+
+if GLOBAL_CONFIG.get("cibuildwheel", "0") == "1" and platform.system() in (
+    "Linux",
+    "Darwin",
+):
+    load_mpi_library()
 
 ENABLE_CUSTOMIZED_OP = load_library("deepmd_op_pt")
 

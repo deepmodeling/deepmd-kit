@@ -115,7 +115,7 @@ class SpinTest:
         nframes, nloc = self.coord.shape[:2]
         self.real_ntypes = self.model.spin.get_ntypes_real()
         # 1. test forward input process
-        coord_updated, atype_updated = self.model.process_spin_input(
+        coord_updated, atype_updated, _ = self.model.process_spin_input(
             self.coord, self.atype, self.spin
         )
         # compare atypes of real and virtual atoms
@@ -174,6 +174,7 @@ class SpinTest:
             extended_atype_updated,
             nlist_updated,
             mapping_updated,
+            _,
         ) = self.model.process_spin_input_lower(
             extended_coord, extended_atype, extended_spin, nlist, mapping=mapping
         )
@@ -313,7 +314,7 @@ class SpinTest:
             return
         dp_model = DPSpinModel.deserialize(self.model.serialize())
         # test call
-        dp_ret = dp_model.call(
+        dp_ret = dp_model.call_common(
             to_numpy_array(self.coord),
             to_numpy_array(self.atype),
             to_numpy_array(self.spin),
@@ -355,7 +356,7 @@ class SpinTest:
         extended_spin = torch.gather(
             self.spin, index=mapping.unsqueeze(-1).tile((1, 1, 3)), dim=1
         )
-        dp_ret_lower = dp_model.call_lower(
+        dp_ret_lower = dp_model.call_common_lower(
             to_numpy_array(extended_coord),
             to_numpy_array(extended_atype),
             to_numpy_array(extended_spin),

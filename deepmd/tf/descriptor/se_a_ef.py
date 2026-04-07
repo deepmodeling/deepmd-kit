@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from collections.abc import (
+    Callable,
+)
 from typing import (
-    Optional,
+    Any,
 )
 
 import numpy as np
@@ -77,14 +80,14 @@ class DescrptSeAEf(DescrptSe):
         axis_neuron: int = 8,
         resnet_dt: bool = False,
         trainable: bool = True,
-        seed: Optional[int] = None,
+        seed: int | None = None,
         type_one_side: bool = True,
         exclude_types: list[list[int]] = [],
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = "default",
-        uniform_seed=False,
-        **kwargs,
+        uniform_seed: bool = False,
+        **kwargs: Any,
     ) -> None:
         """Constructor."""
         self.descrpt_para = DescrptSeAEfLower(
@@ -171,9 +174,9 @@ class DescrptSeAEf(DescrptSe):
         natoms_vec: list,
         mesh: list,
         input_dict: dict,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
-        """Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
+        """Compute the statistics (avg and std) of the training data. The input will be normalized by the statistics.
 
         Parameters
         ----------
@@ -207,7 +210,7 @@ class DescrptSeAEf(DescrptSe):
         box_: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict,
-        reuse: Optional[bool] = None,
+        reuse: bool | None = None,
         suffix: str = "",
     ) -> tf.Tensor:
         """Build the computational graph for the descriptor.
@@ -300,7 +303,7 @@ class DescrptSeAEfLower(DescrptSeA):
 
     def __init__(
         self,
-        op,
+        op: Callable,
         rcut: float,
         rcut_smth: float,
         sel: list[int],
@@ -308,7 +311,7 @@ class DescrptSeAEfLower(DescrptSeA):
         axis_neuron: int = 8,
         resnet_dt: bool = False,
         trainable: bool = True,
-        seed: Optional[int] = None,
+        seed: int | None = None,
         type_one_side: bool = True,
         exclude_types: list[list[int]] = [],
         set_davg_zero: bool = False,
@@ -404,13 +407,13 @@ class DescrptSeAEfLower(DescrptSeA):
 
     def compute_input_stats(
         self,
-        data_coord,
-        data_box,
-        data_atype,
-        natoms_vec,
-        mesh,
-        input_dict,
-        **kwargs,
+        data_coord: list[np.ndarray],
+        data_box: list[np.ndarray],
+        data_atype: list[np.ndarray],
+        natoms_vec: list[np.ndarray],
+        mesh: list[np.ndarray],
+        input_dict: dict,
+        **kwargs: Any,
     ) -> None:
         data_efield = input_dict["efield"]
         all_davg = []
@@ -422,7 +425,13 @@ class DescrptSeAEfLower(DescrptSeA):
             sumr2 = []
             suma2 = []
             for cc, bb, tt, nn, mm, ee in zip(
-                data_coord, data_box, data_atype, natoms_vec, mesh, data_efield
+                data_coord,
+                data_box,
+                data_atype,
+                natoms_vec,
+                mesh,
+                data_efield,
+                strict=True,
             ):
                 sysr, sysr2, sysa, sysa2, sysn = self._compute_dstats_sys_smth(
                     cc, bb, tt, nn, mm, ee
@@ -453,14 +462,22 @@ class DescrptSeAEfLower(DescrptSeA):
         self.davg = np.array(all_davg)
         self.dstd = np.array(all_dstd)
 
-    def _normalize_3d(self, a):
+    def _normalize_3d(self, a: tf.Tensor) -> tf.Tensor:
         na = tf.norm(a, axis=1)
         na = tf.tile(tf.reshape(na, [-1, 1]), tf.constant([1, 3]))
         return tf.divide(a, na)
 
     def build(
-        self, coord_, atype_, natoms, box_, mesh, input_dict, suffix="", reuse=None
-    ):
+        self,
+        coord_: tf.Tensor,
+        atype_: tf.Tensor,
+        natoms: list,
+        box_: tf.Tensor,
+        mesh: tf.Tensor,
+        input_dict: dict,
+        suffix: str = "",
+        reuse: bool | None = None,
+    ) -> tf.Tensor:
         efield = input_dict["efield"]
         davg = self.davg
         dstd = self.dstd
@@ -540,8 +557,14 @@ class DescrptSeAEfLower(DescrptSeA):
         return self.dout
 
     def _compute_dstats_sys_smth(
-        self, data_coord, data_box, data_atype, natoms_vec, mesh, data_efield
-    ):
+        self,
+        data_coord: np.ndarray,
+        data_box: np.ndarray,
+        data_atype: np.ndarray,
+        natoms_vec: np.ndarray,
+        mesh: np.ndarray,
+        data_efield: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         dd_all = run_sess(
             self.sub_sess,
             self.stat_descrpt,

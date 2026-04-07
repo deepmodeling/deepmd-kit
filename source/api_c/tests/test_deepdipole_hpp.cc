@@ -26,6 +26,9 @@ class TestInferDeepDipole : public ::testing::Test {
   deepmd::hpp::DeepTensor dp;
 
   void SetUp() override {
+#ifndef BUILD_TENSORFLOW
+    GTEST_SKIP() << "Skip because TensorFlow support is not enabled.";
+#endif
     deepmd::hpp::convert_pbtxt_to_pb("../../tests/infer/deepdipole.pbtxt",
                                      "deepdipole.pb");
 
@@ -221,6 +224,9 @@ class TestInferDeepDipoleNew : public ::testing::Test {
   deepmd::hpp::DeepTensor dp;
 
   void SetUp() override {
+#ifndef BUILD_TENSORFLOW
+    GTEST_SKIP() << "Skip because TensorFlow support is not enabled.";
+#endif
     std::string file_name = "../../tests/infer/deepdipole_new.pbtxt";
     deepmd::hpp::convert_pbtxt_to_pb("../../tests/infer/deepdipole_new.pbtxt",
                                      "deepdipole_new.pb");
@@ -434,6 +440,9 @@ class TestInferDeepDipoleFake : public ::testing::Test {
   deepmd::hpp::DeepTensor dp;
 
   void SetUp() override {
+#ifndef BUILD_TENSORFLOW
+    GTEST_SKIP() << "Skip because TensorFlow support is not enabled.";
+#endif
     deepmd::hpp::convert_pbtxt_to_pb("../../tests/infer/deepdipole_fake.pbtxt",
                                      "deepdipole_fake.pb");
 

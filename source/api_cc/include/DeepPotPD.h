@@ -260,6 +260,11 @@ class DeepPotPD : public DeepPotBackend {
     assert(inited);
     return aparam_nall;
   };
+  /**
+   * @brief Check if the model has default frame parameters.
+   * @return Always false for Paddle backend.
+   **/
+  bool has_default_fparam() const { return false; };
 
   /**
    * @brief Print the shape of given tensor.
@@ -282,12 +287,11 @@ class DeepPotPD : public DeepPotBackend {
    * @brief Compute the number of elements in a tensor.
    * @param[in] x Tensor x.
    **/
-  int numel(const paddle_infer::Tensor& x) const {
-    // TODO: There might be a overflow problem here for multiply int numbers.
-    int ret = 1;
+  size_t numel(const paddle_infer::Tensor& x) const {
+    size_t ret = 1;
     std::vector<int> x_shape = x.shape();
     for (std::size_t i = 0, n = x_shape.size(); i < n; ++i) {
-      ret *= x_shape[i];
+      ret *= static_cast<size_t>(x_shape[i]);
     }
     return ret;
   };
@@ -392,7 +396,11 @@ class DeepPotPD : public DeepPotBackend {
   int do_message_passing;  // 1:dpa2 model 0:others
   bool gpu_enabled;
   std::unique_ptr<paddle_infer::Tensor> firstneigh_tensor;
-  // std::unordered_map<std::string, paddle::Tensor> comm_dict; # Not used yet
+  std::unique_ptr<paddle_infer::Tensor> mapping_tensor;
+  std::vector<std::vector<int>> remapped_sendlist;
+  std::vector<int*> remapped_sendlist_ptrs;
+  std::vector<int> remapped_sendnum;
+  std::vector<int> remapped_recvnum;
 };
 
 }  // namespace deepmd

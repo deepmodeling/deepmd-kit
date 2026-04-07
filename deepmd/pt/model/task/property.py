@@ -1,8 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
-    Optional,
-    Union,
+    Any,
 )
 
 import torch
@@ -71,6 +70,8 @@ class PropertyFittingNet(InvarFitting):
         different fitting nets for different atom types.
     seed : int, optional
         Random seed.
+    distinguish_types : bool
+        Whether to distinguish atom types when computing output statistics.
     """
 
     def __init__(
@@ -80,7 +81,7 @@ class PropertyFittingNet(InvarFitting):
         property_name: str,
         task_dim: int = 1,
         neuron: list[int] = [128, 128, 128],
-        bias_atom_p: Optional[torch.Tensor] = None,
+        bias_atom_p: torch.Tensor | None = None,
         intensive: bool = False,
         resnet_dt: bool = True,
         numb_fparam: int = 0,
@@ -89,12 +90,15 @@ class PropertyFittingNet(InvarFitting):
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
-        trainable: Union[bool, list[bool]] = True,
-        seed: Optional[int] = None,
-        **kwargs,
+        trainable: bool | list[bool] = True,
+        seed: int | None = None,
+        default_fparam: list | None = None,
+        distinguish_types: bool = True,
+        **kwargs: Any,
     ) -> None:
         self.task_dim = task_dim
         self.intensive = intensive
+        self.distinguish_types = distinguish_types
         super().__init__(
             var_name=property_name,
             ntypes=ntypes,
@@ -111,6 +115,7 @@ class PropertyFittingNet(InvarFitting):
             mixed_types=mixed_types,
             trainable=trainable,
             seed=seed,
+            default_fparam=default_fparam,
             **kwargs,
         )
 
@@ -132,10 +137,15 @@ class PropertyFittingNet(InvarFitting):
         """Whether the fitting property is intensive."""
         return self.intensive
 
+    def get_distinguish_types(self) -> bool:
+        """Get whether to distinguish atom types when computing output statistics."""
+        return self.distinguish_types
+
     @classmethod
     def deserialize(cls, data: dict) -> "PropertyFittingNet":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 4, 1)
+        check_version_compatibility(data.pop("@version", 1), 6, 1)
+        data.setdefault("distinguish_types", False)
         data.pop("dim_out")
         data["property_name"] = data.pop("var_name")
         obj = super().deserialize(data)
@@ -149,8 +159,9 @@ class PropertyFittingNet(InvarFitting):
             "type": "property",
             "task_dim": self.task_dim,
             "intensive": self.intensive,
+            "distinguish_types": self.distinguish_types,
         }
-        dd["@version"] = 4
+        dd["@version"] = 6
 
         return dd
 

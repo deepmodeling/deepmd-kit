@@ -4,6 +4,7 @@ from abc import (
     abstractmethod,
 )
 from typing import (
+    Any,
     NoReturn,
 )
 
@@ -18,11 +19,18 @@ from deepmd.utils.plugin import (
 
 
 class TaskLoss(torch.nn.Module, ABC, make_plugin_registry("loss")):
-    def __init__(self, **kwargs) -> None:
+    def __init__(self, **kwargs: Any) -> None:
         """Construct loss."""
         super().__init__()
 
-    def forward(self, input_dict, model, label, natoms, learning_rate) -> NoReturn:
+    def forward(
+        self,
+        input_dict: dict[str, torch.Tensor],
+        model: torch.nn.Module,
+        label: dict[str, torch.Tensor],
+        natoms: int,
+        learning_rate: float | torch.Tensor,
+    ) -> NoReturn:
         """Return loss ."""
         raise NotImplementedError
 

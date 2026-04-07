@@ -26,9 +26,6 @@ from functools import (
 from pathlib import (
     Path,
 )
-from typing import (
-    Optional,
-)
 
 import numpy as np
 import yaml
@@ -125,6 +122,13 @@ class Result:
         else:
             self.descriptor = None
 
+        if "fit_ll" in data:
+            self.fit_ll = np.array(data["fit_ll"], dtype=np.float64).reshape(
+                self.nloc, -1
+            )
+        else:
+            self.fit_ll = None
+
 
 class Case:
     """Test case.
@@ -149,7 +153,7 @@ class Case:
         self.model_def_script = config.get("model_def_script")
 
     @lru_cache
-    def get_model(self, suffix: str, out_file: Optional[str] = None) -> str:
+    def get_model(self, suffix: str, out_file: str | None = None) -> str:
         """Get the model file with the specified suffix.
 
         Parameters

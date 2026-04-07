@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from typing import (
-    Optional,
+    Any,
 )
 
 import numpy as np
@@ -34,12 +34,12 @@ class PairTab:
         cutoff raduis for the tabulated potential
     """
 
-    def __init__(self, filename: str, rcut: Optional[float] = None) -> None:
+    def __init__(self, filename: str, rcut: float | None = None) -> None:
         """Constructor."""
         self.data_type = np.float64
         self.reinit(filename, rcut)
 
-    def reinit(self, filename: str, rcut: Optional[float] = None) -> None:
+    def reinit(self, filename: str, rcut: float | None = None) -> None:
         """Initialize the tabulated interaction.
 
         Parameters
@@ -95,7 +95,7 @@ class PairTab:
         }
 
     @classmethod
-    def deserialize(cls, data) -> "PairTab":
+    def deserialize(cls, data: dict[str, Any]) -> "PairTab":
         data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 1, 1)
         data.pop("@class")
@@ -257,7 +257,7 @@ class PairTab:
         )
         return pad_extrapolation
 
-    def _make_data(self):
+    def _make_data(self) -> np.ndarray:
         data = np.zeros(
             [self.ntypes * self.ntypes * 4 * self.nspline], dtype=self.data_type
         )

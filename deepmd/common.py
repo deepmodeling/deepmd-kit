@@ -15,14 +15,13 @@ from typing import (
     TYPE_CHECKING,
     Any,
     TypeVar,
-    Union,
     get_args,
 )
 
 try:
     from typing import Literal  # python >=3.8
 except ImportError:
-    from typing_extensions import Literal  # type: ignore
+    from typing import Literal  # type: ignore
 
 import numpy as np
 import yaml
@@ -35,6 +34,7 @@ from deepmd.utils.path import (
 )
 
 __all__ = [
+    "GLOBAL_NP_FLOAT_PRECISION",
     "VALID_ACTIVATION",
     "VALID_PRECISION",
     "expand_sys_str",
@@ -44,7 +44,7 @@ __all__ = [
     "select_idx_map",
 ]
 
-_PRECISION = Literal["default", "float16", "float32", "float64"]
+_PRECISION = Literal["default", "float16", "bfloat16", "float32", "float64"]
 _ACTIVATION = Literal[
     "relu",
     "relu6",
@@ -158,7 +158,7 @@ def j_deprecated(
         return jdata[key]
 
 
-def j_loader(filename: Union[str, Path]) -> dict[str, Any]:
+def j_loader(filename: str | Path) -> dict[str, Any]:
     """Load yaml or json settings file.
 
     Parameters
@@ -187,7 +187,7 @@ def j_loader(filename: Union[str, Path]) -> dict[str, Any]:
         raise TypeError("config file must be json, or yaml/yml")
 
 
-def expand_sys_str(root_dir: Union[str, Path]) -> list[str]:
+def expand_sys_str(root_dir: str | Path) -> list[str]:
     """Recursively iterate over directories taking those that contain `type.raw` file.
 
     Parameters
@@ -249,16 +249,11 @@ def get_np_precision(precision: "_PRECISION") -> np.dtype:
     RuntimeError
         if string is invalid
     """
-    if precision == "default":
-        return GLOBAL_NP_FLOAT_PRECISION
-    elif precision == "float16":
-        return np.float16
-    elif precision == "float32":
-        return np.float32
-    elif precision == "float64":
-        return np.float64
-    else:
-        raise RuntimeError(f"{precision} is not a valid precision")
+    from deepmd.dpmodel.common import (
+        get_xp_precision,
+    )
+
+    return get_xp_precision(np, precision)
 
 
 def symlink_prefix_files(old_prefix: str, new_prefix: str) -> None:
@@ -288,7 +283,7 @@ def symlink_prefix_files(old_prefix: str, new_prefix: str) -> None:
             shutil.copyfile(ori_ff, new_ff)
 
 
-def get_hash(obj) -> str:
+def get_hash(obj: Any) -> str:
     """Get hash of object.
 
     Parameters
