@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "DeepPot.h"
+#include "DeepPotPTExpt.h"
 #include "test_utils.h"
 
 template <class VALUETYPE>
@@ -113,13 +114,18 @@ class TestInferDeepPotAFparamAparamNFramesPtExpt : public ::testing::Test {
   std::vector<double> expected_tot_e;
   std::vector<VALUETYPE> expected_tot_v;
 
-  deepmd::DeepPot dp;
+  static deepmd::DeepPot dp;
+
+  static void SetUpTestSuite() {
+#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
+    dp.init("../../tests/infer/fparam_aparam.pt2");
+#endif
+  }
 
   void SetUp() override {
-#ifndef BUILD_PYTORCH
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
-    dp.init("../../tests/infer/fparam_aparam.pt2");
 
     natoms = expected_e.size() / nframes;
     EXPECT_EQ(nframes * natoms * 3, expected_f.size());
@@ -142,7 +148,12 @@ class TestInferDeepPotAFparamAparamNFramesPtExpt : public ::testing::Test {
   };
 
   void TearDown() override {};
+
+  static void TearDownTestSuite() { dp = deepmd::DeepPot(); }
 };
+
+template <class VALUETYPE>
+deepmd::DeepPot TestInferDeepPotAFparamAparamNFramesPtExpt<VALUETYPE>::dp;
 
 TYPED_TEST_SUITE(TestInferDeepPotAFparamAparamNFramesPtExpt, ValueTypes);
 

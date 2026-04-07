@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "DeepPot.h"
+#include "DeepPotPTExpt.h"
 #include "neighbor_list.h"
 #include "test_utils.h"
 
@@ -73,13 +74,18 @@ class TestInferDeepPotAFParamAParamPtExpt : public ::testing::Test {
   double expected_tot_e;
   std::vector<VALUETYPE> expected_tot_v;
 
-  deepmd::DeepPot dp;
+  static deepmd::DeepPot dp;
+
+  static void SetUpTestSuite() {
+#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
+    dp.init("../../tests/infer/fparam_aparam.pt2");
+#endif
+  }
 
   void SetUp() override {
-#ifndef BUILD_PYTORCH
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
-    dp.init("../../tests/infer/fparam_aparam.pt2");
 
     natoms = expected_e.size();
     EXPECT_EQ(natoms * 3, expected_f.size());
@@ -98,7 +104,12 @@ class TestInferDeepPotAFParamAParamPtExpt : public ::testing::Test {
   };
 
   void TearDown() override {};
+
+  static void TearDownTestSuite() { dp = deepmd::DeepPot(); }
 };
+
+template <class VALUETYPE>
+deepmd::DeepPot TestInferDeepPotAFParamAParamPtExpt<VALUETYPE>::dp;
 
 TYPED_TEST_SUITE(TestInferDeepPotAFParamAParamPtExpt, ValueTypes);
 
@@ -325,17 +336,27 @@ TYPED_TEST(TestInferDeepPotAFParamAParamPtExpt, cpu_lmp_nlist_atomic) {
 template <class VALUETYPE>
 class TestInferDeepPotNoDefaultFParamPtExpt : public ::testing::Test {
  protected:
-  deepmd::DeepPot dp;
+  static deepmd::DeepPot dp;
+
+  static void SetUpTestSuite() {
+#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
+    dp.init("../../tests/infer/fparam_aparam.pt2");
+#endif
+  }
 
   void SetUp() override {
-#ifndef BUILD_PYTORCH
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
-    dp.init("../../tests/infer/fparam_aparam.pt2");
   };
 
   void TearDown() override {};
+
+  static void TearDownTestSuite() { dp = deepmd::DeepPot(); }
 };
+
+template <class VALUETYPE>
+deepmd::DeepPot TestInferDeepPotNoDefaultFParamPtExpt<VALUETYPE>::dp;
 
 TYPED_TEST_SUITE(TestInferDeepPotNoDefaultFParamPtExpt, ValueTypes);
 

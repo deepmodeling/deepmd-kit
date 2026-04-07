@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "DeepPot.h"
+#include "DeepPotPTExpt.h"
 #include "neighbor_list.h"
 #include "test_utils.h"
 
@@ -32,24 +33,42 @@ class TestInferDeepPotModeDeviPtExpt : public ::testing::Test {
                                    0.25852028, 0.25852028, 0.25852028};
   int natoms;
 
-  deepmd::DeepPot dp0;
-  deepmd::DeepPot dp1;
-  deepmd::DeepPotModelDevi dp_md;
+  static deepmd::DeepPot dp0;
+  static deepmd::DeepPot dp1;
+  static deepmd::DeepPotModelDevi dp_md;
 
-  void SetUp() override {
-#ifndef BUILD_PYTORCH
-    GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
-#endif
+  static void SetUpTestSuite() {
+#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
     dp0.init("../../tests/infer/model_devi_md0.pt2");
     dp1.init("../../tests/infer/model_devi_md1.pt2");
     dp_md.init(
         std::vector<std::string>({"../../tests/infer/model_devi_md0.pt2",
                                   "../../tests/infer/model_devi_md1.pt2"}));
+#endif
+  }
+
+  void SetUp() override {
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
+    GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
+#endif
     natoms = coord.size() / 3;
   };
 
   void TearDown() override {};
+
+  static void TearDownTestSuite() {
+    dp0 = deepmd::DeepPot();
+    dp1 = deepmd::DeepPot();
+    dp_md = deepmd::DeepPotModelDevi();
+  }
 };
+
+template <class VALUETYPE>
+deepmd::DeepPot TestInferDeepPotModeDeviPtExpt<VALUETYPE>::dp0;
+template <class VALUETYPE>
+deepmd::DeepPot TestInferDeepPotModeDeviPtExpt<VALUETYPE>::dp1;
+template <class VALUETYPE>
+deepmd::DeepPotModelDevi TestInferDeepPotModeDeviPtExpt<VALUETYPE>::dp_md;
 
 TYPED_TEST_SUITE(TestInferDeepPotModeDeviPtExpt, ValueTypes);
 
@@ -414,24 +433,43 @@ class TestInferDeepPotModeDeviPtExptPrecomputed : public ::testing::Test {
       1.735782978938303146e-04, 2.441022592033971239e-05,
       7.333090508662540210e-05};  // max min mystd
 
-  deepmd::DeepPot dp0;
-  deepmd::DeepPot dp1;
-  deepmd::DeepPotModelDevi dp_md;
+  static deepmd::DeepPot dp0;
+  static deepmd::DeepPot dp1;
+  static deepmd::DeepPotModelDevi dp_md;
 
-  void SetUp() override {
-#ifndef BUILD_PYTORCH
-    GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
-#endif
+  static void SetUpTestSuite() {
+#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
     dp0.init("../../tests/infer/model_devi_md0.pt2");
     dp1.init("../../tests/infer/model_devi_md1.pt2");
     dp_md.init(
         std::vector<std::string>({"../../tests/infer/model_devi_md0.pt2",
                                   "../../tests/infer/model_devi_md1.pt2"}));
+#endif
+  }
+
+  void SetUp() override {
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
+    GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
+#endif
     natoms = coord.size() / 3;
   };
 
   void TearDown() override {};
+
+  static void TearDownTestSuite() {
+    dp0 = deepmd::DeepPot();
+    dp1 = deepmd::DeepPot();
+    dp_md = deepmd::DeepPotModelDevi();
+  }
 };
+
+template <class VALUETYPE>
+deepmd::DeepPot TestInferDeepPotModeDeviPtExptPrecomputed<VALUETYPE>::dp0;
+template <class VALUETYPE>
+deepmd::DeepPot TestInferDeepPotModeDeviPtExptPrecomputed<VALUETYPE>::dp1;
+template <class VALUETYPE>
+deepmd::DeepPotModelDevi
+    TestInferDeepPotModeDeviPtExptPrecomputed<VALUETYPE>::dp_md;
 
 TYPED_TEST_SUITE(TestInferDeepPotModeDeviPtExptPrecomputed, ValueTypes);
 
