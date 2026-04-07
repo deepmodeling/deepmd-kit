@@ -1,12 +1,21 @@
 title: "[Q&A] "
 labels: ["question"]
 body:
-  - type: textarea
-    id: summary
+  - type: markdown
     attributes:
-      label: Summary
-      description: Please provide a clear and concise description of your question.
-      placeholder: What would you like to know about DeePMD-kit?
+      value: |
+        Use this form for Q&A discussions.
+
+        This template is intentionally lightweight.
+        **Only fill the technical fields below if they are relevant to your question.**
+
+        If your question is about using DeePMD-kit or diagnosing a problem, version info and a minimal reproducible example can help others answer faster.
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: Please describe your question clearly.
+      placeholder: What would you like to ask?
       value:
     validations:
       required: true
@@ -14,66 +23,70 @@ body:
     id: version
     attributes:
       label: DeePMD-kit Version
-      description: "What version of DeePMD-kit are you using? Run `dp --version` to check."
+      description: "If applicable: `dp --version`."
       placeholder: "e.g., 2.2.7"
     validations:
       required: false
   - type: input
     id: backend-version
     attributes:
-      label: Backend and Version
-      description: "Which backend are you using and what version? (e.g., TensorFlow v2.15.0, PyTorch v2.0.1)"
+      label: Backend and its version
+      description: "If applicable: the backend and its version will be printed when running DeePMD-kit, e.g. TensorFlow v2.15.0."
       placeholder: "e.g., TensorFlow v2.15.0"
+    validations:
+      required: false
+  - type: textarea
+    id: other-version
+    attributes:
+      label: Python Version, CUDA Version, GCC Version, LAMMPS Version, etc
+      description: "If applicable, specify your platform or environment details."
+      placeholder:
+      value:
     validations:
       required: false
   - type: textarea
     id: details
     attributes:
-      label: Detailed Description
-      description: |
-        Please provide more details about your question. If you're having trouble with specific functionality, please include:
-        - What you're trying to achieve
-        - What you've tried so far
-        - Any relevant configuration or setup details
-      placeholder: Provide additional context that would help others understand and answer your question.
-      value:
-    validations:
-      required: true
-  - type: textarea
-    id: reproducible-example
-    attributes:
-      label: Reproducible Example (if applicable)
-      description: |
-        If your question relates to specific code, input files, or commands, please provide a minimal reproducible example.
-        This helps others understand your issue and provide better assistance.
-        
-        **Please include:**
-        - Input files (minimal example)
-        - Commands you're running
-        - Configuration files
-        - Expected vs actual behavior
-      placeholder: |
-        ```bash
-        # Your commands here
-        dp train input.json
-        ```
-        
-        ```json
-        // Your configuration here
-        {
-          "model": {...}
-        }
-        ```
+      label: Details
+      description: "If applicable, add more context such as what you are trying to do, what you have tried, and where you got stuck."
+      placeholder:
       value:
     validations:
       required: false
   - type: textarea
-    id: additional-info
+    id: reproducible-example
     attributes:
-      label: Additional Information
+      label: Reproducible Example, Input Files, and Commands
       description: |
-        Any additional information, links to documentation you've consulted, or other relevant details.
-      placeholder: Links, references, or other context that might be helpful.
+        If applicable, provide a minimal reproducible example.
+        For software-usage questions, this is often the fastest way to get a useful answer.
+      placeholder: |
+        Commands:
+        ```bash
+        dp train input.json
+        ```
+
+        Input / config:
+        ```json
+        {
+          "model": {}
+        }
+        ```
+
+        Expected behavior:
+        ...
+
+        Actual behavior / error message:
+        ...
+      value:
+    validations:
+      required: false
+  - type: textarea
+    id: further
+    attributes:
+      label: Further Information, Files, and Links
+      description: Put any additional information here, including links to docs, papers, related issues, screenshots, or external resources.
+      placeholder:
       value:
     validations:
       required: false

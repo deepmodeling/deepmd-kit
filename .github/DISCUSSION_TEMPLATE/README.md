@@ -2,14 +2,12 @@
 
 This directory contains GitHub Discussion category forms for DeePMD-kit.
 
-## Active templates
+## Active template
 
-- `general.yml` → **General**
 - `q-a.yml` → **Q&A**
-- `ideas.yml` → **Ideas**
-- `show-and-tell.yml` → **Show and tell**
 
 ## Notes
 
-GitHub Discussion form filenames must match the target discussion category slug exactly.
-Top-level keys allowed by GitHub are limited; use `title`, `labels`, and `body`.
+- The filename must match the discussion category slug exactly.
+- GitHub Discussion forms only support a limited set of top-level keys, such as `title`, `labels`, and `body`.
+- This Q&A template is intentionally lightweight; most fields are optional and should be filled only when relevant.
