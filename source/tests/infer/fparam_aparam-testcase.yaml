@@ -26,7 +26,7 @@ model_def_script:
         "set_davg_zero": False,
         "trainable": True,
         "type": "se_e2_a",
-        "type_one_side": False,
+        "type_one_side": True,
       },
     "fitting_net":
       {
