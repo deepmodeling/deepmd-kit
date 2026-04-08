@@ -161,7 +161,7 @@ class IOTest:
             deep_eval = DeepEval(model_file)
             self.assertIsInstance(deep_eval.get_model_def_script(), dict)
             serialized_data = self.get_data_from_model(model_file)
-            self.assertEqual(deep_eval.serialize(), serialized_data["model"])
+            np.testing.assert_equal(deep_eval.serialize(), serialized_data["model"])
             if deep_eval.get_dim_fparam() > 0:
                 fparam = np.ones((nframes, deep_eval.get_dim_fparam()))
             else:
