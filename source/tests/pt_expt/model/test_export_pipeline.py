@@ -234,13 +234,31 @@ class TestExportPipeline:
         # 12. Verify: fparam actually affects output (when with_fparam=True)
         if with_fparam:
             fparam_ones = torch.ones_like(fparam)
+            eager_out_fp1 = model2.forward_common_lower(
+                ext_coord.detach().requires_grad_(True),
+                ext_atype,
+                nlist_t,
+                mapping_t,
+                fparam=fparam_ones,
+                aparam=aparam,
+                do_atomic_virial=True,
+            )
             loaded_out_fp1 = loaded(
                 ext_coord, ext_atype, nlist_t, mapping_t, fparam_ones, aparam
             )
+            # Loaded with fparam=1 should match eager with fparam=1
+            for key in eager_out_fp1:
+                np.testing.assert_allclose(
+                    eager_out_fp1[key].detach().cpu().numpy(),
+                    loaded_out_fp1[key].detach().cpu().numpy(),
+                    rtol=1e-10,
+                    atol=1e-10,
+                    err_msg=f"loaded (.pte) vs eager (modified fparam): {key}",
+                )
             # Output with fparam=0 should differ from fparam=1
             assert not np.allclose(
-                loaded_out["energy"].detach().cpu().numpy(),
-                loaded_out_fp1["energy"].detach().cpu().numpy(),
+                eager_out["energy"].detach().cpu().numpy(),
+                eager_out_fp1["energy"].detach().cpu().numpy(),
             ), (
                 "Changing fparam did not change output — "
                 "fparam may be baked in as a constant"
