@@ -1372,25 +1372,25 @@ class Trainer:
                                 train_results[_key] = log_loss_train(
                                     loss, more_loss, _task_key=_key
                                 )
-                        valid_results[_key] = log_loss_valid(_task_key=_key)
-                        if self.rank == 0:
-                            log.info(
-                                format_training_message_per_task(
-                                    batch=display_step_id,
-                                    task_name=_key + "_trn",
-                                    rmse=train_results[_key],
-                                    learning_rate=cur_lr,
-                                )
-                            )
-                            if valid_results[_key]:
+                            valid_results[_key] = log_loss_valid(_task_key=_key)
+                            if self.rank == 0:
                                 log.info(
                                     format_training_message_per_task(
                                         batch=display_step_id,
-                                        task_name=_key + "_val",
-                                        rmse=valid_results[_key],
-                                        learning_rate=None,
+                                        task_name=_key + "_trn",
+                                        rmse=train_results[_key],
+                                        learning_rate=cur_lr,
                                     )
                                 )
+                                if valid_results[_key]:
+                                    log.info(
+                                        format_training_message_per_task(
+                                            batch=display_step_id,
+                                            task_name=_key + "_val",
+                                            rmse=valid_results[_key],
+                                            learning_rate=None,
+                                        )
+                                    )
                 self.wrapper.train()
 
                 if self.disp_avg:
