@@ -711,7 +711,8 @@ class DeepEval(DeepEvalBackend):
             serialize_from_file,
         )
 
-        return serialize_from_file(self.model_path)["model"]
+        data = serialize_from_file(self.model_path)
+        return data["model"] if isinstance(data, dict) and "model" in data else data
 
     def get_model_size(self) -> dict:
         """Get model parameter count.
