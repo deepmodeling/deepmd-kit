@@ -48,7 +48,19 @@ class TestDeepPot(unittest.TestCase):
                 "se_e2_r type_one_side is not supported for PyTorch models"
             )
         cls.case = get_cases()[key]
-        cls.model_name = cls.case.get_model(extension)
+        if extension == ".pt2":
+            import torch
+
+            # Clear default device: tests/pt/__init__.py may set a fake
+            # device for CPU fallback, which poisons AOTInductor compilation.
+            saved_device = torch.get_default_device()
+            torch.set_default_device(None)
+            try:
+                cls.model_name = cls.case.get_model(extension)
+            finally:
+                torch.set_default_device(saved_device)
+        else:
+            cls.model_name = cls.case.get_model(extension)
         cls.dp = DeepEval(cls.model_name)
 
     @classmethod
