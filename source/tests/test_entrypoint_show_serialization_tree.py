@@ -1,8 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
-from unittest.mock import patch
+from unittest.mock import (
+    patch,
+)
 
-from deepmd.entrypoints.show import show
+from deepmd.entrypoints.show import (
+    show,
+)
 
 
 class TestShowSerializationTree(unittest.TestCase):
