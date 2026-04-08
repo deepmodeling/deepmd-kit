@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "DeepPot.h"
+#include "DeepPotPTExpt.h"
 #include "neighbor_list.h"
 #include "test_utils.h"
 
@@ -54,15 +55,18 @@ class TestInferDeepPotAPtExpt : public ::testing::Test {
   double expected_tot_e;
   std::vector<VALUETYPE> expected_tot_v;
 
-  deepmd::DeepPot dp;
+  static deepmd::DeepPot dp;
+
+  static void SetUpTestSuite() {
+#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
+    dp.init("../../tests/infer/deeppot_sea.pt2");
+#endif
+  }
 
   void SetUp() override {
-#ifndef BUILD_PYTORCH
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
-    std::string file_name = "../../tests/infer/deeppot_sea.pt2";
-
-    dp.init(file_name);
 
     natoms = expected_e.size();
     EXPECT_EQ(natoms * 3, expected_f.size());
@@ -81,7 +85,12 @@ class TestInferDeepPotAPtExpt : public ::testing::Test {
   };
 
   void TearDown() override {};
+
+  static void TearDownTestSuite() { dp = deepmd::DeepPot(); }
 };
+
+template <class VALUETYPE>
+deepmd::DeepPot TestInferDeepPotAPtExpt<VALUETYPE>::dp;
 
 TYPED_TEST_SUITE(TestInferDeepPotAPtExpt, ValueTypes);
 
@@ -452,14 +461,18 @@ class TestInferDeepPotAPtExptNoPbc : public ::testing::Test {
   double expected_tot_e;
   std::vector<VALUETYPE> expected_tot_v;
 
-  deepmd::DeepPot dp;
+  static deepmd::DeepPot dp;
+
+  static void SetUpTestSuite() {
+#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
+    dp.init("../../tests/infer/deeppot_sea.pt2");
+#endif
+  }
 
   void SetUp() override {
-#ifndef BUILD_PYTORCH
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
-    std::string file_name = "../../tests/infer/deeppot_sea.pt2";
-    dp.init(file_name);
 
     natoms = expected_e.size();
     EXPECT_EQ(natoms * 3, expected_f.size());
@@ -478,7 +491,12 @@ class TestInferDeepPotAPtExptNoPbc : public ::testing::Test {
   };
 
   void TearDown() override {};
+
+  static void TearDownTestSuite() { dp = deepmd::DeepPot(); }
 };
+
+template <class VALUETYPE>
+deepmd::DeepPot TestInferDeepPotAPtExptNoPbc<VALUETYPE>::dp;
 
 TYPED_TEST_SUITE(TestInferDeepPotAPtExptNoPbc, ValueTypes);
 
@@ -623,7 +641,7 @@ TYPED_TEST(TestInferDeepPotAPtExptNoPbc, cpu_build_nlist_nframes) {
 // ========== Parser / metadata coverage tests ==========
 
 TEST(TestDeepPotPTExptParser, load_nonexistent_file) {
-#ifndef BUILD_PYTORCH
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
   GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
   deepmd::DeepPot dp;
@@ -631,7 +649,7 @@ TEST(TestDeepPotPTExptParser, load_nonexistent_file) {
 }
 
 TEST(TestDeepPotPTExptParser, load_invalid_zip) {
-#ifndef BUILD_PYTORCH
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
   GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
   std::string tmpfile = "test_invalid.pt2";
@@ -646,7 +664,7 @@ TEST(TestDeepPotPTExptParser, load_invalid_zip) {
 }
 
 TEST(TestDeepPotPTExptParser, load_tiny_file) {
-#ifndef BUILD_PYTORCH
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
   GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
   std::string tmpfile = "test_tiny.pt2";
@@ -664,15 +682,24 @@ TEST(TestDeepPotPTExptParser, load_tiny_file) {
 template <class VALUETYPE>
 class TestDeepPotPTExptMetadata : public ::testing::Test {
  protected:
-  deepmd::DeepPot dp;
+  static deepmd::DeepPot dp;
+  static void SetUpTestSuite() {
+#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
+    dp.init("../../tests/infer/deeppot_sea.pt2");
+#endif
+  }
   void SetUp() override {
-#ifndef BUILD_PYTORCH
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
-    dp.init("../../tests/infer/deeppot_sea.pt2");
   };
   void TearDown() override {};
+
+  static void TearDownTestSuite() { dp = deepmd::DeepPot(); }
 };
+
+template <class VALUETYPE>
+deepmd::DeepPot TestDeepPotPTExptMetadata<VALUETYPE>::dp;
 
 TYPED_TEST_SUITE(TestDeepPotPTExptMetadata, ValueTypes);
 
@@ -707,15 +734,24 @@ TYPED_TEST(TestDeepPotPTExptMetadata, no_default_fparam) {
 template <class VALUETYPE>
 class TestDeepPotPTExptJsonTypes : public ::testing::Test {
  protected:
-  deepmd::DeepPot dp;
+  static deepmd::DeepPot dp;
+  static void SetUpTestSuite() {
+#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
+    dp.init("../../tests/infer/fparam_aparam.pt2");
+#endif
+  }
   void SetUp() override {
-#ifndef BUILD_PYTORCH
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
-    dp.init("../../tests/infer/fparam_aparam.pt2");
   };
   void TearDown() override {};
+
+  static void TearDownTestSuite() { dp = deepmd::DeepPot(); }
 };
+
+template <class VALUETYPE>
+deepmd::DeepPot TestDeepPotPTExptJsonTypes<VALUETYPE>::dp;
 
 TYPED_TEST_SUITE(TestDeepPotPTExptJsonTypes, ValueTypes);
 
@@ -743,15 +779,24 @@ TYPED_TEST(TestDeepPotPTExptJsonTypes, float_field) {
 template <class VALUETYPE>
 class TestDeepPotPTExptJsonDefaults : public ::testing::Test {
  protected:
-  deepmd::DeepPot dp;
+  static deepmd::DeepPot dp;
+  static void SetUpTestSuite() {
+#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
+    dp.init("../../tests/infer/fparam_aparam_default.pt2");
+#endif
+  }
   void SetUp() override {
-#ifndef BUILD_PYTORCH
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
-    dp.init("../../tests/infer/fparam_aparam_default.pt2");
   };
   void TearDown() override {};
+
+  static void TearDownTestSuite() { dp = deepmd::DeepPot(); }
 };
+
+template <class VALUETYPE>
+deepmd::DeepPot TestDeepPotPTExptJsonDefaults<VALUETYPE>::dp;
 
 TYPED_TEST_SUITE(TestDeepPotPTExptJsonDefaults, ValueTypes);
 

@@ -59,6 +59,9 @@ else:
 	# runtime to be preloaded (otherwise dlopen fails).  We disable leak detection
 	# in the gen scripts to avoid false reports from torch/paddle internals.
 	INFER_SCRIPT_PATH=${SCRIPT_PATH}/../tests/infer
+	# Remove stale generated model files so they can't be accidentally reused
+	# if gen scripts change format or the code version changes.
+	rm -f ${INFER_SCRIPT_PATH}/*.pt2 ${INFER_SCRIPT_PATH}/*.pte
 	_GEN_ENV=""
 	if echo "${CXXFLAGS:-}" | grep -q fsanitize=leak; then
 		_LSAN_LIB=$(gcc -print-file-name=liblsan.so 2>/dev/null || true)
@@ -66,14 +69,34 @@ else:
 			_GEN_ENV="LD_PRELOAD=${_LSAN_LIB} LSAN_OPTIONS=detect_leaks=0"
 		fi
 	fi
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_sea.py
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa1.py
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa2.py
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa3.py
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_fparam_aparam.py
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_model_devi.py
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_spin.py
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_spin_model_devi.py
+	# Run gen scripts in parallel for faster model generation.
+	# Wait on each PID separately so any failure is caught by set -e.
+	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_sea.py &
+	PID1=$!
+	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa1.py &
+	PID2=$!
+	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa2.py &
+	PID3=$!
+	wait $PID1
+	wait $PID2
+	wait $PID3
+
+	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa3.py &
+	PID4=$!
+	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_fparam_aparam.py &
+	PID5=$!
+	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_model_devi.py &
+	PID6=$!
+	wait $PID4
+	wait $PID5
+	wait $PID6
+
+	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_spin.py &
+	PID7=$!
+	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_spin_model_devi.py &
+	PID8=$!
+	wait $PID7
+	wait $PID8
 fi
 if [ "${ENABLE_PADDLE:-TRUE}" == "TRUE" ]; then
 	PADDLE_INFERENCE_DIR=${BUILD_TMP_DIR}/paddle_inference_install_dir
