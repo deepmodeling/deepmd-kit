@@ -712,6 +712,7 @@ class DeepEval(DeepEvalBackend):
             from deepmd.pt_expt.utils.serialization import (
                 serialize_from_file as serialize_from_pte,
             )
+
             data = serialize_from_pte(self.model_path)
             # pt_expt serialize_from_file returns the model tree directly
             return data
@@ -725,6 +726,7 @@ class DeepEval(DeepEvalBackend):
         from deepmd.pt.utils.serialization import (
             serialize_from_file,
         )
+
         data = serialize_from_file(self.model_path)
         # Generic pt serialize_from_file returns wrapped dict with "model" key
         return data["model"] if isinstance(data, dict) and "model" in data else data
