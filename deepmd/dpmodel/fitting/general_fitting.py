@@ -24,6 +24,9 @@ from deepmd.dpmodel.common import (
     get_xp_precision,
     to_numpy_array,
 )
+from deepmd.dpmodel.output_def import (
+    OutputVariableDef,
+)
 from deepmd.dpmodel.utils import (
     AtomExcludeMask,
     FittingNet,
@@ -434,6 +437,20 @@ class GeneralFitting(NativeOP, BaseFitting):
         ``[nframes, nloc, neuron[-1]]``.
         """
         self.eval_return_middle_output = enable
+
+    def _middle_output_def(self) -> list[OutputVariableDef]:
+        """Return extra OutputVariableDefs for middle_output when enabled."""
+        if self.eval_return_middle_output:
+            return [
+                OutputVariableDef(
+                    "middle_output",
+                    [self.neuron[-1]],
+                    reducible=False,
+                    r_differentiable=False,
+                    c_differentiable=False,
+                ),
+            ]
+        return []
 
     def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.

@@ -198,6 +198,7 @@ class DipoleFitting(GeneralFitting):
                     r_differentiable=self.r_differentiable,
                     c_differentiable=self.c_differentiable,
                 ),
+                *self._middle_output_def(),
             ]
         )
 

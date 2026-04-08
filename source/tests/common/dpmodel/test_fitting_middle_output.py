@@ -92,6 +92,33 @@ class TestFittingMiddleOutput(unittest.TestCase, TestCaseSingleFrameWithNlist):
         expected_shape = (nf, nloc, ft.neuron[-1])
         self.assertEqual(ret["middle_output"].shape, expected_shape)
 
+    def test_middle_output_registered_in_output_def(self) -> None:
+        """middle_output should appear in output_def when enabled."""
+        ft, descriptor, atype = self._build_fitting(mixed_types=True)
+        # Not registered by default
+        self.assertNotIn("middle_output", ft.output_def().keys())
+        # Registered after enabling
+        ft.set_return_middle_output(True)
+        self.assertIn("middle_output", ft.output_def().keys())
+        odef = ft.output_def()["middle_output"]
+        self.assertEqual(odef.shape, [ft.neuron[-1]])
+        self.assertFalse(odef.reducible)
+        self.assertFalse(odef.r_differentiable)
+        self.assertFalse(odef.c_differentiable)
+        # Removed after disabling
+        ft.set_return_middle_output(False)
+        self.assertNotIn("middle_output", ft.output_def().keys())
+
+    def test_middle_output_checked_by_decorator(self) -> None:
+        """fitting_check_output decorator validates middle_output shape."""
+        ft, descriptor, atype = self._build_fitting(mixed_types=True)
+        ft.set_return_middle_output(True)
+        # __call__ goes through fitting_check_output which validates output_def
+        ret = ft(descriptor, atype)
+        self.assertIn("middle_output", ret)
+        nf, nloc, _ = descriptor.shape
+        self.assertEqual(ret["middle_output"].shape, (nf, nloc, ft.neuron[-1]))
+
     def test_middle_output_deterministic(self) -> None:
         """Middle output should be deterministic."""
         ft, descriptor, atype = self._build_fitting(mixed_types=True)
