@@ -99,3 +99,61 @@ class TestFittingMiddleOutput(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ret1 = ft.call(descriptor, atype)
         ret2 = ft.call(descriptor, atype)
         np.testing.assert_array_equal(ret1["middle_output"], ret2["middle_output"])
+
+    def test_middle_output_dipole_fitting(self) -> None:
+        """middle_output flows through DipoleFitting.call()."""
+        from deepmd.dpmodel.fitting.dipole_fitting import (
+            DipoleFitting,
+        )
+
+        ds = DescrptSeA(self.rcut, self.rcut_smth, self.sel)
+        dd = ds.call(self.coord_ext, self.atype_ext, self.nlist)
+        descriptor = dd[0]
+        rot_mat = dd[1]
+        atype = self.atype_ext[:, : self.nloc]
+        ft = DipoleFitting(
+            ntypes=self.nt,
+            dim_descrpt=ds.get_dim_out(),
+            embedding_width=ds.get_dim_emb(),
+            seed=GLOBAL_SEED,
+        )
+        # Disabled: no middle_output
+        ret = ft.call(descriptor, atype, gr=rot_mat)
+        self.assertNotIn("middle_output", ret)
+        # Enabled: middle_output present
+        ft.set_return_middle_output(True)
+        ret = ft.call(descriptor, atype, gr=rot_mat)
+        self.assertIn("middle_output", ret)
+        nf, nloc, _ = descriptor.shape
+        self.assertEqual(ret["middle_output"].shape, (nf, nloc, ft.neuron[-1]))
+        # Primary output still correct shape
+        self.assertEqual(ret["dipole"].shape, (nf, nloc, 3))
+
+    def test_middle_output_polar_fitting(self) -> None:
+        """middle_output flows through PolarFitting.call()."""
+        from deepmd.dpmodel.fitting.polarizability_fitting import (
+            PolarFitting,
+        )
+
+        ds = DescrptSeA(self.rcut, self.rcut_smth, self.sel)
+        dd = ds.call(self.coord_ext, self.atype_ext, self.nlist)
+        descriptor = dd[0]
+        rot_mat = dd[1]
+        atype = self.atype_ext[:, : self.nloc]
+        ft = PolarFitting(
+            ntypes=self.nt,
+            dim_descrpt=ds.get_dim_out(),
+            embedding_width=ds.get_dim_emb(),
+            seed=GLOBAL_SEED,
+        )
+        # Disabled: no middle_output
+        ret = ft.call(descriptor, atype, gr=rot_mat)
+        self.assertNotIn("middle_output", ret)
+        # Enabled: middle_output present
+        ft.set_return_middle_output(True)
+        ret = ft.call(descriptor, atype, gr=rot_mat)
+        self.assertIn("middle_output", ret)
+        nf, nloc, _ = descriptor.shape
+        self.assertEqual(ret["middle_output"].shape, (nf, nloc, ft.neuron[-1]))
+        # Primary output still correct shape
+        self.assertEqual(ret["polarizability"].shape, (nf, nloc, 3, 3))

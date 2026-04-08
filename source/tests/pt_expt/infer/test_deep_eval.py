@@ -1267,5 +1267,272 @@ class TestEvalFittingLastLayer(unittest.TestCase):
             self.dp_fp.deep_eval.eval_fitting_last_layer(coords, cells, atom_types)
 
 
+class TestGetDpAtomicModel(unittest.TestCase):
+    """Test get_dp_atomic_model() API on various model types."""
+
+    def test_energy_model(self) -> None:
+        """Standard energy model returns a DPAtomicModel."""
+        from deepmd.dpmodel.atomic_model.dp_atomic_model import (
+            DPAtomicModel as DPAtomicModelDP,
+        )
+
+        ds = DescrptSeA(4.0, 0.5, [8, 6])
+        ft = EnergyFittingNet(2, ds.get_dim_out(), mixed_types=False, seed=GLOBAL_SEED)
+        model = EnergyModel(ds, ft, type_map=["foo", "bar"])
+        dp_am = model.get_dp_atomic_model()
+        self.assertIsNotNone(dp_am)
+        self.assertIsInstance(dp_am, DPAtomicModelDP)
+        self.assertTrue(hasattr(dp_am, "descriptor"))
+        self.assertTrue(hasattr(dp_am, "fitting_net"))
+
+    def test_zbl_model_returns_none(self) -> None:
+        """DPZBLModel's LinearEnergyAtomicModel should return None."""
+        from deepmd.dpmodel.atomic_model.dp_atomic_model import (
+            DPAtomicModel as DPAtomicModelDP,
+        )
+        from deepmd.dpmodel.atomic_model.linear_atomic_model import (
+            DPZBLLinearEnergyAtomicModel,
+        )
+        from deepmd.dpmodel.atomic_model.pairtab_atomic_model import (
+            PairTabAtomicModel,
+        )
+        from deepmd.dpmodel.descriptor.dpa1 import DescrptDPA1 as DescrptDPA1DP
+
+        # LinearAtomicModel requires mixed_type descriptors
+        ds = DescrptDPA1DP(4.0, 0.5, [14], ntypes=2)
+        ft = EnergyFittingNet(2, ds.get_dim_out(), mixed_types=True, seed=GLOBAL_SEED)
+        dp_am = DPAtomicModelDP(ds, ft, type_map=["foo", "bar"])
+        pair_tab = PairTabAtomicModel(
+            tab_file=None, rcut=4.0, sel=14, type_map=["foo", "bar"]
+        )
+        zbl_am = DPZBLLinearEnergyAtomicModel(
+            dp_am, pair_tab, sw_rmin=1.0, sw_rmax=2.0, type_map=["foo", "bar"]
+        )
+        # zbl_am is a LinearEnergyAtomicModel, not DPAtomicModel
+        self.assertFalse(isinstance(zbl_am, DPAtomicModelDP))
+
+    def test_spin_model_delegates(self) -> None:
+        """SpinModel.get_dp_atomic_model() delegates to backbone."""
+        from deepmd.dpmodel.atomic_model.dp_atomic_model import (
+            DPAtomicModel as DPAtomicModelDP,
+        )
+        from deepmd.dpmodel.model.spin_model import (
+            SpinModel,
+        )
+        from deepmd.utils.spin import (
+            Spin,
+        )
+
+        ds = DescrptSeA(4.0, 0.5, [8, 6])
+        ft = EnergyFittingNet(2, ds.get_dim_out(), mixed_types=False, seed=GLOBAL_SEED)
+        model = EnergyModel(ds, ft, type_map=["foo", "bar"])
+        spin = Spin(
+            use_spin=[False, False],
+            virtual_scale=[0.0, 0.0],
+        )
+        spin_model = SpinModel(backbone_model=model, spin=spin)
+        dp_am = spin_model.get_dp_atomic_model()
+        self.assertIsNotNone(dp_am)
+        self.assertIsInstance(dp_am, DPAtomicModelDP)
+
+    def test_frozen_model_delegates(self) -> None:
+        """FrozenModel.get_dp_atomic_model() delegates to inner model."""
+        from deepmd.dpmodel.atomic_model.dp_atomic_model import (
+            DPAtomicModel as DPAtomicModelDP,
+        )
+
+        ds = DescrptSeA(4.0, 0.5, [8, 6])
+        ft = EnergyFittingNet(2, ds.get_dim_out(), mixed_types=False, seed=GLOBAL_SEED)
+        model = EnergyModel(ds, ft, type_map=["foo", "bar"])
+        model = model.to(torch.float64)
+        model.eval()
+
+        tmpdir = tempfile.mkdtemp()
+        try:
+            pte_path = os.path.join(tmpdir, "test.pte")
+            deserialize_to_file(pte_path, {"model": model.serialize()})
+            dp = DeepPot(pte_path)
+            # The _dpmodel deserialized from .pte is a regular energy model
+            dp_am = dp.deep_eval._dpmodel.get_dp_atomic_model()
+            self.assertIsNotNone(dp_am)
+            self.assertIsInstance(dp_am, DPAtomicModelDP)
+        finally:
+            import shutil
+
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+class TestEvalDiagSpinModel(unittest.TestCase):
+    """Test eval diagnostic methods on spin models."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        from deepmd.dpmodel.model.spin_model import (
+            SpinModel,
+        )
+        from deepmd.pt_expt.descriptor.dpa1 import (
+            DescrptDPA1,
+        )
+        from deepmd.utils.spin import (
+            Spin,
+        )
+
+        cls.rcut = 4.0
+        cls.rcut_smth = 0.5
+        cls.sel = [8, 6]
+        cls.nt = 2
+        cls.type_map = ["foo", "bar"]
+
+        # DPA1 model with spin wrapper
+        ds = DescrptDPA1(
+            cls.rcut, cls.rcut_smth, cls.sel, ntypes=cls.nt, seed=GLOBAL_SEED
+        )
+        ft = EnergyFittingNet(
+            cls.nt, ds.get_dim_out(), mixed_types=ds.mixed_types(), seed=GLOBAL_SEED
+        )
+        backbone = EnergyModel(ds, ft, type_map=cls.type_map)
+        backbone = backbone.to(torch.float64)
+        backbone.eval()
+
+        spin = Spin(use_spin=[True, False], virtual_scale=[0.5, 0.0])
+        cls.spin_model = SpinModel(backbone_model=backbone, spin=spin)
+
+        # Export backbone as .pte, then swap _dpmodel to SpinModel
+        cls._tmpdir = tempfile.mkdtemp()
+        pte_path = os.path.join(cls._tmpdir, "spin.pte")
+        deserialize_to_file(pte_path, {"model": backbone.serialize()})
+        cls.dp = DeepPot(pte_path)
+        cls.dp.deep_eval._dpmodel = cls.spin_model
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        import shutil
+
+        shutil.rmtree(cls._tmpdir, ignore_errors=True)
+
+    def _make_inputs(self):
+        nframes = 1
+        natoms = 6
+        coords = (
+            np.random.default_rng(42).random((nframes, natoms, 3)).astype(np.float64)
+        )
+        cells = 5.0 * np.eye(3, dtype=np.float64).reshape(1, 3, 3).repeat(
+            nframes, axis=0
+        )
+        atom_types = np.array([0, 0, 0, 1, 1, 1], dtype=int)
+        return coords, cells, atom_types
+
+    def test_eval_typeebd_spin(self) -> None:
+        """eval_typeebd traverses backbone_model for spin models."""
+        typeebd = self.dp.deep_eval.eval_typeebd()
+        self.assertEqual(typeebd.ndim, 2)
+        # DPA1 TypeEmbedNet outputs ntypes or ntypes+1
+        self.assertIn(typeebd.shape[0], (self.nt, self.nt + 1))
+        self.assertTrue(typeebd.shape[1] > 0)
+
+    def test_eval_descriptor_spin_raises(self) -> None:
+        """eval_descriptor raises NotImplementedError for spin models."""
+        coords, cells, atom_types = self._make_inputs()
+        with self.assertRaises(NotImplementedError):
+            self.dp.deep_eval.eval_descriptor(coords, cells, atom_types)
+
+    def test_eval_fitting_last_layer_spin_raises(self) -> None:
+        """eval_fitting_last_layer raises NotImplementedError for spin models."""
+        coords, cells, atom_types = self._make_inputs()
+        with self.assertRaises(NotImplementedError):
+            self.dp.deep_eval.eval_fitting_last_layer(coords, cells, atom_types)
+
+
+class TestEvalDescriptorASE(unittest.TestCase):
+    """Test eval_descriptor with ASE neighbor list."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.rcut = 4.0
+        cls.rcut_smth = 0.5
+        cls.sel = [8, 6]
+        cls.nt = 2
+        cls.type_map = ["foo", "bar"]
+
+        ds = DescrptSeA(cls.rcut, cls.rcut_smth, cls.sel)
+        ft = EnergyFittingNet(
+            cls.nt,
+            ds.get_dim_out(),
+            mixed_types=ds.mixed_types(),
+            seed=GLOBAL_SEED,
+        )
+        model = EnergyModel(ds, ft, type_map=cls.type_map)
+        model = model.to(torch.float64)
+        model.eval()
+        cls.dim_descrpt = ds.get_dim_out()
+
+        cls._tmpdir = tempfile.mkdtemp()
+        pte_path = os.path.join(cls._tmpdir, "sea.pte")
+        deserialize_to_file(pte_path, {"model": model.serialize()})
+        cls.dp_native = DeepPot(pte_path)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        import shutil
+
+        shutil.rmtree(cls._tmpdir, ignore_errors=True)
+
+    @unittest.skipUnless(
+        importlib.util.find_spec("ase") is not None, "ase not installed"
+    )
+    def test_eval_descriptor_ase_vs_native(self) -> None:
+        """eval_descriptor with ASE nlist matches native nlist."""
+        import ase.neighborlist
+
+        pte_path = os.path.join(self._tmpdir, "sea.pte")
+        dp_ase = DeepPot(
+            pte_path,
+            neighbor_list=ase.neighborlist.NewPrimitiveNeighborList(
+                cutoffs=self.rcut, bothways=True
+            ),
+        )
+
+        rng = np.random.default_rng(GLOBAL_SEED + 99)
+        natoms = 5
+        coords = rng.random((1, natoms, 3)) * 8.0
+        cells = np.eye(3).reshape(1, 9) * 10.0
+        atom_types = np.array([i % self.nt for i in range(natoms)], dtype=np.int32)
+
+        d_native = self.dp_native.deep_eval.eval_descriptor(coords, cells, atom_types)
+        d_ase = dp_ase.deep_eval.eval_descriptor(coords, cells, atom_types)
+
+        self.assertEqual(d_native.shape, d_ase.shape)
+        np.testing.assert_allclose(d_native, d_ase, rtol=1e-10, atol=1e-10)
+
+    @unittest.skipUnless(
+        importlib.util.find_spec("ase") is not None, "ase not installed"
+    )
+    def test_eval_fitting_last_layer_ase_vs_native(self) -> None:
+        """eval_fitting_last_layer with ASE nlist matches native nlist."""
+        import ase.neighborlist
+
+        pte_path = os.path.join(self._tmpdir, "sea.pte")
+        dp_ase = DeepPot(
+            pte_path,
+            neighbor_list=ase.neighborlist.NewPrimitiveNeighborList(
+                cutoffs=self.rcut, bothways=True
+            ),
+        )
+
+        rng = np.random.default_rng(GLOBAL_SEED + 99)
+        natoms = 5
+        coords = rng.random((1, natoms, 3)) * 8.0
+        cells = np.eye(3).reshape(1, 9) * 10.0
+        atom_types = np.array([i % self.nt for i in range(natoms)], dtype=np.int32)
+
+        f_native = self.dp_native.deep_eval.eval_fitting_last_layer(
+            coords, cells, atom_types
+        )
+        f_ase = dp_ase.deep_eval.eval_fitting_last_layer(coords, cells, atom_types)
+
+        self.assertEqual(f_native.shape, f_ase.shape)
+        np.testing.assert_allclose(f_native, f_ase, rtol=1e-10, atol=1e-10)
+
+
 if __name__ == "__main__":
     unittest.main()
