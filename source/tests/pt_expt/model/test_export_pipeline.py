@@ -160,15 +160,9 @@ class TestExportPipeline:
         )
 
         # 7. .pte save → load round-trip
-        with tempfile.NamedTemporaryFile(suffix=".pte", delete=True) as tmp:
-            tmpfile = tmp.name
-        torch.export.save(exported, tmpfile)
-        loaded = torch.export.load(tmpfile).module()
-
-        # Clean up temp file
-        import os
-
-        os.unlink(tmpfile)
+        with tempfile.NamedTemporaryFile(suffix=".pte") as tmp:
+            torch.export.save(exported, tmp.name)
+            loaded = torch.export.load(tmp.name).module()
 
         # 8. Verify: traced output matches eager (same shapes as trace)
         traced_out = traced(ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam)

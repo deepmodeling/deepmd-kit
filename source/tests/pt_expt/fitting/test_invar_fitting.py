@@ -24,6 +24,9 @@ from ...common.test_mixins import (
 from ...seed import (
     GLOBAL_SEED,
 )
+from ..export_helpers import (
+    export_save_load_and_compare,
+)
 
 
 class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
@@ -230,10 +233,6 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
             )
 
     def test_make_fx(self) -> None:
-        from ..export_helpers import (
-            export_save_load_and_compare,
-        )
-
         nf, nloc, nnei = self.nlist.shape
         ds = DescrptSeA(self.rcut, self.rcut_smth, self.sel)
         rng = np.random.default_rng(GLOBAL_SEED)
@@ -302,28 +301,11 @@ class TestInvarFitting(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 {0: nframes_dim} if aparam is not None else None,  # aparam
             )
             inputs = (descriptor, atype, fparam, aparam)
-            loaded = export_save_load_and_compare(
+            export_save_load_and_compare(
                 fn,
                 inputs,
                 (ret_eager, grad_eager),
                 dynamic_shapes,
-                rtol=1e-10,
-                atol=1e-10,
-            )
-
-            # Different shapes (nf=1 slice)
-            inputs_1f = tuple(t[0:1] if t is not None else None for t in inputs)
-            ret_1f, grad_1f = fn(*inputs_1f)
-            ret_loaded_1f, grad_loaded_1f = loaded(*inputs_1f)
-            np.testing.assert_allclose(
-                ret_1f.detach().cpu().numpy(),
-                ret_loaded_1f.detach().cpu().numpy(),
-                rtol=1e-10,
-                atol=1e-10,
-            )
-            np.testing.assert_allclose(
-                grad_1f.detach().cpu().numpy(),
-                grad_loaded_1f.detach().cpu().numpy(),
                 rtol=1e-10,
                 atol=1e-10,
             )

@@ -24,6 +24,9 @@ from deepmd.pt_expt.utils import (
 from ...seed import (
     GLOBAL_SEED,
 )
+from ..export_helpers import (
+    model_forward_lower_export_round_trip,
+)
 
 
 class TestPropertyModel(unittest.TestCase):
@@ -137,100 +140,17 @@ class TestPropertyModel(unittest.TestCase):
         fparam = None
         aparam = None
 
-        ret_eager = md_pt.forward_lower(
-            ext_coord.requires_grad_(True),
-            ext_atype,
-            nlist_t,
-            mapping_t,
-            fparam=fparam,
-            aparam=aparam,
-        )
-
-        traced = md_pt.forward_lower_exportable(
+        var_name = md_pt.get_var_name()
+        model_forward_lower_export_round_trip(
+            md_pt,
             ext_coord,
             ext_atype,
             nlist_t,
             mapping_t,
-            fparam=fparam,
-            aparam=aparam,
+            fparam,
+            aparam,
+            output_keys=(f"atom_{var_name}", var_name),
         )
-        self.assertIsInstance(traced, torch.nn.Module)
-
-        exported = torch.export.export(
-            traced,
-            (ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam),
-            strict=False,
-        )
-        self.assertIsNotNone(exported)
-
-        ret_traced = traced(ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam)
-        ret_exported = exported.module()(
-            ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam
-        )
-
-        var_name = md_pt.get_var_name()
-        output_keys = (f"atom_{var_name}", var_name)
-        for key in output_keys:
-            np.testing.assert_allclose(
-                ret_eager[key].detach().cpu().numpy(),
-                ret_traced[key].detach().cpu().numpy(),
-                rtol=1e-10,
-                atol=1e-10,
-                err_msg=f"traced vs eager: {key}",
-            )
-            np.testing.assert_allclose(
-                ret_eager[key].detach().cpu().numpy(),
-                ret_exported[key].detach().cpu().numpy(),
-                rtol=1e-10,
-                atol=1e-10,
-                err_msg=f"exported vs eager: {key}",
-            )
-
-        # --- symbolic trace + export with dynamic shapes + .pte round-trip ---
-        import tempfile
-
-        from deepmd.pt_expt.utils.serialization import (
-            _build_dynamic_shapes,
-        )
-
-        inputs_2f = tuple(
-            torch.cat([t, t], dim=0) if t is not None else None
-            for t in (ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam)
-        )
-
-        traced_sym = md_pt.forward_lower_exportable(
-            inputs_2f[0],
-            inputs_2f[1],
-            inputs_2f[2],
-            inputs_2f[3],
-            fparam=inputs_2f[4],
-            aparam=inputs_2f[5],
-            tracing_mode="symbolic",
-            _allow_non_fake_inputs=True,
-        )
-
-        dynamic_shapes = _build_dynamic_shapes(*inputs_2f)
-        exported_dyn = torch.export.export(
-            traced_sym,
-            inputs_2f,
-            dynamic_shapes=dynamic_shapes,
-            strict=False,
-            prefer_deferred_runtime_asserts_over_guards=True,
-        )
-
-        with tempfile.NamedTemporaryFile(suffix=".pte") as f:
-            torch.export.save(exported_dyn, f.name)
-            loaded = torch.export.load(f.name).module()
-
-        ret_loaded_1f = loaded(ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam)
-        for key in output_keys:
-            np.testing.assert_allclose(
-                ret_eager[key].detach().cpu().numpy(),
-                ret_loaded_1f[key].detach().cpu().numpy(),
-                rtol=1e-10,
-                atol=1e-10,
-                err_msg=f"loaded vs eager (nf=1): {key}",
-            )
 
 
 if __name__ == "__main__":

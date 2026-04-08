@@ -28,6 +28,10 @@ from ...common.test_mixins import (
 from ...seed import (
     GLOBAL_SEED,
 )
+from ..export_helpers import (
+    export_save_load_and_compare,
+    make_descriptor_dynamic_shapes,
+)
 
 
 class TestDescrptSeA(TestCaseSingleFrameWithNlist):
@@ -207,35 +211,13 @@ class TestDescrptSeA(TestCaseSingleFrameWithNlist):
         )
 
         # --- symbolic trace + export + .pte round-trip ---
-        from ..export_helpers import (
-            export_save_load_and_compare,
-            make_descriptor_dynamic_shapes,
-        )
-
         dynamic_shapes = make_descriptor_dynamic_shapes(has_mapping=False)
         inputs = (coord_ext, atype_ext, nlist)
-        loaded = export_save_load_and_compare(
+        export_save_load_and_compare(
             fn,
             inputs,
             (rd_eager, grad_eager),
             dynamic_shapes,
-            rtol=rtol,
-            atol=atol,
-        )
-
-        # Different shapes (nf=1 slice)
-        inputs_1f = tuple(t[0:1] for t in inputs)
-        rd_1f, grad_1f = fn(*inputs_1f)
-        rd_loaded_1f, grad_loaded_1f = loaded(*inputs_1f)
-        np.testing.assert_allclose(
-            rd_1f.detach().cpu().numpy(),
-            rd_loaded_1f.detach().cpu().numpy(),
-            rtol=rtol,
-            atol=atol,
-        )
-        np.testing.assert_allclose(
-            grad_1f.detach().cpu().numpy(),
-            grad_loaded_1f.detach().cpu().numpy(),
             rtol=rtol,
             atol=atol,
         )

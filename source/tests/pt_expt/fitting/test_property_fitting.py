@@ -23,6 +23,10 @@ from ...common.test_mixins import (
 from ...seed import (
     GLOBAL_SEED,
 )
+from ..export_helpers import (
+    export_save_load_and_compare,
+    make_fitting_dynamic_shapes,
+)
 
 
 class TestPropertyFittingNet(TestCaseSingleFrameWithNlist):
@@ -167,35 +171,13 @@ class TestPropertyFittingNet(TestCaseSingleFrameWithNlist):
         )
 
         # --- symbolic trace + export + .pte round-trip ---
-        from ..export_helpers import (
-            export_save_load_and_compare,
-            make_fitting_dynamic_shapes,
-        )
-
         dynamic_shapes = make_fitting_dynamic_shapes(has_gr=False)
         inputs = (descriptor, atype)
-        loaded = export_save_load_and_compare(
+        export_save_load_and_compare(
             fn,
             inputs,
             (ret_eager, grad_eager),
             dynamic_shapes,
-            rtol=1e-10,
-            atol=1e-10,
-        )
-
-        # Different shapes (nf=1 slice)
-        inputs_1f = tuple(t[0:1] for t in inputs)
-        ret_1f, grad_1f = fn(*inputs_1f)
-        ret_loaded_1f, grad_loaded_1f = loaded(*inputs_1f)
-        np.testing.assert_allclose(
-            ret_1f.detach().cpu().numpy(),
-            ret_loaded_1f.detach().cpu().numpy(),
-            rtol=1e-10,
-            atol=1e-10,
-        )
-        np.testing.assert_allclose(
-            grad_1f.detach().cpu().numpy(),
-            grad_loaded_1f.detach().cpu().numpy(),
             rtol=1e-10,
             atol=1e-10,
         )

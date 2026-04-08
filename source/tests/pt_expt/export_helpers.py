@@ -90,7 +90,151 @@ def export_save_load_and_compare(
             atol=atol,
         )
 
+    # 6. Compare loaded output vs eager (different nframes via nf=1 slice)
+    inputs_1f = tuple(t[0:1] if t is not None else None for t in inputs)
+    eager_1f = fn(*inputs_1f)
+    loaded_1f = loaded_module(*inputs_1f)
+    if not isinstance(eager_1f, tuple):
+        eager_1f = (eager_1f,)
+    if not isinstance(loaded_1f, tuple):
+        loaded_1f = (loaded_1f,)
+    for eager_out, loaded_out in zip(eager_1f, loaded_1f, strict=True):
+        np.testing.assert_allclose(
+            eager_out.detach().cpu().numpy(),
+            loaded_out.detach().cpu().numpy(),
+            rtol=rtol,
+            atol=atol,
+        )
+
     return loaded_module
+
+
+def model_forward_lower_export_round_trip(
+    md_pt,
+    ext_coord,
+    ext_atype,
+    nlist_t,
+    mapping_t,
+    fparam,
+    aparam,
+    output_keys: tuple[str, ...],
+    rtol: float = 1e-10,
+    atol: float = 1e-10,
+):
+    """Full forward_lower_exportable test: concrete trace + export + symbolic + .pte.
+
+    Performs the complete export pipeline test:
+    1. Eager reference via forward_lower
+    2. Concrete trace via forward_lower_exportable
+    3. torch.export.export (no dynamic shapes)
+    4. Compare traced/exported vs eager
+    5. Symbolic trace + dynamic shapes + .pte save/load round-trip
+    6. Compare loaded vs eager (nf=1 — different shapes)
+
+    Parameters
+    ----------
+    md_pt : torch.nn.Module
+        The model (already deserialized and in eval mode).
+    ext_coord, ext_atype, nlist_t, mapping_t : torch.Tensor
+        Extended coordinates, atom types, neighbor list, mapping.
+    fparam, aparam : torch.Tensor or None
+        Frame and atom parameters.
+    output_keys : tuple of str
+        Output dictionary keys to verify.
+    rtol, atol : float
+        Tolerances for np.testing.assert_allclose.
+    """
+    from deepmd.pt_expt.utils.serialization import (
+        _build_dynamic_shapes,
+    )
+
+    # 1. Eager reference
+    ret_eager = md_pt.forward_lower(
+        ext_coord.requires_grad_(True),
+        ext_atype,
+        nlist_t,
+        mapping_t,
+        fparam=fparam,
+        aparam=aparam,
+    )
+
+    # 2. Concrete trace
+    traced = md_pt.forward_lower_exportable(
+        ext_coord,
+        ext_atype,
+        nlist_t,
+        mapping_t,
+        fparam=fparam,
+        aparam=aparam,
+    )
+    assert isinstance(traced, torch.nn.Module)
+
+    # 3. Basic export (no dynamic shapes)
+    exported = torch.export.export(
+        traced,
+        (ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam),
+        strict=False,
+    )
+    assert exported is not None
+
+    # 4. Compare traced and exported vs eager
+    ret_traced = traced(ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam)
+    ret_exported = exported.module()(
+        ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam
+    )
+    for key in output_keys:
+        np.testing.assert_allclose(
+            ret_eager[key].detach().cpu().numpy(),
+            ret_traced[key].detach().cpu().numpy(),
+            rtol=rtol,
+            atol=atol,
+            err_msg=f"traced vs eager: {key}",
+        )
+        np.testing.assert_allclose(
+            ret_eager[key].detach().cpu().numpy(),
+            ret_exported[key].detach().cpu().numpy(),
+            rtol=rtol,
+            atol=atol,
+            err_msg=f"exported vs eager: {key}",
+        )
+
+    # 5. Symbolic trace + dynamic shapes + .pte round-trip
+    inputs_2f = tuple(
+        torch.cat([t, t], dim=0) if t is not None else None
+        for t in (ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam)
+    )
+    traced_sym = md_pt.forward_lower_exportable(
+        inputs_2f[0],
+        inputs_2f[1],
+        inputs_2f[2],
+        inputs_2f[3],
+        fparam=inputs_2f[4],
+        aparam=inputs_2f[5],
+        tracing_mode="symbolic",
+        _allow_non_fake_inputs=True,
+    )
+    dynamic_shapes = _build_dynamic_shapes(*inputs_2f)
+    exported_dyn = torch.export.export(
+        traced_sym,
+        inputs_2f,
+        dynamic_shapes=dynamic_shapes,
+        strict=False,
+        prefer_deferred_runtime_asserts_over_guards=True,
+    )
+    with tempfile.NamedTemporaryFile(suffix=".pte") as f:
+        torch.export.save(exported_dyn, f.name)
+        loaded = torch.export.load(f.name).module()
+
+    # 6. Compare loaded vs eager (nf=1 — different shapes)
+    ret_loaded_1f = loaded(ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam)
+    for key in output_keys:
+        np.testing.assert_allclose(
+            ret_eager[key].detach().cpu().numpy(),
+            ret_loaded_1f[key].detach().cpu().numpy(),
+            rtol=rtol,
+            atol=atol,
+            err_msg=f"loaded vs eager (nf=1): {key}",
+        )
 
 
 def make_descriptor_dynamic_shapes(has_mapping: bool = False) -> tuple:
