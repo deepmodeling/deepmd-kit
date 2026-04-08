@@ -363,12 +363,12 @@ class DeepEvalBackend(ABC):
 
     @abstractmethod
     def serialize(self) -> dict[str, Any]:
-        """Serialize the loaded model to a backend-unified dictionary.
+        """Serialize the loaded model structure only.
 
         Returns
         -------
         dict
-            Serialized model data. Must include key ``"model"``.
+            Serialized model tree that can be consumed by ``Node.deserialize``.
         """
 
 
@@ -432,7 +432,7 @@ class DeepEval(ABC):
         """Returns the output variable definitions."""
 
     def serialize(self) -> dict[str, Any]:
-        """Serialize the loaded model to a backend-unified dictionary."""
+        """Serialize the loaded model structure only."""
         return self.deep_eval.serialize()
 
     def get_rcut(self) -> float:

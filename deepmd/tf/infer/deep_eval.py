@@ -1136,23 +1136,7 @@ class DeepEval(DeepEvalBackend):
         model = Model(**model_def_script)
         # important! must be called before serialize
         model.init_variables(graph=graph, graph_def=graph_def)
-        model_dict = model.serialize()
-
-        data: dict[str, Any] = {
-            "backend": "TensorFlow",
-            "tf_version": tf.__version__,
-            "model": model_dict,
-            "model_def_script": model_def_script,
-        }
-        try:
-            t_min_nbor_dist = self._get_tensor("train_attr/min_nbor_dist:0")
-        except KeyError:
-            pass
-        else:
-            [min_nbor_dist] = run_sess(self.sess, [t_min_nbor_dist], feed_dict={})
-            data.setdefault("@variables", {})
-            data["@variables"]["min_nbor_dist"] = float(min_nbor_dist)
-        return data
+        return model.serialize()
 
     def get_model(self) -> "tf.Graph":
         """Get the TensorFlow graph.

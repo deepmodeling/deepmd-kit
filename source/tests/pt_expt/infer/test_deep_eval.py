@@ -109,15 +109,11 @@ class TestDeepEvalEner(unittest.TestCase):
         self.assertAlmostEqual(mds["rcut"], self.rcut)
         self.assertEqual(mds["sel"], list(self.sel))
 
-    def test_serialize_contract(self) -> None:
+    def test_serialize_returns_model_tree(self) -> None:
         data = self.dp.deep_eval.serialize()
-        self.assertEqual(data["backend"], "PyTorch Exportable")
-        self.assertIn("model", data)
-        self.assertIn("model_def_script", data)
-        self.assertIn("@variables", data)
-        self.assertIsInstance(data["@variables"], dict)
-        self.assertEqual(data["model_def_script"]["type_map"], self.type_map)
-        self.assertEqual(data["model"], serialize_from_file(self.tmpfile.name))
+        self.assertEqual(data["@class"], self.model.serialize()["@class"])
+        self.assertEqual(data["type"], self.model.serialize()["type"])
+        self.assertEqual(data, serialize_from_file(self.tmpfile.name))
 
     def test_eval_consistency(self) -> None:
         """Test that DeepPot.eval gives same results as direct model forward."""

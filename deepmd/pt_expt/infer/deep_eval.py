@@ -670,13 +670,7 @@ class DeepEval(DeepEvalBackend):
             serialize_from_file,
         )
 
-        model_dict = serialize_from_file(self.model_path)
-        return {
-            "backend": "PyTorch Exportable",
-            "model": model_dict,
-            "model_def_script": self.get_model_def_script(),
-            "@variables": {},
-        }
+        return serialize_from_file(self.model_path)
 
     def get_model(self) -> torch.nn.Module:
         """Get the exported model module.

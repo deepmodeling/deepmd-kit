@@ -4,9 +4,6 @@ from typing import (
     Any,
 )
 
-from deepmd.backend.backend import (
-    Backend,
-)
 from deepmd.dpmodel.utils.serialization import (
     Node,
 )
@@ -144,11 +141,5 @@ def show(
             log.info(f"Observed types: {observed_types['observed_type']} ")
 
     if "serialization-tree" in ATTRIBUTES:
-        backend = Backend.detect_backend_by_model(INPUT)()
-        data = backend.serialize_hook(INPUT)
-        if "model" not in data:
-            raise RuntimeError(
-                "Serialized model data does not contain key 'model'."
-            )
-        root = Node.deserialize(data["model"])
+        root = Node.deserialize(model.serialize())
         log.info("Model serialization tree:\n" + str(root))

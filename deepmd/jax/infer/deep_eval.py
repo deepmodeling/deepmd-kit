@@ -192,7 +192,10 @@ class DeepEval(DeepEvalBackend):
             serialize_from_file,
         )
 
-        return serialize_from_file(self.model_path)
+        data = serialize_from_file(self.model_path)
+        if "model" not in data:
+            raise RuntimeError("Serialized model data does not contain key 'model'.")
+        return data["model"]
 
     def eval(
         self,

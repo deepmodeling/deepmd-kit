@@ -408,15 +408,7 @@ class DeepEval(DeepEvalBackend):
 
     def serialize(self) -> dict[str, Any]:
         model = self.dp
-        data: dict[str, Any] = {
-            "backend": "DPModel",
-            "model": model.serialize(),
-            "model_def_script": self.get_model_def_script(),
-            "@variables": {},
-        }
-        if model.get_min_nbor_dist() is not None:
-            data["@variables"]["min_nbor_dist"] = model.get_min_nbor_dist()
-        return data
+        return model.serialize()
 
     def get_observed_types(self) -> dict:
         """Get observed types (elements) of the model during data statistics.

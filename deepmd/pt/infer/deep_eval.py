@@ -704,16 +704,7 @@ class DeepEval(DeepEvalBackend):
 
     def serialize(self) -> dict[str, Any]:
         model = self.dp.model["Default"]
-        data: dict[str, Any] = {
-            "backend": "PyTorch",
-            "pt_version": str(torch.__version__),
-            "model": model.serialize(),
-            "model_def_script": self.get_model_def_script(),
-            "@variables": {},
-        }
-        if model.get_min_nbor_dist() is not None:
-            data["@variables"]["min_nbor_dist"] = model.get_min_nbor_dist()
-        return data
+        return model.serialize()
 
     def get_model_size(self) -> dict:
         """Get model parameter count.
