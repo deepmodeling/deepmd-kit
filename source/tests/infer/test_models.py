@@ -169,33 +169,51 @@ class TestDeepPot(unittest.TestCase):
 
     def test_descriptor(self) -> None:
         _, extension = self.param
-        if extension in (".pte", ".pt2"):
-            self.skipTest("eval_descriptor not supported for pt_expt models")
         for ii, result in enumerate(self.case.results):
             if result.descriptor is None:
                 continue
-            descpt = self.dp.eval_descriptor(result.coord, result.box, result.atype)
+            descpt = self.dp.eval_descriptor(
+                result.coord,
+                result.box,
+                result.atype,
+                fparam=result.fparam,
+                aparam=result.aparam,
+            )
             expected_descpt = result.descriptor
             np.testing.assert_almost_equal(descpt.ravel(), expected_descpt.ravel())
             # See #4533
-            descpt = self.dp.eval_descriptor(result.coord, result.box, result.atype)
+            descpt = self.dp.eval_descriptor(
+                result.coord,
+                result.box,
+                result.atype,
+                fparam=result.fparam,
+                aparam=result.aparam,
+            )
             expected_descpt = result.descriptor
             np.testing.assert_almost_equal(descpt.ravel(), expected_descpt.ravel())
 
     def test_fitting_last_layer(self) -> None:
         _, extension = self.param
-        if extension in (".pb", ".pte", ".pt2"):
-            self.skipTest("fitting_last_layer not supported for this backend")
+        if extension == ".pb":
+            self.skipTest("fitting_last_layer not supported for TensorFlow models")
         for ii, result in enumerate(self.case.results):
             if result.fit_ll is None:
                 continue
             fit_ll = self.dp.eval_fitting_last_layer(
-                result.coord, result.box, result.atype
+                result.coord,
+                result.box,
+                result.atype,
+                fparam=result.fparam,
+                aparam=result.aparam,
             )
             expected_fit_ll = result.fit_ll
             np.testing.assert_almost_equal(fit_ll.ravel(), expected_fit_ll.ravel())
             fit_ll = self.dp.eval_fitting_last_layer(
-                result.coord, result.box, result.atype
+                result.coord,
+                result.box,
+                result.atype,
+                fparam=result.fparam,
+                aparam=result.aparam,
             )
             expected_fit_ll = result.fit_ll
             np.testing.assert_almost_equal(fit_ll.ravel(), expected_fit_ll.ravel())

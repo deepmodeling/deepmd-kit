@@ -6,6 +6,7 @@ Verifies the full pipeline:
 """
 
 import importlib
+import os
 import tempfile
 import unittest
 import zipfile
@@ -853,6 +854,417 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
                 atol=1e-10,
                 err_msg=f"nframes={nframes}, atom_virial",
             )
+
+
+class TestDeepEvalEnerDefaultFparam(unittest.TestCase):
+    """Test .pte inference with default fparam (non-spin model)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.rcut = 4.0
+        cls.rcut_smth = 0.5
+        cls.sel = [8, 6]
+        cls.nt = 2
+        cls.type_map = ["foo", "bar"]
+
+        ds = DescrptSeA(cls.rcut, cls.rcut_smth, cls.sel)
+        ft = EnergyFittingNet(
+            cls.nt,
+            ds.get_dim_out(),
+            mixed_types=ds.mixed_types(),
+            numb_fparam=1,
+            seed=GLOBAL_SEED,
+        )
+        cls.model = EnergyModel(ds, ft, type_map=cls.type_map)
+        cls.model = cls.model.to(torch.float64)
+        cls.model.eval()
+
+        cls.model_data = {"model": cls.model.serialize()}
+        cls.tmpfile = tempfile.NamedTemporaryFile(suffix=".pte", delete=False)
+        cls.tmpfile.close()
+        deserialize_to_file(cls.tmpfile.name, cls.model_data)
+
+        cls.dp = DeepPot(cls.tmpfile.name)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        import os
+
+        os.unlink(cls.tmpfile.name)
+
+    def _make_inputs(self):
+        nframes = 1
+        natoms = 6
+        coords = (
+            np.random.default_rng(42).random((nframes, natoms, 3)).astype(np.float64)
+        )
+        cells = 5.0 * np.eye(3, dtype=np.float64).reshape(1, 3, 3).repeat(
+            nframes, axis=0
+        )
+        atom_types = np.array([0, 0, 0, 1, 1, 1], dtype=int)
+        return coords, cells, atom_types
+
+    def test_eval_with_fparam(self) -> None:
+        """Model with fparam works when fparam is explicitly provided."""
+        coords, cells, atom_types = self._make_inputs()
+        fparam = np.array([0.5], dtype=np.float64)
+        ee, ff, vv = self.dp.eval(coords, cells, atom_types, fparam=fparam)[:3]
+        self.assertEqual(ee.shape, (1, 1))
+        self.assertEqual(ff.shape, (1, 6, 3))
+
+    def test_eval_without_fparam_has_default(self) -> None:
+        """When fparam is omitted but default exists, should use default."""
+        coords, cells, atom_types = self._make_inputs()
+        # The model has dim_fparam=1 but default_fparam is None by default.
+        # Without a default, omitting fparam should raise ValueError.
+        with self.assertRaises(ValueError):
+            self.dp.eval(coords, cells, atom_types)
+
+
+class TestEvalTypeEbd(unittest.TestCase):
+    """Test eval_typeebd for pt_expt models."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.rcut = 4.0
+        cls.rcut_smth = 0.5
+        cls.sel = [8, 6]
+        cls.nt = 2
+        cls.type_map = ["foo", "bar"]
+
+        # se_e2_a model (no type embedding)
+        ds_sea = DescrptSeA(cls.rcut, cls.rcut_smth, cls.sel)
+        ft_sea = EnergyFittingNet(
+            cls.nt,
+            ds_sea.get_dim_out(),
+            mixed_types=ds_sea.mixed_types(),
+            seed=GLOBAL_SEED,
+        )
+        model_sea = EnergyModel(ds_sea, ft_sea, type_map=cls.type_map)
+        model_sea = model_sea.to(torch.float64)
+        model_sea.eval()
+        cls._tmpdir = tempfile.mkdtemp()
+        pte_sea = os.path.join(cls._tmpdir, "sea.pte")
+        deserialize_to_file(pte_sea, {"model": model_sea.serialize()})
+        cls.dp_sea = DeepPot(pte_sea)
+
+        # DPA1 model (has type embedding)
+        from deepmd.pt_expt.descriptor.dpa1 import (
+            DescrptDPA1,
+        )
+
+        ds_dpa1 = DescrptDPA1(
+            cls.rcut,
+            cls.rcut_smth,
+            cls.sel,
+            ntypes=cls.nt,
+            seed=GLOBAL_SEED,
+        )
+        ft_dpa1 = EnergyFittingNet(
+            cls.nt,
+            ds_dpa1.get_dim_out(),
+            mixed_types=ds_dpa1.mixed_types(),
+            seed=GLOBAL_SEED,
+        )
+        model_dpa1 = EnergyModel(ds_dpa1, ft_dpa1, type_map=cls.type_map)
+        model_dpa1 = model_dpa1.to(torch.float64)
+        model_dpa1.eval()
+        pte_dpa1 = os.path.join(cls._tmpdir, "dpa1.pte")
+        deserialize_to_file(pte_dpa1, {"model": model_dpa1.serialize()})
+        cls.dp_dpa1 = DeepPot(pte_dpa1)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        import shutil
+
+        shutil.rmtree(cls._tmpdir, ignore_errors=True)
+
+    def test_typeebd_dpa1(self) -> None:
+        """DPA1 model has type embedding, should return valid array."""
+        typeebd = self.dp_dpa1.deep_eval.eval_typeebd()
+        self.assertEqual(typeebd.ndim, 2)
+        # DPA1 TypeEmbedNet outputs (ntypes+1) rows (padding type included)
+        self.assertIn(typeebd.shape[0], (self.nt, self.nt + 1))
+        self.assertTrue(typeebd.shape[1] > 0)
+
+    def test_typeebd_sea_raises(self) -> None:
+        """se_e2_a model has no type embedding, should raise KeyError."""
+        with self.assertRaises(KeyError):
+            self.dp_sea.deep_eval.eval_typeebd()
+
+
+class TestEvalDescriptor(unittest.TestCase):
+    """Test eval_descriptor for pt_expt models."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.rcut = 4.0
+        cls.rcut_smth = 0.5
+        cls.sel = [8, 6]
+        cls.nt = 2
+        cls.type_map = ["foo", "bar"]
+
+        # se_e2_a model
+        ds_sea = DescrptSeA(cls.rcut, cls.rcut_smth, cls.sel)
+        ft_sea = EnergyFittingNet(
+            cls.nt,
+            ds_sea.get_dim_out(),
+            mixed_types=ds_sea.mixed_types(),
+            seed=GLOBAL_SEED,
+        )
+        model_sea = EnergyModel(ds_sea, ft_sea, type_map=cls.type_map)
+        model_sea = model_sea.to(torch.float64)
+        model_sea.eval()
+        cls._tmpdir = tempfile.mkdtemp()
+        pte_sea = os.path.join(cls._tmpdir, "sea.pte")
+        deserialize_to_file(pte_sea, {"model": model_sea.serialize()})
+        cls.dp_sea = DeepPot(pte_sea)
+        cls.dim_descrpt_sea = ds_sea.get_dim_out()
+
+        # DPA1 model
+        from deepmd.pt_expt.descriptor.dpa1 import (
+            DescrptDPA1,
+        )
+
+        ds_dpa1 = DescrptDPA1(
+            cls.rcut,
+            cls.rcut_smth,
+            cls.sel,
+            ntypes=cls.nt,
+            seed=GLOBAL_SEED,
+        )
+        ft_dpa1 = EnergyFittingNet(
+            cls.nt,
+            ds_dpa1.get_dim_out(),
+            mixed_types=ds_dpa1.mixed_types(),
+            seed=GLOBAL_SEED,
+        )
+        model_dpa1 = EnergyModel(ds_dpa1, ft_dpa1, type_map=cls.type_map)
+        model_dpa1 = model_dpa1.to(torch.float64)
+        model_dpa1.eval()
+        pte_dpa1 = os.path.join(cls._tmpdir, "dpa1.pte")
+        deserialize_to_file(pte_dpa1, {"model": model_dpa1.serialize()})
+        cls.dp_dpa1 = DeepPot(pte_dpa1)
+        cls.dim_descrpt_dpa1 = ds_dpa1.get_dim_out()
+
+        # se_e2_a model with fparam (dim_fparam=1, no default; swap _dpmodel
+        # because se_e2_a + fparam hits GuardOnDataDependentSymNode in export)
+        ds_fp = DescrptSeA(cls.rcut, cls.rcut_smth, cls.sel)
+        ft_fp = EnergyFittingNet(
+            cls.nt,
+            ds_fp.get_dim_out(),
+            mixed_types=ds_fp.mixed_types(),
+            numb_fparam=1,
+            seed=GLOBAL_SEED,
+        )
+        model_fp = EnergyModel(ds_fp, ft_fp, type_map=cls.type_map)
+        pte_fp = os.path.join(cls._tmpdir, "fp.pte")
+        deserialize_to_file(pte_fp, {"model": model_sea.serialize()})
+        cls.dp_fp = DeepPot(pte_fp)
+        cls.dp_fp.deep_eval._dpmodel = model_fp
+        cls.dim_descrpt_fp = ds_fp.get_dim_out()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        import shutil
+
+        shutil.rmtree(cls._tmpdir, ignore_errors=True)
+
+    def _make_inputs(self):
+        nframes = 1
+        natoms = 6
+        coords = (
+            np.random.default_rng(42).random((nframes, natoms, 3)).astype(np.float64)
+        )
+        cells = 5.0 * np.eye(3, dtype=np.float64).reshape(1, 3, 3).repeat(
+            nframes, axis=0
+        )
+        atom_types = np.array([0, 0, 0, 1, 1, 1], dtype=int)
+        return coords, cells, atom_types
+
+    def test_descriptor_shape_sea(self) -> None:
+        """se_e2_a descriptor has correct shape."""
+        coords, cells, atom_types = self._make_inputs()
+        descpt = self.dp_sea.deep_eval.eval_descriptor(coords, cells, atom_types)
+        self.assertEqual(descpt.shape, (1, 6, self.dim_descrpt_sea))
+
+    def test_descriptor_shape_dpa1(self) -> None:
+        """DPA1 descriptor has correct shape."""
+        coords, cells, atom_types = self._make_inputs()
+        descpt = self.dp_dpa1.deep_eval.eval_descriptor(coords, cells, atom_types)
+        self.assertEqual(descpt.shape, (1, 6, self.dim_descrpt_dpa1))
+
+    def test_descriptor_deterministic_sea(self) -> None:
+        """Calling eval_descriptor twice gives same result for se_e2_a."""
+        coords, cells, atom_types = self._make_inputs()
+        d1 = self.dp_sea.deep_eval.eval_descriptor(coords, cells, atom_types)
+        d2 = self.dp_sea.deep_eval.eval_descriptor(coords, cells, atom_types)
+        np.testing.assert_array_equal(d1, d2)
+
+    def test_descriptor_deterministic_dpa1(self) -> None:
+        """Calling eval_descriptor twice gives same result for DPA1."""
+        coords, cells, atom_types = self._make_inputs()
+        d1 = self.dp_dpa1.deep_eval.eval_descriptor(coords, cells, atom_types)
+        d2 = self.dp_dpa1.deep_eval.eval_descriptor(coords, cells, atom_types)
+        np.testing.assert_array_equal(d1, d2)
+
+    def test_descriptor_with_fparam(self) -> None:
+        """eval_descriptor works with fparam."""
+        coords, cells, atom_types = self._make_inputs()
+        fparam = np.array([0.5], dtype=np.float64)
+        descpt = self.dp_fp.deep_eval.eval_descriptor(
+            coords, cells, atom_types, fparam=fparam
+        )
+        self.assertEqual(descpt.shape, (1, 6, self.dim_descrpt_fp))
+
+    def test_descriptor_without_fparam_raises(self) -> None:
+        """eval_descriptor raises when fparam is required but not provided."""
+        coords, cells, atom_types = self._make_inputs()
+        with self.assertRaises(ValueError):
+            self.dp_fp.deep_eval.eval_descriptor(coords, cells, atom_types)
+
+
+class TestEvalFittingLastLayer(unittest.TestCase):
+    """Test eval_fitting_last_layer for pt_expt models."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.rcut = 4.0
+        cls.rcut_smth = 0.5
+        cls.sel = [8, 6]
+        cls.nt = 2
+        cls.type_map = ["foo", "bar"]
+        cls.neuron = [120, 120, 120]  # default fitting net neurons
+
+        # se_e2_a model (mixed_types=False)
+        ds_sea = DescrptSeA(cls.rcut, cls.rcut_smth, cls.sel)
+        ft_sea = EnergyFittingNet(
+            cls.nt,
+            ds_sea.get_dim_out(),
+            mixed_types=ds_sea.mixed_types(),
+            seed=GLOBAL_SEED,
+        )
+        model_sea = EnergyModel(ds_sea, ft_sea, type_map=cls.type_map)
+        model_sea = model_sea.to(torch.float64)
+        model_sea.eval()
+        cls._tmpdir = tempfile.mkdtemp()
+        pte_sea = os.path.join(cls._tmpdir, "sea.pte")
+        deserialize_to_file(pte_sea, {"model": model_sea.serialize()})
+        cls.dp_sea = DeepPot(pte_sea)
+
+        # DPA1 model (mixed_types=True)
+        from deepmd.pt_expt.descriptor.dpa1 import (
+            DescrptDPA1,
+        )
+
+        ds_dpa1 = DescrptDPA1(
+            cls.rcut,
+            cls.rcut_smth,
+            cls.sel,
+            ntypes=cls.nt,
+            seed=GLOBAL_SEED,
+        )
+        ft_dpa1 = EnergyFittingNet(
+            cls.nt,
+            ds_dpa1.get_dim_out(),
+            mixed_types=ds_dpa1.mixed_types(),
+            seed=GLOBAL_SEED,
+        )
+        model_dpa1 = EnergyModel(ds_dpa1, ft_dpa1, type_map=cls.type_map)
+        model_dpa1 = model_dpa1.to(torch.float64)
+        model_dpa1.eval()
+        pte_dpa1 = os.path.join(cls._tmpdir, "dpa1.pte")
+        deserialize_to_file(pte_dpa1, {"model": model_dpa1.serialize()})
+        cls.dp_dpa1 = DeepPot(pte_dpa1)
+
+        # se_e2_a model with fparam and aparam (swap _dpmodel because
+        # se_e2_a + fparam hits GuardOnDataDependentSymNode in export)
+        ds_fp = DescrptSeA(cls.rcut, cls.rcut_smth, cls.sel)
+        ft_fp = EnergyFittingNet(
+            cls.nt,
+            ds_fp.get_dim_out(),
+            mixed_types=ds_fp.mixed_types(),
+            numb_fparam=1,
+            numb_aparam=2,
+            seed=GLOBAL_SEED,
+        )
+        model_fp = EnergyModel(ds_fp, ft_fp, type_map=cls.type_map)
+        pte_fp = os.path.join(cls._tmpdir, "fp.pte")
+        deserialize_to_file(pte_fp, {"model": model_sea.serialize()})
+        cls.dp_fp = DeepPot(pte_fp)
+        cls.dp_fp.deep_eval._dpmodel = model_fp
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        import shutil
+
+        shutil.rmtree(cls._tmpdir, ignore_errors=True)
+
+    def _make_inputs(self):
+        nframes = 1
+        natoms = 6
+        coords = (
+            np.random.default_rng(42).random((nframes, natoms, 3)).astype(np.float64)
+        )
+        cells = 5.0 * np.eye(3, dtype=np.float64).reshape(1, 3, 3).repeat(
+            nframes, axis=0
+        )
+        atom_types = np.array([0, 0, 0, 1, 1, 1], dtype=int)
+        return coords, cells, atom_types
+
+    def test_fitting_ll_shape_sea(self) -> None:
+        """se_e2_a fitting last layer has correct shape."""
+        coords, cells, atom_types = self._make_inputs()
+        fit_ll = self.dp_sea.deep_eval.eval_fitting_last_layer(
+            coords, cells, atom_types
+        )
+        self.assertEqual(fit_ll.shape, (1, 6, self.neuron[-1]))
+
+    def test_fitting_ll_shape_dpa1(self) -> None:
+        """DPA1 fitting last layer has correct shape."""
+        coords, cells, atom_types = self._make_inputs()
+        fit_ll = self.dp_dpa1.deep_eval.eval_fitting_last_layer(
+            coords, cells, atom_types
+        )
+        self.assertEqual(fit_ll.shape, (1, 6, self.neuron[-1]))
+
+    def test_fitting_ll_deterministic_sea(self) -> None:
+        """Verify calling twice gives the same result for se_e2_a."""
+        coords, cells, atom_types = self._make_inputs()
+        fit_ll1 = self.dp_sea.deep_eval.eval_fitting_last_layer(
+            coords, cells, atom_types
+        )
+        fit_ll2 = self.dp_sea.deep_eval.eval_fitting_last_layer(
+            coords, cells, atom_types
+        )
+        np.testing.assert_array_equal(fit_ll1, fit_ll2)
+
+    def test_fitting_ll_deterministic_dpa1(self) -> None:
+        """Verify calling twice gives the same result for DPA1."""
+        coords, cells, atom_types = self._make_inputs()
+        fit_ll1 = self.dp_dpa1.deep_eval.eval_fitting_last_layer(
+            coords, cells, atom_types
+        )
+        fit_ll2 = self.dp_dpa1.deep_eval.eval_fitting_last_layer(
+            coords, cells, atom_types
+        )
+        np.testing.assert_array_equal(fit_ll1, fit_ll2)
+
+    def test_fitting_ll_with_fparam_aparam(self) -> None:
+        """eval_fitting_last_layer works with fparam and aparam."""
+        coords, cells, atom_types = self._make_inputs()
+        fparam = np.array([0.5], dtype=np.float64)
+        aparam = np.zeros((1, 6, 2), dtype=np.float64)
+        fit_ll = self.dp_fp.deep_eval.eval_fitting_last_layer(
+            coords, cells, atom_types, fparam=fparam, aparam=aparam
+        )
+        self.assertEqual(fit_ll.shape, (1, 6, self.neuron[-1]))
+
+    def test_fitting_ll_without_fparam_raises(self) -> None:
+        """eval_fitting_last_layer raises when fparam is required but not provided."""
+        coords, cells, atom_types = self._make_inputs()
+        with self.assertRaises(ValueError):
+            self.dp_fp.deep_eval.eval_fitting_last_layer(coords, cells, atom_types)
 
 
 if __name__ == "__main__":

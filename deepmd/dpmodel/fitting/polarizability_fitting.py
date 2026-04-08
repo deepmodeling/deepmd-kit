@@ -326,9 +326,8 @@ class PolarFitting(GeneralFitting):
             "Must provide the rotation matrix for polarizability fitting."
         )
         # (nframes, nloc, _net_out_dim)
-        out = self._call_common(descriptor, atype, gr, g2, h2, fparam, aparam)[
-            self.var_name
-        ]
+        results = self._call_common(descriptor, atype, gr, g2, h2, fparam, aparam)
+        out = results.pop(self.var_name)
         # out = out * self.scale[atype, ...]
         scale_atype = xp.reshape(
             xp.take(xp.astype(self.scale, out.dtype), xp.reshape(atype, (-1,)), axis=0),
@@ -371,4 +370,5 @@ class PolarFitting(GeneralFitting):
             # (nframes, nloc, 3, 3)
             bias = bias[..., None] * eye
             out = out + bias
-        return {"polarizability": out}
+        results["polarizability"] = out
+        return results

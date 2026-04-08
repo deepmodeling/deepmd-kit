@@ -3,8 +3,14 @@ from collections.abc import (
     Callable,
 )
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
+
+if TYPE_CHECKING:
+    from deepmd.dpmodel.atomic_model.dp_atomic_model import (
+        DPAtomicModel,
+    )
 
 import array_api_compat
 import numpy as np
@@ -703,6 +709,21 @@ def make_model(
             If False, the shape is (nframes, nloc, ndim).
             """
             return self.atomic_model.is_aparam_nall()
+
+        def get_dp_atomic_model(self) -> "DPAtomicModel | None":
+            """Get the underlying DPAtomicModel with descriptor and fitting_net.
+
+            Returns the ``atomic_model`` if it is a ``DPAtomicModel`` instance
+            (i.e. has both ``descriptor`` and ``fitting_net``).  Returns ``None``
+            for composite atomic models such as ``LinearEnergyAtomicModel``.
+            """
+            from deepmd.dpmodel.atomic_model.dp_atomic_model import (
+                DPAtomicModel,
+            )
+
+            if isinstance(self.atomic_model, DPAtomicModel):
+                return self.atomic_model
+            return None
 
         def get_rcut(self) -> float:
             """Get the cut-off radius."""
