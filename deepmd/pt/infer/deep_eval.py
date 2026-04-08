@@ -704,7 +704,14 @@ class DeepEval(DeepEvalBackend):
 
     def serialize(self) -> dict[str, Any]:
         model = self.dp.model["Default"]
-        return model.serialize()
+        if hasattr(model, "serialize"):
+            return model.serialize()
+
+        from deepmd.pt.utils.serialization import (
+            serialize_from_file,
+        )
+
+        return serialize_from_file(self.model_path)["model"]
 
     def get_model_size(self) -> dict:
         """Get model parameter count.
