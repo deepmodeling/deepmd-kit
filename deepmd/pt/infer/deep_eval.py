@@ -707,11 +707,26 @@ class DeepEval(DeepEvalBackend):
         if hasattr(model, "serialize"):
             return model.serialize()
 
+        # Try pt_expt serialization first (for .pte files)
+        try:
+            from deepmd.pt_expt.utils.serialization import (
+                serialize_from_file as serialize_from_pte,
+            )
+            data = serialize_from_pte(self.model_path)
+            # pt_expt serialize_from_file returns the model tree directly
+            return data
+        except ImportError:
+            pass
+        except Exception:
+            # If pt_expt serialization fails for other reasons, fall back
+            pass
+
+        # Fallback to generic pt serialization (for .pth/.pt files)
         from deepmd.pt.utils.serialization import (
             serialize_from_file,
         )
-
         data = serialize_from_file(self.model_path)
+        # Generic pt serialize_from_file returns wrapped dict with "model" key
         return data["model"] if isinstance(data, dict) and "model" in data else data
 
     def get_model_size(self) -> dict:
