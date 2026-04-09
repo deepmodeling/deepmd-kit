@@ -24,6 +24,9 @@ from deepmd.pt_expt.utils import (
 from ...seed import (
     GLOBAL_SEED,
 )
+from ..export_helpers import (
+    model_forward_lower_export_round_trip,
+)
 
 
 class TestPolarModel(unittest.TestCase):
@@ -135,52 +138,16 @@ class TestPolarModel(unittest.TestCase):
         fparam = None
         aparam = None
 
-        ret_eager = md_pt.forward_lower(
-            ext_coord.requires_grad_(True),
-            ext_atype,
-            nlist_t,
-            mapping_t,
-            fparam=fparam,
-            aparam=aparam,
-        )
-
-        traced = md_pt.forward_lower_exportable(
+        model_forward_lower_export_round_trip(
+            md_pt,
             ext_coord,
             ext_atype,
             nlist_t,
             mapping_t,
-            fparam=fparam,
-            aparam=aparam,
+            fparam,
+            aparam,
+            output_keys=("polar", "global_polar"),
         )
-        self.assertIsInstance(traced, torch.nn.Module)
-
-        exported = torch.export.export(
-            traced,
-            (ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam),
-            strict=False,
-        )
-        self.assertIsNotNone(exported)
-
-        ret_traced = traced(ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam)
-        ret_exported = exported.module()(
-            ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam
-        )
-
-        for key in ("polar", "global_polar"):
-            np.testing.assert_allclose(
-                ret_eager[key].detach().cpu().numpy(),
-                ret_traced[key].detach().cpu().numpy(),
-                rtol=1e-10,
-                atol=1e-10,
-                err_msg=f"traced vs eager: {key}",
-            )
-            np.testing.assert_allclose(
-                ret_eager[key].detach().cpu().numpy(),
-                ret_exported[key].detach().cpu().numpy(),
-                rtol=1e-10,
-                atol=1e-10,
-                err_msg=f"exported vs eager: {key}",
-            )
 
 
 if __name__ == "__main__":

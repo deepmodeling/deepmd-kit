@@ -42,7 +42,7 @@ class DeepSpinBackend : public DeepBaseModelBackend {
   /**
    * @brief Evaluate the energy, force, magnetic force, virial, atomic energy,
    *and atomic virial by using this DP with spin input.
-   * @note The double precision interface is used by i-PI, GROMACS, ABACUS, and
+   * @note The double precision interface is used by i-PI, ABACUS, and
    *CP2k.
    * @param[out] ener The system energy.
    * @param[out] force The force on each atom.

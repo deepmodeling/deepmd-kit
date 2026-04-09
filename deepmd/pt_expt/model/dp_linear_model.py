@@ -129,6 +129,7 @@ class LinearEnergyModel(DPModelCommon, DPLinearModel_):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
+        **make_fx_kwargs: Any,
     ) -> torch.nn.Module:
         model = self
 
@@ -151,7 +152,7 @@ class LinearEnergyModel(DPModelCommon, DPLinearModel_):
                 do_atomic_virial=do_atomic_virial,
             )
 
-        return make_fx(fn)(
+        return make_fx(fn, **make_fx_kwargs)(
             extended_coord, extended_atype, nlist, mapping, fparam, aparam
         )
 
