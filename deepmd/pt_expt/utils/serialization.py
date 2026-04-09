@@ -17,13 +17,23 @@ from deepmd.dpmodel.utils.serialization import (
 
 
 def _strip_shape_assertions(graph_module: torch.nn.Module) -> None:
-    """Remove shape-guard assertion nodes from an exported graph.
+    """Remove shape-guard assertion nodes from a spin model's exported graph.
 
     ``torch.export`` inserts ``aten._assert_scalar`` nodes for symbolic shape
-    relationships discovered during tracing (e.g. ``Ne(nall, nloc)``).  For the
-    spin model, these are overly conservative — the model computes correct
-    results even when ``nall == nloc`` (NoPBC, no ghost atoms).  Stripping
-    them allows the model to accept any valid shape combination.
+    relationships discovered during tracing.  For the spin model, the atom-
+    doubling logic creates slice patterns that depend on ``(nall - nloc)``,
+    producing guards like ``Ne(nall, nloc)``.  These guards are spurious: the
+    model computes correct results even when ``nall == nloc`` (NoPBC, no ghost
+    atoms).
+
+    This function is **only called for spin models** (guarded by ``if is_spin``
+    in ``_trace_and_export``).  The assertion messages use opaque symbolic
+    variable names (e.g. ``Ne(s22, s96)``) rather than human-readable names,
+    so filtering by message content is not reliable.  Since
+    ``prefer_deferred_runtime_asserts_over_guards=True`` converts all shape
+    guards into these deferred assertions, and the only shape relationships in
+    the spin model involve nall/nloc, removing all of them is safe in this
+    context.
     """
     graph = graph_module.graph
     for node in list(graph.nodes):

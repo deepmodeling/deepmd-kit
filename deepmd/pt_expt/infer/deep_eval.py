@@ -127,7 +127,7 @@ class DeepEval(DeepEvalBackend):
         model_dict = _json_to_numpy(model_dict)
         model_data = model_dict["model"]
 
-        if "spin" in model_data and "backbone_model" in model_data:
+        if model_data.get("type") == "spin_ener":
             from deepmd.pt_expt.model.spin_model import (
                 SpinModel,
             )
