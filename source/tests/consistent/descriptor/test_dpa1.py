@@ -22,7 +22,7 @@ from ..common import (
     INSTALLED_PT_EXPT,
     INSTALLED_TF,
     CommonTest,
-    parameterized,
+    parameterized_cases,
 )
 from .common import (
     DescriptorAPITest,
@@ -57,28 +57,76 @@ from deepmd.utils.argcheck import (
     descrpt_se_atten_args,
 )
 
-
-@parameterized(
-    (4,),  # tebd_dim
-    ("concat", "strip"),  # tebd_input_mode
-    (True,),  # resnet_dt
-    (True,),  # type_one_side
-    (20,),  # attn
-    (0, 2),  # attn_layer
-    (True,),  # attn_dotr
-    ([], [[0, 1]]),  # excluded_types
-    (0.0,),  # env_protection
-    (True, False),  # set_davg_zero
-    (1.0,),  # scaling_factor
-    (True,),  # normalize
-    (None, 1.0),  # temperature
-    (1e-5,),  # ln_eps
-    (True,),  # smooth_type_embedding
-    (True,),  # concat_output_tebd
-    ("float64",),  # precision
-    (True, False),  # use_econf_tebd
-    (False,),  # use_tebd_bias
+DPA1_CASE_FIELDS = (
+    "tebd_dim",
+    "tebd_input_mode",
+    "resnet_dt",
+    "type_one_side",
+    "attn",
+    "attn_layer",
+    "attn_dotr",
+    "excluded_types",
+    "env_protection",
+    "set_davg_zero",
+    "scaling_factor",
+    "normalize",
+    "temperature",
+    "ln_eps",
+    "smooth_type_embedding",
+    "concat_output_tebd",
+    "precision",
+    "use_econf_tebd",
+    "use_tebd_bias",
 )
+
+
+DPA1_BASELINE_CASE = {
+    "tebd_dim": 4,
+    "tebd_input_mode": "concat",
+    "resnet_dt": True,
+    "type_one_side": True,
+    "attn": 20,
+    "attn_layer": 2,
+    "attn_dotr": True,
+    "excluded_types": [],
+    "env_protection": 0.0,
+    "set_davg_zero": True,
+    "scaling_factor": 1.0,
+    "normalize": True,
+    "temperature": 1.0,
+    "ln_eps": 1e-5,
+    "smooth_type_embedding": True,
+    "concat_output_tebd": True,
+    "precision": "float64",
+    "use_econf_tebd": False,
+    "use_tebd_bias": False,
+}
+
+
+def dpa1_case(**overrides: Any) -> tuple:
+    case = DPA1_BASELINE_CASE | overrides
+    return tuple(case[field] for field in DPA1_CASE_FIELDS)
+
+
+DPA1_CURATED_CASES = (
+    # Baseline coverage.
+    dpa1_case(),
+    # Alternate tebd input plumbing.
+    dpa1_case(tebd_input_mode="strip"),
+    # High-risk descriptor toggles.
+    dpa1_case(excluded_types=[[0, 1]]),
+    dpa1_case(set_davg_zero=False),
+    dpa1_case(normalize=False),
+    # Attention edge cases: disabled temperature path vs zero-layer path.
+    dpa1_case(temperature=None),
+    dpa1_case(attn_layer=0, temperature=None),
+    # econf-specific path with both tebd input modes.
+    dpa1_case(use_econf_tebd=True),
+    dpa1_case(tebd_input_mode="strip", use_econf_tebd=True),
+)
+
+
+@parameterized_cases(*DPA1_CURATED_CASES)
 class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
     @property
     def data(self) -> dict:
@@ -556,27 +604,7 @@ class TestDPA1(CommonTest, DescriptorTest, unittest.TestCase):
             raise ValueError(f"Unknown precision: {precision}")
 
 
-@parameterized(
-    (4,),  # tebd_dim
-    ("concat", "strip"),  # tebd_input_mode
-    (True,),  # resnet_dt
-    (True,),  # type_one_side
-    (20,),  # attn
-    (0, 2),  # attn_layer
-    (True,),  # attn_dotr
-    ([], [[0, 1]]),  # excluded_types
-    (0.0,),  # env_protection
-    (True, False),  # set_davg_zero
-    (1.0,),  # scaling_factor
-    (True,),  # normalize
-    (None, 1.0),  # temperature
-    (1e-5,),  # ln_eps
-    (True,),  # smooth_type_embedding
-    (True,),  # concat_output_tebd
-    ("float64",),  # precision
-    (True, False),  # use_econf_tebd
-    (False,),  # use_tebd_bias
-)
+@parameterized_cases(*DPA1_CURATED_CASES)
 class TestDPA1DescriptorAPI(DescriptorAPITest, unittest.TestCase):
     """Test consistency of BaseDescriptor API methods across backends."""
 

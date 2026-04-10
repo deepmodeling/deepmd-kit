@@ -21,7 +21,7 @@ from ..common import (
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
     CommonTest,
-    parameterized,
+    parameterized_cases,
 )
 from .common import (
     DescriptorAPITest,
@@ -63,36 +63,106 @@ from deepmd.utils.argcheck import (
     descrpt_dpa2_args,
 )
 
-
-@parameterized(
-    ("concat", "strip"),  # repinit_tebd_input_mode
-    (True,),  # repinit_set_davg_zero
-    (False,),  # repinit_type_one_side
-    (True, False),  # repinit_use_three_body
-    (True, False),  # repformer_direct_dist
-    (True,),  # repformer_update_g1_has_conv
-    (True,),  # repformer_update_g1_has_drrd
-    (True,),  # repformer_update_g1_has_grrg
-    (True,),  # repformer_update_g1_has_attn
-    (True,),  # repformer_update_g2_has_g1g1
-    (True,),  # repformer_update_g2_has_attn
-    (False,),  # repformer_update_h2
-    (True,),  # repformer_attn2_has_gate
-    ("res_avg", "res_residual"),  # repformer_update_style
-    ("norm", "const"),  # repformer_update_residual_init
-    (True,),  # repformer_set_davg_zero
-    (True,),  # repformer_trainable_ln
-    (1e-5,),  # repformer_ln_eps
-    (True,),  # repformer_use_sqrt_nnei
-    (True,),  # repformer_g1_out_conv
-    (True,),  # repformer_g1_out_mlp
-    (True, False),  # smooth
-    ([], [[0, 1]]),  # exclude_types
-    ("float64",),  # precision
-    (True, False),  # add_tebd_to_repinit_out
-    (True, False),  # use_econf_tebd
-    (False,),  # use_tebd_bias
+DPA2_CASE_FIELDS = (
+    "repinit_tebd_input_mode",
+    "repinit_set_davg_zero",
+    "repinit_type_one_side",
+    "repinit_use_three_body",
+    "repformer_direct_dist",
+    "repformer_update_g1_has_conv",
+    "repformer_update_g1_has_drrd",
+    "repformer_update_g1_has_grrg",
+    "repformer_update_g1_has_attn",
+    "repformer_update_g2_has_g1g1",
+    "repformer_update_g2_has_attn",
+    "repformer_update_h2",
+    "repformer_attn2_has_gate",
+    "repformer_update_style",
+    "repformer_update_residual_init",
+    "repformer_set_davg_zero",
+    "repformer_trainable_ln",
+    "repformer_ln_eps",
+    "repformer_use_sqrt_nnei",
+    "repformer_g1_out_conv",
+    "repformer_g1_out_mlp",
+    "smooth",
+    "exclude_types",
+    "precision",
+    "add_tebd_to_repinit_out",
+    "use_econf_tebd",
+    "use_tebd_bias",
 )
+
+
+DPA2_BASELINE_CASE = {
+    "repinit_tebd_input_mode": "concat",
+    "repinit_set_davg_zero": True,
+    "repinit_type_one_side": False,
+    "repinit_use_three_body": True,
+    "repformer_direct_dist": True,
+    "repformer_update_g1_has_conv": True,
+    "repformer_update_g1_has_drrd": True,
+    "repformer_update_g1_has_grrg": True,
+    "repformer_update_g1_has_attn": True,
+    "repformer_update_g2_has_g1g1": True,
+    "repformer_update_g2_has_attn": True,
+    "repformer_update_h2": False,
+    "repformer_attn2_has_gate": True,
+    "repformer_update_style": "res_avg",
+    "repformer_update_residual_init": "norm",
+    "repformer_set_davg_zero": True,
+    "repformer_trainable_ln": True,
+    "repformer_ln_eps": 1e-5,
+    "repformer_use_sqrt_nnei": True,
+    "repformer_g1_out_conv": True,
+    "repformer_g1_out_mlp": True,
+    "smooth": True,
+    "exclude_types": [],
+    "precision": "float64",
+    "add_tebd_to_repinit_out": True,
+    "use_econf_tebd": False,
+    "use_tebd_bias": False,
+}
+
+
+def dpa2_case(**overrides: Any) -> tuple:
+    case = DPA2_BASELINE_CASE | overrides
+    return tuple(case[field] for field in DPA2_CASE_FIELDS)
+
+
+DPA2_CURATED_CASES = (
+    # Baseline coverage.
+    dpa2_case(),
+    # Alternate repinit embedding path.
+    dpa2_case(repinit_tebd_input_mode="strip"),
+    # repinit / repformer structural toggles.
+    dpa2_case(repinit_use_three_body=False),
+    # Keep direct_dist and update_g1_has_conv named explicitly: a historical
+    # tuple/unpack mismatch could silently swap these booleans when raw tuples
+    # were edited, so curated cases must spell out which branch is changing.
+    dpa2_case(repformer_direct_dist=False),
+    dpa2_case(repformer_update_style="res_residual"),
+    dpa2_case(repformer_update_residual_init="const"),
+    # Descriptor-level toggles.
+    dpa2_case(smooth=False),
+    dpa2_case(exclude_types=[[0, 1]]),
+    dpa2_case(add_tebd_to_repinit_out=False),
+    # econf-specific coverage, including one mixed high-risk combination.
+    dpa2_case(use_econf_tebd=True),
+    dpa2_case(
+        repinit_tebd_input_mode="strip",
+        repformer_direct_dist=False,
+        repformer_update_style="res_residual",
+        repformer_update_residual_init="const",
+        smooth=False,
+        exclude_types=[[0, 1]],
+        add_tebd_to_repinit_out=False,
+        use_econf_tebd=True,
+    ),
+)
+
+
+@parameterized_cases(*DPA2_CURATED_CASES)
 class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
     @property
     def data(self) -> dict:
@@ -101,8 +171,8 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             repinit_set_davg_zero,
             repinit_type_one_side,
             repinit_use_three_body,
-            repformer_update_g1_has_conv,
             repformer_direct_dist,
+            repformer_update_g1_has_conv,
             repformer_update_g1_has_drrd,
             repformer_update_g1_has_grrg,
             repformer_update_g1_has_attn,
@@ -173,7 +243,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
                     "update_style": repformer_update_style,
                     "update_residual": 0.001,
                     "update_residual_init": repformer_update_residual_init,
-                    "set_davg_zero": True,
+                    "set_davg_zero": repformer_set_davg_zero,
                     "trainable_ln": repformer_trainable_ln,
                     "ln_eps": repformer_ln_eps,
                     "use_sqrt_nnei": repformer_use_sqrt_nnei,
@@ -201,8 +271,8 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             repinit_set_davg_zero,
             repinit_type_one_side,
             repinit_use_three_body,
-            repformer_update_g1_has_conv,
             repformer_direct_dist,
+            repformer_update_g1_has_conv,
             repformer_update_g1_has_drrd,
             repformer_update_g1_has_grrg,
             repformer_update_g1_has_attn,
@@ -234,8 +304,8 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             repinit_set_davg_zero,
             repinit_type_one_side,
             repinit_use_three_body,
-            repformer_update_g1_has_conv,
             repformer_direct_dist,
+            repformer_update_g1_has_conv,
             repformer_update_g1_has_drrd,
             repformer_update_g1_has_grrg,
             repformer_update_g1_has_attn,
@@ -267,8 +337,8 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             repinit_set_davg_zero,
             repinit_type_one_side,
             repinit_use_three_body,
-            repformer_update_g1_has_conv,
             repformer_direct_dist,
+            repformer_update_g1_has_conv,
             repformer_update_g1_has_drrd,
             repformer_update_g1_has_grrg,
             repformer_update_g1_has_attn,
@@ -300,8 +370,8 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             repinit_set_davg_zero,
             repinit_type_one_side,
             repinit_use_three_body,
-            repformer_update_g1_has_conv,
             repformer_direct_dist,
+            repformer_update_g1_has_conv,
             repformer_update_g1_has_drrd,
             repformer_update_g1_has_grrg,
             repformer_update_g1_has_attn,
@@ -377,8 +447,8 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             repinit_set_davg_zero,
             repinit_type_one_side,
             repinit_use_three_body,
-            repformer_update_g1_has_conv,
             repformer_direct_dist,
+            repformer_update_g1_has_conv,
             repformer_update_g1_has_drrd,
             repformer_update_g1_has_grrg,
             repformer_update_g1_has_attn,
@@ -483,8 +553,8 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             repinit_set_davg_zero,
             repinit_type_one_side,
             repinit_use_three_body,
-            repformer_update_g1_has_conv,
             repformer_direct_dist,
+            repformer_update_g1_has_conv,
             repformer_update_g1_has_drrd,
             repformer_update_g1_has_grrg,
             repformer_update_g1_has_attn,
@@ -522,8 +592,8 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             repinit_set_davg_zero,
             repinit_type_one_side,
             repinit_use_three_body,
-            repformer_update_g1_has_conv,
             repformer_direct_dist,
+            repformer_update_g1_has_conv,
             repformer_update_g1_has_drrd,
             repformer_update_g1_has_grrg,
             repformer_update_g1_has_attn,
@@ -554,35 +624,7 @@ class TestDPA2(CommonTest, DescriptorTest, unittest.TestCase):
             raise ValueError(f"Unknown precision: {precision}")
 
 
-@parameterized(
-    ("concat", "strip"),  # repinit_tebd_input_mode
-    (True,),  # repinit_set_davg_zero
-    (False,),  # repinit_type_one_side
-    (True, False),  # repinit_use_three_body
-    (True, False),  # repformer_direct_dist
-    (True,),  # repformer_update_g1_has_conv
-    (True,),  # repformer_update_g1_has_drrd
-    (True,),  # repformer_update_g1_has_grrg
-    (True,),  # repformer_update_g1_has_attn
-    (True,),  # repformer_update_g2_has_g1g1
-    (True,),  # repformer_update_g2_has_attn
-    (False,),  # repformer_update_h2
-    (True,),  # repformer_attn2_has_gate
-    ("res_avg", "res_residual"),  # repformer_update_style
-    ("norm", "const"),  # repformer_update_residual_init
-    (True,),  # repformer_set_davg_zero
-    (True,),  # repformer_trainable_ln
-    (1e-5,),  # repformer_ln_eps
-    (True,),  # repformer_use_sqrt_nnei
-    (True,),  # repformer_g1_out_conv
-    (True,),  # repformer_g1_out_mlp
-    (True, False),  # smooth
-    ([], [[0, 1]]),  # exclude_types
-    ("float64",),  # precision
-    (True, False),  # add_tebd_to_repinit_out
-    (True, False),  # use_econf_tebd
-    (False,),  # use_tebd_bias
-)
+@parameterized_cases(*DPA2_CURATED_CASES)
 class TestDPA2DescriptorAPI(DescriptorAPITest, unittest.TestCase):
     """Test consistency of BaseDescriptor API methods across backends."""
 
@@ -598,8 +640,8 @@ class TestDPA2DescriptorAPI(DescriptorAPITest, unittest.TestCase):
             repinit_set_davg_zero,
             repinit_type_one_side,
             repinit_use_three_body,
-            repformer_update_g1_has_conv,
             repformer_direct_dist,
+            repformer_update_g1_has_conv,
             repformer_update_g1_has_drrd,
             repformer_update_g1_has_grrg,
             repformer_update_g1_has_attn,
@@ -670,7 +712,7 @@ class TestDPA2DescriptorAPI(DescriptorAPITest, unittest.TestCase):
                     "update_style": repformer_update_style,
                     "update_residual": 0.001,
                     "update_residual_init": repformer_update_residual_init,
-                    "set_davg_zero": True,
+                    "set_davg_zero": repformer_set_davg_zero,
                     "trainable_ln": repformer_trainable_ln,
                     "ln_eps": repformer_ln_eps,
                     "use_sqrt_nnei": repformer_use_sqrt_nnei,
