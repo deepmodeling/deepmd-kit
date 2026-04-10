@@ -1,0 +1,92 @@
+title: "[Q&A] "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this form for Q&A discussions.
+
+        This template is intentionally lightweight.
+        **Only fill the technical fields below if they are relevant to your question.**
+
+        If your question is about using DeePMD-kit or diagnosing a problem, version info and a minimal reproducible example can help others answer faster.
+  - type: textarea
+    id: question
+    attributes:
+      label: Question
+      description: Please describe your question clearly.
+      placeholder: What would you like to ask?
+      value:
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: DeePMD-kit Version
+      description: "If applicable: `dp --version`."
+      placeholder: "e.g., 2.2.7"
+    validations:
+      required: false
+  - type: input
+    id: backend-version
+    attributes:
+      label: Backend and its version
+      description: "If applicable: the backend and its version will be printed when running DeePMD-kit, e.g. TensorFlow v2.15.0."
+      placeholder: "e.g., TensorFlow v2.15.0"
+    validations:
+      required: false
+  - type: textarea
+    id: other-version
+    attributes:
+      label: Python Version, CUDA Version, GCC Version, LAMMPS Version, etc
+      description: "If applicable, specify your platform or environment details."
+      placeholder:
+      value:
+    validations:
+      required: false
+  - type: textarea
+    id: details
+    attributes:
+      label: Details
+      description: "If applicable, add more context such as what you are trying to do, what you have tried, and where you got stuck."
+      placeholder:
+      value:
+    validations:
+      required: false
+  - type: textarea
+    id: reproducible-example
+    attributes:
+      label: Reproducible Example, Input Files, and Commands
+      description: |
+        If applicable, provide a minimal reproducible example.
+        For software-usage questions, this is often the fastest way to get a useful answer.
+      placeholder: |
+        Commands:
+        ```bash
+        dp train input.json
+        ```
+
+        Input / config:
+        ```json
+        {
+          "model": {}
+        }
+        ```
+
+        Expected behavior:
+        ...
+
+        Actual behavior / error message:
+        ...
+      value:
+    validations:
+      required: false
+  - type: textarea
+    id: further
+    attributes:
+      label: Further Information, Files, and Links
+      description: Put any additional information here, including links to docs, papers, related issues, screenshots, or external resources.
+      placeholder:
+      value:
+    validations:
+      required: false
