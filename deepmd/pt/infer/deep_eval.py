@@ -314,6 +314,13 @@ class DeepEval(DeepEvalBackend):
         """Check if the model has spin atom types."""
         return self._has_spin
 
+    def get_use_spin(self) -> list[bool]:
+        """Get the per-type spin usage of this model."""
+        if self._has_spin:
+            model = self.dp.model["Default"]
+            return model.spin.use_spin.tolist()
+        return []
+
     def get_has_hessian(self) -> bool:
         """Check if the model has hessian."""
         return self._has_hessian

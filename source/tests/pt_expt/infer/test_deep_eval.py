@@ -96,6 +96,10 @@ class TestDeepEvalEner(unittest.TestCase):
         sel_type = self.dp.deep_eval.get_sel_type()
         self.assertEqual(sel_type, self.model.get_sel_type())
 
+    def test_use_spin_non_spin_model(self) -> None:
+        self.assertFalse(self.dp.has_spin)
+        self.assertEqual(self.dp.use_spin, [])
+
     def test_model_type(self) -> None:
         self.assertIs(self.dp.deep_eval.model_type, DeepPot)
 
@@ -582,6 +586,10 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
         sel_type = self.dp.deep_eval.get_sel_type()
         self.assertEqual(sel_type, self.model.get_sel_type())
 
+    def test_use_spin_non_spin_model(self) -> None:
+        self.assertFalse(self.dp.has_spin)
+        self.assertEqual(self.dp.use_spin, [])
+
     def test_model_type(self) -> None:
         self.assertIs(self.dp.deep_eval.model_type, DeepPot)
 
@@ -853,6 +861,442 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
                 atol=1e-10,
                 err_msg=f"nframes={nframes}, atom_virial",
             )
+
+
+class TestDeepEvalEnerDefaultFparam(unittest.TestCase):
+    """Test .pte inference with default fparam (non-spin model)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.rcut = 4.0
+        cls.rcut_smth = 0.5
+        cls.sel = [8, 6]
+        cls.nt = 2
+        cls.type_map = ["foo", "bar"]
+        cls.numb_fparam = 1
+        cls.default_fparam = [0.5]
+
+        ds = DescrptSeA(cls.rcut, cls.rcut_smth, cls.sel)
+        ft = EnergyFittingNet(
+            cls.nt,
+            ds.get_dim_out(),
+            mixed_types=ds.mixed_types(),
+            numb_fparam=cls.numb_fparam,
+            default_fparam=cls.default_fparam,
+            seed=GLOBAL_SEED,
+        )
+        cls.model = EnergyModel(ds, ft, type_map=cls.type_map)
+        cls.model = cls.model.to(torch.float64)
+        cls.model.eval()
+
+        cls.model_data = {"model": cls.model.serialize()}
+        cls.tmpfile = tempfile.NamedTemporaryFile(suffix=".pte", delete=False)
+        cls.tmpfile.close()
+        deserialize_to_file(cls.tmpfile.name, cls.model_data)
+
+        cls.dp = DeepPot(cls.tmpfile.name)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        import os
+
+        os.unlink(cls.tmpfile.name)
+
+    def test_get_dim_fparam(self) -> None:
+        self.assertEqual(self.dp.deep_eval.get_dim_fparam(), self.numb_fparam)
+
+    def test_eval_without_fparam_matches_explicit(self) -> None:
+        """Eval without fparam should use default and match explicit fparam."""
+        rng = np.random.default_rng(GLOBAL_SEED)
+        natoms = 5
+        coords = rng.random((1, natoms, 3)) * 8.0
+        cells = np.eye(3).reshape(1, 9) * 10.0
+        atom_types = np.array([i % self.nt for i in range(natoms)], dtype=np.int32)
+
+        # Eval WITHOUT fparam — should use default_fparam=[0.5]
+        e_no, f_no, v_no = self.dp.eval(coords, cells, atom_types)
+        # Eval WITH explicit fparam=[0.5]
+        e_ex, f_ex, v_ex = self.dp.eval(
+            coords, cells, atom_types, fparam=self.default_fparam
+        )
+
+        np.testing.assert_allclose(e_no, e_ex, atol=1e-10)
+        np.testing.assert_allclose(f_no, f_ex, atol=1e-10)
+        np.testing.assert_allclose(v_no, v_ex, atol=1e-10)
+
+    def test_fparam_takes_effect(self) -> None:
+        """Different fparam values must produce different outputs."""
+        rng = np.random.default_rng(GLOBAL_SEED)
+        natoms = 5
+        coords = rng.random((1, natoms, 3)) * 8.0
+        cells = np.eye(3).reshape(1, 9) * 10.0
+        atom_types = np.array([i % self.nt for i in range(natoms)], dtype=np.int32)
+
+        e0, f0, v0 = self.dp.eval(coords, cells, atom_types, fparam=[0.0])
+        e1, f1, v1 = self.dp.eval(coords, cells, atom_types, fparam=[1.0])
+
+        assert not np.allclose(e0, e1), (
+            "Changing fparam did not change output — fparam may be ignored"
+        )
+
+
+class TestDeepEvalEnerDefaultFparamPt2(unittest.TestCase):
+    """Test .pt2 inference with default fparam (non-spin model)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.rcut = 4.0
+        cls.rcut_smth = 0.5
+        cls.sel = [8, 6]
+        cls.nt = 2
+        cls.type_map = ["foo", "bar"]
+        cls.numb_fparam = 1
+        cls.default_fparam = [0.5]
+
+        ds = DescrptSeA(cls.rcut, cls.rcut_smth, cls.sel)
+        ft = EnergyFittingNet(
+            cls.nt,
+            ds.get_dim_out(),
+            mixed_types=ds.mixed_types(),
+            numb_fparam=cls.numb_fparam,
+            default_fparam=cls.default_fparam,
+            seed=GLOBAL_SEED,
+        )
+        cls.model = EnergyModel(ds, ft, type_map=cls.type_map)
+        cls.model = cls.model.to(torch.float64)
+        cls.model.eval()
+
+        cls.model_data = {"model": cls.model.serialize()}
+        cls.tmpfile = tempfile.NamedTemporaryFile(suffix=".pt2", delete=False)
+        cls.tmpfile.close()
+        torch.set_default_device(None)
+        try:
+            deserialize_to_file(cls.tmpfile.name, cls.model_data)
+        finally:
+            torch.set_default_device("cuda:9999999")
+
+        # Also save .pte for cross-format comparison
+        cls.pte_tmpfile = tempfile.NamedTemporaryFile(suffix=".pte", delete=False)
+        cls.pte_tmpfile.close()
+        deserialize_to_file(cls.pte_tmpfile.name, cls.model_data)
+
+        cls.dp = DeepPot(cls.tmpfile.name)
+        cls.dp_pte = DeepPot(cls.pte_tmpfile.name)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        import os
+
+        os.unlink(cls.tmpfile.name)
+        os.unlink(cls.pte_tmpfile.name)
+
+    def test_get_dim_fparam(self) -> None:
+        self.assertEqual(self.dp.deep_eval.get_dim_fparam(), self.numb_fparam)
+
+    def test_eval_without_fparam_matches_explicit(self) -> None:
+        """Eval without fparam should use default and match explicit fparam."""
+        rng = np.random.default_rng(GLOBAL_SEED)
+        natoms = 5
+        coords = rng.random((1, natoms, 3)) * 8.0
+        cells = np.eye(3).reshape(1, 9) * 10.0
+        atom_types = np.array([i % self.nt for i in range(natoms)], dtype=np.int32)
+
+        e_no, f_no, v_no = self.dp.eval(coords, cells, atom_types)
+        e_ex, f_ex, v_ex = self.dp.eval(
+            coords, cells, atom_types, fparam=self.default_fparam
+        )
+
+        np.testing.assert_allclose(e_no, e_ex, atol=1e-10)
+        np.testing.assert_allclose(f_no, f_ex, atol=1e-10)
+        np.testing.assert_allclose(v_no, v_ex, atol=1e-10)
+
+    def test_fparam_takes_effect(self) -> None:
+        """Different fparam values must produce different outputs."""
+        rng = np.random.default_rng(GLOBAL_SEED)
+        natoms = 5
+        coords = rng.random((1, natoms, 3)) * 8.0
+        cells = np.eye(3).reshape(1, 9) * 10.0
+        atom_types = np.array([i % self.nt for i in range(natoms)], dtype=np.int32)
+
+        e0, f0, v0 = self.dp.eval(coords, cells, atom_types, fparam=[0.0])
+        e1, f1, v1 = self.dp.eval(coords, cells, atom_types, fparam=[1.0])
+
+        assert not np.allclose(e0, e1), (
+            "Changing fparam did not change output — fparam may be ignored"
+        )
+
+    def test_pt2_vs_pte_consistency(self) -> None:
+        """Outputs from .pt2 with default fparam should match .pte."""
+        rng = np.random.default_rng(GLOBAL_SEED + 19)
+        natoms = 5
+        coords = rng.random((1, natoms, 3)) * 8.0
+        cells = np.eye(3).reshape(1, 9) * 10.0
+        atom_types = np.array([i % self.nt for i in range(natoms)], dtype=np.int32)
+
+        # Both use default fparam (no explicit fparam)
+        e1, f1, v1 = self.dp.eval(coords, cells, atom_types)
+        e2, f2, v2 = self.dp_pte.eval(coords, cells, atom_types)
+
+        np.testing.assert_allclose(e1, e2, rtol=1e-10, atol=1e-10, err_msg="energy")
+        np.testing.assert_allclose(f1, f2, rtol=1e-10, atol=1e-10, err_msg="force")
+        np.testing.assert_allclose(v1, v2, rtol=1e-10, atol=1e-10, err_msg="virial")
+
+
+class TestDeepEvalEnerAparam(unittest.TestCase):
+    """Test .pte inference with aparam (non-spin model)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.rcut = 4.0
+        cls.rcut_smth = 0.5
+        cls.sel = [8, 6]
+        cls.nt = 2
+        cls.type_map = ["foo", "bar"]
+        cls.numb_aparam = 2
+
+        ds = DescrptSeA(cls.rcut, cls.rcut_smth, cls.sel)
+        ft = EnergyFittingNet(
+            cls.nt,
+            ds.get_dim_out(),
+            mixed_types=ds.mixed_types(),
+            numb_aparam=cls.numb_aparam,
+            seed=GLOBAL_SEED,
+        )
+        cls.model = EnergyModel(ds, ft, type_map=cls.type_map)
+        cls.model = cls.model.to(torch.float64)
+        cls.model.eval()
+
+        cls.model_data = {"model": cls.model.serialize()}
+        cls.tmpfile = tempfile.NamedTemporaryFile(suffix=".pte", delete=False)
+        cls.tmpfile.close()
+        deserialize_to_file(cls.tmpfile.name, cls.model_data)
+
+        cls.dp = DeepPot(cls.tmpfile.name)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        import os
+
+        os.unlink(cls.tmpfile.name)
+
+    def test_get_dim_aparam(self) -> None:
+        self.assertEqual(self.dp.deep_eval.get_dim_aparam(), self.numb_aparam)
+
+    def test_aparam_takes_effect(self) -> None:
+        """Different aparam values must produce different outputs."""
+        rng = np.random.default_rng(GLOBAL_SEED)
+        natoms = 5
+        coords = rng.random((1, natoms, 3)) * 8.0
+        cells = np.eye(3).reshape(1, 9) * 10.0
+        atom_types = np.array([i % self.nt for i in range(natoms)], dtype=np.int32)
+
+        aparam_zero = np.zeros(natoms * self.numb_aparam, dtype=np.float64)
+        aparam_nonzero = np.full(natoms * self.numb_aparam, 0.5, dtype=np.float64)
+
+        e0, f0, v0 = self.dp.eval(coords, cells, atom_types, aparam=aparam_zero)
+        e1, f1, v1 = self.dp.eval(coords, cells, atom_types, aparam=aparam_nonzero)
+
+        assert not np.allclose(e0, e1), (
+            "Changing aparam did not change output — aparam may be ignored"
+        )
+
+    def test_eval_without_aparam_raises(self) -> None:
+        """Model with dim_aparam > 0 must raise when aparam not provided."""
+        rng = np.random.default_rng(GLOBAL_SEED)
+        natoms = 5
+        coords = rng.random((1, natoms, 3)) * 8.0
+        cells = np.eye(3).reshape(1, 9) * 10.0
+        atom_types = np.array([i % self.nt for i in range(natoms)], dtype=np.int32)
+
+        with self.assertRaises(ValueError):
+            self.dp.eval(coords, cells, atom_types)
+
+    def test_eval_consistency(self) -> None:
+        """Test that DeepPot.eval with aparam matches direct model forward."""
+        rng = np.random.default_rng(GLOBAL_SEED)
+        natoms = 5
+        coords = rng.random((1, natoms, 3)) * 8.0
+        cells = np.eye(3).reshape(1, 9) * 10.0
+        atom_types = np.array([i % self.nt for i in range(natoms)], dtype=np.int32)
+        aparam = rng.random(natoms * self.numb_aparam)
+
+        e, f, v, ae, av = self.dp.eval(
+            coords, cells, atom_types, atomic=True, aparam=aparam
+        )
+
+        coord_t = torch.tensor(
+            coords, dtype=torch.float64, device=DEVICE
+        ).requires_grad_(True)
+        atype_t = torch.tensor(
+            atom_types.reshape(1, -1), dtype=torch.int64, device=DEVICE
+        )
+        cell_t = torch.tensor(cells, dtype=torch.float64, device=DEVICE)
+        aparam_t = torch.tensor(
+            aparam.reshape(1, natoms, self.numb_aparam),
+            dtype=torch.float64,
+            device=DEVICE,
+        )
+        ref = self.model.forward(
+            coord_t, atype_t, cell_t, aparam=aparam_t, do_atomic_virial=True
+        )
+
+        np.testing.assert_allclose(
+            e, ref["energy"].detach().cpu().numpy(), rtol=1e-10, atol=1e-10
+        )
+        np.testing.assert_allclose(
+            f, ref["force"].detach().cpu().numpy(), rtol=1e-10, atol=1e-10
+        )
+        np.testing.assert_allclose(
+            v, ref["virial"].detach().cpu().numpy(), rtol=1e-10, atol=1e-10
+        )
+        np.testing.assert_allclose(
+            ae, ref["atom_energy"].detach().cpu().numpy(), rtol=1e-10, atol=1e-10
+        )
+        np.testing.assert_allclose(
+            av, ref["atom_virial"].detach().cpu().numpy(), rtol=1e-10, atol=1e-10
+        )
+
+
+class TestDeepEvalEnerAparamPt2(unittest.TestCase):
+    """Test .pt2 inference with aparam (non-spin model)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.rcut = 4.0
+        cls.rcut_smth = 0.5
+        cls.sel = [8, 6]
+        cls.nt = 2
+        cls.type_map = ["foo", "bar"]
+        cls.numb_aparam = 2
+
+        ds = DescrptSeA(cls.rcut, cls.rcut_smth, cls.sel)
+        ft = EnergyFittingNet(
+            cls.nt,
+            ds.get_dim_out(),
+            mixed_types=ds.mixed_types(),
+            numb_aparam=cls.numb_aparam,
+            seed=GLOBAL_SEED,
+        )
+        cls.model = EnergyModel(ds, ft, type_map=cls.type_map)
+        cls.model = cls.model.to(torch.float64)
+        cls.model.eval()
+
+        cls.model_data = {"model": cls.model.serialize()}
+        cls.tmpfile = tempfile.NamedTemporaryFile(suffix=".pt2", delete=False)
+        cls.tmpfile.close()
+        torch.set_default_device(None)
+        try:
+            deserialize_to_file(cls.tmpfile.name, cls.model_data)
+        finally:
+            torch.set_default_device("cuda:9999999")
+
+        # Also save .pte for cross-format comparison
+        cls.pte_tmpfile = tempfile.NamedTemporaryFile(suffix=".pte", delete=False)
+        cls.pte_tmpfile.close()
+        deserialize_to_file(cls.pte_tmpfile.name, cls.model_data)
+
+        cls.dp = DeepPot(cls.tmpfile.name)
+        cls.dp_pte = DeepPot(cls.pte_tmpfile.name)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        import os
+
+        os.unlink(cls.tmpfile.name)
+        os.unlink(cls.pte_tmpfile.name)
+
+    def test_get_dim_aparam(self) -> None:
+        self.assertEqual(self.dp.deep_eval.get_dim_aparam(), self.numb_aparam)
+
+    def test_aparam_takes_effect(self) -> None:
+        """Different aparam values must produce different outputs."""
+        rng = np.random.default_rng(GLOBAL_SEED)
+        natoms = 5
+        coords = rng.random((1, natoms, 3)) * 8.0
+        cells = np.eye(3).reshape(1, 9) * 10.0
+        atom_types = np.array([i % self.nt for i in range(natoms)], dtype=np.int32)
+
+        aparam_zero = np.zeros(natoms * self.numb_aparam, dtype=np.float64)
+        aparam_nonzero = np.full(natoms * self.numb_aparam, 0.5, dtype=np.float64)
+
+        e0, f0, v0 = self.dp.eval(coords, cells, atom_types, aparam=aparam_zero)
+        e1, f1, v1 = self.dp.eval(coords, cells, atom_types, aparam=aparam_nonzero)
+
+        assert not np.allclose(e0, e1), (
+            "Changing aparam did not change output — aparam may be ignored"
+        )
+
+    def test_eval_without_aparam_raises(self) -> None:
+        """Model with dim_aparam > 0 must raise when aparam not provided."""
+        rng = np.random.default_rng(GLOBAL_SEED)
+        natoms = 5
+        coords = rng.random((1, natoms, 3)) * 8.0
+        cells = np.eye(3).reshape(1, 9) * 10.0
+        atom_types = np.array([i % self.nt for i in range(natoms)], dtype=np.int32)
+
+        with self.assertRaises(ValueError):
+            self.dp.eval(coords, cells, atom_types)
+
+    def test_eval_consistency(self) -> None:
+        """Test that .pt2 DeepPot.eval with aparam matches direct model forward."""
+        rng = np.random.default_rng(GLOBAL_SEED)
+        natoms = 5
+        coords = rng.random((1, natoms, 3)) * 8.0
+        cells = np.eye(3).reshape(1, 9) * 10.0
+        atom_types = np.array([i % self.nt for i in range(natoms)], dtype=np.int32)
+        aparam = rng.random(natoms * self.numb_aparam)
+
+        e, f, v, ae, av = self.dp.eval(
+            coords, cells, atom_types, atomic=True, aparam=aparam
+        )
+
+        coord_t = torch.tensor(
+            coords, dtype=torch.float64, device=DEVICE
+        ).requires_grad_(True)
+        atype_t = torch.tensor(
+            atom_types.reshape(1, -1), dtype=torch.int64, device=DEVICE
+        )
+        cell_t = torch.tensor(cells, dtype=torch.float64, device=DEVICE)
+        aparam_t = torch.tensor(
+            aparam.reshape(1, natoms, self.numb_aparam),
+            dtype=torch.float64,
+            device=DEVICE,
+        )
+        ref = self.model.forward(
+            coord_t, atype_t, cell_t, aparam=aparam_t, do_atomic_virial=True
+        )
+
+        np.testing.assert_allclose(
+            e, ref["energy"].detach().cpu().numpy(), rtol=1e-10, atol=1e-10
+        )
+        np.testing.assert_allclose(
+            f, ref["force"].detach().cpu().numpy(), rtol=1e-10, atol=1e-10
+        )
+        np.testing.assert_allclose(
+            v, ref["virial"].detach().cpu().numpy(), rtol=1e-10, atol=1e-10
+        )
+        np.testing.assert_allclose(
+            ae, ref["atom_energy"].detach().cpu().numpy(), rtol=1e-10, atol=1e-10
+        )
+        np.testing.assert_allclose(
+            av, ref["atom_virial"].detach().cpu().numpy(), rtol=1e-10, atol=1e-10
+        )
+
+    def test_pt2_vs_pte_consistency(self) -> None:
+        """Outputs from .pt2 with aparam should match .pte."""
+        rng = np.random.default_rng(GLOBAL_SEED + 19)
+        natoms = 5
+        coords = rng.random((1, natoms, 3)) * 8.0
+        cells = np.eye(3).reshape(1, 9) * 10.0
+        atom_types = np.array([i % self.nt for i in range(natoms)], dtype=np.int32)
+        aparam = rng.random(natoms * self.numb_aparam)
+
+        e1, f1, v1 = self.dp.eval(coords, cells, atom_types, aparam=aparam)
+        e2, f2, v2 = self.dp_pte.eval(coords, cells, atom_types, aparam=aparam)
+
+        np.testing.assert_allclose(e1, e2, rtol=1e-10, atol=1e-10, err_msg="energy")
+        np.testing.assert_allclose(f1, f2, rtol=1e-10, atol=1e-10, err_msg="force")
+        np.testing.assert_allclose(v1, v2, rtol=1e-10, atol=1e-10, err_msg="virial")
 
 
 if __name__ == "__main__":

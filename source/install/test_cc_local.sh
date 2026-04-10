@@ -69,7 +69,7 @@ else:
 			_GEN_ENV="LD_PRELOAD=${_LSAN_LIB} LSAN_OPTIONS=detect_leaks=0"
 		fi
 	fi
-	# Run gen scripts in parallel (2 groups of 3) for faster model generation.
+	# Run gen scripts in parallel for faster model generation.
 	# Wait on each PID separately so any failure is caught by set -e.
 	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_sea.py &
 	PID1=$!
@@ -90,6 +90,13 @@ else:
 	wait $PID4
 	wait $PID5
 	wait $PID6
+
+	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_spin.py &
+	PID7=$!
+	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_spin_model_devi.py &
+	PID8=$!
+	wait $PID7
+	wait $PID8
 fi
 if [ "${ENABLE_PADDLE:-TRUE}" == "TRUE" ]; then
 	PADDLE_INFERENCE_DIR=${BUILD_TMP_DIR}/paddle_inference_install_dir

@@ -16,6 +16,36 @@ from deepmd.dpmodel.utils.serialization import (
 )
 
 
+def _strip_shape_assertions(graph_module: torch.nn.Module) -> None:
+    """Remove shape-guard assertion nodes from a spin model's exported graph.
+
+    ``torch.export`` inserts ``aten._assert_scalar`` nodes for symbolic shape
+    relationships discovered during tracing.  For the spin model, the atom-
+    doubling logic creates slice patterns that depend on ``(nall - nloc)``,
+    producing guards like ``Ne(nall, nloc)``.  These guards are spurious: the
+    model computes correct results even when ``nall == nloc`` (NoPBC, no ghost
+    atoms).
+
+    This function is **only called for spin models** (guarded by ``if is_spin``
+    in ``_trace_and_export``).  The assertion messages use opaque symbolic
+    variable names (e.g. ``Ne(s22, s96)``) rather than human-readable names,
+    so filtering by message content is not reliable.  Since
+    ``prefer_deferred_runtime_asserts_over_guards=True`` converts all shape
+    guards into these deferred assertions, and the only shape relationships in
+    the spin model involve nall/nloc, removing all of them is safe in this
+    context.
+    """
+    graph = graph_module.graph
+    for node in list(graph.nodes):
+        if (
+            node.op == "call_function"
+            and node.target is torch.ops.aten._assert_scalar.default
+        ):
+            graph.erase_node(node)
+    graph.eliminate_dead_code()
+    graph_module.recompile()
+
+
 def _numpy_to_json_serializable(model_obj: dict) -> dict:
     """Convert numpy arrays in a model dict to JSON-serializable lists."""
     return traverse_model_dict(
@@ -49,6 +79,7 @@ def _make_sample_inputs(
     model: torch.nn.Module,
     nframes: int = 1,
     nloc: int = 7,
+    has_spin: bool = False,
 ) -> tuple[torch.Tensor, ...]:
     """Create sample inputs for tracing forward_lower.
 
@@ -60,11 +91,14 @@ def _make_sample_inputs(
         Number of frames.
     nloc : int
         Number of local atoms.
+    has_spin : bool
+        If True, create an extended spin tensor and return 7 tensors.
 
     Returns
     -------
     tuple
-        (ext_coord, ext_atype, nlist, mapping, fparam, aparam)
+        (ext_coord, ext_atype, nlist, mapping, fparam, aparam) or
+        (ext_coord, ext_atype, ext_spin, nlist, mapping, fparam, aparam) when has_spin.
     """
     rcut = model.get_rcut()
     sel = model.get_sel()
@@ -131,22 +165,31 @@ def _make_sample_inputs(
     else:
         aparam = None
 
+    if has_spin:
+        nall = extended_coord.shape[1]
+        ext_spin = torch.zeros(
+            nframes, nall, 3, dtype=torch.float64, device=_env.DEVICE
+        )
+        return ext_coord, ext_atype, ext_spin, nlist_t, mapping_t, fparam, aparam
+
     return ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam
 
 
 def _build_dynamic_shapes(
-    _ext_coord: torch.Tensor,
-    _ext_atype: torch.Tensor,
-    _nlist: torch.Tensor,
-    _mapping: torch.Tensor,
-    fparam: torch.Tensor | None,
-    aparam: torch.Tensor | None,
+    *sample_inputs: torch.Tensor | None,
+    has_spin: bool = False,
 ) -> tuple:
     """Build dynamic shape specifications for torch.export.
 
     Marks nframes, nloc and nall as dynamic dimensions so the exported
     program handles arbitrary frame and atom counts.
 
+    Parameters
+    ----------
+    *sample_inputs : torch.Tensor | None
+        Sample inputs: either 6 tensors (non-spin) or 7 tensors (spin).
+    has_spin : bool
+        Whether the inputs include an extended_spin tensor.
     Returns a tuple (not dict) to match positional args of the make_fx
     traced module, whose arg names may have suffixes like ``_1``.
     """
@@ -154,17 +197,34 @@ def _build_dynamic_shapes(
     nall_dim = torch.export.Dim("nall", min=1)
     nloc_dim = torch.export.Dim("nloc", min=1)
 
-    return (
-        {0: nframes_dim, 1: nall_dim},  # extended_coord: (nframes, nall, 3)
-        {0: nframes_dim, 1: nall_dim},  # extended_atype: (nframes, nall)
-        {0: nframes_dim, 1: nloc_dim},  # nlist: (nframes, nloc, nnei)
-        {0: nframes_dim, 1: nall_dim},  # mapping: (nframes, nall)
-        {0: nframes_dim} if fparam is not None else None,  # fparam
-        {0: nframes_dim, 1: nloc_dim} if aparam is not None else None,  # aparam
-    )
+    if has_spin:
+        # (ext_coord, ext_atype, ext_spin, nlist, mapping, fparam, aparam)
+        fparam = sample_inputs[5]
+        aparam = sample_inputs[6]
+        return (
+            {0: nframes_dim, 1: nall_dim},  # extended_coord: (nframes, nall, 3)
+            {0: nframes_dim, 1: nall_dim},  # extended_atype: (nframes, nall)
+            {0: nframes_dim, 1: nall_dim},  # extended_spin: (nframes, nall, 3)
+            {0: nframes_dim, 1: nloc_dim},  # nlist: (nframes, nloc, nnei)
+            {0: nframes_dim, 1: nall_dim},  # mapping: (nframes, nall)
+            {0: nframes_dim} if fparam is not None else None,  # fparam
+            {0: nframes_dim, 1: nloc_dim} if aparam is not None else None,  # aparam
+        )
+    else:
+        # (ext_coord, ext_atype, nlist, mapping, fparam, aparam)
+        fparam = sample_inputs[4]
+        aparam = sample_inputs[5]
+        return (
+            {0: nframes_dim, 1: nall_dim},  # extended_coord: (nframes, nall, 3)
+            {0: nframes_dim, 1: nall_dim},  # extended_atype: (nframes, nall)
+            {0: nframes_dim, 1: nloc_dim},  # nlist: (nframes, nloc, nnei)
+            {0: nframes_dim, 1: nall_dim},  # mapping: (nframes, nall)
+            {0: nframes_dim} if fparam is not None else None,  # fparam
+            {0: nframes_dim, 1: nloc_dim} if aparam is not None else None,  # aparam
+        )
 
 
-def _collect_metadata(model: torch.nn.Module) -> dict:
+def _collect_metadata(model: torch.nn.Module, is_spin: bool = False) -> dict:
     """Collect metadata from the model for C++ inference.
 
     This metadata is stored as ``metadata.json`` in both .pt2 and .pte archives.
@@ -193,7 +253,7 @@ def _collect_metadata(model: torch.nn.Module) -> dict:
                 "intensive": vdef.intensive,
             }
         )
-    return {
+    meta = {
         "type_map": model.get_type_map(),
         "rcut": model.get_rcut(),
         "sel": model.get_sel(),
@@ -203,7 +263,12 @@ def _collect_metadata(model: torch.nn.Module) -> dict:
         "has_default_fparam": model.has_default_fparam(),
         "default_fparam": model.get_default_fparam(),
         "fitting_output_defs": fitting_output_defs,
+        "is_spin": is_spin,
     }
+    if is_spin:
+        meta["ntypes_spin"] = model.spin.get_ntypes_spin()
+        meta["use_spin"] = [bool(v) for v in model.spin.use_spin]
+    return meta
 
 
 def serialize_from_file(model_file: str) -> dict:
@@ -317,51 +382,94 @@ def _trace_and_export(
 
     target_device = _env.DEVICE
 
+    # Detect spin model
+    is_spin = data["model"].get("type") == "spin_ener"
+
     # 1. Deserialize model on CPU for make_fx tracing.
     # make_fx with _allow_non_fake_inputs=True keeps real model parameters;
     # on CUDA the autograd engine requires CUDA streams for those real
     # tensors during torch.autograd.grad, but proxy-tensor dispatch doesn't
     # set streams up → assertion failure.  Tracing on CPU avoids this.
-    model = BaseModel.deserialize(data["model"])
+    if is_spin:
+        from deepmd.pt_expt.model.spin_model import (
+            SpinModel,
+        )
+
+        model = SpinModel.deserialize(data["model"])
+    else:
+        model = BaseModel.deserialize(data["model"])
     model.to("cpu")
     model.eval()
 
     # 2. Collect metadata
-    metadata = _collect_metadata(model)
+    metadata = _collect_metadata(model, is_spin=is_spin)
 
     # 3. Create sample inputs on CPU for tracing
-    # Use nframes=5 to avoid two specialization traps:
-    #   - nframes=1 causes make_fx to specialize on the scalar case
-    #   - nframes=N where N == numb_fparam or numb_aparam causes PyTorch's
-    #     symbolic tracer to merge symbols (e.g. fparam.shape=(2,2) when
-    #     nframes=2 and numb_fparam=2), so a guard on one dim constrains
-    #     the other.  5 is unlikely to collide with typical param counts.
+    # torch.export's duck-sizing unifies dimensions with the same sample value,
+    # so nframes must differ from every other dimension in the sample tensors.
+    # We first build with nframes=2, collect all non-batch dimension sizes,
+    # then rebuild if there is a collision.
     _orig_device = _env.DEVICE
     _env.DEVICE = torch.device("cpu")
     try:
-        ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam = _make_sample_inputs(
-            model, nframes=5
-        )
+        nframes = 2
+        sample_inputs = _make_sample_inputs(model, nframes=nframes, has_spin=is_spin)
+        # Collect all dimension sizes except dim-0 (nframes) from every tensor
+        other_dims: set[int] = set()
+        for t in sample_inputs:
+            if t is not None:
+                other_dims.update(t.shape[1:])
+        while nframes in other_dims:
+            nframes += 1
+        if nframes != 2:
+            sample_inputs = _make_sample_inputs(
+                model, nframes=nframes, has_spin=is_spin
+            )
     finally:
         _env.DEVICE = _orig_device
+
+    if is_spin:
+        ext_coord, ext_atype, ext_spin, nlist_t, mapping_t, fparam, aparam = (
+            sample_inputs
+        )
+    else:
+        ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam = sample_inputs
 
     # 4. Trace via make_fx on CPU.
     # This decomposes torch.autograd.grad into aten ops so the resulting
     # GraphModule no longer contains autograd calls.
-    traced = model.forward_common_lower_exportable(
-        ext_coord,
-        ext_atype,
-        nlist_t,
-        mapping_t,
-        fparam=fparam,
-        aparam=aparam,
-        do_atomic_virial=True,
-        tracing_mode="symbolic",
-        _allow_non_fake_inputs=True,
-    )
+    if is_spin:
+        traced = model.forward_common_lower_exportable(
+            ext_coord,
+            ext_atype,
+            ext_spin,
+            nlist_t,
+            mapping_t,
+            fparam=fparam,
+            aparam=aparam,
+            do_atomic_virial=True,
+            tracing_mode="symbolic",
+            _allow_non_fake_inputs=True,
+        )
+        # 5. Extract output keys from the CPU-traced module.
+        sample_out = traced(
+            ext_coord, ext_atype, ext_spin, nlist_t, mapping_t, fparam, aparam
+        )
+    else:
+        traced = model.forward_common_lower_exportable(
+            ext_coord,
+            ext_atype,
+            nlist_t,
+            mapping_t,
+            fparam=fparam,
+            aparam=aparam,
+            do_atomic_virial=True,
+            tracing_mode="symbolic",
+            _allow_non_fake_inputs=True,
+        )
+        # 5. Extract output keys from the CPU-traced module.
+        sample_out = traced(ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam)
 
-    # 5. Extract output keys from the CPU-traced module.
-    sample_out = traced(ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam)
     output_keys = list(sample_out.keys())
 
     # 6. Export on CPU.
@@ -369,16 +477,24 @@ def _trace_and_export(
     # graph.  Exporting on CPU keeps devices consistent; we move the
     # ExportedProgram to the target device afterwards via the official
     # move_to_device_pass (avoids FakeTensor device-propagation errors).
-    dynamic_shapes = _build_dynamic_shapes(
-        ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam
-    )
+    dynamic_shapes = _build_dynamic_shapes(*sample_inputs, has_spin=is_spin)
     exported = torch.export.export(
         traced,
-        (ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam),
+        sample_inputs,
         dynamic_shapes=dynamic_shapes,
         strict=False,
         prefer_deferred_runtime_asserts_over_guards=True,
     )
+
+    if is_spin:
+        # torch.export re-introduces shape-guard assertions even when
+        # the make_fx graph has none.  The spin model's atom-doubling
+        # logic creates slice patterns that depend on (nall - nloc),
+        # producing guards like Ne(nall, nloc).  These guards are
+        # spurious: the model is correct when nall == nloc (NoPBC).
+        # Strip them from the exported graph so the model can be
+        # used with any valid nall >= nloc.
+        _strip_shape_assertions(exported.graph_module)
 
     # 7. Move the exported program to the target device if needed.
     if target_device.type != "cpu":

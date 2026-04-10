@@ -188,36 +188,15 @@ class TestDPFreezePtExpt(unittest.TestCase):
         np.testing.assert_allclose(f_pte, f_pt2, atol=1e-10)
         np.testing.assert_allclose(v_pte, v_pt2, atol=1e-10)
 
-
-class TestDPFreezePt2DefaultFparam(unittest.TestCase):
-    """Test .pt2 with default fparam — eval without providing fparam."""
-
-    @classmethod
-    def setUpClass(cls) -> None:
-        cls.tmpdir = tempfile.mkdtemp()
-
-        model_params = deepcopy(model_se_e2_a)
-        model_params["fitting_net"]["numb_fparam"] = 1
-        model_params["fitting_net"]["default_fparam"] = [0.5]
-        model = get_model(model_params)
-        wrapper = ModelWrapper(model, model_params=model_params)
-        state_dict = wrapper.state_dict()
-        cls.ckpt_file = os.path.join(cls.tmpdir, "model_dfp.pt")
-        torch.save({"model": state_dict}, cls.ckpt_file)
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        shutil.rmtree(cls.tmpdir)
-
-    def test_pt2_eval_default_fparam(self) -> None:
-        """Eval .pt2 without fparam should match eval with explicit default value."""
+    def test_nonspin_model_rejects_spin(self) -> None:
+        """Non-spin model must raise ValueError when spin is provided."""
         import numpy as np
 
         from deepmd.infer import (
             DeepPot,
         )
 
-        pt2_path = os.path.join(self.tmpdir, "dfp.pt2")
+        pt2_path = os.path.join(self.tmpdir, "nonspin_reject.pt2")
         freeze(model=self.ckpt_file, output=pt2_path)
 
         coord = np.array(
@@ -226,17 +205,11 @@ class TestDPFreezePt2DefaultFparam(unittest.TestCase):
         )
         box = np.array([5.0, 0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0, 5.0], dtype=np.float64)
         atype = [0, 1, 2]
+        spin = np.zeros(9, dtype=np.float64)
 
         dp = DeepPot(pt2_path)
-
-        # Eval WITHOUT fparam — model should use default (0.5)
-        e_no, f_no, v_no = dp.eval(coord, box, atype)
-        # Eval WITH explicit default value
-        e_ex, f_ex, v_ex = dp.eval(coord, box, atype, fparam=[0.5])
-
-        np.testing.assert_allclose(e_no, e_ex, atol=1e-10)
-        np.testing.assert_allclose(f_no, f_ex, atol=1e-10)
-        np.testing.assert_allclose(v_no, v_ex, atol=1e-10)
+        with self.assertRaises(ValueError):
+            dp.eval(coord, box, atype, spin=spin)
 
 
 if __name__ == "__main__":
