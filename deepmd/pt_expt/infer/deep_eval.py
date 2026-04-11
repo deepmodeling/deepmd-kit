@@ -1058,6 +1058,10 @@ class DeepEval(DeepEvalBackend):
         np.ndarray
             Descriptor output, shape ``(nframes, nloc, dim_descrpt)``.
         """
+        coords = np.array(coords)
+        atom_types = np.array(atom_types, dtype=np.int32)
+        if cells is not None:
+            cells = np.array(cells)
         if self._is_spin_model():
             raise NotImplementedError(
                 "eval_descriptor is not supported for spin models."
@@ -1120,6 +1124,10 @@ class DeepEval(DeepEvalBackend):
         np.ndarray
             Middle-layer output, shape ``(nframes, nloc, neuron[-1])``.
         """
+        coords = np.array(coords)
+        atom_types = np.array(atom_types, dtype=np.int32)
+        if cells is not None:
+            cells = np.array(cells)
         if self._is_spin_model():
             raise NotImplementedError(
                 "eval_fitting_last_layer is not supported for spin models."

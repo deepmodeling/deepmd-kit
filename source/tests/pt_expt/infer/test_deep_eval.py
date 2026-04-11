@@ -1502,6 +1502,26 @@ class TestEvalDescriptor(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.dp_fp.deep_eval.eval_descriptor(coords, cells, atom_types)
 
+    def test_descriptor_accepts_list_inputs(self) -> None:
+        """eval_descriptor accepts Python lists (not just np.ndarray)."""
+        coords, cells, atom_types = self._make_inputs()
+        descpt_arr = self.dp_sea.deep_eval.eval_descriptor(coords, cells, atom_types)
+        descpt_list = self.dp_sea.deep_eval.eval_descriptor(
+            coords.tolist(), cells.tolist(), atom_types.tolist()
+        )
+        np.testing.assert_allclose(descpt_arr, descpt_list)
+
+    def test_fitting_last_layer_accepts_list_inputs(self) -> None:
+        """eval_fitting_last_layer accepts Python lists (not just np.ndarray)."""
+        coords, cells, atom_types = self._make_inputs()
+        mid_arr = self.dp_sea.deep_eval.eval_fitting_last_layer(
+            coords, cells, atom_types
+        )
+        mid_list = self.dp_sea.deep_eval.eval_fitting_last_layer(
+            coords.tolist(), cells.tolist(), atom_types.tolist()
+        )
+        np.testing.assert_allclose(mid_arr, mid_list)
+
 
 class TestEvalFittingLastLayer(unittest.TestCase):
     """Test eval_fitting_last_layer for pt_expt models."""
