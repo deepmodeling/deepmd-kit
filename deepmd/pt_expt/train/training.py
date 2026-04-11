@@ -222,7 +222,12 @@ def _trace_and_compile(
     compile_opts.pop("backend", None)
     if "options" not in compile_opts:
         compile_opts["options"] = {}
-    compile_opts["options"].setdefault("shape_padding", True)
+    opts = compile_opts["options"]
+    opts.setdefault("max_autotune", False)
+    opts.setdefault("epilogue_fusion", False)
+    opts.setdefault("triton.cudagraphs", False)
+    opts.setdefault("shape_padding", True)
+    opts.setdefault("max_fusion_size", 8)
 
     compiled_lower = torch.compile(
         traced_lower,
