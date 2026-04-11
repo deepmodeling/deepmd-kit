@@ -996,7 +996,11 @@ class DeepEval(DeepEvalBackend):
 
     def _is_spin_model(self) -> bool:
         """Check if the underlying dpmodel is a SpinModel."""
-        return getattr(self, "_is_spin", False)
+        from deepmd.dpmodel.model.spin_model import (
+            SpinModel,
+        )
+
+        return isinstance(self._dpmodel, SpinModel)
 
     def eval_typeebd(self) -> np.ndarray:
         """Evaluate type embedding.
