@@ -2,7 +2,7 @@
 requires = [
     # TODO: unpin the upper bound when scikit-build dynamic metadata API is stable
     # dynamic metadata API is still unstable
-    "scikit-build-core>=0.5,!=0.6.0,<0.13",
+    "scikit-build-core>=0.11,!=0.6.0,<0.13",
     "packaging",
     'tomli >= 1.1.0 ; python_version < "3.11"',
     "dependency_groups",
@@ -18,7 +18,8 @@ authors = [
   {name = "DeepModeling"},
   {name = "Han Wang", email = "wang_han@iapcm.ac.cn"},
 ]
-license = {file = "LICENSE"}
+license = "LGPL-3.0-or-later"
+license-files = ["LICENSE"]
 classifiers = [
     "Natural Language :: English",
     "Operating System :: POSIX :: Linux",
@@ -33,7 +34,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
+
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Scientific/Engineering :: Physics",
     "Topic :: Scientific/Engineering :: Chemistry",
@@ -54,6 +55,8 @@ dependencies = [
     'ml_dtypes',
     'mendeleev',
     'array-api-compat',
+    'lmdb',
+    'msgpack',
 ]
 requires-python = ">=3.10"
 keywords = ["deepmd"]

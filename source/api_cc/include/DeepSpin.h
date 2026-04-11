@@ -42,7 +42,7 @@ class DeepSpinBackend : public DeepBaseModelBackend {
   /**
    * @brief Evaluate the energy, force, magnetic force, virial, atomic energy,
    *and atomic virial by using this DP with spin input.
-   * @note The double precision interface is used by i-PI, GROMACS, ABACUS, and
+   * @note The double precision interface is used by i-PI, ABACUS, and
    *CP2k.
    * @param[out] ener The system energy.
    * @param[out] force The force on each atom.
@@ -160,6 +160,13 @@ class DeepSpinBackend : public DeepBaseModelBackend {
                         const std::vector<float>& aparam,
                         const bool atomic) = 0;
   /** @} */
+
+  /**
+   * @brief Get the per-type use_spin flags.
+   * @return A vector of booleans indicating which atom types have spin enabled.
+   *         Empty if the backend does not provide this information.
+   **/
+  virtual std::vector<bool> get_use_spin() const { return {}; };
 };
 
 /**
@@ -414,6 +421,13 @@ class DeepSpin : public DeepBaseModel {
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
                const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
   /** @} */
+
+  /**
+   * @brief Get the per-type use_spin flags.
+   * @return A vector of booleans indicating which atom types have spin enabled.
+   **/
+  std::vector<bool> get_use_spin() const;
+
  protected:
   std::shared_ptr<deepmd::DeepSpinBackend> dp;
 };
@@ -609,6 +623,12 @@ class DeepSpinModelDevi : public DeepBaseModelDevi {
                const int& ago,
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
                const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+
+  /**
+   * @brief Get the per-type use_spin flags from the first model.
+   * @return A vector of booleans indicating which atom types have spin enabled.
+   **/
+  std::vector<bool> get_use_spin() const;
 
  protected:
   std::vector<std::shared_ptr<deepmd::DeepSpin>> dps;

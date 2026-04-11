@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "DeepPot.h"
+#include "DeepPotPTExpt.h"
 #include "neighbor_list.h"
 #include "test_utils.h"
 
@@ -71,13 +72,18 @@ class TestInferDeepPotDpa2PtExpt : public ::testing::Test {
   double expected_tot_e;
   std::vector<VALUETYPE> expected_tot_v;
 
-  deepmd::DeepPot dp;
+  static deepmd::DeepPot dp;
+
+  static void SetUpTestSuite() {
+#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
+    dp.init("../../tests/infer/deeppot_dpa2.pt2");
+#endif
+  }
 
   void SetUp() override {
-#ifndef BUILD_PYTORCH
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
-    dp.init("../../tests/infer/deeppot_dpa2.pt2");
 
     natoms = expected_e.size();
     EXPECT_EQ(natoms * 3, expected_f.size());
@@ -96,7 +102,12 @@ class TestInferDeepPotDpa2PtExpt : public ::testing::Test {
   };
 
   void TearDown() override {};
+
+  static void TearDownTestSuite() { dp = deepmd::DeepPot(); }
 };
+
+template <class VALUETYPE>
+deepmd::DeepPot TestInferDeepPotDpa2PtExpt<VALUETYPE>::dp;
 
 TYPED_TEST_SUITE(TestInferDeepPotDpa2PtExpt, ValueTypes);
 
@@ -492,13 +503,18 @@ class TestInferDeepPotDpa2PtExptNoPbc : public ::testing::Test {
   double expected_tot_e;
   std::vector<VALUETYPE> expected_tot_v;
 
-  deepmd::DeepPot dp;
+  static deepmd::DeepPot dp;
+
+  static void SetUpTestSuite() {
+#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
+    dp.init("../../tests/infer/deeppot_dpa2.pt2");
+#endif
+  }
 
   void SetUp() override {
-#ifndef BUILD_PYTORCH
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
-    dp.init("../../tests/infer/deeppot_dpa2.pt2");
 
     natoms = expected_e.size();
     EXPECT_EQ(natoms * 3, expected_f.size());
@@ -517,7 +533,12 @@ class TestInferDeepPotDpa2PtExptNoPbc : public ::testing::Test {
   };
 
   void TearDown() override {};
+
+  static void TearDownTestSuite() { dp = deepmd::DeepPot(); }
 };
+
+template <class VALUETYPE>
+deepmd::DeepPot TestInferDeepPotDpa2PtExptNoPbc<VALUETYPE>::dp;
 
 TYPED_TEST_SUITE(TestInferDeepPotDpa2PtExptNoPbc, ValueTypes);
 

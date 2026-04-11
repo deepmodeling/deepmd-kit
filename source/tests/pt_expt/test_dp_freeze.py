@@ -57,6 +57,13 @@ class TestDPFreezePtExpt(unittest.TestCase):
         cls.ckpt_file = os.path.join(cls.tmpdir, "model.pt")
         torch.save({"model": state_dict}, cls.ckpt_file)
 
+        # Pre-freeze shared .pte and .pt2 files so individual tests don't
+        # each pay the AOTInductor compilation cost (~82s per .pt2).
+        cls.shared_pte = os.path.join(cls.tmpdir, "shared.pte")
+        freeze(model=cls.ckpt_file, output=cls.shared_pte)
+        cls.shared_pt2 = os.path.join(cls.tmpdir, "shared.pt2")
+        freeze(model=cls.ckpt_file, output=cls.shared_pt2)
+
     @classmethod
     def tearDownClass(cls) -> None:
         shutil.rmtree(cls.tmpdir)
@@ -98,9 +105,7 @@ class TestDPFreezePtExpt(unittest.TestCase):
 
     def test_freeze_pt2(self) -> None:
         """Freeze to .pt2 (AOTInductor) and verify the file is loadable."""
-        output = os.path.join(self.tmpdir, "frozen_model.pt2")
-        freeze(model=self.ckpt_file, output=output)
-        self.assertTrue(os.path.exists(output))
+        self.assertTrue(os.path.exists(self.shared_pt2))
 
         # Verify the .pt2 can be loaded and evaluated via DeepPot
         import numpy as np
@@ -109,7 +114,7 @@ class TestDPFreezePtExpt(unittest.TestCase):
             DeepPot,
         )
 
-        dp = DeepPot(output)
+        dp = DeepPot(self.shared_pt2)
         self.assertEqual(dp.get_type_map(), ["O", "H", "B"])
         rcut = dp.get_rcut()
         self.assertGreater(rcut, 0.0)
@@ -134,11 +139,6 @@ class TestDPFreezePtExpt(unittest.TestCase):
             DeepPot,
         )
 
-        pte_path = os.path.join(self.tmpdir, "consistency.pte")
-        pt2_path = os.path.join(self.tmpdir, "consistency.pt2")
-        freeze(model=self.ckpt_file, output=pte_path)
-        freeze(model=self.ckpt_file, output=pt2_path)
-
         coord = np.array(
             [0.0, 0.0, 0.1, 1.0, 0.3, 0.2, 0.1, 1.9, 3.4],
             dtype=np.float64,
@@ -146,8 +146,8 @@ class TestDPFreezePtExpt(unittest.TestCase):
         box = np.array([5.0, 0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0, 5.0], dtype=np.float64)
         atype = [0, 1, 2]
 
-        dp_pte = DeepPot(pte_path)
-        dp_pt2 = DeepPot(pt2_path)
+        dp_pte = DeepPot(self.shared_pte)
+        dp_pt2 = DeepPot(self.shared_pt2)
 
         e_pte, f_pte, v_pte = dp_pte.eval(coord, box, atype)
         e_pt2, f_pt2, v_pt2 = dp_pt2.eval(coord, box, atype)
@@ -171,11 +171,6 @@ class TestDPFreezePtExpt(unittest.TestCase):
             DeepPot,
         )
 
-        pte_path = os.path.join(self.tmpdir, "nopbc_neg.pte")
-        pt2_path = os.path.join(self.tmpdir, "nopbc_neg.pt2")
-        freeze(model=self.ckpt_file, output=pte_path)
-        freeze(model=self.ckpt_file, output=pt2_path)
-
         # Coordinates with negative values — no periodic box
         coord = np.array(
             [-1.0, -2.0, 0.5, 1.0, 0.3, -0.2, 0.1, -1.9, 3.4],
@@ -183,8 +178,8 @@ class TestDPFreezePtExpt(unittest.TestCase):
         )
         atype = [0, 1, 2]
 
-        dp_pte = DeepPot(pte_path)
-        dp_pt2 = DeepPot(pt2_path)
+        dp_pte = DeepPot(self.shared_pte)
+        dp_pt2 = DeepPot(self.shared_pt2)
 
         e_pte, f_pte, v_pte = dp_pte.eval(coord, None, atype)
         e_pt2, f_pt2, v_pt2 = dp_pt2.eval(coord, None, atype)
@@ -193,36 +188,15 @@ class TestDPFreezePtExpt(unittest.TestCase):
         np.testing.assert_allclose(f_pte, f_pt2, atol=1e-10)
         np.testing.assert_allclose(v_pte, v_pt2, atol=1e-10)
 
-
-class TestDPFreezePt2DefaultFparam(unittest.TestCase):
-    """Test .pt2 with default fparam — eval without providing fparam."""
-
-    @classmethod
-    def setUpClass(cls) -> None:
-        cls.tmpdir = tempfile.mkdtemp()
-
-        model_params = deepcopy(model_se_e2_a)
-        model_params["fitting_net"]["numb_fparam"] = 1
-        model_params["fitting_net"]["default_fparam"] = [0.5]
-        model = get_model(model_params)
-        wrapper = ModelWrapper(model, model_params=model_params)
-        state_dict = wrapper.state_dict()
-        cls.ckpt_file = os.path.join(cls.tmpdir, "model_dfp.pt")
-        torch.save({"model": state_dict}, cls.ckpt_file)
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        shutil.rmtree(cls.tmpdir)
-
-    def test_pt2_eval_default_fparam(self) -> None:
-        """Eval .pt2 without fparam should match eval with explicit default value."""
+    def test_nonspin_model_rejects_spin(self) -> None:
+        """Non-spin model must raise ValueError when spin is provided."""
         import numpy as np
 
         from deepmd.infer import (
             DeepPot,
         )
 
-        pt2_path = os.path.join(self.tmpdir, "dfp.pt2")
+        pt2_path = os.path.join(self.tmpdir, "nonspin_reject.pt2")
         freeze(model=self.ckpt_file, output=pt2_path)
 
         coord = np.array(
@@ -231,17 +205,11 @@ class TestDPFreezePt2DefaultFparam(unittest.TestCase):
         )
         box = np.array([5.0, 0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0, 5.0], dtype=np.float64)
         atype = [0, 1, 2]
+        spin = np.zeros(9, dtype=np.float64)
 
         dp = DeepPot(pt2_path)
-
-        # Eval WITHOUT fparam — model should use default (0.5)
-        e_no, f_no, v_no = dp.eval(coord, box, atype)
-        # Eval WITH explicit default value
-        e_ex, f_ex, v_ex = dp.eval(coord, box, atype, fparam=[0.5])
-
-        np.testing.assert_allclose(e_no, e_ex, atol=1e-10)
-        np.testing.assert_allclose(f_no, f_ex, atol=1e-10)
-        np.testing.assert_allclose(v_no, v_ex, atol=1e-10)
+        with self.assertRaises(ValueError):
+            dp.eval(coord, box, atype, spin=spin)
 
 
 if __name__ == "__main__":

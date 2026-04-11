@@ -169,6 +169,8 @@ class TestDeepPot(unittest.TestCase):
 
     def test_descriptor(self) -> None:
         _, extension = self.param
+        if extension in (".pte", ".pt2"):
+            self.skipTest("eval_descriptor not supported for pt_expt models")
         for ii, result in enumerate(self.case.results):
             if result.descriptor is None:
                 continue
@@ -194,8 +196,8 @@ class TestDeepPot(unittest.TestCase):
 
     def test_fitting_last_layer(self) -> None:
         _, extension = self.param
-        if extension == ".pb":
-            self.skipTest("fitting_last_layer not supported for TensorFlow models")
+        if extension in (".pb", ".pte", ".pt2"):
+            self.skipTest("fitting_last_layer not supported for this backend")
         for ii, result in enumerate(self.case.results):
             if result.fit_ll is None:
                 continue

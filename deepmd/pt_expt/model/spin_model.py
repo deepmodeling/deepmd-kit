@@ -129,6 +129,8 @@ class SpinModel(SpinModelDP):
             DPEnergyAtomicModel,
         )
 
+        data = data.copy()
+        data.pop("type", None)
         backbone_model_obj = make_model(
             DPEnergyAtomicModel, T_Bases=(BaseModel,)
         ).deserialize(data["backbone_model"])
