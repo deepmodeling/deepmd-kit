@@ -903,8 +903,9 @@ class Trainer:
                     "lr_adjust_coeff": float(self.opt_param["lr_adjust_coeff"]),
                     "muon_mode": str(self.opt_param.get("muon_mode", "slice")),
                     "named_parameters": tuple(self.wrapper.named_parameters()),
-                    "flash_muon": bool(self.opt_param.get("flash_muon", True)),
-                    "magma_muon": bool(self.opt_param.get("magma_muon", False)),
+                    "enable_gram": bool(self.opt_param.get("enable_gram")),
+                    "flash_muon": bool(self.opt_param.get("flash_muon")),
+                    "magma_muon": bool(self.opt_param.get("magma_muon")),
                 }
             else:
                 raise ValueError(f"Not supported optimizer type '{self.opt_type}'")

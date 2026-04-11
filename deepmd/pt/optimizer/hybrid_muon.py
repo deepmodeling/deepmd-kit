@@ -39,10 +39,21 @@ For Muon-routed parameters, the update is:
        m_t = beta * m_{t-1} + (1 - beta) * g_t
        update = beta * m_t + (1 - beta) * g_t
 
-    2. Newton-Schulz orthogonalization (quintic iteration):
-       X_0 = G / ||G||_F
-       X_{k+1} = a*X_k + (b*A_k + c*A_k^2) @ X_k,  where A_k = X_k @ X_k^T
-       Coefficients: a=3.4445, b=-4.7750, c=2.0315
+    2. Orthogonalization:
+       - Standard path:
+         X_0 = G / ||G||_F
+         A_k = X_k @ X_k^T
+         X_{k+1} = a*X_k + (b*A_k + c*A_k^2) @ X_k
+       - Gram path (when ``enable_gram=True`` and the matrix is rectangular):
+         X_0 = G / ||G||_F
+         R_k = X_k @ X_k^T
+         Z_k = b*R_k + c*R_k^2
+         Q_k = Z_k + a*I                              [restart]
+         Q_k = Q_{k-1} @ (Z_k + a*I)                 [accumulation]
+         RZ_k = a*R_k + R_k @ Z_k
+         R_{k+1} = a*RZ_k + Z_k @ RZ_k
+         X_out = Q_last @ X_restart
+         Uses float32 normalization followed by float16 iteration.
 
     3. Scaling: scale = coeff * sqrt(max(m, n))  [match-RMS mode]
                 scale = sqrt(max(1, m/n))        [rectangular mode]
@@ -54,8 +65,9 @@ AdamW behavior (decoupled weight decay) is applied only on >=2D Adam paths.
 
 Dtype Behavior
 --------------
-- Newton-Schulz iterations: always bfloat16 (matches official Muon)
-- NS output (bfloat16) directly applied to parameters (PyTorch handles mixed precision)
+- Standard Newton-Schulz path: bfloat16 iterations
+- Gram Newton-Schulz path: float32 normalization + float16 iterations
+- NS output directly applied to parameters after casting back to the input dtype
 - Adam state (exp_avg, exp_avg_sq): always float32 for numerical stability
 - Muon momentum buffer: follows gradient dtype (grad -> buffer -> update)
 - Adam gradients: cast to float32 for update computation
@@ -79,6 +91,8 @@ References
        HybridMuon uses a stabilized variant (Magma-lite) with sigmoid range stretching
        and continuous soft scaling [0.1, 1.0] instead of Bernoulli masking, optimized
        for MLIP force-field training.
+.. [6] Dao-AILab, "gram-newton-schulz."
+       https://github.com/Dao-AILab/gram-newton-schulz
 """
 
 from __future__ import (
@@ -126,6 +140,25 @@ EPS: float = 1e-7
 NS_COEFF_A: float = 3.4445
 NS_COEFF_B: float = -4.7750
 NS_COEFF_C: float = 2.0315
+# Polar Express coefficients with the safety scaling used in the reference repo
+_GRAM_NS_UNMODIFIED_POLAR_EXPRESS_COEFFICIENTS: tuple[
+    tuple[float, float, float], ...
+] = (
+    (8.28721201814563, -23.595886519098837, 17.300387312530933),
+    (4.107059111542203, -2.9478499167379106, 0.5448431082926601),
+    (3.9486908534822946, -2.908902115962949, 0.5518191394370137),
+    (3.3184196573706015, -2.488488024314874, 0.51004894012372),
+    (2.300652019954817, -1.6689039845747493, 0.4188073119525673),
+)
+GRAM_NS_SAFETY_FACTOR: float = 1.05
+POLAR_EXPRESS_COEFFICIENTS: tuple[tuple[float, float, float], ...] = tuple(
+    (
+        a / GRAM_NS_SAFETY_FACTOR,
+        b / GRAM_NS_SAFETY_FACTOR**3,
+        c / GRAM_NS_SAFETY_FACTOR**5,
+    )
+    for a, b, c in _GRAM_NS_UNMODIFIED_POLAR_EXPRESS_COEFFICIENTS
+)
 # Minimum matrix dimension for flash path to be beneficial.
 # Below this threshold, triton kernel launch overhead dominates over compute,
 # and cuBLAS (via torch.mm/addmm) is faster for small matrices.
@@ -363,6 +396,284 @@ def _batched_newton_schulz_orth(
     return X
 
 
+class _GramNewtonSchulzOrthogonalizer:
+    """
+    Orthogonalize rectangular matrices with the fixed Gram Newton-Schulz setup
+    used by HybridMuon.
+    """
+
+    def __init__(self) -> None:
+        self.ns_epsilon = float(EPS)
+        self.ns_coefficients = tuple(
+            (float(a), float(b), float(c)) for a, b, c in POLAR_EXPRESS_COEFFICIENTS
+        )
+        self._restart_iteration_set = frozenset((2,))
+        self._call_impl = self._orthogonalize_impl
+        self._compiled_call = torch.compile(
+            self._call_impl,
+            fullgraph=True,
+            mode="reduce-overhead",
+        )
+
+    def __call__(self, X: torch.Tensor) -> torch.Tensor:
+        """
+        Orthogonalize a tensor of rectangular matrices.
+
+        Parameters
+        ----------
+        X : torch.Tensor
+            Input tensor with shape ``(m, n)``, ``(batch, m, n)``, or any tensor
+            whose last two dimensions are matrix dimensions.
+
+        Returns
+        -------
+        torch.Tensor
+            Orthogonalized tensor with the same shape and dtype as ``X``.
+        """
+        with torch.device(X.device):
+            return self._compiled_call(X)
+
+    def _orthogonalize_impl(self, X: torch.Tensor) -> torch.Tensor:
+        # === Step 1. Canonicalize leading batch dimensions ===
+        original_shape = X.shape
+        if X.ndim == 2:
+            X = X.unsqueeze(0)
+        elif X.ndim > 3:
+            X = X.reshape(-1, *X.shape[-2:])
+
+        # === Step 2. Normalize in float32 before Gram iteration ===
+        original_dtype = X.dtype
+        X = X.to(torch.float32)
+
+        # === Step 3. Work on the wide-matrix orientation ===
+        should_transpose = X.size(-2) > X.size(-1)
+        if should_transpose:
+            X = X.mT
+
+        # === Step 4. Run Gram Newton-Schulz in float16 ===
+        X = X / (X.norm(dim=(-2, -1), keepdim=True) + self.ns_epsilon)
+        X = X.to(torch.float16)
+        X = self._gram_newton_schulz(X)
+
+        # === Step 5. Restore original orientation and dtype ===
+        if should_transpose:
+            X = X.mT
+
+        return X.to(original_dtype).reshape(original_shape)
+
+    def _gram_newton_schulz(self, X: torch.Tensor) -> torch.Tensor:
+        # === Step 1. Initialize R_0 = X_0 @ X_0^T and the batch identity ===
+        gram_matrix = torch.bmm(X, X.mT)
+        batch_size = gram_matrix.size(0)
+        identity = (
+            torch.eye(
+                gram_matrix.size(-1),
+                device=X.device,
+                dtype=X.dtype,
+            )
+            .unsqueeze(0)
+            .expand(batch_size, -1, -1)
+            .contiguous()
+        )
+        transform = None
+
+        for idx, (coef_a, coef_b, coef_c) in enumerate(self.ns_coefficients):
+            # === Step 2. Apply the configured restart boundary ===
+            if idx in self._restart_iteration_set and idx != 0:
+                X = torch.bmm(transform, X)
+                gram_matrix = torch.bmm(X, X.mT)
+                transform = None
+
+            # === Step 3. Build Z_k = b * R_k + c * R_k^2 ===
+            poly = torch.baddbmm(
+                gram_matrix,
+                gram_matrix,
+                gram_matrix,
+                beta=coef_b,
+                alpha=coef_c,
+            )
+            # === Step 4. Accumulate Q_k ===
+            if idx == 0 or idx in self._restart_iteration_set:
+                # Q_k = Z_k + a * I
+                transform = poly + coef_a * identity
+            else:
+                # Q_k = Q_{k-1} @ (Z_k + a * I) = a * Q_{k-1} + Q_{k-1} @ Z_k
+                transform = torch.baddbmm(
+                    transform,
+                    transform,
+                    poly,
+                    beta=coef_a,
+                    alpha=1.0,
+                )
+
+            if (
+                idx < len(self.ns_coefficients) - 1
+                and idx + 1 not in self._restart_iteration_set
+            ):
+                # RZ_k = a * R_k + R_k @ Z_k
+                gram_poly = torch.baddbmm(
+                    gram_matrix,
+                    gram_matrix,
+                    poly,
+                    beta=coef_a,
+                    alpha=1.0,
+                )
+                # R_{k+1} = a * RZ_k + Z_k @ RZ_k
+                gram_matrix = torch.baddbmm(
+                    gram_poly,
+                    poly,
+                    gram_poly,
+                    beta=coef_a,
+                    alpha=1.0,
+                )
+
+        # === Step 5. Apply the accumulated Q_last to the current X ===
+        return torch.bmm(transform, X)
+
+
+def _reshape_update_to_matrix_batch(
+    update_tensor: torch.Tensor,
+    batch_size: int,
+    rows: int,
+    cols: int,
+) -> torch.Tensor:
+    """
+    View one update tensor as a batch of matrices.
+
+    Parameters
+    ----------
+    update_tensor : torch.Tensor
+        Update tensor for a single parameter.
+    batch_size : int
+        Number of matrix slices represented by the parameter.
+    rows : int
+        Matrix row count for each slice.
+    cols : int
+        Matrix column count for each slice.
+
+    Returns
+    -------
+    torch.Tensor
+        Tensor with shape ``(batch_size, rows, cols)``.
+    """
+    if update_tensor.is_contiguous():
+        return update_tensor.view(batch_size, rows, cols)
+    return update_tensor.reshape(batch_size, rows, cols).contiguous()
+
+
+def _stack_bucket_updates(
+    bucket_entries: list[
+        tuple[dict[str, Any], torch.Tensor, torch.Tensor, torch.Tensor]
+    ],
+    batch_size: int,
+    rows: int,
+    cols: int,
+) -> torch.Tensor:
+    """
+    Stack same-shape Muon updates into one tensor for orthogonalization.
+
+    Parameters
+    ----------
+    bucket_entries : list[tuple[dict[str, Any], torch.Tensor, torch.Tensor, torch.Tensor]]
+        Bucket entries as ``(entry, update_tensor, grad, momentum_buffer)``.
+    batch_size : int
+        Number of matrix slices per parameter in the bucket.
+    rows : int
+        Matrix row count for each slice.
+    cols : int
+        Matrix column count for each slice.
+
+    Returns
+    -------
+    torch.Tensor
+        Tensor with shape ``(num_entries, batch_size, rows, cols)``.
+    """
+    update_batches = [
+        _reshape_update_to_matrix_batch(update_tensor, batch_size, rows, cols)
+        for _, update_tensor, _, _ in bucket_entries
+    ]
+    return torch.stack(update_batches, dim=0)
+
+
+def _orthogonalize_standard_stacked(
+    stacked_updates: torch.Tensor,
+    rows: int,
+    cols: int,
+    use_flash: bool,
+    flash_buffers: tuple[torch.Tensor, torch.Tensor] | None = None,
+) -> torch.Tensor:
+    """
+    Orthogonalize stacked updates with the current standard Newton-Schulz path.
+
+    Parameters
+    ----------
+    stacked_updates : torch.Tensor
+        Tensor with shape ``(num_entries, batch_size, rows, cols)``.
+    rows : int
+        Matrix row count.
+    cols : int
+        Matrix column count.
+    use_flash : bool
+        Whether to use the Triton single-matrix path when ``batch_size == 1``.
+    flash_buffers : tuple[torch.Tensor, torch.Tensor] | None, optional
+        Pre-allocated flash buffers when ``use_flash`` is enabled.
+
+    Returns
+    -------
+    torch.Tensor
+        Orthogonalized tensor with the same shape as ``stacked_updates``.
+    """
+    num_entries, batch_size, _, _ = stacked_updates.shape
+    if use_flash and batch_size == 1:
+        if flash_buffers is None:
+            raise ValueError("Flash buffers are required when use_flash=True.")
+        buf1, buf2 = flash_buffers
+        orthogonalized = [
+            _flash_newton_schulz_orth(stacked_updates[idx, 0], buf1, buf2)
+            for idx in range(num_entries)
+        ]
+        return torch.stack(orthogonalized, dim=0).unsqueeze(1)
+
+    # Flash path only supports one matrix per entry; batched inputs use bmm path.
+    flat_updates = stacked_updates.reshape(num_entries * batch_size, rows, cols)
+    orthogonalized = _batched_newton_schulz_orth(flat_updates)
+    return orthogonalized.reshape(num_entries, batch_size, rows, cols)
+
+
+def _compute_muon_nesterov_updates(
+    gradients: list[torch.Tensor],
+    momentum_buffers: list[torch.Tensor],
+    momentum: float,
+) -> list[torch.Tensor]:
+    """
+    Update Muon momentum buffers and return Nesterov updates.
+
+    Parameters
+    ----------
+    gradients : list[torch.Tensor]
+        Gradient tensors routed to the Muon path.
+    momentum_buffers : list[torch.Tensor]
+        Momentum buffers associated with ``gradients``.
+    momentum : float
+        Momentum coefficient.
+
+    Returns
+    -------
+    list[torch.Tensor]
+        Nesterov-style Muon updates with the same shapes as ``gradients``.
+    """
+    # === Step 1. Update momentum buffers ===
+    # m_t = beta * m_{t-1} + (1 - beta) * g_t
+    for momentum_buffer, grad in zip(momentum_buffers, gradients, strict=True):
+        momentum_buffer.lerp_(grad, 1.0 - momentum)
+    # === Step 2. Form Nesterov updates ===
+    # update = beta * m_t + (1 - beta) * g_t
+    return [
+        torch.lerp(grad, momentum_buffer, momentum)
+        for grad, momentum_buffer in zip(gradients, momentum_buffers, strict=True)
+    ]
+
+
 def get_adam_route(
     param_name: str | None,
 ) -> str:
@@ -544,7 +855,7 @@ class HybridMuonOptimizer(Optimizer):
           scale = lr_adjust_coeff * sqrt(max(m, n)). Adam uses lr directly.
         - If lr_adjust > 0: use rectangular correction for Muon,
           scale = sqrt(max(1.0, m/n)). Adam uses lr/lr_adjust.
-        Default is 10.0 (Adam lr = lr/10).
+        Default is 0.0 (match-RMS scaling).
     lr_adjust_coeff : float
         Coefficient with default 0.2 for match-RMS scaling when
         ``lr_adjust <= 0``:
@@ -560,10 +871,15 @@ class HybridMuonOptimizer(Optimizer):
         (case-insensitive), or starting with ``adam_`` (case-insensitive),
         are forced to Adam (no weight decay). Parameters starting with
         ``adamw_`` are forced to AdamW-style decoupled decay path.
+    enable_gram : bool
+        Enable the compiled Gram Newton-Schulz path for rectangular Muon
+        matrices. Square matrices continue to use the current standard
+        Newton-Schulz implementation. Default is True.
     flash_muon : bool
         Enable triton-accelerated Newton-Schulz orthogonalization.
         Requires triton and CUDA. Falls back to PyTorch implementation
-        when triton is unavailable or running on CPU.
+        when triton is unavailable or running on CPU. Ignored when
+        ``enable_gram=True``.
         Default is True.
     magma_muon : bool
         Enable Magma-lite damping on Muon updates with default False.
@@ -591,6 +907,7 @@ class HybridMuonOptimizer(Optimizer):
         lr_adjust_coeff: float = 0.2,
         muon_mode: str = "slice",
         named_parameters: Iterable[tuple[str, torch.Tensor]] | None = None,
+        enable_gram: bool = True,
         flash_muon: bool = True,
         magma_muon: bool = False,
     ) -> None:
@@ -610,6 +927,7 @@ class HybridMuonOptimizer(Optimizer):
             "lr_adjust": lr_adjust,
             "lr_adjust_coeff": lr_adjust_coeff,
             "muon_mode": muon_mode,
+            "enable_gram": bool(enable_gram),
             "magma_muon": bool(magma_muon),
         }
         super().__init__(params, defaults)
@@ -631,6 +949,7 @@ class HybridMuonOptimizer(Optimizer):
             tuple[int, torch.device],
             tuple[torch.Tensor, torch.Tensor],
         ] = {}
+        self._gram_orthogonalizer: _GramNewtonSchulzOrthogonalizer | None = None
 
     def _compute_magma_scale(
         self,
@@ -880,6 +1199,19 @@ class HybridMuonOptimizer(Optimizer):
             )
         return self._ns_buffers[key]
 
+    def _get_gram_orthogonalizer(self) -> _GramNewtonSchulzOrthogonalizer:
+        """
+        Lazily initialize the compiled Gram orthogonalizer.
+
+        Returns
+        -------
+        _GramNewtonSchulzOrthogonalizer
+            Shared Gram orthogonalizer instance for the optimizer.
+        """
+        if self._gram_orthogonalizer is None:
+            self._gram_orthogonalizer = _GramNewtonSchulzOrthogonalizer()
+        return self._gram_orthogonalizer
+
     def _build_param_routing(self) -> None:
         """
         Classify parameters into Muon, Adam, and AdamW routes (static routing).
@@ -982,6 +1314,7 @@ class HybridMuonOptimizer(Optimizer):
             adam_betas = group["adam_betas"]
             lr_adjust = group["lr_adjust"]
             lr_adjust_coeff = group["lr_adjust_coeff"]
+            enable_gram = bool(group.get("enable_gram", True))
             magma_muon = bool(group.get("magma_muon", False))
 
             # === Step 1. Adam update for non-decay Adam path ===
@@ -1137,14 +1470,11 @@ class HybridMuonOptimizer(Optimizer):
                 continue
 
             # === Step 3.3. Momentum update (Nesterov) ===
-            # m_t = beta * m_{t-1} + (1 - beta) * g_t
-            for buf, g in zip(muon_momentum_buffers, muon_grads):
-                buf.lerp_(g, 1 - momentum)
-            # update = beta * m_t + (1 - beta) * g_t
-            muon_updates = [
-                torch.lerp(g, buf, momentum)
-                for g, buf in zip(muon_grads, muon_momentum_buffers)
-            ]
+            muon_updates = _compute_muon_nesterov_updates(
+                gradients=muon_grads,
+                momentum_buffers=muon_momentum_buffers,
+                momentum=momentum,
+            )
 
             # === Step 3.4. Bucket by (batch_size, rows, cols, device, dtype) ===
             buckets: dict[
@@ -1154,13 +1484,13 @@ class HybridMuonOptimizer(Optimizer):
 
             for idx, entry_info in enumerate(active_entries):
                 entry, _ = entry_info
-                p = entry["param"]
+                update_tensor = muon_updates[idx]
                 bucket_key = (
                     entry["batch_size"],
                     entry["rows"],
                     entry["cols"],
-                    p.device,
-                    p.dtype,
+                    update_tensor.device,
+                    update_tensor.dtype,
                 )
                 if bucket_key not in buckets:
                     buckets[bucket_key] = []
@@ -1172,6 +1502,9 @@ class HybridMuonOptimizer(Optimizer):
                         muon_momentum_buffers[idx],
                     )
                 )
+
+            for bucket_entries in buckets.values():
+                bucket_entries.sort(key=lambda item: item[0]["param"].data_ptr())
 
             # === Step 3.5. Newton-Schulz orthogonalization and update ===
             for (batch_size, rows, cols, _device, _), bucket_entries in buckets.items():
@@ -1188,13 +1521,20 @@ class HybridMuonOptimizer(Optimizer):
                 # for small matrices, triton launch overhead > compute savings.
                 M = min(rows, cols)
                 use_flash = (
-                    batch_size == 1
+                    not enable_gram
+                    and batch_size == 1
                     and self._use_flash
                     and _device.type == "cuda"
                     and M >= FLASH_MIN_DIM
                 )
                 if use_flash:
                     buf1, buf2 = self._get_ns_buffers(M, _device)
+                    flash_buffers: tuple[torch.Tensor, torch.Tensor] | None = (
+                        buf1,
+                        buf2,
+                    )
+                else:
+                    flash_buffers = None
 
                 if magma_muon:
                     bucket_magma_scales = self._compute_magma_scales_for_bucket(
@@ -1206,47 +1546,39 @@ class HybridMuonOptimizer(Optimizer):
                 else:
                     bucket_magma_scales = [None] * len(bucket_entries)
 
-                # Process each entry individually with Newton-Schulz orth.
-                # Compatible with sharding propagation under FSDP2.
-                for (entry, update_tensor, _grad, _buffer), magma_scale in zip(
-                    bucket_entries, bucket_magma_scales, strict=True
-                ):
-                    if batch_size > 1:
-                        if update_tensor.is_contiguous():
-                            update_batch = update_tensor.view(batch_size, rows, cols)
-                        else:
-                            update_batch = update_tensor.reshape(
-                                batch_size, rows, cols
-                            ).contiguous()
-                        orth = _batched_newton_schulz_orth(update_batch)
-                    else:
-                        if update_tensor.is_contiguous():
-                            update_matrix = update_tensor.view(rows, cols)
-                        else:
-                            update_matrix = update_tensor.reshape(
-                                rows, cols
-                            ).contiguous()
-                        if use_flash:
-                            orth = _flash_newton_schulz_orth(update_matrix, buf1, buf2)
-                        else:
-                            orth = _newton_schulz_orth(update_matrix)
-                    orth.mul_(scale)
-                    if batch_size > 1:
-                        orth_view = orth.reshape(batch_size, rows, cols)
-                        if magma_scale is not None:
-                            orth_view.mul_(
-                                magma_scale.view(batch_size, 1, 1).to(
-                                    dtype=orth.dtype,
-                                    device=orth.device,
-                                )
+                stacked_updates = _stack_bucket_updates(
+                    bucket_entries=bucket_entries,
+                    batch_size=batch_size,
+                    rows=rows,
+                    cols=cols,
+                )
+                use_gram_path = enable_gram and rows != cols
+                if use_gram_path:
+                    orthogonalized = self._get_gram_orthogonalizer()(stacked_updates)
+                else:
+                    orthogonalized = _orthogonalize_standard_stacked(
+                        stacked_updates=stacked_updates,
+                        rows=rows,
+                        cols=cols,
+                        use_flash=use_flash,
+                        flash_buffers=flash_buffers,
+                    )
+
+                orthogonalized.mul_(scale)
+
+                for idx, (
+                    (entry, _update_tensor, _grad, _buffer),
+                    magma_scale,
+                ) in enumerate(zip(bucket_entries, bucket_magma_scales, strict=True)):
+                    orth_view = orthogonalized[idx]
+                    if magma_scale is not None:
+                        orth_view.mul_(
+                            magma_scale.view(batch_size, 1, 1).to(
+                                dtype=orth_view.dtype,
+                                device=orth_view.device,
                             )
-                        delta = orth_view.reshape(entry["param"].shape)
-                    else:
-                        if magma_scale is not None:
-                            orth.mul_(
-                                magma_scale[0].to(dtype=orth.dtype, device=orth.device)
-                            )
-                        delta = orth.reshape(entry["param"].shape)
+                        )
+                    delta = orth_view.reshape(entry["param"].shape)
                     entry["param"].add_(delta, alpha=-lr)
 
         return loss

@@ -4,6 +4,7 @@ import unittest
 import torch
 
 from deepmd.pt.optimizer.hybrid_muon import (
+    FLASH_MIN_DIM,
     MAGMA_MIN_SCALE,
     TRITON_AVAILABLE,
     HybridMuonOptimizer,
@@ -36,7 +37,18 @@ def _bf16_matmul_supported(device: torch.device) -> bool:
         return False
 
 
+def _fp16_matmul_supported(device: torch.device) -> bool:
+    """Check if float16 matmul is reliably supported on the given device."""
+    try:
+        a = torch.randn(4, 4, dtype=torch.float16, device=device)
+        _ = torch.mm(a, a.T)
+        return True
+    except (RuntimeError, TypeError):
+        return False
+
+
 BF16_SUPPORTED = _bf16_matmul_supported(env.DEVICE)
+FP16_SUPPORTED = _fp16_matmul_supported(env.DEVICE)
 
 
 @unittest.skipIf(not BF16_SUPPORTED, "bf16 matmul not supported on this device")
@@ -139,6 +151,74 @@ class TestHybridMuonOptimizer(unittest.TestCase):
             torch.allclose(model1.weight, model2.weight),
             "Different lr_adjust modes should produce different updates",
         )
+
+    def test_enable_gram_defaults_to_true(self) -> None:
+        """Test enable_gram is enabled by default."""
+        model = torch.nn.Linear(10, 20, bias=False, device=self.device)
+        optimizer = HybridMuonOptimizer(model.parameters(), lr=0.02)
+        self.assertTrue(optimizer.param_groups[0]["enable_gram"])
+
+    def test_enable_gram_square_falls_back_to_standard(self) -> None:
+        """Test square matrices keep using the standard path when Gram is enabled."""
+        torch.manual_seed(42)
+        model_standard = torch.nn.Linear(10, 10, device=self.device)
+        model_gram = torch.nn.Linear(10, 10, device=self.device)
+        model_gram.load_state_dict(model_standard.state_dict())
+
+        opt_standard = HybridMuonOptimizer(
+            model_standard.parameters(),
+            lr=0.02,
+            enable_gram=False,
+            flash_muon=False,
+        )
+        opt_gram = HybridMuonOptimizer(
+            model_gram.parameters(),
+            lr=0.02,
+            enable_gram=True,
+            flash_muon=False,
+        )
+
+        x = torch.randn(4, 10, device=self.device)
+        opt_standard.zero_grad()
+        model_standard(x).sum().backward()
+        opt_standard.step()
+
+        opt_gram.zero_grad()
+        model_gram(x).sum().backward()
+        opt_gram.step()
+
+        self.assertTrue(
+            torch.allclose(
+                model_standard.weight, model_gram.weight, atol=1e-6, rtol=1e-6
+            )
+        )
+        self.assertTrue(
+            torch.allclose(model_standard.bias, model_gram.bias, atol=1e-6, rtol=1e-6)
+        )
+
+    @unittest.skipIf(
+        not FP16_SUPPORTED,
+        "float16 matmul not supported on this device",
+    )
+    def test_enable_gram_rectangular_step_runs(self) -> None:
+        """Test a rectangular Muon step runs successfully with Gram enabled."""
+        torch.manual_seed(42)
+        model = torch.nn.Linear(10, 20, bias=False, device=self.device)
+        optimizer = HybridMuonOptimizer(
+            model.parameters(),
+            lr=0.02,
+            enable_gram=True,
+            flash_muon=False,
+        )
+        initial_weight = model.weight.detach().clone()
+
+        x = torch.randn(4, 10, device=self.device)
+        optimizer.zero_grad()
+        model(x).sum().backward()
+        optimizer.step()
+
+        self.assertFalse(torch.allclose(initial_weight, model.weight))
+        self.assertIn("momentum_buffer", optimizer.state[model.weight])
 
     def test_slice_mode_uses_muon_for_3d_weight(self) -> None:
         """Test muon_mode='slice' + name rules route params as expected."""
@@ -415,8 +495,18 @@ class TestFlashMuon(unittest.TestCase):
         model2 = torch.nn.Linear(32, 64, device=self.device)
         model2.load_state_dict(model1.state_dict())
 
-        opt1 = HybridMuonOptimizer(model1.parameters(), lr=0.02, flash_muon=False)
-        opt2 = HybridMuonOptimizer(model2.parameters(), lr=0.02, flash_muon=True)
+        opt1 = HybridMuonOptimizer(
+            model1.parameters(),
+            lr=0.02,
+            enable_gram=False,
+            flash_muon=False,
+        )
+        opt2 = HybridMuonOptimizer(
+            model2.parameters(),
+            lr=0.02,
+            enable_gram=False,
+            flash_muon=True,
+        )
 
         x = torch.randn(4, 32, device=self.device)
 
@@ -444,15 +534,16 @@ class TestFlashMuon(unittest.TestCase):
     )
     def test_flash_path_actually_used(self) -> None:
         """Verify that flash path is actually active when triton + CUDA available."""
-        from deepmd.pt.optimizer.hybrid_muon import (
-            FLASH_MIN_DIM,
-        )
-
         torch.manual_seed(42)
         # Use matrix large enough to exceed FLASH_MIN_DIM threshold
         dim = max(FLASH_MIN_DIM, 128)
         model = torch.nn.Linear(dim, dim * 2, device=self.device)
-        optimizer = HybridMuonOptimizer(model.parameters(), lr=0.02, flash_muon=True)
+        optimizer = HybridMuonOptimizer(
+            model.parameters(),
+            lr=0.02,
+            enable_gram=False,
+            flash_muon=True,
+        )
         # _use_flash should be True when triton is available
         self.assertTrue(optimizer._use_flash)
         # _ns_buffers should be empty before first step

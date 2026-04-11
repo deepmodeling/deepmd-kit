@@ -3089,7 +3089,8 @@ def optimizer_hybrid_muon() -> list[Argument]:
             optional=True,
             default=0.001,
             doc=doc_only_pt_supported
-            + "Weight decay coefficient. Applied only to Muon-routed parameters",
+            + "Weight decay coefficient. Applied to Muon-routed parameters and "
+            + "the AdamW-style decay path for matrix parameters.",
         ),
         Argument(
             "lr_adjust",
@@ -3123,6 +3124,15 @@ def optimizer_hybrid_muon() -> list[Argument]:
             + "Routing uses effective shape after removing singleton dimensions.",
         ),
         Argument(
+            "enable_gram",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_only_pt_supported
+            + "Enable the compiled Gram Newton-Schulz path for rectangular Muon matrices. "
+            + "Square matrices keep using the current standard Newton-Schulz path.",
+        ),
+        Argument(
             "flash_muon",
             bool,
             optional=True,
@@ -3130,13 +3140,13 @@ def optimizer_hybrid_muon() -> list[Argument]:
             doc=doc_only_pt_supported
             + "Enable triton-accelerated Newton-Schulz orthogonalization. "
             "Requires triton and CUDA. Falls back to PyTorch implementation "
-            "when triton is unavailable or running on CPU.",
+            "when triton is unavailable or running on CPU. Ignored when enable_gram is true.",
         ),
         Argument(
             "magma_muon",
             bool,
             optional=True,
-            default=False,
+            default=True,
             doc=doc_only_pt_supported
             + "Enable Magma-lite damping on the Muon route only. "
             "When enabled, HybridMuon computes momentum-gradient alignment "
