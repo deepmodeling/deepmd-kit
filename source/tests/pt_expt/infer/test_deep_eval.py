@@ -1364,7 +1364,7 @@ class TestEvalTypeEbd(unittest.TestCase):
         self.assertEqual(typeebd.ndim, 2)
         # DPA1 TypeEmbedNet outputs (ntypes+1) rows (padding type included)
         self.assertIn(typeebd.shape[0], (self.nt, self.nt + 1))
-        self.assertTrue(typeebd.shape[1] > 0)
+        self.assertGreater(typeebd.shape[1], 0)
 
     def test_typeebd_sea_raises(self) -> None:
         """se_e2_a model has no type embedding, should raise KeyError."""
@@ -1807,7 +1807,7 @@ class TestEvalDiagSpinModel(unittest.TestCase):
         self.assertEqual(typeebd.ndim, 2)
         # DPA1 TypeEmbedNet outputs ntypes or ntypes+1
         self.assertIn(typeebd.shape[0], (self.nt, self.nt + 1))
-        self.assertTrue(typeebd.shape[1] > 0)
+        self.assertGreater(typeebd.shape[1], 0)
 
     def test_eval_descriptor_spin_raises(self) -> None:
         """eval_descriptor raises NotImplementedError for spin models."""
