@@ -94,7 +94,7 @@ class TestFittingMiddleOutput(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
     def test_middle_output_registered_in_output_def(self) -> None:
         """middle_output should appear in output_def when enabled."""
-        ft, descriptor, atype = self._build_fitting(mixed_types=True)
+        ft, _, _ = self._build_fitting(mixed_types=True)
         # Not registered by default
         self.assertNotIn("middle_output", ft.output_def().keys())
         # Registered after enabling
@@ -118,6 +118,34 @@ class TestFittingMiddleOutput(unittest.TestCase, TestCaseSingleFrameWithNlist):
         self.assertIn("middle_output", ret)
         nf, nloc, _ = descriptor.shape
         self.assertEqual(ret["middle_output"].shape, (nf, nloc, ft.neuron[-1]))
+
+    def test_middle_output_empty_neuron_mixed_types(self) -> None:
+        """neuron=[] should raise ValueError when enabling middle_output."""
+        ft = InvarFitting(
+            "energy",
+            self.nt,
+            4,  # dim_descrpt (arbitrary)
+            1,
+            neuron=[],
+            mixed_types=True,
+            seed=GLOBAL_SEED,
+        )
+        with self.assertRaises(ValueError):
+            ft.set_return_middle_output(True)
+
+    def test_middle_output_empty_neuron_per_type(self) -> None:
+        """neuron=[] with mixed_types=False should raise ValueError."""
+        ft = InvarFitting(
+            "energy",
+            self.nt,
+            4,
+            1,
+            neuron=[],
+            mixed_types=False,
+            seed=GLOBAL_SEED,
+        )
+        with self.assertRaises(ValueError):
+            ft.set_return_middle_output(True)
 
     def test_middle_output_deterministic(self) -> None:
         """Middle output should be deterministic."""

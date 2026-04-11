@@ -1665,7 +1665,7 @@ class TestGetDpAtomicModel(unittest.TestCase):
         self.assertTrue(hasattr(dp_am, "fitting_net"))
 
     def test_zbl_model_returns_none(self) -> None:
-        """DPZBLModel's LinearEnergyAtomicModel should return None."""
+        """DPZBLModel wraps a LinearEnergyAtomicModel, so get_dp_atomic_model returns None."""
         from deepmd.dpmodel.atomic_model.dp_atomic_model import (
             DPAtomicModel as DPAtomicModelDP,
         )
@@ -1677,7 +1677,6 @@ class TestGetDpAtomicModel(unittest.TestCase):
         )
         from deepmd.dpmodel.descriptor.dpa1 import DescrptDPA1 as DescrptDPA1DP
 
-        # LinearAtomicModel requires mixed_type descriptors
         ds = DescrptDPA1DP(4.0, 0.5, [14], ntypes=2)
         ft = EnergyFittingNet(2, ds.get_dim_out(), mixed_types=True, seed=GLOBAL_SEED)
         dp_am = DPAtomicModelDP(ds, ft, type_map=["foo", "bar"])
@@ -1687,7 +1686,7 @@ class TestGetDpAtomicModel(unittest.TestCase):
         zbl_am = DPZBLLinearEnergyAtomicModel(
             dp_am, pair_tab, sw_rmin=1.0, sw_rmax=2.0, type_map=["foo", "bar"]
         )
-        # zbl_am is a LinearEnergyAtomicModel, not DPAtomicModel
+        # LinearEnergyAtomicModel is not a DPAtomicModel
         self.assertFalse(isinstance(zbl_am, DPAtomicModelDP))
 
     def test_spin_model_delegates(self) -> None:
@@ -1714,8 +1713,8 @@ class TestGetDpAtomicModel(unittest.TestCase):
         self.assertIsNotNone(dp_am)
         self.assertIsInstance(dp_am, DPAtomicModelDP)
 
-    def test_frozen_model_delegates(self) -> None:
-        """FrozenModel.get_dp_atomic_model() delegates to inner model."""
+    def test_deserialized_model_delegates(self) -> None:
+        """Model deserialized from .pte exposes get_dp_atomic_model()."""
         from deepmd.dpmodel.atomic_model.dp_atomic_model import (
             DPAtomicModel as DPAtomicModelDP,
         )
@@ -1731,7 +1730,6 @@ class TestGetDpAtomicModel(unittest.TestCase):
             pte_path = os.path.join(tmpdir, "test.pte")
             deserialize_to_file(pte_path, {"model": model.serialize()})
             dp = DeepPot(pte_path)
-            # The _dpmodel deserialized from .pte is a regular energy model
             dp_am = dp.deep_eval._dpmodel.get_dp_atomic_model()
             self.assertIsNotNone(dp_am)
             self.assertIsInstance(dp_am, DPAtomicModelDP)

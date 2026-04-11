@@ -996,11 +996,7 @@ class DeepEval(DeepEvalBackend):
 
     def _is_spin_model(self) -> bool:
         """Check if the underlying dpmodel is a SpinModel."""
-        from deepmd.dpmodel.model.spin_model import (
-            SpinModel,
-        )
-
-        return isinstance(self._dpmodel, SpinModel)
+        return getattr(self, "_is_spin", False)
 
     def eval_typeebd(self) -> np.ndarray:
         """Evaluate type embedding.
@@ -1074,15 +1070,15 @@ class DeepEval(DeepEvalBackend):
             nlist_t,
             mapping_t,
             fparam_t,
-            aparam_t,
-            nframes,
-            natoms,
+            _aparam_t,
+            _nframes,
+            _natoms,
         ) = self._prepare_inputs(coords, cells, atom_types, fparam, aparam)
         with torch.no_grad():
             fparam_for_des = (
                 fparam_t if getattr(dp_am, "add_chg_spin_ebd", False) else None
             )
-            descriptor, rot_mat, g2, h2, sw = dp_am.descriptor(
+            descriptor, *_ = dp_am.descriptor(
                 ext_coord_t,
                 ext_atype_t,
                 nlist_t,
@@ -1137,14 +1133,14 @@ class DeepEval(DeepEvalBackend):
             mapping_t,
             fparam_t,
             aparam_t,
-            nframes,
+            _nframes,
             natoms,
         ) = self._prepare_inputs(coords, cells, atom_types, fparam, aparam)
         with torch.no_grad():
             fparam_for_des = (
                 fparam_t if getattr(dp_am, "add_chg_spin_ebd", False) else None
             )
-            descriptor, rot_mat, g2, h2, sw = dp_am.descriptor(
+            descriptor, rot_mat, g2, h2, _sw = dp_am.descriptor(
                 ext_coord_t,
                 ext_atype_t,
                 nlist_t,
