@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
+from copy import (
+    deepcopy,
+)
 from typing import (
     Any,
 )
@@ -100,9 +103,17 @@ DPA3_BASELINE_CASE = {
 }
 
 
+def _build_dpa3_case(fields: tuple[str, ...], **overrides: Any) -> tuple:
+    unknown = set(overrides) - set(DPA3_BASELINE_CASE)
+    if unknown:
+        raise KeyError(f"Unknown DPA3 case override(s): {sorted(unknown)}")
+    case = deepcopy(DPA3_BASELINE_CASE)
+    case.update(overrides)
+    return tuple(case[field] for field in fields)
+
+
 def dpa3_case(**overrides: Any) -> tuple:
-    case = DPA3_BASELINE_CASE | overrides
-    return tuple(case[field] for field in DPA3_CASE_FIELDS)
+    return _build_dpa3_case(DPA3_CASE_FIELDS, **overrides)
 
 
 DPA3_CURATED_CASES = (
@@ -139,8 +150,7 @@ DPA3_DESCRIPTOR_API_CASE_FIELDS = DPA3_CASE_FIELDS
 
 
 def dpa3_descriptor_api_case(**overrides: Any) -> tuple:
-    case = DPA3_BASELINE_CASE | overrides
-    return tuple(case[field] for field in DPA3_DESCRIPTOR_API_CASE_FIELDS)
+    return _build_dpa3_case(DPA3_DESCRIPTOR_API_CASE_FIELDS, **overrides)
 
 
 DPA3_DESCRIPTOR_API_CURATED_CASES = (
