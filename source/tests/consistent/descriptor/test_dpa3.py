@@ -135,7 +135,7 @@ DPA3_CURATED_CASES = (
 )
 
 
-DPA3_DESCRIPTOR_API_CASE_FIELDS = DPA3_CASE_FIELDS[:-1]
+DPA3_DESCRIPTOR_API_CASE_FIELDS = DPA3_CASE_FIELDS
 
 
 def dpa3_descriptor_api_case(**overrides: Any) -> tuple:
@@ -150,6 +150,7 @@ DPA3_DESCRIPTOR_API_CURATED_CASES = (
     dpa3_descriptor_api_case(exclude_types=[[0, 1]]),
     dpa3_descriptor_api_case(use_loc_mapping=False),
     dpa3_descriptor_api_case(fix_stat_std=0.0),
+    dpa3_descriptor_api_case(add_chg_spin_ebd=True),
     # Repflow compression branches.
     dpa3_descriptor_api_case(a_compress_rate=1),
     dpa3_descriptor_api_case(a_compress_e_rate=2),
@@ -169,6 +170,7 @@ DPA3_DESCRIPTOR_API_CURATED_CASES = (
         use_dynamic_sel=False,
         use_loc_mapping=False,
         fix_stat_std=0.0,
+        add_chg_spin_ebd=True,
     ),
 )
 
@@ -550,6 +552,7 @@ class TestDPA3DescriptorAPI(DescriptorAPITest, unittest.TestCase):
             fix_stat_std,
             n_multi_edge_message,
             precision,
+            add_chg_spin_ebd,
         ) = self.param
         return {
             "ntypes": self.ntypes,
@@ -590,4 +593,5 @@ class TestDPA3DescriptorAPI(DescriptorAPITest, unittest.TestCase):
             "env_protection": 0.0,
             "use_loc_mapping": use_loc_mapping,
             "trainable": False,
+            "add_chg_spin_ebd": add_chg_spin_ebd,
         }
