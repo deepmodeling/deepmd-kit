@@ -204,7 +204,7 @@ class TestCompiledDynamicShapes(unittest.TestCase):
                     lr = trainer.scheduler.get_last_lr()[0]
                     _, loss, _more_loss = trainer.wrapper(**inp, cur_lr=lr, label=lab)
                     loss.backward()
-                    trainer.optimizer.step()
+                    trainer._optimizer_step()
 
                     # Loss should be a finite scalar
                     self.assertFalse(torch.isnan(loss))
