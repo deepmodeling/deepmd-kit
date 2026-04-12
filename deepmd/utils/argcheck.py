@@ -1556,6 +1556,13 @@ def dpa3_repflow_args() -> list[Argument]:
         "or `a_sel / sel_reduce_factor` instead of the raw `e_sel` or `a_sel` values, "
         "accommodating larger selection numbers."
     )
+    doc_sequential_update = (
+        "Whether to use sequential update mode within each repflow layer. "
+        "When True, updates are applied sequentially: edge self → angle self (using updated edge) "
+        "→ edge angle (using updated angle) → node (using final edge), "
+        "instead of the default parallel mode where all updates use original embeddings. "
+        "Currently only supports update_style='res_residual'."
+    )
 
     return [
         # repflow args
@@ -1685,6 +1692,13 @@ def dpa3_repflow_args() -> list[Argument]:
             optional=True,
             default=10.0,
             doc=doc_sel_reduce_factor,
+        ),
+        Argument(
+            "sequential_update",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_sequential_update,
         ),
     ]
 
