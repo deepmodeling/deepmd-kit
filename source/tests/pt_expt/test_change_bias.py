@@ -156,14 +156,7 @@ class TestChangeBias(unittest.TestCase):
         cls.shared_pte = os.path.join(cls.tmpdir, "shared.pte")
         freeze(model=cls.model_path, output=cls.shared_pte)
         cls.shared_pt2 = os.path.join(cls.tmpdir, "shared.pt2")
-        # Clear default device: tests/pt/__init__.py may set a fake device
-        # for CPU fallback, which poisons AOTInductor compilation.
-        saved_device = torch.get_default_device()
-        torch.set_default_device(None)
-        try:
-            freeze(model=cls.model_path, output=cls.shared_pt2)
-        finally:
-            torch.set_default_device(saved_device)
+        freeze(model=cls.model_path, output=cls.shared_pt2)
 
     @classmethod
     def tearDownClass(cls) -> None:
