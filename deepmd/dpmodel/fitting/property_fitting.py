@@ -129,6 +129,7 @@ class PropertyFittingNet(InvarFitting):
                     c_differentiable=False,
                     intensive=self.intensive,
                 ),
+                *self._middle_output_def(),
             ]
         )
 

@@ -624,15 +624,22 @@ class DeepEval(DeepEvalBackend):
 
         return extended_coord, extended_atype, nlist, mapping
 
-    def _eval_model(
+    def _prepare_inputs(
         self,
         coords: np.ndarray,
         cells: np.ndarray | None,
         atom_types: np.ndarray,
         fparam: np.ndarray | None,
         aparam: np.ndarray | None,
-        request_defs: list[OutputVariableDef],
-    ) -> tuple[np.ndarray, ...]:
+    ) -> tuple:
+        """Prepare tensor inputs for model evaluation.
+
+        Returns
+        -------
+        tuple
+            (ext_coord_t, ext_atype_t, nlist_t, mapping_t,
+             fparam_t, aparam_t, nframes, natoms)
+        """
         nframes = coords.shape[0]
         if len(atom_types.shape) == 1:
             natoms = len(atom_types)
@@ -714,6 +721,37 @@ class DeepEval(DeepEvalBackend):
             )
         else:
             aparam_t = None
+
+        return (
+            ext_coord_t,
+            ext_atype_t,
+            nlist_t,
+            mapping_t,
+            fparam_t,
+            aparam_t,
+            nframes,
+            natoms,
+        )
+
+    def _eval_model(
+        self,
+        coords: np.ndarray,
+        cells: np.ndarray | None,
+        atom_types: np.ndarray,
+        fparam: np.ndarray | None,
+        aparam: np.ndarray | None,
+        request_defs: list[OutputVariableDef],
+    ) -> tuple[np.ndarray, ...]:
+        (
+            ext_coord_t,
+            ext_atype_t,
+            nlist_t,
+            mapping_t,
+            fparam_t,
+            aparam_t,
+            nframes,
+            natoms,
+        ) = self._prepare_inputs(coords, cells, atom_types, fparam, aparam)
 
         # Call the model (forward_common_lower interface, internal keys)
         if self._is_pt2:
@@ -955,3 +993,185 @@ class DeepEval(DeepEvalBackend):
             The exported model module.
         """
         return self.exported_module
+
+    def _is_spin_model(self) -> bool:
+        """Check if the underlying dpmodel is a SpinModel."""
+        from deepmd.dpmodel.model.spin_model import (
+            SpinModel,
+        )
+
+        return isinstance(self._dpmodel, SpinModel)
+
+    def eval_typeebd(self) -> np.ndarray:
+        """Evaluate type embedding.
+
+        Returns
+        -------
+        np.ndarray
+            Type embedding array of shape ``(ntypes, tebd_dim)``.
+
+        Raises
+        ------
+        KeyError
+            If the model has no type embedding networks.
+        """
+        from deepmd.dpmodel.utils.type_embed import TypeEmbedNet as TypeEmbedNetDP
+
+        model = self._dpmodel
+        if self._is_spin_model():
+            model = model.backbone_model
+        out = []
+        for mm in model.modules():
+            if isinstance(mm, TypeEmbedNetDP):
+                out.append(mm())
+        if not out:
+            raise KeyError("The model has no type embedding networks.")
+        typeebd = torch.cat(out, dim=1)
+        return typeebd.detach().cpu().numpy()
+
+    def eval_descriptor(
+        self,
+        coords: np.ndarray,
+        cells: np.ndarray | None,
+        atom_types: np.ndarray,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+        **kwargs: Any,
+    ) -> np.ndarray:
+        """Evaluate descriptor.
+
+        Parameters
+        ----------
+        coords
+            Coordinates, shape ``(nframes, natoms, 3)``.
+        cells
+            Cell vectors, shape ``(nframes, 3, 3)`` or ``None``.
+        atom_types
+            Atom types, shape ``(natoms,)`` or ``(nframes, natoms)``.
+        fparam
+            Frame parameters, optional.
+        aparam
+            Atom parameters, optional.
+
+        Returns
+        -------
+        np.ndarray
+            Descriptor output, shape ``(nframes, nloc, dim_descrpt)``.
+        """
+        coords = np.array(coords)
+        atom_types = np.array(atom_types, dtype=np.int32)
+        if cells is not None:
+            cells = np.array(cells)
+        if self._is_spin_model():
+            raise NotImplementedError(
+                "eval_descriptor is not supported for spin models."
+            )
+        dp_am = self._dpmodel.get_dp_atomic_model()
+        if dp_am is None:
+            raise NotImplementedError(
+                "eval_descriptor is not supported for this model type "
+                f"({type(self._dpmodel).__name__})."
+            )
+        (
+            ext_coord_t,
+            ext_atype_t,
+            nlist_t,
+            mapping_t,
+            fparam_t,
+            _aparam_t,
+            _nframes,
+            _natoms,
+        ) = self._prepare_inputs(coords, cells, atom_types, fparam, aparam)
+        with torch.no_grad():
+            fparam_for_des = (
+                fparam_t if getattr(dp_am, "add_chg_spin_ebd", False) else None
+            )
+            descriptor, *_ = dp_am.descriptor(
+                ext_coord_t,
+                ext_atype_t,
+                nlist_t,
+                mapping=mapping_t,
+                fparam=fparam_for_des,
+            )
+        return descriptor.detach().cpu().numpy()
+
+    def eval_fitting_last_layer(
+        self,
+        coords: np.ndarray,
+        cells: np.ndarray | None,
+        atom_types: np.ndarray,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+        **kwargs: Any,
+    ) -> np.ndarray:
+        """Evaluate the last hidden layer of the fitting network.
+
+        Parameters
+        ----------
+        coords
+            Coordinates, shape ``(nframes, natoms, 3)``.
+        cells
+            Cell vectors, shape ``(nframes, 3, 3)`` or ``None``.
+        atom_types
+            Atom types, shape ``(natoms,)`` or ``(nframes, natoms)``.
+        fparam
+            Frame parameters, optional.
+        aparam
+            Atom parameters, optional.
+
+        Returns
+        -------
+        np.ndarray
+            Middle-layer output, shape ``(nframes, nloc, neuron[-1])``.
+        """
+        coords = np.array(coords)
+        atom_types = np.array(atom_types, dtype=np.int32)
+        if cells is not None:
+            cells = np.array(cells)
+        if self._is_spin_model():
+            raise NotImplementedError(
+                "eval_fitting_last_layer is not supported for spin models."
+            )
+        dp_am = self._dpmodel.get_dp_atomic_model()
+        if dp_am is None:
+            raise NotImplementedError(
+                "eval_fitting_last_layer is not supported for this model type "
+                f"({type(self._dpmodel).__name__})."
+            )
+        (
+            ext_coord_t,
+            ext_atype_t,
+            nlist_t,
+            mapping_t,
+            fparam_t,
+            aparam_t,
+            _nframes,
+            natoms,
+        ) = self._prepare_inputs(coords, cells, atom_types, fparam, aparam)
+        with torch.no_grad():
+            fparam_for_des = (
+                fparam_t if getattr(dp_am, "add_chg_spin_ebd", False) else None
+            )
+            descriptor, rot_mat, g2, h2, _sw = dp_am.descriptor(
+                ext_coord_t,
+                ext_atype_t,
+                nlist_t,
+                mapping=mapping_t,
+                fparam=fparam_for_des,
+            )
+            atype = ext_atype_t[:, :natoms]
+            fitting_net = dp_am.fitting_net
+            fitting_net.set_return_middle_output(True)
+            try:
+                ret = fitting_net(
+                    descriptor,
+                    atype,
+                    gr=rot_mat,
+                    g2=g2,
+                    h2=h2,
+                    fparam=fparam_t,
+                    aparam=aparam_t,
+                )
+            finally:
+                fitting_net.set_return_middle_output(False)
+        return ret["middle_output"].detach().cpu().numpy()

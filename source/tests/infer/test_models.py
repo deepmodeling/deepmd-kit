@@ -174,11 +174,23 @@ class TestDeepPot(unittest.TestCase):
         for ii, result in enumerate(self.case.results):
             if result.descriptor is None:
                 continue
-            descpt = self.dp.eval_descriptor(result.coord, result.box, result.atype)
+            descpt = self.dp.eval_descriptor(
+                result.coord,
+                result.box,
+                result.atype,
+                fparam=result.fparam,
+                aparam=result.aparam,
+            )
             expected_descpt = result.descriptor
             np.testing.assert_almost_equal(descpt.ravel(), expected_descpt.ravel())
             # See #4533
-            descpt = self.dp.eval_descriptor(result.coord, result.box, result.atype)
+            descpt = self.dp.eval_descriptor(
+                result.coord,
+                result.box,
+                result.atype,
+                fparam=result.fparam,
+                aparam=result.aparam,
+            )
             expected_descpt = result.descriptor
             np.testing.assert_almost_equal(descpt.ravel(), expected_descpt.ravel())
 
@@ -190,12 +202,20 @@ class TestDeepPot(unittest.TestCase):
             if result.fit_ll is None:
                 continue
             fit_ll = self.dp.eval_fitting_last_layer(
-                result.coord, result.box, result.atype
+                result.coord,
+                result.box,
+                result.atype,
+                fparam=result.fparam,
+                aparam=result.aparam,
             )
             expected_fit_ll = result.fit_ll
             np.testing.assert_almost_equal(fit_ll.ravel(), expected_fit_ll.ravel())
             fit_ll = self.dp.eval_fitting_last_layer(
-                result.coord, result.box, result.atype
+                result.coord,
+                result.box,
+                result.atype,
+                fparam=result.fparam,
+                aparam=result.aparam,
             )
             expected_fit_ll = result.fit_ll
             np.testing.assert_almost_equal(fit_ll.ravel(), expected_fit_ll.ravel())

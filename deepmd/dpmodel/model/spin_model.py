@@ -547,6 +547,10 @@ class SpinModel(NativeOP):
             raise AttributeError(name)
         return getattr(self.backbone_model, name)
 
+    def get_dp_atomic_model(self) -> "DPAtomicModel | None":
+        """Get the underlying DPAtomicModel by delegating to the backbone model."""
+        return self.backbone_model.get_dp_atomic_model()
+
     def serialize(self) -> dict:
         return {
             "type": "spin_ener",

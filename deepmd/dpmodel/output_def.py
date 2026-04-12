@@ -102,8 +102,9 @@ def fitting_check_output(cls: type) -> type:
             **kwargs: Any,
         ) -> Any:
             ret = cls.__call__(self, *args, **kwargs)
-            for kk in self.md.keys():
-                dd = self.md[kk]
+            md = self.output_def()
+            for kk in md.keys():
+                dd = md[kk]
                 check_var(ret[kk], dd)
             return ret
 
