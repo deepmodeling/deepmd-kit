@@ -33,6 +33,7 @@ if INSTALLED_PT:
 if INSTALLED_PT_EXPT:
     import torch
 
+    from deepmd.pt_expt.utils.env import DEVICE as PT_EXPT_DEVICE
     from deepmd.pt_expt.utils.network import (
         _torch_activation,
     )
@@ -109,7 +110,9 @@ class TestActivationFunctionConsistent(unittest.TestCase):
     @unittest.skipUnless(INSTALLED_PT_EXPT, "PyTorch Exportable is not installed")
     def test_pt_expt_consistent_with_ref(self) -> None:
         if INSTALLED_PT_EXPT:
-            x = torch.tensor(self.random_input, dtype=torch.float64)
+            x = torch.tensor(
+                self.random_input, dtype=torch.float64, device=PT_EXPT_DEVICE
+            )
             test = _torch_activation(x, self.activation).detach().numpy()
             np.testing.assert_allclose(self.ref, test, atol=1e-10)
 
@@ -149,6 +152,8 @@ class TestSilutVariantsConsistent(unittest.TestCase):
     @unittest.skipUnless(INSTALLED_PT_EXPT, "PyTorch Exportable is not installed")
     def test_pt_expt_consistent_with_ref(self) -> None:
         if INSTALLED_PT_EXPT:
-            x = torch.tensor(self.random_input, dtype=torch.float64)
+            x = torch.tensor(
+                self.random_input, dtype=torch.float64, device=PT_EXPT_DEVICE
+            )
             test = _torch_activation(x, self.activation).detach().numpy()
             np.testing.assert_allclose(self.ref, test, atol=1e-10)
