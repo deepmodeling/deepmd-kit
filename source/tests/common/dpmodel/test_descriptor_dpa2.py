@@ -10,6 +10,9 @@ from deepmd.dpmodel.descriptor.dpa2 import (
     RepformerArgs,
     RepinitArgs,
 )
+from deepmd.dpmodel.descriptor.repformers import (
+    DescrptBlockRepformers,
+)
 
 from ...seed import (
     GLOBAL_SEED,
@@ -69,3 +72,36 @@ class TestDescrptDPA2(unittest.TestCase, TestCaseSingleFrameWithNlist):
         for ii in [0, 1, 2, 3, 4]:
             np.testing.assert_equal(mm0[ii].shape, desired_shape[ii])
             np.testing.assert_allclose(mm0[ii], mm1[ii])
+
+
+class TestDescrptBlockRepformersAccessors(unittest.TestCase):
+    def test_get_rcut_smth(self) -> None:
+        block = DescrptBlockRepformers(
+            rcut=6.0,
+            rcut_smth=5.0,
+            sel=40,
+            ntypes=2,
+            nlayers=3,
+        )
+        self.assertEqual(block.get_rcut_smth(), 5.0)
+
+    def test_get_env_protection(self) -> None:
+        block = DescrptBlockRepformers(
+            rcut=6.0,
+            rcut_smth=5.0,
+            sel=40,
+            ntypes=2,
+            nlayers=3,
+            env_protection=1.0,
+        )
+        self.assertEqual(block.get_env_protection(), 1.0)
+
+    def test_get_env_protection_default(self) -> None:
+        block = DescrptBlockRepformers(
+            rcut=6.0,
+            rcut_smth=5.0,
+            sel=40,
+            ntypes=2,
+            nlayers=3,
+        )
+        self.assertEqual(block.get_env_protection(), 0.0)
