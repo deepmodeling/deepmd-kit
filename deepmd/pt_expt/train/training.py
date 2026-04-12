@@ -309,7 +309,6 @@ class _CompiledModel(torch.nn.Module):
         # Ghost-atom forces must be scatter-summed back to local atoms
         # via ``mapping`` — the same operation ``communicate_extended_output``
         # performs in the uncompiled path.
-        actual_nall = ext_coord.shape[1]
         out: dict[str, torch.Tensor] = {}
         out["atom_energy"] = result["atom_energy"]
         out["energy"] = result["energy"]

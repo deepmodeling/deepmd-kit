@@ -80,7 +80,6 @@ class TestSilutActivation:
 
     def test_silut_below_threshold_is_silu(self) -> None:
         """Below threshold, silut equals silu exactly."""
-        threshold = 10.0
         x_below = torch.tensor([-5.0, 0.0, 1.0, 5.0, 9.9], dtype=torch.float64)
         result = _torch_activation(x_below, "silut:10.0")
         silu = x_below * torch.sigmoid(x_below)
