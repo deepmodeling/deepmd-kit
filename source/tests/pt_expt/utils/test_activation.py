@@ -103,3 +103,18 @@ class TestSilutActivation:
         np.testing.assert_allclose(
             result.detach().numpy(), expected.detach().numpy(), rtol=1e-14, atol=1e-14
         )
+
+    def test_silut_export(self) -> None:
+        """torch.export.export can trace through silut activation."""
+
+        class SilutModule(torch.nn.Module):
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return _torch_activation(x, "silut:10.0")
+
+        mod = SilutModule()
+        exported = torch.export.export(mod, (self.x_torch,))
+        result = exported.module()(self.x_torch)
+        expected = _torch_activation(self.x_torch, "silut:10.0")
+        np.testing.assert_allclose(
+            result.detach().numpy(), expected.detach().numpy(), rtol=1e-12, atol=1e-12
+        )
