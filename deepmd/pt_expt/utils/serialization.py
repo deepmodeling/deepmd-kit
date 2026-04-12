@@ -554,19 +554,8 @@ def _deserialize_to_file_pt2(
         data, model_json_override
     )
 
-    # AOTInductor's lowering code internally creates tensors (e.g.
-    # ``torch.zeros``) without an explicit ``device=`` argument.  If a
-    # non-CPU default device is active (e.g. tests/pt/__init__.py sets
-    # ``torch.set_default_device("cuda:9999999")``), the compilation fails
-    # on CPU-only builds.  Temporarily clear the default device so the
-    # inductor always targets CPU.
-    prev_device = torch.get_default_device()
-    torch.set_default_device(None)
-    try:
-        # Compile via AOTInductor into a .pt2 package
-        aoti_compile_and_package(exported, package_path=model_file)
-    finally:
-        torch.set_default_device(prev_device)
+    # Compile via AOTInductor into a .pt2 package
+    aoti_compile_and_package(exported, package_path=model_file)
 
     # Embed metadata into the .pt2 ZIP archive
     model_def_script = data.get("model_def_script") or {}

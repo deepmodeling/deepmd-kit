@@ -154,7 +154,14 @@ def spin_model_files():
     tmpdir = tempfile.mkdtemp()
     for ext in (".pt2", ".pte"):
         path = os.path.join(tmpdir, f"spin_test{ext}")
-        deserialize_to_file(path, copy.deepcopy(data))
+        # AOTInductor (.pt2) internally creates tensors using the PyTorch
+        # default device.  Clear it so compilation stays on CPU.
+        prev = torch.get_default_device()
+        torch.set_default_device(None)
+        try:
+            deserialize_to_file(path, copy.deepcopy(data))
+        finally:
+            torch.set_default_device(prev)
         files[ext] = path
     yield files, ref_pbc, ref_nopbc
     for path in files.values():
@@ -355,7 +362,12 @@ def spin_fparam_model_files():
     tmpdir = tempfile.mkdtemp()
     for ext in (".pt2", ".pte"):
         path = os.path.join(tmpdir, f"spin_fparam_test{ext}")
-        deserialize_to_file(path, copy.deepcopy(data))
+        prev = torch.get_default_device()
+        torch.set_default_device(None)
+        try:
+            deserialize_to_file(path, copy.deepcopy(data))
+        finally:
+            torch.set_default_device(prev)
         files[ext] = path
     yield files
     for path in files.values():
@@ -414,7 +426,12 @@ def spin_aparam_model_files():
     tmpdir = tempfile.mkdtemp()
     for ext in (".pt2", ".pte"):
         path = os.path.join(tmpdir, f"spin_aparam_test{ext}")
-        deserialize_to_file(path, copy.deepcopy(data))
+        prev = torch.get_default_device()
+        torch.set_default_device(None)
+        try:
+            deserialize_to_file(path, copy.deepcopy(data))
+        finally:
+            torch.set_default_device(prev)
         files[ext] = path
     yield files
     for path in files.values():
