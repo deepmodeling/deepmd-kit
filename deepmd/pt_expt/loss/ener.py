@@ -1,10 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from deepmd.dpmodel.loss.ener import EnergyLoss as EnergyLossDP
-from deepmd.pt_expt.common import (
-    torch_module,
+from deepmd.dpmodel.loss.ener import (
+    EnergyLoss,
 )
 
-
-@torch_module
-class EnergyLoss(EnergyLossDP):
-    pass
+__all__ = ["EnergyLoss"]

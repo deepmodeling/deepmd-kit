@@ -791,6 +791,7 @@ def process_systems(
 
     If it is a single directory, search for all the systems in the directory.
     If it is a list, each item in the list is treated as a directory to search.
+    If it is a single LMDB path, return it directly without expansion.
     Check if the systems are valid.
 
     Parameters
@@ -805,6 +806,14 @@ def process_systems(
     result_systems: list of str
         The valid systems
     """
+    from deepmd.dpmodel.utils.lmdb_data import (
+        is_lmdb,
+    )
+
+    # LMDB path: return directly without expansion
+    if isinstance(systems, str) and is_lmdb(systems):
+        return [systems]
+
     # Normalize input to a list of paths to search
     if isinstance(systems, str):
         search_paths = [systems]

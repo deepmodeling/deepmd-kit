@@ -24,6 +24,9 @@ from deepmd.dpmodel.common import (
     get_xp_precision,
     to_numpy_array,
 )
+from deepmd.dpmodel.output_def import (
+    OutputVariableDef,
+)
 from deepmd.dpmodel.utils import (
     AtomExcludeMask,
     FittingNet,
@@ -168,6 +171,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         if self.spin is not None:
             raise NotImplementedError("spin is not supported")
         self.remove_vaccum_contribution = remove_vaccum_contribution
+        self.eval_return_middle_output = False
 
         net_dim_out = self._net_out_dim()
         # init constants
@@ -423,6 +427,39 @@ class GeneralFitting(NativeOP, BaseFitting):
     def get_default_fparam(self) -> list[float] | None:
         """Get the default frame parameters."""
         return self.default_fparam
+
+    def set_return_middle_output(self, enable: bool) -> None:
+        """Enable or disable returning the middle (pre-last-layer) output.
+
+        When enabled, the fitting network's ``call`` method will include
+        a ``"middle_output"`` key in the returned dict, containing the
+        hidden-layer activations before the final linear layer.  Shape:
+        ``[nframes, nloc, neuron[-1]]``.
+
+        Raises
+        ------
+        ValueError
+            If ``enable`` is True but ``neuron`` is empty (no hidden layers).
+        """
+        if enable and len(self.neuron) == 0:
+            raise ValueError(
+                "middle_output requires at least one hidden layer (neuron=[])"
+            )
+        self.eval_return_middle_output = enable
+
+    def _middle_output_def(self) -> list[OutputVariableDef]:
+        """Return extra OutputVariableDefs for middle_output when enabled."""
+        if self.eval_return_middle_output and len(self.neuron) > 0:
+            return [
+                OutputVariableDef(
+                    "middle_output",
+                    [self.neuron[-1]],
+                    reducible=False,
+                    r_differentiable=False,
+                    c_differentiable=False,
+                ),
+            ]
+        return []
 
     def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
@@ -690,6 +727,12 @@ class GeneralFitting(NativeOP, BaseFitting):
                 dtype=get_xp_precision(xp, self.precision),
                 device=array_api_compat.device(descriptor),
             )
+            if self.eval_return_middle_output and len(self.neuron) > 0:
+                middle_outs = xp.zeros(
+                    [nf, nloc, self.neuron[-1]],
+                    dtype=get_xp_precision(xp, self.precision),
+                    device=array_api_compat.device(descriptor),
+                )
             for type_i in range(self.ntypes):
                 mask = xp.tile(
                     xp.reshape((atype == type_i), (nf, nloc, 1)), (1, 1, net_dim_out)
@@ -705,10 +748,20 @@ class GeneralFitting(NativeOP, BaseFitting):
                     mask, atom_property, xp.zeros_like(atom_property)
                 )
                 outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
+                if self.eval_return_middle_output and len(self.neuron) > 0:
+                    mid = self.nets[(type_i,)].call_until_last(xx)
+                    mid_mask = xp.tile(
+                        xp.reshape((atype == type_i), (nf, nloc, 1)),
+                        (1, 1, self.neuron[-1]),
+                    )
+                    mid = xp.where(mid_mask, mid, xp.zeros_like(mid))
+                    middle_outs = middle_outs + mid
         else:
             outs = self.nets[()](xx)
             if xx_zeros is not None:
                 outs -= self.nets[()](xx_zeros)
+            if self.eval_return_middle_output and len(self.neuron) > 0:
+                middle_outs = self.nets[()].call_until_last(xx)
         outs += xp.reshape(
             xp.take(
                 xp.astype(self.bias_atom_e[...], outs.dtype),
@@ -723,4 +776,6 @@ class GeneralFitting(NativeOP, BaseFitting):
         # nf x nloc x nod
         outs = xp.where(exclude_mask[:, :, None], outs, xp.zeros_like(outs))
         results[self.var_name] = outs
+        if self.eval_return_middle_output and len(self.neuron) > 0:
+            results["middle_output"] = middle_outs
         return results

@@ -73,6 +73,23 @@ from .descriptor import (
     extend_descrpt_stat,
 )
 
+if not hasattr(torch.ops.deepmd, "tabulate_fusion_se_t_tebd"):
+
+    def tabulate_fusion_se_t_tebd(
+        argument0: torch.Tensor,
+        argument1: torch.Tensor,
+        argument2: torch.Tensor,
+        argument3: torch.Tensor,
+        argument4: int,
+    ) -> list[torch.Tensor]:
+        raise NotImplementedError(
+            "tabulate_fusion_se_t_tebd is not available since customized PyTorch OP library is not built when freezing the model. "
+            "See documentation for model compression for details."
+        )
+
+    # Note: this hack cannot actually save a model that can be run using LAMMPS.
+    torch.ops.deepmd.tabulate_fusion_se_t_tebd = tabulate_fusion_se_t_tebd
+
 
 @BaseDescriptor.register("se_e3_tebd")
 class DescrptSeTTebd(BaseDescriptor, torch.nn.Module):
@@ -387,13 +404,14 @@ class DescrptSeTTebd(BaseDescriptor, torch.nn.Module):
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeTTebd":
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
+        check_version_compatibility(data.pop("@version"), 2, 1)
         data.pop("@class")
         data.pop("type")
         variables = data.pop("@variables")
         embeddings = data.pop("embeddings")
         type_embedding = data.pop("type_embedding")
         env_mat = data.pop("env_mat")
+        data.pop("compress", None)  # pt uses state_dict for compression
         tebd_input_mode = data["tebd_input_mode"]
         if tebd_input_mode in ["strip"]:
             embeddings_strip = data.pop("embeddings_strip")

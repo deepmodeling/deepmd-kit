@@ -24,14 +24,16 @@ from deepmd.pt_expt.utils.env import (
     PRECISION_DICT,
 )
 
-from ...pt.model.test_env_mat import (
+from ...common.test_mixins import (
     TestCaseSingleFrameWithNlist,
-)
-from ...pt.model.test_mlp import (
     get_tols,
 )
 from ...seed import (
     GLOBAL_SEED,
+)
+from ..export_helpers import (
+    export_save_load_and_compare,
+    make_descriptor_dynamic_shapes,
 )
 
 
@@ -214,6 +216,18 @@ class TestDescrptHybrid(TestCaseSingleFrameWithNlist):
         np.testing.assert_allclose(
             grad_eager.detach().cpu().numpy(),
             grad_traced.detach().cpu().numpy(),
+            rtol=rtol,
+            atol=atol,
+        )
+
+        # --- symbolic trace + export + .pte round-trip ---
+        dynamic_shapes = make_descriptor_dynamic_shapes(has_mapping=False)
+        inputs = (coord_ext, atype_ext, nlist)
+        export_save_load_and_compare(
+            fn,
+            inputs,
+            (rd_eager, grad_eager),
+            dynamic_shapes,
             rtol=rtol,
             atol=atol,
         )

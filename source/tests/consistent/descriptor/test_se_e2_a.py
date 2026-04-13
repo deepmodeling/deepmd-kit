@@ -19,7 +19,7 @@ from ..common import (
     INSTALLED_PT_EXPT,
     INSTALLED_TF,
     CommonTest,
-    parameterized,
+    parameterized_cases,
 )
 from .common import (
     DescriptorAPITest,
@@ -71,13 +71,55 @@ else:
     DescrptSeAArrayAPIStrict = None
 
 
-@parameterized(
-    (True, False),  # resnet_dt
-    (True, False),  # type_one_side
-    ([], [[0, 1]]),  # excluded_types
-    ("float32", "float64"),  # precision
-    (0.0, 1e-8, 1e-2),  # env_protection
+SE_A_CASE_FIELDS = (
+    "resnet_dt",
+    "type_one_side",
+    "excluded_types",
+    "precision",
+    "env_protection",
 )
+
+
+SE_A_BASELINE_CASE = {
+    "resnet_dt": True,
+    "type_one_side": True,
+    "excluded_types": [],
+    "precision": "float64",
+    "env_protection": 0.0,
+}
+
+
+def se_a_case(**overrides: Any) -> tuple:
+    case = SE_A_BASELINE_CASE | overrides
+    return tuple(case[field] for field in SE_A_CASE_FIELDS)
+
+
+SE_A_CURATED_CASES = (
+    # Baseline coverage.
+    se_a_case(),
+    # Core descriptor toggles.
+    se_a_case(resnet_dt=False),
+    se_a_case(type_one_side=False),
+    se_a_case(excluded_types=[[0, 1]]),
+    # Environment-protection edge cases.
+    se_a_case(env_protection=1e-8),
+    se_a_case(env_protection=1e-2),
+    # Lower-precision smoke coverage.
+    se_a_case(precision="float32"),
+)
+
+SE_A_DESCRIPTOR_API_CASES = (
+    # Descriptor API coverage keeps float64-only behavior from the original test.
+    se_a_case(),
+    se_a_case(resnet_dt=False),
+    se_a_case(type_one_side=False),
+    se_a_case(excluded_types=[[0, 1]]),
+    se_a_case(env_protection=1e-8),
+    se_a_case(env_protection=1e-2),
+)
+
+
+@parameterized_cases(*SE_A_CURATED_CASES)
 class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
     @property
     def data(self) -> dict:
@@ -337,13 +379,17 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
             raise ValueError(f"Unknown precision: {precision}")
 
 
-@parameterized(
-    (True,),  # resnet_dt
-    (True,),  # type_one_side
-    ([],),  # excluded_types
-    ("float64",),  # precision
-    (0.0, 1e-8, 1e-2),  # env_protection
+SE_A_STAT_CASES = (
+    # Statistics path exercises the float64 baseline, a type_one_side=False
+    # variant, and env-protection variants.
+    se_a_case(),
+    se_a_case(type_one_side=False),
+    se_a_case(env_protection=1e-8),
+    se_a_case(env_protection=1e-2),
 )
+
+
+@parameterized_cases(*SE_A_STAT_CASES)
 class TestSeAStat(CommonTest, DescriptorTest, unittest.TestCase):
     @property
     def data(self) -> dict:
@@ -669,13 +715,7 @@ class TestSeAStat(CommonTest, DescriptorTest, unittest.TestCase):
             raise ValueError(f"Unknown precision: {precision}")
 
 
-@parameterized(
-    (True, False),  # resnet_dt
-    (True, False),  # type_one_side
-    ([], [[0, 1]]),  # excluded_types
-    ("float64",),  # precision
-    (0.0, 1e-8, 1e-2),  # env_protection
-)
+@parameterized_cases(*SE_A_DESCRIPTOR_API_CASES)
 class TestSeADescriptorAPI(DescriptorAPITest, unittest.TestCase):
     """Test consistency of BaseDescriptor API methods across backends."""
 

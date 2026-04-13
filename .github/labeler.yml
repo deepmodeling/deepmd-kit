@@ -30,9 +30,6 @@ C:
 LAMMPS:
   - changed-files:
       - any-glob-to-any-file: source/lmp/**/*
-Gromacs:
-  - changed-files:
-      - any-glob-to-any-file: source/gmx/**/*
 i-PI:
   - changed-files:
       - any-glob-to-any-file: source/ipi/**/*

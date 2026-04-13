@@ -32,6 +32,7 @@ from deepmd.pd.utils.update_sel import (
     UpdateSel,
 )
 from deepmd.pd.utils.utils import (
+    ActivationFn,
     to_numpy_array,
 )
 from deepmd.utils.data_system import (
@@ -120,6 +121,7 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         use_tebd_bias: bool = False,
         use_loc_mapping: bool = True,
         type_map: list[str] | None = None,
+        add_chg_spin_ebd: bool = False,
     ) -> None:
         super().__init__()
 
@@ -174,6 +176,7 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         )
 
         self.use_econf_tebd = use_econf_tebd
+        self.add_chg_spin_ebd = add_chg_spin_ebd
         self.use_loc_mapping = use_loc_mapping
         self.use_tebd_bias = use_tebd_bias
         self.type_map = type_map
@@ -196,6 +199,34 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         self.concat_output_tebd = concat_output_tebd
         self.precision = precision
         self.prec = PRECISION_DICT[self.precision]
+
+        if self.add_chg_spin_ebd:
+            self.act = ActivationFn(activation_function)
+            # -100 ~ 100 is a conservative bound
+            self.chg_embedding = TypeEmbedNet(
+                200,
+                self.tebd_dim,
+                precision=precision,
+                seed=child_seed(seed, 3),
+            )
+            # 100 is a conservative upper bound
+            self.spin_embedding = TypeEmbedNet(
+                100,
+                self.tebd_dim,
+                precision=precision,
+                seed=child_seed(seed, 4),
+            )
+            self.mix_cs_mlp = MLPLayer(
+                2 * self.tebd_dim,
+                self.tebd_dim,
+                precision=precision,
+                seed=child_seed(seed, 5),
+            )
+        else:
+            self.chg_embedding = None
+            self.spin_embedding = None
+            self.mix_cs_mlp = None
+
         self.exclude_types = exclude_types
         self.env_protection = env_protection
         self.trainable = trainable
@@ -433,9 +464,14 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
             "use_econf_tebd": self.use_econf_tebd,
             "use_tebd_bias": self.use_tebd_bias,
             "use_loc_mapping": self.use_loc_mapping,
+            "add_chg_spin_ebd": self.add_chg_spin_ebd,
             "type_map": self.type_map,
             "type_embedding": self.type_embedding.embedding.serialize(),
         }
+        if self.add_chg_spin_ebd:
+            data["chg_embedding"] = self.chg_embedding.embedding.serialize()
+            data["spin_embedding"] = self.spin_embedding.embedding.serialize()
+            data["mix_cs_mlp"] = self.mix_cs_mlp.serialize()
         repflow_variable = {
             "edge_embd": repflows.edge_embd.serialize(),
             "angle_embd": repflows.angle_embd.serialize(),
@@ -462,11 +498,23 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         data.pop("type")
         repflow_variable = data.pop("repflow_variable").copy()
         type_embedding = data.pop("type_embedding")
+        chg_embedding = data.pop("chg_embedding", None)
+        spin_embedding = data.pop("spin_embedding", None)
+        mix_cs_mlp = data.pop("mix_cs_mlp", None)
         data["repflow"] = RepFlowArgs(**data.pop("repflow_args"))
         obj = cls(**data)
         obj.type_embedding.embedding = TypeEmbedNetConsistent.deserialize(
             type_embedding
         )
+
+        if obj.add_chg_spin_ebd and chg_embedding is not None:
+            obj.chg_embedding.embedding = TypeEmbedNetConsistent.deserialize(
+                chg_embedding
+            )
+            obj.spin_embedding.embedding = TypeEmbedNetConsistent.deserialize(
+                spin_embedding
+            )
+            obj.mix_cs_mlp = MLPLayer.deserialize(mix_cs_mlp)
 
         def t_cvt(xx: Any) -> paddle.Tensor:
             return paddle.to_tensor(xx, dtype=obj.repflows.prec, place=env.DEVICE)
@@ -493,7 +541,14 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         nlist: paddle.Tensor,
         mapping: paddle.Tensor | None = None,
         comm_dict: list[paddle.Tensor] | None = None,
-    ) -> paddle.Tensor:
+        fparam: paddle.Tensor | None = None,
+    ) -> tuple[
+        paddle.Tensor,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+        paddle.Tensor | None,
+    ]:
         """Compute the descriptor.
 
         Parameters
@@ -536,6 +591,20 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
             node_ebd_ext = self.type_embedding(extended_atype[:, :nloc])
         else:
             node_ebd_ext = self.type_embedding(extended_atype)
+
+        if self.add_chg_spin_ebd:
+            assert fparam is not None
+            assert self.chg_embedding is not None
+            assert self.spin_embedding is not None
+            charge = fparam[:, 0].to(dtype=paddle.int64) + 100
+            spin = fparam[:, 1].to(dtype=paddle.int64)
+            chg_ebd = self.chg_embedding(charge)
+            spin_ebd = self.spin_embedding(spin)
+            sys_cs_embd = self.act(
+                self.mix_cs_mlp(paddle.concat([chg_ebd, spin_ebd], axis=-1))
+            )
+            node_ebd_ext = node_ebd_ext + sys_cs_embd.unsqueeze(1)
+
         node_ebd_inp = node_ebd_ext[:, :nloc, :]
         # repflows
         node_ebd, edge_ebd, h2, rot_mat, sw = self.repflows(
@@ -550,10 +619,14 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
             node_ebd = paddle.concat([node_ebd, node_ebd_inp], axis=-1)
         return (
             node_ebd.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
-            rot_mat.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
-            edge_ebd.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
-            h2.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
-            sw.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION),
+            rot_mat.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION)
+            if rot_mat is not None
+            else None,
+            edge_ebd.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION)
+            if edge_ebd is not None
+            else None,
+            h2.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION) if h2 is not None else None,
+            sw.to(dtype=env.GLOBAL_PD_FLOAT_PRECISION) if sw is not None else None,
         )
 
     @classmethod

@@ -3,14 +3,22 @@ from collections.abc import (
     Callable,
 )
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
+
+if TYPE_CHECKING:
+    from deepmd.dpmodel.atomic_model.dp_atomic_model import (
+        DPAtomicModel,
+    )
 
 import array_api_compat
 import numpy as np
 
 from deepmd.dpmodel.array_api import (
     Array,
+    xp_take_along_axis,
+    xp_take_first_n,
 )
 from deepmd.dpmodel.atomic_model.base_atomic_model import (
     BaseAtomicModel,
@@ -589,7 +597,6 @@ def make_model(
             xp = array_api_compat.array_namespace(extended_coord, nlist)
             n_nf, n_nloc, n_nnei = nlist.shape
             extended_coord = extended_coord.reshape([n_nf, -1, 3])
-            nall = extended_coord.shape[1]
             rcut = self.get_rcut()
 
             if n_nnei < nnei:
@@ -612,14 +619,14 @@ def make_model(
                 # make a copy before revise
                 m_real_nei = nlist >= 0
                 ret = xp.where(m_real_nei, nlist, 0)
-                coord0 = extended_coord[:, :n_nloc, :]
+                coord0 = xp_take_first_n(extended_coord, 1, n_nloc)
                 index = xp.tile(ret.reshape(n_nf, n_nloc * n_nnei, 1), (1, 1, 3))
-                coord1 = xp.take_along_axis(extended_coord, index, axis=1)
+                coord1 = xp_take_along_axis(extended_coord, index, axis=1)
                 coord1 = coord1.reshape(n_nf, n_nloc, n_nnei, 3)
                 rr = xp.linalg.norm(coord0[:, :, None, :] - coord1, axis=-1)
                 rr = xp.where(m_real_nei, rr, float("inf"))
                 rr, ret_mapping = xp.sort(rr, axis=-1), xp.argsort(rr, axis=-1)
-                ret = xp.take_along_axis(ret, ret_mapping, axis=2)
+                ret = xp_take_along_axis(ret, ret_mapping, axis=2)
                 ret = xp.where(rr > rcut, -1, ret)
                 ret = ret[..., :nnei]
             # not extra_nlist_sort and n_nnei <= nnei:
@@ -702,6 +709,21 @@ def make_model(
             If False, the shape is (nframes, nloc, ndim).
             """
             return self.atomic_model.is_aparam_nall()
+
+        def get_dp_atomic_model(self) -> "DPAtomicModel | None":
+            """Get the underlying DPAtomicModel with descriptor and fitting_net.
+
+            Returns the ``atomic_model`` if it is a ``DPAtomicModel`` instance
+            (i.e. has both ``descriptor`` and ``fitting_net``).  Returns ``None``
+            for composite atomic models such as ``LinearEnergyAtomicModel``.
+            """
+            from deepmd.dpmodel.atomic_model.dp_atomic_model import (
+                DPAtomicModel,
+            )
+
+            if isinstance(self.atomic_model, DPAtomicModel):
+                return self.atomic_model
+            return None
 
         def get_rcut(self) -> float:
             """Get the cut-off radius."""

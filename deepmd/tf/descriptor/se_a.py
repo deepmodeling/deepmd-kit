@@ -1481,7 +1481,7 @@ class DescrptSeA(DescrptSe):
         if cls is not DescrptSeA:
             raise NotImplementedError(f"Not implemented in class {cls.__name__}")
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 2, 1)
+        check_version_compatibility(data.pop("@version", 1), 3, 1)
         data.pop("@class", None)
         data.pop("type", None)
         embedding_net_variables = cls.deserialize_network(
@@ -1489,6 +1489,7 @@ class DescrptSeA(DescrptSe):
         )
         data.pop("env_mat")
         variables = data.pop("@variables")
+        data.pop("compress", None)  # tf uses frozen graph for compression
         descriptor = cls(**data)
         descriptor.embedding_net_variables = embedding_net_variables
         descriptor.davg = variables["davg"].reshape(

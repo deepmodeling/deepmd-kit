@@ -9,6 +9,7 @@ from deepmd.dpmodel.common import (
 from deepmd.dpmodel.utils.learning_rate import (
     LearningRateCosine,
     LearningRateExp,
+    LearningRateWSD,
 )
 
 
@@ -74,6 +75,108 @@ class TestLearningRateCosineBasic(unittest.TestCase):
         np.testing.assert_allclose(lr.stop_lr, 1e-5, rtol=1e-10)
 
 
+class TestLearningRateWSDBasic(unittest.TestCase):
+    """Test warmup-stable-decay learning rate functionality."""
+
+    def test_basic_wsd_inverse_linear(self) -> None:
+        """Test plateau and inverse-linear decay without warmup."""
+        lr = LearningRateWSD(
+            start_lr=1e-3,
+            stop_lr=1e-5,
+            num_steps=10000,
+            decay_phase_ratio=0.1,
+        )
+        expected_mid = 1.0 / (0.5 / 1e-5 + 0.5 / 1e-3)
+
+        self.assertEqual(lr.stable_steps, 9000)
+        np.testing.assert_allclose(lr.value(0), 1e-3, rtol=1e-10)
+        np.testing.assert_allclose(lr.value(9000), 1e-3, rtol=1e-10)
+        np.testing.assert_allclose(lr.value(9500), expected_mid, rtol=1e-10)
+        np.testing.assert_allclose(lr.value(10000), 1e-5, rtol=1e-10)
+
+    def test_basic_wsd_cosine(self) -> None:
+        """Test plateau and cosine decay without warmup."""
+        lr = LearningRateWSD(
+            start_lr=1e-3,
+            stop_lr=1e-5,
+            num_steps=10000,
+            decay_phase_ratio=0.1,
+            decay_type="cosine",
+        )
+        expected_mid = 1e-5 + (1e-3 - 1e-5) * 0.5
+
+        self.assertEqual(lr.stable_steps, 9000)
+        np.testing.assert_allclose(lr.value(0), 1e-3, rtol=1e-10)
+        np.testing.assert_allclose(lr.value(9000), 1e-3, rtol=1e-10)
+        np.testing.assert_allclose(lr.value(9500), expected_mid, rtol=1e-10)
+        np.testing.assert_allclose(lr.value(10000), 1e-5, rtol=1e-10)
+
+    def test_basic_wsd_linear(self) -> None:
+        """Test plateau and linear decay without warmup."""
+        lr = LearningRateWSD(
+            start_lr=1e-3,
+            stop_lr=1e-5,
+            num_steps=10000,
+            decay_phase_ratio=0.1,
+            decay_type="linear",
+        )
+        expected_mid = 1e-3 + (1e-5 - 1e-3) * 0.5
+
+        self.assertEqual(lr.stable_steps, 9000)
+        np.testing.assert_allclose(lr.value(0), 1e-3, rtol=1e-10)
+        np.testing.assert_allclose(lr.value(9000), 1e-3, rtol=1e-10)
+        np.testing.assert_allclose(lr.value(9500), expected_mid, rtol=1e-10)
+        np.testing.assert_allclose(lr.value(10000), 1e-5, rtol=1e-10)
+
+    def test_stop_lr_ratio(self) -> None:
+        """Test stop_lr_ratio parameter for WSD."""
+        lr = LearningRateWSD(
+            start_lr=1e-3,
+            stop_lr_ratio=0.01,
+            num_steps=10000,
+            decay_phase_ratio=0.1,
+        )
+        np.testing.assert_allclose(lr.stop_lr, 1e-5, rtol=1e-10)
+        np.testing.assert_allclose(lr.value(10000), 1e-5, rtol=1e-10)
+
+    def test_invalid_decay_phase_ratio(self) -> None:
+        """Test invalid WSD decay_phase_ratio values."""
+        with self.assertRaises(ValueError):
+            LearningRateWSD(
+                start_lr=1e-3,
+                stop_lr=1e-5,
+                num_steps=10000,
+                decay_phase_ratio=0.0,
+            )
+        with self.assertRaises(ValueError):
+            LearningRateWSD(
+                start_lr=1e-3,
+                stop_lr=1e-5,
+                num_steps=10000,
+                decay_phase_ratio=1.1,
+            )
+        with self.assertRaises(ValueError):
+            LearningRateWSD(
+                start_lr=1e-3,
+                stop_lr=1e-5,
+                num_steps=10000,
+                decay_type="bad_mode",
+            )
+
+    def test_decay_phase_exceeds_post_warmup_steps(self) -> None:
+        """Test WSD clamps decay_phase_steps to post-warmup steps when ratio is too large."""
+        lr = LearningRateWSD(
+            start_lr=1e-3,
+            stop_lr=1e-5,
+            num_steps=10,
+            warmup_steps=9,
+            decay_phase_ratio=0.2,
+        )
+        # decay_num_steps = 1, so decay_phase_steps should be clamped to 1
+        self.assertEqual(lr.decay_phase_steps, 1)
+        self.assertEqual(lr.stable_steps, 0)
+
+
 class TestLearningRateWarmup(unittest.TestCase):
     """Test learning rate warmup functionality."""
 
@@ -107,6 +210,41 @@ class TestLearningRateWarmup(unittest.TestCase):
         self.assertEqual(lr.decay_num_steps, 9000)
         np.testing.assert_allclose(lr.value(0), 0.0, rtol=1e-10)
         np.testing.assert_allclose(lr.value(1000), 1e-3, rtol=1e-10)
+        np.testing.assert_allclose(lr.value(10000), 1e-5, rtol=1e-10)
+
+    def test_warmup_steps_wsd(self) -> None:
+        """Test warmup with default inverse-linear WSD schedule."""
+        lr = LearningRateWSD(
+            start_lr=1e-3,
+            stop_lr=1e-5,
+            num_steps=10000,
+            warmup_steps=1000,
+            decay_phase_ratio=0.1,
+        )
+        self.assertEqual(lr.decay_num_steps, 9000)
+        self.assertEqual(lr.decay_phase_steps, 1000)
+        self.assertEqual(lr.stable_steps, 8000)
+        np.testing.assert_allclose(lr.value(0), 0.0, rtol=1e-10)
+        np.testing.assert_allclose(lr.value(500), 0.5e-3, rtol=1e-10)
+        np.testing.assert_allclose(lr.value(1000), 1e-3, rtol=1e-10)
+        np.testing.assert_allclose(lr.value(9000), 1e-3, rtol=1e-10)
+        np.testing.assert_allclose(lr.value(10000), 1e-5, rtol=1e-10)
+
+    def test_warmup_steps_wsd_linear(self) -> None:
+        """Test warmup with linear WSD decay."""
+        lr = LearningRateWSD(
+            start_lr=1e-3,
+            stop_lr=1e-5,
+            num_steps=10000,
+            warmup_steps=1000,
+            decay_phase_ratio=0.1,
+            decay_type="linear",
+        )
+        expected_mid = 1e-3 + (1e-5 - 1e-3) * 0.5
+
+        np.testing.assert_allclose(lr.value(0), 0.0, rtol=1e-10)
+        np.testing.assert_allclose(lr.value(1000), 1e-3, rtol=1e-10)
+        np.testing.assert_allclose(lr.value(9500), expected_mid, rtol=1e-10)
         np.testing.assert_allclose(lr.value(10000), 1e-5, rtol=1e-10)
 
     def test_warmup_ratio(self) -> None:
@@ -181,6 +319,43 @@ class TestLearningRateArrayInput(unittest.TestCase):
         np.testing.assert_allclose(lrs[1], 1e-3, rtol=1e-10)
         np.testing.assert_allclose(lrs[3], 1e-5, rtol=1e-10)
 
+    def test_array_input_wsd(self) -> None:
+        """Test inverse-linear warmup-stable-decay with array input."""
+        lr = LearningRateWSD(
+            start_lr=1e-3,
+            stop_lr=1e-5,
+            num_steps=10000,
+            decay_phase_ratio=0.1,
+        )
+        steps = np.array([0, 9000, 9500, 10000])
+        lrs = lr.value(steps)
+        expected_mid = 1.0 / (0.5 / 1e-5 + 0.5 / 1e-3)
+
+        self.assertEqual(lrs.shape, (4,))
+        np.testing.assert_allclose(lrs[0], 1e-3, rtol=1e-10)
+        np.testing.assert_allclose(lrs[1], 1e-3, rtol=1e-10)
+        np.testing.assert_allclose(lrs[2], expected_mid, rtol=1e-10)
+        np.testing.assert_allclose(lrs[3], 1e-5, rtol=1e-10)
+
+    def test_array_input_wsd_cosine(self) -> None:
+        """Test cosine warmup-stable-decay with array input."""
+        lr = LearningRateWSD(
+            start_lr=1e-3,
+            stop_lr=1e-5,
+            num_steps=10000,
+            decay_phase_ratio=0.1,
+            decay_type="cosine",
+        )
+        steps = np.array([0, 9000, 9500, 10000])
+        lrs = lr.value(steps)
+        expected_mid = 1e-5 + (1e-3 - 1e-5) * 0.5
+
+        self.assertEqual(lrs.shape, (4,))
+        np.testing.assert_allclose(lrs[0], 1e-3, rtol=1e-10)
+        np.testing.assert_allclose(lrs[1], 1e-3, rtol=1e-10)
+        np.testing.assert_allclose(lrs[2], expected_mid, rtol=1e-10)
+        np.testing.assert_allclose(lrs[3], 1e-5, rtol=1e-10)
+
 
 class TestLearningRateBeyondStopSteps(unittest.TestCase):
     """Test learning rate behavior beyond num_steps."""
@@ -201,5 +376,15 @@ class TestLearningRateBeyondStopSteps(unittest.TestCase):
             start_lr=1e-3,
             stop_lr=1e-5,
             num_steps=10000,
+        )
+        np.testing.assert_allclose(lr.value(20000), 1e-5, rtol=1e-10)
+
+    def test_wsd_beyond_num_steps(self) -> None:
+        """Test WSD returns stop_lr beyond decay phase."""
+        lr = LearningRateWSD(
+            start_lr=1e-3,
+            stop_lr=1e-5,
+            num_steps=10000,
+            decay_phase_ratio=0.1,
         )
         np.testing.assert_allclose(lr.value(20000), 1e-5, rtol=1e-10)

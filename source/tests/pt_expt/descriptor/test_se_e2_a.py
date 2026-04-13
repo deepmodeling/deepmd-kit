@@ -21,14 +21,16 @@ from deepmd.pt_expt.utils.exclude_mask import (
     PairExcludeMask,
 )
 
-from ...pt.model.test_env_mat import (
+from ...common.test_mixins import (
     TestCaseSingleFrameWithNlist,
-)
-from ...pt.model.test_mlp import (
     get_tols,
 )
 from ...seed import (
     GLOBAL_SEED,
+)
+from ..export_helpers import (
+    export_save_load_and_compare,
+    make_descriptor_dynamic_shapes,
 )
 
 
@@ -132,6 +134,36 @@ class TestDescrptSeA(TestCaseSingleFrameWithNlist):
         )
         torch.export.export(dd0, inputs)
 
+    @pytest.mark.parametrize("tos", [True, False])  # type_one_side
+    @pytest.mark.parametrize("prec", ["float64", "float32"])  # precision
+    def test_compressed_forward(self, tos, prec) -> None:
+        from deepmd.pt.cxx_op import (
+            ENABLE_CUSTOMIZED_OP,
+        )
+
+        if not ENABLE_CUSTOMIZED_OP:
+            pytest.skip("Custom OP library not built")
+        atol = 1e-5 if prec == "float32" else 1e-10
+        dtype = PRECISION_DICT[prec]
+        # Use default davg/dstd (zeros/ones) so env matrix values
+        # stay within the tabulation range.
+        dd0 = DescrptSeA(
+            self.rcut,
+            self.rcut_smth,
+            self.sel,
+            precision=prec,
+            type_one_side=tos,
+            seed=GLOBAL_SEED,
+        ).to(self.device)
+        coord_ext = torch.tensor(self.coord_ext, dtype=dtype, device=self.device)
+        atype_ext = torch.tensor(self.atype_ext, dtype=int, device=self.device)
+        nlist = torch.tensor(self.nlist, dtype=int, device=self.device)
+        result_ref, _, _, _, _ = dd0(coord_ext, atype_ext, nlist)
+        dd0.enable_compression(0.5)
+        result_cmp, _, _, _, _ = dd0(coord_ext, atype_ext, nlist)
+        assert result_ref.shape == result_cmp.shape
+        torch.testing.assert_close(result_ref, result_cmp, atol=atol, rtol=atol)
+
     @pytest.mark.parametrize("prec", ["float64"])  # precision
     def test_make_fx(self, prec) -> None:
         rng = np.random.default_rng(GLOBAL_SEED)
@@ -174,6 +206,18 @@ class TestDescrptSeA(TestCaseSingleFrameWithNlist):
         np.testing.assert_allclose(
             grad_eager.detach().cpu().numpy(),
             grad_traced.detach().cpu().numpy(),
+            rtol=rtol,
+            atol=atol,
+        )
+
+        # --- symbolic trace + export + .pte round-trip ---
+        dynamic_shapes = make_descriptor_dynamic_shapes(has_mapping=False)
+        inputs = (coord_ext, atype_ext, nlist)
+        export_save_load_and_compare(
+            fn,
+            inputs,
+            (rd_eager, grad_eager),
+            dynamic_shapes,
             rtol=rtol,
             atol=atol,
         )
