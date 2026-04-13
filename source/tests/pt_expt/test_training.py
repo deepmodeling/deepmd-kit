@@ -12,6 +12,9 @@ import os
 import shutil
 import tempfile
 import unittest
+from unittest.mock import (
+    patch,
+)
 
 import torch
 
@@ -607,6 +610,118 @@ class TestTrainingDPA3(unittest.TestCase):
                 os.chdir(old_cwd)
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+def _create_small_system(
+    path: str, natoms_o: int = 2, natoms_h: int = 4, nframes: int = 10
+) -> None:
+    """Create a minimal deepmd data system with few atoms."""
+    import numpy as np
+
+    natoms = natoms_o + natoms_h
+    set_dir = os.path.join(path, "set.000")
+    os.makedirs(set_dir, exist_ok=True)
+
+    with open(os.path.join(path, "type.raw"), "w") as f:
+        for _ in range(natoms_o):
+            f.write("0\n")
+        for _ in range(natoms_h):
+            f.write("1\n")
+    with open(os.path.join(path, "type_map.raw"), "w") as f:
+        f.write("O\nH\n")
+
+    rng = np.random.default_rng(42)
+    box_len = 5.0
+    box = np.zeros((nframes, 9), dtype=np.float32)
+    box[:, 0] = box_len
+    box[:, 4] = box_len
+    box[:, 8] = box_len
+    coord = rng.uniform(0, box_len, size=(nframes, natoms * 3)).astype(np.float32)
+    energy = rng.normal(-100, 10, size=(nframes,)).astype(np.float32)
+    force = rng.normal(0, 1, size=(nframes, natoms * 3)).astype(np.float32)
+    np.save(os.path.join(set_dir, "coord.npy"), coord)
+    np.save(os.path.join(set_dir, "force.npy"), force)
+    np.save(os.path.join(set_dir, "energy.npy"), energy)
+    np.save(os.path.join(set_dir, "box.npy"), box)
+
+
+class TestCompiledVaryingNatoms(unittest.TestCase):
+    """Test compiled training with systems of different atom counts.
+
+    Uses the 192-atom ``data_0`` alongside a synthetic 6-atom system so that
+    different ``nloc`` / ``nall`` appear across steps, exercising the
+    dynamic-shape compile path.
+
+    ``dp_random.choice`` is mocked to alternate [0, 1, 0, 1, ...] so that
+    both systems are guaranteed to be sampled.
+
+    ``batch_size: "auto"`` assigns different batch sizes per system (based
+    on atom count), so both ``nframes`` and ``natoms`` vary across steps.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        data_dir = os.path.join(EXAMPLE_DIR, "data")
+        if not os.path.isdir(data_dir):
+            raise unittest.SkipTest(f"Example data not found: {data_dir}")
+        cls.data_dir = data_dir
+        cls.small_data_dir = tempfile.mkdtemp(prefix="pt_expt_small_data_")
+        _create_small_system(cls.small_data_dir)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        shutil.rmtree(cls.small_data_dir, ignore_errors=True)
+
+    def _make_varying_config(self, enable_compile: bool, numb_steps: int = 10) -> dict:
+        """Config with two systems of different natoms and auto batch size."""
+        config = _make_config(self.data_dir, numb_steps=numb_steps)
+        config["training"]["training_data"]["systems"].append(self.small_data_dir)
+        config["training"]["training_data"]["batch_size"] = "auto"
+        if enable_compile:
+            config["training"]["enable_compile"] = True
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+        return config
+
+    def _run_steps(self, config: dict, nsteps: int = 6) -> None:
+        """Run *nsteps* training steps and assert finite loss at each."""
+        # Alternate between system 0 (192 atoms) and system 1 (6 atoms)
+        sys_sequence = [i % 2 for i in range(nsteps)]
+
+        tmpdir = tempfile.mkdtemp(prefix="pt_expt_varying_")
+        try:
+            old_cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                trainer = get_trainer(config)
+                trainer.wrapper.train()
+                with patch(
+                    "deepmd.utils.data_system.dp_random.choice",
+                    side_effect=sys_sequence,
+                ):
+                    for _ in range(nsteps):
+                        trainer.optimizer.zero_grad(set_to_none=True)
+                        inp, lab = trainer.get_data(is_train=True)
+                        lr = trainer.scheduler.get_last_lr()[0]
+                        _, loss, _ = trainer.wrapper(**inp, cur_lr=lr, label=lab)
+                        loss.backward()
+                        trainer._optimizer_step()
+                        self.assertFalse(torch.isnan(loss), "loss is NaN")
+                        self.assertFalse(torch.isinf(loss), "loss is Inf")
+            finally:
+                os.chdir(old_cwd)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_compiled_varying_natoms(self) -> None:
+        """Compiled training with 192-atom and 6-atom systems."""
+        config = self._make_varying_config(enable_compile=True)
+        self._run_steps(config)
+
+    def test_uncompiled_varying_natoms(self) -> None:
+        """Uncompiled training with varying natoms as baseline."""
+        config = self._make_varying_config(enable_compile=False)
+        self._run_steps(config)
 
 
 if __name__ == "__main__":

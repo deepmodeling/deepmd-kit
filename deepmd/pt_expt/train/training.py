@@ -207,6 +207,21 @@ def _trace_and_compile(
     # Symbolic tracing captures shape-polymorphic ops, pairing with
     # dynamic=True in torch.compile to handle varying nall without
     # manual padding or recompilation.
+    #
+    # When nframes==1 the symbolic tracer specialises the batch dimension
+    # to the concrete value 1, preventing later batches with nframes>1.
+    # Duplicating the sample to nframes>=2 forces the tracer to create a
+    # symbolic int for the batch dimension.
+    if ext_coord.shape[0] == 1:
+        ext_coord = torch.cat([ext_coord, ext_coord], dim=0)
+        ext_atype = torch.cat([ext_atype, ext_atype], dim=0)
+        nlist = torch.cat([nlist, nlist], dim=0)
+        if mapping is not None:
+            mapping = torch.cat([mapping, mapping], dim=0)
+        if fparam is not None:
+            fparam = torch.cat([fparam, fparam], dim=0)
+        if aparam is not None:
+            aparam = torch.cat([aparam, aparam], dim=0)
     traced_lower = make_fx(
         fn,
         tracing_mode="symbolic",
