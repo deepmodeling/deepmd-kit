@@ -166,6 +166,16 @@ class TestTraining(unittest.TestCase):
         config = normalize(config)
         self._run_training(config)
 
+    def test_training_loop_compiled_silu(self) -> None:
+        """Run compiled training with silu activation."""
+        config = _make_config(self.data_dir, numb_steps=5)
+        config["model"]["descriptor"]["activation_function"] = "silu"
+        config["model"]["fitting_net"]["activation_function"] = "silu"
+        config["training"]["enable_compile"] = True
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+        self._run_training(config)
+
 
 class TestCompiledDynamicShapes(unittest.TestCase):
     """Test that compiled model handles varying nall via dynamic shapes."""

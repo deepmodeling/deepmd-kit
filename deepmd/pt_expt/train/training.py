@@ -233,8 +233,10 @@ def _trace_and_compile(
 
     # Override backend and dynamic — the inductor backend with
     # dynamic=True handles varying shapes automatically.
-    compile_opts.pop("dynamic", None)
-    compile_opts.pop("backend", None)
+    # Work on a copy to avoid mutating the caller-owned dict.
+    compile_opts = {
+        k: v for k, v in compile_opts.items() if k not in ("dynamic", "backend")
+    }
     if "options" not in compile_opts:
         compile_opts["options"] = {}
     opts = compile_opts["options"]
