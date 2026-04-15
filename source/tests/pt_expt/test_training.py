@@ -193,7 +193,7 @@ class TestCompiledRecompile(unittest.TestCase):
                 trainer = get_trainer(config)
 
                 # The wrapper.model should be a _CompiledModel
-                compiled_model = trainer.wrapper.model
+                compiled_model = trainer.wrapper.model["Default"]
                 self.assertIsInstance(compiled_model, _CompiledModel)
 
                 original_max_nall = compiled_model._max_nall
@@ -273,7 +273,7 @@ class TestCompiledConsistency(unittest.TestCase):
                 config_compiled = update_deepmd_input(config_compiled, warning=False)
                 config_compiled = normalize(config_compiled)
                 trainer_compiled = get_trainer(config_compiled)
-                compiled_model = trainer_compiled.wrapper.model
+                compiled_model = trainer_compiled.wrapper.model["Default"]
                 self.assertIsInstance(compiled_model, _CompiledModel)
 
                 # Copy uncompiled weights to compiled model so they match
@@ -325,6 +325,84 @@ class TestCompiledConsistency(unittest.TestCase):
                         rtol=1e-10,
                         msg="virial mismatch between compiled and uncompiled",
                     )
+            finally:
+                os.chdir(old_cwd)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_compiled_gradients_match_uncompiled(self) -> None:
+        """Parameter gradients from compiled model must match uncompiled.
+
+        Verifies second-order derivatives are correct: the loss includes
+        force terms, and force is computed via autograd.grad(create_graph=True),
+        so loss.backward() requires second-order differentiation through the
+        make_fx-decomposed backward ops.
+        """
+        from deepmd.pt_expt.train.training import (
+            _CompiledModel,
+        )
+
+        config_uc = _make_config(self.data_dir, numb_steps=1)
+        config_uc = update_deepmd_input(config_uc, warning=False)
+        config_uc = normalize(config_uc)
+
+        config_c = _make_config(self.data_dir, numb_steps=1)
+        config_c["training"]["enable_compile"] = True
+        config_c = update_deepmd_input(config_c, warning=False)
+        config_c = normalize(config_c)
+
+        tmpdir = tempfile.mkdtemp(prefix="pt_expt_grad_consistency_")
+        try:
+            old_cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                trainer_uc = get_trainer(config_uc)
+                trainer_c = get_trainer(config_c)
+                compiled_model = trainer_c.wrapper.model["Default"]
+                self.assertIsInstance(compiled_model, _CompiledModel)
+
+                # Match weights
+                compiled_model.original_model.load_state_dict(
+                    trainer_uc.model.state_dict()
+                )
+
+                # Forward + backward through wrapper (includes loss)
+                trainer_uc.optimizer.zero_grad(set_to_none=True)
+                trainer_c.optimizer.zero_grad(set_to_none=True)
+
+                input_dict, label_dict = trainer_uc.get_data(is_train=True)
+                cur_lr = trainer_uc.scheduler.get_last_lr()[0]
+
+                _, loss_uc, _ = trainer_uc.wrapper(
+                    **input_dict,
+                    cur_lr=cur_lr,
+                    label=label_dict,
+                )
+                _, loss_c, _ = trainer_c.wrapper(
+                    **input_dict,
+                    cur_lr=cur_lr,
+                    label=label_dict,
+                )
+                loss_uc.backward()
+                loss_c.backward()
+
+                for (name_uc, p_uc), (name_c, p_c) in zip(
+                    trainer_uc.model.named_parameters(),
+                    compiled_model.original_model.named_parameters(),
+                    strict=True,
+                ):
+                    if p_uc.grad is not None:
+                        self.assertIsNotNone(
+                            p_c.grad,
+                            msg=f"grad is None for {name_c}",
+                        )
+                        torch.testing.assert_close(
+                            p_c.grad,
+                            p_uc.grad,
+                            atol=1e-10,
+                            rtol=1e-10,
+                            msg=f"grad mismatch on {name_uc}",
+                        )
             finally:
                 os.chdir(old_cwd)
         finally:
@@ -496,7 +574,7 @@ class TestRestart(unittest.TestCase):
                 trainer2 = get_trainer(config2, restart_model=ckpt_path)
 
                 self.assertEqual(trainer2.start_step, 5)
-                self.assertIsInstance(trainer2.wrapper.model, _CompiledModel)
+                self.assertIsInstance(trainer2.wrapper.model["Default"], _CompiledModel)
                 trainer2.run()
 
                 with open(os.path.join(tmpdir, "lcurve.out")) as f:

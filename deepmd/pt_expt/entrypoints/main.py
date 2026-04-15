@@ -4,6 +4,7 @@
 import argparse
 import json
 import logging
+import os
 from pathlib import (
     Path,
 )
@@ -40,54 +41,112 @@ def get_trainer(
     restart_model: str | None = None,
     finetune_model: str | None = None,
     finetune_links: dict | None = None,
+    shared_links: dict | None = None,
 ) -> training.Trainer:
     """Build a :class:`training.Trainer` from a normalised config."""
     model_params = config["model"]
     training_params = config["training"]
-    type_map = model_params["type_map"]
+    multi_task = "model_dict" in model_params
 
-    # ----- training data ------------------------------------------------
-    training_dataset_params = training_params["training_data"]
-    training_systems = process_systems(
-        training_dataset_params["systems"],
-        patterns=training_dataset_params.get("rglob_patterns", None),
-    )
-    train_data = DeepmdDataSystem(
-        systems=training_systems,
-        batch_size=training_dataset_params["batch_size"],
-        test_size=1,
-        type_map=type_map,
-        trn_all_set=True,
-        sys_probs=training_dataset_params.get("sys_probs", None),
-        auto_prob_style=training_dataset_params.get("auto_prob", "prob_sys_size"),
-    )
+    if not multi_task:
+        type_map = model_params["type_map"]
 
-    # ----- validation data ----------------------------------------------
-    validation_data = None
-    validation_dataset_params = training_params.get("validation_data", None)
-    if validation_dataset_params is not None:
-        val_systems = process_systems(
-            validation_dataset_params["systems"],
-            patterns=validation_dataset_params.get("rglob_patterns", None),
+        # ----- training data ------------------------------------------------
+        training_dataset_params = training_params["training_data"]
+        training_systems = process_systems(
+            training_dataset_params["systems"],
+            patterns=training_dataset_params.get("rglob_patterns", None),
         )
-        validation_data = DeepmdDataSystem(
-            systems=val_systems,
-            batch_size=validation_dataset_params["batch_size"],
+        train_data = DeepmdDataSystem(
+            systems=training_systems,
+            batch_size=training_dataset_params["batch_size"],
             test_size=1,
             type_map=type_map,
             trn_all_set=True,
+            sys_probs=training_dataset_params.get("sys_probs", None),
+            auto_prob_style=training_dataset_params.get("auto_prob", "prob_sys_size"),
         )
 
-    # ----- stat file path -----------------------------------------------
-    stat_file_path = training_params.get("stat_file", None)
-    if stat_file_path is not None:
-        if not Path(stat_file_path).exists():
-            if stat_file_path.endswith((".h5", ".hdf5")):
-                with h5py.File(stat_file_path, "w"):
-                    pass
+        # ----- validation data ----------------------------------------------
+        validation_data = None
+        validation_dataset_params = training_params.get("validation_data", None)
+        if validation_dataset_params is not None:
+            val_systems = process_systems(
+                validation_dataset_params["systems"],
+                patterns=validation_dataset_params.get("rglob_patterns", None),
+            )
+            validation_data = DeepmdDataSystem(
+                systems=val_systems,
+                batch_size=validation_dataset_params["batch_size"],
+                test_size=1,
+                type_map=type_map,
+                trn_all_set=True,
+            )
+
+        # ----- stat file path -----------------------------------------------
+        stat_file_path = training_params.get("stat_file", None)
+        if stat_file_path is not None:
+            if not Path(stat_file_path).exists():
+                if stat_file_path.endswith((".h5", ".hdf5")):
+                    with h5py.File(stat_file_path, "w"):
+                        pass
+                else:
+                    Path(stat_file_path).mkdir()
+            stat_file_path = DPPath(stat_file_path, "a")
+    else:
+        # Multi-task: build per-task data systems
+        train_data = {}
+        validation_data = {}
+        stat_file_path = {}
+        for model_key in model_params["model_dict"]:
+            type_map = model_params["model_dict"][model_key]["type_map"]
+            data_params = training_params["data_dict"][model_key]
+
+            # training data
+            td_params = data_params["training_data"]
+            training_systems = process_systems(
+                td_params["systems"],
+                patterns=td_params.get("rglob_patterns", None),
+            )
+            train_data[model_key] = DeepmdDataSystem(
+                systems=training_systems,
+                batch_size=td_params["batch_size"],
+                test_size=1,
+                type_map=type_map,
+                trn_all_set=True,
+                sys_probs=td_params.get("sys_probs", None),
+                auto_prob_style=td_params.get("auto_prob", "prob_sys_size"),
+            )
+
+            # validation data
+            vd_params = data_params.get("validation_data", None)
+            if vd_params is not None:
+                val_systems = process_systems(
+                    vd_params["systems"],
+                    patterns=vd_params.get("rglob_patterns", None),
+                )
+                validation_data[model_key] = DeepmdDataSystem(
+                    systems=val_systems,
+                    batch_size=vd_params["batch_size"],
+                    test_size=1,
+                    type_map=type_map,
+                    trn_all_set=True,
+                )
             else:
-                Path(stat_file_path).mkdir()
-        stat_file_path = DPPath(stat_file_path, "a")
+                validation_data[model_key] = None
+
+            # stat file
+            _sf = data_params.get("stat_file", None)
+            if _sf is not None:
+                if not Path(_sf).exists():
+                    if _sf.endswith((".h5", ".hdf5")):
+                        with h5py.File(_sf, "w"):
+                            pass
+                    else:
+                        Path(_sf).mkdir(parents=True)
+                stat_file_path[model_key] = DPPath(_sf, "a")
+            else:
+                stat_file_path[model_key] = None
 
     trainer = training.Trainer(
         config,
@@ -98,6 +157,7 @@ def get_trainer(
         restart_model=restart_model,
         finetune_model=finetune_model,
         finetune_links=finetune_links,
+        shared_links=shared_links,
     )
     return trainer
 
@@ -151,6 +211,19 @@ def train(
     if restart is not None and not restart.endswith(".pt"):
         restart += ".pt"
 
+    # Multi-task detection and shared params preprocessing
+    multi_task = "model_dict" in config.get("model", {})
+    shared_links = None
+    if multi_task:
+        from deepmd.pt_expt.utils.multi_task import (
+            preprocess_shared_params,
+        )
+
+        config["model"], shared_links = preprocess_shared_params(config["model"])
+        assert "RANDOM" not in config["model"]["model_dict"], (
+            "Model name can not be 'RANDOM' in multi-task mode!"
+        )
+
     # update fine-tuning config
     finetune_links = None
     if finetune is not None:
@@ -174,7 +247,7 @@ def train(
 
     # argcheck
     config = update_deepmd_input(config, warning=True, dump="input_v2_compat.json")
-    config = normalize(config)
+    config = normalize(config, multi_task=multi_task)
 
     # neighbour stat
     if not skip_neighbor_stat:
@@ -182,18 +255,42 @@ def train(
             "Calculate neighbor statistics... "
             "(add --skip-neighbor-stat to skip this step)"
         )
-        type_map = config["model"].get("type_map")
-        train_data = get_data(config["training"]["training_data"], 0, type_map, None)
         from deepmd.pt_expt.model import (
             BaseModel,
         )
 
-        config["model"], _min_nbor_dist = BaseModel.update_sel(
-            train_data, type_map, config["model"]
-        )
+        if not multi_task:
+            type_map = config["model"].get("type_map")
+            train_data = get_data(
+                config["training"]["training_data"], 0, type_map, None
+            )
+            config["model"], _min_nbor_dist = BaseModel.update_sel(
+                train_data, type_map, config["model"]
+            )
+        else:
+            for model_key in config["model"]["model_dict"]:
+                type_map = config["model"]["model_dict"][model_key]["type_map"]
+                train_data = get_data(
+                    config["training"]["data_dict"][model_key]["training_data"],
+                    0,
+                    type_map,
+                    None,
+                )
+                config["model"]["model_dict"][model_key], _min_nbor_dist = (
+                    BaseModel.update_sel(
+                        train_data,
+                        type_map,
+                        config["model"]["model_dict"][model_key],
+                    )
+                )
 
     with open(output, "w") as fp:
         json.dump(config, fp, indent=4)
+
+    import torch.distributed as dist
+
+    if os.environ.get("LOCAL_RANK") is not None:
+        dist.init_process_group(backend="cuda:nccl,cpu:gloo")
 
     trainer = get_trainer(
         config,
@@ -201,8 +298,12 @@ def train(
         restart,
         finetune_model=finetune,
         finetune_links=finetune_links,
+        shared_links=shared_links,
     )
     trainer.run()
+
+    if dist.is_available() and dist.is_initialized():
+        dist.destroy_process_group()
 
 
 def freeze(
@@ -219,7 +320,7 @@ def freeze(
     output : str
         Path for the output .pte file.
     head : str or None
-        Head to freeze in multi-task mode (not yet supported).
+        Head to freeze in multi-task mode.
     """
     import torch
 
@@ -248,18 +349,43 @@ def freeze(
         )
     model_params = extra_state["model_params"]
 
-    if head is not None and "model_dict" in model_params:
-        raise NotImplementedError(
-            "Multi-task freeze is not yet supported for the pt_expt backend."
-        )
+    multi_task = "model_dict" in model_params
+    if multi_task:
+        if head is None:
+            raise ValueError(
+                "Multi-task model requires --head to specify which model to freeze. "
+                f"Available heads: {list(model_params['model_dict'].keys())}"
+            )
+        if head not in model_params["model_dict"]:
+            raise ValueError(
+                f"Head '{head}' not found. "
+                f"Available: {list(model_params['model_dict'].keys())}"
+            )
+        # Build full multi-task wrapper, load weights, extract single head
+        model_dict = {}
+        for key in model_params["model_dict"]:
+            from copy import (
+                deepcopy,
+            )
 
-    m = get_model(model_params)
-    wrapper = ModelWrapper(m)
-    wrapper.load_state_dict(state_dict)
+            model_dict[key] = get_model(deepcopy(model_params["model_dict"][key]))
+        wrapper = ModelWrapper(model_dict)
+        wrapper.load_state_dict(state_dict)
+
+        m = wrapper.model[head]
+        single_model_params = model_params["model_dict"][head]
+    else:
+        m = get_model(model_params)
+        wrapper = ModelWrapper(m)
+        wrapper.load_state_dict(state_dict)
+        single_model_params = model_params
+
     m.eval()
-
-    model_dict = m.serialize()
-    deserialize_to_file(output, {"model": model_dict, "model_def_script": model_params})
+    model_dict_serialized = m.serialize()
+    deserialize_to_file(
+        output,
+        {"model": model_dict_serialized, "model_def_script": single_model_params},
+    )
     log.info("Saved frozen model to %s", output)
 
 
