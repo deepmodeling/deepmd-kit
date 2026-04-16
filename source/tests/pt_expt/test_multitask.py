@@ -1469,7 +1469,7 @@ class TestMultiTaskCompile(unittest.TestCase):
 
         For each branch: feed the same batch through wrapper (which computes
         loss), call loss.backward(), then compare:
-        1. model predictions (energy, force)
+        1. model predictions (atom_energy, energy, force, virial)
         2. loss values
         3. parameter gradients (second-order, through force loss)
         """
@@ -1534,19 +1534,25 @@ class TestMultiTaskCompile(unittest.TestCase):
                     task_key=task_key,
                 )
 
-                # Compare predictions
-                torch.testing.assert_close(
-                    pred_c["energy"],
-                    pred_uc["energy"],
-                    atol=1e-10,
-                    rtol=1e-10,
-                )
-                torch.testing.assert_close(
-                    pred_c["force"],
-                    pred_uc["force"],
-                    atol=1e-10,
-                    rtol=1e-10,
-                )
+                # Compare predictions: atom_energy, energy, force, virial.
+                # Atomic virial is not exercised because training does not
+                # pass ``do_atomic_virial=True``; the compiled graph is
+                # traced with the default (False) so per-atom virial is not
+                # computed by the compiled path.
+                for key in ("atom_energy", "energy", "force", "virial"):
+                    self.assertIn(
+                        key, pred_uc, f"uncompiled missing '{key}' (task={task_key})"
+                    )
+                    self.assertIn(
+                        key, pred_c, f"compiled missing '{key}' (task={task_key})"
+                    )
+                    torch.testing.assert_close(
+                        pred_c[key],
+                        pred_uc[key],
+                        atol=1e-10,
+                        rtol=1e-10,
+                        msg=f"{key} mismatch (task={task_key})",
+                    )
                 torch.testing.assert_close(loss_c, loss_uc, atol=1e-10, rtol=1e-10)
 
                 # Compare gradients (second-order, through force loss)

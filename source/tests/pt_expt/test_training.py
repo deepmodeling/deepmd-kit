@@ -287,33 +287,20 @@ class TestCompiledConsistency(unittest.TestCase):
 
                 pred_c = compiled_model(coord.clone(), atype, box)
 
-                # Energy
-                torch.testing.assert_close(
-                    pred_c["energy"],
-                    pred_uc["energy"],
-                    atol=1e-10,
-                    rtol=1e-10,
-                    msg="energy mismatch between compiled and uncompiled",
-                )
-                # Force
-                self.assertIn("force", pred_c, "compiled model missing 'force'")
-                self.assertIn("force", pred_uc, "uncompiled model missing 'force'")
-                torch.testing.assert_close(
-                    pred_c["force"],
-                    pred_uc["force"],
-                    atol=1e-10,
-                    rtol=1e-10,
-                    msg="force mismatch between compiled and uncompiled",
-                )
-                # Virial
-                if "virial" in pred_uc:
-                    self.assertIn("virial", pred_c, "compiled model missing 'virial'")
+                # Compare predictions: atom_energy, energy, force, virial.
+                # Atomic virial is not exercised here because training does
+                # not pass ``do_atomic_virial=True``; the compiled graph is
+                # traced with the default (False) so per-atom virial is not
+                # computed by the compiled path.
+                for key in ("atom_energy", "energy", "force", "virial"):
+                    self.assertIn(key, pred_uc, f"uncompiled missing '{key}'")
+                    self.assertIn(key, pred_c, f"compiled missing '{key}'")
                     torch.testing.assert_close(
-                        pred_c["virial"],
-                        pred_uc["virial"],
+                        pred_c[key],
+                        pred_uc[key],
                         atol=1e-10,
                         rtol=1e-10,
-                        msg="virial mismatch between compiled and uncompiled",
+                        msg=f"{key} mismatch between compiled and uncompiled",
                     )
             finally:
                 os.chdir(old_cwd)
