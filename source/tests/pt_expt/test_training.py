@@ -40,6 +40,53 @@ EXAMPLE_DIR = os.path.join(
     "water",
 )
 
+# Keys present on the compiled path. ``atom_virial`` is intentionally excluded:
+# training never passes ``do_atomic_virial=True``, so the compiled graph is
+# traced with the default (False) and per-atom virial is not emitted.
+_COMPILE_PRED_KEYS = ("atom_energy", "energy", "force", "virial")
+_COMPILE_TOL = {"atol": 1e-10, "rtol": 1e-10}
+
+
+def _assert_compile_predictions_match(
+    testcase: unittest.TestCase,
+    out_c: dict,
+    out_uc: dict,
+    *,
+    ctx: str = "",
+) -> None:
+    for key in _COMPILE_PRED_KEYS:
+        testcase.assertIn(key, out_uc, f"{ctx}uncompiled missing '{key}'")
+        testcase.assertIn(key, out_c, f"{ctx}compiled missing '{key}'")
+        torch.testing.assert_close(
+            out_c[key],
+            out_uc[key],
+            **_COMPILE_TOL,
+            msg=f"{ctx}{key} mismatch between compiled and uncompiled",
+        )
+
+
+def _assert_compile_grads_match(
+    testcase: unittest.TestCase,
+    model_c: torch.nn.Module,
+    model_uc: torch.nn.Module,
+    *,
+    ctx: str = "",
+) -> None:
+    for (name_uc, p_uc), (_, p_c) in zip(
+        model_uc.named_parameters(),
+        model_c.named_parameters(),
+        strict=True,
+    ):
+        if p_uc.grad is None:
+            continue
+        testcase.assertIsNotNone(p_c.grad, msg=f"{ctx}grad is None for {name_uc}")
+        torch.testing.assert_close(
+            p_c.grad,
+            p_uc.grad,
+            **_COMPILE_TOL,
+            msg=f"{ctx}grad mismatch on {name_uc}",
+        )
+
 
 def _make_config(data_dir: str, numb_steps: int = 5) -> dict:
     """Build a minimal config dict pointing at *data_dir*."""
@@ -242,37 +289,41 @@ class TestCompiledConsistency(unittest.TestCase):
             raise unittest.SkipTest(f"Example data not found: {data_dir}")
         cls.data_dir = data_dir
 
-    def test_compiled_matches_uncompiled(self) -> None:
-        """Energy, force, virial from compiled model must match uncompiled."""
+    def _check_consistency(self, activation: str | None = None) -> None:
+        """Compiled model predictions match uncompiled for the given activation.
+
+        ``activation`` overrides both descriptor and fitting-net activation
+        functions when provided.  ``None`` keeps the config default (tanh).
+        """
         from deepmd.pt_expt.train.training import (
             _CompiledModel,
         )
 
-        config = _make_config(self.data_dir, numb_steps=1)
-        # enable virial in loss so the model returns it
-        config["loss"]["start_pref_v"] = 1.0
-        config["loss"]["limit_pref_v"] = 1.0
-        config = update_deepmd_input(config, warning=False)
-        config = normalize(config)
+        def _build_config(enable_compile: bool) -> dict:
+            config = _make_config(self.data_dir, numb_steps=1)
+            # enable virial in loss so the model returns it
+            config["loss"]["start_pref_v"] = 1.0
+            config["loss"]["limit_pref_v"] = 1.0
+            if activation is not None:
+                config["model"]["descriptor"]["activation_function"] = activation
+                config["model"]["fitting_net"]["activation_function"] = activation
+            if enable_compile:
+                config["training"]["enable_compile"] = True
+            config = update_deepmd_input(config, warning=False)
+            return normalize(config)
 
         tmpdir = tempfile.mkdtemp(prefix="pt_expt_consistency_")
         try:
             old_cwd = os.getcwd()
             os.chdir(tmpdir)
             try:
-                trainer = get_trainer(config)
+                trainer = get_trainer(_build_config(enable_compile=False))
                 # Uncompiled model reference
                 uncompiled_model = trainer.model
                 uncompiled_model.eval()
 
                 # Build compiled model from the same weights
-                config_compiled = _make_config(self.data_dir, numb_steps=1)
-                config_compiled["loss"]["start_pref_v"] = 1.0
-                config_compiled["loss"]["limit_pref_v"] = 1.0
-                config_compiled["training"]["enable_compile"] = True
-                config_compiled = update_deepmd_input(config_compiled, warning=False)
-                config_compiled = normalize(config_compiled)
-                trainer_compiled = get_trainer(config_compiled)
+                trainer_compiled = get_trainer(_build_config(enable_compile=True))
                 compiled_model = trainer_compiled.wrapper.model["Default"]
                 self.assertIsInstance(compiled_model, _CompiledModel)
 
@@ -297,25 +348,19 @@ class TestCompiledConsistency(unittest.TestCase):
 
                 pred_c = compiled_model(coord.clone(), atype, box)
 
-                # Compare predictions: atom_energy, energy, force, virial.
-                # Atomic virial is not exercised here because training does
-                # not pass ``do_atomic_virial=True``; the compiled graph is
-                # traced with the default (False) so per-atom virial is not
-                # computed by the compiled path.
-                for key in ("atom_energy", "energy", "force", "virial"):
-                    self.assertIn(key, pred_uc, f"uncompiled missing '{key}'")
-                    self.assertIn(key, pred_c, f"compiled missing '{key}'")
-                    torch.testing.assert_close(
-                        pred_c[key],
-                        pred_uc[key],
-                        atol=1e-10,
-                        rtol=1e-10,
-                        msg=f"{key} mismatch between compiled and uncompiled",
-                    )
+                _assert_compile_predictions_match(self, pred_c, pred_uc)
             finally:
                 os.chdir(old_cwd)
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_compiled_matches_uncompiled(self) -> None:
+        """Energy, force, virial from compiled model must match uncompiled."""
+        self._check_consistency()
+
+    def test_compiled_matches_uncompiled_silu(self) -> None:
+        """Same numerical equivalence under silu activation (full model)."""
+        self._check_consistency(activation="silu")
 
     def test_compiled_gradients_match_uncompiled(self) -> None:
         """Parameter gradients from compiled model must match uncompiled.
@@ -373,23 +418,9 @@ class TestCompiledConsistency(unittest.TestCase):
                 loss_uc.backward()
                 loss_c.backward()
 
-                for (name_uc, p_uc), (name_c, p_c) in zip(
-                    trainer_uc.model.named_parameters(),
-                    compiled_model.original_model.named_parameters(),
-                    strict=True,
-                ):
-                    if p_uc.grad is not None:
-                        self.assertIsNotNone(
-                            p_c.grad,
-                            msg=f"grad is None for {name_c}",
-                        )
-                        torch.testing.assert_close(
-                            p_c.grad,
-                            p_uc.grad,
-                            atol=1e-10,
-                            rtol=1e-10,
-                            msg=f"grad mismatch on {name_uc}",
-                        )
+                _assert_compile_grads_match(
+                    self, compiled_model.original_model, trainer_uc.model
+                )
             finally:
                 os.chdir(old_cwd)
         finally:
@@ -911,10 +942,12 @@ def _create_small_system(
     coord = rng.uniform(0, box_len, size=(nframes, natoms * 3)).astype(np.float32)
     energy = rng.normal(-100, 10, size=(nframes,)).astype(np.float32)
     force = rng.normal(0, 1, size=(nframes, natoms * 3)).astype(np.float32)
+    virial = rng.normal(0, 1, size=(nframes, 9)).astype(np.float32)
     np.save(os.path.join(set_dir, "coord.npy"), coord)
     np.save(os.path.join(set_dir, "force.npy"), force)
     np.save(os.path.join(set_dir, "energy.npy"), energy)
     np.save(os.path.join(set_dir, "box.npy"), box)
+    np.save(os.path.join(set_dir, "virial.npy"), virial)
 
 
 class TestCompiledVaryingNatoms(unittest.TestCase):
@@ -949,14 +982,31 @@ class TestCompiledVaryingNatoms(unittest.TestCase):
         config = _make_config(self.data_dir, numb_steps=numb_steps)
         config["training"]["training_data"]["systems"].append(self.small_data_dir)
         config["training"]["training_data"]["batch_size"] = "auto"
+        # enable virial in loss so the model returns it (virial.npy exists in
+        # both systems), exercising the compiled virial passthrough on each step
+        config["loss"]["start_pref_v"] = 1.0
+        config["loss"]["limit_pref_v"] = 1.0
         if enable_compile:
             config["training"]["enable_compile"] = True
         config = update_deepmd_input(config, warning=False)
         config = normalize(config)
         return config
 
-    def _run_steps(self, config: dict, nsteps: int = 6) -> None:
-        """Run *nsteps* training steps and assert finite loss at each."""
+    def test_compiled_matches_uncompiled_varying_natoms(self) -> None:
+        """Compiled and uncompiled produce identical predictions/loss/grads
+        across batches with varying ``nframes`` and ``natoms``.
+
+        The loss config has ``start_pref_f=1000`` and ``start_pref_v=1.0``,
+        so ``loss.backward()`` propagates through ``F = -dE/dr`` (computed
+        via ``autograd.grad(..., create_graph=True)``); the per-parameter
+        grad comparison therefore exercises the second-order derivative
+        ``d^2 E / (dr d theta)`` on each step at each system size.
+        """
+        from deepmd.pt_expt.train.training import (
+            _CompiledModel,
+        )
+
+        nsteps = 4
         # Alternate between system 0 (192 atoms) and system 1 (6 atoms)
         sys_sequence = [i % 2 for i in range(nsteps)]
 
@@ -965,35 +1015,61 @@ class TestCompiledVaryingNatoms(unittest.TestCase):
             old_cwd = os.getcwd()
             os.chdir(tmpdir)
             try:
-                trainer = get_trainer(config)
-                trainer.wrapper.train()
+                trainer_uc = get_trainer(self._make_varying_config(False))
+                trainer_c = get_trainer(self._make_varying_config(True))
+                compiled_model = trainer_c.wrapper.model["Default"]
+                self.assertIsInstance(compiled_model, _CompiledModel)
+
+                # Sync weights so predictions can be compared exactly
+                compiled_model.original_model.load_state_dict(
+                    trainer_uc.model.state_dict()
+                )
+                trainer_uc.wrapper.train()
+                trainer_c.wrapper.train()
+
                 with patch(
                     "deepmd.utils.data_system.dp_random.choice",
                     side_effect=sys_sequence,
                 ):
-                    for _ in range(nsteps):
-                        trainer.optimizer.zero_grad(set_to_none=True)
-                        inp, lab = trainer.get_data(is_train=True)
-                        lr = trainer.scheduler.get_last_lr()[0]
-                        _, loss, _ = trainer.wrapper(**inp, cur_lr=lr, label=lab)
-                        loss.backward()
-                        trainer._optimizer_step()
-                        self.assertFalse(torch.isnan(loss), "loss is NaN")
-                        self.assertFalse(torch.isinf(loss), "loss is Inf")
+                    for step in range(nsteps):
+                        trainer_uc.optimizer.zero_grad(set_to_none=True)
+                        trainer_c.optimizer.zero_grad(set_to_none=True)
+
+                        # Single shared batch; mock yields one value per call
+                        inp, lab = trainer_uc.get_data(is_train=True)
+                        lr = trainer_uc.scheduler.get_last_lr()[0]
+
+                        out_uc, loss_uc, _ = trainer_uc.wrapper(
+                            **inp, cur_lr=lr, label=lab
+                        )
+                        out_c, loss_c, _ = trainer_c.wrapper(
+                            **inp, cur_lr=lr, label=lab
+                        )
+
+                        ctx = f"step={step} "
+                        _assert_compile_predictions_match(self, out_c, out_uc, ctx=ctx)
+                        torch.testing.assert_close(
+                            loss_c,
+                            loss_uc,
+                            **_COMPILE_TOL,
+                            msg=f"{ctx}loss mismatch",
+                        )
+
+                        loss_uc.backward()
+                        loss_c.backward()
+                        _assert_compile_grads_match(
+                            self,
+                            compiled_model.original_model,
+                            trainer_uc.model,
+                            ctx=ctx,
+                        )
+
+                        trainer_uc._optimizer_step()
+                        trainer_c._optimizer_step()
             finally:
                 os.chdir(old_cwd)
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
-
-    def test_compiled_varying_natoms(self) -> None:
-        """Compiled training with 192-atom and 6-atom systems."""
-        config = self._make_varying_config(enable_compile=True)
-        self._run_steps(config)
-
-    def test_uncompiled_varying_natoms(self) -> None:
-        """Uncompiled training with varying natoms as baseline."""
-        config = self._make_varying_config(enable_compile=False)
-        self._run_steps(config)
 
 
 if __name__ == "__main__":
