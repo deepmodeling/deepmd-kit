@@ -46,6 +46,70 @@ EXAMPLE_DIR = os.path.join(
 _COMPILE_PRED_KEYS = ("atom_energy", "energy", "force", "virial")
 _COMPILE_TOL = {"atol": 1e-10, "rtol": 1e-10}
 
+# DPA3 descriptor config used to extend the varying-natoms compile-correctness
+# test to a non-trivial architecture (repflow with attention).  ``precision:
+# float64`` is set explicitly so the strict ``atol=rtol=1e-10`` comparison
+# holds at machine epsilon.
+#
+# DPA1 (se_atten) is intentionally NOT covered here: inductor's compile of the
+# se_atten attention path is intermittently incorrect — see the "known
+# limitations" section of the multi-task compile memo for details.
+_DESCRIPTOR_DPA2 = {
+    "type": "dpa2",
+    "repinit": {
+        "rcut": 4.0,
+        "rcut_smth": 0.5,
+        "nsel": 18,
+        "neuron": [2, 4, 8],
+        "axis_neuron": 4,
+        "activation_function": "tanh",
+    },
+    "repformer": {
+        "rcut": 3.0,
+        "rcut_smth": 0.5,
+        "nsel": 12,
+        "nlayers": 2,
+        "g1_dim": 8,
+        "g2_dim": 5,
+        "attn2_hidden": 3,
+        "attn2_nhead": 1,
+        "attn1_hidden": 5,
+        "attn1_nhead": 1,
+        "axis_neuron": 4,
+        "update_h2": False,
+        "update_g1_has_conv": True,
+        "update_g1_has_grrg": True,
+        "update_g1_has_drrd": True,
+        "update_g1_has_attn": True,
+        "update_g2_has_g1g1": True,
+        "update_g2_has_attn": True,
+        "attn2_has_gate": True,
+    },
+    "precision": "float64",
+    "seed": 1,
+    "add_tebd_to_repinit_out": False,
+}
+
+_DESCRIPTOR_DPA3 = {
+    "type": "dpa3",
+    "repflow": {
+        "n_dim": 8,
+        "e_dim": 5,
+        "a_dim": 4,
+        "nlayers": 2,
+        "e_rcut": 3.0,
+        "e_rcut_smth": 0.5,
+        "e_sel": 12,
+        "a_rcut": 3.0,
+        "a_rcut_smth": 0.5,
+        "a_sel": 8,
+        "axis_neuron": 4,
+    },
+    "precision": "float64",
+    "concat_output_tebd": False,
+    "seed": 1,
+}
+
 
 def _assert_compile_predictions_match(
     testcase: unittest.TestCase,
@@ -977,30 +1041,45 @@ class TestCompiledVaryingNatoms(unittest.TestCase):
     def tearDownClass(cls) -> None:
         shutil.rmtree(cls.small_data_dir, ignore_errors=True)
 
-    def _make_varying_config(self, enable_compile: bool, numb_steps: int = 10) -> dict:
-        """Config with two systems of different natoms and auto batch size."""
-        config = _make_config(self.data_dir, numb_steps=numb_steps)
+    def _make_varying_config(
+        self,
+        enable_compile: bool,
+        descriptor: dict | None = None,
+    ) -> dict:
+        """Config with two systems of different natoms and auto batch size.
+
+        ``descriptor`` overrides the default se_e2_a descriptor when given.
+        """
+        config = _make_config(self.data_dir)
         config["training"]["training_data"]["systems"].append(self.small_data_dir)
         config["training"]["training_data"]["batch_size"] = "auto"
         # enable virial in loss so the model returns it (virial.npy exists in
         # both systems), exercising the compiled virial passthrough on each step
         config["loss"]["start_pref_v"] = 1.0
         config["loss"]["limit_pref_v"] = 1.0
+        if descriptor is not None:
+            config["model"]["descriptor"] = descriptor
         if enable_compile:
             config["training"]["enable_compile"] = True
         config = update_deepmd_input(config, warning=False)
         config = normalize(config)
         return config
 
-    def test_compiled_matches_uncompiled_varying_natoms(self) -> None:
-        """Compiled and uncompiled produce identical predictions/loss/grads
-        across batches with varying ``nframes`` and ``natoms``.
+    def _check_varying_natoms(self, descriptor: dict | None = None) -> None:
+        """Per-step compiled-vs-uncompiled comparison for the given descriptor.
 
         The loss config has ``start_pref_f=1000`` and ``start_pref_v=1.0``,
         so ``loss.backward()`` propagates through ``F = -dE/dr`` (computed
         via ``autograd.grad(..., create_graph=True)``); the per-parameter
         grad comparison therefore exercises the second-order derivative
         ``d^2 E / (dr d theta)`` on each step at each system size.
+
+        Verifies multi-step training-trajectory equivalence: weights are
+        synced once at the start, then both trainers step their own Adam
+        states forward.  All assertions use the strict
+        ``atol=rtol=1e-10`` tolerance; if a descriptor's compiled path
+        cannot meet that on float64 the descriptor has a real numerical
+        problem (see the DPA1 limitation note where this happened).
         """
         from deepmd.pt_expt.train.training import (
             _CompiledModel,
@@ -1015,8 +1094,8 @@ class TestCompiledVaryingNatoms(unittest.TestCase):
             old_cwd = os.getcwd()
             os.chdir(tmpdir)
             try:
-                trainer_uc = get_trainer(self._make_varying_config(False))
-                trainer_c = get_trainer(self._make_varying_config(True))
+                trainer_uc = get_trainer(self._make_varying_config(False, descriptor))
+                trainer_c = get_trainer(self._make_varying_config(True, descriptor))
                 compiled_model = trainer_c.wrapper.model["Default"]
                 self.assertIsInstance(compiled_model, _CompiledModel)
 
@@ -1070,6 +1149,26 @@ class TestCompiledVaryingNatoms(unittest.TestCase):
                 os.chdir(old_cwd)
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_compiled_matches_uncompiled_varying_natoms_se_e2_a(self) -> None:
+        """se_e2_a: compiled vs uncompiled match across varying nframes/natoms."""
+        self._check_varying_natoms()  # uses default se_e2_a from _make_config
+
+    def test_compiled_matches_uncompiled_varying_natoms_dpa2(self) -> None:
+        """DPA2: compiled vs uncompiled match across varying nframes/natoms.
+
+        Exercises the DPA2 repinit + repformers stack; matches at machine
+        epsilon (~1e-12) on float64 just like se_e2_a.
+        """
+        self._check_varying_natoms(_DESCRIPTOR_DPA2)
+
+    def test_compiled_matches_uncompiled_varying_natoms_dpa3(self) -> None:
+        """DPA3: compiled vs uncompiled match across varying nframes/natoms.
+
+        Exercises a non-trivial multi-layer repflow descriptor; matches at
+        machine epsilon (~1e-12) on float64 just like se_e2_a.
+        """
+        self._check_varying_natoms(_DESCRIPTOR_DPA3)
 
 
 if __name__ == "__main__":
