@@ -3130,7 +3130,8 @@ def optimizer_hybrid_muon() -> list[Argument]:
             default=True,
             doc=doc_only_pt_supported
             + "Enable the compiled Gram Newton-Schulz path for rectangular Muon matrices. "
-            + "Square matrices keep using the current standard Newton-Schulz path.",
+            + "Square matrices keep using the current standard Newton-Schulz path. "
+            + "Automatically disabled in distributed (multi-GPU) training.",
         ),
         Argument(
             "flash_muon",

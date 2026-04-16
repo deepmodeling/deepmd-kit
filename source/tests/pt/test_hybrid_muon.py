@@ -8,6 +8,8 @@ from deepmd.pt.optimizer.hybrid_muon import (
     MAGMA_MIN_SCALE,
     TRITON_AVAILABLE,
     HybridMuonOptimizer,
+    _batched_newton_schulz_orth,
+    _GramNewtonSchulzOrthogonalizer,
     _newton_schulz_orth,
 )
 from deepmd.pt.utils import (
@@ -555,6 +557,200 @@ class TestFlashMuon(unittest.TestCase):
 
         # After step, buffers should have been allocated for the weight matrix
         self.assertGreater(len(optimizer._ns_buffers), 0)
+
+
+@unittest.skipIf(not BF16_SUPPORTED, "bf16 matmul not supported on this device")
+class TestColumnPadMergeEquivalence(unittest.TestCase):
+    """Verify column-pad merge produces numerically identical NS orth results.
+
+    The column-pad merge optimization zero-pads the column (large) dimension
+    of rectangular matrices so that matrices with the same min_dim can share
+    a single Gram NS call.  These tests verify the mathematical invariant:
+
+        R_pad = [X | 0] @ [X | 0]^T = X @ X^T = R
+
+    which guarantees the NS iteration is identical, and truncating the output
+    to the original column count exactly recovers the unpadded result.
+    """
+
+    def setUp(self) -> None:
+        self.device = env.DEVICE
+
+    @unittest.skipIf(
+        not FP16_SUPPORTED,
+        "float16 matmul not supported on this device",
+    )
+    def test_gram_ns_column_pad_exact_equivalence(self) -> None:
+        """Gram NS orth on X vs [X|0] must agree in the first n columns."""
+        torch.manual_seed(123)
+        gram_orth = _GramNewtonSchulzOrthogonalizer()
+
+        for m, n, pad in [(16, 32, 32), (64, 128, 256), (64, 192, 192)]:
+            with self.subTest(m=m, n=n, pad=pad):
+                X = torch.randn(1, m, n, dtype=torch.float32, device=self.device)
+                X_padded = torch.nn.functional.pad(X, (0, pad))  # (1, m, n+pad)
+
+                # _orthogonalize_impl bypasses compile for deterministic comparison
+                out_orig = gram_orth._call_impl(X)
+                out_padded = gram_orth._call_impl(X_padded)
+
+                # Truncate padded output to original column count
+                out_padded_trunc = out_padded[:, :, :n]
+                # Padded columns must be zero
+                out_padded_tail = out_padded[:, :, n:]
+
+                self.assertTrue(
+                    torch.allclose(out_orig, out_padded_trunc, atol=1e-3, rtol=1e-3),
+                    f"shape ({m},{n}) pad {pad}: max diff = {(out_orig - out_padded_trunc).abs().max().item():.6f}",
+                )
+                self.assertTrue(
+                    torch.allclose(
+                        out_padded_tail,
+                        torch.zeros_like(out_padded_tail),
+                        atol=1e-3,
+                    ),
+                    f"shape ({m},{n}) pad {pad}: padded tail not zero, max = {out_padded_tail.abs().max().item():.6f}",
+                )
+
+    def test_standard_ns_column_pad_exact_equivalence(self) -> None:
+        """Standard (quintic) NS orth on X vs [X|0] must agree."""
+        torch.manual_seed(456)
+
+        for m, n, pad in [(16, 32, 32), (32, 64, 64)]:
+            with self.subTest(m=m, n=n, pad=pad):
+                X = torch.randn(1, m, n, dtype=torch.float32, device=self.device)
+                X_padded = torch.nn.functional.pad(X, (0, pad))
+
+                out_orig = _batched_newton_schulz_orth(X)
+                out_padded = _batched_newton_schulz_orth(X_padded)
+                out_padded_trunc = out_padded[:, :, :n]
+
+                self.assertTrue(
+                    torch.allclose(out_orig, out_padded_trunc, atol=1e-3, rtol=1e-3),
+                    f"shape ({m},{n}) pad {pad}: max diff = {(out_orig - out_padded_trunc).abs().max().item():.6f}",
+                )
+
+    @unittest.skipIf(
+        not FP16_SUPPORTED,
+        "float16 matmul not supported on this device",
+    )
+    def test_gram_ns_batch_pad_equivalence(self) -> None:
+        """Batched column-padded Gram NS must agree with per-matrix Gram NS."""
+        torch.manual_seed(789)
+        gram_orth = _GramNewtonSchulzOrthogonalizer()
+        min_dim = 64
+
+        # Simulate two different max_dims in the same super-bucket
+        shapes = [(min_dim, 128), (min_dim, 192), (min_dim, 384)]
+        padded_max = max(s[1] for s in shapes)
+
+        per_matrix_results = []
+        padded_batch = []
+        for m, n in shapes:
+            X = torch.randn(1, m, n, dtype=torch.float32, device=self.device)
+            per_matrix_results.append(gram_orth._call_impl(X))
+            padded_batch.append(torch.nn.functional.pad(X, (0, padded_max - n)))
+
+        # Run Gram NS on the batched padded tensor
+        stacked = torch.cat(padded_batch, dim=0)  # (3, 64, 384)
+        batched_out = gram_orth._call_impl(stacked)
+
+        for i, (m, n) in enumerate(shapes):
+            expected = per_matrix_results[i]
+            actual = batched_out[i : i + 1, :, :n]
+            self.assertTrue(
+                torch.allclose(expected, actual, atol=1e-3, rtol=1e-3),
+                f"shape ({m},{n}): batched-pad max diff = {(expected - actual).abs().max().item():.6f}",
+            )
+
+    @unittest.skipIf(
+        not FP16_SUPPORTED,
+        "float16 matmul not supported on this device",
+    )
+    def test_optimizer_step_column_pad_merge_e2e(self) -> None:
+        """End-to-end: optimizer with mixed rectangular shapes runs correctly.
+
+        Constructs a model with multiple rectangular weight matrices of
+        different shapes (same min_dim) that trigger the column-pad merge
+        path, then verifies all parameters are updated and the model produces
+        finite outputs.
+        """
+        torch.manual_seed(42)
+
+        class MixedRectModel(torch.nn.Module):
+            """Model with rectangular weights sharing min_dim=8 but different max_dims."""
+
+            def __init__(self, device: torch.device) -> None:
+                super().__init__()
+                # 3 rectangular weights: min_dim=8, max_dim varies
+                self.w1 = torch.nn.Parameter(torch.randn(8, 16, device=device))
+                self.w2 = torch.nn.Parameter(torch.randn(8, 32, device=device))
+                self.w3 = torch.nn.Parameter(torch.randn(24, 8, device=device))
+                # A square weight for the standard NS path
+                self.w_sq = torch.nn.Parameter(torch.randn(16, 16, device=device))
+                # 1D bias for Adam path
+                self.bias = torch.nn.Parameter(torch.zeros(16, device=device))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                # x: (B, 8), w1: (8, 16) -> (B, 16)
+                h = x @ self.w1 + self.bias
+                h = h @ self.w_sq  # (B, 16)
+                h2 = x @ self.w2  # (B, 32)
+                h3 = x @ self.w3.T  # (B, 24); w3: (24, 8)
+                return h.sum() + h2.sum() + h3.sum()
+
+        model = MixedRectModel(self.device)
+        init_state = {k: v.detach().clone() for k, v in model.named_parameters()}
+
+        optimizer = HybridMuonOptimizer(
+            model.parameters(),
+            lr=0.01,
+            enable_gram=True,
+            flash_muon=False,
+            magma_muon=True,
+            muon_mode="slice",
+            named_parameters=tuple(model.named_parameters()),
+        )
+
+        x = torch.randn(4, 8, device=self.device)
+        for _ in range(3):
+            optimizer.zero_grad()
+            model(x).backward()
+            optimizer.step()
+
+        # All params must have been updated
+        for name, param in model.named_parameters():
+            self.assertFalse(
+                torch.allclose(param, init_state[name]),
+                f"Parameter {name} was not updated after 3 steps",
+            )
+
+        # Output must be finite
+        with torch.no_grad():
+            out = model(x)
+        self.assertTrue(
+            torch.isfinite(out).all(),
+            f"Model output is not finite: {out}",
+        )
+
+        # Muon params should have momentum_buffer
+        for name in ["w1", "w2", "w3", "w_sq"]:
+            p = getattr(model, name)
+            self.assertIn(
+                "momentum_buffer",
+                optimizer.state[p],
+                f"{name} missing momentum_buffer",
+            )
+        # Magma should be active on Muon params
+        for name in ["w1", "w2", "w3", "w_sq"]:
+            p = getattr(model, name)
+            self.assertIn(
+                "magma_score",
+                optimizer.state[p],
+                f"{name} missing magma_score",
+            )
+        # Bias uses Adam
+        self.assertIn("exp_avg", optimizer.state[model.bias])
 
 
 if __name__ == "__main__":

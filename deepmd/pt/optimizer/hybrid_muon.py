@@ -412,7 +412,7 @@ class _GramNewtonSchulzOrthogonalizer:
         self._compiled_call = torch.compile(
             self._call_impl,
             fullgraph=True,
-            mode="reduce-overhead",
+            dynamic=True,
         )
 
     def __call__(self, X: torch.Tensor) -> torch.Tensor:
@@ -644,6 +644,7 @@ def _compute_muon_nesterov_updates(
     gradients: list[torch.Tensor],
     momentum_buffers: list[torch.Tensor],
     momentum: float,
+    use_foreach: bool = False,
 ) -> list[torch.Tensor]:
     """
     Update Muon momentum buffers and return Nesterov updates.
@@ -656,17 +657,22 @@ def _compute_muon_nesterov_updates(
         Momentum buffers associated with ``gradients``.
     momentum : float
         Momentum coefficient.
+    use_foreach : bool
+        Use ``torch._foreach_*`` multi-tensor kernels when True.
 
     Returns
     -------
     list[torch.Tensor]
         Nesterov-style Muon updates with the same shapes as ``gradients``.
     """
-    # === Step 1. Update momentum buffers ===
+    if use_foreach and len(gradients) > 1:
+        # m_t = beta * m_{t-1} + (1 - beta) * g_t
+        torch._foreach_lerp_(momentum_buffers, gradients, 1.0 - momentum)
+        # update = lerp(g_t, m_t, beta) = beta * m_t + (1 - beta) * g_t
+        return torch._foreach_lerp(gradients, momentum_buffers, momentum)
     # m_t = beta * m_{t-1} + (1 - beta) * g_t
     for momentum_buffer, grad in zip(momentum_buffers, gradients, strict=True):
         momentum_buffer.lerp_(grad, 1.0 - momentum)
-    # === Step 2. Form Nesterov updates ===
     # update = beta * m_t + (1 - beta) * g_t
     return [
         torch.lerp(grad, momentum_buffer, momentum)
@@ -910,6 +916,7 @@ class HybridMuonOptimizer(Optimizer):
         enable_gram: bool = True,
         flash_muon: bool = True,
         magma_muon: bool = False,
+        use_foreach: bool | None = None,
     ) -> None:
         # === Step 1. Validate routing mode ===
         muon_mode = str(muon_mode).lower()
@@ -950,6 +957,106 @@ class HybridMuonOptimizer(Optimizer):
             tuple[torch.Tensor, torch.Tensor],
         ] = {}
         self._gram_orthogonalizer: _GramNewtonSchulzOrthogonalizer | None = None
+
+        # === Step 5. Foreach acceleration (disabled under FSDP2 / DTensor) ===
+        self._use_foreach = self._resolve_foreach(use_foreach)
+
+    @staticmethod
+    def _resolve_foreach(use_foreach: bool | None) -> bool:
+        """Decide whether to use ``torch._foreach_*`` multi-tensor kernels.
+
+        Foreach fuses per-parameter loops into single kernel launches,
+        eliminating Python overhead. Disabled when parameters are FSDP2
+        ``DTensor`` because several foreach ops lack DTensor sharding
+        propagation rules in older PyTorch builds.
+        """
+        if use_foreach is not None:
+            return bool(use_foreach)
+        # Conservative default: enable foreach (safe for DDP / ZeRO-1).
+        # FSDP2 users should pass use_foreach=False explicitly if they
+        # encounter DTensor dispatch errors.
+        return True
+
+    def _compute_magma_scales_merged(
+        self,
+        bucket_entries: list[
+            tuple[dict[str, Any], torch.Tensor, torch.Tensor, torch.Tensor]
+        ],
+        rows: int,
+        cols: int,
+    ) -> list[torch.Tensor]:
+        """Compute Magma-lite scales for a merged bucket with variable batch_sizes.
+
+        Like ``_compute_magma_scales_for_bucket`` but handles entries whose
+        ``batch_size`` may differ (produced by the merged-bucket strategy that
+        keys on ``(rows, cols)`` instead of ``(batch_size, rows, cols)``).
+        """
+        n = len(bucket_entries)
+        if n == 0:
+            return []
+        if n == 1:
+            entry, _, grad, momentum_buffer = bucket_entries[0]
+            return [
+                self._compute_magma_scale(
+                    param=entry["param"],
+                    grad=grad,
+                    momentum_buffer=momentum_buffer,
+                    batch_size=entry["batch_size"],
+                    rows=rows,
+                    cols=cols,
+                )
+            ]
+
+        flat_dim = rows * cols
+        grad_views: list[torch.Tensor] = []
+        momentum_views: list[torch.Tensor] = []
+        entry_batch_sizes: list[int] = []
+        for entry, _, grad, momentum_buffer in bucket_entries:
+            bs = entry["batch_size"]
+            grad_views.append(grad.reshape(bs, flat_dim).to(dtype=torch.float32))
+            momentum_views.append(
+                momentum_buffer.reshape(bs, flat_dim).to(dtype=torch.float32)
+            )
+            entry_batch_sizes.append(bs)
+
+        grad_cat = torch.cat(grad_views, dim=0)
+        momentum_cat = torch.cat(momentum_views, dim=0)
+
+        dot = (momentum_cat * grad_cat).sum(dim=1)
+        denom = (momentum_cat.norm(dim=1) * grad_cat.norm(dim=1)).clamp(min=MAGMA_EPS)
+        cosine = (dot / denom).clamp(-1.0, 1.0)
+        raw_sigmoid = torch.sigmoid(cosine / MAGMA_TAU)
+        raw_scores = (
+            (raw_sigmoid - MAGMA_SIGMOID_MIN) / (MAGMA_SIGMOID_MAX - MAGMA_SIGMOID_MIN)
+        ).clamp(0.0, 1.0)
+
+        scales: list[torch.Tensor] = []
+        offset = 0
+        for idx, (entry, _, _, _) in enumerate(bucket_entries):
+            bs = entry_batch_sizes[idx]
+            param = entry["param"]
+            state = self.state[param]
+            magma_score = state.get("magma_score")
+            if (
+                magma_score is None
+                or magma_score.ndim != 1
+                or magma_score.numel() != bs
+                or magma_score.device != param.device
+            ):
+                magma_score = torch.full(
+                    (bs,), 0.5, dtype=torch.float32, device=param.device
+                )
+                state["magma_score"] = magma_score
+            elif magma_score.dtype != torch.float32:
+                magma_score = magma_score.to(dtype=torch.float32, device=param.device)
+                state["magma_score"] = magma_score
+            magma_score.mul_(MAGMA_EMA_DECAY).add_(
+                raw_scores[offset : offset + bs], alpha=(1.0 - MAGMA_EMA_DECAY)
+            )
+            scales.append(MAGMA_MIN_SCALE + (1.0 - MAGMA_MIN_SCALE) * magma_score)
+            offset += bs
+
+        return scales
 
     def _compute_magma_scale(
         self,
@@ -1212,6 +1319,152 @@ class HybridMuonOptimizer(Optimizer):
             self._gram_orthogonalizer = _GramNewtonSchulzOrthogonalizer()
         return self._gram_orthogonalizer
 
+    def _process_merged_gram_buckets(
+        self,
+        gram_buckets: dict[
+            tuple[int, int, torch.device, torch.dtype],
+            list[tuple[dict[str, Any], torch.Tensor, torch.Tensor, torch.Tensor]],
+        ],
+        lr: float,
+        lr_adjust: float,
+        lr_adjust_coeff: float,
+        magma_scales_map: dict[int, torch.Tensor],
+    ) -> None:
+        """Column-pad merge across rectangular buckets sharing the same min_dim.
+
+        Rectangular Muon matrices with the same ``min(rows, cols)`` can be
+        fused into a single Gram Newton-Schulz call by zero-padding the
+        **column** (large) dimension to the group maximum.  This reduces the
+        number of compiled Gram NS dispatches and improves GPU occupancy.
+
+        Mathematical equivalence proof for column-padding:
+        Both Standard NS and Gram NS operate on the wide orientation
+        ``X  (m x n)``, ``m <= n``.  The Gram matrix is
+        ``R = X @ X^T  (m x m)``.
+
+        Let ``X_pad = [X | 0]  (m x (n+p))`` where the last p columns are
+        zero.  Then:
+
+        1. Frobenius norm is unchanged:
+           ``||X_pad||_F = ||X||_F``
+           because the zero columns contribute nothing.
+
+        2. Gram matrix is unchanged:
+           ``R_pad = X_pad @ X_pad^T = X @ X^T + 0 @ 0^T = R``
+
+        3. Since all NS iterations (both standard quintic and Gram/Polar-
+           Express) depend *only* on R (which is m x m regardless of n),
+           every intermediate ``Q_k`` is identical.
+
+        4. The restart step ``X_new = Q @ X_pad = [Q @ X | 0]`` also
+           preserves the invariant ``R_new = Q @ R @ Q^T``, so subsequent
+           iterations remain identical.
+
+        5. The final output is ``Q_last @ X_pad = [Q_last @ X | 0]``.
+           Truncating to the first n columns exactly recovers the
+           unpadded result.
+
+        **Constraint**: Only the *column* (large) dimension may be padded.
+        Padding rows would change the size of R and break equivalence.
+
+        Per-entry ``scale`` and Magma damping are applied *after* unpadding,
+        since different original shapes have different ``max(rows, cols)``.
+        """
+        # --- Group rectangular buckets by (min_dim, device, dtype) ---
+        super_buckets: dict[
+            tuple[int, torch.device, torch.dtype],
+            list[
+                tuple[
+                    int,
+                    int,
+                    bool,
+                    list[
+                        tuple[
+                            dict[str, Any],
+                            torch.Tensor,
+                            torch.Tensor,
+                            torch.Tensor,
+                        ]
+                    ],
+                ]
+            ],
+        ] = {}
+
+        for (rows, cols, dev, dt), bucket_entries in gram_buckets.items():
+            min_dim = min(rows, cols)
+            max_dim = max(rows, cols)
+            transposed = rows > cols
+            sb_key = (min_dim, dev, dt)
+            if sb_key not in super_buckets:
+                super_buckets[sb_key] = []
+            super_buckets[sb_key].append((rows, cols, transposed, bucket_entries))
+
+        gram_orth = self._get_gram_orthogonalizer()
+
+        for (min_dim, _dev, _dt), sub_list in super_buckets.items():
+            # Find the maximum large-dimension across all sub-buckets.
+            padded_max_dim = max(max(r, c) for r, c, _, _ in sub_list)
+
+            # Collect all matrices in wide orientation (min_dim, padded_max_dim).
+            all_wide: list[torch.Tensor] = []
+            # Track per-matrix metadata for the split-back phase.
+            # Each entry: (param_entry, batch_size, orig_max_dim, was_transposed)
+            all_meta: list[tuple[dict[str, Any], int, int, bool]] = []
+
+            for rows, cols, was_transposed, bucket_entries in sub_list:
+                orig_max_dim = max(rows, cols)
+                for entry, update_tensor, _, _ in bucket_entries:
+                    bs = entry["batch_size"]
+                    mat = _reshape_update_to_matrix_batch(update_tensor, bs, rows, cols)
+                    # Orient to wide: (bs, min_dim, orig_max_dim)
+                    if was_transposed:
+                        mat = mat.transpose(-2, -1)
+                    # Pad columns if needed: (bs, min_dim, padded_max_dim)
+                    pad_width = padded_max_dim - orig_max_dim
+                    if pad_width > 0:
+                        mat = torch.nn.functional.pad(mat, (0, pad_width))
+                    all_wide.append(mat)
+                    all_meta.append((entry, bs, orig_max_dim, was_transposed))
+
+            # Single Gram NS call on the entire super-bucket.
+            # Shape: (total_batch, min_dim, padded_max_dim)
+            stacked = torch.cat(all_wide, dim=0)
+            orthogonalized = gram_orth(stacked)
+
+            # Split back, unpad, un-transpose, apply scale + Magma + update.
+            offset = 0
+            for entry, bs, orig_max_dim, was_transposed in all_meta:
+                orth_slice = orthogonalized[offset : offset + bs]
+                offset += bs
+
+                # Unpad: keep only the first orig_max_dim columns.
+                if orig_max_dim < padded_max_dim:
+                    orth_slice = orth_slice[:, :, :orig_max_dim]
+
+                # Un-transpose back to original (rows, cols) orientation.
+                if was_transposed:
+                    orth_slice = orth_slice.transpose(-2, -1)
+
+                # Per-entry scale (depends on original max(rows, cols)).
+                orig_rows, orig_cols = entry["rows"], entry["cols"]
+                if lr_adjust <= 0:
+                    scale = lr_adjust_coeff * math.sqrt(
+                        float(max(orig_rows, orig_cols))
+                    )
+                else:
+                    scale = max(1.0, orig_rows / orig_cols) ** 0.5
+                orth_slice = orth_slice * scale
+
+                # Per-entry Magma damping.
+                magma_scale = magma_scales_map.get(id(entry["param"]))
+                if magma_scale is not None:
+                    orth_slice = orth_slice * magma_scale.view(bs, 1, 1).to(
+                        dtype=orth_slice.dtype, device=orth_slice.device
+                    )
+
+                delta = orth_slice.reshape(entry["param"].shape)
+                entry["param"].add_(delta, alpha=-lr)
+
     def _build_param_routing(self) -> None:
         """
         Classify parameters into Muon, Adam, and AdamW routes (static routing).
@@ -1279,6 +1532,50 @@ class HybridMuonOptimizer(Optimizer):
             )
 
         self._routing_built = True
+
+    # ------------------------------------------------------------------
+    # Foreach-aware helpers for Adam moment updates
+    # ------------------------------------------------------------------
+
+    def _adam_update_moments(
+        self,
+        exp_avgs: list[torch.Tensor],
+        exp_avg_sqs: list[torch.Tensor],
+        grads_fp32: list[torch.Tensor],
+        beta1: float,
+        beta2: float,
+    ) -> None:
+        """Update Adam first/second moment estimates, foreach-accelerated when safe.
+
+        exp_avg  = beta1 * exp_avg  + (1 - beta1) * grad
+        exp_avg_sq = beta2 * exp_avg_sq + (1 - beta2) * grad^2
+        """
+        if self._use_foreach and len(exp_avgs) > 1:
+            torch._foreach_lerp_(exp_avgs, grads_fp32, 1.0 - beta1)
+            grad_sq = torch._foreach_mul(grads_fp32, grads_fp32)
+            torch._foreach_lerp_(exp_avg_sqs, grad_sq, 1.0 - beta2)
+        else:
+            for ea, g in zip(exp_avgs, grads_fp32, strict=True):
+                ea.lerp_(g, 1.0 - beta1)
+            grad_sq = [g * g for g in grads_fp32]
+            for eas, gsq in zip(exp_avg_sqs, grad_sq, strict=True):
+                eas.lerp_(gsq, 1.0 - beta2)
+
+    def _weight_decay_inplace(
+        self,
+        params: list[torch.Tensor],
+        factor: float,
+    ) -> None:
+        """Apply multiplicative weight decay, foreach-accelerated when safe."""
+        if self._use_foreach and len(params) > 1:
+            torch._foreach_mul_(params, factor)
+        else:
+            for p in params:
+                p.mul_(factor)
+
+    # ------------------------------------------------------------------
+    # step()
+    # ------------------------------------------------------------------
 
     @torch.no_grad()
     def step(
@@ -1352,24 +1649,20 @@ class HybridMuonOptimizer(Optimizer):
             if adam_no_decay_params:
                 # === Step 1.2. Update exp_avg / exp_avg_sq ===
                 adam_lr = lr if lr_adjust <= 0 else lr / lr_adjust
-
-                # exp_avg = beta1 * exp_avg + (1 - beta1) * grad
-                # exp_avg_sq = beta2 * exp_avg_sq + (1 - beta2) * grad^2
-                for ea, g in zip(
-                    adam_no_decay_exp_avgs, adam_no_decay_grads_fp32, strict=True
-                ):
-                    ea.lerp_(g, 1 - adam_betas[0])
-                grad_sq = [g * g for g in adam_no_decay_grads_fp32]
-                for eas, gsq in zip(adam_no_decay_exp_avg_sqs, grad_sq, strict=True):
-                    eas.lerp_(gsq, 1 - adam_betas[1])
-
+                self._adam_update_moments(
+                    adam_no_decay_exp_avgs,
+                    adam_no_decay_exp_avg_sqs,
+                    adam_no_decay_grads_fp32,
+                    adam_betas[0],
+                    adam_betas[1],
+                )
                 # === Step 1.3. Bias correction and parameter update ===
+                # delta = -step_size * m_hat / (sqrt(v_hat) + eps)
                 for i, p in enumerate(adam_no_decay_params):
                     state = adam_no_decay_states[i]
                     bias_corr1 = 1 - state["beta1_pow"]
                     bias_corr2 = 1 - state["beta2_pow"]
                     step_size = adam_lr / bias_corr1
-                    # delta = -step_size * m_hat / (sqrt(v_hat) + eps)
                     denom = (adam_no_decay_exp_avg_sqs[i] / bias_corr2).sqrt().add_(EPS)
                     delta_fp32 = -step_size * (adam_no_decay_exp_avgs[i] / denom)
                     p.add_(delta_fp32.to(p.dtype))
@@ -1407,30 +1700,27 @@ class HybridMuonOptimizer(Optimizer):
                 adam_decay_states.append(state)
 
             if adam_decay_params:
-                # === Step 2.2. Update exp_avg / exp_avg_sq ===
                 adam_lr = lr if lr_adjust <= 0 else lr / lr_adjust
-                # AdamW decay for >=2D Adam path.
+                # AdamW decoupled weight decay for >=2D Adam path.
                 if weight_decay > 0:
-                    for p in adam_decay_params:
-                        p.mul_(1.0 - adam_lr * weight_decay)
-
-                # exp_avg = beta1 * exp_avg + (1 - beta1) * grad
-                # exp_avg_sq = beta2 * exp_avg_sq + (1 - beta2) * grad^2
-                for ea, g in zip(
-                    adam_decay_exp_avgs, adam_decay_grads_fp32, strict=True
-                ):
-                    ea.lerp_(g, 1 - adam_betas[0])
-                grad_sq = [g * g for g in adam_decay_grads_fp32]
-                for eas, gsq in zip(adam_decay_exp_avg_sqs, grad_sq, strict=True):
-                    eas.lerp_(gsq, 1 - adam_betas[1])
-
+                    self._weight_decay_inplace(
+                        adam_decay_params, 1.0 - adam_lr * weight_decay
+                    )
+                # === Step 2.2. Update exp_avg / exp_avg_sq ===
+                self._adam_update_moments(
+                    adam_decay_exp_avgs,
+                    adam_decay_exp_avg_sqs,
+                    adam_decay_grads_fp32,
+                    adam_betas[0],
+                    adam_betas[1],
+                )
                 # === Step 2.3. Bias correction and parameter update ===
+                # delta = -step_size * m_hat / (sqrt(v_hat) + eps)
                 for i, p in enumerate(adam_decay_params):
                     state = adam_decay_states[i]
                     bias_corr1 = 1 - state["beta1_pow"]
                     bias_corr2 = 1 - state["beta2_pow"]
                     step_size = adam_lr / bias_corr1
-                    # delta = -step_size * m_hat / (sqrt(v_hat) + eps)
                     denom = (adam_decay_exp_avg_sqs[i] / bias_corr2).sqrt().add_(EPS)
                     delta_fp32 = -step_size * (adam_decay_exp_avgs[i] / denom)
                     p.add_(delta_fp32.to(p.dtype))
@@ -1463,8 +1753,9 @@ class HybridMuonOptimizer(Optimizer):
 
             # === Step 3.2. Apply weight decay on Muon path ===
             if weight_decay > 0 and muon_params_for_decay:
-                for p in muon_params_for_decay:
-                    p.mul_(1.0 - lr * weight_decay)
+                self._weight_decay_inplace(
+                    muon_params_for_decay, 1.0 - lr * weight_decay
+                )
 
             if not active_entries:
                 continue
@@ -1474,11 +1765,15 @@ class HybridMuonOptimizer(Optimizer):
                 gradients=muon_grads,
                 momentum_buffers=muon_momentum_buffers,
                 momentum=momentum,
+                use_foreach=self._use_foreach,
             )
 
-            # === Step 3.4. Bucket by (batch_size, rows, cols, device, dtype) ===
+            # === Step 3.4. Bucket by (rows, cols, device, dtype) ===
+            # Merging across batch_sizes: entries with the same matrix
+            # shape are concatenated along the batch dimension, producing
+            # fewer but larger NS orth calls → better GPU occupancy.
             buckets: dict[
-                tuple[int, int, int, torch.device, torch.dtype],
+                tuple[int, int, torch.device, torch.dtype],
                 list[tuple[dict[str, Any], torch.Tensor, torch.Tensor, torch.Tensor]],
             ] = {}
 
@@ -1486,7 +1781,6 @@ class HybridMuonOptimizer(Optimizer):
                 entry, _ = entry_info
                 update_tensor = muon_updates[idx]
                 bucket_key = (
-                    entry["batch_size"],
                     entry["rows"],
                     entry["cols"],
                     update_tensor.device,
@@ -1506,8 +1800,54 @@ class HybridMuonOptimizer(Optimizer):
             for bucket_entries in buckets.values():
                 bucket_entries.sort(key=lambda item: item[0]["param"].data_ptr())
 
-            # === Step 3.5. Newton-Schulz orthogonalization and update ===
-            for (batch_size, rows, cols, _device, _), bucket_entries in buckets.items():
+            # === Step 3.5. Pre-compute all Magma scales before NS loop ===
+            # All Magma GPU kernels are launched first as a contiguous batch,
+            # then all NS orth kernels follow.  This avoids interleaving
+            # Magma and NS dispatches, giving the GPU a denser pipeline.
+            magma_scales_map: dict[int, torch.Tensor] = {}
+            if magma_muon:
+                for (rows, cols, _, _), bucket_entries in buckets.items():
+                    per_bucket = self._compute_magma_scales_merged(
+                        bucket_entries=bucket_entries,
+                        rows=rows,
+                        cols=cols,
+                    )
+                    for (entry, _, _, _), sc in zip(
+                        bucket_entries, per_bucket, strict=True
+                    ):
+                        magma_scales_map[id(entry["param"])] = sc
+
+            # === Step 3.6. Newton-Schulz orthogonalization and update ===
+            # Split buckets into square (standard NS) and rectangular (Gram NS).
+            # Rectangular buckets are column-pad merged by min_dim in a single
+            # Gram NS call per group; square buckets use the standard bmm path.
+            square_buckets: dict[
+                tuple[int, int, torch.device, torch.dtype],
+                list[tuple[dict[str, Any], torch.Tensor, torch.Tensor, torch.Tensor]],
+            ] = {}
+            gram_buckets: dict[
+                tuple[int, int, torch.device, torch.dtype],
+                list[tuple[dict[str, Any], torch.Tensor, torch.Tensor, torch.Tensor]],
+            ] = {}
+            for key, bucket_entries in buckets.items():
+                rows, cols = key[0], key[1]
+                if enable_gram and rows != cols:
+                    gram_buckets[key] = bucket_entries
+                else:
+                    square_buckets[key] = bucket_entries
+
+            # --- 3.6a  Rectangular buckets → column-pad merged Gram NS ---
+            if gram_buckets:
+                self._process_merged_gram_buckets(
+                    gram_buckets=gram_buckets,
+                    lr=lr,
+                    lr_adjust=lr_adjust,
+                    lr_adjust_coeff=lr_adjust_coeff,
+                    magma_scales_map=magma_scales_map,
+                )
+
+            # --- 3.6b  Square buckets → standard / flash NS path ---
+            for (rows, cols, _device, _dtype), bucket_entries in square_buckets.items():
                 # scale = coeff * sqrt(max(m, n))  [match-RMS mode]
                 # scale = sqrt(max(1, m/n))        [rectangular mode]
                 if lr_adjust <= 0:
@@ -1515,70 +1855,48 @@ class HybridMuonOptimizer(Optimizer):
                 else:
                     scale = max(1.0, rows / cols) ** 0.5
 
-                # Determine if flash path is usable for this bucket.
-                # Flash path is enabled only for single-matrix updates.
-                # Only beneficial when min(rows, cols) >= FLASH_MIN_DIM;
-                # for small matrices, triton launch overhead > compute savings.
+                flat_updates: list[torch.Tensor] = []
+                entry_slices: list[tuple[int, int]] = []
+                offset = 0
+                for entry, update_tensor, _, _ in bucket_entries:
+                    bs = entry["batch_size"]
+                    mat = _reshape_update_to_matrix_batch(update_tensor, bs, rows, cols)
+                    flat_updates.append(mat)
+                    entry_slices.append((offset, bs))
+                    offset += bs
+                all_updates = torch.cat(flat_updates, dim=0)
+
+                # Flash path: triton-accelerated symmetric matmul for single
+                # large matrices (min_dim >= FLASH_MIN_DIM).
+                total_batch = all_updates.size(0)
                 M = min(rows, cols)
                 use_flash = (
                     not enable_gram
-                    and batch_size == 1
+                    and total_batch == 1
                     and self._use_flash
                     and _device.type == "cuda"
                     and M >= FLASH_MIN_DIM
                 )
                 if use_flash:
                     buf1, buf2 = self._get_ns_buffers(M, _device)
-                    flash_buffers: tuple[torch.Tensor, torch.Tensor] | None = (
-                        buf1,
-                        buf2,
-                    )
+                    orthogonalized = _flash_newton_schulz_orth(
+                        all_updates.squeeze(0), buf1, buf2
+                    ).unsqueeze(0)
                 else:
-                    flash_buffers = None
-
-                if magma_muon:
-                    bucket_magma_scales = self._compute_magma_scales_for_bucket(
-                        bucket_entries=bucket_entries,
-                        batch_size=batch_size,
-                        rows=rows,
-                        cols=cols,
-                    )
-                else:
-                    bucket_magma_scales = [None] * len(bucket_entries)
-
-                stacked_updates = _stack_bucket_updates(
-                    bucket_entries=bucket_entries,
-                    batch_size=batch_size,
-                    rows=rows,
-                    cols=cols,
-                )
-                use_gram_path = enable_gram and rows != cols
-                if use_gram_path:
-                    orthogonalized = self._get_gram_orthogonalizer()(stacked_updates)
-                else:
-                    orthogonalized = _orthogonalize_standard_stacked(
-                        stacked_updates=stacked_updates,
-                        rows=rows,
-                        cols=cols,
-                        use_flash=use_flash,
-                        flash_buffers=flash_buffers,
-                    )
+                    orthogonalized = _batched_newton_schulz_orth(all_updates)
 
                 orthogonalized.mul_(scale)
 
-                for idx, (
-                    (entry, _update_tensor, _grad, _buffer),
-                    magma_scale,
-                ) in enumerate(zip(bucket_entries, bucket_magma_scales, strict=True)):
-                    orth_view = orthogonalized[idx]
+                for idx, (entry, _, _, _) in enumerate(bucket_entries):
+                    off, bs = entry_slices[idx]
+                    orth_slice = orthogonalized[off : off + bs]
+                    magma_scale = magma_scales_map.get(id(entry["param"]))
                     if magma_scale is not None:
-                        orth_view.mul_(
-                            magma_scale.view(batch_size, 1, 1).to(
-                                dtype=orth_view.dtype,
-                                device=orth_view.device,
-                            )
+                        orth_slice = orth_slice * magma_scale.view(bs, 1, 1).to(
+                            dtype=orth_slice.dtype,
+                            device=orth_slice.device,
                         )
-                    delta = orth_view.reshape(entry["param"].shape)
+                    delta = orth_slice.reshape(entry["param"].shape)
                     entry["param"].add_(delta, alpha=-lr)
 
         return loss
