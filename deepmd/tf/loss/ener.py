@@ -100,6 +100,13 @@ class EnerStdLoss(Loss):
     f_use_norm : bool
         If True, use L2 norm of force vectors for loss calculation.
         Not implemented in TF backend, only for serialization compatibility.
+    intensive : bool
+        If true (default), energy and virial losses are computed as intensive quantities,
+        normalized by the square of the number of atoms (1/N^2). This ensures the loss
+        value is independent of system size and consistent with per-atom RMSE reporting.
+        If false, uses the legacy normalization (1/N), which may cause the loss to scale
+        with system size. Set to false for backward compatibility with models trained
+        using deepmd-kit <= 3.0.1.
     **kwargs
         Other keyword arguments.
     """
@@ -126,6 +133,7 @@ class EnerStdLoss(Loss):
         huber_delta: float | list[float] = 0.01,
         loss_func: str = "mse",
         f_use_norm: bool = False,
+        intensive: bool = True,
         **kwargs: Any,
     ) -> None:
         if loss_func != "mse":
@@ -167,6 +175,7 @@ class EnerStdLoss(Loss):
             )
         self.use_huber = use_huber
         self.huber_delta = huber_delta
+        self.intensive = intensive
         (
             self._huber_delta_energy,
             self._huber_delta_force,
@@ -354,9 +363,11 @@ class EnerStdLoss(Loss):
 
         loss = 0
         more_loss = {}
+        # Normalization exponent: 2 for intensive (new), 1 for legacy behavior
+        norm_exp = 2 if self.intensive else 1
         if self.has_e:
             if not self.use_huber:
-                loss += atom_norm_ener**2 * (pref_e * l2_ener_loss)
+                loss += atom_norm_ener**norm_exp * (pref_e * l2_ener_loss)
             else:
                 l_huber_loss = custom_huber_loss(
                     atom_norm_ener * energy,
@@ -381,7 +392,7 @@ class EnerStdLoss(Loss):
         if self.has_v:
             if not self.use_huber:
                 loss += global_cvt_2_ener_float(
-                    atom_norm**2 * (pref_v * l2_virial_loss)
+                    atom_norm**norm_exp * (pref_v * l2_virial_loss)
                 )
             else:
                 l_huber_loss = custom_huber_loss(

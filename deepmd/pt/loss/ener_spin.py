@@ -40,6 +40,7 @@ class EnergySpinLoss(TaskLoss):
         enable_atom_ener_coeff: bool = False,
         loss_func: str = "mse",
         inference: bool = False,
+        intensive: bool = True,
         **kwargs: Any,
     ) -> None:
         r"""Construct a layer to compute loss on energy, real force, magnetic force and virial.
@@ -76,6 +77,13 @@ class EnergySpinLoss(TaskLoss):
             MAE loss is less sensitive to outliers compared to MSE loss.
         inference : bool
             If true, it will output all losses found in output, ignoring the pre-factors.
+        intensive : bool
+            If true (default), energy and virial losses are computed as intensive quantities,
+            normalized by the square of the number of atoms (1/N^2). This ensures the loss
+            value is independent of system size and consistent with per-atom RMSE reporting.
+            If false, uses the legacy normalization (1/N), which may cause the loss to scale
+            with system size. Set to false for backward compatibility with models trained
+            using deepmd-kit <= 3.0.1.
         **kwargs
             Other keyword arguments.
         """
@@ -101,6 +109,7 @@ class EnergySpinLoss(TaskLoss):
         self.limit_pref_ae = limit_pref_ae
         self.enable_atom_ener_coeff = enable_atom_ener_coeff
         self.inference = inference
+        self.intensive = intensive
 
     def forward(
         self,
@@ -145,6 +154,8 @@ class EnergySpinLoss(TaskLoss):
         # more_loss['log_keys'] = []  # showed when validation on the fly
         # more_loss['test_keys'] = []  # showed when doing dp test
         atom_norm = 1.0 / natoms
+        # Normalization exponent: 2 for intensive (new), 1 for legacy behavior
+        norm_exp = 2 if self.intensive else 1
         if self.has_e and "energy" in model_pred and "energy" in label:
             energy_pred = model_pred["energy"]
             energy_label = label["energy"]
@@ -169,7 +180,7 @@ class EnergySpinLoss(TaskLoss):
                     more_loss["l2_ener_loss"] = self.display_if_exist(
                         l2_ener_loss.detach(), find_energy
                     )
-                loss += atom_norm * (pref_e * l2_ener_loss)
+                loss += atom_norm**norm_exp * (pref_e * l2_ener_loss)
                 rmse_e = l2_ener_loss.sqrt() * atom_norm
                 more_loss["rmse_e"] = self.display_if_exist(
                     rmse_e.detach(), find_energy
@@ -324,7 +335,7 @@ class EnergySpinLoss(TaskLoss):
                     more_loss["l2_virial_loss"] = self.display_if_exist(
                         l2_virial_loss.detach(), find_virial
                     )
-                loss += atom_norm * (pref_v * l2_virial_loss)
+                loss += atom_norm**norm_exp * (pref_v * l2_virial_loss)
                 rmse_v = l2_virial_loss.sqrt() * atom_norm
                 more_loss["rmse_v"] = self.display_if_exist(
                     rmse_v.detach(), find_virial
