@@ -2089,5 +2089,205 @@ class TestMultiTaskGradient(unittest.TestCase):
         )
 
 
+class TestCompileCaseEmbdVaryingNframes(unittest.TestCase):
+    """Compiled multi-task with ``dim_case_embd > 0`` and varying ``nframes``.
+
+    The shared-fitting path in ``GeneralFitting.call`` tiles the per-task
+    case embedding as ``xp.tile(reshape(case_embd, (1, 1, -1)), (nf, nloc, 1))``
+    (see ``deepmd/dpmodel/fitting/general_fitting.py``).  Under
+    ``tracing_mode="symbolic"`` the ``nf`` multiplier must stay symbolic;
+    otherwise the compiled graph hard-codes a specific batch size and
+    subsequent calls with a different ``nframes`` error out.
+
+    The test uses two systems with different atom counts and per-system
+    ``batch_size=[2, 3]`` so every branch's compiled graph sees both
+    nframes values.  ``dim_case_embd=2`` is deliberately chosen to also
+    collide numerically with the nframes=2 runtime case.  ``dp_random.choice``
+    is mocked so both tasks and both systems are sampled.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.tmpdir = tempfile.mkdtemp(prefix="pt_expt_mt_case_embd_vary_")
+        cls.sys0_m1 = os.path.join(cls.tmpdir, "sys0_model1_6atoms")
+        cls.sys1_m1 = os.path.join(cls.tmpdir, "sys1_model1_4atoms")
+        cls.sys0_m2 = os.path.join(cls.tmpdir, "sys0_model2_6atoms")
+        cls.sys1_m2 = os.path.join(cls.tmpdir, "sys1_model2_4atoms")
+        for path, seed in (
+            (cls.sys0_m1, 11),
+            (cls.sys1_m1, 12),
+            (cls.sys0_m2, 21),
+            (cls.sys1_m2, 22),
+        ):
+            _generate_random_data_dir(
+                path,
+                atom_types=[i % 2 for i in range(6 if "6atoms" in path else 4)],
+                nframes=4,
+                seed=seed,
+            )
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        shutil.rmtree(cls.tmpdir, ignore_errors=True)
+
+    def _make_config(self) -> dict:
+        type_map = ["O", "H"]
+        fitting = deepcopy(_fitting_net)
+        fitting["dim_case_embd"] = 2
+        shared_dict: dict = {
+            "my_type_map": type_map,
+            "my_descriptor": deepcopy(_descriptor_se_e2_a),
+            "my_fitting": fitting,
+        }
+        config = {
+            "model": {
+                "shared_dict": shared_dict,
+                "model_dict": {
+                    "model_1": {
+                        "type_map": "my_type_map",
+                        "descriptor": "my_descriptor",
+                        "fitting_net": "my_fitting",
+                        "data_stat_nbatch": 1,
+                    },
+                    "model_2": {
+                        "type_map": "my_type_map",
+                        "descriptor": "my_descriptor",
+                        "fitting_net": "my_fitting",
+                        "data_stat_nbatch": 1,
+                    },
+                },
+            },
+            "learning_rate": {
+                "type": "exp",
+                "decay_steps": 500,
+                "start_lr": 0.001,
+                "stop_lr": 3.51e-8,
+            },
+            "loss_dict": {
+                "model_1": {
+                    "type": "ener",
+                    "start_pref_e": 0.02,
+                    "limit_pref_e": 1,
+                    "start_pref_f": 1000,
+                    "limit_pref_f": 1,
+                    "start_pref_v": 0,
+                    "limit_pref_v": 0,
+                },
+                "model_2": {
+                    "type": "ener",
+                    "start_pref_e": 0.02,
+                    "limit_pref_e": 1,
+                    "start_pref_f": 1000,
+                    "limit_pref_f": 1,
+                    "start_pref_v": 0,
+                    "limit_pref_v": 0,
+                },
+            },
+            "training": {
+                "enable_compile": True,
+                "model_prob": {"model_1": 0.5, "model_2": 0.5},
+                "data_dict": {
+                    "model_1": {
+                        "stat_file": "./stat_files/model_1",
+                        "training_data": {
+                            "systems": [self.sys0_m1, self.sys1_m1],
+                            "batch_size": [2, 3],
+                        },
+                        "validation_data": {
+                            "systems": [self.sys0_m1],
+                            "batch_size": 1,
+                            "numb_btch": 1,
+                        },
+                    },
+                    "model_2": {
+                        "stat_file": "./stat_files/model_2",
+                        "training_data": {
+                            "systems": [self.sys0_m2, self.sys1_m2],
+                            "batch_size": [2, 3],
+                        },
+                        "validation_data": {
+                            "systems": [self.sys0_m2],
+                            "batch_size": 1,
+                            "numb_btch": 1,
+                        },
+                    },
+                },
+                "numb_steps": 1,
+                "seed": 10,
+                "disp_file": "lcurve.out",
+                "disp_freq": 100,
+                "save_freq": 100,
+            },
+        }
+        config["model"], shared_links = preprocess_shared_params(config["model"])
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config, multi_task=True)
+        return config, shared_links
+
+    def test_compiled_varying_nframes_with_case_embd(self) -> None:
+        """Compiled shared-fitting graph handles nframes in {2, 3} per branch."""
+        from deepmd.pt_expt.train.training import (
+            _CompiledModel,
+        )
+
+        config, shared_links = self._make_config()
+        tmpdir = tempfile.mkdtemp(prefix="pt_expt_mt_case_embd_run_")
+        old_cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            trainer = get_trainer(deepcopy(config), shared_links=shared_links)
+            # Both branches must be compiled.
+            for mk in ("model_1", "model_2"):
+                self.assertIsInstance(trainer.wrapper.model[mk], _CompiledModel)
+                ce = trainer.wrapper.model[
+                    mk
+                ].original_model.atomic_model.fitting_net.case_embd
+                self.assertIsNotNone(ce, f"case_embd not set on {mk}")
+                self.assertEqual(int(ce.shape[0]), 2)
+
+            # Drive 6 steps alternating (task, system_index) so each branch's
+            # compiled graph sees both nframes=2 (sys0) and nframes=3 (sys1).
+            trainer.wrapper.train()
+            task_sequence = ["model_1", "model_2"] * 3
+            sys_sequence = [0, 1, 0, 1, 0, 1]
+            sys_iter = iter(sys_sequence)
+
+            original_choice = dp_random.choice
+
+            def task_or_system_choice(a, size=None, replace=True, p=None):
+                # Per-branch system selection: alternate between the two
+                # systems so every compiled graph sees both nframes values.
+                if hasattr(a, "__len__") and len(a) == 2 and p is not None:
+                    return next(sys_iter)
+                return original_choice(a, size=size, replace=replace, p=p)
+
+            seen_nframes: set[int] = set()
+            with patch.object(dp_random, "choice", side_effect=task_or_system_choice):
+                for task_key in task_sequence:
+                    trainer.optimizer.zero_grad(set_to_none=True)
+                    inp, lab = trainer.get_data(is_train=True, task_key=task_key)
+                    seen_nframes.add(int(inp["coord"].shape[0]))
+                    lr = trainer.scheduler.get_last_lr()[0]
+                    _, loss, _ = trainer.wrapper(
+                        **inp, cur_lr=lr, label=lab, task_key=task_key
+                    )
+                    loss.backward()
+                    trainer.optimizer.step()
+                    self.assertFalse(torch.isnan(loss), "loss is NaN")
+                    self.assertFalse(torch.isinf(loss), "loss is Inf")
+
+            self.assertEqual(
+                seen_nframes,
+                {2, 3},
+                msg=(
+                    f"nframes did not vary across steps: {seen_nframes}. "
+                    "Expected both 2 and 3 (matching and not matching dim_case_embd=2)."
+                ),
+            )
+        finally:
+            os.chdir(old_cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 if __name__ == "__main__":
     unittest.main()

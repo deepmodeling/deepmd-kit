@@ -12,6 +12,9 @@ import os
 import shutil
 import tempfile
 import unittest
+from unittest.mock import (
+    patch,
+)
 
 import torch
 
@@ -164,8 +167,8 @@ class TestTraining(unittest.TestCase):
         self._run_training(config)
 
 
-class TestCompiledRecompile(unittest.TestCase):
-    """Test that _CompiledModel recompiles when nall exceeds max_nall."""
+class TestCompiledDynamicShapes(unittest.TestCase):
+    """Test that _CompiledModel handles varying nall via dynamic shapes."""
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -174,8 +177,13 @@ class TestCompiledRecompile(unittest.TestCase):
             raise unittest.SkipTest(f"Example data not found: {data_dir}")
         cls.data_dir = data_dir
 
-    def test_nall_growth_triggers_recompile(self) -> None:
-        """Shrink max_nall to force a recompile, then verify training works."""
+    def test_compiled_handles_varying_nall(self) -> None:
+        """Run several training steps, assert finite loss each step.
+
+        With ``tracing_mode="symbolic"`` + ``dynamic=True``, nall is a
+        symbolic dim so nall growth across batches is handled without
+        any recompile or padding.
+        """
         from deepmd.pt_expt.train.training import (
             _CompiledModel,
         )
@@ -185,7 +193,7 @@ class TestCompiledRecompile(unittest.TestCase):
         config = update_deepmd_input(config, warning=False)
         config = normalize(config)
 
-        tmpdir = tempfile.mkdtemp(prefix="pt_expt_recompile_")
+        tmpdir = tempfile.mkdtemp(prefix="pt_expt_dynamic_")
         try:
             old_cwd = os.getcwd()
             os.chdir(tmpdir)
@@ -196,36 +204,18 @@ class TestCompiledRecompile(unittest.TestCase):
                 compiled_model = trainer.wrapper.model["Default"]
                 self.assertIsInstance(compiled_model, _CompiledModel)
 
-                original_max_nall = compiled_model._max_nall
-                self.assertGreater(original_max_nall, 0)
-
-                # Artificially shrink max_nall to 1 so the next batch
-                # will certainly exceed it and trigger recompilation.
-                compiled_model._max_nall = 1
-                old_compiled_lower = compiled_model.compiled_forward_lower
-
-                # Run one training step — should trigger recompile
                 trainer.wrapper.train()
-                trainer.optimizer.zero_grad(set_to_none=True)
-                inp, lab = trainer.get_data(is_train=True)
-                lr = trainer.scheduler.get_last_lr()[0]
-                _, loss, more_loss = trainer.wrapper(**inp, cur_lr=lr, label=lab)
-                loss.backward()
-                trainer.optimizer.step()
+                for _ in range(3):
+                    trainer.optimizer.zero_grad(set_to_none=True)
+                    inp, lab = trainer.get_data(is_train=True)
+                    lr = trainer.scheduler.get_last_lr()[0]
+                    _, loss, _ = trainer.wrapper(**inp, cur_lr=lr, label=lab)
+                    loss.backward()
+                    trainer.optimizer.step()
 
-                # max_nall should have grown beyond 1
-                new_max_nall = compiled_model._max_nall
-                self.assertGreater(new_max_nall, 1)
-
-                # compiled_forward_lower should be a new object
-                self.assertIsNot(
-                    compiled_model.compiled_forward_lower,
-                    old_compiled_lower,
-                )
-
-                # Loss should be a finite scalar
-                self.assertFalse(torch.isnan(loss))
-                self.assertFalse(torch.isinf(loss))
+                    # Loss should be a finite scalar at every step
+                    self.assertFalse(torch.isnan(loss))
+                    self.assertFalse(torch.isinf(loss))
             finally:
                 os.chdir(old_cwd)
         finally:
@@ -702,6 +692,199 @@ class TestTrainingDPA3(unittest.TestCase):
                 os.chdir(old_cwd)
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+class TestCompiledVaryingNframesWithParams(unittest.TestCase):
+    """Compiled training with varying ``nframes`` + ``nall`` + fparam/aparam.
+
+    Exercises the compiled forward path under all three kinds of shape
+    variation simultaneously:
+
+    * Different systems have different atom counts -> varying ``nloc`` / ``nall``.
+    * Per-system ``batch_size: [2, 3]`` -> varying ``nframes`` (2 vs 3).
+    * Both ``fparam`` (per-frame) and ``aparam`` (per-atom) labels are
+      provided, covering the ``dim_fparam`` / ``dim_aparam`` > 0 branches
+      inside ``forward_lower``.
+
+    The chosen values (``nframes`` in {2, 3}, ``numb_fparam=2``,
+    ``numb_aparam=3``) are deliberately chosen so the runtime ``nframes``
+    collides with the per-frame / per-atom feature dims — this is the
+    exact pattern that previously caused PyTorch's symbolic tracer to
+    specialise the batch dim (see _trace_and_compile in training.py).
+
+    ``dp_random.choice`` is mocked to alternate between the two systems
+    so both are guaranteed to be sampled across ``nsteps``.
+    """
+
+    NFPARAM = 2
+    NAPARAM = 3
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        # Reuse the data-dir helper from the multitask gradient tests so we
+        # don't duplicate the npy/raw layout boilerplate.
+        from .test_multitask import (
+            _generate_random_data_dir,
+        )
+
+        cls.tmpdir = tempfile.mkdtemp(prefix="pt_expt_varying_params_data_")
+        cls.sys0 = os.path.join(cls.tmpdir, "sys0_8atoms")
+        cls.sys1 = os.path.join(cls.tmpdir, "sys1_4atoms")
+        # Atom types alternate 0/1 to match the ["O", "H"] type_map below.
+        _generate_random_data_dir(
+            cls.sys0,
+            atom_types=[i % 2 for i in range(8)],
+            nframes=4,
+            seed=42,
+            nfparam=cls.NFPARAM,
+            naparam=cls.NAPARAM,
+        )
+        _generate_random_data_dir(
+            cls.sys1,
+            atom_types=[i % 2 for i in range(4)],
+            nframes=4,
+            seed=137,
+            nfparam=cls.NFPARAM,
+            naparam=cls.NAPARAM,
+        )
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        shutil.rmtree(cls.tmpdir, ignore_errors=True)
+
+    def _make_config(self, enable_compile: bool) -> dict:
+        config = {
+            "model": {
+                "type_map": ["O", "H"],
+                "descriptor": {
+                    "type": "se_e2_a",
+                    "sel": [6, 12],
+                    "rcut_smth": 0.50,
+                    "rcut": 3.00,
+                    "neuron": [8, 16],
+                    "resnet_dt": False,
+                    "axis_neuron": 4,
+                    "type_one_side": True,
+                    "seed": 1,
+                },
+                "fitting_net": {
+                    "neuron": [16, 16],
+                    "resnet_dt": True,
+                    "numb_fparam": self.NFPARAM,
+                    "numb_aparam": self.NAPARAM,
+                    "seed": 1,
+                },
+                "data_stat_nbatch": 1,
+            },
+            "learning_rate": {
+                "type": "exp",
+                "decay_steps": 500,
+                "start_lr": 0.001,
+                "stop_lr": 3.51e-8,
+            },
+            "loss": {
+                "type": "ener",
+                "start_pref_e": 0.02,
+                "limit_pref_e": 1,
+                "start_pref_f": 1000,
+                "limit_pref_f": 1,
+                "start_pref_v": 0,
+                "limit_pref_v": 0,
+            },
+            "training": {
+                "training_data": {
+                    "systems": [self.sys0, self.sys1],
+                    # Per-system batch sizes: sys0 gets nframes=2, sys1 gets nframes=3.
+                    # Combined with sys0=8 atoms / sys1=4 atoms this guarantees
+                    # both `nframes` and `nall` vary across steps.
+                    "batch_size": [2, 3],
+                },
+                "validation_data": {
+                    "systems": [self.sys0],
+                    "batch_size": 1,
+                    "numb_btch": 1,
+                },
+                "numb_steps": 6,
+                "seed": 10,
+                "disp_file": "lcurve.out",
+                "disp_freq": 100,
+                "save_freq": 100,
+            },
+        }
+        if enable_compile:
+            config["training"]["enable_compile"] = True
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+        return config
+
+    def _run_steps(self, enable_compile: bool, nsteps: int = 6) -> None:
+        from deepmd.utils import data_system as _data_system
+
+        config = self._make_config(enable_compile=enable_compile)
+        sys_sequence = [i % 2 for i in range(nsteps)]
+
+        tmpdir = tempfile.mkdtemp(prefix="pt_expt_varying_params_run_")
+        try:
+            old_cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                trainer = get_trainer(config)
+                if enable_compile:
+                    from deepmd.pt_expt.train.training import (
+                        _CompiledModel,
+                    )
+
+                    self.assertIsInstance(
+                        trainer.wrapper.model["Default"], _CompiledModel
+                    )
+
+                trainer.wrapper.train()
+                seen_nframes = set()
+                seen_nall = set()
+                with patch.object(
+                    _data_system.dp_random,
+                    "choice",
+                    side_effect=sys_sequence,
+                ):
+                    for _ in range(nsteps):
+                        trainer.optimizer.zero_grad(set_to_none=True)
+                        inp, lab = trainer.get_data(is_train=True)
+                        seen_nframes.add(int(inp["coord"].shape[0]))
+                        seen_nall.add(int(inp["atype"].shape[1]))
+                        # fparam/aparam must be present in every batch
+                        self.assertIn("fparam", inp)
+                        self.assertIn("aparam", inp)
+                        lr = trainer.scheduler.get_last_lr()[0]
+                        _, loss, _ = trainer.wrapper(**inp, cur_lr=lr, label=lab)
+                        loss.backward()
+                        trainer.optimizer.step()
+                        self.assertFalse(torch.isnan(loss), "loss is NaN")
+                        self.assertFalse(torch.isinf(loss), "loss is Inf")
+
+                # The two systems differ in both batch-size-auto and natoms,
+                # so both nframes and nloc should have varied across steps.
+                self.assertGreater(
+                    len(seen_nframes),
+                    1,
+                    msg=f"nframes did not vary across steps: {seen_nframes}",
+                )
+                self.assertGreater(
+                    len(seen_nall),
+                    1,
+                    msg=f"nloc did not vary across steps: {seen_nall}",
+                )
+            finally:
+                os.chdir(old_cwd)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_compiled(self) -> None:
+        """Compiled training with varying nframes + fparam/aparam."""
+        self._run_steps(enable_compile=True)
+
+    def test_uncompiled(self) -> None:
+        """Baseline: same config, uncompiled, should also succeed."""
+        self._run_steps(enable_compile=False)
 
 
 if __name__ == "__main__":

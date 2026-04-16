@@ -68,16 +68,22 @@ def _make_env_mat(
     xp = array_api_compat.array_namespace(nlist)
     nf, nloc, nnei = nlist.shape
     # nf x nall x 3
-    coord = xp.reshape(coord, (nf, -1, 3))
+    # Callers may pass either (nf, nall*3) or (nf, nall, 3); normalise
+    # both to (nf, nall, 3) using -1 for nframes so the shape is inferred
+    # from the total size.  Passing the symbolic nf here can trigger
+    # torch.fx symbolic-tracer specialisation when nf happens to collide
+    # with another dim (e.g. numb_fparam) during training compile.
+    if coord.ndim == 2:
+        coord = xp.reshape(coord, (-1, coord.shape[1] // 3, 3))
     mask = nlist >= 0
     nlist = nlist * xp.astype(mask, nlist.dtype)
     # nf x (nloc x nnei) x 3
-    index = xp.tile(xp.reshape(nlist, (nf, -1, 1)), (1, 1, 3))
+    index = xp.tile(xp.reshape(nlist, (-1, nloc * nnei, 1)), (1, 1, 3))
     coord_r = xp_take_along_axis(coord, index, 1)
     # nf x nloc x nnei x 3
-    coord_r = xp.reshape(coord_r, (nf, nloc, nnei, 3))
+    coord_r = xp.reshape(coord_r, (-1, nloc, nnei, 3))
     # nf x nloc x 1 x 3
-    coord_l = xp.reshape(xp_take_first_n(coord, 1, nloc), (nf, -1, 1, 3))
+    coord_l = xp.reshape(xp_take_first_n(coord, 1, nloc), (-1, nloc, 1, 3))
     # nf x nloc x nnei x 3
     diff = coord_r - coord_l
     # nf x nloc x nnei

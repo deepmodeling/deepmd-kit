@@ -174,16 +174,17 @@ def _trace_and_compile(
     aparam: torch.Tensor | None,
     compile_opts: dict[str, Any],
 ) -> torch.nn.Module:
-    """Trace ``forward_lower`` with ``make_fx`` and compile with ``torch.compile``.
+    """Symbolic-trace ``forward_lower`` and compile with inductor + dynamic=True.
 
     Parameters
     ----------
     model : torch.nn.Module
         The (uncompiled) model.
     ext_coord, ext_atype, nlist, mapping, fparam, aparam
-        Sample tensors (already padded to the desired max_nall).
+        Sample tensors used to seed the symbolic tracer.
     compile_opts : dict
-        Options forwarded to ``torch.compile`` (excluding ``dynamic``).
+        Options forwarded to ``torch.compile`` (the ``dynamic`` and
+        ``backend`` keys are ignored and replaced).
 
     Returns
     -------
@@ -210,7 +211,7 @@ def _trace_and_compile(
         fparam: torch.Tensor | None,
         aparam: torch.Tensor | None,
     ) -> dict[str, torch.Tensor]:
-        extended_coord = extended_coord.requires_grad_(True)
+        extended_coord = extended_coord.detach().requires_grad_(True)
         return model.forward_lower(
             extended_coord,
             extended_atype,
@@ -220,10 +221,40 @@ def _trace_and_compile(
             aparam=aparam,
         )
 
-    # Use default tracing_mode="real" (concrete shapes) for best
-    # runtime performance.  If data-dependent intermediate shapes
-    # change at runtime, the caller catches the error and retraces.
-    traced_lower = make_fx(fn)(ext_coord, ext_atype, nlist, mapping, fparam, aparam)
+    # Pick a trace-time nframes that's unlikely to collide with any other
+    # tensor dim in the graph.  The symbolic tracer merges symbols that
+    # are numerically equal at trace time, which bakes nframes into the
+    # compiled graph whenever it matches e.g. numb_fparam, numb_aparam,
+    # ntypes, axis_neuron, or neuron sizes (8, 16, 32, ...).  Using a
+    # prime value of 7 avoids the common small-dim collisions while still
+    # being cheap to trace.
+    _TRACE_NFRAMES = 7
+    cur_nframes = ext_coord.shape[0]
+    if cur_nframes != _TRACE_NFRAMES:
+
+        def _expand(t: torch.Tensor | None) -> torch.Tensor | None:
+            if t is None:
+                return None
+            # Repeat rows so total nframes == _TRACE_NFRAMES.  Use index
+            # gather (mod) so we don't require divisibility.
+            idx = (
+                torch.arange(_TRACE_NFRAMES, dtype=torch.long, device=t.device)
+                % cur_nframes
+            )
+            return t.index_select(0, idx)
+
+        ext_coord = _expand(ext_coord)
+        ext_atype = _expand(ext_atype)
+        nlist = _expand(nlist)
+        mapping = _expand(mapping)
+        fparam = _expand(fparam)
+        aparam = _expand(aparam)
+
+    traced_lower = make_fx(
+        fn,
+        tracing_mode="symbolic",
+        _allow_non_fake_inputs=True,
+    )(ext_coord, ext_atype, nlist, mapping, fparam, aparam)
 
     # make_fx inserts aten.detach.default for saved tensors used in the
     # decomposed autograd.grad backward ops.  These detach nodes break
@@ -234,72 +265,36 @@ def _trace_and_compile(
     if not was_training:
         model.eval()
 
-    if "backend" not in compile_opts:
-        compile_opts["backend"] = "aot_eager"
-    compiled_lower = torch.compile(traced_lower, dynamic=False, **compile_opts)
-    return compiled_lower
+    # Work on a copy; ignore caller-supplied dynamic/backend.
+    compile_opts = {
+        k: v for k, v in compile_opts.items() if k not in ("dynamic", "backend")
+    }
+    opts = compile_opts.setdefault("options", {})
+    opts.setdefault("max_autotune", False)
+    opts.setdefault("epilogue_fusion", False)
+    opts.setdefault("triton.cudagraphs", False)
+    opts.setdefault("shape_padding", True)
+    opts.setdefault("max_fusion_size", 8)
+
+    return torch.compile(
+        traced_lower,
+        backend="inductor",
+        dynamic=True,
+        **compile_opts,
+    )
 
 
 class _CompiledModel(torch.nn.Module):
-    """Coord extension (eager) -> pad nall -> compiled forward_lower.
-
-    If a batch's ``nall`` exceeds the current ``max_nall``, the model is
-    automatically re-traced and recompiled with a larger pad size.
-    """
+    """Coord extension (eager) -> compiled forward_lower (dynamic shapes)."""
 
     def __init__(
         self,
         original_model: torch.nn.Module,
         compiled_forward_lower: torch.nn.Module,
-        max_nall: int,
-        compile_opts: dict[str, Any],
     ) -> None:
         super().__init__()
         self.original_model = original_model
         self.compiled_forward_lower = compiled_forward_lower
-        self._max_nall = max_nall
-        self._compile_opts = compile_opts
-
-    def _recompile(
-        self,
-        ext_coord: torch.Tensor,
-        ext_atype: torch.Tensor,
-        nlist: torch.Tensor,
-        mapping: torch.Tensor,
-        fparam: torch.Tensor | None,
-        aparam: torch.Tensor | None,
-        new_max_nall: int,
-    ) -> None:
-        """Re-trace and recompile for the given inputs.
-
-        If *new_max_nall* differs from the current ``_max_nall``, the
-        inputs are padded (or already padded by the caller).
-        """
-        # Pad if the caller provides unpadded tensors (nall growth case)
-        actual_nall = ext_coord.shape[1]
-        pad_n = new_max_nall - actual_nall
-        if pad_n > 0:
-            ext_coord = torch.nn.functional.pad(ext_coord, (0, 0, 0, pad_n))
-            ext_atype = torch.nn.functional.pad(ext_atype, (0, pad_n))
-            mapping = torch.nn.functional.pad(mapping, (0, pad_n))
-
-        ext_coord = ext_coord.detach()
-
-        self.compiled_forward_lower = _trace_and_compile(
-            self.original_model,
-            ext_coord,
-            ext_atype,
-            nlist,
-            mapping,
-            fparam,
-            aparam,
-            self._compile_opts,
-        )
-        self._max_nall = new_max_nall
-        log.info(
-            "Recompiled model with max_nall=%d.",
-            new_max_nall,
-        )
 
     def forward(
         self,
@@ -343,27 +338,6 @@ class _CompiledModel(torch.nn.Module):
             distinguish_types=False,
         )
         ext_coord = ext_coord.reshape(nframes, -1, 3)
-
-        # Grow max_nall if needed (retrace + recompile)
-        actual_nall = ext_coord.shape[1]
-        if actual_nall > self._max_nall:
-            new_max_nall = ((int(actual_nall * 1.2) + 7) // 8) * 8
-            log.info(
-                "nall=%d exceeds max_nall=%d; recompiling with max_nall=%d.",
-                actual_nall,
-                self._max_nall,
-                new_max_nall,
-            )
-            self._recompile(
-                ext_coord, ext_atype, nlist, mapping, fparam, aparam, new_max_nall
-            )
-
-        # Pad to max_nall so compiled graph sees a fixed shape
-        pad_n = self._max_nall - actual_nall
-        if pad_n > 0:
-            ext_coord = torch.nn.functional.pad(ext_coord, (0, 0, 0, pad_n))
-            ext_atype = torch.nn.functional.pad(ext_atype, (0, pad_n))
-            mapping = torch.nn.functional.pad(mapping, (0, pad_n))
         ext_coord = ext_coord.detach().requires_grad_(True)
 
         result = self.compiled_forward_lower(
@@ -379,18 +353,12 @@ class _CompiledModel(torch.nn.Module):
         out["atom_energy"] = result["atom_energy"]
         out["energy"] = result["energy"]
         if "extended_force" in result:
-            ext_force = result["extended_force"]  # (nf, nall_padded, 3)
-            # mapping may be padded; only use actual_nall entries
-            map_actual = mapping[:, :actual_nall]  # (nf, actual_nall)
-            ext_force_actual = ext_force[:, :actual_nall, :]  # (nf, actual_nall, 3)
-            # scatter-sum extended forces onto local atoms
-            idx = map_actual.unsqueeze(-1).expand_as(
-                ext_force_actual
-            )  # (nf, actual_nall, 3)
+            ext_force = result["extended_force"]  # (nf, nall, 3)
+            idx = mapping.unsqueeze(-1).expand_as(ext_force)  # (nf, nall, 3)
             force = torch.zeros(
                 nframes, nloc, 3, dtype=ext_force.dtype, device=ext_force.device
             )
-            force.scatter_add_(1, idx, ext_force_actual)
+            force.scatter_add_(1, idx, ext_force)
             out["force"] = force
         if "virial" in result:
             out["virial"] = result["virial"]
@@ -878,17 +846,13 @@ class Trainer:
         computation) with ``create_graph=True``, which creates a "double
         backward" that ``torch.compile`` cannot handle.
 
-        Solution: use ``make_fx`` to trace ``forward_lower``, decomposing
-        ``torch.autograd.grad`` into primitive ops.  The coord extension +
-        nlist build (data-dependent control flow) are kept outside the
-        compiled region.
-
-        To avoid the overhead of symbolic tracing and dynamic shapes, the
-        extended-atom dimension (nall) is padded to a fixed maximum
-        estimated from the training data.  This allows concrete-shape
-        tracing and ``dynamic=False``.  If a batch exceeds the current
-        max_nall at runtime, the model is automatically re-traced and
-        recompiled with a larger pad size.
+        Solution: use ``make_fx`` in ``tracing_mode="symbolic"`` to trace
+        ``forward_lower``, decomposing ``torch.autograd.grad`` into
+        primitive ops.  The symbolic trace keeps the extended-atom
+        dimension (``nall``) and batch dimension (``nframes``) as
+        symbolic shapes, so no padding or recompile-on-growth logic is
+        needed.  The coord extension + nlist build (data-dependent
+        control flow) are kept outside the compiled region.
         """
         from deepmd.dpmodel.utils.nlist import (
             build_neighbor_list,
@@ -909,111 +873,53 @@ class Trainer:
         for task_key in self.model_keys:
             model = wrapper_mod.model[task_key]
 
-            # --- Estimate max_nall by sampling multiple batches ---
-            n_sample = 20
-            max_nall = 0
-            best_sample: (
-                tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, int, dict] | None
-            ) = None
+            inp, _ = self.get_data(is_train=True, task_key=task_key)
+            coord = inp["coord"].detach()
+            atype = inp["atype"].detach()
+            box = inp.get("box")
+            if box is not None:
+                box = box.detach()
 
-            for _ii in range(n_sample):
-                inp, _ = self.get_data(is_train=True, task_key=task_key)
-                coord = inp["coord"].detach()
-                atype = inp["atype"].detach()
-                box = inp.get("box")
-                if box is not None:
-                    box = box.detach()
+            nframes, nloc = atype.shape[:2]
+            coord_3d = coord.reshape(nframes, nloc, 3)
+            box_flat = box.reshape(nframes, 9) if box is not None else None
 
-                nframes, nloc = atype.shape[:2]
-                coord_np = coord.cpu().numpy().reshape(nframes, nloc, 3)
-                atype_np = atype.cpu().numpy()
-                box_np = (
-                    box.cpu().numpy().reshape(nframes, 9) if box is not None else None
-                )
+            if box_flat is not None:
+                coord_norm = normalize_coord(coord_3d, box_flat.reshape(nframes, 3, 3))
+            else:
+                coord_norm = coord_3d
 
-                if box_np is not None:
-                    coord_norm = normalize_coord(
-                        coord_np, box_np.reshape(nframes, 3, 3)
-                    )
-                else:
-                    coord_norm = coord_np
-
-                ext_coord_np, ext_atype_np, mapping_np = extend_coord_with_ghosts(
-                    coord_norm, atype_np, box_np, model.get_rcut()
-                )
-                nlist_np = build_neighbor_list(
-                    ext_coord_np,
-                    ext_atype_np,
-                    nloc,
-                    model.get_rcut(),
-                    model.get_sel(),
-                    distinguish_types=False,
-                )
-                ext_coord_np = ext_coord_np.reshape(nframes, -1, 3)
-                nall = ext_coord_np.shape[1]
-                if nall > max_nall:
-                    max_nall = nall
-                    best_sample = (
-                        ext_coord_np,
-                        ext_atype_np,
-                        mapping_np,
-                        nlist_np,
-                        nloc,
-                        inp,
-                    )
-
-            # Add 20 % margin and round up to a multiple of 8.
-            max_nall = ((int(max_nall * 1.2) + 7) // 8) * 8
-            log.info(
-                "Estimated max_nall=%d for compiled model "
-                "(task=%s, sampled %d batches).",
-                max_nall,
-                task_key,
-                n_sample,
+            ext_coord, ext_atype, mapping = extend_coord_with_ghosts(
+                coord_norm, atype, box_flat, model.get_rcut()
             )
-
-            # --- Pad the largest sample to max_nall and trace ---
-            assert best_sample is not None
-            ext_coord_np, ext_atype_np, mapping_np, nlist_np, nloc, sample_input = (
-                best_sample
+            nlist_t = build_neighbor_list(
+                ext_coord,
+                ext_atype,
+                nloc,
+                model.get_rcut(),
+                model.get_sel(),
+                distinguish_types=False,
             )
-            actual_nall = ext_coord_np.shape[1]
-            pad_n = max_nall - actual_nall
+            ext_coord = ext_coord.reshape(nframes, -1, 3)
 
-            if pad_n > 0:
-                ext_coord_np = np.pad(ext_coord_np, ((0, 0), (0, pad_n), (0, 0)))
-                ext_atype_np = np.pad(ext_atype_np, ((0, 0), (0, pad_n)))
-                mapping_np = np.pad(mapping_np, ((0, 0), (0, pad_n)))
-
-            ext_coord = torch.tensor(
-                ext_coord_np, dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
-            )
-            ext_atype = torch.tensor(ext_atype_np, dtype=torch.int64, device=DEVICE)
-            nlist_t = torch.tensor(nlist_np, dtype=torch.int64, device=DEVICE)
-            mapping_t = torch.tensor(mapping_np, dtype=torch.int64, device=DEVICE)
-            fparam = sample_input.get("fparam")
-            aparam = sample_input.get("aparam")
-
-            task_compile_opts = dict(compile_opts)
-            task_compile_opts.pop("dynamic", None)  # always False for padded approach
+            fparam = inp.get("fparam")
+            aparam = inp.get("aparam")
 
             compiled_lower = _trace_and_compile(
                 model,
                 ext_coord,
                 ext_atype,
                 nlist_t,
-                mapping_t,
+                mapping,
                 fparam,
                 aparam,
-                task_compile_opts,
+                compile_opts,
             )
 
-            wrapper_mod.model[task_key] = _CompiledModel(
-                model, compiled_lower, max_nall, task_compile_opts
-            )
+            wrapper_mod.model[task_key] = _CompiledModel(model, compiled_lower)
             log.info(
-                "Model compiled with padded nall=%d (task=%s, dynamic=False).",
-                max_nall,
+                "Model compiled (task=%s, tracing_mode=symbolic, "
+                "dynamic=True, backend=inductor).",
                 task_key,
             )
 
