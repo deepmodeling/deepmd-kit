@@ -63,6 +63,10 @@ _DESCRIPTOR_DPA2 = {
         "neuron": [2, 4, 8],
         "axis_neuron": 4,
         "activation_function": "tanh",
+        "use_three_body": True,
+        "three_body_sel": 12,
+        "three_body_rcut": 3.0,
+        "three_body_rcut_smth": 0.5,
     },
     "repformer": {
         "rcut": 3.0,
