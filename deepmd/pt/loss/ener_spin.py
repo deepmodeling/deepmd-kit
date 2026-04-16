@@ -426,7 +426,7 @@ class EnergySpinLoss(TaskLoss):
         """Serialize the loss module."""
         return {
             "@class": "EnergySpinLoss",
-            "@version": 1,
+            "@version": 2,
             "starter_learning_rate": self.starter_learning_rate,
             "start_pref_e": self.start_pref_e,
             "limit_pref_e": self.limit_pref_e,
@@ -440,12 +440,17 @@ class EnergySpinLoss(TaskLoss):
             "limit_pref_ae": self.limit_pref_ae,
             "enable_atom_ener_coeff": self.enable_atom_ener_coeff,
             "loss_func": self.loss_func,
+            "intensive": self.intensive,
         }
 
     @classmethod
     def deserialize(cls, data: dict) -> "EnergySpinLoss":
         """Deserialize the loss module."""
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
+        version = data.pop("@version")
+        check_version_compatibility(version, 2, 1)
         data.pop("@class")
+        # Handle backward compatibility for older versions without intensive
+        if version < 2:
+            data.setdefault("intensive", False)
         return cls(**data)
