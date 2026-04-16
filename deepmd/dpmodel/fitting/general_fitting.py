@@ -673,7 +673,13 @@ class GeneralFitting(NativeOP, BaseFitting):
         # check fparam dim, concate to input descriptor
         if self.numb_fparam > 0:
             assert fparam is not None, "fparam should not be None"
-            fparam = xp.reshape(fparam, (nf, self.numb_fparam))
+            try:
+                fparam = xp.reshape(fparam, (nf, self.numb_fparam))
+            except (ValueError, RuntimeError) as e:
+                raise ValueError(
+                    f"input fparam: cannot reshape {fparam.shape} "
+                    f"into ({nf}, {self.numb_fparam})."
+                ) from e
             fparam = (fparam - self.fparam_avg[...]) * self.fparam_inv_std[...]
             fparam = xp.tile(
                 xp.reshape(fparam, (nf, 1, self.numb_fparam)), (1, nloc, 1)
@@ -690,7 +696,13 @@ class GeneralFitting(NativeOP, BaseFitting):
         # check aparam dim, concate to input descriptor
         if self.numb_aparam > 0 and not self.use_aparam_as_mask:
             assert aparam is not None, "aparam should not be None"
-            aparam = xp.reshape(aparam, (nf, nloc, self.numb_aparam))
+            try:
+                aparam = xp.reshape(aparam, (nf, nloc, self.numb_aparam))
+            except (ValueError, RuntimeError) as e:
+                raise ValueError(
+                    f"input aparam: cannot reshape {aparam.shape} "
+                    f"into ({nf}, {nloc}, {self.numb_aparam})."
+                ) from e
             aparam = (aparam - self.aparam_avg[...]) * self.aparam_inv_std[...]
             xx = xp.concat(
                 [xx, aparam],
