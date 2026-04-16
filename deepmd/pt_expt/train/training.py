@@ -898,8 +898,16 @@ class Trainer:
             normalize_coord,
         )
 
+        # Under DDP, self.wrapper is a DistributedDataParallel wrapper;
+        # access the underlying ModelWrapper via .module.
+        wrapper_mod = (
+            self.wrapper.module
+            if isinstance(self.wrapper, torch.nn.parallel.DistributedDataParallel)
+            else self.wrapper
+        )
+
         for task_key in self.model_keys:
-            model = self.wrapper.model[task_key]
+            model = wrapper_mod.model[task_key]
 
             # --- Estimate max_nall by sampling multiple batches ---
             n_sample = 20
@@ -1000,7 +1008,7 @@ class Trainer:
                 task_compile_opts,
             )
 
-            self.wrapper.model[task_key] = _CompiledModel(
+            wrapper_mod.model[task_key] = _CompiledModel(
                 model, compiled_lower, max_nall, task_compile_opts
             )
             log.info(
