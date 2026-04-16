@@ -23,8 +23,8 @@ from copy import (
 from pathlib import (
     Path,
 )
-from unittest import (
-    mock,
+from unittest.mock import (
+    patch,
 )
 
 import numpy as np
@@ -71,12 +71,6 @@ _energy_data_requirement = [
 
 # Paths to the water data used by PT tests
 _PT_DATA = str(Path(__file__).parent.parent / "pt" / "water" / "data" / "data_0")
-
-# Path to the multitask template JSON
-_MULTITASK_JSON = str(Path(__file__).parent.parent / "pt" / "water" / "multitask.json")
-_MULTITASK_SHAREFIT_JSON = str(
-    Path(__file__).parent.parent / "pt" / "model" / "water" / "multitask_sharefit.json"
-)
 
 
 def _skip_if_no_data() -> None:
@@ -1962,7 +1956,7 @@ class TestMultiTaskGradient(unittest.TestCase):
             {"desc": mt_desc, "fit_1": mt_fit_1, "fit_2": mt_fit_2},
             mt_grads,
         )
-        with mock.patch(
+        with patch(
             "deepmd.utils.random.choice",
             _deterministic_task_choice([0, 1]),
         ):

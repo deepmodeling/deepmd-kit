@@ -264,7 +264,7 @@ def train(
             train_data = get_data(
                 config["training"]["training_data"], 0, type_map, None
             )
-            config["model"], _min_nbor_dist = BaseModel.update_sel(
+            config["model"], _ = BaseModel.update_sel(
                 train_data, type_map, config["model"]
             )
         else:
@@ -276,12 +276,10 @@ def train(
                     type_map,
                     None,
                 )
-                config["model"]["model_dict"][model_key], _min_nbor_dist = (
-                    BaseModel.update_sel(
-                        train_data,
-                        type_map,
-                        config["model"]["model_dict"][model_key],
-                    )
+                config["model"]["model_dict"][model_key], _ = BaseModel.update_sel(
+                    train_data,
+                    type_map,
+                    config["model"]["model_dict"][model_key],
                 )
 
     with open(output, "w") as fp:

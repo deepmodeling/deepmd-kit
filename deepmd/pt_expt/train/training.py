@@ -969,7 +969,6 @@ class Trainer:
             ext_coord_np, ext_atype_np, mapping_np, nlist_np, nloc, sample_input = (
                 best_sample
             )
-            nframes = ext_coord_np.shape[0]
             actual_nall = ext_coord_np.shape[1]
             pad_n = max_nall - actual_nall
 
