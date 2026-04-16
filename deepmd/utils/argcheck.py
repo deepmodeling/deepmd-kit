@@ -3235,11 +3235,11 @@ def loss_ener() -> list[Argument]:
         "Only effective when loss_func='mae' or use_huber=True."
     )
     doc_intensive = (
-        "If true (default), energy and virial losses are computed as intensive quantities, "
+        "If true, energy and virial losses are computed as intensive quantities, "
         "normalized by the square of the number of atoms (1/N^2). "
         "This ensures the loss value is independent of system size and consistent with per-atom RMSE reporting. "
-        "If false, uses the legacy normalization (1/N), which may cause the loss to scale with system size. "
-        "Set to false for backward compatibility with models trained using deepmd-kit <= 3.0.1."
+        "If false (default), uses the legacy normalization (1/N), which may cause the loss to scale with system size. "
+        "The default is false for backward compatibility with models trained using deepmd-kit <= 3.0.1."
     )
     return [
         Argument(
@@ -3387,7 +3387,7 @@ def loss_ener() -> list[Argument]:
             "intensive",
             bool,
             optional=True,
-            default=True,
+            default=False,
             doc=doc_intensive,
         ),
     ]
@@ -3416,11 +3416,11 @@ def loss_ener_spin() -> list[Argument]:
         "Future extensions may support additional loss types."
     )
     doc_intensive = (
-        "If true (default), energy and virial losses are computed as intensive quantities, "
+        "If true, energy and virial losses are computed as intensive quantities, "
         "normalized by the square of the number of atoms (1/N^2). "
         "This ensures the loss value is independent of system size and consistent with per-atom RMSE reporting. "
-        "If false, uses the legacy normalization (1/N), which may cause the loss to scale with system size. "
-        "Set to false for backward compatibility with models trained using deepmd-kit <= 3.0.1."
+        "If false (default), uses the legacy normalization (1/N), which may cause the loss to scale with system size. "
+        "The default is false for backward compatibility with models trained using deepmd-kit <= 3.0.1."
     )
     return [
         Argument(
@@ -3526,7 +3526,7 @@ def loss_ener_spin() -> list[Argument]:
             "intensive",
             bool,
             optional=True,
-            default=True,
+            default=False,
             doc=doc_intensive,
         ),
     ]

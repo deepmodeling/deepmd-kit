@@ -40,7 +40,7 @@ class EnergySpinLoss(TaskLoss):
         enable_atom_ener_coeff: bool = False,
         loss_func: str = "mse",
         inference: bool = False,
-        intensive: bool = True,
+        intensive: bool = False,
         **kwargs: Any,
     ) -> None:
         r"""Construct a layer to compute loss on energy, real force, magnetic force and virial.
@@ -78,11 +78,11 @@ class EnergySpinLoss(TaskLoss):
         inference : bool
             If true, it will output all losses found in output, ignoring the pre-factors.
         intensive : bool
-            If true (default), energy and virial losses are computed as intensive quantities,
+            If true, energy and virial losses are computed as intensive quantities,
             normalized by the square of the number of atoms (1/N^2). This ensures the loss
             value is independent of system size and consistent with per-atom RMSE reporting.
-            If false, uses the legacy normalization (1/N), which may cause the loss to scale
-            with system size. Set to false for backward compatibility with models trained
+            If false (default), uses the legacy normalization (1/N), which may cause the loss to scale
+            with system size. The default is false for backward compatibility with models trained
             using deepmd-kit <= 3.0.1.
         **kwargs
             Other keyword arguments.

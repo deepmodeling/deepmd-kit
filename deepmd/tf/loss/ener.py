@@ -101,11 +101,11 @@ class EnerStdLoss(Loss):
         If True, use L2 norm of force vectors for loss calculation.
         Not implemented in TF backend, only for serialization compatibility.
     intensive : bool
-        If true (default), energy and virial losses are computed as intensive quantities,
+        If true, energy and virial losses are computed as intensive quantities,
         normalized by the square of the number of atoms (1/N^2). This ensures the loss
         value is independent of system size and consistent with per-atom RMSE reporting.
-        If false, uses the legacy normalization (1/N), which may cause the loss to scale
-        with system size. Set to false for backward compatibility with models trained
+        If false (default), uses the legacy normalization (1/N), which may cause the loss to scale
+        with system size. The default is false for backward compatibility with models trained
         using deepmd-kit <= 3.0.1.
     **kwargs
         Other keyword arguments.
@@ -133,7 +133,7 @@ class EnerStdLoss(Loss):
         huber_delta: float | list[float] = 0.01,
         loss_func: str = "mse",
         f_use_norm: bool = False,
-        intensive: bool = True,
+        intensive: bool = False,
         **kwargs: Any,
     ) -> None:
         if loss_func != "mse":
