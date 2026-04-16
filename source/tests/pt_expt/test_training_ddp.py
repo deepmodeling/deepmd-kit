@@ -11,6 +11,7 @@ Verifies that:
 5. Finetune + DDP: selective weight copy via _unwrapped
 6. Finetune + DDP with random fitting: descriptor from pretrained, fitting random
 7. Finetune + DDP with new type: exercises _unwrapped.model["Default"] + stat broadcast
+8. DDP + torch.compile: single-task and multi-task compile under DDP
 """
 
 import os
@@ -1367,6 +1368,211 @@ def _worker_multitask_finetune(
             shutil.rmtree(tmpdir, ignore_errors=True)
     finally:
         dist.destroy_process_group()
+
+
+def _worker_single_task_compile_train(rank, world_size, port, data_dir, result_dict):
+    """Worker: run single-task DDP training with torch.compile enabled.
+
+    This exercises the ``_compile_model`` code path under DDP, which must
+    unwrap ``DistributedDataParallel`` to access ``wrapper.module.model``.
+    Before the fix, ``self.wrapper.model[task_key]`` raised ``AttributeError``
+    because ``DistributedDataParallel`` does not expose ``.model`` directly.
+    """
+    os.environ["MASTER_ADDR"] = "127.0.0.1"
+    os.environ["MASTER_PORT"] = str(port)
+    os.environ["DEVICE"] = "cpu"
+    dist.init_process_group(backend="gloo", rank=rank, world_size=world_size)
+    try:
+        tmpdir = tempfile.mkdtemp(prefix=f"ddp_compile_st_rank{rank}_")
+        old_cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            config = _make_config(data_dir, numb_steps=2)
+            config["training"]["enable_compile"] = True
+            config = update_deepmd_input(config, warning=False)
+            config = normalize(config)
+            trainer = get_trainer(config)
+            trainer.run()
+
+            from deepmd.pt_expt.train.training import (
+                _CompiledModel,
+            )
+
+            # Check the compiled model is a _CompiledModel
+            is_compiled = isinstance(
+                trainer._unwrapped.model["Default"], _CompiledModel
+            )
+
+            lcurve_exists = os.path.exists("lcurve.out")
+            ckpt_files = [f for f in os.listdir(".") if f.endswith(".pt")]
+
+            weights = {
+                name: p.detach().cpu().clone()
+                for name, p in trainer._unwrapped.named_parameters()
+            }
+
+            result_dict[rank] = {
+                "lcurve_exists": lcurve_exists,
+                "num_ckpts": len(ckpt_files),
+                "weights": weights,
+                "is_compiled": is_compiled,
+            }
+        finally:
+            os.chdir(old_cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+    finally:
+        dist.destroy_process_group()
+
+
+def _worker_multitask_compile_train(rank, world_size, port, data_dir, result_dict):
+    """Worker: run multi-task DDP training with torch.compile enabled.
+
+    Exercises the per-branch compilation loop in ``_compile_model`` under DDP.
+    """
+    os.environ["MASTER_ADDR"] = "127.0.0.1"
+    os.environ["MASTER_PORT"] = str(port)
+    os.environ["DEVICE"] = "cpu"
+    dist.init_process_group(backend="gloo", rank=rank, world_size=world_size)
+    try:
+        tmpdir = tempfile.mkdtemp(prefix=f"ddp_compile_mt_rank{rank}_")
+        old_cwd = os.getcwd()
+        os.chdir(tmpdir)
+        try:
+            config = _make_multitask_config(data_dir, numb_steps=2)
+            config["training"]["enable_compile"] = True
+            config["model"], shared_links = preprocess_shared_params(config["model"])
+            config = update_deepmd_input(config, warning=False)
+            config = normalize(config, multi_task=True)
+            trainer = get_trainer(config, shared_links=shared_links)
+            trainer.run()
+
+            from deepmd.pt_expt.train.training import (
+                _CompiledModel,
+            )
+
+            # Check both branch models are compiled
+            compiled_flags = {}
+            for mk in ("model_1", "model_2"):
+                compiled_flags[mk] = isinstance(
+                    trainer._unwrapped.model[mk], _CompiledModel
+                )
+
+            lcurve_exists = os.path.exists("lcurve.out")
+            ckpt_files = [f for f in os.listdir(".") if f.endswith(".pt")]
+
+            # Get shared descriptor params from model_1
+            desc_params = {}
+            for name, p in trainer._unwrapped.model[
+                "model_1"
+            ].original_model.atomic_model.descriptor.named_parameters():
+                desc_params[name] = p.detach().cpu().clone()
+
+            result_dict[rank] = {
+                "lcurve_exists": lcurve_exists,
+                "num_ckpts": len(ckpt_files),
+                "desc_params": desc_params,
+                "compiled_flags": compiled_flags,
+            }
+        finally:
+            os.chdir(old_cwd)
+            shutil.rmtree(tmpdir, ignore_errors=True)
+    finally:
+        dist.destroy_process_group()
+
+
+class TestDDPCompileSingleTask(unittest.TestCase):
+    """DDP + torch.compile: single-task training with 2 ranks.
+
+    Exercises ``_compile_model`` under DDP, which requires unwrapping
+    ``DistributedDataParallel`` to access ``wrapper.module.model``.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        data_dir = os.path.join(EXAMPLE_DIR, "data")
+        if not os.path.isdir(data_dir):
+            raise unittest.SkipTest(f"Example data not found: {data_dir}")
+        cls.data_dir = os.path.join(data_dir, "data_0")
+
+    def test_ddp_compile_single_task(self) -> None:
+        """2 ranks, se_e2_a, enable_compile=True, 2 steps."""
+        port = _find_free_port()
+        result_dict = mp.Manager().dict()
+        mp.spawn(
+            _worker_single_task_compile_train,
+            args=(2, port, self.data_dir, result_dict),
+            nprocs=2,
+            join=True,
+        )
+        results = dict(result_dict)
+
+        # Both ranks have compiled models
+        self.assertTrue(results[0]["is_compiled"], "rank 0 model should be compiled")
+        self.assertTrue(results[1]["is_compiled"], "rank 1 model should be compiled")
+
+        # Only rank 0 produces output files
+        self.assertTrue(results[0]["lcurve_exists"])
+        self.assertFalse(results[1]["lcurve_exists"])
+        self.assertGreater(results[0]["num_ckpts"], 0)
+        self.assertEqual(results[1]["num_ckpts"], 0)
+
+        # Final weights identical across ranks
+        for name in results[0]["weights"]:
+            torch.testing.assert_close(
+                results[0]["weights"][name],
+                results[1]["weights"][name],
+                msg=f"Compiled DDP weights differ across ranks: {name}",
+            )
+
+
+class TestDDPCompileMultiTask(unittest.TestCase):
+    """DDP + torch.compile: multi-task training with 2 ranks.
+
+    Exercises the per-branch compilation loop in ``_compile_model`` under DDP.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        if not os.path.isdir(_PT_DATA):
+            raise unittest.SkipTest(f"Test data not found: {_PT_DATA}")
+        cls.data_dir = _PT_DATA
+
+    def test_ddp_compile_multitask(self) -> None:
+        """2 ranks, multi-task, enable_compile=True, 2 steps."""
+        port = _find_free_port()
+        result_dict = mp.Manager().dict()
+        mp.spawn(
+            _worker_multitask_compile_train,
+            args=(2, port, self.data_dir, result_dict),
+            nprocs=2,
+            join=True,
+        )
+        results = dict(result_dict)
+
+        # Both ranks have compiled models for both branches
+        for mk in ("model_1", "model_2"):
+            self.assertTrue(
+                results[0]["compiled_flags"][mk],
+                f"rank 0 {mk} should be compiled",
+            )
+            self.assertTrue(
+                results[1]["compiled_flags"][mk],
+                f"rank 1 {mk} should be compiled",
+            )
+
+        # Only rank 0 produces output files
+        self.assertTrue(results[0]["lcurve_exists"])
+        self.assertFalse(results[1]["lcurve_exists"])
+        self.assertGreater(results[0]["num_ckpts"], 0)
+        self.assertEqual(results[1]["num_ckpts"], 0)
+
+        # Shared descriptor params identical across ranks
+        for name in results[0]["desc_params"]:
+            torch.testing.assert_close(
+                results[0]["desc_params"][name],
+                results[1]["desc_params"][name],
+                msg=f"Compiled DDP shared descriptor param differs: {name}",
+            )
 
 
 class TestDDPMultiTaskFinetune(unittest.TestCase):
