@@ -363,7 +363,9 @@ class EnerStdLoss(Loss):
 
         loss = 0
         more_loss = {}
-        # Normalization exponent: 2 for intensive (new), 1 for legacy behavior
+        # Normalization exponent controls loss scaling with system size:
+        # - norm_exp=2 (intensive=True): loss uses 1/N² scaling, making it independent of system size
+        # - norm_exp=1 (intensive=False, legacy): loss uses 1/N scaling, which varies with system size
         norm_exp = 2 if self.intensive else 1
         if self.has_e:
             if not self.use_huber:

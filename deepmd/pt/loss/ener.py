@@ -234,7 +234,9 @@ class EnergyStdLoss(TaskLoss):
         # more_loss['log_keys'] = []  # showed when validation on the fly
         # more_loss['test_keys'] = []  # showed when doing dp test
         atom_norm = 1.0 / natoms
-        # Normalization exponent: 2 for intensive (new), 1 for legacy behavior
+        # Normalization exponent controls loss scaling with system size:
+        # - norm_exp=2 (intensive=True): loss uses 1/N² scaling, making it independent of system size
+        # - norm_exp=1 (intensive=False, legacy): loss uses 1/N scaling, which varies with system size
         norm_exp = 2 if self.intensive else 1
         if self.has_e and "energy" in model_pred and "energy" in label:
             energy_pred = model_pred["energy"]
