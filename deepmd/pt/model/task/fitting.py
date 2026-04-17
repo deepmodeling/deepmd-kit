@@ -779,6 +779,11 @@ class GeneralFitting(Fitting):
             assert fparam is not None, "fparam should not be None"
             assert self.fparam_avg is not None
             assert self.fparam_inv_std is not None
+            if fparam.numel() != nf * self.numb_fparam:
+                raise ValueError(
+                    f"input fparam: cannot reshape {list(fparam.shape)} "
+                    f"into ({nf}, {self.numb_fparam})."
+                )
             fparam = fparam.view([nf, self.numb_fparam])
             nb, _ = fparam.shape
             t_fparam_avg = self._extend_f_avg_std(self.fparam_avg, nb)
@@ -799,6 +804,11 @@ class GeneralFitting(Fitting):
             assert aparam is not None, "aparam should not be None"
             assert self.aparam_avg is not None
             assert self.aparam_inv_std is not None
+            if aparam.numel() % (nf * self.numb_aparam) != 0:
+                raise ValueError(
+                    f"input aparam: cannot reshape {list(aparam.shape)} "
+                    f"into ({nf}, nloc, {self.numb_aparam})."
+                )
             aparam = aparam.view([nf, -1, self.numb_aparam])
             nb, nloc, _ = aparam.shape
             t_aparam_avg = self._extend_a_avg_std(self.aparam_avg, nb, nloc)
