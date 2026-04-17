@@ -626,6 +626,7 @@ class EnerSpinLoss(Loss):
         enable_atom_ener_coeff: bool = False,
         use_spin: list | None = None,
         loss_func: str = "mse",
+        intensive: bool = False,
     ) -> None:
         if loss_func != "mse":
             raise NotImplementedError(
@@ -648,6 +649,7 @@ class EnerSpinLoss(Loss):
         self.relative_f = relative_f
         self.enable_atom_ener_coeff = enable_atom_ener_coeff
         self.use_spin = use_spin
+        self.intensive = intensive
         self.has_e = self.start_pref_e != 0.0 or self.limit_pref_e != 0.0
         self.has_fr = self.start_pref_fr != 0.0 or self.limit_pref_fr != 0.0
         self.has_fm = self.start_pref_fm != 0.0 or self.limit_pref_fm != 0.0
@@ -733,6 +735,10 @@ class EnerSpinLoss(Loss):
 
         atom_norm = 1.0 / global_cvt_2_tf_float(natoms[0])
         atom_norm_ener = 1.0 / global_cvt_2_ener_float(natoms[0])
+        # RMSE normalization exponent:
+        # - norm_exp=2 (intensive=True): loss uses 1/N² scaling, making it independent of system size
+        # - norm_exp=1 (intensive=False, legacy): loss uses 1/N scaling, which varies with system size
+        norm_exp = 2 if self.intensive else 1
         pref_e = global_cvt_2_ener_float(
             find_energy
             * (
@@ -782,7 +788,7 @@ class EnerSpinLoss(Loss):
         l2_loss = 0
         more_loss = {}
         if self.has_e:
-            l2_loss += atom_norm_ener * (pref_e * l2_ener_loss)
+            l2_loss += atom_norm_ener**norm_exp * (pref_e * l2_ener_loss)
         more_loss["l2_ener_loss"] = self.display_if_exist(l2_ener_loss, find_energy)
         if self.has_fr:
             l2_loss += global_cvt_2_ener_float(pref_fr * l2_force_r_loss)
@@ -795,7 +801,9 @@ class EnerSpinLoss(Loss):
             l2_force_m_loss, find_force
         )
         if self.has_v:
-            l2_loss += global_cvt_2_ener_float(atom_norm * (pref_v * l2_virial_loss))
+            l2_loss += global_cvt_2_ener_float(
+                atom_norm**norm_exp * (pref_v * l2_virial_loss)
+            )
         more_loss["l2_virial_loss"] = self.display_if_exist(l2_virial_loss, find_virial)
         if self.has_ae:
             l2_loss += global_cvt_2_ener_float(pref_ae * l2_atom_ener_loss)
@@ -982,6 +990,63 @@ class EnerSpinLoss(Loss):
                 )
             )
         return data_requirements
+
+    def serialize(self, suffix: str = "") -> dict:
+        """Serialize the loss module.
+
+        Parameters
+        ----------
+        suffix : str
+            The suffix of the loss module
+
+        Returns
+        -------
+        dict
+            The serialized loss module
+        """
+        return {
+            "@class": "EnergySpinLoss",
+            "@version": 2,
+            "starter_learning_rate": self.starter_learning_rate,
+            "start_pref_e": self.start_pref_e,
+            "limit_pref_e": self.limit_pref_e,
+            "start_pref_fr": self.start_pref_fr,
+            "limit_pref_fr": self.limit_pref_fr,
+            "start_pref_fm": self.start_pref_fm,
+            "limit_pref_fm": self.limit_pref_fm,
+            "start_pref_v": self.start_pref_v,
+            "limit_pref_v": self.limit_pref_v,
+            "start_pref_ae": self.start_pref_ae,
+            "limit_pref_ae": self.limit_pref_ae,
+            "enable_atom_ener_coeff": self.enable_atom_ener_coeff,
+            "loss_func": self.loss_func,
+            "intensive": self.intensive,
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict, suffix: str = "") -> "EnerSpinLoss":
+        """Deserialize the loss module.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized loss module
+        suffix : str
+            The suffix of the loss module
+
+        Returns
+        -------
+        EnerSpinLoss
+            The deserialized loss module
+        """
+        data = data.copy()
+        version = data.pop("@version")
+        check_version_compatibility(version, 2, 1)
+        data.pop("@class")
+        # Handle backward compatibility for older versions without intensive
+        if version < 2:
+            data.setdefault("intensive", False)
+        return cls(**data)
 
 
 class EnerDipoleLoss(Loss):
