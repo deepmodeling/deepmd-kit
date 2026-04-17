@@ -250,10 +250,21 @@ def _trace_and_compile(
         fparam = _expand(fparam)
         aparam = _expand(aparam)
 
+    # Decompose silu_backward into primitive ops (sigmoid + mul + ...)
+    # so that inductor can compile the graph without requiring a
+    # higher-order derivative that PyTorch does not register for
+    # the fused silu backward kernel.
+    from torch._decomp import (
+        get_decompositions,
+    )
+
+    decomp_table = get_decompositions([torch.ops.aten.silu_backward.default])
+
     traced_lower = make_fx(
         fn,
         tracing_mode="symbolic",
         _allow_non_fake_inputs=True,
+        decomposition_table=decomp_table,
     )(ext_coord, ext_atype, nlist, mapping, fparam, aparam)
 
     # make_fx inserts aten.detach.default for saved tensors used in the

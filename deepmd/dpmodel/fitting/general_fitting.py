@@ -674,12 +674,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         if self.numb_fparam > 0:
             assert fparam is not None, "fparam should not be None"
             try:
-                # Use -1 for nframes so the shape is inferred from the total
-                # size.  Passing the concrete symbol `nf` here would let
-                # torch.fx's symbolic tracer specialise when `nf` happens to
-                # equal another tensor dim (e.g. numb_fparam), baking the
-                # batch size into the compiled graph.
-                fparam = xp.reshape(fparam, (-1, self.numb_fparam))
+                fparam = xp.reshape(fparam, (nf, self.numb_fparam))
             except (ValueError, RuntimeError) as e:
                 raise ValueError(
                     f"input fparam: cannot reshape {fparam.shape} "
@@ -687,7 +682,7 @@ class GeneralFitting(NativeOP, BaseFitting):
                 ) from e
             fparam = (fparam - self.fparam_avg[...]) * self.fparam_inv_std[...]
             fparam = xp.tile(
-                xp.reshape(fparam, (-1, 1, self.numb_fparam)), (1, nloc, 1)
+                xp.reshape(fparam, (nf, 1, self.numb_fparam)), (1, nloc, 1)
             )
             xx = xp.concat(
                 [xx, fparam],
@@ -702,9 +697,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         if self.numb_aparam > 0 and not self.use_aparam_as_mask:
             assert aparam is not None, "aparam should not be None"
             try:
-                # Use -1 for nframes so the shape is inferred from the total
-                # size; see the fparam branch above for rationale.
-                aparam = xp.reshape(aparam, (-1, nloc, self.numb_aparam))
+                aparam = xp.reshape(aparam, (nf, nloc, self.numb_aparam))
             except (ValueError, RuntimeError) as e:
                 raise ValueError(
                     f"input aparam: cannot reshape {aparam.shape} "
@@ -751,11 +744,8 @@ class GeneralFitting(NativeOP, BaseFitting):
                     device=array_api_compat.device(descriptor),
                 )
             for type_i in range(self.ntypes):
-                # Use -1 for nframes so the shape is inferred; see the fparam
-                # branch above for rationale (avoid symbolic-dim collision
-                # with numb_fparam / other dims during symbolic tracing).
                 mask = xp.tile(
-                    xp.reshape((atype == type_i), (-1, nloc, 1)),
+                    xp.reshape((atype == type_i), (nf, nloc, 1)),
                     (1, 1, net_dim_out),
                 )
                 atom_property = self.nets[(type_i,)](xx)
@@ -772,7 +762,7 @@ class GeneralFitting(NativeOP, BaseFitting):
                 if self.eval_return_middle_output and len(self.neuron) > 0:
                     mid = self.nets[(type_i,)].call_until_last(xx)
                     mid_mask = xp.tile(
-                        xp.reshape((atype == type_i), (-1, nloc, 1)),
+                        xp.reshape((atype == type_i), (nf, nloc, 1)),
                         (1, 1, self.neuron[-1]),
                     )
                     mid = xp.where(mid_mask, mid, xp.zeros_like(mid))
@@ -789,7 +779,7 @@ class GeneralFitting(NativeOP, BaseFitting):
                 xp.reshape(atype, (-1,)),
                 axis=0,
             ),
-            (-1, nloc, net_dim_out),
+            (nf, nloc, net_dim_out),
         )
         # nf x nloc
         exclude_mask = self.emask.build_type_exclude_mask(atype)
