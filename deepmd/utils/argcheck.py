@@ -3234,6 +3234,13 @@ def loss_ener() -> list[Argument]:
         "This treats the force vector as a whole rather than three independent components. "
         "Only effective when loss_func='mae' or use_huber=True."
     )
+    doc_intensive = (
+        "If true, energy and virial losses are computed as intensive quantities, "
+        "normalized by the square of the number of atoms (1/N^2). "
+        "This ensures the loss value is independent of system size and consistent with per-atom RMSE reporting. "
+        "If false (default), uses the legacy normalization (1/N), which may cause the loss to scale with system size. "
+        "The default is false for backward compatibility with models trained using deepmd-kit <= 3.0.1."
+    )
     return [
         Argument(
             "start_pref_e",
@@ -3376,6 +3383,13 @@ def loss_ener() -> list[Argument]:
             default=0.01,
             doc=doc_huber_delta,
         ),
+        Argument(
+            "intensive",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_intensive,
+        ),
     ]
 
 
@@ -3400,6 +3414,13 @@ def loss_ener_spin() -> list[Argument]:
         "Options: 'mse' (Mean Squared Error, L2 loss, default) or 'mae' (Mean Absolute Error, L1 loss). "
         "MAE loss is less sensitive to outliers compared to MSE loss. "
         "Future extensions may support additional loss types."
+    )
+    doc_intensive = (
+        "If true, energy and virial losses are computed as intensive quantities, "
+        "normalized by the square of the number of atoms (1/N^2). "
+        "This ensures the loss value is independent of system size and consistent with per-atom RMSE reporting. "
+        "If false (default), uses the legacy normalization (1/N), which may cause the loss to scale with system size. "
+        "The default is false for backward compatibility with models trained using deepmd-kit <= 3.0.1."
     )
     return [
         Argument(
@@ -3500,6 +3521,13 @@ def loss_ener_spin() -> list[Argument]:
             optional=True,
             default="mse",
             doc=doc_loss_func,
+        ),
+        Argument(
+            "intensive",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_intensive,
         ),
     ]
 
