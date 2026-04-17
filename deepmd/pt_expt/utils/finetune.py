@@ -105,10 +105,11 @@ def get_finetune_rules(
         finetune_links["Default"] = finetune_rule
     else:
         # Multi-task target — mirrors PT's logic
-        assert model_branch == "", (
-            "Multi-task fine-tuning does not support command-line branches chosen!"
-            "Please define the 'finetune_head' in each model params!"
-        )
+        if model_branch != "":
+            raise ValueError(
+                "Multi-task fine-tuning does not support command-line branches chosen! "
+                "Please define the 'finetune_head' in each model params!"
+            )
         if not finetune_from_multi_task:
             pretrained_keys = ["Default"]
         else:
@@ -120,10 +121,11 @@ def get_finetune_rules(
                 and model_config["model_dict"][model_key]["finetune_head"] != "RANDOM"
             ):
                 pretrained_key = model_config["model_dict"][model_key]["finetune_head"]
-                assert pretrained_key in pretrained_keys, (
-                    f"'{pretrained_key}' head chosen to finetune not exist in the pretrained model!"
-                    f"Available heads are: {list(pretrained_keys)}"
-                )
+                if pretrained_key not in pretrained_keys:
+                    raise ValueError(
+                        f"'{pretrained_key}' head chosen to finetune not exist in the pretrained model! "
+                        f"Available heads are: {list(pretrained_keys)}"
+                    )
                 model_branch_from = pretrained_key
             elif (
                 "finetune_head" not in model_config["model_dict"][model_key]

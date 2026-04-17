@@ -936,7 +936,7 @@ class MultiTaskTrainTest:
         # Also set trainable=False to verify it's preserved
         ft_config_true["model"]["shared_dict"]["my_descriptor"]["trainable"] = False
         ft_config_true["model"], _ = preprocess_shared_params(ft_config_true["model"])
-        model_config_true, finetune_links_true = get_finetune_rules(
+        model_config_true, _finetune_links_true = get_finetune_rules(
             ckpt_path, deepcopy(ft_config_true["model"]), change_model_params=True
         )
 
@@ -1164,7 +1164,7 @@ class MultiTaskTrainTest:
     def test_multitask_freeze(self) -> None:
         """Train, then freeze with --head and verify.
 
-        Only runs for se_e2_a descriptor to avoid redundant slow freeze tests.
+        Only runs for dpa3 descriptor to avoid redundant slow freeze tests.
         """
         if self.descriptor.get("type") != "dpa3":
             return
@@ -1948,7 +1948,7 @@ class TestMultiTaskGradient(unittest.TestCase):
 
         # Verify descriptor params are aliased (share_params)
         mt_desc_2 = mt_trainer.wrapper.model["model_2"].atomic_model.descriptor
-        for (n1, p1), (n2, p2) in zip(
+        for (n1, p1), (_n2, p2) in zip(
             mt_desc.named_parameters(), mt_desc_2.named_parameters(), strict=True
         ):
             assert p1.data_ptr() == p2.data_ptr(), (

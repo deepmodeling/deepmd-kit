@@ -91,7 +91,7 @@ def get_trainer(
                     with h5py.File(stat_file_path, "w"):
                         pass
                 else:
-                    Path(stat_file_path).mkdir()
+                    Path(stat_file_path).mkdir(parents=True, exist_ok=True)
             stat_file_path = DPPath(stat_file_path, "a")
     else:
         # Multi-task: build per-task data systems
@@ -143,7 +143,7 @@ def get_trainer(
                         with h5py.File(_sf, "w"):
                             pass
                     else:
-                        Path(_sf).mkdir(parents=True)
+                        Path(_sf).mkdir(parents=True, exist_ok=True)
                 stat_file_path[model_key] = DPPath(_sf, "a")
             else:
                 stat_file_path[model_key] = None
@@ -290,18 +290,19 @@ def train(
     if os.environ.get("LOCAL_RANK") is not None:
         dist.init_process_group(backend="cuda:nccl,cpu:gloo")
 
-    trainer = get_trainer(
-        config,
-        init_model,
-        restart,
-        finetune_model=finetune,
-        finetune_links=finetune_links,
-        shared_links=shared_links,
-    )
-    trainer.run()
-
-    if dist.is_available() and dist.is_initialized():
-        dist.destroy_process_group()
+    try:
+        trainer = get_trainer(
+            config,
+            init_model,
+            restart,
+            finetune_model=finetune,
+            finetune_links=finetune_links,
+            shared_links=shared_links,
+        )
+        trainer.run()
+    finally:
+        if dist.is_available() and dist.is_initialized():
+            dist.destroy_process_group()
 
 
 def freeze(

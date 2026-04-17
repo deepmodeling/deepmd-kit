@@ -611,13 +611,16 @@ class Trainer:
                     for ii in model_params["model_dict"]
                 ]
             )
-            assert np.allclose(_data_stat_protect, _data_stat_protect[0]), (
-                "Model key 'data_stat_protect' must be the same in each branch when multitask!"
-            )
+            if not np.allclose(_data_stat_protect, _data_stat_protect[0]):
+                raise ValueError(
+                    "Model key 'data_stat_protect' must be the same in each branch when multitask!"
+                )
             self.wrapper.share_params(
                 shared_links,
                 resume=(resuming and not self._finetune_update_stat) or self.rank != 0,
-                model_key_prob_map=dict(zip(self.model_keys, self.model_prob)),
+                model_key_prob_map=dict(
+                    zip(self.model_keys, self.model_prob, strict=True)
+                ),
                 data_stat_protect=_data_stat_protect[0],
             )
 
@@ -825,7 +828,9 @@ class Trainer:
                 self._unwrapped.share_params(
                     shared_links,
                     resume=True,
-                    model_key_prob_map=dict(zip(self.model_keys, self.model_prob)),
+                    model_key_prob_map=dict(
+                        zip(self.model_keys, self.model_prob, strict=True)
+                    ),
                 )
 
             if optimizer_state_dict is not None:
