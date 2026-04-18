@@ -189,7 +189,7 @@ def _trace_and_compile(
     mapping: torch.Tensor,
     fparam: torch.Tensor | None,
     aparam: torch.Tensor | None,
-    compile_opts: dict[str, Any],
+    compile_opts: dict[str, Any] | None = None,
 ) -> torch.nn.Module:
     """Symbolic-trace ``forward_lower`` and compile with inductor + dynamic=True.
 
@@ -199,9 +199,9 @@ def _trace_and_compile(
         The (uncompiled) model.
     ext_coord, ext_atype, nlist, mapping, fparam, aparam
         Sample tensors used to seed the symbolic tracer.
-    compile_opts : dict
-        Options forwarded to ``torch.compile`` (the ``dynamic`` and
-        ``backend`` keys are ignored and replaced).
+    compile_opts : dict or None
+        User-supplied inductor options.  These are merged on top of the
+        built-in defaults (user values take precedence).
 
     Returns
     -------
@@ -296,22 +296,28 @@ def _trace_and_compile(
     if not was_training:
         model.eval()
 
-    # Work on a copy; ignore caller-supplied dynamic/backend.
-    compile_opts = {
-        k: v for k, v in compile_opts.items() if k not in ("dynamic", "backend")
+    # Inductor defaults tuned for second-order-gradient training graphs.
+    # User-supplied compile_opts override these on a per-key basis.
+    inductor_options: dict[str, Any] = {
+        "max_autotune": False,
+        "shape_padding": True,
+        "epilogue_fusion": False,
+        "triton.cudagraphs": False,
+        "max_fusion_size": 64,
+        # NOTE: mix_order_reduction hits multiple bugs under
+        # data-dependent symbolic shapes on PyTorch <=2.11
+        # (pytorch/pytorch#174379, #178080, #179494) -- our
+        # edge count is exactly that kind of shape.
+        "triton.mix_order_reduction": False,
     }
-    opts = compile_opts.setdefault("options", {})
-    opts.setdefault("max_autotune", False)
-    opts.setdefault("epilogue_fusion", False)
-    opts.setdefault("triton.cudagraphs", False)
-    opts.setdefault("shape_padding", True)
-    opts.setdefault("max_fusion_size", 8)
+    if compile_opts:
+        inductor_options.update(compile_opts)
 
     return torch.compile(
         traced_lower,
         backend="inductor",
         dynamic=True,
-        **compile_opts,
+        options=inductor_options,
     )
 
 
