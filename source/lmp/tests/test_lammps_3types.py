@@ -9,11 +9,12 @@ import pytest
 from lammps import (
     PyLammps,
 )
-from model_convert import (
-    ensure_converted_pb,
-)
 from write_lmp_data import (
     write_lmp_data,
+)
+
+from model_convert import (
+    ensure_converted_pb,
 )
 
 pbtxt_file = Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot.pbtxt"
@@ -244,7 +245,6 @@ type_HO = np.array([2, 1, 1, 2, 1, 1, 3])
 
 # https://github.com/lammps/lammps/blob/1e1311cf401c5fc2614b5d6d0ff3230642b76597/src/update.cpp#L193
 nktv2p = 1.6021765e6
-
 
 def setup_module() -> None:
     if os.environ.get("ENABLE_TENSORFLOW", "1") != "1":

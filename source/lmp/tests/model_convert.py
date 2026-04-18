@@ -1,9 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Helpers for preparing converted TensorFlow graph files in LAMMPS tests."""
 
-from __future__ import (
-    annotations,
-)
+from __future__ import annotations
 
 import errno
 import os
@@ -11,9 +9,7 @@ import subprocess as sp
 import sys
 import tempfile
 import time
-from pathlib import (
-    Path,
-)
+from pathlib import Path
 
 _LOCK_TIMEOUT_SECONDS = 60.0
 _LOCK_POLL_SECONDS = 0.1
@@ -53,12 +49,12 @@ def _should_break_stale_lock(lock_file: Path) -> bool:
     except FileNotFoundError:
         return False
 
-    lock_age = time.time() - lock_stat.st_mtime
-    if lock_age > _LOCK_TIMEOUT_SECONDS:
-        return True
-
     lock_pid = _read_lock_pid(lock_file)
-    return lock_pid is not None and not _pid_is_running(lock_pid)
+    if lock_pid is not None:
+        return not _pid_is_running(lock_pid)
+
+    lock_age = time.time() - lock_stat.st_mtime
+    return lock_age > _LOCK_TIMEOUT_SECONDS
 
 
 def ensure_converted_pb(source: Path, output: Path) -> Path:
@@ -68,6 +64,7 @@ def ensure_converted_pb(source: Path, output: Path) -> Path:
     repeated imports across multiple test modules do not regenerate the same model
     more than once.
     """
+
     source = source.resolve()
     output = output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -103,7 +100,7 @@ def ensure_converted_pb(source: Path, output: Path) -> Path:
         )
         os.close(tmp_fd)
         tmp_path = Path(tmp_name)
-        sp.run(
+        sp.run(  # noqa: S603
             [
                 sys.executable,
                 "-m",

@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import importlib
 import os
-import shutil
 import subprocess as sp
+import shutil
 import sys
 import tempfile
 from pathlib import (
@@ -14,11 +14,12 @@ import pytest
 from lammps import (
     PyLammps,
 )
-from model_convert import (
-    ensure_converted_pb,
-)
 from write_lmp_data import (
     write_lmp_data_spin,
+)
+
+from model_convert import (
+    ensure_converted_pb,
 )
 
 pbtxt_file2 = (

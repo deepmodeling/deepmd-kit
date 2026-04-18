@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import importlib
 import os
-import shutil
 import subprocess as sp
+import shutil
 import sys
 import tempfile
 from pathlib import (
@@ -15,11 +15,12 @@ import pytest
 from lammps import (
     PyLammps,
 )
-from model_convert import (
-    ensure_converted_pb,
-)
 from write_lmp_data import (
     write_lmp_data,
+)
+
+from model_convert import (
+    ensure_converted_pb,
 )
 
 pbtxt_file2 = (
@@ -721,6 +722,10 @@ def test_pair_deepmd_si(lammps_si) -> None:
 @pytest.mark.parametrize(
     ("balance_args",),
     [(["--balance"],), ([],)],
+)
+@pytest.mark.skipif(
+    os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
+    reason="Skip test because TensorFlow support is not enabled.",
 )
 def test_pair_deepmd_mpi(balance_args: list) -> None:
     with tempfile.NamedTemporaryFile() as f:
