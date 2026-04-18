@@ -164,6 +164,23 @@ def _remove_detach_nodes(gm: torch.fx.GraphModule) -> None:
     gm.recompile()
 
 
+def _rebuild_graph_module(gm: torch.fx.GraphModule) -> torch.fx.GraphModule:
+    """Copy all nodes into a fresh ``torch.fx.Graph``.
+
+    After ``Graph.erase_node()`` the C-level prev/next pointers on
+    neighbouring ``Node`` objects may become stale.  When ``torch.compile``
+    (dynamo) later re-traces the graph it walks these pointers, which can
+    cause segfaults.  Rebuilding into a new graph eliminates stale pointers.
+    """
+    old_graph = gm.graph
+    new_graph = torch.fx.Graph()
+    val_map: dict[torch.fx.Node, torch.fx.Node] = {}
+    for node in old_graph.nodes:
+        val_map[node] = new_graph.node_copy(node, lambda n: val_map[n])
+    new_graph.lint()
+    return torch.fx.GraphModule(gm, new_graph)
+
+
 def _trace_and_compile(
     model: torch.nn.Module,
     ext_coord: torch.Tensor,
@@ -272,6 +289,9 @@ def _trace_and_compile(
     # second-order gradient flow (d(force)/d(params) for force training).
     # Removing them restores correct higher-order derivatives.
     _remove_detach_nodes(traced_lower)
+    # Rebuild into a fresh graph to eliminate stale C-level node pointers
+    # left by erase_node(), which can cause segfaults during dynamo re-trace.
+    traced_lower = _rebuild_graph_module(traced_lower)
 
     if not was_training:
         model.eval()
