@@ -63,6 +63,10 @@ EXAMPLE_DIR = os.path.join(
 # Auto-detect DDP backend based on device availability.
 _DDP_BACKEND = "nccl" if torch.cuda.is_available() else "gloo"
 
+# NCCL requires at least 2 GPUs for multi-rank tests.
+if _DDP_BACKEND == "nccl" and torch.cuda.device_count() < 2:
+    raise unittest.SkipTest("NCCL DDP tests require at least 2 GPUs")
+
 
 def _find_free_port():
     """Find a free TCP port on localhost."""
