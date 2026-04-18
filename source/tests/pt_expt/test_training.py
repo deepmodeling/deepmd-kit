@@ -8,7 +8,6 @@ Verifies that:
 4. Loss decreases over those steps
 """
 
-import copy
 import os
 import shutil
 import tempfile
@@ -50,10 +49,6 @@ _COMPILE_TOL = {"atol": 1e-10, "rtol": 1e-10}
 # Descriptor configs used to extend compile-correctness tests to non-trivial
 # architectures.  ``precision: float64`` is set so the strict ``atol=rtol=1e-10``
 # comparison holds at machine epsilon.
-#
-# DPA1 with attn_layer=0 (no se_atten attention) compiles correctly.
-# DPA1 with attn_layer>0 is rejected at compile time because inductor produces
-# incorrect force gradients through the attention path.
 _DESCRIPTOR_DPA1_NO_ATTN = {
     "type": "dpa1",
     "sel": 12,
@@ -1198,26 +1193,16 @@ class TestCompiledVaryingNatoms(unittest.TestCase):
         self._check_varying_natoms(_DESCRIPTOR_DPA3)
 
     def test_compiled_matches_uncompiled_varying_natoms_dpa1_no_attn(self) -> None:
-        """DPA1 (attn_layer=0): compiled vs uncompiled match.
-
-        DPA1 without attention compiles correctly and matches eager mode.
-        """
+        """DPA1 (attn_layer=0): compiled vs uncompiled match."""
         self._check_varying_natoms(_DESCRIPTOR_DPA1_NO_ATTN)
 
-    def test_compile_rejects_dpa1_with_attention(self) -> None:
-        """DPA1 (attn_layer>0): compile must raise RuntimeError.
+    def test_compiled_matches_uncompiled_varying_natoms_dpa1_with_attn(self) -> None:
+        """DPA1 (attn_layer=2): compiled vs uncompiled match.
 
-        Compiled attention produces incorrect force gradients; the compile
-        path rejects models with se_atten attention layers.
+        Exercises DPA1 with se_atten attention layers; matches at machine
+        epsilon (~1e-12) on float64 just like se_e2_a.
         """
-        config = _make_config(self.data_dir, numb_steps=2)
-        config["model"]["descriptor"] = copy.deepcopy(_DESCRIPTOR_DPA1_WITH_ATTN)
-        config["training"]["enable_compile"] = True
-        config = update_deepmd_input(config, warning=False)
-        config = normalize(config)
-        with self.assertRaises(RuntimeError, msg="se_atten attention"):
-            trainer = get_trainer(config)
-            trainer.run()
+        self._check_varying_natoms(_DESCRIPTOR_DPA1_WITH_ATTN)
 
 
 if __name__ == "__main__":

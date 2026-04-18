@@ -889,23 +889,6 @@ class Trainer:
         for task_key in self.model_keys:
             model = wrapper_mod.model[task_key]
 
-            # Guard: DPA1/se_atten_v2 attention produces incorrect force
-            # gradients under inductor compile.  Other descriptors (DPA2,
-            # DPA3) use different attention mechanisms that compile correctly.
-            from deepmd.dpmodel.descriptor.dpa1 import DescrptDPA1 as DescrptDPA1DP
-
-            descriptor = model.get_descriptor()
-            if isinstance(descriptor, DescrptDPA1DP):
-                n_attn = descriptor.get_numb_attn_layer()
-                if n_attn > 0:
-                    raise RuntimeError(
-                        f"Cannot compile model (task={task_key}): DPA1 "
-                        f"descriptor has {n_attn} se_atten attention "
-                        f"layer(s). Compiled se_atten produces incorrect "
-                        f"force gradients. Set 'enable_compile: false' or "
-                        f"use attn_layer=0."
-                    )
-
             inp, _ = self.get_data(is_train=True, task_key=task_key)
             coord = inp["coord"].detach()
             atype = inp["atype"].detach()
