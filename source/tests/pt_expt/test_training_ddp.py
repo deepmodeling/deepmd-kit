@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Tests for distributed (DDP) training in the pt_expt backend.
 
-Uses ``torch.multiprocessing.spawn`` + ``gloo`` backend to verify DDP on CPU.
+Uses ``torch.multiprocessing.spawn`` with auto-detected backend
+(``nccl`` on CUDA, ``gloo`` on CPU).
 
 Verifies that:
 1. Single-task DDP training completes and produces correct outputs
@@ -58,6 +59,9 @@ EXAMPLE_DIR = os.path.join(
     "examples",
     "water",
 )
+
+# Auto-detect DDP backend based on device availability.
+_DDP_BACKEND = "nccl" if torch.cuda.is_available() else "gloo"
 
 
 def _find_free_port():
@@ -306,8 +310,7 @@ def _worker_single_task_train(rank, world_size, port, data_dir, result_dict):
     """Worker: run single-task DDP training."""
     os.environ["MASTER_ADDR"] = "127.0.0.1"
     os.environ["MASTER_PORT"] = str(port)
-    os.environ["DEVICE"] = "cpu"
-    dist.init_process_group(backend="gloo", rank=rank, world_size=world_size)
+    dist.init_process_group(backend=_DDP_BACKEND, rank=rank, world_size=world_size)
     try:
         tmpdir = tempfile.mkdtemp(prefix=f"ddp_st_rank{rank}_")
         old_cwd = os.getcwd()
@@ -345,8 +348,7 @@ def _worker_multitask_train(rank, world_size, port, data_dir, result_dict):
     """Worker: run multi-task DDP training."""
     os.environ["MASTER_ADDR"] = "127.0.0.1"
     os.environ["MASTER_PORT"] = str(port)
-    os.environ["DEVICE"] = "cpu"
-    dist.init_process_group(backend="gloo", rank=rank, world_size=world_size)
+    dist.init_process_group(backend=_DDP_BACKEND, rank=rank, world_size=world_size)
     try:
         tmpdir = tempfile.mkdtemp(prefix=f"ddp_mt_rank{rank}_")
         old_cwd = os.getcwd()
@@ -385,8 +387,7 @@ def _worker_gradient_test(rank, world_size, port, data_dir, result_dict):
     """Worker: run 1 step of DDP training, collect gradients and input data."""
     os.environ["MASTER_ADDR"] = "127.0.0.1"
     os.environ["MASTER_PORT"] = str(port)
-    os.environ["DEVICE"] = "cpu"
-    dist.init_process_group(backend="gloo", rank=rank, world_size=world_size)
+    dist.init_process_group(backend=_DDP_BACKEND, rank=rank, world_size=world_size)
     try:
         tmpdir = tempfile.mkdtemp(prefix=f"ddp_grad_rank{rank}_")
         old_cwd = os.getcwd()
@@ -453,8 +454,7 @@ def _worker_multitask_gradient_test(rank, world_size, port, data_dir, result_dic
     """Worker: run 1 step of multi-task DDP training, collect gradients."""
     os.environ["MASTER_ADDR"] = "127.0.0.1"
     os.environ["MASTER_PORT"] = str(port)
-    os.environ["DEVICE"] = "cpu"
-    dist.init_process_group(backend="gloo", rank=rank, world_size=world_size)
+    dist.init_process_group(backend=_DDP_BACKEND, rank=rank, world_size=world_size)
     try:
         tmpdir = tempfile.mkdtemp(prefix=f"ddp_mt_grad_rank{rank}_")
         old_cwd = os.getcwd()
@@ -509,8 +509,7 @@ def _worker_check_resume(
     """
     os.environ["MASTER_ADDR"] = "127.0.0.1"
     os.environ["MASTER_PORT"] = str(port)
-    os.environ["DEVICE"] = "cpu"
-    dist.init_process_group(backend="gloo", rank=rank, world_size=world_size)
+    dist.init_process_group(backend=_DDP_BACKEND, rank=rank, world_size=world_size)
     try:
         tmpdir = tempfile.mkdtemp(prefix=f"ddp_resume_rank{rank}_")
         old_cwd = os.getcwd()
@@ -564,8 +563,7 @@ def _worker_finetune(
     """
     os.environ["MASTER_ADDR"] = "127.0.0.1"
     os.environ["MASTER_PORT"] = str(port)
-    os.environ["DEVICE"] = "cpu"
-    dist.init_process_group(backend="gloo", rank=rank, world_size=world_size)
+    dist.init_process_group(backend=_DDP_BACKEND, rank=rank, world_size=world_size)
     try:
         tmpdir = tempfile.mkdtemp(prefix=f"ddp_ft_rank{rank}_")
         old_cwd = os.getcwd()
@@ -1331,8 +1329,7 @@ def _worker_multitask_finetune(
     """Worker: DDP multi-task finetune from checkpoint."""
     os.environ["MASTER_ADDR"] = "127.0.0.1"
     os.environ["MASTER_PORT"] = str(port)
-    os.environ["DEVICE"] = "cpu"
-    dist.init_process_group(backend="gloo", rank=rank, world_size=world_size)
+    dist.init_process_group(backend=_DDP_BACKEND, rank=rank, world_size=world_size)
     try:
         tmpdir = tempfile.mkdtemp(prefix=f"ddp_mt_ft_rank{rank}_")
         old_cwd = os.getcwd()
@@ -1380,8 +1377,7 @@ def _worker_single_task_compile_train(rank, world_size, port, data_dir, result_d
     """
     os.environ["MASTER_ADDR"] = "127.0.0.1"
     os.environ["MASTER_PORT"] = str(port)
-    os.environ["DEVICE"] = "cpu"
-    dist.init_process_group(backend="gloo", rank=rank, world_size=world_size)
+    dist.init_process_group(backend=_DDP_BACKEND, rank=rank, world_size=world_size)
     try:
         tmpdir = tempfile.mkdtemp(prefix=f"ddp_compile_st_rank{rank}_")
         old_cwd = os.getcwd()
@@ -1431,8 +1427,7 @@ def _worker_multitask_compile_train(rank, world_size, port, data_dir, result_dic
     """
     os.environ["MASTER_ADDR"] = "127.0.0.1"
     os.environ["MASTER_PORT"] = str(port)
-    os.environ["DEVICE"] = "cpu"
-    dist.init_process_group(backend="gloo", rank=rank, world_size=world_size)
+    dist.init_process_group(backend=_DDP_BACKEND, rank=rank, world_size=world_size)
     try:
         tmpdir = tempfile.mkdtemp(prefix=f"ddp_compile_mt_rank{rank}_")
         old_cwd = os.getcwd()
