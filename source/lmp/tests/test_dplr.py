@@ -10,12 +10,11 @@ import pytest
 from lammps import (
     PyLammps,
 )
-from write_lmp_data import (
-    write_lmp_data_full,
-)
-
 from model_convert import (
     ensure_converted_pb,
+)
+from write_lmp_data import (
+    write_lmp_data_full,
 )
 
 pbtxt_file = Path(__file__).parent / "lrmodel.pbtxt"
