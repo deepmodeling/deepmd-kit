@@ -10,11 +10,12 @@ import pytest
 from lammps import (
     PyLammps,
 )
-from model_convert import (
-    ensure_converted_pb,
-)
 from write_lmp_data import (
     write_lmp_data_full,
+)
+
+from model_convert import (
+    ensure_converted_pb,
 )
 
 pbtxt_file = Path(__file__).parent / "lrmodel.pbtxt"
@@ -266,15 +267,14 @@ beta = 0.4
 mesh = 10
 
 
-ensure_converted_pb(pbtxt_file, pb_file)
-ensure_converted_pb(dipole_pbtxt_file, dipole_pb_file)
-
-
 def setup_module() -> None:
     if os.environ.get("ENABLE_TENSORFLOW", "1") != "1":
         pytest.skip(
             "Skip test because TensorFlow support is not enabled.",
         )
+    ensure_converted_pb(pbtxt_file, pb_file)
+    ensure_converted_pb(dipole_pbtxt_file, dipole_pb_file)
+
     write_lmp_data_full(
         box, coord, mol_list, type_OH, charge, data_file, bond_list, mass_list
     )

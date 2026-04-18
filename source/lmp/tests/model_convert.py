@@ -1,18 +1,15 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Helpers for preparing converted TensorFlow graph files in LAMMPS tests."""
 
-from __future__ import (
-    annotations,
-)
+from __future__ import annotations
 
+import errno
 import os
 import subprocess as sp
 import sys
 import tempfile
 import time
-from pathlib import (
-    Path,
-)
+from pathlib import Path
 
 _LOCK_TIMEOUT_SECONDS = 60.0
 _LOCK_POLL_SECONDS = 0.1
@@ -22,6 +19,44 @@ def _is_up_to_date(source: Path, output: Path) -> bool:
     return output.exists() and output.stat().st_mtime_ns >= source.stat().st_mtime_ns
 
 
+def _read_lock_pid(lock_file: Path) -> int | None:
+    try:
+        for line in lock_file.read_text(encoding="utf-8").splitlines():
+            if line.startswith("pid="):
+                return int(line.split("=", maxsplit=1)[1])
+    except (FileNotFoundError, ValueError):
+        return None
+    return None
+
+
+def _pid_is_running(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError as err:
+        if err.errno == errno.ESRCH:
+            return False
+        raise
+    return True
+
+
+def _should_break_stale_lock(lock_file: Path) -> bool:
+    try:
+        lock_stat = lock_file.stat()
+    except FileNotFoundError:
+        return False
+
+    lock_age = time.time() - lock_stat.st_mtime
+    if lock_age > _LOCK_TIMEOUT_SECONDS:
+        return True
+
+    lock_pid = _read_lock_pid(lock_file)
+    return lock_pid is not None and not _pid_is_running(lock_pid)
+
+
 def ensure_converted_pb(source: Path, output: Path) -> Path:
     """Convert ``source`` into ``output`` only when the target is missing or stale.
 
@@ -29,6 +64,7 @@ def ensure_converted_pb(source: Path, output: Path) -> Path:
     repeated imports across multiple test modules do not regenerate the same model
     more than once.
     """
+
     source = source.resolve()
     output = output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -41,6 +77,9 @@ def ensure_converted_pb(source: Path, output: Path) -> Path:
         try:
             fd = os.open(str(lock_file), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         except FileExistsError as err:
+            if _should_break_stale_lock(lock_file):
+                lock_file.unlink(missing_ok=True)
+                continue
             if time.monotonic() - started >= _LOCK_TIMEOUT_SECONDS:
                 raise TimeoutError(f"Timed out waiting for {lock_file}") from err
             time.sleep(_LOCK_POLL_SECONDS)
@@ -61,7 +100,7 @@ def ensure_converted_pb(source: Path, output: Path) -> Path:
         )
         os.close(tmp_fd)
         tmp_path = Path(tmp_name)
-        sp.check_output(
+        sp.run(
             [
                 sys.executable,
                 "-m",
@@ -72,7 +111,8 @@ def ensure_converted_pb(source: Path, output: Path) -> Path:
                 str(source),
                 "-o",
                 str(tmp_path),
-            ]
+            ],
+            check=True,
         )
         tmp_path.replace(output)
         tmp_path = None

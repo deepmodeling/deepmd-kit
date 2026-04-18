@@ -12,11 +12,12 @@ import pytest
 from lammps import (
     PyLammps,
 )
-from model_convert import (
-    ensure_converted_pb,
-)
 from write_lmp_data import (
     write_lmp_data,
+)
+
+from model_convert import (
+    ensure_converted_pb,
 )
 
 pbtxt_file = (
@@ -135,14 +136,13 @@ coord = np.array(
 type_OH = np.array([1, 1, 1, 1, 1, 1])
 
 
-ensure_converted_pb(pbtxt_file, pb_file)
-
-
 def setup_module() -> None:
     if os.environ.get("ENABLE_TENSORFLOW", "1") != "1":
         pytest.skip(
             "Skip test because TensorFlow support is not enabled.",
         )
+    ensure_converted_pb(pbtxt_file, pb_file)
+
     write_lmp_data(box, coord, type_OH, data_file)
 
 

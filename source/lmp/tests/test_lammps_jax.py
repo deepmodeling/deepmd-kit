@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import importlib
 import os
-import shutil
 import subprocess as sp
+import shutil
 import sys
 import tempfile
 from pathlib import (
@@ -15,11 +15,12 @@ import pytest
 from lammps import (
     PyLammps,
 )
-from model_convert import (
-    ensure_converted_pb,
-)
 from write_lmp_data import (
     write_lmp_data,
+)
+
+from model_convert import (
+    ensure_converted_pb,
 )
 
 pbtxt_file2 = (
@@ -225,14 +226,14 @@ type_OH = np.array([1, 2, 2, 1, 2, 2])
 type_HO = np.array([2, 1, 1, 2, 1, 1])
 
 
-ensure_converted_pb(pbtxt_file2, pb_file2)
-
-
 def setup_module():
     if os.environ.get("ENABLE_JAX", "1") != "1":
         pytest.skip(
             "Skip test because JAX support is not enabled.",
         )
+    if os.environ.get("ENABLE_TENSORFLOW", "1") == "1":
+        ensure_converted_pb(pbtxt_file2, pb_file2)
+
     write_lmp_data(box, coord, type_OH, data_file)
     write_lmp_data(box, coord, type_HO, data_type_map_file)
     write_lmp_data(

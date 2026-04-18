@@ -10,11 +10,12 @@ import pytest
 from lammps import (
     PyLammps,
 )
-from model_convert import (
-    ensure_converted_pb,
-)
 from write_lmp_data import (
     write_lmp_data,
+)
+
+from model_convert import (
+    ensure_converted_pb,
 )
 
 pbtxt_file = Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot.pbtxt"
@@ -57,16 +58,14 @@ type_OH = np.array([1, 2, 2, 1, 2, 2])
 # type_HO = np.array([2, 1, 1, 2, 1, 1])
 
 
-ensure_converted_pb(pbtxt_file, pb_file)
-
-ensure_converted_pb(pbtxt_file2, pb_file2)
-
-
 def setup_module() -> None:
     if os.environ.get("ENABLE_TENSORFLOW", "1") != "1":
         pytest.skip(
             "Skip test because TensorFlow support is not enabled.",
         )
+    ensure_converted_pb(pbtxt_file, pb_file)
+    ensure_converted_pb(pbtxt_file2, pb_file2)
+
     write_lmp_data(box, coord, type_OH, data_file)
     # TODO
     # write_lmp_data(box, coord, type_HO, data_type_map_file)
