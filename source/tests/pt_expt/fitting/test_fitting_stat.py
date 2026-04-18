@@ -117,13 +117,17 @@ def _get_weighted_fitting_stat(
     return weighted_avg, weighted_std
 
 
-# Paths to the water data used by PT tests
-_PT_DATA = str(Path(__file__).parent.parent.parent / "pt" / "water" / "data" / "data_0")
+# Paths to the water data used by PT tests.
+# ``source/tests/pt/water`` is a symlink to ``model/water``; use the real
+# path so CI checkouts that materialise symlinks as text files still work.
+_PT_DATA = str(
+    Path(__file__).parent.parent.parent / "pt" / "model" / "water" / "data" / "data_0"
+)
 _PT_DATA_NO_FPARAM = str(
-    Path(__file__).parent.parent.parent / "pt" / "water" / "data" / "data_1"
+    Path(__file__).parent.parent.parent / "pt" / "model" / "water" / "data" / "data_1"
 )
 _PT_DATA_SINGLE = str(
-    Path(__file__).parent.parent.parent / "pt" / "water" / "data" / "single"
+    Path(__file__).parent.parent.parent / "pt" / "model" / "water" / "data" / "single"
 )
 
 _descriptor_se_e2_a = {
