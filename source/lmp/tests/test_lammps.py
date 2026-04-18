@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import importlib
 import os
-import subprocess as sp
 import shutil
+import subprocess as sp
 import sys
 import tempfile
 from pathlib import (
@@ -15,12 +15,11 @@ import pytest
 from lammps import (
     PyLammps,
 )
-from write_lmp_data import (
-    write_lmp_data,
-)
-
 from model_convert import (
     ensure_converted_pb,
+)
+from write_lmp_data import (
+    write_lmp_data,
 )
 
 pbtxt_file = Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot.pbtxt"

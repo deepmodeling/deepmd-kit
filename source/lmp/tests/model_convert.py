@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Helpers for preparing converted TensorFlow graph files in LAMMPS tests."""
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import errno
 import os
@@ -9,7 +11,9 @@ import subprocess as sp
 import sys
 import tempfile
 import time
-from pathlib import Path
+from pathlib import (
+    Path,
+)
 
 _LOCK_TIMEOUT_SECONDS = 60.0
 _LOCK_POLL_SECONDS = 0.1
@@ -64,7 +68,6 @@ def ensure_converted_pb(source: Path, output: Path) -> Path:
     repeated imports across multiple test modules do not regenerate the same model
     more than once.
     """
-
     source = source.resolve()
     output = output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -100,7 +103,7 @@ def ensure_converted_pb(source: Path, output: Path) -> Path:
         )
         os.close(tmp_fd)
         tmp_path = Path(tmp_name)
-        sp.run(  # noqa: S603
+        sp.run(
             [
                 sys.executable,
                 "-m",
