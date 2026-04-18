@@ -12,11 +12,12 @@ import pytest
 from lammps import (
     PyLammps,
 )
-from model_convert import (
-    ensure_converted_pb,
-)
 from write_lmp_data import (
     write_lmp_data,
+)
+
+from model_convert import (
+    ensure_converted_pb,
 )
 
 pbtxt_file = (
