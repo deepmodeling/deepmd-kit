@@ -311,12 +311,11 @@ def _trace_and_compile(
         "shape_padding": True,
         "epilogue_fusion": False,
         "triton.cudagraphs": False,
-        "max_fusion_size": 64,
-        # NOTE: mix_order_reduction hits multiple bugs under
-        # data-dependent symbolic shapes on PyTorch <=2.11
-        # (pytorch/pytorch#174379, #178080, #179494) -- our
-        # edge count is exactly that kind of shape.
-        "triton.mix_order_reduction": False,
+        "max_fusion_size": 8,
+        # NOTE: On GPU with PyTorch <=2.11, consider adding
+        # "triton.mix_order_reduction": False to work around
+        # pytorch/pytorch#174379, #178080, #179494 under
+        # data-dependent symbolic shapes.
     }
     if compile_opts:
         inductor_options.update(compile_opts)
