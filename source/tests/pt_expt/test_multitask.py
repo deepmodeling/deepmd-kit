@@ -1200,7 +1200,7 @@ class MultiTaskTrainTest:
     def test_multitask_freeze_no_head_raises(self) -> None:
         """Freezing multi-task model without --head raises ValueError.
 
-        Only runs for se_e2_a descriptor to avoid redundant slow freeze tests.
+        Only runs for dpa3 descriptor to avoid redundant slow freeze tests.
         """
         if self.descriptor.get("type") != "dpa3":
             return
@@ -1220,7 +1220,7 @@ class MultiTaskTrainTest:
     def test_multitask_freeze_invalid_head_raises(self) -> None:
         """Freezing multi-task model with invalid --head raises ValueError.
 
-        Only runs for se_e2_a descriptor to avoid redundant slow freeze tests.
+        Only runs for dpa3 descriptor to avoid redundant slow freeze tests.
         """
         if self.descriptor.get("type") != "dpa3":
             return
