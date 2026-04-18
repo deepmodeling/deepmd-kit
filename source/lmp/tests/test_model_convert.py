@@ -1,13 +1,21 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import tempfile
 import unittest
-from pathlib import Path
-from unittest.mock import patch
+from pathlib import (
+    Path,
+)
+from unittest.mock import (
+    patch,
+)
 
-from source.lmp.tests.model_convert import ensure_converted_pb
+from source.lmp.tests.model_convert import (
+    ensure_converted_pb,
+)
 
 
 class TestEnsureConvertedPb(unittest.TestCase):
