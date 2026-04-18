@@ -113,7 +113,7 @@ class TestActivationFunctionConsistent(unittest.TestCase):
             x = torch.tensor(
                 self.random_input, dtype=torch.float64, device=PT_EXPT_DEVICE
             )
-            test = _torch_activation(x, self.activation).detach().numpy()
+            test = _torch_activation(x, self.activation).detach().cpu().numpy()
             np.testing.assert_allclose(self.ref, test, atol=1e-10)
 
 
@@ -155,5 +155,5 @@ class TestSilutVariantsConsistent(unittest.TestCase):
             x = torch.tensor(
                 self.random_input, dtype=torch.float64, device=PT_EXPT_DEVICE
             )
-            test = _torch_activation(x, self.activation).detach().numpy()
+            test = _torch_activation(x, self.activation).detach().cpu().numpy()
             np.testing.assert_allclose(self.ref, test, atol=1e-10)
