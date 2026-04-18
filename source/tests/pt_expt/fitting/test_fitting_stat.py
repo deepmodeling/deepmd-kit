@@ -117,18 +117,13 @@ def _get_weighted_fitting_stat(
     return weighted_avg, weighted_std
 
 
-# Paths to the water data used by PT tests.
-# resolve() follows the ``pt/water -> model/water`` symlink so numpy can
-# always open the real file, even on CI runners where symlink handling
-# can be fragile.
-_PT_DATA = str(
-    (Path(__file__).parent.parent.parent / "pt" / "water" / "data" / "data_0").resolve()
-)
+# Paths to the water data used by PT tests
+_PT_DATA = str(Path(__file__).parent.parent.parent / "pt" / "water" / "data" / "data_0")
 _PT_DATA_NO_FPARAM = str(
-    (Path(__file__).parent.parent.parent / "pt" / "water" / "data" / "data_1").resolve()
+    Path(__file__).parent.parent.parent / "pt" / "water" / "data" / "data_1"
 )
 _PT_DATA_SINGLE = str(
-    (Path(__file__).parent.parent.parent / "pt" / "water" / "data" / "single").resolve()
+    Path(__file__).parent.parent.parent / "pt" / "water" / "data" / "single"
 )
 
 _descriptor_se_e2_a = {
