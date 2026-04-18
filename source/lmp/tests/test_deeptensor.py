@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import os
-import subprocess as sp
-import sys
 from pathlib import (
     Path,
 )
@@ -14,6 +12,10 @@ from lammps import (
 )
 from write_lmp_data import (
     write_lmp_data,
+)
+
+from model_convert import (
+    ensure_converted_pb,
 )
 
 pbtxt_file = Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot.pbtxt"
@@ -56,13 +58,9 @@ type_OH = np.array([1, 2, 2, 1, 2, 2])
 # type_HO = np.array([2, 1, 1, 2, 1, 1])
 
 
-sp.check_output(
-    f"{sys.executable} -m deepmd convert-from pbtxt -i {pbtxt_file.resolve()} -o {pb_file.resolve()}".split()
-)
+ensure_converted_pb(pbtxt_file, pb_file)
 
-sp.check_output(
-    f"{sys.executable} -m deepmd convert-from pbtxt -i {pbtxt_file2.resolve()} -o {pb_file2.resolve()}".split()
-)
+ensure_converted_pb(pbtxt_file2, pb_file2)
 
 
 def setup_module() -> None:

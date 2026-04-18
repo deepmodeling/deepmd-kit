@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import os
-import subprocess as sp
-import sys
 from pathlib import (
     Path,
 )
@@ -14,6 +12,10 @@ from lammps import (
 )
 from write_lmp_data import (
     write_lmp_data_full,
+)
+
+from model_convert import (
+    ensure_converted_pb,
 )
 
 pbtxt_file = Path(__file__).parent / "lrmodel.pbtxt"
@@ -265,9 +267,8 @@ beta = 0.4
 mesh = 10
 
 
-sp.check_output(
-    f"{sys.executable} -m deepmd convert-from pbtxt -i {pbtxt_file.resolve()} -o {pb_file.resolve()}".split()
-)
+ensure_converted_pb(pbtxt_file, pb_file)
+ensure_converted_pb(dipole_pbtxt_file, dipole_pb_file)
 
 
 def setup_module() -> None:

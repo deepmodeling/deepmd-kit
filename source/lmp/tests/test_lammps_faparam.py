@@ -2,8 +2,6 @@
 """Test LAMMPS fparam and aparam input."""
 
 import os
-import subprocess as sp
-import sys
 from pathlib import (
     Path,
 )
@@ -16,6 +14,10 @@ from lammps import (
 )
 from write_lmp_data import (
     write_lmp_data,
+)
+
+from model_convert import (
+    ensure_converted_pb,
 )
 
 pbtxt_file = (
@@ -134,9 +136,7 @@ coord = np.array(
 type_OH = np.array([1, 1, 1, 1, 1, 1])
 
 
-sp.check_output(
-    f"{sys.executable} -m deepmd convert-from pbtxt -i {pbtxt_file.resolve()} -o {pb_file.resolve()}".split()
-)
+ensure_converted_pb(pbtxt_file, pb_file)
 
 
 def setup_module() -> None:
