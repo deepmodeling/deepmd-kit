@@ -24,6 +24,14 @@ import numpy as np
 import torch
 import torch.distributed as dist
 
+# Disable DDPOptimizer: our compile region wraps only the inner compute
+# function, not the whole DDP model.  DDPOptimizer assumes it owns the
+# full model graph and splits at bucket boundaries, producing subgraphs
+# whose outputs include symbolic integers.  AOT Autograd then crashes
+# with ``'int' object has no attribute 'meta'``
+# (pytorch/pytorch#134182).
+torch._dynamo.config.optimize_ddp = False
+
 from deepmd.dpmodel.common import (
     to_numpy_array,
 )
