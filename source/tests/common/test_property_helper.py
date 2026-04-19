@@ -45,7 +45,9 @@ class TestPropertyHelpers(unittest.TestCase):
         self.assertEqual(config["model"]["type_map"], ["H", "C", "N", "O"])
         self.assertEqual(config["model"]["fitting_net"]["property_name"], "band_prop")
         self.assertEqual(config["model"]["fitting_net"]["task_dim"], 3)
-        self.assertEqual(config["training"]["training_data"]["systems"], ["train0", "train1"])
+        self.assertEqual(
+            config["training"]["training_data"]["systems"], ["train0", "train1"]
+        )
         self.assertEqual(config["training"]["validation_data"]["systems"], ["valid0"])
         self.assertEqual(config["training"]["validation_data"]["batch_size"], 4)
 

@@ -211,7 +211,7 @@ class PropertyTrainer:
         use_pretrain_script: bool | None = None,
         force_load: bool = False,
         **kwargs: Any,
-    ) -> "PropertyTrainer":
+    ) -> PropertyTrainer:
         trainer = cls(**kwargs)
         trainer._system_options = {
             "type_map": type_map,
@@ -324,9 +324,7 @@ class PropertyTrainer:
                 "Use PropertyTrainer.from_systems(...) first."
             )
 
-        from deepmd.pt.entrypoints.main import (
-            train as pt_train,
-        )
+        from deepmd.pt.entrypoints.main import train as pt_train
 
         config = self.build_input()
         finetune_model = resolve_model_name(

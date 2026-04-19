@@ -15,7 +15,10 @@ from typing import (
 
 if TYPE_CHECKING:
     from deepmd.infer import DeepPotential as DeepPotentialType
-    from deepmd.property import PropertyPredictor, PropertyTrainer
+    from deepmd.property import (
+        PropertyPredictor,
+        PropertyTrainer,
+    )
 
 try:
     from deepmd._version import version as __version__
@@ -46,6 +49,7 @@ def DeepPotential(*args: Any, **kwargs: Any) -> "DeepPotentialType":
     )
 
     return DeepPotential(*args, **kwargs)
+
 
 def __getattr__(name: str) -> Any:
     """Lazily expose optional high-level helpers.
