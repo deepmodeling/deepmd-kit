@@ -91,12 +91,13 @@ class EnergyLoss(Loss):
         Instead of computing loss on force components, computes loss on ||F_pred - F_label||_2.
         This treats the force vector as a whole rather than three independent components.
     intensive : bool
-        If true, energy and virial losses are computed as intensive quantities,
-        normalized by the square of the number of atoms (1/N^2). This ensures the loss
-        value is independent of system size and consistent with per-atom RMSE reporting.
-        If false (default), uses the legacy normalization (1/N), which may cause the loss to scale
-        with system size. The default is false for backward compatibility with models trained
-        using deepmd-kit <= 3.0.1.
+        If true, the non-Huber MSE energy and virial losses use intensive normalization,
+        i.e. a 1/N^2 factor instead of the legacy 1/N scaling. This matches per-atom
+        RMSE-style normalization for those terms. MAE and Huber modes use different
+        scaling and are not affected in the same way by this flag.
+        If false (default), the legacy normalization is used for the affected terms.
+        The default is false for backward compatibility with models trained using
+        deepmd-kit <= 3.0.1.
     **kwargs
         Other keyword arguments.
     """

@@ -47,11 +47,12 @@ if INSTALLED_ARRAY_API_STRICT:
 @parameterized(
     ("mse", "mae"),  # loss_func
     (False, True),  # mae (dp test extra MAE metrics)
+    (False, True),  # intensive
 )
 class TestEnerSpin(CommonTest, LossTest, unittest.TestCase):
     @property
     def data(self) -> dict:
-        (loss_func, _mae) = self.param
+        (loss_func, _mae, intensive) = self.param
         return {
             "start_pref_e": 0.02,
             "limit_pref_e": 1.0,
@@ -64,6 +65,7 @@ class TestEnerSpin(CommonTest, LossTest, unittest.TestCase):
             "start_pref_ae": 1.0,
             "limit_pref_ae": 1.0,
             "loss_func": loss_func,
+            "intensive": intensive,
         }
 
     skip_tf = True
@@ -81,7 +83,7 @@ class TestEnerSpin(CommonTest, LossTest, unittest.TestCase):
     args = loss_ener_spin()
 
     def setUp(self) -> None:
-        (loss_func, mae) = self.param
+        (loss_func, mae, _intensive) = self.param
         if loss_func == "mae" and mae:
             self.skipTest("mae=True with loss_func='mae' is redundant")
         CommonTest.setUp(self)
