@@ -51,12 +51,13 @@ class EnergySpinLoss(Loss):
     loss_func : str
         Loss function type: 'mse' or 'mae'.
     intensive : bool
-        If true, energy and virial losses are computed as intensive quantities,
-        normalized by the square of the number of atoms (1/N^2). This ensures the loss
-        value is independent of system size and consistent with per-atom RMSE reporting.
-        If false (default), uses the legacy normalization (1/N), which may cause the loss to scale
-        with system size. The default is false for backward compatibility with models trained
-        using deepmd-kit <= 3.0.1.
+        If true, the MSE energy and virial terms use intensive normalization,
+        i.e. an additional normalization by the square of the number of atoms
+        (1/N^2) instead of the legacy (1/N) behavior. This keeps those MSE loss
+        terms consistent with per-atom RMSE reporting and less dependent on
+        system size. This option does not change the MAE formulation, which is
+        handled separately. The default is false for backward compatibility with
+        models trained using deepmd-kit <= 3.0.1.
     **kwargs
         Other keyword arguments.
     """

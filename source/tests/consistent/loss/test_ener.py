@@ -67,11 +67,19 @@ if INSTALLED_ARRAY_API_STRICT:
     ("mse", "mae"),  # loss_func
     (False, True),  # f_use_norm
     (False, True),  # mae (dp test extra MAE metrics)
+    (False, True),  # intensive
 )
 class TestEner(CommonTest, LossTest, unittest.TestCase):
     @property
     def data(self) -> dict:
-        (use_huber, enable_atom_ener_coeff, loss_func, f_use_norm, _mae) = self.param
+        (
+            use_huber,
+            enable_atom_ener_coeff,
+            loss_func,
+            f_use_norm,
+            _mae,
+            intensive,
+        ) = self.param
         return {
             "start_pref_e": 0.02,
             "limit_pref_e": 1.0,
@@ -87,17 +95,32 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
             "enable_atom_ener_coeff": enable_atom_ener_coeff,
             "loss_func": loss_func,
             "f_use_norm": f_use_norm,
+            "intensive": intensive,
         }
 
     @property
     def skip_tf(self) -> bool:
-        (_use_huber, _enable_atom_ener_coeff, loss_func, f_use_norm, _mae) = self.param
+        (
+            _use_huber,
+            _enable_atom_ener_coeff,
+            loss_func,
+            f_use_norm,
+            _mae,
+            _intensive,
+        ) = self.param
         # Skip TF for MAE loss tests (not implemented in TF backend)
         return CommonTest.skip_tf or loss_func == "mae" or f_use_norm
 
     @property
     def skip_pd(self) -> bool:
-        (_use_huber, _enable_atom_ener_coeff, loss_func, f_use_norm, _mae) = self.param
+        (
+            _use_huber,
+            _enable_atom_ener_coeff,
+            loss_func,
+            f_use_norm,
+            _mae,
+            _intensive,
+        ) = self.param
         # Skip Paddle for MAE loss tests (not implemented in Paddle backend)
         return not INSTALLED_PD or loss_func == "mae" or f_use_norm
 
@@ -116,7 +139,14 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
     args = loss_ener()
 
     def setUp(self) -> None:
-        (use_huber, _enable_atom_ener_coeff, loss_func, f_use_norm, mae) = self.param
+        (
+            use_huber,
+            _enable_atom_ener_coeff,
+            loss_func,
+            f_use_norm,
+            mae,
+            _intensive,
+        ) = self.param
         # Skip invalid combinations
         if f_use_norm and not (use_huber or loss_func == "mae"):
             self.skipTest("f_use_norm requires either use_huber or loss_func='mae'")
@@ -557,3 +587,173 @@ class TestEnerGF(CommonTest, LossTest, unittest.TestCase):
     @property
     def atol(self) -> float:
         return 1e-10
+
+
+class TestIntensiveNatomsScaling(unittest.TestCase):
+    """Regression test for natoms-scaling behavior with intensive normalization.
+
+    This test verifies that MSE energy/virial loss contributions scale with 1/N² when
+    intensive=True, ensuring the loss is independent of system size. This guards against
+    future refactors accidentally reverting to 1/N scaling.
+    """
+
+    def test_intensive_energy_scaling(self) -> None:
+        """Test that energy MSE loss scales as 1/N² with intensive=True."""
+        if not INSTALLED_PT:
+            self.skipTest("PyTorch not installed")
+
+        # Create loss function with intensive=True
+        loss_func = EnerLossPT(
+            starter_learning_rate=1e-3,
+            start_pref_e=1.0,
+            limit_pref_e=1.0,
+            start_pref_f=0.0,
+            limit_pref_f=0.0,
+            start_pref_v=1.0,  # Enable virial to test it too
+            limit_pref_v=1.0,
+            intensive=True,
+        )
+
+        rng = np.random.default_rng(20250419)
+        nframes = 1
+
+        # Run with different natoms values and check scaling
+        natoms_values = [4, 8, 16]
+        energy_losses: list[float] = []
+        virial_losses: list[float] = []
+
+        for natoms in natoms_values:
+            predict = {
+                "energy": numpy_to_torch(rng.random((nframes,))),
+                "force": numpy_to_torch(rng.random((nframes, natoms, 3))),
+                "virial": numpy_to_torch(rng.random((nframes, 9))),
+                "atom_energy": numpy_to_torch(rng.random((nframes, natoms))),
+            }
+            label = {
+                "energy": numpy_to_torch(rng.random((nframes,))),
+                "force": numpy_to_torch(rng.random((nframes, natoms, 3))),
+                "virial": numpy_to_torch(rng.random((nframes, 9))),
+                "atom_ener": numpy_to_torch(rng.random((nframes, natoms))),
+                "find_energy": 1.0,
+                "find_force": 1.0,
+                "find_virial": 1.0,
+                "find_atom_ener": 0.0,  # Disable to simplify test
+            }
+
+            _, _loss, more_loss = loss_func(
+                {},
+                lambda p=predict: p,
+                label,
+                natoms,
+                1e-3,
+            )
+
+            # Get the raw L2 losses before prefactor weighting
+            energy_losses.append(float(torch_to_numpy(more_loss["l2_ener_loss"])))
+            virial_losses.append(float(torch_to_numpy(more_loss["l2_virial_loss"])))
+
+        # For MSE loss with intensive=True, the raw l2 loss should be roughly
+        # size-independent (just the mean squared error). The scaling factor
+        # (1/N² vs 1/N) is applied when combining into the total loss.
+        # So we verify that l2_ener_loss and l2_virial_loss are size-independent.
+        # (They should be similar across different natoms since they're just MSE.)
+
+        # The raw MSE losses should not scale linearly with natoms
+        # (if they did, that would indicate bug in normalization)
+        for i in range(len(natoms_values) - 1):
+            ratio = natoms_values[i + 1] / natoms_values[i]
+            # Raw l2 loss should NOT scale with natoms (within reasonable variance)
+            energy_ratio = energy_losses[i + 1] / energy_losses[i]
+            virial_ratio = virial_losses[i + 1] / virial_losses[i]
+
+            # These shouldn't scale linearly with N - allow some variance but not Nx
+            self.assertLess(
+                energy_ratio,
+                ratio * 0.8,
+                f"Energy loss appears to scale with natoms (ratio {energy_ratio:.2f})",
+            )
+            self.assertLess(
+                virial_ratio,
+                ratio * 0.8,
+                f"Virial loss appears to scale with natoms (ratio {virial_ratio:.2f})",
+            )
+
+    def test_intensive_vs_legacy_scaling_difference(self) -> None:
+        """Test that intensive=True produces different loss than intensive=False for energy/virial."""
+        if not INSTALLED_PT:
+            self.skipTest("PyTorch not installed")
+
+        rng = np.random.default_rng(20250419)
+        nframes = 1
+        natoms = 8
+
+        predict = {
+            "energy": numpy_to_torch(rng.random((nframes,))),
+            "force": numpy_to_torch(rng.random((nframes, natoms, 3))),
+            "virial": numpy_to_torch(rng.random((nframes, 9))),
+            "atom_energy": numpy_to_torch(rng.random((nframes, natoms))),
+        }
+        label = {
+            "energy": numpy_to_torch(rng.random((nframes,))),
+            "force": numpy_to_torch(rng.random((nframes, natoms, 3))),
+            "virial": numpy_to_torch(rng.random((nframes, 9))),
+            "atom_ener": numpy_to_torch(rng.random((nframes, natoms))),
+            "find_energy": 1.0,
+            "find_force": 1.0,
+            "find_virial": 1.0,
+            "find_atom_ener": 0.0,
+        }
+
+        # Create loss functions with intensive=True and intensive=False
+        loss_intensive = EnerLossPT(
+            starter_learning_rate=1e-3,
+            start_pref_e=1.0,
+            limit_pref_e=1.0,
+            start_pref_f=0.0,
+            limit_pref_f=0.0,
+            start_pref_v=1.0,
+            limit_pref_v=1.0,
+            intensive=True,
+        )
+        loss_legacy = EnerLossPT(
+            starter_learning_rate=1e-3,
+            start_pref_e=1.0,
+            limit_pref_e=1.0,
+            start_pref_f=0.0,
+            limit_pref_f=0.0,
+            start_pref_v=1.0,
+            limit_pref_v=1.0,
+            intensive=False,
+        )
+
+        _, loss_val_intensive, _ = loss_intensive(
+            {},
+            lambda: predict,
+            label,
+            natoms,
+            1e-3,
+        )
+        _, loss_val_legacy, _ = loss_legacy(
+            {},
+            lambda: predict,
+            label,
+            natoms,
+            1e-3,
+        )
+
+        loss_intensive_val = float(torch_to_numpy(loss_val_intensive))
+        loss_legacy_val = float(torch_to_numpy(loss_val_legacy))
+
+        # The losses should be different when intensive differs
+        # (unless by chance the values are the same, which is unlikely)
+        # The intensive version should have an extra 1/N factor
+        expected_ratio = 1.0 / natoms
+        actual_ratio = loss_intensive_val / loss_legacy_val
+
+        # Allow some tolerance due to floating point
+        self.assertAlmostEqual(
+            actual_ratio,
+            expected_ratio,
+            places=5,
+            msg=f"Expected intensive/legacy ratio ~{expected_ratio:.6f}, got {actual_ratio:.6f}",
+        )

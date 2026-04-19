@@ -3235,10 +3235,11 @@ def loss_ener() -> list[Argument]:
         "Only effective when loss_func='mae' or use_huber=True."
     )
     doc_intensive = (
-        "If true, energy and virial losses are computed as intensive quantities, "
-        "normalized by the square of the number of atoms (1/N^2). "
-        "This ensures the loss value is independent of system size and consistent with per-atom RMSE reporting. "
-        "If false (default), uses the legacy normalization (1/N), which may cause the loss to scale with system size. "
+        "Controls intensive normalization for energy and virial loss terms in the current implementation. "
+        "For non-Huber MSE energy/virial terms, setting this to true uses 1/N^2 normalization instead of the legacy 1/N scaling. "
+        "This matches per-atom-style reporting more closely for those terms. "
+        "For MAE, the normalization remains 1/N. When `use_huber=True`, the residual is already scaled by 1/N before applying the Huber loss, "
+        "so this flag may have limited or no effect for those terms. "
         "The default is false for backward compatibility with models trained using deepmd-kit <= 3.0.1."
     )
     return [
@@ -3416,10 +3417,11 @@ def loss_ener_spin() -> list[Argument]:
         "Future extensions may support additional loss types."
     )
     doc_intensive = (
-        "If true, energy and virial losses are computed as intensive quantities, "
-        "normalized by the square of the number of atoms (1/N^2). "
-        "This ensures the loss value is independent of system size and consistent with per-atom RMSE reporting. "
-        "If false (default), uses the legacy normalization (1/N), which may cause the loss to scale with system size. "
+        "Controls normalization of the energy and virial loss terms. "
+        "For `loss_func='mse'`, if true, energy and virial losses are computed as intensive quantities, "
+        "normalized by the square of the number of atoms (1/N^2); if false (default), the legacy normalization "
+        "(1/N) is used. "
+        "For `loss_func='mae'`, energy and virial losses remain normalized by the number of atoms (1/N). "
         "The default is false for backward compatibility with models trained using deepmd-kit <= 3.0.1."
     )
     return [
