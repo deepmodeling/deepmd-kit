@@ -5,6 +5,9 @@ from .deep_eval import (
 from .deep_pot import (
     DeepPot,
 )
+from .deep_property import (
+    DeepProperty,
+)
 from .model_devi import (
     calc_model_devi,
 )
@@ -13,6 +16,7 @@ __all__ = [
     "DeepEval",
     "DeepPot",
     "DeepPotential",
+    "DeepProperty",
     "calc_model_devi",
 ]
 
