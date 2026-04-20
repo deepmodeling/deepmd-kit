@@ -86,7 +86,22 @@ The spin loss function $L$ for training energy is given by
 
 $$L = p_e L_e + p_{fr} L_{fr} + p_{fm} L_{fm} + p_v L_v$$
 
-where $L_e$, $L_{fr}$, $L_{fm}$ and $L_v$ denote the loss in energy, atomic force, magnatic force and virial, respectively. $p_e$, $p_{fr}$, $p_{fm}$ and $p_v$ give the prefactors of the energy, atomic force, magnatic force and virial losses.
+where $L_e$, $L_{fr}$, $L_{fm}$ and $L_v$ denote the loss in energy, atomic force, magnetic force and virial, respectively. $p_e$, $p_{fr}$, $p_{fm}$ and $p_v$ give the prefactors of the energy, atomic force, magnetic force and virial losses.
+
+By default, the energy and virial losses are normalized by the number of atoms $N$. When **intensive loss normalization** is enabled, these terms are instead normalized by $N^2$. For the energy loss, this converts it to the square of the per-atom energy error:
+
+```math
+    L_E^{\text{intensive}}(\boldsymbol{x};\boldsymbol{\theta})=\left(\frac{E(\boldsymbol{x};\boldsymbol{\theta})-E^*}{N}\right)^2 = \frac{1}{N^2}(E(\boldsymbol{x};\boldsymbol{\theta})-E^*)^2,
+```
+
+and similarly for the virial loss:
+
+```math
+    L_\Xi^{\text{intensive}}(\boldsymbol{x};\boldsymbol{\theta})=\frac{1}{9N^2}\sum_{\alpha,\beta=1}^{3}(\Xi_{\alpha\beta}(\boldsymbol{x};\boldsymbol{\theta})-\Xi_{\alpha\beta}^*)^2.
+```
+
+Intensive normalization ensures the loss scale remains consistent across systems with different numbers of atoms $N$, which is highly recommended for multi-task learning.
+
 
 The prefectors may not be a constant, rather it changes linearly with the learning rate. Taking the atomic force prefactor for example, at training step $t$, it is given by
 
@@ -111,8 +126,10 @@ The {ref}`loss <loss>` section in the `input.json` is
 	"limit_pref_fm":	10.0,
 	"start_pref_v":	    0,
 	"limit_pref_v":	    0,
-	"loss_func":	    "mse"
+	"loss_func":	    "mse",
+	"intensive":	    false
     },
+
 ```
 
 The options {ref}`start_pref_e <loss[ener_spin]/start_pref_e>`, {ref}`limit_pref_e <loss[ener_spin]/limit_pref_e>`, {ref}`start_pref_fr <loss[ener_spin]/start_pref_fr>`, {ref}`limit_pref_fm <loss[ener_spin]/limit_pref_fm>`, {ref}`start_pref_v <loss[ener_spin]/start_pref_v>` and {ref}`limit_pref_v <loss[ener_spin]/limit_pref_v>` determine the start and limit prefactors of energy, atomic force, magnatic force and virial, respectively.
@@ -124,7 +141,10 @@ The {ref}`loss_func <loss[ener_spin]/loss_func>` option specifies the type of lo
 
 When using `loss_func="mse"`, the training will output `rmse_e`, `rmse_fr`, `rmse_fm`, `rmse_v` metrics (root mean square errors). When using `loss_func="mae"`, the training will output `mae_e`, `mae_fr`, `mae_fm`, `mae_v` metrics (mean absolute errors).
 
+The {ref}`intensive <loss[ener_spin]/intensive>` option (default is `false`) controls the normalization of the energy and virial loss terms when `loss_func="mse"`. If set to `true`, these terms are normalized by $1/N^2$ (intensive), ensuring the loss scale is independent of the system size $N$. If `false`, the legacy $1/N$ normalization is used.
+
 If one does not want to train with virial, then he/she may set the virial prefactors {ref}`start_pref_v <loss[ener_spin]/start_pref_v>` and {ref}`limit_pref_v <loss[ener_spin]/limit_pref_v>` to 0.
+
 
 ## Data format
 
