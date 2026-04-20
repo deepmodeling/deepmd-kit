@@ -759,6 +759,19 @@ class DeepEval(DeepEvalBackend):
             # returning a dict just like the .pte module.
             # It also filters non-tensor args automatically, matching the
             # export-time signature where None args were excluded.
+            # Pad nlist with extra -1 column so n_nnei > nnei, ensuring
+            # format_nlist's compiled sort branch executes.
+            nlist_t = torch.cat(
+                [
+                    nlist_t,
+                    -torch.ones(
+                        (*nlist_t.shape[:2], 1),
+                        dtype=nlist_t.dtype,
+                        device=nlist_t.device,
+                    ),
+                ],
+                dim=-1,
+            )
             model_ret = self._pt2_runner(
                 ext_coord_t, ext_atype_t, nlist_t, mapping_t, fparam_t, aparam_t
             )
@@ -898,6 +911,19 @@ class DeepEval(DeepEvalBackend):
 
         # Call the model with spin (7 args)
         if self._is_pt2:
+            # Pad nlist with extra -1 column so n_nnei > nnei, ensuring
+            # format_nlist's compiled sort branch executes.
+            nlist_t = torch.cat(
+                [
+                    nlist_t,
+                    -torch.ones(
+                        (*nlist_t.shape[:2], 1),
+                        dtype=nlist_t.dtype,
+                        device=nlist_t.device,
+                    ),
+                ],
+                dim=-1,
+            )
             model_ret = self._pt2_runner(
                 ext_coord_t,
                 ext_atype_t,
