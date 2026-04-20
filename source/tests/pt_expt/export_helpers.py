@@ -213,7 +213,7 @@ def model_forward_lower_export_round_trip(
         tracing_mode="symbolic",
         _allow_non_fake_inputs=True,
     )
-    dynamic_shapes = _build_dynamic_shapes(*inputs_2f)
+    dynamic_shapes = _build_dynamic_shapes(*inputs_2f, model_nnei=sum(md_pt.get_sel()))
     exported_dyn = torch.export.export(
         traced_sym,
         inputs_2f,

@@ -141,6 +141,15 @@ def _make_sample_inputs(
         sel,
         distinguish_types=not mixed_types,
     )
+    # Pad nlist with extra -1 columns so n_nnei > nnei at trace time.
+    # This ensures format_nlist's distance-sort branch is traced into the
+    # compiled graph, allowing the .pt2 model to handle variable-size
+    # neighbor lists at runtime (e.g. LAMMPS rcut + skin).
+    nnei = sum(sel)
+    n_pad = max(1, nnei // 4)  # pad by ~25%, at least 1
+    nlist = np.concatenate(
+        [nlist, -np.ones((nframes, nloc, n_pad), dtype=nlist.dtype)], axis=-1
+    )
     extended_coord = extended_coord.reshape(nframes, -1, 3)
 
     # Convert to torch tensors
@@ -178,11 +187,12 @@ def _make_sample_inputs(
 def _build_dynamic_shapes(
     *sample_inputs: torch.Tensor | None,
     has_spin: bool = False,
+    model_nnei: int = 1,
 ) -> tuple:
     """Build dynamic shape specifications for torch.export.
 
-    Marks nframes, nloc and nall as dynamic dimensions so the exported
-    program handles arbitrary frame and atom counts.
+    Marks nframes, nloc, nall and nnei as dynamic dimensions so the exported
+    program handles arbitrary frame, atom and neighbor counts.
 
     Parameters
     ----------
@@ -190,12 +200,15 @@ def _build_dynamic_shapes(
         Sample inputs: either 6 tensors (non-spin) or 7 tensors (spin).
     has_spin : bool
         Whether the inputs include an extended_spin tensor.
+    model_nnei : int
+        The model's sum(sel).  Used as the min for the dynamic nnei dim.
     Returns a tuple (not dict) to match positional args of the make_fx
     traced module, whose arg names may have suffixes like ``_1``.
     """
     nframes_dim = torch.export.Dim("nframes", min=1)
     nall_dim = torch.export.Dim("nall", min=1)
     nloc_dim = torch.export.Dim("nloc", min=1)
+    nnei_dim = torch.export.Dim("nnei", min=max(2, model_nnei))
 
     if has_spin:
         # (ext_coord, ext_atype, ext_spin, nlist, mapping, fparam, aparam)
@@ -208,7 +221,8 @@ def _build_dynamic_shapes(
             {
                 0: nframes_dim,
                 1: nloc_dim,
-            },  # nlist: (nframes, nloc, nnei) — nnei is static
+                2: nnei_dim,
+            },  # nlist: (nframes, nloc, nnei) — nnei is dynamic
             {0: nframes_dim, 1: nall_dim},  # mapping: (nframes, nall)
             {0: nframes_dim} if fparam is not None else None,  # fparam
             {0: nframes_dim, 1: nloc_dim} if aparam is not None else None,  # aparam
@@ -223,7 +237,8 @@ def _build_dynamic_shapes(
             {
                 0: nframes_dim,
                 1: nloc_dim,
-            },  # nlist: (nframes, nloc, nnei) — nnei is static
+                2: nnei_dim,
+            },  # nlist: (nframes, nloc, nnei) — nnei is dynamic
             {0: nframes_dim, 1: nall_dim},  # mapping: (nframes, nall)
             {0: nframes_dim} if fparam is not None else None,  # fparam
             {0: nframes_dim, 1: nloc_dim} if aparam is not None else None,  # aparam
@@ -493,7 +508,9 @@ def _trace_and_export(
     # graph.  Exporting on CPU keeps devices consistent; we move the
     # ExportedProgram to the target device afterwards via the official
     # move_to_device_pass (avoids FakeTensor device-propagation errors).
-    dynamic_shapes = _build_dynamic_shapes(*sample_inputs, has_spin=is_spin)
+    dynamic_shapes = _build_dynamic_shapes(
+        *sample_inputs, has_spin=is_spin, model_nnei=sum(model.get_sel())
+    )
     exported = torch.export.export(
         traced,
         sample_inputs,

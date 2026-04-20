@@ -438,38 +438,43 @@ inline std::string read_zip_entry(const std::string& zip_path,
 }
 
 // ============================================================================
-// Create raw neighbor list tensor (no type-sorting or sel-limiting).
-// The .pt2 model's compiled graph already contains format_nlist which
-// sorts by distance and truncates on-device, so CPU-side sorting is
-// unnecessary.
+// Create raw neighbor list tensor.
+// The .pt2 compiled graph has format_nlist which sorts by distance and
+// truncates on-device (GPU).  The C++ side just flattens the jagged nlist
+// and pads to at least `min_nnei` columns so format_nlist can work.
 // ============================================================================
 
 /**
- * @brief Convert a raw neighbor list to a flat tensor.
- *
- * Simply flattens the jagged nlist into a (1, nloc, nnei) int32 tensor.
- * The .pt2 model handles format_nlist internally (distance sort + truncation).
- */
-/**
- * @brief Create nlist tensor with exactly `expected_nnei` neighbors per atom.
+ * @brief Flatten a jagged neighbor list into a tensor, padding to min_nnei.
  *
  * Each row in `data` may have a different number of neighbors.  This function
- * pads short rows with -1 and truncates long rows to produce a tensor of shape
- * [1, nloc, expected_nnei].  The .pt2 compiled graph has nnei baked as a
- * static dimension, so the tensor must match exactly.
+ * pads short rows with -1 to produce a tensor of shape
+ * [1, nloc, max(max_row_length, min_nnei)].  No truncation or distance
+ * sorting is done — the .pt2 model's compiled format_nlist handles that
+ * on-device.
+ *
+ * @param data      Jagged neighbor list: data[i] contains neighbor indices
+ *                  for local atom i.
+ * @param min_nnei  Minimum number of neighbor columns.  Must be > sum(sel)
+ *                  so that format_nlist's sort branch executes.
  */
 inline torch::Tensor createNlistTensor(
-    const std::vector<std::vector<int>>& data, int expected_nnei) {
+    const std::vector<std::vector<int>>& data, int min_nnei) {
   int nloc = static_cast<int>(data.size());
-  std::vector<int> flat_data(static_cast<size_t>(nloc) * expected_nnei, -1);
+  // Find max row length
+  int max_nnei = 0;
   for (int ii = 0; ii < nloc; ++ii) {
-    int ncopy = std::min(static_cast<int>(data[ii].size()), expected_nnei);
-    for (int jj = 0; jj < ncopy; ++jj) {
-      flat_data[static_cast<size_t>(ii) * expected_nnei + jj] = data[ii][jj];
+    max_nnei = std::max(max_nnei, static_cast<int>(data[ii].size()));
+  }
+  int nnei = std::max(max_nnei, min_nnei);
+  std::vector<int> flat_data(static_cast<size_t>(nloc) * nnei, -1);
+  for (int ii = 0; ii < nloc; ++ii) {
+    for (size_t jj = 0; jj < data[ii].size(); ++jj) {
+      flat_data[static_cast<size_t>(ii) * nnei + jj] = data[ii][jj];
     }
   }
   torch::Tensor flat_tensor = torch::tensor(flat_data, torch::kInt32);
-  return flat_tensor.view({1, nloc, expected_nnei});
+  return flat_tensor.view({1, nloc, nnei});
 }
 
 }  // namespace ptexpt

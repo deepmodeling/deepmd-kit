@@ -366,7 +366,7 @@ class TestEnergyModel(unittest.TestCase):
             _allow_non_fake_inputs=True,
         )
 
-        dynamic_shapes = _build_dynamic_shapes(*inputs_5f)
+        dynamic_shapes = _build_dynamic_shapes(*inputs_5f, model_nnei=sum(md.get_sel()))
         exported_dyn = torch.export.export(
             traced_sym,
             inputs_5f,
