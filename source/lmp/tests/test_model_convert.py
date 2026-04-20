@@ -1,9 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import os
-from pathlib import Path
+from pathlib import (
+    Path,
+)
 
 import model_convert
 
