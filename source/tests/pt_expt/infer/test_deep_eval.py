@@ -63,11 +63,11 @@ class TestDeepEvalEner(unittest.TestCase):
         cls.model = cls.model.to(torch.float64)
         cls.model.eval()
 
-        # Serialize and save to .pte
+        # Serialize and save to .pte (with atomic virial for test_dynamic_shapes)
         cls.model_data = {"model": cls.model.serialize()}
         cls.tmpfile = tempfile.NamedTemporaryFile(suffix=".pte", delete=False)
         cls.tmpfile.close()
-        deserialize_to_file(cls.tmpfile.name, cls.model_data)
+        deserialize_to_file(cls.tmpfile.name, cls.model_data, do_atomic_virial=True)
 
         # Create DeepPot for testing
         cls.dp = DeepPot(cls.tmpfile.name)
@@ -547,14 +547,14 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
         # compilation (tests/pt/__init__.py sets it to "cuda:9999999").
         torch.set_default_device(None)
         try:
-            deserialize_to_file(cls.tmpfile.name, cls.model_data)
+            deserialize_to_file(cls.tmpfile.name, cls.model_data, do_atomic_virial=True)
         finally:
             torch.set_default_device("cuda:9999999")
 
         # Also save to .pte for cross-format comparison
         cls.pte_tmpfile = tempfile.NamedTemporaryFile(suffix=".pte", delete=False)
         cls.pte_tmpfile.close()
-        deserialize_to_file(cls.pte_tmpfile.name, cls.model_data)
+        deserialize_to_file(cls.pte_tmpfile.name, cls.model_data, do_atomic_virial=True)
 
         # Create DeepPot for .pt2
         cls.dp = DeepPot(cls.tmpfile.name)
@@ -1070,7 +1070,7 @@ class TestDeepEvalEnerAparam(unittest.TestCase):
         cls.model_data = {"model": cls.model.serialize()}
         cls.tmpfile = tempfile.NamedTemporaryFile(suffix=".pte", delete=False)
         cls.tmpfile.close()
-        deserialize_to_file(cls.tmpfile.name, cls.model_data)
+        deserialize_to_file(cls.tmpfile.name, cls.model_data, do_atomic_virial=True)
 
         cls.dp = DeepPot(cls.tmpfile.name)
 
@@ -1187,14 +1187,14 @@ class TestDeepEvalEnerAparamPt2(unittest.TestCase):
         cls.tmpfile.close()
         torch.set_default_device(None)
         try:
-            deserialize_to_file(cls.tmpfile.name, cls.model_data)
+            deserialize_to_file(cls.tmpfile.name, cls.model_data, do_atomic_virial=True)
         finally:
             torch.set_default_device("cuda:9999999")
 
         # Also save .pte for cross-format comparison
         cls.pte_tmpfile = tempfile.NamedTemporaryFile(suffix=".pte", delete=False)
         cls.pte_tmpfile.close()
-        deserialize_to_file(cls.pte_tmpfile.name, cls.model_data)
+        deserialize_to_file(cls.pte_tmpfile.name, cls.model_data, do_atomic_virial=True)
 
         cls.dp = DeepPot(cls.tmpfile.name)
         cls.dp_pte = DeepPot(cls.pte_tmpfile.name)

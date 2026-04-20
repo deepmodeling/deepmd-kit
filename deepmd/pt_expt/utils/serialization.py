@@ -17,23 +17,23 @@ from deepmd.dpmodel.utils.serialization import (
 
 
 def _strip_shape_assertions(graph_module: torch.nn.Module) -> None:
-    """Remove shape-guard assertion nodes from a spin model's exported graph.
+    """Remove shape-guard assertion nodes from an exported graph.
 
     ``torch.export`` inserts ``aten._assert_scalar`` nodes for symbolic shape
-    relationships discovered during tracing.  For the spin model, the atom-
-    doubling logic creates slice patterns that depend on ``(nall - nloc)``,
-    producing guards like ``Ne(nall, nloc)``.  These guards are spurious: the
-    model computes correct results even when ``nall == nloc`` (NoPBC, no ghost
-    atoms).
+    relationships discovered during tracing.  These guards can be spurious:
 
-    This function is **only called for spin models** (guarded by ``if is_spin``
-    in ``_trace_and_export``).  The assertion messages use opaque symbolic
-    variable names (e.g. ``Ne(s22, s96)``) rather than human-readable names,
-    so filtering by message content is not reliable.  Since
+    * **Spin models**: atom-doubling logic creates slice patterns that depend
+      on ``(nall - nloc)``, producing guards like ``Ne(nall, nloc)``.
+    * **All models**: the nlist padding inside ``forward_common_lower_exportable``
+      and the subsequent sort/truncate in ``_format_nlist`` can produce guards
+      like ``Ne(nnei, sum(sel))``.  These are spurious because the compiled
+      graph handles any ``nnei >= sum(sel)`` correctly.
+
+    The assertion messages use opaque symbolic variable names (e.g.
+    ``Ne(s22, s96)``) rather than human-readable names, so filtering by
+    message content is not reliable.  Since
     ``prefer_deferred_runtime_asserts_over_guards=True`` converts all shape
-    guards into these deferred assertions, and the only shape relationships in
-    the spin model involve nall/nloc, removing all of them is safe in this
-    context.
+    guards into these deferred assertions, removing all of them is safe.
     """
     graph = graph_module.graph
     for node in list(graph.nodes):
@@ -141,10 +141,8 @@ def _make_sample_inputs(
         sel,
         distinguish_types=not mixed_types,
     )
-    # Pad nlist with extra -1 columns so n_nnei > nnei at trace time.
-    # This ensures format_nlist's distance-sort branch is traced into the
-    # compiled graph, allowing the .pt2 model to handle variable-size
-    # neighbor lists at runtime (e.g. LAMMPS rcut + skin).
+    # Pad nlist so nnei > sum(sel) in the sample tensors.
+    # This prevents torch.export from specializing nnei to sum(sel).
     nnei = sum(sel)
     n_pad = max(1, nnei // 4)  # pad by ~25%, at least 1
     nlist = np.concatenate(
@@ -519,15 +517,10 @@ def _trace_and_export(
         prefer_deferred_runtime_asserts_over_guards=True,
     )
 
-    if is_spin:
-        # torch.export re-introduces shape-guard assertions even when
-        # the make_fx graph has none.  The spin model's atom-doubling
-        # logic creates slice patterns that depend on (nall - nloc),
-        # producing guards like Ne(nall, nloc).  These guards are
-        # spurious: the model is correct when nall == nloc (NoPBC).
-        # Strip them from the exported graph so the model can be
-        # used with any valid nall >= nloc.
-        _strip_shape_assertions(exported.graph_module)
+    # torch.export inserts _assert_scalar guards for symbolic shape
+    # relationships (e.g. Ne(nnei, sum(sel)), Ne(nall, nloc)).  These
+    # are spurious — the model handles any valid input shapes correctly.
+    _strip_shape_assertions(exported.graph_module)
 
     # 7. Move the exported program to the target device if needed.
     if target_device.type != "cpu":

@@ -346,6 +346,21 @@ def make_model(
                 aparam: torch.Tensor | None,
             ) -> dict[str, torch.Tensor]:
                 extended_coord = extended_coord.detach().requires_grad_(True)
+                # Pad nlist with one extra -1 column inside the traced function.
+                # This ensures n_nnei > sum(sel), forcing the sort branch in
+                # _format_nlist.  The padding becomes part of the compiled graph,
+                # so callers never need to pad externally.
+                nlist = torch.cat(
+                    [
+                        nlist,
+                        -torch.ones(
+                            (*nlist.shape[:2], 1),
+                            dtype=nlist.dtype,
+                            device=nlist.device,
+                        ),
+                    ],
+                    dim=-1,
+                )
                 return model.forward_common_lower(
                     extended_coord,
                     extended_atype,
@@ -356,13 +371,19 @@ def make_model(
                     do_atomic_virial=do_atomic_virial,
                 )
 
-            return make_fx(fn, **make_fx_kwargs)(
-                extended_coord,
-                extended_atype,
-                nlist,
-                mapping,
-                fparam,
-                aparam,
-            )
+            # Force format_nlist to always use the sort branch during tracing.
+            model.need_sorted_nlist_for_lower = lambda: True
+            try:
+                traced = make_fx(fn, **make_fx_kwargs)(
+                    extended_coord,
+                    extended_atype,
+                    nlist,
+                    mapping,
+                    fparam,
+                    aparam,
+                )
+            finally:
+                del model.need_sorted_nlist_for_lower
+            return traced
 
     return CM

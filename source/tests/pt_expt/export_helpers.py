@@ -70,6 +70,12 @@ def export_save_load_and_compare(
         strict=False,
         prefer_deferred_runtime_asserts_over_guards=True,
     )
+    # Strip spurious shape-guard assertions (e.g. Ne(nnei, sum(sel)))
+    from deepmd.pt_expt.utils.serialization import (
+        _strip_shape_assertions,
+    )
+
+    _strip_shape_assertions(exported.graph_module)
 
     # 4. .pte save -> load round-trip
     with tempfile.NamedTemporaryFile(suffix=".pte") as f:
@@ -199,9 +205,22 @@ def model_forward_lower_export_round_trip(
         )
 
     # 5. Symbolic trace + dynamic shapes + .pte round-trip
+    # Pad nlist with extra -1 columns so nnei > sum(sel) in the sample.
+    # This prevents torch.export from specializing nnei to sum(sel).
+    nlist_padded = torch.cat(
+        [
+            nlist_t,
+            -torch.ones(
+                (*nlist_t.shape[:2], max(1, nlist_t.shape[2] // 4)),
+                dtype=nlist_t.dtype,
+                device=nlist_t.device,
+            ),
+        ],
+        dim=-1,
+    )
     inputs_2f = tuple(
         torch.cat([t, t], dim=0) if t is not None else None
-        for t in (ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam)
+        for t in (ext_coord, ext_atype, nlist_padded, mapping_t, fparam, aparam)
     )
     traced_sym = md_pt.forward_lower_exportable(
         inputs_2f[0],
@@ -221,6 +240,12 @@ def model_forward_lower_export_round_trip(
         strict=False,
         prefer_deferred_runtime_asserts_over_guards=True,
     )
+    # Strip spurious shape-guard assertions (e.g. Ne(nnei, sum(sel)))
+    from deepmd.pt_expt.utils.serialization import (
+        _strip_shape_assertions,
+    )
+
+    _strip_shape_assertions(exported_dyn.graph_module)
     with tempfile.NamedTemporaryFile(suffix=".pte") as f:
         torch.export.save(exported_dyn, f.name)
         loaded = torch.export.load(f.name).module()

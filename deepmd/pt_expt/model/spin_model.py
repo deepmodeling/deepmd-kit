@@ -96,6 +96,18 @@ class SpinModel(SpinModelDP):
             aparam: torch.Tensor | None,
         ) -> dict[str, torch.Tensor]:
             extended_coord = extended_coord.detach().requires_grad_(True)
+            # Pad nlist inside traced function (see make_model.py for rationale).
+            nlist = torch.cat(
+                [
+                    nlist,
+                    -torch.ones(
+                        (*nlist.shape[:2], 1),
+                        dtype=nlist.dtype,
+                        device=nlist.device,
+                    ),
+                ],
+                dim=-1,
+            )
             return model.forward_common_lower(
                 extended_coord,
                 extended_atype,
@@ -107,15 +119,22 @@ class SpinModel(SpinModelDP):
                 do_atomic_virial=do_atomic_virial,
             )
 
-        return make_fx(fn, **make_fx_kwargs)(
-            extended_coord,
-            extended_atype,
-            extended_spin,
-            nlist,
-            mapping,
-            fparam,
-            aparam,
-        )
+        # Force format_nlist to always use the sort branch during tracing.
+        backbone = model.backbone_model
+        backbone.need_sorted_nlist_for_lower = lambda: True
+        try:
+            traced = make_fx(fn, **make_fx_kwargs)(
+                extended_coord,
+                extended_atype,
+                extended_spin,
+                nlist,
+                mapping,
+                fparam,
+                aparam,
+            )
+        finally:
+            del backbone.need_sorted_nlist_for_lower
+        return traced
 
     def forward_common_lower(
         self, *args: Any, **kwargs: Any
