@@ -337,6 +337,14 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
     aparam_tensor = torch::zeros({0}, options).to(device);
   }
 
+  // Fail fast: check atomic virial availability before running the model
+  if (atomic && !do_atomic_virial) {
+    throw deepmd::deepmd_exception(
+        "Atomic virial is not available in this .pt2 model "
+        "(exported without --atomic-virial). "
+        "Regenerate with: dp convert-backend --atomic-virial INPUT OUTPUT");
+  }
+
   // Run the .pt2 model
   auto flat_outputs = run_model(coord_Tensor, atype_Tensor, firstneigh_tensor,
                                 mapping_tensor, fparam_tensor, aparam_tensor);
@@ -373,12 +381,6 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
                         nall_real);
 
   if (atomic) {
-    if (!do_atomic_virial) {
-      throw deepmd::deepmd_exception(
-          "Atomic virial is not available in this .pt2 model "
-          "(exported without --atomic-virial). "
-          "Regenerate with: dp convert-backend --atomic-virial INPUT OUTPUT");
-    }
     // Extract atom_energy: energy (nf, nloc, 1)
     torch::Tensor atom_energy_tensor =
         output_map["energy"].view({-1}).to(floatType);
@@ -595,11 +597,19 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
     aparam_tensor = torch::zeros({0}, options).to(device);
   }
 
-  // 5. Run the .pt2 model
+  // 5. Fail fast: check atomic virial availability before running the model
+  if (atomic && !do_atomic_virial) {
+    throw deepmd::deepmd_exception(
+        "Atomic virial is not available in this .pt2 model "
+        "(exported without --atomic-virial). "
+        "Regenerate with: dp convert-backend --atomic-virial INPUT OUTPUT");
+  }
+
+  // 6. Run the .pt2 model
   auto flat_outputs = run_model(coord_Tensor, atype_Tensor, nlist_tensor,
                                 mapping_tensor, fparam_tensor, aparam_tensor);
 
-  // 6. Map flat outputs to internal keys
+  // 7. Map flat outputs to internal keys
   std::map<std::string, torch::Tensor> output_map;
   extract_outputs(output_map, flat_outputs);
 
@@ -627,12 +637,6 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   fold_back(force, extended_force, mapping_vec, nloc, nall, 3, nframes);
 
   if (atomic) {
-    if (!do_atomic_virial) {
-      throw deepmd::deepmd_exception(
-          "Atomic virial is not available in this .pt2 model "
-          "(exported without --atomic-virial). "
-          "Regenerate with: dp convert-backend --atomic-virial INPUT OUTPUT");
-    }
     // atom_energy: energy (nf, nloc, 1) — already on local atoms
     torch::Tensor atom_energy_tensor =
         output_map["energy"].view({-1}).to(floatType);

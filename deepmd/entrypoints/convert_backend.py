@@ -39,4 +39,8 @@ def convert_backend(
     if "do_atomic_virial" in sig.parameters:
         out_hook(OUTPUT, data, do_atomic_virial=atomic_virial)
     else:
+        if atomic_virial:
+            raise ValueError(
+                "--atomic-virial is only supported for pt_expt .pt2/.pte outputs"
+            )
         out_hook(OUTPUT, data)
