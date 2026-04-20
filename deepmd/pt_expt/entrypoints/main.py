@@ -41,6 +41,28 @@ from deepmd.utils.path import (
 log = logging.getLogger(__name__)
 
 
+def _detect_lmdb_path(systems_raw: Any) -> str | None:
+    """Return the LMDB path when ``systems_raw`` is a scalar LMDB string.
+
+    Returns ``None`` for non-LMDB inputs. Raises ``ValueError`` if
+    ``systems_raw`` is a list containing any LMDB path, so both
+    ``_get_neighbor_stat_data`` and ``_build_data_system`` fail with the
+    same clear message instead of the opaque error from
+    :func:`process_systems` / :class:`DeepmdData`.
+    """
+    if isinstance(systems_raw, str) and is_lmdb(systems_raw):
+        return systems_raw
+    if isinstance(systems_raw, list) and any(
+        isinstance(s, str) and is_lmdb(s) for s in systems_raw
+    ):
+        raise ValueError(
+            "LMDB datasets must be passed as a scalar 'systems' string "
+            "(e.g. 'systems': '/path/to/data.lmdb'); list-form systems "
+            "with LMDB paths are not supported."
+        )
+    return None
+
+
 def _get_neighbor_stat_data(
     dataset_params: dict[str, Any],
     type_map: list[str] | None,
@@ -51,13 +73,13 @@ def _get_neighbor_stat_data(
     ``make_neighbor_stat_data``; falls back to the legacy ``get_data`` for
     npy/HDF5 directories.
     """
-    systems_raw = dataset_params.get("systems")
-    if isinstance(systems_raw, str) and is_lmdb(systems_raw):
+    lmdb_path = _detect_lmdb_path(dataset_params.get("systems"))
+    if lmdb_path is not None:
         from deepmd.dpmodel.utils.lmdb_data import (
             make_neighbor_stat_data,
         )
 
-        return make_neighbor_stat_data(systems_raw, type_map)
+        return make_neighbor_stat_data(lmdb_path, type_map)
     return get_data(dataset_params, 0, type_map, None)
 
 
@@ -73,21 +95,14 @@ def _build_data_system(
     :class:`DeepmdDataSystem` path with system expansion.
     """
     systems_raw = dataset_params["systems"]
-    if isinstance(systems_raw, str) and is_lmdb(systems_raw):
+    lmdb_path = _detect_lmdb_path(systems_raw)
+    if lmdb_path is not None:
         return LmdbDataSystem(
-            lmdb_path=systems_raw,
+            lmdb_path=lmdb_path,
             type_map=type_map,
             batch_size=dataset_params["batch_size"],
             auto_prob_style=dataset_params.get("auto_prob"),
             seed=seed,
-        )
-    if isinstance(systems_raw, list) and any(
-        isinstance(s, str) and is_lmdb(s) for s in systems_raw
-    ):
-        raise ValueError(
-            "LMDB datasets must be passed as a scalar 'systems' string "
-            "(e.g. 'systems': '/path/to/data.lmdb'); list-form systems "
-            "with LMDB paths are not supported."
         )
     systems = process_systems(
         systems_raw,
