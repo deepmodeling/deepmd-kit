@@ -15,14 +15,12 @@ from torch.utils.data import (
     Dataset,
     Sampler,
 )
-from torch.utils.data._utils.collate import (
-    collate_tensor_fn,
-)
 
 from deepmd.dpmodel.utils.lmdb_data import (
     LmdbDataReader,
     LmdbTestData,
     SameNlocBatchSampler,
+    collate_lmdb_frames,
     compute_block_targets,
     is_lmdb,
 )
@@ -42,13 +40,17 @@ __all__ = [
 
 
 def _collate_lmdb_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
-    """Collate a list of frame dicts into a batch dict.
+    """Collate a list of frame dicts into a torch batch dict.
+
+    Pre-converts per-frame numpy arrays to CPU torch tensors (zero-copy when
+    dtype matches) and delegates stacking to the backend-agnostic
+    :func:`collate_lmdb_frames`. With torch tensors as input, the shared
+    collate yields a torch dict (``sid`` becomes a torch tensor automatically
+    via ``array_api_compat``).
 
     All frames in the batch must have the same nloc (enforced by
-    SameNlocBatchSampler when mixed_batch=False).
-
-    For mixed_batch=True, this function would need padding + mask.
-    Currently raises NotImplementedError for that case.
+    SameNlocBatchSampler when mixed_batch=False). For mixed_batch=True,
+    raises NotImplementedError.
     """
     if len(batch) > 1:
         atypes = [d.get("atype") for d in batch if d.get("atype") is not None]
@@ -59,24 +61,19 @@ def _collate_lmdb_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
                 "Padding + mask in collate_fn needed."
             )
 
-    example = batch[0]
-    result: dict[str, Any] = {}
-    for key in example:
-        if "find_" in key:
-            result[key] = batch[0][key]
-        elif key == "fid":
-            result[key] = [d[key] for d in batch]
-        elif key == "type":
-            continue
-        elif batch[0][key] is None:
-            result[key] = None
-        else:
-            with torch.device("cpu"):
-                result[key] = collate_tensor_fn(
-                    [torch.as_tensor(d[key]) for d in batch]
-                )
-    result["sid"] = torch.tensor([0], dtype=torch.long, device="cpu")
-    return result
+    with torch.device("cpu"):
+        torch_frames: list[dict[str, Any]] = []
+        for f in batch:
+            tf: dict[str, Any] = {}
+            for key, val in f.items():
+                if key.startswith("find_") or key == "fid" or key == "type":
+                    tf[key] = val
+                elif val is None:
+                    tf[key] = None
+                else:
+                    tf[key] = torch.as_tensor(val)
+            torch_frames.append(tf)
+        return collate_lmdb_frames(torch_frames)
 
 
 class _SameNlocBatchSamplerTorch(Sampler):

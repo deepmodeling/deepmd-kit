@@ -14,8 +14,14 @@ from typing import (
 
 import h5py
 
+from deepmd.dpmodel.utils.lmdb_data import (
+    is_lmdb,
+)
 from deepmd.pt_expt.train import (
     training,
+)
+from deepmd.pt_expt.utils.lmdb_dataset import (
+    LmdbDataSystem,
 )
 from deepmd.utils.argcheck import (
     normalize,
@@ -35,6 +41,41 @@ from deepmd.utils.path import (
 log = logging.getLogger(__name__)
 
 
+def _build_data_system(
+    dataset_params: dict[str, Any],
+    type_map: list[str],
+    seed: int | None = None,
+) -> DeepmdDataSystem | LmdbDataSystem:
+    """Build a data system from dataset config, routing LMDB paths to LmdbDataSystem.
+
+    A scalar ``systems`` value pointing at an LMDB directory triggers the
+    LMDB adapter; otherwise we fall through to the legacy
+    :class:`DeepmdDataSystem` path with system expansion.
+    """
+    systems_raw = dataset_params["systems"]
+    if isinstance(systems_raw, str) and is_lmdb(systems_raw):
+        return LmdbDataSystem(
+            lmdb_path=systems_raw,
+            type_map=type_map,
+            batch_size=dataset_params["batch_size"],
+            auto_prob_style=dataset_params.get("auto_prob"),
+            seed=seed,
+        )
+    systems = process_systems(
+        systems_raw,
+        patterns=dataset_params.get("rglob_patterns", None),
+    )
+    return DeepmdDataSystem(
+        systems=systems,
+        batch_size=dataset_params["batch_size"],
+        test_size=1,
+        type_map=type_map,
+        trn_all_set=True,
+        sys_probs=dataset_params.get("sys_probs", None),
+        auto_prob_style=dataset_params.get("auto_prob", "prob_sys_size"),
+    )
+
+
 def get_trainer(
     config: dict[str, Any],
     init_model: str | None = None,
@@ -48,39 +89,23 @@ def get_trainer(
     training_params = config["training"]
     multi_task = "model_dict" in model_params
 
+    data_seed = training_params.get("seed", None)
+
     if not multi_task:
         type_map = model_params["type_map"]
 
         # ----- training data ------------------------------------------------
         training_dataset_params = training_params["training_data"]
-        training_systems = process_systems(
-            training_dataset_params["systems"],
-            patterns=training_dataset_params.get("rglob_patterns", None),
-        )
-        train_data = DeepmdDataSystem(
-            systems=training_systems,
-            batch_size=training_dataset_params["batch_size"],
-            test_size=1,
-            type_map=type_map,
-            trn_all_set=True,
-            sys_probs=training_dataset_params.get("sys_probs", None),
-            auto_prob_style=training_dataset_params.get("auto_prob", "prob_sys_size"),
+        train_data = _build_data_system(
+            training_dataset_params, type_map, seed=data_seed
         )
 
         # ----- validation data ----------------------------------------------
         validation_data = None
         validation_dataset_params = training_params.get("validation_data", None)
         if validation_dataset_params is not None:
-            val_systems = process_systems(
-                validation_dataset_params["systems"],
-                patterns=validation_dataset_params.get("rglob_patterns", None),
-            )
-            validation_data = DeepmdDataSystem(
-                systems=val_systems,
-                batch_size=validation_dataset_params["batch_size"],
-                test_size=1,
-                type_map=type_map,
-                trn_all_set=True,
+            validation_data = _build_data_system(
+                validation_dataset_params, type_map, seed=data_seed
             )
 
         # ----- stat file path -----------------------------------------------
@@ -103,34 +128,15 @@ def get_trainer(
             data_params = training_params["data_dict"][model_key]
 
             # training data
-            td_params = data_params["training_data"]
-            training_systems = process_systems(
-                td_params["systems"],
-                patterns=td_params.get("rglob_patterns", None),
-            )
-            train_data[model_key] = DeepmdDataSystem(
-                systems=training_systems,
-                batch_size=td_params["batch_size"],
-                test_size=1,
-                type_map=type_map,
-                trn_all_set=True,
-                sys_probs=td_params.get("sys_probs", None),
-                auto_prob_style=td_params.get("auto_prob", "prob_sys_size"),
+            train_data[model_key] = _build_data_system(
+                data_params["training_data"], type_map, seed=data_seed
             )
 
             # validation data
             vd_params = data_params.get("validation_data", None)
             if vd_params is not None:
-                val_systems = process_systems(
-                    vd_params["systems"],
-                    patterns=vd_params.get("rglob_patterns", None),
-                )
-                validation_data[model_key] = DeepmdDataSystem(
-                    systems=val_systems,
-                    batch_size=vd_params["batch_size"],
-                    test_size=1,
-                    type_map=type_map,
-                    trn_all_set=True,
+                validation_data[model_key] = _build_data_system(
+                    vd_params, type_map, seed=data_seed
                 )
             else:
                 validation_data[model_key] = None
