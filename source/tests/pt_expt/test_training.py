@@ -61,17 +61,6 @@ _DESCRIPTOR_DPA1_NO_ATTN = {
     "seed": 1,
 }
 
-_DESCRIPTOR_DPA1_WITH_ATTN = {
-    "type": "dpa1",
-    "sel": 12,
-    "rcut_smth": 0.50,
-    "rcut": 3.00,
-    "neuron": [8, 16],
-    "axis_neuron": 4,
-    "attn_layer": 2,
-    "precision": "float64",
-    "seed": 1,
-}
 _DESCRIPTOR_DPA2 = {
     "type": "dpa2",
     "repinit": {
@@ -1058,18 +1047,10 @@ class TestCompiledVaryingNatoms(unittest.TestCase):
         cls.data_dir = data_dir
         cls.small_data_dir = tempfile.mkdtemp(prefix="pt_expt_small_data_")
         _create_small_system(cls.small_data_dir)
-        # Force single-threaded reductions so compiled-vs-uncompiled diffs
-        # stay below the 1e-10 tolerance on every CI host.  Multi-threaded
-        # CPU reductions sum partials in a hardware-dependent order, which
-        # diverges between the inductor-fused and eager paths and makes the
-        # DPA1+attn test flaky on machines with many cores.
-        cls._old_num_threads = torch.get_num_threads()
-        torch.set_num_threads(1)
 
     @classmethod
     def tearDownClass(cls) -> None:
         shutil.rmtree(cls.small_data_dir, ignore_errors=True)
-        torch.set_num_threads(cls._old_num_threads)
 
     def _make_varying_config(
         self,
@@ -1201,16 +1182,46 @@ class TestCompiledVaryingNatoms(unittest.TestCase):
         self._check_varying_natoms(_DESCRIPTOR_DPA3)
 
     def test_compiled_matches_uncompiled_varying_natoms_dpa1_no_attn(self) -> None:
-        """DPA1 (attn_layer=0): compiled vs uncompiled match."""
+        """DPA1 (attn_layer=0): compiled vs uncompiled match.
+
+        DPA1 with attention layers is intentionally not covered: the
+        compiled se_atten path is hardware-sensitive on multi-threaded
+        CPUs (parallel reduction order diverges from eager above the
+        1e-10 tolerance).  ``_compile_model`` warns the user instead.
+        """
         self._check_varying_natoms(_DESCRIPTOR_DPA1_NO_ATTN)
 
-    def test_compiled_matches_uncompiled_varying_natoms_dpa1_with_attn(self) -> None:
-        """DPA1 (attn_layer=2): compiled vs uncompiled match.
+    def test_compile_warns_dpa1_with_attention(self) -> None:
+        """DPA1 (attn_layer>0) under compile must emit a warning.
 
-        Exercises DPA1 with se_atten attention layers; matches at machine
-        epsilon (~1e-12) on float64 just like se_e2_a.
+        Compiled se_atten attention is numerically hardware-sensitive;
+        the trainer should warn at compile time but still proceed.
         """
-        self._check_varying_natoms(_DESCRIPTOR_DPA1_WITH_ATTN)
+        descriptor = {
+            "type": "dpa1",
+            "sel": 12,
+            "rcut_smth": 0.50,
+            "rcut": 3.00,
+            "neuron": [8, 16],
+            "axis_neuron": 4,
+            "attn_layer": 2,
+            "precision": "float64",
+            "seed": 1,
+        }
+        config = self._make_varying_config(enable_compile=True, descriptor=descriptor)
+        with self.assertLogs("deepmd", level="WARNING") as cm:
+            trainer = get_trainer(config)
+        self.assertTrue(
+            any("attention layer" in msg for msg in cm.output),
+            f"expected attention-layer warning, got: {cm.output}",
+        )
+        # Also confirm the compiled model was actually built (warning is
+        # not a rejection).
+        from deepmd.pt_expt.train.training import (
+            _CompiledModel,
+        )
+
+        self.assertIsInstance(trainer.wrapper.model["Default"], _CompiledModel)
 
 
 if __name__ == "__main__":

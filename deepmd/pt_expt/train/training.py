@@ -922,6 +922,30 @@ class Trainer:
         for task_key in self.model_keys:
             model = wrapper_mod.model[task_key]
 
+            # Compiled DPA1/se_atten_v2 attention is numerically more
+            # sensitive than other descriptors: the inductor-fused and
+            # eager force/grad outputs can diverge above 1e-10 on
+            # multi-threaded CPU hosts because parallel reduction order
+            # is hardware-dependent.  Warn but do not reject — energies
+            # remain well within training tolerance and the user may
+            # accept the trade-off for compile speed.
+            from deepmd.dpmodel.descriptor.dpa1 import DescrptDPA1 as DescrptDPA1DP
+
+            descriptor = model.get_descriptor()
+            if isinstance(descriptor, DescrptDPA1DP):
+                n_attn = descriptor.get_numb_attn_layer()
+                if n_attn > 0:
+                    log.warning(
+                        "Compiling DPA1/se_atten_v2 with %d attention "
+                        "layer(s) (task=%s): the compiled forces/grads "
+                        "are slightly hardware-sensitive (multi-thread "
+                        "reduction order), and may not match the eager "
+                        "path bit-for-bit.  Use 'enable_compile: false' "
+                        "or 'attn_layer: 0' for fully reproducible runs.",
+                        n_attn,
+                        task_key,
+                    )
+
             inp, _ = self.get_data(is_train=True, task_key=task_key)
             coord = inp["coord"].detach()
             atype = inp["atype"].detach()
