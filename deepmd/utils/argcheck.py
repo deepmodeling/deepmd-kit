@@ -3421,7 +3421,8 @@ def loss_ener_spin() -> list[Argument]:
         "For `loss_func='mse'`, if true, energy and virial losses are computed as intensive quantities, "
         "normalized by the square of the number of atoms (1/N^2); if false (default), the legacy normalization "
         "(1/N) is used. "
-        "For `loss_func='mae'`, energy and virial losses remain normalized by the number of atoms (1/N). "
+        "For `loss_func='mae'`, this option does not change the existing MAE formulations; in particular, "
+        "the MAE energy and virial terms are not both normalized by 1/N. "
         "The default is false for backward compatibility with models trained using deepmd-kit <= 3.0.1."
     )
     return [
