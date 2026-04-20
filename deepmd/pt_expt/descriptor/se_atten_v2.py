@@ -22,6 +22,13 @@ class DescrptSeAttenV2(DescrptSeAttenV2DP):
 
     _update_sel_cls = UpdateSel
 
+    def share_params(self, *args: Any, **kwargs: Any) -> None:
+        from deepmd.pt_expt.descriptor.dpa1 import (
+            DescrptDPA1,
+        )
+
+        return DescrptDPA1.share_params(self, *args, **kwargs)
+
     def enable_compression(self, *args: Any, **kwargs: Any) -> None:
         from deepmd.pt_expt.descriptor.dpa1 import (
             DescrptDPA1,

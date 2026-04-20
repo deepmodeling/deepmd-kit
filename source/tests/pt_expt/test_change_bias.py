@@ -145,7 +145,7 @@ class TestChangeBias(unittest.TestCase):
         cls.model_path = os.path.join(cls.tmpdir, "model.ckpt.pt")
 
         # Record original bias
-        cls.original_bias = to_numpy(trainer.wrapper.model.get_out_bias())
+        cls.original_bias = to_numpy(trainer.wrapper.model["Default"].get_out_bias())
 
         # Pre-freeze shared .pte and .pt2 files so individual tests don't
         # each pay the AOTInductor compilation cost (~82s per .pt2).

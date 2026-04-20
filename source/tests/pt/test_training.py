@@ -268,11 +268,22 @@ class TestFparam(unittest.TestCase, DPTrainTest):
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
         self.set_path = Path(__file__).parent / "water/data/data_0" / "set.000"
-        shutil.copyfile(self.set_path / "energy.npy", self.set_path / "fparam.npy")
+        # Backup the committed fparam.npy (numb_fparam=2) before overwriting
+        # with a 1-column version for this test.
+        self._fparam_backup = self.set_path / "fparam.npy.bak"
+        fparam_path = self.set_path / "fparam.npy"
+        if fparam_path.exists():
+            shutil.copyfile(fparam_path, self._fparam_backup)
+        shutil.copyfile(self.set_path / "energy.npy", fparam_path)
         self.config["model"]["data_stat_nbatch"] = 100
 
     def tearDown(self) -> None:
-        (self.set_path / "fparam.npy").unlink(missing_ok=True)
+        # Restore the original fparam.npy so other tests can use it.
+        fparam_path = self.set_path / "fparam.npy"
+        if self._fparam_backup.exists():
+            shutil.move(str(self._fparam_backup), str(fparam_path))
+        else:
+            fparam_path.unlink(missing_ok=True)
         DPTrainTest.tearDown(self)
 
 
