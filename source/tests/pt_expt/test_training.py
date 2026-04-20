@@ -1058,10 +1058,18 @@ class TestCompiledVaryingNatoms(unittest.TestCase):
         cls.data_dir = data_dir
         cls.small_data_dir = tempfile.mkdtemp(prefix="pt_expt_small_data_")
         _create_small_system(cls.small_data_dir)
+        # Force single-threaded reductions so compiled-vs-uncompiled diffs
+        # stay below the 1e-10 tolerance on every CI host.  Multi-threaded
+        # CPU reductions sum partials in a hardware-dependent order, which
+        # diverges between the inductor-fused and eager paths and makes the
+        # DPA1+attn test flaky on machines with many cores.
+        cls._old_num_threads = torch.get_num_threads()
+        torch.set_num_threads(1)
 
     @classmethod
     def tearDownClass(cls) -> None:
         shutil.rmtree(cls.small_data_dir, ignore_errors=True)
+        torch.set_num_threads(cls._old_num_threads)
 
     def _make_varying_config(
         self,
