@@ -69,8 +69,13 @@ def test_breaks_stale_lock_before_converting(tmp_path, monkeypatch) -> None:
     source = tmp_path / "model.pbtxt"
     output = tmp_path / "model.pb"
     lock_file = tmp_path / ".model.pb.lock"
+    stale_pid = 999999
     source.write_text("source", encoding="utf-8")
-    lock_file.write_text("pid=999999\n", encoding="utf-8")
+    lock_file.write_text(f"pid={stale_pid}\n", encoding="utf-8")
+
+    def fake_pid_is_running(pid: int) -> bool:
+        assert pid == stale_pid
+        return False
 
     def fake_run(cmd: list[str], check: bool) -> None:
         assert check is True
@@ -78,6 +83,7 @@ def test_breaks_stale_lock_before_converting(tmp_path, monkeypatch) -> None:
         assert lock_file.read_text(encoding="utf-8") == f"pid={os.getpid()}\n"
         Path(cmd[-1]).write_text("converted", encoding="utf-8")
 
+    monkeypatch.setattr(model_convert, "_pid_is_running", fake_pid_is_running)
     monkeypatch.setattr(model_convert.sp, "run", fake_run)
 
     assert model_convert.ensure_converted_pb(source, output) == output.resolve()
