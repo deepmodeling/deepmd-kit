@@ -205,7 +205,10 @@ def _build_dynamic_shapes(
             {0: nframes_dim, 1: nall_dim},  # extended_coord: (nframes, nall, 3)
             {0: nframes_dim, 1: nall_dim},  # extended_atype: (nframes, nall)
             {0: nframes_dim, 1: nall_dim},  # extended_spin: (nframes, nall, 3)
-            {0: nframes_dim, 1: nloc_dim},  # nlist: (nframes, nloc, nnei)
+            {
+                0: nframes_dim,
+                1: nloc_dim,
+            },  # nlist: (nframes, nloc, nnei) — nnei is static
             {0: nframes_dim, 1: nall_dim},  # mapping: (nframes, nall)
             {0: nframes_dim} if fparam is not None else None,  # fparam
             {0: nframes_dim, 1: nloc_dim} if aparam is not None else None,  # aparam
@@ -217,7 +220,10 @@ def _build_dynamic_shapes(
         return (
             {0: nframes_dim, 1: nall_dim},  # extended_coord: (nframes, nall, 3)
             {0: nframes_dim, 1: nall_dim},  # extended_atype: (nframes, nall)
-            {0: nframes_dim, 1: nloc_dim},  # nlist: (nframes, nloc, nnei)
+            {
+                0: nframes_dim,
+                1: nloc_dim,
+            },  # nlist: (nframes, nloc, nnei) — nnei is static
             {0: nframes_dim, 1: nall_dim},  # mapping: (nframes, nall)
             {0: nframes_dim} if fparam is not None else None,  # fparam
             {0: nframes_dim, 1: nloc_dim} if aparam is not None else None,  # aparam
@@ -257,6 +263,7 @@ def _collect_metadata(model: torch.nn.Module, is_spin: bool = False) -> dict:
         "type_map": model.get_type_map(),
         "rcut": model.get_rcut(),
         "sel": model.get_sel(),
+        "nnei": sum(model.get_sel()),
         "dim_fparam": model.get_dim_fparam(),
         "dim_aparam": model.get_dim_aparam(),
         "mixed_types": model.mixed_types(),
@@ -336,6 +343,7 @@ def deserialize_to_file(
     model_file: str,
     data: dict,
     model_json_override: dict | None = None,
+    do_atomic_virial: bool = False,
 ) -> None:
     """Deserialize a dictionary to a .pte or .pt2 model file.
 
@@ -356,16 +364,24 @@ def deserialize_to_file(
         If provided, this dict is stored in model.json instead of ``data``.
         Used by ``dp compress`` to store the compressed model dict while
         tracing the uncompressed model (make_fx cannot trace custom ops).
+    do_atomic_virial : bool
+        If True, export with per-atom virial correction (3 extra backward
+        passes, ~2.5x slower).  Default False for best performance.
     """
     if model_file.endswith(".pt2"):
-        _deserialize_to_file_pt2(model_file, data, model_json_override)
+        _deserialize_to_file_pt2(
+            model_file, data, model_json_override, do_atomic_virial
+        )
     else:
-        _deserialize_to_file_pte(model_file, data, model_json_override)
+        _deserialize_to_file_pte(
+            model_file, data, model_json_override, do_atomic_virial
+        )
 
 
 def _trace_and_export(
     data: dict,
     model_json_override: dict | None = None,
+    do_atomic_virial: bool = False,
 ) -> tuple:
     """Common logic: build model, trace, export.
 
@@ -447,7 +463,7 @@ def _trace_and_export(
             mapping_t,
             fparam=fparam,
             aparam=aparam,
-            do_atomic_virial=True,
+            do_atomic_virial=do_atomic_virial,
             tracing_mode="symbolic",
             _allow_non_fake_inputs=True,
         )
@@ -463,7 +479,7 @@ def _trace_and_export(
             mapping_t,
             fparam=fparam,
             aparam=aparam,
-            do_atomic_virial=True,
+            do_atomic_virial=do_atomic_virial,
             tracing_mode="symbolic",
             _allow_non_fake_inputs=True,
         )
@@ -504,7 +520,10 @@ def _trace_and_export(
 
         exported = move_to_device_pass(exported, target_device)
 
-    # 8. Prepare JSON-serializable model dict
+    # 8. Record export-time config in metadata
+    metadata["do_atomic_virial"] = do_atomic_virial
+
+    # 9. Prepare JSON-serializable model dict
     json_source = model_json_override if model_json_override is not None else data
     data_for_json = deepcopy(json_source)
     data_for_json = _numpy_to_json_serializable(data_for_json)
@@ -516,10 +535,11 @@ def _deserialize_to_file_pte(
     model_file: str,
     data: dict,
     model_json_override: dict | None = None,
+    do_atomic_virial: bool = False,
 ) -> None:
     """Deserialize a dictionary to a .pte model file."""
     exported, metadata, data_for_json, output_keys = _trace_and_export(
-        data, model_json_override
+        data, model_json_override, do_atomic_virial
     )
 
     model_def_script = data.get("model_def_script") or {}
@@ -537,6 +557,7 @@ def _deserialize_to_file_pt2(
     model_file: str,
     data: dict,
     model_json_override: dict | None = None,
+    do_atomic_virial: bool = False,
 ) -> None:
     """Deserialize a dictionary to a .pt2 model file (AOTInductor).
 
@@ -551,7 +572,7 @@ def _deserialize_to_file_pt2(
     )
 
     exported, metadata, data_for_json, output_keys = _trace_and_export(
-        data, model_json_override
+        data, model_json_override, do_atomic_virial
     )
 
     # Compile via AOTInductor into a .pt2 package

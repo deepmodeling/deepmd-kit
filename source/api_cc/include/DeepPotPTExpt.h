@@ -208,9 +208,10 @@ class DeepPotPTExpt : public DeepPotBackend {
   bool gpu_enabled;
   std::vector<std::string> type_map;
   std::vector<std::string> output_keys;  // sorted internal output key names
-  bool mixed_types;
-  std::vector<int> sel;
+  bool do_atomic_virial;  // whether model was exported with atomic virial corr
+  int nnei;               // expected nlist nnei dimension (= sum(sel))
   NeighborListData nlist_data;
+  at::Tensor mapping_tensor;  // cached mapping tensor (LAMMPS path)
   std::unique_ptr<torch::inductor::AOTIModelPackageLoader> loader;
 
   /**

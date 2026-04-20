@@ -12,6 +12,7 @@ def convert_backend(
     *,  # Enforce keyword-only arguments
     INPUT: str,
     OUTPUT: str,
+    atomic_virial: bool = False,
     **kwargs: Any,
 ) -> None:
     """Convert a model file from one backend to another.
@@ -20,12 +21,22 @@ def convert_backend(
     ----------
     INPUT : str
         The input model file.
-    INPUT : str
+    OUTPUT : str
         The output model file.
+    atomic_virial : bool
+        If True, export .pt2/.pte models with per-atom virial correction.
+        This adds ~2.5x inference cost.  Default False.
     """
     inp_backend: Backend = Backend.detect_backend_by_model(INPUT)()
     out_backend: Backend = Backend.detect_backend_by_model(OUTPUT)()
     inp_hook = inp_backend.serialize_hook
     out_hook = out_backend.deserialize_hook
     data = inp_hook(INPUT)
-    out_hook(OUTPUT, data)
+    # Forward atomic_virial to pt_expt deserialize_to_file if applicable
+    import inspect
+
+    sig = inspect.signature(out_hook)
+    if "do_atomic_virial" in sig.parameters:
+        out_hook(OUTPUT, data, do_atomic_virial=atomic_virial)
+    else:
+        out_hook(OUTPUT, data)

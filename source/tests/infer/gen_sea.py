@@ -57,7 +57,7 @@ def main():
     }
 
     print(f"Exporting to {pt2_path} ...")  # noqa: T201
-    deserialize_to_file(pt2_path, data)
+    deserialize_to_file(pt2_path, data, do_atomic_virial=True)
 
     print("Done!")  # noqa: T201
 

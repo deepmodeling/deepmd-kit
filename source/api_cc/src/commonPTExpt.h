@@ -438,100 +438,38 @@ inline std::string read_zip_entry(const std::string& zip_path,
 }
 
 // ============================================================================
-// Build type-sorted, sel-limited neighbor list tensor.
+// Create raw neighbor list tensor (no type-sorting or sel-limiting).
+// The .pt2 model's compiled graph already contains format_nlist which
+// sorts by distance and truncates on-device, so CPU-side sorting is
+// unnecessary.
 // ============================================================================
 
 /**
- * @brief Convert a raw neighbor list to the sel-limited format expected by the
- *        pt_expt model.
+ * @brief Convert a raw neighbor list to a flat tensor.
  *
- * For non-mixed-type models (distinguish_types=true): the nlist has shape
- * (nframes, nloc, sum(sel)), where the first sel[0] entries are neighbors of
- * type 0, the next sel[1] are type 1, etc.  Within each type group neighbors
- * are sorted by distance (ascending).
- *
- * For mixed-type models (distinguish_types=false): all neighbors go into a
- * single group sorted by distance, truncated to sum(sel).
- *
- * Missing slots are filled with -1.
+ * Simply flattens the jagged nlist into a (1, nloc, nnei) int32 tensor.
+ * The .pt2 model handles format_nlist internally (distance sort + truncation).
  */
-template <typename VALUETYPE>
-inline torch::Tensor buildTypeSortedNlist(
-    const std::vector<std::vector<int>>& raw_nlist,
-    const std::vector<VALUETYPE>& coord_ext,
-    const std::vector<int>& atype_ext,
-    const std::vector<int>& sel,
-    int nloc,
-    bool mixed_types) {
-  int nsel = 0;
-  for (auto s : sel) {
-    nsel += s;
-  }
-  int ntypes = sel.size();
-  std::vector<int64_t> result(static_cast<size_t>(nloc) * nsel, -1);
-
+/**
+ * @brief Create nlist tensor with exactly `expected_nnei` neighbors per atom.
+ *
+ * Each row in `data` may have a different number of neighbors.  This function
+ * pads short rows with -1 and truncates long rows to produce a tensor of shape
+ * [1, nloc, expected_nnei].  The .pt2 compiled graph has nnei baked as a
+ * static dimension, so the tensor must match exactly.
+ */
+inline torch::Tensor createNlistTensor(
+    const std::vector<std::vector<int>>& data, int expected_nnei) {
+  int nloc = static_cast<int>(data.size());
+  std::vector<int> flat_data(static_cast<size_t>(nloc) * expected_nnei, -1);
   for (int ii = 0; ii < nloc; ++ii) {
-    const auto& neighbors = raw_nlist[ii];
-    VALUETYPE xi = coord_ext[ii * 3 + 0];
-    VALUETYPE yi = coord_ext[ii * 3 + 1];
-    VALUETYPE zi = coord_ext[ii * 3 + 2];
-    int offset = ii * nsel;
-
-    if (mixed_types) {
-      std::vector<std::pair<VALUETYPE, int>> all_neighbors;
-      for (int jj : neighbors) {
-        if (jj < 0) {
-          continue;
-        }
-        int jtype = atype_ext[jj];
-        if (jtype < 0) {
-          continue;
-        }
-        VALUETYPE dx = coord_ext[jj * 3 + 0] - xi;
-        VALUETYPE dy = coord_ext[jj * 3 + 1] - yi;
-        VALUETYPE dz = coord_ext[jj * 3 + 2] - zi;
-        VALUETYPE rr = dx * dx + dy * dy + dz * dz;
-        all_neighbors.emplace_back(rr, jj);
-      }
-      std::sort(all_neighbors.begin(), all_neighbors.end());
-      int count = std::min(static_cast<int>(all_neighbors.size()), nsel);
-      for (int kk = 0; kk < count; ++kk) {
-        result[offset + kk] = all_neighbors[kk].second;
-      }
-    } else {
-      std::vector<std::vector<std::pair<VALUETYPE, int>>> by_type(ntypes);
-      for (int jj : neighbors) {
-        if (jj < 0) {
-          continue;
-        }
-        int jtype = atype_ext[jj];
-        if (jtype < 0 || jtype >= ntypes) {
-          continue;
-        }
-        VALUETYPE dx = coord_ext[jj * 3 + 0] - xi;
-        VALUETYPE dy = coord_ext[jj * 3 + 1] - yi;
-        VALUETYPE dz = coord_ext[jj * 3 + 2] - zi;
-        VALUETYPE rr = dx * dx + dy * dy + dz * dz;
-        by_type[jtype].emplace_back(rr, jj);
-      }
-      int col = 0;
-      for (int tt = 0; tt < ntypes; ++tt) {
-        auto& group = by_type[tt];
-        std::sort(group.begin(), group.end());
-        int count = std::min(static_cast<int>(group.size()), sel[tt]);
-        for (int kk = 0; kk < count; ++kk) {
-          result[offset + col + kk] = group[kk].second;
-        }
-        col += sel[tt];
-      }
+    int ncopy = std::min(static_cast<int>(data[ii].size()), expected_nnei);
+    for (int jj = 0; jj < ncopy; ++jj) {
+      flat_data[static_cast<size_t>(ii) * expected_nnei + jj] = data[ii][jj];
     }
   }
-
-  torch::Tensor tensor =
-      torch::from_blob(result.data(), {1, nloc, nsel},
-                       torch::TensorOptions().dtype(torch::kInt64))
-          .clone();
-  return tensor;
+  torch::Tensor flat_tensor = torch::tensor(flat_data, torch::kInt32);
+  return flat_tensor.view({1, nloc, expected_nnei});
 }
 
 }  // namespace ptexpt

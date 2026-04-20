@@ -17,7 +17,7 @@
 #include "errors.h"
 #include "neighbor_list.h"
 
-using deepmd::ptexpt::buildTypeSortedNlist;
+using deepmd::ptexpt::createNlistTensor;
 using deepmd::ptexpt::parse_json;
 using deepmd::ptexpt::read_zip_entry;
 
@@ -93,7 +93,6 @@ void DeepSpinPTExpt::init(const std::string& model,
   ntypes = static_cast<int>(metadata["type_map"].as_array().size());
   dfparam = metadata["dim_fparam"].as_int();
   daparam = metadata["dim_aparam"].as_int();
-  mixed_types = metadata["mixed_types"].as_bool();
   aparam_nall = false;
 
   // Spin-specific metadata
@@ -133,14 +132,27 @@ void DeepSpinPTExpt::init(const std::string& model,
     }
   }
 
+  if (metadata.obj_val.count("do_atomic_virial")) {
+    do_atomic_virial = metadata["do_atomic_virial"].as_bool();
+  } else {
+    // Older models without this field were exported with do_atomic_virial=True
+    do_atomic_virial = true;
+  }
+
+  // Read expected nnei (= sum(sel)) — the .pt2 graph has this dimension static.
+  if (metadata.obj_val.count("nnei")) {
+    nnei = metadata["nnei"].as_int();
+  } else {
+    // Fallback: compute from sel array
+    nnei = 0;
+    for (const auto& v : metadata["sel"].as_array()) {
+      nnei += v.as_int();
+    }
+  }
+
   type_map.clear();
   for (const auto& v : metadata["type_map"].as_array()) {
     type_map.push_back(v.as_string());
-  }
-
-  sel.clear();
-  for (const auto& v : metadata["sel"].as_array()) {
-    sel.push_back(v.as_int());
   }
 
   output_keys.clear();
@@ -285,33 +297,31 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
     nlist_data.copy_from_nlist(lmp_list, nall - nghost);
     nlist_data.shuffle_exclude_empty(fwd_map);
     nlist_data.padding();
-  }
-  at::Tensor firstneigh_tensor =
-      buildTypeSortedNlist<double>(nlist_data.jlist, coord_d, datype, sel, nloc,
-                                   mixed_types)
-          .to(device);
 
-  // Build mapping tensor
-  at::Tensor mapping_tensor;
-  if (lmp_list.mapping) {
-    std::vector<std::int64_t> mapping(nall_real);
-    for (int ii = 0; ii < nall_real; ii++) {
-      mapping[ii] = fwd_map[lmp_list.mapping[bkw_map[ii]]];
+    // Rebuild mapping tensor only when nlist is updated (ago == 0).
+    if (lmp_list.mapping) {
+      std::vector<std::int64_t> mapping(nall_real);
+      for (int ii = 0; ii < nall_real; ii++) {
+        mapping[ii] = fwd_map[lmp_list.mapping[bkw_map[ii]]];
+      }
+      mapping_tensor =
+          torch::from_blob(mapping.data(), {1, nall_real}, int_option)
+              .clone()
+              .to(device);
+    } else {
+      std::vector<std::int64_t> mapping(nall_real);
+      for (int ii = 0; ii < nall_real; ii++) {
+        mapping[ii] = ii;
+      }
+      mapping_tensor =
+          torch::from_blob(mapping.data(), {1, nall_real}, int_option)
+              .clone()
+              .to(device);
     }
-    mapping_tensor =
-        torch::from_blob(mapping.data(), {1, nall_real}, int_option)
-            .clone()
-            .to(device);
-  } else {
-    std::vector<std::int64_t> mapping(nall_real);
-    for (int ii = 0; ii < nall_real; ii++) {
-      mapping[ii] = ii;
-    }
-    mapping_tensor =
-        torch::from_blob(mapping.data(), {1, nall_real}, int_option)
-            .clone()
-            .to(device);
   }
+  // Build raw nlist tensor — the .pt2 model handles format_nlist internally.
+  at::Tensor firstneigh_tensor =
+      createNlistTensor(nlist_data.jlist, nnei).to(torch::kInt64).to(device);
 
   // Build fparam/aparam tensors
   auto valuetype_options = std::is_same<VALUETYPE, float>::value
@@ -398,6 +408,12 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
                         fwd_map.size(), nall_real);
 
   if (atomic) {
+    if (!do_atomic_virial) {
+      throw deepmd::deepmd_exception(
+          "Atomic virial is not available in this .pt2 model "
+          "(exported without --atomic-virial). "
+          "Regenerate with: dp convert-backend --atomic-virial INPUT OUTPUT");
+    }
     torch::Tensor atom_energy_tensor =
         output_map["energy"].view({-1}).to(floatType);
     torch::Tensor cpu_atom_energy_ = atom_energy_tensor.to(torch::kCPU);
@@ -580,10 +596,9 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
       torch::from_blob(atype_64.data(), {1, nall}, int_options)
           .clone()
           .to(device);
+  // Build raw nlist tensor — the .pt2 model handles format_nlist internally.
   at::Tensor nlist_tensor =
-      buildTypeSortedNlist<double>(nlist_raw, coord_cpy_d, atype_cpy, sel, nloc,
-                                   mixed_types)
-          .to(device);
+      createNlistTensor(nlist_raw, nnei).to(torch::kInt64).to(device);
   std::vector<std::int64_t> mapping_64(mapping_vec.begin(), mapping_vec.end());
   at::Tensor mapping_tensor =
       torch::from_blob(mapping_64.data(), {1, nall}, int_options)
@@ -671,6 +686,12 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
   fold_back(force_mag, extended_force_mag, mapping_vec, nloc, nall, 3, nframes);
 
   if (atomic) {
+    if (!do_atomic_virial) {
+      throw deepmd::deepmd_exception(
+          "Atomic virial is not available in this .pt2 model "
+          "(exported without --atomic-virial). "
+          "Regenerate with: dp convert-backend --atomic-virial INPUT OUTPUT");
+    }
     // atom_energy: energy (nf, nloc, 1)
     torch::Tensor atom_energy_tensor =
         output_map["energy"].view({-1}).to(floatType);

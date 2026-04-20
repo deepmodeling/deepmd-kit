@@ -86,7 +86,7 @@ def main():
 
     pt2_path = os.path.join(base_dir, "deeppot_dpa3.pt2")
     print(f"Exporting to {pt2_path} ...")  # noqa: T201
-    pt_expt_deserialize_to_file(pt2_path, copy.deepcopy(data))
+    pt_expt_deserialize_to_file(pt2_path, copy.deepcopy(data), do_atomic_virial=True)
 
     pth_path = os.path.join(base_dir, "deeppot_dpa3.pth")
     print(f"Exporting to {pth_path} ...")  # noqa: T201
