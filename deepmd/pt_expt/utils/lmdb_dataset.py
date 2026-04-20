@@ -9,7 +9,6 @@ wrapper around the framework-agnostic :class:`LmdbDataReader` that satisfies
 that interface.
 """
 
-import logging
 from typing import (
     Any,
 )
@@ -23,8 +22,6 @@ from deepmd.dpmodel.utils.lmdb_data import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
-
-log = logging.getLogger(__name__)
 
 __all__ = ["LmdbDataSystem"]
 
@@ -118,7 +115,7 @@ class LmdbDataSystem:
 
     @property
     def type_map(self) -> list[str]:
-        return self._reader._type_map
+        return self._reader.type_map
 
     @property
     def mixed_type(self) -> bool:

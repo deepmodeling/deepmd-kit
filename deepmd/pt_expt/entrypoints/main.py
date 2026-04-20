@@ -41,6 +41,26 @@ from deepmd.utils.path import (
 log = logging.getLogger(__name__)
 
 
+def _get_neighbor_stat_data(
+    dataset_params: dict[str, Any],
+    type_map: list[str] | None,
+) -> Any:
+    """Return a data proxy suitable for ``BaseModel.update_sel`` (neighbor stat).
+
+    Routes a scalar LMDB ``systems`` path through dpmodel's
+    ``make_neighbor_stat_data``; falls back to the legacy ``get_data`` for
+    npy/HDF5 directories.
+    """
+    systems_raw = dataset_params.get("systems")
+    if isinstance(systems_raw, str) and is_lmdb(systems_raw):
+        from deepmd.dpmodel.utils.lmdb_data import (
+            make_neighbor_stat_data,
+        )
+
+        return make_neighbor_stat_data(systems_raw, type_map)
+    return get_data(dataset_params, 0, type_map, None)
+
+
 def _build_data_system(
     dataset_params: dict[str, Any],
     type_map: list[str],
@@ -60,6 +80,14 @@ def _build_data_system(
             batch_size=dataset_params["batch_size"],
             auto_prob_style=dataset_params.get("auto_prob"),
             seed=seed,
+        )
+    if isinstance(systems_raw, list) and any(
+        isinstance(s, str) and is_lmdb(s) for s in systems_raw
+    ):
+        raise ValueError(
+            "LMDB datasets must be passed as a scalar 'systems' string "
+            "(e.g. 'systems': '/path/to/data.lmdb'); list-form systems "
+            "with LMDB paths are not supported."
         )
     systems = process_systems(
         systems_raw,
@@ -267,8 +295,8 @@ def train(
 
         if not multi_task:
             type_map = config["model"].get("type_map")
-            train_data = get_data(
-                config["training"]["training_data"], 0, type_map, None
+            train_data = _get_neighbor_stat_data(
+                config["training"]["training_data"], type_map
             )
             config["model"], _ = BaseModel.update_sel(
                 train_data, type_map, config["model"]
@@ -276,11 +304,9 @@ def train(
         else:
             for model_key in config["model"]["model_dict"]:
                 type_map = config["model"]["model_dict"][model_key]["type_map"]
-                train_data = get_data(
+                train_data = _get_neighbor_stat_data(
                     config["training"]["data_dict"][model_key]["training_data"],
-                    0,
                     type_map,
-                    None,
                 )
                 config["model"]["model_dict"][model_key], _ = BaseModel.update_sel(
                     train_data,

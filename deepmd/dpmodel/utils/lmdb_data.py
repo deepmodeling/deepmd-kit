@@ -578,6 +578,11 @@ class LmdbDataReader:
         return True
 
     @property
+    def type_map(self) -> list[str]:
+        """Model-side type map used when constructing the reader."""
+        return self._type_map
+
+    @property
     def nloc_groups(self) -> dict[int, list[int]]:
         """Nloc → list of frame indices."""
         return self._nloc_groups
