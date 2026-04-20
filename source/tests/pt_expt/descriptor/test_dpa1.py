@@ -36,6 +36,14 @@ class TestDescrptDPA1(TestCaseSingleFrameWithNlist):
         TestCaseSingleFrameWithNlist.setUp(self)
         self.device = env.DEVICE
 
+    @pytest.mark.parametrize("attn", [0, 2])  # attn_layer (zero / non-zero paths)
+    def test_get_numb_attn_layer(self, attn) -> None:
+        """Cover both code paths: attn_layer == 0 and attn_layer > 0."""
+        dd = DescrptDPA1(
+            self.rcut, self.rcut_smth, self.sel_mix, self.nt, attn_layer=attn
+        )
+        assert dd.get_numb_attn_layer() == attn
+
     @pytest.mark.parametrize("idt", [False, True])  # resnet_dt
     @pytest.mark.parametrize("sm", [False, True])  # smooth_type_embedding
     @pytest.mark.parametrize("to", [False, True])  # type_one_side
