@@ -71,7 +71,6 @@ and similarly for the virial loss:
 
 Intensive normalization makes the loss magnitudes independent of the system size $N$ (assuming per-atom errors are consistent), which is crucial for multi-task training involving datasets with varying system sizes to prevent larger systems from dominating the training process.
 
-
 If part of atoms is more important than others, for example, certain atoms play an essential role when calculating free energy profiles or kinetic isotope effects, the MSE of atomic forces with prefactors $q_{k}$ can also be used as the loss function:
 
 ```math
@@ -150,6 +149,5 @@ When using `loss_func="mse"`, the training will output `rmse_e`, `rmse_f`, `rmse
 The {ref}`intensive <loss[ener]/intensive>` option (default is `false`) controls the normalization of the energy and virial loss terms when `loss_func="mse"`. If set to `true`, these terms are normalized by $1/N^2$ (making them "intensive"), ensuring the loss scale remains consistent across different system sizes $N$. If `false`, the legacy $1/N$ normalization is used. This option is highly recommended for multi-task learning.
 
 If one does not want to train with virial, then he/she may set the virial prefactors {ref}`start_pref_v <loss[ener]/start_pref_v>` and {ref}`limit_pref_v <loss[ener]/limit_pref_v>` to 0.
-
 
 [^1]: This section is built upon Jinzhe Zeng, Duo Zhang, Denghui Lu, Pinghui Mo, Zeyu Li, Yixiao Chen, Marián Rynik, Li'ang Huang, Ziyao Li, Shaochen Shi, Yingze Wang, Haotian Ye, Ping Tuo, Jiabin Yang, Ye Ding, Yifan Li, Davide Tisi, Qiyu Zeng, Han Bao, Yu Xia, Jiameng Huang, Koki Muraoka, Yibo Wang, Junhan Chang, Fengbo Yuan, Sigbjørn Løland Bore, Chun Cai, Yinnian Lin, Bo Wang, Jiayan Xu, Jia-Xin Zhu, Chenxing Luo, Yuzhi Zhang, Rhys E. A. Goodall, Wenshuo Liang, Anurag Kumar Singh, Sikai Yao, Jingchao Zhang, Renata Wentzcovitch, Jiequn Han, Jie Liu, Weile Jia, Darrin M. York, Weinan E, Roberto Car, Linfeng Zhang, Han Wang, [J. Chem. Phys. 159, 054801 (2023)](https://doi.org/10.1063/5.0155600) licensed under a [Creative Commons Attribution (CC BY) license](http://creativecommons.org/licenses/by/4.0/).
