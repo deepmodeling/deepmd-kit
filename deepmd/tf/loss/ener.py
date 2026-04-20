@@ -1019,7 +1019,11 @@ class EnerSpinLoss(Loss):
             "limit_pref_v": self.limit_pref_v,
             "start_pref_ae": self.start_pref_ae,
             "limit_pref_ae": self.limit_pref_ae,
+            "start_pref_pf": self.start_pref_pf,
+            "limit_pref_pf": self.limit_pref_pf,
+            "relative_f": self.relative_f,
             "enable_atom_ener_coeff": self.enable_atom_ener_coeff,
+            "use_spin": self.use_spin,
             "loss_func": self.loss_func,
             "intensive": self.intensive,
         }

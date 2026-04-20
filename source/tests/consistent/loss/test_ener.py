@@ -597,86 +597,141 @@ class TestIntensiveNatomsScaling(unittest.TestCase):
     future refactors accidentally reverting to 1/N scaling.
     """
 
-    def test_intensive_energy_scaling(self) -> None:
-        """Test that energy MSE loss scales as 1/N² with intensive=True."""
+    def test_intensive_total_loss_scaling(self) -> None:
+        """Test that total loss scales correctly with 1/N² for intensive=True.
+
+        This test uses controlled energy/virial residuals to verify that the
+        total loss contribution scales with 1/N² (intensive) vs 1/N (legacy).
+        We use identical per-atom residuals across different system sizes to
+        ensure the raw MSE is the same, then verify the total loss scales as
+        expected based on the normalization factor.
+        """
         if not INSTALLED_PT:
             self.skipTest("PyTorch not installed")
 
-        # Create loss function with intensive=True
-        loss_func = EnerLossPT(
+        nframes = 1
+
+        # Test with two different system sizes
+        natoms_small = 4
+        natoms_large = 8  # 2x the small system
+
+        # Use fixed energy residual so MSE is predictable
+        # Energy residual = 1.0, so l2_ener_loss = 1.0
+        fixed_energy_diff = 1.0
+
+        def create_data_with_fixed_residual(natoms: int, energy_diff: float):
+            """Create predict/label with a fixed energy difference."""
+            predict = {
+                "energy": numpy_to_torch(np.array([1.0])),
+                "force": numpy_to_torch(np.zeros((nframes, natoms, 3))),
+                "virial": numpy_to_torch(np.array([[1.0] * 9])),  # Virial residual = 1
+                "atom_energy": numpy_to_torch(np.ones((nframes, natoms)) / natoms),
+            }
+            label = {
+                "energy": numpy_to_torch(np.array([1.0 + energy_diff])),
+                "force": numpy_to_torch(np.zeros((nframes, natoms, 3))),
+                "virial": numpy_to_torch(np.array([[2.0] * 9])),  # Virial residual = 1
+                "atom_ener": numpy_to_torch(
+                    np.ones((nframes, natoms)) * (1.0 + energy_diff) / natoms
+                ),
+                "find_energy": 1.0,
+                "find_force": 0.0,  # Disable force to focus on energy/virial
+                "find_virial": 1.0,
+                "find_atom_ener": 0.0,
+            }
+            return predict, label
+
+        # Create loss functions
+        loss_intensive = EnerLossPT(
             starter_learning_rate=1e-3,
             start_pref_e=1.0,
             limit_pref_e=1.0,
             start_pref_f=0.0,
             limit_pref_f=0.0,
-            start_pref_v=1.0,  # Enable virial to test it too
+            start_pref_v=1.0,
             limit_pref_v=1.0,
             intensive=True,
         )
+        loss_legacy = EnerLossPT(
+            starter_learning_rate=1e-3,
+            start_pref_e=1.0,
+            limit_pref_e=1.0,
+            start_pref_f=0.0,
+            limit_pref_f=0.0,
+            start_pref_v=1.0,
+            limit_pref_v=1.0,
+            intensive=False,
+        )
 
-        rng = np.random.default_rng(20250419)
-        nframes = 1
+        # Compute losses for small system
+        predict_small, label_small = create_data_with_fixed_residual(
+            natoms_small, fixed_energy_diff
+        )
+        _, loss_intensive_small, _ = loss_intensive(
+            {},
+            lambda p=predict_small: p,
+            label_small,
+            natoms_small,
+            1e-3,
+        )
+        _, loss_legacy_small, _ = loss_legacy(
+            {},
+            lambda p=predict_small: p,
+            label_small,
+            natoms_small,
+            1e-3,
+        )
 
-        # Run with different natoms values and check scaling
-        natoms_values = [4, 8, 16]
-        energy_losses: list[float] = []
-        virial_losses: list[float] = []
+        # Compute losses for large system
+        predict_large, label_large = create_data_with_fixed_residual(
+            natoms_large, fixed_energy_diff
+        )
+        _, loss_intensive_large, _ = loss_intensive(
+            {},
+            lambda p=predict_large: p,
+            label_large,
+            natoms_large,
+            1e-3,
+        )
+        _, loss_legacy_large, _ = loss_legacy(
+            {},
+            lambda p=predict_large: p,
+            label_large,
+            natoms_large,
+            1e-3,
+        )
 
-        for natoms in natoms_values:
-            predict = {
-                "energy": numpy_to_torch(rng.random((nframes,))),
-                "force": numpy_to_torch(rng.random((nframes, natoms, 3))),
-                "virial": numpy_to_torch(rng.random((nframes, 9))),
-                "atom_energy": numpy_to_torch(rng.random((nframes, natoms))),
-            }
-            label = {
-                "energy": numpy_to_torch(rng.random((nframes,))),
-                "force": numpy_to_torch(rng.random((nframes, natoms, 3))),
-                "virial": numpy_to_torch(rng.random((nframes, 9))),
-                "atom_ener": numpy_to_torch(rng.random((nframes, natoms))),
-                "find_energy": 1.0,
-                "find_force": 1.0,
-                "find_virial": 1.0,
-                "find_atom_ener": 0.0,  # Disable to simplify test
-            }
+        loss_int_small = float(torch_to_numpy(loss_intensive_small))
+        loss_int_large = float(torch_to_numpy(loss_intensive_large))
+        loss_leg_small = float(torch_to_numpy(loss_legacy_small))
+        loss_leg_large = float(torch_to_numpy(loss_legacy_large))
 
-            _, _loss, more_loss = loss_func(
-                {},
-                lambda p=predict: p,
-                label,
-                natoms,
-                1e-3,
-            )
+        # With same residuals but different natoms:
+        # - intensive (1/N²): loss should scale as (N_small/N_large)² = (4/8)² = 0.25
+        # - legacy (1/N): loss should scale as (N_small/N_large) = 4/8 = 0.5
 
-            # Get the raw L2 losses before prefactor weighting
-            energy_losses.append(float(torch_to_numpy(more_loss["l2_ener_loss"])))
-            virial_losses.append(float(torch_to_numpy(more_loss["l2_virial_loss"])))
+        # Verify intensive scaling: loss_large / loss_small should be ~0.25
+        natoms_ratio = natoms_small / natoms_large  # 0.5
+        expected_intensive_ratio = natoms_ratio**2  # 0.25
+        expected_legacy_ratio = natoms_ratio  # 0.5
 
-        # For MSE loss with intensive=True, the raw l2 loss should be roughly
-        # size-independent (just the mean squared error). The scaling factor
-        # (1/N² vs 1/N) is applied when combining into the total loss.
-        # So we verify that l2_ener_loss and l2_virial_loss are size-independent.
-        # (They should be similar across different natoms since they're just MSE.)
+        actual_intensive_ratio = loss_int_large / loss_int_small
+        actual_legacy_ratio = loss_leg_large / loss_leg_small
 
-        # The raw MSE losses should not scale linearly with natoms
-        # (if they did, that would indicate bug in normalization)
-        for i in range(len(natoms_values) - 1):
-            ratio = natoms_values[i + 1] / natoms_values[i]
-            # Raw l2 loss should NOT scale with natoms (within reasonable variance)
-            energy_ratio = energy_losses[i + 1] / energy_losses[i]
-            virial_ratio = virial_losses[i + 1] / virial_losses[i]
-
-            # These shouldn't scale linearly with N - allow some variance but not Nx
-            self.assertLess(
-                energy_ratio,
-                ratio * 0.8,
-                f"Energy loss appears to scale with natoms (ratio {energy_ratio:.2f})",
-            )
-            self.assertLess(
-                virial_ratio,
-                ratio * 0.8,
-                f"Virial loss appears to scale with natoms (ratio {virial_ratio:.2f})",
-            )
+        self.assertAlmostEqual(
+            actual_intensive_ratio,
+            expected_intensive_ratio,
+            places=5,
+            msg=f"Intensive loss scaling: expected {expected_intensive_ratio:.4f}, "
+            f"got {actual_intensive_ratio:.4f}",
+        )
+        self.assertAlmostEqual(
+            actual_legacy_ratio,
+            expected_legacy_ratio,
+            places=5,
+            msg=f"Legacy loss scaling: expected {expected_legacy_ratio:.4f}, "
+            f"got {actual_legacy_ratio:.4f}",
+        )
 
     def test_intensive_vs_legacy_scaling_difference(self) -> None:
         """Test that intensive=True produces different loss than intensive=False for energy/virial."""
