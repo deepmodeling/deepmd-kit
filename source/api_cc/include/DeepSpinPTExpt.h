@@ -186,7 +186,8 @@ class DeepSpinPTExpt : public DeepSpinBackend {
   bool do_atomic_virial;  // whether model was exported with atomic virial corr
   int nnei;               // expected nlist nnei dimension (= sum(sel))
   NeighborListData nlist_data;
-  at::Tensor mapping_tensor;  // cached mapping tensor (LAMMPS path)
+  at::Tensor mapping_tensor;     // cached mapping tensor (LAMMPS path)
+  at::Tensor firstneigh_tensor;  // cached nlist tensor (LAMMPS path)
   std::unique_ptr<torch::inductor::AOTIModelPackageLoader> loader;
 
   std::vector<torch::Tensor> run_model(const torch::Tensor& coord,

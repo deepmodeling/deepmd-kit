@@ -290,12 +290,13 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
               .clone()
               .to(device);
     }
+
+    // Build raw nlist tensor — pass all neighbors, padded to at least nnei+1
+    // columns so the .pt2 model's compiled format_nlist sorts on-device.
+    firstneigh_tensor = createNlistTensor(nlist_data.jlist, nnei + 1)
+                            .to(torch::kInt64)
+                            .to(device);
   }
-  // Build raw nlist tensor — pass all neighbors, padded to at least nnei+1
-  // columns so the .pt2 model's compiled format_nlist sorts on-device.
-  at::Tensor firstneigh_tensor = createNlistTensor(nlist_data.jlist, nnei + 1)
-                                     .to(torch::kInt64)
-                                     .to(device);
 
   // Build fparam/aparam tensors (cast to float64 for the model)
   auto valuetype_options = std::is_same<VALUETYPE, float>::value
