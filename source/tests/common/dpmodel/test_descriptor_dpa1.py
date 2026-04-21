@@ -37,6 +37,13 @@ class TestDescrptDPA1(unittest.TestCase, TestCaseSingleFrameWithNlist):
         for ii in [0, 1, 4]:
             np.testing.assert_allclose(mm0[ii], mm1[ii])
 
+    def test_get_numb_attn_layer(self) -> None:
+        """Cover both code paths: attn_layer == 0 and attn_layer > 0."""
+        em0 = DescrptDPA1(self.rcut, self.rcut_smth, self.sel, ntypes=2, attn_layer=0)
+        self.assertEqual(em0.get_numb_attn_layer(), 0)
+        em2 = DescrptDPA1(self.rcut, self.rcut_smth, self.sel, ntypes=2, attn_layer=2)
+        self.assertEqual(em2.get_numb_attn_layer(), 2)
+
     def test_multiple_frames(self) -> None:
         rng = np.random.default_rng(GLOBAL_SEED)
         nf, nloc, nnei = self.nlist.shape

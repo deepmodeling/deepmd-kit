@@ -33,6 +33,17 @@ class TestDescrptSeAtten(unittest.TestCase, TestCaseSingleFrameWithNlist):
     def setUp(self) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
 
+    def test_get_numb_attn_layer(self) -> None:
+        """Cover both code paths: attn_layer == 0 and attn_layer > 0."""
+        dd0 = DescrptDPA1(
+            self.rcut, self.rcut_smth, self.sel_mix, self.nt, attn_layer=0
+        ).to(env.DEVICE)
+        self.assertEqual(dd0.get_numb_attn_layer(), 0)
+        dd2 = DescrptDPA1(
+            self.rcut, self.rcut_smth, self.sel_mix, self.nt, attn_layer=2
+        ).to(env.DEVICE)
+        self.assertEqual(dd2.get_numb_attn_layer(), 2)
+
     def test_consistency(
         self,
     ) -> None:

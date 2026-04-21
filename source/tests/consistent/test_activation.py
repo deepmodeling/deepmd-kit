@@ -19,6 +19,7 @@ from .common import (
     INSTALLED_JAX,
     INSTALLED_PD,
     INSTALLED_PT,
+    INSTALLED_PT_EXPT,
     INSTALLED_TF,
     parameterized,
 )
@@ -28,6 +29,13 @@ if INSTALLED_PT:
     from deepmd.pt.utils.utils import to_numpy_array as torch_to_numpy
     from deepmd.pt.utils.utils import (
         to_torch_tensor,
+    )
+if INSTALLED_PT_EXPT:
+    import torch
+
+    from deepmd.pt_expt.utils.env import DEVICE as PT_EXPT_DEVICE
+    from deepmd.pt_expt.utils.network import (
+        _torch_activation,
     )
 if INSTALLED_TF:
     from deepmd.tf.common import get_activation_func as get_activation_fn_tf
@@ -97,4 +105,55 @@ class TestActivationFunctionConsistent(unittest.TestCase):
             test = paddle_to_numpy(
                 ActivationFn_pd(self.activation)(to_paddle_tensor(self.random_input))
             )
+            np.testing.assert_allclose(self.ref, test, atol=1e-10)
+
+    @unittest.skipUnless(INSTALLED_PT_EXPT, "PyTorch Exportable is not installed")
+    def test_pt_expt_consistent_with_ref(self) -> None:
+        if INSTALLED_PT_EXPT:
+            x = torch.tensor(
+                self.random_input, dtype=torch.float64, device=PT_EXPT_DEVICE
+            )
+            test = _torch_activation(x, self.activation).detach().cpu().numpy()
+            np.testing.assert_allclose(self.ref, test, atol=1e-10)
+
+
+@parameterized(
+    (
+        "silut",  # default threshold 3.0
+        "silut:3.0",  # explicit threshold 3.0
+        "silut:10.0",  # large threshold
+        "custom_silu:5.0",  # alias
+    ),
+)
+class TestSilutVariantsConsistent(unittest.TestCase):
+    """Cross-backend consistency for silut with different thresholds."""
+
+    def setUp(self) -> None:
+        (self.activation,) = self.param
+        # Parse threshold to build input that covers both branches
+        threshold = (
+            float(self.activation.split(":")[-1]) if ":" in self.activation else 3.0
+        )
+        rng = np.random.default_rng(GLOBAL_SEED)
+        # Values below threshold (silu branch) and above threshold (tanh branch)
+        below = rng.uniform(-threshold - 5, threshold - 0.1, size=(5, 10))
+        above = rng.uniform(threshold + 0.1, threshold + 20, size=(5, 10))
+        self.random_input = np.concatenate([below, above], axis=0)
+        self.ref = get_activation_fn_dp(self.activation)(self.random_input)
+
+    @unittest.skipUnless(INSTALLED_PT, "PyTorch is not installed")
+    def test_pt_consistent_with_ref(self) -> None:
+        if INSTALLED_PT:
+            test = torch_to_numpy(
+                ActivationFn_pt(self.activation)(to_torch_tensor(self.random_input))
+            )
+            np.testing.assert_allclose(self.ref, test, atol=1e-10)
+
+    @unittest.skipUnless(INSTALLED_PT_EXPT, "PyTorch Exportable is not installed")
+    def test_pt_expt_consistent_with_ref(self) -> None:
+        if INSTALLED_PT_EXPT:
+            x = torch.tensor(
+                self.random_input, dtype=torch.float64, device=PT_EXPT_DEVICE
+            )
+            test = _torch_activation(x, self.activation).detach().cpu().numpy()
             np.testing.assert_allclose(self.ref, test, atol=1e-10)

@@ -255,6 +255,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         stat_file_path : Optional[DPPath]
             The path to the stat file.
         """
+        self._param_stats: dict[str, list[StatItem]] = {}
         if self.numb_fparam == 0 and self.numb_aparam == 0:
             # skip data statistics
             return
@@ -296,6 +297,7 @@ class GeneralFitting(NativeOP, BaseFitting):
                     self._save_param_stats_to_file(
                         stat_file_path, "fparam", fparam_stats
                     )
+            self._param_stats["fparam"] = fparam_stats
             fparam_avg = np.array(
                 [s.compute_avg() for s in fparam_stats], dtype=np.float64
             )
@@ -362,6 +364,7 @@ class GeneralFitting(NativeOP, BaseFitting):
                     self._save_param_stats_to_file(
                         stat_file_path, "aparam", aparam_stats
                     )
+            self._param_stats["aparam"] = aparam_stats
             aparam_avg = np.array(
                 [s.compute_avg() for s in aparam_stats], dtype=np.float64
             )
@@ -406,6 +409,10 @@ class GeneralFitting(NativeOP, BaseFitting):
             StatItem(number=arr[ii][0], sum=arr[ii][1], squared_sum=arr[ii][2])
             for ii in range(numb)
         ]
+
+    def get_param_stats(self) -> dict[str, list[StatItem]]:
+        """Get the stored fparam/aparam statistics (populated by compute_input_stats)."""
+        return getattr(self, "_param_stats", {})
 
     @abstractmethod
     def _net_out_dim(self) -> int:
@@ -666,11 +673,13 @@ class GeneralFitting(NativeOP, BaseFitting):
         # check fparam dim, concate to input descriptor
         if self.numb_fparam > 0:
             assert fparam is not None, "fparam should not be None"
-            if fparam.shape[-1] != self.numb_fparam:
+            try:
+                fparam = xp.reshape(fparam, (nf, self.numb_fparam))
+            except (ValueError, RuntimeError) as e:
                 raise ValueError(
-                    f"get an input fparam of dim {fparam.shape[-1]}, "
-                    f"which is not consistent with {self.numb_fparam}."
-                )
+                    f"input fparam: cannot reshape {fparam.shape} "
+                    f"into ({nf}, {self.numb_fparam})."
+                ) from e
             fparam = (fparam - self.fparam_avg[...]) * self.fparam_inv_std[...]
             fparam = xp.tile(
                 xp.reshape(fparam, (nf, 1, self.numb_fparam)), (1, nloc, 1)
@@ -687,12 +696,13 @@ class GeneralFitting(NativeOP, BaseFitting):
         # check aparam dim, concate to input descriptor
         if self.numb_aparam > 0 and not self.use_aparam_as_mask:
             assert aparam is not None, "aparam should not be None"
-            if aparam.shape[-1] != self.numb_aparam:
+            try:
+                aparam = xp.reshape(aparam, (nf, nloc, self.numb_aparam))
+            except (ValueError, RuntimeError) as e:
                 raise ValueError(
-                    f"get an input aparam of dim {aparam.shape[-1]}, "
-                    f"which is not consistent with {self.numb_aparam}."
-                )
-            aparam = xp.reshape(aparam, (nf, nloc, self.numb_aparam))
+                    f"input aparam: cannot reshape {aparam.shape} "
+                    f"into ({nf}, {nloc}, {self.numb_aparam})."
+                ) from e
             aparam = (aparam - self.aparam_avg[...]) * self.aparam_inv_std[...]
             xx = xp.concat(
                 [xx, aparam],
@@ -735,7 +745,8 @@ class GeneralFitting(NativeOP, BaseFitting):
                 )
             for type_i in range(self.ntypes):
                 mask = xp.tile(
-                    xp.reshape((atype == type_i), (nf, nloc, 1)), (1, 1, net_dim_out)
+                    xp.reshape((atype == type_i), (nf, nloc, 1)),
+                    (1, 1, net_dim_out),
                 )
                 atom_property = self.nets[(type_i,)](xx)
                 if self.remove_vaccum_contribution is not None and not (

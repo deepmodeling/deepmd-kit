@@ -260,3 +260,54 @@ class TestDescrptDPA3(TestCaseSingleFrameWithNlist):
             rtol=rtol,
             atol=atol,
         )
+
+    @pytest.mark.parametrize("shared_level", [0, 1])  # sharing level
+    def test_share_params(self, shared_level) -> None:
+        """share_params level 0: share all; level 1: share type_embedding only."""
+        rng = np.random.default_rng(GLOBAL_SEED)
+        nf, nloc, nnei = self.nlist.shape
+        davg0 = rng.normal(size=(self.nt, nnei, 4))
+        dstd0 = 0.1 + np.abs(rng.normal(size=(self.nt, nnei, 4)))
+
+        repflow = RepFlowArgs(
+            n_dim=20,
+            e_dim=10,
+            a_dim=8,
+            nlayers=3,
+            e_rcut=self.rcut,
+            e_rcut_smth=self.rcut_smth,
+            e_sel=nnei,
+            a_rcut=self.rcut - 0.1,
+            a_rcut_smth=self.rcut_smth,
+            a_sel=nnei - 1,
+            axis_neuron=4,
+            update_angle=True,
+            update_style="res_residual",
+            update_residual_init="const",
+            smooth_edge_update=True,
+        )
+
+        dd0 = DescrptDPA3(
+            self.nt, repflow=repflow, exclude_types=[], seed=GLOBAL_SEED
+        ).to(self.device)
+        dd1 = DescrptDPA3(
+            self.nt, repflow=repflow, exclude_types=[], seed=GLOBAL_SEED + 1
+        ).to(self.device)
+        dd0.repflows.mean = torch.tensor(davg0, dtype=torch.float64, device=self.device)
+        dd0.repflows.stddev = torch.tensor(
+            dstd0, dtype=torch.float64, device=self.device
+        )
+
+        dd1.share_params(dd0, shared_level=shared_level)
+
+        # type_embedding is always shared
+        assert dd1._modules["type_embedding"] is dd0._modules["type_embedding"]
+
+        if shared_level == 0:
+            assert dd1._modules["repflows"] is dd0._modules["repflows"]
+        elif shared_level == 1:
+            assert dd1._modules["repflows"] is not dd0._modules["repflows"]
+
+        # invalid level raises
+        with pytest.raises(NotImplementedError):
+            dd1.share_params(dd0, shared_level=2)

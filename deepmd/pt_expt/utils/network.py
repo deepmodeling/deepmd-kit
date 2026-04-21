@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import math
 from typing import (
     Any,
     ClassVar,
@@ -182,6 +183,14 @@ def _torch_activation(x: torch.Tensor, name: str) -> torch.Tensor:
         return torch.sigmoid(x)
     elif name == "silu":
         return torch.nn.functional.silu(x)
+    elif name.startswith("silut") or name.startswith("custom_silu"):
+        threshold = float(name.split(":")[-1]) if ":" in name else 3.0
+        sig_t = 1.0 / (1.0 + math.exp(-threshold))
+        slope = sig_t + threshold * sig_t * (1.0 - sig_t)
+        const = threshold * sig_t
+        silu = x * torch.sigmoid(x)
+        tanh_branch = torch.tanh(slope * (x - threshold)) + const
+        return torch.where(x < threshold, silu, tanh_branch)
     elif name in ("none", "linear"):
         return x
     else:

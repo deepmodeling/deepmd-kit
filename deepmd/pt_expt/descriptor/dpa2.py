@@ -14,6 +14,9 @@ from deepmd.dpmodel.descriptor.dpa2 import (
     build_multiple_neighbor_list,
     get_multiple_nlist_key,
 )
+from deepmd.dpmodel.utils.env_mat_stat import (
+    merge_env_stat,
+)
 from deepmd.pt_expt.common import (
     torch_module,
 )
@@ -29,6 +32,47 @@ from deepmd.pt_expt.utils.update_sel import (
 @torch_module
 class DescrptDPA2(DescrptDPA2DP):
     _update_sel_cls = UpdateSel
+
+    def share_params(
+        self,
+        base_class: "DescrptDPA2",
+        shared_level: int,
+        model_prob: float = 1.0,
+        resume: bool = False,
+    ) -> None:
+        """Share parameters with base_class for multi-task training.
+
+        Level 0: share type_embedding, repinit, repinit_three_body,
+                 g1_shape_tranform, and repformers.
+        Level 1: share type_embedding only.
+        """
+        assert self.__class__ == base_class.__class__, (
+            "Only descriptors of the same type can share params!"
+        )
+        if shared_level == 0:
+            self._modules["type_embedding"] = base_class._modules["type_embedding"]
+            if not resume:
+                merge_env_stat(base_class.repinit, self.repinit, model_prob)
+                if self.use_three_body and "repinit_three_body" in base_class._modules:
+                    merge_env_stat(
+                        base_class.repinit_three_body,
+                        self.repinit_three_body,
+                        model_prob,
+                    )
+                merge_env_stat(base_class.repformers, self.repformers, model_prob)
+            self._modules["repinit"] = base_class._modules["repinit"]
+            if self.use_three_body and "repinit_three_body" in base_class._modules:
+                self._modules["repinit_three_body"] = base_class._modules[
+                    "repinit_three_body"
+                ]
+            self._modules["g1_shape_tranform"] = base_class._modules[
+                "g1_shape_tranform"
+            ]
+            self._modules["repformers"] = base_class._modules["repformers"]
+        elif shared_level == 1:
+            self._modules["type_embedding"] = base_class._modules["type_embedding"]
+        else:
+            raise NotImplementedError
 
     def enable_compression(
         self,
