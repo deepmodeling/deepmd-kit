@@ -280,10 +280,16 @@ class TestDeepEvalEner(unittest.TestCase):
         typically have more neighbors than sum(sel).  The compiled
         format_nlist must sort by distance and truncate correctly.
 
-        The test shuffles neighbor columns so that some real (close) neighbors
-        appear AFTER sum(sel), forcing format_nlist to distance-sort rather
-        than just truncating by column index.  A model that truncates without
-        sorting would pick wrong neighbors and produce different energy/force.
+        The test verifies two things:
+
+        1. **Correctness**: the exported model with an oversized, shuffled
+           nlist produces the same results as the eager model (both sort by
+           distance and keep the closest sum(sel) neighbors).
+
+        2. **Naive truncation produces wrong results**: simply taking the
+           first sum(sel) columns of the shuffled nlist (simulating a C++
+           implementation that truncates without sorting) gives a different
+           energy.  This proves the distance sort is necessary.
         """
         exported = torch.export.load(self.tmpfile.name)
         exported_mod = exported.module()
@@ -314,6 +320,7 @@ class TestDeepEvalEner(unittest.TestCase):
         nlist_shuffled = nlist_padded[:, :, perm]
         assert nlist_shuffled.shape[-1] > nnei
 
+        # --- Part 1: exported model sorts correctly ---
         # Reference: eager model with shuffled oversized nlist
         ec = ext_coord.detach().requires_grad_(True)
         ref_ret = self.model.forward_common_lower(
@@ -340,6 +347,31 @@ class TestDeepEvalEner(unittest.TestCase):
                     atol=1e-10,
                     err_msg=f"oversized nlist, key={key}",
                 )
+
+        # --- Part 2: naive truncation gives wrong results ---
+        # Simulate the old C++ bug: truncate shuffled nlist to sum(sel) columns
+        # without distance sorting.  Some close neighbors that were shuffled
+        # beyond column sum(sel) are lost, producing wrong energy.
+        nlist_truncated = nlist_shuffled[:, :, :nnei]
+        ec2 = ext_coord.detach().requires_grad_(True)
+        trunc_ret = self.model.forward_common_lower(
+            ec2,
+            ext_atype,
+            nlist_truncated,
+            mapping_t,
+            fparam=fparam,
+            aparam=aparam,
+            do_atomic_virial=True,
+        )
+        # The truncated result MUST differ from the correctly sorted result,
+        # proving that naive truncation discards real neighbors.
+        e_ref = ref_ret["energy_redu"].detach().cpu().numpy()
+        e_trunc = trunc_ret["energy_redu"].detach().cpu().numpy()
+        assert not np.allclose(e_ref, e_trunc, rtol=1e-10, atol=1e-10), (
+            "Naive truncation of shuffled nlist should give different energy, "
+            "but got the same result.  The test data may not have enough "
+            "neighbors shuffled beyond sum(sel) to trigger the bug."
+        )
 
     def test_serialize_round_trip(self) -> None:
         """Test .pte → serialize_from_file → deserialize → model gives same outputs."""
@@ -843,10 +875,16 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
         typically have more neighbors than sum(sel).  The compiled
         format_nlist must sort by distance and truncate correctly.
 
-        The test shuffles neighbor columns so that some real (close) neighbors
-        appear AFTER sum(sel), forcing format_nlist to distance-sort rather
-        than just truncating by column index.  A model that truncates without
-        sorting would pick wrong neighbors and produce different energy/force.
+        The test verifies two things:
+
+        1. **Correctness**: the exported model with an oversized, shuffled
+           nlist produces the same results as the eager model (both sort by
+           distance and keep the closest sum(sel) neighbors).
+
+        2. **Naive truncation produces wrong results**: simply taking the
+           first sum(sel) columns of the shuffled nlist (simulating a C++
+           implementation that truncates without sorting) gives a different
+           energy.  This proves the distance sort is necessary.
         """
         exported = torch.export.load(self.pte_tmpfile.name)
         exported_mod = exported.module()
@@ -877,7 +915,7 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
         nlist_shuffled = nlist_padded[:, :, perm]
         assert nlist_shuffled.shape[-1] > nnei
 
-        # Reference: eager model with shuffled oversized nlist
+        # --- Part 1: exported model sorts correctly ---
         ec = ext_coord.detach().requires_grad_(True)
         ref_ret = self.model.forward_common_lower(
             ec,
@@ -889,7 +927,6 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
             do_atomic_virial=True,
         )
 
-        # Exported model with same shuffled oversized nlist
         pte_ret = exported_mod(
             ext_coord, ext_atype, nlist_shuffled, mapping_t, fparam, aparam
         )
@@ -903,6 +940,26 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
                     atol=1e-10,
                     err_msg=f"oversized nlist, key={key}",
                 )
+
+        # --- Part 2: naive truncation gives wrong results ---
+        nlist_truncated = nlist_shuffled[:, :, :nnei]
+        ec2 = ext_coord.detach().requires_grad_(True)
+        trunc_ret = self.model.forward_common_lower(
+            ec2,
+            ext_atype,
+            nlist_truncated,
+            mapping_t,
+            fparam=fparam,
+            aparam=aparam,
+            do_atomic_virial=True,
+        )
+        e_ref = ref_ret["energy_redu"].detach().cpu().numpy()
+        e_trunc = trunc_ret["energy_redu"].detach().cpu().numpy()
+        assert not np.allclose(e_ref, e_trunc, rtol=1e-10, atol=1e-10), (
+            "Naive truncation of shuffled nlist should give different energy, "
+            "but got the same result.  The test data may not have enough "
+            "neighbors shuffled beyond sum(sel) to trigger the bug."
+        )
 
     def test_serialize_round_trip(self) -> None:
         """Test .pt2 → serialize_from_file → deserialize → model gives same outputs."""
