@@ -273,6 +273,74 @@ class TestDeepEvalEner(unittest.TestCase):
                         err_msg=f"nloc={nloc}, key={key}",
                     )
 
+    def test_oversized_nlist(self) -> None:
+        """Test that the exported model handles nlist with more neighbors than nnei.
+
+        In LAMMPS, the neighbor list is built with rcut + skin, so atoms
+        typically have more neighbors than sum(sel).  The compiled
+        format_nlist must sort by distance and truncate correctly.
+
+        The test shuffles neighbor columns so that some real (close) neighbors
+        appear AFTER sum(sel), forcing format_nlist to distance-sort rather
+        than just truncating by column index.  A model that truncates without
+        sorting would pick wrong neighbors and produce different energy/force.
+        """
+        exported = torch.export.load(self.tmpfile.name)
+        exported_mod = exported.module()
+
+        nnei = sum(self.sel)  # model's expected neighbor count
+        nloc = 5
+        ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam = _make_sample_inputs(
+            self.model, nloc=nloc
+        )
+
+        # Pad nlist with -1 columns, then shuffle column order so real
+        # neighbors are interspersed with absent ones beyond column sum(sel).
+        n_extra = nnei  # double the nlist width
+        nlist_padded = torch.cat(
+            [
+                nlist_t,
+                -torch.ones(
+                    (*nlist_t.shape[:2], n_extra),
+                    dtype=nlist_t.dtype,
+                    device=nlist_t.device,
+                ),
+            ],
+            dim=-1,
+        )
+        # Shuffle columns: move some real neighbors past sum(sel) boundary.
+        rng = np.random.default_rng(42)
+        perm = rng.permutation(nlist_padded.shape[-1])
+        nlist_shuffled = nlist_padded[:, :, perm]
+        assert nlist_shuffled.shape[-1] > nnei
+
+        # Reference: eager model with shuffled oversized nlist
+        ec = ext_coord.detach().requires_grad_(True)
+        ref_ret = self.model.forward_common_lower(
+            ec,
+            ext_atype,
+            nlist_shuffled,
+            mapping_t,
+            fparam=fparam,
+            aparam=aparam,
+            do_atomic_virial=True,
+        )
+
+        # Exported model with same shuffled oversized nlist
+        pte_ret = exported_mod(
+            ext_coord, ext_atype, nlist_shuffled, mapping_t, fparam, aparam
+        )
+
+        for key in ("energy", "energy_redu", "energy_derv_r", "energy_derv_c"):
+            if ref_ret[key] is not None and key in pte_ret:
+                np.testing.assert_allclose(
+                    ref_ret[key].detach().cpu().numpy(),
+                    pte_ret[key].detach().cpu().numpy(),
+                    rtol=1e-10,
+                    atol=1e-10,
+                    err_msg=f"oversized nlist, key={key}",
+                )
+
     def test_serialize_round_trip(self) -> None:
         """Test .pte → serialize_from_file → deserialize → model gives same outputs."""
         loaded_data = serialize_from_file(self.tmpfile.name)
@@ -767,6 +835,74 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
         np.testing.assert_allclose(
             v, ref["virial"].detach().cpu().numpy(), rtol=1e-10, atol=1e-10
         )
+
+    def test_oversized_nlist(self) -> None:
+        """Test that the exported model handles nlist with more neighbors than nnei.
+
+        In LAMMPS, the neighbor list is built with rcut + skin, so atoms
+        typically have more neighbors than sum(sel).  The compiled
+        format_nlist must sort by distance and truncate correctly.
+
+        The test shuffles neighbor columns so that some real (close) neighbors
+        appear AFTER sum(sel), forcing format_nlist to distance-sort rather
+        than just truncating by column index.  A model that truncates without
+        sorting would pick wrong neighbors and produce different energy/force.
+        """
+        exported = torch.export.load(self.pte_tmpfile.name)
+        exported_mod = exported.module()
+
+        nnei = sum(self.sel)  # model's expected neighbor count
+        nloc = 5
+        ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam = _make_sample_inputs(
+            self.model, nloc=nloc
+        )
+
+        # Pad nlist with -1 columns, then shuffle column order so real
+        # neighbors are interspersed with absent ones beyond column sum(sel).
+        n_extra = nnei  # double the nlist width
+        nlist_padded = torch.cat(
+            [
+                nlist_t,
+                -torch.ones(
+                    (*nlist_t.shape[:2], n_extra),
+                    dtype=nlist_t.dtype,
+                    device=nlist_t.device,
+                ),
+            ],
+            dim=-1,
+        )
+        # Shuffle columns: move some real neighbors past sum(sel) boundary.
+        rng = np.random.default_rng(42)
+        perm = rng.permutation(nlist_padded.shape[-1])
+        nlist_shuffled = nlist_padded[:, :, perm]
+        assert nlist_shuffled.shape[-1] > nnei
+
+        # Reference: eager model with shuffled oversized nlist
+        ec = ext_coord.detach().requires_grad_(True)
+        ref_ret = self.model.forward_common_lower(
+            ec,
+            ext_atype,
+            nlist_shuffled,
+            mapping_t,
+            fparam=fparam,
+            aparam=aparam,
+            do_atomic_virial=True,
+        )
+
+        # Exported model with same shuffled oversized nlist
+        pte_ret = exported_mod(
+            ext_coord, ext_atype, nlist_shuffled, mapping_t, fparam, aparam
+        )
+
+        for key in ("energy", "energy_redu", "energy_derv_r", "energy_derv_c"):
+            if ref_ret[key] is not None and key in pte_ret:
+                np.testing.assert_allclose(
+                    ref_ret[key].detach().cpu().numpy(),
+                    pte_ret[key].detach().cpu().numpy(),
+                    rtol=1e-10,
+                    atol=1e-10,
+                    err_msg=f"oversized nlist, key={key}",
+                )
 
     def test_serialize_round_trip(self) -> None:
         """Test .pt2 → serialize_from_file → deserialize → model gives same outputs."""
