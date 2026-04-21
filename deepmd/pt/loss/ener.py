@@ -127,7 +127,7 @@ class EnergyStdLoss(TaskLoss):
             1/N scaling. For MAE, the normalization remains 1/N. For Huber loss, residuals are
             first normalized by 1/N before applying the Huber formula, so this option does not
             provide a pure 1/N versus 1/N^2 toggle in that path. The default is false for
-            backward compatibility with models trained using deepmd-kit <= 3.0.1.
+            backward compatibility with models trained using deepmd-kit <= 3.1.3.
         **kwargs
             Other keyword arguments.
         """

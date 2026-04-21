@@ -3240,7 +3240,7 @@ def loss_ener() -> list[Argument]:
         "This matches per-atom-style reporting more closely for those terms. "
         "For MAE, the normalization remains 1/N. When `use_huber=True`, the residual is already scaled by 1/N before applying the Huber loss, "
         "so this flag may have limited or no effect for those terms. "
-        "The default is false for backward compatibility with models trained using deepmd-kit <= 3.0.1."
+        "The default is false for backward compatibility with models trained using deepmd-kit <= 3.1.3."
     )
     return [
         Argument(
@@ -3421,9 +3421,8 @@ def loss_ener_spin() -> list[Argument]:
         "For `loss_func='mse'`, if true, energy and virial losses are computed as intensive quantities, "
         "normalized by the square of the number of atoms (1/N^2); if false (default), the legacy normalization "
         "(1/N) is used. "
-        "For `loss_func='mae'`, this option does not change the existing MAE formulations; in particular, "
-        "the MAE energy and virial terms are not both normalized by 1/N. "
-        "The default is false for backward compatibility with models trained using deepmd-kit <= 3.0.1."
+        "For `loss_func='mae'`, this option does not change the existing MAE formulations;"
+        "The default is false for backward compatibility with models trained using deepmd-kit <= 3.1.3."
     )
     return [
         Argument(

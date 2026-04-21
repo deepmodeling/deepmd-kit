@@ -84,7 +84,7 @@ class EnergySpinLoss(TaskLoss):
             the legacy normalization (1/N) is used for those MSE terms. Note that this 1/N^2
             behavior does not apply to the MAE code paths: MAE energy/virial losses do not use
             the `intensive` exponent in the same way. The default is false for backward
-            compatibility with models trained using deepmd-kit <= 3.0.1.
+            compatibility with models trained using deepmd-kit <= 3.1.3.
         **kwargs
             Other keyword arguments.
         """

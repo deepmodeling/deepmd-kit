@@ -107,7 +107,7 @@ class EnerStdLoss(Loss):
         legacy normalization (1/N). When ``use_huber=True``, the residual is still
         normalized by 1/N before applying the Huber loss, so ``intensive`` may not
         change behavior in that path. The default is false for backward compatibility
-        with models trained using deepmd-kit <= 3.0.1.
+        with models trained using deepmd-kit <= 3.1.3.
     **kwargs
         Other keyword arguments.
     """

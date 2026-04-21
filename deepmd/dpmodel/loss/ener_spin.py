@@ -57,7 +57,7 @@ class EnergySpinLoss(Loss):
         terms consistent with per-atom RMSE reporting and less dependent on
         system size. This option does not change the MAE formulation, which is
         handled separately. The default is false for backward compatibility with
-        models trained using deepmd-kit <= 3.0.1.
+        models trained using deepmd-kit <= 3.1.3.
     **kwargs
         Other keyword arguments.
     """
