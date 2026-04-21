@@ -319,11 +319,9 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
               .to(device);
     }
 
-    // Build raw nlist tensor — pass all neighbors, padded to at least nnei+1
-    // columns so the .pt2 model's compiled format_nlist sorts on-device.
-    firstneigh_tensor = createNlistTensor(nlist_data.jlist, nnei + 1)
-                            .to(torch::kInt64)
-                            .to(device);
+    // Flatten raw nlist — the .pt2 model sorts by distance on-device.
+    firstneigh_tensor =
+        createNlistTensor(nlist_data.jlist).to(torch::kInt64).to(device);
   }
 
   // Build fparam/aparam tensors
@@ -601,10 +599,9 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
       torch::from_blob(atype_64.data(), {1, nall}, int_options)
           .clone()
           .to(device);
-  // Build raw nlist tensor — pass all neighbors, padded to at least nnei+1
-  // columns so the .pt2 model's compiled format_nlist sorts on-device.
+  // Flatten raw nlist — the .pt2 model sorts by distance on-device.
   at::Tensor nlist_tensor =
-      createNlistTensor(nlist_raw, nnei + 1).to(torch::kInt64).to(device);
+      createNlistTensor(nlist_raw).to(torch::kInt64).to(device);
   std::vector<std::int64_t> mapping_64(mapping_vec.begin(), mapping_vec.end());
   at::Tensor mapping_tensor =
       torch::from_blob(mapping_64.data(), {1, nall}, int_options)
