@@ -173,7 +173,12 @@ class Case:
             out_file = tempfile.NamedTemporaryFile(
                 suffix=suffix, dir=tempdir.name, delete=False, prefix=self.key + "_"
             ).name
-        convert_backend(INPUT=self.filename, OUTPUT=out_file)
+        # For .pte/.pt2, export with atomic virial so tests can verify
+        # per-atom virial against reference values.
+        kwargs: dict = {}
+        if suffix in (".pte", ".pt2"):
+            kwargs["atomic_virial"] = True
+        convert_backend(INPUT=self.filename, OUTPUT=out_file, **kwargs)
         return out_file
 
 
