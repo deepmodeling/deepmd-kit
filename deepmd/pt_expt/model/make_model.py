@@ -371,19 +371,16 @@ def make_model(
                     do_atomic_virial=do_atomic_virial,
                 )
 
-            # Force format_nlist to always use the sort branch during tracing.
-            model.need_sorted_nlist_for_lower = lambda: True
-            try:
-                traced = make_fx(fn, **make_fx_kwargs)(
-                    extended_coord,
-                    extended_atype,
-                    nlist,
-                    mapping,
-                    fparam,
-                    aparam,
-                )
-            finally:
-                del model.need_sorted_nlist_for_lower
+            # The +1 pad inside fn guarantees n_nnei > sum(sel) at trace
+            # time, so _format_nlist's distance-sort branch is always traced.
+            traced = make_fx(fn, **make_fx_kwargs)(
+                extended_coord,
+                extended_atype,
+                nlist,
+                mapping,
+                fparam,
+                aparam,
+            )
             return traced
 
     return CM

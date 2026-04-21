@@ -119,21 +119,17 @@ class SpinModel(SpinModelDP):
                 do_atomic_virial=do_atomic_virial,
             )
 
-        # Force format_nlist to always use the sort branch during tracing.
-        backbone = model.backbone_model
-        backbone.need_sorted_nlist_for_lower = lambda: True
-        try:
-            traced = make_fx(fn, **make_fx_kwargs)(
-                extended_coord,
-                extended_atype,
-                extended_spin,
-                nlist,
-                mapping,
-                fparam,
-                aparam,
-            )
-        finally:
-            del backbone.need_sorted_nlist_for_lower
+        # The +1 pad inside fn guarantees n_nnei > sum(sel) at trace
+        # time, so _format_nlist's distance-sort branch is always traced.
+        traced = make_fx(fn, **make_fx_kwargs)(
+            extended_coord,
+            extended_atype,
+            extended_spin,
+            nlist,
+            mapping,
+            fparam,
+            aparam,
+        )
         return traced
 
     def forward_common_lower(
