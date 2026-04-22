@@ -206,7 +206,7 @@ def _build_dynamic_shapes(
     nframes_dim = torch.export.Dim("nframes", min=1)
     nall_dim = torch.export.Dim("nall", min=1)
     nloc_dim = torch.export.Dim("nloc", min=1)
-    nnei_dim = torch.export.Dim("nnei", min=max(2, model_nnei))
+    nnei_dim = torch.export.Dim("nnei", min=max(1, model_nnei))
 
     if has_spin:
         # (ext_coord, ext_atype, ext_spin, nlist, mapping, fparam, aparam)
