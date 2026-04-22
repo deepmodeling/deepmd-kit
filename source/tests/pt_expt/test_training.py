@@ -61,17 +61,6 @@ _DESCRIPTOR_DPA1_NO_ATTN = {
     "seed": 1,
 }
 
-_DESCRIPTOR_DPA1_WITH_ATTN = {
-    "type": "dpa1",
-    "sel": 12,
-    "rcut_smth": 0.50,
-    "rcut": 3.00,
-    "neuron": [8, 16],
-    "axis_neuron": 4,
-    "attn_layer": 2,
-    "precision": "float64",
-    "seed": 1,
-}
 _DESCRIPTOR_DPA2 = {
     "type": "dpa2",
     "repinit": {
