@@ -31,10 +31,8 @@ class XASModel(PropertyModel):
     Two corrections are applied in ``forward`` that are absent in the generic
     :class:`PropertyModel`:
 
-    1. **sel_type reduction** — only atoms of the absorbing type (looked up
-       from ``fparam`` via ``xas_edge_to_seltype``) contribute to the
-       reduced spectrum.  The parent reduction sums *all* atoms, which is
-       incorrect for XAS where only one atom type absorbs.
+    1. **sel_type reduction** — only atoms of the absorbing type contribute to
+       the reduced spectrum.  
 
     2. **e_ref restoration** — during training the energy dimensions (E_min,
        E_max at indices 0–1) are trained against chemical shifts
@@ -64,7 +62,35 @@ class XASModel(PropertyModel):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
+        sel_type: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
+        """Forward pass with XAS-specific reductions.
+
+        Parameters
+        ----------
+        coord : torch.Tensor
+            Coordinates, shape [nf, nloc, 3].
+        atype : torch.Tensor
+            Atom types, shape [nf, nloc].
+        box : torch.Tensor | None
+            Box vectors, shape [nf, 9].
+        fparam : torch.Tensor | None
+            Frame parameters (one-hot edge encoding), shape [nf, nfparam].
+        aparam : torch.Tensor | None
+            Atom parameters, shape [nf, nloc, naparam].
+        do_atomic_virial : bool
+            Whether to compute atomic virial.
+        sel_type : torch.Tensor | None
+            Absorbing atom type per frame, shape [nf]. Required when multiple
+            element types share the same edge (e.g., K-edge for H/Li/Be/...).
+            If None, falls back to legacy ``xas_edge_to_seltype`` mapping which
+            only works when each edge has exactly one absorbing element type.
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            Model predictions including reduced XAS spectrum.
+        """
         model_predict = super().forward(
             coord, atype, box, fparam, aparam, do_atomic_virial
         )
@@ -72,21 +98,27 @@ class XASModel(PropertyModel):
             return model_predict
 
         am = self.atomic_model
-        edge_to_sel = getattr(am, "xas_edge_to_seltype", None)
-        if edge_to_sel is None:
-            return model_predict
-
         var_name = self.get_var_name()
         atom_xas = model_predict[f"atom_{var_name}"]  # [nf, nloc, task_dim]
         nf = atype.shape[0]
 
-        # Derive absorbing atom type from one-hot fparam
-        edge_idx = fparam.reshape(nf, -1).argmax(dim=-1).clamp(
-            0, edge_to_sel.shape[0] - 1
-        )  # [nf]
-        sel_type_per_frame = edge_to_sel[edge_idx.to(edge_to_sel.device)].to(
-            atype.device
-        )  # [nf]
+        # Derive edge_idx from one-hot fparam
+        nfparam = fparam.reshape(nf, -1).shape[-1]
+        edge_idx = fparam.reshape(nf, -1).argmax(dim=-1).clamp(0, nfparam - 1)  # [nf]
+
+        # Determine absorbing atom type per frame
+        if sel_type is not None:
+            # Explicit sel_type provided — use directly
+            sel_type_per_frame = sel_type.to(atype.device).long()
+        else:
+            # Legacy fallback: use xas_edge_to_seltype mapping
+            # WARNING: only correct when each edge has exactly one absorbing type
+            edge_to_sel = getattr(am, "xas_edge_to_seltype", None)
+            if edge_to_sel is None:
+                return model_predict
+            sel_type_per_frame = edge_to_sel[edge_idx.to(edge_to_sel.device)].to(
+                atype.device
+            )
 
         # Sum only sel_type atoms per frame
         mask_3d = atype.unsqueeze(-1) == sel_type_per_frame.view(nf, 1, 1)  # [nf, nloc, 1]
