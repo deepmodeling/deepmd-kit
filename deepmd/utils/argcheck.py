@@ -3757,7 +3757,9 @@ def validation_data_args() -> list[
 - list: the length of which is the same as the {link_sys}. The batch size of each system is given by the elements of the list.\n\n\
 - int: all {link_sys} use the same batch size.\n\n\
 - string "auto": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than 32.\n\n\
-- string "auto:N": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than N.'
+- string "auto:N": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than N.\n\n\
+- string "max:N": automatically determines the batch size so that the batch_size times the number of atoms in the system is no more than N.\n\n\
+- string "filter:N": the same as `"max:N"` but removes the systems with the number of atoms larger than `N` from the data set.'
     doc_auto_prob_style = 'Determine the probability of systems automatically. The method is assigned by this key and can be\n\n\
 - "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()\n\n\
 - "prob_sys_size" : the probability of a system is proportional to the number of batches in the system\n\n\
