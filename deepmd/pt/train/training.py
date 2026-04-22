@@ -164,7 +164,7 @@ class Trainer:
 
         # Iteration config
         self.num_steps = training_params.get("numb_steps")
-        self.num_epoch = training_params.get("num_epoch")
+        self.num_epoch = training_params.get("numb_epoch")
         self.num_epoch_dict = training_params.get("num_epoch_dict")
         self.disp_file = training_params.get("disp_file", "lcurve.out")
         self.disp_freq = training_params.get("disp_freq", 1000)
