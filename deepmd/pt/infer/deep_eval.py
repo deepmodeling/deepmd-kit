@@ -170,6 +170,12 @@ class DeepEval(DeepEvalBackend):
             if not self.input_param.get("hessian_mode") and not no_jit:
                 model = torch.jit.script(model)
             self.dp = ModelWrapper(model)
+            # Filter out loss-related keys that may be present in old training checkpoints.
+            # This is for backward compatibility with checkpoints saved before the
+            # XASLoss refactor that removed persistent buffers from the loss module.
+            state_dict = {
+                k: v for k, v in state_dict.items() if not k.startswith("loss.")
+            }
             self.dp.load_state_dict(state_dict)
         elif str(self.model_path).endswith(".pth"):
             extra_files = {"data_modifier.pth": ""}

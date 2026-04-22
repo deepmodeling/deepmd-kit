@@ -948,8 +948,7 @@ def test_property(
         for i in range(numb_test):
             t = sel_type_int[i]
             mask = atype_frames[i] == t  # [natoms]
-            count = max(mask.sum(), 1)
-            property[i] = atom_prop[i][mask].sum(axis=0) / count
+            property[i] = atom_prop[i][mask].sum(axis=0)  # sum, not mean
 
         # Add back the per-(type, edge) energy reference so output is in
         # absolute eV (matching label format).  xas_e_ref is saved in the
@@ -971,6 +970,27 @@ def test_property(
                 t = sel_type_int[i]
                 e = int(edge_idx_all[i])
                 property[i, :2] += e_ref_np[t, e]
+
+        # Restore intensity dims: pred_abs = pred * intensity_std + intensity_ref
+        try:
+            am = dp.deep_eval.dp.model["Default"].atomic_model
+            xas_intensity_ref = getattr(am, "xas_intensity_ref", None)
+            xas_intensity_std = getattr(am, "xas_intensity_std", None)
+        except AttributeError:
+            xas_intensity_ref = None
+            xas_intensity_std = None
+        if xas_intensity_ref is not None and xas_intensity_std is not None and fparam is not None:
+            import torch as _torch
+
+            edge_idx_all = (
+                _torch.tensor(fparam.reshape(numb_test, -1)).argmax(dim=-1).numpy()
+            )
+            int_ref_np = xas_intensity_ref.cpu().numpy()  # [ntypes, nfparam, n_pts]
+            int_std_np = xas_intensity_std.cpu().numpy()  # [ntypes, nfparam, n_pts]
+            for i in range(numb_test):
+                t = sel_type_int[i]
+                e = int(edge_idx_all[i])
+                property[i, 2:] = property[i, 2:] * int_std_np[t, e] + int_ref_np[t, e]
     else:
         property = ret[0]
 

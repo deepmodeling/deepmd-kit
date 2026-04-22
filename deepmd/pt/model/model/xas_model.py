@@ -62,6 +62,24 @@ class XASModel(PropertyModel):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
+    ) -> dict[str, torch.Tensor]:
+        """Forward pass with XAS-specific reductions.
+
+        For inference with multi-type edges, use :meth:`forward_xas` instead
+        which accepts an explicit ``sel_type`` argument.
+        """
+        return self.forward_xas(
+            coord, atype, box, fparam, aparam, do_atomic_virial, sel_type=None
+        )
+
+    def forward_xas(
+        self,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        box: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        do_atomic_virial: bool = False,
         sel_type: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Forward pass with XAS-specific reductions.
@@ -91,15 +109,26 @@ class XASModel(PropertyModel):
         dict[str, torch.Tensor]
             Model predictions including reduced XAS spectrum.
         """
-        model_predict = super().forward(
-            coord, atype, box, fparam, aparam, do_atomic_virial
+        # Call forward_common directly (same as PropertyModel.forward)
+        model_ret = self.forward_common(
+            coord,
+            atype,
+            box,
+            fparam=fparam,
+            aparam=aparam,
+            do_atomic_virial=do_atomic_virial,
         )
+
+        var_name = self.get_var_name()
+        model_predict: dict[str, torch.Tensor] = {}
+        model_predict[f"atom_{var_name}"] = model_ret[var_name]
+
         if fparam is None or fparam.numel() == 0:
+            model_predict[var_name] = model_ret[f"{var_name}_redu"]
             return model_predict
 
         am = self.atomic_model
-        var_name = self.get_var_name()
-        atom_xas = model_predict[f"atom_{var_name}"]  # [nf, nloc, task_dim]
+        atom_xas = model_ret[var_name]  # [nf, nloc, task_dim]
         nf = atype.shape[0]
 
         # Derive edge_idx from one-hot fparam

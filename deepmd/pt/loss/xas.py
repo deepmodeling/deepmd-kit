@@ -120,33 +120,9 @@ class XASLoss(TaskLoss):
         self.pref_energy = pref_energy
         self.pref_spectrum = pref_spectrum
         self.smooth_reg = smooth_reg
-
-        n_pts = max(task_dim - 2, 0)
-
-        # e_ref[t, e, 0/1] = mean E_min / E_max for (absorbing_type t, edge e).
-        # Shape [ntypes, nfparam, 2]. Filled by compute_output_stats; zero until then.
-        self.register_buffer(
-            "e_ref",
-            torch.zeros(ntypes, nfparam, 2, dtype=env.GLOBAL_PT_FLOAT_PRECISION),
-        )
-        # e_std[t, e, 0/1] = std of chemical shifts; used to scale out_std for energy dims.
-        self.register_buffer(
-            "e_std",
-            torch.ones(ntypes, nfparam, 2, dtype=env.GLOBAL_PT_FLOAT_PRECISION),
-        )
-        # intensity_ref[t, e, i] = per-point mean intensity for (t, e) group.
-        # Shape [ntypes, nfparam, n_pts]. Filled by compute_output_stats; zero until then.
-        self.register_buffer(
-            "intensity_ref",
-            torch.zeros(ntypes, nfparam, n_pts, dtype=env.GLOBAL_PT_FLOAT_PRECISION),
-        )
-        # intensity_std[t, e, i] = per-point std of intensities; floored at 1e-6.
-        # All frames in a (t, e) group are divided by the same constant → equal
-        # gradient magnitudes across frames (cf. PropertyLoss / out_std approach).
-        self.register_buffer(
-            "intensity_std",
-            torch.ones(ntypes, nfparam, n_pts, dtype=env.GLOBAL_PT_FLOAT_PRECISION),
-        )
+        # Reference to model's atomic_model, set by compute_output_stats.
+        # All statistics (e_ref, intensity_ref, intensity_std) live in the model.
+        self._atomic_model: "torch.nn.Module | None" = None
 
     # ------------------------------------------------------------------
     # Stat phase
@@ -248,81 +224,92 @@ class XASLoss(TaskLoss):
                 f"(n={len(vals)})"
             )
 
-        self.e_ref.copy_(e_ref)
-        self.e_std.copy_(e_std)
-        self.intensity_ref.copy_(intensity_ref)
-        self.intensity_std.copy_(intensity_std)
         log.info(
             f"XASLoss: stats computed for {len(accum)} (sel_type, edge) combinations."
         )
 
-        if model is not None:
-            try:
-                am = model.atomic_model
+        if model is None:
+            log.warning(
+                "XASLoss.compute_output_stats: model is None; "
+                "cannot store statistics. Training will fail."
+            )
+            return
 
-                # Copy e_ref / intensity stats into model buffers so they are
-                # saved in the checkpoint and available at inference time.
-                if getattr(am, "xas_e_ref", None) is not None:
-                    am.xas_e_ref.copy_(e_ref.to(am.xas_e_ref.dtype))
-                    log.info("XASLoss: copied e_ref → model.atomic_model.xas_e_ref.")
+        try:
+            am = model.atomic_model
+            self._atomic_model = am
 
-                if getattr(am, "xas_intensity_ref", None) is not None:
-                    am.xas_intensity_ref.copy_(
-                        intensity_ref.to(am.xas_intensity_ref.dtype)
-                    )
-                    am.xas_intensity_std.copy_(
-                        intensity_std.to(am.xas_intensity_std.dtype)
-                    )
-                    log.info(
-                        "XASLoss: copied intensity_ref/std → "
-                        "model.atomic_model.xas_intensity_ref/std."
-                    )
-
-                # edge_idx → absorbing atom type mapping (needed by inference forward).
-                if getattr(am, "xas_edge_to_seltype", None) is not None:
-                    mapping = torch.zeros(
-                        self.nfparam,
-                        dtype=torch.long,
-                        device=am.xas_edge_to_seltype.device,
-                    )
-                    for (t, e) in accum.keys():
-                        mapping[e] = t
-                    am.xas_edge_to_seltype.copy_(mapping)
-                    log.info("XASLoss: populated xas_edge_to_seltype mapping.")
-
-                key_idx = am.bias_keys.index(self.var_name)
-
-                # Energy dims: out_bias = 0, out_std = e_std_global
-                # → NN predicts chemical shifts in ±O(1) normalised units.
-                populated = e_std.abs().gt(1.0)
-                if populated.any():
-                    e_std_global = e_std[populated].mean(dim=0)  # [2]
-                else:
-                    e_std_global = torch.ones(2, dtype=e_std.dtype, device=e_std.device)
-                with torch.no_grad():
-                    am.out_bias[key_idx, :, :2] = 0.0
-                    am.out_std[key_idx, :, :2] = e_std_global.to(am.out_std.dtype)
-                log.info(
-                    f"XASLoss: out_bias[:,:2]=0, out_std[:,:2]={e_std_global.tolist()} eV."
+            # Store e_ref into model buffer (used for inference).
+            if getattr(am, "xas_e_ref", None) is not None:
+                am.xas_e_ref.copy_(e_ref.to(am.xas_e_ref.dtype))
+                log.info("XASLoss: stored e_ref → model.atomic_model.xas_e_ref.")
+            else:
+                raise RuntimeError(
+                    "Model missing xas_e_ref buffer. Use DPXASAtomicModel."
                 )
 
-                # Intensity dims: out_bias = 0, out_std = 1
-                # → NN directly outputs the standardised residual
-                #   (label - intensity_ref) / intensity_std.
-                # Since intensity_std is a fixed constant per (t,e) group, the
-                # gradient magnitude is identical for every frame in the group —
-                # the same mechanism PropertyLoss uses with its global out_std.
-                if n_pts > 0:
-                    with torch.no_grad():
-                        am.out_bias[key_idx, :, 2:] = 0.0
-                        am.out_std[key_idx, :, 2:] = 1.0
-                    log.info(
-                        "XASLoss: out_bias[:,2:]=0, out_std[:,2:]=1 "
-                        "(NN predicts standardised intensity)."
-                    )
+            # Store intensity statistics into model buffers.
+            if getattr(am, "xas_intensity_ref", None) is not None:
+                am.xas_intensity_ref.copy_(
+                    intensity_ref.to(am.xas_intensity_ref.dtype)
+                )
+                am.xas_intensity_std.copy_(
+                    intensity_std.to(am.xas_intensity_std.dtype)
+                )
+                log.info(
+                    "XASLoss: stored intensity_ref/std → "
+                    "model.atomic_model.xas_intensity_ref/std."
+                )
+            else:
+                raise RuntimeError(
+                    "Model missing xas_intensity_ref buffer. Use DPXASAtomicModel."
+                )
 
-            except Exception as exc:
-                log.warning(f"XASLoss: could not update model stats: {exc}")
+            # edge_idx → absorbing atom type mapping (needed by inference forward).
+            if getattr(am, "xas_edge_to_seltype", None) is not None:
+                mapping = torch.zeros(
+                    self.nfparam,
+                    dtype=torch.long,
+                    device=am.xas_edge_to_seltype.device,
+                )
+                for (t, e) in accum.keys():
+                    mapping[e] = t
+                am.xas_edge_to_seltype.copy_(mapping)
+                log.info("XASLoss: populated xas_edge_to_seltype mapping.")
+
+            key_idx = am.bias_keys.index(self.var_name)
+
+            # Energy dims: out_bias = 0, out_std = e_std_global
+            # → NN predicts chemical shifts in ±O(1) normalised units.
+            populated = e_std.abs().gt(1.0)
+            if populated.any():
+                e_std_global = e_std[populated].mean(dim=0)  # [2]
+            else:
+                e_std_global = torch.ones(2, dtype=e_std.dtype, device=e_std.device)
+            with torch.no_grad():
+                am.out_bias[key_idx, :, :2] = 0.0
+                am.out_std[key_idx, :, :2] = e_std_global.to(am.out_std.dtype)
+            log.info(
+                f"XASLoss: out_bias[:,:2]=0, out_std[:,:2]={e_std_global.tolist()} eV."
+            )
+
+            # Intensity dims: out_bias = 0, out_std = 1
+            # → NN directly outputs the standardised residual
+            #   (label - intensity_ref) / intensity_std.
+            # Since intensity_std is a fixed constant per (t,e) group, the
+            # gradient magnitude is identical for every frame in the group —
+            # the same mechanism PropertyLoss uses with its global out_std.
+            if n_pts > 0:
+                with torch.no_grad():
+                    am.out_bias[key_idx, :, 2:] = 0.0
+                    am.out_std[key_idx, :, 2:] = 1.0
+                log.info(
+                    "XASLoss: out_bias[:,2:]=0, out_std[:,2:]=1 "
+                    "(NN predicts standardised intensity)."
+                )
+
+        except Exception as exc:
+            log.warning(f"XASLoss: could not update model stats: {exc}")
 
     # ------------------------------------------------------------------
     # Forward
@@ -350,20 +337,31 @@ class XASLoss(TaskLoss):
 
         label_xas = label[self.var_name]  # [nf, task_dim]
 
-        # --- per-(type, edge) stat lookup ---
+        # --- per-(type, edge) stat lookup from model buffers ---
         fparam = input_dict.get("fparam")
         if fparam is not None and fparam.numel() > 0:
             edge_idx = fparam.reshape(nf, -1).argmax(dim=-1).clamp(0, self.nfparam - 1)
         else:
             edge_idx = torch.zeros(nf, dtype=torch.long, device=pred.device)
 
-        _dev = self.e_ref.device
+        # Get statistics from model's atomic_model buffers.
+        am = self._atomic_model
+        if am is None:
+            raise RuntimeError(
+                "XASLoss: _atomic_model not set. Call compute_output_stats first."
+            )
+
+        e_ref = am.xas_e_ref  # [ntypes, nfparam, 2]
+        intensity_ref = am.xas_intensity_ref  # [ntypes, nfparam, n_pts]
+        intensity_std = am.xas_intensity_std  # [ntypes, nfparam, n_pts]
+
+        _dev = e_ref.device
         _sel = sel_type.to(_dev)
         _eidx = edge_idx.to(_dev)
 
-        e_ref_frame = self.e_ref[_sel, _eidx].to(pred.device)          # [nf, 2]
-        intensity_ref_frame = self.intensity_ref[_sel, _eidx].to(pred.device)  # [nf, n_pts]
-        intensity_std_frame = self.intensity_std[_sel, _eidx].to(pred.device)  # [nf, n_pts]
+        e_ref_frame = e_ref[_sel, _eidx].to(pred.device)  # [nf, 2]
+        intensity_ref_frame = intensity_ref[_sel, _eidx].to(pred.device)  # [nf, n_pts]
+        intensity_std_frame = intensity_std[_sel, _eidx].to(pred.device)  # [nf, n_pts]
 
         # Normalised targets:
         #   energy dims   → chemical shift:  label - e_ref          (eV scale, ≈ ±few eV)
