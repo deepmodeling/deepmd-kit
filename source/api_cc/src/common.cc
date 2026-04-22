@@ -295,13 +295,13 @@ void deepmd::NeighborListData::shuffle(const AtomMap& map) {
 void deepmd::NeighborListData::shuffle(const std::vector<int>& fwd_map) {
   int nloc = fwd_map.size();
   for (unsigned ii = 0; ii < ilist.size(); ++ii) {
-    if (ilist[ii] < nloc) {
+    if (ilist[ii] >= 0 && ilist[ii] < nloc) {
       ilist[ii] = fwd_map[ilist[ii]];
     }
   }
   for (unsigned ii = 0; ii < jlist.size(); ++ii) {
     for (unsigned jj = 0; jj < jlist[ii].size(); ++jj) {
-      if (jlist[ii][jj] < nloc) {
+      if (jlist[ii][jj] >= 0 && jlist[ii][jj] < nloc) {
         jlist[ii][jj] = fwd_map[jlist[ii][jj]];
       }
     }

@@ -471,3 +471,45 @@ TYPED_TEST(TestInferDeepSpinDpaPtExptNopbc, cpu_lmp_nlist_atomic) {
     EXPECT_LT(fabs(atom_vir[ii] - expected_atom_v[ii]), EPSILON);
   }
 }
+
+TYPED_TEST(TestInferDeepSpinDpaPtExptNopbc, cpu_lmp_nlist_oversized) {
+  using VALUETYPE = TypeParam;
+  const std::vector<VALUETYPE>& coord = this->coord;
+  const std::vector<VALUETYPE>& spin = this->spin;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  std::vector<VALUETYPE>& expected_f = this->expected_f;
+  std::vector<VALUETYPE>& expected_fm = this->expected_fm;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
+  int& natoms = this->natoms;
+  double& expected_tot_e = this->expected_tot_e;
+  deepmd::DeepSpin& dp = this->dp;
+  double ener;
+  std::vector<VALUETYPE> force, force_mag, virial;
+
+  std::vector<std::vector<int> > nlist_data = {
+      {1, 2, 3, 4, 5}, {0, 2, 3, 4, 5}, {0, 1, 3, 4, 5},
+      {0, 1, 2, 4, 5}, {0, 1, 2, 3, 5}, {0, 1, 2, 3, 4}};
+  // Pad with extra -1 entries and shuffle to create oversized nlist
+  std::vector<std::vector<int> > nlist_oversized;
+  _pad_shuffle_nlist(nlist_oversized, nlist_data, 50);
+  std::vector<int> ilist(natoms), numneigh(natoms);
+  std::vector<int*> firstneigh(natoms);
+  deepmd::InputNlist inlist(natoms, &ilist[0], &numneigh[0], &firstneigh[0]);
+  convert_nlist(inlist, nlist_oversized);
+  dp.compute(ener, force, force_mag, virial, coord, spin, atype, box, 0, inlist,
+             0);
+
+  EXPECT_EQ(force.size(), natoms * 3);
+  EXPECT_EQ(force_mag.size(), natoms * 3);
+  EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
+  for (int ii = 0; ii < natoms * 3; ++ii) {
+    EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
+    EXPECT_LT(fabs(force_mag[ii] - expected_fm[ii]), EPSILON);
+  }
+  EXPECT_FALSE(virial.empty()) << "Virial should not be empty";
+  EXPECT_EQ(virial.size(), 9);
+  for (int ii = 0; ii < 3 * 3; ++ii) {
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+  }
+}

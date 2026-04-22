@@ -31,22 +31,6 @@ void DeepSpinPT::translate_error(std::function<void()> f) {
   }
 }
 
-torch::Tensor createNlistTensor2(const std::vector<std::vector<int>>& data) {
-  size_t total_size = 0;
-  for (const auto& row : data) {
-    total_size += row.size();
-  }
-  std::vector<int> flat_data;
-  flat_data.reserve(total_size);
-  for (const auto& row : data) {
-    flat_data.insert(flat_data.end(), row.begin(), row.end());
-  }
-
-  torch::Tensor flat_tensor = torch::tensor(flat_data, torch::kInt32);
-  int nloc = data.size();
-  int nnei = nloc > 0 ? total_size / nloc : 0;
-  return flat_tensor.view({1, nloc, nnei});
-}
 DeepSpinPT::DeepSpinPT() : inited(false) {}
 DeepSpinPT::DeepSpinPT(const std::string& model,
                        const int& gpu_rank,
@@ -209,7 +193,7 @@ void DeepSpinPT::compute(ENERGYVTYPE& ener,
               .to(device);
     }
   }
-  at::Tensor firstneigh = createNlistTensor2(nlist_data.jlist);
+  at::Tensor firstneigh = createNlistTensor(nlist_data.jlist);
   firstneigh_tensor = firstneigh.to(torch::kInt64).to(device);
   bool do_atom_virial_tensor = atomic;
   c10::optional<torch::Tensor> fparam_tensor;

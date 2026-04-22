@@ -444,36 +444,5 @@ inline std::string read_zip_entry(const std::string& zip_path,
 // The C++ side just flattens the jagged nlist into a rectangular tensor.
 // ============================================================================
 
-/**
- * @brief Flatten a jagged neighbor list into a tensor.
- *
- * Each row in `data` may have a different number of neighbors.  This function
- * pads short rows with -1 to produce a tensor of shape
- * [1, nloc, max_row_length].  No truncation or distance sorting is done —
- * the .pt2 model's compiled format_nlist handles that on-device.
- *
- * @param data  Jagged neighbor list: data[i] contains neighbor indices
- *              for local atom i.
- */
-inline torch::Tensor createNlistTensor(
-    const std::vector<std::vector<int>>& data) {
-  int nloc = static_cast<int>(data.size());
-  int nnei = 0;
-  for (int ii = 0; ii < nloc; ++ii) {
-    nnei = std::max(nnei, static_cast<int>(data[ii].size()));
-  }
-  if (nnei == 0) {
-    nnei = 1;  // at least 1 column to avoid empty tensor
-  }
-  std::vector<int> flat_data(static_cast<size_t>(nloc) * nnei, -1);
-  for (int ii = 0; ii < nloc; ++ii) {
-    for (size_t jj = 0; jj < data[ii].size(); ++jj) {
-      flat_data[static_cast<size_t>(ii) * nnei + jj] = data[ii][jj];
-    }
-  }
-  torch::Tensor flat_tensor = torch::tensor(flat_data, torch::kInt32);
-  return flat_tensor.view({1, nloc, nnei});
-}
-
 }  // namespace ptexpt
 }  // namespace deepmd

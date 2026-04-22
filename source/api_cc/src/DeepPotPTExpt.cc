@@ -12,12 +12,12 @@
 
 #include "SimulationRegion.h"
 #include "common.h"
+#include "commonPT.h"
 #include "commonPTExpt.h"
 #include "device.h"
 #include "errors.h"
 #include "neighbor_list.h"
 
-using deepmd::ptexpt::createNlistTensor;
 using deepmd::ptexpt::parse_json;
 using deepmd::ptexpt::read_zip_entry;
 
@@ -293,7 +293,7 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
 
     // Flatten raw nlist — the .pt2 model sorts by distance on-device.
     firstneigh_tensor =
-        createNlistTensor(nlist_data.jlist).to(torch::kInt64).to(device);
+        createNlistTensor(nlist_data.jlist, nnei).to(torch::kInt64).to(device);
   }
 
   // Build fparam/aparam tensors (cast to float64 for the model)
@@ -548,7 +548,7 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
           .to(device);
   // Flatten raw nlist — the .pt2 model sorts by distance on-device.
   at::Tensor nlist_tensor =
-      createNlistTensor(nlist_raw).to(torch::kInt64).to(device);
+      createNlistTensor(nlist_raw, nnei).to(torch::kInt64).to(device);
   std::vector<std::int64_t> mapping_64(mapping_vec.begin(), mapping_vec.end());
   at::Tensor mapping_tensor =
       torch::from_blob(mapping_64.data(), {1, nall}, int_options)
