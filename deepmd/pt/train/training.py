@@ -183,9 +183,7 @@ class Trainer:
                 f"training.zero_stage must be 0, 1, 2, or 3, got {self.zero_stage}"
             )
         if self.zero_stage > 0 and not self.is_distributed:
-            raise ValueError(
-                "training.zero_stage requires distributed launch via torchrun."
-            )
+            self.zero_stage = 0
         if self.zero_stage > 0 and self.change_bias_after_training:
             raise ValueError(
                 "training.zero_stage does not support change_bias_after_training."
