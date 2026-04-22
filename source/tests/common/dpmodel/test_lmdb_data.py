@@ -821,6 +821,46 @@ class TestMaxFilterBatchSize(unittest.TestCase):
         # after re-normalisation → no expansion needed.
         self.assertEqual(block_targets, [])
 
+    def test_filter_dataset_index_is_contiguous_and_live(self):
+        """After filter:N, every i in range(len(reader)) is a live retrievable frame.
+
+        Regression for the earlier indexing bug where ``len(reader)`` shrank
+        to the retained count but ``__getitem__`` still indexed the original
+        LMDB key space. Under filter:10 the mixed-nloc LMDB drops the two
+        12-atom frames at original keys 8 & 9; we check here that:
+
+        * every dataset index ``0..len(reader)-1`` decodes without raising
+          and never returns a filtered-out frame, and
+        * ``fid`` reports the stable original LMDB key, not the dataset
+          index (so downstream logs survive the remap), and
+        * out-of-range indices still raise IndexError.
+        """
+        reader = LmdbDataReader(
+            self._mixed_path, self._type_map, batch_size="filter:10"
+        )
+        self.assertEqual(len(reader), 8)
+        self.assertEqual(len(reader._retained_keys), 8)
+        self.assertEqual(reader._retained_keys, [0, 1, 2, 3, 4, 5, 6, 7])
+
+        seen_fids = []
+        for i in range(len(reader)):
+            frame = reader[i]
+            self.assertLessEqual(frame["atype"].shape[0], 10)
+            self.assertEqual(
+                frame["fid"],
+                reader._retained_keys[i],
+                msg=f"fid should be the original LMDB key, not dataset index {i}",
+            )
+            seen_fids.append(frame["fid"])
+        # Dropped original keys (8, 9) must never appear as fids.
+        self.assertNotIn(8, seen_fids)
+        self.assertNotIn(9, seen_fids)
+
+        with self.assertRaises(IndexError):
+            reader[len(reader)]
+        with self.assertRaises(IndexError):
+            reader[-1]
+
     def test_sampler_with_filter(self):
         """SameNlocBatchSampler only emits retained, same-nloc frames."""
         reader = LmdbDataReader(
@@ -841,9 +881,11 @@ class TestMaxFilterBatchSize(unittest.TestCase):
         for batch in all_batches:
             nlocs = {reader.frame_nlocs[idx] for idx in batch}
             self.assertEqual(len(nlocs), 1)
-        # The 12-atom frames (indices 8, 9) are never reached.
-        for idx in (8, 9):
-            self.assertNotIn(idx, all_indices)
+        # The 12-atom frames were at original LMDB keys 8, 9; they must
+        # never be reachable via any emitted dataset index.
+        reached_original_keys = {reader._retained_keys[idx] for idx in all_indices}
+        for original_key in (8, 9):
+            self.assertNotIn(original_key, reached_original_keys)
 
     def test_auto_prob_with_filter_still_works(self):
         """compute_block_targets + sampler survive a fully-dropped block."""

@@ -298,33 +298,34 @@ class LmdbDataReader:
 
         # Scan per-frame nloc only when needed for same-nloc batching.
         # For mixed_batch=True, skip the scan entirely (future: padding handles it).
-        # We keep _frame_nlocs / _frame_system_ids indexable by the *original*
-        # LMDB frame index even after filter:N: entries for dropped frames
-        # simply never get referenced because _nloc_groups / _system_groups
-        # no longer reference them.
+        # ``orig_frame_nlocs`` / ``orig_frame_system_ids`` are indexed by the
+        # *original* LMDB frame index. After a potential ``filter:N`` drop we
+        # rebuild ``self._frame_nlocs`` / ``self._frame_system_ids`` so they
+        # are parallel arrays over the *dataset* index space (0..len(self));
+        # the dataset-to-original mapping lives in ``self._retained_keys``.
         if not mixed_batch:
             # Fast path: use pre-computed frame_nlocs from metadata if available.
             # Falls back to scanning each frame's atom_types shape (~10 us/frame).
             meta_nlocs = meta.get("frame_nlocs")
             if meta_nlocs is not None:
-                self._frame_nlocs = [int(n) for n in meta_nlocs]
+                orig_frame_nlocs = [int(n) for n in meta_nlocs]
             else:
-                self._frame_nlocs = _scan_frame_nlocs(
+                orig_frame_nlocs = _scan_frame_nlocs(
                     self._env, self.nframes, self._frame_fmt, self._natoms
                 )
         else:
-            self._frame_nlocs = []
+            orig_frame_nlocs = []
 
-        # Parse frame_system_ids for auto_prob support. _nsystems must stay at
-        # ``max(original_sid) + 1`` even after filter:N so that user-facing
+        # Parse frame_system_ids for auto_prob support. ``_nsystems`` must stay
+        # at ``max(original_sid) + 1`` even after filter:N so that user-facing
         # auto_prob block slicing (e.g. ``prob_sys_size;0:284:0.5;284:842:0.5``)
         # keeps its meaning across filter thresholds.
         meta_sys_ids = meta.get("frame_system_ids")
         if meta_sys_ids is not None:
-            self._frame_system_ids: list[int] | None = [int(s) for s in meta_sys_ids]
-            self._nsystems = max(self._frame_system_ids) + 1
+            orig_frame_system_ids: list[int] | None = [int(s) for s in meta_sys_ids]
+            self._nsystems = max(orig_frame_system_ids) + 1
         else:
-            self._frame_system_ids = None
+            orig_frame_system_ids = None
             self._nsystems = 1
 
         # Parse batch_size spec. ``auto_rule`` and ``max_rule`` are mutually
@@ -353,10 +354,10 @@ class LmdbDataReader:
         # ``filter:N`` every frame is retained. ``mixed_batch=True`` has no
         # per-frame nloc info to filter against, so filter:N is a no-op there.
         if self._filter_rule is not None and not mixed_batch:
-            retained_indices = [
-                i for i, n in enumerate(self._frame_nlocs) if n <= self._filter_rule
+            retained_keys = [
+                i for i, n in enumerate(orig_frame_nlocs) if n <= self._filter_rule
             ]
-            n_dropped = self.nframes - len(retained_indices)
+            n_dropped = self.nframes - len(retained_keys)
             if n_dropped > 0:
                 log.info(
                     f"LMDB filter:{self._filter_rule} drops {n_dropped}/"
@@ -364,36 +365,55 @@ class LmdbDataReader:
                     f"({self.lmdb_path})."
                 )
         else:
-            retained_indices = list(range(self.nframes))
+            retained_keys = list(range(self.nframes))
 
-        # Group retained frames by nloc. _nloc_groups only contains nlocs
-        # that passed the filter; its values stay as *original* LMDB frame
-        # indices so __getitem__(index) keeps reading the right LMDB key.
+        # Dataset-index → original LMDB frame key. ``__getitem__`` looks up
+        # this table so that ``reader[i]`` is a valid LMDB read for every
+        # ``0 <= i < len(reader)``, no matter how many frames were filtered.
+        self._retained_keys: list[int] = retained_keys
+
+        # Re-key _frame_nlocs / _frame_system_ids into the dataset-index
+        # space so that every downstream consumer (nloc_groups, system_groups,
+        # SameNlocBatchSampler, _expand_indices_by_blocks) operates in a
+        # single, self-consistent indexing scheme.
+        if not mixed_batch:
+            self._frame_nlocs = [orig_frame_nlocs[k] for k in retained_keys]
+        else:
+            self._frame_nlocs = []
+
+        if orig_frame_system_ids is not None:
+            self._frame_system_ids: list[int] | None = [
+                orig_frame_system_ids[k] for k in retained_keys
+            ]
+        else:
+            self._frame_system_ids = None
+
+        # Group retained frames by nloc using dataset indices (0..len-1).
         if not mixed_batch:
             self._nloc_groups: dict[int, list[int]] = {}
-            for idx in retained_indices:
-                self._nloc_groups.setdefault(self._frame_nlocs[idx], []).append(idx)
+            for ds_idx, nloc in enumerate(self._frame_nlocs):
+                self._nloc_groups.setdefault(nloc, []).append(ds_idx)
         else:
             self._nloc_groups = {}
 
-        # Group retained frames by system id. _system_nframes is indexed by
-        # *original* sid and stays length _nsystems even if some systems are
-        # fully dropped — those entries are simply zero so auto_prob block
-        # slicing still parses predictably.
+        # Group retained frames by original system id; the sid numbering is
+        # preserved (no compression) so user-facing auto_prob slices stay
+        # meaningful across filter thresholds. Fully-dropped systems appear
+        # as zero-frame entries in ``_system_nframes``.
         if self._frame_system_ids is not None:
             self._system_groups: dict[int, list[int]] = {}
-            for idx in retained_indices:
-                sid = self._frame_system_ids[idx]
-                self._system_groups.setdefault(sid, []).append(idx)
+            for ds_idx, sid in enumerate(self._frame_system_ids):
+                self._system_groups.setdefault(sid, []).append(ds_idx)
             self._system_nframes: list[int] = [
                 len(self._system_groups.get(i, [])) for i in range(self._nsystems)
             ]
         else:
-            self._system_groups = {0: list(retained_indices)}
-            self._system_nframes = [len(retained_indices)]
+            self._system_groups = {0: list(range(len(retained_keys)))}
+            self._system_nframes = [len(retained_keys)]
 
-        # nframes now reflects retained frames; __len__ returns this.
-        self.nframes = len(retained_indices)
+        # nframes now reflects retained frames; __len__ returns this and the
+        # valid index domain for __getitem__ is [0, self.nframes).
+        self.nframes = len(retained_keys)
 
         # Default batch_size used only by the index/total_batch estimate. The
         # sampler always goes through get_batch_size_for_nloc for real batches.
@@ -474,11 +494,21 @@ class LmdbDataReader:
         return self.nframes
 
     def __getitem__(self, index: int) -> dict[str, Any]:
-        """Read frame from LMDB, decode, remap keys, return dict of numpy arrays."""
-        key = format(index, self._frame_fmt).encode()
+        """Read frame from LMDB, decode, remap keys, return dict of numpy arrays.
+
+        ``index`` is a dataset-level index in ``[0, len(self))``. Under
+        ``filter:N`` the LMDB key space may have gaps (dropped frames), so
+        we translate through ``self._retained_keys`` before hitting LMDB.
+        """
+        if index < 0 or index >= self.nframes:
+            raise IndexError(f"dataset index {index} out of range [0, {self.nframes})")
+        original_key = self._retained_keys[index]
+        key = format(original_key, self._frame_fmt).encode()
         raw = self._txn.get(key)
         if raw is None:
-            raise IndexError(f"Frame {index} not found in LMDB")
+            raise IndexError(
+                f"Frame {original_key} not found in LMDB (dataset index {index})"
+            )
         frame = _decode_frame(raw)
         frame = _remap_keys(frame)
 
@@ -607,7 +637,7 @@ class LmdbDataReader:
                     np.float32(1.0) if extra_key in frame else np.float32(0.0)
                 )
 
-        frame["fid"] = index
+        frame["fid"] = original_key
 
         return frame
 
