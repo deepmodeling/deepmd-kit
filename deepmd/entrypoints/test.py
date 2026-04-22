@@ -858,10 +858,8 @@ def test_ener(
             prediction_energy=energy,
             reference_force=test_data["force"][:numb_test],
             prediction_force=force,
-            reference_virial=test_data["virial"][:numb_test]
-            if find_virial == 1 and data.pbc
-            else None,
-            prediction_virial=virial if find_virial == 1 and data.pbc else None,
+            reference_virial=test_data["virial"][:numb_test],
+            prediction_virial=virial,
             out_put_spin=out_put_spin,
             reference_force_real=test_force_r,
             prediction_force_real=force_r,
