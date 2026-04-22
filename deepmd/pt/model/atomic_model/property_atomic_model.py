@@ -71,9 +71,27 @@ class DPXASAtomicModel(DPPropertyAtomicModel):
         nfparam: int = getattr(fitting, "numb_fparam", 0)
         if nfparam > 0:
             ntypes: int = len(type_map)
+            n_pts: int = max(getattr(fitting, "dim_out", 2) - 2, 0)
             self.register_buffer(
                 "xas_e_ref",
                 torch.zeros(ntypes, nfparam, 2, dtype=torch.float64),
             )
+            # maps edge_idx (argmax of fparam one-hot) → absorbing atom type index
+            self.register_buffer(
+                "xas_edge_to_seltype",
+                torch.zeros(nfparam, dtype=torch.long),
+            )
+            # per-(type, edge, point) intensity statistics for inference denormalisation
+            self.register_buffer(
+                "xas_intensity_ref",
+                torch.zeros(ntypes, nfparam, n_pts, dtype=torch.float64),
+            )
+            self.register_buffer(
+                "xas_intensity_std",
+                torch.ones(ntypes, nfparam, n_pts, dtype=torch.float64),
+            )
         else:
             self.xas_e_ref: torch.Tensor | None = None
+            self.xas_edge_to_seltype: torch.Tensor | None = None
+            self.xas_intensity_ref: torch.Tensor | None = None
+            self.xas_intensity_std: torch.Tensor | None = None

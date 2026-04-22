@@ -3496,21 +3496,9 @@ def loss_xas() -> list[Argument]:
     )
     doc_smooth_reg = (
         "Coefficient of the second-order smoothness regulariser applied to the "
-        "predicted intensity dimensions. Penalises curvature "
+        "predicted intensity dimensions in standardised space. Penalises curvature "
         "(pred[i+1] - 2*pred[i] + pred[i-1])^2 to suppress high-frequency wiggles. "
-        "0.0 disables it (default). Typical range: 1e-4 to 1e-2. "
-        "When intensity_norm is active the regulariser operates in normalised space, "
-        "making it scale-invariant."
-    )
-    doc_intensity_norm = (
-        "Normalisation applied to intensity dimensions inside the loss only "
-        "(model outputs remain in absolute units; freeze/test are unaffected). "
-        "'none' (default): no normalisation, loss dominated by high-intensity regions. "
-        "'log1p': apply log(1+x) to both predicted and label intensities before "
-        "computing loss and smooth_reg, compressing the dynamic range so that "
-        "features at 1e-2 and features at 10 receive comparable gradient signal. "
-        "'max_frame': divide each frame's intensities by its peak label intensity, "
-        "so every spectrum contributes equally regardless of absolute cross-section scale."
+        "0.0 disables it (default). Typical range: 1e-4 to 1e-2."
     )
     return [
         Argument(
@@ -3523,9 +3511,6 @@ def loss_xas() -> list[Argument]:
             "pref_spectrum", float, optional=True, default=1.0, doc=doc_pref_spectrum
         ),
         Argument("smooth_reg", float, optional=True, default=0.0, doc=doc_smooth_reg),
-        Argument(
-            "intensity_norm", str, optional=True, default="none", doc=doc_intensity_norm
-        ),
     ]
 
 
