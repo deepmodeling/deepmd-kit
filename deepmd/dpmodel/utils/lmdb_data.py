@@ -578,6 +578,11 @@ class LmdbDataReader:
         return True
 
     @property
+    def type_map(self) -> list[str]:
+        """Model-side type map used when constructing the reader."""
+        return self._type_map
+
+    @property
     def nloc_groups(self) -> dict[int, list[int]]:
         """Nloc → list of frame indices."""
         return self._nloc_groups
@@ -606,6 +611,41 @@ class LmdbDataReader:
     def system_nframes(self) -> list[int]:
         """Number of frames per system."""
         return self._system_nframes
+
+
+def collate_lmdb_frames(frames: list[dict[str, Any]]) -> dict[str, Any]:
+    """Stack a list of per-frame dicts into a single batch dict.
+
+    Backend-agnostic via ``array_api_compat``: works for numpy, torch, jax,
+    etc. The array library is inferred from the first frame's ``coord``.
+
+    Conventions match :func:`deepmd.dpmodel.utils.batch.normalize_batch`:
+    ``find_*`` flags are taken from the first frame (constant within a
+    batch); ``fid`` is collected as a list; ``type`` is dropped (callers
+    should already use ``atype``); other arrays are stacked along axis 0.
+    A ``sid`` placeholder is appended.
+    """
+    import array_api_compat
+
+    if not frames:
+        raise ValueError("collate_lmdb_frames requires at least one frame")
+
+    xp = array_api_compat.array_namespace(frames[0]["coord"])
+    dev = array_api_compat.device(frames[0]["coord"])
+    out: dict[str, Any] = {}
+    for key in frames[0]:
+        if key.startswith("find_"):
+            out[key] = frames[0][key]
+        elif key == "fid":
+            out[key] = [f[key] for f in frames]
+        elif key == "type":
+            continue
+        elif frames[0][key] is None:
+            out[key] = None
+        else:
+            out[key] = xp.stack([f[key] for f in frames])
+    out["sid"] = xp.asarray([0], dtype=xp.int64, device=dev)
+    return out
 
 
 def compute_block_targets(
