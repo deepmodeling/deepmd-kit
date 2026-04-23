@@ -120,9 +120,6 @@ class XASLoss(TaskLoss):
         self.pref_energy = pref_energy
         self.pref_spectrum = pref_spectrum
         self.smooth_reg = smooth_reg
-        # Reference to model's atomic_model, set by compute_output_stats.
-        # All statistics (e_ref, intensity_ref, intensity_std) live in the model.
-        self._atomic_model: "torch.nn.Module | None" = None
 
     # ------------------------------------------------------------------
     # Stat phase
@@ -237,7 +234,6 @@ class XASLoss(TaskLoss):
 
         try:
             am = model.atomic_model
-            self._atomic_model = am
 
             # Store e_ref into model buffer (used for inference).
             if getattr(am, "xas_e_ref", None) is not None:
@@ -345,11 +341,7 @@ class XASLoss(TaskLoss):
             edge_idx = torch.zeros(nf, dtype=torch.long, device=pred.device)
 
         # Get statistics from model's atomic_model buffers.
-        am = self._atomic_model
-        if am is None:
-            raise RuntimeError(
-                "XASLoss: _atomic_model not set. Call compute_output_stats first."
-            )
+        am = model.atomic_model
 
         e_ref = am.xas_e_ref  # [ntypes, nfparam, 2]
         intensity_ref = am.xas_intensity_ref  # [ntypes, nfparam, n_pts]
