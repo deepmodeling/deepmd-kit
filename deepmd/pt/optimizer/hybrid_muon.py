@@ -120,13 +120,31 @@ if TYPE_CHECKING:
 # Triton availability detection
 # ============================================================================
 
+# Two-stage probe:
+#   1. ``import triton`` succeeds (package is installed).
+#   2. ``triton.runtime.driver.active`` resolves to a usable backend driver.
+#
+# Stage 2 is required because ``@triton.autotune(...)`` eagerly calls
+# ``driver.active.get_benchmarker()`` inside ``Autotuner.__init__``; on
+# CPU-only / driver-less hosts this raises ``RuntimeError: 0 active drivers``
+# at *module import time*, breaking non-training entry points.
+TRITON_AVAILABLE = False
 try:
     import triton
     import triton.language as tl
 
-    TRITON_AVAILABLE = True
+    try:
+        # Touching ``driver.active`` forces the lazy proxy to initialize the
+        # backend driver. ``get_current_target`` is the lightest public call
+        # that exercises the same path as ``Autotuner.__init__``.
+        triton.runtime.driver.active.get_current_target()
+        TRITON_AVAILABLE = True
+    except Exception:
+        # No usable runtime driver (no CUDA/ROCm/XPU, or a mis-configured
+        # one): fall back to the pure-PyTorch Newton-Schulz path.
+        TRITON_AVAILABLE = False
 except ImportError:
-    TRITON_AVAILABLE = False
+    pass
 
 # ============================================================================
 # Constants
