@@ -208,6 +208,29 @@ def _compute_batch_size(nloc: int, rule: int) -> int:
     return max(bsi, 1)
 
 
+def _parse_positive_rule(spec: str, prefix: str) -> int:
+    """Parse the ``N`` in ``<prefix>N`` and require ``N > 0``.
+
+    Rejects missing/non-integer/non-positive ``N`` up front so that
+    misconfigurations (``"filter:"``, ``"filter:0"``, ``"max:-5"``) fail at
+    construction time instead of silently producing an empty dataset or a
+    batch_size=1 fallback downstream.
+    """
+    _, _, raw = spec.partition(":")
+    try:
+        n = int(raw)
+    except ValueError:
+        raise ValueError(
+            f"Unsupported batch_size {spec!r}. "
+            f"Expected '{prefix}N' with N a positive integer."
+        ) from None
+    if n <= 0:
+        raise ValueError(
+            f"Unsupported batch_size {spec!r}: N must be a positive integer, got {n}."
+        )
+    return n
+
+
 class LmdbDataReader:
     """Framework-agnostic LMDB dataset reader.
 
@@ -338,11 +361,11 @@ class LmdbDataReader:
             if batch_size == "auto":
                 self._auto_rule = 32
             elif batch_size.startswith("auto:"):
-                self._auto_rule = int(batch_size.split(":")[1])
+                self._auto_rule = _parse_positive_rule(batch_size, "auto:")
             elif batch_size.startswith("max:"):
-                self._max_rule = int(batch_size.split(":")[1])
+                self._max_rule = _parse_positive_rule(batch_size, "max:")
             elif batch_size.startswith("filter:"):
-                self._filter_rule = int(batch_size.split(":")[1])
+                self._filter_rule = _parse_positive_rule(batch_size, "filter:")
                 self._max_rule = self._filter_rule
             else:
                 raise ValueError(
@@ -350,10 +373,20 @@ class LmdbDataReader:
                     "Expected int, 'auto', 'auto:N', 'max:N', or 'filter:N'."
                 )
 
+        # ``filter:N`` needs per-frame nloc to drop oversized frames; the
+        # ``mixed_batch=True`` fast path skips the nloc scan entirely, so the
+        # two options are incompatible. Fail fast rather than silently
+        # retaining every frame and breaking the documented contract.
+        if self._filter_rule is not None and mixed_batch:
+            raise ValueError(
+                "batch_size='filter:N' is incompatible with mixed_batch=True: "
+                "per-frame nloc is unavailable in the mixed-batch fast path. "
+                "Use mixed_batch=False, or switch to 'max:N' / a fixed int."
+            )
+
         # Determine which original-index frames survive the filter. Without
-        # ``filter:N`` every frame is retained. ``mixed_batch=True`` has no
-        # per-frame nloc info to filter against, so filter:N is a no-op there.
-        if self._filter_rule is not None and not mixed_batch:
+        # ``filter:N`` every frame is retained.
+        if self._filter_rule is not None:
             retained_keys = [
                 i for i, n in enumerate(orig_frame_nlocs) if n <= self._filter_rule
             ]
@@ -479,9 +512,13 @@ class LmdbDataReader:
 
         - ``auto`` / ``auto:N``: ``ceil(N / nloc)`` — may overshoot the
           atom budget by up to ``nloc - 1`` atoms.
-        - ``max:N`` / ``filter:N``: ``max(1, floor(N / nloc))`` — never
-          overshoots; clamps to 1 when a single frame already exceeds ``N``
-          atoms.
+        - ``max:N``: ``max(1, floor(N / nloc))``. Acts as an upper bound
+          for groups with ``nloc <= N`` (batch has at most ``N`` atoms).
+          For groups with ``nloc > N`` the floor clamps to 1 and the
+          single-frame batch still carries ``nloc`` atoms, exceeding ``N``.
+        - ``filter:N``: same per-nloc formula as ``max:N``; by
+          construction every retained group satisfies ``nloc <= N`` so
+          no overshoot occurs.
         - fixed int: the same value for every nloc group.
         """
         if self._auto_rule is not None:
@@ -778,8 +815,27 @@ def compute_block_targets(
         if sum(system_nframes[stt:end]) > 0
     ]
     if not nonempty:
+        log.info(
+            "compute_block_targets: all blocks are empty in "
+            f"{auto_prob_style!r}; dataset has no retained frames."
+        )
         return []
     if len(nonempty) < len(blocks):
+        # Rewriting auto_prob_style silently re-normalises the remaining
+        # weights so they sum to 1.0 — e.g. ``0:3:0.8;3:10:0.2`` with block
+        # ``0:3`` empty becomes effectively weight 1.0 on block ``3:10``.
+        # Surface this reweighting so operators can correlate it with the
+        # preceding ``filter:N`` log line.
+        dropped = [
+            f"{stt}:{end}:{weight}"
+            for (stt, end, weight) in blocks
+            if (stt, end, weight) not in nonempty
+        ]
+        log.info(
+            "compute_block_targets: dropping empty blocks (all systems have "
+            f"0 frames, likely after filter:N): {dropped}. Remaining block "
+            "weights will be renormalised to sum to 1.0."
+        )
         auto_prob_style = "prob_sys_size;" + ";".join(
             f"{stt}:{end}:{weight}" for stt, end, weight in nonempty
         )

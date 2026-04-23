@@ -599,6 +599,22 @@ class TestAutoProb(unittest.TestCase):
         self.assertEqual(result[0][0], [0, 1])
         self.assertEqual(result[0][1], 400)
 
+    def test_compute_block_targets_logs_dropped_block(self):
+        """Emptied blocks trigger an INFO log.
+
+        The silent re-normalisation of ``auto_prob_style`` (remaining
+        weights rescaled to sum to 1.0) must be visible to operators
+        alongside the ``filter:N`` drop line.
+        """
+        with self.assertLogs("deepmd.dpmodel.utils.lmdb_data", level="INFO") as cm:
+            result = compute_block_targets(
+                "prob_sys_size;0:1:0.8;1:2:0.2",
+                nsystems=2,
+                system_nframes=[0, 500],
+            )
+        self.assertTrue(any("empty blocks" in msg for msg in cm.output))
+        self.assertEqual(result, [])
+
     def test_expand_indices_basic(self):
         frame_system_ids = [0] * 5 + [1] * 5
         block_targets = [([0], 25), ([1], 25)]
@@ -886,6 +902,34 @@ class TestMaxFilterBatchSize(unittest.TestCase):
         reached_original_keys = {reader._retained_keys[idx] for idx in all_indices}
         for original_key in (8, 9):
             self.assertNotIn(original_key, reached_original_keys)
+
+    def test_invalid_batch_size_strings_rejected(self):
+        """``<rule>:N`` specs with missing / non-positive N fail at init.
+
+        Before this hardening, ``filter:0`` silently dropped every frame
+        and ``max:`` raised a cryptic ``invalid literal for int()``.
+        One case per failure mode is enough to pin the behaviour.
+        """
+        for spec in ("filter:", "filter:0", "max:-1"):
+            with self.assertRaises(ValueError) as ctx:
+                LmdbDataReader(self._uniform_path, self._type_map, batch_size=spec)
+            self.assertIn("positive", str(ctx.exception))
+
+    def test_filter_with_mixed_batch_rejected(self):
+        """``filter:N`` + ``mixed_batch=True`` must fail loudly.
+
+        The mixed-batch fast path skips the per-frame nloc scan, so
+        filter:N cannot honour its documented ``nloc > N`` drop.
+        """
+        with self.assertRaises(ValueError) as ctx:
+            LmdbDataReader(
+                self._mixed_path,
+                self._type_map,
+                batch_size="filter:10",
+                mixed_batch=True,
+            )
+        self.assertIn("filter", str(ctx.exception))
+        self.assertIn("mixed_batch", str(ctx.exception))
 
     def test_auto_prob_with_filter_still_works(self):
         """compute_block_targets + sampler survive a fully-dropped block."""
