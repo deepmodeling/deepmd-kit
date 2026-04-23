@@ -408,9 +408,8 @@ class _GramNewtonSchulzOrthogonalizer:
             (float(a), float(b), float(c)) for a, b, c in POLAR_EXPRESS_COEFFICIENTS
         )
         self._restart_iteration_set = frozenset((2,))
-        self._call_impl = self._orthogonalize_impl
         self._compiled_call = torch.compile(
-            self._call_impl,
+            self._orthogonalize_impl,
             fullgraph=True,
             dynamic=True,
         )
@@ -559,85 +558,6 @@ def _reshape_update_to_matrix_batch(
     if update_tensor.is_contiguous():
         return update_tensor.view(batch_size, rows, cols)
     return update_tensor.reshape(batch_size, rows, cols).contiguous()
-
-
-def _stack_bucket_updates(
-    bucket_entries: list[
-        tuple[dict[str, Any], torch.Tensor, torch.Tensor, torch.Tensor]
-    ],
-    batch_size: int,
-    rows: int,
-    cols: int,
-) -> torch.Tensor:
-    """
-    Stack same-shape Muon updates into one tensor for orthogonalization.
-
-    Parameters
-    ----------
-    bucket_entries : list[tuple[dict[str, Any], torch.Tensor, torch.Tensor, torch.Tensor]]
-        Bucket entries as ``(entry, update_tensor, grad, momentum_buffer)``.
-    batch_size : int
-        Number of matrix slices per parameter in the bucket.
-    rows : int
-        Matrix row count for each slice.
-    cols : int
-        Matrix column count for each slice.
-
-    Returns
-    -------
-    torch.Tensor
-        Tensor with shape ``(num_entries, batch_size, rows, cols)``.
-    """
-    update_batches = [
-        _reshape_update_to_matrix_batch(update_tensor, batch_size, rows, cols)
-        for _, update_tensor, _, _ in bucket_entries
-    ]
-    return torch.stack(update_batches, dim=0)
-
-
-def _orthogonalize_standard_stacked(
-    stacked_updates: torch.Tensor,
-    rows: int,
-    cols: int,
-    use_flash: bool,
-    flash_buffers: tuple[torch.Tensor, torch.Tensor] | None = None,
-) -> torch.Tensor:
-    """
-    Orthogonalize stacked updates with the current standard Newton-Schulz path.
-
-    Parameters
-    ----------
-    stacked_updates : torch.Tensor
-        Tensor with shape ``(num_entries, batch_size, rows, cols)``.
-    rows : int
-        Matrix row count.
-    cols : int
-        Matrix column count.
-    use_flash : bool
-        Whether to use the Triton single-matrix path when ``batch_size == 1``.
-    flash_buffers : tuple[torch.Tensor, torch.Tensor] | None, optional
-        Pre-allocated flash buffers when ``use_flash`` is enabled.
-
-    Returns
-    -------
-    torch.Tensor
-        Orthogonalized tensor with the same shape as ``stacked_updates``.
-    """
-    num_entries, batch_size, _, _ = stacked_updates.shape
-    if use_flash and batch_size == 1:
-        if flash_buffers is None:
-            raise ValueError("Flash buffers are required when use_flash=True.")
-        buf1, buf2 = flash_buffers
-        orthogonalized = [
-            _flash_newton_schulz_orth(stacked_updates[idx, 0], buf1, buf2)
-            for idx in range(num_entries)
-        ]
-        return torch.stack(orthogonalized, dim=0).unsqueeze(1)
-
-    # Flash path only supports one matrix per entry; batched inputs use bmm path.
-    flat_updates = stacked_updates.reshape(num_entries * batch_size, rows, cols)
-    orthogonalized = _batched_newton_schulz_orth(flat_updates)
-    return orthogonalized.reshape(num_entries, batch_size, rows, cols)
 
 
 def _compute_muon_nesterov_updates(
@@ -958,23 +878,25 @@ class HybridMuonOptimizer(Optimizer):
         ] = {}
         self._gram_orthogonalizer: _GramNewtonSchulzOrthogonalizer | None = None
 
-        # === Step 5. Foreach acceleration (disabled under FSDP2 / DTensor) ===
+        # === Step 5. Foreach acceleration ===
+        # Defaults to True for single-GPU / DDP / ZeRO-1 (plain tensors). Callers
+        # that train under FSDP2 (``fully_shard``) should pass
+        # ``use_foreach=False`` explicitly because several ``torch._foreach_*``
+        # ops lack DTensor sharding propagation on older PyTorch builds.
         self._use_foreach = self._resolve_foreach(use_foreach)
 
     @staticmethod
     def _resolve_foreach(use_foreach: bool | None) -> bool:
-        """Decide whether to use ``torch._foreach_*`` multi-tensor kernels.
+        """Resolve the ``use_foreach`` flag for ``torch._foreach_*`` kernels.
 
         Foreach fuses per-parameter loops into single kernel launches,
-        eliminating Python overhead. Disabled when parameters are FSDP2
-        ``DTensor`` because several foreach ops lack DTensor sharding
-        propagation rules in older PyTorch builds.
+        eliminating Python overhead. When ``use_foreach`` is ``None`` the
+        default is ``True`` because plain ``torch.Tensor`` (single-GPU, DDP,
+        ZeRO-1) always supports these ops; callers that hit DTensor dispatch
+        errors under FSDP2 must pass ``use_foreach=False`` explicitly.
         """
         if use_foreach is not None:
             return bool(use_foreach)
-        # Conservative default: enable foreach (safe for DDP / ZeRO-1).
-        # FSDP2 users should pass use_foreach=False explicitly if they
-        # encounter DTensor dispatch errors.
         return True
 
     def _compute_magma_scales_merged(
@@ -1392,7 +1314,6 @@ class HybridMuonOptimizer(Optimizer):
 
         for (rows, cols, dev, dt), bucket_entries in gram_buckets.items():
             min_dim = min(rows, cols)
-            max_dim = max(rows, cols)
             transposed = rows > cols
             sb_key = (min_dim, dev, dt)
             if sb_key not in super_buckets:
@@ -1401,7 +1322,7 @@ class HybridMuonOptimizer(Optimizer):
 
         gram_orth = self._get_gram_orthogonalizer()
 
-        for (min_dim, _dev, _dt), sub_list in super_buckets.items():
+        for (_min_dim, _dev, _dt), sub_list in super_buckets.items():
             # Find the maximum large-dimension across all sub-buckets.
             padded_max_dim = max(max(r, c) for r, c, _, _ in sub_list)
 

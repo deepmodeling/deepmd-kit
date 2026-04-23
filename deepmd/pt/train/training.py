@@ -908,6 +908,11 @@ class Trainer:
                     else bool(self.opt_param.get("enable_gram")),
                     "flash_muon": bool(self.opt_param.get("flash_muon")),
                     "magma_muon": bool(self.opt_param.get("magma_muon")),
+                    # FSDP2 shards parameters as DTensor; several torch._foreach_*
+                    # ops lack DTensor sharding propagation on older PyTorch, so
+                    # fall back to the per-tensor path under zero_stage >= 2.
+                    # DDP / ZeRO-1 keep plain tensors and use the default.
+                    "use_foreach": False if self.zero_stage >= 2 else None,
                 }
             else:
                 raise ValueError(f"Not supported optimizer type '{self.opt_type}'")

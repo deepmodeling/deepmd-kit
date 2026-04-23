@@ -590,9 +590,10 @@ class TestColumnPadMergeEquivalence(unittest.TestCase):
                 X = torch.randn(1, m, n, dtype=torch.float32, device=self.device)
                 X_padded = torch.nn.functional.pad(X, (0, pad))  # (1, m, n+pad)
 
-                # _orthogonalize_impl bypasses compile for deterministic comparison
-                out_orig = gram_orth._call_impl(X)
-                out_padded = gram_orth._call_impl(X_padded)
+                # Call the uncompiled implementation directly so the two
+                # invocations share an identical numerical path.
+                out_orig = gram_orth._orthogonalize_impl(X)
+                out_padded = gram_orth._orthogonalize_impl(X_padded)
 
                 # Truncate padded output to original column count
                 out_padded_trunc = out_padded[:, :, :n]
@@ -648,12 +649,12 @@ class TestColumnPadMergeEquivalence(unittest.TestCase):
         padded_batch = []
         for m, n in shapes:
             X = torch.randn(1, m, n, dtype=torch.float32, device=self.device)
-            per_matrix_results.append(gram_orth._call_impl(X))
+            per_matrix_results.append(gram_orth._orthogonalize_impl(X))
             padded_batch.append(torch.nn.functional.pad(X, (0, padded_max - n)))
 
         # Run Gram NS on the batched padded tensor
         stacked = torch.cat(padded_batch, dim=0)  # (3, 64, 384)
-        batched_out = gram_orth._call_impl(stacked)
+        batched_out = gram_orth._orthogonalize_impl(stacked)
 
         for i, (m, n) in enumerate(shapes):
             expected = per_matrix_results[i]
