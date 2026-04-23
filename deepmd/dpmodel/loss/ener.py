@@ -97,7 +97,7 @@ class EnergyLoss(Loss):
         scaling and are not affected in the same way by this flag.
         If false (default), the legacy normalization is used for the affected terms.
         The default is false for backward compatibility with models trained using
-        deepmd-kit <= 3.0.1.
+        deepmd-kit <= 3.1.3.
     **kwargs
         Other keyword arguments.
     """
