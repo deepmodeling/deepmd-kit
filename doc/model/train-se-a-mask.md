@@ -85,6 +85,22 @@ And the `loss` section in the training input script should be set as follows.
   }
 ```
 
+If `atom_pref.npy` is not provided in the training data, one can set `use_default_pf` to `true` to use a default atom preference of 1.0 for all atoms. This allows using the prefactor force loss (`pf` loss) without requiring `atom_pref.npy` files. When `atom_pref.npy` is provided, it will be used as-is regardless of this setting.
+
+```json
+"loss": {
+    "type": "ener",
+    "start_pref_e": 0.0,
+    "limit_pref_e": 0.0,
+    "start_pref_f": 0.0,
+    "limit_pref_f": 0.0,
+    "start_pref_pf": 1.0,
+    "limit_pref_pf": 1.0,
+    "use_default_pf": true,
+    "_comment": " that's all"
+  }
+```
+
 ## Type embedding
 
 Same as [`se_e2_a`](./train-se-e2-a.md).

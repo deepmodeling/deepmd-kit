@@ -59,6 +59,7 @@ class EnergyStdLoss(TaskLoss):
         loss_func: str = "mse",
         inference: bool = False,
         use_huber: bool = False,
+        use_default_pf: bool = False,
         f_use_norm: bool = False,
         huber_delta: float | list[float] = 0.01,
         **kwargs: Any,
@@ -106,6 +107,9 @@ class EnergyStdLoss(TaskLoss):
             MAE loss is less sensitive to outliers compared to MSE loss.
         inference : bool
             If true, it will output all losses found in output, ignoring the pre-factors.
+        use_default_pf : bool
+            If true, use default atom_pref of 1.0 for all atoms when atom_pref data is not provided.
+            This allows using the prefactor force loss (pf) without requiring atom_pref.npy files.
         use_huber : bool
             Enables Huber loss calculation for energy/force/virial terms with user-defined threshold delta (D).
             The loss function smoothly transitions between L2 and L1 loss:
@@ -153,6 +157,7 @@ class EnergyStdLoss(TaskLoss):
         self.limit_pref_pf = limit_pref_pf
         self.start_pref_gf = start_pref_gf
         self.limit_pref_gf = limit_pref_gf
+        self.use_default_pf = use_default_pf
         self.relative_f = relative_f
         self.enable_atom_ener_coeff = enable_atom_ener_coeff
         self.numb_generalized_coord = numb_generalized_coord
@@ -368,7 +373,9 @@ class EnergyStdLoss(TaskLoss):
 
             if self.has_pf and "atom_pref" in label:
                 atom_pref = label["atom_pref"]
-                find_atom_pref = label.get("find_atom_pref", 0.0)
+                find_atom_pref = (
+                    label.get("find_atom_pref", 0.0) if not self.use_default_pf else 1.0
+                )
                 pref_pf = pref_pf * find_atom_pref
                 atom_pref_reshape = atom_pref.reshape(-1)
 
@@ -525,7 +532,7 @@ class EnergyStdLoss(TaskLoss):
                     high_prec=True,
                 )
             )
-        if self.has_f:
+        if self.has_f or self.has_pf or self.relative_f is not None or self.has_gf:
             label_requirement.append(
                 DataRequirementItem(
                     "force",
@@ -564,6 +571,7 @@ class EnergyStdLoss(TaskLoss):
                     must=False,
                     high_prec=False,
                     repeat=3,
+                    default=1.0,
                 )
             )
         if self.has_gf > 0:
@@ -599,7 +607,7 @@ class EnergyStdLoss(TaskLoss):
         """
         return {
             "@class": "EnergyLoss",
-            "@version": 2,
+            "@version": 3,
             "starter_learning_rate": self.starter_learning_rate,
             "start_pref_e": self.start_pref_e,
             "limit_pref_e": self.limit_pref_e,
@@ -620,6 +628,7 @@ class EnergyStdLoss(TaskLoss):
             "huber_delta": self.huber_delta,
             "loss_func": self.loss_func,
             "f_use_norm": self.f_use_norm,
+            "use_default_pf": self.use_default_pf,
         }
 
     @classmethod
@@ -637,7 +646,7 @@ class EnergyStdLoss(TaskLoss):
             The deserialized loss module
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 2, 1)
+        check_version_compatibility(data.pop("@version"), 3, 1)
         data.pop("@class")
         return cls(**data)
 

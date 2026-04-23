@@ -138,6 +138,10 @@ class EnerStdLoss(Loss):
             raise NotImplementedError(
                 "TensorFlow backend does not support f_use_norm=True."
             )
+        if kwargs.get("use_default_pf", False):
+            raise NotImplementedError(
+                "TensorFlow backend does not support use_default_pf=True."
+            )
 
         self.starter_learning_rate = starter_learning_rate
         self.start_pref_e = start_pref_e
@@ -541,7 +545,7 @@ class EnerStdLoss(Loss):
         """
         return {
             "@class": "EnergyLoss",
-            "@version": 2,
+            "@version": 3,
             "starter_learning_rate": self.starter_learning_rate,
             "start_pref_e": self.start_pref_e,
             "limit_pref_e": self.limit_pref_e,
@@ -562,6 +566,7 @@ class EnerStdLoss(Loss):
             "huber_delta": self.huber_delta,
             "loss_func": self.loss_func,
             "f_use_norm": self.f_use_norm,
+            "use_default_pf": getattr(self, "use_default_pf", False),
         }
 
     @classmethod
@@ -581,7 +586,7 @@ class EnerStdLoss(Loss):
             The deserialized loss module
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 2, 1)
+        check_version_compatibility(data.pop("@version"), 3, 1)
         data.pop("@class")
         return cls(**data)
 
