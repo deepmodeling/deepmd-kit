@@ -103,9 +103,13 @@ from torch.distributed.checkpoint.state_dict import (
     get_optimizer_state_dict,
     set_optimizer_state_dict,
 )
-from torch.distributed.fsdp import (
-    fully_shard,
-)
+
+try:
+    from torch.distributed.fsdp import (
+        fully_shard,
+    )
+except ImportError:
+    fully_shard = None  # type: ignore[assignment]
 from torch.distributed.optim import (
     ZeroRedundancyOptimizer,
 )
@@ -853,6 +857,15 @@ class Trainer:
         if self.is_distributed:
             torch.cuda.set_device(LOCAL_RANK)
             if self.zero_stage >= 2:
+                if fully_shard is None:
+                    raise RuntimeError(
+                        "training.zero_stage>=2 requires FSDP2, which is only "
+                        "available in PyTorch >= 2.6 "
+                        "(``torch.distributed.fsdp.fully_shard``). "
+                        f"Current PyTorch is {torch.__version__}. "
+                        "Please upgrade PyTorch, or set training.zero_stage "
+                        "to 0 or 1 to stay on the DDP / ZeRO-1 path."
+                    )
                 # FSDP2 does NOT broadcast params (unlike DDP constructor).
                 # Ensure all ranks share identical weights before sharding.
                 for p in self.wrapper.parameters():
