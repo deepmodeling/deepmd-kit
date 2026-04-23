@@ -262,7 +262,9 @@ def _collect_metadata(model: torch.nn.Module, is_spin: bool = False) -> dict:
                 "r_differentiable": vdef.r_differentiable,
                 "c_differentiable": vdef.c_differentiable,
                 "atomic": vdef.atomic,
-                "category": vdef.category,
+                # OutputVariableCategory is an IntEnum; force plain int for
+                # deterministic JSON serialisation across Python versions.
+                "category": int(vdef.category),
                 "r_hessian": vdef.r_hessian,
                 "magnetic": vdef.magnetic,
                 "intensive": vdef.intensive,
@@ -279,6 +281,10 @@ def _collect_metadata(model: torch.nn.Module, is_spin: bool = False) -> dict:
         "has_default_fparam": model.has_default_fparam(),
         "default_fparam": model.get_default_fparam(),
         "fitting_output_defs": fitting_output_defs,
+        # sel_type enables `DeepEval.get_sel_type()` without a dpmodel
+        # round-trip; required for dipole/polar/wfc models in metadata-only
+        # inference (energy models return []).
+        "sel_type": [int(t) for t in model.get_sel_type()],
         "is_spin": is_spin,
     }
     if is_spin:
