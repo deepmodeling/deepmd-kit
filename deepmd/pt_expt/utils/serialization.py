@@ -34,6 +34,17 @@ def _strip_shape_assertions(graph_module: torch.nn.Module) -> None:
     message content is not reliable.  Since
     ``prefer_deferred_runtime_asserts_over_guards=True`` converts all shape
     guards into these deferred assertions, removing all of them is safe.
+
+    .. note::
+
+       We intentionally do **not** call ``graph.eliminate_dead_code()``
+       after removing assertion nodes.  Dead-code elimination can remove
+       intermediate computation nodes that share sub-expressions with the
+       autograd gradient path (traced via ``torch.autograd.grad`` inside the
+       exported function).  Removing those nodes produces NaN forces for
+       models like DPA1/se_atten in the NoPBC case.  The leftover "dead"
+       nodes (computing the boolean condition for the removed assertions)
+       are harmless — they just compute unused scalar values.
     """
     graph = graph_module.graph
     for node in list(graph.nodes):
@@ -42,7 +53,6 @@ def _strip_shape_assertions(graph_module: torch.nn.Module) -> None:
             and node.target is torch.ops.aten._assert_scalar.default
         ):
             graph.erase_node(node)
-    graph.eliminate_dead_code()
     graph_module.recompile()
 
 
