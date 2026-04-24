@@ -586,14 +586,18 @@ def _deserialize_to_file_pt2(
         data, model_json_override, do_atomic_virial
     )
 
-    # Compile via AOTInductor into a .pt2 package.
-    # realize_opcount_threshold=0 prevents aggressive kernel fusion that
+    # On CUDA, aggressive kernel fusion (default realize_opcount_threshold=30)
     # causes NaN in the backward pass (force/virial) of attention-based
-    # descriptors (DPA1, DPA2) on CUDA for certain coordinate patterns.
+    # descriptors (DPA1, DPA2). Setting threshold=0 prevents fusion and
+    # avoids the NaN. Only applied on CUDA; CPU compilation is unaffected.
     import torch._inductor.config as _inductor_config
 
+    import deepmd.pt_expt.utils.env as _env
+
+    is_cuda = _env.DEVICE.type == "cuda"
     saved_threshold = _inductor_config.realize_opcount_threshold
-    _inductor_config.realize_opcount_threshold = 0
+    if is_cuda:
+        _inductor_config.realize_opcount_threshold = 0
     try:
         aoti_compile_and_package(exported, package_path=model_file)
     finally:
