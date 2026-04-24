@@ -24,6 +24,10 @@ import torch
 import torch.distributed as dist
 
 from deepmd.dpmodel.common import PRECISION_DICT as NP_PRECISION_DICT
+from deepmd.dpmodel.utils.lmdb_data import (
+    LmdbTestData,
+    LmdbTestDataNlocView,
+)
 from deepmd.pt.utils.auto_batch_size import (
     AutoBatchSize,
 )
@@ -34,6 +38,9 @@ from deepmd.pt.utils.env import (
     DEVICE,
     GLOBAL_PT_FLOAT_PRECISION,
     RESERVED_PRECISION_DICT,
+)
+from deepmd.pt.utils.lmdb_dataset import (
+    LmdbDataset,
 )
 from deepmd.pt.utils.utils import (
     to_torch_tensor,
@@ -55,6 +62,10 @@ from deepmd.utils.weight_avg import (
 log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
+    from collections.abc import (
+        Iterator,
+    )
+
     from deepmd.utils.data import (
         DeepmdData,
     )
@@ -229,6 +240,12 @@ class FullValidator:
         if self.rank == 0:
             self._initialize_best_checkpoints(restart_training=restart_training)
 
+        # Lazily-populated full test snapshot for LMDB validation. Mixed-nloc
+        # LMDB datasets cannot be stacked as a single (nframes, natoms*3)
+        # tensor, so we materialize frames grouped by nloc the first time
+        # full validation runs and reuse the snapshot on subsequent calls.
+        self._lmdb_test_data: LmdbTestData | None = None
+
     def should_run(self, display_step: int) -> bool:
         """Check whether the current step should trigger full validation."""
         if not self.enabled or self.start_step is None:
@@ -348,14 +365,10 @@ class FullValidator:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-        system_metrics = []
-        for dataset in self.validation_data.systems:
-            if not isinstance(dataset, DeepmdDataSetForLoader):
-                raise TypeError(
-                    "Full validation expects each dataset in validation_data.systems "
-                    f"to be DeepmdDataSetForLoader, got {type(dataset)!r}."
-                )
-            system_metrics.append(self._evaluate_system(dataset.data_system))
+        system_metrics = [
+            self._evaluate_system(data_system)
+            for data_system in self._iter_validation_data_systems()
+        ]
 
         aggregated = weighted_average([metric for metric in system_metrics if metric])
         return {
@@ -363,6 +376,54 @@ class FullValidator:
             for _, metric_key in LOG_COLUMN_ORDER
             if metric_key in aggregated
         }
+
+    def _iter_validation_data_systems(self) -> Iterator[Any]:
+        """Yield ``DeepmdData``-like systems to evaluate in this run.
+
+        - For ``DpLoaderSet``-style validation data, each entry in
+          ``validation_data.systems`` is a :class:`DeepmdDataSetForLoader`,
+          and we forward its underlying ``DeepmdData`` instance.
+        - For ``LmdbDataset`` validation data, we lazily materialize a
+          :class:`LmdbTestData` snapshot (cached across calls) and yield one
+          :class:`LmdbTestDataNlocView` per ``nloc`` group, so mixed-nloc
+          frames can be stacked and evaluated group by group.
+        """
+        validation_data = self.validation_data
+        if isinstance(validation_data, LmdbDataset):
+            lmdb_test_data = self._get_lmdb_test_data_snapshot(validation_data)
+            for nloc in sorted(lmdb_test_data.nloc_groups.keys()):
+                yield LmdbTestDataNlocView(lmdb_test_data, nloc)
+            return
+
+        for dataset in validation_data.systems:
+            if not isinstance(dataset, DeepmdDataSetForLoader):
+                raise TypeError(
+                    "Full validation expects each dataset in validation_data.systems "
+                    f"to be DeepmdDataSetForLoader, got {type(dataset)!r}."
+                )
+            yield dataset.data_system
+
+    def _get_lmdb_test_data_snapshot(self, lmdb_dataset: LmdbDataset) -> LmdbTestData:
+        """Build (once) and return the cached LMDB test snapshot.
+
+        Reuses the ``type_map`` and previously-registered
+        ``DataRequirementItem`` entries on ``LmdbDataset._reader`` so that
+        the full-validation snapshot sees exactly the same fields and
+        dtypes as training batches.
+        """
+        if self._lmdb_test_data is not None:
+            return self._lmdb_test_data
+
+        reader = lmdb_dataset._reader
+        self._lmdb_test_data = LmdbTestData(
+            lmdb_dataset.lmdb_path,
+            type_map=list(reader._type_map),
+            shuffle_test=False,
+        )
+        data_requirements = list(reader._data_requirements.values())
+        if data_requirements:
+            self._lmdb_test_data.add_data_requirement(data_requirements)
+        return self._lmdb_test_data
 
     def _evaluate_system(
         self, data_system: DeepmdData
