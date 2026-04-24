@@ -24,10 +24,13 @@ class AutoBatchSize(AutoBatchSizeBase):
         self,
         initial_batch_size: int = 1024,
         factor: float = 2.0,
+        *,
+        silent: bool = False,
     ) -> None:
         super().__init__(
             initial_batch_size=initial_batch_size,
             factor=factor,
+            silent=silent,
         )
 
     def is_gpu_available(self) -> bool:

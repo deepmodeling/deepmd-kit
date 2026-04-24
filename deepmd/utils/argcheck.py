@@ -4150,6 +4150,222 @@ def training_args(
     )
 
 
+FULL_VALIDATION_METRIC_PREFS = {
+    "e:mae": ("start_pref_e", "limit_pref_e"),
+    "e:rmse": ("start_pref_e", "limit_pref_e"),
+    "f:mae": ("start_pref_f", "limit_pref_f"),
+    "f:rmse": ("start_pref_f", "limit_pref_f"),
+    "v:mae": ("start_pref_v", "limit_pref_v"),
+    "v:rmse": ("start_pref_v", "limit_pref_v"),
+}
+
+
+def normalize_full_validation_metric(metric: str) -> str:
+    """Normalize the full validation metric string."""
+    return metric.strip().lower()
+
+
+def is_valid_full_validation_metric(metric: str) -> bool:
+    """Check whether a full validation metric is supported."""
+    return normalize_full_validation_metric(metric) in FULL_VALIDATION_METRIC_PREFS
+
+
+def get_full_validation_metric_prefactors(metric: str) -> tuple[str, str]:
+    """Get the prefactor keys required by a full validation metric."""
+    normalized_metric = normalize_full_validation_metric(metric)
+    if normalized_metric not in FULL_VALIDATION_METRIC_PREFS:
+        valid_metrics = ", ".join(item.upper() for item in FULL_VALIDATION_METRIC_PREFS)
+        raise ValueError(
+            f"validating.validation_metric must be one of {valid_metrics}, got {metric!r}."
+        )
+    return FULL_VALIDATION_METRIC_PREFS[normalized_metric]
+
+
+def resolve_full_validation_start_step(
+    full_val_start: float, num_steps: int
+) -> int | None:
+    """Resolve the first step at which full validation becomes active."""
+    start_value = float(full_val_start)
+    if start_value == 1.0:
+        return None
+    if 0.0 <= start_value < 1.0:
+        return int(num_steps * start_value)
+    return int(start_value)
+
+
+def validating_args() -> Argument:
+    """Generate full validation arguments."""
+    valid_metrics = ", ".join(item.upper() for item in FULL_VALIDATION_METRIC_PREFS)
+    doc_full_validation = (
+        "Whether to run an additional full validation pass over the entire "
+        "validation dataset during training. This flow is independent from the "
+        "display-time validation controlled by `training.disp_freq`. Only "
+        "single-task energy training is supported. Multi-task, spin-energy, "
+        "and `training.zero_stage >= 2` are not supported."
+    )
+    doc_validation_freq = (
+        "The frequency, in training steps, of running the full validation pass."
+    )
+    doc_save_best = (
+        "Whether to save an extra checkpoint when the selected full validation "
+        "metric reaches a new best value."
+    )
+    doc_max_best_ckpt = (
+        "The maximum number of top-ranked best checkpoints to keep. The best "
+        "checkpoints are ranked by the selected validation metric in ascending "
+        "order. Default is 1."
+    )
+    doc_validation_metric = (
+        "Metric used to determine the best checkpoint during full validation. "
+        f"Supported values are {valid_metrics}. The string is case-insensitive. "
+        "`E` and `V` are per-atom metrics; `F` uses component-wise force errors, "
+        "matching `dp test`. The corresponding loss prefactors must not both be 0."
+    )
+    doc_full_val_file = (
+        "The file for writing full validation results only. This file is "
+        "independent from `training.disp_file`."
+    )
+    doc_full_val_start = (
+        "The starting point of full validation. `0` means the feature is active "
+        "from the beginning and will trigger at every `validation_freq` steps. "
+        "A value in `(0, 1)` is interpreted as a ratio of `training.numb_steps`. "
+        "`1` disables the feature. A value larger than `1` is interpreted as the "
+        "starting step after integer conversion."
+    )
+    args = [
+        Argument(
+            "full_validation",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_full_validation,
+        ),
+        Argument(
+            "validation_freq",
+            int,
+            optional=True,
+            default=5000,
+            doc=doc_only_pt_supported + doc_validation_freq,
+            extra_check=lambda x: x > 0,
+            extra_check_errmsg="must be greater than 0",
+        ),
+        Argument(
+            "save_best",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_only_pt_supported + doc_save_best,
+        ),
+        Argument(
+            "max_best_ckpt",
+            int,
+            optional=True,
+            default=1,
+            doc=doc_only_pt_supported + doc_max_best_ckpt,
+            extra_check=lambda x: x > 0,
+            extra_check_errmsg="must be greater than 0",
+        ),
+        Argument(
+            "validation_metric",
+            str,
+            optional=True,
+            default="E:MAE",
+            doc=doc_only_pt_supported + doc_validation_metric,
+            extra_check=is_valid_full_validation_metric,
+            extra_check_errmsg=(
+                "must be one of "
+                + ", ".join(item.upper() for item in FULL_VALIDATION_METRIC_PREFS)
+            ),
+        ),
+        Argument(
+            "full_val_file",
+            str,
+            optional=True,
+            default="val.log",
+            doc=doc_only_pt_supported + doc_full_val_file,
+        ),
+        Argument(
+            "full_val_start",
+            [int, float],
+            optional=True,
+            default=0.5,
+            doc=doc_only_pt_supported + doc_full_val_start,
+            extra_check=lambda x: x >= 0,
+            extra_check_errmsg="must be greater than or equal to 0",
+        ),
+    ]
+    return Argument(
+        "validating",
+        dict,
+        sub_fields=args,
+        sub_variants=[],
+        optional=True,
+        default={},
+        doc=doc_only_pt_supported
+        + "Independent full validation options for single-task energy training.",
+    )
+
+
+def validate_full_validation_config(
+    data: dict[str, Any], multi_task: bool = False
+) -> None:
+    """Validate cross-section constraints for full validation."""
+    validating = data.get("validating") or {}
+    training = data.get("training", {})
+    if not validating.get("full_validation", False):
+        return
+
+    metric = str(validating.get("validation_metric", "E:MAE"))
+    if not is_valid_full_validation_metric(metric):
+        valid_metrics = ", ".join(item.upper() for item in FULL_VALIDATION_METRIC_PREFS)
+        raise ValueError(
+            "validating.validation_metric must be one of "
+            f"{valid_metrics}, got {metric!r}."
+        )
+
+    if multi_task:
+        raise ValueError(
+            "validating.full_validation only supports single-task energy "
+            "training; multi-task training is not supported."
+        )
+
+    loss_params = data.get("loss", {})
+    loss_type = loss_params.get("type", "ener")
+    if loss_type == "ener_spin":
+        raise ValueError(
+            "validating.full_validation only supports single-task energy "
+            "training; spin-energy training is not supported."
+        )
+    if loss_type != "ener":
+        raise ValueError(
+            "validating.full_validation only supports single-task energy "
+            f"training with loss.type='ener'; got loss.type={loss_type!r}."
+        )
+
+    if not training.get("validation_data"):
+        raise ValueError(
+            "validating.full_validation requires `training.validation_data`. "
+            "It is only supported for single-task energy training."
+        )
+
+    zero_stage = int(training.get("zero_stage", 0))
+    if zero_stage >= 2:
+        raise ValueError(
+            "validating.full_validation only supports single-task energy "
+            "training with training.zero_stage < 2."
+        )
+
+    pref_start_key, pref_limit_key = get_full_validation_metric_prefactors(metric)
+    pref_start = float(loss_params.get(pref_start_key, 0.0))
+    pref_limit = float(loss_params.get(pref_limit_key, 0.0))
+    if pref_start == 0.0 or pref_limit == 0.0:
+        raise ValueError(
+            f"validating.validation_metric={metric!r} requires "
+            f"`loss.{pref_start_key}` and `loss.{pref_limit_key}` to both "
+            "be non-zero."
+        )
+
+
 def multi_model_args() -> list[Argument]:
     model_dict = model_args()
     model_dict.name = "model_dict"
@@ -4224,6 +4440,7 @@ def gen_args(multi_task: bool = False) -> list[Argument]:
             optimizer_args(),
             loss_args(),
             training_args(multi_task=multi_task),
+            validating_args(),
             nvnmd_args(),
         ]
     else:
@@ -4233,6 +4450,7 @@ def gen_args(multi_task: bool = False) -> list[Argument]:
             optimizer_args(fold_subdoc=True),
             multi_loss_args(),
             training_args(multi_task=multi_task),
+            validating_args(),
             nvnmd_args(fold_subdoc=True),
         ]
 
@@ -4264,10 +4482,15 @@ def gen_json_schema(multi_task: bool = False) -> str:
     return json.dumps(generate_json_schema(arg))
 
 
-def normalize(data: dict[str, Any], multi_task: bool = False) -> dict[str, Any]:
+def normalize(
+    data: dict[str, Any], multi_task: bool = False, *, check: bool = True
+) -> dict[str, Any]:
+    """Normalize config values and optionally run strict schema checks."""
     base = Argument("base", dict, gen_args(multi_task=multi_task))
     data = base.normalize_value(data, trim_pattern="_*")
-    base.check_value(data, strict=True)
+    if check:
+        base.check_value(data, strict=True)
+    validate_full_validation_config(data, multi_task=multi_task)
 
     return data
 
