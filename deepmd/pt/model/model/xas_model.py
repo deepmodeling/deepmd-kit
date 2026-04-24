@@ -24,9 +24,10 @@ class XASModel(PropertyModel):
     Identical to :class:`PropertyModel` but uses :class:`DPXASAtomicModel`
     as the underlying atomic model, which carries the per-(absorbing_type,
     edge) energy reference buffer ``xas_e_ref`` in the checkpoint.  This
-    buffer is populated by :meth:`deepmd.pt.loss.xas.XASLoss.compute_output_stats`
-    before training starts and restored at inference time so that absolute
-    edge energies are available without any external reference files.
+    buffers are populated by :meth:`DPXASAtomicModel.compute_or_load_out_stat`
+    (via the standard stat pipeline) before training starts and restored at
+    inference time so that absolute edge energies are available without any
+    external reference files.
 
     Two corrections are applied in ``forward`` that are absent in the generic
     :class:`PropertyModel`:
