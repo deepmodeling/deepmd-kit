@@ -166,9 +166,9 @@ class DeepEval(DeepEvalBackend):
             self._model_output_def = ModelOutputDef(self._dpmodel.atomic_output_def())
 
     def _init_from_metadata(self) -> None:
-        """Initialize DeepEval from ``extra/metadata.json`` alone.
+        """Initialize DeepEval from ``metadata.json`` alone.
 
-        Used when the ``.pt2`` / ``.pte`` archive ships no ``extra/model.json``
+        Used when the ``.pt2`` / ``.pte`` archive ships no ``model.json``
         (e.g. for backends that do not travel through the dpmodel round-trip).
         The metadata contract is the same one the C++ ``DeepPotPTExpt``
         reader consumes, so anything that validates against the C++ side
@@ -241,12 +241,15 @@ class DeepEval(DeepEvalBackend):
     def _load_pt2(self, model_file: str) -> None:
         """Load a .pt2 (AOTInductor) model file.
 
-        ``extra/model.json`` is optional — it only enables the dpmodel
+        ``model.json`` is optional — it only enables the dpmodel
         round-trip (used by ``eval_descriptor``, ``eval_typeebd``, etc.).
         Pure AOTI inference (``DeepPot.eval`` / ``dp test`` / ASE
-        calculator) only needs ``extra/metadata.json``, matching the
-        contract the C++ ``DeepPotPTExpt`` reader enforces.  Backends that
-        cannot produce ``model.json``.
+        calculator) only needs ``metadata.json``, matching the contract
+        the C++ ``DeepPotPTExpt`` reader enforces.
+
+        Archive entries are located under ``model/extra/`` so that the
+        PyTorch 2.11 ``load_pt2`` loader accepts the archive without the
+        "outdated pt2 file" fallback warning.
         """
         import zipfile
 
@@ -254,20 +257,28 @@ class DeepEval(DeepEvalBackend):
             aoti_load_package,
         )
 
+        from deepmd.pt_expt.utils.serialization import (
+            PT2_EXTRA_PREFIX,
+        )
+
+        md_entry = PT2_EXTRA_PREFIX + "metadata.json"
+        model_json_entry = PT2_EXTRA_PREFIX + "model.json"
+        mds_entry = PT2_EXTRA_PREFIX + "model_def_script.json"
+
         # Read metadata from the .pt2 ZIP archive
         with zipfile.ZipFile(model_file, "r") as zf:
             names = zf.namelist()
-            if "extra/metadata.json" not in names:
+            if md_entry not in names:
                 raise ValueError(
-                    f"Invalid .pt2 file '{model_file}': missing 'extra/metadata.json'"
+                    f"Invalid .pt2 file '{model_file}': missing '{md_entry}'"
                 )
-            md = zf.read("extra/metadata.json").decode("utf-8")
+            md = zf.read(md_entry).decode("utf-8")
             model_json_str = ""
-            if "extra/model.json" in names:
-                model_json_str = zf.read("extra/model.json").decode("utf-8")
+            if model_json_entry in names:
+                model_json_str = zf.read(model_json_entry).decode("utf-8")
             mds = ""
-            if "extra/model_def_script.json" in names:
-                mds = zf.read("extra/model_def_script.json").decode("utf-8")
+            if mds_entry in names:
+                mds = zf.read(mds_entry).decode("utf-8")
 
         self.metadata = json.loads(md)
         self._model_def_script = json.loads(mds) if mds else {}
@@ -1118,7 +1129,7 @@ class DeepEval(DeepEvalBackend):
 
         ``eval_descriptor`` / ``eval_typeebd`` / ``eval_fitting_last_layer``
         all introspect the dpmodel's internal sub-modules, which requires
-        ``extra/model.json`` to have been present at load time.  Archives
+        ``model.json`` to have been present at load time.  Archives
         shipped without ``model.json`` (metadata-only mode) can still run
         the main ``eval`` inference path but cannot expose these hooks.
         """
@@ -1126,7 +1137,7 @@ class DeepEval(DeepEvalBackend):
             raise NotImplementedError(
                 f"{feature} requires the dpmodel instance, which is only "
                 "available when the .pt2 / .pte archive contains "
-                "'extra/model.json'. The loaded archive is metadata-only; "
+                "'model.json'. The loaded archive is metadata-only; "
                 "re-export with the full dpmodel serialisation to enable "
                 "this feature."
             )
