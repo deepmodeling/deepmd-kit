@@ -119,13 +119,17 @@ def get_loss(
 def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
     additional_data_requirement: list[DataRequirementItem] = []
     if _model.get_dim_fparam() > 0:
+        has_default_fparam = _model.has_default_fparam()
+        fparam_default = (
+            np.asarray(_model.get_default_fparam()) if has_default_fparam else 0.0
+        )
         additional_data_requirement.append(
             DataRequirementItem(
                 "fparam",
                 _model.get_dim_fparam(),
                 atomic=False,
-                must=False,
-                default=0.0,
+                must=not has_default_fparam,
+                default=fparam_default,
             )
         )
     if _model.get_dim_aparam() > 0:

@@ -545,6 +545,74 @@ class TestGetData(unittest.TestCase):
             shutil.rmtree(tmpdir, ignore_errors=True)
 
 
+class TestAdditionalDataRequirement(unittest.TestCase):
+    """Cover both branches of fparam handling in get_additional_data_requirement.
+
+    Regression guard for the bug where pt_expt hard-coded ``default=0.0`` for
+    fparam, ignoring the model's ``default_fparam``.  When the dataset has no
+    ``fparam.npy``, that caused the data system to feed zeros to the fitting
+    net while pt fed the model default — producing a constant DC offset
+    (e.g. ``[0, -100]`` after fparam normalisation) that slowed training.
+    """
+
+    def test_has_default_fparam(self) -> None:
+        """has_default_fparam==True: must=False and default broadcasts the model value."""
+        from deepmd.pt_expt.train.training import (
+            get_additional_data_requirement,
+        )
+
+        class _M:
+            def get_dim_fparam(self) -> int:
+                return 2
+
+            def get_dim_aparam(self) -> int:
+                return 0
+
+            def has_default_fparam(self) -> bool:
+                return True
+
+            def get_default_fparam(self) -> list[float]:
+                return [0.0, 1.0]
+
+        reqs = get_additional_data_requirement(_M())
+        self.assertEqual(len(reqs), 1)
+        fparam_req = reqs[0]
+        self.assertEqual(fparam_req.key, "fparam")
+        self.assertEqual(fparam_req.ndof, 2)
+        self.assertFalse(fparam_req.must)
+        # default is the model's default_fparam, not 0.0
+        self.assertNotIsInstance(fparam_req.default, float)
+        import numpy as np
+
+        np.testing.assert_array_equal(np.asarray(fparam_req.default), [0.0, 1.0])
+
+    def test_no_default_fparam(self) -> None:
+        """has_default_fparam==False: must=True (data file must exist) and default=0.0."""
+        from deepmd.pt_expt.train.training import (
+            get_additional_data_requirement,
+        )
+
+        class _M:
+            def get_dim_fparam(self) -> int:
+                return 2
+
+            def get_dim_aparam(self) -> int:
+                return 0
+
+            def has_default_fparam(self) -> bool:
+                return False
+
+            def get_default_fparam(self) -> None:
+                return None
+
+        reqs = get_additional_data_requirement(_M())
+        self.assertEqual(len(reqs), 1)
+        fparam_req = reqs[0]
+        self.assertEqual(fparam_req.key, "fparam")
+        self.assertTrue(fparam_req.must)
+        self.assertEqual(fparam_req.default, 0.0)
+
+
 class TestRestart(unittest.TestCase):
     """Test restart and init_model resume paths."""
 
