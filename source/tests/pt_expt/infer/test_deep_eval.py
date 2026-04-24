@@ -738,14 +738,14 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
         self.assertTrue(zipfile.is_zipfile(self.tmpfile.name))
 
     def test_pt2_has_metadata(self) -> None:
-        """The .pt2 ZIP should contain metadata entries."""
+        """The .pt2 ZIP should contain metadata entries under ``model/extra/``."""
         with zipfile.ZipFile(self.tmpfile.name, "r") as zf:
             names = zf.namelist()
-            self.assertIn("extra/metadata.json", names)
-            self.assertIn("extra/model_def_script.json", names)
-            self.assertIn("extra/model.json", names)
-            self.assertNotIn("extra/output_keys.json", names)
-            self.assertNotIn("extra/model_params.json", names)
+            self.assertIn("model/extra/metadata.json", names)
+            self.assertIn("model/extra/model_def_script.json", names)
+            self.assertIn("model/extra/model.json", names)
+            self.assertNotIn("model/extra/output_keys.json", names)
+            self.assertNotIn("model/extra/model_params.json", names)
 
     def test_eval_consistency(self) -> None:
         """Test that DeepPot.eval gives same results as direct model forward."""
