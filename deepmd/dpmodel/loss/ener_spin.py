@@ -50,7 +50,7 @@ class EnergySpinLoss(Loss):
         if true, the energy will be computed as \sum_i c_i E_i
     loss_func : str
         Loss function type: 'mse' or 'mae'.
-    intensive : bool
+    intensive_ener_virial : bool
         If true, the MSE energy and virial terms use intensive normalization,
         i.e. an additional normalization by the square of the number of atoms
         (1/N^2) instead of the legacy (1/N) behavior. This keeps those MSE loss
@@ -77,7 +77,7 @@ class EnergySpinLoss(Loss):
         limit_pref_ae: float = 0.0,
         enable_atom_ener_coeff: bool = False,
         loss_func: str = "mse",
-        intensive: bool = False,
+        intensive_ener_virial: bool = False,
         **kwargs: Any,
     ) -> None:
         valid_loss_funcs = ["mse", "mae"]
@@ -98,7 +98,7 @@ class EnergySpinLoss(Loss):
         self.start_pref_ae = start_pref_ae
         self.limit_pref_ae = limit_pref_ae
         self.enable_atom_ener_coeff = enable_atom_ener_coeff
-        self.intensive = intensive
+        self.intensive_ener_virial = intensive_ener_virial
         self.has_e = self.start_pref_e != 0.0 or self.limit_pref_e != 0.0
         self.has_fr = self.start_pref_fr != 0.0 or self.limit_pref_fr != 0.0
         self.has_fm = self.start_pref_fm != 0.0 or self.limit_pref_fm != 0.0
@@ -128,9 +128,9 @@ class EnergySpinLoss(Loss):
         more_loss = {}
         atom_norm = 1.0 / natoms
         # Normalization exponent controls loss scaling with system size:
-        # - norm_exp=2 (intensive=True): loss uses 1/N² scaling, making it independent of system size
-        # - norm_exp=1 (intensive=False, legacy): loss uses 1/N scaling, which varies with system size
-        norm_exp = 2 if self.intensive else 1
+        # - norm_exp=2 (intensive_ener_virial=True): loss uses 1/N² scaling, making it independent of system size
+        # - norm_exp=1 (intensive_ener_virial=False, legacy): loss uses 1/N scaling, which varies with system size
+        norm_exp = 2 if self.intensive_ener_virial else 1
 
         if self.has_e:
             energy_pred = model_dict["energy"]
@@ -354,7 +354,7 @@ class EnergySpinLoss(Loss):
             "limit_pref_ae": self.limit_pref_ae,
             "enable_atom_ener_coeff": self.enable_atom_ener_coeff,
             "loss_func": self.loss_func,
-            "intensive": self.intensive,
+            "intensive_ener_virial": self.intensive_ener_virial,
         }
 
     @classmethod
@@ -366,5 +366,5 @@ class EnergySpinLoss(Loss):
         data.pop("@class")
         # Backward compatibility: version 1 used legacy normalization
         if version < 2:
-            data.setdefault("intensive", False)
+            data.setdefault("intensive_ener_virial", False)
         return cls(**data)

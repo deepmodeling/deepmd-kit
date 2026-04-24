@@ -47,12 +47,12 @@ if INSTALLED_ARRAY_API_STRICT:
 @parameterized(
     ("mse", "mae"),  # loss_func
     (False, True),  # mae (dp test extra MAE metrics)
-    (False, True),  # intensive
+    (False, True),  # intensive_ener_virial
 )
 class TestEnerSpin(CommonTest, LossTest, unittest.TestCase):
     @property
     def data(self) -> dict:
-        (loss_func, _mae, intensive) = self.param
+        (loss_func, _mae, intensive_ener_virial) = self.param
         return {
             "start_pref_e": 0.02,
             "limit_pref_e": 1.0,
@@ -65,7 +65,7 @@ class TestEnerSpin(CommonTest, LossTest, unittest.TestCase):
             "start_pref_ae": 1.0,
             "limit_pref_ae": 1.0,
             "loss_func": loss_func,
-            "intensive": intensive,
+            "intensive_ener_virial": intensive_ener_virial,
         }
 
     skip_tf = True
@@ -83,11 +83,12 @@ class TestEnerSpin(CommonTest, LossTest, unittest.TestCase):
     args = loss_ener_spin()
 
     def setUp(self) -> None:
-        (loss_func, mae, _intensive) = self.param
+        (loss_func, mae, intensive_ener_virial) = self.param
         if loss_func == "mae" and mae:
             self.skipTest("mae=True with loss_func='mae' is redundant")
         CommonTest.setUp(self)
         self.mae = mae
+        self.intensive_ener_virial = intensive_ener_virial
         self.learning_rate = 1e-3
         rng = np.random.default_rng(20250326)
         self.nframes = 2
@@ -216,12 +217,12 @@ class TestEnerSpinIntensiveScaling(unittest.TestCase):
     """Regression test for natoms-scaling behavior with intensive normalization.
 
     This test verifies that MSE energy/virial loss contributions scale with 1/N² when
-    intensive=True, ensuring the loss is independent of system size. This guards against
+    intensive_ener_virial=True, ensuring the loss is independent of system size. This guards against
     future refactors accidentally reverting to 1/N scaling.
     """
 
     def test_intensive_total_loss_scaling(self) -> None:
-        """Test that total loss scales correctly with 1/N² for intensive=True.
+        """Test that total loss scales correctly with 1/N² for intensive_ener_virial=True.
 
         This test uses controlled energy/virial residuals to verify that the
         total loss contribution scales with 1/N² (intensive) vs 1/N (legacy).
@@ -282,7 +283,7 @@ class TestEnerSpinIntensiveScaling(unittest.TestCase):
             limit_pref_fm=0.0,
             start_pref_v=1.0,
             limit_pref_v=1.0,
-            intensive=True,
+            intensive_ener_virial=True,
         )
         loss_legacy = EnerSpinLossPT(
             starter_learning_rate=1e-3,
@@ -294,7 +295,7 @@ class TestEnerSpinIntensiveScaling(unittest.TestCase):
             limit_pref_fm=0.0,
             start_pref_v=1.0,
             limit_pref_v=1.0,
-            intensive=False,
+            intensive_ener_virial=False,
         )
 
         # Compute losses for small system
@@ -367,7 +368,7 @@ class TestEnerSpinIntensiveScaling(unittest.TestCase):
         )
 
     def test_intensive_vs_legacy_scaling_difference(self) -> None:
-        """Test that intensive=True produces different loss than intensive=False."""
+        """Test that intensive_ener_virial=True produces different loss than intensive_ener_virial=False."""
         if not INSTALLED_PT:
             self.skipTest("PyTorch not installed")
 
@@ -400,7 +401,7 @@ class TestEnerSpinIntensiveScaling(unittest.TestCase):
             "find_atom_ener": 0.0,
         }
 
-        # Create loss functions with intensive=True and intensive=False
+        # Create loss functions with intensive_ener_virial=True and intensive_ener_virial=False
         loss_intensive = EnerSpinLossPT(
             starter_learning_rate=1e-3,
             start_pref_e=1.0,
@@ -411,7 +412,7 @@ class TestEnerSpinIntensiveScaling(unittest.TestCase):
             limit_pref_fm=0.0,
             start_pref_v=1.0,
             limit_pref_v=1.0,
-            intensive=True,
+            intensive_ener_virial=True,
         )
         loss_legacy = EnerSpinLossPT(
             starter_learning_rate=1e-3,
@@ -423,7 +424,7 @@ class TestEnerSpinIntensiveScaling(unittest.TestCase):
             limit_pref_fm=0.0,
             start_pref_v=1.0,
             limit_pref_v=1.0,
-            intensive=False,
+            intensive_ener_virial=False,
         )
 
         _, loss_val_intensive, _ = loss_intensive(

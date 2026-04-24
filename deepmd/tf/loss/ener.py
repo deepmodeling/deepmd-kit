@@ -100,12 +100,12 @@ class EnerStdLoss(Loss):
     f_use_norm : bool
         If True, use L2 norm of force vectors for loss calculation.
         Not implemented in TF backend, only for serialization compatibility.
-    intensive : bool
+    intensive_ener_virial : bool
         Controls the normalization used for energy and virial terms in the non-Huber
         MSE branch of this TF loss. If true, that branch uses intensive normalization
         by the square of the number of atoms (1/N^2); if false (default), it uses the
         legacy normalization (1/N). When ``use_huber=True``, the residual is still
-        normalized by 1/N before applying the Huber loss, so ``intensive`` may not
+        normalized by 1/N before applying the Huber loss, so ``intensive_ener_virial`` may not
         change behavior in that path. The default is false for backward compatibility
         with models trained using deepmd-kit <= 3.1.3.
     **kwargs
@@ -134,7 +134,7 @@ class EnerStdLoss(Loss):
         huber_delta: float | list[float] = 0.01,
         loss_func: str = "mse",
         f_use_norm: bool = False,
-        intensive: bool = False,
+        intensive_ener_virial: bool = False,
         **kwargs: Any,
     ) -> None:
         if loss_func != "mse":
@@ -176,7 +176,7 @@ class EnerStdLoss(Loss):
             )
         self.use_huber = use_huber
         self.huber_delta = huber_delta
-        self.intensive = intensive
+        self.intensive_ener_virial = intensive_ener_virial
         (
             self._huber_delta_energy,
             self._huber_delta_force,
@@ -365,9 +365,9 @@ class EnerStdLoss(Loss):
         loss = 0
         more_loss = {}
         # Normalization exponent controls loss scaling with system size:
-        # - norm_exp=2 (intensive=True): loss uses 1/N² scaling, making it independent of system size
-        # - norm_exp=1 (intensive=False, legacy): loss uses 1/N scaling, which varies with system size
-        norm_exp = 2 if self.intensive else 1
+        # - norm_exp=2 (intensive_ener_virial=True): loss uses 1/N² scaling, making it independent of system size
+        # - norm_exp=1 (intensive_ener_virial=False, legacy): loss uses 1/N scaling, which varies with system size
+        norm_exp = 2 if self.intensive_ener_virial else 1
         if self.has_e:
             if not self.use_huber:
                 loss += atom_norm_ener**norm_exp * (pref_e * l2_ener_loss)
@@ -578,7 +578,7 @@ class EnerStdLoss(Loss):
             "huber_delta": self.huber_delta,
             "loss_func": self.loss_func,
             "f_use_norm": self.f_use_norm,
-            "intensive": self.intensive,
+            "intensive_ener_virial": self.intensive_ener_virial,
         }
 
     @classmethod
@@ -601,9 +601,9 @@ class EnerStdLoss(Loss):
         version = data.pop("@version")
         check_version_compatibility(version, 3, 1)
         data.pop("@class")
-        # Handle backward compatibility for older versions without intensive
+        # Handle backward compatibility for older versions without intensive_ener_virial
         if version < 3:
-            data.setdefault("intensive", False)
+            data.setdefault("intensive_ener_virial", False)
         return cls(**data)
 
 
@@ -627,7 +627,7 @@ class EnerSpinLoss(Loss):
         enable_atom_ener_coeff: bool = False,
         use_spin: list | None = None,
         loss_func: str = "mse",
-        intensive: bool = False,
+        intensive_ener_virial: bool = False,
     ) -> None:
         if loss_func != "mse":
             raise NotImplementedError(
@@ -650,7 +650,7 @@ class EnerSpinLoss(Loss):
         self.relative_f = relative_f
         self.enable_atom_ener_coeff = enable_atom_ener_coeff
         self.use_spin = use_spin
-        self.intensive = intensive
+        self.intensive_ener_virial = intensive_ener_virial
         self.has_e = self.start_pref_e != 0.0 or self.limit_pref_e != 0.0
         self.has_fr = self.start_pref_fr != 0.0 or self.limit_pref_fr != 0.0
         self.has_fm = self.start_pref_fm != 0.0 or self.limit_pref_fm != 0.0
@@ -737,9 +737,9 @@ class EnerSpinLoss(Loss):
         atom_norm = 1.0 / global_cvt_2_tf_float(natoms[0])
         atom_norm_ener = 1.0 / global_cvt_2_ener_float(natoms[0])
         # loss normalization exponent:
-        # - norm_exp=2 (intensive=True): loss uses 1/N² scaling, making it independent of system size
-        # - norm_exp=1 (intensive=False, legacy): loss uses 1/N scaling, which varies with system size
-        norm_exp = 2 if self.intensive else 1
+        # - norm_exp=2 (intensive_ener_virial=True): loss uses 1/N² scaling, making it independent of system size
+        # - norm_exp=1 (intensive_ener_virial=False, legacy): loss uses 1/N scaling, which varies with system size
+        norm_exp = 2 if self.intensive_ener_virial else 1
         pref_e = global_cvt_2_ener_float(
             find_energy
             * (
@@ -1025,7 +1025,7 @@ class EnerSpinLoss(Loss):
             "enable_atom_ener_coeff": self.enable_atom_ener_coeff,
             "use_spin": self.use_spin,
             "loss_func": self.loss_func,
-            "intensive": self.intensive,
+            "intensive_ener_virial": self.intensive_ener_virial,
         }
 
     @classmethod
@@ -1048,9 +1048,9 @@ class EnerSpinLoss(Loss):
         version = data.pop("@version")
         check_version_compatibility(version, 2, 1)
         data.pop("@class")
-        # Handle backward compatibility for older versions without intensive
+        # Handle backward compatibility for older versions without intensive_ener_virial
         if version < 2:
-            data.setdefault("intensive", False)
+            data.setdefault("intensive_ener_virial", False)
         return cls(**data)
 
 

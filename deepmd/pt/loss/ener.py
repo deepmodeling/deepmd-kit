@@ -61,7 +61,7 @@ class EnergyStdLoss(TaskLoss):
         use_huber: bool = False,
         f_use_norm: bool = False,
         huber_delta: float | list[float] = 0.01,
-        intensive: bool = False,
+        intensive_ener_virial: bool = False,
         **kwargs: Any,
     ) -> None:
         r"""Construct a layer to compute loss on energy, force and virial.
@@ -121,7 +121,7 @@ class EnergyStdLoss(TaskLoss):
             The threshold delta (D) used for Huber loss, controlling transition between
             L2 and L1 loss. It can be either one float shared by all terms or a list of
             three values ordered as [energy, force, virial].
-        intensive : bool
+        intensive_ener_virial : bool
             Controls size normalization for energy and virial loss terms. For the non-Huber
             MSE path, setting this to true applies 1/N^2 scaling, while false uses the legacy
             1/N scaling. For MAE, the normalization remains 1/N. For Huber loss, residuals are
@@ -171,7 +171,7 @@ class EnergyStdLoss(TaskLoss):
         self.inference = inference
         self.use_huber = use_huber
         self.f_use_norm = f_use_norm
-        self.intensive = intensive
+        self.intensive_ener_virial = intensive_ener_virial
         if self.f_use_norm and not (self.use_huber or self.loss_func == "mae"):
             raise RuntimeError(
                 "f_use_norm can only be True when use_huber or loss_func='mae'."
@@ -235,9 +235,9 @@ class EnergyStdLoss(TaskLoss):
         # more_loss['test_keys'] = []  # showed when doing dp test
         atom_norm = 1.0 / natoms
         # Normalization exponent controls loss scaling with system size:
-        # - norm_exp=2 (intensive=True): loss uses 1/N² scaling, making it independent of system size
-        # - norm_exp=1 (intensive=False, legacy): loss uses 1/N scaling, which varies with system size
-        norm_exp = 2 if self.intensive else 1
+        # - norm_exp=2 (intensive_ener_virial=True): loss uses 1/N² scaling, making it independent of system size
+        # - norm_exp=1 (intensive_ener_virial=False, legacy): loss uses 1/N scaling, which varies with system size
+        norm_exp = 2 if self.intensive_ener_virial else 1
         if self.has_e and "energy" in model_pred and "energy" in label:
             energy_pred = model_pred["energy"]
             energy_label = label["energy"]
@@ -633,7 +633,7 @@ class EnergyStdLoss(TaskLoss):
             "huber_delta": self.huber_delta,
             "loss_func": self.loss_func,
             "f_use_norm": self.f_use_norm,
-            "intensive": self.intensive,
+            "intensive_ener_virial": self.intensive_ener_virial,
         }
 
     @classmethod
@@ -654,9 +654,9 @@ class EnergyStdLoss(TaskLoss):
         version = data.pop("@version")
         check_version_compatibility(version, 3, 1)
         data.pop("@class")
-        # Handle backward compatibility for older versions without intensive
+        # Handle backward compatibility for older versions without intensive_ener_virial
         if version < 3:
-            data.setdefault("intensive", False)
+            data.setdefault("intensive_ener_virial", False)
         return cls(**data)
 
 

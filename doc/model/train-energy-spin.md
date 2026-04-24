@@ -126,7 +126,7 @@ The {ref}`loss <loss>` section in the `input.json` is
 	"start_pref_v":	    0,
 	"limit_pref_v":	    0,
 	"loss_func":	    "mse",
-	"intensive":	    false
+	"intensive_ener_virial":	    false
     },
 
 ```
@@ -140,7 +140,7 @@ The {ref}`loss_func <loss[ener_spin]/loss_func>` option specifies the type of lo
 
 When using `loss_func="mse"`, the training will output `rmse_e`, `rmse_fr`, `rmse_fm`, `rmse_v` metrics (root mean square errors). When using `loss_func="mae"`, the training will output `mae_e`, `mae_fr`, `mae_fm`, `mae_v` metrics (mean absolute errors).
 
-The {ref}`intensive <loss[ener_spin]/intensive>` option (default is `false`) controls the normalization of the energy and virial loss terms when `loss_func="mse"`. If set to `true`, these terms are normalized by $1/N^2$ (intensive), ensuring the loss scale is independent of the system size $N$. If `false`, the legacy $1/N$ normalization is used.
+The {ref}`intensive_ener_virial <loss[ener_spin]/intensive_ener_virial>` option (default is `false`) controls the normalization of the energy and virial loss terms when `loss_func="mse"`. If set to `true`, these terms are normalized by $1/N^2$ (intensive), ensuring the loss scale is independent of the system size $N$. If `false`, the legacy $1/N$ normalization is used.
 
 If one does not want to train with virial, then he/she may set the virial prefactors {ref}`start_pref_v <loss[ener_spin]/start_pref_v>` and {ref}`limit_pref_v <loss[ener_spin]/limit_pref_v>` to 0.
 

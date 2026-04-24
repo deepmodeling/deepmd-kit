@@ -3234,7 +3234,7 @@ def loss_ener() -> list[Argument]:
         "This treats the force vector as a whole rather than three independent components. "
         "Only effective when loss_func='mae' or use_huber=True."
     )
-    doc_intensive = (
+    doc_intensive_ener_virial = (
         "Controls intensive normalization for energy and virial loss terms in the current implementation. "
         "For non-Huber MSE energy/virial terms, setting this to true uses 1/N^2 normalization instead of the legacy 1/N scaling. "
         "This matches per-atom-style reporting more closely for those terms. "
@@ -3385,11 +3385,11 @@ def loss_ener() -> list[Argument]:
             doc=doc_huber_delta,
         ),
         Argument(
-            "intensive",
+            "intensive_ener_virial",
             bool,
             optional=True,
             default=False,
-            doc=doc_intensive,
+            doc=doc_intensive_ener_virial,
         ),
     ]
 
@@ -3416,7 +3416,7 @@ def loss_ener_spin() -> list[Argument]:
         "MAE loss is less sensitive to outliers compared to MSE loss. "
         "Future extensions may support additional loss types."
     )
-    doc_intensive = (
+    doc_intensive_ener_virial = (
         "Controls normalization of the energy and virial loss terms. "
         "For `loss_func='mse'`, if true, energy and virial losses are computed as intensive quantities, "
         "normalized by the square of the number of atoms (1/N^2); if false (default), the legacy normalization "
@@ -3525,11 +3525,11 @@ def loss_ener_spin() -> list[Argument]:
             doc=doc_loss_func,
         ),
         Argument(
-            "intensive",
+            "intensive_ener_virial",
             bool,
             optional=True,
             default=False,
-            doc=doc_intensive,
+            doc=doc_intensive_ener_virial,
         ),
     ]
 

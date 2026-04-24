@@ -90,7 +90,7 @@ class EnergyLoss(Loss):
         If true, use L2 norm of force vectors for loss calculation when loss_func='mae' or use_huber is True.
         Instead of computing loss on force components, computes loss on ||F_pred - F_label||_2.
         This treats the force vector as a whole rather than three independent components.
-    intensive : bool
+    intensive_ener_virial : bool
         If true, the non-Huber MSE energy and virial losses use intensive normalization,
         i.e. a 1/N^2 factor instead of the legacy 1/N scaling. This matches per-atom
         RMSE-style normalization for those terms. MAE and Huber modes use different
@@ -124,7 +124,7 @@ class EnergyLoss(Loss):
         huber_delta: float | list[float] = 0.01,
         loss_func: str = "mse",
         f_use_norm: bool = False,
-        intensive: bool = False,
+        intensive_ener_virial: bool = False,
         **kwargs: Any,
     ) -> None:
         # Validate loss_func
@@ -164,7 +164,7 @@ class EnergyLoss(Loss):
         self.use_huber = use_huber
         self.huber_delta = huber_delta
         self.f_use_norm = f_use_norm
-        self.intensive = intensive
+        self.intensive_ener_virial = intensive_ener_virial
         if self.f_use_norm and not (self.use_huber or self.loss_func == "mae"):
             raise RuntimeError(
                 "f_use_norm can only be True when use_huber or loss_func='mae'."
@@ -267,9 +267,9 @@ class EnergyLoss(Loss):
         loss = 0
         more_loss = {}
         # Normalization exponent controls loss scaling with system size:
-        # - norm_exp=2 (intensive=True): loss uses 1/N² scaling, making it independent of system size
-        # - norm_exp=1 (intensive=False, legacy): loss uses 1/N scaling, which varies with system size
-        norm_exp = 2 if self.intensive else 1
+        # - norm_exp=2 (intensive_ener_virial=True): loss uses 1/N² scaling, making it independent of system size
+        # - norm_exp=1 (intensive_ener_virial=False, legacy): loss uses 1/N scaling, which varies with system size
+        norm_exp = 2 if self.intensive_ener_virial else 1
         if self.has_e:
             if self.loss_func == "mse":
                 l2_ener_loss = xp.mean(xp.square(energy - energy_hat))
@@ -560,7 +560,7 @@ class EnergyLoss(Loss):
             "huber_delta": self.huber_delta,
             "loss_func": self.loss_func,
             "f_use_norm": self.f_use_norm,
-            "intensive": self.intensive,
+            "intensive_ener_virial": self.intensive_ener_virial,
         }
 
     @classmethod
@@ -583,5 +583,5 @@ class EnergyLoss(Loss):
         data.pop("@class")
         # Backward compatibility: version 1-2 used legacy normalization
         if version < 3:
-            data.setdefault("intensive", False)
+            data.setdefault("intensive_ener_virial", False)
         return cls(**data)

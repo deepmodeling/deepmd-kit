@@ -67,7 +67,7 @@ if INSTALLED_ARRAY_API_STRICT:
     ("mse", "mae"),  # loss_func
     (False, True),  # f_use_norm
     (False, True),  # mae (dp test extra MAE metrics)
-    (False, True),  # intensive
+    (False, True),  # intensive_ener_virial
 )
 class TestEner(CommonTest, LossTest, unittest.TestCase):
     @property
@@ -78,7 +78,7 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
             loss_func,
             f_use_norm,
             _mae,
-            intensive,
+            intensive_ener_virial,
         ) = self.param
         return {
             "start_pref_e": 0.02,
@@ -95,7 +95,7 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
             "enable_atom_ener_coeff": enable_atom_ener_coeff,
             "loss_func": loss_func,
             "f_use_norm": f_use_norm,
-            "intensive": intensive,
+            "intensive_ener_virial": intensive_ener_virial,
         }
 
     @property
@@ -106,7 +106,7 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
             loss_func,
             f_use_norm,
             _mae,
-            _intensive,
+            intensive_ener_virial,
         ) = self.param
         # Skip TF for MAE loss tests (not implemented in TF backend)
         return CommonTest.skip_tf or loss_func == "mae" or f_use_norm
@@ -119,7 +119,7 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
             loss_func,
             f_use_norm,
             _mae,
-            _intensive,
+            intensive_ener_virial,
         ) = self.param
         # Skip Paddle for MAE loss tests (not implemented in Paddle backend)
         return not INSTALLED_PD or loss_func == "mae" or f_use_norm
@@ -145,7 +145,7 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
             loss_func,
             f_use_norm,
             mae,
-            _intensive,
+            intensive_ener_virial,
         ) = self.param
         # Skip invalid combinations
         if f_use_norm and not (use_huber or loss_func == "mae"):
@@ -598,7 +598,7 @@ class TestIntensiveNatomsScaling(unittest.TestCase):
     """
 
     def test_intensive_total_loss_scaling(self) -> None:
-        """Test that total loss scales correctly with 1/N² for intensive=True.
+        """Test that total loss scales correctly with 1/N² for intensive_ener_virial=True.
 
         This test uses controlled energy/virial residuals to verify that the
         total loss contribution scales with 1/N² (intensive) vs 1/N (legacy).
@@ -650,7 +650,7 @@ class TestIntensiveNatomsScaling(unittest.TestCase):
             limit_pref_f=0.0,
             start_pref_v=1.0,
             limit_pref_v=1.0,
-            intensive=True,
+            intensive_ener_virial=True,
         )
         loss_legacy = EnerLossPT(
             starter_learning_rate=1e-3,
@@ -660,7 +660,7 @@ class TestIntensiveNatomsScaling(unittest.TestCase):
             limit_pref_f=0.0,
             start_pref_v=1.0,
             limit_pref_v=1.0,
-            intensive=False,
+            intensive_ener_virial=False,
         )
 
         # Compute losses for small system
@@ -734,7 +734,7 @@ class TestIntensiveNatomsScaling(unittest.TestCase):
         )
 
     def test_intensive_vs_legacy_scaling_difference(self) -> None:
-        """Test that intensive=True produces different loss than intensive=False for energy/virial."""
+        """Test that intensive_ener_virial=True produces different loss than intensive_ener_virial=False for energy/virial."""
         if not INSTALLED_PT:
             self.skipTest("PyTorch not installed")
 
@@ -759,7 +759,7 @@ class TestIntensiveNatomsScaling(unittest.TestCase):
             "find_atom_ener": 0.0,
         }
 
-        # Create loss functions with intensive=True and intensive=False
+        # Create loss functions with intensive_ener_virial=True and intensive_ener_virial=False
         loss_intensive = EnerLossPT(
             starter_learning_rate=1e-3,
             start_pref_e=1.0,
@@ -768,7 +768,7 @@ class TestIntensiveNatomsScaling(unittest.TestCase):
             limit_pref_f=0.0,
             start_pref_v=1.0,
             limit_pref_v=1.0,
-            intensive=True,
+            intensive_ener_virial=True,
         )
         loss_legacy = EnerLossPT(
             starter_learning_rate=1e-3,
@@ -778,7 +778,7 @@ class TestIntensiveNatomsScaling(unittest.TestCase):
             limit_pref_f=0.0,
             start_pref_v=1.0,
             limit_pref_v=1.0,
-            intensive=False,
+            intensive_ener_virial=False,
         )
 
         _, loss_val_intensive, _ = loss_intensive(
