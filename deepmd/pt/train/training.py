@@ -920,9 +920,7 @@ class Trainer:
                     "lr_adjust_coeff": float(self.opt_param["lr_adjust_coeff"]),
                     "muon_mode": str(self.opt_param.get("muon_mode", "slice")),
                     "named_parameters": tuple(self.wrapper.named_parameters()),
-                    "enable_gram": False
-                    if self.is_distributed
-                    else bool(self.opt_param.get("enable_gram")),
+                    "enable_gram": bool(self.opt_param.get("enable_gram")),
                     "flash_muon": bool(self.opt_param.get("flash_muon")),
                     "magma_muon": bool(self.opt_param.get("magma_muon")),
                     # FSDP2 shards parameters as DTensor; several torch._foreach_*
