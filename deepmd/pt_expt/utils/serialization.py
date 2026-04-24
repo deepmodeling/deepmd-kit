@@ -17,7 +17,7 @@ from deepmd.dpmodel.utils.serialization import (
 
 
 def _strip_shape_assertions(graph_module: torch.nn.Module) -> None:
-    """Remove shape-guard assertion nodes from an exported graph.
+    """Neutralise shape-guard assertion nodes in an exported graph.
 
     ``torch.export`` inserts ``aten._assert_scalar`` nodes for symbolic shape
     relationships discovered during tracing.  These guards can be spurious:
@@ -29,22 +29,10 @@ def _strip_shape_assertions(graph_module: torch.nn.Module) -> None:
       like ``Ne(nnei, sum(sel))``.  These are spurious because the compiled
       graph handles any ``nnei >= sum(sel)`` correctly.
 
-    The assertion messages use opaque symbolic variable names (e.g.
-    ``Ne(s22, s96)``) rather than human-readable names, so filtering by
-    message content is not reliable.  Since
-    ``prefer_deferred_runtime_asserts_over_guards=True`` converts all shape
-    guards into these deferred assertions, removing all of them is safe.
-
-    .. note::
-
-       We intentionally do **not** call ``graph.eliminate_dead_code()``
-       after removing assertion nodes.  Dead-code elimination can remove
-       intermediate computation nodes that share sub-expressions with the
-       autograd gradient path (traced via ``torch.autograd.grad`` inside the
-       exported function).  Removing those nodes produces NaN forces for
-       models like DPA1/se_atten in the NoPBC case.  The leftover "dead"
-       nodes (computing the boolean condition for the removed assertions)
-       are harmless — they just compute unused scalar values.
+    Instead of erasing the assertion nodes (which can disturb the FX graph
+    structure and produce NaN gradients on some Python/torch versions), we
+    replace each assertion's condition with ``True`` so that the node stays
+    in the graph but never fires at runtime.
     """
     graph = graph_module.graph
     for node in list(graph.nodes):
@@ -52,7 +40,10 @@ def _strip_shape_assertions(graph_module: torch.nn.Module) -> None:
             node.op == "call_function"
             and node.target is torch.ops.aten._assert_scalar.default
         ):
-            graph.erase_node(node)
+            # Replace the condition with True so the assertion always passes
+            # but the node stays in the graph.  Erasing nodes can disturb the
+            # graph structure and produce NaN on some Python/torch versions.
+            node.args = (True, node.args[1])
     graph_module.recompile()
 
 
