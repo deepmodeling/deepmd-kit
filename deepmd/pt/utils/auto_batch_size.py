@@ -53,7 +53,7 @@ class AutoBatchSize(AutoBatchSizeBase):
             torch.cuda.empty_cache()
             return True
 
-        if not isinstance(e, RuntimeError) or not e.args:
+        if not isinstance(e, RuntimeError):
             return False
 
         # Gather messages from the exception itself and its chain.  AOTInductor
@@ -85,6 +85,7 @@ class AutoBatchSize(AutoBatchSizeBase):
 
         # AOTInductor (.pt2) wraps the underlying CUDA OOM as a generic
         # ``run_func_(...) API call failed at .../model_container_runner.cpp``.
+        # https://github.com/deepmodeling/deepmd-kit/issues/4594
         # The original "CUDA out of memory" text is printed to stderr only and
         # is absent from the Python-level RuntimeError, so we match on the
         # wrapper signature.  If the root cause turns out to be something
