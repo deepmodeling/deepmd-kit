@@ -51,6 +51,19 @@ class DescrptBlockRepflows(DescrptBlockRepflowsDP):
                 nall,
                 nloc,
             )
+        # Pt's parallel branch (repflows.py:580-587) requires the
+        # extended-region pathway (use_loc_mapping=False).  The
+        # local-mapping codepath skips the per-layer ghost exchange
+        # entirely, so combining it with comm_dict is contradictory.
+        # Surface this as a clear error rather than producing silently
+        # wrong results.
+        if getattr(self, "use_loc_mapping", False):
+            raise RuntimeError(
+                "DescrptBlockRepflows._exchange_ghosts: comm_dict is "
+                "set but use_loc_mapping=True. Multi-rank parallel "
+                "inference requires use_loc_mapping=False so per-layer "
+                "ghost exchange is meaningful."
+            )
 
         has_spin = "has_spin" in comm_dict
         if has_spin:

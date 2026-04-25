@@ -31,6 +31,34 @@ from __future__ import (
 import torch
 
 
+def _check_underlying_ops_loaded() -> None:
+    """Surface a clearer error when libdeepmd_op_pt.so isn't loaded.
+
+    pt_expt depends on libdeepmd_op_pt.so for the underlying
+    ``deepmd::border_op`` and ``deepmd::border_op_backward`` C++ ops.
+    Without them, callers get cryptic
+    ``AttributeError: '_OpNamespace' object has no attribute 'border_op'``
+    errors. We translate that into actionable advice.
+
+    Called once on first wrapper invocation (not at import time, since
+    pt_expt may legitimately be imported on systems where the .so is
+    not built — e.g. eager-only smoke tests of dpmodel-side code).
+    """
+    if not (
+        hasattr(torch.ops, "deepmd")
+        and hasattr(torch.ops.deepmd, "border_op")
+        and hasattr(torch.ops.deepmd, "border_op_backward")
+    ):
+        raise RuntimeError(
+            "deepmd_export::border_op wrapper requires "
+            "torch.ops.deepmd.border_op and "
+            "torch.ops.deepmd.border_op_backward (from "
+            "libdeepmd_op_pt.so) to be loaded. Build the pt custom-op "
+            "library and ensure deepmd.pt is imported before the "
+            "first call to this wrapper."
+        )
+
+
 @torch.library.custom_op("deepmd_export::border_op", mutates_args=())
 def border_op_export(
     sendlist: torch.Tensor,
@@ -50,6 +78,7 @@ def border_op_export(
     and outputs match the underlying op exactly except for the aliasing
     fix (see module docstring).
     """
+    _check_underlying_ops_loaded()
     out = torch.ops.deepmd.border_op(
         sendlist,
         sendproc,
