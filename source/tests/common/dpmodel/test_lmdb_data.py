@@ -14,6 +14,7 @@ import numpy as np
 from deepmd.dpmodel.utils.lmdb_data import (
     LmdbDataReader,
     LmdbTestData,
+    LmdbTestDataNlocView,
     SameNlocBatchSampler,
     _expand_indices_by_blocks,
     compute_block_targets,
@@ -414,6 +415,27 @@ class TestMixedNloc(unittest.TestCase):
         self.assertEqual(r9["coord"].shape, (4, 9 * 3))
         r12 = td.get_test(nloc=12)
         self.assertEqual(r12["coord"].shape, (2, 12 * 3))
+
+    def test_test_data_nloc_view(self):
+        """LmdbTestDataNlocView delegates attributes and fixes nloc."""
+        td = LmdbTestData(self._lmdb_path, type_map=self._type_map, shuffle_test=False)
+        td.add("energy", 1, atomic=False, must=False, high_prec=True)
+        view = LmdbTestDataNlocView(td, 9)
+
+        self.assertEqual(view.pbc, td.pbc)
+        self.assertIs(view.nloc_groups, td.nloc_groups)
+
+        expected = td.get_test(nloc=9)
+        actual = view.get_test()
+        self.assertEqual(actual["coord"].shape, (4, 9 * 3))
+        self.assertEqual(actual["type"].shape, (4, 9))
+        self.assertEqual(actual.keys(), expected.keys())
+        for key, expected_value in expected.items():
+            actual_value = actual[key]
+            if isinstance(expected_value, np.ndarray):
+                np.testing.assert_array_equal(actual_value, expected_value)
+            else:
+                self.assertEqual(actual_value, expected_value)
 
     def test_test_data_get_test_default_mixed(self):
         td = LmdbTestData(self._lmdb_path, type_map=self._type_map, shuffle_test=False)
@@ -850,6 +872,66 @@ class TestDynamicKeysAndRepeat(unittest.TestCase):
             result["atom_pref"].shape,
             (self._nframes, self._natoms * 3),
         )
+
+    def test_testdata_add_data_requirement_matches_manual_add(self):
+        """DataRequirementItem forwarding matches manual requirement registration."""
+        from deepmd.utils.data import (
+            DataRequirementItem,
+        )
+
+        requirements = [
+            DataRequirementItem(
+                "drdq",
+                ndof=6,
+                atomic=True,
+                must=False,
+                high_prec=False,
+                repeat=2,
+                default=1.25,
+                dtype=np.float64,
+            ),
+            DataRequirementItem(
+                "aux",
+                ndof=2,
+                atomic=False,
+                must=False,
+                high_prec=False,
+                repeat=3,
+                default=-2.0,
+                dtype=np.float32,
+            ),
+        ]
+        manual = LmdbTestData(
+            self._lmdb_path,
+            type_map=self._type_map,
+            shuffle_test=False,
+        )
+        forwarded = LmdbTestData(
+            self._lmdb_path,
+            type_map=self._type_map,
+            shuffle_test=False,
+        )
+        for item in requirements:
+            manual.add(
+                item["key"],
+                ndof=item["ndof"],
+                atomic=item["atomic"],
+                must=item["must"],
+                high_prec=item["high_prec"],
+                repeat=item["repeat"],
+                default=item["default"],
+                dtype=item["dtype"],
+            )
+        forwarded.add_data_requirement(requirements)
+
+        manual_result = manual.get_test()
+        forwarded_result = forwarded.get_test()
+        for item in requirements:
+            key = item["key"]
+            self.assertEqual(forwarded_result[f"find_{key}"], 0.0)
+            self.assertEqual(forwarded_result[key].shape, manual_result[key].shape)
+            self.assertEqual(forwarded_result[key].dtype, manual_result[key].dtype)
+            np.testing.assert_array_equal(forwarded_result[key], manual_result[key])
 
     def test_testdata_missing_key_not_found(self):
         """Keys absent from LMDB frames get find_*=0.0 in get_test()."""

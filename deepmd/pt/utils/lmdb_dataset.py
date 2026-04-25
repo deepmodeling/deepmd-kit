@@ -212,6 +212,14 @@ class LmdbDataset(Dataset):
     def batch_size(self) -> int:
         return self._reader.batch_size
 
+    @property
+    def type_map(self) -> list[str]:
+        return self._reader.type_map
+
+    @property
+    def data_requirements(self) -> list[DataRequirementItem]:
+        return self._reader.data_requirements
+
     def add_data_requirement(self, data_requirement: list[DataRequirementItem]) -> None:
         self._reader.add_data_requirement(data_requirement)
 

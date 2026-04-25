@@ -407,20 +407,19 @@ class FullValidator:
         """Build (once) and return the cached LMDB test snapshot.
 
         Reuses the ``type_map`` and previously-registered
-        ``DataRequirementItem`` entries on ``LmdbDataset._reader`` so that
+        ``DataRequirementItem`` entries from the validation dataset so that
         the full-validation snapshot sees exactly the same fields and
         dtypes as training batches.
         """
         if self._lmdb_test_data is not None:
             return self._lmdb_test_data
 
-        reader = lmdb_dataset._reader
         self._lmdb_test_data = LmdbTestData(
             lmdb_dataset.lmdb_path,
-            type_map=list(reader._type_map),
+            type_map=list(lmdb_dataset.type_map),
             shuffle_test=False,
         )
-        data_requirements = list(reader._data_requirements.values())
+        data_requirements = lmdb_dataset.data_requirements
         if data_requirements:
             self._lmdb_test_data.add_data_requirement(data_requirements)
         return self._lmdb_test_data

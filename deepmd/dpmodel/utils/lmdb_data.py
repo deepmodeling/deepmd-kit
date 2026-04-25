@@ -535,6 +535,11 @@ class LmdbDataReader:
         for item in data_requirement:
             self._data_requirements[item["key"]] = item
 
+    @property
+    def data_requirements(self) -> list[DataRequirementItem]:
+        """Registered data requirements in insertion order."""
+        return list(self._data_requirements.values())
+
     def print_summary(self, name: str, prob: Any) -> None:
         """Print basic dataset info."""
         n_groups = len(self._nloc_groups)
