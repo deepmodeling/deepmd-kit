@@ -99,7 +99,9 @@ def main():
         }
         pt2_path = os.path.join(base_dir, f"model_devi_md{idx}.pt2")
         print(f"Exporting to {pt2_path} ...")  # noqa: T201
-        pt_expt_deserialize_to_file(pt2_path, copy.deepcopy(data))
+        pt_expt_deserialize_to_file(
+            pt2_path, copy.deepcopy(data), do_atomic_virial=True
+        )
         models.append(pt2_path)
 
     print("Export done.")  # noqa: T201

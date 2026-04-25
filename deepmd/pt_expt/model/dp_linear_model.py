@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import types
 from typing import (
     Any,
 )
@@ -19,6 +20,7 @@ from deepmd.utils.data_system import (
 )
 
 from .make_model import (
+    _pad_nlist_for_export,
     make_model,
 )
 from .model import (
@@ -142,6 +144,7 @@ class LinearEnergyModel(DPModelCommon, DPLinearModel_):
             aparam: torch.Tensor | None,
         ) -> dict[str, torch.Tensor]:
             extended_coord = extended_coord.detach().requires_grad_(True)
+            nlist = _pad_nlist_for_export(nlist)
             return model.forward_lower(
                 extended_coord,
                 extended_atype,
@@ -152,9 +155,16 @@ class LinearEnergyModel(DPModelCommon, DPLinearModel_):
                 do_atomic_virial=do_atomic_virial,
             )
 
-        return make_fx(fn, **make_fx_kwargs)(
-            extended_coord, extended_atype, nlist, mapping, fparam, aparam
-        )
+        # See make_model.py for the rationale of the pad + monkeypatch.
+        _orig_need_sort = model.need_sorted_nlist_for_lower
+        model.need_sorted_nlist_for_lower = types.MethodType(lambda self: True, model)
+        try:
+            traced = make_fx(fn, **make_fx_kwargs)(
+                extended_coord, extended_atype, nlist, mapping, fparam, aparam
+            )
+        finally:
+            model.need_sorted_nlist_for_lower = _orig_need_sort
+        return traced
 
     @classmethod
     def update_sel(

@@ -112,7 +112,7 @@ def main():
     convert_backend(INPUT=yaml_path, OUTPUT=pth_path)
 
     print(f"Converting to {pt2_path} ...")  # noqa: T201
-    convert_backend(INPUT=yaml_path, OUTPUT=pt2_path)
+    convert_backend(INPUT=yaml_path, OUTPUT=pt2_path, atomic_virial=True)
 
     print("Export done.")  # noqa: T201
 

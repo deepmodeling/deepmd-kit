@@ -8,12 +8,13 @@
 #include <vector>
 
 #include "DeepSpin.h"
+#include "DeepSpinPTExpt.h"
 #include "neighbor_list.h"
 #include "test_utils.h"
 
 // Spin models need relaxed epsilon
 #undef EPSILON
-#define EPSILON (std::is_same<VALUETYPE, double>::value ? 1e-6 : 1e-1)
+#define EPSILON (std::is_same<VALUETYPE, double>::value ? 1e-10 : 1e-4)
 
 // ============================================================================
 // PBC test fixture
@@ -52,7 +53,7 @@ class TestInferDeepSpinDpaPtExpt : public ::testing::Test {
         GTEST_SKIP() << "Skipping: " << model_path << " not found.";
       }
     }
-#ifndef BUILD_PYTORCH
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT_SPIN
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
     dp.init(model_path);
@@ -238,7 +239,7 @@ class TestInferDeepSpinDpaPtExptNopbc : public ::testing::Test {
         GTEST_SKIP() << "Skipping: " << model_path << " not found.";
       }
     }
-#ifndef BUILD_PYTORCH
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT_SPIN
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
     dp.init(model_path);
@@ -469,4 +470,104 @@ TYPED_TEST(TestInferDeepSpinDpaPtExptNopbc, cpu_lmp_nlist_atomic) {
   for (int ii = 0; ii < natoms * 9; ++ii) {
     EXPECT_LT(fabs(atom_vir[ii] - expected_atom_v[ii]), EPSILON);
   }
+}
+
+TYPED_TEST(TestInferDeepSpinDpaPtExptNopbc, cpu_lmp_nlist_oversized) {
+  using VALUETYPE = TypeParam;
+  const std::vector<VALUETYPE>& coord = this->coord;
+  const std::vector<VALUETYPE>& spin = this->spin;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  std::vector<VALUETYPE>& expected_f = this->expected_f;
+  std::vector<VALUETYPE>& expected_fm = this->expected_fm;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
+  int& natoms = this->natoms;
+  double& expected_tot_e = this->expected_tot_e;
+  deepmd::DeepSpin& dp = this->dp;
+  double ener;
+  std::vector<VALUETYPE> force, force_mag, virial;
+
+  std::vector<std::vector<int> > nlist_data = {
+      {1, 2, 3, 4, 5}, {0, 2, 3, 4, 5}, {0, 1, 3, 4, 5},
+      {0, 1, 2, 4, 5}, {0, 1, 2, 3, 5}, {0, 1, 2, 3, 4}};
+  // Pad with extra -1 entries and shuffle to create oversized nlist
+  std::vector<std::vector<int> > nlist_oversized;
+  _pad_shuffle_nlist(nlist_oversized, nlist_data, 50);
+  std::vector<int> ilist(natoms), numneigh(natoms);
+  std::vector<int*> firstneigh(natoms);
+  deepmd::InputNlist inlist(natoms, &ilist[0], &numneigh[0], &firstneigh[0]);
+  convert_nlist(inlist, nlist_oversized);
+  dp.compute(ener, force, force_mag, virial, coord, spin, atype, box, 0, inlist,
+             0);
+
+  EXPECT_EQ(force.size(), natoms * 3);
+  EXPECT_EQ(force_mag.size(), natoms * 3);
+  EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
+  for (int ii = 0; ii < natoms * 3; ++ii) {
+    EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
+    EXPECT_LT(fabs(force_mag[ii] - expected_fm[ii]), EPSILON);
+  }
+  EXPECT_FALSE(virial.empty()) << "Virial should not be empty";
+  EXPECT_EQ(virial.size(), 9);
+  for (int ii = 0; ii < 3 * 3; ++ii) {
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+  }
+}
+
+// Sanity check that the shuffle in `_pad_shuffle_nlist` actually redistributes
+// real neighbors away from the front of each row — see the non-spin version
+// in test_deeppot_ptexpt.cc for the rationale.  At least one prediction
+// (energy / force / force_mag / virial) must deviate from the reference by
+// more than EPSILON when the nlist is truncated to a single column.
+TYPED_TEST(TestInferDeepSpinDpaPtExptNopbc,
+           cpu_lmp_nlist_oversized_shuffle_sanity) {
+  using VALUETYPE = TypeParam;
+  const std::vector<VALUETYPE>& coord = this->coord;
+  const std::vector<VALUETYPE>& spin = this->spin;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  std::vector<VALUETYPE>& expected_f = this->expected_f;
+  std::vector<VALUETYPE>& expected_fm = this->expected_fm;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
+  int& natoms = this->natoms;
+  double& expected_tot_e = this->expected_tot_e;
+  deepmd::DeepSpin& dp = this->dp;
+  double ener;
+  std::vector<VALUETYPE> force, force_mag, virial;
+
+  std::vector<std::vector<int> > nlist_data = {
+      {1, 2, 3, 4, 5}, {0, 2, 3, 4, 5}, {0, 1, 3, 4, 5},
+      {0, 1, 2, 4, 5}, {0, 1, 2, 3, 5}, {0, 1, 2, 3, 4}};
+  std::vector<std::vector<int> > nlist_oversized;
+  _pad_shuffle_nlist(nlist_oversized, nlist_data, 50);
+  for (auto& row : nlist_oversized) {
+    row.resize(1);
+  }
+  std::vector<int> ilist(natoms), numneigh(natoms);
+  std::vector<int*> firstneigh(natoms);
+  deepmd::InputNlist inlist(natoms, &ilist[0], &numneigh[0], &firstneigh[0]);
+  convert_nlist(inlist, nlist_oversized);
+  dp.compute(ener, force, force_mag, virial, coord, spin, atype, box, 0, inlist,
+             0);
+
+  // See test_deeppot_ptexpt.cc for the rationale of the separate negative-
+  // direction threshold.  For the spin nopbc test the strongest signal
+  // is in force_mag (max magnitude ~0.97); 1e-3 is well below all
+  // expected signal magnitudes and well above the float precision floor.
+  static constexpr double SANITY_MIN_DEV = 1e-3;
+  bool any_deviates = fabs(ener - expected_tot_e) > SANITY_MIN_DEV;
+  for (int ii = 0; ii < natoms * 3 && !any_deviates; ++ii) {
+    any_deviates = fabs(force[ii] - expected_f[ii]) > SANITY_MIN_DEV;
+  }
+  for (int ii = 0; ii < natoms * 3 && !any_deviates; ++ii) {
+    any_deviates = fabs(force_mag[ii] - expected_fm[ii]) > SANITY_MIN_DEV;
+  }
+  for (int ii = 0; ii < 9 && !any_deviates; ++ii) {
+    any_deviates = fabs(virial[ii] - expected_tot_v[ii]) > SANITY_MIN_DEV;
+  }
+  EXPECT_TRUE(any_deviates)
+      << "Every prediction stayed within SANITY_MIN_DEV after single-column "
+         "truncation of the shuffled oversized nlist — the shuffle appears "
+         "to have kept real neighbors at the front.  The oversized test "
+         "above may be a tautology; increase n_extra in _pad_shuffle_nlist.";
 }

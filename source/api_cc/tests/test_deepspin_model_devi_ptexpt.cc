@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "DeepSpin.h"
+#include "DeepSpinPTExpt.h"
 #include "neighbor_list.h"
 #include "test_utils.h"
 
@@ -46,7 +47,7 @@ class TestInferDeepSpinModeDeviPtExpt : public ::testing::Test {
         GTEST_SKIP() << "Skipping: " << model1_path << " not found.";
       }
     }
-#ifndef BUILD_PYTORCH
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT_SPIN
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
     dp0.init(model0_path);

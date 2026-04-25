@@ -17,7 +17,7 @@ from deepmd.dpmodel.utils.serialization import (
 
 
 def _strip_shape_assertions(graph_module: torch.nn.Module) -> None:
-    """Remove shape-guard assertion nodes from a spin model's exported graph.
+    """Neutralise shape-guard assertion nodes in a spin model's exported graph.
 
     ``torch.export`` inserts ``aten._assert_scalar`` nodes for symbolic shape
     relationships discovered during tracing.  For the spin model, the atom-
@@ -32,8 +32,12 @@ def _strip_shape_assertions(graph_module: torch.nn.Module) -> None:
     so filtering by message content is not reliable.  Since
     ``prefer_deferred_runtime_asserts_over_guards=True`` converts all shape
     guards into these deferred assertions, and the only shape relationships in
-    the spin model involve nall/nloc, removing all of them is safe in this
+    the spin model involve nall/nloc, neutralising all of them is safe in this
     context.
+
+    We replace each assertion's condition with ``True`` rather than erasing the
+    node; erasing nodes can disturb the FX graph structure and produce NaN
+    gradients on some Python/torch versions.
     """
     graph = graph_module.graph
     for node in list(graph.nodes):
@@ -41,8 +45,7 @@ def _strip_shape_assertions(graph_module: torch.nn.Module) -> None:
             node.op == "call_function"
             and node.target is torch.ops.aten._assert_scalar.default
         ):
-            graph.erase_node(node)
-    graph.eliminate_dead_code()
+            node.args = (True, node.args[1])
     graph_module.recompile()
 
 
@@ -178,11 +181,12 @@ def _make_sample_inputs(
 def _build_dynamic_shapes(
     *sample_inputs: torch.Tensor | None,
     has_spin: bool = False,
+    model_nnei: int = 1,
 ) -> tuple:
     """Build dynamic shape specifications for torch.export.
 
-    Marks nframes, nloc and nall as dynamic dimensions so the exported
-    program handles arbitrary frame and atom counts.
+    Marks nframes, nloc, nall and nnei as dynamic dimensions so the exported
+    program handles arbitrary frame, atom and neighbor counts.
 
     Parameters
     ----------
@@ -190,12 +194,15 @@ def _build_dynamic_shapes(
         Sample inputs: either 6 tensors (non-spin) or 7 tensors (spin).
     has_spin : bool
         Whether the inputs include an extended_spin tensor.
+    model_nnei : int
+        The model's sum(sel).  Used as the min for the dynamic nnei dim.
     Returns a tuple (not dict) to match positional args of the make_fx
     traced module, whose arg names may have suffixes like ``_1``.
     """
     nframes_dim = torch.export.Dim("nframes", min=1)
     nall_dim = torch.export.Dim("nall", min=1)
     nloc_dim = torch.export.Dim("nloc", min=1)
+    nnei_dim = torch.export.Dim("nnei", min=max(1, model_nnei))
 
     if has_spin:
         # (ext_coord, ext_atype, ext_spin, nlist, mapping, fparam, aparam)
@@ -205,7 +212,11 @@ def _build_dynamic_shapes(
             {0: nframes_dim, 1: nall_dim},  # extended_coord: (nframes, nall, 3)
             {0: nframes_dim, 1: nall_dim},  # extended_atype: (nframes, nall)
             {0: nframes_dim, 1: nall_dim},  # extended_spin: (nframes, nall, 3)
-            {0: nframes_dim, 1: nloc_dim},  # nlist: (nframes, nloc, nnei)
+            {
+                0: nframes_dim,
+                1: nloc_dim,
+                2: nnei_dim,
+            },  # nlist: (nframes, nloc, nnei) — nnei is dynamic
             {0: nframes_dim, 1: nall_dim},  # mapping: (nframes, nall)
             {0: nframes_dim} if fparam is not None else None,  # fparam
             {0: nframes_dim, 1: nloc_dim} if aparam is not None else None,  # aparam
@@ -217,7 +228,11 @@ def _build_dynamic_shapes(
         return (
             {0: nframes_dim, 1: nall_dim},  # extended_coord: (nframes, nall, 3)
             {0: nframes_dim, 1: nall_dim},  # extended_atype: (nframes, nall)
-            {0: nframes_dim, 1: nloc_dim},  # nlist: (nframes, nloc, nnei)
+            {
+                0: nframes_dim,
+                1: nloc_dim,
+                2: nnei_dim,
+            },  # nlist: (nframes, nloc, nnei) — nnei is dynamic
             {0: nframes_dim, 1: nall_dim},  # mapping: (nframes, nall)
             {0: nframes_dim} if fparam is not None else None,  # fparam
             {0: nframes_dim, 1: nloc_dim} if aparam is not None else None,  # aparam
@@ -257,6 +272,7 @@ def _collect_metadata(model: torch.nn.Module, is_spin: bool = False) -> dict:
         "type_map": model.get_type_map(),
         "rcut": model.get_rcut(),
         "sel": model.get_sel(),
+        "nnei": sum(model.get_sel()),
         "dim_fparam": model.get_dim_fparam(),
         "dim_aparam": model.get_dim_aparam(),
         "mixed_types": model.mixed_types(),
@@ -336,6 +352,7 @@ def deserialize_to_file(
     model_file: str,
     data: dict,
     model_json_override: dict | None = None,
+    do_atomic_virial: bool = False,
 ) -> None:
     """Deserialize a dictionary to a .pte or .pt2 model file.
 
@@ -356,16 +373,24 @@ def deserialize_to_file(
         If provided, this dict is stored in model.json instead of ``data``.
         Used by ``dp compress`` to store the compressed model dict while
         tracing the uncompressed model (make_fx cannot trace custom ops).
+    do_atomic_virial : bool
+        If True, export with per-atom virial correction (3 extra backward
+        passes, ~2.5x slower).  Default False for best performance.
     """
     if model_file.endswith(".pt2"):
-        _deserialize_to_file_pt2(model_file, data, model_json_override)
+        _deserialize_to_file_pt2(
+            model_file, data, model_json_override, do_atomic_virial
+        )
     else:
-        _deserialize_to_file_pte(model_file, data, model_json_override)
+        _deserialize_to_file_pte(
+            model_file, data, model_json_override, do_atomic_virial
+        )
 
 
 def _trace_and_export(
     data: dict,
     model_json_override: dict | None = None,
+    do_atomic_virial: bool = False,
 ) -> tuple:
     """Common logic: build model, trace, export.
 
@@ -447,7 +472,7 @@ def _trace_and_export(
             mapping_t,
             fparam=fparam,
             aparam=aparam,
-            do_atomic_virial=True,
+            do_atomic_virial=do_atomic_virial,
             tracing_mode="symbolic",
             _allow_non_fake_inputs=True,
         )
@@ -463,7 +488,7 @@ def _trace_and_export(
             mapping_t,
             fparam=fparam,
             aparam=aparam,
-            do_atomic_virial=True,
+            do_atomic_virial=do_atomic_virial,
             tracing_mode="symbolic",
             _allow_non_fake_inputs=True,
         )
@@ -477,7 +502,9 @@ def _trace_and_export(
     # graph.  Exporting on CPU keeps devices consistent; we move the
     # ExportedProgram to the target device afterwards via the official
     # move_to_device_pass (avoids FakeTensor device-propagation errors).
-    dynamic_shapes = _build_dynamic_shapes(*sample_inputs, has_spin=is_spin)
+    dynamic_shapes = _build_dynamic_shapes(
+        *sample_inputs, has_spin=is_spin, model_nnei=sum(model.get_sel())
+    )
     exported = torch.export.export(
         traced,
         sample_inputs,
@@ -487,13 +514,13 @@ def _trace_and_export(
     )
 
     if is_spin:
-        # torch.export re-introduces shape-guard assertions even when
-        # the make_fx graph has none.  The spin model's atom-doubling
-        # logic creates slice patterns that depend on (nall - nloc),
-        # producing guards like Ne(nall, nloc).  These guards are
-        # spurious: the model is correct when nall == nloc (NoPBC).
-        # Strip them from the exported graph so the model can be
-        # used with any valid nall >= nloc.
+        # The spin model's atom-doubling slice patterns depend on
+        # (nall - nloc), producing guards like Ne(nall, nloc).  These are
+        # spurious — the model is correct when nall == nloc (NoPBC).
+        # Non-spin models don't emit shape guards because the short-circuit
+        # order in `_format_nlist` (dpmodel) keeps the dynamic `nnei` axis
+        # free of symbolic comparisons when `extra_nlist_sort=True`
+        # (see `forward_common_lower_exportable` in pt_expt/model/make_model.py).
         _strip_shape_assertions(exported.graph_module)
 
     # 7. Move the exported program to the target device if needed.
@@ -504,7 +531,10 @@ def _trace_and_export(
 
         exported = move_to_device_pass(exported, target_device)
 
-    # 8. Prepare JSON-serializable model dict
+    # 8. Record export-time config in metadata
+    metadata["do_atomic_virial"] = do_atomic_virial
+
+    # 9. Prepare JSON-serializable model dict
     json_source = model_json_override if model_json_override is not None else data
     data_for_json = deepcopy(json_source)
     data_for_json = _numpy_to_json_serializable(data_for_json)
@@ -516,10 +546,11 @@ def _deserialize_to_file_pte(
     model_file: str,
     data: dict,
     model_json_override: dict | None = None,
+    do_atomic_virial: bool = False,
 ) -> None:
     """Deserialize a dictionary to a .pte model file."""
     exported, metadata, data_for_json, output_keys = _trace_and_export(
-        data, model_json_override
+        data, model_json_override, do_atomic_virial
     )
 
     model_def_script = data.get("model_def_script") or {}
@@ -537,6 +568,7 @@ def _deserialize_to_file_pt2(
     model_file: str,
     data: dict,
     model_json_override: dict | None = None,
+    do_atomic_virial: bool = False,
 ) -> None:
     """Deserialize a dictionary to a .pt2 model file (AOTInductor).
 
@@ -551,11 +583,31 @@ def _deserialize_to_file_pt2(
     )
 
     exported, metadata, data_for_json, output_keys = _trace_and_export(
-        data, model_json_override
+        data, model_json_override, do_atomic_virial
     )
 
-    # Compile via AOTInductor into a .pt2 package
-    aoti_compile_and_package(exported, package_path=model_file)
+    # On CUDA, aggressive kernel fusion (default realize_opcount_threshold=30)
+    # causes NaN in the backward pass (force/virial) of attention-based
+    # descriptors (DPA1, DPA2). Setting threshold=0 prevents fusion and
+    # avoids the NaN. Only applied on CUDA; CPU compilation is unaffected.
+    #
+    # NOTE: `torch._inductor.config` is a process-wide singleton.  The
+    # save/restore pattern here is NOT thread-safe — concurrent AOTInductor
+    # compilations from multiple threads would race on this global.  Callers
+    # must serialise `.pt2` exports if running under a thread pool.  Processes
+    # are fine (each has its own inductor config).
+    import torch._inductor.config as _inductor_config
+
+    import deepmd.pt_expt.utils.env as _env
+
+    is_cuda = _env.DEVICE.type == "cuda"
+    saved_threshold = _inductor_config.realize_opcount_threshold
+    if is_cuda:
+        _inductor_config.realize_opcount_threshold = 0
+    try:
+        aoti_compile_and_package(exported, package_path=model_file)
+    finally:
+        _inductor_config.realize_opcount_threshold = saved_threshold
 
     # Embed metadata into the .pt2 ZIP archive
     model_def_script = data.get("model_def_script") or {}
