@@ -921,7 +921,8 @@ def main_parser() -> argparse.ArgumentParser:
         default=False,
         help="Export .pt2/.pte models with per-atom virial correction. "
         "This adds ~2.5x inference cost but is required for "
-        "LAMMPS compute/atom virial output.",
+        "LAMMPS compute/atom virial output. "
+        "Ignored (with a warning) for other output backends.",
     )
 
     # * show model ******************************************************************
