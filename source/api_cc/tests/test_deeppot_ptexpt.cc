@@ -581,6 +581,52 @@ TYPED_TEST(TestInferDeepPotAPtExpt, print_summary) {
   dp.print_summary("");
 }
 
+// Regression test for the fail-fast guard hoisted in commit c80db58d.
+// `deeppot_sea_no_atomic_virial.pt2` is a copy of deeppot_sea.pt2 with
+// the do_atomic_virial=false flag patched into its metadata.json.
+// Calling compute() with atomic=true on this model must throw before
+// any tensors are allocated.
+TYPED_TEST(TestInferDeepPotAPtExpt, cpu_atomic_throws_when_disabled) {
+  using VALUETYPE = TypeParam;
+  deepmd::DeepPot dp_no_av;
+  ASSERT_NO_THROW(
+      dp_no_av.init("../../tests/infer/deeppot_sea_no_atomic_virial.pt2"));
+
+  std::vector<VALUETYPE>& coord = this->coord;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  int& natoms = this->natoms;
+
+  // Build an LMP-style nlist so we exercise the nlist-overload of
+  // compute(); the no-nlist overload has the same guard but is
+  // covered by symmetry.
+  float rc = dp_no_av.cutoff();
+  int nloc = coord.size() / 3;
+  std::vector<VALUETYPE> coord_cpy;
+  std::vector<int> atype_cpy, mapping;
+  std::vector<std::vector<int> > nlist_data;
+  _build_nlist<VALUETYPE>(nlist_data, coord_cpy, atype_cpy, mapping, coord,
+                          atype, box, rc);
+  int nall = coord_cpy.size() / 3;
+  std::vector<int> ilist(nloc), numneigh(nloc);
+  std::vector<int*> firstneigh(nloc);
+  deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+  convert_nlist(inlist, nlist_data);
+
+  double ener;
+  std::vector<VALUETYPE> force(nall * 3, 0.0), virial(9, 0.0), atom_ener,
+      atom_vir;
+  // atomic=true => guard must trip and throw deepmd_exception.
+  EXPECT_THROW(
+      dp_no_av.compute(ener, force, virial, atom_ener, atom_vir, coord_cpy,
+                       atype_cpy, box, nall - nloc, inlist, 0),
+      deepmd::deepmd_exception);
+  // atomic=false on the same model must work normally (sanity check
+  // that the guard fires only when actually requested).
+  EXPECT_NO_THROW(dp_no_av.compute(ener, force, virial, coord_cpy, atype_cpy,
+                                   box, nall - nloc, inlist, 0));
+}
+
 template <class VALUETYPE>
 class TestInferDeepPotAPtExptNoPbc : public ::testing::Test {
  protected:
