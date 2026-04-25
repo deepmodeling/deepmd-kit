@@ -242,6 +242,15 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
                              const std::vector<VALUETYPE>& fparam,
                              const std::vector<VALUETYPE>& aparam,
                              const bool atomic) {
+  // Fail fast before allocating any tensors.
+  if (atomic && !do_atomic_virial) {
+    throw deepmd::deepmd_exception(
+        "Atomic virial was requested (e.g. by LAMMPS compute */atom/virial) "
+        "but this .pt2 model was exported without it (metadata field "
+        "do_atomic_virial=False). Atomic virial adds ~2.5x inference cost "
+        "and is off by default for .pt2. To enable it, regenerate with: "
+        "dp convert-backend --atomic-virial INPUT.pth OUTPUT.pt2");
+  }
   torch::Device device(torch::kCUDA, gpu_id);
   if (!gpu_enabled) {
     device = torch::Device(torch::kCPU);
@@ -293,12 +302,15 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
           .clone()
           .to(device);
 
+  // LAMMPS sets ago=0 on every nlist rebuild, so ago>0 implies the cached
+  // mapping and nlist tensors are still valid — see DeepPotPTExpt.cc for
+  // the same rationale.
   if (ago == 0) {
     nlist_data.copy_from_nlist(lmp_list, nall - nghost);
     nlist_data.shuffle_exclude_empty(fwd_map);
     nlist_data.padding();
 
-    // Rebuild mapping tensor only when nlist is updated (ago == 0).
+    // Rebuild mapping tensor
     if (lmp_list.mapping) {
       std::vector<std::int64_t> mapping(nall_real);
       for (int ii = 0; ii < nall_real; ii++) {
@@ -362,14 +374,6 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
             .to(device);
   } else {
     aparam_tensor = torch::zeros({0}, options).to(device);
-  }
-
-  // Fail fast: check atomic virial availability before running the model
-  if (atomic && !do_atomic_virial) {
-    throw deepmd::deepmd_exception(
-        "Atomic virial is not available in this .pt2 model "
-        "(exported without --atomic-virial). "
-        "Regenerate with: dp convert-backend --atomic-virial INPUT OUTPUT");
   }
 
   // Run the .pt2 model (7 args for spin)
@@ -494,6 +498,15 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
                              const std::vector<VALUETYPE>& fparam,
                              const std::vector<VALUETYPE>& aparam,
                              const bool atomic) {
+  // Fail fast before allocating any tensors.
+  if (atomic && !do_atomic_virial) {
+    throw deepmd::deepmd_exception(
+        "Atomic virial was requested (e.g. by LAMMPS compute */atom/virial) "
+        "but this .pt2 model was exported without it (metadata field "
+        "do_atomic_virial=False). Atomic virial adds ~2.5x inference cost "
+        "and is off by default for .pt2. To enable it, regenerate with: "
+        "dp convert-backend --atomic-virial INPUT.pth OUTPUT.pt2");
+  }
   int natoms = atype.size();
 
   torch::Device device(torch::kCUDA, gpu_id);
@@ -648,20 +661,12 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
     aparam_tensor = torch::zeros({0}, options).to(device);
   }
 
-  // 5. Fail fast: check atomic virial availability before running the model
-  if (atomic && !do_atomic_virial) {
-    throw deepmd::deepmd_exception(
-        "Atomic virial is not available in this .pt2 model "
-        "(exported without --atomic-virial). "
-        "Regenerate with: dp convert-backend --atomic-virial INPUT OUTPUT");
-  }
-
-  // 6. Run the .pt2 model (7 args for spin)
+  // 5. Run the .pt2 model (7 args for spin)
   auto flat_outputs =
       run_model(coord_Tensor, atype_Tensor, spin_Tensor, nlist_tensor,
                 mapping_tensor, fparam_tensor, aparam_tensor);
 
-  // 7. Extract outputs
+  // 6. Extract outputs
   std::map<std::string, torch::Tensor> output_map;
   extract_outputs(output_map, flat_outputs);
 
