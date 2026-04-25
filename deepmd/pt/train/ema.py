@@ -5,6 +5,7 @@ from __future__ import (
     annotations,
 )
 
+import logging
 from contextlib import (
     contextmanager,
 )
@@ -31,6 +32,8 @@ EMA_DECAY_KEY = "decay"
 EMA_MODEL_STATE_KEY = "model"
 EMA_VALIDATION_STATE_KEY = "validation_state"
 
+log = logging.getLogger(__name__)
+
 
 def _append_suffix(path_like: str | Path, suffix: str) -> Path:
     """Append a suffix before the final file suffix when present."""
@@ -55,7 +58,7 @@ class ModelEMA:
 
     def __init__(
         self,
-        model: torch.nn.Module,
+        model: torch.nn.Module | dict[str, torch.nn.Module],
         decay: float,
         state: dict[str, Any] | None = None,
     ) -> None:
@@ -118,7 +121,14 @@ class ModelEMA:
     def load_state_dict(self, state: dict[str, Any]) -> None:
         """Restore EMA shadow parameters and validator state."""
         if EMA_DECAY_KEY in state:
-            self.decay = float(state[EMA_DECAY_KEY])
+            checkpoint_decay = float(state[EMA_DECAY_KEY])
+            if checkpoint_decay != self.decay:
+                log.warning(
+                    "Overriding training.ema_decay=%s with EMA checkpoint decay=%s.",
+                    self.decay,
+                    checkpoint_decay,
+                )
+            self.decay = checkpoint_decay
         model_state = state.get(EMA_MODEL_STATE_KEY, {})
         if not isinstance(model_state, dict):
             raise TypeError("EMA checkpoint field `model` must be a dict.")
