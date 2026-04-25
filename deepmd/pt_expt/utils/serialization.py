@@ -590,6 +590,12 @@ def _deserialize_to_file_pt2(
     # causes NaN in the backward pass (force/virial) of attention-based
     # descriptors (DPA1, DPA2). Setting threshold=0 prevents fusion and
     # avoids the NaN. Only applied on CUDA; CPU compilation is unaffected.
+    #
+    # NOTE: `torch._inductor.config` is a process-wide singleton.  The
+    # save/restore pattern here is NOT thread-safe — concurrent AOTInductor
+    # compilations from multiple threads would race on this global.  Callers
+    # must serialise `.pt2` exports if running under a thread pool.  Processes
+    # are fine (each has its own inductor config).
     import torch._inductor.config as _inductor_config
 
     import deepmd.pt_expt.utils.env as _env
