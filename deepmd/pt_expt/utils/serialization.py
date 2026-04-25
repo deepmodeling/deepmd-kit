@@ -17,22 +17,27 @@ from deepmd.dpmodel.utils.serialization import (
 
 
 def _strip_shape_assertions(graph_module: torch.nn.Module) -> None:
-    """Neutralise shape-guard assertion nodes in an exported graph.
+    """Neutralise shape-guard assertion nodes in a spin model's exported graph.
 
     ``torch.export`` inserts ``aten._assert_scalar`` nodes for symbolic shape
-    relationships discovered during tracing.  These guards can be spurious:
+    relationships discovered during tracing.  For the spin model, the atom-
+    doubling logic creates slice patterns that depend on ``(nall - nloc)``,
+    producing guards like ``Ne(nall, nloc)``.  These guards are spurious: the
+    model computes correct results even when ``nall == nloc`` (NoPBC, no ghost
+    atoms).
 
-    * **Spin models**: atom-doubling logic creates slice patterns that depend
-      on ``(nall - nloc)``, producing guards like ``Ne(nall, nloc)``.
-    * **All models**: the nlist padding inside ``forward_common_lower_exportable``
-      and the subsequent sort/truncate in ``_format_nlist`` can produce guards
-      like ``Ne(nnei, sum(sel))``.  These are spurious because the compiled
-      graph handles any ``nnei >= sum(sel)`` correctly.
+    This function is **only called for spin models** (guarded by ``if is_spin``
+    in ``_trace_and_export``).  The assertion messages use opaque symbolic
+    variable names (e.g. ``Ne(s22, s96)``) rather than human-readable names,
+    so filtering by message content is not reliable.  Since
+    ``prefer_deferred_runtime_asserts_over_guards=True`` converts all shape
+    guards into these deferred assertions, and the only shape relationships in
+    the spin model involve nall/nloc, neutralising all of them is safe in this
+    context.
 
-    Instead of erasing the assertion nodes (which can disturb the FX graph
-    structure and produce NaN gradients on some Python/torch versions), we
-    replace each assertion's condition with ``True`` so that the node stays
-    in the graph but never fires at runtime.
+    We replace each assertion's condition with ``True`` rather than erasing the
+    node; erasing nodes can disturb the FX graph structure and produce NaN
+    gradients on some Python/torch versions.
     """
     graph = graph_module.graph
     for node in list(graph.nodes):
@@ -40,9 +45,6 @@ def _strip_shape_assertions(graph_module: torch.nn.Module) -> None:
             node.op == "call_function"
             and node.target is torch.ops.aten._assert_scalar.default
         ):
-            # Replace the condition with True so the assertion always passes
-            # but the node stays in the graph.  Erasing nodes can disturb the
-            # graph structure and produce NaN on some Python/torch versions.
             node.args = (True, node.args[1])
     graph_module.recompile()
 
@@ -141,13 +143,6 @@ def _make_sample_inputs(
         rcut,
         sel,
         distinguish_types=not mixed_types,
-    )
-    # Pad nlist so nnei > sum(sel) in the sample tensors.
-    # This prevents torch.export from specializing nnei to sum(sel).
-    nnei = sum(sel)
-    n_pad = max(1, nnei // 4)  # pad by ~25%, at least 1
-    nlist = np.concatenate(
-        [nlist, -np.ones((nframes, nloc, n_pad), dtype=nlist.dtype)], axis=-1
     )
     extended_coord = extended_coord.reshape(nframes, -1, 3)
 
@@ -518,10 +513,15 @@ def _trace_and_export(
         prefer_deferred_runtime_asserts_over_guards=True,
     )
 
-    # torch.export inserts _assert_scalar guards for symbolic shape
-    # relationships (e.g. Ne(nnei, sum(sel)), Ne(nall, nloc)).  These
-    # are spurious — the model handles any valid input shapes correctly.
-    _strip_shape_assertions(exported.graph_module)
+    if is_spin:
+        # The spin model's atom-doubling slice patterns depend on
+        # (nall - nloc), producing guards like Ne(nall, nloc).  These are
+        # spurious — the model is correct when nall == nloc (NoPBC).
+        # Non-spin models don't emit shape guards because the short-circuit
+        # order in `_format_nlist` (dpmodel) keeps the dynamic `nnei` axis
+        # free of symbolic comparisons when `extra_nlist_sort=True`
+        # (see `forward_common_lower_exportable` in pt_expt/model/make_model.py).
+        _strip_shape_assertions(exported.graph_module)
 
     # 7. Move the exported program to the target device if needed.
     if target_device.type != "cpu":

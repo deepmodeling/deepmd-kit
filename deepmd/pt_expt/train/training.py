@@ -945,6 +945,7 @@ class Trainer:
                         n_attn,
                         task_key,
                     )
+
             inp, _ = self.get_data(is_train=True, task_key=task_key)
             coord = inp["coord"].detach()
             atype = inp["atype"].detach()
