@@ -12,8 +12,8 @@ Strategy
    ``.pte`` (the fast path; ``.pt2`` AOTInductor compilation is too
    heavy for a routine unit test).
 2. Read back that ``.pte`` and record the reference outputs.
-3. Rewrite the archive byte-for-byte except for the ``extra/model.json``
-   entry, producing a metadata-only variant.
+3. Copy all archive entries except ``extra/model.json`` into a
+   metadata-only variant.
 4. Load the metadata-only archive via ``DeepPot`` and assert that the
    metadata-level accessors and the numeric ``eval`` result are
    **bitwise identical** to the reference.
@@ -151,10 +151,10 @@ class TestDeepEvalMetadataOnlyPte(unittest.TestCase):
         """The hot-path attributes hoisted in both init paths must agree."""
         full = self.dp_full.deep_eval
         meta = self.dp_meta.deep_eval
-        self.assertEqual(list(full.sel), list(meta.sel))
-        self.assertEqual(bool(full.mixed_types), bool(meta.mixed_types))
-        self.assertEqual(full.rcut, meta.rcut)
-        self.assertEqual(list(full.type_map), list(meta.type_map))
+        self.assertEqual(list(full._sel), list(meta._sel))
+        self.assertEqual(bool(full._mixed_types), bool(meta._mixed_types))
+        self.assertEqual(full._rcut, meta._rcut)
+        self.assertEqual(list(full._type_map), list(meta._type_map))
 
     def test_dpmodel_presence(self) -> None:
         """``_dpmodel`` is the single signal that separates the two modes."""

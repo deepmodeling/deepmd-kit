@@ -146,14 +146,10 @@ class DeepEval(DeepEvalBackend):
             self._dpmodel = BaseModel.deserialize(model_data)
             self._is_spin = False
 
-        self.rcut = self._dpmodel.get_rcut()
-        self.type_map = self._dpmodel.get_type_map()
-        # Hoist sel / mixed_types to plain attributes so the inference hot
-        # path (`_build_nlist_*`) does not need the dpmodel instance.  This
-        # matches what `_init_from_metadata` sets and keeps both code paths
-        # numerically identical.
-        self.sel = list(self._dpmodel.get_sel())
-        self.mixed_types = bool(self._dpmodel.mixed_types())
+        self._rcut = self._dpmodel.get_rcut()
+        self._type_map = self._dpmodel.get_type_map()
+        self._sel = list(self._dpmodel.get_sel())
+        self._mixed_types = bool(self._dpmodel.mixed_types())
         if self._is_spin:
             self._model_output_def = ModelOutputDef(
                 FittingOutputDef(
@@ -185,15 +181,15 @@ class DeepEval(DeepEvalBackend):
         ``self._dpmodel`` is left as ``None`` to signal the metadata-only
         mode.  Inference does not need it: it runs through
         ``aoti_load_package`` / the exported module and uses plain
-        attributes (``self.rcut``, ``self.sel``, ``self.mixed_types``,
+        attributes (``self._rcut``, ``self._sel``, ``self._mixed_types``,
         ``self._model_output_def``) for all metadata-level queries.
         """
         self._dpmodel = None
         self._is_spin = bool(self.metadata.get("is_spin", False))
-        self.rcut = float(self.metadata["rcut"])
-        self.type_map = list(self.metadata["type_map"])
-        self.sel = [int(s) for s in self.metadata["sel"]]
-        self.mixed_types = bool(self.metadata["mixed_types"])
+        self._rcut = float(self.metadata["rcut"])
+        self._type_map = list(self.metadata["type_map"])
+        self._sel = [int(s) for s in self.metadata["sel"]]
+        self._mixed_types = bool(self.metadata["mixed_types"])
 
         fitting_defs = []
         for vdef in self.metadata["fitting_output_defs"]:
@@ -485,15 +481,15 @@ class DeepEval(DeepEvalBackend):
 
     def get_rcut(self) -> float:
         """Get the cutoff radius of this model."""
-        return self.rcut
+        return self._rcut
 
     def get_ntypes(self) -> int:
         """Get the number of atom types of this model."""
-        return len(self.type_map)
+        return len(self._type_map)
 
     def get_type_map(self) -> list[str]:
         """Get the type map (element name of the atom types) of this model."""
-        return self.type_map
+        return self._type_map
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this DP."""
@@ -509,7 +505,7 @@ class DeepEval(DeepEvalBackend):
 
     @property
     def model_type(self) -> type["DeepEvalWrapper"]:
-        """The the evaluator of the model type."""
+        """The evaluator of the model type."""
         if self._dpmodel is not None:
             model_output_type = self._dpmodel.model_output_type()
         else:
@@ -557,11 +553,11 @@ class DeepEval(DeepEvalBackend):
 
     def get_has_spin(self) -> bool:
         """Check if the model has spin atom types."""
-        return getattr(self, "_is_spin", False)
+        return self._is_spin
 
     def get_use_spin(self) -> list[bool]:
         """Get the per-type spin usage of this model."""
-        if not getattr(self, "_is_spin", False):
+        if not self._is_spin:
             return []
         if self._dpmodel is not None:
             return self._dpmodel.spin.use_spin.tolist()
@@ -719,12 +715,9 @@ class DeepEval(DeepEvalBackend):
         """
         nframes = coords.shape[0]
         natoms = coords.shape[1]
-        rcut = self.rcut
-        # ``self.sel`` / ``self.mixed_types`` are populated in both
-        # :meth:`_init_from_model_json` and :meth:`_init_from_metadata`,
-        # so this works whether or not ``model.json`` was available.
-        sel = self.sel
-        mixed_types = self.mixed_types
+        rcut = self._rcut
+        sel = self._sel
+        mixed_types = self._mixed_types
 
         if cells is not None:
             box_input = cells.reshape(nframes, 3, 3)
@@ -835,8 +828,8 @@ class DeepEval(DeepEvalBackend):
         nlist : np.ndarray, shape (nloc, nsel)
         mapping : np.ndarray, shape (nall,)
         """
-        sel = self.sel
-        mixed_types = self.mixed_types
+        sel = self._sel
+        mixed_types = self._mixed_types
         nsel = sum(sel)
 
         natoms = positions.shape[0]
@@ -879,7 +872,7 @@ class DeepEval(DeepEvalBackend):
         ghost_remap[out_mask] = np.arange(nloc, nloc + nghost, dtype=np.int64)
 
         # Build nlist: vectorized CSR-to-dense conversion
-        rcut = self.rcut
+        rcut = self._rcut
         counts = np.diff(first_neigh)
         max_nn = int(counts.max()) if counts.size > 0 else 0
 

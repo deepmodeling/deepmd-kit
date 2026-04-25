@@ -8,6 +8,7 @@ through the pt_expt inference backend (DeepEval → DeepPot).
 import copy
 import os
 import tempfile
+import zipfile
 
 import numpy as np
 import pytest
@@ -105,6 +106,37 @@ ATYPE = [0, 1, 1, 0, 1, 1]
 BOX = np.array([13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0], dtype=np.float64)
 
 
+def _strip_extra_model_json(src: str, dst: str) -> None:
+    """Copy ``src`` to ``dst`` dropping any ``extra/model.json`` entry."""
+    with zipfile.ZipFile(src, "r") as zin, zipfile.ZipFile(dst, "w") as zout:
+        for info in zin.infolist():
+            if info.filename.endswith("extra/model.json"):
+                continue
+            zout.writestr(info, zin.read(info.filename))
+
+
+def _assert_fitting_output_defs_match(full_eval, meta_eval) -> None:
+    """Assert that metadata rebuilds the same fitting output definitions."""
+    full_defs = full_eval._model_output_def.def_outp.get_data()
+    meta_defs = meta_eval._model_output_def.def_outp.get_data()
+    assert full_defs.keys() == meta_defs.keys()
+    attrs = (
+        "shape",
+        "reducible",
+        "r_differentiable",
+        "c_differentiable",
+        "atomic",
+        "category",
+        "r_hessian",
+        "magnetic",
+        "intensive",
+    )
+    for name, full_def in full_defs.items():
+        meta_def = meta_defs[name]
+        for attr in attrs:
+            assert getattr(meta_def, attr) == getattr(full_def, attr)
+
+
 def _build_reference():
     """Build pt_expt model and run eager reference inference.
 
@@ -163,6 +195,9 @@ def spin_model_files():
         finally:
             torch.set_default_device(prev)
         files[ext] = path
+    meta_path = os.path.join(tmpdir, "spin_test_metadata_only.pte")
+    _strip_extra_model_json(files[".pte"], meta_path)
+    files[".pte.meta"] = meta_path
     yield files, ref_pbc, ref_nopbc
     for path in files.values():
         if os.path.exists(path):
@@ -339,6 +374,32 @@ class TestSpinInference:
             rtol=1e-10,
             atol=1e-10,
         )
+
+
+class TestSpinMetadataOnly:
+    """Test metadata-only spin model inference through DeepPot."""
+
+    def test_metadata_only_spin_pte_parity(self, spin_model_files) -> None:
+        """Metadata-only spin .pte matches full archive metadata and outputs."""
+        from deepmd.infer import (
+            DeepPot,
+        )
+
+        files, _, _ = spin_model_files
+        full_dp = DeepPot(files[".pte"])
+        meta_dp = DeepPot(files[".pte.meta"])
+
+        assert meta_dp.has_spin == full_dp.has_spin
+        assert meta_dp.use_spin == full_dp.use_spin
+        assert meta_dp.get_ntypes_spin() == full_dp.get_ntypes_spin()
+        _assert_fitting_output_defs_match(full_dp.deep_eval, meta_dp.deep_eval)
+
+        full_out = full_dp.eval(COORD, BOX, ATYPE, atomic=True, spin=SPIN)
+        meta_out = meta_dp.eval(COORD, BOX, ATYPE, atomic=True, spin=SPIN)
+
+        assert len(full_out) == len(meta_out)
+        for ref, test in zip(full_out, meta_out, strict=True):
+            np.testing.assert_array_equal(test, ref)
 
 
 SPIN_FPARAM_CONFIG = copy.deepcopy(SPIN_CONFIG)
