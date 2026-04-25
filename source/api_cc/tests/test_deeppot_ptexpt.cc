@@ -401,6 +401,75 @@ TYPED_TEST(TestInferDeepPotAPtExpt, cpu_lmp_nlist_oversized) {
   }
 }
 
+// Sanity check for the oversized-nlist test above: the Python counterpart
+// asserts that naïvely truncating the shuffled nlist (without distance
+// sorting) produces a DIFFERENT prediction, proving that the shuffle did
+// move real neighbors past the sum(sel) boundary.  The C++ API always
+// sorts on-device, so we verify the equivalent property by truncating the
+// shuffled nlist to a single column: with the shuffle ratio (~5 real
+// entries out of 205), almost every row ends up holding a -1, and the
+// model's prediction must deviate from the reference on at least one of
+// {energy, force, virial}.  If every prediction still matches the
+// reference within EPSILON, the shuffle is not meaningful and the
+// oversized test above is a tautology.
+TYPED_TEST(TestInferDeepPotAPtExpt, cpu_lmp_nlist_oversized_shuffle_sanity) {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE>& coord = this->coord;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  std::vector<VALUETYPE>& expected_f = this->expected_f;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
+  int& natoms = this->natoms;
+  double& expected_tot_e = this->expected_tot_e;
+  deepmd::DeepPot& dp = this->dp;
+  float rc = dp.cutoff();
+  int nloc = coord.size() / 3;
+  std::vector<VALUETYPE> coord_cpy;
+  std::vector<int> atype_cpy, mapping;
+  std::vector<std::vector<int> > nlist_data;
+  _build_nlist<VALUETYPE>(nlist_data, coord_cpy, atype_cpy, mapping, coord,
+                          atype, box, rc);
+  std::vector<std::vector<int> > nlist_oversized;
+  _pad_shuffle_nlist(nlist_oversized, nlist_data, 200);
+  for (auto& row : nlist_oversized) {
+    row.resize(1);
+  }
+  int nall = coord_cpy.size() / 3;
+  std::vector<int> ilist(nloc), numneigh(nloc);
+  std::vector<int*> firstneigh(nloc);
+  deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+  convert_nlist(inlist, nlist_oversized);
+
+  double ener;
+  std::vector<VALUETYPE> force_(nall * 3, 0.0), virial(9, 0.0);
+  dp.compute(ener, force_, virial, coord_cpy, atype_cpy, box, nall - nloc,
+             inlist, 0);
+  std::vector<VALUETYPE> force;
+  _fold_back<VALUETYPE>(force, force_, mapping, nloc, nall, 3);
+
+  // Threshold for the negative-direction check is intentionally separate
+  // from EPSILON.  EPSILON is a numerical-precision tolerance for positive
+  // assertions ("model matches reference"); here we want a physical-signal
+  // tolerance ("broken model produces a meaningful deviation").  1e-3 is
+  // 100x below the smallest expected force magnitude (~1e-1) and well
+  // above the float precision noise floor (~1e-5), so it cleanly
+  // distinguishes "actually broken" from "noise".
+  static constexpr double SANITY_MIN_DEV = 1e-3;
+  bool any_deviates = fabs(ener - expected_tot_e) > SANITY_MIN_DEV;
+  for (int ii = 0; ii < natoms * 3 && !any_deviates; ++ii) {
+    any_deviates = fabs(force[ii] - expected_f[ii]) > SANITY_MIN_DEV;
+  }
+  for (int ii = 0; ii < 9 && !any_deviates; ++ii) {
+    any_deviates = fabs(virial[ii] - expected_tot_v[ii]) > SANITY_MIN_DEV;
+  }
+  EXPECT_TRUE(any_deviates)
+      << "Every prediction (energy/force/virial) stayed within "
+         "SANITY_MIN_DEV after single-column truncation of the shuffled "
+         "oversized nlist — the shuffle appears to have kept real neighbors "
+         "at the front.  The oversized test above may be a tautology; "
+         "increase n_extra in _pad_shuffle_nlist.";
+}
+
 // Edge case: a subdomain whose every local atom has zero neighbors within
 // cutoff (e.g. under aggressive spatial partitioning on a small/sparse
 // subdomain, or at the start of a simulation before atoms settle in).
