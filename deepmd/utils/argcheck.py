@@ -4193,6 +4193,11 @@ def training_args(
         num_epoch = data.get("numb_epoch")
         num_epoch_dict = data.get("num_epoch_dict", {})
         model_prob = data.get("model_prob", {})
+        zero_stage = int(data.get("zero_stage", 0))
+        if data.get("enable_ema", False) and zero_stage >= 2:
+            raise ValueError(
+                "training.enable_ema currently only supports training.zero_stage < 2."
+            )
         if multi_task:
             if num_epoch is not None:
                 raise ValueError(
@@ -4299,7 +4304,7 @@ def validating_args() -> Argument:
         "EMA-smoothed model. This reuses the existing full validation schedule, "
         "metric, start step, and best-checkpoint settings, writes results to an "
         "EMA-specific validation log such as `val_ema.log`, and saves EMA best "
-        "checkpoints with an `best_ema.ckpt` prefix. Requires "
+        "checkpoints with a `best_ema.ckpt` prefix. Requires "
         "`training.enable_ema=true`."
     )
     doc_max_best_ckpt = (
