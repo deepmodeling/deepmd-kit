@@ -22,7 +22,10 @@ from .type_embed import (
 # as it's a stateless utility class
 register_dpmodel_mapping(EnvMat, lambda v: v)
 
+# Register opaque deepmd_export::border_op wrapper (used by GNN MPI
+# parallel inference; see comm.py module docstring).
 # Register fake tensor implementations for custom tabulate ops
+from deepmd.pt_expt.utils import comm  # noqa: F401
 from deepmd.pt_expt.utils import tabulate_ops  # noqa: F401
 
 __all__ = [

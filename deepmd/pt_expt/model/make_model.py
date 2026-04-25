@@ -257,6 +257,7 @@ def make_model(
             aparam: torch.Tensor | None = None,
             do_atomic_virial: bool = False,
             extended_coord_corr: torch.Tensor | None = None,
+            comm_dict: dict | None = None,
         ) -> dict[str, torch.Tensor]:
             atomic_ret = self.atomic_model.forward_common_atomic(
                 extended_coord,
@@ -265,6 +266,7 @@ def make_model(
                 mapping=mapping,
                 fparam=fparam,
                 aparam=aparam,
+                comm_dict=comm_dict,
             )
             model_ret = fit_output_to_model_output(
                 atomic_ret,
@@ -363,6 +365,97 @@ def make_model(
                 mapping,
                 fparam,
                 aparam,
+            )
+
+        def forward_common_lower_exportable_with_comm(
+            self,
+            extended_coord: torch.Tensor,
+            extended_atype: torch.Tensor,
+            nlist: torch.Tensor,
+            mapping: torch.Tensor | None,
+            fparam: torch.Tensor | None,
+            aparam: torch.Tensor | None,
+            send_list: torch.Tensor,
+            send_proc: torch.Tensor,
+            recv_proc: torch.Tensor,
+            send_num: torch.Tensor,
+            recv_num: torch.Tensor,
+            communicator: torch.Tensor,
+            nlocal: torch.Tensor,
+            nghost: torch.Tensor,
+            do_atomic_virial: bool = False,
+            **make_fx_kwargs: Any,
+        ) -> torch.nn.Module:
+            """Trace forward_common_lower with comm_dict tensors as positional inputs.
+
+            Used to compile a parallel-inference variant of the model
+            (.pt2 with-comm artifact) that drives MPI ghost-atom exchange
+            for GNN descriptors via the opaque
+            ``deepmd_export::border_op`` wrapper. The comm tensors enter
+            the exported program as 8 additional positional inputs after
+            the usual (coord, atype, nlist, mapping, fparam, aparam) —
+            this fixes the C++ ABI for ``DeepPotPTExpt`` (Phase 4).
+
+            Tracing requires ``nswap >= 1`` (Phase 0 finding); with
+            ``nswap == 0`` the dim specializes and the artifact would
+            only run for that exact value. The C++ caller must always
+            provide ``nswap >= 1``.
+            """
+            model = self
+
+            def fn(
+                extended_coord: torch.Tensor,
+                extended_atype: torch.Tensor,
+                nlist: torch.Tensor,
+                mapping: torch.Tensor | None,
+                fparam: torch.Tensor | None,
+                aparam: torch.Tensor | None,
+                send_list: torch.Tensor,
+                send_proc: torch.Tensor,
+                recv_proc: torch.Tensor,
+                send_num: torch.Tensor,
+                recv_num: torch.Tensor,
+                communicator: torch.Tensor,
+                nlocal: torch.Tensor,
+                nghost: torch.Tensor,
+            ) -> dict[str, torch.Tensor]:
+                extended_coord = extended_coord.detach().requires_grad_(True)
+                comm_dict = {
+                    "send_list": send_list,
+                    "send_proc": send_proc,
+                    "recv_proc": recv_proc,
+                    "send_num": send_num,
+                    "recv_num": recv_num,
+                    "communicator": communicator,
+                    "nlocal": nlocal,
+                    "nghost": nghost,
+                }
+                return model.forward_common_lower(
+                    extended_coord,
+                    extended_atype,
+                    nlist,
+                    mapping,
+                    fparam=fparam,
+                    aparam=aparam,
+                    do_atomic_virial=do_atomic_virial,
+                    comm_dict=comm_dict,
+                )
+
+            return make_fx(fn, **make_fx_kwargs)(
+                extended_coord,
+                extended_atype,
+                nlist,
+                mapping,
+                fparam,
+                aparam,
+                send_list,
+                send_proc,
+                recv_proc,
+                send_num,
+                recv_num,
+                communicator,
+                nlocal,
+                nghost,
             )
 
     return CM

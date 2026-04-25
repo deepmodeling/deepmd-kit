@@ -183,6 +183,7 @@ class DescrptDPA1(DescrptDPA1DP):
         nlist: torch.Tensor,
         mapping: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
+        comm_dict: dict | None = None,
     ) -> Any:
         if not self.compress:
             return DescrptDPA1DP.call.__wrapped__(
