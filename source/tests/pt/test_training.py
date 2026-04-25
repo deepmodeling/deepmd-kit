@@ -1,14 +1,24 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import functools
 import json
 import os
 import shutil
+import signal
 import tempfile
 import unittest
+from collections.abc import (
+    Callable,
+)
 from copy import (
     deepcopy,
 )
 from pathlib import (
     Path,
+)
+from typing import (
+    Any,
+    TypeVar,
+    cast,
 )
 from unittest.mock import (
     patch,
@@ -46,6 +56,36 @@ from .model.test_permutation import (
     model_se_e2_a,
     model_zbl,
 )
+
+_F = TypeVar("_F", bound=Callable[..., Any])
+
+
+def _training_timeout(seconds: int) -> Callable[[_F], _F]:
+    """Limit real training tests on platforms that support SIGALRM."""
+
+    def decorate(func: _F) -> _F:
+        if not hasattr(signal, "SIGALRM"):
+            return func
+
+        @functools.wraps(func)
+        def wrapped(*args: Any, **kwargs: Any) -> Any:
+            def raise_timeout(signum: int, frame: Any) -> None:
+                raise TimeoutError(f"training test exceeded {seconds} seconds")
+
+            previous_handler = signal.signal(signal.SIGALRM, raise_timeout)
+            signal.alarm(seconds)
+            try:
+                return func(*args, **kwargs)
+            finally:
+                signal.alarm(0)
+                signal.signal(signal.SIGALRM, previous_handler)
+
+        return cast("_F", wrapped)
+
+    return decorate
+
+
+TRAINING_TEST_TIMEOUT = _training_timeout(60)
 
 
 class DPTrainTest:
@@ -911,6 +951,15 @@ class TestFullValidation(unittest.TestCase):
 
 class TestEMATraining(unittest.TestCase):
     def setUp(self) -> None:
+        import deepmd.pt.train.training as training_module
+        import deepmd.pt.utils.env as env_module
+
+        self._num_workers_state = (
+            (env_module, env_module.NUM_WORKERS),
+            (training_module, training_module.NUM_WORKERS),
+        )
+        env_module.NUM_WORKERS = 0
+        training_module.NUM_WORKERS = 0
         self._cwd = os.getcwd()
         self._tmpdir = tempfile.TemporaryDirectory()
         os.chdir(self._tmpdir.name)
@@ -941,9 +990,12 @@ class TestEMATraining(unittest.TestCase):
         }
 
     def tearDown(self) -> None:
+        for module, num_workers in self._num_workers_state:
+            module.NUM_WORKERS = num_workers
         os.chdir(self._cwd)
         self._tmpdir.cleanup()
 
+    @TRAINING_TEST_TIMEOUT
     def test_ema_checkpoint_rotation(self) -> None:
         trainer = get_trainer(deepcopy(self.config))
         ema_prefix = trainer.ema_save_ckpt
@@ -956,6 +1008,25 @@ class TestEMATraining(unittest.TestCase):
         self.assertFalse(Path(f"{ema_prefix}-2.pt").exists())
         self.assertFalse(Path("checkpoint_ema").exists())
 
+    def test_ema_checkpoint_cleanup_removes_future_steps(self) -> None:
+        trainer = get_trainer(deepcopy(self.config))
+        trainer.ema_ckpt_keep = 10
+        ema_prefix = trainer.ema_save_ckpt
+        Path(f"{ema_prefix}-999.pt").touch()
+
+        trainer.save_ema_model(f"{ema_prefix}-1.pt", lr=0.0, step=0)
+
+        self.assertFalse(Path(f"{ema_prefix}-999.pt").exists())
+        self.assertTrue(Path(f"{ema_prefix}-1.pt").exists())
+
+    def test_ema_rejects_zero_stage_2_during_normalization(self) -> None:
+        config = deepcopy(self.config)
+        config["training"]["zero_stage"] = 2
+        config = update_deepmd_input(config, warning=False)
+        with self.assertRaisesRegex(ValueError, "training.zero_stage < 2"):
+            normalize(config)
+
+    @TRAINING_TEST_TIMEOUT
     def test_restart_restores_ema_state(self) -> None:
         trainer = get_trainer(deepcopy(self.config))
         first_key = next(iter(trainer.model_ema.shadow_params))
@@ -988,6 +1059,7 @@ class TestEMATraining(unittest.TestCase):
             trainer.model_ema.validation_state,
         )
 
+    @TRAINING_TEST_TIMEOUT
     @patch("deepmd.pt.train.validation.FullValidator.evaluate_all_systems")
     def test_ema_full_validation_writes_separate_outputs(self, mocked_eval) -> None:
         mocked_eval.side_effect = [

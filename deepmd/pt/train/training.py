@@ -1849,25 +1849,34 @@ class Trainer:
                 )
             elif self.zero_stage == 1:
                 # ZeRO-1: consolidate sharded optimizer state to rank 0.
-                # deepcopy is required: state_dict() returns param.detach() which
-                # shares storage with the live param tensors. If use_ema_weights is
-                # True, the EMA context will restore the original weights on exit,
-                # overwriting that shared storage before torch.save runs.
-                model_state = deepcopy(module.state_dict())
+                model_state = module.state_dict()
+                if use_ema_weights:
+                    # state_dict() tensors share storage with live parameters; clone
+                    # them before the EMA context restores the original weights.
+                    model_state = deepcopy(model_state)
                 if include_optimizer:
                     self.optimizer.consolidate_state_dict(to=0)
-                    optim_state = (
-                        deepcopy(self.optimizer.state_dict()) if self.rank == 0 else {}
-                    )
+                    optim_state = self.optimizer.state_dict() if self.rank == 0 else {}
                 else:
                     optim_state = None
             else:
-                # Same storage-sharing issue as zero_stage == 1.
-                model_state = deepcopy(module.state_dict())
-                optim_state = (
-                    deepcopy(self.optimizer.state_dict()) if include_optimizer else None
-                )
+                model_state = module.state_dict()
+                if use_ema_weights:
+                    # Same storage-sharing issue as zero_stage == 1.
+                    model_state = deepcopy(model_state)
+                optim_state = self.optimizer.state_dict() if include_optimizer else None
         return model_state, optim_state
+
+    @staticmethod
+    def _parse_checkpoint_step(path: Path, prefix_name: str) -> int | None:
+        """Parse the checkpoint step from ``<prefix>-<step>.pt`` filenames."""
+        checkpoint_prefix = f"{prefix_name}-"
+        if path.suffix != ".pt" or not path.name.startswith(checkpoint_prefix):
+            return None
+        step_text = path.name[len(checkpoint_prefix) : -len(path.suffix)]
+        if not step_text.isdigit():
+            return None
+        return int(step_text)
 
     def _write_checkpoint(
         self,
@@ -1889,14 +1898,26 @@ class Trainer:
                 item["lr"] = float(item["lr"])
         torch.save(checkpoint_data, save_path)
         checkpoint_dir = save_path.parent
-        checkpoint_files = [
-            f
-            for f in checkpoint_dir.glob("*.pt")
-            if not f.is_symlink() and f.name.startswith(prefix_name)
-        ]
-        if len(checkpoint_files) > max_ckpt_keep:
-            checkpoint_files.sort(key=lambda x: x.stat().st_mtime)
-            checkpoint_files[0].unlink()
+        checkpoint_files = []
+        for checkpoint_file in checkpoint_dir.glob("*.pt"):
+            step = self._parse_checkpoint_step(checkpoint_file, prefix_name)
+            if checkpoint_file.is_symlink() or step is None:
+                continue
+            checkpoint_files.append((checkpoint_file, step))
+
+        current_step = self._parse_checkpoint_step(save_path, prefix_name)
+        if current_step is not None:
+            fresh_checkpoint_files = []
+            for checkpoint_file, step in checkpoint_files:
+                if step > current_step:
+                    checkpoint_file.unlink()
+                else:
+                    fresh_checkpoint_files.append((checkpoint_file, step))
+            checkpoint_files = fresh_checkpoint_files
+
+        checkpoint_files.sort(key=lambda item: (item[1], item[0].name))
+        while len(checkpoint_files) > max_ckpt_keep:
+            checkpoint_files.pop(0)[0].unlink()
 
     def save_model(
         self,
