@@ -276,13 +276,21 @@ void deepmd::NeighborListData::copy_from_nlist(const InputNlist& inlist,
   int inum = natoms >= 0 ? natoms : inlist.inum;
   ilist.resize(inum);
   jlist.resize(inum);
-  memcpy(&ilist[0], inlist.ilist, inum * sizeof(int));
+  if (inum > 0) {
+    memcpy(&ilist[0], inlist.ilist, inum * sizeof(int));
+  }
   for (int ii = 0; ii < inum; ++ii) {
     int jnum = inlist.numneigh[ii];
     jlist[ii].resize(jnum);
-    memcpy(&jlist[ii][0], inlist.firstneigh[ii], jnum * sizeof(int));
-    for (int jj = 0; jj < jnum; ++jj) {
-      jlist[ii][jj] &= inlist.mask;
+    // Guard against empty jlist[ii]: `&vec[0]` is undefined behaviour for
+    // empty vectors and libstdc++ debug mode asserts on it.  This happens
+    // when a subdomain's local atoms legitimately have zero neighbours
+    // within cutoff (e.g. under spatial partitioning).
+    if (jnum > 0) {
+      memcpy(&jlist[ii][0], inlist.firstneigh[ii], jnum * sizeof(int));
+      for (int jj = 0; jj < jnum; ++jj) {
+        jlist[ii][jj] &= inlist.mask;
+      }
     }
   }
 }

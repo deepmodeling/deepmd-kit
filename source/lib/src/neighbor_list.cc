@@ -852,7 +852,11 @@ void deepmd::convert_nlist(InputNlist& to_nlist,
   for (int ii = 0; ii < to_nlist.inum; ++ii) {
     to_nlist.ilist[ii] = ii;
     to_nlist.numneigh[ii] = from_nlist[ii].size();
-    to_nlist.firstneigh[ii] = &from_nlist[ii][0];
+    // `&vec[0]` is undefined behaviour for empty vectors (libstdc++ debug
+    // mode asserts on it).  When numneigh[ii] is 0 the pointer is never
+    // dereferenced; use vector::data() which is well-defined for empty
+    // vectors (may return nullptr).
+    to_nlist.firstneigh[ii] = from_nlist[ii].data();
   }
 }
 

@@ -109,6 +109,13 @@ inline void build_comm_dict_with_virtual_atoms(
  * No truncation or distance sorting is done — the model's format_nlist
  * handles that on-device.
  *
+ * If @p min_nnei is 0 (the default used by the .pth callers) and every row
+ * is empty (no atom has any neighbor — fully-dissociated system), the
+ * output shape is [1, nloc, 0].  PyTorch accepts zero-sized dimensions, and
+ * the eager `_format_nlist` pads it back up to sum(sel).  .pt2 callers
+ * always pass @p min_nnei = sum(sel) > 0, so the output width is at least
+ * sum(sel) for them.
+ *
  * @param data      Jagged neighbor list: data[i] holds neighbor indices
  *                  for local atom i.
  * @param min_nnei  Minimum width of the nnei dimension.  For .pt2 models
@@ -122,9 +129,6 @@ inline torch::Tensor createNlistTensor(
   int nnei = min_nnei;
   for (int ii = 0; ii < nloc; ++ii) {
     nnei = std::max(nnei, static_cast<int>(data[ii].size()));
-  }
-  if (nnei == 0) {
-    nnei = 1;  // at least 1 column to avoid empty tensor
   }
   std::vector<int> flat_data(static_cast<size_t>(nloc) * nnei, -1);
   for (int ii = 0; ii < nloc; ++ii) {

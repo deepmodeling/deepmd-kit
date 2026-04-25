@@ -401,6 +401,52 @@ TYPED_TEST(TestInferDeepPotAPtExpt, cpu_lmp_nlist_oversized) {
   }
 }
 
+// Edge case: a subdomain whose every local atom has zero neighbors within
+// cutoff (e.g. under aggressive spatial partitioning on a small/sparse
+// subdomain, or at the start of a simulation before atoms settle in).
+// The C++ side builds an InputNlist with empty rows, which feeds
+// `createNlistTensor` with min_nnei=sum(sel); the compiled .pt2 graph must
+// then run cleanly on an all-`-1` nlist and produce a sensible (finite,
+// interaction-free) result.  Verifies both that the code path doesn't
+// crash and that the forces/virial collapse to zero (no interactions).
+TYPED_TEST(TestInferDeepPotAPtExpt, cpu_lmp_nlist_empty_subdomain) {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE>& coord = this->coord;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  int& natoms = this->natoms;
+  deepmd::DeepPot& dp = this->dp;
+
+  // Pass coord/atype as-is; the model sees them, but `dp.compute` only
+  // uses the provided InputNlist for neighbor information.
+  int nall = natoms;
+  std::vector<std::vector<int> > nlist_data(natoms);  // every row empty
+  std::vector<int> ilist(natoms), numneigh(natoms);
+  std::vector<int*> firstneigh(natoms);
+  deepmd::InputNlist inlist(natoms, &ilist[0], &numneigh[0], &firstneigh[0]);
+  convert_nlist(inlist, nlist_data);
+
+  double ener;
+  std::vector<VALUETYPE> force(nall * 3, 0.0), virial(9, 0.0);
+  // Must not throw: zero-neighbor input is legal and expected under some
+  // spatial-partitioning configurations.
+  ASSERT_NO_THROW(
+      dp.compute(ener, force, virial, coord, atype, box, 0, inlist, 0));
+  EXPECT_EQ(force.size(), natoms * 3);
+  EXPECT_EQ(virial.size(), 9);
+  EXPECT_TRUE(std::isfinite(ener));
+  // With no neighbors, interaction forces and virial must be exactly zero
+  // (the descriptor sees only -1 entries, so pair contributions vanish).
+  for (int ii = 0; ii < natoms * 3; ++ii) {
+    EXPECT_TRUE(std::isfinite(force[ii]));
+    EXPECT_LT(fabs(force[ii]), EPSILON);
+  }
+  for (int ii = 0; ii < 9; ++ii) {
+    EXPECT_TRUE(std::isfinite(virial[ii]));
+    EXPECT_LT(fabs(virial[ii]), EPSILON);
+  }
+}
+
 TYPED_TEST(TestInferDeepPotAPtExpt, cpu_lmp_nlist_type_sel) {
   using VALUETYPE = TypeParam;
   std::vector<VALUETYPE>& coord = this->coord;
