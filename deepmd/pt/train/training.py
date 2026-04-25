@@ -1048,7 +1048,9 @@ class Trainer:
         validation_data: DpLoaderSet | None,
     ) -> FullValidator | None:
         """Create the runtime EMA full validator when it is active."""
-        if not self._is_validation_requested(validating_params, "ema_full_validation"):
+        if not self._is_validation_requested(
+            validating_params, "full_validation"
+        ) or not validating_params.get("ema_full_validation", False):
             return None
         self._raise_if_full_validation_unsupported(validation_data)
         if self.model_ema is None:
