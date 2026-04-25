@@ -4257,10 +4257,11 @@ def validating_args() -> Argument:
     )
     doc_ema_full_validation = (
         "Whether to additionally run the same full validation flow on the "
-        "EMA-smoothed model. This reuses the existing full validation schedule, "
-        "metric, start step, and best-checkpoint settings, writes results to an "
-        "EMA-specific validation log such as `val_ema.log`, and saves EMA best "
-        "checkpoints with a `best_ema.ckpt` prefix. Requires "
+        "EMA-smoothed model when `validating.full_validation=true`. This reuses "
+        "the existing full validation schedule, metric, start step, and "
+        "best-checkpoint settings, writes results to an EMA-specific validation "
+        "log such as `val_ema.log`, and saves EMA best checkpoints with a "
+        "`best_ema.ckpt` prefix. Requires "
         "`training.enable_ema=true`."
     )
     doc_max_best_ckpt = (
@@ -4374,7 +4375,7 @@ def validate_full_validation_config(
     training_params = data.get("training", {}) or {}
     full_validation_enabled = bool(validating.get("full_validation", False))
     ema_full_validation_enabled = bool(validating.get("ema_full_validation", False))
-    if not full_validation_enabled and not ema_full_validation_enabled:
+    if not full_validation_enabled:
         return
     if float(validating.get("full_val_start", 0.0)) == 1.0:
         return

@@ -1063,17 +1063,22 @@ class TestEMATraining(unittest.TestCase):
     @patch("deepmd.pt.train.validation.FullValidator.evaluate_all_systems")
     def test_ema_full_validation_writes_separate_outputs(self, mocked_eval) -> None:
         mocked_eval.side_effect = [
+            {"mae_e_per_atom": 10.0},
             {"mae_e_per_atom": 1.0},
+            {"mae_e_per_atom": 10.0},
             {"mae_e_per_atom": 0.5},
+            {"mae_e_per_atom": 10.0},
             {"mae_e_per_atom": 0.75},
+            {"mae_e_per_atom": 10.0},
             {"mae_e_per_atom": 0.25},
         ]
         config = deepcopy(self.config)
+        config["validating"]["full_validation"] = True
         config["validating"]["ema_full_validation"] = True
         trainer = get_trainer(config)
         trainer.run()
 
-        self.assertFalse(Path("val.log").exists())
+        self.assertTrue(Path("val.log").exists())
         self.assertTrue(Path("val_ema.log").exists())
         self.assertTrue(Path("best_ema.ckpt-4.t-1.pt").exists())
         self.assertFalse(Path("best_ema.ckpt-1.t-1.pt").exists())
@@ -1084,6 +1089,24 @@ class TestEMATraining(unittest.TestCase):
             trainer.model_ema.validation_state["full_validation_topk_records"],
             [{"metric": 0.25, "step": 4}],
         )
+
+    @TRAINING_TEST_TIMEOUT
+    @patch("deepmd.pt.train.validation.FullValidator.evaluate_all_systems")
+    def test_ema_full_validation_ignored_without_full_validation(
+        self, mocked_eval
+    ) -> None:
+        config = deepcopy(self.config)
+        config["training"]["enable_ema"] = False
+        config["validating"]["full_validation"] = False
+        config["validating"]["ema_full_validation"] = True
+        trainer = get_trainer(config)
+        trainer.run()
+
+        mocked_eval.assert_not_called()
+        self.assertFalse(Path("val.log").exists())
+        self.assertFalse(Path("val_ema.log").exists())
+        self.assertIsNone(trainer.model_ema)
+        self.assertIsNone(trainer.ema_full_validator)
 
 
 if __name__ == "__main__":
