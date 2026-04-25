@@ -61,6 +61,7 @@ class EnergyStdLoss(TaskLoss):
         use_huber: bool = False,
         f_use_norm: bool = False,
         huber_delta: float | list[float] = 0.01,
+        intensive_ener_virial: bool = False,
         **kwargs: Any,
     ) -> None:
         r"""Construct a layer to compute loss on energy, force and virial.
@@ -120,6 +121,13 @@ class EnergyStdLoss(TaskLoss):
             The threshold delta (D) used for Huber loss, controlling transition between
             L2 and L1 loss. It can be either one float shared by all terms or a list of
             three values ordered as [energy, force, virial].
+        intensive_ener_virial : bool
+            Controls size normalization for energy and virial loss terms. For the non-Huber
+            MSE path, setting this to true applies 1/N^2 scaling, while false uses the legacy
+            1/N scaling. For MAE, the normalization remains 1/N. For Huber loss, residuals are
+            first normalized by 1/N before applying the Huber formula, so this option does not
+            provide a pure 1/N versus 1/N^2 toggle in that path. The default is false for
+            backward compatibility with models trained using deepmd-kit <= 3.1.3.
         **kwargs
             Other keyword arguments.
         """
@@ -163,6 +171,7 @@ class EnergyStdLoss(TaskLoss):
         self.inference = inference
         self.use_huber = use_huber
         self.f_use_norm = f_use_norm
+        self.intensive_ener_virial = intensive_ener_virial
         if self.f_use_norm and not (self.use_huber or self.loss_func == "mae"):
             raise RuntimeError(
                 "f_use_norm can only be True when use_huber or loss_func='mae'."
@@ -225,6 +234,10 @@ class EnergyStdLoss(TaskLoss):
         # more_loss['log_keys'] = []  # showed when validation on the fly
         # more_loss['test_keys'] = []  # showed when doing dp test
         atom_norm = 1.0 / natoms
+        # Normalization exponent controls loss scaling with system size:
+        # - norm_exp=2 (intensive_ener_virial=True): loss uses 1/N² scaling, making it independent of system size
+        # - norm_exp=1 (intensive_ener_virial=False, legacy): loss uses 1/N scaling, which varies with system size
+        norm_exp = 2 if self.intensive_ener_virial else 1
         if self.has_e and "energy" in model_pred and "energy" in label:
             energy_pred = model_pred["energy"]
             energy_label = label["energy"]
@@ -250,7 +263,7 @@ class EnergyStdLoss(TaskLoss):
                         l2_ener_loss.detach(), find_energy
                     )
                 if not self.use_huber:
-                    loss += atom_norm * (pref_e * l2_ener_loss)
+                    loss += atom_norm**norm_exp * (pref_e * l2_ener_loss)
                 else:
                     l_huber_loss = custom_huber_loss(
                         atom_norm * energy_pred,
@@ -432,7 +445,7 @@ class EnergyStdLoss(TaskLoss):
                         l2_virial_loss.detach(), find_virial
                     )
                 if not self.use_huber:
-                    loss += atom_norm * (pref_v * l2_virial_loss)
+                    loss += atom_norm**norm_exp * (pref_v * l2_virial_loss)
                 else:
                     l_huber_loss = custom_huber_loss(
                         atom_norm * model_pred["virial"].reshape(-1),
@@ -599,7 +612,7 @@ class EnergyStdLoss(TaskLoss):
         """
         return {
             "@class": "EnergyLoss",
-            "@version": 2,
+            "@version": 3,
             "starter_learning_rate": self.starter_learning_rate,
             "start_pref_e": self.start_pref_e,
             "limit_pref_e": self.limit_pref_e,
@@ -620,6 +633,7 @@ class EnergyStdLoss(TaskLoss):
             "huber_delta": self.huber_delta,
             "loss_func": self.loss_func,
             "f_use_norm": self.f_use_norm,
+            "intensive_ener_virial": self.intensive_ener_virial,
         }
 
     @classmethod
@@ -637,8 +651,12 @@ class EnergyStdLoss(TaskLoss):
             The deserialized loss module
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 2, 1)
+        version = data.pop("@version")
+        check_version_compatibility(version, 3, 1)
         data.pop("@class")
+        # Handle backward compatibility for older versions without intensive_ener_virial
+        if version < 3:
+            data.setdefault("intensive_ener_virial", False)
         return cls(**data)
 
 

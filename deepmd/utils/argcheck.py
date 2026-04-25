@@ -3234,6 +3234,14 @@ def loss_ener() -> list[Argument]:
         "This treats the force vector as a whole rather than three independent components. "
         "Only effective when loss_func='mae' or use_huber=True."
     )
+    doc_intensive_ener_virial = (
+        "Controls intensive normalization for energy and virial loss terms in the current implementation. "
+        "For non-Huber MSE energy/virial terms, setting this to true uses 1/N^2 normalization instead of the legacy 1/N scaling. "
+        "This matches per-atom-style reporting more closely for those terms. "
+        "For MAE, the normalization remains 1/N. When `use_huber=True`, the residual is already scaled by 1/N before applying the Huber loss, "
+        "so this flag may have limited or no effect for those terms. "
+        "The default is false for backward compatibility with models trained using deepmd-kit <= 3.1.3."
+    )
     return [
         Argument(
             "start_pref_e",
@@ -3376,6 +3384,13 @@ def loss_ener() -> list[Argument]:
             default=0.01,
             doc=doc_huber_delta,
         ),
+        Argument(
+            "intensive_ener_virial",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_intensive_ener_virial,
+        ),
     ]
 
 
@@ -3400,6 +3415,14 @@ def loss_ener_spin() -> list[Argument]:
         "Options: 'mse' (Mean Squared Error, L2 loss, default) or 'mae' (Mean Absolute Error, L1 loss). "
         "MAE loss is less sensitive to outliers compared to MSE loss. "
         "Future extensions may support additional loss types."
+    )
+    doc_intensive_ener_virial = (
+        "Controls normalization of the energy and virial loss terms. "
+        "For `loss_func='mse'`, if true, energy and virial losses are computed as intensive quantities, "
+        "normalized by the square of the number of atoms (1/N^2); if false (default), the legacy normalization "
+        "(1/N) is used. "
+        "For `loss_func='mae'`, this option does not change the existing MAE formulations;"
+        "The default is false for backward compatibility with models trained using deepmd-kit <= 3.1.3."
     )
     return [
         Argument(
@@ -3500,6 +3523,13 @@ def loss_ener_spin() -> list[Argument]:
             optional=True,
             default="mse",
             doc=doc_loss_func,
+        ),
+        Argument(
+            "intensive_ener_virial",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_intensive_ener_virial,
         ),
     ]
 
