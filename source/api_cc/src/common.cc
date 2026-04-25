@@ -361,12 +361,16 @@ void deepmd::NeighborListData::make_inlist(InputNlist& inlist) {
   firstneigh.resize(nloc);
   for (int ii = 0; ii < nloc; ++ii) {
     numneigh[ii] = jlist[ii].size();
-    firstneigh[ii] = &jlist[ii][0];
+    // `&vec[0]` is undefined behaviour for empty vectors (libstdc++
+    // debug mode asserts on it).  When numneigh[ii] is 0 the pointer is
+    // never dereferenced; use vector::data() which is well-defined for
+    // empty vectors.  Mirrors the fix in convert_nlist.
+    firstneigh[ii] = jlist[ii].data();
   }
   inlist.inum = nloc;
-  inlist.ilist = &ilist[0];
-  inlist.numneigh = &numneigh[0];
-  inlist.firstneigh = &firstneigh[0];
+  inlist.ilist = ilist.data();
+  inlist.numneigh = numneigh.data();
+  inlist.firstneigh = firstneigh.data();
 }
 
 #ifdef BUILD_TENSORFLOW

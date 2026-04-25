@@ -1121,7 +1121,9 @@ void DeepSpinTF::extend(int& extend_inum,
   extend_firstneigh.resize(extend_nloc);
   extend_numneigh.resize(extend_nloc);
   for (int ii = 0; ii < extend_nloc; ii++) {
-    extend_firstneigh[ii] = &extend_neigh[ii][0];
+    // `&vec[0]` is undefined behaviour for empty vectors; use
+    // vector::data() instead.  See convert_nlist for the same fix.
+    extend_firstneigh[ii] = extend_neigh[ii].data();
     extend_numneigh[ii] = extend_neigh[ii].size();
   }
 
