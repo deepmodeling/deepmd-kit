@@ -3948,6 +3948,7 @@ def training_args(
         "but reduces optimizer memory to 1/N per GPU. "
         "2: FSDP2 stage-2, shards optimizer states and gradients; same communication "
         "volume as stage-1 but further reduces gradient memory to 1/N per GPU. "
+        "Stages 2 and 3 require FSDP2, which is available in PyTorch >= 2.6. "
         "Note: FSDP2 introduces DTensor dispatch overhead that can slow down "
         "models with many small layers; use torch.compile to mitigate. "
         "3: FSDP2 stage-3, shards parameters as well; maximum memory savings but "
