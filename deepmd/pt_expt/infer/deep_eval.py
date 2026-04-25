@@ -151,21 +151,12 @@ class DeepEval(DeepEvalBackend):
         self._sel = list(self._dpmodel.get_sel())
         self._mixed_types = bool(self._dpmodel.mixed_types())
         if self._is_spin:
-            self._model_output_def = ModelOutputDef(
-                FittingOutputDef(
-                    [
-                        OutputVariableDef(
-                            "energy",
-                            shape=[1],
-                            reducible=True,
-                            r_differentiable=True,
-                            c_differentiable=True,
-                            atomic=True,
-                            magnetic=True,
-                        )
-                    ]
-                )
-            )
+            spin_fitting_defs = self._dpmodel.model_output_def().def_outp.get_data()
+            # Keep only physical fitting outputs; mask is derived by ModelOutputDef.
+            fitting_defs = [
+                vdef for name, vdef in spin_fitting_defs.items() if name != "mask"
+            ]
+            self._model_output_def = ModelOutputDef(FittingOutputDef(fitting_defs))
         else:
             self._model_output_def = ModelOutputDef(self._dpmodel.atomic_output_def())
 
