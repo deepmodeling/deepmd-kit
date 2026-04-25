@@ -174,17 +174,6 @@ class Border : public torch::autograd::Function<Border> {
   static torch::autograd::variable_list backward(
       torch::autograd::AutogradContext* ctx,
       torch::autograd::variable_list grad_output) {
-    bool type_flag = (grad_output[0].dtype() == torch::kDouble) ? true : false;
-    if (type_flag) {
-      return backward_t<double>(ctx, grad_output);
-    } else {
-      return backward_t<float>(ctx, grad_output);
-    }
-  }
-  template <typename FPTYPE>
-  static torch::autograd::variable_list backward_t(
-      torch::autograd::AutogradContext* ctx,
-      torch::autograd::variable_list grad_output) {
     torch::autograd::variable_list saved_variables = ctx->get_saved_variables();
     torch::Tensor sendlist_tensor = saved_variables[0];
     torch::Tensor sendproc_tensor = saved_variables[1];
@@ -194,8 +183,41 @@ class Border : public torch::autograd::Function<Border> {
     torch::Tensor communicator_tensor = saved_variables[5];
     torch::Tensor nlocal_tensor = saved_variables[6];
     torch::Tensor nghost_tensor = saved_variables[7];
+    torch::Tensor d_in = border_op_backward_dispatch(
+        sendlist_tensor, sendproc_tensor, recvproc_tensor, sendnum_tensor,
+        recvnum_tensor, grad_output[0], communicator_tensor, nlocal_tensor,
+        nghost_tensor);
+    return {torch::Tensor(), torch::Tensor(), torch::Tensor(),
+            torch::Tensor(), torch::Tensor(), d_in,
+            torch::Tensor(), torch::Tensor(), torch::Tensor(),
+            torch::Tensor()};
+  }
 
-    torch::Tensor d_local_g1_tensor = grad_output[0].contiguous();
+  // Forward declaration; defined as a free function below so it can be
+  // registered as a separate torch op (deepmd::border_op_backward) used by
+  // the pt_expt opaque-op autograd wrapper.
+  static torch::Tensor border_op_backward_dispatch(
+      const torch::Tensor& sendlist_tensor,
+      const torch::Tensor& sendproc_tensor,
+      const torch::Tensor& recvproc_tensor,
+      const torch::Tensor& sendnum_tensor,
+      const torch::Tensor& recvnum_tensor,
+      const torch::Tensor& grad_g1,
+      const torch::Tensor& communicator_tensor,
+      const torch::Tensor& nlocal_tensor,
+      const torch::Tensor& nghost_tensor);
+
+  template <typename FPTYPE>
+  static torch::Tensor backward_t(const torch::Tensor& sendlist_tensor,
+                                  const torch::Tensor& sendproc_tensor,
+                                  const torch::Tensor& recvproc_tensor,
+                                  const torch::Tensor& sendnum_tensor,
+                                  const torch::Tensor& recvnum_tensor,
+                                  const torch::Tensor& grad_g1,
+                                  const torch::Tensor& communicator_tensor,
+                                  const torch::Tensor& nlocal_tensor,
+                                  const torch::Tensor& nghost_tensor) {
+    torch::Tensor d_local_g1_tensor = grad_g1.contiguous();
 #ifdef USE_MPI
     int mpi_init = 0;
     MPI_Initialized(&mpi_init);
@@ -216,8 +238,8 @@ class Border : public torch::autograd::Function<Border> {
       cuda_aware = MPIX_Query_cuda_support();
 #endif
       if (cuda_aware == 0) {
-        d_local_g1_tensor = torch::empty_like(grad_output[0]).to(torch::kCPU);
-        d_local_g1_tensor.copy_(grad_output[0]);
+        d_local_g1_tensor = torch::empty_like(grad_g1).to(torch::kCPU);
+        d_local_g1_tensor.copy_(grad_g1);
       }
     }
 #endif
@@ -312,15 +334,15 @@ class Border : public torch::autograd::Function<Border> {
 #ifdef USE_MPI
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
     if (cuda_aware == 0) {
-      grad_output[0].copy_(d_local_g1_tensor);
+      // Move result back to the device of the input grad. This replaces
+      // the original in-place copy_ into grad_output[0].
+      d_local_g1_tensor = d_local_g1_tensor.to(grad_g1.device());
     }
 #endif
 #endif
-
-    return {torch::Tensor(), torch::Tensor(), torch::Tensor(), torch::Tensor(),
-            torch::Tensor(), grad_output[0],  torch::Tensor(), torch::Tensor(),
-            torch::Tensor(), torch::Tensor()};
+    return d_local_g1_tensor;
   }
+
 #ifdef USE_MPI
   static void unpack_communicator(const torch::Tensor& communicator_tensor,
                                   MPI_Comm& mpi_comm) {
@@ -363,4 +385,70 @@ std::vector<torch::Tensor> border_op(const torch::Tensor& sendlist_tensor,
                        communicator_tensor, nlocal_tensor, nghost_tensor);
 }
 
-TORCH_LIBRARY_FRAGMENT(deepmd, m) { m.def("border_op", border_op); }
+// Define Border::border_op_backward_dispatch out-of-line so the type-flag
+// dispatch can refer to the templated backward_t members declared in the
+// class.
+torch::Tensor Border::border_op_backward_dispatch(
+    const torch::Tensor& sendlist_tensor,
+    const torch::Tensor& sendproc_tensor,
+    const torch::Tensor& recvproc_tensor,
+    const torch::Tensor& sendnum_tensor,
+    const torch::Tensor& recvnum_tensor,
+    const torch::Tensor& grad_g1,
+    const torch::Tensor& communicator_tensor,
+    const torch::Tensor& nlocal_tensor,
+    const torch::Tensor& nghost_tensor) {
+  bool type_flag = (grad_g1.dtype() == torch::kDouble);
+  if (type_flag) {
+    return backward_t<double>(sendlist_tensor, sendproc_tensor, recvproc_tensor,
+                              sendnum_tensor, recvnum_tensor, grad_g1,
+                              communicator_tensor, nlocal_tensor,
+                              nghost_tensor);
+  } else {
+    return backward_t<float>(sendlist_tensor, sendproc_tensor, recvproc_tensor,
+                             sendnum_tensor, recvnum_tensor, grad_g1,
+                             communicator_tensor, nlocal_tensor, nghost_tensor);
+  }
+}
+
+/**
+ * @brief Standalone backward of border_op for use by pt_expt's opaque-op
+ * autograd wrapper. Performs the symmetric MPI exchange that the autograd
+ * Border::backward applies, but without an autograd context — comm tensors
+ * are passed directly so the op can be registered as a torch op and
+ * embedded in an AOTInductor graph.
+ *
+ * The comm topology is symmetric: the same sendlist/sendnum/recvnum buffers
+ * encode the forward exchange; backward simply swaps send <-> recv and
+ * accumulates gradients into the local atom slots.
+ *
+ * @param[in]  sendlist_tensor  send-list pointer-array (forward direction)
+ * @param[in]  sendproc_tensor  send-proc IDs (forward direction)
+ * @param[in]  recvproc_tensor  recv-proc IDs (forward direction)
+ * @param[in]  sendnum_tensor   atoms sent per swap (forward direction)
+ * @param[in]  recvnum_tensor   atoms received per swap (forward direction)
+ * @param[in]  grad_g1          upstream gradient w.r.t. g1 of forward
+ * @param[in]  communicator_tensor MPI communicator handle as int64
+ * @param[in]  nlocal_tensor    number of local atoms (per rank)
+ * @param[in]  nghost_tensor    number of ghost atoms (per rank)
+ * @return d_in (gradient w.r.t. forward g1 input), same shape as grad_g1.
+ */
+torch::Tensor border_op_backward(const torch::Tensor& sendlist_tensor,
+                                 const torch::Tensor& sendproc_tensor,
+                                 const torch::Tensor& recvproc_tensor,
+                                 const torch::Tensor& sendnum_tensor,
+                                 const torch::Tensor& recvnum_tensor,
+                                 const torch::Tensor& grad_g1,
+                                 const torch::Tensor& communicator_tensor,
+                                 const torch::Tensor& nlocal_tensor,
+                                 const torch::Tensor& nghost_tensor) {
+  return Border::border_op_backward_dispatch(
+      sendlist_tensor, sendproc_tensor, recvproc_tensor, sendnum_tensor,
+      recvnum_tensor, grad_g1, communicator_tensor, nlocal_tensor,
+      nghost_tensor);
+}
+
+TORCH_LIBRARY_FRAGMENT(deepmd, m) {
+  m.def("border_op", border_op);
+  m.def("border_op_backward", border_op_backward);
+}
