@@ -616,6 +616,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         nlist: Array,
         mapping: Array | None = None,
         fparam: Array | None = None,
+        comm_dict: dict | None = None,
     ) -> tuple[Array, Array, Array, Array, Array]:
         """Compute the descriptor.
 
@@ -629,6 +630,9 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             The neighbor list. shape: nf x nloc x nnei
         mapping
             The index mapping, mapps extended region index to local region.
+        comm_dict
+            MPI communication metadata for parallel inference. Forwarded to
+            the repflows block. ``None`` for non-parallel inference (default).
 
         Returns
         -------
@@ -695,6 +699,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             atype_ext,
             node_ebd_ext,
             mapping,
+            comm_dict=comm_dict,
         )
         if self.concat_output_tebd:
             node_ebd = xp.concat([node_ebd, node_ebd_inp], axis=-1)

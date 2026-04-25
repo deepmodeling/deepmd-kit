@@ -399,6 +399,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         nlist: Array,
         mapping: Array | None = None,
         fparam: Array | None = None,
+        comm_dict: dict | None = None,
     ) -> Array:
         """Compute the descriptor.
 
