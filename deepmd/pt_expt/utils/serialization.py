@@ -270,9 +270,15 @@ def _collect_metadata(model: torch.nn.Module, is_spin: bool = False) -> dict:
     The ``fitting_output_defs`` list is also included so that
     ``ModelOutputDef`` can be reconstructed without loading the full model.
     """
-    fitting_output_def = model.atomic_output_def()
+    if is_spin:
+        fitting_output_def = model.model_output_def().def_outp
+    else:
+        fitting_output_def = model.atomic_output_def()
     fitting_output_defs = []
     for vdef in fitting_output_def.get_data().values():
+        # Keep metadata aligned with physical fitting outputs only.
+        if is_spin and vdef.name == "mask":
+            continue
         fitting_output_defs.append(
             {
                 "name": vdef.name,
