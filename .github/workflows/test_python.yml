@@ -76,7 +76,9 @@ jobs:
           name: split-${{ matrix.python }}-${{ matrix.group }}
           path: .test_durations_${{ matrix.group }}
           include-hidden-files: true
-      - uses: codecov/codecov-action@v6
+      - name: Upload coverage to Codecov (non-blocking)
+        uses: codecov/codecov-action@v6
+        continue-on-error: true
         with:
           use_oidc: true
     permissions:
