@@ -86,7 +86,7 @@ def main():
 
     pt2_path = os.path.join(base_dir, "deeppot_dpa3.pt2")
     print(f"Exporting to {pt2_path} ...")  # noqa: T201
-    pt_expt_deserialize_to_file(pt2_path, copy.deepcopy(data))
+    pt_expt_deserialize_to_file(pt2_path, copy.deepcopy(data), do_atomic_virial=True)
 
     # Multi-rank LAMMPS variant (use_loc_mapping=False) — produces a
     # dual-artifact .pt2 with the with-comm AOTI module nested inside
@@ -104,7 +104,9 @@ def main():
     }
     pt2_mpi_path = os.path.join(base_dir, "deeppot_dpa3_mpi.pt2")
     print(f"Exporting to {pt2_mpi_path} ...")  # noqa: T201
-    pt_expt_deserialize_to_file(pt2_mpi_path, copy.deepcopy(data_mpi))
+    pt_expt_deserialize_to_file(
+        pt2_mpi_path, copy.deepcopy(data_mpi), do_atomic_virial=True
+    )
 
     pth_path = os.path.join(base_dir, "deeppot_dpa3.pth")
     print(f"Exporting to {pth_path} ...")  # noqa: T201

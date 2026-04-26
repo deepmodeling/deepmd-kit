@@ -276,9 +276,10 @@ void deepmd::NeighborListData::copy_from_nlist(const InputNlist& inlist,
   int inum = natoms >= 0 ? natoms : inlist.inum;
   ilist.resize(inum);
   jlist.resize(inum);
-  // Guard against an empty subdomain (inum == 0): &ilist[0] on an
-  // empty vector is OOB under libstdc++ debug-mode and undefined
-  // behaviour in general. Use data() and skip the copy when empty.
+  // Guard against an empty subdomain (inum == 0) and atoms with zero
+  // neighbours (jnum == 0): `&vec[0]` is undefined behaviour for an
+  // empty vector and libstdc++ debug-mode asserts on it. Use data()
+  // and skip the copy when the count is zero.
   if (inum > 0) {
     memcpy(ilist.data(), inlist.ilist, inum * sizeof(int));
   }
@@ -302,13 +303,13 @@ void deepmd::NeighborListData::shuffle(const AtomMap& map) {
 void deepmd::NeighborListData::shuffle(const std::vector<int>& fwd_map) {
   int nloc = fwd_map.size();
   for (unsigned ii = 0; ii < ilist.size(); ++ii) {
-    if (ilist[ii] < nloc) {
+    if (ilist[ii] >= 0 && ilist[ii] < nloc) {
       ilist[ii] = fwd_map[ilist[ii]];
     }
   }
   for (unsigned ii = 0; ii < jlist.size(); ++ii) {
     for (unsigned jj = 0; jj < jlist[ii].size(); ++jj) {
-      if (jlist[ii][jj] < nloc) {
+      if (jlist[ii][jj] >= 0 && jlist[ii][jj] < nloc) {
         jlist[ii][jj] = fwd_map[jlist[ii][jj]];
       }
     }
@@ -360,12 +361,16 @@ void deepmd::NeighborListData::make_inlist(InputNlist& inlist) {
   firstneigh.resize(nloc);
   for (int ii = 0; ii < nloc; ++ii) {
     numneigh[ii] = jlist[ii].size();
-    firstneigh[ii] = &jlist[ii][0];
+    // `&vec[0]` is undefined behaviour for empty vectors (libstdc++
+    // debug mode asserts on it).  When numneigh[ii] is 0 the pointer is
+    // never dereferenced; use vector::data() which is well-defined for
+    // empty vectors.  Mirrors the fix in convert_nlist.
+    firstneigh[ii] = jlist[ii].data();
   }
   inlist.inum = nloc;
-  inlist.ilist = &ilist[0];
-  inlist.numneigh = &numneigh[0];
-  inlist.firstneigh = &firstneigh[0];
+  inlist.ilist = ilist.data();
+  inlist.numneigh = numneigh.data();
+  inlist.firstneigh = firstneigh.data();
 }
 
 #ifdef BUILD_TENSORFLOW

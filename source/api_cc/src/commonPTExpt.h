@@ -447,103 +447,6 @@ inline std::string read_zip_entry(const std::string& zip_path,
 }
 
 // ============================================================================
-// Build type-sorted, sel-limited neighbor list tensor.
-// ============================================================================
-
-/**
- * @brief Convert a raw neighbor list to the sel-limited format expected by the
- *        pt_expt model.
- *
- * For non-mixed-type models (distinguish_types=true): the nlist has shape
- * (nframes, nloc, sum(sel)), where the first sel[0] entries are neighbors of
- * type 0, the next sel[1] are type 1, etc.  Within each type group neighbors
- * are sorted by distance (ascending).
- *
- * For mixed-type models (distinguish_types=false): all neighbors go into a
- * single group sorted by distance, truncated to sum(sel).
- *
- * Missing slots are filled with -1.
- */
-template <typename VALUETYPE>
-inline torch::Tensor buildTypeSortedNlist(
-    const std::vector<std::vector<int>>& raw_nlist,
-    const std::vector<VALUETYPE>& coord_ext,
-    const std::vector<int>& atype_ext,
-    const std::vector<int>& sel,
-    int nloc,
-    bool mixed_types) {
-  int nsel = 0;
-  for (auto s : sel) {
-    nsel += s;
-  }
-  int ntypes = sel.size();
-  std::vector<int64_t> result(static_cast<size_t>(nloc) * nsel, -1);
-
-  for (int ii = 0; ii < nloc; ++ii) {
-    const auto& neighbors = raw_nlist[ii];
-    VALUETYPE xi = coord_ext[ii * 3 + 0];
-    VALUETYPE yi = coord_ext[ii * 3 + 1];
-    VALUETYPE zi = coord_ext[ii * 3 + 2];
-    int offset = ii * nsel;
-
-    if (mixed_types) {
-      std::vector<std::pair<VALUETYPE, int>> all_neighbors;
-      for (int jj : neighbors) {
-        if (jj < 0) {
-          continue;
-        }
-        int jtype = atype_ext[jj];
-        if (jtype < 0) {
-          continue;
-        }
-        VALUETYPE dx = coord_ext[jj * 3 + 0] - xi;
-        VALUETYPE dy = coord_ext[jj * 3 + 1] - yi;
-        VALUETYPE dz = coord_ext[jj * 3 + 2] - zi;
-        VALUETYPE rr = dx * dx + dy * dy + dz * dz;
-        all_neighbors.emplace_back(rr, jj);
-      }
-      std::sort(all_neighbors.begin(), all_neighbors.end());
-      int count = std::min(static_cast<int>(all_neighbors.size()), nsel);
-      for (int kk = 0; kk < count; ++kk) {
-        result[offset + kk] = all_neighbors[kk].second;
-      }
-    } else {
-      std::vector<std::vector<std::pair<VALUETYPE, int>>> by_type(ntypes);
-      for (int jj : neighbors) {
-        if (jj < 0) {
-          continue;
-        }
-        int jtype = atype_ext[jj];
-        if (jtype < 0 || jtype >= ntypes) {
-          continue;
-        }
-        VALUETYPE dx = coord_ext[jj * 3 + 0] - xi;
-        VALUETYPE dy = coord_ext[jj * 3 + 1] - yi;
-        VALUETYPE dz = coord_ext[jj * 3 + 2] - zi;
-        VALUETYPE rr = dx * dx + dy * dy + dz * dz;
-        by_type[jtype].emplace_back(rr, jj);
-      }
-      int col = 0;
-      for (int tt = 0; tt < ntypes; ++tt) {
-        auto& group = by_type[tt];
-        std::sort(group.begin(), group.end());
-        int count = std::min(static_cast<int>(group.size()), sel[tt]);
-        for (int kk = 0; kk < count; ++kk) {
-          result[offset + col + kk] = group[kk].second;
-        }
-        col += sel[tt];
-      }
-    }
-  }
-
-  torch::Tensor tensor =
-      torch::from_blob(result.data(), {1, nloc, nsel},
-                       torch::TensorOptions().dtype(torch::kInt64))
-          .clone();
-  return tensor;
-}
-
-// ============================================================================
 // With-comm artifact extraction (Phase 4)
 //
 // GNN .pt2 archives carry a nested ``extra/forward_lower_with_comm.pt2``
@@ -717,9 +620,9 @@ inline std::vector<at::Tensor> build_comm_tensors_positional_with_virtual_atoms(
   for (int s = 0; s < nswap; ++s) {
     remapped_sendlist_ptrs[s] = remapped_sendlist[s].data();
   }
-  return build_comm_tensors_positional(
-      lmp_list, remapped_sendlist_ptrs.data(), remapped_sendnum.data(),
-      remapped_recvnum.data(), nlocal, nghost);
+  return build_comm_tensors_positional(lmp_list, remapped_sendlist_ptrs.data(),
+                                       remapped_sendnum.data(),
+                                       remapped_recvnum.data(), nlocal, nghost);
 }
 
 }  // namespace ptexpt

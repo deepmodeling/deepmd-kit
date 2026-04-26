@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import types
 from typing import (
     Any,
 )
@@ -17,6 +18,7 @@ from deepmd.utils.spin import (
 )
 
 from .make_model import (
+    _pad_nlist_for_export,
     make_model,
 )
 from .model import (
@@ -96,6 +98,7 @@ class SpinModel(SpinModelDP):
             aparam: torch.Tensor | None,
         ) -> dict[str, torch.Tensor]:
             extended_coord = extended_coord.detach().requires_grad_(True)
+            nlist = _pad_nlist_for_export(nlist)
             return model.forward_common_lower(
                 extended_coord,
                 extended_atype,
@@ -107,15 +110,30 @@ class SpinModel(SpinModelDP):
                 do_atomic_virial=do_atomic_virial,
             )
 
-        return make_fx(fn, **make_fx_kwargs)(
-            extended_coord,
-            extended_atype,
-            extended_spin,
-            nlist,
-            mapping,
-            fparam,
-            aparam,
+        # Force the sort branch of `_format_nlist` into the compiled graph by
+        # overriding `need_sorted_nlist_for_lower` on the backbone (which is
+        # where `call_common_lower` reads it).  Short-circuit `or` in
+        # `_format_nlist` then skips the symbolic `n_nnei > nnei` comparison,
+        # so no spurious shape guard is emitted.  See make_model.py for the
+        # non-spin counterpart.
+        backbone = model.backbone_model
+        _orig_need_sort = backbone.need_sorted_nlist_for_lower
+        backbone.need_sorted_nlist_for_lower = types.MethodType(
+            lambda self: True, backbone
         )
+        try:
+            traced = make_fx(fn, **make_fx_kwargs)(
+                extended_coord,
+                extended_atype,
+                extended_spin,
+                nlist,
+                mapping,
+                fparam,
+                aparam,
+            )
+        finally:
+            backbone.need_sorted_nlist_for_lower = _orig_need_sort
+        return traced
 
     def forward_common_lower_exportable_with_comm(
         self,
@@ -164,6 +182,8 @@ class SpinModel(SpinModelDP):
             nghost: torch.Tensor,
         ) -> dict[str, torch.Tensor]:
             extended_coord = extended_coord.detach().requires_grad_(True)
+            # Same nnei-dynamic-axis workaround as the regular variant.
+            nlist = _pad_nlist_for_export(nlist)
             comm_dict = {
                 "send_list": send_list,
                 "send_proc": send_proc,
@@ -193,23 +213,35 @@ class SpinModel(SpinModelDP):
                 comm_dict=comm_dict,
             )
 
-        return make_fx(fn, **make_fx_kwargs)(
-            extended_coord,
-            extended_atype,
-            extended_spin,
-            nlist,
-            mapping,
-            fparam,
-            aparam,
-            send_list,
-            send_proc,
-            recv_proc,
-            send_num,
-            recv_num,
-            communicator,
-            nlocal,
-            nghost,
+        # Force the sort branch in ``_format_nlist`` so the compiled
+        # graph's ``nnei`` axis stays dynamic (mirrors the regular
+        # spin variant; backbone-level override is required).
+        backbone = self.backbone_model
+        _orig_need_sort = backbone.need_sorted_nlist_for_lower
+        backbone.need_sorted_nlist_for_lower = types.MethodType(
+            lambda self: True, backbone
         )
+        try:
+            traced = make_fx(fn, **make_fx_kwargs)(
+                extended_coord,
+                extended_atype,
+                extended_spin,
+                nlist,
+                mapping,
+                fparam,
+                aparam,
+                send_list,
+                send_proc,
+                recv_proc,
+                send_num,
+                recv_num,
+                communicator,
+                nlocal,
+                nghost,
+            )
+        finally:
+            backbone.need_sorted_nlist_for_lower = _orig_need_sort
+        return traced
 
     def forward_common_lower(
         self, *args: Any, **kwargs: Any

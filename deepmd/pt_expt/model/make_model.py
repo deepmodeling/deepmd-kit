@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import math
+import types
 from typing import (
     Any,
 )
@@ -26,6 +27,28 @@ from deepmd.pt_expt.common import (
 from .transform_output import (
     fit_output_to_model_output,
 )
+
+
+def _pad_nlist_for_export(nlist: torch.Tensor) -> torch.Tensor:
+    """Append a single ``-1`` column to ``nlist`` for export-time tracing.
+
+    Used inside ``forward_common_lower_exportable`` (and its spin counterpart)
+    so that ``_format_nlist``'s terminal slice ``ret[..., :nnei]`` truncates
+    to a statically sized output.  Without the extra column, torch.export
+    cannot prove the ``ret.shape[-1] == nnei`` assertion at trace time and
+    would specialise the dynamic ``nnei`` dim to the sample value.
+
+    Combined with the short-circuit order in ``_format_nlist``
+    (``extra_nlist_sort`` on the left) and the ``need_sorted_nlist_for_lower``
+    override during tracing, this keeps the compiled graph's ``nnei`` axis
+    fully dynamic and free of symbolic shape guards.
+    """
+    pad = -torch.ones(
+        (*nlist.shape[:2], 1),
+        dtype=nlist.dtype,
+        device=nlist.device,
+    )
+    return torch.cat([nlist, pad], dim=-1)
 
 
 def _cal_hessian_ext(
@@ -348,6 +371,7 @@ def make_model(
                 aparam: torch.Tensor | None,
             ) -> dict[str, torch.Tensor]:
                 extended_coord = extended_coord.detach().requires_grad_(True)
+                nlist = _pad_nlist_for_export(nlist)
                 return model.forward_common_lower(
                     extended_coord,
                     extended_atype,
@@ -358,14 +382,27 @@ def make_model(
                     do_atomic_virial=do_atomic_virial,
                 )
 
-            return make_fx(fn, **make_fx_kwargs)(
-                extended_coord,
-                extended_atype,
-                nlist,
-                mapping,
-                fparam,
-                aparam,
+            # Force `_format_nlist`'s sort branch into the compiled graph so the
+            # exported model tolerates oversized nlists at runtime (LAMMPS builds
+            # nlists with rcut+skin).  Combined with the short-circuit order in
+            # `_format_nlist`, no symbolic guard on the dynamic `nnei` axis is
+            # emitted.
+            _orig_need_sort = model.need_sorted_nlist_for_lower
+            model.need_sorted_nlist_for_lower = types.MethodType(
+                lambda self: True, model
             )
+            try:
+                traced = make_fx(fn, **make_fx_kwargs)(
+                    extended_coord,
+                    extended_atype,
+                    nlist,
+                    mapping,
+                    fparam,
+                    aparam,
+                )
+            finally:
+                model.need_sorted_nlist_for_lower = _orig_need_sort
+            return traced
 
         def forward_common_lower_exportable_with_comm(
             self,
@@ -420,6 +457,10 @@ def make_model(
                 nghost: torch.Tensor,
             ) -> dict[str, torch.Tensor]:
                 extended_coord = extended_coord.detach().requires_grad_(True)
+                # Same nnei-dynamic-axis workaround as the regular variant
+                # (see ``_pad_nlist_for_export``).  Without it the with-comm
+                # trace specialises ``nnei`` to the sample width.
+                nlist = _pad_nlist_for_export(nlist)
                 comm_dict = {
                     "send_list": send_list,
                     "send_proc": send_proc,
@@ -441,21 +482,31 @@ def make_model(
                     comm_dict=comm_dict,
                 )
 
-            return make_fx(fn, **make_fx_kwargs)(
-                extended_coord,
-                extended_atype,
-                nlist,
-                mapping,
-                fparam,
-                aparam,
-                send_list,
-                send_proc,
-                recv_proc,
-                send_num,
-                recv_num,
-                communicator,
-                nlocal,
-                nghost,
+            # Force the sort branch in ``_format_nlist`` (mirrors the regular
+            # variant) so the compiled graph's ``nnei`` axis stays dynamic.
+            _orig_need_sort = model.need_sorted_nlist_for_lower
+            model.need_sorted_nlist_for_lower = types.MethodType(
+                lambda self: True, model
             )
+            try:
+                traced = make_fx(fn, **make_fx_kwargs)(
+                    extended_coord,
+                    extended_atype,
+                    nlist,
+                    mapping,
+                    fparam,
+                    aparam,
+                    send_list,
+                    send_proc,
+                    recv_proc,
+                    send_num,
+                    recv_num,
+                    communicator,
+                    nlocal,
+                    nghost,
+                )
+            finally:
+                model.need_sorted_nlist_for_lower = _orig_need_sort
+            return traced
 
     return CM

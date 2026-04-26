@@ -67,7 +67,9 @@ def main():
     }
     pt2_default_path = os.path.join(base_dir, "fparam_aparam_default.pt2")
     print(f"Exporting to {pt2_default_path} ...")  # noqa: T201
-    pt_expt_deserialize_to_file(pt2_default_path, copy.deepcopy(data_default))
+    pt_expt_deserialize_to_file(
+        pt2_default_path, copy.deepcopy(data_default), do_atomic_virial=True
+    )
 
     # ---- 3. Export fparam_aparam.pt2 and .pth (without default_fparam) ----
     config_no_default = copy.deepcopy(config)
@@ -84,7 +86,9 @@ def main():
 
     pt2_path = os.path.join(base_dir, "fparam_aparam.pt2")
     print(f"Exporting to {pt2_path} ...")  # noqa: T201
-    pt_expt_deserialize_to_file(pt2_path, copy.deepcopy(data_no_default))
+    pt_expt_deserialize_to_file(
+        pt2_path, copy.deepcopy(data_no_default), do_atomic_virial=True
+    )
 
     pth_path = os.path.join(base_dir, "fparam_aparam.pth")
     pth_exported = False

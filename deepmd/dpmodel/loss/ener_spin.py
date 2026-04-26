@@ -50,6 +50,14 @@ class EnergySpinLoss(Loss):
         if true, the energy will be computed as \sum_i c_i E_i
     loss_func : str
         Loss function type: 'mse' or 'mae'.
+    intensive_ener_virial : bool
+        If true, the MSE energy and virial terms use intensive normalization,
+        i.e. an additional normalization by the square of the number of atoms
+        (1/N^2) instead of the legacy (1/N) behavior. This keeps those MSE loss
+        terms consistent with per-atom RMSE reporting and less dependent on
+        system size. This option does not change the MAE formulation, which is
+        handled separately. The default is false for backward compatibility with
+        models trained using deepmd-kit <= 3.1.3.
     **kwargs
         Other keyword arguments.
     """
@@ -69,6 +77,7 @@ class EnergySpinLoss(Loss):
         limit_pref_ae: float = 0.0,
         enable_atom_ener_coeff: bool = False,
         loss_func: str = "mse",
+        intensive_ener_virial: bool = False,
         **kwargs: Any,
     ) -> None:
         valid_loss_funcs = ["mse", "mae"]
@@ -89,6 +98,7 @@ class EnergySpinLoss(Loss):
         self.start_pref_ae = start_pref_ae
         self.limit_pref_ae = limit_pref_ae
         self.enable_atom_ener_coeff = enable_atom_ener_coeff
+        self.intensive_ener_virial = intensive_ener_virial
         self.has_e = self.start_pref_e != 0.0 or self.limit_pref_e != 0.0
         self.has_fr = self.start_pref_fr != 0.0 or self.limit_pref_fr != 0.0
         self.has_fm = self.start_pref_fm != 0.0 or self.limit_pref_fm != 0.0
@@ -117,6 +127,10 @@ class EnergySpinLoss(Loss):
         loss = 0
         more_loss = {}
         atom_norm = 1.0 / natoms
+        # Normalization exponent controls loss scaling with system size:
+        # - norm_exp=2 (intensive_ener_virial=True): loss uses 1/N² scaling, making it independent of system size
+        # - norm_exp=1 (intensive_ener_virial=False, legacy): loss uses 1/N scaling, which varies with system size
+        norm_exp = 2 if self.intensive_ener_virial else 1
 
         if self.has_e:
             energy_pred = model_dict["energy"]
@@ -130,7 +144,7 @@ class EnergySpinLoss(Loss):
                 energy_pred = xp.sum(atom_ener_coeff * atom_ener_pred, axis=1)
             if self.loss_func == "mse":
                 l2_ener_loss = xp.mean(xp.square(energy_pred - energy_label))
-                loss += atom_norm * (pref_e * l2_ener_loss)
+                loss += atom_norm**norm_exp * (pref_e * l2_ener_loss)
                 more_loss["rmse_e"] = self.display_if_exist(
                     xp.sqrt(l2_ener_loss) * atom_norm, find_energy
                 )
@@ -238,7 +252,7 @@ class EnergySpinLoss(Loss):
             diff_v = virial_label - virial_pred
             if self.loss_func == "mse":
                 l2_virial_loss = xp.mean(xp.square(diff_v))
-                loss += atom_norm * (pref_v * l2_virial_loss)
+                loss += atom_norm**norm_exp * (pref_v * l2_virial_loss)
                 more_loss["rmse_v"] = self.display_if_exist(
                     xp.sqrt(l2_virial_loss) * atom_norm, find_virial
                 )
@@ -326,7 +340,7 @@ class EnergySpinLoss(Loss):
         """Serialize the loss module."""
         return {
             "@class": "EnergySpinLoss",
-            "@version": 1,
+            "@version": 2,
             "starter_learning_rate": self.starter_learning_rate,
             "start_pref_e": self.start_pref_e,
             "limit_pref_e": self.limit_pref_e,
@@ -340,12 +354,17 @@ class EnergySpinLoss(Loss):
             "limit_pref_ae": self.limit_pref_ae,
             "enable_atom_ener_coeff": self.enable_atom_ener_coeff,
             "loss_func": self.loss_func,
+            "intensive_ener_virial": self.intensive_ener_virial,
         }
 
     @classmethod
     def deserialize(cls, data: dict) -> "EnergySpinLoss":
         """Deserialize the loss module."""
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
+        version = data.pop("@version")
+        check_version_compatibility(version, 2, 1)
         data.pop("@class")
+        # Backward compatibility: version 1 used legacy normalization
+        if version < 2:
+            data.setdefault("intensive_ener_virial", False)
         return cls(**data)
