@@ -535,6 +535,11 @@ class LmdbDataReader:
         for item in data_requirement:
             self._data_requirements[item["key"]] = item
 
+    @property
+    def data_requirements(self) -> list[DataRequirementItem]:
+        """Registered data requirements in insertion order."""
+        return list(self._data_requirements.values())
+
     def print_summary(self, name: str, prob: Any) -> None:
         """Print basic dataset info."""
         n_groups = len(self._nloc_groups)
@@ -1286,6 +1291,25 @@ class LmdbTestData:
             "dtype": dtype,
         }
 
+    def add_data_requirement(self, data_requirement: list[DataRequirementItem]) -> None:
+        """Register expected keys from ``DataRequirementItem`` objects.
+
+        Mirrors :meth:`LmdbDataReader.add_data_requirement` so the same
+        requirement list can be forwarded to both the training reader and
+        the full-validation test data.
+        """
+        for item in data_requirement:
+            self.add(
+                item["key"],
+                ndof=item["ndof"],
+                atomic=item["atomic"],
+                must=item["must"],
+                high_prec=item["high_prec"],
+                repeat=item["repeat"],
+                default=item["default"],
+                dtype=item["dtype"],
+            )
+
     def _resolve_dtype(self, key: str) -> np.dtype:
         """Resolve target dtype for a key using registered requirements."""
         if key in self._requirements:
@@ -1442,6 +1466,28 @@ class LmdbTestData:
                 result[key] = np.full(shape, default, dtype=self._resolve_dtype(key))
 
         return result
+
+
+class LmdbTestDataNlocView:
+    """Thin wrapper exposing a fixed-``nloc`` view of :class:`LmdbTestData`.
+
+    The underlying :class:`LmdbTestData` groups frames by atom count. This
+    view fixes one ``nloc`` group, so ``get_test()`` returns only the frames
+    with that atom count and all other attributes (``pbc``, ``mixed_type``,
+    …) are forwarded to the underlying object. It lets downstream consumers
+    that expect a ``DeepmdData``-style system (one fixed natoms per
+    ``get_test()``) work on mixed-nloc LMDB datasets without changes.
+    """
+
+    def __init__(self, lmdb_test_data: "LmdbTestData", nloc: int) -> None:
+        self._inner = lmdb_test_data
+        self._nloc = nloc
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+    def get_test(self) -> dict[str, Any]:
+        return self._inner.get_test(nloc=self._nloc)
 
 
 def merge_lmdb(

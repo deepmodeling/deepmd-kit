@@ -17,6 +17,7 @@ from deepmd.common import (
 )
 from deepmd.dpmodel.utils.lmdb_data import (
     LmdbTestData,
+    LmdbTestDataNlocView,
     is_lmdb,
 )
 from deepmd.infer.deep_dipole import (
@@ -75,24 +76,6 @@ if TYPE_CHECKING:
 __all__ = ["test"]
 
 log = logging.getLogger(__name__)
-
-
-class _LmdbTestDataNlocView:
-    """Thin wrapper that makes LmdbTestData.get_test() return a specific nloc group.
-
-    Delegates all attributes to the underlying LmdbTestData, but get_test()
-    returns only frames with the specified nloc.
-    """
-
-    def __init__(self, lmdb_test_data: LmdbTestData, nloc: int) -> None:
-        self._inner = lmdb_test_data
-        self._nloc = nloc
-
-    def __getattr__(self, name: str) -> Any:
-        return getattr(self._inner, name)
-
-    def get_test(self) -> dict:
-        return self._inner.get_test(nloc=self._nloc)
 
 
 def test(
@@ -221,7 +204,7 @@ def test(
             for nloc_val in nloc_keys:
                 label = f"{system} [nloc={nloc_val}]" if len(nloc_keys) > 1 else system
                 # Create a thin wrapper that returns only this nloc group
-                data_items.append((_LmdbTestDataNlocView(lmdb_data, nloc_val), label))
+                data_items.append((LmdbTestDataNlocView(lmdb_data, nloc_val), label))
         else:
             data = DeepmdData(
                 system,
