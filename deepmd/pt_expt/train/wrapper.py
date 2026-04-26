@@ -232,8 +232,10 @@ class ModelWrapper(torch.nn.Module):
         """Load state dict with key remapping for PT backend compatibility.
 
         This method handles loading checkpoints from the PT backend, which uses
-        slightly different naming conventions for some buffers (e.g., "min_nbor_dist"
-        vs "_min_nbor_dist").
+        different naming conventions:
+        - PT uses "min_nbor_dist" → pt_expt uses "_min_nbor_dist"
+        - PT uses ".matrix" (weights) → pt_expt uses ".w"
+        - PT uses ".bias" (bias) → pt_expt uses ".b"
 
         Parameters
         ----------
@@ -249,14 +251,23 @@ class ModelWrapper(torch.nn.Module):
         _IncompatibleKeys
             Named tuple with missing_keys and unexpected_keys.
         """
+        import re
+
         # Remap keys from PT backend naming to pt_expt naming
         remapped_state_dict = {}
         for key, value in state_dict.items():
             new_key = key
-            for old_suffix, new_suffix in self._PT_TO_PT_EXPT_KEY_MAP.items():
-                if old_suffix in key:
-                    new_key = key.replace(old_suffix, new_suffix)
-                    break
+            # Remap min_nbor_dist → _min_nbor_dist
+            new_key = new_key.replace(".min_nbor_dist", "._min_nbor_dist")
+            # Remap layer weights: .matrix → .w (must be at end of key or before a dot)
+            new_key = re.sub(r"\.matrix$", ".w", new_key)
+            new_key = re.sub(r"\.matrix\.", ".w.", new_key)
+            # Remap layer bias: .bias → .b (must be at end of key or before a dot)
+            # Note: only match ".bias" when it's a parameter, not when it's part of
+            # a module name. We detect this by checking if it ends the key or
+            # is followed by another dot (indicating it's a parameter name).
+            new_key = re.sub(r"\.bias$", ".b", new_key)
+            new_key = re.sub(r"\.bias\.", ".b.", new_key)
             remapped_state_dict[new_key] = value
 
         # Call parent's load_state_dict with remapped keys

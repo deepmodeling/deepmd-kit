@@ -87,9 +87,10 @@ log = logging.getLogger(__name__)
 def _remap_state_dict_keys_for_pt(state_dict: dict[str, Any]) -> dict[str, Any]:
     """Remap state dict keys from pt_expt naming to PT naming for compatibility.
 
-    The pt_expt backend uses slightly different naming conventions for some buffers:
-    - pt_expt uses "_min_nbor_dist" (with underscore prefix)
-    - pt uses "min_nbor_dist" (without underscore prefix)
+    The pt_expt backend uses different naming conventions than the PT backend:
+    - pt_expt uses "_min_nbor_dist" → pt uses "min_nbor_dist"
+    - pt_expt uses ".w" (weights) → pt uses ".matrix"
+    - pt_expt uses ".b" (bias) → pt uses ".bias"
 
     This function remaps pt_expt keys to PT format when loading pt_expt checkpoints
     into the PT backend.
@@ -104,18 +105,20 @@ def _remap_state_dict_keys_for_pt(state_dict: dict[str, Any]) -> dict[str, Any]:
     dict
         The remapped state dict.
     """
-    # Mapping from pt_expt naming to PT naming
-    key_mappings = {
-        "._min_nbor_dist": ".min_nbor_dist",
-    }
+    import re
 
     remapped = {}
     for key, value in state_dict.items():
         new_key = key
-        for old_pattern, new_pattern in key_mappings.items():
-            if old_pattern in key:
-                new_key = key.replace(old_pattern, new_pattern)
-                break
+        # Remap _min_nbor_dist → min_nbor_dist
+        new_key = new_key.replace("._min_nbor_dist", ".min_nbor_dist")
+        # Remap layer weights: .w → .matrix (must be at end of key or before a dot)
+        # Match ".w" that ends the key or is followed by a dot (for nested keys)
+        new_key = re.sub(r"\.w$", ".matrix", new_key)
+        new_key = re.sub(r"\.w\.", ".matrix.", new_key)
+        # Remap layer bias: .b → .bias (must be at end of key or before a dot)
+        new_key = re.sub(r"\.b$", ".bias", new_key)
+        new_key = re.sub(r"\.b\.", ".bias.", new_key)
         remapped[new_key] = value
 
     return remapped
