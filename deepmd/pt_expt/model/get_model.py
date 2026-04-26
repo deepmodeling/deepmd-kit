@@ -37,6 +37,12 @@ from deepmd.pt_expt.model.polar_model import (
 from deepmd.pt_expt.model.property_model import (
     PropertyModel,
 )
+from deepmd.pt_expt.model.spin_ener_model import (
+    SpinEnergyModel,
+)
+from deepmd.utils.spin import (
+    Spin,
+)
 
 
 def _get_standard_model_components(
@@ -162,6 +168,36 @@ def get_linear_model(model_params: dict) -> BaseModel:
     )
 
 
+def get_spin_model(data: dict) -> SpinEnergyModel:
+    """Build a pt_expt spin energy model from a config dictionary.
+
+    Mirrors :func:`deepmd.dpmodel.model.model.get_spin_model`: expands the
+    type map and descriptor sel for virtual spin atoms, then wraps the
+    backbone EnergyModel as a :class:`SpinEnergyModel`.
+    """
+    data = copy.deepcopy(data)
+    data["type_map"] += [item + "_spin" for item in data["type_map"]]
+    spin = Spin(
+        use_spin=data["spin"]["use_spin"],
+        virtual_scale=data["spin"]["virtual_scale"],
+    )
+    pair_exclude_types = spin.get_pair_exclude_types(
+        exclude_types=data.get("pair_exclude_types", None)
+    )
+    data["pair_exclude_types"] = pair_exclude_types
+    data["descriptor"]["exclude_types"] = pair_exclude_types
+    atom_exclude_types = spin.get_atom_exclude_types(
+        exclude_types=data.get("atom_exclude_types", None)
+    )
+    data["atom_exclude_types"] = atom_exclude_types
+    if "env_protection" not in data["descriptor"]:
+        data["descriptor"]["env_protection"] = 1e-6
+    if data["descriptor"]["type"] in ["se_e2_a"]:
+        data["descriptor"]["sel"] += data["descriptor"]["sel"]
+    backbone_model = get_standard_model(data)
+    return SpinEnergyModel(backbone_model=backbone_model, spin=spin)
+
+
 def get_model(data: dict) -> BaseModel:
     """Get a model from a config dictionary.
 
@@ -172,6 +208,8 @@ def get_model(data: dict) -> BaseModel:
     """
     model_type = data.get("type", "standard")
     if model_type == "standard":
+        if "spin" in data:
+            return get_spin_model(data)
         return get_standard_model(data)
     elif model_type == "linear_ener":
         return get_linear_model(data)
