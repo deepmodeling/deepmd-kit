@@ -341,22 +341,33 @@ def test_pair_deepmd_si(lammps_si) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _run_mpi_subprocess(extra_args: list[str] | None = None) -> dict:
-    """Helper: invoke run_mpi_pair_deepmd_dpa3_pt2.py under mpirun -n 2,
-    return ``{"pe": float, "forces": (n, 3) array}``."""
+def _run_mpi_subprocess(
+    extra_args: list[str] | None = None,
+    nprocs: int = 2,
+) -> dict:
+    """Helper: invoke run_mpi_pair_deepmd_dpa3_pt2.py under
+    ``mpirun -n <nprocs>`` and return ``{"pe": float, "forces": (n, 3) array}``.
+
+    With ``nprocs == 1`` the runner is invoked with ``--processors 1 1 1``
+    so the C++ side sees ``nswap == 0`` and routes to the regular
+    (single-rank) artifact of the dual-artifact .pt2 — useful as a
+    same-archive reference for multi-rank comparisons.
+    """
     with tempfile.NamedTemporaryFile(mode="r", suffix=".out", delete=False) as f:
         out_path = f.name
     try:
         argv = [
             "mpirun",
             "-n",
-            "2",
+            str(nprocs),
             sys.executable,
             str(Path(__file__).parent / "run_mpi_pair_deepmd_dpa3_pt2.py"),
             str(data_file.resolve()),
             str(pb_file_mpi.resolve()),
             out_path,
         ]
+        if nprocs == 1:
+            argv.extend(["--processors", "1 1 1"])
         if extra_args:
             argv.extend(extra_args)
         sp.check_call(argv)
@@ -415,24 +426,28 @@ def test_pair_deepmd_mpi_dpa3() -> None:
     importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
 )
 def test_pair_deepmd_mpi_dpa3_nlist_rebuild() -> None:
-    """Multi-rank with neighbor-list rebuilds.
+    """Multi-rank with neighbor-list rebuilds, validated against a
+    single-rank reference of the same archive and trajectory.
 
-    Runs ~50 MD steps with ``neigh_modify every 10 delay 0 check no``,
-    forcing at least 5 nlist rebuilds during the trajectory. The
-    purpose is NOT to validate exact final-state values (round-off
-    accumulates over MD steps and cross-rank ordering can shift the
-    LSBs) but to verify the with-comm dispatch path stays consistent
-    across rebuilds — i.e. ``DeepPotPTExpt::compute`` correctly
-    reconstructs the comm tensors when ``ago == 0`` triggers and the
-    AOTI graph keeps producing finite values.
+    Runs 25 MD steps with ``neigh_modify every 10 delay 0 check no``,
+    so the multi-rank trajectory crosses two nlist rebuilds (at steps
+    10 and 20) before the final force evaluation. The same trajectory
+    is then run under ``mpirun -n 1`` (regular-artifact dispatch on
+    the same dual-artifact .pt2) to obtain a reference; comparing the
+    two catches a wrong-but-finite force from a dispatch bug that the
+    previous finite/bounded check would miss.
+
+    NVE is deterministic up to floating-point summation order, so the
+    cross-rank divergence after 25 steps is bounded by accumulated
+    round-off — small for a 6-atom system but non-zero, hence the
+    relaxed (but still tight) tolerances.
     """
-    out = _run_mpi_subprocess(extra_args=["--nsteps", "50"])
-    # Trajectory advanced; final state will differ from the run-0
-    # reference. Just sanity-check finite values + reasonable forces.
-    assert np.all(np.isfinite(out["forces"]))
-    assert np.isfinite(out["pe"])
-    # Force magnitudes shouldn't blow up; pick a generous bound for
-    # the small-box water-like 6-atom system.
-    assert np.max(np.abs(out["forces"])) < 100.0, (
-        f"forces exploded after 50 steps: max|f|={np.max(np.abs(out['forces']))}"
+    out_mpi = _run_mpi_subprocess(extra_args=["--nsteps", "25"], nprocs=2)
+    out_ref = _run_mpi_subprocess(extra_args=["--nsteps", "25"], nprocs=1)
+    np.testing.assert_allclose(
+        out_mpi["forces"],
+        out_ref["forces"],
+        atol=1e-6,
+        rtol=1e-6,
     )
+    assert out_mpi["pe"] == pytest.approx(out_ref["pe"], rel=1e-8, abs=1e-10)

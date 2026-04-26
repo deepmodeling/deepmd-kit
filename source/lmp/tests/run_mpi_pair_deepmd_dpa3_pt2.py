@@ -41,16 +41,31 @@ parser.add_argument(
     "with --nsteps > 10 (LAMMPS neigh_modify every=10) the dispatch path "
     "is exercised across at least one neighbor-list rebuild.",
 )
+parser.add_argument(
+    "--processors",
+    type=str,
+    default="2 1 1",
+    help="LAMMPS processors grid. Default '2 1 1' forces multi-rank "
+    "domain decomposition (nswap>0). Pass '1 1 1' for a single-rank "
+    "reference run on the same archive (single-artifact dispatch).",
+)
 args = parser.parse_args()
 
 lammps = PyLammps()
-# Force a non-trivial domain decomposition: 2 x 1 x 1 across ranks.
-# Combined with the simulation box this guarantees nswap > 0 on the C++
-# side, so DeepPotPTExpt routes to the with-comm AOTI artifact.
-lammps.processors("2 1 1")
+# Force the requested domain decomposition. The default "2 1 1"
+# combined with the simulation box guarantees nswap > 0 on the C++
+# side, so DeepPotPTExpt routes to the with-comm AOTI artifact. Pass
+# "1 1 1" to obtain a single-rank reference using the same archive
+# (the regular artifact handles nswap==0).
+lammps.processors(args.processors)
 lammps.units("metal")
 lammps.boundary("p p p")
 lammps.atom_style("atomic")
+# ``atom_modify map yes`` is required when single-rank dispatch goes
+# through the regular artifact of a use_loc_mapping=False .pt2: the
+# C++ side needs the LAMMPS global-id->local-index map to build the
+# ``mapping`` tensor. It is harmless under multi-rank.
+lammps.atom_modify("map yes")
 lammps.neighbor("2.0 bin")
 lammps.neigh_modify("every 10 delay 0 check no")
 lammps.read_data(args.DATAFILE)
@@ -72,13 +87,21 @@ if args.nsteps > 0:
 
 # Forces need to be gathered across ranks. PyLammps's ``atoms[i]``
 # only exposes rank-local atoms; ``gather_atoms`` returns the global,
-# id-ordered array on every rank.
+# id-ordered array on every rank. We also gather ``id`` and reorder
+# explicitly by id rather than trusting an implicit ordering — this
+# is robust against subdomain layout, empty subdomains, and any
+# future LAMMPS change in gather ordering.
 forces_global = lammps.lmp.gather_atoms("f", 1, 3)
+ids_global = lammps.lmp.gather_atoms("id", 0, 1)
 # ``PyLammps.eval`` is rank-0-only.
 if rank == 0:
     pe_global = lammps.eval("pe")
     natoms = lammps.atoms.natoms
     forces = np.array(forces_global, dtype=np.float64).reshape(natoms, 3)
+    ids = np.array(ids_global, dtype=np.int64).reshape(natoms)
+    # Sort by atom id so output is unambiguously id-ordered (id 1 first).
+    order = np.argsort(ids)
+    forces = forces[order]
     with open(args.OUTPUT, "w") as f:
         f.write(f"{pe_global:.16e}\n")
         for row in forces:
