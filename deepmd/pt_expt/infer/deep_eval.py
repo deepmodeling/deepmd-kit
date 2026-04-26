@@ -1098,7 +1098,7 @@ class DeepEval(DeepEvalBackend):
         tests that construct a non-spin archive and then swap
         :attr:`_dpmodel` to a :class:`SpinModel` instance after load.
         """
-        if bool(getattr(self, "_is_spin", False)):
+        if self._is_spin:
             return True
         if self._dpmodel is None:
             return False
