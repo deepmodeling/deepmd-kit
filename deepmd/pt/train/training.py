@@ -920,8 +920,16 @@ class Trainer:
                     "lr_adjust_coeff": float(self.opt_param["lr_adjust_coeff"]),
                     "muon_mode": str(self.opt_param.get("muon_mode", "slice")),
                     "named_parameters": tuple(self.wrapper.named_parameters()),
-                    "flash_muon": bool(self.opt_param.get("flash_muon", True)),
-                    "magma_muon": bool(self.opt_param.get("magma_muon", False)),
+                    "enable_gram": False
+                    if self.is_distributed
+                    else bool(self.opt_param.get("enable_gram")),
+                    "flash_muon": bool(self.opt_param.get("flash_muon")),
+                    "magma_muon": bool(self.opt_param.get("magma_muon")),
+                    # FSDP2 shards parameters as DTensor; several torch._foreach_*
+                    # ops lack DTensor sharding propagation on older PyTorch, so
+                    # fall back to the per-tensor path under zero_stage >= 2.
+                    # DDP / ZeRO-1 keep plain tensors and use the default.
+                    "use_foreach": False if self.zero_stage >= 2 else None,
                 }
             else:
                 raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
