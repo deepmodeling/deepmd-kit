@@ -84,6 +84,43 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
+def _remap_state_dict_keys_for_pt(state_dict: dict[str, Any]) -> dict[str, Any]:
+    """Remap state dict keys from pt_expt naming to PT naming for compatibility.
+
+    The pt_expt backend uses slightly different naming conventions for some buffers:
+    - pt_expt uses "_min_nbor_dist" (with underscore prefix)
+    - pt uses "min_nbor_dist" (without underscore prefix)
+
+    This function remaps pt_expt keys to PT format when loading pt_expt checkpoints
+    into the PT backend.
+
+    Parameters
+    ----------
+    state_dict : dict
+        The state dict to remap.
+
+    Returns
+    -------
+    dict
+        The remapped state dict.
+    """
+    # Mapping from pt_expt naming to PT naming
+    key_mappings = {
+        "._min_nbor_dist": ".min_nbor_dist",
+    }
+
+    remapped = {}
+    for key, value in state_dict.items():
+        new_key = key
+        for old_pattern, new_pattern in key_mappings.items():
+            if old_pattern in key:
+                new_key = key.replace(old_pattern, new_pattern)
+                break
+        remapped[new_key] = value
+
+    return remapped
+
+
 class DeepEval(DeepEvalBackend):
     """PyTorch backend implementation of DeepEval.
 
@@ -170,6 +207,8 @@ class DeepEval(DeepEvalBackend):
             if not self.input_param.get("hessian_mode") and not no_jit:
                 model = torch.jit.script(model)
             self.dp = ModelWrapper(model)
+            # Remap state dict keys for compatibility with pt_expt checkpoints
+            state_dict = _remap_state_dict_keys_for_pt(state_dict)
             missing, unexpected = self.dp.load_state_dict(state_dict, strict=False)
             if missing:
                 log.warning(

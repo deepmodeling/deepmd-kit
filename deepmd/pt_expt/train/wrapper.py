@@ -2,6 +2,7 @@
 import logging
 from typing import (
     Any,
+    ClassVar,
 )
 
 import torch
@@ -214,3 +215,65 @@ class ModelWrapper(torch.nn.Module):
             "model_params": self.model_params,
             "train_infos": self.train_infos,
         }
+
+    # Key mappings from PT backend to pt_expt backend for checkpoint compatibility
+    # PT backend uses different naming conventions for some buffers/parameters
+    _PT_TO_PT_EXPT_KEY_MAP: ClassVar[dict[str, str]] = {
+        # Buffer name difference: pt uses "min_nbor_dist", pt_expt uses "_min_nbor_dist"
+        ".min_nbor_dist": "._min_nbor_dist",
+    }
+
+    def load_state_dict(
+        self,
+        state_dict: dict[str, Any],
+        strict: bool = True,
+        assign: bool = False,
+    ) -> torch.nn.modules.module._IncompatibleKeys:
+        """Load state dict with key remapping for PT backend compatibility.
+
+        This method handles loading checkpoints from the PT backend, which uses
+        slightly different naming conventions for some buffers (e.g., "min_nbor_dist"
+        vs "_min_nbor_dist").
+
+        Parameters
+        ----------
+        state_dict : dict
+            The state dict to load.
+        strict : bool
+            Whether to strictly enforce that the keys in state_dict match.
+        assign : bool
+            Whether to assign tensors in-place (PyTorch 2.1+ feature).
+
+        Returns
+        -------
+        _IncompatibleKeys
+            Named tuple with missing_keys and unexpected_keys.
+        """
+        # Remap keys from PT backend naming to pt_expt naming
+        remapped_state_dict = {}
+        for key, value in state_dict.items():
+            new_key = key
+            for old_suffix, new_suffix in self._PT_TO_PT_EXPT_KEY_MAP.items():
+                if old_suffix in key:
+                    new_key = key.replace(old_suffix, new_suffix)
+                    break
+            remapped_state_dict[new_key] = value
+
+        # Call parent's load_state_dict with remapped keys
+        result = super().load_state_dict(
+            remapped_state_dict, strict=strict, assign=assign
+        )
+
+        # Log warnings for missing/unexpected keys (matching PT backend behavior)
+        if result.missing_keys:
+            log.warning(
+                "Checkpoint loaded with missing keys (likely from an older version): %s",
+                result.missing_keys,
+            )
+        if result.unexpected_keys:
+            log.warning(
+                "Checkpoint loaded with unexpected keys: %s",
+                result.unexpected_keys,
+            )
+
+        return result
