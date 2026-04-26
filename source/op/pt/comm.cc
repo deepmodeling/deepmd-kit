@@ -452,3 +452,85 @@ TORCH_LIBRARY_FRAGMENT(deepmd, m) {
   m.def("border_op", border_op);
   m.def("border_op_backward", border_op_backward);
 }
+
+// ============================================================================
+// Opaque wrappers for the pt_expt (.pt2 / AOTInductor) export path.
+//
+// ``deepmd::border_op`` and ``deepmd::border_op_backward`` are registered
+// without an explicit dispatch key, which makes them
+// ``CompositeImplicitAutograd`` ops.  ``torch.export`` decomposes such ops
+// during tracing — i.e., it tries to inline the C++ kernel — and that
+// fails because the kernel calls ``data_ptr()`` on FakeTensors.
+//
+// These ``deepmd_export::*`` wrappers are registered with explicit
+// ``CPU`` and ``CUDA`` dispatch keys so ``torch.export`` records them as
+// opaque external calls in the graph.  The .pt2 archive embeds the call
+// sites; at runtime the dispatcher routes back to the underlying
+// ``deepmd::*`` op.  Both clones because ``deepmd::border_op`` returns
+// the same tensor it modified in place, which violates AOTInductor's
+// no-aliasing rule for graph outputs.
+//
+// Python (``deepmd/pt_expt/utils/comm.py``) layers ``register_fake`` and
+// ``register_autograd`` on top of these C++-defined ops so traced graphs
+// can run their fake/backward.
+// ============================================================================
+
+namespace {
+torch::Tensor border_op_export(const torch::Tensor& sendlist_tensor,
+                               const torch::Tensor& sendproc_tensor,
+                               const torch::Tensor& recvproc_tensor,
+                               const torch::Tensor& sendnum_tensor,
+                               const torch::Tensor& recvnum_tensor,
+                               const torch::Tensor& g1_tensor,
+                               const torch::Tensor& communicator_tensor,
+                               const torch::Tensor& nlocal_tensor,
+                               const torch::Tensor& nghost_tensor) {
+  auto out = border_op(sendlist_tensor, sendproc_tensor, recvproc_tensor,
+                       sendnum_tensor, recvnum_tensor, g1_tensor,
+                       communicator_tensor, nlocal_tensor, nghost_tensor);
+  // border_op returns {g1_tensor} — a list whose first element aliases
+  // g1_tensor. Clone for AOTI graph-output correctness.
+  return out.empty() ? torch::empty_like(g1_tensor) : out[0].clone();
+}
+
+torch::Tensor border_op_backward_export(
+    const torch::Tensor& sendlist_tensor,
+    const torch::Tensor& sendproc_tensor,
+    const torch::Tensor& recvproc_tensor,
+    const torch::Tensor& sendnum_tensor,
+    const torch::Tensor& recvnum_tensor,
+    const torch::Tensor& grad_g1,
+    const torch::Tensor& communicator_tensor,
+    const torch::Tensor& nlocal_tensor,
+    const torch::Tensor& nghost_tensor) {
+  return border_op_backward(sendlist_tensor, sendproc_tensor, recvproc_tensor,
+                            sendnum_tensor, recvnum_tensor, grad_g1,
+                            communicator_tensor, nlocal_tensor, nghost_tensor)
+      .clone();
+}
+}  // namespace
+
+TORCH_LIBRARY_FRAGMENT(deepmd_export, m) {
+  m.def(
+      "border_op(Tensor sendlist, Tensor sendproc, Tensor recvproc, "
+      "Tensor sendnum, Tensor recvnum, Tensor g1, Tensor communicator, "
+      "Tensor nlocal, Tensor nghost) -> Tensor");
+  m.def(
+      "border_op_backward(Tensor sendlist, Tensor sendproc, Tensor recvproc, "
+      "Tensor sendnum, Tensor recvnum, Tensor grad_g1, Tensor communicator, "
+      "Tensor nlocal, Tensor nghost) -> Tensor");
+}
+
+// Register CPU + CUDA implementations under explicit dispatch keys so
+// torch.export sees opaque external calls (vs CompositeImplicitAutograd
+// which gets decomposed during trace).
+TORCH_LIBRARY_IMPL(deepmd_export, CPU, m) {
+  m.impl("border_op", border_op_export);
+  m.impl("border_op_backward", border_op_backward_export);
+}
+#if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
+TORCH_LIBRARY_IMPL(deepmd_export, CUDA, m) {
+  m.impl("border_op", border_op_export);
+  m.impl("border_op_backward", border_op_backward_export);
+}
+#endif

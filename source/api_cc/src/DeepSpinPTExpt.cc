@@ -62,6 +62,11 @@ void DeepSpinPTExpt::init(const std::string& model,
     return;
   }
 
+  // Load libdeepmd_op_pt.so so deepmd_export::* schemas are visible
+  // to torch's dispatcher before the AOTI module loads.  See
+  // DeepPotPTExpt::init for the full rationale.
+  deepmd::load_op_library();
+
   if (!file_content.empty()) {
     throw deepmd::deepmd_exception(
         "In-memory file_content loading is not supported for .pt2 models. "

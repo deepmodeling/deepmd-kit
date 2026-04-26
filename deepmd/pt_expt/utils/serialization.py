@@ -85,6 +85,11 @@ def _has_message_passing(model: torch.nn.Module) -> bool:
     compiled.  Non-GNN descriptors (se_e2_a, se_r, se_t, se_t_tebd,
     DPA1, hybrid-of-non-GNN) need only the regular artifact.
 
+    Additional gate: ``use_loc_mapping=True`` GNN models (the default
+    for DPA3) keep nlist in local-only indexing, so per-layer ghost
+    exchange is meaningless — these get only the regular artifact.
+    Multi-rank LAMMPS for GNN requires use_loc_mapping=False.
+
     Returns False if the descriptor's ``has_message_passing()`` query
     cannot be answered (e.g. linear/zbl/frozen models without a single
     descriptor) — those are assumed local.
@@ -93,12 +98,23 @@ def _has_message_passing(model: torch.nn.Module) -> bool:
         descriptor = model.atomic_model.descriptor
     except AttributeError:
         return False
-    if hasattr(descriptor, "has_message_passing"):
-        try:
-            return bool(descriptor.has_message_passing())
-        except (AttributeError, NotImplementedError):
+    if not hasattr(descriptor, "has_message_passing"):
+        return False
+    try:
+        if not descriptor.has_message_passing():
             return False
-    return False
+    except (AttributeError, NotImplementedError):
+        return False
+    # Walk into the GNN block (repflows / repformers) to inspect
+    # ``use_loc_mapping``. The attribute lives on the block, not on the
+    # top-level descriptor wrapper.
+    for attr in ("repflows", "repformers"):
+        block = getattr(descriptor, attr, None)
+        if block is None:
+            continue
+        if getattr(block, "use_loc_mapping", False):
+            return False
+    return True
 
 
 # Module-level cache for the trace-time sendlist buffer. The pointer

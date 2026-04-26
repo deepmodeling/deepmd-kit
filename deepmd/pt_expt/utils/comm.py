@@ -1,27 +1,32 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Opaque torch.export wrapper around the deepmd MPI border_op.
+"""Python-side fake / autograd registration for the C++-defined opaque
+``deepmd_export::border_op`` and ``deepmd_export::border_op_backward``.
 
-The existing ``torch.ops.deepmd.border_op`` (registered by
-``libdeepmd_op_pt.so``) is a ``CompositeImplicitAutograd`` op that wraps
-``Border::apply`` for the torch.jit (pt) backend. ``torch.export`` /
-AOTInductor try to *decompose* such ops into primitive aten ops, which
-fails because the C++ kernel calls ``data_ptr()`` on inputs — illegal
-during tracing on FakeTensors.
+The op schemas and concrete CPU/CUDA implementations are defined in
+``source/op/pt/comm.cc`` (registered under explicit dispatch keys so
+``torch.export`` records them as opaque external calls instead of
+decomposing into the C++ kernel — which would hit ``data_ptr()`` on
+FakeTensors and fail).  Defining the schema in C++ also means a
+``.pt2`` archive loaded by a pure-C++ process (LAMMPS via
+``DeepPotPTExpt``) can dispatch through the registered op without
+needing a Python interpreter.
 
-This module defines a NEW op ``deepmd_export::border_op`` via
-``torch.library.custom_op``, marked opaque so ``torch.export`` records it
-as a single black-box call. At runtime the loaded ``.pt2`` dispatches
-back into ``torch.ops.deepmd.border_op`` (forward) or
-``torch.ops.deepmd.border_op_backward`` (backward), preserving the MPI
-exchange semantics.
+This module adds the Python-only metadata that the ops still need:
+    * ``register_fake`` so ``make_fx`` / ``torch.export`` can trace
+      through them with FakeTensor inputs.
+    * ``register_autograd`` so ``torch.autograd.grad`` (used inside
+      ``forward_common_lower_exportable_with_comm``) flows gradients
+      through the forward op back to its inputs.
 
 Constraints discovered during de-risking (scratch/derisk_border_op.py):
-    1. ``custom_op`` forbids returning a tensor that aliases an input —
-       the underlying C++ op returns ``g1`` itself, so we ``.clone()``.
-    2. The fake (meta) impl honours ``g1.dtype`` (no float64 hardcoding).
-    3. ``register_autograd`` makes the op differentiable; the backward
-       dispatches to ``deepmd::border_op_backward`` which performs the
-       symmetric MPI exchange.
+    1. Both forward and backward outputs must NOT alias their inputs
+       (the C++ kernels return the same tensor they modified) — the
+       C++ wrapper layer in ``comm.cc`` clones them before exposing.
+    2. The fake impls honour ``g1.dtype`` (no float64 hardcoding).
+    3. ``register_autograd`` makes the forward op differentiable; the
+       backward callback dispatches to the opaque
+       ``deepmd_export::border_op_backward`` op so ``make_fx`` tracing
+       through ``autograd.grad`` also sees a black box.
 """
 
 from __future__ import (
@@ -34,70 +39,33 @@ import torch
 def _check_underlying_ops_loaded() -> None:
     """Surface a clearer error when libdeepmd_op_pt.so isn't loaded.
 
-    pt_expt depends on libdeepmd_op_pt.so for the underlying
-    ``deepmd::border_op`` and ``deepmd::border_op_backward`` C++ ops.
-    Without them, callers get cryptic
-    ``AttributeError: '_OpNamespace' object has no attribute 'border_op'``
-    errors. We translate that into actionable advice.
-
-    Called once on first wrapper invocation (not at import time, since
-    pt_expt may legitimately be imported on systems where the .so is
-    not built — e.g. eager-only smoke tests of dpmodel-side code).
+    pt_expt depends on libdeepmd_op_pt.so for the ``deepmd_export::*``
+    op schemas + impls.  Without it, the ops can't be registered for
+    fake/autograd metadata and callers get a cryptic AttributeError
+    on ``torch.ops.deepmd_export.border_op``.
     """
     if not (
-        hasattr(torch.ops, "deepmd")
-        and hasattr(torch.ops.deepmd, "border_op")
-        and hasattr(torch.ops.deepmd, "border_op_backward")
+        hasattr(torch.ops, "deepmd_export")
+        and hasattr(torch.ops.deepmd_export, "border_op")
+        and hasattr(torch.ops.deepmd_export, "border_op_backward")
     ):
         raise RuntimeError(
-            "deepmd_export::border_op wrapper requires "
-            "torch.ops.deepmd.border_op and "
-            "torch.ops.deepmd.border_op_backward (from "
-            "libdeepmd_op_pt.so) to be loaded. Build the pt custom-op "
-            "library and ensure deepmd.pt is imported before the "
-            "first call to this wrapper."
+            "torch.ops.deepmd_export.{border_op,border_op_backward} "
+            "are not registered. Build libdeepmd_op_pt.so and ensure "
+            "deepmd.pt is imported before this module."
         )
 
 
-@torch.library.custom_op("deepmd_export::border_op", mutates_args=())
-def border_op_export(
-    sendlist: torch.Tensor,
-    sendproc: torch.Tensor,
-    recvproc: torch.Tensor,
-    sendnum: torch.Tensor,
-    recvnum: torch.Tensor,
-    g1: torch.Tensor,
-    communicator: torch.Tensor,
-    nlocal: torch.Tensor,
-    nghost: torch.Tensor,
-) -> torch.Tensor:
-    """Opaque wrapper around ``torch.ops.deepmd.border_op``.
-
-    Performs MPI ghost-atom exchange of the embedding tensor ``g1`` so
-    GNN message-passing layers can run under multi-rank LAMMPS. Inputs
-    and outputs match the underlying op exactly except for the aliasing
-    fix (see module docstring).
-    """
-    _check_underlying_ops_loaded()
-    out = torch.ops.deepmd.border_op(
-        sendlist,
-        sendproc,
-        recvproc,
-        sendnum,
-        recvnum,
-        g1,
-        communicator,
-        nlocal,
-        nghost,
-    )
-    if isinstance(out, (list, tuple)):
-        out = out[0]
-    # custom_op forbids output aliasing inputs; underlying op returns g1.
-    return out.clone()
+_check_underlying_ops_loaded()
 
 
-@border_op_export.register_fake
-def _border_op_export_fake(
+# ---------------------------------------------------------------------------
+# Fake (meta) impls — let make_fx / torch.export trace through.
+# ---------------------------------------------------------------------------
+
+
+@torch.library.register_fake("deepmd_export::border_op")
+def _border_op_fake(
     sendlist: torch.Tensor,
     sendproc: torch.Tensor,
     recvproc: torch.Tensor,
@@ -109,6 +77,28 @@ def _border_op_export_fake(
     nghost: torch.Tensor,
 ) -> torch.Tensor:
     return torch.empty_like(g1)
+
+
+@torch.library.register_fake("deepmd_export::border_op_backward")
+def _border_op_backward_fake(
+    sendlist: torch.Tensor,
+    sendproc: torch.Tensor,
+    recvproc: torch.Tensor,
+    sendnum: torch.Tensor,
+    recvnum: torch.Tensor,
+    grad_g1: torch.Tensor,
+    communicator: torch.Tensor,
+    nlocal: torch.Tensor,
+    nghost: torch.Tensor,
+) -> torch.Tensor:
+    return torch.empty_like(grad_g1)
+
+
+# ---------------------------------------------------------------------------
+# Autograd: route the forward op's backward through the backward op so
+# ``make_fx`` tracing through ``torch.autograd.grad`` records both as
+# opaque external calls.
+# ---------------------------------------------------------------------------
 
 
 def _border_op_setup_context(
@@ -146,7 +136,7 @@ def _border_op_backward(
     (sendlist, sendproc, recvproc, sendnum, recvnum, communicator, nlocal, nghost) = (
         ctx.saved_tensors
     )
-    grad_in = torch.ops.deepmd.border_op_backward(
+    grad_in = torch.ops.deepmd_export.border_op_backward(
         sendlist,
         sendproc,
         recvproc,
@@ -157,22 +147,21 @@ def _border_op_backward(
         nlocal,
         nghost,
     )
-    # Same aliasing concern as forward: the C++ backward returns the same
-    # tensor object it modified; clone before handing back to autograd.
     return (
         None,
         None,
         None,
         None,
         None,  # sendlist..recvnum
-        grad_in.clone(),  # g1
+        grad_in,  # g1
         None,
         None,
         None,  # communicator, nlocal, nghost
     )
 
 
-border_op_export.register_autograd(
+torch.library.register_autograd(
+    "deepmd_export::border_op",
     _border_op_backward,
     setup_context=_border_op_setup_context,
 )

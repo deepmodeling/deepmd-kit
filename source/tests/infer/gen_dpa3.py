@@ -88,6 +88,24 @@ def main():
     print(f"Exporting to {pt2_path} ...")  # noqa: T201
     pt_expt_deserialize_to_file(pt2_path, copy.deepcopy(data))
 
+    # Multi-rank LAMMPS variant (use_loc_mapping=False) — produces a
+    # dual-artifact .pt2 with the with-comm AOTI module nested inside
+    # so the C++ DeepPotPTExpt routes to it under mpirun.  See
+    # source/lmp/tests/test_lammps_dpa3_pt2.py::test_pair_deepmd_mpi_dpa3.
+    config_mpi = copy.deepcopy(config)
+    config_mpi["descriptor"]["use_loc_mapping"] = False
+    model_mpi = get_model(config_mpi)
+    data_mpi = {
+        "model": model_mpi.serialize(),
+        "model_def_script": config_mpi,
+        "backend": "dpmodel",
+        "software": "deepmd-kit",
+        "version": "3.0.0",
+    }
+    pt2_mpi_path = os.path.join(base_dir, "deeppot_dpa3_mpi.pt2")
+    print(f"Exporting to {pt2_mpi_path} ...")  # noqa: T201
+    pt_expt_deserialize_to_file(pt2_mpi_path, copy.deepcopy(data_mpi))
+
     pth_path = os.path.join(base_dir, "deeppot_dpa3.pth")
     print(f"Exporting to {pth_path} ...")  # noqa: T201
     try:

@@ -5,7 +5,12 @@ Mirrors test_lammps_pt2.py (se_e2_a) but for the DPA3 descriptor.
 Reference values from source/tests/infer/gen_dpa3.py / C++ test.
 """
 
+import importlib.util
 import os
+import shutil
+import subprocess as sp
+import sys
+import tempfile
 from pathlib import (
     Path,
 )
@@ -21,6 +26,12 @@ from write_lmp_data import (
 )
 
 pb_file = Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot_dpa3.pt2"
+# Multi-rank-capable variant (use_loc_mapping=False; carries the
+# nested forward_lower_with_comm.pt2 artifact). Produced alongside
+# deeppot_dpa3.pt2 by source/tests/infer/gen_dpa3.py.
+pb_file_mpi = (
+    Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot_dpa3_mpi.pt2"
+)
 data_file = Path(__file__).parent / "data_dpa3_pt2.lmp"
 data_file_si = Path(__file__).parent / "data_dpa3_pt2.si"
 data_type_map_file = Path(__file__).parent / "data_type_map_dpa3_pt2.lmp"
@@ -315,3 +326,69 @@ def test_pair_deepmd_si(lammps_si) -> None:
             expected_f[lammps_si.atoms[ii].id - 1] * constants.force_metal2si
         )
     lammps_si.run(1)
+
+
+# ---------------------------------------------------------------------------
+# Multi-rank test (Phase 5 of GNN MPI)
+#
+# Drives the .pt2 model under ``mpirun -n 2`` so the C++ ``DeepPotPTExpt``
+# routes to the with-comm AOTI artifact (Phase 4) and ``border_op`` does
+# real MPI ghost exchange between two ranks.  The expected energy/forces
+# are the same as the single-rank reference (single-rank LAMMPS would
+# need ``atom_modify map yes`` to use the regular artifact; multi-rank
+# uses the with-comm artifact whose graph reproduces the gather via
+# MPI exchange).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(
+    shutil.which("mpirun") is None, reason="MPI is not installed on this system"
+)
+@pytest.mark.skipif(
+    importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
+)
+def test_pair_deepmd_mpi_dpa3() -> None:
+    """Multi-rank LAMMPS run for DPA3 .pt2 must match the single-rank
+    reference within numerical tolerance.
+
+    Requires the .pt2 archive to carry a with-comm artifact (Phase 3
+    output for GNN models).  If the archive lacks it, the C++ falls
+    back to the regular artifact and produces wrong cross-rank values
+    — which the assertion would catch (loud test failure, not silent).
+    """
+    with tempfile.NamedTemporaryFile(mode="r", suffix=".out", delete=False) as f:
+        out_path = f.name
+    try:
+        sp.check_call(
+            [
+                "mpirun",
+                "-n",
+                "2",
+                sys.executable,
+                str(Path(__file__).parent / "run_mpi_pair_deepmd_dpa3_pt2.py"),
+                str(data_file.resolve()),
+                str(pb_file_mpi.resolve()),
+                out_path,
+            ]
+        )
+        with open(out_path) as fh:
+            lines = fh.read().strip().splitlines()
+        pe_mpi = float(lines[0])
+        forces_mpi = np.array(
+            [list(map(float, line.split())) for line in lines[1:]],
+            dtype=np.float64,
+        )
+        # Energy matches single-rank reference.
+        assert pe_mpi == pytest.approx(expected_e)
+        # Per-atom forces match (atoms in id-sorted order from the
+        # subprocess script).
+        for ii in range(6):
+            np.testing.assert_allclose(
+                forces_mpi[ii],
+                expected_f[ii],
+                atol=1e-8,
+                rtol=0,
+            )
+    finally:
+        if os.path.exists(out_path):
+            os.remove(out_path)

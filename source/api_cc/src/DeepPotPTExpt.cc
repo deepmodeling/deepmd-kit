@@ -62,6 +62,13 @@ void DeepPotPTExpt::init(const std::string& model,
     return;
   }
 
+  // Load libdeepmd_op_pt.so so its TORCH_LIBRARY_FRAGMENT entries
+  // (deepmd::*, deepmd_export::*) are visible to torch's dispatcher
+  // before the AOTI module loads.  Without this, multi-rank GNN .pt2
+  // archives fail at pair_style time with
+  // ``Could not find schema for deepmd_export::border_op``.
+  deepmd::load_op_library();
+
   if (!file_content.empty()) {
     throw deepmd::deepmd_exception(
         "In-memory file_content loading is not supported for .pt2 models. "
