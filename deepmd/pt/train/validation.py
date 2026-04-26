@@ -8,6 +8,9 @@ from __future__ import (
 import logging
 import re
 import traceback
+from contextlib import (
+    nullcontext,
+)
 from dataclasses import (
     dataclass,
 )
@@ -55,6 +58,10 @@ from deepmd.utils.weight_avg import (
 log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
+    from collections.abc import (
+        Callable,
+    )
+
     from deepmd.utils.data import (
         DeepmdData,
     )
@@ -70,14 +77,13 @@ LOG_COLUMN_ORDER = [
 
 TOPK_RECORDS_INFO_KEY = "full_validation_topk_records"
 BEST_METRIC_NAME_INFO_KEY = "full_validation_metric"
-BEST_CKPT_GLOB = "best.ckpt-*.t-*.pt"
-BEST_CKPT_PATTERN = re.compile(r"^best\.ckpt-(\d+)\.t-(\d+)\.pt$")
 STALE_FULL_VALIDATION_INFO_KEYS = (
     "full_validation_best_metric",
     "full_validation_best_step",
     "full_validation_best_path",
     "full_validation_best_records",
 )
+BEST_CKPT_PREFIX = "best.ckpt"
 VAL_LOG_SIGNIFICANT_DIGITS = 5
 VAL_LOG_COLUMN_GAP = "   "
 VAL_LOG_HEADER_PREFIX = "# "
@@ -106,6 +112,16 @@ class BestCheckpointRecord:
 
     metric: float
     step: int
+
+
+def build_best_checkpoint_glob(best_checkpoint_prefix: str) -> str:
+    """Build the glob pattern for managed best checkpoints."""
+    return f"{best_checkpoint_prefix}-*.t-*.pt"
+
+
+def build_best_checkpoint_pattern(best_checkpoint_prefix: str) -> re.Pattern[str]:
+    """Build the regex pattern for managed best checkpoints."""
+    return re.compile(rf"^{re.escape(best_checkpoint_prefix)}-(\d+)\.t-(\d+)\.pt$")
 
 
 def parse_validation_metric(metric: str) -> tuple[str, str]:
@@ -176,22 +192,39 @@ class FullValidator:
         validating_params: dict[str, Any],
         validation_data: Any,
         model: torch.nn.Module,
-        train_infos: dict[str, Any],
+        state_store: dict[str, Any],
         num_steps: int,
         rank: int,
         zero_stage: int,
         restart_training: bool,
         checkpoint_dir: Path | None = None,
+        full_val_file: str | Path | None = None,
+        best_checkpoint_prefix: str = BEST_CKPT_PREFIX,
+        metric_name_info_key: str = BEST_METRIC_NAME_INFO_KEY,
+        topk_records_info_key: str = TOPK_RECORDS_INFO_KEY,
+        stale_state_keys: tuple[str, ...] = STALE_FULL_VALIDATION_INFO_KEYS,
+        emit_best_save_log: bool = True,
+        model_eval_context: Callable[[], Any] | None = None,
     ) -> None:
         self.validation_data = validation_data
         self.model = model
-        self.train_infos = train_infos
+        self.state_store = state_store
         self.rank = rank
         self.zero_stage = zero_stage
         self.checkpoint_dir = (
             Path(checkpoint_dir) if checkpoint_dir is not None else Path(".")
         )
         self.is_distributed = dist.is_available() and dist.is_initialized()
+        self.metric_name_info_key = metric_name_info_key
+        self.topk_records_info_key = topk_records_info_key
+        self.stale_state_keys = stale_state_keys
+        self.best_checkpoint_prefix = best_checkpoint_prefix
+        self.best_checkpoint_glob = build_best_checkpoint_glob(best_checkpoint_prefix)
+        self.best_checkpoint_pattern = build_best_checkpoint_pattern(
+            best_checkpoint_prefix
+        )
+        self.emit_best_save_log = emit_best_save_log
+        self.model_eval_context = model_eval_context or nullcontext
 
         self.full_validation = bool(validating_params.get("full_validation", False))
         self.validation_freq = int(validating_params.get("validation_freq", 5000))
@@ -200,7 +233,12 @@ class FullValidator:
         self.metric_name, self.metric_key = parse_validation_metric(
             str(validating_params.get("validation_metric", "E:MAE"))
         )
-        self.full_val_file = Path(validating_params.get("full_val_file", "val.log"))
+        resolved_log_file = (
+            full_val_file
+            if full_val_file is not None
+            else validating_params.get("full_val_file", "val.log")
+        )
+        self.full_val_file = Path(resolved_log_file)
         self.start_step = resolve_full_validation_start_step(
             validating_params.get("full_val_start", 0.5),
             num_steps,
@@ -225,7 +263,7 @@ class FullValidator:
             )
 
         self.topk_records = self._load_topk_records()
-        self._sync_train_infos()
+        self._sync_state_store()
         if self.rank == 0:
             self._initialize_best_checkpoints(restart_training=restart_training)
 
@@ -318,8 +356,9 @@ class FullValidator:
         was_training = bool(getattr(self.model, "training", True))
         self.model.eval()
         try:
-            # === Step 2. Evaluate All Systems ===
-            metrics = self.evaluate_all_systems()
+            with self.model_eval_context():
+                # === Step 2. Evaluate All Systems ===
+                metrics = self.evaluate_all_systems()
         finally:
             self.model.train(was_training)
 
@@ -524,27 +563,27 @@ class FullValidator:
             return None
 
         self.topk_records = updated_records
-        self._sync_train_infos()
+        self._sync_state_store()
         if not self.save_best:
             return None
         candidate_rank = self.topk_records.index(candidate) + 1
         return str(self._best_checkpoint_path(display_step, candidate_rank))
 
-    def _sync_train_infos(self) -> None:
-        """Synchronize top-K validation state into train infos."""
-        for key in STALE_FULL_VALIDATION_INFO_KEYS:
-            self.train_infos.pop(key, None)
-        self.train_infos[BEST_METRIC_NAME_INFO_KEY] = self.metric_name
-        self.train_infos[TOPK_RECORDS_INFO_KEY] = [
+    def _sync_state_store(self) -> None:
+        """Synchronize top-K validation state into the configured state store."""
+        for key in self.stale_state_keys:
+            self.state_store.pop(key, None)
+        self.state_store[self.metric_name_info_key] = self.metric_name
+        self.state_store[self.topk_records_info_key] = [
             {"metric": record.metric, "step": record.step}
             for record in self.topk_records
         ]
 
     def _load_topk_records(self) -> list[BestCheckpointRecord]:
-        """Load top-K records from train infos for the current metric."""
-        if self.train_infos.get(BEST_METRIC_NAME_INFO_KEY) != self.metric_name:
+        """Load top-K records from the configured state store."""
+        if self.state_store.get(self.metric_name_info_key) != self.metric_name:
             return []
-        raw_records = self.train_infos.get(TOPK_RECORDS_INFO_KEY, [])
+        raw_records = self.state_store.get(self.topk_records_info_key, [])
         if not isinstance(raw_records, list):
             return []
         records = []
@@ -564,7 +603,7 @@ class FullValidator:
 
     def _best_checkpoint_name(self, step: int, rank: int) -> str:
         """Build the best-checkpoint filename for one step."""
-        return f"best.ckpt-{step}.t-{rank}.pt"
+        return f"{self.best_checkpoint_prefix}-{step}.t-{rank}.pt"
 
     def _best_checkpoint_path(self, step: int, rank: int) -> Path:
         """Build the best-checkpoint path for one step."""
@@ -574,7 +613,7 @@ class FullValidator:
         """List all managed best checkpoints in the checkpoint directory."""
         best_checkpoints = [
             path
-            for path in self.checkpoint_dir.glob(BEST_CKPT_GLOB)
+            for path in self.checkpoint_dir.glob(self.best_checkpoint_glob)
             if path.is_file() and not path.is_symlink()
         ]
         best_checkpoints.sort(key=lambda path: path.stat().st_mtime)
@@ -594,7 +633,7 @@ class FullValidator:
         files_by_step: dict[int, list[Path]] = {}
         stale_files: list[Path] = []
         for checkpoint_path in current_files:
-            match = BEST_CKPT_PATTERN.match(checkpoint_path.name)
+            match = self.best_checkpoint_pattern.match(checkpoint_path.name)
             if match is None:
                 stale_files.append(checkpoint_path)
                 continue
@@ -662,7 +701,7 @@ class FullValidator:
         if result is None:
             raise ValueError("Full validation logging requires a result on rank 0.")
         self._write_log_file(result)
-        if result.saved_best_path is not None:
+        if self.emit_best_save_log and result.saved_best_path is not None:
             metric_label, metric_value, metric_unit = format_metric_for_log(
                 self.metric_name, result.selected_metric_value
             )
