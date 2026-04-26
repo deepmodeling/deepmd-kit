@@ -142,6 +142,25 @@ void DeepPotPTExpt::init(const std::string& model,
       gpu_enabled ? static_cast<c10::DeviceIndex>(gpu_id)
                   : static_cast<c10::DeviceIndex>(-1));
 
+  // Phase 4: load the optional with-comm artifact for multi-rank GNN
+  // inference. Pre-Phase-3 .pt2 files lack ``has_comm_artifact``;
+  // default to false so old artifacts keep working.
+  has_comm_artifact_ = metadata.obj_val.count("has_comm_artifact") &&
+                       metadata["has_comm_artifact"].as_bool();
+  if (has_comm_artifact_) {
+    // Extract the nested ``extra/forward_lower_with_comm.pt2`` into a
+    // temp file and load it as a second AOTI module. The TempFile
+    // unlinks the temp file on destruction.
+    with_comm_tempfile_ = std::make_unique<deepmd::ptexpt::TempFile>(
+        deepmd::ptexpt::TempFile::from_zip_entry(
+            model, "extra/forward_lower_with_comm.pt2"));
+    with_comm_loader =
+        std::make_unique<torch::inductor::AOTIModelPackageLoader>(
+            with_comm_tempfile_->path(), "model", false, 1,
+            gpu_enabled ? static_cast<c10::DeviceIndex>(gpu_id)
+                        : static_cast<c10::DeviceIndex>(-1));
+  }
+
   int num_intra_nthreads, num_inter_nthreads;
   get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
   if (num_inter_nthreads) {
@@ -180,6 +199,40 @@ std::vector<torch::Tensor> DeepPotPTExpt::run_model(
     inputs.push_back(aparam);
   }
   return loader->run(inputs);
+}
+
+std::vector<torch::Tensor> DeepPotPTExpt::run_model_with_comm(
+    const torch::Tensor& coord,
+    const torch::Tensor& atype,
+    const torch::Tensor& nlist,
+    const torch::Tensor& mapping,
+    const torch::Tensor& fparam,
+    const torch::Tensor& aparam,
+    const std::vector<at::Tensor>& comm_tensors) {
+  if (!with_comm_loader) {
+    throw deepmd::deepmd_exception(
+        "run_model_with_comm called but the .pt2 file has no with-comm "
+        "artifact. This is a programming error: the caller should check "
+        "has_comm_artifact_ before invoking this path.");
+  }
+  if (comm_tensors.size() != 8) {
+    throw deepmd::deepmd_exception(
+        "run_model_with_comm: comm_tensors must contain exactly 8 tensors "
+        "(send_list, send_proc, recv_proc, send_num, recv_num, "
+        "communicator, nlocal, nghost). Got " +
+        std::to_string(comm_tensors.size()) + ".");
+  }
+  std::vector<torch::Tensor> inputs = {coord, atype, nlist, mapping};
+  if (dfparam > 0) {
+    inputs.push_back(fparam);
+  }
+  if (daparam > 0) {
+    inputs.push_back(aparam);
+  }
+  for (const auto& t : comm_tensors) {
+    inputs.push_back(t);
+  }
+  return with_comm_loader->run(inputs);
 }
 
 void DeepPotPTExpt::extract_outputs(
@@ -328,9 +381,25 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
     aparam_tensor = torch::zeros({0}, options).to(device);
   }
 
-  // Run the .pt2 model
-  auto flat_outputs = run_model(coord_Tensor, atype_Tensor, firstneigh_tensor,
-                                mapping_tensor, fparam_tensor, aparam_tensor);
+  // Phase 4 dispatch: use the with-comm artifact when LAMMPS is
+  // running multi-rank.  ``lmp_list.nswap > 0`` is the proxy for
+  // "multi-rank with cross-domain communication"; in single-rank
+  // mode LAMMPS sets nswap=0.  Falling back to the regular artifact
+  // for nswap=0 is correct because that artifact uses the mapping
+  // tensor to gather ghost embeddings from local atoms.
+  std::vector<torch::Tensor> flat_outputs;
+  bool use_with_comm = has_comm_artifact_ && lmp_list.nswap > 0;
+  if (use_with_comm) {
+    auto comm_tensors = deepmd::ptexpt::build_comm_tensors_positional(
+        lmp_list, lmp_list.sendlist, lmp_list.sendnum, lmp_list.recvnum, nloc,
+        nghost_real);
+    flat_outputs = run_model_with_comm(
+        coord_Tensor, atype_Tensor, firstneigh_tensor, mapping_tensor,
+        fparam_tensor, aparam_tensor, comm_tensors);
+  } else {
+    flat_outputs = run_model(coord_Tensor, atype_Tensor, firstneigh_tensor,
+                             mapping_tensor, fparam_tensor, aparam_tensor);
+  }
 
   // Map flat outputs to internal keys
   std::map<std::string, torch::Tensor> output_map;

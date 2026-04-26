@@ -14,6 +14,11 @@
 
 #include "DeepSpin.h"
 
+// Forward-declare the temp-file helper from commonPTExpt.h.
+namespace deepmd::ptexpt {
+class TempFile;
+}
+
 namespace torch::inductor {
 class AOTIModelPackageLoader;
 }
@@ -187,6 +192,10 @@ class DeepSpinPTExpt : public DeepSpinBackend {
   std::vector<int> sel;
   NeighborListData nlist_data;
   std::unique_ptr<torch::inductor::AOTIModelPackageLoader> loader;
+  // Optional with-comm artifact for multi-rank GNN spin inference.
+  bool has_comm_artifact_ = false;
+  std::unique_ptr<deepmd::ptexpt::TempFile> with_comm_tempfile_;
+  std::unique_ptr<torch::inductor::AOTIModelPackageLoader> with_comm_loader;
 
   std::vector<torch::Tensor> run_model(const torch::Tensor& coord,
                                        const torch::Tensor& atype,
@@ -195,6 +204,20 @@ class DeepSpinPTExpt : public DeepSpinBackend {
                                        const torch::Tensor& mapping,
                                        const torch::Tensor& fparam,
                                        const torch::Tensor& aparam);
+
+  /**
+   * @brief Run with-comm spin artifact: 5-7 base inputs (incl.
+   * extended_spin) + 8 comm tensors.
+   */
+  std::vector<torch::Tensor> run_model_with_comm(
+      const torch::Tensor& coord,
+      const torch::Tensor& atype,
+      const torch::Tensor& spin,
+      const torch::Tensor& nlist,
+      const torch::Tensor& mapping,
+      const torch::Tensor& fparam,
+      const torch::Tensor& aparam,
+      const std::vector<at::Tensor>& comm_tensors);
 
   void extract_outputs(std::map<std::string, torch::Tensor>& output_map,
                        const std::vector<torch::Tensor>& flat_outputs);
