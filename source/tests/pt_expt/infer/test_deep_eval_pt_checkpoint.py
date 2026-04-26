@@ -111,6 +111,47 @@ def _save_pt_checkpoint(
     torch.save(state, path)
 
 
+def _save_pt_checkpoint_compiled(
+    model: EnergyModel,
+    model_params: dict,
+    path: str,
+) -> None:
+    """Save a checkpoint with the `_CompiledModel`-wrapped layout.
+
+    Mirrors what ``deepmd.pt_expt.train.training`` writes after compilation
+    (training.py:996): each head's model is wrapped in ``_CompiledModel``,
+    so state-dict keys gain an ``original_model.`` infix and pick up extra
+    ``compiled_forward_lower._orig_mod._param_constant*`` / ``_tensor_constant*``
+    entries (graph constants baked into the compiled ``forward_lower``).
+
+    We synthesise that layout directly so the test does not pay the cost of
+    a real ``torch.compile`` invocation.
+    """
+    base_wrapper = ModelWrapper(model, model_params=model_params)
+    base_state = base_wrapper.state_dict()
+    cooked: dict = {}
+    for key, value in base_state.items():
+        if key == "_extra_state":
+            cooked[key] = value
+            continue
+        # `model.Default.X` -> `model.Default.original_model.X`
+        cooked[key.replace("model.Default.", "model.Default.original_model.", 1)] = (
+            value
+        )
+    # Add a few graph-artifact keys with arbitrary tensors. These must be
+    # silently dropped by the loader; if they leak through they will appear
+    # as unexpected-keys in strict load_state_dict.
+    for i in range(3):
+        cooked[f"model.Default.compiled_forward_lower._orig_mod._param_constant{i}"] = (
+            torch.zeros(1)
+        )
+    for i in range(2):
+        cooked[
+            f"model.Default.compiled_forward_lower._orig_mod._tensor_constant{i}"
+        ] = torch.zeros(1)
+    torch.save({"model": cooked}, path)
+
+
 class TestBackendDispatchPt(unittest.TestCase):
     """``Backend.detect_backend_by_model`` must sniff `.pt` content."""
 
@@ -245,8 +286,104 @@ class TestPtExptLoadPt(unittest.TestCase):
             os.unlink(bogus)
 
 
+class TestPtExptLoadPtCompiledLayout(unittest.TestCase):
+    """`.pt` saved after pt_expt training compilation (`_CompiledModel` wrap).
+
+    Real training-produced checkpoints have ``model.Default.original_model.X``
+    for the trained weights plus ``model.Default.compiled_forward_lower.*``
+    for the compiled-graph constants.  ``_load_pt`` must strip the
+    ``original_model.`` infix and drop the ``compiled_forward_lower.*`` keys
+    so eager inference works on the recovered weights.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.model, cls.model_params = _build_model_and_params()
+        cls.pt_path = tempfile.NamedTemporaryFile(suffix=".pt", delete=False).name
+        _save_pt_checkpoint_compiled(cls.model, cls.model_params, cls.pt_path)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        if os.path.exists(cls.pt_path):
+            os.unlink(cls.pt_path)
+
+    def test_eval_matches_source_model(self) -> None:
+        """Eval through the compiled-layout `.pt` matches direct forward."""
+        dp = DeepPot(self.pt_path)
+
+        rng = np.random.default_rng(GLOBAL_SEED)
+        natoms = 5
+        nt = len(self.model.get_type_map())
+        coords = rng.random((1, natoms, 3)) * 8.0
+        cells = np.eye(3).reshape(1, 9) * 10.0
+        atom_types = np.array([i % nt for i in range(natoms)], dtype=np.int32)
+
+        e, f, v, ae, av = dp.eval(coords, cells, atom_types, atomic=True)
+
+        coord_t = torch.tensor(
+            coords, dtype=torch.float64, device=DEVICE
+        ).requires_grad_(True)
+        atype_t = torch.tensor(
+            atom_types.reshape(1, -1), dtype=torch.int64, device=DEVICE
+        )
+        cell_t = torch.tensor(cells, dtype=torch.float64, device=DEVICE)
+        ref = self.model.forward(coord_t, atype_t, cell_t, do_atomic_virial=True)
+
+        np.testing.assert_allclose(
+            e, ref["energy"].detach().cpu().numpy(), rtol=1e-10, atol=1e-10
+        )
+        np.testing.assert_allclose(
+            f, ref["force"].detach().cpu().numpy(), rtol=1e-10, atol=1e-10
+        )
+        np.testing.assert_allclose(
+            v, ref["virial"].detach().cpu().numpy(), rtol=1e-10, atol=1e-10
+        )
+        np.testing.assert_allclose(
+            ae, ref["atom_energy"].detach().cpu().numpy(), rtol=1e-10, atol=1e-10
+        )
+        np.testing.assert_allclose(
+            av, ref["atom_virial"].detach().cpu().numpy(), rtol=1e-10, atol=1e-10
+        )
+
+
+def _save_multitask_checkpoint(
+    models: dict,
+    model_params: dict,
+    path: str,
+    *,
+    compiled: bool = False,
+) -> None:
+    """Save a multi-task `.pt` checkpoint, optionally with the compiled wrap."""
+    wrapper = ModelWrapper(models, model_params=model_params)
+    state = wrapper.state_dict()
+    if not compiled:
+        torch.save({"model": state}, path)
+        return
+    cooked: dict = {}
+    for key, value in state.items():
+        if key == "_extra_state":
+            cooked[key] = value
+            continue
+        # `model.{head}.X` -> `model.{head}.original_model.X`
+        # Locate the head segment as the first token after the leading "model."
+        # (head names cannot contain dots in deepmd-kit, so this is unambiguous).
+        parts = key.split(".", 2)  # ["model", head, "rest..."]
+        if len(parts) == 3 and parts[0] == "model":
+            new_key = f"model.{parts[1]}.original_model.{parts[2]}"
+        else:
+            new_key = key
+        cooked[new_key] = value
+    # Add a few graph artifacts per head — they must be silently dropped.
+    for head in models:
+        for i in range(2):
+            cooked[
+                f"model.{head}.compiled_forward_lower._orig_mod._param_constant{i}"
+            ] = torch.zeros(1)
+    torch.save({"model": cooked}, path)
+
+
 class TestPtExptLoadPtMultiTask(unittest.TestCase):
-    """Multi-task `.pt` checkpoints: head selection."""
+    """Multi-task `.pt` checkpoints: head selection (plain + compiled wrap)."""
 
     @classmethod
     def setUpClass(cls) -> None:
@@ -254,21 +391,26 @@ class TestPtExptLoadPtMultiTask(unittest.TestCase):
         # different seeds, then save a multi-task-style checkpoint.
         cls.model_a, params_a = _build_model_and_params(rcut=4.0)
         cls.model_b, params_b = _build_model_and_params(rcut=4.0)
+        cls.models = {"head_a": cls.model_a, "head_b": cls.model_b}
+        cls.model_params = {"model_dict": {"head_a": params_a, "head_b": params_b}}
 
-        # Multi-task model_params layout used by pt_expt training.
-        model_params = {"model_dict": {"head_a": params_a, "head_b": params_b}}
-
-        wrapper = ModelWrapper(
-            {"head_a": cls.model_a, "head_b": cls.model_b},
-            model_params=model_params,
-        )
         cls.pt_path = tempfile.NamedTemporaryFile(suffix=".pt", delete=False).name
-        torch.save({"model": wrapper.state_dict()}, cls.pt_path)
+        _save_multitask_checkpoint(
+            cls.models, cls.model_params, cls.pt_path, compiled=False
+        )
+
+        cls.pt_path_compiled = tempfile.NamedTemporaryFile(
+            suffix=".pt", delete=False
+        ).name
+        _save_multitask_checkpoint(
+            cls.models, cls.model_params, cls.pt_path_compiled, compiled=True
+        )
 
     @classmethod
     def tearDownClass(cls) -> None:
-        if os.path.exists(cls.pt_path):
-            os.unlink(cls.pt_path)
+        for p in (cls.pt_path, cls.pt_path_compiled):
+            if os.path.exists(p):
+                os.unlink(p)
 
     def test_select_head_matches_single_task_forward(self) -> None:
         rng = np.random.default_rng(GLOBAL_SEED + 1)
@@ -316,6 +458,42 @@ class TestPtExptLoadPtMultiTask(unittest.TestCase):
         # Neither head is named "Default", so omitting --head must raise.
         with self.assertRaisesRegex(ValueError, "pass --head to select one"):
             DeepPot(self.pt_path)
+
+    def test_select_head_compiled_layout_matches(self) -> None:
+        """Compiled-wrap multi-task `.pt`: each head's eval matches eager."""
+        rng = np.random.default_rng(GLOBAL_SEED + 11)
+        natoms = 4
+        coords = rng.random((1, natoms, 3)) * 8.0
+        cells = np.eye(3).reshape(1, 9) * 10.0
+        atom_types = np.array([i % 2 for i in range(natoms)], dtype=np.int32)
+
+        for head, src in (("head_a", self.model_a), ("head_b", self.model_b)):
+            dp = DeepPot(self.pt_path_compiled, head=head)
+            e, f, v = dp.eval(coords, cells, atom_types, atomic=False)
+
+            coord_t = torch.tensor(
+                coords, dtype=torch.float64, device=DEVICE
+            ).requires_grad_(True)
+            atype_t = torch.tensor(
+                atom_types.reshape(1, -1), dtype=torch.int64, device=DEVICE
+            )
+            cell_t = torch.tensor(cells, dtype=torch.float64, device=DEVICE)
+            ref = src.forward(coord_t, atype_t, cell_t, do_atomic_virial=False)
+
+            np.testing.assert_allclose(
+                e,
+                ref["energy"].detach().cpu().numpy(),
+                rtol=1e-10,
+                atol=1e-10,
+                err_msg=f"compiled layout, head={head}, energy",
+            )
+            np.testing.assert_allclose(
+                f,
+                ref["force"].detach().cpu().numpy(),
+                rtol=1e-10,
+                atol=1e-10,
+                err_msg=f"compiled layout, head={head}, force",
+            )
 
 
 def _make_spin_files(spin_config: dict) -> dict:

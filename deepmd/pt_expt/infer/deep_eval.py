@@ -262,6 +262,24 @@ class DeepEval(DeepEvalBackend):
 
         model = get_model(deepcopy(model_params)).to(DEVICE)
 
+        # Strip the `_CompiledModel` wrapper that pt_expt training applies
+        # after compilation (training.py:996).  The saved state_dict has
+        # `model.Default.original_model.X` keys (the real weights) plus
+        # `model.Default.compiled_forward_lower._orig_mod._param_constant*`
+        # / `_tensor_constant*` keys (graph constants baked into the
+        # compiled forward — duplicates of the real weights, useless for
+        # eager inference).  Drop the latter and unwrap the former.
+        cleaned: dict[str, Any] = {}
+        compiled_marker = ".compiled_forward_lower."
+        wrapper_infix = ".original_model."
+        for key, value in state_dict.items():
+            if compiled_marker in key:
+                continue
+            if wrapper_infix in key:
+                key = key.replace(wrapper_infix, ".", 1)
+            cleaned[key] = value
+        state_dict = cleaned
+
         # Load weights into a {"Default": model} wrapper to match the
         # `model.Default.*` key prefix used in the saved state_dict.
         from deepmd.pt_expt.train.wrapper import (
