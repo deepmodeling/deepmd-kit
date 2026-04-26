@@ -73,6 +73,7 @@ class AutoBatchSize(AutoBatchSizeBase):
 
         # Several sources treat CUSOLVER_STATUS_INTERNAL_ERROR as an OOM, e.g.
         # https://github.com/JuliaGPU/CUDA.jl/issues/1924
+        # https://github.com/deepmodeling/deepmd-kit/issues/4594
         plain_oom_markers = (
             "CUDA out of memory.",
             "CUDA driver error: out of memory",
@@ -85,7 +86,6 @@ class AutoBatchSize(AutoBatchSizeBase):
 
         # AOTInductor (.pt2) wraps the underlying CUDA OOM as a generic
         # ``run_func_(...) API call failed at .../model_container_runner.cpp``.
-        # https://github.com/deepmodeling/deepmd-kit/issues/4594
         # The original "CUDA out of memory" text is printed to stderr only and
         # is absent from the Python-level RuntimeError, so we match on the
         # wrapper signature.  If the root cause turns out to be something
