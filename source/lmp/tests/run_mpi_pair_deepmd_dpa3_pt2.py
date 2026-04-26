@@ -8,8 +8,10 @@ carries the with-comm artifact (Phase 3 dual-artifact layout). The C++
 reports nswap > 0 (multi-rank), driving MPI ghost-atom exchange via
 ``deepmd_export::border_op`` per layer.
 
-Rank 0 writes potential energy + per-atom forces to ``OUTPUT`` so the parent
-pytest process can compare against the single-rank reference.
+Rank 0 writes potential energy + per-atom forces (3 cols) + per-atom
+virial (9 cols, from ``compute centroid/stress/atom NULL pair`` in
+LAMMPS internal units) to ``OUTPUT`` so the parent pytest process can
+compare against the single-rank reference.
 """
 
 from __future__ import (
@@ -76,6 +78,12 @@ lammps.fix("1 all nve")
 
 lammps.pair_style(f"deepmd {args.PB_FILE}")
 lammps.pair_coeff("* *")
+# Per-atom virial from the pair contribution. ``centroid/stress/atom``
+# is parallel-safe (rank-local data, gathered below). LAMMPS computes
+# stress*volume per atom in internal units; the parent test reverses
+# the unit conversion (divide by ``constants.nktv2p``) before comparing
+# against the reference virial.
+lammps.compute("virial all centroid/stress/atom NULL pair")
 lammps.run(0)
 
 # Optional: run additional MD steps to exercise the with-comm
@@ -93,18 +101,26 @@ if args.nsteps > 0:
 # future LAMMPS change in gather ordering.
 forces_global = lammps.lmp.gather_atoms("f", 1, 3)
 ids_global = lammps.lmp.gather_atoms("id", 0, 1)
+# Gather the per-atom virial across ranks. ``lmp.gather`` accepts
+# named per-atom computes (``c_<id>``) and returns the global,
+# id-ordered array on every rank.
+virial_global = lammps.lmp.gather("c_virial", 1, 9)
 # ``PyLammps.eval`` is rank-0-only.
 if rank == 0:
     pe_global = lammps.eval("pe")
     natoms = lammps.atoms.natoms
     forces = np.array(forces_global, dtype=np.float64).reshape(natoms, 3)
+    virials = np.array(virial_global, dtype=np.float64).reshape(natoms, 9)
     ids = np.array(ids_global, dtype=np.int64).reshape(natoms)
     # Sort by atom id so output is unambiguously id-ordered (id 1 first).
     order = np.argsort(ids)
     forces = forces[order]
+    virials = virials[order]
     with open(args.OUTPUT, "w") as f:
         f.write(f"{pe_global:.16e}\n")
-        for row in forces:
+        # Each row: 3 force components followed by 9 virial components.
+        for fi, vi in zip(forces, virials, strict=True):
+            row = np.concatenate([fi, vi])
             f.write(" ".join(f"{v:.16e}" for v in row) + "\n")
 
 MPI.Finalize()

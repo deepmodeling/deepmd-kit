@@ -35,6 +35,12 @@ pb_file_mpi = (
 data_file = Path(__file__).parent / "data_dpa3_pt2.lmp"
 data_file_si = Path(__file__).parent / "data_dpa3_pt2.si"
 data_type_map_file = Path(__file__).parent / "data_type_map_dpa3_pt2.lmp"
+# Elongated-box variant for the empty-subdomain MPI test: x is
+# extended to 30 Å while atoms remain in x ∈ [0.25, 12.83]. Combined
+# with ``processors 2 1 1`` this leaves rank 1 (x ≥ 15) with zero
+# local atoms — a corner case the comm-dispatch path must handle
+# without crashing or producing wrong forces.
+data_file_empty_subdomain = Path(__file__).parent / "data_dpa3_pt2_empty_subdomain.lmp"
 
 # Reference values from gen_dpa3.py / test_deeppot_dpa3_ptexpt.cc (PBC)
 expected_ae = np.array(
@@ -158,10 +164,19 @@ def setup_module() -> None:
         type_OH,
         data_file_si,
     )
+    # Elongated x-axis; atoms unchanged. With ``processors 2 1 1`` the
+    # split is at x = 15 Å and rank 1 owns x ≥ 15, which is empty.
+    box_empty_subdomain = np.array([0, 30, 0, 13, 0, 13, 0, 0, 0])
+    write_lmp_data(box_empty_subdomain, coord, type_OH, data_file_empty_subdomain)
 
 
 def teardown_module() -> None:
-    for f in [data_file, data_type_map_file, data_file_si]:
+    for f in [
+        data_file,
+        data_type_map_file,
+        data_file_si,
+        data_file_empty_subdomain,
+    ]:
         if f.exists():
             os.remove(f)
 
@@ -344,15 +359,22 @@ def test_pair_deepmd_si(lammps_si) -> None:
 def _run_mpi_subprocess(
     extra_args: list[str] | None = None,
     nprocs: int = 2,
+    data_path: Path | None = None,
 ) -> dict:
     """Helper: invoke run_mpi_pair_deepmd_dpa3_pt2.py under
-    ``mpirun -n <nprocs>`` and return ``{"pe": float, "forces": (n, 3) array}``.
+    ``mpirun -n <nprocs>`` and return
+    ``{"pe": float, "forces": (n, 3) array, "virials": (n, 9) array}``.
 
     With ``nprocs == 1`` the runner is invoked with ``--processors 1 1 1``
     so the C++ side sees ``nswap == 0`` and routes to the regular
     (single-rank) artifact of the dual-artifact .pt2 — useful as a
     same-archive reference for multi-rank comparisons.
+
+    ``data_path`` (default ``data_file``) selects the LAMMPS data file —
+    the empty-subdomain test points at a non-default elongated-box file.
     """
+    if data_path is None:
+        data_path = data_file
     with tempfile.NamedTemporaryFile(mode="r", suffix=".out", delete=False) as f:
         out_path = f.name
     try:
@@ -362,7 +384,7 @@ def _run_mpi_subprocess(
             str(nprocs),
             sys.executable,
             str(Path(__file__).parent / "run_mpi_pair_deepmd_dpa3_pt2.py"),
-            str(data_file.resolve()),
+            str(data_path.resolve()),
             str(pb_file_mpi.resolve()),
             out_path,
         ]
@@ -374,11 +396,14 @@ def _run_mpi_subprocess(
         with open(out_path) as fh:
             lines = fh.read().strip().splitlines()
         pe = float(lines[0])
-        forces = np.array(
+        rows = np.array(
             [list(map(float, line.split())) for line in lines[1:]],
             dtype=np.float64,
         )
-        return {"pe": pe, "forces": forces}
+        # Each row is (3 force) + (9 virial); see runner script.
+        forces = rows[:, :3]
+        virials = rows[:, 3:]
+        return {"pe": pe, "forces": forces, "virials": virials}
     finally:
         if os.path.exists(out_path):
             os.remove(out_path)
@@ -392,16 +417,17 @@ def _run_mpi_subprocess(
 )
 def test_pair_deepmd_mpi_dpa3() -> None:
     """Multi-rank LAMMPS run for DPA3 .pt2 must match the single-rank
-    reference within numerical tolerance for energy and forces.
+    reference within numerical tolerance for energy, forces, and virial.
 
     Forces are the autograd output of energy through the with-comm
     graph, so they implicitly validate the backward path of
-    ``deepmd_export::border_op``.  Virial requires a separate
-    ``compute pressure NULL virial`` which interacts poorly with
-    PyLammps multi-rank (hangs); deferred to a follow-up.
+    ``deepmd_export::border_op``. Per-atom virial is gathered from
+    ``compute centroid/stress/atom NULL pair`` (parallel-safe) — the
+    earlier deadlock comment was specific to ``compute pressure NULL
+    virial`` + ``lammps.eval(...)``, which we sidestep entirely.
 
     Requires the .pt2 archive to carry a with-comm artifact (Phase 3
-    output for GNN models).  If the archive lacks it, the C++ falls
+    output for GNN models). If the archive lacks it, the C++ falls
     back to the regular artifact and produces wrong cross-rank values
     — which the assertion would catch (loud test failure, not silent).
     """
@@ -417,6 +443,20 @@ def test_pair_deepmd_mpi_dpa3() -> None:
             atol=1e-8,
             rtol=0,
         )
+    # Per-atom virial matches the gen_dpa3.py reference. LAMMPS
+    # centroid/stress/atom returns components in [xx, yy, zz, xy, xz,
+    # yz, yx, zx, zy] order; ``expected_v`` columns follow the same
+    # column-major flattening as the single-rank ``test_pair_deepmd_virial``
+    # (which uses idx_map [0, 4, 8, 3, 6, 7, 1, 2, 5] from c_virial[1..9]
+    # to expected_v columns). The inverse permutation maps
+    # ``out["virials"]`` columns back to ``expected_v`` columns.
+    expected_v_to_lammps = [0, 6, 7, 3, 1, 8, 4, 5, 2]
+    np.testing.assert_allclose(
+        out["virials"][:, expected_v_to_lammps] / constants.nktv2p,
+        expected_v,
+        atol=1e-8,
+        rtol=0,
+    )
 
 
 @pytest.mark.skipif(
@@ -450,4 +490,38 @@ def test_pair_deepmd_mpi_dpa3_nlist_rebuild() -> None:
         atol=1e-6,
         rtol=1e-6,
     )
+    np.testing.assert_allclose(
+        out_mpi["virials"],
+        out_ref["virials"],
+        atol=1e-6,
+        rtol=1e-6,
+    )
     assert out_mpi["pe"] == pytest.approx(out_ref["pe"], rel=1e-8, abs=1e-10)
+
+
+@pytest.mark.skipif(
+    shutil.which("mpirun") is None, reason="MPI is not installed on this system"
+)
+@pytest.mark.skipif(
+    importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
+)
+def test_pair_deepmd_mpi_dpa3_empty_subdomain() -> None:
+    """Multi-rank DPA3 with one rank owning zero local atoms.
+
+    Uses a 30 x 13 x 13 box with all six atoms clustered in x in
+    [0.25, 12.83]. Under ``processors 2 1 1`` the split is at x = 15
+    so rank 1 owns an empty subdomain. The comm-dispatch path must
+    still produce correct forces and virial (compared against a
+    same-archive single-rank reference of the same configuration).
+
+    This catches: zero-length send/recv lists in the comm tensors,
+    division-by-zero in nlocal-dependent reshapes, and any silent
+    drop of a rank's contribution when it has no atoms to evaluate.
+    """
+    out_mpi = _run_mpi_subprocess(nprocs=2, data_path=data_file_empty_subdomain)
+    out_ref = _run_mpi_subprocess(nprocs=1, data_path=data_file_empty_subdomain)
+    np.testing.assert_allclose(out_mpi["forces"], out_ref["forces"], atol=1e-8, rtol=0)
+    np.testing.assert_allclose(
+        out_mpi["virials"], out_ref["virials"], atol=1e-8, rtol=0
+    )
+    assert out_mpi["pe"] == pytest.approx(out_ref["pe"], rel=1e-12, abs=1e-12)
