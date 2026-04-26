@@ -984,6 +984,14 @@ class DeepEval(DeepEvalBackend):
         """Get model definition script (training config)."""
         return self._model_def_script
 
+    def serialize(self) -> dict[str, Any]:
+        from deepmd.pt_expt.utils.serialization import (
+            serialize_from_file,
+        )
+
+        data = serialize_from_file(self.model_path)
+        return data["model"] if isinstance(data, dict) and "model" in data else data
+
     def get_model(self) -> torch.nn.Module:
         """Get the exported model module.
 

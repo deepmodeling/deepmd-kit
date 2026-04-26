@@ -737,6 +737,12 @@ class DeepEval(DeepEvalBackend):
         """Get model definition script."""
         return self.model_def_script
 
+    def serialize(self) -> dict[str, Any]:
+        model = (
+            self.dp.model["Default"] if isinstance(self.dp, ModelWrapper) else self.dp
+        )
+        return model.serialize()
+
     def get_model_size(self) -> dict:
         """Get model parameter count.
 

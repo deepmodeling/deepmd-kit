@@ -202,5 +202,13 @@ def serialize_from_file(model_file: str) -> dict:
         data.pop("constants")
         data["@variables"].pop("stablehlo")
         return data
+    elif model_file.endswith(".savedmodel"):
+        from deepmd.tf.utils.serialization import (
+            serialize_from_file as serialize_savedmodel,
+        )
+
+        return serialize_savedmodel(model_file)
     else:
-        raise ValueError("JAX backend only supports converting .jax directory")
+        raise ValueError(
+            "JAX backend only supports converting .jax directory, .hlo, and .savedmodel"
+        )

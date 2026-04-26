@@ -156,11 +156,12 @@ class IOTest:
             if not backend.is_available():
                 continue
             reference_data = copy.deepcopy(self.data)
-            self.save_data_to_model(
-                prefix + backend.suffixes[suffix_idx], reference_data
-            )
-            deep_eval = DeepEval(prefix + backend.suffixes[suffix_idx])
+            model_file = prefix + backend.suffixes[suffix_idx]
+            self.save_data_to_model(model_file, reference_data)
+            deep_eval = DeepEval(model_file)
             self.assertIsInstance(deep_eval.get_model_def_script(), dict)
+            serialized_data = self.get_data_from_model(model_file)
+            np.testing.assert_equal(deep_eval.serialize(), serialized_data["model"])
             if deep_eval.get_dim_fparam() > 0:
                 fparam = np.ones((nframes, deep_eval.get_dim_fparam()))
             else:
