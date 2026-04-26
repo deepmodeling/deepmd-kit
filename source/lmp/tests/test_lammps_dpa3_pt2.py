@@ -341,6 +341,38 @@ def test_pair_deepmd_si(lammps_si) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _run_mpi_subprocess(extra_args: list[str] | None = None) -> dict:
+    """Helper: invoke run_mpi_pair_deepmd_dpa3_pt2.py under mpirun -n 2,
+    return ``{"pe": float, "forces": (n, 3) array}``."""
+    with tempfile.NamedTemporaryFile(mode="r", suffix=".out", delete=False) as f:
+        out_path = f.name
+    try:
+        argv = [
+            "mpirun",
+            "-n",
+            "2",
+            sys.executable,
+            str(Path(__file__).parent / "run_mpi_pair_deepmd_dpa3_pt2.py"),
+            str(data_file.resolve()),
+            str(pb_file_mpi.resolve()),
+            out_path,
+        ]
+        if extra_args:
+            argv.extend(extra_args)
+        sp.check_call(argv)
+        with open(out_path) as fh:
+            lines = fh.read().strip().splitlines()
+        pe = float(lines[0])
+        forces = np.array(
+            [list(map(float, line.split())) for line in lines[1:]],
+            dtype=np.float64,
+        )
+        return {"pe": pe, "forces": forces}
+    finally:
+        if os.path.exists(out_path):
+            os.remove(out_path)
+
+
 @pytest.mark.skipif(
     shutil.which("mpirun") is None, reason="MPI is not installed on this system"
 )
@@ -349,46 +381,58 @@ def test_pair_deepmd_si(lammps_si) -> None:
 )
 def test_pair_deepmd_mpi_dpa3() -> None:
     """Multi-rank LAMMPS run for DPA3 .pt2 must match the single-rank
-    reference within numerical tolerance.
+    reference within numerical tolerance for energy and forces.
+
+    Forces are the autograd output of energy through the with-comm
+    graph, so they implicitly validate the backward path of
+    ``deepmd_export::border_op``.  Virial requires a separate
+    ``compute pressure NULL virial`` which interacts poorly with
+    PyLammps multi-rank (hangs); deferred to a follow-up.
 
     Requires the .pt2 archive to carry a with-comm artifact (Phase 3
     output for GNN models).  If the archive lacks it, the C++ falls
     back to the regular artifact and produces wrong cross-rank values
     — which the assertion would catch (loud test failure, not silent).
     """
-    with tempfile.NamedTemporaryFile(mode="r", suffix=".out", delete=False) as f:
-        out_path = f.name
-    try:
-        sp.check_call(
-            [
-                "mpirun",
-                "-n",
-                "2",
-                sys.executable,
-                str(Path(__file__).parent / "run_mpi_pair_deepmd_dpa3_pt2.py"),
-                str(data_file.resolve()),
-                str(pb_file_mpi.resolve()),
-                out_path,
-            ]
+    out = _run_mpi_subprocess()
+    # Energy matches single-rank reference.
+    assert out["pe"] == pytest.approx(expected_e)
+    # Per-atom forces match (atoms in id-sorted order from the
+    # subprocess script).
+    for ii in range(6):
+        np.testing.assert_allclose(
+            out["forces"][ii],
+            expected_f[ii],
+            atol=1e-8,
+            rtol=0,
         )
-        with open(out_path) as fh:
-            lines = fh.read().strip().splitlines()
-        pe_mpi = float(lines[0])
-        forces_mpi = np.array(
-            [list(map(float, line.split())) for line in lines[1:]],
-            dtype=np.float64,
-        )
-        # Energy matches single-rank reference.
-        assert pe_mpi == pytest.approx(expected_e)
-        # Per-atom forces match (atoms in id-sorted order from the
-        # subprocess script).
-        for ii in range(6):
-            np.testing.assert_allclose(
-                forces_mpi[ii],
-                expected_f[ii],
-                atol=1e-8,
-                rtol=0,
-            )
-    finally:
-        if os.path.exists(out_path):
-            os.remove(out_path)
+
+
+@pytest.mark.skipif(
+    shutil.which("mpirun") is None, reason="MPI is not installed on this system"
+)
+@pytest.mark.skipif(
+    importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
+)
+def test_pair_deepmd_mpi_dpa3_nlist_rebuild() -> None:
+    """Multi-rank with neighbor-list rebuilds.
+
+    Runs ~50 MD steps with ``neigh_modify every 10 delay 0 check no``,
+    forcing at least 5 nlist rebuilds during the trajectory. The
+    purpose is NOT to validate exact final-state values (round-off
+    accumulates over MD steps and cross-rank ordering can shift the
+    LSBs) but to verify the with-comm dispatch path stays consistent
+    across rebuilds — i.e. ``DeepPotPTExpt::compute`` correctly
+    reconstructs the comm tensors when ``ago == 0`` triggers and the
+    AOTI graph keeps producing finite values.
+    """
+    out = _run_mpi_subprocess(extra_args=["--nsteps", "50"])
+    # Trajectory advanced; final state will differ from the run-0
+    # reference. Just sanity-check finite values + reasonable forces.
+    assert np.all(np.isfinite(out["forces"]))
+    assert np.isfinite(out["pe"])
+    # Force magnitudes shouldn't blow up; pick a generous bound for
+    # the small-box water-like 6-atom system.
+    assert np.max(np.abs(out["forces"])) < 100.0, (
+        f"forces exploded after 50 steps: max|f|={np.max(np.abs(out['forces']))}"
+    )

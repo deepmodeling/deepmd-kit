@@ -5,6 +5,7 @@
 #include <torch/csrc/inductor/aoti_package/model_package_loader.h>
 
 #include <algorithm>
+#include <numeric>
 #include <cstdint>
 #include <fstream>
 #include <map>
@@ -396,10 +397,24 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   // tensor to gather ghost embeddings from local atoms.
   std::vector<torch::Tensor> flat_outputs;
   bool use_with_comm = has_comm_artifact_ && lmp_list.nswap > 0;
+  // When NULL-type atoms exist, remapped storage must outlive comm
+  // tensors (the int** pointer-array tensor references it).
+  std::vector<std::vector<int>> remapped_sendlist;
+  std::vector<int*> remapped_sendlist_ptrs;
+  std::vector<int> remapped_sendnum, remapped_recvnum;
   if (use_with_comm) {
-    auto comm_tensors = deepmd::ptexpt::build_comm_tensors_positional(
-        lmp_list, lmp_list.sendlist, lmp_list.sendnum, lmp_list.recvnum, nloc,
-        nghost_real);
+    bool has_null_atoms = (nall_real < nall);
+    std::vector<at::Tensor> comm_tensors;
+    if (has_null_atoms) {
+      comm_tensors =
+          deepmd::ptexpt::build_comm_tensors_positional_with_virtual_atoms(
+              lmp_list, fwd_map, nloc, nghost_real, remapped_sendlist,
+              remapped_sendlist_ptrs, remapped_sendnum, remapped_recvnum);
+    } else {
+      comm_tensors = deepmd::ptexpt::build_comm_tensors_positional(
+          lmp_list, lmp_list.sendlist, lmp_list.sendnum, lmp_list.recvnum,
+          nloc, nghost_real);
+    }
     flat_outputs = run_model_with_comm(
         coord_Tensor, atype_Tensor, firstneigh_tensor, mapping_tensor,
         fparam_tensor, aparam_tensor, comm_tensors);

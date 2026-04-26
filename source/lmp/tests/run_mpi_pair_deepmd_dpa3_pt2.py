@@ -33,6 +33,14 @@ parser = argparse.ArgumentParser()
 parser.add_argument("DATAFILE", type=str, help="LAMMPS data file (atom positions)")
 parser.add_argument("PB_FILE", type=str, help=".pt2 model file")
 parser.add_argument("OUTPUT", type=str, help="Output file for energies + forces")
+parser.add_argument(
+    "--nsteps",
+    type=int,
+    default=0,
+    help="Number of MD steps to run after the initial force evaluation; "
+    "with --nsteps > 10 (LAMMPS neigh_modify every=10) the dispatch path "
+    "is exercised across at least one neighbor-list rebuild.",
+)
 args = parser.parse_args()
 
 lammps = PyLammps()
@@ -54,6 +62,13 @@ lammps.fix("1 all nve")
 lammps.pair_style(f"deepmd {args.PB_FILE}")
 lammps.pair_coeff("* *")
 lammps.run(0)
+
+# Optional: run additional MD steps to exercise the with-comm
+# dispatch across neighbor-list rebuilds (LAMMPS rebuilds every
+# 10 steps with our neigh_modify config, so any nsteps >= 10
+# triggers at least one rebuild).
+if args.nsteps > 0:
+    lammps.run(args.nsteps)
 
 # Forces need to be gathered across ranks. PyLammps's ``atoms[i]``
 # only exposes rank-local atoms; ``gather_atoms`` returns the global,

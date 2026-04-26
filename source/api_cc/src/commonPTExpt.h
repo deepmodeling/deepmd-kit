@@ -18,6 +18,7 @@
 #include <string>
 #include <vector>
 
+#include "common.h"  // for remap_comm_sendlist
 #include "errors.h"
 #include "neighbor_list.h"
 
@@ -649,21 +650,9 @@ class TempFile {
 // ============================================================================
 
 /**
- * @brief Build the 8 comm-tensor positional inputs from LAMMPS data.
- *
- * Tensors share storage with the LAMMPS-owned buffers (no copy);
- * the caller must keep ``lmp_list``, ``sendlist``, ``sendnum``, and
- * ``recvnum`` alive until ``loader->run`` returns.  ``nlocal`` /
- * ``nghost`` are produced via ``torch::tensor`` (small allocation).
- *
- * @param lmp_list    LAMMPS neighbor list (provides nswap, sendproc,
- *                    recvproc, world).
- * @param sendlist    int** pointer-array (already remapped if needed).
- * @param sendnum     int* per-swap send counts (already remapped).
- * @param recvnum     int* per-swap recv counts (already remapped).
- * @param nlocal      Number of local atoms (per-rank).
- * @param nghost      Number of ghost atoms (per-rank).
- * @return Vector of 8 tensors in canonical positional order.
+ * @brief Build the 8 comm-tensor positional inputs from LAMMPS data
+ * (Phase 5 working signature, restored after the consolidation
+ * attempt regressed).
  */
 inline std::vector<at::Tensor> build_comm_tensors_positional(
     const InputNlist& lmp_list,
@@ -678,9 +667,6 @@ inline std::vector<at::Tensor> build_comm_tensors_positional(
   auto int64_option =
       torch::TensorOptions().device(torch::kCPU).dtype(torch::kInt64);
 
-  // sendlist is int**: nswap entries each holding an int* pointer.
-  // Reinterpret as int64 for tensor packaging (matches what pt's
-  // build_comm_dict does and what border_op expects).
   at::Tensor sendlist_tensor =
       torch::from_blob(static_cast<void*>(sendlist), {nswap}, int64_option);
   at::Tensor sendproc_tensor =
@@ -690,7 +676,6 @@ inline std::vector<at::Tensor> build_comm_tensors_positional(
   at::Tensor sendnum_tensor = torch::from_blob(sendnum, {nswap}, int32_option);
   at::Tensor recvnum_tensor = torch::from_blob(recvnum, {nswap}, int32_option);
 
-  // MPI communicator handle as a 1-element int64 tensor.
   static std::int64_t null_communicator = 0;
   at::Tensor communicator_tensor;
   if (lmp_list.world == nullptr) {
@@ -701,12 +686,40 @@ inline std::vector<at::Tensor> build_comm_tensors_positional(
         torch::from_blob(const_cast<void*>(lmp_list.world), {1}, int64_option);
   }
 
-  // Scalar nlocal / nghost — int32 to match Python-side tracing.
   at::Tensor nlocal_tensor = torch::tensor(nlocal, int32_option);
   at::Tensor nghost_tensor = torch::tensor(nghost, int32_option);
 
   return {sendlist_tensor, sendproc_tensor,     recvproc_tensor, sendnum_tensor,
           recvnum_tensor,  communicator_tensor, nlocal_tensor,   nghost_tensor};
+}
+
+/**
+ * @brief Build the 8 comm-tensor positional inputs with NULL-type-atom
+ * remapping.  When ``select_real_atoms_coord`` filters atoms (atype <
+ * 0), ``fwd_map`` translates original sendlist indices into real-atom
+ * indices (with ``-1`` for filtered).  Mirrors
+ * ``commonPT.h::build_comm_dict_with_virtual_atoms``.  The remapped
+ * storage must outlive the returned tensors.
+ */
+inline std::vector<at::Tensor> build_comm_tensors_positional_with_virtual_atoms(
+    const InputNlist& lmp_list,
+    const std::vector<int>& fwd_map,
+    int nlocal,
+    int nghost,
+    std::vector<std::vector<int>>& remapped_sendlist,
+    std::vector<int*>& remapped_sendlist_ptrs,
+    std::vector<int>& remapped_sendnum,
+    std::vector<int>& remapped_recvnum) {
+  remap_comm_sendlist(remapped_sendlist, remapped_sendnum, remapped_recvnum,
+                      lmp_list, fwd_map);
+  int nswap = lmp_list.nswap;
+  remapped_sendlist_ptrs.resize(nswap);
+  for (int s = 0; s < nswap; ++s) {
+    remapped_sendlist_ptrs[s] = remapped_sendlist[s].data();
+  }
+  return build_comm_tensors_positional(
+      lmp_list, remapped_sendlist_ptrs.data(), remapped_sendnum.data(),
+      remapped_recvnum.data(), nlocal, nghost);
 }
 
 }  // namespace ptexpt
