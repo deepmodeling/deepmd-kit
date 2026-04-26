@@ -1,8 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
+import re
 from typing import (
     Any,
-    ClassVar,
 )
 
 import torch
@@ -216,13 +216,6 @@ class ModelWrapper(torch.nn.Module):
             "train_infos": self.train_infos,
         }
 
-    # Key mappings from PT backend to pt_expt backend for checkpoint compatibility
-    # PT backend uses different naming conventions for some buffers/parameters
-    _PT_TO_PT_EXPT_KEY_MAP: ClassVar[dict[str, str]] = {
-        # Buffer name difference: pt uses "min_nbor_dist", pt_expt uses "_min_nbor_dist"
-        ".min_nbor_dist": "._min_nbor_dist",
-    }
-
     def load_state_dict(
         self,
         state_dict: dict[str, Any],
@@ -251,8 +244,6 @@ class ModelWrapper(torch.nn.Module):
         _IncompatibleKeys
             Named tuple with missing_keys and unexpected_keys.
         """
-        import re
-
         # Remap keys from PT backend naming to pt_expt naming
         remapped_state_dict = {}
         for key, value in state_dict.items():

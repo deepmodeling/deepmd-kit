@@ -2,6 +2,7 @@
 import io
 import json
 import logging
+import re
 from collections.abc import (
     Callable,
 )
@@ -105,8 +106,6 @@ def _remap_state_dict_keys_for_pt(state_dict: dict[str, Any]) -> dict[str, Any]:
     dict
         The remapped state dict.
     """
-    import re
-
     remapped = {}
     for key, value in state_dict.items():
         new_key = key
