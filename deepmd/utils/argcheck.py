@@ -3107,9 +3107,11 @@ def optimizer_hybrid_muon() -> list[Argument]:
             "lr_adjust_coeff",
             float,
             optional=True,
-            default=0.2,
+            default=0.18,
             doc=doc_only_pt_supported
-            + "Coefficient for match-RMS scaling. Only effective when lr_adjust <= 0.",
+            + "Coefficient for match-RMS scaling. Only effective when lr_adjust <= 0. "
+            + "Default 0.18 follows DeepSeek-V4's calibration so Muon update RMS "
+            + "matches AdamW's typical RMS; Moonlight's original recipe uses 0.2.",
         ),
         Argument(
             "muon_mode",
@@ -3130,8 +3132,7 @@ def optimizer_hybrid_muon() -> list[Argument]:
             default=True,
             doc=doc_only_pt_supported
             + "Enable the compiled Gram Newton-Schulz path for rectangular Muon matrices. "
-            + "Square matrices keep using the current standard Newton-Schulz path. "
-            + "Automatically disabled in distributed (multi-GPU) training.",
+            + "Square matrices keep using the current standard Newton-Schulz path.",
         ),
         Argument(
             "flash_muon",
