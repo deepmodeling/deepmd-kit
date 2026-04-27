@@ -101,10 +101,33 @@ class Backend(PluginVariant, make_plugin_registry("backend")):
         filename : str
             The model file name
         """
-        filename = str(filename).lower()
+        filename_lower = str(filename).lower()
+        # `.pt` is shared between the pt and pt_expt backends. They use
+        # different parameter naming (pt: `.matrix`/`.bias`, pt_expt:
+        # `.w`/`.b`), so peek at the state-dict keys to disambiguate.
+        if filename_lower.endswith(".pt"):
+            try:
+                import torch
+
+                sd = torch.load(filename, map_location="cpu", weights_only=False)
+                if isinstance(sd, dict) and "model" in sd:
+                    sd = sd["model"]
+                keys = list(sd.keys()) if hasattr(sd, "keys") else []
+                has_pt_expt = any(k.endswith(".w") or k.endswith(".b") for k in keys)
+                has_pt = any(k.endswith(".matrix") or k.endswith(".bias") for k in keys)
+                if has_pt_expt and not has_pt:
+                    target_name = "pt-expt"
+                else:
+                    target_name = "pt"
+                for key, backend in Backend.get_backends().items():
+                    if key == target_name:
+                        return backend
+            except Exception:
+                # Fall through to suffix matching if sniffing fails.
+                pass
         for backend in Backend.get_backends().values():
             for suffix in backend.suffixes:
-                if filename.endswith(suffix):
+                if filename_lower.endswith(suffix):
                     return backend
         raise ValueError(f"Cannot detect the backend of the model file {filename}.")
 
