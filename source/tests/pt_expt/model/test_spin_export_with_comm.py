@@ -95,14 +95,16 @@ def test_spin_forward_common_lower_exportable_with_comm_traces() -> None:
     model.eval()
 
     # Build sample inputs (nframes=1 to match the override's nb=1
-    # constraint; spin doubles natoms).
+    # constraint; spin doubles natoms). nlist width must match the
+    # model's sum(sel); the descriptor's _format_nlist asserts this.
     nloc = 6  # 3 real + 3 virtual
     nall = 8  # 1 ghost on each side
     n_dim_coord = 3
+    nnei = sum(SPIN_GNN_DATA["descriptor"]["sel"])
     ext_coord = torch.zeros(1, nall, n_dim_coord, dtype=torch.float64)
     ext_atype = torch.zeros(1, nall, dtype=torch.int64)
     ext_spin = torch.zeros(1, nall, n_dim_coord, dtype=torch.float64)
-    nlist = torch.zeros(1, nloc, 6, dtype=torch.int64)  # nnei from sel
+    nlist = torch.zeros(1, nloc, nnei, dtype=torch.int64)
     mapping = torch.zeros(1, nall, dtype=torch.int64)
     fparam = None
     aparam = None
