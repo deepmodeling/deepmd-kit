@@ -44,6 +44,43 @@ class PyTorchExportableBackend(Backend):
     suffixes: ClassVar[list[str]] = [".pte", ".pt2"]
     """The suffixes of the backend."""
 
+    @classmethod
+    def match_filename(cls, filename: str) -> int:
+        """Recognise pt_expt-trained `.pt` checkpoints in addition to `.pt2`/`.pte`.
+
+        Returns
+        -------
+        - 1 for the regular `.pte` / `.pt2` suffixes (default behaviour).
+        - 2 for `.pt` files whose state-dict uses pt_expt's dpmodel
+            parameter naming (`.w`/`.b`); this outranks the legacy pt
+            backend's default suffix score (1) so pt_expt-trained `.pt`
+            checkpoints route here, while genuine pt-trained `.pt` files
+            (which use `.matrix`/`.bias`) keep going to the pt backend.
+        - 0 otherwise.
+        """
+        score = super().match_filename(filename)
+        if score:
+            return score
+        fname = str(filename).lower()
+        if not fname.endswith(".pt"):
+            return 0
+        try:
+            import torch
+
+            # weights_only=True avoids unpickling arbitrary code from an
+            # untrusted .pt — sniffing only needs the dict keys.
+            sd = torch.load(filename, map_location="cpu", weights_only=True)
+            if isinstance(sd, dict) and "model" in sd:
+                sd = sd["model"]
+            keys = list(sd.keys()) if hasattr(sd, "keys") else []
+            has_pt_expt = any(k.endswith(".w") or k.endswith(".b") for k in keys)
+            has_pt = any(k.endswith(".matrix") or k.endswith(".bias") for k in keys)
+            if has_pt_expt and not has_pt:
+                return 2
+        except Exception:
+            pass
+        return 0
+
     def is_available(self) -> bool:
         """Check if the backend is available.
 

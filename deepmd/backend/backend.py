@@ -92,46 +92,43 @@ class Backend(PluginVariant, make_plugin_registry("backend")):
             if backend.features & feature
         }
 
+    @classmethod
+    def match_filename(cls, filename: str) -> int:
+        """Specificity score of this backend's claim on ``filename``.
+
+        Returns a positive integer if this backend can handle the file
+        (higher = stronger / more specific claim), or 0 otherwise.
+
+        The default implementation returns 1 when ``filename`` ends with
+        one of ``cls.suffixes``. Backends with overlapping suffixes can
+        override this to disambiguate (e.g. by inspecting file content)
+        and return a higher score so they win the tie.
+        """
+        fname = str(filename).lower()
+        return 1 if any(fname.endswith(s) for s in cls.suffixes) else 0
+
     @staticmethod
     def detect_backend_by_model(filename: str) -> type["Backend"]:
         """Detect the backend of the given model file.
+
+        Calls ``match_filename`` on every registered backend and returns
+        the one with the highest specificity score (>0).
 
         Parameters
         ----------
         filename : str
             The model file name
         """
-        filename_lower = str(filename).lower()
-        # `.pt` is shared between the pt and pt_expt backends. They use
-        # different parameter naming (pt: `.matrix`/`.bias`, pt_expt:
-        # `.w`/`.b`), so peek at the state-dict keys to disambiguate.
-        if filename_lower.endswith(".pt"):
-            try:
-                import torch
-
-                # Use weights_only=True to avoid executing arbitrary pickle
-                # from an untrusted .pt — sniffing only needs the dict keys.
-                sd = torch.load(filename, map_location="cpu", weights_only=True)
-                if isinstance(sd, dict) and "model" in sd:
-                    sd = sd["model"]
-                keys = list(sd.keys()) if hasattr(sd, "keys") else []
-                has_pt_expt = any(k.endswith(".w") or k.endswith(".b") for k in keys)
-                has_pt = any(k.endswith(".matrix") or k.endswith(".bias") for k in keys)
-                if has_pt_expt and not has_pt:
-                    target_name = "pt-expt"
-                else:
-                    target_name = "pt"
-                for key, backend in Backend.get_backends().items():
-                    if key == target_name:
-                        return backend
-            except Exception:
-                # Fall through to suffix matching if sniffing fails.
-                pass
+        best: type[Backend] | None = None
+        best_score = 0
         for backend in Backend.get_backends().values():
-            for suffix in backend.suffixes:
-                if filename_lower.endswith(suffix):
-                    return backend
-        raise ValueError(f"Cannot detect the backend of the model file {filename}.")
+            score = backend.match_filename(filename)
+            if score > best_score:
+                best_score = score
+                best = backend
+        if best is None:
+            raise ValueError(f"Cannot detect the backend of the model file {filename}.")
+        return best
 
     class Feature(Flag):
         """Feature flag to indicate whether the backend supports certain features."""
