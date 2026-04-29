@@ -591,6 +591,133 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
             sw.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION) if sw is not None else None,
         )
 
+    def forward_flat(
+        self,
+        extended_coord: torch.Tensor,
+        extended_atype: torch.Tensor,
+        extended_batch: torch.Tensor,
+        nlist: torch.Tensor,
+        mapping: torch.Tensor,
+        batch: torch.Tensor,
+        ptr: torch.Tensor,
+        fparam: torch.Tensor | None = None,
+        central_ext_index: torch.Tensor | None = None,
+        nlist_ext: torch.Tensor | None = None,
+        a_nlist: torch.Tensor | None = None,
+        a_nlist_ext: torch.Tensor | None = None,
+        nlist_mask: torch.Tensor | None = None,
+        a_nlist_mask: torch.Tensor | None = None,
+        edge_index: torch.Tensor | None = None,
+        angle_index: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
+        """Compute the descriptor with flat batch format.
+
+        Parameters
+        ----------
+        extended_coord : torch.Tensor
+            Extended coordinates [total_extended_atoms, 3].
+        extended_atype : torch.Tensor
+            Extended atom types [total_extended_atoms].
+        extended_batch : torch.Tensor
+            Frame assignment for extended atoms [total_extended_atoms].
+        nlist : torch.Tensor
+            Neighbor list [total_atoms, nnei].
+        mapping : torch.Tensor
+            Extended atom -> local flat index mapping [total_extended_atoms].
+        batch : torch.Tensor
+            Frame assignment for local atoms [total_atoms].
+        ptr : torch.Tensor
+            Frame boundaries [nframes + 1].
+        fparam : torch.Tensor | None
+            Frame parameters [nframes, ndf].
+
+        Returns
+        -------
+        result : dict[str, torch.Tensor]
+            Dictionary containing:
+            - 'descriptor': [total_atoms, descriptor_dim]
+            - 'rot_mat': [total_atoms, e_dim, 3] or None
+            - 'g2': edge embedding or None
+            - 'h2': pair representation or None
+        """
+        print("ENTERING DescrptDPA3.forward_flat()")
+        print(f"  extended_coord shape: {extended_coord.shape}")
+        print(f"  extended_atype shape: {extended_atype.shape}")
+        print(f"  extended_batch shape: {extended_batch.shape}")
+        print(f"  nlist shape: {nlist.shape}")
+        print(f"  batch shape: {batch.shape}")
+        print(f"  ptr: {ptr.tolist()}")
+
+        # Cast to internal precision
+        extended_coord = extended_coord.to(dtype=self.prec)
+
+        # Get type embeddings for extended atoms
+        # For flat format, we embed all extended atoms
+        node_ebd_ext = self.type_embedding(extended_atype)  # [total_extended_atoms, tebd_dim]
+
+        print(f"  node_ebd_ext shape after type_embedding: {node_ebd_ext.shape}")
+
+        # Handle charge/spin embedding if needed
+        if self.add_chg_spin_ebd:
+            assert fparam is not None
+            assert self.chg_embedding is not None
+            assert self.spin_embedding is not None
+
+            # fparam: [nframes, 2] -> need to expand to [total_extended_atoms, ...]
+            # Use extended_batch to index into fparam
+            charge = fparam[extended_batch, 0].to(dtype=torch.int64) + 100
+            spin = fparam[extended_batch, 1].to(dtype=torch.int64)
+            chg_ebd = self.chg_embedding(charge)
+            spin_ebd = self.spin_embedding(spin)
+            sys_cs_embd = self.act(
+                self.mix_cs_mlp(torch.cat((chg_ebd, spin_ebd), dim=-1))
+            )
+            node_ebd_ext = node_ebd_ext + sys_cs_embd
+
+        if central_ext_index is None:
+            from deepmd.pt.utils.nlist import get_central_ext_index
+
+            central_ext_index = get_central_ext_index(extended_batch, ptr)
+        node_ebd_inp = node_ebd_ext[central_ext_index]
+
+        print(f"  node_ebd_inp shape: {node_ebd_inp.shape}")
+
+        # Call repflows with flat format
+
+        node_ebd, edge_ebd, h2, rot_mat, sw = self.repflows.forward_flat(
+            nlist,
+            extended_coord,
+            extended_atype,
+            extended_batch,
+            node_ebd_ext,
+            mapping,
+            batch,
+            ptr,
+            central_ext_index=central_ext_index,
+            nlist_ext=nlist_ext,
+            a_nlist=a_nlist,
+            a_nlist_ext=a_nlist_ext,
+            nlist_mask=nlist_mask,
+            a_nlist_mask=a_nlist_mask,
+            edge_index=edge_index,
+            angle_index=angle_index,
+        )
+
+        print(f"After repflows.forward_flat():")
+        print(f"  node_ebd shape: {node_ebd.shape}")
+        if rot_mat is not None:
+            print(f"  rot_mat shape: {rot_mat.shape}")
+
+        if self.concat_output_tebd:
+            node_ebd = torch.cat([node_ebd, node_ebd_inp], dim=-1)
+
+        return {
+            'descriptor': node_ebd.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+            'rot_mat': rot_mat.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION) if rot_mat is not None else None,
+            'g2': edge_ebd.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION) if edge_ebd is not None else None,
+            'h2': h2.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION) if h2 is not None else None,
+        }
+
     @classmethod
     def update_sel(
         cls,

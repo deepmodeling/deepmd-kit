@@ -40,6 +40,92 @@ __all__ = [
     "is_lmdb",
 ]
 
+_ATOMWISE_MIXED_BATCH_KEYS = frozenset(
+    {
+        "aparam",
+        "atom_ener_coeff",
+        "atom_pref",
+        "atype",
+        "coord",
+        "force",
+        "spin",
+    }
+)
+
+
+def _collate_lmdb_mixed_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
+    """Collate mixed-nloc frames into flattened atom-wise tensors.
+
+    Atom-wise fields are concatenated across frames and accompanied by:
+
+    - ``batch``: flattened atom -> frame assignment
+    - ``ptr``: prefix-sum frame offsets
+
+    Frame-wise fields such as ``energy`` and ``box`` keep the usual batch
+    dimension via ``torch.stack``.
+    """
+    atype_list = [torch.as_tensor(item["atype"]) for item in batch]
+    counts = torch.tensor([int(item.shape[0]) for item in atype_list], dtype=torch.long)
+    ptr = torch.cat(
+        [torch.zeros(1, dtype=torch.long), torch.cumsum(counts, dim=0)],
+        dim=0,
+    )
+    batch_index = torch.repeat_interleave(
+        torch.arange(len(batch), dtype=torch.long),
+        counts,
+    )
+
+    example = batch[0]
+    result: dict[str, Any] = {}
+    for key in example:
+        if "find_" in key:
+            result[key] = batch[0][key]
+        elif key == "fid":
+            result[key] = [d[key] for d in batch]
+        elif key == "type":
+            continue
+        elif batch[0][key] is None:
+            result[key] = None
+        else:
+            tensors = [torch.as_tensor(d[key]) for d in batch]
+            with torch.device("cpu"):
+                if key in _ATOMWISE_MIXED_BATCH_KEYS:
+                    result[key] = torch.cat(tensors, dim=0)
+                else:
+                    result[key] = collate_tensor_fn(tensors)
+    result["batch"] = batch_index
+    result["ptr"] = ptr
+    result["sid"] = torch.tensor([0], dtype=torch.long, device="cpu")
+    return result
+
+
+def make_lmdb_mixed_batch_collate(
+    graph_config: dict[str, Any] | None = None,
+) -> Any:
+    def collate(batch: list[dict[str, Any]]) -> dict[str, Any]:
+        
+        result = _collate_lmdb_mixed_batch(batch)
+        if graph_config is None:
+            return result
+        from deepmd.pt.utils.nlist import build_precomputed_flat_graph
+
+        graph_data = build_precomputed_flat_graph(
+            result["coord"],
+            result["atype"],
+            result["batch"],
+            result["ptr"],
+            graph_config["rcut"],
+            graph_config["sel"],
+            graph_config["a_rcut"],
+            graph_config["a_sel"],
+            mixed_types=graph_config["mixed_types"],
+            box=result.get("box"),
+        )
+        result.update(graph_data)
+        return result
+
+    return collate
+
 
 def _collate_lmdb_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
     """Collate a list of frame dicts into a batch dict.
@@ -48,16 +134,13 @@ def _collate_lmdb_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
     SameNlocBatchSampler when mixed_batch=False).
 
     For mixed_batch=True, this function would need padding + mask.
-    Currently raises NotImplementedError for that case.
+    Mixed-nloc batches are flattened atom-wise and augmented with ``batch`` and
+    ``ptr`` to preserve frame ownership.
     """
     if len(batch) > 1:
         atypes = [d.get("atype") for d in batch if d.get("atype") is not None]
         if atypes and any(len(a) != len(atypes[0]) for a in atypes):
-            raise NotImplementedError(
-                "mixed_batch collation (frames with different atom counts "
-                "in the same batch) is not yet supported. "
-                "Padding + mask in collate_fn needed."
-            )
+            return _collate_lmdb_mixed_batch(batch)
 
     example = batch[0]
     result: dict[str, Any] = {}
@@ -129,13 +212,7 @@ class LmdbDataset(Dataset):
         self._reader = LmdbDataReader(
             lmdb_path, type_map, batch_size, mixed_batch=mixed_batch
         )
-
-        if mixed_batch:
-            # Future: DataLoader with padding collate_fn
-            raise NotImplementedError(
-                "mixed_batch=True is not yet supported. "
-                "Requires padding + mask in collate_fn."
-            )
+        self._batch_sampler: _SameNlocBatchSamplerTorch | None = None
 
         # Compute block_targets from auto_prob_style if provided
         self._block_targets = None
@@ -151,21 +228,31 @@ class LmdbDataset(Dataset):
                     f"nsystems={self._reader.nsystems}"
                 )
 
-        # Same-nloc batching: use SameNlocBatchSampler
-        sampler = SameNlocBatchSampler(
-            self._reader,
-            shuffle=True,
-            block_targets=self._block_targets,
-        )
-        self._batch_sampler = _SameNlocBatchSamplerTorch(sampler)
-
-        with torch.device("cpu"):
-            self._inner_dataloader = DataLoader(
-                self,
-                batch_sampler=self._batch_sampler,
-                num_workers=0,
-                collate_fn=_collate_lmdb_batch,
+        if mixed_batch:
+            with torch.device("cpu"):
+                self._inner_dataloader = DataLoader(
+                    self,
+                    batch_size=self._reader.batch_size,
+                    shuffle=True,
+                    num_workers=0,
+                    collate_fn=_collate_lmdb_mixed_batch,
+                )
+        else:
+            # Same-nloc batching: use SameNlocBatchSampler
+            sampler = SameNlocBatchSampler(
+                self._reader,
+                shuffle=True,
+                block_targets=self._block_targets,
             )
+            self._batch_sampler = _SameNlocBatchSamplerTorch(sampler)
+
+            with torch.device("cpu"):
+                self._inner_dataloader = DataLoader(
+                    self,
+                    batch_sampler=self._batch_sampler,
+                    num_workers=0,
+                    collate_fn=_collate_lmdb_batch,
+                )
 
         # Per-nloc-group dataloaders for make_stat_input.
         # Each group gets its own DataLoader so torch.cat in stat collection
@@ -314,7 +401,9 @@ class LmdbDataset(Dataset):
     @property
     def systems(self) -> list:
         """One 'system' per nloc group for stat collection compatibility."""
-        return [self] * len(self._nloc_dataloaders)
+        if self._nloc_dataloaders:
+            return [self] * len(self._nloc_dataloaders)
+        return [self]
 
     @property
     def dataloaders(self) -> list:
@@ -323,8 +412,12 @@ class LmdbDataset(Dataset):
         Each dataloader yields batches with uniform nloc, so torch.cat
         in stat collection only concatenates same-shape tensors.
         """
-        return self._nloc_dataloaders
+        if self._nloc_dataloaders:
+            return self._nloc_dataloaders
+        return [self._inner_dataloader]
 
     @property
     def sampler_list(self) -> list:
+        if self._batch_sampler is None:
+            return []
         return [self._batch_sampler]

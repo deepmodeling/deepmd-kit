@@ -27,6 +27,10 @@ from deepmd.pt.model.model.transform_output import (
     communicate_extended_output,
     fit_output_to_model_output,
 )
+from deepmd.pt.utils.batch_utils import (
+    pack_flat_to_dense,
+    unpack_dense_to_flat,
+)
 from deepmd.pt.utils.env import (
     GLOBAL_PT_ENER_FLOAT_PRECISION,
     GLOBAL_PT_FLOAT_PRECISION,
@@ -213,6 +217,483 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             )
             model_predict = self._output_type_cast(model_predict, input_prec)
             return model_predict
+
+        def forward_common_flat_native(
+            self,
+            coord: torch.Tensor,
+            atype: torch.Tensor,
+            batch: torch.Tensor,
+            ptr: torch.Tensor,
+            box: torch.Tensor | None = None,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
+            do_atomic_virial: bool = False,
+            extended_atype: torch.Tensor | None = None,
+            extended_batch: torch.Tensor | None = None,
+            extended_image: torch.Tensor | None = None,
+            extended_ptr: torch.Tensor | None = None,
+            mapping: torch.Tensor | None = None,
+            central_ext_index: torch.Tensor | None = None,
+            nlist: torch.Tensor | None = None,
+            nlist_ext: torch.Tensor | None = None,
+            a_nlist: torch.Tensor | None = None,
+            a_nlist_ext: torch.Tensor | None = None,
+            nlist_mask: torch.Tensor | None = None,
+            a_nlist_mask: torch.Tensor | None = None,
+            edge_index: torch.Tensor | None = None,
+            angle_index: torch.Tensor | None = None,
+        ) -> dict[str, torch.Tensor]:
+            """Forward pass for flat mixed-nloc batch (true graph-native path).
+
+            This implementation processes the flat batch directly without packing/unpacking,
+            making it more efficient for heterogeneous systems.
+
+            Parameters
+            ----------
+            coord
+                Flattened atomic coordinates with shape [total_atoms, 3].
+            atype
+                Flattened atomic types with shape [total_atoms].
+            batch
+                Atom-to-frame assignment with shape [total_atoms].
+            ptr
+                Frame boundaries with shape [nframes + 1].
+            box
+                Simulation boxes with shape [nframes, 9].
+            fparam
+                Frame parameters with shape [nframes, ndf].
+            aparam
+                Flattened atomic parameters with shape [total_atoms, nda].
+            do_atomic_virial
+                Whether to calculate atomic virial.
+
+            Returns
+            -------
+            model_predict : dict[str, torch.Tensor]
+                Model predictions with flat format:
+                - atomwise outputs: [total_atoms, ...]
+                - frame-wise outputs: [nframes, ...]
+
+            Notes
+            -----
+            This is the true graph-native implementation that avoids padding overhead.
+            """
+            # Enable gradient tracking for coord and box if needed
+            if self.do_grad_r("energy"):
+                coord = coord.clone().detach().requires_grad_(True)
+            if self.do_grad_c("energy") and box is not None:
+                box = box.clone().detach().requires_grad_(True)
+            if (
+                extended_atype is not None
+                and extended_batch is not None
+                and extended_image is not None
+                and mapping is not None
+                and nlist is not None
+                and nlist_ext is not None
+                and a_nlist is not None
+                and a_nlist_ext is not None
+                and nlist_mask is not None
+                and a_nlist_mask is not None
+                and central_ext_index is not None
+            ):
+                from deepmd.pt.utils.nlist import rebuild_extended_coord_from_flat_graph
+
+                extended_coord = rebuild_extended_coord_from_flat_graph(
+                    coord,
+                    box,
+                    mapping,
+                    extended_batch,
+                    extended_image,
+                )
+            else:
+                raise RuntimeError(
+                    "Flat mixed-batch forward requires precomputed graph fields from "
+                    "the LMDB collate_fn."
+                )
+            # Call forward_common_lower_flat with flat format
+            # This will pass flat extended coords directly to descriptor
+            assert extended_atype is not None
+            assert extended_batch is not None
+            assert mapping is not None
+            assert nlist is not None
+            model_predict_lower = self.forward_common_lower_flat(
+                extended_coord,
+                extended_atype,
+                extended_batch,
+                nlist,
+                mapping,
+                batch,
+                ptr,
+                do_atomic_virial=do_atomic_virial,
+                fparam=fparam,
+                aparam=aparam,
+                extended_ptr=extended_ptr,
+                central_ext_index=central_ext_index,
+                nlist_ext=nlist_ext,
+                a_nlist=a_nlist,
+                a_nlist_ext=a_nlist_ext,
+                nlist_mask=nlist_mask,
+                a_nlist_mask=a_nlist_mask,
+                edge_index=edge_index,
+                angle_index=angle_index,
+            )
+
+            # Compute derivatives if needed
+            if self.do_grad_r("energy") or self.do_grad_c("energy"):
+                model_predict_lower = self._compute_derivatives_flat(
+                    model_predict_lower,
+                    extended_coord,
+                    extended_atype,
+                    extended_batch,
+                    coord,
+                    atype,
+                    batch,
+                    ptr,
+                    box,
+                    do_atomic_virial,
+                )
+
+            return model_predict_lower
+
+        def forward_common_lower_flat(
+            self,
+            extended_coord: torch.Tensor,
+            extended_atype: torch.Tensor,
+            extended_batch: torch.Tensor,
+            nlist: torch.Tensor,
+            mapping: torch.Tensor,
+            batch: torch.Tensor,
+            ptr: torch.Tensor,
+            do_atomic_virial: bool = False,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
+            extended_ptr: torch.Tensor | None = None,
+            central_ext_index: torch.Tensor | None = None,
+            nlist_ext: torch.Tensor | None = None,
+            a_nlist: torch.Tensor | None = None,
+            a_nlist_ext: torch.Tensor | None = None,
+            nlist_mask: torch.Tensor | None = None,
+            a_nlist_mask: torch.Tensor | None = None,
+            edge_index: torch.Tensor | None = None,
+            angle_index: torch.Tensor | None = None,
+        ) -> dict[str, torch.Tensor]:
+            """Lower interface for flat batch format.
+
+            Parameters
+            ----------
+            extended_coord : torch.Tensor
+                Extended coordinates [total_extended_atoms, 3].
+            extended_atype : torch.Tensor
+                Extended atom types [total_extended_atoms].
+            extended_batch : torch.Tensor
+                Frame assignment for extended atoms [total_extended_atoms].
+            nlist : torch.Tensor
+                Neighbor list [total_atoms, nnei].
+            mapping : torch.Tensor
+                Extended atom -> local flat index mapping [total_extended_atoms].
+            batch : torch.Tensor
+                Frame assignment for local atoms [total_atoms].
+            ptr : torch.Tensor
+                Frame boundaries [nframes + 1].
+            do_atomic_virial : bool
+                Whether to compute atomic virial.
+            fparam : torch.Tensor | None
+                Frame parameters [nframes, ndf].
+            aparam : torch.Tensor | None
+                Atomic parameters [total_atoms, nda].
+
+            Returns
+            -------
+            model_predict : dict[str, torch.Tensor]
+                Model predictions in flat format.
+            """
+            # Call atomic model with flat format
+            # The atomic model needs to support flat format
+            model_ret = self.atomic_model.forward_common_atomic_flat(
+                extended_coord,
+                extended_atype,
+                extended_batch,
+                nlist,
+                mapping,
+                batch,
+                ptr,
+                fparam=fparam,
+                aparam=aparam,
+                extended_ptr=extended_ptr,
+                central_ext_index=central_ext_index,
+                nlist_ext=nlist_ext,
+                a_nlist=a_nlist,
+                a_nlist_ext=a_nlist_ext,
+                nlist_mask=nlist_mask,
+                a_nlist_mask=a_nlist_mask,
+                edge_index=edge_index,
+                angle_index=angle_index,
+            )
+
+            # Reduce atomic properties to frame properties
+            # For energy: sum over atoms in each frame
+            nframes = ptr.numel() - 1
+            if "energy" in model_ret:
+                energy_atomic = model_ret["energy"]  # [total_atoms, 1]
+                energy_redu = energy_atomic.new_zeros((nframes, energy_atomic.shape[-1]))
+                energy_redu.index_add_(0, batch, energy_atomic)
+                model_ret["energy_redu"] = energy_redu
+
+            return model_ret
+
+        def _compute_derivatives_flat(
+            self,
+            fit_ret: dict[str, torch.Tensor],
+            extended_coord: torch.Tensor,
+            extended_atype: torch.Tensor,
+            extended_batch: torch.Tensor,
+            coord: torch.Tensor,
+            atype: torch.Tensor,
+            batch: torch.Tensor,
+            ptr: torch.Tensor,
+            box: torch.Tensor | None,
+            do_atomic_virial: bool,
+        ) -> dict[str, torch.Tensor]:
+            """Compute force and virial derivatives for flat batch format.
+
+            Parameters
+            ----------
+            fit_ret : dict[str, torch.Tensor]
+                Fitting network output with "energy" key [total_atoms, 1].
+            extended_coord : torch.Tensor
+                Extended coordinates [total_extended_atoms, 3].
+            extended_atype : torch.Tensor
+                Extended atom types [total_extended_atoms].
+            extended_batch : torch.Tensor
+                Frame assignment for extended atoms [total_extended_atoms].
+            coord : torch.Tensor
+                Original coordinates [total_atoms, 3].
+            atype : torch.Tensor
+                Original atom types [total_atoms].
+            batch : torch.Tensor
+                Frame assignment for original atoms [total_atoms].
+            ptr : torch.Tensor
+                Frame boundaries [nframes + 1].
+            box : torch.Tensor | None
+                Simulation boxes [nframes, 9].
+            do_atomic_virial : bool
+                Whether to compute atomic virial.
+
+            Returns
+            -------
+            model_predict : dict[str, torch.Tensor]
+                Model predictions with derivatives in flat format.
+            """
+            # Compute force: -dE/dr
+            if self.do_grad_r("energy"):
+                energy_atomic = fit_ret["energy"]  # [total_atoms, 1]
+
+                # Compute gradient w.r.t. coord
+                # energy_atomic is [total_atoms, 1], coord is [total_atoms, 3]
+                energy_derv_r = torch.autograd.grad(
+                    outputs=energy_atomic.sum(),
+                    inputs=coord,
+                    create_graph=True,
+                    retain_graph=True,
+                )[0]  # [total_atoms, 3]
+
+                # Force is negative gradient
+                fit_ret["energy_derv_r"] = -energy_derv_r.unsqueeze(-2)  # [total_atoms, 1, 3]
+                # Also provide dforce field for compatibility with EnergyModel.forward()
+                fit_ret["dforce"] = -energy_derv_r  # [total_atoms, 3]
+
+            # Compute virial: dE/dh
+            if self.do_grad_c("energy"):
+                nframes = ptr.numel() - 1
+                energy_redu = fit_ret["energy_redu"]  # [nframes, 1]
+
+                if box is not None:
+                    # Compute gradient w.r.t. box directly (box is already [nframes, 9])
+                    # No need to reshape - work with the flat representation
+                    energy_derv_c_redu = torch.autograd.grad(
+                        outputs=energy_redu.sum(),
+                        inputs=box,
+                        create_graph=True,
+                        retain_graph=True,
+                    )[0]  # [nframes, 9]
+
+                    fit_ret["energy_derv_c_redu"] = energy_derv_c_redu.unsqueeze(1)  # [nframes, 1, 9]
+
+                    # TODO: Implement atomic virial if needed
+                    if do_atomic_virial:
+                        pass  # Not yet implemented for flat format
+
+            return fit_ret
+
+        def forward_common_flat_pack_unpack(
+            self,
+            coord: torch.Tensor,
+            atype: torch.Tensor,
+            batch: torch.Tensor,
+            ptr: torch.Tensor,
+            box: torch.Tensor | None = None,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
+            do_atomic_virial: bool = False,
+            extended_atype: torch.Tensor | None = None,
+            extended_batch: torch.Tensor | None = None,
+            extended_image: torch.Tensor | None = None,
+            extended_ptr: torch.Tensor | None = None,
+            mapping: torch.Tensor | None = None,
+            central_ext_index: torch.Tensor | None = None,
+            nlist: torch.Tensor | None = None,
+            nlist_ext: torch.Tensor | None = None,
+            a_nlist: torch.Tensor | None = None,
+            a_nlist_ext: torch.Tensor | None = None,
+            nlist_mask: torch.Tensor | None = None,
+            a_nlist_mask: torch.Tensor | None = None,
+            edge_index: torch.Tensor | None = None,
+            angle_index: torch.Tensor | None = None,
+        ) -> dict[str, torch.Tensor]:
+            """Forward pass using pack/unpack strategy (transitional implementation).
+
+            This is a transitional implementation that packs flat batch into dense format,
+            calls the existing forward_common, then unpacks back to flat format.
+
+            Parameters
+            ----------
+            coord
+                Flattened atomic coordinates with shape [total_atoms, 3].
+            atype
+                Flattened atomic types with shape [total_atoms].
+            batch
+                Atom-to-frame assignment with shape [total_atoms].
+            ptr
+                Frame boundaries with shape [nframes + 1].
+            box
+                Simulation boxes with shape [nframes, 9].
+            fparam
+                Frame parameters with shape [nframes, ndf].
+            aparam
+                Flattened atomic parameters with shape [total_atoms, nda].
+            do_atomic_virial
+                Whether to calculate atomic virial.
+
+            Returns
+            -------
+            model_predict : dict[str, torch.Tensor]
+                Model predictions with flat format:
+                - atomwise outputs: [total_atoms, ...]
+                - frame-wise outputs: [nframes, ...]
+            """
+            from deepmd.pt.utils.batch_utils import pack_flat_to_dense, unpack_dense_to_flat
+
+            # Pack flat batch into dense format
+            coord_dense, atype_dense, aparam_dense = pack_flat_to_dense(
+                coord, atype, batch, ptr, aparam
+            )
+
+            # Call existing forward_common with dense format
+            model_predict_dense = self.forward_common(
+                coord_dense,
+                atype_dense,
+                box=box,
+                fparam=fparam,
+                aparam=aparam_dense,
+                do_atomic_virial=do_atomic_virial,
+            )
+
+            # Unpack dense output back to flat format
+            # Define atomwise keys that need unpacking
+            atomwise_keys = {
+                "energy",  # atomic energy [nframes, nloc, 1]
+                "energy_derv_r",  # force [nframes, nloc, 1, 3]
+                "energy_derv_c",  # atomic virial [nframes, nloc, 9]
+                "mask",  # mask [nframes, nloc]
+            }
+
+            model_predict_flat = unpack_dense_to_flat(
+                model_predict_dense, ptr, atomwise_keys
+            )
+
+            return model_predict_flat
+
+        def forward_common_flat(
+            self,
+            coord: torch.Tensor,
+            atype: torch.Tensor,
+            batch: torch.Tensor,
+            ptr: torch.Tensor,
+            box: torch.Tensor | None = None,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
+            do_atomic_virial: bool = False,
+            extended_atype: torch.Tensor | None = None,
+            extended_batch: torch.Tensor | None = None,
+            extended_image: torch.Tensor | None = None,
+            extended_ptr: torch.Tensor | None = None,
+            mapping: torch.Tensor | None = None,
+            central_ext_index: torch.Tensor | None = None,
+            nlist: torch.Tensor | None = None,
+            nlist_ext: torch.Tensor | None = None,
+            a_nlist: torch.Tensor | None = None,
+            a_nlist_ext: torch.Tensor | None = None,
+            nlist_mask: torch.Tensor | None = None,
+            a_nlist_mask: torch.Tensor | None = None,
+            edge_index: torch.Tensor | None = None,
+            angle_index: torch.Tensor | None = None,
+        ) -> dict[str, torch.Tensor]:
+            """Forward pass for flat mixed-nloc batch.
+
+            This method dispatches to either the native graph implementation or
+            the pack/unpack fallback based on availability.
+
+            Parameters
+            ----------
+            coord
+                Flattened atomic coordinates with shape [total_atoms, 3].
+            atype
+                Flattened atomic types with shape [total_atoms].
+            batch
+                Atom-to-frame assignment with shape [total_atoms].
+            ptr
+                Frame boundaries with shape [nframes + 1].
+            box
+                Simulation boxes with shape [nframes, 9].
+            fparam
+                Frame parameters with shape [nframes, ndf].
+            aparam
+                Flattened atomic parameters with shape [total_atoms, nda].
+            do_atomic_virial
+                Whether to calculate atomic virial.
+
+            Returns
+            -------
+            model_predict : dict[str, torch.Tensor]
+                Model predictions with flat format:
+                - atomwise outputs: [total_atoms, ...]
+                - frame-wise outputs: [nframes, ...]
+            """
+            # Use native implementation to test flat neighbor list building
+            return self.forward_common_flat_native(
+                coord,
+                atype,
+                batch,
+                ptr,
+                box,
+                fparam,
+                aparam,
+                do_atomic_virial,
+                extended_atype=extended_atype,
+                extended_batch=extended_batch,
+                extended_image=extended_image,
+                extended_ptr=extended_ptr,
+                mapping=mapping,
+                central_ext_index=central_ext_index,
+                nlist=nlist,
+                nlist_ext=nlist_ext,
+                a_nlist=a_nlist,
+                a_nlist_ext=a_nlist_ext,
+                nlist_mask=nlist_mask,
+                a_nlist_mask=a_nlist_mask,
+                edge_index=edge_index,
+                angle_index=angle_index,
+            )
 
         def get_out_bias(self) -> torch.Tensor:
             return self.atomic_model.get_out_bias()

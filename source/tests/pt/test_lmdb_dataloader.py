@@ -208,6 +208,16 @@ class TestLmdbDataset:
         ds = LmdbDataset(lmdb_dir, type_map=["O", "H"], batch_size=2)
         assert ds.mixed_type is True
 
+    def test_mixed_batch_init(self, multi_nloc_lmdb):
+        ds = LmdbDataset(
+            multi_nloc_lmdb,
+            type_map=["O", "H"],
+            batch_size=3,
+            mixed_batch=True,
+        )
+        assert ds.mixed_batch is True
+        assert len(ds.dataloaders) == 1
+
 
 # ============================================================
 # Trainer compatibility interface
@@ -352,6 +362,38 @@ class TestCollate:
             {"coord": np.zeros((2, 3)), "box": None},
         ]
         assert _collate_lmdb_batch(frames)["box"] is None
+
+    def test_collate_mixed_nloc_flattens_atomwise(self):
+        rng = np.random.default_rng(7)
+        frames = [
+            {
+                "coord": rng.standard_normal((2, 3)),
+                "atype": np.array([0, 1], dtype=np.int64),
+                "force": rng.standard_normal((2, 3)),
+                "energy": np.array([1.0]),
+                "box": np.arange(9, dtype=np.float64),
+                "find_energy": 1.0,
+                "fid": 3,
+            },
+            {
+                "coord": rng.standard_normal((3, 3)),
+                "atype": np.array([1, 0, 1], dtype=np.int64),
+                "force": rng.standard_normal((3, 3)),
+                "energy": np.array([2.0]),
+                "box": np.arange(9, dtype=np.float64) + 10.0,
+                "find_energy": 1.0,
+                "fid": 9,
+            },
+        ]
+        batch = _collate_lmdb_batch(frames)
+        assert batch["coord"].shape == (5, 3)
+        assert batch["atype"].shape == (5,)
+        assert batch["force"].shape == (5, 3)
+        assert batch["energy"].shape == (2, 1)
+        assert batch["box"].shape == (2, 9)
+        torch.testing.assert_close(batch["batch"], torch.tensor([0, 0, 1, 1, 1]))
+        torch.testing.assert_close(batch["ptr"], torch.tensor([0, 2, 5]))
+        assert batch["fid"] == [3, 9]
 
 
 # ============================================================

@@ -167,10 +167,12 @@ def get_trainer(
         # LMDB path: single string → LmdbDataset
         if isinstance(training_systems, str) and is_lmdb(training_systems):
             auto_prob = training_dataset_params.get("auto_prob", None)
+            mixed_batch = training_dataset_params.get("mixed_batch", False)
             train_data_single = LmdbDataset(
                 training_systems,
                 model_params_single["type_map"],
                 training_dataset_params["batch_size"],
+                mixed_batch=mixed_batch,
                 auto_prob_style=auto_prob,
             )
             if (
@@ -178,10 +180,12 @@ def get_trainer(
                 and isinstance(validation_systems, str)
                 and is_lmdb(validation_systems)
             ):
+                val_mixed_batch = validation_dataset_params.get("mixed_batch", False)
                 validation_data_single = LmdbDataset(
                     validation_systems,
                     model_params_single["type_map"],
                     validation_dataset_params["batch_size"],
+                    mixed_batch=val_mixed_batch,
                 )
             elif validation_systems is not None:
                 validation_data_single = _make_dp_loader_set(

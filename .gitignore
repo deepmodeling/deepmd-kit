@@ -73,3 +73,9 @@ frozen_model.*
 
 # Test system directories
 system/
+
+temp/
+test_mptraj/
+pkl/
+history/
+*.hdf5

@@ -678,6 +678,233 @@ class DescrptBlockRepflows(DescriptorBlock):
 
         return node_ebd, edge_ebd, h2, rot_mat.view(nframes, nloc, self.dim_emb, 3), sw
 
+    def forward_flat(
+        self,
+        nlist: torch.Tensor,
+        extended_coord: torch.Tensor,
+        extended_atype: torch.Tensor,
+        extended_batch: torch.Tensor,
+        extended_atype_embd: torch.Tensor,
+        mapping: torch.Tensor,
+        batch: torch.Tensor,
+        ptr: torch.Tensor,
+        central_ext_index: torch.Tensor | None = None,
+        nlist_ext: torch.Tensor | None = None,
+        a_nlist: torch.Tensor | None = None,
+        a_nlist_ext: torch.Tensor | None = None,
+        nlist_mask: torch.Tensor | None = None,
+        a_nlist_mask: torch.Tensor | None = None,
+        edge_index: torch.Tensor | None = None,
+        angle_index: torch.Tensor | None = None,
+    ) -> tuple[
+        torch.Tensor,
+        torch.Tensor | None,
+        torch.Tensor | None,
+        torch.Tensor | None,
+        torch.Tensor | None,
+    ]:
+        """Forward pass with flat batch format (native implementation).
+
+        Parameters
+        ----------
+        nlist : torch.Tensor
+            Neighbor list [total_atoms, nnei] with global extended indices.
+        extended_coord : torch.Tensor
+            Extended coordinates [total_extended_atoms, 3].
+        extended_atype : torch.Tensor
+            Extended atom types [total_extended_atoms].
+        extended_batch : torch.Tensor
+            Frame assignment for extended atoms [total_extended_atoms].
+        extended_atype_embd : torch.Tensor
+            Type embeddings for extended atoms [total_extended_atoms, tebd_dim].
+        mapping : torch.Tensor
+            Extended atom -> local flat index mapping [total_extended_atoms].
+        batch : torch.Tensor
+            Frame assignment for local atoms [total_atoms].
+        ptr : torch.Tensor
+            Frame boundaries [nframes + 1].
+
+        Returns
+        -------
+        node_ebd : torch.Tensor
+            Node embeddings [total_atoms, n_dim].
+        edge_ebd : torch.Tensor | None
+            Edge embeddings.
+        h2 : torch.Tensor | None
+            Pair representation.
+        rot_mat : torch.Tensor | None
+            Rotation matrix [total_atoms, e_dim, 3].
+        sw : torch.Tensor | None
+            Switch function.
+        """
+        from deepmd.pt.model.descriptor.env_mat import prod_env_mat_flat
+
+        nloc = batch.shape[0]
+        nall = extended_coord.shape[0]
+        nframes = ptr.shape[0] - 1
+        if (
+            central_ext_index is None
+            or nlist_ext is None
+            or a_nlist is None
+            or a_nlist_ext is None
+            or nlist_mask is None
+            or a_nlist_mask is None
+        ):
+            raise RuntimeError(
+                "Repflows flat forward requires precomputed graph fields from collate_fn."
+            )
+        coord_central = extended_coord[central_ext_index]
+        atype = extended_atype[central_ext_index]
+
+        # Step 1: Compute environment matrix for edges
+        dmatrix, diff, sw = prod_env_mat_flat(
+            extended_coord,
+            nlist_ext,
+            atype,
+            self.mean,
+            self.stddev,
+            self.e_rcut,
+            self.e_rcut_smth,
+            protection=self.env_protection,
+            use_exp_switch=self.use_exp_switch,
+            coord_flat=coord_central,
+        )
+
+        sw = torch.squeeze(sw, -1)
+        sw = sw.masked_fill(~nlist_mask, 0.0)
+
+        # Step 2: Get angle nlist (smaller cutoff)
+        _, a_diff, a_sw = prod_env_mat_flat(
+            extended_coord,
+            a_nlist_ext,
+            atype,
+            self.mean[:, : self.a_sel],
+            self.stddev[:, : self.a_sel],
+            self.a_rcut,
+            self.a_rcut_smth,
+            protection=self.env_protection,
+            use_exp_switch=self.use_exp_switch,
+            coord_flat=coord_central,
+        )
+
+        a_sw = torch.squeeze(a_sw, -1)
+        a_sw = a_sw.masked_fill(~a_nlist_mask, 0.0)
+
+        # Set padding to 0
+
+        # Step 3: Get node embedding
+        atype_embd = extended_atype_embd[central_ext_index]
+        assert list(atype_embd.shape) == [nloc, self.n_dim]
+        node_ebd = self.act(atype_embd)
+        n_dim = node_ebd.shape[-1]
+
+        # Step 4: Get edge and angle embedding input
+        edge_input, h2 = torch.split(dmatrix, [1, 3], dim=-1)
+        if self.edge_init_use_dist:
+            edge_input = safe_for_norm(diff, dim=-1, keepdim=True)
+
+        # Compute angle input (cosine between pairs of neighbors)
+        normalized_diff_i = a_diff / (
+            safe_for_norm(a_diff, dim=-1, keepdim=True) + 1e-6
+        )
+        normalized_diff_j = torch.transpose(normalized_diff_i, 1, 2)
+        cosine_ij = torch.matmul(normalized_diff_i, normalized_diff_j) * (1 - 1e-6)
+        angle_input = cosine_ij.unsqueeze(-1) / (torch.pi**0.5)
+
+        # Step 6: Get graph index in flat format
+        if self.use_dynamic_sel:
+            if edge_index is None or angle_index is None:
+                raise RuntimeError(
+                    "Dynamic flat forward requires precomputed edge_index and angle_index."
+                )
+            # Flatten tensors
+            edge_input = edge_input[nlist_mask]
+            h2 = h2[nlist_mask]
+            sw = sw[nlist_mask]
+            # Angle mask: both neighbors must be valid
+            a_nlist_mask_2d = a_nlist_mask[:, :, None] & a_nlist_mask[:, None, :]
+            angle_input = angle_input[a_nlist_mask_2d]
+            a_sw = (a_sw[:, :, None] * a_sw[:, None, :])[a_nlist_mask_2d]
+        else:
+            edge_index = torch.zeros([2, 1], device=nlist.device, dtype=nlist.dtype)
+            angle_index = torch.zeros([3, 1], device=nlist.device, dtype=nlist.dtype)
+
+        # Step 7: Get edge and angle embeddings
+        if not self.edge_init_use_dist:
+            edge_ebd = self.act(self.edge_embd(edge_input))
+        else:
+            edge_ebd = self.edge_embd(edge_input)
+        angle_ebd = self.angle_embd(angle_input)
+
+        # Step 8: Process through RepFlow layers
+        # Add batch dimension for RepFlowLayer (expects [nf, nloc, ...])
+        node_ebd_batched = node_ebd.unsqueeze(0)  # [1, nloc, n_dim]
+        edge_ebd_batched = edge_ebd.unsqueeze(0) if not self.use_dynamic_sel else edge_ebd  # [1, nloc, nnei, e_dim] or [n_edge, e_dim]
+        h2_batched = h2.unsqueeze(0) if not self.use_dynamic_sel else h2  # [1, nloc, nnei, 3] or [n_edge, 3]
+        angle_ebd_batched = angle_ebd.unsqueeze(0) if not self.use_dynamic_sel else angle_ebd  # [1, nloc, a_nnei, a_nnei, a_dim] or [n_angle, a_dim]
+        nlist_batched = nlist.unsqueeze(0)  # [1, nloc, nnei]
+        nlist_mask_batched = nlist_mask.unsqueeze(0)  # [1, nloc, nnei]
+        sw_batched = sw.unsqueeze(0) if not self.use_dynamic_sel else sw  # [1, nloc, nnei] or [n_edge]
+        a_nlist_batched = a_nlist.unsqueeze(0)  # [1, nloc, a_nnei]
+        a_nlist_mask_batched = a_nlist_mask.unsqueeze(0)  # [1, nloc, a_nnei]
+        a_sw_batched = a_sw.unsqueeze(0) if not self.use_dynamic_sel else a_sw  # [1, nloc, a_nnei] or [n_angle]
+
+        for idx, ll in enumerate(self.layers):
+            # In flat format with use_loc_mapping, node_ebd_ext is just node_ebd
+            node_ebd_ext_batched = node_ebd_batched if self.use_loc_mapping else node_ebd_batched
+
+            node_ebd_batched, edge_ebd_batched, angle_ebd_batched = ll.forward(
+                node_ebd_ext_batched,
+                edge_ebd_batched,
+                h2_batched,
+                angle_ebd_batched,
+                nlist_batched,
+                nlist_mask_batched,
+                sw_batched,
+                a_nlist_batched,
+                a_nlist_mask_batched,
+                a_sw_batched,
+                edge_index=edge_index,
+                angle_index=angle_index,
+            )
+
+        # Step 9: Compute rotation matrix
+        if self.use_dynamic_sel:
+            h2g2 = RepFlowLayer._cal_hg_dynamic(
+                edge_ebd_batched,
+                h2_batched,
+                sw_batched,
+                owner=edge_index[0],
+                num_owner=nloc,
+                nb=1,
+                nloc=nloc,
+                scale_factor=(self.nnei / self.sel_reduce_factor) ** (-0.5),
+            ).squeeze(0)
+        else:
+            # Use batched versions for _cal_hg, then squeeze
+            h2g2 = RepFlowLayer._cal_hg(
+                edge_ebd_batched,
+                h2_batched,
+                nlist_mask_batched,
+                sw_batched,
+            )
+            h2g2 = h2g2.squeeze(0)  # Remove batch dimension
+
+        # Remove batch dimension from outputs
+        node_ebd = node_ebd_batched.squeeze(0)
+        edge_ebd = (
+            edge_ebd_batched.squeeze(0)
+            if not self.use_dynamic_sel
+            else edge_ebd_batched
+        )
+        h2 = h2_batched.squeeze(0) if not self.use_dynamic_sel else h2_batched
+        sw = sw_batched.squeeze(0) if not self.use_dynamic_sel else sw_batched
+
+        # [nloc, e_dim, 3]
+        rot_mat = torch.permute(h2g2, (0, 2, 1))
+
+        return node_ebd, edge_ebd, h2, rot_mat, sw
+
     def compute_input_stats(
         self,
         merged: Callable[[], list[dict]] | list[dict],

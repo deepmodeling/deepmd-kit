@@ -224,7 +224,20 @@ class EnergyStdLoss(TaskLoss):
         more_loss = {}
         # more_loss['log_keys'] = []  # showed when validation on the fly
         # more_loss['test_keys'] = []  # showed when doing dp test
-        atom_norm = 1.0 / natoms
+
+        # Detect mixed batch format
+        is_mixed_batch = "ptr" in input_dict and input_dict["ptr"] is not None
+
+        # For mixed batch, compute per-frame atom_norm and average
+        if is_mixed_batch:
+            ptr = input_dict["ptr"]
+            nframes = ptr.numel() - 1
+            # Compute natoms for each frame
+            natoms_per_frame = ptr[1:] - ptr[:-1]  # [nframes]
+            # Average atom_norm across frames
+            atom_norm = torch.mean(1.0 / natoms_per_frame.float())
+        else:
+            atom_norm = 1.0 / natoms
         if self.has_e and "energy" in model_pred and "energy" in label:
             energy_pred = model_pred["energy"]
             energy_label = label["energy"]

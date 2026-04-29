@@ -75,6 +75,15 @@ from .spin_model import (
 )
 
 
+DEFAULT_DESCRIPTOR_INIT_SEED = 1
+DEFAULT_FITTING_INIT_SEED = 2
+
+
+def _set_default_init_seed(params: dict[str, Any], seed: int) -> None:
+    if params.get("seed") is None:
+        params["seed"] = seed
+
+
 def _get_standard_model_components(model_params: dict, ntypes: int) -> tuple:
     if "type_embedding" in model_params:
         raise ValueError(
@@ -83,9 +92,11 @@ def _get_standard_model_components(model_params: dict, ntypes: int) -> tuple:
     # descriptor
     model_params["descriptor"]["ntypes"] = ntypes
     model_params["descriptor"]["type_map"] = copy.deepcopy(model_params["type_map"])
+    _set_default_init_seed(model_params["descriptor"], DEFAULT_DESCRIPTOR_INIT_SEED)
     descriptor = BaseDescriptor(**model_params["descriptor"])
     # fitting
     fitting_net = model_params.get("fitting_net", {})
+    _set_default_init_seed(fitting_net, DEFAULT_FITTING_INIT_SEED)
     fitting_net["type"] = fitting_net.get("type", "ener")
     fitting_net["ntypes"] = descriptor.get_ntypes()
     fitting_net["type_map"] = copy.deepcopy(model_params["type_map"])

@@ -3690,6 +3690,12 @@ If MPI is used, the value should be considered as the batch size per task.'
         "specifying the probability of each system."
     )
 
+    doc_mixed_batch = (
+        "Whether to allow mixed batch training with different number of atoms per frame. "
+        "When set to True, frames with different atom counts can be batched together. "
+        "Only supported for LMDB datasets. Default is False."
+    )
+
     args = [
         Argument(
             "systems", [list[str], str], optional=False, default=".", doc=doc_systems
@@ -3725,6 +3731,13 @@ If MPI is used, the value should be considered as the batch size per task.'
             default=None,
             doc=doc_sys_probs,
             alias=["sys_weights"],
+        ),
+        Argument(
+            "mixed_batch",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_mixed_batch + doc_only_pt_supported,
         ),
     ]
 
@@ -3768,6 +3781,11 @@ def validation_data_args() -> list[
         "specifying the probability of each system."
     )
     doc_numb_btch = "An integer that specifies the number of batches to be sampled for each validation period."
+    doc_mixed_batch = (
+        "Whether to allow mixed batch validation with different number of atoms per frame. "
+        "When set to True, frames with different atom counts can be batched together. "
+        "Only supported for LMDB datasets. Default is False."
+    )
 
     args = [
         Argument(
@@ -3814,6 +3832,13 @@ def validation_data_args() -> list[
             alias=[
                 "numb_batch",
             ],
+        ),
+        Argument(
+            "mixed_batch",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_mixed_batch + doc_only_pt_supported,
         ),
     ]
 
