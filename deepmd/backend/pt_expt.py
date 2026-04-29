@@ -70,15 +70,19 @@ class PyTorchExportableBackend(Backend):
             # weights_only=True avoids unpickling arbitrary code from an
             # untrusted .pt — sniffing only needs the dict keys.
             sd = torch.load(filename, map_location="cpu", weights_only=True)
-            if isinstance(sd, dict) and "model" in sd:
-                sd = sd["model"]
-            keys = list(sd.keys()) if hasattr(sd, "keys") else []
-            has_pt_expt = any(k.endswith(".w") or k.endswith(".b") for k in keys)
-            has_pt = any(k.endswith(".matrix") or k.endswith(".bias") for k in keys)
-            if has_pt_expt and not has_pt:
-                return 2
         except Exception:
-            pass
+            # Not a valid torch archive (corrupt file, wrong format, or a
+            # weights_only=True restriction trip).  Surrender the claim so
+            # the dispatcher falls back to the default suffix match — pt's
+            # default score (1) will pick up the file under `dp --pt`.
+            return 0
+        if isinstance(sd, dict) and "model" in sd:
+            sd = sd["model"]
+        keys = list(sd.keys()) if hasattr(sd, "keys") else []
+        has_pt_expt = any(k.endswith(".w") or k.endswith(".b") for k in keys)
+        has_pt = any(k.endswith(".matrix") or k.endswith(".bias") for k in keys)
+        if has_pt_expt and not has_pt:
+            return 2
         return 0
 
     def is_available(self) -> bool:
