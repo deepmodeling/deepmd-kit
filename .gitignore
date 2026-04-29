@@ -78,4 +78,5 @@ temp/
 test_mptraj/
 pkl/
 history/
+deepmd-kit/
 *.hdf5

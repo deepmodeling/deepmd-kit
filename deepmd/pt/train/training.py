@@ -77,7 +77,6 @@ from deepmd.pt.utils.learning_rate import (
 from deepmd.pt.utils.lmdb_dataset import (
     LmdbDataset,
     _collate_lmdb_batch,
-    _collate_lmdb_mixed_batch,
     _SameNlocBatchSamplerTorch,
     make_lmdb_mixed_batch_collate,
 )
@@ -244,24 +243,16 @@ class Trainer:
                     _seed = 42
 
                 if _data.mixed_batch:
-                    # mixed_batch=True: allow different nloc in same batch
-                    # Use RandomSampler or SequentialSampler + _collate_lmdb_mixed_batch
                     from torch.utils.data import RandomSampler, SequentialSampler
 
                     if _shuffle:
-                        # Set random seed for reproducibility
                         generator = torch.Generator()
                         generator.manual_seed(_seed)
                         _sampler = RandomSampler(
                             _data, replacement=False, generator=generator
                         )
                     else:
-                        # Use sequential sampler when shuffle=False
                         _sampler = SequentialSampler(_data)
-
-                    # Use a fixed batch_size (e.g., 4 frames per batch)
-                    # TODO: make this configurable via training params
-                    _batch_size = 4
 
                     model_for_graph = (
                         self.model[_task_key] if self.multi_task else self.model
@@ -279,7 +270,7 @@ class Trainer:
 
                     _dataloader = DataLoader(
                         _data,
-                        batch_size=_batch_size,
+                        batch_size=_data.batch_size,
                         sampler=_sampler,
                         num_workers=0,
                         collate_fn=make_lmdb_mixed_batch_collate(graph_config),
@@ -1122,7 +1113,6 @@ class Trainer:
                 model_pred, loss, more_loss = self.wrapper(
                     **input_dict, cur_lr=pref_lr, label=label_dict, task_key=task_key
                 )
-                import pdb; pdb.set_trace()  # --- IGNORE ---
                 loss.backward()
                 # === Initialize gradient diagnostics variables ===
                 total_norm: torch.Tensor | None = None

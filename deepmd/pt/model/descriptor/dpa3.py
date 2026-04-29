@@ -640,22 +640,12 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
             - 'g2': edge embedding or None
             - 'h2': pair representation or None
         """
-        print("ENTERING DescrptDPA3.forward_flat()")
-        print(f"  extended_coord shape: {extended_coord.shape}")
-        print(f"  extended_atype shape: {extended_atype.shape}")
-        print(f"  extended_batch shape: {extended_batch.shape}")
-        print(f"  nlist shape: {nlist.shape}")
-        print(f"  batch shape: {batch.shape}")
-        print(f"  ptr: {ptr.tolist()}")
-
         # Cast to internal precision
         extended_coord = extended_coord.to(dtype=self.prec)
 
         # Get type embeddings for extended atoms
         # For flat format, we embed all extended atoms
         node_ebd_ext = self.type_embedding(extended_atype)  # [total_extended_atoms, tebd_dim]
-
-        print(f"  node_ebd_ext shape after type_embedding: {node_ebd_ext.shape}")
 
         # Handle charge/spin embedding if needed
         if self.add_chg_spin_ebd:
@@ -680,8 +670,6 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
             central_ext_index = get_central_ext_index(extended_batch, ptr)
         node_ebd_inp = node_ebd_ext[central_ext_index]
 
-        print(f"  node_ebd_inp shape: {node_ebd_inp.shape}")
-
         # Call repflows with flat format
 
         node_ebd, edge_ebd, h2, rot_mat, sw = self.repflows.forward_flat(
@@ -702,11 +690,6 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
             edge_index=edge_index,
             angle_index=angle_index,
         )
-
-        print(f"After repflows.forward_flat():")
-        print(f"  node_ebd shape: {node_ebd.shape}")
-        if rot_mat is not None:
-            print(f"  rot_mat shape: {rot_mat.shape}")
 
         if self.concat_output_tebd:
             node_ebd = torch.cat([node_ebd, node_ebd_inp], dim=-1)

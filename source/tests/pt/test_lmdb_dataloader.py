@@ -24,6 +24,10 @@ from deepmd.dpmodel.utils.lmdb_data import (
 from deepmd.pt.utils.lmdb_dataset import (
     LmdbDataset,
     _collate_lmdb_batch,
+    make_lmdb_mixed_batch_collate,
+)
+from deepmd.utils.argcheck import (
+    training_data_args,
 )
 from deepmd.utils.data import (
     DataRequirementItem,
@@ -394,6 +398,70 @@ class TestCollate:
         torch.testing.assert_close(batch["batch"], torch.tensor([0, 0, 1, 1, 1]))
         torch.testing.assert_close(batch["ptr"], torch.tensor([0, 2, 5]))
         assert batch["fid"] == [3, 9]
+
+    def test_mixed_batch_collate_precomputes_graph(self):
+        frames = [
+            {
+                "coord": np.array([[0.0, 0.0, 0.0], [0.2, 0.0, 0.0]]),
+                "atype": np.array([0, 0], dtype=np.int64),
+                "force": np.zeros((2, 3)),
+                "energy": np.array([0.0]),
+                "box": np.eye(3).reshape(9),
+                "find_energy": 1.0,
+                "fid": 0,
+            },
+            {
+                "coord": np.array(
+                    [[0.0, 0.0, 0.0], [0.2, 0.0, 0.0], [0.0, 0.2, 0.0]]
+                ),
+                "atype": np.array([0, 0, 0], dtype=np.int64),
+                "force": np.zeros((3, 3)),
+                "energy": np.array([1.0]),
+                "box": np.eye(3).reshape(9),
+                "find_energy": 1.0,
+                "fid": 1,
+            },
+        ]
+        collate = make_lmdb_mixed_batch_collate(
+            {
+                "rcut": 0.8,
+                "sel": [4],
+                "a_rcut": 0.8,
+                "a_sel": 4,
+                "mixed_types": True,
+            }
+        )
+        batch = collate(frames)
+        assert batch["coord"].shape == (5, 3)
+        torch.testing.assert_close(batch["ptr"], torch.tensor([0, 2, 5]))
+        for key in (
+            "extended_atype",
+            "extended_batch",
+            "extended_image",
+            "extended_ptr",
+            "mapping",
+            "central_ext_index",
+            "nlist",
+            "nlist_ext",
+            "a_nlist",
+            "a_nlist_ext",
+            "nlist_mask",
+            "a_nlist_mask",
+            "edge_index",
+            "angle_index",
+        ):
+            assert key in batch
+        assert batch["nlist"].shape[0] == 5
+        assert batch["edge_index"].shape[0] == 2
+        assert batch["angle_index"].shape[0] == 3
+
+    def test_mix_batch_arg_alias(self):
+        arg = training_data_args()
+        normalized = arg.normalize_value(
+            {"systems": "train.lmdb", "batch_size": 2, "mix_batch": True},
+            trim_pattern="_*",
+        )
+        assert normalized["mixed_batch"] is True
 
 
 # ============================================================

@@ -3691,9 +3691,10 @@ If MPI is used, the value should be considered as the batch size per task.'
     )
 
     doc_mixed_batch = (
-        "Whether to allow mixed batch training with different number of atoms per frame. "
-        "When set to True, frames with different atom counts can be batched together. "
-        "Only supported for LMDB datasets. Default is False."
+        "Whether to enable LMDB mixed-batch training with different numbers of atoms "
+        "per frame. When set to True, the PyTorch LMDB dataloader flattens atom-wise "
+        "fields and precomputes graph indices in the collate function. "
+        "The alias `mix_batch` is accepted. Default is False."
     )
 
     args = [
@@ -3737,6 +3738,7 @@ If MPI is used, the value should be considered as the batch size per task.'
             bool,
             optional=True,
             default=False,
+            alias=["mix_batch"],
             doc=doc_mixed_batch + doc_only_pt_supported,
         ),
     ]
@@ -3782,9 +3784,10 @@ def validation_data_args() -> list[
     )
     doc_numb_btch = "An integer that specifies the number of batches to be sampled for each validation period."
     doc_mixed_batch = (
-        "Whether to allow mixed batch validation with different number of atoms per frame. "
-        "When set to True, frames with different atom counts can be batched together. "
-        "Only supported for LMDB datasets. Default is False."
+        "Whether to enable LMDB mixed-batch validation with different numbers of atoms "
+        "per frame. When set to True, the PyTorch LMDB dataloader flattens atom-wise "
+        "fields and precomputes graph indices in the collate function. "
+        "The alias `mix_batch` is accepted. Default is False."
     )
 
     args = [
@@ -3838,6 +3841,7 @@ def validation_data_args() -> list[
             bool,
             optional=True,
             default=False,
+            alias=["mix_batch"],
             doc=doc_mixed_batch + doc_only_pt_supported,
         ),
     ]

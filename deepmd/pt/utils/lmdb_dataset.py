@@ -37,6 +37,8 @@ __all__ = [
     "LmdbDataset",
     "LmdbTestData",
     "_collate_lmdb_batch",
+    "_collate_lmdb_mixed_batch",
+    "make_lmdb_mixed_batch_collate",
     "is_lmdb",
 ]
 
@@ -102,8 +104,14 @@ def _collate_lmdb_mixed_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
 def make_lmdb_mixed_batch_collate(
     graph_config: dict[str, Any] | None = None,
 ) -> Any:
+    """Build a collate function for flattened mixed-nloc LMDB batches.
+
+    When ``graph_config`` is provided, the collate function also precomputes the
+    extended image, neighbor lists, edge index, and angle index consumed by the
+    flat DPA3 forward path.
+    """
+
     def collate(batch: list[dict[str, Any]]) -> dict[str, Any]:
-        
         result = _collate_lmdb_mixed_batch(batch)
         if graph_config is None:
             return result

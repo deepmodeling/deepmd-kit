@@ -5,9 +5,6 @@ import torch
 
 def get_graph_index_flat(
     nlist_flat: torch.Tensor,
-    extended_batch: torch.Tensor,
-    batch: torch.Tensor,
-    ptr: torch.Tensor,
     a_nlist_mask: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """
@@ -19,14 +16,8 @@ def get_graph_index_flat(
         Neighbor list in flat format [total_atoms, nnei].
         Indices refer to positions in extended_coord_flat.
         Padded neighbors are marked as -1.
-    extended_batch : torch.Tensor
-        Frame assignment for extended atoms [total_extended_atoms].
-    batch : torch.Tensor
-        Frame assignment for local atoms [total_atoms].
-    ptr : torch.Tensor
-        Frame boundaries [nframes + 1].
-    a_sel : int
-        Maximum number of angle neighbors (subset of edge neighbors).
+    a_nlist_mask : torch.Tensor
+        Valid angle-neighbor mask with shape [total_atoms, a_sel].
 
     Returns
     -------
@@ -61,7 +52,7 @@ def get_graph_index_flat(
     n_edge = nlist_mask.sum().item()
 
     # Angle mask: both neighbors must be valid
-    a_nlist_mask_3d = a_nlist_mask[:, :, None] & a_nlist_mask[:, None, :]  # [total_atoms, a_sel, a_sel]
+    a_nlist_mask_3d = a_nlist_mask[:, :, None] & a_nlist_mask[:, None, :]
 
     # 1. Build edge_index
     # n2e_index: for each edge, which local atom does it belong to
@@ -72,10 +63,12 @@ def get_graph_index_flat(
     n_ext2e_index = nlist_flat[nlist_mask]  # [n_edge]
 
     edge_index = torch.stack([n2e_index, n_ext2e_index], dim=0)  # [2, n_edge]
-    
+
     # 2. Build angle_index
     # n2a_index: for each angle, which local atom does it belong to
-    n2a_index = atom_indices[:, None, None].expand(-1, a_sel, a_sel)[a_nlist_mask_3d]  # [n_angle]
+    n2a_index = atom_indices[:, None, None].expand(-1, a_sel, a_sel)[
+        a_nlist_mask_3d
+    ]
 
     # Create edge_id mapping: (atom_idx, neighbor_idx) -> edge_id
     edge_id = torch.arange(n_edge, dtype=dtype, device=device)
@@ -85,79 +78,12 @@ def get_graph_index_flat(
     edge_lookup_a = edge_lookup[:, :a_sel]  # [total_atoms, a_sel]
 
     # eij2a_index: for each angle (i,j,k), the edge id of (i,j)
-    edge_lookup_ij = edge_lookup_a[:, :, None].expand(-1, -1, a_sel)  # [total_atoms, a_sel, a_sel]
+    edge_lookup_ij = edge_lookup_a[:, :, None].expand(-1, -1, a_sel)
     eij2a_index = edge_lookup_ij[a_nlist_mask_3d]  # [n_angle]
 
     # eik2a_index: for each angle (i,j,k), the edge id of (i,k)
-    edge_lookup_ik = edge_lookup_a[:, None, :].expand(-1, a_sel, -1)  # [total_atoms, a_sel, a_sel]
+    edge_lookup_ik = edge_lookup_a[:, None, :].expand(-1, a_sel, -1)
     eik2a_index = edge_lookup_ik[a_nlist_mask_3d]  # [n_angle]
 
-    angle_index = torch.stack([n2a_index, eij2a_index, eik2a_index], dim=0)  # [3, n_angle]
+    angle_index = torch.stack([n2a_index, eij2a_index, eik2a_index], dim=0)
     return edge_index, angle_index
-
-
-def convert_nlist_to_flat_format(
-    nlist_batch: torch.Tensor,
-    extended_batch: torch.Tensor,
-    batch: torch.Tensor,
-    ptr: torch.Tensor,
-) -> torch.Tensor:
-    """
-    Convert neighbor list from batch format to flat format.
-
-    In batch format, nlist contains indices relative to each frame's extended atoms.
-    In flat format, nlist should contain global indices into extended_coord_flat.
-
-    Parameters
-    ----------
-    nlist_batch : torch.Tensor
-        Neighbor list in batch format [nframes, nloc, nnei].
-        Indices are relative to each frame (0 to nall-1 per frame).
-    extended_batch : torch.Tensor
-        Frame assignment for extended atoms [total_extended_atoms].
-    batch : torch.Tensor
-        Frame assignment for local atoms [total_atoms].
-    ptr : torch.Tensor
-        Frame boundaries for local atoms [nframes + 1].
-
-    Returns
-    -------
-    nlist_flat : torch.Tensor
-        Neighbor list in flat format [total_atoms, nnei].
-        Indices are global (0 to total_extended_atoms-1).
-        Padded neighbors remain as -1.
-    """
-    nframes, nloc_max, nnei = nlist_batch.shape
-    device = nlist_batch.device
-    dtype = nlist_batch.dtype
-
-    # Compute extended_ptr: frame boundaries for extended atoms
-    extended_ptr = torch.zeros(nframes + 1, dtype=torch.long, device=device)
-    for i in range(nframes):
-        extended_ptr[i + 1] = extended_ptr[i] + (extended_batch == i).sum()
-
-    # Initialize flat nlist
-    total_atoms = ptr[-1].item()
-    nlist_flat = torch.full((total_atoms, nnei), -1, dtype=dtype, device=device)
-
-    # Convert frame-relative indices to global indices
-    for i in range(nframes):
-        start_local = ptr[i].item()
-        end_local = ptr[i + 1].item()
-        nloc_i = end_local - start_local
-
-        start_extended = extended_ptr[i].item()
-
-        # Get this frame's nlist
-        frame_nlist = nlist_batch[i, :nloc_i, :]  # [nloc_i, nnei]
-
-        # Convert: add offset for extended atoms, keep -1 as -1
-        frame_nlist_global = torch.where(
-            frame_nlist >= 0,
-            frame_nlist + start_extended,
-            torch.tensor(-1, dtype=dtype, device=device)
-        )
-
-        nlist_flat[start_local:end_local, :] = frame_nlist_global
-
-    return nlist_flat

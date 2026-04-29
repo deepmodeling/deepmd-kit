@@ -237,26 +237,18 @@ class InvarFitting(GeneralFitting):
         result : dict[str, torch.Tensor]
             Model predictions in flat format.
         """
-        print("ENTERING InvarFitting.forward_flat()")
-        print(f"  descriptor shape: {descriptor.shape}")
-        print(f"  atype shape: {atype.shape}")
-        print(f"  batch shape: {batch.shape}")
-        print(f"  ptr: {ptr.tolist()}")
-
-        # For now, convert to batch format and call the original forward
-        # TODO: Implement true flat format processing
-        nframes = ptr.numel() - 1
-        total_atoms = batch.shape[0]
-
-        # Find max nloc
-        nloc_list = []
-        for i in range(nframes):
-            nloc_i = (ptr[i + 1] - ptr[i]).item()
-            nloc_list.append(nloc_i)
-        max_nloc = max(nloc_list)
-
-        # Create batch tensors with padding
         device = descriptor.device
+        batch = batch.to(device=device, dtype=torch.long)
+        ptr = ptr.to(device=device, dtype=torch.long)
+        atype = atype.to(device=device)
+
+        nframes = ptr.numel() - 1
+        total_atoms = descriptor.shape[0]
+        atom_counts = ptr[1:] - ptr[:-1]
+        max_nloc = int(atom_counts.max().item())
+        flat_index = torch.arange(total_atoms, dtype=torch.long, device=device)
+        local_index = flat_index - ptr[batch]
+
         descriptor_batch = torch.zeros(
             (nframes, max_nloc, descriptor.shape[1]),
             dtype=descriptor.dtype,
@@ -264,40 +256,31 @@ class InvarFitting(GeneralFitting):
         )
         atype_batch = torch.full(
             (nframes, max_nloc), -1, dtype=atype.dtype, device=device
-        )
+            )
         gr_batch = None
         if gr is not None:
             gr_batch = torch.zeros(
-                (nframes, max_nloc, gr.shape[1], gr.shape[2]),
+                (nframes, max_nloc, *gr.shape[1:]),
                 dtype=gr.dtype,
                 device=device,
             )
         aparam_batch = None
         if aparam is not None:
             aparam_batch = torch.zeros(
-                (nframes, max_nloc, aparam.shape[1]),
+                (nframes, max_nloc, *aparam.shape[1:]),
                 dtype=aparam.dtype,
                 device=device,
             )
 
-        # Fill in the data
-        for i in range(nframes):
-            start_idx = ptr[i].item()
-            end_idx = ptr[i + 1].item()
-            nloc_i = end_idx - start_idx
+        descriptor_batch[batch, local_index] = descriptor
+        atype_batch[batch, local_index] = atype
+        if gr is not None:
+            assert gr_batch is not None
+            gr_batch[batch, local_index] = gr
+        if aparam is not None:
+            assert aparam_batch is not None
+            aparam_batch[batch, local_index] = aparam
 
-            descriptor_batch[i, :nloc_i] = descriptor[start_idx:end_idx]
-            atype_batch[i, :nloc_i] = atype[start_idx:end_idx]
-            if gr is not None:
-                gr_batch[i, :nloc_i] = gr[start_idx:end_idx]
-            if aparam is not None:
-                aparam_batch[i, :nloc_i] = aparam[start_idx:end_idx]
-
-        print(f"Packed to batch format:")
-        print(f"  descriptor_batch shape: {descriptor_batch.shape}")
-        print(f"  atype_batch shape: {atype_batch.shape}")
-
-        # Call original forward with batch format
         result_batch = self.forward(
             descriptor_batch,
             atype_batch,
@@ -308,27 +291,21 @@ class InvarFitting(GeneralFitting):
             aparam=aparam_batch,
         )
 
-        print(f"After batch forward:")
-        for key, val in result_batch.items():
-            if isinstance(val, torch.Tensor):
-                print(f"  {key} shape: {val.shape}")
-
-        # Unpack batch format back to flat format
-        result_flat = {}
-        for key, val in result_batch.items():
-            if isinstance(val, torch.Tensor):
-                val_list = []
-                for i in range(nframes):
-                    nloc_i = nloc_list[i]
-                    val_list.append(val[i, :nloc_i])
-                result_flat[key] = torch.cat(val_list, dim=0)
+        valid_atom_mask = (
+            torch.arange(max_nloc, dtype=torch.long, device=device).unsqueeze(0)
+            < atom_counts.unsqueeze(1)
+        )
+        result_flat: dict[str, torch.Tensor] = {}
+        for key, value in result_batch.items():
+            if (
+                isinstance(value, torch.Tensor)
+                and value.dim() >= 2
+                and value.shape[0] == nframes
+                and value.shape[1] == max_nloc
+            ):
+                result_flat[key] = value[valid_atom_mask]
             else:
-                result_flat[key] = val
-
-        print(f"Unpacked to flat format:")
-        for key, val in result_flat.items():
-            if isinstance(val, torch.Tensor):
-                print(f"  {key} shape: {val.shape}")
+                result_flat[key] = value
 
         return result_flat
 

@@ -27,10 +27,6 @@ from deepmd.pt.model.model.transform_output import (
     communicate_extended_output,
     fit_output_to_model_output,
 )
-from deepmd.pt.utils.batch_utils import (
-    pack_flat_to_dense,
-    unpack_dense_to_flat,
-)
 from deepmd.pt.utils.env import (
     GLOBAL_PT_ENER_FLOAT_PRECISION,
     GLOBAL_PT_FLOAT_PRECISION,
@@ -524,94 +520,6 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                         pass  # Not yet implemented for flat format
 
             return fit_ret
-
-        def forward_common_flat_pack_unpack(
-            self,
-            coord: torch.Tensor,
-            atype: torch.Tensor,
-            batch: torch.Tensor,
-            ptr: torch.Tensor,
-            box: torch.Tensor | None = None,
-            fparam: torch.Tensor | None = None,
-            aparam: torch.Tensor | None = None,
-            do_atomic_virial: bool = False,
-            extended_atype: torch.Tensor | None = None,
-            extended_batch: torch.Tensor | None = None,
-            extended_image: torch.Tensor | None = None,
-            extended_ptr: torch.Tensor | None = None,
-            mapping: torch.Tensor | None = None,
-            central_ext_index: torch.Tensor | None = None,
-            nlist: torch.Tensor | None = None,
-            nlist_ext: torch.Tensor | None = None,
-            a_nlist: torch.Tensor | None = None,
-            a_nlist_ext: torch.Tensor | None = None,
-            nlist_mask: torch.Tensor | None = None,
-            a_nlist_mask: torch.Tensor | None = None,
-            edge_index: torch.Tensor | None = None,
-            angle_index: torch.Tensor | None = None,
-        ) -> dict[str, torch.Tensor]:
-            """Forward pass using pack/unpack strategy (transitional implementation).
-
-            This is a transitional implementation that packs flat batch into dense format,
-            calls the existing forward_common, then unpacks back to flat format.
-
-            Parameters
-            ----------
-            coord
-                Flattened atomic coordinates with shape [total_atoms, 3].
-            atype
-                Flattened atomic types with shape [total_atoms].
-            batch
-                Atom-to-frame assignment with shape [total_atoms].
-            ptr
-                Frame boundaries with shape [nframes + 1].
-            box
-                Simulation boxes with shape [nframes, 9].
-            fparam
-                Frame parameters with shape [nframes, ndf].
-            aparam
-                Flattened atomic parameters with shape [total_atoms, nda].
-            do_atomic_virial
-                Whether to calculate atomic virial.
-
-            Returns
-            -------
-            model_predict : dict[str, torch.Tensor]
-                Model predictions with flat format:
-                - atomwise outputs: [total_atoms, ...]
-                - frame-wise outputs: [nframes, ...]
-            """
-            from deepmd.pt.utils.batch_utils import pack_flat_to_dense, unpack_dense_to_flat
-
-            # Pack flat batch into dense format
-            coord_dense, atype_dense, aparam_dense = pack_flat_to_dense(
-                coord, atype, batch, ptr, aparam
-            )
-
-            # Call existing forward_common with dense format
-            model_predict_dense = self.forward_common(
-                coord_dense,
-                atype_dense,
-                box=box,
-                fparam=fparam,
-                aparam=aparam_dense,
-                do_atomic_virial=do_atomic_virial,
-            )
-
-            # Unpack dense output back to flat format
-            # Define atomwise keys that need unpacking
-            atomwise_keys = {
-                "energy",  # atomic energy [nframes, nloc, 1]
-                "energy_derv_r",  # force [nframes, nloc, 1, 3]
-                "energy_derv_c",  # atomic virial [nframes, nloc, 9]
-                "mask",  # mask [nframes, nloc]
-            }
-
-            model_predict_flat = unpack_dense_to_flat(
-                model_predict_dense, ptr, atomwise_keys
-            )
-
-            return model_predict_flat
 
         def forward_common_flat(
             self,

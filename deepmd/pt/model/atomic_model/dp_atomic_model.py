@@ -367,12 +367,6 @@ class DPAtomicModel(BaseAtomicModel):
         result_dict : dict[str, torch.Tensor]
             Model predictions in flat format.
         """
-        print("ENTERING DPAtomicModel.forward_common_atomic_flat()")
-        print(f"  extended_coord shape: {extended_coord.shape}")
-        print(f"  extended_atype shape: {extended_atype.shape}")
-        print(f"  extended_batch shape: {extended_batch.shape}")
-        print(f"  nlist shape: {nlist.shape}")
-
         if self.do_grad_r() or self.do_grad_c():
             extended_coord.requires_grad_(True)
 
@@ -396,9 +390,6 @@ class DPAtomicModel(BaseAtomicModel):
             edge_index=edge_index,
             angle_index=angle_index,
         )
-
-        print(f"After descriptor.forward_flat():")
-        print(f"  descriptor shape: {descriptor_out['descriptor'].shape if 'descriptor' in descriptor_out else 'N/A'}")
 
         # Extract descriptor and other outputs
         descriptor = descriptor_out.get('descriptor')
@@ -444,11 +435,6 @@ class DPAtomicModel(BaseAtomicModel):
                 fit_ret[kk].reshape([out_shape[0], out_shape2]) * atom_mask[:, None]
             ).view(out_shape)
         fit_ret["mask"] = atom_mask
-
-        print(f"After fitting_net.forward_flat():")
-        for key, val in fit_ret.items():
-            if isinstance(val, torch.Tensor):
-                print(f"  {key} shape: {val.shape}")
 
         if self.enable_eval_fitting_last_layer_hook:
             if "middle_output" in fit_ret:
