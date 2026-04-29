@@ -97,7 +97,10 @@ def _build_model_and_params(
         mixed_types=ds.mixed_types(),
         seed=seed,
     )
-    model = EnergyModel(ds, ft, type_map=type_map).to(torch.float64).eval()
+    # Move to DEVICE so tests that build eager-reference tensors at
+    # `device=DEVICE` and call `model.forward(...)` don't device-mismatch
+    # on CUDA/MPS runners.
+    model = EnergyModel(ds, ft, type_map=type_map).to(torch.float64).to(DEVICE).eval()
 
     model_params = {
         "type_map": type_map,
