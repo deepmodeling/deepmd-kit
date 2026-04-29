@@ -99,8 +99,16 @@ class DeepEval(DeepEvalBackend):
 
         if self._is_pt2:
             self._load_pt2(model_file)
-        else:
+        elif model_file.endswith(".pte"):
             self._load_pte(model_file)
+        elif model_file.endswith(".pt"):
+            self._load_pt(model_file, head=kwargs.get("head"))
+        else:
+            raise ValueError(
+                f"Unsupported model file '{model_file}' for the pt_expt "
+                "backend: expected `.pt2` / `.pte` (deployable archives) or "
+                "`.pt` (training checkpoint)."
+            )
 
         if isinstance(auto_batch_size, bool):
             if auto_batch_size:
@@ -205,6 +213,189 @@ class DeepEval(DeepEvalBackend):
         # Uses torch._inductor.aoti_load_package (private API, stable since PyTorch 2.6).
         self._pt2_runner = aoti_load_package(model_file)
         self.exported_module = None
+
+    def _load_pt(self, model_file: str, head: str | None = None) -> None:
+        """Load a `.pt` training checkpoint (eager mode, no torch.export)."""
+        from copy import (
+            deepcopy,
+        )
+
+        from deepmd.pt_expt.model import (
+            get_model,
+        )
+        from deepmd.pt_expt.utils.env import (
+            DEVICE,
+        )
+
+        # Match the training resume path (training.py:712) — weights_only=True
+        # avoids unpickling arbitrary code from untrusted checkpoints.
+        state_dict = torch.load(model_file, map_location=DEVICE, weights_only=True)
+        if isinstance(state_dict, dict) and "model" in state_dict:
+            state_dict = state_dict["model"]
+        extra = state_dict.get("_extra_state") if isinstance(state_dict, dict) else None
+        if not (isinstance(extra, dict) and "model_params" in extra):
+            raise ValueError(
+                f"Invalid .pt file '{model_file}': expected a pt_expt training "
+                "checkpoint containing '_extra_state' with nested "
+                "'model_params'. If this is a legacy pt-trained checkpoint, "
+                "load it with `dp --pt` instead. If this is an exported model, "
+                "use a `.pte` or `.pt2` artifact."
+            )
+        model_params = deepcopy(extra["model_params"])
+
+        if "model_dict" in model_params:
+            # Multi-task: pick the requested head (defaults to "Default" if present).
+            heads = list(model_params["model_dict"].keys())
+            if head is None:
+                if "Default" in heads:
+                    head = "Default"
+                else:
+                    raise ValueError(
+                        f"Multi-task checkpoint '{model_file}' has heads "
+                        f"{heads}; pass --head to select one."
+                    )
+            if head not in heads:
+                raise ValueError(
+                    f"Head '{head}' not found in checkpoint '{model_file}'. "
+                    f"Available heads: {heads}."
+                )
+            head_params = model_params["model_dict"][head]
+            # Restrict state_dict to the chosen head and rename to "Default".
+            # No tensor cloning needed: load_state_dict copies into the
+            # destination parameters and does not mutate the input dict.
+            head_state = {"_extra_state": state_dict["_extra_state"]}
+            prefix = f"model.{head}."
+            for key, value in state_dict.items():
+                if key.startswith(prefix):
+                    head_state[key.replace(prefix, "model.Default.")] = value
+            state_dict = head_state
+            model_params = head_params
+
+        model = get_model(deepcopy(model_params)).to(DEVICE)
+
+        # Strip the `_CompiledModel` wrapper that pt_expt training applies
+        # after compilation (training.py:996).  The saved state_dict has
+        # `model.Default.original_model.X` keys (the real weights) plus
+        # `model.Default.compiled_forward_lower._orig_mod._param_constant*`
+        # / `_tensor_constant*` keys (graph constants baked into the
+        # compiled forward — duplicates of the real weights, useless for
+        # eager inference).  Drop the latter and unwrap the former.
+        cleaned: dict[str, Any] = {}
+        compiled_marker = ".compiled_forward_lower."
+        wrapper_infix = ".original_model."
+        for key, value in state_dict.items():
+            if compiled_marker in key:
+                continue
+            if wrapper_infix in key:
+                key = key.replace(wrapper_infix, ".", 1)
+            cleaned[key] = value
+        state_dict = cleaned
+
+        # Load weights into a {"Default": model} wrapper to match the
+        # `model.Default.*` key prefix used in the saved state_dict.
+        from deepmd.pt_expt.train.wrapper import (
+            ModelWrapper,
+        )
+
+        wrapper = ModelWrapper(model)
+        wrapper.load_state_dict(state_dict)
+        model = wrapper.model["Default"].eval()
+
+        self._dpmodel = model
+        self._is_spin = (
+            model_params.get("type") == "spin_ener" or "spin" in model_params
+        )
+        self.rcut = model.get_rcut()
+        self.type_map = model.get_type_map()
+        if self._is_spin:
+            self._model_output_def = ModelOutputDef(
+                FittingOutputDef(
+                    [
+                        OutputVariableDef(
+                            "energy",
+                            shape=[1],
+                            reducible=True,
+                            r_differentiable=True,
+                            c_differentiable=True,
+                            atomic=True,
+                            magnetic=True,
+                        )
+                    ]
+                )
+            )
+        else:
+            self._model_output_def = ModelOutputDef(model.atomic_output_def())
+        self._model_def_script = model_params
+        # Populate metadata so eval helpers (e.g. default_fparam fallback)
+        # behave the same as the .pt2/.pte path.  Mirrors the fields that
+        # `_collect_metadata` writes into metadata.json.
+        self.metadata = {
+            "type_map": model.get_type_map(),
+            "rcut": model.get_rcut(),
+            "sel": model.get_sel(),
+            "dim_fparam": model.get_dim_fparam(),
+            "dim_aparam": model.get_dim_aparam(),
+            "mixed_types": model.mixed_types(),
+            "has_default_fparam": model.has_default_fparam(),
+            "default_fparam": model.get_default_fparam(),
+            "is_spin": self._is_spin,
+        }
+        if self._is_spin:
+            self.metadata["ntypes_spin"] = model.spin.get_ntypes_spin()
+            self.metadata["use_spin"] = [bool(v) for v in model.spin.use_spin]
+
+        # Eager runner with the same signature as the .pt2/.pte exported module.
+        # Use forward_common_lower (not forward_lower) to match the export-time
+        # output keys ("energy", "energy_redu", "energy_derv_r", ...) that
+        # communicate_extended_output downstream consumes.
+        # Non-spin: (ext_coord, ext_atype, nlist, mapping, fparam, aparam)
+        # Spin:     (ext_coord, ext_atype, ext_spin, nlist, mapping, fparam, aparam)
+        if self._is_spin:
+
+            def _eager_runner_spin(
+                ext_coord: torch.Tensor,
+                ext_atype: torch.Tensor,
+                ext_spin: torch.Tensor,
+                nlist: torch.Tensor,
+                mapping: torch.Tensor | None,
+                fparam: torch.Tensor | None,
+                aparam: torch.Tensor | None,
+            ) -> dict[str, torch.Tensor]:
+                ext_coord = ext_coord.detach().requires_grad_(True)
+                return model.forward_common_lower(
+                    ext_coord,
+                    ext_atype,
+                    ext_spin,
+                    nlist,
+                    mapping,
+                    fparam=fparam,
+                    aparam=aparam,
+                    do_atomic_virial=True,
+                )
+
+            self.exported_module = _eager_runner_spin
+        else:
+
+            def _eager_runner(
+                ext_coord: torch.Tensor,
+                ext_atype: torch.Tensor,
+                nlist: torch.Tensor,
+                mapping: torch.Tensor | None,
+                fparam: torch.Tensor | None,
+                aparam: torch.Tensor | None,
+            ) -> dict[str, torch.Tensor]:
+                ext_coord = ext_coord.detach().requires_grad_(True)
+                return model.forward_common_lower(
+                    ext_coord,
+                    ext_atype,
+                    nlist,
+                    mapping,
+                    fparam=fparam,
+                    aparam=aparam,
+                    do_atomic_virial=True,
+                )
+
+            self.exported_module = _eager_runner
 
     def get_rcut(self) -> float:
         """Get the cutoff radius of this model."""
