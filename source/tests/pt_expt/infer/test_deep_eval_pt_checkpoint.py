@@ -52,8 +52,14 @@ from ...seed import (
 )
 
 
-def _build_model_and_params(rcut: float = 4.0) -> tuple[EnergyModel, dict]:
-    """Build a small pt_expt EnergyModel and the matching ``model_params`` dict."""
+def _build_model_and_params(
+    rcut: float = 4.0, seed: int = GLOBAL_SEED
+) -> tuple[EnergyModel, dict]:
+    """Build a small pt_expt EnergyModel and the matching ``model_params`` dict.
+
+    The ``seed`` parameter lets callers build distinguishable models when
+    they need head-selection tests to produce different outputs per head.
+    """
     type_map = ["foo", "bar"]
     sel = [8, 6]
     descriptor_args = {
@@ -64,13 +70,13 @@ def _build_model_and_params(rcut: float = 4.0) -> tuple[EnergyModel, dict]:
         "neuron": [4, 8],
         "axis_neuron": 4,
         "type_one_side": True,
-        "seed": GLOBAL_SEED,
+        "seed": seed,
     }
     fitting_args = {
         "type": "ener",
         "neuron": [8, 8],
         "resnet_dt": True,
-        "seed": GLOBAL_SEED,
+        "seed": seed,
     }
 
     ds = DescrptSeA(
@@ -80,7 +86,7 @@ def _build_model_and_params(rcut: float = 4.0) -> tuple[EnergyModel, dict]:
         neuron=[4, 8],
         axis_neuron=4,
         type_one_side=True,
-        seed=GLOBAL_SEED,
+        seed=seed,
     )
     ft = EnergyFittingNet(
         len(type_map),
@@ -88,7 +94,7 @@ def _build_model_and_params(rcut: float = 4.0) -> tuple[EnergyModel, dict]:
         neuron=[8, 8],
         resnet_dt=True,
         mixed_types=ds.mixed_types(),
-        seed=GLOBAL_SEED,
+        seed=seed,
     )
     model = EnergyModel(ds, ft, type_map=type_map).to(torch.float64).eval()
 
@@ -388,9 +394,11 @@ class TestPtExptLoadPtMultiTask(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         # Build two single-task models with the same architecture but
-        # different seeds, then save a multi-task-style checkpoint.
-        cls.model_a, params_a = _build_model_and_params(rcut=4.0)
-        cls.model_b, params_b = _build_model_and_params(rcut=4.0)
+        # different seeds. Distinct seeds matter so that a head-routing
+        # bug (loading head_b's weights when head_a is requested, or
+        # vice versa) actually shows up as an assertion failure.
+        cls.model_a, params_a = _build_model_and_params(rcut=4.0, seed=42)
+        cls.model_b, params_b = _build_model_and_params(rcut=4.0, seed=7)
         cls.models = {"head_a": cls.model_a, "head_b": cls.model_b}
         cls.model_params = {"model_dict": {"head_a": params_a, "head_b": params_b}}
 
@@ -423,7 +431,7 @@ class TestPtExptLoadPtMultiTask(unittest.TestCase):
             # Build a DeepPot wrapping this DeepEval for end-to-end eval.
             dp = DeepPot(self.pt_path, head=head)
             de = dp.deep_eval
-            e, f, v = dp.eval(coords, cells, atom_types, atomic=False)
+            e, f, _v = dp.eval(coords, cells, atom_types, atomic=False)
 
             coord_t = torch.tensor(
                 coords, dtype=torch.float64, device=DEVICE
@@ -450,6 +458,25 @@ class TestPtExptLoadPtMultiTask(unittest.TestCase):
             )
             self.assertEqual(de.get_type_map(), src.get_type_map())
 
+    def test_distinct_heads_produce_distinct_outputs(self) -> None:
+        """Sanity check that head_a and head_b really resolve to different weights."""
+        rng = np.random.default_rng(GLOBAL_SEED + 2)
+        natoms = 4
+        coords = rng.random((1, natoms, 3)) * 8.0
+        cells = np.eye(3).reshape(1, 9) * 10.0
+        atom_types = np.array([i % 2 for i in range(natoms)], dtype=np.int32)
+        e_a = DeepPot(self.pt_path, head="head_a").eval(
+            coords, cells, atom_types, atomic=False
+        )[0]
+        e_b = DeepPot(self.pt_path, head="head_b").eval(
+            coords, cells, atom_types, atomic=False
+        )[0]
+        self.assertFalse(
+            np.allclose(e_a, e_b),
+            "head_a and head_b produced identical outputs — head selection "
+            "may be loading the wrong weights",
+        )
+
     def test_missing_head_raises(self) -> None:
         with self.assertRaisesRegex(ValueError, "Head 'no_such_head' not found"):
             DeepPot(self.pt_path, head="no_such_head")
@@ -469,7 +496,7 @@ class TestPtExptLoadPtMultiTask(unittest.TestCase):
 
         for head, src in (("head_a", self.model_a), ("head_b", self.model_b)):
             dp = DeepPot(self.pt_path_compiled, head=head)
-            e, f, v = dp.eval(coords, cells, atom_types, atomic=False)
+            e, f, _v = dp.eval(coords, cells, atom_types, atomic=False)
 
             coord_t = torch.tensor(
                 coords, dtype=torch.float64, device=DEVICE
@@ -610,7 +637,7 @@ class TestPtExptLoadPtSpin(_SpinFilesMixin, unittest.TestCase):
 
     def test_eval_pbc_atomic_matches_reference(self) -> None:
         dp = DeepPot(self.files[".pt"])
-        e, f, v, ae, av, fm, mm = dp.eval(
+        e, f, v, ae, _av, fm, _mm = dp.eval(
             self.COORD, self.BOX, self.ATYPE, atomic=True, spin=self.SPIN
         )
         np.testing.assert_allclose(
@@ -915,7 +942,7 @@ class TestPtExptLoadPtSpinMultiTask(unittest.TestCase):
             self.assertEqual(dp.use_spin, [True, False], msg=f"head={head}")
 
             ref = self._eager_ref(src)
-            e, f, v, ae, av, fm, mm = dp.eval(
+            e, f, v, _ae, _av, fm, _mm = dp.eval(
                 self.COORD, self.BOX, self.ATYPE, atomic=True, spin=self.SPIN
             )
             np.testing.assert_allclose(
