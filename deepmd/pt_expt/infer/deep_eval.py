@@ -227,7 +227,9 @@ class DeepEval(DeepEvalBackend):
             get_model,
         )
 
-        state_dict = torch.load(model_file, map_location=DEVICE, weights_only=False)
+        # Match the training resume path (training.py:712) — weights_only=True
+        # avoids unpickling arbitrary code from untrusted checkpoints.
+        state_dict = torch.load(model_file, map_location=DEVICE, weights_only=True)
         if "model" in state_dict:
             state_dict = state_dict["model"]
         model_params = deepcopy(state_dict["_extra_state"]["model_params"])

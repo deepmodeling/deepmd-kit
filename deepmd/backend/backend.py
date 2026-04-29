@@ -109,7 +109,9 @@ class Backend(PluginVariant, make_plugin_registry("backend")):
             try:
                 import torch
 
-                sd = torch.load(filename, map_location="cpu", weights_only=False)
+                # Use weights_only=True to avoid executing arbitrary pickle
+                # from an untrusted .pt — sniffing only needs the dict keys.
+                sd = torch.load(filename, map_location="cpu", weights_only=True)
                 if isinstance(sd, dict) and "model" in sd:
                     sd = sd["model"]
                 keys = list(sd.keys()) if hasattr(sd, "keys") else []
