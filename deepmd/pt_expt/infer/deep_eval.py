@@ -220,19 +220,28 @@ class DeepEval(DeepEvalBackend):
             deepcopy,
         )
 
-        from deepmd.pt.utils.env import (
-            DEVICE,
-        )
         from deepmd.pt_expt.model import (
             get_model,
+        )
+        from deepmd.pt_expt.utils.env import (
+            DEVICE,
         )
 
         # Match the training resume path (training.py:712) — weights_only=True
         # avoids unpickling arbitrary code from untrusted checkpoints.
         state_dict = torch.load(model_file, map_location=DEVICE, weights_only=True)
-        if "model" in state_dict:
+        if isinstance(state_dict, dict) and "model" in state_dict:
             state_dict = state_dict["model"]
-        model_params = deepcopy(state_dict["_extra_state"]["model_params"])
+        extra = state_dict.get("_extra_state") if isinstance(state_dict, dict) else None
+        if not (isinstance(extra, dict) and "model_params" in extra):
+            raise ValueError(
+                f"Invalid .pt file '{model_file}': expected a pt_expt training "
+                "checkpoint containing '_extra_state' with nested "
+                "'model_params'. If this is a legacy pt-trained checkpoint, "
+                "load it with `dp --pt` instead. If this is an exported model, "
+                "use a `.pte` or `.pt2` artifact."
+            )
+        model_params = deepcopy(extra["model_params"])
 
         if "model_dict" in model_params:
             # Multi-task: pick the requested head (defaults to "Default" if present).
@@ -252,13 +261,13 @@ class DeepEval(DeepEvalBackend):
                 )
             head_params = model_params["model_dict"][head]
             # Restrict state_dict to the chosen head and rename to "Default".
+            # No tensor cloning needed: load_state_dict copies into the
+            # destination parameters and does not mutate the input dict.
             head_state = {"_extra_state": state_dict["_extra_state"]}
+            prefix = f"model.{head}."
             for key, value in state_dict.items():
-                prefix = f"model.{head}."
                 if key.startswith(prefix):
-                    head_state[key.replace(prefix, "model.Default.")] = (
-                        value.clone() if torch.is_tensor(value) else value
-                    )
+                    head_state[key.replace(prefix, "model.Default.")] = value
             state_dict = head_state
             model_params = head_params
 

@@ -14,6 +14,7 @@ Covers two pieces:
 
 import copy
 import os
+import shutil
 import tempfile
 import unittest
 
@@ -605,11 +606,8 @@ class _SpinFilesMixin:
 
     @classmethod
     def tearDownClass(cls) -> None:
-        for ext in (".pt", ".pte"):
-            path = cls.files[ext]
-            if os.path.exists(path):
-                os.unlink(path)
-        os.rmdir(cls.files["tmpdir"])
+        # Robust against unexpected leftover files in tmpdir.
+        shutil.rmtree(cls.files["tmpdir"], ignore_errors=True)
 
 
 class TestPtExptLoadPtSpin(_SpinFilesMixin, unittest.TestCase):
