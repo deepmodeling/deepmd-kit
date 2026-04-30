@@ -66,8 +66,8 @@ log = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from collections.abc import (
-        Iterator,
         Callable,
+        Iterator,
     )
 
     from deepmd.utils.data import (
