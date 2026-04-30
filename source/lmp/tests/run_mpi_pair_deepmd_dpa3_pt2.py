@@ -51,6 +51,23 @@ parser.add_argument(
     "domain decomposition (nswap>0). Pass '1 1 1' for a single-rank "
     "reference run on the same archive (single-artifact dispatch).",
 )
+parser.add_argument(
+    "--pair-coeff",
+    type=str,
+    default="* *",
+    help="pair_coeff arguments (after 'pair_coeff'). Default '* *' "
+    "uses identity LAMMPS-type-to-deepmd-atype mapping (assumes the "
+    "data file's types match the model's type_map order). For NULL-type "
+    "tests pass e.g. '* * O H NULL' so the third LAMMPS type becomes "
+    "deepmd atype=-1 (filtered before model evaluation).",
+)
+parser.add_argument(
+    "--mass3",
+    type=float,
+    default=None,
+    help="Optional mass for LAMMPS atom type 3 (and any higher types). "
+    "Used by the NULL-type fixture; ignored when only 2 types exist.",
+)
 args = parser.parse_args()
 
 lammps = PyLammps()
@@ -73,11 +90,17 @@ lammps.neigh_modify("every 10 delay 0 check no")
 lammps.read_data(args.DATAFILE)
 lammps.mass("1 16")
 lammps.mass("2 2")
+if args.mass3 is not None:
+    # Used by the NULL-type test where the data file has a 3rd LAMMPS
+    # type that maps to a NULL deepmd atype (filtered before model
+    # evaluation). The mass value is physically irrelevant — these
+    # atoms get zero force from the deepmd model.
+    lammps.mass(f"3 {args.mass3}")
 lammps.timestep(0.0005)
 lammps.fix("1 all nve")
 
 lammps.pair_style(f"deepmd {args.PB_FILE}")
-lammps.pair_coeff("* *")
+lammps.pair_coeff(args.pair_coeff)
 # Per-atom virial from the pair contribution. ``centroid/stress/atom``
 # is parallel-safe (rank-local data, gathered below). LAMMPS computes
 # stress*volume per atom in internal units; the parent test reverses

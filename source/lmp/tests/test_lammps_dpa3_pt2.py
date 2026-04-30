@@ -41,6 +41,14 @@ data_type_map_file = Path(__file__).parent / "data_type_map_dpa3_pt2.lmp"
 # local atoms — a corner case the comm-dispatch path must handle
 # without crashing or producing wrong forces.
 data_file_empty_subdomain = Path(__file__).parent / "data_dpa3_pt2_empty_subdomain.lmp"
+# NULL-type variant: 6 real atoms (types 1,2) + 2 type-3 atoms straddling
+# the x=6.5 rank boundary. With ``pair_coeff * * O H NULL`` LAMMPS type 3
+# maps to deepmd atype=-1, so those atoms are filtered by
+# ``select_real_atoms_coord`` and the comm tensors must be remapped via
+# ``fwd_map`` before being handed to the with-comm artifact. Forces on
+# the 6 real atoms must match the no-NULL baseline; NULL atoms get zero
+# force from the deepmd model.
+data_file_null_type = Path(__file__).parent / "data_dpa3_pt2_null_type.lmp"
 
 # Reference values from gen_dpa3.py / test_deeppot_dpa3_ptexpt.cc (PBC)
 expected_ae = np.array(
@@ -168,6 +176,24 @@ def setup_module() -> None:
     # split is at x = 15 Å and rank 1 owns x ≥ 15, which is empty.
     box_empty_subdomain = np.array([0, 30, 0, 13, 0, 13, 0, 0, 0])
     write_lmp_data(box_empty_subdomain, coord, type_OH, data_file_empty_subdomain)
+    # NULL-type fixture: original 6 real atoms (types 1,2) plus 2 LAMMPS
+    # type-3 atoms placed within rcut (~6 Å) of real atoms on BOTH sides
+    # of the x=6.5 rank boundary. The NULL atoms appear in real atoms'
+    # neighbour lists and in the cross-rank sendlists, so the comm-tensor
+    # remap (``fwd_map``-based) is genuinely exercised — not trivial.
+    coord_null_type = np.concatenate(
+        [
+            coord,
+            np.array(
+                [
+                    [5.5, 6.0, 6.0],  # rank 0 side, near boundary
+                    [7.5, 7.0, 7.0],  # rank 1 side, near boundary
+                ]
+            ),
+        ]
+    )
+    type_null = np.concatenate([type_OH, np.array([3, 3])])
+    write_lmp_data(box, coord_null_type, type_null, data_file_null_type)
 
 
 def teardown_module() -> None:
@@ -176,6 +202,7 @@ def teardown_module() -> None:
         data_type_map_file,
         data_file_si,
         data_file_empty_subdomain,
+        data_file_null_type,
     ]:
         if f.exists():
             os.remove(f)
@@ -361,6 +388,7 @@ def _run_mpi_subprocess(
     nprocs: int = 2,
     data_path: Path | None = None,
     processors: str | None = None,
+    runner_args: list[str] | None = None,
 ) -> dict:
     """Helper: invoke run_mpi_pair_deepmd_dpa3_pt2.py under
     ``mpirun -n <nprocs>`` and return
@@ -399,6 +427,8 @@ def _run_mpi_subprocess(
             argv.extend(["--processors", "1 1 1"])
         if extra_args:
             argv.extend(extra_args)
+        if runner_args:
+            argv.extend(runner_args)
         sp.check_call(argv)
         with open(out_path) as fh:
             lines = fh.read().strip().splitlines()
@@ -574,6 +604,65 @@ def test_pair_deepmd_mpi_dpa3_decomposition(nprocs, processors) -> None:
     expected_v_to_lammps = [0, 6, 7, 3, 1, 8, 4, 5, 2]
     np.testing.assert_allclose(
         out_mpi["virials"][:, expected_v_to_lammps] / constants.nktv2p,
+        expected_v,
+        atol=1e-8,
+        rtol=0,
+    )
+
+
+@pytest.mark.skipif(
+    shutil.which("mpirun") is None, reason="MPI is not installed on this system"
+)
+@pytest.mark.skipif(
+    importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
+)
+def test_pair_deepmd_mpi_dpa3_null_type() -> None:
+    """Multi-rank DPA3 .pt2 with NULL-type atoms.
+
+    Exercises ``select_real_atoms_coord`` filtering AND
+    ``build_comm_tensors_positional_with_virtual_atoms`` remapping
+    under multi-rank dispatch — neither path was reachable in any
+    previous test fixture.
+
+    Setup: 6 real atoms (types 1,2) at the canonical positions plus
+    2 LAMMPS type-3 atoms straddling the x=6.5 rank boundary. With
+    ``pair_coeff * * O H NULL`` the type-3 atoms map to deepmd
+    atype=-1 and are filtered before model evaluation. Because the
+    NULL atoms sit within rcut of real atoms on BOTH sides of the
+    boundary, they appear in cross-rank sendlists — forcing the
+    ``fwd_map``-based remap (which translates unfiltered LAMMPS
+    indices into filtered real-atom indices, dropping ``-1`` slots).
+
+    Assertions:
+    - Forces on the 6 real atoms (ids 1..6, id-sorted output) match
+      the no-NULL baseline ``expected_f`` exactly. NULL atoms don't
+      contribute to the deepmd model so real-atom forces are
+      identical to the 6-atom baseline.
+    - NULL-atom forces (ids 7,8) are zero — the deepmd model is the
+      only pair_style and skips them entirely.
+    - Total energy matches ``expected_e``.
+    - Per-atom virial on real atoms matches ``expected_v``.
+    """
+    out_mpi = _run_mpi_subprocess(
+        nprocs=2,
+        data_path=data_file_null_type,
+        runner_args=["--pair-coeff", "* * O H NULL", "--mass3", "5.0"],
+    )
+    # Forces on real atoms (ids 1..6) match the no-NULL baseline.
+    real_forces = out_mpi["forces"][:6]
+    for ii in range(6):
+        np.testing.assert_allclose(real_forces[ii], expected_f[ii], atol=1e-8, rtol=0)
+    # NULL atoms (ids 7,8) get zero force from the deepmd model.
+    null_forces = out_mpi["forces"][6:]
+    np.testing.assert_allclose(null_forces, 0.0, atol=1e-12, rtol=0)
+    # Total potential energy unchanged (NULL atoms contribute 0).
+    assert out_mpi["pe"] == pytest.approx(expected_e, rel=0, abs=1e-8)
+    # Per-atom virial on real atoms matches expected_v with the same
+    # column permutation as test_pair_deepmd_mpi_dpa3.
+    expected_v_to_lammps = [0, 6, 7, 3, 1, 8, 4, 5, 2]
+    real_virials = out_mpi["virials"][:6]
+    np.testing.assert_allclose(
+        real_virials[:, expected_v_to_lammps] / constants.nktv2p,
         expected_v,
         atol=1e-8,
         rtol=0,
