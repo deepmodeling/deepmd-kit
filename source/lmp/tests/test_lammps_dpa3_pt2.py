@@ -360,6 +360,7 @@ def _run_mpi_subprocess(
     extra_args: list[str] | None = None,
     nprocs: int = 2,
     data_path: Path | None = None,
+    processors: str | None = None,
 ) -> dict:
     """Helper: invoke run_mpi_pair_deepmd_dpa3_pt2.py under
     ``mpirun -n <nprocs>`` and return
@@ -372,6 +373,10 @@ def _run_mpi_subprocess(
 
     ``data_path`` (default ``data_file``) selects the LAMMPS data file —
     the empty-subdomain test points at a non-default elongated-box file.
+
+    ``processors`` overrides the runner's default decomposition string
+    (``"2 1 1"``); used by the ``test_*_decomposition`` variants to
+    exercise 2D / 3D processor grids (Px*Py*Pz must equal nprocs).
     """
     if data_path is None:
         data_path = data_file
@@ -388,7 +393,9 @@ def _run_mpi_subprocess(
             str(pb_file_mpi.resolve()),
             out_path,
         ]
-        if nprocs == 1:
+        if processors is not None:
+            argv.extend(["--processors", processors])
+        elif nprocs == 1:
             argv.extend(["--processors", "1 1 1"])
         if extra_args:
             argv.extend(extra_args)
@@ -525,3 +532,49 @@ def test_pair_deepmd_mpi_dpa3_empty_subdomain() -> None:
         out_mpi["virials"], out_ref["virials"], atol=1e-8, rtol=0
     )
     assert out_mpi["pe"] == pytest.approx(out_ref["pe"], rel=1e-12, abs=1e-12)
+
+
+@pytest.mark.skipif(
+    shutil.which("mpirun") is None, reason="MPI is not installed on this system"
+)
+@pytest.mark.skipif(
+    importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
+)
+@pytest.mark.parametrize(
+    "nprocs,processors",
+    [
+        (4, "2 2 1"),  # 2D decomposition; nswap > 2, two-direction borders
+        (4, "4 1 1"),  # 1D-deep chain; sendlist depth = 3 (each pair is 1+2 swaps)
+        (8, "2 2 2"),  # 3D decomposition; full xyz border exchange
+    ],
+)
+def test_pair_deepmd_mpi_dpa3_decomposition(nprocs, processors) -> None:
+    """Multi-rank DPA3 .pt2 must match the single-rank reference under
+    deeper / 3D processor grids beyond the canonical 2x1x1 (N=2) layout.
+
+    Production MD typically runs with 8/16/32+ ranks and 2D/3D
+    decompositions. Bugs that don't fire at N=2 (deeper sendlist
+    chains, 3D border swaps, asymmetric subdomains, multiple empty
+    cells in the 2x2x2 split of a small fixture) have zero coverage
+    without this test.
+
+    The 6-atom 13x13x13 fixture is intentionally small relative to
+    the rank count: in the 2x2x2 split each subdomain is
+    ~6.5x6.5x6.5 A, so several subdomains are empty — exercising the
+    empty-subdomain ``copy_from_nlist`` guard fix in 3D.
+    """
+    out_mpi = _run_mpi_subprocess(nprocs=nprocs, processors=processors)
+    # Step-0 evaluation; bit-exact match expected against the
+    # gen_dpa3.py-derived reference.
+    assert out_mpi["pe"] == pytest.approx(expected_e, rel=0, abs=1e-8)
+    for ii in range(6):
+        np.testing.assert_allclose(
+            out_mpi["forces"][ii], expected_f[ii], atol=1e-8, rtol=0
+        )
+    expected_v_to_lammps = [0, 6, 7, 3, 1, 8, 4, 5, 2]
+    np.testing.assert_allclose(
+        out_mpi["virials"][:, expected_v_to_lammps] / constants.nktv2p,
+        expected_v,
+        atol=1e-8,
+        rtol=0,
+    )
