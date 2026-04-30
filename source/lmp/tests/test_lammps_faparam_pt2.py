@@ -38,10 +38,16 @@ data_file = Path(__file__).parent / "data.lmp"
 # Reference values written by source/tests/infer/gen_fparam_aparam.py for the
 # default-fparam case. The .pth and .pt2 produce identical values (verified by
 # the gen script's parity check).
-_ref = read_expected_ref(ref_file)["default"]
-expected_ae = _ref["expected_e"]
-expected_e = np.sum(expected_ae)
-expected_f = _ref["expected_f"].reshape(6, 3)
+# Guarded with try/except because gen_fparam_aparam.py only runs when PyTorch
+# is built; matrices that disable PyTorch (e.g. paddle-only) skip the test in
+# setup_module but still load this file at pytest collection time.
+try:
+    _ref = read_expected_ref(ref_file)["default"]
+    expected_ae = _ref["expected_e"]
+    expected_e = np.sum(expected_ae)
+    expected_f = _ref["expected_f"].reshape(6, 3)
+except FileNotFoundError:
+    expected_ae = expected_e = expected_f = None
 
 box = np.array([0, 13, 0, 13, 0, 13, 0, 0, 0])
 coord = np.array(

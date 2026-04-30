@@ -32,12 +32,18 @@ data_file_si = Path(__file__).parent / "data_dpa3_pt2_nopbc.si"
 data_type_map_file = Path(__file__).parent / "data_type_map_dpa3_pt2_nopbc.lmp"
 
 # Reference values written by source/tests/infer/gen_dpa3.py (NoPbc case).
-_ref = read_expected_ref(ref_file)["nopbc"]
-expected_ae = _ref["expected_e"]
-expected_e = np.sum(expected_ae)
-expected_f = _ref["expected_f"].reshape(6, 3)
-# LAMMPS uses opposite sign convention for virial vs DeepPot atom_virial.
-expected_v = -_ref["expected_v"].reshape(6, 9)
+# Guarded with try/except because gen_dpa3.py only runs when PyTorch is built;
+# matrices that disable PyTorch (e.g. paddle-only) skip the test in
+# setup_module but still load this file at pytest collection time.
+try:
+    _ref = read_expected_ref(ref_file)["nopbc"]
+    expected_ae = _ref["expected_e"]
+    expected_e = np.sum(expected_ae)
+    expected_f = _ref["expected_f"].reshape(6, 3)
+    # LAMMPS uses opposite sign convention for virial vs DeepPot atom_virial.
+    expected_v = -_ref["expected_v"].reshape(6, 9)
+except FileNotFoundError:
+    expected_ae = expected_e = expected_f = expected_v = None
 
 box = np.array([0, 13, 0, 13, 0, 13, 0, 0, 0])
 coord = np.array(
