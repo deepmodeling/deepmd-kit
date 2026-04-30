@@ -318,7 +318,13 @@ def _build_dynamic_shapes(
     nframes_dim: torch.export.Dim | int = (
         1 if with_comm_dict else torch.export.Dim("nframes", min=1)
     )
-    nall_dim = torch.export.Dim("nall", min=1)
+    # Spin models double atom count internally (real + virtual). Some
+    # GNN ops in the spin path generate a min=4 constraint on the
+    # *pre-doubling* nall axis (matches "Suggested fixes" from
+    # torch.export's CONSTRAINT_VIOLATION error). Bump the min for spin
+    # so the export does not error on the inferred guard.
+    nall_min = 4 if has_spin else 1
+    nall_dim = torch.export.Dim("nall", min=nall_min)
     nloc_dim = torch.export.Dim("nloc", min=1)
     nnei_dim = torch.export.Dim("nnei", min=max(1, model_nnei))
 
