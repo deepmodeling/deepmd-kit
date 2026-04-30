@@ -89,6 +89,26 @@ parser.add_argument(
     "``select_real_atoms_coord``) so their unphysical velocity is "
     "harmless.",
 )
+parser.add_argument(
+    "--null-vx-split",
+    action="store_true",
+    help="With ``--null-vx X``, split type-3 atoms into two groups by "
+    "their LAMMPS atom-id parity: even ids get +X, odd ids get -X. "
+    "Used by the NULL-type rebuild test to send different NULLs in "
+    "opposite directions, so the cross-rank sendlist composition "
+    "changes in BOTH directions per rebuild (rank 0 loses one NULL, "
+    "gains another simultaneously).",
+)
+parser.add_argument(
+    "--real-temp",
+    type=float,
+    default=None,
+    help="Optional initial thermal temperature (Kelvin) for non-NULL "
+    "atoms via ``velocity realgroup create T seed``. Each real atom "
+    "gets a random thermal velocity in a different direction — used "
+    "to exercise sendlist composition changes from real-atom motion "
+    "rather than only from NULL motion.",
+)
 args = parser.parse_args()
 
 lammps = PyLammps()
@@ -119,14 +139,30 @@ if args.mass3 is not None:
     lammps.mass(f"3 {args.mass3}")
 lammps.timestep(0.0005)
 lammps.fix("1 all nve")
+# Initial velocities. Order matters: thermalize real atoms first
+# (``velocity all create`` would also affect type 3, so we restrict
+# it to a real-atom group), then set the NULL bias on type 3.
+if args.real_temp is not None:
+    lammps.group("realgroup type 1 2")
+    lammps.velocity(f"realgroup create {args.real_temp:.6f} 12345 mom yes rot yes")
 if args.null_vx is not None:
     # Restrict initial velocity to LAMMPS type 3 atoms (NULL-type
     # in the deepmd plugin's pair_coeff mapping). Real atoms stay
-    # at v=0; only the NULL atoms get the high vx, so the deepmd
-    # model's force outputs on real atoms remain bounded and the
-    # NVE integrator stays stable.
+    # at v=0 (or thermal); only the NULL atoms get the high vx, so
+    # the deepmd model's force outputs on real atoms remain bounded
+    # and the NVE integrator stays stable.
     lammps.group("nullgroup type 3")
-    lammps.velocity(f"nullgroup set {args.null_vx:.6f} 0.0 0.0 units box")
+    if args.null_vx_split:
+        # Send NULL atoms with even/odd LAMMPS atom-id in opposite
+        # directions. Hardcoded to the null_type fixture's NULL ids
+        # (7, 8); sufficient because the runner is only used by this
+        # branch's tests, not as a general utility.
+        lammps.group("null_id7 id 7")
+        lammps.group("null_id8 id 8")
+        lammps.velocity(f"null_id7 set {-args.null_vx:.6f} 0.0 0.0 units box")
+        lammps.velocity(f"null_id8 set {args.null_vx:.6f} 0.0 0.0 units box")
+    else:
+        lammps.velocity(f"nullgroup set {args.null_vx:.6f} 0.0 0.0 units box")
 
 lammps.pair_style(f"deepmd {args.PB_FILE}")
 lammps.pair_coeff(args.pair_coeff)

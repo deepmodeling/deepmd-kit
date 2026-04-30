@@ -815,31 +815,36 @@ def test_pair_deepmd_mpi_dpa3_all_null_rank() -> None:
     importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
 )
 def test_pair_deepmd_mpi_dpa3_null_type_nlist_rebuild() -> None:
-    """NULL-type atoms physically crossing the rank boundary during MD.
+    """NULL atoms cross the boundary in OPPOSITE directions while
+    real atoms move randomly via thermal motion — sendlist
+    composition changes both ways per rebuild.
 
-    NULL atoms get a high initial v_x = 2000 A/ps via
-    ``--null-vx 2000`` so that with timestep 0.0005 ps each NULL atom
-    moves 1.0 A per step. Initial NULL positions are x=5.5 (rank 0,
-    moving right) and x=7.5 (rank 1, also moving right — wraps via
-    PBC). After 3 steps with ``neigh_modify every 1``:
+    Initial conditions:
+    - Real atoms (types 1, 2): thermal velocities at T=10000 K
+      (``--real-temp 10000``). Each real atom gets a different
+      random direction; mass-weighted RMS speed is roughly
+      3 - 9 A/ps so motion in 3 steps is ~0.005 - 0.015 A. Tiny
+      but enough to perturb sendlist composition under
+      ``every 1`` rebuilds.
+    - NULL atom 7 (id=7) at x=5.5: gets ``v_x = -2000 A/ps`` via
+      ``--null-vx 2000 --null-vx-split`` (odd id -> negative).
+      Wraps via PBC: x = 5.5 -> 4.5 -> 3.5 -> 2.5 (stays in rank 0
+      but drifts deeper into the PBC ghost region of rank 1).
+    - NULL atom 8 (id=8) at x=7.5: gets ``v_x = +2000 A/ps``
+      (even id -> positive). x = 7.5 -> 8.5 -> 9.5 -> 10.5 (stays
+      in rank 1 but drifts deeper).
 
-    - NULL @ x=5.5 -> 6.5 -> 7.5 -> 8.5 : crosses x=6.5 boundary
-      between steps 0 and 1 (moves from rank 0 to rank 1).
-    - NULL @ x=7.5 -> 8.5 -> 9.5 -> 10.5 : stays in rank 1 but
-      drifts deeper into the rcut window of rank 0.
+    The +x/-x split means each rebuild sees NULL atoms entering
+    different sendlists (rank 0's right-edge sendlist gains NULL 7
+    even as it loses NULL 8 deeper into rank 1's domain, and vice
+    versa). Real-atom thermal motion provides additional sendlist
+    perturbation per atom.
 
-    Real atoms stay at v=0 so their dynamics are stable; the deepmd
-    model never sees the NULL atoms (filtered by
-    ``select_real_atoms_coord``) so unphysical NULL velocity is
-    harmless. The boundary crossing changes which rank owns each
-    NULL atom across rebuilds — exercising the case where a NULL's
-    fwd_map index moves between the local-section and ghost-section
-    of the per-rank sendlists.
-
-    Coverage: ``has_null_atoms`` must remain True across rebuilds;
-    the ``_with_virtual_atoms`` remap must produce correct outputs
-    even as NULL atoms migrate ranks. Compares mpi-2-rank vs
-    mpi-1-rank trajectories.
+    Coverage: ``has_null_atoms`` must remain True; the
+    ``_with_virtual_atoms`` remap must produce correct outputs as
+    NULL atoms migrate in mixed directions and real-atom positions
+    shift. Compares mpi-2-rank vs mpi-1-rank trajectories
+    deterministically (both use the same velocity seed 12345).
     """
     runner_args = [
         "--pair-coeff",
@@ -850,6 +855,9 @@ def test_pair_deepmd_mpi_dpa3_null_type_nlist_rebuild() -> None:
         "1",
         "--null-vx",
         "2000.0",
+        "--null-vx-split",
+        "--real-temp",
+        "10000.0",
     ]
     out_mpi = _run_mpi_subprocess(
         nprocs=2,
