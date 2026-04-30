@@ -68,6 +68,15 @@ parser.add_argument(
     help="Optional mass for LAMMPS atom type 3 (and any higher types). "
     "Used by the NULL-type fixture; ignored when only 2 types exist.",
 )
+parser.add_argument(
+    "--neigh-every",
+    type=int,
+    default=10,
+    help="LAMMPS ``neigh_modify every`` value. Default 10 mirrors the "
+    "production-realistic interval. Pass 1 for tests that want to "
+    "trigger nlist rebuilds on every step (and run a small ``--nsteps`` "
+    "to keep wall time low while still exercising the rebuild path).",
+)
 args = parser.parse_args()
 
 lammps = PyLammps()
@@ -86,7 +95,7 @@ lammps.atom_style("atomic")
 # ``mapping`` tensor. It is harmless under multi-rank.
 lammps.atom_modify("map yes")
 lammps.neighbor("2.0 bin")
-lammps.neigh_modify("every 10 delay 0 check no")
+lammps.neigh_modify(f"every {args.neigh_every} delay 0 check no")
 lammps.read_data(args.DATAFILE)
 lammps.mass("1 16")
 lammps.mass("2 2")

@@ -49,6 +49,20 @@ data_file_empty_subdomain = Path(__file__).parent / "data_dpa3_pt2_empty_subdoma
 # the 6 real atoms must match the no-NULL baseline; NULL atoms get zero
 # force from the deepmd model.
 data_file_null_type = Path(__file__).parent / "data_dpa3_pt2_null_type.lmp"
+# Isolated-NULL fixture: box=30 Å in x so rank 0 (x ∈ [0, 15]) has a
+# subdomain interior that is NOT within rcut of any boundary. With
+# rcut=6, boundary-adjacent regions are [0, 6] (PBC of right wall)
+# and [9, 15] (left wall of rank 1) — atoms in x in (6, 9) are LOCAL
+# but not in any sendlist. Place 1 NULL atom at x=7.5 (in this gap)
+# so the remap branch is reached but the sendlists contain no NULL
+# entries — exercises ``has_null_atoms=true`` with no-op remap.
+data_file_null_isolated = Path(__file__).parent / "data_dpa3_pt2_null_isolated.lmp"
+# All-NULL-rank fixture: box=30 Å in x. 6 real atoms in rank 0
+# (x < 13). 2 NULL atoms in rank 1 (x ∈ {20, 25}). Under
+# ``processors 2 1 1`` rank 1 owns ONLY NULL atoms, so after
+# ``select_real_atoms_coord`` rank 1 has nloc_real=0 (intersection
+# of empty-subdomain and NULL-type paths).
+data_file_all_null_rank = Path(__file__).parent / "data_dpa3_pt2_all_null_rank.lmp"
 
 # Reference values from gen_dpa3.py / test_deeppot_dpa3_ptexpt.cc (PBC)
 expected_ae = np.array(
@@ -194,6 +208,37 @@ def setup_module() -> None:
     )
     type_null = np.concatenate([type_OH, np.array([3, 3])])
     write_lmp_data(box, coord_null_type, type_null, data_file_null_type)
+    # Isolated-NULL fixture: same elongated box as empty-subdomain
+    # plus one NULL atom in rank 0's subdomain interior (x ∈ (6, 9)).
+    coord_null_isolated = np.concatenate([coord, np.array([[7.5, 6.5, 6.5]])])
+    type_null_isolated = np.concatenate([type_OH, np.array([3])])
+    write_lmp_data(
+        box_empty_subdomain,
+        coord_null_isolated,
+        type_null_isolated,
+        data_file_null_isolated,
+    )
+    # All-NULL-rank fixture: box=30 in x. Real atoms in rank 0
+    # (their original coords; all x < 13). NULL atoms placed in
+    # rank 1 (x ∈ {20, 25}). Rank 1 owns ONLY NULL atoms.
+    coord_all_null_rank = np.concatenate(
+        [
+            coord,
+            np.array(
+                [
+                    [20.0, 6.5, 6.5],
+                    [25.0, 6.5, 6.5],
+                ]
+            ),
+        ]
+    )
+    type_all_null_rank = np.concatenate([type_OH, np.array([3, 3])])
+    write_lmp_data(
+        box_empty_subdomain,
+        coord_all_null_rank,
+        type_all_null_rank,
+        data_file_all_null_rank,
+    )
 
 
 def teardown_module() -> None:
@@ -203,6 +248,8 @@ def teardown_module() -> None:
         data_file_si,
         data_file_empty_subdomain,
         data_file_null_type,
+        data_file_null_isolated,
+        data_file_all_null_rank,
     ]:
         if f.exists():
             os.remove(f)
@@ -506,21 +553,25 @@ def test_pair_deepmd_mpi_dpa3_nlist_rebuild() -> None:
     """Multi-rank with neighbor-list rebuilds, validated against a
     single-rank reference of the same archive and trajectory.
 
-    Runs 25 MD steps with ``neigh_modify every 10 delay 0 check no``,
-    so the multi-rank trajectory crosses two nlist rebuilds (at steps
-    10 and 20) before the final force evaluation. The same trajectory
-    is then run under ``mpirun -n 1`` (regular-artifact dispatch on
-    the same dual-artifact .pt2) to obtain a reference; comparing the
-    two catches a wrong-but-finite force from a dispatch bug that the
-    previous finite/bounded check would miss.
+    Uses ``neigh_modify every 1`` so a rebuild happens on every step,
+    then runs 3 steps — yields 3 rebuilds in roughly 1/8 the wall
+    time of a 25-step ``every 10`` run. The same trajectory is then
+    run under ``mpirun -n 1`` (regular-artifact dispatch on the same
+    dual-artifact .pt2) to obtain a reference; comparing the two
+    catches a wrong-but-finite force from a dispatch bug.
 
-    NVE is deterministic up to floating-point summation order, so the
-    cross-rank divergence after 25 steps is bounded by accumulated
+    NVE is deterministic up to floating-point summation order, so
+    the cross-rank divergence after 3 steps is bounded by accumulated
     round-off — small for a 6-atom system but non-zero, hence the
     relaxed (but still tight) tolerances.
     """
-    out_mpi = _run_mpi_subprocess(extra_args=["--nsteps", "25"], nprocs=2)
-    out_ref = _run_mpi_subprocess(extra_args=["--nsteps", "25"], nprocs=1)
+    runner_args = ["--neigh-every", "1"]
+    out_mpi = _run_mpi_subprocess(
+        extra_args=["--nsteps", "3"], nprocs=2, runner_args=runner_args
+    )
+    out_ref = _run_mpi_subprocess(
+        extra_args=["--nsteps", "3"], nprocs=1, runner_args=runner_args
+    )
     np.testing.assert_allclose(
         out_mpi["forces"],
         out_ref["forces"],
@@ -667,3 +718,140 @@ def test_pair_deepmd_mpi_dpa3_null_type() -> None:
         atol=1e-8,
         rtol=0,
     )
+
+
+@pytest.mark.skipif(
+    shutil.which("mpirun") is None, reason="MPI is not installed on this system"
+)
+@pytest.mark.skipif(
+    importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
+)
+def test_pair_deepmd_mpi_dpa3_null_isolated() -> None:
+    """NULL atom local on a rank but absent from every sendlist.
+
+    Box is 30x13x13 with split at x=15. With rcut=6 the boundary
+    rcut-windows on rank 0 are x ∈ [0, 6] (PBC of right wall via
+    x=30) and x ∈ [9, 15] (left wall of rank 1). Atoms in
+    x ∈ (6, 9) are LOCAL on rank 0 but never appear in any
+    cross-rank sendlist. Placing a NULL atom at x=7.5 puts it in
+    that gap.
+
+    Coverage: ``has_null_atoms == True`` triggers the
+    ``_with_virtual_atoms`` branch, but the remap encounters NO
+    NULL entries in any sendlist (no-op remap). The
+    ``test_pair_deepmd_mpi_dpa3_null_type`` test exercises the
+    remap-with-NULLs case; this one pins the
+    remap-with-no-NULLs-in-sendlist case.
+
+    Comparison is mpi-vs-single-rank on the same fixture (no hardcoded
+    reference because the box differs from the canonical 13x13x13).
+    """
+    out_mpi = _run_mpi_subprocess(
+        nprocs=2,
+        data_path=data_file_null_isolated,
+        runner_args=["--pair-coeff", "* * O H NULL", "--mass3", "5.0"],
+    )
+    out_ref = _run_mpi_subprocess(
+        nprocs=1,
+        data_path=data_file_null_isolated,
+        runner_args=["--pair-coeff", "* * O H NULL", "--mass3", "5.0"],
+    )
+    np.testing.assert_allclose(out_mpi["forces"], out_ref["forces"], atol=1e-8, rtol=0)
+    np.testing.assert_allclose(
+        out_mpi["virials"], out_ref["virials"], atol=1e-8, rtol=0
+    )
+    assert out_mpi["pe"] == pytest.approx(out_ref["pe"], rel=0, abs=1e-8)
+
+
+@pytest.mark.skipif(
+    shutil.which("mpirun") is None, reason="MPI is not installed on this system"
+)
+@pytest.mark.skipif(
+    importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
+)
+def test_pair_deepmd_mpi_dpa3_all_null_rank() -> None:
+    """Rank that owns ONLY NULL atoms (intersection of empty-subdomain
+    and NULL-type paths).
+
+    Box=30x13x13, split at x=15. Real atoms (types 1,2) are all in
+    rank 0 (x < 13). NULL atoms (type 3) are at x ∈ {20, 25},
+    both in rank 1. After ``select_real_atoms_coord``:
+
+    - Rank 0: nloc_real=6 (all real local), receives NULL atoms as
+      ghosts via PBC -> filtered -> nall_real ≤ nall.
+    - Rank 1: nloc_real=0 (all local atoms filtered out — empty
+      subdomain after filter), receives real atoms as ghosts.
+
+    Tests that the comm-dispatch path handles a rank with zero real
+    locals correctly. The empty-subdomain ``copy_from_nlist`` guard
+    must fire on rank 1, AND the ``_with_virtual_atoms`` remap must
+    handle the case where the local section of the sendlist is
+    entirely NULL.
+    """
+    out_mpi = _run_mpi_subprocess(
+        nprocs=2,
+        data_path=data_file_all_null_rank,
+        runner_args=["--pair-coeff", "* * O H NULL", "--mass3", "5.0"],
+    )
+    out_ref = _run_mpi_subprocess(
+        nprocs=1,
+        data_path=data_file_all_null_rank,
+        runner_args=["--pair-coeff", "* * O H NULL", "--mass3", "5.0"],
+    )
+    np.testing.assert_allclose(out_mpi["forces"], out_ref["forces"], atol=1e-8, rtol=0)
+    np.testing.assert_allclose(
+        out_mpi["virials"], out_ref["virials"], atol=1e-8, rtol=0
+    )
+    assert out_mpi["pe"] == pytest.approx(out_ref["pe"], rel=0, abs=1e-8)
+
+
+@pytest.mark.skipif(
+    shutil.which("mpirun") is None, reason="MPI is not installed on this system"
+)
+@pytest.mark.skipif(
+    importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
+)
+def test_pair_deepmd_mpi_dpa3_null_type_nlist_rebuild() -> None:
+    """NULL-type atoms across nlist rebuilds during MD.
+
+    Uses ``neigh_modify every 1`` so the nlist rebuilds on every MD
+    step, then runs 3 steps — yielding 3 rebuilds in roughly 1/8 the
+    wall time of a 25-step ``every 10`` run. Atoms still move (NVE
+    integration), so the comm-tensor composition (which atoms appear
+    in each swap's sendlist, where NULL atoms map under
+    ``fwd_map``) genuinely changes between rebuilds.
+
+    Coverage: validates that the ``_with_virtual_atoms`` remap
+    re-runs correctly on every ago=0 trigger and that the cached
+    state in ``DeepPotPTExpt::compute`` (mapping_tensor,
+    firstneigh_tensor) plus the per-step rebuilt comm tensors stay
+    consistent under NULL filtering. Compares mpi-2-rank vs
+    mpi-1-rank trajectories.
+    """
+    runner_args = [
+        "--pair-coeff",
+        "* * O H NULL",
+        "--mass3",
+        "5.0",
+        "--neigh-every",
+        "1",
+    ]
+    out_mpi = _run_mpi_subprocess(
+        nprocs=2,
+        data_path=data_file_null_type,
+        extra_args=["--nsteps", "3"],
+        runner_args=runner_args,
+    )
+    out_ref = _run_mpi_subprocess(
+        nprocs=1,
+        data_path=data_file_null_type,
+        extra_args=["--nsteps", "3"],
+        runner_args=runner_args,
+    )
+    np.testing.assert_allclose(
+        out_mpi["forces"], out_ref["forces"], atol=1e-6, rtol=1e-6
+    )
+    np.testing.assert_allclose(
+        out_mpi["virials"], out_ref["virials"], atol=1e-6, rtol=1e-6
+    )
+    assert out_mpi["pe"] == pytest.approx(out_ref["pe"], rel=1e-8, abs=1e-10)
