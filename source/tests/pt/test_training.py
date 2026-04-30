@@ -707,11 +707,9 @@ class TestModelChangeOutBiasFittingStat(unittest.TestCase):
     """
 
     def test_fitting_stat_consistency(self) -> None:
+        import deepmd.pt.train.training as training_module
         from deepmd.pt.model.model import get_model as get_model_pt
         from deepmd.pt.model.model.ener_model import EnergyModel as EnergyModelPT
-        from deepmd.pt.train.training import (
-            model_change_out_bias,
-        )
         from deepmd.pt.utils.utils import to_numpy_array as torch_to_numpy
         from deepmd.pt.utils.utils import to_torch_tensor as numpy_to_torch
         from deepmd.utils.argcheck import model_args as model_args_fn
@@ -785,7 +783,7 @@ class TestModelChangeOutBiasFittingStat(unittest.TestCase):
 
         # Model B: use the NEW code path via model_change_out_bias
         sample_func = lambda: merged  # noqa: E731
-        model_change_out_bias(model_b, sample_func, "set-by-statistic")
+        training_module.model_change_out_bias(model_b, sample_func, "set-by-statistic")
 
         # Compare out_bias
         bias_a = torch_to_numpy(model_a.get_out_bias())
@@ -1018,6 +1016,42 @@ class TestEMATraining(unittest.TestCase):
 
         self.assertFalse(Path(f"{ema_prefix}-999.pt").exists())
         self.assertTrue(Path(f"{ema_prefix}-1.pt").exists())
+
+    @TRAINING_TEST_TIMEOUT
+    @patch("deepmd.pt.train.training.model_change_out_bias")
+    def test_ema_checkpoint_keeps_changed_out_bias(self, mocked_change_out_bias) -> None:
+        def change_out_bias(model, sample_func, _bias_adjust_mode):
+            model.set_out_bias(model.get_out_bias() + 1.0)
+            return model
+
+        mocked_change_out_bias.side_effect = change_out_bias
+        config = deepcopy(self.config)
+        config["training"]["numb_steps"] = 1
+        config["training"]["change_bias_after_training"] = True
+        trainer = get_trainer(config)
+        trainer.run()
+
+        regular_checkpoint = torch.load(
+            trainer.latest_model, map_location="cpu", weights_only=True
+        )
+        ema_checkpoint = torch.load(
+            trainer.latest_ema_model, map_location="cpu", weights_only=True
+        )
+        regular_out_bias = {
+            key: value
+            for key, value in regular_checkpoint["model"].items()
+            if key.endswith("out_bias")
+        }
+        ema_out_bias = {
+            key: value
+            for key, value in ema_checkpoint["model"].items()
+            if key.endswith("out_bias")
+        }
+
+        self.assertTrue(regular_out_bias)
+        self.assertEqual(regular_out_bias.keys(), ema_out_bias.keys())
+        for key, regular_value in regular_out_bias.items():
+            torch.testing.assert_close(regular_value, ema_out_bias[key])
 
     def test_ema_rejects_zero_stage_2_during_normalization(self) -> None:
         config = deepcopy(self.config)
