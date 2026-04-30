@@ -624,7 +624,10 @@ def test_pair_deepmd_mpi_dpa3_empty_subdomain() -> None:
 @pytest.mark.parametrize(
     "nprocs,processors",
     [
-        (4, "2 2 1"),  # 2D decomposition; nswap > 2, two-direction borders
+        # 2D ``2 2 1`` is omitted: ``8 @ 2 2 2`` already exercises 2D
+        # face exchange (it's a superset, in 3D), so the 2D-only case
+        # is redundant. The two kept variants give complementary
+        # coverage: 1D-deep sendlist chains vs 3D border exchange.
         (4, "4 1 1"),  # 1D-deep chain; sendlist depth = 3 (each pair is 1+2 swaps)
         (8, "2 2 2"),  # 3D decomposition; full xyz border exchange
     ],
@@ -812,20 +815,30 @@ def test_pair_deepmd_mpi_dpa3_all_null_rank() -> None:
     importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
 )
 def test_pair_deepmd_mpi_dpa3_null_type_nlist_rebuild() -> None:
-    """NULL-type atoms across nlist rebuilds during MD.
+    """NULL-type atoms physically crossing the rank boundary during MD.
 
-    Uses ``neigh_modify every 1`` so the nlist rebuilds on every MD
-    step, then runs 3 steps — yielding 3 rebuilds in roughly 1/8 the
-    wall time of a 25-step ``every 10`` run. Atoms still move (NVE
-    integration), so the comm-tensor composition (which atoms appear
-    in each swap's sendlist, where NULL atoms map under
-    ``fwd_map``) genuinely changes between rebuilds.
+    NULL atoms get a high initial v_x = 2000 A/ps via
+    ``--null-vx 2000`` so that with timestep 0.0005 ps each NULL atom
+    moves 1.0 A per step. Initial NULL positions are x=5.5 (rank 0,
+    moving right) and x=7.5 (rank 1, also moving right — wraps via
+    PBC). After 3 steps with ``neigh_modify every 1``:
 
-    Coverage: validates that the ``_with_virtual_atoms`` remap
-    re-runs correctly on every ago=0 trigger and that the cached
-    state in ``DeepPotPTExpt::compute`` (mapping_tensor,
-    firstneigh_tensor) plus the per-step rebuilt comm tensors stay
-    consistent under NULL filtering. Compares mpi-2-rank vs
+    - NULL @ x=5.5 -> 6.5 -> 7.5 -> 8.5 : crosses x=6.5 boundary
+      between steps 0 and 1 (moves from rank 0 to rank 1).
+    - NULL @ x=7.5 -> 8.5 -> 9.5 -> 10.5 : stays in rank 1 but
+      drifts deeper into the rcut window of rank 0.
+
+    Real atoms stay at v=0 so their dynamics are stable; the deepmd
+    model never sees the NULL atoms (filtered by
+    ``select_real_atoms_coord``) so unphysical NULL velocity is
+    harmless. The boundary crossing changes which rank owns each
+    NULL atom across rebuilds — exercising the case where a NULL's
+    fwd_map index moves between the local-section and ghost-section
+    of the per-rank sendlists.
+
+    Coverage: ``has_null_atoms`` must remain True across rebuilds;
+    the ``_with_virtual_atoms`` remap must produce correct outputs
+    even as NULL atoms migrate ranks. Compares mpi-2-rank vs
     mpi-1-rank trajectories.
     """
     runner_args = [
@@ -835,6 +848,8 @@ def test_pair_deepmd_mpi_dpa3_null_type_nlist_rebuild() -> None:
         "5.0",
         "--neigh-every",
         "1",
+        "--null-vx",
+        "2000.0",
     ]
     out_mpi = _run_mpi_subprocess(
         nprocs=2,

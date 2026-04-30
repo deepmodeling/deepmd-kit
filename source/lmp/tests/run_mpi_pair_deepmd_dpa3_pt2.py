@@ -77,6 +77,18 @@ parser.add_argument(
     "trigger nlist rebuilds on every step (and run a small ``--nsteps`` "
     "to keep wall time low while still exercising the rebuild path).",
 )
+parser.add_argument(
+    "--null-vx",
+    type=float,
+    default=None,
+    help="Optional initial x-velocity (units: Angstrom/ps in metal "
+    "units) for LAMMPS atom type 3 atoms. Real atoms stay at v=0. "
+    "Used by the NULL-type rebuild test to make NULL atoms cross the "
+    "rank boundary in a few MD steps without destabilising real-atom "
+    "dynamics — the deepmd model never sees NULL atoms (filtered by "
+    "``select_real_atoms_coord``) so their unphysical velocity is "
+    "harmless.",
+)
 args = parser.parse_args()
 
 lammps = PyLammps()
@@ -107,6 +119,14 @@ if args.mass3 is not None:
     lammps.mass(f"3 {args.mass3}")
 lammps.timestep(0.0005)
 lammps.fix("1 all nve")
+if args.null_vx is not None:
+    # Restrict initial velocity to LAMMPS type 3 atoms (NULL-type
+    # in the deepmd plugin's pair_coeff mapping). Real atoms stay
+    # at v=0; only the NULL atoms get the high vx, so the deepmd
+    # model's force outputs on real atoms remain bounded and the
+    # NVE integrator stays stable.
+    lammps.group("nullgroup type 3")
+    lammps.velocity(f"nullgroup set {args.null_vx:.6f} 0.0 0.0 units box")
 
 lammps.pair_style(f"deepmd {args.PB_FILE}")
 lammps.pair_coeff(args.pair_coeff)
