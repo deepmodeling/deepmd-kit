@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 from gen_common import (
     ensure_inductor_compiler,
     load_custom_ops,
-    print_cpp_values,
+    write_expected_ref,
 )
 
 
@@ -156,12 +156,30 @@ def main():
 
     e1, f1, v1, ae1, av1 = dp.eval(coord, box, atype, atomic=True)
     print(f"\n// PBC total energy: {e1[0, 0]:.18e}")  # noqa: T201
-    print_cpp_values("PBC reference values", ae1, f1, av1)
 
     # ---- 5. Run inference for NoPbc test ----
     e_np, f_np, v_np, ae_np, av_np = dp.eval(coord, None, atype, atomic=True)
     print(f"\n// NoPbc total energy: {e_np[0, 0]:.18e}")  # noqa: T201
-    print_cpp_values("NoPbc reference values", ae_np, f_np, av_np)
+
+    # ---- 5b. Write sidecar reference file consumed by C++ tests ----
+    ref_path = os.path.join(base_dir, "deeppot_dpa2.expected")
+    write_expected_ref(
+        ref_path,
+        sections={
+            "pbc": {
+                "expected_e": ae1[0, :, 0],
+                "expected_f": f1[0],
+                "expected_v": av1[0],
+            },
+            "nopbc": {
+                "expected_e": ae_np[0, :, 0],
+                "expected_f": f_np[0],
+                "expected_v": av_np[0],
+            },
+        },
+        source_script="source/tests/infer/gen_dpa2.py",
+    )
+    print(f"Wrote {ref_path}")  # noqa: T201
 
     # ---- 6. Verify .pth gives same results ----
     if os.path.exists(pth_path):
