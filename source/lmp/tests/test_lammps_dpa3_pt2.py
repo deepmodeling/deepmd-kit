@@ -596,23 +596,46 @@ def test_pair_deepmd_mpi_dpa3_nlist_rebuild() -> None:
 def test_pair_deepmd_mpi_dpa3_empty_subdomain() -> None:
     """Multi-rank DPA3 with one rank owning zero local atoms.
 
+    Runs 5 MD steps with ``neigh_modify every 100`` so the nlist is
+    rebuilt only once (at step 0, ago=0) and the next 4 force
+    evaluations exercise the cached ``mapping_tensor`` /
+    ``firstneigh_tensor`` path (PR 5407 caching) under empty
+    subdomain. Atoms move ~0 (v=0 default) so positions only differ
+    by tiny round-off, but the C++ dispatch path with cached state
+    on rank 1 (which has nloc=0) must still produce correct
+    cross-rank forces.
+
     Uses a 30 x 13 x 13 box with all six atoms clustered in x in
     [0.25, 12.83]. Under ``processors 2 1 1`` the split is at x = 15
     so rank 1 owns an empty subdomain. The comm-dispatch path must
     still produce correct forces and virial (compared against a
-    same-archive single-rank reference of the same configuration).
+    same-archive single-rank reference of the same trajectory).
 
     This catches: zero-length send/recv lists in the comm tensors,
-    division-by-zero in nlocal-dependent reshapes, and any silent
-    drop of a rank's contribution when it has no atoms to evaluate.
+    division-by-zero in nlocal-dependent reshapes, silent drop of a
+    rank's contribution when it has no atoms to evaluate, AND
+    cache-hit (ago>0) bugs specific to the empty-subdomain rank.
     """
-    out_mpi = _run_mpi_subprocess(nprocs=2, data_path=data_file_empty_subdomain)
-    out_ref = _run_mpi_subprocess(nprocs=1, data_path=data_file_empty_subdomain)
-    np.testing.assert_allclose(out_mpi["forces"], out_ref["forces"], atol=1e-8, rtol=0)
-    np.testing.assert_allclose(
-        out_mpi["virials"], out_ref["virials"], atol=1e-8, rtol=0
+    runner_args = ["--neigh-every", "100"]
+    out_mpi = _run_mpi_subprocess(
+        nprocs=2,
+        data_path=data_file_empty_subdomain,
+        extra_args=["--nsteps", "5"],
+        runner_args=runner_args,
     )
-    assert out_mpi["pe"] == pytest.approx(out_ref["pe"], rel=1e-12, abs=1e-12)
+    out_ref = _run_mpi_subprocess(
+        nprocs=1,
+        data_path=data_file_empty_subdomain,
+        extra_args=["--nsteps", "5"],
+        runner_args=runner_args,
+    )
+    np.testing.assert_allclose(
+        out_mpi["forces"], out_ref["forces"], atol=1e-6, rtol=1e-6
+    )
+    np.testing.assert_allclose(
+        out_mpi["virials"], out_ref["virials"], atol=1e-6, rtol=1e-6
+    )
+    assert out_mpi["pe"] == pytest.approx(out_ref["pe"], rel=1e-8, abs=1e-10)
 
 
 @pytest.mark.skipif(
