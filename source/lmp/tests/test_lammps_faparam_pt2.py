@@ -8,6 +8,9 @@ from pathlib import (
 
 import numpy as np
 import pytest
+from expected_ref import (
+    read_expected_ref,
+)
 from lammps import (
     PyLammps,
 )
@@ -24,43 +27,21 @@ pt2_file = (
 pt2_file_no_default = (
     Path(__file__).parent.parent.parent / "tests" / "infer" / "fparam_aparam.pt2"
 )
+ref_file = (
+    Path(__file__).parent.parent.parent
+    / "tests"
+    / "infer"
+    / "fparam_aparam_default.expected"
+)
 data_file = Path(__file__).parent / "data.lmp"
 
-# expected values from fparam_aparam_default.pt2 with default_fparam=[0.25852028]
-# (identical to .pth — generated from the same dpmodel checkpoint via gen_fparam_aparam.py)
-expected_ae = np.array(
-    [
-        -1.038271223729637e-01,
-        -7.285433579124989e-02,
-        -9.467600492266426e-02,
-        -1.467050207422953e-01,
-        -7.660561676973243e-02,
-        -7.277296000253175e-02,
-    ]
-)
+# Reference values written by source/tests/infer/gen_fparam_aparam.py for the
+# default-fparam case. The .pth and .pt2 produce identical values (verified by
+# the gen script's parity check).
+_ref = read_expected_ref(ref_file)["default"]
+expected_ae = _ref["expected_e"]
 expected_e = np.sum(expected_ae)
-expected_f = np.array(
-    [
-        6.622266941151356e-02,
-        5.278739714221517e-02,
-        2.265728009692279e-02,
-        -2.606048291367521e-02,
-        -4.538812303131843e-02,
-        1.058247419681242e-02,
-        1.679392617013225e-01,
-        -2.257826240741907e-03,
-        -4.490146347357200e-02,
-        -1.148364179422036e-01,
-        -1.169790528013792e-02,
-        6.140403441496690e-02,
-        -8.078778123309406e-02,
-        -5.838879041789346e-02,
-        6.773641084621368e-02,
-        -1.247724902386317e-02,
-        6.494524782787654e-02,
-        -1.174787360813438e-01,
-    ]
-).reshape(6, 3)
+expected_f = _ref["expected_f"].reshape(6, 3)
 
 box = np.array([0, 13, 0, 13, 0, 13, 0, 0, 0])
 coord = np.array(
