@@ -15,6 +15,25 @@ from deepmd.dpmodel.utils.serialization import (
     traverse_model_dict,
 )
 
+# ---------------------------------------------------------------------------
+# AOTInductor ``.pt2`` archive layout.
+#
+# PyTorch 2.11 tightened the single-model ``.pt2`` convention so that every
+# entry in the ZIP archive must live under the top-level ``model/`` directory.
+# Any stray root-level file makes
+# ``torch.export.pt2_archive._package.load_pt2`` raise ``RuntimeError`` at
+# load time; the upper-level ``torch._inductor.package.package.load_package``
+# then emits a misleading ``Loading outdated pt2 file. Please regenerate
+# your package.`` warning and falls back to the legacy C++ loader.
+#
+# deepmd-kit therefore stores its metadata JSON blobs under ``model/extra/``
+# so that the strict ``load_pt2`` loader accepts the archive without
+# complaint.  The C++ reader (``commonPTExpt.h::read_zip_entry``) resolves
+# this layout transparently because it matches ``entry_name`` as a
+# ``/``-delimited suffix.
+# ---------------------------------------------------------------------------
+PT2_EXTRA_PREFIX = "model/extra/"
+
 
 def _strip_shape_assertions(graph_module: torch.nn.Module) -> None:
     """Neutralise shape-guard assertion nodes in a spin model's exported graph.
@@ -251,9 +270,15 @@ def _collect_metadata(model: torch.nn.Module, is_spin: bool = False) -> dict:
     The ``fitting_output_defs`` list is also included so that
     ``ModelOutputDef`` can be reconstructed without loading the full model.
     """
-    fitting_output_def = model.atomic_output_def()
+    if is_spin:
+        fitting_output_def = model.model_output_def().def_outp
+    else:
+        fitting_output_def = model.atomic_output_def()
     fitting_output_defs = []
     for vdef in fitting_output_def.get_data().values():
+        # Keep metadata aligned with physical fitting outputs only.
+        if is_spin and vdef.name == "mask":
+            continue
         fitting_output_defs.append(
             {
                 "name": vdef.name,
@@ -262,7 +287,9 @@ def _collect_metadata(model: torch.nn.Module, is_spin: bool = False) -> dict:
                 "r_differentiable": vdef.r_differentiable,
                 "c_differentiable": vdef.c_differentiable,
                 "atomic": vdef.atomic,
-                "category": vdef.category,
+                # OutputVariableCategory is an IntEnum; force plain int for
+                # deterministic JSON serialisation across Python versions.
+                "category": int(vdef.category),
                 "r_hessian": vdef.r_hessian,
                 "magnetic": vdef.magnetic,
                 "intensive": vdef.intensive,
@@ -279,6 +306,10 @@ def _collect_metadata(model: torch.nn.Module, is_spin: bool = False) -> dict:
         "has_default_fparam": model.has_default_fparam(),
         "default_fparam": model.get_default_fparam(),
         "fitting_output_defs": fitting_output_defs,
+        # sel_type enables `DeepEval.get_sel_type()` without a dpmodel
+        # round-trip; required for dipole/polar/wfc models in metadata-only
+        # inference (energy models return []).
+        "sel_type": [int(t) for t in model.get_sel_type()],
         "is_spin": is_spin,
     }
     if is_spin:
@@ -326,21 +357,23 @@ def _serialize_from_file_pte(model_file: str) -> dict:
 def _serialize_from_file_pt2(model_file: str) -> dict:
     """Serialize a .pt2 model file to a dictionary.
 
-    Reads the model dict stored in the extra/ directory of the .pt2 ZIP archive.
+    Reads the model dict stored in the ``model/extra/`` directory of the
+    ``.pt2`` ZIP archive.
     """
     import zipfile
 
+    model_json_entry = PT2_EXTRA_PREFIX + "model.json"
+    model_def_script_entry = PT2_EXTRA_PREFIX + "model_def_script.json"
     with zipfile.ZipFile(model_file, "r") as zf:
-        if "extra/model.json" not in zf.namelist():
+        names = zf.namelist()
+        if model_json_entry not in names:
             raise ValueError(
-                f"Invalid .pt2 file '{model_file}': missing 'extra/model.json'"
+                f"Invalid .pt2 file '{model_file}': missing '{model_json_entry}'"
             )
-        model_json = zf.read("extra/model.json").decode("utf-8")
+        model_json = zf.read(model_json_entry).decode("utf-8")
         model_def_script_json = ""
-        if "extra/model_def_script.json" in zf.namelist():
-            model_def_script_json = zf.read("extra/model_def_script.json").decode(
-                "utf-8"
-            )
+        if model_def_script_entry in names:
+            model_def_script_json = zf.read(model_def_script_entry).decode("utf-8")
     model_dict = json.loads(model_json)
     model_dict = _json_to_numpy(model_dict)
     if model_def_script_json:
@@ -609,13 +642,20 @@ def _deserialize_to_file_pt2(
     finally:
         _inductor_config.realize_opcount_threshold = saved_threshold
 
-    # Embed metadata into the .pt2 ZIP archive
+    # Embed metadata into the .pt2 ZIP archive.  Entries are placed under
+    # ``model/extra/`` so the strict PyTorch 2.11 ``load_pt2`` loader
+    # accepts the archive without emitting the "outdated pt2 file"
+    # fallback warning.  See the module-level comment on
+    # ``PT2_EXTRA_PREFIX`` for the rationale.
     model_def_script = data.get("model_def_script") or {}
     metadata["output_keys"] = output_keys
     with zipfile.ZipFile(model_file, "a") as zf:
-        zf.writestr("extra/metadata.json", json.dumps(metadata))
-        zf.writestr("extra/model_def_script.json", json.dumps(model_def_script))
+        zf.writestr(PT2_EXTRA_PREFIX + "metadata.json", json.dumps(metadata))
         zf.writestr(
-            "extra/model.json",
+            PT2_EXTRA_PREFIX + "model_def_script.json",
+            json.dumps(model_def_script),
+        )
+        zf.writestr(
+            PT2_EXTRA_PREFIX + "model.json",
             json.dumps(data_for_json, separators=(",", ":")),
         )

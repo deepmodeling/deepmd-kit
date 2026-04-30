@@ -651,6 +651,17 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
         finally:
             torch.set_default_device("cuda:9999999")
 
+        cls.meta_tmpfile = tempfile.NamedTemporaryFile(suffix=".pt2", delete=False)
+        cls.meta_tmpfile.close()
+        with (
+            zipfile.ZipFile(cls.tmpfile.name, "r") as zin,
+            zipfile.ZipFile(cls.meta_tmpfile.name, "w") as zout,
+        ):
+            for info in zin.infolist():
+                if info.filename == "model/extra/model.json":
+                    continue
+                zout.writestr(info, zin.read(info.filename))
+
         # Also save to .pte for cross-format comparison
         cls.pte_tmpfile = tempfile.NamedTemporaryFile(suffix=".pte", delete=False)
         cls.pte_tmpfile.close()
@@ -658,6 +669,8 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
 
         # Create DeepPot for .pt2
         cls.dp = DeepPot(cls.tmpfile.name)
+        # Create DeepPot for metadata-only .pt2
+        cls.dp_meta = DeepPot(cls.meta_tmpfile.name)
         # Create DeepPot for .pte reference
         cls.dp_pte = DeepPot(cls.pte_tmpfile.name)
 
@@ -666,6 +679,7 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
         import os
 
         os.unlink(cls.tmpfile.name)
+        os.unlink(cls.meta_tmpfile.name)
         os.unlink(cls.pte_tmpfile.name)
 
     def test_get_rcut(self) -> None:
@@ -738,14 +752,52 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
         self.assertTrue(zipfile.is_zipfile(self.tmpfile.name))
 
     def test_pt2_has_metadata(self) -> None:
-        """The .pt2 ZIP should contain metadata entries."""
+        """The .pt2 ZIP should contain metadata entries under ``model/extra/``."""
         with zipfile.ZipFile(self.tmpfile.name, "r") as zf:
             names = zf.namelist()
-            self.assertIn("extra/metadata.json", names)
-            self.assertIn("extra/model_def_script.json", names)
-            self.assertIn("extra/model.json", names)
-            self.assertNotIn("extra/output_keys.json", names)
-            self.assertNotIn("extra/model_params.json", names)
+            self.assertIn("model/extra/metadata.json", names)
+            self.assertIn("model/extra/model_def_script.json", names)
+            self.assertIn("model/extra/model.json", names)
+            self.assertNotIn("model/extra/output_keys.json", names)
+            self.assertNotIn("model/extra/model_params.json", names)
+
+    def test_metadata_only_pt2_has_no_model_json(self) -> None:
+        """The metadata-only .pt2 keeps metadata but drops model.json."""
+        with zipfile.ZipFile(self.meta_tmpfile.name, "r") as zf:
+            names = zf.namelist()
+            self.assertIn("model/extra/metadata.json", names)
+            self.assertNotIn("model/extra/model.json", names)
+
+    def test_metadata_only_pt2_accessors_match(self) -> None:
+        """Metadata-only .pt2 archives expose the same metadata API."""
+        full = self.dp.deep_eval
+        meta = self.dp_meta.deep_eval
+        self.assertIsNotNone(full._dpmodel)
+        self.assertIsNone(meta._dpmodel)
+        self.assertEqual(full.get_rcut(), meta.get_rcut())
+        self.assertEqual(full.get_ntypes(), meta.get_ntypes())
+        self.assertEqual(full.get_type_map(), meta.get_type_map())
+        self.assertEqual(full.get_dim_fparam(), meta.get_dim_fparam())
+        self.assertEqual(full.get_dim_aparam(), meta.get_dim_aparam())
+        self.assertEqual(full.get_sel_type(), meta.get_sel_type())
+        self.assertEqual(full.get_has_spin(), meta.get_has_spin())
+        self.assertEqual(full.get_use_spin(), meta.get_use_spin())
+        self.assertIs(full.model_type, meta.model_type)
+
+    def test_metadata_only_pt2_eval_parity(self) -> None:
+        """Metadata-only .pt2 inference matches the full archive exactly."""
+        rng = np.random.default_rng(GLOBAL_SEED + 29)
+        natoms = 5
+        coords = rng.random((1, natoms, 3)) * 8.0
+        cells = np.eye(3).reshape(1, 9) * 10.0
+        atom_types = np.array([i % self.nt for i in range(natoms)], dtype=np.int32)
+
+        full_out = self.dp.eval(coords, cells, atom_types, atomic=True)
+        meta_out = self.dp_meta.eval(coords, cells, atom_types, atomic=True)
+
+        self.assertEqual(len(full_out), len(meta_out))
+        for ref, test in zip(full_out, meta_out, strict=True):
+            np.testing.assert_array_equal(test, ref)
 
     def test_eval_consistency(self) -> None:
         """Test that DeepPot.eval gives same results as direct model forward."""

@@ -78,13 +78,17 @@ def _patch_no_atomic_virial(pt2_path: str) -> None:
     """Flip do_atomic_virial=False in the metadata.json of a .pt2 archive.
 
     The .pt2 is a ZIP archive; the metadata blob lives at
-    ``extra/metadata.json``.  We rewrite the archive with that one entry
+    ``model/extra/metadata.json``.  We rewrite the archive with that one entry
     replaced and all other entries preserved verbatim.
     """
     import json
     import zipfile
 
-    metadata_name = "extra/metadata.json"
+    from deepmd.pt_expt.utils.serialization import (
+        PT2_EXTRA_PREFIX,
+    )
+
+    metadata_name = PT2_EXTRA_PREFIX + "metadata.json"
     tmp_path = pt2_path + ".tmp"
     # PyTorch .pt2 archives use ZIP_STORED (uncompressed) so that the C++
     # reader (read_zip_entry in commonPTExpt.h) and torch's mmap-based
