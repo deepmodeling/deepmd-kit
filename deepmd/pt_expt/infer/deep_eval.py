@@ -378,8 +378,10 @@ class DeepEval(DeepEvalBackend):
         self._is_spin = (
             model_params.get("type") == "spin_ener" or "spin" in model_params
         )
-        self.rcut = model.get_rcut()
-        self.type_map = model.get_type_map()
+        self._rcut = model.get_rcut()
+        self._type_map = model.get_type_map()
+        self._sel = list(model.get_sel())
+        self._mixed_types = bool(model.mixed_types())
         if self._is_spin:
             self._model_output_def = ModelOutputDef(
                 FittingOutputDef(
