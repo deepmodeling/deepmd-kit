@@ -34,6 +34,8 @@ def read_expected_ref(path):
             )
         key, count = parts
         n = int(count)
+        if n < 0:
+            raise ValueError(f"array '{key}' has negative count {n} in {path}")
         if i + n > len(lines):
             raise ValueError(
                 f"array '{key}' expects {n} values, but only {len(lines) - i} remain in {path}"
