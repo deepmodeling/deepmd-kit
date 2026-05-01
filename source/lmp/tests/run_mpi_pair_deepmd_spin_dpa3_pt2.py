@@ -60,6 +60,22 @@ parser.add_argument(
     "domain decomposition (nswap>0). Pass '1 1 1' for a single-rank "
     "reference run on the same archive.",
 )
+parser.add_argument(
+    "--pair-coeff",
+    type=str,
+    default="* *",
+    help="pair_coeff arguments (after 'pair_coeff'). Default '* *' "
+    "uses identity LAMMPS-type-to-deepmd-atype mapping. For NULL-type "
+    "tests pass e.g. '* * Ni O NULL' so the third LAMMPS type becomes "
+    "deepmd atype=-1 (filtered before model evaluation).",
+)
+parser.add_argument(
+    "--mass3",
+    type=float,
+    default=None,
+    help="Optional mass for LAMMPS atom type 3 (and any higher types). "
+    "Used by the NULL-type fixture; ignored when only 2 types exist.",
+)
 args = parser.parse_args()
 
 lammps = PyLammps()
@@ -73,11 +89,16 @@ lammps.neigh_modify("every 10 delay 0 check no")
 lammps.read_data(args.DATAFILE)
 lammps.mass("1 58")
 lammps.mass("2 16")
+if args.mass3 is not None:
+    # NULL-type fixture: third LAMMPS type maps to deepmd atype=-1
+    # via pair_coeff and is filtered before model evaluation. Mass
+    # is physically irrelevant.
+    lammps.mass(f"3 {args.mass3}")
 lammps.timestep(0.0005)
 lammps.fix("1 all nve")
 
 lammps.pair_style(f"deepspin {args.PB_FILE}")
-lammps.pair_coeff("* *")
+lammps.pair_coeff(args.pair_coeff)
 lammps.compute("virial all centroid/stress/atom NULL pair")
 # Per-atom magnetic force components. LAMMPS does not expose ``fm``
 # through the legacy ``extract``/``gather_atoms`` registry, so we go

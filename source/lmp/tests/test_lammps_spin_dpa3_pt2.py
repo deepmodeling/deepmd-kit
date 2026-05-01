@@ -57,6 +57,22 @@ pb_file_mpi = (
     / "deeppot_dpa3_spin_mpi.pt2"
 )
 data_file = Path(__file__).parent / "data_dpa3_spin_pt2.lmp"
+# Elongated-box fixture for the spin empty-subdomain MPI test: x is
+# extended to 30 A while atoms remain in x in [3, 13]. Combined with
+# ``processors 2 1 1`` this leaves rank 1 (x >= 15) with zero local
+# atoms, exercising the ``copy_from_nlist`` empty-rank guard for spin.
+data_file_empty_subdomain = (
+    Path(__file__).parent / "data_dpa3_spin_pt2_empty_subdomain.lmp"
+)
+# NULL-type fixture: 4 real Ni-O atoms + 2 LAMMPS type-3 atoms
+# straddling the x=6.5 rank boundary. With ``pair_coeff * * Ni O NULL``
+# LAMMPS type 3 maps to deepmd atype=-1, so those atoms are filtered
+# by ``select_real_atoms_coord`` and the comm tensors must be remapped
+# via ``fwd_map`` before being handed to the with-comm artifact.
+# Forces / force_mag on the 4 real atoms must match the no-NULL
+# baseline (mpi-1 reference run); NULL atoms get zero forces from the
+# deepmd model.
+data_file_null_type = Path(__file__).parent / "data_dpa3_spin_pt2_null_type.lmp"
 
 # 4-atom Ni-O system; same layout as ``test_lammps_spin_pt2.py``. With
 # ``processors 2 1 1`` the split sits at x=6.5 -> 2 atoms per rank.
@@ -86,22 +102,56 @@ def setup_module() -> None:
             "Skip test because PyTorch support is not enabled.",
         )
     write_lmp_data_spin(box, coord, spin, type_NiO, data_file)
+    # Elongated x-axis; atoms unchanged. ``processors 2 1 1`` splits
+    # at x=15 A and rank 1 owns x >= 15, which is empty.
+    box_empty = np.array([0, 30, 0, 13, 0, 13, 0, 0, 0])
+    write_lmp_data_spin(box_empty, coord, spin, type_NiO, data_file_empty_subdomain)
+    # NULL-type fixture: append 2 LAMMPS type-3 atoms within rcut
+    # (~4 A) of real atoms on BOTH sides of the x=6.5 rank boundary,
+    # so they appear in cross-rank sendlists and the fwd_map-based
+    # comm-tensor remap is genuinely exercised. NULL atoms still need
+    # spin coordinates (write_lmp_data_spin format); we give them
+    # zero spin like the type-2 (O) atoms.
+    coord_null = np.concatenate(
+        [
+            coord,
+            np.array(
+                [
+                    [5.5, 6.0, 6.0],  # rank 0 side, near boundary
+                    [7.5, 7.0, 7.0],  # rank 1 side, near boundary
+                ]
+            ),
+        ]
+    )
+    spin_null = np.concatenate([spin, np.zeros((2, 3))])
+    type_null = np.concatenate([type_NiO, np.array([3, 3])])
+    write_lmp_data_spin(box, coord_null, spin_null, type_null, data_file_null_type)
 
 
 def teardown_module() -> None:
-    if data_file.exists():
-        os.remove(data_file)
+    for f in [data_file, data_file_empty_subdomain, data_file_null_type]:
+        if f.exists():
+            os.remove(f)
 
 
 def _run_mpi_subprocess(
     nprocs: int,
     extra_args: list[str] | None = None,
     processors: str | None = None,
+    data_path: Path | None = None,
+    runner_args: list[str] | None = None,
 ) -> dict:
     """Run ``run_mpi_pair_deepmd_spin_dpa3_pt2.py`` under
     ``mpirun -n <nprocs>`` and return
     ``{"pe", "forces", "force_mag", "virials"}``.
+
+    ``data_path`` (default ``data_file``) selects the LAMMPS data file
+    -- the empty-subdomain and NULL-type tests point at non-default
+    fixtures. ``runner_args`` flows additional flags (e.g.
+    ``--pair-coeff``, ``--mass3``) to the subprocess runner.
     """
+    if data_path is None:
+        data_path = data_file
     with tempfile.NamedTemporaryFile(mode="r", suffix=".out", delete=False) as f:
         out_path = f.name
     try:
@@ -111,7 +161,7 @@ def _run_mpi_subprocess(
             str(nprocs),
             sys.executable,
             str(Path(__file__).parent / "run_mpi_pair_deepmd_spin_dpa3_pt2.py"),
-            str(data_file.resolve()),
+            str(data_path.resolve()),
             str(pb_file_mpi.resolve()),
             out_path,
         ]
@@ -121,6 +171,8 @@ def _run_mpi_subprocess(
             argv.extend(["--processors", "1 1 1"])
         if extra_args:
             argv.extend(extra_args)
+        if runner_args:
+            argv.extend(runner_args)
         sp.check_call(argv)
         with open(out_path) as fh:
             lines = fh.read().strip().splitlines()
@@ -176,3 +228,77 @@ def test_pair_deepmd_mpi_dpa3_spin() -> None:
     np.testing.assert_allclose(
         out_mpi["virials"], out_ref["virials"], atol=1e-8, rtol=0
     )
+
+
+@pytest.mark.skipif(
+    shutil.which("mpirun") is None, reason="MPI is not installed on this system"
+)
+@pytest.mark.skipif(
+    importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
+)
+def test_pair_deepmd_mpi_dpa3_spin_empty_subdomain() -> None:
+    """Spin DPA3 multi-rank with one empty rank.
+
+    Elongated x box (30 A) + ``processors 2 1 1`` puts all 4 atoms on
+    rank 0; rank 1 has nloc=0. Exercises the C++ ``copy_from_nlist``
+    empty-rank guard for the spin path (the with-comm artifact still
+    runs on rank 1 with nloc_real=0). Compares against same-archive
+    mpi-1 reference.
+    """
+    out_mpi = _run_mpi_subprocess(nprocs=2, data_path=data_file_empty_subdomain)
+    out_ref = _run_mpi_subprocess(nprocs=1, data_path=data_file_empty_subdomain)
+
+    assert out_mpi["pe"] == pytest.approx(out_ref["pe"], rel=1e-10, abs=1e-12)
+    np.testing.assert_allclose(out_mpi["forces"], out_ref["forces"], atol=1e-8, rtol=0)
+    np.testing.assert_allclose(
+        out_mpi["force_mag"], out_ref["force_mag"], atol=1e-8, rtol=0
+    )
+    np.testing.assert_allclose(
+        out_mpi["virials"], out_ref["virials"], atol=1e-8, rtol=0
+    )
+
+
+@pytest.mark.skipif(
+    shutil.which("mpirun") is None, reason="MPI is not installed on this system"
+)
+@pytest.mark.skipif(
+    importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
+)
+def test_pair_deepmd_mpi_dpa3_spin_null_type() -> None:
+    """Spin DPA3 multi-rank with NULL-type atoms straddling the
+    rank boundary.
+
+    Two LAMMPS type-3 atoms (mapped to deepmd atype=-1 via
+    ``pair_coeff * * Ni O NULL``) sit at x=5.5 and x=7.5, just inside
+    the rcut window of either side of the x=6.5 boundary. They appear
+    in the cross-rank sendlists and are filtered by
+    ``select_real_atoms_coord`` -- so the spin path goes through
+    ``DeepSpinPTExpt::compute`` with ``nall_real < nall``, triggering
+    the ``has_null_atoms`` branch that calls
+    ``build_comm_tensors_positional_with_virtual_atoms`` (fwd_map-based
+    sendlist remap). Compares mpi-2 vs same-archive mpi-1 reference
+    (nullifying NULL forces and using the same fwd_map remap on rank 0
+    too).
+    """
+    runner_args = ["--pair-coeff", "* * Ni O NULL", "--mass3", "1.0"]
+    out_mpi = _run_mpi_subprocess(
+        nprocs=2, data_path=data_file_null_type, runner_args=runner_args
+    )
+    out_ref = _run_mpi_subprocess(
+        nprocs=1, data_path=data_file_null_type, runner_args=runner_args
+    )
+
+    assert out_mpi["pe"] == pytest.approx(out_ref["pe"], rel=1e-10, abs=1e-12)
+    np.testing.assert_allclose(out_mpi["forces"], out_ref["forces"], atol=1e-8, rtol=0)
+    np.testing.assert_allclose(
+        out_mpi["force_mag"], out_ref["force_mag"], atol=1e-8, rtol=0
+    )
+    np.testing.assert_allclose(
+        out_mpi["virials"], out_ref["virials"], atol=1e-8, rtol=0
+    )
+    # Sanity: NULL atoms (ids 5, 6) get exactly zero forces from the
+    # deepmd model. ``write_lmp_data_spin`` writes atoms in the order
+    # given (id 1..N), so type-3 NULL atoms are ids 5, 6 (after the 4
+    # real Ni-O atoms).
+    np.testing.assert_array_equal(out_mpi["forces"][4:], np.zeros((2, 3)))
+    np.testing.assert_array_equal(out_mpi["force_mag"][4:], np.zeros((2, 3)))
