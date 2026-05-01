@@ -37,13 +37,12 @@ data_type_map_file = Path(__file__).parent / "data_type_map_dpa3_pt2_nopbc.lmp"
 # setup_module but still load this file at pytest collection time.
 try:
     _ref = read_expected_ref(ref_file)["nopbc"]
-    expected_ae = _ref["expected_e"]
-    expected_e = np.sum(expected_ae)
+    expected_e = float(np.sum(_ref["expected_e"]))
     expected_f = _ref["expected_f"].reshape(6, 3)
     # LAMMPS uses opposite sign convention for virial vs DeepPot atom_virial.
     expected_v = -_ref["expected_v"].reshape(6, 9)
 except FileNotFoundError:
-    expected_ae = expected_e = expected_f = expected_v = None
+    expected_e = expected_f = expected_v = None
 
 box = np.array([0, 13, 0, 13, 0, 13, 0, 0, 0])
 coord = np.array(

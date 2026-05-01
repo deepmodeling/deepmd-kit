@@ -43,11 +43,10 @@ data_file = Path(__file__).parent / "data.lmp"
 # setup_module but still load this file at pytest collection time.
 try:
     _ref = read_expected_ref(ref_file)["default"]
-    expected_ae = _ref["expected_e"]
-    expected_e = np.sum(expected_ae)
+    expected_e = float(np.sum(_ref["expected_e"]))
     expected_f = _ref["expected_f"].reshape(6, 3)
 except FileNotFoundError:
-    expected_ae = expected_e = expected_f = None
+    expected_e = expected_f = None
 
 box = np.array([0, 13, 0, 13, 0, 13, 0, 0, 0])
 coord = np.array(
