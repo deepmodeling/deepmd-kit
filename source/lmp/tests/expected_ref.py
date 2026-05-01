@@ -27,8 +27,17 @@ def read_expected_ref(path):
             continue
         if current_section is None:
             raise ValueError(f"array '{line}' before any [section] in {path}")
-        key, count = line.split()
+        parts = line.split()
+        if len(parts) != 2:
+            raise ValueError(
+                f"invalid array header '{line}' in {path}; expected '<name> <count>'"
+            )
+        key, count = parts
         n = int(count)
+        if i + n > len(lines):
+            raise ValueError(
+                f"array '{key}' expects {n} values, but only {len(lines) - i} remain in {path}"
+            )
         values = [float(lines[i + j].strip()) for j in range(n)]
         i += n
         sections[current_section][key] = np.array(values, dtype=np.float64)

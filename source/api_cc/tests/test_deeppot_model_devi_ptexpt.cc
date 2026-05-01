@@ -455,6 +455,9 @@ class TestInferDeepPotModeDeviPtExptPrecomputed : public ::testing::Test {
     ref.load("../../tests/infer/model_devi.expected");
     expected_md_f = ref.get<VALUETYPE>("default", "expected_md_f");
     expected_md_v = ref.get<VALUETYPE>("default", "expected_md_v");
+    // gen_model_devi.py writes (max, min, avg/mystd) — 3 elements each.
+    ASSERT_EQ(expected_md_f.size(), 3u);
+    ASSERT_EQ(expected_md_v.size(), 3u);
     natoms = coord.size() / 3;
   };
 
