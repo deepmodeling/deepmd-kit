@@ -8,7 +8,13 @@ from copy import (
 from pathlib import (
     Path,
 )
+from unittest.mock import (
+    patch,
+)
 
+import lmdb
+import msgpack
+import numpy as np
 import torch
 from dargs.dargs import (
     ArgumentValueError,
@@ -19,6 +25,9 @@ from deepmd.pt.train.validation import (
     TOPK_RECORDS_INFO_KEY,
     FullValidator,
     resolve_full_validation_start_step,
+)
+from deepmd.pt.utils.lmdb_dataset import (
+    LmdbDataset,
 )
 from deepmd.utils.argcheck import (
     normalize,
@@ -43,6 +52,85 @@ class _DummyModel(torch.nn.Module):
 
     def get_dim_aparam(self) -> int:
         return 0
+
+
+def _make_lmdb_frame(natoms: int, seed: int) -> dict:
+    """Create one synthetic LMDB frame for full-validation tests."""
+    rng = np.random.RandomState(seed)
+    n_type0 = max(1, natoms // 3)
+    n_type1 = natoms - n_type0
+    atype = np.array([0] * n_type0 + [1] * n_type1, dtype=np.int64)
+    return {
+        "atom_names": ["O", "H"],
+        "atom_numbs": [
+            {
+                "type": "<i8",
+                "shape": (1,),
+                "data": np.array([n_type0], dtype=np.int64).tobytes(),
+            },
+            {
+                "type": "<i8",
+                "shape": (1,),
+                "data": np.array([n_type1], dtype=np.int64).tobytes(),
+            },
+        ],
+        "atom_types": {
+            "type": "<i8",
+            "shape": (natoms,),
+            "data": atype.tobytes(),
+        },
+        "coords": {
+            "type": "<f8",
+            "shape": (natoms, 3),
+            "data": rng.randn(natoms, 3).astype(np.float64).tobytes(),
+        },
+        "cells": {
+            "type": "<f8",
+            "shape": (3, 3),
+            "data": (np.eye(3) * 10.0).astype(np.float64).tobytes(),
+        },
+        "energies": {
+            "type": "<f8",
+            "shape": (1,),
+            "data": rng.randn(1).astype(np.float64).tobytes(),
+        },
+        "forces": {
+            "type": "<f8",
+            "shape": (natoms, 3),
+            "data": rng.randn(natoms, 3).astype(np.float64).tobytes(),
+        },
+    }
+
+
+def _create_mixed_nloc_lmdb(path: str) -> str:
+    """Create a mixed-nloc LMDB dataset with 6, 9, and 12-atom frames."""
+    frame_specs = [(6, 4), (9, 4), (12, 2)]
+    total_frames = sum(count for _, count in frame_specs)
+    env = lmdb.open(path, map_size=10 * 1024 * 1024)
+    with env.begin(write=True) as txn:
+        metadata = {
+            "nframes": total_frames,
+            "frame_idx_fmt": "012d",
+            "type_map": ["O", "H"],
+            "system_info": {
+                "natoms": [2, 4],
+                "formula": "mixed",
+            },
+        }
+        txn.put(b"__metadata__", msgpack.packb(metadata, use_bin_type=True))
+        frame_idx = 0
+        for natoms, count in frame_specs:
+            for _ in range(count):
+                txn.put(
+                    format(frame_idx, "012d").encode(),
+                    msgpack.packb(
+                        _make_lmdb_frame(natoms=natoms, seed=frame_idx),
+                        use_bin_type=True,
+                    ),
+                )
+                frame_idx += 1
+    env.close()
+    return path
 
 
 def _make_single_task_config() -> dict:
@@ -191,6 +279,56 @@ class TestValidationHelpers(unittest.TestCase):
                 sorted(path.name for path in Path(tmpdir).glob("best.ckpt-*.pt")),
                 ["best.ckpt-10.t-2.pt", "best.ckpt-20.t-1.pt"],
             )
+
+    def test_full_validator_lmdb_full_validation_iterates_nloc_groups(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            lmdb_path = _create_mixed_nloc_lmdb(f"{tmpdir}/mixed.lmdb")
+            validation_data = LmdbDataset(
+                lmdb_path,
+                type_map=["O", "H"],
+                batch_size=2,
+            )
+            validator = FullValidator(
+                validating_params={
+                    "full_validation": True,
+                    "validation_freq": 1,
+                    "save_best": False,
+                    "max_best_ckpt": 1,
+                    "validation_metric": "E:MAE",
+                    "full_val_file": "val.log",
+                    "full_val_start": 0.0,
+                },
+                validation_data=validation_data,
+                model=_DummyModel(),
+                train_infos={},
+                num_steps=10,
+                rank=0,
+                zero_stage=0,
+                restart_training=False,
+            )
+            observed_natoms = []
+
+            def fake_evaluate_system(data_system):
+                test_data = data_system.get_test()
+                natoms = int(test_data["type"].shape[1])
+                nframes = int(test_data["coord"].shape[0])
+                observed_natoms.append(natoms)
+                return {
+                    "mae_e_per_atom": (float(natoms), nframes),
+                    "rmse_e_per_atom": (float(natoms), nframes),
+                }
+
+            with patch.object(
+                validator,
+                "_evaluate_system",
+                side_effect=fake_evaluate_system,
+            ) as evaluate_system:
+                metrics = validator.evaluate_all_systems()
+
+        self.assertEqual(observed_natoms, [6, 9, 12])
+        self.assertEqual(evaluate_system.call_count, 3)
+        self.assertAlmostEqual(metrics["mae_e_per_atom"], 8.4)
+        self.assertAlmostEqual(metrics["rmse_e_per_atom"], np.sqrt(75.6))
 
 
 class TestValidationArgcheck(unittest.TestCase):

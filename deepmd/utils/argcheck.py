@@ -3089,7 +3089,8 @@ def optimizer_hybrid_muon() -> list[Argument]:
             optional=True,
             default=0.001,
             doc=doc_only_pt_supported
-            + "Weight decay coefficient. Applied only to Muon-routed parameters",
+            + "Weight decay coefficient. Applied to Muon-routed parameters and "
+            + "the AdamW-style decay path for matrix parameters.",
         ),
         Argument(
             "lr_adjust",
@@ -3106,9 +3107,11 @@ def optimizer_hybrid_muon() -> list[Argument]:
             "lr_adjust_coeff",
             float,
             optional=True,
-            default=0.2,
+            default=0.18,
             doc=doc_only_pt_supported
-            + "Coefficient for match-RMS scaling. Only effective when lr_adjust <= 0.",
+            + "Coefficient for match-RMS scaling. Only effective when lr_adjust <= 0. "
+            + "Default 0.18 follows DeepSeek-V4's calibration so Muon update RMS "
+            + "matches AdamW's typical RMS; Moonlight's original recipe uses 0.2.",
         ),
         Argument(
             "muon_mode",
@@ -3123,6 +3126,15 @@ def optimizer_hybrid_muon() -> list[Argument]:
             + "Routing uses effective shape after removing singleton dimensions.",
         ),
         Argument(
+            "enable_gram",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_only_pt_supported
+            + "Enable the compiled Gram Newton-Schulz path for rectangular Muon matrices. "
+            + "Square matrices keep using the current standard Newton-Schulz path.",
+        ),
+        Argument(
             "flash_muon",
             bool,
             optional=True,
@@ -3130,13 +3142,13 @@ def optimizer_hybrid_muon() -> list[Argument]:
             doc=doc_only_pt_supported
             + "Enable triton-accelerated Newton-Schulz orthogonalization. "
             "Requires triton and CUDA. Falls back to PyTorch implementation "
-            "when triton is unavailable or running on CPU.",
+            "when triton is unavailable or running on CPU. Ignored when enable_gram is true.",
         ),
         Argument(
             "magma_muon",
             bool,
             optional=True,
-            default=False,
+            default=True,
             doc=doc_only_pt_supported
             + "Enable Magma-lite damping on the Muon route only. "
             "When enabled, HybridMuon computes momentum-gradient alignment "
@@ -3707,8 +3719,8 @@ def training_data_args() -> list[
 - string "auto": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than 32.\n\n\
 - string "auto:N": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than N.\n\n\
 - string "mixed:N": the batch data will be sampled from all systems and merged into a mixed system with the batch size N. Only support the se_atten descriptor for TensorFlow backend.\n\n\
-- string "max:N": automatically determines the batch size so that the batch_size times the number of atoms in the system is no more than N.\n\n\
-- string "filter:N": the same as `"max:N"` but removes the systems with the number of atoms larger than `N` from the data set.\n\n\
+- string "max:N": automatically determines the batch size so that `batch_size * natoms` is at most `N`. `natoms` is the per-system atom count for npy data and the per-frame nloc for LMDB data. When a single system/frame already has more than `N` atoms, the batch size clamps to 1 and that batch will exceed `N`.\n\n\
+- string "filter:N": the same as `"max:N"` but additionally drops data whose atom count exceeds `N`. For npy data this removes whole systems with natoms > `N`; for LMDB data this removes individual frames with nloc > `N`.\n\n\
 If MPI is used, the value should be considered as the batch size per task.'
     doc_auto_prob_style = 'Determine the probability of systems automatically. The method is assigned by this key and can be\n\n\
 - "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()\n\n\
@@ -3787,7 +3799,9 @@ def validation_data_args() -> list[
 - list: the length of which is the same as the {link_sys}. The batch size of each system is given by the elements of the list.\n\n\
 - int: all {link_sys} use the same batch size.\n\n\
 - string "auto": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than 32.\n\n\
-- string "auto:N": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than N.'
+- string "auto:N": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than N.\n\n\
+- string "max:N": automatically determines the batch size so that `batch_size * natoms` is at most `N`. `natoms` is the per-system atom count for npy data and the per-frame nloc for LMDB data. When a single system/frame already has more than `N` atoms, the batch size clamps to 1 and that batch will exceed `N`.\n\n\
+- string "filter:N": the same as `"max:N"` but additionally drops data whose atom count exceeds `N`. For npy data this removes whole systems with natoms > `N`; for LMDB data this removes individual frames with nloc > `N`.'
     doc_auto_prob_style = 'Determine the probability of systems automatically. The method is assigned by this key and can be\n\n\
 - "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()\n\n\
 - "prob_sys_size" : the probability of a system is proportional to the number of batches in the system\n\n\

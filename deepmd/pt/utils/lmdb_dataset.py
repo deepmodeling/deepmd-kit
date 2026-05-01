@@ -109,7 +109,14 @@ class LmdbDataset(Dataset):
     type_map : list[str]
         Global type map from model config.
     batch_size : int or str
-        Batch size. Supports int, "auto", "auto:N".
+        Batch size rule forwarded to :class:`LmdbDataReader`. Supports:
+
+        - ``int``: fixed batch size for every nloc group.
+        - ``"auto"`` / ``"auto:N"``: ``ceil(N / nloc)`` per nloc group
+          (``N=32`` for bare ``"auto"``).
+        - ``"max:N"``: ``max(1, floor(N / nloc))`` per nloc group.
+        - ``"filter:N"``: same per-nloc formula as ``"max:N"`` and drops
+          every frame whose ``nloc > N`` from the dataset.
     mixed_batch : bool
         If True, allow different nloc in the same batch (future).
         If False (default), use SameNlocBatchSampler.
@@ -211,6 +218,14 @@ class LmdbDataset(Dataset):
     @property
     def batch_size(self) -> int:
         return self._reader.batch_size
+
+    @property
+    def type_map(self) -> list[str]:
+        return self._reader.type_map
+
+    @property
+    def data_requirements(self) -> list[DataRequirementItem]:
+        return self._reader.data_requirements
 
     def add_data_requirement(self, data_requirement: list[DataRequirementItem]) -> None:
         self._reader.add_data_requirement(data_requirement)
