@@ -43,7 +43,27 @@ def _check_underlying_ops_loaded() -> None:
     op schemas + impls.  Without it, the ops can't be registered for
     fake/autograd metadata and callers get a cryptic AttributeError
     on ``torch.ops.deepmd_export.border_op``.
+
+    The .so is loaded as a side effect of ``import deepmd.pt`` (via
+    ``deepmd/pt/cxx_op.py``).  We trigger that import here so callers
+    don't have to remember to do it first — important for environments
+    like DDP-spawned subprocesses that re-import modules from scratch
+    and never see the test conftest's ``import deepmd.pt``.
     """
+    if not (
+        hasattr(torch.ops, "deepmd_export")
+        and hasattr(torch.ops.deepmd_export, "border_op")
+        and hasattr(torch.ops.deepmd_export, "border_op_backward")
+    ):
+        # Triggers cxx_op.py which torch.ops.load_library's the .so.
+        try:
+            import deepmd.pt  # noqa: F401
+        except Exception:
+            # If deepmd.pt itself fails to import, fall through to the
+            # explicit RuntimeError below — clearer than re-raising a
+            # potentially-unrelated import error.
+            pass
+
     if not (
         hasattr(torch.ops, "deepmd_export")
         and hasattr(torch.ops.deepmd_export, "border_op")
@@ -52,7 +72,7 @@ def _check_underlying_ops_loaded() -> None:
         raise RuntimeError(
             "torch.ops.deepmd_export.{border_op,border_op_backward} "
             "are not registered. Build libdeepmd_op_pt.so and ensure "
-            "deepmd.pt is imported before this module."
+            "deepmd.pt is importable before this module."
         )
 
 
