@@ -30,9 +30,9 @@ import numpy as np
 import pytest
 import torch
 
-# Ensure the new C++ symbol is loaded.  pt_expt imports deepmd.pt for
-# the custom-op .so.
-import deepmd.pt
+# comm self-bootstraps the underlying libdeepmd_op_pt.so when needed, so
+# this single side-effect import is enough to register both the C++
+# ops (deepmd::border_op_backward) and their fake/autograd metadata.
 import deepmd.pt_expt.utils.comm  # noqa: F401  - registers deepmd_export::border_op
 
 

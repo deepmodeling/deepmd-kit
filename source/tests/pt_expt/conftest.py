@@ -17,14 +17,9 @@ from torch.overrides import (
     _get_current_function_mode_stack,
 )
 
-# Import ``deepmd.pt`` at conftest evaluation time so libdeepmd_op_pt.so
-# is loaded and ``deepmd_export::{border_op, border_op_backward}`` are
-# registered before any pt_expt test module imports
-# ``deepmd.pt_expt.utils`` (which transitively imports ``comm.py`` and
-# its ``_check_underlying_ops_loaded()`` runtime check). Previously this
-# worked only when collected alongside earlier tests that happened to
-# import deepmd.pt first.
-import deepmd.pt  # noqa: F401  - side-effect: register custom ops
+# ``deepmd.pt_expt.utils.comm`` self-bootstraps libdeepmd_op_pt.so via
+# ``_check_underlying_ops_loaded()``, so we no longer need to preload
+# ``deepmd.pt`` here.
 
 
 def _pop_device_contexts() -> list:
