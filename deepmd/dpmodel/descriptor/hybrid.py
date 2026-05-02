@@ -333,7 +333,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
                 # mixed_types is True, but descrpt.mixed_types is False
                 assert nl_distinguish_types is not None
                 nl = nl_distinguish_types[:, :, nci]
-            odescriptor, gr, g2, h2, sw = descrpt(
+            odescriptor, gr, _g2, _h2, _sw = descrpt(
                 coord_ext, atype_ext, nl, mapping, comm_dict=comm_dict
             )
             out_descriptor.append(odescriptor)

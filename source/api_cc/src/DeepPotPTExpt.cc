@@ -164,21 +164,34 @@ void DeepPotPTExpt::init(const std::string& model,
 
   // Phase 4: load the optional with-comm artifact for multi-rank GNN
   // inference. Pre-Phase-3 .pt2 files lack ``has_comm_artifact``;
-  // default to false so old artifacts keep working.
+  // default to false so old artifacts keep working. If the metadata
+  // flag is set but the nested artifact fails to extract or compile,
+  // fall back to single-rank mode rather than aborting init -- the
+  // hard error then surfaces in ``run_model_with_comm()`` only when
+  // multi-rank actually needs it.
   has_comm_artifact_ = metadata.obj_val.count("has_comm_artifact") &&
                        metadata["has_comm_artifact"].as_bool();
   if (has_comm_artifact_) {
-    // Extract the nested ``extra/forward_lower_with_comm.pt2`` into a
-    // temp file and load it as a second AOTI module. The TempFile
-    // unlinks the temp file on destruction.
-    with_comm_tempfile_ = std::make_unique<deepmd::ptexpt::TempFile>(
-        deepmd::ptexpt::TempFile::from_zip_entry(
-            model, "extra/forward_lower_with_comm.pt2"));
-    with_comm_loader =
-        std::make_unique<torch::inductor::AOTIModelPackageLoader>(
-            with_comm_tempfile_->path(), "model", false, 1,
-            gpu_enabled ? static_cast<c10::DeviceIndex>(gpu_id)
-                        : static_cast<c10::DeviceIndex>(-1));
+    try {
+      // Extract the nested ``extra/forward_lower_with_comm.pt2`` into a
+      // temp file and load it as a second AOTI module. The TempFile
+      // unlinks the temp file on destruction.
+      with_comm_tempfile_ = std::make_unique<deepmd::ptexpt::TempFile>(
+          deepmd::ptexpt::TempFile::from_zip_entry(
+              model, "extra/forward_lower_with_comm.pt2"));
+      with_comm_loader =
+          std::make_unique<torch::inductor::AOTIModelPackageLoader>(
+              with_comm_tempfile_->path(), "model", false, 1,
+              gpu_enabled ? static_cast<c10::DeviceIndex>(gpu_id)
+                          : static_cast<c10::DeviceIndex>(-1));
+    } catch (const std::exception& e) {
+      std::cerr << "DeepPotPTExpt: failed to load with-comm artifact ("
+                << e.what() << "); falling back to single-rank-only dispatch."
+                << std::endl;
+      with_comm_tempfile_.reset();
+      with_comm_loader.reset();
+      has_comm_artifact_ = false;
+    }
   }
 
   int num_intra_nthreads, num_inter_nthreads;

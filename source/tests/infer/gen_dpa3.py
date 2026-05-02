@@ -94,7 +94,10 @@ def main():
     # source/lmp/tests/test_lammps_dpa3_pt2.py::test_pair_deepmd_mpi_dpa3.
     config_mpi = copy.deepcopy(config)
     config_mpi["descriptor"]["use_loc_mapping"] = False
-    model_mpi = get_model(config_mpi)
+    # Defensive deep copy: get_model is allowed to mutate its argument
+    # in place, and we still need ``config_mpi`` intact below for
+    # ``model_def_script``.
+    model_mpi = get_model(copy.deepcopy(config_mpi))
     data_mpi = {
         "model": model_mpi.serialize(),
         "model_def_script": config_mpi,

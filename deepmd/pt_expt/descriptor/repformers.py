@@ -44,6 +44,17 @@ class DescrptBlockRepformers(DescrptBlockRepformersDP):
                 nall,
                 nloc,
             )
+        # The squeeze(0) / unsqueeze(0) dance below assumes a single
+        # frame.  LAMMPS always feeds nb=1 in production; refuse loudly
+        # if a Python caller batches frames so the mismatch surfaces
+        # here rather than as a malformed border_op tensor downstream.
+        if g1.shape[0] != 1:
+            raise RuntimeError(
+                "DescrptBlockRepformers._exchange_ghosts: comm_dict path "
+                "only supports nf=1 (got nf="
+                f"{g1.shape[0]}). Multi-frame batching with comm_dict is "
+                "not supported."
+            )
 
         has_spin = "has_spin" in comm_dict
         if has_spin:

@@ -64,6 +64,17 @@ class DescrptBlockRepflows(DescrptBlockRepflowsDP):
                 "inference requires use_loc_mapping=False so per-layer "
                 "ghost exchange is meaningful."
             )
+        # The squeeze(0) / unsqueeze(0) dance below assumes a single
+        # frame.  LAMMPS always feeds nb=1 in production; refuse loudly
+        # if a Python caller batches frames so the mismatch surfaces
+        # here rather than as a malformed border_op tensor downstream.
+        if node_ebd.shape[0] != 1:
+            raise RuntimeError(
+                "DescrptBlockRepflows._exchange_ghosts: comm_dict path "
+                "only supports nf=1 (got nf="
+                f"{node_ebd.shape[0]}). Multi-frame batching with "
+                "comm_dict is not supported."
+            )
 
         has_spin = "has_spin" in comm_dict
         if has_spin:

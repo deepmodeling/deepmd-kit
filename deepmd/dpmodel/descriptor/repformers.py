@@ -498,6 +498,12 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         not None``.
         """
         del comm_dict, nall, nloc
+        if mapping_tiled is None:
+            raise ValueError(
+                "`mapping` is required by the default `_exchange_ghosts` "
+                "implementation; pass a valid mapping or override the method "
+                "for parallel comm handling."
+            )
         return xp_take_along_axis(g1, mapping_tiled, axis=1)
 
     def call(

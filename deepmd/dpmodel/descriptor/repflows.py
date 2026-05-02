@@ -525,6 +525,11 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         del comm_dict, nall, nloc
         if self.use_loc_mapping:
             return node_ebd
+        if mapping_tiled is None:
+            raise ValueError(
+                "`mapping` is required when use_loc_mapping=False unless "
+                "`_exchange_ghosts` is overridden for parallel comm handling."
+            )
         return xp_take_along_axis(node_ebd, mapping_tiled, axis=1)
 
     def call(

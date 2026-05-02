@@ -173,18 +173,28 @@ void DeepSpinPTExpt::init(const std::string& model,
                   : static_cast<c10::DeviceIndex>(-1));
 
   // Phase 4: load the optional with-comm artifact for multi-rank GNN
-  // spin inference.  Mirrors DeepPotPTExpt; see its init() comment.
+  // spin inference.  Mirrors DeepPotPTExpt; see its init() comment for
+  // the rationale on the try/catch fallback.
   has_comm_artifact_ = metadata.obj_val.count("has_comm_artifact") &&
                        metadata["has_comm_artifact"].as_bool();
   if (has_comm_artifact_) {
-    with_comm_tempfile_ = std::make_unique<deepmd::ptexpt::TempFile>(
-        deepmd::ptexpt::TempFile::from_zip_entry(
-            model, "extra/forward_lower_with_comm.pt2"));
-    with_comm_loader =
-        std::make_unique<torch::inductor::AOTIModelPackageLoader>(
-            with_comm_tempfile_->path(), "model", false, 1,
-            gpu_enabled ? static_cast<c10::DeviceIndex>(gpu_id)
-                        : static_cast<c10::DeviceIndex>(-1));
+    try {
+      with_comm_tempfile_ = std::make_unique<deepmd::ptexpt::TempFile>(
+          deepmd::ptexpt::TempFile::from_zip_entry(
+              model, "extra/forward_lower_with_comm.pt2"));
+      with_comm_loader =
+          std::make_unique<torch::inductor::AOTIModelPackageLoader>(
+              with_comm_tempfile_->path(), "model", false, 1,
+              gpu_enabled ? static_cast<c10::DeviceIndex>(gpu_id)
+                          : static_cast<c10::DeviceIndex>(-1));
+    } catch (const std::exception& e) {
+      std::cerr << "DeepSpinPTExpt: failed to load with-comm artifact ("
+                << e.what() << "); falling back to single-rank-only dispatch."
+                << std::endl;
+      with_comm_tempfile_.reset();
+      with_comm_loader.reset();
+      has_comm_artifact_ = false;
+    }
   }
 
   int num_intra_nthreads, num_inter_nthreads;

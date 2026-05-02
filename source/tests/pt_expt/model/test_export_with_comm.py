@@ -79,16 +79,25 @@ def _build_self_comm_inputs(
     sendlist_indices: np.ndarray,
     keepalive: list,
 ) -> tuple[torch.Tensor, ...]:
-    """Build runtime comm tensors for a single-rank self-send."""
+    """Build runtime comm tensors for a single-rank self-send.
+
+    Clamps the swap count to ``max(1, nghost)`` to mirror the trace-time
+    helper in ``serialization.py::_make_comm_sample_inputs``; that
+    avoids an empty sendlist pointer when a caller happens to construct
+    a fixture with no ghost atoms.
+    """
+    send_count = max(1, nghost)
     sendlist_indices = np.ascontiguousarray(sendlist_indices, dtype=np.int32)
+    if sendlist_indices.size == 0:
+        sendlist_indices = np.zeros(send_count, dtype=np.int32)
     keepalive.append(sendlist_indices)
     nswap = 1
     addr = _addr_of(sendlist_indices)
     send_list = torch.tensor([addr], dtype=torch.int64)
     send_proc = torch.zeros(nswap, dtype=torch.int32)
     recv_proc = torch.zeros(nswap, dtype=torch.int32)
-    send_num = torch.tensor([nghost], dtype=torch.int32)
-    recv_num = torch.tensor([nghost], dtype=torch.int32)
+    send_num = torch.tensor([send_count], dtype=torch.int32)
+    recv_num = torch.tensor([send_count], dtype=torch.int32)
     communicator = torch.zeros(1, dtype=torch.int64)
     nlocal_ts = torch.tensor(nloc, dtype=torch.int32)
     nghost_ts = torch.tensor(nghost, dtype=torch.int32)
@@ -120,11 +129,12 @@ def test_pt2_dual_artifact_for_gnn(tmp_path) -> None:
     deserialize_to_file(pt2_path, data)
     assert os.path.exists(pt2_path)
 
-    # 1. ZIP layout sanity
+    # 1. ZIP layout sanity. PyTorch 2.11 strict layout puts our sidecars
+    # under ``model/extra/`` (PT2_EXTRA_PREFIX); see serialization.py.
     with zipfile.ZipFile(pt2_path, "r") as zf:
         names = set(zf.namelist())
-        meta = json.loads(zf.read("extra/metadata.json").decode("utf-8"))
-        assert "extra/forward_lower_with_comm.pt2" in names, (
+        meta = json.loads(zf.read("model/extra/metadata.json").decode("utf-8"))
+        assert "model/extra/forward_lower_with_comm.pt2" in names, (
             f"with-comm artifact missing; names={sorted(names)}"
         )
     assert meta["has_message_passing"] is True
@@ -141,7 +151,7 @@ def test_pt2_dual_artifact_for_gnn(tmp_path) -> None:
         wc_path = os.path.join(td, "fl_wc.pt2")
         with zipfile.ZipFile(pt2_path, "r") as zf:
             with open(wc_path, "wb") as f:
-                f.write(zf.read("extra/forward_lower_with_comm.pt2"))
+                f.write(zf.read("model/extra/forward_lower_with_comm.pt2"))
         with_comm = aoti_load_package(wc_path)
 
     # 3. Run both artifacts with nframes=1 (matches what the with-comm
