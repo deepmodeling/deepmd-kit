@@ -168,6 +168,16 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         """Returns whether the descriptor has message passing."""
         return any(descrpt.has_message_passing() for descrpt in self.descrpt_list)
 
+    def has_message_passing_across_ranks(self) -> bool:
+        """Returns whether per-layer node embeddings need MPI ghost exchange.
+
+        ``True`` if any child descriptor needs cross-rank message passing
+        (e.g. a hybrid wrapping a DPA3 with ``use_loc_mapping=False``).
+        """
+        return any(
+            descrpt.has_message_passing_across_ranks() for descrpt in self.descrpt_list
+        )
+
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
         return True

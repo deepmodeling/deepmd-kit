@@ -527,6 +527,17 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         """Returns whether the descriptor has message passing."""
         return self.repflows.has_message_passing()
 
+    def has_message_passing_across_ranks(self) -> bool:
+        """Returns whether per-layer node embeddings need MPI ghost exchange.
+
+        Delegates to repflows: ``False`` when ``use_loc_mapping=True``
+        (per-layer messages stay within each rank's local atoms),
+        ``True`` when ``use_loc_mapping=False`` (ghost slots in
+        ``[nb, nall, n_dim]`` layout must be filled by cross-rank
+        exchange before each layer).
+        """
+        return self.repflows.has_message_passing_across_ranks()
+
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
         return True

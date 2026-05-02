@@ -98,45 +98,29 @@ def _json_to_numpy(model_obj: dict) -> dict:
     )
 
 
-def _has_message_passing(model: torch.nn.Module) -> bool:
-    """Detect whether a model's descriptor uses GNN-style message passing.
+def _needs_with_comm_artifact(model: torch.nn.Module) -> bool:
+    """Return ``True`` if the model needs a "with-comm" AOTI artifact compiled.
 
-    GNN descriptors (DPA2 with repformers, DPA3 with repflows) require
-    a per-layer ghost-atom MPI exchange when running multi-rank LAMMPS,
-    which means a separate ``with-comm`` AOTInductor artifact must be
-    compiled.  Non-GNN descriptors (se_e2_a, se_r, se_t, se_t_tebd,
-    DPA1, hybrid-of-non-GNN) need only the regular artifact.
+    The with-comm artifact carries the per-layer ``deepmd_export::border_op``
+    calls that exchange node-embedding tensors across MPI ranks. Multi-rank
+    LAMMPS dispatches to it when the descriptor's message passing extends
+    across rank boundaries (i.e. layers consume neighbour features that
+    live on a different rank). Non-GNN descriptors and GNN descriptors with
+    ``use_loc_mapping=True`` keep all per-layer messaging local to each
+    rank's owned atoms; they need only the regular artifact.
 
-    Additional gate: ``use_loc_mapping=True`` GNN models (the default
-    for DPA3) keep nlist in local-only indexing, so per-layer ghost
-    exchange is meaningless — these get only the regular artifact.
-    Multi-rank LAMMPS for GNN requires use_loc_mapping=False.
-
-    Returns False if the descriptor's ``has_message_passing()`` query
-    cannot be answered (e.g. linear/zbl/frozen models without a single
-    descriptor) — those are assumed local.
+    Delegates to ``descriptor.has_message_passing_across_ranks()``, which
+    descriptor classes implement explicitly. Returns ``False`` defensively
+    when the model has no single descriptor (linear/zbl/frozen) or when
+    the method is somehow missing or raises.
     """
-    try:
-        descriptor = model.atomic_model.descriptor
-    except AttributeError:
-        return False
-    if not hasattr(descriptor, "has_message_passing"):
+    desc = getattr(getattr(model, "atomic_model", None), "descriptor", None)
+    if desc is None or not hasattr(desc, "has_message_passing_across_ranks"):
         return False
     try:
-        if not descriptor.has_message_passing():
-            return False
+        return bool(desc.has_message_passing_across_ranks())
     except (AttributeError, NotImplementedError):
         return False
-    # Walk into the GNN block (repflows / repformers) to inspect
-    # ``use_loc_mapping``. The attribute lives on the block, not on the
-    # top-level descriptor wrapper.
-    for attr in ("repflows", "repformers"):
-        block = getattr(descriptor, attr, None)
-        if block is None:
-            continue
-        if getattr(block, "use_loc_mapping", False):
-            return False
-    return True
 
 
 # Module-level cache for the trace-time sendlist buffer. The pointer
@@ -454,11 +438,10 @@ def _collect_metadata(model: torch.nn.Module, is_spin: bool = False) -> dict:
     if is_spin:
         meta["ntypes_spin"] = model.spin.get_ntypes_spin()
         meta["use_spin"] = [bool(v) for v in model.spin.use_spin]
-    # Record whether the model uses GNN-style message passing.  When
-    # True, .pt2 deserialization compiles a second ``with-comm`` artifact
-    # so multi-rank LAMMPS can drive ghost-atom MPI exchange through
-    # the model.  C++ DeepPotPTExpt branches on this flag at load time.
-    meta["has_message_passing"] = _has_message_passing(model)
+    # Whether multi-rank LAMMPS needs a second "with-comm" AOTI artifact
+    # (per-layer ghost-feature MPI exchange via deepmd_export::border_op).
+    # The C++ DeepPotPTExpt / DeepSpinPTExpt loaders branch on this flag.
+    meta["has_comm_artifact"] = _needs_with_comm_artifact(model)
     return meta
 
 
@@ -588,7 +571,8 @@ def _trace_and_export(
         ``send_proc``, ``recv_proc``, ``send_num``, ``recv_num``,
         ``communicator``, ``nlocal``, ``nghost``) used by the pt_expt
         Repflow/Repformer override to drive MPI ghost-atom exchange.
-        Only valid for GNN models (see ``_has_message_passing``).
+        Only valid for models that need cross-rank ghost-feature exchange
+        (see ``_needs_with_comm_artifact``).
     do_atomic_virial
         If True, the traced graph computes per-atom virial (extra
         autograd.grad backward passes); off by default to keep .pt2
@@ -686,10 +670,12 @@ def _trace_and_export(
     # matter for tracing — only that they're valid tensors of the right
     # shape and dtype.  See ``_make_comm_sample_inputs``.
     if with_comm_dict:
-        if not metadata.get("has_message_passing"):
+        if not _needs_with_comm_artifact(model):
             raise ValueError(
-                "with_comm_dict=True requested but model has no GNN "
-                "message-passing descriptor — there's nothing to compile."
+                "with_comm_dict=True requested but the model's descriptor "
+                "does not need cross-rank message passing "
+                "(has_message_passing_across_ranks() is False) — "
+                "there's nothing to compile."
             )
         nloc_sample = nlist_t.shape[1]
         nall_sample = ext_atype.shape[1]
@@ -847,21 +833,22 @@ def _deserialize_to_file_pt2(
     program into a .pt2 package (ZIP archive with compiled shared libraries),
     then embeds metadata into the archive.
 
-    For GNN models (descriptor.has_message_passing() is True), compiles
-    a SECOND ``with-comm`` artifact and packs it alongside the regular
-    one.  The ``with-comm`` variant accepts comm-dict tensors as
+    For models whose descriptor reports
+    ``has_message_passing_across_ranks() == True`` (DPA2, DPA3 with
+    ``use_loc_mapping=False``, or hybrids wrapping such children),
+    compiles a SECOND ``with-comm`` artifact and packs it alongside the
+    regular one. The ``with-comm`` variant accepts comm-dict tensors as
     additional positional inputs and drives MPI ghost-atom exchange via
-    ``deepmd_export::border_op``.  The C++ ``DeepPotPTExpt`` loader picks
+    ``deepmd_export::border_op``. The C++ ``DeepPotPTExpt`` loader picks
     the artifact based on the LAMMPS rank count at runtime.
 
     Layout inside the .pt2 ZIP (PyTorch 2.11 strict layout):
         regular   →  artifact at ``model/`` (AOTInductor's own layout)
         with-comm →  ``model/extra/forward_lower_with_comm.pt2`` (nested ZIP)
         metadata  →  ``model/extra/metadata.json`` with
-                     ``has_message_passing`` and ``has_comm_artifact``
-                     flags. The C++ reader matches by ``/``-delimited
-                     suffix so the legacy root-level ``extra/`` layout
-                     still loads.
+                     ``has_comm_artifact`` flag. The C++ reader matches
+                     by ``/``-delimited suffix so the legacy root-level
+                     ``extra/`` layout still loads.
 
     Old .pt2 files (pre-this-change) lack ``has_comm_artifact`` so the
     C++ loader must default to ``False`` when the field is missing.
@@ -903,9 +890,11 @@ def _deserialize_to_file_pt2(
     finally:
         _inductor_config.realize_opcount_threshold = saved_threshold
 
-    # Second artifact: with-comm. Only for GNN models.
-    has_comm_artifact = bool(metadata.get("has_message_passing"))
-    metadata["has_comm_artifact"] = has_comm_artifact
+    # Second artifact: with-comm. Only for descriptors whose message
+    # passing extends across rank boundaries. The flag was computed
+    # from the model in ``_collect_metadata`` and is already in
+    # ``metadata`` here.
+    has_comm_artifact = bool(metadata.get("has_comm_artifact"))
     with_comm_bytes: bytes | None = None
     with_comm_output_keys: list[str] | None = None
     if has_comm_artifact:

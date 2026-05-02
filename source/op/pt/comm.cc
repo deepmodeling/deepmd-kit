@@ -140,7 +140,12 @@ class Border : public torch::autograd::Function<Border> {
 #endif
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
 #ifdef USE_MPI
-        if (cuda_aware == 0) {
+        // The CPU-fallback ``recv_g1_tensor.to(kCPU)`` above only runs
+        // when ``world_size >= 1`` (MPI initialized). With no MPI
+        // (single-rank, world_size == 0) the tensor is still on CUDA,
+        // so memcpy on CUDA pointers would segfault — gpuMemcpy is
+        // correct in that case regardless of ``cuda_aware``.
+        if (world_size >= 1 && cuda_aware == 0) {
           memcpy(recv_g1, send_g1,
                  (unsigned long)nsend * tensor_size * sizeof(FPTYPE));
         } else {
@@ -164,7 +169,10 @@ class Border : public torch::autograd::Function<Border> {
     }
 #ifdef USE_MPI
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
-    if (cuda_aware == 0) {
+    // Only copy back when ``recv_g1_tensor`` was moved to CPU above
+    // (world_size >= 1 && cuda_aware == 0). With world_size == 0 the
+    // tensor is still aliased to g1 — no copy needed.
+    if (world_size >= 1 && cuda_aware == 0) {
       g1.copy_(recv_g1_tensor);
     }
 #endif
@@ -305,7 +313,10 @@ class Border : public torch::autograd::Function<Border> {
         if (nrecv) {
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
 #ifdef USE_MPI
-          if (cuda_aware == 0) {
+          // See forward kernel: when world_size==0 the data stays on
+          // CUDA, so memcpy on device pointers segfaults. Only use
+          // host memcpy when we explicitly moved data to CPU above.
+          if (world_size >= 1 && cuda_aware == 0) {
             memcpy(recv_g1, send_g1,
                    (unsigned long)nrecv * tensor_size * sizeof(FPTYPE));
           } else {
@@ -333,9 +344,11 @@ class Border : public torch::autograd::Function<Border> {
     }
 #ifdef USE_MPI
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
-    if (cuda_aware == 0) {
-      // Move result back to the device of the input grad. This replaces
-      // the original in-place copy_ into grad_output[0].
+    // Move result back to the device of the input grad only when
+    // ``d_local_g1_tensor`` was moved to CPU above (world_size >= 1
+    // && cuda_aware == 0). With world_size == 0 the tensor stayed on
+    // its original device — no move needed.
+    if (world_size >= 1 && cuda_aware == 0) {
       d_local_g1_tensor = d_local_g1_tensor.to(grad_g1.device());
     }
 #endif

@@ -9,8 +9,7 @@ archive containing TWO compiled artifacts:
 
 This test verifies:
   1. Both artifacts are present in the archive.
-  2. ``metadata.json`` carries the new ``has_message_passing`` and
-     ``has_comm_artifact`` flags.
+  2. ``metadata.json`` carries the ``has_comm_artifact`` flag.
   3. The with-comm artifact loads via ``aoti_load_package`` and runs
      when fed valid comm-dict tensors built via the ctypes pointer
      trick (see ``test_repflow_parallel.py``).
@@ -137,7 +136,6 @@ def test_pt2_dual_artifact_for_gnn(tmp_path) -> None:
         assert "model/extra/forward_lower_with_comm.pt2" in names, (
             f"with-comm artifact missing; names={sorted(names)}"
         )
-    assert meta["has_message_passing"] is True
     assert meta["has_comm_artifact"] is True
 
     # 2. Both artifacts load.
@@ -245,19 +243,20 @@ def test_make_comm_sample_inputs_clamps_zero_nghost() -> None:
     assert nghost_t.item() == 0
 
 
-def test_has_message_passing_for_hybrid_with_gnn() -> None:
-    """``_has_message_passing`` correctly reports True for hybrid
-    descriptors whose children include a GNN block.
+def test_needs_with_comm_artifact_for_hybrid_with_gnn() -> None:
+    """``_needs_with_comm_artifact`` correctly reports True for hybrid
+    descriptors whose children include a GNN block needing cross-rank
+    message passing.
 
-    The hybrid descriptor delegates ``has_message_passing()`` to its
-    children — if any child has message passing, the hybrid does too.
-    Our metadata flag (``has_message_passing``) is what
-    ``_deserialize_to_file_pt2`` uses to decide whether to compile
-    the with-comm artifact, so the hybrid case must route correctly.
+    The hybrid descriptor delegates ``has_message_passing_across_ranks()``
+    to its children — if any child needs cross-rank message passing,
+    the hybrid does too. ``_deserialize_to_file_pt2`` uses this gate
+    to decide whether to compile the with-comm artifact, so the
+    hybrid case must route correctly.
     """
     from deepmd.pt_expt.model.get_model import get_model as get_pt_expt_model
     from deepmd.pt_expt.utils.serialization import (
-        _has_message_passing,
+        _needs_with_comm_artifact,
     )
 
     config = {
@@ -301,8 +300,10 @@ def test_has_message_passing_for_hybrid_with_gnn() -> None:
     model = get_pt_expt_model(config)
     model.to("cpu")
     model.eval()
-    assert _has_message_passing(model) is True, (
-        "hybrid model with a GNN child must report has_message_passing=True"
+    assert _needs_with_comm_artifact(model) is True, (
+        "hybrid model with a use_loc_mapping=False GNN child must "
+        "report has_message_passing_across_ranks=True so a with-comm "
+        "artifact gets compiled"
     )
 
 
@@ -330,7 +331,11 @@ def test_pte_with_comm_dict_traces_and_loads(tmp_path) -> None:
         model_json_override=None,
         with_comm_dict=True,
     )
-    assert metadata["has_message_passing"] is True
+    # ``_trace_and_export(with_comm_dict=True)`` is the with-comm path
+    # by construction; metadata at this layer no longer carries the
+    # has_message_passing flag (only ``has_comm_artifact``, written
+    # later in _deserialize_to_file_pt2). Sanity-check via output_keys
+    # that the trace produced energy outputs.
     # output_keys mirrors what the regular trace would produce; at
     # least one energy-related key must be present.
     assert any(k.startswith("energy") for k in output_keys), (

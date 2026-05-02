@@ -110,8 +110,9 @@ def main():
     print(f"Exporting to {pt2_path} ...")  # noqa: T201
     # DPA2's repformer block has no ``use_loc_mapping`` knob (unlike
     # DPA3), so a single .pt2 already carries the dual-artifact layout
-    # (regular + with-comm) — _has_message_passing returns True and the
-    # serializer produces both. No separate _mpi.pt2 needed.
+    # (regular + with-comm) — ``has_message_passing_across_ranks``
+    # returns True and the serializer produces both. No separate _mpi.pt2
+    # needed.
     pt_expt_deserialize_to_file(pt2_path, copy.deepcopy(data), do_atomic_virial=True)
 
     pth_path = os.path.join(base_dir, "deeppot_dpa2.pth")

@@ -600,6 +600,15 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         """Returns whether the descriptor block has message passing."""
         return True
 
+    def has_message_passing_across_ranks(self) -> bool:
+        """Returns whether per-layer g1 needs MPI ghost exchange.
+
+        Repformers has no ``use_loc_mapping`` opt-out; it always passes
+        ``g1`` in ``[nb, nall, n_dim]`` layout, so multi-rank always needs
+        cross-rank exchange of the per-atom feature tensor.
+        """
+        return True
+
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the descriptor block needs sorted nlist when using `forward_lower`."""
         return False
