@@ -54,18 +54,27 @@ def _build_self_comm_dict(
     device: torch.device,
     keepalive: list,
 ) -> dict:
+    """Control tensors must live on CPU because the C++ ``border_op``
+    host code dereferences ``data_ptr<int>()`` directly.  Production
+    builds them on CPU in
+    ``commonPTExpt.h::build_comm_tensors_positional``; on a CUDA build
+    a CUDA-device control tensor segfaults the host read.  See
+    ``test_repflow_parallel.py::_build_self_comm_dict`` for the full
+    rationale.
+    """
+    del device  # control tensors are always CPU
     sendlist_indices = np.ascontiguousarray(sendlist_indices, dtype=np.int32)
     keepalive.append(sendlist_indices)
     nswap = 1
     addr = _addr_of(sendlist_indices)
-    sendlist_tensor = torch.tensor([addr], dtype=torch.int64, device=device)
-    sendproc = torch.zeros(nswap, dtype=torch.int32, device=device)
-    recvproc = torch.zeros(nswap, dtype=torch.int32, device=device)
-    sendnum = torch.tensor([nghost], dtype=torch.int32, device=device)
-    recvnum = torch.tensor([nghost], dtype=torch.int32, device=device)
-    communicator = torch.zeros(1, dtype=torch.int64, device=device)
-    nlocal_ts = torch.tensor(nloc, dtype=torch.int32, device=device)
-    nghost_ts = torch.tensor(nghost, dtype=torch.int32, device=device)
+    sendlist_tensor = torch.tensor([addr], dtype=torch.int64, device="cpu")
+    sendproc = torch.zeros(nswap, dtype=torch.int32, device="cpu")
+    recvproc = torch.zeros(nswap, dtype=torch.int32, device="cpu")
+    sendnum = torch.tensor([nghost], dtype=torch.int32, device="cpu")
+    recvnum = torch.tensor([nghost], dtype=torch.int32, device="cpu")
+    communicator = torch.zeros(1, dtype=torch.int64, device="cpu")
+    nlocal_ts = torch.tensor(nloc, dtype=torch.int32, device="cpu")
+    nghost_ts = torch.tensor(nghost, dtype=torch.int32, device="cpu")
     return {
         "send_list": sendlist_tensor,
         "send_proc": sendproc,
