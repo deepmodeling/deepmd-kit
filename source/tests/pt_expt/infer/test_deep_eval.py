@@ -644,12 +644,13 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
         cls.tmpfile = tempfile.NamedTemporaryFile(suffix=".pt2", delete=False)
         cls.tmpfile.close()
         # Temporarily clear default device to avoid poisoning AOTInductor
-        # compilation (tests/pt/__init__.py sets it to "cuda:9999999").
+        # compilation (tests/pt/__init__.py may set a fake CUDA device).
+        prev = torch.get_default_device()
         torch.set_default_device(None)
         try:
             deserialize_to_file(cls.tmpfile.name, cls.model_data, do_atomic_virial=True)
         finally:
-            torch.set_default_device("cuda:9999999")
+            torch.set_default_device(prev)
 
         cls.meta_tmpfile = tempfile.NamedTemporaryFile(suffix=".pt2", delete=False)
         cls.meta_tmpfile.close()
@@ -720,6 +721,7 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
         with tempfile.NamedTemporaryFile(suffix=".pt2", delete=False) as f:
             tmpfile2 = f.name
         try:
+            prev = torch.get_default_device()
             torch.set_default_device(None)
             try:
                 data_with_config = {
@@ -728,7 +730,7 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
                 }
                 deserialize_to_file(tmpfile2, data_with_config)
             finally:
-                torch.set_default_device("cuda:9999999")
+                torch.set_default_device(prev)
             dp2 = DeepPot(tmpfile2)
             mds = dp2.deep_eval.get_model_def_script()
             self.assertEqual(mds, training_config)
@@ -1215,11 +1217,12 @@ class TestDeepEvalEnerDefaultFparamPt2(unittest.TestCase):
         cls.model_data = {"model": cls.model.serialize()}
         cls.tmpfile = tempfile.NamedTemporaryFile(suffix=".pt2", delete=False)
         cls.tmpfile.close()
+        prev = torch.get_default_device()
         torch.set_default_device(None)
         try:
             deserialize_to_file(cls.tmpfile.name, cls.model_data)
         finally:
-            torch.set_default_device("cuda:9999999")
+            torch.set_default_device(prev)
 
         # Also save .pte for cross-format comparison
         cls.pte_tmpfile = tempfile.NamedTemporaryFile(suffix=".pte", delete=False)
@@ -1430,11 +1433,12 @@ class TestDeepEvalEnerAparamPt2(unittest.TestCase):
         cls.model_data = {"model": cls.model.serialize()}
         cls.tmpfile = tempfile.NamedTemporaryFile(suffix=".pt2", delete=False)
         cls.tmpfile.close()
+        prev = torch.get_default_device()
         torch.set_default_device(None)
         try:
             deserialize_to_file(cls.tmpfile.name, cls.model_data, do_atomic_virial=True)
         finally:
-            torch.set_default_device("cuda:9999999")
+            torch.set_default_device(prev)
 
         # Also save .pte for cross-format comparison
         cls.pte_tmpfile = tempfile.NamedTemporaryFile(suffix=".pte", delete=False)
