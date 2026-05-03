@@ -81,24 +81,32 @@ def _build_self_comm_dict(
         int32 array of length ``nghost`` giving local indices to copy
         into successive ghost slots [nloc, nloc+1, ...].
     device
-        Target torch device for tensors.
+        Target torch device for the data tensors. The control tensors
+        (send_proc / recv_proc / send_num / recv_num / send_list /
+        communicator / nlocal / nghost) are forced to CPU regardless of
+        ``device`` because the C++ ``border_op`` host-side code derefer-
+        ences ``data_ptr<int>()`` directly — production builds them on
+        CPU in ``commonPTExpt.h::build_comm_tensors_positional`` and a
+        CUDA-built kernel will segfault if it tries to read CUDA memory
+        from the host.
     keepalive
         List into which we store numpy buffers that must outlive the
         forward pass (their addresses are referenced by sendlist_tensor).
     """
+    del device  # control tensors are always CPU; see docstring
     sendlist_indices = np.ascontiguousarray(sendlist_indices, dtype=np.int32)
     keepalive.append(sendlist_indices)
     nswap = 1
     addr = _addr_of(sendlist_indices)
     # int** packed as one int64 entry per swap.
-    sendlist_tensor = torch.tensor([addr], dtype=torch.int64, device=device)
-    sendproc = torch.zeros(nswap, dtype=torch.int32, device=device)
-    recvproc = torch.zeros(nswap, dtype=torch.int32, device=device)
-    sendnum = torch.tensor([nghost], dtype=torch.int32, device=device)
-    recvnum = torch.tensor([nghost], dtype=torch.int32, device=device)
-    communicator = torch.zeros(1, dtype=torch.int64, device=device)
-    nlocal_ts = torch.tensor(nloc, dtype=torch.int32, device=device)
-    nghost_ts = torch.tensor(nghost, dtype=torch.int32, device=device)
+    sendlist_tensor = torch.tensor([addr], dtype=torch.int64, device="cpu")
+    sendproc = torch.zeros(nswap, dtype=torch.int32, device="cpu")
+    recvproc = torch.zeros(nswap, dtype=torch.int32, device="cpu")
+    sendnum = torch.tensor([nghost], dtype=torch.int32, device="cpu")
+    recvnum = torch.tensor([nghost], dtype=torch.int32, device="cpu")
+    communicator = torch.zeros(1, dtype=torch.int64, device="cpu")
+    nlocal_ts = torch.tensor(nloc, dtype=torch.int32, device="cpu")
+    nghost_ts = torch.tensor(nghost, dtype=torch.int32, device="cpu")
     return {
         "send_list": sendlist_tensor,
         "send_proc": sendproc,
