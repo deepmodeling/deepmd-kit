@@ -25,7 +25,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 from gen_common import (
     ensure_inductor_compiler,
     load_custom_ops,
-    print_cpp_spin_values,
+    write_expected_ref,
 )
 
 
@@ -174,14 +174,36 @@ def main():
 
     e1, f1, v1, ae1, av1, fm1, _ = dp.eval(coord, box, atype, atomic=True, spin=spin)
     print(f"\n// PBC total energy: {e1[0, 0]:.18e}")  # noqa: T201
-    print_cpp_spin_values("PBC reference values", ae1, f1, fm1, v1, av1)
 
     # ---- 4. Run inference for NoPbc test ----
     e_np, f_np, v_np, ae_np, av_np, fm_np, _ = dp.eval(
         coord, None, atype, atomic=True, spin=spin
     )
     print(f"\n// NoPbc total energy: {e_np[0, 0]:.18e}")  # noqa: T201
-    print_cpp_spin_values("NoPbc reference values", ae_np, f_np, fm_np, v_np, av_np)
+
+    # ---- 4b. Write sidecar reference file consumed by C++ tests ----
+    ref_path = os.path.join(base_dir, "deeppot_dpa_spin.expected")
+    write_expected_ref(
+        ref_path,
+        sections={
+            "pbc": {
+                "expected_e": ae1[0, :, 0],
+                "expected_f": f1[0],
+                "expected_fm": fm1[0],
+                "expected_tot_v": v1[0],
+                "expected_atom_v": av1[0],
+            },
+            "nopbc": {
+                "expected_e": ae_np[0, :, 0],
+                "expected_f": f_np[0],
+                "expected_fm": fm_np[0],
+                "expected_tot_v": v_np[0],
+                "expected_atom_v": av_np[0],
+            },
+        },
+        source_script="source/tests/infer/gen_spin.py",
+    )
+    print(f"Wrote {ref_path}")  # noqa: T201
 
     # ---- 5. Verify .pth gives same results ----
     if os.path.exists(pth_path):

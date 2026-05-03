@@ -13,6 +13,9 @@ from pathlib import (
 import constants
 import numpy as np
 import pytest
+from expected_ref import (
+    read_expected_ref,
+)
 from lammps import (
     PyLammps,
 )
@@ -21,103 +24,25 @@ from write_lmp_data import (
 )
 
 pb_file = Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot_dpa3.pt2"
+ref_file = (
+    Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot_dpa3.expected"
+)
 data_file = Path(__file__).parent / "data_dpa3_pt2.lmp"
 data_file_si = Path(__file__).parent / "data_dpa3_pt2.si"
 data_type_map_file = Path(__file__).parent / "data_type_map_dpa3_pt2.lmp"
 
-# Reference values from gen_dpa3.py / test_deeppot_dpa3_ptexpt.cc (PBC)
-expected_ae = np.array(
-    [
-        2.733142942358297023e-01,
-        2.768815473296480922e-01,
-        2.781664369968356865e-01,
-        2.697839344989072519e-01,
-        2.741210600049306945e-01,
-        2.752870928812235496e-01,
-    ]
-)
-expected_e = np.sum(expected_ae)
-expected_f = np.array(
-    [
-        -1.962618723134541832e-02,
-        4.287158582278347702e-02,
-        7.640666386947853050e-03,
-        5.554130248696588501e-02,
-        -6.501206231527984977e-03,
-        -4.524468847893595158e-02,
-        -3.851051736663693714e-02,
-        -3.620789238677154381e-02,
-        3.756162244251591564e-02,
-        6.729090678104879264e-02,
-        -2.430710555108604037e-02,
-        4.496058666120762021e-02,
-        9.285825331084011924e-03,
-        5.623126339971108029e-02,
-        -8.776072674283137698e-02,
-        -7.398133000111631330e-02,
-        -3.208664505310900028e-02,
-        4.284253973109593966e-02,
-    ]
-).reshape(6, 3)
-
-expected_v = -np.array(
-    [
-        -2.519191242984861884e-02,
-        -7.976296517418629550e-04,
-        2.293255716383547221e-02,
-        -1.129879902880513709e-04,
-        -2.480533869648754441e-02,
-        5.147545203263749480e-03,
-        2.250634701911344987e-02,
-        5.288887046140826331e-03,
-        -2.010244267109611085e-02,
-        -1.779331319768159489e-02,
-        3.093850189397499839e-03,
-        1.469388965841003300e-02,
-        -3.857294749719837688e-03,
-        1.122172669801067097e-03,
-        3.015485878866499582e-03,
-        1.588838841470147090e-02,
-        -2.814760933954751562e-03,
-        -1.277216714527013713e-02,
-        -8.763367643346370306e-03,
-        -1.305889135368112908e-02,
-        1.181350951828694096e-02,
-        -6.506014073233991855e-03,
-        -6.021216432246893902e-03,
-        6.406967309407277100e-03,
-        1.054423249710041179e-02,
-        1.210616766999832172e-02,
-        -1.127472660426425549e-02,
-        -3.873334330831591787e-02,
-        -3.620067664760272686e-03,
-        1.173198873109224322e-03,
-        -3.979800321914496279e-03,
-        -1.483777776121806245e-02,
-        2.311848485249741111e-02,
-        1.659292900032220339e-03,
-        2.315104663227764842e-02,
-        -3.645194750481960122e-02,
-        -1.668107738824501848e-04,
-        -7.331929353596922626e-03,
-        1.141573012886789966e-02,
-        -1.498650485705460686e-03,
-        -1.339178008942835431e-02,
-        2.104129816063767672e-02,
-        2.247013447171188061e-03,
-        2.035538814221872148e-02,
-        -3.195007182084359104e-02,
-        -2.339460083073257798e-02,
-        -1.001949167693141039e-02,
-        1.320033846426920537e-02,
-        -1.577941189045228843e-02,
-        -6.283307183655661120e-03,
-        8.237968913765561507e-03,
-        2.238394952866012630e-02,
-        8.881021761757389166e-03,
-        -1.162377795308391741e-02,
-    ]
-).reshape(6, 9)
+# Reference values written by source/tests/infer/gen_dpa3.py (PBC case).
+# Guarded with try/except because gen_dpa3.py only runs when PyTorch is built;
+# matrices that disable PyTorch (e.g. paddle-only) skip the test in
+# setup_module but still load this file at pytest collection time.
+try:
+    _ref = read_expected_ref(ref_file)["pbc"]
+    expected_e = float(np.sum(_ref["expected_e"]))
+    expected_f = _ref["expected_f"].reshape(6, 3)
+    # LAMMPS uses opposite sign convention for virial vs DeepPot atom_virial.
+    expected_v = -_ref["expected_v"].reshape(6, 9)
+except FileNotFoundError:
+    expected_e = expected_f = expected_v = None
 
 box = np.array([0, 13, 0, 13, 0, 13, 0, 0, 0])
 coord = np.array(
