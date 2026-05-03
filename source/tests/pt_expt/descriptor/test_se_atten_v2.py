@@ -145,7 +145,11 @@ class TestDescrptSeAttenV2(TestCaseSingleFrameWithNlist):
         dstd = 0.1 + np.abs(dstd)
 
         dtype = PRECISION_DICT[prec]
-        atol = 1e-5 if prec == "float32" else 1e-10
+        # float32 tabulation error grows with embedding-net output magnitude;
+        # bias init N(0,1) (matching pt) widens the range vs. the earlier
+        # Glorot bias init, observed max-abs diff ~3.2e-5 — set 4e-5 with
+        # ~25% headroom over the measured value.
+        atol = 4e-5 if prec == "float32" else 1e-10
         dd0 = DescrptSeAttenV2(
             self.rcut,
             self.rcut_smth,

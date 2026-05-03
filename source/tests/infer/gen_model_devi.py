@@ -19,6 +19,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 from gen_common import (
     ensure_inductor_compiler,
     load_custom_ops,
+    write_expected_ref,
 )
 
 
@@ -139,52 +140,10 @@ def main():
     fparam_val = np.array([0.25852028], dtype=np.float64)
     aparam_val = np.array([0.25852028] * 6, dtype=np.float64)
 
-    # Inference with explicit fparam for both models
-    for idx, pt2_path in enumerate(models):
-        dp = DeepPot(pt2_path)
-
-        # With explicit fparam + aparam
-        e, f, v, ae, av = dp.eval(
-            coord,
-            box,
-            atype,
-            fparam=fparam_val,
-            aparam=aparam_val,
-            atomic=True,
-        )
-
-        # Note: default_fparam path is tested at the C++ level;
-        # the Python pt2 runner filters None args so it can't be tested here.
-
-        atom_energy = ae[0, :, 0]
-        force = f[0]
-        atom_virial = av[0]
-
-        print(f"\n// ---- Model {idx} reference values (LAMMPS nlist path) ----")  # noqa: T201
-        print(f"// Total energy: {e[0, 0]:.18e}")  # noqa: T201
-        print()  # noqa: T201
-        print(f"  // model {idx}")  # noqa: T201
-        print("  std::vector<VALUETYPE> expected_e = {")  # noqa: T201
-        for ii, ev in enumerate(atom_energy):
-            comma = "," if ii < len(atom_energy) - 1 else ""
-            print(f"      {ev:.18e}{comma}")  # noqa: T201
-        print("  };")  # noqa: T201
-
-        print("  std::vector<VALUETYPE> expected_f = {")  # noqa: T201
-        force_flat = force.flatten()
-        for ii, fv in enumerate(force_flat):
-            comma = "," if ii < len(force_flat) - 1 else ""
-            print(f"      {fv:.18e}{comma}")  # noqa: T201
-        print("  };")  # noqa: T201
-
-        print("  std::vector<VALUETYPE> expected_v = {")  # noqa: T201
-        virial_flat = atom_virial.flatten()
-        for ii, vv in enumerate(virial_flat):
-            comma = "," if ii < len(virial_flat) - 1 else ""
-            print(f"      {vv:.18e}{comma}")  # noqa: T201
-        print("  };")  # noqa: T201
-
     # ---- 4. Compute deviation stats (LAMMPS nlist) ----
+    # The C++ Precomputed test only consumes the model-deviation aggregate
+    # statistics (expected_md_f, expected_md_v); per-model atom_energy/force/
+    # virial are not asserted on the C++ side, so we don't write them.
     dp0 = DeepPot(models[0])
     dp1 = DeepPot(models[1])
 
@@ -241,14 +200,20 @@ def main():
 
     print(f"// std_v: max={max_std_v:.18e}  min={min_std_v:.18e}  mystd={mystd_v:.18e}")  # noqa: T201
 
-    print("\n  std::vector<VALUETYPE> expected_md_f = {")  # noqa: T201
-    print(f"      {max_std_f:.18e},")  # noqa: T201
-    print(f"      {min_std_f:.18e},")  # noqa: T201
-    print(f"      {avg_std_f:.18e}}}; // max min avg")  # noqa: T201
-    print("  std::vector<VALUETYPE> expected_md_v = {")  # noqa: T201
-    print(f"      {max_std_v:.18e},")  # noqa: T201
-    print(f"      {min_std_v:.18e},")  # noqa: T201
-    print(f"      {mystd_v:.18e}}}; // max min mystd")  # noqa: T201
+    # ---- 5. Write sidecar reference for C++ Precomputed test ----
+    ref_path = os.path.join(base_dir, "model_devi.expected")
+    write_expected_ref(
+        ref_path,
+        sections={
+            "default": {
+                # Layout: (max, min, avg) for std_f; (max, min, mystd) for std_v.
+                "expected_md_f": np.array([max_std_f, min_std_f, avg_std_f]),
+                "expected_md_v": np.array([max_std_v, min_std_v, mystd_v]),
+            },
+        },
+        source_script="source/tests/infer/gen_model_devi.py",
+    )
+    print(f"Wrote {ref_path}")  # noqa: T201
 
     print("\nDone!")  # noqa: T201
 
