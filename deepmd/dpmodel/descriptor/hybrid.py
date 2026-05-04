@@ -168,6 +168,16 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         """Returns whether the descriptor has message passing."""
         return any(descrpt.has_message_passing() for descrpt in self.descrpt_list)
 
+    def has_message_passing_across_ranks(self) -> bool:
+        """Returns whether per-layer node embeddings need MPI ghost exchange.
+
+        ``True`` if any child descriptor needs cross-rank message passing
+        (e.g. a hybrid wrapping a DPA3 with ``use_loc_mapping=False``).
+        """
+        return any(
+            descrpt.has_message_passing_across_ranks() for descrpt in self.descrpt_list
+        )
+
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
         return True
@@ -276,6 +286,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         nlist: Array,
         mapping: Array | None = None,
         fparam: Array | None = None,
+        comm_dict: dict | None = None,
     ) -> tuple[
         Array,
         Array | None,
@@ -332,7 +343,9 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
                 # mixed_types is True, but descrpt.mixed_types is False
                 assert nl_distinguish_types is not None
                 nl = nl_distinguish_types[:, :, nci]
-            odescriptor, gr, g2, h2, sw = descrpt(coord_ext, atype_ext, nl, mapping)
+            odescriptor, gr, _g2, _h2, _sw = descrpt(
+                coord_ext, atype_ext, nl, mapping, comm_dict=comm_dict
+            )
             out_descriptor.append(odescriptor)
             if gr is not None:
                 out_gr.append(gr)

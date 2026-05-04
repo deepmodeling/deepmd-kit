@@ -157,6 +157,7 @@ class DPAtomicModel(BaseAtomicModel):
         mapping: Array | None = None,
         fparam: Array | None = None,
         aparam: Array | None = None,
+        comm_dict: dict | None = None,
     ) -> dict[str, Array]:
         """Models' atomic predictions.
 
@@ -174,6 +175,9 @@ class DPAtomicModel(BaseAtomicModel):
             frame parameter. nf x ndf
         aparam
             atomic parameter. nf x nloc x nda
+        comm_dict
+            MPI communication metadata for parallel inference. ``None`` for
+            non-parallel inference (default). Forwarded to the descriptor.
 
         Returns
         -------
@@ -215,6 +219,7 @@ class DPAtomicModel(BaseAtomicModel):
             nlist,
             mapping=mapping,
             fparam=fparam_input_for_des if self.add_chg_spin_ebd else None,
+            comm_dict=comm_dict,
         )
         ret = self.fitting_net(
             descriptor,

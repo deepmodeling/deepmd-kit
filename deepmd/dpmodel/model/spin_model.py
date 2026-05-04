@@ -748,6 +748,7 @@ class SpinModel(NativeOP):
         fparam: Array | None = None,
         aparam: Array | None = None,
         do_atomic_virial: bool = False,
+        comm_dict: dict | None = None,
     ) -> dict[str, Array]:
         """Return model prediction with raw internal keys. Lower interface that takes
         extended atomic coordinates, types and spins, nlist, and mapping
@@ -800,6 +801,7 @@ class SpinModel(NativeOP):
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
             extended_coord_corr=extended_coord_corr,
+            comm_dict=comm_dict,
         )
         model_output_type = self.backbone_model.model_output_type()
         if "mask" in model_output_type:

@@ -253,7 +253,9 @@ class PairTabAtomicModel(BaseAtomicModel):
         mapping: Array | None = None,
         fparam: Array | None = None,
         aparam: Array | None = None,
+        comm_dict: dict | None = None,
     ) -> dict[str, Array]:
+        del comm_dict  # pairtab is local; no MPI ghost exchange needed.
         xp = array_api_compat.array_namespace(extended_coord, extended_atype, nlist)
         nframes, nloc, nnei = nlist.shape
         extended_coord = xp.reshape(extended_coord, (nframes, -1, 3))

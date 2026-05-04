@@ -1,0 +1,214 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
+"""Multi-rank LAMMPS driver for DPA3 .pt2 (Phase 5 of GNN MPI).
+
+Run via ``mpirun -n N python run_mpi_pair_deepmd_dpa3_pt2.py DATAFILE PB_FILE OUTPUT``.
+Mirrors ``run_mpi_pair_deepmd.py`` but targets a GNN model whose .pt2 archive
+carries the with-comm artifact (Phase 3 dual-artifact layout). The C++
+``DeepPotPTExpt`` (Phase 4) routes to the with-comm artifact when LAMMPS
+reports nswap > 0 (multi-rank), driving MPI ghost-atom exchange via
+``deepmd_export::border_op`` per layer.
+
+Rank 0 writes potential energy + per-atom forces (3 cols) + per-atom
+virial (9 cols, from ``compute centroid/stress/atom NULL pair`` in
+LAMMPS internal units) to ``OUTPUT`` so the parent pytest process can
+compare against the single-rank reference.
+"""
+
+from __future__ import (
+    annotations,
+)
+
+import argparse
+
+import numpy as np
+from lammps import (
+    PyLammps,
+)
+from mpi4py import (
+    MPI,
+)
+
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
+
+parser = argparse.ArgumentParser()
+parser.add_argument("DATAFILE", type=str, help="LAMMPS data file (atom positions)")
+parser.add_argument("PB_FILE", type=str, help=".pt2 model file")
+parser.add_argument("OUTPUT", type=str, help="Output file for energies + forces")
+parser.add_argument(
+    "--nsteps",
+    type=int,
+    default=0,
+    help="Number of MD steps to run after the initial force evaluation; "
+    "with --nsteps > 10 (LAMMPS neigh_modify every=10) the dispatch path "
+    "is exercised across at least one neighbor-list rebuild.",
+)
+parser.add_argument(
+    "--processors",
+    type=str,
+    default="2 1 1",
+    help="LAMMPS processors grid. Default '2 1 1' forces multi-rank "
+    "domain decomposition (nswap>0). Pass '1 1 1' for a single-rank "
+    "reference run on the same archive (single-artifact dispatch).",
+)
+parser.add_argument(
+    "--pair-coeff",
+    type=str,
+    default="* *",
+    help="pair_coeff arguments (after 'pair_coeff'). Default '* *' "
+    "uses identity LAMMPS-type-to-deepmd-atype mapping (assumes the "
+    "data file's types match the model's type_map order). For NULL-type "
+    "tests pass e.g. '* * O H NULL' so the third LAMMPS type becomes "
+    "deepmd atype=-1 (filtered before model evaluation).",
+)
+parser.add_argument(
+    "--mass3",
+    type=float,
+    default=None,
+    help="Optional mass for LAMMPS atom type 3 (and any higher types). "
+    "Used by the NULL-type fixture; ignored when only 2 types exist.",
+)
+parser.add_argument(
+    "--neigh-every",
+    type=int,
+    default=10,
+    help="LAMMPS ``neigh_modify every`` value. Default 10 mirrors the "
+    "production-realistic interval. Pass 1 for tests that want to "
+    "trigger nlist rebuilds on every step (and run a small ``--nsteps`` "
+    "to keep wall time low while still exercising the rebuild path).",
+)
+parser.add_argument(
+    "--null-vx",
+    type=float,
+    default=None,
+    help="Optional initial x-velocity (units: Angstrom/ps in metal "
+    "units) for LAMMPS atom type 3 atoms. Real atoms stay at v=0. "
+    "Used by the NULL-type rebuild test to make NULL atoms cross the "
+    "rank boundary in a few MD steps without destabilising real-atom "
+    "dynamics — the deepmd model never sees NULL atoms (filtered by "
+    "``select_real_atoms_coord``) so their unphysical velocity is "
+    "harmless.",
+)
+parser.add_argument(
+    "--null-vx-split",
+    action="store_true",
+    help="With ``--null-vx X``, split type-3 atoms into two groups by "
+    "their LAMMPS atom-id parity: even ids get +X, odd ids get -X. "
+    "Used by the NULL-type rebuild test to send different NULLs in "
+    "opposite directions, so the cross-rank sendlist composition "
+    "changes in BOTH directions per rebuild (rank 0 loses one NULL, "
+    "gains another simultaneously).",
+)
+parser.add_argument(
+    "--real-temp",
+    type=float,
+    default=None,
+    help="Optional initial thermal temperature (Kelvin) for non-NULL "
+    "atoms via ``velocity realgroup create T seed``. Each real atom "
+    "gets a random thermal velocity in a different direction — used "
+    "to exercise sendlist composition changes from real-atom motion "
+    "rather than only from NULL motion.",
+)
+args = parser.parse_args()
+
+lammps = PyLammps()
+# Force the requested domain decomposition. The default "2 1 1"
+# combined with the simulation box guarantees nswap > 0 on the C++
+# side, so DeepPotPTExpt routes to the with-comm AOTI artifact. Pass
+# "1 1 1" to obtain a single-rank reference using the same archive
+# (the regular artifact handles nswap==0).
+lammps.processors(args.processors)
+lammps.units("metal")
+lammps.boundary("p p p")
+lammps.atom_style("atomic")
+# ``atom_modify map yes`` is required when single-rank dispatch goes
+# through the regular artifact of a use_loc_mapping=False .pt2: the
+# C++ side needs the LAMMPS global-id->local-index map to build the
+# ``mapping`` tensor. It is harmless under multi-rank.
+lammps.atom_modify("map yes")
+lammps.neighbor("2.0 bin")
+lammps.neigh_modify(f"every {args.neigh_every} delay 0 check no")
+lammps.read_data(args.DATAFILE)
+lammps.mass("1 16")
+lammps.mass("2 2")
+if args.mass3 is not None:
+    # Used by the NULL-type test where the data file has a 3rd LAMMPS
+    # type that maps to a NULL deepmd atype (filtered before model
+    # evaluation). The mass value is physically irrelevant — these
+    # atoms get zero force from the deepmd model.
+    lammps.mass(f"3 {args.mass3}")
+lammps.timestep(0.0005)
+lammps.fix("1 all nve")
+# Initial velocities. Order matters: thermalize real atoms first
+# (``velocity all create`` would also affect type 3, so we restrict
+# it to a real-atom group), then set the NULL bias on type 3.
+if args.real_temp is not None:
+    lammps.group("realgroup type 1 2")
+    lammps.velocity(f"realgroup create {args.real_temp:.6f} 12345 mom yes rot yes")
+if args.null_vx is not None:
+    # Restrict initial velocity to LAMMPS type 3 atoms (NULL-type
+    # in the deepmd plugin's pair_coeff mapping). Real atoms stay
+    # at v=0 (or thermal); only the NULL atoms get the high vx, so
+    # the deepmd model's force outputs on real atoms remain bounded
+    # and the NVE integrator stays stable.
+    lammps.group("nullgroup type 3")
+    if args.null_vx_split:
+        # Send NULL atoms with even/odd LAMMPS atom-id in opposite
+        # directions. Hardcoded to the null_type fixture's NULL ids
+        # (7, 8); sufficient because the runner is only used by this
+        # branch's tests, not as a general utility.
+        lammps.group("null_id7 id 7")
+        lammps.group("null_id8 id 8")
+        lammps.velocity(f"null_id7 set {-args.null_vx:.6f} 0.0 0.0 units box")
+        lammps.velocity(f"null_id8 set {args.null_vx:.6f} 0.0 0.0 units box")
+    else:
+        lammps.velocity(f"nullgroup set {args.null_vx:.6f} 0.0 0.0 units box")
+
+lammps.pair_style(f"deepmd {args.PB_FILE}")
+lammps.pair_coeff(args.pair_coeff)
+# Per-atom virial from the pair contribution. ``centroid/stress/atom``
+# is parallel-safe (rank-local data, gathered below). LAMMPS computes
+# stress*volume per atom in internal units; the parent test reverses
+# the unit conversion (divide by ``constants.nktv2p``) before comparing
+# against the reference virial.
+lammps.compute("virial all centroid/stress/atom NULL pair")
+lammps.run(0)
+
+# Optional: run additional MD steps to exercise the with-comm
+# dispatch across neighbor-list rebuilds (LAMMPS rebuilds every
+# 10 steps with our neigh_modify config, so any nsteps >= 10
+# triggers at least one rebuild).
+if args.nsteps > 0:
+    lammps.run(args.nsteps)
+
+# Forces need to be gathered across ranks. PyLammps's ``atoms[i]``
+# only exposes rank-local atoms; ``gather_atoms`` returns the global,
+# id-ordered array on every rank. We also gather ``id`` and reorder
+# explicitly by id rather than trusting an implicit ordering — this
+# is robust against subdomain layout, empty subdomains, and any
+# future LAMMPS change in gather ordering.
+forces_global = lammps.lmp.gather_atoms("f", 1, 3)
+ids_global = lammps.lmp.gather_atoms("id", 0, 1)
+# Gather the per-atom virial across ranks. ``lmp.gather`` accepts
+# named per-atom computes (``c_<id>``) and returns the global,
+# id-ordered array on every rank.
+virial_global = lammps.lmp.gather("c_virial", 1, 9)
+# ``PyLammps.eval`` is rank-0-only.
+if rank == 0:
+    pe_global = lammps.eval("pe")
+    natoms = lammps.atoms.natoms
+    forces = np.array(forces_global, dtype=np.float64).reshape(natoms, 3)
+    virials = np.array(virial_global, dtype=np.float64).reshape(natoms, 9)
+    ids = np.array(ids_global, dtype=np.int64).reshape(natoms)
+    # Sort by atom id so output is unambiguously id-ordered (id 1 first).
+    order = np.argsort(ids)
+    forces = forces[order]
+    virials = virials[order]
+    with open(args.OUTPUT, "w") as f:
+        f.write(f"{pe_global:.16e}\n")
+        # Each row: 3 force components followed by 9 virial components.
+        for fi, vi in zip(forces, virials, strict=True):
+            row = np.concatenate([fi, vi])
+            f.write(" ".join(f"{v:.16e}" for v in row) + "\n")
+
+MPI.Finalize()

@@ -311,3 +311,43 @@ class TestDescrptDPA3(TestCaseSingleFrameWithNlist):
         # invalid level raises
         with pytest.raises(NotImplementedError):
             dd1.share_params(dd0, shared_level=2)
+
+
+@pytest.mark.parametrize("use_loc_mapping", [True, False])
+def test_has_message_passing_across_ranks(use_loc_mapping) -> None:
+    """DPA3 always reports message passing; cross-rank only when
+    ``use_loc_mapping=False`` (so per-layer node embeddings must flow
+    via MPI ghost exchange instead of a local gather).
+    """
+    import copy
+
+    from deepmd.dpmodel.model.model import (
+        get_model,
+    )
+
+    config = {
+        "type_map": ["O", "H"],
+        "descriptor": {
+            "type": "dpa3",
+            "repflow": {
+                "n_dim": 8,
+                "e_dim": 6,
+                "a_dim": 4,
+                "nlayers": 1,
+                "e_rcut": 4.0,
+                "e_rcut_smth": 0.5,
+                "e_sel": 8,
+                "a_rcut": 3.5,
+                "a_rcut_smth": 0.5,
+                "a_sel": 4,
+                "axis_neuron": 4,
+                "update_angle": False,
+            },
+            "use_loc_mapping": use_loc_mapping,
+        },
+        "fitting_net": {"neuron": [16, 16], "seed": 1},
+    }
+    model = get_model(copy.deepcopy(config))
+    desc = model.atomic_model.descriptor
+    assert desc.has_message_passing() is True
+    assert desc.has_message_passing_across_ranks() is (not use_loc_mapping)

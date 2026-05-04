@@ -16,6 +16,12 @@
 
 #include "DeepPot.h"
 
+// Forward-declare to keep TempFile out of public header. Defined in
+// commonPTExpt.h.
+namespace deepmd::ptexpt {
+class TempFile;
+}
+
 namespace torch::inductor {
 class AOTIModelPackageLoader;
 }
@@ -214,6 +220,14 @@ class DeepPotPTExpt : public DeepPotBackend {
   at::Tensor mapping_tensor;     // cached mapping tensor (LAMMPS path)
   at::Tensor firstneigh_tensor;  // cached nlist tensor (LAMMPS path)
   std::unique_ptr<torch::inductor::AOTIModelPackageLoader> loader;
+  // Optional second AOTInductor artifact for the multi-rank GNN code
+  // path (Phase 4).  Loaded only if the .pt2 metadata reports
+  // ``has_comm_artifact == true`` AND the model has GNN message
+  // passing.  ``with_comm_tempfile_`` owns the extracted nested .pt2
+  // for the lifetime of ``with_comm_loader``.
+  bool has_comm_artifact_ = false;
+  std::unique_ptr<deepmd::ptexpt::TempFile> with_comm_tempfile_;
+  std::unique_ptr<torch::inductor::AOTIModelPackageLoader> with_comm_loader;
 
   /**
    * @brief Multi-frame loop for standalone compute (no nlist).
@@ -265,6 +279,24 @@ class DeepPotPTExpt : public DeepPotBackend {
                                        const torch::Tensor& mapping,
                                        const torch::Tensor& fparam,
                                        const torch::Tensor& aparam);
+
+  /**
+   * @brief Run the with-comm .pt2 artifact with comm tensors appended.
+   *
+   * @param[in] base 4-6 base inputs (coord, atype, nlist, mapping,
+   *            fparam?, aparam?) — same as ``run_model``.
+   * @param[in] comm_tensors 8 comm tensors in canonical positional
+   *            order: send_list, send_proc, recv_proc, send_num,
+   *            recv_num, communicator, nlocal, nghost.
+   */
+  std::vector<torch::Tensor> run_model_with_comm(
+      const torch::Tensor& coord,
+      const torch::Tensor& atype,
+      const torch::Tensor& nlist,
+      const torch::Tensor& mapping,
+      const torch::Tensor& fparam,
+      const torch::Tensor& aparam,
+      const std::vector<at::Tensor>& comm_tensors);
 
   /**
    * @brief Extract outputs from flat tensor list using output_keys.

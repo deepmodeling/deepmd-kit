@@ -221,3 +221,38 @@ class TestDescrptSeA(TestCaseSingleFrameWithNlist):
             rtol=rtol,
             atol=atol,
         )
+
+
+def test_has_message_passing_across_ranks() -> None:
+    """se_e2_a is a single-layer local descriptor: no message passing,
+    no cross-rank exchange ever needed.
+    """
+    import copy
+
+    from deepmd.dpmodel.model.model import (
+        get_model,
+    )
+
+    config = {
+        "type_map": ["O", "H"],
+        "descriptor": {
+            "type": "se_e2_a",
+            "rcut": 6.0,
+            "rcut_smth": 0.5,
+            "sel": [20, 20],
+            "neuron": [2, 4],
+            "axis_neuron": 2,
+            "type_one_side": True,
+            "precision": "float64",
+            "seed": 1,
+        },
+        "fitting_net": {
+            "neuron": [4, 4],
+            "resnet_dt": True,
+            "precision": "float64",
+            "seed": 1,
+        },
+    }
+    desc = get_model(copy.deepcopy(config)).atomic_model.descriptor
+    assert desc.has_message_passing() is False
+    assert desc.has_message_passing_across_ranks() is False

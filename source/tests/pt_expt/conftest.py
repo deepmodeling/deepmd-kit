@@ -17,6 +17,10 @@ from torch.overrides import (
     _get_current_function_mode_stack,
 )
 
+# ``deepmd.pt_expt.utils.comm`` self-bootstraps libdeepmd_op_pt.so via
+# ``_check_underlying_ops_loaded()``, so we no longer need to preload
+# ``deepmd.pt`` here.
+
 
 def _pop_device_contexts() -> list:
     """Pop all stale DeviceContext modes from the torch function mode stack."""

@@ -480,6 +480,32 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
 
+    def _exchange_ghosts(
+        self,
+        g1: Array,
+        mapping_tiled: Array | None,
+        comm_dict: dict | None,
+        nall: int,
+        nloc: int,
+    ) -> Array:
+        """Build g1_ext (the ghost-aware single-atom embedding) for the
+        per-layer loop.
+
+        Default: array-api gather via the pre-tiled ``mapping_tiled``.
+        ``comm_dict``, ``nall``, ``nloc`` are unused in this default impl;
+        they exist so the pt_expt subclass can perform the per-layer MPI
+        ghost exchange (``deepmd_export::border_op``) when ``comm_dict is
+        not None``.
+        """
+        del comm_dict, nall, nloc
+        if mapping_tiled is None:
+            raise ValueError(
+                "`mapping` is required by the default `_exchange_ghosts` "
+                "implementation; pass a valid mapping or override the method "
+                "for parallel comm handling."
+            )
+        return xp_take_along_axis(g1, mapping_tiled, axis=1)
+
     def call(
         self,
         nlist: Array,
@@ -488,6 +514,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         atype_embd_ext: Array | None = None,
         mapping: Array | None = None,
         type_embedding: Array | None = None,
+        comm_dict: dict | None = None,
     ) -> Array:
         xp = array_api_compat.array_namespace(nlist, coord_ext, atype_ext)
         exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
@@ -524,12 +551,27 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         # set all padding positions to index of 0
         # if a neighbor is real or not is indicated by nlist_mask
         nlist = xp.where(nlist == -1, xp.zeros_like(nlist), nlist)
-        # nf x nall x ng1
-        mapping = xp.tile(xp.expand_dims(mapping, axis=-1), (1, 1, self.g1_dim))
+        # nall computed for the pt_expt parallel-mode override (uses nall to
+        # size the pad before MPI ghost exchange). dpmodel default ignores it.
+        nall = xp.reshape(coord_ext, (nf, -1)).shape[1] // 3
+        # nf x nall x ng1 (pre-tiled mapping reused across layers when not
+        # using comm_dict). Skip the tile when mapping is None — pt_expt's
+        # parallel-mode override consults comm_dict instead.
+        mapping_tiled = (
+            xp.tile(xp.expand_dims(mapping, axis=-1), (1, 1, self.g1_dim))
+            if mapping is not None
+            else None
+        )
         for idx, ll in enumerate(self.layers):
             # g1:     nf x nloc x ng1
             # g1_ext: nf x nall x ng1
-            g1_ext = xp_take_along_axis(g1, mapping, axis=1)
+            g1_ext = self._exchange_ghosts(
+                g1,
+                mapping_tiled,
+                comm_dict,
+                nall,
+                nloc,
+            )
             g1, g2, h2 = ll.call(
                 g1_ext,
                 g2,
@@ -556,6 +598,15 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
 
     def has_message_passing(self) -> bool:
         """Returns whether the descriptor block has message passing."""
+        return True
+
+    def has_message_passing_across_ranks(self) -> bool:
+        """Returns whether per-layer g1 needs MPI ghost exchange.
+
+        Repformers has no ``use_loc_mapping`` opt-out; it always passes
+        ``g1`` in ``[nb, nall, n_dim]`` layout, so multi-rank always needs
+        cross-rank exchange of the per-atom feature tensor.
+        """
         return True
 
     def need_sorted_nlist_for_lower(self) -> bool:

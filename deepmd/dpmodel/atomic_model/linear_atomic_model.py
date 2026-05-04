@@ -224,6 +224,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         mapping: Array | None = None,
         fparam: Array | None = None,
         aparam: Array | None = None,
+        comm_dict: dict | None = None,
     ) -> dict[str, Array]:
         """Return atomic prediction.
 
@@ -241,6 +242,10 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             frame parameter. (nframes, ndf)
         aparam
             atomic parameter. (nframes, nloc, nda)
+        comm_dict
+            MPI communication metadata. Forwarded to each sub-model so GNN
+            sub-descriptors can perform parallel ghost exchange. ``None`` for
+            non-parallel inference (default).
 
         Returns
         -------
@@ -280,6 +285,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                     mapping,
                     fparam,
                     aparam,
+                    comm_dict,
                 )["energy"]
             )
         weights = self._compute_weight(extended_coord, extended_atype, nlists_)

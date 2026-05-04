@@ -284,3 +284,73 @@ class TestDescrptHybrid(TestCaseSingleFrameWithNlist):
         # invalid level raises
         with pytest.raises(NotImplementedError):
             dd1.share_params(dd0, shared_level=1)
+
+
+def _se_e2_a_child() -> dict:
+    return {
+        "type": "se_e2_a",
+        "rcut": 6.0,
+        "rcut_smth": 0.5,
+        "sel": [20, 20],
+        "neuron": [2, 4],
+        "axis_neuron": 2,
+        "type_one_side": True,
+        "precision": "float64",
+        "seed": 1,
+    }
+
+
+def _dpa3_child(use_loc_mapping: bool) -> dict:
+    return {
+        "type": "dpa3",
+        "repflow": {
+            "n_dim": 8,
+            "e_dim": 6,
+            "a_dim": 4,
+            "nlayers": 1,
+            "e_rcut": 4.0,
+            "e_rcut_smth": 0.5,
+            "e_sel": 8,
+            "a_rcut": 3.5,
+            "a_rcut_smth": 0.5,
+            "a_sel": 4,
+            "axis_neuron": 4,
+            "update_angle": False,
+        },
+        "use_loc_mapping": use_loc_mapping,
+    }
+
+
+@pytest.mark.parametrize(
+    "child_factory,expected_hmp,expected_hmp_ar",
+    [
+        (lambda: _se_e2_a_child(), False, False),
+        (lambda: _dpa3_child(use_loc_mapping=True), True, False),
+        (lambda: _dpa3_child(use_loc_mapping=False), True, True),
+    ],
+    ids=["se_e2_a-only", "dpa3-ulm-true", "dpa3-ulm-false"],
+)
+def test_has_message_passing_across_ranks(
+    child_factory, expected_hmp, expected_hmp_ar
+) -> None:
+    """Hybrid descriptor recurses into its children; cross-rank message
+    passing is required iff any child needs it. Closes the structural
+    side of catalog Tier-1 #1.
+    """
+    import copy
+
+    from deepmd.dpmodel.model.model import (
+        get_model,
+    )
+
+    config = {
+        "type_map": ["O", "H"],
+        "descriptor": {
+            "type": "hybrid",
+            "list": [child_factory()],
+        },
+        "fitting_net": {"neuron": [4, 4], "seed": 1},
+    }
+    desc = get_model(copy.deepcopy(config)).atomic_model.descriptor
+    assert desc.has_message_passing() is expected_hmp
+    assert desc.has_message_passing_across_ranks() is expected_hmp_ar

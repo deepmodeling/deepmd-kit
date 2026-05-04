@@ -1,17 +1,26 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // Shared utilities for pt_expt (.pt2 / AOTInductor) backend classes.
-// Provides: JSON parser, ZIP archive reader, and type-sorted nlist builder.
+// Provides: JSON parser, ZIP archive reader, type-sorted nlist builder,
+// and helpers for the with-comm dual-artifact layout (Phase 4 of the
+// GNN MPI plumbing).
 #pragma once
+
+#include <torch/torch.h>
+#include <unistd.h>
 
 #include <algorithm>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <map>
 #include <sstream>
 #include <string>
 #include <vector>
 
+#include "common.h"  // for remap_comm_sendlist
 #include "errors.h"
+#include "neighbor_list.h"
 
 namespace deepmd {
 namespace ptexpt {
@@ -438,11 +447,183 @@ inline std::string read_zip_entry(const std::string& zip_path,
 }
 
 // ============================================================================
-// Create raw neighbor list tensor.
-// The .pt2 compiled graph already contains format_nlist (distance sort +
-// truncation) and an internal +1 pad that guarantees the sort branch fires.
-// The C++ side just flattens the jagged nlist into a rectangular tensor.
+// With-comm artifact extraction (Phase 4)
+//
+// GNN .pt2 archives carry a nested ``extra/forward_lower_with_comm.pt2``
+// alongside the regular forward_lower artifact.  AOTInductor's
+// ``ModelPackageLoader`` reads .pt2 files from disk, so to load the
+// nested artifact we extract it to a temp file.
 // ============================================================================
+
+/**
+ * @brief RAII handle for a temp file on disk.
+ *
+ * Used to hold the extracted with-comm .pt2 artifact for the lifetime
+ * of the loader.  Destructor unlinks the file.
+ */
+class TempFile {
+ public:
+  TempFile() = default;
+  TempFile(const TempFile&) = delete;
+  TempFile& operator=(const TempFile&) = delete;
+  TempFile(TempFile&& other) noexcept : path_(std::move(other.path_)) {
+    other.path_.clear();
+  }
+  TempFile& operator=(TempFile&& other) noexcept {
+    if (this != &other) {
+      cleanup();
+      path_ = std::move(other.path_);
+      other.path_.clear();
+    }
+    return *this;
+  }
+  ~TempFile() { cleanup(); }
+
+  const std::string& path() const { return path_; }
+  bool empty() const { return path_.empty(); }
+
+  /**
+   * @brief Write the content of an existing .pt2 ZIP entry to a temp
+   * file and return a TempFile owning that path.
+   *
+   * The temp file is created via ``mkstemp(3)`` (atomic, unique,
+   * 0600 permissions) under the system tempdir (TMPDIR or /tmp).
+   */
+  static TempFile from_zip_entry(const std::string& outer_pt2_path,
+                                 const std::string& entry_name) {
+    std::string content = read_zip_entry(outer_pt2_path, entry_name);
+    const char* tmpdir = std::getenv("TMPDIR");
+    std::string tmpl =
+        std::string(tmpdir ? tmpdir : "/tmp") + "/dp_pt2_with_comm_XXXXXX";
+    std::vector<char> buf(tmpl.begin(), tmpl.end());
+    buf.push_back('\0');
+    int fd = mkstemp(buf.data());
+    if (fd < 0) {
+      throw deepmd::deepmd_exception(
+          "Failed to create temp file for nested .pt2 artifact: " + tmpl);
+    }
+    std::string path(buf.data());
+    // Write content to the fd so we don't race with another process
+    // opening the same path.
+    ssize_t written = 0;
+    const char* p = content.data();
+    ssize_t remain = static_cast<ssize_t>(content.size());
+    while (remain > 0) {
+      ssize_t n = ::write(fd, p + written, static_cast<size_t>(remain));
+      if (n < 0) {
+        ::close(fd);
+        ::unlink(path.c_str());
+        throw deepmd::deepmd_exception(
+            "Failed to write nested .pt2 artifact to temp file: " + path);
+      }
+      written += n;
+      remain -= n;
+    }
+    ::close(fd);
+    TempFile tf;
+    tf.path_ = std::move(path);
+    return tf;
+  }
+
+ private:
+  void cleanup() {
+    if (!path_.empty()) {
+      ::unlink(path_.c_str());
+      path_.clear();
+    }
+  }
+  std::string path_;
+};
+
+// ============================================================================
+// comm_dict tensor packing for the with-comm artifact (Phase 4)
+//
+// The with-comm AOTInductor artifact accepts comm tensors as 8 additional
+// positional inputs (after the regular 4-6 inputs) in this canonical order:
+//   send_list (nswap, int64 ptr-array packed as int64 tensor)
+//   send_proc (nswap, int32)
+//   recv_proc (nswap, int32)
+//   send_num  (nswap, int32)
+//   recv_num  (nswap, int32)
+//   communicator (1, int64 — MPI handle as opaque int)
+//   nlocal    (scalar int32)
+//   nghost    (scalar int32)
+// This mirrors deepmd_export::border_op's argument order in
+// deepmd/pt_expt/utils/comm.py.
+// ============================================================================
+
+/**
+ * @brief Build the 8 comm-tensor positional inputs from LAMMPS data
+ * (Phase 5 working signature, restored after the consolidation
+ * attempt regressed).
+ */
+inline std::vector<at::Tensor> build_comm_tensors_positional(
+    const InputNlist& lmp_list,
+    int** sendlist,
+    int* sendnum,
+    int* recvnum,
+    int nlocal,
+    int nghost) {
+  int nswap = lmp_list.nswap;
+  auto int32_option =
+      torch::TensorOptions().device(torch::kCPU).dtype(torch::kInt32);
+  auto int64_option =
+      torch::TensorOptions().device(torch::kCPU).dtype(torch::kInt64);
+
+  at::Tensor sendlist_tensor =
+      torch::from_blob(static_cast<void*>(sendlist), {nswap}, int64_option);
+  at::Tensor sendproc_tensor =
+      torch::from_blob(lmp_list.sendproc, {nswap}, int32_option);
+  at::Tensor recvproc_tensor =
+      torch::from_blob(lmp_list.recvproc, {nswap}, int32_option);
+  at::Tensor sendnum_tensor = torch::from_blob(sendnum, {nswap}, int32_option);
+  at::Tensor recvnum_tensor = torch::from_blob(recvnum, {nswap}, int32_option);
+
+  static std::int64_t null_communicator = 0;
+  at::Tensor communicator_tensor;
+  if (lmp_list.world == nullptr) {
+    communicator_tensor =
+        torch::from_blob(&null_communicator, {1}, int64_option);
+  } else {
+    communicator_tensor =
+        torch::from_blob(const_cast<void*>(lmp_list.world), {1}, int64_option);
+  }
+
+  at::Tensor nlocal_tensor = torch::tensor(nlocal, int32_option);
+  at::Tensor nghost_tensor = torch::tensor(nghost, int32_option);
+
+  return {sendlist_tensor, sendproc_tensor,     recvproc_tensor, sendnum_tensor,
+          recvnum_tensor,  communicator_tensor, nlocal_tensor,   nghost_tensor};
+}
+
+/**
+ * @brief Build the 8 comm-tensor positional inputs with NULL-type-atom
+ * remapping.  When ``select_real_atoms_coord`` filters atoms (atype <
+ * 0), ``fwd_map`` translates original sendlist indices into real-atom
+ * indices (with ``-1`` for filtered).  Mirrors
+ * ``commonPT.h::build_comm_dict_with_virtual_atoms``.  The remapped
+ * storage must outlive the returned tensors.
+ */
+inline std::vector<at::Tensor> build_comm_tensors_positional_with_virtual_atoms(
+    const InputNlist& lmp_list,
+    const std::vector<int>& fwd_map,
+    int nlocal,
+    int nghost,
+    std::vector<std::vector<int>>& remapped_sendlist,
+    std::vector<int*>& remapped_sendlist_ptrs,
+    std::vector<int>& remapped_sendnum,
+    std::vector<int>& remapped_recvnum) {
+  remap_comm_sendlist(remapped_sendlist, remapped_sendnum, remapped_recvnum,
+                      lmp_list, fwd_map);
+  int nswap = lmp_list.nswap;
+  remapped_sendlist_ptrs.resize(nswap);
+  for (int s = 0; s < nswap; ++s) {
+    remapped_sendlist_ptrs[s] = remapped_sendlist[s].data();
+  }
+  return build_comm_tensors_positional(lmp_list, remapped_sendlist_ptrs.data(),
+                                       remapped_sendnum.data(),
+                                       remapped_recvnum.data(), nlocal, nghost);
+}
 
 }  // namespace ptexpt
 }  // namespace deepmd

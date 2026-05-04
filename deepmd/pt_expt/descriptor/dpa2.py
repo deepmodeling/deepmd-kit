@@ -233,11 +233,19 @@ class DescrptDPA2(DescrptDPA2DP):
         nlist: torch.Tensor,
         mapping: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
+        comm_dict: dict | None = None,
     ) -> Any:
         if not self.compress:
             return DescrptDPA2DP.call.__wrapped__(
-                self, coord_ext, atype_ext, nlist, mapping
+                self,
+                coord_ext,
+                atype_ext,
+                nlist,
+                mapping,
+                fparam,
+                comm_dict=comm_dict,
             )
+        # Compressed path is local-only (no message passing during compress).
         return self._call_compressed(coord_ext, atype_ext, nlist, mapping)
 
     def _call_compressed(
