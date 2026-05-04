@@ -165,6 +165,22 @@ class Border : public torch::autograd::Function<Border> {
       recv_g1 += nrecv * tensor_size;
     }
 #ifdef USE_MPI
+    // Drain pending eager-send ACKs before returning.  In the
+    // asymmetric ghost-exchange pattern (one rank only Sends, the
+    // other only Irecvs at a given swap — e.g. an empty subdomain
+    // under ``processors 2 1 1``) the sender's MPI_Send returns once
+    // the eager-buffered message is queued, but MPICH's internal
+    // accounting marks the message as "in flight" until the sender's
+    // progress engine processes the receiver's ACK.  In the symmetric
+    // case the sender's own MPI_Wait on its Irecv drains those ACKs.
+    // In the asymmetric case there is no such Wait, and the message
+    // stays "in flight" all the way to MPI_Finalize, which then
+    // reports ``Communicator (...) being freed has N unmatched
+    // message(s)``.  An MPI_Barrier on the same communicator forces a
+    // round-trip on every rank, drains ACKs, and clears the counter.
+    if (mpi_init && world_size >= 1) {
+      MPI_Barrier(world);
+    }
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
     // Only copy back when ``recv_g1_tensor`` was actually moved to a
     // different device above (the cuda_aware==0 CPU fallback). When
@@ -339,6 +355,13 @@ class Border : public torch::autograd::Function<Border> {
       }
     }
 #ifdef USE_MPI
+    // Drain pending eager-send ACKs before returning — see forward_t
+    // for the full rationale.  Backward has the same asymmetric
+    // Send/Irecv pattern (now in the reverse direction) and the same
+    // unmatched-message trap when one rank only Sends.
+    if (mpi_init && world_size >= 1) {
+      MPI_Barrier(world);
+    }
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
     // Move result back to the device of the input grad only when
     // ``d_local_g1_tensor`` was actually moved to a different device
