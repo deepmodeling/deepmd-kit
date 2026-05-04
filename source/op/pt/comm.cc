@@ -139,25 +139,22 @@ class Border : public torch::autograd::Function<Border> {
       } else {
 #endif
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
-#ifdef USE_MPI
-        // The CPU-fallback ``recv_g1_tensor.to(kCPU)`` above only runs
-        // when ``world_size >= 1`` (MPI initialized). With no MPI
-        // (single-rank, world_size == 0) the tensor is still on CUDA,
-        // so memcpy on CUDA pointers would segfault — gpuMemcpy is
-        // correct in that case regardless of ``cuda_aware``.
-        if (world_size >= 1 && cuda_aware == 0) {
-          memcpy(recv_g1, send_g1,
-                 (unsigned long)nsend * tensor_size * sizeof(FPTYPE));
-        } else {
+        // Self-send branch: choose the host-vs-device memcpy based on
+        // where the data actually lives, not on MPI state. The buffer
+        // we read/write is ``recv_g1_tensor`` whose device is either
+        // (a) the original ``g1`` device, or (b) CPU after the
+        // non-cuda-aware MPI fallback above. Reading that device
+        // directly is the only correct dispatch for build configs
+        // where USE_MPI is on but the call site uses CPU tensors
+        // (e.g. unit tests of border_op without MPI init).
+        if (recv_g1_tensor.is_cuda()) {
           gpuMemcpy(recv_g1, send_g1,
                     (unsigned long)nsend * tensor_size * sizeof(FPTYPE),
                     gpuMemcpyDeviceToDevice);
+        } else {
+          memcpy(recv_g1, send_g1,
+                 (unsigned long)nsend * tensor_size * sizeof(FPTYPE));
         }
-#else
-        gpuMemcpy(recv_g1, send_g1,
-                  (unsigned long)nsend * tensor_size * sizeof(FPTYPE),
-                  gpuMemcpyDeviceToDevice);
-#endif
 #else
       memcpy(recv_g1, send_g1,
              (unsigned long)nsend * tensor_size * sizeof(FPTYPE));
@@ -169,10 +166,12 @@ class Border : public torch::autograd::Function<Border> {
     }
 #ifdef USE_MPI
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
-    // Only copy back when ``recv_g1_tensor`` was moved to CPU above
-    // (world_size >= 1 && cuda_aware == 0). With world_size == 0 the
-    // tensor is still aliased to g1 — no copy needed.
-    if (world_size >= 1 && cuda_aware == 0) {
+    // Only copy back when ``recv_g1_tensor`` was actually moved to a
+    // different device above (the cuda_aware==0 CPU fallback). When
+    // ``recv_g1_tensor`` still aliases ``g1`` no copy is needed; the
+    // is_alias_of check is the precise correctness condition and works
+    // for both CUDA and CPU call sites.
+    if (!recv_g1_tensor.is_alias_of(g1)) {
       g1.copy_(recv_g1_tensor);
     }
 #endif
@@ -312,23 +311,20 @@ class Border : public torch::autograd::Function<Border> {
 #endif
         if (nrecv) {
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
-#ifdef USE_MPI
-          // See forward kernel: when world_size==0 the data stays on
-          // CUDA, so memcpy on device pointers segfaults. Only use
-          // host memcpy when we explicitly moved data to CPU above.
-          if (world_size >= 1 && cuda_aware == 0) {
-            memcpy(recv_g1, send_g1,
-                   (unsigned long)nrecv * tensor_size * sizeof(FPTYPE));
-          } else {
+          // Self-send branch: dispatch on the actual device of the
+          // ``recv_g1_tensor`` buffer, not on MPI state. Same rationale
+          // as the forward kernel — USE_MPI builds may be called with
+          // CPU tensors (unit tests of border_op_backward) where the
+          // gpuMemcpy path silently fails with cudaErrorInvalidValue
+          // and leaves recv_g1 uninitialized.
+          if (recv_g1_tensor.is_cuda()) {
             gpuMemcpy(recv_g1, send_g1,
                       (unsigned long)nrecv * tensor_size * sizeof(FPTYPE),
                       gpuMemcpyDeviceToDevice);
+          } else {
+            memcpy(recv_g1, send_g1,
+                   (unsigned long)nrecv * tensor_size * sizeof(FPTYPE));
           }
-#else
-          gpuMemcpy(recv_g1, send_g1,
-                    (unsigned long)nrecv * tensor_size * sizeof(FPTYPE),
-                    gpuMemcpyDeviceToDevice);
-#endif
 #else
         memcpy(recv_g1, send_g1,
                (unsigned long)nrecv * tensor_size * sizeof(FPTYPE));
@@ -345,10 +341,11 @@ class Border : public torch::autograd::Function<Border> {
 #ifdef USE_MPI
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
     // Move result back to the device of the input grad only when
-    // ``d_local_g1_tensor`` was moved to CPU above (world_size >= 1
-    // && cuda_aware == 0). With world_size == 0 the tensor stayed on
-    // its original device — no move needed.
-    if (world_size >= 1 && cuda_aware == 0) {
+    // ``d_local_g1_tensor`` was actually moved to a different device
+    // above (the cuda_aware==0 CPU fallback). The is_alias_of check
+    // is the precise correctness condition and works for both CUDA
+    // and CPU call sites (no-op when the tensor still aliases input).
+    if (!d_local_g1_tensor.is_alias_of(grad_g1)) {
       d_local_g1_tensor = d_local_g1_tensor.to(grad_g1.device());
     }
 #endif
