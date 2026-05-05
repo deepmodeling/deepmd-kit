@@ -122,8 +122,13 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
         use_loc_mapping: bool = True,
         type_map: list[str] | None = None,
         add_chg_spin_ebd: bool = False,
+        default_chg_spin: list[float] | None = None,
     ) -> None:
         super().__init__()
+        if default_chg_spin is not None:
+            assert len(default_chg_spin) == 2, (
+                "default_chg_spin must be a list of length 2 [charge, spin]."
+            )
 
         def init_subclass_params(sub_data: Any, sub_class: Any) -> Any:
             if isinstance(sub_data, dict):
@@ -177,6 +182,7 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
 
         self.use_econf_tebd = use_econf_tebd
         self.add_chg_spin_ebd = add_chg_spin_ebd
+        self.default_chg_spin = default_chg_spin
         self.use_loc_mapping = use_loc_mapping
         self.use_tebd_bias = use_tebd_bias
         self.type_map = type_map
@@ -248,6 +254,27 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
         return self.rcut
+
+    @torch.jit.export
+    def get_dim_chg_spin(self) -> int:
+        """Get the dimension of charge_spin input."""
+        return 2 if self.add_chg_spin_ebd else 0
+
+    @torch.jit.export
+    def has_default_chg_spin(self) -> bool:
+        """Check if the descriptor has default charge_spin values."""
+        return self.default_chg_spin is not None
+
+    @torch.jit.export
+    def get_default_chg_spin(self) -> torch.Tensor | None:
+        """Get the default charge_spin values as a tensor."""
+        if self.default_chg_spin is None:
+            return None
+        return torch.tensor(
+            self.default_chg_spin,
+            dtype=self.prec,
+            device=env.DEVICE,
+        )
 
     def get_rcut_smth(self) -> float:
         """Returns the radius where the neighbor information starts to smoothly decay to 0."""
@@ -427,6 +454,7 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
             "use_tebd_bias": self.use_tebd_bias,
             "use_loc_mapping": self.use_loc_mapping,
             "add_chg_spin_ebd": self.add_chg_spin_ebd,
+            "default_chg_spin": self.default_chg_spin,
             "type_map": self.type_map,
             "type_embedding": self.type_embedding.embedding.serialize(),
         }
@@ -504,6 +532,7 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
         mapping: torch.Tensor | None = None,
         comm_dict: dict[str, torch.Tensor] | None = None,
         fparam: torch.Tensor | None = None,
+        charge_spin: torch.Tensor | None = None,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor | None,
@@ -555,11 +584,11 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
             node_ebd_ext = self.type_embedding(extended_atype)
 
         if self.add_chg_spin_ebd:
-            assert fparam is not None
+            assert charge_spin is not None
             assert self.chg_embedding is not None
             assert self.spin_embedding is not None
-            charge = fparam[:, 0].to(dtype=torch.int64) + 100
-            spin = fparam[:, 1].to(dtype=torch.int64)
+            charge = charge_spin[:, 0].to(dtype=torch.int64) + 100
+            spin = charge_spin[:, 1].to(dtype=torch.int64)
             chg_ebd = self.chg_embedding(charge)
             spin_ebd = self.spin_embedding(spin)
             sys_cs_embd = self.act(

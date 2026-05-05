@@ -1375,8 +1375,15 @@ def descrpt_dpa3_args() -> list[Argument]:
     )
     doc_add_chg_spin_ebd = (
         "Whether to add charge and spin embedding to the descriptor. "
-        "When enabled, fparam is expected to have 2 values (charge, spin) "
-        "which are embedded and added to the type embedding."
+        "When enabled, the dedicated `charge_spin` input (shape [nframes, 2], "
+        "[charge, spin]) is embedded and added to the type embedding. "
+        "When `charge_spin` is missing in the input data, `default_chg_spin` "
+        "is used as a fallback if provided."
+    )
+    doc_default_chg_spin = (
+        "Default charge and spin values used as fallback when `charge_spin` "
+        "is not provided in the input data. Must be a list of length 2 "
+        "[charge, spin]. Only used when `add_chg_spin_ebd` is True."
     )
     doc_activation_function = f"The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}."
     doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
@@ -1409,6 +1416,13 @@ def descrpt_dpa3_args() -> list[Argument]:
             optional=True,
             default=False,
             doc=doc_add_chg_spin_ebd,
+        ),
+        Argument(
+            "default_chg_spin",
+            list[float],
+            optional=True,
+            default=None,
+            doc=doc_default_chg_spin,
         ),
         Argument(
             "activation_function",

@@ -395,8 +395,8 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             _precision,
             add_chg_spin_ebd,
         ) = self.param
-        # fparam for charge=5, spin=1 when add_chg_spin_ebd is True
-        self.fparam = (
+        # charge_spin for charge=5, spin=1 when add_chg_spin_ebd is True
+        self.charge_spin = (
             np.array([[5, 1]], dtype=GLOBAL_NP_FLOAT_PRECISION)
             if add_chg_spin_ebd
             else None
@@ -420,7 +420,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             self.atype,
             self.box,
             mixed_types=True,
-            fparam=self.fparam,
+            charge_spin=self.charge_spin,
         )
 
     def eval_pt(self, pt_obj: Any) -> Any:
@@ -431,7 +431,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             self.atype,
             self.box,
             mixed_types=True,
-            fparam=self.fparam,
+            charge_spin=self.charge_spin,
         )
 
     def eval_pd(self, pd_obj: Any) -> Any:
@@ -442,7 +442,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             self.atype,
             self.box,
             mixed_types=True,
-            fparam=self.fparam,
+            charge_spin=self.charge_spin,
         )
 
     def eval_jax(self, jax_obj: Any) -> Any:
@@ -453,7 +453,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             self.atype,
             self.box,
             mixed_types=True,
-            fparam=self.fparam,
+            charge_spin=self.charge_spin,
         )
 
     def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
@@ -464,7 +464,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             self.atype,
             self.box,
             mixed_types=True,
-            fparam=self.fparam,
+            charge_spin=self.charge_spin,
         )
 
     def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
@@ -475,7 +475,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             self.atype,
             self.box,
             mixed_types=True,
-            fparam=self.fparam,
+            charge_spin=self.charge_spin,
         )
 
     def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:

@@ -165,6 +165,7 @@ class ModelWrapper(torch.nn.Module):
         do_atomic_virial: bool = False,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
+        charge_spin: torch.Tensor | None = None,
     ) -> tuple[Any, Any, Any]:
         if not self.multi_task:
             task_key = "Default"
@@ -179,6 +180,7 @@ class ModelWrapper(torch.nn.Module):
             "do_atomic_virial": do_atomic_virial,
             "fparam": fparam,
             "aparam": aparam,
+            "charge_spin": charge_spin,
         }
         has_spin = getattr(self.model[task_key], "has_spin", False)
         if callable(has_spin):

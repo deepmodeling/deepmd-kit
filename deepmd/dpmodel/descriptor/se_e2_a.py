@@ -399,6 +399,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         nlist: Array,
         mapping: Array | None = None,
         fparam: Array | None = None,
+        charge_spin: Array | None = None,
     ) -> Array:
         """Compute the descriptor.
 

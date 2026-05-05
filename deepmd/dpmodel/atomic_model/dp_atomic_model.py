@@ -79,6 +79,28 @@ class DPAtomicModel(BaseAtomicModel):
         )
         super().init_out_stat()
 
+    def has_chg_spin_ebd(self) -> bool:
+        """Check if the model has charge spin embedding."""
+        return self.add_chg_spin_ebd
+
+    def get_dim_chg_spin(self) -> int:
+        """Get the dimension of charge_spin input."""
+        if self.add_chg_spin_ebd:
+            return self.descriptor.get_dim_chg_spin()
+        return 0
+
+    def has_default_chg_spin(self) -> bool:
+        """Check if the model has default charge_spin values."""
+        if self.add_chg_spin_ebd:
+            return self.descriptor.has_default_chg_spin()
+        return False
+
+    def get_default_chg_spin(self) -> list[float] | None:
+        """Get the default charge_spin values."""
+        if self.add_chg_spin_ebd and self.descriptor.has_default_chg_spin():
+            return self.descriptor.get_default_chg_spin()
+        return None
+
     def fitting_output_def(self) -> FittingOutputDef:
         """Get the output def of the fitting net."""
         return self.fitting_net.output_def()
@@ -157,6 +179,7 @@ class DPAtomicModel(BaseAtomicModel):
         mapping: Array | None = None,
         fparam: Array | None = None,
         aparam: Array | None = None,
+        charge_spin: Array | None = None,
     ) -> dict[str, Array]:
         """Models' atomic predictions.
 
@@ -174,6 +197,8 @@ class DPAtomicModel(BaseAtomicModel):
             frame parameter. nf x ndf
         aparam
             atomic parameter. nf x nloc x nda
+        charge_spin
+            charge and spin parameter for descriptor. nf x 2
 
         Returns
         -------
@@ -184,37 +209,28 @@ class DPAtomicModel(BaseAtomicModel):
         nframes, nloc, nnei = nlist.shape
         atype = xp_take_first_n(extended_atype, 1, nloc)
 
-        # Handle default fparam if fitting net supports it
-        if (
-            hasattr(self.fitting_net, "get_dim_fparam")
-            and self.fitting_net.get_dim_fparam() > 0
-            and fparam is None
-        ):
-            # use default fparam
-            from deepmd.dpmodel.array_api import (
-                array_api_compat,
-            )
+        # Handle default charge_spin if descriptor supports it
+        if self.add_chg_spin_ebd and charge_spin is None:
+            default_cs = self.descriptor.get_default_chg_spin()
+            if default_cs is not None:
+                from deepmd.dpmodel.array_api import (
+                    array_api_compat,
+                )
 
-            default_fparam = self.fitting_net.get_default_fparam()
-            assert default_fparam is not None
-            xp = array_api_compat.array_namespace(extended_coord)
-            default_fparam_array = xp.asarray(
-                default_fparam,
-                dtype=extended_coord.dtype,
-                device=array_api_compat.device(extended_coord),
-            )
-            fparam_input_for_des = xp.tile(
-                xp.reshape(default_fparam_array, (1, -1)), (nframes, 1)
-            )
-        else:
-            fparam_input_for_des = fparam
+                xp = array_api_compat.array_namespace(extended_coord)
+                cs_array = xp.asarray(
+                    default_cs,
+                    dtype=extended_coord.dtype,
+                    device=array_api_compat.device(extended_coord),
+                )
+                charge_spin = xp.tile(xp.reshape(cs_array, (1, -1)), (nframes, 1))
 
         descriptor, rot_mat, g2, h2, sw = self.descriptor(
             extended_coord,
             extended_atype,
             nlist,
             mapping=mapping,
-            fparam=fparam_input_for_des if self.add_chg_spin_ebd else None,
+            charge_spin=charge_spin if self.add_chg_spin_ebd else None,
         )
         ret = self.fitting_net(
             descriptor,

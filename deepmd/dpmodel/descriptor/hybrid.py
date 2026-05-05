@@ -276,6 +276,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         nlist: Array,
         mapping: Array | None = None,
         fparam: Array | None = None,
+        charge_spin: Array | None = None,
     ) -> tuple[
         Array,
         Array | None,
@@ -332,7 +333,9 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
                 # mixed_types is True, but descrpt.mixed_types is False
                 assert nl_distinguish_types is not None
                 nl = nl_distinguish_types[:, :, nci]
-            odescriptor, gr, g2, h2, sw = descrpt(coord_ext, atype_ext, nl, mapping)
+            odescriptor, gr, g2, h2, sw = descrpt(
+                coord_ext, atype_ext, nl, mapping, charge_spin=charge_spin
+            )
             out_descriptor.append(odescriptor)
             if gr is not None:
                 out_gr.append(gr)

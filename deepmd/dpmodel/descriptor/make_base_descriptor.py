@@ -187,6 +187,7 @@ def make_base_descriptor(
             nlist: Array,
             mapping: Array | None = None,
             fparam: Array | None = None,
+            charge_spin: Array | None = None,
         ) -> Array:
             """Calculate descriptor."""
             pass

@@ -77,6 +77,7 @@ def model_call_from_call_lower(
     aparam: Array | None = None,
     do_atomic_virial: bool = False,
     coord_corr_for_virial: Array | None = None,
+    charge_spin: Array | None = None,
 ) -> dict[str, Array]:
     """Return model prediction from lower interface.
 
@@ -146,6 +147,7 @@ def model_call_from_call_lower(
         "fparam": fp,
         "aparam": ap,
         "do_atomic_virial": do_atomic_virial,
+        "charge_spin": charge_spin,
     }
     if extended_coord_corr is not None:
         call_lower_kwargs["extended_coord_corr"] = extended_coord_corr
@@ -266,6 +268,7 @@ def make_model(
             aparam: Array | None = None,
             do_atomic_virial: bool = False,
             coord_corr_for_virial: Array | None = None,
+            charge_spin: Array | None = None,
         ) -> dict[str, Array]:
             """Return model prediction.
 
@@ -312,6 +315,7 @@ def make_model(
                 aparam=ap,
                 do_atomic_virial=do_atomic_virial,
                 coord_corr_for_virial=coord_corr_for_virial,
+                charge_spin=charge_spin,
             )
             model_predict = self._output_type_cast(model_predict, input_prec)
             return model_predict
@@ -326,6 +330,7 @@ def make_model(
             aparam: Array | None = None,
             do_atomic_virial: bool = False,
             extended_coord_corr: Array | None = None,
+            charge_spin: Array | None = None,
         ) -> dict[str, Array]:
             """Return model prediction. Lower interface that takes
             extended atomic coordinates and types, nlist, and mapping
@@ -379,6 +384,7 @@ def make_model(
                 aparam=ap,
                 do_atomic_virial=do_atomic_virial,
                 extended_coord_corr=extended_coord_corr,
+                charge_spin=charge_spin,
             )
             model_predict = self._output_type_cast(model_predict, input_prec)
             return model_predict
@@ -393,6 +399,7 @@ def make_model(
             aparam: Array | None = None,
             do_atomic_virial: bool = False,
             extended_coord_corr: Array | None = None,
+            charge_spin: Array | None = None,
         ) -> dict[str, Array]:
             atomic_ret = self.atomic_model.forward_common_atomic(
                 extended_coord,
@@ -401,6 +408,7 @@ def make_model(
                 mapping=mapping,
                 fparam=fparam,
                 aparam=aparam,
+                charge_spin=charge_spin,
             )
             return fit_output_to_model_output(
                 atomic_ret,
@@ -699,6 +707,18 @@ def make_model(
         def get_default_fparam(self) -> list[float] | None:
             """Get the default frame parameters."""
             return self.atomic_model.get_default_fparam()
+
+        def has_chg_spin_ebd(self) -> bool:
+            """Check if the model has charge spin embedding."""
+            return self.atomic_model.has_chg_spin_ebd()
+
+        def has_default_chg_spin(self) -> bool:
+            """Check if the model has default charge_spin values."""
+            return self.atomic_model.has_default_chg_spin()
+
+        def get_default_chg_spin(self) -> list[float] | None:
+            """Get the default charge_spin values."""
+            return self.atomic_model.get_default_chg_spin()
 
         def get_sel_type(self) -> list[int]:
             """Get the selected atom types of this model.

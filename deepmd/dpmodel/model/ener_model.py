@@ -86,6 +86,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         box: Array | None = None,
         fparam: Array | None = None,
         aparam: Array | None = None,
+        charge_spin: Array | None = None,
         do_atomic_virial: bool = False,
     ) -> dict[str, Array]:
         model_ret = self.call_common(
@@ -94,6 +95,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             box,
             fparam=fparam,
             aparam=aparam,
+            charge_spin=charge_spin,
             do_atomic_virial=do_atomic_virial,
         )
         model_predict = {}
@@ -119,6 +121,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         mapping: Array | None = None,
         fparam: Array | None = None,
         aparam: Array | None = None,
+        charge_spin: Array | None = None,
         do_atomic_virial: bool = False,
     ) -> dict[str, Array]:
         model_ret = self.call_common_lower(
@@ -128,6 +131,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             mapping,
             fparam=fparam,
             aparam=aparam,
+            charge_spin=charge_spin,
             do_atomic_virial=do_atomic_virial,
         )
         model_predict = {}

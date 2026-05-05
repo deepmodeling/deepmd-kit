@@ -359,6 +359,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         use_loc_mapping: bool = True,
         type_map: list[str] | None = None,
         add_chg_spin_ebd: bool = False,
+        default_chg_spin: list[float] | None = None,
     ) -> None:
         super().__init__()
 
@@ -414,6 +415,11 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
 
         self.use_econf_tebd = use_econf_tebd
         self.add_chg_spin_ebd = add_chg_spin_ebd
+        self.default_chg_spin = default_chg_spin
+        if self.add_chg_spin_ebd and self.default_chg_spin is not None:
+            assert len(self.default_chg_spin) == 2, (
+                "default_chg_spin must have exactly 2 values [charge, spin]"
+            )
         self.use_tebd_bias = use_tebd_bias
         self.use_loc_mapping = use_loc_mapping
         self.type_map = type_map
@@ -479,6 +485,18 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
         return self.rcut
+
+    def get_dim_chg_spin(self) -> int:
+        """Returns the dimension of charge_spin input."""
+        return 2 if self.add_chg_spin_ebd else 0
+
+    def has_default_chg_spin(self) -> bool:
+        """Returns whether default charge_spin values are set."""
+        return self.default_chg_spin is not None
+
+    def get_default_chg_spin(self) -> list[float] | None:
+        """Returns the default charge_spin values."""
+        return self.default_chg_spin
 
     def get_rcut_smth(self) -> float:
         """Returns the radius where the neighbor information starts to smoothly decay to 0."""
@@ -616,6 +634,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         nlist: Array,
         mapping: Array | None = None,
         fparam: Array | None = None,
+        charge_spin: Array | None = None,
     ) -> tuple[Array, Array, Array, Array, Array]:
         """Compute the descriptor.
 
@@ -668,13 +687,13 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             )
 
         if self.add_chg_spin_ebd:
-            assert fparam is not None
+            assert charge_spin is not None
             assert self.chg_embedding is not None
             assert self.spin_embedding is not None
             chg_tebd = self.chg_embedding.call()
             spin_tebd = self.spin_embedding.call()
-            charge = xp.astype(fparam[:, 0], xp.int64) + 100
-            spin = xp.astype(fparam[:, 1], xp.int64)
+            charge = xp.astype(charge_spin[:, 0], xp.int64) + 100
+            spin = xp.astype(charge_spin[:, 1], xp.int64)
             chg_ebd = xp.reshape(
                 xp.take(chg_tebd, xp.reshape(charge, (-1,)), axis=0),
                 (nframes, self.tebd_dim),
@@ -718,6 +737,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             "use_tebd_bias": self.use_tebd_bias,
             "use_loc_mapping": self.use_loc_mapping,
             "add_chg_spin_ebd": self.add_chg_spin_ebd,
+            "default_chg_spin": self.default_chg_spin,
             "type_map": self.type_map,
             "type_embedding": self.type_embedding.serialize(),
         }

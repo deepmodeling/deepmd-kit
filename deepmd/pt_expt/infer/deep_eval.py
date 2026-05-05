@@ -413,6 +413,21 @@ class DeepEval(DeepEvalBackend):
             "mixed_types": model.mixed_types(),
             "has_default_fparam": model.has_default_fparam(),
             "default_fparam": model.get_default_fparam(),
+            "has_chg_spin_ebd": (
+                model.has_chg_spin_ebd()
+                if hasattr(model, "has_chg_spin_ebd")
+                else False
+            ),
+            "has_default_chg_spin": (
+                model.has_default_chg_spin()
+                if hasattr(model, "has_default_chg_spin")
+                else False
+            ),
+            "default_chg_spin": (
+                model.get_default_chg_spin()
+                if hasattr(model, "get_default_chg_spin")
+                else None
+            ),
             "is_spin": self._is_spin,
         }
         if self._is_spin:
@@ -435,6 +450,7 @@ class DeepEval(DeepEvalBackend):
                 mapping: torch.Tensor | None,
                 fparam: torch.Tensor | None,
                 aparam: torch.Tensor | None,
+                charge_spin: torch.Tensor | None = None,
             ) -> dict[str, torch.Tensor]:
                 ext_coord = ext_coord.detach().requires_grad_(True)
                 return model.forward_common_lower(
@@ -445,6 +461,7 @@ class DeepEval(DeepEvalBackend):
                     mapping,
                     fparam=fparam,
                     aparam=aparam,
+                    charge_spin=charge_spin,
                     do_atomic_virial=True,
                 )
 
@@ -458,6 +475,7 @@ class DeepEval(DeepEvalBackend):
                 mapping: torch.Tensor | None,
                 fparam: torch.Tensor | None,
                 aparam: torch.Tensor | None,
+                charge_spin: torch.Tensor | None = None,
             ) -> dict[str, torch.Tensor]:
                 ext_coord = ext_coord.detach().requires_grad_(True)
                 return model.forward_common_lower(
@@ -467,6 +485,7 @@ class DeepEval(DeepEvalBackend):
                     mapping,
                     fparam=fparam,
                     aparam=aparam,
+                    charge_spin=charge_spin,
                     do_atomic_virial=True,
                 )
 
@@ -495,6 +514,18 @@ class DeepEval(DeepEvalBackend):
         if self._dpmodel is not None:
             return self._dpmodel.get_dim_aparam()
         return int(self.metadata["dim_aparam"])
+
+    def has_chg_spin_ebd(self) -> bool:
+        """Check whether the model uses a dedicated charge_spin input."""
+        if self._dpmodel is not None and hasattr(self._dpmodel, "has_chg_spin_ebd"):
+            return bool(self._dpmodel.has_chg_spin_ebd())
+        return bool(self.metadata.get("has_chg_spin_ebd", False))
+
+    def has_default_chg_spin(self) -> bool:
+        """Check whether the model has a default charge_spin fallback."""
+        if self._dpmodel is not None and hasattr(self._dpmodel, "has_default_chg_spin"):
+            return bool(self._dpmodel.has_default_chg_spin())
+        return bool(self.metadata.get("has_default_chg_spin", False))
 
     @property
     def model_type(self) -> type["DeepEvalWrapper"]:
@@ -568,6 +599,7 @@ class DeepEval(DeepEvalBackend):
         atomic: bool = False,
         fparam: np.ndarray | None = None,
         aparam: np.ndarray | None = None,
+        charge_spin: np.ndarray | None = None,
         **kwargs: Any,
     ) -> dict[str, np.ndarray]:
         """Evaluate the energy, force and virial by using this DP.
@@ -623,11 +655,24 @@ class DeepEval(DeepEvalBackend):
         if spins is not None:
             spins = np.array(spins)
             out = self._eval_func(self._eval_model_spin, numb_test, natoms)(
-                coords, cells, atom_types, spins, fparam, aparam, request_defs
+                coords,
+                cells,
+                atom_types,
+                spins,
+                fparam,
+                aparam,
+                request_defs,
+                charge_spin,
             )
         else:
             out = self._eval_func(self._eval_model, numb_test, natoms)(
-                coords, cells, atom_types, fparam, aparam, request_defs
+                coords,
+                cells,
+                atom_types,
+                fparam,
+                aparam,
+                request_defs,
+                charge_spin,
             )
         return dict(
             zip(
@@ -917,6 +962,7 @@ class DeepEval(DeepEvalBackend):
         atom_types: np.ndarray,
         fparam: np.ndarray | None,
         aparam: np.ndarray | None,
+        charge_spin: np.ndarray | None = None,
     ) -> tuple:
         """Prepare tensor inputs for model evaluation.
 
@@ -924,7 +970,7 @@ class DeepEval(DeepEvalBackend):
         -------
         tuple
             (ext_coord_t, ext_atype_t, nlist_t, mapping_t,
-             fparam_t, aparam_t, nframes, natoms)
+             fparam_t, aparam_t, charge_spin_t, nframes, natoms)
         """
         nframes = coords.shape[0]
         if len(atom_types.shape) == 1:
@@ -1008,6 +1054,32 @@ class DeepEval(DeepEvalBackend):
         else:
             aparam_t = None
 
+        # charge_spin handling: dedicated input, separate from fparam.
+        if charge_spin is not None:
+            charge_spin_t = torch.tensor(
+                np.asarray(charge_spin).reshape(nframes, 2),
+                dtype=torch.float64,
+                device=DEVICE,
+            )
+        elif self.metadata.get("has_chg_spin_ebd", False):
+            default_cs = self.metadata.get("default_chg_spin")
+            if default_cs is not None:
+                if hasattr(default_cs, "cpu"):
+                    default_cs = default_cs.cpu().numpy()
+                charge_spin_t = (
+                    torch.tensor(default_cs, dtype=torch.float64, device=DEVICE)
+                    .unsqueeze(0)
+                    .expand(nframes, -1)
+                    .contiguous()
+                )
+            else:
+                raise ValueError(
+                    "charge_spin is required for this model (add_chg_spin_ebd=True) "
+                    "but was not provided, and no default_chg_spin is set."
+                )
+        else:
+            charge_spin_t = None
+
         return (
             ext_coord_t,
             ext_atype_t,
@@ -1015,6 +1087,7 @@ class DeepEval(DeepEvalBackend):
             mapping_t,
             fparam_t,
             aparam_t,
+            charge_spin_t,
             nframes,
             natoms,
         )
@@ -1027,6 +1100,7 @@ class DeepEval(DeepEvalBackend):
         fparam: np.ndarray | None,
         aparam: np.ndarray | None,
         request_defs: list[OutputVariableDef],
+        charge_spin: np.ndarray | None = None,
     ) -> tuple[np.ndarray, ...]:
         (
             ext_coord_t,
@@ -1035,9 +1109,10 @@ class DeepEval(DeepEvalBackend):
             mapping_t,
             fparam_t,
             aparam_t,
+            charge_spin_t,
             nframes,
             natoms,
-        ) = self._prepare_inputs(coords, cells, atom_types, fparam, aparam)
+        ) = self._prepare_inputs(coords, cells, atom_types, fparam, aparam, charge_spin)
 
         # Call the model (forward_common_lower interface, internal keys)
         if self._is_pt2:
@@ -1046,11 +1121,23 @@ class DeepEval(DeepEvalBackend):
             # It also filters non-tensor args automatically, matching the
             # export-time signature where None args were excluded.
             model_ret = self._pt2_runner(
-                ext_coord_t, ext_atype_t, nlist_t, mapping_t, fparam_t, aparam_t
+                ext_coord_t,
+                ext_atype_t,
+                nlist_t,
+                mapping_t,
+                fparam_t,
+                aparam_t,
+                charge_spin_t,
             )
         else:
             model_ret = self.exported_module(
-                ext_coord_t, ext_atype_t, nlist_t, mapping_t, fparam_t, aparam_t
+                ext_coord_t,
+                ext_atype_t,
+                nlist_t,
+                mapping_t,
+                fparam_t,
+                aparam_t,
+                charge_spin=charge_spin_t,
             )
 
         # Apply communicate_extended_output to map extended atoms → local atoms
@@ -1093,6 +1180,7 @@ class DeepEval(DeepEvalBackend):
         fparam: np.ndarray | None,
         aparam: np.ndarray | None,
         request_defs: list[OutputVariableDef],
+        charge_spin: np.ndarray | None = None,
     ) -> tuple[np.ndarray, ...]:
         nframes = coords.shape[0]
         if len(atom_types.shape) == 1:
@@ -1182,6 +1270,32 @@ class DeepEval(DeepEvalBackend):
         else:
             aparam_t = None
 
+        # charge_spin handling: dedicated input, separate from fparam.
+        if charge_spin is not None:
+            charge_spin_t = torch.tensor(
+                np.asarray(charge_spin).reshape(nframes, 2),
+                dtype=torch.float64,
+                device=DEVICE,
+            )
+        elif self.metadata.get("has_chg_spin_ebd", False):
+            default_cs = self.metadata.get("default_chg_spin")
+            if default_cs is not None:
+                if hasattr(default_cs, "cpu"):
+                    default_cs = default_cs.cpu().numpy()
+                charge_spin_t = (
+                    torch.tensor(default_cs, dtype=torch.float64, device=DEVICE)
+                    .unsqueeze(0)
+                    .expand(nframes, -1)
+                    .contiguous()
+                )
+            else:
+                raise ValueError(
+                    "charge_spin is required for this model (add_chg_spin_ebd=True) "
+                    "but was not provided, and no default_chg_spin is set."
+                )
+        else:
+            charge_spin_t = None
+
         # Call the model with spin (7 args)
         if self._is_pt2:
             model_ret = self._pt2_runner(
@@ -1192,6 +1306,7 @@ class DeepEval(DeepEvalBackend):
                 mapping_t,
                 fparam_t,
                 aparam_t,
+                charge_spin_t,
             )
         else:
             model_ret = self.exported_module(
@@ -1202,6 +1317,7 @@ class DeepEval(DeepEvalBackend):
                 mapping_t,
                 fparam_t,
                 aparam_t,
+                charge_spin=charge_spin_t,
             )
 
         # Apply communicate_extended_output to map extended atoms → local atoms
@@ -1357,6 +1473,7 @@ class DeepEval(DeepEvalBackend):
         atom_types: np.ndarray,
         fparam: np.ndarray | None = None,
         aparam: np.ndarray | None = None,
+        charge_spin: np.ndarray | None = None,
         **kwargs: Any,
     ) -> np.ndarray:
         """Evaluate descriptor.
@@ -1402,19 +1519,19 @@ class DeepEval(DeepEvalBackend):
             mapping_t,
             fparam_t,
             _aparam_t,
+            charge_spin_t,
             _nframes,
             _natoms,
-        ) = self._prepare_inputs(coords, cells, atom_types, fparam, aparam)
+        ) = self._prepare_inputs(coords, cells, atom_types, fparam, aparam, charge_spin)
         with torch.no_grad():
-            fparam_for_des = (
-                fparam_t if getattr(dp_am, "add_chg_spin_ebd", False) else None
-            )
             descriptor, *_ = dp_am.descriptor(
                 ext_coord_t,
                 ext_atype_t,
                 nlist_t,
                 mapping=mapping_t,
-                fparam=fparam_for_des,
+                charge_spin=charge_spin_t
+                if getattr(dp_am, "add_chg_spin_ebd", False)
+                else None,
             )
         return descriptor.detach().cpu().numpy()
 
@@ -1425,6 +1542,7 @@ class DeepEval(DeepEvalBackend):
         atom_types: np.ndarray,
         fparam: np.ndarray | None = None,
         aparam: np.ndarray | None = None,
+        charge_spin: np.ndarray | None = None,
         **kwargs: Any,
     ) -> np.ndarray:
         """Evaluate the last hidden layer of the fitting network.
@@ -1470,19 +1588,19 @@ class DeepEval(DeepEvalBackend):
             mapping_t,
             fparam_t,
             aparam_t,
+            charge_spin_t,
             _nframes,
             natoms,
-        ) = self._prepare_inputs(coords, cells, atom_types, fparam, aparam)
+        ) = self._prepare_inputs(coords, cells, atom_types, fparam, aparam, charge_spin)
         with torch.no_grad():
-            fparam_for_des = (
-                fparam_t if getattr(dp_am, "add_chg_spin_ebd", False) else None
-            )
             descriptor, rot_mat, g2, h2, _sw = dp_am.descriptor(
                 ext_coord_t,
                 ext_atype_t,
                 nlist_t,
                 mapping=mapping_t,
-                fparam=fparam_for_des,
+                charge_spin=charge_spin_t
+                if getattr(dp_am, "add_chg_spin_ebd", False)
+                else None,
             )
             atype = ext_atype_t[:, :natoms]
             fitting_net = dp_am.fitting_net

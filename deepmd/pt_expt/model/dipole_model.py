@@ -44,6 +44,7 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
         box: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
+        charge_spin: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
     ) -> dict[str, torch.Tensor]:
         model_ret = self.call_common(
@@ -52,6 +53,7 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
             box,
             fparam=fparam,
             aparam=aparam,
+            charge_spin=charge_spin,
             do_atomic_virial=do_atomic_virial,
         )
         model_predict = {}
@@ -75,6 +77,7 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
         mapping: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
+        charge_spin: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
     ) -> dict[str, torch.Tensor]:
         model_ret = self.call_common_lower(
@@ -84,6 +87,7 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
             mapping,
             fparam=fparam,
             aparam=aparam,
+            charge_spin=charge_spin,
             do_atomic_virial=do_atomic_virial,
         )
         model_predict = {}
@@ -125,6 +129,7 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
         mapping: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
+        charge_spin: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
         **make_fx_kwargs: Any,
     ) -> torch.nn.Module:
@@ -137,6 +142,7 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
             mapping: torch.Tensor | None,
             fparam: torch.Tensor | None,
             aparam: torch.Tensor | None,
+            charge_spin: torch.Tensor | None,
         ) -> dict[str, torch.Tensor]:
             extended_coord = extended_coord.detach().requires_grad_(True)
             nlist = _pad_nlist_for_export(nlist)
@@ -147,6 +153,7 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
                 mapping,
                 fparam=fparam,
                 aparam=aparam,
+                charge_spin=charge_spin,
                 do_atomic_virial=do_atomic_virial,
             )
 
@@ -155,7 +162,13 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
         model.need_sorted_nlist_for_lower = types.MethodType(lambda self: True, model)
         try:
             traced = make_fx(fn, **make_fx_kwargs)(
-                extended_coord, extended_atype, nlist, mapping, fparam, aparam
+                extended_coord,
+                extended_atype,
+                nlist,
+                mapping,
+                fparam,
+                aparam,
+                charge_spin,
             )
         finally:
             model.need_sorted_nlist_for_lower = _orig_need_sort

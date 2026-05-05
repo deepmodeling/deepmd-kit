@@ -489,6 +489,7 @@ def DescriptorParamDPA3(
     precision="float64",
     use_loc_mapping=True,
     add_chg_spin_ebd=False,
+    default_chg_spin=None,
 ):
     input_dict = {
         # kwargs for repformer
@@ -537,6 +538,7 @@ def DescriptorParamDPA3(
         "use_tebd_bias": False,
         "use_loc_mapping": use_loc_mapping,
         "add_chg_spin_ebd": add_chg_spin_ebd,
+        "default_chg_spin": default_chg_spin,
         "type_map": type_map,
         "seed": GLOBAL_SEED,
     }
@@ -564,6 +566,7 @@ DescriptorParamDPA3List = parameterize_func(
             "precision": ("float64",),
             "use_loc_mapping": (True, False),
             "add_chg_spin_ebd": (False, True),
+            "default_chg_spin": (None, [5.0, 1.0]),
         }
     ),
 )

@@ -354,6 +354,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         nlist: Array,
         mapping: Array | None = None,
         fparam: Array | None = None,
+        charge_spin: Array | None = None,
     ) -> tuple[Array, Array]:
         """Compute the descriptor.
 

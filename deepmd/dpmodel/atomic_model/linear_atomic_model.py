@@ -224,6 +224,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         mapping: Array | None = None,
         fparam: Array | None = None,
         aparam: Array | None = None,
+        charge_spin: Array | None = None,
     ) -> dict[str, Array]:
         """Return atomic prediction.
 
@@ -280,6 +281,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                     mapping,
                     fparam,
                     aparam,
+                    charge_spin=charge_spin,
                 )["energy"]
             )
         weights = self._compute_weight(extended_coord, extended_atype, nlists_)

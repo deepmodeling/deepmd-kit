@@ -103,6 +103,7 @@ class DescriptorTest:
         box: np.ndarray,
         mixed_types: bool = False,
         fparam: np.ndarray | None = None,
+        charge_spin: np.ndarray | None = None,
     ) -> Any:
         ext_coords, ext_atype, mapping = extend_coord_with_ghosts(
             coords.reshape(1, -1, 3),
@@ -119,7 +120,12 @@ class DescriptorTest:
             distinguish_types=(not mixed_types),
         )
         return dp_obj(
-            ext_coords, ext_atype, nlist=nlist, mapping=mapping, fparam=fparam
+            ext_coords,
+            ext_atype,
+            nlist=nlist,
+            mapping=mapping,
+            fparam=fparam,
+            charge_spin=charge_spin,
         )
 
     def eval_pt_descriptor(
@@ -131,6 +137,7 @@ class DescriptorTest:
         box: np.ndarray,
         mixed_types: bool = False,
         fparam: np.ndarray | None = None,
+        charge_spin: np.ndarray | None = None,
     ) -> Any:
         ext_coords, ext_atype, mapping = extend_coord_with_ghosts_pt(
             torch.from_numpy(coords).to(PT_DEVICE).reshape(1, -1, 3),
@@ -149,10 +156,20 @@ class DescriptorTest:
         fparam_pt = (
             torch.from_numpy(fparam).to(PT_DEVICE) if fparam is not None else None
         )
+        charge_spin_pt = (
+            torch.from_numpy(charge_spin).to(PT_DEVICE)
+            if charge_spin is not None
+            else None
+        )
         return [
             x.detach().cpu().numpy() if torch.is_tensor(x) else x
             for x in pt_obj(
-                ext_coords, ext_atype, nlist=nlist, mapping=mapping, fparam=fparam_pt
+                ext_coords,
+                ext_atype,
+                nlist=nlist,
+                mapping=mapping,
+                fparam=fparam_pt,
+                charge_spin=charge_spin_pt,
             )
         ]
 
@@ -165,6 +182,7 @@ class DescriptorTest:
         box: np.ndarray,
         mixed_types: bool = False,
         fparam: np.ndarray | None = None,
+        charge_spin: np.ndarray | None = None,
     ) -> Any:
         ext_coords, ext_atype, mapping = extend_coord_with_ghosts(
             torch.from_numpy(coords).to(PT_DEVICE).reshape(1, -1, 3),
@@ -183,10 +201,20 @@ class DescriptorTest:
         fparam_pt = (
             torch.from_numpy(fparam).to(PT_DEVICE) if fparam is not None else None
         )
+        charge_spin_pt = (
+            torch.from_numpy(charge_spin).to(PT_DEVICE)
+            if charge_spin is not None
+            else None
+        )
         return [
             x.detach().cpu().numpy() if torch.is_tensor(x) else x
             for x in pt_expt_obj(
-                ext_coords, ext_atype, nlist=nlist, mapping=mapping, fparam=fparam_pt
+                ext_coords,
+                ext_atype,
+                nlist=nlist,
+                mapping=mapping,
+                fparam=fparam_pt,
+                charge_spin=charge_spin_pt,
             )
         ]
 
@@ -199,6 +227,7 @@ class DescriptorTest:
         box: np.ndarray,
         mixed_types: bool = False,
         fparam: np.ndarray | None = None,
+        charge_spin: np.ndarray | None = None,
     ) -> Any:
         ext_coords, ext_atype, mapping = extend_coord_with_ghosts(
             jnp.array(coords).reshape(1, -1, 3),
@@ -215,10 +244,16 @@ class DescriptorTest:
             distinguish_types=(not mixed_types),
         )
         fparam_jax = jnp.array(fparam) if fparam is not None else None
+        charge_spin_jax = jnp.array(charge_spin) if charge_spin is not None else None
         return [
             np.asarray(x) if isinstance(x, jnp.ndarray) else x
             for x in jax_obj(
-                ext_coords, ext_atype, nlist=nlist, mapping=mapping, fparam=fparam_jax
+                ext_coords,
+                ext_atype,
+                nlist=nlist,
+                mapping=mapping,
+                fparam=fparam_jax,
+                charge_spin=charge_spin_jax,
             )
         ]
 
@@ -231,6 +266,7 @@ class DescriptorTest:
         box: np.ndarray,
         mixed_types: bool = False,
         fparam: np.ndarray | None = None,
+        charge_spin: np.ndarray | None = None,
     ) -> Any:
         ext_coords, ext_atype, mapping = extend_coord_with_ghosts_pd(
             paddle.to_tensor(coords).to(PD_DEVICE).reshape([1, -1, 3]),
@@ -265,6 +301,7 @@ class DescriptorTest:
         box: np.ndarray,
         mixed_types: bool = False,
         fparam: np.ndarray | None = None,
+        charge_spin: np.ndarray | None = None,
     ) -> Any:
         ext_coords, ext_atype, mapping = extend_coord_with_ghosts(
             array_api_strict.asarray(coords.reshape(1, -1, 3)),
@@ -283,6 +320,9 @@ class DescriptorTest:
         fparam_array_api = (
             array_api_strict.asarray(fparam) if fparam is not None else None
         )
+        charge_spin_array_api = (
+            array_api_strict.asarray(charge_spin) if charge_spin is not None else None
+        )
         return [
             to_numpy_array(x) if hasattr(x, "__array_namespace__") else x
             for x in array_api_strict_obj(
@@ -291,6 +331,7 @@ class DescriptorTest:
                 nlist=nlist,
                 mapping=mapping,
                 fparam=fparam_array_api,
+                charge_spin=charge_spin_array_api,
             )
         ]
 

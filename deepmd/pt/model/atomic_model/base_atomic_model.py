@@ -189,6 +189,18 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         """Get the default frame parameters."""
         return None
 
+    def has_chg_spin_ebd(self) -> bool:
+        """Check if the model has charge spin embedding."""
+        return False
+
+    def has_default_chg_spin(self) -> bool:
+        """Check if the model has default charge_spin values."""
+        return False
+
+    def get_default_chg_spin(self) -> torch.Tensor | None:
+        """Get the default charge_spin values."""
+        return None
+
     def _make_wrapped_sampler(
         self,
         sampled_func: Callable[[], list[dict]],
@@ -305,6 +317,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         comm_dict: dict[str, torch.Tensor] | None = None,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Common interface for atomic inference.
 
@@ -356,6 +369,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
             fparam=fparam,
             aparam=aparam,
             comm_dict=comm_dict,
+            charge_spin=charge_spin,
         )
         ret_dict = self.apply_out_stat(ret_dict, atype)
 
@@ -386,6 +400,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         comm_dict: dict[str, torch.Tensor] | None = None,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         return self.forward_common_atomic(
             extended_coord,
@@ -395,6 +410,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
             fparam=fparam,
             aparam=aparam,
             comm_dict=comm_dict,
+            charge_spin=charge_spin,
         )
 
     def change_type_map(
@@ -621,6 +637,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
             box: torch.Tensor | None,
             fparam: torch.Tensor | None = None,
             aparam: torch.Tensor | None = None,
+            charge_spin: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
             with (
                 torch.no_grad()
@@ -638,6 +655,10 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
                     mixed_types=self.mixed_types(),
                     box=box,
                 )
+                if charge_spin is not None and not isinstance(
+                    charge_spin, torch.Tensor
+                ):
+                    charge_spin = to_torch_tensor(charge_spin)
                 atomic_ret = self.forward_common_atomic(
                     extended_coord,
                     extended_atype,
@@ -645,6 +666,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
                     mapping=mapping,
                     fparam=fparam,
                     aparam=aparam,
+                    charge_spin=charge_spin,
                 )
                 return {kk: vv.detach() for kk, vv in atomic_ret.items()}
 

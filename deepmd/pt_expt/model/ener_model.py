@@ -57,6 +57,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         box: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
+        charge_spin: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
     ) -> dict[str, torch.Tensor]:
         model_ret = self.call_common(
@@ -65,6 +66,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             box,
             fparam=fparam,
             aparam=aparam,
+            charge_spin=charge_spin,
             do_atomic_virial=do_atomic_virial,
         )
         model_predict = {}
@@ -90,6 +92,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         mapping: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
+        charge_spin: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
     ) -> dict[str, torch.Tensor]:
         model_ret = self.call_common_lower(
@@ -99,6 +102,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             mapping,
             fparam=fparam,
             aparam=aparam,
+            charge_spin=charge_spin,
             do_atomic_virial=do_atomic_virial,
         )
         model_predict = {}
@@ -144,6 +148,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         mapping: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
+        charge_spin: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
         **make_fx_kwargs: Any,
     ) -> torch.nn.Module:
@@ -175,6 +180,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             mapping,
             fparam=fparam,
             aparam=aparam,
+            charge_spin=charge_spin,
             do_atomic_virial=do_atomic_virial,
             **make_fx_kwargs,
         )
@@ -191,9 +197,16 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             mapping: torch.Tensor | None,
             fparam: torch.Tensor | None,
             aparam: torch.Tensor | None,
+            charge_spin: torch.Tensor | None,
         ) -> dict[str, torch.Tensor]:
             model_ret = traced(
-                extended_coord, extended_atype, nlist, mapping, fparam, aparam
+                extended_coord,
+                extended_atype,
+                nlist,
+                mapping,
+                fparam,
+                aparam,
+                charge_spin,
             )
             model_predict: dict[str, torch.Tensor] = {}
             model_predict["atom_energy"] = model_ret["energy"]
@@ -211,5 +224,5 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             return model_predict
 
         return make_fx(fn, **make_fx_kwargs)(
-            extended_coord, extended_atype, nlist, mapping, fparam, aparam
+            extended_coord, extended_atype, nlist, mapping, fparam, aparam, charge_spin
         )

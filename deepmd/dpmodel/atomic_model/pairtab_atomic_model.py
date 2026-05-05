@@ -253,6 +253,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         mapping: Array | None = None,
         fparam: Array | None = None,
         aparam: Array | None = None,
+        charge_spin: Array | None = None,
     ) -> dict[str, Array]:
         xp = array_api_compat.array_namespace(extended_coord, extended_atype, nlist)
         nframes, nloc, nnei = nlist.shape

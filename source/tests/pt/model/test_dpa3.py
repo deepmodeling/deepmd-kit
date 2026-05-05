@@ -55,7 +55,7 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
             nme,
             prec,
             ect,
-            add_chg_spin,
+            cs_mode,
         ) in itertools.product(
             [True, False],  # update_angle
             ["res_residual"],  # update_style
@@ -66,12 +66,19 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
             [1, 2],  # n_multi_edge_message
             ["float64"],  # precision
             [False],  # use_econf_tebd
-            [False, True],  # add_chg_spin_ebd
+            ["no_chg_spin", "explicit_chg_spin", "default_chg_spin"],
         ):
             dtype = PRECISION_DICT[prec]
             rtol, atol = get_tols(prec)
             if prec == "float64":
                 atol = 1e-8  # marginal GPU test cases...
+
+            add_chg_spin = cs_mode != "no_chg_spin"
+            default_chg_spin = [5.0, 1.0] if cs_mode == "default_chg_spin" else None
+            # Descriptor.forward does not apply default_chg_spin fallback
+            # (that lives in dp_atomic_model). When add_chg_spin_ebd is on,
+            # tests must always pass an explicit charge_spin tensor.
+            need_cs_input = add_chg_spin
 
             repflow = RepFlowArgs(
                 n_dim=20,
@@ -105,27 +112,28 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 use_econf_tebd=ect,
                 type_map=["O", "H"] if ect else None,
                 add_chg_spin_ebd=add_chg_spin,
+                default_chg_spin=default_chg_spin,
                 seed=GLOBAL_SEED,
             ).to(env.DEVICE)
 
             dd0.repflows.mean = torch.tensor(davg, dtype=dtype, device=env.DEVICE)
             dd0.repflows.stddev = torch.tensor(dstd, dtype=dtype, device=env.DEVICE)
 
-            # Prepare fparam if needed
-            fparam = None
-            fparam_np = None
-            if add_chg_spin:
-                fparam = torch.tensor([[5, 1]], dtype=dtype, device=env.DEVICE).expand(
-                    nf, -1
-                )
-                fparam_np = np.array([[5, 1]], dtype=np.float64).repeat(nf, axis=0)
+            # Prepare charge_spin per mode.
+            charge_spin = None
+            charge_spin_np = None
+            if need_cs_input:
+                charge_spin = torch.tensor(
+                    [[5, 1]], dtype=dtype, device=env.DEVICE
+                ).expand(nf, -1)
+                charge_spin_np = np.array([[5, 1]], dtype=np.float64).repeat(nf, axis=0)
 
             rd0, _, _, _, _ = dd0(
                 torch.tensor(self.coord_ext, dtype=dtype, device=env.DEVICE),
                 torch.tensor(self.atype_ext, dtype=int, device=env.DEVICE),
                 torch.tensor(self.nlist, dtype=int, device=env.DEVICE),
                 torch.tensor(self.mapping, dtype=int, device=env.DEVICE),
-                fparam=fparam,
+                charge_spin=charge_spin,
             )
             # serialization
             dd1 = DescrptDPA3.deserialize(dd0.serialize())
@@ -134,7 +142,7 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 torch.tensor(self.atype_ext, dtype=int, device=env.DEVICE),
                 torch.tensor(self.nlist, dtype=int, device=env.DEVICE),
                 torch.tensor(self.mapping, dtype=int, device=env.DEVICE),
-                fparam=fparam,
+                charge_spin=charge_spin,
             )
             np.testing.assert_allclose(
                 rd0.detach().cpu().numpy(),
@@ -149,7 +157,7 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 self.atype_ext,
                 self.nlist,
                 self.mapping,
-                fparam=fparam_np,
+                charge_spin=charge_spin_np,
             )
             np.testing.assert_allclose(
                 rd0.detach().cpu().numpy(),
@@ -157,6 +165,42 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 rtol=rtol,
                 atol=atol,
             )
+
+            # default_chg_spin should match explicit when value is the same.
+            if cs_mode == "default_chg_spin":
+                dd_explicit = DescrptDPA3(
+                    self.nt,
+                    repflow=repflow,
+                    exclude_types=[],
+                    precision=prec,
+                    use_econf_tebd=ect,
+                    type_map=["O", "H"] if ect else None,
+                    add_chg_spin_ebd=True,
+                    default_chg_spin=None,
+                    seed=GLOBAL_SEED,
+                ).to(env.DEVICE)
+                dd_explicit.repflows.mean = torch.tensor(
+                    davg, dtype=dtype, device=env.DEVICE
+                )
+                dd_explicit.repflows.stddev = torch.tensor(
+                    dstd, dtype=dtype, device=env.DEVICE
+                )
+                cs = torch.tensor([[5, 1]], dtype=dtype, device=env.DEVICE).expand(
+                    nf, -1
+                )
+                rd_explicit, _, _, _, _ = dd_explicit(
+                    torch.tensor(self.coord_ext, dtype=dtype, device=env.DEVICE),
+                    torch.tensor(self.atype_ext, dtype=int, device=env.DEVICE),
+                    torch.tensor(self.nlist, dtype=int, device=env.DEVICE),
+                    torch.tensor(self.mapping, dtype=int, device=env.DEVICE),
+                    charge_spin=cs,
+                )
+                np.testing.assert_allclose(
+                    rd0.detach().cpu().numpy(),
+                    rd_explicit.detach().cpu().numpy(),
+                    rtol=rtol,
+                    atol=atol,
+                )
 
     def test_jit(
         self,
