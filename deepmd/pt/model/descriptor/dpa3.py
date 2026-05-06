@@ -630,6 +630,14 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
             Frame boundaries [nframes + 1].
         fparam : torch.Tensor | None
             Frame parameters [nframes, ndf].
+        central_ext_index : torch.Tensor | None
+            Extended-atom indices corresponding to local atoms.
+        nlist_ext, a_nlist_ext : torch.Tensor | None
+            Edge and angle neighbor lists indexing concatenated extended atoms.
+        nlist_mask, a_nlist_mask : torch.Tensor | None
+            Valid-neighbor masks for flat edge and angle neighbor lists.
+        edge_index, angle_index : torch.Tensor | None
+            Dynamic graph indices produced by the flat graph preprocessor.
 
         Returns
         -------
@@ -640,21 +648,19 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
             - 'g2': edge embedding or None
             - 'h2': pair representation or None
         """
-        # Cast to internal precision
         extended_coord = extended_coord.to(dtype=self.prec)
 
-        # Get type embeddings for extended atoms
-        # For flat format, we embed all extended atoms
-        node_ebd_ext = self.type_embedding(extended_atype)  # [total_extended_atoms, tebd_dim]
+        # Flat batches embed all extended atoms, then gather central atoms.
+        node_ebd_ext = self.type_embedding(
+            extended_atype
+        )  # [total_extended_atoms, tebd_dim]
 
-        # Handle charge/spin embedding if needed
         if self.add_chg_spin_ebd:
             assert fparam is not None
             assert self.chg_embedding is not None
             assert self.spin_embedding is not None
 
-            # fparam: [nframes, 2] -> need to expand to [total_extended_atoms, ...]
-            # Use extended_batch to index into fparam
+            # Expand frame-level charge/spin parameters to extended atoms.
             charge = fparam[extended_batch, 0].to(dtype=torch.int64) + 100
             spin = fparam[extended_batch, 1].to(dtype=torch.int64)
             chg_ebd = self.chg_embedding(charge)
@@ -669,8 +675,6 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
 
             central_ext_index = get_central_ext_index(extended_batch, ptr)
         node_ebd_inp = node_ebd_ext[central_ext_index]
-
-        # Call repflows with flat format
 
         node_ebd, edge_ebd, h2, rot_mat, sw = self.repflows.forward_flat(
             nlist,
@@ -695,10 +699,22 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
             node_ebd = torch.cat([node_ebd, node_ebd_inp], dim=-1)
 
         return {
-            'descriptor': node_ebd.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
-            'rot_mat': rot_mat.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION) if rot_mat is not None else None,
-            'g2': edge_ebd.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION) if edge_ebd is not None else None,
-            'h2': h2.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION) if h2 is not None else None,
+            "descriptor": node_ebd.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION),
+            "rot_mat": (
+                rot_mat.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION)
+                if rot_mat is not None
+                else None
+            ),
+            "g2": (
+                edge_ebd.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION)
+                if edge_ebd is not None
+                else None
+            ),
+            "h2": (
+                h2.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION)
+                if h2 is not None
+                else None
+            ),
         }
 
     @classmethod

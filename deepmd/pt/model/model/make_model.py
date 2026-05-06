@@ -239,10 +239,10 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             edge_index: torch.Tensor | None = None,
             angle_index: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
-            """Forward pass for flat mixed-nloc batch (true graph-native path).
+            """Forward pass for mixed-nloc batches with a precomputed flat graph.
 
-            This implementation processes the flat batch directly without packing/unpacking,
-            making it more efficient for heterogeneous systems.
+            This path consumes graph tensors prepared by the LMDB collate function
+            and keeps atom-wise values flattened across frames.
 
             Parameters
             ----------
@@ -272,7 +272,8 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
 
             Notes
             -----
-            This is the true graph-native implementation that avoids padding overhead.
+            The precomputed graph fields are required for this path; missing
+            fields are treated as a data pipeline error.
             """
             # Enable gradient tracking for coord and box if needed
             if self.do_grad_r("energy"):
@@ -306,8 +307,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                     "Flat mixed-batch forward requires precomputed graph fields from "
                     "the LMDB collate_fn."
                 )
-            # Call forward_common_lower_flat with flat format
-            # This will pass flat extended coords directly to descriptor
+            # Pass flat extended coordinates directly to the atomic model.
             assert extended_atype is not None
             assert extended_batch is not None
             assert mapping is not None
@@ -403,8 +403,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             model_predict : dict[str, torch.Tensor]
                 Model predictions in flat format.
             """
-            # Call atomic model with flat format
-            # The atomic model needs to support flat format
+            # The atomic model keeps atom-wise outputs in flat format.
             model_ret = self.atomic_model.forward_common_atomic_flat(
                 extended_coord,
                 extended_atype,
@@ -426,8 +425,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 angle_index=angle_index,
             )
 
-            # Reduce atomic properties to frame properties
-            # For energy: sum over atoms in each frame
+            # Reduce atom-wise energy to frame-wise energy.
             nframes = ptr.numel() - 1
             if "energy" in model_ret:
                 energy_atomic = model_ret["energy"]  # [total_atoms, 1]
@@ -480,12 +478,10 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             model_predict : dict[str, torch.Tensor]
                 Model predictions with derivatives in flat format.
             """
-            # Compute force: -dE/dr
+            # Force is the negative gradient of the total atomic energy.
             if self.do_grad_r("energy"):
                 energy_atomic = fit_ret["energy"]  # [total_atoms, 1]
 
-                # Compute gradient w.r.t. coord
-                # energy_atomic is [total_atoms, 1], coord is [total_atoms, 3]
                 energy_derv_r = torch.autograd.grad(
                     outputs=energy_atomic.sum(),
                     inputs=coord,
@@ -493,7 +489,6 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                     retain_graph=True,
                 )[0]  # [total_atoms, 3]
 
-                # Force is negative gradient
                 fit_ret["energy_derv_r"] = -energy_derv_r.unsqueeze(-2)  # [total_atoms, 1, 3]
                 # Also provide dforce field for compatibility with EnergyModel.forward()
                 fit_ret["dforce"] = -energy_derv_r  # [total_atoms, 3]
@@ -504,8 +499,6 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 energy_redu = fit_ret["energy_redu"]  # [nframes, 1]
 
                 if box is not None:
-                    # Compute gradient w.r.t. box directly (box is already [nframes, 9])
-                    # No need to reshape - work with the flat representation
                     energy_derv_c_redu = torch.autograd.grad(
                         outputs=energy_redu.sum(),
                         inputs=box,
@@ -513,9 +506,12 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                         retain_graph=True,
                     )[0]  # [nframes, 9]
 
-                    fit_ret["energy_derv_c_redu"] = energy_derv_c_redu.unsqueeze(1)  # [nframes, 1, 9]
+                    fit_ret["energy_derv_c_redu"] = energy_derv_c_redu.unsqueeze(
+                        1
+                    )  # [nframes, 1, 9]
 
-                    # TODO: Implement atomic virial if needed
+                    # Preserve the current flat-path behavior: reduced virial is
+                    # available, atomic virial is not populated yet.
                     if do_atomic_virial:
                         pass  # Not yet implemented for flat format
 
@@ -548,8 +544,8 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
         ) -> dict[str, torch.Tensor]:
             """Forward pass for flat mixed-nloc batch.
 
-            This method dispatches to either the native graph implementation or
-            the pack/unpack fallback based on availability.
+            This method consumes the precomputed flat graph produced by LMDB
+            collation and returns the same output keys as the regular path.
 
             Parameters
             ----------
@@ -577,7 +573,6 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 - atomwise outputs: [total_atoms, ...]
                 - frame-wise outputs: [nframes, ...]
             """
-            # Use native implementation to test flat neighbor list building
             return self.forward_common_flat_native(
                 coord,
                 atype,

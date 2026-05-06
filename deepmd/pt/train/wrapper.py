@@ -197,24 +197,28 @@ class ModelWrapper(torch.nn.Module):
             "aparam": aparam,
         }
 
-        # For mixed batch, add batch and ptr to input_dict
+        # Mixed-nloc LMDB batches carry a precomputed flat graph.
         if batch is not None and ptr is not None:
-            input_dict["batch"] = batch
-            input_dict["ptr"] = ptr
-            input_dict["extended_atype"] = extended_atype
-            input_dict["extended_batch"] = extended_batch
-            input_dict["extended_image"] = extended_image
-            input_dict["extended_ptr"] = extended_ptr
-            input_dict["mapping"] = mapping
-            input_dict["central_ext_index"] = central_ext_index
-            input_dict["nlist"] = nlist
-            input_dict["nlist_ext"] = nlist_ext
-            input_dict["a_nlist"] = a_nlist
-            input_dict["a_nlist_ext"] = a_nlist_ext
-            input_dict["nlist_mask"] = nlist_mask
-            input_dict["a_nlist_mask"] = a_nlist_mask
-            input_dict["edge_index"] = edge_index
-            input_dict["angle_index"] = angle_index
+            input_dict.update(
+                {
+                    "batch": batch,
+                    "ptr": ptr,
+                    "extended_atype": extended_atype,
+                    "extended_batch": extended_batch,
+                    "extended_image": extended_image,
+                    "extended_ptr": extended_ptr,
+                    "mapping": mapping,
+                    "central_ext_index": central_ext_index,
+                    "nlist": nlist,
+                    "nlist_ext": nlist_ext,
+                    "a_nlist": a_nlist,
+                    "a_nlist_ext": a_nlist_ext,
+                    "nlist_mask": nlist_mask,
+                    "a_nlist_mask": a_nlist_mask,
+                    "edge_index": edge_index,
+                    "angle_index": angle_index,
+                }
+            )
 
         has_spin = getattr(self.model[task_key], "has_spin", False)
         if callable(has_spin):

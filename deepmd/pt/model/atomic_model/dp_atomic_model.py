@@ -361,6 +361,14 @@ class DPAtomicModel(BaseAtomicModel):
             Frame parameters [nframes, ndf].
         aparam : torch.Tensor | None
             Atomic parameters [total_atoms, nda].
+        central_ext_index : torch.Tensor | None
+            Extended-atom indices corresponding to local atoms.
+        nlist_ext, a_nlist_ext : torch.Tensor | None
+            Edge and angle neighbor lists indexing concatenated extended atoms.
+        nlist_mask, a_nlist_mask : torch.Tensor | None
+            Valid-neighbor masks for flat edge and angle neighbor lists.
+        edge_index, angle_index : torch.Tensor | None
+            Dynamic graph indices produced by the flat graph preprocessor.
 
         Returns
         -------
@@ -370,8 +378,7 @@ class DPAtomicModel(BaseAtomicModel):
         if self.do_grad_r() or self.do_grad_c():
             extended_coord.requires_grad_(True)
 
-        # Call descriptor with flat format
-        # The descriptor needs to support flat format
+        # Descriptor and fitting both consume the flat atom layout.
         descriptor_out = self.descriptor.forward_flat(
             extended_coord,
             extended_atype,
@@ -391,11 +398,10 @@ class DPAtomicModel(BaseAtomicModel):
             angle_index=angle_index,
         )
 
-        # Extract descriptor and other outputs
-        descriptor = descriptor_out.get('descriptor')
-        rot_mat = descriptor_out.get('rot_mat')
-        g2 = descriptor_out.get('g2')
-        h2 = descriptor_out.get('h2')
+        descriptor = descriptor_out.get("descriptor")
+        rot_mat = descriptor_out.get("rot_mat")
+        g2 = descriptor_out.get("g2")
+        h2 = descriptor_out.get("h2")
 
         if self.enable_eval_descriptor_hook:
             self.eval_descriptor_list.append(descriptor.detach())
@@ -408,7 +414,6 @@ class DPAtomicModel(BaseAtomicModel):
         else:
             atype = extended_atype[central_ext_index]
 
-        # Call fitting network with flat format
         fit_ret = self.fitting_net.forward_flat(
             descriptor,
             atype,

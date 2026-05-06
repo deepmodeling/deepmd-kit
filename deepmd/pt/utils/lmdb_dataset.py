@@ -3,6 +3,7 @@
 
 import logging
 from collections.abc import (
+    Callable,
     Iterator,
 )
 from typing import (
@@ -32,6 +33,11 @@ from deepmd.utils.data import (
 
 log = logging.getLogger(__name__)
 
+FrameDict = dict[str, Any]
+BatchDict = dict[str, Any]
+GraphConfig = dict[str, Any]
+MixedBatchCollate = Callable[[list[FrameDict]], BatchDict]
+
 # Re-export for backward compatibility
 __all__ = [
     "LmdbDataset",
@@ -55,16 +61,17 @@ _ATOMWISE_MIXED_BATCH_KEYS = frozenset(
 )
 
 
-def _collate_lmdb_mixed_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
+def _collate_lmdb_mixed_batch(batch: list[FrameDict]) -> BatchDict:
     """Collate mixed-nloc frames into flattened atom-wise tensors.
 
     Atom-wise fields are concatenated across frames and accompanied by:
 
-    - ``batch``: flattened atom -> frame assignment
-    - ``ptr``: prefix-sum frame offsets
+    - ``batch``: flattened atom-to-frame assignment with shape ``[total_atoms]``.
+    - ``ptr``: prefix-sum atom offsets with shape ``[nframes + 1]``.
 
     Frame-wise fields such as ``energy`` and ``box`` keep the usual batch
-    dimension via ``torch.stack``.
+    dimension via ``torch.stack``. The returned ``sid`` keeps the historical
+    LMDB collate shape, namely a CPU tensor with shape ``[1]``.
     """
     atype_list = [torch.as_tensor(item["atype"]) for item in batch]
     counts = torch.tensor([int(item.shape[0]) for item in atype_list], dtype=torch.long)
@@ -72,13 +79,13 @@ def _collate_lmdb_mixed_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
         [torch.zeros(1, dtype=torch.long), torch.cumsum(counts, dim=0)],
         dim=0,
     )
-    batch_index = torch.repeat_interleave(
+    atom_batch = torch.repeat_interleave(
         torch.arange(len(batch), dtype=torch.long),
         counts,
     )
 
     example = batch[0]
-    result: dict[str, Any] = {}
+    result: BatchDict = {}
     for key in example:
         if "find_" in key:
             result[key] = batch[0][key]
@@ -95,23 +102,24 @@ def _collate_lmdb_mixed_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
                     result[key] = torch.cat(tensors, dim=0)
                 else:
                     result[key] = collate_tensor_fn(tensors)
-    result["batch"] = batch_index
+    result["batch"] = atom_batch
     result["ptr"] = ptr
     result["sid"] = torch.tensor([0], dtype=torch.long, device="cpu")
     return result
 
 
 def make_lmdb_mixed_batch_collate(
-    graph_config: dict[str, Any] | None = None,
-) -> Any:
+    graph_config: GraphConfig | None = None,
+) -> MixedBatchCollate:
     """Build a collate function for flattened mixed-nloc LMDB batches.
 
     When ``graph_config`` is provided, the collate function also precomputes the
-    extended image, neighbor lists, edge index, and angle index consumed by the
-    flat DPA3 forward path.
+    extended image, neighbor lists, masks, edge index, and angle index consumed
+    by the flat DPA3 forward path. ``graph_config`` is expected to contain
+    ``rcut``, ``sel``, ``a_rcut``, ``a_sel``, and ``mixed_types``.
     """
 
-    def collate(batch: list[dict[str, Any]]) -> dict[str, Any]:
+    def collate(batch: list[FrameDict]) -> BatchDict:
         result = _collate_lmdb_mixed_batch(batch)
         if graph_config is None:
             return result
@@ -135,7 +143,7 @@ def make_lmdb_mixed_batch_collate(
     return collate
 
 
-def _collate_lmdb_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
+def _collate_lmdb_batch(batch: list[FrameDict]) -> BatchDict:
     """Collate a list of frame dicts into a batch dict.
 
     All frames in the batch must have the same nloc (enforced by

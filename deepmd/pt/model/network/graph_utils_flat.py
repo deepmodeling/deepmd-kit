@@ -7,8 +7,7 @@ def get_graph_index_flat(
     nlist_flat: torch.Tensor,
     a_nlist_mask: torch.Tensor,
 ) -> tuple[torch.Tensor, torch.Tensor]:
-    """
-    Get the index mapping for edge graph and angle graph in flat format.
+    """Get edge and angle graph indices for flat neighbor lists.
 
     Parameters
     ----------
@@ -22,20 +21,20 @@ def get_graph_index_flat(
     Returns
     -------
     edge_index : torch.Tensor [2, n_edge]
-        n2e_index : n_edge
+        ``edge_index[0]`` : n_edge
             Broadcast indices from node(i) to edge(ij), or reduction indices from edge(ij) to node(i).
             These are flat indices in range [0, total_atoms).
-        n_ext2e_index : n_edge
+        ``edge_index[1]`` : n_edge
             Broadcast indices from extended node(j) to edge(ij).
             These are flat indices in range [0, total_extended_atoms).
     angle_index : torch.Tensor [3, n_angle]
-        n2a_index : n_angle
+        ``angle_index[0]`` : n_angle
             Broadcast indices from node(i) to angle(ijk).
             These are flat indices in range [0, total_atoms).
-        eij2a_index : n_angle
+        ``angle_index[1]`` : n_angle
             Broadcast indices from edge(ij) to angle(ijk), or reduction indices from angle(ijk) to edge(ij).
             These are edge indices in range [0, n_edge).
-        eik2a_index : n_angle
+        ``angle_index[2]`` : n_angle
             Broadcast indices from edge(ik) to angle(ijk).
             These are edge indices in range [0, n_edge).
     """

@@ -107,23 +107,35 @@ def prod_env_mat_flat(
 ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """Generate smooth environment matrix in flat format.
 
-    Args:
-    - extended_coord_flat: Atom coordinates with shape [nall, 3].
-    - nlist_flat: Neighbor list with shape [nloc, nnei].
-    - atype_flat: Atom types with shape [nloc].
-    - mean: Average value of descriptor per element type with shape [ntypes, nnei, 4 or 1].
-    - stddev: Standard deviation of descriptor per element type with shape [ntypes, nnei, 4 or 1].
-    - rcut: Cut-off radius.
-    - rcut_smth: Smooth hyper-parameter for pair force & energy.
-    - radial_only: Whether to return a full description or a radial-only descriptor.
-    - protection: Protection parameter to prevent division by zero errors during calculations.
-    - use_exp_switch: Whether to use the exponential switch function.
+    Parameters
+    ----------
+    extended_coord_flat
+        Extended atom coordinates with shape ``[nall, 3]``.
+    nlist_flat
+        Neighbor list with shape ``[nloc, nnei]``. ``-1`` marks padding.
+    atype_flat
+        Central atom types with shape ``[nloc]``.
+    mean, stddev
+        Descriptor statistics with shape ``[ntypes, nnei, 4 or 1]``.
+    rcut, rcut_smth
+        Cutoff radius and smooth cutoff radius.
+    radial_only
+        Whether to return radial-only descriptors.
+    protection
+        Small positive value used in radial divisions.
+    use_exp_switch
+        Whether to use the exponential switch function.
+    coord_flat
+        Optional central atom coordinates with shape ``[nloc, 3]``.
 
     Returns
     -------
-    - env_mat: Shape is [nloc, nnei, 4 or 1].
-    - diff: Difference vectors with shape [nloc, nnei, 3].
-    - switch: Switch function values with shape [nloc, nnei, 1].
+    env_mat
+        Environment matrix with shape ``[nloc, nnei, 4 or 1]``.
+    diff
+        Difference vectors with shape ``[nloc, nnei, 3]``.
+    switch
+        Switch function values with shape ``[nloc, nnei, 1]``.
     """
     nloc, nnei = nlist_flat.shape
     nall = extended_coord_flat.shape[0]
@@ -136,10 +148,12 @@ def prod_env_mat_flat(
         coord_l = coord_flat.view(nloc, 1, 3)
     else:
         coord_l = extended_coord_flat[:nloc].view(nloc, 1, 3)
-    
+
     # Gather neighbor coordinates
     index = nlist_safe.view(-1).unsqueeze(-1).expand(-1, 3)
-    coord_pad = torch.cat([extended_coord_flat, extended_coord_flat[-1:, :] + rcut], dim=0)
+    coord_pad = torch.cat(
+        [extended_coord_flat, extended_coord_flat[-1:, :] + rcut], dim=0
+    )
     coord_r = torch.gather(coord_pad, 0, index)
     coord_r = coord_r.view(nloc, nnei, 3)
 

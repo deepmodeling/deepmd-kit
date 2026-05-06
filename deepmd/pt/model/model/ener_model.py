@@ -140,7 +140,6 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             else:
                 model_predict = model_ret
                 model_predict["updated_coord"] += coord
-            import pdb; pdb.set_trace()
             return model_predict
 
         model_ret = self.forward_common(

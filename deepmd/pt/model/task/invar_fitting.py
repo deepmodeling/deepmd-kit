@@ -235,7 +235,9 @@ class InvarFitting(GeneralFitting):
         Returns
         -------
         result : dict[str, torch.Tensor]
-            Model predictions in flat format.
+            Model predictions in flat atom format. Atom-wise outputs are
+            flattened back to ``[total_atoms, ...]`` after the regular fitting
+            network runs on a padded dense batch.
         """
         device = descriptor.device
         batch = batch.to(device=device, dtype=torch.long)
@@ -255,8 +257,11 @@ class InvarFitting(GeneralFitting):
             device=device,
         )
         atype_batch = torch.full(
-            (nframes, max_nloc), -1, dtype=atype.dtype, device=device
-            )
+            (nframes, max_nloc),
+            -1,
+            dtype=atype.dtype,
+            device=device,
+        )
         gr_batch = None
         if gr is not None:
             gr_batch = torch.zeros(

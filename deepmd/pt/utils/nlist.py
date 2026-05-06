@@ -10,6 +10,8 @@ from deepmd.pt.utils.region import (
     to_face_distance,
 )
 
+FlatGraphData = dict[str, torch.Tensor]
+
 
 def extend_input_and_build_neighbor_list(
     coord: torch.Tensor,
@@ -55,14 +57,42 @@ def build_precomputed_flat_graph(
     a_sel: int,
     mixed_types: bool = False,
     box: torch.Tensor | None = None,
-) -> dict[str, torch.Tensor]:
+) -> FlatGraphData:
+    """Build graph tensors for flattened mixed-nloc LMDB batches.
+
+    Parameters
+    ----------
+    coord
+        Flattened local coordinates with shape ``[total_atoms, 3]``.
+    atype
+        Flattened local atom types with shape ``[total_atoms]``.
+    batch
+        Local atom-to-frame assignment with shape ``[total_atoms]``.
+    ptr
+        Prefix-sum local atom offsets with shape ``[nframes + 1]``.
+    rcut, sel
+        Edge cutoff and neighbor selection used by the descriptor.
+    a_rcut, a_sel
+        Angle cutoff and maximum angle-neighbor count.
+    mixed_types
+        Whether neighbor selection ignores atom types.
+    box
+        Optional flattened cell tensor with shape ``[nframes, 9]``.
+
+    Returns
+    -------
+    FlatGraphData
+        Dictionary consumed by the flat forward path. ``*_ext`` neighbor lists
+        index into the concatenated extended atoms, while ``nlist`` and
+        ``a_nlist`` map neighbors back to flattened local atom indices.
+    """
     device = coord.device
     nframes = ptr.numel() - 1
     extended_coords_list = []
     extended_atypes_list = []
     extended_batches_list = []
     extended_images_list = []
-    mappings_list = []
+    extended_to_atom_list = []
     nlists_ext_list = []
     central_indices_list = []
     extended_ptr = torch.zeros(nframes + 1, dtype=torch.long, device=device)
@@ -135,7 +165,7 @@ def build_precomputed_flat_graph(
             torch.full((nall_frame,), frame_idx, dtype=torch.long, device=device)
         )
         extended_images_list.append(frame_extended_image)
-        mappings_list.append(frame_mapping + start_idx)
+        extended_to_atom_list.append(frame_mapping + start_idx)
         extended_offset += nall_frame
         extended_ptr[frame_idx + 1] = extended_offset
 
@@ -143,7 +173,7 @@ def build_precomputed_flat_graph(
     extended_atype = torch.cat(extended_atypes_list, dim=0)
     extended_batch = torch.cat(extended_batches_list, dim=0)
     extended_image = torch.cat(extended_images_list, dim=0)
-    mapping = torch.cat(mappings_list, dim=0)
+    mapping = torch.cat(extended_to_atom_list, dim=0)
     central_ext_index = torch.cat(central_indices_list, dim=0)
     nlist_ext = torch.cat(nlists_ext_list, dim=0)
     nlist_mask = nlist_ext >= 0
@@ -207,6 +237,12 @@ def rebuild_extended_coord_from_flat_graph(
     extended_batch: torch.Tensor,
     extended_image: torch.Tensor,
 ) -> torch.Tensor:
+    """Reconstruct extended coordinates from precomputed flat graph metadata.
+
+    ``mapping`` maps each extended atom to its source local atom. When ``box``
+    is available, ``extended_image`` is applied after wrapping the source local
+    coordinate back into the corresponding periodic cell.
+    """
     if box is None:
         return coord[mapping]
     cell = box.reshape(-1, 3, 3)
@@ -227,6 +263,7 @@ def get_central_ext_index(
     extended_batch: torch.Tensor,
     ptr: torch.Tensor,
 ) -> torch.Tensor:
+    """Return extended-atom indices corresponding to local atoms."""
     nframes = ptr.numel() - 1
     extended_counts = torch.bincount(extended_batch, minlength=nframes)
     extended_ptr = torch.cat(

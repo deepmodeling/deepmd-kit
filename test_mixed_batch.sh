@@ -7,13 +7,6 @@ set -e
 echo "=== Testing Mixed Batch Training ==="
 echo ""
 
-# Check if LMDB data exists
-LMDB_PATH="temp/graph_lmdb_demo/out_random_10000/raw_subset.lmdb"
-if [ ! -d "$LMDB_PATH" ]; then
-    echo "Error: LMDB data not found at $LMDB_PATH"
-    echo "Please run the data preparation script first"
-    exit 1
-fi
 
 # Run training with mixed batch
 echo "Starting training with mixed_batch=True..."

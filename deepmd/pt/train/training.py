@@ -114,6 +114,25 @@ from deepmd.utils.path import (
 
 log = logging.getLogger(__name__)
 
+_FLAT_GRAPH_INPUT_KEYS = (
+    "batch",
+    "ptr",
+    "extended_atype",
+    "extended_batch",
+    "extended_image",
+    "extended_ptr",
+    "mapping",
+    "central_ext_index",
+    "nlist",
+    "nlist_ext",
+    "a_nlist",
+    "a_nlist_ext",
+    "nlist_mask",
+    "a_nlist_mask",
+    "edge_index",
+    "angle_index",
+)
+
 
 class Trainer:
     def __init__(
@@ -1102,7 +1121,7 @@ class Trainer:
             input_dict, label_dict, log_dict = self.get_data(
                 is_train=True, task_key=task_key
             )
-            
+
             if SAMPLER_RECORD:
                 print_str = f"Step {_step_id}: sample system{log_dict['sid']}  frame{log_dict['fid']}\n"
                 fout1.write(print_str)
@@ -1697,26 +1716,9 @@ class Trainer:
             "aparam",
         ]
 
-        # For mixed batch, also include batch and ptr in input
+        # Mixed-nloc LMDB batches include precomputed flat-graph tensors.
         if is_mixed_batch:
-            input_keys = input_keys + [
-                "batch",
-                "ptr",
-                "extended_atype",
-                "extended_batch",
-                "extended_image",
-                "extended_ptr",
-                "mapping",
-                "central_ext_index",
-                "nlist",
-                "nlist_ext",
-                "a_nlist",
-                "a_nlist_ext",
-                "nlist_mask",
-                "a_nlist_mask",
-                "edge_index",
-                "angle_index",
-            ]
+            input_keys = input_keys + list(_FLAT_GRAPH_INPUT_KEYS)
             batch_data["batch"] = batch_data["batch"].to(DEVICE, non_blocking=True)
             batch_data["ptr"] = batch_data["ptr"].to(DEVICE, non_blocking=True)
 
