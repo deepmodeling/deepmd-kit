@@ -54,7 +54,12 @@ def get_ema_validation_log_path(full_val_file: str | Path) -> Path:
 
 
 class ModelEMA:
-    """Maintain an exponential moving average of model parameters."""
+    """Maintain an exponential moving average of model parameters.
+
+    This helper assumes DDP/ZeRO-1 style training where every rank owns the
+    same full, consistently ordered model parameters. It is not a sharded
+    parameter EMA implementation.
+    """
 
     def __init__(
         self,
@@ -124,11 +129,11 @@ class ModelEMA:
             checkpoint_decay = float(state[EMA_DECAY_KEY])
             if checkpoint_decay != self.decay:
                 log.warning(
-                    "Overriding training.ema_decay=%s with EMA checkpoint decay=%s.",
-                    self.decay,
+                    "Ignoring EMA checkpoint decay=%s because training.ema_decay=%s "
+                    "is configured.",
                     checkpoint_decay,
+                    self.decay,
                 )
-            self.decay = checkpoint_decay
         model_state = state.get(EMA_MODEL_STATE_KEY, {})
         if not isinstance(model_state, dict):
             raise TypeError("EMA checkpoint field `model` must be a dict.")
@@ -177,18 +182,19 @@ class ModelEMA:
     ) -> Iterator[None]:
         """Temporarily replace model parameters with the EMA shadow state."""
         backups: dict[str, torch.Tensor] = {}
-        with torch.no_grad():
-            for name, param in self._named_model_parameters(model):
-                backups[name] = param.detach().clone()
-                param.copy_(
-                    self.shadow_params[name].to(
-                        device=param.device,
-                        dtype=param.dtype,
-                    )
-                )
         try:
+            with torch.no_grad():
+                for name, param in self._named_model_parameters(model):
+                    backups[name] = param.detach().clone()
+                    param.copy_(
+                        self.shadow_params[name].to(
+                            device=param.device,
+                            dtype=param.dtype,
+                        )
+                    )
             yield
         finally:
             with torch.no_grad():
                 for name, param in self._named_model_parameters(model):
-                    param.copy_(backups[name])
+                    if name in backups:
+                        param.copy_(backups[name])
