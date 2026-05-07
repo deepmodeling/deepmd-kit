@@ -26,6 +26,7 @@ def forward_common_atomic(
     aparam: jnp.ndarray | None = None,
     do_atomic_virial: bool = False,
     extended_coord_corr: jnp.ndarray | None = None,
+    charge_spin: jnp.ndarray | None = None,
 ) -> dict[str, jnp.ndarray]:
     atomic_ret = self.atomic_model.forward_common_atomic(
         extended_coord,
@@ -34,6 +35,7 @@ def forward_common_atomic(
         mapping=mapping,
         fparam=fparam,
         aparam=aparam,
+        charge_spin=charge_spin,
     )
     atomic_output_def = self.atomic_output_def()
     model_predict = {}
@@ -75,6 +77,7 @@ def forward_common_atomic(
                         mapping=mapping[None, ...] if mapping is not None else None,
                         fparam=fparam[None, ...] if fparam is not None else None,
                         aparam=aparam[None, ...] if aparam is not None else None,
+                        charge_spin=charge_spin,
                     )
                     return jnp.sum(atomic_ret[_kk][0], axis=_atom_axis)
 
@@ -137,6 +140,7 @@ def forward_common_atomic(
                             mapping=mapping[None, ...] if mapping is not None else None,
                             fparam=fparam[None, ...] if fparam is not None else None,
                             aparam=aparam[None, ...] if aparam is not None else None,
+                            charge_spin=charge_spin,
                         )
                         nloc = nlist.shape[0]
                         cc_loc = jax.lax.stop_gradient(cc_ext)[:nloc, ...]

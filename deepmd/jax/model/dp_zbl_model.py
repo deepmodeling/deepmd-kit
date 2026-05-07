@@ -38,6 +38,7 @@ class DPZBLModel(DPZBLModelDP):
         aparam: jnp.ndarray | None = None,
         do_atomic_virial: bool = False,
         extended_coord_corr: jnp.ndarray | None = None,
+        charge_spin: jnp.ndarray | None = None,
     ) -> dict[str, jnp.ndarray]:
         return forward_common_atomic(
             self,
@@ -49,6 +50,7 @@ class DPZBLModel(DPZBLModelDP):
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
             extended_coord_corr=extended_coord_corr,
+            charge_spin=charge_spin,
         )
 
     def format_nlist(
