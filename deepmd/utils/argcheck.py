@@ -4542,12 +4542,21 @@ def gen_json_schema(multi_task: bool = False) -> str:
 
 
 def _check_dpa3_chg_spin_migration(data: dict[str, Any]) -> None:
-    """Detect legacy DPA3 charge/spin configs that packed charge_spin into fparam.
+    """Warn on likely legacy DPA3 configs that packed charge/spin into fparam.
 
-    Prior to the charge_spin decoupling, DPA3 models with add_chg_spin_ebd=True
-    required numb_fparam=2 on the fitting net (and optionally default_fparam).
-    After the decoupling, charge/spin is a first-class input and fparam is no
-    longer used for that purpose. Raise a clear error so users update configs.
+    Before the charge_spin decoupling, enabling ``add_chg_spin_ebd`` on DPA3
+    required ``numb_fparam=2`` on the fitting net so that charge/spin could be
+    carried via ``fparam``. After the decoupling, ``charge_spin`` is a
+    first-class input that is fully independent of ``fparam``, so users may
+    legitimately combine ``add_chg_spin_ebd`` with any ``numb_fparam`` for
+    genuine frame parameters.
+
+    We cannot determine from the config alone whether a user's ``numb_fparam``
+    is legacy (charge/spin in disguise) or genuine (real frame parameters).
+    But the combination ``add_chg_spin_ebd=True`` together with
+    ``numb_fparam=2`` is the strongest heuristic for the legacy pattern, since
+    that is exactly what the old code required. Emit a warning — not an error
+    — so users can audit their setup without breaking legitimate combinations.
     """
     model = data.get("model", {}) if isinstance(data, dict) else {}
     if not isinstance(model, dict):
@@ -4566,12 +4575,16 @@ def _check_dpa3_chg_spin_migration(data: dict[str, Any]) -> None:
             continue
         if not desc.get("add_chg_spin_ebd", False):
             continue
-        if fitting.get("numb_fparam", 0) or fitting.get("default_fparam") is not None:
-            raise ValueError(
-                "DPA3 `add_chg_spin_ebd=True` no longer uses `fparam` for "
-                "charge/spin. Remove `numb_fparam`/`default_fparam` from "
-                "`fitting_net` and provide charge/spin via the new "
-                "`charge_spin` input or the descriptor's `default_chg_spin`."
+        if fitting.get("numb_fparam", 0) == 2:
+            warnings.warn(
+                "DPA3 `add_chg_spin_ebd=True` with `numb_fparam=2` matches the "
+                "pre-decoupling pattern where charge/spin was carried via "
+                "`fparam`. `charge_spin` is now an independent input, so "
+                "`numb_fparam=2` will be treated as two genuine frame "
+                "parameters. If you intended to feed charge/spin, remove the "
+                "charge/spin part of `fparam` and use the `charge_spin` input "
+                "or the descriptor's `default_chg_spin` instead.",
+                stacklevel=2,
             )
 
 
