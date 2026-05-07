@@ -416,8 +416,8 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         self.use_econf_tebd = use_econf_tebd
         self.add_chg_spin_ebd = add_chg_spin_ebd
         self.default_chg_spin = default_chg_spin
-        if self.add_chg_spin_ebd and self.default_chg_spin is not None:
-            assert len(self.default_chg_spin) == 2, (
+        if self.default_chg_spin is not None and len(self.default_chg_spin) != 2:
+            raise ValueError(
                 "default_chg_spin must have exactly 2 values [charge, spin]"
             )
         self.use_tebd_bias = use_tebd_bias

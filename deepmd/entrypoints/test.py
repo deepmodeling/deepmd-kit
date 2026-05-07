@@ -639,7 +639,7 @@ def test_ener(
         aparam = test_data["aparam"][:numb_test]
     else:
         aparam = None
-    if dp.has_chg_spin_ebd() and test_data.get("find_charge_spin", 1.0) != 0.0:
+    if dp.has_chg_spin_ebd() and test_data.get("find_charge_spin", 0.0) != 0.0:
         charge_spin = test_data["charge_spin"][:numb_test]
     else:
         charge_spin = None

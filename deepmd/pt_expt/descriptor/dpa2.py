@@ -233,6 +233,7 @@ class DescrptDPA2(DescrptDPA2DP):
         nlist: torch.Tensor,
         mapping: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
+        charge_spin: torch.Tensor | None = None,
     ) -> Any:
         if not self.compress:
             return DescrptDPA2DP.call.__wrapped__(

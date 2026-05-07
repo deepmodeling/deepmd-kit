@@ -171,6 +171,18 @@ class DescrptSeT(BaseDescriptor, torch.nn.Module):
             seed=seed,
         )
 
+    def get_dim_chg_spin(self) -> int:
+        """Returns the dimension of charge_spin input (0 if not supported)."""
+        return 0
+
+    def has_default_chg_spin(self) -> bool:
+        """Returns whether the descriptor has a default charge_spin value."""
+        return False
+
+    def get_default_chg_spin(self) -> None:
+        """Returns the default charge_spin value, or None."""
+        return None
+
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
         return self.seat.get_rcut()

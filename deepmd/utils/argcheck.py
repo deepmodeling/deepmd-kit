@@ -4541,6 +4541,40 @@ def gen_json_schema(multi_task: bool = False) -> str:
     return json.dumps(generate_json_schema(arg))
 
 
+def _check_dpa3_chg_spin_migration(data: dict[str, Any]) -> None:
+    """Detect legacy DPA3 charge/spin configs that packed charge_spin into fparam.
+
+    Prior to the charge_spin decoupling, DPA3 models with add_chg_spin_ebd=True
+    required numb_fparam=2 on the fitting net (and optionally default_fparam).
+    After the decoupling, charge/spin is a first-class input and fparam is no
+    longer used for that purpose. Raise a clear error so users update configs.
+    """
+    model = data.get("model", {}) if isinstance(data, dict) else {}
+    if not isinstance(model, dict):
+        return
+    submodels = (
+        [model] if "descriptor" in model else list(model.get("model_dict", {}).values())
+    )
+    for m in submodels:
+        if not isinstance(m, dict):
+            continue
+        desc = m.get("descriptor", {})
+        fitting = m.get("fitting_net", {})
+        if not isinstance(desc, dict) or not isinstance(fitting, dict):
+            continue
+        if desc.get("type") != "dpa3":
+            continue
+        if not desc.get("add_chg_spin_ebd", False):
+            continue
+        if fitting.get("numb_fparam", 0) or fitting.get("default_fparam") is not None:
+            raise ValueError(
+                "DPA3 `add_chg_spin_ebd=True` no longer uses `fparam` for "
+                "charge/spin. Remove `numb_fparam`/`default_fparam` from "
+                "`fitting_net` and provide charge/spin via the new "
+                "`charge_spin` input or the descriptor's `default_chg_spin`."
+            )
+
+
 def normalize(
     data: dict[str, Any], multi_task: bool = False, *, check: bool = True
 ) -> dict[str, Any]:
@@ -4550,6 +4584,7 @@ def normalize(
     if check:
         base.check_value(data, strict=True)
     validate_full_validation_config(data, multi_task=multi_task)
+    _check_dpa3_chg_spin_migration(data)
 
     return data
 

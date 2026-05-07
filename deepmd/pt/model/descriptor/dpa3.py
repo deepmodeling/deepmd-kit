@@ -4,6 +4,7 @@ from collections.abc import (
 )
 from typing import (
     Any,
+    Optional,
 )
 
 import torch
@@ -125,8 +126,8 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
         default_chg_spin: list[float] | None = None,
     ) -> None:
         super().__init__()
-        if default_chg_spin is not None:
-            assert len(default_chg_spin) == 2, (
+        if default_chg_spin is not None and len(default_chg_spin) != 2:
+            raise ValueError(
                 "default_chg_spin must be a list of length 2 [charge, spin]."
             )
 
@@ -266,7 +267,7 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
         return self.default_chg_spin is not None
 
     @torch.jit.export
-    def get_default_chg_spin(self) -> torch.Tensor | None:
+    def get_default_chg_spin(self) -> Optional[torch.Tensor]:  # noqa: UP045
         """Get the default charge_spin values as a tensor."""
         if self.default_chg_spin is None:
             return None

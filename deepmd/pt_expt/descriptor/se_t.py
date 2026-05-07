@@ -139,6 +139,7 @@ class DescrptSeT(DescrptSeTDP):
         nlist: torch.Tensor,
         mapping: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
+        charge_spin: torch.Tensor | None = None,
     ) -> Any:
         if not self.compress:
             return DescrptSeTDP.call.__wrapped__(

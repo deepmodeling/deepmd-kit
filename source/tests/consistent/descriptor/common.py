@@ -119,14 +119,10 @@ class DescriptorTest:
             dp_obj.get_sel(),
             distinguish_types=(not mixed_types),
         )
-        return dp_obj(
-            ext_coords,
-            ext_atype,
-            nlist=nlist,
-            mapping=mapping,
-            fparam=fparam,
-            charge_spin=charge_spin,
-        )
+        kwargs = {"nlist": nlist, "mapping": mapping, "fparam": fparam}
+        if hasattr(dp_obj, "get_dim_chg_spin") and dp_obj.get_dim_chg_spin() > 0:
+            kwargs["charge_spin"] = charge_spin
+        return dp_obj(ext_coords, ext_atype, **kwargs)
 
     def eval_pt_descriptor(
         self,
@@ -161,16 +157,12 @@ class DescriptorTest:
             if charge_spin is not None
             else None
         )
+        kwargs = {"nlist": nlist, "mapping": mapping, "fparam": fparam_pt}
+        if hasattr(pt_obj, "get_dim_chg_spin") and pt_obj.get_dim_chg_spin() > 0:
+            kwargs["charge_spin"] = charge_spin_pt
         return [
             x.detach().cpu().numpy() if torch.is_tensor(x) else x
-            for x in pt_obj(
-                ext_coords,
-                ext_atype,
-                nlist=nlist,
-                mapping=mapping,
-                fparam=fparam_pt,
-                charge_spin=charge_spin_pt,
-            )
+            for x in pt_obj(ext_coords, ext_atype, **kwargs)
         ]
 
     def eval_pt_expt_descriptor(
@@ -206,16 +198,15 @@ class DescriptorTest:
             if charge_spin is not None
             else None
         )
+        kwargs = {"nlist": nlist, "mapping": mapping, "fparam": fparam_pt}
+        if (
+            hasattr(pt_expt_obj, "get_dim_chg_spin")
+            and pt_expt_obj.get_dim_chg_spin() > 0
+        ):
+            kwargs["charge_spin"] = charge_spin_pt
         return [
             x.detach().cpu().numpy() if torch.is_tensor(x) else x
-            for x in pt_expt_obj(
-                ext_coords,
-                ext_atype,
-                nlist=nlist,
-                mapping=mapping,
-                fparam=fparam_pt,
-                charge_spin=charge_spin_pt,
-            )
+            for x in pt_expt_obj(ext_coords, ext_atype, **kwargs)
         ]
 
     def eval_jax_descriptor(
@@ -245,16 +236,12 @@ class DescriptorTest:
         )
         fparam_jax = jnp.array(fparam) if fparam is not None else None
         charge_spin_jax = jnp.array(charge_spin) if charge_spin is not None else None
+        kwargs = {"nlist": nlist, "mapping": mapping, "fparam": fparam_jax}
+        if hasattr(jax_obj, "get_dim_chg_spin") and jax_obj.get_dim_chg_spin() > 0:
+            kwargs["charge_spin"] = charge_spin_jax
         return [
             np.asarray(x) if isinstance(x, jnp.ndarray) else x
-            for x in jax_obj(
-                ext_coords,
-                ext_atype,
-                nlist=nlist,
-                mapping=mapping,
-                fparam=fparam_jax,
-                charge_spin=charge_spin_jax,
-            )
+            for x in jax_obj(ext_coords, ext_atype, **kwargs)
         ]
 
     def eval_pd_descriptor(
@@ -323,16 +310,15 @@ class DescriptorTest:
         charge_spin_array_api = (
             array_api_strict.asarray(charge_spin) if charge_spin is not None else None
         )
+        kwargs = {"nlist": nlist, "mapping": mapping, "fparam": fparam_array_api}
+        if (
+            hasattr(array_api_strict_obj, "get_dim_chg_spin")
+            and array_api_strict_obj.get_dim_chg_spin() > 0
+        ):
+            kwargs["charge_spin"] = charge_spin_array_api
         return [
             to_numpy_array(x) if hasattr(x, "__array_namespace__") else x
-            for x in array_api_strict_obj(
-                ext_coords,
-                ext_atype,
-                nlist=nlist,
-                mapping=mapping,
-                fparam=fparam_array_api,
-                charge_spin=charge_spin_array_api,
-            )
+            for x in array_api_strict_obj(ext_coords, ext_atype, **kwargs)
         ]
 
 

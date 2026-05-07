@@ -138,10 +138,7 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
                 "aparam", _model.get_dim_aparam(), atomic=True, must=True
             )
         )
-    has_chg_spin_ebd = getattr(_model, "has_chg_spin_ebd", False)
-    if callable(has_chg_spin_ebd):
-        has_chg_spin_ebd = has_chg_spin_ebd()
-    if has_chg_spin_ebd:
+    if _model.has_chg_spin_ebd():
         has_default_cs = _model.has_default_chg_spin()
         if has_default_cs:
             default_cs = _model.get_default_chg_spin()

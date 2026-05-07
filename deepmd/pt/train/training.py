@@ -1906,10 +1906,7 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
             DataRequirementItem("spin", ndof=3, atomic=True, must=True)
         ]
         additional_data_requirement += spin_requirement_items
-    has_chg_spin_ebd = getattr(_model, "has_chg_spin_ebd", False)
-    if callable(has_chg_spin_ebd):
-        has_chg_spin_ebd = has_chg_spin_ebd()
-    if has_chg_spin_ebd:
+    if _model.has_chg_spin_ebd():
         has_default_cs = _model.has_default_chg_spin()
         cs_default = (
             _model.get_default_chg_spin().cpu().numpy() if has_default_cs else 0.0
