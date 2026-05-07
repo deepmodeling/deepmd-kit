@@ -4422,12 +4422,12 @@ def validate_full_validation_config(
     ema_full_validation_enabled = bool(validating.get("ema_full_validation", False))
     if not full_validation_enabled:
         return
-    if float(validating.get("full_val_start", 0.0)) == 1.0:
-        return
     if ema_full_validation_enabled and not training_params.get("enable_ema", False):
         raise ValueError(
             "validating.ema_full_validation requires `training.enable_ema=true`."
         )
+    if float(validating.get("full_val_start", 0.0)) == 1.0:
+        return
 
     metric = str(validating.get("validation_metric", "E:MAE"))
     if not is_valid_full_validation_metric(metric):

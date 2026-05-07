@@ -300,7 +300,7 @@ class TestValidationHelpers(unittest.TestCase):
                 },
                 validation_data=validation_data,
                 model=_DummyModel(),
-                train_infos={},
+                state_store={},
                 num_steps=10,
                 rank=0,
                 zero_stage=0,
