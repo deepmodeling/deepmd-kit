@@ -771,6 +771,67 @@ class TestModelChangeOutBiasFittingStat(unittest.TestCase):
         )
 
 
+class TestLearningRateRestart(unittest.TestCase):
+    def setUp(self) -> None:
+        self._cwd = os.getcwd()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        os.chdir(self._tmpdir.name)
+        input_json = str(Path(__file__).parent / "water/se_atten.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
+        self.config["model"] = deepcopy(model_se_e2_a)
+        self.config["learning_rate"] = {
+            "type": "wsd",
+            "start_lr": 5e-4,
+            "stop_lr": 1e-6,
+            "warmup_steps": 2,
+            "warmup_start_factor": 0.2,
+            "decay_phase_ratio": 0.5,
+            "decay_type": "cosine",
+        }
+        self.config["training"]["numb_steps"] = 3
+        self.config["training"]["save_freq"] = 3
+        self.config["training"]["disp_freq"] = 1
+        self.config["training"]["disp_training"] = False
+        self.config["training"]["time_training"] = False
+
+    def tearDown(self) -> None:
+        os.chdir(self._cwd)
+        self._tmpdir.cleanup()
+
+    def test_restart_scheduler_matches_lr_schedule(self) -> None:
+        trainer = get_trainer(deepcopy(self.config))
+        trainer.run()
+        restart_model = Path("model-3.pt")
+        checkpoint = torch.load(restart_model, map_location="cpu", weights_only=True)
+        stale_initial_lr = trainer.lr_schedule.value(0)
+        for group in checkpoint["optimizer"]["param_groups"]:
+            group["initial_lr"] = stale_initial_lr
+        torch.save(checkpoint, restart_model)
+
+        restart_config = deepcopy(self.config)
+        restart_config["training"]["numb_steps"] = 5
+        restart_trainer = get_trainer(
+            restart_config,
+            restart_model=str(restart_model),
+        )
+
+        np.testing.assert_allclose(
+            restart_trainer.scheduler.get_last_lr()[0],
+            restart_trainer.lr_schedule.value(restart_trainer.start_step),
+            rtol=1e-12,
+        )
+        restart_trainer.run()
+        np.testing.assert_allclose(
+            restart_trainer.scheduler.get_last_lr()[0],
+            restart_trainer.lr_schedule.value(restart_config["training"]["numb_steps"]),
+            rtol=1e-12,
+        )
+
 class TestFullValidation(unittest.TestCase):
     def setUp(self) -> None:
         self._cwd = os.getcwd()
