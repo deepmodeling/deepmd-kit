@@ -119,8 +119,9 @@ def _make_sample_inputs(
     Returns
     -------
     tuple
-        (ext_coord, ext_atype, nlist, mapping, fparam, aparam) or
-        (ext_coord, ext_atype, ext_spin, nlist, mapping, fparam, aparam) when has_spin.
+        (ext_coord, ext_atype, nlist, mapping, fparam, aparam, charge_spin) or
+        (ext_coord, ext_atype, ext_spin, nlist, mapping, fparam, aparam,
+        charge_spin) when has_spin.
     """
     rcut = model.get_rcut()
     sel = model.get_sel()
@@ -187,14 +188,31 @@ def _make_sample_inputs(
     else:
         aparam = None
 
+    dim_chg_spin = model.get_dim_chg_spin() if hasattr(model, "get_dim_chg_spin") else 0
+    if dim_chg_spin > 0:
+        charge_spin = torch.zeros(
+            nframes, dim_chg_spin, dtype=torch.float64, device=_env.DEVICE
+        )
+    else:
+        charge_spin = None
+
     if has_spin:
         nall = extended_coord.shape[1]
         ext_spin = torch.zeros(
             nframes, nall, 3, dtype=torch.float64, device=_env.DEVICE
         )
-        return ext_coord, ext_atype, ext_spin, nlist_t, mapping_t, fparam, aparam
+        return (
+            ext_coord,
+            ext_atype,
+            ext_spin,
+            nlist_t,
+            mapping_t,
+            fparam,
+            aparam,
+            charge_spin,
+        )
 
-    return ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam
+    return ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin
 
 
 def _build_dynamic_shapes(
@@ -224,9 +242,10 @@ def _build_dynamic_shapes(
     nnei_dim = torch.export.Dim("nnei", min=max(1, model_nnei))
 
     if has_spin:
-        # (ext_coord, ext_atype, ext_spin, nlist, mapping, fparam, aparam)
+        # (ext_coord, ext_atype, ext_spin, nlist, mapping, fparam, aparam, charge_spin)
         fparam = sample_inputs[5]
         aparam = sample_inputs[6]
+        charge_spin = sample_inputs[7]
         return (
             {0: nframes_dim, 1: nall_dim},  # extended_coord: (nframes, nall, 3)
             {0: nframes_dim, 1: nall_dim},  # extended_atype: (nframes, nall)
@@ -239,11 +258,13 @@ def _build_dynamic_shapes(
             {0: nframes_dim, 1: nall_dim},  # mapping: (nframes, nall)
             {0: nframes_dim} if fparam is not None else None,  # fparam
             {0: nframes_dim, 1: nloc_dim} if aparam is not None else None,  # aparam
+            {0: nframes_dim} if charge_spin is not None else None,  # charge_spin
         )
     else:
-        # (ext_coord, ext_atype, nlist, mapping, fparam, aparam)
+        # (ext_coord, ext_atype, nlist, mapping, fparam, aparam, charge_spin)
         fparam = sample_inputs[4]
         aparam = sample_inputs[5]
+        charge_spin = sample_inputs[6]
         return (
             {0: nframes_dim, 1: nall_dim},  # extended_coord: (nframes, nall, 3)
             {0: nframes_dim, 1: nall_dim},  # extended_atype: (nframes, nall)
@@ -255,6 +276,7 @@ def _build_dynamic_shapes(
             {0: nframes_dim, 1: nall_dim},  # mapping: (nframes, nall)
             {0: nframes_dim} if fparam is not None else None,  # fparam
             {0: nframes_dim, 1: nloc_dim} if aparam is not None else None,  # aparam
+            {0: nframes_dim} if charge_spin is not None else None,  # charge_spin
         )
 
 
@@ -487,11 +509,26 @@ def _trace_and_export(
         _env.DEVICE = _orig_device
 
     if is_spin:
-        ext_coord, ext_atype, ext_spin, nlist_t, mapping_t, fparam, aparam = (
-            sample_inputs
-        )
+        (
+            ext_coord,
+            ext_atype,
+            ext_spin,
+            nlist_t,
+            mapping_t,
+            fparam,
+            aparam,
+            charge_spin,
+        ) = sample_inputs
     else:
-        ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam = sample_inputs
+        (
+            ext_coord,
+            ext_atype,
+            nlist_t,
+            mapping_t,
+            fparam,
+            aparam,
+            charge_spin,
+        ) = sample_inputs
 
     # 4. Trace via make_fx on CPU.
     # This decomposes torch.autograd.grad into aten ops so the resulting
@@ -505,13 +542,21 @@ def _trace_and_export(
             mapping_t,
             fparam=fparam,
             aparam=aparam,
+            charge_spin=charge_spin,
             do_atomic_virial=do_atomic_virial,
             tracing_mode="symbolic",
             _allow_non_fake_inputs=True,
         )
         # 5. Extract output keys from the CPU-traced module.
         sample_out = traced(
-            ext_coord, ext_atype, ext_spin, nlist_t, mapping_t, fparam, aparam
+            ext_coord,
+            ext_atype,
+            ext_spin,
+            nlist_t,
+            mapping_t,
+            fparam,
+            aparam,
+            charge_spin,
         )
     else:
         traced = model.forward_common_lower_exportable(
@@ -521,12 +566,15 @@ def _trace_and_export(
             mapping_t,
             fparam=fparam,
             aparam=aparam,
+            charge_spin=charge_spin,
             do_atomic_virial=do_atomic_virial,
             tracing_mode="symbolic",
             _allow_non_fake_inputs=True,
         )
         # 5. Extract output keys from the CPU-traced module.
-        sample_out = traced(ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam)
+        sample_out = traced(
+            ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin
+        )
 
     output_keys = list(sample_out.keys())
 
