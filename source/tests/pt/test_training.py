@@ -832,6 +832,7 @@ class TestLearningRateRestart(unittest.TestCase):
             rtol=1e-12,
         )
 
+
 class TestFullValidation(unittest.TestCase):
     def setUp(self) -> None:
         self._cwd = os.getcwd()
