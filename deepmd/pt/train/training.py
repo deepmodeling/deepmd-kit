@@ -939,12 +939,10 @@ class Trainer:
                 **extra,
             )
             self._load_optimizer_state(optimizer_state_dict)
-            self.scheduler = torch.optim.lr_scheduler.LambdaLR(
+            self.scheduler = self._create_lr_scheduler(
                 self.optimizer,
-                lambda step: (
-                    self.lr_schedule.value(step + self.start_step) / initial_lr
-                ),
-                last_epoch=self.start_step - 1,
+                self.lr_schedule,
+                self.start_step,
             )
 
         if self.zero_stage > 0 and self.rank == 0:
@@ -974,6 +972,21 @@ class Trainer:
         # Log model parameter count
         if self.rank == 0:
             self._log_parameter_count()
+
+    @staticmethod
+    def _create_lr_scheduler(
+        optimizer: torch.optim.Optimizer,
+        lr_schedule: BaseLR,
+        start_step: int,
+    ) -> torch.optim.lr_scheduler.LambdaLR:
+        base_lr = float(lr_schedule.start_lr)
+        for group in optimizer.param_groups:
+            group["initial_lr"] = base_lr
+        return torch.optim.lr_scheduler.LambdaLR(
+            optimizer,
+            lambda step: lr_schedule.value(step) / base_lr,
+            last_epoch=start_step - 1,
+        )
 
     def _create_full_validator(
         self,
