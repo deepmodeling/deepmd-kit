@@ -173,7 +173,7 @@ DPA3_DESCRIPTOR_API_CURATED_CASES = (
     dpa3_descriptor_api_case(edge_init_use_dist=False),
     dpa3_descriptor_api_case(use_exp_switch=False),
     dpa3_descriptor_api_case(use_dynamic_sel=False),
-    dpa3_descriptor_api_case(sequential_update=False),
+    dpa3_descriptor_api_case(sequential_update=True),
     # One mixed high-risk path to keep interactions covered.
     dpa3_descriptor_api_case(
         exclude_types=[[0, 1]],
