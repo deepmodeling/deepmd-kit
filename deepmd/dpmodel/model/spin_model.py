@@ -579,6 +579,7 @@ class SpinModel(NativeOP):
         box: Array | None = None,
         fparam: Array | None = None,
         aparam: Array | None = None,
+        charge_spin: Array | None = None,
         do_atomic_virial: bool = False,
     ) -> dict[str, Array]:
         """Return model prediction with raw internal keys.
@@ -624,6 +625,7 @@ class SpinModel(NativeOP):
             box,
             fparam=fparam,
             aparam=aparam,
+            charge_spin=charge_spin,
             do_atomic_virial=do_atomic_virial,
             coord_corr_for_virial=coord_corr_for_virial,
         )
@@ -673,6 +675,7 @@ class SpinModel(NativeOP):
         box: Array | None = None,
         fparam: Array | None = None,
         aparam: Array | None = None,
+        charge_spin: Array | None = None,
         do_atomic_virial: bool = False,
     ) -> dict[str, Array]:
         """Return model prediction with translated user-facing keys.
@@ -710,6 +713,7 @@ class SpinModel(NativeOP):
             box,
             fparam=fparam,
             aparam=aparam,
+            charge_spin=charge_spin,
             do_atomic_virial=do_atomic_virial,
         )
         model_output_type = self.backbone_model.model_output_type()
@@ -747,6 +751,7 @@ class SpinModel(NativeOP):
         mapping: Array | None = None,
         fparam: Array | None = None,
         aparam: Array | None = None,
+        charge_spin: Array | None = None,
         do_atomic_virial: bool = False,
     ) -> dict[str, Array]:
         """Return model prediction with raw internal keys. Lower interface that takes
@@ -798,6 +803,7 @@ class SpinModel(NativeOP):
             mapping=mapping_updated,
             fparam=fparam,
             aparam=aparam,
+            charge_spin=charge_spin,
             do_atomic_virial=do_atomic_virial,
             extended_coord_corr=extended_coord_corr,
         )
@@ -851,6 +857,7 @@ class SpinModel(NativeOP):
         mapping: Array | None = None,
         fparam: Array | None = None,
         aparam: Array | None = None,
+        charge_spin: Array | None = None,
         do_atomic_virial: bool = False,
     ) -> dict[str, Array]:
         """Return model prediction with translated user-facing keys. Lower interface.
@@ -889,6 +896,7 @@ class SpinModel(NativeOP):
             mapping=mapping,
             fparam=fparam,
             aparam=aparam,
+            charge_spin=charge_spin,
             do_atomic_virial=do_atomic_virial,
         )
         model_output_type = self.backbone_model.model_output_type()

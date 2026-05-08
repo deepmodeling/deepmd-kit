@@ -55,6 +55,7 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         model_ret = self.forward_common(
             coord,
@@ -63,6 +64,7 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
+            charge_spin=charge_spin,
         )
         model_predict = {}
         model_predict[f"atom_{self.get_var_name()}"] = model_ret[self.get_var_name()]
@@ -97,6 +99,7 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
         comm_dict: dict[str, torch.Tensor] | None = None,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         model_ret = self.forward_common_lower(
             extended_coord,
@@ -108,6 +111,7 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
             do_atomic_virial=do_atomic_virial,
             comm_dict=comm_dict,
             extra_nlist_sort=self.need_sorted_nlist_for_lower(),
+            charge_spin=charge_spin,
         )
         model_predict = {}
         model_predict[f"atom_{self.get_var_name()}"] = model_ret[self.get_var_name()]
