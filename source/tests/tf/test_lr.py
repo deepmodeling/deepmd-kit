@@ -11,6 +11,7 @@ import numpy as np
 
 from deepmd.dpmodel.utils.learning_rate import (
     LearningRateExp,
+    LearningRateWSD,
 )
 from deepmd.tf.env import (
     tf,
@@ -101,6 +102,42 @@ class TestLearningRateScheduleBuild(unittest.TestCase):
         expected = lr_schedule.base_lr.value(5000)
 
         np.testing.assert_allclose(lr_value, expected, rtol=1e-10)
+
+    def test_wsd_build_and_value(self) -> None:
+        """Test TF wrapper with the WSD scheduler."""
+        lr_schedule = LearningRateSchedule(
+            {
+                "start_lr": 1e-3,
+                "stop_lr": 1e-5,
+                "type": "wsd",
+                "decay_phase_ratio": 0.1,
+            }
+        )
+        global_step = tf.constant(0, dtype=tf.int64)
+        lr_schedule.build(global_step, num_steps=10000)
+
+        self.assertIsInstance(lr_schedule.base_lr, LearningRateWSD)
+        np.testing.assert_allclose(
+            lr_schedule.value(9500), lr_schedule.base_lr.value(9500), rtol=1e-10
+        )
+
+    def test_wsd_cosine_build_and_value(self) -> None:
+        """Test TF wrapper with cosine WSD decay."""
+        lr_schedule = LearningRateSchedule(
+            {
+                "start_lr": 1e-3,
+                "stop_lr": 1e-5,
+                "type": "wsd",
+                "decay_phase_ratio": 0.1,
+                "decay_type": "cosine",
+            }
+        )
+        global_step = tf.constant(0, dtype=tf.int64)
+        lr_schedule.build(global_step, num_steps=10000)
+
+        np.testing.assert_allclose(
+            lr_schedule.value(9500), lr_schedule.base_lr.value(9500), rtol=1e-10
+        )
 
 
 if __name__ == "__main__":

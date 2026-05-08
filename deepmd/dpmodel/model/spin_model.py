@@ -547,14 +547,21 @@ class SpinModel(NativeOP):
             raise AttributeError(name)
         return getattr(self.backbone_model, name)
 
+    def get_dp_atomic_model(self) -> "DPAtomicModel | None":
+        """Get the underlying DPAtomicModel by delegating to the backbone model."""
+        return self.backbone_model.get_dp_atomic_model()
+
     def serialize(self) -> dict:
         return {
+            "type": "spin_ener",
             "backbone_model": self.backbone_model.serialize(),
             "spin": self.spin.serialize(),
         }
 
     @classmethod
     def deserialize(cls, data: dict) -> "SpinModel":
+        data = data.copy()
+        data.pop("type", None)
         backbone_model_obj = make_model(
             DPAtomicModel, T_Bases=(NativeOP, BaseModel)
         ).deserialize(data["backbone_model"])
@@ -646,7 +653,7 @@ class SpinModel(NativeOP):
             ) = self.process_spin_output(
                 atype,
                 model_ret[f"{var_name}_derv_c"],
-                add_mag=False,
+                add_mag=True,
                 virtual_scale=False,
             )
         # Always compute mask_mag from atom types (even when forces are unavailable)
@@ -823,7 +830,7 @@ class SpinModel(NativeOP):
                 extended_atype,
                 model_ret[f"{var_name}_derv_c"],
                 nloc,
-                add_mag=False,
+                add_mag=True,
                 virtual_scale=False,
             )
         # Always compute mask_mag from atom types (even when forces are unavailable)

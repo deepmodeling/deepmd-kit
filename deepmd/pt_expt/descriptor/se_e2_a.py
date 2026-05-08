@@ -9,6 +9,9 @@ from deepmd.dpmodel.common import (
     cast_precision,
 )
 from deepmd.dpmodel.descriptor.se_e2_a import DescrptSeA as DescrptSeADP
+from deepmd.dpmodel.utils.env_mat_stat import (
+    merge_env_stat,
+)
 from deepmd.pt_expt.common import (
     torch_module,
 )
@@ -26,6 +29,30 @@ from deepmd.pt_expt.utils.update_sel import (
 class DescrptSeA(DescrptSeADP):
     _update_sel_cls = UpdateSel
 
+    def share_params(
+        self,
+        base_class: Any,
+        shared_level: int,
+        model_prob: float = 1.0,
+        resume: bool = False,
+    ) -> None:
+        """Share parameters with base_class for multi-task training.
+
+        Level 0: share all modules and buffers.
+        """
+        assert self.__class__ == base_class.__class__, (
+            "Only descriptors of the same type can share params!"
+        )
+        if shared_level == 0:
+            if not resume:
+                merge_env_stat(base_class, self, model_prob)
+            for item in self._modules:
+                self._modules[item] = base_class._modules[item]
+            for item in self._buffers:
+                self._buffers[item] = base_class._buffers[item]
+        else:
+            raise NotImplementedError
+
     def enable_compression(
         self,
         min_nbor_dist: float,
@@ -34,9 +61,6 @@ class DescrptSeA(DescrptSeADP):
         table_stride_2: float = 0.1,
         check_frequency: int = -1,
     ) -> None:
-        from deepmd.pt.utils.utils import (
-            ActivationFn,
-        )
         from deepmd.pt_expt.utils.tabulate import (
             DPTabulate,
         )
@@ -49,7 +73,7 @@ class DescrptSeA(DescrptSeADP):
             data["neuron"],
             data["type_one_side"],
             data["exclude_types"],
-            ActivationFn(data["activation_function"]),
+            data["activation_function"],
         )
         self.table_config = [
             table_extrapolate,

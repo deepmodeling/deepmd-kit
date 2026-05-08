@@ -14,6 +14,9 @@ from deepmd.dpmodel.loss.loss import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
+from deepmd.utils.loss import (
+    resolve_huber_deltas,
+)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -74,8 +77,10 @@ class EnergyLoss(Loss):
         - For absolute prediction errors within D: quadratic loss (0.5 * (error**2))
         - For absolute errors exceeding D: linear loss (D * |error| - 0.5 * D)
         Formula: loss = 0.5 * (error**2) if |error| <= D else D * (|error| - 0.5 * D).
-    huber_delta : float
-        The threshold delta (D) used for Huber loss, controlling transition between L2 and L1 loss.
+    huber_delta : float | list[float]
+        The threshold delta (D) used for Huber loss, controlling transition between
+        L2 and L1 loss. It can be either one float shared by all terms or a list of
+        three values ordered as [energy, force, virial].
     loss_func : str
         Loss function type for energy, force, and virial terms.
         Options: 'mse' (Mean Squared Error, L2 loss, default) or 'mae' (Mean Absolute Error, L1 loss).
@@ -84,6 +89,15 @@ class EnergyLoss(Loss):
     f_use_norm : bool
         If true, use L2 norm of force vectors for loss calculation when loss_func='mae' or use_huber is True.
         Instead of computing loss on force components, computes loss on ||F_pred - F_label||_2.
+        This treats the force vector as a whole rather than three independent components.
+    intensive_ener_virial : bool
+        If true, the non-Huber MSE energy and virial losses use intensive normalization,
+        i.e. a 1/N^2 factor instead of the legacy 1/N scaling. This matches per-atom
+        RMSE-style normalization for those terms. MAE and Huber modes use different
+        scaling and are not affected in the same way by this flag.
+        If false (default), the legacy normalization is used for the affected terms.
+        The default is false for backward compatibility with models trained using
+        deepmd-kit <= 3.1.3.
     **kwargs
         Other keyword arguments.
     """
@@ -107,9 +121,10 @@ class EnergyLoss(Loss):
         limit_pref_gf: float = 0.0,
         numb_generalized_coord: int = 0,
         use_huber: bool = False,
-        huber_delta: float = 0.01,
+        huber_delta: float | list[float] = 0.01,
         loss_func: str = "mse",
         f_use_norm: bool = False,
+        intensive_ener_virial: bool = False,
         **kwargs: Any,
     ) -> None:
         # Validate loss_func
@@ -149,10 +164,16 @@ class EnergyLoss(Loss):
         self.use_huber = use_huber
         self.huber_delta = huber_delta
         self.f_use_norm = f_use_norm
+        self.intensive_ener_virial = intensive_ener_virial
         if self.f_use_norm and not (self.use_huber or self.loss_func == "mae"):
             raise RuntimeError(
                 "f_use_norm can only be True when use_huber or loss_func='mae'."
             )
+        (
+            self._huber_delta_energy,
+            self._huber_delta_force,
+            self._huber_delta_virial,
+        ) = resolve_huber_deltas(huber_delta)
         if self.use_huber and (
             self.has_pf or self.has_gf or self.relative_f is not None
         ):
@@ -166,6 +187,7 @@ class EnergyLoss(Loss):
         natoms: int,
         model_dict: dict[str, Array],
         label_dict: dict[str, Array],
+        mae: bool = False,
     ) -> tuple[Array, dict[str, Array]]:
         """Calculate loss from model results and labeled results."""
         energy = model_dict["energy"]
@@ -215,7 +237,10 @@ class EnergyLoss(Loss):
 
         if self.relative_f is not None:
             force_hat_3 = xp.reshape(force_hat, (-1, 3))
-            norm_f = xp.reshape(xp.norm(force_hat_3, axis=1), (-1, 1)) + self.relative_f
+            norm_f = (
+                xp.reshape(xp.linalg.vector_norm(force_hat_3, axis=1), (-1, 1))
+                + self.relative_f
+            )
             diff_f_3 = xp.reshape(diff_f, (-1, 3))
             diff_f_3 = diff_f_3 / norm_f
             diff_f = xp.reshape(diff_f_3, (-1,))
@@ -241,16 +266,20 @@ class EnergyLoss(Loss):
 
         loss = 0
         more_loss = {}
+        # Normalization exponent controls loss scaling with system size:
+        # - norm_exp=2 (intensive_ener_virial=True): loss uses 1/N² scaling, making it independent of system size
+        # - norm_exp=1 (intensive_ener_virial=False, legacy): loss uses 1/N scaling, which varies with system size
+        norm_exp = 2 if self.intensive_ener_virial else 1
         if self.has_e:
             if self.loss_func == "mse":
                 l2_ener_loss = xp.mean(xp.square(energy - energy_hat))
                 if not self.use_huber:
-                    loss += atom_norm_ener * (pref_e * l2_ener_loss)
+                    loss += atom_norm_ener**norm_exp * (pref_e * l2_ener_loss)
                 else:
                     l_huber_loss = custom_huber_loss(
                         atom_norm_ener * energy,
                         atom_norm_ener * energy_hat,
-                        delta=self.huber_delta,
+                        delta=self._huber_delta_energy,
                     )
                     loss += pref_e * l_huber_loss
                 more_loss["rmse_e"] = self.display_if_exist(
@@ -266,6 +295,11 @@ class EnergyLoss(Loss):
                 raise NotImplementedError(
                     f"Loss type {self.loss_func} is not implemented for energy loss."
                 )
+            if mae:
+                mae_e = xp.mean(xp.abs(energy - energy_hat)) * atom_norm_ener
+                more_loss["mae_e"] = self.display_if_exist(mae_e, find_energy)
+                mae_e_all = xp.mean(xp.abs(energy - energy_hat))
+                more_loss["mae_e_all"] = self.display_if_exist(mae_e_all, find_energy)
         if self.has_f:
             if self.loss_func == "mse":
                 l2_force_loss = xp.mean(xp.square(diff_f))
@@ -276,7 +310,7 @@ class EnergyLoss(Loss):
                         l_huber_loss = custom_huber_loss(
                             xp.reshape(force, (-1,)),
                             xp.reshape(force_hat, (-1,)),
-                            delta=self.huber_delta,
+                            delta=self._huber_delta_force,
                         )
                     else:
                         force_diff_3 = xp.reshape(force_hat - force, (-1, 3))
@@ -286,7 +320,7 @@ class EnergyLoss(Loss):
                         l_huber_loss = custom_huber_loss(
                             force_diff_norm,
                             xp.zeros_like(force_diff_norm),
-                            delta=self.huber_delta,
+                            delta=self._huber_delta_force,
                         )
                     loss += pref_f * l_huber_loss
                 more_loss["rmse_f"] = self.display_if_exist(
@@ -304,6 +338,9 @@ class EnergyLoss(Loss):
                 raise NotImplementedError(
                     f"Loss type {self.loss_func} is not implemented for force loss."
                 )
+            if mae:
+                mae_f = xp.mean(xp.abs(diff_f))
+                more_loss["mae_f"] = self.display_if_exist(mae_f, find_force)
         if self.has_v:
             virial_reshape = xp.reshape(virial, (-1,))
             virial_hat_reshape = xp.reshape(virial_hat, (-1,))
@@ -312,12 +349,12 @@ class EnergyLoss(Loss):
                     xp.square(virial_hat_reshape - virial_reshape),
                 )
                 if not self.use_huber:
-                    loss += atom_norm * (pref_v * l2_virial_loss)
+                    loss += atom_norm**norm_exp * (pref_v * l2_virial_loss)
                 else:
                     l_huber_loss = custom_huber_loss(
                         atom_norm * virial_reshape,
                         atom_norm * virial_hat_reshape,
-                        delta=self.huber_delta,
+                        delta=self._huber_delta_virial,
                     )
                     loss += pref_v * l_huber_loss
                 more_loss["rmse_v"] = self.display_if_exist(
@@ -333,10 +370,12 @@ class EnergyLoss(Loss):
                 raise NotImplementedError(
                     f"Loss type {self.loss_func} is not implemented for virial loss."
                 )
+            if mae:
+                mae_v = xp.mean(xp.abs(virial_hat_reshape - virial_reshape)) * atom_norm
+                more_loss["mae_v"] = self.display_if_exist(mae_v, find_virial)
         if self.has_ae:
             atom_ener_reshape = xp.reshape(atom_ener, (-1,))
             atom_ener_hat_reshape = xp.reshape(atom_ener_hat, (-1,))
-
             if self.loss_func == "mse":
                 l2_atom_ener_loss = xp.mean(
                     xp.square(atom_ener_hat_reshape - atom_ener_reshape),
@@ -347,7 +386,7 @@ class EnergyLoss(Loss):
                     l_huber_loss = custom_huber_loss(
                         atom_ener_reshape,
                         atom_ener_hat_reshape,
-                        delta=self.huber_delta,
+                        delta=self._huber_delta_energy,
                     )
                     loss += pref_ae * l_huber_loss
                 more_loss["rmse_ae"] = self.display_if_exist(
@@ -500,7 +539,7 @@ class EnergyLoss(Loss):
         """
         return {
             "@class": "EnergyLoss",
-            "@version": 2,
+            "@version": 3,
             "starter_learning_rate": self.starter_learning_rate,
             "start_pref_e": self.start_pref_e,
             "limit_pref_e": self.limit_pref_e,
@@ -521,6 +560,7 @@ class EnergyLoss(Loss):
             "huber_delta": self.huber_delta,
             "loss_func": self.loss_func,
             "f_use_norm": self.f_use_norm,
+            "intensive_ener_virial": self.intensive_ener_virial,
         }
 
     @classmethod
@@ -538,6 +578,10 @@ class EnergyLoss(Loss):
             The deserialized loss module
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 2, 1)
+        version = data.pop("@version")
+        check_version_compatibility(version, 3, 1)
         data.pop("@class")
+        # Backward compatibility: version 1-2 used legacy normalization
+        if version < 3:
+            data.setdefault("intensive_ener_virial", False)
         return cls(**data)

@@ -91,7 +91,7 @@ class TestOutStat(unittest.TestCase):
         )
 
     def test_compute_stats_do_not_distinguish_types_intensive(self) -> None:
-        """Test compute_stats_property function with intensive scenario."""
+        """Test compute_stats_do_not_distinguish function with intensive scenario."""
         bias, std = compute_stats_do_not_distinguish_types(
             self.output_redu, self.natoms, intensive=True
         )
@@ -110,7 +110,7 @@ class TestOutStat(unittest.TestCase):
             )
 
     def test_compute_stats_do_not_distinguish_types_extensive(self) -> None:
-        """Test compute_stats_property function with extensive scenario."""
+        """Test compute_stats_do_not_distinguish function with extensive scenario."""
         bias, std = compute_stats_do_not_distinguish_types(
             self.output_redu, self.natoms
         )
@@ -141,6 +141,34 @@ class TestOutStat(unittest.TestCase):
                 ),
                 rtol=1e-7,
             )
+
+    def test_compute_stats_from_redu_intensive(self) -> None:
+        """Test compute_stats_from_redu function with intensive scenario."""
+        bias, std = compute_stats_from_redu(
+            self.output_redu / self.natoms.sum(axis=1, keepdims=True),
+            self.natoms,
+            intensive=True,
+        )
+        # Test shapes
+        assert bias.shape == (len(self.mean), self.output_redu.shape[1])
+        assert std.shape == (self.output_redu.shape[1],)
+
+        # Test values
+        np.testing.assert_allclose(bias, self.mean, rtol=1e-6)
+        reference_std = np.array(
+            [
+                0.00001700638138272794,
+                0.00001954897296228177,
+                0.000020281857747683162,
+                0.000010741237959989648,
+                0.000020258211828681347,
+            ]
+        )
+        np.testing.assert_allclose(
+            std,
+            reference_std,
+            rtol=1e-6,
+        )
 
     def test_compute_stats_from_atomic(self) -> None:
         bias, std = compute_stats_from_atomic(self.output, self.atype)

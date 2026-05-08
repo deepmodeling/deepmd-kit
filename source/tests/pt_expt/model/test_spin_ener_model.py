@@ -359,6 +359,56 @@ class TestSpinEnerModelVirial(unittest.TestCase, VirialTest):
 
 
 class TestSpinEnerModelExportable(unittest.TestCase):
+    @staticmethod
+    def _build_extended_inputs(model, natoms=6):
+        """Build extended inputs for spin model export tests."""
+        from deepmd.dpmodel.utils import (
+            build_neighbor_list,
+            extend_coord_with_ghosts,
+            normalize_coord,
+        )
+
+        generator = torch.Generator(device="cpu").manual_seed(GLOBAL_SEED)
+        cell = torch.rand([3, 3], dtype=dtype, device="cpu", generator=generator)
+        cell = (cell + cell.T) + 5.0 * torch.eye(3, device="cpu")
+        coord = torch.rand([natoms, 3], dtype=dtype, device="cpu", generator=generator)
+        coord = torch.matmul(coord, cell)
+        atype = torch.tensor([0, 0, 1, 0, 1, 1], dtype=torch.int64)
+        spin = (
+            torch.rand([natoms, 3], dtype=dtype, device="cpu", generator=generator)
+            * 0.5
+        )
+
+        rcut = model.get_rcut()
+        sel = SPIN_DATA["descriptor"]["sel"]
+        coord_np = coord.unsqueeze(0).numpy()
+        atype_np = atype.unsqueeze(0).numpy()
+        box_np = cell.reshape(1, 9).numpy()
+        coord_normalized = normalize_coord(
+            coord_np.reshape(1, natoms, 3),
+            box_np.reshape(1, 3, 3),
+        )
+        ext_coord, ext_atype, mapping = extend_coord_with_ghosts(
+            coord_normalized, atype_np, box_np, rcut
+        )
+        nlist = build_neighbor_list(
+            ext_coord, ext_atype, natoms, rcut, sel, distinguish_types=True
+        )
+        ext_coord = ext_coord.reshape(1, -1, 3)
+        spin_np = spin.unsqueeze(0).numpy()
+        ext_spin = np.take_along_axis(
+            spin_np,
+            np.repeat(mapping[:, :, np.newaxis], 3, axis=2),
+            axis=1,
+        )
+
+        ext_coord_t = torch.tensor(ext_coord, dtype=dtype, device=env.DEVICE)
+        ext_atype_t = torch.tensor(ext_atype, dtype=torch.int64, device=env.DEVICE)
+        nlist_t = torch.tensor(nlist, dtype=torch.int64, device=env.DEVICE)
+        mapping_t = torch.tensor(mapping, dtype=torch.int64, device=env.DEVICE)
+        ext_spin_t = torch.tensor(ext_spin, dtype=dtype, device=env.DEVICE)
+        return ext_coord_t, ext_atype_t, ext_spin_t, nlist_t, mapping_t, sel
+
     def test_forward_lower_exportable(self) -> None:
         """Test that SpinEnergyModel.forward_lower_exportable works with make_fx and torch.export."""
         from deepmd.dpmodel.utils import (
@@ -475,6 +525,142 @@ class TestSpinEnerModelExportable(unittest.TestCase):
                 atol=1e-10,
                 err_msg=f"exported vs eager: {key}",
             )
+
+        # --- symbolic trace + export with dynamic shapes + .pte round-trip ---
+        import tempfile
+
+        # Use nf=2 data for tracing to avoid nframes=1 specialization
+        inputs_2f = (
+            torch.cat([ext_coord_t, ext_coord_t], dim=0),
+            torch.cat([ext_atype_t, ext_atype_t], dim=0),
+            torch.cat([ext_spin_t, ext_spin_t], dim=0),
+            torch.cat([nlist_t, nlist_t], dim=0),
+            torch.cat([mapping_t, mapping_t], dim=0),
+            None,
+            None,
+        )
+
+        traced_sym = model.forward_lower_exportable(
+            inputs_2f[0],
+            inputs_2f[1],
+            inputs_2f[2],
+            inputs_2f[3],
+            inputs_2f[4],
+            tracing_mode="symbolic",
+            _allow_non_fake_inputs=True,
+        )
+
+        # Build dynamic shapes for spin model
+        # (ext_coord, ext_atype, ext_spin, nlist, mapping, fparam, aparam)
+        nframes_dim = torch.export.Dim("nframes", min=1)
+        nall_dim = torch.export.Dim("nall", min=1)
+        nloc_dim = torch.export.Dim("nloc", min=1)
+        dynamic_shapes = (
+            {0: nframes_dim, 1: nall_dim},  # ext_coord
+            {0: nframes_dim, 1: nall_dim},  # ext_atype
+            {0: nframes_dim, 1: nall_dim},  # ext_spin
+            {0: nframes_dim, 1: nloc_dim},  # nlist
+            {0: nframes_dim, 1: nall_dim},  # mapping
+            None,  # fparam
+            None,  # aparam
+        )
+        exported_dyn = torch.export.export(
+            traced_sym,
+            inputs_2f,
+            dynamic_shapes=dynamic_shapes,
+            strict=False,
+            prefer_deferred_runtime_asserts_over_guards=True,
+        )
+
+        with tempfile.NamedTemporaryFile(suffix=".pte") as f:
+            torch.export.save(exported_dyn, f.name)
+            loaded = torch.export.load(f.name).module()
+
+        ret_loaded_1f = loaded(
+            ext_coord_t, ext_atype_t, ext_spin_t, nlist_t, mapping_t, None, None
+        )
+        for key in output_keys:
+            np.testing.assert_allclose(
+                ret_eager[key].detach().cpu().numpy(),
+                ret_loaded_1f[key].detach().cpu().numpy(),
+                rtol=1e-10,
+                atol=1e-10,
+                err_msg=f"loaded vs eager (nf=1): {key}",
+            )
+
+    def test_oversized_nlist(self) -> None:
+        """Test that the exported spin model handles nlist with more neighbors than nnei.
+
+        Verifies two things:
+        1. The exported model with an oversized, shuffled nlist produces the
+           same results as the eager model.
+        2. Naive truncation of the shuffled nlist gives different energy,
+           proving distance sort is necessary.
+        """
+        model = _make_model()
+        ext_coord_t, ext_atype_t, ext_spin_t, nlist_t, mapping_t, sel = (
+            self._build_extended_inputs(model)
+        )
+        nnei = sum(sel)
+
+        # Pad and shuffle nlist
+        n_extra = nnei
+        nlist_padded = torch.cat(
+            [
+                nlist_t,
+                -torch.ones(
+                    (*nlist_t.shape[:2], n_extra),
+                    dtype=nlist_t.dtype,
+                    device=nlist_t.device,
+                ),
+            ],
+            dim=-1,
+        )
+        rng = np.random.default_rng(42)
+        perm = rng.permutation(nlist_padded.shape[-1])
+        nlist_shuffled = nlist_padded[:, :, perm]
+        assert nlist_shuffled.shape[-1] > nnei
+
+        output_keys = ("energy", "extended_force", "extended_force_mag", "virial")
+
+        # --- Part 1: exported model sorts correctly ---
+        traced = model.forward_lower_exportable(
+            ext_coord_t,
+            ext_atype_t,
+            ext_spin_t,
+            nlist_shuffled,
+            mapping_t,
+        )
+        ret_traced = traced(
+            ext_coord_t, ext_atype_t, ext_spin_t, nlist_shuffled, mapping_t, None, None
+        )
+
+        ec = ext_coord_t.detach().requires_grad_(True)
+        ret_eager = model.forward_lower(
+            ec, ext_atype_t, ext_spin_t, nlist_shuffled, mapping_t
+        )
+
+        for key in output_keys:
+            if ret_eager.get(key) is not None and key in ret_traced:
+                np.testing.assert_allclose(
+                    ret_eager[key].detach().cpu().numpy(),
+                    ret_traced[key].detach().cpu().numpy(),
+                    rtol=1e-10,
+                    atol=1e-10,
+                    err_msg=f"oversized nlist, key={key}",
+                )
+
+        # --- Part 2: naive truncation gives wrong results ---
+        nlist_truncated = nlist_shuffled[:, :, :nnei]
+        ec2 = ext_coord_t.detach().requires_grad_(True)
+        ret_trunc = model.forward_lower(
+            ec2, ext_atype_t, ext_spin_t, nlist_truncated, mapping_t
+        )
+        e_ref = ret_eager["energy"].detach().cpu().numpy()
+        e_trunc = ret_trunc["energy"].detach().cpu().numpy()
+        assert not np.allclose(e_ref, e_trunc, rtol=1e-10, atol=1e-10), (
+            "Naive truncation of shuffled nlist should give different energy."
+        )
 
 
 if __name__ == "__main__":

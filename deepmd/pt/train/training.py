@@ -54,6 +54,10 @@ from deepmd.pt.optimizer import (
     KFOptimizerWrapper,
     LKFOptimizer,
 )
+from deepmd.pt.train.validation import (
+    FullValidator,
+    resolve_full_validation_start_step,
+)
 from deepmd.pt.train.wrapper import (
     ModelWrapper,
 )
@@ -73,6 +77,11 @@ from deepmd.pt.utils.env import (
 )
 from deepmd.pt.utils.learning_rate import (
     BaseLR,
+)
+from deepmd.pt.utils.lmdb_dataset import (
+    LmdbDataset,
+    _collate_lmdb_batch,
+    _SameNlocBatchSamplerTorch,
 )
 from deepmd.pt.utils.stat import (
     make_stat_input,
@@ -94,9 +103,13 @@ from torch.distributed.checkpoint.state_dict import (
     get_optimizer_state_dict,
     set_optimizer_state_dict,
 )
-from torch.distributed.fsdp import (
-    fully_shard,
-)
+
+try:
+    from torch.distributed.fsdp import (
+        fully_shard,
+    )
+except ImportError:
+    fully_shard = None  # type: ignore[assignment]
 from torch.distributed.optim import (
     ZeroRedundancyOptimizer,
 )
@@ -159,7 +172,7 @@ class Trainer:
 
         # Iteration config
         self.num_steps = training_params.get("numb_steps")
-        self.num_epoch = training_params.get("num_epoch")
+        self.num_epoch = training_params.get("numb_epoch")
         self.num_epoch_dict = training_params.get("num_epoch_dict")
         self.disp_file = training_params.get("disp_file", "lcurve.out")
         self.disp_freq = training_params.get("disp_freq", 1000)
@@ -178,9 +191,7 @@ class Trainer:
                 f"training.zero_stage must be 0, 1, 2, or 3, got {self.zero_stage}"
             )
         if self.zero_stage > 0 and not self.is_distributed:
-            raise ValueError(
-                "training.zero_stage requires distributed launch via torchrun."
-            )
+            self.zero_stage = 0
         if self.zero_stage > 0 and self.change_bias_after_training:
             raise ValueError(
                 "training.zero_stage does not support change_bias_after_training."
@@ -218,8 +229,8 @@ class Trainer:
                 yield from it
 
         def get_data_loader(
-            _training_data: DpLoaderSet,
-            _validation_data: DpLoaderSet | None,
+            _training_data: DpLoaderSet | LmdbDataset,
+            _validation_data: DpLoaderSet | LmdbDataset | None,
             _training_params: dict[str, Any],
         ) -> tuple[
             DataLoader,
@@ -228,6 +239,62 @@ class Trainer:
             Generator[Any, None, None] | None,
             int,
         ]:
+            def get_dataloader_and_iter_lmdb(
+                _data: LmdbDataset,
+            ) -> tuple[DataLoader, Generator[Any, None, None]]:
+                if _data.mixed_batch:
+                    # TODO [mixed_batch=True]: Replace SameNlocBatchSampler with
+                    # RandomSampler(replacement=False) + padding collate_fn.
+                    # Changes needed:
+                    #   1. _collate_lmdb_batch: pad coord/force/atype to max_nloc,
+                    #      add "atom_mask" bool tensor (nframes, max_nloc)
+                    #   2. Use RandomSampler(_data, replacement=False) as sampler
+                    #   3. Use fixed batch_size in DataLoader (not batch_sampler)
+                    #   4. Model forward: apply atom_mask to descriptor/fitting
+                    #   5. Loss: mask out padded atoms in force loss
+                    raise NotImplementedError(
+                        "mixed_batch=True training is not yet supported."
+                    )
+                # mixed_batch=False: group frames by nloc, each batch same nloc.
+                # SameNlocBatchSampler yields list[int] per batch, all same nloc.
+                # Auto batch_size is computed per-nloc-group inside the sampler.
+                from deepmd.dpmodel.utils.lmdb_data import (
+                    SameNlocBatchSampler,
+                )
+
+                _block_targets = getattr(_data, "_block_targets", None)
+
+                if self.world_size > 1:
+                    from deepmd.dpmodel.utils.lmdb_data import (
+                        DistributedSameNlocBatchSampler,
+                    )
+
+                    _inner_sampler = DistributedSameNlocBatchSampler(
+                        _data._reader,
+                        rank=self.rank,
+                        world_size=self.world_size,
+                        shuffle=True,
+                        seed=_training_params.get("seed", None),
+                        block_targets=_block_targets,
+                    )
+                else:
+                    _inner_sampler = SameNlocBatchSampler(
+                        _data._reader,
+                        shuffle=True,
+                        block_targets=_block_targets,
+                    )
+
+                _batch_sampler = _SameNlocBatchSamplerTorch(_inner_sampler)
+                _dataloader = DataLoader(
+                    _data,
+                    batch_sampler=_batch_sampler,
+                    num_workers=0,
+                    collate_fn=_collate_lmdb_batch,
+                    pin_memory=(DEVICE != "cpu"),
+                )
+                _data_iter = cycle_iterator(_dataloader)
+                return _dataloader, _data_iter
+
             def get_dataloader_and_iter(
                 _data: DpLoaderSet, _params: dict[str, Any]
             ) -> tuple[DataLoader, Generator[Any, None, None]]:
@@ -250,17 +317,28 @@ class Trainer:
                 _data_iter = cycle_iterator(_dataloader)
                 return _dataloader, _data_iter
 
-            training_dataloader, training_data_iter = get_dataloader_and_iter(
-                _training_data, _training_params["training_data"]
-            )
+            if isinstance(_training_data, LmdbDataset):
+                training_dataloader, training_data_iter = get_dataloader_and_iter_lmdb(
+                    _training_data
+                )
+            else:
+                training_dataloader, training_data_iter = get_dataloader_and_iter(
+                    _training_data, _training_params["training_data"]
+                )
 
             if _validation_data is not None:
-                (
-                    validation_dataloader,
-                    validation_data_iter,
-                ) = get_dataloader_and_iter(
-                    _validation_data, _training_params["validation_data"]
-                )
+                if isinstance(_validation_data, LmdbDataset):
+                    (
+                        validation_dataloader,
+                        validation_data_iter,
+                    ) = get_dataloader_and_iter_lmdb(_validation_data)
+                else:
+                    (
+                        validation_dataloader,
+                        validation_data_iter,
+                    ) = get_dataloader_and_iter(
+                        _validation_data, _training_params["validation_data"]
+                    )
                 valid_numb_batch = _training_params["validation_data"].get(
                     "numb_btch", 1
                 )
@@ -388,12 +466,17 @@ class Trainer:
                 self.valid_numb_batch,
             ) = get_data_loader(training_data, validation_data, training_params)
             training_data.print_summary(
-                "training", to_numpy_array(self.training_dataloader.sampler.weights)
+                "training",
+                to_numpy_array(self.training_dataloader.sampler.weights)
+                if not isinstance(training_data, LmdbDataset)
+                else [1.0],
             )
             if validation_data is not None:
                 validation_data.print_summary(
                     "validation",
-                    to_numpy_array(self.validation_dataloader.sampler.weights),
+                    to_numpy_array(self.validation_dataloader.sampler.weights)
+                    if not isinstance(validation_data, LmdbDataset)
+                    else [1.0],
                 )
         else:
             (
@@ -459,7 +542,9 @@ class Trainer:
 
                 training_data[model_key].print_summary(
                     f"training in {model_key}",
-                    to_numpy_array(self.training_dataloader[model_key].sampler.weights),
+                    to_numpy_array(self.training_dataloader[model_key].sampler.weights)
+                    if not isinstance(training_data[model_key], LmdbDataset)
+                    else [1.0],
                 )
                 if (
                     validation_data is not None
@@ -469,7 +554,9 @@ class Trainer:
                         f"validation in {model_key}",
                         to_numpy_array(
                             self.validation_dataloader[model_key].sampler.weights
-                        ),
+                        )
+                        if not isinstance(validation_data[model_key], LmdbDataset)
+                        else [1.0],
                     )
 
         # Resolve training steps
@@ -482,13 +569,16 @@ class Trainer:
                     )
                 if self.num_epoch <= 0:
                     raise ValueError("training.num_epoch must be positive.")
-                sampler_weights = to_numpy_array(
-                    self.training_dataloader.sampler.weights
-                )
-                total_numb_batch = compute_total_numb_batch(
-                    training_data.index,
-                    sampler_weights,
-                )
+                if isinstance(training_data, LmdbDataset):
+                    total_numb_batch = training_data.total_batch
+                else:
+                    sampler_weights = to_numpy_array(
+                        self.training_dataloader.sampler.weights
+                    )
+                    total_numb_batch = compute_total_numb_batch(
+                        training_data.index,
+                        sampler_weights,
+                    )
                 if total_numb_batch <= 0:
                     raise ValueError(
                         "Total number of training batches must be positive."
@@ -508,15 +598,18 @@ class Trainer:
                         "are mutually exclusive."
                     )
                 for model_key in self.model_keys:
-                    sampler_weights = to_numpy_array(
-                        self.training_dataloader[model_key].sampler.weights
-                    )
-                    per_task_total.append(
-                        compute_total_numb_batch(
-                            training_data[model_key].index,
-                            sampler_weights,
+                    if isinstance(training_data[model_key], LmdbDataset):
+                        per_task_total.append(training_data[model_key].total_batch)
+                    else:
+                        sampler_weights = to_numpy_array(
+                            self.training_dataloader[model_key].sampler.weights
                         )
-                    )
+                        per_task_total.append(
+                            compute_total_numb_batch(
+                                training_data[model_key].index,
+                                sampler_weights,
+                            )
+                        )
                 (
                     self.model_prob,
                     self.num_steps,
@@ -764,6 +857,15 @@ class Trainer:
         if self.is_distributed:
             torch.cuda.set_device(LOCAL_RANK)
             if self.zero_stage >= 2:
+                if fully_shard is None:
+                    raise RuntimeError(
+                        "training.zero_stage>=2 requires FSDP2, which is only "
+                        "available in PyTorch >= 2.6 "
+                        "(``torch.distributed.fsdp.fully_shard``). "
+                        f"Current PyTorch is {torch.__version__}. "
+                        "Please upgrade PyTorch, or set training.zero_stage "
+                        "to 0 or 1 to stay on the DDP / ZeRO-1 path."
+                    )
                 # FSDP2 does NOT broadcast params (unlike DDP constructor).
                 # Ensure all ranks share identical weights before sharding.
                 for p in self.wrapper.parameters():
@@ -818,8 +920,14 @@ class Trainer:
                     "lr_adjust_coeff": float(self.opt_param["lr_adjust_coeff"]),
                     "muon_mode": str(self.opt_param.get("muon_mode", "slice")),
                     "named_parameters": tuple(self.wrapper.named_parameters()),
-                    "flash_muon": bool(self.opt_param.get("flash_muon", True)),
-                    "magma_muon": bool(self.opt_param.get("magma_muon", False)),
+                    "enable_gram": bool(self.opt_param.get("enable_gram")),
+                    "flash_muon": bool(self.opt_param.get("flash_muon")),
+                    "magma_muon": bool(self.opt_param.get("magma_muon")),
+                    # FSDP2 shards parameters as DTensor; several torch._foreach_*
+                    # ops lack DTensor sharding propagation on older PyTorch, so
+                    # fall back to the per-tensor path under zero_stage >= 2.
+                    # DDP / ZeRO-1 keep plain tensors and use the default.
+                    "use_foreach": False if self.zero_stage >= 2 else None,
                 }
             else:
                 raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
@@ -857,10 +965,88 @@ class Trainer:
         self.enable_profiler = training_params.get("enable_profiler", False)
         self.profiling = training_params.get("profiling", False)
         self.profiling_file = training_params.get("profiling_file", "timeline.json")
+        validating_params = config.get("validating") or {}
+        self.full_validator = self._create_full_validator(
+            validating_params=validating_params,
+            validation_data=validation_data,
+        )
 
         # Log model parameter count
         if self.rank == 0:
             self._log_parameter_count()
+
+    def _create_full_validator(
+        self,
+        *,
+        validating_params: dict[str, Any],
+        validation_data: DpLoaderSet | None,
+    ) -> FullValidator | None:
+        """Create the runtime full validator when it is active."""
+        if not self._is_full_validation_requested(validating_params):
+            return None
+        self._raise_if_full_validation_unsupported(validation_data)
+        if validation_data is None:
+            raise RuntimeError(
+                "validation_data must be available after full validation checks."
+            )
+        return FullValidator(
+            validating_params=validating_params,
+            validation_data=validation_data,
+            model=self.model,
+            train_infos=self._get_inner_module().train_infos,
+            num_steps=self.num_steps,
+            rank=self.rank,
+            zero_stage=self.zero_stage,
+            restart_training=self.restart_training,
+            checkpoint_dir=Path(self.save_ckpt).parent,
+        )
+
+    def _is_full_validation_requested(self, validating_params: dict[str, Any]) -> bool:
+        """Check whether full validation can trigger during this training run."""
+        if not validating_params.get("full_validation", False):
+            return False
+        start_step = resolve_full_validation_start_step(
+            validating_params.get("full_val_start", 0.5),
+            self.num_steps,
+        )
+        return start_step is not None and start_step <= self.num_steps
+
+    def _raise_if_full_validation_unsupported(
+        self,
+        validation_data: DpLoaderSet | None,
+    ) -> None:
+        """Validate runtime full validation constraints."""
+        if self.multi_task:
+            raise ValueError(
+                "validating.full_validation only supports single-task energy "
+                "training; multi-task training is not supported."
+            )
+
+        has_spin = getattr(self.model, "has_spin", False)
+        if callable(has_spin):
+            has_spin = has_spin()
+        if has_spin or isinstance(self.loss, EnergySpinLoss):
+            raise ValueError(
+                "validating.full_validation only supports single-task energy "
+                "training; spin-energy training is not supported."
+            )
+
+        if not isinstance(self.loss, EnergyStdLoss):
+            raise ValueError(
+                "validating.full_validation only supports single-task energy training."
+            )
+
+        if validation_data is None:
+            raise ValueError(
+                "validating.full_validation requires `training.validation_data` "
+                "to be configured."
+            )
+
+        if self.zero_stage >= 2:
+            raise ValueError(
+                "validating.full_validation only supports single-task energy "
+                "training with training.zero_stage < 2."
+            )
 
     @staticmethod
     def _count_parameters(model: torch.nn.Module) -> tuple[int, int]:
@@ -1285,25 +1471,25 @@ class Trainer:
                                 train_results[_key] = log_loss_train(
                                     loss, more_loss, _task_key=_key
                                 )
-                        valid_results[_key] = log_loss_valid(_task_key=_key)
-                        if self.rank == 0:
-                            log.info(
-                                format_training_message_per_task(
-                                    batch=display_step_id,
-                                    task_name=_key + "_trn",
-                                    rmse=train_results[_key],
-                                    learning_rate=cur_lr,
-                                )
-                            )
-                            if valid_results[_key]:
+                            valid_results[_key] = log_loss_valid(_task_key=_key)
+                            if self.rank == 0:
                                 log.info(
                                     format_training_message_per_task(
                                         batch=display_step_id,
-                                        task_name=_key + "_val",
-                                        rmse=valid_results[_key],
-                                        learning_rate=None,
+                                        task_name=_key + "_trn",
+                                        rmse=train_results[_key],
+                                        learning_rate=cur_lr,
                                     )
                                 )
+                                if valid_results[_key]:
+                                    log.info(
+                                        format_training_message_per_task(
+                                            batch=display_step_id,
+                                            task_name=_key + "_val",
+                                            rmse=valid_results[_key],
+                                            learning_rate=None,
+                                        )
+                                    )
                 self.wrapper.train()
 
                 if self.disp_avg:
@@ -1362,6 +1548,14 @@ class Trainer:
                     self.print_on_training(
                         fout, display_step_id, cur_lr, train_results, valid_results
                     )
+
+            if self.full_validator is not None:
+                self.full_validator.run(
+                    step_id=_step_id,
+                    display_step=display_step_id,
+                    lr=cur_lr,
+                    save_checkpoint=self.save_model,
+                )
 
             if (
                 (

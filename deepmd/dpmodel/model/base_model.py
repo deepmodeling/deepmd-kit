@@ -127,6 +127,14 @@ def make_base_model() -> type[object]:
                 model_type = data.get("type", "standard")
                 if model_type == "standard":
                     model_type = data.get("fitting", {}).get("type", "ener")
+                if model_type == "spin_ener":
+                    # SpinModel is not a BaseModel subclass and cannot be
+                    # registered via the plugin registry.  Dispatch directly.
+                    from deepmd.dpmodel.model.spin_model import (
+                        SpinModel,
+                    )
+
+                    return SpinModel.deserialize(data)
                 return cls.get_class_by_type(model_type).deserialize(data)
             raise NotImplementedError(f"Not implemented in class {cls.__name__}")
 

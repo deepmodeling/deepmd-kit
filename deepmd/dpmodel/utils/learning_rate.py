@@ -393,6 +393,180 @@ class LearningRateExp(BaseLR):
         return step_lr
 
 
+@BaseLR.register("wsd")
+class LearningRateWSD(BaseLR):
+    r"""
+    Warmup-stable-decay learning rate schedule with configurable decay rules.
+
+    The schedule uses the shared warmup implementation from :class:`BaseLR`,
+    then keeps the learning rate at ``start_lr`` during the stable phase, and
+    finally applies one of the supported decay rules.
+
+    Let :math:`\tau \in [0, 1]` denote the normalized progress within the
+    decay phase.
+
+    **Inverse-linear mode (``decay_type="inverse_linear"``):**
+
+    .. math::
+
+        lr(t) = \frac{1}{
+            \tau / lr_{\text{stop}} + (1 - \tau) / lr_0
+        }
+
+    **Cosine mode (``decay_type="cosine"``):**
+
+    .. math::
+
+        lr(t) = lr_{\text{stop}} +
+        \frac{lr_0 - lr_{\text{stop}}}{2}
+        \left(1 + \cos(\pi \tau)\right)
+
+    **Linear mode (``decay_type="linear"``):**
+
+    .. math::
+
+        lr(t) = lr_0 + \left(lr_{\text{stop}} - lr_0\right)\tau
+    """
+
+    def __init__(
+        self,
+        start_lr: float,
+        num_steps: int,
+        stop_lr: float | None = None,
+        stop_lr_ratio: float | None = None,
+        warmup_steps: int = 0,
+        warmup_ratio: float | None = None,
+        warmup_start_factor: float = 0.0,
+        decay_phase_ratio: float = 0.1,
+        decay_type: str = "inverse_linear",
+        **kwargs: Any,
+    ) -> None:
+        """
+        Construct a warmup-stable-decay learning rate schedule.
+
+        Parameters
+        ----------
+        start_lr : float
+            The learning rate at the start of the stable phase.
+        num_steps : int
+            The total training steps (including warmup).
+        stop_lr : float, optional
+            The final learning rate at the end of training.
+            Mutually exclusive with stop_lr_ratio.
+        stop_lr_ratio : float, optional
+            The ratio of stop_lr to start_lr.
+            Mutually exclusive with stop_lr.
+        warmup_steps : int, optional
+            The number of warmup steps.
+            Mutually exclusive with warmup_ratio. Default is 0.
+        warmup_ratio : float, optional
+            The ratio of warmup steps to total training steps.
+            Mutually exclusive with warmup_steps.
+        warmup_start_factor : float, optional
+            The factor of start_lr for the initial warmup learning rate.
+            Default is 0.0.
+        decay_phase_ratio : float, optional
+            The ratio of the decay phase to total training steps.
+            Default is 0.1.
+        decay_type : str, optional
+            The decay rule used in the decay phase.
+            Supported values are ``inverse_linear``, ``cosine`` and ``linear``.
+            Default is ``inverse_linear``.
+
+        Raises
+        ------
+        ValueError
+            If the learning rates are non-positive.
+            If decay_phase_ratio is not in (0, 1].
+            If decay_type is invalid.
+            If the derived decay phase is empty or exceeds post-warmup steps.
+        """
+        super().__init__(
+            start_lr=start_lr,
+            stop_lr=stop_lr,
+            stop_lr_ratio=stop_lr_ratio,
+            num_steps=num_steps,
+            warmup_steps=warmup_steps,
+            warmup_ratio=warmup_ratio,
+            warmup_start_factor=warmup_start_factor,
+            **kwargs,
+        )
+
+        # === Validate WSD-specific invariants ===
+        if self._start_lr <= 0:
+            raise ValueError(f"start_lr ({self._start_lr}) must be positive.")
+        if self.stop_lr <= 0:
+            raise ValueError(f"stop_lr ({self.stop_lr}) must be positive.")
+        if decay_phase_ratio <= 0 or decay_phase_ratio > 1:
+            raise ValueError(
+                f"decay_phase_ratio ({decay_phase_ratio}) must be in (0, 1]."
+            )
+        if decay_type not in ("inverse_linear", "cosine", "linear"):
+            raise ValueError(
+                "decay_type must be one of "
+                f"{('inverse_linear', 'cosine', 'linear')}. "
+                f"Got decay_type={decay_type}."
+            )
+
+        # === Derive stable and decay phase lengths ===
+        self.decay_phase_ratio = decay_phase_ratio
+        self.decay_type = decay_type
+        # Clamp decay_phase_steps to valid range [1, decay_num_steps]
+        self.decay_phase_steps = max(
+            1, min(int(self.decay_phase_ratio * self.num_steps), self.decay_num_steps)
+        )
+        self.stable_steps = self.decay_num_steps - self.decay_phase_steps
+
+    def _decay_value(self, step: int | Array) -> Array:
+        """
+        Get the warmup-stable-decay learning rate at the given step.
+
+        Parameters
+        ----------
+        step : int or Array
+            The step index relative to the end of warmup.
+
+        Returns
+        -------
+        Array
+            The learning rate (absolute value).
+        """
+        if not array_api_compat.is_array_api_obj(step):
+            step = np.asarray(step)
+        xp = array_api_compat.array_namespace(step)
+        step_dtype = (
+            step.dtype
+            if xp.isdtype(step.dtype, "real floating")
+            else get_xp_precision(xp, "global")
+        )
+
+        # === Step 1. Build typed scalar constants ===
+        typed_step = xp.astype(step, step_dtype)
+        zero = xp.asarray(0.0, dtype=step_dtype)
+        one = xp.asarray(1.0, dtype=step_dtype)
+        start_lr = xp.asarray(self._start_lr, dtype=step_dtype)
+        stop_lr = xp.asarray(self.stop_lr, dtype=step_dtype)
+        stable_steps = xp.asarray(self.stable_steps, dtype=step_dtype)
+        decay_phase_steps = xp.asarray(self.decay_phase_steps, dtype=step_dtype)
+
+        # === Step 2. Keep a constant learning rate in the stable phase ===
+        decay_progress = (typed_step - stable_steps) / decay_phase_steps
+        tau = xp.clip(decay_progress, zero, one)
+
+        # === Step 3. Apply the selected interpolation in the decay phase ===
+        if self.decay_type == "inverse_linear":
+            decay_lr = one / (tau / stop_lr + (one - tau) / start_lr)
+        elif self.decay_type == "cosine":
+            decay_lr = stop_lr + (start_lr - stop_lr) * 0.5 * (
+                one + xp.cos(xp.asarray(xp.pi * tau, dtype=step_dtype))
+            )
+        else:
+            decay_lr = start_lr + (stop_lr - start_lr) * tau
+        step_lr = xp.where(step < self.stable_steps, start_lr, decay_lr)
+        step_lr = xp.where(step >= self.decay_num_steps, stop_lr, step_lr)
+        return step_lr
+
+
 @BaseLR.register("cosine")
 class LearningRateCosine(BaseLR):
     r"""

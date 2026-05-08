@@ -23,6 +23,10 @@ from ...common.test_mixins import (
 from ...seed import (
     GLOBAL_SEED,
 )
+from ..export_helpers import (
+    export_save_load_and_compare,
+    make_fitting_dynamic_shapes,
+)
 
 
 class TestDOSFittingNet(TestCaseSingleFrameWithNlist):
@@ -162,6 +166,18 @@ class TestDOSFittingNet(TestCaseSingleFrameWithNlist):
         np.testing.assert_allclose(
             grad_eager.detach().cpu().numpy(),
             grad_traced.detach().cpu().numpy(),
+            rtol=1e-10,
+            atol=1e-10,
+        )
+
+        # --- symbolic trace + export + .pte round-trip ---
+        dynamic_shapes = make_fitting_dynamic_shapes(has_gr=False)
+        inputs = (descriptor, atype)
+        export_save_load_and_compare(
+            fn,
+            inputs,
+            (ret_eager, grad_eager),
+            dynamic_shapes,
             rtol=1e-10,
             atol=1e-10,
         )

@@ -9,6 +9,9 @@ from deepmd.dpmodel.common import (
     cast_precision,
 )
 from deepmd.dpmodel.descriptor.se_t_tebd import DescrptSeTTebd as DescrptSeTTebdDP
+from deepmd.dpmodel.utils.env_mat_stat import (
+    merge_env_stat,
+)
 from deepmd.pt_expt.common import (
     torch_module,
 )
@@ -24,6 +27,31 @@ from deepmd.pt_expt.utils.update_sel import (
 @torch_module
 class DescrptSeTTebd(DescrptSeTTebdDP):
     _update_sel_cls = UpdateSel
+
+    def share_params(
+        self,
+        base_class: "DescrptSeTTebd",
+        shared_level: int,
+        model_prob: float = 1.0,
+        resume: bool = False,
+    ) -> None:
+        """Share parameters with base_class for multi-task training.
+
+        Level 0: share type_embedding and se_ttebd.
+        Level 1: share type_embedding only.
+        """
+        assert self.__class__ == base_class.__class__, (
+            "Only descriptors of the same type can share params!"
+        )
+        if shared_level == 0:
+            self._modules["type_embedding"] = base_class._modules["type_embedding"]
+            if not resume:
+                merge_env_stat(base_class.se_ttebd, self.se_ttebd, model_prob)
+            self._modules["se_ttebd"] = base_class._modules["se_ttebd"]
+        elif shared_level == 1:
+            self._modules["type_embedding"] = base_class._modules["type_embedding"]
+        else:
+            raise NotImplementedError
 
     def enable_compression(
         self,
@@ -48,9 +76,6 @@ class DescrptSeTTebd(DescrptSeTTebdDP):
         check_frequency
             The overflow check frequency
         """
-        from deepmd.pt.utils.utils import (
-            ActivationFn,
-        )
         from deepmd.pt_expt.utils.tabulate import (
             DPTabulate,
         )
@@ -65,7 +90,7 @@ class DescrptSeTTebd(DescrptSeTTebdDP):
             self,
             data["neuron"],
             exclude_types=data["exclude_types"],
-            activation_fn=ActivationFn(data["activation_function"]),
+            activation_fn_name=data["activation_function"],
         )
         # SE_T scales strides by 10
         stride_1_scaled = table_stride_1 * 10

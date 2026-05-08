@@ -18,6 +18,9 @@ from deepmd.pt.utils.env import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 
 class EnergySpinLoss(TaskLoss):
@@ -37,6 +40,7 @@ class EnergySpinLoss(TaskLoss):
         enable_atom_ener_coeff: bool = False,
         loss_func: str = "mse",
         inference: bool = False,
+        intensive_ener_virial: bool = False,
         **kwargs: Any,
     ) -> None:
         r"""Construct a layer to compute loss on energy, real force, magnetic force and virial.
@@ -73,6 +77,14 @@ class EnergySpinLoss(TaskLoss):
             MAE loss is less sensitive to outliers compared to MSE loss.
         inference : bool
             If true, it will output all losses found in output, ignoring the pre-factors.
+        intensive_ener_virial : bool
+            Controls the normalization exponent used for the MSE energy and virial loss terms.
+            If true, those MSE terms use intensive normalization by the square of the number of
+            atoms (1/N^2), which is consistent with per-atom RMSE reporting. If false (default),
+            the legacy normalization (1/N) is used for those MSE terms. Note that this 1/N^2
+            behavior does not apply to the MAE code paths: MAE energy/virial losses do not use
+            the `intensive_ener_virial` exponent in the same way. The default is false for backward
+            compatibility with models trained using deepmd-kit <= 3.1.3.
         **kwargs
             Other keyword arguments.
         """
@@ -98,6 +110,7 @@ class EnergySpinLoss(TaskLoss):
         self.limit_pref_ae = limit_pref_ae
         self.enable_atom_ener_coeff = enable_atom_ener_coeff
         self.inference = inference
+        self.intensive_ener_virial = intensive_ener_virial
 
     def forward(
         self,
@@ -142,6 +155,10 @@ class EnergySpinLoss(TaskLoss):
         # more_loss['log_keys'] = []  # showed when validation on the fly
         # more_loss['test_keys'] = []  # showed when doing dp test
         atom_norm = 1.0 / natoms
+        # Normalization exponent controls loss scaling with system size:
+        # - norm_exp=2 (intensive_ener_virial=True): loss uses 1/N² scaling, making it independent of system size
+        # - norm_exp=1 (intensive_ener_virial=False, legacy): loss uses 1/N scaling, which varies with system size
+        norm_exp = 2 if self.intensive_ener_virial else 1
         if self.has_e and "energy" in model_pred and "energy" in label:
             energy_pred = model_pred["energy"]
             energy_label = label["energy"]
@@ -166,7 +183,7 @@ class EnergySpinLoss(TaskLoss):
                     more_loss["l2_ener_loss"] = self.display_if_exist(
                         l2_ener_loss.detach(), find_energy
                     )
-                loss += atom_norm * (pref_e * l2_ener_loss)
+                loss += atom_norm**norm_exp * (pref_e * l2_ener_loss)
                 rmse_e = l2_ener_loss.sqrt() * atom_norm
                 more_loss["rmse_e"] = self.display_if_exist(
                     rmse_e.detach(), find_energy
@@ -321,7 +338,7 @@ class EnergySpinLoss(TaskLoss):
                     more_loss["l2_virial_loss"] = self.display_if_exist(
                         l2_virial_loss.detach(), find_virial
                     )
-                loss += atom_norm * (pref_v * l2_virial_loss)
+                loss += atom_norm**norm_exp * (pref_v * l2_virial_loss)
                 rmse_v = l2_virial_loss.sqrt() * atom_norm
                 more_loss["rmse_v"] = self.display_if_exist(
                     rmse_v.detach(), find_virial
@@ -405,3 +422,36 @@ class EnergySpinLoss(TaskLoss):
                 )
             )
         return label_requirement
+
+    def serialize(self) -> dict:
+        """Serialize the loss module."""
+        return {
+            "@class": "EnergySpinLoss",
+            "@version": 2,
+            "starter_learning_rate": self.starter_learning_rate,
+            "start_pref_e": self.start_pref_e,
+            "limit_pref_e": self.limit_pref_e,
+            "start_pref_fr": self.start_pref_fr,
+            "limit_pref_fr": self.limit_pref_fr,
+            "start_pref_fm": self.start_pref_fm,
+            "limit_pref_fm": self.limit_pref_fm,
+            "start_pref_v": self.start_pref_v,
+            "limit_pref_v": self.limit_pref_v,
+            "start_pref_ae": self.start_pref_ae,
+            "limit_pref_ae": self.limit_pref_ae,
+            "enable_atom_ener_coeff": self.enable_atom_ener_coeff,
+            "loss_func": self.loss_func,
+            "intensive_ener_virial": self.intensive_ener_virial,
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "EnergySpinLoss":
+        """Deserialize the loss module."""
+        data = data.copy()
+        version = data.pop("@version")
+        check_version_compatibility(version, 2, 1)
+        data.pop("@class")
+        # Handle backward compatibility for older versions without intensive_ener_virial
+        if version < 2:
+            data.setdefault("intensive_ener_virial", False)
+        return cls(**data)

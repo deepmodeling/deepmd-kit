@@ -89,6 +89,7 @@ class DOSFittingNet(InvarFitting):
                     r_differentiable=False,
                     c_differentiable=False,
                 ),
+                *self._middle_output_def(),
             ]
         )
 

@@ -12,549 +12,16 @@
 
 #include "SimulationRegion.h"
 #include "common.h"
+#include "commonPT.h"
+#include "commonPTExpt.h"
 #include "device.h"
 #include "errors.h"
 #include "neighbor_list.h"
 
-// Minimal JSON value parser for reading metadata from .pt2 archives.
-// Supports: strings, numbers, booleans, arrays, objects.
-// This avoids adding a dependency on nlohmann/json for the api_cc library.
-namespace {
-
-struct JsonValue;
-using JsonObject = std::map<std::string, JsonValue>;
-using JsonArray = std::vector<JsonValue>;
-
-struct JsonValue {
-  enum Type { Null, Bool, Number, String, Array, Object };
-  Type type = Null;
-  bool bool_val = false;
-  double num_val = 0.0;
-  std::string str_val;
-  JsonArray arr_val;
-  JsonObject obj_val;
-
-  std::string as_string() const { return str_val; }
-  double as_double() const { return num_val; }
-  int as_int() const { return static_cast<int>(num_val); }
-  bool as_bool() const { return bool_val; }
-  const JsonArray& as_array() const { return arr_val; }
-  const JsonObject& as_object() const { return obj_val; }
-  const JsonValue& operator[](const std::string& key) const {
-    return obj_val.at(key);
-  }
-  const JsonValue& operator[](size_t idx) const { return arr_val.at(idx); }
-  bool has(const std::string& key) const {
-    return obj_val.find(key) != obj_val.end();
-  }
-};
-
-class JsonParser {
- public:
-  explicit JsonParser(const std::string& s) : s_(s), pos_(0) {}
-  JsonValue parse() {
-    skip_ws();
-    auto val = parse_value();
-    return val;
-  }
-
- private:
-  const std::string& s_;
-  size_t pos_;
-
-  char peek() const { return pos_ < s_.size() ? s_[pos_] : '\0'; }
-  char get() {
-    if (pos_ >= s_.size()) {
-      throw std::runtime_error("JSON parse error: unexpected end of input");
-    }
-    return s_[pos_++];
-  }
-  void skip_ws() {
-    while (pos_ < s_.size() && (s_[pos_] == ' ' || s_[pos_] == '\t' ||
-                                s_[pos_] == '\n' || s_[pos_] == '\r')) {
-      ++pos_;
-    }
-  }
-
-  JsonValue parse_value() {
-    skip_ws();
-    char c = peek();
-    if (c == '"') {
-      return parse_string_val();
-    } else if (c == '{') {
-      return parse_object();
-    } else if (c == '[') {
-      return parse_array();
-    } else if (c == 't' || c == 'f') {
-      return parse_bool();
-    } else if (c == 'n') {
-      return parse_null();
-    } else {
-      return parse_number();
-    }
-  }
-
-  std::string parse_string_raw() {
-    get();  // consume '"'
-    std::string result;
-    while (pos_ < s_.size() && peek() != '"') {
-      if (peek() == '\\') {
-        get();
-        char esc = get();
-        switch (esc) {
-          case '"':
-            result += '"';
-            break;
-          case '\\':
-            result += '\\';
-            break;
-          case '/':
-            result += '/';
-            break;
-          case 'n':
-            result += '\n';
-            break;
-          case 't':
-            result += '\t';
-            break;
-          case 'r':
-            result += '\r';
-            break;
-          default:
-            result += esc;
-            break;
-        }
-      } else {
-        result += get();
-      }
-    }
-    get();  // consume closing '"'
-    return result;
-  }
-
-  JsonValue parse_string_val() {
-    JsonValue v;
-    v.type = JsonValue::String;
-    v.str_val = parse_string_raw();
-    return v;
-  }
-
-  JsonValue parse_number() {
-    size_t start = pos_;
-    if (peek() == '-') {
-      get();
-    }
-    while (pos_ < s_.size() &&
-           (std::isdigit(s_[pos_]) || s_[pos_] == '.' || s_[pos_] == 'e' ||
-            s_[pos_] == 'E' || s_[pos_] == '+' || s_[pos_] == '-')) {
-      // handle sign only if after e/E
-      if ((s_[pos_] == '+' || s_[pos_] == '-') && pos_ > start &&
-          s_[pos_ - 1] != 'e' && s_[pos_ - 1] != 'E') {
-        break;
-      }
-      ++pos_;
-    }
-    JsonValue v;
-    v.type = JsonValue::Number;
-    try {
-      v.num_val = std::stod(s_.substr(start, pos_ - start));
-    } catch (const std::exception& e) {
-      throw std::runtime_error("JSON parse error: invalid number at position " +
-                               std::to_string(start));
-    }
-    return v;
-  }
-
-  JsonValue parse_bool() {
-    JsonValue v;
-    v.type = JsonValue::Bool;
-    if (s_.substr(pos_, 4) == "true") {
-      v.bool_val = true;
-      pos_ += 4;
-    } else if (s_.substr(pos_, 5) == "false") {
-      v.bool_val = false;
-      pos_ += 5;
-    } else {
-      throw std::runtime_error(
-          "JSON parse error: expected 'true' or 'false' at position " +
-          std::to_string(pos_));
-    }
-    return v;
-  }
-
-  JsonValue parse_null() {
-    if (s_.substr(pos_, 4) != "null") {
-      throw std::runtime_error(
-          "JSON parse error: expected 'null' at position " +
-          std::to_string(pos_));
-    }
-    pos_ += 4;
-    return JsonValue();
-  }
-
-  JsonValue parse_array() {
-    get();  // consume '['
-    JsonValue v;
-    v.type = JsonValue::Array;
-    skip_ws();
-    if (peek() == ']') {
-      get();
-      return v;
-    }
-    while (true) {
-      v.arr_val.push_back(parse_value());
-      skip_ws();
-      if (peek() == ',') {
-        get();
-      } else {
-        break;
-      }
-    }
-    skip_ws();
-    get();  // consume ']'
-    return v;
-  }
-
-  JsonValue parse_object() {
-    get();  // consume '{'
-    JsonValue v;
-    v.type = JsonValue::Object;
-    skip_ws();
-    if (peek() == '}') {
-      get();
-      return v;
-    }
-    while (true) {
-      skip_ws();
-      std::string key = parse_string_raw();
-      skip_ws();
-      get();  // consume ':'
-      v.obj_val[key] = parse_value();
-      skip_ws();
-      if (peek() == ',') {
-        get();
-      } else {
-        break;
-      }
-    }
-    skip_ws();
-    get();  // consume '}'
-    return v;
-  }
-};
-
-JsonValue parse_json(const std::string& s) {
-  JsonParser parser(s);
-  return parser.parse();
-}
-
-// Read a file from a ZIP archive using caffe2::serialize::PyTorchStreamReader.
-// We avoid depending on caffe2 headers by using a simpler approach:
-// just read the file directly as a ZIP file.
-std::string read_zip_entry(const std::string& zip_path,
-                           const std::string& entry_name) {
-  // Use a simple approach: scan all possible prefixed names.
-  // .pt2 files from AOTInductor store extra files at "extra/<name>"
-  // within the ZIP archive.
-  std::ifstream ifs(zip_path, std::ios::binary);
-  if (!ifs.is_open()) {
-    throw deepmd::deepmd_exception("Cannot open file: " + zip_path);
-  }
-
-  // Read entire file
-  std::string content((std::istreambuf_iterator<char>(ifs)),
-                      std::istreambuf_iterator<char>());
-  ifs.close();
-
-  // Simple ZIP central directory parser
-  // Find End of Central Directory Record (EOCD)
-  // EOCD signature: 0x06054b50
-  // Minimum EOCD size is 22 bytes
-  if (content.size() < 22) {
-    throw deepmd::deepmd_exception(
-        "File too small to be a valid ZIP archive: " + zip_path);
-  }
-  size_t eocd_pos = std::string::npos;
-  for (int64_t i = static_cast<int64_t>(content.size()) - 22;
-       i >= 0 && static_cast<size_t>(i) + 3 < content.size(); --i) {
-    if (content[i] == 0x50 && content[i + 1] == 0x4b &&
-        content[i + 2] == 0x05 && content[i + 3] == 0x06) {
-      eocd_pos = static_cast<size_t>(i);
-      break;
-    }
-  }
-  if (eocd_pos == std::string::npos) {
-    throw deepmd::deepmd_exception("Invalid ZIP file: " + zip_path);
-  }
-
-  // Parse EOCD to get central directory offset and size
-  auto read_u16 = [&](size_t offset) -> uint16_t {
-    return static_cast<uint16_t>(static_cast<unsigned char>(content[offset])) |
-           (static_cast<uint16_t>(
-                static_cast<unsigned char>(content[offset + 1]))
-            << 8);
-  };
-  auto read_u32 = [&](size_t offset) -> uint32_t {
-    return static_cast<uint32_t>(static_cast<unsigned char>(content[offset])) |
-           (static_cast<uint32_t>(
-                static_cast<unsigned char>(content[offset + 1]))
-            << 8) |
-           (static_cast<uint32_t>(
-                static_cast<unsigned char>(content[offset + 2]))
-            << 16) |
-           (static_cast<uint32_t>(
-                static_cast<unsigned char>(content[offset + 3]))
-            << 24);
-  };
-
-  uint64_t num_entries = read_u16(eocd_pos + 10);
-  uint64_t cd_offset = read_u32(eocd_pos + 16);
-
-  // If this is a ZIP64 file, look for the ZIP64 EOCD locator
-  if (cd_offset == 0xFFFFFFFF || num_entries == 0xFFFF) {
-    // ZIP64 EOCD locator signature: 0x07064b50
-    // It should be right before the EOCD (20 bytes)
-    if (eocd_pos < 20) {
-      throw deepmd::deepmd_exception(
-          "Invalid ZIP64 file (truncated EOCD locator): " + zip_path);
-    }
-    size_t zip64_locator_pos = eocd_pos - 20;
-    if (content[zip64_locator_pos] == 0x50 &&
-        content[zip64_locator_pos + 1] == 0x4b &&
-        content[zip64_locator_pos + 2] == 0x06 &&
-        content[zip64_locator_pos + 3] == 0x07) {
-      // Read ZIP64 EOCD offset from locator
-      uint64_t zip64_eocd_offset = 0;
-      for (int b = 0; b < 8; ++b) {
-        zip64_eocd_offset |= static_cast<uint64_t>(static_cast<unsigned char>(
-                                 content[zip64_locator_pos + 8 + b]))
-                             << (8 * b);
-      }
-      // Parse ZIP64 EOCD
-      // ZIP64 EOCD signature: 0x06064b50
-      size_t z64_pos = static_cast<size_t>(zip64_eocd_offset);
-      if (z64_pos + 56 > content.size()) {
-        throw deepmd::deepmd_exception(
-            "Invalid ZIP64 file (truncated EOCD record): " + zip_path);
-      }
-      // num entries at offset 32 (8 bytes in ZIP64)
-      num_entries = 0;
-      for (int b = 0; b < 8; ++b) {
-        num_entries |= static_cast<uint64_t>(static_cast<unsigned char>(
-                           content[z64_pos + 32 + b]))
-                       << (8 * b);
-      }
-      // cd offset at offset 48 (8 bytes in ZIP64)
-      cd_offset = 0;
-      for (int b = 0; b < 8; ++b) {
-        cd_offset |= static_cast<uint64_t>(
-                         static_cast<unsigned char>(content[z64_pos + 48 + b]))
-                     << (8 * b);
-      }
-    }
-  }
-
-  // Iterate central directory entries
-  size_t pos = cd_offset;
-  for (uint64_t i = 0; i < num_entries; ++i) {
-    // Central directory entry signature: 0x02014b50
-    if (pos + 46 > content.size()) {
-      break;
-    }
-    uint16_t name_len = read_u16(pos + 28);
-    uint16_t extra_len = read_u16(pos + 30);
-    uint16_t comment_len = read_u16(pos + 32);
-    uint32_t compressed_size_u32 = read_u32(pos + 20);
-    uint32_t uncompressed_size_u32 = read_u32(pos + 24);
-    uint32_t local_header_offset_u32 = read_u32(pos + 42);
-
-    // Use 64-bit types so ZIP64 values are not truncated
-    uint64_t compressed_size = compressed_size_u32;
-    uint64_t uncompressed_size = uncompressed_size_u32;
-    uint64_t local_header_offset = local_header_offset_u32;
-
-    std::string name = content.substr(pos + 46, name_len);
-
-    // Handle ZIP64 extra field for large files
-    if (uncompressed_size_u32 == 0xFFFFFFFF ||
-        local_header_offset_u32 == 0xFFFFFFFF) {
-      // Parse ZIP64 extended information extra field
-      size_t extra_pos = pos + 46 + name_len;
-      size_t extra_end = extra_pos + extra_len;
-      while (extra_pos + 4 <= extra_end) {
-        uint16_t field_id = read_u16(extra_pos);
-        uint16_t field_size = read_u16(extra_pos + 2);
-        if (field_id == 0x0001) {  // ZIP64 extra field
-          size_t field_data = extra_pos + 4;
-          int offset_in_field = 0;
-          if (uncompressed_size_u32 == 0xFFFFFFFF) {
-            uncompressed_size = 0;
-            for (int b = 0; b < 8; ++b) {
-              uncompressed_size |=
-                  static_cast<uint64_t>(static_cast<unsigned char>(
-                      content[field_data + offset_in_field + b]))
-                  << (8 * b);
-            }
-            offset_in_field += 8;
-          }
-          if (compressed_size_u32 == 0xFFFFFFFF) {
-            compressed_size = 0;
-            for (int b = 0; b < 8; ++b) {
-              compressed_size |=
-                  static_cast<uint64_t>(static_cast<unsigned char>(
-                      content[field_data + offset_in_field + b]))
-                  << (8 * b);
-            }
-            offset_in_field += 8;
-          }
-          if (local_header_offset_u32 == 0xFFFFFFFF) {
-            local_header_offset = 0;
-            for (int b = 0; b < 8; ++b) {
-              local_header_offset |=
-                  static_cast<uint64_t>(static_cast<unsigned char>(
-                      content[field_data + offset_in_field + b]))
-                  << (8 * b);
-            }
-          }
-          break;
-        }
-        extra_pos += 4 + field_size;
-      }
-    }
-
-    // Match exact name or suffix (handles archives with directory prefixes,
-    // e.g. "model/extra/output_keys.json" matches "extra/output_keys.json")
-    bool match = (name == entry_name);
-    if (!match && name.size() > entry_name.size()) {
-      size_t suffix_start = name.size() - entry_name.size();
-      if (name[suffix_start - 1] == '/' &&
-          name.substr(suffix_start) == entry_name) {
-        match = true;
-      }
-    }
-    if (match) {
-      // Read from local file header
-      uint16_t local_name_len = read_u16(local_header_offset + 26);
-      uint16_t local_extra_len = read_u16(local_header_offset + 28);
-      size_t data_offset =
-          local_header_offset + 30 + local_name_len + local_extra_len;
-      return content.substr(data_offset, uncompressed_size);
-    }
-
-    pos += 46 + name_len + extra_len + comment_len;
-  }
-
-  throw deepmd::deepmd_exception("Entry not found in ZIP: " + entry_name +
-                                 " in " + zip_path);
-}
-
-}  // namespace
+using deepmd::ptexpt::parse_json;
+using deepmd::ptexpt::read_zip_entry;
 
 using namespace deepmd;
-
-/**
- * @brief Convert a raw neighbor list to the sel-limited format expected by the
- *        pt_expt model.
- *
- * For non-mixed-type models (distinguish_types=true): the nlist has shape
- * (nframes, nloc, sum(sel)), where the first sel[0] entries are neighbors of
- * type 0, the next sel[1] are type 1, etc.  Within each type group neighbors
- * are sorted by distance (ascending).
- *
- * For mixed-type models (distinguish_types=false): all neighbors go into a
- * single group sorted by distance, truncated to sum(sel).
- *
- * Missing slots are filled with -1.
- *
- * @param[in]  raw_nlist    Raw neighbor list (nloc x variable-nnei).
- * @param[in]  coord_ext    Extended coordinates (nall x 3), flat.
- * @param[in]  atype_ext    Extended atom types (nall).
- * @param[in]  sel          Per-type neighbor selection counts.
- * @param[in]  nloc         Number of local atoms.
- * @param[in]  mixed_types  Whether the model uses mixed types
- *                          (distinguish_types=false).
- * @return Tensor of shape (1, nloc, sum(sel)), dtype int64.
- */
-template <typename VALUETYPE>
-torch::Tensor buildTypeSortedNlist(
-    const std::vector<std::vector<int>>& raw_nlist,
-    const std::vector<VALUETYPE>& coord_ext,
-    const std::vector<int>& atype_ext,
-    const std::vector<int>& sel,
-    int nloc,
-    bool mixed_types) {
-  int nsel = 0;
-  for (auto s : sel) {
-    nsel += s;
-  }
-  int ntypes = sel.size();
-  std::vector<int64_t> result(static_cast<size_t>(nloc) * nsel, -1);
-
-  for (int ii = 0; ii < nloc; ++ii) {
-    const auto& neighbors = raw_nlist[ii];
-    VALUETYPE xi = coord_ext[ii * 3 + 0];
-    VALUETYPE yi = coord_ext[ii * 3 + 1];
-    VALUETYPE zi = coord_ext[ii * 3 + 2];
-    int offset = ii * nsel;
-
-    if (mixed_types) {
-      // Mixed-type: all neighbors in one group, sort by distance
-      std::vector<std::pair<VALUETYPE, int>> all_neighbors;
-      for (int jj : neighbors) {
-        if (jj < 0) {
-          continue;
-        }
-        int jtype = atype_ext[jj];
-        if (jtype < 0) {
-          continue;  // skip invalid atoms
-        }
-        VALUETYPE dx = coord_ext[jj * 3 + 0] - xi;
-        VALUETYPE dy = coord_ext[jj * 3 + 1] - yi;
-        VALUETYPE dz = coord_ext[jj * 3 + 2] - zi;
-        VALUETYPE rr = dx * dx + dy * dy + dz * dz;
-        all_neighbors.emplace_back(rr, jj);
-      }
-      std::sort(all_neighbors.begin(), all_neighbors.end());
-      int count = std::min(static_cast<int>(all_neighbors.size()), nsel);
-      for (int kk = 0; kk < count; ++kk) {
-        result[offset + kk] = all_neighbors[kk].second;
-      }
-    } else {
-      // Non-mixed-type: group by type, sort each group
-      std::vector<std::vector<std::pair<VALUETYPE, int>>> by_type(ntypes);
-      for (int jj : neighbors) {
-        if (jj < 0) {
-          continue;
-        }
-        int jtype = atype_ext[jj];
-        if (jtype < 0 || jtype >= ntypes) {
-          continue;  // skip virtual/unknown type atoms
-        }
-        VALUETYPE dx = coord_ext[jj * 3 + 0] - xi;
-        VALUETYPE dy = coord_ext[jj * 3 + 1] - yi;
-        VALUETYPE dz = coord_ext[jj * 3 + 2] - zi;
-        VALUETYPE rr = dx * dx + dy * dy + dz * dz;
-        by_type[jtype].emplace_back(rr, jj);
-      }
-      int col = 0;
-      for (int tt = 0; tt < ntypes; ++tt) {
-        auto& group = by_type[tt];
-        std::sort(group.begin(), group.end());
-        int count = std::min(static_cast<int>(group.size()), sel[tt]);
-        for (int kk = 0; kk < count; ++kk) {
-          result[offset + col + kk] = group[kk].second;
-        }
-        col += sel[tt];
-      }
-    }
-  }
-
-  torch::Tensor tensor =
-      torch::from_blob(result.data(), {1, nloc, nsel},
-                       torch::TensorOptions().dtype(torch::kInt64))
-          .clone();
-  return tensor;
-}
 
 void DeepPotPTExpt::translate_error(std::function<void()> f) {
   try {
@@ -619,22 +86,55 @@ void DeepPotPTExpt::init(const std::string& model,
   }
 
   // Read metadata from the .pt2 ZIP archive
-  std::string metadata_json =
-      read_zip_entry(model, "extra/model_def_script.json");
-  std::string output_keys_json =
-      read_zip_entry(model, "extra/output_keys.json");
+  std::string metadata_json = read_zip_entry(model, "extra/metadata.json");
 
   auto metadata = parse_json(metadata_json);
   rcut = metadata["rcut"].as_double();
   ntypes = static_cast<int>(metadata["type_map"].as_array().size());
   dfparam = metadata["dim_fparam"].as_int();
   daparam = metadata["dim_aparam"].as_int();
-  mixed_types = metadata["mixed_types"].as_bool();
   aparam_nall = false;  // pt_expt models use nloc for aparam
   if (metadata.obj_val.count("has_default_fparam")) {
     has_default_fparam_ = metadata["has_default_fparam"].as_bool();
   } else {
     has_default_fparam_ = false;
+  }
+  if (has_default_fparam_) {
+    if (metadata.obj_val.count("default_fparam")) {
+      default_fparam_.clear();
+      for (const auto& v : metadata["default_fparam"].as_array()) {
+        default_fparam_.push_back(v.as_double());
+      }
+      if (static_cast<int>(default_fparam_.size()) != dfparam) {
+        throw deepmd::deepmd_exception(
+            "default_fparam length (" + std::to_string(default_fparam_.size()) +
+            ") does not match dim_fparam (" + std::to_string(dfparam) + ").");
+      }
+    } else {
+      std::cerr << "WARNING: Model has has_default_fparam=true but "
+                   "default_fparam values are missing from metadata. "
+                   "Empty fparam will not be substituted. Please regenerate "
+                   "the .pt2 model with an updated version of deepmd-kit."
+                << std::endl;
+    }
+  }
+
+  if (metadata.obj_val.count("do_atomic_virial")) {
+    do_atomic_virial = metadata["do_atomic_virial"].as_bool();
+  } else {
+    // Older models without this field were exported with do_atomic_virial=True
+    do_atomic_virial = true;
+  }
+
+  // Read expected nnei (= sum(sel)) — the .pt2 graph has this dimension static.
+  if (metadata.obj_val.count("nnei")) {
+    nnei = metadata["nnei"].as_int();
+  } else {
+    // Fallback: compute from sel array
+    nnei = 0;
+    for (const auto& v : metadata["sel"].as_array()) {
+      nnei += v.as_int();
+    }
   }
 
   type_map.clear();
@@ -642,15 +142,9 @@ void DeepPotPTExpt::init(const std::string& model,
     type_map.push_back(v.as_string());
   }
 
-  sel.clear();
-  for (const auto& v : metadata["sel"].as_array()) {
-    sel.push_back(v.as_int());
-  }
-
-  // Parse output keys
-  auto keys_val = parse_json(output_keys_json);
+  // Parse output keys from metadata
   output_keys.clear();
-  for (const auto& v : keys_val.as_array()) {
+  for (const auto& v : metadata["output_keys"].as_array()) {
     output_keys.push_back(v.as_string());
   }
 
@@ -707,7 +201,7 @@ void DeepPotPTExpt::extract_outputs(
     throw deepmd::deepmd_exception(
         "Model returned " + std::to_string(flat_outputs.size()) +
         " outputs but expected " + std::to_string(output_keys.size()) +
-        " (from output_keys.json)");
+        " (from metadata.json)");
   }
   for (size_t i = 0; i < output_keys.size(); ++i) {
     output_map[output_keys[i]] = flat_outputs[i];
@@ -729,6 +223,16 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
                             const std::vector<VALUETYPE>& fparam,
                             const std::vector<VALUETYPE>& aparam,
                             const bool atomic) {
+  // Fail fast before allocating any tensors: refuse to run if the caller
+  // asked for atomic virial but the .pt2 was exported without it.
+  if (atomic && !do_atomic_virial) {
+    throw deepmd::deepmd_exception(
+        "Atomic virial was requested (e.g. by LAMMPS compute */atom/virial) "
+        "but this .pt2 model was exported without it (metadata field "
+        "do_atomic_virial=False). Atomic virial adds ~2.5x inference cost "
+        "and is off by default for .pt2. To enable it, regenerate with: "
+        "dp convert-backend --atomic-virial INPUT.pth OUTPUT.pt2");
+  }
   torch::Device device(torch::kCUDA, gpu_id);
   if (!gpu_enabled) {
     device = torch::Device(torch::kCPU);
@@ -770,40 +274,39 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
           .clone()
           .to(device);
 
+  // LAMMPS sets ago=0 on every nlist rebuild (neighbor rebuild, re-partition,
+  // atom exchange between subdomains), so `ago > 0` implies the cached
+  // mapping and nlist tensors are still valid.  Rebuild only on ago==0.
   if (ago == 0) {
     nlist_data.copy_from_nlist(lmp_list, nall - nghost);
     nlist_data.shuffle_exclude_empty(fwd_map);
     nlist_data.padding();
-  }
-  // Build type-sorted, sel-limited nlist expected by the .pt2 model
-  at::Tensor firstneigh_tensor =
-      buildTypeSortedNlist<double>(nlist_data.jlist, coord_d, datype, sel, nloc,
-                                   mixed_types)
-          .to(device);
 
-  // Build mapping tensor.
-  // NOTE: must .clone() because the local vector goes out of scope before
-  // run_model is called, and torch::from_blob does not copy the data.
-  at::Tensor mapping_tensor;
-  if (lmp_list.mapping) {
-    std::vector<std::int64_t> mapping(nall_real);
-    for (int ii = 0; ii < nall_real; ii++) {
-      mapping[ii] = fwd_map[lmp_list.mapping[bkw_map[ii]]];
+    // Rebuild mapping tensor
+    if (lmp_list.mapping) {
+      std::vector<std::int64_t> mapping(nall_real);
+      for (int ii = 0; ii < nall_real; ii++) {
+        mapping[ii] = fwd_map[lmp_list.mapping[bkw_map[ii]]];
+      }
+      mapping_tensor =
+          torch::from_blob(mapping.data(), {1, nall_real}, int_option)
+              .clone()
+              .to(device);
+    } else {
+      // Default identity mapping for local atoms
+      std::vector<std::int64_t> mapping(nall_real);
+      for (int ii = 0; ii < nall_real; ii++) {
+        mapping[ii] = ii;
+      }
+      mapping_tensor =
+          torch::from_blob(mapping.data(), {1, nall_real}, int_option)
+              .clone()
+              .to(device);
     }
-    mapping_tensor =
-        torch::from_blob(mapping.data(), {1, nall_real}, int_option)
-            .clone()
-            .to(device);
-  } else {
-    // Default identity mapping for local atoms
-    std::vector<std::int64_t> mapping(nall_real);
-    for (int ii = 0; ii < nall_real; ii++) {
-      mapping[ii] = ii;
-    }
-    mapping_tensor =
-        torch::from_blob(mapping.data(), {1, nall_real}, int_option)
-            .clone()
-            .to(device);
+
+    // Flatten raw nlist — the .pt2 model sorts by distance on-device.
+    firstneigh_tensor =
+        createNlistTensor(nlist_data.jlist, nnei).to(torch::kInt64).to(device);
   }
 
   // Build fparam/aparam tensors (cast to float64 for the model)
@@ -818,6 +321,17 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
                          valuetype_options)
             .to(torch::kFloat64)
             .to(device);
+  } else if (has_default_fparam_ && !default_fparam_.empty()) {
+    fparam_tensor =
+        torch::from_blob(const_cast<double*>(default_fparam_.data()),
+                         {1, static_cast<std::int64_t>(default_fparam_.size())},
+                         options)
+            .clone()
+            .to(device);
+  } else if (has_default_fparam_) {
+    throw deepmd::deepmd_exception(
+        "fparam is empty and default_fparam values are missing from the .pt2 "
+        "metadata. Please regenerate the model or provide fparam explicitly.");
   } else {
     fparam_tensor = torch::zeros({0}, options).to(device);
   }
@@ -941,6 +455,16 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
                             const std::vector<VALUETYPE>& fparam,
                             const std::vector<VALUETYPE>& aparam,
                             const bool atomic) {
+  // Fail fast before allocating any tensors (same check as the nlist
+  // overload — see its comment).
+  if (atomic && !do_atomic_virial) {
+    throw deepmd::deepmd_exception(
+        "Atomic virial was requested (e.g. by LAMMPS compute */atom/virial) "
+        "but this .pt2 model was exported without it (metadata field "
+        "do_atomic_virial=False). Atomic virial adds ~2.5x inference cost "
+        "and is off by default for .pt2. To enable it, regenerate with: "
+        "dp convert-backend --atomic-virial INPUT.pth OUTPUT.pt2");
+  }
   int natoms = atype.size();
   int nframes = coord.size() / (natoms * 3);
   if (nframes > 1) {
@@ -982,6 +506,15 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       min_z = std::min(min_z, coord_d[ii * 3 + 2]);
       max_z = std::max(max_z, coord_d[ii * 3 + 2]);
     }
+    // Shift coords so minimum is at rcut (ensures all atoms are in [0, L))
+    double shift_x = rcut - min_x;
+    double shift_y = rcut - min_y;
+    double shift_z = rcut - min_z;
+    for (int ii = 0; ii < natoms; ++ii) {
+      coord_d[ii * 3 + 0] += shift_x;
+      coord_d[ii * 3 + 1] += shift_y;
+      coord_d[ii * 3 + 2] += shift_z;
+    }
     box_d.resize(9, 0.0);
     box_d[0] = (max_x - min_x) + 2.0 * rcut;
     box_d[4] = (max_y - min_y) + 2.0 * rcut;
@@ -1016,8 +549,6 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
                 ncell, ext_stt, ext_end, region, ncell);
   }
 
-  // 3. Build type-sorted, sel-limited nlist (uses double coords for distances)
-
   // 4. Convert to tensors (always float64 for .pt2 model)
   // NOTE: must .clone() because from_blob does not copy data, and the local
   // vectors would go out of scope before run_model completes.
@@ -1030,10 +561,9 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       torch::from_blob(atype_64.data(), {1, nall}, int_options)
           .clone()
           .to(device);
+  // Flatten raw nlist — the .pt2 model sorts by distance on-device.
   at::Tensor nlist_tensor =
-      buildTypeSortedNlist<double>(nlist_raw, coord_cpy_d, atype_cpy, sel, nloc,
-                                   mixed_types)
-          .to(device);
+      createNlistTensor(nlist_raw, nnei).to(torch::kInt64).to(device);
   std::vector<std::int64_t> mapping_64(mapping_vec.begin(), mapping_vec.end());
   at::Tensor mapping_tensor =
       torch::from_blob(mapping_64.data(), {1, nall}, int_options)
@@ -1052,6 +582,17 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
                          valuetype_options)
             .to(torch::kFloat64)
             .to(device);
+  } else if (has_default_fparam_ && !default_fparam_.empty()) {
+    fparam_tensor =
+        torch::from_blob(const_cast<double*>(default_fparam_.data()),
+                         {1, static_cast<std::int64_t>(default_fparam_.size())},
+                         options)
+            .clone()
+            .to(device);
+  } else if (has_default_fparam_) {
+    throw deepmd::deepmd_exception(
+        "fparam is empty and default_fparam values are missing from the .pt2 "
+        "metadata. Please regenerate the model or provide fparam explicitly.");
   } else {
     fparam_tensor = torch::zeros({0}, options).to(device);
   }
@@ -1123,31 +664,6 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   }
 }
 
-template void DeepPotPTExpt::compute<double, std::vector<ENERGYTYPE>>(
-    std::vector<ENERGYTYPE>& ener,
-    std::vector<double>& force,
-    std::vector<double>& virial,
-    std::vector<double>& atom_energy,
-    std::vector<double>& atom_virial,
-    const std::vector<double>& coord,
-    const std::vector<int>& atype,
-    const std::vector<double>& box,
-    const std::vector<double>& fparam,
-    const std::vector<double>& aparam,
-    const bool atomic);
-template void DeepPotPTExpt::compute<float, std::vector<ENERGYTYPE>>(
-    std::vector<ENERGYTYPE>& ener,
-    std::vector<float>& force,
-    std::vector<float>& virial,
-    std::vector<float>& atom_energy,
-    std::vector<float>& atom_virial,
-    const std::vector<float>& coord,
-    const std::vector<int>& atype,
-    const std::vector<float>& box,
-    const std::vector<float>& fparam,
-    const std::vector<float>& aparam,
-    const bool atomic);
-
 template <typename VALUETYPE, typename ENERGYVTYPE>
 void DeepPotPTExpt::compute_nframes(ENERGYVTYPE& ener,
                                     std::vector<VALUETYPE>& force,
@@ -1206,6 +722,31 @@ void DeepPotPTExpt::compute_nframes(ENERGYVTYPE& ener,
     }
   }
 }
+
+template void DeepPotPTExpt::compute<double, std::vector<ENERGYTYPE>>(
+    std::vector<ENERGYTYPE>& ener,
+    std::vector<double>& force,
+    std::vector<double>& virial,
+    std::vector<double>& atom_energy,
+    std::vector<double>& atom_virial,
+    const std::vector<double>& coord,
+    const std::vector<int>& atype,
+    const std::vector<double>& box,
+    const std::vector<double>& fparam,
+    const std::vector<double>& aparam,
+    const bool atomic);
+template void DeepPotPTExpt::compute<float, std::vector<ENERGYTYPE>>(
+    std::vector<ENERGYTYPE>& ener,
+    std::vector<float>& force,
+    std::vector<float>& virial,
+    std::vector<float>& atom_energy,
+    std::vector<float>& atom_virial,
+    const std::vector<float>& coord,
+    const std::vector<int>& atype,
+    const std::vector<float>& box,
+    const std::vector<float>& fparam,
+    const std::vector<float>& aparam,
+    const bool atomic);
 
 void DeepPotPTExpt::get_type_map(std::string& type_map_str) {
   for (const auto& t : type_map) {

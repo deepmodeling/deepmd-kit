@@ -13,6 +13,7 @@ def compute_stats_from_redu(
     natoms: np.ndarray,
     assigned_bias: np.ndarray | None = None,
     rcond: float | None = None,
+    intensive: bool = False,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Compute the output statistics.
 
@@ -31,6 +32,8 @@ def compute_stats_from_redu(
         of the type is not assigned.
     rcond
         Cut-off ratio for small singular values of a.
+    intensive
+        Whether the output is intensive or extensive.
 
     Returns
     -------
@@ -44,6 +47,8 @@ def compute_stats_from_redu(
     output_redu = np.array(output_redu)
     var_shape = list(output_redu.shape[1:])
     output_redu = output_redu.reshape(nf, -1)
+    if intensive:
+        natoms = natoms / np.sum(natoms, axis=1, keepdims=True)
     # check shape
     assert output_redu.ndim == 2
     assert natoms.ndim == 2

@@ -16,6 +16,7 @@ from deepmd.dpmodel.output_def import (
     ModelOutputDef,
     OutputVariableDef,
     get_deriv_name,
+    get_deriv_name_mag,
     get_hessian_name,
     get_reduce_name,
 )
@@ -128,6 +129,21 @@ def communicate_extended_output(
                         model_ret[kk_derv_r],
                     )
                     new_ret[kk_derv_r] = force
+                    if vdef.magnetic:
+                        kk_derv_r_mag = get_deriv_name_mag(kk)[0]
+                        if model_ret.get(kk_derv_r_mag) is not None:
+                            force_mag = xp.zeros(
+                                vldims + derv_r_ext_dims,
+                                dtype=vv.dtype,
+                                device=device,
+                            )
+                            force_mag = xp_scatter_sum(
+                                force_mag,
+                                1,
+                                mapping,
+                                model_ret[kk_derv_r_mag],
+                            )
+                            new_ret[kk_derv_r_mag] = force_mag
                 else:
                     # name holders
                     new_ret[kk_derv_r] = None
@@ -235,10 +251,29 @@ def communicate_extended_output(
                     )
                     new_ret[kk_derv_c] = virial
                     new_ret[kk_derv_c + "_redu"] = xp.sum(new_ret[kk_derv_c], axis=1)
+                    if vdef.magnetic:
+                        kk_derv_c_mag = get_deriv_name_mag(kk)[1]
+                        if model_ret.get(kk_derv_c_mag) is not None:
+                            virial_mag = xp.zeros(
+                                vldims + derv_c_ext_dims,
+                                dtype=vv.dtype,
+                                device=device,
+                            )
+                            virial_mag = xp_scatter_sum(
+                                virial_mag,
+                                1,
+                                mapping,
+                                model_ret[kk_derv_c_mag],
+                            )
+                            new_ret[kk_derv_c_mag] = virial_mag
                 else:
                     new_ret[kk_derv_c] = None
                     new_ret[kk_derv_c + "_redu"] = None
                 if not do_atomic_virial:
                     # pop atomic virial, because it is not correctly calculated.
                     new_ret.pop(kk_derv_c)
+    # Slice mask_mag from extended to local atoms
+    if "mask_mag" in model_ret:
+        nloc = new_ret[next(iter(model_output_def.keys_outp()))].shape[1]
+        new_ret["mask_mag"] = model_ret["mask_mag"][:, :nloc]
     return new_ret

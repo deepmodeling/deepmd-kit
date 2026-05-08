@@ -170,7 +170,18 @@ class DeepEval(DeepEvalBackend):
             if not self.input_param.get("hessian_mode") and not no_jit:
                 model = torch.jit.script(model)
             self.dp = ModelWrapper(model)
-            self.dp.load_state_dict(state_dict)
+            missing, unexpected = self.dp.load_state_dict(state_dict, strict=False)
+            if missing:
+                log.warning(
+                    "Checkpoint loaded with missing keys (likely from an older "
+                    "version): %s",
+                    missing,
+                )
+            if unexpected:
+                log.warning(
+                    "Checkpoint loaded with unexpected keys: %s",
+                    unexpected,
+                )
         elif str(self.model_path).endswith(".pth"):
             extra_files = {"data_modifier.pth": ""}
             model = torch.jit.load(
@@ -302,6 +313,13 @@ class DeepEval(DeepEvalBackend):
     def get_has_spin(self) -> bool:
         """Check if the model has spin atom types."""
         return self._has_spin
+
+    def get_use_spin(self) -> list[bool]:
+        """Get the per-type spin usage of this model."""
+        if self._has_spin:
+            model = self.dp.model["Default"]
+            return model.spin.use_spin.tolist()
+        return []
 
     def get_has_hessian(self) -> bool:
         """Check if the model has hessian."""

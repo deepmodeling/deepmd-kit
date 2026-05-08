@@ -31,6 +31,10 @@ from ...common.test_mixins import (
 from ...seed import (
     GLOBAL_SEED,
 )
+from ..export_helpers import (
+    export_save_load_and_compare,
+    make_descriptor_dynamic_shapes,
+)
 
 
 class TestDescrptHybrid(TestCaseSingleFrameWithNlist):
@@ -215,3 +219,68 @@ class TestDescrptHybrid(TestCaseSingleFrameWithNlist):
             rtol=rtol,
             atol=atol,
         )
+
+        # --- symbolic trace + export + .pte round-trip ---
+        dynamic_shapes = make_descriptor_dynamic_shapes(has_mapping=False)
+        inputs = (coord_ext, atype_ext, nlist)
+        export_save_load_and_compare(
+            fn,
+            inputs,
+            (rd_eager, grad_eager),
+            dynamic_shapes,
+            rtol=rtol,
+            atol=atol,
+        )
+
+    def test_share_params(self) -> None:
+        """share_params level 0: recursively shares all sub-descriptors."""
+        rng = np.random.default_rng(GLOBAL_SEED)
+        _, _, nnei = self.nlist.shape
+        davg4 = rng.normal(size=(self.nt, nnei, 4))
+        dstd4 = 0.1 + np.abs(rng.normal(size=(self.nt, nnei, 4)))
+
+        dd0 = DescrptHybrid(
+            list=[
+                DescrptSeA(self.rcut, self.rcut_smth, self.sel, seed=GLOBAL_SEED),
+                DescrptSeR(self.rcut, self.rcut_smth, self.sel, seed=GLOBAL_SEED),
+            ]
+        ).to(self.device)
+        dd1 = DescrptHybrid(
+            list=[
+                DescrptSeA(self.rcut, self.rcut_smth, self.sel, seed=GLOBAL_SEED + 1),
+                DescrptSeR(self.rcut, self.rcut_smth, self.sel, seed=GLOBAL_SEED + 1),
+            ]
+        ).to(self.device)
+
+        # set stats on dd0's sub-descriptors
+        dd0.descrpt_list[0].davg = torch.tensor(
+            davg4, dtype=torch.float64, device=self.device
+        )
+        dd0.descrpt_list[0].dstd = torch.tensor(
+            dstd4, dtype=torch.float64, device=self.device
+        )
+        dd0.descrpt_list[1].davg = torch.tensor(
+            davg4[..., :1], dtype=torch.float64, device=self.device
+        )
+        dd0.descrpt_list[1].dstd = torch.tensor(
+            dstd4[..., :1], dtype=torch.float64, device=self.device
+        )
+
+        dd1.share_params(dd0, shared_level=0)
+
+        # each sub-descriptor's modules/buffers are shared
+        for ii in range(len(dd0.descrpt_list)):
+            for key in dd0.descrpt_list[ii]._modules:
+                assert (
+                    dd1.descrpt_list[ii]._modules[key]
+                    is dd0.descrpt_list[ii]._modules[key]
+                )
+            for key in dd0.descrpt_list[ii]._buffers:
+                assert (
+                    dd1.descrpt_list[ii]._buffers[key]
+                    is dd0.descrpt_list[ii]._buffers[key]
+                )
+
+        # invalid level raises
+        with pytest.raises(NotImplementedError):
+            dd1.share_params(dd0, shared_level=1)

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #pragma once
 #include <cmath>
+#include <random>
 
 #include "SimulationRegion.h"
 #include "gtest/gtest.h"
@@ -82,6 +83,34 @@ inline void _build_nlist(std::vector<std::vector<int>>& nlist_data,
 
   // convert double to VALUETYPE
   coord_cpy.assign(coord_cpy_.begin(), coord_cpy_.end());
+}
+
+/**
+ * @brief Pad each atom's neighbor list with -1 entries and shuffle.
+ *
+ * Mimics the Python test_oversized_nlist approach: append n_extra
+ * padding entries (-1) to each row, then apply a deterministic
+ * permutation so that real neighbors are no longer at the front.
+ * This exercises the model's internal distance-sort + truncation.
+ */
+inline void _pad_shuffle_nlist(std::vector<std::vector<int>>& nlist_out,
+                               const std::vector<std::vector<int>>& nlist_in,
+                               int n_extra,
+                               unsigned int seed = 42) {
+  nlist_out.resize(nlist_in.size());
+  for (size_t ii = 0; ii < nlist_in.size(); ++ii) {
+    // copy original + pad with -1
+    nlist_out[ii] = nlist_in[ii];
+    for (int jj = 0; jj < n_extra; ++jj) {
+      nlist_out[ii].push_back(-1);
+    }
+    // deterministic shuffle (std::minstd_rand for reproducibility)
+    std::minstd_rand rng(seed + static_cast<unsigned int>(ii));
+    for (size_t jj = nlist_out[ii].size() - 1; jj > 0; --jj) {
+      size_t kk = rng() % (jj + 1);
+      std::swap(nlist_out[ii][jj], nlist_out[ii][kk]);
+    }
+  }
 }
 
 template <typename VALUETYPE>

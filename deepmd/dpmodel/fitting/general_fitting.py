@@ -24,6 +24,9 @@ from deepmd.dpmodel.common import (
     get_xp_precision,
     to_numpy_array,
 )
+from deepmd.dpmodel.output_def import (
+    OutputVariableDef,
+)
 from deepmd.dpmodel.utils import (
     AtomExcludeMask,
     FittingNet,
@@ -168,6 +171,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         if self.spin is not None:
             raise NotImplementedError("spin is not supported")
         self.remove_vaccum_contribution = remove_vaccum_contribution
+        self.eval_return_middle_output = False
 
         net_dim_out = self._net_out_dim()
         # init constants
@@ -251,6 +255,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         stat_file_path : Optional[DPPath]
             The path to the stat file.
         """
+        self._param_stats: dict[str, list[StatItem]] = {}
         if self.numb_fparam == 0 and self.numb_aparam == 0:
             # skip data statistics
             return
@@ -292,6 +297,7 @@ class GeneralFitting(NativeOP, BaseFitting):
                     self._save_param_stats_to_file(
                         stat_file_path, "fparam", fparam_stats
                     )
+            self._param_stats["fparam"] = fparam_stats
             fparam_avg = np.array(
                 [s.compute_avg() for s in fparam_stats], dtype=np.float64
             )
@@ -358,6 +364,7 @@ class GeneralFitting(NativeOP, BaseFitting):
                     self._save_param_stats_to_file(
                         stat_file_path, "aparam", aparam_stats
                     )
+            self._param_stats["aparam"] = aparam_stats
             aparam_avg = np.array(
                 [s.compute_avg() for s in aparam_stats], dtype=np.float64
             )
@@ -403,6 +410,10 @@ class GeneralFitting(NativeOP, BaseFitting):
             for ii in range(numb)
         ]
 
+    def get_param_stats(self) -> dict[str, list[StatItem]]:
+        """Get the stored fparam/aparam statistics (populated by compute_input_stats)."""
+        return getattr(self, "_param_stats", {})
+
     @abstractmethod
     def _net_out_dim(self) -> int:
         """Set the FittingNet output dim."""
@@ -423,6 +434,39 @@ class GeneralFitting(NativeOP, BaseFitting):
     def get_default_fparam(self) -> list[float] | None:
         """Get the default frame parameters."""
         return self.default_fparam
+
+    def set_return_middle_output(self, enable: bool) -> None:
+        """Enable or disable returning the middle (pre-last-layer) output.
+
+        When enabled, the fitting network's ``call`` method will include
+        a ``"middle_output"`` key in the returned dict, containing the
+        hidden-layer activations before the final linear layer.  Shape:
+        ``[nframes, nloc, neuron[-1]]``.
+
+        Raises
+        ------
+        ValueError
+            If ``enable`` is True but ``neuron`` is empty (no hidden layers).
+        """
+        if enable and len(self.neuron) == 0:
+            raise ValueError(
+                "middle_output requires at least one hidden layer (neuron=[])"
+            )
+        self.eval_return_middle_output = enable
+
+    def _middle_output_def(self) -> list[OutputVariableDef]:
+        """Return extra OutputVariableDefs for middle_output when enabled."""
+        if self.eval_return_middle_output and len(self.neuron) > 0:
+            return [
+                OutputVariableDef(
+                    "middle_output",
+                    [self.neuron[-1]],
+                    reducible=False,
+                    r_differentiable=False,
+                    c_differentiable=False,
+                ),
+            ]
+        return []
 
     def get_sel_type(self) -> list[int]:
         """Get the selected atom types of this model.
@@ -629,11 +673,13 @@ class GeneralFitting(NativeOP, BaseFitting):
         # check fparam dim, concate to input descriptor
         if self.numb_fparam > 0:
             assert fparam is not None, "fparam should not be None"
-            if fparam.shape[-1] != self.numb_fparam:
+            try:
+                fparam = xp.reshape(fparam, (nf, self.numb_fparam))
+            except (ValueError, RuntimeError) as e:
                 raise ValueError(
-                    f"get an input fparam of dim {fparam.shape[-1]}, "
-                    f"which is not consistent with {self.numb_fparam}."
-                )
+                    f"input fparam: cannot reshape {fparam.shape} "
+                    f"into ({nf}, {self.numb_fparam})."
+                ) from e
             fparam = (fparam - self.fparam_avg[...]) * self.fparam_inv_std[...]
             fparam = xp.tile(
                 xp.reshape(fparam, (nf, 1, self.numb_fparam)), (1, nloc, 1)
@@ -650,12 +696,13 @@ class GeneralFitting(NativeOP, BaseFitting):
         # check aparam dim, concate to input descriptor
         if self.numb_aparam > 0 and not self.use_aparam_as_mask:
             assert aparam is not None, "aparam should not be None"
-            if aparam.shape[-1] != self.numb_aparam:
+            try:
+                aparam = xp.reshape(aparam, (nf, nloc, self.numb_aparam))
+            except (ValueError, RuntimeError) as e:
                 raise ValueError(
-                    f"get an input aparam of dim {aparam.shape[-1]}, "
-                    f"which is not consistent with {self.numb_aparam}."
-                )
-            aparam = xp.reshape(aparam, (nf, nloc, self.numb_aparam))
+                    f"input aparam: cannot reshape {aparam.shape} "
+                    f"into ({nf}, {nloc}, {self.numb_aparam})."
+                ) from e
             aparam = (aparam - self.aparam_avg[...]) * self.aparam_inv_std[...]
             xx = xp.concat(
                 [xx, aparam],
@@ -690,9 +737,16 @@ class GeneralFitting(NativeOP, BaseFitting):
                 dtype=get_xp_precision(xp, self.precision),
                 device=array_api_compat.device(descriptor),
             )
+            if self.eval_return_middle_output and len(self.neuron) > 0:
+                middle_outs = xp.zeros(
+                    [nf, nloc, self.neuron[-1]],
+                    dtype=get_xp_precision(xp, self.precision),
+                    device=array_api_compat.device(descriptor),
+                )
             for type_i in range(self.ntypes):
                 mask = xp.tile(
-                    xp.reshape((atype == type_i), (nf, nloc, 1)), (1, 1, net_dim_out)
+                    xp.reshape((atype == type_i), (nf, nloc, 1)),
+                    (1, 1, net_dim_out),
                 )
                 atom_property = self.nets[(type_i,)](xx)
                 if self.remove_vaccum_contribution is not None and not (
@@ -705,10 +759,20 @@ class GeneralFitting(NativeOP, BaseFitting):
                     mask, atom_property, xp.zeros_like(atom_property)
                 )
                 outs = outs + atom_property  # Shape is [nframes, natoms[0], 1]
+                if self.eval_return_middle_output and len(self.neuron) > 0:
+                    mid = self.nets[(type_i,)].call_until_last(xx)
+                    mid_mask = xp.tile(
+                        xp.reshape((atype == type_i), (nf, nloc, 1)),
+                        (1, 1, self.neuron[-1]),
+                    )
+                    mid = xp.where(mid_mask, mid, xp.zeros_like(mid))
+                    middle_outs = middle_outs + mid
         else:
             outs = self.nets[()](xx)
             if xx_zeros is not None:
                 outs -= self.nets[()](xx_zeros)
+            if self.eval_return_middle_output and len(self.neuron) > 0:
+                middle_outs = self.nets[()].call_until_last(xx)
         outs += xp.reshape(
             xp.take(
                 xp.astype(self.bias_atom_e[...], outs.dtype),
@@ -723,4 +787,6 @@ class GeneralFitting(NativeOP, BaseFitting):
         # nf x nloc x nod
         outs = xp.where(exclude_mask[:, :, None], outs, xp.zeros_like(outs))
         results[self.var_name] = outs
+        if self.eval_return_middle_output and len(self.neuron) > 0:
+            results["middle_output"] = middle_outs
         return results

@@ -323,6 +323,17 @@ class DeepEvalBackend(ABC):
         """Check if the model has spin atom types."""
         return False
 
+    def get_use_spin(self) -> list[bool]:
+        """Get the per-type spin usage of this model.
+
+        Returns
+        -------
+        list[bool]
+            A list of bool indicating whether each atom type uses spin.
+            Empty list if the model does not have spin.
+        """
+        return []
+
     def get_has_hessian(self) -> bool:
         """Check if the model has hessian."""
         return False
@@ -704,6 +715,18 @@ class DeepEval(ABC):
     def has_spin(self) -> bool:
         """Check if the model has spin."""
         return self.deep_eval.get_has_spin()
+
+    @property
+    def use_spin(self) -> list[bool]:
+        """Get the per-type spin usage of this model.
+
+        Returns
+        -------
+        list[bool]
+            A list of bool indicating whether each atom type uses spin.
+            Empty list if the model does not have spin.
+        """
+        return self.deep_eval.get_use_spin()
 
     @property
     def has_hessian(self) -> bool:

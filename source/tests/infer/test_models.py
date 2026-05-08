@@ -13,6 +13,7 @@ from deepmd.infer.deep_pot import (
 )
 
 from ..consistent.common import (
+    INSTALLED_PT_EXPT,
     parameterized,
 )
 from .case import (
@@ -28,7 +29,7 @@ default_places = 7
         "se_e2_r",
         "fparam_aparam",
     ),  # key
-    (".pb", ".pth"),  # model extension
+    (".pb", ".pth", ".pte", ".pt2"),  # model extension
 )
 class TestDeepPot(unittest.TestCase):
     # moved from tests/tf/test_deeppot_a.py
@@ -36,20 +37,35 @@ class TestDeepPot(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         key, extension = cls.param
+        if extension in (".pte", ".pt2") and not INSTALLED_PT_EXPT:
+            raise unittest.SkipTest("pt_expt backend not installed")
+        if key in ("se_e2_a", "se_e2_r") and extension in (".pte", ".pt2"):
+            raise unittest.SkipTest(
+                "type_one_side=False is not supported for pt_expt export"
+            )
+        if key == "se_e2_r" and extension == ".pth":
+            raise unittest.SkipTest(
+                "se_e2_r type_one_side is not supported for PyTorch models"
+            )
         cls.case = get_cases()[key]
-        cls.model_name = cls.case.get_model(extension)
+        if extension == ".pt2":
+            import torch
+
+            # Clear default device: tests/pt/__init__.py may set a fake
+            # device for CPU fallback, which poisons AOTInductor compilation.
+            saved_device = torch.get_default_device()
+            torch.set_default_device(None)
+            try:
+                cls.model_name = cls.case.get_model(extension)
+            finally:
+                torch.set_default_device(saved_device)
+        else:
+            cls.model_name = cls.case.get_model(extension)
         cls.dp = DeepEval(cls.model_name)
 
     @classmethod
     def tearDownClass(cls) -> None:
         cls.dp = None
-
-    def setUp(self) -> None:
-        key, extension = self.param
-        if key == "se_e2_r" and extension == ".pth":
-            self.skipTest(
-                reason="se_e2_r type_one_side is not supported for PyTorch models"
-            )
 
     def test_attrs(self) -> None:
         assert isinstance(self.dp, DeepPot)
@@ -153,31 +169,53 @@ class TestDeepPot(unittest.TestCase):
 
     def test_descriptor(self) -> None:
         _, extension = self.param
+        if extension in (".pte", ".pt2"):
+            self.skipTest("eval_descriptor not supported for pt_expt models")
         for ii, result in enumerate(self.case.results):
             if result.descriptor is None:
                 continue
-            descpt = self.dp.eval_descriptor(result.coord, result.box, result.atype)
+            descpt = self.dp.eval_descriptor(
+                result.coord,
+                result.box,
+                result.atype,
+                fparam=result.fparam,
+                aparam=result.aparam,
+            )
             expected_descpt = result.descriptor
             np.testing.assert_almost_equal(descpt.ravel(), expected_descpt.ravel())
             # See #4533
-            descpt = self.dp.eval_descriptor(result.coord, result.box, result.atype)
+            descpt = self.dp.eval_descriptor(
+                result.coord,
+                result.box,
+                result.atype,
+                fparam=result.fparam,
+                aparam=result.aparam,
+            )
             expected_descpt = result.descriptor
             np.testing.assert_almost_equal(descpt.ravel(), expected_descpt.ravel())
 
     def test_fitting_last_layer(self) -> None:
         _, extension = self.param
-        if extension == ".pb":
-            self.skipTest("fitting_last_layer not supported for TensorFlow models")
+        if extension in (".pb", ".pte", ".pt2"):
+            self.skipTest("fitting_last_layer not supported for this backend")
         for ii, result in enumerate(self.case.results):
             if result.fit_ll is None:
                 continue
             fit_ll = self.dp.eval_fitting_last_layer(
-                result.coord, result.box, result.atype
+                result.coord,
+                result.box,
+                result.atype,
+                fparam=result.fparam,
+                aparam=result.aparam,
             )
             expected_fit_ll = result.fit_ll
             np.testing.assert_almost_equal(fit_ll.ravel(), expected_fit_ll.ravel())
             fit_ll = self.dp.eval_fitting_last_layer(
-                result.coord, result.box, result.atype
+                result.coord,
+                result.box,
+                result.atype,
+                fparam=result.fparam,
+                aparam=result.aparam,
             )
             expected_fit_ll = result.fit_ll
             np.testing.assert_almost_equal(fit_ll.ravel(), expected_fit_ll.ravel())

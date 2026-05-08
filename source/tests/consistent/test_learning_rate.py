@@ -51,6 +51,32 @@ if INSTALLED_ARRAY_API_STRICT:
             "num_steps": 1000000,
             "warmup_steps": 10000,
         },
+        {
+            "type": "wsd",
+            "start_lr": 1e-3,
+            "stop_lr": 1e-8,
+            "num_steps": 1000000,
+            "warmup_steps": 10000,
+            "decay_phase_ratio": 0.1,
+        },
+        {
+            "type": "wsd",
+            "start_lr": 1e-3,
+            "stop_lr": 1e-8,
+            "num_steps": 1000000,
+            "warmup_steps": 10000,
+            "decay_phase_ratio": 0.1,
+            "decay_type": "cosine",
+        },
+        {
+            "type": "wsd",
+            "start_lr": 1e-3,
+            "stop_lr": 1e-8,
+            "num_steps": 1000000,
+            "warmup_steps": 10000,
+            "decay_phase_ratio": 0.1,
+            "decay_type": "linear",
+        },
     ),
 )
 class TestLearningRateConsistent(unittest.TestCase):
@@ -59,7 +85,14 @@ class TestLearningRateConsistent(unittest.TestCase):
     def setUp(self) -> None:
         (lr_param,) = self.param
         self.lr = BaseLR(**lr_param)
-        self.step = 500000
+        if hasattr(self.lr, "stable_steps") and hasattr(self.lr, "decay_phase_steps"):
+            self.step = (
+                self.lr.warmup_steps
+                + self.lr.stable_steps
+                + self.lr.decay_phase_steps // 2
+            )
+        else:
+            self.step = 500000
         self.ref = self.lr.value(self.step)
         self.warmup_step = None
         self.warmup_ref = None

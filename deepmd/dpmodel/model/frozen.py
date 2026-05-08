@@ -1,8 +1,14 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
+    TYPE_CHECKING,
     Any,
     NoReturn,
 )
+
+if TYPE_CHECKING:
+    from deepmd.dpmodel.atomic_model.dp_atomic_model import (
+        DPAtomicModel,
+    )
 
 from deepmd.dpmodel.common import (
     NativeOP,
@@ -130,6 +136,10 @@ class FrozenModel(NativeOP, BaseModel):
     def get_observed_type_list(self) -> list[str]:
         """Get observed types (elements) of the model during data statistics."""
         return self.model.get_observed_type_list()
+
+    def get_dp_atomic_model(self) -> "DPAtomicModel | None":
+        """Get the underlying DPAtomicModel by delegating to the inner model."""
+        return self.model.get_dp_atomic_model()
 
     def serialize(self) -> dict:
         """Serialize the model.

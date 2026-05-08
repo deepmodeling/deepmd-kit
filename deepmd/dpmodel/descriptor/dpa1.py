@@ -405,6 +405,10 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         """Returns the protection of building environment matrix."""
         return self.se_atten.get_env_protection()
 
+    def get_numb_attn_layer(self) -> int:
+        """Returns the number of se_atten attention layers."""
+        return self.se_atten.attn_layer
+
     def share_params(
         self, base_class: "DescrptDPA1", shared_level: int, resume: bool = False
     ) -> NoReturn:

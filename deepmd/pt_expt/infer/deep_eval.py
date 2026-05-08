@@ -59,28 +59,6 @@ if TYPE_CHECKING:
     import ase.neighborlist
 
 
-def _reconstruct_model_output_def(metadata: dict) -> ModelOutputDef:
-    """Reconstruct ModelOutputDef from stored fitting_output_defs metadata."""
-    var_defs = []
-    for vd in metadata["fitting_output_defs"]:
-        var_defs.append(
-            OutputVariableDef(
-                name=vd["name"],
-                shape=vd["shape"],
-                reducible=vd["reducible"],
-                r_differentiable=vd["r_differentiable"],
-                c_differentiable=vd["c_differentiable"],
-                atomic=vd["atomic"],
-                category=vd["category"],
-                r_hessian=vd["r_hessian"],
-                magnetic=vd["magnetic"],
-                intensive=vd["intensive"],
-            )
-        )
-    fitting_output_def = FittingOutputDef(var_defs)
-    return ModelOutputDef(fitting_output_def)
-
-
 class DeepEval(DeepEvalBackend):
     """PyTorch Exportable backend implementation of DeepEval.
 
@@ -121,11 +99,16 @@ class DeepEval(DeepEvalBackend):
 
         if self._is_pt2:
             self._load_pt2(model_file)
-        else:
+        elif model_file.endswith(".pte"):
             self._load_pte(model_file)
-
-        # Reconstruct the model output def from stored fitting output defs
-        self._model_output_def = _reconstruct_model_output_def(self.metadata)
+        elif model_file.endswith(".pt"):
+            self._load_pt(model_file, head=kwargs.get("head"))
+        else:
+            raise ValueError(
+                f"Unsupported model file '{model_file}' for the pt_expt "
+                "backend: expected `.pt2` / `.pte` (deployable archives) or "
+                "`.pt` (training checkpoint)."
+            )
 
         if isinstance(auto_batch_size, bool):
             if auto_batch_size:
@@ -139,66 +122,393 @@ class DeepEval(DeepEvalBackend):
         else:
             raise TypeError("auto_batch_size should be bool, int, or AutoBatchSize")
 
+    def _init_from_model_json(self, model_json_str: str) -> None:
+        """Deserialize model.json and derive model API from the dpmodel instance."""
+        from deepmd.pt_expt.model.model import (
+            BaseModel,
+        )
+        from deepmd.pt_expt.utils.serialization import (
+            _json_to_numpy,
+        )
+
+        model_dict = json.loads(model_json_str)
+        model_dict = _json_to_numpy(model_dict)
+        model_data = model_dict["model"]
+
+        if model_data.get("type") == "spin_ener":
+            from deepmd.pt_expt.model.spin_model import (
+                SpinModel,
+            )
+
+            self._dpmodel = SpinModel.deserialize(model_data)
+            self._is_spin = True
+        else:
+            self._dpmodel = BaseModel.deserialize(model_data)
+            self._is_spin = False
+
+        self._rcut = self._dpmodel.get_rcut()
+        self._type_map = self._dpmodel.get_type_map()
+        self._sel = list(self._dpmodel.get_sel())
+        self._mixed_types = bool(self._dpmodel.mixed_types())
+        if self._is_spin:
+            spin_fitting_defs = self._dpmodel.model_output_def().def_outp.get_data()
+            # Keep only physical fitting outputs; mask is derived by ModelOutputDef.
+            fitting_defs = [
+                vdef for name, vdef in spin_fitting_defs.items() if name != "mask"
+            ]
+            self._model_output_def = ModelOutputDef(FittingOutputDef(fitting_defs))
+        else:
+            self._model_output_def = ModelOutputDef(self._dpmodel.atomic_output_def())
+
+    def _init_from_metadata(self) -> None:
+        """Initialize DeepEval from ``metadata.json`` alone.
+
+        Used when the ``.pt2`` / ``.pte`` archive ships no ``model.json``
+        (e.g. for backends that do not travel through the dpmodel round-trip).
+        The metadata contract is the same one the C++ ``DeepPotPTExpt``
+        reader consumes, so anything that validates against the C++ side
+        automatically validates here.
+
+        ``self._dpmodel`` is left as ``None`` to signal the metadata-only
+        mode.  Inference does not need it: it runs through
+        ``aoti_load_package`` / the exported module and uses plain
+        attributes (``self._rcut``, ``self._sel``, ``self._mixed_types``,
+        ``self._model_output_def``) for all metadata-level queries.
+        """
+        self._dpmodel = None
+        self._is_spin = bool(self.metadata.get("is_spin", False))
+        self._rcut = float(self.metadata["rcut"])
+        self._type_map = list(self.metadata["type_map"])
+        self._sel = [int(s) for s in self.metadata["sel"]]
+        self._mixed_types = bool(self.metadata["mixed_types"])
+
+        fitting_defs = []
+        for vdef in self.metadata["fitting_output_defs"]:
+            fitting_defs.append(
+                OutputVariableDef(
+                    name=vdef["name"],
+                    shape=list(vdef["shape"]),
+                    reducible=vdef.get("reducible", False),
+                    r_differentiable=vdef.get("r_differentiable", False),
+                    c_differentiable=vdef.get("c_differentiable", False),
+                    atomic=vdef.get("atomic", True),
+                    category=int(
+                        vdef.get("category", OutputVariableCategory.OUT.value)
+                    ),
+                    r_hessian=vdef.get("r_hessian", False),
+                    magnetic=vdef.get("magnetic", False),
+                    intensive=vdef.get("intensive", False),
+                )
+            )
+        self._model_output_def = ModelOutputDef(FittingOutputDef(fitting_defs))
+
     def _load_pte(self, model_file: str) -> None:
-        """Load a .pte (torch.export) model file."""
-        extra_files = {"model_def_script.json": ""}
+        """Load a .pte (torch.export) model file.
+
+        ``model.json`` is optional: when present it is used to reconstruct
+        the dpmodel instance (enabling dpmodel-level introspection such as
+        ``eval_descriptor``); when absent we fall back to pure metadata
+        mode via :meth:`_init_from_metadata`.  ``metadata.json`` is the
+        only contract the inference path actually requires.
+        """
+        extra_files = {
+            "model.json": "",
+            "model_def_script.json": "",
+            "metadata.json": "",
+        }
         exported = torch.export.load(model_file, extra_files=extra_files)
         self.exported_module = exported.module()
-        self.metadata = json.loads(extra_files["model_def_script.json"])
-        self.rcut = self.metadata["rcut"]
-        self.type_map = self.metadata["type_map"]
+        mds = extra_files["model_def_script.json"]
+        self._model_def_script = json.loads(mds) if mds else {}
+        md = extra_files["metadata.json"]
+        if not md:
+            raise ValueError(
+                f"Invalid .pte file '{model_file}': missing 'metadata.json'"
+            )
+        self.metadata = json.loads(md)
+
+        model_json_str = extra_files["model.json"]
+        if model_json_str:
+            self._init_from_model_json(model_json_str)
+        else:
+            self._init_from_metadata()
 
     def _load_pt2(self, model_file: str) -> None:
-        """Load a .pt2 (AOTInductor) model file."""
+        """Load a .pt2 (AOTInductor) model file.
+
+        ``model.json`` is optional — it only enables the dpmodel
+        round-trip (used by ``eval_descriptor``, ``eval_typeebd``, etc.).
+        Pure AOTI inference (``DeepPot.eval`` / ``dp test`` / ASE
+        calculator) only needs ``metadata.json``, matching the contract
+        the C++ ``DeepPotPTExpt`` reader enforces.
+
+        Archive entries are located under ``model/extra/`` so that the
+        PyTorch 2.11 ``load_pt2`` loader accepts the archive without the
+        "outdated pt2 file" fallback warning.
+        """
         import zipfile
 
         from torch._inductor import (
             aoti_load_package,
         )
 
+        from deepmd.pt_expt.utils.serialization import (
+            PT2_EXTRA_PREFIX,
+        )
+
+        md_entry = PT2_EXTRA_PREFIX + "metadata.json"
+        model_json_entry = PT2_EXTRA_PREFIX + "model.json"
+        mds_entry = PT2_EXTRA_PREFIX + "model_def_script.json"
+
         # Read metadata from the .pt2 ZIP archive
         with zipfile.ZipFile(model_file, "r") as zf:
             names = zf.namelist()
-            for required in ("extra/model_def_script.json", "extra/output_keys.json"):
-                if required not in names:
-                    raise ValueError(
-                        f"Invalid .pt2 file '{model_file}': missing '{required}'"
-                    )
-            self.metadata = json.loads(zf.read("extra/model_def_script.json"))
-            self._output_keys = json.loads(zf.read("extra/output_keys.json"))
+            if md_entry not in names:
+                raise ValueError(
+                    f"Invalid .pt2 file '{model_file}': missing '{md_entry}'"
+                )
+            md = zf.read(md_entry).decode("utf-8")
+            model_json_str = ""
+            if model_json_entry in names:
+                model_json_str = zf.read(model_json_entry).decode("utf-8")
+            mds = ""
+            if mds_entry in names:
+                mds = zf.read(mds_entry).decode("utf-8")
 
-        self.rcut = self.metadata["rcut"]
-        self.type_map = self.metadata["type_map"]
+        self.metadata = json.loads(md)
+        self._model_def_script = json.loads(mds) if mds else {}
+        if model_json_str:
+            self._init_from_model_json(model_json_str)
+        else:
+            self._init_from_metadata()
 
         # Load the AOTInductor model package (.pt2 ZIP archive).
         # Uses torch._inductor.aoti_load_package (private API, stable since PyTorch 2.6).
         self._pt2_runner = aoti_load_package(model_file)
         self.exported_module = None
 
+    def _load_pt(self, model_file: str, head: str | None = None) -> None:
+        """Load a `.pt` training checkpoint (eager mode, no torch.export)."""
+        from copy import (
+            deepcopy,
+        )
+
+        from deepmd.pt_expt.model import (
+            get_model,
+        )
+        from deepmd.pt_expt.utils.env import (
+            DEVICE,
+        )
+
+        # Match the training resume path (training.py:712) — weights_only=True
+        # avoids unpickling arbitrary code from untrusted checkpoints.
+        state_dict = torch.load(model_file, map_location=DEVICE, weights_only=True)
+        if isinstance(state_dict, dict) and "model" in state_dict:
+            state_dict = state_dict["model"]
+        extra = state_dict.get("_extra_state") if isinstance(state_dict, dict) else None
+        if not (isinstance(extra, dict) and "model_params" in extra):
+            raise ValueError(
+                f"Invalid .pt file '{model_file}': expected a pt_expt training "
+                "checkpoint containing '_extra_state' with nested "
+                "'model_params'. If this is a legacy pt-trained checkpoint, "
+                "load it with `dp --pt` instead. If this is an exported model, "
+                "use a `.pte` or `.pt2` artifact."
+            )
+        model_params = deepcopy(extra["model_params"])
+
+        if "model_dict" in model_params:
+            # Multi-task: pick the requested head (defaults to "Default" if present).
+            heads = list(model_params["model_dict"].keys())
+            if head is None:
+                if "Default" in heads:
+                    head = "Default"
+                else:
+                    raise ValueError(
+                        f"Multi-task checkpoint '{model_file}' has heads "
+                        f"{heads}; pass --head to select one."
+                    )
+            if head not in heads:
+                raise ValueError(
+                    f"Head '{head}' not found in checkpoint '{model_file}'. "
+                    f"Available heads: {heads}."
+                )
+            head_params = model_params["model_dict"][head]
+            # Restrict state_dict to the chosen head and rename to "Default".
+            # No tensor cloning needed: load_state_dict copies into the
+            # destination parameters and does not mutate the input dict.
+            head_state = {"_extra_state": state_dict["_extra_state"]}
+            prefix = f"model.{head}."
+            for key, value in state_dict.items():
+                if key.startswith(prefix):
+                    head_state[key.replace(prefix, "model.Default.")] = value
+            state_dict = head_state
+            model_params = head_params
+
+        model = get_model(deepcopy(model_params)).to(DEVICE)
+
+        # Strip the `_CompiledModel` wrapper that pt_expt training applies
+        # after compilation (training.py:996).  The saved state_dict has
+        # `model.Default.original_model.X` keys (the real weights) plus
+        # `model.Default.compiled_forward_lower._orig_mod._param_constant*`
+        # / `_tensor_constant*` keys (graph constants baked into the
+        # compiled forward — duplicates of the real weights, useless for
+        # eager inference).  Drop the latter and unwrap the former.
+        cleaned: dict[str, Any] = {}
+        compiled_marker = ".compiled_forward_lower."
+        wrapper_infix = ".original_model."
+        for key, value in state_dict.items():
+            if compiled_marker in key:
+                continue
+            if wrapper_infix in key:
+                key = key.replace(wrapper_infix, ".", 1)
+            cleaned[key] = value
+        state_dict = cleaned
+
+        # Load weights into a {"Default": model} wrapper to match the
+        # `model.Default.*` key prefix used in the saved state_dict.
+        from deepmd.pt_expt.train.wrapper import (
+            ModelWrapper,
+        )
+
+        wrapper = ModelWrapper(model)
+        wrapper.load_state_dict(state_dict)
+        model = wrapper.model["Default"].eval()
+
+        self._dpmodel = model
+        self._is_spin = (
+            model_params.get("type") == "spin_ener" or "spin" in model_params
+        )
+        self._rcut = model.get_rcut()
+        self._type_map = model.get_type_map()
+        self._sel = list(model.get_sel())
+        self._mixed_types = bool(model.mixed_types())
+        if self._is_spin:
+            self._model_output_def = ModelOutputDef(
+                FittingOutputDef(
+                    [
+                        OutputVariableDef(
+                            "energy",
+                            shape=[1],
+                            reducible=True,
+                            r_differentiable=True,
+                            c_differentiable=True,
+                            atomic=True,
+                            magnetic=True,
+                        )
+                    ]
+                )
+            )
+        else:
+            self._model_output_def = ModelOutputDef(model.atomic_output_def())
+        self._model_def_script = model_params
+        # Populate metadata so eval helpers (e.g. default_fparam fallback)
+        # behave the same as the .pt2/.pte path.  Mirrors the fields that
+        # `_collect_metadata` writes into metadata.json.
+        self.metadata = {
+            "type_map": model.get_type_map(),
+            "rcut": model.get_rcut(),
+            "sel": model.get_sel(),
+            "dim_fparam": model.get_dim_fparam(),
+            "dim_aparam": model.get_dim_aparam(),
+            "mixed_types": model.mixed_types(),
+            "has_default_fparam": model.has_default_fparam(),
+            "default_fparam": model.get_default_fparam(),
+            "is_spin": self._is_spin,
+        }
+        if self._is_spin:
+            self.metadata["ntypes_spin"] = model.spin.get_ntypes_spin()
+            self.metadata["use_spin"] = [bool(v) for v in model.spin.use_spin]
+
+        # Eager runner with the same signature as the .pt2/.pte exported module.
+        # Use forward_common_lower (not forward_lower) to match the export-time
+        # output keys ("energy", "energy_redu", "energy_derv_r", ...) that
+        # communicate_extended_output downstream consumes.
+        # Non-spin: (ext_coord, ext_atype, nlist, mapping, fparam, aparam)
+        # Spin:     (ext_coord, ext_atype, ext_spin, nlist, mapping, fparam, aparam)
+        if self._is_spin:
+
+            def _eager_runner_spin(
+                ext_coord: torch.Tensor,
+                ext_atype: torch.Tensor,
+                ext_spin: torch.Tensor,
+                nlist: torch.Tensor,
+                mapping: torch.Tensor | None,
+                fparam: torch.Tensor | None,
+                aparam: torch.Tensor | None,
+            ) -> dict[str, torch.Tensor]:
+                ext_coord = ext_coord.detach().requires_grad_(True)
+                return model.forward_common_lower(
+                    ext_coord,
+                    ext_atype,
+                    ext_spin,
+                    nlist,
+                    mapping,
+                    fparam=fparam,
+                    aparam=aparam,
+                    do_atomic_virial=True,
+                )
+
+            self.exported_module = _eager_runner_spin
+        else:
+
+            def _eager_runner(
+                ext_coord: torch.Tensor,
+                ext_atype: torch.Tensor,
+                nlist: torch.Tensor,
+                mapping: torch.Tensor | None,
+                fparam: torch.Tensor | None,
+                aparam: torch.Tensor | None,
+            ) -> dict[str, torch.Tensor]:
+                ext_coord = ext_coord.detach().requires_grad_(True)
+                return model.forward_common_lower(
+                    ext_coord,
+                    ext_atype,
+                    nlist,
+                    mapping,
+                    fparam=fparam,
+                    aparam=aparam,
+                    do_atomic_virial=True,
+                )
+
+            self.exported_module = _eager_runner
+
     def get_rcut(self) -> float:
         """Get the cutoff radius of this model."""
-        return self.rcut
+        return self._rcut
 
     def get_ntypes(self) -> int:
         """Get the number of atom types of this model."""
-        return len(self.type_map)
+        return len(self._type_map)
 
     def get_type_map(self) -> list[str]:
         """Get the type map (element name of the atom types) of this model."""
-        return self.type_map
+        return self._type_map
 
     def get_dim_fparam(self) -> int:
         """Get the number (dimension) of frame parameters of this DP."""
-        return self.metadata["dim_fparam"]
+        if self._dpmodel is not None:
+            return self._dpmodel.get_dim_fparam()
+        return int(self.metadata["dim_fparam"])
 
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this DP."""
-        return self.metadata["dim_aparam"]
+        if self._dpmodel is not None:
+            return self._dpmodel.get_dim_aparam()
+        return int(self.metadata["dim_aparam"])
 
     @property
     def model_type(self) -> type["DeepEvalWrapper"]:
-        """The the evaluator of the model type."""
-        model_output_type = self.metadata["model_output_type"]
+        """The evaluator of the model type."""
+        if self._dpmodel is not None:
+            model_output_type = self._dpmodel.model_output_type()
+        else:
+            # Metadata-only mode: derive the output-type set from the
+            # fitting_output_defs names.  `model_output_type()` on a
+            # dpmodel is the same set — just the base output names, not
+            # their derived `*_redu` / `*_derv_*` twins.
+            model_output_type = [
+                d.name for d in self._model_output_def.def_outp.get_data().values()
+            ]
         if "energy" in model_output_type:
             return DeepPot
         elif "dos" in model_output_type:
@@ -219,7 +529,12 @@ class DeepEval(DeepEvalBackend):
         to the result of the model.
         If returning an empty list, all atom types are selected.
         """
-        return self.metadata["sel_type"]
+        if self._dpmodel is not None:
+            return self._dpmodel.get_sel_type()
+        # Metadata-only mode: read the `sel_type` field populated by
+        # `_collect_metadata`.  Missing field → `[]` (every type
+        # selected), matching the dpmodel default for energy models.
+        return [int(t) for t in self.metadata.get("sel_type", [])]
 
     def get_numb_dos(self) -> int:
         """Get the number of DOS."""
@@ -229,8 +544,20 @@ class DeepEval(DeepEvalBackend):
         """Check if the model has efield."""
         return False
 
+    def get_has_spin(self) -> bool:
+        """Check if the model has spin atom types."""
+        return self._is_spin
+
+    def get_use_spin(self) -> list[bool]:
+        """Get the per-type spin usage of this model."""
+        if not self._is_spin:
+            return []
+        if self._dpmodel is not None:
+            return self._dpmodel.spin.use_spin.tolist()
+        return [bool(v) for v in self.metadata.get("use_spin", [])]
+
     def get_ntypes_spin(self) -> int:
-        """Get the number of spin atom types of this model."""
+        """Get the number of spin atom types of this model. Only used in old implement."""
         return 0
 
     def eval(
@@ -282,9 +609,26 @@ class DeepEval(DeepEvalBackend):
             coords, atom_types, len(atom_types.shape) > 1
         )
         request_defs = self._get_request_defs(atomic)
-        out = self._eval_func(self._eval_model, numb_test, natoms)(
-            coords, cells, atom_types, fparam, aparam, request_defs
-        )
+        spins = kwargs.get("spin")
+        if self._is_spin and spins is None:
+            raise ValueError(
+                "This is a spin model but no `spin` argument was provided. "
+                "Please call eval(..., spin=spin_array)."
+            )
+        if not self._is_spin and spins is not None:
+            raise ValueError(
+                "This is not a spin model but a `spin` argument was provided. "
+                "Please call eval(...) without the `spin` argument."
+            )
+        if spins is not None:
+            spins = np.array(spins)
+            out = self._eval_func(self._eval_model_spin, numb_test, natoms)(
+                coords, cells, atom_types, spins, fparam, aparam, request_defs
+            )
+        else:
+            out = self._eval_func(self._eval_model, numb_test, natoms)(
+                coords, cells, atom_types, fparam, aparam, request_defs
+            )
         return dict(
             zip(
                 [x.name for x in request_defs],
@@ -303,6 +647,7 @@ class DeepEval(DeepEvalBackend):
                 for x in self.output_def.var_defs.values()
                 if x.category
                 in (
+                    OutputVariableCategory.OUT,
                     OutputVariableCategory.REDU,
                     OutputVariableCategory.DERV_R,
                     OutputVariableCategory.DERV_C_REDU,
@@ -363,9 +708,9 @@ class DeepEval(DeepEvalBackend):
         """
         nframes = coords.shape[0]
         natoms = coords.shape[1]
-        rcut = self.rcut
-        sel = self.metadata["sel"]
-        mixed_types = self.metadata["mixed_types"]
+        rcut = self._rcut
+        sel = self._sel
+        mixed_types = self._mixed_types
 
         if cells is not None:
             box_input = cells.reshape(nframes, 3, 3)
@@ -476,8 +821,8 @@ class DeepEval(DeepEvalBackend):
         nlist : np.ndarray, shape (nloc, nsel)
         mapping : np.ndarray, shape (nall,)
         """
-        sel = self.metadata["sel"]
-        mixed_types = self.metadata["mixed_types"]
+        sel = self._sel
+        mixed_types = self._mixed_types
         nsel = sum(sel)
 
         natoms = positions.shape[0]
@@ -520,7 +865,7 @@ class DeepEval(DeepEvalBackend):
         ghost_remap[out_mask] = np.arange(nloc, nloc + nghost, dtype=np.int64)
 
         # Build nlist: vectorized CSR-to-dense conversion
-        rcut = self.rcut
+        rcut = self._rcut
         counts = np.diff(first_neigh)
         max_nn = int(counts.max()) if counts.size > 0 else 0
 
@@ -565,15 +910,22 @@ class DeepEval(DeepEvalBackend):
 
         return extended_coord, extended_atype, nlist, mapping
 
-    def _eval_model(
+    def _prepare_inputs(
         self,
         coords: np.ndarray,
         cells: np.ndarray | None,
         atom_types: np.ndarray,
         fparam: np.ndarray | None,
         aparam: np.ndarray | None,
-        request_defs: list[OutputVariableDef],
-    ) -> tuple[np.ndarray, ...]:
+    ) -> tuple:
+        """Prepare tensor inputs for model evaluation.
+
+        Returns
+        -------
+        tuple
+            (ext_coord_t, ext_atype_t, nlist_t, mapping_t,
+             fparam_t, aparam_t, nframes, natoms)
+        """
         nframes = coords.shape[0]
         if len(atom_types.shape) == 1:
             natoms = len(atom_types)
@@ -621,6 +973,22 @@ class DeepEval(DeepEvalBackend):
                 dtype=torch.float64,
                 device=DEVICE,
             )
+        elif self.get_dim_fparam() > 0:
+            # Exported models (.pt2/.pte) are compiled with fparam as a
+            # required input.  Fill with default values from metadata.
+            default_fp = self.metadata.get("default_fparam")
+            if default_fp is not None:
+                fparam_t = (
+                    torch.tensor(default_fp, dtype=torch.float64, device=DEVICE)
+                    .unsqueeze(0)
+                    .expand(nframes, -1)
+                    .contiguous()
+                )
+            else:
+                raise ValueError(
+                    f"fparam is required for this model (dim_fparam={self.get_dim_fparam()}) "
+                    "but was not provided, and no default_fparam is stored in the model."
+                )
         else:
             fparam_t = None
 
@@ -630,8 +998,46 @@ class DeepEval(DeepEvalBackend):
                 dtype=torch.float64,
                 device=DEVICE,
             )
+        elif self.get_dim_aparam() > 0:
+            # Exported models (.pt2/.pte) are compiled with aparam as a
+            # required positional input.  Unlike fparam, there is no default.
+            raise ValueError(
+                f"aparam is required for this model (dim_aparam={self.get_dim_aparam()}) "
+                "but was not provided."
+            )
         else:
             aparam_t = None
+
+        return (
+            ext_coord_t,
+            ext_atype_t,
+            nlist_t,
+            mapping_t,
+            fparam_t,
+            aparam_t,
+            nframes,
+            natoms,
+        )
+
+    def _eval_model(
+        self,
+        coords: np.ndarray,
+        cells: np.ndarray | None,
+        atom_types: np.ndarray,
+        fparam: np.ndarray | None,
+        aparam: np.ndarray | None,
+        request_defs: list[OutputVariableDef],
+    ) -> tuple[np.ndarray, ...]:
+        (
+            ext_coord_t,
+            ext_atype_t,
+            nlist_t,
+            mapping_t,
+            fparam_t,
+            aparam_t,
+            nframes,
+            natoms,
+        ) = self._prepare_inputs(coords, cells, atom_types, fparam, aparam)
 
         # Call the model (forward_common_lower interface, internal keys)
         if self._is_pt2:
@@ -678,6 +1084,164 @@ class DeepEval(DeepEvalBackend):
                 )
         return tuple(results)
 
+    def _eval_model_spin(
+        self,
+        coords: np.ndarray,
+        cells: np.ndarray | None,
+        atom_types: np.ndarray,
+        spins: np.ndarray,
+        fparam: np.ndarray | None,
+        aparam: np.ndarray | None,
+        request_defs: list[OutputVariableDef],
+    ) -> tuple[np.ndarray, ...]:
+        nframes = coords.shape[0]
+        if len(atom_types.shape) == 1:
+            natoms = len(atom_types)
+            atom_types = np.tile(atom_types, nframes).reshape(nframes, -1)
+        else:
+            natoms = len(atom_types[0])
+
+        from deepmd.pt_expt.utils.env import (
+            DEVICE,
+        )
+
+        coord_input = coords.reshape(nframes, natoms, 3)
+        if self.neighbor_list is not None:
+            extended_coord, extended_atype, nlist, mapping = self._build_nlist_ase(
+                coord_input,
+                cells,
+                atom_types,
+            )
+            ext_coord_t = torch.tensor(
+                extended_coord, dtype=torch.float64, device=DEVICE
+            )
+            ext_atype_t = torch.tensor(extended_atype, dtype=torch.int64, device=DEVICE)
+            nlist_t = torch.tensor(nlist, dtype=torch.int64, device=DEVICE)
+            mapping_t = torch.tensor(mapping, dtype=torch.int64, device=DEVICE)
+        else:
+            coord_t = torch.tensor(coord_input, dtype=torch.float64, device=DEVICE)
+            atype_t = torch.tensor(atom_types, dtype=torch.int64, device=DEVICE)
+            cells_t = (
+                torch.tensor(cells, dtype=torch.float64, device=DEVICE)
+                if cells is not None
+                else None
+            )
+            ext_coord_t, ext_atype_t, nlist_t, mapping_t = self._build_nlist_native(
+                coord_t,
+                cells_t,
+                atype_t,
+            )
+
+        # Extend spin to ghost atoms using mapping
+        spin_t = torch.tensor(
+            spins.reshape(nframes, natoms, 3), dtype=torch.float64, device=DEVICE
+        )
+        batch_idx = (
+            torch.arange(nframes, dtype=torch.long, device=DEVICE)
+            .unsqueeze(1)
+            .expand_as(mapping_t)
+        )
+        ext_spin_t = spin_t[batch_idx, mapping_t]
+
+        if fparam is not None:
+            fparam_t = torch.tensor(
+                fparam.reshape(nframes, self.get_dim_fparam()),
+                dtype=torch.float64,
+                device=DEVICE,
+            )
+        elif self.get_dim_fparam() > 0:
+            # Exported models (.pt2/.pte) are compiled with fparam as a
+            # required input.  Fill with default values from metadata.
+            default_fp = self.metadata.get("default_fparam")
+            if default_fp is not None:
+                fparam_t = (
+                    torch.tensor(default_fp, dtype=torch.float64, device=DEVICE)
+                    .unsqueeze(0)
+                    .expand(nframes, -1)
+                    .contiguous()
+                )
+            else:
+                raise ValueError(
+                    f"fparam is required for this model (dim_fparam={self.get_dim_fparam()}) "
+                    "but was not provided, and no default_fparam is stored in the model."
+                )
+        else:
+            fparam_t = None
+
+        if aparam is not None:
+            aparam_t = torch.tensor(
+                aparam.reshape(nframes, natoms, self.get_dim_aparam()),
+                dtype=torch.float64,
+                device=DEVICE,
+            )
+        elif self.get_dim_aparam() > 0:
+            raise ValueError(
+                f"aparam is required for this model (dim_aparam={self.get_dim_aparam()}) "
+                "but was not provided."
+            )
+        else:
+            aparam_t = None
+
+        # Call the model with spin (7 args)
+        if self._is_pt2:
+            model_ret = self._pt2_runner(
+                ext_coord_t,
+                ext_atype_t,
+                ext_spin_t,
+                nlist_t,
+                mapping_t,
+                fparam_t,
+                aparam_t,
+            )
+        else:
+            model_ret = self.exported_module(
+                ext_coord_t,
+                ext_atype_t,
+                ext_spin_t,
+                nlist_t,
+                mapping_t,
+                fparam_t,
+                aparam_t,
+            )
+
+        # Apply communicate_extended_output to map extended atoms → local atoms
+        do_atomic_virial = any(
+            x.category == OutputVariableCategory.DERV_C for x in request_defs
+        )
+
+        # Save pre-computed reduced virial: it includes both real and virtual
+        # atom contributions.  communicate_extended_output would recompute it
+        # from only the real-atom per-atom virial, losing the virtual part.
+        saved_virial_redu = model_ret.get("energy_derv_c_redu")
+
+        model_predict = communicate_extended_output(
+            model_ret,
+            self._model_output_def,
+            mapping_t,
+            do_atomic_virial=do_atomic_virial,
+        )
+
+        # Restore the correct reduced virial (includes virtual atom contribution)
+        if saved_virial_redu is not None:
+            model_predict["energy_derv_c_redu"] = saved_virial_redu
+
+        # Translate internal keys to backend names and collect results
+        results = []
+        for odef in request_defs:
+            if odef.name in model_predict:
+                shape = self._get_output_shape(odef, nframes, natoms)
+                if model_predict[odef.name] is not None:
+                    out = model_predict[odef.name].detach().cpu().numpy().reshape(shape)
+                else:
+                    out = np.full(shape, np.nan, dtype=GLOBAL_NP_FLOAT_PRECISION)
+                results.append(out)
+            else:
+                shape = self._get_output_shape(odef, nframes, natoms)
+                results.append(
+                    np.full(np.abs(shape), np.nan, dtype=GLOBAL_NP_FLOAT_PRECISION)
+                )
+        return tuple(results)
+
     def _get_output_shape(
         self, odef: OutputVariableDef, nframes: int, natoms: int
     ) -> list[int]:
@@ -703,8 +1267,8 @@ class DeepEval(DeepEvalBackend):
             raise RuntimeError("unknown category")
 
     def get_model_def_script(self) -> dict:
-        """Get model definition script."""
-        return self.metadata
+        """Get model definition script (training config)."""
+        return self._model_def_script
 
     def get_model(self) -> torch.nn.Module:
         """Get the exported model module.
@@ -715,3 +1279,224 @@ class DeepEval(DeepEvalBackend):
             The exported model module.
         """
         return self.exported_module
+
+    def _is_spin_model(self) -> bool:
+        """Check if the underlying model is a SpinModel.
+
+        Primary path: the :attr:`_is_spin` attribute set by the loaders
+        — this works for both ``model.json`` and metadata-only archives
+        (a spin ``.pt2`` carries ``is_spin=true`` in its metadata).
+
+        Legacy path: ``isinstance(_dpmodel, SpinModel)`` — retained for
+        tests that construct a non-spin archive and then swap
+        :attr:`_dpmodel` to a :class:`SpinModel` instance after load.
+        """
+        if self._is_spin:
+            return True
+        if self._dpmodel is None:
+            return False
+        from deepmd.dpmodel.model.spin_model import (
+            SpinModel,
+        )
+
+        return isinstance(self._dpmodel, SpinModel)
+
+    def _require_dpmodel(self, feature: str) -> None:
+        """Guard for features that need a deserialised dpmodel instance.
+
+        ``eval_descriptor`` / ``eval_typeebd`` / ``eval_fitting_last_layer``
+        all introspect the dpmodel's internal sub-modules, which requires
+        ``model.json`` to have been present at load time.  Archives
+        shipped without ``model.json`` (metadata-only mode) can still run
+        the main ``eval`` inference path but cannot expose these hooks.
+        """
+        if self._dpmodel is None:
+            raise NotImplementedError(
+                f"{feature} requires the dpmodel instance, which is only "
+                "available when the .pt2 / .pte archive contains "
+                "'model.json'. The loaded archive is metadata-only; "
+                "re-export with the full dpmodel serialisation to enable "
+                "this feature."
+            )
+
+    def eval_typeebd(self) -> np.ndarray:
+        """Evaluate type embedding.
+
+        Returns
+        -------
+        np.ndarray
+            Type embedding array of shape ``(ntypes, tebd_dim)``.
+
+        Raises
+        ------
+        KeyError
+            If the model has no type embedding networks.
+        NotImplementedError
+            If the archive was loaded in metadata-only mode.
+        """
+        self._require_dpmodel("eval_typeebd")
+
+        from deepmd.dpmodel.utils.type_embed import TypeEmbedNet as TypeEmbedNetDP
+
+        model = self._dpmodel
+        if self._is_spin_model():
+            model = model.backbone_model
+        out = []
+        for mm in model.modules():
+            if isinstance(mm, TypeEmbedNetDP):
+                out.append(mm())
+        if not out:
+            raise KeyError("The model has no type embedding networks.")
+        typeebd = torch.cat(out, dim=1)
+        return typeebd.detach().cpu().numpy()
+
+    def eval_descriptor(
+        self,
+        coords: np.ndarray,
+        cells: np.ndarray | None,
+        atom_types: np.ndarray,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+        **kwargs: Any,
+    ) -> np.ndarray:
+        """Evaluate descriptor.
+
+        Parameters
+        ----------
+        coords
+            Coordinates, shape ``(nframes, natoms, 3)``.
+        cells
+            Cell vectors, shape ``(nframes, 3, 3)`` or ``None``.
+        atom_types
+            Atom types, shape ``(natoms,)`` or ``(nframes, natoms)``.
+        fparam
+            Frame parameters, optional.
+        aparam
+            Atom parameters, optional.
+
+        Returns
+        -------
+        np.ndarray
+            Descriptor output, shape ``(nframes, nloc, dim_descrpt)``.
+        """
+        self._require_dpmodel("eval_descriptor")
+
+        coords = np.array(coords)
+        atom_types = np.array(atom_types, dtype=np.int32)
+        if cells is not None:
+            cells = np.array(cells)
+        if self._is_spin_model():
+            raise NotImplementedError(
+                "eval_descriptor is not supported for spin models."
+            )
+        dp_am = self._dpmodel.get_dp_atomic_model()
+        if dp_am is None:
+            raise NotImplementedError(
+                "eval_descriptor is not supported for this model type "
+                f"({type(self._dpmodel).__name__})."
+            )
+        (
+            ext_coord_t,
+            ext_atype_t,
+            nlist_t,
+            mapping_t,
+            fparam_t,
+            _aparam_t,
+            _nframes,
+            _natoms,
+        ) = self._prepare_inputs(coords, cells, atom_types, fparam, aparam)
+        with torch.no_grad():
+            fparam_for_des = (
+                fparam_t if getattr(dp_am, "add_chg_spin_ebd", False) else None
+            )
+            descriptor, *_ = dp_am.descriptor(
+                ext_coord_t,
+                ext_atype_t,
+                nlist_t,
+                mapping=mapping_t,
+                fparam=fparam_for_des,
+            )
+        return descriptor.detach().cpu().numpy()
+
+    def eval_fitting_last_layer(
+        self,
+        coords: np.ndarray,
+        cells: np.ndarray | None,
+        atom_types: np.ndarray,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+        **kwargs: Any,
+    ) -> np.ndarray:
+        """Evaluate the last hidden layer of the fitting network.
+
+        Parameters
+        ----------
+        coords
+            Coordinates, shape ``(nframes, natoms, 3)``.
+        cells
+            Cell vectors, shape ``(nframes, 3, 3)`` or ``None``.
+        atom_types
+            Atom types, shape ``(natoms,)`` or ``(nframes, natoms)``.
+        fparam
+            Frame parameters, optional.
+        aparam
+            Atom parameters, optional.
+
+        Returns
+        -------
+        np.ndarray
+            Middle-layer output, shape ``(nframes, nloc, neuron[-1])``.
+        """
+        self._require_dpmodel("eval_fitting_last_layer")
+
+        coords = np.array(coords)
+        atom_types = np.array(atom_types, dtype=np.int32)
+        if cells is not None:
+            cells = np.array(cells)
+        if self._is_spin_model():
+            raise NotImplementedError(
+                "eval_fitting_last_layer is not supported for spin models."
+            )
+        dp_am = self._dpmodel.get_dp_atomic_model()
+        if dp_am is None:
+            raise NotImplementedError(
+                "eval_fitting_last_layer is not supported for this model type "
+                f"({type(self._dpmodel).__name__})."
+            )
+        (
+            ext_coord_t,
+            ext_atype_t,
+            nlist_t,
+            mapping_t,
+            fparam_t,
+            aparam_t,
+            _nframes,
+            natoms,
+        ) = self._prepare_inputs(coords, cells, atom_types, fparam, aparam)
+        with torch.no_grad():
+            fparam_for_des = (
+                fparam_t if getattr(dp_am, "add_chg_spin_ebd", False) else None
+            )
+            descriptor, rot_mat, g2, h2, _sw = dp_am.descriptor(
+                ext_coord_t,
+                ext_atype_t,
+                nlist_t,
+                mapping=mapping_t,
+                fparam=fparam_for_des,
+            )
+            atype = ext_atype_t[:, :natoms]
+            fitting_net = dp_am.fitting_net
+            fitting_net.set_return_middle_output(True)
+            try:
+                ret = fitting_net(
+                    descriptor,
+                    atype,
+                    gr=rot_mat,
+                    g2=g2,
+                    h2=h2,
+                    fparam=fparam_t,
+                    aparam=aparam_t,
+                )
+            finally:
+                fitting_net.set_return_middle_output(False)
+        return ret["middle_output"].detach().cpu().numpy()
