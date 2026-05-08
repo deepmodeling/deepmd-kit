@@ -67,8 +67,8 @@ from deepmd.utils.argcheck import (
     ("const",),  # update_residual_init
     ([], [[0, 1]]),  # exclude_types
     (True,),  # update_angle
-    (0, 1),  # a_compress_rate
-    (1, 2),  # a_compress_e_rate
+    (1,),  # a_compress_rate
+    (2,),  # a_compress_e_rate
     (True,),  # a_compress_use_split
     (True, False),  # optim_update
     (True, False),  # edge_init_use_dist
@@ -444,8 +444,8 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
     ("const",),  # update_residual_init
     ([], [[0, 1]]),  # exclude_types
     (True,),  # update_angle
-    (0, 1),  # a_compress_rate
-    (1, 2),  # a_compress_e_rate
+    (1,),  # a_compress_rate
+    (2,),  # a_compress_e_rate
     (True,),  # a_compress_use_split
     (True, False),  # optim_update
     (True, False),  # edge_init_use_dist

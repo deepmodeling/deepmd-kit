@@ -1555,7 +1555,7 @@ def dpa3_repflow_args() -> list[Argument]:
         "When True, updates are applied sequentially: edge self → angle self (using updated edge) "
         "→ edge angle (using updated angle) → node (using final edge), "
         "instead of the default parallel mode where all updates use original embeddings. "
-        "Currently only supports update_style='res_residual'."
+        "Currently only supports update_style='res_residual' and requires update_angle=True."
     )
 
     return [
