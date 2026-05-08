@@ -81,6 +81,7 @@ DPA3_CASE_FIELDS = (
     "n_multi_edge_message",
     "precision",
     "add_chg_spin_ebd",
+    "sequential_update",
 )
 
 
@@ -100,6 +101,7 @@ DPA3_BASELINE_CASE = {
     "n_multi_edge_message": 1,
     "precision": "float64",
     "add_chg_spin_ebd": False,
+    "sequential_update": False,
 }
 
 
@@ -131,6 +133,7 @@ DPA3_CURATED_CASES = (
     dpa3_case(edge_init_use_dist=False),
     dpa3_case(use_exp_switch=False),
     dpa3_case(use_dynamic_sel=False),
+    dpa3_case(sequential_update=True),
     # One mixed high-risk path to keep interactions covered.
     dpa3_case(
         exclude_types=[[0, 1]],
@@ -142,6 +145,7 @@ DPA3_CURATED_CASES = (
         use_dynamic_sel=False,
         use_loc_mapping=False,
         add_chg_spin_ebd=True,
+        sequential_update=True,
     ),
 )
 
@@ -169,6 +173,7 @@ DPA3_DESCRIPTOR_API_CURATED_CASES = (
     dpa3_descriptor_api_case(edge_init_use_dist=False),
     dpa3_descriptor_api_case(use_exp_switch=False),
     dpa3_descriptor_api_case(use_dynamic_sel=False),
+    dpa3_descriptor_api_case(sequential_update=False),
     # One mixed high-risk path to keep interactions covered.
     dpa3_descriptor_api_case(
         exclude_types=[[0, 1]],
@@ -181,6 +186,7 @@ DPA3_DESCRIPTOR_API_CURATED_CASES = (
         use_loc_mapping=False,
         fix_stat_std=0.0,
         add_chg_spin_ebd=True,
+        sequential_update=True,
     ),
 )
 
@@ -268,6 +274,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             _n_multi_edge_message,
             _precision,
             _add_chg_spin_ebd,
+            _sequential_update,
         ) = self.param
         return CommonTest.skip_pt
 
@@ -290,6 +297,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             _precision,
             add_chg_spin_ebd,
             sequential_update,
+            _sequential_update,
         ) = self.param
         return True if add_chg_spin_ebd else CommonTest.skip_pd
 
@@ -311,6 +319,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             _n_multi_edge_message,
             _precision,
             _add_chg_spin_ebd,
+            _sequential_update,
         ) = self.param
         return CommonTest.skip_dp
 
@@ -332,6 +341,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             _n_multi_edge_message,
             _precision,
             _add_chg_spin_ebd,
+            _sequential_update,
         ) = self.param
         return True
 
@@ -398,6 +408,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             _precision,
             add_chg_spin_ebd,
             sequential_update,
+            _sequential_update,
         ) = self.param
         # fparam for charge=5, spin=1 when add_chg_spin_ebd is True
         self.fparam = (
@@ -504,6 +515,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             _n_multi_edge_message,
             precision,
             _add_chg_spin_ebd,
+            _sequential_update,
         ) = self.param
         if precision == "float64":
             return 1e-10
@@ -531,6 +543,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             _n_multi_edge_message,
             precision,
             _add_chg_spin_ebd,
+            _sequential_update,
         ) = self.param
         if precision == "float64":
             return 1e-6  # need to fix in the future, see issue https://github.com/deepmodeling/deepmd-kit/issues/3786
@@ -567,6 +580,7 @@ class TestDPA3DescriptorAPI(DescriptorAPITest, unittest.TestCase):
             n_multi_edge_message,
             precision,
             add_chg_spin_ebd,
+            sequential_update,
         ) = self.param
         return {
             "ntypes": self.ntypes,
@@ -598,6 +612,7 @@ class TestDPA3DescriptorAPI(DescriptorAPITest, unittest.TestCase):
                     "update_style": "res_residual",
                     "update_residual": 0.1,
                     "update_residual_init": update_residual_init,
+                    "sequential_update": sequential_update,
                 }
             ),
             # kwargs for descriptor
