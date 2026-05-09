@@ -174,7 +174,9 @@ void DeepSpinPTExpt::init(const std::string& model,
 
   // Phase 4: load the optional with-comm artifact for multi-rank GNN
   // spin inference.  Mirrors DeepPotPTExpt; see its init() comment for
-  // the rationale on the try/catch fallback.
+  // the rationale on keeping ``has_comm_artifact_=true`` on load
+  // failure so multi-rank dispatch fails fast rather than silently
+  // dropping the MPI exchange.
   has_comm_artifact_ = metadata.obj_val.count("has_comm_artifact") &&
                        metadata["has_comm_artifact"].as_bool();
   if (has_comm_artifact_) {
@@ -189,11 +191,12 @@ void DeepSpinPTExpt::init(const std::string& model,
                           : static_cast<c10::DeviceIndex>(-1));
     } catch (const std::exception& e) {
       std::cerr << "DeepSpinPTExpt: failed to load with-comm artifact ("
-                << e.what() << "); falling back to single-rank-only dispatch."
+                << e.what()
+                << "); single-rank inference will still work, but multi-rank "
+                   "LAMMPS dispatch will throw."
                 << std::endl;
       with_comm_tempfile_.reset();
       with_comm_loader.reset();
-      has_comm_artifact_ = false;
     }
   }
 
@@ -249,8 +252,11 @@ std::vector<torch::Tensor> DeepSpinPTExpt::run_model_with_comm(
     const std::vector<at::Tensor>& comm_tensors) {
   if (!with_comm_loader) {
     throw deepmd::deepmd_exception(
-        "DeepSpinPTExpt::run_model_with_comm called but the .pt2 has no "
-        "with-comm artifact.");
+        "DeepSpinPTExpt::run_model_with_comm called but the with-comm "
+        "artifact is not available. Either the .pt2 file has no with-comm "
+        "artifact compiled, or the artifact was present in the .pt2 metadata "
+        "but failed to load at init time (see earlier stderr log). Multi-rank "
+        "LAMMPS requires a working with-comm artifact.");
   }
   if (comm_tensors.size() != 8) {
     throw deepmd::deepmd_exception(
@@ -448,6 +454,12 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
   // (pre atom-doubling); the spin override halves them internally.
   std::vector<torch::Tensor> flat_outputs;
   bool use_with_comm = has_comm_artifact_ && lmp_list.nswap > 0;
+  if (use_with_comm && !with_comm_loader) {
+    throw deepmd::deepmd_exception(
+        "Multi-rank LAMMPS requires the with-comm artifact, but it failed "
+        "to load at init time. See the earlier stderr log for the underlying "
+        "error.");
+  }
   std::vector<std::vector<int>> remapped_sendlist;
   std::vector<int*> remapped_sendlist_ptrs;
   std::vector<int> remapped_sendnum, remapped_recvnum;

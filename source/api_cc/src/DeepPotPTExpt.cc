@@ -166,9 +166,10 @@ void DeepPotPTExpt::init(const std::string& model,
   // inference. Pre-Phase-3 .pt2 files lack ``has_comm_artifact``;
   // default to false so old artifacts keep working. If the metadata
   // flag is set but the nested artifact fails to extract or compile,
-  // fall back to single-rank mode rather than aborting init -- the
-  // hard error then surfaces in ``run_model_with_comm()`` only when
-  // multi-rank actually needs it.
+  // keep ``has_comm_artifact_=true`` and let single-rank dispatch
+  // continue working; multi-rank dispatch then fails fast at
+  // ``run_model_with_comm()`` rather than silently dropping the MPI
+  // exchange and producing wrong results.
   has_comm_artifact_ = metadata.obj_val.count("has_comm_artifact") &&
                        metadata["has_comm_artifact"].as_bool();
   if (has_comm_artifact_) {
@@ -186,11 +187,12 @@ void DeepPotPTExpt::init(const std::string& model,
                           : static_cast<c10::DeviceIndex>(-1));
     } catch (const std::exception& e) {
       std::cerr << "DeepPotPTExpt: failed to load with-comm artifact ("
-                << e.what() << "); falling back to single-rank-only dispatch."
+                << e.what()
+                << "); single-rank inference will still work, but multi-rank "
+                   "LAMMPS dispatch will throw."
                 << std::endl;
       with_comm_tempfile_.reset();
       with_comm_loader.reset();
-      has_comm_artifact_ = false;
     }
   }
 
@@ -244,9 +246,12 @@ std::vector<torch::Tensor> DeepPotPTExpt::run_model_with_comm(
     const std::vector<at::Tensor>& comm_tensors) {
   if (!with_comm_loader) {
     throw deepmd::deepmd_exception(
-        "run_model_with_comm called but the .pt2 file has no with-comm "
-        "artifact. This is a programming error: the caller should check "
-        "has_comm_artifact_ before invoking this path.");
+        "run_model_with_comm called but the with-comm artifact is not "
+        "available. Either the .pt2 file has no with-comm artifact compiled "
+        "(programming error: the caller should check has_comm_artifact_ "
+        "before invoking this path), or the artifact was present in the "
+        ".pt2 metadata but failed to load at init time (see earlier stderr "
+        "log). Multi-rank LAMMPS requires a working with-comm artifact.");
   }
   if (comm_tensors.size() != 8) {
     throw deepmd::deepmd_exception(
@@ -431,6 +436,12 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   // tensor to gather ghost embeddings from local atoms.
   std::vector<torch::Tensor> flat_outputs;
   bool use_with_comm = has_comm_artifact_ && lmp_list.nswap > 0;
+  if (use_with_comm && !with_comm_loader) {
+    throw deepmd::deepmd_exception(
+        "Multi-rank LAMMPS requires the with-comm artifact, but it failed "
+        "to load at init time. See the earlier stderr log for the underlying "
+        "error.");
+  }
   // When NULL-type atoms exist, remapped storage must outlive comm
   // tensors (the int** pointer-array tensor references it).
   std::vector<std::vector<int>> remapped_sendlist;

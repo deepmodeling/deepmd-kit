@@ -523,7 +523,12 @@ torch::Tensor border_op_export(const torch::Tensor& sendlist_tensor,
                        communicator_tensor, nlocal_tensor, nghost_tensor);
   // border_op returns {g1_tensor} — a list whose first element aliases
   // g1_tensor. Clone for AOTI graph-output correctness.
-  return out.empty() ? torch::empty_like(g1_tensor) : out[0].clone();
+  if (out.empty()) {
+    throw std::runtime_error(
+        "border_op_export: border_op returned an empty output list, which "
+        "indicates an internal error in the underlying border_op kernel.");
+  }
+  return out[0].clone();
 }
 
 torch::Tensor border_op_backward_export(
