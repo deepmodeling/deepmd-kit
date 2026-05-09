@@ -170,11 +170,11 @@ class ModelWrapper(torch.nn.Module):
         box: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
-        charge_spin: torch.Tensor | None = None,
         cur_lr: float | torch.Tensor | None = None,
         label: dict[str, torch.Tensor] | None = None,
         task_key: str | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
     ) -> tuple[dict[str, torch.Tensor], torch.Tensor | None, dict | None]:
         if not self.multi_task:
             task_key = "Default"

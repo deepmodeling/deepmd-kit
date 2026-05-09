@@ -408,7 +408,7 @@ class DeepEval(DeepEvalBackend):
         request_defs = self._get_request_defs(atomic)
         if "spin" not in kwargs or kwargs["spin"] is None:
             out = self._eval_func(self._eval_model, numb_test, natoms)(
-                coords, cells, atom_types, fparam, aparam, charge_spin, request_defs
+                coords, cells, atom_types, fparam, aparam, request_defs, charge_spin
             )
         else:
             out = self._eval_func(self._eval_model_spin, numb_test, natoms)(
@@ -418,8 +418,8 @@ class DeepEval(DeepEvalBackend):
                 np.array(kwargs["spin"]),
                 fparam,
                 aparam,
-                charge_spin,
                 request_defs,
+                charge_spin,
             )
         return dict(
             zip(
@@ -520,8 +520,8 @@ class DeepEval(DeepEvalBackend):
         atom_types: np.ndarray,
         fparam: np.ndarray | None,
         aparam: np.ndarray | None,
-        charge_spin: np.ndarray | None,
         request_defs: list[OutputVariableDef],
+        charge_spin: np.ndarray | None,
     ) -> tuple[np.ndarray, ...]:
         model = self.dp.to(DEVICE)
         prec = NP_PRECISION_DICT[RESERVED_PRECISION_DICT[GLOBAL_PT_FLOAT_PRECISION]]
@@ -604,8 +604,8 @@ class DeepEval(DeepEvalBackend):
         spins: np.ndarray,
         fparam: np.ndarray | None,
         aparam: np.ndarray | None,
-        charge_spin: np.ndarray | None,
         request_defs: list[OutputVariableDef],
+        charge_spin: np.ndarray | None,
     ) -> tuple[np.ndarray, ...]:
         model = self.dp.to(DEVICE)
 

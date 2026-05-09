@@ -57,8 +57,8 @@ class SpinModel(SpinModelDP):
         mapping: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
-        charge_spin: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
         **make_fx_kwargs: Any,
     ) -> torch.nn.Module:
         """Trace ``call_common_lower`` into an exportable module.

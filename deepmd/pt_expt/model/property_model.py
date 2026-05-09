@@ -48,8 +48,8 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
         box: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
-        charge_spin: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         model_ret = self.call_common(
             coord,
@@ -76,8 +76,8 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
         mapping: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
-        charge_spin: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         model_ret = self.call_common_lower(
             extended_coord,
@@ -116,8 +116,8 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
         mapping: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
-        charge_spin: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
         **make_fx_kwargs: Any,
     ) -> torch.nn.Module:
         model = self

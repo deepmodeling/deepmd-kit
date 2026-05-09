@@ -61,8 +61,8 @@ def _cal_hessian_ext(
     mapping: torch.Tensor | None,
     fparam: torch.Tensor | None,
     aparam: torch.Tensor | None,
-    charge_spin: torch.Tensor | None = None,
     create_graph: bool = False,
+    charge_spin: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Compute hessian of reduced output w.r.t. extended coordinates.
 
@@ -285,9 +285,9 @@ def make_model(
             mapping: torch.Tensor | None = None,
             fparam: torch.Tensor | None = None,
             aparam: torch.Tensor | None = None,
-            charge_spin: torch.Tensor | None = None,
             do_atomic_virial: bool = False,
             extended_coord_corr: torch.Tensor | None = None,
+            charge_spin: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
             atomic_ret = self.atomic_model.forward_common_atomic(
                 extended_coord,
@@ -338,8 +338,8 @@ def make_model(
             mapping: torch.Tensor | None = None,
             fparam: torch.Tensor | None = None,
             aparam: torch.Tensor | None = None,
-            charge_spin: torch.Tensor | None = None,
             do_atomic_virial: bool = False,
+            charge_spin: torch.Tensor | None = None,
             **make_fx_kwargs: Any,
         ) -> torch.nn.Module:
             """Trace ``forward_common_lower`` into an exportable module.

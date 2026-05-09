@@ -579,8 +579,8 @@ class SpinModel(NativeOP):
         box: Array | None = None,
         fparam: Array | None = None,
         aparam: Array | None = None,
-        charge_spin: Array | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: Array | None = None,
     ) -> dict[str, Array]:
         """Return model prediction with raw internal keys.
 
@@ -675,8 +675,8 @@ class SpinModel(NativeOP):
         box: Array | None = None,
         fparam: Array | None = None,
         aparam: Array | None = None,
-        charge_spin: Array | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: Array | None = None,
     ) -> dict[str, Array]:
         """Return model prediction with translated user-facing keys.
 
@@ -751,8 +751,8 @@ class SpinModel(NativeOP):
         mapping: Array | None = None,
         fparam: Array | None = None,
         aparam: Array | None = None,
-        charge_spin: Array | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: Array | None = None,
     ) -> dict[str, Array]:
         """Return model prediction with raw internal keys. Lower interface that takes
         extended atomic coordinates, types and spins, nlist, and mapping
@@ -857,8 +857,8 @@ class SpinModel(NativeOP):
         mapping: Array | None = None,
         fparam: Array | None = None,
         aparam: Array | None = None,
-        charge_spin: Array | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: Array | None = None,
     ) -> dict[str, Array]:
         """Return model prediction with translated user-facing keys. Lower interface.
 

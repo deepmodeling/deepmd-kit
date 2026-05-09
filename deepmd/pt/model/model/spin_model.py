@@ -526,8 +526,8 @@ class SpinModel(torch.nn.Module):
         box: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
-        charge_spin: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         nframes, nloc = atype.shape
         coord_updated, atype_updated, coord_corr_for_virial = self.process_spin_input(
@@ -580,10 +580,10 @@ class SpinModel(torch.nn.Module):
         mapping: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
-        charge_spin: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
         comm_dict: dict[str, torch.Tensor] | None = None,
         extra_nlist_sort: bool = False,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         nframes, nloc = nlist.shape[:2]
         (
@@ -699,8 +699,8 @@ class SpinEnergyModel(SpinModel):
         box: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
-        charge_spin: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         model_ret = self.forward_common(
             coord,
@@ -735,9 +735,9 @@ class SpinEnergyModel(SpinModel):
         mapping: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
-        charge_spin: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
         comm_dict: dict[str, torch.Tensor] | None = None,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         model_ret = self.forward_common_lower(
             extended_coord,

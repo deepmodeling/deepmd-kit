@@ -212,8 +212,8 @@ def _trace_and_compile(
     mapping: torch.Tensor,
     fparam: torch.Tensor | None,
     aparam: torch.Tensor | None,
-    charge_spin: torch.Tensor | None = None,
     compile_opts: dict[str, Any] | None = None,
+    charge_spin: torch.Tensor | None = None,
 ) -> torch.nn.Module:
     """Symbolic-trace ``forward_lower`` and compile with inductor + dynamic=True.
 
@@ -366,8 +366,8 @@ class _CompiledModel(torch.nn.Module):
         box: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
-        charge_spin: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         from deepmd.dpmodel.utils.nlist import (
             build_neighbor_list,
