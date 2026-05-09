@@ -296,7 +296,6 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             _n_multi_edge_message,
             _precision,
             add_chg_spin_ebd,
-            sequential_update,
             _sequential_update,
         ) = self.param
         return True if add_chg_spin_ebd else CommonTest.skip_pd
@@ -407,7 +406,6 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             _n_multi_edge_message,
             _precision,
             add_chg_spin_ebd,
-            sequential_update,
             _sequential_update,
         ) = self.param
         # fparam for charge=5, spin=1 when add_chg_spin_ebd is True
