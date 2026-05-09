@@ -1137,7 +1137,7 @@ class DeepEval(DeepEvalBackend):
                 mapping_t,
                 fparam_t,
                 aparam_t,
-                charge_spin=charge_spin_t,
+                charge_spin_t,
             )
 
         # Apply communicate_extended_output to map extended atoms → local atoms
@@ -1317,7 +1317,7 @@ class DeepEval(DeepEvalBackend):
                 mapping_t,
                 fparam_t,
                 aparam_t,
-                charge_spin=charge_spin_t,
+                charge_spin_t,
             )
 
         # Apply communicate_extended_output to map extended atoms → local atoms

@@ -118,6 +118,7 @@ def model_forward_lower_export_round_trip(
     fparam,
     aparam,
     output_keys: tuple[str, ...],
+    charge_spin=None,
     rtol: float = 1e-10,
     atol: float = 1e-10,
 ):
@@ -141,6 +142,9 @@ def model_forward_lower_export_round_trip(
         Frame and atom parameters.
     output_keys : tuple of str
         Output dictionary keys to verify.
+    charge_spin : torch.Tensor or None
+        Charge/spin parameter for descriptors that consume it (e.g. DPA3
+        with ``add_chg_spin_ebd=True``).
     rtol, atol : float
         Tolerances for np.testing.assert_allclose.
     """
@@ -156,6 +160,7 @@ def model_forward_lower_export_round_trip(
         mapping_t,
         fparam=fparam,
         aparam=aparam,
+        charge_spin=charge_spin,
     )
 
     # 2. Concrete trace
@@ -166,21 +171,24 @@ def model_forward_lower_export_round_trip(
         mapping_t,
         fparam=fparam,
         aparam=aparam,
+        charge_spin=charge_spin,
     )
     assert isinstance(traced, torch.nn.Module)
 
     # 3. Basic export (no dynamic shapes)
     exported = torch.export.export(
         traced,
-        (ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam),
+        (ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin),
         strict=False,
     )
     assert exported is not None
 
     # 4. Compare traced and exported vs eager
-    ret_traced = traced(ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam)
+    ret_traced = traced(
+        ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin
+    )
     ret_exported = exported.module()(
-        ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam
+        ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin
     )
     for key in output_keys:
         np.testing.assert_allclose(
@@ -201,7 +209,15 @@ def model_forward_lower_export_round_trip(
     # 5. Symbolic trace + dynamic shapes + .pte round-trip
     inputs_2f = tuple(
         torch.cat([t, t], dim=0) if t is not None else None
-        for t in (ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam)
+        for t in (
+            ext_coord,
+            ext_atype,
+            nlist_t,
+            mapping_t,
+            fparam,
+            aparam,
+            charge_spin,
+        )
     )
     traced_sym = md_pt.forward_lower_exportable(
         inputs_2f[0],
@@ -210,6 +226,7 @@ def model_forward_lower_export_round_trip(
         inputs_2f[3],
         fparam=inputs_2f[4],
         aparam=inputs_2f[5],
+        charge_spin=inputs_2f[6],
         tracing_mode="symbolic",
         _allow_non_fake_inputs=True,
     )
@@ -226,7 +243,9 @@ def model_forward_lower_export_round_trip(
         loaded = torch.export.load(f.name).module()
 
     # 6. Compare loaded vs eager (nf=1 — different shapes)
-    ret_loaded_1f = loaded(ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam)
+    ret_loaded_1f = loaded(
+        ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin
+    )
     for key in output_keys:
         np.testing.assert_allclose(
             ret_eager[key].detach().cpu().numpy(),

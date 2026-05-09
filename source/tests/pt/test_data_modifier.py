@@ -116,6 +116,7 @@ class ModifierRandomTester(BaseModifier):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Implementation of abstractmethod."""
         return {}
@@ -158,6 +159,7 @@ class ModifierZeroTester(BaseModifier):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Implementation of abstractmethod."""
         return {}
@@ -205,6 +207,7 @@ class ModifierScalingTester(BaseModifier):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Take scaled model prediction as data modification."""
         model_pred = self.model(
