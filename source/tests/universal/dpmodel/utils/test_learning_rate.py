@@ -50,6 +50,18 @@ class TestLearningRateExpBasic(unittest.TestCase):
         self.assertEqual(lr.decay_rate, 0.9)
         np.testing.assert_allclose(lr.value(1000), 1e-3 * 0.9, rtol=1e-10)
 
+    def test_rejects_nonpositive_or_nonfinite_start_lr(self) -> None:
+        """Test invalid start_lr values are rejected by the base schedule."""
+        for start_lr in (0.0, -1e-3, np.inf, np.nan):
+            with self.subTest(start_lr=start_lr):
+                with self.assertRaisesRegex(ValueError, "start_lr"):
+                    LearningRateExp(
+                        start_lr=start_lr,
+                        stop_lr=1e-5,
+                        num_steps=10000,
+                        decay_steps=5000,
+                    )
+
 
 class TestLearningRateCosineBasic(unittest.TestCase):
     """Test basic cosine annealing learning rate functionality."""

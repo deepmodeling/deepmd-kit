@@ -457,7 +457,7 @@ class DescrptBlockRepformers(DescriptorBlock):
 
         # set all padding positions to index of 0
         # if the a neighbor is real or not is indicated by nlist_mask
-        nlist[nlist == -1] = 0
+        nlist = torch.where(nlist == -1, 0, nlist)
         # nb x nall x ng1
         if comm_dict is None:
             assert mapping is not None

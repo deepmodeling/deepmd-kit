@@ -496,8 +496,8 @@ class DescrptBlockRepflows(DescriptorBlock):
         a_sw = a_sw.masked_fill(~a_nlist_mask, 0.0)
         # set all padding positions to index of 0
         # if the a neighbor is real or not is indicated by nlist_mask
-        nlist[nlist == -1] = 0
-        a_nlist[a_nlist == -1] = 0
+        nlist = torch.where(nlist == -1, 0, nlist)
+        a_nlist = torch.where(a_nlist == -1, 0, a_nlist)
 
         # get node embedding
         # [nframes, nloc, tebd_dim]

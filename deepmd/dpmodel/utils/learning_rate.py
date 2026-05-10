@@ -70,7 +70,11 @@ class BaseLR(ABC, PluginVariant, make_plugin_registry("lr")):
             The warmup learning rate starts from warmup_start_factor * start_lr.
             Default is 0.0.
         """
-        # === Step 1. Validate stop_lr and stop_lr_ratio (runtime check) ===
+        # === Step 1. Validate start_lr (runtime check) ===
+        if start_lr <= 0 or not np.isfinite(start_lr):
+            raise ValueError(f"start_lr ({start_lr}) must be positive and finite.")
+
+        # === Step 2. Validate stop_lr and stop_lr_ratio (runtime check) ===
         has_stop_lr = stop_lr is not None
         has_stop_lr_ratio = stop_lr_ratio is not None
 
@@ -85,13 +89,13 @@ class BaseLR(ABC, PluginVariant, make_plugin_registry("lr")):
                 "Got stop_lr=None, stop_lr_ratio=None"
             )
 
-        # === Step 2. Compute stop_lr from stop_lr_ratio if needed ===
+        # === Step 3. Compute stop_lr from stop_lr_ratio if needed ===
         if stop_lr_ratio is not None:
             self.stop_lr = start_lr * stop_lr_ratio
         else:
             self.stop_lr = stop_lr
 
-        # === Step 3. Validate warmup_steps and warmup_ratio (runtime check) ===
+        # === Step 4. Validate warmup_steps and warmup_ratio (runtime check) ===
         has_warmup_steps = warmup_steps != 0
         has_warmup_ratio = warmup_ratio is not None
 
@@ -101,13 +105,13 @@ class BaseLR(ABC, PluginVariant, make_plugin_registry("lr")):
                 f"Got warmup_steps={warmup_steps}, warmup_ratio={warmup_ratio}"
             )
 
-        # === Step 4. Compute warmup_steps from warmup_ratio if needed ===
+        # === Step 5. Compute warmup_steps from warmup_ratio if needed ===
         if warmup_ratio is not None:
             self.warmup_steps = int(warmup_ratio * num_steps)
         else:
             self.warmup_steps = warmup_steps
 
-        # === Step 5. Validate step ranges (runtime check) ===
+        # === Step 6. Validate step ranges (runtime check) ===
         if num_steps < 0:
             raise ValueError("num_steps must be non-negative")
         if self.warmup_steps < 0:
@@ -117,10 +121,10 @@ class BaseLR(ABC, PluginVariant, make_plugin_registry("lr")):
         if num_steps == 0 and self.warmup_steps != 0:
             raise ValueError("warmup_steps must be 0 when num_steps is 0")
 
-        # === Step 6. Compute warmup_start_lr ===
+        # === Step 7. Compute warmup_start_lr ===
         self.warmup_start_lr = warmup_start_factor * start_lr
 
-        # === Step 7. Store core parameters ===
+        # === Step 8. Store core parameters ===
         self._start_lr = start_lr
         self.num_steps = num_steps
         # Decay phase covers (num_steps - warmup_steps) steps
@@ -493,8 +497,6 @@ class LearningRateWSD(BaseLR):
         )
 
         # === Validate WSD-specific invariants ===
-        if self._start_lr <= 0:
-            raise ValueError(f"start_lr ({self._start_lr}) must be positive.")
         if self.stop_lr <= 0:
             raise ValueError(f"stop_lr ({self.stop_lr}) must be positive.")
         if decay_phase_ratio <= 0 or decay_phase_ratio > 1:
