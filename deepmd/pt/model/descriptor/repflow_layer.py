@@ -1036,6 +1036,136 @@ class RepFlowLayer(torch.nn.Module):
         n_updated = self.list_update(n_update_list, "node")
         return n_updated, e_updated, a_updated
 
+    def _compute_node_sym(
+        self,
+        edge_ebd: torch.Tensor,
+        nei_node_ebd: torch.Tensor,
+        h2: torch.Tensor,
+        nlist_mask: torch.Tensor,
+        sw: torch.Tensor,
+        n2e_index: torch.Tensor,
+        nb: int,
+        nloc: int,
+    ) -> torch.Tensor:
+        """Compute node symmetrization update (grrg + drrd)."""
+        node_sym_list: list[torch.Tensor] = []
+        node_sym_list.append(
+            self.symmetrization_op(
+                edge_ebd,
+                h2,
+                nlist_mask,
+                sw,
+                self.axis_neuron,
+            )
+            if not self.use_dynamic_sel
+            else self.symmetrization_op_dynamic(
+                edge_ebd,
+                h2,
+                sw,
+                owner=n2e_index,
+                num_owner=nb * nloc,
+                nb=nb,
+                nloc=nloc,
+                scale_factor=self.dynamic_e_sel ** (-0.5),
+                axis_neuron=self.axis_neuron,
+            )
+        )
+        node_sym_list.append(
+            self.symmetrization_op(
+                nei_node_ebd,
+                h2,
+                nlist_mask,
+                sw,
+                self.axis_neuron,
+            )
+            if not self.use_dynamic_sel
+            else self.symmetrization_op_dynamic(
+                nei_node_ebd,
+                h2,
+                sw,
+                owner=n2e_index,
+                num_owner=nb * nloc,
+                nb=nb,
+                nloc=nloc,
+                scale_factor=self.dynamic_e_sel ** (-0.5),
+                axis_neuron=self.axis_neuron,
+            )
+        )
+        return self.act(self.node_sym_linear(torch.cat(node_sym_list, dim=-1)))
+
+    def _compute_node_edge_message(
+        self,
+        node_ebd: torch.Tensor,
+        node_ebd_ext: torch.Tensor,
+        edge_ebd: torch.Tensor,
+        nei_node_ebd: torch.Tensor,
+        sw: torch.Tensor,
+        nlist: torch.Tensor,
+        n2e_index: torch.Tensor,
+        n_ext2e_index: torch.Tensor,
+        nb: int,
+        nloc: int,
+    ) -> torch.Tensor:
+        """Compute node edge message and reduce over neighbor dimension."""
+        if not self.optim_update:
+            if not self.use_dynamic_sel:
+                edge_info = torch.cat(
+                    [
+                        torch.tile(node_ebd.unsqueeze(-2), [1, 1, self.nnei, 1]),
+                        nei_node_ebd,
+                        edge_ebd,
+                    ],
+                    dim=-1,
+                )
+            else:
+                edge_info = torch.cat(
+                    [
+                        torch.index_select(
+                            node_ebd.reshape(-1, self.n_dim), 0, n2e_index
+                        ),
+                        nei_node_ebd,
+                        edge_ebd,
+                    ],
+                    dim=-1,
+                )
+            node_edge_update = self.act(
+                self.node_edge_linear(edge_info)
+            ) * sw.unsqueeze(-1)
+        else:
+            node_edge_update = self.act(
+                self.optim_edge_update(
+                    node_ebd,
+                    node_ebd_ext,
+                    edge_ebd,
+                    nlist,
+                    "node",
+                )
+                if not self.use_dynamic_sel
+                else self.optim_edge_update_dynamic(
+                    node_ebd,
+                    node_ebd_ext,
+                    edge_ebd,
+                    n2e_index,
+                    n_ext2e_index,
+                    "node",
+                )
+            ) * sw.unsqueeze(-1)
+
+        node_edge_update = (
+            (torch.sum(node_edge_update, dim=-2) / self.nnei)
+            if not self.use_dynamic_sel
+            else (
+                aggregate(
+                    node_edge_update,
+                    n2e_index,
+                    average=False,
+                    num_owner=nb * nloc,
+                ).reshape(nb, nloc, node_edge_update.shape[-1])
+                / self.dynamic_e_sel
+            )
+        )
+        return node_edge_update
+
     def _compute_edge_self_update(
         self,
         node_ebd: torch.Tensor,
@@ -1280,136 +1410,6 @@ class RepFlowLayer(torch.nn.Module):
             )
 
         return self.act(self.edge_angle_linear2(padding_edge_angle_update))
-
-    def _compute_node_edge_message(
-        self,
-        node_ebd: torch.Tensor,
-        node_ebd_ext: torch.Tensor,
-        edge_ebd: torch.Tensor,
-        nei_node_ebd: torch.Tensor,
-        sw: torch.Tensor,
-        nlist: torch.Tensor,
-        n2e_index: torch.Tensor,
-        n_ext2e_index: torch.Tensor,
-        nb: int,
-        nloc: int,
-    ) -> torch.Tensor:
-        """Compute node edge message and reduce over neighbor dimension."""
-        if not self.optim_update:
-            if not self.use_dynamic_sel:
-                edge_info = torch.cat(
-                    [
-                        torch.tile(node_ebd.unsqueeze(-2), [1, 1, self.nnei, 1]),
-                        nei_node_ebd,
-                        edge_ebd,
-                    ],
-                    dim=-1,
-                )
-            else:
-                edge_info = torch.cat(
-                    [
-                        torch.index_select(
-                            node_ebd.reshape(-1, self.n_dim), 0, n2e_index
-                        ),
-                        nei_node_ebd,
-                        edge_ebd,
-                    ],
-                    dim=-1,
-                )
-            node_edge_update = self.act(
-                self.node_edge_linear(edge_info)
-            ) * sw.unsqueeze(-1)
-        else:
-            node_edge_update = self.act(
-                self.optim_edge_update(
-                    node_ebd,
-                    node_ebd_ext,
-                    edge_ebd,
-                    nlist,
-                    "node",
-                )
-                if not self.use_dynamic_sel
-                else self.optim_edge_update_dynamic(
-                    node_ebd,
-                    node_ebd_ext,
-                    edge_ebd,
-                    n2e_index,
-                    n_ext2e_index,
-                    "node",
-                )
-            ) * sw.unsqueeze(-1)
-
-        node_edge_update = (
-            (torch.sum(node_edge_update, dim=-2) / self.nnei)
-            if not self.use_dynamic_sel
-            else (
-                aggregate(
-                    node_edge_update,
-                    n2e_index,
-                    average=False,
-                    num_owner=nb * nloc,
-                ).reshape(nb, nloc, node_edge_update.shape[-1])
-                / self.dynamic_e_sel
-            )
-        )
-        return node_edge_update
-
-    def _compute_node_sym(
-        self,
-        edge_ebd: torch.Tensor,
-        nei_node_ebd: torch.Tensor,
-        h2: torch.Tensor,
-        nlist_mask: torch.Tensor,
-        sw: torch.Tensor,
-        n2e_index: torch.Tensor,
-        nb: int,
-        nloc: int,
-    ) -> torch.Tensor:
-        """Compute node symmetrization update (grrg + drrd)."""
-        node_sym_list: list[torch.Tensor] = []
-        node_sym_list.append(
-            self.symmetrization_op(
-                edge_ebd,
-                h2,
-                nlist_mask,
-                sw,
-                self.axis_neuron,
-            )
-            if not self.use_dynamic_sel
-            else self.symmetrization_op_dynamic(
-                edge_ebd,
-                h2,
-                sw,
-                owner=n2e_index,
-                num_owner=nb * nloc,
-                nb=nb,
-                nloc=nloc,
-                scale_factor=self.dynamic_e_sel ** (-0.5),
-                axis_neuron=self.axis_neuron,
-            )
-        )
-        node_sym_list.append(
-            self.symmetrization_op(
-                nei_node_ebd,
-                h2,
-                nlist_mask,
-                sw,
-                self.axis_neuron,
-            )
-            if not self.use_dynamic_sel
-            else self.symmetrization_op_dynamic(
-                nei_node_ebd,
-                h2,
-                sw,
-                owner=n2e_index,
-                num_owner=nb * nloc,
-                nb=nb,
-                nloc=nloc,
-                scale_factor=self.dynamic_e_sel ** (-0.5),
-                axis_neuron=self.axis_neuron,
-            )
-        )
-        return self.act(self.node_sym_linear(torch.cat(node_sym_list, dim=-1)))
 
     @torch.jit.export
     def list_update_res_avg(
