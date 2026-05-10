@@ -171,7 +171,7 @@ class TestEnerStdLossDefaultPf(unittest.TestCase):
         )
         pt_loss_val = pt_loss.detach().cpu().numpy()
         # loss should be non-zero because pf loss is activated via use_default_pf
-        self.assertTrue(pt_loss_val != 0.0)
+        self.assertNotEqual(float(pt_loss_val), 0.0)
         self.assertIn("rmse_pf", pt_more_loss)
         # The pref_force_loss should be a valid number (not NaN)
         self.assertFalse(np.isnan(pt_more_loss["l2_pref_force_loss"]))
@@ -195,7 +195,7 @@ class TestEnerStdLossDefaultPf(unittest.TestCase):
             return self.model_pred
 
         # With find_atom_pref=0.0 and use_default_pf=False, pf loss contribution is zero
-        _, pt_loss_without, pt_more_loss_without = loss_fn(
+        _, _pt_loss_without, pt_more_loss_without = loss_fn(
             {},
             fake_model,
             self.label_without_pref,
@@ -203,7 +203,7 @@ class TestEnerStdLossDefaultPf(unittest.TestCase):
             self.cur_lr,
         )
         # With find_atom_pref=1.0, pf loss should be computed
-        _, pt_loss_with, pt_more_loss_with = loss_fn(
+        _, _pt_loss_with, pt_more_loss_with = loss_fn(
             {},
             fake_model,
             self.label_with_pref,

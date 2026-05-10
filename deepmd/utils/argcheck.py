@@ -3220,7 +3220,9 @@ def loss_ener() -> list[Argument]:
     doc_use_default_pf = (
         "If true, use default atom_pref of 1.0 for all atoms when atom_pref data is not provided. "
         "This allows using the prefactor force loss (pf) without requiring atom_pref.npy files in training data. "
-        "When atom_pref.npy is provided, it will be used as-is regardless of this setting."
+        "When atom_pref.npy is provided, it will be used as-is regardless of this setting. "
+        "Note: this option is only effective for the PyTorch/DPModel backends; "
+        "the TensorFlow and Paddle backends raise NotImplementedError when set to true."
     )
     doc_start_pref_gf = start_pref("generalized force", label="drdq", abbr="gf")
     doc_limit_pref_gf = limit_pref("generalized force")
