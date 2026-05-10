@@ -187,6 +187,7 @@ class TFModelWrapper(tf.Module):
         fparam: jnp.ndarray | None = None,
         aparam: jnp.ndarray | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: jnp.ndarray | None = None,
     ) -> dict[str, jnp.ndarray]:
         if do_atomic_virial:
             call_lower = self._call_lower_atomic_virial
