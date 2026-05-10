@@ -574,6 +574,9 @@ class TestAdditionalDataRequirement(unittest.TestCase):
             def get_default_fparam(self) -> list[float]:
                 return [0.0, 1.0]
 
+            def has_chg_spin_ebd(self) -> bool:
+                return False
+
         reqs = get_additional_data_requirement(_M())
         self.assertEqual(len(reqs), 1)
         fparam_req = reqs[0]
@@ -604,6 +607,9 @@ class TestAdditionalDataRequirement(unittest.TestCase):
 
             def get_default_fparam(self) -> None:
                 return None
+
+            def has_chg_spin_ebd(self) -> bool:
+                return False
 
         reqs = get_additional_data_requirement(_M())
         self.assertEqual(len(reqs), 1)

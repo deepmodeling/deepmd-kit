@@ -46,6 +46,7 @@ class PairTabAtomicModel(PairTabAtomicModelDP):
         mapping: jnp.ndarray | None = None,
         fparam: jnp.ndarray | None = None,
         aparam: jnp.ndarray | None = None,
+        charge_spin: jnp.ndarray | None = None,
     ) -> dict[str, jnp.ndarray]:
         return super().forward_common_atomic(
             extended_coord,
@@ -54,4 +55,5 @@ class PairTabAtomicModel(PairTabAtomicModelDP):
             mapping=mapping,
             fparam=fparam,
             aparam=aparam,
+            charge_spin=charge_spin,
         )

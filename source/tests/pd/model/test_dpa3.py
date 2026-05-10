@@ -66,7 +66,7 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
             [1, 2],  # n_multi_edge_message
             ["float64"],  # precision
             [False],  # use_econf_tebd
-            [False, True],  # add_chg_spin_ebd
+            [False],  # add_chg_spin_ebd (PD backend does not support charge_spin)
         ):
             dtype = PRECISION_DICT[prec]
             rtol, atol = get_tols(prec)
