@@ -5,7 +5,6 @@ import unittest
 import numpy as np
 import torch
 
-from deepmd.dpmodel.descriptor.dpa3 import DescrptDPA3 as DPDescrptDPA3
 from deepmd.dpmodel.descriptor.dpa3 import (
     RepFlowArgs,
 )
@@ -121,12 +120,10 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
 
             # Prepare charge_spin per mode.
             charge_spin = None
-            charge_spin_np = None
             if need_cs_input:
                 charge_spin = torch.tensor(
                     [[5, 1]], dtype=dtype, device=env.DEVICE
                 ).expand(nf, -1)
-                charge_spin_np = np.array([[5, 1]], dtype=np.float64).repeat(nf, axis=0)
 
             rd0, _, _, _, _ = dd0(
                 torch.tensor(self.coord_ext, dtype=dtype, device=env.DEVICE),
@@ -150,21 +147,9 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 rtol=rtol,
                 atol=atol,
             )
-            # dp impl
-            dd2 = DPDescrptDPA3.deserialize(dd0.serialize())
-            rd2, _, _, _, _ = dd2.call(
-                self.coord_ext,
-                self.atype_ext,
-                self.nlist,
-                self.mapping,
-                charge_spin=charge_spin_np,
-            )
-            np.testing.assert_allclose(
-                rd0.detach().cpu().numpy(),
-                rd2,
-                rtol=rtol,
-                atol=atol,
-            )
+            # Cross-backend (dpmodel vs pt) numeric consistency for
+            # add_chg_spin_ebd is covered by
+            # source/tests/consistent/descriptor/test_dpa3.py.
 
             # default_chg_spin should match explicit when value is the same.
             if cs_mode == "default_chg_spin":
