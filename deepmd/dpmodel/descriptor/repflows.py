@@ -1354,6 +1354,532 @@ class RepFlowLayer(NativeOP):
         result_update = bias + sub_node_update + sub_edge_update + sub_node_ext_update
         return result_update
 
+    def call(
+        self,
+        node_ebd_ext: Array,  # nf x nall x n_dim
+        edge_ebd: Array,  # nf x nloc x nnei x e_dim
+        h2: Array,  # nf x nloc x nnei x 3
+        angle_ebd: Array,  # nf x nloc x a_nnei x a_nnei x a_dim
+        nlist: Array,  # nf x nloc x nnei
+        nlist_mask: Array,  # nf x nloc x nnei
+        sw: Array,  # switch func, nf x nloc x nnei
+        a_nlist: Array,  # nf x nloc x a_nnei
+        a_nlist_mask: Array,  # nf x nloc x a_nnei
+        a_sw: Array,  # switch func, nf x nloc x a_nnei
+        edge_index: Array,  # 2 x n_edge
+        angle_index: Array,  # 3 x n_angle
+    ) -> tuple[Array, Array, Array]:
+        """
+        Parameters
+        ----------
+        node_ebd_ext : nf x nall x n_dim
+            Extended node embedding.
+        edge_ebd : nf x nloc x nnei x e_dim
+            Edge embedding.
+        h2 : nf x nloc x nnei x 3
+            Pair-atom channel, equivariant.
+        angle_ebd : nf x nloc x a_nnei x a_nnei x a_dim
+            Angle embedding.
+        nlist : nf x nloc x nnei
+            Neighbor list. (padded neis are set to 0)
+        nlist_mask : nf x nloc x nnei
+            Masks of the neighbor list. real nei 1 otherwise 0
+        sw : nf x nloc x nnei
+            Switch function.
+        a_nlist : nf x nloc x a_nnei
+            Neighbor list for angle. (padded neis are set to 0)
+        a_nlist_mask : nf x nloc x a_nnei
+            Masks of the neighbor list for angle. real nei 1 otherwise 0
+        a_sw : nf x nloc x a_nnei
+            Switch function for angle.
+        edge_index : Optional for dynamic sel, 2 x n_edge
+            n2e_index : n_edge
+                Broadcast indices from node(i) to edge(ij), or reduction indices from edge(ij) to node(i).
+            n_ext2e_index : n_edge
+                Broadcast indices from extended node(j) to edge(ij).
+        angle_index : Optional for dynamic sel, 3 x n_angle
+            n2a_index : n_angle
+                Broadcast indices from extended node(j) to angle(ijk).
+            eij2a_index : n_angle
+                Broadcast indices from extended edge(ij) to angle(ijk), or reduction indices from angle(ijk) to edge(ij).
+            eik2a_index : n_angle
+                Broadcast indices from extended edge(ik) to angle(ijk).
+
+        Returns
+        -------
+        n_updated:     nf x nloc x n_dim
+            Updated node embedding.
+        e_updated:     nf x nloc x nnei x e_dim
+            Updated edge embedding.
+        a_updated : nf x nloc x a_nnei x a_nnei x a_dim
+            Updated angle embedding.
+        """
+        xp = array_api_compat.array_namespace(
+            node_ebd_ext,
+            edge_ebd,
+            h2,
+            angle_ebd,
+            nlist,
+            nlist_mask,
+            sw,
+            a_nlist,
+            a_nlist_mask,
+            a_sw,
+            edge_index,
+            angle_index,
+        )
+        nb, nloc, nnei = nlist.shape
+        nall = node_ebd_ext.shape[1]
+        # int cannot jit; do not run it when self.use_dynamic_sel == False
+        n_edge = (
+            int(xp.sum(xp.astype(nlist_mask, xp.int32))) if self.use_dynamic_sel else 0
+        )
+        node_ebd = xp_take_first_n(node_ebd_ext, 1, nloc)
+        assert (nb, nloc) == node_ebd.shape[:2]
+        if not self.use_dynamic_sel:
+            assert (nb, nloc, nnei) == h2.shape[:3]
+        else:
+            assert (n_edge, 3) == h2.shape
+        del a_nlist  # may be used in the future
+
+        n2e_index, n_ext2e_index = edge_index[0, :], edge_index[1, :]
+        n2a_index, eij2a_index, eik2a_index = (
+            angle_index[0, :],
+            angle_index[1, :],
+            angle_index[2, :],
+        )
+
+        # nb x nloc x nnei x n_dim [OR] n_edge x n_dim
+        nei_node_ebd = (
+            _make_nei_g1(node_ebd_ext, nlist)
+            if not self.use_dynamic_sel
+            else xp.take(
+                xp.reshape(node_ebd_ext, (-1, self.n_dim)), n_ext2e_index, axis=0
+            )
+        )
+
+        if self.sequential_update and self.update_angle:
+            return self._call_sequential(
+                xp,
+                node_ebd,
+                node_ebd_ext,
+                edge_ebd,
+                h2,
+                angle_ebd,
+                nei_node_ebd,
+                nlist,
+                nlist_mask,
+                sw,
+                a_nlist_mask,
+                a_sw,
+                n2e_index,
+                n_ext2e_index,
+                n2a_index,
+                eij2a_index,
+                eik2a_index,
+                nb,
+                nloc,
+                n_edge,
+            )
+
+        n_update_list: list[Array] = [node_ebd]
+        e_update_list: list[Array] = [edge_ebd]
+        a_update_list: list[Array] = [angle_ebd]
+
+        # node self mlp
+        node_self_mlp = self.act(self.node_self_mlp(node_ebd))
+        n_update_list.append(node_self_mlp)
+
+        # node sym (grrg + drrd)
+        node_sym = self._compute_node_sym(
+            xp,
+            edge_ebd,
+            nei_node_ebd,
+            h2,
+            nlist_mask,
+            sw,
+            n2e_index,
+            nb,
+            nloc,
+        )
+        n_update_list.append(node_sym)
+
+        # node edge message
+        node_edge_update = self._compute_node_edge_message(
+            xp,
+            node_ebd,
+            node_ebd_ext,
+            edge_ebd,
+            nei_node_ebd,
+            sw,
+            nlist,
+            n2e_index,
+            n_ext2e_index,
+            nb,
+            nloc,
+        )
+        if self.n_multi_edge_message > 1:
+            # nb x nloc x h x n_dim
+            node_edge_update_mul_head = xp.reshape(
+                node_edge_update, (nb, nloc, self.n_multi_edge_message, self.n_dim)
+            )
+            for head_index in range(self.n_multi_edge_message):
+                n_update_list.append(node_edge_update_mul_head[:, :, head_index, :])
+        else:
+            n_update_list.append(node_edge_update)
+        # update node_ebd
+        n_updated = self.list_update(n_update_list, "node")
+
+        # edge self message
+        edge_self_update = self._compute_edge_self_update(
+            xp,
+            node_ebd,
+            node_ebd_ext,
+            edge_ebd,
+            nei_node_ebd,
+            nlist,
+            n2e_index,
+            n_ext2e_index,
+            nb,
+            nloc,
+        )
+        e_update_list.append(edge_self_update)
+
+        if self.update_angle:
+            assert self.angle_self_linear is not None
+            assert self.edge_angle_linear1 is not None
+            assert self.edge_angle_linear2 is not None
+
+            node_ebd_for_angle, edge_ebd_for_angle = self._prepare_angle_embeddings(
+                xp, node_ebd, edge_ebd, a_nlist_mask
+            )
+
+            # edge angle message
+            edge_angle_update = self._compute_angle_update(
+                xp,
+                angle_ebd,
+                node_ebd_for_angle,
+                edge_ebd_for_angle,
+                "edge",
+                n2a_index,
+                eij2a_index,
+                eik2a_index,
+                nb,
+                nloc,
+            )
+            e_update_list.append(
+                self._compute_edge_angle_reduction(
+                    xp,
+                    edge_angle_update,
+                    edge_ebd,
+                    a_sw,
+                    a_nlist_mask,
+                    nb,
+                    nloc,
+                    n_edge,
+                    eij2a_index,
+                )
+            )
+            # update edge_ebd
+            e_updated = self.list_update(e_update_list, "edge")
+
+            # angle self message
+            angle_self_update = self._compute_angle_update(
+                xp,
+                angle_ebd,
+                node_ebd_for_angle,
+                edge_ebd_for_angle,
+                "angle",
+                n2a_index,
+                eij2a_index,
+                eik2a_index,
+                nb,
+                nloc,
+            )
+            a_update_list.append(angle_self_update)
+        else:
+            # update edge_ebd
+            e_updated = self.list_update(e_update_list, "edge")
+
+        # update angle_ebd
+        a_updated = self.list_update(a_update_list, "angle")
+        return n_updated, e_updated, a_updated
+
+    def _call_sequential(
+        self,
+        xp: object,
+        node_ebd: Array,
+        node_ebd_ext: Array,
+        edge_ebd: Array,
+        h2: Array,
+        angle_ebd: Array,
+        nei_node_ebd: Array,
+        nlist: Array,
+        nlist_mask: Array,
+        sw: Array,
+        a_nlist_mask: Array,
+        a_sw: Array,
+        n2e_index: Array,
+        n_ext2e_index: Array,
+        n2a_index: Array,
+        eij2a_index: Array,
+        eik2a_index: Array,
+        nb: int,
+        nloc: int,
+        n_edge: int,
+    ) -> tuple[Array, Array, Array]:
+        """Sequential update path: edge_self -> angle_self -> edge_angle -> node.
+
+        Each phase consumes the most recent update of its inputs (instead of
+        the parallel path which uses the same ``edge_ebd``/``angle_ebd`` for
+        all branches). Residuals are applied immediately after each phase.
+        """
+        assert self.update_style == "res_residual"
+        assert self.update_angle
+        assert self.angle_self_linear is not None
+        assert self.edge_angle_linear1 is not None
+        assert self.edge_angle_linear2 is not None
+
+        # Phase 1: edge self update -> apply residual immediately.
+        edge_self_update = self._compute_edge_self_update(
+            xp,
+            node_ebd,
+            node_ebd_ext,
+            edge_ebd,
+            nei_node_ebd,
+            nlist,
+            n2e_index,
+            n_ext2e_index,
+            nb,
+            nloc,
+        )
+        edge_ebd_s1 = edge_ebd + self.e_residual[0] * edge_self_update
+
+        # Phase 2: angle self message uses the updated edge embedding.
+        node_ebd_for_angle, edge_ebd_for_angle = self._prepare_angle_embeddings(
+            xp, node_ebd, edge_ebd_s1, a_nlist_mask
+        )
+        angle_self_update = self._compute_angle_update(
+            xp,
+            angle_ebd,
+            node_ebd_for_angle,
+            edge_ebd_for_angle,
+            "angle",
+            n2a_index,
+            eij2a_index,
+            eik2a_index,
+            nb,
+            nloc,
+        )
+        a_updated = angle_ebd + self.a_residual[0] * angle_self_update
+
+        # Phase 3: edge angle message uses the updated angle embedding.
+        edge_angle_update = self._compute_angle_update(
+            xp,
+            a_updated,
+            node_ebd_for_angle,
+            edge_ebd_for_angle,
+            "edge",
+            n2a_index,
+            eij2a_index,
+            eik2a_index,
+            nb,
+            nloc,
+        )
+        edge_angle_reduced = self._compute_edge_angle_reduction(
+            xp,
+            edge_angle_update,
+            edge_ebd_s1,
+            a_sw,
+            a_nlist_mask,
+            nb,
+            nloc,
+            n_edge,
+            eij2a_index,
+        )
+        e_updated = edge_ebd_s1 + self.e_residual[1] * edge_angle_reduced
+
+        # Phase 4: node updates use the fully updated edge embedding.
+        n_update_list: list[Array] = [node_ebd]
+        n_update_list.append(self.act(self.node_self_mlp(node_ebd)))
+        n_update_list.append(
+            self._compute_node_sym(
+                xp,
+                e_updated,
+                nei_node_ebd,
+                h2,
+                nlist_mask,
+                sw,
+                n2e_index,
+                nb,
+                nloc,
+            )
+        )
+        node_edge_update = self._compute_node_edge_message(
+            xp,
+            node_ebd,
+            node_ebd_ext,
+            e_updated,
+            nei_node_ebd,
+            sw,
+            nlist,
+            n2e_index,
+            n_ext2e_index,
+            nb,
+            nloc,
+        )
+        if self.n_multi_edge_message > 1:
+            node_edge_update_mul_head = xp.reshape(
+                node_edge_update,
+                (nb, nloc, self.n_multi_edge_message, self.n_dim),
+            )
+            for head_index in range(self.n_multi_edge_message):
+                n_update_list.append(node_edge_update_mul_head[:, :, head_index, :])
+        else:
+            n_update_list.append(node_edge_update)
+        n_updated = self.list_update(n_update_list, "node")
+        return n_updated, e_updated, a_updated
+
+    def _compute_node_sym(
+        self,
+        xp: object,
+        edge_ebd: Array,
+        nei_node_ebd: Array,
+        h2: Array,
+        nlist_mask: Array,
+        sw: Array,
+        n2e_index: Array,
+        nb: int,
+        nloc: int,
+    ) -> Array:
+        """Compute node symmetrization update (grrg + drrd)."""
+        node_sym_list: list[Array] = []
+        node_sym_list.append(
+            symmetrization_op(
+                edge_ebd,
+                h2,
+                nlist_mask,
+                sw,
+                self.axis_neuron,
+            )
+            if not self.use_dynamic_sel
+            else symmetrization_op_dynamic(
+                edge_ebd,
+                h2,
+                sw,
+                owner=n2e_index,
+                num_owner=nb * nloc,
+                nb=nb,
+                nloc=nloc,
+                scale_factor=self.dynamic_e_sel ** (-0.5),
+                axis_neuron=self.axis_neuron,
+            )
+        )
+        node_sym_list.append(
+            symmetrization_op(
+                nei_node_ebd,
+                h2,
+                nlist_mask,
+                sw,
+                self.axis_neuron,
+            )
+            if not self.use_dynamic_sel
+            else symmetrization_op_dynamic(
+                nei_node_ebd,
+                h2,
+                sw,
+                owner=n2e_index,
+                num_owner=nb * nloc,
+                nb=nb,
+                nloc=nloc,
+                scale_factor=self.dynamic_e_sel ** (-0.5),
+                axis_neuron=self.axis_neuron,
+            )
+        )
+        return self.act(self.node_sym_linear(xp.concat(node_sym_list, axis=-1)))
+
+    def _compute_node_edge_message(
+        self,
+        xp: object,
+        node_ebd: Array,
+        node_ebd_ext: Array,
+        edge_ebd: Array,
+        nei_node_ebd: Array,
+        sw: Array,
+        nlist: Array,
+        n2e_index: Array,
+        n_ext2e_index: Array,
+        nb: int,
+        nloc: int,
+    ) -> Array:
+        """Compute node edge message and reduce over neighbor dimension."""
+        if not self.optim_update:
+            if not self.use_dynamic_sel:
+                edge_info = xp.concat(
+                    [
+                        xp.tile(
+                            xp.reshape(node_ebd, (nb, nloc, 1, self.n_dim)),
+                            (1, 1, self.nnei, 1),
+                        ),
+                        nei_node_ebd,
+                        edge_ebd,
+                    ],
+                    axis=-1,
+                )
+            else:
+                edge_info = xp.concat(
+                    [
+                        xp.take(
+                            xp.reshape(node_ebd, (-1, self.n_dim)),
+                            n2e_index,
+                            axis=0,
+                        ),
+                        nei_node_ebd,
+                        edge_ebd,
+                    ],
+                    axis=-1,
+                )
+            node_edge_update = self.act(
+                self.node_edge_linear(edge_info)
+            ) * xp.expand_dims(sw, axis=-1)
+        else:
+            node_edge_update = self.act(
+                self.optim_edge_update(
+                    node_ebd,
+                    node_ebd_ext,
+                    edge_ebd,
+                    nlist,
+                    "node",
+                )
+                if not self.use_dynamic_sel
+                else self.optim_edge_update_dynamic(
+                    node_ebd,
+                    node_ebd_ext,
+                    edge_ebd,
+                    n2e_index,
+                    n_ext2e_index,
+                    "node",
+                )
+            ) * xp.expand_dims(sw, axis=-1)
+
+        node_edge_update = (
+            (xp.sum(node_edge_update, axis=-2) / self.nnei)
+            if not self.use_dynamic_sel
+            else (
+                xp.reshape(
+                    aggregate(
+                        node_edge_update,
+                        n2e_index,
+                        average=False,
+                        num_owner=nb * nloc,
+                    ),
+                    (nb, nloc, node_edge_update.shape[-1]),
+                )
+                / self.dynamic_e_sel
+            )
+        )
+        return node_edge_update
+
     def _compute_edge_self_update(
         self,
         xp: object,
@@ -1637,465 +2163,6 @@ class RepFlowLayer(NativeOP):
             )
 
         return self.act(self.edge_angle_linear2(padding_edge_angle_update))
-
-    def _compute_node_edge_message(
-        self,
-        xp: object,
-        node_ebd: Array,
-        node_ebd_ext: Array,
-        edge_ebd: Array,
-        nei_node_ebd: Array,
-        sw: Array,
-        nlist: Array,
-        n2e_index: Array,
-        n_ext2e_index: Array,
-        nb: int,
-        nloc: int,
-    ) -> Array:
-        """Compute node edge message and reduce over neighbor dimension."""
-        if not self.optim_update:
-            if not self.use_dynamic_sel:
-                edge_info = xp.concat(
-                    [
-                        xp.tile(
-                            xp.reshape(node_ebd, (nb, nloc, 1, self.n_dim)),
-                            (1, 1, self.nnei, 1),
-                        ),
-                        nei_node_ebd,
-                        edge_ebd,
-                    ],
-                    axis=-1,
-                )
-            else:
-                edge_info = xp.concat(
-                    [
-                        xp.take(
-                            xp.reshape(node_ebd, (-1, self.n_dim)),
-                            n2e_index,
-                            axis=0,
-                        ),
-                        nei_node_ebd,
-                        edge_ebd,
-                    ],
-                    axis=-1,
-                )
-            node_edge_update = self.act(
-                self.node_edge_linear(edge_info)
-            ) * xp.expand_dims(sw, axis=-1)
-        else:
-            node_edge_update = self.act(
-                self.optim_edge_update(
-                    node_ebd,
-                    node_ebd_ext,
-                    edge_ebd,
-                    nlist,
-                    "node",
-                )
-                if not self.use_dynamic_sel
-                else self.optim_edge_update_dynamic(
-                    node_ebd,
-                    node_ebd_ext,
-                    edge_ebd,
-                    n2e_index,
-                    n_ext2e_index,
-                    "node",
-                )
-            ) * xp.expand_dims(sw, axis=-1)
-
-        node_edge_update = (
-            (xp.sum(node_edge_update, axis=-2) / self.nnei)
-            if not self.use_dynamic_sel
-            else (
-                xp.reshape(
-                    aggregate(
-                        node_edge_update,
-                        n2e_index,
-                        average=False,
-                        num_owner=nb * nloc,
-                    ),
-                    (nb, nloc, node_edge_update.shape[-1]),
-                )
-                / self.dynamic_e_sel
-            )
-        )
-        return node_edge_update
-
-    def _compute_node_sym(
-        self,
-        xp: object,
-        edge_ebd: Array,
-        nei_node_ebd: Array,
-        h2: Array,
-        nlist_mask: Array,
-        sw: Array,
-        n2e_index: Array,
-        nb: int,
-        nloc: int,
-    ) -> Array:
-        """Compute node symmetrization update (grrg + drrd)."""
-        node_sym_list: list[Array] = []
-        node_sym_list.append(
-            symmetrization_op(
-                edge_ebd,
-                h2,
-                nlist_mask,
-                sw,
-                self.axis_neuron,
-            )
-            if not self.use_dynamic_sel
-            else symmetrization_op_dynamic(
-                edge_ebd,
-                h2,
-                sw,
-                owner=n2e_index,
-                num_owner=nb * nloc,
-                nb=nb,
-                nloc=nloc,
-                scale_factor=self.dynamic_e_sel ** (-0.5),
-                axis_neuron=self.axis_neuron,
-            )
-        )
-        node_sym_list.append(
-            symmetrization_op(
-                nei_node_ebd,
-                h2,
-                nlist_mask,
-                sw,
-                self.axis_neuron,
-            )
-            if not self.use_dynamic_sel
-            else symmetrization_op_dynamic(
-                nei_node_ebd,
-                h2,
-                sw,
-                owner=n2e_index,
-                num_owner=nb * nloc,
-                nb=nb,
-                nloc=nloc,
-                scale_factor=self.dynamic_e_sel ** (-0.5),
-                axis_neuron=self.axis_neuron,
-            )
-        )
-        return self.act(self.node_sym_linear(xp.concat(node_sym_list, axis=-1)))
-
-    def call(
-        self,
-        node_ebd_ext: Array,  # nf x nall x n_dim
-        edge_ebd: Array,  # nf x nloc x nnei x e_dim
-        h2: Array,  # nf x nloc x nnei x 3
-        angle_ebd: Array,  # nf x nloc x a_nnei x a_nnei x a_dim
-        nlist: Array,  # nf x nloc x nnei
-        nlist_mask: Array,  # nf x nloc x nnei
-        sw: Array,  # switch func, nf x nloc x nnei
-        a_nlist: Array,  # nf x nloc x a_nnei
-        a_nlist_mask: Array,  # nf x nloc x a_nnei
-        a_sw: Array,  # switch func, nf x nloc x a_nnei
-        edge_index: Array,  # 2 x n_edge
-        angle_index: Array,  # 3 x n_angle
-    ) -> tuple[Array, Array, Array]:
-        """
-        Parameters
-        ----------
-        node_ebd_ext : nf x nall x n_dim
-            Extended node embedding.
-        edge_ebd : nf x nloc x nnei x e_dim
-            Edge embedding.
-        h2 : nf x nloc x nnei x 3
-            Pair-atom channel, equivariant.
-        angle_ebd : nf x nloc x a_nnei x a_nnei x a_dim
-            Angle embedding.
-        nlist : nf x nloc x nnei
-            Neighbor list. (padded neis are set to 0)
-        nlist_mask : nf x nloc x nnei
-            Masks of the neighbor list. real nei 1 otherwise 0
-        sw : nf x nloc x nnei
-            Switch function.
-        a_nlist : nf x nloc x a_nnei
-            Neighbor list for angle. (padded neis are set to 0)
-        a_nlist_mask : nf x nloc x a_nnei
-            Masks of the neighbor list for angle. real nei 1 otherwise 0
-        a_sw : nf x nloc x a_nnei
-            Switch function for angle.
-        edge_index : Optional for dynamic sel, 2 x n_edge
-            n2e_index : n_edge
-                Broadcast indices from node(i) to edge(ij), or reduction indices from edge(ij) to node(i).
-            n_ext2e_index : n_edge
-                Broadcast indices from extended node(j) to edge(ij).
-        angle_index : Optional for dynamic sel, 3 x n_angle
-            n2a_index : n_angle
-                Broadcast indices from extended node(j) to angle(ijk).
-            eij2a_index : n_angle
-                Broadcast indices from extended edge(ij) to angle(ijk), or reduction indices from angle(ijk) to edge(ij).
-            eik2a_index : n_angle
-                Broadcast indices from extended edge(ik) to angle(ijk).
-
-        Returns
-        -------
-        n_updated:     nf x nloc x n_dim
-            Updated node embedding.
-        e_updated:     nf x nloc x nnei x e_dim
-            Updated edge embedding.
-        a_updated : nf x nloc x a_nnei x a_nnei x a_dim
-            Updated angle embedding.
-        """
-        xp = array_api_compat.array_namespace(
-            node_ebd_ext,
-            edge_ebd,
-            h2,
-            angle_ebd,
-            nlist,
-            nlist_mask,
-            sw,
-            a_nlist,
-            a_nlist_mask,
-            a_sw,
-            edge_index,
-            angle_index,
-        )
-        nb, nloc, nnei = nlist.shape
-        nall = node_ebd_ext.shape[1]
-        # int cannot jit; do not run it when self.use_dynamic_sel == False
-        n_edge = (
-            int(xp.sum(xp.astype(nlist_mask, xp.int32))) if self.use_dynamic_sel else 0
-        )
-        node_ebd = xp_take_first_n(node_ebd_ext, 1, nloc)
-        assert (nb, nloc) == node_ebd.shape[:2]
-        if not self.use_dynamic_sel:
-            assert (nb, nloc, nnei) == h2.shape[:3]
-        else:
-            assert (n_edge, 3) == h2.shape
-        del a_nlist  # may be used in the future
-
-        n2e_index, n_ext2e_index = edge_index[0, :], edge_index[1, :]
-        n2a_index, eij2a_index, eik2a_index = (
-            angle_index[0, :],
-            angle_index[1, :],
-            angle_index[2, :],
-        )
-
-        # nb x nloc x nnei x n_dim [OR] n_edge x n_dim
-        nei_node_ebd = (
-            _make_nei_g1(node_ebd_ext, nlist)
-            if not self.use_dynamic_sel
-            else xp.take(
-                xp.reshape(node_ebd_ext, (-1, self.n_dim)), n_ext2e_index, axis=0
-            )
-        )
-
-        # Edge self update (always from original embeddings)
-        edge_self_update = self._compute_edge_self_update(
-            xp,
-            node_ebd,
-            node_ebd_ext,
-            edge_ebd,
-            nei_node_ebd,
-            nlist,
-            n2e_index,
-            n_ext2e_index,
-            nb,
-            nloc,
-        )
-
-        if self.sequential_update and self.update_angle:
-            # === Sequential update path ===
-            # Phase 1: Apply edge self residual
-            edge_ebd_s1 = edge_ebd + self.e_residual[0] * edge_self_update
-
-            # Phase 2: Angle self (uses updated edge_ebd_s1)
-            node_for_a, edge_for_a = self._prepare_angle_embeddings(
-                xp, node_ebd, edge_ebd_s1, a_nlist_mask
-            )
-            angle_self_update = self._compute_angle_update(
-                xp,
-                angle_ebd,
-                node_for_a,
-                edge_for_a,
-                "angle",
-                n2a_index,
-                eij2a_index,
-                eik2a_index,
-                nb,
-                nloc,
-            )
-            a_updated = angle_ebd + self.a_residual[0] * angle_self_update
-
-            # Phase 3: Edge angle (uses updated angle a_updated + edge_ebd_s1)
-            edge_angle_update = self._compute_angle_update(
-                xp,
-                a_updated,
-                node_for_a,
-                edge_for_a,
-                "edge",
-                n2a_index,
-                eij2a_index,
-                eik2a_index,
-                nb,
-                nloc,
-            )
-            edge_angle_processed = self._compute_edge_angle_reduction(
-                xp,
-                edge_angle_update,
-                edge_ebd_s1,
-                a_sw,
-                a_nlist_mask,
-                nb,
-                nloc,
-                n_edge,
-                eij2a_index,
-            )
-            e_updated = edge_ebd_s1 + self.e_residual[1] * edge_angle_processed
-
-            # Phase 4+5: Node updates (uses e_updated)
-            node_self_mlp = self.act(self.node_self_mlp(node_ebd))
-            node_sym = self._compute_node_sym(
-                xp,
-                e_updated,
-                nei_node_ebd,
-                h2,
-                nlist_mask,
-                sw,
-                n2e_index,
-                nb,
-                nloc,
-            )
-            node_edge_update = self._compute_node_edge_message(
-                xp,
-                node_ebd,
-                node_ebd_ext,
-                e_updated,
-                nei_node_ebd,
-                sw,
-                nlist,
-                n2e_index,
-                n_ext2e_index,
-                nb,
-                nloc,
-            )
-
-            n_update_list: list[Array] = [node_ebd, node_self_mlp, node_sym]
-            if self.n_multi_edge_message > 1:
-                node_edge_update_mul_head = xp.reshape(
-                    node_edge_update,
-                    (nb, nloc, self.n_multi_edge_message, self.n_dim),
-                )
-                for head_index in range(self.n_multi_edge_message):
-                    n_update_list.append(node_edge_update_mul_head[:, :, head_index, :])
-            else:
-                n_update_list.append(node_edge_update)
-            n_updated = self.list_update(n_update_list, "node")
-
-            return n_updated, e_updated, a_updated
-
-        # === Parallel update path ===
-        n_update_list: list[Array] = [node_ebd]
-        e_update_list: list[Array] = [edge_ebd]
-        a_update_list: list[Array] = [angle_ebd]
-
-        # node self mlp
-        node_self_mlp = self.act(self.node_self_mlp(node_ebd))
-        n_update_list.append(node_self_mlp)
-
-        # node sym (grrg + drrd)
-        node_sym = self._compute_node_sym(
-            xp,
-            edge_ebd,
-            nei_node_ebd,
-            h2,
-            nlist_mask,
-            sw,
-            n2e_index,
-            nb,
-            nloc,
-        )
-        n_update_list.append(node_sym)
-
-        # node edge message
-        node_edge_update = self._compute_node_edge_message(
-            xp,
-            node_ebd,
-            node_ebd_ext,
-            edge_ebd,
-            nei_node_ebd,
-            sw,
-            nlist,
-            n2e_index,
-            n_ext2e_index,
-            nb,
-            nloc,
-        )
-        if self.n_multi_edge_message > 1:
-            # nb x nloc x h x n_dim
-            node_edge_update_mul_head = xp.reshape(
-                node_edge_update, (nb, nloc, self.n_multi_edge_message, self.n_dim)
-            )
-            for head_index in range(self.n_multi_edge_message):
-                n_update_list.append(node_edge_update_mul_head[:, :, head_index, :])
-        else:
-            n_update_list.append(node_edge_update)
-        # update node_ebd
-        n_updated = self.list_update(n_update_list, "node")
-
-        # edge self message
-        e_update_list.append(edge_self_update)
-
-        if self.update_angle:
-            assert self.angle_self_linear is not None
-            assert self.edge_angle_linear1 is not None
-            assert self.edge_angle_linear2 is not None
-
-            node_for_a, edge_for_a = self._prepare_angle_embeddings(
-                xp, node_ebd, edge_ebd, a_nlist_mask
-            )
-
-            # edge angle message
-            edge_angle_update = self._compute_angle_update(
-                xp,
-                angle_ebd,
-                node_for_a,
-                edge_for_a,
-                "edge",
-                n2a_index,
-                eij2a_index,
-                eik2a_index,
-                nb,
-                nloc,
-            )
-            edge_angle_processed = self._compute_edge_angle_reduction(
-                xp,
-                edge_angle_update,
-                edge_ebd,
-                a_sw,
-                a_nlist_mask,
-                nb,
-                nloc,
-                n_edge,
-                eij2a_index,
-            )
-            e_update_list.append(edge_angle_processed)
-            # update edge_ebd
-            e_updated = self.list_update(e_update_list, "edge")
-
-            # angle self message
-            angle_self_update = self._compute_angle_update(
-                xp,
-                angle_ebd,
-                node_for_a,
-                edge_for_a,
-                "angle",
-                n2a_index,
-                eij2a_index,
-                eik2a_index,
-                nb,
-                nloc,
-            )
-            a_update_list.append(angle_self_update)
-        else:
-            # update edge_ebd
-            e_updated = self.list_update(e_update_list, "edge")
-
-        # update angle_ebd
-        a_updated = self.list_update(a_update_list, "angle")
-        return n_updated, e_updated, a_updated
 
     def list_update_res_avg(
         self,
