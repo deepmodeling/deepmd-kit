@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """DPTabulate for the pt_expt backend.
 
-Inherits the numpy math from ``deepmd.utils.tabulate_math.DPTabulate``
-and overrides ``_convert_numpy_to_tensor`` for torch tensor conversion
-and ``_get_descrpt_type`` for serialization-based type detection.
+Inherits the shared Array API tabulation math from
+``deepmd.utils.tabulate_math.DPTabulate`` and overrides backend
+selection, tensor conversion, and descriptor type detection.
 No dependency on the pt backend.
 """
 
@@ -69,6 +69,16 @@ class DPTabulate(DPTabulateBase):
         if descrpt_type is None:
             raise RuntimeError(f"Unsupported descriptor type: {type_str}")
         return descrpt_type
+
+    def _get_math_backend_sample(self) -> Any:
+        """Run shared tabulation math on the pt_expt torch device."""
+        import torch
+
+        from deepmd.pt_expt.utils.env import (
+            DEVICE,
+        )
+
+        return torch.empty((), dtype=torch.float64, device=DEVICE)
 
     def _convert_numpy_to_tensor(self) -> None:
         """Convert self.data from np.ndarray to torch.Tensor."""

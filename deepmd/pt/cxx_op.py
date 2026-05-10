@@ -42,6 +42,16 @@ def load_library(module_name: str) -> bool:
     module_file = (SHARED_LIB_DIR / (prefix + module_name)).with_suffix(ext).resolve()
 
     if module_file.is_file():
+        # Skip if this library was already loaded by torch.ops.load_library.
+        if str(module_file) in torch.ops.loaded_libraries:
+            return True
+        # Skip if ops were already registered via C++ shared-library linkage
+        # (e.g. LAMMPS plugin links libdeepmd_op_pt.so at the C++ level).
+        # TORCH_LIBRARY(deepmd, m) in print_summary.cc registers "enable_mpi"
+        # as the first op; if it's accessible, the library is already loaded.
+        # Calling torch.ops.load_library again would abort() the process.
+        if hasattr(torch.ops, "deepmd") and hasattr(torch.ops.deepmd, "enable_mpi"):
+            return True
         try:
             torch.ops.load_library(module_file)
         except OSError as e:

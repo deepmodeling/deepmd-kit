@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
+from unittest import (
+    mock,
+)
 
 import numpy as np
 
@@ -9,6 +12,36 @@ from deepmd.pt.utils.auto_batch_size import (
 
 
 class TestAutoBatchSize(unittest.TestCase):
+    @mock.patch("deepmd.pt.utils.auto_batch_size.torch.cuda.empty_cache")
+    def test_is_oom_error_cuda_message(self, empty_cache) -> None:
+        auto_batch_size = AutoBatchSize(256, 2.0)
+
+        self.assertTrue(
+            auto_batch_size.is_oom_error(RuntimeError("CUDA out of memory."))
+        )
+        empty_cache.assert_called_once()
+
+    @mock.patch("deepmd.pt.utils.auto_batch_size.torch.cuda.empty_cache")
+    def test_is_oom_error_empty_runtime_error_from_cuda_oom(self, empty_cache) -> None:
+        auto_batch_size = AutoBatchSize(256, 2.0)
+        cause = RuntimeError("CUDA driver error: out of memory")
+        error = RuntimeError()
+        error.__cause__ = cause
+
+        self.assertTrue(auto_batch_size.is_oom_error(error))
+        empty_cache.assert_called_once()
+
+    @mock.patch("deepmd.pt.utils.auto_batch_size.torch.cuda.empty_cache")
+    def test_is_oom_error_aoti_wrapper(self, empty_cache) -> None:
+        auto_batch_size = AutoBatchSize(256, 2.0)
+        error = RuntimeError(
+            "run_func_(...) API call failed at "
+            "/tmp/torchinductor/model_container_runner.cpp"
+        )
+
+        self.assertTrue(auto_batch_size.is_oom_error(error))
+        empty_cache.assert_called_once()
+
     def test_execute_all(self) -> None:
         dd0 = np.zeros((10000, 2, 1, 3, 4))
         dd1 = np.ones((10000, 2, 1, 3, 4))

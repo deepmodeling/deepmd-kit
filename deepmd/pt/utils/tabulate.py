@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """PyTorch-specific DPTabulate wrapper.
 
-Inherits the numpy math from ``deepmd.utils.tabulate_math.DPTabulate``
-and adds torch-specific ``_convert_numpy_to_tensor`` and
-``_get_descrpt_type`` (isinstance checks against PT descriptor classes).
+Inherits the shared Array API tabulation math from
+``deepmd.utils.tabulate_math.DPTabulate`` and adds torch-specific
+backend selection, tensor conversion, and descriptor type detection.
 """
 
 from typing import (
@@ -31,8 +31,8 @@ from deepmd.utils.tabulate_math import (  # noqa: F401 — re-export for test co
 class DPTabulate(DPTabulateBase):
     r"""PyTorch tabulation wrapper.
 
-    Accepts a PT ``ActivationFn`` module and delegates all math to the
-    numpy base class. Only overrides tensor conversion and descriptor
+    Accepts a PT ``ActivationFn`` module and delegates all shared math to the
+    base class. Overrides backend selection, tensor conversion, and descriptor
     type detection.
 
     Parameters
@@ -90,6 +90,10 @@ class DPTabulate(DPTabulateBase):
         elif isinstance(self.descrpt, deepmd.pt.model.descriptor.DescrptSeTTebd):
             return "T_TEBD"
         raise RuntimeError(f"Unsupported descriptor {self.descrpt}")
+
+    def _get_math_backend_sample(self) -> Any:
+        """Run shared tabulation math on the current torch device."""
+        return torch.empty((), dtype=torch.float64, device=env.DEVICE)
 
     def _convert_numpy_to_tensor(self) -> None:
         """Convert self.data from np.ndarray to torch.Tensor."""

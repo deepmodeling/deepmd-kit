@@ -57,6 +57,13 @@ class TestDPFreezePtExpt(unittest.TestCase):
         cls.ckpt_file = os.path.join(cls.tmpdir, "model.pt")
         torch.save({"model": state_dict}, cls.ckpt_file)
 
+        # Pre-freeze shared .pte and .pt2 files so individual tests don't
+        # each pay the AOTInductor compilation cost (~82s per .pt2).
+        cls.shared_pte = os.path.join(cls.tmpdir, "shared.pte")
+        freeze(model=cls.ckpt_file, output=cls.shared_pte)
+        cls.shared_pt2 = os.path.join(cls.tmpdir, "shared.pt2")
+        freeze(model=cls.ckpt_file, output=cls.shared_pt2)
+
     @classmethod
     def tearDownClass(cls) -> None:
         shutil.rmtree(cls.tmpdir)
@@ -95,6 +102,114 @@ class TestDPFreezePtExpt(unittest.TestCase):
         main(flags)
         expected = os.path.join(self.tmpdir, "frozen_default_suffix.pte")
         self.assertTrue(os.path.exists(expected))
+
+    def test_freeze_pt2(self) -> None:
+        """Freeze to .pt2 (AOTInductor) and verify the file is loadable."""
+        self.assertTrue(os.path.exists(self.shared_pt2))
+
+        # Verify the .pt2 can be loaded and evaluated via DeepPot
+        import numpy as np
+
+        from deepmd.infer import (
+            DeepPot,
+        )
+
+        dp = DeepPot(self.shared_pt2)
+        self.assertEqual(dp.get_type_map(), ["O", "H", "B"])
+        rcut = dp.get_rcut()
+        self.assertGreater(rcut, 0.0)
+
+        # Quick smoke-test eval
+        coord = np.array(
+            [0.0, 0.0, 0.1, 1.0, 0.3, 0.2, 0.1, 1.9, 3.4],
+            dtype=np.float64,
+        )
+        box = np.array([5.0, 0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0, 5.0], dtype=np.float64)
+        atype = [0, 1, 2]
+        e, f, v = dp.eval(coord, box, atype)
+        self.assertEqual(e.shape, (1, 1))
+        self.assertEqual(f.shape, (1, 3, 3))
+        self.assertEqual(v.shape, (1, 9))
+
+    def test_freeze_pt2_eval_consistency(self) -> None:
+        """Verify .pte and .pt2 produce identical results."""
+        import numpy as np
+
+        from deepmd.infer import (
+            DeepPot,
+        )
+
+        coord = np.array(
+            [0.0, 0.0, 0.1, 1.0, 0.3, 0.2, 0.1, 1.9, 3.4],
+            dtype=np.float64,
+        )
+        box = np.array([5.0, 0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0, 5.0], dtype=np.float64)
+        atype = [0, 1, 2]
+
+        dp_pte = DeepPot(self.shared_pte)
+        dp_pt2 = DeepPot(self.shared_pt2)
+
+        e_pte, f_pte, v_pte = dp_pte.eval(coord, box, atype)
+        e_pt2, f_pt2, v_pt2 = dp_pt2.eval(coord, box, atype)
+
+        np.testing.assert_allclose(e_pte, e_pt2, atol=1e-10)
+        np.testing.assert_allclose(f_pte, f_pt2, atol=1e-10)
+        np.testing.assert_allclose(v_pte, v_pt2, atol=1e-10)
+
+    def test_freeze_pt2_nopbc_negative_coords(self) -> None:
+        """Verify .pt2 NoPBC works with negative coordinates.
+
+        Regression test: the C++ NoPBC path creates a fake box and must
+        shift coordinates so atoms with negative values are inside [0, L).
+        Compares .pt2 (C++ fake-box path) against .pte (Python no-ghost path)
+        — these are independent NoPBC implementations so cross-comparison
+        validates both.
+        """
+        import numpy as np
+
+        from deepmd.infer import (
+            DeepPot,
+        )
+
+        # Coordinates with negative values — no periodic box
+        coord = np.array(
+            [-1.0, -2.0, 0.5, 1.0, 0.3, -0.2, 0.1, -1.9, 3.4],
+            dtype=np.float64,
+        )
+        atype = [0, 1, 2]
+
+        dp_pte = DeepPot(self.shared_pte)
+        dp_pt2 = DeepPot(self.shared_pt2)
+
+        e_pte, f_pte, v_pte = dp_pte.eval(coord, None, atype)
+        e_pt2, f_pt2, v_pt2 = dp_pt2.eval(coord, None, atype)
+
+        np.testing.assert_allclose(e_pte, e_pt2, atol=1e-10)
+        np.testing.assert_allclose(f_pte, f_pt2, atol=1e-10)
+        np.testing.assert_allclose(v_pte, v_pt2, atol=1e-10)
+
+    def test_nonspin_model_rejects_spin(self) -> None:
+        """Non-spin model must raise ValueError when spin is provided."""
+        import numpy as np
+
+        from deepmd.infer import (
+            DeepPot,
+        )
+
+        pt2_path = os.path.join(self.tmpdir, "nonspin_reject.pt2")
+        freeze(model=self.ckpt_file, output=pt2_path)
+
+        coord = np.array(
+            [0.0, 0.0, 0.1, 1.0, 0.3, 0.2, 0.1, 1.9, 3.4],
+            dtype=np.float64,
+        )
+        box = np.array([5.0, 0.0, 0.0, 0.0, 5.0, 0.0, 0.0, 0.0, 5.0], dtype=np.float64)
+        atype = [0, 1, 2]
+        spin = np.zeros(9, dtype=np.float64)
+
+        dp = DeepPot(pt2_path)
+        with self.assertRaises(ValueError):
+            dp.eval(coord, box, atype, spin=spin)
 
 
 if __name__ == "__main__":

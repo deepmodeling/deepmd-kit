@@ -19,10 +19,16 @@ from deepmd.utils.batch_size import (
 
 
 class AutoBatchSize(AutoBatchSizeBase):
-    def __init__(self, initial_batch_size: int = 1024, factor: float = 2.0) -> None:
-        super().__init__(initial_batch_size, factor)
+    def __init__(
+        self,
+        initial_batch_size: int = 1024,
+        factor: float = 2.0,
+        *,
+        silent: bool = False,
+    ) -> None:
+        super().__init__(initial_batch_size, factor, silent=silent)
         DP_INFER_BATCH_SIZE = int(os.environ.get("DP_INFER_BATCH_SIZE", 0))
-        if not DP_INFER_BATCH_SIZE > 0:
+        if not DP_INFER_BATCH_SIZE > 0 and not self.silent:
             if self.is_gpu_available():
                 log.info(
                     "If you encounter the error 'an illegal memory access was encountered', this may be due to a TensorFlow issue. "

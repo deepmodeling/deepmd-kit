@@ -198,6 +198,7 @@ class DipoleFitting(GeneralFitting):
                     r_differentiable=self.r_differentiable,
                     c_differentiable=self.c_differentiable,
                 ),
+                *self._middle_output_def(),
             ]
         )
 
@@ -239,9 +240,8 @@ class DipoleFitting(GeneralFitting):
         nframes, nloc, _ = descriptor.shape
         assert gr is not None, "Must provide the rotation matrix for dipole fitting."
         # (nframes, nloc, m1)
-        out = self._call_common(descriptor, atype, gr, g2, h2, fparam, aparam)[
-            self.var_name
-        ]
+        results = self._call_common(descriptor, atype, gr, g2, h2, fparam, aparam)
+        out = results[self.var_name]
         # (nframes * nloc, 1, m1)
         out = xp.reshape(out, (-1, 1, self.embedding_width))
         # (nframes * nloc, m1, 3)
@@ -249,5 +249,5 @@ class DipoleFitting(GeneralFitting):
         # (nframes, nloc, 3)
         # out = np.einsum("bim,bmj->bij", out, gr).squeeze(-2).reshape(nframes, nloc, 3)
         out = out @ gr
-        out = xp.reshape(out, (nframes, nloc, 3))
-        return {self.var_name: out}
+        results[self.var_name] = xp.reshape(out, (nframes, nloc, 3))
+        return results

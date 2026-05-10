@@ -99,6 +99,11 @@ int PairDeepBaseModel::get_node_rank() {
 }
 
 std::string PairDeepBaseModel::get_file_content(const std::string& model) {
+  // .pt2 (AOTInductor) models do not support in-memory loading.
+  // Return empty so that init() loads from the file path directly.
+  if (model.size() >= 4 && model.compare(model.size() - 4, 4, ".pt2") == 0) {
+    return std::string();
+  }
   int myrank = 0, root = 0;
   MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
   int nchar = 0;

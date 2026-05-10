@@ -1,6 +1,6 @@
 # DeePMD-kit
 
-DeePMD-kit is a deep learning package for many-body potential energy representation and molecular dynamics. It supports multiple backends (TensorFlow, PyTorch, JAX, Paddle) and integrates with MD packages like LAMMPS, GROMACS, and i-PI.
+DeePMD-kit is a deep learning package for many-body potential energy representation and molecular dynamics. It supports multiple backends (TensorFlow, PyTorch, JAX, Paddle) and integrates with MD packages like LAMMPS and i-PI.
 
 **Always reference these instructions first and fallback to search or bash commands only when you encounter unexpected information that does not match the info here.**
 

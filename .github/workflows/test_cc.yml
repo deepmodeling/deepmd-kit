@@ -44,7 +44,7 @@ jobs:
       - run: python -m pip install uv
       - name: Install Python dependencies
         run: |
-          source/install/uv_with_retry.sh pip install --system --group pin_tensorflow_cpu --group pin_pytorch_cpu --group pin_jax --torch-backend cpu
+          source/install/uv_with_retry.sh pip install --system --group pin_tensorflow_cpu --group pin_pytorch_cpu --group pin_jax_cpu --torch-backend cpu
           export TENSORFLOW_ROOT=$(python -c 'import importlib.util,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
           source/install/uv_with_retry.sh pip install --system -e .[cpu,test,lmp,jax] mpi4py mpich
       - name: Convert models
@@ -98,7 +98,9 @@ jobs:
           ENABLE_JAX: ${{ matrix.enable_tensorflow && '1' || '0' }}
           ENABLE_PADDLE: ${{ matrix.enable_paddle && '1' || '0' }}
         if: ${{ !matrix.check_memleak }}
-      - uses: codecov/codecov-action@v5
+      - name: Upload coverage to Codecov (non-blocking)
+        uses: codecov/codecov-action@v6
+        continue-on-error: true
         with:
           use_oidc: true
     permissions:

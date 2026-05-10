@@ -637,12 +637,15 @@ class SpinModel(torch.nn.Module):
 
     def serialize(self) -> dict:
         return {
+            "type": "spin_ener",
             "backbone_model": self.backbone_model.serialize(),
             "spin": self.spin.serialize(),
         }
 
     @classmethod
     def deserialize(cls, data: dict[str, Any]) -> "SpinModel":
+        data = data.copy()
+        data.pop("type", None)
         backbone_model_obj = make_model(DPAtomicModel).deserialize(
             data["backbone_model"]
         )

@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "DeepPot.h"
+#include "DeepPotPTExpt.h"
 #include "neighbor_list.h"
 #include "test_utils.h"
 
@@ -19,6 +20,10 @@ class TestInferDeepPotAPtExpt : public ::testing::Test {
   std::vector<VALUETYPE> coord = {12.83, 2.56, 2.18, 12.09, 2.87, 2.74,
                                   00.25, 3.32, 1.68, 3.36,  3.00, 1.81,
                                   3.51,  2.51, 2.60, 4.27,  3.22, 1.56};
+  // Alternative coords for multi-frame tests (must give different energy)
+  std::vector<VALUETYPE> coord_alt = {10.06, 5.71,  11.16, 9.07, 1.22, 12.68,
+                                      9.89,  10.22, 1.67,  5.86, 4.82, 12.05,
+                                      8.37,  10.70, 5.76,  2.95, 7.21, 0.83};
   std::vector<int> atype = {0, 1, 1, 0, 1, 1};
   std::vector<VALUETYPE> box = {13., 0., 0., 0., 13., 0., 0., 0., 13.};
   // Same reference values as test_deeppot_pt.cc (model converted from .pth)
@@ -50,15 +55,18 @@ class TestInferDeepPotAPtExpt : public ::testing::Test {
   double expected_tot_e;
   std::vector<VALUETYPE> expected_tot_v;
 
-  deepmd::DeepPot dp;
+  static deepmd::DeepPot dp;
+
+  static void SetUpTestSuite() {
+#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
+    dp.init("../../tests/infer/deeppot_sea.pt2");
+#endif
+  }
 
   void SetUp() override {
-#ifndef BUILD_PYTORCH
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
-    std::string file_name = "../../tests/infer/deeppot_sea.pt2";
-
-    dp.init(file_name);
 
     natoms = expected_e.size();
     EXPECT_EQ(natoms * 3, expected_f.size());
@@ -77,7 +85,12 @@ class TestInferDeepPotAPtExpt : public ::testing::Test {
   };
 
   void TearDown() override {};
+
+  static void TearDownTestSuite() { dp = deepmd::DeepPot(); }
 };
+
+template <class VALUETYPE>
+deepmd::DeepPot TestInferDeepPotAPtExpt<VALUETYPE>::dp;
 
 TYPED_TEST_SUITE(TestInferDeepPotAPtExpt, ValueTypes);
 
@@ -343,6 +356,166 @@ TYPED_TEST(TestInferDeepPotAPtExpt, cpu_lmp_nlist_2rc) {
   }
 }
 
+TYPED_TEST(TestInferDeepPotAPtExpt, cpu_lmp_nlist_oversized) {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE>& coord = this->coord;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  std::vector<VALUETYPE>& expected_f = this->expected_f;
+  int& natoms = this->natoms;
+  double& expected_tot_e = this->expected_tot_e;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
+  deepmd::DeepPot& dp = this->dp;
+  float rc = dp.cutoff();
+  int nloc = coord.size() / 3;
+  std::vector<VALUETYPE> coord_cpy;
+  std::vector<int> atype_cpy, mapping;
+  std::vector<std::vector<int> > nlist_data;
+  _build_nlist<VALUETYPE>(nlist_data, coord_cpy, atype_cpy, mapping, coord,
+                          atype, box, rc);
+  // Pad with extra -1 entries and shuffle to create oversized nlist
+  std::vector<std::vector<int> > nlist_oversized;
+  _pad_shuffle_nlist(nlist_oversized, nlist_data, 200);
+  int nall = coord_cpy.size() / 3;
+  std::vector<int> ilist(nloc), numneigh(nloc);
+  std::vector<int*> firstneigh(nloc);
+  deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+  convert_nlist(inlist, nlist_oversized);
+
+  double ener;
+  std::vector<VALUETYPE> force_(nall * 3, 0.0), virial(9, 0.0);
+  dp.compute(ener, force_, virial, coord_cpy, atype_cpy, box, nall - nloc,
+             inlist, 0);
+  std::vector<VALUETYPE> force;
+  _fold_back<VALUETYPE>(force, force_, mapping, nloc, nall, 3);
+
+  EXPECT_EQ(force.size(), natoms * 3);
+  EXPECT_EQ(virial.size(), 9);
+
+  EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
+  for (int ii = 0; ii < natoms * 3; ++ii) {
+    EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
+  }
+  for (int ii = 0; ii < 3 * 3; ++ii) {
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+  }
+}
+
+// Sanity check for the oversized-nlist test above: the Python counterpart
+// asserts that naïvely truncating the shuffled nlist (without distance
+// sorting) produces a DIFFERENT prediction, proving that the shuffle did
+// move real neighbors past the sum(sel) boundary.  The C++ API always
+// sorts on-device, so we verify the equivalent property by truncating the
+// shuffled nlist to a single column: with the shuffle ratio (~5 real
+// entries out of 205), almost every row ends up holding a -1, and the
+// model's prediction must deviate from the reference on at least one of
+// {energy, force, virial}.  If every prediction still matches the
+// reference within EPSILON, the shuffle is not meaningful and the
+// oversized test above is a tautology.
+TYPED_TEST(TestInferDeepPotAPtExpt, cpu_lmp_nlist_oversized_shuffle_sanity) {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE>& coord = this->coord;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  std::vector<VALUETYPE>& expected_f = this->expected_f;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
+  int& natoms = this->natoms;
+  double& expected_tot_e = this->expected_tot_e;
+  deepmd::DeepPot& dp = this->dp;
+  float rc = dp.cutoff();
+  int nloc = coord.size() / 3;
+  std::vector<VALUETYPE> coord_cpy;
+  std::vector<int> atype_cpy, mapping;
+  std::vector<std::vector<int> > nlist_data;
+  _build_nlist<VALUETYPE>(nlist_data, coord_cpy, atype_cpy, mapping, coord,
+                          atype, box, rc);
+  std::vector<std::vector<int> > nlist_oversized;
+  _pad_shuffle_nlist(nlist_oversized, nlist_data, 200);
+  for (auto& row : nlist_oversized) {
+    row.resize(1);
+  }
+  int nall = coord_cpy.size() / 3;
+  std::vector<int> ilist(nloc), numneigh(nloc);
+  std::vector<int*> firstneigh(nloc);
+  deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+  convert_nlist(inlist, nlist_oversized);
+
+  double ener;
+  std::vector<VALUETYPE> force_(nall * 3, 0.0), virial(9, 0.0);
+  dp.compute(ener, force_, virial, coord_cpy, atype_cpy, box, nall - nloc,
+             inlist, 0);
+  std::vector<VALUETYPE> force;
+  _fold_back<VALUETYPE>(force, force_, mapping, nloc, nall, 3);
+
+  // Threshold for the negative-direction check is intentionally separate
+  // from EPSILON.  EPSILON is a numerical-precision tolerance for positive
+  // assertions ("model matches reference"); here we want a physical-signal
+  // tolerance ("broken model produces a meaningful deviation").  1e-3 is
+  // 100x below the smallest expected force magnitude (~1e-1) and well
+  // above the float precision noise floor (~1e-5), so it cleanly
+  // distinguishes "actually broken" from "noise".
+  static constexpr double SANITY_MIN_DEV = 1e-3;
+  bool any_deviates = fabs(ener - expected_tot_e) > SANITY_MIN_DEV;
+  for (int ii = 0; ii < natoms * 3 && !any_deviates; ++ii) {
+    any_deviates = fabs(force[ii] - expected_f[ii]) > SANITY_MIN_DEV;
+  }
+  for (int ii = 0; ii < 9 && !any_deviates; ++ii) {
+    any_deviates = fabs(virial[ii] - expected_tot_v[ii]) > SANITY_MIN_DEV;
+  }
+  EXPECT_TRUE(any_deviates)
+      << "Every prediction (energy/force/virial) stayed within "
+         "SANITY_MIN_DEV after single-column truncation of the shuffled "
+         "oversized nlist — the shuffle appears to have kept real neighbors "
+         "at the front.  The oversized test above may be a tautology; "
+         "increase n_extra in _pad_shuffle_nlist.";
+}
+
+// Edge case: a subdomain whose every local atom has zero neighbors within
+// cutoff (e.g. under aggressive spatial partitioning on a small/sparse
+// subdomain, or at the start of a simulation before atoms settle in).
+// The C++ side builds an InputNlist with empty rows, which feeds
+// `createNlistTensor` with min_nnei=sum(sel); the compiled .pt2 graph must
+// then run cleanly on an all-`-1` nlist and produce a sensible (finite,
+// interaction-free) result.  Verifies both that the code path doesn't
+// crash and that the forces/virial collapse to zero (no interactions).
+TYPED_TEST(TestInferDeepPotAPtExpt, cpu_lmp_nlist_empty_subdomain) {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE>& coord = this->coord;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  int& natoms = this->natoms;
+  deepmd::DeepPot& dp = this->dp;
+
+  // Pass coord/atype as-is; the model sees them, but `dp.compute` only
+  // uses the provided InputNlist for neighbor information.
+  int nall = natoms;
+  std::vector<std::vector<int> > nlist_data(natoms);  // every row empty
+  std::vector<int> ilist(natoms), numneigh(natoms);
+  std::vector<int*> firstneigh(natoms);
+  deepmd::InputNlist inlist(natoms, &ilist[0], &numneigh[0], &firstneigh[0]);
+  convert_nlist(inlist, nlist_data);
+
+  double ener;
+  std::vector<VALUETYPE> force(nall * 3, 0.0), virial(9, 0.0);
+  // Must not throw: zero-neighbor input is legal and expected under some
+  // spatial-partitioning configurations.
+  ASSERT_NO_THROW(
+      dp.compute(ener, force, virial, coord, atype, box, 0, inlist, 0));
+  EXPECT_EQ(force.size(), natoms * 3);
+  EXPECT_EQ(virial.size(), 9);
+  EXPECT_TRUE(std::isfinite(ener));
+  // With no neighbors, interaction forces and virial must be exactly zero
+  // (the descriptor sees only -1 entries, so pair contributions vanish).
+  for (int ii = 0; ii < natoms * 3; ++ii) {
+    EXPECT_TRUE(std::isfinite(force[ii]));
+    EXPECT_LT(fabs(force[ii]), EPSILON);
+  }
+  for (int ii = 0; ii < 9; ++ii) {
+    EXPECT_TRUE(std::isfinite(virial[ii]));
+    EXPECT_LT(fabs(virial[ii]), EPSILON);
+  }
+}
+
 TYPED_TEST(TestInferDeepPotAPtExpt, cpu_lmp_nlist_type_sel) {
   using VALUETYPE = TypeParam;
   std::vector<VALUETYPE>& coord = this->coord;
@@ -408,12 +581,61 @@ TYPED_TEST(TestInferDeepPotAPtExpt, print_summary) {
   dp.print_summary("");
 }
 
+// Regression test for the fail-fast guard hoisted in commit c80db58d.
+// `deeppot_sea_no_atomic_virial.pt2` is a copy of deeppot_sea.pt2 with
+// the do_atomic_virial=false flag patched into its metadata.json.
+// Calling compute() with atomic=true on this model must throw before
+// any tensors are allocated.
+TYPED_TEST(TestInferDeepPotAPtExpt, cpu_atomic_throws_when_disabled) {
+  using VALUETYPE = TypeParam;
+  deepmd::DeepPot dp_no_av;
+  ASSERT_NO_THROW(
+      dp_no_av.init("../../tests/infer/deeppot_sea_no_atomic_virial.pt2"));
+
+  std::vector<VALUETYPE>& coord = this->coord;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  int& natoms = this->natoms;
+
+  // Build an LMP-style nlist so we exercise the nlist-overload of
+  // compute(); the no-nlist overload has the same guard but is
+  // covered by symmetry.
+  float rc = dp_no_av.cutoff();
+  int nloc = coord.size() / 3;
+  std::vector<VALUETYPE> coord_cpy;
+  std::vector<int> atype_cpy, mapping;
+  std::vector<std::vector<int> > nlist_data;
+  _build_nlist<VALUETYPE>(nlist_data, coord_cpy, atype_cpy, mapping, coord,
+                          atype, box, rc);
+  int nall = coord_cpy.size() / 3;
+  std::vector<int> ilist(nloc), numneigh(nloc);
+  std::vector<int*> firstneigh(nloc);
+  deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+  convert_nlist(inlist, nlist_data);
+
+  double ener;
+  std::vector<VALUETYPE> force(nall * 3, 0.0), virial(9, 0.0), atom_ener,
+      atom_vir;
+  // atomic=true => guard must trip and throw deepmd_exception.
+  EXPECT_THROW(
+      dp_no_av.compute(ener, force, virial, atom_ener, atom_vir, coord_cpy,
+                       atype_cpy, box, nall - nloc, inlist, 0),
+      deepmd::deepmd_exception);
+  // atomic=false on the same model must work normally (sanity check
+  // that the guard fires only when actually requested).
+  EXPECT_NO_THROW(dp_no_av.compute(ener, force, virial, coord_cpy, atype_cpy,
+                                   box, nall - nloc, inlist, 0));
+}
+
 template <class VALUETYPE>
 class TestInferDeepPotAPtExptNoPbc : public ::testing::Test {
  protected:
   std::vector<VALUETYPE> coord = {12.83, 2.56, 2.18, 12.09, 2.87, 2.74,
                                   00.25, 3.32, 1.68, 3.36,  3.00, 1.81,
                                   3.51,  2.51, 2.60, 4.27,  3.22, 1.56};
+  std::vector<VALUETYPE> coord_alt = {10.06, 5.71,  11.16, 9.07, 1.22, 12.68,
+                                      9.89,  10.22, 1.67,  5.86, 4.82, 12.05,
+                                      8.37,  10.70, 5.76,  2.95, 7.21, 0.83};
   std::vector<int> atype = {0, 1, 1, 0, 1, 1};
   std::vector<VALUETYPE> box = {};
   // Same reference values as TestInferDeepPotAPtNoPbc in test_deeppot_pt.cc
@@ -445,14 +667,18 @@ class TestInferDeepPotAPtExptNoPbc : public ::testing::Test {
   double expected_tot_e;
   std::vector<VALUETYPE> expected_tot_v;
 
-  deepmd::DeepPot dp;
+  static deepmd::DeepPot dp;
+
+  static void SetUpTestSuite() {
+#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
+    dp.init("../../tests/infer/deeppot_sea.pt2");
+#endif
+  }
 
   void SetUp() override {
-#ifndef BUILD_PYTORCH
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
-    std::string file_name = "../../tests/infer/deeppot_sea.pt2";
-    dp.init(file_name);
 
     natoms = expected_e.size();
     EXPECT_EQ(natoms * 3, expected_f.size());
@@ -471,7 +697,12 @@ class TestInferDeepPotAPtExptNoPbc : public ::testing::Test {
   };
 
   void TearDown() override {};
+
+  static void TearDownTestSuite() { dp = deepmd::DeepPot(); }
 };
+
+template <class VALUETYPE>
+deepmd::DeepPot TestInferDeepPotAPtExptNoPbc<VALUETYPE>::dp;
 
 TYPED_TEST_SUITE(TestInferDeepPotAPtExptNoPbc, ValueTypes);
 
@@ -499,4 +730,287 @@ TYPED_TEST(TestInferDeepPotAPtExptNoPbc, cpu_build_nlist) {
   for (int ii = 0; ii < 3 * 3; ++ii) {
     EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
   }
+}
+
+TYPED_TEST(TestInferDeepPotAPtExptNoPbc, cpu_build_nlist_atomic) {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE>& coord = this->coord;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  std::vector<VALUETYPE>& expected_e = this->expected_e;
+  std::vector<VALUETYPE>& expected_f = this->expected_f;
+  std::vector<VALUETYPE>& expected_v = this->expected_v;
+  int& natoms = this->natoms;
+  double& expected_tot_e = this->expected_tot_e;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
+  deepmd::DeepPot& dp = this->dp;
+  double ener;
+  std::vector<VALUETYPE> force, virial, atom_ener, atom_vir;
+  dp.compute(ener, force, virial, atom_ener, atom_vir, coord, atype, box);
+
+  EXPECT_EQ(force.size(), natoms * 3);
+  EXPECT_EQ(virial.size(), 9);
+  EXPECT_EQ(atom_ener.size(), natoms);
+  EXPECT_EQ(atom_vir.size(), natoms * 9);
+
+  EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
+  for (int ii = 0; ii < natoms * 3; ++ii) {
+    EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
+  }
+  for (int ii = 0; ii < 3 * 3; ++ii) {
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+  }
+  for (int ii = 0; ii < natoms; ++ii) {
+    EXPECT_LT(fabs(atom_ener[ii] - expected_e[ii]), EPSILON);
+  }
+  for (int ii = 0; ii < natoms * 9; ++ii) {
+    EXPECT_LT(fabs(atom_vir[ii] - expected_v[ii]), EPSILON);
+  }
+}
+
+// Multi-frame PBC test via compute_mixed_type
+TYPED_TEST(TestInferDeepPotAPtExpt, cpu_build_nlist_nframes) {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE>& coord = this->coord;
+  std::vector<VALUETYPE>& coord_alt = this->coord_alt;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  std::vector<VALUETYPE>& expected_f = this->expected_f;
+  int& natoms = this->natoms;
+  double& expected_tot_e = this->expected_tot_e;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
+  deepmd::DeepPot& dp = this->dp;
+
+  int nframes = 2;
+  // Frame 0: original coords.  Frame 1: alternative coords (coord_alt).
+  std::vector<VALUETYPE> coord_2f(coord);
+  coord_2f.insert(coord_2f.end(), coord_alt.begin(), coord_alt.end());
+  std::vector<int> atype_2f(atype);
+  atype_2f.insert(atype_2f.end(), atype.begin(), atype.end());
+  std::vector<VALUETYPE> box_2f(box);
+  box_2f.insert(box_2f.end(), box.begin(), box.end());
+
+  std::vector<double> ener;
+  std::vector<VALUETYPE> force, virial;
+  dp.compute_mixed_type(ener, force, virial, nframes, coord_2f, atype_2f,
+                        box_2f);
+
+  EXPECT_EQ(ener.size(), nframes);
+  EXPECT_EQ(force.size(), nframes * natoms * 3);
+  EXPECT_EQ(virial.size(), nframes * 9);
+
+  // Frame 0 should match reference
+  EXPECT_LT(fabs(ener[0] - expected_tot_e), EPSILON);
+  for (int ii = 0; ii < natoms * 3; ++ii) {
+    EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
+  }
+  // Frame 1 should be different (perturbed coords)
+  EXPECT_GT(fabs(ener[1] - ener[0]), 1e-10);
+}
+
+// Multi-frame NoPBC test via compute_mixed_type
+TYPED_TEST(TestInferDeepPotAPtExptNoPbc, cpu_build_nlist_nframes) {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE>& coord = this->coord;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& coord_alt = this->coord_alt;
+  std::vector<VALUETYPE>& box = this->box;  // empty
+  std::vector<VALUETYPE>& expected_f = this->expected_f;
+  int& natoms = this->natoms;
+  double& expected_tot_e = this->expected_tot_e;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
+  deepmd::DeepPot& dp = this->dp;
+
+  int nframes = 2;
+  std::vector<VALUETYPE> coord_2f(coord);
+  coord_2f.insert(coord_2f.end(), coord_alt.begin(), coord_alt.end());
+  std::vector<int> atype_2f(atype);
+  atype_2f.insert(atype_2f.end(), atype.begin(), atype.end());
+
+  std::vector<double> ener;
+  std::vector<VALUETYPE> force, virial;
+  dp.compute_mixed_type(ener, force, virial, nframes, coord_2f, atype_2f, box);
+
+  EXPECT_EQ(ener.size(), nframes);
+  EXPECT_EQ(force.size(), nframes * natoms * 3);
+  EXPECT_EQ(virial.size(), nframes * 9);
+
+  // Frame 0 should match reference
+  EXPECT_LT(fabs(ener[0] - expected_tot_e), EPSILON);
+  for (int ii = 0; ii < natoms * 3; ++ii) {
+    EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
+  }
+  // Frame 1 should be different (perturbed coords)
+  EXPECT_GT(fabs(ener[1] - ener[0]), 1e-10);
+}
+
+// ========== Parser / metadata coverage tests ==========
+
+TEST(TestDeepPotPTExptParser, load_nonexistent_file) {
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
+  GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
+#endif
+  deepmd::DeepPot dp;
+  EXPECT_THROW(dp.init("nonexistent_model.pt2"), deepmd::deepmd_exception);
+}
+
+TEST(TestDeepPotPTExptParser, load_invalid_zip) {
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
+  GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
+#endif
+  std::string tmpfile = "test_invalid.pt2";
+  {
+    std::ofstream ofs(tmpfile, std::ios::binary);
+    ASSERT_TRUE(ofs.is_open()) << "Failed to create temp file";
+    ofs << "not a zip file at all";
+  }
+  deepmd::DeepPot dp;
+  EXPECT_THROW(dp.init(tmpfile), deepmd::deepmd_exception);
+  std::remove(tmpfile.c_str());
+}
+
+TEST(TestDeepPotPTExptParser, load_tiny_file) {
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
+  GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
+#endif
+  std::string tmpfile = "test_tiny.pt2";
+  {
+    std::ofstream ofs(tmpfile, std::ios::binary);
+    ASSERT_TRUE(ofs.is_open()) << "Failed to create temp file";
+    ofs << "abc";
+  }
+  deepmd::DeepPot dp;
+  EXPECT_THROW(dp.init(tmpfile), deepmd::deepmd_exception);
+  std::remove(tmpfile.c_str());
+}
+
+// Metadata accessor tests — exercise JSON parser on a real model
+template <class VALUETYPE>
+class TestDeepPotPTExptMetadata : public ::testing::Test {
+ protected:
+  static deepmd::DeepPot dp;
+  static void SetUpTestSuite() {
+#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
+    dp.init("../../tests/infer/deeppot_sea.pt2");
+#endif
+  }
+  void SetUp() override {
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
+    GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
+#endif
+  };
+  void TearDown() override {};
+
+  static void TearDownTestSuite() { dp = deepmd::DeepPot(); }
+};
+
+template <class VALUETYPE>
+deepmd::DeepPot TestDeepPotPTExptMetadata<VALUETYPE>::dp;
+
+TYPED_TEST_SUITE(TestDeepPotPTExptMetadata, ValueTypes);
+
+TYPED_TEST(TestDeepPotPTExptMetadata, type_map) {
+  std::string type_map;
+  this->dp.get_type_map(type_map);
+  EXPECT_NE(type_map.find("O"), std::string::npos);
+  EXPECT_NE(type_map.find("H"), std::string::npos);
+}
+
+TYPED_TEST(TestDeepPotPTExptMetadata, cutoff) {
+  EXPECT_GT(this->dp.cutoff(), 0.0);
+}
+
+TYPED_TEST(TestDeepPotPTExptMetadata, ntypes) {
+  EXPECT_EQ(this->dp.numb_types(), 2);
+}
+
+TYPED_TEST(TestDeepPotPTExptMetadata, dim_fparam_zero) {
+  EXPECT_EQ(this->dp.dim_fparam(), 0);
+}
+
+TYPED_TEST(TestDeepPotPTExptMetadata, dim_aparam_zero) {
+  EXPECT_EQ(this->dp.dim_aparam(), 0);
+}
+
+TYPED_TEST(TestDeepPotPTExptMetadata, no_default_fparam) {
+  EXPECT_FALSE(this->dp.has_default_fparam());
+}
+
+// JSON parser type-coverage via fparam model
+template <class VALUETYPE>
+class TestDeepPotPTExptJsonTypes : public ::testing::Test {
+ protected:
+  static deepmd::DeepPot dp;
+  static void SetUpTestSuite() {
+#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
+    dp.init("../../tests/infer/fparam_aparam.pt2");
+#endif
+  }
+  void SetUp() override {
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
+    GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
+#endif
+  };
+  void TearDown() override {};
+
+  static void TearDownTestSuite() { dp = deepmd::DeepPot(); }
+};
+
+template <class VALUETYPE>
+deepmd::DeepPot TestDeepPotPTExptJsonTypes<VALUETYPE>::dp;
+
+TYPED_TEST_SUITE(TestDeepPotPTExptJsonTypes, ValueTypes);
+
+TYPED_TEST(TestDeepPotPTExptJsonTypes, integer_fields) {
+  EXPECT_EQ(this->dp.dim_fparam(), 1);
+  EXPECT_EQ(this->dp.dim_aparam(), 1);
+}
+
+TYPED_TEST(TestDeepPotPTExptJsonTypes, boolean_field) {
+  EXPECT_FALSE(this->dp.has_default_fparam());
+}
+
+TYPED_TEST(TestDeepPotPTExptJsonTypes, string_array) {
+  std::string type_map;
+  this->dp.get_type_map(type_map);
+  EXPECT_FALSE(type_map.empty());
+}
+
+TYPED_TEST(TestDeepPotPTExptJsonTypes, float_field) {
+  EXPECT_GT(this->dp.cutoff(), 0.0);
+  EXPECT_LT(this->dp.cutoff(), 100.0);
+}
+
+// Default fparam model — tests JSON parsing of boolean true + float array
+template <class VALUETYPE>
+class TestDeepPotPTExptJsonDefaults : public ::testing::Test {
+ protected:
+  static deepmd::DeepPot dp;
+  static void SetUpTestSuite() {
+#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
+    dp.init("../../tests/infer/fparam_aparam_default.pt2");
+#endif
+  }
+  void SetUp() override {
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
+    GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
+#endif
+  };
+  void TearDown() override {};
+
+  static void TearDownTestSuite() { dp = deepmd::DeepPot(); }
+};
+
+template <class VALUETYPE>
+deepmd::DeepPot TestDeepPotPTExptJsonDefaults<VALUETYPE>::dp;
+
+TYPED_TEST_SUITE(TestDeepPotPTExptJsonDefaults, ValueTypes);
+
+TYPED_TEST(TestDeepPotPTExptJsonDefaults, boolean_true) {
+  EXPECT_TRUE(this->dp.has_default_fparam());
+}
+
+TYPED_TEST(TestDeepPotPTExptJsonDefaults, default_fparam_parsed) {
+  EXPECT_EQ(this->dp.dim_fparam(), 1);
+  EXPECT_TRUE(this->dp.has_default_fparam());
 }

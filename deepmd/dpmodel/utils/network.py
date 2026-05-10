@@ -117,15 +117,16 @@ class NativeLayer(NativeOP):
         # only use_timestep when skip connection is established.
         use_timestep = use_timestep and (num_out == num_in or num_out == num_in * 2)
         rng = np.random.default_rng(seed)
-        scale_factor = 1.0 / np.sqrt(num_out + num_in)
-        self.w = rng.normal(size=(num_in, num_out), scale=scale_factor).astype(prec)
-        self.b = (
-            rng.normal(size=(num_out,), scale=scale_factor).astype(prec)
-            if bias
-            else None
-        )
+        # Match deepmd/pt MLPLayer._default_normal_init: w uses Glorot scaling,
+        # but b is N(0, 1) (unscaled) and idt is N(0.1, 0.001). Using Glorot
+        # scaling for b/idt empirically slows convergence on ResNet-style
+        # fitting nets because residual layers start near identity (idt~0).
+        self.w = rng.normal(
+            size=(num_in, num_out), scale=1.0 / np.sqrt(num_out + num_in)
+        ).astype(prec)
+        self.b = rng.normal(size=(num_out,), scale=1.0).astype(prec) if bias else None
         self.idt = (
-            rng.normal(size=(num_out,), scale=scale_factor).astype(prec)
+            (rng.normal(size=(num_out,), scale=0.001) + 0.1).astype(prec)
             if use_timestep
             else None
         )

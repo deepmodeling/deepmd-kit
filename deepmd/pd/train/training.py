@@ -141,7 +141,7 @@ class Trainer:
 
         # Iteration config
         self.num_steps = training_params.get("numb_steps")
-        self.num_epoch = training_params.get("num_epoch")
+        self.num_epoch = training_params.get("numb_epoch")
         self.num_epoch_dict = training_params.get("num_epoch_dict")
         self.acc_freq: int = training_params.get(
             "acc_freq", 1

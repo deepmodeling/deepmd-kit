@@ -10,12 +10,21 @@
 #include <vector>
 
 #include "DeepPot.h"
+#include "DeepPotPTExpt.h"
+#include "expected_ref.h"
 #include "neighbor_list.h"
 #include "test_utils.h"
 
 // 1e-10 cannot pass; unclear bug or not
 #undef EPSILON
 #define EPSILON (std::is_same<VALUETYPE, double>::value ? 1e-7 : 1e-4)
+
+namespace {
+constexpr const char* kRefPath =
+    "../../tests/infer/fparam_aparam_default.expected";
+constexpr const char* kModelPath =
+    "../../tests/infer/fparam_aparam_default.pt2";
+}  // namespace
 
 template <class VALUETYPE>
 class TestInferDeepPotDefaultFParamPtExpt : public ::testing::Test {
@@ -30,67 +39,36 @@ class TestInferDeepPotDefaultFParamPtExpt : public ::testing::Test {
                                    0.25852028, 0.25852028, 0.25852028};
   // explicit fparam for backward compat test
   std::vector<VALUETYPE> fparam = {0.25852028};
-  // expected values computed with default fparam
-  std::vector<VALUETYPE> expected_e = {
-      1.596836265688982293e-01, 1.596933624175455035e-01,
-      1.596859462832928844e-01, 1.596779837732069107e-01,
-      1.596776702807257142e-01, 1.596869048501883825e-01};
-  std::vector<VALUETYPE> expected_f = {
-      1.112134318320098417e-05,  1.085230789880272913e-04,
-      9.298442641358670786e-07,  1.491517597320257801e-04,
-      -1.250419527572718750e-05, -9.768265174690742383e-05,
-      -5.021052645725076108e-05, -9.741678916887853762e-05,
-      9.375317764392499637e-05,  8.664103999852429459e-05,
-      -4.538513400016661465e-05, 8.561605116672728300e-05,
-      -2.454811055475983474e-05, 1.079491454988312375e-04,
-      -1.656974003674590982e-04, -1.721555059017404292e-04,
-      -6.116610604208619416e-05, 8.308097903957838235e-05};
-  std::vector<VALUETYPE> expected_v = {
-      -1.264062189119718516e-04, -1.636544077308298682e-05,
-      4.453224130911559301e-05,  -7.947403699518174416e-06,
-      -4.603504987332694676e-05, 9.491045850088937973e-06,
-      4.131028921467351392e-05,  9.691472468201808941e-06,
-      -3.323572704427467454e-05, -1.024556912293136224e-04,
-      5.530809120954762511e-06,  5.211030391191995666e-05,
-      -3.851138686809712045e-06, 2.101414374152978974e-07,
-      3.247573516972806439e-06,  4.561253716254927361e-05,
-      -3.865680092083368681e-06, -3.262252150841838630e-05,
-      -1.166788692566848309e-04, -1.814499890570951256e-05,
-      2.155064011880963138e-05,  -1.629918981392338952e-05,
-      -3.245631268444034052e-05, 2.968538417601219450e-05,
-      2.463149007223181425e-05,  3.660689861518750502e-05,
-      -3.586518711234942813e-05, -1.424206401855391917e-04,
-      -1.017840928263479808e-05, 1.421307534994556974e-05,
-      -8.618294024757196269e-06, -2.192409332705388475e-05,
-      3.461715847634955364e-05,  1.277625693457723244e-05,
-      3.486479415793142304e-05,  -5.604161168847289151e-05,
-      -8.612844407008964597e-05, 2.508361660152530129e-06,
-      -1.633895954533155651e-07, 1.903591783622965016e-06,
-      -3.028341203071198989e-05, 4.685511271783774690e-05,
-      2.876824509984395433e-06,  4.576515617130287920e-05,
-      -7.108738780331674085e-05, -1.062354815105980244e-04,
-      -2.954644717832236758e-05, 4.075640001084843372e-05,
-      -3.138369091725702186e-05, -1.316088004849702041e-05,
-      1.786389692843502177e-05,  4.579187321116953935e-05,
-      1.869753034515599593e-05,  -2.550749273395904029e-05};
+  std::vector<VALUETYPE> expected_e;
+  std::vector<VALUETYPE> expected_f;
+  std::vector<VALUETYPE> expected_v;
   int natoms;
   double expected_tot_e;
   std::vector<VALUETYPE> expected_tot_v;
 
-  deepmd::DeepPot dp;
+  static deepmd::DeepPot dp;
+
+  static void SetUpTestSuite() {
+#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
+    dp.init(kModelPath);
+#endif
+  }
 
   void SetUp() override {
-#ifndef BUILD_PYTORCH
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
-    dp.init("../../tests/infer/fparam_aparam_default.pt2");
+    deepmd_test::ExpectedRef ref;
+    ref.load(kRefPath);
+    expected_e = ref.get<VALUETYPE>("default", "expected_e");
+    expected_f = ref.get<VALUETYPE>("default", "expected_f");
+    expected_v = ref.get<VALUETYPE>("default", "expected_v");
 
     natoms = expected_e.size();
     EXPECT_EQ(natoms * 3, expected_f.size());
     EXPECT_EQ(natoms * 9, expected_v.size());
     expected_tot_e = 0.;
-    expected_tot_v.resize(9);
-    std::fill(expected_tot_v.begin(), expected_tot_v.end(), 0.);
+    expected_tot_v.assign(9, 0.);
     for (int ii = 0; ii < natoms; ++ii) {
       expected_tot_e += expected_e[ii];
     }
@@ -102,7 +80,12 @@ class TestInferDeepPotDefaultFParamPtExpt : public ::testing::Test {
   };
 
   void TearDown() override {};
+
+  static void TearDownTestSuite() { dp = deepmd::DeepPot(); }
 };
+
+template <class VALUETYPE>
+deepmd::DeepPot TestInferDeepPotDefaultFParamPtExpt<VALUETYPE>::dp;
 
 TYPED_TEST_SUITE(TestInferDeepPotDefaultFParamPtExpt, ValueTypes);
 
