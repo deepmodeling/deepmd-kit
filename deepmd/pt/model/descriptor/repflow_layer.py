@@ -702,6 +702,340 @@ class RepFlowLayer(torch.nn.Module):
         result_update = bias + sub_node_update + sub_edge_update + sub_node_ext_update
         return result_update
 
+    def forward(
+        self,
+        node_ebd_ext: torch.Tensor,  # nf x nall x n_dim [OR] nf x nloc x n_dim when not parallel_mode
+        edge_ebd: torch.Tensor,  # nf x nloc x nnei x e_dim
+        h2: torch.Tensor,  # nf x nloc x nnei x 3
+        angle_ebd: torch.Tensor,  # nf x nloc x a_nnei x a_nnei x a_dim
+        nlist: torch.Tensor,  # nf x nloc x nnei
+        nlist_mask: torch.Tensor,  # nf x nloc x nnei
+        sw: torch.Tensor,  # switch func, nf x nloc x nnei
+        a_nlist: torch.Tensor,  # nf x nloc x a_nnei
+        a_nlist_mask: torch.Tensor,  # nf x nloc x a_nnei
+        a_sw: torch.Tensor,  # switch func, nf x nloc x a_nnei
+        edge_index: torch.Tensor,  # 2 x n_edge
+        angle_index: torch.Tensor,  # 3 x n_angle
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Parameters
+        ----------
+        node_ebd_ext : nf x nall x n_dim
+            Extended node embedding.
+        edge_ebd : nf x nloc x nnei x e_dim
+            Edge embedding.
+        h2 : nf x nloc x nnei x 3
+            Pair-atom channel, equivariant.
+        angle_ebd : nf x nloc x a_nnei x a_nnei x a_dim
+            Angle embedding.
+        nlist : nf x nloc x nnei
+            Neighbor list. (padded neis are set to 0)
+        nlist_mask : nf x nloc x nnei
+            Masks of the neighbor list. real nei 1 otherwise 0
+        sw : nf x nloc x nnei
+            Switch function.
+        a_nlist : nf x nloc x a_nnei
+            Neighbor list for angle. (padded neis are set to 0)
+        a_nlist_mask : nf x nloc x a_nnei
+            Masks of the neighbor list for angle. real nei 1 otherwise 0
+        a_sw : nf x nloc x a_nnei
+            Switch function for angle.
+        edge_index : Optional for dynamic sel, 2 x n_edge
+            n2e_index : n_edge
+                Broadcast indices from node(i) to edge(ij), or reduction indices from edge(ij) to node(i).
+            n_ext2e_index : n_edge
+                Broadcast indices from extended node(j) to edge(ij).
+        angle_index : Optional for dynamic sel, 3 x n_angle
+            n2a_index : n_angle
+                Broadcast indices from extended node(j) to angle(ijk).
+            eij2a_index : n_angle
+                Broadcast indices from extended edge(ij) to angle(ijk), or reduction indices from angle(ijk) to edge(ij).
+            eik2a_index : n_angle
+                Broadcast indices from extended edge(ik) to angle(ijk).
+
+        Returns
+        -------
+        n_updated:     nf x nloc x n_dim
+            Updated node embedding.
+        e_updated:     nf x nloc x nnei x e_dim
+            Updated edge embedding.
+        a_updated : nf x nloc x a_nnei x a_nnei x a_dim
+            Updated angle embedding.
+        """
+        nb, nloc, nnei = nlist.shape
+        nall = node_ebd_ext.shape[1]
+        node_ebd = node_ebd_ext[:, :nloc, :]
+        assert (nb, nloc) == node_ebd.shape[:2]
+        if not self.use_dynamic_sel:
+            assert (nb, nloc, nnei, 3) == h2.shape
+            n_edge = None
+        else:
+            # n_edge = int(nlist_mask.sum().item())
+            # assert (n_edge, 3) == h2.shape
+            n_edge = h2.shape[0]
+        del a_nlist  # may be used in the future
+
+        if self.sequential_update and self.update_angle:
+            return self._forward_sequential(
+                node_ebd_ext,
+                edge_ebd,
+                h2,
+                angle_ebd,
+                nlist,
+                nlist_mask,
+                sw,
+                a_nlist_mask,
+                a_sw,
+                edge_index,
+                angle_index,
+                nb,
+                nloc,
+                n_edge,
+            )
+
+        n2e_index, n_ext2e_index = edge_index[0], edge_index[1]
+        n2a_index, eij2a_index, eik2a_index = (
+            angle_index[0],
+            angle_index[1],
+            angle_index[2],
+        )
+
+        # nb x nloc x nnei x n_dim [OR] n_edge x n_dim
+        nei_node_ebd = (
+            _make_nei_g1(node_ebd_ext, nlist)
+            if not self.use_dynamic_sel
+            else torch.index_select(
+                node_ebd_ext.reshape(-1, self.n_dim), 0, n_ext2e_index
+            )
+        )
+
+        n_update_list: list[torch.Tensor] = [node_ebd]
+        e_update_list: list[torch.Tensor] = [edge_ebd]
+        a_update_list: list[torch.Tensor] = [angle_ebd]
+
+        # node self mlp
+        node_self_mlp = self.act(self.node_self_mlp(node_ebd))
+        n_update_list.append(node_self_mlp)
+
+        # node sym (grrg + drrd)
+        node_sym = self._compute_node_sym(
+            edge_ebd, nei_node_ebd, h2, nlist_mask, sw, n2e_index, nb, nloc
+        )
+        n_update_list.append(node_sym)
+
+        # node edge message
+        node_edge_update = self._compute_node_edge_message(
+            node_ebd,
+            node_ebd_ext,
+            edge_ebd,
+            nei_node_ebd,
+            sw,
+            nlist,
+            n2e_index,
+            n_ext2e_index,
+            nb,
+            nloc,
+        )
+        if self.n_multi_edge_message > 1:
+            # nb x nloc x h x n_dim
+            node_edge_update_mul_head = node_edge_update.view(
+                nb, nloc, self.n_multi_edge_message, self.n_dim
+            )
+            for head_index in range(self.n_multi_edge_message):
+                n_update_list.append(node_edge_update_mul_head[..., head_index, :])
+        else:
+            n_update_list.append(node_edge_update)
+        # update node_ebd
+        n_updated = self.list_update(n_update_list, "node")
+
+        # edge self message
+        edge_self_update = self._compute_edge_self_update(
+            node_ebd,
+            node_ebd_ext,
+            edge_ebd,
+            nei_node_ebd,
+            nlist,
+            n2e_index,
+            n_ext2e_index,
+        )
+        e_update_list.append(edge_self_update)
+
+        if self.update_angle:
+            assert self.angle_self_linear is not None
+            assert self.edge_angle_linear1 is not None
+            assert self.edge_angle_linear2 is not None
+
+            node_ebd_for_angle, edge_ebd_for_angle = self._prepare_angle_embeddings(
+                node_ebd, edge_ebd, a_nlist_mask
+            )
+
+            # edge angle message
+            edge_angle_update = self._compute_angle_update(
+                angle_ebd,
+                node_ebd_for_angle,
+                edge_ebd_for_angle,
+                "edge",
+                n2a_index,
+                eij2a_index,
+                eik2a_index,
+            )
+            e_update_list.append(
+                self._compute_edge_angle_reduction(
+                    edge_angle_update,
+                    edge_ebd,
+                    a_sw,
+                    a_nlist_mask,
+                    nb,
+                    nloc,
+                    n_edge,
+                    eij2a_index,
+                )
+            )
+            # update edge_ebd
+            e_updated = self.list_update(e_update_list, "edge")
+
+            # angle self message
+            angle_self_update = self._compute_angle_update(
+                angle_ebd,
+                node_ebd_for_angle,
+                edge_ebd_for_angle,
+                "angle",
+                n2a_index,
+                eij2a_index,
+                eik2a_index,
+            )
+            a_update_list.append(angle_self_update)
+        else:
+            # update edge_ebd
+            e_updated = self.list_update(e_update_list, "edge")
+
+        # update angle_ebd
+        a_updated = self.list_update(a_update_list, "angle")
+        return n_updated, e_updated, a_updated
+
+    def _forward_sequential(
+        self,
+        node_ebd_ext: torch.Tensor,
+        edge_ebd: torch.Tensor,
+        h2: torch.Tensor,
+        angle_ebd: torch.Tensor,
+        nlist: torch.Tensor,
+        nlist_mask: torch.Tensor,
+        sw: torch.Tensor,
+        a_nlist_mask: torch.Tensor,
+        a_sw: torch.Tensor,
+        edge_index: torch.Tensor,
+        angle_index: torch.Tensor,
+        nb: int,
+        nloc: int,
+        n_edge: int | None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Sequential update path: edge_self -> angle_self -> edge_angle -> node.
+
+        Each phase consumes the most recent update of its inputs (instead of
+        the parallel path which uses the same ``edge_ebd``/``angle_ebd`` for
+        all branches). Residuals are applied immediately after each phase.
+        """
+        assert self.update_style == "res_residual"
+        assert self.update_angle
+        assert self.angle_self_linear is not None
+        assert self.edge_angle_linear1 is not None
+        assert self.edge_angle_linear2 is not None
+        node_ebd = node_ebd_ext[:, :nloc, :]
+        n2e_index, n_ext2e_index = edge_index[0], edge_index[1]
+        n2a_index, eij2a_index, eik2a_index = (
+            angle_index[0],
+            angle_index[1],
+            angle_index[2],
+        )
+        nei_node_ebd = (
+            _make_nei_g1(node_ebd_ext, nlist)
+            if not self.use_dynamic_sel
+            else torch.index_select(
+                node_ebd_ext.reshape(-1, self.n_dim), 0, n_ext2e_index
+            )
+        )
+
+        # Phase 1: edge self update -> apply residual immediately.
+        edge_self_update = self._compute_edge_self_update(
+            node_ebd,
+            node_ebd_ext,
+            edge_ebd,
+            nei_node_ebd,
+            nlist,
+            n2e_index,
+            n_ext2e_index,
+        )
+        edge_ebd_s1 = edge_ebd + self.e_residual[0] * edge_self_update
+
+        # Phase 2: angle self message uses the updated edge embedding.
+        node_ebd_for_angle, edge_ebd_for_angle = self._prepare_angle_embeddings(
+            node_ebd, edge_ebd_s1, a_nlist_mask
+        )
+        angle_self_update = self._compute_angle_update(
+            angle_ebd,
+            node_ebd_for_angle,
+            edge_ebd_for_angle,
+            "angle",
+            n2a_index,
+            eij2a_index,
+            eik2a_index,
+        )
+        a_updated = angle_ebd + self.a_residual[0] * angle_self_update
+
+        # Phase 3: edge angle message uses the updated angle embedding.
+        edge_angle_update = self._compute_angle_update(
+            a_updated,
+            node_ebd_for_angle,
+            edge_ebd_for_angle,
+            "edge",
+            n2a_index,
+            eij2a_index,
+            eik2a_index,
+        )
+        edge_angle_reduced = self._compute_edge_angle_reduction(
+            edge_angle_update,
+            edge_ebd_s1,
+            a_sw,
+            a_nlist_mask,
+            nb,
+            nloc,
+            n_edge,
+            eij2a_index,
+        )
+        e_updated = edge_ebd_s1 + self.e_residual[1] * edge_angle_reduced
+
+        # Phase 4: node updates use the fully updated edge embedding.
+        n_update_list: list[torch.Tensor] = [node_ebd]
+        n_update_list.append(self.act(self.node_self_mlp(node_ebd)))
+        n_update_list.append(
+            self._compute_node_sym(
+                e_updated, nei_node_ebd, h2, nlist_mask, sw, n2e_index, nb, nloc
+            )
+        )
+        node_edge_update = self._compute_node_edge_message(
+            node_ebd,
+            node_ebd_ext,
+            e_updated,
+            nei_node_ebd,
+            sw,
+            nlist,
+            n2e_index,
+            n_ext2e_index,
+            nb,
+            nloc,
+        )
+        if self.n_multi_edge_message > 1:
+            node_edge_update_mul_head = node_edge_update.view(
+                nb, nloc, self.n_multi_edge_message, self.n_dim
+            )
+            for head_index in range(self.n_multi_edge_message):
+                n_update_list.append(node_edge_update_mul_head[..., head_index, :])
+        else:
+            n_update_list.append(node_edge_update)
+        n_updated = self.list_update(n_update_list, "node")
+        return n_updated, e_updated, a_updated
+
     def _compute_edge_self_update(
         self,
         node_ebd: torch.Tensor,
@@ -1076,340 +1410,6 @@ class RepFlowLayer(torch.nn.Module):
             )
         )
         return self.act(self.node_sym_linear(torch.cat(node_sym_list, dim=-1)))
-
-    def forward(
-        self,
-        node_ebd_ext: torch.Tensor,  # nf x nall x n_dim [OR] nf x nloc x n_dim when not parallel_mode
-        edge_ebd: torch.Tensor,  # nf x nloc x nnei x e_dim
-        h2: torch.Tensor,  # nf x nloc x nnei x 3
-        angle_ebd: torch.Tensor,  # nf x nloc x a_nnei x a_nnei x a_dim
-        nlist: torch.Tensor,  # nf x nloc x nnei
-        nlist_mask: torch.Tensor,  # nf x nloc x nnei
-        sw: torch.Tensor,  # switch func, nf x nloc x nnei
-        a_nlist: torch.Tensor,  # nf x nloc x a_nnei
-        a_nlist_mask: torch.Tensor,  # nf x nloc x a_nnei
-        a_sw: torch.Tensor,  # switch func, nf x nloc x a_nnei
-        edge_index: torch.Tensor,  # 2 x n_edge
-        angle_index: torch.Tensor,  # 3 x n_angle
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """
-        Parameters
-        ----------
-        node_ebd_ext : nf x nall x n_dim
-            Extended node embedding.
-        edge_ebd : nf x nloc x nnei x e_dim
-            Edge embedding.
-        h2 : nf x nloc x nnei x 3
-            Pair-atom channel, equivariant.
-        angle_ebd : nf x nloc x a_nnei x a_nnei x a_dim
-            Angle embedding.
-        nlist : nf x nloc x nnei
-            Neighbor list. (padded neis are set to 0)
-        nlist_mask : nf x nloc x nnei
-            Masks of the neighbor list. real nei 1 otherwise 0
-        sw : nf x nloc x nnei
-            Switch function.
-        a_nlist : nf x nloc x a_nnei
-            Neighbor list for angle. (padded neis are set to 0)
-        a_nlist_mask : nf x nloc x a_nnei
-            Masks of the neighbor list for angle. real nei 1 otherwise 0
-        a_sw : nf x nloc x a_nnei
-            Switch function for angle.
-        edge_index : Optional for dynamic sel, 2 x n_edge
-            n2e_index : n_edge
-                Broadcast indices from node(i) to edge(ij), or reduction indices from edge(ij) to node(i).
-            n_ext2e_index : n_edge
-                Broadcast indices from extended node(j) to edge(ij).
-        angle_index : Optional for dynamic sel, 3 x n_angle
-            n2a_index : n_angle
-                Broadcast indices from extended node(j) to angle(ijk).
-            eij2a_index : n_angle
-                Broadcast indices from extended edge(ij) to angle(ijk), or reduction indices from angle(ijk) to edge(ij).
-            eik2a_index : n_angle
-                Broadcast indices from extended edge(ik) to angle(ijk).
-
-        Returns
-        -------
-        n_updated:     nf x nloc x n_dim
-            Updated node embedding.
-        e_updated:     nf x nloc x nnei x e_dim
-            Updated edge embedding.
-        a_updated : nf x nloc x a_nnei x a_nnei x a_dim
-            Updated angle embedding.
-        """
-        nb, nloc, nnei = nlist.shape
-        nall = node_ebd_ext.shape[1]
-        node_ebd = node_ebd_ext[:, :nloc, :]
-        assert (nb, nloc) == node_ebd.shape[:2]
-        if not self.use_dynamic_sel:
-            assert (nb, nloc, nnei, 3) == h2.shape
-            n_edge = None
-        else:
-            # n_edge = int(nlist_mask.sum().item())
-            # assert (n_edge, 3) == h2.shape
-            n_edge = h2.shape[0]
-        del a_nlist  # may be used in the future
-
-        if self.sequential_update and self.update_angle:
-            return self._forward_sequential(
-                node_ebd_ext,
-                edge_ebd,
-                h2,
-                angle_ebd,
-                nlist,
-                nlist_mask,
-                sw,
-                a_nlist_mask,
-                a_sw,
-                edge_index,
-                angle_index,
-                nb,
-                nloc,
-                n_edge,
-            )
-
-        n2e_index, n_ext2e_index = edge_index[0], edge_index[1]
-        n2a_index, eij2a_index, eik2a_index = (
-            angle_index[0],
-            angle_index[1],
-            angle_index[2],
-        )
-
-        # nb x nloc x nnei x n_dim [OR] n_edge x n_dim
-        nei_node_ebd = (
-            _make_nei_g1(node_ebd_ext, nlist)
-            if not self.use_dynamic_sel
-            else torch.index_select(
-                node_ebd_ext.reshape(-1, self.n_dim), 0, n_ext2e_index
-            )
-        )
-
-        n_update_list: list[torch.Tensor] = [node_ebd]
-        e_update_list: list[torch.Tensor] = [edge_ebd]
-        a_update_list: list[torch.Tensor] = [angle_ebd]
-
-        # node self mlp
-        node_self_mlp = self.act(self.node_self_mlp(node_ebd))
-        n_update_list.append(node_self_mlp)
-
-        # node sym (grrg + drrd)
-        node_sym = self._compute_node_sym(
-            edge_ebd, nei_node_ebd, h2, nlist_mask, sw, n2e_index, nb, nloc
-        )
-        n_update_list.append(node_sym)
-
-        # node edge message
-        node_edge_update = self._compute_node_edge_message(
-            node_ebd,
-            node_ebd_ext,
-            edge_ebd,
-            nei_node_ebd,
-            sw,
-            nlist,
-            n2e_index,
-            n_ext2e_index,
-            nb,
-            nloc,
-        )
-        if self.n_multi_edge_message > 1:
-            # nb x nloc x h x n_dim
-            node_edge_update_mul_head = node_edge_update.view(
-                nb, nloc, self.n_multi_edge_message, self.n_dim
-            )
-            for head_index in range(self.n_multi_edge_message):
-                n_update_list.append(node_edge_update_mul_head[..., head_index, :])
-        else:
-            n_update_list.append(node_edge_update)
-        # update node_ebd
-        n_updated = self.list_update(n_update_list, "node")
-
-        # edge self message
-        edge_self_update = self._compute_edge_self_update(
-            node_ebd,
-            node_ebd_ext,
-            edge_ebd,
-            nei_node_ebd,
-            nlist,
-            n2e_index,
-            n_ext2e_index,
-        )
-        e_update_list.append(edge_self_update)
-
-        if self.update_angle:
-            assert self.angle_self_linear is not None
-            assert self.edge_angle_linear1 is not None
-            assert self.edge_angle_linear2 is not None
-
-            node_ebd_for_angle, edge_ebd_for_angle = self._prepare_angle_embeddings(
-                node_ebd, edge_ebd, a_nlist_mask
-            )
-
-            # edge angle message
-            edge_angle_update = self._compute_angle_update(
-                angle_ebd,
-                node_ebd_for_angle,
-                edge_ebd_for_angle,
-                "edge",
-                n2a_index,
-                eij2a_index,
-                eik2a_index,
-            )
-            e_update_list.append(
-                self._compute_edge_angle_reduction(
-                    edge_angle_update,
-                    edge_ebd,
-                    a_sw,
-                    a_nlist_mask,
-                    nb,
-                    nloc,
-                    n_edge,
-                    eij2a_index,
-                )
-            )
-            # update edge_ebd
-            e_updated = self.list_update(e_update_list, "edge")
-
-            # angle self message
-            angle_self_update = self._compute_angle_update(
-                angle_ebd,
-                node_ebd_for_angle,
-                edge_ebd_for_angle,
-                "angle",
-                n2a_index,
-                eij2a_index,
-                eik2a_index,
-            )
-            a_update_list.append(angle_self_update)
-        else:
-            # update edge_ebd
-            e_updated = self.list_update(e_update_list, "edge")
-
-        # update angle_ebd
-        a_updated = self.list_update(a_update_list, "angle")
-        return n_updated, e_updated, a_updated
-
-    def _forward_sequential(
-        self,
-        node_ebd_ext: torch.Tensor,
-        edge_ebd: torch.Tensor,
-        h2: torch.Tensor,
-        angle_ebd: torch.Tensor,
-        nlist: torch.Tensor,
-        nlist_mask: torch.Tensor,
-        sw: torch.Tensor,
-        a_nlist_mask: torch.Tensor,
-        a_sw: torch.Tensor,
-        edge_index: torch.Tensor,
-        angle_index: torch.Tensor,
-        nb: int,
-        nloc: int,
-        n_edge: int | None,
-    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """Sequential update path: edge_self -> angle_self -> edge_angle -> node.
-
-        Each phase consumes the most recent update of its inputs (instead of
-        the parallel path which uses the same ``edge_ebd``/``angle_ebd`` for
-        all branches). Residuals are applied immediately after each phase.
-        """
-        assert self.update_style == "res_residual"
-        assert self.update_angle
-        assert self.angle_self_linear is not None
-        assert self.edge_angle_linear1 is not None
-        assert self.edge_angle_linear2 is not None
-        node_ebd = node_ebd_ext[:, :nloc, :]
-        n2e_index, n_ext2e_index = edge_index[0], edge_index[1]
-        n2a_index, eij2a_index, eik2a_index = (
-            angle_index[0],
-            angle_index[1],
-            angle_index[2],
-        )
-        nei_node_ebd = (
-            _make_nei_g1(node_ebd_ext, nlist)
-            if not self.use_dynamic_sel
-            else torch.index_select(
-                node_ebd_ext.reshape(-1, self.n_dim), 0, n_ext2e_index
-            )
-        )
-
-        # Phase 1: edge self update -> apply residual immediately.
-        edge_self_update = self._compute_edge_self_update(
-            node_ebd,
-            node_ebd_ext,
-            edge_ebd,
-            nei_node_ebd,
-            nlist,
-            n2e_index,
-            n_ext2e_index,
-        )
-        edge_ebd_s1 = edge_ebd + self.e_residual[0] * edge_self_update
-
-        # Phase 2: angle self message uses the updated edge embedding.
-        node_ebd_for_angle, edge_ebd_for_angle = self._prepare_angle_embeddings(
-            node_ebd, edge_ebd_s1, a_nlist_mask
-        )
-        angle_self_update = self._compute_angle_update(
-            angle_ebd,
-            node_ebd_for_angle,
-            edge_ebd_for_angle,
-            "angle",
-            n2a_index,
-            eij2a_index,
-            eik2a_index,
-        )
-        a_updated = angle_ebd + self.a_residual[0] * angle_self_update
-
-        # Phase 3: edge angle message uses the updated angle embedding.
-        edge_angle_update = self._compute_angle_update(
-            a_updated,
-            node_ebd_for_angle,
-            edge_ebd_for_angle,
-            "edge",
-            n2a_index,
-            eij2a_index,
-            eik2a_index,
-        )
-        edge_angle_reduced = self._compute_edge_angle_reduction(
-            edge_angle_update,
-            edge_ebd_s1,
-            a_sw,
-            a_nlist_mask,
-            nb,
-            nloc,
-            n_edge,
-            eij2a_index,
-        )
-        e_updated = edge_ebd_s1 + self.e_residual[1] * edge_angle_reduced
-
-        # Phase 4: node updates use the fully updated edge embedding.
-        n_update_list: list[torch.Tensor] = [node_ebd]
-        n_update_list.append(self.act(self.node_self_mlp(node_ebd)))
-        n_update_list.append(
-            self._compute_node_sym(
-                e_updated, nei_node_ebd, h2, nlist_mask, sw, n2e_index, nb, nloc
-            )
-        )
-        node_edge_update = self._compute_node_edge_message(
-            node_ebd,
-            node_ebd_ext,
-            e_updated,
-            nei_node_ebd,
-            sw,
-            nlist,
-            n2e_index,
-            n_ext2e_index,
-            nb,
-            nloc,
-        )
-        if self.n_multi_edge_message > 1:
-            node_edge_update_mul_head = node_edge_update.view(
-                nb, nloc, self.n_multi_edge_message, self.n_dim
-            )
-            for head_index in range(self.n_multi_edge_message):
-                n_update_list.append(node_edge_update_mul_head[..., head_index, :])
-        else:
-            n_update_list.append(node_edge_update)
-        n_updated = self.list_update(n_update_list, "node")
-        return n_updated, e_updated, a_updated
 
     @torch.jit.export
     def list_update_res_avg(
