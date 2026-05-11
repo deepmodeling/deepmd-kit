@@ -81,6 +81,7 @@ DPA3_CASE_FIELDS = (
     "n_multi_edge_message",
     "precision",
     "add_chg_spin_ebd",
+    "default_chg_spin",
 )
 
 
@@ -100,6 +101,7 @@ DPA3_BASELINE_CASE = {
     "n_multi_edge_message": 1,
     "precision": "float64",
     "add_chg_spin_ebd": False,
+    "default_chg_spin": None,
 }
 
 
@@ -123,6 +125,7 @@ DPA3_CURATED_CASES = (
     dpa3_case(exclude_types=[[0, 1]]),
     dpa3_case(use_loc_mapping=False),
     dpa3_case(add_chg_spin_ebd=True),
+    dpa3_case(add_chg_spin_ebd=True, default_chg_spin=[5.0, 1.0]),
     # Repflow compression branches.
     dpa3_case(a_compress_rate=1),
     dpa3_case(a_compress_e_rate=2),
@@ -161,6 +164,7 @@ DPA3_DESCRIPTOR_API_CURATED_CASES = (
     dpa3_descriptor_api_case(use_loc_mapping=False),
     dpa3_descriptor_api_case(fix_stat_std=0.0),
     dpa3_descriptor_api_case(add_chg_spin_ebd=True),
+    dpa3_descriptor_api_case(add_chg_spin_ebd=True, default_chg_spin=[5.0, 1.0]),
     # Repflow compression branches.
     dpa3_descriptor_api_case(a_compress_rate=1),
     dpa3_descriptor_api_case(a_compress_e_rate=2),
@@ -205,6 +209,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             n_multi_edge_message,
             precision,
             add_chg_spin_ebd,
+            default_chg_spin,
         ) = self.param
         return {
             "ntypes": self.ntypes,
@@ -246,6 +251,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             "use_loc_mapping": use_loc_mapping,
             "trainable": False,
             "add_chg_spin_ebd": add_chg_spin_ebd,
+            "default_chg_spin": default_chg_spin,
         }
 
     @property
@@ -266,6 +272,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             _n_multi_edge_message,
             _precision,
             _add_chg_spin_ebd,
+            _default_chg_spin,
         ) = self.param
         return CommonTest.skip_pt
 
@@ -287,6 +294,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             _n_multi_edge_message,
             _precision,
             add_chg_spin_ebd,
+            _default_chg_spin,
         ) = self.param
         return True if add_chg_spin_ebd else CommonTest.skip_pd
 
@@ -308,6 +316,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             _n_multi_edge_message,
             _precision,
             _add_chg_spin_ebd,
+            _default_chg_spin,
         ) = self.param
         return CommonTest.skip_dp
 
@@ -329,6 +338,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             _n_multi_edge_message,
             _precision,
             _add_chg_spin_ebd,
+            _default_chg_spin,
         ) = self.param
         return True
 
@@ -394,8 +404,8 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             _n_multi_edge_message,
             _precision,
             add_chg_spin_ebd,
+            _default_chg_spin,
         ) = self.param
-        # charge_spin for charge=5, spin=1 when add_chg_spin_ebd is True
         self.charge_spin = (
             np.array([[5, 1]], dtype=GLOBAL_NP_FLOAT_PRECISION)
             if add_chg_spin_ebd
@@ -500,6 +510,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             _n_multi_edge_message,
             precision,
             _add_chg_spin_ebd,
+            _default_chg_spin,
         ) = self.param
         if precision == "float64":
             return 1e-10
@@ -527,6 +538,7 @@ class TestDPA3(CommonTest, DescriptorTest, unittest.TestCase):
             _n_multi_edge_message,
             precision,
             _add_chg_spin_ebd,
+            _default_chg_spin,
         ) = self.param
         if precision == "float64":
             return 1e-6  # need to fix in the future, see issue https://github.com/deepmodeling/deepmd-kit/issues/3786
@@ -563,6 +575,7 @@ class TestDPA3DescriptorAPI(DescriptorAPITest, unittest.TestCase):
             n_multi_edge_message,
             precision,
             add_chg_spin_ebd,
+            default_chg_spin,
         ) = self.param
         return {
             "ntypes": self.ntypes,
@@ -604,4 +617,5 @@ class TestDPA3DescriptorAPI(DescriptorAPITest, unittest.TestCase):
             "use_loc_mapping": use_loc_mapping,
             "trainable": False,
             "add_chg_spin_ebd": add_chg_spin_ebd,
+            "default_chg_spin": default_chg_spin,
         }
