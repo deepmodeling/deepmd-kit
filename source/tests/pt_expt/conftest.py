@@ -12,10 +12,20 @@ so pt_expt tests no longer import from the ``tests.pt`` package.
 """
 
 import pytest
+import torch._inductor.config as _inductor_config
 import torch.utils._device as _device
 from torch.overrides import (
     _get_current_function_mode_stack,
 )
+
+# Reduce AOTInductor (.pt2) compile time for unit tests.
+# Tests only validate correctness, not runtime performance, so we can
+# skip expensive C++ optimizations.  This cuts compile time by ~50%.
+_inductor_config.max_fusion_size = 8
+_inductor_config.epilogue_fusion = False
+_inductor_config.pattern_matcher = False
+_inductor_config.aot_inductor.package_cpp_only = True
+_inductor_config.aot_inductor.compile_wrapper_opt_level = "O0"
 
 
 def _pop_device_contexts() -> list:
