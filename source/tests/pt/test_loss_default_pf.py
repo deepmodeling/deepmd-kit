@@ -298,7 +298,7 @@ class TestEnerStdLossDefaultPf(unittest.TestCase):
         )
         data = loss_fn.serialize()
         self.assertTrue(data["use_default_pf"])
-        self.assertEqual(data["@version"], 3)
+        self.assertEqual(data["@version"], 4)
 
         loss_fn2 = EnergyStdLoss.deserialize(data)
         self.assertTrue(loss_fn2.use_default_pf)
