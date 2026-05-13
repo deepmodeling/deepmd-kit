@@ -30,7 +30,7 @@ import ctypes
 import numpy as np
 import torch
 
-import deepmd.pt_expt.utils.comm  # noqa: F401  - opaque op registration
+import deepmd.pt_expt.utils.comm  # noqa: F401  # lgtm[py/unused-import]  - opaque op registration
 from deepmd.dpmodel.model.model import get_model as get_model_dp
 from deepmd.pt_expt.model.spin_ener_model import (
     SpinEnergyModel,

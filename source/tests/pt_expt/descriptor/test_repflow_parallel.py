@@ -32,7 +32,7 @@ import pytest
 import torch
 
 # Trigger registration of the deepmd_export::border_op opaque wrapper.
-import deepmd.pt_expt.utils.comm  # noqa: F401
+import deepmd.pt_expt.utils.comm  # noqa: F401  # lgtm[py/unused-import]
 from deepmd.dpmodel.descriptor.dpa3 import (
     RepFlowArgs,
 )

@@ -509,15 +509,27 @@ TORCH_LIBRARY_FRAGMENT(deepmd, m) {
 // ============================================================================
 
 namespace {
-torch::Tensor border_op_export(const torch::Tensor& sendlist_tensor,
-                               const torch::Tensor& sendproc_tensor,
-                               const torch::Tensor& recvproc_tensor,
-                               const torch::Tensor& sendnum_tensor,
-                               const torch::Tensor& recvnum_tensor,
-                               const torch::Tensor& g1_tensor,
-                               const torch::Tensor& communicator_tensor,
-                               const torch::Tensor& nlocal_tensor,
-                               const torch::Tensor& nghost_tensor) {
+// ``DEEPMD_MAYBE_UNUSED`` silences CodeQL's ``cpp/unused-static-function``
+// query — the functions ARE used: ``TORCH_LIBRARY_IMPL(...)`` below
+// registers them as op implementations via function-pointer arguments,
+// which CodeQL's static dataflow can't see through. The attribute is
+// C++17, so guard it for the legacy-torch (< 2.1) build path which
+// CMakeLists.txt holds at C++14.
+#if __cplusplus >= 201703L
+#define DEEPMD_MAYBE_UNUSED [[maybe_unused]]
+#else
+#define DEEPMD_MAYBE_UNUSED
+#endif
+DEEPMD_MAYBE_UNUSED torch::Tensor border_op_export(
+    const torch::Tensor& sendlist_tensor,
+    const torch::Tensor& sendproc_tensor,
+    const torch::Tensor& recvproc_tensor,
+    const torch::Tensor& sendnum_tensor,
+    const torch::Tensor& recvnum_tensor,
+    const torch::Tensor& g1_tensor,
+    const torch::Tensor& communicator_tensor,
+    const torch::Tensor& nlocal_tensor,
+    const torch::Tensor& nghost_tensor) {
   auto out = border_op(sendlist_tensor, sendproc_tensor, recvproc_tensor,
                        sendnum_tensor, recvnum_tensor, g1_tensor,
                        communicator_tensor, nlocal_tensor, nghost_tensor);
@@ -531,7 +543,7 @@ torch::Tensor border_op_export(const torch::Tensor& sendlist_tensor,
   return out[0].clone();
 }
 
-torch::Tensor border_op_backward_export(
+DEEPMD_MAYBE_UNUSED torch::Tensor border_op_backward_export(
     const torch::Tensor& sendlist_tensor,
     const torch::Tensor& sendproc_tensor,
     const torch::Tensor& recvproc_tensor,
@@ -547,6 +559,7 @@ torch::Tensor border_op_backward_export(
       .clone();
 }
 }  // namespace
+#undef DEEPMD_MAYBE_UNUSED
 
 TORCH_LIBRARY_FRAGMENT(deepmd_export, m) {
   m.def(

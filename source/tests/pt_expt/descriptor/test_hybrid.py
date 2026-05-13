@@ -324,7 +324,7 @@ def _dpa3_child(use_loc_mapping: bool) -> dict:
 @pytest.mark.parametrize(
     "child_factory,expected_hmp,expected_hmp_ar",
     [
-        (lambda: _se_e2_a_child(), False, False),
+        (_se_e2_a_child, False, False),
         (lambda: _dpa3_child(use_loc_mapping=True), True, False),
         (lambda: _dpa3_child(use_loc_mapping=False), True, True),
     ],
