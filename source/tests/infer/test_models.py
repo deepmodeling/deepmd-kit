@@ -39,7 +39,7 @@ class TestDeepPot(unittest.TestCase):
         key, extension = cls.param
         if extension in (".pte", ".pt2") and not INSTALLED_PT_EXPT:
             raise unittest.SkipTest("pt_expt backend not installed")
-        if key in ("se_e2_a", "se_e2_r") and extension in (".pte", ".pt2"):
+        if key == "se_e2_r" and extension in (".pte", ".pt2"):
             raise unittest.SkipTest(
                 "type_one_side=False is not supported for pt_expt export"
             )
