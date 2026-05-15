@@ -25,8 +25,6 @@ model_def_script:
         "axis_neuron": 2,
         "precision": "float64",
         "seed": 1,
-        "_comment2": " that's all",
-        "ntypes": 2,
       },
     "fitting_net":
       {
@@ -34,15 +32,8 @@ model_def_script:
         "resnet_dt": True,
         "precision": "float64",
         "seed": 1,
-        "_comment3": " that's all",
         "type": "ener",
-        "ntypes": 2,
-        "mixed_types": False,
-        "embedding_width": 24,
-        "dim_descrpt": 24,
       },
-    "_comment4": " that's all",
-    "resuming": True,
   }
 results:
   # ---- Block 1: PBC, 13x13x13 box ----
