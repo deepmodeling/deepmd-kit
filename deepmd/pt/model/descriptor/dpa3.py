@@ -204,14 +204,14 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
 
         if self.add_chg_spin_ebd:
             self.act = ActivationFn(activation_function)
-            # -100 ~ 100 is a conservative bound
+            # charge range [-100, 99] mapped to indices [0, 199]
             self.chg_embedding = TypeEmbedNet(
                 200,
                 self.tebd_dim,
                 precision=precision,
                 seed=child_seed(seed, 3),
             )
-            # 100 is a conservative upper bound
+            # spin range [0, 99] mapped to indices [0, 99]
             self.spin_embedding = TypeEmbedNet(
                 100,
                 self.tebd_dim,
@@ -588,9 +588,19 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
             assert charge_spin is not None
             assert self.chg_embedding is not None
             assert self.spin_embedding is not None
-            charge = charge_spin[:, 0].to(dtype=torch.int64) + 100
+            charge = charge_spin[:, 0].to(dtype=torch.int64)
             spin = charge_spin[:, 1].to(dtype=torch.int64)
-            chg_ebd = self.chg_embedding(charge)
+            # Validate charge range [-100, 99] (200 embedding entries)
+            if torch.any(charge < -100) or torch.any(charge > 99):
+                raise ValueError(
+                    f"charge must be in range [-100, 99], got min={charge.min().item()}, max={charge.max().item()}"
+                )
+            # Validate spin range [0, 99] (100 embedding entries)
+            if torch.any(spin < 0) or torch.any(spin >= 100):
+                raise ValueError(
+                    f"spin must be in range [0, 99], got min={spin.min().item()}, max={spin.max().item()}"
+                )
+            chg_ebd = self.chg_embedding(charge + 100)
             spin_ebd = self.spin_embedding(spin)
             sys_cs_embd = self.act(
                 self.mix_cs_mlp(torch.cat((chg_ebd, spin_ebd), dim=-1))

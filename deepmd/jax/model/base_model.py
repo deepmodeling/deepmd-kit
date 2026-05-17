@@ -68,6 +68,7 @@ def forward_common_atomic(
                     mapping: jnp.ndarray | None,
                     fparam: jnp.ndarray | None,
                     aparam: jnp.ndarray | None,
+                    charge_spin_: jnp.ndarray | None,
                     *,
                     _kk: str = kk,
                     _atom_axis: int = atom_axis,
@@ -79,7 +80,9 @@ def forward_common_atomic(
                         mapping=mapping[None, ...] if mapping is not None else None,
                         fparam=fparam[None, ...] if fparam is not None else None,
                         aparam=aparam[None, ...] if aparam is not None else None,
-                        charge_spin=charge_spin,
+                        charge_spin=charge_spin_[None, ...]
+                        if charge_spin_ is not None
+                        else None,
                     )
                     return jnp.sum(atomic_ret[_kk][0], axis=_atom_axis)
 
@@ -92,6 +95,7 @@ def forward_common_atomic(
                     mapping,
                     fparam,
                     aparam,
+                    charge_spin,
                 )
                 # extended_force: [nf, nall, *def, 3]
                 def_ndim = len(vdef.shape)
@@ -109,6 +113,7 @@ def forward_common_atomic(
                         mapping,
                         fparam,
                         aparam,
+                        charge_spin,
                     )
                     kk_hessian = get_hessian_name(kk)
                     model_predict[kk_hessian] = hessian
@@ -130,6 +135,7 @@ def forward_common_atomic(
                         mapping: jnp.ndarray | None,
                         fparam: jnp.ndarray | None,
                         aparam: jnp.ndarray | None,
+                        charge_spin_: jnp.ndarray | None,
                         *,
                         _kk: str = kk,
                         _atom_axis: int = atom_axis - 1,
@@ -142,7 +148,9 @@ def forward_common_atomic(
                             mapping=mapping[None, ...] if mapping is not None else None,
                             fparam=fparam[None, ...] if fparam is not None else None,
                             aparam=aparam[None, ...] if aparam is not None else None,
-                            charge_spin=charge_spin,
+                            charge_spin=charge_spin_[None, ...]
+                            if charge_spin_ is not None
+                            else None,
                         )
                         nloc = nlist.shape[0]
                         cc_loc = jax.lax.stop_gradient(cc_ext)[:nloc, ...]
@@ -160,6 +168,7 @@ def forward_common_atomic(
                         mapping,
                         fparam,
                         aparam,
+                        charge_spin,
                     )
                     # move the first 3 to the last
                     # [nf, *def, nall, 3, 3]

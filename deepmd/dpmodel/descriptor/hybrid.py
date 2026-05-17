@@ -349,6 +349,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
                 atype_ext,
                 nl,
                 mapping,
+                fparam=fparam,
                 comm_dict=comm_dict,
                 charge_spin=charge_spin,
             )

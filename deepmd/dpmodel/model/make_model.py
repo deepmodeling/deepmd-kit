@@ -298,10 +298,10 @@ def make_model(
                 The keys are defined by the `ModelOutputDef`.
 
             """
-            cc, bb, fp, ap, input_prec = self._input_type_cast(
-                coord, box=box, fparam=fparam, aparam=aparam
+            cc, bb, fp, ap, cs, input_prec = self._input_type_cast(
+                coord, box=box, fparam=fparam, aparam=aparam, charge_spin=charge_spin
             )
-            del coord, box, fparam, aparam
+            del coord, box, fparam, aparam, charge_spin
             model_predict = model_call_from_call_lower(
                 call_lower=self.call_common_lower,
                 rcut=self.get_rcut(),
@@ -315,7 +315,7 @@ def make_model(
                 aparam=ap,
                 do_atomic_virial=do_atomic_virial,
                 coord_corr_for_virial=coord_corr_for_virial,
-                charge_spin=charge_spin,
+                charge_spin=cs,
             )
             model_predict = self._output_type_cast(model_predict, input_prec)
             return model_predict
@@ -377,10 +377,10 @@ def make_model(
                 nlist,
                 extra_nlist_sort=self.need_sorted_nlist_for_lower(),
             )
-            cc_ext, _, fp, ap, input_prec = self._input_type_cast(
-                extended_coord, fparam=fparam, aparam=aparam
+            cc_ext, _, fp, ap, cs, input_prec = self._input_type_cast(
+                extended_coord, fparam=fparam, aparam=aparam, charge_spin=charge_spin
             )
-            del extended_coord, fparam, aparam
+            del extended_coord, fparam, aparam, charge_spin
             model_predict = self.forward_common_atomic(
                 cc_ext,
                 extended_atype,
@@ -391,7 +391,7 @@ def make_model(
                 do_atomic_virial=do_atomic_virial,
                 extended_coord_corr=extended_coord_corr,
                 comm_dict=comm_dict,
-                charge_spin=charge_spin,
+                charge_spin=cs,
             )
             model_predict = self._output_type_cast(model_predict, input_prec)
             return model_predict
@@ -482,7 +482,8 @@ def make_model(
             box: Array | None = None,
             fparam: Array | None = None,
             aparam: Array | None = None,
-        ) -> tuple[Array, Array | None, Array | None, Array | None, Any]:
+            charge_spin: Array | None = None,
+        ) -> tuple[Array, Array | None, Array | None, Array | None, Array | None, Any]:
             """Cast the input data to global float type."""
             xp = array_api_compat.array_namespace(coord)
             input_dtype = coord.dtype
@@ -494,17 +495,20 @@ def make_model(
             ###
             _lst: list[Array | None] = [
                 xp.astype(vv, input_dtype) if vv is not None else None
-                for vv in [box, fparam, aparam]
+                for vv in [box, fparam, aparam, charge_spin]
             ]
-            box, fparam, aparam = _lst
+            box, fparam, aparam, charge_spin = _lst
             if input_dtype == global_dtype:
-                return coord, box, fparam, aparam, input_dtype
+                return coord, box, fparam, aparam, charge_spin, input_dtype
             else:
                 return (
                     xp.astype(coord, global_dtype),
                     xp.astype(box, global_dtype) if box is not None else None,
                     xp.astype(fparam, global_dtype) if fparam is not None else None,
                     xp.astype(aparam, global_dtype) if aparam is not None else None,
+                    xp.astype(charge_spin, global_dtype)
+                    if charge_spin is not None
+                    else None,
                     input_dtype,
                 )
 

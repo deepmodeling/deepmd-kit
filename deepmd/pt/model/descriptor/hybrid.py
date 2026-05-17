@@ -101,14 +101,20 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
 
     def get_dim_chg_spin(self) -> int:
         """Returns the dimension of charge_spin input (0 if not supported)."""
-        return 0
+        return max(
+            (descrpt.get_dim_chg_spin() for descrpt in self.descrpt_list), default=0
+        )
 
     def has_default_chg_spin(self) -> bool:
         """Returns whether the descriptor has a default charge_spin value."""
-        return False
+        return any(descrpt.has_default_chg_spin() for descrpt in self.descrpt_list)
 
-    def get_default_chg_spin(self) -> None:
+    def get_default_chg_spin(self) -> list[float] | None:
         """Returns the default charge_spin value, or None."""
+        for descrpt in self.descrpt_list:
+            default = descrpt.get_default_chg_spin()
+            if default is not None:
+                return default
         return None
 
     def get_rcut(self) -> float:
@@ -346,7 +352,13 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
                     :, :, self.nlist_cut_idx[ii].to(atype_ext.device)
                 ]
             odescriptor, gr, g2, h2, sw = descrpt(
-                coord_ext, atype_ext, nl, mapping, charge_spin=charge_spin
+                coord_ext,
+                atype_ext,
+                nl,
+                mapping,
+                comm_dict=comm_dict,
+                fparam=fparam,
+                charge_spin=charge_spin,
             )
             out_descriptor.append(odescriptor)
             if gr is not None:
