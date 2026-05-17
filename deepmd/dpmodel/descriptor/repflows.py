@@ -506,6 +506,32 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
 
+    def _exchange_ghosts(
+        self,
+        node_ebd: Array,
+        mapping_tiled: Array | None,
+        comm_dict: dict | None,
+        nall: int,
+        nloc: int,
+    ) -> Array:
+        """Build node_ebd_ext (the ghost-aware embedding) for the per-layer loop.
+
+        Default: array-api gather via the pre-tiled `mapping_tiled`, or pass the
+        local-only `node_ebd` through when ``self.use_loc_mapping`` is set.
+        ``comm_dict``, ``nall``, ``nloc`` are unused in this default impl; they
+        exist so the pt_expt subclass can perform the per-layer MPI ghost
+        exchange (``deepmd_export::border_op``) when ``comm_dict is not None``.
+        """
+        del comm_dict, nall, nloc
+        if self.use_loc_mapping:
+            return node_ebd
+        if mapping_tiled is None:
+            raise ValueError(
+                "`mapping` is required when use_loc_mapping=False unless "
+                "`_exchange_ghosts` is overridden for parallel comm handling."
+            )
+        return xp_take_along_axis(node_ebd, mapping_tiled, axis=1)
+
     def call(
         self,
         nlist: Array,
@@ -514,6 +540,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         atype_embd_ext: Array | None = None,
         mapping: Array | None = None,
         type_embedding: Array | None = None,
+        comm_dict: dict | None = None,
     ) -> tuple[Array, Array, Array, Array, Array]:
         xp = array_api_compat.array_namespace(nlist, coord_ext, atype_ext)
         nframes, nloc, nnei = nlist.shape
@@ -641,15 +668,24 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         # nf x nloc x a_nnei x a_nnei x a_dim [OR] n_angle x a_dim
         angle_ebd = self.angle_embd(angle_input)
 
-        # nb x nall x n_dim
-        mapping = xp.tile(xp.expand_dims(mapping, axis=-1), (1, 1, self.n_dim))
+        # nb x nall x n_dim (pre-tiled mapping reused across layers when not
+        # using comm_dict). Skip the tile when mapping is None — pt_expt's
+        # parallel-mode override consults comm_dict instead.
+        mapping_tiled = (
+            xp.tile(xp.expand_dims(mapping, axis=-1), (1, 1, self.n_dim))
+            if mapping is not None
+            else None
+        )
         for idx, ll in enumerate(self.layers):
             # node_ebd:     nb x nloc x n_dim
-            # node_ebd_ext: nb x nall x n_dim
-            node_ebd_ext = (
-                node_ebd
-                if self.use_loc_mapping
-                else xp_take_along_axis(node_ebd, mapping, axis=1)
+            # node_ebd_ext: nb x nall x n_dim (or nb x nloc x n_dim when
+            #               use_loc_mapping=True)
+            node_ebd_ext = self._exchange_ghosts(
+                node_ebd,
+                mapping_tiled,
+                comm_dict,
+                nall,
+                nloc,
             )
             node_ebd, edge_ebd, angle_ebd = ll.call(
                 node_ebd_ext,
@@ -695,6 +731,16 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
     def has_message_passing(self) -> bool:
         """Returns whether the descriptor block has message passing."""
         return True
+
+    def has_message_passing_across_ranks(self) -> bool:
+        """Returns whether per-layer node embeddings need MPI ghost exchange.
+
+        Repflows passes ``node_ebd`` either in ``[nb, nloc, n_dim]`` layout
+        (``use_loc_mapping=True``: messages stay within the rank's local atoms)
+        or ``[nb, nall, n_dim]`` layout (``use_loc_mapping=False``: ghost slots
+        must be filled by cross-rank exchange before each layer).
+        """
+        return not self.use_loc_mapping
 
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the descriptor block needs sorted nlist when using `forward_lower`."""

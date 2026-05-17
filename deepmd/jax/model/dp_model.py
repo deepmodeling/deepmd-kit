@@ -56,8 +56,10 @@ def make_jax_dp_model_from_dpmodel(
             aparam: jnp.ndarray | None = None,
             do_atomic_virial: bool = False,
             extended_coord_corr: jnp.ndarray | None = None,
+            comm_dict: dict | None = None,
             charge_spin: jnp.ndarray | None = None,
         ) -> dict[str, jnp.ndarray]:
+            del comm_dict  # JAX path has no MPI ghost exchange
             return forward_common_atomic(
                 self,
                 extended_coord,

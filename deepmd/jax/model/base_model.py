@@ -26,8 +26,10 @@ def forward_common_atomic(
     aparam: jnp.ndarray | None = None,
     do_atomic_virial: bool = False,
     extended_coord_corr: jnp.ndarray | None = None,
+    comm_dict: dict | None = None,
     charge_spin: jnp.ndarray | None = None,
 ) -> dict[str, jnp.ndarray]:
+    del comm_dict  # JAX path has no MPI ghost exchange
     atomic_ret = self.atomic_model.forward_common_atomic(
         extended_coord,
         extended_atype,

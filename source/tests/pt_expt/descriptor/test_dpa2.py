@@ -426,3 +426,60 @@ class TestDescrptDPA2(TestCaseSingleFrameWithNlist):
             rtol=rtol,
             atol=atol,
         )
+
+
+def test_has_message_passing_across_ranks() -> None:
+    """DPA2's repformer always passes ``g1`` in ``[nb, nall, n_dim]``
+    layout (no ``use_loc_mapping`` opt-out exists), so cross-rank
+    message passing is always required for multi-rank deployment.
+    """
+    import copy
+
+    from deepmd.dpmodel.model.model import (
+        get_model,
+    )
+
+    config = {
+        "type_map": ["O", "H"],
+        "descriptor": {
+            "type": "dpa2",
+            "repinit": {
+                "rcut": 6.0,
+                "rcut_smth": 2.0,
+                "nsel": 20,
+                "neuron": [2, 4],
+                "axis_neuron": 4,
+                "tebd_dim": 8,
+                "tebd_input_mode": "concat",
+                "set_davg_zero": True,
+                "type_one_side": True,
+                "use_three_body": False,
+            },
+            "repformer": {
+                "rcut": 3.0,
+                "rcut_smth": 1.5,
+                "nsel": 10,
+                "nlayers": 1,
+                "g1_dim": 8,
+                "g2_dim": 5,
+                "axis_neuron": 4,
+                "update_g1_has_conv": True,
+                "update_g1_has_drrd": True,
+                "update_g1_has_grrg": True,
+                "update_g2_has_attn": True,
+                "attn1_hidden": 8,
+                "attn1_nhead": 2,
+                "attn2_hidden": 5,
+                "attn2_nhead": 1,
+                "update_style": "res_avg",
+                "set_davg_zero": True,
+            },
+            "concat_output_tebd": True,
+            "precision": "float64",
+            "seed": 1,
+        },
+        "fitting_net": {"neuron": [4, 4], "resnet_dt": True, "seed": 1},
+    }
+    desc = get_model(copy.deepcopy(config)).atomic_model.descriptor
+    assert desc.has_message_passing() is True
+    assert desc.has_message_passing_across_ranks() is True

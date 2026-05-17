@@ -78,6 +78,7 @@ class AutoBatchSize(AutoBatchSizeBase):
             "CUDA out of memory.",
             "CUDA driver error: out of memory",
             "CUDA error: out of memory",
+            "CUBLAS_STATUS_ALLOC_FAILED",
             "cusolver error: CUSOLVER_STATUS_INTERNAL_ERROR",
         )
         if any(m in msg for msg in msgs for m in plain_oom_markers):

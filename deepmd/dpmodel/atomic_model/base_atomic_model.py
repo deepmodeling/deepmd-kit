@@ -243,6 +243,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         mapping: Array | None = None,
         fparam: Array | None = None,
         aparam: Array | None = None,
+        comm_dict: dict | None = None,
         charge_spin: Array | None = None,
     ) -> dict[str, Array]:
         """Common interface for atomic inference.
@@ -265,6 +266,9 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             frame parameters, shape: nf x dim_fparam
         aparam
             atomic parameter, shape: nf x nloc x dim_aparam
+        comm_dict
+            MPI communication metadata for parallel inference. ``None`` for
+            non-parallel inference (default).
 
         Returns
         -------
@@ -292,6 +296,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             mapping=mapping,
             fparam=fparam,
             aparam=aparam,
+            comm_dict=comm_dict,
             charge_spin=charge_spin,
         )
         ret_dict = self.apply_out_stat(ret_dict, atype)
