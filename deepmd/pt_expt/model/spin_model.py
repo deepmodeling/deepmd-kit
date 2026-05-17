@@ -135,6 +135,114 @@ class SpinModel(SpinModelDP):
             backbone.need_sorted_nlist_for_lower = _orig_need_sort
         return traced
 
+    def forward_common_lower_exportable_with_comm(
+        self,
+        extended_coord: torch.Tensor,
+        extended_atype: torch.Tensor,
+        extended_spin: torch.Tensor,
+        nlist: torch.Tensor,
+        mapping: torch.Tensor | None,
+        fparam: torch.Tensor | None,
+        aparam: torch.Tensor | None,
+        send_list: torch.Tensor,
+        send_proc: torch.Tensor,
+        recv_proc: torch.Tensor,
+        send_num: torch.Tensor,
+        recv_num: torch.Tensor,
+        communicator: torch.Tensor,
+        nlocal: torch.Tensor,
+        nghost: torch.Tensor,
+        do_atomic_virial: bool = False,
+        **make_fx_kwargs: Any,
+    ) -> torch.nn.Module:
+        """Spin variant of ``forward_common_lower_exportable_with_comm``.
+
+        Mirrors the non-spin version (see ``make_model.py``) but threads
+        ``extended_spin`` through and injects ``has_spin`` into
+        ``comm_dict`` so the pt_expt Repflow/Repformer override takes
+        the spin branch (split real/virtual + concat_switch_virtual).
+        """
+        model = self
+
+        def fn(
+            extended_coord: torch.Tensor,
+            extended_atype: torch.Tensor,
+            extended_spin: torch.Tensor,
+            nlist: torch.Tensor,
+            mapping: torch.Tensor | None,
+            fparam: torch.Tensor | None,
+            aparam: torch.Tensor | None,
+            send_list: torch.Tensor,
+            send_proc: torch.Tensor,
+            recv_proc: torch.Tensor,
+            send_num: torch.Tensor,
+            recv_num: torch.Tensor,
+            communicator: torch.Tensor,
+            nlocal: torch.Tensor,
+            nghost: torch.Tensor,
+        ) -> dict[str, torch.Tensor]:
+            extended_coord = extended_coord.detach().requires_grad_(True)
+            # Same nnei-dynamic-axis workaround as the regular variant.
+            nlist = _pad_nlist_for_export(nlist)
+            comm_dict = {
+                "send_list": send_list,
+                "send_proc": send_proc,
+                "recv_proc": recv_proc,
+                "send_num": send_num,
+                "recv_num": recv_num,
+                "communicator": communicator,
+                "nlocal": nlocal,
+                "nghost": nghost,
+                # Trace-time marker so the override takes the spin path.
+                # Value is irrelevant — only key presence matters.
+                "has_spin": torch.tensor(
+                    [1],
+                    dtype=torch.int32,
+                    device=extended_coord.device,
+                ),
+            }
+            return model.forward_common_lower(
+                extended_coord,
+                extended_atype,
+                extended_spin,
+                nlist,
+                mapping,
+                fparam=fparam,
+                aparam=aparam,
+                do_atomic_virial=do_atomic_virial,
+                comm_dict=comm_dict,
+            )
+
+        # Force the sort branch in ``_format_nlist`` so the compiled
+        # graph's ``nnei`` axis stays dynamic (mirrors the regular
+        # spin variant; backbone-level override is required).
+        backbone = self.backbone_model
+        _orig_need_sort = backbone.need_sorted_nlist_for_lower
+        backbone.need_sorted_nlist_for_lower = types.MethodType(
+            lambda self: True, backbone
+        )
+        try:
+            traced = make_fx(fn, **make_fx_kwargs)(
+                extended_coord,
+                extended_atype,
+                extended_spin,
+                nlist,
+                mapping,
+                fparam,
+                aparam,
+                send_list,
+                send_proc,
+                recv_proc,
+                send_num,
+                recv_num,
+                communicator,
+                nlocal,
+                nghost,
+            )
+        finally:
+            backbone.need_sorted_nlist_for_lower = _orig_need_sort
+        return traced
+
     def forward_common_lower(
         self, *args: Any, **kwargs: Any
     ) -> dict[str, torch.Tensor]:

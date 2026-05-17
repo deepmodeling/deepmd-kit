@@ -128,6 +128,7 @@ class DescrptSeR(DescrptSeRDP):
         nlist: torch.Tensor,
         mapping: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
+        comm_dict: dict | None = None,
     ) -> Any:
         if not self.compress:
             return DescrptSeRDP.call.__wrapped__(

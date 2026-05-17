@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 # Import to register converters
-from . import se_t_tebd_block  # noqa: F401
+from . import (  # noqa: F401
+    repflows,
+    repformers,
+    se_t_tebd_block,
+)
 from .base_descriptor import (
     BaseDescriptor,
 )

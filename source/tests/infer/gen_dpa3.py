@@ -88,6 +88,53 @@ def main():
     print(f"Exporting to {pt2_path} ...")  # noqa: T201
     pt_expt_deserialize_to_file(pt2_path, copy.deepcopy(data), do_atomic_virial=True)
 
+    # Multi-rank LAMMPS variant (use_loc_mapping=False) — produces a
+    # dual-artifact .pt2 with the with-comm AOTI module nested inside
+    # so the C++ DeepPotPTExpt routes to it under mpirun.  See
+    # source/lmp/tests/test_lammps_dpa3_pt2.py::test_pair_deepmd_mpi_dpa3.
+    config_mpi = copy.deepcopy(config)
+    config_mpi["descriptor"]["use_loc_mapping"] = False
+    # Defensive deep copy: get_model is allowed to mutate its argument
+    # in place, and we still need ``config_mpi`` intact below for
+    # ``model_def_script``.
+    model_mpi = get_model(copy.deepcopy(config_mpi))
+    data_mpi = {
+        "model": model_mpi.serialize(),
+        "model_def_script": config_mpi,
+        "backend": "dpmodel",
+        "software": "deepmd-kit",
+        "version": "3.0.0",
+    }
+    pt2_mpi_path = os.path.join(base_dir, "deeppot_dpa3_mpi.pt2")
+    print(f"Exporting to {pt2_mpi_path} ...")  # noqa: T201
+    pt_expt_deserialize_to_file(
+        pt2_mpi_path, copy.deepcopy(data_mpi), do_atomic_virial=True
+    )
+
+    # Float32 multi-rank variant — same architecture as the float64
+    # MPI fixture but with ``precision: float32``.  Used by
+    # source/lmp/tests/test_lammps_dpa3_pt2_fp32.py to validate that
+    # the comm_dict path (border_op + register_fake/register_autograd)
+    # is dtype-agnostic in practice, not just by inspection.
+    config_mpi_fp32 = copy.deepcopy(config_mpi)
+    config_mpi_fp32["descriptor"]["precision"] = "float32"
+    config_mpi_fp32["fitting_net"]["precision"] = "float32"
+    model_mpi_fp32 = get_model(copy.deepcopy(config_mpi_fp32))
+    data_mpi_fp32 = {
+        "model": model_mpi_fp32.serialize(),
+        "model_def_script": config_mpi_fp32,
+        "backend": "dpmodel",
+        "software": "deepmd-kit",
+        "version": "3.0.0",
+    }
+    pt2_mpi_fp32_path = os.path.join(base_dir, "deeppot_dpa3_mpi_fp32.pt2")
+    print(f"Exporting to {pt2_mpi_fp32_path} ...")  # noqa: T201
+    pt_expt_deserialize_to_file(
+        pt2_mpi_fp32_path,
+        copy.deepcopy(data_mpi_fp32),
+        do_atomic_virial=True,
+    )
+
     pth_path = os.path.join(base_dir, "deeppot_dpa3.pth")
     print(f"Exporting to {pth_path} ...")  # noqa: T201
     try:

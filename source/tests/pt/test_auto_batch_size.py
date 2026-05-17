@@ -22,6 +22,20 @@ class TestAutoBatchSize(unittest.TestCase):
         empty_cache.assert_called_once()
 
     @mock.patch("deepmd.pt.utils.auto_batch_size.torch.cuda.empty_cache")
+    def test_is_oom_error_cublas_alloc_failed(self, empty_cache) -> None:
+        auto_batch_size = AutoBatchSize(256, 2.0)
+
+        self.assertTrue(
+            auto_batch_size.is_oom_error(
+                RuntimeError(
+                    "CUDA error: CUBLAS_STATUS_ALLOC_FAILED when calling "
+                    "`cublasCreate(handle)`"
+                )
+            )
+        )
+        empty_cache.assert_called_once()
+
+    @mock.patch("deepmd.pt.utils.auto_batch_size.torch.cuda.empty_cache")
     def test_is_oom_error_empty_runtime_error_from_cuda_oom(self, empty_cache) -> None:
         auto_batch_size = AutoBatchSize(256, 2.0)
         cause = RuntimeError("CUDA driver error: out of memory")
