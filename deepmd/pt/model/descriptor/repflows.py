@@ -222,6 +222,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         use_exp_switch: bool = False,
         use_dynamic_sel: bool = False,
         sel_reduce_factor: float = 10.0,
+        sequential_update: bool = False,
         use_loc_mapping: bool = True,
         optim_update: bool = True,
         seed: int | list[int] | None = None,
@@ -261,6 +262,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.use_exp_switch = use_exp_switch
         self.use_dynamic_sel = use_dynamic_sel
         self.sel_reduce_factor = sel_reduce_factor
+        self.sequential_update = sequential_update
         if self.use_dynamic_sel and not self.smooth_edge_update:
             raise NotImplementedError(
                 "smooth_edge_update must be True when use_dynamic_sel is True!"
@@ -332,6 +334,7 @@ class DescrptBlockRepflows(DescriptorBlock):
                     optim_update=self.optim_update,
                     use_dynamic_sel=self.use_dynamic_sel,
                     sel_reduce_factor=self.sel_reduce_factor,
+                    sequential_update=self.sequential_update,
                     smooth_edge_update=self.smooth_edge_update,
                     seed=child_seed(child_seed(seed, 1), ii),
                     trainable=trainable,
