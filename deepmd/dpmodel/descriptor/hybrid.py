@@ -123,6 +123,23 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         """Returns the cut-off radius."""
         return np.max([descrpt.get_rcut() for descrpt in self.descrpt_list]).item()
 
+    def get_dim_chg_spin(self) -> int:
+        """Returns the dimension of charge_spin input (0 if not supported)."""
+        return max(
+            (descrpt.get_dim_chg_spin() for descrpt in self.descrpt_list), default=0
+        )
+
+    def has_default_chg_spin(self) -> bool:
+        """Returns whether the descriptor has a default charge_spin value."""
+        return any(descrpt.has_default_chg_spin() for descrpt in self.descrpt_list)
+
+    def get_default_chg_spin(self) -> list[float] | None:
+        """Returns the default charge_spin value, or None."""
+        for descrpt in self.descrpt_list:
+            if descrpt.has_default_chg_spin():
+                return descrpt.get_default_chg_spin()
+        return None
+
     def get_rcut_smth(self) -> float:
         """Returns the radius where the neighbor information starts to smoothly decay to 0."""
         # may not be a good idea...

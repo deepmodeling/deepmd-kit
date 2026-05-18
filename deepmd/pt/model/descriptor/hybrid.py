@@ -101,20 +101,32 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
 
     def get_dim_chg_spin(self) -> int:
         """Returns the dimension of charge_spin input (0 if not supported)."""
-        return max(
-            (descrpt.get_dim_chg_spin() for descrpt in self.descrpt_list), default=0
-        )
+        # JIT-compiled via DPAtomicModel.get_dim_chg_spin; avoid generator
+        # expressions and `max(..., default=...)` which TorchScript rejects.
+        dim: int = 0
+        for descrpt in self.descrpt_list:
+            d = descrpt.get_dim_chg_spin()
+            if d > dim:
+                dim = d
+        return dim
 
     def has_default_chg_spin(self) -> bool:
         """Returns whether the descriptor has a default charge_spin value."""
-        return any(descrpt.has_default_chg_spin() for descrpt in self.descrpt_list)
-
-    def get_default_chg_spin(self) -> list[float] | None:
-        """Returns the default charge_spin value, or None."""
+        # JIT-compiled via DPAtomicModel.has_default_chg_spin; keep as an
+        # explicit loop instead of `any(generator)` for TorchScript.
         for descrpt in self.descrpt_list:
-            default = descrpt.get_default_chg_spin()
-            if default is not None:
-                return default
+            if descrpt.has_default_chg_spin():
+                return True
+        return False
+
+    @torch.jit.export
+    def get_default_chg_spin(self) -> Optional[torch.Tensor]:  # noqa: UP045
+        """Returns the default charge_spin value, or None."""
+        # JIT-compiled via DPAtomicModel.get_default_chg_spin; the caller
+        # invokes `.unsqueeze(0)` on the result, so return a Tensor (not list).
+        for descrpt in self.descrpt_list:
+            if descrpt.has_default_chg_spin():
+                return descrpt.get_default_chg_spin()
         return None
 
     def get_rcut(self) -> float:
