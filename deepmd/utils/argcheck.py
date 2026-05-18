@@ -1556,6 +1556,13 @@ def dpa3_repflow_args() -> list[Argument]:
         "or `a_sel / sel_reduce_factor` instead of the raw `e_sel` or `a_sel` values, "
         "accommodating larger selection numbers."
     )
+    doc_sequential_update = (
+        "Whether to use sequential update mode within each repflow layer. "
+        "When True, updates are applied sequentially: edge self → angle self (using updated edge) "
+        "→ edge angle (using updated angle) → node (using final edge), "
+        "instead of the default parallel mode where all updates use original embeddings. "
+        "Currently only supports update_style='res_residual' and requires update_angle=True."
+    )
 
     return [
         # repflow args
@@ -1685,6 +1692,13 @@ def dpa3_repflow_args() -> list[Argument]:
             optional=True,
             default=10.0,
             doc=doc_sel_reduce_factor,
+        ),
+        Argument(
+            "sequential_update",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_sequential_update,
         ),
     ]
 
@@ -3089,7 +3103,8 @@ def optimizer_hybrid_muon() -> list[Argument]:
             optional=True,
             default=0.001,
             doc=doc_only_pt_supported
-            + "Weight decay coefficient. Applied only to Muon-routed parameters",
+            + "Weight decay coefficient. Applied to Muon-routed parameters and "
+            + "the AdamW-style decay path for matrix parameters.",
         ),
         Argument(
             "lr_adjust",
@@ -3106,9 +3121,11 @@ def optimizer_hybrid_muon() -> list[Argument]:
             "lr_adjust_coeff",
             float,
             optional=True,
-            default=0.2,
+            default=0.18,
             doc=doc_only_pt_supported
-            + "Coefficient for match-RMS scaling. Only effective when lr_adjust <= 0.",
+            + "Coefficient for match-RMS scaling. Only effective when lr_adjust <= 0. "
+            + "Default 0.18 follows DeepSeek-V4's calibration so Muon update RMS "
+            + "matches AdamW's typical RMS; Moonlight's original recipe uses 0.2.",
         ),
         Argument(
             "muon_mode",
@@ -3123,6 +3140,15 @@ def optimizer_hybrid_muon() -> list[Argument]:
             + "Routing uses effective shape after removing singleton dimensions.",
         ),
         Argument(
+            "enable_gram",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_only_pt_supported
+            + "Enable the compiled Gram Newton-Schulz path for rectangular Muon matrices. "
+            + "Square matrices keep using the current standard Newton-Schulz path.",
+        ),
+        Argument(
             "flash_muon",
             bool,
             optional=True,
@@ -3130,13 +3156,13 @@ def optimizer_hybrid_muon() -> list[Argument]:
             doc=doc_only_pt_supported
             + "Enable triton-accelerated Newton-Schulz orthogonalization. "
             "Requires triton and CUDA. Falls back to PyTorch implementation "
-            "when triton is unavailable or running on CPU.",
+            "when triton is unavailable or running on CPU. Ignored when enable_gram is true.",
         ),
         Argument(
             "magma_muon",
             bool,
             optional=True,
-            default=False,
+            default=True,
             doc=doc_only_pt_supported
             + "Enable Magma-lite damping on the Muon route only. "
             "When enabled, HybridMuon computes momentum-gradient alignment "
@@ -3233,6 +3259,14 @@ def loss_ener() -> list[Argument]:
         "Instead of computing loss on individual force components, computes loss on ||F_pred - F_label||_2 for each atom. "
         "This treats the force vector as a whole rather than three independent components. "
         "Only effective when loss_func='mae' or use_huber=True."
+    )
+    doc_intensive_ener_virial = (
+        "Controls intensive normalization for energy and virial loss terms in the current implementation. "
+        "For non-Huber MSE energy/virial terms, setting this to true uses 1/N^2 normalization instead of the legacy 1/N scaling. "
+        "This matches per-atom-style reporting more closely for those terms. "
+        "For MAE, the normalization remains 1/N. When `use_huber=True`, the residual is already scaled by 1/N before applying the Huber loss, "
+        "so this flag may have limited or no effect for those terms. "
+        "The default is false for backward compatibility with models trained using deepmd-kit <= 3.1.3."
     )
     return [
         Argument(
@@ -3376,6 +3410,13 @@ def loss_ener() -> list[Argument]:
             default=0.01,
             doc=doc_huber_delta,
         ),
+        Argument(
+            "intensive_ener_virial",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_intensive_ener_virial,
+        ),
     ]
 
 
@@ -3400,6 +3441,14 @@ def loss_ener_spin() -> list[Argument]:
         "Options: 'mse' (Mean Squared Error, L2 loss, default) or 'mae' (Mean Absolute Error, L1 loss). "
         "MAE loss is less sensitive to outliers compared to MSE loss. "
         "Future extensions may support additional loss types."
+    )
+    doc_intensive_ener_virial = (
+        "Controls normalization of the energy and virial loss terms. "
+        "For `loss_func='mse'`, if true, energy and virial losses are computed as intensive quantities, "
+        "normalized by the square of the number of atoms (1/N^2); if false (default), the legacy normalization "
+        "(1/N) is used. "
+        "For `loss_func='mae'`, this option does not change the existing MAE formulations;"
+        "The default is false for backward compatibility with models trained using deepmd-kit <= 3.1.3."
     )
     return [
         Argument(
@@ -3500,6 +3549,13 @@ def loss_ener_spin() -> list[Argument]:
             optional=True,
             default="mse",
             doc=doc_loss_func,
+        ),
+        Argument(
+            "intensive_ener_virial",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_intensive_ener_virial,
         ),
     ]
 
@@ -3677,8 +3733,8 @@ def training_data_args() -> list[
 - string "auto": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than 32.\n\n\
 - string "auto:N": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than N.\n\n\
 - string "mixed:N": the batch data will be sampled from all systems and merged into a mixed system with the batch size N. Only support the se_atten descriptor for TensorFlow backend.\n\n\
-- string "max:N": automatically determines the batch size so that the batch_size times the number of atoms in the system is no more than N.\n\n\
-- string "filter:N": the same as `"max:N"` but removes the systems with the number of atoms larger than `N` from the data set.\n\n\
+- string "max:N": automatically determines the batch size so that `batch_size * natoms` is at most `N`. `natoms` is the per-system atom count for npy data and the per-frame nloc for LMDB data. When a single system/frame already has more than `N` atoms, the batch size clamps to 1 and that batch will exceed `N`.\n\n\
+- string "filter:N": the same as `"max:N"` but additionally drops data whose atom count exceeds `N`. For npy data this removes whole systems with natoms > `N`; for LMDB data this removes individual frames with nloc > `N`.\n\n\
 If MPI is used, the value should be considered as the batch size per task.'
     doc_auto_prob_style = 'Determine the probability of systems automatically. The method is assigned by this key and can be\n\n\
 - "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()\n\n\
@@ -3772,7 +3828,9 @@ def validation_data_args() -> list[
 - list: the length of which is the same as the {link_sys}. The batch size of each system is given by the elements of the list.\n\n\
 - int: all {link_sys} use the same batch size.\n\n\
 - string "auto": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than 32.\n\n\
-- string "auto:N": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than N.'
+- string "auto:N": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than N.\n\n\
+- string "max:N": automatically determines the batch size so that `batch_size * natoms` is at most `N`. `natoms` is the per-system atom count for npy data and the per-frame nloc for LMDB data. When a single system/frame already has more than `N` atoms, the batch size clamps to 1 and that batch will exceed `N`.\n\n\
+- string "filter:N": the same as `"max:N"` but additionally drops data whose atom count exceeds `N`. For npy data this removes whole systems with natoms > `N`; for LMDB data this removes individual frames with nloc > `N`.'
     doc_auto_prob_style = 'Determine the probability of systems automatically. The method is assigned by this key and can be\n\n\
 - "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()\n\n\
 - "prob_sys_size" : the probability of a system is proportional to the number of batches in the system\n\n\
@@ -3932,6 +3990,21 @@ def training_args(
         "The oldest checkpoints will be deleted once the number of checkpoints exceeds max_ckpt_keep. "
         "Defaults to 5."
     )
+    doc_enable_ema = (
+        "Whether to maintain an exponential moving average (EMA) of model "
+        "parameters during training and save periodic EMA checkpoints with an "
+        "`_ema` suffix in the checkpoint prefix."
+    )
+    doc_ema_decay = (
+        "The decay factor used for the exponential moving average of model "
+        "parameters. The EMA update is "
+        "`ema = ema_decay * ema + (1 - ema_decay) * param`."
+    )
+    doc_ema_ckpt_keep = (
+        "The maximum number of periodic EMA checkpoints to keep. "
+        "EMA checkpoints use the same prefix-based cleanup rule as regular "
+        "training checkpoints, but with an EMA-specific checkpoint prefix."
+    )
     doc_change_bias_after_training = (
         "Whether to change the output bias after the last training step, "
         "by performing predictions using trained model on training data and "
@@ -3977,6 +4050,7 @@ def training_args(
         "but reduces optimizer memory to 1/N per GPU. "
         "2: FSDP2 stage-2, shards optimizer states and gradients; same communication "
         "volume as stage-1 but further reduces gradient memory to 1/N per GPU. "
+        "Stages 2 and 3 require FSDP2, which is available in PyTorch >= 2.6. "
         "Note: FSDP2 introduces DTensor dispatch overhead that can slow down "
         "models with many small layers; use torch.compile to mitigate. "
         "3: FSDP2 stage-3, shards parameters as well; maximum memory savings but "
@@ -4044,6 +4118,31 @@ def training_args(
             "save_ckpt", str, optional=True, default="model.ckpt", doc=doc_save_ckpt
         ),
         Argument("max_ckpt_keep", int, optional=True, default=5, doc=doc_max_ckpt_keep),
+        Argument(
+            "enable_ema",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_enable_ema,
+        ),
+        Argument(
+            "ema_decay",
+            float,
+            optional=True,
+            default=0.999,
+            doc=doc_only_pt_supported + doc_ema_decay,
+            extra_check=lambda x: 0.0 <= x < 1.0,
+            extra_check_errmsg="must be greater than or equal to 0 and less than 1",
+        ),
+        Argument(
+            "ema_ckpt_keep",
+            int,
+            optional=True,
+            default=3,
+            doc=doc_only_pt_supported + doc_ema_ckpt_keep,
+            extra_check=lambda x: x > 0,
+            extra_check_errmsg="must be greater than 0",
+        ),
         Argument(
             "change_bias_after_training",
             bool,
@@ -4138,6 +4237,11 @@ def training_args(
         num_epoch = data.get("numb_epoch")
         num_epoch_dict = data.get("num_epoch_dict", {})
         model_prob = data.get("model_prob", {})
+        zero_stage = int(data.get("zero_stage", 0))
+        if data.get("enable_ema", False) and zero_stage >= 2:
+            raise ValueError(
+                "training.enable_ema currently only supports training.zero_stage < 2."
+            )
         if multi_task:
             if num_epoch is not None:
                 raise ValueError(
@@ -4177,6 +4281,246 @@ def training_args(
         doc=doc_training,
         extra_check=training_extra_check,
     )
+
+
+FULL_VALIDATION_METRIC_PREFS = {
+    "e:mae": ("start_pref_e", "limit_pref_e"),
+    "e:rmse": ("start_pref_e", "limit_pref_e"),
+    "f:mae": ("start_pref_f", "limit_pref_f"),
+    "f:rmse": ("start_pref_f", "limit_pref_f"),
+    "v:mae": ("start_pref_v", "limit_pref_v"),
+    "v:rmse": ("start_pref_v", "limit_pref_v"),
+}
+
+
+def normalize_full_validation_metric(metric: str) -> str:
+    """Normalize the full validation metric string."""
+    return metric.strip().lower()
+
+
+def is_valid_full_validation_metric(metric: str) -> bool:
+    """Check whether a full validation metric is supported."""
+    return normalize_full_validation_metric(metric) in FULL_VALIDATION_METRIC_PREFS
+
+
+def get_full_validation_metric_prefactors(metric: str) -> tuple[str, str]:
+    """Get the prefactor keys required by a full validation metric."""
+    normalized_metric = normalize_full_validation_metric(metric)
+    if normalized_metric not in FULL_VALIDATION_METRIC_PREFS:
+        valid_metrics = ", ".join(item.upper() for item in FULL_VALIDATION_METRIC_PREFS)
+        raise ValueError(
+            f"validating.validation_metric must be one of {valid_metrics}, got {metric!r}."
+        )
+    return FULL_VALIDATION_METRIC_PREFS[normalized_metric]
+
+
+def resolve_full_validation_start_step(
+    full_val_start: float, num_steps: int
+) -> int | None:
+    """Resolve the first step at which full validation becomes active."""
+    start_value = float(full_val_start)
+    if start_value == 1.0:
+        return None
+    if 0.0 <= start_value < 1.0:
+        return int(num_steps * start_value)
+    return int(start_value)
+
+
+def validating_args() -> Argument:
+    """Generate full validation arguments."""
+    valid_metrics = ", ".join(item.upper() for item in FULL_VALIDATION_METRIC_PREFS)
+    doc_full_validation = (
+        "Whether to run an additional full validation pass over the entire "
+        "validation dataset during training. This flow is independent from the "
+        "display-time validation controlled by `training.disp_freq`. Only "
+        "single-task energy training is supported. Multi-task, spin-energy, "
+        "and `training.zero_stage >= 2` are not supported."
+    )
+    doc_validation_freq = (
+        "The frequency, in training steps, of running the full validation pass."
+    )
+    doc_save_best = (
+        "Whether to save an extra checkpoint when the selected full validation "
+        "metric reaches a new best value."
+    )
+    doc_ema_full_validation = (
+        "Whether to additionally run the same full validation flow on the "
+        "EMA-smoothed model when `validating.full_validation=true`. This reuses "
+        "the existing full validation schedule, metric, start step, and "
+        "best-checkpoint settings, writes results to an EMA-specific validation "
+        "log such as `val_ema.log`, and saves EMA best checkpoints with a "
+        "`best_ema.ckpt` prefix. Requires "
+        "`training.enable_ema=true`."
+    )
+    doc_max_best_ckpt = (
+        "The maximum number of top-ranked best checkpoints to keep. The best "
+        "checkpoints are ranked by the selected validation metric in ascending "
+        "order. Default is 1."
+    )
+    doc_validation_metric = (
+        "Metric used to determine the best checkpoint during full validation. "
+        f"Supported values are {valid_metrics}. The string is case-insensitive. "
+        "`E` and `V` are per-atom metrics; `F` uses component-wise force errors, "
+        "matching `dp test`. The corresponding loss prefactors must not both be 0."
+    )
+    doc_full_val_file = (
+        "The file for writing full validation results only. This file is "
+        "independent from `training.disp_file`."
+    )
+    doc_full_val_start = (
+        "The starting point of full validation. `0` means the feature is active "
+        "from the beginning and will trigger at every `validation_freq` steps. "
+        "A value in `(0, 1)` is interpreted as a ratio of `training.numb_steps`. "
+        "`1` disables the feature. A value larger than `1` is interpreted as the "
+        "starting step after integer conversion."
+    )
+    args = [
+        Argument(
+            "full_validation",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_full_validation,
+        ),
+        Argument(
+            "ema_full_validation",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_ema_full_validation,
+        ),
+        Argument(
+            "validation_freq",
+            int,
+            optional=True,
+            default=5000,
+            doc=doc_only_pt_supported + doc_validation_freq,
+            extra_check=lambda x: x > 0,
+            extra_check_errmsg="must be greater than 0",
+        ),
+        Argument(
+            "save_best",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_only_pt_supported + doc_save_best,
+        ),
+        Argument(
+            "max_best_ckpt",
+            int,
+            optional=True,
+            default=1,
+            doc=doc_only_pt_supported + doc_max_best_ckpt,
+            extra_check=lambda x: x > 0,
+            extra_check_errmsg="must be greater than 0",
+        ),
+        Argument(
+            "validation_metric",
+            str,
+            optional=True,
+            default="E:MAE",
+            doc=doc_only_pt_supported + doc_validation_metric,
+            extra_check=is_valid_full_validation_metric,
+            extra_check_errmsg=(
+                "must be one of "
+                + ", ".join(item.upper() for item in FULL_VALIDATION_METRIC_PREFS)
+            ),
+        ),
+        Argument(
+            "full_val_file",
+            str,
+            optional=True,
+            default="val.log",
+            doc=doc_only_pt_supported + doc_full_val_file,
+        ),
+        Argument(
+            "full_val_start",
+            [int, float],
+            optional=True,
+            default=0.5,
+            doc=doc_only_pt_supported + doc_full_val_start,
+            extra_check=lambda x: x >= 0,
+            extra_check_errmsg="must be greater than or equal to 0",
+        ),
+    ]
+    return Argument(
+        "validating",
+        dict,
+        sub_fields=args,
+        sub_variants=[],
+        optional=True,
+        default={},
+        doc=doc_only_pt_supported
+        + "Independent full validation options for single-task energy training.",
+    )
+
+
+def validate_full_validation_config(
+    data: dict[str, Any], multi_task: bool = False
+) -> None:
+    """Validate cross-section constraints for full validation."""
+    validating = data.get("validating") or {}
+    training_params = data.get("training", {}) or {}
+    full_validation_enabled = bool(validating.get("full_validation", False))
+    ema_full_validation_enabled = bool(validating.get("ema_full_validation", False))
+    if not full_validation_enabled:
+        return
+    if ema_full_validation_enabled and not training_params.get("enable_ema", False):
+        raise ValueError(
+            "validating.ema_full_validation requires `training.enable_ema=true`."
+        )
+    if float(validating.get("full_val_start", 0.0)) == 1.0:
+        return
+
+    metric = str(validating.get("validation_metric", "E:MAE"))
+    if not is_valid_full_validation_metric(metric):
+        valid_metrics = ", ".join(item.upper() for item in FULL_VALIDATION_METRIC_PREFS)
+        raise ValueError(
+            "validating.validation_metric must be one of "
+            f"{valid_metrics}, got {metric!r}."
+        )
+
+    if multi_task:
+        raise ValueError(
+            "validating.full_validation only supports single-task energy "
+            "training; multi-task training is not supported."
+        )
+
+    loss_params = data.get("loss", {})
+    loss_type = loss_params.get("type", "ener")
+    if loss_type == "ener_spin":
+        raise ValueError(
+            "validating.full_validation only supports single-task energy "
+            "training; spin-energy training is not supported."
+        )
+    if loss_type != "ener":
+        raise ValueError(
+            "validating.full_validation only supports single-task energy "
+            f"training with loss.type='ener'; got loss.type={loss_type!r}."
+        )
+
+    if not training_params.get("validation_data"):
+        raise ValueError(
+            "full validation requires `training.validation_data`. It is only "
+            "supported for single-task energy training."
+        )
+
+    zero_stage = int(training_params.get("zero_stage", 0))
+    if zero_stage >= 2:
+        raise ValueError(
+            "validating.full_validation only supports single-task energy "
+            "training with training.zero_stage < 2."
+        )
+
+    pref_start_key, pref_limit_key = get_full_validation_metric_prefactors(metric)
+    pref_start = float(loss_params.get(pref_start_key, 0.0))
+    pref_limit = float(loss_params.get(pref_limit_key, 0.0))
+    if pref_start == 0.0 or pref_limit == 0.0:
+        raise ValueError(
+            f"validating.validation_metric={metric!r} requires "
+            f"`loss.{pref_start_key}` and `loss.{pref_limit_key}` to both "
+            "be non-zero."
+        )
 
 
 def multi_model_args() -> list[Argument]:
@@ -4253,6 +4597,7 @@ def gen_args(multi_task: bool = False) -> list[Argument]:
             optimizer_args(),
             loss_args(),
             training_args(multi_task=multi_task),
+            validating_args(),
             nvnmd_args(),
         ]
     else:
@@ -4262,6 +4607,7 @@ def gen_args(multi_task: bool = False) -> list[Argument]:
             optimizer_args(fold_subdoc=True),
             multi_loss_args(),
             training_args(multi_task=multi_task),
+            validating_args(),
             nvnmd_args(fold_subdoc=True),
         ]
 
@@ -4293,10 +4639,15 @@ def gen_json_schema(multi_task: bool = False) -> str:
     return json.dumps(generate_json_schema(arg))
 
 
-def normalize(data: dict[str, Any], multi_task: bool = False) -> dict[str, Any]:
+def normalize(
+    data: dict[str, Any], multi_task: bool = False, *, check: bool = True
+) -> dict[str, Any]:
+    """Normalize config values and optionally run strict schema checks."""
     base = Argument("base", dict, gen_args(multi_task=multi_task))
     data = base.normalize_value(data, trim_pattern="_*")
-    base.check_value(data, strict=True)
+    if check:
+        base.check_value(data, strict=True)
+    validate_full_validation_config(data, multi_task=multi_task)
 
     return data
 

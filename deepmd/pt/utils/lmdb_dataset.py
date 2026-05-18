@@ -16,14 +16,12 @@ from torch.utils.data import (
     Dataset,
     Sampler,
 )
-from torch.utils.data._utils.collate import (
-    collate_tensor_fn,
-)
 
 from deepmd.dpmodel.utils.lmdb_data import (
     LmdbDataReader,
     LmdbTestData,
     SameNlocBatchSampler,
+    collate_lmdb_frames,
     compute_block_targets,
     is_lmdb,
 )
@@ -146,8 +144,11 @@ def make_lmdb_mixed_batch_collate(
 def _collate_lmdb_batch(batch: list[FrameDict]) -> BatchDict:
     """Collate a list of frame dicts into a batch dict.
 
-    All frames in the batch must have the same nloc (enforced by
-    SameNlocBatchSampler when mixed_batch=False).
+    Pre-converts per-frame numpy arrays to CPU torch tensors (zero-copy when
+    dtype matches) and delegates stacking to the backend-agnostic
+    :func:`collate_lmdb_frames`. With torch tensors as input, the shared
+    collate yields a torch dict (``sid`` becomes a torch tensor automatically
+    via ``array_api_compat``).
 
     For mixed_batch=True, this function would need padding + mask.
     Mixed-nloc batches are flattened atom-wise and augmented with ``batch`` and
@@ -158,24 +159,19 @@ def _collate_lmdb_batch(batch: list[FrameDict]) -> BatchDict:
         if atypes and any(len(a) != len(atypes[0]) for a in atypes):
             return _collate_lmdb_mixed_batch(batch)
 
-    example = batch[0]
-    result: dict[str, Any] = {}
-    for key in example:
-        if "find_" in key:
-            result[key] = batch[0][key]
-        elif key == "fid":
-            result[key] = [d[key] for d in batch]
-        elif key == "type":
-            continue
-        elif batch[0][key] is None:
-            result[key] = None
-        else:
-            with torch.device("cpu"):
-                result[key] = collate_tensor_fn(
-                    [torch.as_tensor(d[key]) for d in batch]
-                )
-    result["sid"] = torch.tensor([0], dtype=torch.long, device="cpu")
-    return result
+    with torch.device("cpu"):
+        torch_frames: list[dict[str, Any]] = []
+        for f in batch:
+            tf: dict[str, Any] = {}
+            for key, val in f.items():
+                if key.startswith("find_") or key == "fid" or key == "type":
+                    tf[key] = val
+                elif val is None:
+                    tf[key] = None
+                else:
+                    tf[key] = torch.as_tensor(val)
+            torch_frames.append(tf)
+        return collate_lmdb_frames(torch_frames)
 
 
 class _SameNlocBatchSamplerTorch(Sampler):
@@ -211,7 +207,14 @@ class LmdbDataset(Dataset):
     type_map : list[str]
         Global type map from model config.
     batch_size : int or str
-        Batch size. Supports int, "auto", "auto:N".
+        Batch size rule forwarded to :class:`LmdbDataReader`. Supports:
+
+        - ``int``: fixed batch size for every nloc group.
+        - ``"auto"`` / ``"auto:N"``: ``ceil(N / nloc)`` per nloc group
+          (``N=32`` for bare ``"auto"``).
+        - ``"max:N"``: ``max(1, floor(N / nloc))`` per nloc group.
+        - ``"filter:N"``: same per-nloc formula as ``"max:N"`` and drops
+          every frame whose ``nloc > N`` from the dataset.
     mixed_batch : bool
         If True, allow different nloc in the same batch (future).
         If False (default), use SameNlocBatchSampler.
@@ -317,6 +320,14 @@ class LmdbDataset(Dataset):
     @property
     def batch_size(self) -> int:
         return self._reader.batch_size
+
+    @property
+    def type_map(self) -> list[str]:
+        return self._reader.type_map
+
+    @property
+    def data_requirements(self) -> list[DataRequirementItem]:
+        return self._reader.data_requirements
 
     def add_data_requirement(self, data_requirement: list[DataRequirementItem]) -> None:
         self._reader.add_data_requirement(data_requirement)

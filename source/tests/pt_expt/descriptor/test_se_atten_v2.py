@@ -145,7 +145,11 @@ class TestDescrptSeAttenV2(TestCaseSingleFrameWithNlist):
         dstd = 0.1 + np.abs(dstd)
 
         dtype = PRECISION_DICT[prec]
-        atol = 1e-5 if prec == "float32" else 1e-10
+        # float32 tabulation error grows with embedding-net output magnitude;
+        # bias init N(0,1) (matching pt) widens the range vs. the earlier
+        # Glorot bias init, observed max-abs diff ~3.2e-5 — set 4e-5 with
+        # ~25% headroom over the measured value.
+        atol = 4e-5 if prec == "float32" else 1e-10
         dd0 = DescrptSeAttenV2(
             self.rcut,
             self.rcut_smth,
@@ -234,3 +238,46 @@ class TestDescrptSeAttenV2(TestCaseSingleFrameWithNlist):
             rtol=rtol,
             atol=atol,
         )
+
+    @pytest.mark.parametrize("shared_level", [0, 1])  # sharing level
+    def test_share_params(self, shared_level) -> None:
+        """share_params level 0: share all; level 1: share type_embedding only."""
+        rng = np.random.default_rng(GLOBAL_SEED)
+        _, _, nnei = self.nlist.shape
+        davg0 = rng.normal(size=(self.nt, nnei, 4))
+        dstd0 = 0.1 + np.abs(rng.normal(size=(self.nt, nnei, 4)))
+
+        dd0 = DescrptSeAttenV2(
+            self.rcut,
+            self.rcut_smth,
+            self.sel_mix,
+            self.nt,
+            attn_layer=2,
+            seed=GLOBAL_SEED,
+        ).to(self.device)
+        dd1 = DescrptSeAttenV2(
+            self.rcut,
+            self.rcut_smth,
+            self.sel_mix,
+            self.nt,
+            attn_layer=2,
+            seed=GLOBAL_SEED + 1,
+        ).to(self.device)
+        dd0.se_atten.mean = torch.tensor(davg0, dtype=torch.float64, device=self.device)
+        dd0.se_atten.stddev = torch.tensor(
+            dstd0, dtype=torch.float64, device=self.device
+        )
+
+        dd1.share_params(dd0, shared_level=shared_level)
+
+        # type_embedding is always shared
+        assert dd1._modules["type_embedding"] is dd0._modules["type_embedding"]
+
+        if shared_level == 0:
+            assert dd1._modules["se_atten"] is dd0._modules["se_atten"]
+        elif shared_level == 1:
+            assert dd1._modules["se_atten"] is not dd0._modules["se_atten"]
+
+        # invalid level raises
+        with pytest.raises(NotImplementedError):
+            dd1.share_params(dd0, shared_level=2)

@@ -56,6 +56,7 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
             prec,
             ect,
             add_chg_spin,
+            seq_upd,
         ) in itertools.product(
             [True, False],  # update_angle
             ["res_residual"],  # update_style
@@ -67,7 +68,11 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
             ["float64"],  # precision
             [False],  # use_econf_tebd
             [False, True],  # add_chg_spin_ebd
+            [False, True],  # sequential_update
         ):
+            # sequential_update only works with update_angle=True
+            if seq_upd and not ua:
+                continue
             dtype = PRECISION_DICT[prec]
             rtol, atol = get_tols(prec)
             if prec == "float64":
@@ -93,6 +98,7 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 update_style=rus,
                 update_residual_init=ruri,
                 smooth_edge_update=True,
+                sequential_update=seq_upd,
             )
 
             # dpa3 new impl
@@ -177,6 +183,7 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
             nme,
             prec,
             ect,
+            seq_upd,
         ) in itertools.product(
             [True],  # update_angle
             ["res_residual"],  # update_style
@@ -187,6 +194,7 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
             [1, 2],  # n_multi_edge_message
             ["float64"],  # precision
             [False],  # use_econf_tebd
+            [False, True],  # sequential_update
         ):
             dtype = PRECISION_DICT[prec]
             rtol, atol = get_tols(prec)
@@ -211,6 +219,7 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 update_style=rus,
                 update_residual_init=ruri,
                 smooth_edge_update=True,
+                sequential_update=seq_upd,
             )
 
             # dpa3 new impl

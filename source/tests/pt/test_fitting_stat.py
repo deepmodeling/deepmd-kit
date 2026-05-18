@@ -280,7 +280,7 @@ class TestMultiTaskFittingStat(unittest.TestCase):
         self.config["training"]["data_dict"]["model_2"]["validation_data"][
             "systems"
         ] = self.data_file_single
-        self.config["model"]["model_dict"]["model_1"]["data_stat_nbatch"] = 100
+        self.config["model"]["model_dict"]["model_1"]["data_stat_nbatch"] = 80
 
         self.config["model"], self.shared_links = preprocess_shared_params(
             self.config["model"]
@@ -391,7 +391,7 @@ class TestMultiTaskFittingStat(unittest.TestCase):
         ] = self.data_file
         data_stat_protect = 5e-3
         self.config["model"]["model_dict"]["model_1"]["data_stat_nbatch"] = 3
-        self.config["model"]["model_dict"]["model_3"]["data_stat_nbatch"] = 100
+        self.config["model"]["model_dict"]["model_3"]["data_stat_nbatch"] = 80
         self.config["model"]["model_dict"]["model_1"]["data_stat_protect"] = (
             data_stat_protect
         )

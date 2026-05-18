@@ -371,8 +371,10 @@ class FinetuneTest:
                 wrapper_new = ModelWrapper(model_new)
 
                 _, has_new_type = get_index_between_two_maps(old_type_map, new_type_map)
-                model_with_new_type_stat = wrapper_new.model if has_new_type else None
-                pretrained_wrapper.model.change_type_map(
+                model_with_new_type_stat = (
+                    wrapper_new.model["Default"] if has_new_type else None
+                )
+                pretrained_wrapper.model["Default"].change_type_map(
                     new_type_map,
                     model_with_new_type_stat=model_with_new_type_stat,
                 )

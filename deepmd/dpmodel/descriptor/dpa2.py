@@ -687,6 +687,16 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             [self.repinit.has_message_passing(), self.repformers.has_message_passing()]
         )
 
+    def has_message_passing_across_ranks(self) -> bool:
+        """Returns whether per-layer node embeddings need MPI ghost exchange.
+
+        DPA2's repformers always passes ``g1`` in ``[nb, nall, n_dim]``
+        layout (no ``use_loc_mapping`` opt-out exists at the block level),
+        so multi-rank deployment always needs cross-rank exchange of
+        per-atom features between layers.
+        """
+        return self.repformers.has_message_passing_across_ranks()
+
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
         return True
@@ -831,6 +841,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         nlist: Array,
         mapping: Array | None = None,
         fparam: Array | None = None,
+        comm_dict: dict | None = None,
     ) -> tuple[Array, Array, Array, Array, Array]:
         """Compute the descriptor.
 
@@ -844,6 +855,11 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             The neighbor list. shape: nf x nloc x nnei
         mapping
             The index mapping, maps extended region index to local region.
+        comm_dict
+            MPI communication metadata for parallel inference. Forwarded to
+            the repformer block (the message-passing part). The repinit
+            sub-block does no message passing and does not receive it.
+            ``None`` for non-parallel inference (default).
 
         Returns
         -------
@@ -912,9 +928,18 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             assert self.tebd_transform is not None
             g1 = g1 + self.tebd_transform(g1_inp)
         # mapping g1
-        assert mapping is not None
-        mapping_ext = xp.tile(xp.expand_dims(mapping, axis=-1), (1, 1, g1.shape[-1]))
-        g1_ext = xp_take_along_axis(g1, mapping_ext, axis=1)
+        if comm_dict is None:
+            # non-parallel: gather g1 -> g1_ext via mapping, hand the
+            # nall-sized embedding to the repformer block.
+            assert mapping is not None
+            mapping_ext = xp.tile(
+                xp.expand_dims(mapping, axis=-1), (1, 1, g1.shape[-1])
+            )
+            g1_ext = xp_take_along_axis(g1, mapping_ext, axis=1)
+        else:
+            # parallel mode: hand the local-only g1 to the repformer block;
+            # its per-layer override fills ghosts via the MPI exchange.
+            g1_ext = g1
         # repformer
         g1, g2, h2, rot_mat, sw = self.repformers(
             nlist_dict[
@@ -926,6 +951,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             atype_ext,
             g1_ext,
             mapping,
+            comm_dict=comm_dict,
         )
         if self.concat_output_tebd:
             g1 = xp.concat([g1, g1_inp], axis=-1)

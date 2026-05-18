@@ -216,3 +216,43 @@ class TestDescrptSeR(TestCaseSingleFrameWithNlist):
             rtol=rtol,
             atol=atol,
         )
+
+    def test_share_params(self) -> None:
+        """share_params level 0: all modules and buffers are shared."""
+        rng = np.random.default_rng(GLOBAL_SEED)
+        _, _, nnei = self.nlist.shape
+        davg0 = rng.normal(size=(self.nt, nnei, 1))
+        dstd0 = 0.1 + np.abs(rng.normal(size=(self.nt, nnei, 1)))
+
+        dd0 = DescrptSeR(self.rcut, self.rcut_smth, self.sel, seed=GLOBAL_SEED).to(
+            self.device
+        )
+        dd1 = DescrptSeR(self.rcut, self.rcut_smth, self.sel, seed=GLOBAL_SEED + 1).to(
+            self.device
+        )
+        dd0.davg = torch.tensor(davg0, dtype=torch.float64, device=self.device)
+        dd0.dstd = torch.tensor(dstd0, dtype=torch.float64, device=self.device)
+
+        dd1.share_params(dd0, shared_level=0)
+
+        # all modules and buffers are shared (same object)
+        for key in dd0._modules:
+            assert dd1._modules[key] is dd0._modules[key]
+        for key in dd0._buffers:
+            assert dd1._buffers[key] is dd0._buffers[key]
+
+        # forward pass produces identical output
+        inputs = (
+            torch.tensor(self.coord_ext, dtype=torch.float64, device=self.device),
+            torch.tensor(self.atype_ext, dtype=int, device=self.device),
+            torch.tensor(self.nlist, dtype=int, device=self.device),
+        )
+        rd0 = dd0(*inputs)[0]
+        rd1 = dd1(*inputs)[0]
+        np.testing.assert_allclose(
+            rd0.detach().cpu().numpy(), rd1.detach().cpu().numpy()
+        )
+
+        # invalid level raises
+        with pytest.raises(NotImplementedError):
+            dd1.share_params(dd0, shared_level=1)

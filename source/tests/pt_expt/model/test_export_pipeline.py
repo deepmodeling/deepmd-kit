@@ -149,7 +149,13 @@ class TestExportPipeline:
 
         # 6. Export with dynamic shapes (same as dp freeze)
         dynamic_shapes = _build_dynamic_shapes(
-            ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam
+            ext_coord,
+            ext_atype,
+            nlist_t,
+            mapping_t,
+            fparam,
+            aparam,
+            model_nnei=sum(model2.get_sel()),
         )
         exported = torch.export.export(
             traced,

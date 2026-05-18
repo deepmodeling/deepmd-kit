@@ -63,11 +63,11 @@ class TestDeepEvalEner(unittest.TestCase):
         cls.model = cls.model.to(torch.float64)
         cls.model.eval()
 
-        # Serialize and save to .pte
+        # Serialize and save to .pte (with atomic virial for test_dynamic_shapes)
         cls.model_data = {"model": cls.model.serialize()}
         cls.tmpfile = tempfile.NamedTemporaryFile(suffix=".pte", delete=False)
         cls.tmpfile.close()
-        deserialize_to_file(cls.tmpfile.name, cls.model_data)
+        deserialize_to_file(cls.tmpfile.name, cls.model_data, do_atomic_virial=True)
 
         # Create DeepPot for testing
         cls.dp = DeepPot(cls.tmpfile.name)
@@ -272,6 +272,106 @@ class TestDeepEvalEner(unittest.TestCase):
                         atol=1e-10,
                         err_msg=f"nloc={nloc}, key={key}",
                     )
+
+    def test_oversized_nlist(self) -> None:
+        """Test that the exported model handles nlist with more neighbors than nnei.
+
+        In LAMMPS, the neighbor list is built with rcut + skin, so atoms
+        typically have more neighbors than sum(sel).  The compiled
+        format_nlist must sort by distance and truncate correctly.
+
+        The test verifies two things:
+
+        1. **Correctness**: the exported model with an oversized, shuffled
+           nlist produces the same results as the eager model (both sort by
+           distance and keep the closest sum(sel) neighbors).
+
+        2. **Naive truncation produces wrong results**: simply taking the
+           first sum(sel) columns of the shuffled nlist (simulating a C++
+           implementation that truncates without sorting) gives a different
+           energy.  This proves the distance sort is necessary.
+        """
+        exported = torch.export.load(self.tmpfile.name)
+        exported_mod = exported.module()
+
+        nnei = sum(self.sel)  # model's expected neighbor count
+        nloc = 5
+        ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam = _make_sample_inputs(
+            self.model, nloc=nloc
+        )
+
+        # Pad nlist with -1 columns, then shuffle column order so real
+        # neighbors are interspersed with absent ones beyond column sum(sel).
+        n_extra = nnei  # double the nlist width
+        nlist_padded = torch.cat(
+            [
+                nlist_t,
+                -torch.ones(
+                    (*nlist_t.shape[:2], n_extra),
+                    dtype=nlist_t.dtype,
+                    device=nlist_t.device,
+                ),
+            ],
+            dim=-1,
+        )
+        # Shuffle columns: move some real neighbors past sum(sel) boundary.
+        rng = np.random.default_rng(42)
+        perm = rng.permutation(nlist_padded.shape[-1])
+        nlist_shuffled = nlist_padded[:, :, perm]
+        assert nlist_shuffled.shape[-1] > nnei
+
+        # --- Part 1: exported model sorts correctly ---
+        # Reference: eager model with shuffled oversized nlist
+        ec = ext_coord.detach().requires_grad_(True)
+        ref_ret = self.model.forward_common_lower(
+            ec,
+            ext_atype,
+            nlist_shuffled,
+            mapping_t,
+            fparam=fparam,
+            aparam=aparam,
+            do_atomic_virial=True,
+        )
+
+        # Exported model with same shuffled oversized nlist
+        pte_ret = exported_mod(
+            ext_coord, ext_atype, nlist_shuffled, mapping_t, fparam, aparam
+        )
+
+        for key in ("energy", "energy_redu", "energy_derv_r", "energy_derv_c"):
+            if ref_ret[key] is not None and key in pte_ret:
+                np.testing.assert_allclose(
+                    ref_ret[key].detach().cpu().numpy(),
+                    pte_ret[key].detach().cpu().numpy(),
+                    rtol=1e-10,
+                    atol=1e-10,
+                    err_msg=f"oversized nlist, key={key}",
+                )
+
+        # --- Part 2: naive truncation gives wrong results ---
+        # Simulate the old C++ bug: truncate shuffled nlist to sum(sel) columns
+        # without distance sorting.  Some close neighbors that were shuffled
+        # beyond column sum(sel) are lost, producing wrong energy.
+        nlist_truncated = nlist_shuffled[:, :, :nnei]
+        ec2 = ext_coord.detach().requires_grad_(True)
+        trunc_ret = self.model.forward_common_lower(
+            ec2,
+            ext_atype,
+            nlist_truncated,
+            mapping_t,
+            fparam=fparam,
+            aparam=aparam,
+            do_atomic_virial=True,
+        )
+        # The truncated result MUST differ from the correctly sorted result,
+        # proving that naive truncation discards real neighbors.
+        e_ref = ref_ret["energy_redu"].detach().cpu().numpy()
+        e_trunc = trunc_ret["energy_redu"].detach().cpu().numpy()
+        assert not np.allclose(e_ref, e_trunc, rtol=1e-10, atol=1e-10), (
+            "Naive truncation of shuffled nlist should give different energy, "
+            "but got the same result.  The test data may not have enough "
+            "neighbors shuffled beyond sum(sel) to trigger the bug."
+        )
 
     def test_serialize_round_trip(self) -> None:
         """Test .pte → serialize_from_file → deserialize → model gives same outputs."""
@@ -547,17 +647,30 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
         # compilation (tests/pt/__init__.py sets it to "cuda:9999999").
         torch.set_default_device(None)
         try:
-            deserialize_to_file(cls.tmpfile.name, cls.model_data)
+            deserialize_to_file(cls.tmpfile.name, cls.model_data, do_atomic_virial=True)
         finally:
             torch.set_default_device("cuda:9999999")
+
+        cls.meta_tmpfile = tempfile.NamedTemporaryFile(suffix=".pt2", delete=False)
+        cls.meta_tmpfile.close()
+        with (
+            zipfile.ZipFile(cls.tmpfile.name, "r") as zin,
+            zipfile.ZipFile(cls.meta_tmpfile.name, "w") as zout,
+        ):
+            for info in zin.infolist():
+                if info.filename == "model/extra/model.json":
+                    continue
+                zout.writestr(info, zin.read(info.filename))
 
         # Also save to .pte for cross-format comparison
         cls.pte_tmpfile = tempfile.NamedTemporaryFile(suffix=".pte", delete=False)
         cls.pte_tmpfile.close()
-        deserialize_to_file(cls.pte_tmpfile.name, cls.model_data)
+        deserialize_to_file(cls.pte_tmpfile.name, cls.model_data, do_atomic_virial=True)
 
         # Create DeepPot for .pt2
         cls.dp = DeepPot(cls.tmpfile.name)
+        # Create DeepPot for metadata-only .pt2
+        cls.dp_meta = DeepPot(cls.meta_tmpfile.name)
         # Create DeepPot for .pte reference
         cls.dp_pte = DeepPot(cls.pte_tmpfile.name)
 
@@ -566,6 +679,7 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
         import os
 
         os.unlink(cls.tmpfile.name)
+        os.unlink(cls.meta_tmpfile.name)
         os.unlink(cls.pte_tmpfile.name)
 
     def test_get_rcut(self) -> None:
@@ -638,14 +752,52 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
         self.assertTrue(zipfile.is_zipfile(self.tmpfile.name))
 
     def test_pt2_has_metadata(self) -> None:
-        """The .pt2 ZIP should contain metadata entries."""
+        """The .pt2 ZIP should contain metadata entries under ``model/extra/``."""
         with zipfile.ZipFile(self.tmpfile.name, "r") as zf:
             names = zf.namelist()
-            self.assertIn("extra/metadata.json", names)
-            self.assertIn("extra/model_def_script.json", names)
-            self.assertIn("extra/model.json", names)
-            self.assertNotIn("extra/output_keys.json", names)
-            self.assertNotIn("extra/model_params.json", names)
+            self.assertIn("model/extra/metadata.json", names)
+            self.assertIn("model/extra/model_def_script.json", names)
+            self.assertIn("model/extra/model.json", names)
+            self.assertNotIn("model/extra/output_keys.json", names)
+            self.assertNotIn("model/extra/model_params.json", names)
+
+    def test_metadata_only_pt2_has_no_model_json(self) -> None:
+        """The metadata-only .pt2 keeps metadata but drops model.json."""
+        with zipfile.ZipFile(self.meta_tmpfile.name, "r") as zf:
+            names = zf.namelist()
+            self.assertIn("model/extra/metadata.json", names)
+            self.assertNotIn("model/extra/model.json", names)
+
+    def test_metadata_only_pt2_accessors_match(self) -> None:
+        """Metadata-only .pt2 archives expose the same metadata API."""
+        full = self.dp.deep_eval
+        meta = self.dp_meta.deep_eval
+        self.assertIsNotNone(full._dpmodel)
+        self.assertIsNone(meta._dpmodel)
+        self.assertEqual(full.get_rcut(), meta.get_rcut())
+        self.assertEqual(full.get_ntypes(), meta.get_ntypes())
+        self.assertEqual(full.get_type_map(), meta.get_type_map())
+        self.assertEqual(full.get_dim_fparam(), meta.get_dim_fparam())
+        self.assertEqual(full.get_dim_aparam(), meta.get_dim_aparam())
+        self.assertEqual(full.get_sel_type(), meta.get_sel_type())
+        self.assertEqual(full.get_has_spin(), meta.get_has_spin())
+        self.assertEqual(full.get_use_spin(), meta.get_use_spin())
+        self.assertIs(full.model_type, meta.model_type)
+
+    def test_metadata_only_pt2_eval_parity(self) -> None:
+        """Metadata-only .pt2 inference matches the full archive exactly."""
+        rng = np.random.default_rng(GLOBAL_SEED + 29)
+        natoms = 5
+        coords = rng.random((1, natoms, 3)) * 8.0
+        cells = np.eye(3).reshape(1, 9) * 10.0
+        atom_types = np.array([i % self.nt for i in range(natoms)], dtype=np.int32)
+
+        full_out = self.dp.eval(coords, cells, atom_types, atomic=True)
+        meta_out = self.dp_meta.eval(coords, cells, atom_types, atomic=True)
+
+        self.assertEqual(len(full_out), len(meta_out))
+        for ref, test in zip(full_out, meta_out, strict=True):
+            np.testing.assert_array_equal(test, ref)
 
     def test_eval_consistency(self) -> None:
         """Test that DeepPot.eval gives same results as direct model forward."""
@@ -766,6 +918,99 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
         )
         np.testing.assert_allclose(
             v, ref["virial"].detach().cpu().numpy(), rtol=1e-10, atol=1e-10
+        )
+
+    def test_oversized_nlist(self) -> None:
+        """Test that the exported model handles nlist with more neighbors than nnei.
+
+        In LAMMPS, the neighbor list is built with rcut + skin, so atoms
+        typically have more neighbors than sum(sel).  The compiled
+        format_nlist must sort by distance and truncate correctly.
+
+        The test verifies two things:
+
+        1. **Correctness**: the exported model with an oversized, shuffled
+           nlist produces the same results as the eager model (both sort by
+           distance and keep the closest sum(sel) neighbors).
+
+        2. **Naive truncation produces wrong results**: simply taking the
+           first sum(sel) columns of the shuffled nlist (simulating a C++
+           implementation that truncates without sorting) gives a different
+           energy.  This proves the distance sort is necessary.
+        """
+        exported = torch.export.load(self.pte_tmpfile.name)
+        exported_mod = exported.module()
+
+        nnei = sum(self.sel)  # model's expected neighbor count
+        nloc = 5
+        ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam = _make_sample_inputs(
+            self.model, nloc=nloc
+        )
+
+        # Pad nlist with -1 columns, then shuffle column order so real
+        # neighbors are interspersed with absent ones beyond column sum(sel).
+        n_extra = nnei  # double the nlist width
+        nlist_padded = torch.cat(
+            [
+                nlist_t,
+                -torch.ones(
+                    (*nlist_t.shape[:2], n_extra),
+                    dtype=nlist_t.dtype,
+                    device=nlist_t.device,
+                ),
+            ],
+            dim=-1,
+        )
+        # Shuffle columns: move some real neighbors past sum(sel) boundary.
+        rng = np.random.default_rng(42)
+        perm = rng.permutation(nlist_padded.shape[-1])
+        nlist_shuffled = nlist_padded[:, :, perm]
+        assert nlist_shuffled.shape[-1] > nnei
+
+        # --- Part 1: exported model sorts correctly ---
+        ec = ext_coord.detach().requires_grad_(True)
+        ref_ret = self.model.forward_common_lower(
+            ec,
+            ext_atype,
+            nlist_shuffled,
+            mapping_t,
+            fparam=fparam,
+            aparam=aparam,
+            do_atomic_virial=True,
+        )
+
+        pte_ret = exported_mod(
+            ext_coord, ext_atype, nlist_shuffled, mapping_t, fparam, aparam
+        )
+
+        for key in ("energy", "energy_redu", "energy_derv_r", "energy_derv_c"):
+            if ref_ret[key] is not None and key in pte_ret:
+                np.testing.assert_allclose(
+                    ref_ret[key].detach().cpu().numpy(),
+                    pte_ret[key].detach().cpu().numpy(),
+                    rtol=1e-10,
+                    atol=1e-10,
+                    err_msg=f"oversized nlist, key={key}",
+                )
+
+        # --- Part 2: naive truncation gives wrong results ---
+        nlist_truncated = nlist_shuffled[:, :, :nnei]
+        ec2 = ext_coord.detach().requires_grad_(True)
+        trunc_ret = self.model.forward_common_lower(
+            ec2,
+            ext_atype,
+            nlist_truncated,
+            mapping_t,
+            fparam=fparam,
+            aparam=aparam,
+            do_atomic_virial=True,
+        )
+        e_ref = ref_ret["energy_redu"].detach().cpu().numpy()
+        e_trunc = trunc_ret["energy_redu"].detach().cpu().numpy()
+        assert not np.allclose(e_ref, e_trunc, rtol=1e-10, atol=1e-10), (
+            "Naive truncation of shuffled nlist should give different energy, "
+            "but got the same result.  The test data may not have enough "
+            "neighbors shuffled beyond sum(sel) to trigger the bug."
         )
 
     def test_serialize_round_trip(self) -> None:
@@ -1070,7 +1315,7 @@ class TestDeepEvalEnerAparam(unittest.TestCase):
         cls.model_data = {"model": cls.model.serialize()}
         cls.tmpfile = tempfile.NamedTemporaryFile(suffix=".pte", delete=False)
         cls.tmpfile.close()
-        deserialize_to_file(cls.tmpfile.name, cls.model_data)
+        deserialize_to_file(cls.tmpfile.name, cls.model_data, do_atomic_virial=True)
 
         cls.dp = DeepPot(cls.tmpfile.name)
 
@@ -1187,14 +1432,14 @@ class TestDeepEvalEnerAparamPt2(unittest.TestCase):
         cls.tmpfile.close()
         torch.set_default_device(None)
         try:
-            deserialize_to_file(cls.tmpfile.name, cls.model_data)
+            deserialize_to_file(cls.tmpfile.name, cls.model_data, do_atomic_virial=True)
         finally:
             torch.set_default_device("cuda:9999999")
 
         # Also save .pte for cross-format comparison
         cls.pte_tmpfile = tempfile.NamedTemporaryFile(suffix=".pte", delete=False)
         cls.pte_tmpfile.close()
-        deserialize_to_file(cls.pte_tmpfile.name, cls.model_data)
+        deserialize_to_file(cls.pte_tmpfile.name, cls.model_data, do_atomic_virial=True)
 
         cls.dp = DeepPot(cls.tmpfile.name)
         cls.dp_pte = DeepPot(cls.pte_tmpfile.name)

@@ -8,16 +8,17 @@
 #include <cstdint>
 #include <fstream>
 #include <map>
+#include <numeric>
 #include <sstream>
 
 #include "SimulationRegion.h"
 #include "common.h"
+#include "commonPT.h"
 #include "commonPTExpt.h"
 #include "device.h"
 #include "errors.h"
 #include "neighbor_list.h"
 
-using deepmd::ptexpt::buildTypeSortedNlist;
 using deepmd::ptexpt::parse_json;
 using deepmd::ptexpt::read_zip_entry;
 
@@ -62,6 +63,13 @@ void DeepPotPTExpt::init(const std::string& model,
     return;
   }
 
+  // Load libdeepmd_op_pt.so so its TORCH_LIBRARY_FRAGMENT entries
+  // (deepmd::*, deepmd_export::*) are visible to torch's dispatcher
+  // before the AOTI module loads.  Without this, multi-rank GNN .pt2
+  // archives fail at pair_style time with
+  // ``Could not find schema for deepmd_export::border_op``.
+  deepmd::load_op_library();
+
   if (!file_content.empty()) {
     throw deepmd::deepmd_exception(
         "In-memory file_content loading is not supported for .pt2 models. "
@@ -93,7 +101,6 @@ void DeepPotPTExpt::init(const std::string& model,
   ntypes = static_cast<int>(metadata["type_map"].as_array().size());
   dfparam = metadata["dim_fparam"].as_int();
   daparam = metadata["dim_aparam"].as_int();
-  mixed_types = metadata["mixed_types"].as_bool();
   aparam_nall = false;  // pt_expt models use nloc for aparam
   if (metadata.obj_val.count("has_default_fparam")) {
     has_default_fparam_ = metadata["has_default_fparam"].as_bool();
@@ -120,14 +127,27 @@ void DeepPotPTExpt::init(const std::string& model,
     }
   }
 
+  if (metadata.obj_val.count("do_atomic_virial")) {
+    do_atomic_virial = metadata["do_atomic_virial"].as_bool();
+  } else {
+    // Older models without this field were exported with do_atomic_virial=True
+    do_atomic_virial = true;
+  }
+
+  // Read expected nnei (= sum(sel)) — the .pt2 graph has this dimension static.
+  if (metadata.obj_val.count("nnei")) {
+    nnei = metadata["nnei"].as_int();
+  } else {
+    // Fallback: compute from sel array
+    nnei = 0;
+    for (const auto& v : metadata["sel"].as_array()) {
+      nnei += v.as_int();
+    }
+  }
+
   type_map.clear();
   for (const auto& v : metadata["type_map"].as_array()) {
     type_map.push_back(v.as_string());
-  }
-
-  sel.clear();
-  for (const auto& v : metadata["sel"].as_array()) {
-    sel.push_back(v.as_int());
   }
 
   // Parse output keys from metadata
@@ -141,6 +161,40 @@ void DeepPotPTExpt::init(const std::string& model,
       model, "model", false, 1,
       gpu_enabled ? static_cast<c10::DeviceIndex>(gpu_id)
                   : static_cast<c10::DeviceIndex>(-1));
+
+  // Phase 4: load the optional with-comm artifact for multi-rank GNN
+  // inference. Pre-Phase-3 .pt2 files lack ``has_comm_artifact``;
+  // default to false so old artifacts keep working. If the metadata
+  // flag is set but the nested artifact fails to extract or compile,
+  // keep ``has_comm_artifact_=true`` and let single-rank dispatch
+  // continue working; multi-rank dispatch then fails fast at
+  // ``run_model_with_comm()`` rather than silently dropping the MPI
+  // exchange and producing wrong results.
+  has_comm_artifact_ = metadata.obj_val.count("has_comm_artifact") &&
+                       metadata["has_comm_artifact"].as_bool();
+  if (has_comm_artifact_) {
+    try {
+      // Extract the nested ``extra/forward_lower_with_comm.pt2`` into a
+      // temp file and load it as a second AOTI module. The TempFile
+      // unlinks the temp file on destruction.
+      with_comm_tempfile_ = std::make_unique<deepmd::ptexpt::TempFile>(
+          deepmd::ptexpt::TempFile::from_zip_entry(
+              model, "extra/forward_lower_with_comm.pt2"));
+      with_comm_loader =
+          std::make_unique<torch::inductor::AOTIModelPackageLoader>(
+              with_comm_tempfile_->path(), "model", false, 1,
+              gpu_enabled ? static_cast<c10::DeviceIndex>(gpu_id)
+                          : static_cast<c10::DeviceIndex>(-1));
+    } catch (const std::exception& e) {
+      std::cerr << "DeepPotPTExpt: failed to load with-comm artifact ("
+                << e.what()
+                << "); single-rank inference will still work, but multi-rank "
+                   "LAMMPS dispatch will throw."
+                << std::endl;
+      with_comm_tempfile_.reset();
+      with_comm_loader.reset();
+    }
+  }
 
   int num_intra_nthreads, num_inter_nthreads;
   get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
@@ -182,6 +236,43 @@ std::vector<torch::Tensor> DeepPotPTExpt::run_model(
   return loader->run(inputs);
 }
 
+std::vector<torch::Tensor> DeepPotPTExpt::run_model_with_comm(
+    const torch::Tensor& coord,
+    const torch::Tensor& atype,
+    const torch::Tensor& nlist,
+    const torch::Tensor& mapping,
+    const torch::Tensor& fparam,
+    const torch::Tensor& aparam,
+    const std::vector<at::Tensor>& comm_tensors) {
+  if (!with_comm_loader) {
+    throw deepmd::deepmd_exception(
+        "run_model_with_comm called but the with-comm artifact is not "
+        "available. Either the .pt2 file has no with-comm artifact compiled "
+        "(programming error: the caller should check has_comm_artifact_ "
+        "before invoking this path), or the artifact was present in the "
+        ".pt2 metadata but failed to load at init time (see earlier stderr "
+        "log). Multi-rank LAMMPS requires a working with-comm artifact.");
+  }
+  if (comm_tensors.size() != 8) {
+    throw deepmd::deepmd_exception(
+        "run_model_with_comm: comm_tensors must contain exactly 8 tensors "
+        "(send_list, send_proc, recv_proc, send_num, recv_num, "
+        "communicator, nlocal, nghost). Got " +
+        std::to_string(comm_tensors.size()) + ".");
+  }
+  std::vector<torch::Tensor> inputs = {coord, atype, nlist, mapping};
+  if (dfparam > 0) {
+    inputs.push_back(fparam);
+  }
+  if (daparam > 0) {
+    inputs.push_back(aparam);
+  }
+  for (const auto& t : comm_tensors) {
+    inputs.push_back(t);
+  }
+  return with_comm_loader->run(inputs);
+}
+
 void DeepPotPTExpt::extract_outputs(
     std::map<std::string, torch::Tensor>& output_map,
     const std::vector<torch::Tensor>& flat_outputs) {
@@ -211,6 +302,16 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
                             const std::vector<VALUETYPE>& fparam,
                             const std::vector<VALUETYPE>& aparam,
                             const bool atomic) {
+  // Fail fast before allocating any tensors: refuse to run if the caller
+  // asked for atomic virial but the .pt2 was exported without it.
+  if (atomic && !do_atomic_virial) {
+    throw deepmd::deepmd_exception(
+        "Atomic virial was requested (e.g. by LAMMPS compute */atom/virial) "
+        "but this .pt2 model was exported without it (metadata field "
+        "do_atomic_virial=False). Atomic virial adds ~2.5x inference cost "
+        "and is off by default for .pt2. To enable it, regenerate with: "
+        "dp convert-backend --atomic-virial INPUT.pth OUTPUT.pt2");
+  }
   torch::Device device(torch::kCUDA, gpu_id);
   if (!gpu_enabled) {
     device = torch::Device(torch::kCPU);
@@ -252,40 +353,39 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
           .clone()
           .to(device);
 
+  // LAMMPS sets ago=0 on every nlist rebuild (neighbor rebuild, re-partition,
+  // atom exchange between subdomains), so `ago > 0` implies the cached
+  // mapping and nlist tensors are still valid.  Rebuild only on ago==0.
   if (ago == 0) {
     nlist_data.copy_from_nlist(lmp_list, nall - nghost);
     nlist_data.shuffle_exclude_empty(fwd_map);
     nlist_data.padding();
-  }
-  // Build type-sorted, sel-limited nlist expected by the .pt2 model
-  at::Tensor firstneigh_tensor =
-      buildTypeSortedNlist<double>(nlist_data.jlist, coord_d, datype, sel, nloc,
-                                   mixed_types)
-          .to(device);
 
-  // Build mapping tensor.
-  // NOTE: must .clone() because the local vector goes out of scope before
-  // run_model is called, and torch::from_blob does not copy the data.
-  at::Tensor mapping_tensor;
-  if (lmp_list.mapping) {
-    std::vector<std::int64_t> mapping(nall_real);
-    for (int ii = 0; ii < nall_real; ii++) {
-      mapping[ii] = fwd_map[lmp_list.mapping[bkw_map[ii]]];
+    // Rebuild mapping tensor
+    if (lmp_list.mapping) {
+      std::vector<std::int64_t> mapping(nall_real);
+      for (int ii = 0; ii < nall_real; ii++) {
+        mapping[ii] = fwd_map[lmp_list.mapping[bkw_map[ii]]];
+      }
+      mapping_tensor =
+          torch::from_blob(mapping.data(), {1, nall_real}, int_option)
+              .clone()
+              .to(device);
+    } else {
+      // Default identity mapping for local atoms
+      std::vector<std::int64_t> mapping(nall_real);
+      for (int ii = 0; ii < nall_real; ii++) {
+        mapping[ii] = ii;
+      }
+      mapping_tensor =
+          torch::from_blob(mapping.data(), {1, nall_real}, int_option)
+              .clone()
+              .to(device);
     }
-    mapping_tensor =
-        torch::from_blob(mapping.data(), {1, nall_real}, int_option)
-            .clone()
-            .to(device);
-  } else {
-    // Default identity mapping for local atoms
-    std::vector<std::int64_t> mapping(nall_real);
-    for (int ii = 0; ii < nall_real; ii++) {
-      mapping[ii] = ii;
-    }
-    mapping_tensor =
-        torch::from_blob(mapping.data(), {1, nall_real}, int_option)
-            .clone()
-            .to(device);
+
+    // Flatten raw nlist — the .pt2 model sorts by distance on-device.
+    firstneigh_tensor =
+        createNlistTensor(nlist_data.jlist, nnei).to(torch::kInt64).to(device);
   }
 
   // Build fparam/aparam tensors (cast to float64 for the model)
@@ -328,9 +428,45 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
     aparam_tensor = torch::zeros({0}, options).to(device);
   }
 
-  // Run the .pt2 model
-  auto flat_outputs = run_model(coord_Tensor, atype_Tensor, firstneigh_tensor,
-                                mapping_tensor, fparam_tensor, aparam_tensor);
+  // Phase 4 dispatch: use the with-comm artifact when LAMMPS is
+  // running multi-rank.  ``lmp_list.nswap > 0`` is the proxy for
+  // "multi-rank with cross-domain communication"; in single-rank
+  // mode LAMMPS sets nswap=0.  Falling back to the regular artifact
+  // for nswap=0 is correct because that artifact uses the mapping
+  // tensor to gather ghost embeddings from local atoms.
+  std::vector<torch::Tensor> flat_outputs;
+  bool use_with_comm = has_comm_artifact_ && lmp_list.nswap > 0;
+  if (use_with_comm && !with_comm_loader) {
+    throw deepmd::deepmd_exception(
+        "Multi-rank LAMMPS requires the with-comm artifact, but it failed "
+        "to load at init time. See the earlier stderr log for the underlying "
+        "error.");
+  }
+  // When NULL-type atoms exist, remapped storage must outlive comm
+  // tensors (the int** pointer-array tensor references it).
+  std::vector<std::vector<int>> remapped_sendlist;
+  std::vector<int*> remapped_sendlist_ptrs;
+  std::vector<int> remapped_sendnum, remapped_recvnum;
+  if (use_with_comm) {
+    bool has_null_atoms = (nall_real < nall);
+    std::vector<at::Tensor> comm_tensors;
+    if (has_null_atoms) {
+      comm_tensors =
+          deepmd::ptexpt::build_comm_tensors_positional_with_virtual_atoms(
+              lmp_list, fwd_map, nloc, nghost_real, remapped_sendlist,
+              remapped_sendlist_ptrs, remapped_sendnum, remapped_recvnum);
+    } else {
+      comm_tensors = deepmd::ptexpt::build_comm_tensors_positional(
+          lmp_list, lmp_list.sendlist, lmp_list.sendnum, lmp_list.recvnum, nloc,
+          nghost_real);
+    }
+    flat_outputs = run_model_with_comm(
+        coord_Tensor, atype_Tensor, firstneigh_tensor, mapping_tensor,
+        fparam_tensor, aparam_tensor, comm_tensors);
+  } else {
+    flat_outputs = run_model(coord_Tensor, atype_Tensor, firstneigh_tensor,
+                             mapping_tensor, fparam_tensor, aparam_tensor);
+  }
 
   // Map flat outputs to internal keys
   std::map<std::string, torch::Tensor> output_map;
@@ -434,6 +570,16 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
                             const std::vector<VALUETYPE>& fparam,
                             const std::vector<VALUETYPE>& aparam,
                             const bool atomic) {
+  // Fail fast before allocating any tensors (same check as the nlist
+  // overload — see its comment).
+  if (atomic && !do_atomic_virial) {
+    throw deepmd::deepmd_exception(
+        "Atomic virial was requested (e.g. by LAMMPS compute */atom/virial) "
+        "but this .pt2 model was exported without it (metadata field "
+        "do_atomic_virial=False). Atomic virial adds ~2.5x inference cost "
+        "and is off by default for .pt2. To enable it, regenerate with: "
+        "dp convert-backend --atomic-virial INPUT.pth OUTPUT.pt2");
+  }
   int natoms = atype.size();
   int nframes = coord.size() / (natoms * 3);
   if (nframes > 1) {
@@ -518,8 +664,6 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
                 ncell, ext_stt, ext_end, region, ncell);
   }
 
-  // 3. Build type-sorted, sel-limited nlist (uses double coords for distances)
-
   // 4. Convert to tensors (always float64 for .pt2 model)
   // NOTE: must .clone() because from_blob does not copy data, and the local
   // vectors would go out of scope before run_model completes.
@@ -532,10 +676,9 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       torch::from_blob(atype_64.data(), {1, nall}, int_options)
           .clone()
           .to(device);
+  // Flatten raw nlist — the .pt2 model sorts by distance on-device.
   at::Tensor nlist_tensor =
-      buildTypeSortedNlist<double>(nlist_raw, coord_cpy_d, atype_cpy, sel, nloc,
-                                   mixed_types)
-          .to(device);
+      createNlistTensor(nlist_raw, nnei).to(torch::kInt64).to(device);
   std::vector<std::int64_t> mapping_64(mapping_vec.begin(), mapping_vec.end());
   at::Tensor mapping_tensor =
       torch::from_blob(mapping_64.data(), {1, nall}, int_options)

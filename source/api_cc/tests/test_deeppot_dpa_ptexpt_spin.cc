@@ -8,12 +8,19 @@
 #include <vector>
 
 #include "DeepSpin.h"
+#include "DeepSpinPTExpt.h"
+#include "expected_ref.h"
 #include "neighbor_list.h"
 #include "test_utils.h"
 
 // Spin models need relaxed epsilon
 #undef EPSILON
-#define EPSILON (std::is_same<VALUETYPE, double>::value ? 1e-6 : 1e-1)
+#define EPSILON (std::is_same<VALUETYPE, double>::value ? 1e-10 : 1e-4)
+
+namespace {
+constexpr const char* kRefPath = "../../tests/infer/deeppot_dpa_spin.expected";
+constexpr const char* kModelPath = "../../tests/infer/deeppot_dpa_spin.pt2";
+}  // namespace
 
 // ============================================================================
 // PBC test fixture
@@ -45,64 +52,24 @@ class TestInferDeepSpinDpaPtExpt : public ::testing::Test {
   void SetUp() override {
     // The .pt2 spin model requires the BUILD_PT_EXPT guard from the header.
     // If AOTInductor headers are missing, skip.
-    std::string model_path = "../../tests/infer/deeppot_dpa_spin.pt2";
     {
-      std::ifstream f(model_path);
+      std::ifstream f(kModelPath);
       if (!f.good()) {
-        GTEST_SKIP() << "Skipping: " << model_path << " not found.";
+        GTEST_SKIP() << "Skipping: " << kModelPath << " not found.";
       }
     }
-#ifndef BUILD_PYTORCH
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT_SPIN
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
-    dp.init(model_path);
+    dp.init(kModelPath);
 
-    // PBC reference values from gen_spin.py
-    expected_e = {
-        7.020322773655288e-03, 1.099636038493644e-01, 1.093176595258250e-01,
-        4.865300228001564e-02, 1.096547558413134e-01, 1.099754340356070e-01,
-    };
-    expected_f = {
-        2.980086586841411e-02,  2.670602118823960e-03,  -6.205408022135627e-03,
-        -7.946653268248605e-03, 4.217792180550986e-03,  1.822080579891798e-03,
-        -3.416928812442276e-03, -6.992749479424899e-03, 4.728288289346775e-03,
-        5.049869641953204e-03,  1.550913149717830e-02,  1.801899070929784e-02,
-        -1.411871008097311e-02, -8.283139367982638e-03, -7.058623315726573e-03,
-        -9.368443348703582e-03, -7.121636949145627e-03, -1.130532824067422e-02,
-    };
-    expected_fm = {
-        -1.112646578617150e+00, -2.239176906831133e-01, -2.513101985142691e-01,
-        0.000000000000000e+00,  0.000000000000000e+00,  0.000000000000000e+00,
-        0.000000000000000e+00,  0.000000000000000e+00,  0.000000000000000e+00,
-        -9.763058480695873e-02, 1.564710428447471e-02,  -3.735332673990924e-02,
-        0.000000000000000e+00,  0.000000000000000e+00,  0.000000000000000e+00,
-        0.000000000000000e+00,  0.000000000000000e+00,  0.000000000000000e+00,
-    };
-    expected_tot_v = {
-        -7.128128841285764e-02, -8.315622874246201e-03, -4.731536549332887e-03,
-        -1.341290773830820e-02, -1.469079587670170e-03, 1.056456080782730e-03,
-        -1.192681253424153e-02, 4.978114518702803e-03,  -3.966123865761229e-03,
-    };
-    expected_atom_v = {
-        -3.619151252102697e-03, -1.915456807909512e-03, -1.193634026800710e-03,
-        -1.785172610866009e-03, 4.134184812978909e-03,  -6.166519257514488e-05,
-        -2.157590794793008e-03, -2.693885020778555e-04, 1.587443946069703e-03,
-        2.056276410594536e-03,  -1.371452525359132e-03, -3.000322809812329e-03,
-        -2.204910668541369e-03, -2.235579614907452e-04, 1.766238823282138e-03,
-        1.610936535839619e-04,  -2.104451576692437e-04, -1.804779669204414e-06,
-        -3.221463421325033e-02, -7.637227088481205e-03, 5.718223298429893e-03,
-        -2.919861817651578e-04, -7.691370555547318e-03, 4.007185089114448e-03,
-        4.811410568749122e-04,  4.415618310181523e-03,  -2.774565137306631e-03,
-        -5.845767386476995e-03, -9.718890770743884e-04, 2.149933205072918e-03,
-        -1.901140917532940e-03, 7.116473330687919e-04,  -1.348184104909009e-03,
-        2.280135921727739e-03,  -1.281729466483908e-03, 2.259352377835986e-03,
-        -1.358169386053482e-02, 6.217682155741852e-03,  -1.084162229060967e-02,
-        1.479497817858454e-04,  3.526517898332583e-03,  -5.588222116376142e-03,
-        -3.264343884716279e-03, 4.301831360658648e-03,  -7.109217034201159e-03,
-        -1.807631811108731e-02, -2.637279531163817e-03, 2.435886074387011e-03,
-        -7.377647141388572e-03, -1.926501115012390e-03, 2.281103582246440e-03,
-        -9.427248486918859e-03, -1.977772025906360e-03, 2.072666761510075e-03,
-    };
+    deepmd_test::ExpectedRef ref;
+    ref.load(kRefPath);
+    expected_e = ref.get<VALUETYPE>("pbc", "expected_e");
+    expected_f = ref.get<VALUETYPE>("pbc", "expected_f");
+    expected_fm = ref.get<VALUETYPE>("pbc", "expected_fm");
+    expected_tot_v = ref.get<VALUETYPE>("pbc", "expected_tot_v");
+    expected_atom_v = ref.get<VALUETYPE>("pbc", "expected_atom_v");
 
     natoms = expected_e.size();
     EXPECT_EQ(natoms * 3, expected_f.size());
@@ -231,64 +198,24 @@ class TestInferDeepSpinDpaPtExptNopbc : public ::testing::Test {
   deepmd::DeepSpin dp;
 
   void SetUp() override {
-    std::string model_path = "../../tests/infer/deeppot_dpa_spin.pt2";
     {
-      std::ifstream f(model_path);
+      std::ifstream f(kModelPath);
       if (!f.good()) {
-        GTEST_SKIP() << "Skipping: " << model_path << " not found.";
+        GTEST_SKIP() << "Skipping: " << kModelPath << " not found.";
       }
     }
-#ifndef BUILD_PYTORCH
+#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT_SPIN
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
-    dp.init(model_path);
+    dp.init(kModelPath);
 
-    // NoPBC reference values from gen_spin.py
-    expected_e = {
-        1.298915294144196e-02, 1.095576145701290e-01, 1.083914166945241e-01,
-        4.932338375417146e-02, 1.099860785812512e-01, 1.100478936528533e-01,
-    };
-    expected_f = {
-        1.300765817095240e-02,  -1.593967210478553e-03, -3.196759265340465e-03,
-        -1.300765817095220e-02, 1.593967210478477e-03,  3.196759265340509e-03,
-        9.196695370628910e-03,  -9.044559760114149e-04, 5.658266727670325e-04,
-        1.012744085443978e-02,  1.680427054831429e-02,  1.807036969424208e-02,
-        -1.133453822298158e-02, -8.941333904804914e-03, -6.627672717506913e-03,
-        -7.989598002087154e-03, -6.958480667497971e-03, -1.200852364950221e-02,
-    };
-    expected_fm = {
-        -9.651705644713781e-01, -1.704326891282164e-01, -2.605677204117113e-01,
-        0.000000000000000e+00,  0.000000000000000e+00,  0.000000000000000e+00,
-        0.000000000000000e+00,  0.000000000000000e+00,  0.000000000000000e+00,
-        -9.168034653189444e-02, 1.736913887115685e-02,  -3.908906640474424e-02,
-        0.000000000000000e+00,  0.000000000000000e+00,  0.000000000000000e+00,
-        0.000000000000000e+00,  0.000000000000000e+00,  0.000000000000000e+00,
-    };
-    expected_tot_v = {
-        -2.794677047149250e-02, 2.706780654409338e-03, -1.543674466954783e-02,
-        -6.040095143502448e-03, 3.055091789429398e-03, -4.313832703172029e-03,
-        -1.604723023732680e-02, 1.777744336229196e-03, -5.171028133240485e-04,
-    };
-    expected_atom_v = {
-        2.306155467987514e-03,  -9.660921555042744e-04, -1.745198732526081e-03,
-        -9.476983959938838e-04, 3.970087875108642e-04,  7.171771645359225e-04,
-        -1.713485354054099e-03, 7.178114321056426e-04,  1.296691619287112e-03,
-        7.319511578522508e-03,  -3.066281877489238e-03, -5.539089843206328e-03,
-        -2.318373397601943e-04, 9.712104773733529e-05,  1.754444733319547e-04,
-        -6.521165022942005e-04, 2.731839401501884e-04,  4.934935693035620e-04,
-        -2.688582999243521e-02, 2.879540148031285e-03,  -1.319893926076197e-03,
-        2.654650285707574e-03,  -3.069982439259916e-04, 1.657790217325663e-04,
-        -1.692335959139460e-03, 2.136332667243511e-04,  -1.340912177342011e-04,
-        4.337039816878673e-03,  -4.892467685548227e-04, 1.504317649360216e-03,
-        -5.929947364721471e-04, 9.606430484810017e-04,  -1.606901551850972e-03,
-        1.319957388254711e-03,  -1.503407517480697e-03, 2.524877227122832e-03,
-        -3.426950456916239e-03, 6.054673894090045e-03,  -9.902054694804960e-03,
-        -4.978554214552650e-04, 3.694171795596980e-03,  -5.898283613865629e-03,
-        -2.340485739136391e-03, 4.340998169957810e-03,  -7.094248555283199e-03,
-        -1.159669688552975e-02, -1.705812586163657e-03, 1.565174877705520e-03,
-        -6.424359535528532e-03, -1.786854645970792e-03, 2.132951802944129e-03,
-        -1.096876407095736e-02, -2.264474955228100e-03, 2.396174543979845e-03,
-    };
+    deepmd_test::ExpectedRef ref;
+    ref.load(kRefPath);
+    expected_e = ref.get<VALUETYPE>("nopbc", "expected_e");
+    expected_f = ref.get<VALUETYPE>("nopbc", "expected_f");
+    expected_fm = ref.get<VALUETYPE>("nopbc", "expected_fm");
+    expected_tot_v = ref.get<VALUETYPE>("nopbc", "expected_tot_v");
+    expected_atom_v = ref.get<VALUETYPE>("nopbc", "expected_atom_v");
 
     natoms = expected_e.size();
     EXPECT_EQ(natoms * 3, expected_f.size());
@@ -469,4 +396,104 @@ TYPED_TEST(TestInferDeepSpinDpaPtExptNopbc, cpu_lmp_nlist_atomic) {
   for (int ii = 0; ii < natoms * 9; ++ii) {
     EXPECT_LT(fabs(atom_vir[ii] - expected_atom_v[ii]), EPSILON);
   }
+}
+
+TYPED_TEST(TestInferDeepSpinDpaPtExptNopbc, cpu_lmp_nlist_oversized) {
+  using VALUETYPE = TypeParam;
+  const std::vector<VALUETYPE>& coord = this->coord;
+  const std::vector<VALUETYPE>& spin = this->spin;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  std::vector<VALUETYPE>& expected_f = this->expected_f;
+  std::vector<VALUETYPE>& expected_fm = this->expected_fm;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
+  int& natoms = this->natoms;
+  double& expected_tot_e = this->expected_tot_e;
+  deepmd::DeepSpin& dp = this->dp;
+  double ener;
+  std::vector<VALUETYPE> force, force_mag, virial;
+
+  std::vector<std::vector<int> > nlist_data = {
+      {1, 2, 3, 4, 5}, {0, 2, 3, 4, 5}, {0, 1, 3, 4, 5},
+      {0, 1, 2, 4, 5}, {0, 1, 2, 3, 5}, {0, 1, 2, 3, 4}};
+  // Pad with extra -1 entries and shuffle to create oversized nlist
+  std::vector<std::vector<int> > nlist_oversized;
+  _pad_shuffle_nlist(nlist_oversized, nlist_data, 50);
+  std::vector<int> ilist(natoms), numneigh(natoms);
+  std::vector<int*> firstneigh(natoms);
+  deepmd::InputNlist inlist(natoms, &ilist[0], &numneigh[0], &firstneigh[0]);
+  convert_nlist(inlist, nlist_oversized);
+  dp.compute(ener, force, force_mag, virial, coord, spin, atype, box, 0, inlist,
+             0);
+
+  EXPECT_EQ(force.size(), natoms * 3);
+  EXPECT_EQ(force_mag.size(), natoms * 3);
+  EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
+  for (int ii = 0; ii < natoms * 3; ++ii) {
+    EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
+    EXPECT_LT(fabs(force_mag[ii] - expected_fm[ii]), EPSILON);
+  }
+  EXPECT_FALSE(virial.empty()) << "Virial should not be empty";
+  EXPECT_EQ(virial.size(), 9);
+  for (int ii = 0; ii < 3 * 3; ++ii) {
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+  }
+}
+
+// Sanity check that the shuffle in `_pad_shuffle_nlist` actually redistributes
+// real neighbors away from the front of each row — see the non-spin version
+// in test_deeppot_ptexpt.cc for the rationale.  At least one prediction
+// (energy / force / force_mag / virial) must deviate from the reference by
+// more than EPSILON when the nlist is truncated to a single column.
+TYPED_TEST(TestInferDeepSpinDpaPtExptNopbc,
+           cpu_lmp_nlist_oversized_shuffle_sanity) {
+  using VALUETYPE = TypeParam;
+  const std::vector<VALUETYPE>& coord = this->coord;
+  const std::vector<VALUETYPE>& spin = this->spin;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  std::vector<VALUETYPE>& expected_f = this->expected_f;
+  std::vector<VALUETYPE>& expected_fm = this->expected_fm;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
+  int& natoms = this->natoms;
+  double& expected_tot_e = this->expected_tot_e;
+  deepmd::DeepSpin& dp = this->dp;
+  double ener;
+  std::vector<VALUETYPE> force, force_mag, virial;
+
+  std::vector<std::vector<int> > nlist_data = {
+      {1, 2, 3, 4, 5}, {0, 2, 3, 4, 5}, {0, 1, 3, 4, 5},
+      {0, 1, 2, 4, 5}, {0, 1, 2, 3, 5}, {0, 1, 2, 3, 4}};
+  std::vector<std::vector<int> > nlist_oversized;
+  _pad_shuffle_nlist(nlist_oversized, nlist_data, 50);
+  for (auto& row : nlist_oversized) {
+    row.resize(1);
+  }
+  std::vector<int> ilist(natoms), numneigh(natoms);
+  std::vector<int*> firstneigh(natoms);
+  deepmd::InputNlist inlist(natoms, &ilist[0], &numneigh[0], &firstneigh[0]);
+  convert_nlist(inlist, nlist_oversized);
+  dp.compute(ener, force, force_mag, virial, coord, spin, atype, box, 0, inlist,
+             0);
+
+  // See test_deeppot_ptexpt.cc for the rationale of the separate negative-
+  // direction threshold.  For the spin nopbc test the strongest signal
+  // is in force_mag (max magnitude ~0.97); 1e-3 is well below all
+  // expected signal magnitudes and well above the float precision floor.
+  static constexpr double SANITY_MIN_DEV = 1e-3;
+  bool any_deviates = fabs(ener - expected_tot_e) > SANITY_MIN_DEV;
+  for (int ii = 0; ii < natoms * 3 && !any_deviates; ++ii) {
+    any_deviates = fabs(force[ii] - expected_f[ii]) > SANITY_MIN_DEV;
+  }
+  for (int ii = 0; ii < natoms * 3 && !any_deviates; ++ii) {
+    any_deviates = fabs(force_mag[ii] - expected_fm[ii]) > SANITY_MIN_DEV;
+  }
+  for (int ii = 0; ii < 9 && !any_deviates; ++ii) {
+    any_deviates = fabs(virial[ii] - expected_tot_v[ii]) > SANITY_MIN_DEV;
+  }
+  EXPECT_TRUE(any_deviates)
+      << "Every prediction stayed within SANITY_MIN_DEV after single-column "
+         "truncation of the shuffled oversized nlist — the shuffle appears "
+         "to have kept real neighbors at the front.  The oversized test "
+         "above may be a tautology; increase n_extra in _pad_shuffle_nlist.";
 }

@@ -326,6 +326,7 @@ def make_model(
             aparam: Array | None = None,
             do_atomic_virial: bool = False,
             extended_coord_corr: Array | None = None,
+            comm_dict: dict | None = None,
         ) -> dict[str, Array]:
             """Return model prediction. Lower interface that takes
             extended atomic coordinates and types, nlist, and mapping
@@ -351,6 +352,11 @@ def make_model(
             extended_coord_corr
                 coordinates correction for virial in extended region.
                 nf x (nall x 3)
+            comm_dict
+                MPI communication metadata for parallel inference (e.g.
+                LAMMPS multi-rank). Carries send/recv lists, processor IDs,
+                the MPI communicator handle, and per-rank nlocal/nghost.
+                ``None`` for non-parallel inference (default).
 
             Returns
             -------
@@ -379,6 +385,7 @@ def make_model(
                 aparam=ap,
                 do_atomic_virial=do_atomic_virial,
                 extended_coord_corr=extended_coord_corr,
+                comm_dict=comm_dict,
             )
             model_predict = self._output_type_cast(model_predict, input_prec)
             return model_predict
@@ -393,6 +400,7 @@ def make_model(
             aparam: Array | None = None,
             do_atomic_virial: bool = False,
             extended_coord_corr: Array | None = None,
+            comm_dict: dict | None = None,
         ) -> dict[str, Array]:
             atomic_ret = self.atomic_model.forward_common_atomic(
                 extended_coord,
@@ -401,6 +409,7 @@ def make_model(
                 mapping=mapping,
                 fparam=fparam,
                 aparam=aparam,
+                comm_dict=comm_dict,
             )
             return fit_output_to_model_output(
                 atomic_ret,
@@ -614,7 +623,13 @@ def make_model(
                     axis=-1,
                 )
 
-            if n_nnei > nnei or extra_nlist_sort:
+            # Order matters for torch.export: Python evaluates `or` left-to-right
+            # with short-circuit.  When `extra_nlist_sort=True` (Python bool) is
+            # on the left, the right-hand `n_nnei > nnei` is not evaluated, so no
+            # symbolic guard is registered on the dynamic `n_nnei` dimension.
+            # Swapping the operands would force the SymInt comparison to run and
+            # emit an `_assert_scalar` node in the exported graph.
+            if extra_nlist_sort or n_nnei > nnei:
                 n_nf, n_nloc, n_nnei = nlist.shape
                 # make a copy before revise
                 m_real_nei = nlist >= 0

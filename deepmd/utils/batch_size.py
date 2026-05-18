@@ -41,6 +41,8 @@ class AutoBatchSize(ABC):
         is not set
     factor : float, default: 2.
         increased factor
+    silent : bool, default: False
+        whether to suppress auto batch size informational logs
 
     Attributes
     ----------
@@ -52,8 +54,15 @@ class AutoBatchSize(ABC):
         minimal not working batch size
     """
 
-    def __init__(self, initial_batch_size: int = 1024, factor: float = 2.0) -> None:
+    def __init__(
+        self,
+        initial_batch_size: int = 1024,
+        factor: float = 2.0,
+        *,
+        silent: bool = False,
+    ) -> None:
         # See also PyTorchLightning/pytorch-lightning#1638
+        self.silent = silent
         self.current_batch_size = initial_batch_size
         DP_INFER_BATCH_SIZE = int(os.environ.get("DP_INFER_BATCH_SIZE", 0))
         if DP_INFER_BATCH_SIZE > 0:
@@ -68,11 +77,12 @@ class AutoBatchSize(ABC):
                 self.minimal_not_working_batch_size = (
                     self.maximum_working_batch_size + 1
                 )
-                log.warning(
-                    "You can use the environment variable DP_INFER_BATCH_SIZE to"
-                    "control the inference batch size (nframes * natoms). "
-                    f"The default value is {initial_batch_size}."
-                )
+                if not self.silent:
+                    log.warning(
+                        "You can use the environment variable DP_INFER_BATCH_SIZE to"
+                        "control the inference batch size (nframes * natoms). "
+                        f"The default value is {initial_batch_size}."
+                    )
 
         self.factor = factor
 
@@ -143,9 +153,10 @@ class AutoBatchSize(ABC):
     def _adjust_batch_size(self, factor: float) -> None:
         old_batch_size = self.current_batch_size
         self.current_batch_size = int(self.current_batch_size * factor)
-        log.info(
-            f"Adjust batch size from {old_batch_size} to {self.current_batch_size}"
-        )
+        if not self.silent:
+            log.info(
+                f"Adjust batch size from {old_batch_size} to {self.current_batch_size}"
+            )
 
     def execute_all(
         self,

@@ -19,7 +19,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 from gen_common import (
     ensure_inductor_compiler,
     load_custom_ops,
-    print_cpp_values,
+    write_expected_ref,
 )
 
 
@@ -108,7 +108,12 @@ def main():
 
     pt2_path = os.path.join(base_dir, "deeppot_dpa2.pt2")
     print(f"Exporting to {pt2_path} ...")  # noqa: T201
-    pt_expt_deserialize_to_file(pt2_path, copy.deepcopy(data))
+    # DPA2's repformer block has no ``use_loc_mapping`` knob (unlike
+    # DPA3), so a single .pt2 already carries the dual-artifact layout
+    # (regular + with-comm) — ``has_message_passing_across_ranks``
+    # returns True and the serializer produces both. No separate _mpi.pt2
+    # needed.
+    pt_expt_deserialize_to_file(pt2_path, copy.deepcopy(data), do_atomic_virial=True)
 
     pth_path = os.path.join(base_dir, "deeppot_dpa2.pth")
     print(f"Exporting to {pth_path} ...")  # noqa: T201
@@ -156,12 +161,30 @@ def main():
 
     e1, f1, v1, ae1, av1 = dp.eval(coord, box, atype, atomic=True)
     print(f"\n// PBC total energy: {e1[0, 0]:.18e}")  # noqa: T201
-    print_cpp_values("PBC reference values", ae1, f1, av1)
 
     # ---- 5. Run inference for NoPbc test ----
     e_np, f_np, v_np, ae_np, av_np = dp.eval(coord, None, atype, atomic=True)
     print(f"\n// NoPbc total energy: {e_np[0, 0]:.18e}")  # noqa: T201
-    print_cpp_values("NoPbc reference values", ae_np, f_np, av_np)
+
+    # ---- 5b. Write sidecar reference file consumed by C++ tests ----
+    ref_path = os.path.join(base_dir, "deeppot_dpa2.expected")
+    write_expected_ref(
+        ref_path,
+        sections={
+            "pbc": {
+                "expected_e": ae1[0, :, 0],
+                "expected_f": f1[0],
+                "expected_v": av1[0],
+            },
+            "nopbc": {
+                "expected_e": ae_np[0, :, 0],
+                "expected_f": f_np[0],
+                "expected_v": av_np[0],
+            },
+        },
+        source_script="source/tests/infer/gen_dpa2.py",
+    )
+    print(f"Wrote {ref_path}")  # noqa: T201
 
     # ---- 6. Verify .pth gives same results ----
     if os.path.exists(pth_path):

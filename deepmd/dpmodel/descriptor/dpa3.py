@@ -170,6 +170,13 @@ class RepFlowArgs:
         In the dynamic selection case, neighbor-scale normalization will use `e_sel / sel_reduce_factor`
         or `a_sel / sel_reduce_factor` instead of the raw `e_sel` or `a_sel` values,
         accommodating larger selection numbers.
+    sequential_update : bool, optional
+        Whether to use sequential update mode within each repflow layer.
+        When True, updates are applied sequentially: edge self → angle self (using updated edge)
+        → edge angle (using updated angle) → node (using final edge),
+        instead of the default parallel mode where all updates use original embeddings.
+        Currently only supports ``update_style='res_residual'`` and requires ``update_angle=True``;
+        otherwise, a ``ValueError`` will be raised during initialization.
     """
 
     def __init__(
@@ -201,6 +208,7 @@ class RepFlowArgs:
         use_exp_switch: bool = False,
         use_dynamic_sel: bool = False,
         sel_reduce_factor: float = 10.0,
+        sequential_update: bool = False,
     ) -> None:
         self.n_dim = n_dim
         self.e_dim = e_dim
@@ -231,6 +239,15 @@ class RepFlowArgs:
         self.use_exp_switch = use_exp_switch
         self.use_dynamic_sel = use_dynamic_sel
         self.sel_reduce_factor = sel_reduce_factor
+        self.sequential_update = sequential_update
+        if self.sequential_update:
+            if self.update_style != "res_residual":
+                raise ValueError(
+                    "sequential_update only supports update_style='res_residual', "
+                    f"got '{self.update_style}'!"
+                )
+            if not self.update_angle:
+                raise ValueError("sequential_update requires update_angle=True!")
 
     def __getitem__(self, key: str) -> Any:
         if hasattr(self, key):
@@ -266,6 +283,7 @@ class RepFlowArgs:
             "use_exp_switch": self.use_exp_switch,
             "use_dynamic_sel": self.use_dynamic_sel,
             "sel_reduce_factor": self.sel_reduce_factor,
+            "sequential_update": self.sequential_update,
         }
 
     @classmethod
@@ -404,6 +422,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             use_exp_switch=self.repflow_args.use_exp_switch,
             use_dynamic_sel=self.repflow_args.use_dynamic_sel,
             sel_reduce_factor=self.repflow_args.sel_reduce_factor,
+            sequential_update=self.repflow_args.sequential_update,
             use_loc_mapping=use_loc_mapping,
             exclude_types=exclude_types,
             env_protection=env_protection,
@@ -527,6 +546,17 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         """Returns whether the descriptor has message passing."""
         return self.repflows.has_message_passing()
 
+    def has_message_passing_across_ranks(self) -> bool:
+        """Returns whether per-layer node embeddings need MPI ghost exchange.
+
+        Delegates to repflows: ``False`` when ``use_loc_mapping=True``
+        (per-layer messages stay within each rank's local atoms),
+        ``True`` when ``use_loc_mapping=False`` (ghost slots in
+        ``[nb, nall, n_dim]`` layout must be filled by cross-rank
+        exchange before each layer).
+        """
+        return self.repflows.has_message_passing_across_ranks()
+
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
         return True
@@ -616,6 +646,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
         nlist: Array,
         mapping: Array | None = None,
         fparam: Array | None = None,
+        comm_dict: dict | None = None,
     ) -> tuple[Array, Array, Array, Array, Array]:
         """Compute the descriptor.
 
@@ -629,6 +660,9 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             The neighbor list. shape: nf x nloc x nnei
         mapping
             The index mapping, mapps extended region index to local region.
+        comm_dict
+            MPI communication metadata for parallel inference. Forwarded to
+            the repflows block. ``None`` for non-parallel inference (default).
 
         Returns
         -------
@@ -695,6 +729,7 @@ class DescrptDPA3(NativeOP, BaseDescriptor):
             atype_ext,
             node_ebd_ext,
             mapping,
+            comm_dict=comm_dict,
         )
         if self.concat_output_tebd:
             node_ebd = xp.concat([node_ebd, node_ebd_inp], axis=-1)

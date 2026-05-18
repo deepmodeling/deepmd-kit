@@ -116,7 +116,7 @@ def main():
         pt2_path = os.path.join(base_dir, f"deeppot_dpa_spin_md{idx}.pt2")
         pt2_paths.append(pt2_path)
         print(f"Converting to {pt2_path} ...")  # noqa: T201
-        convert_backend(INPUT=yaml_path, OUTPUT=pt2_path)
+        convert_backend(INPUT=yaml_path, OUTPUT=pt2_path, atomic_virial=True)
 
     print("Export done.")  # noqa: T201
 

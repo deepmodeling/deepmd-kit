@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 from gen_common import (
     ensure_inductor_compiler,
     load_custom_ops,
+    write_expected_ref,
 )
 
 
@@ -67,7 +68,9 @@ def main():
     }
     pt2_default_path = os.path.join(base_dir, "fparam_aparam_default.pt2")
     print(f"Exporting to {pt2_default_path} ...")  # noqa: T201
-    pt_expt_deserialize_to_file(pt2_default_path, copy.deepcopy(data_default))
+    pt_expt_deserialize_to_file(
+        pt2_default_path, copy.deepcopy(data_default), do_atomic_virial=True
+    )
 
     # ---- 3. Export fparam_aparam.pt2 and .pth (without default_fparam) ----
     config_no_default = copy.deepcopy(config)
@@ -84,7 +87,9 @@ def main():
 
     pt2_path = os.path.join(base_dir, "fparam_aparam.pt2")
     print(f"Exporting to {pt2_path} ...")  # noqa: T201
-    pt_expt_deserialize_to_file(pt2_path, copy.deepcopy(data_no_default))
+    pt_expt_deserialize_to_file(
+        pt2_path, copy.deepcopy(data_no_default), do_atomic_virial=True
+    )
 
     pth_path = os.path.join(base_dir, "fparam_aparam.pth")
     pth_exported = False
@@ -141,35 +146,27 @@ def main():
         atomic=True,
     )
 
-    atom_energy = ae[0, :, 0]
-    force = f[0]
-    atom_virial = av[0]
+    # ---- 4a. Write sidecar for fparam_aparam.pt2/.pth tests ----
+    # Consumers: test_deeppot_a_fparam_aparam_{pt,ptexpt,nframes_ptexpt}.cc
+    # Note: test_deeppot_ptexpt.cc also loads fparam_aparam.pt2 but only for
+    # JSON-metadata checks; it does not consume these reference values.
+    ref_path = os.path.join(base_dir, "fparam_aparam.expected")
+    write_expected_ref(
+        ref_path,
+        sections={
+            "default": {
+                "expected_e": ae[0, :, 0],
+                "expected_f": f[0],
+                "expected_v": av[0],
+            },
+        },
+        source_script="source/tests/infer/gen_fparam_aparam.py",
+    )
+    print(f"Wrote {ref_path}")  # noqa: T201
+    print(f"// fparam_aparam total energy: {e[0, 0]:.18e}")  # noqa: T201
 
-    # Print C++ format
-    print("\n// ---- Reference values for C++ test (shared by .pth and .pt2) ----")  # noqa: T201
-    print(f"// Total energy: {e[0, 0]:.18e}")  # noqa: T201
-    print()  # noqa: T201
-    print("  std::vector<VALUETYPE> expected_e = {")  # noqa: T201
-    for ii, ev in enumerate(atom_energy):
-        comma = "," if ii < len(atom_energy) - 1 else ""
-        print(f"      {ev:.18e}{comma}")  # noqa: T201
-    print("  };")  # noqa: T201
-
-    print("  std::vector<VALUETYPE> expected_f = {")  # noqa: T201
-    force_flat = force.flatten()
-    for ii, fv in enumerate(force_flat):
-        comma = "," if ii < len(force_flat) - 1 else ""
-        print(f"      {fv:.18e}{comma}")  # noqa: T201
-    print("  };")  # noqa: T201
-
-    print("  std::vector<VALUETYPE> expected_v = {")  # noqa: T201
-    virial_flat = atom_virial.flatten()
-    for ii, vv in enumerate(virial_flat):
-        comma = "," if ii < len(virial_flat) - 1 else ""
-        print(f"      {vv:.18e}{comma}")  # noqa: T201
-    print("  };")  # noqa: T201
-
-    # ---- 4b. Reference values for default_fparam model (.pt2) ----
+    # ---- 4b. Sidecar for default_fparam model (.pt2) ----
+    # Consumers: test_deeppot_default_fparam_{pt,ptexpt}.cc
     dp_default = DeepPot(pt2_default_path)
     e_d, f_d, _v_d, ae_d, av_d = dp_default.eval(
         coord,
@@ -179,32 +176,20 @@ def main():
         aparam=aparam_val,
         atomic=True,
     )
-    atom_energy_d = ae_d[0, :, 0]
-    force_d = f_d[0]
-    atom_virial_d = av_d[0]
-
-    print("\n// ---- Reference values for C++ default_fparam .pt2 test ----")  # noqa: T201
-    print(f"// Total energy: {e_d[0, 0]:.18e}")  # noqa: T201
-    print()  # noqa: T201
-    print("  std::vector<VALUETYPE> expected_e = {")  # noqa: T201
-    for ii, ev in enumerate(atom_energy_d):
-        comma = "," if ii < len(atom_energy_d) - 1 else ""
-        print(f"      {ev:.18e}{comma}")  # noqa: T201
-    print("  };")  # noqa: T201
-
-    print("  std::vector<VALUETYPE> expected_f = {")  # noqa: T201
-    force_flat_d = force_d.flatten()
-    for ii, fv in enumerate(force_flat_d):
-        comma = "," if ii < len(force_flat_d) - 1 else ""
-        print(f"      {fv:.18e}{comma}")  # noqa: T201
-    print("  };")  # noqa: T201
-
-    print("  std::vector<VALUETYPE> expected_v = {")  # noqa: T201
-    virial_flat_d = atom_virial_d.flatten()
-    for ii, vv in enumerate(virial_flat_d):
-        comma = "," if ii < len(virial_flat_d) - 1 else ""
-        print(f"      {vv:.18e}{comma}")  # noqa: T201
-    print("  };")  # noqa: T201
+    ref_path_default = os.path.join(base_dir, "fparam_aparam_default.expected")
+    write_expected_ref(
+        ref_path_default,
+        sections={
+            "default": {
+                "expected_e": ae_d[0, :, 0],
+                "expected_f": f_d[0],
+                "expected_v": av_d[0],
+            },
+        },
+        source_script="source/tests/infer/gen_fparam_aparam.py",
+    )
+    print(f"Wrote {ref_path_default}")  # noqa: T201
+    print(f"// default_fparam total energy: {e_d[0, 0]:.18e}")  # noqa: T201
 
     # ---- 5. Verify .pth gives same results ----
     if pth_exported:

@@ -14,6 +14,7 @@ import numpy as np
 from deepmd.dpmodel.utils.lmdb_data import (
     LmdbDataReader,
     LmdbTestData,
+    LmdbTestDataNlocView,
     SameNlocBatchSampler,
     _expand_indices_by_blocks,
     compute_block_targets,
@@ -415,6 +416,27 @@ class TestMixedNloc(unittest.TestCase):
         r12 = td.get_test(nloc=12)
         self.assertEqual(r12["coord"].shape, (2, 12 * 3))
 
+    def test_test_data_nloc_view(self):
+        """LmdbTestDataNlocView delegates attributes and fixes nloc."""
+        td = LmdbTestData(self._lmdb_path, type_map=self._type_map, shuffle_test=False)
+        td.add("energy", 1, atomic=False, must=False, high_prec=True)
+        view = LmdbTestDataNlocView(td, 9)
+
+        self.assertEqual(view.pbc, td.pbc)
+        self.assertIs(view.nloc_groups, td.nloc_groups)
+
+        expected = td.get_test(nloc=9)
+        actual = view.get_test()
+        self.assertEqual(actual["coord"].shape, (4, 9 * 3))
+        self.assertEqual(actual["type"].shape, (4, 9))
+        self.assertEqual(actual.keys(), expected.keys())
+        for key, expected_value in expected.items():
+            actual_value = actual[key]
+            if isinstance(expected_value, np.ndarray):
+                np.testing.assert_array_equal(actual_value, expected_value)
+            else:
+                self.assertEqual(actual_value, expected_value)
+
     def test_test_data_get_test_default_mixed(self):
         td = LmdbTestData(self._lmdb_path, type_map=self._type_map, shuffle_test=False)
         td.add("energy", 1, atomic=False, must=False, high_prec=True)
@@ -599,6 +621,22 @@ class TestAutoProb(unittest.TestCase):
         self.assertEqual(result[0][0], [0, 1])
         self.assertEqual(result[0][1], 400)
 
+    def test_compute_block_targets_logs_dropped_block(self):
+        """Emptied blocks trigger an INFO log.
+
+        The silent re-normalisation of ``auto_prob_style`` (remaining
+        weights rescaled to sum to 1.0) must be visible to operators
+        alongside the ``filter:N`` drop line.
+        """
+        with self.assertLogs("deepmd.dpmodel.utils.lmdb_data", level="INFO") as cm:
+            result = compute_block_targets(
+                "prob_sys_size;0:1:0.8;1:2:0.2",
+                nsystems=2,
+                system_nframes=[0, 500],
+            )
+        self.assertTrue(any("empty blocks" in msg for msg in cm.output))
+        self.assertEqual(result, [])
+
     def test_expand_indices_basic(self):
         frame_system_ids = [0] * 5 + [1] * 5
         block_targets = [([0], 25), ([1], 25)]
@@ -668,6 +706,297 @@ class TestAutoProb(unittest.TestCase):
         sampler = SameNlocBatchSampler(reader, shuffle=False)
         all_indices = [i for batch in sampler for i in batch]
         self.assertEqual(sorted(all_indices), list(range(600)))
+
+
+# ============================================================
+# batch_size = "max:N" / "filter:N" tests
+# ============================================================
+
+
+def _create_mixed_sid_nloc_lmdb(
+    path: str,
+    system_specs: list[tuple[int, int]],
+    type_map: list[str] | None = None,
+) -> str:
+    """Build an LMDB whose systems have *different* nloc per sid.
+
+    Existing helpers either fix nloc globally or fix sid boundaries; the
+    filter:N behaviour we want to exercise depends on nloc varying across
+    systems so this helper glues both axes together in one tiny LMDB.
+
+    Parameters
+    ----------
+    path
+        Output LMDB directory.
+    system_specs
+        ``[(nframes, natoms), ...]`` for each system (sid = list index).
+    type_map
+        Optional element list stored in metadata.
+    """
+    total = sum(nf for nf, _ in system_specs)
+    frame_system_ids: list[int] = []
+    frame_nlocs: list[int] = []
+    for sid, (nf, natoms) in enumerate(system_specs):
+        frame_system_ids.extend([sid] * nf)
+        frame_nlocs.extend([natoms] * nf)
+
+    env = lmdb.open(path, map_size=100 * 1024 * 1024)
+    with env.begin(write=True) as txn:
+        first_natoms = system_specs[0][1]
+        n0 = max(1, first_natoms // 3)
+        n1 = first_natoms - n0
+        meta = {
+            "nframes": total,
+            "frame_idx_fmt": "012d",
+            "system_info": {"natoms": [n0, n1]},
+            "frame_system_ids": frame_system_ids,
+            "frame_nlocs": frame_nlocs,
+        }
+        if type_map is not None:
+            meta["type_map"] = type_map
+        txn.put(b"__metadata__", msgpack.packb(meta, use_bin_type=True))
+        idx = 0
+        for _sid, (nf, natoms) in enumerate(system_specs):
+            for _ in range(nf):
+                frame = _make_frame(natoms=natoms, seed=idx % 100)
+                txn.put(
+                    format(idx, "012d").encode(),
+                    msgpack.packb(frame, use_bin_type=True),
+                )
+                idx += 1
+    env.close()
+    return path
+
+
+class TestMaxFilterBatchSize(unittest.TestCase):
+    """Tests for ``batch_size='max:N'`` and ``batch_size='filter:N'``."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls._tmpdir = tempfile.TemporaryDirectory()
+        cls._uniform_path = _create_lmdb(
+            f"{cls._tmpdir.name}/uniform.lmdb", nframes=10, natoms=6
+        )
+        cls._mixed_path = _create_mixed_nloc_lmdb(f"{cls._tmpdir.name}/mixed.lmdb")
+        cls._type_map = ["O", "H"]
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._tmpdir.cleanup()
+
+    def test_max_batch_size_single_nloc(self):
+        """``max:N`` uses floor division and clamps to 1."""
+        reader = LmdbDataReader(
+            self._uniform_path, self._type_map, batch_size="max:500"
+        )
+        # floor(500 / 6) = 83.
+        self.assertEqual(reader.get_batch_size_for_nloc(6), 83)
+        self.assertEqual(reader._max_rule, 500)
+        self.assertIsNone(reader._auto_rule)
+        self.assertIsNone(reader._filter_rule)
+
+        reader_small = LmdbDataReader(
+            self._uniform_path, self._type_map, batch_size="max:5"
+        )
+        # floor(5 / 6) == 0 → clamped to 1 so every nloc still yields a batch.
+        self.assertEqual(reader_small.get_batch_size_for_nloc(6), 1)
+
+    def test_auto_vs_max_ceiling_vs_floor(self):
+        """``auto:N`` rounds up; ``max:N`` rounds down for the same budget."""
+        auto_reader = LmdbDataReader(
+            self._uniform_path, self._type_map, batch_size="auto:1024"
+        )
+        max_reader = LmdbDataReader(
+            self._uniform_path, self._type_map, batch_size="max:1000"
+        )
+        # nloc=148: ceil(1024/148)=7, floor(1000/148)=6
+        self.assertEqual(auto_reader.get_batch_size_for_nloc(148), 7)
+        self.assertEqual(max_reader.get_batch_size_for_nloc(148), 6)
+        # nloc=2: ceil(1024/2)=512, floor(1000/2)=500
+        self.assertEqual(auto_reader.get_batch_size_for_nloc(2), 512)
+        self.assertEqual(max_reader.get_batch_size_for_nloc(2), 500)
+
+    def test_filter_drops_large_nloc_groups(self):
+        """``filter:N`` removes whole nloc groups above the threshold."""
+        # _create_mixed_nloc_lmdb produces nloc groups {6:4, 9:4, 12:2}.
+        r10 = LmdbDataReader(self._mixed_path, self._type_map, batch_size="filter:10")
+        self.assertEqual(set(r10.nloc_groups.keys()), {6, 9})
+        self.assertEqual(len(r10), 8)
+        self.assertEqual(r10._max_rule, 10)
+        self.assertEqual(r10._filter_rule, 10)
+
+        r6 = LmdbDataReader(self._mixed_path, self._type_map, batch_size="filter:6")
+        self.assertEqual(set(r6.nloc_groups.keys()), {6})
+        self.assertEqual(len(r6), 4)
+
+        r100 = LmdbDataReader(self._mixed_path, self._type_map, batch_size="filter:100")
+        self.assertEqual(set(r100.nloc_groups.keys()), {6, 9, 12})
+        self.assertEqual(len(r100), 10)
+
+    def test_filter_preserves_system_id_numbering(self):
+        """filter:N keeps original sid numbering and zeroes dropped systems."""
+        path = f"{self._tmpdir.name}/mixed_sids.lmdb"
+        # sid 0..2 at natoms=6; sid=3 at natoms=20 (fully dropped by filter:10).
+        _create_mixed_sid_nloc_lmdb(
+            path,
+            system_specs=[(100, 6), (200, 6), (300, 6), (20, 20)],
+            type_map=self._type_map,
+        )
+        reader = LmdbDataReader(path, self._type_map, batch_size="filter:10")
+        # sid=3 is fully filtered but the numbering must survive so that
+        # auto_prob block slicing keeps its user-facing semantics.
+        self.assertEqual(reader.nsystems, 4)
+        self.assertEqual(reader.system_nframes, [100, 200, 300, 0])
+        self.assertEqual(reader.system_groups.get(3, []), [])
+        self.assertEqual(len(reader), 600)
+
+        block_targets = compute_block_targets(
+            "prob_sys_size;0:3:0.5;3:4:0.5",
+            nsystems=reader.nsystems,
+            system_nframes=reader.system_nframes,
+        )
+        # Empty block (3:4) drops out, remaining block is already balanced
+        # after re-normalisation → no expansion needed.
+        self.assertEqual(block_targets, [])
+
+    def test_filter_dataset_index_is_contiguous_and_live(self):
+        """After filter:N, every i in range(len(reader)) is a live retrievable frame.
+
+        Regression for the earlier indexing bug where ``len(reader)`` shrank
+        to the retained count but ``__getitem__`` still indexed the original
+        LMDB key space. Under filter:10 the mixed-nloc LMDB drops the two
+        12-atom frames at original keys 8 & 9; we check here that:
+
+        * every dataset index ``0..len(reader)-1`` decodes without raising
+          and never returns a filtered-out frame, and
+        * ``fid`` reports the stable original LMDB key, not the dataset
+          index (so downstream logs survive the remap), and
+        * out-of-range indices still raise IndexError.
+        """
+        reader = LmdbDataReader(
+            self._mixed_path, self._type_map, batch_size="filter:10"
+        )
+        self.assertEqual(len(reader), 8)
+        self.assertEqual(len(reader._retained_keys), 8)
+        self.assertEqual(reader._retained_keys, [0, 1, 2, 3, 4, 5, 6, 7])
+
+        seen_fids = []
+        for i in range(len(reader)):
+            frame = reader[i]
+            self.assertLessEqual(frame["atype"].shape[0], 10)
+            self.assertEqual(
+                frame["fid"],
+                reader._retained_keys[i],
+                msg=f"fid should be the original LMDB key, not dataset index {i}",
+            )
+            seen_fids.append(frame["fid"])
+        # Dropped original keys (8, 9) must never appear as fids.
+        self.assertNotIn(8, seen_fids)
+        self.assertNotIn(9, seen_fids)
+
+        with self.assertRaises(IndexError):
+            reader[len(reader)]
+        with self.assertRaises(IndexError):
+            reader[-1]
+
+    def test_sampler_with_filter(self):
+        """SameNlocBatchSampler only emits retained, same-nloc frames."""
+        reader = LmdbDataReader(
+            self._mixed_path, self._type_map, batch_size="filter:10"
+        )
+        sampler = SameNlocBatchSampler(reader, shuffle=False, seed=0)
+        all_batches = list(sampler)
+        all_indices = [idx for batch in all_batches for idx in batch]
+
+        # (a) every frame in every batch has nloc <= 10
+        for batch in all_batches:
+            for idx in batch:
+                self.assertLessEqual(reader.frame_nlocs[idx], 10)
+        # (b) unique frame index count equals retained frames
+        self.assertEqual(len(set(all_indices)), len(reader))
+        self.assertEqual(len(reader), 8)
+        # (c) each batch is same-nloc
+        for batch in all_batches:
+            nlocs = {reader.frame_nlocs[idx] for idx in batch}
+            self.assertEqual(len(nlocs), 1)
+        # The 12-atom frames were at original LMDB keys 8, 9; they must
+        # never be reachable via any emitted dataset index.
+        reached_original_keys = {reader._retained_keys[idx] for idx in all_indices}
+        for original_key in (8, 9):
+            self.assertNotIn(original_key, reached_original_keys)
+
+    def test_invalid_batch_size_strings_rejected(self):
+        """``<rule>:N`` specs with missing / non-positive N fail at init.
+
+        Before this hardening, ``filter:0`` silently dropped every frame
+        and ``max:`` raised a cryptic ``invalid literal for int()``.
+        One case per failure mode is enough to pin the behaviour.
+        """
+        for spec in ("filter:", "filter:0", "max:-1"):
+            with self.assertRaises(ValueError) as ctx:
+                LmdbDataReader(self._uniform_path, self._type_map, batch_size=spec)
+            self.assertIn("positive", str(ctx.exception))
+
+    def test_filter_with_mixed_batch_rejected(self):
+        """``filter:N`` + ``mixed_batch=True`` must fail loudly.
+
+        The mixed-batch fast path skips the per-frame nloc scan, so
+        filter:N cannot honour its documented ``nloc > N`` drop.
+        """
+        with self.assertRaises(ValueError) as ctx:
+            LmdbDataReader(
+                self._mixed_path,
+                self._type_map,
+                batch_size="filter:10",
+                mixed_batch=True,
+            )
+        self.assertIn("filter", str(ctx.exception))
+        self.assertIn("mixed_batch", str(ctx.exception))
+
+    def test_auto_prob_with_filter_still_works(self):
+        """compute_block_targets + sampler survive a fully-dropped block."""
+        path = f"{self._tmpdir.name}/auto_prob_filter.lmdb"
+        # filter:10 drops sid=2 (natoms=20), and sid=0 is under-represented
+        # relative to sid=1 so at least one block still needs expansion.
+        _create_mixed_sid_nloc_lmdb(
+            path,
+            system_specs=[(50, 6), (500, 6), (30, 20)],
+            type_map=self._type_map,
+        )
+        reader = LmdbDataReader(path, self._type_map, batch_size="filter:10")
+        self.assertEqual(reader.nsystems, 3)
+        self.assertEqual(reader.system_nframes, [50, 500, 0])
+        self.assertEqual(len(reader), 550)
+
+        block_targets = compute_block_targets(
+            "prob_sys_size;0:1:0.5;1:3:0.5",
+            nsystems=reader.nsystems,
+            system_nframes=reader.system_nframes,
+        )
+        # sid=2 in block 1:3 is empty but block 1:3 overall still has 500
+        # frames, so compute_block_targets should produce finite targets.
+        self.assertTrue(
+            all(np.isfinite(target) for _sys_ids, target in block_targets),
+            block_targets,
+        )
+        # Block 0 under-represented relative to weight → expansion needed.
+        self.assertGreater(len(block_targets), 0)
+
+        sampler = SameNlocBatchSampler(
+            reader, shuffle=False, seed=0, block_targets=block_targets
+        )
+        all_batches = list(sampler)
+        all_indices = [idx for batch in all_batches for idx in batch]
+        # Every index must be a retained frame — no dropped sid=2 / nloc=20.
+        for idx in all_indices:
+            self.assertLessEqual(reader.frame_nlocs[idx], 10)
+            self.assertNotEqual(reader.frame_system_ids[idx], 2)
+        # Every batch is same-nloc
+        for batch in all_batches:
+            nlocs = {reader.frame_nlocs[idx] for idx in batch}
+            self.assertEqual(len(nlocs), 1)
+        # Expansion produces more indices than the retained dataset size.
+        self.assertGreater(len(all_indices), len(reader))
 
 
 # ============================================================
@@ -850,6 +1179,66 @@ class TestDynamicKeysAndRepeat(unittest.TestCase):
             result["atom_pref"].shape,
             (self._nframes, self._natoms * 3),
         )
+
+    def test_testdata_add_data_requirement_matches_manual_add(self):
+        """DataRequirementItem forwarding matches manual requirement registration."""
+        from deepmd.utils.data import (
+            DataRequirementItem,
+        )
+
+        requirements = [
+            DataRequirementItem(
+                "drdq",
+                ndof=6,
+                atomic=True,
+                must=False,
+                high_prec=False,
+                repeat=2,
+                default=1.25,
+                dtype=np.float64,
+            ),
+            DataRequirementItem(
+                "aux",
+                ndof=2,
+                atomic=False,
+                must=False,
+                high_prec=False,
+                repeat=3,
+                default=-2.0,
+                dtype=np.float32,
+            ),
+        ]
+        manual = LmdbTestData(
+            self._lmdb_path,
+            type_map=self._type_map,
+            shuffle_test=False,
+        )
+        forwarded = LmdbTestData(
+            self._lmdb_path,
+            type_map=self._type_map,
+            shuffle_test=False,
+        )
+        for item in requirements:
+            manual.add(
+                item["key"],
+                ndof=item["ndof"],
+                atomic=item["atomic"],
+                must=item["must"],
+                high_prec=item["high_prec"],
+                repeat=item["repeat"],
+                default=item["default"],
+                dtype=item["dtype"],
+            )
+        forwarded.add_data_requirement(requirements)
+
+        manual_result = manual.get_test()
+        forwarded_result = forwarded.get_test()
+        for item in requirements:
+            key = item["key"]
+            self.assertEqual(forwarded_result[f"find_{key}"], 0.0)
+            self.assertEqual(forwarded_result[key].shape, manual_result[key].shape)
+            self.assertEqual(forwarded_result[key].dtype, manual_result[key].dtype)
+            np.testing.assert_array_equal(forwarded_result[key], manual_result[key])
 
     def test_testdata_missing_key_not_found(self):
         """Keys absent from LMDB frames get find_*=0.0 in get_test()."""

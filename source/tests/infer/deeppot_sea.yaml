@@ -3933,15 +3933,12 @@ model:
     - O
     - H
 model_def_script:
-  _comment4: " that's all"
   descriptor:
-    _comment2: " that's all"
     axis_neuron: 2
     neuron:
       - 3
       - 6
       - 12
-    ntypes: 2
     precision: float64
     rcut: 6.0
     rcut_smth: 0.5
@@ -3952,20 +3949,14 @@ model_def_script:
       - 92
     type: se_e2_a
   fitting_net:
-    _comment3: " that's all"
-    dim_descrpt: 24
-    embedding_width: 24
-    mixed_types: false
     neuron:
       - 10
       - 10
       - 10
-    ntypes: 2
     precision: float64
     resnet_dt: true
     seed: 1
     type: ener
-  resuming: true
   type_map:
     - O
     - H

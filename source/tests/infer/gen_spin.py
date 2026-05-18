@@ -25,7 +25,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 from gen_common import (
     ensure_inductor_compiler,
     load_custom_ops,
-    print_cpp_spin_values,
+    write_expected_ref,
 )
 
 
@@ -84,6 +84,66 @@ def _build_yaml(yaml_path: str) -> None:
     save_dp_model(yaml_path, data)
 
 
+def _build_dpa3_mpi_yaml(yaml_path: str) -> None:
+    """Build a DPA3 spin model with use_loc_mapping=False (multi-rank).
+
+    The default ``deeppot_dpa_spin.yaml`` uses se_atten (DPA1) which
+    is non-GNN — single-artifact .pt2, no multi-rank ghost exchange.
+    This variant uses DPA3 (repflows, GNN) with use_loc_mapping=False
+    so the dual-artifact .pt2 carries the with-comm AOTI module that
+    DeepSpinPTExpt routes to under mpirun > 1.
+
+    Type map matches the existing 4-atom Ni-O test data
+    (``write_lmp_data_spin``): two types, Ni (spin-active), O (no spin).
+    """
+    from deepmd.dpmodel.model.model import (
+        get_model,
+    )
+    from deepmd.dpmodel.utils.serialization import (
+        save_dp_model,
+    )
+
+    config = {
+        "type_map": ["Ni", "O"],
+        "descriptor": {
+            "type": "dpa3",
+            "repflow": {
+                "n_dim": 8,
+                "e_dim": 6,
+                "a_dim": 4,
+                "nlayers": 1,
+                "e_rcut": 4.0,
+                "e_rcut_smth": 0.5,
+                "e_sel": 8,
+                "a_rcut": 3.5,
+                "a_rcut_smth": 0.5,
+                "a_sel": 4,
+                "axis_neuron": 4,
+                "update_angle": False,
+            },
+            "use_loc_mapping": False,
+            "precision": "float64",
+            "seed": 1,
+        },
+        "fitting_net": {"neuron": [5, 5, 5], "resnet_dt": True, "seed": 1},
+        "spin": {"use_spin": [True, False], "virtual_scale": [0.3140, 0.0]},
+    }
+
+    model = get_model(copy.deepcopy(config))
+    model_dict = model.serialize()
+
+    data = {
+        "model": model_dict,
+        "model_def_script": config,
+        "backend": "dpmodel",
+        "software": "deepmd-kit",
+        "version": "3.0.0",
+    }
+
+    print(f"Building DPA3 spin dpmodel and saving to {yaml_path} ...")  # noqa: T201
+    save_dp_model(yaml_path, data)
+
+
 def main():
     from deepmd.entrypoints.convert_backend import (
         convert_backend,
@@ -96,11 +156,22 @@ def main():
     pth_path = os.path.join(base_dir, "deeppot_dpa_spin.pth")
     pt2_path = os.path.join(base_dir, "deeppot_dpa_spin.pt2")
 
-    # ---- 1. Build .yaml if it doesn't exist ----
+    # Multi-rank GNN spin variant (DPA3 + use_loc_mapping=False).
+    # Produces a dual-artifact .pt2 that DeepSpinPTExpt routes to
+    # under mpirun > 1 (Phase 4c spin multi-rank dispatch).
+    yaml_dpa3_path = os.path.join(base_dir, "deeppot_dpa3_spin_mpi.yaml")
+    pt2_dpa3_path = os.path.join(base_dir, "deeppot_dpa3_spin_mpi.pt2")
+
+    # ---- 1. Build .yamls if they don't exist ----
     if not os.path.exists(yaml_path):
         _build_yaml(yaml_path)
     else:
         print(f"Using existing {yaml_path}")  # noqa: T201
+
+    if not os.path.exists(yaml_dpa3_path):
+        _build_dpa3_mpi_yaml(yaml_dpa3_path)
+    else:
+        print(f"Using existing {yaml_dpa3_path}")  # noqa: T201
 
     # ---- 2. Convert .yaml -> .pth and .yaml -> .pt2 ----
     # Import deepmd.pt to register the backend (needed for convert_backend)
@@ -112,7 +183,10 @@ def main():
     convert_backend(INPUT=yaml_path, OUTPUT=pth_path)
 
     print(f"Converting to {pt2_path} ...")  # noqa: T201
-    convert_backend(INPUT=yaml_path, OUTPUT=pt2_path)
+    convert_backend(INPUT=yaml_path, OUTPUT=pt2_path, atomic_virial=True)
+
+    print(f"Converting to {pt2_dpa3_path} ...")  # noqa: T201
+    convert_backend(INPUT=yaml_dpa3_path, OUTPUT=pt2_dpa3_path, atomic_virial=True)
 
     print("Export done.")  # noqa: T201
 
@@ -174,14 +248,36 @@ def main():
 
     e1, f1, v1, ae1, av1, fm1, _ = dp.eval(coord, box, atype, atomic=True, spin=spin)
     print(f"\n// PBC total energy: {e1[0, 0]:.18e}")  # noqa: T201
-    print_cpp_spin_values("PBC reference values", ae1, f1, fm1, v1, av1)
 
     # ---- 4. Run inference for NoPbc test ----
     e_np, f_np, v_np, ae_np, av_np, fm_np, _ = dp.eval(
         coord, None, atype, atomic=True, spin=spin
     )
     print(f"\n// NoPbc total energy: {e_np[0, 0]:.18e}")  # noqa: T201
-    print_cpp_spin_values("NoPbc reference values", ae_np, f_np, fm_np, v_np, av_np)
+
+    # ---- 4b. Write sidecar reference file consumed by C++ tests ----
+    ref_path = os.path.join(base_dir, "deeppot_dpa_spin.expected")
+    write_expected_ref(
+        ref_path,
+        sections={
+            "pbc": {
+                "expected_e": ae1[0, :, 0],
+                "expected_f": f1[0],
+                "expected_fm": fm1[0],
+                "expected_tot_v": v1[0],
+                "expected_atom_v": av1[0],
+            },
+            "nopbc": {
+                "expected_e": ae_np[0, :, 0],
+                "expected_f": f_np[0],
+                "expected_fm": fm_np[0],
+                "expected_tot_v": v_np[0],
+                "expected_atom_v": av_np[0],
+            },
+        },
+        source_script="source/tests/infer/gen_spin.py",
+    )
+    print(f"Wrote {ref_path}")  # noqa: T201
 
     # ---- 5. Verify .pth gives same results ----
     if os.path.exists(pth_path):

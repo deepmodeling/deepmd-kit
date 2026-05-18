@@ -1,13 +1,27 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import functools
 import json
 import os
 import shutil
+import signal
+import tempfile
 import unittest
+from collections.abc import (
+    Callable,
+)
 from copy import (
     deepcopy,
 )
 from pathlib import (
     Path,
+)
+from typing import (
+    Any,
+    TypeVar,
+    cast,
+)
+from unittest.mock import (
+    patch,
 )
 
 import numpy as np
@@ -17,11 +31,21 @@ from deepmd.pt.entrypoints.main import (
     get_trainer,
 )
 from deepmd.pt.entrypoints.main import train as train_entry
+from deepmd.pt.train.ema import (
+    EMA_CHECKPOINT_KEY,
+)
 from deepmd.pt.utils.finetune import (
     get_finetune_rules,
 )
+from deepmd.pt.utils.multi_task import (
+    preprocess_shared_params,
+)
+from deepmd.utils.argcheck import (
+    normalize,
+)
 from deepmd.utils.compat import (
     convert_optimizer_v31_to_v32,
+    update_deepmd_input,
 )
 
 from .model.test_permutation import (
@@ -32,6 +56,36 @@ from .model.test_permutation import (
     model_se_e2_a,
     model_zbl,
 )
+
+_F = TypeVar("_F", bound=Callable[..., Any])
+
+
+def _training_timeout(seconds: int) -> Callable[[_F], _F]:
+    """Limit real training tests on platforms that support SIGALRM."""
+
+    def decorate(func: _F) -> _F:
+        if not hasattr(signal, "SIGALRM"):
+            return func
+
+        @functools.wraps(func)
+        def wrapped(*args: Any, **kwargs: Any) -> Any:
+            def raise_timeout(signum: int, frame: Any) -> None:
+                raise TimeoutError(f"training test exceeded {seconds} seconds")
+
+            previous_handler = signal.signal(signal.SIGALRM, raise_timeout)
+            signal.alarm(seconds)
+            try:
+                return func(*args, **kwargs)
+            finally:
+                signal.alarm(0)
+                signal.signal(signal.SIGALRM, previous_handler)
+
+        return cast("_F", wrapped)
+
+    return decorate
+
+
+TRAINING_TEST_TIMEOUT = _training_timeout(60)
 
 
 class DPTrainTest:
@@ -268,11 +322,22 @@ class TestFparam(unittest.TestCase, DPTrainTest):
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
         self.set_path = Path(__file__).parent / "water/data/data_0" / "set.000"
-        shutil.copyfile(self.set_path / "energy.npy", self.set_path / "fparam.npy")
+        # Backup the committed fparam.npy (numb_fparam=2) before overwriting
+        # with a 1-column version for this test.
+        self._fparam_backup = self.set_path / "fparam.npy.bak"
+        fparam_path = self.set_path / "fparam.npy"
+        if fparam_path.exists():
+            shutil.copyfile(fparam_path, self._fparam_backup)
+        shutil.copyfile(self.set_path / "energy.npy", fparam_path)
         self.config["model"]["data_stat_nbatch"] = 100
 
     def tearDown(self) -> None:
-        (self.set_path / "fparam.npy").unlink(missing_ok=True)
+        # Restore the original fparam.npy so other tests can use it.
+        fparam_path = self.set_path / "fparam.npy"
+        if self._fparam_backup.exists():
+            shutil.move(str(self._fparam_backup), str(fparam_path))
+        else:
+            fparam_path.unlink(missing_ok=True)
         DPTrainTest.tearDown(self)
 
 
@@ -642,11 +707,9 @@ class TestModelChangeOutBiasFittingStat(unittest.TestCase):
     """
 
     def test_fitting_stat_consistency(self) -> None:
+        import deepmd.pt.train.training as training_module
         from deepmd.pt.model.model import get_model as get_model_pt
         from deepmd.pt.model.model.ener_model import EnergyModel as EnergyModelPT
-        from deepmd.pt.train.training import (
-            model_change_out_bias,
-        )
         from deepmd.pt.utils.utils import to_numpy_array as torch_to_numpy
         from deepmd.pt.utils.utils import to_torch_tensor as numpy_to_torch
         from deepmd.utils.argcheck import model_args as model_args_fn
@@ -720,7 +783,7 @@ class TestModelChangeOutBiasFittingStat(unittest.TestCase):
 
         # Model B: use the NEW code path via model_change_out_bias
         sample_func = lambda: merged  # noqa: E731
-        model_change_out_bias(model_b, sample_func, "set-by-statistic")
+        training_module.model_change_out_bias(model_b, sample_func, "set-by-statistic")
 
         # Compare out_bias
         bias_a = torch_to_numpy(model_a.get_out_bias())
@@ -747,6 +810,401 @@ class TestModelChangeOutBiasFittingStat(unittest.TestCase):
         assert not np.allclose(fparam_inv_std_a, 1.0), (
             "fparam_inv_std is still ones — stat was not computed"
         )
+
+
+class TestLearningRateRestart(unittest.TestCase):
+    def setUp(self) -> None:
+        self._cwd = os.getcwd()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        os.chdir(self._tmpdir.name)
+        input_json = str(Path(__file__).parent / "water/se_atten.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
+        self.config["model"] = deepcopy(model_se_e2_a)
+        self.config["learning_rate"] = {
+            "type": "wsd",
+            "start_lr": 5e-4,
+            "stop_lr": 1e-6,
+            "warmup_steps": 2,
+            "warmup_start_factor": 0.2,
+            "decay_phase_ratio": 0.5,
+            "decay_type": "cosine",
+        }
+        self.config["training"]["numb_steps"] = 3
+        self.config["training"]["save_freq"] = 3
+        self.config["training"]["disp_freq"] = 1
+        self.config["training"]["disp_training"] = False
+        self.config["training"]["time_training"] = False
+
+    def tearDown(self) -> None:
+        os.chdir(self._cwd)
+        self._tmpdir.cleanup()
+
+    def test_restart_scheduler_matches_lr_schedule(self) -> None:
+        trainer = get_trainer(deepcopy(self.config))
+        trainer.run()
+        restart_model = Path("model-3.pt")
+        checkpoint = torch.load(restart_model, map_location="cpu", weights_only=True)
+        stale_initial_lr = trainer.lr_schedule.value(0)
+        for group in checkpoint["optimizer"]["param_groups"]:
+            group["initial_lr"] = stale_initial_lr
+        torch.save(checkpoint, restart_model)
+
+        restart_config = deepcopy(self.config)
+        restart_config["training"]["numb_steps"] = 5
+        restart_trainer = get_trainer(
+            restart_config,
+            restart_model=str(restart_model),
+        )
+
+        np.testing.assert_allclose(
+            restart_trainer.scheduler.get_last_lr()[0],
+            restart_trainer.lr_schedule.value(restart_trainer.start_step),
+            rtol=1e-12,
+        )
+        restart_trainer.run()
+        np.testing.assert_allclose(
+            restart_trainer.scheduler.get_last_lr()[0],
+            restart_trainer.lr_schedule.value(restart_config["training"]["numb_steps"]),
+            rtol=1e-12,
+        )
+
+
+class TestFullValidation(unittest.TestCase):
+    def setUp(self) -> None:
+        self._cwd = os.getcwd()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        os.chdir(self._tmpdir.name)
+        input_json = str(Path(__file__).parent / "water/se_atten.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
+        self.config["model"] = deepcopy(model_se_e2_a)
+        self.config["training"]["numb_steps"] = 4
+        self.config["training"]["save_freq"] = 100
+        self.config["training"]["disp_training"] = False
+        self.config["validating"] = {
+            "full_validation": True,
+            "validation_freq": 1,
+            "save_best": True,
+            "max_best_ckpt": 2,
+            "validation_metric": "E:MAE",
+            "full_val_file": "val.log",
+            "full_val_start": 0.0,
+        }
+
+    def tearDown(self) -> None:
+        os.chdir(self._cwd)
+        self._tmpdir.cleanup()
+
+    @patch("deepmd.pt.train.validation.FullValidator.evaluate_all_systems")
+    def test_full_validation_rotates_best_checkpoint(self, mocked_eval) -> None:
+        mocked_eval.side_effect = [
+            {"mae_e_per_atom": 1.0},
+            {"mae_e_per_atom": 2.0},
+            {"mae_e_per_atom": 0.5},
+            {"mae_e_per_atom": 1.5},
+        ]
+        Path("best.ckpt-999.t-1.pt").touch()
+        trainer = get_trainer(deepcopy(self.config))
+        trainer.run()
+
+        self.assertFalse(Path("best.ckpt-999.t-1.pt").exists())
+        self.assertFalse(Path("best.ckpt-1.t-1.pt").exists())
+        self.assertFalse(Path("best.ckpt-2.t-1.pt").exists())
+        self.assertTrue(Path("best.ckpt-3.t-1.pt").exists())
+        self.assertTrue(Path("best.ckpt-1.t-2.pt").exists())
+        train_infos = trainer._get_inner_module().train_infos
+        self.assertEqual(
+            train_infos["full_validation_topk_records"],
+            [
+                {"metric": 0.5, "step": 3},
+                {"metric": 1.0, "step": 1},
+            ],
+        )
+        with open("val.log") as fp:
+            val_lines = [line for line in fp.readlines() if not line.startswith("#")]
+        self.assertEqual(len(val_lines), 4)
+        self.assertEqual(val_lines[0].split()[1], "1000.0")
+        self.assertEqual(val_lines[1].split()[1], "2000.0")
+
+    @patch("deepmd.pt.train.validation.FullValidator.evaluate_all_systems")
+    def test_full_validation_runs_when_start_step_is_final_step(
+        self, mocked_eval
+    ) -> None:
+        mocked_eval.return_value = {"mae_e_per_atom": 1.0}
+        config = deepcopy(self.config)
+        config["validating"]["full_val_start"] = config["training"]["numb_steps"]
+
+        trainer = get_trainer(config)
+        trainer.run()
+
+        mocked_eval.assert_called_once()
+        with open("val.log") as fp:
+            val_lines = [line for line in fp.readlines() if not line.startswith("#")]
+        self.assertEqual(len(val_lines), 1)
+
+    def test_full_validation_uses_normalized_defaults_in_get_trainer(self) -> None:
+        config = deepcopy(self.config)
+        config["validating"] = {"full_validation": True}
+        normalized = normalize(update_deepmd_input(deepcopy(config), warning=False))
+
+        trainer = get_trainer(config)
+
+        self.assertIsNotNone(trainer.full_validator)
+        assert trainer.full_validator is not None
+        self.assertEqual(
+            trainer.full_validator.validation_freq,
+            normalized["validating"]["validation_freq"],
+        )
+        self.assertEqual(
+            trainer.full_validator.start_step,
+            int(
+                normalized["training"]["numb_steps"]
+                * normalized["validating"]["full_val_start"]
+            ),
+        )
+
+    def test_full_validation_rejects_spin_loss(self) -> None:
+        config = deepcopy(self.config)
+        config["loss"]["type"] = "ener_spin"
+        with self.assertRaisesRegex(ValueError, "spin-energy"):
+            get_trainer(config)
+
+    def test_full_validation_rejects_multitask(self) -> None:
+        multitask_json = str(Path(__file__).parent / "water/multitask.json")
+        with open(multitask_json) as f:
+            config = json.load(f)
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        for model_key in config["training"]["data_dict"]:
+            config["training"]["data_dict"][model_key]["training_data"]["systems"] = (
+                data_file
+            )
+            config["training"]["data_dict"][model_key]["validation_data"]["systems"] = (
+                data_file
+            )
+            config["training"]["data_dict"][model_key]["stat_file"] = (
+                f"stat_files_{model_key}"
+            )
+        config["training"]["numb_steps"] = 1
+        config["training"]["save_freq"] = 1
+        config["validating"] = {
+            "full_validation": True,
+            "validation_freq": 1,
+            "save_best": True,
+            "validation_metric": "E:MAE",
+            "full_val_file": "val.log",
+            "full_val_start": 0.0,
+        }
+        config["model"], _ = preprocess_shared_params(config["model"])
+        config = update_deepmd_input(config, warning=False)
+        with self.assertRaisesRegex(ValueError, "multi-task"):
+            normalize(config, multi_task=True)
+
+
+class TestEMATraining(unittest.TestCase):
+    def setUp(self) -> None:
+        import deepmd.pt.train.training as training_module
+        import deepmd.pt.utils.env as env_module
+
+        self._num_workers_state = (
+            (env_module, env_module.NUM_WORKERS),
+            (training_module, training_module.NUM_WORKERS),
+        )
+        env_module.NUM_WORKERS = 0
+        training_module.NUM_WORKERS = 0
+        self._cwd = os.getcwd()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        os.chdir(self._tmpdir.name)
+        input_json = str(Path(__file__).parent / "water/se_atten.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
+        self.config["model"] = deepcopy(model_se_e2_a)
+        self.config["training"]["numb_steps"] = 4
+        self.config["training"]["save_freq"] = 1
+        self.config["training"]["max_ckpt_keep"] = 3
+        self.config["training"]["disp_training"] = False
+        self.config["training"]["enable_ema"] = True
+        self.config["training"]["ema_decay"] = 0.9
+        self.config["training"]["ema_ckpt_keep"] = 2
+        self.config["validating"] = {
+            "full_validation": False,
+            "ema_full_validation": False,
+            "validation_freq": 1,
+            "save_best": True,
+            "max_best_ckpt": 1,
+            "validation_metric": "E:MAE",
+            "full_val_file": "val.log",
+            "full_val_start": 0.0,
+        }
+
+    def tearDown(self) -> None:
+        for module, num_workers in self._num_workers_state:
+            module.NUM_WORKERS = num_workers
+        os.chdir(self._cwd)
+        self._tmpdir.cleanup()
+
+    @TRAINING_TEST_TIMEOUT
+    def test_ema_checkpoint_rotation(self) -> None:
+        trainer = get_trainer(deepcopy(self.config))
+        ema_prefix = trainer.ema_save_ckpt
+        Path(f"{ema_prefix}-999.pt").touch()
+        trainer.run()
+
+        self.assertFalse(Path(f"{ema_prefix}-999.pt").exists())
+        self.assertTrue(Path(f"{ema_prefix}-3.pt").exists())
+        self.assertTrue(Path(f"{ema_prefix}-4.pt").exists())
+        self.assertFalse(Path(f"{ema_prefix}-2.pt").exists())
+        self.assertFalse(Path("checkpoint_ema").exists())
+
+    def test_ema_checkpoint_cleanup_removes_future_steps(self) -> None:
+        trainer = get_trainer(deepcopy(self.config))
+        trainer.ema_ckpt_keep = 10
+        ema_prefix = trainer.ema_save_ckpt
+        Path(f"{ema_prefix}-999.pt").touch()
+
+        trainer.save_ema_model(f"{ema_prefix}-1.pt", lr=0.0, step=0)
+
+        self.assertFalse(Path(f"{ema_prefix}-999.pt").exists())
+        self.assertTrue(Path(f"{ema_prefix}-1.pt").exists())
+
+    @TRAINING_TEST_TIMEOUT
+    @patch("deepmd.pt.train.training.model_change_out_bias")
+    def test_ema_checkpoint_keeps_changed_out_bias(
+        self, mocked_change_out_bias
+    ) -> None:
+        def change_out_bias(model, sample_func, _bias_adjust_mode):
+            model.set_out_bias(model.get_out_bias() + 1.0)
+            return model
+
+        mocked_change_out_bias.side_effect = change_out_bias
+        config = deepcopy(self.config)
+        config["training"]["numb_steps"] = 1
+        config["training"]["change_bias_after_training"] = True
+        trainer = get_trainer(config)
+        trainer.run()
+
+        regular_checkpoint = torch.load(
+            trainer.latest_model, map_location="cpu", weights_only=True
+        )
+        ema_checkpoint = torch.load(
+            trainer.latest_ema_model, map_location="cpu", weights_only=True
+        )
+        regular_out_bias = {
+            key: value
+            for key, value in regular_checkpoint["model"].items()
+            if key.endswith("out_bias")
+        }
+        ema_out_bias = {
+            key: value
+            for key, value in ema_checkpoint["model"].items()
+            if key.endswith("out_bias")
+        }
+
+        self.assertTrue(regular_out_bias)
+        self.assertEqual(regular_out_bias.keys(), ema_out_bias.keys())
+        for key, regular_value in regular_out_bias.items():
+            torch.testing.assert_close(regular_value, ema_out_bias[key])
+
+    def test_ema_rejects_zero_stage_2_during_normalization(self) -> None:
+        config = deepcopy(self.config)
+        config["training"]["zero_stage"] = 2
+        config = update_deepmd_input(config, warning=False)
+        with self.assertRaisesRegex(ValueError, "training.zero_stage < 2"):
+            normalize(config)
+
+    @TRAINING_TEST_TIMEOUT
+    def test_restart_restores_ema_state(self) -> None:
+        trainer = get_trainer(deepcopy(self.config))
+        first_key = next(iter(trainer.model_ema.shadow_params))
+        trainer.model_ema.shadow_params[first_key].add_(1.2345)
+        trainer.model_ema.validation_state.update(
+            {
+                "full_validation_metric": "e:mae",
+                "full_validation_topk_records": [
+                    {"metric": 0.5, "step": 3},
+                ],
+            }
+        )
+        trainer.save_model("model.ckpt-0.pt", lr=0.1, step=0)
+
+        checkpoint = torch.load(
+            "model.ckpt-0.pt", map_location="cpu", weights_only=True
+        )
+        self.assertIn(EMA_CHECKPOINT_KEY, checkpoint)
+
+        restarted = get_trainer(
+            deepcopy(self.config),
+            restart_model="model.ckpt-0.pt",
+        )
+        torch.testing.assert_close(
+            restarted.model_ema.shadow_params[first_key],
+            trainer.model_ema.shadow_params[first_key],
+        )
+        self.assertEqual(
+            restarted.model_ema.validation_state,
+            trainer.model_ema.validation_state,
+        )
+
+    @TRAINING_TEST_TIMEOUT
+    @patch("deepmd.pt.train.validation.FullValidator.evaluate_all_systems")
+    def test_ema_full_validation_writes_separate_outputs(self, mocked_eval) -> None:
+        mocked_eval.side_effect = [
+            {"mae_e_per_atom": 10.0},
+            {"mae_e_per_atom": 1.0},
+            {"mae_e_per_atom": 10.0},
+            {"mae_e_per_atom": 0.5},
+            {"mae_e_per_atom": 10.0},
+            {"mae_e_per_atom": 0.75},
+            {"mae_e_per_atom": 10.0},
+            {"mae_e_per_atom": 0.25},
+        ]
+        config = deepcopy(self.config)
+        config["validating"]["full_validation"] = True
+        config["validating"]["ema_full_validation"] = True
+        trainer = get_trainer(config)
+        trainer.run()
+
+        self.assertTrue(Path("val.log").exists())
+        self.assertTrue(Path("val_ema.log").exists())
+        self.assertTrue(Path("best_ema.ckpt-4.t-1.pt").exists())
+        self.assertFalse(Path("best_ema.ckpt-1.t-1.pt").exists())
+        train_infos = trainer._get_inner_module().train_infos
+        self.assertNotIn("full_validation_ema_metric", train_infos)
+        self.assertNotIn("full_validation_ema_topk_records", train_infos)
+        self.assertEqual(
+            trainer.model_ema.validation_state["full_validation_topk_records"],
+            [{"metric": 0.25, "step": 4}],
+        )
+
+    @TRAINING_TEST_TIMEOUT
+    @patch("deepmd.pt.train.validation.FullValidator.evaluate_all_systems")
+    def test_ema_full_validation_ignored_without_full_validation(
+        self, mocked_eval
+    ) -> None:
+        config = deepcopy(self.config)
+        config["training"]["enable_ema"] = False
+        config["validating"]["full_validation"] = False
+        config["validating"]["ema_full_validation"] = True
+        trainer = get_trainer(config)
+        trainer.run()
+
+        mocked_eval.assert_not_called()
+        self.assertFalse(Path("val.log").exists())
+        self.assertFalse(Path("val_ema.log").exists())
+        self.assertIsNone(trainer.model_ema)
+        self.assertIsNone(trainer.ema_full_validator)
 
 
 if __name__ == "__main__":

@@ -107,6 +107,24 @@ def make_base_descriptor(
         def has_message_passing(self) -> bool:
             """Returns whether the descriptor has message passing."""
 
+        def has_message_passing_across_ranks(self) -> bool:
+            """Returns whether the descriptor's message passing extends across rank
+            boundaries — i.e. whether it requires cross-rank exchange of intermediate
+            atomic features (per-layer node embeddings) during the forward pass.
+
+            Distinct from generic ghost-coord/force exchange that every LAMMPS
+            pair_style does. This question gates whether the pt_expt backend
+            compiles a second "with-comm" AOTI artifact for multi-rank deployment.
+
+            Concrete default ``False`` (non-GNN behavior) so pt and pd backend
+            descriptors that subclass ``BaseDescriptor`` directly do not have
+            to implement this method until they grow a multi-rank GNN path of
+            their own. GNN descriptors that need MPI ghost-feature exchange
+            (DPA2, DPA3 with ``use_loc_mapping=False``, hybrids wrapping such
+            children) override to return ``True``.
+            """
+            return False
+
         @abstractmethod
         def need_sorted_nlist_for_lower(self) -> bool:
             """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
