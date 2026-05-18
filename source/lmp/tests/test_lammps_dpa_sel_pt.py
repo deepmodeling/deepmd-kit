@@ -12,6 +12,9 @@ from pathlib import (
 import constants
 import numpy as np
 import pytest
+from expected_ref import (
+    read_expected_ref,
+)
 from lammps import (
     PyLammps,
 )
@@ -25,9 +28,9 @@ from write_lmp_data import (
 pbtxt_file2 = (
     Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot-1.pbtxt"
 )
-# large repinit sel but small repformer sel
-pb_file = (
-    Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot_dpa_sel.pth"
+pb_file = Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot_dpa2.pth"
+ref_file = (
+    Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot_dpa2.expected"
 )
 pb_file2 = Path(__file__).parent / "graph2.pb"
 system_file = Path(__file__).parent.parent.parent / "tests"
@@ -36,40 +39,14 @@ data_file_si = Path(__file__).parent / "data.si"
 data_type_map_file = Path(__file__).parent / "data_type_map.lmp"
 md_file = Path(__file__).parent / "md.out"
 
-# this is as the same as python and c++ tests, test_deeppot_a.py
-expected_ae = np.array(
-    [
-        -94.40466356082422,
-        -188.20655580528742,
-        -188.172650838896,
-        -94.3984730612324,
-        -188.18804200217326,
-        -188.20912570390797,
-    ]
-)
-expected_e = np.sum(expected_ae)
-expected_f = np.array(
-    [
-        -0.5269430960718773,
-        0.09443722477575306,
-        -0.018996127144558193,
-        0.07511784469939177,
-        -0.004636423045215931,
-        -0.06042882995560078,
-        -0.11356148928265902,
-        -0.14249867913062475,
-        0.11471641225723211,
-        0.48857267799774884,
-        0.029274479383282204,
-        0.0018077032375469655,
-        0.14145328669603485,
-        0.061307914850956956,
-        -0.08774313950622735,
-        -0.06463922403863916,
-        -0.03788451683415152,
-        0.050643981111607235,
-    ]
-).reshape(6, 3)
+# Reference values written by source/tests/infer/gen_dpa2.py.
+try:
+    _ref = read_expected_ref(ref_file)["pbc"]
+    expected_ae = _ref["expected_e"]
+    expected_e = float(np.sum(expected_ae))
+    expected_f = _ref["expected_f"].reshape(6, 3)
+except FileNotFoundError:
+    expected_ae = expected_e = expected_f = None
 
 expected_f2 = np.array(
     [
@@ -82,64 +59,11 @@ expected_f2 = np.array(
     ]
 )
 
-expected_v = -np.array(
-    [
-        0.9071749098850648,
-        0.06394291002323482,
-        -0.045778841699466444,
-        0.05724095081080198,
-        -0.04587607140012173,
-        0.03338900821751993,
-        -0.08821876554631314,
-        0.028921736412500003,
-        -0.0016941267234178055,
-        0.0328481028525373,
-        0.011077847594560757,
-        0.05737319258976218,
-        0.03033379636209457,
-        -0.007106204143787434,
-        -0.008933706230224273,
-        0.08706716158937683,
-        -0.007590237086934508,
-        -0.0465897822325519,
-        0.005288635023633567,
-        -0.04363673459933623,
-        0.040896766225094555,
-        -0.0776988217139129,
-        -0.04503884467345057,
-        0.034987399918229245,
-        0.06527106015783832,
-        0.036805235933779795,
-        -0.03289891755994384,
-        0.9956154345592723,
-        0.11963562102541159,
-        -0.11601555180804074,
-        0.12681453991319047,
-        0.01822615751480253,
-        -0.020439753868777312,
-        -0.10614750448436672,
-        -0.018079989970225654,
-        0.021624509802219784,
-        0.29066664335998216,
-        -0.017510677635950628,
-        0.040767419279345324,
-        0.0019631746760569863,
-        -0.029874379170659604,
-        0.047763391313415365,
-        0.016942327234135898,
-        0.04694015440808539,
-        -0.07381327572535609,
-        -0.0318765521505375,
-        -0.03129174028722404,
-        0.04031856154341752,
-        -0.036436413927534876,
-        -0.015255351334518573,
-        0.020292770612590032,
-        0.04264726717944152,
-        0.0200622102655479,
-        -0.026746995544407036,
-    ]
-).reshape(6, 9)
+# LAMMPS uses opposite sign convention for virial vs DeepPot atom_virial.
+try:
+    expected_v = -_ref["expected_v"].reshape(6, 9)
+except (NameError, KeyError):
+    expected_v = None
 expected_v2 = -np.array(
     [
         [
