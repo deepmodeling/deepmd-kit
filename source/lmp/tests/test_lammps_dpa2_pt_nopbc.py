@@ -40,11 +40,10 @@ md_file = Path(__file__).parent / "md.out"
 # Reference values written by source/tests/infer/gen_dpa2.py.
 try:
     _ref = read_expected_ref(ref_file)["nopbc"]
-    expected_ae = _ref["expected_e"]
-    expected_e = float(np.sum(expected_ae))
+    expected_e = float(np.sum(_ref["expected_e"]))
     expected_f = _ref["expected_f"].reshape(6, 3)
 except FileNotFoundError:
-    expected_ae = expected_e = expected_f = None
+    expected_e = expected_f = None
 
 expected_f2 = np.array(
     [
