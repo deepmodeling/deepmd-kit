@@ -1570,6 +1570,13 @@ def dpa3_repflow_args() -> list[Argument]:
         "or `a_sel / sel_reduce_factor` instead of the raw `e_sel` or `a_sel` values, "
         "accommodating larger selection numbers."
     )
+    doc_sequential_update = (
+        "Whether to use sequential update mode within each repflow layer. "
+        "When True, updates are applied sequentially: edge self → angle self (using updated edge) "
+        "→ edge angle (using updated angle) → node (using final edge), "
+        "instead of the default parallel mode where all updates use original embeddings. "
+        "Currently only supports update_style='res_residual' and requires update_angle=True."
+    )
 
     return [
         # repflow args
@@ -1699,6 +1706,13 @@ def dpa3_repflow_args() -> list[Argument]:
             optional=True,
             default=10.0,
             doc=doc_sel_reduce_factor,
+        ),
+        Argument(
+            "sequential_update",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_sequential_update,
         ),
     ]
 
@@ -3231,6 +3245,13 @@ def loss_ener() -> list[Argument]:
         "atomic prefactor force", label="atom_pref", abbr="pf"
     )
     doc_limit_pref_pf = limit_pref("atomic prefactor force")
+    doc_use_default_pf = (
+        "If true, use default atom_pref of 1.0 for all atoms when atom_pref data is not provided. "
+        "This allows using the prefactor force loss (pf) without requiring atom_pref.npy files in training data. "
+        "When atom_pref.npy is provided, it will be used as-is regardless of this setting. "
+        "Note: this option is only effective for the PyTorch/DPModel backends; "
+        "the TensorFlow and Paddle backends raise NotImplementedError when set to true."
+    )
     doc_start_pref_gf = start_pref("generalized force", label="drdq", abbr="gf")
     doc_limit_pref_gf = limit_pref("generalized force")
     doc_numb_generalized_coord = "The dimension of generalized coordinates. Required when generalized force loss is used."
@@ -3352,6 +3373,13 @@ def loss_ener() -> list[Argument]:
             optional=True,
             default=0.00,
             doc=doc_limit_pref_pf,
+        ),
+        Argument(
+            "use_default_pf",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_use_default_pf,
         ),
         Argument("relative_f", [float, None], optional=True, doc=doc_relative_f),
         Argument(

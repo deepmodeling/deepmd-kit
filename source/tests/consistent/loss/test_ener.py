@@ -812,3 +812,181 @@ class TestIntensiveNatomsScaling(unittest.TestCase):
             places=5,
             msg=f"Expected intensive/legacy ratio ~{expected_ratio:.6f}, got {actual_ratio:.6f}",
         )
+
+
+class TestEnerDefaultPf(CommonTest, LossTest, unittest.TestCase):
+    """Test energy loss with use_default_pf=True.
+
+    The pf term is activated through the default atom_pref of 1.0 even though
+    `find_atom_pref` is 0.0 in the label. This exercises the cross-backend
+    consistency between PT and DP for the new option. TF and Paddle backends
+    raise NotImplementedError when use_default_pf=True and are skipped.
+    """
+
+    @property
+    def data(self) -> dict:
+        return {
+            "start_pref_e": 0.02,
+            "limit_pref_e": 1.0,
+            "start_pref_f": 1000.0,
+            "limit_pref_f": 1.0,
+            "start_pref_v": 1.0,
+            "limit_pref_v": 1.0,
+            "start_pref_ae": 1.0,
+            "limit_pref_ae": 1.0,
+            "start_pref_pf": 1.0,
+            "limit_pref_pf": 1.0,
+            "use_default_pf": True,
+        }
+
+    skip_tf = True
+    skip_pd = True
+    skip_pt = CommonTest.skip_pt
+    skip_pt_expt = not INSTALLED_PT_EXPT
+    skip_jax = not INSTALLED_JAX
+    skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
+
+    tf_class = EnerLossTF
+    dp_class = EnerLossDP
+    pt_class = EnerLossPT
+    pt_expt_class = EnerLossPTExpt
+    jax_class = EnerLossDP
+    pd_class = EnerLossPD
+    array_api_strict_class = EnerLossDP
+    args = loss_ener()
+
+    def setUp(self) -> None:
+        CommonTest.setUp(self)
+        self.learning_rate = 1e-3
+        rng = np.random.default_rng(20250105)
+        self.nframes = 2
+        self.natoms = 6
+        self.predict = {
+            "energy": rng.random((self.nframes,)),
+            "force": rng.random((self.nframes, self.natoms, 3)),
+            "virial": rng.random((self.nframes, 9)),
+            "atom_ener": rng.random((self.nframes, self.natoms)),
+        }
+        self.predict_dpmodel_style = {
+            "energy": self.predict["energy"],
+            "force": self.predict["force"],
+            "virial": self.predict["virial"],
+            "atom_energy": self.predict["atom_ener"],
+        }
+        # find_atom_pref=0.0 simulates the case where atom_pref.npy is missing;
+        # use_default_pf=True must override this and still compute the pf loss.
+        self.label = {
+            "energy": rng.random((self.nframes,)),
+            "force": rng.random((self.nframes, self.natoms, 3)),
+            "virial": rng.random((self.nframes, 9)),
+            "atom_ener": rng.random((self.nframes, self.natoms)),
+            "atom_pref": np.ones((self.nframes, self.natoms, 3)),
+            "find_energy": 1.0,
+            "find_force": 1.0,
+            "find_virial": 1.0,
+            "find_atom_ener": 1.0,
+            "find_atom_pref": 0.0,
+        }
+
+    @property
+    def additional_data(self) -> dict:
+        return {
+            "starter_learning_rate": 1e-3,
+        }
+
+    def build_tf(self, obj: Any, suffix: str) -> tuple[list, dict]:
+        # use_default_pf=True is not supported by TensorFlow; skip_tf is True so
+        # this method is never invoked, but the abstract base requires it.
+        raise NotImplementedError
+
+    def eval_pt(self, pt_obj: Any) -> Any:
+        predict = {kk: numpy_to_torch(vv) for kk, vv in self.predict.items()}
+        label = {kk: numpy_to_torch(vv) for kk, vv in self.label.items()}
+        predict["atom_energy"] = predict.pop("atom_ener")
+        _, loss, more_loss = pt_obj(
+            {},
+            lambda: predict,
+            label,
+            self.natoms,
+            self.learning_rate,
+            mae=False,
+        )
+        loss = torch_to_numpy(loss)
+        more_loss = {kk: torch_to_numpy(vv) for kk, vv in more_loss.items()}
+        return loss, more_loss
+
+    def eval_dp(self, dp_obj: Any) -> Any:
+        return dp_obj(
+            self.learning_rate,
+            self.natoms,
+            self.predict_dpmodel_style,
+            self.label,
+            mae=False,
+        )
+
+    def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
+        predict = {
+            kk: numpy_to_torch(vv) for kk, vv in self.predict_dpmodel_style.items()
+        }
+        label = {kk: numpy_to_torch(vv) for kk, vv in self.label.items()}
+        loss, more_loss = pt_expt_obj(
+            self.learning_rate,
+            self.natoms,
+            predict,
+            label,
+            mae=False,
+        )
+        loss = torch_to_numpy(loss)
+        more_loss = {kk: torch_to_numpy(vv) for kk, vv in more_loss.items()}
+        return loss, more_loss
+
+    def eval_jax(self, jax_obj: Any) -> Any:
+        predict = {kk: jnp.asarray(vv) for kk, vv in self.predict_dpmodel_style.items()}
+        label = {kk: jnp.asarray(vv) for kk, vv in self.label.items()}
+        loss, more_loss = jax_obj(
+            self.learning_rate,
+            self.natoms,
+            predict,
+            label,
+            mae=False,
+        )
+        loss = to_numpy_array(loss)
+        more_loss = {kk: to_numpy_array(vv) for kk, vv in more_loss.items()}
+        return loss, more_loss
+
+    def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
+        predict = {
+            kk: array_api_strict.asarray(vv)
+            for kk, vv in self.predict_dpmodel_style.items()
+        }
+        label = {kk: array_api_strict.asarray(vv) for kk, vv in self.label.items()}
+        loss, more_loss = array_api_strict_obj(
+            self.learning_rate,
+            self.natoms,
+            predict,
+            label,
+            mae=False,
+        )
+        loss = to_numpy_array(loss)
+        more_loss = {kk: to_numpy_array(vv) for kk, vv in more_loss.items()}
+        return loss, more_loss
+
+    def extract_ret(self, ret: Any, backend) -> dict[str, np.ndarray]:
+        loss = ret[0]
+        result = {"loss": np.atleast_1d(np.asarray(loss, dtype=np.float64))}
+        if len(ret) > 1:
+            more_loss = ret[1]
+            for k in sorted(more_loss):
+                if k.startswith("rmse_") or k.startswith("mae_"):
+                    result[k] = np.atleast_1d(
+                        np.asarray(more_loss[k], dtype=np.float64)
+                    )
+        return result
+
+    @property
+    def rtol(self) -> float:
+        return 1e-10
+
+    @property
+    def atol(self) -> float:
+        return 1e-10

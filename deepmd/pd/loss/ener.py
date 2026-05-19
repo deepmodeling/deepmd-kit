@@ -138,6 +138,10 @@ class EnergyStdLoss(TaskLoss):
             raise NotImplementedError(
                 "Paddle backend does not support f_use_norm=True."
             )
+        if kwargs.get("use_default_pf", False):
+            raise NotImplementedError(
+                "Paddle backend does not support use_default_pf=True."
+            )
 
         self.starter_learning_rate = starter_learning_rate
         self.has_e = (start_pref_e != 0.0 and limit_pref_e != 0.0) or inference
@@ -577,7 +581,7 @@ class EnergyStdLoss(TaskLoss):
         """
         return {
             "@class": "EnergyLoss",
-            "@version": 3,
+            "@version": 4,
             "starter_learning_rate": self.starter_learning_rate,
             "start_pref_e": self.start_pref_e,
             "limit_pref_e": self.limit_pref_e,
@@ -598,6 +602,7 @@ class EnergyStdLoss(TaskLoss):
             "huber_delta": self.huber_delta,
             "loss_func": self.loss_func,
             "f_use_norm": self.f_use_norm,
+            "use_default_pf": getattr(self, "use_default_pf", False),
             "intensive_ener_virial": self.intensive_ener_virial,
         }
 
@@ -617,7 +622,7 @@ class EnergyStdLoss(TaskLoss):
         """
         data = data.copy()
         version = data.pop("@version")
-        check_version_compatibility(version, 3, 1)
+        check_version_compatibility(version, 4, 1)
         data.pop("@class")
         # Handle backward compatibility for older versions without intensive_ener_virial
         if version < 3:
