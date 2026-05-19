@@ -1,0 +1,158 @@
+{
+  "model": {
+    "type": "dpa4",
+    "type_map": [
+      "Ni",
+      "O"
+    ],
+    "spin": {
+      "use_spin": [
+        true,
+        false
+      ],
+      "virtual_scale": [
+        0.314
+      ]
+    },
+    "descriptor": {
+      "type": "dpa4",
+      "sel": 120,
+      "rcut": 6.0,
+      "env_exp": [
+        7,
+        5
+      ],
+      "channels": 64,
+      "n_radial": 16,
+      "radial_mlp": [
+        0
+      ],
+      "use_env_seed": true,
+      "random_gamma": true,
+      "l_schedule": [
+        3,
+        3,
+        2
+      ],
+      "mmax": 1,
+      "so2_norm": false,
+      "so2_layers": 4,
+      "so2_attn_res": "none",
+      "n_focus": 1,
+      "focus_dim": 0,
+      "n_atten_head": 1,
+      "ffn_neurons": 0,
+      "grid_mlp": false,
+      "ffn_blocks": 1,
+      "sandwich_norm": [
+        true,
+        false,
+        true,
+        false
+      ],
+      "mlp_bias": false,
+      "layer_scale": false,
+      "full_attn_res": "none",
+      "block_attn_res": "none",
+      "s2_activation": [
+        false,
+        true
+      ],
+      "activation_function": "silu",
+      "glu_activation": true,
+      "use_amp": true,
+      "precision": "float32",
+      "seed": 42,
+      "_comment": "that's all"
+    },
+    "fitting_net": {
+      "neuron": [
+        0
+      ],
+      "activation_function": "silu",
+      "precision": "float32",
+      "seed": 42,
+      "_comment": "that's all"
+    },
+    "use_compile": true,
+    "enable_tf32": true,
+    "_comment": "that's all"
+  },
+  "learning_rate": {
+    "type": "wsd",
+    "start_lr": 4.5e-4,
+    "stop_lr": 1e-6,
+    "warmup_steps": 5000,
+    "warmup_start_factor": 0.2,
+    "decay_phase_ratio": 0.65,
+    "decay_type": "cosine"
+  },
+  "loss": {
+    "type": "ener_spin",
+    "start_pref_e": 0.02,
+    "limit_pref_e": 1,
+    "start_pref_fr": 1000,
+    "limit_pref_fr": 1,
+    "start_pref_fm": 1000,
+    "limit_pref_fm": 1,
+    "_comment": " that's all"
+  },
+  "optimizer": {
+    "type": "HybridMuon",
+    "muon_mode": "slice",
+    "enable_gram": true,
+    "magma_muon": true,
+    "lr_adjust": 0.0,
+    "weight_decay": 0.001
+  },
+  "training": {
+    "stat_file": "./dpa4_spin.hdf5",
+    "training_data": {
+      "systems": [
+        "../../spin/data_reformat/data_0",
+        "../../spin/data_reformat/data_1"
+      ],
+      "batch_size": 1,
+      "_comment": "that's all"
+    },
+    "validation_data": {
+      "systems": [
+        "../../spin/data_reformat/data_2"
+      ],
+      "batch_size": 1,
+      "numb_btch": 1,
+      "_comment": "that's all"
+    },
+    "numb_steps": 1000000,
+    "gradient_max_norm": 5.0,
+    "save_freq": 100,
+    "max_ckpt_keep": 3,
+    "enable_ema": true,
+    "ema_decay": 0.999,
+    "ema_ckpt_keep": 3,
+    "disp_file": "lcurve.out",
+    "disp_freq": 100,
+    "disp_avg": true,
+    "disp_training": true,
+    "time_training": true,
+    "tensorboard": false,
+    "enable_profiler": false,
+    "tensorboard_freq": 1000,
+    "tensorboard_log_dir": "tb_log",
+    "profiling": false,
+    "profiling_file": "timeline.json",
+    "zero_stage": 0,
+    "seed": 7,
+    "_comment": "that's all"
+  },
+  "validating": {
+    "full_validation": false,
+    "ema_full_validation": false,
+    "validation_freq": 100,
+    "save_best": false,
+    "max_best_ckpt": 1,
+    "validation_metric": "E:MAE",
+    "compiled_infer": false,
+    "_comment": "full validation currently rejects spin-energy training"
+  }
+}

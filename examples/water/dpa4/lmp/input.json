@@ -1,0 +1,133 @@
+{
+  "_comment": "Tiny DPA4 / SeZM water demo. Trained for ~500 steps; the resulting checkpoint is shipped with this example solely so newcomers have something to freeze -> run in LAMMPS out of the box. It is NOT a physically accurate force field.",
+  "model": {
+    "type": "dpa4",
+    "type_map": [
+      "O",
+      "H"
+    ],
+    "descriptor": {
+      "type": "dpa4",
+      "sel": 120,
+      "rcut": 6.0,
+      "env_exp": [
+        7,
+        5
+      ],
+      "channels": 16,
+      "n_radial": 6,
+      "radial_mlp": [
+        0
+      ],
+      "use_env_seed": true,
+      "random_gamma": true,
+      "l_schedule": [
+        1,
+        1
+      ],
+      "mmax": 1,
+      "so2_norm": false,
+      "so2_layers": 2,
+      "so2_attn_res": "none",
+      "n_focus": 1,
+      "focus_dim": 0,
+      "n_atten_head": 1,
+      "ffn_neurons": 0,
+      "grid_mlp": false,
+      "ffn_blocks": 1,
+      "sandwich_norm": [
+        true,
+        false,
+        true,
+        false
+      ],
+      "mlp_bias": false,
+      "layer_scale": false,
+      "full_attn_res": "none",
+      "block_attn_res": "none",
+      "s2_activation": [
+        false,
+        true
+      ],
+      "activation_function": "silu",
+      "glu_activation": true,
+      "use_amp": false,
+      "precision": "float32",
+      "seed": 42
+    },
+    "fitting_net": {
+      "neuron": [
+        0
+      ],
+      "activation_function": "silu",
+      "precision": "float32",
+      "seed": 42
+    },
+    "use_compile": false,
+    "enable_tf32": false,
+    "bridging_method": "none",
+    "bridging_r_inner": 0.8,
+    "bridging_r_outer": 1.2
+  },
+  "learning_rate": {
+    "type": "wsd",
+    "start_lr": 5e-4,
+    "stop_lr": 1e-6,
+    "warmup_steps": 50,
+    "warmup_start_factor": 0.2,
+    "decay_phase_ratio": 0.65,
+    "decay_type": "cosine"
+  },
+  "loss": {
+    "type": "ener",
+    "loss_func": "mae",
+    "f_use_norm": true,
+    "start_pref_e": 20,
+    "limit_pref_e": 20,
+    "start_pref_f": 20,
+    "limit_pref_f": 20,
+    "start_pref_v": 0,
+    "limit_pref_v": 0
+  },
+  "optimizer": {
+    "type": "HybridMuon",
+    "muon_mode": "slice",
+    "enable_gram": true,
+    "magma_muon": true,
+    "lr_adjust": 0.0,
+    "weight_decay": 0.001
+  },
+  "training": {
+    "training_data": {
+      "systems": [
+        "../../data/data_0",
+        "../../data/data_1",
+        "../../data/data_2"
+      ],
+      "batch_size": 1
+    },
+    "validation_data": {
+      "systems": [
+        "../../data/data_3"
+      ],
+      "batch_size": 1,
+      "numb_btch": 1
+    },
+    "numb_steps": 500,
+    "gradient_max_norm": 5.0,
+    "save_freq": 500,
+    "max_ckpt_keep": 1,
+    "enable_ema": false,
+    "disp_file": "lcurve.out",
+    "disp_freq": 100,
+    "disp_avg": true,
+    "disp_training": true,
+    "time_training": false,
+    "seed": 7
+  },
+  "validating": {
+    "full_validation": false,
+    "ema_full_validation": false,
+    "validation_freq": 100
+  }
+}
