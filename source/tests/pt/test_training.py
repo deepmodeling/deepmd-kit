@@ -6,6 +6,7 @@ import shutil
 import signal
 import tempfile
 import unittest
+import warnings
 from collections.abc import (
     Callable,
 )
@@ -1007,6 +1008,57 @@ class TestFullValidation(unittest.TestCase):
         config = update_deepmd_input(config, warning=False)
         with self.assertRaisesRegex(ValueError, "multi-task"):
             normalize(config, multi_task=True)
+
+
+class TestSkippedTrainingBatch(unittest.TestCase):
+    def setUp(self) -> None:
+        self._cwd = os.getcwd()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        os.chdir(self._tmpdir.name)
+        input_json = str(Path(__file__).parent / "water/se_atten.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
+        self.config["model"] = deepcopy(model_se_e2_a)
+        self.config["training"]["numb_steps"] = 2
+        self.config["training"]["save_freq"] = 2
+        self.config["training"]["disp_training"] = False
+        self.config["validating"] = {
+            "full_validation": False,
+            "ema_full_validation": False,
+        }
+
+    def tearDown(self) -> None:
+        os.chdir(self._cwd)
+        self._tmpdir.cleanup()
+
+    def test_skipped_batch_does_not_advance_scheduler(self) -> None:
+        trainer = get_trainer(deepcopy(self.config))
+        original_get_data = trainer.get_data
+        skipped = {"done": False}
+
+        def get_data(
+            is_train: bool = True, task_key: str = "Default"
+        ) -> tuple[dict, dict, dict]:
+            if is_train and not skipped["done"]:
+                skipped["done"] = True
+                return {}, {}, {}
+            return original_get_data(is_train=is_train, task_key=task_key)
+
+        trainer.get_data = get_data
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "error",
+                message=r"Detected call of `lr_scheduler\.step\(\)` before `optimizer\.step\(\)`.*",
+                category=UserWarning,
+            )
+            trainer.run()
+
+        self.assertTrue(skipped["done"])
+        self.assertEqual(trainer.scheduler.last_epoch, 1)
 
 
 class TestEMATraining(unittest.TestCase):

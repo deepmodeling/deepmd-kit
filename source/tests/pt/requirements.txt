@@ -4,3 +4,4 @@ dpdata
 ase
 coverage
 pytest
+e3nn
