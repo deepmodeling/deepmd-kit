@@ -209,12 +209,9 @@ The minimal structure is:
       "rcut": 6.0,
       "channels": 64,
       "n_radial": 16,
-      "l_schedule": [
-        3,
-        3,
-        2
-      ],
+      "lmax": 3,
       "mmax": 1,
+      "n_blocks": 3,
       "precision": "float32"
     },
     "fitting_net": {
@@ -233,17 +230,17 @@ The minimal structure is:
 | Parameter      | Default     | Meaning                                                                       |
 | -------------- | ----------- | ----------------------------------------------------------------------------- |
 | `sel`          | Required    | Maximum selected neighbors. It may be an integer, a per-type list, or `auto`. |
-| `rcut`         | Required    | Neighbor cutoff radius.                                                       |
+| `rcut`         | `6.0`       | Neighbor cutoff radius.                                                       |
 | `env_exp`      | `[7, 5]`    | Envelope exponents for radial basis and message weights.                      |
 | `channels`     | `64`        | Feature width per angular coefficient.                                        |
 | `basis_type`   | `"bessel"`  | Radial basis family. `"gaussian"` is also supported.                          |
-| `n_radial`     | `10`        | Number of radial basis functions.                                             |
-| `radial_mlp`   | `[64]`      | Hidden sizes for the radial network. Use `0` as a placeholder for `channels`. |
-| `lmax`         | `2`         | Maximum SO(3) degree when `l_schedule` is not set.                            |
+| `n_radial`     | `16`        | Number of radial basis functions.                                             |
+| `radial_mlp`   | `[0]`       | Hidden sizes for the radial network. Use `0` as a placeholder for `channels`. |
+| `lmax`         | `3`         | Maximum SO(3) degree when `l_schedule` is not set.                            |
 | `l_schedule`   | `None`      | Per-block degree schedule. Non-increasing schedules reduce later-block cost.  |
-| `mmax`         | `None`      | Maximum SO(2) order when `m_schedule` is not set.                             |
+| `mmax`         | `1`         | Maximum SO(2) order when `m_schedule` is not set.                             |
 | `m_schedule`   | `None`      | Per-block SO(2) order schedule.                                               |
-| `n_blocks`     | `2`         | Number of blocks when `l_schedule` is not set.                                |
+| `n_blocks`     | `3`         | Number of blocks when `l_schedule` is not set.                                |
 | `n_focus`      | `1`         | Number of focus streams inside SO(2) convolution.                             |
 | `n_atten_head` | `1`         | Number of attention heads. Set to `0` for plain scatter aggregation.          |
 | `so2_layers`   | `4`         | Number of SO2Linear layers inside one SO(2) convolution.                      |
@@ -256,7 +253,7 @@ The minimal structure is:
 | -------------------------- | -------- | ------------------------------------------------- |
 | `model.type`               | Required | Use `"dpa4"`.                                     |
 | `model.use_compile`        | `false`  | Enable the PyTorch `torch.compile` training path. |
-| `model.enable_tf32`        | `false`  | Allow TF32 matmul when compile is used.           |
+| `model.enable_tf32`        | `true`   | Allow TF32 matmul when compile is used.           |
 | `model.bridging_method`    | `"none"` | Use `"zbl"` to enable ZBL zone bridging.          |
 | `model.bridging_r_inner`   | `0.8`    | Inner radius of the bridging window.              |
 | `model.bridging_r_outer`   | `1.2`    | Outer radius of the bridging window.              |
@@ -328,7 +325,7 @@ denoising mode is not used together with spin.
 
 ## `torch.compile`
 
-DPA4 can train through a `torch.compile` path:
+DPA4 can train through an experimental `torch.compile` path:
 
 ```json
 {
@@ -343,6 +340,10 @@ differentiates energy to obtain forces and then differentiates the force
 loss with respect to model parameters. The training graph therefore
 contains second-order coordinate derivatives. DPA4 traces this graph before
 passing it to Inductor.
+
+This is an experimental feature. It requires PyTorch >= 2.11. On NVIDIA
+GPUs, CUDA must be >= 12.6. Apple Silicon Macs are also supported. It has
+been tested with Python 3.13.
 
 For evaluation-time compile during validation, set:
 

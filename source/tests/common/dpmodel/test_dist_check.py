@@ -92,6 +92,45 @@ class TestComputeMinPairDistSingle(unittest.TestCase):
         dist = compute_min_pair_dist_single(coord, box=None, atype=atype)
         np.testing.assert_almost_equal(dist, 0.8)
 
+    def test_stop_below_triggers_early_exit(self) -> None:
+        """A pair below stop_below should still return the correct minimum."""
+        coord = np.array([0.0, 0.0, 0.0, 0.05, 0.0, 0.0, 10.0, 0.0, 0.0])
+        atype = np.array([0, 0, 0])
+        dist = compute_min_pair_dist_single(
+            coord, box=None, atype=atype, stop_below=0.1
+        )
+        np.testing.assert_almost_equal(dist, 0.05)
+
+    def test_stop_below_not_triggered(self) -> None:
+        """If all pairs are above stop_below, the true minimum is returned."""
+        coord = np.array([0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 2.0, 0.0, 0.0])
+        atype = np.array([0, 0, 0])
+        dist = compute_min_pair_dist_single(
+            coord, box=None, atype=atype, stop_below=0.5
+        )
+        np.testing.assert_almost_equal(dist, 1.0)
+
+    def test_multi_block_iteration(self) -> None:
+        """>512 atoms exercises multiple row blocks."""
+        rng = np.random.default_rng(42)
+        nloc = 600
+        coord = rng.uniform(0.0, 100.0, (nloc, 3))
+        atype = np.zeros(nloc, dtype=np.int64)
+        diff = coord[:, np.newaxis, :] - coord[np.newaxis, :, :]
+        dist = np.sqrt(np.sum(diff * diff, axis=-1))
+        np.fill_diagonal(dist, np.inf)
+        ref = dist.min()
+
+        actual = compute_min_pair_dist_single(coord, box=None, atype=atype)
+        np.testing.assert_almost_equal(actual, ref, decimal=10)
+
+    def test_coincident_atoms_zero(self) -> None:
+        """Coincident real atoms should return exactly zero."""
+        coord = np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0])
+        atype = np.array([0, 0, 0])
+        dist = compute_min_pair_dist_single(coord, box=None, atype=atype)
+        self.assertEqual(dist, 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()

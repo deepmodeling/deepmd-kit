@@ -32,6 +32,9 @@ from deepmd.pt.utils.env import (
 from deepmd.pt.utils.utils import (
     get_generator,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 from .activation import (
     GatedActivation,
@@ -328,6 +331,33 @@ class SO2Linear(nn.Module):
         self._cached_weight = None
         return super().train(mode)
 
+    def _apply(self, fn: Any) -> SO2Linear:
+        """Invalidate weight cache on device or dtype moves."""
+        self._cached_weight = None
+        return super()._apply(fn)
+
+    def _load_from_state_dict(
+        self,
+        state_dict: dict[str, torch.Tensor],
+        prefix: str,
+        local_metadata: dict[str, Any],
+        strict: bool,
+        missing_keys: list[str],
+        unexpected_keys: list[str],
+        error_msgs: list[str],
+    ) -> None:
+        """Invalidate weight cache before loading new weights."""
+        self._cached_weight = None
+        super()._load_from_state_dict(
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
+        )
+
     def _build_so2_weight(self) -> torch.Tensor:
         """
         Assemble the per-focus block-diagonal SO(2) weight matrix.
@@ -439,8 +469,7 @@ class SO2Linear(nn.Module):
         if data_cls != "SO2Linear":
             raise ValueError(f"Invalid class for SO2Linear: {data_cls}")
         version = int(data.pop("@version"))
-        if version != 1:
-            raise ValueError(f"Unsupported SO2Linear version: {version}")
+        check_version_compatibility(version, 1, 1)
         config = data.pop("config")
         variables = data.pop("@variables")
         precision = config.pop("precision")
@@ -642,7 +671,8 @@ class DynamicRadialDegreeMixer(nn.Module):
             )
             kernel = self._scatter_rank_kernel(compact)
             mixed = torch.einsum("eoir,eic->eorc", kernel, x_local)
-            return torch.einsum("eorc,rc->eoc", mixed, self.channel_basis)
+            channel_basis = self.channel_basis.view(1, 1, self.rank, self.channels)
+            return (mixed * channel_basis).sum(dim=2)
 
         compact = kernel_flat.view(
             x_local.shape[0], self.degree_kernel_size, self.channels
@@ -1296,6 +1326,7 @@ class SO2Convolution(nn.Module):
             )  # (E, F, Cf)
 
         # === Step 4. Convert to SO(2) internal focus layout ===
+        focus_gate_src: torch.Tensor | None = None
         with nvtx_range("SO2Conv/reshape_for_so2"):
             x_local = x_local.reshape(
                 n_edge, self.reduced_dim, self.n_focus, self.so2_focus_dim
@@ -1338,7 +1369,12 @@ class SO2Convolution(nn.Module):
             if self.use_so2_attn_res:
                 so2_depth_sources = [x_local]
                 for layer_idx, (so2_linear, inter_norm, non_linear) in enumerate(
-                    zip(self.so2_linears, self.so2_inter_norms, self.non_linearities)
+                    zip(
+                        self.so2_linears,
+                        self.so2_inter_norms,
+                        self.non_linearities,
+                        strict=True,
+                    )
                 ):
                     x_local: torch.Tensor = self.so2_layer_attn_res[layer_idx](
                         sources=so2_depth_sources,
@@ -1362,7 +1398,12 @@ class SO2Convolution(nn.Module):
                     so2_depth_sources.append(x_local - residual)
             else:
                 for layer_idx, (so2_linear, inter_norm, non_linear) in enumerate(
-                    zip(self.so2_linears, self.so2_inter_norms, self.non_linearities)
+                    zip(
+                        self.so2_linears,
+                        self.so2_inter_norms,
+                        self.non_linearities,
+                        strict=True,
+                    )
                 ):
                     residual = x_local
                     x_local = inter_norm(x_local)
@@ -1606,8 +1647,7 @@ class SO2Convolution(nn.Module):
         if data_cls != "SO2Convolution":
             raise ValueError(f"Invalid class for SO2Convolution: {data_cls}")
         version = int(data.pop("@version"))
-        if version != 1:
-            raise ValueError(f"Unsupported SO2Convolution version: {version}")
+        check_version_compatibility(version, 1, 1)
         config = data.pop("config")
         variables = data.pop("@variables")
         precision = config.pop("precision")

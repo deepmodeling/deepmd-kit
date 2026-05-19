@@ -31,6 +31,8 @@ import torch
 
 from deepmd.pt.entrypoints.freeze_pt2 import (
     _build_dynamic_shapes,
+    _collect_metadata,
+    _make_sample_inputs,
     _resolve_nframes,
     freeze_sezm_to_pt2,
     is_sezm_checkpoint,
@@ -349,19 +351,24 @@ class TestSeZMExportArchive(_FrozenPt2Fixture, unittest.TestCase):
         self.assertTrue(zipfile.is_zipfile(str(self.out_path)))
         with zipfile.ZipFile(str(self.out_path), "r") as zf:
             names = zf.namelist()
-            self.assertIn("extra/metadata.json", names)
-            self.assertIn("extra/model_def_script.json", names)
-            metadata = json.loads(zf.read("extra/metadata.json").decode("utf-8"))
-            mds = json.loads(zf.read("extra/model_def_script.json").decode("utf-8"))
+            self.assertIn("model/extra/metadata.json", names)
+            self.assertIn("model/extra/model_def_script.json", names)
+            metadata = json.loads(zf.read("model/extra/metadata.json").decode("utf-8"))
+            mds = json.loads(
+                zf.read("model/extra/model_def_script.json").decode("utf-8")
+            )
 
         for key in (
             "type_map",
+            "ntypes",
             "rcut",
             "sel",
             "dim_fparam",
             "dim_aparam",
+            "dim_chg_spin",
             "mixed_types",
             "has_default_fparam",
+            "default_chg_spin",
             "output_keys",
             "fitting_output_defs",
             "sel_type",
@@ -370,12 +377,15 @@ class TestSeZMExportArchive(_FrozenPt2Fixture, unittest.TestCase):
             self.assertIn(key, metadata)
 
         self.assertEqual(metadata["type_map"], self.params["type_map"])
+        self.assertEqual(metadata["ntypes"], len(self.params["type_map"]))
         self.assertEqual(metadata["rcut"], self.params["descriptor"]["rcut"])
         self.assertEqual(list(metadata["sel"]), list(self.params["descriptor"]["sel"]))
         self.assertTrue(metadata["mixed_types"])
         self.assertFalse(metadata["is_spin"])
         self.assertEqual(metadata["dim_fparam"], 0)
         self.assertEqual(metadata["dim_aparam"], 0)
+        self.assertEqual(metadata["dim_chg_spin"], 0)
+        self.assertIsNone(metadata["default_chg_spin"])
         # sel_type must agree with the eager SeZM model — this is the
         # field DeepEval._init_from_metadata reads when no model.json is
         # present.  DPA4 / SeZM's dpa4_ener fitting head enumerates every type,
@@ -401,9 +411,9 @@ class TestSeZMExportArchive(_FrozenPt2Fixture, unittest.TestCase):
         # AOTICompiledModel returns an immutable_dict on PyTorch ≥2.11
         # and a flat tuple on older versions; normalise both.
         with zipfile.ZipFile(str(self.out_path), "r") as zf:
-            output_keys = json.loads(zf.read("extra/metadata.json").decode("utf-8"))[
-                "output_keys"
-            ]
+            output_keys = json.loads(
+                zf.read("model/extra/metadata.json").decode("utf-8")
+            )["output_keys"]
         if hasattr(outs, "items"):
             out_map = dict(outs.items())
             self.assertEqual(list(out_map.keys()), output_keys)
@@ -573,6 +583,32 @@ class TestSeZMViaDeepPot(_FrozenPt2Fixture, unittest.TestCase):
 class TestSeZMFreezeGuards(unittest.TestCase):
     """Error paths: detector rejections and CLI-level ``NotImplementedError``s."""
 
+    def test_metadata_records_ntypes_when_type_map_is_empty(self) -> None:
+        """Metadata-only loaders need ntypes even when no type names are exported."""
+        model = _build_tiny_sezm_model()
+        with mock.patch.object(model, "get_type_map", return_value=[]):
+            metadata = _collect_metadata(model, ["energy"])
+
+        self.assertEqual(metadata["type_map"], [])
+        self.assertEqual(metadata["ntypes"], model.get_descriptor().get_ntypes())
+
+    def test_charge_spin_export_sample_has_runtime_input_slot(self) -> None:
+        """Charge/spin-conditioned exports should not bake defaults into the graph."""
+        params = _tiny_sezm_model_params()
+        params["descriptor"]["add_chg_spin_ebd"] = True
+        params["descriptor"]["default_chg_spin"] = [0.0, 1.0]
+        model = get_model(params).to(_CPU).eval()
+
+        sample_inputs = _make_sample_inputs(model, nframes=5, nloc=7, device=_CPU)
+        metadata = _collect_metadata(model, ["energy"])
+        dynamic_shapes = _build_dynamic_shapes(sample_inputs)
+
+        self.assertEqual(len(sample_inputs), 7)
+        self.assertEqual(sample_inputs[-1].shape, (5, 2))
+        self.assertEqual(len(dynamic_shapes), len(sample_inputs))
+        self.assertEqual(metadata["dim_chg_spin"], 2)
+        self.assertEqual(metadata["default_chg_spin"], [0.0, 1.0])
+
     def test_is_sezm_checkpoint_rejects_non_sezm(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             ckpt_path = Path(tmp) / "ener.pt"
@@ -602,7 +638,7 @@ class TestSeZMFreezeGuards(unittest.TestCase):
             with self.assertRaises(NotImplementedError):
                 freeze_sezm_to_pt2(str(ckpt_path), str(out), head="branch")
 
-    def test_freeze_rejects_multi_task(self) -> None:
+    def test_freeze_requires_head_for_multi_task(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             ckpt_path = Path(tmp) / "multi.pt"
             torch.save(
@@ -619,8 +655,45 @@ class TestSeZMFreezeGuards(unittest.TestCase):
                 ckpt_path,
             )
             out = Path(tmp) / "out.pt2"
-            with self.assertRaises(NotImplementedError):
+            with self.assertRaises(ValueError):
                 freeze_sezm_to_pt2(str(ckpt_path), str(out))
+
+    def test_freeze_accepts_multi_task_dpa4_head(self) -> None:
+        """Multitask DPA4 checkpoints should export the selected branch."""
+
+        def fake_compile(_exported: torch.export.ExportedProgram, package_path: str):
+            with zipfile.ZipFile(package_path, "w") as zf:
+                zf.writestr("model/data.pkl", b"")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            branch_params = _tiny_sezm_model_params()
+            branch_params["type"] = "dpa4"
+            branch_params["descriptor"]["type"] = "dpa4"
+            params = {"model_dict": {"Domains_Alloy": branch_params}}
+            model = {
+                "Domains_Alloy": get_model(copy.deepcopy(branch_params)).to(_CPU).eval()
+            }
+            wrapper = ModelWrapper(model, model_params=copy.deepcopy(params))
+            ckpt_path = tmp_path / "multi_dpa4.pt"
+            torch.save({"model": wrapper.state_dict()}, ckpt_path)
+            out = tmp_path / "multi_dpa4.pt2"
+
+            self.assertTrue(is_sezm_checkpoint(str(ckpt_path)))
+            with mock.patch(
+                "torch._inductor.aoti_compile_and_package",
+                side_effect=fake_compile,
+            ):
+                freeze_sezm_to_pt2(
+                    str(ckpt_path), str(out), device=_CPU, head="Domains_Alloy"
+                )
+
+            with zipfile.ZipFile(str(out), "r") as zf:
+                model_def = json.loads(
+                    zf.read("model/extra/model_def_script.json").decode("utf-8")
+                )
+
+        self.assertEqual(model_def["type"], "dpa4")
 
     def test_freeze_accepts_spin_checkpoint_metadata(self) -> None:
         """SeZM spin checkpoints should export a spin-compatible pt2 contract."""
@@ -648,6 +721,9 @@ class TestSeZMFreezeGuards(unittest.TestCase):
 
         self.assertTrue(metadata["is_spin"])
         self.assertEqual(metadata["type_map"], params["type_map"])
+        self.assertEqual(metadata["ntypes"], len(params["type_map"]))
+        self.assertEqual(metadata["dim_chg_spin"], 0)
+        self.assertIsNone(metadata["default_chg_spin"])
         self.assertEqual(metadata["use_spin"], params["spin"]["use_spin"])
         self.assertEqual(metadata["ntypes_spin"], 1)
         self.assertIn("energy_derv_r_mag", metadata["output_keys"])

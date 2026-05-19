@@ -509,6 +509,33 @@ class SeZMNetworkCollection(torch.nn.Module):
         return cls(**data)
 
 
+def _resolve_auto_neuron(
+    neuron: list[int] | None,
+    *,
+    dim_descrpt: int,
+    numb_fparam: int,
+    numb_aparam: int,
+    dim_case_embd: int,
+    case_film_embd: bool,
+    use_aparam_as_mask: bool,
+) -> list[int]:
+    """Resolve SeZM fitting hidden widths, using 0 as the auto-width marker."""
+    resolved_neuron = [0] if neuron is None else [int(width) for width in neuron]
+    if any(width < 0 for width in resolved_neuron):
+        raise ValueError("`fitting_net.neuron` entries must be >= 0")
+    if 0 not in resolved_neuron:
+        return resolved_neuron
+    case_dim = 0 if case_film_embd else int(dim_case_embd)
+    dim_in = (
+        int(dim_descrpt)
+        + int(numb_fparam)
+        + (0 if use_aparam_as_mask else int(numb_aparam))
+        + case_dim
+    )
+    resolved_width = int(32 * math.ceil((8.0 * float(dim_in) / 3.0) / 32.0))
+    return [resolved_width if width == 0 else width for width in resolved_neuron]
+
+
 @Fitting.register("dpa4_ener")
 @Fitting.register("sezm_ener")
 class SeZMEnergyFittingNet(InvarFitting):
@@ -523,7 +550,7 @@ class SeZMEnergyFittingNet(InvarFitting):
         self,
         ntypes: int,
         dim_descrpt: int,
-        neuron: list[int] = [128, 128, 128],
+        neuron: list[int] | None = None,
         bias_atom_e: torch.Tensor | None = None,
         resnet_dt: bool = False,
         numb_fparam: int = 0,
@@ -532,13 +559,22 @@ class SeZMEnergyFittingNet(InvarFitting):
         case_film_embd: bool = False,
         activation_function: str = "silu",
         bias_out: bool = False,
-        precision: str = DEFAULT_PRECISION,
+        precision: str = "float32",
         mixed_types: bool = True,
         seed: int | list[int] | None = None,
         type_map: list[str] | None = None,
         default_fparam: list | None = None,
         **kwargs: Any,
     ) -> None:
+        neuron = _resolve_auto_neuron(
+            neuron,
+            dim_descrpt=dim_descrpt,
+            numb_fparam=numb_fparam,
+            numb_aparam=numb_aparam,
+            dim_case_embd=dim_case_embd,
+            case_film_embd=case_film_embd,
+            use_aparam_as_mask=bool(kwargs.get("use_aparam_as_mask", False)),
+        )
         super().__init__(
             "energy",
             ntypes,

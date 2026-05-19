@@ -25,6 +25,9 @@ from deepmd.pt.utils.env import (
     PRECISION_DICT,
     RESERVED_PRECISION_DICT,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 from .norm import (
     ScalarRMSNorm,
@@ -216,8 +219,7 @@ class DepthAttnRes(nn.Module):
         if data_cls != "DepthAttnRes":
             raise ValueError(f"Invalid class for DepthAttnRes: {data_cls}")
         version = int(data.pop("@version"))
-        if version != 1:
-            raise ValueError(f"Unsupported DepthAttnRes version: {version}")
+        check_version_compatibility(version, 1, 1)
         config = data.pop("config")
         variables = data.pop("@variables")
         precision = config.pop("precision")

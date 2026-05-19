@@ -37,6 +37,9 @@ from deepmd.pt.utils.env import (
 from deepmd.pt.utils.utils import (
     ActivationFn,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 from .norm import (
     RMSNorm,
@@ -159,8 +162,7 @@ class RadialMLP(nn.Module):
         if data_cls != "RadialMLP":
             raise ValueError(f"Invalid class for RadialMLP: {data_cls}")
         version = int(data.pop("@version"))
-        if version != 1:
-            raise ValueError(f"Unsupported RadialMLP version: {version}")
+        check_version_compatibility(version, 1, 1)
         variables = data.pop("@variables")
         data["dtype"] = PRECISION_DICT[data["dtype"]]
         obj = cls(**data)
@@ -235,6 +237,8 @@ class C3CutoffEnvelope(torch.nn.Module):
         dtype: torch.dtype = torch.float32,
     ) -> None:
         super().__init__()
+        if rcut <= 0.0:
+            raise ValueError("`rcut` must be positive")
         if exponent <= 0:
             raise ValueError("`exponent` must be positive")
         self.rcut = float(rcut)
@@ -485,6 +489,8 @@ class RadialBasis(nn.Module):
     ) -> None:
         super().__init__()
         self.rcut = float(rcut)
+        if self.rcut <= 0.0:
+            raise ValueError("`rcut` must be positive")
         self.n_radial = int(n_radial)
         if self.n_radial <= 0:
             raise ValueError("`n_radial` must be positive")
@@ -591,8 +597,7 @@ class RadialBasis(nn.Module):
         if data_cls != "RadialBasis":
             raise ValueError(f"Invalid class for RadialBasis: {data_cls}")
         version = int(data.pop("@version"))
-        if version != 1:
-            raise ValueError(f"Unsupported RadialBasis version: {version}")
+        check_version_compatibility(version, 1, 1)
         config = data.pop("config", data)
         variables = data.pop("@variables", None)
         precision = config["precision"]

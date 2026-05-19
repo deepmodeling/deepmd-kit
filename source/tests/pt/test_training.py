@@ -39,6 +39,7 @@ from deepmd.pt.utils.finetune import (
     get_finetune_rules,
 )
 from deepmd.pt.utils.multi_task import (
+    _cascade_top_level_defaults,
     preprocess_shared_params,
 )
 from deepmd.utils.argcheck import (
@@ -1008,6 +1009,30 @@ class TestFullValidation(unittest.TestCase):
         config = update_deepmd_input(config, warning=False)
         with self.assertRaisesRegex(ValueError, "multi-task"):
             normalize(config, multi_task=True)
+
+
+class TestMultiTaskUtils(unittest.TestCase):
+    def test_cascade_top_level_defaults(self) -> None:
+        cfg = {"foo": 1, "model_dict": {"a": {}, "b": {"foo": 2}}}
+        _cascade_top_level_defaults(cfg)
+
+        self.assertEqual(cfg["model_dict"]["a"]["foo"], 1)
+        self.assertEqual(cfg["model_dict"]["b"]["foo"], 2)
+        self.assertNotIn("foo", cfg)
+
+    def test_cascade_keeps_reserved_top_level_keys(self) -> None:
+        cfg = {"shared_dict": {"x": 1}, "model_dict": {"a": {}}}
+        _cascade_top_level_defaults(cfg)
+
+        self.assertIn("shared_dict", cfg)
+        self.assertNotIn("shared_dict", cfg["model_dict"]["a"])
+
+    def test_cascade_deepcopy_independence(self) -> None:
+        cfg = {"foo": [1, 2], "model_dict": {"a": {}, "b": {}}}
+        _cascade_top_level_defaults(cfg)
+        cfg["model_dict"]["a"]["foo"].append(99)
+
+        self.assertEqual(cfg["model_dict"]["b"]["foo"], [1, 2])
 
 
 class TestSkippedTrainingBatch(unittest.TestCase):

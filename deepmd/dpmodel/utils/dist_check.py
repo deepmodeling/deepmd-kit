@@ -7,11 +7,14 @@ from __future__ import (
 
 import numpy as np
 
+_MIN_PAIR_DIST_BLOCK_PAIRS = 262_144
+
 
 def compute_min_pair_dist_single(
     coord: np.ndarray,
     box: np.ndarray | None,
     atype: np.ndarray,
+    stop_below: float | None = None,
 ) -> float:
     """Compute the minimum pairwise atomic distance for a single frame.
 
@@ -25,6 +28,9 @@ def compute_min_pair_dist_single(
     atype : np.ndarray
         Atom types with shape (natoms,). Virtual atoms (type < 0)
         are excluded from the distance check.
+    stop_below : float or None
+        Optional early-stop threshold. If a block has any pair closer
+        than this value, the block minimum is returned immediately.
 
     Returns
     -------
@@ -41,19 +47,38 @@ def compute_min_pair_dist_single(
     if n_real < 2:
         return float("inf")
 
-    # === Step 2. Compute pairwise displacement vectors ===
-    diff = real_coord[np.newaxis, :, :] - real_coord[:, np.newaxis, :]
-
-    # === Step 3. Apply minimum image convention for PBC ===
+    # === Step 2. Prepare minimum image convention for PBC ===
     if box is not None:
         cell = box.reshape(3, 3)
         inv_cell = np.linalg.inv(cell)
-        frac_diff = diff @ inv_cell
-        frac_diff -= np.round(frac_diff)
-        diff = frac_diff @ cell
+    else:
+        cell = None
+        inv_cell = None
 
-    # === Step 4. Compute distances and exclude self-pairs ===
-    dist_sq = np.sum(diff * diff, axis=-1)
-    np.fill_diagonal(dist_sq, np.inf)
+    # === Step 3. Compute distances in bounded row blocks ===
+    block_size = max(1, min(n_real, _MIN_PAIR_DIST_BLOCK_PAIRS // n_real))
+    min_dist_sq = float("inf")
+    stop_dist_sq = (
+        float(stop_below) * float(stop_below)
+        if stop_below is not None and stop_below > 0.0
+        else None
+    )
+    for start in range(0, n_real, block_size):
+        stop = min(start + block_size, n_real)
+        diff = real_coord[np.newaxis, :, :] - real_coord[start:stop, np.newaxis, :]
 
-    return float(np.sqrt(dist_sq.min()))
+        if cell is not None and inv_cell is not None:
+            frac_diff = diff @ inv_cell
+            frac_diff -= np.round(frac_diff)
+            diff = frac_diff @ cell
+
+        dist_sq = np.sum(diff * diff, axis=-1)
+        rows = np.arange(stop - start, dtype=np.int64)
+        dist_sq[rows, start + rows] = np.inf
+        min_dist_sq = min(min_dist_sq, float(dist_sq.min()))
+        if min_dist_sq == 0.0 or (
+            stop_dist_sq is not None and min_dist_sq < stop_dist_sq
+        ):
+            break
+
+    return float(np.sqrt(min_dist_sq))

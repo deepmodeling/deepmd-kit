@@ -39,6 +39,9 @@ from deepmd.pt.utils.utils import (
     ActivationFn,
     get_generator,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 from .indexing import (
     build_l_major_index,
@@ -255,8 +258,7 @@ class GatedActivation(nn.Module):
         if data_cls != "GatedActivation":
             raise ValueError(f"Invalid class for GatedActivation: {data_cls}")
         version = int(data.pop("@version"))
-        if version != 1:
-            raise ValueError(f"Unsupported GatedActivation version: {version}")
+        check_version_compatibility(version, 1, 1)
         config = data.pop("config")
         variables = data.pop("@variables")
         precision = config.pop("precision")
@@ -494,8 +496,7 @@ class S2GridProjector(nn.Module):
         if data_cls != "S2GridProjector":
             raise ValueError(f"Invalid class for S2GridProjector: {data_cls}")
         version = int(data.pop("@version"))
-        if version != 1:
-            raise ValueError(f"Unsupported S2GridProjector version: {version}")
+        check_version_compatibility(version, 1, 1)
         config = data.pop("config")
         data.pop("@variables", None)
         precision = config.pop("precision")
@@ -720,8 +721,7 @@ class SwiGLUS2Activation(nn.Module):
         if data_cls != "SwiGLUS2Activation":
             raise ValueError(f"Invalid class for SwiGLUS2Activation: {data_cls}")
         version = int(data.pop("@version"))
-        if version != 1:
-            raise ValueError(f"Unsupported SwiGLUS2Activation version: {version}")
+        check_version_compatibility(version, 1, 1)
         config = data.pop("config")
         variables = data.pop("@variables")
         precision = config.pop("precision")

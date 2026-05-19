@@ -561,12 +561,12 @@ def descrpt_se_zm_args() -> list[Argument]:
         Argument(
             "basis_type", str, optional=True, default="bessel", doc=doc_basis_type
         ),
-        Argument("n_radial", int, optional=True, default=10, doc=doc_n_radial),
+        Argument("n_radial", int, optional=True, default=16, doc=doc_n_radial),
         Argument(
             "radial_mlp",
             list[int],
             optional=True,
-            default=[64],
+            default=[0],
             doc=doc_radial_mlp,
         ),
         Argument(
@@ -583,7 +583,7 @@ def descrpt_se_zm_args() -> list[Argument]:
             default=True,
             doc=doc_only_pt_supported + doc_random_gamma,
         ),
-        Argument("lmax", int, optional=True, default=2, doc=doc_lmax),
+        Argument("lmax", int, optional=True, default=3, doc=doc_lmax),
         Argument(
             "l_schedule", list[int], optional=True, default=None, doc=doc_l_schedule
         ),
@@ -591,13 +591,13 @@ def descrpt_se_zm_args() -> list[Argument]:
             "mmax",
             [int, None],
             optional=True,
-            default=None,
+            default=1,
             doc=doc_mmax,
         ),
         Argument(
             "m_schedule", list[int], optional=True, default=None, doc=doc_m_schedule
         ),
-        Argument("n_blocks", int, optional=True, default=2, doc=doc_n_blocks),
+        Argument("n_blocks", int, optional=True, default=3, doc=doc_n_blocks),
         Argument("so2_norm", bool, optional=True, default=False, doc=doc_so2_norm),
         Argument("so2_layers", int, optional=True, default=4, doc=doc_so2_layers),
         Argument(
@@ -613,7 +613,7 @@ def descrpt_se_zm_args() -> list[Argument]:
             "radial_so2_mode",
             str,
             optional=True,
-            default="none",
+            default="degree_channel",
             extra_check=lambda x: x in radial_so2_modes,
             extra_check_errmsg="must be one of 'none', 'degree', or 'degree_channel'",
             doc=doc_only_pt_supported + doc_radial_so2_mode,
@@ -622,7 +622,7 @@ def descrpt_se_zm_args() -> list[Argument]:
             "radial_so2_rank",
             int,
             optional=True,
-            default=0,
+            default=1,
             extra_check=lambda x: x >= 0,
             extra_check_errmsg="must be non-negative",
             doc=doc_only_pt_supported + doc_radial_so2_rank,
@@ -686,7 +686,7 @@ def descrpt_se_zm_args() -> list[Argument]:
             "sandwich_norm",
             list[bool],
             optional=True,
-            default=[True, False, True, False],
+            default=[False, True, True, False],
             doc=doc_only_pt_supported + doc_sandwich_norm,
         ),
         Argument(
@@ -725,7 +725,7 @@ def descrpt_se_zm_args() -> list[Argument]:
             "s2_activation",
             list[bool],
             optional=True,
-            default=[False, False],
+            default=[False, True],
             extra_check=lambda x: len(x) == 2,
             extra_check_errmsg="must be a list of two booleans: [so2_activation, ffn_activation]",
             doc=doc_only_pt_supported + doc_s2_activation,
@@ -734,7 +734,7 @@ def descrpt_se_zm_args() -> list[Argument]:
             "lebedev_quadrature",
             [bool, list[bool]],
             optional=True,
-            default=[False, False],
+            default=True,
             extra_check=lambda x: isinstance(x, bool) or len(x) == 2,
             extra_check_errmsg="must be a boolean or a list of two booleans: [so2_quadrature, ffn_quadrature]",
             doc=doc_only_pt_supported + doc_lebedev_quadrature,
@@ -784,7 +784,7 @@ def descrpt_se_zm_args() -> list[Argument]:
             doc=doc_only_pt_supported + doc_eps,
         ),
         Argument("trainable", bool, optional=True, default=True, doc=doc_trainable),
-        Argument("seed", [int, None], optional=True, doc=doc_seed),
+        Argument("seed", [int, None], optional=True, default=None, doc=doc_seed),
     ]
 
 
@@ -2235,7 +2235,6 @@ def fitting_ener() -> list[Argument]:
     doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
     doc_default_fparam = "The default frame parameter. If set, when `fparam.npy` files are not included in the data system, this value will be used as the default value for the frame parameter in the fitting net."
     doc_dim_case_embd = "The dimension of the case embedding embedding. When training or fine-tuning a multitask model with case embedding embeddings, this number should be set to the number of model branches."
-    doc_case_film_embd = "Whether to use case FiLM conditioning for SeZM shared fitting. When enabled, the case embedding is used to modulate fitting features instead of being concatenated to the fitting input."
     doc_neuron = "The number of neurons in each hidden layer of the fitting net. When two hidden layers are of the same size, a skip connection is built."
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_precision = f"The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
@@ -2275,13 +2274,6 @@ def fitting_ener() -> list[Argument]:
             optional=True,
             default=0,
             doc=doc_only_pt_supported + doc_dim_case_embd,
-        ),
-        Argument(
-            "case_film_embd",
-            bool,
-            optional=True,
-            default=False,
-            doc=doc_only_pt_supported + doc_case_film_embd,
         ),
         Argument(
             "neuron",
@@ -2331,7 +2323,101 @@ def fitting_ener() -> list[Argument]:
 
 @fitting_args_plugin.register("dpa4_ener", alias=["sezm_ener"], doc=doc_ener)
 def fitting_sezm_ener() -> list[Argument]:
-    return fitting_ener()
+    doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
+    doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
+    doc_default_fparam = "The default frame parameter. If set, when `fparam.npy` files are not included in the data system, this value will be used as the default value for the frame parameter in the fitting net."
+    doc_dim_case_embd = "The dimension of the case embedding embedding. When training or fine-tuning a multitask model with case embedding embeddings, this number should be set to the number of model branches."
+    doc_neuron = "The number of neurons in each hidden layer of the fitting net. Use 0 as an auto-width placeholder resolved from the descriptor width."
+    doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
+    doc_precision = f"The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
+    doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
+    doc_trainable = f"Whether the parameters in the fitting net are trainable. This option can be\n\n\
+- bool: True if all parameters of the fitting net are trainable, False otherwise.\n\n\
+- list of bool{doc_only_tf_supported}: Specifies if each layer is trainable. Since the fitting net is composed of hidden layers followed by an output layer, the length of this list should be equal to len(`neuron`)+1."
+    doc_rcond = "The condition number used to determine the initial energy shift for each type of atoms. See `rcond` in :py:meth:`numpy.linalg.lstsq` for more details."
+    doc_seed = "Random seed for parameter initialization of the fitting net"
+    doc_atom_ener = "Specify the atomic energy in vacuum for each type"
+    doc_layer_name = (
+        "The name of the each layer. The length of this list should be equal to n_neuron + 1. "
+        "If two layers, either in the same fitting or different fittings, "
+        "have the same name, they will share the same neural network parameters. "
+        "The shape of these layers should be the same. "
+        "If null is given for a layer, parameters will not be shared."
+    )
+    doc_use_aparam_as_mask = (
+        "Whether to use the aparam as a mask in input."
+        "If True, the aparam will not be used in fitting net for embedding."
+        "When descrpt is se_a_mask, the aparam will be used as a mask to indicate the input atom is real/virtual. And use_aparam_as_mask should be set to True."
+    )
+    doc_case_film_embd = "Whether to use case FiLM conditioning for DPA4/SeZM shared fitting. When enabled, the case embedding is used to modulate fitting features instead of being concatenated to the fitting input."
+    return [
+        Argument("numb_fparam", int, optional=True, default=0, doc=doc_numb_fparam),
+        Argument("numb_aparam", int, optional=True, default=0, doc=doc_numb_aparam),
+        Argument(
+            "default_fparam",
+            list[float],
+            optional=True,
+            default=None,
+            doc=doc_only_pt_supported + doc_default_fparam,
+        ),
+        Argument(
+            "dim_case_embd",
+            int,
+            optional=True,
+            default=0,
+            doc=doc_only_pt_supported + doc_dim_case_embd,
+        ),
+        Argument(
+            "neuron",
+            list[int],
+            optional=True,
+            default=[0],
+            alias=["n_neuron"],
+            doc=doc_neuron,
+        ),
+        Argument(
+            "activation_function",
+            str,
+            optional=True,
+            default="silu",
+            doc=doc_activation_function,
+        ),
+        Argument("precision", str, optional=True, default="float32", doc=doc_precision),
+        Argument("resnet_dt", bool, optional=True, default=False, doc=doc_resnet_dt),
+        Argument(
+            "trainable",
+            [list[bool], bool],
+            optional=True,
+            default=True,
+            doc=doc_trainable,
+        ),
+        Argument(
+            "rcond", [float, type(None)], optional=True, default=None, doc=doc_rcond
+        ),
+        Argument("seed", [int, None], optional=True, default=None, doc=doc_seed),
+        Argument(
+            "atom_ener",
+            list[float | None],
+            optional=True,
+            default=[],
+            doc=doc_atom_ener,
+        ),
+        Argument("layer_name", list[str], optional=True, doc=doc_layer_name),
+        Argument(
+            "use_aparam_as_mask",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_use_aparam_as_mask,
+        ),
+        Argument(
+            "case_film_embd",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_case_film_embd,
+        ),
+    ]
 
 
 @fitting_args_plugin.register("dos", doc=doc_dos)
@@ -2918,14 +3004,12 @@ def sezm_model_args() -> Argument:
         "Used only in multitask models."
     )
     doc_use_compile = (
-        "If True, use compact sparse edges together with symbolic make_fx and "
-        "torch.compile in the DPA4 / SeZM model. "
-        "Only supported in the PyTorch backend."
+        "Experimental feature. If True, use compact sparse edges together with "
+        "symbolic make_fx and torch.compile in the DPA4 / SeZM model. "
+        "Requires PyTorch >= 2.11. NVIDIA GPUs require CUDA >= 12.6. "
+        "Apple Silicon Macs are also supported. Tested with Python 3.13."
     )
-    doc_enable_tf32 = (
-        "If True, enable TF32 matmul precision when use_compile=True. "
-        "Only supported in the PyTorch backend."
-    )
+    doc_enable_tf32 = "If True, enable TF32 matmul precision when use_compile=True."
 
     ca = Argument(
         "dpa4",
@@ -2952,7 +3036,7 @@ def sezm_model_args() -> Argument:
                 "enable_tf32",
                 bool,
                 optional=True,
-                default=False,
+                default=True,
                 doc=doc_only_pt_supported + doc_enable_tf32,
             ),
             Argument(

@@ -9,7 +9,7 @@ same PyTorch implementation; DPA4 is the DPA-series user-facing name.
 | File            | Description                                                                                                                      |
 | --------------- | -------------------------------------------------------------------------------------------------------------------------------- |
 | `input.json`    | Training configuration: tiny DPA4 / SeZM (`channels=16`, two blocks, fp32), 500 Adam steps on `examples/water/data/data_{0..3}`. |
-| `pretrained.pt` | Checkpoint produced by `dp --pt train input.json`.                                                                               |
+| `pretrained.pt` | Shipped checkpoint for the LAMMPS smoke test.                                                                                    |
 | `in.lammps`     | 20-step NVT run at 330 K on 192 water molecules.                                                                                 |
 | `water.lmp`     | LAMMPS data file (192-atom liquid water cell).                                                                                   |
 
@@ -29,8 +29,11 @@ Freeze the checkpoint (the pt backend detects DPA4 / SeZM and writes a
 `.pt2` archive automatically):
 
 ```bash
-dp --pt freeze -c pretrained.pt -o frozen_model
+dp --pt freeze -c model.ckpt.pt -o frozen_model
 ```
+
+To use the shipped smoke-test checkpoint instead of retraining, replace
+`model.ckpt.pt` with `pretrained.pt`.
 
 Run the MD:
 

@@ -65,6 +65,9 @@ from deepmd.pt.utils.exclude_mask import (
 from deepmd.pt.utils.update_sel import (
     UpdateSel,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 from .base_descriptor import (
     BaseDescriptor,
@@ -335,24 +338,24 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         self,
         ntypes: int,
         sel: list[int] | int,
-        rcut: float,
+        rcut: float = 6.0,
         env_exp: list[int] | None = None,
         channels: int = 64,
         basis_type: str = "bessel",
-        n_radial: int = 10,
+        n_radial: int = 16,
         radial_mlp: list[int] | None = None,
         use_env_seed: bool = True,
         random_gamma: bool = True,
-        lmax: int = 2,
+        lmax: int = 3,
         l_schedule: list[int] | None = None,
-        mmax: int | None = None,
+        mmax: int | None = 1,
         m_schedule: list[int] | None = None,
-        n_blocks: int = 2,
+        n_blocks: int = 3,
         so2_norm: bool = False,
         so2_layers: int = 4,
         so2_attn_res: str = "none",
-        radial_so2_mode: str = "none",
-        radial_so2_rank: int = 0,
+        radial_so2_mode: str = "degree_channel",
+        radial_so2_rank: int = 1,
         n_focus: int = 1,
         focus_dim: int = 0,
         n_atten_head: int = 1,
@@ -368,7 +371,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         full_attn_res: str = "none",
         block_attn_res: str = "none",
         s2_activation: list[bool] | None = None,
-        lebedev_quadrature: bool | list[bool] | None = None,
+        lebedev_quadrature: bool | list[bool] | None = True,
         activation_function: str = "silu",
         glu_activation: bool = True,
         use_amp: bool = True,
@@ -414,10 +417,10 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         self.basis_type = str(basis_type).lower()
         self.n_radial = int(n_radial)
         if radial_mlp is None:
-            radial_mlp = [64]
+            radial_mlp = [0]
         self.radial_mlp = [self.channels if x == 0 else int(x) for x in radial_mlp]
         if sandwich_norm is None:
-            sandwich_norm = [True, False, True, False]
+            sandwich_norm = [False, True, True, False]
         if not isinstance(sandwich_norm, (list, tuple)) or len(sandwich_norm) != 4:
             raise ValueError(
                 "sandwich_norm must be a list[bool] of length 4: [so2_pre, so2_post, ffn_pre, ffn_post]"
@@ -428,7 +431,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         self.ffn_pre_norm = self.sandwich_norm[2]
         self.ffn_post_norm = self.sandwich_norm[3]
         if s2_activation is None:
-            s2_activation = [False, False]
+            s2_activation = [False, True]
         if not isinstance(s2_activation, list) or len(s2_activation) != 2:
             raise ValueError(
                 "`s2_activation` must be a list[bool] of length 2: [so2_activation, ffn_activation]"
@@ -959,9 +962,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             # (nf, nloc, nnei), True means keep.
             pair_keep_mask = self.emask(nlist, extended_atype).to(dtype=torch.bool)
         else:
-            pair_keep_mask = torch.ones_like(
-                nlist, dtype=torch.bool, device=self.device
-            )
+            pair_keep_mask = torch.ones_like(nlist, dtype=torch.bool)
 
         # === Step 3. Type embedding (l=0) ===
         with nvtx_range("type_embedding"):
@@ -1769,7 +1770,6 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         statistics do not affect the forward pass. This is a no-op that keeps
         mean/stddev at their initialized values (zero/one) for interface consistency.
         """
-        del merged, path
         # No-op: mean and stddev are already initialized to zero/one in __init__
         # and are not used in forward() due to EquivariantRMSNorm.
 
@@ -1843,8 +1843,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         if type_val not in ("SeZM", "sezm", "dpa4"):
             raise ValueError(f"Invalid type for DescrptSeZM: {type_val}")
         version = int(data.pop("@version"))
-        if version != 1:
-            raise ValueError(f"Unsupported SeZM version: {version}")
+        check_version_compatibility(version, 1, 1)
         config = data.pop("config")
         variables = data.pop("@variables")
         data.pop("env_mat", None)

@@ -25,6 +25,9 @@ import torch.nn as nn
 from deepmd.pt.utils import (
     env,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 from .utils import (
     nvtx_range,
@@ -1507,8 +1510,7 @@ class WignerDCalculator(nn.Module):
         if data_cls != "WignerDCalculator":
             raise ValueError(f"Invalid class for WignerDCalculator: {data_cls}")
         version = int(data.pop("@version"))
-        if version != 1:
-            raise ValueError(f"Unsupported WignerDCalculator version: {version}")
+        check_version_compatibility(version, 1, 1)
         raise NotImplementedError(
             "WignerDCalculator.deserialize should be called by parent with lmax/dtype"
         )

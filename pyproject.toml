@@ -58,7 +58,6 @@ dependencies = [
     'array-api-compat',
     'lmdb',
     'msgpack',
-    'e3nn>=0.5.9',
 ]
 requires-python = ">=3.10"
 keywords = ["deepmd"]

@@ -15,24 +15,20 @@
         5
       ],
       "channels": 64,
-      "basis_type": "bessel",
       "n_radial": 16,
       "radial_mlp": [
         0
       ],
       "use_env_seed": true,
       "random_gamma": true,
-      "l_schedule": [
-        3,
-        3,
-        2
-      ],
+      "lmax": 3,
       "mmax": 1,
-      "so2_norm": false,
+      "n_blocks": 3,
       "so2_layers": 4,
+      "so2_norm": false,
       "so2_attn_res": "none",
       "radial_so2_mode": "degree_channel",
-      "radial_so2_rank": 0,
+      "radial_so2_rank": 1,
       "n_focus": 1,
       "focus_dim": 0,
       "n_atten_head": 1,
@@ -43,8 +39,8 @@
       "grid_mlp": false,
       "ffn_blocks": 1,
       "sandwich_norm": [
-        true,
         false,
+        true,
         true,
         false
       ],
@@ -60,7 +56,6 @@
       "activation_function": "silu",
       "glu_activation": true,
       "use_amp": true,
-      "add_chg_spin_ebd": false,
       "precision": "float32",
       "seed": 42,
       "_comment": "that's all"
@@ -74,7 +69,7 @@
       "seed": 42,
       "_comment": "that's all"
     },
-    "use_compile": true,
+    "use_compile": false,
     "enable_tf32": true,
     "_comment": "that's all"
   },
@@ -155,7 +150,7 @@
     "validation_metric": "E:MAE",
     "full_val_file": "val.log",
     "full_val_start": 100,
-    "compiled_infer": true,
+    "compiled_infer": false,
     "_comment": "that's all"
   }
 }

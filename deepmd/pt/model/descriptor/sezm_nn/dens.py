@@ -39,6 +39,9 @@ from deepmd.pt.utils.env import (
     DEFAULT_PRECISION,
     PRECISION_DICT,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 from .so3 import (
     SO3Linear,
@@ -449,7 +452,7 @@ class SeZMDeNSFittingNet(torch.nn.Module):
     ) -> None:
         super().__init__()
         if neuron is None:
-            neuron = [128, 128, 128]
+            neuron = [0]
         self.ntypes = int(ntypes)
         self.dim_descrpt = int(dim_descrpt)
         self.condition_lmax = int(condition_lmax)
@@ -747,8 +750,7 @@ class SeZMDeNSFittingNet(torch.nn.Module):
         if data.pop("@class") != "SeZMDeNSFittingNet":
             raise ValueError("Invalid class for SeZMDeNSFittingNet deserialization.")
         version = int(data.pop("@version", 1))
-        if version != 1:
-            raise ValueError(f"Unsupported SeZMDeNSFittingNet version: {version}")
+        check_version_compatibility(version, 1, 1)
         config = data.pop("config")
         variables = data.pop("@variables")
         obj = cls(**config)

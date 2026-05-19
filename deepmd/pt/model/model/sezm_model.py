@@ -411,6 +411,9 @@ from deepmd.pt.utils import (
 from deepmd.pt.utils.nlist import (
     extend_input_and_build_neighbor_list,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 log = logging.getLogger(__name__)
 
@@ -576,7 +579,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         self,
         *args: Any,
         use_compile: bool = False,
-        enable_tf32: bool = False,
+        enable_tf32: bool = True,
         bridging_method: str = "none",
         bridging_r_inner: float = 0.8,
         bridging_r_outer: float = 1.2,
@@ -1845,7 +1848,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         model = self
         extra_sort = self.need_sorted_nlist_for_lower()
 
-        def fn(
+        def lower_fn(
             ext_coord: torch.Tensor,
             ext_atype: torch.Tensor,
             nlist_: torch.Tensor,
@@ -1871,15 +1874,39 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 charge_spin=charge_spin_,
             )
 
+        def fn(
+            ext_coord: torch.Tensor,
+            ext_atype: torch.Tensor,
+            nlist_: torch.Tensor,
+            mapping_: torch.Tensor | None,
+            fparam_: torch.Tensor | None,
+            aparam_: torch.Tensor | None,
+            *maybe_charge_spin: torch.Tensor | None,
+        ) -> dict[str, torch.Tensor]:
+            charge_spin_ = maybe_charge_spin[0] if maybe_charge_spin else None
+            return lower_fn(
+                ext_coord,
+                ext_atype,
+                nlist_,
+                mapping_,
+                fparam_,
+                aparam_,
+                charge_spin_,
+            )
+
+        trace_inputs = (extended_coord, extended_atype, nlist, mapping, fparam, aparam)
+        if self.get_dim_chg_spin() > 0:
+            charge_spin = self.convert_charge_spin(
+                charge_spin,
+                nf=extended_atype.shape[0],
+                dtype=extended_coord.dtype,
+                device=extended_coord.device,
+            )
+            trace_inputs = (*trace_inputs, charge_spin)
+
         return self._trace_lower_exportable(
             fn,
-            extended_coord,
-            extended_atype,
-            nlist,
-            mapping,
-            fparam,
-            aparam,
-            charge_spin,
+            *trace_inputs,
         )
 
     # =========================================================================
@@ -2417,8 +2444,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         """
         data = data.copy()
         version = int(data.pop("@version", 1))
-        if version != 1:
-            raise ValueError(f"Unsupported SeZM version: {version}")
+        check_version_compatibility(version, 1, 1)
         data.pop("@class", None)
         data.pop("type", None)
         atomic_model = SeZMAtomicModel.deserialize(data.pop("atomic_model"))

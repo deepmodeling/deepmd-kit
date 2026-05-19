@@ -12,6 +12,61 @@ from deepmd.pt.train.utils import (
 
 
 class TestStableGradClip(unittest.TestCase):
+    def test_fsdp_path_finite_grads(self) -> None:
+        p = torch.nn.Parameter(torch.zeros(1, device="cpu"))
+        p.grad = torch.tensor([2.0], device="cpu")
+        norm = clip_grad_norm_with_stable_fallback(
+            [p],
+            max_norm=1.0,
+            use_stable_fallback=False,
+            named_parameters=lambda: [("p", p)],
+        )
+
+        self.assertTrue(torch.isfinite(norm))
+        self.assertAlmostEqual(p.grad.item(), 1.0, places=5)
+
+    def test_fsdp_path_nonfinite_raises(self) -> None:
+        p = torch.nn.Parameter(torch.zeros(1, device="cpu"))
+        p.grad = torch.tensor([float("nan")], device="cpu")
+
+        with self.assertRaisesRegex(RuntimeError, "p:"):
+            clip_grad_norm_with_stable_fallback(
+                [p],
+                max_norm=1.0,
+                use_stable_fallback=False,
+                named_parameters=lambda: [("p", p)],
+            )
+
+    def test_stable_fallback_nan_individual_grad_raises(self) -> None:
+        p0 = torch.nn.Parameter(torch.zeros(1, device="cpu"))
+        p1 = torch.nn.Parameter(torch.zeros(1, device="cpu"))
+        p0.grad = torch.tensor([float("nan")], device="cpu")
+        p1.grad = torch.tensor([1.0], device="cpu")
+
+        with self.assertRaisesRegex(RuntimeError, "p0:"):
+            clip_grad_norm_with_stable_fallback(
+                [p0, p1],
+                max_norm=1.0,
+                named_parameters=lambda: [("p0", p0), ("p1", p1)],
+            )
+
+    def test_healthy_path_no_overflow(self) -> None:
+        p = torch.nn.Parameter(torch.zeros(1, device="cpu"))
+        p.grad = torch.tensor([0.5], device="cpu")
+        norm = clip_grad_norm_with_stable_fallback(
+            [p],
+            max_norm=1.0,
+            named_parameters=lambda: [("p", p)],
+        )
+
+        self.assertTrue(torch.isfinite(norm))
+        self.assertAlmostEqual(p.grad.item(), 0.5, places=5)
+
+    def test_empty_parameters(self) -> None:
+        norm = clip_grad_norm_with_stable_fallback([], max_norm=1.0)
+
+        self.assertEqual(norm.item(), 0.0)
+
     def test_fallback_clips_large_finite_gradients(self) -> None:
         p0, p1 = self._make_large_grad_parameters()
 

@@ -1,7 +1,7 @@
 {
   "_comment": "DPA4 / SeZM multi-task example with a shared descriptor AND shared fitting net (case-embedded).",
   "model": {
-    "use_compile": true,
+    "use_compile": false,
     "enable_tf32": true,
     "shared_dict": {
       "type_map": [
@@ -23,24 +23,26 @@
         ],
         "use_env_seed": true,
         "random_gamma": true,
-        "l_schedule": [
-          3,
-          3,
-          2
-        ],
+        "lmax": 3,
         "mmax": 1,
-        "so2_norm": false,
+        "n_blocks": 3,
         "so2_layers": 4,
+        "so2_norm": false,
         "so2_attn_res": "none",
+        "radial_so2_mode": "degree_channel",
+        "radial_so2_rank": 1,
         "n_focus": 1,
         "focus_dim": 0,
         "n_atten_head": 1,
+        "atten_f_mix": false,
+        "atten_v_proj": false,
+        "atten_o_proj": false,
         "ffn_neurons": 0,
         "grid_mlp": false,
         "ffn_blocks": 1,
         "sandwich_norm": [
-          true,
           false,
+          true,
           true,
           false
         ],
@@ -52,10 +54,10 @@
           false,
           true
         ],
+        "lebedev_quadrature": true,
         "activation_function": "silu",
         "glu_activation": true,
         "use_amp": true,
-        "add_chg_spin_ebd": false,
         "precision": "float32",
         "seed": 42,
         "_comment": "that's all"
@@ -140,7 +142,6 @@
   "optimizer": {
     "type": "HybridMuon",
     "muon_mode": "slice",
-    "enable_gram": true,
     "magma_muon": true,
     "lr_adjust": 0.0,
     "weight_decay": 0.001

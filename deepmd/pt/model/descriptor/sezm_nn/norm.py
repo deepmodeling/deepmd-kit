@@ -24,6 +24,9 @@ from deepmd.pt.utils.env import (
     PRECISION_DICT,
     RESERVED_PRECISION_DICT,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 from .indexing import (
     map_degree_idx,
@@ -125,8 +128,7 @@ class RMSNorm(nn.Module):
         if data_cls != "RMSNorm":
             raise ValueError(f"Invalid class for RMSNorm: {data_cls}")
         version = int(data.pop("@version"))
-        if version != 1:
-            raise ValueError(f"Unsupported RMSNorm version: {version}")
+        check_version_compatibility(version, 1, 1)
         config = data.pop("config")
         variables = data.pop("@variables")
         precision = config.pop("precision")
@@ -315,8 +317,7 @@ class EquivariantRMSNorm(nn.Module):
         if data_cls != "EquivariantRMSNorm":
             raise ValueError(f"Invalid class for EquivariantRMSNorm: {data_cls}")
         version = int(data.pop("@version"))
-        if version != 1:
-            raise ValueError(f"Unsupported EquivariantRMSNorm version: {version}")
+        check_version_compatibility(version, 1, 1)
         config = data.pop("config")
         variables = data.pop("@variables")
         precision = config.pop("precision")
@@ -518,10 +519,7 @@ class ReducedEquivariantRMSNorm(nn.Module):
         if data_cls != "ReducedEquivariantRMSNorm":
             raise ValueError(f"Invalid class for ReducedEquivariantRMSNorm: {data_cls}")
         version = int(data.pop("@version"))
-        if version != 1:
-            raise ValueError(
-                f"Unsupported ReducedEquivariantRMSNorm version: {version}"
-            )
+        check_version_compatibility(version, 1, 1)
         config = data.pop("config")
         variables = data.pop("@variables")
         degree_index_m = safe_numpy_to_tensor(
@@ -654,8 +652,7 @@ class ScalarRMSNorm(nn.Module):
         if data_cls != "ScalarRMSNorm":
             raise ValueError(f"Invalid class for ScalarRMSNorm: {data_cls}")
         version = int(data.pop("@version"))
-        if version != 1:
-            raise ValueError(f"Unsupported ScalarRMSNorm version: {version}")
+        check_version_compatibility(version, 1, 1)
         config = data.pop("config")
         variables = data.pop("@variables")
         precision = config.pop("precision")

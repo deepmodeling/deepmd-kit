@@ -509,12 +509,14 @@ class DeepmdData:
             )
 
             frame_data["find_min_pair_dist"] = np.float32(1.0)
+            min_pair_dist = float(self.data_dict["min_pair_dist"].get("default", 0.0))
             frame_data["min_pair_dist"] = np.array(
                 [
                     compute_min_pair_dist_single(
                         frame_data["coord"],
                         frame_data.get("box"),
                         frame_data["type"],
+                        stop_below=min_pair_dist,
                     )
                 ],
                 dtype=GLOBAL_NP_FLOAT_PRECISION,

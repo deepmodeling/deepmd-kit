@@ -67,7 +67,9 @@ def map_degree_idx(lmax: int, *, device: torch.device) -> torch.Tensor:
     """
     lmax = int(lmax)
     counts = torch.tensor(
-        [2 * l + 1 for l in range(lmax + 1)], device=device, dtype=torch.long
+        [2 * degree + 1 for degree in range(lmax + 1)],
+        device=device,
+        dtype=torch.long,
     )
     return torch.repeat_interleave(
         torch.arange(lmax + 1, device=device, dtype=torch.long), counts
@@ -175,7 +177,7 @@ def project_Dt_from_m(
     return proj
 
 
-def so3_packed_index(l: int, m: int) -> int:
+def so3_packed_index(degree: int, m: int) -> int:
     """
     Compute packed (l, m) index for real spherical harmonics layout.
 
@@ -186,7 +188,7 @@ def so3_packed_index(l: int, m: int) -> int:
 
     Parameters
     ----------
-    l
+    degree
         Degree l.
     m
         Order m, must satisfy ``-l <= m <= l``.
@@ -196,9 +198,9 @@ def so3_packed_index(l: int, m: int) -> int:
     int
         Packed index.
     """
-    l = int(l)
+    degree = int(degree)
     m = int(m)
-    return l * l + l + m
+    return degree * degree + degree + m
 
 
 def build_l_major_index(lmax: int, mmax: int, *, device: torch.device) -> torch.Tensor:
@@ -244,10 +246,10 @@ def build_l_major_index(lmax: int, mmax: int, *, device: torch.device) -> torch.
         raise ValueError("`mmax` must be <= `lmax`")
 
     indices: list[int] = []
-    for l in range(lmax_i + 1):
-        m_keep = min(mmax_i, l)
+    for degree in range(lmax_i + 1):
+        m_keep = min(mmax_i, degree)
         for m in range(-m_keep, m_keep + 1):
-            indices.append(so3_packed_index(l, m))
+            indices.append(so3_packed_index(degree, m))
     return torch.tensor(indices, device=device, dtype=torch.long)
 
 
@@ -297,15 +299,15 @@ def build_m_major_index(lmax: int, mmax: int, *, device: torch.device) -> torch.
 
     indices: list[int] = []
     # === Step 1. m = 0 group (l = 0..lmax) ===
-    for l in range(lmax_i + 1):
-        indices.append(so3_packed_index(l, 0))
+    for degree in range(lmax_i + 1):
+        indices.append(so3_packed_index(degree, 0))
 
     # === Step 2. m > 0 groups (neg then pos) ===
     for m in range(1, mmax_i + 1):
-        for l in range(m, lmax_i + 1):
-            indices.append(so3_packed_index(l, -m))
-        for l in range(m, lmax_i + 1):
-            indices.append(so3_packed_index(l, m))
+        for degree in range(m, lmax_i + 1):
+            indices.append(so3_packed_index(degree, -m))
+        for degree in range(m, lmax_i + 1):
+            indices.append(so3_packed_index(degree, m))
 
     return torch.tensor(indices, device=device, dtype=torch.long)
 
@@ -350,15 +352,15 @@ def build_m_major_l_index(
 
     degrees: list[int] = []
     # === Step 1. m = 0 group ===
-    for l in range(lmax_i + 1):
-        degrees.append(l)
+    for degree in range(lmax_i + 1):
+        degrees.append(degree)
 
     # === Step 2. m > 0 groups (neg then pos) ===
     for m in range(1, mmax_i + 1):
-        for l in range(m, lmax_i + 1):
-            degrees.append(l)
-        for l in range(m, lmax_i + 1):
-            degrees.append(l)
+        for degree in range(m, lmax_i + 1):
+            degrees.append(degree)
+        for degree in range(m, lmax_i + 1):
+            degrees.append(degree)
 
     return torch.tensor(degrees, device=device, dtype=torch.long)
 

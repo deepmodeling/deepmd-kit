@@ -4,6 +4,7 @@ import json
 import os
 import tempfile
 import unittest
+import warnings
 from unittest import (
     mock,
 )
@@ -31,6 +32,45 @@ from deepmd.pt.utils.nlist import (
 from deepmd.pt.utils.serialization import (
     deserialize_to_file,
 )
+
+warnings.filterwarnings(
+    # Keep the compile-test warning summary focused on strict-tolerance drift.
+    # PyTorch's AOTAutograd cache emits an internal Python 3.14 deprecation
+    # warning that is unrelated to SeZM numerical correctness.
+    "ignore",
+    category=DeprecationWarning,
+    module=r"torch\._functorch\._aot_autograd\.autograd_cache",
+)
+
+
+def _assert_close_with_strict_warning(
+    actual: torch.Tensor,
+    expected: torch.Tensor,
+    *,
+    strict_atol: float = 1.0e-6,
+    strict_rtol: float = 1.0e-6,
+    atol: float,
+    rtol: float,
+    msg: str,
+) -> None:
+    """Warn on strict compile drift, fail only outside relaxed tolerance."""
+    try:
+        torch.testing.assert_close(
+            actual,
+            expected,
+            atol=strict_atol,
+            rtol=strict_rtol,
+            msg=msg,
+        )
+    except AssertionError as err:
+        warnings.warn(
+            f"{msg} exceeds strict tolerance "
+            f"(atol={strict_atol:g}, rtol={strict_rtol:g}) but is checked "
+            f"against relaxed tolerance (atol={atol:g}, rtol={rtol:g}): {err}",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+    torch.testing.assert_close(actual, expected, atol=atol, rtol=rtol, msg=msg)
 
 
 def reduce_tensor(
@@ -64,6 +104,7 @@ class TestSeZMSpinModel(unittest.TestCase):
 
     def setUp(self) -> None:
         self.device = env.DEVICE
+        torch.manual_seed(2024)
         self.coord = torch.tensor(
             [
                 [
@@ -344,17 +385,26 @@ class TestSeZMSpinModel(unittest.TestCase):
         out_compiled = compiled(self.coord, self.atype, spin=self.spin, box=self.box)
 
         self.assertIn((False, False, True), compiled.compiled_core_compute_cache)
-        torch.testing.assert_close(
-            out_compiled["energy"], out_eager["energy"], atol=1.0e-6, rtol=1.0e-6
+        _assert_close_with_strict_warning(
+            out_compiled["energy"],
+            out_eager["energy"],
+            atol=1.0e-6,
+            rtol=1.0e-6,
+            msg="spin compile energy mismatch",
         )
-        torch.testing.assert_close(
-            out_compiled["force"], out_eager["force"], atol=1.0e-6, rtol=1.0e-6
+        _assert_close_with_strict_warning(
+            out_compiled["force"],
+            out_eager["force"],
+            atol=1.0e-6,
+            rtol=1.0e-6,
+            msg="spin compile force mismatch",
         )
-        torch.testing.assert_close(
+        _assert_close_with_strict_warning(
             out_compiled["force_mag"],
             out_eager["force_mag"],
             atol=1.0e-6,
             rtol=1.0e-6,
+            msg="spin compile magnetic force mismatch",
         )
 
 

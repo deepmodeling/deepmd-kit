@@ -480,7 +480,10 @@ class Trainer:
             # add data requirement for labels
             data_requirement = self.loss.label_requirement
             data_requirement += get_additional_data_requirement(self.model)
-            if training_params.get("training_data", {}).get("min_pair_dist", 0.0) > 0.0:
+            min_pair_dist = float(
+                training_params.get("training_data", {}).get("min_pair_dist", 0.0)
+            )
+            if min_pair_dist > 0.0:
                 data_requirement.append(
                     DataRequirementItem(
                         "min_pair_dist",
@@ -488,6 +491,7 @@ class Trainer:
                         atomic=False,
                         must=False,
                         high_prec=False,
+                        default=min_pair_dist,
                     )
                 )
             training_data.add_data_requirement(data_requirement)
@@ -551,10 +555,10 @@ class Trainer:
                 data_requirement += get_additional_data_requirement(
                     self.model[model_key]
                 )
-                if (
+                min_pair_dist = float(
                     training_params.get("training_data", {}).get("min_pair_dist", 0.0)
-                    > 0.0
-                ):
+                )
+                if min_pair_dist > 0.0:
                     data_requirement.append(
                         DataRequirementItem(
                             "min_pair_dist",
@@ -562,6 +566,7 @@ class Trainer:
                             atomic=False,
                             must=False,
                             high_prec=False,
+                            default=min_pair_dist,
                         )
                     )
                 training_data[model_key].add_data_requirement(data_requirement)

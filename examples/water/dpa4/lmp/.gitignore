@@ -1,7 +1,0 @@
-*
-!.gitignore
-!README.md
-!input.json
-!in.lammps
-!water.lmp
-!pretrained.pt

@@ -46,6 +46,9 @@ from deepmd.utils.path import (
 from deepmd.utils.spin import (
     Spin,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 
 @BaseModel.register("sezm_spin")
@@ -304,7 +307,7 @@ class SeZMSpinModel(SeZMModel):
         """Trace the spin lower interface into an exportable FX graph."""
         extra_sort = self.need_sorted_nlist_for_lower()
 
-        def fn(
+        def lower_fn(
             ext_coord: torch.Tensor,
             ext_atype: torch.Tensor,
             ext_spin: torch.Tensor,
@@ -328,8 +331,29 @@ class SeZMSpinModel(SeZMModel):
                 charge_spin=charge_spin_,
             )
 
-        return self._trace_lower_exportable(
-            fn,
+        def fn(
+            ext_coord: torch.Tensor,
+            ext_atype: torch.Tensor,
+            ext_spin: torch.Tensor,
+            nlist_: torch.Tensor,
+            mapping_: torch.Tensor | None,
+            fparam_: torch.Tensor | None,
+            aparam_: torch.Tensor | None,
+            *maybe_charge_spin: torch.Tensor | None,
+        ) -> dict[str, torch.Tensor]:
+            charge_spin_ = maybe_charge_spin[0] if maybe_charge_spin else None
+            return lower_fn(
+                ext_coord,
+                ext_atype,
+                ext_spin,
+                nlist_,
+                mapping_,
+                fparam_,
+                aparam_,
+                charge_spin_,
+            )
+
+        trace_inputs = (
             extended_coord,
             extended_atype,
             extended_spin,
@@ -337,7 +361,19 @@ class SeZMSpinModel(SeZMModel):
             mapping,
             fparam,
             aparam,
-            charge_spin,
+        )
+        if self.get_dim_chg_spin() > 0:
+            charge_spin = self.convert_charge_spin(
+                charge_spin,
+                nf=extended_atype.shape[0],
+                dtype=extended_coord.dtype,
+                device=extended_coord.device,
+            )
+            trace_inputs = (*trace_inputs, charge_spin)
+
+        return self._trace_lower_exportable(
+            fn,
+            *trace_inputs,
         )
 
     # =========================================================================
@@ -484,8 +520,7 @@ class SeZMSpinModel(SeZMModel):
         """Deserialize a SeZM spin model."""
         data = data.copy()
         version = int(data.pop("@version", 1))
-        if version != 1:
-            raise ValueError(f"Unsupported SeZM spin version: {version}")
+        check_version_compatibility(version, 1, 1)
         data.pop("@class", None)
         data.pop("type", None)
         spin = Spin.deserialize(data.pop("spin"))

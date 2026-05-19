@@ -35,6 +35,9 @@ from deepmd.pt.utils.env import (
 from deepmd.pt.utils.utils import (
     get_generator,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 from .indexing import (
     get_so3_dim_of_lmax,
@@ -302,10 +305,7 @@ class GeometricInitialEmbedding(nn.Module):
         if data_cls != "GeometricInitialEmbedding":
             raise ValueError(f"Invalid class for GeometricInitialEmbedding: {data_cls}")
         version = int(data.pop("@version"))
-        if version != 1:
-            raise ValueError(
-                f"Unsupported GeometricInitialEmbedding version: {version}"
-            )
+        check_version_compatibility(version, 1, 1)
         precision = data.pop("precision")
         data["dtype"] = PRECISION_DICT[precision]
         return cls(**data)
@@ -597,8 +597,7 @@ class EnvironmentInitialEmbedding(nn.Module):
         if data_cls != "EnvironmentInitialEmbedding":
             raise ValueError(f"Invalid class: {data_cls}")
         version = int(data.pop("@version"))
-        if version != 1:
-            raise ValueError(f"Unsupported version: {version}")
+        check_version_compatibility(version, 1, 1)
         config = data.pop("config")
         variables = data.pop("@variables")
         precision = config.pop("precision")

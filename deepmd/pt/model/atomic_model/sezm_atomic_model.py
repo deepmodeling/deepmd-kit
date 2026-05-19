@@ -38,6 +38,9 @@ from deepmd.pt.model.task.sezm_ener import (
 from deepmd.pt.utils.utils import (
     to_torch_tensor,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 if TYPE_CHECKING:
     from deepmd.dpmodel import (
@@ -722,7 +725,6 @@ class SeZMAtomicModel(DPAtomicModel):
 
     def _build_dens_fitting_kwargs(self) -> dict[str, Any]:
         """Reconstruct SeZM `dens`-head kwargs from energy head and descriptor."""
-        fitting = self.fitting_net
         descriptor = self.descriptor
         kwargs = self._build_ener_fitting_kwargs()
         kwargs["condition_lmax"] = int(descriptor.l_schedule[0])
@@ -747,8 +749,7 @@ class SeZMAtomicModel(DPAtomicModel):
         """
         payload = data.copy()
         version = int(payload.pop("@version", 2))
-        if version not in (2, 3):
-            raise ValueError(f"Unsupported SeZMAtomicModel version: {version}")
+        check_version_compatibility(version, 3, 2)
         payload.pop("@class", None)
         payload.pop("type", None)
 

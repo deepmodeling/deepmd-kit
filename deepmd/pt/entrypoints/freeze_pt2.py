@@ -26,6 +26,9 @@ from __future__ import (
 import json
 import logging
 import zipfile
+from copy import (
+    deepcopy,
+)
 from typing import (
     Any,
 )
@@ -49,6 +52,9 @@ from deepmd.pt.train.wrapper import (
 from deepmd.pt.utils.env import (
     DEVICE,
 )
+from deepmd.utils.model_branch_dict import (
+    get_model_dict,
+)
 
 log = logging.getLogger(__name__)
 
@@ -57,6 +63,15 @@ def _model_has_spin(model: torch.nn.Module) -> bool:
     """Return whether ``model`` uses the spin lower interface."""
     has_spin = getattr(model, "has_spin", False)
     return bool(has_spin() if callable(has_spin) else has_spin)
+
+
+def _get_model_ntypes(model: torch.nn.Module) -> int:
+    """Return atom type count even when the exported type map is empty."""
+    type_map = list(model.get_type_map())
+    if type_map:
+        return len(type_map)
+    descriptor = model.get_descriptor()
+    return int(descriptor.get_ntypes())
 
 
 def _strip_shape_assertions(graph_module: torch.nn.Module) -> None:
@@ -112,7 +127,61 @@ def is_sezm_checkpoint(ckpt_path: str) -> bool:
         _, params = _extract_state_and_params(raw)
     except ValueError:
         return False
+    if "model_dict" in params:
+        return any(
+            str(branch_params.get("type", "")).lower() in ("sezm", "dpa4")
+            for branch_params in params["model_dict"].values()
+        )
     return str(params.get("type", "")).lower() in ("sezm", "dpa4")
+
+
+def _select_model_head(
+    state_dict: dict[str, Any],
+    params: dict[str, Any],
+    head: str | None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Extract a single selected model branch from a checkpoint."""
+    if "model_dict" not in params:
+        if head is not None:
+            raise NotImplementedError(
+                "SeZM .pt2 freeze does not yet support head selection for single-task checkpoints; pass head=None."
+            )
+        return state_dict, params
+
+    model_alias_dict, _ = get_model_dict(params["model_dict"])
+    model_keys = list(params["model_dict"])
+    if head is None and "Default" in model_alias_dict:
+        head = "Default"
+        log.info(
+            "Using default head %s for multitask SeZM freeze.", model_alias_dict[head]
+        )
+    if head is None:
+        raise ValueError(
+            "Head must be set for multitask SeZM/DPA4 freeze. "
+            f"Available heads are: {model_keys}."
+        )
+    if head not in model_alias_dict:
+        head_lower = head.lower()
+        for key in model_alias_dict:
+            if key.lower() == head_lower:
+                head = key
+                break
+    if head not in model_alias_dict:
+        raise ValueError(
+            f"No head or alias named {head!r} in model. Available heads are: {model_keys}."
+        )
+
+    branch = model_alias_dict[head]
+    branch_params = deepcopy(params["model_dict"][branch])
+    branch_state: dict[str, Any] = {
+        "_extra_state": deepcopy(state_dict.get("_extra_state", {})),
+    }
+    branch_state["_extra_state"]["model_params"] = branch_params
+    prefix = f"model.{branch}."
+    for key, value in state_dict.items():
+        if key.startswith(prefix):
+            branch_state[key.replace(prefix, "model.Default.")] = value
+    return branch_state, branch_params
 
 
 def _to_py_list(value: Any) -> Any:
@@ -167,13 +236,16 @@ def _collect_metadata(
         )
     metadata = {
         "type_map": list(model.get_type_map()),
+        "ntypes": _get_model_ntypes(model),
         "rcut": float(model.get_rcut()),
         "sel": [int(s) for s in model.get_sel()],
         "dim_fparam": int(model.get_dim_fparam()),
         "dim_aparam": int(model.get_dim_aparam()),
+        "dim_chg_spin": int(model.get_dim_chg_spin()),
         "mixed_types": bool(model.mixed_types()),
         "has_default_fparam": bool(model.has_default_fparam()),
         "default_fparam": _to_py_list(model.get_default_fparam()),
+        "default_chg_spin": _to_py_list(model.get_default_chg_spin()),
         "output_keys": list(output_keys),
         "fitting_output_defs": fitting_output_defs,
         # sel_type feeds DeepEval.get_sel_type() in metadata-only mode.
@@ -193,14 +265,7 @@ def _make_sample_inputs(
     nloc: int,
     device: torch.device,
     has_spin: bool = False,
-) -> tuple[
-    torch.Tensor,
-    torch.Tensor,
-    torch.Tensor,
-    torch.Tensor,
-    torch.Tensor | None,
-    torch.Tensor | None,
-]:
+) -> tuple[torch.Tensor | None, ...]:
     """Build representative ``forward_common_lower`` inputs for tracing.
 
     Tensors are float64 / int64 (matching the ``.pt2`` I/O contract).
@@ -208,8 +273,13 @@ def _make_sample_inputs(
     rcut = float(model.get_rcut())
     sel = list(model.get_sel())
     ntypes = len(model.get_type_map())
+    if ntypes == 0:
+        ntypes = int(model.get_descriptor().get_ntypes())
+    if ntypes <= 0:
+        raise ValueError("SeZM .pt2 freeze requires at least one atom type.")
     dim_fparam = int(model.get_dim_fparam())
     dim_aparam = int(model.get_dim_aparam())
+    dim_chg_spin = int(model.get_dim_chg_spin())
     mixed_types = bool(model.mixed_types())
 
     box_size = rcut * 3.0
@@ -264,8 +334,35 @@ def _make_sample_inputs(
         if dim_aparam > 0
         else None
     )
+    charge_spin = None
+    if dim_chg_spin > 0:
+        default_chg_spin = model.get_default_chg_spin()
+        if default_chg_spin is None:
+            raise ValueError(
+                "SeZM .pt2 freeze requires default_chg_spin when charge/spin "
+                "conditioning is enabled; runtime charge_spin input is not exposed."
+            )
+        charge_spin = (
+            default_chg_spin.to(device=device, dtype=torch.float64)
+            .view(1, dim_chg_spin)
+            .expand(nframes, -1)
+            .contiguous()
+        )
     if has_spin:
+        if charge_spin is not None:
+            return (
+                ext_coord,
+                ext_atype,
+                ext_spin,
+                nlist_t,
+                mapping_t,
+                fparam,
+                aparam,
+                charge_spin,
+            )
         return ext_coord, ext_atype, ext_spin, nlist_t, mapping_t, fparam, aparam
+    if charge_spin is not None:
+        return ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin
     return ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam
 
 
@@ -316,7 +413,14 @@ def _build_dynamic_shapes(
     ``(ext_coord, ext_atype, nlist, mapping, fparam, aparam)`` signature.
     """
     nframes_dim = torch.export.Dim("nframes", min=1)
-    has_spin = len(sample_inputs) == 7
+    has_spin = (
+        len(sample_inputs) >= 7
+        and sample_inputs[2] is not None
+        and sample_inputs[2].is_floating_point()
+    )
+    has_charge_spin = (has_spin and len(sample_inputs) == 8) or (
+        not has_spin and len(sample_inputs) == 7
+    )
     # Spin export currently generates a valid lower-bound guard from its
     # virtual-atom split/concat pattern. Matching the bound keeps export strict,
     # while `_strip_shape_assertions` removes the spurious deferred guards later.
@@ -325,7 +429,7 @@ def _build_dynamic_shapes(
     fparam = sample_inputs[5] if has_spin else sample_inputs[4]
     aparam = sample_inputs[6] if has_spin else sample_inputs[5]
     if has_spin:
-        return (
+        shapes = (
             {0: nframes_dim, 1: nall_dim},  # extended_coord
             {0: nframes_dim, 1: nall_dim},  # extended_atype
             {0: nframes_dim, 1: nall_dim},  # extended_spin
@@ -334,7 +438,10 @@ def _build_dynamic_shapes(
             {0: nframes_dim} if fparam is not None else None,
             {0: nframes_dim, 1: nloc_dim} if aparam is not None else None,
         )
-    return (
+        if has_charge_spin:
+            shapes = (*shapes, {0: nframes_dim})
+        return shapes
+    shapes = (
         {0: nframes_dim, 1: nall_dim},  # extended_coord: (nframes, nall, 3)
         {0: nframes_dim, 1: nall_dim},  # extended_atype: (nframes, nall)
         {0: nframes_dim, 1: nloc_dim},  # nlist: (nframes, nloc, nnei)
@@ -342,6 +449,9 @@ def _build_dynamic_shapes(
         {0: nframes_dim} if fparam is not None else None,
         {0: nframes_dim, 1: nloc_dim} if aparam is not None else None,
     )
+    if has_charge_spin:
+        shapes = (*shapes, {0: nframes_dim})
+    return shapes
 
 
 def freeze_sezm_to_pt2(
@@ -363,7 +473,9 @@ def freeze_sezm_to_pt2(
         Target device for the compiled shared library.  Defaults to
         :data:`DEVICE`.  Tracing itself always runs on CPU.
     head
-        Reserved for future multi-task support; must be ``None``.
+        Model head to export from a multi-task checkpoint. If omitted, the
+        ``Default`` head is used when present; otherwise multi-task checkpoints
+        must pass an explicit head. Single-task checkpoints must pass ``None``.
     """
     from torch._inductor import (
         aoti_compile_and_package,
@@ -373,18 +485,12 @@ def freeze_sezm_to_pt2(
 
     raw = torch.load(ckpt_path, map_location="cpu", weights_only=False)
     state_dict, params = _extract_state_and_params(raw)
+    state_dict, params = _select_model_head(state_dict, params, head)
 
-    if str(params.get("type", "")).lower() != "sezm":
+    model_type = str(params.get("type", "")).lower()
+    if model_type not in ("sezm", "dpa4"):
         raise ValueError(
-            f"freeze_sezm_to_pt2 expects a SeZM checkpoint, got type={params.get('type')!r}."
-        )
-    if "model_dict" in params:
-        raise NotImplementedError(
-            "SeZM .pt2 freeze does not yet support multi-task checkpoints."
-        )
-    if head is not None:
-        raise NotImplementedError(
-            "SeZM .pt2 freeze does not yet support head selection; pass head=None."
+            f"freeze_sezm_to_pt2 expects a SeZM/DPA4 checkpoint, got type={params.get('type')!r}."
         )
 
     model = get_model(params)

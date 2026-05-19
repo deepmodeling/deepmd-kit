@@ -1,7 +1,7 @@
 # DPA4 / SeZM bulk water: short MD smoke run backed by an AOTInductor .pt2 archive.
 #
 # The .pt2 file is produced by
-#     dp --pt freeze -c <train_dir>  -o model
+#     dp --pt freeze -c <checkpoint> -o frozen_model
 # against a DPA4 / SeZM training checkpoint.  The freeze CLI detects DPA4 / SeZM
 # automatically, rewrites the output suffix to .pt2 and emits a package
 # whose I/O is fp64 — matching the DeepPotPTExpt C++ contract.

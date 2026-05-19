@@ -604,9 +604,22 @@ class LmdbDataReader:
             box = frame.get("box")
             if box is not None and np.allclose(box, 0.0):
                 box = None
+            req = self._data_requirements["min_pair_dist"]
+            min_pair_dist = float(
+                req.get("default", 0.0)
+                if isinstance(req, dict)
+                else getattr(req, "default", 0.0)
+            )
             frame["find_min_pair_dist"] = np.float32(1.0)
             frame["min_pair_dist"] = np.array(
-                [compute_min_pair_dist_single(frame["coord"], box, frame["atype"])],
+                [
+                    compute_min_pair_dist_single(
+                        frame["coord"],
+                        box,
+                        frame["atype"],
+                        stop_below=min_pair_dist,
+                    )
+                ],
                 dtype=self._resolve_dtype("min_pair_dist"),
             )
 

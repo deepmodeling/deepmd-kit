@@ -355,8 +355,7 @@ def extend_coord_with_ghosts(
         shift_idx = xp.take(xyz, xp.argsort(xp.linalg.vector_norm(xyz, axis=1)), axis=0)
         ns, _ = shift_idx.shape
         nall = ns * nloc
-        xp_name = getattr(xp, "__name__", "")
-        if "jax" in xp_name:
+        if array_api_compat.is_jax_namespace(xp):
             # Avoid JAX internal errors in tensordot.
             shift_vec = xp.sum(
                 shift_idx[xp.newaxis, :, :, xp.newaxis] * cell[:, xp.newaxis, :, :],

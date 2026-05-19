@@ -244,7 +244,7 @@ class DeNSLoss(EnergyStdLoss):
     ) -> torch.Tensor:
         """Compute one clean-force or denoising-force subset loss."""
         if force_pred.numel() == 0:
-            return torch.zeros((), dtype=GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)
+            return force_pred.new_zeros((), dtype=GLOBAL_PT_FLOAT_PRECISION)
         diff_f = (force_target - force_pred).reshape(-1)
         if self.loss_func == "mse":
             subset_loss = torch.mean(torch.square(diff_f))
@@ -286,7 +286,7 @@ class DeNSLoss(EnergyStdLoss):
         pref_f = self.limit_pref_f + (self.start_pref_f - self.limit_pref_f) * coef
         denoise_pref = self.dens_denoising_pos_coefficient
 
-        loss = torch.zeros(1, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)[0]
+        loss = force_label.new_zeros((), dtype=env.GLOBAL_PT_FLOAT_PRECISION)
         more_loss: dict[str, torch.Tensor] = {}
         atom_norm = 1.0 / natoms
 

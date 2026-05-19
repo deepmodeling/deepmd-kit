@@ -29,6 +29,9 @@ from deepmd.pt.utils.env import (
     PRECISION_DICT,
     RESERVED_PRECISION_DICT,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 from .attn_res import (
     DepthAttnRes,
@@ -817,8 +820,7 @@ class SeZMInteractionBlock(nn.Module):
         if data_cls != "SeZMInteractionBlock":
             raise ValueError(f"Invalid class for SeZMInteractionBlock: {data_cls}")
         version = int(data.pop("@version"))
-        if version != 1:
-            raise ValueError(f"Unsupported SeZMInteractionBlock version: {version}")
+        check_version_compatibility(version, 1, 1)
         config = data.pop("config")
         variables = data.pop("@variables")
         precision = config.pop("precision")
