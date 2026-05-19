@@ -84,6 +84,18 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 
+def _is_sezm_model_params(model_params: dict[str, Any]) -> bool:
+    """Return whether the params describe a SeZM / DPA4 model."""
+    model_type = str(model_params.get("type", "")).lower()
+    if model_type in {"sezm", "dpa4", "sezm_spin"}:
+        return True
+    descriptor = model_params.get("descriptor")
+    if isinstance(descriptor, dict):
+        descriptor_type = str(descriptor.get("type", "")).lower()
+        return descriptor_type in {"sezm", "dpa4"}
+    return False
+
+
 class DeepEval(DeepEvalBackend):
     """PyTorch backend implementation of DeepEval.
 
@@ -167,7 +179,8 @@ class DeepEval(DeepEvalBackend):
                         ] = state_dict[item].clone()
                 state_dict = state_dict_head
             model = get_model(self.input_param).to(DEVICE)
-            if not self.input_param.get("hessian_mode") and not no_jit:
+            disable_jit = no_jit or _is_sezm_model_params(self.input_param)
+            if not self.input_param.get("hessian_mode") and not disable_jit:
                 model = torch.jit.script(model)
             self.dp = ModelWrapper(model)
             missing, unexpected = self.dp.load_state_dict(state_dict, strict=False)
@@ -737,7 +750,10 @@ class DeepEval(DeepEvalBackend):
         """
         out = []
         for mm in self.dp.model["Default"].modules():
-            if mm.original_name == TypeEmbedNetConsistent.__name__:
+            if (
+                getattr(mm, "original_name", type(mm).__name__)
+                == TypeEmbedNetConsistent.__name__
+            ):
                 out.append(mm(DEVICE))
         if not out:
             raise KeyError("The model has no type embedding networks.")
