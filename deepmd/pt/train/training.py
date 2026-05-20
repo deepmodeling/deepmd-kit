@@ -80,6 +80,7 @@ from deepmd.pt.utils.dataloader import (
 from deepmd.pt.utils.env import (
     DEVICE,
     JIT,
+    LOCAL_RANK,
     NUM_WORKERS,
     SAMPLER_RECORD,
 )
@@ -111,6 +112,9 @@ from torch.distributed.checkpoint.state_dict import (
     get_model_state_dict,
     get_optimizer_state_dict,
     set_optimizer_state_dict,
+)
+from torch.nn.parallel import (
+    DistributedDataParallel as DDP,
 )
 
 try:

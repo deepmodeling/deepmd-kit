@@ -16,6 +16,9 @@ from torch.utils.data import (
     Dataset,
     Sampler,
 )
+from torch.utils.data._utils.collate import (
+    collate_tensor_fn,
+)
 
 from deepmd.dpmodel.utils.lmdb_data import (
     LmdbDataReader,
