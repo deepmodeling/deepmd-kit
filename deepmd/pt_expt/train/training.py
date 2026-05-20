@@ -1020,7 +1020,7 @@ class Trainer:
             if aparam is not None:
                 del aparam
             del inp
-            if torch.cuda.is_initialized():
+            if DEVICE.type == "cuda" and torch.cuda.is_initialized():
                 torch.cuda.empty_cache()
 
             log.info(
