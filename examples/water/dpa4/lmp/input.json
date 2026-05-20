@@ -1,5 +1,5 @@
 {
-  "_comment": "Tiny DPA4 / SeZM water demo. Trained for ~500 steps; the resulting checkpoint is shipped with this example solely so newcomers have something to freeze -> run in LAMMPS out of the box. It is NOT a physically accurate force field.",
+  "_comment": "Compact DPA4/SeZM water checkpoint used by the LAMMPS smoke test.",
   "model": {
     "type": "dpa4",
     "type_map": [
@@ -71,8 +71,8 @@
   },
   "learning_rate": {
     "type": "wsd",
-    "start_lr": 5e-4,
-    "stop_lr": 1e-6,
+    "start_lr": 0.0005,
+    "stop_lr": 1e-06,
     "warmup_steps": 50,
     "warmup_start_factor": 0.2,
     "decay_phase_ratio": 0.65,

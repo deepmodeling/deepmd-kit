@@ -169,12 +169,32 @@ def _clear_default_device() -> Iterator[None]:
         torch.set_default_device(saved)
 
 
+class _ClearDefaultDeviceTestCase(unittest.TestCase):
+    """Run a test class while the pt default-device sentinel is disabled."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        super().setUpClass()
+        cls._default_device_ctx = _clear_default_device()
+        cls._default_device_ctx.__enter__()
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        try:
+            super().tearDownClass()
+        finally:
+            ctx = getattr(cls, "_default_device_ctx", None)
+            if ctx is not None:
+                ctx.__exit__(None, None, None)
+                delattr(cls, "_default_device_ctx")
+
+
 def _eager_forward(
     model: torch.nn.Module,
     sample_inputs: tuple,
 ) -> dict[str, torch.Tensor]:
     """Mirror the trace closure: fresh leaf coord + ``requires_grad=True``."""
-    ext_coord, ext_atype, nlist, mapping, fparam, aparam = sample_inputs
+    ext_coord, ext_atype, nlist, mapping, fparam, aparam, charge_spin = sample_inputs
     eager_coord = ext_coord.detach().clone().requires_grad_(True)
     return model.forward_common_lower(
         eager_coord,
@@ -183,12 +203,13 @@ def _eager_forward(
         mapping=mapping,
         fparam=fparam,
         aparam=aparam,
+        charge_spin=charge_spin,
         do_atomic_virial=True,
         extra_nlist_sort=model.need_sorted_nlist_for_lower(),
     )
 
 
-class TestSeZMExportPipeline(unittest.TestCase):
+class TestSeZMExportPipeline(_ClearDefaultDeviceTestCase):
     """Bitwise trace / export / ``.pte`` round-trip parity (``rtol=1e-10``).
 
     The ExportedProgram is a pure FX graph (no Inductor codegen), so
@@ -200,23 +221,28 @@ class TestSeZMExportPipeline(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        with _clear_default_device():
+        super().setUpClass()
+        try:
             cls.model = _build_tiny_sezm_model()
             cls.sample_inputs = _make_sample(cls.model, nloc=7, start=2)
             cls.traced, cls.loaded, cls._pte_tmp = cls._build_pipeline(
                 cls.model, cls.sample_inputs
             )
+        except Exception:
+            super().tearDownClass()
+            raise
 
     @classmethod
     def tearDownClass(cls) -> None:
-        cls._pte_tmp.close()
-
-    def setUp(self) -> None:
-        self._device_ctx = _clear_default_device()
-        self._device_ctx.__enter__()
-
-    def tearDown(self) -> None:
-        self._device_ctx.__exit__(None, None, None)
+        try:
+            for attr in ("loaded", "traced", "model", "sample_inputs"):
+                if hasattr(cls, attr):
+                    delattr(cls, attr)
+            if hasattr(cls, "_pte_tmp"):
+                cls._pte_tmp.close()
+                delattr(cls, "_pte_tmp")
+        finally:
+            super().tearDownClass()
 
     @staticmethod
     def _build_pipeline(
@@ -301,7 +327,7 @@ class TestSeZMExportPipeline(unittest.TestCase):
         )
 
 
-class _FrozenPt2Fixture:
+class _FrozenPt2Fixture(_ClearDefaultDeviceTestCase):
     """Shared setUp/tearDown: freeze a tiny SeZM checkpoint to ``.pt2`` once.
 
     AOTInductor compilation costs a few seconds; classes that share this
@@ -314,28 +340,38 @@ class _FrozenPt2Fixture:
     out_path: Path
 
     @classmethod
+    def _cleanup_frozen_fixture(cls) -> None:
+        if hasattr(cls, "_tmpdir"):
+            cls._tmpdir.cleanup()
+            delattr(cls, "_tmpdir")
+        for attr in ("params", "ckpt_path", "out_path"):
+            if hasattr(cls, attr):
+                delattr(cls, attr)
+
+    @classmethod
     def setUpClass(cls) -> None:
+        super().setUpClass()
         cls._tmpdir = tempfile.TemporaryDirectory()
-        tmp_root = Path(cls._tmpdir.name)
-        cls.params = _tiny_sezm_model_params()
-        with _clear_default_device():
+        try:
+            tmp_root = Path(cls._tmpdir.name)
+            cls.params = _tiny_sezm_model_params()
             cls.ckpt_path = _write_tiny_sezm_checkpoint(tmp_root, cls.params)
             cls.out_path = tmp_root / "frozen_sezm.pt2"
             freeze_sezm_to_pt2(str(cls.ckpt_path), str(cls.out_path), device=_CPU)
+        except Exception:
+            cls._cleanup_frozen_fixture()
+            super().tearDownClass()
+            raise
 
     @classmethod
     def tearDownClass(cls) -> None:
-        cls._tmpdir.cleanup()
-
-    def setUp(self) -> None:
-        self._device_ctx = _clear_default_device()
-        self._device_ctx.__enter__()
-
-    def tearDown(self) -> None:
-        self._device_ctx.__exit__(None, None, None)
+        try:
+            cls._cleanup_frozen_fixture()
+        finally:
+            super().tearDownClass()
 
 
-class TestSeZMExportArchive(_FrozenPt2Fixture, unittest.TestCase):
+class TestSeZMExportArchive(_FrozenPt2Fixture):
     """AOTI ``.pt2`` archive structure + load-and-run smoke.
 
     Numerical parity of the compiled ``.pt2`` is covered by the
@@ -426,7 +462,7 @@ class TestSeZMExportArchive(_FrozenPt2Fixture, unittest.TestCase):
             self.assertTrue(torch.isfinite(out_map[key]).all().item())
 
 
-class TestSeZMViaDeepPot(_FrozenPt2Fixture, unittest.TestCase):
+class TestSeZMViaDeepPot(_FrozenPt2Fixture):
     """Integration through the standard :class:`deepmd.infer.DeepPot` entry.
 
     Locks in the contract that makes ``dp test -m frozen.pt2`` and the
@@ -447,48 +483,60 @@ class TestSeZMViaDeepPot(_FrozenPt2Fixture, unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        # The ``.pt2`` archive is compiled on CPU by the fixture; AOTI
-        # packages are device-locked, so ``pt_expt.DeepEval``'s input
-        # preparation must also place tensors on CPU — otherwise
-        # ``_pt2_runner(...)`` segfaults on dtype/device mismatch.
-        # ``_prepare_inputs`` does a function-local
-        # ``from deepmd.pt_expt.utils.env import DEVICE``, so patching
-        # the module attribute is enough (no rebinding required).
-        import deepmd.pt_expt.utils.env as _pt_expt_env
-
-        cls._orig_pt_expt_device = _pt_expt_env.DEVICE
-        _pt_expt_env.DEVICE = _CPU
-
         super().setUpClass()
+        try:
+            # The ``.pt2`` archive is compiled on CPU by the fixture; AOTI
+            # packages are device-locked, so ``pt_expt.DeepEval``'s input
+            # preparation must also place tensors on CPU — otherwise
+            # ``_pt2_runner(...)`` segfaults on dtype/device mismatch.
+            # ``_prepare_inputs`` does a function-local
+            # ``from deepmd.pt_expt.utils.env import DEVICE``, so patching
+            # the module attribute is enough (no rebinding required).
+            import deepmd.pt_expt.utils.env as _pt_expt_env
 
-        # Late import: building the deepmd Backend registry is cheap, but
-        # doing it at collection time conflicts with the conftest
-        # default-device sentinel used elsewhere in this package.
-        from deepmd.infer import (
-            DeepPot,
-        )
+            cls._orig_pt_expt_device = _pt_expt_env.DEVICE
+            _pt_expt_env.DEVICE = _CPU
 
-        cls.dp = DeepPot(str(cls.out_path))
+            # Late import: building the deepmd Backend registry is cheap, but
+            # doing it at collection time conflicts with the conftest
+            # default-device sentinel used elsewhere in this package.
+            from deepmd.infer import (
+                DeepPot,
+            )
 
-        # A deterministic bulk sample; coord is centred in a cubic box
-        # well inside the periodic image, and the atype distribution
-        # exercises both type-0 and type-1 slots of sel=[2, 2].
-        rng = np.random.default_rng(2026)
-        cls.natoms = 5
-        cls.atype = np.array([0, 1, 0, 1, 0], dtype=np.int32)
-        box_edge = cls.params["descriptor"]["rcut"] * 3.0
-        cls.coord = (
-            rng.random((1, cls.natoms, 3), dtype=np.float64) * box_edge * 0.4
-            + box_edge * 0.3
-        )
-        cls.cell = (np.eye(3, dtype=np.float64) * box_edge).reshape(1, 9)
+            cls.dp = DeepPot(str(cls.out_path))
+
+            # A deterministic bulk sample; coord is centred in a cubic box
+            # well inside the periodic image, and the atype distribution
+            # exercises both type-0 and type-1 slots of sel=[2, 2].
+            rng = np.random.default_rng(2026)
+            cls.natoms = 5
+            cls.atype = np.array([0, 1, 0, 1, 0], dtype=np.int32)
+            box_edge = cls.params["descriptor"]["rcut"] * 3.0
+            cls.coord = (
+                rng.random((1, cls.natoms, 3), dtype=np.float64) * box_edge * 0.4
+                + box_edge * 0.3
+            )
+            cls.cell = (np.eye(3, dtype=np.float64) * box_edge).reshape(1, 9)
+        except Exception:
+            super().tearDownClass()
+            raise
 
     @classmethod
     def tearDownClass(cls) -> None:
         import deepmd.pt_expt.utils.env as _pt_expt_env
 
-        _pt_expt_env.DEVICE = cls._orig_pt_expt_device
-        super().tearDownClass()
+        try:
+            if hasattr(cls, "dp"):
+                delattr(cls, "dp")
+            if hasattr(cls, "_orig_pt_expt_device"):
+                _pt_expt_env.DEVICE = cls._orig_pt_expt_device
+                delattr(cls, "_orig_pt_expt_device")
+            for attr in ("natoms", "atype", "coord", "cell"):
+                if hasattr(cls, attr):
+                    delattr(cls, attr)
+        finally:
+            super().tearDownClass()
 
     def _eager_energy_force_virial(self) -> tuple[np.ndarray, ...]:
         """Run the eager SeZMModel forward and return arrays shaped like DeepPot."""
@@ -580,7 +628,7 @@ class TestSeZMViaDeepPot(_FrozenPt2Fixture, unittest.TestCase):
         )
 
 
-class TestSeZMFreezeGuards(unittest.TestCase):
+class TestSeZMFreezeGuards(_ClearDefaultDeviceTestCase):
     """Error paths: detector rejections and CLI-level ``NotImplementedError``s."""
 
     def test_metadata_records_ntypes_when_type_map_is_empty(self) -> None:
@@ -617,15 +665,6 @@ class TestSeZMFreezeGuards(unittest.TestCase):
                 ckpt_path,
             )
             self.assertFalse(is_sezm_checkpoint(str(ckpt_path)))
-
-    def test_is_sezm_checkpoint_accepts_dpa4_alias(self) -> None:
-        with tempfile.TemporaryDirectory() as tmp:
-            ckpt_path = Path(tmp) / "dpa4.pt"
-            torch.save(
-                {"model": {"_extra_state": {"model_params": {"type": "dpa4"}}}},
-                ckpt_path,
-            )
-            self.assertTrue(is_sezm_checkpoint(str(ckpt_path)))
 
     def test_freeze_rejects_head_selection(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

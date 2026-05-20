@@ -59,6 +59,9 @@ Step   PotEng       KinEng      TotEng     Temp
   entries `"O"` and `"H"` respectively. When the element names are
   omitted, the mapping falls back to the `type_map` order stored in
   the `.pt2` metadata.
+- `atom_modify map yes` keeps the ghost / periodic-image to local-atom
+  mapping explicit for `.pt2` graph inference. GNN-style `.pt2` models
+  fail fast when this atom map is required but absent.
 - The 500-step `pretrained.pt` is intended as a smoke test, not a
   physically accurate water potential. Retrain with a longer schedule
   for production.

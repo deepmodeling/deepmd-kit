@@ -1,13 +1,13 @@
 {
+  "_comment": "Baseline DPA4/SeZM energy-training example for the water dataset.",
   "model": {
-    "type": "dpa4",
+    "type": "DPA4",
     "type_map": [
       "O",
       "H"
     ],
-    "pair_exclude_types": [],
     "descriptor": {
-      "type": "dpa4",
+      "type": "DPA4",
       "sel": 120,
       "rcut": 6.0,
       "env_exp": [
@@ -57,8 +57,7 @@
       "glu_activation": true,
       "use_amp": true,
       "precision": "float32",
-      "seed": 42,
-      "_comment": "that's all"
+      "seed": 42
     },
     "fitting_net": {
       "neuron": [
@@ -66,12 +65,10 @@
       ],
       "activation_function": "silu",
       "precision": "float32",
-      "seed": 42,
-      "_comment": "that's all"
+      "seed": 42
     },
     "use_compile": false,
-    "enable_tf32": true,
-    "_comment": "that's all"
+    "enable_tf32": true
   },
   "learning_rate": {
     "type": "wsd",
@@ -108,26 +105,24 @@
         "../data/data_1",
         "../data/data_2"
       ],
-      "batch_size": 1,
-      "_comment": "that's all"
+      "batch_size": 1
     },
     "validation_data": {
       "systems": [
         "../data/data_3"
       ],
       "batch_size": 1,
-      "numb_btch": 1,
-      "_comment": "that's all"
+      "numb_batch": 1
     },
-    "numb_steps": 1000000,
+    "numb_steps": 2000000,
     "gradient_max_norm": 5.0,
-    "save_freq": 100,
+    "save_freq": 2000,
     "max_ckpt_keep": 3,
     "enable_ema": true,
     "ema_decay": 0.999,
     "ema_ckpt_keep": 3,
     "disp_file": "lcurve.out",
-    "disp_freq": 100,
+    "disp_freq": 1000,
     "disp_avg": true,
     "disp_training": true,
     "time_training": true,
@@ -137,20 +132,7 @@
     "tensorboard_log_dir": "tb_log",
     "profiling": false,
     "profiling_file": "timeline.json",
-    "zero_stage": 0,
-    "seed": 7,
-    "_comment": "that's all"
-  },
-  "validating": {
-    "full_validation": true,
-    "ema_full_validation": true,
-    "validation_freq": 100,
-    "save_best": true,
-    "max_best_ckpt": 1,
-    "validation_metric": "E:MAE",
-    "full_val_file": "val.log",
-    "full_val_start": 100,
-    "compiled_infer": false,
-    "_comment": "that's all"
+    "zero_stage": 1,
+    "seed": 42
   }
 }

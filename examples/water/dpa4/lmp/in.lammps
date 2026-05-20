@@ -9,6 +9,7 @@
 units           metal
 boundary        p p p
 atom_style      atomic
+atom_modify     map yes
 
 neighbor        2.0 bin
 neigh_modify    every 10 delay 0 check no

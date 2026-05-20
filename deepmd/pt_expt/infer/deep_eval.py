@@ -1167,9 +1167,8 @@ class DeepEval(DeepEvalBackend):
             mapping_t,
             fparam_t,
             aparam_t,
+            charge_spin_t,
         )
-        if charge_spin_t is not None:
-            model_inputs = (*model_inputs, charge_spin_t)
         if self._is_pt2:
             # AOTInductor's __call__ unflattens output using stored out_spec,
             # returning a dict just like the .pte module.
@@ -1320,9 +1319,8 @@ class DeepEval(DeepEvalBackend):
             mapping_t,
             fparam_t,
             aparam_t,
+            charge_spin_t,
         )
-        if charge_spin_t is not None:
-            model_inputs = (*model_inputs, charge_spin_t)
         if self._is_pt2:
             model_ret = self._pt2_runner(*model_inputs)
         else:

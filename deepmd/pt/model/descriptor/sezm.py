@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """
-SeZM: The descriptor of smooth equivariant Zone-bridging Model.
+SeZM descriptor: Smooth Equivariant Zone-bridging Model.
 
 PyTorch backend
 
-This implementation is designed around two non-negotiables:
+This implementation is designed around two goals:
 
 1) Conservative forces: the descriptor is computed from differentiable energy.
-2) Speed-first inference: edge geometry and Wigner-D rotation blocks are computed
+2) Efficient inference: edge geometry and Wigner-D rotation blocks are computed
    exactly once per `forward()` and reused by all interaction blocks.
 
 Shared descriptor building blocks are re-exported by `sezm_nn/__init__.py`.
@@ -117,10 +117,11 @@ if TYPE_CHECKING:
 
 @BaseDescriptor.register("SeZM")
 @BaseDescriptor.register("sezm")
+@BaseDescriptor.register("DPA4")
 @BaseDescriptor.register("dpa4")
 class DescrptSeZM(BaseDescriptor, nn.Module):
     """
-    SeZM: The descriptor of smooth equivariant Zone-bridging Model for DeePMD-kit.
+    SeZM descriptor.
 
     Execution outline
     -----------------
@@ -154,10 +155,13 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         Hidden layer sizes for radial networks. An output layer of size
         `(l_schedule[0]+1)*channels` will be automatically appended.
     use_env_seed
-        If True, apply environment matrix initial embedding as FiLM conditioning
-        on l=0 features using 4D `[s, s*r_hat]` representation. FiLM deltas are
-        normalized and scaled with learnable strengths initialized to small values.
-        Internal dimensions are derived from `channels`:
+        If True, seed the initial node state with local-environment information:
+        apply environment matrix FiLM conditioning on l=0 features using 4D
+        `[s, s*r_hat]` representation, and enable the non-scalar geometric
+        initial embedding when `l_schedule[0] > 0`. If False, the initial state
+        contains only atom-local scalar features before message passing. FiLM
+        deltas are normalized and scaled with learnable strengths initialized
+        to small values. Internal dimensions are derived from `channels`:
         `embed_dim=min(channels, 128)`,
         `axis_dim=min(4 if embed_dim < 64 else 8, embed_dim-1)`,
         `type_dim=clamp(channels//4, 8, 32)`,
@@ -242,8 +246,8 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         - DepthAttnRes: input-dependent query projection
         - EnvironmentInitialEmbedding:
           rbf_proj_layer1/2 and g_layer1/2
-        Attention projections in SO2Convolution
-        (attn_radial_logit_proj, attn_output_gate_proj) are always bias-free.
+        Attention logit and output-gate parameters in SO(2) convolution are
+        always bias-free.
     layer_scale
         If True, apply learnable LayerScale (init 1e-3) on residual branches:
         - SO(2) branch: per-focus-channel scales `(n_focus, focus_dim)`
@@ -292,16 +296,18 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         ``True`` only when ``s2_activation[1]=True``. The final ``l=0`` output
         FFN always keeps this user-provided value.
     use_amp
-        If True, use automatic mixed precision (AMP) with bfloat16 on CUDA.
-        This does not provide accelerations under fp32 precision but will decrease
-        the memory usage, while preserving model accuracy.
+        If True, use automatic mixed precision (AMP) with bfloat16 on CUDA
+        during training. This can improve speed and reduce memory usage.
+        Enabling this option is recommended on GPUs with native bfloat16 support.
+        Disable it on GPUs without native bfloat16 support to avoid runtime
+        errors or additional conversion overhead.
     exclude_types
         List of excluded type pairs.
     precision
         Precision for neural network parameters and computations. Geometry computations
-        (edge distances, Wigner-D matrices, rotations, GIE) always run in fp32+ to
-        provide accurate geometric information for better convergence. Only the
-        interaction blocks use this precision.
+        (edge distances, Wigner-D matrices, rotations, and enabled env seeds) always
+        run in fp32+ to provide accurate geometric information for better convergence.
+        Only the interaction blocks use this precision.
     eps
         Small epsilon for numerical stability in division and normalization.
     trainable
@@ -727,7 +733,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             dtype=self.compute_dtype,
         )
 
-        self.use_gie = self.l_schedule[0] > 0
+        self.use_gie = self.use_env_seed and self.l_schedule[0] > 0
         if self.use_gie:
             self.gie = GeometricInitialEmbedding(
                 lmax=self.l_schedule[0],
@@ -949,7 +955,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         extended_coord = extended_coord.to(self.compute_dtype)
         nf, nloc, nnei = nlist.shape
         nall = extended_coord.shape[1]
-        n_nodes = int(nf * nloc)
+        n_nodes = nf * nloc
         charge_spin = self._canonicalize_charge_spin(
             charge_spin,
             nf=nf,
@@ -1554,8 +1560,11 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         Notes
         -----
         - When `use_amp=True` and the model is in training mode, enables
-          torch.autocast with bfloat16 on CUDA.
-        - Only affects autocast-eligible operations (matmul, conv, etc.).
+          torch.autocast with bfloat16 on CUDA. This can improve speed and
+          reduce memory usage on GPUs with native bfloat16 support.
+          Disable AMP on GPUs without native bfloat16 support to avoid runtime
+          errors or additional conversion overhead.
+        - Only affects autocast-eligible operations.
         - Does nothing during inference (`self.training=False`), on non-CUDA
           devices, or when `use_amp=False`.
 

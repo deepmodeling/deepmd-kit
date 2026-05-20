@@ -1,12 +1,13 @@
 {
+  "_comment": "DPA4/SeZM energy-training example with ZBL zone bridging.",
   "model": {
-    "type": "dpa4",
+    "type": "DPA4",
     "type_map": [
       "O",
       "H"
     ],
     "descriptor": {
-      "type": "dpa4",
+      "type": "DPA4",
       "sel": 120,
       "rcut": 6.0,
       "env_exp": [
@@ -56,8 +57,7 @@
       "glu_activation": true,
       "use_amp": true,
       "precision": "float32",
-      "seed": 42,
-      "_comment": "that's all"
+      "seed": 42
     },
     "fitting_net": {
       "neuron": [
@@ -65,15 +65,13 @@
       ],
       "activation_function": "silu",
       "precision": "float32",
-      "seed": 42,
-      "_comment": "that's all"
+      "seed": 42
     },
     "use_compile": false,
     "enable_tf32": true,
     "bridging_method": "zbl",
     "bridging_r_inner": 0.8,
-    "bridging_r_outer": 1.2,
-    "_comment": "that's all"
+    "bridging_r_outer": 1.2
   },
   "learning_rate": {
     "type": "wsd",
@@ -111,26 +109,24 @@
         "../data/data_2"
       ],
       "batch_size": 1,
-      "min_pair_dist": 0.8,
-      "_comment": "that's all"
+      "min_pair_dist": 0.8
     },
     "validation_data": {
       "systems": [
         "../data/data_3"
       ],
       "batch_size": 1,
-      "numb_btch": 1,
-      "_comment": "that's all"
+      "numb_batch": 1
     },
-    "numb_steps": 1000000,
+    "numb_steps": 2000000,
     "gradient_max_norm": 5.0,
-    "save_freq": 100,
+    "save_freq": 2000,
     "max_ckpt_keep": 3,
     "enable_ema": true,
     "ema_decay": 0.999,
     "ema_ckpt_keep": 3,
     "disp_file": "lcurve.out",
-    "disp_freq": 100,
+    "disp_freq": 1000,
     "disp_avg": true,
     "disp_training": true,
     "time_training": true,
@@ -140,19 +136,7 @@
     "tensorboard_log_dir": "tb_log",
     "profiling": false,
     "profiling_file": "timeline.json",
-    "zero_stage": 0,
-    "seed": 7,
-    "_comment": "that's all"
-  },
-  "validating": {
-    "full_validation": false,
-    "ema_full_validation": false,
-    "validation_freq": 100,
-    "save_best": true,
-    "max_best_ckpt": 1,
-    "validation_metric": "E:MAE",
-    "full_val_file": "val.log",
-    "full_val_start": 0.5,
-    "_comment": "that's all"
+    "zero_stage": 1,
+    "seed": 42
   }
 }

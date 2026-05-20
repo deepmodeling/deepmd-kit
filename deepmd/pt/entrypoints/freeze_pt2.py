@@ -4,8 +4,8 @@
 SeZM relies on a nested ``autograd.grad(create_graph=True)`` inside
 ``fit_output_to_model_output``; TorchScript cannot represent that
 graph, so DPA4 / SeZM checkpoints are routed through AOTInductor instead.
-The output archive layout matches the ``pt_expt`` convention and is
-consumed directly by ``DeepPotPTExpt.cc`` without any C++ change.
+The output archive layout follows the ``pt_expt`` convention, including the
+metadata consumed by ``DeepPotPTExpt.cc`` and ``DeepSpinPTExpt.cc``.
 
 Tracing runs on CPU (``make_fx`` with ``_allow_non_fake_inputs=True``
 is brittle on CUDA because the proxy-tensor dispatcher does not set
@@ -72,6 +72,22 @@ def _get_model_ntypes(model: torch.nn.Module) -> int:
         return len(type_map)
     descriptor = model.get_descriptor()
     return int(descriptor.get_ntypes())
+
+
+def _model_has_message_passing(model: torch.nn.Module) -> bool:
+    """Return whether the regular .pt2 graph requires a real atom mapping."""
+    for obj in (
+        model,
+        getattr(model, "atomic_model", None),
+        model.get_descriptor() if hasattr(model, "get_descriptor") else None,
+    ):
+        if obj is None or not hasattr(obj, "has_message_passing"):
+            continue
+        try:
+            return bool(obj.has_message_passing())
+        except (AttributeError, NotImplementedError):
+            continue
+    return False
 
 
 def _strip_shape_assertions(graph_module: torch.nn.Module) -> None:
@@ -243,6 +259,8 @@ def _collect_metadata(
         "dim_aparam": int(model.get_dim_aparam()),
         "dim_chg_spin": int(model.get_dim_chg_spin()),
         "mixed_types": bool(model.mixed_types()),
+        "has_message_passing": _model_has_message_passing(model),
+        "has_comm_artifact": False,
         "has_default_fparam": bool(model.has_default_fparam()),
         "default_fparam": _to_py_list(model.get_default_fparam()),
         "default_chg_spin": _to_py_list(model.get_default_chg_spin()),
@@ -336,34 +354,21 @@ def _make_sample_inputs(
     )
     charge_spin = None
     if dim_chg_spin > 0:
-        default_chg_spin = model.get_default_chg_spin()
-        if default_chg_spin is None:
-            raise ValueError(
-                "SeZM .pt2 freeze requires default_chg_spin when charge/spin "
-                "conditioning is enabled; runtime charge_spin input is not exposed."
-            )
-        charge_spin = (
-            default_chg_spin.to(device=device, dtype=torch.float64)
-            .view(1, dim_chg_spin)
-            .expand(nframes, -1)
-            .contiguous()
+        charge_spin = torch.zeros(
+            nframes, dim_chg_spin, dtype=torch.float64, device=device
         )
     if has_spin:
-        if charge_spin is not None:
-            return (
-                ext_coord,
-                ext_atype,
-                ext_spin,
-                nlist_t,
-                mapping_t,
-                fparam,
-                aparam,
-                charge_spin,
-            )
-        return ext_coord, ext_atype, ext_spin, nlist_t, mapping_t, fparam, aparam
-    if charge_spin is not None:
-        return ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin
-    return ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam
+        return (
+            ext_coord,
+            ext_atype,
+            ext_spin,
+            nlist_t,
+            mapping_t,
+            fparam,
+            aparam,
+            charge_spin,
+        )
+    return ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin
 
 
 def _resolve_nframes(
@@ -428,6 +433,9 @@ def _build_dynamic_shapes(
     nloc_dim = torch.export.Dim("nloc", min=1)
     fparam = sample_inputs[5] if has_spin else sample_inputs[4]
     aparam = sample_inputs[6] if has_spin else sample_inputs[5]
+    charge_spin = None
+    if has_charge_spin:
+        charge_spin = sample_inputs[7] if has_spin else sample_inputs[6]
     if has_spin:
         shapes = (
             {0: nframes_dim, 1: nall_dim},  # extended_coord
@@ -439,7 +447,7 @@ def _build_dynamic_shapes(
             {0: nframes_dim, 1: nloc_dim} if aparam is not None else None,
         )
         if has_charge_spin:
-            shapes = (*shapes, {0: nframes_dim})
+            shapes = (*shapes, {0: nframes_dim} if charge_spin is not None else None)
         return shapes
     shapes = (
         {0: nframes_dim, 1: nall_dim},  # extended_coord: (nframes, nall, 3)
@@ -450,7 +458,7 @@ def _build_dynamic_shapes(
         {0: nframes_dim, 1: nloc_dim} if aparam is not None else None,
     )
     if has_charge_spin:
-        shapes = (*shapes, {0: nframes_dim})
+        shapes = (*shapes, {0: nframes_dim} if charge_spin is not None else None)
     return shapes
 
 
@@ -509,10 +517,48 @@ def freeze_sezm_to_pt2(
     # do_atomic_virial=True pulls every key that DeepPotPTExpt may read
     # (energy, energy_redu, energy_derv_r, energy_derv_c, energy_derv_c_redu)
     # into the traced graph.
-    traced = model.forward_common_lower_exportable(
-        *sample_inputs_cpu,
-        do_atomic_virial=True,
-    )
+    if is_spin:
+        (
+            ext_coord,
+            ext_atype,
+            ext_spin,
+            nlist_t,
+            mapping_t,
+            fparam,
+            aparam,
+            charge_spin,
+        ) = sample_inputs_cpu
+        traced = model.forward_common_lower_exportable(
+            ext_coord,
+            ext_atype,
+            ext_spin,
+            nlist_t,
+            mapping_t,
+            fparam=fparam,
+            aparam=aparam,
+            charge_spin=charge_spin,
+            do_atomic_virial=True,
+        )
+    else:
+        (
+            ext_coord,
+            ext_atype,
+            nlist_t,
+            mapping_t,
+            fparam,
+            aparam,
+            charge_spin,
+        ) = sample_inputs_cpu
+        traced = model.forward_common_lower_exportable(
+            ext_coord,
+            ext_atype,
+            nlist_t,
+            mapping_t,
+            fparam=fparam,
+            aparam=aparam,
+            charge_spin=charge_spin,
+            do_atomic_virial=True,
+        )
 
     # Output key order is taken from a concrete run; Python dict order
     # is stable and matches what DeepPotPTExpt::extract_outputs zips

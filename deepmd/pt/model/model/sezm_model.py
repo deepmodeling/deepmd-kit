@@ -87,11 +87,12 @@ Body of the traced compute
 function:
 
 * ``core_compute`` rebuilds a compact, GPU-friendly edge list from the
-  padded DeePMD neighbor list (``build_edge_list_from_nlist``), with a
-  single masked dummy edge appended so the edge tensor is never empty
-  (NOTE 10).  Edge vectors come from ``index_select`` on the extended
-  coordinate tensor, which keeps the gradient path back to coordinates
-  explicit and safe under symbolic shapes (NOTE 11).
+  padded DeePMD neighbor list (``build_edge_list_from_nlist``), with
+  masked dummy edges appended so the edge tensor has a non-singular
+  symbolic lower bound (NOTE 10).  Edge vectors come from
+  ``index_select`` on the extended coordinate tensor, which keeps the
+  gradient path back to coordinates explicit and safe under symbolic
+  shapes (NOTE 11).
 * The SeZM descriptor consumes the edge list and produces per-atom
   features.
 * The fitting network predicts per-atom energy; ``apply_out_stat`` adds
@@ -240,24 +241,22 @@ configured with:
       cudagraphs capture autograd metadata only once.  Higher-order
       gradients need fresh metadata per call, so cudagraphs would feed
       stale autograd state into the second backward.
-* ``max_fusion_size`` -- mode-dependent
+* ``max_fusion_size=8``
       Caps kernel fusion complexity so Inductor's scheduler does not
       time out on the large edge-level reductions inside the
-      descriptor when nsel is big.  Training uses ``64`` (the long-
-      standing default, observed stable on every training run so far);
-      inference uses the tighter ``8`` to dodge the Triton lowering
-      failure described by the next bullet.
-* ``triton.persistent_reductions=False`` -- inference only
+      descriptor when nsel is big.  The tighter value keeps both
+      training and inference fusions small enough for Triton IR
+      generation on GPU backends that are sensitive to large dynamic
+      edge graphs.
+* ``triton.persistent_reductions=False``
       Inductor's persistent-reduction scheduler fuses a ``sum`` with
       *all* neighbouring pointwise ops (``tanh_backward``, ``pow``,
       ``exp``, ``mul``, ``select``, ``slice``, ``view`` ...) into one
-      ``triton_per_fused_...`` kernel.  On the graph emitted by
-      inference (``create_graph=False``, no double-detach stripping,
-      different fused topology than training) this kernel hits Triton
-      bug ``PassManager::run failed`` inside ``make_ttgir``.  Training
-      never produces the same fused shape and does not benefit from
-      disabling the optimisation, so the flag is left on for training
-      to preserve kernel quality.
+      ``triton_per_fused_...`` kernel.  On SeZM's dynamic edge graph
+      this can hit Triton bug ``PassManager::run failed`` inside
+      ``make_ttgir``.  Disabling it forces the reduction into its own
+      kernel before either training or inference can form the
+      pathological fused IR.
 * ``triton.mix_order_reduction=False``
       Workaround for PyTorch <=2.11 bugs pytorch/pytorch#174379,
       #178080, #179494.  All three manifest only under data-dependent
@@ -324,17 +323,20 @@ precondition for make_fx symbolic tracing.
 In eval mode we merely detach; no ``create_graph`` is requested, so the
 compiled kernel never has to build a backward graph.
 
-NOTE 10 -- Tail dummy edge
---------------------------
+NOTE 10 -- Tail dummy edges
+---------------------------
 
-``build_edge_list_from_nlist`` appends exactly one masked edge at the
-end of every batch.  Real edge compaction happens via
+``build_edge_list_from_nlist`` appends two masked edges at the end of
+every batch.  Real edge compaction happens via
 ``torch.nonzero(valid_mask)``, whose output length is data-dependent
 and can be zero in sparse or single-type systems.  make_fx cannot trace
 an "if n_edges == 0: skip" branch symbolically; without the dummy it
 would fall back to concrete shape specialization and break
-``dynamic=True``.  The dummy's ``edge_mask`` is ``False`` so it
-contributes exactly zero to every downstream sum or gather.
+``dynamic=True``.  A pair of dummy slots also gives Inductor's batched
+matmul lowering a static ``E >= 2`` edge-axis bound, avoiding
+data-dependent layout guards on ``E == 1``.  Each dummy's ``edge_mask``
+is ``False`` so it contributes exactly zero to every downstream sum or
+gather.
 
 NOTE 11 -- ``index_select`` for coordinate gradients
 ----------------------------------------------------
@@ -375,6 +377,9 @@ from typing import (
 import torch
 from einops import (
     rearrange,
+)
+from packaging.version import (
+    Version,
 )
 from torch.fx.experimental.proxy_tensor import (
     make_fx,
@@ -475,6 +480,16 @@ def _parse_optional_env_bool(var_name: str) -> bool | None:
     )
 
 
+def _check_compile_torch_version() -> None:
+    """Fail fast when SeZM compile is requested on unsupported PyTorch."""
+    version = Version(torch.__version__).release
+    if len(version) < 2 or version[:2] != (2, 11):
+        raise RuntimeError(
+            "SeZM `use_compile` and `DP_COMPILE_INFER` require PyTorch 2.11.x; "
+            f"found torch {torch.__version__}."
+        )
+
+
 def _strip_saved_tensor_detach(gm: torch.fx.GraphModule) -> None:
     """Strip ``aten.detach`` nodes that ``make_fx`` inserts for saved tensors.
 
@@ -559,6 +574,7 @@ def _rebuild_graph_module(gm: torch.fx.GraphModule) -> torch.fx.GraphModule:
 
 @BaseModel.register("SeZM")
 @BaseModel.register("sezm")
+@BaseModel.register("DPA4")
 @BaseModel.register("dpa4")
 class SeZMModel(DPModelCommon, SeZMModel_):
     """
@@ -570,7 +586,9 @@ class SeZMModel(DPModelCommon, SeZMModel_):
     standard neighbor list and traces the local graph with ``make_fx`` for
     higher-order force training. Evaluation/inference compile usage is
     controlled by the `DP_COMPILE_INFER` environment variable read at model
-    initialization time.
+    initialization time. This path is experimental, requires ``torch==2.11``,
+    may still expose PyTorch compiler bugs, and can improve training speed by
+    roughly 2-3x on supported workloads.
     """
 
     model_type = "SeZM"
@@ -611,6 +629,8 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         self._env_use_compile_infer: bool | None = _parse_optional_env_bool(
             "DP_COMPILE_INFER"
         )
+        if self.use_compile or self._env_use_compile_infer is True:
+            _check_compile_torch_version()
 
         # === Bridging (optional short-range zone bridging) ===
         self.bridging_method: str = str(bridging_method).upper()
@@ -1672,44 +1692,23 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         # fresh graph is cheap and a segfault is fatal.
         traced = _rebuild_graph_module(traced)
 
-        # NOTE: Inductor options are mode-dependent.  Training has been
-        # running cleanly with ``max_fusion_size=64`` for a while, so we
-        # keep that path untouched to avoid destabilising it.  Inference
-        # (``self.training is False``) has shown a Triton
-        # ``make_ttgir`` / ``PassManager::run failed`` on the fused
-        # per-reduction kernel
-        # ``triton_per_fused_clone_exp_mul_pow_select_slice_sum_tanh_...``;
-        # the kernel itself is fine, but the *fused* IR is too big /
-        # too complex for Triton's lowering pipeline on this version.
-        # So inference:
-        #   * disables ``triton.persistent_reductions`` -- persistent
-        #     reduction is what lets Inductor pull a ``sum`` together
-        #     with all surrounding pointwise ops (including the
-        #     activation-backward pointwise chain) into one
-        #     ``per_fused_...`` kernel; turning it off forces the sum
-        #     to emit its own kernel and stops the pathological fuse.
-        #   * tightens ``max_fusion_size`` from 64 to 8, so even
-        #     non-persistent fusions stay small enough for Triton IR
-        #     generation to succeed.
-        # Training does not hit this path in practice (different graph
-        # topology under ``create_graph=True``), so we keep the looser
-        # options there to preserve kernel quality.
+        # NOTE: Conservative Inductor options keep SeZM's dynamic edge
+        # graph from forming overly large Triton reduction kernels
+        # (``make_ttgir`` / ``PassManager::run failed``) on some
+        # GPU/Triton combinations.
         compile_options: dict[str, Any] = {
             "max_autotune": False,
             "shape_padding": True,
             "epilogue_fusion": False,
             "triton.cudagraphs": False,
+            "max_fusion_size": 8,
+            "triton.persistent_reductions": False,
             # NOTE: ``mix_order_reduction`` hits multiple bugs under
             # data-dependent symbolic shapes on PyTorch <=2.11
             # (pytorch/pytorch#174379, #178080, #179494) -- our edge
             # count is exactly that kind of shape.
             "triton.mix_order_reduction": False,
         }
-        if self.training:
-            compile_options["max_fusion_size"] = 64
-        else:
-            compile_options["max_fusion_size"] = 8
-            compile_options["triton.persistent_reductions"] = False
         try:
             from torch._inductor import config as inductor_config
 
@@ -1825,8 +1824,9 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         mapping: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
-        do_atomic_virial: bool = False,
         charge_spin: torch.Tensor | None = None,
+        *,
+        do_atomic_virial: bool = False,
     ) -> torch.nn.Module:
         """Trace ``forward_common_lower`` into an exportable FX ``GraphModule``.
 
@@ -1881,9 +1881,8 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             mapping_: torch.Tensor | None,
             fparam_: torch.Tensor | None,
             aparam_: torch.Tensor | None,
-            *maybe_charge_spin: torch.Tensor | None,
+            charge_spin_: torch.Tensor | None,
         ) -> dict[str, torch.Tensor]:
-            charge_spin_ = maybe_charge_spin[0] if maybe_charge_spin else None
             return lower_fn(
                 ext_coord,
                 ext_atype,
@@ -1902,7 +1901,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 dtype=extended_coord.dtype,
                 device=extended_coord.device,
             )
-            trace_inputs = (*trace_inputs, charge_spin)
+        trace_inputs = (*trace_inputs, charge_spin)
 
         return self._trace_lower_exportable(
             fn,
@@ -1961,9 +1960,10 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         Build a compact edge list from DeePMD padded neighbor list.
 
         Edge vectors are computed via ``index_select`` on ``extended_coord``
-        so they remain differentiable w.r.t. the input coordinates.  One
-        masked dummy edge is always appended to avoid data-dependent empty-edge
-        branches that ``make_fx`` cannot trace.
+        so they remain differentiable w.r.t. the input coordinates.  Two
+        masked dummy edges are always appended to avoid data-dependent empty-edge
+        branches that ``make_fx`` cannot trace and singular edge-axis guards
+        in Inductor's batched matmul lowering.
 
         Parameters
         ----------
@@ -1977,11 +1977,11 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         Returns
         -------
         edge_index
-            Edge indices with shape (2, E+1) where E is valid edge count.
+            Edge indices with shape (2, E+2) where E is valid edge count.
         edge_vec
-            Edge vectors with shape (E+1, 3).
+            Edge vectors with shape (E+2, 3).
         edge_mask
-            Boolean mask with shape (E+1,).  The trailing element is ``False``.
+            Boolean mask with shape (E+2).  The trailing elements are ``False``.
         """
         nf, nloc, nsel = nlist.shape
         n_actual = nf * nloc
@@ -2033,19 +2033,22 @@ class SeZMModel(DPModelCommon, SeZMModel_):
 
         valid_idx = torch.nonzero(edge_mask_actual, as_tuple=False).flatten()
 
-        # === Step 3. Compact edges + append one masked dummy ===
-        # NOTE: Always append exactly one masked dummy edge.
+        # === Step 3. Compact edges + append masked dummies ===
+        # NOTE: Always append two masked dummy edges.
         # ``torch.nonzero(edge_mask_actual)`` produces a data-dependent
         # number of valid edges, which can be zero on sparse or
         # single-type systems.  make_fx cannot trace an
         # ``if n_edges == 0: skip`` branch symbolically; without the
         # dummy it would fall back to concrete shape specialisation and
-        # break ``torch.compile(dynamic=True)`` for later batches.  The
+        # break ``torch.compile(dynamic=True)`` for later batches.  Two
+        # dummy edges keep the symbolic edge axis statically above one,
+        # which avoids Inductor bmm layout guards on ``E == 1``.  Each
         # dummy edge copies entry 0 (any in-range index is fine) and
         # carries ``edge_mask=False`` so every downstream sum, gather
         # or scatter ignores it.
+        dummy_count = 2
         padded_idx = torch.cat(
-            [valid_idx, torch.zeros(1, dtype=torch.long, device=device)]
+            [valid_idx, torch.zeros(dummy_count, dtype=torch.long, device=device)]
         )
         src_sel = src_actual.index_select(0, padded_idx)
         dst_sel = dst_actual.index_select(0, padded_idx)
@@ -2054,7 +2057,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         edge_mask = torch.cat(
             [
                 torch.ones(valid_idx.shape[0], dtype=torch.bool, device=device),
-                torch.zeros(1, dtype=torch.bool, device=device),
+                torch.zeros(dummy_count, dtype=torch.bool, device=device),
             ]
         )
         return edge_index, edge_vec_sel, edge_mask
@@ -2265,7 +2268,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         )
 
     # =========================================================================
-    # Charge/Spin Condition Metadata
+    # Metadata
     # =========================================================================
 
     def has_chg_spin_ebd(self) -> bool:
@@ -2283,6 +2286,10 @@ class SeZMModel(DPModelCommon, SeZMModel_):
     def get_default_chg_spin(self) -> torch.Tensor | None:
         """Return default charge/spin conditions as a tensor."""
         return self.atomic_model.get_default_chg_spin()
+
+    def has_message_passing(self) -> bool:
+        """Return whether the descriptor performs message passing."""
+        return self.atomic_model.has_message_passing()
 
     # =========================================================================
     # Mode Management

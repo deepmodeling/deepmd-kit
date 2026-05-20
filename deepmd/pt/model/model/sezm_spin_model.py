@@ -301,8 +301,9 @@ class SeZMSpinModel(SeZMModel):
         mapping: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
-        do_atomic_virial: bool = False,
         charge_spin: torch.Tensor | None = None,
+        *,
+        do_atomic_virial: bool = False,
     ) -> torch.nn.Module:
         """Trace the spin lower interface into an exportable FX graph."""
         extra_sort = self.need_sorted_nlist_for_lower()
@@ -339,9 +340,8 @@ class SeZMSpinModel(SeZMModel):
             mapping_: torch.Tensor | None,
             fparam_: torch.Tensor | None,
             aparam_: torch.Tensor | None,
-            *maybe_charge_spin: torch.Tensor | None,
+            charge_spin_: torch.Tensor | None,
         ) -> dict[str, torch.Tensor]:
-            charge_spin_ = maybe_charge_spin[0] if maybe_charge_spin else None
             return lower_fn(
                 ext_coord,
                 ext_atype,
@@ -369,7 +369,7 @@ class SeZMSpinModel(SeZMModel):
                 dtype=extended_coord.dtype,
                 device=extended_coord.device,
             )
-            trace_inputs = (*trace_inputs, charge_spin)
+        trace_inputs = (*trace_inputs, charge_spin)
 
         return self._trace_lower_exportable(
             fn,

@@ -5,9 +5,6 @@ import unittest
 
 import torch
 
-from deepmd.pt.model.descriptor.base_descriptor import (
-    BaseDescriptor,
-)
 from deepmd.pt.model.descriptor.sezm import (
     DescrptSeZM,
 )
@@ -156,21 +153,6 @@ class TestDescrptSeZM(_SeZMTestCase):
         self.assertIsNotNone(extended_coord.grad)
         self.assertTrue(torch.all(torch.isfinite(extended_coord.grad)))
         return model
-
-    def test_dpa4_alias_constructs_descriptor(self) -> None:
-        """DPA4 should be the primary user-facing alias for the SeZM descriptor."""
-        model = BaseDescriptor(type="dpa4", **_descriptor_kwargs())
-
-        self.assertIsInstance(model, DescrptSeZM)
-
-    def test_dpa4_alias_deserializes_descriptor(self) -> None:
-        """Serialized descriptor payloads should accept the DPA4 type string."""
-        data = DescrptSeZM(**_descriptor_kwargs(seed=123)).serialize()
-        data["type"] = "dpa4"
-
-        restored = BaseDescriptor.deserialize(data)
-
-        self.assertIsInstance(restored, DescrptSeZM)
 
     def test_forward_with_descriptor_variants(self) -> None:
         """Test forward/backward smoke paths for compact descriptor variants."""

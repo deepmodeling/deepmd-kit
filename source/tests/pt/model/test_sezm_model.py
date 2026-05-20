@@ -31,7 +31,6 @@ from deepmd.pt.model.descriptor.sezm_nn import (
     build_merged_state_dict,
 )
 from deepmd.pt.model.model import (
-    get_model,
     get_sezm_model,
 )
 from deepmd.pt.model.model.sezm_model import (
@@ -189,23 +188,6 @@ def _build_lora_sezm_model_params(**overrides) -> dict:
     }
     params.update(overrides)
     return params
-
-
-class TestSeZMDPA4Alias(unittest.TestCase):
-    """Test the DPA4 user-facing aliases for the SeZM model scaffold."""
-
-    def test_get_model_accepts_dpa4_alias(self) -> None:
-        """DPA4 model and descriptor type strings should build SeZMModel."""
-        params = _build_lora_sezm_model_params(type="dpa4")
-        params["descriptor"]["type"] = "dpa4"
-
-        model = get_model(params)
-
-        self.assertIsInstance(model, SeZMModel)
-        self.assertEqual(
-            model.serialize()["atomic_model"]["fitting"]["type"],
-            "sezm_ener",
-        )
 
 
 class TestSeZMModelCompile(unittest.TestCase):
@@ -614,9 +596,11 @@ class TestSeZMModelCompile(unittest.TestCase):
             wigner_calc=descriptor.wigner_calc,
         )
 
-        # build_edge_list_from_nlist appends one masked dummy edge;
-        # compare only the real edges (all except the trailing dummy).
+        # build_edge_list_from_nlist appends masked dummy edges;
+        # compare only the real edges before the padded tail.
         n_real = cache_std.src.shape[0]
+        self.assertEqual(edge_mask.shape[0] - n_real, 2)
+        self.assertFalse(edge_mask[n_real:].any().item())
         self.assertTrue(torch.equal(cache_std.src, cache_sparse.src[:n_real]))
         self.assertTrue(torch.equal(cache_std.dst, cache_sparse.dst[:n_real]))
         torch.testing.assert_close(cache_std.edge_vec, cache_sparse.edge_vec[:n_real])

@@ -12,7 +12,7 @@
 #include "DeepPot.h"
 #include "DeepPotPTExpt.h"
 #if defined(BUILD_PYTORCH)
-#include "commonPTExpt.h"
+#include "../src/commonPTExpt.h"
 #endif
 #include "neighbor_list.h"
 #include "test_utils.h"

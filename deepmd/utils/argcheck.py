@@ -54,7 +54,8 @@ doc_se_atten_v2 = "Used by the smooth edition of Deep Potential. The full relati
 doc_se_a_mask = "Used by the smooth edition of Deep Potential. It can accept a variable number of atoms in a frame (Non-PBC system). *aparam* are required as an indicator matrix for the real/virtual sign of input atoms."
 doc_hybrid = "Concatenate of a list of descriptors as a new descriptor."
 doc_se_zm = (
-    "DPA4 descriptor (SeZM implementation): Smooth equivariant Zone-bridging Model."
+    "DPA4/SeZM descriptor implemented as the SeZM (Smooth Equivariant "
+    "Zone-bridging Model) architecture."
 )
 # fitting
 doc_ener = "Fit an energy model (potential energy surface)."
@@ -345,7 +346,7 @@ def descrpt_se_a_args() -> list[Argument]:
 
 @descrpt_args_plugin.register(
     "dpa4",
-    alias=["SeZM", "sezm"],
+    alias=["DPA4", "SeZM", "sezm"],
     doc=doc_only_pt_supported + doc_se_zm,
 )
 def descrpt_se_zm_args() -> list[Argument]:
@@ -356,7 +357,7 @@ def descrpt_se_zm_args() -> list[Argument]:
     - `str`: Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wrapped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
     doc_rcut = "The cut-off radius."
     doc_env_exp = (
-        "C^2 cutoff envelope exponents `[rbf_env_exp, edge_env_exp]`. "
+        "C^3 cutoff envelope exponents `[rbf_env_exp, edge_env_exp]`. "
         "`rbf_env_exp` controls radial basis function envelope decay; "
         "`edge_env_exp` controls message passing edge weight envelope decay. "
         "Larger values give weaker suppression."
@@ -366,9 +367,12 @@ def descrpt_se_zm_args() -> list[Argument]:
     doc_n_radial = "Number of radial basis functions."
     doc_radial_mlp = "Hidden layer sizes for radial networks. An output layer of size (l_schedule[0]+1)*channels will be automatically appended. Use 0 as a placeholder to be replaced by channels."
     doc_use_env_seed = (
-        "If True, apply environment matrix initial embedding as FiLM conditioning on "
-        "l=0 features using 4D [s, s*r_hat] representation. Internal dimensions are "
-        "derived from channels: embed_dim=min(channels, 128), "
+        "If True, seed the initial node state with local-environment information: "
+        "apply environment matrix FiLM conditioning on l=0 features using 4D "
+        "[s, s*r_hat] representation, and enable the non-scalar geometric initial "
+        "embedding when l_schedule[0] > 0. If False, the initial state contains "
+        "only atom-local scalar features before message passing. Internal dimensions "
+        "are derived from channels: embed_dim=min(channels, 128), "
         "axis_dim=min(4 if embed_dim < 64 else 8, embed_dim-1), "
         "type_dim=clamp(channels//4, 8, 32), "
         "rbf_out_dim=max(32, embed_dim-2*type_dim), "
@@ -382,7 +386,11 @@ def descrpt_se_zm_args() -> list[Argument]:
     doc_lmax = "Maximum degree, only used when `l_schedule` is None."
     doc_l_schedule = "Pyramid schedule of lmax per block, e.g. [3, 3, 2]. Must be non-increasing. If set, lmax and n_blocks will be ignored."
     doc_mmax = "Maximum SO(2) order (|m|), only used when `m_schedule` is None. If None, defaults to the per-block lmax."
-    doc_m_schedule = "Schedule of mmax per block. Must satisfy `m_schedule[i] <= l_schedule[i]`. If set, `mmax` will be ignored."
+    doc_m_schedule = (
+        "Schedule of mmax per block. Must have the same length as "
+        "`l_schedule` and satisfy `m_schedule[i] <= l_schedule[i]`. "
+        "If set, `mmax` will be ignored."
+    )
     doc_n_blocks = "Number of blocks (only used when `l_schedule` is None)."
     doc_block_attn_res = (
         "Descriptor-level block attention residual mode over block history "
@@ -465,8 +473,8 @@ def descrpt_se_zm_args() -> list[Argument]:
         "- GatedActivation: gate linear bias\n"
         "- DepthAttnRes: input-dependent query projection\n"
         "- EnvironmentInitialEmbedding MLPs: rbf_proj_layer1/2 and g_layer1/2\n"
-        "Attention projections in SO2Convolution "
-        "(attn_radial_bias_proj, attn_output_gate_proj) are always bias-free."
+        "Attention logit and output-gate parameters in SO(2) convolution "
+        "are always bias-free."
     )
     doc_layer_scale = (
         "If True, apply learnable LayerScale (init 1e-3) on residual branches: "
@@ -521,9 +529,11 @@ def descrpt_se_zm_args() -> list[Argument]:
         "while the final scalar output FFN keeps the user-provided value."
     )
     doc_use_amp = (
-        "If True, use automatic mixed precision (AMP) with bfloat16 on CUDA. "
-        "This does not provide accelerations under fp32 precision but will decrease "
-        "the memory usage, while preserving model accuracy."
+        "If True, use automatic mixed precision (AMP) with bfloat16 on CUDA "
+        "during training. This can improve speed and reduce memory usage. "
+        "Enabling this option is recommended on GPUs with native bfloat16 support. "
+        "Disable it on GPUs without native bfloat16 support to avoid runtime "
+        "errors or additional conversion overhead."
     )
     doc_add_chg_spin_ebd = (
         "Whether to add frame-level charge and spin conditions to the descriptor "
@@ -531,7 +541,9 @@ def descrpt_se_zm_args() -> list[Argument]:
     )
     doc_default_chg_spin = (
         "Default frame-level charge and spin conditions `[charge, spin]`. "
-        "If set, this value is used when charge_spin data are not provided."
+        "This option is used only when `add_chg_spin_ebd` is enabled. "
+        "If set, the value is used when explicit `charge_spin` data are "
+        "not provided, including during `.pt2` inference."
     )
 
     doc_exclude_types = (
@@ -2321,12 +2333,16 @@ def fitting_ener() -> list[Argument]:
     ]
 
 
-@fitting_args_plugin.register("dpa4_ener", alias=["sezm_ener"], doc=doc_ener)
+@fitting_args_plugin.register(
+    "dpa4_ener",
+    alias=["sezm_ener"],
+    doc=doc_only_pt_supported + doc_ener,
+)
 def fitting_sezm_ener() -> list[Argument]:
-    doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
-    doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
-    doc_default_fparam = "The default frame parameter. If set, when `fparam.npy` files are not included in the data system, this value will be used as the default value for the frame parameter in the fitting net."
-    doc_dim_case_embd = "The dimension of the case embedding embedding. When training or fine-tuning a multitask model with case embedding embeddings, this number should be set to the number of model branches."
+    doc_numb_fparam = "Dimension of frame parameters. If set to >0, each data system should provide `fparam.npy`."
+    doc_numb_aparam = "Dimension of atomic parameters. If set to >0, each data system should provide `aparam.npy`."
+    doc_default_fparam = "Default frame parameters used when a data system does not provide `fparam.npy`."
+    doc_dim_case_embd = "Dimension of the case embedding. For multitask training or fine-tuning with case embeddings, set this value to the number of model branches."
     doc_neuron = "The number of neurons in each hidden layer of the fitting net. Use 0 as an auto-width placeholder resolved from the descriptor width."
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_precision = f"The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
@@ -2349,7 +2365,7 @@ def fitting_sezm_ener() -> list[Argument]:
         "If True, the aparam will not be used in fitting net for embedding."
         "When descrpt is se_a_mask, the aparam will be used as a mask to indicate the input atom is real/virtual. And use_aparam_as_mask should be set to True."
     )
-    doc_case_film_embd = "Whether to use case FiLM conditioning for DPA4/SeZM shared fitting. When enabled, the case embedding is used to modulate fitting features instead of being concatenated to the fitting input."
+    doc_case_film_embd = "Whether to use case FiLM conditioning for shared DPA4/SeZM fitting. When enabled, the case embedding modulates fitting features instead of being concatenated to the fitting input."
     return [
         Argument("numb_fparam", int, optional=True, default=0, doc=doc_numb_fparam),
         Argument("numb_aparam", int, optional=True, default=0, doc=doc_numb_aparam),
@@ -2957,7 +2973,11 @@ def standard_model_args() -> Argument:
         dict,
         [
             Argument(
-                "descriptor", dict, [], [descrpt_variant_type_args()], doc=doc_descrpt
+                "descriptor",
+                dict,
+                [],
+                [descrpt_variant_type_args()],
+                doc=doc_descrpt,
             ),
             Argument(
                 "fitting_net",
@@ -2988,11 +3008,11 @@ def standard_model_args() -> Argument:
 
 @model_args_plugin.register(
     "dpa4",
-    alias=["SeZM", "sezm"],
+    alias=["DPA4", "SeZM", "sezm"],
 )
 def sezm_model_args() -> Argument:
-    doc_descrpt = "The descriptor of atomic environment. User-provided (DPA4 / SeZM is recommended)."
-    doc_fitting = "The fitting of physical properties. The `type` field is ignored; DPA4 uses the dpa4_ener GLU energy fitting."
+    doc_descrpt = "Descriptor configuration for atomic environments. DPA4/SeZM uses the SeZM descriptor."
+    doc_fitting = "Fitting network configuration. DPA4/SeZM uses the `dpa4_ener` GLU energy fitting."
     doc_model_branch_alias = (
         "List of aliases for this model branch. "
         "Multiple aliases can be defined, and any alias can reference this branch throughout the model usage. "
@@ -3005,25 +3025,70 @@ def sezm_model_args() -> Argument:
     )
     doc_use_compile = (
         "Experimental feature. If True, use compact sparse edges together with "
-        "symbolic make_fx and torch.compile in the DPA4 / SeZM model. "
-        "Requires PyTorch >= 2.11. NVIDIA GPUs require CUDA >= 12.6. "
+        "symbolic make_fx and torch.compile in the DPA4/SeZM model. "
+        "This path may still expose PyTorch compiler bugs, but can improve "
+        "training speed by roughly 2-3x on supported workloads. "
+        "Requires torch==2.11. NVIDIA GPUs require CUDA >= 12.6. "
         "Apple Silicon Macs are also supported. Tested with Python 3.13."
     )
     doc_enable_tf32 = "If True, enable TF32 matmul precision when use_compile=True."
+    doc_bridging_method = (
+        "Short-range bridging method. Currently supports 'ZBL'. "
+        "The value is case-insensitive; set it to 'None' to disable bridging."
+    )
+    doc_bridging_r_inner = (
+        "Inner clamping radius in Å. ML descriptor distances below this radius are frozen. "
+        "Only used when `bridging_method` is enabled. "
+        "For ZBL bridging, set `training.training_data.min_pair_dist` to the same value "
+        "so frames with atom pairs closer than `bridging_r_inner` are skipped during training."
+    )
+    doc_bridging_r_outer = (
+        "Outer clamping radius in Å. The transition zone "
+        "`[bridging_r_inner, bridging_r_outer]` uses a C^3-continuous "
+        "septic Hermite polynomial. Only used when `bridging_method` is enabled."
+    )
+    doc_lora_rank = "LoRA rank; adapters are injected on every SO3Linear and SO2Linear."
+    doc_lora_alpha = (
+        "LoRA scaling numerator; effective scaling is alpha / rank. "
+        "When omitted, alpha defaults to rank (scaling = 1.0)."
+    )
+    doc_lora = (
+        "Low-rank adaptation for fine-tuning. Single-task only; "
+        "setting this in a multi-task input (top-level or per-branch) "
+        "raises an error in `preprocess_shared_params` because "
+        "`share_params` links descriptor modules across branches to "
+        "the same object, which would collapse per-branch LoRA into "
+        "one shared adapter. "
+        "When set, backbone SO3Linear and SO2Linear weights are frozen and "
+        "low-rank A/B adapters are injected alongside them (the adapters share "
+        "the base shape family so HybridMuon's slice route applies identically). "
+        "fitting_net, env_seed_embedding, radial_embedding, and small parameters "
+        "(norm scales, LayerScale, FiLM strength, attention projections, bias terms) "
+        "stay fully trainable; type embeddings, radial frequencies, and "
+        "GatedActivation gate projections are frozen. mid-train latest checkpoints "
+        "include LoRA parameters for resume; best checkpoints from full validation "
+        "are saved with LoRA deltas folded into base weights, producing plain "
+        "DPA4/SeZM checkpoints suitable for deployment."
+    )
+    doc_model = "DPA4/SeZM model scaffold with fixed SeZM descriptor and fitting types."
 
     ca = Argument(
         "dpa4",
         dict,
         [
             Argument(
-                "descriptor", dict, [], [descrpt_variant_type_args()], doc=doc_descrpt
+                "descriptor",
+                dict,
+                [],
+                [descrpt_variant_type_args()],
+                doc=doc_only_pt_supported + doc_descrpt,
             ),
             Argument(
                 "fitting_net",
                 dict,
                 [],
                 [fitting_variant_type_args()],
-                doc=doc_fitting,
+                doc=doc_only_pt_supported + doc_fitting,
             ),
             Argument(
                 "use_compile",
@@ -3058,26 +3123,21 @@ def sezm_model_args() -> Argument:
                 str,
                 optional=True,
                 default="None",
-                doc="Bridging method for short-range repulsion. Currently supports 'ZBL'. "
-                "Case-insensitive. Set to 'None' to disable.",
+                doc=doc_only_pt_supported + doc_bridging_method,
             ),
             Argument(
                 "bridging_r_inner",
                 float,
                 optional=True,
                 default=0.8,
-                doc="Inner clamping radius in Å. Distances below this are frozen for the ML model. "
-                "Only used when bridging_method is set. "
-                "When using ZBL bridging, set training_data.min_pair_dist to the same value "
-                "so that frames with atoms closer than r_inner are skipped during training.",
+                doc=doc_only_pt_supported + doc_bridging_r_inner,
             ),
             Argument(
                 "bridging_r_outer",
                 float,
                 optional=True,
                 default=1.2,
-                doc="Outer clamping radius in Å. The transition zone [bridging_r_inner, bridging_r_outer] "
-                "uses a C3-continuous septic Hermite polynomial. Only used when bridging_method is set.",
+                doc=doc_only_pt_supported + doc_bridging_r_outer,
             ),
             Argument(
                 "lora",
@@ -3086,41 +3146,23 @@ def sezm_model_args() -> Argument:
                     Argument(
                         "rank",
                         int,
-                        doc="LoRA rank; adapters are injected on every SO3Linear and SO2Linear.",
+                        doc=doc_only_pt_supported + doc_lora_rank,
                     ),
                     Argument(
                         "alpha",
                         float,
                         optional=True,
                         default=None,
-                        doc="LoRA scaling numerator; effective scaling is alpha / rank. "
-                        "When omitted, alpha defaults to rank (scaling = 1.0).",
+                        doc=doc_only_pt_supported + doc_lora_alpha,
                     ),
                 ],
                 optional=True,
                 default=None,
-                doc=doc_only_pt_supported
-                + "Low-rank adaptation for fine-tuning. Single-task only; "
-                "setting this in a multi-task input (top-level or per-branch) "
-                "raises an error in `preprocess_shared_params` because "
-                "`share_params` links descriptor modules across branches to "
-                "the same object, which would collapse per-branch LoRA into "
-                "one shared adapter. "
-                "When set, backbone SO3Linear and "
-                "SO2Linear weights are frozen and low-rank A/B adapters are injected "
-                "alongside them (the adapters share the base shape family so HybridMuon's "
-                "slice route applies identically). fitting_net, env_seed_embedding, "
-                "radial_embedding, and small parameters (norm scales, LayerScale, FiLM "
-                "strength, attention projections, bias terms) stay fully trainable; type "
-                "embeddings, radial frequencies, and GatedActivation gate projections are "
-                "frozen. mid-train latest checkpoints include LoRA parameters for resume; "
-                "best checkpoints from full validation are saved with LoRA deltas folded "
-                "into base weights, producing plain DPA4 / SeZM checkpoints suitable for "
-                "deployment.",
+                doc=doc_only_pt_supported + doc_lora,
             ),
         ],
-        alias=["SeZM", "sezm"],
-        doc="DPA4 model scaffold with fixed SeZM descriptor and fitting types.",
+        alias=["DPA4", "SeZM", "sezm"],
+        doc=doc_only_pt_supported + doc_model,
     )
     return ca
 
@@ -4488,7 +4530,7 @@ def loss_tensor() -> list[Argument]:
 
 
 def loss_variant_type_args() -> Variant:
-    doc_loss = "The type of the loss. When the fitting type is `ener`, the loss type should be set to `ener`, `dens` (Only DPA4 / SeZM supported), or left unset. When the fitting type is `dipole` or `polar`, the loss type should be set to `tensor`."
+    doc_loss = "The type of the loss. When the fitting type is `ener`, the loss type should be set to `ener`, `dens` (Only DPA4/SeZM supported), or left unset. When the fitting type is `dipole` or `polar`, the loss type should be set to `tensor`."
 
     return Variant(
         "type",
@@ -5143,7 +5185,7 @@ def validating_args() -> Argument:
     )
     doc_compiled_infer = (
         "Whether to route eval-time forwards (including full validation) "
-        "through the DPA4 / SeZM `torch.compile` path instead of eager. When `true`, "
+        "through the DPA4/SeZM `torch.compile` path instead of eager. When `true`, "
         "this flag is translated into `DP_COMPILE_INFER=1` at trainer "
         "startup before any model is constructed, which is the env var SeZM "
         "samples inside `SeZMModel.__init__`. A manually exported "

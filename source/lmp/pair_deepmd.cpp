@@ -188,7 +188,8 @@ void PairDeepMD::compute(int eflag, int vflag) {
     }
   }
 
-  // mapping (for DPA-2 JAX)
+  // mapping (for DPA-2/3 .pt2 GNN models that gather ghost features via
+  // the LAMMPS atom-map; harmless for other models).
   std::vector<int> mapping_vec(nall, -1);
   if (comm->nprocs == 1 && atom->map_style != Atom::MAP_NONE) {
     for (size_t ii = 0; ii < nall; ++ii) {

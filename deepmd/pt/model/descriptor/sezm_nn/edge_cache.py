@@ -290,7 +290,7 @@ def build_edge_cache(
         Per-edge cache.
     """
     nf, nloc, nnei = nlist.shape
-    n_nodes = int(nf * nloc)
+    n_nodes = nf * nloc
 
     # === Step 1. Force fp32+ for geometry ===
     geom_dtype = get_promoted_dtype(extended_coord.dtype)
@@ -492,10 +492,10 @@ def build_edge_cache_from_edges(
     edge_type_feat = edge_type_feat * edge_keep_f.to(dtype=edge_type_feat.dtype)
 
     # === Step 6. Source Freeze Propagation Gate (optional) ===
-    # The sparse-edge path packs one dummy masked edge per frame so the
-    # compiled graph sees a statically non-empty tensor. ``edge_keep_f``
-    # rewrites any such slot to ``w=1`` inside ``compute_edge_src_gate``,
-    # keeping the product reduction unaffected by padding.
+    # The sparse-edge path packs masked dummy edges so the compiled graph sees
+    # a statically non-empty, non-singular edge tensor. ``edge_keep_f`` rewrites
+    # any such slot to ``w=1`` inside ``compute_edge_src_gate``, keeping the
+    # product reduction unaffected by padding.
     edge_src_gate: torch.Tensor | None = None
     if bridging_switch is not None:
         with nvtx_range("src_gate"):
