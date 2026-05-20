@@ -333,11 +333,7 @@ def _trace_and_compile(
     model_uses_cuda = any(param.is_cuda for param in model.parameters()) or any(
         buffer.is_cuda for buffer in model.buffers()
     )
-    if (
-        model_uses_cuda
-        and torch.cuda.is_available()
-        and torch.cuda.is_initialized()
-    ):
+    if model_uses_cuda and torch.cuda.is_available() and torch.cuda.is_initialized():
         torch.cuda.empty_cache()
     return compiled
 
