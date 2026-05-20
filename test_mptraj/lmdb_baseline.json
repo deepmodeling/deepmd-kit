@@ -192,14 +192,14 @@
     "weight_decay": 0.001
   },
   "training": {
-    "stat_file": "./MP_traj_v024_alldata_mixu.hdf5",
+    "stat_file": "${DEEPMD_TEST_STAT_FILE}",
     "training_data": {
-      "systems": "/mnt/data_nas/zhangd/data/lmdb_data/mptraj_v024.lmdb",
+      "systems": "${DEEPMD_TEST_LMDB_TRAIN}",
       "batch_size": "auto:128",
       "_comment": "that's all"
     },
     "validation_data": {
-      "systems": "/mnt/data_nas/zhangd/data/lmdb_data/wbm.lmdb",
+      "systems": "${DEEPMD_TEST_LMDB_VALID}",
       "batch_size": 1,
       "_comment": "that's all"
     },

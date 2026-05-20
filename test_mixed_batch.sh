@@ -4,15 +4,16 @@
 
 set -e
 
+repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$repo_root"
+
 echo "=== Testing Mixed Batch Training ==="
 echo ""
 
-
-# Run training with mixed batch
 echo "Starting training with mixed_batch=True..."
 echo ""
 
-dp --pt train test_mptraj/lmdb_mixed_batch.json --skip-neighbor-stat
+dp --pt train test_mptraj/lmdb_mixed_batch.json --skip-neighbor-stat > mixed_batch_train.log 2>&1
 
 echo ""
 echo "=== Training completed ==="

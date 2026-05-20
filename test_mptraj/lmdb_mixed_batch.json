@@ -71,7 +71,7 @@
     "limit_pref_v": 1
   },
   "training": {
-    "stat_file": "/aisi/mnt/data_nas/liwentao/devel_workspace/deepmd-kit-lmdb/MP_traj_v024_alldata_mixu.hdf5",
+    "stat_file": "./MP_traj_v024_alldata_mixu.hdf5",
     "training_data": {
       "systems": "/mnt/data_nas/zhangd/data/lmdb_data/mptraj_v024.lmdb",
       "batch_size": 8,
