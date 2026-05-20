@@ -269,6 +269,7 @@ class EnergyStdLoss(TaskLoss):
                 assert atom_norm is not None
                 return torch.mean(torch.square(diff)).sqrt() * atom_norm
             return torch.mean(torch.square(diff * get_frame_norm(diff))).sqrt()
+
         if self.has_e and "energy" in model_pred and "energy" in label:
             energy_pred = model_pred["energy"]
             energy_label = label["energy"]
@@ -445,6 +446,10 @@ class EnergyStdLoss(TaskLoss):
                     )
 
             if self.has_gf and "drdq" in label:
+                if is_mixed_batch:
+                    raise NotImplementedError(
+                        "Generalized force loss is not supported with mixed_batch=True yet."
+                    )
                 drdq = label["drdq"]
                 find_drdq = label.get("find_drdq", 0.0)
                 pref_gf = pref_gf * find_drdq

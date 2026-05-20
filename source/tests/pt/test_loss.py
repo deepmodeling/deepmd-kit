@@ -16,6 +16,9 @@ from deepmd.pt.loss import (
     EnergySpinLoss,
     EnergyStdLoss,
 )
+from deepmd.pt.utils import (
+    env,
+)
 from deepmd.pt.utils.dataset import (
     DeepmdDataSetForLoader,
 )
@@ -380,17 +383,19 @@ class TestEnerStdLossMixedBatch(unittest.TestCase):
             limit_pref_v=1.0,
         )
 
-        energy_pred = torch.tensor([[10.0], [200.0]], dtype=torch.float64)
+        energy_pred = torch.tensor(
+            [[10.0], [200.0]], dtype=torch.float64, device=env.DEVICE
+        )
         energy_label = torch.zeros_like(energy_pred)
         virial_pred = torch.stack(
             [
-                torch.full((9,), 10.0, dtype=torch.float64),
-                torch.full((9,), 200.0, dtype=torch.float64),
+                torch.full((9,), 10.0, dtype=torch.float64, device=env.DEVICE),
+                torch.full((9,), 200.0, dtype=torch.float64, device=env.DEVICE),
             ]
         )
         virial_label = torch.zeros_like(virial_pred)
 
-        def fake_model():
+        def fake_model(**kwargs):
             return {
                 "energy": energy_pred,
                 "virial": virial_pred,
@@ -398,7 +403,7 @@ class TestEnerStdLossMixedBatch(unittest.TestCase):
 
         _, loss, _ = loss_obj(
             {
-                "ptr": torch.tensor([0, 10, 110], dtype=torch.long),
+                "ptr": torch.tensor([0, 10, 110], dtype=torch.long, device=env.DEVICE),
             },
             fake_model,
             {
@@ -412,11 +417,51 @@ class TestEnerStdLossMixedBatch(unittest.TestCase):
         )
 
         expected_per_term = (
-            torch.tensor([10.0**2 / 10, 200.0**2 / 100], dtype=torch.float64)
+            torch.tensor(
+                [10.0**2 / 10, 200.0**2 / 100],
+                dtype=torch.float64,
+                device=env.DEVICE,
+            )
             .mean()
             .to(loss.dtype)
         )
         torch.testing.assert_close(loss, expected_per_term * 2.0)
+
+    def test_generalized_force_rejected(self) -> None:
+        loss_obj = EnergyStdLoss(
+            starter_learning_rate=1.0,
+            start_pref_f=1.0,
+            limit_pref_f=1.0,
+            start_pref_gf=1.0,
+            limit_pref_gf=1.0,
+            numb_generalized_coord=2,
+        )
+
+        def fake_model(**kwargs):
+            return {
+                "force": torch.zeros((2, 3), dtype=torch.float64, device=env.DEVICE),
+            }
+
+        with self.assertRaisesRegex(
+            NotImplementedError,
+            "Generalized force loss is not supported with mixed_batch=True yet.",
+        ):
+            loss_obj(
+                {"ptr": torch.tensor([0, 2], dtype=torch.long, device=env.DEVICE)},
+                fake_model,
+                {
+                    "force": torch.zeros(
+                        (2, 3), dtype=torch.float64, device=env.DEVICE
+                    ),
+                    "drdq": torch.zeros(
+                        (1, 12), dtype=torch.float64, device=env.DEVICE
+                    ),
+                    "find_force": 1.0,
+                    "find_drdq": 1.0,
+                },
+                natoms=2,
+                learning_rate=1.0,
+            )
 
 
 class TestEnerStdLossAePfGf(LossCommonTest):
