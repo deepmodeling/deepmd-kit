@@ -13,7 +13,7 @@ echo ""
 echo "Starting training with mixed_batch=True..."
 echo ""
 
-dp --pt train test_mptraj/lmdb_mixed_batch.json --skip-neighbor-stat > mixed_batch_train.log 2>&1
+dp --pt train test_mptraj/lmdb_mixed_batch.json --skip-neighbor-stat >mixed_batch_train.log 2>&1
 
 echo ""
 echo "=== Training completed ==="

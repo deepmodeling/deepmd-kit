@@ -83,14 +83,19 @@ def _collate_lmdb_mixed_batch(batch: list[FrameDict]) -> BatchDict:
     with torch.device("cpu"):
         atype_list = [torch.as_tensor(item["atype"]) for item in batch]
         counts = torch.tensor(
-            [int(item.shape[0]) for item in atype_list], dtype=torch.long
+            [int(item.shape[0]) for item in atype_list],
+            dtype=torch.long,
+            device=torch.device("cpu"),
         )
         ptr = torch.cat(
-            [torch.zeros(1, dtype=torch.long), torch.cumsum(counts, dim=0)],
+            [
+                torch.zeros(1, dtype=torch.long, device=counts.device),
+                torch.cumsum(counts, dim=0),
+            ],
             dim=0,
         )
         atom_batch = torch.repeat_interleave(
-            torch.arange(len(batch), dtype=torch.long),
+            torch.arange(len(batch), dtype=torch.long, device=counts.device),
             counts,
         )
 
@@ -133,7 +138,9 @@ def make_lmdb_mixed_batch_collate(
         result = _collate_lmdb_mixed_batch(batch)
         if graph_config is None:
             return result
-        from deepmd.pt.utils.nlist import build_precomputed_flat_graph
+        from deepmd.pt.utils.nlist import (
+            build_precomputed_flat_graph,
+        )
 
         graph_data = build_precomputed_flat_graph(
             result["coord"],

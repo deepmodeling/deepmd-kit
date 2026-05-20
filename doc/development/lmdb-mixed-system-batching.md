@@ -23,9 +23,9 @@
 collate 阶段会调用 `build_precomputed_flat_graph(...)`，逐个 frame 做邻居图预处理：
 
 1. 通过 `ptr` 切出单个 frame 的 `coord/atype/box`。
-2. 对单个 frame 调用 ghost 扩展和 neighbor list 构建。
-3. 用 `extended_offset` 把每个 frame 的扩展原子索引平移到全 batch 的 flat index 空间。
-4. 拼接得到：
+1. 对单个 frame 调用 ghost 扩展和 neighbor list 构建。
+1. 用 `extended_offset` 把每个 frame 的扩展原子索引平移到全 batch 的 flat index 空间。
+1. 拼接得到：
    - `extended_atype`, `extended_batch`, `extended_image`, `extended_ptr`
    - `mapping`: extended atom -> 原始 flat local atom
    - `central_ext_index`: local atom 在 extended atom 列表里的位置

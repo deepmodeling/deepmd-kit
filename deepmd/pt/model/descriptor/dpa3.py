@@ -672,7 +672,9 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
             node_ebd_ext = node_ebd_ext + sys_cs_embd
 
         if central_ext_index is None:
-            from deepmd.pt.utils.nlist import get_central_ext_index
+            from deepmd.pt.utils.nlist import (
+                get_central_ext_index,
+            )
 
             central_ext_index = get_central_ext_index(extended_batch, ptr)
         node_ebd_inp = node_ebd_ext[central_ext_index]
@@ -712,9 +714,7 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
                 else None
             ),
             "h2": (
-                h2.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION)
-                if h2 is not None
-                else None
+                h2.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION) if h2 is not None else None
             ),
         }
 

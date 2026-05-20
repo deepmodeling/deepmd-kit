@@ -77,7 +77,6 @@ from .spin_model import (
     SpinModel,
 )
 
-
 DEFAULT_DESCRIPTOR_INIT_SEED = 1
 DEFAULT_FITTING_INIT_SEED = 2
 

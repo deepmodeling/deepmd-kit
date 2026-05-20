@@ -296,10 +296,9 @@ class InvarFitting(GeneralFitting):
             aparam=aparam_batch,
         )
 
-        valid_atom_mask = (
-            torch.arange(max_nloc, dtype=torch.long, device=device).unsqueeze(0)
-            < atom_counts.unsqueeze(1)
-        )
+        valid_atom_mask = torch.arange(
+            max_nloc, dtype=torch.long, device=device
+        ).unsqueeze(0) < atom_counts.unsqueeze(1)
         result_flat: dict[str, torch.Tensor] = {}
         for key, value in result_batch.items():
             if (

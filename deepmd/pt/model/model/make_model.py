@@ -300,7 +300,9 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 and a_nlist_mask is not None
                 and central_ext_index is not None
             ):
-                from deepmd.pt.utils.nlist import rebuild_extended_coord_from_flat_graph
+                from deepmd.pt.utils.nlist import (
+                    rebuild_extended_coord_from_flat_graph,
+                )
 
                 extended_coord = rebuild_extended_coord_from_flat_graph(
                     coord,

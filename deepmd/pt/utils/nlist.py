@@ -188,7 +188,11 @@ def build_precomputed_flat_graph(
 
     coord_central = extended_coord[central_ext_index]
     coord_pad = torch.cat([extended_coord, extended_coord[-1:, :] + rcut], dim=0)
-    nlist_safe = torch.where(nlist_mask, nlist_ext, torch.tensor(nall, device=device))
+    nlist_safe = torch.where(
+        nlist_mask,
+        nlist_ext,
+        torch.tensor(nall, dtype=nlist_ext.dtype, device=device),
+    )
     index = nlist_safe.view(-1).unsqueeze(-1).expand(-1, 3)
     coord_nei = torch.gather(coord_pad, 0, index).view(nlist_ext.shape[0], -1, 3)
     dist = torch.linalg.norm(coord_nei - coord_central[:, None, :], dim=-1)
@@ -206,7 +210,9 @@ def build_precomputed_flat_graph(
         torch.tensor(-1, dtype=nlist_ext.dtype, device=device),
     )
 
-    from deepmd.pt.model.network.graph_utils_flat import get_graph_index_flat
+    from deepmd.pt.model.network.graph_utils_flat import (
+        get_graph_index_flat,
+    )
 
     edge_index, angle_index = get_graph_index_flat(
         nlist,
@@ -273,7 +279,9 @@ def get_central_ext_index(
         ]
     )
     extended_index = torch.arange(
-        extended_batch.shape[0], dtype=extended_batch.dtype, device=extended_batch.device
+        extended_batch.shape[0],
+        dtype=extended_batch.dtype,
+        device=extended_batch.device,
     )
     frame_local_index = extended_index - extended_ptr[extended_batch]
     nloc_per_frame = (ptr[1:] - ptr[:-1]).to(extended_batch.device)

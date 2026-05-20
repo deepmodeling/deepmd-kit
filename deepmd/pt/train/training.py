@@ -113,9 +113,7 @@ from torch.distributed.checkpoint.state_dict import (
     get_optimizer_state_dict,
     set_optimizer_state_dict,
 )
-from torch.nn.parallel import (
-    DistributedDataParallel as DDP,
-)
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 try:
     from torch.distributed.fsdp import (
@@ -288,7 +286,10 @@ class Trainer:
                     _seed = 42
 
                 if _data.mixed_batch:
-                    from torch.utils.data import RandomSampler, SequentialSampler
+                    from torch.utils.data import (
+                        RandomSampler,
+                        SequentialSampler,
+                    )
 
                     if _shuffle:
                         generator = torch.Generator()

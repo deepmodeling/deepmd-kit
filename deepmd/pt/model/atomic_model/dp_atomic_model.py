@@ -421,7 +421,9 @@ class DPAtomicModel(BaseAtomicModel):
             self.eval_descriptor_list.append(descriptor.detach())
 
         if central_ext_index is None:
-            from deepmd.pt.utils.nlist import get_central_ext_index
+            from deepmd.pt.utils.nlist import (
+                get_central_ext_index,
+            )
 
             central_ext_index = get_central_ext_index(extended_batch, ptr)
             atype = extended_atype[central_ext_index]

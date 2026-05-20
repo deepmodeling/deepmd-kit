@@ -748,7 +748,9 @@ class DescrptBlockRepflows(DescriptorBlock):
         sw : torch.Tensor | None
             Switch function.
         """
-        from deepmd.pt.model.descriptor.env_mat import prod_env_mat_flat
+        from deepmd.pt.model.descriptor.env_mat import (
+            prod_env_mat_flat,
+        )
 
         nloc = batch.shape[0]
         if (

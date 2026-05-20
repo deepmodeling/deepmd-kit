@@ -55,7 +55,9 @@ def get_graph_index_flat(
 
     # 1. Build edge_index
     # n2e_index: for each edge, which local atom does it belong to
-    atom_indices = torch.arange(total_atoms, dtype=dtype, device=device)  # [total_atoms]
+    atom_indices = torch.arange(
+        total_atoms, dtype=dtype, device=device
+    )  # [total_atoms]
     n2e_index = atom_indices[:, None].expand(-1, nnei)[nlist_mask]  # [n_edge]
 
     # n_ext2e_index: for each edge, which extended atom is the neighbor
@@ -65,9 +67,7 @@ def get_graph_index_flat(
 
     # 2. Build angle_index
     # n2a_index: for each angle, which local atom does it belong to
-    n2a_index = atom_indices[:, None, None].expand(-1, a_sel, a_sel)[
-        a_nlist_mask_3d
-    ]
+    n2a_index = atom_indices[:, None, None].expand(-1, a_sel, a_sel)[a_nlist_mask_3d]
 
     # Create edge_id mapping: (atom_idx, neighbor_idx) -> edge_id
     edge_id = torch.arange(n_edge, dtype=dtype, device=device)
