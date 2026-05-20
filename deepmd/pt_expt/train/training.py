@@ -288,6 +288,13 @@ def _trace_and_compile(
         decomposition_table=decomp_table,
     )(ext_coord, ext_atype, nlist, mapping, fparam, aparam)
 
+    # make_fx has captured the graph; input tensors are no longer needed.
+    del ext_coord, ext_atype, nlist, mapping
+    if fparam is not None:
+        del fparam
+    if aparam is not None:
+        del aparam
+
     # make_fx inserts aten.detach.default for saved tensors used in the
     # decomposed autograd.grad backward ops.  These detach nodes break
     # second-order gradient flow (d(force)/d(params) for force training).
@@ -316,12 +323,16 @@ def _trace_and_compile(
     if compile_opts:
         inductor_options.update(compile_opts)
 
-    return torch.compile(
+    compiled = torch.compile(
         traced_lower,
         backend="inductor",
         dynamic=True,
         options=inductor_options,
     )
+    del traced_lower
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    return compiled
 
 
 class _CompiledModel(torch.nn.Module):
@@ -994,6 +1005,21 @@ class Trainer:
             )
 
             wrapper_mod.model[task_key] = _CompiledModel(model, compiled_lower)
+
+            # Release all intermediate tensors built for this task so they don't
+            # accumulate across tasks in multi-task scenarios.
+            del ext_coord, ext_atype, mapping, nlist_t
+            del coord, atype, coord_3d, coord_norm
+            if box is not None:
+                del box, box_flat
+            if fparam is not None:
+                del fparam
+            if aparam is not None:
+                del aparam
+            del inp
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
             log.info(
                 "Model compiled (task=%s, tracing_mode=symbolic, "
                 "dynamic=True, backend=inductor).",
