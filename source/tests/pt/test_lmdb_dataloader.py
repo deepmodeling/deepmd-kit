@@ -374,6 +374,8 @@ class TestCollate:
                 "coord": rng.standard_normal((2, 3)),
                 "atype": np.array([0, 1], dtype=np.int64),
                 "force": rng.standard_normal((2, 3)),
+                "atom_ener": rng.standard_normal((2, 1)),
+                "drdq": rng.standard_normal((2, 6)),
                 "energy": np.array([1.0]),
                 "box": np.arange(9, dtype=np.float64),
                 "find_energy": 1.0,
@@ -383,6 +385,8 @@ class TestCollate:
                 "coord": rng.standard_normal((3, 3)),
                 "atype": np.array([1, 0, 1], dtype=np.int64),
                 "force": rng.standard_normal((3, 3)),
+                "atom_ener": rng.standard_normal((3, 1)),
+                "drdq": rng.standard_normal((3, 6)),
                 "energy": np.array([2.0]),
                 "box": np.arange(9, dtype=np.float64) + 10.0,
                 "find_energy": 1.0,
@@ -393,10 +397,14 @@ class TestCollate:
         assert batch["coord"].shape == (5, 3)
         assert batch["atype"].shape == (5,)
         assert batch["force"].shape == (5, 3)
+        assert batch["atom_ener"].shape == (5, 1)
+        assert batch["drdq"].shape == (5, 6)
         assert batch["energy"].shape == (2, 1)
         assert batch["box"].shape == (2, 9)
-        torch.testing.assert_close(batch["batch"], torch.tensor([0, 0, 1, 1, 1]))
-        torch.testing.assert_close(batch["ptr"], torch.tensor([0, 2, 5]))
+        torch.testing.assert_close(
+            batch["batch"], torch.tensor([0, 0, 1, 1, 1], device="cpu")
+        )
+        torch.testing.assert_close(batch["ptr"], torch.tensor([0, 2, 5], device="cpu"))
         assert batch["fid"] == [3, 9]
 
     def test_mixed_batch_collate_precomputes_graph(self):
@@ -411,9 +419,7 @@ class TestCollate:
                 "fid": 0,
             },
             {
-                "coord": np.array(
-                    [[0.0, 0.0, 0.0], [0.2, 0.0, 0.0], [0.0, 0.2, 0.0]]
-                ),
+                "coord": np.array([[0.0, 0.0, 0.0], [0.2, 0.0, 0.0], [0.0, 0.2, 0.0]]),
                 "atype": np.array([0, 0, 0], dtype=np.int64),
                 "force": np.zeros((3, 3)),
                 "energy": np.array([1.0]),
@@ -433,7 +439,7 @@ class TestCollate:
         )
         batch = collate(frames)
         assert batch["coord"].shape == (5, 3)
-        torch.testing.assert_close(batch["ptr"], torch.tensor([0, 2, 5]))
+        torch.testing.assert_close(batch["ptr"], torch.tensor([0, 2, 5], device="cpu"))
         for key in (
             "extended_atype",
             "extended_batch",
@@ -711,6 +717,15 @@ class TestAutoProbDataset:
         )
         assert ds._block_targets is not None
 
+    def test_dataset_auto_prob_default_mixed_batch(self, auto_prob_lmdb):
+        ds = LmdbDataset(
+            auto_prob_lmdb,
+            type_map=["O", "H"],
+            batch_size=4,
+            mixed_batch=True,
+        )
+        assert ds._block_targets is None
+
     def test_dataset_auto_prob_none(self, auto_prob_lmdb):
         ds = LmdbDataset(auto_prob_lmdb, type_map=["O", "H"], batch_size=4)
         assert ds._block_targets is None
@@ -733,6 +748,16 @@ class TestAutoProbDataset:
         )
         count = sum(len(batch) for batch in ds._batch_sampler)
         assert count > 300  # expanded
+
+    def test_dataset_auto_prob_mixed_batch_raises(self, auto_prob_lmdb):
+        with pytest.raises(NotImplementedError, match="mixed_batch=True"):
+            LmdbDataset(
+                auto_prob_lmdb,
+                type_map=["O", "H"],
+                batch_size=4,
+                mixed_batch=True,
+                auto_prob_style="prob_sys_size;0:1:0.5;1:3:0.5",
+            )
 
 
 class TestMergeLmdbSystemIds:

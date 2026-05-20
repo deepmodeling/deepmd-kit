@@ -370,6 +370,55 @@ class TestEnerStdLoss(LossCommonTest):
             self.assertTrue(np.isnan(pt_more_loss_absent[f"l2_{key}_loss"]))
 
 
+class TestEnerStdLossMixedBatch(unittest.TestCase):
+    def test_per_frame_energy_and_virial_normalization(self) -> None:
+        loss_obj = EnergyStdLoss(
+            starter_learning_rate=1.0,
+            start_pref_e=1.0,
+            limit_pref_e=1.0,
+            start_pref_v=1.0,
+            limit_pref_v=1.0,
+        )
+
+        energy_pred = torch.tensor([[10.0], [200.0]], dtype=torch.float64)
+        energy_label = torch.zeros_like(energy_pred)
+        virial_pred = torch.stack(
+            [
+                torch.full((9,), 10.0, dtype=torch.float64),
+                torch.full((9,), 200.0, dtype=torch.float64),
+            ]
+        )
+        virial_label = torch.zeros_like(virial_pred)
+
+        def fake_model():
+            return {
+                "energy": energy_pred,
+                "virial": virial_pred,
+            }
+
+        _, loss, _ = loss_obj(
+            {
+                "ptr": torch.tensor([0, 10, 110], dtype=torch.long),
+            },
+            fake_model,
+            {
+                "energy": energy_label,
+                "find_energy": 1.0,
+                "virial": virial_label,
+                "find_virial": 1.0,
+            },
+            natoms=0,
+            learning_rate=1.0,
+        )
+
+        expected_per_term = (
+            torch.tensor([10.0**2 / 10, 200.0**2 / 100], dtype=torch.float64)
+            .mean()
+            .to(loss.dtype)
+        )
+        torch.testing.assert_close(loss, expected_per_term * 2.0)
+
+
 class TestEnerStdLossAePfGf(LossCommonTest):
     def setUp(self) -> None:
         self.start_lr = 1.1

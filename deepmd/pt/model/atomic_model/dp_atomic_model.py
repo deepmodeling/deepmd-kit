@@ -378,6 +378,20 @@ class DPAtomicModel(BaseAtomicModel):
         if self.do_grad_r() or self.do_grad_c():
             extended_coord.requires_grad_(True)
 
+        if (
+            hasattr(self.fitting_net, "get_dim_fparam")
+            and self.fitting_net.get_dim_fparam() > 0
+            and fparam is None
+        ):
+            default_fparam_tensor = self.fitting_net.get_default_fparam()
+            assert default_fparam_tensor is not None
+            fparam_input_for_des = torch.tile(
+                default_fparam_tensor.to(device=extended_coord.device).unsqueeze(0),
+                [ptr.numel() - 1, 1],
+            )
+        else:
+            fparam_input_for_des = fparam
+
         # Descriptor and fitting both consume the flat atom layout.
         descriptor_out = self.descriptor.forward_flat(
             extended_coord,
@@ -387,7 +401,7 @@ class DPAtomicModel(BaseAtomicModel):
             mapping,
             batch,
             ptr,
-            fparam=fparam if self.add_chg_spin_ebd else None,
+            fparam=fparam_input_for_des if self.add_chg_spin_ebd else None,
             central_ext_index=central_ext_index,
             nlist_ext=nlist_ext,
             a_nlist=a_nlist,

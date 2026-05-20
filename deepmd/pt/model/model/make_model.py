@@ -275,6 +275,13 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             The precomputed graph fields are required for this path; missing
             fields are treated as a data pipeline error.
             """
+            if do_atomic_virial:
+                raise NotImplementedError(
+                    "Atomic virial is not implemented for flat mixed-batch forward."
+                )
+            coord, box, fparam, aparam, input_prec = self._input_type_cast(
+                coord, box=box, fparam=fparam, aparam=aparam
+            )
             # Enable gradient tracking for coord and box if needed
             if self.do_grad_r("energy"):
                 coord = coord.clone().detach().requires_grad_(True)
@@ -349,7 +356,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                     do_atomic_virial,
                 )
 
-            return model_predict_lower
+            return self._output_type_cast(model_predict_lower, input_prec)
 
         def forward_common_lower_flat(
             self,
@@ -429,7 +436,9 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             nframes = ptr.numel() - 1
             if "energy" in model_ret:
                 energy_atomic = model_ret["energy"]  # [total_atoms, 1]
-                energy_redu = energy_atomic.new_zeros((nframes, energy_atomic.shape[-1]))
+                energy_redu = energy_atomic.new_zeros(
+                    (nframes, energy_atomic.shape[-1])
+                )
                 energy_redu.index_add_(0, batch, energy_atomic)
                 model_ret["energy_redu"] = energy_redu
 
@@ -489,7 +498,9 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                     retain_graph=True,
                 )[0]  # [total_atoms, 3]
 
-                fit_ret["energy_derv_r"] = -energy_derv_r.unsqueeze(-2)  # [total_atoms, 1, 3]
+                fit_ret["energy_derv_r"] = -energy_derv_r.unsqueeze(
+                    -2
+                )  # [total_atoms, 1, 3]
                 # Also provide dforce field for compatibility with EnergyModel.forward()
                 fit_ret["dforce"] = -energy_derv_r  # [total_atoms, 3]
 
@@ -510,10 +521,11 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                         1
                     )  # [nframes, 1, 9]
 
-                    # Preserve the current flat-path behavior: reduced virial is
-                    # available, atomic virial is not populated yet.
                     if do_atomic_virial:
-                        pass  # Not yet implemented for flat format
+                        raise NotImplementedError(
+                            "Atomic virial is not implemented for flat mixed-batch "
+                            "forward."
+                        )
 
             return fit_ret
 

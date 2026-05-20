@@ -42,18 +42,24 @@ __all__ = [
     "LmdbTestData",
     "_collate_lmdb_batch",
     "_collate_lmdb_mixed_batch",
-    "make_lmdb_mixed_batch_collate",
     "is_lmdb",
+    "make_lmdb_mixed_batch_collate",
 ]
 
 _ATOMWISE_MIXED_BATCH_KEYS = frozenset(
     {
         "aparam",
+        "atom_dos",
+        "atom_ener",
         "atom_ener_coeff",
         "atom_pref",
+        "atomic_weight",
         "atype",
         "coord",
+        "drdq",
         "force",
+        "force_mag",
+        "hessian",
         "spin",
     }
 )
@@ -71,16 +77,19 @@ def _collate_lmdb_mixed_batch(batch: list[FrameDict]) -> BatchDict:
     dimension via ``torch.stack``. The returned ``sid`` keeps the historical
     LMDB collate shape, namely a CPU tensor with shape ``[1]``.
     """
-    atype_list = [torch.as_tensor(item["atype"]) for item in batch]
-    counts = torch.tensor([int(item.shape[0]) for item in atype_list], dtype=torch.long)
-    ptr = torch.cat(
-        [torch.zeros(1, dtype=torch.long), torch.cumsum(counts, dim=0)],
-        dim=0,
-    )
-    atom_batch = torch.repeat_interleave(
-        torch.arange(len(batch), dtype=torch.long),
-        counts,
-    )
+    with torch.device("cpu"):
+        atype_list = [torch.as_tensor(item["atype"]) for item in batch]
+        counts = torch.tensor(
+            [int(item.shape[0]) for item in atype_list], dtype=torch.long
+        )
+        ptr = torch.cat(
+            [torch.zeros(1, dtype=torch.long), torch.cumsum(counts, dim=0)],
+            dim=0,
+        )
+        atom_batch = torch.repeat_interleave(
+            torch.arange(len(batch), dtype=torch.long),
+            counts,
+        )
 
     example = batch[0]
     result: BatchDict = {}
@@ -94,8 +103,8 @@ def _collate_lmdb_mixed_batch(batch: list[FrameDict]) -> BatchDict:
         elif batch[0][key] is None:
             result[key] = None
         else:
-            tensors = [torch.as_tensor(d[key]) for d in batch]
             with torch.device("cpu"):
+                tensors = [torch.as_tensor(d[key]) for d in batch]
                 if key in _ATOMWISE_MIXED_BATCH_KEYS:
                     result[key] = torch.cat(tensors, dim=0)
                 else:
@@ -241,7 +250,12 @@ class LmdbDataset(Dataset):
                 self._reader.nsystems,
                 self._reader.system_nframes,
             )
-            if self._block_targets is not None:
+            if self._block_targets:
+                if mixed_batch:
+                    raise NotImplementedError(
+                        "auto_prob_style/block weighting is not supported with "
+                        "mixed_batch=True yet."
+                    )
                 log.info(
                     f"LMDB auto_prob: {len(self._block_targets)} blocks, "
                     f"nsystems={self._reader.nsystems}"

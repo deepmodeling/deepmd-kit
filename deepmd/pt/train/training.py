@@ -80,7 +80,6 @@ from deepmd.pt.utils.dataloader import (
 from deepmd.pt.utils.env import (
     DEVICE,
     JIT,
-    LOCAL_RANK,
     NUM_WORKERS,
     SAMPLER_RECORD,
 )
@@ -123,7 +122,6 @@ except ImportError:
 from torch.distributed.optim import (
     ZeroRedundancyOptimizer,
 )
-from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import (
     DataLoader,
 )
@@ -281,9 +279,7 @@ class Trainer:
                 _data: LmdbDataset,
             ) -> tuple[DataLoader, Generator[Any, None, None]]:
                 _shuffle = _training_params.get("shuffle", True)
-                _seed = _training_params.get(
-                    "seed", training_params.get("seed", 42)
-                )
+                _seed = _training_params.get("seed", training_params.get("seed", 42))
                 if _seed is None:
                     _seed = 42
 
@@ -303,15 +299,18 @@ class Trainer:
                         self.model[_task_key] if self.multi_task else self.model
                     )
                     descriptor = model_for_graph.atomic_model.descriptor
-                    graph_config = None
-                    if hasattr(descriptor, "repflows"):
-                        graph_config = {
-                            "rcut": descriptor.get_rcut(),
-                            "sel": descriptor.get_sel(),
-                            "a_rcut": descriptor.repflows.a_rcut,
-                            "a_sel": descriptor.repflows.a_sel,
-                            "mixed_types": descriptor.mixed_types(),
-                        }
+                    if not hasattr(descriptor, "repflows"):
+                        raise ValueError(
+                            "mixed_batch=True currently requires a flat-graph "
+                            "capable descriptor, for example DPA3/RepFlow."
+                        )
+                    graph_config = {
+                        "rcut": descriptor.get_rcut(),
+                        "sel": descriptor.get_sel(),
+                        "a_rcut": descriptor.repflows.a_rcut,
+                        "a_sel": descriptor.repflows.a_sel,
+                        "mixed_types": descriptor.mixed_types(),
+                    }
 
                     _dataloader = DataLoader(
                         _data,
