@@ -180,12 +180,12 @@ def teardown_module() -> None:
             os.remove(f)
 
 
-def _lammps(data_file, units="metal") -> PyLammps:
+def _lammps(data_file, units="metal", atom_map: str = "yes") -> PyLammps:
     lammps = PyLammps()
     lammps.units(units)
     lammps.boundary("p p p")
     lammps.atom_style("atomic")
-    lammps.atom_modify("map yes")
+    lammps.atom_modify(f"map {atom_map}")
     if units == "metal" or units == "real":
         lammps.neighbor("2.0 bin")
     elif units == "si":
@@ -242,7 +242,22 @@ def lammps_si():
     lmp.close()
 
 
+@pytest.fixture
+def lammps_no_atom_map():
+    # Same as the default ``lammps`` fixture but with the LAMMPS atom-map
+    # disabled (``atom_modify map no``).  Exercises the C++ fail-fast
+    # branch in DeepPotPTExpt::compute_inner — single-rank .pt2 GNN
+    # inference without atom-map cannot resolve ghost-to-local mapping,
+    # so the regular path throws with an actionable error message.
+    lmp = _lammps(data_file=data_file, atom_map="no")
+    yield lmp
+    lmp.close()
+
+
 def test_pair_deepmd(lammps) -> None:
+    # Cell A: use_loc_mapping=True (deeppot_dpa3.pt2, no with-comm artifact),
+    # atom_modify map yes, single-rank.  Regular path uses the correct
+    # mapping built from LAMMPS atom-map; ghost-feature gather works.
     lammps.pair_style(f"deepmd {pb_file.resolve()}")
     lammps.pair_coeff("* *")
     lammps.run(0)
@@ -252,6 +267,46 @@ def test_pair_deepmd(lammps) -> None:
             expected_f[lammps.atoms[ii].id - 1]
         )
     lammps.run(1)
+
+
+def test_pair_deepmd_no_atom_map_fails_fast(lammps_no_atom_map) -> None:
+    # Cell B: use_loc_mapping=True (no with-comm artifact), atom_modify
+    # map no, single-rank.  Regular path needs a correct mapping for
+    # ghost-feature gather but atom-map is absent and we deliberately do
+    # not build one ourselves.  Must fail fast with an actionable message.
+    lammps_no_atom_map.pair_style(f"deepmd {pb_file.resolve()}")
+    lammps_no_atom_map.pair_coeff("* *")
+    with pytest.raises(Exception, match=r"atom_modify map yes"):
+        lammps_no_atom_map.run(0)
+
+
+def test_pair_deepmd_with_comm(lammps) -> None:
+    # Cell C single-rank: use_loc_mapping=False (deeppot_dpa3_mpi.pt2,
+    # has with-comm artifact), atom_modify map yes, single-rank.
+    # Dispatch picks the regular path because nswap==0; the regular
+    # artifact uses the correct mapping built from LAMMPS atom-map.
+    # Forces must match the same baseline as the use_loc_mapping=True
+    # variant (gen_dpa3.py exports both .pt2s from identical weights).
+    lammps.pair_style(f"deepmd {pb_file_mpi.resolve()}")
+    lammps.pair_coeff("* *")
+    lammps.run(0)
+    assert lammps.eval("pe") == pytest.approx(expected_e)
+    for ii in range(6):
+        assert lammps.atoms[ii].force == pytest.approx(
+            expected_f[lammps.atoms[ii].id - 1]
+        )
+
+
+def test_pair_deepmd_with_comm_no_atom_map_fails_fast(lammps_no_atom_map) -> None:
+    # Cell D: use_loc_mapping=False (with-comm artifact available),
+    # atom_modify map no, single-rank.  Despite the with-comm artifact
+    # being available, single-rank PBC has empty CommBrick sendlist
+    # (nswap==0), so border_op cannot fill ghost features.  Must fail
+    # fast with the same single-rank message as cell B.
+    lammps_no_atom_map.pair_style(f"deepmd {pb_file_mpi.resolve()}")
+    lammps_no_atom_map.pair_coeff("* *")
+    with pytest.raises(Exception, match=r"atom_modify map yes"):
+        lammps_no_atom_map.run(0)
 
 
 def test_pair_deepmd_virial(lammps) -> None:
@@ -361,6 +416,8 @@ def _run_mpi_subprocess(
     data_path: Path | None = None,
     processors: str | None = None,
     runner_args: list[str] | None = None,
+    pb_path: Path | None = None,
+    capture: bool = False,
 ) -> dict:
     """Helper: invoke run_mpi_pair_deepmd_dpa3_pt2.py under
     ``mpirun -n <nprocs>`` and return
@@ -380,6 +437,8 @@ def _run_mpi_subprocess(
     """
     if data_path is None:
         data_path = data_file
+    if pb_path is None:
+        pb_path = pb_file_mpi
     with tempfile.NamedTemporaryFile(mode="r", suffix=".out", delete=False) as f:
         out_path = f.name
     try:
@@ -390,7 +449,7 @@ def _run_mpi_subprocess(
             sys.executable,
             str(Path(__file__).parent / "run_mpi_pair_deepmd_dpa3_pt2.py"),
             str(data_path.resolve()),
-            str(pb_file_mpi.resolve()),
+            str(pb_path.resolve()),
             out_path,
         ]
         if processors is not None:
@@ -401,6 +460,15 @@ def _run_mpi_subprocess(
             argv.extend(extra_args)
         if runner_args:
             argv.extend(runner_args)
+        if capture:
+            # Return raw process info instead of parsing output — used by
+            # tests that expect the subprocess to fail (the fail-fast cases).
+            proc = sp.run(argv, capture_output=True, text=True)
+            return {
+                "returncode": proc.returncode,
+                "stdout": proc.stdout,
+                "stderr": proc.stderr,
+            }
         sp.check_call(argv)
         with open(out_path) as fh:
             lines = fh.read().strip().splitlines()
@@ -466,6 +534,56 @@ def test_pair_deepmd_mpi_dpa3() -> None:
         atol=1e-8,
         rtol=0,
     )
+
+
+@pytest.mark.skipif(
+    shutil.which("mpirun") is None, reason="MPI is not installed on this system"
+)
+@pytest.mark.skipif(
+    importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
+)
+def test_pair_deepmd_mpi_no_with_comm_fails_fast() -> None:
+    """Cell B-mr: use_loc_mapping=True (no with-comm artifact) under
+    ``mpirun -n 2``.  Multi-rank dispatch cannot use the regular path
+    (mapping is unreliable across ranks) and there is no with-comm
+    artifact to fall back to.  Must fail-fast with a message naming
+    ``use_loc_mapping=False`` as the user-facing fix.
+    """
+    out = _run_mpi_subprocess(pb_path=pb_file, capture=True)
+    assert out["returncode"] != 0, (
+        "Expected subprocess to fail-fast for "
+        "use_loc_mapping=True .pt2 + multi-rank, but it exited 0."
+    )
+    combined = out["stdout"] + out["stderr"]
+    assert "use_loc_mapping=False" in combined, (
+        "Expected error message mentioning use_loc_mapping=False, got:\n"
+        + combined[-500:]
+    )
+
+
+@pytest.mark.skipif(
+    shutil.which("mpirun") is None, reason="MPI is not installed on this system"
+)
+@pytest.mark.skipif(
+    importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
+)
+def test_pair_deepmd_mpi_no_atom_map() -> None:
+    """Cell D-mr: use_loc_mapping=False (with-comm artifact present)
+    under ``mpirun -n 2`` WITHOUT ``atom_modify map yes``.  Multi-rank
+    dispatch routes to the with-comm artifact whose graph fills ghost
+    features via ``border_op`` and does not consume the mapping tensor
+    — so atom-map is not required.  Forces must match the same baseline
+    as the with-atom-map multi-rank run (cell C-mr).
+    """
+    out = _run_mpi_subprocess(runner_args=["--no-atom-map"])
+    assert out["pe"] == pytest.approx(expected_e)
+    for ii in range(6):
+        np.testing.assert_allclose(
+            out["forces"][ii],
+            expected_f[ii],
+            atol=1e-8,
+            rtol=0,
+        )
 
 
 @pytest.mark.skipif(

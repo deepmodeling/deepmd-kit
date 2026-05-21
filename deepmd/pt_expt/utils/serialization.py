@@ -442,6 +442,22 @@ def _collect_metadata(model: torch.nn.Module, is_spin: bool = False) -> dict:
     # (per-layer ghost-feature MPI exchange via deepmd_export::border_op).
     # The C++ DeepPotPTExpt / DeepSpinPTExpt loaders branch on this flag.
     meta["has_comm_artifact"] = _needs_with_comm_artifact(model)
+    # Whether the model's regular .pt2 graph consumes the ``mapping``
+    # tensor to gather per-layer ghost-atom features from local atoms.
+    # Mirrors the descriptor's ``has_message_passing()`` API: True for
+    # any message-passing descriptor (DPA2, DPA3, hybrids over those);
+    # False for non-message-passing descriptors (se_e2_a, DPA1, etc.).
+    # The C++ side gates its fail-fast on this — an absent mapping is
+    # fatal only for models that would silently corrupt ghost features
+    # otherwise.
+    desc = getattr(getattr(model, "atomic_model", None), "descriptor", None)
+    if desc is not None and hasattr(desc, "has_message_passing"):
+        try:
+            meta["has_message_passing"] = bool(desc.has_message_passing())
+        except (AttributeError, NotImplementedError):
+            meta["has_message_passing"] = False
+    else:
+        meta["has_message_passing"] = False
     return meta
 
 

@@ -78,6 +78,15 @@ parser.add_argument(
     "to keep wall time low while still exercising the rebuild path).",
 )
 parser.add_argument(
+    "--no-atom-map",
+    action="store_true",
+    help="When set, omit ``atom_modify map yes`` from the LAMMPS input. "
+    "Used by the no-atom-map fail-fast / with-comm fallback tests; "
+    "with this flag the C++ DeepPotPTExpt sees inlist.mapping == "
+    "nullptr and either fails fast (no with-comm artifact) or routes "
+    "to with-comm (multi-rank, with-comm artifact present).",
+)
+parser.add_argument(
     "--null-vx",
     type=float,
     default=None,
@@ -124,8 +133,12 @@ lammps.atom_style("atomic")
 # ``atom_modify map yes`` is required when single-rank dispatch goes
 # through the regular artifact of a use_loc_mapping=False .pt2: the
 # C++ side needs the LAMMPS global-id->local-index map to build the
-# ``mapping`` tensor. It is harmless under multi-rank.
-lammps.atom_modify("map yes")
+# ``mapping`` tensor. It is harmless under multi-rank.  The
+# ``--no-atom-map`` flag skips this line so the no-atom-map fallback
+# (multi-rank with-comm path) and fail-fast (no with-comm artifact)
+# branches can be exercised.
+if not args.no_atom_map:
+    lammps.atom_modify("map yes")
 lammps.neighbor("2.0 bin")
 lammps.neigh_modify(f"every {args.neigh_every} delay 0 check no")
 lammps.read_data(args.DATAFILE)
