@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import ctypes
 import json
+from typing import (
+    Any,
+)
 
 import numpy as np
 import torch
@@ -96,6 +99,16 @@ def _json_to_numpy(model_obj: dict) -> dict:
             else x
         ),
     )
+
+
+def _metadata_value_to_json(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, torch.Tensor):
+        return value.detach().cpu().tolist()
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    return value
 
 
 def _needs_with_comm_artifact(model: torch.nn.Module) -> bool:
@@ -450,6 +463,19 @@ def _collect_metadata(model: torch.nn.Module, is_spin: bool = False) -> dict:
         "mixed_types": model.mixed_types(),
         "has_default_fparam": model.has_default_fparam(),
         "default_fparam": model.get_default_fparam(),
+        "has_chg_spin_ebd": (
+            model.has_chg_spin_ebd() if hasattr(model, "has_chg_spin_ebd") else False
+        ),
+        "has_default_chg_spin": (
+            model.has_default_chg_spin()
+            if hasattr(model, "has_default_chg_spin")
+            else False
+        ),
+        "default_chg_spin": (
+            _metadata_value_to_json(model.get_default_chg_spin())
+            if hasattr(model, "get_default_chg_spin")
+            else None
+        ),
         "fitting_output_defs": fitting_output_defs,
         # sel_type enables `DeepEval.get_sel_type()` without a dpmodel
         # round-trip; required for dipole/polar/wfc models in metadata-only

@@ -561,6 +561,11 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             return self.atomic_model.has_chg_spin_ebd()
 
         @torch.jit.export
+        def get_dim_chg_spin(self) -> int:
+            """Get the dimension of charge_spin input."""
+            return self.atomic_model.get_dim_chg_spin()
+
+        @torch.jit.export
         def has_default_chg_spin(self) -> bool:
             """Check if the model has default charge_spin values."""
             return self.atomic_model.has_default_chg_spin()

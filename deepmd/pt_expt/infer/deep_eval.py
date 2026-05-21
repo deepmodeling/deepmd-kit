@@ -59,6 +59,17 @@ if TYPE_CHECKING:
     import ase.neighborlist
 
 
+def _reshape_charge_spin(charge_spin: np.ndarray, nframes: int) -> np.ndarray:
+    charge_spin_arr = np.asarray(charge_spin)
+    try:
+        return charge_spin_arr.reshape(nframes, 2)
+    except ValueError as err:
+        raise ValueError(
+            f"charge_spin must be reshape-compatible with ({nframes}, 2), "
+            f"got shape {charge_spin_arr.shape}."
+        ) from err
+
+
 class DeepEval(DeepEvalBackend):
     """PyTorch Exportable backend implementation of DeepEval.
 
@@ -626,10 +637,11 @@ class DeepEval(DeepEvalBackend):
             The array should be of size nframes x natoms x dim_aparam.
         charge_spin
             The charge and spin values for each frame.
-            The array should be of size nframes x 2, where the first column is charge
-            and the second column is spin. If the model has add_chg_spin_ebd=True and
-            no default_chg_spin is set, this parameter is required. If default_chg_spin
-            is configured, this parameter is optional and will override the default.
+            The array should be reshape-compatible with nframes x 2, where the first
+            column is charge and the second column is spin. If the model has
+            add_chg_spin_ebd=True and no default_chg_spin is set, this parameter is
+            required. If default_chg_spin is configured, this parameter is optional
+            and will override the default.
         **kwargs
             Other parameters
 
@@ -1062,12 +1074,7 @@ class DeepEval(DeepEvalBackend):
 
         # charge_spin handling: dedicated input, separate from fparam.
         if charge_spin is not None:
-            charge_spin_arr = np.asarray(charge_spin)
-            if charge_spin_arr.shape != (nframes, 2):
-                raise ValueError(
-                    f"charge_spin must have shape (nframes, 2), got {charge_spin_arr.shape}. "
-                    f"Expected ({nframes}, 2) for {nframes} frame(s)."
-                )
+            charge_spin_arr = _reshape_charge_spin(charge_spin, nframes)
             charge_spin_t = torch.tensor(
                 charge_spin_arr,
                 dtype=torch.float64,
@@ -1284,12 +1291,7 @@ class DeepEval(DeepEvalBackend):
 
         # charge_spin handling: dedicated input, separate from fparam.
         if charge_spin is not None:
-            charge_spin_arr = np.asarray(charge_spin)
-            if charge_spin_arr.shape != (nframes, 2):
-                raise ValueError(
-                    f"charge_spin must have shape (nframes, 2), got {charge_spin_arr.shape}. "
-                    f"Expected ({nframes}, 2) for {nframes} frame(s)."
-                )
+            charge_spin_arr = _reshape_charge_spin(charge_spin, nframes)
             charge_spin_t = torch.tensor(
                 charge_spin_arr,
                 dtype=torch.float64,

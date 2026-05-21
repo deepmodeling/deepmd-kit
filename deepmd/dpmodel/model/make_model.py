@@ -725,6 +725,10 @@ def make_model(
             """Check if the model has charge spin embedding."""
             return self.atomic_model.has_chg_spin_ebd()
 
+        def get_dim_chg_spin(self) -> int:
+            """Get the dimension of charge_spin input."""
+            return self.atomic_model.get_dim_chg_spin()
+
         def has_default_chg_spin(self) -> bool:
             """Check if the model has default charge_spin values."""
             return self.atomic_model.has_default_chg_spin()
