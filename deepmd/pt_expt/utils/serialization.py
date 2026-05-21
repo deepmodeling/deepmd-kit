@@ -673,7 +673,9 @@ def _trace_and_export(
         # Load libdeepmd_op_pt.so and register border_op fake/autograd
         # metadata now — deferred from import time so normal utils imports
         # don't force-load the op library and break fake-op ordering.
-        from deepmd.pt_expt.utils.comm import ensure_comm_registered
+        from deepmd.pt_expt.utils.comm import (
+            ensure_comm_registered,
+        )
 
         ensure_comm_registered()
         if not _needs_with_comm_artifact(model):
