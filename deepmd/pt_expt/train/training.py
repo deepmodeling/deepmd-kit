@@ -1007,6 +1007,19 @@ class Trainer:
                 compile_opts,
             )
 
+            # torch.compile is lazy: inductor only compiles on the first
+            # call.  In DDP multi-task training, different ranks may first
+            # hit a task at different training steps, so one rank can block
+            # inside inductor for minutes while others spin in AllReduce —
+            # causing an NCCL timeout.  Warmup here, while sample inputs
+            # still exist, forces eager compilation before training starts.
+            _warmup_out = compiled_lower(
+                ext_coord, ext_atype, nlist_t, mapping, fparam, aparam
+            )
+            del _warmup_out
+            if DEVICE.type == "cuda" and torch.cuda.is_initialized():
+                torch.cuda.synchronize()
+
             wrapper_mod.model[task_key] = _CompiledModel(model, compiled_lower)
 
             # Release all intermediate tensors built for this task so they don't
@@ -1028,6 +1041,12 @@ class Trainer:
                 "dynamic=True, backend=inductor).",
                 task_key,
             )
+
+        # All tasks compiled on this rank — wait for all ranks before
+        # training starts so no rank enters the training loop while another
+        # is still blocked in inductor compilation.
+        if self.is_distributed:
+            dist.barrier()
 
     # ------------------------------------------------------------------
     # Data helpers
