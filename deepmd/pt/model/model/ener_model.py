@@ -89,7 +89,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         edge_index: torch.Tensor | None = None,
         angle_index: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
-        if batch is not None and ptr is not None:
+        if not torch.jit.is_scripting() and batch is not None and ptr is not None:
             model_ret = self.forward_common_flat(
                 coord=coord,
                 atype=atype,
