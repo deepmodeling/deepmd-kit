@@ -1022,9 +1022,9 @@ class Trainer:
             #   ext_coord / ext_atype / mapping  dim 1 = nall (ghost+real atoms)
             #   nlist_t                          dim 1 = nloc (real atoms only)
             # Both vary per batch because system sizes differ across structures.
-            torch._dynamo.mark_dynamic(ext_coord, 1)   # [nframes, nall, 3]
-            torch._dynamo.mark_dynamic(ext_atype, 1)   # [nframes, nall]
-            torch._dynamo.mark_dynamic(nlist_t, 1)     # [nframes, nloc, max_nnei]
+            torch._dynamo.mark_dynamic(ext_coord, 1)  # [nframes, nall, 3]
+            torch._dynamo.mark_dynamic(ext_atype, 1)  # [nframes, nall]
+            torch._dynamo.mark_dynamic(nlist_t, 1)  # [nframes, nloc, max_nnei]
             if mapping.dim() >= 2:
                 torch._dynamo.mark_dynamic(mapping, 1)  # [nframes, nall]
             _warmup_out = compiled_lower(
