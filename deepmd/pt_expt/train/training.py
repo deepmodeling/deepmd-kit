@@ -401,15 +401,15 @@ class _CompiledModel(torch.nn.Module):
         # use.  With random task sampling across DDP ranks, that second
         # compilation can happen at different times on different ranks, causing
         # an NCCL timeout.
-        torch._dynamo.mark_dynamic(ext_coord, 1)   # nall
-        torch._dynamo.mark_dynamic(ext_atype, 1)   # nall
-        torch._dynamo.mark_dynamic(nlist, 1)        # nloc
+        torch._dynamo.mark_dynamic(ext_coord, 1)  # nall
+        torch._dynamo.mark_dynamic(ext_atype, 1)  # nall
+        torch._dynamo.mark_dynamic(nlist, 1)  # nloc
         if mapping.dim() >= 2:
             torch._dynamo.mark_dynamic(mapping, 1)  # nall
         if fparam is not None:
-            torch._dynamo.mark_dynamic(fparam, 0)   # nframes (may differ per task)
+            torch._dynamo.mark_dynamic(fparam, 0)  # nframes (may differ per task)
         if aparam is not None:
-            torch._dynamo.mark_dynamic(aparam, 1)   # nloc
+            torch._dynamo.mark_dynamic(aparam, 1)  # nloc
 
         result = self.compiled_forward_lower(
             ext_coord, ext_atype, nlist, mapping, fparam, aparam
@@ -1052,7 +1052,7 @@ class Trainer:
             if mapping.dim() >= 2:
                 torch._dynamo.mark_dynamic(mapping, 1)  # [nframes, nall]
             if fparam is not None:
-                torch._dynamo.mark_dynamic(fparam, 0)   # [nframes, dim_fparam]
+                torch._dynamo.mark_dynamic(fparam, 0)  # [nframes, dim_fparam]
             if aparam is not None:
                 torch._dynamo.mark_dynamic(aparam, 1)  # [nframes, nloc, dim_aparam]
             _warmup_out = compiled_lower(
