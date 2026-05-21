@@ -741,7 +741,7 @@ def extend_coord_with_ghosts(
         mapping extended index to the local index
 
     """
-    extend_coord, extend_atype, extend_aidx = _extend_coord_with_ghosts_impl(
+    extend_coord, extend_atype, extend_aidx, _ = _extend_coord_with_ghosts_impl(
         coord,
         atype,
         cell,
@@ -786,7 +786,7 @@ def _extend_coord_with_ghosts_impl(
     rcut: float,
     cell_cpu: torch.Tensor | None = None,
     return_image: bool = False,
-) -> tuple[torch.Tensor, ...]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
     device = coord.device
     nf, nloc = atype.shape
     aidx = torch.tile(
@@ -797,11 +797,10 @@ def _extend_coord_with_ghosts_impl(
         extend_coord = coord.clone()
         extend_atype = atype.clone()
         extend_aidx = aidx.clone()
-        extend_image = (
-            torch.zeros((nf, nloc, 3), device=device, dtype=torch.int64)
-            if return_image
-            else None
-        )
+        if return_image:
+            extend_image = torch.zeros((nf, nloc, 3), device=device, dtype=torch.int64)
+        else:
+            extend_image = torch.empty((0,), device=device, dtype=torch.int64)
     else:
         coord = coord.view([nf, nloc, 3])
         cell = cell.view([nf, 3, 3])
@@ -834,17 +833,15 @@ def _extend_coord_with_ghosts_impl(
         extend_coord = coord[:, None, :, :] + shift_vec[:, :, None, :]
         extend_atype = torch.tile(atype.unsqueeze(-2), [1, ns, 1])
         extend_aidx = torch.tile(aidx.unsqueeze(-2), [1, ns, 1])
-        extend_image = (
-            torch.tile(shift_idx.view(1, ns, 1, 3), [nf, 1, nloc, 1])
-            if return_image
-            else None
-        )
-    result = [
-        extend_coord.reshape([nf, nall * 3]).to(device),
-        extend_atype.view([nf, nall]).to(device),
-        extend_aidx.view([nf, nall]).to(device),
-    ]
+        if return_image:
+            extend_image = torch.tile(shift_idx.view(1, ns, 1, 3), [nf, 1, nloc, 1])
+        else:
+            extend_image = torch.empty((0,), device=device, dtype=torch.int64)
+    extend_coord_out = extend_coord.reshape([nf, nall * 3]).to(device)
+    extend_atype_out = extend_atype.view([nf, nall]).to(device)
+    extend_aidx_out = extend_aidx.view([nf, nall]).to(device)
     if return_image:
-        assert extend_image is not None
-        result.append(extend_image.view([nf, nall, 3]).to(device))
-    return tuple(result)
+        extend_image_out = extend_image.view([nf, nall, 3]).to(device)
+    else:
+        extend_image_out = extend_image
+    return extend_coord_out, extend_atype_out, extend_aidx_out, extend_image_out
