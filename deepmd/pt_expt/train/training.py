@@ -1013,6 +1013,20 @@ class Trainer:
             # inside inductor for minutes while others spin in AllReduce —
             # causing an NCCL timeout.  Warmup here, while sample inputs
             # still exist, forces eager compilation before training starts.
+            #
+            # Mark variable-size dimensions as dynamic so Dynamo creates range
+            # guards rather than equality guards.  Without this, each new value
+            # of nall or nloc in a training batch breaks the equality guard and
+            # triggers a full recompilation, which can stall one rank for
+            # minutes while others wait in a collective — causing NCCL timeout.
+            #   ext_coord / ext_atype / mapping  dim 1 = nall (ghost+real atoms)
+            #   nlist_t                          dim 1 = nloc (real atoms only)
+            # Both vary per batch because system sizes differ across structures.
+            torch._dynamo.mark_dynamic(ext_coord, 1)   # [nframes, nall, 3]
+            torch._dynamo.mark_dynamic(ext_atype, 1)   # [nframes, nall]
+            torch._dynamo.mark_dynamic(nlist_t, 1)     # [nframes, nloc, max_nnei]
+            if mapping.dim() >= 2:
+                torch._dynamo.mark_dynamic(mapping, 1)  # [nframes, nall]
             _warmup_out = compiled_lower(
                 ext_coord, ext_atype, nlist_t, mapping, fparam, aparam
             )
