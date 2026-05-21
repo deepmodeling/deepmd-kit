@@ -394,6 +394,23 @@ class _CompiledModel(torch.nn.Module):
         ext_coord = ext_coord.reshape(nframes, -1, 3)
         ext_coord = ext_coord.detach().requires_grad_(True)
 
+        # Mark nall and nloc as dynamic on every call so Dynamo's guard always
+        # matches the warmup compilation (which was also built with mark_dynamic).
+        # Without this, training tensors are new Python objects that Dynamo sees
+        # as "fresh", triggering a second per-task compilation on first training
+        # use.  With random task sampling across DDP ranks, that second
+        # compilation can happen at different times on different ranks, causing
+        # an NCCL timeout.
+        torch._dynamo.mark_dynamic(ext_coord, 1)   # nall
+        torch._dynamo.mark_dynamic(ext_atype, 1)   # nall
+        torch._dynamo.mark_dynamic(nlist, 1)        # nloc
+        if mapping.dim() >= 2:
+            torch._dynamo.mark_dynamic(mapping, 1)  # nall
+        if fparam is not None:
+            torch._dynamo.mark_dynamic(fparam, 0)   # nframes (may differ per task)
+        if aparam is not None:
+            torch._dynamo.mark_dynamic(aparam, 1)   # nloc
+
         result = self.compiled_forward_lower(
             ext_coord, ext_atype, nlist, mapping, fparam, aparam
         )
@@ -1022,11 +1039,22 @@ class Trainer:
             #   ext_coord / ext_atype / mapping  dim 1 = nall (ghost+real atoms)
             #   nlist_t                          dim 1 = nloc (real atoms only)
             # Both vary per batch because system sizes differ across structures.
+            # Match _CompiledModel.forward which sets requires_grad_(True) on
+            # ext_coord before calling compiled_forward_lower.  Dynamo's guard
+            # includes requires_grad, so a mismatch here would cause every
+            # task's first training call to miss the warmup cache and trigger
+            # a new compilation — at a random time on each rank — creating the
+            # exact NCCL desync we are trying to prevent.
+            ext_coord = ext_coord.detach().requires_grad_(True)
             torch._dynamo.mark_dynamic(ext_coord, 1)  # [nframes, nall, 3]
             torch._dynamo.mark_dynamic(ext_atype, 1)  # [nframes, nall]
             torch._dynamo.mark_dynamic(nlist_t, 1)  # [nframes, nloc, max_nnei]
             if mapping.dim() >= 2:
                 torch._dynamo.mark_dynamic(mapping, 1)  # [nframes, nall]
+            if fparam is not None:
+                torch._dynamo.mark_dynamic(fparam, 0)   # [nframes, dim_fparam]
+            if aparam is not None:
+                torch._dynamo.mark_dynamic(aparam, 1)  # [nframes, nloc, dim_aparam]
             _warmup_out = compiled_lower(
                 ext_coord, ext_atype, nlist_t, mapping, fparam, aparam
             )
