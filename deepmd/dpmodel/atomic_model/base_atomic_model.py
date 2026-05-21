@@ -160,6 +160,10 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         """Check if the model has charge spin embedding."""
         return False
 
+    def get_dim_chg_spin(self) -> int:
+        """Get the dimension of charge_spin input."""
+        return 0
+
     def has_default_chg_spin(self) -> bool:
         """Check if the model has default charge_spin values."""
         return False

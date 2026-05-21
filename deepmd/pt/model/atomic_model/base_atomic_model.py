@@ -193,6 +193,11 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         """Check if the model has charge spin embedding."""
         return False
 
+    @torch.jit.export
+    def get_dim_chg_spin(self) -> int:
+        """Get the dimension of charge_spin input."""
+        return 0
+
     def has_default_chg_spin(self) -> bool:
         """Check if the model has default charge_spin values."""
         return False
