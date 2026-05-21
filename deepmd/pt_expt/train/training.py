@@ -1019,7 +1019,7 @@ class Trainer:
                 del fparam
             if aparam is not None:
                 del aparam
-            del inp
+            del inp, _
             if DEVICE.type == "cuda" and torch.cuda.is_initialized():
                 torch.cuda.empty_cache()
 
@@ -1205,7 +1205,9 @@ class Trainer:
                 if self.rank == 0:
                     if not self.multi_task:
                         train_results = {
-                            k: v for k, v in more_loss.items() if "l2_" not in k
+                            k: (v.item() if isinstance(v, torch.Tensor) else v)
+                            for k, v in more_loss.items()
+                            if "l2_" not in k
                         }
 
                         # validation
@@ -1225,9 +1227,13 @@ class Trainer:
                                 sum_natoms += natoms
                                 for k, v in _vmore.items():
                                     if "l2_" not in k:
-                                        valid_results[k] = (
-                                            valid_results.get(k, 0.0) + v * natoms
-                                        )
+                                        valid_results[k] = valid_results.get(
+                                            k, 0.0
+                                        ) + (
+                                            v.item()
+                                            if isinstance(v, torch.Tensor)
+                                            else v
+                                        ) * natoms
                             if sum_natoms > 0:
                                 valid_results = {
                                     k: v / sum_natoms for k, v in valid_results.items()
@@ -1239,13 +1245,15 @@ class Trainer:
 
                         # current task already has loss
                         train_results[task_key] = {
-                            k: v for k, v in more_loss.items() if "l2_" not in k
+                            k: (v.item() if isinstance(v, torch.Tensor) else v)
+                            for k, v in more_loss.items()
+                            if "l2_" not in k
                         }
 
                         # compute loss for other tasks
                         for _key in self.model_keys:
                             if _key != task_key:
-                                self.optimizer.zero_grad()
+                                self.optimizer.zero_grad(set_to_none=True)
                                 _inp, _lab = self.get_data(is_train=True, task_key=_key)
                                 _, _loss, _more = self._unwrapped(
                                     **_inp,
@@ -1253,9 +1261,23 @@ class Trainer:
                                     label=_lab,
                                     task_key=_key,
                                 )
+                                # Use .item() so the backward graph (and its
+                                # saved activations) can be freed immediately.
+                                # Display passes never call loss.backward(), so
+                                # without this the computation graphs for all
+                                # tasks accumulate simultaneously in GPU memory.
                                 train_results[_key] = {
-                                    k: v for k, v in _more.items() if "l2_" not in k
+                                    k: (
+                                        v.item()
+                                        if isinstance(v, torch.Tensor)
+                                        else v
+                                    )
+                                    for k, v in _more.items()
+                                    if "l2_" not in k
                                 }
+                                del _loss, _more, _inp, _lab
+                                if torch.cuda.is_available() and torch.cuda.is_initialized():
+                                    torch.cuda.empty_cache()
 
                             # validation for each task
                             _vdata = self.validation_data[_key]
@@ -1278,7 +1300,11 @@ class Trainer:
                                     _sum_natoms += natoms
                                     for k, v in _vmore.items():
                                         if "l2_" not in k:
-                                            _vres[k] = _vres.get(k, 0.0) + v * natoms
+                                            _vres[k] = _vres.get(k, 0.0) + (
+                                                v.item()
+                                                if isinstance(v, torch.Tensor)
+                                                else v
+                                            ) * natoms
                                 if _sum_natoms > 0:
                                     _vres = {
                                         k: v / _sum_natoms for k, v in _vres.items()
