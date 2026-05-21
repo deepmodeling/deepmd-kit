@@ -565,11 +565,25 @@ DescriptorParamDPA3List = parameterize_func(
             "env_protection": (0.0, 1e-8),
             "precision": ("float64",),
             "use_loc_mapping": (True, False),
-            "add_chg_spin_ebd": (False, True),
-            "default_chg_spin": (None, [5.0, 1.0]),
         }
     ),
 )
+
+
+def DescriptorParamDPA3DefaultChgSpin(ntypes, rcut, rcut_smth, sel, type_map, **kwargs):
+    return DescriptorParamDPA3(
+        ntypes,
+        rcut,
+        rcut_smth,
+        sel,
+        type_map,
+        **kwargs,
+        add_chg_spin_ebd=True,
+        default_chg_spin=[5.0, 1.0],
+    )
+
+
+DescriptorParamDPA3List.append(DescriptorParamDPA3DefaultChgSpin)
 # to get name for the default function
 DescriptorParamDPA3 = DescriptorParamDPA3List[0]
 
