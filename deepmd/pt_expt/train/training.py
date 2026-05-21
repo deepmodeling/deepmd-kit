@@ -1227,13 +1227,15 @@ class Trainer:
                                 sum_natoms += natoms
                                 for k, v in _vmore.items():
                                     if "l2_" not in k:
-                                        valid_results[k] = valid_results.get(
-                                            k, 0.0
-                                        ) + (
-                                            v.item()
-                                            if isinstance(v, torch.Tensor)
-                                            else v
-                                        ) * natoms
+                                        valid_results[k] = (
+                                            valid_results.get(k, 0.0)
+                                            + (
+                                                v.item()
+                                                if isinstance(v, torch.Tensor)
+                                                else v
+                                            )
+                                            * natoms
+                                        )
                             if sum_natoms > 0:
                                 valid_results = {
                                     k: v / sum_natoms for k, v in valid_results.items()
@@ -1267,16 +1269,15 @@ class Trainer:
                                 # without this the computation graphs for all
                                 # tasks accumulate simultaneously in GPU memory.
                                 train_results[_key] = {
-                                    k: (
-                                        v.item()
-                                        if isinstance(v, torch.Tensor)
-                                        else v
-                                    )
+                                    k: (v.item() if isinstance(v, torch.Tensor) else v)
                                     for k, v in _more.items()
                                     if "l2_" not in k
                                 }
                                 del _loss, _more, _inp, _lab
-                                if torch.cuda.is_available() and torch.cuda.is_initialized():
+                                if (
+                                    torch.cuda.is_available()
+                                    and torch.cuda.is_initialized()
+                                ):
                                     torch.cuda.empty_cache()
 
                             # validation for each task
@@ -1300,11 +1301,15 @@ class Trainer:
                                     _sum_natoms += natoms
                                     for k, v in _vmore.items():
                                         if "l2_" not in k:
-                                            _vres[k] = _vres.get(k, 0.0) + (
-                                                v.item()
-                                                if isinstance(v, torch.Tensor)
-                                                else v
-                                            ) * natoms
+                                            _vres[k] = (
+                                                _vres.get(k, 0.0)
+                                                + (
+                                                    v.item()
+                                                    if isinstance(v, torch.Tensor)
+                                                    else v
+                                                )
+                                                * natoms
+                                            )
                                 if _sum_natoms > 0:
                                     _vres = {
                                         k: v / _sum_natoms for k, v in _vres.items()
