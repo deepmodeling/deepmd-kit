@@ -349,9 +349,11 @@ def test_pte_with_comm_dict_traces_and_loads(tmp_path) -> None:
     assert os.path.exists(pte_path)
     loaded = torch.export.load(pte_path)
     # Sanity: the loaded program has the expected number of inputs
-    # (6 base + 8 comm = 14).
+    # (7 base + 8 comm = 15): extended_coord, extended_atype, nlist,
+    # mapping, fparam, aparam, charge_spin (added in 0505_reformat_chg_spin)
+    # + the 8 comm tensors.
     spec = loaded.module().graph.find_nodes(op="placeholder")
-    assert len(spec) == 14, (
-        f"with-comm exported program must accept 14 positional inputs "
-        f"(6 base + 8 comm); got {len(spec)}"
+    assert len(spec) == 15, (
+        f"with-comm exported program must accept 15 positional inputs "
+        f"(7 base + 8 comm); got {len(spec)}"
     )
