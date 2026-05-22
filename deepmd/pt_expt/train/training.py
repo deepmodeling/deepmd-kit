@@ -329,6 +329,13 @@ def _trace_and_compile(
         dynamic=True,
         options=inductor_options,
     )
+    # Keep the traced FX graph alive as long as the compiled callable.
+    # _remove_detach_nodes makes saved activations alias the graph's symbolic
+    # tensors; if the FX graph is GC'd, its SymInt shape objects lose their
+    # Python references while C++ view metadata still holds raw pointers to
+    # them — causing apply_view_meta_sequence to read garbage (crash at
+    # random training steps, earlier under higher GC pressure from many tasks).
+    compiled._traced_lower_ref = traced_lower
     del traced_lower
     model_uses_cuda = any(param.is_cuda for param in model.parameters()) or any(
         buffer.is_cuda for buffer in model.buffers()
