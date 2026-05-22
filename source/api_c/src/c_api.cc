@@ -16,10 +16,12 @@ extern "C" {
 DP_Nlist::DP_Nlist() {}
 DP_Nlist::DP_Nlist(deepmd::InputNlist& nl) : nl(nl) {}
 
-DP_Nlist* DP_NewNlist(
-    int inum_, int* ilist_, int* numneigh_, int** firstneigh_, int nprocs) {
-  DP_NEW_OK(DP_Nlist, deepmd::InputNlist nl(inum_, ilist_, numneigh_,
-                                            firstneigh_, nprocs);
+DP_Nlist* DP_NewNlist(int inum_,
+                      int* ilist_,
+                      int* numneigh_,
+                      int** firstneigh_) {
+  DP_NEW_OK(DP_Nlist,
+            deepmd::InputNlist nl(inum_, ilist_, numneigh_, firstneigh_);
             DP_Nlist* new_nl = new DP_Nlist(nl); return new_nl;)
 }
 DP_Nlist* DP_NewNlist_comm(int inum_,

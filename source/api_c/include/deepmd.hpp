@@ -809,16 +809,15 @@ struct InputNlist {
         ilist(nullptr),
         numneigh(nullptr),
         firstneigh(nullptr),
-        nl(DP_NewNlist(0, nullptr, nullptr, nullptr, 1)) {
+        nl(DP_NewNlist(0, nullptr, nullptr, nullptr)) {
     DP_CHECK_OK(DP_NlistCheckOK, nl);
   };
-  InputNlist(
-      int inum_, int* ilist_, int* numneigh_, int** firstneigh_, int nprocs = 1)
+  InputNlist(int inum_, int* ilist_, int* numneigh_, int** firstneigh_)
       : inum(inum_),
         ilist(ilist_),
         numneigh(numneigh_),
         firstneigh(firstneigh_),
-        nl(DP_NewNlist(inum_, ilist_, numneigh_, firstneigh_, nprocs)) {
+        nl(DP_NewNlist(inum_, ilist_, numneigh_, firstneigh_)) {
     DP_CHECK_OK(DP_NlistCheckOK, nl);
   };
   InputNlist(int inum_,
@@ -898,7 +897,7 @@ void inline convert_nlist(InputNlist& to_nlist,
   // delete the original nl
   DP_DeleteNlist(to_nlist.nl);
   to_nlist.nl = DP_NewNlist(to_nlist.inum, to_nlist.ilist, to_nlist.numneigh,
-                            to_nlist.firstneigh, 1);
+                            to_nlist.firstneigh);
 }
 /**
  * @brief Deep Potential Base Model.

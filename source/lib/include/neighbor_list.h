@@ -46,13 +46,14 @@ struct InputNlist {
   int mask = 0xFFFFFFFF;
   /// mapping from all atoms to real atoms, in the size of nall
   int* mapping = nullptr;
-  /// number of MPI ranks (1 = single-rank).  Passed by LAMMPS pair
-  /// styles as the trailing ``nprocs_`` argument of the comm-aware
-  /// constructor (sourced from ``comm->nprocs``); defaults to 1 for
-  /// direct C++ callers and for the lightweight constructors that
-  /// don't carry comm metadata.  Use this — NOT ``nswap > 0`` — as the
-  /// "is multi-rank?" predicate: ``atom_style spin`` and some other
-  /// LAMMPS configurations populate ``nswap`` even in single-rank.
+  /// number of MPI ranks (1 = single-rank).  Settable only via the
+  /// trailing ``nprocs_`` argument of the comm-aware constructor (LAMMPS
+  /// pair styles pass ``comm->nprocs``).  The lightweight constructors
+  /// leave it at 1 by construction — they carry no comm metadata
+  /// (``world``, ``sendlist``, ...), so they cannot drive the with-comm
+  /// dispatch path even if a non-1 value were forced here.  Use this —
+  /// NOT ``nswap > 0`` — as the "is multi-rank?" predicate: ``atom_style
+  /// spin`` populates ``nswap`` even in single-rank.
   int nprocs = 1;
   InputNlist()
       : inum(0),
@@ -67,11 +68,7 @@ struct InputNlist {
         sendproc(nullptr),
         recvproc(nullptr),
         world(0) {};
-  InputNlist(int inum_,
-             int* ilist_,
-             int* numneigh_,
-             int** firstneigh_,
-             int nprocs_ = 1)
+  InputNlist(int inum_, int* ilist_, int* numneigh_, int** firstneigh_)
       : inum(inum_),
         ilist(ilist_),
         numneigh(numneigh_),
@@ -83,8 +80,7 @@ struct InputNlist {
         sendlist(nullptr),
         sendproc(nullptr),
         recvproc(nullptr),
-        world(0),
-        nprocs(nprocs_) {};
+        world(0) {};
   InputNlist(int inum_,
              int* ilist_,
              int* numneigh_,

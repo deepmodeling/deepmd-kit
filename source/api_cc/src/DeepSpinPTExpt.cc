@@ -389,7 +389,14 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
   bool multi_rank = (lmp_list.nprocs > 1);
   bool atom_map_present = (lmp_list.mapping != nullptr);
   bool use_with_comm = has_comm_artifact_ && multi_rank;
-  // See DeepPotPTExpt::compute_inner for the decision-matrix rationale.
+  // Decision matrix (see PR #5450 description):
+  //   non-GNN model (has_message_passing_ == false): regular path is
+  //                                                  always safe.
+  //   nghost == 0 (NoPbc, isolated cluster):         always safe.
+  //   GNN model, multi-rank:    requires has_comm_artifact_  (cell C-mr / D-mr)
+  //                             else fail-fast               (cell B-mr)
+  //   GNN model, single-rank:   requires atom_map_present    (cell A / C)
+  //                             else fail-fast               (cell B / D)
   if (has_message_passing_ && nghost > 0) {
     if (multi_rank && !has_comm_artifact_) {
       throw deepmd::deepmd_exception(

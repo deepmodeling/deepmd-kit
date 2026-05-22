@@ -505,7 +505,7 @@ void FixDPLR::pre_force(int vflag) {
   // get lammps nlist
   NeighList* list = pair_deepmd->list;
   deepmd_compat::InputNlist lmp_list(list->inum, list->ilist, list->numneigh,
-                                     list->firstneigh, comm->nprocs);
+                                     list->firstneigh);
   lmp_list.set_mask(NEIGHMASK);
   if (comm->nprocs == 1 && atom->map_style != Atom::MAP_NONE) {
     lmp_list.set_mapping(mapping_vec.data());

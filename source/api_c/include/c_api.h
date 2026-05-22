@@ -27,8 +27,10 @@ typedef struct DP_Nlist DP_Nlist;
  * @param[in] Array stores the core region atom's neighbor index
  * @returns A pointer to the neighbor list.
  **/
-extern DP_Nlist* DP_NewNlist(
-    int inum_, int* ilist_, int* numneigh_, int** firstneigh_, int nprocs);
+extern DP_Nlist* DP_NewNlist(int inum_,
+                             int* ilist_,
+                             int* numneigh_,
+                             int** firstneigh_);
 /**
  * @brief Create a new neighbor list with communication capabilities.
  * @details This function extends DP_NewNlist by adding support for parallel
