@@ -474,3 +474,6 @@ def test_pair_deepspin_mpi_no_atom_map() -> None:
     np.testing.assert_allclose(
         out_no_map["force_mag"], out_baseline["force_mag"], atol=1e-8, rtol=0
     )
+    np.testing.assert_allclose(
+        out_no_map["virials"], out_baseline["virials"], atol=1e-8, rtol=0
+    )
