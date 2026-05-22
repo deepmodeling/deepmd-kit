@@ -27,10 +27,8 @@ typedef struct DP_Nlist DP_Nlist;
  * @param[in] Array stores the core region atom's neighbor index
  * @returns A pointer to the neighbor list.
  **/
-extern DP_Nlist* DP_NewNlist(int inum_,
-                             int* ilist_,
-                             int* numneigh_,
-                             int** firstneigh_);
+extern DP_Nlist* DP_NewNlist(
+    int inum_, int* ilist_, int* numneigh_, int** firstneigh_, int nprocs);
 /**
  * @brief Create a new neighbor list with communication capabilities.
  * @details This function extends DP_NewNlist by adding support for parallel
@@ -52,6 +50,9 @@ extern DP_Nlist* DP_NewNlist(int inum_,
  * each swap.
  * @param[in] world Pointer to the MPI communicator or similar communication
  * world used for the operation.
+ * @param[in] nprocs Number of MPI ranks (1 = single-rank).  Used by
+ * ``DeepPotPTExpt`` / ``DeepSpinPTExpt`` to choose between the regular
+ * and with-comm artifacts.  Defaults to 1 if not supplied.
  * @returns A pointer to the initialized neighbor list with communication
  * capabilities.
  */
@@ -66,7 +67,8 @@ extern DP_Nlist* DP_NewNlist_comm(int inum_,
                                   int** sendlist,
                                   int* sendproc,
                                   int* recvproc,
-                                  void* world);
+                                  void* world,
+                                  int nprocs);
 
 /**
  * @brief Set mask for a neighbor list.
@@ -87,16 +89,6 @@ extern void DP_NlistSetMask(DP_Nlist* nl, int mask);
  *
  **/
 extern void DP_NlistSetMapping(DP_Nlist* nl, int* mapping);
-
-/**
- * @brief Set the number of MPI ranks for a neighbor list.
- *
- * @param nl Neighbor list.
- * @param nprocs Number of MPI ranks (1 = single-rank).
- * @since API version 26
- *
- **/
-extern void DP_NlistSetNprocs(DP_Nlist* nl, int nprocs);
 
 /**
  * @brief Delete a neighbor list.

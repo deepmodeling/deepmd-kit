@@ -809,15 +809,16 @@ struct InputNlist {
         ilist(nullptr),
         numneigh(nullptr),
         firstneigh(nullptr),
-        nl(DP_NewNlist(0, nullptr, nullptr, nullptr)) {
+        nl(DP_NewNlist(0, nullptr, nullptr, nullptr, 1)) {
     DP_CHECK_OK(DP_NlistCheckOK, nl);
   };
-  InputNlist(int inum_, int* ilist_, int* numneigh_, int** firstneigh_)
+  InputNlist(
+      int inum_, int* ilist_, int* numneigh_, int** firstneigh_, int nprocs = 1)
       : inum(inum_),
         ilist(ilist_),
         numneigh(numneigh_),
         firstneigh(firstneigh_),
-        nl(DP_NewNlist(inum_, ilist_, numneigh_, firstneigh_)) {
+        nl(DP_NewNlist(inum_, ilist_, numneigh_, firstneigh_, nprocs)) {
     DP_CHECK_OK(DP_NlistCheckOK, nl);
   };
   InputNlist(int inum_,
@@ -831,7 +832,8 @@ struct InputNlist {
              int** sendlist,
              int* sendproc,
              int* recvproc,
-             void* world)
+             void* world,
+             int nprocs = 1)
       : inum(inum_),
         ilist(ilist_),
         numneigh(numneigh_),
@@ -847,7 +849,8 @@ struct InputNlist {
                             sendlist,
                             sendproc,
                             recvproc,
-                            world)) {};
+                            world,
+                            nprocs)) {};
   ~InputNlist() { DP_DeleteNlist(nl); };
   /// @brief C API neighbor list.
   DP_Nlist* nl;
@@ -868,11 +871,6 @@ struct InputNlist {
    * @param mapping mapping from all atoms to real atoms, in size nall.
    */
   void set_mapping(int* mapping) { DP_NlistSetMapping(nl, mapping); };
-  /**
-   * @brief Set the number of MPI ranks for this neighbor list.
-   * @param nprocs Number of MPI ranks (1 = single-rank).
-   */
-  void set_nprocs(int nprocs) { DP_NlistSetNprocs(nl, nprocs); };
 };
 
 /**
@@ -900,7 +898,7 @@ void inline convert_nlist(InputNlist& to_nlist,
   // delete the original nl
   DP_DeleteNlist(to_nlist.nl);
   to_nlist.nl = DP_NewNlist(to_nlist.inum, to_nlist.ilist, to_nlist.numneigh,
-                            to_nlist.firstneigh);
+                            to_nlist.firstneigh, 1);
 }
 /**
  * @brief Deep Potential Base Model.

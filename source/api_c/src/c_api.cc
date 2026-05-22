@@ -16,12 +16,10 @@ extern "C" {
 DP_Nlist::DP_Nlist() {}
 DP_Nlist::DP_Nlist(deepmd::InputNlist& nl) : nl(nl) {}
 
-DP_Nlist* DP_NewNlist(int inum_,
-                      int* ilist_,
-                      int* numneigh_,
-                      int** firstneigh_) {
-  DP_NEW_OK(DP_Nlist,
-            deepmd::InputNlist nl(inum_, ilist_, numneigh_, firstneigh_);
+DP_Nlist* DP_NewNlist(
+    int inum_, int* ilist_, int* numneigh_, int** firstneigh_, int nprocs) {
+  DP_NEW_OK(DP_Nlist, deepmd::InputNlist nl(inum_, ilist_, numneigh_,
+                                            firstneigh_, nprocs);
             DP_Nlist* new_nl = new DP_Nlist(nl); return new_nl;)
 }
 DP_Nlist* DP_NewNlist_comm(int inum_,
@@ -35,10 +33,11 @@ DP_Nlist* DP_NewNlist_comm(int inum_,
                            int** sendlist,
                            int* sendproc,
                            int* recvproc,
-                           void* world) {
+                           void* world,
+                           int nprocs) {
   deepmd::InputNlist nl(inum_, ilist_, numneigh_, firstneigh_, nswap, sendnum,
-                        recvnum, firstrecv, sendlist, sendproc, recvproc,
-                        world);
+                        recvnum, firstrecv, sendlist, sendproc, recvproc, world,
+                        nprocs);
   DP_Nlist* new_nl = new DP_Nlist(nl);
   return new_nl;
 }
@@ -46,7 +45,6 @@ void DP_NlistSetMask(DP_Nlist* nl, int mask) { nl->nl.set_mask(mask); }
 void DP_NlistSetMapping(DP_Nlist* nl, int* mapping) {
   nl->nl.set_mapping(mapping);
 }
-void DP_NlistSetNprocs(DP_Nlist* nl, int nprocs) { nl->nl.set_nprocs(nprocs); }
 void DP_DeleteNlist(DP_Nlist* nl) { delete nl; }
 
 // DP Base Model

@@ -367,10 +367,11 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
 
   // Dispatch decision: use the with-comm artifact when LAMMPS is running
   // multi-rank.  ``lmp_list.nprocs > 1`` is the direct predicate;
-  // ``pair_deepmd.cpp`` populates it via ``set_nprocs(comm->nprocs)``.
-  // Earlier drafts used ``nswap > 0`` as a proxy, but that breaks for
-  // ``atom_style spin`` (which emits nswap > 0 even in single-rank to
-  // propagate PBC ghost spins).  ``nprocs`` is unambiguous.
+  // LAMMPS pair styles populate it by passing ``comm->nprocs`` to the
+  // ``InputNlist`` constructor.  Earlier drafts used ``nswap > 0`` as a
+  // proxy, but that breaks for ``atom_style spin`` (which emits
+  // nswap > 0 even in single-rank to propagate PBC ghost spins).
+  // ``nprocs`` is unambiguous.
   //
   // The regular artifact uses ``mapping`` to gather ghost-atom features
   // from local-atom embeddings (``index_select(node_ebd[1, nloc, dim],

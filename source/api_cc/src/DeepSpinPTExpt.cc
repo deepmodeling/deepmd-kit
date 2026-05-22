@@ -381,10 +381,11 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
   // ghost→local mapping); multi-rank without a with-comm artifact cannot
   // drive border_op (no inter-rank exchange tensor).  Both unsupported
   // combinations fail-fast for every caller.
-  // ``nprocs > 1`` is the direct multi-rank predicate (set by
-  // pair_deepspin via ``lmp_list.set_nprocs(comm->nprocs)``).  Earlier
-  // drafts used ``nswap > 0`` as a proxy, but atom_style spin emits
-  // nswap > 0 even in single-rank, so the proxy is unsound.
+  // ``nprocs > 1`` is the direct multi-rank predicate (LAMMPS pair
+  // styles set it by passing ``comm->nprocs`` to the ``InputNlist``
+  // constructor).  Earlier drafts used ``nswap > 0`` as a proxy, but
+  // atom_style spin emits nswap > 0 even in single-rank, so the proxy
+  // is unsound.
   bool multi_rank = (lmp_list.nprocs > 1);
   bool atom_map_present = (lmp_list.mapping != nullptr);
   bool use_with_comm = has_comm_artifact_ && multi_rank;
