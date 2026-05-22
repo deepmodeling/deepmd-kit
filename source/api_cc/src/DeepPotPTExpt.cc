@@ -382,28 +382,23 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   bool multi_rank = (lmp_list.nswap > 0);
   bool atom_map_present = (lmp_list.mapping != nullptr);
   bool use_with_comm = has_comm_artifact_ && multi_rank;
-  // Fail-fast conditions:
-  //   - ``has_message_passing_``: only models whose regular graph
-  //     actually consumes ``mapping`` for ghost-feature gather can be
-  //     silently corrupted by a missing or invalid mapping.  Skip for
-  //     non-GNN models (se_e2_a, DPA1, ...).
-  //   - ``nghost > 0``: with no ghost atoms, identity mapping over
-  //     [0, nloc) is trivially correct.
-  //   - Multi-rank without with-comm: the regular path's mapping can
-  //     never resolve cross-rank ghosts (atom-map is rank-local), so
-  //     fail-fast UNCONDITIONALLY on atom_map_present.
-  //   - Single-rank without atom-map: the identity fallback gives wrong
-  //     ghost indices, so fail-fast only when atom_map_present is false.
-  bool needs_fail_fast = has_message_passing_ && !use_with_comm && nghost > 0 &&
-                         (multi_rank || !atom_map_present);
-  if (needs_fail_fast) {
-    if (multi_rank) {
+  // Decision matrix (see PR #5450 description):
+  //   non-GNN model (has_message_passing_ == false): regular path is
+  //                                                  always safe.
+  //   nghost == 0 (NoPbc, isolated cluster):         always safe.
+  //   GNN model, multi-rank:    requires has_comm_artifact_  (cell C-mr / D-mr)
+  //                             else fail-fast               (cell B-mr)
+  //   GNN model, single-rank:   requires atom_map_present    (cell A / C)
+  //                             else fail-fast               (cell B / D)
+  if (has_message_passing_ && nghost > 0) {
+    if (multi_rank && !has_comm_artifact_) {
       throw deepmd::deepmd_exception(
           "Multi-rank LAMMPS .pt2 inference requires the model to be "
           "exported with `use_loc_mapping=False`, which compiles a "
           "with-comm artifact for cross-rank ghost-feature exchange. "
           "Re-export the model with use_loc_mapping=False and try again.");
-    } else {
+    }
+    if (!multi_rank && !atom_map_present) {
       throw deepmd::deepmd_exception(
           "Single-rank LAMMPS .pt2 inference requires `atom_modify map "
           "yes` in the LAMMPS input (so InputNlist.mapping is populated "
