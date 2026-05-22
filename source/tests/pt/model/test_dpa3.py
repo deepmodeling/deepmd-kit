@@ -10,6 +10,7 @@ from deepmd.dpmodel.descriptor.dpa3 import (
 )
 from deepmd.pt.model.descriptor import (
     DescrptDPA3,
+    DescrptHybrid,
 )
 from deepmd.pt.utils import (
     env,
@@ -29,6 +30,23 @@ from .test_mlp import (
 )
 
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
+
+
+def _repflow_args() -> RepFlowArgs:
+    return RepFlowArgs(
+        n_dim=8,
+        e_dim=6,
+        a_dim=4,
+        nlayers=1,
+        e_rcut=4.0,
+        e_rcut_smth=0.5,
+        e_sel=12,
+        a_rcut=3.5,
+        a_rcut_smth=0.5,
+        a_sel=8,
+        axis_neuron=4,
+        update_angle=False,
+    )
 
 
 class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
@@ -192,6 +210,36 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
                     rtol=rtol,
                     atol=atol,
                 )
+
+    def test_hybrid_default_chg_spin_semantics(self) -> None:
+        def make_dpa3(default_chg_spin: list[float] | None) -> DescrptDPA3:
+            return DescrptDPA3(
+                self.nt,
+                repflow=_repflow_args(),
+                precision="float64",
+                add_chg_spin_ebd=True,
+                default_chg_spin=default_chg_spin,
+                seed=GLOBAL_SEED,
+            ).to(env.DEVICE)
+
+        shared_default = DescrptHybrid(
+            list=[make_dpa3([5.0, 1.0]), make_dpa3([5.0, 1.0])]
+        )
+        self.assertTrue(shared_default.has_default_chg_spin())
+        torch.testing.assert_close(
+            shared_default.get_default_chg_spin(),
+            torch.tensor([5.0, 1.0], dtype=torch.float64, device=env.DEVICE),
+        )
+
+        missing_default = DescrptHybrid(list=[make_dpa3([5.0, 1.0]), make_dpa3(None)])
+        self.assertFalse(missing_default.has_default_chg_spin())
+        self.assertIsNone(missing_default.get_default_chg_spin())
+
+        mismatched_default = DescrptHybrid(
+            list=[make_dpa3([5.0, 1.0]), make_dpa3([6.0, 1.0])]
+        )
+        self.assertFalse(mismatched_default.has_default_chg_spin())
+        self.assertIsNone(mismatched_default.get_default_chg_spin())
 
     def test_jit(
         self,

@@ -112,20 +112,29 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
 
     def has_default_chg_spin(self) -> bool:
         """Returns whether the descriptor has a default charge_spin value."""
-        # JIT-compiled via DPAtomicModel.has_default_chg_spin; keep as an
-        # explicit loop instead of `any(generator)` for TorchScript.
+        default_chg_spin: torch.Tensor | None = None
+        found_chg_spin: bool = False
         for descrpt in self.descrpt_list:
-            if descrpt.has_default_chg_spin():
-                return True
-        return False
+            if descrpt.get_dim_chg_spin() > 0:
+                found_chg_spin = True
+                if not descrpt.has_default_chg_spin():
+                    return False
+                child_default_chg_spin = descrpt.get_default_chg_spin()
+                if child_default_chg_spin is None:
+                    return False
+                if default_chg_spin is None:
+                    default_chg_spin = child_default_chg_spin
+                elif not torch.equal(default_chg_spin, child_default_chg_spin):
+                    return False
+        return found_chg_spin
 
     @torch.jit.export
     def get_default_chg_spin(self) -> Optional[torch.Tensor]:  # noqa: UP045
         """Returns the default charge_spin value, or None."""
-        # JIT-compiled via DPAtomicModel.get_default_chg_spin; the caller
-        # invokes `.unsqueeze(0)` on the result, so return a Tensor (not list).
+        if not self.has_default_chg_spin():
+            return None
         for descrpt in self.descrpt_list:
-            if descrpt.has_default_chg_spin():
+            if descrpt.get_dim_chg_spin() > 0:
                 return descrpt.get_default_chg_spin()
         return None
 

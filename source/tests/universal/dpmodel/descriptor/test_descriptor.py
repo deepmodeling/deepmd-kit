@@ -659,3 +659,37 @@ class TestDescriptorDP(unittest.TestCase, DescriptorTest, DPTestCase):
             self.nt, self.rcut, self.rcut_smth, self.sel, ["O", "H"]
         )
         self.module = Descrpt(**self.input_dict)
+
+
+class TestHybridChgSpinDefaultDP(unittest.TestCase):
+    def _make_dpa3(self, default_chg_spin: list[float] | None) -> DescrptDPA3:
+        return DescrptDPA3(
+            **DescriptorParamDPA3(
+                2,
+                4.0,
+                0.5,
+                [6, 6],
+                ["O", "H"],
+                add_chg_spin_ebd=True,
+                default_chg_spin=default_chg_spin,
+            )
+        )
+
+    def test_shared_default_required_for_hybrid_default(self) -> None:
+        shared_default = DescrptHybrid(
+            list=[self._make_dpa3([5.0, 1.0]), self._make_dpa3([5.0, 1.0])]
+        )
+        self.assertTrue(shared_default.has_default_chg_spin())
+        self.assertEqual(shared_default.get_default_chg_spin(), [5.0, 1.0])
+
+        missing_default = DescrptHybrid(
+            list=[self._make_dpa3([5.0, 1.0]), self._make_dpa3(None)]
+        )
+        self.assertFalse(missing_default.has_default_chg_spin())
+        self.assertIsNone(missing_default.get_default_chg_spin())
+
+        mismatched_default = DescrptHybrid(
+            list=[self._make_dpa3([5.0, 1.0]), self._make_dpa3([6.0, 1.0])]
+        )
+        self.assertFalse(mismatched_default.has_default_chg_spin())
+        self.assertIsNone(mismatched_default.get_default_chg_spin())

@@ -131,12 +131,29 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
 
     def has_default_chg_spin(self) -> bool:
         """Returns whether the descriptor has a default charge_spin value."""
-        return any(descrpt.has_default_chg_spin() for descrpt in self.descrpt_list)
+        default_chg_spin = None
+        found_chg_spin = False
+        for descrpt in self.descrpt_list:
+            if descrpt.get_dim_chg_spin() == 0:
+                continue
+            found_chg_spin = True
+            if not descrpt.has_default_chg_spin():
+                return False
+            child_default_chg_spin = descrpt.get_default_chg_spin()
+            if child_default_chg_spin is None:
+                return False
+            if default_chg_spin is None:
+                default_chg_spin = child_default_chg_spin
+            elif child_default_chg_spin != default_chg_spin:
+                return False
+        return found_chg_spin
 
     def get_default_chg_spin(self) -> list[float] | None:
         """Returns the default charge_spin value, or None."""
+        if not self.has_default_chg_spin():
+            return None
         for descrpt in self.descrpt_list:
-            if descrpt.has_default_chg_spin():
+            if descrpt.get_dim_chg_spin() > 0:
                 return descrpt.get_default_chg_spin()
         return None
 
