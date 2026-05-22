@@ -179,6 +179,10 @@ void DeepSpinPTExpt::init(const std::string& model,
   // dropping the MPI exchange.
   has_comm_artifact_ = metadata.obj_val.count("has_comm_artifact") &&
                        metadata["has_comm_artifact"].as_bool();
+  // See DeepPotPTExpt::init for rationale.  Defaults to false for
+  // pre-PR archives so they retain their previous behaviour.
+  has_message_passing_ = metadata.obj_val.count("has_message_passing") &&
+                         metadata["has_message_passing"].as_bool();
   if (has_comm_artifact_) {
     try {
       with_comm_tempfile_ = std::make_unique<deepmd::ptexpt::TempFile>(
@@ -372,6 +376,46 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
           .clone()
           .to(device);
 
+  // Dispatch decision: see DeepPotPTExpt.cc for the full rationale.
+  // Single-rank without atom-map cannot drive the regular path (no safe
+  // ghost→local mapping); multi-rank without a with-comm artifact cannot
+  // drive border_op (no inter-rank exchange tensor).  Both unsupported
+  // combinations fail-fast for every caller.
+  // ``nprocs > 1`` is the direct multi-rank predicate (LAMMPS pair
+  // styles set it by passing ``comm->nprocs`` to the ``InputNlist``
+  // constructor).  Earlier drafts used ``nswap > 0`` as a proxy, but
+  // atom_style spin emits nswap > 0 even in single-rank, so the proxy
+  // is unsound.
+  bool multi_rank = (lmp_list.nprocs > 1);
+  bool atom_map_present = (lmp_list.mapping != nullptr);
+  bool use_with_comm = has_comm_artifact_ && multi_rank;
+  // Decision matrix (see PR #5450 description):
+  //   non-GNN model (has_message_passing_ == false): regular path is
+  //                                                  always safe.
+  //   nghost == 0 (NoPbc, isolated cluster):         always safe.
+  //   GNN model, multi-rank:    requires has_comm_artifact_  (cell C-mr / D-mr)
+  //                             else fail-fast               (cell B-mr)
+  //   GNN model, single-rank:   requires atom_map_present    (cell A / C)
+  //                             else fail-fast               (cell B / D)
+  if (has_message_passing_ && nghost > 0) {
+    if (multi_rank && !has_comm_artifact_) {
+      throw deepmd::deepmd_exception(
+          "Multi-rank LAMMPS .pt2 inference requires the model to be "
+          "exported with `use_loc_mapping=False`, which compiles a "
+          "with-comm artifact for cross-rank ghost-feature exchange. "
+          "Re-export the model with use_loc_mapping=False and try again.");
+    }
+    if (!multi_rank && !atom_map_present) {
+      throw deepmd::deepmd_exception(
+          "Single-rank LAMMPS .pt2 inference requires `atom_modify map "
+          "yes` in the LAMMPS input (so InputNlist.mapping is populated "
+          "from the LAMMPS atom-map).  The model gathers ghost-atom "
+          "features via this mapping; without it the C++ side has no "
+          "safe way to resolve ghost indices to local owners.  C++ API "
+          "callers must set inlist.mapping explicitly before compute().");
+    }
+  }
+
   // LAMMPS sets ago=0 on every nlist rebuild, so ago>0 implies the cached
   // mapping and nlist tensors are still valid — see DeepPotPTExpt.cc for
   // the same rationale.
@@ -391,6 +435,11 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
               .clone()
               .to(device);
     } else {
+      // Identity fallback.  See DeepPotPTExpt::compute_inner for the
+      // invariant rationale: this branch is only reached when the
+      // model is non-message-passing, nghost==0, or use_with_comm is
+      // true (border_op fills ghosts); other configurations were
+      // rejected by the fail-fast above.
       std::vector<std::int64_t> mapping(nall_real);
       for (int ii = 0; ii < nall_real; ii++) {
         mapping[ii] = ii;
@@ -452,8 +501,10 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
   // _with_comm), so C++ supplies the same 8 comm tensors as the
   // non-spin path. ``nlocal``/``nghost`` carry the real-atom counts
   // (pre atom-doubling); the spin override halves them internally.
+  //
+  // ``use_with_comm`` was computed earlier alongside the fail-fast
+  // dispatch check.
   std::vector<torch::Tensor> flat_outputs;
-  bool use_with_comm = has_comm_artifact_ && lmp_list.nswap > 0;
   if (use_with_comm && !with_comm_loader) {
     throw deepmd::deepmd_exception(
         "Multi-rank LAMMPS requires the with-comm artifact, but it failed "

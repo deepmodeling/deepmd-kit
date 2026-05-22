@@ -226,6 +226,15 @@ class DeepPotPTExpt : public DeepPotBackend {
   // passing.  ``with_comm_tempfile_`` owns the extracted nested .pt2
   // for the lifetime of ``with_comm_loader``.
   bool has_comm_artifact_ = false;
+  // Whether the regular .pt2 graph consumes the mapping tensor for
+  // ghost-feature gather (true for any message-passing descriptor:
+  // DPA2/DPA3/hybrids; false for se_e2_a/DPA1/etc.).  Mirrors the
+  // descriptor's ``has_message_passing()`` API; read from the
+  // ``has_message_passing`` metadata field.  Defaults to false for
+  // pre-PR .pt2 archives that lack the field so non-GNN archives
+  // continue to work; GNN archives must be regenerated to opt into
+  // the fail-fast guard against the silent-corruption bug.
+  bool has_message_passing_ = false;
   std::unique_ptr<deepmd::ptexpt::TempFile> with_comm_tempfile_;
   std::unique_ptr<torch::inductor::AOTIModelPackageLoader> with_comm_loader;
 

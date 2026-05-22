@@ -831,7 +831,8 @@ struct InputNlist {
              int** sendlist,
              int* sendproc,
              int* recvproc,
-             void* world)
+             void* world,
+             int nprocs = 1)
       : inum(inum_),
         ilist(ilist_),
         numneigh(numneigh_),
@@ -847,7 +848,8 @@ struct InputNlist {
                             sendlist,
                             sendproc,
                             recvproc,
-                            world)) {};
+                            world,
+                            nprocs)) {};
   ~InputNlist() { DP_DeleteNlist(nl); };
   /// @brief C API neighbor list.
   DP_Nlist* nl;
