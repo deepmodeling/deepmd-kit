@@ -809,6 +809,7 @@ class DeepEval(DeepEvalBackend):
                 aparam=aparam,
                 **kwargs,
             )
+            descriptor = model.eval_descriptor()
         except RetrySignal:
             return self.eval_descriptor(
                 coords,
@@ -819,7 +820,6 @@ class DeepEval(DeepEvalBackend):
                 **kwargs,
             )
         finally:
-            descriptor = model.eval_descriptor()
             model.set_eval_descriptor_hook(False)
             if self.auto_batch_size is not None:
                 self.auto_batch_size.set_oom_retry_mode(False)
@@ -879,8 +879,9 @@ class DeepEval(DeepEvalBackend):
                 aparam=aparam,
                 **kwargs,
             )
+            fitting_net = model.eval_fitting_last_layer()
         except RetrySignal:
-            return self.eval_descriptor(
+            return self.eval_fitting_last_layer(
                 coords,
                 cells,
                 atom_types,
@@ -889,7 +890,6 @@ class DeepEval(DeepEvalBackend):
                 **kwargs,
             )
         finally:
-            fitting_net = model.eval_fitting_last_layer()
             model.set_eval_fitting_last_layer_hook(False)
             if self.auto_batch_size is not None:
                 self.auto_batch_size.set_oom_retry_mode(False)
