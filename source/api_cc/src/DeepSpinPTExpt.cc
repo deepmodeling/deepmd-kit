@@ -385,8 +385,11 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
   bool atom_map_present = (lmp_list.mapping != nullptr);
   bool use_with_comm = has_comm_artifact_ && multi_rank;
   // See DeepPotPTExpt::compute_inner for the rationale on these guards.
-  if (has_message_passing_ && !use_with_comm && !atom_map_present &&
-      nghost > 0) {
+  // Multi-rank fail-fast is unconditional on atom_map_present because
+  // atom-map can only resolve rank-local ghosts.
+  bool needs_fail_fast = has_message_passing_ && !use_with_comm && nghost > 0 &&
+                         (multi_rank || !atom_map_present);
+  if (needs_fail_fast) {
     if (multi_rank) {
       throw deepmd::deepmd_exception(
           "Multi-rank LAMMPS .pt2 inference requires the model to be "

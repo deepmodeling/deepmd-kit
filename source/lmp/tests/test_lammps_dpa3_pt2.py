@@ -185,7 +185,11 @@ def _lammps(data_file, units="metal", atom_map: str = "yes") -> PyLammps:
     lammps.units(units)
     lammps.boundary("p p p")
     lammps.atom_style("atomic")
-    lammps.atom_modify(f"map {atom_map}")
+    # LAMMPS rejects ``atom_modify map no``; the supported way to leave
+    # the atom-map disabled is to simply omit the command (default for
+    # ``atom_style atomic``).
+    if atom_map != "no":
+        lammps.atom_modify(f"map {atom_map}")
     if units == "metal" or units == "real":
         lammps.neighbor("2.0 bin")
     elif units == "si":

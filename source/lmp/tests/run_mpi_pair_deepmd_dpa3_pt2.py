@@ -134,9 +134,10 @@ lammps.atom_style("atomic")
 # through the regular artifact of a use_loc_mapping=False .pt2: the
 # C++ side needs the LAMMPS global-id->local-index map to build the
 # ``mapping`` tensor. It is harmless under multi-rank.  The
-# ``--no-atom-map`` flag skips this line so the no-atom-map fallback
+# ``--no-atom-map`` flag omits this line so the no-atom-map fallback
 # (multi-rank with-comm path) and fail-fast (no with-comm artifact)
-# branches can be exercised.
+# branches can be exercised — LAMMPS rejects ``atom_modify map no``,
+# so omitting the command is the only way to leave the map disabled.
 if not args.no_atom_map:
     lammps.atom_modify("map yes")
 lammps.neighbor("2.0 bin")

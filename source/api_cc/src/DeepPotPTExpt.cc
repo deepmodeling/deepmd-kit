@@ -385,12 +385,18 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   // Fail-fast conditions:
   //   - ``has_message_passing_``: only models whose regular graph
   //     actually consumes ``mapping`` for ghost-feature gather can be
-  //     silently corrupted by an absent mapping.  Skip for non-GNN
-  //     models (se_e2_a, DPA1, ...).
+  //     silently corrupted by a missing or invalid mapping.  Skip for
+  //     non-GNN models (se_e2_a, DPA1, ...).
   //   - ``nghost > 0``: with no ghost atoms, identity mapping over
   //     [0, nloc) is trivially correct.
-  if (has_message_passing_ && !use_with_comm && !atom_map_present &&
-      nghost > 0) {
+  //   - Multi-rank without with-comm: the regular path's mapping can
+  //     never resolve cross-rank ghosts (atom-map is rank-local), so
+  //     fail-fast UNCONDITIONALLY on atom_map_present.
+  //   - Single-rank without atom-map: the identity fallback gives wrong
+  //     ghost indices, so fail-fast only when atom_map_present is false.
+  bool needs_fail_fast = has_message_passing_ && !use_with_comm && nghost > 0 &&
+                         (multi_rank || !atom_map_present);
+  if (needs_fail_fast) {
     if (multi_rank) {
       throw deepmd::deepmd_exception(
           "Multi-rank LAMMPS .pt2 inference requires the model to be "
