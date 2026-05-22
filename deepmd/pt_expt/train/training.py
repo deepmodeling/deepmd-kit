@@ -394,29 +394,6 @@ class _CompiledModel(torch.nn.Module):
         ext_coord = ext_coord.reshape(nframes, -1, 3)
         ext_coord = ext_coord.detach().requires_grad_(True)
 
-        # Mark nframes, nall, and nloc as dynamic on every call so Dynamo's
-        # guard always matches the warmup compilation.  nframes varies when
-        # different systems have different per-system batch sizes.  nall/nloc
-        # vary because system atom counts differ.  Marking dim 0 (nframes) on
-        # ext_coord/ext_atype/nlist/mapping is required: without it Dynamo
-        # specialises ext_coord.shape[0] to the warmup value, propagates that
-        # constant into fparam.shape[0] via the reshape in general_fitting, and
-        # conflicts with mark_dynamic(fparam, 0) when nframes changes.
-        torch._dynamo.mark_dynamic(ext_coord, 0)  # nframes
-        torch._dynamo.mark_dynamic(ext_coord, 1)  # nall
-        torch._dynamo.mark_dynamic(ext_atype, 0)  # nframes
-        torch._dynamo.mark_dynamic(ext_atype, 1)  # nall
-        torch._dynamo.mark_dynamic(nlist, 0)  # nframes
-        torch._dynamo.mark_dynamic(nlist, 1)  # nloc
-        if mapping.dim() >= 2:
-            torch._dynamo.mark_dynamic(mapping, 0)  # nframes
-            torch._dynamo.mark_dynamic(mapping, 1)  # nall
-        if fparam is not None:
-            torch._dynamo.mark_dynamic(fparam, 0)  # nframes
-        if aparam is not None:
-            torch._dynamo.mark_dynamic(aparam, 0)  # nframes
-            torch._dynamo.mark_dynamic(aparam, 1)  # nloc
-
         result = self.compiled_forward_lower(
             ext_coord, ext_atype, nlist, mapping, fparam, aparam
         )
@@ -1037,40 +1014,10 @@ class Trainer:
             # causing an NCCL timeout.  Warmup here, while sample inputs
             # still exist, forces eager compilation before training starts.
             #
-            # Mark variable-size dimensions as dynamic so Dynamo creates range
-            # guards rather than equality guards.  Without this, each new value
-            # of nall, nloc, or nframes in a training batch breaks the equality
-            # guard and triggers a full recompilation, which can stall one rank
-            # for minutes while others wait in a collective — causing NCCL timeout.
-            #   ext_coord / ext_atype / mapping  dim 0 = nframes, dim 1 = nall
-            #   nlist_t                          dim 0 = nframes, dim 1 = nloc
-            # nframes varies across batches when different systems have different
-            # per-system batch sizes.  nall/nloc vary because system atom counts
-            # differ.  fparam/aparam share dim 0 = nframes with ext_coord; if
-            # ext_coord dim 0 is not marked dynamic, Dynamo specialises it to the
-            # warmup value and propagates that constant into fparam's shape via
-            # the reshape in general_fitting, conflicting with mark_dynamic(fparam,0).
             # Match _CompiledModel.forward which sets requires_grad_(True) on
-            # ext_coord before calling compiled_forward_lower.  Dynamo's guard
-            # includes requires_grad, so a mismatch here would cause every
-            # task's first training call to miss the warmup cache and trigger
-            # a new compilation — at a random time on each rank — creating the
-            # exact NCCL desync we are trying to prevent.
+            # ext_coord: Dynamo's guard includes requires_grad, so a mismatch
+            # causes every task's first training call to miss the warmup cache.
             ext_coord = ext_coord.detach().requires_grad_(True)
-            torch._dynamo.mark_dynamic(ext_coord, 0)  # nframes
-            torch._dynamo.mark_dynamic(ext_coord, 1)  # nall
-            torch._dynamo.mark_dynamic(ext_atype, 0)  # nframes
-            torch._dynamo.mark_dynamic(ext_atype, 1)  # nall
-            torch._dynamo.mark_dynamic(nlist_t, 0)  # nframes
-            torch._dynamo.mark_dynamic(nlist_t, 1)  # nloc
-            if mapping.dim() >= 2:
-                torch._dynamo.mark_dynamic(mapping, 0)  # nframes
-                torch._dynamo.mark_dynamic(mapping, 1)  # nall
-            if fparam is not None:
-                torch._dynamo.mark_dynamic(fparam, 0)  # nframes
-            if aparam is not None:
-                torch._dynamo.mark_dynamic(aparam, 0)  # nframes
-                torch._dynamo.mark_dynamic(aparam, 1)  # nloc
             _warmup_out = compiled_lower(
                 ext_coord, ext_atype, nlist_t, mapping, fparam, aparam
             )
