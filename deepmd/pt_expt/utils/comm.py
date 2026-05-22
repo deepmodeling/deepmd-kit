@@ -33,9 +33,12 @@ from __future__ import (
     annotations,
 )
 
+import threading
+
 import torch
 
 _registered: bool = False
+_register_lock = threading.Lock()
 
 
 def _check_underlying_ops_loaded() -> None:
@@ -192,22 +195,29 @@ def ensure_comm_registered() -> None:
     global _registered
     if _registered:
         return
-    _check_underlying_ops_loaded()
-    try:
-        torch.library.register_fake("deepmd_export::border_op")(_border_op_fake)
-    except RuntimeError as e:
-        if "already has" not in str(e) and "already registered" not in str(e):
-            raise
-    try:
-        torch.library.register_fake("deepmd_export::border_op_backward")(
-            _border_op_backward_fake
-        )
-    except RuntimeError as e:
-        if "already has" not in str(e) and "already registered" not in str(e):
-            raise
-    torch.library.register_autograd(
-        "deepmd_export::border_op",
-        _border_op_backward,
-        setup_context=_border_op_setup_context,
-    )
-    _registered = True
+    with _register_lock:
+        if _registered:
+            return
+        _check_underlying_ops_loaded()
+        try:
+            torch.library.register_fake("deepmd_export::border_op")(_border_op_fake)
+        except RuntimeError as e:
+            if "already has" not in str(e) and "already registered" not in str(e):
+                raise
+        try:
+            torch.library.register_fake("deepmd_export::border_op_backward")(
+                _border_op_backward_fake
+            )
+        except RuntimeError as e:
+            if "already has" not in str(e) and "already registered" not in str(e):
+                raise
+        try:
+            torch.library.register_autograd(
+                "deepmd_export::border_op",
+                _border_op_backward,
+                setup_context=_border_op_setup_context,
+            )
+        except RuntimeError as e:
+            if "already has" not in str(e) and "already registered" not in str(e):
+                raise
+        _registered = True

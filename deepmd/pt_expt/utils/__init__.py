@@ -24,8 +24,9 @@ register_dpmodel_mapping(EnvMat, lambda v: v)
 
 # Register fake tensor implementations for custom tabulate ops.
 # comm.py (border_op fake/autograd) is NOT imported here — its
-# ensure_comm_registered() is called lazily from the with_comm_dict
-# export path in serialization.py to avoid eager libdeepmd_op_pt.so
+# ensure_comm_registered() is called lazily by comm_dict entry points
+# (the with_comm_dict export path in serialization.py and pt_expt
+# descriptor comm_dict exchange paths) to avoid eager libdeepmd_op_pt.so
 # loading that breaks fake-op registration order in tests.
 from deepmd.pt_expt.utils import tabulate_ops  # noqa: F401
 

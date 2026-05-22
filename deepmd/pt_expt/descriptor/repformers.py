@@ -74,6 +74,11 @@ class DescrptBlockRepformers(DescrptBlockRepformersDP):
                 value=0.0,
             )
 
+        from deepmd.pt_expt.utils.comm import (
+            ensure_comm_registered,
+        )
+
+        ensure_comm_registered()
         exchanged = torch.ops.deepmd_export.border_op(
             comm_dict["send_list"],
             comm_dict["send_proc"],

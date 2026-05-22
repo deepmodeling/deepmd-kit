@@ -18,8 +18,8 @@ from torch.overrides import (
 )
 
 # ``deepmd.pt_expt.utils.comm`` is now lazy: libdeepmd_op_pt.so is only
-# loaded when ``ensure_comm_registered()`` is explicitly called from the
-# with_comm_dict export path.  Tests that don't exercise that path never
+# loaded when ``ensure_comm_registered()`` is explicitly called from a
+# comm_dict code path. Tests that don't exercise comm_dict paths never
 # load the op library, preserving fake-op registration order.
 
 

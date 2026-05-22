@@ -33,16 +33,20 @@ import numpy as np
 import pytest
 import torch
 
-# Trigger registration of the deepmd_export::border_op opaque wrapper
-# (needed by the with-comm artifact at runtime).
-import deepmd.pt_expt.utils.comm  # noqa: F401  # lgtm[py/unused-import]
 from deepmd.pt_expt.model.get_model import (
     get_model,
+)
+
+# Register deepmd_export::border_op fake/autograd metadata explicitly.
+from deepmd.pt_expt.utils.comm import (
+    ensure_comm_registered,
 )
 from deepmd.pt_expt.utils.serialization import (
     _make_sample_inputs,
     deserialize_to_file,
 )
+
+ensure_comm_registered()
 
 _DPA3_CONFIG = {
     "type_map": ["O", "H"],

@@ -670,14 +670,6 @@ def _trace_and_export(
     # matter for tracing — only that they're valid tensors of the right
     # shape and dtype.  See ``_make_comm_sample_inputs``.
     if with_comm_dict:
-        # Load libdeepmd_op_pt.so and register border_op fake/autograd
-        # metadata now — deferred from import time so normal utils imports
-        # don't force-load the op library and break fake-op ordering.
-        from deepmd.pt_expt.utils.comm import (
-            ensure_comm_registered,
-        )
-
-        ensure_comm_registered()
         if not _needs_with_comm_artifact(model):
             raise ValueError(
                 "with_comm_dict=True requested but the model's descriptor "
@@ -685,6 +677,13 @@ def _trace_and_export(
                 "(has_message_passing_across_ranks() is False) — "
                 "there's nothing to compile."
             )
+        # Load libdeepmd_op_pt.so and register border_op fake/autograd
+        # metadata only for models that actually need the comm path.
+        from deepmd.pt_expt.utils.comm import (
+            ensure_comm_registered,
+        )
+
+        ensure_comm_registered()
         nloc_sample = nlist_t.shape[1]
         nall_sample = ext_atype.shape[1]
         nghost_sample = nall_sample - nloc_sample

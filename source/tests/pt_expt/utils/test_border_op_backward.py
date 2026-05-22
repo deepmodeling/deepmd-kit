@@ -30,10 +30,11 @@ import numpy as np
 import pytest
 import torch
 
-# comm self-bootstraps the underlying libdeepmd_op_pt.so when needed, so
-# this single side-effect import is enough to register both the C++
-# ops (deepmd::border_op_backward) and their fake/autograd metadata.
-import deepmd.pt_expt.utils.comm  # noqa: F401  # lgtm[py/unused-import]  - registers deepmd_export::border_op
+from deepmd.pt_expt.utils.comm import (
+    ensure_comm_registered,
+)
+
+ensure_comm_registered()
 
 
 def _addr_of(np_arr: np.ndarray) -> int:

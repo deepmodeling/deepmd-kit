@@ -31,8 +31,6 @@ import numpy as np
 import pytest
 import torch
 
-# Trigger registration of the deepmd_export::border_op opaque wrapper.
-import deepmd.pt_expt.utils.comm  # noqa: F401  # lgtm[py/unused-import]
 from deepmd.dpmodel.descriptor.dpa3 import (
     RepFlowArgs,
 )
@@ -41,6 +39,9 @@ from deepmd.pt_expt.descriptor.dpa3 import (
 )
 from deepmd.pt_expt.utils import (
     env,
+)
+from deepmd.pt_expt.utils.comm import (
+    ensure_comm_registered,
 )
 from deepmd.pt_expt.utils.env import (
     PRECISION_DICT,
@@ -53,6 +54,8 @@ from ...common.test_mixins import (
 from ...seed import (
     GLOBAL_SEED,
 )
+
+ensure_comm_registered()
 
 # ---------------------------------------------------------------------------
 # Helpers for building the comm_dict tensors

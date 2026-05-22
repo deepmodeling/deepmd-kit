@@ -17,8 +17,6 @@ import numpy as np
 import pytest
 import torch
 
-# Trigger registration of the deepmd_export::border_op opaque wrapper.
-import deepmd.pt_expt.utils.comm  # noqa: F401  # lgtm[py/unused-import]
 from deepmd.dpmodel.descriptor.dpa2 import (
     RepformerArgs,
     RepinitArgs,
@@ -28,6 +26,9 @@ from deepmd.pt_expt.descriptor.dpa2 import (
 )
 from deepmd.pt_expt.utils import (
     env,
+)
+from deepmd.pt_expt.utils.comm import (
+    ensure_comm_registered,
 )
 from deepmd.pt_expt.utils.env import (
     PRECISION_DICT,
@@ -40,6 +41,8 @@ from ...common.test_mixins import (
 from ...seed import (
     GLOBAL_SEED,
 )
+
+ensure_comm_registered()
 
 
 def _addr_of(np_arr: np.ndarray) -> int:
