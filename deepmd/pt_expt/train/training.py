@@ -335,7 +335,11 @@ def _trace_and_compile(
     # Python references while C++ view metadata still holds raw pointers to
     # them — causing apply_view_meta_sequence to read garbage (crash at
     # random training steps, earlier under higher GC pressure from many tasks).
-    compiled._traced_lower_ref = traced_lower
+    # Use object.__setattr__ to bypass nn.Module.__setattr__: traced_lower is
+    # an nn.Module, and normal assignment would register it as a submodule of
+    # compiled (also an nn.Module), creating a cycle in the module tree that
+    # causes RecursionError in trainer.wrapper.train().
+    object.__setattr__(compiled, "_traced_lower_ref", traced_lower)
     del traced_lower
     model_uses_cuda = any(param.is_cuda for param in model.parameters()) or any(
         buffer.is_cuda for buffer in model.buffers()
