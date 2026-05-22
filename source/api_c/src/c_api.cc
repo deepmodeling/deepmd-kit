@@ -46,6 +46,7 @@ void DP_NlistSetMask(DP_Nlist* nl, int mask) { nl->nl.set_mask(mask); }
 void DP_NlistSetMapping(DP_Nlist* nl, int* mapping) {
   nl->nl.set_mapping(mapping);
 }
+void DP_NlistSetNprocs(DP_Nlist* nl, int nprocs) { nl->nl.set_nprocs(nprocs); }
 void DP_DeleteNlist(DP_Nlist* nl) { delete nl; }
 
 // DP Base Model

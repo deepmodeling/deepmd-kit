@@ -366,11 +366,11 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
           .to(device);
 
   // Dispatch decision: use the with-comm artifact when LAMMPS is running
-  // multi-rank.  ``lmp_list.nswap > 0`` is the proxy for "multi-rank with
-  // cross-domain communication"; in single-rank LAMMPS (processors 1 1 1,
-  // including with PBC) the C++ side sees nswap == 0.  api_cc is not
-  // linked against MPI directly, so we cannot call MPI_Comm_size; the
-  // proxy is set by LAMMPS's CommBrick at setup time.
+  // multi-rank.  ``lmp_list.nprocs > 1`` is the direct predicate;
+  // ``pair_deepmd.cpp`` populates it via ``set_nprocs(comm->nprocs)``.
+  // Earlier drafts used ``nswap > 0`` as a proxy, but that breaks for
+  // ``atom_style spin`` (which emits nswap > 0 even in single-rank to
+  // propagate PBC ghost spins).  ``nprocs`` is unambiguous.
   //
   // The regular artifact uses ``mapping`` to gather ghost-atom features
   // from local-atom embeddings (``index_select(node_ebd[1, nloc, dim],
@@ -379,7 +379,7 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   // mapping — applies uniformly to every caller (LAMMPS pair, ctest
   // fixtures, direct C++ API users).  Callers that want the regular
   // path must populate ``lmp_list.mapping``.
-  bool multi_rank = (lmp_list.nswap > 0);
+  bool multi_rank = (lmp_list.nprocs > 1);
   bool atom_map_present = (lmp_list.mapping != nullptr);
   bool use_with_comm = has_comm_artifact_ && multi_rank;
   // Decision matrix (see PR #5450 description):
@@ -428,13 +428,15 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
               .clone()
               .to(device);
     } else {
-      // Identity fallback reached only on the with-comm path (where the
-      // model graph fills ghost features via border_op and ignores this
-      // tensor for ghost gather — see deepmd/pt_expt/descriptor/
-      // repflows.py::_exchange_ghosts) or for trusted direct C++ callers
-      // (world == nullptr, see the dispatch carve-out above).  Any other
-      // path that reaches here would have been rejected by the fail-fast
-      // throw, so identity values are safe.
+      // Identity fallback.  The fail-fast above guarantees we only
+      // reach this branch when one of these is true:
+      //   - The model is non-message-passing (mapping is unused).
+      //   - ``nghost == 0`` (no ghosts to gather, identity is trivially
+      //     correct).
+      //   - ``use_with_comm`` is true (the with-comm graph fills ghost
+      //     features via border_op and ignores this tensor for ghost
+      //     gather — see deepmd/pt_expt/descriptor/
+      //     repflows.py::_exchange_ghosts).
       std::vector<std::int64_t> mapping(nall_real);
       for (int ii = 0; ii < nall_real; ii++) {
         mapping[ii] = ii;

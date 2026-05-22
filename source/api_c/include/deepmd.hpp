@@ -868,6 +868,11 @@ struct InputNlist {
    * @param mapping mapping from all atoms to real atoms, in size nall.
    */
   void set_mapping(int* mapping) { DP_NlistSetMapping(nl, mapping); };
+  /**
+   * @brief Set the number of MPI ranks for this neighbor list.
+   * @param nprocs Number of MPI ranks (1 = single-rank).
+   */
+  void set_nprocs(int nprocs) { DP_NlistSetNprocs(nl, nprocs); };
 };
 
 /**

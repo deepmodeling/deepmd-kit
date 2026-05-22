@@ -381,7 +381,11 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
   // ghost→local mapping); multi-rank without a with-comm artifact cannot
   // drive border_op (no inter-rank exchange tensor).  Both unsupported
   // combinations fail-fast for every caller.
-  bool multi_rank = (lmp_list.nswap > 0);
+  // ``nprocs > 1`` is the direct multi-rank predicate (set by
+  // pair_deepspin via ``lmp_list.set_nprocs(comm->nprocs)``).  Earlier
+  // drafts used ``nswap > 0`` as a proxy, but atom_style spin emits
+  // nswap > 0 even in single-rank, so the proxy is unsound.
+  bool multi_rank = (lmp_list.nprocs > 1);
   bool atom_map_present = (lmp_list.mapping != nullptr);
   bool use_with_comm = has_comm_artifact_ && multi_rank;
   // See DeepPotPTExpt::compute_inner for the decision-matrix rationale.
@@ -423,10 +427,11 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
               .clone()
               .to(device);
     } else {
-      // Identity fallback: only reached on the with-comm path (which
-      // fills ghost features via border_op and ignores this tensor for
-      // ghost gather) or for trusted direct C++ callers (world ==
-      // nullptr).  Other paths were rejected by the fail-fast above.
+      // Identity fallback.  See DeepPotPTExpt::compute_inner for the
+      // invariant rationale: this branch is only reached when the
+      // model is non-message-passing, nghost==0, or use_with_comm is
+      // true (border_op fills ghosts); other configurations were
+      // rejected by the fail-fast above.
       std::vector<std::int64_t> mapping(nall_real);
       for (int ii = 0; ii < nall_real; ii++) {
         mapping[ii] = ii;

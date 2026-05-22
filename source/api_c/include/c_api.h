@@ -89,6 +89,16 @@ extern void DP_NlistSetMask(DP_Nlist* nl, int mask);
 extern void DP_NlistSetMapping(DP_Nlist* nl, int* mapping);
 
 /**
+ * @brief Set the number of MPI ranks for a neighbor list.
+ *
+ * @param nl Neighbor list.
+ * @param nprocs Number of MPI ranks (1 = single-rank).
+ * @since API version 26
+ *
+ **/
+extern void DP_NlistSetNprocs(DP_Nlist* nl, int nprocs);
+
+/**
  * @brief Delete a neighbor list.
  *
  * @param nl Neighbor list to delete.

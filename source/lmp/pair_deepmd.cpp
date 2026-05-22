@@ -239,6 +239,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
         commdata_->firstrecv, commdata_->sendlist, commdata_->sendproc,
         commdata_->recvproc, &world);
     lmp_list.set_mask(NEIGHMASK);
+    lmp_list.set_nprocs(comm->nprocs);
     if (comm->nprocs == 1 && atom->map_style != Atom::MAP_NONE) {
       lmp_list.set_mapping(mapping_vec.data());
     }

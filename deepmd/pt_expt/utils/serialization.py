@@ -442,6 +442,7 @@ def _collect_metadata(model: torch.nn.Module, is_spin: bool = False) -> dict:
     # (per-layer ghost-feature MPI exchange via deepmd_export::border_op).
     # The C++ DeepPotPTExpt / DeepSpinPTExpt loaders branch on this flag.
     meta["has_comm_artifact"] = _needs_with_comm_artifact(model)
+
     # Whether the model's regular .pt2 graph consumes the ``mapping``
     # tensor to gather per-layer ghost-atom features from local atoms.
     # Mirrors the descriptor's ``has_message_passing()`` API: True for
@@ -450,14 +451,32 @@ def _collect_metadata(model: torch.nn.Module, is_spin: bool = False) -> dict:
     # The C++ side gates its fail-fast on this — an absent mapping is
     # fatal only for models that would silently corrupt ghost features
     # otherwise.
-    desc = getattr(getattr(model, "atomic_model", None), "descriptor", None)
-    if desc is not None and hasattr(desc, "has_message_passing"):
+    #
+    # Lookup order: model -> atomic_model -> descriptor.  Going through
+    # ``atomic_model.has_message_passing()`` is important for composite
+    # atomic models (e.g. ``LinearAtomicModel`` in DP-ZBL) which don't
+    # expose a single ``.descriptor`` but do aggregate the flag across
+    # their sub-models.  ``descriptor.has_message_passing()`` is the
+    # fallback for any future wrapper that lacks the higher-level
+    # methods.
+    def _probe_has_message_passing(obj: object) -> bool | None:
+        if obj is None or not hasattr(obj, "has_message_passing"):
+            return None
         try:
-            meta["has_message_passing"] = bool(desc.has_message_passing())
+            return bool(obj.has_message_passing())
         except (AttributeError, NotImplementedError):
-            meta["has_message_passing"] = False
-    else:
-        meta["has_message_passing"] = False
+            return None
+
+    result: bool | None = None
+    for obj in (
+        model,
+        getattr(model, "atomic_model", None),
+        getattr(getattr(model, "atomic_model", None), "descriptor", None),
+    ):
+        result = _probe_has_message_passing(obj)
+        if result is not None:
+            break
+    meta["has_message_passing"] = result if result is not None else False
     return meta
 
 
