@@ -225,4 +225,8 @@ if rank == 0:
             row = np.concatenate([fi, vi])
             f.write(" ".join(f"{v:.16e}" for v in row) + "\n")
 
+# Tear down LAMMPS before MPI.Finalize() — see the matching comment in
+# ``run_mpi_pair_deepmd_spin_dpa3_pt2.py``.  Same teardown-order race
+# class; spin happens to hit it more often on CUDA CI.
+del lammps
 MPI.Finalize()

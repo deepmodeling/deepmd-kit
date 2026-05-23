@@ -144,4 +144,13 @@ if rank == 0:
             row = np.concatenate([fi, fmi, vi])
             f.write(" ".join(f"{v:.16e}" for v in row) + "\n")
 
+# Tear down the LAMMPS instance *before* ``MPI.Finalize()`` so its
+# destructor's MPI calls (fix/compute cleanup, timing reductions inside
+# ``Finish::end``, the deep-spin pair-style destructor chain, etc.) run
+# while the communicator is still valid.  Without this, Python keeps
+# ``lammps`` alive past ``MPI.Finalize()`` and only releases it during
+# interpreter shutdown — and the empty-subdomain rank then hits an
+# MPI-after-Finalize call which crashes with SIGFPE on some CUDA CI
+# runners (intermittent; not reproducible on V100).
+del lammps
 MPI.Finalize()
