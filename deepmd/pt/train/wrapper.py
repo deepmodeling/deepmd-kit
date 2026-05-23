@@ -165,6 +165,22 @@ class ModelWrapper(torch.nn.Module):
         do_atomic_virial: bool = False,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
+        batch: torch.Tensor | None = None,
+        ptr: torch.Tensor | None = None,
+        extended_atype: torch.Tensor | None = None,
+        extended_batch: torch.Tensor | None = None,
+        extended_image: torch.Tensor | None = None,
+        extended_ptr: torch.Tensor | None = None,
+        mapping: torch.Tensor | None = None,
+        central_ext_index: torch.Tensor | None = None,
+        nlist: torch.Tensor | None = None,
+        nlist_ext: torch.Tensor | None = None,
+        a_nlist: torch.Tensor | None = None,
+        a_nlist_ext: torch.Tensor | None = None,
+        nlist_mask: torch.Tensor | None = None,
+        a_nlist_mask: torch.Tensor | None = None,
+        edge_index: torch.Tensor | None = None,
+        angle_index: torch.Tensor | None = None,
     ) -> tuple[Any, Any, Any]:
         if not self.multi_task:
             task_key = "Default"
@@ -180,6 +196,30 @@ class ModelWrapper(torch.nn.Module):
             "fparam": fparam,
             "aparam": aparam,
         }
+
+        # Mixed-nloc LMDB batches carry a precomputed flat graph.
+        if batch is not None and ptr is not None:
+            input_dict.update(
+                {
+                    "batch": batch,
+                    "ptr": ptr,
+                    "extended_atype": extended_atype,
+                    "extended_batch": extended_batch,
+                    "extended_image": extended_image,
+                    "extended_ptr": extended_ptr,
+                    "mapping": mapping,
+                    "central_ext_index": central_ext_index,
+                    "nlist": nlist,
+                    "nlist_ext": nlist_ext,
+                    "a_nlist": a_nlist,
+                    "a_nlist_ext": a_nlist_ext,
+                    "nlist_mask": nlist_mask,
+                    "a_nlist_mask": a_nlist_mask,
+                    "edge_index": edge_index,
+                    "angle_index": angle_index,
+                }
+            )
+
         has_spin = getattr(self.model[task_key], "has_spin", False)
         if callable(has_spin):
             has_spin = has_spin()
@@ -194,7 +234,9 @@ class ModelWrapper(torch.nn.Module):
                     model_pred[k] = model_pred[k] + v
             return model_pred, None, None
         else:
-            natoms = atype.shape[-1]
+            # For mixed batch, natoms is the total flattened atoms
+            # For regular batch, natoms is per-frame atoms
+            natoms = atype.shape[-1] if atype.dim() > 1 else atype.shape[0]
             model_pred, loss, more_loss = self.loss[task_key](
                 input_dict,
                 self.model[task_key],

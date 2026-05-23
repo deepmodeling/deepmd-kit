@@ -91,6 +91,7 @@ from deepmd.pt.utils.lmdb_dataset import (
     LmdbDataset,
     _collate_lmdb_batch,
     _SameNlocBatchSamplerTorch,
+    make_lmdb_mixed_batch_collate,
 )
 from deepmd.pt.utils.stat import (
     make_stat_input,
@@ -112,6 +113,7 @@ from torch.distributed.checkpoint.state_dict import (
     get_optimizer_state_dict,
     set_optimizer_state_dict,
 )
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 try:
     from torch.distributed.fsdp import (
@@ -122,7 +124,6 @@ except ImportError:
 from torch.distributed.optim import (
     ZeroRedundancyOptimizer,
 )
-from torch.nn.parallel import DistributedDataParallel as DDP
 from torch.utils.data import (
     DataLoader,
 )
@@ -132,6 +133,25 @@ from deepmd.utils.path import (
 )
 
 log = logging.getLogger(__name__)
+
+_FLAT_GRAPH_INPUT_KEYS = (
+    "batch",
+    "ptr",
+    "extended_atype",
+    "extended_batch",
+    "extended_image",
+    "extended_ptr",
+    "mapping",
+    "central_ext_index",
+    "nlist",
+    "nlist_ext",
+    "a_nlist",
+    "a_nlist_ext",
+    "nlist_mask",
+    "a_nlist_mask",
+    "edge_index",
+    "angle_index",
+)
 
 
 class Trainer:
@@ -249,6 +269,7 @@ class Trainer:
             _training_data: DpLoaderSet | LmdbDataset,
             _validation_data: DpLoaderSet | LmdbDataset | None,
             _training_params: dict[str, Any],
+            _task_key: str = "Default",
         ) -> tuple[
             DataLoader,
             Generator[Any, None, None],
@@ -259,19 +280,54 @@ class Trainer:
             def get_dataloader_and_iter_lmdb(
                 _data: LmdbDataset,
             ) -> tuple[DataLoader, Generator[Any, None, None]]:
+                _shuffle = _training_params.get("shuffle", True)
+                _seed = _training_params.get("seed", training_params.get("seed", 42))
+                if _seed is None:
+                    _seed = 42
+
                 if _data.mixed_batch:
-                    # TODO [mixed_batch=True]: Replace SameNlocBatchSampler with
-                    # RandomSampler(replacement=False) + padding collate_fn.
-                    # Changes needed:
-                    #   1. _collate_lmdb_batch: pad coord/force/atype to max_nloc,
-                    #      add "atom_mask" bool tensor (nframes, max_nloc)
-                    #   2. Use RandomSampler(_data, replacement=False) as sampler
-                    #   3. Use fixed batch_size in DataLoader (not batch_sampler)
-                    #   4. Model forward: apply atom_mask to descriptor/fitting
-                    #   5. Loss: mask out padded atoms in force loss
-                    raise NotImplementedError(
-                        "mixed_batch=True training is not yet supported."
+                    from torch.utils.data import (
+                        RandomSampler,
+                        SequentialSampler,
                     )
+
+                    if _shuffle:
+                        generator = torch.Generator()
+                        generator.manual_seed(_seed)
+                        _sampler = RandomSampler(
+                            _data, replacement=False, generator=generator
+                        )
+                    else:
+                        _sampler = SequentialSampler(_data)
+
+                    model_for_graph = (
+                        self.model[_task_key] if self.multi_task else self.model
+                    )
+                    descriptor = model_for_graph.atomic_model.descriptor
+                    if not hasattr(descriptor, "repflows"):
+                        raise ValueError(
+                            "mixed_batch=True currently requires a flat-graph "
+                            "capable descriptor, for example DPA3/RepFlow."
+                        )
+                    graph_config = {
+                        "rcut": descriptor.get_rcut(),
+                        "sel": descriptor.get_sel(),
+                        "a_rcut": descriptor.repflows.a_rcut,
+                        "a_sel": descriptor.repflows.a_sel,
+                        "mixed_types": descriptor.mixed_types(),
+                    }
+
+                    _dataloader = DataLoader(
+                        _data,
+                        batch_size=_data.batch_size,
+                        sampler=_sampler,
+                        num_workers=0,
+                        collate_fn=make_lmdb_mixed_batch_collate(graph_config),
+                        pin_memory=(DEVICE != "cpu"),
+                    )
+                    _data_iter = cycle_iterator(_dataloader)
+                    return _dataloader, _data_iter
+
                 # mixed_batch=False: group frames by nloc, each batch same nloc.
                 # SameNlocBatchSampler yields list[int] per batch, all same nloc.
                 # Auto batch_size is computed per-nloc-group inside the sampler.
@@ -290,14 +346,15 @@ class Trainer:
                         _data._reader,
                         rank=self.rank,
                         world_size=self.world_size,
-                        shuffle=True,
-                        seed=_training_params.get("seed", None),
+                        shuffle=_shuffle,
+                        seed=_seed,
                         block_targets=_block_targets,
                     )
                 else:
                     _inner_sampler = SameNlocBatchSampler(
                         _data._reader,
-                        shuffle=True,
+                        shuffle=_shuffle,
+                        seed=_seed,
                         block_targets=_block_targets,
                     )
 
@@ -555,6 +612,7 @@ class Trainer:
                     training_data[model_key],
                     validation_data[model_key],
                     training_params["data_dict"][model_key],
+                    _task_key=model_key,
                 )
 
                 training_data[model_key].print_summary(
@@ -1284,6 +1342,7 @@ class Trainer:
             input_dict, label_dict, log_dict = self.get_data(
                 is_train=True, task_key=task_key
             )
+
             if SAMPLER_RECORD:
                 print_str = f"Step {_step_id}: sample system{log_dict['sid']}  frame{log_dict['fid']}\n"
                 fout1.write(print_str)
@@ -2008,6 +2067,7 @@ class Trainer:
     def get_data(
         self, is_train: bool = True, task_key: str = "Default"
     ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+
         if is_train:
             iterator = self.training_data
         else:
@@ -2017,16 +2077,25 @@ class Trainer:
         if iterator is None:
             return {}, {}, {}
         batch_data = next(iterator)
+
+        # Detect mixed batch format (has 'batch' and 'ptr' fields)
+        is_mixed_batch = "batch" in batch_data and "ptr" in batch_data
+
         for key in batch_data.keys():
-            if key == "sid" or key == "fid" or key == "box" or "find_" in key:
+            if key == "sid" or key == "fid" or "find_" in key:
+                continue
+            # Skip batch and ptr for now, will handle them separately
+            elif key == "batch" or key == "ptr":
                 continue
             elif not isinstance(batch_data[key], list):
                 if batch_data[key] is not None:
                     batch_data[key] = batch_data[key].to(DEVICE, non_blocking=True)
             else:
                 batch_data[key] = [
-                    item.to(DEVICE, non_blocking=True) for item in batch_data[key]
+                    item.to(DEVICE, non_blocking=True) if item is not None else None
+                    for item in batch_data[key]
                 ]
+
         # we may need a better way to classify which are inputs and which are labels
         # now wrapper only supports the following inputs:
         input_keys = [
@@ -2037,6 +2106,13 @@ class Trainer:
             "fparam",
             "aparam",
         ]
+
+        # Mixed-nloc LMDB batches include precomputed flat-graph tensors.
+        if is_mixed_batch:
+            input_keys = input_keys + list(_FLAT_GRAPH_INPUT_KEYS)
+            batch_data["batch"] = batch_data["batch"].to(DEVICE, non_blocking=True)
+            batch_data["ptr"] = batch_data["ptr"].to(DEVICE, non_blocking=True)
+
         input_dict = dict.fromkeys(input_keys)
         label_dict = {}
         for item_key in batch_data:

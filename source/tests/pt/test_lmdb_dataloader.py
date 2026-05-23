@@ -24,6 +24,10 @@ from deepmd.dpmodel.utils.lmdb_data import (
 from deepmd.pt.utils.lmdb_dataset import (
     LmdbDataset,
     _collate_lmdb_batch,
+    make_lmdb_mixed_batch_collate,
+)
+from deepmd.utils.argcheck import (
+    training_data_args,
 )
 from deepmd.utils.data import (
     DataRequirementItem,
@@ -208,6 +212,16 @@ class TestLmdbDataset:
         ds = LmdbDataset(lmdb_dir, type_map=["O", "H"], batch_size=2)
         assert ds.mixed_type is True
 
+    def test_mixed_batch_init(self, multi_nloc_lmdb):
+        ds = LmdbDataset(
+            multi_nloc_lmdb,
+            type_map=["O", "H"],
+            batch_size=3,
+            mixed_batch=True,
+        )
+        assert ds.mixed_batch is True
+        assert len(ds.dataloaders) == 1
+
 
 # ============================================================
 # Trainer compatibility interface
@@ -352,6 +366,165 @@ class TestCollate:
             {"coord": np.zeros((2, 3)), "box": None},
         ]
         assert _collate_lmdb_batch(frames)["box"] is None
+
+    def test_collate_mixed_nloc_flattens_atomwise(self):
+        rng = np.random.default_rng(7)
+        frames = [
+            {
+                "coord": rng.standard_normal((2, 3)),
+                "atype": np.array([0, 1], dtype=np.int64),
+                "force": rng.standard_normal((2, 3)),
+                "atom_ener": rng.standard_normal((2, 1)),
+                "drdq": rng.standard_normal((2, 6)),
+                "energy": np.array([1.0]),
+                "box": np.arange(9, dtype=np.float64),
+                "find_energy": 1.0,
+                "fid": 3,
+            },
+            {
+                "coord": rng.standard_normal((3, 3)),
+                "atype": np.array([1, 0, 1], dtype=np.int64),
+                "force": rng.standard_normal((3, 3)),
+                "atom_ener": rng.standard_normal((3, 1)),
+                "drdq": rng.standard_normal((3, 6)),
+                "energy": np.array([2.0]),
+                "box": np.arange(9, dtype=np.float64) + 10.0,
+                "find_energy": 1.0,
+                "fid": 9,
+            },
+        ]
+        batch = _collate_lmdb_batch(frames)
+        assert batch["coord"].shape == (5, 3)
+        assert batch["atype"].shape == (5,)
+        assert batch["force"].shape == (5, 3)
+        assert batch["atom_ener"].shape == (5, 1)
+        assert batch["drdq"].shape == (5, 6)
+        assert batch["energy"].shape == (2, 1)
+        assert batch["box"].shape == (2, 9)
+        torch.testing.assert_close(
+            batch["batch"], torch.tensor([0, 0, 1, 1, 1], device="cpu")
+        )
+        torch.testing.assert_close(batch["ptr"], torch.tensor([0, 2, 5], device="cpu"))
+        torch.testing.assert_close(
+            batch["coord"],
+            torch.as_tensor(
+                np.concatenate([frame["coord"] for frame in frames]), device="cpu"
+            ),
+        )
+        torch.testing.assert_close(
+            batch["atype"],
+            torch.as_tensor(
+                np.concatenate([frame["atype"] for frame in frames]), device="cpu"
+            ),
+        )
+        torch.testing.assert_close(
+            batch["force"],
+            torch.as_tensor(
+                np.concatenate([frame["force"] for frame in frames]), device="cpu"
+            ),
+        )
+        assert batch["fid"] == [3, 9]
+
+    def test_mixed_batch_collate_precomputes_graph(self):
+        frames = [
+            {
+                "coord": np.array([[0.0, 0.0, 0.0], [0.2, 0.0, 0.0]]),
+                "atype": np.array([0, 0], dtype=np.int64),
+                "force": np.zeros((2, 3)),
+                "energy": np.array([0.0]),
+                "box": np.eye(3).reshape(9),
+                "find_energy": 1.0,
+                "fid": 0,
+            },
+            {
+                "coord": np.array([[0.0, 0.0, 0.0], [0.2, 0.0, 0.0], [0.0, 0.2, 0.0]]),
+                "atype": np.array([0, 0, 0], dtype=np.int64),
+                "force": np.zeros((3, 3)),
+                "energy": np.array([1.0]),
+                "box": np.eye(3).reshape(9),
+                "find_energy": 1.0,
+                "fid": 1,
+            },
+        ]
+        collate = make_lmdb_mixed_batch_collate(
+            {
+                "rcut": 0.8,
+                "sel": [4],
+                "a_rcut": 0.8,
+                "a_sel": 4,
+                "mixed_types": True,
+            }
+        )
+        batch = collate(frames)
+        assert batch["coord"].shape == (5, 3)
+        torch.testing.assert_close(batch["ptr"], torch.tensor([0, 2, 5], device="cpu"))
+        for key in (
+            "extended_atype",
+            "extended_batch",
+            "extended_image",
+            "extended_ptr",
+            "mapping",
+            "central_ext_index",
+            "nlist",
+            "nlist_ext",
+            "a_nlist",
+            "a_nlist_ext",
+            "nlist_mask",
+            "a_nlist_mask",
+            "edge_index",
+            "angle_index",
+        ):
+            assert key in batch
+        assert batch["nlist"].shape[0] == 5
+        assert batch["edge_index"].shape[0] == 2
+        assert batch["angle_index"].shape[0] == 3
+        assert torch.equal(batch["nlist_mask"], batch["nlist_ext"] >= 0)
+        assert torch.equal(batch["a_nlist_mask"], batch["a_nlist_ext"] >= 0)
+
+    def test_mixed_batch_graph_keeps_frame_boundaries(self):
+        frames = [
+            {
+                "coord": np.array([[0.0, 0.0, 0.0], [0.2, 0.0, 0.0]]),
+                "atype": np.array([0, 0], dtype=np.int64),
+                "force": np.zeros((2, 3)),
+                "energy": np.array([0.0]),
+                "box": np.eye(3).reshape(9) * 10.0,
+                "find_energy": 1.0,
+                "fid": 0,
+            },
+            {
+                "coord": np.array([[0.1, 0.0, 0.0], [0.3, 0.0, 0.0]]),
+                "atype": np.array([0, 0], dtype=np.int64),
+                "force": np.zeros((2, 3)),
+                "energy": np.array([1.0]),
+                "box": np.eye(3).reshape(9) * 10.0,
+                "find_energy": 1.0,
+                "fid": 1,
+            },
+        ]
+        batch = make_lmdb_mixed_batch_collate(
+            {
+                "rcut": 0.5,
+                "sel": [2],
+                "a_rcut": 0.5,
+                "a_sel": 2,
+                "mixed_types": True,
+            }
+        )(frames)
+
+        for atom_idx, frame_idx in enumerate(batch["batch"].tolist()):
+            local_neighbors = batch["nlist"][atom_idx][batch["nlist_mask"][atom_idx]]
+            ext_neighbors = batch["nlist_ext"][atom_idx][batch["nlist_mask"][atom_idx]]
+            assert torch.all(batch["batch"][local_neighbors] == frame_idx)
+            assert torch.all(batch["extended_batch"][ext_neighbors] == frame_idx)
+
+    def test_mix_batch_arg_alias(self):
+        arg = training_data_args()
+        normalized = arg.normalize_value(
+            {"systems": "train.lmdb", "batch_size": 2, "mix_batch": True},
+            trim_pattern="_*",
+        )
+        assert normalized["mixed_batch"] is True
 
 
 # ============================================================
@@ -601,6 +774,15 @@ class TestAutoProbDataset:
         )
         assert ds._block_targets is not None
 
+    def test_dataset_auto_prob_default_mixed_batch(self, auto_prob_lmdb):
+        ds = LmdbDataset(
+            auto_prob_lmdb,
+            type_map=["O", "H"],
+            batch_size=4,
+            mixed_batch=True,
+        )
+        assert ds._block_targets is None
+
     def test_dataset_auto_prob_none(self, auto_prob_lmdb):
         ds = LmdbDataset(auto_prob_lmdb, type_map=["O", "H"], batch_size=4)
         assert ds._block_targets is None
@@ -623,6 +805,16 @@ class TestAutoProbDataset:
         )
         count = sum(len(batch) for batch in ds._batch_sampler)
         assert count > 300  # expanded
+
+    def test_dataset_auto_prob_mixed_batch_raises(self, auto_prob_lmdb):
+        with pytest.raises(NotImplementedError, match="mixed_batch=True"):
+            LmdbDataset(
+                auto_prob_lmdb,
+                type_map=["O", "H"],
+                batch_size=4,
+                mixed_batch=True,
+                auto_prob_style="prob_sys_size;0:1:0.5;1:3:0.5",
+            )
 
 
 class TestMergeLmdbSystemIds:

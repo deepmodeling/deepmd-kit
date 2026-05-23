@@ -72,7 +72,76 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
+        batch: torch.Tensor | None = None,
+        ptr: torch.Tensor | None = None,
+        extended_atype: torch.Tensor | None = None,
+        extended_batch: torch.Tensor | None = None,
+        extended_image: torch.Tensor | None = None,
+        extended_ptr: torch.Tensor | None = None,
+        mapping: torch.Tensor | None = None,
+        central_ext_index: torch.Tensor | None = None,
+        nlist: torch.Tensor | None = None,
+        nlist_ext: torch.Tensor | None = None,
+        a_nlist: torch.Tensor | None = None,
+        a_nlist_ext: torch.Tensor | None = None,
+        nlist_mask: torch.Tensor | None = None,
+        a_nlist_mask: torch.Tensor | None = None,
+        edge_index: torch.Tensor | None = None,
+        angle_index: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
+        if not torch.jit.is_scripting() and batch is not None and ptr is not None:
+            model_ret = self.forward_common_flat(
+                coord=coord,
+                atype=atype,
+                batch=batch,
+                ptr=ptr,
+                box=box,
+                fparam=fparam,
+                aparam=aparam,
+                do_atomic_virial=do_atomic_virial,
+                extended_atype=extended_atype,
+                extended_batch=extended_batch,
+                extended_image=extended_image,
+                extended_ptr=extended_ptr,
+                mapping=mapping,
+                central_ext_index=central_ext_index,
+                nlist=nlist,
+                nlist_ext=nlist_ext,
+                a_nlist=a_nlist,
+                a_nlist_ext=a_nlist_ext,
+                nlist_mask=nlist_mask,
+                a_nlist_mask=a_nlist_mask,
+                edge_index=edge_index,
+                angle_index=angle_index,
+            )
+            if self.get_fitting_net() is not None:
+                model_predict = {}
+                model_predict["atom_energy"] = model_ret["energy"]
+                model_predict["energy"] = model_ret["energy_redu"]
+                if self.do_grad_r("energy"):
+                    model_predict["force"] = model_ret["energy_derv_r"].squeeze(-2)
+                else:
+                    if "dforce" in model_ret:
+                        model_predict["force"] = model_ret["dforce"]
+                if self.do_grad_c("energy"):
+                    model_predict["virial"] = model_ret["energy_derv_c_redu"].squeeze(
+                        -2
+                    )
+                    if do_atomic_virial:
+                        model_predict["atom_virial"] = model_ret[
+                            "energy_derv_c"
+                        ].squeeze(-2)
+                if "mask" in model_ret:
+                    model_predict["mask"] = model_ret["mask"]
+                if self._hessian_enabled:
+                    model_predict["hessian"] = model_ret[
+                        "energy_derv_r_derv_r"
+                    ].squeeze(-3)
+            else:
+                model_predict = model_ret
+                model_predict["updated_coord"] += coord
+            return model_predict
+
         model_ret = self.forward_common(
             coord,
             atype,
@@ -87,14 +156,15 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             model_predict["energy"] = model_ret["energy_redu"]
             if self.do_grad_r("energy"):
                 model_predict["force"] = model_ret["energy_derv_r"].squeeze(-2)
+            else:
+                if "dforce" in model_ret:
+                    model_predict["force"] = model_ret["dforce"]
             if self.do_grad_c("energy"):
                 model_predict["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
                 if do_atomic_virial:
                     model_predict["atom_virial"] = model_ret["energy_derv_c"].squeeze(
                         -2
                     )
-            else:
-                model_predict["force"] = model_ret["dforce"]
             if "mask" in model_ret:
                 model_predict["mask"] = model_ret["mask"]
             if self._hessian_enabled:
@@ -102,6 +172,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         else:
             model_predict = model_ret
             model_predict["updated_coord"] += coord
+
         return model_predict
 
     @torch.jit.export

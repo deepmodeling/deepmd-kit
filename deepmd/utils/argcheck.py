@@ -3760,6 +3760,15 @@ If MPI is used, the value should be considered as the batch size per task.'
         "specifying the probability of each system."
     )
 
+    doc_mixed_batch = (
+        "Whether to enable LMDB mixed-batch training with different numbers of atoms "
+        "per frame. When set to True, the PyTorch LMDB dataloader flattens atom-wise "
+        "fields and precomputes graph indices in the collate function. In this mode, "
+        "`batch_size` is the number of frames/systems per batch rather than the total "
+        "atom count. "
+        "The alias `mix_batch` is accepted. Default is False."
+    )
+
     args = [
         Argument(
             "systems", [list[str], str], optional=False, default=".", doc=doc_systems
@@ -3795,6 +3804,14 @@ If MPI is used, the value should be considered as the batch size per task.'
             default=None,
             doc=doc_sys_probs,
             alias=["sys_weights"],
+        ),
+        Argument(
+            "mixed_batch",
+            bool,
+            optional=True,
+            default=False,
+            alias=["mix_batch"],
+            doc=doc_mixed_batch + doc_only_pt_supported,
         ),
     ]
 
@@ -3840,6 +3857,14 @@ def validation_data_args() -> list[
         "specifying the probability of each system."
     )
     doc_numb_btch = "An integer that specifies the number of batches to be sampled for each validation period."
+    doc_mixed_batch = (
+        "Whether to enable LMDB mixed-batch validation with different numbers of atoms "
+        "per frame. When set to True, the PyTorch LMDB dataloader flattens atom-wise "
+        "fields and precomputes graph indices in the collate function. In this mode, "
+        "`batch_size` is the number of frames/systems per batch rather than the total "
+        "atom count. "
+        "The alias `mix_batch` is accepted. Default is False."
+    )
 
     args = [
         Argument(
@@ -3886,6 +3911,14 @@ def validation_data_args() -> list[
             alias=[
                 "numb_batch",
             ],
+        ),
+        Argument(
+            "mixed_batch",
+            bool,
+            optional=True,
+            default=False,
+            alias=["mix_batch"],
+            doc=doc_mixed_batch + doc_only_pt_supported,
         ),
     ]
 
