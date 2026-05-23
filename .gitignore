@@ -73,9 +73,3 @@ frozen_model.*
 
 # Test system directories
 system/
-*.expected
-temp/
-pkl/
-history/
-deepmd-kit/
-*.hdf5
