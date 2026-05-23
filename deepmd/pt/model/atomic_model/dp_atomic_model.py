@@ -278,6 +278,7 @@ class DPAtomicModel(BaseAtomicModel):
         if self.add_chg_spin_ebd and charge_spin is None:
             default_cs_tensor = self.descriptor.get_default_chg_spin()
             if default_cs_tensor is not None:
+                default_cs_tensor = default_cs_tensor.to(device=extended_coord.device)
                 charge_spin = torch.tile(default_cs_tensor.unsqueeze(0), [nframes, 1])
 
         descriptor, rot_mat, g2, h2, sw = self.descriptor(
