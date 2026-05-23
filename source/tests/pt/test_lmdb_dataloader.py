@@ -405,6 +405,24 @@ class TestCollate:
             batch["batch"], torch.tensor([0, 0, 1, 1, 1], device="cpu")
         )
         torch.testing.assert_close(batch["ptr"], torch.tensor([0, 2, 5], device="cpu"))
+        torch.testing.assert_close(
+            batch["coord"],
+            torch.as_tensor(
+                np.concatenate([frame["coord"] for frame in frames]), device="cpu"
+            ),
+        )
+        torch.testing.assert_close(
+            batch["atype"],
+            torch.as_tensor(
+                np.concatenate([frame["atype"] for frame in frames]), device="cpu"
+            ),
+        )
+        torch.testing.assert_close(
+            batch["force"],
+            torch.as_tensor(
+                np.concatenate([frame["force"] for frame in frames]), device="cpu"
+            ),
+        )
         assert batch["fid"] == [3, 9]
 
     def test_mixed_batch_collate_precomputes_graph(self):
@@ -460,6 +478,45 @@ class TestCollate:
         assert batch["nlist"].shape[0] == 5
         assert batch["edge_index"].shape[0] == 2
         assert batch["angle_index"].shape[0] == 3
+        assert torch.equal(batch["nlist_mask"], batch["nlist_ext"] >= 0)
+        assert torch.equal(batch["a_nlist_mask"], batch["a_nlist_ext"] >= 0)
+
+    def test_mixed_batch_graph_keeps_frame_boundaries(self):
+        frames = [
+            {
+                "coord": np.array([[0.0, 0.0, 0.0], [0.2, 0.0, 0.0]]),
+                "atype": np.array([0, 0], dtype=np.int64),
+                "force": np.zeros((2, 3)),
+                "energy": np.array([0.0]),
+                "box": np.eye(3).reshape(9) * 10.0,
+                "find_energy": 1.0,
+                "fid": 0,
+            },
+            {
+                "coord": np.array([[0.1, 0.0, 0.0], [0.3, 0.0, 0.0]]),
+                "atype": np.array([0, 0], dtype=np.int64),
+                "force": np.zeros((2, 3)),
+                "energy": np.array([1.0]),
+                "box": np.eye(3).reshape(9) * 10.0,
+                "find_energy": 1.0,
+                "fid": 1,
+            },
+        ]
+        batch = make_lmdb_mixed_batch_collate(
+            {
+                "rcut": 0.5,
+                "sel": [2],
+                "a_rcut": 0.5,
+                "a_sel": 2,
+                "mixed_types": True,
+            }
+        )(frames)
+
+        for atom_idx, frame_idx in enumerate(batch["batch"].tolist()):
+            local_neighbors = batch["nlist"][atom_idx][batch["nlist_mask"][atom_idx]]
+            ext_neighbors = batch["nlist_ext"][atom_idx][batch["nlist_mask"][atom_idx]]
+            assert torch.all(batch["batch"][local_neighbors] == frame_idx)
+            assert torch.all(batch["extended_batch"][ext_neighbors] == frame_idx)
 
     def test_mix_batch_arg_alias(self):
         arg = training_data_args()

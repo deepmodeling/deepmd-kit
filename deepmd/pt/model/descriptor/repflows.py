@@ -852,10 +852,12 @@ class DescrptBlockRepflows(DescriptorBlock):
         angle_ebd_batched = (
             angle_ebd.unsqueeze(0) if not self.use_dynamic_sel else angle_ebd
         )
-        nlist_batched = nlist.unsqueeze(0)  # [1, nloc, nnei]
+        nlist_safe = torch.where(nlist_mask, nlist, torch.zeros_like(nlist))
+        a_nlist_safe = torch.where(a_nlist_mask, a_nlist, torch.zeros_like(a_nlist))
+        nlist_batched = nlist_safe.unsqueeze(0)  # [1, nloc, nnei]
         nlist_mask_batched = nlist_mask.unsqueeze(0)  # [1, nloc, nnei]
         sw_batched = sw.unsqueeze(0) if not self.use_dynamic_sel else sw
-        a_nlist_batched = a_nlist.unsqueeze(0)  # [1, nloc, a_nnei]
+        a_nlist_batched = a_nlist_safe.unsqueeze(0)  # [1, nloc, a_nnei]
         a_nlist_mask_batched = a_nlist_mask.unsqueeze(0)  # [1, nloc, a_nnei]
         a_sw_batched = a_sw.unsqueeze(0) if not self.use_dynamic_sel else a_sw
 
