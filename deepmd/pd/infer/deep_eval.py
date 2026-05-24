@@ -826,37 +826,30 @@ class DeepEval(DeepEvalBackend):
         model = (
             self.dp.model["Default"] if isinstance(self.dp, ModelWrapper) else self.dp
         )
-        if self.auto_batch_size is not None:
-            self.auto_batch_size.set_oom_retry_mode(True)
-        model.set_eval_descriptor_hook(True)
-        retry = False
-        try:
-            self.eval(
-                coords,
-                cells,
-                atom_types,
-                atomic=False,
-                fparam=fparam,
-                aparam=aparam,
-                **kwargs,
-            )
-            descriptor = model.eval_descriptor()
-        except RetrySignal:
-            retry = True
-        finally:
-            model.set_eval_descriptor_hook(False)
+        while True:
             if self.auto_batch_size is not None:
-                self.auto_batch_size.set_oom_retry_mode(False)
-        if retry:
-            return self.eval_descriptor(
-                coords,
-                cells,
-                atom_types,
-                fparam=fparam,
-                aparam=aparam,
-                **kwargs,
-            )
-        return to_numpy_array(descriptor)
+                self.auto_batch_size.set_oom_retry_mode(True)
+            model.set_eval_descriptor_hook(True)
+            retry = False
+            try:
+                self.eval(
+                    coords,
+                    cells,
+                    atom_types,
+                    atomic=False,
+                    fparam=fparam,
+                    aparam=aparam,
+                    **kwargs,
+                )
+                descriptor = model.eval_descriptor()
+            except RetrySignal:
+                retry = True
+            finally:
+                model.set_eval_descriptor_hook(False)
+                if self.auto_batch_size is not None:
+                    self.auto_batch_size.set_oom_retry_mode(False)
+            if not retry:
+                return to_numpy_array(descriptor)
 
     def eval_fitting_last_layer(
         self,
@@ -899,34 +892,27 @@ class DeepEval(DeepEvalBackend):
             Fitting output before last layer.
         """
         model = self.dp.model["Default"]
-        if self.auto_batch_size is not None:
-            self.auto_batch_size.set_oom_retry_mode(True)
-        model.set_eval_fitting_last_layer_hook(True)
-        retry = False
-        try:
-            self.eval(
-                coords,
-                cells,
-                atom_types,
-                atomic=False,
-                fparam=fparam,
-                aparam=aparam,
-                **kwargs,
-            )
-            fitting_net = model.eval_fitting_last_layer()
-        except RetrySignal:
-            retry = True
-        finally:
-            model.set_eval_fitting_last_layer_hook(False)
+        while True:
             if self.auto_batch_size is not None:
-                self.auto_batch_size.set_oom_retry_mode(False)
-        if retry:
-            return self.eval_fitting_last_layer(
-                coords,
-                cells,
-                atom_types,
-                fparam=fparam,
-                aparam=aparam,
-                **kwargs,
-            )
-        return to_numpy_array(fitting_net)
+                self.auto_batch_size.set_oom_retry_mode(True)
+            model.set_eval_fitting_last_layer_hook(True)
+            retry = False
+            try:
+                self.eval(
+                    coords,
+                    cells,
+                    atom_types,
+                    atomic=False,
+                    fparam=fparam,
+                    aparam=aparam,
+                    **kwargs,
+                )
+                fitting_net = model.eval_fitting_last_layer()
+            except RetrySignal:
+                retry = True
+            finally:
+                model.set_eval_fitting_last_layer_hook(False)
+                if self.auto_batch_size is not None:
+                    self.auto_batch_size.set_oom_retry_mode(False)
+            if not retry:
+                return to_numpy_array(fitting_net)
