@@ -583,7 +583,6 @@ def DescriptorParamDPA3DefaultChgSpin(ntypes, rcut, rcut_smth, sel, type_map, **
     )
 
 
-DescriptorParamDPA3List.append(DescriptorParamDPA3DefaultChgSpin)
 # to get name for the default function
 DescriptorParamDPA3 = DescriptorParamDPA3List[0]
 
