@@ -182,6 +182,12 @@ class TestEnergyModel(unittest.TestCase):
             dtype=torch.float64,
             device=self.device,
         )
+        charge_spin_zero = torch.zeros(
+            nframes,
+            2,
+            dtype=torch.float64,
+            device=self.device,
+        )
 
         # --- eager reference with zero params ---
         ret_eager_zero = md.forward_lower(
@@ -204,13 +210,22 @@ class TestEnergyModel(unittest.TestCase):
             mapping_t,
             fparam=fparam_zero,
             aparam=aparam_zero,
+            charge_spin=charge_spin_zero,
             do_atomic_virial=True,
         )
         self.assertIsInstance(traced, torch.nn.Module)
 
         exported = torch.export.export(
             traced,
-            (ext_coord, ext_atype, nlist_t, mapping_t, fparam_zero, aparam_zero),
+            (
+                ext_coord,
+                ext_atype,
+                nlist_t,
+                mapping_t,
+                fparam_zero,
+                aparam_zero,
+                charge_spin_zero,
+            ),
             strict=False,
         )
         self.assertIsNotNone(exported)
@@ -223,6 +238,7 @@ class TestEnergyModel(unittest.TestCase):
             mapping_t,
             fparam_zero,
             aparam_zero,
+            charge_spin_zero,
         )
         ret_exported_zero = exported.module()(
             ext_coord,
@@ -231,6 +247,7 @@ class TestEnergyModel(unittest.TestCase):
             mapping_t,
             fparam_zero,
             aparam_zero,
+            charge_spin_zero,
         )
         for key in output_keys:
             np.testing.assert_allclose(
@@ -278,6 +295,7 @@ class TestEnergyModel(unittest.TestCase):
             mapping_t,
             fparam_nz,
             aparam_nz,
+            charge_spin_zero,
         )
         ret_exported_nz = exported.module()(
             ext_coord,
@@ -286,6 +304,7 @@ class TestEnergyModel(unittest.TestCase):
             mapping_t,
             fparam_nz,
             aparam_nz,
+            charge_spin_zero,
         )
         for key in output_keys:
             np.testing.assert_allclose(
@@ -321,6 +340,7 @@ class TestEnergyModel(unittest.TestCase):
             mapping_t,
             fparam_zero,
             aparam_nz,
+            charge_spin_zero,
         )
         self.assertFalse(
             np.allclose(
@@ -351,6 +371,7 @@ class TestEnergyModel(unittest.TestCase):
                 mapping_t,
                 fparam_zero,
                 aparam_zero,
+                charge_spin_zero,
             )
         )
 
@@ -361,6 +382,7 @@ class TestEnergyModel(unittest.TestCase):
             inputs_5f[3],
             fparam=inputs_5f[4],
             aparam=inputs_5f[5],
+            charge_spin=inputs_5f[6],
             do_atomic_virial=True,
             tracing_mode="symbolic",
             _allow_non_fake_inputs=True,
@@ -390,7 +412,13 @@ class TestEnergyModel(unittest.TestCase):
             do_atomic_virial=True,
         )
         ret_loaded_1f = loaded(
-            ext_coord, ext_atype, nlist_t, mapping_t, fparam_zero, aparam_zero
+            ext_coord,
+            ext_atype,
+            nlist_t,
+            mapping_t,
+            fparam_zero,
+            aparam_zero,
+            charge_spin_zero,
         )
         for key in ret_common:
             np.testing.assert_allclose(

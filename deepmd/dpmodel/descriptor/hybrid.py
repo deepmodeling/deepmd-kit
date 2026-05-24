@@ -123,6 +123,40 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         """Returns the cut-off radius."""
         return np.max([descrpt.get_rcut() for descrpt in self.descrpt_list]).item()
 
+    def get_dim_chg_spin(self) -> int:
+        """Returns the dimension of charge_spin input (0 if not supported)."""
+        return max(
+            (descrpt.get_dim_chg_spin() for descrpt in self.descrpt_list), default=0
+        )
+
+    def has_default_chg_spin(self) -> bool:
+        """Returns whether the descriptor has a default charge_spin value."""
+        default_chg_spin = None
+        found_chg_spin = False
+        for descrpt in self.descrpt_list:
+            if descrpt.get_dim_chg_spin() == 0:
+                continue
+            found_chg_spin = True
+            if not descrpt.has_default_chg_spin():
+                return False
+            child_default_chg_spin = descrpt.get_default_chg_spin()
+            if child_default_chg_spin is None:
+                return False
+            if default_chg_spin is None:
+                default_chg_spin = child_default_chg_spin
+            elif child_default_chg_spin != default_chg_spin:
+                return False
+        return found_chg_spin
+
+    def get_default_chg_spin(self) -> list[float] | None:
+        """Returns the default charge_spin value, or None."""
+        if not self.has_default_chg_spin():
+            return None
+        for descrpt in self.descrpt_list:
+            if descrpt.get_dim_chg_spin() > 0:
+                return descrpt.get_default_chg_spin()
+        return None
+
     def get_rcut_smth(self) -> float:
         """Returns the radius where the neighbor information starts to smoothly decay to 0."""
         # may not be a good idea...
@@ -287,6 +321,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         mapping: Array | None = None,
         fparam: Array | None = None,
         comm_dict: dict | None = None,
+        charge_spin: Array | None = None,
     ) -> tuple[
         Array,
         Array | None,
@@ -344,7 +379,13 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
                 assert nl_distinguish_types is not None
                 nl = nl_distinguish_types[:, :, nci]
             odescriptor, gr, _g2, _h2, _sw = descrpt(
-                coord_ext, atype_ext, nl, mapping, comm_dict=comm_dict
+                coord_ext,
+                atype_ext,
+                nl,
+                mapping,
+                fparam=fparam,
+                comm_dict=comm_dict,
+                charge_spin=charge_spin,
             )
             out_descriptor.append(odescriptor)
             if gr is not None:

@@ -137,8 +137,14 @@ class DP(Calculator):
 
         fparam = self.atoms.info.get("fparam", None)
         aparam = self.atoms.info.get("aparam", None)
+        charge_spin = self.atoms.info.get("charge_spin", None)
         e, f, v = self.dp.eval(
-            coords=coord, cells=cell, atom_types=atype, fparam=fparam, aparam=aparam
+            coords=coord,
+            cells=cell,
+            atom_types=atype,
+            fparam=fparam,
+            aparam=aparam,
+            charge_spin=charge_spin,
         )[:3]
         self.results["energy"] = e[0][0]
         # see https://gitlab.com/ase/ase/-/merge_requests/2485

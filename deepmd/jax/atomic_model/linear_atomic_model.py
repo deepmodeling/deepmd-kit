@@ -62,6 +62,7 @@ class DPZBLLinearEnergyAtomicModel(DPZBLLinearEnergyAtomicModelDP):
         fparam: jnp.ndarray | None = None,
         aparam: jnp.ndarray | None = None,
         comm_dict: dict | None = None,
+        charge_spin: jnp.ndarray | None = None,
     ) -> dict[str, jnp.ndarray]:
         del comm_dict  # JAX path has no MPI ghost exchange
         return super().forward_common_atomic(
@@ -71,4 +72,5 @@ class DPZBLLinearEnergyAtomicModel(DPZBLLinearEnergyAtomicModelDP):
             mapping=mapping,
             fparam=fparam,
             aparam=aparam,
+            charge_spin=charge_spin,
         )

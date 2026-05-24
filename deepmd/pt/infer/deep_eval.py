@@ -252,6 +252,20 @@ class DeepEval(DeepEvalBackend):
             # for compatibility with old models
             return False
 
+    def has_chg_spin_ebd(self) -> bool:
+        """Check if the model has charge spin embedding."""
+        try:
+            return self.dp.model["Default"].has_chg_spin_ebd()
+        except AttributeError:
+            return False
+
+    def has_default_chg_spin(self) -> bool:
+        """Check if the model has default charge_spin values."""
+        try:
+            return self.dp.model["Default"].has_default_chg_spin()
+        except AttributeError:
+            return False
+
     def get_intensive(self) -> bool:
         return self.dp.model["Default"].get_intensive()
 
@@ -344,6 +358,7 @@ class DeepEval(DeepEvalBackend):
         atomic: bool = False,
         fparam: np.ndarray | None = None,
         aparam: np.ndarray | None = None,
+        charge_spin: np.ndarray | None = None,
         **kwargs: Any,
     ) -> dict[str, np.ndarray]:
         """Evaluate the energy, force and virial by using this DP.
@@ -393,7 +408,7 @@ class DeepEval(DeepEvalBackend):
         request_defs = self._get_request_defs(atomic)
         if "spin" not in kwargs or kwargs["spin"] is None:
             out = self._eval_func(self._eval_model, numb_test, natoms)(
-                coords, cells, atom_types, fparam, aparam, request_defs
+                coords, cells, atom_types, fparam, aparam, request_defs, charge_spin
             )
         else:
             out = self._eval_func(self._eval_model_spin, numb_test, natoms)(
@@ -404,6 +419,7 @@ class DeepEval(DeepEvalBackend):
                 fparam,
                 aparam,
                 request_defs,
+                charge_spin,
             )
         return dict(
             zip(
@@ -505,6 +521,7 @@ class DeepEval(DeepEvalBackend):
         fparam: np.ndarray | None,
         aparam: np.ndarray | None,
         request_defs: list[OutputVariableDef],
+        charge_spin: np.ndarray | None,
     ) -> tuple[np.ndarray, ...]:
         model = self.dp.to(DEVICE)
         prec = NP_PRECISION_DICT[RESERVED_PRECISION_DICT[GLOBAL_PT_FLOAT_PRECISION]]
@@ -546,6 +563,10 @@ class DeepEval(DeepEvalBackend):
             )
         else:
             aparam_input = None
+        if charge_spin is not None:
+            charge_spin_input = to_torch_tensor(charge_spin.reshape(nframes, 2))
+        else:
+            charge_spin_input = None
         do_atomic_virial = any(
             x.category == OutputVariableCategory.DERV_C for x in request_defs
         )
@@ -556,6 +577,7 @@ class DeepEval(DeepEvalBackend):
             do_atomic_virial=do_atomic_virial,
             fparam=fparam_input,
             aparam=aparam_input,
+            charge_spin=charge_spin_input,
         )
         if isinstance(batch_output, tuple):
             batch_output = batch_output[0]
@@ -583,6 +605,7 @@ class DeepEval(DeepEvalBackend):
         fparam: np.ndarray | None,
         aparam: np.ndarray | None,
         request_defs: list[OutputVariableDef],
+        charge_spin: np.ndarray | None,
     ) -> tuple[np.ndarray, ...]:
         model = self.dp.to(DEVICE)
 
@@ -624,6 +647,10 @@ class DeepEval(DeepEvalBackend):
             )
         else:
             aparam_input = None
+        if charge_spin is not None:
+            charge_spin_input = to_torch_tensor(charge_spin.reshape(nframes, 2))
+        else:
+            charge_spin_input = None
 
         do_atomic_virial = any(
             x.category == OutputVariableCategory.DERV_C_REDU for x in request_defs
@@ -636,6 +663,7 @@ class DeepEval(DeepEvalBackend):
             do_atomic_virial=do_atomic_virial,
             fparam=fparam_input,
             aparam=aparam_input,
+            charge_spin=charge_spin_input,
         )
         if isinstance(batch_output, tuple):
             batch_output = batch_output[0]

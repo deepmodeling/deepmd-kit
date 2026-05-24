@@ -128,6 +128,89 @@ class TestDescrptDPA3(TestCaseSingleFrameWithNlist):
             atol=atol,
         )
 
+    @pytest.mark.parametrize("cs_mode", ["explicit_chg_spin", "default_chg_spin"])
+    def test_consistency_chg_spin(self, cs_mode) -> None:
+        rng = np.random.default_rng(GLOBAL_SEED)
+        nf, nloc, nnei = self.nlist.shape
+        davg = rng.normal(size=(self.nt, nnei, 4))
+        dstd = 0.1 + np.abs(rng.normal(size=(self.nt, nnei, 4)))
+
+        prec = "float64"
+        dtype = PRECISION_DICT[prec]
+        rtol, atol = get_tols(prec)
+        atol = 1e-8
+
+        default_chg_spin = [5.0, 1.0] if cs_mode == "default_chg_spin" else None
+
+        repflow = RepFlowArgs(
+            n_dim=20,
+            e_dim=10,
+            a_dim=8,
+            nlayers=3,
+            e_rcut=self.rcut,
+            e_rcut_smth=self.rcut_smth,
+            e_sel=nnei,
+            a_rcut=self.rcut - 0.1,
+            a_rcut_smth=self.rcut_smth,
+            a_sel=nnei - 1,
+            axis_neuron=4,
+            update_angle=True,
+            update_style="res_residual",
+            update_residual_init="const",
+            smooth_edge_update=True,
+        )
+
+        dd0 = DescrptDPA3(
+            self.nt,
+            repflow=repflow,
+            exclude_types=[],
+            precision=prec,
+            add_chg_spin_ebd=True,
+            default_chg_spin=default_chg_spin,
+            seed=GLOBAL_SEED,
+        ).to(self.device)
+        dd0.repflows.mean = torch.tensor(davg, dtype=dtype, device=self.device)
+        dd0.repflows.stddev = torch.tensor(dstd, dtype=dtype, device=self.device)
+
+        # descriptor.forward does not apply default_chg_spin fallback;
+        # always pass an explicit charge_spin tensor here.
+        charge_spin = torch.tensor([[5, 1]], dtype=dtype, device=self.device).expand(
+            nf, -1
+        )
+        charge_spin_np = np.array([[5, 1]], dtype=np.float64).repeat(nf, axis=0)
+
+        coord_ext = torch.tensor(self.coord_ext, dtype=dtype, device=self.device)
+        atype_ext = torch.tensor(self.atype_ext, dtype=int, device=self.device)
+        nlist_t = torch.tensor(self.nlist, dtype=int, device=self.device)
+        mapping_t = torch.tensor(self.mapping, dtype=int, device=self.device)
+
+        rd0, _, _, _, _ = dd0(
+            coord_ext, atype_ext, nlist_t, mapping_t, charge_spin=charge_spin
+        )
+        # serialization round-trip preserves default_chg_spin
+        dd1 = DescrptDPA3.deserialize(dd0.serialize())
+        rd1, _, _, _, _ = dd1(
+            coord_ext, atype_ext, nlist_t, mapping_t, charge_spin=charge_spin
+        )
+        np.testing.assert_allclose(
+            rd0.detach().cpu().numpy(),
+            rd1.detach().cpu().numpy(),
+            rtol=rtol,
+            atol=atol,
+        )
+        # vs dpmodel
+        dd2 = DPDescrptDPA3.deserialize(dd0.serialize())
+        rd2, _, _, _, _ = dd2.call(
+            self.coord_ext,
+            self.atype_ext,
+            self.nlist,
+            self.mapping,
+            charge_spin=charge_spin_np,
+        )
+        np.testing.assert_allclose(
+            rd0.detach().cpu().numpy(), rd2, rtol=rtol, atol=atol
+        )
+
     @pytest.mark.parametrize("prec", ["float64", "float32"])  # precision
     def test_exportable(self, prec) -> None:
         rng = np.random.default_rng(GLOBAL_SEED)

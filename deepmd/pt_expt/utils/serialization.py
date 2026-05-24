@@ -1,6 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import ctypes
 import json
+from typing import (
+    Any,
+)
 
 import numpy as np
 import torch
@@ -96,6 +99,16 @@ def _json_to_numpy(model_obj: dict) -> dict:
             else x
         ),
     )
+
+
+def _metadata_value_to_json(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, torch.Tensor):
+        return value.detach().cpu().tolist()
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    return value
 
 
 def _needs_with_comm_artifact(model: torch.nn.Module) -> bool:
@@ -201,8 +214,9 @@ def _make_sample_inputs(
     Returns
     -------
     tuple
-        (ext_coord, ext_atype, nlist, mapping, fparam, aparam) or
-        (ext_coord, ext_atype, ext_spin, nlist, mapping, fparam, aparam) when has_spin.
+        (ext_coord, ext_atype, nlist, mapping, fparam, aparam, charge_spin) or
+        (ext_coord, ext_atype, ext_spin, nlist, mapping, fparam, aparam,
+        charge_spin) when has_spin.
     """
     rcut = model.get_rcut()
     sel = model.get_sel()
@@ -269,14 +283,31 @@ def _make_sample_inputs(
     else:
         aparam = None
 
+    dim_chg_spin = model.get_dim_chg_spin() if hasattr(model, "get_dim_chg_spin") else 0
+    if dim_chg_spin > 0:
+        charge_spin = torch.zeros(
+            nframes, dim_chg_spin, dtype=torch.float64, device=_env.DEVICE
+        )
+    else:
+        charge_spin = None
+
     if has_spin:
         nall = extended_coord.shape[1]
         ext_spin = torch.zeros(
             nframes, nall, 3, dtype=torch.float64, device=_env.DEVICE
         )
-        return ext_coord, ext_atype, ext_spin, nlist_t, mapping_t, fparam, aparam
+        return (
+            ext_coord,
+            ext_atype,
+            ext_spin,
+            nlist_t,
+            mapping_t,
+            fparam,
+            aparam,
+            charge_spin,
+        )
 
-    return ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam
+    return ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin
 
 
 def _build_dynamic_shapes(
@@ -332,9 +363,10 @@ def _build_dynamic_shapes(
     nnei_dim = torch.export.Dim("nnei", min=max(1, model_nnei))
 
     if has_spin:
-        # (ext_coord, ext_atype, ext_spin, nlist, mapping, fparam, aparam)
+        # (ext_coord, ext_atype, ext_spin, nlist, mapping, fparam, aparam, charge_spin)
         fparam = sample_inputs[5]
         aparam = sample_inputs[6]
+        charge_spin = sample_inputs[7]
         base = (
             {0: nframes_dim, 1: nall_dim},  # extended_coord: (nframes, nall, 3)
             {0: nframes_dim, 1: nall_dim},  # extended_atype: (nframes, nall)
@@ -347,11 +379,13 @@ def _build_dynamic_shapes(
             {0: nframes_dim, 1: nall_dim},  # mapping: (nframes, nall)
             {0: nframes_dim} if fparam is not None else None,  # fparam
             {0: nframes_dim, 1: nloc_dim} if aparam is not None else None,  # aparam
+            {0: nframes_dim} if charge_spin is not None else None,  # charge_spin
         )
     else:
-        # (ext_coord, ext_atype, nlist, mapping, fparam, aparam)
+        # (ext_coord, ext_atype, nlist, mapping, fparam, aparam, charge_spin)
         fparam = sample_inputs[4]
         aparam = sample_inputs[5]
+        charge_spin = sample_inputs[6]
         base = (
             {0: nframes_dim, 1: nall_dim},  # extended_coord: (nframes, nall, 3)
             {0: nframes_dim, 1: nall_dim},  # extended_atype: (nframes, nall)
@@ -363,6 +397,7 @@ def _build_dynamic_shapes(
             {0: nframes_dim, 1: nall_dim},  # mapping: (nframes, nall)
             {0: nframes_dim} if fparam is not None else None,  # fparam
             {0: nframes_dim, 1: nloc_dim} if aparam is not None else None,  # aparam
+            {0: nframes_dim} if charge_spin is not None else None,  # charge_spin
         )
 
     if not with_comm_dict:
@@ -428,6 +463,19 @@ def _collect_metadata(model: torch.nn.Module, is_spin: bool = False) -> dict:
         "mixed_types": model.mixed_types(),
         "has_default_fparam": model.has_default_fparam(),
         "default_fparam": model.get_default_fparam(),
+        "has_chg_spin_ebd": (
+            model.has_chg_spin_ebd() if hasattr(model, "has_chg_spin_ebd") else False
+        ),
+        "has_default_chg_spin": (
+            model.has_default_chg_spin()
+            if hasattr(model, "has_default_chg_spin")
+            else False
+        ),
+        "default_chg_spin": (
+            _metadata_value_to_json(model.get_default_chg_spin())
+            if hasattr(model, "get_default_chg_spin")
+            else None
+        ),
         "fitting_output_defs": fitting_output_defs,
         # sel_type enables `DeepEval.get_sel_type()` without a dpmodel
         # round-trip; required for dipole/polar/wfc models in metadata-only
@@ -694,11 +742,26 @@ def _trace_and_export(
         _env.DEVICE = _orig_device
 
     if is_spin:
-        ext_coord, ext_atype, ext_spin, nlist_t, mapping_t, fparam, aparam = (
-            sample_inputs
-        )
+        (
+            ext_coord,
+            ext_atype,
+            ext_spin,
+            nlist_t,
+            mapping_t,
+            fparam,
+            aparam,
+            charge_spin,
+        ) = sample_inputs
     else:
-        ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam = sample_inputs
+        (
+            ext_coord,
+            ext_atype,
+            nlist_t,
+            mapping_t,
+            fparam,
+            aparam,
+            charge_spin,
+        ) = sample_inputs
 
     # 3b. Build comm-tensor sample inputs when tracing the with-comm
     # variant (only valid for GNN models). The actual values don't
@@ -735,6 +798,7 @@ def _trace_and_export(
                 mapping_t,
                 fparam,
                 aparam,
+                charge_spin,
                 *comm_inputs,
                 do_atomic_virial=do_atomic_virial,
                 tracing_mode="symbolic",
@@ -750,6 +814,7 @@ def _trace_and_export(
                 fparam=fparam,
                 aparam=aparam,
                 do_atomic_virial=do_atomic_virial,
+                charge_spin=charge_spin,
                 tracing_mode="symbolic",
                 _allow_non_fake_inputs=True,
             )
@@ -764,6 +829,7 @@ def _trace_and_export(
                 mapping_t,
                 fparam,
                 aparam,
+                charge_spin,
                 *comm_inputs,
                 do_atomic_virial=do_atomic_virial,
                 tracing_mode="symbolic",
@@ -778,6 +844,7 @@ def _trace_and_export(
                 fparam=fparam,
                 aparam=aparam,
                 do_atomic_virial=do_atomic_virial,
+                charge_spin=charge_spin,
                 tracing_mode="symbolic",
                 _allow_non_fake_inputs=True,
             )

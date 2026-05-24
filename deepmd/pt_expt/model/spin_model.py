@@ -58,6 +58,7 @@ class SpinModel(SpinModelDP):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
         **make_fx_kwargs: Any,
     ) -> torch.nn.Module:
         """Trace ``call_common_lower`` into an exportable module.
@@ -96,6 +97,7 @@ class SpinModel(SpinModelDP):
             mapping: torch.Tensor | None,
             fparam: torch.Tensor | None,
             aparam: torch.Tensor | None,
+            charge_spin: torch.Tensor | None,
         ) -> dict[str, torch.Tensor]:
             extended_coord = extended_coord.detach().requires_grad_(True)
             nlist = _pad_nlist_for_export(nlist)
@@ -107,6 +109,7 @@ class SpinModel(SpinModelDP):
                 mapping,
                 fparam=fparam,
                 aparam=aparam,
+                charge_spin=charge_spin,
                 do_atomic_virial=do_atomic_virial,
             )
 
@@ -130,6 +133,7 @@ class SpinModel(SpinModelDP):
                 mapping,
                 fparam,
                 aparam,
+                charge_spin,
             )
         finally:
             backbone.need_sorted_nlist_for_lower = _orig_need_sort
@@ -144,6 +148,7 @@ class SpinModel(SpinModelDP):
         mapping: torch.Tensor | None,
         fparam: torch.Tensor | None,
         aparam: torch.Tensor | None,
+        charge_spin: torch.Tensor | None,
         send_list: torch.Tensor,
         send_proc: torch.Tensor,
         recv_proc: torch.Tensor,
@@ -172,6 +177,7 @@ class SpinModel(SpinModelDP):
             mapping: torch.Tensor | None,
             fparam: torch.Tensor | None,
             aparam: torch.Tensor | None,
+            charge_spin: torch.Tensor | None,
             send_list: torch.Tensor,
             send_proc: torch.Tensor,
             recv_proc: torch.Tensor,
@@ -211,6 +217,7 @@ class SpinModel(SpinModelDP):
                 aparam=aparam,
                 do_atomic_virial=do_atomic_virial,
                 comm_dict=comm_dict,
+                charge_spin=charge_spin,
             )
 
         # Force the sort branch in ``_format_nlist`` so the compiled
@@ -230,6 +237,7 @@ class SpinModel(SpinModelDP):
                 mapping,
                 fparam,
                 aparam,
+                charge_spin,
                 send_list,
                 send_proc,
                 recv_proc,

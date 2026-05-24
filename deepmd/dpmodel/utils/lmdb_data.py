@@ -667,8 +667,8 @@ class LmdbDataReader:
                         np.repeat(frame[req_key], repeat).reshape(-1).astype(req_dtype)
                     )
 
-        # Add find_* for fparam/aparam/spin if not already set
-        for extra_key in ["fparam", "aparam", "spin"]:
+        # Add find_* for fparam/aparam/spin/charge_spin if not already set
+        for extra_key in ["fparam", "aparam", "spin", "charge_spin"]:
             if f"find_{extra_key}" not in frame:
                 frame[f"find_{extra_key}"] = (
                     np.float32(1.0) if extra_key in frame else np.float32(0.0)

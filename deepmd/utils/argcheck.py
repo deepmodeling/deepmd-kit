@@ -1375,8 +1375,15 @@ def descrpt_dpa3_args() -> list[Argument]:
     )
     doc_add_chg_spin_ebd = (
         "Whether to add charge and spin embedding to the descriptor. "
-        "When enabled, fparam is expected to have 2 values (charge, spin) "
-        "which are embedded and added to the type embedding."
+        "When enabled, the dedicated `charge_spin` input (shape [nframes, 2], "
+        "[charge, spin]) is embedded and added to the type embedding. "
+        "When `charge_spin` is missing in the input data, `default_chg_spin` "
+        "is used as a fallback if provided."
+    )
+    doc_default_chg_spin = (
+        "Default charge and spin values used as fallback when `charge_spin` "
+        "is not provided in the input data. Must be a list of length 2 "
+        "[charge, spin]. Only used when `add_chg_spin_ebd` is True."
     )
     doc_activation_function = f"The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}."
     doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
@@ -1409,6 +1416,13 @@ def descrpt_dpa3_args() -> list[Argument]:
             optional=True,
             default=False,
             doc=doc_add_chg_spin_ebd,
+        ),
+        Argument(
+            "default_chg_spin",
+            list[float],
+            optional=True,
+            default=None,
+            doc=doc_default_chg_spin,
         ),
         Argument(
             "activation_function",
@@ -4624,6 +4638,53 @@ def gen_json_schema(multi_task: bool = False) -> str:
     return json.dumps(generate_json_schema(arg))
 
 
+def _check_dpa3_chg_spin_migration(data: dict[str, Any]) -> None:
+    """Warn on likely legacy DPA3 configs that packed charge/spin into fparam.
+
+    Before the charge_spin decoupling, enabling ``add_chg_spin_ebd`` on DPA3
+    required ``numb_fparam=2`` on the fitting net so that charge/spin could be
+    carried via ``fparam``. After the decoupling, ``charge_spin`` is a
+    first-class input that is fully independent of ``fparam``, so users may
+    legitimately combine ``add_chg_spin_ebd`` with any ``numb_fparam`` for
+    genuine frame parameters.
+
+    We cannot determine from the config alone whether a user's ``numb_fparam``
+    is legacy (charge/spin in disguise) or genuine (real frame parameters).
+    But the combination ``add_chg_spin_ebd=True`` together with
+    ``numb_fparam=2`` is the strongest heuristic for the legacy pattern, since
+    that is exactly what the old code required. Emit a warning — not an error
+    — so users can audit their setup without breaking legitimate combinations.
+    """
+    model = data.get("model", {}) if isinstance(data, dict) else {}
+    if not isinstance(model, dict):
+        return
+    submodels = (
+        [model] if "descriptor" in model else list(model.get("model_dict", {}).values())
+    )
+    for m in submodels:
+        if not isinstance(m, dict):
+            continue
+        desc = m.get("descriptor", {})
+        fitting = m.get("fitting_net", {})
+        if not isinstance(desc, dict) or not isinstance(fitting, dict):
+            continue
+        if desc.get("type") != "dpa3":
+            continue
+        if not desc.get("add_chg_spin_ebd", False):
+            continue
+        if fitting.get("numb_fparam", 0) == 2:
+            warnings.warn(
+                "DPA3 `add_chg_spin_ebd=True` with `numb_fparam=2` matches the "
+                "pre-decoupling pattern where charge/spin was carried via "
+                "`fparam`. `charge_spin` is now an independent input, so "
+                "`numb_fparam=2` will be treated as two genuine frame "
+                "parameters. If you intended to feed charge/spin, remove the "
+                "charge/spin part of `fparam` and use the `charge_spin` input "
+                "or the descriptor's `default_chg_spin` instead.",
+                stacklevel=2,
+            )
+
+
 def normalize(
     data: dict[str, Any], multi_task: bool = False, *, check: bool = True
 ) -> dict[str, Any]:
@@ -4633,6 +4694,7 @@ def normalize(
     if check:
         base.check_value(data, strict=True)
     validate_full_validation_config(data, multi_task=multi_task)
+    _check_dpa3_chg_spin_migration(data)
 
     return data
 

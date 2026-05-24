@@ -121,7 +121,9 @@ class TestExportPipeline:
             inputs_trace = _make_sample_inputs(model2, nframes=5, nloc=7)
         finally:
             _env.DEVICE = orig_device
-        ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam = inputs_trace
+        ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin = (
+            inputs_trace
+        )
 
         # 4. Eager reference
         eager_out = model2.forward_common_lower(
@@ -132,6 +134,7 @@ class TestExportPipeline:
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=True,
+            charge_spin=charge_spin,
         )
 
         # 5. Trace with symbolic mode (same as dp freeze)
@@ -142,6 +145,7 @@ class TestExportPipeline:
             mapping_t,
             fparam=fparam,
             aparam=aparam,
+            charge_spin=charge_spin,
             do_atomic_virial=True,
             tracing_mode="symbolic",
             _allow_non_fake_inputs=True,
@@ -155,11 +159,12 @@ class TestExportPipeline:
             mapping_t,
             fparam,
             aparam,
+            charge_spin,
             model_nnei=sum(model2.get_sel()),
         )
         exported = torch.export.export(
             traced,
-            (ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam),
+            (ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin),
             dynamic_shapes=dynamic_shapes,
             strict=False,
             prefer_deferred_runtime_asserts_over_guards=True,
@@ -171,7 +176,9 @@ class TestExportPipeline:
             loaded = torch.export.load(tmp.name).module()
 
         # 8. Verify: traced output matches eager (same shapes as trace)
-        traced_out = traced(ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam)
+        traced_out = traced(
+            ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin
+        )
         for key in eager_out:
             np.testing.assert_allclose(
                 eager_out[key].detach().cpu().numpy(),
@@ -182,7 +189,9 @@ class TestExportPipeline:
             )
 
         # 9. Verify: loaded (.pte) output matches eager (same shapes)
-        loaded_out = loaded(ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam)
+        loaded_out = loaded(
+            ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin
+        )
         for key in eager_out:
             np.testing.assert_allclose(
                 eager_out[key].detach().cpu().numpy(),
@@ -206,6 +215,7 @@ class TestExportPipeline:
             mapping_t2,
             fparam2,
             aparam2,
+            charge_spin2,
         ) = inputs_infer
 
         eager_out2 = model2.forward_common_lower(
@@ -216,9 +226,16 @@ class TestExportPipeline:
             fparam=fparam2,
             aparam=aparam2,
             do_atomic_virial=True,
+            charge_spin=charge_spin2,
         )
         loaded_out2 = loaded(
-            ext_coord2, ext_atype2, nlist_t2, mapping_t2, fparam2, aparam2
+            ext_coord2,
+            ext_atype2,
+            nlist_t2,
+            mapping_t2,
+            fparam2,
+            aparam2,
+            charge_spin2,
         )
         for key in eager_out2:
             np.testing.assert_allclose(
@@ -248,9 +265,16 @@ class TestExportPipeline:
                 fparam=fparam_ones,
                 aparam=aparam,
                 do_atomic_virial=True,
+                charge_spin=charge_spin,
             )
             loaded_out_fp1 = loaded(
-                ext_coord, ext_atype, nlist_t, mapping_t, fparam_ones, aparam
+                ext_coord,
+                ext_atype,
+                nlist_t,
+                mapping_t,
+                fparam_ones,
+                aparam,
+                charge_spin,
             )
             # Loaded with fparam=1 should match eager with fparam=1
             for key in eager_out_fp1:
