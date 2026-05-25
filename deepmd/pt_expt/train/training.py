@@ -324,6 +324,8 @@ def _trace_and_compile(
         del fparam
     if aparam is not None:
         del aparam
+    if charge_spin is not None:
+        del charge_spin
 
     # make_fx inserts aten.detach.default for saved tensors used in the
     # decomposed autograd.grad backward ops.  These detach nodes break
@@ -1048,7 +1050,7 @@ class Trainer:
                 ext_coord, ext_atype, nlist_t, mapping, fparam, aparam, charge_spin
             )
             del _warmup_out
-            if DEVICE.type == "cuda" and torch.cuda.is_initialized():
+            if DEVICE.type == "cuda":
                 torch.cuda.synchronize()
 
             wrapper_mod.model[task_key] = _CompiledModel(model, compiled_lower)
