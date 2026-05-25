@@ -89,8 +89,8 @@ class TestOOMRetry(unittest.TestCase):
             DeepEval.__abstractmethods__ = abstract_methods
 
         model = MagicMock()
-        model.eval_descriptor.return_value = np.array([1, 2, 3])
-        model.eval_fitting_last_layer.return_value = np.array([4, 5, 6])
+        model.eval_descriptor.return_value = np.array([1.0, 2.0, 3.0])
+        model.eval_fitting_last_layer.return_value = np.array([4.0, 5.0, 6.0])
 
         if backend == "pd" and method_name == "eval_descriptor":
             # Paddle eval_descriptor accepts either a ModelWrapper or a direct model.
@@ -154,7 +154,7 @@ class TestOOMRetry(unittest.TestCase):
             "pt",
             "eval_descriptor",
             "set_eval_descriptor_hook",
-            np.array([1, 2, 3]),
+            np.array([1.0, 2.0, 3.0]),
         )
 
     def test_pt_eval_fitting_last_layer_retry_clears_hook_between_attempts(
@@ -164,7 +164,7 @@ class TestOOMRetry(unittest.TestCase):
             "pt",
             "eval_fitting_last_layer",
             "set_eval_fitting_last_layer_hook",
-            np.array([4, 5, 6]),
+            np.array([4.0, 5.0, 6.0]),
         )
 
     def test_pd_eval_descriptor_retry_clears_hook_between_attempts(self) -> None:
@@ -172,7 +172,7 @@ class TestOOMRetry(unittest.TestCase):
             "pd",
             "eval_descriptor",
             "set_eval_descriptor_hook",
-            np.array([1, 2, 3]),
+            np.array([1.0, 2.0, 3.0]),
         )
 
     def test_pd_eval_fitting_last_layer_retry_clears_hook_between_attempts(
@@ -182,7 +182,7 @@ class TestOOMRetry(unittest.TestCase):
             "pd",
             "eval_fitting_last_layer",
             "set_eval_fitting_last_layer_hook",
-            np.array([4, 5, 6]),
+            np.array([4.0, 5.0, 6.0]),
         )
 
     def test_pt_eval_descriptor_runtime_error_clears_state(self) -> None:
