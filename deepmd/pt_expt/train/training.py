@@ -147,23 +147,30 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
 
 
 def _remove_detach_nodes(gm: torch.fx.GraphModule) -> None:
-    """Remove ``aten.detach.default`` nodes from an FX graph in-place.
+    """Replace ``aten.detach.default`` nodes with ``aten.clone.default``.
 
-    ``make_fx`` inserts these nodes when recording saved tensors from the
-    autograd backward pass (``autograd.grad`` with ``create_graph=True``).
-    The detach breaks the gradient connection between saved activations and
-    model parameters, causing incorrect second-order derivatives — e.g.
-    bias gradients become zero for force-loss training.
+    ``make_fx`` inserts detach nodes for saved tensors in the decomposed
+    autograd backward.  The detach breaks the gradient path from saved
+    activations back to model parameters, causing incorrect second-order
+    derivatives (e.g. bias gradients become zero for force-loss training).
 
-    Removing these nodes restores the gradient path so that higher-order
-    derivatives flow correctly through the decomposed backward ops.
+    We replace detach with clone rather than erasing the node entirely.
+    Erasing makes the output alias the input — AOT autograd detects the
+    alias and stores SymInt shape values as raw pointers in a C++
+    ``view_meta_sequence``.  When Python GC later collects those SymInt
+    objects the pointers dangle, producing a crash of the form
+    ``shape '[139...008, ...]' is invalid for input of size N``.
+    Clone breaks the alias so no ``view_meta_sequence`` is generated.
     """
     graph = gm.graph
     for node in list(graph.nodes):
         if node.op == "call_function" and node.target == torch.ops.aten.detach.default:
-            input_node = node.args[0]
-            node.replace_all_uses_with(input_node)
-            graph.erase_node(node)
+            # Replace detach with clone to break the input-output alias.
+            # Alias-free outputs mean AOT autograd never writes SymInt raw
+            # pointers into C++ view_meta_sequence, so GC of SymInt objects
+            # cannot produce dangling pointers and apply_view_meta_sequence
+            # crashes (shape '[139...008, ...]' is invalid for input ...).
+            node.target = torch.ops.aten.clone.default
     graph.lint()
     gm.recompile()
 
@@ -323,30 +330,12 @@ def _trace_and_compile(
     if compile_opts:
         inductor_options.update(compile_opts)
 
-    compiled = torch.compile(
+    return torch.compile(
         traced_lower,
         backend="inductor",
         dynamic=True,
         options=inductor_options,
     )
-    # Keep the traced FX graph alive as long as the compiled callable.
-    # _remove_detach_nodes makes saved activations alias the graph's symbolic
-    # tensors; if the FX graph is GC'd, its SymInt shape objects lose their
-    # Python references while C++ view metadata still holds raw pointers to
-    # them — causing apply_view_meta_sequence to read garbage (crash at
-    # random training steps, earlier under higher GC pressure from many tasks).
-    # Use object.__setattr__ to bypass nn.Module.__setattr__: traced_lower is
-    # an nn.Module, and normal assignment would register it as a submodule of
-    # compiled (also an nn.Module), creating a cycle in the module tree that
-    # causes RecursionError in trainer.wrapper.train().
-    object.__setattr__(compiled, "_traced_lower_ref", traced_lower)
-    del traced_lower
-    model_uses_cuda = any(param.is_cuda for param in model.parameters()) or any(
-        buffer.is_cuda for buffer in model.buffers()
-    )
-    if model_uses_cuda and torch.cuda.is_available() and torch.cuda.is_initialized():
-        torch.cuda.empty_cache()
-    return compiled
 
 
 class _CompiledModel(torch.nn.Module):
@@ -1049,8 +1038,6 @@ class Trainer:
             if aparam is not None:
                 del aparam
             del inp, _
-            if DEVICE.type == "cuda" and torch.cuda.is_initialized():
-                torch.cuda.empty_cache()
 
             log.info(
                 "Model compiled (task=%s, tracing_mode=symbolic, "
@@ -1309,11 +1296,6 @@ class Trainer:
                                     if "l2_" not in k
                                 }
                                 del _loss, _more, _inp, _lab
-                                if (
-                                    torch.cuda.is_available()
-                                    and torch.cuda.is_initialized()
-                                ):
-                                    torch.cuda.empty_cache()
 
                             # validation for each task
                             _vdata = self.validation_data[_key]
