@@ -99,6 +99,45 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
             ).astype(np.int64)
             self.nlist_cut_idx.append(to_torch_tensor(cut_idx))
 
+    def get_dim_chg_spin(self) -> int:
+        """Returns the dimension of charge_spin input (0 if not supported)."""
+        # JIT-compiled via DPAtomicModel.get_dim_chg_spin; avoid generator
+        # expressions and `max(..., default=...)` which TorchScript rejects.
+        dim: int = 0
+        for descrpt in self.descrpt_list:
+            d = descrpt.get_dim_chg_spin()
+            if d > dim:
+                dim = d
+        return dim
+
+    def has_default_chg_spin(self) -> bool:
+        """Returns whether the descriptor has a default charge_spin value."""
+        default_chg_spin: torch.Tensor | None = None
+        found_chg_spin: bool = False
+        for descrpt in self.descrpt_list:
+            if descrpt.get_dim_chg_spin() > 0:
+                found_chg_spin = True
+                if not descrpt.has_default_chg_spin():
+                    return False
+                child_default_chg_spin = descrpt.get_default_chg_spin()
+                if child_default_chg_spin is None:
+                    return False
+                if default_chg_spin is None:
+                    default_chg_spin = child_default_chg_spin
+                elif not torch.equal(default_chg_spin, child_default_chg_spin):
+                    return False
+        return found_chg_spin
+
+    @torch.jit.export
+    def get_default_chg_spin(self) -> Optional[torch.Tensor]:  # noqa: UP045
+        """Returns the default charge_spin value, or None."""
+        if not self.has_default_chg_spin():
+            return None
+        for descrpt in self.descrpt_list:
+            if descrpt.get_dim_chg_spin() > 0:
+                return descrpt.get_default_chg_spin()
+        return None
+
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
         # do not use numpy here - jit is not happy
@@ -269,6 +308,7 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
         mapping: torch.Tensor | None = None,
         comm_dict: dict[str, torch.Tensor] | None = None,
         fparam: torch.Tensor | None = None,
+        charge_spin: torch.Tensor | None = None,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor | None,
@@ -332,7 +372,15 @@ class DescrptHybrid(BaseDescriptor, torch.nn.Module):
                 nl = nl_distinguish_types[
                     :, :, self.nlist_cut_idx[ii].to(atype_ext.device)
                 ]
-            odescriptor, gr, g2, h2, sw = descrpt(coord_ext, atype_ext, nl, mapping)
+            odescriptor, gr, g2, h2, sw = descrpt(
+                coord_ext,
+                atype_ext,
+                nl,
+                mapping,
+                comm_dict=comm_dict,
+                fparam=fparam,
+                charge_spin=charge_spin,
+            )
             out_descriptor.append(odescriptor)
             if gr is not None:
                 out_gr.append(gr)

@@ -63,13 +63,10 @@ from ..fitting.test_fitting import (
 
 def skip_model_tests(test_obj):
     if test_obj.input_dict_ds.get("add_chg_spin_ebd", False):
-        import inspect
-
-        (FittingParam, _) = test_obj.param[1]
-        sig = inspect.signature(FittingParam)
-        numb_param = sig.parameters.get("numb_param")
-        if numb_param is None or numb_param.default != 2:
-            return True, "add_chg_spin_ebd requires numb_fparam=2"
+        # The universal model driver does not feed `charge_spin` directly;
+        # rely on `default_chg_spin` fallback inside dp_atomic_model.
+        if test_obj.input_dict_ds.get("default_chg_spin") is None:
+            return True, "add_chg_spin_ebd requires default_chg_spin in universal tests"
     if not test_obj.input_dict_ds.get(
         "smooth_type_embedding", True
     ) or not test_obj.input_dict_ds.get("smooth", True):

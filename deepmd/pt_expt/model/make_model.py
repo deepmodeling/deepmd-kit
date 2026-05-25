@@ -62,6 +62,7 @@ def _cal_hessian_ext(
     fparam: torch.Tensor | None,
     aparam: torch.Tensor | None,
     create_graph: bool = False,
+    charge_spin: torch.Tensor | None = None,
 ) -> torch.Tensor:
     """Compute hessian of reduced output w.r.t. extended coordinates.
 
@@ -112,6 +113,7 @@ def _cal_hessian_ext(
                 mapping[ii] if mapping is not None else None,
                 fparam[ii] if fparam is not None else None,
                 aparam[ii] if aparam is not None else None,
+                charge_spin[ii] if charge_spin is not None else None,
             )
             hess = torch.autograd.functional.hessian(
                 wrapper,
@@ -142,6 +144,7 @@ class _WrapperForwardEnergy:
         mapping: torch.Tensor | None,
         fparam: torch.Tensor | None,
         aparam: torch.Tensor | None,
+        charge_spin: torch.Tensor | None = None,
     ) -> None:
         self.model = model
         self.kk = kk
@@ -152,6 +155,7 @@ class _WrapperForwardEnergy:
         self.mapping = mapping
         self.fparam = fparam
         self.aparam = aparam
+        self.charge_spin = charge_spin
 
     def __call__(self, coord_flat: torch.Tensor) -> torch.Tensor:
         """Compute scalar reduced energy for one frame, one component.
@@ -174,6 +178,9 @@ class _WrapperForwardEnergy:
             mapping=self.mapping.unsqueeze(0) if self.mapping is not None else None,
             fparam=self.fparam.unsqueeze(0) if self.fparam is not None else None,
             aparam=self.aparam.unsqueeze(0) if self.aparam is not None else None,
+            charge_spin=self.charge_spin.unsqueeze(0)
+            if self.charge_spin is not None
+            else None,
         )
         # atomic_ret[kk]: [1, nloc, *def]
         atom_energy = atomic_ret[self.kk][0]  # [nloc, *def]
@@ -281,6 +288,7 @@ def make_model(
             do_atomic_virial: bool = False,
             extended_coord_corr: torch.Tensor | None = None,
             comm_dict: dict | None = None,
+            charge_spin: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
             atomic_ret = self.atomic_model.forward_common_atomic(
                 extended_coord,
@@ -290,6 +298,7 @@ def make_model(
                 fparam=fparam,
                 aparam=aparam,
                 comm_dict=comm_dict,
+                charge_spin=charge_spin,
             )
             model_ret = fit_output_to_model_output(
                 atomic_ret,
@@ -318,6 +327,7 @@ def make_model(
                         mapping,
                         fparam,
                         aparam,
+                        charge_spin=charge_spin,
                         create_graph=self.training,
                     )
             return model_ret
@@ -331,6 +341,7 @@ def make_model(
             fparam: torch.Tensor | None = None,
             aparam: torch.Tensor | None = None,
             do_atomic_virial: bool = False,
+            charge_spin: torch.Tensor | None = None,
             **make_fx_kwargs: Any,
         ) -> torch.nn.Module:
             """Trace ``forward_common_lower`` into an exportable module.
@@ -369,6 +380,7 @@ def make_model(
                 mapping: torch.Tensor | None,
                 fparam: torch.Tensor | None,
                 aparam: torch.Tensor | None,
+                charge_spin: torch.Tensor | None,
             ) -> dict[str, torch.Tensor]:
                 extended_coord = extended_coord.detach().requires_grad_(True)
                 nlist = _pad_nlist_for_export(nlist)
@@ -379,6 +391,7 @@ def make_model(
                     mapping,
                     fparam=fparam,
                     aparam=aparam,
+                    charge_spin=charge_spin,
                     do_atomic_virial=do_atomic_virial,
                 )
 
@@ -399,6 +412,7 @@ def make_model(
                     mapping,
                     fparam,
                     aparam,
+                    charge_spin,
                 )
             finally:
                 model.need_sorted_nlist_for_lower = _orig_need_sort
@@ -412,6 +426,7 @@ def make_model(
             mapping: torch.Tensor | None,
             fparam: torch.Tensor | None,
             aparam: torch.Tensor | None,
+            charge_spin: torch.Tensor | None,
             send_list: torch.Tensor,
             send_proc: torch.Tensor,
             recv_proc: torch.Tensor,
@@ -447,6 +462,7 @@ def make_model(
                 mapping: torch.Tensor | None,
                 fparam: torch.Tensor | None,
                 aparam: torch.Tensor | None,
+                charge_spin: torch.Tensor | None,
                 send_list: torch.Tensor,
                 send_proc: torch.Tensor,
                 recv_proc: torch.Tensor,
@@ -480,6 +496,7 @@ def make_model(
                     aparam=aparam,
                     do_atomic_virial=do_atomic_virial,
                     comm_dict=comm_dict,
+                    charge_spin=charge_spin,
                 )
 
             # Force the sort branch in ``_format_nlist`` (mirrors the regular
@@ -496,6 +513,7 @@ def make_model(
                     mapping,
                     fparam,
                     aparam,
+                    charge_spin,
                     send_list,
                     send_proc,
                     recv_proc,

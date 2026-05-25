@@ -68,6 +68,7 @@ def make_hessian_model(T_Model: type) -> type:
             fparam: torch.Tensor | None = None,
             aparam: torch.Tensor | None = None,
             do_atomic_virial: bool = False,
+            charge_spin: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
             """Return model prediction.
 
@@ -101,6 +102,7 @@ def make_hessian_model(T_Model: type) -> type:
                 fparam=fparam,
                 aparam=aparam,
                 do_atomic_virial=do_atomic_virial,
+                charge_spin=charge_spin,
             )
             vdef = self.atomic_output_def()
             hess_yes = [vdef[kk].r_hessian for kk in vdef.keys()]

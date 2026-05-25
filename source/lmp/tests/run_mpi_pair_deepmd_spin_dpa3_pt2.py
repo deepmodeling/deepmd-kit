@@ -76,6 +76,14 @@ parser.add_argument(
     help="Optional mass for LAMMPS atom type 3 (and any higher types). "
     "Used by the NULL-type fixture; ignored when only 2 types exist.",
 )
+parser.add_argument(
+    "--no-atom-map",
+    action="store_true",
+    help="Omit ``atom_modify map yes`` from the LAMMPS input.  Used by "
+    "the spin no-atom-map fail-fast / with-comm-fallback tests; LAMMPS "
+    "rejects ``atom_modify map no`` so omitting the command is the only "
+    "way to leave the map disabled.",
+)
 args = parser.parse_args()
 
 lammps = PyLammps()
@@ -83,7 +91,8 @@ lammps.processors(args.processors)
 lammps.units("metal")
 lammps.boundary("p p p")
 lammps.atom_style("spin")
-lammps.atom_modify("map yes")
+if not args.no_atom_map:
+    lammps.atom_modify("map yes")
 lammps.neighbor("2.0 bin")
 lammps.neigh_modify("every 10 delay 0 check no")
 lammps.read_data(args.DATAFILE)
@@ -135,4 +144,13 @@ if rank == 0:
             row = np.concatenate([fi, fmi, vi])
             f.write(" ".join(f"{v:.16e}" for v in row) + "\n")
 
+# Tear down the LAMMPS instance *before* ``MPI.Finalize()`` so its
+# destructor's MPI calls (fix/compute cleanup, timing reductions inside
+# ``Finish::end``, the deep-spin pair-style destructor chain, etc.) run
+# while the communicator is still valid.  Without this, Python keeps
+# ``lammps`` alive past ``MPI.Finalize()`` and only releases it during
+# interpreter shutdown — and the empty-subdomain rank then hits an
+# MPI-after-Finalize call which crashes with SIGFPE on some CUDA CI
+# runners (intermittent; not reproducible on V100).
+del lammps
 MPI.Finalize()

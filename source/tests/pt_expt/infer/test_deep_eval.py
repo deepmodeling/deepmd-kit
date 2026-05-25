@@ -244,12 +244,18 @@ class TestDeepEvalEner(unittest.TestCase):
         exported_mod = exported.module()
 
         for nloc in [2, 5, 10]:
-            ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam = (
+            ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin = (
                 _make_sample_inputs(self.model, nloc=nloc)
             )
 
             pte_ret = exported_mod(
-                ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam
+                ext_coord,
+                ext_atype,
+                nlist_t,
+                mapping_t,
+                fparam,
+                aparam,
+                charge_spin,
             )
 
             ec = ext_coord.detach().requires_grad_(True)
@@ -261,6 +267,7 @@ class TestDeepEvalEner(unittest.TestCase):
                 fparam=fparam,
                 aparam=aparam,
                 do_atomic_virial=True,
+                charge_spin=charge_spin,
             )
 
             for key in ("energy", "energy_redu", "energy_derv_r", "energy_derv_c"):
@@ -296,8 +303,8 @@ class TestDeepEvalEner(unittest.TestCase):
 
         nnei = sum(self.sel)  # model's expected neighbor count
         nloc = 5
-        ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam = _make_sample_inputs(
-            self.model, nloc=nloc
+        ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin = (
+            _make_sample_inputs(self.model, nloc=nloc)
         )
 
         # Pad nlist with -1 columns, then shuffle column order so real
@@ -331,11 +338,18 @@ class TestDeepEvalEner(unittest.TestCase):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=True,
+            charge_spin=charge_spin,
         )
 
         # Exported model with same shuffled oversized nlist
         pte_ret = exported_mod(
-            ext_coord, ext_atype, nlist_shuffled, mapping_t, fparam, aparam
+            ext_coord,
+            ext_atype,
+            nlist_shuffled,
+            mapping_t,
+            fparam,
+            aparam,
+            charge_spin,
         )
 
         for key in ("energy", "energy_redu", "energy_derv_r", "energy_derv_c"):
@@ -362,6 +376,7 @@ class TestDeepEvalEner(unittest.TestCase):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=True,
+            charge_spin=charge_spin,
         )
         # The truncated result MUST differ from the correctly sorted result,
         # proving that naive truncation discards real neighbors.
@@ -382,7 +397,7 @@ class TestDeepEvalEner(unittest.TestCase):
         model2.eval()
 
         for nloc in [3, 7]:
-            ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam = (
+            ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin = (
                 _make_sample_inputs(self.model, nloc=nloc)
             )
             ec1 = ext_coord.detach().requires_grad_(True)
@@ -396,6 +411,7 @@ class TestDeepEvalEner(unittest.TestCase):
                 fparam=fparam,
                 aparam=aparam,
                 do_atomic_virial=True,
+                charge_spin=charge_spin,
             )
             ret2 = model2.forward_common_lower(
                 ec2,
@@ -405,6 +421,7 @@ class TestDeepEvalEner(unittest.TestCase):
                 fparam=fparam,
                 aparam=aparam,
                 do_atomic_virial=True,
+                charge_spin=charge_spin,
             )
 
             for key in ("energy", "energy_redu", "energy_derv_r", "energy_derv_c"):
@@ -943,8 +960,8 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
 
         nnei = sum(self.sel)  # model's expected neighbor count
         nloc = 5
-        ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam = _make_sample_inputs(
-            self.model, nloc=nloc
+        ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin = (
+            _make_sample_inputs(self.model, nloc=nloc)
         )
 
         # Pad nlist with -1 columns, then shuffle column order so real
@@ -977,10 +994,17 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=True,
+            charge_spin=charge_spin,
         )
 
         pte_ret = exported_mod(
-            ext_coord, ext_atype, nlist_shuffled, mapping_t, fparam, aparam
+            ext_coord,
+            ext_atype,
+            nlist_shuffled,
+            mapping_t,
+            fparam,
+            aparam,
+            charge_spin,
         )
 
         for key in ("energy", "energy_redu", "energy_derv_r", "energy_derv_c"):
@@ -1004,6 +1028,7 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=True,
+            charge_spin=charge_spin,
         )
         e_ref = ref_ret["energy_redu"].detach().cpu().numpy()
         e_trunc = trunc_ret["energy_redu"].detach().cpu().numpy()
@@ -1022,7 +1047,7 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
         model2.eval()
 
         for nloc in [3, 7]:
-            ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam = (
+            ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin = (
                 _make_sample_inputs(self.model, nloc=nloc)
             )
             ec1 = ext_coord.detach().requires_grad_(True)
@@ -1036,6 +1061,7 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
                 fparam=fparam,
                 aparam=aparam,
                 do_atomic_virial=True,
+                charge_spin=charge_spin,
             )
             ret2 = model2.forward_common_lower(
                 ec2,
@@ -1045,6 +1071,7 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
                 fparam=fparam,
                 aparam=aparam,
                 do_atomic_virial=True,
+                charge_spin=charge_spin,
             )
 
             for key in ("energy", "energy_redu", "energy_derv_r", "energy_derv_c"):

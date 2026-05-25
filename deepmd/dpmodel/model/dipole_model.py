@@ -44,6 +44,7 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
         fparam: Array | None = None,
         aparam: Array | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: Array | None = None,
     ) -> dict[str, Array]:
         model_ret = self.call_common(
             coord,
@@ -52,6 +53,7 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
+            charge_spin=charge_spin,
         )
         model_predict = {}
         model_predict["dipole"] = model_ret["dipole"]
@@ -75,6 +77,7 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
         fparam: Array | None = None,
         aparam: Array | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: Array | None = None,
     ) -> dict[str, Array]:
         model_ret = self.call_common_lower(
             extended_coord,
@@ -84,6 +87,7 @@ class DipoleModel(DPModelCommon, DPDipoleModel_):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
+            charge_spin=charge_spin,
         )
         model_predict = {}
         model_predict["dipole"] = model_ret["dipole"]

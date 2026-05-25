@@ -215,8 +215,11 @@ def _compute_model_predict(
         box = to_numpy_array(system["box"])
         fparam = to_numpy_array(system.get("fparam", None))
         aparam = to_numpy_array(system.get("aparam", None))
+        charge_spin = to_numpy_array(system.get("charge_spin", None))
 
-        sample_predict = model_forward(coord, atype, box, fparam=fparam, aparam=aparam)
+        sample_predict = model_forward(
+            coord, atype, box, fparam=fparam, aparam=aparam, charge_spin=charge_spin
+        )
         for kk in keys:
             model_predict[kk].append(
                 sample_predict[kk]  # already numpy from model_forward

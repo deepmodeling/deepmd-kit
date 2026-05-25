@@ -509,6 +509,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         mapping: Array | None = None,
         fparam: Array | None = None,
         comm_dict: dict | None = None,
+        charge_spin: Array | None = None,
     ) -> Array:
         """Compute the descriptor.
 

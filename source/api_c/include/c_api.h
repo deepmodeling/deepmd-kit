@@ -52,6 +52,9 @@ extern DP_Nlist* DP_NewNlist(int inum_,
  * each swap.
  * @param[in] world Pointer to the MPI communicator or similar communication
  * world used for the operation.
+ * @param[in] nprocs Number of MPI ranks (1 = single-rank).  Used by
+ * ``DeepPotPTExpt`` / ``DeepSpinPTExpt`` to choose between the regular
+ * and with-comm artifacts.  Defaults to 1 if not supplied.
  * @returns A pointer to the initialized neighbor list with communication
  * capabilities.
  */
@@ -66,7 +69,8 @@ extern DP_Nlist* DP_NewNlist_comm(int inum_,
                                   int** sendlist,
                                   int* sendproc,
                                   int* recvproc,
-                                  void* world);
+                                  void* world,
+                                  int nprocs);
 
 /**
  * @brief Set mask for a neighbor list.

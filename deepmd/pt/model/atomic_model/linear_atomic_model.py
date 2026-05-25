@@ -233,6 +233,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         comm_dict: dict[str, torch.Tensor] | None = None,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Return atomic prediction.
 
@@ -292,6 +293,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                     fparam,
                     aparam,
                     comm_dict=comm_dict,
+                    charge_spin=charge_spin,
                 )["energy"]
             )
         weights = self._compute_weight(extended_coord, extended_atype, nlists_)

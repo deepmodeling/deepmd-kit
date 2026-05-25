@@ -495,14 +495,23 @@ class TestSpinEnerModelExportable(unittest.TestCase):
         # --- export with torch.export ---
         exported = torch.export.export(
             traced,
-            (ext_coord_t, ext_atype_t, ext_spin_t, nlist_t, mapping_t, None, None),
+            (
+                ext_coord_t,
+                ext_atype_t,
+                ext_spin_t,
+                nlist_t,
+                mapping_t,
+                None,
+                None,
+                None,
+            ),
             strict=False,
         )
         self.assertIsNotNone(exported)
 
         # --- verify traced matches eager ---
         ret_traced = traced(
-            ext_coord_t, ext_atype_t, ext_spin_t, nlist_t, mapping_t, None, None
+            ext_coord_t, ext_atype_t, ext_spin_t, nlist_t, mapping_t, None, None, None
         )
         for key in output_keys:
             np.testing.assert_allclose(
@@ -515,7 +524,7 @@ class TestSpinEnerModelExportable(unittest.TestCase):
 
         # --- verify exported matches eager ---
         ret_exported = exported.module()(
-            ext_coord_t, ext_atype_t, ext_spin_t, nlist_t, mapping_t, None, None
+            ext_coord_t, ext_atype_t, ext_spin_t, nlist_t, mapping_t, None, None, None
         )
         for key in output_keys:
             np.testing.assert_allclose(
@@ -538,6 +547,7 @@ class TestSpinEnerModelExportable(unittest.TestCase):
             torch.cat([mapping_t, mapping_t], dim=0),
             None,
             None,
+            None,
         )
 
         traced_sym = model.forward_lower_exportable(
@@ -551,7 +561,7 @@ class TestSpinEnerModelExportable(unittest.TestCase):
         )
 
         # Build dynamic shapes for spin model
-        # (ext_coord, ext_atype, ext_spin, nlist, mapping, fparam, aparam)
+        # (ext_coord, ext_atype, ext_spin, nlist, mapping, fparam, aparam, charge_spin)
         nframes_dim = torch.export.Dim("nframes", min=1)
         nall_dim = torch.export.Dim("nall", min=1)
         nloc_dim = torch.export.Dim("nloc", min=1)
@@ -563,6 +573,7 @@ class TestSpinEnerModelExportable(unittest.TestCase):
             {0: nframes_dim, 1: nall_dim},  # mapping
             None,  # fparam
             None,  # aparam
+            None,  # charge_spin
         )
         exported_dyn = torch.export.export(
             traced_sym,
@@ -577,7 +588,7 @@ class TestSpinEnerModelExportable(unittest.TestCase):
             loaded = torch.export.load(f.name).module()
 
         ret_loaded_1f = loaded(
-            ext_coord_t, ext_atype_t, ext_spin_t, nlist_t, mapping_t, None, None
+            ext_coord_t, ext_atype_t, ext_spin_t, nlist_t, mapping_t, None, None, None
         )
         for key in output_keys:
             np.testing.assert_allclose(
@@ -632,7 +643,14 @@ class TestSpinEnerModelExportable(unittest.TestCase):
             mapping_t,
         )
         ret_traced = traced(
-            ext_coord_t, ext_atype_t, ext_spin_t, nlist_shuffled, mapping_t, None, None
+            ext_coord_t,
+            ext_atype_t,
+            ext_spin_t,
+            nlist_shuffled,
+            mapping_t,
+            None,
+            None,
+            None,
         )
 
         ec = ext_coord_t.detach().requires_grad_(True)

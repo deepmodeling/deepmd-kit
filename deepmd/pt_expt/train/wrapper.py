@@ -174,6 +174,7 @@ class ModelWrapper(torch.nn.Module):
         label: dict[str, torch.Tensor] | None = None,
         task_key: str | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
     ) -> tuple[dict[str, torch.Tensor], torch.Tensor | None, dict | None]:
         if not self.multi_task:
             task_key = "Default"
@@ -189,6 +190,7 @@ class ModelWrapper(torch.nn.Module):
             "do_atomic_virial": do_atomic_virial,
             "fparam": fparam,
             "aparam": aparam,
+            "charge_spin": charge_spin,
         }
 
         model_pred = self.model[task_key](**input_dict)

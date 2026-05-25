@@ -183,6 +183,7 @@ class HLO(BaseModel):
         fparam: jnp.ndarray | None = None,
         aparam: jnp.ndarray | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: jnp.ndarray | None = None,
     ) -> dict[str, jnp.ndarray]:
         if extended_coord.shape[1] > nlist.shape[1]:
             if do_atomic_virial:

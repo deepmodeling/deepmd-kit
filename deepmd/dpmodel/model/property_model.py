@@ -51,6 +51,7 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
         fparam: Array | None = None,
         aparam: Array | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: Array | None = None,
     ) -> dict[str, Array]:
         model_ret = self.call_common(
             coord,
@@ -59,6 +60,7 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
+            charge_spin=charge_spin,
         )
         var_name = self.get_var_name()
         model_predict = {}
@@ -77,6 +79,7 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
         fparam: Array | None = None,
         aparam: Array | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: Array | None = None,
     ) -> dict[str, Array]:
         model_ret = self.call_common_lower(
             extended_coord,
@@ -86,6 +89,7 @@ class PropertyModel(DPModelCommon, DPPropertyModel_):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
+            charge_spin=charge_spin,
         )
         var_name = self.get_var_name()
         model_predict = {}

@@ -138,6 +138,25 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
                 "aparam", _model.get_dim_aparam(), atomic=True, must=True
             )
         )
+    if _model.has_chg_spin_ebd():
+        has_default_cs = _model.has_default_chg_spin()
+        if has_default_cs:
+            default_cs = _model.get_default_chg_spin()
+            if hasattr(default_cs, "cpu"):
+                default_cs = default_cs.cpu().numpy()
+            else:
+                default_cs = np.asarray(default_cs)
+        else:
+            default_cs = 0.0
+        additional_data_requirement.append(
+            DataRequirementItem(
+                "charge_spin",
+                ndof=2,
+                atomic=False,
+                must=not has_default_cs,
+                default=default_cs,
+            )
+        )
     return additional_data_requirement
 
 
@@ -201,6 +220,7 @@ def _trace_and_compile(
     fparam: torch.Tensor | None,
     aparam: torch.Tensor | None,
     compile_opts: dict[str, Any] | None = None,
+    charge_spin: torch.Tensor | None = None,
 ) -> torch.nn.Module:
     """Symbolic-trace ``forward_lower`` and compile with inductor + dynamic=True.
 
@@ -238,6 +258,7 @@ def _trace_and_compile(
         mapping: torch.Tensor | None,
         fparam: torch.Tensor | None,
         aparam: torch.Tensor | None,
+        charge_spin: torch.Tensor | None,
     ) -> dict[str, torch.Tensor]:
         extended_coord = extended_coord.detach().requires_grad_(True)
         return model.forward_lower(
@@ -247,6 +268,7 @@ def _trace_and_compile(
             mapping,
             fparam=fparam,
             aparam=aparam,
+            charge_spin=charge_spin,
         )
 
     # Pick a trace-time nframes that's unlikely to collide with any other
@@ -277,6 +299,7 @@ def _trace_and_compile(
         mapping = _expand(mapping)
         fparam = _expand(fparam)
         aparam = _expand(aparam)
+        charge_spin = _expand(charge_spin)
 
     # Decompose silu_backward into primitive ops (sigmoid + mul + ...)
     # so that inductor can compile the graph without requiring a
@@ -293,7 +316,7 @@ def _trace_and_compile(
         tracing_mode="symbolic",
         _allow_non_fake_inputs=True,
         decomposition_table=decomp_table,
-    )(ext_coord, ext_atype, nlist, mapping, fparam, aparam)
+    )(ext_coord, ext_atype, nlist, mapping, fparam, aparam, charge_spin)
 
     # make_fx has captured the graph; input tensors are no longer needed.
     del ext_coord, ext_atype, nlist, mapping
@@ -358,6 +381,7 @@ class _CompiledModel(torch.nn.Module):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         from deepmd.dpmodel.utils.nlist import (
             build_neighbor_list,
@@ -395,7 +419,7 @@ class _CompiledModel(torch.nn.Module):
         ext_coord = ext_coord.detach().requires_grad_(True)
 
         result = self.compiled_forward_lower(
-            ext_coord, ext_atype, nlist, mapping, fparam, aparam
+            ext_coord, ext_atype, nlist, mapping, fparam, aparam, charge_spin
         )
 
         # Translate forward_lower keys -> forward keys.
@@ -995,6 +1019,7 @@ class Trainer:
 
             fparam = inp.get("fparam")
             aparam = inp.get("aparam")
+            charge_spin = inp.get("charge_spin")
 
             compiled_lower = _trace_and_compile(
                 model,
@@ -1004,7 +1029,8 @@ class Trainer:
                 mapping,
                 fparam,
                 aparam,
-                compile_opts,
+                charge_spin=charge_spin,
+                compile_opts=compile_opts,
             )
 
             # torch.compile is lazy: inductor only compiles on the first
@@ -1086,6 +1112,16 @@ class Trainer:
 
         batch = normalize_batch(data_sys.get_batch())
         input_dict, label_dict = split_batch(batch)
+
+        # Drop optional inputs whose find_* flag is False so the model sees None.
+        for opt_key in ("fparam", "charge_spin"):
+            find_key = f"find_{opt_key}"
+            if (
+                opt_key in input_dict
+                and find_key in label_dict
+                and not bool(label_dict[find_key])
+            ):
+                input_dict.pop(opt_key)
 
         # Convert numpy values to torch tensors.
         for dd in (input_dict, label_dict):

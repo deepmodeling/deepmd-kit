@@ -55,6 +55,7 @@ class PolarModel(DPModelCommon, DPPolarModel_):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         model_ret = self.forward_common(
             coord,
@@ -63,6 +64,7 @@ class PolarModel(DPModelCommon, DPPolarModel_):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
+            charge_spin=charge_spin,
         )
         if self.get_fitting_net() is not None:
             model_predict = {}
@@ -86,6 +88,7 @@ class PolarModel(DPModelCommon, DPPolarModel_):
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
         comm_dict: dict[str, torch.Tensor] | None = None,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         model_ret = self.forward_common_lower(
             extended_coord,
@@ -97,6 +100,7 @@ class PolarModel(DPModelCommon, DPPolarModel_):
             do_atomic_virial=do_atomic_virial,
             comm_dict=comm_dict,
             extra_nlist_sort=self.need_sorted_nlist_for_lower(),
+            charge_spin=charge_spin,
         )
         if self.get_fitting_net() is not None:
             model_predict = {}
