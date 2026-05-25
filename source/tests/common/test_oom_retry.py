@@ -1,6 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
-from types import SimpleNamespace
+from types import (
+    SimpleNamespace,
+)
 from typing import (
     Any,
 )
@@ -69,9 +71,13 @@ class TestOOMRetry(unittest.TestCase):
     def _make_backend(self, backend: str, method_name: str) -> tuple[Any, MagicMock]:
         try:
             if backend == "pt":
-                from deepmd.pt.infer.deep_eval import DeepEval
+                from deepmd.pt.infer.deep_eval import (
+                    DeepEval,
+                )
             else:
-                from deepmd.pd.infer.deep_eval import DeepEval
+                from deepmd.pd.infer.deep_eval import (
+                    DeepEval,
+                )
         except ModuleNotFoundError as exc:
             self.skipTest(f"{backend} backend dependencies are unavailable: {exc}")
 
