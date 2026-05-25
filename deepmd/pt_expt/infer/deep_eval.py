@@ -366,9 +366,14 @@ class DeepEval(DeepEvalBackend):
         # eager inference).  Drop the latter and unwrap the former.
         cleaned: dict[str, Any] = {}
         compiled_marker = ".compiled_forward_lower."
+        # Per-task buffer copies registered on _CompiledModel (bias_atom_e,
+        # case_embd) — real values live on the original model's fitting net.
+        task_buf_marker = "._task_"
         wrapper_infix = ".original_model."
         for key, value in state_dict.items():
             if compiled_marker in key:
+                continue
+            if task_buf_marker in key:
                 continue
             if wrapper_infix in key:
                 key = key.replace(wrapper_infix, ".", 1)

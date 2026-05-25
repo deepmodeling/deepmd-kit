@@ -70,6 +70,42 @@ from deepmd.utils.path import (
 
 log = logging.getLogger(__name__)
 
+# Buffer names that differ per task after share_params; everything else in the
+# fitting net is literally the same Python object across shared tasks.
+_TASK_SPECIFIC_BUFFER_NAMES: tuple[str, ...] = ("bias_atom_e", "case_embd")
+
+
+def _get_task_buffers(model: torch.nn.Module) -> dict[str, torch.Tensor]:
+    """Return per-task fitting-net buffers that vary across shared tasks."""
+    try:
+        fitting = model.get_fitting_net()
+    except AttributeError:
+        return {}
+    result: dict[str, torch.Tensor] = {}
+    for name in _TASK_SPECIFIC_BUFFER_NAMES:
+        val = getattr(fitting, name, None)
+        if val is not None and torch.is_tensor(val):
+            result[name] = val.detach().clone()
+    return result
+
+
+def _get_model_structure_key(model: torch.nn.Module) -> int:
+    """Return an id that is identical for all tasks that share a fitting net.
+
+    After ``share_params``, the fitting net's child sub-modules are literally
+    the same Python objects across tasks.  The first non-task-specific child's
+    ``id()`` is therefore the same for all shared tasks and unique across
+    unrelated models.
+    """
+    try:
+        fitting = model.get_fitting_net()
+        for name, child in fitting.named_children():
+            if name not in _TASK_SPECIFIC_BUFFER_NAMES:
+                return id(child)
+    except AttributeError:
+        pass
+    return id(model)
+
 
 # ---------------------------------------------------------------------------
 # Helper: loss factory (reused from pt)
@@ -214,7 +250,8 @@ def _trace_and_compile(
     aparam: torch.Tensor | None,
     compile_opts: dict[str, Any] | None = None,
     charge_spin: torch.Tensor | None = None,
-) -> torch.nn.Module:
+    task_buffers: dict[str, torch.Tensor] | None = None,
+) -> tuple[torch.nn.Module, tuple[str, ...]]:
     """Symbolic-trace ``forward_lower`` and compile with inductor + dynamic=True.
 
     Parameters
@@ -226,11 +263,17 @@ def _trace_and_compile(
     compile_opts : dict or None
         User-supplied inductor options.  These are merged on top of the
         built-in defaults (user values take precedence).
+    task_buffers : dict or None
+        Per-task fitting-net buffers (``bias_atom_e``, ``case_embd``) to
+        promote to explicit FX ``placeholder`` nodes so the compiled graph is
+        reusable across tasks that share the same structure.
 
     Returns
     -------
-    torch.nn.Module
+    compiled : torch.nn.Module
         The compiled ``forward_lower`` callable.
+    task_buf_order : tuple[str, ...]
+        Ordered names of the promoted buffers (empty when none).
     """
     from torch.fx.experimental.proxy_tensor import (
         make_fx,
@@ -244,6 +287,19 @@ def _trace_and_compile(
     # backprop cannot reach the weights and force RMSE never decreases.
     model.train()
 
+    task_buf_order: tuple[str, ...] = tuple(task_buffers.keys()) if task_buffers else ()
+    task_buf_vals_trace: tuple[torch.Tensor, ...] = (
+        tuple(task_buffers[k] for k in task_buf_order) if task_buffers else ()
+    )
+
+    # Resolve fitting net once for buffer patching inside fn.
+    _fitting: torch.nn.Module | None = None
+    if task_buf_order:
+        try:
+            _fitting = model.get_fitting_net()
+        except AttributeError:
+            pass
+
     def fn(
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
@@ -252,17 +308,30 @@ def _trace_and_compile(
         fparam: torch.Tensor | None,
         aparam: torch.Tensor | None,
         charge_spin: torch.Tensor | None,
+        *task_buf_vals: torch.Tensor,
     ) -> dict[str, torch.Tensor]:
         extended_coord = extended_coord.detach().requires_grad_(True)
-        return model.forward_lower(
-            extended_coord,
-            extended_atype,
-            nlist,
-            mapping,
-            fparam=fparam,
-            aparam=aparam,
-            charge_spin=charge_spin,
-        )
+        # Temporarily patch task-specific buffers with the proxy tensors so
+        # make_fx records them as FX placeholders rather than baked-in constants.
+        # This makes the compiled graph reusable for any buffer values.
+        originals: dict[str, torch.Tensor | None] = {}
+        if _fitting is not None and task_buf_order:
+            for name, val in zip(task_buf_order, task_buf_vals):
+                originals[name] = _fitting._buffers.get(name)
+                _fitting._buffers[name] = val
+        try:
+            return model.forward_lower(
+                extended_coord,
+                extended_atype,
+                nlist,
+                mapping,
+                fparam=fparam,
+                aparam=aparam,
+                charge_spin=charge_spin,
+            )
+        finally:
+            for name, orig in originals.items():
+                _fitting._buffers[name] = orig
 
     # Pick a trace-time nframes that's unlikely to collide with any other
     # tensor dim in the graph.  The symbolic tracer merges symbols that
@@ -309,7 +378,7 @@ def _trace_and_compile(
         tracing_mode="symbolic",
         _allow_non_fake_inputs=True,
         decomposition_table=decomp_table,
-    )(ext_coord, ext_atype, nlist, mapping, fparam, aparam, charge_spin)
+    )(ext_coord, ext_atype, nlist, mapping, fparam, aparam, charge_spin, *task_buf_vals_trace)
 
     # make_fx inserts aten.detach.default for saved tensors used in the
     # decomposed autograd.grad backward ops.  These detach nodes break
@@ -344,7 +413,7 @@ def _trace_and_compile(
         backend="inductor",
         dynamic=True,
         options=inductor_options,
-    )
+    ), task_buf_order
 
 
 class _CompiledModel(torch.nn.Module):
@@ -354,10 +423,17 @@ class _CompiledModel(torch.nn.Module):
         self,
         original_model: torch.nn.Module,
         compiled_forward_lower: torch.nn.Module,
+        task_buf_order: tuple[str, ...] = (),
+        task_buffers: dict[str, torch.Tensor] | None = None,
     ) -> None:
         super().__init__()
         self.original_model = original_model
         self.compiled_forward_lower = compiled_forward_lower
+        self._task_buf_order = task_buf_order
+        if task_buf_order and task_buffers:
+            for name in task_buf_order:
+                if name in task_buffers:
+                    self.register_buffer(f"_task_{name}", task_buffers[name])
 
     def forward(
         self,
@@ -404,8 +480,12 @@ class _CompiledModel(torch.nn.Module):
         ext_coord = ext_coord.reshape(nframes, -1, 3)
         ext_coord = ext_coord.detach().requires_grad_(True)
 
+        task_buf_vals = tuple(
+            getattr(self, f"_task_{name}") for name in self._task_buf_order
+        )
         result = self.compiled_forward_lower(
-            ext_coord, ext_atype, nlist, mapping, fparam, aparam, charge_spin
+            ext_coord, ext_atype, nlist, mapping, fparam, aparam, charge_spin,
+            *task_buf_vals,
         )
 
         # Translate forward_lower keys -> forward keys.
@@ -947,6 +1027,13 @@ class Trainer:
             else self.wrapper
         )
 
+        from deepmd.dpmodel.descriptor.dpa1 import DescrptDPA1 as DescrptDPA1DP
+
+        # structure_key -> (compiled_lower, task_buf_order)
+        # Shared-fitting tasks produce the same structure key so only the first
+        # task triggers make_fx + torch.compile; the rest reuse the result.
+        _compiled_by_structure: dict[int, tuple] = {}
+
         for task_key in self.model_keys:
             model = wrapper_mod.model[task_key]
 
@@ -957,8 +1044,6 @@ class Trainer:
             # is hardware-dependent.  Warn but do not reject — energies
             # remain well within training tolerance and the user may
             # accept the trade-off for compile speed.
-            from deepmd.dpmodel.descriptor.dpa1 import DescrptDPA1 as DescrptDPA1DP
-
             descriptor = model.get_descriptor()
             if isinstance(descriptor, DescrptDPA1DP):
                 n_attn = descriptor.get_numb_attn_layer()
@@ -974,54 +1059,71 @@ class Trainer:
                         task_key,
                     )
 
-            inp, _ = self.get_data(is_train=True, task_key=task_key)
-            coord = inp["coord"].detach()
-            atype = inp["atype"].detach()
-            box = inp.get("box")
-            if box is not None:
-                box = box.detach()
+            structure_key = _get_model_structure_key(model)
+            task_bufs = _get_task_buffers(model)
 
-            nframes, nloc = atype.shape[:2]
-            coord_3d = coord.reshape(nframes, nloc, 3)
-            box_flat = box.reshape(nframes, 9) if box is not None else None
-
-            if box_flat is not None:
-                coord_norm = normalize_coord(coord_3d, box_flat.reshape(nframes, 3, 3))
+            if structure_key in _compiled_by_structure:
+                # Shared structure: reuse the already-compiled graph.
+                compiled_lower, task_buf_order = _compiled_by_structure[structure_key]
+                log.info(
+                    "Reusing compiled graph for task=%s (shared model structure).",
+                    task_key,
+                )
             else:
-                coord_norm = coord_3d
+                inp, _ = self.get_data(is_train=True, task_key=task_key)
+                coord = inp["coord"].detach()
+                atype = inp["atype"].detach()
+                box = inp.get("box")
+                if box is not None:
+                    box = box.detach()
 
-            ext_coord, ext_atype, mapping = extend_coord_with_ghosts(
-                coord_norm, atype, box_flat, model.get_rcut()
+                nframes, nloc = atype.shape[:2]
+                coord_3d = coord.reshape(nframes, nloc, 3)
+                box_flat = box.reshape(nframes, 9) if box is not None else None
+
+                if box_flat is not None:
+                    coord_norm = normalize_coord(
+                        coord_3d, box_flat.reshape(nframes, 3, 3)
+                    )
+                else:
+                    coord_norm = coord_3d
+
+                ext_coord, ext_atype, mapping = extend_coord_with_ghosts(
+                    coord_norm, atype, box_flat, model.get_rcut()
+                )
+                nlist_t = build_neighbor_list(
+                    ext_coord,
+                    ext_atype,
+                    nloc,
+                    model.get_rcut(),
+                    model.get_sel(),
+                    distinguish_types=False,
+                )
+                ext_coord = ext_coord.reshape(nframes, -1, 3)
+
+                fparam = inp.get("fparam")
+                aparam = inp.get("aparam")
+                charge_spin = inp.get("charge_spin")
+
+                compiled_lower, task_buf_order = _trace_and_compile(
+                    model,
+                    ext_coord,
+                    ext_atype,
+                    nlist_t,
+                    mapping,
+                    fparam,
+                    aparam,
+                    charge_spin=charge_spin,
+                    task_buffers=task_bufs if task_bufs else None,
+                    compile_opts=compile_opts,
+                )
+                _compiled_by_structure[structure_key] = (compiled_lower, task_buf_order)
+
+            wrapper_mod.model[task_key] = _CompiledModel(
+                model, compiled_lower, task_buf_order, task_bufs
             )
-            nlist_t = build_neighbor_list(
-                ext_coord,
-                ext_atype,
-                nloc,
-                model.get_rcut(),
-                model.get_sel(),
-                distinguish_types=False,
-            )
-            ext_coord = ext_coord.reshape(nframes, -1, 3)
-
-            fparam = inp.get("fparam")
-            aparam = inp.get("aparam")
-            charge_spin = inp.get("charge_spin")
-
-            compiled_lower = _trace_and_compile(
-                model,
-                ext_coord,
-                ext_atype,
-                nlist_t,
-                mapping,
-                fparam,
-                aparam,
-                charge_spin=charge_spin,
-                compile_opts=compile_opts,
-            )
-
-            wrapper_mod.model[task_key] = _CompiledModel(model, compiled_lower)
             log.info(
-                "Model compiled (task=%s, tracing_mode=symbolic, "
+                "Model compiled/reused (task=%s, tracing_mode=symbolic, "
                 "dynamic=True, backend=inductor).",
                 task_key,
             )
