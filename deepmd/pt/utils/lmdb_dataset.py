@@ -311,11 +311,11 @@ class LmdbDataset(Dataset):
 
     @property
     def index(self) -> list[int]:
-        return self._reader.index
+        return [self.total_batch]
 
     @property
     def total_batch(self) -> int:
-        return self._reader.total_batch
+        return len(self._batch_sampler)
 
     @property
     def batch_sizes(self) -> list[int]:

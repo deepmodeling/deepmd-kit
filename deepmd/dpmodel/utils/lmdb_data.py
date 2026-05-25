@@ -751,11 +751,17 @@ class LmdbDataReader:
     @property
     def index(self) -> list[int]:
         """Number of batches per system (single system)."""
-        return [max(1, self.nframes // self.batch_size)]
+        return [self.total_batch]
 
     @property
     def total_batch(self) -> int:
-        return self.index[0]
+        if self.mixed_batch:
+            return math.ceil(self.nframes / self.batch_size) if self.nframes else 0
+        total = 0
+        for nloc, indices in self._nloc_groups.items():
+            bs = self.get_batch_size_for_nloc(nloc)
+            total += (len(indices) + bs - 1) // bs
+        return total
 
     @property
     def batch_sizes(self) -> list[int]:
@@ -1304,10 +1310,13 @@ class DistributedSameNlocBatchSampler:
 
     def __len__(self) -> int:
         """Number of batches for this rank."""
-        total = 0
-        for nloc, indices in self._reader.nloc_groups.items():
-            bs = self._reader.get_batch_size_for_nloc(nloc)
-            total += (len(indices) + bs - 1) // bs
+        total = len(
+            SameNlocBatchSampler(
+                self._reader,
+                shuffle=False,
+                block_targets=self._block_targets,
+            )
+        )
         return math.ceil(total / self._world_size)
 
     @property
