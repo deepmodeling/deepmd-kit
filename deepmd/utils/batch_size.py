@@ -292,7 +292,12 @@ class AutoBatchSize(ABC):
     def set_oom_retry_mode(self, enable: bool) -> None:
         """Set OOM retry mode.
 
-        In OOM retry mode, all data will be re-executed.
+        In OOM retry mode, an OOM during execution may reduce the current
+        batch size and raise :class:`RetrySignal` to indicate that execution
+        should be retried.
+
+        Callers that want all data to be re-executed must catch
+        :class:`RetrySignal` and restart the full evaluation themselves.
 
         Parameters
         ----------
