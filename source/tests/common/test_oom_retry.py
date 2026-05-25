@@ -1,8 +1,16 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
+from types import SimpleNamespace
 from typing import (
     Any,
 )
+from unittest.mock import (
+    MagicMock,
+    call,
+    patch,
+)
+
+import numpy as np
 
 from deepmd.utils.batch_size import (
     AutoBatchSize,
@@ -29,79 +37,6 @@ class DummyAutoBatchSize:
     def set_oom_retry_mode(self, enable: bool) -> None:
         self.oom_retry_mode = enable
         self.modes.append(enable)
-
-
-class DummyModel:
-    def __init__(self) -> None:
-        self.descriptor_hook_calls: list[bool] = []
-        self.fitting_hook_calls: list[bool] = []
-
-    def set_eval_descriptor_hook(self, enable: bool) -> None:
-        self.descriptor_hook_calls.append(enable)
-
-    def set_eval_fitting_last_layer_hook(self, enable: bool) -> None:
-        self.fitting_hook_calls.append(enable)
-
-    def eval_descriptor(self) -> list[int]:
-        return [1, 2, 3]
-
-    def eval_fitting_last_layer(self) -> list[int]:
-        return [4, 5, 6]
-
-
-class DummyDeepEval:
-    def __init__(self, fail_once: bool = False, runtime_error: bool = False) -> None:
-        self.auto_batch_size = DummyAutoBatchSize()
-        self.model = DummyModel()
-        self.dp = {"model": {"Default": self.model}}
-        self.fail_once = fail_once
-        self.runtime_error = runtime_error
-        self.eval_calls = 0
-
-    def eval(self, *args: Any, **kwargs: Any) -> None:
-        self.eval_calls += 1
-        if self.runtime_error:
-            raise RuntimeError("non-retry failure")
-        if self.fail_once and self.eval_calls == 1:
-            raise RetrySignal
-
-    def eval_descriptor(self, *args: Any, **kwargs: Any) -> list[int]:
-        model = self.dp["model"]["Default"]
-        if self.auto_batch_size is not None:
-            self.auto_batch_size.set_oom_retry_mode(True)
-        model.set_eval_descriptor_hook(True)
-        retry = False
-        try:
-            self.eval(*args, **kwargs)
-            descriptor = model.eval_descriptor()
-        except RetrySignal:
-            retry = True
-        finally:
-            model.set_eval_descriptor_hook(False)
-            if self.auto_batch_size is not None:
-                self.auto_batch_size.set_oom_retry_mode(False)
-        if retry:
-            return self.eval_descriptor(*args, **kwargs)
-        return descriptor
-
-    def eval_fitting_last_layer(self, *args: Any, **kwargs: Any) -> list[int]:
-        model = self.dp["model"]["Default"]
-        if self.auto_batch_size is not None:
-            self.auto_batch_size.set_oom_retry_mode(True)
-        model.set_eval_fitting_last_layer_hook(True)
-        retry = False
-        try:
-            self.eval(*args, **kwargs)
-            fitting = model.eval_fitting_last_layer()
-        except RetrySignal:
-            retry = True
-        finally:
-            model.set_eval_fitting_last_layer_hook(False)
-            if self.auto_batch_size is not None:
-                self.auto_batch_size.set_oom_retry_mode(False)
-        if retry:
-            return self.eval_fitting_last_layer(*args, **kwargs)
-        return fitting
 
 
 class TestOOMRetry(unittest.TestCase):
@@ -131,39 +66,146 @@ class TestOOMRetry(unittest.TestCase):
         self.assertIsNone(result)
         self.assertEqual(auto_batch_size.current_batch_size, 128)
 
-    def test_eval_descriptor_retry_clears_hook_between_attempts(self) -> None:
-        deep_eval = DummyDeepEval(fail_once=True)
-        self.assertEqual(deep_eval.eval_descriptor(), [1, 2, 3])
-        self.assertEqual(deep_eval.eval_calls, 2)
+    def _make_backend(self, backend: str, method_name: str) -> tuple[Any, MagicMock]:
+        try:
+            if backend == "pt":
+                from deepmd.pt.infer.deep_eval import DeepEval
+            else:
+                from deepmd.pd.infer.deep_eval import DeepEval
+        except ModuleNotFoundError as exc:
+            self.skipTest(f"{backend} backend dependencies are unavailable: {exc}")
+
+        abstract_methods = getattr(DeepEval, "__abstractmethods__", frozenset())
+        try:
+            DeepEval.__abstractmethods__ = frozenset()
+            deep_eval = object.__new__(DeepEval)
+        finally:
+            DeepEval.__abstractmethods__ = abstract_methods
+
+        model = MagicMock()
+        model.eval_descriptor.return_value = np.array([1, 2, 3])
+        model.eval_fitting_last_layer.return_value = np.array([4, 5, 6])
+
+        if backend == "pd" and method_name == "eval_descriptor":
+            # Paddle eval_descriptor accepts either a ModelWrapper or a direct model.
+            deep_eval.dp = model
+        else:
+            deep_eval.dp = SimpleNamespace(model={"Default": model})
+        deep_eval.auto_batch_size = DummyAutoBatchSize()
+        return deep_eval, model
+
+    def _assert_retry_clears_hook_between_attempts(
+        self,
+        backend: str,
+        method_name: str,
+        hook_name: str,
+        expected: np.ndarray,
+    ) -> None:
+        deep_eval, model = self._make_backend(backend, method_name)
+        with patch.object(
+            deep_eval, "eval", side_effect=[RetrySignal, None]
+        ) as eval_mock:
+            result = getattr(deep_eval, method_name)(
+                coords=np.zeros((3, 1, 3)),
+                cells=None,
+                atom_types=np.array([0]),
+            )
+        self.assertEqual(eval_mock.call_count, 2)
+        np.testing.assert_array_equal(result, expected)
         self.assertEqual(
-            deep_eval.model.descriptor_hook_calls,
-            [True, False, True, False],
+            getattr(model, hook_name).call_args_list,
+            [call(True), call(False), call(True), call(False)],
         )
         self.assertFalse(deep_eval.auto_batch_size.oom_retry_mode)
+        self.assertEqual(deep_eval.auto_batch_size.modes, [True, False, True, False])
 
-    def test_eval_fitting_last_layer_retry_clears_hook_between_attempts(self) -> None:
-        deep_eval = DummyDeepEval(fail_once=True)
-        self.assertEqual(deep_eval.eval_fitting_last_layer(), [4, 5, 6])
-        self.assertEqual(deep_eval.eval_calls, 2)
+    def _assert_runtime_error_clears_state(
+        self,
+        backend: str,
+        method_name: str,
+        hook_name: str,
+    ) -> None:
+        deep_eval, model = self._make_backend(backend, method_name)
+        with patch.object(
+            deep_eval,
+            "eval",
+            side_effect=RuntimeError("non-retry failure"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "non-retry failure"):
+                getattr(deep_eval, method_name)(
+                    coords=np.zeros((3, 1, 3)),
+                    cells=None,
+                    atom_types=np.array([0]),
+                )
         self.assertEqual(
-            deep_eval.model.fitting_hook_calls,
-            [True, False, True, False],
+            getattr(model, hook_name).call_args_list, [call(True), call(False)]
         )
         self.assertFalse(deep_eval.auto_batch_size.oom_retry_mode)
+        self.assertEqual(deep_eval.auto_batch_size.modes, [True, False])
 
-    def test_eval_descriptor_runtime_error_clears_state(self) -> None:
-        deep_eval = DummyDeepEval(runtime_error=True)
-        with self.assertRaisesRegex(RuntimeError, "non-retry failure"):
-            deep_eval.eval_descriptor()
-        self.assertEqual(deep_eval.model.descriptor_hook_calls, [True, False])
-        self.assertFalse(deep_eval.auto_batch_size.oom_retry_mode)
+    def test_pt_eval_descriptor_retry_clears_hook_between_attempts(self) -> None:
+        self._assert_retry_clears_hook_between_attempts(
+            "pt",
+            "eval_descriptor",
+            "set_eval_descriptor_hook",
+            np.array([1, 2, 3]),
+        )
 
-    def test_eval_fitting_last_layer_runtime_error_clears_state(self) -> None:
-        deep_eval = DummyDeepEval(runtime_error=True)
-        with self.assertRaisesRegex(RuntimeError, "non-retry failure"):
-            deep_eval.eval_fitting_last_layer()
-        self.assertEqual(deep_eval.model.fitting_hook_calls, [True, False])
-        self.assertFalse(deep_eval.auto_batch_size.oom_retry_mode)
+    def test_pt_eval_fitting_last_layer_retry_clears_hook_between_attempts(
+        self,
+    ) -> None:
+        self._assert_retry_clears_hook_between_attempts(
+            "pt",
+            "eval_fitting_last_layer",
+            "set_eval_fitting_last_layer_hook",
+            np.array([4, 5, 6]),
+        )
+
+    def test_pd_eval_descriptor_retry_clears_hook_between_attempts(self) -> None:
+        self._assert_retry_clears_hook_between_attempts(
+            "pd",
+            "eval_descriptor",
+            "set_eval_descriptor_hook",
+            np.array([1, 2, 3]),
+        )
+
+    def test_pd_eval_fitting_last_layer_retry_clears_hook_between_attempts(
+        self,
+    ) -> None:
+        self._assert_retry_clears_hook_between_attempts(
+            "pd",
+            "eval_fitting_last_layer",
+            "set_eval_fitting_last_layer_hook",
+            np.array([4, 5, 6]),
+        )
+
+    def test_pt_eval_descriptor_runtime_error_clears_state(self) -> None:
+        self._assert_runtime_error_clears_state(
+            "pt",
+            "eval_descriptor",
+            "set_eval_descriptor_hook",
+        )
+
+    def test_pt_eval_fitting_last_layer_runtime_error_clears_state(self) -> None:
+        self._assert_runtime_error_clears_state(
+            "pt",
+            "eval_fitting_last_layer",
+            "set_eval_fitting_last_layer_hook",
+        )
+
+    def test_pd_eval_descriptor_runtime_error_clears_state(self) -> None:
+        self._assert_runtime_error_clears_state(
+            "pd",
+            "eval_descriptor",
+            "set_eval_descriptor_hook",
+        )
+
+    def test_pd_eval_fitting_last_layer_runtime_error_clears_state(self) -> None:
+        self._assert_runtime_error_clears_state(
+            "pd",
+            "eval_fitting_last_layer",
+            "set_eval_fitting_last_layer_hook",
+        )
 
 
 if __name__ == "__main__":
