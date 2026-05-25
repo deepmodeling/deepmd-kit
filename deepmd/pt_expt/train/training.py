@@ -1045,7 +1045,7 @@ class Trainer:
             # causes every task's first training call to miss the warmup cache.
             ext_coord = ext_coord.detach().requires_grad_(True)
             _warmup_out = compiled_lower(
-                ext_coord, ext_atype, nlist_t, mapping, fparam, aparam
+                ext_coord, ext_atype, nlist_t, mapping, fparam, aparam, charge_spin
             )
             del _warmup_out
             if DEVICE.type == "cuda" and torch.cuda.is_initialized():
@@ -1063,6 +1063,8 @@ class Trainer:
                 del fparam
             if aparam is not None:
                 del aparam
+            if charge_spin is not None:
+                del charge_spin
             del inp, _
 
             log.info(
