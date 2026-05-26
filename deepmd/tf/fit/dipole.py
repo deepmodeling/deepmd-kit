@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Optional,
+    Any,
 )
 
 import numpy as np
@@ -27,6 +27,9 @@ from deepmd.tf.loss.tensor import (
 )
 from deepmd.tf.utils.graph import (
     get_fitting_net_variables_from_graph_def,
+)
+from deepmd.tf.utils.learning_rate import (
+    LearningRateExp,
 )
 from deepmd.tf.utils.network import (
     one_layer,
@@ -97,16 +100,16 @@ class DipoleFittingSeA(Fitting):
         numb_fparam: int = 0,
         numb_aparam: int = 0,
         dim_case_embd: int = 0,
-        sel_type: Optional[list[int]] = None,
-        seed: Optional[int] = None,
+        sel_type: list[int] | None = None,
+        seed: int | None = None,
         activation_function: str = "tanh",
         precision: str = "default",
         uniform_seed: bool = False,
         mixed_types: bool = False,
-        type_map: Optional[list[str]] = None,  # to be compat with input
-        default_fparam: Optional[list[float]] = None,  # to be compat with input
-        trainable: Optional[list[bool]] = None,
-        **kwargs,
+        type_map: list[str] | None = None,  # to be compat with input
+        default_fparam: list[float] | None = None,  # to be compat with input
+        trainable: list[bool] | None = None,
+        **kwargs: Any,
     ) -> None:
         """Constructor."""
         self.ntypes = ntypes
@@ -169,7 +172,15 @@ class DipoleFittingSeA(Fitting):
         return 3
 
     @cast_precision
-    def _build_lower(self, start_index, natoms, inputs, rot_mat, suffix="", reuse=None):
+    def _build_lower(
+        self,
+        start_index: int,
+        natoms: int,
+        inputs: tf.Tensor,
+        rot_mat: tf.Tensor,
+        suffix: str = "",
+        reuse: bool | None = None,
+    ) -> tf.Tensor:
         # cut-out inputs
         inputs_i = tf.slice(inputs, [0, start_index, 0], [-1, natoms, -1])
         inputs_i = tf.reshape(inputs_i, [-1, self.dim_descrpt])
@@ -240,8 +251,8 @@ class DipoleFittingSeA(Fitting):
         input_d: tf.Tensor,
         rot_mat: tf.Tensor,
         natoms: tf.Tensor,
-        input_dict: Optional[dict] = None,
-        reuse: Optional[bool] = None,
+        input_dict: dict | None = None,
+        reuse: bool | None = None,
         suffix: str = "",
     ) -> tf.Tensor:
         """Build the computational graph for fitting net.
@@ -373,7 +384,7 @@ class DipoleFittingSeA(Fitting):
             graph_def, suffix=suffix
         )
 
-    def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
+    def enable_mixed_precision(self, mixed_prec: dict | None = None) -> None:
         """Receive the mixed precision setting.
 
         Parameters
@@ -384,14 +395,14 @@ class DipoleFittingSeA(Fitting):
         self.mixed_prec = mixed_prec
         self.fitting_precision = get_precision(mixed_prec["output_prec"])
 
-    def get_loss(self, loss: dict, lr) -> Loss:
+    def get_loss(self, loss: dict, lr: LearningRateExp) -> Loss:
         """Get the loss function.
 
         Parameters
         ----------
         loss : dict
             the loss dict
-        lr : LearningRateExp
+        lr : LearningRateSchedule
             the learning rate
 
         Returns
@@ -423,7 +434,6 @@ class DipoleFittingSeA(Fitting):
             "dim_descrpt": self.dim_descrpt,
             "embedding_width": self.dim_rot_mat_1,
             "mixed_types": self.mixed_types,
-            "dim_out": 3,
             "neuron": self.n_neuron,
             "resnet_dt": self.resnet_dt,
             "numb_fparam": self.numb_fparam,
@@ -458,11 +468,20 @@ class DipoleFittingSeA(Fitting):
                 ),
             },
             "type_map": self.type_map,
+            "var_name": "dipole",
+            "rcond": None,
+            "tot_ener_zero": False,
+            "trainable": self.trainable,
+            "layer_name": None,
+            "use_aparam_as_mask": False,
+            "spin": None,
+            "r_differentiable": True,
+            "c_differentiable": True,
         }
         return data
 
     @classmethod
-    def deserialize(cls, data: dict, suffix: str):
+    def deserialize(cls, data: dict, suffix: str) -> "DipoleFittingSeA":
         """Deserialize the model.
 
         Parameters

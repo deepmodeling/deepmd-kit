@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
-    Callable,
-    Optional,
 )
 
 import torch
@@ -69,14 +70,14 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             self,
             *args: Any,
             # underscore to prevent conflict with normal inputs
-            atomic_model_: Optional[T_AtomicModel] = None,
+            atomic_model_: T_AtomicModel | None = None,  # type: ignore
             **kwargs: Any,
         ) -> None:
             super().__init__(*args, **kwargs)
             if atomic_model_ is not None:
-                self.atomic_model: T_AtomicModel = atomic_model_
+                self.atomic_model: T_AtomicModel = atomic_model_  # type: ignore
             else:
-                self.atomic_model: T_AtomicModel = T_AtomicModel(*args, **kwargs)
+                self.atomic_model: T_AtomicModel = T_AtomicModel(*args, **kwargs)  # type: ignore
             self.precision_dict = PRECISION_DICT
             self.reverse_precision_dict = RESERVED_PRECISION_DICT
             self.global_pt_float_precision = GLOBAL_PT_FLOAT_PRECISION
@@ -133,10 +134,12 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             self,
             coord: torch.Tensor,
             atype: torch.Tensor,
-            box: Optional[torch.Tensor] = None,
-            fparam: Optional[torch.Tensor] = None,
-            aparam: Optional[torch.Tensor] = None,
+            box: torch.Tensor | None = None,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
             do_atomic_virial: bool = False,
+            coord_corr_for_virial: torch.Tensor | None = None,
+            charge_spin: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
             """Return model prediction.
 
@@ -155,6 +158,9 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 atomic parameter. nf x nloc x nda
             do_atomic_virial
                 If calculate the atomic virial.
+            coord_corr_for_virial
+                The coordinates correction of the atoms for virial.
+                shape: nf x (nloc x 3)
 
             Returns
             -------
@@ -163,7 +169,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 The keys are defined by the `ModelOutputDef`.
 
             """
-            cc, bb, fp, ap, input_prec = self.input_type_cast(
+            cc, bb, fp, ap, input_prec = self._input_type_cast(
                 coord, box=box, fparam=fparam, aparam=aparam
             )
             del coord, box, fparam, aparam
@@ -182,6 +188,14 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 mixed_types=True,
                 box=bb,
             )
+            if coord_corr_for_virial is not None:
+                coord_corr_for_virial = coord_corr_for_virial.to(cc.dtype)
+                extended_coord_corr = torch.gather(
+                    coord_corr_for_virial, 1, mapping.unsqueeze(-1).expand(-1, -1, 3)
+                )
+            else:
+                extended_coord_corr = None
+
             model_predict_lower = self.forward_common_lower(
                 extended_coord,
                 extended_atype,
@@ -190,6 +204,8 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 do_atomic_virial=do_atomic_virial,
                 fparam=fp,
                 aparam=ap,
+                extended_coord_corr=extended_coord_corr,
+                charge_spin=charge_spin,
             )
             model_predict = communicate_extended_output(
                 model_predict_lower,
@@ -197,7 +213,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 mapping,
                 do_atomic_virial=do_atomic_virial,
             )
-            model_predict = self.output_type_cast(model_predict, input_prec)
+            model_predict = self._output_type_cast(model_predict, input_prec)
             return model_predict
 
         def get_out_bias(self) -> torch.Tensor:
@@ -238,12 +254,14 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             extended_coord: torch.Tensor,
             extended_atype: torch.Tensor,
             nlist: torch.Tensor,
-            mapping: Optional[torch.Tensor] = None,
-            fparam: Optional[torch.Tensor] = None,
-            aparam: Optional[torch.Tensor] = None,
+            mapping: torch.Tensor | None = None,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
             do_atomic_virial: bool = False,
-            comm_dict: Optional[dict[str, torch.Tensor]] = None,
+            comm_dict: dict[str, torch.Tensor] | None = None,
             extra_nlist_sort: bool = False,
+            extended_coord_corr: torch.Tensor | None = None,
+            charge_spin: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
             """Return model prediction. Lower interface that takes
             extended atomic coordinates and types, nlist, and mapping
@@ -270,6 +288,8 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 The data needed for communication for parallel inference.
             extra_nlist_sort
                 whether to forcibly sort the nlist.
+            extended_coord_corr
+                coordinates correction for virial in extended region. nf x (nall x 3)
 
             Returns
             -------
@@ -282,7 +302,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             nlist = self.format_nlist(
                 extended_coord, extended_atype, nlist, extra_nlist_sort=extra_nlist_sort
             )
-            cc_ext, _, fp, ap, input_prec = self.input_type_cast(
+            cc_ext, _, fp, ap, input_prec = self._input_type_cast(
                 extended_coord, fparam=fparam, aparam=aparam
             )
             del extended_coord, fparam, aparam
@@ -294,6 +314,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 fparam=fp,
                 aparam=ap,
                 comm_dict=comm_dict,
+                charge_spin=charge_spin,
             )
             model_predict = fit_output_to_model_output(
                 atomic_ret,
@@ -302,21 +323,22 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 do_atomic_virial=do_atomic_virial,
                 create_graph=self.training,
                 mask=atomic_ret["mask"] if "mask" in atomic_ret else None,
+                extended_coord_corr=extended_coord_corr,
             )
-            model_predict = self.output_type_cast(model_predict, input_prec)
+            model_predict = self._output_type_cast(model_predict, input_prec)
             return model_predict
 
-        def input_type_cast(
+        def _input_type_cast(
             self,
             coord: torch.Tensor,
-            box: Optional[torch.Tensor] = None,
-            fparam: Optional[torch.Tensor] = None,
-            aparam: Optional[torch.Tensor] = None,
+            box: torch.Tensor | None = None,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
         ) -> tuple[
             torch.Tensor,
-            Optional[torch.Tensor],
-            Optional[torch.Tensor],
-            Optional[torch.Tensor],
+            torch.Tensor | None,
+            torch.Tensor | None,
+            torch.Tensor | None,
             str,
         ]:
             """Cast the input data to global float type."""
@@ -331,7 +353,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             #           " does not match"
             #           f" that of the coordinate {input_prec}"
             #         )
-            _lst: list[Optional[torch.Tensor]] = [
+            _lst: list[torch.Tensor | None] = [
                 vv.to(coord.dtype) if vv is not None else None
                 for vv in [box, fparam, aparam]
             ]
@@ -351,7 +373,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                     input_prec,
                 )
 
-        def output_type_cast(
+        def _output_type_cast(
             self,
             model_ret: dict[str, torch.Tensor],
             input_prec: str,
@@ -481,7 +503,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
 
         def do_grad_r(
             self,
-            var_name: Optional[str] = None,
+            var_name: str | None = None,
         ) -> bool:
             """Tell if the output variable `var_name` is r_differentiable.
             if var_name is None, returns if any of the variable is r_differentiable.
@@ -490,7 +512,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
 
         def do_grad_c(
             self,
-            var_name: Optional[str] = None,
+            var_name: str | None = None,
         ) -> bool:
             """Tell if the output variable `var_name` is c_differentiable.
             if var_name is None, returns if any of the variable is c_differentiable.
@@ -498,7 +520,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             return self.atomic_model.do_grad_c(var_name)
 
         def change_type_map(
-            self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
+            self, type_map: list[str], model_with_new_type_stat: Any | None = None
         ) -> None:
             """Change the type related params to new ones, according to `type_map` and the original one in the model.
             If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -529,6 +551,29 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
         def has_default_fparam(self) -> bool:
             """Check if the model has default frame parameters."""
             return self.atomic_model.has_default_fparam()
+
+        def get_default_fparam(self) -> torch.Tensor | None:
+            return self.atomic_model.get_default_fparam()
+
+        @torch.jit.export
+        def has_chg_spin_ebd(self) -> bool:
+            """Check if the model has charge spin embedding."""
+            return self.atomic_model.has_chg_spin_ebd()
+
+        @torch.jit.export
+        def get_dim_chg_spin(self) -> int:
+            """Get the dimension of charge_spin input."""
+            return self.atomic_model.get_dim_chg_spin()
+
+        @torch.jit.export
+        def has_default_chg_spin(self) -> bool:
+            """Check if the model has default charge_spin values."""
+            return self.atomic_model.has_default_chg_spin()
+
+        @torch.jit.export
+        def get_default_chg_spin(self) -> torch.Tensor | None:
+            """Get the default charge_spin values."""
+            return self.atomic_model.get_default_chg_spin()
 
         @torch.jit.export
         def get_dim_aparam(self) -> int:
@@ -580,10 +625,41 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
         def compute_or_load_stat(
             self,
             sampled_func: Callable[[], Any],
-            stat_file_path: Optional[DPPath] = None,
+            stat_file_path: DPPath | None = None,
+            preset_observed_type: list[str] | None = None,
         ) -> None:
             """Compute or load the statistics."""
-            return self.atomic_model.compute_or_load_stat(sampled_func, stat_file_path)
+            return self.atomic_model.compute_or_load_stat(
+                sampled_func,
+                stat_file_path,
+                preset_observed_type=preset_observed_type,
+            )
+
+        @torch.jit.export
+        def get_observed_type_list(self) -> list[str]:
+            """Get observed types (elements) of the model during data statistics.
+
+            Returns
+            -------
+            observed_type_list: a list of the observed types in this model.
+            """
+            type_map = self.get_type_map()
+            out_bias = self.atomic_model.get_out_bias()[0]
+
+            assert out_bias is not None, "No out_bias found in the model."
+            assert out_bias.dim() == 2, "The supported out_bias should be a 2D tensor."
+            assert out_bias.size(0) == len(type_map), (
+                "The out_bias shape does not match the type_map length."
+            )
+            bias_mask = (
+                torch.gt(torch.abs(out_bias), 1e-6).any(dim=-1).detach().cpu()
+            )  # 1e-6 for stability
+
+            observed_type_list: list[str] = []
+            for i in range(len(type_map)):
+                if bias_mask[i]:
+                    observed_type_list.append(type_map[i])
+            return observed_type_list
 
         def get_sel(self) -> list[int]:
             """Returns the number of selected atoms for each type."""
@@ -614,10 +690,11 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             self,
             coord: torch.Tensor,
             atype: torch.Tensor,
-            box: Optional[torch.Tensor] = None,
-            fparam: Optional[torch.Tensor] = None,
-            aparam: Optional[torch.Tensor] = None,
+            box: torch.Tensor | None = None,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
             do_atomic_virial: bool = False,
+            charge_spin: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
             # directly call the forward_common method when no specific transform rule
             return self.forward_common(
@@ -627,6 +704,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 fparam=fparam,
                 aparam=aparam,
                 do_atomic_virial=do_atomic_virial,
+                charge_spin=charge_spin,
             )
 
     return CM

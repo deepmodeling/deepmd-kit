@@ -1,5 +1,5 @@
-# new in 3.16: GET_RUNTIME_DEPENDENCIES, target_precompile_headers
-cmake_minimum_required(VERSION 3.16)
+# new in 3.25: RUN_OUTPUT_STDOUT_VARIABLE
+cmake_minimum_required(VERSION 3.25.2)
 project(DeePMD)
 
 option(ENABLE_TENSORFLOW "Enable TensorFlow interface" OFF)
@@ -244,8 +244,14 @@ set(DP_VARIANT "cpu")
 
 # define USE_CUDA_TOOLKIT
 if(USE_CUDA_TOOLKIT)
-  cmake_minimum_required(VERSION 3.23)
+  cmake_minimum_required(VERSION 3.25.2)
   find_package(CUDAToolkit REQUIRED)
+  # CUDA 13.0+ requires C++17
+  if(CUDAToolkit_VERSION VERSION_GREATER_EQUAL "13.0")
+    set_if_higher(CMAKE_CXX_STANDARD 17)
+    message(
+      STATUS "CUDA ${CUDAToolkit_VERSION} detected, setting C++ standard to 17")
+  endif()
   if(NOT DEFINED CMAKE_CUDA_COMPILER)
     set(CMAKE_CUDA_COMPILER ${CUDAToolkit_NVCC_EXECUTABLE})
   endif()
@@ -261,7 +267,7 @@ endif(USE_CUDA_TOOLKIT)
 
 # define USE_ROCM_TOOLKIT
 if(USE_ROCM_TOOLKIT)
-  cmake_minimum_required(VERSION 3.21)
+  cmake_minimum_required(VERSION 3.25.2)
   include(CMakeDetermineHIPCompiler)
   list(APPEND CMAKE_PREFIX_PATH ${CMAKE_HIP_COMPILER_ROCM_ROOT})
   find_package(hip REQUIRED)
@@ -480,11 +486,10 @@ if(BUILD_CPP_IF)
   if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 4.8)
     set(LIB_DEEPMD_NATIVE "deepmd_native_md")
     set(LIB_DEEPMD_IPI "deepmd_ipi")
-    set(LIB_DEEPMD_GROMACS "deepmd_gromacs")
   else()
     message(
       STATUS
-        "Your gcc/g++ version is ${CMAKE_CXX_COMPILER_VERSION}, so native MD, ipi and gromacs plugin are disabled. To enable them, use gcc/g++ >= 4.8."
+        "Your gcc/g++ version is ${CMAKE_CXX_COMPILER_VERSION}, so native MD and the i-PI driver are disabled. To enable them, use gcc/g++ >= 4.8."
     )
   endif()
 endif(BUILD_CPP_IF)
@@ -551,13 +556,10 @@ if(BUILD_CPP_IF)
   if(LAMMPS_VERSION OR NOT BUILD_PY_IF)
     add_subdirectory(lmp/)
   endif()
-  if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 4.8)
+  if(CMAKE_CXX_COMPILER_VERSION VERSION_GREATER_EQUAL 4.8)
     # add_subdirectory (md/)
     if(ENABLE_IPI OR NOT BUILD_PY_IF)
       add_subdirectory(ipi/)
-    endif()
-    if(NOT BUILD_PY_IF)
-      add_subdirectory(gmx/)
     endif()
   endif()
   if(BUILD_NODEJS_IF)

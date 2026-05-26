@@ -12,6 +12,27 @@ It is also the first example to the DeePMD-kit [plugin mechanism](../development
 
 ## C/C++ interface used by other packages
 
+### Third-party GROMACS interface to DeePMD-kit
+
+A third-party GROMACS interface to DeePMD-kit is available outside this repository at [HuXioAn/gromacs/tree/deepmd-oneModel](https://github.com/HuXioAn/gromacs/tree/deepmd-oneModel). It is based on the GROMACS Neural Network Potentials (NNPot) infrastructure and is described in [Enabling AI Deep Potentials for Ab Initio-quality Molecular Dynamics Simulations in GROMACS](https://arxiv.org/abs/2602.02234).
+
+According to that implementation and paper, this interface supports
+
+- DeePMD-kit inference through the C++/CUDA backend;
+- multiple DeePMD model families, including `se_e2_a`, `DPA`, `DPA2`, and `DPA3`;
+- hybrid workflows where DeePMD-kit is applied to selected atom groups inside a GROMACS simulation.
+
+The reported examples use protein-in-water systems, where DeePMD-kit is applied to the protein internal interactions while water and protein-water interactions remain classical.
+
+Users should also be aware of the current scope reported by the third-party project:
+
+- the published benchmarks enable DeePMD only in the production MD stage, not in EM/NVT/NPT;
+- the reported implementation uses single-rank inference in the current GROMACS NNPot workflow;
+- scalability and domain-decomposed inference are described as future optimization targets;
+- some DPA3 benchmark cases run out of GPU memory on the tested hardware.
+
+This interface is maintained outside DeePMD-kit. Please refer to the corresponding third-party repository for installation instructions, supported GROMACS versions, and runtime details.
+
 ### OpenMM plugin for DeePMD-kit
 
 An [OpenMM](https://github.com/openmm/openmm) plugin is provided from [JingHuangLab/openmm_deepmd_plugin](https://github.com/JingHuangLab/openmm_deepmd_plugin), written by the [Huang Lab](http://www.compbiophysics.org/) at Westlake University.

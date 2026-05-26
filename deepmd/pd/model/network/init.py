@@ -26,19 +26,33 @@ from paddle import (
 PaddleGenerator = paddle.base.libpaddle.Generator
 
 
-def _no_grad_uniform_(tensor: paddle.Tensor, a, b, generator=None):
+def _no_grad_uniform_(
+    tensor: paddle.Tensor, a: float, b: float, generator: PaddleGenerator | None = None
+) -> paddle.Tensor:
     with paddle.no_grad():
         return tensor.uniform_(a, b)
 
 
-def _no_grad_normal_(tensor: paddle.Tensor, mean, std, generator=None):
+def _no_grad_normal_(
+    tensor: paddle.Tensor,
+    mean: float,
+    std: float,
+    generator: PaddleGenerator | None = None,
+) -> paddle.Tensor:
     with paddle.no_grad():
         return tensor.normal_(mean, std)
 
 
-def _no_grad_trunc_normal_(tensor: paddle.Tensor, mean, std, a, b, generator=None):
+def _no_grad_trunc_normal_(
+    tensor: paddle.Tensor,
+    mean: float,
+    std: float,
+    a: float,
+    b: float,
+    generator: PaddleGenerator | None = None,
+) -> paddle.Tensor:
     # Method based on https://people.sc.fsu.edu/~jburkardt/presentations/truncated_normal.pdf
-    def norm_cdf(x):
+    def norm_cdf(x: float) -> float:
         # Computes standard normal cumulative distribution function
         return (1.0 + math.erf(x / math.sqrt(2.0))) / 2.0
 
@@ -73,17 +87,17 @@ def _no_grad_trunc_normal_(tensor: paddle.Tensor, mean, std, a, b, generator=Non
         return tensor
 
 
-def _no_grad_zero_(tensor: paddle.Tensor):
+def _no_grad_zero_(tensor: paddle.Tensor) -> paddle.Tensor:
     with paddle.no_grad():
         return tensor.zero_()
 
 
-def _no_grad_fill_(tensor: paddle.Tensor, val):
+def _no_grad_fill_(tensor: paddle.Tensor, val: float) -> paddle.Tensor:
     with paddle.no_grad():
         return tensor.fill_(val)
 
 
-def calculate_gain(nonlinearity, param=None):
+def calculate_gain(nonlinearity: str, param: float | None = None) -> float:
     r"""Return the recommended gain value for the given nonlinearity function.
 
     The values are as follows:
@@ -154,7 +168,9 @@ def calculate_gain(nonlinearity, param=None):
         raise ValueError(f"Unsupported nonlinearity {nonlinearity}")
 
 
-def _calculate_fan_in_and_fan_out(tensor, reverse=False):
+def _calculate_fan_in_and_fan_out(
+    tensor: paddle.Tensor, reverse: bool = False
+) -> tuple[int, int]:
     dimensions = tensor.ndim
     if dimensions < 2:
         raise ValueError(
@@ -176,7 +192,9 @@ def _calculate_fan_in_and_fan_out(tensor, reverse=False):
     return fan_in, fan_out
 
 
-def _calculate_correct_fan(tensor, mode, reverse=False):
+def _calculate_correct_fan(
+    tensor: paddle.Tensor, mode: str, reverse: bool = False
+) -> int:
     mode = mode.lower()
     valid_modes = ["fan_in", "fan_out"]
     if mode not in valid_modes:
@@ -292,7 +310,7 @@ def kaiming_uniform_(
     nonlinearity: str = "leaky_relu",
     generator: PaddleGenerator | None = None,
     reverse: bool = False,
-):
+) -> Tensor:
     r"""Fill the input `Tensor` with values using a Kaiming uniform distribution.
 
     The method is described in `Delving deep into rectifiers: Surpassing
@@ -342,7 +360,7 @@ def kaiming_normal_(
     nonlinearity: str = "leaky_relu",
     generator: PaddleGenerator | None = None,
     reverse: bool = False,
-):
+) -> Tensor:
     r"""Fill the input `Tensor` with values using a Kaiming normal distribution.
 
     The method is described in `Delving deep into rectifiers: Surpassing

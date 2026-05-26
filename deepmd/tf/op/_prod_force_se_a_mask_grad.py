@@ -8,11 +8,14 @@ from tensorflow.python.framework import (
 
 from deepmd.tf.env import (
     op_grads_module,
+    tf,
 )
 
 
 @ops.RegisterGradient("ProdForceSeAMask")
-def _prod_force_se_a_mask_grad_cc(op, grad):
+def _prod_force_se_a_mask_grad_cc(
+    op: tf.Operation, grad: tf.Tensor
+) -> list[tf.Tensor | None]:
     net_grad = op_grads_module.prod_force_se_a_mask_grad(
         grad,
         op.inputs[0],

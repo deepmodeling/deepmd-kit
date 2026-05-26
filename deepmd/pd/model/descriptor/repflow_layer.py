@@ -1,8 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-    Union,
-)
 
 import paddle
 import paddle.nn as nn
@@ -63,7 +59,7 @@ class RepFlowLayer(paddle.nn.Layer):
         update_residual: float = 0.1,
         update_residual_init: str = "const",
         precision: str = "float64",
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
         trainable: bool = True,
     ) -> None:
         super().__init__()
@@ -718,7 +714,7 @@ class RepFlowLayer(paddle.nn.Layer):
         a_sw: paddle.Tensor,  # switch func, nf x nloc x a_nnei
         edge_index: paddle.Tensor,  # 2 x n_edge
         angle_index: paddle.Tensor,  # 3 x n_angle
-    ):
+    ) -> tuple[paddle.Tensor, paddle.Tensor, paddle.Tensor]:
         """
         Parameters
         ----------

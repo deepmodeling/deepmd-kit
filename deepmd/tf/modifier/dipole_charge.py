@@ -1,5 +1,14 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import os
+from typing import (
+    TYPE_CHECKING,
+    Any,
+)
+
+if TYPE_CHECKING:
+    from typing_extensions import (
+        Self,
+    )
 
 import numpy as np
 
@@ -27,6 +36,11 @@ from deepmd.tf.utils.sess import (
     run_sess,
 )
 
+if TYPE_CHECKING:
+    from deepmd.tf.infer import (
+        DeepEval,
+    )
+
 
 @BaseModifier.register("dipole_charge")
 class DipoleChargeModifier(DeepDipole, BaseModifier):
@@ -44,7 +58,9 @@ class DipoleChargeModifier(DeepDipole, BaseModifier):
             Splitting parameter of the Ewald sum. Unit: A^{-1}
     """
 
-    def __new__(cls, *args, model_name=None, **kwargs):
+    def __new__(
+        cls, *args: Any, model_name: str | None = None, **kwargs: Any
+    ) -> "Self":
         return super().__new__(cls, model_name)
 
     def __init__(
@@ -151,7 +167,7 @@ class DipoleChargeModifier(DeepDipole, BaseModifier):
         with self.graph.as_default():
             return self._build_fv_graph_inner()
 
-    def _build_fv_graph_inner(self):
+    def _build_fv_graph_inner(self) -> tuple[tf.Tensor, tf.Tensor, tf.Tensor]:
         self.t_ef = tf.placeholder(GLOBAL_TF_FLOAT_PRECISION, [None], name="t_ef")
         nf = 10
         nfxnas = 64 * nf
@@ -221,7 +237,7 @@ class DipoleChargeModifier(DeepDipole, BaseModifier):
         atom_virial = tf.identity(atom_virial, name="o_dm_av")
         return force, virial, atom_virial
 
-    def _enrich(self, dipole, dof=3):
+    def _enrich(self, dipole: tf.Tensor, dof: int = 3) -> tf.Tensor:
         coll = []
         sel_start_idx = 0
         for type_i in range(self.ntypes):
@@ -240,7 +256,7 @@ class DipoleChargeModifier(DeepDipole, BaseModifier):
             coll.append(di)
         return tf.concat(coll, axis=1)
 
-    def _slice_descrpt_deriv(self, deriv):
+    def _slice_descrpt_deriv(self, deriv: tf.Tensor) -> tf.Tensor:
         coll = []
         start_idx = 0
         for type_i in range(self.ntypes):
@@ -369,7 +385,13 @@ class DipoleChargeModifier(DeepDipole, BaseModifier):
 
         return tot_e, tot_f, tot_v
 
-    def _eval_fv(self, coords, cells, atom_types, ext_f):
+    def _eval_fv(
+        self,
+        coords: np.ndarray,
+        cells: np.ndarray,
+        atom_types: np.ndarray,
+        ext_f: np.ndarray,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         # reshape the inputs
         cells = np.reshape(cells, [-1, 9])
         nframes = cells.shape[0]
@@ -404,7 +426,9 @@ class DipoleChargeModifier(DeepDipole, BaseModifier):
         fout = np.reshape(fout, [nframes, -1])
         return fout, vout, avout
 
-    def _extend_system(self, coord, box, atype, charge):
+    def _extend_system(
+        self, coord: np.ndarray, box: np.ndarray, atype: np.ndarray, charge: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
         natoms = coord.shape[1] // 3
         nframes = coord.shape[0]
         # sel atoms and setup ref coord
@@ -487,3 +511,52 @@ class DipoleChargeModifier(DeepDipole, BaseModifier):
             data["force"] -= tot_f.reshape(data["force"].shape)
         if "find_virial" in data and data["find_virial"] == 1.0:
             data["virial"] -= tot_v.reshape(data["virial"].shape)
+
+    @staticmethod
+    def get_params_from_frozen_model(model: "DeepEval") -> dict:
+        """Extract modifier parameters from a DeepEval model.
+
+        Parameters
+        ----------
+        model : DeepEval
+            The DeepEval model instance containing the modifier tensors.
+
+        Returns
+        -------
+        dict
+            Dictionary containing modifier parameters:
+            - model_name : str
+            - model_charge_map : list[int]
+            - sys_charge_map : list[int]
+            - ewald_h : float
+            - ewald_beta : float
+        """
+        t_mdl_name = model._get_tensor("modifier_attr/mdl_name:0")
+        t_mdl_charge_map = model._get_tensor("modifier_attr/mdl_charge_map:0")
+        t_sys_charge_map = model._get_tensor("modifier_attr/sys_charge_map:0")
+        t_ewald_h = model._get_tensor("modifier_attr/ewald_h:0")
+        t_ewald_beta = model._get_tensor("modifier_attr/ewald_beta:0")
+        [mdl_name, mdl_charge_map, sys_charge_map, ewald_h, ewald_beta] = run_sess(
+            model.sess,
+            [
+                t_mdl_name,
+                t_mdl_charge_map,
+                t_sys_charge_map,
+                t_ewald_h,
+                t_ewald_beta,
+            ],
+        )
+        model_charge_map = [
+            int(float(ii)) for ii in mdl_charge_map.decode("UTF-8").split()
+        ]
+        sys_charge_map = [
+            int(float(ii)) for ii in sys_charge_map.decode("UTF-8").split()
+        ]
+        modifier_params = {
+            "model_name": mdl_name.decode("UTF-8"),
+            "model_charge_map": model_charge_map,
+            "sys_charge_map": sys_charge_map,
+            "ewald_h": ewald_h,
+            "ewald_beta": ewald_beta,
+        }
+        return modifier_params

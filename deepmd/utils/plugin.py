@@ -6,10 +6,11 @@ import difflib
 from abc import (
     ABCMeta,
 )
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
-    Callable,
-    Optional,
 )
 
 
@@ -98,7 +99,7 @@ class PluginVariant(metaclass=VariantABCMeta):
     pass
 
 
-def make_plugin_registry(name: Optional[str] = None) -> type[object]:
+def make_plugin_registry(name: str | None = None) -> type[object]:
     """Make a plugin registry.
 
     Parameters

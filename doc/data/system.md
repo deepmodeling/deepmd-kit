@@ -12,29 +12,29 @@ A system should contain system properties, input frame properties, and labeled f
 
 The input frame properties contain the following property, the first axis of which is the number of frames:
 
-| ID        | Property                                            | Raw file   | Unit | Required/Optional    | Shape                    | Description                               |
-| --------- | --------------------------------------------------- | ---------- | ---- | -------------------- | ------------------------ | ----------------------------------------- |
-| coord     | Atomic coordinates                                  | coord.raw  | Å    | Required             | Nframes \* Natoms \* 3   |
-| box       | Boxes                                               | box.raw    | Å    | Required if periodic | Nframes \* 3 \* 3        | in the order `XX XY XZ YX YY YZ ZX ZY ZZ` |
-| fparam    | Extra frame parameters                              | fparam.raw | Any  | Optional             | Nframes \* Any           |
-| aparam    | Extra atomic parameters                             | aparam.raw | Any  | Optional             | Nframes \* aparam \* Any |
-| numb_copy | Each frame is copied by the `numb_copy` (int) times | prob.raw   | 1    | Optional             | Nframes                  | Integer; Default is 1 for all frames      |
+| ID        | Property                                            | Raw file   | Unit | Required/Optional    | Shape                  | Description                               |
+| --------- | --------------------------------------------------- | ---------- | ---- | -------------------- | ---------------------- | ----------------------------------------- |
+| coord     | Atomic coordinates                                  | coord.raw  | Å    | Required             | Nframes * Natoms * 3   |                                           |
+| box       | Boxes                                               | box.raw    | Å    | Required if periodic | Nframes * 3 * 3        | in the order `XX XY XZ YX YY YZ ZX ZY ZZ` |
+| fparam    | Extra frame parameters                              | fparam.raw | Any  | Optional             | Nframes * Any          |                                           |
+| aparam    | Extra atomic parameters                             | aparam.raw | Any  | Optional             | Nframes * aparam * Any |                                           |
+| numb_copy | Each frame is copied by the `numb_copy` (int) times | prob.raw   | 1    | Optional             | Nframes                | Integer; Default is 1 for all frames      |
 
 The labeled frame properties are listed as follows, all of which will be used for training if and only if the loss function contains such property:
 
-| ID                    | Property                                                                         | Raw file                  | Unit   | Shape                                 | Description                               |
-| --------------------- | -------------------------------------------------------------------------------- | ------------------------- | ------ | ------------------------------------- | ----------------------------------------- |
-| energy                | Frame energies                                                                   | energy.raw                | eV     | Nframes                               |
-| force                 | Atomic forces                                                                    | force.raw                 | eV/Å   | Nframes \* Natoms \* 3                |
-| virial                | Frame virial                                                                     | virial.raw                | eV     | Nframes \* 9                          | in the order `XX XY XZ YX YY YZ ZX ZY ZZ` |
-| hessian               | Frame energy Hessian matrices                                                    | hessian.raw               | eV/Å^2 | Nframes \* Natoms \* 3 \* Natoms \* 3 | full Hessian matrices                     |
-| atom_ener             | Atomic energies                                                                  | atom_ener.raw             | eV     | Nframes \* Natoms                     |
-| atom_pref             | Weights of atomic forces                                                         | atom_pref.raw             | 1      | Nframes \* Natoms                     |
-| dipole                | Frame dipole                                                                     | dipole.raw                | Any    | Nframes \* 3                          |
-| atomic_dipole         | Atomic dipole                                                                    | atomic_dipole.raw         | Any    | Nframes \* Natoms \* 3                |
-| polarizability        | Frame polarizability                                                             | polarizability.raw        | Any    | Nframes \* 9                          | in the order `XX XY XZ YX YY YZ ZX ZY ZZ` |
-| atomic_polarizability | Atomic polarizability                                                            | atomic_polarizability.raw | Any    | Nframes \* Natoms \* 9                | in the order `XX XY XZ YX YY YZ ZX ZY ZZ` |
-| drdq                  | Partial derivative of atomic coordinates with respect to generalized coordinates | drdq.raw                  | 1      | Nframes \* Natoms \* 3 \* Ngen_coords |
+| ID                    | Property                                                                         | Raw file                  | Unit   | Shape                              | Description                               |
+| --------------------- | -------------------------------------------------------------------------------- | ------------------------- | ------ | ---------------------------------- | ----------------------------------------- |
+| energy                | Frame energies                                                                   | energy.raw                | eV     | Nframes                            |                                           |
+| force                 | Atomic forces                                                                    | force.raw                 | eV/Å   | Nframes * Natoms * 3               |                                           |
+| virial                | Frame virial                                                                     | virial.raw                | eV     | Nframes * 9                        | in the order `XX XY XZ YX YY YZ ZX ZY ZZ` |
+| hessian               | Frame energy Hessian matrices                                                    | hessian.raw               | eV/Å^2 | Nframes * Natoms * 3 * Natoms * 3  | full Hessian matrices                     |
+| atom_ener             | Atomic energies                                                                  | atom_ener.raw             | eV     | Nframes * Natoms                   |                                           |
+| atom_pref             | Weights of atomic forces                                                         | atom_pref.raw             | 1      | Nframes * Natoms                   |                                           |
+| dipole                | Frame dipole                                                                     | dipole.raw                | Any    | Nframes * 3                        |                                           |
+| atomic_dipole         | Atomic dipole                                                                    | atomic_dipole.raw         | Any    | Nframes * Natoms * 3               |                                           |
+| polarizability        | Frame polarizability                                                             | polarizability.raw        | Any    | Nframes * 9                        | in the order `XX XY XZ YX YY YZ ZX ZY ZZ` |
+| atomic_polarizability | Atomic polarizability                                                            | atomic_polarizability.raw | Any    | Nframes * Natoms * 9               | in the order `XX XY XZ YX YY YZ ZX ZY ZZ` |
+| drdq                  | Partial derivative of atomic coordinates with respect to generalized coordinates | drdq.raw                  | 1      | Nframes * Natoms * 3 * Ngen_coords |                                           |
 
 In general, we always use the following convention of units:
 
@@ -73,11 +73,11 @@ set.*/real_atom_types.npy
 
 This system contains `Nframes` frames with the same atom number `Natoms`, the total number of element types contained in all frames is `Ntypes`. Most files are the same as those in [standard formats](../data/system.md), here we only list the distinct ones:
 
-| ID       | Property                         | File                | Required/Optional | Shape             | Description                                                                                                              |
-| -------- | -------------------------------- | ------------------- | ----------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| /        | Atom type indexes (place holder) | type.raw            | Required          | Natoms            | All zeros to fake the type input                                                                                         |
-| type_map | Atom type names                  | type_map.raw        | Required          | Ntypes            | Atom names that map to atom type contained in all the frames, which is unnecessart to be contained in the periodic table |
-| type     | Atom type indexes of each frame  | real_atom_types.npy | Required          | Nframes \* Natoms | Integers that describe atom types in each frame, corresponding to indexes in type_map. `-1` means virtual atoms.         |
+| ID       | Property                         | File                | Required/Optional | Shape            | Description                                                                                                              |
+| -------- | -------------------------------- | ------------------- | ----------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| /        | Atom type indexes (place holder) | type.raw            | Required          | Natoms           | All zeros to fake the type input                                                                                         |
+| type_map | Atom type names                  | type_map.raw        | Required          | Ntypes           | Atom names that map to atom type contained in all the frames, which is unnecessart to be contained in the periodic table |
+| type     | Atom type indexes of each frame  | real_atom_types.npy | Required          | Nframes * Natoms | Integers that describe atom types in each frame, corresponding to indexes in type_map. `-1` means virtual atoms.         |
 
 With these edited files, one can put together frames with the same `Natoms`, instead of the same formula (like `H2O`).
 

@@ -4,15 +4,14 @@ from abc import (
     ABC,
     abstractmethod,
 )
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
-    Callable,
-    NoReturn,
-    Optional,
-    Union,
 )
 
-import numpy as np
+import array_api_compat
 
 from deepmd.dpmodel.array_api import (
     Array,
@@ -86,9 +85,9 @@ class DescriptorBlock(ABC, make_plugin_registry("DescriptorBlock")):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
-    ) -> NoReturn:
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
+    ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
 
@@ -113,7 +112,7 @@ class DescriptorBlock(ABC, make_plugin_registry("DescriptorBlock")):
 
     def share_params(
         self, base_class: Any, shared_level: Any, resume: bool = False
-    ) -> NoReturn:
+    ) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -125,11 +124,11 @@ class DescriptorBlock(ABC, make_plugin_registry("DescriptorBlock")):
     def call(
         self,
         nlist: Array,
-        extended_coord: Array,
-        extended_atype: Array,
-        extended_atype_embd: Optional[Array] = None,
-        mapping: Optional[Array] = None,
-        type_embedding: Optional[Array] = None,
+        coord_ext: Array,
+        atype_ext: Array,
+        atype_embd_ext: Array | None = None,
+        mapping: Array | None = None,
+        type_embedding: Array | None = None,
     ) -> Any:
         """Calculate DescriptorBlock."""
         pass
@@ -173,7 +172,18 @@ def extend_descrpt_stat(
         extend_dstd = des_with_stat["dstd"]
     else:
         extend_shape = [len(type_map), *list(des["davg"].shape[1:])]
-        extend_davg = np.zeros(extend_shape, dtype=des["davg"].dtype)
-        extend_dstd = np.ones(extend_shape, dtype=des["dstd"].dtype)
-    des["davg"] = np.concatenate([des["davg"], extend_davg], axis=0)
-    des["dstd"] = np.concatenate([des["dstd"], extend_dstd], axis=0)
+        # Use array_api_compat to infer device and dtype from context
+        xp = array_api_compat.array_namespace(des["davg"])
+        extend_davg = xp.zeros(
+            extend_shape,
+            dtype=des["davg"].dtype,
+            device=array_api_compat.device(des["davg"]),
+        )
+        extend_dstd = xp.ones(
+            extend_shape,
+            dtype=des["dstd"].dtype,
+            device=array_api_compat.device(des["dstd"]),
+        )
+    xp = array_api_compat.array_namespace(des["davg"])
+    des["davg"] = xp.concat([des["davg"], extend_davg], axis=0)
+    des["dstd"] = xp.concat([des["dstd"], extend_dstd], axis=0)

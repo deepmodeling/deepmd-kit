@@ -62,6 +62,11 @@ from ..fitting.test_fitting import (
 
 
 def skip_model_tests(test_obj):
+    if test_obj.input_dict_ds.get("add_chg_spin_ebd", False):
+        # The universal model driver does not feed `charge_spin` directly;
+        # rely on `default_chg_spin` fallback inside dp_atomic_model.
+        if test_obj.input_dict_ds.get("default_chg_spin") is None:
+            return True, "add_chg_spin_ebd requires default_chg_spin in universal tests"
     if not test_obj.input_dict_ds.get(
         "smooth_type_embedding", True
     ) or not test_obj.input_dict_ds.get("smooth", True):
@@ -164,7 +169,7 @@ class TestEnergyModelDP(unittest.TestCase, EnerModelTest, DPTestCase):
             ft,
             type_map=cls.expected_type_map,
         )
-        cls.output_def = cls.module.model_output_def().get_data()
+        cls.output_def = cls.module.translated_output_def()
         cls.expected_has_message_passing = ds.has_message_passing()
         cls.expected_sel_type = ft.get_sel_type()
         cls.expected_dim_fparam = ft.get_dim_fparam()
@@ -271,7 +276,7 @@ class TestSpinEnergyModelDP(unittest.TestCase, SpinEnerModelTest, DPTestCase):
             pair_exclude_types=pair_exclude_types,
         )
         cls.module = SpinModel(backbone_model=backbone_model, spin=spin)
-        cls.output_def = cls.module.model_output_def().get_data()
+        cls.output_def = cls.module.translated_output_def()
         cls.expected_has_message_passing = ds.has_message_passing()
         cls.expected_sel_type = ft.get_sel_type()
         cls.expected_dim_fparam = ft.get_dim_fparam()

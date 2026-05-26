@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-)
 
 import torch
 
@@ -29,7 +26,7 @@ def atomic_virial_corr(
     ce = coord * atom_energy
     sumce0, sumce1, sumce2 = torch.split(torch.sum(ce, dim=1), [1, 1, 1], dim=-1)
     faked_grad = torch.ones_like(sumce0)
-    lst = torch.jit.annotate(list[Optional[torch.Tensor]], [faked_grad])
+    lst = torch.jit.annotate(list[torch.Tensor | None], [faked_grad])
     extended_virial_corr0 = torch.autograd.grad(
         [sumce0],
         [extended_coord],
@@ -72,9 +69,9 @@ def task_deriv_one(
     do_virial: bool = True,
     do_atomic_virial: bool = False,
     create_graph: bool = True,
-) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
+) -> tuple[torch.Tensor, torch.Tensor | None]:
     faked_grad = torch.ones_like(energy)
-    lst = torch.jit.annotate(list[Optional[torch.Tensor]], [faked_grad])
+    lst = torch.jit.annotate(list[torch.Tensor | None], [faked_grad])
     extended_force = torch.autograd.grad(
         [energy],
         [extended_coord],
@@ -116,7 +113,7 @@ def take_deriv(
     do_virial: bool = False,
     do_atomic_virial: bool = False,
     create_graph: bool = True,
-) -> tuple[torch.Tensor, Optional[torch.Tensor]]:
+) -> tuple[torch.Tensor, torch.Tensor | None]:
     size = 1
     for ii in vdef.shape:
         size *= ii
@@ -158,7 +155,8 @@ def fit_output_to_model_output(
     coord_ext: torch.Tensor,
     do_atomic_virial: bool = False,
     create_graph: bool = True,
-    mask: Optional[torch.Tensor] = None,
+    mask: torch.Tensor | None = None,
+    extended_coord_corr: torch.Tensor | None = None,
 ) -> dict[str, torch.Tensor]:
     """Transform the output of the fitting network to
     the model output.
@@ -195,6 +193,12 @@ def fit_output_to_model_output(
                 model_ret[kk_derv_r] = dr
                 if vdef.c_differentiable:
                     assert dc is not None
+                    if extended_coord_corr is not None:
+                        dc_corr = (
+                            dr.squeeze(-2).unsqueeze(-1)
+                            @ extended_coord_corr.unsqueeze(-2).to(dr.dtype)
+                        ).view(list(dc.shape[:-2]) + [1, 9])  # noqa: RUF005
+                        dc = dc + dc_corr
                     model_ret[kk_derv_c] = dc
                     model_ret[kk_derv_c + "_redu"] = torch.sum(
                         model_ret[kk_derv_c].to(redu_prec), dim=1

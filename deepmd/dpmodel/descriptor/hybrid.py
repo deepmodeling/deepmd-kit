@@ -3,8 +3,6 @@ import math
 from typing import (
     Any,
     NoReturn,
-    Optional,
-    Union,
 )
 
 import array_api_compat
@@ -35,7 +33,20 @@ from deepmd.utils.version import (
 
 @BaseDescriptor.register("hybrid")
 class DescrptHybrid(BaseDescriptor, NativeOP):
-    """Concate a list of descriptors to form a new descriptor.
+    r"""Concatenate a list of descriptors to form a new descriptor.
+
+    The hybrid descriptor combines multiple descriptors by concatenation:
+
+    .. math::
+        \mathcal{D}^i = [\mathcal{D}^i_1, \mathcal{D}^i_2, ..., \mathcal{D}^i_n],
+
+    where :math:`\mathcal{D}^i_k` is the descriptor computed by the :math:`k`-th
+    sub-descriptor for atom :math:`i`.
+
+    The output dimension is the sum of all sub-descriptor dimensions:
+
+    .. math::
+        \dim(\mathcal{D}^i) = \sum_{k=1}^{n} \dim(\mathcal{D}^i_k).
 
     Parameters
     ----------
@@ -46,9 +57,9 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
 
     def __init__(
         self,
-        list: list[Union[BaseDescriptor, dict[str, Any]]],
-        type_map: Optional[list[str]] = None,
-        ntypes: Optional[int] = None,  # to be compat with input
+        list: list[BaseDescriptor | dict[str, Any]],
+        type_map: list[str] | None = None,
+        ntypes: int | None = None,  # to be compat with input
     ) -> None:
         super().__init__()
         # warning: list is conflict with built-in list
@@ -103,7 +114,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
             start_idx = np.cumsum(np.pad(hybrid_sel, (1, 0), "constant"))[:-1]
             end_idx = start_idx + np.array(sub_sel)
             cut_idx = np.concatenate(
-                [range(ss, ee) for ss, ee in zip(start_idx, end_idx)]
+                [range(ss, ee) for ss, ee in zip(start_idx, end_idx, strict=True)]
             )
             nlist_cut_idx.append(cut_idx)
         self.nlist_cut_idx = nlist_cut_idx
@@ -111,6 +122,40 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
         return np.max([descrpt.get_rcut() for descrpt in self.descrpt_list]).item()
+
+    def get_dim_chg_spin(self) -> int:
+        """Returns the dimension of charge_spin input (0 if not supported)."""
+        return max(
+            (descrpt.get_dim_chg_spin() for descrpt in self.descrpt_list), default=0
+        )
+
+    def has_default_chg_spin(self) -> bool:
+        """Returns whether the descriptor has a default charge_spin value."""
+        default_chg_spin = None
+        found_chg_spin = False
+        for descrpt in self.descrpt_list:
+            if descrpt.get_dim_chg_spin() == 0:
+                continue
+            found_chg_spin = True
+            if not descrpt.has_default_chg_spin():
+                return False
+            child_default_chg_spin = descrpt.get_default_chg_spin()
+            if child_default_chg_spin is None:
+                return False
+            if default_chg_spin is None:
+                default_chg_spin = child_default_chg_spin
+            elif child_default_chg_spin != default_chg_spin:
+                return False
+        return found_chg_spin
+
+    def get_default_chg_spin(self) -> list[float] | None:
+        """Returns the default charge_spin value, or None."""
+        if not self.has_default_chg_spin():
+            return None
+        for descrpt in self.descrpt_list:
+            if descrpt.get_dim_chg_spin() > 0:
+                return descrpt.get_default_chg_spin()
+        return None
 
     def get_rcut_smth(self) -> float:
         """Returns the radius where the neighbor information starts to smoothly decay to 0."""
@@ -157,6 +202,16 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         """Returns whether the descriptor has message passing."""
         return any(descrpt.has_message_passing() for descrpt in self.descrpt_list)
 
+    def has_message_passing_across_ranks(self) -> bool:
+        """Returns whether per-layer node embeddings need MPI ghost exchange.
+
+        ``True`` if any child descriptor needs cross-rank message passing
+        (e.g. a hybrid wrapping a DPA3 with ``use_loc_mapping=False``).
+        """
+        return any(
+            descrpt.has_message_passing_across_ranks() for descrpt in self.descrpt_list
+        )
+
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
         return True
@@ -196,7 +251,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
             )
 
     def compute_input_stats(
-        self, merged: list[dict], path: Optional[DPPath] = None
+        self, merged: list[dict], path: DPPath | None = None
     ) -> None:
         """Update mean and stddev for descriptor elements."""
         for descrpt in self.descrpt_list:
@@ -204,8 +259,8 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
 
     def set_stat_mean_and_stddev(
         self,
-        mean: list[Union[np.ndarray, list[Array]]],
-        stddev: list[Union[np.ndarray, list[Array]]],
+        mean: list[np.ndarray | list[Array]],
+        stddev: list[np.ndarray | list[Array]],
     ) -> None:
         """Update mean and stddev for descriptor."""
         for ii, descrpt in enumerate(self.descrpt_list):
@@ -214,8 +269,8 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
     def get_stat_mean_and_stddev(
         self,
     ) -> tuple[
-        list[Union[Array, list[Array]]],
-        list[Union[Array, list[Array]]],
+        list[Array | list[Array]],
+        list[Array | list[Array]],
     ]:
         """Get mean and stddev for descriptor."""
         mean_list = []
@@ -234,7 +289,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         table_stride_2: float = 0.1,
         check_frequency: int = -1,
     ) -> None:
-        """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+        """Receive the statistics (distance, max_nbor_size and env_mat_range) of the training data.
 
         Parameters
         ----------
@@ -263,13 +318,16 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         coord_ext: Array,
         atype_ext: Array,
         nlist: Array,
-        mapping: Optional[Array] = None,
+        mapping: Array | None = None,
+        fparam: Array | None = None,
+        comm_dict: dict | None = None,
+        charge_spin: Array | None = None,
     ) -> tuple[
         Array,
-        Optional[Array],
-        Optional[Array],
-        Optional[Array],
-        Optional[Array],
+        Array | None,
+        Array | None,
+        Array | None,
+        Array | None,
     ]:
         """Compute the descriptor.
 
@@ -312,7 +370,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
             )
         else:
             nl_distinguish_types = None
-        for descrpt, nci in zip(self.descrpt_list, self.nlist_cut_idx):
+        for descrpt, nci in zip(self.descrpt_list, self.nlist_cut_idx, strict=True):
             # cut the nlist to the correct length
             if self.mixed_types() == descrpt.mixed_types():
                 nl = xp.take(nlist, nci, axis=2)
@@ -320,7 +378,15 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
                 # mixed_types is True, but descrpt.mixed_types is False
                 assert nl_distinguish_types is not None
                 nl = nl_distinguish_types[:, :, nci]
-            odescriptor, gr, g2, h2, sw = descrpt(coord_ext, atype_ext, nl, mapping)
+            odescriptor, gr, _g2, _h2, _sw = descrpt(
+                coord_ext,
+                atype_ext,
+                nl,
+                mapping,
+                fparam=fparam,
+                comm_dict=comm_dict,
+                charge_spin=charge_spin,
+            )
             out_descriptor.append(odescriptor)
             if gr is not None:
                 out_gr.append(gr)
@@ -333,7 +399,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
     ) -> tuple[Array, Array]:
         """Update the selection and perform neighbor statistics.

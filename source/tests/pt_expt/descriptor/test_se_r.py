@@ -1,0 +1,258 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
+
+import numpy as np
+import pytest
+import torch
+from torch.fx.experimental.proxy_tensor import (
+    make_fx,
+)
+
+from deepmd.dpmodel.descriptor import DescrptSeR as DPDescrptSeR
+from deepmd.pt_expt.descriptor.se_r import (
+    DescrptSeR,
+)
+from deepmd.pt_expt.utils import (
+    env,
+)
+from deepmd.pt_expt.utils.env import (
+    PRECISION_DICT,
+)
+
+from ...common.test_mixins import (
+    TestCaseSingleFrameWithNlist,
+    get_tols,
+)
+from ...seed import (
+    GLOBAL_SEED,
+)
+from ..export_helpers import (
+    export_save_load_and_compare,
+    make_descriptor_dynamic_shapes,
+)
+
+
+class TestDescrptSeR(TestCaseSingleFrameWithNlist):
+    def setup_method(self) -> None:
+        TestCaseSingleFrameWithNlist.setUp(self)
+        self.device = env.DEVICE
+
+    @pytest.mark.parametrize("idt", [False, True])  # resnet_dt
+    @pytest.mark.parametrize("prec", ["float64", "float32"])  # precision
+    @pytest.mark.parametrize("em", [[], [[0, 1]], [[1, 1]]])  # exclude_types
+    def test_consistency(self, idt, prec, em) -> None:
+        rng = np.random.default_rng(GLOBAL_SEED)
+        _, _, nnei = self.nlist.shape
+        davg = rng.normal(size=(self.nt, nnei, 1))
+        dstd = rng.normal(size=(self.nt, nnei, 1))
+        dstd = 0.1 + np.abs(dstd)
+
+        dtype = PRECISION_DICT[prec]
+        rtol, atol = get_tols(prec)
+        err_msg = f"idt={idt} prec={prec}"
+        dd0 = DescrptSeR(
+            self.rcut,
+            self.rcut_smth,
+            self.sel,
+            precision=prec,
+            resnet_dt=idt,
+            exclude_types=em,
+            seed=GLOBAL_SEED,
+        ).to(self.device)
+        dd0.davg = torch.tensor(davg, dtype=dtype, device=self.device)
+        dd0.dstd = torch.tensor(dstd, dtype=dtype, device=self.device)
+
+        rd0, _, _, _, _ = dd0(
+            torch.tensor(self.coord_ext, dtype=dtype, device=self.device),
+            torch.tensor(self.atype_ext, dtype=int, device=self.device),
+            torch.tensor(self.nlist, dtype=int, device=self.device),
+        )
+        dd1 = DescrptSeR.deserialize(dd0.serialize())
+        rd1, _, _, _, sw1 = dd1(
+            torch.tensor(self.coord_ext, dtype=dtype, device=self.device),
+            torch.tensor(self.atype_ext, dtype=int, device=self.device),
+            torch.tensor(self.nlist, dtype=int, device=self.device),
+        )
+        np.testing.assert_allclose(
+            rd0.detach().cpu().numpy(),
+            rd1.detach().cpu().numpy(),
+            rtol=rtol,
+            atol=atol,
+            err_msg=err_msg,
+        )
+        np.testing.assert_allclose(
+            rd0.detach().cpu().numpy()[0][self.perm[: self.nloc]],
+            rd0.detach().cpu().numpy()[1],
+            rtol=rtol,
+            atol=atol,
+            err_msg=err_msg,
+        )
+        dd2 = DPDescrptSeR.deserialize(dd0.serialize())
+        rd2, _, _, _, sw2 = dd2.call(
+            self.coord_ext,
+            self.atype_ext,
+            self.nlist,
+        )
+        for aa, bb in zip([rd1, sw1], [rd2, sw2], strict=True):
+            np.testing.assert_allclose(
+                aa.detach().cpu().numpy(),
+                bb,
+                rtol=rtol,
+                atol=atol,
+                err_msg=err_msg,
+            )
+
+    @pytest.mark.parametrize("idt", [False, True])  # resnet_dt
+    @pytest.mark.parametrize("prec", ["float64", "float32"])  # precision
+    def test_exportable(self, idt, prec) -> None:
+        rng = np.random.default_rng(GLOBAL_SEED)
+        _, _, nnei = self.nlist.shape
+        davg = rng.normal(size=(self.nt, nnei, 1))
+        dstd = rng.normal(size=(self.nt, nnei, 1))
+        dstd = 0.1 + np.abs(dstd)
+
+        dtype = PRECISION_DICT[prec]
+        dd0 = DescrptSeR(
+            self.rcut,
+            self.rcut_smth,
+            self.sel,
+            precision=prec,
+            resnet_dt=idt,
+            seed=GLOBAL_SEED,
+        ).to(self.device)
+        dd0.davg = torch.tensor(davg, dtype=dtype, device=self.device)
+        dd0.dstd = torch.tensor(dstd, dtype=dtype, device=self.device)
+        dd0 = dd0.eval()
+        inputs = (
+            torch.tensor(self.coord_ext, dtype=dtype, device=self.device),
+            torch.tensor(self.atype_ext, dtype=int, device=self.device),
+            torch.tensor(self.nlist, dtype=int, device=self.device),
+        )
+        torch.export.export(dd0, inputs)
+
+    @pytest.mark.parametrize("prec", ["float64", "float32"])  # precision
+    def test_compressed_forward(self, prec) -> None:
+        from deepmd.pt.cxx_op import (
+            ENABLE_CUSTOMIZED_OP,
+        )
+
+        if not ENABLE_CUSTOMIZED_OP:
+            pytest.skip("Custom OP library not built")
+        dtype = PRECISION_DICT[prec]
+        atol = 1e-5 if prec == "float32" else 1e-10
+        dd0 = DescrptSeR(
+            self.rcut,
+            self.rcut_smth,
+            self.sel,
+            precision=prec,
+            seed=GLOBAL_SEED,
+        ).to(self.device)
+        coord_ext = torch.tensor(self.coord_ext, dtype=dtype, device=self.device)
+        atype_ext = torch.tensor(self.atype_ext, dtype=int, device=self.device)
+        nlist = torch.tensor(self.nlist, dtype=int, device=self.device)
+        rd0, _, _, _, _ = dd0(coord_ext, atype_ext, nlist)
+        dd0.enable_compression(0.5)
+        rd1, _, _, _, _ = dd0(coord_ext, atype_ext, nlist)
+        assert rd0.shape == rd1.shape
+        np.testing.assert_allclose(
+            rd0.detach().cpu().numpy(),
+            rd1.detach().cpu().numpy(),
+            atol=atol,
+        )
+
+    @pytest.mark.parametrize("prec", ["float64"])  # precision
+    def test_make_fx(self, prec) -> None:
+        rng = np.random.default_rng(GLOBAL_SEED)
+        _, _, nnei = self.nlist.shape
+        davg = rng.normal(size=(self.nt, nnei, 1))
+        dstd = rng.normal(size=(self.nt, nnei, 1))
+        dstd = 0.1 + np.abs(dstd)
+
+        dtype = PRECISION_DICT[prec]
+        rtol, atol = get_tols(prec)
+        dd0 = DescrptSeR(
+            self.rcut,
+            self.rcut_smth,
+            self.sel,
+            precision=prec,
+            seed=GLOBAL_SEED,
+        ).to(self.device)
+        dd0.davg = torch.tensor(davg, dtype=dtype, device=self.device)
+        dd0.dstd = torch.tensor(dstd, dtype=dtype, device=self.device)
+        dd0 = dd0.eval()
+        coord_ext = torch.tensor(self.coord_ext, dtype=dtype, device=self.device)
+        atype_ext = torch.tensor(self.atype_ext, dtype=int, device=self.device)
+        nlist = torch.tensor(self.nlist, dtype=int, device=self.device)
+
+        def fn(coord_ext, atype_ext, nlist):
+            coord_ext = coord_ext.detach().requires_grad_(True)
+            rd = dd0(coord_ext, atype_ext, nlist)[0]
+            grad = torch.autograd.grad(rd.sum(), coord_ext, create_graph=False)[0]
+            return rd, grad
+
+        rd_eager, grad_eager = fn(coord_ext, atype_ext, nlist)
+        traced = make_fx(fn)(coord_ext, atype_ext, nlist)
+        rd_traced, grad_traced = traced(coord_ext, atype_ext, nlist)
+        np.testing.assert_allclose(
+            rd_eager.detach().cpu().numpy(),
+            rd_traced.detach().cpu().numpy(),
+            rtol=rtol,
+            atol=atol,
+        )
+        np.testing.assert_allclose(
+            grad_eager.detach().cpu().numpy(),
+            grad_traced.detach().cpu().numpy(),
+            rtol=rtol,
+            atol=atol,
+        )
+
+        # --- symbolic trace + export + .pte round-trip ---
+        dynamic_shapes = make_descriptor_dynamic_shapes(has_mapping=False)
+        inputs = (coord_ext, atype_ext, nlist)
+        export_save_load_and_compare(
+            fn,
+            inputs,
+            (rd_eager, grad_eager),
+            dynamic_shapes,
+            rtol=rtol,
+            atol=atol,
+        )
+
+    def test_share_params(self) -> None:
+        """share_params level 0: all modules and buffers are shared."""
+        rng = np.random.default_rng(GLOBAL_SEED)
+        _, _, nnei = self.nlist.shape
+        davg0 = rng.normal(size=(self.nt, nnei, 1))
+        dstd0 = 0.1 + np.abs(rng.normal(size=(self.nt, nnei, 1)))
+
+        dd0 = DescrptSeR(self.rcut, self.rcut_smth, self.sel, seed=GLOBAL_SEED).to(
+            self.device
+        )
+        dd1 = DescrptSeR(self.rcut, self.rcut_smth, self.sel, seed=GLOBAL_SEED + 1).to(
+            self.device
+        )
+        dd0.davg = torch.tensor(davg0, dtype=torch.float64, device=self.device)
+        dd0.dstd = torch.tensor(dstd0, dtype=torch.float64, device=self.device)
+
+        dd1.share_params(dd0, shared_level=0)
+
+        # all modules and buffers are shared (same object)
+        for key in dd0._modules:
+            assert dd1._modules[key] is dd0._modules[key]
+        for key in dd0._buffers:
+            assert dd1._buffers[key] is dd0._buffers[key]
+
+        # forward pass produces identical output
+        inputs = (
+            torch.tensor(self.coord_ext, dtype=torch.float64, device=self.device),
+            torch.tensor(self.atype_ext, dtype=int, device=self.device),
+            torch.tensor(self.nlist, dtype=int, device=self.device),
+        )
+        rd0 = dd0(*inputs)[0]
+        rd1 = dd1(*inputs)[0]
+        np.testing.assert_allclose(
+            rd0.detach().cpu().numpy(), rd1.detach().cpu().numpy()
+        )
+
+        # invalid level raises
+        with pytest.raises(NotImplementedError):
+            dd1.share_params(dd0, shared_level=1)

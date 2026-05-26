@@ -1,8 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-    Union,
-)
 
 import numpy as np
 
@@ -10,11 +6,11 @@ _RANDOM_GENERATOR = np.random.RandomState()
 
 
 def choice(
-    a: Union[np.ndarray, int],
-    size: Optional[Union[int, tuple[int, ...]]] = None,
+    a: np.ndarray | int,
+    size: int | tuple[int, ...] | None = None,
     replace: bool = True,
-    p: Optional[np.ndarray] = None,
-) -> Union[np.ndarray, int]:
+    p: np.ndarray | None = None,
+) -> np.ndarray | int:
     """Generates a random sample from a given 1-D array.
 
     Parameters
@@ -41,8 +37,8 @@ def choice(
 
 
 def random(
-    size: Optional[Union[int, tuple[int, ...]]] = None,
-) -> Union[float, np.ndarray]:
+    size: int | tuple[int, ...] | None = None,
+) -> float | np.ndarray:
     """Return random floats in the half-open interval [0.0, 1.0).
 
     Parameters
@@ -58,7 +54,7 @@ def random(
     return _RANDOM_GENERATOR.random_sample(size)
 
 
-def seed(val: Optional[Union[int, list[int]]] = None) -> None:
+def seed(val: int | list[int] | None = None) -> None:
     """Seed the generator.
 
     Parameters

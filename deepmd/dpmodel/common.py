@@ -3,13 +3,15 @@ from abc import (
     ABC,
     abstractmethod,
 )
+from collections.abc import (
+    Callable,
+)
 from functools import (
     wraps,
 )
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     Optional,
     overload,
 )
@@ -101,7 +103,7 @@ class NativeOP(ABC):
         return self.call(*args, **kwargs)
 
 
-def to_numpy_array(x: Optional["Array"]) -> Optional[np.ndarray]:
+def to_numpy_array(x: Optional["Array"]) -> np.ndarray | None:
     """Convert an array to a NumPy array.
 
     Parameters
@@ -119,10 +121,12 @@ def to_numpy_array(x: Optional["Array"]) -> Optional[np.ndarray]:
     try:
         # asarray is not within Array API standard, so may fail
         return np.asarray(x)
-    except (ValueError, AttributeError):
+    except (ValueError, AttributeError, TypeError, RuntimeError):
+        # RuntimeError: handles torch tensors with requires_grad=True
         xp = array_api_compat.array_namespace(x)
         # to fix BufferError: Cannot export readonly array since signalling readonly is unsupported by DLPack.
-        x = xp.asarray(x, copy=True)
+        # Move to CPU device to ensure numpy compatibility
+        x = xp.asarray(x, device="cpu", copy=True)
         return np.from_dlpack(x)
 
 

@@ -2,11 +2,11 @@
 import json
 import logging
 import warnings
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
-    Callable,
-    Optional,
-    Union,
 )
 
 from dargs import (
@@ -41,9 +41,10 @@ PRECISION_DICT = dict.fromkeys(VALID_PRECISION)
 
 doc_only_tf_supported = "(Supported Backend: TensorFlow) "
 doc_only_pt_supported = "(Supported Backend: PyTorch) "
+doc_only_pt_expt_supported = "(Supported Backend: PyTorch Exportable) "
 doc_only_pd_supported = "(Supported Backend: Paddle) "
 # descriptors
-doc_loc_frame = "Defines a local frame at each atom, and the compute the descriptor as local coordinates under this frame."
+doc_loc_frame = "Defines a local frame at each atom, and computes the descriptor as local coordinates under this frame."
 doc_se_e2_a = "Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor."
 doc_se_e2_r = "Used by the smooth edition of Deep Potential. Only the distance between atoms is used to construct the descriptor."
 doc_se_e3 = "Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Three-body embedding will be used by this descriptor."
@@ -51,12 +52,12 @@ doc_se_a_tpe = "Used by the smooth edition of Deep Potential. The full relative 
 doc_se_atten = "Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Attention mechanism will be used by this descriptor."
 doc_se_atten_v2 = "Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Attention mechanism with new modifications will be used by this descriptor."
 doc_se_a_mask = "Used by the smooth edition of Deep Potential. It can accept a variable number of atoms in a frame (Non-PBC system). *aparam* are required as an indicator matrix for the real/virtual sign of input atoms."
-doc_hybrid = "Concatenate of a list of descriptors as a new descriptor."
+doc_hybrid = "Concatenates a list of descriptors into a new descriptor."
 # fitting
 doc_ener = "Fit an energy model (potential energy surface)."
-doc_dos = "Fit a density of states model. The total density of states / site-projected density of states labels should be provided by `dos.npy` or `atom_dos.npy` in each data system. The file has number of frames lines and number of energy grid columns (times number of atoms in `atom_dos.npy`). See `loss` parameter."
-doc_dipole = "Fit an atomic dipole model. Global dipole labels or atomic dipole labels for all the selected atoms (see `sel_type`) should be provided by `dipole.npy` in each data system. The file either has number of frames lines and 3 times of number of selected atoms columns, or has number of frames lines and 3 columns. See `loss` parameter."
-doc_polar = "Fit an atomic polarizability model. Global polarizazbility labels or atomic polarizability labels for all the selected atoms (see `sel_type`) should be provided by `polarizability.npy` in each data system. The file with has number of frames lines and 9 times of number of selected atoms columns, or has number of frames lines and 9 columns. See `loss` parameter."
+doc_dos = "Fit a density of states model. The total density of states / site-projected density of states labels should be provided by `dos.npy` or `atom_dos.npy` in each data system. The file has a number of frames (rows) and a number of energy-grid columns (multiplied by the number of atoms in `atom_dos.npy`). See `loss` parameter."
+doc_dipole = "Fit an atomic dipole model. Global dipole labels or atomic dipole labels for all selected atoms (see `sel_type`) should be provided by `dipole.npy` in each data system. The file should have shape `(n_frames, 3*n_selected)` for atomic dipole labels, or shape `(n_frames, 3)` for global dipole labels. See `loss` parameter."
+doc_polar = "Fit an atomic polarizability model. Global polarizability labels or atomic polarizability labels for all selected atoms (see `sel_type`) should be provided by `polarizability.npy` in each data system. The file should have shape `(n_frames, 9*n_selected)` for atomic polarizability labels, or shape `(n_frames, 9)` for global polarizability labels. See `loss` parameter."
 # modifier
 doc_dipole_charge = "Use WFCC to model the electronic structure of the system. Correct the long-range interaction."
 
@@ -89,7 +90,7 @@ def deprecate_argument_extra_check(key: str) -> Callable[[dict], bool]:
         The name of the deprecated argument.
     """
 
-    def deprecate_something(data: Optional[dict]) -> bool:
+    def deprecate_something(data: dict | None) -> bool:
         if data is not None and key in data:
             warnings.warn(f"{key} has been removed and takes no effect.", FutureWarning)
             data.pop(key)
@@ -99,14 +100,16 @@ def deprecate_argument_extra_check(key: str) -> Callable[[dict], bool]:
 
 
 def type_embedding_args() -> list[Argument]:
-    doc_neuron = "Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built."
+    doc_neuron = "Number of neurons in each hidden layer of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built."
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_seed = "Random seed for parameter initialization"
     doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
-    doc_trainable = "If the parameters in the embedding net are trainable"
-    doc_use_econf_tebd = "Whether to use electronic configuration type embedding."
-    doc_use_tebd_bias = "Whether to use bias in the type embedding layer."
+    doc_trainable = "Whether the parameters in the embedding net are trainable"
+    doc_use_econf_tebd = (
+        "Whether to use an electronic-configuration-based type embedding."
+    )
+    doc_use_tebd_bias = "Whether to use a bias term in the type-embedding layer."
 
     return [
         Argument("neuron", list[int], optional=True, default=[8], doc=doc_neuron),
@@ -183,10 +186,10 @@ class ArgsPlugin:
         self.__plugin = Plugin()
 
     def register(
-        self, name: str, alias: Optional[list[str]] = None, doc: str = ""
+        self, name: str, alias: list[str] | None = None, doc: str = ""
     ) -> Callable[
-        [Union[Callable[[], Argument], Callable[[], list[Argument]]]],
-        Union[Callable[[], Argument], Callable[[], list[Argument]]],
+        [Callable[[], Argument] | Callable[[], list[Argument]]],
+        Callable[[], Argument] | Callable[[], list[Argument]],
     ]:
         """Register a descriptor argument plugin.
 
@@ -251,9 +254,9 @@ descrpt_args_plugin = ArgsPlugin()
 @descrpt_args_plugin.register("loc_frame", doc=doc_only_tf_supported + doc_loc_frame)
 def descrpt_local_frame_args() -> list[Argument]:
     doc_sel_a = "A list of integers. The length of the list should be the same as the number of atom types in the system. `sel_a[i]` gives the selected number of type-i neighbors. The full relative coordinates of the neighbors are used by the descriptor."
-    doc_sel_r = "A list of integers. The length of the list should be the same as the number of atom types in the system. `sel_r[i]` gives the selected number of type-i neighbors. Only relative distance of the neighbors are used by the descriptor. sel_a[i] + sel_r[i] is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius."
+    doc_sel_r = "A list of integers. The length of the list should be the same as the number of atom types in the system. `sel_r[i]` gives the selected number of type-i neighbors. Only the relative distances of the neighbors are used by the descriptor. sel_a[i] + sel_r[i] is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius."
     doc_rcut = "The cut-off radius. The default value is 6.0"
-    doc_axis_rule = "A list of integers. The length should be 6 times of the number of types. \n\n\
+    doc_axis_rule = "A list of integers. The length should be 6 times the number of types. \n\n\
 - axis_rule[i*6+0]: class of the atom defining the first axis of type-i atom. 0 for neighbors with full coordinates and 1 for neighbors only with relative distance.\n\n\
 - axis_rule[i*6+1]: type of the atom defining the first axis of type-i atom.\n\n\
 - axis_rule[i*6+2]: index of the axis atom defining the first axis. Note that the neighbors with the same class and type are sorted according to their relative distance.\n\n\
@@ -271,18 +274,18 @@ def descrpt_local_frame_args() -> list[Argument]:
 
 @descrpt_args_plugin.register("se_e2_a", alias=["se_a"], doc=doc_se_e2_a)
 def descrpt_se_a_args() -> list[Argument]:
-    doc_sel = 'This parameter set the number of selected neighbors for each type of atom. It can be:\n\n\
+    doc_sel = 'This parameter sets the number of selected neighbors for each type of atom. It can be:\n\n\
     - `list[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
-    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wrapped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
+    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors within the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally, the number is rounded up to a multiple of 4. The option "auto" is equivalent to "auto:1.1".'
     doc_rcut = "The cut-off radius."
     doc_rcut_smth = "Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`"
-    doc_neuron = "Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built."
-    doc_axis_neuron = "Size of the submatrix of G (embedding matrix)."
+    doc_neuron = "Number of neurons in each hidden layer of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built."
+    doc_axis_neuron = "Size of the submatrix of `G` (the embedding matrix) used to build the descriptor."
     doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_type_one_side = r"If true, the embedding network parameters vary by types of neighbor atoms only, so there will be $N_\text{types}$ sets of embedding network parameters. Otherwise, the embedding network parameters vary by types of centric atoms and types of neighbor atoms, so there will be $N_\text{types}^2$ sets of embedding network parameters."
     doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
-    doc_trainable = "If the parameters in the embedding net is trainable"
+    doc_trainable = "Whether the parameters in the embedding net are trainable"
     doc_seed = "Random seed for parameter initialization"
     doc_exclude_types = "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
     doc_env_protection = "Protection parameter to prevent division by zero errors during environment matrix calculations. For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection."
@@ -341,16 +344,16 @@ def descrpt_se_a_args() -> list[Argument]:
     "se_e3", alias=["se_at", "se_a_3be", "se_t"], doc=doc_se_e3
 )
 def descrpt_se_t_args() -> list[Argument]:
-    doc_sel = 'This parameter set the number of selected neighbors for each type of atom. It can be:\n\n\
+    doc_sel = 'This parameter sets the number of selected neighbors for each type of atom. It can be:\n\n\
     - `list[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
-    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wrapped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
+    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors within the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally, the number is rounded up to a multiple of 4. The option "auto" is equivalent to "auto:1.1".'
     doc_rcut = "The cut-off radius."
     doc_rcut_smth = "Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`"
-    doc_neuron = "Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built."
+    doc_neuron = "Number of neurons in each hidden layer of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built."
     doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
-    doc_trainable = "If the parameters in the embedding net are trainable"
+    doc_trainable = "Whether the parameters in the embedding net are trainable"
     doc_seed = "Random seed for parameter initialization"
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used"
     doc_exclude_types = "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
@@ -412,17 +415,17 @@ def descrpt_se_a_tpe_args() -> list[Argument]:
 
 @descrpt_args_plugin.register("se_e2_r", alias=["se_r"], doc=doc_se_e2_r)
 def descrpt_se_r_args() -> list[Argument]:
-    doc_sel = 'This parameter set the number of selected neighbors for each type of atom. It can be:\n\n\
+    doc_sel = 'This parameter sets the number of selected neighbors for each type of atom. It can be:\n\n\
     - `list[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
-    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wrapped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
+    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors within the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally, the number is rounded up to a multiple of 4. The option "auto" is equivalent to "auto:1.1".'
     doc_rcut = "The cut-off radius."
     doc_rcut_smth = "Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`"
-    doc_neuron = "Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built."
+    doc_neuron = "Number of neurons in each hidden layer of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built."
     doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_type_one_side = r"If true, the embedding network parameters vary by types of neighbor atoms only, so there will be $N_\text{types}$ sets of embedding network parameters. Otherwise, the embedding network parameters vary by types of centric atoms and types of neighbor atoms, so there will be $N_\text{types}^2$ sets of embedding network parameters."
     doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
-    doc_trainable = "If the parameters in the embedding net are trainable"
+    doc_trainable = "Whether the parameters in the embedding net are trainable"
     doc_seed = "Random seed for parameter initialization"
     doc_exclude_types = "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used"
@@ -488,26 +491,26 @@ def descrpt_hybrid_args() -> list[Argument]:
 
 
 def descrpt_se_atten_common_args() -> list[Argument]:
-    doc_sel = 'This parameter set the number of selected neighbors. Note that this parameter is a little different from that in other descriptors. Instead of separating each type of atoms, only the summation matters. And this number is highly related with the efficiency, thus one should not make it too large. Usually 200 or less is enough, far away from the GPU limitation 4096. It can be:\n\n\
+    doc_sel = 'This parameter sets the number of selected neighbors. Note that this parameter is a little different from that in other descriptors. Instead of separating each type of atoms, only the summation matters. And this number is highly related with the efficiency, thus one should not make it too large. Usually 200 or less is enough, far away from the GPU limitation 4096. It can be:\n\n\
     - `int`. The maximum number of neighbor atoms to be considered. We recommend it to be less than 200. \n\n\
     - `list[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. Only the summation of `sel[i]` matters, and it is recommended to be less than 200.\
-    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wrapped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
+    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors within the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally, the number is rounded up to a multiple of 4. The option "auto" is equivalent to "auto:1.1".'
     doc_rcut = "The cut-off radius."
     doc_rcut_smth = "Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`"
-    doc_neuron = "Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built."
-    doc_axis_neuron = "Size of the submatrix of G (embedding matrix)."
+    doc_neuron = "Number of neurons in each hidden layer of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built."
+    doc_axis_neuron = "Size of the submatrix of `G` (the embedding matrix) used to build the descriptor."
     doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_type_one_side = r"If 'False', type embeddings of both neighbor and central atoms are considered. If 'True', only type embeddings of neighbor atoms are considered. Default is 'False'."
     doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
-    doc_trainable = "If the parameters in the embedding net is trainable"
+    doc_trainable = "Whether the parameters in the embedding net are trainable"
     doc_seed = "Random seed for parameter initialization"
     doc_exclude_types = "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
     doc_env_protection = "Protection parameter to prevent division by zero errors during environment matrix calculations. For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection."
     doc_attn = "The length of hidden vectors in attention layers"
-    doc_attn_layer = "The number of attention layers. Note that model compression of `se_atten` is only enabled when attn_layer==0 and tebd_input_mode=='strip'"
+    doc_attn_layer = "The number of attention layers. Note that model compression of `se_atten` works for any attn_layer value (for pytorch backend only, for other backends, attn_layer=0 is still needed to compress) when tebd_input_mode=='strip'. When attn_layer!=0, only type embedding is compressed, geometric parts are not compressed."
     doc_attn_dotr = "Whether to do dot product with the normalized relative coordinates"
-    doc_attn_mask = "Whether to do mask on the diagonal in the attention matrix"
+    doc_attn_mask = "Whether to mask the diagonal in the attention matrix"
 
     return [
         Argument(
@@ -569,29 +572,29 @@ def descrpt_se_atten_args() -> list[Argument]:
         "Whether to use trainable shift and scale weights in layer normalization."
     )
     doc_ln_eps = "The epsilon value for layer normalization. The default value for TensorFlow is set to 1e-3 to keep consistent with keras while set to 1e-5 in PyTorch and DP implementation."
-    doc_tebd_dim = "The dimension of atom type embedding."
+    doc_tebd_dim = "Dimension of the atom-type embedding (`tebd`)."
     doc_use_econf_tebd = r"Whether to use electronic configuration type embedding. For TensorFlow backend, please set `use_econf_tebd` in `type_embedding` block instead."
-    doc_use_tebd_bias = "Whether to use bias in the type embedding layer."
+    doc_use_tebd_bias = "Whether to use a bias term in the type-embedding layer."
     doc_temperature = "The scaling factor of normalization in calculations of attention weights, which is used to scale the matmul(Q, K)."
     doc_scaling_factor = (
         "The scaling factor of normalization in calculations of attention weights, which is used to scale the matmul(Q, K). "
         "If `temperature` is None, the scaling of attention weights is (N_hidden_dim * scaling_factor)**0.5. "
-        "Else, the scaling of attention weights is setting to `temperature`."
+        "Else, the scaling of attention weights is set to `temperature`."
     )
     doc_normalize = (
         "Whether to normalize the hidden vectors during attention calculation."
     )
     doc_concat_output_tebd = (
-        "Whether to concat type embedding at the output of the descriptor."
+        "Whether to concatenate the type embedding to the descriptor output."
     )
     doc_tebd_input_mode = (
-        "The input mode of the type embedding. Supported modes are ['concat', 'strip']."
-        "- 'concat': Concatenate the type embedding with the smoothed radial information as the union input for the embedding network. "
+        "How the atom-type embedding (`tebd`) is fed into the descriptor. Supported modes are ['concat', 'strip'].\n\n"
+        "- 'concat': Concatenate the type embedding with the smoothed radial information as the combined input to the embedding network. "
         "When `type_one_side` is False, the input is `input_ij = concat([r_ij, tebd_j, tebd_i])`. When `type_one_side` is True, the input is `input_ij = concat([r_ij, tebd_j])`. "
-        "The output is `out_ij = embedding(input_ij)` for the pair-wise representation of atom i with neighbor j."
-        "- 'strip': Use a separated embedding network for the type embedding and combine the output with the radial embedding network output. "
+        "The output is `out_ij = embedding(input_ij)` for the pair-wise representation of atom i with neighbor j.\n"
+        "- 'strip': Use a separate embedding network for the type embedding and combine its output with the radial embedding-network output. "
         f"When `type_one_side` is False, the input is `input_t = concat([tebd_j, tebd_i])`. {doc_only_pt_supported} When `type_one_side` is True, the input is `input_t = tebd_j`. "
-        "The output is `out_ij = embeding_t(input_t) * embeding_s(r_ij) + embeding_s(r_ij)` for the pair-wise representation of atom i with neighbor j."
+        "The output is `out_ij = embedding_t(input_t) * embedding_s(r_ij) + embedding_s(r_ij)` for the pair-wise representation of atom i with neighbor j."
     )
     doc_stripped_type_embedding = (
         "(Deprecated, kept only for compatibility.) Whether to strip the type embedding into a separate embedding network. "
@@ -685,35 +688,35 @@ def descrpt_se_atten_args() -> list[Argument]:
 
 @descrpt_args_plugin.register("se_e3_tebd", doc=doc_only_pt_supported)
 def descrpt_se_e3_tebd_args() -> list[Argument]:
-    doc_sel = 'This parameter set the number of selected neighbors. Note that this parameter is a little different from that in other descriptors. Instead of separating each type of atoms, only the summation matters. And this number is highly related with the efficiency, thus one should not make it too large. Usually 200 or less is enough, far away from the GPU limitation 4096. It can be:\n\n\
+    doc_sel = 'This parameter sets the number of selected neighbors. Note that this parameter is a little different from that in other descriptors. Instead of separating each type of atoms, only the summation matters. And this number is highly related with the efficiency, thus one should not make it too large. Usually 200 or less is enough, far away from the GPU limitation 4096. It can be:\n\n\
     - `int`. The maximum number of neighbor atoms to be considered. We recommend it to be less than 200. \n\n\
     - `list[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. Only the summation of `sel[i]` matters, and it is recommended to be less than 200.\
-    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wrapped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
+    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors within the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally, the number is rounded up to a multiple of 4. The option "auto" is equivalent to "auto:1.1".'
     doc_rcut = "The cut-off radius."
     doc_rcut_smth = "Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`"
-    doc_neuron = "Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built."
+    doc_neuron = "Number of neurons in each hidden layer of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built."
     doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
-    doc_trainable = "If the parameters in the embedding net is trainable"
+    doc_trainable = "Whether the parameters in the embedding net are trainable"
     doc_seed = "Random seed for parameter initialization"
     doc_exclude_types = "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
     doc_env_protection = "Protection parameter to prevent division by zero errors during environment matrix calculations. For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection."
     doc_smooth = "Whether to use smooth process in calculation when using stripped type embedding. Whether to dot smooth factor (both neighbors j and k) on the network output (out_jk) of type embedding to keep the network smooth, instead of setting `set_davg_zero` to be True."
     doc_set_davg_zero = "Set the normalization average to zero. This option should be set when `atom_ener` in the energy fitting is used"
-    doc_tebd_dim = "The dimension of atom type embedding."
+    doc_tebd_dim = "Dimension of the atom-type embedding (`tebd`)."
     doc_use_econf_tebd = r"Whether to use electronic configuration type embedding."
     doc_concat_output_tebd = (
-        "Whether to concat type embedding at the output of the descriptor."
+        "Whether to concatenate the type embedding to the descriptor output."
     )
     doc_tebd_input_mode = (
-        "The input mode of the type embedding. Supported modes are ['concat', 'strip']."
-        "- 'concat': Concatenate the type embedding with the smoothed angular information as the union input for the embedding network. "
+        "How the atom-type embedding (`tebd`) is fed into the descriptor. Supported modes are ['concat', 'strip'].\n\n"
+        "- 'concat': Concatenate the type embedding with the smoothed angular information as the combined input to the embedding network. "
         "The input is `input_jk = concat([angle_jk, tebd_j, tebd_k])`. "
-        "The output is `out_jk = embedding(input_jk)` for the three-body representation of atom i with neighbors j and k."
-        "- 'strip': Use a separated embedding network for the type embedding and combine the output with the angular embedding network output. "
-        "The input is `input_t = concat([tebd_j, tebd_k])`."
-        "The output is `out_jk = embeding_t(input_t) * embeding_s(angle_jk) + embeding_s(angle_jk)` for the three-body representation of atom i with neighbors j and k."
+        "The output is `out_jk = embedding(input_jk)` for the three-body representation of atom i with neighbors j and k.\n"
+        "- 'strip': Use a separate embedding network for the type embedding and combine its output with the angular embedding-network output. "
+        "The input is `input_t = concat([tebd_j, tebd_k])`. "
+        "The output is `out_jk = embedding_t(input_t) * embedding_s(angle_jk) + embedding_s(angle_jk)` for the three-body representation of atom i with neighbors j and k."
     )
 
     return [
@@ -804,20 +807,20 @@ def descrpt_se_atten_v2_args() -> list[Argument]:
         "Whether to use trainable shift and scale weights in layer normalization."
     )
     doc_ln_eps = "The epsilon value for layer normalization. The default value for TensorFlow is set to 1e-3 to keep consistent with keras while set to 1e-5 in PyTorch and DP implementation."
-    doc_tebd_dim = "The dimension of atom type embedding."
+    doc_tebd_dim = "Dimension of the atom-type embedding (`tebd`)."
     doc_use_econf_tebd = r"Whether to use electronic configuration type embedding. For TensorFlow backend, please set `use_econf_tebd` in `type_embedding` block instead."
-    doc_use_tebd_bias = "Whether to use bias in the type embedding layer."
+    doc_use_tebd_bias = "Whether to use a bias term in the type-embedding layer."
     doc_temperature = "The scaling factor of normalization in calculations of attention weights, which is used to scale the matmul(Q, K)."
     doc_scaling_factor = (
         "The scaling factor of normalization in calculations of attention weights, which is used to scale the matmul(Q, K). "
         "If `temperature` is None, the scaling of attention weights is (N_hidden_dim * scaling_factor)**0.5. "
-        "Else, the scaling of attention weights is setting to `temperature`."
+        "Else, the scaling of attention weights is set to `temperature`."
     )
     doc_normalize = (
         "Whether to normalize the hidden vectors during attention calculation."
     )
     doc_concat_output_tebd = (
-        "Whether to concat type embedding at the output of the descriptor."
+        "Whether to concatenate the type embedding to the descriptor output."
     )
 
     return [
@@ -884,12 +887,12 @@ def descrpt_se_atten_v2_args() -> list[Argument]:
 @descrpt_args_plugin.register("dpa2", doc=doc_only_pt_supported)
 def descrpt_dpa2_args() -> list[Argument]:
     # repinit args
-    doc_repinit = "The arguments used to initialize the repinit block."
+    doc_repinit = "Arguments for the `repinit` block, which builds the initial atom-wise representations before `repformer`."
     # repformer args
-    doc_repformer = "The arguments used to initialize the repformer block."
+    doc_repformer = "Arguments for the `repformer` block, which refines the representations produced by `repinit`."
     # descriptor args
     doc_concat_output_tebd = (
-        "Whether to concat type embedding at the output of the descriptor."
+        "Whether to concatenate the type embedding to the descriptor output."
     )
     doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
     doc_smooth = (
@@ -897,11 +900,13 @@ def descrpt_dpa2_args() -> list[Argument]:
     )
     doc_exclude_types = "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
     doc_env_protection = "Protection parameter to prevent division by zero errors during environment matrix calculations. For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection."
-    doc_trainable = "If the parameters in the embedding net is trainable."
+    doc_trainable = "Whether the parameters in the embedding net are trainable."
     doc_seed = "Random seed for parameter initialization."
-    doc_add_tebd_to_repinit_out = "Add type embedding to the output representation from repinit before inputting it into repformer."
-    doc_use_econf_tebd = "Whether to use electronic configuration type embedding."
-    doc_use_tebd_bias = "Whether to use bias in the type embedding layer."
+    doc_add_tebd_to_repinit_out = "Whether to add the type embedding to the output of `repinit` before passing it to `repformer`."
+    doc_use_econf_tebd = (
+        "Whether to use an electronic-configuration-based type embedding."
+    )
+    doc_use_tebd_bias = "Whether to use a bias term in the type-embedding layer."
     return [
         # repinit args
         Argument("repinit", dict, dpa2_repinit_args(), doc=doc_repinit),
@@ -965,22 +970,22 @@ def dpa2_repinit_args() -> list[Argument]:
     doc_rcut_smth = "Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`."
     doc_nsel = 'Maximally possible number of selected neighbors. It can be:\n\n\
     - `int`. The maximum number of neighbor atoms to be considered. We recommend it to be less than 200. \n\n\
-    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wrapped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
+    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors within the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally, the number is rounded up to a multiple of 4. The option "auto" is equivalent to "auto:1.1".'
     doc_neuron = (
-        "Number of neurons in each hidden layers of the embedding net."
+        "Number of neurons in each hidden layer of the embedding net."
         "When two layers are of the same size or one layer is twice as large as the previous layer, "
         "a skip connection is built."
     )
-    doc_axis_neuron = "Size of the submatrix of G (embedding matrix)."
-    doc_tebd_dim = "The dimension of atom type embedding."
+    doc_axis_neuron = "Size of the submatrix of `G` (the embedding matrix) used to build the descriptor."
+    doc_tebd_dim = "Dimension of the atom-type embedding (`tebd`)."
     doc_tebd_input_mode = (
-        "The input mode of the type embedding. Supported modes are ['concat', 'strip']."
-        "- 'concat': Concatenate the type embedding with the smoothed radial information as the union input for the embedding network. "
+        "How the atom-type embedding (`tebd`) is fed into the descriptor. Supported modes are ['concat', 'strip'].\n\n"
+        "- 'concat': Concatenate the type embedding with the smoothed radial information as the combined input to the embedding network. "
         "When `type_one_side` is False, the input is `input_ij = concat([r_ij, tebd_j, tebd_i])`. When `type_one_side` is True, the input is `input_ij = concat([r_ij, tebd_j])`. "
-        "The output is `out_ij = embedding(input_ij)` for the pair-wise representation of atom i with neighbor j."
-        "- 'strip': Use a separated embedding network for the type embedding and combine the output with the radial embedding network output. "
+        "The output is `out_ij = embedding(input_ij)` for the pair-wise representation of atom i with neighbor j.\n"
+        "- 'strip': Use a separate embedding network for the type embedding and combine its output with the radial embedding-network output. "
         f"When `type_one_side` is False, the input is `input_t = concat([tebd_j, tebd_i])`. {doc_only_pt_supported} When `type_one_side` is True, the input is `input_t = tebd_j`. "
-        "The output is `out_ij = embeding_t(input_t) * embeding_s(r_ij) + embeding_s(r_ij)` for the pair-wise representation of atom i with neighbor j."
+        "The output is `out_ij = embedding_t(input_t) * embedding_s(r_ij) + embedding_s(r_ij)` for the pair-wise representation of atom i with neighbor j."
     )
     doc_set_davg_zero = (
         "Set the normalization average to zero. "
@@ -989,17 +994,15 @@ def dpa2_repinit_args() -> list[Argument]:
     doc_activation_function = f"The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}."
     doc_type_one_side = r"If true, the embedding network parameters vary by types of neighbor atoms only, so there will be $N_\text{types}$ sets of embedding network parameters. Otherwise, the embedding network parameters vary by types of centric atoms and types of neighbor atoms, so there will be $N_\text{types}^2$ sets of embedding network parameters."
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection.'
-    doc_use_three_body = (
-        "Whether to concatenate three-body representation in the output descriptor."
-    )
+    doc_use_three_body = "Whether to concatenate an additional three-body representation to the `repinit` output descriptor."
     doc_three_body_neuron = (
-        "Number of neurons in each hidden layers of the three-body embedding net."
+        "Number of neurons in each hidden layer of the three-body embedding net."
         "When two layers are of the same size or one layer is twice as large as the previous layer, "
         "a skip connection is built."
     )
     doc_three_body_sel = 'Maximally possible number of selected neighbors in the three-body representation. It can be:\n\n\
     - `int`. The maximum number of neighbor atoms to be considered. We recommend it to be less than 200. \n\n\
-    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wrapped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
+    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors within the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally, the number is rounded up to a multiple of 4. The option "auto" is equivalent to "auto:1.1".'
     doc_three_body_rcut = "The cut-off radius in the three-body representation."
     doc_three_body_rcut_smth = "Where to start smoothing in the three-body representation. For example the 1/r term is smoothed from `three_body_rcut` to `three_body_rcut_smth`."
 
@@ -1109,36 +1112,40 @@ def dpa2_repformer_args() -> list[Argument]:
     doc_rcut_smth = "Where to start smoothing. For example the 1/r term is smoothed from `rcut` to `rcut_smth`."
     doc_nsel = 'Maximally possible number of selected neighbors. It can be:\n\n\
     - `int`. The maximum number of neighbor atoms to be considered. We recommend it to be less than 200. \n\n\
-    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wrapped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
-    doc_nlayers = "The number of repformer layers."
-    doc_g1_dim = "The dimension of invariant single-atom representation."
-    doc_g2_dim = "The dimension of invariant pair-atom representation."
-    doc_axis_neuron = "The number of dimension of submatrix in the symmetrization ops."
-    doc_direct_dist = "Whether or not use direct distance as input for the embedding net to get g2 instead of smoothed 1/r."
-    doc_update_g1_has_conv = "Update the g1 rep with convolution term."
-    doc_update_g1_has_drrd = "Update the g1 rep with the drrd term."
-    doc_update_g1_has_grrg = "Update the g1 rep with the grrg term."
-    doc_update_g1_has_attn = "Update the g1 rep with the localized self-attention."
-    doc_update_g2_has_g1g1 = "Update the g2 rep with the g1xg1 term."
-    doc_update_g2_has_attn = "Update the g2 rep with the gated self-attention."
-    doc_use_sqrt_nnei = "Whether to use the square root of the number of neighbors for symmetrization_op normalization instead of using the number of neighbors directly."
-    doc_g1_out_conv = "Whether to put the convolutional update of g1 separately outside the concatenated MLP update."
-    doc_g1_out_mlp = "Whether to put the self MLP update of g1 separately outside the concatenated MLP update."
-    doc_update_h2 = "Update the h2 rep."
+    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors within the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally, the number is rounded up to a multiple of 4. The option "auto" is equivalent to "auto:1.1".'
+    doc_nlayers = "Number of `repformer` layers."
+    doc_g1_dim = "Dimension of the `g1` representation, i.e., the rotationally invariant single-atom representation."
+    doc_g2_dim = "Dimension of the `g2` representation, i.e., the rotationally invariant pair-atom representation."
+    doc_axis_neuron = "Size of the submatrix used in the symmetrization operations."
+    doc_direct_dist = "Whether to use the direct distance as input to the embedding net when building `g2`, instead of the smoothed `1/r`."
+    doc_update_g1_has_conv = (
+        "Whether to include the convolution term when updating `g1`."
+    )
+    doc_update_g1_has_drrd = "Whether to include the `drrd` term when updating `g1`."
+    doc_update_g1_has_grrg = "Whether to include the `grrg` term when updating `g1`."
+    doc_update_g1_has_attn = (
+        "Whether to include localized self-attention when updating `g1`."
+    )
+    doc_update_g2_has_g1g1 = "Whether to include the `g1 x g1` term when updating `g2`."
+    doc_update_g2_has_attn = (
+        "Whether to include gated self-attention when updating `g2`."
+    )
+    doc_use_sqrt_nnei = "Whether to normalize `symmetrization_op` by the square root of the number of neighbors instead of by the number of neighbors itself."
+    doc_g1_out_conv = "Whether to keep the convolutional update of `g1` as a separate branch outside the concatenated MLP update."
+    doc_g1_out_mlp = "Whether to keep the self-MLP update of `g1` as a separate branch outside the concatenated MLP update."
+    doc_update_h2 = "Whether to update the `h2` representation, i.e., the rotationally equivariant pair representation."
     doc_attn1_hidden = (
-        "The hidden dimension of localized self-attention to update the g1 rep."
+        "Hidden dimension of the localized self-attention used to update `g1`."
     )
     doc_attn1_nhead = (
-        "The number of heads in localized self-attention to update the g1 rep."
+        "Number of heads in the localized self-attention used to update `g1`."
     )
     doc_attn2_hidden = (
-        "The hidden dimension of gated self-attention to update the g2 rep."
+        "Hidden dimension of the gated self-attention used to update `g2`."
     )
-    doc_attn2_nhead = (
-        "The number of heads in gated self-attention to update the g2 rep."
-    )
+    doc_attn2_nhead = "Number of heads in the gated self-attention used to update `g2`."
     doc_attn2_has_gate = (
-        "Whether to use gate in the gated self-attention to update the g2 rep."
+        "Whether to use gating in the gated self-attention used to update `g2`."
     )
     doc_activation_function = f"The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}."
     doc_update_style = (
@@ -1361,19 +1368,33 @@ def dpa2_repformer_args() -> list[Argument]:
 @descrpt_args_plugin.register("dpa3", doc=doc_only_pt_supported)
 def descrpt_dpa3_args() -> list[Argument]:
     # repflow args
-    doc_repflow = "The arguments used to initialize the repflow block."
+    doc_repflow = "Arguments for the `repflow` block, which updates node, edge, and angle representations in DPA3."
     # descriptor args
     doc_concat_output_tebd = (
-        "Whether to concat type embedding at the output of the descriptor."
+        "Whether to concatenate the type embedding to the descriptor output."
+    )
+    doc_add_chg_spin_ebd = (
+        "Whether to add charge and spin embedding to the descriptor. "
+        "When enabled, the dedicated `charge_spin` input (shape [nframes, 2], "
+        "[charge, spin]) is embedded and added to the type embedding. "
+        "When `charge_spin` is missing in the input data, `default_chg_spin` "
+        "is used as a fallback if provided."
+    )
+    doc_default_chg_spin = (
+        "Default charge and spin values used as fallback when `charge_spin` "
+        "is not provided in the input data. Must be a list of length 2 "
+        "[charge, spin]. Only used when `add_chg_spin_ebd` is True."
     )
     doc_activation_function = f"The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())}."
     doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
     doc_exclude_types = "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
     doc_env_protection = "Protection parameter to prevent division by zero errors during environment matrix calculations. For example, when using paddings, there may be zero distances of neighbors, which may make division by zero error during environment matrix calculations without protection."
-    doc_trainable = "If the parameters in the embedding net is trainable."
+    doc_trainable = "Whether the parameters in the embedding net are trainable."
     doc_seed = "Random seed for parameter initialization."
-    doc_use_econf_tebd = "Whether to use electronic configuration type embedding."
-    doc_use_tebd_bias = "Whether to use bias in the type embedding layer."
+    doc_use_econf_tebd = (
+        "Whether to use an electronic-configuration-based type embedding."
+    )
+    doc_use_tebd_bias = "Whether to use a bias term in the type-embedding layer."
     doc_use_loc_mapping = (
         "Whether to use local atom index mapping in training or non-parallel inference. "
         "When True, local indexing and mapping are applied to neighbor lists and embeddings during descriptor computation."
@@ -1388,6 +1409,20 @@ def descrpt_dpa3_args() -> list[Argument]:
             optional=True,
             default=False,
             doc=doc_concat_output_tebd,
+        ),
+        Argument(
+            "add_chg_spin_ebd",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_add_chg_spin_ebd,
+        ),
+        Argument(
+            "default_chg_spin",
+            list[float],
+            optional=True,
+            default=None,
+            doc=doc_default_chg_spin,
         ),
         Argument(
             "activation_function",
@@ -1440,20 +1475,20 @@ def descrpt_dpa3_args() -> list[Argument]:
 # repflow for dpa3
 def dpa3_repflow_args() -> list[Argument]:
     # repflow args
-    doc_n_dim = "The dimension of node representation."
-    doc_e_dim = "The dimension of edge representation."
-    doc_a_dim = "The dimension of angle representation."
-    doc_nlayers = "The number of repflow layers."
+    doc_n_dim = "Dimension of the node (atom-wise) representation."
+    doc_e_dim = "Dimension of the edge (pair-wise) representation."
+    doc_a_dim = "Dimension of the angle (three-body/angular) representation."
+    doc_nlayers = "Number of `repflow` layers."
     doc_e_rcut = "The edge cut-off radius."
     doc_e_rcut_smth = "Where to start smoothing for edge. For example the 1/r term is smoothed from `rcut` to `rcut_smth`."
     doc_e_sel = 'Maximally possible number of selected edge neighbors. It can be:\n\n\
     - `int`. The maximum number of neighbor atoms to be considered. We recommend it to be less than 200. \n\n\
-    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wrapped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
+    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors within the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally, the number is rounded up to a multiple of 4. The option "auto" is equivalent to "auto:1.1".'
     doc_a_rcut = "The angle cut-off radius."
     doc_a_rcut_smth = "Where to start smoothing for angle. For example the 1/r term is smoothed from `rcut` to `rcut_smth`."
     doc_a_sel = 'Maximally possible number of selected angle neighbors. It can be:\n\n\
     - `int`. The maximum number of neighbor atoms to be considered. We recommend it to be less than 200. \n\n\
-    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wrapped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
+    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors within the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally, the number is rounded up to a multiple of 4. The option "auto" is equivalent to "auto:1.1".'
     doc_a_compress_rate = (
         "The compression rate for angular messages. The default value is 0, indicating no compression. "
         " If a non-zero integer c is provided, the node and edge dimensions will be compressed "
@@ -1469,10 +1504,10 @@ def dpa3_repflow_args() -> list[Argument]:
         "The default value is False."
     )
     doc_n_multi_edge_message = (
-        "The head number of multiple edge messages to update node feature. "
-        "Default is 1, indicating one head edge message."
+        "Number of heads in the multi-edge-message update of node features. "
+        "Default is 1, i.e., a single edge-message head."
     )
-    doc_axis_neuron = "The number of dimension of submatrix in the symmetrization ops."
+    doc_axis_neuron = "Size of the submatrix used in the symmetrization operations."
     doc_fix_stat_std = (
         "If non-zero (default is 0.3), use this constant as the normalization standard deviation "
         "instead of computing it from data statistics."
@@ -1482,9 +1517,7 @@ def dpa3_repflow_args() -> list[Argument]:
         "If set to True, it forces fix_stat_std=0.3 for backward compatibility. "
         "Transition to fix_stat_std parameter immediately."
     )
-    doc_update_angle = (
-        "Where to update the angle rep. If not, only node and edge rep will be used."
-    )
+    doc_update_angle = "Whether to update the angle representation. If False, only the node and edge representations are updated."
     doc_update_style = (
         "Style to update a representation. "
         "Supported options are: "
@@ -1504,7 +1537,7 @@ def dpa3_repflow_args() -> list[Argument]:
     )
     doc_optim_update = (
         "Whether to enable the optimized update method. "
-        "Uses a more efficient process when enabled. Defaults to True"
+        "Uses a more efficient implementation when enabled. Default is True."
     )
     doc_smooth_edge_update = (
         "Whether to make edge update smooth. "
@@ -1536,6 +1569,13 @@ def dpa3_repflow_args() -> list[Argument]:
         "In the dynamic selection case, neighbor-scale normalization will use `e_sel / sel_reduce_factor` "
         "or `a_sel / sel_reduce_factor` instead of the raw `e_sel` or `a_sel` values, "
         "accommodating larger selection numbers."
+    )
+    doc_sequential_update = (
+        "Whether to use sequential update mode within each repflow layer. "
+        "When True, updates are applied sequentially: edge self → angle self (using updated edge) "
+        "→ edge angle (using updated angle) → node (using final edge), "
+        "instead of the default parallel mode where all updates use original embeddings. "
+        "Currently only supports update_style='res_residual' and requires update_angle=True."
     )
 
     return [
@@ -1667,6 +1707,13 @@ def dpa3_repflow_args() -> list[Argument]:
             default=10.0,
             doc=doc_sel_reduce_factor,
         ),
+        Argument(
+            "sequential_update",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_sequential_update,
+        ),
     ]
 
 
@@ -1681,16 +1728,16 @@ def descrpt_se_a_ebd_v2_args() -> list[Argument]:
 def descrpt_se_a_mask_args() -> list[Argument]:
     doc_sel = 'This parameter sets the number of selected neighbors for each type of atom. It can be:\n\n\
     - `list[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius. It is noted that the total sel value must be less than 4096 in a GPU environment.\n\n\
-    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wrapped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
+    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors within the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally, the number is rounded up to a multiple of 4. The option "auto" is equivalent to "auto:1.1".'
 
-    doc_neuron = "Number of neurons in each hidden layers of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built."
-    doc_axis_neuron = "Size of the submatrix of G (embedding matrix)."
+    doc_neuron = "Number of neurons in each hidden layer of the embedding net. When two layers are of the same size or one layer is twice as large as the previous layer, a skip connection is built."
+    doc_axis_neuron = "Size of the submatrix of `G` (the embedding matrix) used to build the descriptor."
     doc_activation_function = f'The activation function in the embedding net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_type_one_side = r"If true, the embedding network parameters vary by types of neighbor atoms only, so there will be $N_\text{types}$ sets of embedding network parameters. Otherwise, the embedding network parameters vary by types of centric atoms and types of neighbor atoms, so there will be $N_\text{types}^2$ sets of embedding network parameters."
     doc_exclude_types = "The excluded pairs of types which have no interaction with each other. For example, `[[0, 1]]` means no interaction between type 0 and type 1."
     doc_precision = f"The precision of the embedding net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
-    doc_trainable = "If the parameters in the embedding net is trainable"
+    doc_trainable = "Whether the parameters in the embedding net are trainable"
     doc_seed = "Random seed for parameter initialization"
 
     return [
@@ -1750,13 +1797,13 @@ def fitting_ener() -> list[Argument]:
     doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
     doc_default_fparam = "The default frame parameter. If set, when `fparam.npy` files are not included in the data system, this value will be used as the default value for the frame parameter in the fitting net."
     doc_dim_case_embd = "The dimension of the case embedding embedding. When training or fine-tuning a multitask model with case embedding embeddings, this number should be set to the number of model branches."
-    doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built."
+    doc_neuron = "The number of neurons in each hidden layer of the fitting net. When two hidden layers are of the same size, a skip connection is built."
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_precision = f"The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_trainable = f"Whether the parameters in the fitting net are trainable. This option can be\n\n\
 - bool: True if all parameters of the fitting net are trainable, False otherwise.\n\n\
-- list of bool{doc_only_tf_supported}: Specifies if each layer is trainable. Since the fitting net is composed by hidden layers followed by a output layer, the length of this list should be equal to len(`neuron`)+1."
+- list of bool{doc_only_tf_supported}: Specifies if each layer is trainable. Since the fitting net is composed of hidden layers followed by an output layer, the length of this list should be equal to len(`neuron`)+1."
     doc_rcond = "The condition number used to determine the initial energy shift for each type of atoms. See `rcond` in :py:meth:`numpy.linalg.lstsq` for more details."
     doc_seed = "Random seed for parameter initialization of the fitting net"
     doc_atom_ener = "Specify the atomic energy in vacuum for each type"
@@ -1820,7 +1867,7 @@ def fitting_ener() -> list[Argument]:
         Argument("seed", [int, None], optional=True, doc=doc_seed),
         Argument(
             "atom_ener",
-            list[Optional[float]],
+            list[float | None],
             optional=True,
             default=[],
             doc=doc_atom_ener,
@@ -1888,13 +1935,13 @@ def fitting_dos() -> list[Argument]:
     doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
     doc_default_fparam = "The default frame parameter. If set, when `fparam.npy` files are not included in the data system, this value will be used as the default value for the frame parameter in the fitting net."
     doc_dim_case_embd = "The dimension of the case embedding embedding. When training or fine-tuning a multitask model with case embedding embeddings, this number should be set to the number of model branches."
-    doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built."
+    doc_neuron = "The number of neurons in each hidden layer of the fitting net. When two hidden layers are of the same size, a skip connection is built."
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_precision = f"The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_trainable = "Whether the parameters in the fitting net are trainable. This option can be\n\n\
 - bool: True if all parameters of the fitting net are trainable, False otherwise.\n\n\
-- list of bool: Specifies if each layer is trainable. Since the fitting net is composed by hidden layers followed by a output layer, the length of this list should be equal to len(`neuron`)+1."
+- list of bool: Specifies if each layer is trainable. Since the fitting net is composed of hidden layers followed by an output layer, the length of this list should be equal to len(`neuron`)+1."
     doc_rcond = "The condition number used to determine the initial energy shift for each type of atoms. See `rcond` in :py:meth:`numpy.linalg.lstsq` for more details."
     doc_seed = "Random seed for parameter initialization of the fitting net"
     doc_numb_dos = (
@@ -1951,17 +1998,20 @@ def fitting_property() -> list[Argument]:
     doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
     doc_default_fparam = "The default frame parameter. If set, when `fparam.npy` files are not included in the data system, this value will be used as the default value for the frame parameter in the fitting net."
     doc_dim_case_embd = "The dimension of the case embedding embedding. When training or fine-tuning a multitask model with case embedding embeddings, this number should be set to the number of model branches."
-    doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built"
+    doc_neuron = "The number of neurons in each hidden layer of the fitting net. When two hidden layers are of the same size, a skip connection is built"
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_precision = f"The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
     doc_seed = "Random seed for parameter initialization of the fitting net"
     doc_task_dim = "The dimension of outputs of fitting net"
     doc_intensive = "Whether the fitting property is intensive"
+    doc_distinguish_types = (
+        "Whether to distinguish atom types when computing output statistics."
+    )
     doc_property_name = "The names of fitting property, which should be consistent with the property name in the dataset."
     doc_trainable = "Whether the parameters in the fitting net are trainable. This option can be\n\n\
 - bool: True if all parameters of the fitting net are trainable, False otherwise.\n\n\
-- list of bool: Specifies if each layer is trainable. Since the fitting net is composed by hidden layers followed by a output layer, the length of this list should be equal to len(`neuron`)+1."
+- list of bool: Specifies if each layer is trainable. Since the fitting net is composed of hidden layers followed by an output layer, the length of this list should be equal to len(`neuron`)+1."
     return [
         Argument("numb_fparam", int, optional=True, default=0, doc=doc_numb_fparam),
         Argument("numb_aparam", int, optional=True, default=0, doc=doc_numb_aparam),
@@ -2000,6 +2050,13 @@ def fitting_property() -> list[Argument]:
         Argument("task_dim", int, optional=True, default=1, doc=doc_task_dim),
         Argument("intensive", bool, optional=True, default=False, doc=doc_intensive),
         Argument(
+            "distinguish_types",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_distinguish_types,
+        ),
+        Argument(
             "property_name",
             str,
             optional=False,
@@ -2021,7 +2078,7 @@ def fitting_polar() -> list[Argument]:
     doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
     doc_default_fparam = "The default frame parameter. If set, when `fparam.npy` files are not included in the data system, this value will be used as the default value for the frame parameter in the fitting net."
     doc_dim_case_embd = "The dimension of the case embedding embedding. When training or fine-tuning a multitask model with case embedding embeddings, this number should be set to the number of model branches."
-    doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built."
+    doc_neuron = "The number of neurons in each hidden layer of the fitting net. When two hidden layers are of the same size, a skip connection is built."
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_precision = f"The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
@@ -2107,7 +2164,7 @@ def fitting_dipole() -> list[Argument]:
     doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
     doc_default_fparam = "The default frame parameter. If set, when `fparam.npy` files are not included in the data system, this value will be used as the default value for the frame parameter in the fitting net."
     doc_dim_case_embd = "The dimension of the case embedding embedding. When training or fine-tuning a multitask model with case embedding embeddings, this number should be set to the number of model branches."
-    doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built."
+    doc_neuron = "The number of neurons in each hidden layer of the fitting net. When two hidden layers are of the same size, a skip connection is built."
     doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
     doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
     doc_precision = f"The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
@@ -2330,7 +2387,7 @@ def model_args(exclude_hybrid: bool = False) -> list[Argument]:
             ),
             Argument(
                 "preset_out_bias",
-                dict[str, list[Optional[Union[float, list[float]]]]],
+                dict[str, list[float | list[float] | None]],
                 optional=True,
                 default=None,
                 doc=doc_only_pt_supported + doc_preset_out_bias,
@@ -2396,12 +2453,12 @@ def standard_model_args() -> Argument:
     doc_model_branch_alias = (
         "List of aliases for this model branch. "
         "Multiple aliases can be defined, and any alias can reference this branch throughout the model usage. "
-        "Used only in multitask models."
+        "Used only in multi-task models."
     )
     doc_info = (
-        "Dictionary of metadata for this model branch. "
-        "Store arbitrary key-value pairs with branch-specific information. "
-        "Used only in multitask models."
+        "Dictionary of metadata for this model or model branch. "
+        "Store arbitrary key-value pairs with model- or branch-specific information. "
+        "Used in both single- and multi-task models."
     )
 
     ca = Argument(
@@ -2475,10 +2532,10 @@ def frozen_model_args() -> Argument:
 def pairtab_model_args() -> Argument:
     doc_tab_file = "Path to the tabulation file."
     doc_rcut = "The cut-off radius."
-    doc_sel = 'This parameter set the number of selected neighbors. Note that this parameter is a little different from that in other descriptors. Instead of separating each type of atoms, only the summation matters. And this number is highly related with the efficiency, thus one should not make it too large. Usually 200 or less is enough, far away from the GPU limitation 4096. It can be:\n\n\
+    doc_sel = 'This parameter sets the number of selected neighbors. Note that this parameter is a little different from that in other descriptors. Instead of separating each type of atoms, only the summation matters. And this number is highly related with the efficiency, thus one should not make it too large. Usually 200 or less is enough, far away from the GPU limitation 4096. It can be:\n\n\
     - `int`. The maximum number of neighbor atoms to be considered. We recommend it to be less than 200. \n\n\
     - `list[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. Only the summation of `sel[i]` matters, and it is recommended to be less than 200.\
-    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wrapped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
+    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors within the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally, the number is rounded up to a multiple of 4. The option "auto" is equivalent to "auto:1.1".'
     ca = Argument(
         "pairtab",
         dict,
@@ -2523,36 +2580,250 @@ def linear_ener_model_args() -> Argument:
 
 
 #  --- Learning rate configurations: --- #
+lr_args_plugin = ArgsPlugin()
+
+
+def _check_lr_stop_args(data: dict[str, Any]) -> bool:
+    """
+    Check that stop_lr and stop_lr_ratio are mutually exclusive.
+    If neither is provided, set a default stop_lr for backward compatibility.
+
+    Parameters
+    ----------
+    data : dict[str, Any]
+        The learning rate configuration dictionary.
+
+    Returns
+    -------
+    bool
+        True if validation passes.
+
+    Raises
+    ------
+    ValueError
+        If both stop_lr and stop_lr_ratio are provided.
+    """
+    has_stop_lr = "stop_lr" in data and data["stop_lr"] is not None
+    has_stop_lr_ratio = "stop_lr_ratio" in data and data["stop_lr_ratio"] is not None
+
+    if has_stop_lr and has_stop_lr_ratio:
+        raise ValueError(
+            "stop_lr and stop_lr_ratio are mutually exclusive. "
+            f"Got stop_lr={data['stop_lr']}, stop_lr_ratio={data['stop_lr_ratio']}"
+        )
+    # Set default stop_lr for backward compatibility (old default was 5e-8)
+    if not has_stop_lr and not has_stop_lr_ratio:
+        data["stop_lr"] = 5e-8
+    return True
+
+
+def _check_warmup_args(data: dict[str, Any]) -> bool:
+    """
+    Check that warmup_steps and warmup_ratio are mutually exclusive.
+
+    Parameters
+    ----------
+    data : dict[str, Any]
+        The learning rate configuration dictionary.
+
+    Returns
+    -------
+    bool
+        True if validation passes.
+
+    Raises
+    ------
+    ValueError
+        If both warmup_steps (non-zero) and warmup_ratio are provided.
+    """
+    # warmup_steps default is 0, so check for non-zero value
+    has_warmup_steps = "warmup_steps" in data and data["warmup_steps"] != 0
+    has_warmup_ratio = "warmup_ratio" in data and data["warmup_ratio"] is not None
+
+    if has_warmup_steps and has_warmup_ratio:
+        raise ValueError(
+            "warmup_steps and warmup_ratio are mutually exclusive. "
+            f"Got warmup_steps={data['warmup_steps']}, warmup_ratio={data['warmup_ratio']}"
+        )
+    return True
+
+
+def _check_decay_steps_args(data: dict[str, Any]) -> bool:
+    """
+    Check that decay_steps is positive and decay_rate is valid for exponential learning rate.
+
+    Parameters
+    ----------
+    data : dict[str, Any]
+        The learning rate configuration dictionary.
+
+    Returns
+    -------
+    bool
+        True if validation passes.
+
+    Raises
+    ------
+    ValueError
+        If decay_steps is not positive.
+        If decay_rate is not positive.
+    """
+    lr_type = data.get("type", "exp")
+    if lr_type != "exp":
+        return True
+
+    decay_steps = data.get("decay_steps")
+    if decay_steps is not None and decay_steps <= 0:
+        raise ValueError(f"decay_steps ({decay_steps}) must be positive.")
+
+    decay_rate = data.get("decay_rate")
+    if decay_rate is not None and (decay_rate <= 0 or decay_rate > 1):
+        raise ValueError(
+            f"decay_rate ({decay_rate}) must be in (0, 1] for exponential decay."
+        )
+    return True
+
+
+def _check_wsd_args(data: dict[str, Any]) -> bool:
+    """
+    Check WSD-specific learning rate arguments.
+
+    Parameters
+    ----------
+    data : dict[str, Any]
+        The learning rate configuration dictionary.
+
+    Returns
+    -------
+    bool
+        True if validation passes.
+
+    Raises
+    ------
+    ValueError
+        If the WSD-specific arguments are invalid.
+    """
+    lr_type = data.get("type", "exp")
+    if lr_type != "wsd":
+        return True
+
+    start_lr = data.get("start_lr")
+    if start_lr is not None and start_lr <= 0:
+        raise ValueError(f"start_lr ({start_lr}) must be positive for WSD.")
+
+    stop_lr = data.get("stop_lr")
+    if stop_lr is not None and stop_lr <= 0:
+        raise ValueError(f"stop_lr ({stop_lr}) must be positive for WSD.")
+
+    stop_lr_ratio = data.get("stop_lr_ratio")
+    if stop_lr_ratio is not None and stop_lr_ratio <= 0:
+        raise ValueError(f"stop_lr_ratio ({stop_lr_ratio}) must be positive for WSD.")
+
+    decay_phase_ratio = data.get("decay_phase_ratio")
+    if decay_phase_ratio is not None and (
+        decay_phase_ratio <= 0 or decay_phase_ratio > 1
+    ):
+        raise ValueError(f"decay_phase_ratio ({decay_phase_ratio}) must be in (0, 1].")
+
+    decay_type = data.get("decay_type")
+    if decay_type is not None and decay_type not in (
+        "inverse_linear",
+        "cosine",
+        "linear",
+    ):
+        raise ValueError(
+            "decay_type must be one of "
+            f"{('inverse_linear', 'cosine', 'linear')}. "
+            f"Got decay_type={decay_type}."
+        )
+    return True
+
+
+@lr_args_plugin.register("exp")
 def learning_rate_exp() -> list[Argument]:
-    doc_start_lr = "The learning rate at the start of the training."
-    doc_stop_lr = (
-        "The desired learning rate at the end of the training. "
-        f"When decay_rate {doc_only_pt_supported}is explicitly set, "
-        "this value will serve as the minimum learning rate during training. "
-        "In other words, if the learning rate decays below stop_lr, stop_lr will be applied instead."
-    )
+    """
+    Defines an exponential-decayed learning rate schedule with optional warmup.
+
+    The learning rate starts at `start_lr` (after warmup) and decays exponentially
+    to `stop_lr` over the training steps.
+    """
     doc_decay_steps = (
-        "The learning rate is decaying every this number of training steps."
+        "The learning rate is decaying every this number of training steps. "
+        "If decay_steps exceeds the decay phase steps (num_steps - warmup_steps) "
+        "and decay_rate is not provided, it will be automatically adjusted to a "
+        "sensible default value."
     )
     doc_decay_rate = (
         "The decay rate for the learning rate. "
         "If this is provided, it will be used directly as the decay rate for learning rate "
         "instead of calculating it through interpolation between start_lr and stop_lr."
     )
+    doc_smooth = (
+        "If True, use smooth exponential decay (lr decays continuously). "
+        "If False (default), use stepped decay (lr decays every decay_steps)."
+    )
 
-    args = [
-        Argument("start_lr", float, optional=True, default=1e-3, doc=doc_start_lr),
-        Argument("stop_lr", float, optional=True, default=1e-8, doc=doc_stop_lr),
+    # Only exp-specific arguments (common args are outside Variant)
+    return [
         Argument("decay_steps", int, optional=True, default=5000, doc=doc_decay_steps),
         Argument(
             "decay_rate",
             float,
             optional=True,
             default=None,
-            doc=doc_only_pt_supported + doc_decay_rate,
+            doc=doc_decay_rate,
+        ),
+        Argument("smooth", bool, optional=True, default=False, doc=doc_smooth),
+    ]
+
+
+@lr_args_plugin.register("cosine")
+def learning_rate_cosine() -> list[Argument]:
+    """
+    Defines a cosine annealing learning rate schedule with optional warmup.
+
+    The learning rate starts at `start_lr` (after warmup) and gradually
+    decreases to `stop_lr` following a cosine curve over the training steps.
+    """
+    # Cosine annealing has no type-specific arguments
+    # (common args like start_lr, stop_lr, warmup settings are outside Variant)
+    return []
+
+
+@lr_args_plugin.register("wsd")
+def learning_rate_wsd() -> list[Argument]:
+    """
+    Defines a warmup-stable-decay learning rate schedule with configurable
+    decay rules.
+
+    The learning rate stays at `start_lr` during the stable phase and then
+    decays to `stop_lr` with the selected decay rule.
+    """
+    doc_decay_phase_ratio = (
+        "The ratio of the decay phase to total training steps. "
+        "The remaining post-warmup steps are used as the stable phase. "
+        "Default is 0.1."
+    )
+    doc_decay_type = (
+        "The decay rule used in the decay phase. "
+        "Supported values are `inverse_linear` (default), `cosine`, and `linear`."
+    )
+    return [
+        Argument(
+            "decay_phase_ratio",
+            float,
+            optional=True,
+            default=0.1,
+            doc=doc_decay_phase_ratio,
+        ),
+        Argument(
+            "decay_type",
+            str,
+            optional=True,
+            default="inverse_linear",
+            doc=doc_decay_type,
         ),
     ]
-    return args
 
 
 def learning_rate_variant_type_args() -> Variant:
@@ -2560,7 +2831,7 @@ def learning_rate_variant_type_args() -> Variant:
 
     return Variant(
         "type",
-        [Argument("exp", dict, learning_rate_exp())],
+        lr_args_plugin.get_all_argument(),
         optional=True,
         default_tag="exp",
         doc=doc_lr,
@@ -2570,29 +2841,426 @@ def learning_rate_variant_type_args() -> Variant:
 def learning_rate_args(fold_subdoc: bool = False) -> Argument:
     doc_scale_by_worker = "When parallel training or batch size scaled, how to alter learning rate. Valid values are `linear`(default), `sqrt` or `none`."
     doc_lr = "The definition of learning rate"
+    doc_start_lr = "The learning rate at the start of the training (after warmup)."
+    doc_stop_lr = (
+        "The desired learning rate at the end of training. "
+        "Mutually exclusive with stop_lr_ratio."
+    )
+    doc_stop_lr_ratio = (
+        "The ratio of stop_lr to start_lr. stop_lr = start_lr * stop_lr_ratio. "
+        "Mutually exclusive with stop_lr."
+    )
+    doc_warmup_steps = (
+        "The number of steps for learning rate warmup. "
+        "During warmup, the learning rate increases linearly from "
+        "warmup_start_factor * start_lr to start_lr. "
+        "Mutually exclusive with warmup_ratio. Default is 0 (no warmup)."
+    )
+    doc_warmup_ratio = (
+        "The ratio of warmup steps to total training steps. "
+        "The actual number of warmup steps is int(warmup_ratio * num_steps)."
+        "Mutually exclusive with warmup_steps."
+    )
+    doc_warmup_start_factor = (
+        "The factor of start_lr for the initial warmup learning rate. "
+        "The warmup learning rate starts from warmup_start_factor * start_lr. "
+        "Default is 0.0, meaning the learning rate starts from zero."
+    )
+
+    def _check_lr_args(data: dict[str, Any]) -> bool:
+        """Check learning rate argument constraints."""
+        # Check stop_lr and stop_lr_ratio
+        _check_lr_stop_args(data)
+        # Check warmup_steps and warmup_ratio
+        _check_warmup_args(data)
+        # Check decay_steps and decay_rate
+        _check_decay_steps_args(data)
+        # Check WSD-specific arguments
+        _check_wsd_args(data)
+        return True
+
+    # Common arguments for all learning rate types (outside Variant)
+    common_args = [
+        Argument("start_lr", float, optional=False, doc=doc_start_lr),
+        Argument(
+            "stop_lr",
+            float,
+            optional=True,
+            default=None,
+            doc=doc_stop_lr,
+        ),
+        Argument(
+            "stop_lr_ratio",
+            float,
+            optional=True,
+            default=None,
+            doc=doc_stop_lr_ratio,
+        ),
+        Argument(
+            "warmup_steps",
+            int,
+            optional=True,
+            default=0,
+            doc=doc_warmup_steps,
+        ),
+        Argument(
+            "warmup_ratio",
+            float,
+            optional=True,
+            default=None,
+            doc=doc_warmup_ratio,
+        ),
+        Argument(
+            "warmup_start_factor",
+            float,
+            optional=True,
+            default=0.0,
+            doc=doc_warmup_start_factor,
+        ),
+        Argument(
+            "scale_by_worker",
+            str,
+            optional=True,
+            default="linear",
+            doc=doc_scale_by_worker,
+        ),
+    ]
+
     return Argument(
         "learning_rate",
         dict,
-        [
-            Argument(
-                "scale_by_worker",
-                str,
-                optional=True,
-                default="linear",
-                doc=doc_scale_by_worker,
-            )
-        ],
+        common_args,
         [learning_rate_variant_type_args()],
         optional=True,
         doc=doc_lr,
+        fold_subdoc=fold_subdoc,
+        extra_check=_check_lr_args,
+    )
+
+
+#  --- Optimizer configurations: --- #
+opt_args_plugin = ArgsPlugin()
+
+
+@opt_args_plugin.register("Adam")
+def optimizer_adam() -> list[Argument]:
+    doc_adam_beta1 = "Adam beta1 coefficient for first moment decay."
+    doc_adam_beta2 = "Adam beta2 coefficient for second moment decay."
+    doc_weight_decay = (
+        "Weight decay coefficient for Adam. In PyTorch and Paddle, this is an L2 "
+        "penalty applied to gradients. TensorFlow does not support weight_decay and "
+        "requires this value to be 0."
+    )
+    return [
+        Argument(
+            "adam_beta1",
+            float,
+            optional=True,
+            default=0.9,
+            doc=doc_adam_beta1,
+        ),
+        Argument(
+            "adam_beta2",
+            float,
+            optional=True,
+            default=0.999,
+            doc=doc_adam_beta2,
+        ),
+        Argument(
+            "weight_decay",
+            float,
+            optional=True,
+            default=0.0,
+            doc=doc_weight_decay,
+        ),
+    ]
+
+
+@opt_args_plugin.register("AdamW", doc=doc_only_pt_supported)
+def optimizer_adamw() -> list[Argument]:
+    doc_adam_beta1 = "AdamW beta1 coefficient for first moment decay."
+    doc_adam_beta2 = "AdamW beta2 coefficient for second moment decay."
+    doc_weight_decay = (
+        "Decoupled weight decay coefficient for AdamW optimizer (PyTorch only)."
+    )
+    return [
+        Argument(
+            "adam_beta1",
+            float,
+            optional=True,
+            default=0.9,
+            doc=doc_only_pt_supported + doc_adam_beta1,
+        ),
+        Argument(
+            "adam_beta2",
+            float,
+            optional=True,
+            default=0.999,
+            doc=doc_only_pt_supported + doc_adam_beta2,
+        ),
+        Argument(
+            "weight_decay",
+            float,
+            optional=True,
+            default=0.001,
+            doc=doc_only_pt_supported + doc_weight_decay,
+        ),
+    ]
+
+
+@opt_args_plugin.register("LKF", doc=doc_only_pt_supported)
+def optimizer_lkf() -> list[Argument]:
+    doc_kf_blocksize = "The blocksize for the Kalman filter."
+    doc_kf_start_pref_e = (
+        "The prefactor of energy loss at the start of Kalman filter updates."
+    )
+    doc_kf_limit_pref_e = (
+        "The prefactor of energy loss at the end of training for Kalman filter updates."
+    )
+    doc_kf_start_pref_f = (
+        "The prefactor of force loss at the start of Kalman filter updates."
+    )
+    doc_kf_limit_pref_f = (
+        "The prefactor of force loss at the end of training for Kalman filter updates."
+    )
+    return [
+        Argument(
+            "kf_blocksize",
+            int,
+            optional=True,
+            default=5120,
+            doc=doc_only_pt_supported + doc_kf_blocksize,
+        ),
+        Argument(
+            "kf_start_pref_e",
+            float,
+            optional=True,
+            default=1.0,
+            doc=doc_only_pt_supported + doc_kf_start_pref_e,
+        ),
+        Argument(
+            "kf_limit_pref_e",
+            float,
+            optional=True,
+            default=1.0,
+            doc=doc_only_pt_supported + doc_kf_limit_pref_e,
+        ),
+        Argument(
+            "kf_start_pref_f",
+            float,
+            optional=True,
+            default=1.0,
+            doc=doc_only_pt_supported + doc_kf_start_pref_f,
+        ),
+        Argument(
+            "kf_limit_pref_f",
+            float,
+            optional=True,
+            default=1.0,
+            doc=doc_only_pt_supported + doc_kf_limit_pref_f,
+        ),
+    ]
+
+
+@opt_args_plugin.register("AdaMuon", doc=doc_only_pt_supported)
+def optimizer_adamuon() -> list[Argument]:
+    return [
+        Argument(
+            "momentum",
+            float,
+            optional=True,
+            default=0.95,
+            alias=["muon_momentum"],
+            doc=doc_only_pt_supported + "Momentum coefficient for AdaMuon optimizer.",
+        ),
+        Argument(
+            "adam_beta1",
+            float,
+            optional=True,
+            default=0.9,
+            doc=doc_only_pt_supported + "Adam beta1 coefficient for AdaMuon optimizer.",
+        ),
+        Argument(
+            "adam_beta2",
+            float,
+            optional=True,
+            default=0.95,
+            doc=doc_only_pt_supported + "Adam beta2 coefficient for AdaMuon optimizer.",
+        ),
+        Argument(
+            "weight_decay",
+            float,
+            optional=True,
+            default=0.001,
+            doc=doc_only_pt_supported
+            + "Weight decay coefficient. Applied only to >=2D parameters (AdaMuon path).",
+        ),
+        Argument(
+            "lr_adjust",
+            float,
+            optional=True,
+            default=10.0,
+            doc=doc_only_pt_supported
+            + "Learning rate adjustment factor for Adam (1D params). "
+            "If lr_adjust <= 0: use match-RMS scaling (scale = lr_adjust_coeff * sqrt(max(m, n))), Adam uses lr directly. "
+            "If lr_adjust > 0: use rectangular correction (scale = sqrt(max(1.0, m/n))), Adam uses lr/lr_adjust.",
+        ),
+        Argument(
+            "lr_adjust_coeff",
+            float,
+            optional=True,
+            default=0.2,
+            doc=doc_only_pt_supported
+            + "Coefficient for match-RMS scaling. Only effective when lr_adjust <= 0.",
+        ),
+    ]
+
+
+@opt_args_plugin.register(
+    "HybridMuon",
+    doc=doc_only_pt_supported
+    + "HybridMuon optimizer (DeePMD-kit custom implementation). "
+    + "This is a Hybrid optimizer that automatically combines Muon and Adam. "
+    + "For matrix params: Muon update with Newton-Schulz based on selected muon_mode. "
+    + "For 1D params: Standard Adam. "
+    + "Name-based Adam routing is enabled: final effective parameter name segment containing 'bias' "
+    + "or starting with 'adam_' (case-insensitive) always uses Adam (no weight decay); "
+    + "segment starting with 'adamw_' (case-insensitive) uses AdamW-style decoupled decay. "
+    + "Trailing numeric ParameterList indices are ignored when deriving the effective segment. "
+    + "This is DIFFERENT from PyTorch's torch.optim.Muon which ONLY supports 2D parameters.",
+)
+def optimizer_hybrid_muon() -> list[Argument]:
+    return [
+        Argument(
+            "momentum",
+            float,
+            optional=True,
+            default=0.95,
+            alias=["muon_momentum"],
+            doc=doc_only_pt_supported
+            + "Momentum coefficient for HybridMuon optimizer (>=2D params). "
+            "Used in Nesterov momentum update: m_t = beta*m_{t-1} + (1-beta)*g_t.",
+        ),
+        Argument(
+            "adam_beta1",
+            float,
+            optional=True,
+            default=0.9,
+            doc=doc_only_pt_supported
+            + "Adam beta1 coefficient for 1D parameters (biases, norms).",
+        ),
+        Argument(
+            "adam_beta2",
+            float,
+            optional=True,
+            default=0.95,
+            doc=doc_only_pt_supported
+            + "Adam beta2 coefficient for 1D parameters (biases, norms).",
+        ),
+        Argument(
+            "weight_decay",
+            float,
+            optional=True,
+            default=0.001,
+            doc=doc_only_pt_supported
+            + "Weight decay coefficient. Applied to Muon-routed parameters and "
+            + "the AdamW-style decay path for matrix parameters.",
+        ),
+        Argument(
+            "lr_adjust",
+            float,
+            optional=True,
+            default=0.0,
+            doc=doc_only_pt_supported
+            + "Learning rate adjustment mode for HybridMuon scaling and Adam learning rate. "
+            "If lr_adjust <= 0: use match-RMS scaling (scale = coeff*sqrt(max(m,n))), Adam uses lr directly. "
+            "If lr_adjust > 0: use rectangular correction (scale = sqrt(max(1, m/n))), Adam uses lr/lr_adjust. "
+            "Default is 0.0 (match-RMS scaling).",
+        ),
+        Argument(
+            "lr_adjust_coeff",
+            float,
+            optional=True,
+            default=0.18,
+            doc=doc_only_pt_supported
+            + "Coefficient for match-RMS scaling. Only effective when lr_adjust <= 0. "
+            + "Default 0.18 follows DeepSeek-V4's calibration so Muon update RMS "
+            + "matches AdamW's typical RMS; Moonlight's original recipe uses 0.2.",
+        ),
+        Argument(
+            "muon_mode",
+            str,
+            optional=True,
+            default="slice",
+            doc=doc_only_pt_supported
+            + "Muon routing mode. "
+            + "'2d': only effective-rank-2 params are eligible for Muon; effective rank >2 goes to AdamW-style decoupled decay path. "
+            + "'flat': effective-rank >=2 params are flattened to matrix-view (prod(shape[:-1]), shape[-1]) for Muon. "
+            + "'slice' (default): effective-rank >=3 params use per-slice Muon on the last two dimensions; no cross-slice mixing. "
+            + "Routing uses effective shape after removing singleton dimensions.",
+        ),
+        Argument(
+            "enable_gram",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_only_pt_supported
+            + "Enable the compiled Gram Newton-Schulz path for rectangular Muon matrices. "
+            + "Square matrices keep using the current standard Newton-Schulz path.",
+        ),
+        Argument(
+            "flash_muon",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_only_pt_supported
+            + "Enable triton-accelerated Newton-Schulz orthogonalization. "
+            "Requires triton and CUDA. Falls back to PyTorch implementation "
+            "when triton is unavailable or running on CPU. Ignored when enable_gram is true.",
+        ),
+        Argument(
+            "magma_muon",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_only_pt_supported
+            + "Enable Magma-lite damping on the Muon route only. "
+            "When enabled, HybridMuon computes momentum-gradient alignment "
+            "per Muon block, applies EMA smoothing, and rescales Muon updates "
+            "to improve stability. Adam/AdamW routes are unchanged.",
+        ),
+    ]
+
+
+def optimizer_variant_type_args() -> Variant:
+    doc_opt_type = "The type of optimizer to use."
+    return Variant(
+        "type",
+        opt_args_plugin.get_all_argument(),
+        optional=True,
+        default_tag="Adam",
+        doc=doc_opt_type,
+    )
+
+
+def optimizer_args(fold_subdoc: bool = False) -> Argument:
+    doc_optimizer = (
+        "The definition of optimizer. Supported optimizer types depend on backend: "
+        "TensorFlow/Paddle: Adam; PyTorch: Adam, AdamW, LKF, AdaMuon, HybridMuon."
+    )
+    return Argument(
+        "optimizer",
+        dict,
+        [],
+        [optimizer_variant_type_args()],
+        optional=True,
+        doc=doc_optimizer,
         fold_subdoc=fold_subdoc,
     )
 
 
 #  --- Loss configurations: --- #
-def start_pref(
-    item: str, label: Optional[str] = None, abbr: Optional[str] = None
-) -> str:
+def start_pref(item: str, label: str | None = None, abbr: str | None = None) -> str:
     if label is None:
         label = item
     if abbr is None:
@@ -2623,6 +3291,13 @@ def loss_ener() -> list[Argument]:
         "atomic prefactor force", label="atom_pref", abbr="pf"
     )
     doc_limit_pref_pf = limit_pref("atomic prefactor force")
+    doc_use_default_pf = (
+        "If true, use default atom_pref of 1.0 for all atoms when atom_pref data is not provided. "
+        "This allows using the prefactor force loss (pf) without requiring atom_pref.npy files in training data. "
+        "When atom_pref.npy is provided, it will be used as-is regardless of this setting. "
+        "Note: this option is only effective for the PyTorch/DPModel backends; "
+        "the TensorFlow and Paddle backends raise NotImplementedError when set to true."
+    )
     doc_start_pref_gf = start_pref("generalized force", label="drdq", abbr="gf")
     doc_limit_pref_gf = limit_pref("generalized force")
     doc_numb_generalized_coord = "The dimension of generalized coordinates. Required when generalized force loss is used."
@@ -2635,7 +3310,31 @@ def loss_ener() -> list[Argument]:
         "- For absolute errors exceeding D: linear loss D * (\\|error\\| - 0.5 * D) \n\n"
         "Formula: loss = 0.5 * (error**2) if \\|error\\| <= D else D * (\\|error\\| - 0.5 * D). "
     )
-    doc_huber_delta = "The threshold delta (D) used for Huber loss, controlling transition between L2 and L1 loss. "
+    doc_huber_delta = (
+        "The threshold delta (D) used for Huber loss, controlling transition between L2 and L1 loss. "
+        "It can be either one float shared by all terms or a list of "
+        "three values ordered as [energy, force, virial]. "
+    )
+    doc_loss_func = (
+        "Loss function type for energy, force, and virial terms. "
+        "Options: 'mse' (Mean Squared Error, L2 loss, default) or 'mae' (Mean Absolute Error, L1 loss). "
+        "MAE loss is less sensitive to outliers compared to MSE loss. "
+        "Future extensions may support additional loss types."
+    )
+    doc_f_use_norm = (
+        "If true, use L2 norm of force vectors for loss calculation when loss_func='mae' or use_huber is True. "
+        "Instead of computing loss on individual force components, computes loss on ||F_pred - F_label||_2 for each atom. "
+        "This treats the force vector as a whole rather than three independent components. "
+        "Only effective when loss_func='mae' or use_huber=True."
+    )
+    doc_intensive_ener_virial = (
+        "Controls intensive normalization for energy and virial loss terms in the current implementation. "
+        "For non-Huber MSE energy/virial terms, setting this to true uses 1/N^2 normalization instead of the legacy 1/N scaling. "
+        "This matches per-atom-style reporting more closely for those terms. "
+        "For MAE, the normalization remains 1/N. When `use_huber=True`, the residual is already scaled by 1/N before applying the Huber loss, "
+        "so this flag may have limited or no effect for those terms. "
+        "The default is false for backward compatibility with models trained using deepmd-kit <= 3.1.3."
+    )
     return [
         Argument(
             "start_pref_e",
@@ -2721,6 +3420,13 @@ def loss_ener() -> list[Argument]:
             default=0.00,
             doc=doc_limit_pref_pf,
         ),
+        Argument(
+            "use_default_pf",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_use_default_pf,
+        ),
         Argument("relative_f", [float, None], optional=True, doc=doc_relative_f),
         Argument(
             "enable_atom_ener_coeff",
@@ -2758,11 +3464,53 @@ def loss_ener() -> list[Argument]:
             doc=doc_use_huber,
         ),
         Argument(
+            "loss_func",
+            str,
+            optional=True,
+            default="mse",
+            doc=doc_loss_func,
+        ),
+        Argument(
+            "f_use_norm",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_f_use_norm,
+        ),
+        Argument(
             "huber_delta",
-            float,
+            [float, list[float]],
             optional=True,
             default=0.01,
             doc=doc_huber_delta,
+        ),
+        Argument(
+            "intensive_ener_virial",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_intensive_ener_virial,
+        ),
+    ]
+
+@loss_args_plugin.register("grid_density")
+def loss_grid_density():
+    doc_start_pref_d = start_pref("density", abbr="d")
+    doc_limit_pref_d = limit_pref("density")
+    return [
+        Argument(
+            "start_pref_d",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc=doc_start_pref_d,
+        ),
+        Argument(
+            "limit_pref_d",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc=doc_limit_pref_d,
         ),
     ]
 
@@ -2804,6 +3552,20 @@ def loss_ener_spin() -> list[Argument]:
     doc_limit_pref_pf = limit_pref("atom_pref")
     doc_relative_f = "If provided, relative force error will be used in the loss. The difference of force will be normalized by the magnitude of the force in the label with a shift given by `relative_f`, i.e. DF_i / ( || F || + relative_f ) with DF denoting the difference between prediction and label and || F || denoting the L2 norm of the label."
     doc_enable_atom_ener_coeff = r"If true, the energy will be computed as \sum_i c_i E_i. c_i should be provided by file atom_ener_coeff.npy in each data system, otherwise it's 1."
+    doc_loss_func = (
+        "Loss function type for energy, force, and virial terms. "
+        "Options: 'mse' (Mean Squared Error, L2 loss, default) or 'mae' (Mean Absolute Error, L1 loss). "
+        "MAE loss is less sensitive to outliers compared to MSE loss. "
+        "Future extensions may support additional loss types."
+    )
+    doc_intensive_ener_virial = (
+        "Controls normalization of the energy and virial loss terms. "
+        "For `loss_func='mse'`, if true, energy and virial losses are computed as intensive quantities, "
+        "normalized by the square of the number of atoms (1/N^2); if false (default), the legacy normalization "
+        "(1/N) is used. "
+        "For `loss_func='mae'`, this option does not change the existing MAE formulations;"
+        "The default is false for backward compatibility with models trained using deepmd-kit <= 3.1.3."
+    )
     return [
         Argument(
             "start_pref_e",
@@ -2896,6 +3658,20 @@ def loss_ener_spin() -> list[Argument]:
             optional=True,
             default=False,
             doc=doc_enable_atom_ener_coeff,
+        ),
+        Argument(
+            "loss_func",
+            str,
+            optional=True,
+            default="mse",
+            doc=doc_loss_func,
+        ),
+        Argument(
+            "intensive_ener_virial",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_intensive_ener_virial,
         ),
     ]
 
@@ -3060,8 +3836,9 @@ def training_data_args() -> list[
     link_sys = make_link("systems", "training/training_data/systems")
     doc_systems = (
         "The data systems for training. "
-        "This key can be provided with a list that specifies the systems, or be provided with a string "
-        "by which the prefix of all systems are given and the list of the systems is automatically generated."
+        "This key can be a list or a str. "
+        "When provided as a string, it can be a system directory path (containing 'type.raw') or a parent directory path to recursively search for all system subdirectories. "
+        "When provided as a list, each string item in the list is processed the same way as individual string inputs, i.e., each path can be a system directory or a parent directory to recursively search for all system subdirectories."
     )
     doc_patterns = (
         "The customized patterns used in `rglob` to collect all training systems. "
@@ -3072,8 +3849,8 @@ def training_data_args() -> list[
 - string "auto": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than 32.\n\n\
 - string "auto:N": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than N.\n\n\
 - string "mixed:N": the batch data will be sampled from all systems and merged into a mixed system with the batch size N. Only support the se_atten descriptor for TensorFlow backend.\n\n\
-- string "max:N": automatically determines the batch size so that the batch_size times the number of atoms in the system is no more than N.\n\n\
-- string "filter:N": the same as `"max:N"` but removes the systems with the number of atoms larger than `N` from the data set.\n\n\
+- string "max:N": automatically determines the batch size so that `batch_size * natoms` is at most `N`. `natoms` is the per-system atom count for npy data and the per-frame nloc for LMDB data. When a single system/frame already has more than `N` atoms, the batch size clamps to 1 and that batch will exceed `N`.\n\n\
+- string "filter:N": the same as `"max:N"` but additionally drops data whose atom count exceeds `N`. For npy data this removes whole systems with natoms > `N`; for LMDB data this removes individual frames with nloc > `N`.\n\n\
 If MPI is used, the value should be considered as the batch size per task.'
     doc_auto_prob_style = 'Determine the probability of systems automatically. The method is assigned by this key and can be\n\n\
 - "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()\n\n\
@@ -3141,8 +3918,9 @@ def validation_data_args() -> list[
     link_sys = make_link("systems", "training/validation_data/systems")
     doc_systems = (
         "The data systems for validation. "
-        "This key can be provided with a list that specifies the systems, or be provided with a string "
-        "by which the prefix of all systems are given and the list of the systems is automatically generated."
+        "This key can be a list or a str. "
+        "When provided as a string, it can be a system directory path (containing 'type.raw') or a parent directory path to recursively search for all system subdirectories. "
+        "When provided as a list, each string item in the list is processed the same way as individual string inputs, i.e., each path can be a system directory or a parent directory to recursively search for all system subdirectories."
     )
     doc_patterns = (
         "The customized patterns used in `rglob` to collect all validation systems. "
@@ -3151,7 +3929,9 @@ def validation_data_args() -> list[
 - list: the length of which is the same as the {link_sys}. The batch size of each system is given by the elements of the list.\n\n\
 - int: all {link_sys} use the same batch size.\n\n\
 - string "auto": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than 32.\n\n\
-- string "auto:N": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than N.'
+- string "auto:N": automatically determines the batch size so that the batch_size times the number of atoms in the system is no less than N.\n\n\
+- string "max:N": automatically determines the batch size so that `batch_size * natoms` is at most `N`. `natoms` is the per-system atom count for npy data and the per-frame nloc for LMDB data. When a single system/frame already has more than `N` atoms, the batch size clamps to 1 and that batch will exceed `N`.\n\n\
+- string "filter:N": the same as `"max:N"` but additionally drops data whose atom count exceeds `N`. For npy data this removes whole systems with natoms > `N`; for LMDB data this removes individual frames with nloc > `N`.'
     doc_auto_prob_style = 'Determine the probability of systems automatically. The method is assigned by this key and can be\n\n\
 - "prob_uniform"  : the probability all the systems are equal, namely 1.0/self.get_nsystems()\n\n\
 - "prob_sys_size" : the probability of a system is proportional to the number of batches in the system\n\n\
@@ -3258,7 +4038,35 @@ def mixed_precision_args() -> list[Argument]:  # ! added by Denghui.
 def training_args(
     multi_task: bool = False,
 ) -> list[Argument]:  # ! modified by Ziyao: data configuration isolated.
-    doc_numb_steps = "Number of training batch. Each training uses one batch of data."
+    doc_numb_steps = (
+        "Number of training steps (num_step). Each training uses one batch of data. "
+        "Mutually exclusive with num_epoch in single-task mode. In multi-task "
+        "mode, this is mutually exclusive with num_epoch_dict. "
+        "Accepted names: num_step, num_steps, numb_step, numb_steps, stop_batch."
+    )
+    doc_num_epoch = (
+        "Number of training epochs (num_epoch; can be fractional) for single-task "
+        "mode only. Because each step samples the dataset stochastically, this "
+        "corresponds to an expected epoch count rather than a deterministic full "
+        "pass. When num_step is not set, the total steps are computed as "
+        "ceil(num_epoch * total_numb_batch). total_numb_batch is computed as "
+        "ceil(max_i(n_bch_i / p_i)), where n_bch_i is the number of batches for "
+        "system i and p_i is the sampling probability after sys_probs/auto_prob "
+        "normalization. Mutually exclusive with num_step. For multi-task mode, "
+        "use num_epoch_dict instead. Accepted names: num_epoch, num_epochs, "
+        "numb_epoch, numb_epochs."
+    )
+    doc_num_epoch_dict = (
+        "Number of training epochs for each model branch in multi-task mode "
+        "(can be fractional). This is a dictionary mapping model keys to the "
+        "number of epochs to train that specific model. When set, model_prob "
+        "is derived from the epoch targets and per-task total_numb_batch values: "
+        "model_prob[i] = num_epoch_dict[i] * per_task_total[i] / sum_j(num_epoch_dict[j] * per_task_total[j]). "
+        "Total training steps are computed as "
+        "ceil(sum_i(num_epoch_dict[i] * per_task_total[i])). "
+        "This parameter is mutually exclusive with training.model_prob and "
+        "training.num_step. All model keys must be specified in the dictionary."
+    )
     doc_seed = "The random seed for getting frames from the training data set."
     doc_disp_file = "The file for printing learning curve."
     doc_disp_freq = "The frequency of printing learning curve."
@@ -3268,6 +4076,21 @@ def training_args(
         "The maximum number of checkpoints to keep. "
         "The oldest checkpoints will be deleted once the number of checkpoints exceeds max_ckpt_keep. "
         "Defaults to 5."
+    )
+    doc_enable_ema = (
+        "Whether to maintain an exponential moving average (EMA) of model "
+        "parameters during training and save periodic EMA checkpoints with an "
+        "`_ema` suffix in the checkpoint prefix."
+    )
+    doc_ema_decay = (
+        "The decay factor used for the exponential moving average of model "
+        "parameters. The EMA update is "
+        "`ema = ema_decay * ema + (1 - ema_decay) * param`."
+    )
+    doc_ema_ckpt_keep = (
+        "The maximum number of periodic EMA checkpoints to keep. "
+        "EMA checkpoints use the same prefix-based cleanup rule as regular "
+        "training checkpoints, but with an EMA-specific checkpoint prefix."
     )
     doc_change_bias_after_training = (
         "Whether to change the output bias after the last training step, "
@@ -3285,11 +4108,6 @@ def training_args(
     doc_tensorboard = "Enable tensorboard"
     doc_tensorboard_log_dir = "The log directory of tensorboard outputs"
     doc_tensorboard_freq = "The frequency of writing tensorboard events."
-    doc_warmup_steps = (
-        "The number of steps for learning rate warmup. During warmup, "
-        "the learning rate begins at zero and progressively increases linearly to `start_lr`, "
-        "rather than starting directly from `start_lr`"
-    )
     doc_gradient_max_norm = (
         "Clips the gradient norm to a maximum value. "
         "If the gradient norm exceeds this value, it will be clipped to this limit. "
@@ -3302,11 +4120,32 @@ def training_args(
         "If the file extension is .h5 or .hdf5, an HDF5 file is used to store the statistics; "
         "otherwise, a directory containing NumPy binary files are used."
     )
-    doc_opt_type = "The type of optimizer to use."
-    doc_kf_blocksize = "The blocksize for the Kalman filter."
-    doc_model_prob = "The visiting probability of each model for each training step in the multi-task mode."
+    doc_model_prob = (
+        "The visiting probability of each model for each training step in the "
+        "multi-task mode. Only used when num_epoch_dict is not set. If not set "
+        "or an empty dict, defaults to weights proportional to the number of "
+        "systems per task."
+    )
     doc_data_dict = "The multiple definition of the data, used in the multi-task mode."
     doc_acc_freq = "Gradient accumulation steps (number of steps to accumulate gradients before performing an update)."
+    doc_zero_stage = (
+        "ZeRO optimization stage for distributed training memory reduction. "
+        "0: standard DDP, lowest communication overhead but highest memory usage "
+        "(full optimizer states, gradients, and parameters replicated on every GPU). "
+        "1: DDP + ZeRO stage-1, shards optimizer states across GPUs via "
+        "ZeroRedundancyOptimizer; same communication volume as DDP (2x model size) "
+        "but reduces optimizer memory to 1/N per GPU. "
+        "2: FSDP2 stage-2, shards optimizer states and gradients; same communication "
+        "volume as stage-1 but further reduces gradient memory to 1/N per GPU. "
+        "Stages 2 and 3 require FSDP2, which is available in PyTorch >= 2.6. "
+        "Note: FSDP2 introduces DTensor dispatch overhead that can slow down "
+        "models with many small layers; use torch.compile to mitigate. "
+        "3: FSDP2 stage-3, shards parameters as well; maximum memory savings but "
+        "50% more communication (3x model size) due to parameter all-gather in "
+        "both forward and backward passes. "
+        "Default is 0. Requires distributed launch via torchrun. "
+        "Currently supports single-task training; does not support LKF or change_bias_after_training."
+    )
 
     arg_training_data = training_data_args()
     arg_validation_data = validation_data_args()
@@ -3324,6 +4163,13 @@ def training_args(
         if not multi_task
         else [
             Argument("model_prob", dict, optional=True, default={}, doc=doc_model_prob),
+            Argument(
+                "num_epoch_dict",
+                dict,
+                optional=True,
+                default={},
+                doc=doc_num_epoch_dict,
+            ),
             Argument("data_dict", dict, data_args, repeat=True, doc=doc_data_dict),
         ]
     )
@@ -3331,7 +4177,23 @@ def training_args(
     args += [
         mixed_precision_data,
         Argument(
-            "numb_steps", int, optional=False, doc=doc_numb_steps, alias=["stop_batch"]
+            "numb_steps",
+            int,
+            optional=True,
+            doc=doc_numb_steps,
+            alias=[
+                "stop_batch",
+                "num_step",
+                "num_steps",
+                "numb_step",
+            ],
+        ),
+        Argument(
+            "numb_epoch",
+            [int, float],
+            optional=True,
+            doc=doc_num_epoch,
+            alias=["num_epochs", "num_epoch", "numb_epochs"],
         ),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
         Argument(
@@ -3343,6 +4205,31 @@ def training_args(
             "save_ckpt", str, optional=True, default="model.ckpt", doc=doc_save_ckpt
         ),
         Argument("max_ckpt_keep", int, optional=True, default=5, doc=doc_max_ckpt_keep),
+        Argument(
+            "enable_ema",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_enable_ema,
+        ),
+        Argument(
+            "ema_decay",
+            float,
+            optional=True,
+            default=0.999,
+            doc=doc_only_pt_supported + doc_ema_decay,
+            extra_check=lambda x: 0.0 <= x < 1.0,
+            extra_check_errmsg="must be greater than or equal to 0 and less than 1",
+        ),
+        Argument(
+            "ema_ckpt_keep",
+            int,
+            optional=True,
+            default=3,
+            doc=doc_only_pt_supported + doc_ema_ckpt_keep,
+            extra_check=lambda x: x > 0,
+            extra_check_errmsg="must be greater than 0",
+        ),
         Argument(
             "change_bias_after_training",
             bool,
@@ -3398,12 +4285,6 @@ def training_args(
             "tensorboard_freq", int, optional=True, default=1, doc=doc_tensorboard_freq
         ),
         Argument(
-            "warmup_steps",
-            int,
-            optional=True,
-            doc=doc_only_pt_supported + doc_warmup_steps,
-        ),
-        Argument(
             "gradient_max_norm",
             float,
             optional=True,
@@ -3416,36 +4297,317 @@ def training_args(
             default=1,
             doc=doc_only_pd_supported + doc_acc_freq,
         ),
-    ]
-    variants = [
-        Variant(
-            "opt_type",
-            choices=[
-                Argument("Adam", dict, [], [], optional=True),
-                Argument("AdamW", dict, [], [], optional=True),
-                Argument(
-                    "LKF",
-                    dict,
-                    [
-                        Argument(
-                            "kf_blocksize",
-                            int,
-                            optional=True,
-                            doc=doc_only_pt_supported + doc_kf_blocksize,
-                        ),
-                    ],
-                    [],
-                    optional=True,
-                ),
-            ],
+        Argument(
+            "zero_stage",
+            int,
             optional=True,
-            default_tag="Adam",
-            doc=doc_only_pt_supported + doc_opt_type,
-        )
+            default=0,
+            doc=doc_only_pt_supported + doc_zero_stage,
+        ),
+        Argument(
+            "enable_compile",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_expt_supported
+            + "Enable torch.compile to accelerate training. "
+            "Uses make_fx to decompose autograd into primitive ops, "
+            "then compiles with torch.compile/Inductor for kernel fusion. "
+            "The first training step will be slower due to one-time compilation.",
+        ),
     ]
 
+    def training_extra_check(data: dict | None) -> bool:
+        if data is None:
+            return True
+        num_steps = data.get("numb_steps")
+        num_epoch = data.get("numb_epoch")
+        num_epoch_dict = data.get("num_epoch_dict", {})
+        model_prob = data.get("model_prob", {})
+        zero_stage = int(data.get("zero_stage", 0))
+        if data.get("enable_ema", False) and zero_stage >= 2:
+            raise ValueError(
+                "training.enable_ema currently only supports training.zero_stage < 2."
+            )
+        if multi_task:
+            if num_epoch is not None:
+                raise ValueError(
+                    "training.num_epoch is only supported in single-task mode."
+                )
+            if num_epoch_dict:
+                if num_steps is not None:
+                    raise ValueError(
+                        "training.num_epoch_dict is mutually exclusive with training.num_step."
+                    )
+                if model_prob:
+                    raise ValueError(
+                        "training.num_epoch_dict is mutually exclusive with training.model_prob."
+                    )
+            else:
+                if num_steps is None:
+                    raise ValueError(
+                        "Multi-task mode requires either training.numb_steps or training.num_epoch_dict."
+                    )
+        else:
+            if num_steps is not None and num_epoch is not None:
+                raise ValueError(
+                    "training.num_step and training.num_epoch are mutually exclusive."
+                )
+            if num_steps is None and num_epoch is None:
+                raise ValueError(
+                    "Single-task mode requires either training.numb_steps or training.num_epoch."
+                )
+        return True
+
     doc_training = "The training options."
-    return Argument("training", dict, args, variants, doc=doc_training)
+    return Argument(
+        "training",
+        dict,
+        args,
+        [],
+        doc=doc_training,
+        extra_check=training_extra_check,
+    )
+
+
+FULL_VALIDATION_METRIC_PREFS = {
+    "e:mae": ("start_pref_e", "limit_pref_e"),
+    "e:rmse": ("start_pref_e", "limit_pref_e"),
+    "f:mae": ("start_pref_f", "limit_pref_f"),
+    "f:rmse": ("start_pref_f", "limit_pref_f"),
+    "v:mae": ("start_pref_v", "limit_pref_v"),
+    "v:rmse": ("start_pref_v", "limit_pref_v"),
+}
+
+
+def normalize_full_validation_metric(metric: str) -> str:
+    """Normalize the full validation metric string."""
+    return metric.strip().lower()
+
+
+def is_valid_full_validation_metric(metric: str) -> bool:
+    """Check whether a full validation metric is supported."""
+    return normalize_full_validation_metric(metric) in FULL_VALIDATION_METRIC_PREFS
+
+
+def get_full_validation_metric_prefactors(metric: str) -> tuple[str, str]:
+    """Get the prefactor keys required by a full validation metric."""
+    normalized_metric = normalize_full_validation_metric(metric)
+    if normalized_metric not in FULL_VALIDATION_METRIC_PREFS:
+        valid_metrics = ", ".join(item.upper() for item in FULL_VALIDATION_METRIC_PREFS)
+        raise ValueError(
+            f"validating.validation_metric must be one of {valid_metrics}, got {metric!r}."
+        )
+    return FULL_VALIDATION_METRIC_PREFS[normalized_metric]
+
+
+def resolve_full_validation_start_step(
+    full_val_start: float, num_steps: int
+) -> int | None:
+    """Resolve the first step at which full validation becomes active."""
+    start_value = float(full_val_start)
+    if start_value == 1.0:
+        return None
+    if 0.0 <= start_value < 1.0:
+        return int(num_steps * start_value)
+    return int(start_value)
+
+
+def validating_args() -> Argument:
+    """Generate full validation arguments."""
+    valid_metrics = ", ".join(item.upper() for item in FULL_VALIDATION_METRIC_PREFS)
+    doc_full_validation = (
+        "Whether to run an additional full validation pass over the entire "
+        "validation dataset during training. This flow is independent from the "
+        "display-time validation controlled by `training.disp_freq`. Only "
+        "single-task energy training is supported. Multi-task, spin-energy, "
+        "and `training.zero_stage >= 2` are not supported."
+    )
+    doc_validation_freq = (
+        "The frequency, in training steps, of running the full validation pass."
+    )
+    doc_save_best = (
+        "Whether to save an extra checkpoint when the selected full validation "
+        "metric reaches a new best value."
+    )
+    doc_ema_full_validation = (
+        "Whether to additionally run the same full validation flow on the "
+        "EMA-smoothed model when `validating.full_validation=true`. This reuses "
+        "the existing full validation schedule, metric, start step, and "
+        "best-checkpoint settings, writes results to an EMA-specific validation "
+        "log such as `val_ema.log`, and saves EMA best checkpoints with a "
+        "`best_ema.ckpt` prefix. Requires "
+        "`training.enable_ema=true`."
+    )
+    doc_max_best_ckpt = (
+        "The maximum number of top-ranked best checkpoints to keep. The best "
+        "checkpoints are ranked by the selected validation metric in ascending "
+        "order. Default is 1."
+    )
+    doc_validation_metric = (
+        "Metric used to determine the best checkpoint during full validation. "
+        f"Supported values are {valid_metrics}. The string is case-insensitive. "
+        "`E` and `V` are per-atom metrics; `F` uses component-wise force errors, "
+        "matching `dp test`. The corresponding loss prefactors must not both be 0."
+    )
+    doc_full_val_file = (
+        "The file for writing full validation results only. This file is "
+        "independent from `training.disp_file`."
+    )
+    doc_full_val_start = (
+        "The starting point of full validation. `0` means the feature is active "
+        "from the beginning and will trigger at every `validation_freq` steps. "
+        "A value in `(0, 1)` is interpreted as a ratio of `training.numb_steps`. "
+        "`1` disables the feature. A value larger than `1` is interpreted as the "
+        "starting step after integer conversion."
+    )
+    args = [
+        Argument(
+            "full_validation",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_full_validation,
+        ),
+        Argument(
+            "ema_full_validation",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_ema_full_validation,
+        ),
+        Argument(
+            "validation_freq",
+            int,
+            optional=True,
+            default=5000,
+            doc=doc_only_pt_supported + doc_validation_freq,
+            extra_check=lambda x: x > 0,
+            extra_check_errmsg="must be greater than 0",
+        ),
+        Argument(
+            "save_best",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_only_pt_supported + doc_save_best,
+        ),
+        Argument(
+            "max_best_ckpt",
+            int,
+            optional=True,
+            default=1,
+            doc=doc_only_pt_supported + doc_max_best_ckpt,
+            extra_check=lambda x: x > 0,
+            extra_check_errmsg="must be greater than 0",
+        ),
+        Argument(
+            "validation_metric",
+            str,
+            optional=True,
+            default="E:MAE",
+            doc=doc_only_pt_supported + doc_validation_metric,
+            extra_check=is_valid_full_validation_metric,
+            extra_check_errmsg=(
+                "must be one of "
+                + ", ".join(item.upper() for item in FULL_VALIDATION_METRIC_PREFS)
+            ),
+        ),
+        Argument(
+            "full_val_file",
+            str,
+            optional=True,
+            default="val.log",
+            doc=doc_only_pt_supported + doc_full_val_file,
+        ),
+        Argument(
+            "full_val_start",
+            [int, float],
+            optional=True,
+            default=0.5,
+            doc=doc_only_pt_supported + doc_full_val_start,
+            extra_check=lambda x: x >= 0,
+            extra_check_errmsg="must be greater than or equal to 0",
+        ),
+    ]
+    return Argument(
+        "validating",
+        dict,
+        sub_fields=args,
+        sub_variants=[],
+        optional=True,
+        default={},
+        doc=doc_only_pt_supported
+        + "Independent full validation options for single-task energy training.",
+    )
+
+
+def validate_full_validation_config(
+    data: dict[str, Any], multi_task: bool = False
+) -> None:
+    """Validate cross-section constraints for full validation."""
+    validating = data.get("validating") or {}
+    training_params = data.get("training", {}) or {}
+    full_validation_enabled = bool(validating.get("full_validation", False))
+    ema_full_validation_enabled = bool(validating.get("ema_full_validation", False))
+    if not full_validation_enabled:
+        return
+    if ema_full_validation_enabled and not training_params.get("enable_ema", False):
+        raise ValueError(
+            "validating.ema_full_validation requires `training.enable_ema=true`."
+        )
+    if float(validating.get("full_val_start", 0.0)) == 1.0:
+        return
+
+    metric = str(validating.get("validation_metric", "E:MAE"))
+    if not is_valid_full_validation_metric(metric):
+        valid_metrics = ", ".join(item.upper() for item in FULL_VALIDATION_METRIC_PREFS)
+        raise ValueError(
+            "validating.validation_metric must be one of "
+            f"{valid_metrics}, got {metric!r}."
+        )
+
+    if multi_task:
+        raise ValueError(
+            "validating.full_validation only supports single-task energy "
+            "training; multi-task training is not supported."
+        )
+
+    loss_params = data.get("loss", {})
+    loss_type = loss_params.get("type", "ener")
+    if loss_type == "ener_spin":
+        raise ValueError(
+            "validating.full_validation only supports single-task energy "
+            "training; spin-energy training is not supported."
+        )
+    if loss_type != "ener":
+        raise ValueError(
+            "validating.full_validation only supports single-task energy "
+            f"training with loss.type='ener'; got loss.type={loss_type!r}."
+        )
+
+    if not training_params.get("validation_data"):
+        raise ValueError(
+            "full validation requires `training.validation_data`. It is only "
+            "supported for single-task energy training."
+        )
+
+    zero_stage = int(training_params.get("zero_stage", 0))
+    if zero_stage >= 2:
+        raise ValueError(
+            "validating.full_validation only supports single-task energy "
+            "training with training.zero_stage < 2."
+        )
+
+    pref_start_key, pref_limit_key = get_full_validation_metric_prefactors(metric)
+    pref_start = float(loss_params.get(pref_start_key, 0.0))
+    pref_limit = float(loss_params.get(pref_limit_key, 0.0))
+    if pref_start == 0.0 or pref_limit == 0.0:
+        raise ValueError(
+            f"validating.validation_metric={metric!r} requires "
+            f"`loss.{pref_start_key}` and `loss.{pref_limit_key}` to both "
+            "be non-zero."
+        )
 
 
 def multi_model_args() -> list[Argument]:
@@ -3519,16 +4681,20 @@ def gen_args(multi_task: bool = False) -> list[Argument]:
         return [
             model_args(),
             learning_rate_args(),
+            optimizer_args(),
             loss_args(),
             training_args(multi_task=multi_task),
+            validating_args(),
             nvnmd_args(),
         ]
     else:
         return [
             multi_model_args(),
             learning_rate_args(fold_subdoc=True),
+            optimizer_args(fold_subdoc=True),
             multi_loss_args(),
             training_args(multi_task=multi_task),
+            validating_args(),
             nvnmd_args(fold_subdoc=True),
         ]
 
@@ -3560,10 +4726,63 @@ def gen_json_schema(multi_task: bool = False) -> str:
     return json.dumps(generate_json_schema(arg))
 
 
-def normalize(data: dict[str, Any], multi_task: bool = False) -> dict[str, Any]:
+def _check_dpa3_chg_spin_migration(data: dict[str, Any]) -> None:
+    """Warn on likely legacy DPA3 configs that packed charge/spin into fparam.
+
+    Before the charge_spin decoupling, enabling ``add_chg_spin_ebd`` on DPA3
+    required ``numb_fparam=2`` on the fitting net so that charge/spin could be
+    carried via ``fparam``. After the decoupling, ``charge_spin`` is a
+    first-class input that is fully independent of ``fparam``, so users may
+    legitimately combine ``add_chg_spin_ebd`` with any ``numb_fparam`` for
+    genuine frame parameters.
+
+    We cannot determine from the config alone whether a user's ``numb_fparam``
+    is legacy (charge/spin in disguise) or genuine (real frame parameters).
+    But the combination ``add_chg_spin_ebd=True`` together with
+    ``numb_fparam=2`` is the strongest heuristic for the legacy pattern, since
+    that is exactly what the old code required. Emit a warning — not an error
+    — so users can audit their setup without breaking legitimate combinations.
+    """
+    model = data.get("model", {}) if isinstance(data, dict) else {}
+    if not isinstance(model, dict):
+        return
+    submodels = (
+        [model] if "descriptor" in model else list(model.get("model_dict", {}).values())
+    )
+    for m in submodels:
+        if not isinstance(m, dict):
+            continue
+        desc = m.get("descriptor", {})
+        fitting = m.get("fitting_net", {})
+        if not isinstance(desc, dict) or not isinstance(fitting, dict):
+            continue
+        if desc.get("type") != "dpa3":
+            continue
+        if not desc.get("add_chg_spin_ebd", False):
+            continue
+        if fitting.get("numb_fparam", 0) == 2:
+            warnings.warn(
+                "DPA3 `add_chg_spin_ebd=True` with `numb_fparam=2` matches the "
+                "pre-decoupling pattern where charge/spin was carried via "
+                "`fparam`. `charge_spin` is now an independent input, so "
+                "`numb_fparam=2` will be treated as two genuine frame "
+                "parameters. If you intended to feed charge/spin, remove the "
+                "charge/spin part of `fparam` and use the `charge_spin` input "
+                "or the descriptor's `default_chg_spin` instead.",
+                stacklevel=2,
+            )
+
+
+def normalize(
+    data: dict[str, Any], multi_task: bool = False, *, check: bool = True
+) -> dict[str, Any]:
+    """Normalize config values and optionally run strict schema checks."""
     base = Argument("base", dict, gen_args(multi_task=multi_task))
     data = base.normalize_value(data, trim_pattern="_*")
-    base.check_value(data, strict=True)
+    if check:
+        base.check_value(data, strict=True)
+    validate_full_validation_config(data, multi_task=multi_task)
+    _check_dpa3_chg_spin_migration(data)
 
     return data
 

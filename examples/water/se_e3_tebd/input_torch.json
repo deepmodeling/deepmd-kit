@@ -17,7 +17,8 @@
       ],
       "tebd_dim": 8,
       "tebd_input_mode": "concat",
-      "activation_function": "tanh"
+      "activation_function": "tanh",
+      "seed": 1
     },
     "fitting_net": {
       "neuron": [

@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import itertools
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
-    Callable,
     ClassVar,
-    Optional,
-    Union,
 )
 
 import numpy as np
@@ -96,7 +96,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[list[int], int],
+        sel: list[int] | int,
         neuron: list[int] = [25, 50, 100],
         axis_neuron: int = 16,
         set_davg_zero: bool = False,
@@ -107,11 +107,11 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         env_protection: float = 0.0,
         type_one_side: bool = True,
         trainable: bool = True,
-        seed: Optional[Union[int, list[int]]] = None,
-        ntypes: Optional[int] = None,  # to be compat with input
-        type_map: Optional[list[str]] = None,
+        seed: int | list[int] | None = None,
+        ntypes: int | None = None,  # to be compat with input
+        type_map: list[str] | None = None,
         # not implemented
-        spin: Optional[Any] = None,
+        spin: Any | None = None,
     ) -> None:
         del ntypes
         if spin is not None:
@@ -136,6 +136,18 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
             trainable=trainable,
             seed=seed,
         )
+
+    def get_dim_chg_spin(self) -> int:
+        """Returns the dimension of charge_spin input (0 if not supported)."""
+        return 0
+
+    def has_default_chg_spin(self) -> bool:
+        """Returns whether the descriptor has a default charge_spin value."""
+        return False
+
+    def get_default_chg_spin(self) -> None:
+        """Returns the default charge_spin value, or None."""
+        return None
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -213,7 +225,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         return self.sea.dim_out
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
+        self, type_map: list[str], model_with_new_type_stat: Any | None = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -226,8 +238,8 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -262,7 +274,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         table_stride_2: float = 0.1,
         check_frequency: int = -1,
     ) -> None:
-        """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+        """Receive the statistics (distance, max_nbor_size and env_mat_range) of the training data.
 
         Parameters
         ----------
@@ -306,14 +318,16 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         coord_ext: torch.Tensor,
         atype_ext: torch.Tensor,
         nlist: torch.Tensor,
-        mapping: Optional[torch.Tensor] = None,
-        comm_dict: Optional[dict[str, torch.Tensor]] = None,
+        mapping: torch.Tensor | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
+        fparam: torch.Tensor | None = None,
+        charge_spin: torch.Tensor | None = None,
     ) -> tuple[
         torch.Tensor,
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
+        torch.Tensor | None,
+        torch.Tensor | None,
+        torch.Tensor | None,
+        torch.Tensor | None,
     ]:
         """Compute the descriptor.
 
@@ -411,12 +425,13 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeA":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 2, 1)
+        check_version_compatibility(data.pop("@version", 1), 3, 1)
         data.pop("@class", None)
         data.pop("type", None)
         variables = data.pop("@variables")
         embeddings = data.pop("embeddings")
         env_mat = data.pop("env_mat")
+        data.pop("compress", None)  # pt uses state_dict for compression
         obj = cls(**data)
 
         def t_cvt(xx: Any) -> torch.Tensor:
@@ -431,9 +446,9 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Parameters
@@ -468,7 +483,7 @@ class DescrptBlockSeA(DescriptorBlock):
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[int, list[int]],
+        sel: int | list[int],
         neuron: list[int] = [25, 50, 100],
         axis_neuron: int = 16,
         set_davg_zero: bool = False,
@@ -479,7 +494,7 @@ class DescrptBlockSeA(DescriptorBlock):
         env_protection: float = 0.0,
         type_one_side: bool = True,
         trainable: bool = True,
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
         **kwargs: Any,
     ) -> None:
         """Construct an embedding net of type `se_a`.
@@ -640,8 +655,8 @@ class DescrptBlockSeA(DescriptorBlock):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -699,7 +714,7 @@ class DescrptBlockSeA(DescriptorBlock):
     def enable_compression(
         self,
         table_data: dict[str, torch.Tensor],
-        table_config: list[Union[int, float]],
+        table_config: list[int | float],
         lower: dict[str, int],
         upper: dict[str, int],
     ) -> None:
@@ -737,15 +752,15 @@ class DescrptBlockSeA(DescriptorBlock):
         nlist: torch.Tensor,
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
-        extended_atype_embd: Optional[torch.Tensor] = None,
-        mapping: Optional[torch.Tensor] = None,
-        type_embedding: Optional[torch.Tensor] = None,
+        extended_atype_embd: torch.Tensor | None = None,
+        mapping: torch.Tensor | None = None,
+        type_embedding: torch.Tensor | None = None,
     ) -> tuple[
         torch.Tensor,
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
+        torch.Tensor | None,
+        torch.Tensor | None,
+        torch.Tensor | None,
+        torch.Tensor | None,
     ]:
         """Calculate decoded embedding for each atom.
 

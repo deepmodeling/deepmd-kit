@@ -18,7 +18,7 @@ from deepmd.pd.utils import (
 def atomic_virial_corr(
     extended_coord: paddle.Tensor,
     atom_energy: paddle.Tensor,
-):
+) -> paddle.Tensor:
     nall = extended_coord.shape[1]
     nloc = atom_energy.shape[1]
     coord, _ = paddle.split(extended_coord, [nloc, nall - nloc], axis=1)
@@ -69,7 +69,7 @@ def task_deriv_one(
     do_virial: bool = True,
     do_atomic_virial: bool = False,
     create_graph: bool = True,
-):
+) -> tuple[paddle.Tensor, paddle.Tensor | None]:
     # faked_grad = paddle.ones_like(energy)
     # lst = paddle.jit.annotate(List[Optional[paddle.Tensor]], [faked_grad])
     extended_force = paddle.autograd.grad(
@@ -99,7 +99,7 @@ def task_deriv_one(
 def get_leading_dims(
     vv: paddle.Tensor,
     vdef: OutputVariableDef,
-):
+) -> list[int]:
     """Get the dimensions of nf x nloc."""
     vshape = vv.shape
     return list(vshape[: (len(vshape) - len(vdef.shape))])
@@ -113,7 +113,7 @@ def take_deriv(
     do_virial: bool = False,
     do_atomic_virial: bool = False,
     create_graph: bool = True,
-):
+) -> tuple[paddle.Tensor, paddle.Tensor | None]:
     size = 1
     for ii in vdef.shape:
         size *= ii

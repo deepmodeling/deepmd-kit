@@ -3,8 +3,6 @@ import copy
 import math
 from typing import (
     Any,
-    Optional,
-    Union,
 )
 
 import torch
@@ -49,7 +47,7 @@ def make_hessian_model(T_Model: type) -> type:
 
         def requires_hessian(
             self,
-            keys: Union[str, list[str]],
+            keys: str | list[str],
         ) -> None:
             """Set which output variable(s) requires hessian."""
             if isinstance(keys, str):
@@ -66,10 +64,11 @@ def make_hessian_model(T_Model: type) -> type:
             self,
             coord: torch.Tensor,
             atype: torch.Tensor,
-            box: Optional[torch.Tensor] = None,
-            fparam: Optional[torch.Tensor] = None,
-            aparam: Optional[torch.Tensor] = None,
+            box: torch.Tensor | None = None,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
             do_atomic_virial: bool = False,
+            charge_spin: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
             """Return model prediction.
 
@@ -103,6 +102,7 @@ def make_hessian_model(T_Model: type) -> type:
                 fparam=fparam,
                 aparam=aparam,
                 do_atomic_virial=do_atomic_virial,
+                charge_spin=charge_spin,
             )
             vdef = self.atomic_output_def()
             hess_yes = [vdef[kk].r_hessian for kk in vdef.keys()]
@@ -121,9 +121,9 @@ def make_hessian_model(T_Model: type) -> type:
             self,
             coord: torch.Tensor,
             atype: torch.Tensor,
-            box: Optional[torch.Tensor] = None,
-            fparam: Optional[torch.Tensor] = None,
-            aparam: Optional[torch.Tensor] = None,
+            box: torch.Tensor | None = None,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
             nf, nloc = atype.shape
             coord = coord.view([nf, (nloc * 3)])
@@ -166,9 +166,9 @@ def make_hessian_model(T_Model: type) -> type:
             ci: int,
             coord: torch.Tensor,
             atype: torch.Tensor,
-            box: Optional[torch.Tensor] = None,
-            fparam: Optional[torch.Tensor] = None,
-            aparam: Optional[torch.Tensor] = None,
+            box: torch.Tensor | None = None,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
         ) -> torch.Tensor:
             # coord, # (nloc x 3)
             # atype, # nloc
@@ -189,9 +189,9 @@ def make_hessian_model(T_Model: type) -> type:
             obj: CM,
             ci: int,
             atype: torch.Tensor,
-            box: Optional[torch.Tensor],
-            fparam: Optional[torch.Tensor],
-            aparam: Optional[torch.Tensor],
+            box: torch.Tensor | None,
+            fparam: torch.Tensor | None,
+            aparam: torch.Tensor | None,
         ) -> None:
             self.atype, self.box, self.fparam, self.aparam = atype, box, fparam, aparam
             self.ci = ci

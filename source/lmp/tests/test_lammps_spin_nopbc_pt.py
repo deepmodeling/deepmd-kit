@@ -14,6 +14,9 @@ import pytest
 from lammps import (
     PyLammps,
 )
+from model_convert import (
+    ensure_converted_pb,
+)
 from write_lmp_data import (
     write_lmp_data_spin,
 )
@@ -31,24 +34,21 @@ data_file_si = Path(__file__).parent / "data.si"
 data_type_map_file = Path(__file__).parent / "data_type_map.lmp"
 md_file = Path(__file__).parent / "md.out"
 
-expected_ae = np.array(
-    [-5.452114789070532, -5.480146653237549, -5.196470063744647, -5.196470063744647]
-)
-expected_e = np.sum(expected_ae)
+expected_e = 3.5101080091096860e-01
 expected_f = np.array(
     [
-        [0.1005891161568464, -0.0421386837954357, -0.1035159238420185],
-        [-0.1005891161568464, 0.0421386837954357, 0.1035159238420185],
-        [-0.0874023630887424, -0.0816522076223778, 0.1196032337003844],
-        [0.0874023630887424, 0.0816522076223778, -0.1196032337003844],
+        [3.9007324220254663e-03, -1.6340906092268837e-03, 2.4784543132550553e-03],
+        [-3.9007324220254660e-03, 1.6340906092268837e-03, -2.4784543132550550e-03],
+        [1.0879565176984952e-04, 1.0163804310078055e-04, -1.4887826031663627e-04],
+        [-1.0879565176984952e-04, -1.0163804310078055e-04, 1.4887826031663627e-04],
     ]
 )
 expected_fm = np.array(
     [
-        [0.0248296941890119, -0.0104016286467482, 0.0166496777995534],
-        [-0.0407454346265244, 0.0170690334246251, 0.0337262181162752],
-        [0.0000000000000000, 0.00000000000000000, 0.00000000000000000],
-        [0.0000000000000000, 0.00000000000000000, 0.00000000000000000],
+        [3.4589594972289518e-03, -1.4490235731634794e-03, 2.3561281037953720e-03],
+        [-3.0400436796538990e-04, 1.2735318117469008e-04, -1.4949786028183132e-03],
+        [0.0000000000000000e00, 0.0000000000000000e00, 0.0000000000000000e00],
+        [0.0000000000000000e00, 0.0000000000000000e00, 0.0000000000000000e00],
     ]
 )
 
@@ -90,12 +90,14 @@ spin = np.array(
 type_NiO = np.array([1, 1, 2, 2])
 
 
-sp.check_output(
-    f"{sys.executable} -m deepmd convert-from pbtxt -i {pbtxt_file2.resolve()} -o {pb_file2.resolve()}".split()
-)
-
-
 def setup_module() -> None:
+    if os.environ.get("ENABLE_PYTORCH", "1") != "1":
+        pytest.skip(
+            "Skip test because PyTorch support is not enabled.",
+        )
+    if os.environ.get("ENABLE_TENSORFLOW", "1") == "1":
+        ensure_converted_pb(pbtxt_file2, pb_file2)
+
     write_lmp_data_spin(box, coord, spin, type_NiO, data_file)
 
 
@@ -146,6 +148,10 @@ def test_pair_deepmd(lammps) -> None:
     lammps.run(1)
 
 
+@pytest.mark.skipif(
+    os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
+    reason="Skip test because TensorFlow support is not enabled.",
+)
 def test_pair_deepmd_model_devi(lammps) -> None:
     lammps.pair_style(
         f"deepspin {pb_file.resolve()} {pb_file2.resolve()} out_file {md_file.resolve()} out_freq 1"
@@ -169,6 +175,10 @@ def test_pair_deepmd_model_devi(lammps) -> None:
     assert md[9] == pytest.approx(np.mean(expected_md_fm))
 
 
+@pytest.mark.skipif(
+    os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
+    reason="Skip test because TensorFlow support is not enabled.",
+)
 def test_pair_deepmd_model_devi_atomic_relative(lammps) -> None:
     relative = 1.0
     lammps.pair_style(
@@ -206,6 +216,10 @@ def test_pair_deepmd_model_devi_atomic_relative(lammps) -> None:
 @pytest.mark.parametrize(
     ("balance_args",),
     [(["--balance"],), ([],)],
+)
+@pytest.mark.skipif(
+    os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
+    reason="Skip test because TensorFlow support is not enabled.",
 )
 def test_pair_deepmd_mpi(balance_args: list) -> None:
     with tempfile.NamedTemporaryFile() as f:

@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Union,
-)
 
 import tensorflow as tf
 import tensorflow.experimental.numpy as tnp
@@ -17,7 +14,7 @@ def build_neighbor_list(
     atype: tnp.ndarray,
     nloc: int,
     rcut: float,
-    sel: Union[int, list[int]],
+    sel: int | list[int],
     distinguish_types: bool = True,
 ) -> tnp.ndarray:
     """Build neighbor list for a single frame. keeps nsel neighbors.
@@ -115,7 +112,7 @@ def nlist_distinguish_types(
     nlist: tnp.ndarray,
     atype: tnp.ndarray,
     sel: list[int],
-):
+) -> tnp.ndarray:
     """Given a nlist that does not distinguish atom types, return a nlist that
     distinguish atom types.
 
@@ -140,7 +137,7 @@ def nlist_distinguish_types(
     return ret
 
 
-def tf_outer(a, b):
+def tf_outer(a: tnp.ndarray, b: tnp.ndarray) -> tnp.ndarray:
     return tf.einsum("i,j->ij", a, b)
 
 
@@ -150,7 +147,7 @@ def extend_coord_with_ghosts(
     atype: tnp.ndarray,
     cell: tnp.ndarray,
     rcut: float,
-):
+) -> tuple[tnp.ndarray, tnp.ndarray, tnp.ndarray]:
     """Extend the coordinates of the atoms by appending peridoc images.
     The number of images is large enough to ensure all the neighbors
     within rcut are appended.

@@ -2,8 +2,7 @@
 import logging
 import re
 from typing import (
-    Optional,
-    Union,
+    Any,
 )
 
 import numpy as np
@@ -42,7 +41,7 @@ def embed_atom_type(
     ntypes: int,
     natoms: tf.Tensor,
     type_embedding: tf.Tensor,
-):
+) -> tf.Tensor:
     """Make the embedded type for the atoms in system.
     The atoms are assumed to be sorted according to the type,
     thus their types are described by a `tf.Tensor` natoms, see explanation below.
@@ -116,16 +115,16 @@ class TypeEmbedNet:
         ntypes: int,
         neuron: list[int],
         resnet_dt: bool = False,
-        activation_function: Union[str, None] = "tanh",
+        activation_function: str | None = "tanh",
         precision: str = "default",
         trainable: bool = True,
-        seed: Optional[int] = None,
+        seed: int | None = None,
         uniform_seed: bool = False,
         padding: bool = False,
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
-        type_map: Optional[list[str]] = None,
-        **kwargs,
+        type_map: list[str] | None = None,
+        **kwargs: Any,
     ) -> None:
         """Constructor."""
         self.ntypes = ntypes
@@ -154,9 +153,9 @@ class TypeEmbedNet:
     def build(
         self,
         ntypes: int,
-        reuse=None,
-        suffix="",
-    ):
+        reuse: bool | None = None,
+        suffix: str = "",
+    ) -> tf.Tensor:
         """Build the computational graph for the descriptor.
 
         Parameters
@@ -217,8 +216,8 @@ class TypeEmbedNet:
         self,
         graph: tf.Graph,
         graph_def: tf.GraphDef,
-        suffix="",
-        model_type="original_model",
+        suffix: str = "",
+        model_type: str = "original_model",
     ) -> None:
         """Init the type embedding net variables with the given dict.
 
@@ -239,7 +238,7 @@ class TypeEmbedNet:
         )
 
     @classmethod
-    def deserialize(cls, data: dict, suffix: str = ""):
+    def deserialize(cls, data: dict, suffix: str = "") -> "TypeEmbedNet":
         """Deserialize the model.
 
         Parameters

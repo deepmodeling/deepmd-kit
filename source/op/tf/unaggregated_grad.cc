@@ -75,6 +75,10 @@ FPTYPE grad(const FPTYPE xbar,
     case 6: {
       return y * (1 - y);
     }
+    case 7: {
+      const FPTYPE sig = 1.0 / (1.0 + exp(-xbar));
+      return sig + xbar * sig * (1 - sig);
+    }
     default:
       return -1;
   }
@@ -104,6 +108,11 @@ FPTYPE grad_grad(const FPTYPE xbar, const FPTYPE y, const int functype) {
     }
     case 6: {
       return y * (1 - y) * (1 - 2 * y);
+    }
+    case 7: {
+      const FPTYPE sig = 1.0 / (1.0 + exp(-xbar));
+      const FPTYPE d_sig = sig * (1 - sig);
+      return 2 * d_sig + xbar * d_sig * (1 - 2 * sig);
     }
     default:
       return -1;

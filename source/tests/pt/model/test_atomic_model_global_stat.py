@@ -6,7 +6,6 @@ from pathlib import (
 )
 from typing import (
     NoReturn,
-    Optional,
 )
 
 import h5py
@@ -93,11 +92,11 @@ class FooFitting(torch.nn.Module, BaseFitting):
         self,
         descriptor: torch.Tensor,
         atype: torch.Tensor,
-        gr: Optional[torch.Tensor] = None,
-        g2: Optional[torch.Tensor] = None,
-        h2: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        gr: torch.Tensor | None = None,
+        g2: torch.Tensor | None = None,
+        h2: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
     ):
         nf, nloc, _ = descriptor.shape
         ret = {}
@@ -231,7 +230,9 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         )
         ret1 = md0.forward_common_atomic(*args)
         ret1 = cvt_ret(ret1)
-        expected_std = np.ones((3, 2, 2))  # 3 keys, 2 atypes, 2 max dims.
+        expected_std = np.array(
+            [[[0, 1], [0, 1]], [[1, 1], [1, 1]], [[0, 0], [0, 0]]]
+        )  # 3 keys, 2 atypes, 2 max dims.
         # nt x odim
         foo_bias = np.array([1.0, 3.0]).reshape(2, 1)
         bar_bias = np.array([1.0, 5.0, 3.0, 2.0]).reshape(2, 1, 2)

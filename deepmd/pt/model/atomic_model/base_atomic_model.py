@@ -1,11 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
+import functools
 import logging
-from typing import (
+from collections.abc import (
     Callable,
+)
+from typing import (
     NoReturn,
     Optional,
-    Union,
 )
 
 import numpy as np
@@ -77,8 +79,8 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         type_map: list[str],
         atom_exclude_types: list[int] = [],
         pair_exclude_types: list[tuple[int, int]] = [],
-        rcond: Optional[float] = None,
-        preset_out_bias: Optional[dict[str, np.ndarray]] = None,
+        rcond: float | None = None,
+        preset_out_bias: dict[str, np.ndarray] | None = None,
         data_stat_protect: float = 1e-2,
     ) -> None:
         torch.nn.Module.__init__(self)
@@ -89,6 +91,45 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         self.rcond = rcond
         self.preset_out_bias = preset_out_bias
         self.data_stat_protect = data_stat_protect
+        self._observed_type: list[str] | None = None
+
+    @property
+    def observed_type(self) -> list[str] | None:
+        """Get the observed element type list from data statistics."""
+        return self._observed_type
+
+    def _collect_and_set_observed_type(
+        self,
+        sampled_func: Callable[[], list[dict]],
+        stat_file_path: "DPPath | None",
+        preset_observed_type: list[str] | None,
+    ) -> None:
+        """Collect observed types with priority: preset > stat_file > compute.
+
+        Parameters
+        ----------
+        sampled_func
+            The lazy sampled function to get data frames.
+        stat_file_path
+            The path to the statistics files (should already include type_map suffix).
+        preset_observed_type
+            User-specified observed types that take highest priority.
+        """
+        from deepmd.dpmodel.utils.stat import (
+            _restore_observed_type_from_file,
+            _save_observed_type_to_file,
+            collect_observed_types,
+        )
+
+        if preset_observed_type is not None:
+            self._observed_type = preset_observed_type
+        else:
+            observed = _restore_observed_type_from_file(stat_file_path)
+            if observed is None:
+                sampled = sampled_func()
+                observed = collect_observed_types(sampled, self.type_map)
+                _save_observed_type_to_file(stat_file_path, observed)
+            self._observed_type = observed
 
     def init_out_stat(self) -> None:
         """Initialize the output bias."""
@@ -103,7 +144,12 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         self.register_buffer("out_bias", out_bias_data)
         self.register_buffer("out_std", out_std_data)
 
+    def get_out_bias(self) -> torch.Tensor:
+        """Get the output bias."""
+        return self.out_bias
+
     def set_out_bias(self, out_bias: torch.Tensor) -> None:
+        """Set the output bias."""
         self.out_bias = out_bias
 
     def __setitem__(self, key: str, value: torch.Tensor) -> None:
@@ -138,6 +184,75 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
     def has_default_fparam(self) -> bool:
         """Check if the model has default frame parameters."""
         return False
+
+    def get_default_fparam(self) -> torch.Tensor | None:
+        """Get the default frame parameters."""
+        return None
+
+    def has_chg_spin_ebd(self) -> bool:
+        """Check if the model has charge spin embedding."""
+        return False
+
+    @torch.jit.export
+    def get_dim_chg_spin(self) -> int:
+        """Get the dimension of charge_spin input."""
+        return 0
+
+    def has_default_chg_spin(self) -> bool:
+        """Check if the model has default charge_spin values."""
+        return False
+
+    def get_default_chg_spin(self) -> torch.Tensor | None:
+        """Get the default charge_spin values."""
+        return None
+
+    def _make_wrapped_sampler(
+        self,
+        sampled_func: Callable[[], list[dict]],
+    ) -> Callable[[], list[dict]]:
+        """Wrap the sampled function with exclusion types and default fparam.
+
+        The returned callable is cached so that the sampling (which may be
+        expensive) is performed at most once.
+
+        Parameters
+        ----------
+        sampled_func
+            The lazy sampled function to get data frames from different data
+            systems.
+
+        Returns
+        -------
+        Callable[[], list[dict]]
+            A cached wrapper around *sampled_func* that additionally sets
+            ``pair_exclude_types``, ``atom_exclude_types`` and default
+            ``fparam`` on every sample dict when applicable.
+        """
+
+        @functools.lru_cache
+        def wrapped_sampler() -> list[dict]:
+            sampled = sampled_func()
+            if self.pair_excl is not None:
+                pair_exclude_types = self.pair_excl.get_exclude_types()
+                for sample in sampled:
+                    sample["pair_exclude_types"] = list(pair_exclude_types)
+            if self.atom_excl is not None:
+                atom_exclude_types = self.atom_excl.get_exclude_types()
+                for sample in sampled:
+                    sample["atom_exclude_types"] = list(atom_exclude_types)
+            if (
+                "find_fparam" not in sampled[0]
+                and "fparam" not in sampled[0]
+                and self.has_default_fparam()
+            ):
+                default_fparam = self.get_default_fparam()
+                if default_fparam is not None:
+                    for sample in sampled:
+                        nframe = sample["atype"].shape[0]
+                        sample["fparam"] = default_fparam.repeat(nframe, 1)
+            return sampled
+
+        return wrapped_sampler
 
     def reinit_atom_exclude(
         self,
@@ -203,10 +318,11 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
         nlist: torch.Tensor,
-        mapping: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
-        comm_dict: Optional[dict[str, torch.Tensor]] = None,
+        mapping: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Common interface for atomic inference.
 
@@ -258,6 +374,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
             fparam=fparam,
             aparam=aparam,
             comm_dict=comm_dict,
+            charge_spin=charge_spin,
         )
         ret_dict = self.apply_out_stat(ret_dict, atype)
 
@@ -284,10 +401,11 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
         nlist: torch.Tensor,
-        mapping: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
-        comm_dict: Optional[dict[str, torch.Tensor]] = None,
+        mapping: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         return self.forward_common_atomic(
             extended_coord,
@@ -297,6 +415,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
             fparam=fparam,
             aparam=aparam,
             comm_dict=comm_dict,
+            charge_spin=charge_spin,
         )
 
     def change_type_map(
@@ -367,9 +486,10 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
 
     def compute_or_load_stat(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        stat_file_path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        stat_file_path: DPPath | None = None,
         compute_or_load_out_stat: bool = True,
+        preset_observed_type: list[str] | None = None,
     ) -> NoReturn:
         """
         Compute or load the statistics parameters of the model,
@@ -394,8 +514,8 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
 
     def compute_or_load_out_stat(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        stat_file_path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        stat_file_path: DPPath | None = None,
     ) -> None:
         """
         Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
@@ -444,8 +564,8 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
 
     def change_out_bias(
         self,
-        sample_merged: Union[Callable[[], list[dict]], list[dict]],
-        stat_file_path: Optional[DPPath] = None,
+        sample_merged: Callable[[], list[dict]] | list[dict],
+        stat_file_path: DPPath | None = None,
         bias_adjust_mode: str = "change-by-statistic",
     ) -> None:
         """Change the output bias according to the input data and the pretrained model.
@@ -476,6 +596,8 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
                 model_forward=self._get_forward_wrapper_func(),
                 rcond=self.rcond,
                 preset_bias=self.preset_out_bias,
+                stats_distinguish_types=self.get_compute_stats_distinguish_types(),
+                intensive=self.get_intensive(),
             )
             self._store_out_stat(delta_bias, out_std, add=True)
         elif bias_adjust_mode == "set-by-statistic":
@@ -493,15 +615,34 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         else:
             raise RuntimeError("Unknown bias_adjust_mode mode: " + bias_adjust_mode)
 
+    def compute_fitting_input_stat(
+        self,
+        sample_merged: Callable[[], list[dict]] | list[dict],
+    ) -> None:
+        """Compute the input statistics (e.g. mean and stddev) for the atomic model from packed data.
+
+        Parameters
+        ----------
+        sample_merged : Union[Callable[[], list[dict]], list[dict]]
+            - list[dict]: A list of data samples from various data systems.
+                Each element, `merged[i]`, is a data dictionary containing `keys`: `torch.Tensor`
+                originating from the `i`-th data system.
+            - Callable[[], list[dict]]: A lazy function that returns data samples in the above format
+                only when needed. Since the sampling process can be slow and memory-intensive,
+                the lazy function helps by only sampling once.
+        """
+        pass
+
     def _get_forward_wrapper_func(self) -> Callable[..., torch.Tensor]:
         """Get a forward wrapper of the atomic model for output bias calculation."""
 
         def model_forward(
             coord: torch.Tensor,
             atype: torch.Tensor,
-            box: Optional[torch.Tensor],
-            fparam: Optional[torch.Tensor] = None,
-            aparam: Optional[torch.Tensor] = None,
+            box: torch.Tensor | None,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
+            charge_spin: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
             with (
                 torch.no_grad()
@@ -519,6 +660,10 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
                     mixed_types=self.mixed_types(),
                     box=box,
                 )
+                if charge_spin is not None and not isinstance(
+                    charge_spin, torch.Tensor
+                ):
+                    charge_spin = to_torch_tensor(charge_spin)
                 atomic_ret = self.forward_common_atomic(
                     extended_coord,
                     extended_atype,
@@ -526,6 +671,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
                     mapping=mapping,
                     fparam=fparam,
                     aparam=aparam,
+                    charge_spin=charge_spin,
                 )
                 return {kk: vv.detach() for kk, vv in atomic_ret.items()}
 

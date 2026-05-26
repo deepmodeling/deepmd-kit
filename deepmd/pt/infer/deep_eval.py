@@ -1,12 +1,14 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import io
 import json
 import logging
+from collections.abc import (
+    Callable,
+)
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     Optional,
-    Union,
 )
 
 import numpy as np
@@ -108,9 +110,9 @@ class DeepEval(DeepEvalBackend):
         model_file: str,
         output_def: ModelOutputDef,
         *args: Any,
-        auto_batch_size: Union[bool, int, AutoBatchSize] = True,
+        auto_batch_size: bool | int | AutoBatchSize = True,
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
-        head: Optional[Union[str, int]] = None,
+        head: str | int | None = None,
         no_jit: bool = False,
         **kwargs: Any,
     ) -> None:
@@ -168,10 +170,34 @@ class DeepEval(DeepEvalBackend):
             if not self.input_param.get("hessian_mode") and not no_jit:
                 model = torch.jit.script(model)
             self.dp = ModelWrapper(model)
-            self.dp.load_state_dict(state_dict)
+            missing, unexpected = self.dp.load_state_dict(state_dict, strict=False)
+            if missing:
+                log.warning(
+                    "Checkpoint loaded with missing keys (likely from an older "
+                    "version): %s",
+                    missing,
+                )
+            if unexpected:
+                log.warning(
+                    "Checkpoint loaded with unexpected keys: %s",
+                    unexpected,
+                )
         elif str(self.model_path).endswith(".pth"):
-            model = torch.jit.load(model_file, map_location=env.DEVICE)
-            self.dp = ModelWrapper(model)
+            extra_files = {"data_modifier.pth": ""}
+            model = torch.jit.load(
+                model_file, map_location=env.DEVICE, _extra_files=extra_files
+            )
+            modifier = None
+            # Load modifier if it exists in extra_files
+            if len(extra_files["data_modifier.pth"]) > 0:
+                # Create a file-like object from the in-memory data
+                modifier_data = extra_files["data_modifier.pth"]
+                if isinstance(modifier_data, bytes):
+                    modifier_data = io.BytesIO(modifier_data)
+                # Load the modifier directly from the file-like object
+                modifier = torch.jit.load(modifier_data, map_location=env.DEVICE)
+            self.dp = ModelWrapper(model, modifier=modifier)
+            self.modifier = modifier
             model_def_script = self.dp.model["Default"].get_model_def_script()
             if model_def_script:
                 self.model_def_script = json.loads(model_def_script)
@@ -226,6 +252,20 @@ class DeepEval(DeepEvalBackend):
             # for compatibility with old models
             return False
 
+    def has_chg_spin_ebd(self) -> bool:
+        """Check if the model has charge spin embedding."""
+        try:
+            return self.dp.model["Default"].has_chg_spin_ebd()
+        except AttributeError:
+            return False
+
+    def has_default_chg_spin(self) -> bool:
+        """Check if the model has default charge_spin values."""
+        try:
+            return self.dp.model["Default"].has_default_chg_spin()
+        except AttributeError:
+            return False
+
     def get_intensive(self) -> bool:
         return self.dp.model["Default"].get_intensive()
 
@@ -248,7 +288,7 @@ class DeepEval(DeepEvalBackend):
             return DeepDOS
         elif "dipole" in model_output_type:
             return DeepDipole
-        elif "polar" in model_output_type:
+        elif "polar" in model_output_type or "polarizability" in model_output_type:
             return DeepPolar
         elif "global_polar" in model_output_type:
             return DeepGlobalPolar
@@ -288,6 +328,13 @@ class DeepEval(DeepEvalBackend):
         """Check if the model has spin atom types."""
         return self._has_spin
 
+    def get_use_spin(self) -> list[bool]:
+        """Get the per-type spin usage of this model."""
+        if self._has_spin:
+            model = self.dp.model["Default"]
+            return model.spin.use_spin.tolist()
+        return []
+
     def get_has_hessian(self) -> bool:
         """Check if the model has hessian."""
         return self._has_hessian
@@ -306,11 +353,12 @@ class DeepEval(DeepEvalBackend):
     def eval(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: np.ndarray,
         atomic: bool = False,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+        charge_spin: np.ndarray | None = None,
         **kwargs: Any,
     ) -> dict[str, np.ndarray]:
         """Evaluate the energy, force and virial by using this DP.
@@ -367,6 +415,7 @@ class DeepEval(DeepEvalBackend):
                 fparam,
                 aparam,
                 request_defs,
+                charge_spin,
             )
         elif "grid" in kwargs and kwargs["grid"] is not None:
             out = self._eval_func(self._eval_model_density, numb_test, natoms)(
@@ -408,9 +457,9 @@ class DeepEval(DeepEvalBackend):
             The requested output definitions.
         """
         if atomic:
-            return list(self.output_def.var_defs.values())
+            output_defs = list(self.output_def.var_defs.values())
         else:
-            return [
+            output_defs = [
                 x
                 for x in self.output_def.var_defs.values()
                 if x.category
@@ -422,6 +471,13 @@ class DeepEval(DeepEvalBackend):
                     OutputVariableCategory.DERV_R_DERV_R,
                 )
             ]
+        if not self.get_has_hessian():
+            output_defs = [
+                x
+                for x in output_defs
+                if x.category != OutputVariableCategory.DERV_R_DERV_R
+            ]
+        return output_defs
 
     def _eval_func(self, inner_func: Callable, numb_test: int, natoms: int) -> Callable:
         """Wrapper method with auto batch size.
@@ -471,11 +527,12 @@ class DeepEval(DeepEvalBackend):
     def _eval_model(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: np.ndarray,
-        fparam: Optional[np.ndarray],
-        aparam: Optional[np.ndarray],
+        fparam: np.ndarray | None,
+        aparam: np.ndarray | None,
         request_defs: list[OutputVariableDef],
+        charge_spin: np.ndarray | None,
     ) -> tuple[np.ndarray, ...]:
         model = self.dp.to(DEVICE)
         prec = NP_PRECISION_DICT[RESERVED_PRECISION_DICT[GLOBAL_PT_FLOAT_PRECISION]]
@@ -517,6 +574,10 @@ class DeepEval(DeepEvalBackend):
             )
         else:
             aparam_input = None
+        if charge_spin is not None:
+            charge_spin_input = to_torch_tensor(charge_spin.reshape(nframes, 2))
+        else:
+            charge_spin_input = None
         do_atomic_virial = any(
             x.category == OutputVariableCategory.DERV_C for x in request_defs
         )
@@ -527,6 +588,7 @@ class DeepEval(DeepEvalBackend):
             do_atomic_virial=do_atomic_virial,
             fparam=fparam_input,
             aparam=aparam_input,
+            charge_spin=charge_spin_input,
         )
         if isinstance(batch_output, tuple):
             batch_output = batch_output[0]
@@ -548,12 +610,13 @@ class DeepEval(DeepEvalBackend):
     def _eval_model_spin(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: np.ndarray,
         spins: np.ndarray,
-        fparam: Optional[np.ndarray],
-        aparam: Optional[np.ndarray],
+        fparam: np.ndarray | None,
+        aparam: np.ndarray | None,
         request_defs: list[OutputVariableDef],
+        charge_spin: np.ndarray | None,
     ) -> tuple[np.ndarray, ...]:
         model = self.dp.to(DEVICE)
 
@@ -595,6 +658,10 @@ class DeepEval(DeepEvalBackend):
             )
         else:
             aparam_input = None
+        if charge_spin is not None:
+            charge_spin_input = to_torch_tensor(charge_spin.reshape(nframes, 2))
+        else:
+            charge_spin_input = None
 
         do_atomic_virial = any(
             x.category == OutputVariableCategory.DERV_C_REDU for x in request_defs
@@ -607,6 +674,7 @@ class DeepEval(DeepEvalBackend):
             do_atomic_virial=do_atomic_virial,
             fparam=fparam_input,
             aparam=aparam_input,
+            charge_spin=charge_spin_input,
         )
         if isinstance(batch_output, tuple):
             batch_output = batch_output[0]
@@ -762,7 +830,7 @@ class DeepEval(DeepEvalBackend):
         typeebd = torch.cat(out, dim=1)
         return to_numpy_array(typeebd)
 
-    def get_model_def_script(self) -> str:
+    def get_model_def_script(self) -> dict:
         """Get model definition script."""
         return self.model_def_script
 
@@ -800,6 +868,14 @@ class DeepEval(DeepEvalBackend):
             - 'type_num': the total number of observed types in this model.
             - 'observed_type': a list of the observed types in this model.
         """
+        # Try metadata first (from model_def_script, already a dict)
+        observed_type_list = self.model_def_script.get("info", {}).get("observed_type")
+        if observed_type_list is not None:
+            return {
+                "type_num": len(observed_type_list),
+                "observed_type": observed_type_list,
+            }
+        # Fallback: bias-based approach for old models
         observed_type_list = self.dp.model["Default"].get_observed_type_list()
         return {
             "type_num": len(observed_type_list),
@@ -819,10 +895,10 @@ class DeepEval(DeepEvalBackend):
     def eval_descriptor(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: np.ndarray,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
         **kwargs: Any,
     ) -> np.ndarray:
         """Evaluate descriptors by using this DP.
@@ -874,10 +950,10 @@ class DeepEval(DeepEvalBackend):
     def eval_fitting_last_layer(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: np.ndarray,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
         **kwargs: Any,
     ) -> np.ndarray:
         """Evaluate fitting before last layer by using this DP.

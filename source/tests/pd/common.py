@@ -1,9 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import pathlib
-from typing import (
-    Optional,
-    Union,
-)
 
 import numpy as np
 import paddle
@@ -51,10 +47,10 @@ def run_dp(cmd: str) -> int:
 
 def eval_model(
     model,
-    coords: Union[np.ndarray, paddle.Tensor],
-    cells: Optional[Union[np.ndarray, paddle.Tensor]],
-    atom_types: Union[np.ndarray, paddle.Tensor, list[int]],
-    spins: Optional[Union[np.ndarray, paddle.Tensor]] = None,
+    coords: np.ndarray | paddle.Tensor,
+    cells: np.ndarray | paddle.Tensor | None,
+    atom_types: np.ndarray | paddle.Tensor | list[int],
+    spins: np.ndarray | paddle.Tensor | None = None,
     atomic: bool = False,
     infer_batch_size: int = 2,
     denoise: bool = False,

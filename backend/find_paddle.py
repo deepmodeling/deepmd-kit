@@ -17,14 +17,10 @@ from pathlib import (
 from sysconfig import (
     get_path,
 )
-from typing import (
-    Optional,
-    Union,
-)
 
 
 @lru_cache
-def find_paddle() -> tuple[Optional[str], list[str]]:
+def find_paddle() -> tuple[str | None, list[str]]:
     """Find PaddlePadle library.
 
     Tries to find PaddlePadle in the order of:
@@ -111,7 +107,7 @@ def get_pd_requirement(pd_version: str = "") -> dict:
 
 
 @lru_cache
-def get_pd_version(pd_path: Optional[Union[str, Path]]) -> str:
+def get_pd_version(pd_path: str | Path | None) -> str:
     """Get Paddle version from a Paddle Python library path.
 
     Parameters

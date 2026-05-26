@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    Optional,
-    Union,
 )
 
 import array_api_compat
@@ -45,6 +43,35 @@ from .general_fitting import (
 @fitting_check_output
 class PolarFitting(GeneralFitting):
     r"""Fitting rotationally equivariant polarizability of the system.
+
+    The polarizability tensor :math:`\boldsymbol{\alpha} \in \mathbb{R}^{3 \times 3}` is
+    computed from the fitting network output and the rotation matrix
+    :math:`\mathbf{R}^i \in \mathbb{R}^{m_1 \times 3}` from the descriptor,
+    where :math:`m_1` is the embedding width (the dimension of the rotation matrix):
+
+    **Diagonal fitting** (when `fit_diag=True`):
+
+    .. math::
+        \boldsymbol{\alpha}^i = \mathbf{R}^{i,T} \cdot \mathrm{diag}(\mathbf{p}^i) \cdot \mathbf{R}^i,
+
+    where :math:`\mathbf{p}^i \in \mathbb{R}^{m_1}` is the diagonal elements of the
+    local-frame polarizability predicted by the fitting network.
+
+    **Full matrix fitting** (when `fit_diag=False`):
+
+    .. math::
+        \boldsymbol{\alpha}^i = \mathbf{R}^{i,T} \cdot \mathbf{P}^i \cdot \mathbf{R}^i,
+
+    where :math:`\hat{\mathbf{P}}^i \in \mathbb{R}^{m_1 \times m_1}` is the raw output of
+    the fitting network, and :math:`\mathbf{P}^i = \frac{1}{2}(\hat{\mathbf{P}}^i + \hat{\mathbf{P}}^{i,T})`
+    is the symmetrized version. Since :math:`\mathbf{P}^i` is symmetric, the resulting
+    :math:`\boldsymbol{\alpha}^i` is guaranteed to be a symmetric tensor (matrix products
+    of the form :math:`A^T S A` preserve symmetry).
+
+    The fitting network is:
+
+    .. math::
+        \mathbf{p}^i \text{ (or } \mathbf{P}^i) = \mathcal{L}^{(n)} \circ \cdots \circ \mathcal{L}^{(0)}(\mathcal{D}^i).
 
     Parameters
     ----------
@@ -108,22 +135,22 @@ class PolarFitting(GeneralFitting):
         numb_fparam: int = 0,
         numb_aparam: int = 0,
         dim_case_embd: int = 0,
-        rcond: Optional[float] = None,
+        rcond: float | None = None,
         tot_ener_zero: bool = False,
-        trainable: Optional[list[bool]] = None,
+        trainable: list[bool] | None = None,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
-        layer_name: Optional[list[Optional[str]]] = None,
+        layer_name: list[str | None] | None = None,
         use_aparam_as_mask: bool = False,
         spin: Any = None,
         mixed_types: bool = False,
         exclude_types: list[int] = [],
         fit_diag: bool = True,
-        scale: Optional[list[float]] = None,
+        scale: list[float] | None = None,
         shift_diag: bool = True,
-        type_map: Optional[list[str]] = None,
-        seed: Optional[Union[int, list[int]]] = None,
-        default_fparam: Optional[list[float]] = None,
+        type_map: list[str] | None = None,
+        seed: int | list[int] | None = None,
+        default_fparam: list[float] | None = None,
     ) -> None:
         if tot_ener_zero:
             raise NotImplementedError("tot_ener_zero is not implemented")
@@ -223,6 +250,7 @@ class PolarFitting(GeneralFitting):
                     r_differentiable=False,
                     c_differentiable=False,
                 ),
+                *self._middle_output_def(),
             ]
         )
 
@@ -239,14 +267,21 @@ class PolarFitting(GeneralFitting):
         remap_index, has_new_type = get_index_between_two_maps(self.type_map, type_map)
         super().change_type_map(type_map=type_map)
         if has_new_type:
+            xp = array_api_compat.array_namespace(self.scale)
             extend_shape = [len(type_map), *list(self.scale.shape[1:])]
-            extend_scale = np.ones(extend_shape, dtype=self.scale.dtype)
-            self.scale = np.concatenate([self.scale, extend_scale], axis=0)
-            extend_shape = [len(type_map), *list(self.constant_matrix.shape[1:])]
-            extend_constant_matrix = np.zeros(
-                extend_shape, dtype=self.constant_matrix.dtype
+            extend_scale = xp.ones(
+                extend_shape,
+                dtype=self.scale.dtype,
+                device=array_api_compat.device(self.scale),
             )
-            self.constant_matrix = np.concatenate(
+            self.scale = xp.concat([self.scale, extend_scale], axis=0)
+            extend_shape = [len(type_map), *list(self.constant_matrix.shape[1:])]
+            extend_constant_matrix = xp.zeros(
+                extend_shape,
+                dtype=self.constant_matrix.dtype,
+                device=array_api_compat.device(self.constant_matrix),
+            )
+            self.constant_matrix = xp.concat(
                 [self.constant_matrix, extend_constant_matrix], axis=0
             )
         self.scale = self.scale[remap_index]
@@ -257,11 +292,11 @@ class PolarFitting(GeneralFitting):
         self,
         descriptor: Array,
         atype: Array,
-        gr: Optional[Array] = None,
-        g2: Optional[Array] = None,
-        h2: Optional[Array] = None,
-        fparam: Optional[Array] = None,
-        aparam: Optional[Array] = None,
+        gr: Array | None = None,
+        g2: Array | None = None,
+        h2: Array | None = None,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
     ) -> dict[str, Array]:
         """Calculate the fitting.
 
@@ -292,9 +327,8 @@ class PolarFitting(GeneralFitting):
             "Must provide the rotation matrix for polarizability fitting."
         )
         # (nframes, nloc, _net_out_dim)
-        out = self._call_common(descriptor, atype, gr, g2, h2, fparam, aparam)[
-            self.var_name
-        ]
+        results = self._call_common(descriptor, atype, gr, g2, h2, fparam, aparam)
+        out = results.pop(self.var_name)
         # out = out * self.scale[atype, ...]
         scale_atype = xp.reshape(
             xp.take(xp.astype(self.scale, out.dtype), xp.reshape(atype, (-1,)), axis=0),
@@ -330,9 +364,12 @@ class PolarFitting(GeneralFitting):
             )
             # (nframes, nloc, 1)
             bias = bias[..., None] * scale_atype
-            eye = xp.eye(3, dtype=descriptor.dtype)
+            eye = xp.eye(
+                3, dtype=descriptor.dtype, device=array_api_compat.device(descriptor)
+            )
             eye = xp.tile(eye, (nframes, nloc, 1, 1))
             # (nframes, nloc, 3, 3)
             bias = bias[..., None] * eye
             out = out + bias
-        return {"polarizability": out}
+        results["polarizability"] = out
+        return results

@@ -1,9 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
+from collections.abc import (
     Callable,
+)
+from typing import (
     NoReturn,
     Optional,
-    Union,
 )
 
 import array_api_compat
@@ -69,6 +70,27 @@ from .descriptor import (
 class DescrptSeTTebd(NativeOP, BaseDescriptor):
     r"""Construct an embedding net that takes angles between two neighboring atoms and type embeddings as input.
 
+    The descriptor :math:`\mathcal{D}^i \in \mathbb{R}^{M}` is given by
+
+    .. math::
+        \mathcal{D}^i = \frac{1}{N_c^2} \sum_{j,k} \mathcal{N}(\cos\theta_{jik}, \mathcal{T}_j, \mathcal{T}_k),
+
+    where :math:`\theta_{jik}` is the angle between neighbors :math:`j` and :math:`k`
+    around the central atom :math:`i`, :math:`\mathcal{T}_j` and :math:`\mathcal{T}_k`
+    are the type embeddings of atoms :math:`j` and :math:`k`, and :math:`\mathcal{N}`
+    is the embedding network.
+
+    The cosine of the angle is computed from the normalized relative coordinates:
+
+    .. math::
+        \cos\theta_{jik} = \frac{\boldsymbol{r}_{ij} \cdot \boldsymbol{r}_{ik}}{|\boldsymbol{r}_{ij}| |\boldsymbol{r}_{ik}|}.
+
+    The type embedding can be incorporated in two modes:
+
+    - "concat": Concatenate :math:`[\cos\theta_{jik}, \mathcal{T}_j, \mathcal{T}_k]` as input to the embedding network.
+    - "strip": Use separate embedding networks for :math:`\cos\theta_{jik}` and :math:`[\mathcal{T}_j, \mathcal{T}_k]`,
+      then combine their outputs multiplicatively.
+
     Parameters
     ----------
     rcut
@@ -119,11 +141,13 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
 
     """
 
+    _update_sel_cls = UpdateSel
+
     def __init__(
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[list[int], int],
+        sel: list[int] | int,
         ntypes: int,
         neuron: list = [2, 4, 8],
         tebd_dim: int = 8,
@@ -135,8 +159,8 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         exclude_types: list[tuple[int, int]] = [],
         precision: str = "float64",
         trainable: bool = True,
-        seed: Optional[Union[int, list[int]]] = None,
-        type_map: Optional[list[str]] = None,
+        seed: int | list[int] | None = None,
+        type_map: list[str] | None = None,
         concat_output_tebd: bool = True,
         use_econf_tebd: bool = False,
         use_tebd_bias: bool = False,
@@ -179,6 +203,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         self.concat_output_tebd = concat_output_tebd
         self.trainable = trainable
         self.precision = precision
+        self.compress = False
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -230,6 +255,10 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         """Returns whether the descriptor has message passing."""
         return self.se_ttebd.has_message_passing()
 
+    def has_message_passing_across_ranks(self) -> bool:
+        """Returns whether per-layer node embeddings need MPI ghost exchange."""
+        return self.se_ttebd.has_message_passing_across_ranks()
+
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
         return self.se_ttebd.need_sorted_nlist_for_lower()
@@ -258,8 +287,8 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -327,7 +356,10 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         coord_ext: Array,
         atype_ext: Array,
         nlist: Array,
-        mapping: Optional[Array] = None,
+        mapping: Array | None = None,
+        fparam: Array | None = None,
+        comm_dict: dict | None = None,
+        charge_spin: Array | None = None,
     ) -> tuple[Array, Array]:
         """Compute the descriptor.
 
@@ -391,7 +423,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         data = {
             "@class": "Descriptor",
             "type": "se_e3_tebd",
-            "@version": 1,
+            "@version": 2 if self.compress else 1,
             "rcut": obj.rcut,
             "rcut_smth": obj.rcut_smth,
             "sel": obj.sel,
@@ -421,19 +453,32 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         }
         if obj.tebd_input_mode in ["strip"]:
             data.update({"embeddings_strip": obj.embeddings_strip.serialize()})
+        if self.compress:
+            compress_dict: dict = {
+                "@variables": {
+                    "compress_data": [to_numpy_array(d) for d in self.compress_data],
+                    "compress_info": [to_numpy_array(i) for i in self.compress_info],
+                },
+            }
+            if hasattr(self, "type_embd_data"):
+                compress_dict["@variables"]["type_embd_data"] = to_numpy_array(
+                    self.type_embd_data
+                )
+            data["compress"] = compress_dict
         return data
 
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeTTebd":
         """Deserialize from dict."""
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
+        check_version_compatibility(data.pop("@version"), 2, 1)
         data.pop("@class")
         data.pop("type")
         variables = data.pop("@variables")
         embeddings = data.pop("embeddings")
         type_embedding = data.pop("type_embedding")
         env_mat = data.pop("env_mat")
+        compress = data.pop("compress", None)
         tebd_input_mode = data["tebd_input_mode"]
         if tebd_input_mode in ["strip"]:
             embeddings_strip = data.pop("embeddings_strip")
@@ -449,14 +494,25 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
             obj.se_ttebd.embeddings_strip = NetworkCollection.deserialize(
                 embeddings_strip
             )
+        if compress is not None:
+            obj._load_compress_data(compress)
 
         return obj
+
+    def _load_compress_data(self, compress: dict) -> None:
+        """Load compression state from serialized data."""
+        variables = compress["@variables"]
+        self.compress_data = variables["compress_data"]
+        self.compress_info = variables["compress_info"]
+        if "type_embd_data" in variables:
+            self.type_embd_data = variables["type_embd_data"]
+        self.compress = True
 
     @classmethod
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
     ) -> tuple[Array, Array]:
         """Update the selection and perform neighbor statistics.
@@ -478,7 +534,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
             The minimum distance between two atoms
         """
         local_jdata_cpy = local_jdata.copy()
-        min_nbor_dist, sel = UpdateSel().update_one_sel(
+        min_nbor_dist, sel = cls._update_sel_cls().update_one_sel(
             train_data, type_map, local_jdata_cpy["rcut"], local_jdata_cpy["sel"], True
         )
         local_jdata_cpy["sel"] = sel[0]
@@ -487,11 +543,64 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
 
 @DescriptorBlock.register("se_ttebd")
 class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
+    r"""The three-body descriptor block with type embedding.
+
+    This block computes an embedding using angles between two neighboring atoms and type embeddings.
+    The descriptor is computed as:
+
+    .. math::
+        \mathcal{D}^i = \frac{1}{N_c^2} \sum_{j,k} \mathcal{N}(\cos\theta_{jik}, \mathcal{T}_j, \mathcal{T}_k),
+
+    where :math:`\theta_{jik}` is the angle between neighbors :math:`j` and :math:`k`
+    around the central atom :math:`i`, :math:`\mathcal{T}_j` and :math:`\mathcal{T}_k`
+    are the type embeddings of atoms :math:`j` and :math:`k`.
+
+    The cosine of the angle is computed from the normalized relative coordinates:
+
+    .. math::
+        \cos\theta_{jik} = \frac{\boldsymbol{r}_{ij} \cdot \boldsymbol{r}_{ik}}{|\boldsymbol{r}_{ij}| |\boldsymbol{r}_{ik}|}.
+
+    Parameters
+    ----------
+    rcut : float
+        The cut-off radius.
+    rcut_smth : float
+        Where to start smoothing.
+    sel : Union[list[int], int]
+        Maximally possible number of selected neighbors.
+    ntypes : int
+        Number of element types.
+    neuron : list[int], optional
+        Number of neurons in each hidden layer of the embedding net.
+    tebd_dim : int, optional
+        Dimension of the type embedding.
+    tebd_input_mode : str, optional
+        The input mode of the type embedding. Supported modes are ["concat", "strip"].
+    set_davg_zero : bool, optional
+        Set the shift of embedding net input to zero.
+    activation_function : str, optional
+        The activation function in the embedding net.
+    precision : str, optional
+        The precision of the embedding net parameters.
+    resnet_dt : bool, optional
+        Time-step `dt` in the resnet construction.
+    exclude_types : list[tuple[int, int]], optional
+        The excluded pairs of types which have no interaction.
+    env_protection : float, optional
+        Protection parameter to prevent division by zero.
+    smooth : bool, optional
+        Whether to use smoothness.
+    seed : int, optional
+        Random seed for parameter initialization.
+    trainable : bool, optional
+        If the parameters are trainable.
+    """
+
     def __init__(
         self,
         rcut: float,
         rcut_smth: float,
-        sel: Union[list[int], int],
+        sel: list[int] | int,
         ntypes: int,
         neuron: list = [25, 50, 100],
         tebd_dim: int = 8,
@@ -503,7 +612,7 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
         exclude_types: list[tuple[int, int]] = [],
         env_protection: float = 0.0,
         smooth: bool = True,
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
         trainable: bool = True,
     ) -> None:
         self.rcut = rcut
@@ -659,8 +768,8 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -693,9 +802,14 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         xp = array_api_compat.array_namespace(self.stddev)
+        device = array_api_compat.device(self.stddev)
         if not self.set_davg_zero:
-            self.mean = xp.asarray(mean, dtype=self.mean.dtype, copy=True)
-        self.stddev = xp.asarray(stddev, dtype=self.stddev.dtype, copy=True)
+            self.mean = xp.asarray(
+                mean, dtype=self.mean.dtype, copy=True, device=device
+            )
+        self.stddev = xp.asarray(
+            stddev, dtype=self.stddev.dtype, copy=True, device=device
+        )
 
     def get_stats(self) -> dict[str, StatItem]:
         """Get the statistics of the descriptor."""
@@ -736,9 +850,9 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
         nlist: Array,
         coord_ext: Array,
         atype_ext: Array,
-        atype_embd_ext: Optional[Array] = None,
-        mapping: Optional[Array] = None,
-        type_embedding: Optional[Array] = None,
+        atype_embd_ext: Array | None = None,
+        mapping: Array | None = None,
+        type_embedding: Array | None = None,
     ) -> tuple[Array, Array]:
         xp = array_api_compat.array_namespace(nlist, coord_ext, atype_ext)
         # nf x nloc x nnei x 4
@@ -763,7 +877,9 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
         sw = xp.where(
             nlist_mask[:, :, None],
             xp.reshape(sw, (nf * nloc, nnei, 1)),
-            xp.zeros((nf * nloc, nnei, 1), dtype=sw.dtype),
+            xp.zeros(
+                (nf * nloc, nnei, 1), dtype=sw.dtype, device=array_api_compat.device(sw)
+            ),
         )
 
         # nfnl x nnei x 4
@@ -826,6 +942,8 @@ class DescrptBlockSeTTebd(NativeOP, DescriptorBlock):
 
             # (nf x nl x nt_i x nt_j) x ng
             idx = xp.tile(xp.reshape((idx_i + idx_j), (-1, 1)), (1, ng))
+            # Cast to int64 for PyTorch backend (take_along_dim requires Long indices)
+            idx = xp.astype(idx, xp.int64)
 
             # ntypes * (ntypes) * nt
             type_embedding_i = xp.tile(

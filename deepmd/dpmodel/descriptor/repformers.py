@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
-    Callable,
-    Optional,
-    Union,
 )
 
 import array_api_compat
@@ -16,6 +16,7 @@ from deepmd.dpmodel import (
 from deepmd.dpmodel.array_api import (
     Array,
     xp_take_along_axis,
+    xp_take_first_n,
 )
 from deepmd.dpmodel.common import (
     to_numpy_array,
@@ -83,6 +84,36 @@ def xp_transpose_01342(x: Array) -> Array:
 class DescrptBlockRepformers(NativeOP, DescriptorBlock):
     r"""
     The repformer descriptor block.
+
+    The repformer block iteratively updates single-atom (:math:`\mathcal{G}_1`),
+    pair-atom (:math:`\mathcal{G}_2`), and equivariant pair-atom (:math:`\mathcal{H}_2`)
+    representations through multiple layers:
+
+    **Update of :math:`\mathcal{G}_1` (single-atom representation):**
+
+    The update can include multiple terms:
+
+    - Convolution term: :math:`\mathcal{G}_1^{i,l+1} \leftarrow \mathcal{G}_1^{i,l} + \mathrm{MLP}(\sum_j \mathcal{G}_2^{ij,l} \odot \mathcal{G}_1^{j,l})`
+    - GRRG term: :math:`\mathcal{G}_1^{i,l+1} \leftarrow \mathcal{G}_1^{i,l} + \mathrm{MLP}((\mathcal{G}_2^{i,l})^T \mathcal{H}_2^{i,l} (\mathcal{H}_2^{i,l})^T \mathcal{G}_{2,<}^{i,l})`
+    - DRRD term: :math:`\mathcal{G}_1^{i,l+1} \leftarrow \mathcal{G}_1^{i,l} + \mathrm{MLP}((\mathcal{G}_1^{j,l})^T \mathcal{H}_2^{i,l} (\mathcal{H}_2^{i,l})^T \mathcal{G}_{1,<}^{j,l})`
+    - Attention term: :math:`\mathcal{G}_1^{i,l+1} \leftarrow \mathcal{G}_1^{i,l} + \mathrm{SelfAttention}(\mathcal{G}_1^{i,l}, \mathcal{G}_1^{j,l})`
+
+    **Update of :math:`\mathcal{G}_2` (pair-atom representation):**
+
+    - G1xG1 term: :math:`\mathcal{G}_2^{ij,l+1} \leftarrow \mathcal{G}_2^{ij,l} + \mathrm{MLP}(\mathcal{G}_1^{i,l} \otimes \mathcal{G}_1^{j,l})`
+    - Attention term: :math:`\mathcal{G}_2^{ij,l+1} \leftarrow \mathcal{G}_2^{ij,l} + \mathrm{GatedSelfAttention}(\mathcal{G}_2^{ij,l})`
+
+    **Update of :math:`\mathcal{H}_2` (equivariant pair-atom representation):**
+
+    .. math::
+        \mathcal{H}_2^{ij,l+1} = \mathcal{H}_2^{ij,l} + \mathrm{MLP}(\mathcal{G}_2^{ij,l}) \odot \mathcal{R}^{ij}.
+
+    The final descriptor is the iteratively updated single-atom representation:
+
+    .. math::
+        \mathcal{D}^i = \mathcal{G}_1^{i,L},
+
+    where :math:`L` is the number of repformer layers.
 
     Parameters
     ----------
@@ -206,8 +237,8 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         use_sqrt_nnei: bool = True,
         g1_out_conv: bool = True,
         g1_out_mlp: bool = True,
-        ln_eps: Optional[float] = 1e-5,
-        seed: Optional[Union[int, list[int]]] = None,
+        ln_eps: float | None = 1e-5,
+        seed: int | list[int] | None = None,
         trainable: bool = True,
     ) -> None:
         super().__init__()
@@ -314,6 +345,14 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         """Returns the cut-off radius."""
         return self.rcut
 
+    def get_rcut_smth(self) -> float:
+        """Returns the radius where the neighbor information starts to smoothly decay to 0."""
+        return self.rcut_smth
+
+    def get_env_protection(self) -> float:
+        """Returns the protection of building environment matrix."""
+        return self.env_protection
+
     def get_nsel(self) -> int:
         """Returns the number of selected atoms in the cut-off radius."""
         return sum(self.sel)
@@ -383,8 +422,8 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -417,9 +456,14 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         xp = array_api_compat.array_namespace(self.stddev)
+        device = array_api_compat.device(self.stddev)
         if not self.set_davg_zero:
-            self.mean = xp.asarray(mean, dtype=self.mean.dtype, copy=True)
-        self.stddev = xp.asarray(stddev, dtype=self.stddev.dtype, copy=True)
+            self.mean = xp.asarray(
+                mean, dtype=self.mean.dtype, copy=True, device=device
+            )
+        self.stddev = xp.asarray(
+            stddev, dtype=self.stddev.dtype, copy=True, device=device
+        )
 
     def get_stats(self) -> dict[str, StatItem]:
         """Get the statistics of the descriptor."""
@@ -436,14 +480,41 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
 
+    def _exchange_ghosts(
+        self,
+        g1: Array,
+        mapping_tiled: Array | None,
+        comm_dict: dict | None,
+        nall: int,
+        nloc: int,
+    ) -> Array:
+        """Build g1_ext (the ghost-aware single-atom embedding) for the
+        per-layer loop.
+
+        Default: array-api gather via the pre-tiled ``mapping_tiled``.
+        ``comm_dict``, ``nall``, ``nloc`` are unused in this default impl;
+        they exist so the pt_expt subclass can perform the per-layer MPI
+        ghost exchange (``deepmd_export::border_op``) when ``comm_dict is
+        not None``.
+        """
+        del comm_dict, nall, nloc
+        if mapping_tiled is None:
+            raise ValueError(
+                "`mapping` is required by the default `_exchange_ghosts` "
+                "implementation; pass a valid mapping or override the method "
+                "for parallel comm handling."
+            )
+        return xp_take_along_axis(g1, mapping_tiled, axis=1)
+
     def call(
         self,
         nlist: Array,
         coord_ext: Array,
         atype_ext: Array,
-        atype_embd_ext: Optional[Array] = None,
-        mapping: Optional[Array] = None,
-        type_embedding: Optional[Array] = None,
+        atype_embd_ext: Array | None = None,
+        mapping: Array | None = None,
+        type_embedding: Array | None = None,
+        comm_dict: dict | None = None,
     ) -> Array:
         xp = array_api_compat.array_namespace(nlist, coord_ext, atype_ext)
         exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
@@ -464,13 +535,13 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         sw = xp.reshape(sw, (nf, nloc, nnei))
         sw = xp.where(nlist_mask, sw, xp.zeros_like(sw))
         # nf x nloc x tebd_dim
-        atype_embd = atype_embd_ext[:, :nloc, :]
+        atype_embd = xp_take_first_n(atype_embd_ext, 1, nloc)
         assert list(atype_embd.shape) == [nf, nloc, self.g1_dim]
 
         g1 = self.act(atype_embd)
         # nf x nloc x nnei x 1,  nf x nloc x nnei x 3
         if not self.direct_dist:
-            g2, h2 = xp.split(dmatrix, [1], axis=-1)
+            g2, h2 = dmatrix[..., :1], dmatrix[..., 1:]
         else:
             g2, h2 = safe_for_vector_norm(diff, axis=-1, keepdims=True), diff
             g2 = g2 / self.rcut
@@ -480,12 +551,27 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         # set all padding positions to index of 0
         # if a neighbor is real or not is indicated by nlist_mask
         nlist = xp.where(nlist == -1, xp.zeros_like(nlist), nlist)
-        # nf x nall x ng1
-        mapping = xp.tile(xp.reshape(mapping, (nf, -1, 1)), (1, 1, self.g1_dim))
+        # nall computed for the pt_expt parallel-mode override (uses nall to
+        # size the pad before MPI ghost exchange). dpmodel default ignores it.
+        nall = xp.reshape(coord_ext, (nf, -1)).shape[1] // 3
+        # nf x nall x ng1 (pre-tiled mapping reused across layers when not
+        # using comm_dict). Skip the tile when mapping is None — pt_expt's
+        # parallel-mode override consults comm_dict instead.
+        mapping_tiled = (
+            xp.tile(xp.expand_dims(mapping, axis=-1), (1, 1, self.g1_dim))
+            if mapping is not None
+            else None
+        )
         for idx, ll in enumerate(self.layers):
             # g1:     nf x nloc x ng1
             # g1_ext: nf x nall x ng1
-            g1_ext = xp_take_along_axis(g1, mapping, axis=1)
+            g1_ext = self._exchange_ghosts(
+                g1,
+                mapping_tiled,
+                comm_dict,
+                nall,
+                nloc,
+            )
             g1, g2, h2 = ll.call(
                 g1_ext,
                 g2,
@@ -512,6 +598,15 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
 
     def has_message_passing(self) -> bool:
         """Returns whether the descriptor block has message passing."""
+        return True
+
+    def has_message_passing_across_ranks(self) -> bool:
+        """Returns whether per-layer g1 needs MPI ghost exchange.
+
+        Repformers has no ``use_loc_mapping`` opt-out; it always passes
+        ``g1`` in ``[nb, nall, n_dim]`` layout, so multi-rank always needs
+        cross-rank exchange of the per-atom feature tensor.
+        """
         return True
 
     def need_sorted_nlist_for_lower(self) -> bool:
@@ -592,7 +687,7 @@ def get_residual(
     _mode: str = "norm",
     trainable: bool = True,
     precision: str = "float64",
-    seed: Optional[Union[int, list[int]]] = None,
+    seed: int | list[int] | None = None,
 ) -> Array:
     """
     Get residual tensor for one update vector.
@@ -751,10 +846,12 @@ def _cal_hg(
     else:
         g = _apply_switch(g, sw)
         if not use_sqrt_nnei:
-            invnnei = (1.0 / float(nnei)) * xp.ones((nf, nloc, 1, 1), dtype=g.dtype)
+            invnnei = (1.0 / float(nnei)) * xp.ones(
+                (nf, nloc, 1, 1), dtype=g.dtype, device=array_api_compat.device(g)
+            )
         else:
             invnnei = (1.0 / (float(nnei) ** 0.5)) * xp.ones(
-                (nf, nloc, 1, 1), dtype=g.dtype
+                (nf, nloc, 1, 1), dtype=g.dtype, device=array_api_compat.device(g)
             )
     # nf x nloc x 3 x ng
     hg = xp.matmul(xp.matrix_transpose(h), g) * invnnei
@@ -856,7 +953,7 @@ class Atten2Map(NativeOP):
         smooth: bool = True,
         attnw_shift: float = 20.0,
         precision: str = "float64",
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
         trainable: bool = True,
     ) -> None:
         """Return neighbor-wise multi-head self-attention maps, with gate mechanism."""
@@ -981,7 +1078,7 @@ class Atten2MultiHeadApply(NativeOP):
         input_dim: int,
         head_num: int,
         precision: str = "float64",
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
         trainable: bool = True,
     ) -> None:
         super().__init__()
@@ -1072,7 +1169,7 @@ class Atten2EquiVarApply(NativeOP):
         input_dim: int,
         head_num: int,
         precision: str = "float64",
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
         trainable: bool = True,
     ) -> None:
         super().__init__()
@@ -1153,7 +1250,7 @@ class LocalAtten(NativeOP):
         smooth: bool = True,
         attnw_shift: float = 20.0,
         precision: str = "float64",
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
         trainable: bool = True,
     ) -> None:
         super().__init__()
@@ -1318,8 +1415,8 @@ class RepformerLayer(NativeOP):
         use_sqrt_nnei: bool = True,
         g1_out_conv: bool = True,
         g1_out_mlp: bool = True,
-        ln_eps: Optional[float] = 1e-5,
-        seed: Optional[Union[int, list[int]]] = None,
+        ln_eps: float | None = 1e-5,
+        seed: int | list[int] | None = None,
         trainable: bool = True,
     ) -> None:
         super().__init__()
@@ -1650,7 +1747,9 @@ class RepformerLayer(NativeOP):
             invnnei = invnnei[:, :, xp.newaxis]
         else:
             gg1 = _apply_switch(gg1, sw)
-            invnnei = (1.0 / float(nnei)) * xp.ones((nf, nloc, 1), dtype=gg1.dtype)
+            invnnei = (1.0 / float(nnei)) * xp.ones(
+                (nf, nloc, 1), dtype=gg1.dtype, device=array_api_compat.device(gg1)
+            )
         if not self.g1_out_conv:
             # nf x nloc x ng2
             g1_11 = xp.sum(g2 * gg1, axis=2) * invnnei
@@ -1726,9 +1825,8 @@ class RepformerLayer(NativeOP):
         )
 
         nf, nloc, nnei, _ = g2.shape
-        nall = g1_ext.shape[1]
         # g1, _ = xp.split(g1_ext, [nloc], axis=1)
-        g1 = g1_ext[:, :nloc, :]
+        g1 = xp_take_first_n(g1_ext, 1, nloc)
         assert (nf, nloc) == g1.shape[:2]
         assert (nf, nloc, nnei) == h2.shape[:3]
 

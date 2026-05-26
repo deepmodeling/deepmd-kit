@@ -15,14 +15,13 @@ from typing import (
     TYPE_CHECKING,
     Any,
     TypeVar,
-    Union,
     get_args,
 )
 
 try:
     from typing import Literal  # python >=3.8
 except ImportError:
-    from typing_extensions import Literal  # type: ignore
+    from typing import Literal  # type: ignore
 
 import numpy as np
 import yaml
@@ -159,7 +158,7 @@ def j_deprecated(
         return jdata[key]
 
 
-def j_loader(filename: Union[str, Path]) -> dict[str, Any]:
+def j_loader(filename: str | Path) -> dict[str, Any]:
     """Load yaml or json settings file.
 
     Parameters
@@ -188,7 +187,7 @@ def j_loader(filename: Union[str, Path]) -> dict[str, Any]:
         raise TypeError("config file must be json, or yaml/yml")
 
 
-def expand_sys_str(root_dir: Union[str, Path]) -> list[str]:
+def expand_sys_str(root_dir: str | Path) -> list[str]:
     """Recursively iterate over directories taking those that contain `type.raw` file.
 
     Parameters

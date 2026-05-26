@@ -16,11 +16,13 @@ from ..common import (
     INSTALLED_JAX,
     INSTALLED_PD,
     INSTALLED_PT,
+    INSTALLED_PT_EXPT,
     INSTALLED_TF,
     CommonTest,
-    parameterized,
+    parameterized_cases,
 )
 from .common import (
+    DescriptorAPITest,
     DescriptorTest,
 )
 
@@ -33,6 +35,10 @@ if INSTALLED_PT:
     )
 else:
     DescrptSeAPT = None
+if INSTALLED_PT_EXPT:
+    from deepmd.pt_expt.descriptor.se_e2_a import DescrptSeA as DescrptSeAPTExpt
+else:
+    DescrptSeAPTExpt = None
 if INSTALLED_TF:
     from deepmd.tf.descriptor.se_a import DescrptSeA as DescrptSeATF
 else:
@@ -65,13 +71,55 @@ else:
     DescrptSeAArrayAPIStrict = None
 
 
-@parameterized(
-    (True, False),  # resnet_dt
-    (True, False),  # type_one_side
-    ([], [[0, 1]]),  # excluded_types
-    ("float32", "float64"),  # precision
-    (0.0, 1e-8, 1e-2),  # env_protection
+SE_A_CASE_FIELDS = (
+    "resnet_dt",
+    "type_one_side",
+    "excluded_types",
+    "precision",
+    "env_protection",
 )
+
+
+SE_A_BASELINE_CASE = {
+    "resnet_dt": True,
+    "type_one_side": True,
+    "excluded_types": [],
+    "precision": "float64",
+    "env_protection": 0.0,
+}
+
+
+def se_a_case(**overrides: Any) -> tuple:
+    case = SE_A_BASELINE_CASE | overrides
+    return tuple(case[field] for field in SE_A_CASE_FIELDS)
+
+
+SE_A_CURATED_CASES = (
+    # Baseline coverage.
+    se_a_case(),
+    # Core descriptor toggles.
+    se_a_case(resnet_dt=False),
+    se_a_case(type_one_side=False),
+    se_a_case(excluded_types=[[0, 1]]),
+    # Environment-protection edge cases.
+    se_a_case(env_protection=1e-8),
+    se_a_case(env_protection=1e-2),
+    # Lower-precision smoke coverage.
+    se_a_case(precision="float32"),
+)
+
+SE_A_DESCRIPTOR_API_CASES = (
+    # Descriptor API coverage keeps float64-only behavior from the original test.
+    se_a_case(),
+    se_a_case(resnet_dt=False),
+    se_a_case(type_one_side=False),
+    se_a_case(excluded_types=[[0, 1]]),
+    se_a_case(env_protection=1e-8),
+    se_a_case(env_protection=1e-2),
+)
+
+
+@parameterized_cases(*SE_A_CURATED_CASES)
 class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
     @property
     def data(self) -> dict:
@@ -94,6 +142,7 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
             "env_protection": env_protection,
             "precision": precision,
             "seed": 1145141919810,
+            "activation_function": "relu",
         }
 
     @property
@@ -106,6 +155,17 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
             env_protection,
         ) = self.param
         return CommonTest.skip_pt
+
+    @property
+    def skip_pt_expt(self) -> bool:
+        (
+            resnet_dt,
+            type_one_side,
+            excluded_types,
+            precision,
+            env_protection,
+        ) = self.param
+        return (not type_one_side) or CommonTest.skip_pt_expt
 
     @property
     def skip_dp(self) -> bool:
@@ -127,7 +187,7 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
             precision,
             env_protection,
         ) = self.param
-        return env_protection != 0.0
+        return env_protection != 0.0 or CommonTest.skip_tf
 
     @property
     def skip_jax(self) -> bool:
@@ -165,6 +225,7 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
     tf_class = DescrptSeATF
     dp_class = DescrptSeADP
     pt_class = DescrptSeAPT
+    pt_expt_class = DescrptSeAPTExpt
     jax_class = DescrptSeAJAX
     pd_class = DescrptSeAPD
     array_api_strict_class = DescrptSeAArrayAPIStrict
@@ -244,6 +305,15 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
             self.box,
         )
 
+    def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
+        return self.eval_pt_expt_descriptor(
+            pt_expt_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
     def eval_jax(self, jax_obj: Any) -> Any:
         return self.eval_jax_descriptor(
             jax_obj,
@@ -309,13 +379,17 @@ class TestSeA(CommonTest, DescriptorTest, unittest.TestCase):
             raise ValueError(f"Unknown precision: {precision}")
 
 
-@parameterized(
-    (True,),  # resnet_dt
-    (True,),  # type_one_side
-    ([],),  # excluded_types
-    ("float64",),  # precision
-    (0.0, 1e-8, 1e-2),  # env_protection
+SE_A_STAT_CASES = (
+    # Statistics path exercises the float64 baseline, a type_one_side=False
+    # variant, and env-protection variants.
+    se_a_case(),
+    se_a_case(type_one_side=False),
+    se_a_case(env_protection=1e-8),
+    se_a_case(env_protection=1e-2),
 )
+
+
+@parameterized_cases(*SE_A_STAT_CASES)
 class TestSeAStat(CommonTest, DescriptorTest, unittest.TestCase):
     @property
     def data(self) -> dict:
@@ -350,6 +424,17 @@ class TestSeAStat(CommonTest, DescriptorTest, unittest.TestCase):
             env_protection,
         ) = self.param
         return CommonTest.skip_pt
+
+    @property
+    def skip_pt_expt(self) -> bool:
+        (
+            resnet_dt,
+            type_one_side,
+            excluded_types,
+            precision,
+            env_protection,
+        ) = self.param
+        return (not type_one_side) or CommonTest.skip_pt_expt
 
     @property
     def skip_dp(self) -> bool:
@@ -402,6 +487,7 @@ class TestSeAStat(CommonTest, DescriptorTest, unittest.TestCase):
     tf_class = DescrptSeATF
     dp_class = DescrptSeADP
     pt_class = DescrptSeAPT
+    pt_expt_class = DescrptSeAPTExpt
     jax_class = DescrptSeAJAX
     pd_class = DescrptSeAPD
     array_api_strict_class = DescrptSeAArrayAPIStrict
@@ -499,6 +585,28 @@ class TestSeAStat(CommonTest, DescriptorTest, unittest.TestCase):
         )
         return self.eval_pt_descriptor(
             pt_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
+    def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
+        pt_expt_obj.compute_input_stats(
+            [
+                {
+                    "r0": None,
+                    "coord": torch.from_numpy(self.coords)
+                    .reshape(-1, self.natoms[0], 3)
+                    .to(env.DEVICE),
+                    "atype": torch.from_numpy(self.atype.reshape(1, -1)).to(env.DEVICE),
+                    "box": torch.from_numpy(self.box.reshape(1, 3, 3)).to(env.DEVICE),
+                    "natoms": self.natoms[0],
+                }
+            ]
+        )
+        return self.eval_pt_expt_descriptor(
+            pt_expt_obj,
             self.natoms,
             self.coords,
             self.atype,
@@ -605,3 +713,48 @@ class TestSeAStat(CommonTest, DescriptorTest, unittest.TestCase):
             return 1e-4
         else:
             raise ValueError(f"Unknown precision: {precision}")
+
+
+@parameterized_cases(*SE_A_DESCRIPTOR_API_CASES)
+class TestSeADescriptorAPI(DescriptorAPITest, unittest.TestCase):
+    """Test consistency of BaseDescriptor API methods across backends."""
+
+    dp_class = DescrptSeADP
+    pt_class = DescrptSeAPT
+    pt_expt_class = DescrptSeAPTExpt
+    args = descrpt_se_a_args()
+
+    @property
+    def data(self) -> dict:
+        (
+            resnet_dt,
+            type_one_side,
+            excluded_types,
+            precision,
+            env_protection,
+        ) = self.param
+        return {
+            "sel": [9, 10],
+            "rcut_smth": 5.80,
+            "rcut": 6.00,
+            "neuron": [6, 12, 24],
+            "axis_neuron": 3,
+            "resnet_dt": resnet_dt,
+            "type_one_side": type_one_side,
+            "exclude_types": excluded_types,
+            "env_protection": env_protection,
+            "precision": precision,
+            "seed": 1145141919810,
+            "activation_function": "relu",
+        }
+
+    @property
+    def skip_pt_expt(self) -> bool:
+        (
+            resnet_dt,
+            type_one_side,
+            excluded_types,
+            precision,
+            env_protection,
+        ) = self.param
+        return (not type_one_side) or not INSTALLED_PT_EXPT

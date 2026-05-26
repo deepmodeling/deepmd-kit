@@ -6,6 +6,7 @@ Training
 
    training
    training-advanced
+   learning-rate
    train-input
    parallel-training
    multi-task-training

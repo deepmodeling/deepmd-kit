@@ -9,7 +9,6 @@ from functools import (
 )
 from typing import (
     Any,
-    Optional,
 )
 
 import numpy as np
@@ -29,7 +28,6 @@ class BaseTabulate(ABC):
         neuron: list[int],
         type_one_side: bool,
         exclude_types: list[list[int]],
-        is_pt: bool,
     ) -> None:
         """Constructor."""
         super().__init__()
@@ -39,7 +37,6 @@ class BaseTabulate(ABC):
         self.neuron = neuron
         self.type_one_side = type_one_side
         self.exclude_types = exclude_types
-        self.is_pt = is_pt
 
         """Need to be initialized in the subclass."""
         self.descrpt_type = "Base"
@@ -92,6 +89,11 @@ class BaseTabulate(ABC):
         """
         # tabulate range [lower, upper] with stride0 'stride0'
         lower, upper = self._get_env_mat_range(min_nbor_dist)
+        # Normalize to per-type scalars: PT serialized data produces
+        # multi-dimensional arrays (ntypes, nnei) while TF produces 1D.
+        if lower.ndim > 1:
+            lower = np.min(lower, axis=tuple(range(1, lower.ndim)))
+            upper = np.max(upper, axis=tuple(range(1, upper.ndim)))
         if self.descrpt_type in ("Atten", "AEbdV2"):
             uu = np.max(upper)
             ll = np.min(lower)
@@ -128,12 +130,8 @@ class BaseTabulate(ABC):
                         net = (
                             "filter_" + str(ielement) + "_net_" + str(ii % self.ntypes)
                         )
-                        if self.is_pt:
-                            uu = np.max(upper[ielement])
-                            ll = np.min(lower[ielement])
-                        else:
-                            uu = upper[ielement]
-                            ll = lower[ielement]
+                        uu = upper[ielement]
+                        ll = lower[ielement]
                     xx = np.arange(ll, uu, stride0, dtype=self.data_type)
                     xx = np.append(
                         xx,
@@ -151,13 +149,8 @@ class BaseTabulate(ABC):
         elif self.descrpt_type == "T":
             xx_all = []
             for ii in range(self.ntypes):
-                """Pt and tf is different here. Pt version is a two-dimensional array."""
-                if self.is_pt:
-                    uu = np.max(upper[ii])
-                    ll = np.min(lower[ii])
-                else:
-                    ll = lower[ii]
-                    uu = upper[ii]
+                ll = lower[ii]
+                uu = upper[ii]
                 xx = np.arange(extrapolate * ll, ll, stride1, dtype=self.data_type)
                 xx = np.append(xx, np.arange(ll, uu, stride0, dtype=self.data_type))
                 xx = np.append(
@@ -177,12 +170,8 @@ class BaseTabulate(ABC):
             ).astype(int)
             idx = 0
             for ii in range(self.ntypes):
-                if self.is_pt:
-                    uu = np.max(upper[ii])
-                    ll = np.min(lower[ii])
-                else:
-                    ll = lower[ii]
-                    uu = upper[ii]
+                ll = lower[ii]
+                uu = upper[ii]
                 for jj in range(ii, self.ntypes):
                     net = "filter_" + str(ii) + "_net_" + str(jj)
                     self._build_lower(
@@ -194,9 +183,51 @@ class BaseTabulate(ABC):
                         stride0,
                         stride1,
                         extrapolate,
-                        nspline[ii][0] if self.is_pt else nspline[ii],
+                        nspline[ii],
                     )
                     idx += 1
+        elif self.descrpt_type == "T_TEBD":
+            # 1. Find the global range [ll, uu] of cos(theta) across all types
+            uu = np.max(upper)
+            ll = np.min(lower)
+
+            # 2. Create a unique input grid xx for this shared geometric network based on the global range
+            xx = np.arange(extrapolate * ll, ll, stride1, dtype=self.data_type)
+            xx = np.append(
+                xx,
+                np.arange(ll, uu, stride0, dtype=self.data_type),
+            )
+            xx = np.append(
+                xx,
+                np.arange(
+                    uu,
+                    extrapolate * uu,
+                    stride1,
+                    dtype=self.data_type,
+                ),
+            )
+            xx = np.append(xx, np.array([extrapolate * uu], dtype=self.data_type))
+
+            # 3. Calculate the number of spline points
+            nspline = (
+                (uu - ll) / stride0
+                + ((extrapolate * uu - uu) / stride1)
+                + ((ll - extrapolate * ll) / stride1)
+            ).astype(int)
+
+            # 4. Call _build_lower only once to generate the table for this shared network
+            geometric_net_name = "filter_net"
+            self._build_lower(
+                geometric_net_name,
+                xx,
+                0,
+                uu,
+                ll,
+                stride0,
+                stride1,
+                extrapolate,
+                nspline,
+            )
         elif self.descrpt_type == "R":
             for ii in range(self.table_size):
                 if (self.type_one_side and not self._all_excluded(ii)) or (
@@ -238,13 +269,12 @@ class BaseTabulate(ABC):
             raise RuntimeError("Unsupported descriptor")
 
         self._convert_numpy_to_tensor()
-        if self.is_pt:
-            self._convert_numpy_float_to_int()
         return self.lower, self.upper
 
+    # generate_spline_table
     def _build_lower(
         self,
-        net: int,
+        net: str,
         xx: np.ndarray,
         idx: int,
         upper: float,
@@ -260,21 +290,14 @@ class BaseTabulate(ABC):
         )
 
         # tt.shape: [nspline, self.last_layer_size]
-        if self.descrpt_type in ("Atten", "A", "AEbdV2"):
+        if self.descrpt_type in ("Atten", "A", "AEbdV2", "R"):
             tt = np.full((nspline, self.last_layer_size), stride1)  # pylint: disable=no-explicit-dtype
             tt[: int((upper - lower) / stride0), :] = stride0
-        elif self.descrpt_type == "T":
+        elif self.descrpt_type in ("T", "T_TEBD"):
             tt = np.full((nspline, self.last_layer_size), stride1)  # pylint: disable=no-explicit-dtype
-            tt[
-                int((lower - extrapolate * lower) / stride1) + 1 : (
-                    int((lower - extrapolate * lower) / stride1)
-                    + int((upper - lower) / stride0)
-                ),
-                :,
-            ] = stride0
-        elif self.descrpt_type == "R":
-            tt = np.full((nspline, self.last_layer_size), stride1)  # pylint: disable=no-explicit-dtype
-            tt[: int((upper - lower) / stride0), :] = stride0
+            start_index = int((lower - extrapolate * lower) / stride1) + 1
+            end_index = start_index + int((upper - lower) / stride0)
+            tt[start_index:end_index, :] = stride0
         else:
             raise RuntimeError("Unsupported descriptor")
 
@@ -394,7 +417,7 @@ class BaseTabulate(ABC):
 
     def _get_table_size(self) -> int:
         table_size = 0
-        if self.descrpt_type in ("Atten", "AEbdV2"):
+        if self.descrpt_type in ("Atten", "AEbdV2", "T_TEBD"):
             table_size = 1
         elif self.descrpt_type == "A":
             table_size = self.ntypes * self.ntypes
@@ -410,7 +433,7 @@ class BaseTabulate(ABC):
             raise RuntimeError("Unsupported descriptor")
         return table_size
 
-    def _get_data_type(self) -> Optional[type]:
+    def _get_data_type(self) -> type | None:
         for item in self.matrix["layer_" + str(self.layer_size)]:
             if len(item) != 0:
                 return type(item[0][0])
@@ -448,7 +471,7 @@ class BaseTabulate(ABC):
         if self.descrpt_type in ("Atten", "A", "AEbdV2"):
             lower = -self.davg[:, 0] / self.dstd[:, 0]
             upper = ((1 / min_nbor_dist) * sw - self.davg[:, 0]) / self.dstd[:, 0]
-        elif self.descrpt_type == "T":
+        elif self.descrpt_type in ("T", "T_TEBD"):
             var = np.square(sw / (min_nbor_dist * self.dstd[:, 1:4]))
             lower = np.min(-var, axis=1)
             upper = np.max(var, axis=1)

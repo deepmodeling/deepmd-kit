@@ -10,25 +10,23 @@ import numpy as np
 from deepmd.dpmodel.common import (
     to_numpy_array,
 )
+from deepmd.jax.common import (
+    to_jax_array,
+)
+from deepmd.jax.descriptor.se_e2_a import (
+    DescrptSeA,
+)
+from deepmd.jax.env import (
+    jnp,
+)
+from deepmd.jax.fitting.fitting import (
+    PropertyFittingNet,
+)
+from deepmd.jax.model.property_model import (
+    PropertyModel,
+)
 
-if sys.version_info >= (3, 10):
-    from deepmd.jax.common import (
-        to_jax_array,
-    )
-    from deepmd.jax.descriptor.se_e2_a import (
-        DescrptSeA,
-    )
-    from deepmd.jax.env import (
-        jnp,
-    )
-    from deepmd.jax.fitting.fitting import (
-        PropertyFittingNet,
-    )
-    from deepmd.jax.model.property_model import (
-        PropertyModel,
-    )
-
-    dtype = jnp.float64
+dtype = jnp.float64
 
 
 @unittest.skipIf(
@@ -91,8 +89,8 @@ class TestPaddingAtoms(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         result = model.call(*args)
         # test intensive
         np.testing.assert_allclose(
-            to_numpy_array(result[f"{var_name}_redu"]),
-            np.mean(to_numpy_array(result[f"{var_name}"]), axis=1),
+            to_numpy_array(result[var_name]),
+            np.mean(to_numpy_array(result[f"atom_{var_name}"]), axis=1),
             atol=self.atol,
         )
         # test padding atoms
@@ -117,8 +115,8 @@ class TestPaddingAtoms(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
             ]
             result_padding = model.call(*args)
             np.testing.assert_allclose(
-                to_numpy_array(result[f"{var_name}_redu"]),
-                to_numpy_array(result_padding[f"{var_name}_redu"]),
+                to_numpy_array(result[var_name]),
+                to_numpy_array(result_padding[var_name]),
                 atol=self.atol,
             )
 

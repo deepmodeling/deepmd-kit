@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     TYPE_CHECKING,
-    Optional,
 )
 
 from deepmd.infer.deep_dipole import (
@@ -15,6 +14,8 @@ if TYPE_CHECKING:
     from pathlib import (
         Path,
     )
+
+    import ase.neighborlist
 
 __all__ = [
     "DeepDipole",
@@ -50,8 +51,8 @@ class DeepDipoleOld(DeepTensor):
         model_file: "Path",
         load_prefix: str = "load",
         default_tf_graph: bool = False,
-        input_map: Optional[dict] = None,
-        neighbor_list=None,
+        input_map: dict | None = None,
+        neighbor_list: "ase.neighborlist.NeighborList | None" = None,
     ) -> None:
         # use this in favor of dict update to move attribute from class to
         # instance namespace

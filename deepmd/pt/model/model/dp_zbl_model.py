@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    Optional,
 )
 
 import torch
@@ -50,7 +49,7 @@ class DPZBLModel(DPZBLModel_):
             output_def["virial"] = out_def_data["energy_derv_c_redu"]
             output_def["virial"].squeeze(-2)
             output_def["atom_virial"] = out_def_data["energy_derv_c"]
-            output_def["atom_virial"].squeeze(-3)
+            output_def["atom_virial"].squeeze(-2)
         if "mask" in out_def_data:
             output_def["mask"] = out_def_data["mask"]
         return output_def
@@ -59,10 +58,11 @@ class DPZBLModel(DPZBLModel_):
         self,
         coord: torch.Tensor,
         atype: torch.Tensor,
-        box: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        box: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         model_ret = self.forward_common(
             coord,
@@ -71,6 +71,7 @@ class DPZBLModel(DPZBLModel_):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
+            charge_spin=charge_spin,
         )
 
         model_predict = {}
@@ -81,7 +82,7 @@ class DPZBLModel(DPZBLModel_):
         if self.do_grad_c("energy"):
             model_predict["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
             if do_atomic_virial:
-                model_predict["atom_virial"] = model_ret["energy_derv_c"].squeeze(-3)
+                model_predict["atom_virial"] = model_ret["energy_derv_c"].squeeze(-2)
         else:
             model_predict["force"] = model_ret["dforce"]
         if "mask" in model_ret:
@@ -94,11 +95,12 @@ class DPZBLModel(DPZBLModel_):
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
         nlist: torch.Tensor,
-        mapping: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        mapping: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
-        comm_dict: Optional[dict[str, torch.Tensor]] = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         model_ret = self.forward_common_lower(
             extended_coord,
@@ -110,6 +112,7 @@ class DPZBLModel(DPZBLModel_):
             do_atomic_virial=do_atomic_virial,
             comm_dict=comm_dict,
             extra_nlist_sort=self.need_sorted_nlist_for_lower(),
+            charge_spin=charge_spin,
         )
 
         model_predict = {}
@@ -121,20 +124,22 @@ class DPZBLModel(DPZBLModel_):
             model_predict["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
             if do_atomic_virial:
                 model_predict["extended_virial"] = model_ret["energy_derv_c"].squeeze(
-                    -3
+                    -2
                 )
         else:
             assert model_ret["dforce"] is not None
             model_predict["dforce"] = model_ret["dforce"]
+        if "mask" in model_ret:
+            model_predict["mask"] = model_ret["mask"]
         return model_predict
 
     @classmethod
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

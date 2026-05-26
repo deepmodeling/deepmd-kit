@@ -3,15 +3,14 @@ import logging
 from copy import (
     deepcopy,
 )
-from typing import (
-    Optional,
-    Union,
-)
 
 import torch
 
 from deepmd.pt.model.model import (
     get_model,
+)
+from deepmd.pt.modifier import (
+    get_data_modifier,
 )
 from deepmd.pt.train.wrapper import (
     ModelWrapper,
@@ -29,8 +28,8 @@ log = logging.getLogger(__name__)
 class Tester:
     def __init__(
         self,
-        model_ckpt: Union[str, torch.nn.Module],
-        head: Optional[str] = None,
+        model_ckpt: str | torch.nn.Module,
+        head: str | None = None,
     ) -> None:
         """Construct a DeePMD tester.
 
@@ -64,6 +63,11 @@ class Tester:
         )  # wrapper Hessian to Energy model due to JIT limit
         self.model_params = deepcopy(model_params)
         self.model = get_model(model_params).to(DEVICE)
+        self.modifier = None
+        if "modifier" in model_params:
+            modifier = get_data_modifier(model_params["modifier"]).to(DEVICE)
+            if modifier.jitable:
+                self.modifier = modifier
 
         # Model Wrapper
         self.wrapper = ModelWrapper(self.model)  # inference only

@@ -28,7 +28,7 @@ venv*
 .vscode/**
 _build
 _templates
-API_CC
+doc/API_CC/
 doc/api_py/
 doc/api_core/
 doc/api_c/
@@ -62,9 +62,15 @@ test_dp_test_*.out
 
 # Training and model output files
 *.pth
+*.pte
+*.pt2
 *.ckpt*
 checkpoint
 lcurve.out
 out.json
 input_v2_compat.json
 frozen_model.*
+
+# Test system directories
+system/
+*.expected

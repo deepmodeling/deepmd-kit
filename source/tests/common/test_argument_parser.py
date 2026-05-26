@@ -15,7 +15,6 @@ from io import (
 from typing import (
     TYPE_CHECKING,
     Any,
-    Union,
 )
 
 from deepmd.main import (
@@ -30,7 +29,7 @@ if TYPE_CHECKING:
         from typing_extensions import TypedDict  # python<=3.7
 
     class DATA(TypedDict):
-        type: Union[type, tuple[type]]
+        type: type | tuple[type]
         value: Any
 
     TEST_DICT = dict[str, DATA]

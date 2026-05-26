@@ -19,10 +19,12 @@ from ..common import (
     INSTALLED_JAX,
     INSTALLED_PD,
     INSTALLED_PT,
+    INSTALLED_PT_EXPT,
     CommonTest,
     parameterized,
 )
 from .common import (
+    DescriptorAPITest,
     DescriptorTest,
 )
 
@@ -30,6 +32,12 @@ if INSTALLED_PT:
     from deepmd.pt.model.descriptor.se_t_tebd import DescrptSeTTebd as DescrptSeTTebdPT
 else:
     DescrptSeTTebdPT = None
+if INSTALLED_PT_EXPT:
+    from deepmd.pt_expt.descriptor.se_t_tebd import (
+        DescrptSeTTebd as DescrptSeTTebdPTExpt,
+    )
+else:
+    DescrptSeTTebdPTExpt = None
 DescrptSeTTebdTF = None
 if INSTALLED_JAX:
     from deepmd.jax.descriptor.se_t_tebd import DescrptSeTTebd as DescrptSeTTebdJAX
@@ -98,6 +106,7 @@ class TestSeTTebd(CommonTest, DescriptorTest, unittest.TestCase):
             "use_tebd_bias": use_tebd_bias,
             "type_map": ["O", "H"] if use_econf_tebd else None,
             "seed": 1145141919810,
+            "activation_function": "relu",
         }
 
     @property
@@ -116,6 +125,23 @@ class TestSeTTebd(CommonTest, DescriptorTest, unittest.TestCase):
             use_tebd_bias,
         ) = self.param
         return CommonTest.skip_pt
+
+    @property
+    def skip_pt_expt(self) -> bool:
+        (
+            tebd_dim,
+            tebd_input_mode,
+            resnet_dt,
+            excluded_types,
+            env_protection,
+            set_davg_zero,
+            smooth,
+            concat_output_tebd,
+            precision,
+            use_econf_tebd,
+            use_tebd_bias,
+        ) = self.param
+        return CommonTest.skip_pt_expt
 
     @property
     def skip_dp(self) -> bool:
@@ -158,6 +184,7 @@ class TestSeTTebd(CommonTest, DescriptorTest, unittest.TestCase):
     tf_class = DescrptSeTTebdTF
     dp_class = DescrptSeTTebdDP
     pt_class = DescrptSeTTebdPT
+    pt_expt_class = DescrptSeTTebdPTExpt
     pd_class = DescrptSeTTebdPD
     jax_class = DescrptSeTTebdJAX
     array_api_strict_class = DescrptSeTTebdStrict
@@ -233,6 +260,16 @@ class TestSeTTebd(CommonTest, DescriptorTest, unittest.TestCase):
     def eval_pt(self, pt_obj: Any) -> Any:
         return self.eval_pt_descriptor(
             pt_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+            mixed_types=True,
+        )
+
+    def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
+        return self.eval_pt_expt_descriptor(
+            pt_expt_obj,
             self.natoms,
             self.coords,
             self.atype,
@@ -318,3 +355,62 @@ class TestSeTTebd(CommonTest, DescriptorTest, unittest.TestCase):
             return 1e-4
         else:
             raise ValueError(f"Unknown precision: {precision}")
+
+
+@parameterized(
+    (4,),  # tebd_dim
+    ("strip",),  # tebd_input_mode
+    (True,),  # resnet_dt
+    ([], [[0, 1]]),  # excluded_types
+    (0.0,),  # env_protection
+    (True, False),  # set_davg_zero
+    (True, False),  # smooth
+    (True,),  # concat_output_tebd
+    ("float64",),  # precision
+    (True, False),  # use_econf_tebd
+    (False, True),  # use_tebd_bias
+)
+class TestSeTTebdDescriptorAPI(DescriptorAPITest, unittest.TestCase):
+    """Test consistency of BaseDescriptor API methods across backends."""
+
+    dp_class = DescrptSeTTebdDP
+    pt_class = DescrptSeTTebdPT
+    pt_expt_class = DescrptSeTTebdPTExpt
+    args = descrpt_se_e3_tebd_args().append(Argument("ntypes", int, optional=False))
+
+    @property
+    def data(self) -> dict:
+        (
+            tebd_dim,
+            tebd_input_mode,
+            resnet_dt,
+            excluded_types,
+            env_protection,
+            set_davg_zero,
+            smooth,
+            concat_output_tebd,
+            precision,
+            use_econf_tebd,
+            use_tebd_bias,
+        ) = self.param
+        return {
+            "sel": [10],
+            "rcut_smth": 3.50,
+            "rcut": 4.00,
+            "neuron": [2, 4, 8],
+            "ntypes": self.ntypes,
+            "tebd_dim": tebd_dim,
+            "tebd_input_mode": tebd_input_mode,
+            "concat_output_tebd": concat_output_tebd,
+            "resnet_dt": resnet_dt,
+            "exclude_types": excluded_types,
+            "env_protection": env_protection,
+            "precision": precision,
+            "set_davg_zero": set_davg_zero,
+            "smooth": smooth,
+            "use_econf_tebd": use_econf_tebd,
+            "use_tebd_bias": use_tebd_bias,
+            "type_map": ["O", "H"] if use_econf_tebd else None,
+            "seed": 1145141919810,
+            "activation_function": "relu",
+        }

@@ -237,7 +237,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
         list->inum, list->ilist, list->numneigh, list->firstneigh,
         commdata_->nswap, commdata_->sendnum, commdata_->recvnum,
         commdata_->firstrecv, commdata_->sendlist, commdata_->sendproc,
-        commdata_->recvproc, &world);
+        commdata_->recvproc, &world, comm->nprocs);
     lmp_list.set_mask(NEIGHMASK);
     if (comm->nprocs == 1 && atom->map_style != Atom::MAP_NONE) {
       lmp_list.set_mapping(mapping_vec.data());
@@ -853,7 +853,7 @@ void PairDeepMD::coeff(int narg, char** arg) {
         }
       }
       if (!found_element && "NULL" == type_name) {
-        type_idx_map.push_back(type_map.size());  // ghost type
+        type_idx_map.push_back(-1);  // virtual atom
         found_element = true;
       }
       if (!found_element) {

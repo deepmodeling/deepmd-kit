@@ -368,7 +368,7 @@ def translate_se_atten_and_type_embd_dicts_to_dpa1(
     source_dict,
     type_embd_dict,
 ):
-    all_keys = list(target_dict.keys())
+    all_keys = [key for key in target_dict.keys() if "buffer_" not in key]
     record = [False for ii in all_keys]
     for kk, vv in source_dict.items():
         tk = "se_atten." + kk

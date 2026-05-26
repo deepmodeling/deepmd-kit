@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    Any,
+)
+
 from deepmd.tf.utils.convert import (
     convert_10_to_21,
     convert_012_to_21,
@@ -16,7 +20,7 @@ def convert(
     FROM: str,
     input_model: str,
     output_model: str,
-    **kwargs,
+    **kwargs: Any,
 ) -> None:
     if output_model[-6:] == ".pbtxt":
         if input_model[-6:] != ".pbtxt":

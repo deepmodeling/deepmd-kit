@@ -4,7 +4,7 @@ channels:
   - defaults
 dependencies:
   - doxygen>=1.9.1
-  - python=3.9
+  - python=3.10
   - pip>=20.1
   - pip:
       - ..[docs,cpu,torch]

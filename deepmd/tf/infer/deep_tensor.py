@@ -2,7 +2,6 @@
 from typing import (
     TYPE_CHECKING,
     ClassVar,
-    Optional,
 )
 
 import numpy as np
@@ -19,6 +18,8 @@ if TYPE_CHECKING:
     from pathlib import (
         Path,
     )
+
+    import ase.neighborlist
 
 
 class DeepTensor(DeepEval):
@@ -59,8 +60,8 @@ class DeepTensor(DeepEval):
         model_file: "Path",
         load_prefix: str = "load",
         default_tf_graph: bool = False,
-        input_map: Optional[dict] = None,
-        neighbor_list=None,
+        input_map: dict | None = None,
+        neighbor_list: "ase.neighborlist.NeighborList | None" = None,
     ) -> None:
         """Constructor."""
         DeepEval.__init__(
@@ -143,12 +144,12 @@ class DeepTensor(DeepEval):
     def eval(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: list[int],
         atomic: bool = True,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
-        efield: Optional[np.ndarray] = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+        efield: np.ndarray | None = None,
         mixed_type: bool = False,
     ) -> np.ndarray:
         """Evaluate the model.
@@ -273,12 +274,12 @@ class DeepTensor(DeepEval):
     def eval_full(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: list[int],
         atomic: bool = False,
-        fparam: Optional[np.array] = None,
-        aparam: Optional[np.array] = None,
-        efield: Optional[np.array] = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+        efield: np.ndarray | None = None,
         mixed_type: bool = False,
     ) -> tuple[np.ndarray, ...]:
         """Evaluate the model with interface similar to the energy model.

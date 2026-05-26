@@ -8,11 +8,14 @@ from tensorflow.python.framework import (
 
 from deepmd.tf.env import (
     op_grads_module,
+    tf,
 )
 
 
 @ops.RegisterGradient("ProdVirialSeR")
-def _prod_virial_se_a_grad_cc(op, grad, grad_atom):
+def _prod_virial_se_a_grad_cc(
+    op: tf.Operation, grad: tf.Tensor, grad_atom: tf.Tensor
+) -> list[tf.Tensor | None]:
     net_grad = op_grads_module.prod_virial_se_r_grad(
         grad, op.inputs[0], op.inputs[1], op.inputs[2], op.inputs[3], op.inputs[4]
     )

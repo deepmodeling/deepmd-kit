@@ -4,10 +4,10 @@ import paddle
 
 
 def concat_switch_virtual(
-    extended_tensor,
-    extended_tensor_virtual,
+    extended_tensor: paddle.Tensor,
+    extended_tensor_virtual: paddle.Tensor,
     nloc: int,
-):
+) -> paddle.Tensor:
     """
     Concat real and virtual extended tensors, and switch all the local ones to the first nloc * 2 atoms.
     - [:, :nloc]: original nloc real atoms.

@@ -10,12 +10,18 @@
 #include <vector>
 
 #include "DeepPot.h"
+#include "expected_ref.h"
 #include "neighbor_list.h"
 #include "test_utils.h"
 
 // 1e-10 cannot pass; unclear bug or not
 #undef EPSILON
 #define EPSILON (std::is_same<VALUETYPE, double>::value ? 1e-7 : 1e-4)
+
+namespace {
+constexpr const char* kRefPath = "../../tests/infer/fparam_aparam.expected";
+constexpr const char* kModelPath = "../../tests/infer/fparam_aparam.pth";
+}  // namespace
 
 template <class VALUETYPE>
 class TestInferDeepPotAFParamAParamPt : public ::testing::Test {
@@ -28,48 +34,9 @@ class TestInferDeepPotAFParamAParamPt : public ::testing::Test {
   std::vector<VALUETYPE> fparam = {0.25852028};
   std::vector<VALUETYPE> aparam = {0.25852028, 0.25852028, 0.25852028,
                                    0.25852028, 0.25852028, 0.25852028};
-  std::vector<VALUETYPE> expected_e = {
-      -1.038271183039953804e-01, -7.285433575272914908e-02,
-      -9.467600174099155552e-02, -1.467050086239614082e-01,
-      -7.660561620618722145e-02, -7.277295998502930630e-02};
-  std::vector<VALUETYPE> expected_f = {
-      6.622266817497907132e-02,  5.278739055693523058e-02,
-      2.265727495541422845e-02,  -2.606047850915838363e-02,
-      -4.538811686410718776e-02, 1.058247569147072187e-02,
-      1.679392490937766935e-01,  -2.257828022687320690e-03,
-      -4.490145670355452645e-02, -1.148364103573685929e-01,
-      -1.169790466695089237e-02, 6.140402504113953025e-02,
-      -8.078778132132799494e-02, -5.838878056243369807e-02,
-      6.773639989682191109e-02,  -1.247724708090079161e-02,
-      6.494523955924384750e-02,  -1.174787188812918687e-01};
-  std::vector<VALUETYPE> expected_v = {
-      -1.589185553287162656e-01, 2.586163333170100279e-03,
-      -1.575127933809472624e-04, -1.855360380105876630e-02,
-      1.949822090859933826e-02,  -1.006552056166355388e-02,
-      3.177029853276916449e-02,  1.714349636720383010e-03,
-      -1.290389175187874483e-03, -8.553510339477603253e-02,
-      -5.654637257232508415e-03, -1.286954833787038420e-02,
-      2.464156457499515687e-02,  -2.398202886026797043e-02,
-      -1.957110465239037672e-02, 2.233492928605742764e-02,
-      6.107843207824020099e-03,  1.707078295947736047e-03,
-      -1.653994088976195043e-01, 3.894358678172111371e-02,
-      -2.169595969759342477e-02, 6.819704294738503786e-03,
-      -5.018242039618424008e-03, 2.640664428663210429e-03,
-      -1.985298275686078057e-03, -3.638421609610945767e-02,
-      2.342932331075030239e-02,  -8.501331914753691710e-02,
-      -2.181253413538992297e-03, 4.311300069651782287e-03,
-      -1.910329328333908129e-03, -1.808810159508548836e-03,
-      -1.540075281450827612e-03, -1.173703213175551763e-02,
-      -2.596306629910121507e-03, 6.705025662372287101e-03,
-      -9.038455005073858795e-02, 3.011717773578577451e-02,
-      -5.083054073419784880e-02, -2.951210292616929069e-03,
-      2.342445652898489383e-02,  -4.091207474993674431e-02,
-      -1.648470649301832236e-02, -2.872261885460645689e-02,
-      4.763924972552112391e-02,  -8.300036532764677732e-02,
-      1.020429228955421243e-03,  -1.026734151199098881e-03,
-      5.678534096113684732e-02,  1.273635718045938205e-02,
-      -1.530143225195957322e-02, -1.061671865629566225e-01,
-      -2.486859433265622629e-02, 2.875323131744185121e-02};
+  std::vector<VALUETYPE> expected_e;
+  std::vector<VALUETYPE> expected_f;
+  std::vector<VALUETYPE> expected_v;
   int natoms;
   double expected_tot_e;
   std::vector<VALUETYPE> expected_tot_v;
@@ -77,14 +44,22 @@ class TestInferDeepPotAFParamAParamPt : public ::testing::Test {
   deepmd::DeepPot dp;
 
   void SetUp() override {
-    dp.init("../../tests/infer/fparam_aparam.pth");
+#ifndef BUILD_PYTORCH
+    GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
+#endif
+    deepmd_test::ExpectedRef ref;
+    ref.load(kRefPath);
+    expected_e = ref.get<VALUETYPE>("default", "expected_e");
+    expected_f = ref.get<VALUETYPE>("default", "expected_f");
+    expected_v = ref.get<VALUETYPE>("default", "expected_v");
+
+    dp.init(kModelPath);
 
     natoms = expected_e.size();
     EXPECT_EQ(natoms * 3, expected_f.size());
     EXPECT_EQ(natoms * 9, expected_v.size());
     expected_tot_e = 0.;
-    expected_tot_v.resize(9);
-    std::fill(expected_tot_v.begin(), expected_tot_v.end(), 0.);
+    expected_tot_v.assign(9, 0.);
     for (int ii = 0; ii < natoms; ++ii) {
       expected_tot_e += expected_e[ii];
     }

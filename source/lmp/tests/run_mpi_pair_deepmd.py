@@ -62,4 +62,7 @@ if rank == 0:
     pe = lammps.eval("pe")
     arr = [pe]
     np.savetxt(output, np.array(arr))
+# Tear down LAMMPS before MPI.Finalize() to avoid MPI-after-Finalize
+# in the LAMMPS destructor.  See run_mpi_pair_deepmd_spin_dpa3_pt2.py.
+del lammps
 MPI.Finalize()

@@ -1,11 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import itertools
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
-    Callable,
     NoReturn,
-    Optional,
-    Union,
 )
 
 import array_api_compat
@@ -138,9 +138,8 @@ class DescrptSeA(NativeOP, BaseDescriptor):
     -----------
     The currently implementation does not support the following features
 
-    1. type_one_side == False
-    2. exclude_types != []
-    3. spin is not None
+    1. exclude_types != []
+    2. spin is not None
 
     References
     ----------
@@ -149,6 +148,8 @@ class DescrptSeA(NativeOP, BaseDescriptor):
        systems. In Proceedings of the 32nd International Conference on Neural Information Processing
        Systems (NIPS'18). Curran Associates Inc., Red Hook, NY, USA, 4441-4451.
     """
+
+    _update_sel_cls = UpdateSel
 
     def __init__(
         self,
@@ -165,11 +166,11 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         set_davg_zero: bool = False,
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
-        spin: Optional[Any] = None,
-        type_map: Optional[list[str]] = None,
-        ntypes: Optional[int] = None,  # to be compat with input
+        spin: Any | None = None,
+        type_map: list[str] | None = None,
+        ntypes: int | None = None,  # to be compat with input
         # consistent with argcheck, not used though
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
     ) -> None:
         del ntypes
         ## seed, uniform_seed, not included.
@@ -191,6 +192,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         self.precision = precision
         self.spin = spin
         self.type_map = type_map
+        self.compress = False
         # order matters, placed after the assignment of self.ntypes
         self.reinit_exclude(exclude_types)
 
@@ -276,6 +278,10 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         """Returns whether the descriptor has message passing."""
         return False
 
+    def has_message_passing_across_ranks(self) -> bool:
+        """Returns whether per-layer node embeddings need MPI ghost exchange."""
+        return False
+
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
         return False
@@ -295,7 +301,7 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         raise NotImplementedError
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat: Optional[Any] = None
+        self, type_map: list[str], model_with_new_type_stat: Any | None = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -316,8 +322,8 @@ class DescrptSeA(NativeOP, BaseDescriptor):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.
@@ -350,9 +356,12 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         xp = array_api_compat.array_namespace(self.dstd)
+        device = array_api_compat.device(self.dstd)
         if not self.set_davg_zero:
-            self.davg = xp.asarray(mean, dtype=self.davg.dtype, copy=True)
-        self.dstd = xp.asarray(stddev, dtype=self.dstd.dtype, copy=True)
+            self.davg = xp.asarray(
+                mean, dtype=self.davg.dtype, copy=True, device=device
+            )
+        self.dstd = xp.asarray(stddev, dtype=self.dstd.dtype, copy=True, device=device)
 
     def set_stat_mean_and_stddev(
         self,
@@ -392,7 +401,10 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         coord_ext: Array,
         atype_ext: Array,
         nlist: Array,
-        mapping: Optional[Array] = None,
+        mapping: Array | None = None,
+        fparam: Array | None = None,
+        comm_dict: dict | None = None,
+        charge_spin: Array | None = None,
     ) -> Array:
         """Compute the descriptor.
 
@@ -424,45 +436,81 @@ class DescrptSeA(NativeOP, BaseDescriptor):
             The smooth switch function.
         """
         del mapping
+        xp = array_api_compat.array_namespace(coord_ext, atype_ext, nlist)
+        input_dtype = coord_ext.dtype
         # nf x nloc x nnei x 4
         rr, diff, ww = self.env_mat.call(
-            coord_ext, atype_ext, nlist, self.davg, self.dstd
+            coord_ext,
+            atype_ext,
+            nlist,
+            self.davg[...],
+            self.dstd[...],
         )
         nf, nloc, nnei, _ = rr.shape
-        sec = np.append([0], np.cumsum(self.sel))
+        sec = self.sel_cumsum
 
         ng = self.neuron[-1]
-        gr = np.zeros([nf * nloc, ng, 4], dtype=PRECISION_DICT[self.precision])
+        gr = xp.zeros(
+            [nf * nloc, ng, 4],
+            dtype=input_dtype,
+            device=array_api_compat.device(coord_ext),
+        )
         exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
         # merge nf and nloc axis, so for type_one_side == False,
         # we don't require atype is the same in all frames
-        exclude_mask = exclude_mask.reshape(nf * nloc, nnei)
-        rr = rr.reshape(nf * nloc, nnei, 4)
+        exclude_mask = xp.reshape(exclude_mask, (nf * nloc, nnei))
+        rr = xp.reshape(rr, (nf * nloc, nnei, 4))
+        rr = xp.astype(rr, self.dstd.dtype)
 
-        for embedding_idx in itertools.product(
-            range(self.ntypes), repeat=self.embeddings.ndim
-        ):
-            if self.type_one_side:
-                (tt,) = embedding_idx
-                ti_mask = np.s_[:]
-            else:
-                ti, tt = embedding_idx
-                ti_mask = atype_ext[:, :nloc].ravel() == ti
-            mm = exclude_mask[ti_mask, sec[tt] : sec[tt + 1]]
-            tr = rr[ti_mask, sec[tt] : sec[tt + 1], :]
-            tr = tr * mm[:, :, None]
-            ss = tr[..., 0:1]
-            gg = self.cal_g(ss, embedding_idx)
-            gr_tmp = np.einsum("lni,lnj->lij", gg, tr)
-            gr[ti_mask] += gr_tmp
-        gr = gr.reshape(nf, nloc, ng, 4)
+        if self.type_one_side:
+            for tt in range(self.ntypes):
+                mm = exclude_mask[:, sec[tt] : sec[tt + 1]]
+                tr = rr[:, sec[tt] : sec[tt + 1], :]
+                tr = tr * xp.astype(mm[:, :, None], tr.dtype)
+                ss = tr[..., 0:1]
+                gg = self.cal_g(ss, (tt,))
+                gr += xp.sum(gg[:, :, :, None] * tr[:, :, None, :], axis=1)
+        else:
+            # Sort atoms by center type so each type forms a contiguous block.
+            # Slice indexing (arr[s:e]) is array-api compatible and lets us
+            # run cal_g only on atoms of the matching center type, keeping the
+            # same O(nf*nloc) total embedding cost as the original numpy code.
+            atype_loc = xp.reshape(atype_ext[:, :nloc], (nf * nloc,))
+            sort_idx = xp.argsort(atype_loc)
+            unsort_idx = xp.argsort(sort_idx)
+            rr_s = xp.take(rr, sort_idx, axis=0)
+            mask_s = xp.take(exclude_mask, sort_idx, axis=0)
+            dev = array_api_compat.device(coord_ext)
+            gr_s = xp.zeros([nf * nloc, ng, 4], dtype=input_dtype, device=dev)
+            # Per-type boundaries in sorted order
+            type_ends = []
+            offset = 0
+            for ti in range(self.ntypes):
+                offset += int(xp.sum(xp.astype(atype_loc == ti, xp.int32)))
+                type_ends.append(offset)
+            type_starts = [0, *type_ends[:-1]]
+            for ti in range(self.ntypes):
+                s, e = type_starts[ti], type_ends[ti]
+                if s == e:
+                    continue
+                for tt in range(self.ntypes):
+                    mm = mask_s[s:e, sec[tt] : sec[tt + 1]]
+                    tr = rr_s[s:e, sec[tt] : sec[tt + 1], :]
+                    tr = tr * xp.astype(mm[:, :, None], tr.dtype)
+                    ss = tr[..., 0:1]
+                    gg = self.cal_g(ss, (ti, tt))
+                    gr_s[s:e] = gr_s[s:e] + xp.sum(
+                        gg[:, :, :, None] * tr[:, :, None, :], axis=1
+                    )
+            gr = xp.take(gr_s, unsort_idx, axis=0)
+        gr = xp.reshape(gr, (nf, nloc, ng, 4))
         # nf x nloc x ng x 4
         gr /= self.nnei
         gr1 = gr[:, :, : self.axis_neuron, :]
         # nf x nloc x ng x ng1
-        grrg = np.einsum("flid,fljd->flij", gr, gr1)
+        grrg = xp.sum(gr[:, :, :, None, :] * gr1[:, :, None, :, :], axis=4)
         # nf x nloc x (ng x ng1)
-        grrg = grrg.reshape(nf, nloc, ng * self.axis_neuron)
+        grrg = xp.reshape(grrg, (nf, nloc, ng * self.axis_neuron))
         return grrg, gr[..., 1:], None, None, ww
 
     def serialize(self) -> dict:
@@ -473,10 +521,24 @@ class DescrptSeA(NativeOP, BaseDescriptor):
                 if embedding_idx in self.emask:
                     self.embeddings[embedding_idx].clear()
 
-        return {
+        # Serialization version history:
+        #   v2: original format
+        #   v3: added optional "compress" key for model compression state
+        #       (tabulated embedding-net polynomial coefficients).
+        #       Uncompressed models stay at v2 for full backward compatibility.
+        #
+        # Why serialize compression state here:
+        #   The pt and tf backends persist compression via their native
+        #   framework save mechanisms (torch.jit.save / tf.saved_model),
+        #   which capture the full runtime state including tabulated data.
+        #   The pt_expt backend uses serialize() -> model.json -> deserialize()
+        #   as the primary persistence path (.pte files), so compression state
+        #   must survive this round-trip.  All backends accept v3 in
+        #   deserialize() to allow cross-backend loading of compressed models.
+        data = {
             "@class": "Descriptor",
             "type": "se_e2_a",
-            "@version": 2,
+            "@version": 3 if self.compress else 2,
             "rcut": self.rcut,
             "rcut_smth": self.rcut_smth,
             "sel": self.sel,
@@ -500,29 +562,55 @@ class DescrptSeA(NativeOP, BaseDescriptor):
             },
             "type_map": self.type_map,
         }
+        if self.compress:
+            data["compress"] = {
+                "@variables": {
+                    "compress_data": [to_numpy_array(d) for d in self.compress_data],
+                    "compress_info": [to_numpy_array(i) for i in self.compress_info],
+                },
+            }
+        return data
 
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeA":
         """Deserialize from dict."""
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 2, 1)
+        check_version_compatibility(data.pop("@version", 1), 3, 1)
         data.pop("@class", None)
         data.pop("type", None)
         variables = data.pop("@variables")
         embeddings = data.pop("embeddings")
         env_mat = data.pop("env_mat")
+        compress = data.pop("compress", None)
         obj = cls(**data)
 
         obj["davg"] = variables["davg"]
         obj["dstd"] = variables["dstd"]
         obj.embeddings = NetworkCollection.deserialize(embeddings)
+        if compress is not None:
+            obj._load_compress_data(compress)
         return obj
+
+    def _load_compress_data(self, compress: dict) -> None:
+        """Load compression state from serialized data.
+
+        Parameters
+        ----------
+        compress : dict
+            Must contain "@variables" with "compress_data" (list of arrays,
+            one per embedding network) and "compress_info" (list of arrays
+            with table bounds).
+        """
+        variables = compress["@variables"]
+        self.compress_data = variables["compress_data"]
+        self.compress_info = variables["compress_info"]
+        self.compress = True
 
     @classmethod
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
     ) -> tuple[Array, Array]:
         """Update the selection and perform neighbor statistics.
@@ -544,96 +632,10 @@ class DescrptSeA(NativeOP, BaseDescriptor):
             The minimum distance between two atoms
         """
         local_jdata_cpy = local_jdata.copy()
-        min_nbor_dist, local_jdata_cpy["sel"] = UpdateSel().update_one_sel(
+        min_nbor_dist, local_jdata_cpy["sel"] = cls._update_sel_cls().update_one_sel(
             train_data, type_map, local_jdata_cpy["rcut"], local_jdata_cpy["sel"], False
         )
         return local_jdata_cpy, min_nbor_dist
 
 
-class DescrptSeAArrayAPI(DescrptSeA):
-    @cast_precision
-    def call(
-        self,
-        coord_ext: Array,
-        atype_ext: Array,
-        nlist: Array,
-        mapping: Optional[Array] = None,
-    ) -> Array:
-        """Compute the descriptor.
-
-        Parameters
-        ----------
-        coord_ext
-            The extended coordinates of atoms. shape: nf x (nallx3)
-        atype_ext
-            The extended aotm types. shape: nf x nall
-        nlist
-            The neighbor list. shape: nf x nloc x nnei
-        mapping
-            The index mapping from extended to local region. not used by this descriptor.
-
-        Returns
-        -------
-        descriptor
-            The descriptor. shape: nf x nloc x (ng x axis_neuron)
-        gr
-            The rotationally equivariant and permutationally invariant single particle
-            representation. shape: nf x nloc x ng x 3
-        g2
-            The rotationally invariant pair-partical representation.
-            this descriptor returns None
-        h2
-            The rotationally equivariant pair-partical representation.
-            this descriptor returns None
-        sw
-            The smooth switch function.
-        """
-        if not self.type_one_side:
-            raise NotImplementedError(
-                "type_one_side == False is not supported in DescrptSeAArrayAPI"
-            )
-        del mapping
-        xp = array_api_compat.array_namespace(coord_ext, atype_ext, nlist)
-        input_dtype = coord_ext.dtype
-        # nf x nloc x nnei x 4
-        rr, diff, ww = self.env_mat.call(
-            coord_ext,
-            atype_ext,
-            nlist,
-            self.davg[...],
-            self.dstd[...],
-        )
-        nf, nloc, nnei, _ = rr.shape
-        sec = self.sel_cumsum
-
-        ng = self.neuron[-1]
-        gr = xp.zeros([nf * nloc, ng, 4], dtype=self.dstd.dtype)
-        exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
-        # merge nf and nloc axis, so for type_one_side == False,
-        # we don't require atype is the same in all frames
-        exclude_mask = xp.reshape(exclude_mask, (nf * nloc, nnei))
-        rr = xp.reshape(rr, (nf * nloc, nnei, 4))
-        rr = xp.astype(rr, self.dstd.dtype)
-
-        for embedding_idx in itertools.product(
-            range(self.ntypes), repeat=self.embeddings.ndim
-        ):
-            (tt,) = embedding_idx
-            mm = exclude_mask[:, sec[tt] : sec[tt + 1]]
-            tr = rr[:, sec[tt] : sec[tt + 1], :]
-            tr = tr * xp.astype(mm[:, :, None], tr.dtype)
-            ss = tr[..., 0:1]
-            gg = self.cal_g(ss, embedding_idx)
-            # gr_tmp = xp.einsum("lni,lnj->lij", gg, tr)
-            gr_tmp = xp.sum(gg[:, :, :, None] * tr[:, :, None, :], axis=1)
-            gr += gr_tmp
-        gr = xp.reshape(gr, (nf, nloc, ng, 4))
-        # nf x nloc x ng x 4
-        gr /= self.nnei
-        gr1 = gr[:, :, : self.axis_neuron, :]
-        # nf x nloc x ng x ng1
-        # grrg = xp.einsum("flid,fljd->flij", gr, gr1)
-        grrg = xp.sum(gr[:, :, :, None, :] * gr1[:, :, None, :, :], axis=4)
-        # nf x nloc x (ng x ng1)
-        grrg = xp.reshape(grrg, (nf, nloc, ng * self.axis_neuron))
-        return grrg, gr[..., 1:], None, None, ww
+DescrptSeAArrayAPI = DescrptSeA

@@ -2,10 +2,6 @@
 from abc import (
     abstractmethod,
 )
-from typing import (
-    Optional,
-    Union,
-)
 
 import numpy as np
 
@@ -41,11 +37,11 @@ class DeepTensor(DeepEval):
     def eval(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
-        atom_types: Union[list[int], np.ndarray],
+        cells: np.ndarray | None,
+        atom_types: list[int] | np.ndarray,
         atomic: bool = True,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
         mixed_type: bool = False,
         **kwargs: dict,
     ) -> np.ndarray:
@@ -110,11 +106,11 @@ class DeepTensor(DeepEval):
     def eval_full(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: np.ndarray,
         atomic: bool = False,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
         mixed_type: bool = False,
         **kwargs: dict,
     ) -> tuple[np.ndarray, ...]:
@@ -241,11 +237,11 @@ class OldDeepTensor(DeepTensor):
     def eval_full(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: np.ndarray,
         atomic: bool = False,
-        fparam: Optional[np.ndarray] = None,
-        aparam: Optional[np.ndarray] = None,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
         mixed_type: bool = False,
         **kwargs: dict,
     ) -> tuple[np.ndarray, ...]:

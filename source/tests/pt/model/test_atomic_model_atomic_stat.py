@@ -6,7 +6,6 @@ from pathlib import (
 )
 from typing import (
     NoReturn,
-    Optional,
 )
 
 import h5py
@@ -81,11 +80,11 @@ class FooFitting(torch.nn.Module, BaseFitting):
         self,
         descriptor: torch.Tensor,
         atype: torch.Tensor,
-        gr: Optional[torch.Tensor] = None,
-        g2: Optional[torch.Tensor] = None,
-        h2: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        gr: torch.Tensor | None = None,
+        g2: torch.Tensor | None = None,
+        h2: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
     ):
         nf, nloc, _ = descriptor.shape
         ret = {}
@@ -227,6 +226,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         expected_std[0, :, :1] = np.array([0.0, 0.816496]).reshape(
             2, 1
         )  # updating std for foo based on [5.0, 5.0, 5.0], [5.0, 6.0, 7.0]]
+        expected_std[1, :, :] = np.zeros([2, 2])
         np.testing.assert_almost_equal(
             to_numpy_array(md0.out_std), expected_std, decimal=4
         )

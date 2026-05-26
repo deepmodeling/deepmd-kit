@@ -6,7 +6,6 @@ from abc import (
 from typing import (
     Any,
     NoReturn,
-    Union,
 )
 
 import torch
@@ -30,7 +29,7 @@ class TaskLoss(torch.nn.Module, ABC, make_plugin_registry("loss")):
         model: torch.nn.Module,
         label: dict[str, torch.Tensor],
         natoms: int,
-        learning_rate: Union[float, torch.Tensor],
+        learning_rate: float | torch.Tensor,
     ) -> NoReturn:
         """Return loss ."""
         raise NotImplementedError

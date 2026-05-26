@@ -4,9 +4,6 @@ import unittest
 from pathlib import (
     Path,
 )
-from typing import (
-    Optional,
-)
 
 import h5py
 import numpy as np
@@ -92,11 +89,11 @@ class FooFitting(paddle.nn.Layer, BaseFitting):
         self,
         descriptor: paddle.Tensor,
         atype: paddle.Tensor,
-        gr: Optional[paddle.Tensor] = None,
-        g2: Optional[paddle.Tensor] = None,
-        h2: Optional[paddle.Tensor] = None,
-        fparam: Optional[paddle.Tensor] = None,
-        aparam: Optional[paddle.Tensor] = None,
+        gr: paddle.Tensor | None = None,
+        g2: paddle.Tensor | None = None,
+        h2: paddle.Tensor | None = None,
+        fparam: paddle.Tensor | None = None,
+        aparam: paddle.Tensor | None = None,
     ):
         nf, nloc, _ = descriptor.shape
         ret = {}
@@ -230,7 +227,9 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         )
         ret1 = md0.forward_common_atomic(*args)
         ret1 = cvt_ret(ret1)
-        expected_std = np.ones((3, 2, 2))  # 3 keys, 2 atypes, 2 max dims.
+        expected_std = np.array(
+            [[[0, 1], [0, 1]], [[1, 1], [1, 1]], [[0, 0], [0, 0]]]
+        )  # 3 keys, 2 atypes, 2 max dims.
         # nt x odim
         foo_bias = np.array([1.0, 3.0]).reshape(2, 1)
         bar_bias = np.array([1.0, 5.0, 3.0, 2.0]).reshape(2, 1, 2)

@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    Optional,
-    Union,
 )
 
 import numpy as np
@@ -45,10 +43,10 @@ class DescrptHybrid(Descriptor):
 
     def __init__(
         self,
-        list: list[Union[Descriptor, dict[str, Any]]],
-        ntypes: Optional[int] = None,
-        spin: Optional[Spin] = None,
-        **kwargs,
+        list: list[Descriptor | dict[str, Any]],
+        ntypes: int | None = None,
+        spin: Spin | None = None,
+        **kwargs: Any,
     ) -> None:
         """Constructor."""
         # warning: list is conflict with built-in list
@@ -143,10 +141,10 @@ class DescrptHybrid(Descriptor):
         mesh: list,
         input_dict: dict,
         mixed_type: bool = False,
-        real_natoms_vec: Optional[list] = None,
-        **kwargs,
+        real_natoms_vec: list | None = None,
+        **kwargs: Any,
     ) -> None:
-        """Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
+        """Compute the statistics (avg and std) of the training data. The input will be normalized by the statistics.
 
         Parameters
         ----------
@@ -184,23 +182,23 @@ class DescrptHybrid(Descriptor):
                 **kwargs,
             )
 
-    def merge_input_stats(self, stat_dict) -> None:
-        """Merge the statisitcs computed from compute_input_stats to obtain the self.davg and self.dstd.
+    def merge_input_stats(self, stat_dict: dict[str, float]) -> None:
+        """Merge the statistics computed from compute_input_stats to obtain the self.davg and self.dstd.
 
         Parameters
         ----------
         stat_dict
-                The dict of statisitcs computed from compute_input_stats, including:
+                The dict of statistics computed from compute_input_stats, including:
             sumr
-                    The sum of radial statisitcs.
+                    The sum of radial statistics.
             suma
-                    The sum of relative coord statisitcs.
+                    The sum of relative coord statistics.
             sumn
                     The sum of neighbor numbers.
             sumr2
-                    The sum of square of radial statisitcs.
+                    The sum of square of radial statistics.
             suma2
-                    The sum of square of relative coord statisitcs.
+                    The sum of square of relative coord statistics.
         """
         for ii in self.descrpt_list:
             ii.merge_input_stats(stat_dict)
@@ -213,7 +211,7 @@ class DescrptHybrid(Descriptor):
         box_: tf.Tensor,
         mesh: tf.Tensor,
         input_dict: dict,
-        reuse: Optional[bool] = None,
+        reuse: bool | None = None,
         suffix: str = "",
     ) -> tf.Tensor:
         """Build the computational graph for the descriptor.
@@ -317,7 +315,7 @@ class DescrptHybrid(Descriptor):
         check_frequency: int = -1,
         suffix: str = "",
     ) -> None:
-        """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the
+        """Receive the statistics (distance, max_nbor_size and env_mat_range) of the
         training data.
 
         Parameters
@@ -351,7 +349,7 @@ class DescrptHybrid(Descriptor):
                 suffix=f"{suffix}_{idx}",
             )
 
-    def enable_mixed_precision(self, mixed_prec: Optional[dict] = None) -> None:
+    def enable_mixed_precision(self, mixed_prec: dict | None = None) -> None:
         """Receive the mixed precision setting.
 
         Parameters
@@ -426,9 +424,9 @@ class DescrptHybrid(Descriptor):
     def update_sel(
         cls,
         train_data: DeepmdDataSystem,
-        type_map: Optional[list[str]],
+        type_map: list[str] | None,
         local_jdata: dict,
-    ) -> tuple[dict, Optional[float]]:
+    ) -> tuple[dict, float | None]:
         """Update the selection and perform neighbor statistics.
 
         Parameters

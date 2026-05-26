@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    Optional,
 )
 
 import array_api_compat
@@ -11,15 +10,14 @@ from deepmd.dpmodel import (
 )
 from deepmd.dpmodel.array_api import (
     Array,
-    support_array_api,
     xp_take_along_axis,
+    xp_take_first_n,
 )
 from deepmd.dpmodel.utils.safe_gradient import (
     safe_for_vector_norm,
 )
 
 
-@support_array_api(version="2023.12")
 def compute_smooth_weight(
     distance: Array,
     rmin: float,
@@ -29,14 +27,16 @@ def compute_smooth_weight(
     if rmin >= rmax:
         raise ValueError("rmin should be less than rmax.")
     xp = array_api_compat.array_namespace(distance)
-    distance = xp.clip(distance, min=rmin, max=rmax)
+    # Use where instead of clip so that make_fx tracing does not
+    # decompose it into boolean-indexed ops with data-dependent sizes.
+    distance = xp.where(distance < rmin, xp.full_like(distance, rmin), distance)
+    distance = xp.where(distance > rmax, xp.full_like(distance, rmax), distance)
     uu = (distance - rmin) / (rmax - rmin)
     uu2 = uu * uu
     vv = uu2 * uu * (-6.0 * uu2 + 15.0 * uu - 10.0) + 1.0
     return vv
 
 
-@support_array_api(version="2023.12")
 def compute_exp_sw(
     distance: Array,
     rmin: float,
@@ -46,7 +46,8 @@ def compute_exp_sw(
     if rmin >= rmax:
         raise ValueError("rmin should be less than rmax.")
     xp = array_api_compat.array_namespace(distance)
-    distance = xp.clip(distance, min=0.0, max=rmax)
+    distance = xp.where(distance < 0.0, xp.zeros_like(distance), distance)
+    distance = xp.where(distance > rmax, xp.full_like(distance, rmax), distance)
     C = 20
     a = C / rmin
     b = rmin
@@ -67,7 +68,11 @@ def _make_env_mat(
     xp = array_api_compat.array_namespace(nlist)
     nf, nloc, nnei = nlist.shape
     # nf x nall x 3
-    coord = xp.reshape(coord, (nf, -1, 3))
+    # Callers may pass either (nf, nall*3) or (nf, nall, 3); normalise
+    # both to (nf, nall, 3) using shape-based inference so the concrete nf
+    # value is not baked into the reshape.
+    if coord.ndim == 2:
+        coord = xp.reshape(coord, (-1, coord.shape[1] // 3, 3))
     mask = nlist >= 0
     nlist = nlist * xp.astype(mask, nlist.dtype)
     # nf x (nloc x nnei) x 3
@@ -76,7 +81,7 @@ def _make_env_mat(
     # nf x nloc x nnei x 3
     coord_r = xp.reshape(coord_r, (nf, nloc, nnei, 3))
     # nf x nloc x 1 x 3
-    coord_l = xp.reshape(coord[:, :nloc, ...], (nf, -1, 1, 3))
+    coord_l = xp.reshape(xp_take_first_n(coord, 1, nloc), (nf, nloc, 1, 3))
     # nf x nloc x nnei x 3
     diff = coord_r - coord_l
     # nf x nloc x nnei
@@ -117,8 +122,8 @@ class EnvMat(NativeOP):
         coord_ext: Array,
         atype_ext: Array,
         nlist: Array,
-        davg: Optional[Array] = None,
-        dstd: Optional[Array] = None,
+        davg: Array | None = None,
+        dstd: Array | None = None,
         radial_only: bool = False,
     ) -> tuple[Array, Array, Array]:
         """Compute the environment matrix.
@@ -153,7 +158,7 @@ class EnvMat(NativeOP):
         xp = array_api_compat.array_namespace(coord_ext, atype_ext, nlist)
         em, diff, sw = self._call(nlist, coord_ext, radial_only)
         nf, nloc, nnei = nlist.shape
-        atype = atype_ext[:, :nloc]
+        atype = xp_take_first_n(atype_ext, 1, nloc)
         if davg is not None:
             em -= xp.reshape(xp.take(davg, xp.reshape(atype, (-1,)), axis=0), em.shape)
         if dstd is not None:

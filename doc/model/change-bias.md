@@ -27,7 +27,6 @@ dp --tf change-bias model.ckpt -s data_dir -o model_updated.pb
 ```sh
 dp --tf change-bias model.ckpt -b -92.523 -187.66 -o model_updated.pb
 ```
-
 :::
 
 :::{tab-item} PyTorch Backend {{ pytorch_icon }}
@@ -49,7 +48,6 @@ For multitask models, where `--model-branch` must be specified:
 ```sh
 dp --pt change-bias multi_model.pt -s data_dir -o model_updated.pt --model-branch model_1
 ```
-
 :::
 
 ::::

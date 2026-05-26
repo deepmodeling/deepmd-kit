@@ -3,14 +3,18 @@ import logging
 from abc import (
     abstractmethod,
 )
-from typing import (
+from collections.abc import (
     Callable,
-    Optional,
-    Union,
+)
+from typing import (
+    Any,
 )
 
 import numpy as np
 import paddle
+from typing_extensions import (
+    Self,
+)
 
 from deepmd.dpmodel.utils.seed import (
     child_seed,
@@ -40,6 +44,9 @@ from deepmd.utils.finetune import (
     get_index_between_two_maps,
     map_atom_exclude_types,
 )
+from deepmd.utils.path import (
+    DPPath,
+)
 
 dtype = env.GLOBAL_PD_FLOAT_PRECISION
 device = env.DEVICE
@@ -50,12 +57,14 @@ log = logging.getLogger(__name__)
 class Fitting(paddle.nn.Layer, BaseFitting):
     # plugin moved to BaseFitting
 
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args: Any, **kwargs: Any) -> Self:
         if cls is Fitting:
             return BaseFitting.__new__(BaseFitting, *args, **kwargs)
         return super().__new__(cls)
 
-    def share_params(self, base_class, shared_level, resume=False) -> None:
+    def share_params(
+        self, base_class: "Fitting", shared_level: int, resume: bool = False
+    ) -> None:
         """
         Share the parameters of self to the base_class with shared_level during multitask training.
         If not start from checkpoint (resume is False),
@@ -74,8 +83,9 @@ class Fitting(paddle.nn.Layer, BaseFitting):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
+        merged: Callable[[], list[dict]] | list[dict],
         protection: float = 1e-2,
+        stat_file_path: DPPath | None = None,
     ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the fittings from packed data.
@@ -91,6 +101,8 @@ class Fitting(paddle.nn.Layer, BaseFitting):
                 the lazy function helps by only sampling once.
         protection : float
             Divided-by-zero protection
+        stat_file_path : Optional[DPPath]
+            The path to the stat file.
         """
         if self.numb_fparam == 0 and self.numb_aparam == 0:
             # skip data statistics
@@ -222,7 +234,7 @@ class GeneralFitting(Fitting):
         ntypes: int,
         dim_descrpt: int,
         neuron: list[int] = [128, 128, 128],
-        bias_atom_e: Optional[paddle.Tensor] = None,
+        bias_atom_e: paddle.Tensor | None = None,
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
@@ -230,15 +242,15 @@ class GeneralFitting(Fitting):
         activation_function: str = "tanh",
         precision: str = DEFAULT_PRECISION,
         mixed_types: bool = True,
-        rcond: Optional[float] = None,
-        seed: Optional[Union[int, list[int]]] = None,
+        rcond: float | None = None,
+        seed: int | list[int] | None = None,
         exclude_types: list[int] = [],
-        trainable: Union[bool, list[bool]] = True,
-        remove_vaccum_contribution: Optional[list[bool]] = None,
-        type_map: Optional[list[str]] = None,
+        trainable: bool | list[bool] = True,
+        remove_vaccum_contribution: list[bool] | None = None,
+        type_map: list[str] | None = None,
         use_aparam_as_mask: bool = False,
-        default_fparam: Optional[list[float]] = None,
-        **kwargs,
+        default_fparam: list[float] | None = None,
+        **kwargs: Any,
     ) -> None:
         super().__init__()
         self.var_name = var_name
@@ -248,7 +260,13 @@ class GeneralFitting(Fitting):
         self.mixed_types = mixed_types
         self.resnet_dt = resnet_dt
         self.numb_fparam = numb_fparam
+        self.register_buffer(
+            "buffer_numb_fparam", paddle.to_tensor([numb_fparam], dtype=paddle.int64)
+        )
         self.numb_aparam = numb_aparam
+        self.register_buffer(
+            "buffer_numb_aparam", paddle.to_tensor([numb_aparam], dtype=paddle.int64)
+        )
         self.dim_case_embd = dim_case_embd
         self.default_fparam = default_fparam
         self.activation_function = activation_function
@@ -257,6 +275,11 @@ class GeneralFitting(Fitting):
         self.rcond = rcond
         self.seed = seed
         self.type_map = type_map
+        if type_map is not None:
+            self.register_buffer(
+                "buffer_type_map",
+                paddle.to_tensor([ord(c) for c in " ".join(self.type_map)]),
+            )
         self.use_aparam_as_mask = use_aparam_as_mask
         # order matters, should be place after the assignment of ntypes
         self.reinit_exclude(exclude_types)
@@ -350,7 +373,7 @@ class GeneralFitting(Fitting):
         self.emask = AtomExcludeMask(self.ntypes, self.exclude_types)
 
     def change_type_map(
-        self, type_map: list[str], model_with_new_type_stat=None
+        self, type_map: list[str], model_with_new_type_stat: "Fitting | None" = None
     ) -> None:
         """Change the type related params to new ones, according to `type_map` and the original one in the model.
         If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -435,6 +458,14 @@ class GeneralFitting(Fitting):
         """Get the number (dimension) of atomic parameters of this atomic model."""
         return self.numb_aparam
 
+    def get_buffer_dim_fparam(self) -> paddle.Tensor:
+        """Get the number (dimension) of frame parameters of this atomic model as a buffer-style Tensor."""
+        return self.buffer_numb_fparam
+
+    def get_buffer_dim_aparam(self) -> paddle.Tensor:
+        """Get the number (dimension) of atomic parameters of this atomic model as a buffer-style Tensor."""
+        return self.buffer_numb_aparam
+
     # make jit happy
     exclude_types: list[int]
 
@@ -456,7 +487,19 @@ class GeneralFitting(Fitting):
         """Get the name to each type of atoms."""
         return self.type_map
 
-    def set_case_embd(self, case_idx: int):
+    def get_buffer_type_map(self) -> paddle.Tensor:
+        """
+        Return the type map as a buffer-style Tensor for JIT saving.
+
+        The original type map (e.g., ['Ni', 'O']) is first joined into a single space-separated string
+        (e.g., "Ni O"). Each character in this string is then converted to its ASCII code using `ord()`,
+        and the resulting integer sequence is stored as a 1D paddle.Tensor of dtype int.
+
+        This format allows the type map to be serialized as a raw byte buffer during JIT model saving.
+        """
+        return self.buffer_type_map
+
+    def set_case_embd(self, case_idx: int) -> None:
         """
         Set the case embedding of this fitting net by the given case_idx,
         typically concatenated with the output of the descriptor and fed into the fitting net.
@@ -468,7 +511,7 @@ class GeneralFitting(Fitting):
     def set_return_middle_output(self, return_middle_output: bool = True) -> None:
         self.eval_return_middle_output = return_middle_output
 
-    def __setitem__(self, key, value) -> None:
+    def __setitem__(self, key: str, value: paddle.Tensor) -> None:
         if key in ["bias_atom_e"]:
             value = value.reshape([self.ntypes, self._net_out_dim()])
             self.bias_atom_e = value
@@ -487,7 +530,7 @@ class GeneralFitting(Fitting):
         else:
             raise KeyError(key)
 
-    def __getitem__(self, key):
+    def __getitem__(self, key: str) -> paddle.Tensor:
         if key in ["bias_atom_e"]:
             return self.bias_atom_e
         elif key in ["fparam_avg"]:
@@ -506,7 +549,7 @@ class GeneralFitting(Fitting):
             raise KeyError(key)
 
     @abstractmethod
-    def _net_out_dim(self):
+    def _net_out_dim(self) -> int:
         """Set the FittingNet output dim."""
         pass
 
@@ -520,12 +563,12 @@ class GeneralFitting(Fitting):
         self,
         descriptor: paddle.Tensor,
         atype: paddle.Tensor,
-        gr: Optional[paddle.Tensor] = None,
-        g2: Optional[paddle.Tensor] = None,
-        h2: Optional[paddle.Tensor] = None,
-        fparam: Optional[paddle.Tensor] = None,
-        aparam: Optional[paddle.Tensor] = None,
-    ):
+        gr: paddle.Tensor | None = None,
+        g2: paddle.Tensor | None = None,
+        h2: paddle.Tensor | None = None,
+        fparam: paddle.Tensor | None = None,
+        aparam: paddle.Tensor | None = None,
+    ) -> tuple[paddle.Tensor, paddle.Tensor | None]:
         # cast the input to internal precsion
         xx = descriptor.astype(self.prec)
         fparam = fparam.astype(self.prec) if fparam is not None else None

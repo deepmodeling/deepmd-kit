@@ -1,7 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-)
 
 import torch
 
@@ -11,7 +8,7 @@ def aggregate(
     data: torch.Tensor,
     owners: torch.Tensor,
     average: bool = True,
-    num_owner: Optional[int] = None,
+    num_owner: int | None = None,
 ) -> torch.Tensor:
     """
     Aggregate rows in data by specifying the owners.

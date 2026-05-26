@@ -196,5 +196,6 @@ def translate_type_embd_dicts_to_dpa2(
         target_dict[tk] = type_embd_dict[kk]
     record[all_keys.index("repinit.compress_data.0")] = True
     record[all_keys.index("repinit.compress_info.0")] = True
+    record[all_keys.index("repinit.type_embd_data")] = True
     assert all(record)
     return target_dict

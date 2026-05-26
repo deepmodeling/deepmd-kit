@@ -14,6 +14,9 @@ from deepmd.pt.utils import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 
 class TensorLoss(TaskLoss):
@@ -205,3 +208,24 @@ class TensorLoss(TaskLoss):
                 )
             )
         return label_requirement
+
+    def serialize(self) -> dict:
+        """Serialize the loss module."""
+        return {
+            "@class": "TensorLoss",
+            "@version": 1,
+            "tensor_name": self.tensor_name,
+            "tensor_size": self.tensor_size,
+            "label_name": self.label_name,
+            "pref_atomic": self.local_weight,
+            "pref": self.global_weight,
+            "enable_atomic_weight": self.enable_atomic_weight,
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "TensorLoss":
+        """Deserialize the loss module."""
+        data = data.copy()
+        check_version_compatibility(data.pop("@version"), 1, 1)
+        data.pop("@class")
+        return cls(**data)

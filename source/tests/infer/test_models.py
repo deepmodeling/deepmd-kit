@@ -13,13 +13,23 @@ from deepmd.infer.deep_pot import (
 )
 
 from ..consistent.common import (
+    INSTALLED_PT_EXPT,
     parameterized,
 )
 from .case import (
     get_cases,
 )
 
+# Per-key tolerance.  Keys whose cross-backend (TF ↔ PyTorch) outputs
+# happen to land within fp64 round-off get `STRICT_PLACES`; keys where
+# the TF kernel reorders ops enough to drift at ~1e-8 (observed for
+# `fparam_aparam`: 1-type se_e2_a with fparam/aparam plumbing) stay at
+# `default_places`.  Without per-key tolerance, tightening uniformly
+# would either let real conversion regressions hide behind 1e-7 (too
+# loose) or break legitimate cross-backend cases at 1e-12 (too strict).
 default_places = 7
+STRICT_PLACES = 12
+STRICT_KEYS = frozenset(("se_e2_a", "se_e2_r"))
 
 
 @parameterized(
@@ -28,7 +38,7 @@ default_places = 7
         "se_e2_r",
         "fparam_aparam",
     ),  # key
-    (".pb", ".pth"),  # model extension
+    (".pb", ".pth", ".pte", ".pt2"),  # model extension
 )
 class TestDeepPot(unittest.TestCase):
     # moved from tests/tf/test_deeppot_a.py
@@ -36,27 +46,41 @@ class TestDeepPot(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
         key, extension = cls.param
+        if extension in (".pte", ".pt2") and not INSTALLED_PT_EXPT:
+            raise unittest.SkipTest("pt_expt backend not installed")
+        if key == "se_e2_r" and extension in (".pte", ".pt2"):
+            raise unittest.SkipTest(
+                "type_one_side=False is not supported for pt_expt export"
+            )
+        if key == "se_e2_r" and extension == ".pth":
+            raise unittest.SkipTest(
+                "se_e2_r type_one_side is not supported for PyTorch models"
+            )
+        cls.places = STRICT_PLACES if key in STRICT_KEYS else default_places
         cls.case = get_cases()[key]
-        cls.model_name = cls.case.get_model(extension)
+        if extension == ".pt2":
+            import torch
+
+            # Clear default device: tests/pt/__init__.py may set a fake
+            # device for CPU fallback, which poisons AOTInductor compilation.
+            saved_device = torch.get_default_device()
+            torch.set_default_device(None)
+            try:
+                cls.model_name = cls.case.get_model(extension)
+            finally:
+                torch.set_default_device(saved_device)
+        else:
+            cls.model_name = cls.case.get_model(extension)
         cls.dp = DeepEval(cls.model_name)
 
     @classmethod
     def tearDownClass(cls) -> None:
         cls.dp = None
 
-    def setUp(self) -> None:
-        key, extension = self.param
-        if key == "se_e2_r" and extension == ".pth":
-            self.skipTest(
-                reason="se_e2_r type_one_side is not supported for PyTorch models"
-            )
-
     def test_attrs(self) -> None:
         assert isinstance(self.dp, DeepPot)
         self.assertEqual(self.dp.get_ntypes(), self.case.ntypes)
-        self.assertAlmostEqual(
-            self.dp.get_rcut(), self.case.rcut, places=default_places
-        )
+        self.assertAlmostEqual(self.dp.get_rcut(), self.case.rcut, places=self.places)
         self.assertEqual(self.dp.get_type_map(), self.case.type_map)
         self.assertEqual(self.dp.get_dim_fparam(), self.case.dim_fparam)
         self.assertEqual(self.dp.get_dim_aparam(), self.case.dim_aparam)
@@ -81,21 +105,21 @@ class TestDeepPot(unittest.TestCase):
             np.testing.assert_almost_equal(
                 ff.ravel(),
                 result.force.ravel(),
-                default_places,
+                self.places,
                 err_msg=f"Result {ii} force",
             )
             expected_se = np.sum(result.atomic_energy.reshape([nframes, -1]), axis=1)
             np.testing.assert_almost_equal(
                 ee.ravel(),
                 expected_se.ravel(),
-                default_places,
+                self.places,
                 err_msg=f"Result {ii} energy",
             )
             expected_sv = np.sum(result.atomic_virial.reshape([nframes, -1, 9]), axis=1)
             np.testing.assert_almost_equal(
                 vv.ravel(),
                 expected_sv.ravel(),
-                default_places,
+                self.places,
                 err_msg=f"Result {ii} virial",
             )
 
@@ -121,66 +145,96 @@ class TestDeepPot(unittest.TestCase):
             np.testing.assert_almost_equal(
                 ff.ravel(),
                 result.force.ravel(),
-                default_places,
+                self.places,
                 err_msg=f"Result {ii} force",
             )
             np.testing.assert_almost_equal(
                 ae.ravel(),
                 result.atomic_energy.ravel(),
-                default_places,
+                self.places,
                 err_msg=f"Result {ii} atomic energy",
             )
             np.testing.assert_almost_equal(
                 av.ravel(),
                 result.atomic_virial.ravel(),
-                default_places,
+                self.places,
                 err_msg=f"Result {ii} atomic virial",
             )
             expected_se = np.sum(result.energy.reshape([nframes, -1]), axis=1)
             np.testing.assert_almost_equal(
                 ee.ravel(),
                 expected_se.ravel(),
-                default_places,
+                self.places,
                 err_msg=f"Result {ii} energy",
             )
             expected_sv = np.sum(result.virial.reshape([nframes, -1, 9]), axis=1)
             np.testing.assert_almost_equal(
                 vv.ravel(),
                 expected_sv.ravel(),
-                default_places,
+                self.places,
                 err_msg=f"Result {ii} virial",
             )
 
     def test_descriptor(self) -> None:
         _, extension = self.param
+        if extension in (".pte", ".pt2"):
+            self.skipTest("eval_descriptor not supported for pt_expt models")
         for ii, result in enumerate(self.case.results):
             if result.descriptor is None:
                 continue
-            descpt = self.dp.eval_descriptor(result.coord, result.box, result.atype)
+            descpt = self.dp.eval_descriptor(
+                result.coord,
+                result.box,
+                result.atype,
+                fparam=result.fparam,
+                aparam=result.aparam,
+            )
             expected_descpt = result.descriptor
-            np.testing.assert_almost_equal(descpt.ravel(), expected_descpt.ravel())
+            np.testing.assert_almost_equal(
+                descpt.ravel(), expected_descpt.ravel(), self.places
+            )
             # See #4533
-            descpt = self.dp.eval_descriptor(result.coord, result.box, result.atype)
+            descpt = self.dp.eval_descriptor(
+                result.coord,
+                result.box,
+                result.atype,
+                fparam=result.fparam,
+                aparam=result.aparam,
+            )
             expected_descpt = result.descriptor
-            np.testing.assert_almost_equal(descpt.ravel(), expected_descpt.ravel())
+            np.testing.assert_almost_equal(
+                descpt.ravel(), expected_descpt.ravel(), self.places
+            )
 
     def test_fitting_last_layer(self) -> None:
         _, extension = self.param
-        if extension == ".pb":
-            self.skipTest("fitting_last_layer not supported for TensorFlow models")
+        if extension in (".pb", ".pte", ".pt2"):
+            self.skipTest("fitting_last_layer not supported for this backend")
         for ii, result in enumerate(self.case.results):
             if result.fit_ll is None:
                 continue
             fit_ll = self.dp.eval_fitting_last_layer(
-                result.coord, result.box, result.atype
+                result.coord,
+                result.box,
+                result.atype,
+                fparam=result.fparam,
+                aparam=result.aparam,
             )
             expected_fit_ll = result.fit_ll
-            np.testing.assert_almost_equal(fit_ll.ravel(), expected_fit_ll.ravel())
+            np.testing.assert_almost_equal(
+                fit_ll.ravel(), expected_fit_ll.ravel(), self.places
+            )
             fit_ll = self.dp.eval_fitting_last_layer(
-                result.coord, result.box, result.atype
+                result.coord,
+                result.box,
+                result.atype,
+                fparam=result.fparam,
+                aparam=result.aparam,
             )
             expected_fit_ll = result.fit_ll
-            np.testing.assert_almost_equal(fit_ll.ravel(), expected_fit_ll.ravel())
+            np.testing.assert_almost_equal(
+                fit_ll.ravel(), expected_fit_ll.ravel(), self.places
+            )
 
     def test_2frame_atm(self) -> None:
         for ii, result in enumerate(self.case.results):
@@ -213,23 +267,13 @@ class TestDeepPot(unittest.TestCase):
             expected_v = np.concatenate(
                 (result.atomic_virial, result.atomic_virial), axis=0
             )
-            np.testing.assert_almost_equal(
-                ff.ravel(), expected_f.ravel(), default_places
-            )
-            np.testing.assert_almost_equal(
-                ae.ravel(), expected_e.ravel(), default_places
-            )
-            np.testing.assert_almost_equal(
-                av.ravel(), expected_v.ravel(), default_places
-            )
+            np.testing.assert_almost_equal(ff.ravel(), expected_f.ravel(), self.places)
+            np.testing.assert_almost_equal(ae.ravel(), expected_e.ravel(), self.places)
+            np.testing.assert_almost_equal(av.ravel(), expected_v.ravel(), self.places)
             expected_se = np.sum(expected_e.reshape([nframes, -1]), axis=1)
-            np.testing.assert_almost_equal(
-                ee.ravel(), expected_se.ravel(), default_places
-            )
+            np.testing.assert_almost_equal(ee.ravel(), expected_se.ravel(), self.places)
             expected_sv = np.sum(expected_v.reshape([nframes, -1, 9]), axis=1)
-            np.testing.assert_almost_equal(
-                vv.ravel(), expected_sv.ravel(), default_places
-            )
+            np.testing.assert_almost_equal(vv.ravel(), expected_sv.ravel(), self.places)
 
     def test_zero_input(self) -> None:
         _, extension = self.param
@@ -261,9 +305,9 @@ class TestDeepPot(unittest.TestCase):
             self.assertEqual(ff.shape, (nframes, natoms, 3))
             self.assertEqual(vv.shape, (nframes, 9))
             # check values
-            np.testing.assert_almost_equal(ff.ravel(), 0, default_places)
-            np.testing.assert_almost_equal(ee.ravel(), 0, default_places)
-            np.testing.assert_almost_equal(vv.ravel(), 0, default_places)
+            np.testing.assert_almost_equal(ff.ravel(), 0, self.places)
+            np.testing.assert_almost_equal(ee.ravel(), 0, self.places)
+            np.testing.assert_almost_equal(vv.ravel(), 0, self.places)
 
     def test_ase(self) -> None:
         from ase import (
@@ -291,14 +335,14 @@ class TestDeepPot(unittest.TestCase):
             np.testing.assert_almost_equal(
                 ff.ravel(),
                 result.force.ravel(),
-                default_places,
+                self.places,
                 err_msg=f"Result {ii} force",
             )
             expected_se = np.sum(result.atomic_energy.reshape([nframes, -1]), axis=1)
             np.testing.assert_almost_equal(
                 ee.ravel(),
                 expected_se.ravel(),
-                default_places,
+                self.places,
                 err_msg=f"Result {ii} energy",
             )
 
@@ -327,21 +371,21 @@ class TestDeepPot(unittest.TestCase):
             np.testing.assert_almost_equal(
                 system_predicted["forces"].ravel(),
                 result.force.ravel(),
-                default_places,
+                self.places,
                 err_msg=f"Result {ii} force",
             )
             expected_se = np.sum(result.energy.reshape([nframes, -1]), axis=1)
             np.testing.assert_almost_equal(
                 system_predicted["energies"].ravel(),
                 expected_se.ravel(),
-                default_places,
+                self.places,
                 err_msg=f"Result {ii} energy",
             )
             expected_sv = np.sum(result.virial.reshape([nframes, -1, 9]), axis=1)
             np.testing.assert_almost_equal(
                 system_predicted["virials"].ravel(),
                 expected_sv.ravel(),
-                default_places,
+                self.places,
                 err_msg=f"Result {ii} virial",
             )
 
@@ -360,6 +404,7 @@ class TestDeepPotNeighborList(TestDeepPot):
     @classmethod
     def setUpClass(cls) -> None:
         key, extension = cls.param
+        cls.places = STRICT_PLACES if key in STRICT_KEYS else default_places
         cls.case = get_cases()[key]
         model_name = cls.case.get_model(extension)
         cls.dp = DeepEval(

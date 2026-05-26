@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import argparse
 import copy
+import io
 import json
 import logging
 import os
@@ -9,8 +10,6 @@ from pathlib import (
 )
 from typing import (
     Any,
-    Optional,
-    Union,
 )
 
 import h5py
@@ -49,6 +48,9 @@ from deepmd.pt.infer import (
 from deepmd.pt.model.model import (
     BaseModel,
 )
+from deepmd.pt.modifier import (
+    get_data_modifier,
+)
 from deepmd.pt.train import (
     training,
 )
@@ -67,6 +69,10 @@ from deepmd.pt.utils.env import (
 )
 from deepmd.pt.utils.finetune import (
     get_finetune_rules,
+)
+from deepmd.pt.utils.lmdb_dataset import (
+    LmdbDataset,
+    is_lmdb,
 )
 from deepmd.pt.utils.multi_task import (
     preprocess_shared_params,
@@ -97,13 +103,13 @@ log = logging.getLogger(__name__)
 
 def get_trainer(
     config: dict[str, Any],
-    init_model: Optional[str] = None,
-    restart_model: Optional[str] = None,
-    finetune_model: Optional[str] = None,
+    init_model: str | None = None,
+    restart_model: str | None = None,
+    finetune_model: str | None = None,
     force_load: bool = False,
-    init_frz_model: Optional[str] = None,
-    shared_links: Optional[dict[str, Any]] = None,
-    finetune_links: Optional[dict[str, Any]] = None,
+    init_frz_model: str | None = None,
+    shared_links: dict[str, Any] | None = None,
+    finetune_links: dict[str, Any] | None = None,
 ) -> training.Trainer:
     multi_task = "model_dict" in config.get("model", {})
 
@@ -111,19 +117,22 @@ def get_trainer(
         model_params_single: dict[str, Any],
         data_dict_single: dict[str, Any],
         rank: int = 0,
-        seed: Optional[int] = None,
-    ) -> tuple[DpLoaderSet, Optional[DpLoaderSet], Optional[DPPath]]:
+        seed: int | None = None,
+    ) -> tuple[
+        DpLoaderSet | LmdbDataset, DpLoaderSet | LmdbDataset | None, DPPath | None
+    ]:
+        # get data modifier
+        modifier = None
+        modifier_params = model_params_single.get("modifier", None)
+        if modifier_params is not None:
+            modifier = get_data_modifier(modifier_params).to(DEVICE)
+
         training_dataset_params = data_dict_single["training_data"]
         validation_dataset_params = data_dict_single.get("validation_data", None)
         validation_systems = (
             validation_dataset_params["systems"] if validation_dataset_params else None
         )
         training_systems = training_dataset_params["systems"]
-        trn_patterns = training_dataset_params.get("rglob_patterns", None)
-        training_systems = process_systems(training_systems, patterns=trn_patterns)
-        if validation_systems is not None:
-            val_patterns = validation_dataset_params.get("rglob_patterns", None)
-            validation_systems = process_systems(validation_systems, val_patterns)
 
         # stat files
         stat_file_path_single = data_dict_single.get("stat_file", None)
@@ -138,25 +147,58 @@ def get_trainer(
                     Path(stat_file_path_single).mkdir()
             stat_file_path_single = DPPath(stat_file_path_single, "a")
 
-        # validation and training data
-        # avoid the same batch sequence among devices
         rank_seed = [rank, seed % (2**32)] if seed is not None else None
-        validation_data_single = (
-            DpLoaderSet(
-                validation_systems,
-                validation_dataset_params["batch_size"],
+
+        def _make_dp_loader_set(
+            systems: str | list[str],
+            dataset_params: dict[str, Any],
+        ) -> DpLoaderSet:
+            """Create a DpLoaderSet from systems with pattern expansion."""
+            patterns = dataset_params.get("rglob_patterns", None)
+            systems = process_systems(systems, patterns=patterns)
+            return DpLoaderSet(
+                systems,
+                dataset_params["batch_size"],
                 model_params_single["type_map"],
                 seed=rank_seed,
+                modifier=modifier,
             )
-            if validation_systems
-            else None
-        )
-        train_data_single = DpLoaderSet(
-            training_systems,
-            training_dataset_params["batch_size"],
-            model_params_single["type_map"],
-            seed=rank_seed,
-        )
+
+        # LMDB path: single string → LmdbDataset
+        if isinstance(training_systems, str) and is_lmdb(training_systems):
+            auto_prob = training_dataset_params.get("auto_prob", None)
+            train_data_single = LmdbDataset(
+                training_systems,
+                model_params_single["type_map"],
+                training_dataset_params["batch_size"],
+                auto_prob_style=auto_prob,
+            )
+            if (
+                validation_systems is not None
+                and isinstance(validation_systems, str)
+                and is_lmdb(validation_systems)
+            ):
+                validation_data_single = LmdbDataset(
+                    validation_systems,
+                    model_params_single["type_map"],
+                    validation_dataset_params["batch_size"],
+                )
+            elif validation_systems is not None:
+                validation_data_single = _make_dp_loader_set(
+                    validation_systems, validation_dataset_params
+                )
+            else:
+                validation_data_single = None
+        else:
+            # Standard npy path
+            train_data_single = _make_dp_loader_set(
+                training_systems, training_dataset_params
+            )
+            validation_data_single = (
+                _make_dp_loader_set(validation_systems, validation_dataset_params)
+                if validation_systems
+                else None
+            )
         return (
             train_data_single,
             validation_data_single,
@@ -229,26 +271,38 @@ class SummaryPrinter(BaseSummaryPrinter):
         """Get backend information."""
         if ENABLE_CUSTOMIZED_OP:
             op_info = {
-                "build with PT ver": GLOBAL_CONFIG["pt_version"],
-                "build with PT inc": GLOBAL_CONFIG["pt_include_dir"].replace(";", "\n"),
-                "build with PT lib": GLOBAL_CONFIG["pt_libs"].replace(";", "\n"),
+                "Built with PT Ver": GLOBAL_CONFIG["pt_version"],
+                "Built with PT Inc": GLOBAL_CONFIG["pt_include_dir"].replace(";", "\n"),
+                "Built with PT Lib": GLOBAL_CONFIG["pt_libs"].replace(";", "\n"),
             }
         else:
             op_info = {}
         return {
             "Backend": "PyTorch",
-            "PT ver": f"v{torch.__version__}-g{torch.version.git_version[:11]}",
-            "Enable custom OP": ENABLE_CUSTOMIZED_OP,
+            "PT Ver": f"v{torch.__version__}-g{torch.version.git_version[:11]}",
+            "Custom OP Enabled": ENABLE_CUSTOMIZED_OP,
             **op_info,
         }
+
+    def get_device_name(self) -> str | None:
+        """Use PyTorch's current device name as the device identifier.
+
+        Returns
+        -------
+        str or None
+            The device name if available, otherwise None.
+        """
+        if torch.cuda.is_available():
+            return torch.cuda.get_device_name(torch.cuda.current_device())
+        return None
 
 
 def train(
     input_file: str,
-    init_model: Optional[str],
-    restart: Optional[str],
-    finetune: Optional[str],
-    init_frz_model: Optional[str],
+    init_model: str | None,
+    restart: str | None,
+    finetune: str | None,
+    init_frz_model: str | None,
     model_branch: str,
     skip_neighbor_stat: bool = False,
     use_pretrain_script: bool = False,
@@ -314,9 +368,21 @@ def train(
 
         if not multi_task:
             type_map = config["model"].get("type_map")
-            train_data = get_data(
-                config["training"]["training_data"], 0, type_map, None
-            )
+            training_systems = config["training"]["training_data"].get("systems")
+            if (
+                training_systems is not None
+                and isinstance(training_systems, str)
+                and is_lmdb(training_systems)
+            ):
+                from deepmd.dpmodel.utils.lmdb_data import (
+                    make_neighbor_stat_data,
+                )
+
+                train_data = make_neighbor_stat_data(training_systems, type_map)
+            else:
+                train_data = get_data(
+                    config["training"]["training_data"], 0, type_map, None
+                )
             config["model"], min_nbor_dist = BaseModel.update_sel(
                 train_data, type_map, config["model"]
             )
@@ -324,12 +390,26 @@ def train(
             min_nbor_dist = {}
             for model_item in config["model"]["model_dict"]:
                 type_map = config["model"]["model_dict"][model_item].get("type_map")
-                train_data = get_data(
-                    config["training"]["data_dict"][model_item]["training_data"],
-                    0,
-                    type_map,
-                    None,
-                )
+                training_systems = config["training"]["data_dict"][model_item][
+                    "training_data"
+                ].get("systems")
+                if (
+                    training_systems is not None
+                    and isinstance(training_systems, str)
+                    and is_lmdb(training_systems)
+                ):
+                    from deepmd.dpmodel.utils.lmdb_data import (
+                        make_neighbor_stat_data,
+                    )
+
+                    train_data = make_neighbor_stat_data(training_systems, type_map)
+                else:
+                    train_data = get_data(
+                        config["training"]["data_dict"][model_item]["training_data"],
+                        0,
+                        type_map,
+                        None,
+                    )
                 config["model"]["model_dict"][model_item], min_nbor_dist[model_item] = (
                     BaseModel.update_sel(
                         train_data, type_map, config["model"]["model_dict"][model_item]
@@ -375,12 +455,24 @@ def train(
 def freeze(
     model: str,
     output: str = "frozen_model.pth",
-    head: Optional[str] = None,
+    head: str | None = None,
 ) -> None:
-    model = inference.Tester(model, head=head).model
+    tester = inference.Tester(model, head=head)
+    model = tester.model
     model.eval()
     model = torch.jit.script(model)
-    extra_files = {}
+
+    dm_output = "data_modifier.pth"
+    extra_files = {dm_output: ""}
+    if tester.modifier is not None:
+        dm = tester.modifier
+        dm.eval()
+        buffer = io.BytesIO()
+        torch.jit.save(
+            torch.jit.script(dm),
+            buffer,
+        )
+        extra_files = {dm_output: buffer.getvalue()}
     torch.jit.save(
         model,
         output,
@@ -392,12 +484,12 @@ def freeze(
 def change_bias(
     input_file: str,
     mode: str = "change",
-    bias_value: Optional[list] = None,
-    datafile: Optional[str] = None,
+    bias_value: list | None = None,
+    datafile: str | None = None,
     system: str = ".",
     numb_batch: int = 0,
-    model_branch: Optional[str] = None,
-    output: Optional[str] = None,
+    model_branch: str | None = None,
+    output: str | None = None,
 ) -> None:
     if input_file.endswith(".pt"):
         old_state_dict = torch.load(
@@ -520,7 +612,7 @@ def change_bias(
     log.info(f"Saved model to {output_path}")
 
 @record
-def main(args: Optional[Union[list[str], argparse.Namespace]] = None) -> None:
+def main(args: list[str] | argparse.Namespace | None = None) -> None:
     if not isinstance(args, argparse.Namespace):
         FLAGS = parse_args(args=args)
     else:

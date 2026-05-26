@@ -4,7 +4,6 @@ from copy import (
 )
 from typing import (
     Any,
-    Optional,
 )
 
 from deepmd.pt.model.descriptor import (
@@ -107,7 +106,7 @@ def preprocess_shared_params(
         key_type: str,
         key_in_dict: str,
         suffix: str = "",
-        index: Optional[int] = None,
+        index: int | None = None,
     ) -> None:
         shared_type = key_type
         shared_key = key_in_dict
@@ -156,8 +155,10 @@ def preprocess_shared_params(
     for shared_key in shared_links:
         shared_links[shared_key]["links"] = sorted(
             shared_links[shared_key]["links"],
-            key=lambda x: x["shared_level"]
-            - ("spin" in model_config["model_dict"][x["model_key"]]) * 100,
+            key=lambda x: (
+                x["shared_level"]
+                - ("spin" in model_config["model_dict"][x["model_key"]]) * 100
+            ),
         )
         # little trick to make spin models in the front to be the base models,
         # because its type embeddings are more general.

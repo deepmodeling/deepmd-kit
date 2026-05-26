@@ -1,23 +1,51 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import functools
 import json
 import os
 import shutil
+import signal
+import tempfile
 import unittest
+from collections.abc import (
+    Callable,
+)
 from copy import (
     deepcopy,
 )
 from pathlib import (
     Path,
 )
+from typing import (
+    Any,
+    TypeVar,
+    cast,
+)
+from unittest.mock import (
+    patch,
+)
 
+import numpy as np
 import torch
 
 from deepmd.pt.entrypoints.main import (
     get_trainer,
 )
 from deepmd.pt.entrypoints.main import train as train_entry
+from deepmd.pt.train.ema import (
+    EMA_CHECKPOINT_KEY,
+)
 from deepmd.pt.utils.finetune import (
     get_finetune_rules,
+)
+from deepmd.pt.utils.multi_task import (
+    preprocess_shared_params,
+)
+from deepmd.utils.argcheck import (
+    normalize,
+)
+from deepmd.utils.compat import (
+    convert_optimizer_v31_to_v32,
+    update_deepmd_input,
 )
 
 from .model.test_permutation import (
@@ -28,6 +56,36 @@ from .model.test_permutation import (
     model_se_e2_a,
     model_zbl,
 )
+
+_F = TypeVar("_F", bound=Callable[..., Any])
+
+
+def _training_timeout(seconds: int) -> Callable[[_F], _F]:
+    """Limit real training tests on platforms that support SIGALRM."""
+
+    def decorate(func: _F) -> _F:
+        if not hasattr(signal, "SIGALRM"):
+            return func
+
+        @functools.wraps(func)
+        def wrapped(*args: Any, **kwargs: Any) -> Any:
+            def raise_timeout(signum: int, frame: Any) -> None:
+                raise TimeoutError(f"training test exceeded {seconds} seconds")
+
+            previous_handler = signal.signal(signal.SIGALRM, raise_timeout)
+            signal.alarm(seconds)
+            try:
+                return func(*args, **kwargs)
+            finally:
+                signal.alarm(0)
+                signal.signal(signal.SIGALRM, previous_handler)
+
+        return cast("_F", wrapped)
+
+    return decorate
+
+
+TRAINING_TEST_TIMEOUT = _training_timeout(60)
 
 
 class DPTrainTest:
@@ -92,7 +150,11 @@ class DPTrainTest:
                     state_dict_trained[state_key],
                     state_dict_finetuned_empty[state_key],
                 )
-                if "fitting_net" not in state_key:
+                if (
+                    ("fitting_net" not in state_key)
+                    or ("fparam" in state_key)
+                    or ("aparam" in state_key)
+                ):
                     torch.testing.assert_close(
                         state_dict_trained[state_key],
                         state_dict_finetuned_random[state_key],
@@ -174,6 +236,8 @@ class TestEnergyModelSeA(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        # Backward compatibility: convert old optimizer format
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
         data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
@@ -211,6 +275,7 @@ class TestDOSModelSeA(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "dos/input.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
         data_file = [str(Path(__file__).parent / "dos/data/atomic_system")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
@@ -229,6 +294,7 @@ class TestEnergyZBLModelSeA(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water/zbl.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
         data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
@@ -247,6 +313,7 @@ class TestFparam(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
         data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
@@ -255,10 +322,22 @@ class TestFparam(unittest.TestCase, DPTrainTest):
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
         self.set_path = Path(__file__).parent / "water/data/data_0" / "set.000"
-        shutil.copyfile(self.set_path / "energy.npy", self.set_path / "fparam.npy")
+        # Backup the committed fparam.npy (numb_fparam=2) before overwriting
+        # with a 1-column version for this test.
+        self._fparam_backup = self.set_path / "fparam.npy.bak"
+        fparam_path = self.set_path / "fparam.npy"
+        if fparam_path.exists():
+            shutil.copyfile(fparam_path, self._fparam_backup)
+        shutil.copyfile(self.set_path / "energy.npy", fparam_path)
+        self.config["model"]["data_stat_nbatch"] = 100
 
     def tearDown(self) -> None:
-        (self.set_path / "fparam.npy").unlink(missing_ok=True)
+        # Restore the original fparam.npy so other tests can use it.
+        fparam_path = self.set_path / "fparam.npy"
+        if self._fparam_backup.exists():
+            shutil.move(str(self._fparam_backup), str(fparam_path))
+        else:
+            fparam_path.unlink(missing_ok=True)
         DPTrainTest.tearDown(self)
 
 
@@ -267,6 +346,7 @@ class TestEnergyModelDPA1(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
         data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
@@ -279,6 +359,7 @@ class TestEnergyModelDPA1(unittest.TestCase, DPTrainTest):
         input_json_zbl = str(Path(__file__).parent / "water/zbl.json")
         with open(input_json_zbl) as f:
             self.config_zbl = json.load(f)
+        self.config_zbl = convert_optimizer_v31_to_v32(self.config_zbl, warning=False)
         data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.config_zbl["training"]["training_data"]["systems"] = data_file
         self.config_zbl["training"]["validation_data"]["systems"] = data_file
@@ -295,6 +376,7 @@ class TestEnergyModelDPA2(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
         data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
@@ -312,6 +394,7 @@ class TestEnergyModelHybrid(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
         data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
@@ -328,6 +411,7 @@ class TestDipoleModelSeA(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
         data_file_atomic = str(
             Path(__file__).parent / "water_tensor/dipole/atomic_system"
         )
@@ -357,6 +441,7 @@ class TestDipoleModelDPA1(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
         data_file_atomic = str(
             Path(__file__).parent / "water_tensor/dipole/atomic_system"
         )
@@ -386,6 +471,7 @@ class TestDipoleModelDPA2(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
         data_file_atomic = str(
             Path(__file__).parent / "water_tensor/dipole/atomic_system"
         )
@@ -415,6 +501,7 @@ class TestPolarModelSeA(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
         data_file_atomic = str(
             Path(__file__).parent / "water_tensor/polar/atomic_system"
         )
@@ -449,6 +536,7 @@ class TestPolarModelDPA1(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
         data_file_atomic = str(
             Path(__file__).parent / "water_tensor/polar/atomic_system"
         )
@@ -483,6 +571,7 @@ class TestPolarModelDPA2(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water_tensor/se_e2_a.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
         data_file_atomic = str(
             Path(__file__).parent / "water_tensor/polar/atomic_system"
         )
@@ -517,6 +606,7 @@ class TestPropFintuFromEnerModel(unittest.TestCase):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
         data_file = [str(Path(__file__).parent / "water/data/data_0")]
         self.config["training"]["training_data"]["systems"] = data_file
         self.config["training"]["validation_data"]["systems"] = data_file
@@ -528,6 +618,9 @@ class TestPropFintuFromEnerModel(unittest.TestCase):
         property_input = str(Path(__file__).parent / "property/input.json")
         with open(property_input) as f:
             self.config_property = json.load(f)
+        self.config_property = convert_optimizer_v31_to_v32(
+            self.config_property, warning=False
+        )
         prop_data_file = [str(Path(__file__).parent / "property/double")]
         self.config_property["training"]["training_data"]["systems"] = prop_data_file
         self.config_property["training"]["validation_data"]["systems"] = prop_data_file
@@ -585,6 +678,7 @@ class TestCustomizedRGLOB(unittest.TestCase, DPTrainTest):
         input_json = str(Path(__file__).parent / "water/se_atten.json")
         with open(input_json) as f:
             self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
         self.config["training"]["training_data"]["rglob_patterns"] = [
             "water/data/data_*"
         ]
@@ -601,6 +695,516 @@ class TestCustomizedRGLOB(unittest.TestCase, DPTrainTest):
 
     def tearDown(self) -> None:
         DPTrainTest.tearDown(self)
+
+
+class TestModelChangeOutBiasFittingStat(unittest.TestCase):
+    """Verify model_change_out_bias produces the same fitting stat as the old code path.
+
+    The old code called compute_fitting_input_stat inside change_out_bias (make_model.py).
+    The new code calls get_fitting_net().compute_input_stats() separately in
+    model_change_out_bias (training.py). This test verifies they produce identical
+    out_bias, fparam_avg, and fparam_inv_std.
+    """
+
+    def test_fitting_stat_consistency(self) -> None:
+        import deepmd.pt.train.training as training_module
+        from deepmd.pt.model.model import get_model as get_model_pt
+        from deepmd.pt.model.model.ener_model import EnergyModel as EnergyModelPT
+        from deepmd.pt.utils.utils import to_numpy_array as torch_to_numpy
+        from deepmd.pt.utils.utils import to_torch_tensor as numpy_to_torch
+        from deepmd.utils.argcheck import model_args as model_args_fn
+
+        # Build a model with numb_fparam=2 so fitting stat is non-trivial
+        model_params = model_args_fn().normalize_value(
+            {
+                "type_map": ["O", "H"],
+                "descriptor": {
+                    "type": "se_e2_a",
+                    "sel": [20, 20],
+                    "rcut_smth": 0.50,
+                    "rcut": 6.00,
+                    "neuron": [3, 6],
+                    "resnet_dt": False,
+                    "axis_neuron": 2,
+                    "precision": "float64",
+                    "type_one_side": True,
+                    "seed": 1,
+                },
+                "fitting_net": {
+                    "neuron": [5, 5],
+                    "resnet_dt": True,
+                    "precision": "float64",
+                    "seed": 1,
+                    "numb_fparam": 2,
+                },
+            },
+            trim_pattern="_*",
+        )
+
+        # Create two identical models via serialize/deserialize
+        model_orig = get_model_pt(model_params)
+        serialized = model_orig.serialize()
+        model_a = EnergyModelPT.deserialize(deepcopy(serialized))
+        model_b = EnergyModelPT.deserialize(deepcopy(serialized))
+
+        # Build mock stat data with fparam
+        nframes = 4
+        natoms = 6
+        coords = np.random.default_rng(42).random((nframes, natoms, 3)) * 13.0
+        atype = np.array([[0, 0, 1, 1, 1, 1]] * nframes, dtype=np.int32)
+        box = np.tile(
+            np.eye(3, dtype=np.float64).reshape(1, 3, 3) * 13.0, (nframes, 1, 1)
+        )
+        natoms_data = np.array([[6, 6, 2, 4]] * nframes, dtype=np.int32)
+        energy = np.array([10.0, 20.0, 15.0, 25.0]).reshape(nframes, 1)
+        # fparam with varying values so mean != 0 and std != 0
+        fparam = np.array(
+            [[1.0, 3.0], [5.0, 7.0], [2.0, 8.0], [6.0, 4.0]], dtype=np.float64
+        )
+
+        merged = [
+            {
+                "coord": numpy_to_torch(coords),
+                "atype": numpy_to_torch(atype),
+                "atype_ext": numpy_to_torch(atype),
+                "box": numpy_to_torch(box),
+                "natoms": numpy_to_torch(natoms_data),
+                "energy": numpy_to_torch(energy),
+                "find_energy": np.float32(1.0),
+                "fparam": numpy_to_torch(fparam),
+                "find_fparam": np.float32(1.0),
+            }
+        ]
+
+        # Model A: simulate the OLD code path
+        # old change_out_bias called both bias adjustment + compute_fitting_input_stat
+        model_a.change_out_bias(merged, bias_adjust_mode="set-by-statistic")
+        model_a.atomic_model.compute_fitting_input_stat(merged)
+
+        # Model B: use the NEW code path via model_change_out_bias
+        sample_func = lambda: merged  # noqa: E731
+        training_module.model_change_out_bias(model_b, sample_func, "set-by-statistic")
+
+        # Compare out_bias
+        bias_a = torch_to_numpy(model_a.get_out_bias())
+        bias_b = torch_to_numpy(model_b.get_out_bias())
+        np.testing.assert_allclose(bias_a, bias_b, rtol=1e-10, atol=1e-10)
+
+        # Compare fparam_avg and fparam_inv_std
+        fit_a = model_a.get_fitting_net()
+        fit_b = model_b.get_fitting_net()
+        fparam_avg_a = torch_to_numpy(fit_a.fparam_avg)
+        fparam_avg_b = torch_to_numpy(fit_b.fparam_avg)
+        fparam_inv_std_a = torch_to_numpy(fit_a.fparam_inv_std)
+        fparam_inv_std_b = torch_to_numpy(fit_b.fparam_inv_std)
+
+        np.testing.assert_allclose(fparam_avg_a, fparam_avg_b, rtol=1e-10, atol=1e-10)
+        np.testing.assert_allclose(
+            fparam_inv_std_a, fparam_inv_std_b, rtol=1e-10, atol=1e-10
+        )
+
+        # Verify non-trivial: avg should not be zeros, inv_std should not be ones
+        assert not np.allclose(fparam_avg_a, 0.0), (
+            "fparam_avg is still zero — stat was not computed"
+        )
+        assert not np.allclose(fparam_inv_std_a, 1.0), (
+            "fparam_inv_std is still ones — stat was not computed"
+        )
+
+
+class TestLearningRateRestart(unittest.TestCase):
+    def setUp(self) -> None:
+        self._cwd = os.getcwd()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        os.chdir(self._tmpdir.name)
+        input_json = str(Path(__file__).parent / "water/se_atten.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
+        self.config["model"] = deepcopy(model_se_e2_a)
+        self.config["learning_rate"] = {
+            "type": "wsd",
+            "start_lr": 5e-4,
+            "stop_lr": 1e-6,
+            "warmup_steps": 2,
+            "warmup_start_factor": 0.2,
+            "decay_phase_ratio": 0.5,
+            "decay_type": "cosine",
+        }
+        self.config["training"]["numb_steps"] = 3
+        self.config["training"]["save_freq"] = 3
+        self.config["training"]["disp_freq"] = 1
+        self.config["training"]["disp_training"] = False
+        self.config["training"]["time_training"] = False
+
+    def tearDown(self) -> None:
+        os.chdir(self._cwd)
+        self._tmpdir.cleanup()
+
+    def test_restart_scheduler_matches_lr_schedule(self) -> None:
+        trainer = get_trainer(deepcopy(self.config))
+        trainer.run()
+        restart_model = Path("model-3.pt")
+        checkpoint = torch.load(restart_model, map_location="cpu", weights_only=True)
+        stale_initial_lr = trainer.lr_schedule.value(0)
+        for group in checkpoint["optimizer"]["param_groups"]:
+            group["initial_lr"] = stale_initial_lr
+        torch.save(checkpoint, restart_model)
+
+        restart_config = deepcopy(self.config)
+        restart_config["training"]["numb_steps"] = 5
+        restart_trainer = get_trainer(
+            restart_config,
+            restart_model=str(restart_model),
+        )
+
+        np.testing.assert_allclose(
+            restart_trainer.scheduler.get_last_lr()[0],
+            restart_trainer.lr_schedule.value(restart_trainer.start_step),
+            rtol=1e-12,
+        )
+        restart_trainer.run()
+        np.testing.assert_allclose(
+            restart_trainer.scheduler.get_last_lr()[0],
+            restart_trainer.lr_schedule.value(restart_config["training"]["numb_steps"]),
+            rtol=1e-12,
+        )
+
+
+class TestFullValidation(unittest.TestCase):
+    def setUp(self) -> None:
+        self._cwd = os.getcwd()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        os.chdir(self._tmpdir.name)
+        input_json = str(Path(__file__).parent / "water/se_atten.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
+        self.config["model"] = deepcopy(model_se_e2_a)
+        self.config["training"]["numb_steps"] = 4
+        self.config["training"]["save_freq"] = 100
+        self.config["training"]["disp_training"] = False
+        self.config["validating"] = {
+            "full_validation": True,
+            "validation_freq": 1,
+            "save_best": True,
+            "max_best_ckpt": 2,
+            "validation_metric": "E:MAE",
+            "full_val_file": "val.log",
+            "full_val_start": 0.0,
+        }
+
+    def tearDown(self) -> None:
+        os.chdir(self._cwd)
+        self._tmpdir.cleanup()
+
+    @patch("deepmd.pt.train.validation.FullValidator.evaluate_all_systems")
+    def test_full_validation_rotates_best_checkpoint(self, mocked_eval) -> None:
+        mocked_eval.side_effect = [
+            {"mae_e_per_atom": 1.0},
+            {"mae_e_per_atom": 2.0},
+            {"mae_e_per_atom": 0.5},
+            {"mae_e_per_atom": 1.5},
+        ]
+        Path("best.ckpt-999.t-1.pt").touch()
+        trainer = get_trainer(deepcopy(self.config))
+        trainer.run()
+
+        self.assertFalse(Path("best.ckpt-999.t-1.pt").exists())
+        self.assertFalse(Path("best.ckpt-1.t-1.pt").exists())
+        self.assertFalse(Path("best.ckpt-2.t-1.pt").exists())
+        self.assertTrue(Path("best.ckpt-3.t-1.pt").exists())
+        self.assertTrue(Path("best.ckpt-1.t-2.pt").exists())
+        train_infos = trainer._get_inner_module().train_infos
+        self.assertEqual(
+            train_infos["full_validation_topk_records"],
+            [
+                {"metric": 0.5, "step": 3},
+                {"metric": 1.0, "step": 1},
+            ],
+        )
+        with open("val.log") as fp:
+            val_lines = [line for line in fp.readlines() if not line.startswith("#")]
+        self.assertEqual(len(val_lines), 4)
+        self.assertEqual(val_lines[0].split()[1], "1000.0")
+        self.assertEqual(val_lines[1].split()[1], "2000.0")
+
+    @patch("deepmd.pt.train.validation.FullValidator.evaluate_all_systems")
+    def test_full_validation_runs_when_start_step_is_final_step(
+        self, mocked_eval
+    ) -> None:
+        mocked_eval.return_value = {"mae_e_per_atom": 1.0}
+        config = deepcopy(self.config)
+        config["validating"]["full_val_start"] = config["training"]["numb_steps"]
+
+        trainer = get_trainer(config)
+        trainer.run()
+
+        mocked_eval.assert_called_once()
+        with open("val.log") as fp:
+            val_lines = [line for line in fp.readlines() if not line.startswith("#")]
+        self.assertEqual(len(val_lines), 1)
+
+    def test_full_validation_uses_normalized_defaults_in_get_trainer(self) -> None:
+        config = deepcopy(self.config)
+        config["validating"] = {"full_validation": True}
+        normalized = normalize(update_deepmd_input(deepcopy(config), warning=False))
+
+        trainer = get_trainer(config)
+
+        self.assertIsNotNone(trainer.full_validator)
+        assert trainer.full_validator is not None
+        self.assertEqual(
+            trainer.full_validator.validation_freq,
+            normalized["validating"]["validation_freq"],
+        )
+        self.assertEqual(
+            trainer.full_validator.start_step,
+            int(
+                normalized["training"]["numb_steps"]
+                * normalized["validating"]["full_val_start"]
+            ),
+        )
+
+    def test_full_validation_rejects_spin_loss(self) -> None:
+        config = deepcopy(self.config)
+        config["loss"]["type"] = "ener_spin"
+        with self.assertRaisesRegex(ValueError, "spin-energy"):
+            get_trainer(config)
+
+    def test_full_validation_rejects_multitask(self) -> None:
+        multitask_json = str(Path(__file__).parent / "water/multitask.json")
+        with open(multitask_json) as f:
+            config = json.load(f)
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        for model_key in config["training"]["data_dict"]:
+            config["training"]["data_dict"][model_key]["training_data"]["systems"] = (
+                data_file
+            )
+            config["training"]["data_dict"][model_key]["validation_data"]["systems"] = (
+                data_file
+            )
+            config["training"]["data_dict"][model_key]["stat_file"] = (
+                f"stat_files_{model_key}"
+            )
+        config["training"]["numb_steps"] = 1
+        config["training"]["save_freq"] = 1
+        config["validating"] = {
+            "full_validation": True,
+            "validation_freq": 1,
+            "save_best": True,
+            "validation_metric": "E:MAE",
+            "full_val_file": "val.log",
+            "full_val_start": 0.0,
+        }
+        config["model"], _ = preprocess_shared_params(config["model"])
+        config = update_deepmd_input(config, warning=False)
+        with self.assertRaisesRegex(ValueError, "multi-task"):
+            normalize(config, multi_task=True)
+
+
+class TestEMATraining(unittest.TestCase):
+    def setUp(self) -> None:
+        import deepmd.pt.train.training as training_module
+        import deepmd.pt.utils.env as env_module
+
+        self._num_workers_state = (
+            (env_module, env_module.NUM_WORKERS),
+            (training_module, training_module.NUM_WORKERS),
+        )
+        env_module.NUM_WORKERS = 0
+        training_module.NUM_WORKERS = 0
+        self._cwd = os.getcwd()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        os.chdir(self._tmpdir.name)
+        input_json = str(Path(__file__).parent / "water/se_atten.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
+        self.config["model"] = deepcopy(model_se_e2_a)
+        self.config["training"]["numb_steps"] = 4
+        self.config["training"]["save_freq"] = 1
+        self.config["training"]["max_ckpt_keep"] = 3
+        self.config["training"]["disp_training"] = False
+        self.config["training"]["enable_ema"] = True
+        self.config["training"]["ema_decay"] = 0.9
+        self.config["training"]["ema_ckpt_keep"] = 2
+        self.config["validating"] = {
+            "full_validation": False,
+            "ema_full_validation": False,
+            "validation_freq": 1,
+            "save_best": True,
+            "max_best_ckpt": 1,
+            "validation_metric": "E:MAE",
+            "full_val_file": "val.log",
+            "full_val_start": 0.0,
+        }
+
+    def tearDown(self) -> None:
+        for module, num_workers in self._num_workers_state:
+            module.NUM_WORKERS = num_workers
+        os.chdir(self._cwd)
+        self._tmpdir.cleanup()
+
+    @TRAINING_TEST_TIMEOUT
+    def test_ema_checkpoint_rotation(self) -> None:
+        trainer = get_trainer(deepcopy(self.config))
+        ema_prefix = trainer.ema_save_ckpt
+        Path(f"{ema_prefix}-999.pt").touch()
+        trainer.run()
+
+        self.assertFalse(Path(f"{ema_prefix}-999.pt").exists())
+        self.assertTrue(Path(f"{ema_prefix}-3.pt").exists())
+        self.assertTrue(Path(f"{ema_prefix}-4.pt").exists())
+        self.assertFalse(Path(f"{ema_prefix}-2.pt").exists())
+        self.assertFalse(Path("checkpoint_ema").exists())
+
+    def test_ema_checkpoint_cleanup_removes_future_steps(self) -> None:
+        trainer = get_trainer(deepcopy(self.config))
+        trainer.ema_ckpt_keep = 10
+        ema_prefix = trainer.ema_save_ckpt
+        Path(f"{ema_prefix}-999.pt").touch()
+
+        trainer.save_ema_model(f"{ema_prefix}-1.pt", lr=0.0, step=0)
+
+        self.assertFalse(Path(f"{ema_prefix}-999.pt").exists())
+        self.assertTrue(Path(f"{ema_prefix}-1.pt").exists())
+
+    @TRAINING_TEST_TIMEOUT
+    @patch("deepmd.pt.train.training.model_change_out_bias")
+    def test_ema_checkpoint_keeps_changed_out_bias(
+        self, mocked_change_out_bias
+    ) -> None:
+        def change_out_bias(model, sample_func, _bias_adjust_mode):
+            model.set_out_bias(model.get_out_bias() + 1.0)
+            return model
+
+        mocked_change_out_bias.side_effect = change_out_bias
+        config = deepcopy(self.config)
+        config["training"]["numb_steps"] = 1
+        config["training"]["change_bias_after_training"] = True
+        trainer = get_trainer(config)
+        trainer.run()
+
+        regular_checkpoint = torch.load(
+            trainer.latest_model, map_location="cpu", weights_only=True
+        )
+        ema_checkpoint = torch.load(
+            trainer.latest_ema_model, map_location="cpu", weights_only=True
+        )
+        regular_out_bias = {
+            key: value
+            for key, value in regular_checkpoint["model"].items()
+            if key.endswith("out_bias")
+        }
+        ema_out_bias = {
+            key: value
+            for key, value in ema_checkpoint["model"].items()
+            if key.endswith("out_bias")
+        }
+
+        self.assertTrue(regular_out_bias)
+        self.assertEqual(regular_out_bias.keys(), ema_out_bias.keys())
+        for key, regular_value in regular_out_bias.items():
+            torch.testing.assert_close(regular_value, ema_out_bias[key])
+
+    def test_ema_rejects_zero_stage_2_during_normalization(self) -> None:
+        config = deepcopy(self.config)
+        config["training"]["zero_stage"] = 2
+        config = update_deepmd_input(config, warning=False)
+        with self.assertRaisesRegex(ValueError, "training.zero_stage < 2"):
+            normalize(config)
+
+    @TRAINING_TEST_TIMEOUT
+    def test_restart_restores_ema_state(self) -> None:
+        trainer = get_trainer(deepcopy(self.config))
+        first_key = next(iter(trainer.model_ema.shadow_params))
+        trainer.model_ema.shadow_params[first_key].add_(1.2345)
+        trainer.model_ema.validation_state.update(
+            {
+                "full_validation_metric": "e:mae",
+                "full_validation_topk_records": [
+                    {"metric": 0.5, "step": 3},
+                ],
+            }
+        )
+        trainer.save_model("model.ckpt-0.pt", lr=0.1, step=0)
+
+        checkpoint = torch.load(
+            "model.ckpt-0.pt", map_location="cpu", weights_only=True
+        )
+        self.assertIn(EMA_CHECKPOINT_KEY, checkpoint)
+
+        restarted = get_trainer(
+            deepcopy(self.config),
+            restart_model="model.ckpt-0.pt",
+        )
+        torch.testing.assert_close(
+            restarted.model_ema.shadow_params[first_key],
+            trainer.model_ema.shadow_params[first_key],
+        )
+        self.assertEqual(
+            restarted.model_ema.validation_state,
+            trainer.model_ema.validation_state,
+        )
+
+    @TRAINING_TEST_TIMEOUT
+    @patch("deepmd.pt.train.validation.FullValidator.evaluate_all_systems")
+    def test_ema_full_validation_writes_separate_outputs(self, mocked_eval) -> None:
+        mocked_eval.side_effect = [
+            {"mae_e_per_atom": 10.0},
+            {"mae_e_per_atom": 1.0},
+            {"mae_e_per_atom": 10.0},
+            {"mae_e_per_atom": 0.5},
+            {"mae_e_per_atom": 10.0},
+            {"mae_e_per_atom": 0.75},
+            {"mae_e_per_atom": 10.0},
+            {"mae_e_per_atom": 0.25},
+        ]
+        config = deepcopy(self.config)
+        config["validating"]["full_validation"] = True
+        config["validating"]["ema_full_validation"] = True
+        trainer = get_trainer(config)
+        trainer.run()
+
+        self.assertTrue(Path("val.log").exists())
+        self.assertTrue(Path("val_ema.log").exists())
+        self.assertTrue(Path("best_ema.ckpt-4.t-1.pt").exists())
+        self.assertFalse(Path("best_ema.ckpt-1.t-1.pt").exists())
+        train_infos = trainer._get_inner_module().train_infos
+        self.assertNotIn("full_validation_ema_metric", train_infos)
+        self.assertNotIn("full_validation_ema_topk_records", train_infos)
+        self.assertEqual(
+            trainer.model_ema.validation_state["full_validation_topk_records"],
+            [{"metric": 0.25, "step": 4}],
+        )
+
+    @TRAINING_TEST_TIMEOUT
+    @patch("deepmd.pt.train.validation.FullValidator.evaluate_all_systems")
+    def test_ema_full_validation_ignored_without_full_validation(
+        self, mocked_eval
+    ) -> None:
+        config = deepcopy(self.config)
+        config["training"]["enable_ema"] = False
+        config["validating"]["full_validation"] = False
+        config["validating"]["ema_full_validation"] = True
+        trainer = get_trainer(config)
+        trainer.run()
+
+        mocked_eval.assert_not_called()
+        self.assertFalse(Path("val.log").exists())
+        self.assertFalse(Path("val_ema.log").exists())
+        self.assertIsNone(trainer.model_ema)
+        self.assertIsNone(trainer.ema_full_validator)
 
 
 if __name__ == "__main__":

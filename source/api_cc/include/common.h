@@ -13,7 +13,7 @@
 namespace deepmd {
 
 typedef double ENERGYTYPE;
-enum DPBackend { TensorFlow, PyTorch, Paddle, JAX, Unknown };
+enum DPBackend { TensorFlow, PyTorch, PyTorchExportable, Paddle, JAX, Unknown };
 
 /**
  * @brief Get the backend of the model.
@@ -154,6 +154,27 @@ void select_map_inv(typename std::vector<VT>::iterator out,
                     const int& stride);
 
 /**
+ * @brief Remap communication sendlist for message passing with NULL-type atoms.
+ *
+ * When NULL-type (virtual) atoms are present, the original LAMMPS sendlist
+ * contains indices referring to virtual atoms that have been filtered out by
+ * select_real_atoms_coord. This function remaps those indices through fwd_map
+ * and independently recomputes recvnum using firstrecv.
+ *
+ * @param[out] new_sendlist Remapped send lists per swap (vector of vectors).
+ * @param[out] new_sendnum Number of atoms to send per swap after remapping.
+ * @param[out] new_recvnum Number of atoms to receive per swap after remapping.
+ * @param[in] lmp_list The LAMMPS neighbor list containing communication info.
+ * @param[in] fwd_map Forward map from original atom index to real-atom index
+ *            (-1 for virtual/NULL atoms).
+ */
+void remap_comm_sendlist(std::vector<std::vector<int>>& new_sendlist,
+                         std::vector<int>& new_sendnum,
+                         std::vector<int>& new_recvnum,
+                         const InputNlist& lmp_list,
+                         const std::vector<int>& fwd_map);
+
+/**
  * @brief Get the number of threads from the environment variable.
  * @details A warning will be thrown if environment variables are not set.
  * @param[out] num_intra_nthreads The number of intra threads. Read from
@@ -204,4 +225,46 @@ void convert_pbtxt_to_pb(std::string fn_pb_txt, std::string fn_pb);
  * @param[in] pre The prefix to each line.
  */
 void print_summary(const std::string& pre);
+
+/**
+ * @brief Fold back extended-region values to local atoms via scatter-sum.
+ *
+ * Copies local atom values directly, then accumulates ghost atom contributions
+ * onto their mapped local atoms using the mapping array.
+ *
+ * @tparam VT The value type (double or float).
+ * @param[out] out Output vector of size nframes * nloc * ndim.
+ * @param[in] in Input vector of size nframes * nall * ndim (extended region).
+ * @param[in] mapping Mapping from extended index to local index, size nall.
+ * @param[in] nloc Number of local atoms.
+ * @param[in] nall Number of all atoms (local + ghost).
+ * @param[in] ndim Number of dimensions per atom (e.g. 3 for force, 9 for
+ * virial).
+ * @param[in] nframes Number of frames.
+ */
+template <typename VT>
+void fold_back(std::vector<VT>& out,
+               const std::vector<VT>& in,
+               const std::vector<int>& mapping,
+               const int nloc,
+               const int nall,
+               const int ndim,
+               const int nframes = 1) {
+  const ptrdiff_t nloc_ = nloc;
+  const ptrdiff_t nall_ = nall;
+  const ptrdiff_t ndim_ = ndim;
+  out.resize(static_cast<size_t>(nframes) * nloc_ * ndim_);
+  for (ptrdiff_t kk = 0; kk < nframes; ++kk) {
+    std::copy(in.begin() + kk * nall_ * ndim_,
+              in.begin() + kk * nall_ * ndim_ + nloc_ * ndim_,
+              out.begin() + kk * nloc_ * ndim_);
+    for (ptrdiff_t ii = nloc_; ii < nall_; ++ii) {
+      ptrdiff_t out_idx = mapping[ii];
+      for (ptrdiff_t dd = 0; dd < ndim_; ++dd) {
+        out[kk * nloc_ * ndim_ + out_idx * ndim_ + dd] +=
+            in[kk * nall_ * ndim_ + ii * ndim_ + dd];
+      }
+    }
+  }
+}
 }  // namespace deepmd

@@ -1,9 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from collections.abc import (
+    Callable,
+)
 from typing import (
     Any,
-    Callable,
-    Optional,
-    Union,
 )
 
 import torch
@@ -34,6 +34,9 @@ from deepmd.pt.utils.env_mat_stat import (
 )
 from deepmd.pt.utils.exclude_mask import (
     PairExcludeMask,
+)
+from deepmd.pt.utils.safe_gradient import (
+    safe_for_norm,
 )
 from deepmd.pt.utils.spin import (
     concat_switch_virtual,
@@ -219,9 +222,10 @@ class DescrptBlockRepflows(DescriptorBlock):
         use_exp_switch: bool = False,
         use_dynamic_sel: bool = False,
         sel_reduce_factor: float = 10.0,
+        sequential_update: bool = False,
         use_loc_mapping: bool = True,
         optim_update: bool = True,
-        seed: Optional[Union[int, list[int]]] = None,
+        seed: int | list[int] | None = None,
         trainable: bool = True,
     ) -> None:
         super().__init__()
@@ -258,6 +262,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         self.use_exp_switch = use_exp_switch
         self.use_dynamic_sel = use_dynamic_sel
         self.sel_reduce_factor = sel_reduce_factor
+        self.sequential_update = sequential_update
         if self.use_dynamic_sel and not self.smooth_edge_update:
             raise NotImplementedError(
                 "smooth_edge_update must be True when use_dynamic_sel is True!"
@@ -329,6 +334,7 @@ class DescrptBlockRepflows(DescriptorBlock):
                     optim_update=self.optim_update,
                     use_dynamic_sel=self.use_dynamic_sel,
                     sel_reduce_factor=self.sel_reduce_factor,
+                    sequential_update=self.sequential_update,
                     smooth_edge_update=self.smooth_edge_update,
                     seed=child_seed(child_seed(seed, 1), ii),
                     trainable=trainable,
@@ -436,16 +442,16 @@ class DescrptBlockRepflows(DescriptorBlock):
         nlist: torch.Tensor,
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
-        extended_atype_embd: Optional[torch.Tensor] = None,
-        mapping: Optional[torch.Tensor] = None,
-        comm_dict: Optional[dict[str, torch.Tensor]] = None,
+        extended_atype_embd: torch.Tensor | None = None,
+        mapping: torch.Tensor | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
     ) -> tuple[
         torch.Tensor,
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
-        Optional[torch.Tensor],
-    ]:  
+        torch.Tensor | None,
+        torch.Tensor | None,
+        torch.Tensor | None,
+        torch.Tensor | None,
+    ]:
         parallel_mode = comm_dict is not None
         if not parallel_mode:
             assert mapping is not None
@@ -473,9 +479,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         sw = sw.masked_fill(~nlist_mask, 0.0)
 
         # get angle nlist (maybe smaller)
-        a_dist_mask = (torch.linalg.norm(diff, dim=-1) < self.a_rcut)[
-            :, :, : self.a_sel
-        ]
+        a_dist_mask = (safe_for_norm(diff, dim=-1) < self.a_rcut)[:, :, : self.a_sel]
         a_nlist = nlist[:, :, : self.a_sel]
         a_nlist = torch.where(a_dist_mask, a_nlist, -1)
         _, a_diff, a_sw = prod_env_mat(
@@ -495,8 +499,8 @@ class DescrptBlockRepflows(DescriptorBlock):
         a_sw = a_sw.masked_fill(~a_nlist_mask, 0.0)
         # set all padding positions to index of 0
         # if the a neighbor is real or not is indicated by nlist_mask
-        nlist[nlist == -1] = 0
-        a_nlist[a_nlist == -1] = 0
+        nlist = torch.where(nlist == -1, 0, nlist)
+        a_nlist = torch.where(a_nlist == -1, 0, a_nlist)
 
         # get node embedding
         # [nframes, nloc, tebd_dim]
@@ -512,11 +516,11 @@ class DescrptBlockRepflows(DescriptorBlock):
         edge_input, h2 = torch.split(dmatrix, [1, 3], dim=-1)
         if self.edge_init_use_dist:
             # nb x nloc x nnei x 1
-            edge_input = torch.linalg.norm(diff, dim=-1, keepdim=True)
+            edge_input = safe_for_norm(diff, dim=-1, keepdim=True)
 
         # nf x nloc x a_nnei x 3
         normalized_diff_i = a_diff / (
-            torch.linalg.norm(a_diff, dim=-1, keepdim=True) + 1e-6
+            safe_for_norm(a_diff, dim=-1, keepdim=True) + 1e-6
         )
         # nf x nloc x 3 x a_nnei
         normalized_diff_j = torch.transpose(normalized_diff_i, 2, 3)
@@ -679,8 +683,8 @@ class DescrptBlockRepflows(DescriptorBlock):
 
     def compute_input_stats(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        path: DPPath | None = None,
     ) -> None:
         """
         Compute the input statistics (e.g. mean and stddev) for the descriptors from packed data.

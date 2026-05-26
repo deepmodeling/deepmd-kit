@@ -15,6 +15,9 @@ import pytest
 from lammps import (
     PyLammps,
 )
+from model_convert import (
+    ensure_converted_pb,
+)
 from write_lmp_data import (
     write_lmp_data,
 )
@@ -221,15 +224,14 @@ type_OH = np.array([1, 2, 2, 1, 2, 2])
 type_HO = np.array([2, 1, 1, 2, 1, 1])
 
 
-sp.check_output(
-    f"{sys.executable} -m deepmd convert-from pbtxt -i {pbtxt_file.resolve()} -o {pb_file.resolve()}".split()
-)
-sp.check_output(
-    f"{sys.executable} -m deepmd convert-from pbtxt -i {pbtxt_file2.resolve()} -o {pb_file2.resolve()}".split()
-)
-
-
 def setup_module() -> None:
+    if os.environ.get("ENABLE_TENSORFLOW", "1") != "1":
+        pytest.skip(
+            "Skip test because TensorFlow support is not enabled.",
+        )
+    ensure_converted_pb(pbtxt_file, pb_file)
+    ensure_converted_pb(pbtxt_file2, pb_file2)
+
     write_lmp_data(box, coord, type_OH, data_file)
     write_lmp_data(box, coord, type_HO, data_type_map_file)
     write_lmp_data(
@@ -511,6 +513,15 @@ def test_pair_deepmd_type_map(lammps_type_map) -> None:
             expected_f[lammps_type_map.atoms[ii].id - 1]
         )
     lammps_type_map.run(1)
+
+
+def test_pair_deepmd_type_map_with_null(lammps_type_map) -> None:
+    lammps_type_map.pair_style(
+        f"hybrid/scaled 0.5 deepmd {pb_file.resolve()} 0.5 deepmd {pb_file.resolve()}"
+    )
+    lammps_type_map.pair_coeff("* * deepmd 1 H NULL")
+    lammps_type_map.pair_coeff("* * deepmd 2 NULL O")
+    lammps_type_map.run(0)
 
 
 def test_pair_deepmd_real(lammps_real) -> None:

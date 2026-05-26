@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    Optional,
-    Union,
     overload,
 )
 
@@ -18,6 +16,7 @@ from deepmd.pt.utils import (
 
 from .env import (
     DEVICE,
+    GLOBAL_NP_FLOAT_PRECISION,
 )
 from .env import PRECISION_DICT as PT_PRECISION_DICT
 
@@ -173,7 +172,7 @@ class SiLUT(torch.nn.Module):
 
 
 class ActivationFn(torch.nn.Module):
-    def __init__(self, activation: Optional[str]) -> None:
+    def __init__(self, activation: str | None) -> None:
         super().__init__()
         self.activation: str = activation if activation is not None else "linear"
         if self.activation.lower().startswith(
@@ -221,6 +220,14 @@ class ActivationFn(torch.nn.Module):
 
 
 @overload
+def to_numpy_array(xx: np.ndarray) -> np.ndarray: ...
+
+
+@overload
+def to_numpy_array(xx: float) -> np.ndarray: ...
+
+
+@overload
 def to_numpy_array(xx: torch.Tensor) -> np.ndarray: ...
 
 
@@ -229,11 +236,14 @@ def to_numpy_array(xx: None) -> None: ...
 
 
 def to_numpy_array(
-    xx: Optional[torch.Tensor],
-) -> Optional[np.ndarray]:
+    xx: torch.Tensor | np.ndarray | float | None,
+) -> np.ndarray | None:
     if xx is None:
         return None
-    assert xx is not None
+    if isinstance(xx, (float, int)):
+        return np.array(xx, dtype=GLOBAL_NP_FLOAT_PRECISION)
+    if isinstance(xx, np.ndarray):
+        return xx.astype(GLOBAL_NP_FLOAT_PRECISION)
     # Create a reverse mapping of PT_PRECISION_DICT
     reverse_precision_dict = {v: k for k, v in PT_PRECISION_DICT.items()}
     # Use the reverse mapping to find keys with the desired value
@@ -241,6 +251,7 @@ def to_numpy_array(
     prec = NP_PRECISION_DICT.get(prec, None)
     if prec is None:
         raise ValueError(f"unknown precision {xx.dtype}")
+    assert isinstance(xx, torch.Tensor)
     if xx.dtype == torch.bfloat16:
         # https://github.com/pytorch/pytorch/issues/109873
         xx = xx.float()
@@ -256,8 +267,8 @@ def to_torch_tensor(xx: None) -> None: ...
 
 
 def to_torch_tensor(
-    xx: Optional[np.ndarray],
-) -> Optional[torch.Tensor]:
+    xx: np.ndarray | None,
+) -> torch.Tensor | None:
     if xx is None:
         return None
     assert xx is not None
@@ -326,8 +337,8 @@ def mix_entropy(entropy_array: list[int]) -> int:
 
 
 def get_generator(
-    seed: Optional[Union[int, list[int]]] = None,
-) -> Optional[torch.Generator]:
+    seed: int | list[int] | None = None,
+) -> torch.Generator | None:
     if seed is not None:
         if isinstance(seed, list):
             seed = mix_entropy(seed)

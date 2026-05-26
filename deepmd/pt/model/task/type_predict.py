@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
     Any,
-    Optional,
 )
 
 import torch
@@ -40,7 +39,7 @@ class TypePredictNet(Fitting):
         )
 
     def forward(
-        self, features: torch.Tensor, masked_tokens: Optional[torch.Tensor] = None
+        self, features: torch.Tensor, masked_tokens: torch.Tensor | None = None
     ) -> torch.Tensor:
         """Calculate the predicted logits.
         Args:

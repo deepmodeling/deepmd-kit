@@ -1,11 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
+from collections.abc import (
+    Callable,
+)
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
     Optional,
-    Union,
 )
 
 import numpy as np
@@ -49,6 +50,9 @@ from deepmd.infer.deep_pot import (
 from deepmd.infer.deep_wfc import (
     DeepWFC,
 )
+from deepmd.utils.econf_embd import (
+    sort_element_type,
+)
 
 if TYPE_CHECKING:
     import ase.neighborlist
@@ -80,7 +84,7 @@ class DeepEval(DeepEvalBackend):
         model_file: str,
         output_def: ModelOutputDef,
         *args: Any,
-        auto_batch_size: Union[bool, int, AutoBatchSize] = True,
+        auto_batch_size: bool | int | AutoBatchSize = True,
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
         **kwargs: Any,
     ) -> None:
@@ -89,6 +93,7 @@ class DeepEval(DeepEvalBackend):
 
         model_data = load_dp_model(model_file)
         self.dp = BaseModel.deserialize(model_data["model"])
+        self.dp.model_def_script = json.dumps(model_data.get("model_def_script", {}))
         self.rcut = self.dp.get_rcut()
         self.type_map = self.dp.get_type_map()
         if isinstance(auto_batch_size, bool):
@@ -137,7 +142,7 @@ class DeepEval(DeepEvalBackend):
             return DeepDOS
         elif "dipole" in model_output_type:
             return DeepDipole
-        elif "polar" in model_output_type:
+        elif "polar" in model_output_type or "polarizability" in model_output_type:
             return DeepPolar
         elif "wfc" in model_output_type:
             return DeepWFC
@@ -161,6 +166,16 @@ class DeepEval(DeepEvalBackend):
         """Check if the model has efield."""
         return False
 
+    def get_has_spin(self) -> bool:
+        """Check if the model has spin atom types."""
+        return hasattr(self.dp, "spin")
+
+    def get_use_spin(self) -> list[bool]:
+        """Get the per-type spin usage of this model."""
+        if hasattr(self.dp, "spin"):
+            return self.dp.spin.use_spin.tolist()
+        return []
+
     def get_ntypes_spin(self) -> int:
         """Get the number of spin atom types of this model."""
         return 0
@@ -168,11 +183,11 @@ class DeepEval(DeepEvalBackend):
     def eval(
         self,
         coords: Array,
-        cells: Optional[Array],
+        cells: Array | None,
         atom_types: Array,
         atomic: bool = False,
-        fparam: Optional[Array] = None,
-        aparam: Optional[Array] = None,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
         **kwargs: Any,
     ) -> dict[str, Array]:
         """Evaluate the energy, force and virial by using this DP.
@@ -227,6 +242,7 @@ class DeepEval(DeepEvalBackend):
             zip(
                 [x.name for x in request_defs],
                 out,
+                strict=True,
             )
         )
 
@@ -309,10 +325,10 @@ class DeepEval(DeepEvalBackend):
     def _eval_model(
         self,
         coords: Array,
-        cells: Optional[Array],
+        cells: Array | None,
         atom_types: Array,
-        fparam: Optional[Array],
-        aparam: Optional[Array],
+        fparam: Array | None,
+        aparam: Array | None,
         request_defs: list[OutputVariableDef],
     ) -> dict[str, Array]:
         model = self.dp
@@ -355,9 +371,7 @@ class DeepEval(DeepEvalBackend):
 
         results = []
         for odef in request_defs:
-            # it seems not doing conversion
-            # dp_name = self._OUTDEF_DP2BACKEND[odef.name]
-            dp_name = odef.name
+            dp_name = self._OUTDEF_DP2BACKEND[odef.name]
             if dp_name in batch_output:
                 shape = self._get_output_shape(odef, nframes, natoms)
                 if batch_output[dp_name] is not None:
@@ -401,6 +415,31 @@ class DeepEval(DeepEvalBackend):
     def get_model_def_script(self) -> dict:
         """Get model definition script."""
         return json.loads(self.dp.get_model_def_script())
+
+    def get_observed_types(self) -> dict:
+        """Get observed types (elements) of the model during data statistics.
+
+        Returns
+        -------
+        dict
+            A dictionary containing the information of observed type in the model:
+            - 'type_num': the total number of observed types in this model.
+            - 'observed_type': a list of the observed types in this model.
+        """
+        # Try metadata first (from model_def_script)
+        model_def_script = self.get_model_def_script()
+        observed_type_list = model_def_script.get("info", {}).get("observed_type")
+        if observed_type_list is not None:
+            return {
+                "type_num": len(observed_type_list),
+                "observed_type": observed_type_list,
+            }
+        # Fallback: bias-based approach for old models
+        observed_type_list = self.dp.get_observed_type_list()
+        return {
+            "type_num": len(observed_type_list),
+            "observed_type": sort_element_type(observed_type_list),
+        }
 
     def get_model(self) -> "BaseModel":
         """Get the dpmodel BaseModel.

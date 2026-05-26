@@ -21,6 +21,8 @@ class DPTestCase(BackendTestCase):
     """DP module to test."""
 
     def forward_wrapper(self, x):
+        if not hasattr(x, "forward_lower") and hasattr(x, "call_lower"):
+            x.forward_lower = x.call_lower
         return x
 
     def forward_wrapper_cpu_ref(self, x):

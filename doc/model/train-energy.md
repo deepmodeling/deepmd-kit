@@ -57,6 +57,20 @@ The properties $\eta$ of the energy loss function could be energy $E$, force $\b
 where $F_{k,\alpha}$ is the $\alpha$-th component of the force on atom $k$, and the superscript $\ast$ indicates the label of the property that should be provided in advance.
 Using $N$ ensures that each loss of fitting property is averaged over atomic contributions before they contribute to the total loss by weight.
 
+By default, the energy and virial losses are normalized by the number of atoms $N$ as shown above. When **intensive loss normalization** is enabled, these terms are instead normalized by $N^2$. For the energy loss, this converts it to the square of the per-atom energy error:
+
+```math
+    L_E^{\text{intensive}}(\boldsymbol{x};\boldsymbol{\theta})=\left(\frac{E(\boldsymbol{x};\boldsymbol{\theta})-E^*}{N}\right)^2 = \frac{1}{N^2}(E(\boldsymbol{x};\boldsymbol{\theta})-E^*)^2,
+```
+
+and similarly for the virial loss:
+
+```math
+    L_\Xi^{\text{intensive}}(\boldsymbol{x};\boldsymbol{\theta})=\frac{1}{9N^2}\sum_{\alpha,\beta=1}^{3}(\Xi_{\alpha\beta}(\boldsymbol{x};\boldsymbol{\theta})-\Xi_{\alpha\beta}^*)^2.
+```
+
+Intensive normalization makes the loss magnitudes independent of the system size $N$ (assuming per-atom errors are consistent), which is crucial for multi-task training involving datasets with varying system sizes to prevent larger systems from dominating the training process.
+
 If part of atoms is more important than others, for example, certain atoms play an essential role when calculating free energy profiles or kinetic isotope effects, the MSE of atomic forces with prefactors $q_{k}$ can also be used as the loss function:
 
 ```math
@@ -74,8 +88,6 @@ If some forces are quite large, for example, forces can be greater than 60 eV/Å
 where $\nu$ is a small constant used to protect
 an atom where the magnitude of $\boldsymbol{F}^\ast_k$ is small from having a large $L^r_F$.
 Benefiting from the relative force loss, small forces can be fitted more accurately.[^1]
-
-[^1]: This section is built upon Jinzhe Zeng, Duo Zhang, Denghui Lu, Pinghui Mo, Zeyu Li, Yixiao Chen, Marián Rynik, Li'ang Huang, Ziyao Li, Shaochen Shi, Yingze Wang, Haotian Ye, Ping Tuo, Jiabin Yang, Ye Ding, Yifan Li, Davide Tisi, Qiyu Zeng, Han Bao, Yu Xia, Jiameng Huang, Koki Muraoka, Yibo Wang, Junhan Chang, Fengbo Yuan, Sigbjørn Løland Bore, Chun Cai, Yinnian Lin, Bo Wang, Jiayan Xu, Jia-Xin Zhu, Chenxing Luo, Yuzhi Zhang, Rhys E. A. Goodall, Wenshuo Liang, Anurag Kumar Singh, Sikai Yao, Jingchao Zhang, Renata Wentzcovitch, Jiequn Han, Jie Liu, Weile Jia, Darrin M. York, Weinan E, Roberto Car, Linfeng Zhang, Han Wang, [J. Chem. Phys. 159, 054801 (2023)](https://doi.org/10.1063/5.0155600) licensed under a [Creative Commons Attribution (CC BY) license](http://creativecommons.org/licenses/by/4.0/).
 
 ## The fitting network
 
@@ -118,10 +130,50 @@ The {ref}`loss <loss>` section in the `input.json` is
 	"start_pref_f":	1000,
 	"limit_pref_f":	1,
 	"start_pref_v":	0,
-	"limit_pref_v":	0
+	"limit_pref_v":	0,
+	"loss_func":	"mse",
+	"intensive_ener_virial":	false
     }
+
 ```
 
 The options {ref}`start_pref_e <loss[ener]/start_pref_e>`, {ref}`limit_pref_e <loss[ener]/limit_pref_e>`, {ref}`start_pref_f <loss[ener]/start_pref_f>`, {ref}`limit_pref_f <loss[ener]/limit_pref_f>`, {ref}`start_pref_v <loss[ener]/start_pref_v>` and {ref}`limit_pref_v <loss[ener]/limit_pref_v>` determine the start and limit prefactors of energy, force and virial, respectively.
 
+The {ref}`loss_func <loss[ener]/loss_func>` option specifies the type of loss function to use. Two options are available:
+
+- `"mse"` (default): Mean Squared Error (L2 loss). This is the standard loss function that penalizes large errors more heavily.
+- `"mae"`: Mean Absolute Error (L1 loss). This loss function is less sensitive to outliers and may be preferred when the training data contains occasional large errors.
+
+When using `loss_func="mse"`, the training will output `rmse_e`, `rmse_f`, `rmse_v` metrics (root mean square errors). When using `loss_func="mae"`, the training will output `mae_e`, `mae_f`, `mae_v` metrics (mean absolute errors).
+
+The {ref}`intensive_ener_virial <loss[ener]/intensive_ener_virial>` option (default is `false`) controls the normalization of the energy and virial loss terms when `loss_func="mse"`. If set to `true`, these terms are normalized by $1/N^2$ (making them "intensive"), ensuring the loss scale remains consistent across different system sizes $N$. If `false`, the legacy $1/N$ normalization is used. This option is highly recommended for multi-task learning.
+
 If one does not want to train with virial, then he/she may set the virial prefactors {ref}`start_pref_v <loss[ener]/start_pref_v>` and {ref}`limit_pref_v <loss[ener]/limit_pref_v>` to 0.
+
+### Prefactor force loss with default atom preference
+
+:::{note}
+**Supported backends**: PyTorch {{ pytorch_icon }}, DP {{ dpmodel_icon }}
+:::
+
+When using the prefactor force loss (controlled by {ref}`start_pref_pf <loss[ener]/start_pref_pf>` and {ref}`limit_pref_pf <loss[ener]/limit_pref_pf>`), the training data typically requires an `atom_pref.npy` file in each system directory to specify per-atom prefactors $q_k$. If `atom_pref.npy` is not provided, the {ref}`use_default_pf <loss[ener]/use_default_pf>` option can be set to `true` to use a default atom preference of 1.0 for all atoms:
+
+```json
+    "loss" : {
+        "start_pref_e": 0.02,
+        "limit_pref_e": 1,
+        "start_pref_f": 1000,
+        "limit_pref_f": 1,
+        "start_pref_v": 0,
+        "limit_pref_v": 0,
+        "start_pref_pf": 1.0,
+        "limit_pref_pf": 1.0,
+        "use_default_pf": true
+    }
+```
+
+This allows using the prefactor force loss without requiring `atom_pref.npy` files. When `atom_pref.npy` is provided in the training data, it will be used as-is regardless of the `use_default_pf` setting.
+
+Note that `use_default_pf` is only effective for the PyTorch and DP (NumPy reference) backends. The TensorFlow and Paddle backends raise `NotImplementedError` when `use_default_pf` is set to `true`.
+
+[^1]: This section is built upon Jinzhe Zeng, Duo Zhang, Denghui Lu, Pinghui Mo, Zeyu Li, Yixiao Chen, Marián Rynik, Li'ang Huang, Ziyao Li, Shaochen Shi, Yingze Wang, Haotian Ye, Ping Tuo, Jiabin Yang, Ye Ding, Yifan Li, Davide Tisi, Qiyu Zeng, Han Bao, Yu Xia, Jiameng Huang, Koki Muraoka, Yibo Wang, Junhan Chang, Fengbo Yuan, Sigbjørn Løland Bore, Chun Cai, Yinnian Lin, Bo Wang, Jiayan Xu, Jia-Xin Zhu, Chenxing Luo, Yuzhi Zhang, Rhys E. A. Goodall, Wenshuo Liang, Anurag Kumar Singh, Sikai Yao, Jingchao Zhang, Renata Wentzcovitch, Jiequn Han, Jie Liu, Weile Jia, Darrin M. York, Weinan E, Roberto Car, Linfeng Zhang, Han Wang, [J. Chem. Phys. 159, 054801 (2023)](https://doi.org/10.1063/5.0155600) licensed under a [Creative Commons Attribution (CC BY) license](http://creativecommons.org/licenses/by/4.0/).

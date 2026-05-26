@@ -7,11 +7,12 @@ from tensorflow.python.framework import (
 
 from deepmd.tf.env import (
     op_module,
+    tf,
 )
 
 
 @ops.RegisterGradient("QuantizeNvnmd")
-def _QuantizeNvnmdGrad(op, grad):
+def _QuantizeNvnmdGrad(op: tf.Operation, grad: tf.Tensor) -> tf.Tensor:
     isround = op.get_attr("isround")
     nbit1 = op.get_attr("nbit1")
     nbit2 = op.get_attr("nbit2")

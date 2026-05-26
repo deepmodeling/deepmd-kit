@@ -75,6 +75,11 @@ class DeepBaseModelBackend {
    *instead of fparam.
    **/
   virtual bool is_aparam_nall() const = 0;
+  /**
+   * @brief Check if the model has default frame parameters.
+   * @return true if the model has default frame parameters.
+   **/
+  virtual bool has_default_fparam() const = 0;
 };
 
 /**
@@ -141,6 +146,11 @@ class DeepBaseModel {
    *instead of fparam.
    **/
   bool is_aparam_nall() const;
+  /**
+   * @brief Check if the model has default frame parameters.
+   * @return true if the model has default frame parameters.
+   **/
+  bool has_default_fparam() const;
 
  protected:
   bool inited;
@@ -272,6 +282,14 @@ class DeepBaseModelDevi {
   bool is_aparam_nall() const {
     assert(inited);
     return dpbases[0]->is_aparam_nall();
+  };
+  /**
+   * @brief Check if the model has default frame parameters.
+   * @return true if the model has default frame parameters.
+   **/
+  bool has_default_fparam() const {
+    assert(inited);
+    return dpbases[0]->has_default_fparam();
   };
 
  protected:

@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import math
 import warnings
-from typing import Optional as _Optional
 
 import torch
 from torch import (
@@ -22,7 +21,7 @@ def _no_grad_uniform_(
     tensor: torch.Tensor,
     a: float,
     b: float,
-    generator: _Optional[torch.Generator] = None,
+    generator: torch.Generator | None = None,
 ) -> torch.Tensor:
     with torch.no_grad():
         return tensor.uniform_(a, b, generator=generator)
@@ -32,7 +31,7 @@ def _no_grad_normal_(
     tensor: torch.Tensor,
     mean: float,
     std: float,
-    generator: _Optional[torch.Generator] = None,
+    generator: torch.Generator | None = None,
 ) -> torch.Tensor:
     with torch.no_grad():
         return tensor.normal_(mean, std, generator=generator)
@@ -44,7 +43,7 @@ def _no_grad_trunc_normal_(
     std: float,
     a: float,
     b: float,
-    generator: _Optional[torch.Generator] = None,
+    generator: torch.Generator | None = None,
 ) -> torch.Tensor:
     # Method based on https://people.sc.fsu.edu/~jburkardt/presentations/truncated_normal.pdf
     def norm_cdf(x: float) -> float:
@@ -92,7 +91,7 @@ def _no_grad_fill_(tensor: torch.Tensor, val: float) -> torch.Tensor:
         return tensor.fill_(val)
 
 
-def calculate_gain(nonlinearity: str, param: _Optional[float] = None) -> float:
+def calculate_gain(nonlinearity: str, param: float | None = None) -> float:
     r"""Return the recommended gain value for the given nonlinearity function.
 
     The values are as follows:
@@ -245,7 +244,7 @@ def normal_(
     tensor: Tensor,
     mean: float = 0.0,
     std: float = 1.0,
-    generator: _Optional[torch.Generator] = None,
+    generator: torch.Generator | None = None,
 ) -> Tensor:
     r"""Fill the input Tensor with values drawn from the normal distribution.
 
@@ -275,7 +274,7 @@ def trunc_normal_(
     std: float = 1.0,
     a: float = -2.0,
     b: float = 2.0,
-    generator: _Optional[torch.Generator] = None,
+    generator: torch.Generator | None = None,
 ) -> Tensor:
     r"""Fill the input Tensor with values drawn from a truncated normal distribution.
 
@@ -306,7 +305,7 @@ def kaiming_uniform_(
     a: float = 0,
     mode: str = "fan_in",
     nonlinearity: str = "leaky_relu",
-    generator: _Optional[torch.Generator] = None,
+    generator: torch.Generator | None = None,
 ) -> Tensor:
     r"""Fill the input `Tensor` with values using a Kaiming uniform distribution.
 
@@ -364,7 +363,7 @@ def kaiming_normal_(
     a: float = 0,
     mode: str = "fan_in",
     nonlinearity: str = "leaky_relu",
-    generator: _Optional[torch.Generator] = None,
+    generator: torch.Generator | None = None,
 ) -> Tensor:
     r"""Fill the input `Tensor` with values using a Kaiming normal distribution.
 
@@ -406,7 +405,7 @@ def kaiming_normal_(
 
 
 def xavier_uniform_(
-    tensor: Tensor, gain: float = 1.0, generator: _Optional[torch.Generator] = None
+    tensor: Tensor, gain: float = 1.0, generator: torch.Generator | None = None
 ) -> Tensor:
     r"""Fill the input `Tensor` with values using a Xavier uniform distribution.
 
@@ -440,7 +439,7 @@ def xavier_uniform_(
 def xavier_normal_(
     tensor: Tensor,
     gain: float = 1.0,
-    generator: _Optional[torch.Generator] = None,
+    generator: torch.Generator | None = None,
 ) -> Tensor:
     r"""Fill the input `Tensor` with values using a Xavier normal distribution.
 

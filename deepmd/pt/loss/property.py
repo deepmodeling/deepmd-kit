@@ -2,7 +2,6 @@
 import logging
 from typing import (
     Any,
-    Union,
 )
 
 import torch
@@ -17,6 +16,9 @@ from deepmd.pt.utils import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 log = logging.getLogger(__name__)
 
@@ -29,8 +31,8 @@ class PropertyLoss(TaskLoss):
         loss_func: str = "smooth_mae",
         metric: list[str] = ["mae"],
         beta: float = 1.00,
-        out_bias: Union[list, None] = None,
-        out_std: Union[list, None] = None,
+        out_bias: list | None = None,
+        out_std: list | None = None,
         intensive: bool = False,
         **kwargs: Any,
     ) -> None:
@@ -220,3 +222,26 @@ class PropertyLoss(TaskLoss):
             )
         )
         return label_requirement
+
+    def serialize(self) -> dict:
+        """Serialize the loss module."""
+        return {
+            "@class": "PropertyLoss",
+            "@version": 1,
+            "task_dim": self.task_dim,
+            "var_name": self.var_name,
+            "loss_func": self.loss_func,
+            "metric": self.metric,
+            "beta": self.beta,
+            "out_bias": self.out_bias,
+            "out_std": self.out_std,
+            "intensive": self.intensive,
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "PropertyLoss":
+        """Deserialize the loss module."""
+        data = data.copy()
+        check_version_compatibility(data.pop("@version"), 1, 1)
+        data.pop("@class")
+        return cls(**data)

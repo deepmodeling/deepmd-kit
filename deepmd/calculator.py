@@ -88,9 +88,9 @@ class DP(Calculator):
         self,
         model: Union[str, "Path"],
         label: str = "DP",
-        type_dict: Optional[dict[str, int]] = None,
+        type_dict: dict[str, int] | None = None,
         neighbor_list: Optional["NeighborList"] = None,
-        head: Optional[str] = None,
+        head: str | None = None,
         **kwargs: Any,
     ) -> None:
         Calculator.__init__(self, label=label, **kwargs)
@@ -103,7 +103,7 @@ class DP(Calculator):
             self.type_dict = type_dict
         else:
             self.type_dict = dict(
-                zip(self.dp.get_type_map(), range(self.dp.get_ntypes()))
+                zip(self.dp.get_type_map(), range(self.dp.get_ntypes()), strict=True)
             )
 
     def calculate(
@@ -137,8 +137,14 @@ class DP(Calculator):
 
         fparam = self.atoms.info.get("fparam", None)
         aparam = self.atoms.info.get("aparam", None)
+        charge_spin = self.atoms.info.get("charge_spin", None)
         e, f, v = self.dp.eval(
-            coords=coord, cells=cell, atom_types=atype, fparam=fparam, aparam=aparam
+            coords=coord,
+            cells=cell,
+            atom_types=atype,
+            fparam=fparam,
+            aparam=aparam,
+            charge_spin=charge_spin,
         )[:3]
         self.results["energy"] = e[0][0]
         # see https://gitlab.com/ase/ase/-/merge_requests/2485

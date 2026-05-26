@@ -55,6 +55,12 @@
     "pref_atomic": 1.0,
     "_comment6": " that's all"
   },
+  "optimizer": {
+    "type": "Adam",
+    "adam_beta1": 0.9,
+    "adam_beta2": 0.999,
+    "weight_decay": 0.0
+  },
   "_comment7": " traing controls",
   "training": {
     "training_data": {

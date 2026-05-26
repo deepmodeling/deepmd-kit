@@ -53,6 +53,10 @@ class DPiPICalculator(FileIOCalculator):
         atoms.write(self.xyz_file, format="xyz")
 
 
+@unittest.skipIf(
+    os.environ.get("ENABLE_TENSORFLOW", "1") != "1",
+    reason="Skip test because TensorFlow support is not enabled.",
+)
 class TestDPIPI(unittest.TestCase):
     # copy from test_deeppot_a.py
     @classmethod
@@ -253,6 +257,10 @@ class TestDPIPI(unittest.TestCase):
         np.testing.assert_almost_equal(ee.ravel(), expected_se.ravel(), default_places)
 
 
+@unittest.skipIf(
+    os.environ.get("ENABLE_PYTORCH", "1") != "1",
+    reason="Skip test because PyTorch support is not enabled.",
+)
 class TestDPIPIPt(TestDPIPI):
     @classmethod
     def setUpClass(cls) -> None:
