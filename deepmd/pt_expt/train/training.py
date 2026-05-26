@@ -1312,9 +1312,14 @@ class Trainer:
                 self.wrapper.eval()
 
                 if self.rank == 0:
+                    def _to_float(v: Any) -> float:
+                        return v.detach().item() if torch.is_tensor(v) else float(v)
+
                     if not self.multi_task:
                         train_results = {
-                            k: v for k, v in more_loss.items() if "l2_" not in k
+                            k: _to_float(v)
+                            for k, v in more_loss.items()
+                            if "l2_" not in k
                         }
 
                         # validation
@@ -1335,7 +1340,8 @@ class Trainer:
                                 for k, v in _vmore.items():
                                     if "l2_" not in k:
                                         valid_results[k] = (
-                                            valid_results.get(k, 0.0) + v * natoms
+                                            valid_results.get(k, 0.0)
+                                            + _to_float(v) * natoms
                                         )
                             if sum_natoms > 0:
                                 valid_results = {
@@ -1348,7 +1354,9 @@ class Trainer:
 
                         # current task already has loss
                         train_results[task_key] = {
-                            k: v for k, v in more_loss.items() if "l2_" not in k
+                            k: _to_float(v)
+                            for k, v in more_loss.items()
+                            if "l2_" not in k
                         }
 
                         # compute loss for other tasks
@@ -1363,7 +1371,9 @@ class Trainer:
                                     task_key=_key,
                                 )
                                 train_results[_key] = {
-                                    k: v for k, v in _more.items() if "l2_" not in k
+                                    k: _to_float(v)
+                                    for k, v in _more.items()
+                                    if "l2_" not in k
                                 }
 
                             # validation for each task
@@ -1387,7 +1397,10 @@ class Trainer:
                                     _sum_natoms += natoms
                                     for k, v in _vmore.items():
                                         if "l2_" not in k:
-                                            _vres[k] = _vres.get(k, 0.0) + v * natoms
+                                            _vres[k] = (
+                                                _vres.get(k, 0.0)
+                                                + _to_float(v) * natoms
+                                            )
                                 if _sum_natoms > 0:
                                     _vres = {
                                         k: v / _sum_natoms for k, v in _vres.items()
