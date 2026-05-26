@@ -439,10 +439,9 @@ class _CompiledModel(torch.nn.Module):
         self.original_model = original_model
         self.compiled_forward_lower = compiled_forward_lower
         self._task_buf_order = task_buf_order
-        if task_buf_order and task_buffers:
-            for name in task_buf_order:
-                if name in task_buffers:
-                    self.register_buffer(f"_task_{name}", task_buffers[name])
+        # task_buffers is intentionally not stored: buffers are read from
+        # original_model.get_fitting_net() at forward time so that weight
+        # updates (load_state_dict, optimiser steps) are always reflected.
 
     def forward(
         self,
@@ -489,9 +488,16 @@ class _CompiledModel(torch.nn.Module):
         ext_coord = ext_coord.reshape(nframes, -1, 3)
         ext_coord = ext_coord.detach().requires_grad_(True)
 
-        task_buf_vals = tuple(
-            getattr(self, f"_task_{name}") for name in self._task_buf_order
-        )
+        if self._task_buf_order:
+            try:
+                _fitting = self.original_model.get_fitting_net()
+                task_buf_vals: tuple = tuple(
+                    getattr(_fitting, name) for name in self._task_buf_order
+                )
+            except AttributeError:
+                task_buf_vals = ()
+        else:
+            task_buf_vals = ()
         result = self.compiled_forward_lower(
             ext_coord,
             ext_atype,
