@@ -573,19 +573,6 @@ DescriptorParamDPA3List = parameterize_func(
 )
 
 
-def DescriptorParamDPA3DefaultChgSpin(ntypes, rcut, rcut_smth, sel, type_map, **kwargs):
-    return DescriptorParamDPA3(
-        ntypes,
-        rcut,
-        rcut_smth,
-        sel,
-        type_map,
-        **kwargs,
-        add_chg_spin_ebd=True,
-        default_chg_spin=[5.0, 1.0],
-    )
-
-
 # to get name for the default function
 DescriptorParamDPA3 = DescriptorParamDPA3List[0]
 
@@ -814,10 +801,18 @@ DescriptorParamDPA3EnergyModelList = (
     _descriptor_param_variant(
         DescriptorParamDPA3, "DescriptorParamDPA3_no_loc_mapping", use_loc_mapping=False
     ),
+    _descriptor_param_variant(
+        DescriptorParamDPA3,
+        "DescriptorParamDPA3_default_chg_spin",
+        add_chg_spin_ebd=True,
+        default_chg_spin=[5.0, 1.0],
+    ),
     # Mixed high-risk combination.
     _descriptor_param_variant(
         DescriptorParamDPA3,
         "DescriptorParamDPA3_mixed_high_risk",
+        add_chg_spin_ebd=True,
+        default_chg_spin=[5.0, 1.0],
         exclude_types=[[0, 1]],
         optim_update=False,
         edge_init_use_dist=False,
