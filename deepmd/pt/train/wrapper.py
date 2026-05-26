@@ -142,6 +142,7 @@ class ModelWrapper(torch.nn.Module):
         coord: torch.Tensor,
         atype: torch.Tensor,
         spin: Optional[torch.Tensor] = None,
+        grid: Optional[torch.Tensor] = None,
         box: Optional[torch.Tensor] = None,
         cur_lr: Optional[torch.Tensor] = None,
         label: Optional[torch.Tensor] = None,
@@ -170,6 +171,12 @@ class ModelWrapper(torch.nn.Module):
             has_spin = has_spin()
         if has_spin:
             input_dict["spin"] = spin
+        
+        has_grid = getattr(self.model[task_key], "has_grid", False)
+        if callable(has_grid):
+            has_grid = has_grid()
+        if has_grid:
+            input_dict["grid"] = grid
 
         if self.inference_only or inference_only:
             model_pred = self.model[task_key](**input_dict)

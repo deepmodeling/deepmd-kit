@@ -219,6 +219,7 @@ class DpLoaderSet(Dataset):
         name: str,
         prob: list[float],
     ) -> None:
+        return 
         rank = dist.get_rank() if dist.is_initialized() else 0
         if rank == 0:
             print_summary(

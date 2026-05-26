@@ -1,0 +1,107 @@
+{
+  "_comment": "that's all",
+  "model": {
+    "type_map": [
+      "Li",
+      "Ni",
+      "Co",
+      "Mn",
+      "O",
+      "C",
+      "H",
+      "N",
+      "F",
+      "X"
+    ],
+    "descriptor": {
+      "type": "dpa3",
+      "repflow": {
+        "n_dim": 128,
+        "e_dim": 64,
+        "a_dim": 32,
+        "nlayers": 12,
+        "e_rcut": 6.0,
+        "e_rcut_smth": 5.3,
+        "e_sel": 120,
+        "a_rcut": 4.0,
+        "a_rcut_smth": 3.5,
+        "a_sel": 30,
+        "axis_neuron": 4,
+        "skip_stat": true,
+        "a_compress_rate": 1,
+        "a_compress_e_rate": 2,
+        "a_compress_use_split": true,
+        "update_angle": true,
+        "smooth_edge_update": true,
+        "use_dynamic_sel": true,
+        "sel_reduce_factor": 10.0,
+        "edge_use_dist": true,
+        "use_env_envelope": true,
+        "optim_update": true,
+        "update_style": "res_residual",
+        "update_residual": 0.1,
+        "update_residual_init": "const"
+      },
+      "activation_function": "custom_silu:10.0",
+      "use_tebd_bias": false,
+      "env_protection": 0.1,
+      "precision": "float32",
+      "concat_output_tebd": false
+    },
+    "fitting_net": {
+      "type": "density",
+      "neuron": [
+        240,
+        240,
+        240
+      ],
+      "resnet_dt": true,
+      "seed": 1,
+      "precision": "float32",
+      "activation_function": "silu",
+      "_comment": " that's all"
+    },
+    "_comment": " that's all"
+  },
+  "learning_rate": {
+    "type": "exp",
+    "decay_steps": 5000,
+    "start_lr": 0.001,
+    "stop_lr": 1e-05,
+    "_comment": "that's all"
+  },
+  "loss": {
+    "type": "grid_density",
+    "start_pref_d": 1,
+    "limit_pref_d": 1,
+    "_comment": " that's all"
+  },
+  "training": {
+    "stat_file": "./qm9_charge_density.hdf5",
+    "training_data": {
+      "systems": [
+       "../dataset/qm9/C7H15NO_train"
+      ],
+      "batch_size": "auto:128",
+      "_comment": "that's all"
+    },
+    "validation_data": {
+      "systems": [
+        "../dataset/qm9/C7H15NO_val"
+      ],
+      "batch_size": 1,
+      "numb_btch": 3,
+      "_comment": "that's all"
+    },
+    "numb_steps": 100,
+    "warmup_steps": 0,
+    "gradient_max_norm": 5.0,
+    "seed": 10,
+    "max_ckpt_keep": 100,
+    "opt_type": "AdamW",
+    "disp_file": "lcurve.out",
+    "disp_freq": 100,
+    "save_freq": 10000,
+    "_comment": "that's all"
+  }
+}

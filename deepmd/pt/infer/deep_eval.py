@@ -358,11 +358,7 @@ class DeepEval(DeepEvalBackend):
             coords, atom_types, len(atom_types.shape) > 1
         )
         request_defs = self._get_request_defs(atomic)
-        if "spin" not in kwargs or kwargs["spin"] is None:
-            out = self._eval_func(self._eval_model, numb_test, natoms)(
-                coords, cells, atom_types, fparam, aparam, request_defs
-            )
-        else:
+        if "spin" in kwargs and kwargs["spin"] is not None:
             out = self._eval_func(self._eval_model_spin, numb_test, natoms)(
                 coords,
                 cells,
@@ -371,6 +367,21 @@ class DeepEval(DeepEvalBackend):
                 fparam,
                 aparam,
                 request_defs,
+            )
+        elif "grid" in kwargs and kwargs["grid"] is not None:
+            out = self._eval_func(self._eval_model_density, numb_test, natoms)(
+                coords,
+                cells,
+                atom_types,
+                np.array(kwargs["grid"]),
+                fparam,
+                aparam,
+                request_defs,
+            )
+            return {"density": out}
+        else:
+            out = self._eval_func(self._eval_model, numb_test, natoms)(
+                coords, cells, atom_types, fparam, aparam, request_defs
             )
         return dict(
             zip(
@@ -619,6 +630,81 @@ class DeepEval(DeepEvalBackend):
                     )
                 )  # this is kinda hacky
         return tuple(results)
+
+    def _eval_model_density(
+        self,
+        coords: np.ndarray,
+        cells: Optional[np.ndarray],
+        atom_types: np.ndarray,
+        grid: np.ndarray,
+        fparam: Optional[np.ndarray],
+        aparam: Optional[np.ndarray],
+        request_defs: list[OutputVariableDef],
+    ):
+        model = self.dp.to(DEVICE)
+
+        nframes = coords.shape[0]
+        if len(atom_types.shape) == 1:
+            natoms = len(atom_types)
+            atom_types = np.tile(atom_types, nframes).reshape(nframes, -1)
+        else:
+            natoms = len(atom_types[0])
+
+        coord_input = torch.tensor(
+            coords.reshape([nframes, natoms, 3]),
+            dtype=GLOBAL_PT_FLOAT_PRECISION,
+            device=DEVICE,
+        )
+        type_input = torch.tensor(atom_types, dtype=torch.long, device=DEVICE)
+        grid_input = torch.tensor(
+            grid.reshape([nframes, -1, 3]),
+            dtype=GLOBAL_PT_FLOAT_PRECISION,
+            device=DEVICE,
+        )
+        ngrid = grid_input.shape[1]
+        if cells is not None:
+            box_input = torch.tensor(
+                cells.reshape([nframes, 3, 3]),
+                dtype=GLOBAL_PT_FLOAT_PRECISION,
+                device=DEVICE,
+            )
+        else:
+            box_input = None
+        if fparam is not None:
+            fparam_input = to_torch_tensor(
+                fparam.reshape(nframes, self.get_dim_fparam())
+            )
+        else:
+            fparam_input = None
+        if aparam is not None:
+            aparam_input = to_torch_tensor(
+                aparam.reshape(nframes, natoms, self.get_dim_aparam())
+            )
+        else:
+            aparam_input = None
+
+        do_atomic_virial = any(
+            x.category == OutputVariableCategory.DERV_C_REDU for x in request_defs
+        )
+        batch_output = model(
+            coord_input,
+            type_input,
+            grid=grid_input,
+            box=box_input,
+            do_atomic_virial=do_atomic_virial,
+            fparam=fparam_input,
+            aparam=aparam_input,
+        )
+        if isinstance(batch_output, tuple):
+            batch_output = batch_output[0]
+
+        results = []
+        pt_name = "density"
+        density_shape = [nframes, ngrid]
+        out = batch_output[pt_name].reshape(density_shape).detach().cpu().numpy()
+        results.append(out)
+        return tuple(results)
+
 
     def _get_output_shape(
         self, odef: OutputVariableDef, nframes: int, natoms: int

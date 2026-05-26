@@ -185,8 +185,11 @@ def _compute_model_predict(
                 **kwargs,
             )
 
+        grid_kwargs = {}
+        if "grid" in system:
+            grid_kwargs["grid"] = system["grid"]
         sample_predict = model_forward_auto_batch_size(
-            coord, atype, box, fparam=fparam, aparam=aparam
+            coord, atype, box, fparam=fparam, aparam=aparam, **grid_kwargs
         )
         for kk in keys:
             model_predict[kk].append(

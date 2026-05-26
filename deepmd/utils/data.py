@@ -633,6 +633,9 @@ class DeepmdData:
         else:
             dtype = GLOBAL_NP_FLOAT_PRECISION
         path = set_name / (key + ".npy")
+        if key in ["grid", "density"] and path.is_file():
+            data = path.load_numpy().astype(dtype)
+            return np.float32(1.0), data
         if path.is_file():
             data = path.load_numpy().astype(dtype)
             try:  # YWolfeee: deal with data shape error

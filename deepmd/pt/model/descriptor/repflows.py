@@ -445,7 +445,7 @@ class DescrptBlockRepflows(DescriptorBlock):
         Optional[torch.Tensor],
         Optional[torch.Tensor],
         Optional[torch.Tensor],
-    ]:
+    ]:  
         parallel_mode = comm_dict is not None
         if not parallel_mode:
             assert mapping is not None

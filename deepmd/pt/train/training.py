@@ -34,6 +34,7 @@ from deepmd.pt.loss import (
     EnergyHessianStdLoss,
     EnergySpinLoss,
     EnergyStdLoss,
+    GridDensityLoss,
     PropertyLoss,
     TaskLoss,
     TensorLoss,
@@ -215,7 +216,6 @@ class Trainer:
                 )
                 _data_iter = cycle_iterator(_dataloader)
                 return _dataloader, _data_iter
-
             training_dataloader, training_data_iter = get_dataloader_and_iter(
                 _training_data, _training_params["training_data"]
             )
@@ -1244,6 +1244,7 @@ class Trainer:
             "coord",
             "atype",
             "spin",
+            "grid",
             "box",
             "fparam",
             "aparam",
@@ -1400,6 +1401,9 @@ def get_loss(
             tensor_name = "polar"
         loss_params["tensor_name"] = tensor_name
         return TensorLoss(**loss_params)
+    elif loss_type == 'grid_density':
+        loss_params["starter_learning_rate"] = start_lr
+        return GridDensityLoss(**loss_params)
     elif loss_type == "property":
         task_dim = _model.get_task_dim()
         var_name = _model.get_var_name()
