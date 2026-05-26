@@ -70,22 +70,41 @@ from deepmd.utils.path import (
 
 log = logging.getLogger(__name__)
 
-# Buffer names that differ per task after share_params; everything else in the
-# fitting net is literally the same Python object across shared tasks.
+# Buffer names in the fitting net that differ per task after share_params;
+# everything else in the fitting net is the same Python object across tasks.
 _TASK_SPECIFIC_BUFFER_NAMES: tuple[str, ...] = ("bias_atom_e", "case_embd")
+
+# Buffer names in atomic_model that are per-task (energy/output statistics).
+# These live one level above the fitting net and are not reached by
+# fitting-net share_params, so they must also be promoted to FX placeholders.
+_ATOMIC_MODEL_TASK_BUFFER_NAMES: tuple[str, ...] = ("out_bias", "out_std")
+
+# Prefix used in task_buf_order keys to distinguish atomic_model buffers
+# from fitting-net buffers.
+_AM_PREFIX = "am/"
 
 
 def _get_task_buffers(model: torch.nn.Module) -> dict[str, torch.Tensor]:
-    """Return per-task fitting-net buffers that vary across shared tasks."""
+    """Return per-task buffers (fitting net + atomic model) that vary across shared tasks."""
+    result: dict[str, torch.Tensor] = {}
+    # fitting-net task buffers
     try:
         fitting = model.get_fitting_net()
+        for name in _TASK_SPECIFIC_BUFFER_NAMES:
+            val = fitting._buffers.get(name)
+            if val is not None and torch.is_tensor(val):
+                result[name] = val.detach().clone()
     except AttributeError:
-        return {}
-    result: dict[str, torch.Tensor] = {}
-    for name in _TASK_SPECIFIC_BUFFER_NAMES:
-        val = getattr(fitting, name, None)
-        if val is not None and torch.is_tensor(val):
-            result[name] = val.detach().clone()
+        pass
+    # atomic_model task buffers (out_bias, out_std)
+    try:
+        am = model.atomic_model
+        for name in _ATOMIC_MODEL_TASK_BUFFER_NAMES:
+            val = am._buffers.get(name)
+            if val is not None and torch.is_tensor(val):
+                result[_AM_PREFIX + name] = val.detach().clone()
+    except AttributeError:
+        pass
     return result
 
 
@@ -292,13 +311,18 @@ def _trace_and_compile(
         tuple(task_buffers[k] for k in task_buf_order) if task_buffers else ()
     )
 
-    # Resolve fitting net once for buffer patching inside fn.
+    # Resolve fitting net and atomic_model once for buffer patching inside fn.
     _fitting: torch.nn.Module | None = None
+    _atomic_model: torch.nn.Module | None = None
     if task_buf_order:
         try:
             _fitting = model.get_fitting_net()
         except AttributeError:
-            pass
+            pass  # no fitting net → no fitting-net buffers to patch
+        try:
+            _atomic_model = model.atomic_model
+        except AttributeError:
+            pass  # no atomic_model → no atomic-model buffers to patch
 
     def fn(
         extended_coord: torch.Tensor,
@@ -313,12 +337,20 @@ def _trace_and_compile(
         extended_coord = extended_coord.detach().requires_grad_(True)
         # Temporarily patch task-specific buffers with the proxy tensors so
         # make_fx records them as FX placeholders rather than baked-in constants.
-        # This makes the compiled graph reusable for any buffer values.
+        # Keys prefixed with _AM_PREFIX are atomic_model buffers; the rest are
+        # fitting-net buffers.
         originals: dict[str, torch.Tensor | None] = {}
-        if _fitting is not None and task_buf_order:
+        if task_buf_order:
             for name, val in zip(task_buf_order, task_buf_vals):
-                originals[name] = _fitting._buffers.get(name)
-                _fitting._buffers[name] = val
+                if name.startswith(_AM_PREFIX):
+                    actual = name[len(_AM_PREFIX):]
+                    if _atomic_model is not None:
+                        originals[name] = _atomic_model._buffers.get(actual)
+                        _atomic_model._buffers[actual] = val
+                else:
+                    if _fitting is not None:
+                        originals[name] = _fitting._buffers.get(name)
+                        _fitting._buffers[name] = val
         try:
             return model.forward_lower(
                 extended_coord,
@@ -331,7 +363,13 @@ def _trace_and_compile(
             )
         finally:
             for name, orig in originals.items():
-                _fitting._buffers[name] = orig
+                if name.startswith(_AM_PREFIX):
+                    actual = name[len(_AM_PREFIX):]
+                    if _atomic_model is not None:
+                        _atomic_model._buffers[actual] = orig
+                else:
+                    if _fitting is not None:
+                        _fitting._buffers[name] = orig
 
     # Pick a trace-time nframes that's unlikely to collide with any other
     # tensor dim in the graph.  The symbolic tracer merges symbols that
@@ -491,9 +529,15 @@ class _CompiledModel(torch.nn.Module):
         if self._task_buf_order:
             try:
                 _fitting = self.original_model.get_fitting_net()
-                task_buf_vals: tuple = tuple(
-                    getattr(_fitting, name) for name in self._task_buf_order
-                )
+                _am = getattr(self.original_model, "atomic_model", None)
+                _vals: list[torch.Tensor] = []
+                for _name in self._task_buf_order:
+                    if _name.startswith(_AM_PREFIX):
+                        _actual = _name[len(_AM_PREFIX):]
+                        _vals.append(_am._buffers[_actual])
+                    else:
+                        _vals.append(getattr(_fitting, _name))
+                task_buf_vals: tuple = tuple(_vals)
             except AttributeError:
                 task_buf_vals = ()
         else:
