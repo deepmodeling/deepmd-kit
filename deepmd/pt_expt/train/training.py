@@ -343,7 +343,7 @@ def _trace_and_compile(
         if task_buf_order:
             for name, val in zip(task_buf_order, task_buf_vals):
                 if name.startswith(_AM_PREFIX):
-                    actual = name[len(_AM_PREFIX):]
+                    actual = name[len(_AM_PREFIX) :]
                     if _atomic_model is not None:
                         originals[name] = _atomic_model._buffers.get(actual)
                         _atomic_model._buffers[actual] = val
@@ -364,7 +364,7 @@ def _trace_and_compile(
         finally:
             for name, orig in originals.items():
                 if name.startswith(_AM_PREFIX):
-                    actual = name[len(_AM_PREFIX):]
+                    actual = name[len(_AM_PREFIX) :]
                     if _atomic_model is not None:
                         _atomic_model._buffers[actual] = orig
                 else:
@@ -533,7 +533,7 @@ class _CompiledModel(torch.nn.Module):
                 _vals: list[torch.Tensor] = []
                 for _name in self._task_buf_order:
                     if _name.startswith(_AM_PREFIX):
-                        _actual = _name[len(_AM_PREFIX):]
+                        _actual = _name[len(_AM_PREFIX) :]
                         _vals.append(_am._buffers[_actual])
                     else:
                         _vals.append(getattr(_fitting, _name))
