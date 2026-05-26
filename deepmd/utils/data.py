@@ -966,6 +966,8 @@ class DeepmdData:
         data = mmap_obj[frame_idx].copy().astype(dtype, copy=False)
 
         try:
+            if key in ("grid", "density"):
+                return np.float32(1.0), data
             if vv["atomic"]:
                 # Handle type_sel logic
                 if vv["type_sel"] is not None:

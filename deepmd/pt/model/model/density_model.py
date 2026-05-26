@@ -60,6 +60,7 @@ class GridDensityModel(DPModelCommon, DPDensityModel_):
         fparam: Optional[torch.Tensor] = None,
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
+        charge_spin: Optional[torch.Tensor] = None,
     ) -> dict[str, torch.Tensor]:
         model_ret = self.forward_common(
             coord,
@@ -87,5 +88,6 @@ class GridDensityModel(DPModelCommon, DPDensityModel_):
         aparam: Optional[torch.Tensor] = None,
         do_atomic_virial: bool = False,
         comm_dict: Optional[dict[str, torch.Tensor]] = None,
+        charge_spin: Optional[torch.Tensor] = None,
     ):
         raise NotImplementedError

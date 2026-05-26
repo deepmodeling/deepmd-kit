@@ -101,6 +101,26 @@ def make_density_model(T_AtomicModel: Type[BaseAtomicModel]):
                     vars.append(kk)
             return vars
 
+        @torch.jit.export
+        def has_chg_spin_ebd(self) -> bool:
+            """Check if the model has charge spin embedding."""
+            return self.atomic_model.has_chg_spin_ebd()
+
+        @torch.jit.export
+        def get_dim_chg_spin(self) -> int:
+            """Get the dimension of charge_spin input."""
+            return self.atomic_model.get_dim_chg_spin()
+
+        @torch.jit.export
+        def has_default_chg_spin(self) -> bool:
+            """Check if the model has default charge_spin values."""
+            return self.atomic_model.has_default_chg_spin()
+
+        @torch.jit.export
+        def get_default_chg_spin(self) -> torch.Tensor | None:
+            """Get the default charge_spin values."""
+            return self.atomic_model.get_default_chg_spin()
+
         # cannot use the name forward. torch script does not work
         def forward_common(
             self,
@@ -111,6 +131,7 @@ def make_density_model(T_AtomicModel: Type[BaseAtomicModel]):
             fparam: Optional[torch.Tensor] = None,
             aparam: Optional[torch.Tensor] = None,
             do_atomic_virial: bool = False,
+            charge_spin: Optional[torch.Tensor] = None,
         ) -> dict[str, torch.Tensor]:
             """Return model prediction.
 
@@ -145,6 +166,7 @@ def make_density_model(T_AtomicModel: Type[BaseAtomicModel]):
                 coord, grid, box=box, fparam=fparam, aparam=aparam
             )
             del coord, grid, box, fparam, aparam
+            gg = gg.view(gg.shape[0], -1, 3)
             (
                 extended_coord,
                 extended_atype,
@@ -158,7 +180,7 @@ def make_density_model(T_AtomicModel: Type[BaseAtomicModel]):
                 mixed_types=self.mixed_types(),
                 box=bb,
             )
-            grid_type = torch.zeros(gg.shape[:-1], device=gg.device, dtype=atype.dtype)
+            grid_type = torch.zeros(gg.shape[0], gg.shape[1], device=gg.device, dtype=atype.dtype)
             grid_nlist = build_directional_neighbor_list(
                 gg,
                 grid_type,
@@ -233,6 +255,7 @@ def make_density_model(T_AtomicModel: Type[BaseAtomicModel]):
             mapping: Optional[torch.Tensor] = None,
             fparam: Optional[torch.Tensor] = None,
             aparam: Optional[torch.Tensor] = None,
+            charge_spin: Optional[torch.Tensor] = None,
             do_atomic_virial: bool = False,
             comm_dict: Optional[dict[str, torch.Tensor]] = None,
             extra_nlist_sort: bool = False,
@@ -572,9 +595,14 @@ def make_density_model(T_AtomicModel: Type[BaseAtomicModel]):
             self,
             sampled_func,
             stat_file_path: Optional[DPPath] = None,
+            preset_observed_type: list[str] | None = None,
         ):
             """Compute or load the statistics."""
-            return self.atomic_model.compute_or_load_stat(sampled_func, stat_file_path)
+            return self.atomic_model.compute_or_load_stat(
+                sampled_func,
+                stat_file_path,
+                preset_observed_type=preset_observed_type,
+            )
 
         def get_sel(self) -> list[int]:
             """Returns the number of selected atoms for each type."""
