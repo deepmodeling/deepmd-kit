@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from .charge import (
+    GridDensityLoss,
+)
 from .denoise import (
     DenoiseLoss,
 )
@@ -28,6 +31,7 @@ __all__ = [
     "EnergyHessianStdLoss",
     "EnergySpinLoss",
     "EnergyStdLoss",
+    "GridDensityLoss",
     "PropertyLoss",
     "TaskLoss",
     "TensorLoss",

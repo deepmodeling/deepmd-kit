@@ -1882,6 +1882,52 @@ def fitting_ener() -> list[Argument]:
         ),
     ]
 
+@fitting_args_plugin.register("density")
+def fitting_density():
+    doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
+    doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
+    doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built."
+    doc_activation_function = f'The activation function in the fitting net. Supported activation functions are {list_to_doc(ACTIVATION_FN_DICT.keys())} Note that "gelu" denotes the custom operator version, and "gelu_tf" denotes the TF standard version. If you set "None" or "none" here, no activation function will be used.'
+    doc_precision = f"The precision of the fitting net parameters, supported options are {list_to_doc(PRECISION_DICT.keys())} Default follows the interface precision."
+    doc_resnet_dt = 'Whether to use a "Timestep" in the skip connection'
+    doc_trainable = f"Whether the parameters in the fitting net are trainable. This option can be\n\n\
+- bool: True if all parameters of the fitting net are trainable, False otherwise.\n\n\
+- list of bool{doc_only_tf_supported}: Specifies if each layer is trainable. Since the fitting net is composed by hidden layers followed by a output layer, the length of this list should be equal to len(`neuron`)+1."
+    doc_rcond = "The condition number used to determine the inital density shift for each type of atoms. See `rcond` in :py:meth:`numpy.linalg.lstsq` for more details."
+    doc_seed = "Random seed for parameter initialization of the fitting net"
+
+    return [
+        Argument("numb_fparam", int, optional=True, default=0, doc=doc_numb_fparam),
+        Argument("numb_aparam", int, optional=True, default=0, doc=doc_numb_aparam),
+        Argument(
+            "neuron",
+            list[int],
+            optional=True,
+            default=[120, 120, 120],
+            alias=["n_neuron"],
+            doc=doc_neuron,
+        ),
+        Argument(
+            "activation_function",
+            str,
+            optional=True,
+            default="tanh",
+            doc=doc_activation_function,
+        ),
+        Argument("precision", str, optional=True, default="default", doc=doc_precision),
+        Argument("resnet_dt", bool, optional=True, default=True, doc=doc_resnet_dt),
+        Argument(
+            "trainable",
+            [list[bool], bool],
+            optional=True,
+            default=True,
+            doc=doc_trainable,
+        ),
+        Argument(
+            "rcond", [float, type(None)], optional=True, default=None, doc=doc_rcond
+        ),
+        Argument("seed", [int, None], optional=True, doc=doc_seed),
+    ]
 
 @fitting_args_plugin.register("dos", doc=doc_dos)
 def fitting_dos() -> list[Argument]:
@@ -3444,6 +3490,27 @@ def loss_ener() -> list[Argument]:
             optional=True,
             default=False,
             doc=doc_intensive_ener_virial,
+        ),
+    ]
+
+@loss_args_plugin.register("grid_density")
+def loss_grid_density():
+    doc_start_pref_d = start_pref("density", abbr="d")
+    doc_limit_pref_d = limit_pref("density")
+    return [
+        Argument(
+            "start_pref_d",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc=doc_start_pref_d,
+        ),
+        Argument(
+            "limit_pref_d",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc=doc_limit_pref_d,
         ),
     ]
 

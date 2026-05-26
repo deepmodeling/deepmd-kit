@@ -200,8 +200,15 @@ def _compute_model_predict(
                 **kwargs,
             )
 
+        grid_kwargs = {}
+        if "grid" in system:
+            grid_kwargs["grid"] = system["grid"]
         sample_predict = model_forward_auto_batch_size(
+<<<<<<< HEAD
             coord, atype, box, fparam=fparam, aparam=aparam, charge_spin=charge_spin
+=======
+            coord, atype, box, fparam=fparam, aparam=aparam, **grid_kwargs
+>>>>>>> 6c86368f (feat: add charge density prediction support)
         )
         for kk in keys:
             model_predict[kk].append(

@@ -447,11 +447,19 @@ class DescrptBlockRepflows(DescriptorBlock):
         comm_dict: dict[str, torch.Tensor] | None = None,
     ) -> tuple[
         torch.Tensor,
+<<<<<<< HEAD
         torch.Tensor | None,
         torch.Tensor | None,
         torch.Tensor | None,
         torch.Tensor | None,
     ]:
+=======
+        Optional[torch.Tensor],
+        Optional[torch.Tensor],
+        Optional[torch.Tensor],
+        Optional[torch.Tensor],
+    ]:  
+>>>>>>> 6c86368f (feat: add charge density prediction support)
         parallel_mode = comm_dict is not None
         if not parallel_mode:
             assert mapping is not None
