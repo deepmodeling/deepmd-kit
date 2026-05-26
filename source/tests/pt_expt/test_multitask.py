@@ -1487,32 +1487,30 @@ class TestMultiTaskCompile(unittest.TestCase):
         config_uc = update_deepmd_input(config_uc, warning=False)
         config_uc = normalize(config_uc, multi_task=True)
 
-        # Build compiled trainer
-        config_c = _make_multitask_config(
-            _descriptor_se_e2_a, share_fitting=share_fitting
-        )
-        config_c["training"]["enable_compile"] = True
-        config_c["model"], shared_links_c = preprocess_shared_params(config_c["model"])
-        config_c = update_deepmd_input(config_c, warning=False)
-        config_c = normalize(config_c, multi_task=True)
-
         tmpdir = tempfile.mkdtemp(prefix="pt_expt_mt_compile_corr_")
         old_cwd = os.getcwd()
         os.chdir(tmpdir)
         try:
             trainer_uc = get_trainer(config_uc, shared_links=shared_links_uc)
-            trainer_c = get_trainer(config_c, shared_links=shared_links_c)
-            for mk in ("model_1", "model_2"):
-                self.assertIsInstance(trainer_c.wrapper.model[mk], _CompiledModel)
-
-            # Copy uncompiled weights → compiled (same starting point)
-            for mk in ("model_1", "model_2"):
-                trainer_c.wrapper.model[mk].original_model.load_state_dict(
-                    trainer_uc.wrapper.model[mk].state_dict()
-                )
 
             # For each branch, run one forward+backward and compare
             for task_key in ("model_1", "model_2"):
+                # Build compiled trainer per task to isolate per-task graph/state.
+                config_c = _make_multitask_config(
+                    _descriptor_se_e2_a, share_fitting=share_fitting
+                )
+                config_c["training"]["enable_compile"] = True
+                config_c["model"], shared_links_c = preprocess_shared_params(
+                    config_c["model"]
+                )
+                config_c = update_deepmd_input(config_c, warning=False)
+                config_c = normalize(config_c, multi_task=True)
+                trainer_c = get_trainer(config_c, shared_links=shared_links_c)
+                self.assertIsInstance(trainer_c.wrapper.model[task_key], _CompiledModel)
+                trainer_c.wrapper.model[task_key].original_model.load_state_dict(
+                    trainer_uc.wrapper.model[task_key].state_dict()
+                )
+
                 trainer_uc.optimizer.zero_grad(set_to_none=True)
                 trainer_c.optimizer.zero_grad(set_to_none=True)
 
