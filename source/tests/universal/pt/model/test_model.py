@@ -53,22 +53,22 @@ from ...common.cases.model.model import (
 )
 from ...dpmodel.descriptor.test_descriptor import (
     DescriptorParamDPA1,
-    DescriptorParamDPA1List,
+    DescriptorParamDPA1EnergyModelList,
     DescriptorParamDPA2,
-    DescriptorParamDPA2List,
+    DescriptorParamDPA2EnergyModelList,
     DescriptorParamDPA3,
-    DescriptorParamDPA3List,
+    DescriptorParamDPA3EnergyModelList,
     DescriptorParamHybrid,
     DescriptorParamHybridMixed,
     DescriptorParamHybridMixedTTebd,
     DescriptorParamSeA,
-    DescriptorParamSeAList,
+    DescriptorParamSeAEnergyModelList,
     DescriptorParamSeR,
-    DescriptorParamSeRList,
+    DescriptorParamSeREnergyModelList,
     DescriptorParamSeT,
-    DescriptorParamSeTList,
+    DescriptorParamSeTEnergyModelList,
     DescriptorParamSeTTebd,
-    DescriptorParamSeTTebdList,
+    DescriptorParamSeTTebdEnergyModelList,
 )
 from ...dpmodel.fitting.test_fitting import (
     FittingParamDipole,
@@ -108,36 +108,95 @@ defalut_fit_param = [
     FittingParamProperty,
 ]
 
+ENERGY_DESCRIPTOR_PARAMS = (
+    *[(param_func, DescrptSeA) for param_func in DescriptorParamSeAEnergyModelList],
+    *[(param_func, DescrptSeR) for param_func in DescriptorParamSeREnergyModelList],
+    *[(param_func, DescrptSeT) for param_func in DescriptorParamSeTEnergyModelList],
+    *[
+        (param_func, DescrptSeTTebd)
+        for param_func in DescriptorParamSeTTebdEnergyModelList
+    ],
+    *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1EnergyModelList],
+    *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2EnergyModelList],
+    *[(param_func, DescrptDPA3) for param_func in DescriptorParamDPA3EnergyModelList],
+    (DescriptorParamHybrid, DescrptHybrid),
+    (DescriptorParamHybridMixed, DescrptHybrid),
+    (DescriptorParamHybridMixedTTebd, DescrptHybrid),
+)
+
+DEFAULT_DESCRIPTOR_PARAMS = (
+    (DescriptorParamSeA, DescrptSeA),
+    (DescriptorParamSeR, DescrptSeR),
+    (DescriptorParamSeT, DescrptSeT),
+    (DescriptorParamSeTTebd, DescrptSeTTebd),
+    (DescriptorParamDPA1, DescrptDPA1),
+    (DescriptorParamDPA2, DescrptDPA2),
+    (DescriptorParamDPA3, DescrptDPA3),
+)
+
+DEFAULT_DESCRIPTOR_PARAMS_WITH_HYBRID = (
+    *DEFAULT_DESCRIPTOR_PARAMS,
+    (DescriptorParamHybrid, DescrptHybrid),
+    (DescriptorParamHybridMixed, DescrptHybrid),
+    (DescriptorParamHybridMixedTTebd, DescrptHybrid),
+)
+
+DEFAULT_DPA_DESCRIPTOR_PARAMS = (
+    (DescriptorParamDPA1, DescrptDPA1),
+    (DescriptorParamDPA2, DescrptDPA2),
+    (DescriptorParamDPA3, DescrptDPA3),
+)
+
+DEFAULT_DPA_DESCRIPTOR_PARAMS_WITH_HYBRID = (
+    *DEFAULT_DPA_DESCRIPTOR_PARAMS,
+    (DescriptorParamHybridMixed, DescrptHybrid),
+    (DescriptorParamHybridMixedTTebd, DescrptHybrid),
+)
+
+DEFAULT_DPA12_DESCRIPTOR_PARAMS = (
+    (DescriptorParamDPA1, DescrptDPA1),
+    (DescriptorParamDPA2, DescrptDPA2),
+)
+
+DEFAULT_DPA12_DESCRIPTOR_PARAMS_WITH_HYBRID = (
+    *DEFAULT_DPA12_DESCRIPTOR_PARAMS,
+    (DescriptorParamHybridMixed, DescrptHybrid),
+    (DescriptorParamHybridMixedTTebd, DescrptHybrid),
+)
+
+DEFAULT_VEC_DESCRIPTOR_PARAMS = (
+    (DescriptorParamSeA, DescrptSeA),
+    (DescriptorParamDPA1, DescrptDPA1),
+    (DescriptorParamDPA2, DescrptDPA2),
+    (DescriptorParamDPA3, DescrptDPA3),
+)
+
+DEFAULT_VEC_DESCRIPTOR_PARAMS_WITH_HYBRID = (
+    *DEFAULT_VEC_DESCRIPTOR_PARAMS,
+    (DescriptorParamHybrid, DescrptHybrid),
+    (DescriptorParamHybridMixed, DescrptHybrid),
+)
+
+DEFAULT_SPIN_DESCRIPTOR_PARAMS = (
+    (DescriptorParamSeA, DescrptSeA),
+    (DescriptorParamSeR, DescrptSeR),
+    (DescriptorParamSeT, DescrptSeT),
+    (DescriptorParamSeTTebd, DescrptSeTTebd),
+    (DescriptorParamDPA1, DescrptDPA1),
+    (DescriptorParamDPA2, DescrptDPA2),
+    # unsupported for SpinModel to hybrid both mixed_types and no-mixed_types descriptor
+    (DescriptorParamHybridMixed, DescrptHybrid),
+    (DescriptorParamHybridMixedTTebd, DescrptHybrid),
+)
+
 
 @parameterized(
     des_parameterized=(
-        (
-            *[(param_func, DescrptSeA) for param_func in DescriptorParamSeAList],
-            *[(param_func, DescrptSeR) for param_func in DescriptorParamSeRList],
-            *[(param_func, DescrptSeT) for param_func in DescriptorParamSeTList],
-            *[
-                (param_func, DescrptSeTTebd)
-                for param_func in DescriptorParamSeTTebdList
-            ],
-            *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
-            *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
-            *[(param_func, DescrptDPA3) for param_func in DescriptorParamDPA3List],
-            (DescriptorParamHybrid, DescrptHybrid),
-            (DescriptorParamHybridMixed, DescrptHybrid),
-            (DescriptorParamHybridMixedTTebd, DescrptHybrid),
-        ),  # descrpt_class_param & class
+        ENERGY_DESCRIPTOR_PARAMS,  # descrpt_class_param & class
         ((FittingParamEnergy, EnergyFittingNet),),  # fitting_class_param & class
     ),
     fit_parameterized=(
-        (
-            (DescriptorParamSeA, DescrptSeA),
-            (DescriptorParamSeR, DescrptSeR),
-            (DescriptorParamSeT, DescrptSeT),
-            (DescriptorParamSeTTebd, DescrptSeTTebd),
-            (DescriptorParamDPA1, DescrptDPA1),
-            (DescriptorParamDPA2, DescrptDPA2),
-            (DescriptorParamDPA3, DescrptDPA3),
-        ),  # descrpt_class_param & class
+        DEFAULT_DESCRIPTOR_PARAMS,  # descrpt_class_param & class
         (
             *[(param_func, EnergyFittingNet) for param_func in FittingParamEnergyList],
         ),  # fitting_class_param & class
@@ -218,33 +277,11 @@ class TestEnergyModelPT(unittest.TestCase, EnerModelTest, PTTestCase):
 
 @parameterized(
     des_parameterized=(
-        (
-            *[(param_func, DescrptSeA) for param_func in DescriptorParamSeAList],
-            *[(param_func, DescrptSeR) for param_func in DescriptorParamSeRList],
-            *[(param_func, DescrptSeT) for param_func in DescriptorParamSeTList],
-            *[
-                (param_func, DescrptSeTTebd)
-                for param_func in DescriptorParamSeTTebdList
-            ],
-            *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
-            *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
-            *[(param_func, DescrptDPA3) for param_func in DescriptorParamDPA3List],
-            (DescriptorParamHybrid, DescrptHybrid),
-            (DescriptorParamHybridMixed, DescrptHybrid),
-            (DescriptorParamHybridMixedTTebd, DescrptHybrid),
-        ),  # descrpt_class_param & class
+        DEFAULT_DESCRIPTOR_PARAMS_WITH_HYBRID,  # descrpt_class_param & class
         ((FittingParamDos, DOSFittingNet),),  # fitting_class_param & class
     ),
     fit_parameterized=(
-        (
-            (DescriptorParamSeA, DescrptSeA),
-            (DescriptorParamSeR, DescrptSeR),
-            (DescriptorParamSeT, DescrptSeT),
-            (DescriptorParamSeTTebd, DescrptSeTTebd),
-            (DescriptorParamDPA1, DescrptDPA1),
-            (DescriptorParamDPA2, DescrptDPA2),
-            (DescriptorParamDPA3, DescrptDPA3),
-        ),  # descrpt_class_param & class
+        DEFAULT_DESCRIPTOR_PARAMS,  # descrpt_class_param & class
         (
             *[(param_func, DOSFittingNet) for param_func in FittingParamDosList],
         ),  # fitting_class_param & class
@@ -326,23 +363,11 @@ class TestDosModelPT(unittest.TestCase, DosModelTest, PTTestCase):
 
 @parameterized(
     des_parameterized=(
-        (
-            *[(param_func, DescrptSeA) for param_func in DescriptorParamSeAList],
-            *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
-            *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
-            *[(param_func, DescrptDPA3) for param_func in DescriptorParamDPA3List],
-            (DescriptorParamHybrid, DescrptHybrid),
-            (DescriptorParamHybridMixed, DescrptHybrid),
-        ),  # descrpt_class_param & class
+        DEFAULT_VEC_DESCRIPTOR_PARAMS_WITH_HYBRID,  # descrpt_class_param & class
         ((FittingParamDipole, DipoleFittingNet),),  # fitting_class_param & class
     ),
     fit_parameterized=(
-        (
-            (DescriptorParamSeA, DescrptSeA),
-            (DescriptorParamDPA1, DescrptDPA1),
-            (DescriptorParamDPA2, DescrptDPA2),
-            (DescriptorParamDPA3, DescrptDPA3),
-        ),  # descrpt_class_param & class
+        DEFAULT_VEC_DESCRIPTOR_PARAMS,  # descrpt_class_param & class
         (
             *[(param_func, DipoleFittingNet) for param_func in FittingParamDipoleList],
         ),  # fitting_class_param & class
@@ -425,23 +450,11 @@ class TestDipoleModelPT(unittest.TestCase, DipoleModelTest, PTTestCase):
 
 @parameterized(
     des_parameterized=(
-        (
-            *[(param_func, DescrptSeA) for param_func in DescriptorParamSeAList],
-            *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
-            *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
-            *[(param_func, DescrptDPA3) for param_func in DescriptorParamDPA3List],
-            (DescriptorParamHybrid, DescrptHybrid),
-            (DescriptorParamHybridMixed, DescrptHybrid),
-        ),  # descrpt_class_param & class
+        DEFAULT_VEC_DESCRIPTOR_PARAMS_WITH_HYBRID,  # descrpt_class_param & class
         ((FittingParamPolar, PolarFittingNet),),  # fitting_class_param & class
     ),
     fit_parameterized=(
-        (
-            (DescriptorParamSeA, DescrptSeA),
-            (DescriptorParamDPA1, DescrptDPA1),
-            (DescriptorParamDPA2, DescrptDPA2),
-            (DescriptorParamDPA3, DescrptDPA3),
-        ),  # descrpt_class_param & class
+        DEFAULT_VEC_DESCRIPTOR_PARAMS,  # descrpt_class_param & class
         (
             *[(param_func, PolarFittingNet) for param_func in FittingParamPolarList],
         ),  # fitting_class_param & class
@@ -520,19 +533,11 @@ class TestPolarModelPT(unittest.TestCase, PolarModelTest, PTTestCase):
 
 @parameterized(
     des_parameterized=(
-        (
-            *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
-            *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
-            (DescriptorParamHybridMixed, DescrptHybrid),
-            (DescriptorParamHybridMixedTTebd, DescrptHybrid),
-        ),  # descrpt_class_param & class
+        DEFAULT_DPA12_DESCRIPTOR_PARAMS_WITH_HYBRID,  # descrpt_class_param & class
         ((FittingParamEnergy, EnergyFittingNet),),  # fitting_class_param & class
     ),
     fit_parameterized=(
-        (
-            (DescriptorParamDPA1, DescrptDPA1),
-            (DescriptorParamDPA2, DescrptDPA2),
-        ),  # descrpt_class_param & class
+        DEFAULT_DPA12_DESCRIPTOR_PARAMS,  # descrpt_class_param & class
         (
             *[(param_func, EnergyFittingNet) for param_func in FittingParamEnergyList],
         ),  # fitting_class_param & class
@@ -623,32 +628,11 @@ class TestZBLModelPT(unittest.TestCase, ZBLModelTest, PTTestCase):
 
 @parameterized(
     des_parameterized=(
-        (
-            *[(param_func, DescrptSeA) for param_func in DescriptorParamSeAList],
-            *[(param_func, DescrptSeR) for param_func in DescriptorParamSeRList],
-            *[(param_func, DescrptSeT) for param_func in DescriptorParamSeTList],
-            *[
-                (param_func, DescrptSeTTebd)
-                for param_func in DescriptorParamSeTTebdList
-            ],
-            *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
-            *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
-            # (DescriptorParamHybrid, DescrptHybrid),
-            # unsupported for SpinModel to hybrid both mixed_types and no-mixed_types descriptor
-            (DescriptorParamHybridMixed, DescrptHybrid),
-            (DescriptorParamHybridMixedTTebd, DescrptHybrid),
-        ),  # descrpt_class_param & class
+        DEFAULT_SPIN_DESCRIPTOR_PARAMS,  # descrpt_class_param & class
         ((FittingParamEnergy, EnergyFittingNet),),  # fitting_class_param & class
     ),
     fit_parameterized=(
-        (
-            (DescriptorParamSeA, DescrptSeA),
-            (DescriptorParamSeR, DescrptSeR),
-            (DescriptorParamSeT, DescrptSeT),
-            (DescriptorParamSeTTebd, DescrptSeTTebd),
-            (DescriptorParamDPA1, DescrptDPA1),
-            (DescriptorParamDPA2, DescrptDPA2),
-        ),  # descrpt_class_param & class
+        DEFAULT_SPIN_DESCRIPTOR_PARAMS[:6],  # descrpt_class_param & class
         (
             *[(param_func, EnergyFittingNet) for param_func in FittingParamEnergyList],
         ),  # fitting_class_param & class
@@ -754,23 +738,11 @@ class TestSpinEnergyModelDP(unittest.TestCase, SpinEnerModelTest, PTTestCase):
 
 @parameterized(
     des_parameterized=(
-        (
-            *[(param_func, DescrptSeA) for param_func in DescriptorParamSeAList],
-            *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
-            *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
-            *[(param_func, DescrptDPA3) for param_func in DescriptorParamDPA3List],
-            (DescriptorParamHybrid, DescrptHybrid),
-            (DescriptorParamHybridMixed, DescrptHybrid),
-        ),  # descrpt_class_param & class
+        DEFAULT_VEC_DESCRIPTOR_PARAMS_WITH_HYBRID,  # descrpt_class_param & class
         ((FittingParamProperty, PropertyFittingNet),),  # fitting_class_param & class
     ),
     fit_parameterized=(
-        (
-            (DescriptorParamSeA, DescrptSeA),
-            (DescriptorParamDPA1, DescrptDPA1),
-            (DescriptorParamDPA2, DescrptDPA2),
-            (DescriptorParamDPA3, DescrptDPA3),
-        ),  # descrpt_class_param & class
+        DEFAULT_VEC_DESCRIPTOR_PARAMS,  # descrpt_class_param & class
         (
             *[
                 (param_func, PropertyFittingNet)
@@ -852,21 +824,11 @@ class TestPropertyModelPT(unittest.TestCase, PropertyModelTest, PTTestCase):
 
 @parameterized(
     des_parameterized=(
-        (
-            *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
-            *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
-            *[(param_func, DescrptDPA3) for param_func in DescriptorParamDPA3List],
-            (DescriptorParamHybridMixed, DescrptHybrid),
-            (DescriptorParamHybridMixedTTebd, DescrptHybrid),
-        ),  # descrpt_class_param & class
+        DEFAULT_DPA_DESCRIPTOR_PARAMS_WITH_HYBRID,  # descrpt_class_param & class
         ((FittingParamEnergy, EnergyFittingNet),),  # fitting_class_param & class
     ),
     fit_parameterized=(
-        (
-            (DescriptorParamDPA1, DescrptDPA1),
-            (DescriptorParamDPA2, DescrptDPA2),
-            (DescriptorParamDPA3, DescrptDPA3),
-        ),  # descrpt_class_param & class
+        DEFAULT_DPA_DESCRIPTOR_PARAMS,  # descrpt_class_param & class
         (
             *[(param_func, EnergyFittingNet) for param_func in FittingParamEnergyList],
         ),  # fitting_class_param & class
