@@ -378,7 +378,16 @@ def _trace_and_compile(
         tracing_mode="symbolic",
         _allow_non_fake_inputs=True,
         decomposition_table=decomp_table,
-    )(ext_coord, ext_atype, nlist, mapping, fparam, aparam, charge_spin, *task_buf_vals_trace)
+    )(
+        ext_coord,
+        ext_atype,
+        nlist,
+        mapping,
+        fparam,
+        aparam,
+        charge_spin,
+        *task_buf_vals_trace,
+    )
 
     # make_fx inserts aten.detach.default for saved tensors used in the
     # decomposed autograd.grad backward ops.  These detach nodes break
@@ -484,7 +493,13 @@ class _CompiledModel(torch.nn.Module):
             getattr(self, f"_task_{name}") for name in self._task_buf_order
         )
         result = self.compiled_forward_lower(
-            ext_coord, ext_atype, nlist, mapping, fparam, aparam, charge_spin,
+            ext_coord,
+            ext_atype,
+            nlist,
+            mapping,
+            fparam,
+            aparam,
+            charge_spin,
             *task_buf_vals,
         )
 
@@ -1312,6 +1327,7 @@ class Trainer:
                 self.wrapper.eval()
 
                 if self.rank == 0:
+
                     def _to_float(v: Any) -> float:
                         return v.detach().item() if torch.is_tensor(v) else float(v)
 
