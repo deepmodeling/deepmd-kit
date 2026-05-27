@@ -391,31 +391,34 @@ class DPTrainer:
                     )
                     start_time = time.time()
                 if (step + 1) % self.save_freq == 0:
-                    # save model
-                    _, state = nnx.split(model)
-                    ckpt_path = Path(f"{self.save_ckpt}-{step + 1}.jax")
-                    if ckpt_path.is_dir():
-                        # remove old checkpoint if it exists
-                        shutil.rmtree(ckpt_path)
-                    model_def_script_cpy = self.model_def_script.copy()
-                    model_def_script_cpy["current_step"] = step + 1
-                    with ocp.Checkpointer(
-                        ocp.CompositeCheckpointHandler("state", "model_def_script")
-                    ) as checkpointer:
-                        checkpointer.save(
-                            ckpt_path.absolute(),
-                            ocp.args.Composite(
-                                state=ocp.args.StandardSave(state.to_pure_dict()),
-                                model_def_script=ocp.args.JsonSave(
-                                    model_def_script_cpy
-                                ),
-                            ),
-                        )
-                    log.info(f"Trained model has been saved to: {ckpt_path!s}")
-                    _link_checkpoint(ckpt_path, Path(f"{self.save_ckpt}.jax"))
-                    self._cleanup_old_checkpoints()
-                    with open("checkpoint", "w") as fp:
-                        fp.write(f"{self.save_ckpt}.jax")
+                    self._save_checkpoint(model, step + 1)
+        if self.num_steps > self.start_step and self.num_steps % self.save_freq != 0:
+            self._save_checkpoint(model, self.num_steps)
+
+    def _save_checkpoint(self, model: BaseModel, step: int) -> None:
+        """Save a JAX checkpoint and update the stable checkpoint pointer."""
+        _, state = nnx.split(model)
+        ckpt_path = Path(f"{self.save_ckpt}-{step}.jax")
+        if ckpt_path.is_dir():
+            # remove old checkpoint if it exists
+            shutil.rmtree(ckpt_path)
+        model_def_script_cpy = self.model_def_script.copy()
+        model_def_script_cpy["current_step"] = step
+        with ocp.Checkpointer(
+            ocp.CompositeCheckpointHandler("state", "model_def_script")
+        ) as checkpointer:
+            checkpointer.save(
+                ckpt_path.absolute(),
+                ocp.args.Composite(
+                    state=ocp.args.StandardSave(state.to_pure_dict()),
+                    model_def_script=ocp.args.JsonSave(model_def_script_cpy),
+                ),
+            )
+        log.info(f"Trained model has been saved to: {ckpt_path!s}")
+        _link_checkpoint(ckpt_path, Path(f"{self.save_ckpt}.jax"))
+        self._cleanup_old_checkpoints()
+        with open("checkpoint", "w") as fp:
+            fp.write(f"{self.save_ckpt}.jax")
 
     def _cleanup_old_checkpoints(self) -> None:
         """Remove old checkpoint directories beyond the retention limit."""
@@ -537,7 +540,7 @@ def prepare_input(
             bb.reshape(nframes, 3, 3),
         )
     else:
-        coord_normalized = cc.copy()
+        coord_normalized = cc.reshape(nframes, nloc, 3).copy()
     extended_coord, extended_atype, mapping = extend_coord_with_ghosts(
         coord_normalized, atype, bb, rcut
     )
