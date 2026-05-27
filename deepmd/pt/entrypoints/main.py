@@ -422,9 +422,11 @@ def train(
     # Initialize DDP
     if os.environ.get("LOCAL_RANK") is not None:
         import datetime
-        timeout = datetime.timedelta(seconds=18000) # set a longer timeout for for large datasets or slow file systems
+
+        timeout = datetime.timedelta(
+            seconds=18000
+        )  # set a longer timeout for for large datasets or slow file systems
         dist.init_process_group(backend="cuda:nccl,cpu:gloo", timeout=timeout)
-    
 
     trainer = get_trainer(
         config,
@@ -610,6 +612,7 @@ def change_bias(
             {},
         )
     log.info(f"Saved model to {output_path}")
+
 
 @record
 def main(args: list[str] | argparse.Namespace | None = None) -> None:

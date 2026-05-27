@@ -80,7 +80,7 @@
     "stat_file": "./qm9_charge_density.hdf5",
     "training_data": {
       "systems": [
-       "../dataset/qm9/C7H15NO_train"
+        "../dataset/qm9/C7H15NO_train"
       ],
       "batch_size": "auto:128",
       "_comment": "that's all"

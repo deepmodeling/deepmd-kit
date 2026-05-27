@@ -107,7 +107,7 @@ class GridDensityLoss(TaskLoss):
             DataRequirementItem(
                 "grid",
                 ndof=3,
-                atomic=True, # the grid is defined for each atom, so it is atomic
+                atomic=True,  # the grid is defined for each atom, so it is atomic
                 must=True,
                 high_prec=True,
             )

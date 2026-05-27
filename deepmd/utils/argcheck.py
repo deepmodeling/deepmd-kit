@@ -1882,6 +1882,7 @@ def fitting_ener() -> list[Argument]:
         ),
     ]
 
+
 @fitting_args_plugin.register("density")
 def fitting_density():
     doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
@@ -1928,6 +1929,7 @@ def fitting_density():
         ),
         Argument("seed", [int, None], optional=True, doc=doc_seed),
     ]
+
 
 @fitting_args_plugin.register("dos", doc=doc_dos)
 def fitting_dos() -> list[Argument]:
@@ -3493,6 +3495,7 @@ def loss_ener() -> list[Argument]:
         ),
     ]
 
+
 @loss_args_plugin.register("grid_density")
 def loss_grid_density():
     doc_start_pref_d = start_pref("density", abbr="d")
@@ -3513,6 +3516,7 @@ def loss_grid_density():
             doc=doc_limit_pref_d,
         ),
     ]
+
 
 @loss_args_plugin.register("grid_density")
 def loss_grid_density():

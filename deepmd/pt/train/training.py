@@ -334,6 +334,7 @@ class Trainer:
                 )
                 _data_iter = cycle_iterator(_dataloader)
                 return _dataloader, _data_iter
+
             if isinstance(_training_data, LmdbDataset):
                 training_dataloader, training_data_iter = get_dataloader_and_iter_lmdb(
                     _training_data
@@ -2217,7 +2218,7 @@ def get_loss(
             tensor_name = "polar"
         loss_params["tensor_name"] = tensor_name
         return TensorLoss(**loss_params)
-    elif loss_type == 'grid_density':
+    elif loss_type == "grid_density":
         loss_params["starter_learning_rate"] = start_lr
         return GridDensityLoss(**loss_params)
     elif loss_type == "property":

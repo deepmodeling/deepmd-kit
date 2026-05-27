@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Evaluate a charge-density model on validation/test datasets.
 
 Usage
@@ -12,14 +13,20 @@ import math
 import os
 import random
 import sys
-from typing import Optional
-
-import numpy as np
-from tqdm import tqdm
 
 import dpdata
-from deepmd.infer import DeepPot
-from dpdata.data_type import Axis, DataType
+import numpy as np
+from dpdata.data_type import (
+    Axis,
+    DataType,
+)
+from tqdm import (
+    tqdm,
+)
+
+from deepmd.infer import (
+    DeepPot,
+)
 
 # Register custom dpdata types for grid density
 _GRID_DATA_TYPE = DataType(
@@ -43,7 +50,9 @@ def parse_args() -> argparse.Namespace:
         description="Evaluate charge-density DeepPot model."
     )
     parser.add_argument("model", type=str, help="Path to the model file (.pt or .pth).")
-    parser.add_argument("data_dir", type=str, help="Root directory of deepmd/npy datasets.")
+    parser.add_argument(
+        "data_dir", type=str, help="Root directory of deepmd/npy datasets."
+    )
     parser.add_argument(
         "--ratio",
         type=float,
@@ -85,7 +94,9 @@ class TeeLogger:
         self.log.close()
 
 
-def evaluate(model_path: str, data_dir: str, ratio: float) -> tuple[np.ndarray, np.ndarray]:
+def evaluate(
+    model_path: str, data_dir: str, ratio: float
+) -> tuple[np.ndarray, np.ndarray]:
     """Run inference and return (predictions, labels)."""
     dm = DeepPot(model_path)
     type_map = dm.get_type_map()
@@ -126,7 +137,7 @@ def evaluate(model_path: str, data_dir: str, ratio: float) -> tuple[np.ndarray, 
 def print_summary(pred: np.ndarray, label: np.ndarray) -> None:
     diff = pred - label
     mae = np.mean(np.abs(diff))
-    rmse = np.sqrt(np.mean(diff ** 2))
+    rmse = np.sqrt(np.mean(diff**2))
     label_mean_abs = np.mean(np.abs(label))
     label_std = np.std(label)
 

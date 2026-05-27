@@ -4,7 +4,7 @@ This example demonstrates how to train and evaluate a **charge density** model u
 
 The model predicts the charge density on a set of grid points (`grid`) for a given atomic configuration (`coord`, `atype`, `box`).
 
----
+______________________________________________________________________
 
 ## Directory Structure
 
@@ -21,24 +21,24 @@ The model predicts the charge density on a set of grid points (`grid`) for a giv
 └── dptest_density_script.py  # Evaluation script for density models
 ```
 
----
+______________________________________________________________________
 
 ## Data Format
 
 The training/validation data follows the standard **`deepmd/npy`** format, with two additional files in each `set.000/` directory:
 
-| File | Shape | Description |
-|------|-------|-------------|
-| `coord.npy` | `[nframes, natoms * 3]` | Atomic coordinates |
-| `box.npy` | `[nframes, 9]` | Simulation cell vectors |
-| `type.raw` | `[natoms]` | Atom type indices |
-| `type_map.raw` | `[ntypes]` | Type map (e.g., `C H N O ...`) |
-| **`grid.npy`** | `[nframes, ngrid, 3]` | **Grid point coordinates** |
-| **`density.npy`** | `[nframes, ngrid, 1]` | **Charge density labels on grids** |
+| File              | Shape                   | Description                        |
+| ----------------- | ----------------------- | ---------------------------------- |
+| `coord.npy`       | `[nframes, natoms * 3]` | Atomic coordinates                 |
+| `box.npy`         | `[nframes, 9]`          | Simulation cell vectors            |
+| `type.raw`        | `[natoms]`              | Atom type indices                  |
+| `type_map.raw`    | `[ntypes]`              | Type map (e.g., `C H N O ...`)     |
+| **`grid.npy`**    | `[nframes, ngrid, 3]`   | **Grid point coordinates**         |
+| **`density.npy`** | `[nframes, ngrid, 1]`   | **Charge density labels on grids** |
 
 > **Note:** `grid.npy` and `density.npy` are required for the density model. The number of grid points (`ngrid`) must match between `grid.npy` and `density.npy`.
 
----
+______________________________________________________________________
 
 ## Training
 
@@ -54,13 +54,28 @@ Key parameters in `input.json`:
 ```json
 {
   "model": {
-    "type_map": ["Li", "Ni", "Co", "Mn", "O", "C", "H", "N", "F", "X"],
+    "type_map": [
+      "Li",
+      "Ni",
+      "Co",
+      "Mn",
+      "O",
+      "C",
+      "H",
+      "N",
+      "F",
+      "X"
+    ],
     "descriptor": {
       "type": "dpa3"
     },
     "fitting_net": {
       "type": "density",
-      "neuron": [240, 240, 240]
+      "neuron": [
+        240,
+        240,
+        240
+      ]
     }
   },
   "loss": {
@@ -70,11 +85,15 @@ Key parameters in `input.json`:
   },
   "training": {
     "training_data": {
-      "systems": ["../dataset/qm9/C7H15NO_train"],
+      "systems": [
+        "../dataset/qm9/C7H15NO_train"
+      ],
       "batch_size": "auto:128"
     },
     "validation_data": {
-      "systems": ["../dataset/qm9/C7H15NO_val"],
+      "systems": [
+        "../dataset/qm9/C7H15NO_val"
+      ],
       "batch_size": 1,
       "numb_btch": 3
     }
@@ -90,6 +109,7 @@ dp --pt train input.json
 ```
 
 The training will output:
+
 - `model.ckpt-*.pt` — Model checkpoints
 - `lcurve.out` — Training/validation loss curves
 - `out.json` — Final training parameters
@@ -116,7 +136,7 @@ dp --pt freeze -c . -o frozen_model
 
 This generates `frozen_model.pth` (PyTorch backend).
 
----
+______________________________________________________________________
 
 ## Testing / Evaluation
 
@@ -136,12 +156,12 @@ python dptest_density_script.py \
 
 Arguments:
 
-| Argument | Description |
-|----------|-------------|
-| `model` | Path to the model file (`.pt` checkpoint or `.pth` frozen model) |
-| `data_dir` | Root directory of deepmd/npy datasets |
-| `--ratio` | Fraction of frames to randomly sample (default: `0.1`) |
-| `--output` | If provided, save screen output to this file |
+| Argument      | Description                                                               |
+| ------------- | ------------------------------------------------------------------------- |
+| `model`       | Path to the model file (`.pt` checkpoint or `.pth` frozen model)          |
+| `data_dir`    | Root directory of deepmd/npy datasets                                     |
+| `--ratio`     | Fraction of frames to randomly sample (default: `0.1`)                    |
+| `--output`    | If provided, save screen output to this file                              |
 | `--pred-file` | File to save paired `[prediction, label]` array (default: `result.d.out`) |
 
 ### Evaluate the Full QM9 Dataset

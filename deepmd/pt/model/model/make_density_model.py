@@ -1,9 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Optional,
-    Tuple,
-    Type,
-)
 
 import torch
 
@@ -42,7 +37,7 @@ from deepmd.utils.path import (
 )
 
 
-def make_density_model(T_AtomicModel: Type[BaseAtomicModel]):
+def make_density_model(T_AtomicModel: type[BaseAtomicModel]):
     """Make a density model as a derived class of an atomic model.
 
     The model provide two interfaces.
@@ -70,7 +65,7 @@ def make_density_model(T_AtomicModel: Type[BaseAtomicModel]):
             self,
             *args,
             # underscore to prevent conflict with normal inputs
-            atomic_model_: Optional[T_AtomicModel] = None,
+            atomic_model_: T_AtomicModel | None = None,
             **kwargs,
         ):
             super().__init__(*args, **kwargs)
@@ -127,11 +122,11 @@ def make_density_model(T_AtomicModel: Type[BaseAtomicModel]):
             coord: torch.Tensor,
             atype: torch.Tensor,
             grid: torch.Tensor,
-            box: Optional[torch.Tensor] = None,
-            fparam: Optional[torch.Tensor] = None,
-            aparam: Optional[torch.Tensor] = None,
+            box: torch.Tensor | None = None,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
             do_atomic_virial: bool = False,
-            charge_spin: Optional[torch.Tensor] = None,
+            charge_spin: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
             """Return model prediction.
 
@@ -180,7 +175,9 @@ def make_density_model(T_AtomicModel: Type[BaseAtomicModel]):
                 mixed_types=self.mixed_types(),
                 box=bb,
             )
-            grid_type = torch.zeros(gg.shape[0], gg.shape[1], device=gg.device, dtype=atype.dtype)
+            grid_type = torch.zeros(
+                gg.shape[0], gg.shape[1], device=gg.device, dtype=atype.dtype
+            )
             grid_nlist = build_directional_neighbor_list(
                 gg,
                 grid_type,
@@ -252,12 +249,12 @@ def make_density_model(T_AtomicModel: Type[BaseAtomicModel]):
             grid,
             grid_type,
             grid_nlist,
-            mapping: Optional[torch.Tensor] = None,
-            fparam: Optional[torch.Tensor] = None,
-            aparam: Optional[torch.Tensor] = None,
-            charge_spin: Optional[torch.Tensor] = None,
+            mapping: torch.Tensor | None = None,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
+            charge_spin: torch.Tensor | None = None,
             do_atomic_virial: bool = False,
-            comm_dict: Optional[dict[str, torch.Tensor]] = None,
+            comm_dict: dict[str, torch.Tensor] | None = None,
             extra_nlist_sort: bool = False,
         ):
             """Return model prediction. Lower interface that takes
@@ -328,15 +325,15 @@ def make_density_model(T_AtomicModel: Type[BaseAtomicModel]):
             self,
             coord: torch.Tensor,
             grid: torch.Tensor,
-            box: Optional[torch.Tensor] = None,
-            fparam: Optional[torch.Tensor] = None,
-            aparam: Optional[torch.Tensor] = None,
-        ) -> Tuple[
+            box: torch.Tensor | None = None,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
+        ) -> tuple[
             torch.Tensor,
             torch.Tensor,
-            Optional[torch.Tensor],
-            Optional[torch.Tensor],
-            Optional[torch.Tensor],
+            torch.Tensor | None,
+            torch.Tensor | None,
+            torch.Tensor | None,
             str,
         ]:
             """Cast the input data to global float type."""
@@ -351,7 +348,7 @@ def make_density_model(T_AtomicModel: Type[BaseAtomicModel]):
             #           " does not match"
             #           f" that of the coordinate {input_prec}"
             #         )
-            _lst: list[Optional[torch.Tensor]] = [
+            _lst: list[torch.Tensor | None] = [
                 vv.to(coord.dtype) if vv is not None else None
                 for vv in [grid, box, fparam, aparam]
             ]
@@ -503,7 +500,7 @@ def make_density_model(T_AtomicModel: Type[BaseAtomicModel]):
 
         def do_grad_r(
             self,
-            var_name: Optional[str] = None,
+            var_name: str | None = None,
         ) -> bool:
             """Tell if the output variable `var_name` is r_differentiable.
             if var_name is None, returns if any of the variable is r_differentiable.
@@ -512,7 +509,7 @@ def make_density_model(T_AtomicModel: Type[BaseAtomicModel]):
 
         def do_grad_c(
             self,
-            var_name: Optional[str] = None,
+            var_name: str | None = None,
         ) -> bool:
             """Tell if the output variable `var_name` is c_differentiable.
             if var_name is None, returns if any of the variable is c_differentiable.
@@ -594,7 +591,7 @@ def make_density_model(T_AtomicModel: Type[BaseAtomicModel]):
         def compute_or_load_stat(
             self,
             sampled_func,
-            stat_file_path: Optional[DPPath] = None,
+            stat_file_path: DPPath | None = None,
             preset_observed_type: list[str] | None = None,
         ):
             """Compute or load the statistics."""
@@ -633,9 +630,9 @@ def make_density_model(T_AtomicModel: Type[BaseAtomicModel]):
             self,
             coord,
             atype,
-            box: Optional[torch.Tensor] = None,
-            fparam: Optional[torch.Tensor] = None,
-            aparam: Optional[torch.Tensor] = None,
+            box: torch.Tensor | None = None,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
             do_atomic_virial: bool = False,
         ) -> dict[str, torch.Tensor]:
             # directly call the forward_common method when no specific transform rule

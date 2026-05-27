@@ -1,23 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
-from typing import (
-    Callable,
-    Optional,
-    Union,
-)
+from collections.abc import Callable
 
 import torch
 
-from deepmd.pt.model.descriptor.env_mat import (
-    prod_env_mat,
-)
-from deepmd.pt.model.descriptor.repformer_layer import (
-    RepformerLayer,
-    _make_nei_g1,
-)
-from deepmd.pt.model.network.mlp import (
-    MLPLayer,
-)
 from deepmd.pt.model.task.density import (
     DensityFittingNet,
 )
@@ -66,13 +52,13 @@ class DPDensityAtomicModel(DPAtomicModel):
         extended_coord,
         extended_atype,
         nlist,
-        mapping: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
-        comm_dict: Optional[dict[str, torch.Tensor]] = None,
-        grid: Optional[torch.Tensor] = None,
-        grid_type: Optional[torch.Tensor] = None,
-        grid_nlist: Optional[torch.Tensor] = None,
+        mapping: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
+        grid: torch.Tensor | None = None,
+        grid_type: torch.Tensor | None = None,
+        grid_nlist: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Return atomic prediction.
 
@@ -109,7 +95,9 @@ class DPDensityAtomicModel(DPAtomicModel):
         # nb x (ngrid+nall) x 3
         merged_coord = torch.cat([grid, extended_coord], dim=1)
 
-        grid_atype = torch.ones([nframes, ngrid], device=extended_atype.device, dtype=extended_atype.dtype)*(self.descriptor.ntypes - 1)
+        grid_atype = torch.ones(
+            [nframes, ngrid], device=extended_atype.device, dtype=extended_atype.dtype
+        ) * (self.descriptor.ntypes - 1)
         # nb x (ngrid+nall)
         merged_atype = torch.cat([grid_atype, extended_atype], dim=1)
 
@@ -122,7 +110,13 @@ class DPDensityAtomicModel(DPAtomicModel):
         # nb x (ngrid+nall)
         merged_nlist = torch.cat([shifted_grid_nlist, shifted_nlist], dim=1)
 
-        grid_mapping = torch.cat([torch.ones([nframes, 1], device=mapping.device, dtype=mapping.dtype)* i for i in range(ngrid)], dim=1)
+        grid_mapping = torch.cat(
+            [
+                torch.ones([nframes, 1], device=mapping.device, dtype=mapping.dtype) * i
+                for i in range(ngrid)
+            ],
+            dim=1,
+        )
         # nb x (ngrid+nall)
         merged_mapping = torch.cat([grid_mapping, mapping + ngrid], dim=1)
 
@@ -137,7 +131,9 @@ class DPDensityAtomicModel(DPAtomicModel):
 
         ret = self.fitting_net(
             descriptor[:, :ngrid, :],
-            torch.zeros([nframes, ngrid], device=grid_type.device, dtype=grid_type.dtype),
+            torch.zeros(
+                [nframes, ngrid], device=grid_type.device, dtype=grid_type.dtype
+            ),
             gr=rot_mat,
             g2=g2,
             h2=h2,
@@ -151,13 +147,13 @@ class DPDensityAtomicModel(DPAtomicModel):
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
         nlist: torch.Tensor,
-        mapping: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
-        comm_dict: Optional[dict[str, torch.Tensor]] = None,
-        grid: Optional[torch.Tensor] = None,
-        grid_type: Optional[torch.Tensor] = None,
-        grid_nlist: Optional[torch.Tensor] = None,
+        mapping: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
+        grid: torch.Tensor | None = None,
+        grid_type: torch.Tensor | None = None,
+        grid_nlist: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Common interface for atomic inference.
 
@@ -222,7 +218,9 @@ class DPDensityAtomicModel(DPAtomicModel):
         ext_grid_mask = self.make_atom_mask(grid_type)
 
         # nf x ngrid
-        grid_mask = torch.ones([nframes, ngrid], dtype=torch.int32, device=ext_atom_mask.device)
+        grid_mask = torch.ones(
+            [nframes, ngrid], dtype=torch.int32, device=ext_atom_mask.device
+        )
         if self.atom_excl is not None:
             grid_mask *= self.atom_excl(grid_type)
 
@@ -244,10 +242,10 @@ class DPDensityAtomicModel(DPAtomicModel):
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
         nlist: torch.Tensor,
-        mapping: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
-        comm_dict: Optional[dict[str, torch.Tensor]] = None,
+        mapping: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
     ) -> dict[str, torch.Tensor]:
         return self.forward_common_atomic(
             extended_coord,
@@ -265,10 +263,10 @@ class DPDensityAtomicModel(DPAtomicModel):
         def model_forward(
             coord: torch.Tensor,
             atype: torch.Tensor,
-            box: Optional[torch.Tensor],
-            fparam: Optional[torch.Tensor] = None,
-            aparam: Optional[torch.Tensor] = None,
-            grid: Optional[torch.Tensor] = None,
+            box: torch.Tensor | None,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
+            grid: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
             with torch.no_grad():
                 (
@@ -314,8 +312,8 @@ class DPDensityAtomicModel(DPAtomicModel):
 
     def change_out_bias(
         self,
-        sample_merged: Union[Callable[[], list[dict]], list[dict]],
-        stat_file_path: Optional[DPPath] = None,
+        sample_merged: Callable[[], list[dict]] | list[dict],
+        stat_file_path: DPPath | None = None,
         bias_adjust_mode: str = "change-by-statistic",
     ) -> None:
         """Change the output bias according to the input data and the pretrained model.
@@ -326,15 +324,13 @@ class DPDensityAtomicModel(DPAtomicModel):
         The fitting net will adapt to the target dataset through normal
         gradient descent during training.
         """
-        log.warning(
-            "change_out_bias is not supported for density models; skipping."
-        )
+        log.warning("change_out_bias is not supported for density models; skipping.")
         return
 
     def compute_or_load_out_stat(
         self,
-        merged: Union[Callable[[], list[dict]], list[dict]],
-        stat_file_path: Optional[DPPath] = None,
+        merged: Callable[[], list[dict]] | list[dict],
+        stat_file_path: DPPath | None = None,
     ):
         """
         Compute the output statistics (e.g. energy bias) for the fitting net from packed data.

@@ -702,11 +702,11 @@ class DeepEval(DeepEvalBackend):
     def _eval_model_density(
         self,
         coords: np.ndarray,
-        cells: Optional[np.ndarray],
+        cells: np.ndarray | None,
         atom_types: np.ndarray,
         grid: np.ndarray,
-        fparam: Optional[np.ndarray],
-        aparam: Optional[np.ndarray],
+        fparam: np.ndarray | None,
+        aparam: np.ndarray | None,
         request_defs: list[OutputVariableDef],
     ):
         model = self.dp.to(DEVICE)
@@ -772,7 +772,6 @@ class DeepEval(DeepEvalBackend):
         out = batch_output[pt_name].reshape(density_shape).detach().cpu().numpy()
         results.append(out)
         return tuple(results)
-
 
     def _get_output_shape(
         self, odef: OutputVariableDef, nframes: int, natoms: int

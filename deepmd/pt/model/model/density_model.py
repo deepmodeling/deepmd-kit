@@ -2,9 +2,6 @@
 from copy import (
     deepcopy,
 )
-from typing import (
-    Optional,
-)
 
 import torch
 
@@ -56,11 +53,11 @@ class GridDensityModel(DPModelCommon, DPDensityModel_):
         coord,
         atype,
         grid,
-        box: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        box: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
-        charge_spin: Optional[torch.Tensor] = None,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         model_ret = self.forward_common(
             coord,
@@ -83,11 +80,11 @@ class GridDensityModel(DPModelCommon, DPDensityModel_):
         extended_coord,
         extended_atype,
         nlist,
-        mapping: Optional[torch.Tensor] = None,
-        fparam: Optional[torch.Tensor] = None,
-        aparam: Optional[torch.Tensor] = None,
+        mapping: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
-        comm_dict: Optional[dict[str, torch.Tensor]] = None,
-        charge_spin: Optional[torch.Tensor] = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
+        charge_spin: torch.Tensor | None = None,
     ):
         raise NotImplementedError

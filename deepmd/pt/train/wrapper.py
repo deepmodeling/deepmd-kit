@@ -2,8 +2,6 @@
 import logging
 from typing import (
     Any,
-    Optional,
-    Union,
 )
 
 import torch
@@ -158,12 +156,12 @@ class ModelWrapper(torch.nn.Module):
         self,
         coord: torch.Tensor,
         atype: torch.Tensor,
-        spin: Optional[torch.Tensor] = None,
-        grid: Optional[torch.Tensor] = None,
-        box: Optional[torch.Tensor] = None,
-        cur_lr: Optional[torch.Tensor] = None,
-        label: Optional[torch.Tensor] = None,
-        task_key: Optional[torch.Tensor] = None,
+        spin: torch.Tensor | None = None,
+        grid: torch.Tensor | None = None,
+        box: torch.Tensor | None = None,
+        cur_lr: torch.Tensor | None = None,
+        label: torch.Tensor | None = None,
+        task_key: torch.Tensor | None = None,
         inference_only: bool = False,
         do_atomic_virial: bool = False,
         fparam: torch.Tensor | None = None,
@@ -190,7 +188,7 @@ class ModelWrapper(torch.nn.Module):
             has_spin = has_spin()
         if has_spin:
             input_dict["spin"] = spin
-        
+
         has_grid = getattr(self.model[task_key], "has_grid", False)
         if callable(has_grid):
             has_grid = has_grid()

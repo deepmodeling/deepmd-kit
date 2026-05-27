@@ -50,12 +50,12 @@ __all__ = [
     "BaseAtomicModel",
     "DPAtomicModel",
     "DPDOSAtomicModel",
+    "DPDensityAtomicModel",
     "DPDipoleAtomicModel",
     "DPEnergyAtomicModel",
     "DPPolarAtomicModel",
     "DPPropertyAtomicModel",
     "DPZBLLinearEnergyAtomicModel",
-    "DPDensityAtomicModel",
     "LinearEnergyAtomicModel",
     "PairTabAtomicModel",
 ]

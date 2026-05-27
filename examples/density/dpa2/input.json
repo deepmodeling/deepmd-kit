@@ -83,7 +83,7 @@
     "stop_lr": 3.51e-08,
     "_comment": "that's all"
   },
-   "loss": {
+  "loss": {
     "type": "grid_density",
     "start_pref_d": 1,
     "limit_pref_d": 1,
