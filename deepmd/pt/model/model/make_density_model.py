@@ -4,6 +4,7 @@ from collections.abc import (
 )
 from typing import (
     Any,
+    Optional,
 )
 
 import torch
@@ -410,7 +411,7 @@ def make_density_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
             extended_atype: torch.Tensor,
             nlist: torch.Tensor,
             extra_nlist_sort: bool = False,
-        ):
+        ) -> torch.Tensor:
             """Format the neighbor list.
 
             1. If the number of neighbors in the `nlist` is equal to sum(self.sel),
@@ -461,7 +462,7 @@ def make_density_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
             nlist: torch.Tensor,
             nnei: int,
             extra_nlist_sort: bool = False,
-        ):
+        ) -> torch.Tensor:
             n_nf, n_nloc, n_nnei = nlist.shape
             # nf x nall x 3
             extended_coord = extended_coord.view([n_nf, -1, 3])
@@ -523,7 +524,9 @@ def make_density_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
             return self.atomic_model.do_grad_c(var_name)
 
         def change_type_map(
-            self, type_map: list[str], model_with_new_type_stat=None
+            self,
+            type_map: list[str],
+            model_with_new_type_stat: Optional["CM"] = None,
         ) -> None:
             """Change the type related params to new ones, according to `type_map` and the original one in the model.
             If there are new types in `type_map`, statistics will be updated accordingly to `model_with_new_type_stat` for these new types.
@@ -539,7 +542,7 @@ def make_density_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
             return self.atomic_model.serialize()
 
         @classmethod
-        def deserialize(cls, data) -> "CM":
+        def deserialize(cls, data: dict) -> "CM":
             return cls(atomic_model_=T_AtomicModel.deserialize(data))
 
         @torch.jit.export
@@ -596,10 +599,10 @@ def make_density_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
 
         def compute_or_load_stat(
             self,
-            sampled_func,
+            sampled_func: Callable[[], list[dict]] | list[dict],
             stat_file_path: DPPath | None = None,
             preset_observed_type: list[str] | None = None,
-        ):
+        ) -> None:
             """Compute or load the statistics."""
             return self.atomic_model.compute_or_load_stat(
                 sampled_func,
@@ -634,8 +637,8 @@ def make_density_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
 
         def forward(
             self,
-            coord,
-            atype,
+            coord: torch.Tensor,
+            atype: torch.Tensor,
             box: torch.Tensor | None = None,
             fparam: torch.Tensor | None = None,
             aparam: torch.Tensor | None = None,

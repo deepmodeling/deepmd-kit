@@ -1884,7 +1884,7 @@ def fitting_ener() -> list[Argument]:
 
 
 @fitting_args_plugin.register("density")
-def fitting_density():
+def fitting_density() -> list[Argument]:
     doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
     doc_numb_aparam = "The dimension of the atomic parameter. If set to >0, file `aparam.npy` should be included to provided the input aparams."
     doc_neuron = "The number of neurons in each hidden layers of the fitting net. When two hidden layers are of the same size, a skip connection is built."
@@ -3497,29 +3497,7 @@ def loss_ener() -> list[Argument]:
 
 
 @loss_args_plugin.register("grid_density")
-def loss_grid_density():
-    doc_start_pref_d = start_pref("density", abbr="d")
-    doc_limit_pref_d = limit_pref("density")
-    return [
-        Argument(
-            "start_pref_d",
-            [float, int],
-            optional=True,
-            default=1.00,
-            doc=doc_start_pref_d,
-        ),
-        Argument(
-            "limit_pref_d",
-            [float, int],
-            optional=True,
-            default=1.00,
-            doc=doc_limit_pref_d,
-        ),
-    ]
-
-
-@loss_args_plugin.register("grid_density")
-def loss_grid_density():
+def loss_grid_density() -> list[Argument]:
     doc_start_pref_d = start_pref("density", abbr="d")
     doc_limit_pref_d = limit_pref("density")
     return [

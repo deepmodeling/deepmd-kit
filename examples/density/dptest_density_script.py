@@ -78,19 +78,19 @@ def parse_args() -> argparse.Namespace:
 class TeeLogger:
     """Redirect stdout to both the terminal and a file."""
 
-    def __init__(self, filepath: str):
+    def __init__(self, filepath: str) -> None:
         self.terminal = sys.stdout
         self.log = open(filepath, "w")
 
-    def write(self, message: str):
+    def write(self, message: str) -> None:
         self.terminal.write(message)
         self.log.write(message)
 
-    def flush(self):
+    def flush(self) -> None:
         self.terminal.flush()
         self.log.flush()
 
-    def close(self):
+    def close(self) -> None:
         self.log.close()
 
 
@@ -127,7 +127,7 @@ def evaluate(
 
         pred_list.append(density_pred)
         label_list.append(density_label)
-        print(f"  {sys_name:60s}  frames={n_sample}/{n_frames}")
+        sys.stdout.write(f"  {sys_name:60s}  frames={n_sample}/{n_frames}" + "\n")
 
     predictions = np.concatenate(pred_list)
     labels = np.concatenate(label_list)
@@ -141,16 +141,16 @@ def print_summary(pred: np.ndarray, label: np.ndarray) -> None:
     label_mean_abs = np.mean(np.abs(label))
     label_std = np.std(label)
 
-    print("\n" + "=" * 60)
-    print("Summary")
-    print("=" * 60)
-    print(f"  Number of grid points : {label.size}")
-    print(f"  Label std             : {label_std:.6e}")
-    print(f"  RMSE                  : {rmse:.6e}")
-    print(f"  MAE                   : {mae:.6e}")
-    print(f"  Mean |label|          : {label_mean_abs:.6e}")
-    print(f"  epsilon_MAE (MAE/Mean|label|) : {mae / label_mean_abs:.6e}")
-    print("=" * 60)
+    sys.stdout.write("\n" + "=" * 60 + "\n")
+    sys.stdout.write("Summary" + "\n")
+    sys.stdout.write("=" * 60 + "\n")
+    sys.stdout.write(f"  Number of grid points : {label.size}" + "\n")
+    sys.stdout.write(f"  Label std             : {label_std:.6e}" + "\n")
+    sys.stdout.write(f"  RMSE                  : {rmse:.6e}" + "\n")
+    sys.stdout.write(f"  MAE                   : {mae:.6e}" + "\n")
+    sys.stdout.write(f"  Mean |label|          : {label_mean_abs:.6e}" + "\n")
+    sys.stdout.write(f"  epsilon_MAE (MAE/Mean|label|) : {mae / label_mean_abs:.6e}" + "\n")
+    sys.stdout.write("=" * 60 + "\n")
 
 
 def main() -> None:
@@ -159,18 +159,18 @@ def main() -> None:
     if args.output:
         tee = TeeLogger(args.output)
         sys.stdout = tee
-        print(f"[INFO] Screen output will also be saved to: {args.output}\n")
+        sys.stdout.write(f"[INFO] Screen output will also be saved to: {args.output}\n")
 
-    print(f"[INFO] Model : {args.model}")
-    print(f"[INFO] Data  : {args.data_dir}")
-    print(f"[INFO] Ratio : {args.ratio}\n")
+    sys.stdout.write(f"[INFO] Model : {args.model}" + "\n")
+    sys.stdout.write(f"[INFO] Data  : {args.data_dir}" + "\n")
+    sys.stdout.write(f"[INFO] Ratio : {args.ratio}\n")
 
     pred, label = evaluate(args.model, args.data_dir, args.ratio)
 
     # Save paired predictions & labels
     out_array = np.stack([pred.reshape(-1), label.reshape(-1)], axis=1)
     np.savetxt(args.pred_file, out_array)
-    print(f"\n[INFO] Paired [pred, label] saved to: {args.pred_file}")
+    sys.stdout.write(f"\n[INFO] Paired [pred, label] saved to: {args.pred_file}" + "\n")
 
     print_summary(pred, label)
 

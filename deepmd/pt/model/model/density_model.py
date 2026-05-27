@@ -90,5 +90,5 @@ class GridDensityModel(DPModelCommon, DPDensityModel_):
         do_atomic_virial: bool = False,
         comm_dict: dict[str, torch.Tensor] | None = None,
         charge_spin: torch.Tensor | None = None,
-    ) -> NoReturn:
+    ) -> None:
         raise NotImplementedError
