@@ -1,0 +1,1 @@
+recursive-include deepmd_property_tools/config *.json
