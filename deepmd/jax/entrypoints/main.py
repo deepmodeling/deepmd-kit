@@ -6,9 +6,6 @@ from pathlib import (
     Path,
 )
 
-from deepmd.backend.suffix import (
-    format_model_suffix,
-)
 from deepmd.jax.entrypoints.freeze import (
     freeze,
 )
@@ -53,9 +50,6 @@ def main(args: list[str] | argparse.Namespace | None = None) -> None:
     if args.command == "train":
         train(**dict_args)
     elif args.command == "freeze":
-        dict_args["output"] = format_model_suffix(
-            dict_args["output"], preferred_backend=args.backend, strict_prefer=True
-        )
         freeze(**dict_args)
     elif args.command is None:
         pass

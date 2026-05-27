@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """End-to-end tests for the local JAX training entrypoint."""
 
+import argparse
 import functools
 import json
 import os
@@ -26,6 +27,12 @@ from unittest.mock import (
     patch,
 )
 
+from deepmd.jax.entrypoints.freeze import (
+    freeze,
+)
+from deepmd.jax.entrypoints.main import (
+    main,
+)
 from deepmd.jax.entrypoints.train import (
     train,
 )
@@ -139,3 +146,36 @@ class TestJAXTraining(unittest.TestCase):
         self.assertTrue(Path("checkpoint").is_file())
         self.assertTrue(Path("model-1.jax").is_dir())
         self.assertIn("1", Path("lcurve.out").read_text())
+
+    @patch("deepmd.jax.entrypoints.freeze.deserialize_to_file")
+    @patch("deepmd.jax.entrypoints.freeze.serialize_from_file")
+    def test_freeze_entrypoint_uses_checkpoint_pointer(
+        self, serialize_from_file, deserialize_to_file
+    ) -> None:
+        """Freeze resolves the stable checkpoint pointer without Hessian options."""
+        checkpoint_dir = self.work_dir / "ckpt"
+        checkpoint_dir.mkdir()
+        (checkpoint_dir / "checkpoint").write_text("model-1.jax")
+        serialize_from_file.return_value = {"model": {}, "model_def_script": {}}
+
+        freeze(checkpoint_folder=str(checkpoint_dir), output="frozen_model")
+
+        serialize_from_file.assert_called_once_with(str(checkpoint_dir / "model-1.jax"))
+        deserialize_to_file.assert_called_once_with(
+            "frozen_model.hlo", serialize_from_file.return_value
+        )
+
+    @patch("deepmd.jax.entrypoints.main.freeze")
+    def test_main_dispatches_freeze(self, freeze_entrypoint) -> None:
+        """JAX CLI main imports and dispatches the freeze command."""
+        args = argparse.Namespace(
+            command="freeze",
+            log_level=2,
+            log_path=None,
+            checkpoint_folder=".",
+            output="frozen_model",
+        )
+
+        main(args)
+
+        freeze_entrypoint.assert_called_once()
