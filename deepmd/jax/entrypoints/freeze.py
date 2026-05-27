@@ -4,6 +4,7 @@
 from pathlib import (
     Path,
 )
+
 from deepmd.backend.suffix import (
     format_model_suffix,
 )
