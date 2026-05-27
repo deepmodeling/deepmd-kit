@@ -138,8 +138,6 @@ def _make_subset_dataset(src_system: str, dst_system: str, n_frames: int) -> Non
     frames`` makes the forward enumerate every frame and so the
     aggregate bias is invariant under shuffle.
     """
-    import numpy as np
-
     src_set = os.path.join(src_system, "set.000")
     dst_set = os.path.join(dst_system, "set.000")
     os.makedirs(dst_set, exist_ok=True)
