@@ -1,15 +1,24 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import json
 import time
-from pathlib import Path
-from unittest import mock
+from pathlib import (
+    Path,
+)
+from unittest import (
+    mock,
+)
 
 import numpy as np
-
-from deepmd_property_tools import PropertyPredict
-from deepmd_property_tools.data.mol import predict_records_from_data
+from deepmd_property_tools import (
+    PropertyPredict,
+)
+from deepmd_property_tools.data.mol import (
+    predict_records_from_data,
+)
 
 
 def _write_mol(path: Path) -> None:
@@ -104,7 +113,9 @@ def test_predict_save_handles_single_output(tmp_path: Path) -> None:
         )
 
     assert y_pred.tolist() == [[1.25]]
-    assert (tmp_path / "test.predict.0.csv").read_text(encoding="utf-8").splitlines() == [
+    assert (tmp_path / "test.predict.0.csv").read_text(
+        encoding="utf-8"
+    ).splitlines() == [
         "SMILES,predict_Property",
         "[H],1.25",
     ]

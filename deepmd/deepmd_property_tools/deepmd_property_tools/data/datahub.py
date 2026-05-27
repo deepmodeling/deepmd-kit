@@ -1,10 +1,16 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Uni-Mol-style data hub for DeePMD property workflows."""
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
-from pathlib import Path
-from typing import Any
+from pathlib import (
+    Path,
+)
+from typing import (
+    Any,
+)
 
 from .converter import (
     PropertyDataResult,

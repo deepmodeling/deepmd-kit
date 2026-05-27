@@ -1,20 +1,29 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """DeepMD mixed-npy conversion for property labels."""
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import csv
 import json
 import os
 import random
 import shutil
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Any
+from dataclasses import (
+    dataclass,
+)
+from pathlib import (
+    Path,
+)
+from typing import (
+    Any,
+)
 
 import numpy as np
-
-from deepmd_property_tools.config import ConfigHandler
+from deepmd_property_tools.config import (
+    ConfigHandler,
+)
 
 from .mol import (
     build_used_type_map,
@@ -39,7 +48,10 @@ class PropertyDataResult:
 
 def register_extra_dtypes(property_name: str) -> None:
     import dpdata
-    from dpdata.data_type import Axis, DataType
+    from dpdata.data_type import (
+        Axis,
+        DataType,
+    )
 
     datatypes = [
         DataType(property_name, np.ndarray, shape=(Axis.NFRAMES, 1), required=False),
@@ -142,12 +154,14 @@ def prepare_property_data(
         mol_dir_value = mol_dir if mol_dir is not None else data.get("mol_dir")
         if mol_dir_value is None:
             raise ValueError("mol_dir is required for CSV/MOL data")
-        records, failed_rows, skipped_zero, skipped_overlap, raw_data = records_from_csv_mol(
-            dataset=dataset,
-            mol_dir=mol_dir_value,
-            property_col=property_col,
-            mol_template=mol_template,
-            overlap_tol=overlap_tol,
+        records, failed_rows, skipped_zero, skipped_overlap, raw_data = (
+            records_from_csv_mol(
+                dataset=dataset,
+                mol_dir=mol_dir_value,
+                property_col=property_col,
+                mol_template=mol_template,
+                overlap_tol=overlap_tol,
+            )
         )
     else:
         records, raw_data = records_from_direct_data(data)
@@ -200,8 +214,16 @@ def prepare_property_data(
 
     input_path = Path(input_out).resolve()
     path_base = input_path.parent
-    train_systems = sorted(to_relative_path(path, path_base) for path in train_dir.iterdir() if path.is_dir())
-    valid_systems = sorted(to_relative_path(path, path_base) for path in valid_dir.iterdir() if path.is_dir())
+    train_systems = sorted(
+        to_relative_path(path, path_base)
+        for path in train_dir.iterdir()
+        if path.is_dir()
+    )
+    valid_systems = sorted(
+        to_relative_path(path, path_base)
+        for path in valid_dir.iterdir()
+        if path.is_dir()
+    )
     if not train_systems or not valid_systems:
         raise RuntimeError("Generated system directories are empty.")
 

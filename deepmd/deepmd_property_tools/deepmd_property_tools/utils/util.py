@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """General utilities."""
 
-from pathlib import Path
+from pathlib import (
+    Path,
+)
 
 
 def ensure_dir(path: str | Path) -> Path:

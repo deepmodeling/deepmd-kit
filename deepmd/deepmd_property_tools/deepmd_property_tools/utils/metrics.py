@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Simple regression metrics."""
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import numpy as np
 

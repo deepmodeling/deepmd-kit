@@ -1,11 +1,15 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Training task wrapper."""
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import os
 import subprocess
-from pathlib import Path
+from pathlib import (
+    Path,
+)
 
 
 class Trainer:
@@ -33,7 +37,9 @@ class Trainer:
     def run(self, input_path: str | Path) -> None:
         input_path = Path(input_path)
         if self.nproc_per_node == 1:
-            from deepmd.pt.entrypoints.main import train
+            from deepmd.pt.entrypoints.main import (
+                train,
+            )
 
             old_cwd = os.getcwd()
             try:
@@ -82,7 +88,9 @@ class Trainer:
         subprocess.run(cmd, check=True, cwd=self.save_path)
 
     def freeze(self) -> None:
-        from deepmd.pt.entrypoints.main import freeze
+        from deepmd.pt.entrypoints.main import (
+            freeze,
+        )
 
         checkpoint = self.latest_checkpoint()
         try:

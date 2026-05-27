@@ -1,7 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
-from deepmd_property_tools.config import ConfigHandler
+from deepmd_property_tools.config import (
+    ConfigHandler,
+)
 
 
 def test_merge_deep_updates_nested_dicts() -> None:

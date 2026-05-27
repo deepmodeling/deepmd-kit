@@ -1,10 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
-from pathlib import Path
+from pathlib import (
+    Path,
+)
 
 import numpy as np
-
 from deepmd_property_tools.data.mol import (
     build_used_type_map,
     has_overlapping_atoms,

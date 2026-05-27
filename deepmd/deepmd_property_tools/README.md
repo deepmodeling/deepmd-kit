@@ -53,11 +53,13 @@ DATA/
 Direct coordinate data is also supported:
 
 ```python
-clf.fit({
-    "atoms": [["C", "H", "H", "H", "H"], ["O", "H", "H"]],
-    "coordinates": [coords0, coords1],
-    "target": [0.1, 0.2],
-})
+clf.fit(
+    {
+        "atoms": [["C", "H", "H", "H", "H"], ["O", "H", "H"]],
+        "coordinates": [coords0, coords1],
+        "target": [0.1, 0.2],
+    }
+)
 ```
 
 ## Command Line
@@ -72,19 +74,19 @@ Train from CSV + MOL inputs:
 
 ```bash
 deepmd-property-tools train \
-  --dataset DATA/dataset_demo.csv \
-  --mol-dir DATA/mol_convert \
-  --save-path exp_property
+    --dataset DATA/dataset_demo.csv \
+    --mol-dir DATA/mol_convert \
+    --save-path exp_property
 ```
 
 Predict with a checkpoint file or an experiment directory:
 
 ```bash
 deepmd-property-tools predict \
-  --model exp_property \
-  --dataset DATA/dataset_demo.csv \
-  --mol-dir DATA/mol_convert \
-  --save-path pred_property
+    --model exp_property \
+    --dataset DATA/dataset_demo.csv \
+    --mol-dir DATA/mol_convert \
+    --save-path pred_property
 ```
 
 ## Notes

@@ -8,7 +8,9 @@ from .converter import (
     prepare_property_data,
     register_extra_dtypes,
 )
-from .datahub import DataHub
+from .datahub import (
+    DataHub,
+)
 from .mol import (
     build_used_type_map,
     parse_property_value,

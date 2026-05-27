@@ -1,16 +1,30 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """High-level property training interface."""
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import json
-from pathlib import Path
-from typing import Any
+from pathlib import (
+    Path,
+)
+from typing import (
+    Any,
+)
 
-from deepmd_property_tools.config import ConfigHandler
-from deepmd_property_tools.data import DataHub
-from deepmd_property_tools.tasks import Trainer
-from deepmd_property_tools.weights import WeightHub
+from deepmd_property_tools.config import (
+    ConfigHandler,
+)
+from deepmd_property_tools.data import (
+    DataHub,
+)
+from deepmd_property_tools.tasks import (
+    Trainer,
+)
+from deepmd_property_tools.weights import (
+    WeightHub,
+)
 
 
 class PropertyTrain:
@@ -46,11 +60,17 @@ class PropertyTrain:
             names = ", ".join(sorted(params))
             raise TypeError(f"Unexpected PropertyTrain argument(s): {names}")
         if task != "regression":
-            raise ValueError("DeePMD property tools currently support task='regression'")
+            raise ValueError(
+                "DeePMD property tools currently support task='regression'"
+            )
         if data_type != "molecule":
-            raise ValueError("DeePMD property tools currently support data_type='molecule'")
+            raise ValueError(
+                "DeePMD property tools currently support data_type='molecule'"
+            )
         if model_name != "dpa3":
-            raise ValueError("DeePMD property tools currently support model_name='dpa3'")
+            raise ValueError(
+                "DeePMD property tools currently support model_name='dpa3'"
+            )
         self.task = task
         self.data_type = data_type
         self.model_name = model_name
@@ -61,8 +81,14 @@ class PropertyTrain:
         self.property_name = property_name
         self.property_col = property_col
         self.save_path = Path(save_path)
-        self.numb_steps = numb_steps if numb_steps is not None else self._epochs_to_steps(epochs)
-        self.finetune = None if finetune is None else WeightHub(root=self.save_path.parent).get(finetune)
+        self.numb_steps = (
+            numb_steps if numb_steps is not None else self._epochs_to_steps(epochs)
+        )
+        self.finetune = (
+            None
+            if finetune is None
+            else WeightHub(root=self.save_path.parent).get(finetune)
+        )
         self.nproc_per_node = nproc_per_node
         self.train_ratio = train_ratio
         self.mol_template = mol_template
@@ -83,7 +109,9 @@ class PropertyTrain:
             )
         if metrics is not None:
             metric_list = [metrics] if isinstance(metrics, str) else list(metrics)
-            input_updates = ConfigHandler.merge(input_updates, {"loss": {"metric": metric_list}})
+            input_updates = ConfigHandler.merge(
+                input_updates, {"loss": {"metric": metric_list}}
+            )
         self.input_updates = input_updates
         self.datahub: DataHub | None = None
 

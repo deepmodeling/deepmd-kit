@@ -30,7 +30,7 @@ PropertyTrain(
 
 其中 `use_pretrain_script=True` 会让 DeePMD-kit 根据预训练模型里的 `model_params` 自动修正当前 `input.json` 中的模型结构，使其更容易和 `DPA-3.2-5M.pt` 对齐。
 
----
+______________________________________________________________________
 
 ## 2. 应与预训练模型保持一致的参数
 
@@ -53,13 +53,24 @@ unexpected key
 微调数据中的元素类型应被预训练模型支持。当前 20 条 demo 数据自动生成：
 
 ```json
-["H", "C", "N", "O"]
+[
+  "H",
+  "C",
+  "N",
+  "O"
+]
 ```
 
 如果使用全量数据且包含 `I`，则可能生成：
 
 ```json
-["H", "C", "N", "O", "I"]
+[
+  "H",
+  "C",
+  "N",
+  "O",
+  "I"
+]
 ```
 
 需要确认预训练模型支持这些元素。
@@ -153,7 +164,7 @@ unexpected key
 
 这些参数有些会影响模型结构，有些会影响模型计算逻辑。做预训练微调时，不建议手动随意修改。
 
----
+______________________________________________________________________
 
 ## 3. 可以根据当前任务设置的参数
 
@@ -193,15 +204,15 @@ unexpected key
 可以自行设置：
 
 ```python
-numb_steps=10
+numb_steps = 10
 ```
 
 或正式训练时设置更大：
 
 ```python
-numb_steps=10000
-numb_steps=50000
-numb_steps=200000
+numb_steps = 10000
+numb_steps = 50000
+numb_steps = 200000
 ```
 
 当前 20 条 demo 数据只用于 smoke test，`10` steps 只是验证流程。
@@ -211,19 +222,19 @@ numb_steps=200000
 可以根据数据量和显存调整：
 
 ```python
-batch_size=1
+batch_size = 1
 ```
 
 或使用 DeePMD 支持的自动 batch：
 
 ```python
-batch_size="auto:512"
+batch_size = "auto:512"
 ```
 
 当前 20 条 demo 数据中很多 system 只有 1-2 个样本，如果设置：
 
 ```python
-batch_size=1024
+batch_size = 1024
 ```
 
 会出现 warning：
@@ -254,7 +265,7 @@ required batch size is larger than the size of the dataset
 在 `train_property_20.py` 中可通过 `input_updates` 设置：
 
 ```python
-input_updates={
+input_updates = {
     "learning_rate": {
         "type": "exp",
         "decay_steps": 1000,
@@ -284,8 +295,8 @@ input_updates={
 例如：
 
 ```python
-property_name="Property"
-property_col="Property"
+property_name = "Property"
+property_col = "Property"
 ```
 
 含义：
@@ -324,7 +335,7 @@ The fitting net will be re-init instead of using that in the pretrained model!
 这是 `deepmd_property_tools` 的工具层参数：
 
 ```python
-freeze=False
+freeze = False
 ```
 
 它控制训练结束后是否自动导出 `frozen_model.pth`。
@@ -332,7 +343,7 @@ freeze=False
 当前 DPA3 预训练模型的 `custom_silu` 在 TorchScript freeze 阶段可能报错，因此当前 demo 中使用：
 
 ```python
-freeze=False
+freeze = False
 ```
 
 先保存 checkpoint：
@@ -348,7 +359,7 @@ model.ckpt-10.pt
 这是 `deepmd_property_tools` 的训练启动参数，用于控制单节点启动多少个训练进程：
 
 ```python
-nproc_per_node=1
+nproc_per_node = 1
 ```
 
 默认值是 `1`，表示单进程训练。单进程时，工具会直接调用 DeePMD-kit 的 Python 训练入口。
@@ -356,7 +367,7 @@ nproc_per_node=1
 如果设置为大于 1，例如：
 
 ```python
-nproc_per_node=2
+nproc_per_node = 2
 ```
 
 工具会改用 `torchrun` 启动多进程训练，等价于：
@@ -368,7 +379,7 @@ torchrun --nproc_per_node=2 --no-python dp --pt train input.json
 通常含义是单节点 2 张 GPU / 2 个训练进程。8 卡训练可以设置：
 
 ```python
-nproc_per_node=8
+nproc_per_node = 8
 ```
 
 注意：`nproc_per_node` 不是 CPU 线程数。如果只是在 CPU 上想使用更多线程，应通过环境变量控制，例如：
@@ -380,7 +391,7 @@ export DP_INTER_OP_PARALLELISM_THREADS=2
 python train_property_20.py
 ```
 
----
+______________________________________________________________________
 
 ## 4. 当前推荐配置示例
 
@@ -432,7 +443,7 @@ DPA3 结构开关
 
 这些应由 `use_pretrain_script=True` 自动继承预训练模型配置。
 
----
+______________________________________________________________________
 
 ## 5. 简要总结
 
@@ -463,7 +474,7 @@ nproc_per_node
 当前工具推荐让 DeePMD-kit 通过：
 
 ```python
-use_pretrain_script=True
+use_pretrain_script = True
 ```
 
 自动继承预训练模型结构，而用户主要调当前任务相关的训练超参。

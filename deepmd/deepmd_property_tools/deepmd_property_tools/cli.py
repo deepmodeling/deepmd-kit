@@ -1,13 +1,20 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Command line interface for DeePMD property tools."""
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import argparse
-from pathlib import Path
-from typing import Sequence
+from pathlib import (
+    Path,
+)
+from collections.abc import Sequence
 
-from deepmd_property_tools import PropertyPredict, PropertyTrain
+from deepmd_property_tools import (
+    PropertyPredict,
+    PropertyTrain,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -25,21 +32,45 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command")
 
     train_parser = subparsers.add_parser("train", help="Train a property model")
-    train_parser.add_argument("--dataset", required=True, type=Path, help="CSV dataset path")
-    train_parser.add_argument("--mol-dir", required=True, type=Path, help="MOL directory path")
-    train_parser.add_argument("--save-path", required=True, type=Path, help="Experiment output directory")
-    train_parser.add_argument("--property-col", default="Property", help="CSV property column")
-    train_parser.add_argument("--property-name", default="Property", help="DeePMD property name")
-    train_parser.add_argument("--finetune", default=None, help="Pretrained model name or path")
-    train_parser.add_argument("--numb-steps", type=int, default=None, help="Number of training steps")
-    train_parser.add_argument("--batch-size", type=int, default=None, help="Training batch size")
+    train_parser.add_argument(
+        "--dataset", required=True, type=Path, help="CSV dataset path"
+    )
+    train_parser.add_argument(
+        "--mol-dir", required=True, type=Path, help="MOL directory path"
+    )
+    train_parser.add_argument(
+        "--save-path", required=True, type=Path, help="Experiment output directory"
+    )
+    train_parser.add_argument(
+        "--property-col", default="Property", help="CSV property column"
+    )
+    train_parser.add_argument(
+        "--property-name", default="Property", help="DeePMD property name"
+    )
+    train_parser.add_argument(
+        "--finetune", default=None, help="Pretrained model name or path"
+    )
+    train_parser.add_argument(
+        "--numb-steps", type=int, default=None, help="Number of training steps"
+    )
+    train_parser.add_argument(
+        "--batch-size", type=int, default=None, help="Training batch size"
+    )
     train_parser.set_defaults(func=_run_train)
 
     predict_parser = subparsers.add_parser("predict", help="Predict properties")
-    predict_parser.add_argument("--model", required=True, type=Path, help="Model file or experiment directory")
-    predict_parser.add_argument("--dataset", required=True, type=Path, help="CSV dataset path")
-    predict_parser.add_argument("--mol-dir", required=True, type=Path, help="MOL directory path")
-    predict_parser.add_argument("--save-path", default=None, type=Path, help="Prediction output directory")
+    predict_parser.add_argument(
+        "--model", required=True, type=Path, help="Model file or experiment directory"
+    )
+    predict_parser.add_argument(
+        "--dataset", required=True, type=Path, help="CSV dataset path"
+    )
+    predict_parser.add_argument(
+        "--mol-dir", required=True, type=Path, help="MOL directory path"
+    )
+    predict_parser.add_argument(
+        "--save-path", default=None, type=Path, help="Prediction output directory"
+    )
     predict_parser.set_defaults(func=_run_predict)
 
     return parser

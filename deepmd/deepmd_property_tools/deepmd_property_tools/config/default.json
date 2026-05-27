@@ -38,14 +38,21 @@
       "property_name": "Property",
       "intensive": true,
       "task_dim": 1,
-      "neuron": [240, 240, 240],
+      "neuron": [
+        240,
+        240,
+        240
+      ],
       "resnet_dt": true,
       "seed": 1
     }
   },
   "loss": {
     "type": "property",
-    "metric": ["mae", "rmse"],
+    "metric": [
+      "mae",
+      "rmse"
+    ],
     "loss_func": "smooth_mae",
     "beta": 1.0
   },

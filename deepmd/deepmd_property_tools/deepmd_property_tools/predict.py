@@ -1,16 +1,25 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """High-level property prediction interface."""
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import json
-from pathlib import Path
-from typing import Any
+from pathlib import (
+    Path,
+)
+from typing import (
+    Any,
+)
 
 import numpy as np
-
-from deepmd_property_tools.data import DataHub
-from deepmd_property_tools.predictor import Predictor
+from deepmd_property_tools.data import (
+    DataHub,
+)
+from deepmd_property_tools.predictor import (
+    Predictor,
+)
 
 
 class PropertyPredict:
@@ -26,14 +35,20 @@ class PropertyPredict:
         if load_model_path.is_dir():
             self.model_dir = load_model_path
             frozen_model = load_model_path / "frozen_model.pth"
-            self.load_model = frozen_model if frozen_model.exists() else self._latest_checkpoint(load_model_path)
+            self.load_model = (
+                frozen_model
+                if frozen_model.exists()
+                else self._latest_checkpoint(load_model_path)
+            )
         else:
             self.load_model = load_model_path
             self.model_dir = load_model_path.parent
         config = self._load_config()
         self.type_map = type_map or config.get("type_map")
         if self.type_map is None:
-            raise ValueError("type_map is required when property_tools_config.json is absent")
+            raise ValueError(
+                "type_map is required when property_tools_config.json is absent"
+            )
         self.property_name = property_name or config.get("property_name", "Property")
         self.datahub: DataHub | None = None
 

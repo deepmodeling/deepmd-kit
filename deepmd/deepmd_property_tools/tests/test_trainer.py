@@ -1,10 +1,18 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
-from pathlib import Path
-from unittest import mock
+from pathlib import (
+    Path,
+)
+from unittest import (
+    mock,
+)
 
-from deepmd_property_tools.tasks.trainer import Trainer
+from deepmd_property_tools.tasks.trainer import (
+    Trainer,
+)
 
 
 def test_latest_checkpoint_prefers_newest_numbered_checkpoint(tmp_path: Path) -> None:

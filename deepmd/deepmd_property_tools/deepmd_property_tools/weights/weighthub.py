@@ -1,16 +1,28 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Local pretrained-weight path helper."""
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
-from pathlib import Path
-from typing import Any
+from pathlib import (
+    Path,
+)
+from typing import (
+    Any,
+)
 
 
 class WeightHub:
-    def __init__(self, root: str | Path = ".", cache_dir: str | Path | None = None) -> None:
+    def __init__(
+        self, root: str | Path = ".", cache_dir: str | Path | None = None
+    ) -> None:
         self.root = Path(root)
-        self.cache_dir = Path(cache_dir) if cache_dir is not None else self.root / "pretrained_models"
+        self.cache_dir = (
+            Path(cache_dir)
+            if cache_dir is not None
+            else self.root / "pretrained_models"
+        )
 
     def get(self, name_or_path: str | Path) -> str:
         path = Path(name_or_path)
@@ -24,7 +36,9 @@ class WeightHub:
         model_registry = self._model_registry()
         model_name = self._resolve_model_name(path, model_registry)
         if model_name is not None:
-            from deepmd.pretrained.download import resolve_model_path
+            from deepmd.pretrained.download import (
+                resolve_model_path,
+            )
 
             filename = str(model_registry[model_name]["filename"])
             expected_path = self.cache_dir / filename
@@ -40,12 +54,16 @@ class WeightHub:
 
     @staticmethod
     def _model_registry() -> dict[str, dict[str, Any]]:
-        from deepmd.pretrained.registry import MODEL_REGISTRY
+        from deepmd.pretrained.registry import (
+            MODEL_REGISTRY,
+        )
 
         return MODEL_REGISTRY
 
     @staticmethod
-    def _resolve_model_name(path: Path, model_registry: dict[str, dict[str, Any]]) -> str | None:
+    def _resolve_model_name(
+        path: Path, model_registry: dict[str, dict[str, Any]]
+    ) -> str | None:
         alias = path.name
         if alias in model_registry:
             return alias

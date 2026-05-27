@@ -1,8 +1,13 @@
 #!/usr/bin/env python3
-from pathlib import Path
+# SPDX-License-Identifier: LGPL-3.0-or-later
+from pathlib import (
+    Path,
+)
 
-from deepmd_property_tools import PropertyPredict, PropertyTrain
-
+from deepmd_property_tools import (
+    PropertyPredict,
+    PropertyTrain,
+)
 
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = ROOT / "DATA"
@@ -45,7 +50,9 @@ trainer = PropertyTrain(
 
 trainer.fit(TRAIN_DATA)
 
-checkpoints = sorted(EXP_DIR.glob("model.ckpt-*.pt"), key=lambda path: path.stat().st_mtime)
+checkpoints = sorted(
+    EXP_DIR.glob("model.ckpt-*.pt"), key=lambda path: path.stat().st_mtime
+)
 if not checkpoints:
     raise FileNotFoundError(f"No checkpoint found in {EXP_DIR}")
 model_path = checkpoints[-1]

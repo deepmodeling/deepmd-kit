@@ -1,29 +1,141 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """MOL and direct-coordinate data helpers."""
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import csv
 import re
-from pathlib import Path
-from typing import Any
+from pathlib import (
+    Path,
+)
+from typing import (
+    Any,
+)
 
 import numpy as np
 
 ELEMENTS = np.array(
     [
-        "H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne",
-        "Na", "Mg", "Al", "Si", "P", "S", "Cl", "Ar", "K", "Ca",
-        "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn",
-        "Ga", "Ge", "As", "Se", "Br", "Kr", "Rb", "Sr", "Y", "Zr",
-        "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd", "In", "Sn",
-        "Sb", "Te", "I", "Xe", "Cs", "Ba", "La", "Ce", "Pr", "Nd",
-        "Pm", "Sm", "Eu", "Gd", "Tb", "Dy", "Ho", "Er", "Tm", "Yb",
-        "Lu", "Hf", "Ta", "W", "Re", "Os", "Ir", "Pt", "Au", "Hg",
-        "Tl", "Pb", "Bi", "Po", "At", "Rn", "Fr", "Ra", "Ac", "Th",
-        "Pa", "U", "Np", "Pu", "Am", "Cm", "Bk", "Cf", "Es", "Fm",
-        "Md", "No", "Lr", "Rf", "Db", "Sg", "Bh", "Hs", "Mt", "Ds",
-        "Rg", "Cn", "Nh", "Fl", "Mc", "Lv", "Ts", "Og",
+        "H",
+        "He",
+        "Li",
+        "Be",
+        "B",
+        "C",
+        "N",
+        "O",
+        "F",
+        "Ne",
+        "Na",
+        "Mg",
+        "Al",
+        "Si",
+        "P",
+        "S",
+        "Cl",
+        "Ar",
+        "K",
+        "Ca",
+        "Sc",
+        "Ti",
+        "V",
+        "Cr",
+        "Mn",
+        "Fe",
+        "Co",
+        "Ni",
+        "Cu",
+        "Zn",
+        "Ga",
+        "Ge",
+        "As",
+        "Se",
+        "Br",
+        "Kr",
+        "Rb",
+        "Sr",
+        "Y",
+        "Zr",
+        "Nb",
+        "Mo",
+        "Tc",
+        "Ru",
+        "Rh",
+        "Pd",
+        "Ag",
+        "Cd",
+        "In",
+        "Sn",
+        "Sb",
+        "Te",
+        "I",
+        "Xe",
+        "Cs",
+        "Ba",
+        "La",
+        "Ce",
+        "Pr",
+        "Nd",
+        "Pm",
+        "Sm",
+        "Eu",
+        "Gd",
+        "Tb",
+        "Dy",
+        "Ho",
+        "Er",
+        "Tm",
+        "Yb",
+        "Lu",
+        "Hf",
+        "Ta",
+        "W",
+        "Re",
+        "Os",
+        "Ir",
+        "Pt",
+        "Au",
+        "Hg",
+        "Tl",
+        "Pb",
+        "Bi",
+        "Po",
+        "At",
+        "Rn",
+        "Fr",
+        "Ra",
+        "Ac",
+        "Th",
+        "Pa",
+        "U",
+        "Np",
+        "Pu",
+        "Am",
+        "Cm",
+        "Bk",
+        "Cf",
+        "Es",
+        "Fm",
+        "Md",
+        "No",
+        "Lr",
+        "Rf",
+        "Db",
+        "Sg",
+        "Bh",
+        "Hs",
+        "Mt",
+        "Ds",
+        "Rg",
+        "Cn",
+        "Nh",
+        "Fl",
+        "Mc",
+        "Lv",
+        "Ts",
+        "Og",
     ]
 )
 ELEMENT_INDEX = {name: i for i, name in enumerate(ELEMENTS)}
@@ -112,7 +224,13 @@ def records_from_csv_mol(
     property_col: str,
     mol_template: str = "id{row}.mol",
     overlap_tol: float = 1e-6,
-) -> tuple[list[tuple[list[str], np.ndarray, float, int]], list[tuple[int, str, str]], int, int, list[dict[str, Any]]]:
+) -> tuple[
+    list[tuple[list[str], np.ndarray, float, int]],
+    list[tuple[int, str, str]],
+    int,
+    int,
+    list[dict[str, Any]],
+]:
     with Path(dataset).open("r", encoding="utf-8") as fp:
         rows = list(csv.DictReader(fp))
     if not rows:
@@ -134,14 +252,18 @@ def records_from_csv_mol(
             if has_overlapping_atoms(coords, overlap_tol):
                 skipped_overlap += 1
                 continue
-            records.append((symbols, coords, parse_property_value(row[prop_col]), row_idx))
+            records.append(
+                (symbols, coords, parse_property_value(row[prop_col]), row_idx)
+            )
             kept_rows.append(dict(row))
         except Exception as exc:
             failed_rows.append((row_idx, str(mol_path), str(exc)))
     return records, failed_rows, skipped_zero, skipped_overlap, kept_rows
 
 
-def records_from_direct_data(data: dict[str, Any]) -> tuple[list[tuple[list[str], np.ndarray, float, int]], list[dict[str, Any]]]:
+def records_from_direct_data(
+    data: dict[str, Any],
+) -> tuple[list[tuple[list[str], np.ndarray, float, int]], list[dict[str, Any]]]:
     atoms = data.get("atoms")
     coordinates = data.get("coordinates")
     targets = data.get("target", data.get("targets"))
@@ -152,7 +274,9 @@ def records_from_direct_data(data: dict[str, Any]) -> tuple[list[tuple[list[str]
     records = []
     rows = []
     for idx, (symbols, coords, target) in enumerate(zip(atoms, coordinates, targets)):
-        records.append((list(symbols), np.asarray(coords, dtype=np.float32), float(target), idx))
+        records.append(
+            (list(symbols), np.asarray(coords, dtype=np.float32), float(target), idx)
+        )
         rows.append({"sample_id": idx, "target": float(target)})
     return records, rows
 
@@ -178,7 +302,9 @@ def predict_records_from_data(
         coords: list[np.ndarray] = []
         kept_rows: list[dict[str, Any]] = []
         for row_idx, row in enumerate(rows):
-            symbols, coord = read_mol_coords(resolved_mol_dir / mol_template.format(row=row_idx))
+            symbols, coord = read_mol_coords(
+                resolved_mol_dir / mol_template.format(row=row_idx)
+            )
             atoms.append(symbols)
             coords.append(coord)
             kept_rows.append(dict(row))

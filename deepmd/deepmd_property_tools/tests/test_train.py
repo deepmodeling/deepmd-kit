@@ -1,9 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import pytest
-
-from deepmd_property_tools import PropertyTrain
+from deepmd_property_tools import (
+    PropertyTrain,
+)
 
 
 def test_property_train_rejects_unknown_arguments() -> None:

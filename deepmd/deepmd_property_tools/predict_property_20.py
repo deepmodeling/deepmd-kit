@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
-from pathlib import Path
+# SPDX-License-Identifier: LGPL-3.0-or-later
+from pathlib import (
+    Path,
+)
 
-from deepmd_property_tools import PropertyPredict
-
+from deepmd_property_tools import (
+    PropertyPredict,
+)
 
 ROOT = Path(__file__).resolve().parent
 DATA_DIR = ROOT / "DATA"
