@@ -1,0 +1,65 @@
+{
+  "model": {
+    "type_map": [
+      "O",
+      "H"
+    ],
+    "descriptor": {
+      "type": "se_e2_a",
+      "sel": [
+        46,
+        92
+      ],
+      "rcut_smth": 0.5,
+      "rcut": 6.0,
+      "neuron": [
+        25,
+        50,
+        100
+      ],
+      "resnet_dt": false,
+      "axis_neuron": 16,
+      "seed": 1
+    },
+    "fitting_net": {
+      "type": "ener",
+      "neuron": [
+        240,
+        240,
+        240
+      ],
+      "resnet_dt": true,
+      "seed": 1
+    }
+  },
+  "learning_rate": {
+    "type": "exp",
+    "decay_steps": 5000,
+    "start_lr": 0.001,
+    "stop_lr": 3.51e-08
+  },
+  "loss": {
+    "type": "ener",
+    "start_pref_e": 0.02,
+    "limit_pref_e": 1,
+    "start_pref_f": 1000,
+    "limit_pref_f": 1,
+    "start_pref_v": 0,
+    "limit_pref_v": 0
+  },
+  "training": {
+    "training_data": {
+      "systems": "water_training.lmdb",
+      "batch_size": "auto"
+    },
+    "validation_data": {
+      "systems": "water_validation.lmdb",
+      "batch_size": 1
+    },
+    "numb_steps": 100,
+    "seed": 10,
+    "disp_file": "lcurve.out",
+    "disp_freq": 10,
+    "save_freq": 100
+  }
+}

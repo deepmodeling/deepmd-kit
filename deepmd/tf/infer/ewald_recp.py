@@ -16,7 +16,7 @@ from deepmd.tf.utils.sess import (
 class EwaldRecp:
     """Evaluate the reciprocal part of the Ewald sum."""
 
-    def __init__(self, hh, beta) -> None:
+    def __init__(self, hh: float, beta: float) -> None:
         """Constructor.
 
         Parameters

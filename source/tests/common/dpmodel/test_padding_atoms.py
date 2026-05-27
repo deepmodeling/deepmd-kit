@@ -69,8 +69,8 @@ class TestPaddingAtoms(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         result = model.call(*args)
         # test intensive
         np.testing.assert_allclose(
-            result[f"{var_name}_redu"],
-            np.mean(result[f"{var_name}"], axis=1),
+            result[var_name],
+            np.mean(result[f"atom_{var_name}"], axis=1),
             atol=self.atol,
         )
         # test padding atoms
@@ -93,8 +93,8 @@ class TestPaddingAtoms(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
             args = [coord_padding, atype_padding, self.cell]
             result_padding = model.call(*args)
             np.testing.assert_allclose(
-                result[f"{var_name}_redu"],
-                result_padding[f"{var_name}_redu"],
+                result[var_name],
+                result_padding[var_name],
                 atol=self.atol,
             )
 

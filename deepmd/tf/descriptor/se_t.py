@@ -1,5 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import re
+from collections.abc import (
+    Callable,
+)
+from typing import (
+    Any,
+)
 
 import numpy as np
 
@@ -104,7 +110,7 @@ class DescrptSeT(DescrptSe):
         uniform_seed: bool = False,
         type_map: list[str] | None = None,  # to be compat with input
         env_protection: float = 0.0,  # not implement!!
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Constructor."""
         if rcut < rcut_smth:
@@ -230,9 +236,9 @@ class DescrptSeT(DescrptSe):
         natoms_vec: list,
         mesh: list,
         input_dict: dict,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
-        """Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
+        """Compute the statistics (avg and std) of the training data. The input will be normalized by the statistics.
 
         Parameters
         ----------
@@ -277,23 +283,23 @@ class DescrptSeT(DescrptSe):
             }
             self.merge_input_stats(stat_dict)
 
-    def merge_input_stats(self, stat_dict) -> None:
-        """Merge the statisitcs computed from compute_input_stats to obtain the self.davg and self.dstd.
+    def merge_input_stats(self, stat_dict: dict[str, Any]) -> None:
+        """Merge the statistics computed from compute_input_stats to obtain the self.davg and self.dstd.
 
         Parameters
         ----------
         stat_dict
-                The dict of statisitcs computed from compute_input_stats, including:
+                The dict of statistics computed from compute_input_stats, including:
             sumr
-                    The sum of radial statisitcs.
+                    The sum of radial statistics.
             suma
-                    The sum of relative coord statisitcs.
+                    The sum of relative coord statistics.
             sumn
                     The sum of neighbor numbers.
             sumr2
-                    The sum of square of radial statisitcs.
+                    The sum of square of radial statistics.
             suma2
-                    The sum of square of relative coord statisitcs.
+                    The sum of square of relative coord statistics.
         """
         all_davg = []
         all_dstd = []
@@ -329,7 +335,7 @@ class DescrptSeT(DescrptSe):
         check_frequency: int = -1,
         suffix: str = "",
     ) -> None:
-        """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+        """Receive the statistics (distance, max_nbor_size and env_mat_range) of the training data.
 
         Parameters
         ----------
@@ -539,8 +545,15 @@ class DescrptSeT(DescrptSe):
         return force, virial, atom_virial
 
     def _pass_filter(
-        self, inputs, atype, natoms, input_dict, reuse=None, suffix="", trainable=True
-    ):
+        self,
+        inputs: tf.Tensor,
+        atype: tf.Tensor,
+        natoms: tf.Tensor,
+        input_dict: dict,
+        reuse: bool | None = None,
+        suffix: str = "",
+        trainable: bool = True,
+    ) -> tuple[tf.Tensor, None]:
         start_index = 0
         inputs = tf.reshape(inputs, [-1, natoms[0], self.ndescrpt])
         output = []
@@ -566,8 +579,13 @@ class DescrptSeT(DescrptSe):
         return output, None
 
     def _compute_dstats_sys_smth(
-        self, data_coord, data_box, data_atype, natoms_vec, mesh
-    ):
+        self,
+        data_coord: np.ndarray,
+        data_box: np.ndarray,
+        data_atype: np.ndarray,
+        natoms_vec: np.ndarray,
+        mesh: np.ndarray,
+    ) -> tuple[list[float], list[float], list[float], list[float], list[int]]:
         dd_all = run_sess(
             self.sub_sess,
             self.stat_descrpt,
@@ -608,7 +626,7 @@ class DescrptSeT(DescrptSe):
             sysa2.append(suma2)
         return sysr, sysr2, sysa, sysa2, sysn
 
-    def _compute_std(self, sumv2, sumv, sumn):
+    def _compute_std(self, sumv2: float, sumv: float, sumn: int) -> float:
         val = np.sqrt(sumv2 / sumn - np.multiply(sumv / sumn, sumv / sumn))
         if np.abs(val) < 1e-2:
             val = 1e-2
@@ -617,16 +635,16 @@ class DescrptSeT(DescrptSe):
     @cast_precision
     def _filter(
         self,
-        inputs,
-        type_input,
-        natoms,
-        activation_fn=tf.nn.tanh,
-        stddev=1.0,
-        bavg=0.0,
-        name="linear",
-        reuse=None,
-        trainable=True,
-    ):
+        inputs: tf.Tensor,
+        type_input: int,
+        natoms: tf.Tensor,
+        activation_fn: Callable[[tf.Tensor], tf.Tensor] | None = tf.nn.tanh,
+        stddev: float = 1.0,
+        bavg: float = 0.0,
+        name: str = "linear",
+        reuse: bool | None = None,
+        trainable: bool = True,
+    ) -> tuple[tf.Tensor, tf.Tensor]:
         # natom x (nei x 4)
         shape = inputs.get_shape().as_list()
         outputs_size = [1, *self.filter_neuron]
@@ -763,7 +781,7 @@ class DescrptSeT(DescrptSe):
             network_type="embedding_network",
         )
 
-        def clear_ij(type_i, type_j) -> None:
+        def clear_ij(type_i: int, type_j: int) -> None:
             # initialize an empty network
             embeddings[(type_i, type_j)] = EmbeddingNet(
                 in_dim=in_dim,
@@ -866,7 +884,7 @@ class DescrptSeT(DescrptSe):
         return embedding_net_variables
 
     @classmethod
-    def deserialize(cls, data: dict, suffix: str = ""):
+    def deserialize(cls, data: dict, suffix: str = "") -> "DescrptSeT":
         """Deserialize the model.
 
         Parameters
@@ -882,7 +900,7 @@ class DescrptSeT(DescrptSe):
         if cls is not DescrptSeT:
             raise NotImplementedError(f"Not implemented in class {cls.__name__}")
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 2, 1)
+        check_version_compatibility(data.pop("@version", 1), 3, 1)
         data.pop("@class", None)
         data.pop("type", None)
         embedding_net_variables = cls.deserialize_network(
@@ -890,6 +908,7 @@ class DescrptSeT(DescrptSe):
         )
         data.pop("env_mat")
         variables = data.pop("@variables")
+        data.pop("compress", None)  # tf uses frozen graph for compression
         descriptor = cls(**data)
         descriptor.embedding_net_variables = embedding_net_variables
         descriptor.davg = variables["davg"].reshape(

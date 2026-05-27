@@ -14,7 +14,7 @@ from deepmd.utils.hostlist import (
 __all__ = ["get_gpus", "get_resource"]
 
 
-def get_gpus():
+def get_gpus() -> list[int] | None:
     """Get available IDs of GPU cards at local.
     These IDs are valid when used as the TensorFlow device ID.
 

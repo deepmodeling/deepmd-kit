@@ -192,7 +192,7 @@ def get_embedding_net_variables_from_graph_def(
     return convert_tensor_to_ndarray_in_dict(embedding_net_nodes)
 
 
-def get_extra_embedding_net_suffix(type_one_side: bool):
+def get_extra_embedding_net_suffix(type_one_side: bool) -> str:
     """Get the extra embedding net suffix according to the value of type_one_side.
 
     Parameters

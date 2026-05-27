@@ -49,8 +49,8 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ret0 = md0.call_lower(self.coord_ext, self.atype_ext, self.nlist)
         ret1 = md1.call_lower(self.coord_ext, self.atype_ext, self.nlist)
 
+        np.testing.assert_allclose(ret0["atom_energy"], ret1["atom_energy"])
         np.testing.assert_allclose(ret0["energy"], ret1["energy"])
-        np.testing.assert_allclose(ret0["energy_redu"], ret1["energy_redu"])
 
     def test_prec_consistency(self) -> None:
         rng = np.random.default_rng(GLOBAL_SEED)
@@ -83,10 +83,12 @@ class TestDPModelLower(unittest.TestCase, TestCaseSingleFrameWithNlist):
         model_l_ret_64 = md1.call_lower(*args64, fparam=fparam, aparam=aparam)
         model_l_ret_32 = md1.call_lower(*args32, fparam=fparam, aparam=aparam)
 
+        # After translation, reduced keys are "energy" and "virial"
+        _REDUCED_KEYS = {"energy", "virial"}
         for ii in model_l_ret_32.keys():
             if model_l_ret_32[ii] is None:
                 continue
-            if ii[-4:] == "redu":
+            if ii in _REDUCED_KEYS:
                 self.assertEqual(model_l_ret_32[ii].dtype, np.float64)
             else:
                 self.assertEqual(model_l_ret_32[ii].dtype, np.float32)
@@ -137,10 +139,12 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         model_l_ret_64 = md1.call(*args64, fparam=fparam, aparam=aparam)
         model_l_ret_32 = md1.call(*args32, fparam=fparam, aparam=aparam)
 
+        # After translation, reduced keys are "energy" and "virial"
+        _REDUCED_KEYS = {"energy", "virial"}
         for ii in model_l_ret_32.keys():
             if model_l_ret_32[ii] is None:
                 continue
-            if ii[-4:] == "redu":
+            if ii in _REDUCED_KEYS:
                 self.assertEqual(model_l_ret_32[ii].dtype, np.float64)
             else:
                 self.assertEqual(model_l_ret_32[ii].dtype, np.float32)

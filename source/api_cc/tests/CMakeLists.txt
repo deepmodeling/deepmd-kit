@@ -11,6 +11,10 @@ if(ENABLE_TENSORFLOW)
 endif()
 if(ENABLE_PYTORCH)
   target_compile_definitions(runUnitTests_cc PRIVATE BUILD_PYTORCH)
+  # Link torch so __has_include(<torch/csrc/inductor/...>) succeeds and
+  # BUILD_PT_EXPT is set for the test binary; otherwise pt_expt tests all
+  # GTEST_SKIP() with "PyTorch support is not enabled".
+  target_link_libraries(runUnitTests_cc "${TORCH_LIBRARIES}")
 endif()
 if(ENABLE_JAX)
   target_compile_definitions(runUnitTests_cc PRIVATE BUILD_JAX)
@@ -31,6 +35,8 @@ add_test(
   NAME runUnitTest_cc
   COMMAND runUnitTests_cc
   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR})
+set_tests_properties(runUnitTest_cc PROPERTIES ENVIRONMENT
+                                               "TF_DISABLE_MLIR_BRIDGE=1")
 set_target_properties(runUnitTests_cc PROPERTIES INSTALL_RPATH "$ORIGIN/../lib")
 target_compile_definitions(runUnitTests_cc PUBLIC ${prec_def})
 install(TARGETS runUnitTests_cc DESTINATION bin/)

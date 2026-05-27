@@ -20,6 +20,7 @@ from deepmd.dpmodel import (
 from deepmd.dpmodel.array_api import (
     Array,
     xp_take_along_axis,
+    xp_take_first_n,
 )
 from deepmd.dpmodel.common import (
     cast_precision,
@@ -242,6 +243,8 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
        arXiv preprint arXiv:2208.08236.
     """
 
+    _update_sel_cls = UpdateSel
+
     def __init__(
         self,
         rcut: float,
@@ -342,6 +345,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         self.concat_output_tebd = concat_output_tebd
         self.trainable = trainable
         self.precision = precision
+        self.compress = False
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -393,6 +397,14 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         """Returns whether the descriptor has message passing."""
         return self.se_atten.has_message_passing()
 
+    def has_message_passing_across_ranks(self) -> bool:
+        """Returns whether per-layer node embeddings need MPI ghost exchange.
+
+        DPA1 (se_atten) is single-layer and does not exchange features
+        across ranks; same as the base se_e2_a path.
+        """
+        return False
+
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
         return self.se_atten.need_sorted_nlist_for_lower()
@@ -400,6 +412,10 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
     def get_env_protection(self) -> float:
         """Returns the protection of building environment matrix."""
         return self.se_atten.get_env_protection()
+
+    def get_numb_attn_layer(self) -> int:
+        """Returns the number of se_atten attention layers."""
+        return self.se_atten.attn_layer
 
     def share_params(
         self, base_class: "DescrptDPA1", shared_level: int, resume: bool = False
@@ -491,6 +507,9 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         atype_ext: Array,
         nlist: Array,
         mapping: Array | None = None,
+        fparam: Array | None = None,
+        comm_dict: dict | None = None,
+        charge_spin: Array | None = None,
     ) -> Array:
         """Compute the descriptor.
 
@@ -532,7 +551,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             (nf, nall, self.tebd_dim),
         )
         # nfnl x tebd_dim
-        atype_embd = atype_embd_ext[:, :nloc, :]
+        atype_embd = xp_take_first_n(atype_embd_ext, 1, nloc)
         grrg, g2, h2, rot_mat, sw = self.se_atten(
             nlist,
             coord_ext,
@@ -554,7 +573,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         data = {
             "@class": "Descriptor",
             "type": "dpa1",
-            "@version": 2,
+            "@version": 3 if self.compress else 2,
             "rcut": obj.rcut,
             "rcut_smth": obj.rcut_smth,
             "sel": obj.sel,
@@ -599,13 +618,28 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         }
         if obj.tebd_input_mode in ["strip"]:
             data.update({"embeddings_strip": obj.embeddings_strip.serialize()})
+        if self.compress:
+            compress_dict: dict = {
+                "@variables": {
+                    "type_embd_data": to_numpy_array(self.type_embd_data),
+                },
+                "geo_compress": self.geo_compress,
+            }
+            if self.geo_compress:
+                compress_dict["@variables"]["compress_data"] = [
+                    to_numpy_array(d) for d in self.compress_data
+                ]
+                compress_dict["@variables"]["compress_info"] = [
+                    to_numpy_array(i) for i in self.compress_info
+                ]
+            data["compress"] = compress_dict
         return data
 
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptDPA1":
         """Deserialize from dict."""
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 2, 1)
+        check_version_compatibility(data.pop("@version"), 3, 1)
         data.pop("@class")
         data.pop("type")
         variables = data.pop("@variables")
@@ -613,6 +647,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         type_embedding = data.pop("type_embedding")
         attention_layers = data.pop("attention_layers")
         env_mat = data.pop("env_mat")
+        compress = data.pop("compress", None)
         tebd_input_mode = data["tebd_input_mode"]
         if tebd_input_mode in ["strip"]:
             embeddings_strip = data.pop("embeddings_strip")
@@ -634,7 +669,19 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         obj.se_atten.dpa1_attention = NeighborGatedAttention.deserialize(
             attention_layers
         )
+        if compress is not None:
+            obj._load_compress_data(compress)
         return obj
+
+    def _load_compress_data(self, compress: dict) -> None:
+        """Load compression state from serialized data."""
+        variables = compress["@variables"]
+        self.type_embd_data = variables["type_embd_data"]
+        self.geo_compress = compress.get("geo_compress", False)
+        if self.geo_compress:
+            self.compress_data = variables["compress_data"]
+            self.compress_info = variables["compress_info"]
+        self.compress = True
 
     @classmethod
     def update_sel(
@@ -662,7 +709,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             The minimum distance between two atoms
         """
         local_jdata_cpy = local_jdata.copy()
-        min_nbor_dist, sel = UpdateSel().update_one_sel(
+        min_nbor_dist, sel = cls._update_sel_cls().update_one_sel(
             train_data, type_map, local_jdata_cpy["rcut"], local_jdata_cpy["sel"], True
         )
         local_jdata_cpy["sel"] = sel[0]
@@ -671,6 +718,84 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
 
 @DescriptorBlock.register("se_atten")
 class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
+    r"""The attention-based descriptor block.
+
+    This block computes an embedding matrix using attention mechanism and type embedding.
+    The descriptor is computed as:
+
+    .. math::
+        \mathcal{D}^i = \frac{1}{N_c^2}(\hat{\mathcal{G}}^i)^T \mathcal{R}^i (\mathcal{R}^i)^T \hat{\mathcal{G}}^i_<,
+
+    where :math:`\hat{\mathcal{G}}^i` is the embedding matrix after self-attention layers,
+    :math:`\mathcal{R}^i` is the coordinate matrix, and :math:`\hat{\mathcal{G}}^i_<` denotes
+    the first `axis_neuron` columns of :math:`\hat{\mathcal{G}}^i`.
+
+    The embedding matrix :math:`\mathcal{G}^i` is computed by:
+
+    .. math::
+        (\mathcal{G}^i)_j = \mathcal{N}(s(r_{ji}), \mathcal{T}_i, \mathcal{T}_j),
+
+    where :math:`\mathcal{N}` is the embedding network, :math:`s(r_{ji})` is the smoothed
+    radial distance, and :math:`\mathcal{T}` denotes type embedding.
+
+    Parameters
+    ----------
+    rcut : float
+        The cut-off radius.
+    rcut_smth : float
+        Where to start smoothing.
+    sel : Union[list[int], int]
+        Maximally possible number of selected neighbors.
+    ntypes : int
+        Number of element types.
+    neuron : list[int], optional
+        Number of neurons in each hidden layer of the embedding net.
+    axis_neuron : int, optional
+        Size of the submatrix of the embedding matrix.
+    tebd_dim : int, optional
+        Dimension of the type embedding.
+    tebd_input_mode : str, optional
+        The input mode of the type embedding. Supported modes are ["concat", "strip"].
+    resnet_dt : bool, optional
+        Time-step `dt` in the resnet construction.
+    type_one_side : bool, optional
+        If True, only type embeddings of neighbor atoms are considered.
+    attn : int, optional
+        Hidden dimension of the attention vectors.
+    attn_layer : int, optional
+        Number of attention layers.
+    attn_dotr : bool, optional
+        If True, dot the angular gate to the attention weights.
+    attn_mask : bool, optional
+        If True, mask the diagonal of attention weights.
+    exclude_types : list[tuple[int, int]], optional
+        The excluded pairs of types which have no interaction.
+    env_protection : float, optional
+        Protection parameter to prevent division by zero.
+    set_davg_zero : bool, optional
+        Set the shift of embedding net input to zero.
+    activation_function : str, optional
+        The activation function in the embedding net.
+    precision : str, optional
+        The precision of the embedding net parameters.
+    scaling_factor : float, optional
+        The scaling factor of normalization in attention weights calculation.
+    normalize : bool, optional
+        Whether to normalize the hidden vectors in attention weights calculation.
+    temperature : float, optional
+        If not None, the scaling of attention weights is `temperature` itself.
+    trainable_ln : bool, optional
+        Whether to use trainable shift and scale weights in layer normalization.
+    ln_eps : float, optional
+        The epsilon value for layer normalization.
+    smooth : bool, optional
+        Whether to use smoothness in attention weights calculation.
+    seed : int, optional
+        Random seed for parameter initialization.
+    trainable : bool, optional
+        If the parameters are trainable.
+    """
+
     def __init__(
         self,
         rcut: float,
@@ -707,6 +832,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             sel = [sel]
         self.sel = sel
         self.nnei = sum(sel)
+        self.ndescrpt = self.nnei * 4
         self.ntypes = ntypes
         self.neuron = neuron
         self.filter_neuron = self.neuron
@@ -909,9 +1035,14 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         xp = array_api_compat.array_namespace(self.stddev)
+        device = array_api_compat.device(self.stddev)
         if not self.set_davg_zero:
-            self.mean = xp.asarray(mean, dtype=self.mean.dtype, copy=True)
-        self.stddev = xp.asarray(stddev, dtype=self.stddev.dtype, copy=True)
+            self.mean = xp.asarray(
+                mean, dtype=self.mean.dtype, copy=True, device=device
+            )
+        self.stddev = xp.asarray(
+            stddev, dtype=self.stddev.dtype, copy=True, device=device
+        )
 
     def get_stats(self) -> dict[str, StatItem]:
         """Get the statistics of the descriptor."""
@@ -959,7 +1090,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         atype_embd_ext: Array | None = None,
         mapping: Array | None = None,
         type_embedding: Array | None = None,
-    ) -> tuple[Array, Array]:
+    ) -> tuple[Array, Array, Array, Array, Array]:
         xp = array_api_compat.array_namespace(nlist, coord_ext, atype_ext)
         # nf x nloc x nnei x 4
         dmatrix, diff, sw = self.env_mat.call(
@@ -970,7 +1101,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             self.stddev[...],
         )
         nf, nloc, nnei, _ = dmatrix.shape
-        atype = atype_ext[:, :nloc]
+        atype = xp_take_first_n(atype_ext, 1, nloc)
         exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
         # nfnl x nnei
         exclude_mask = xp.reshape(exclude_mask, (nf * nloc, nnei))
@@ -989,6 +1120,12 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         nlist_masked = xp.where(nlist_mask, nlist, xp.zeros_like(nlist))
         ng = self.neuron[-1]
         nt = self.tebd_dim
+
+        # Gather neighbor info using xp_take_along_axis along axis=1.
+        # This avoids flat (nf*nall,) indexing that creates Ne(nall, nloc)
+        # constraints in torch.export, breaking NoPbc (nall == nloc).
+        nlist_2d = xp.reshape(nlist_masked, (nf, nloc * nnei))  # (nf, nloc*nnei)
+
         # nfnl x nnei x 4
         rr = xp.reshape(dmatrix, (nf * nloc, nnei, 4))
         rr = rr * xp.astype(exclude_mask[:, :, None], rr.dtype)
@@ -997,15 +1134,16 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         if self.tebd_input_mode in ["concat"]:
             # nfnl x tebd_dim
             atype_embd = xp.reshape(
-                atype_embd_ext[:, :nloc, :], (nf * nloc, self.tebd_dim)
+                xp_take_first_n(atype_embd_ext, 1, nloc), (nf * nloc, self.tebd_dim)
             )
             # nfnl x nnei x tebd_dim
             atype_embd_nnei = xp.tile(atype_embd[:, xp.newaxis, :], (1, nnei, 1))
-            index = xp.tile(
-                xp.reshape(nlist_masked, (nf, -1, 1)), (1, 1, self.tebd_dim)
+            # Gather neighbor type embeddings: (nf, nall, tebd_dim) -> (nf, nloc*nnei, tebd_dim)
+            nlist_idx_tebd = xp.tile(nlist_2d[:, :, xp.newaxis], (1, 1, self.tebd_dim))
+            atype_embd_nlist = xp_take_along_axis(
+                atype_embd_ext, nlist_idx_tebd, axis=1
             )
             # nfnl x nnei x tebd_dim
-            atype_embd_nlist = xp_take_along_axis(atype_embd_ext, index, axis=1)
             atype_embd_nlist = xp.reshape(
                 atype_embd_nlist, (nf * nloc, nnei, self.tebd_dim)
             )
@@ -1024,10 +1162,9 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             assert self.embeddings_strip is not None
             assert type_embedding is not None
             ntypes_with_padding = type_embedding.shape[0]
-            # nf x (nl x nnei)
-            nlist_index = xp.reshape(nlist_masked, (nf, nloc * nnei))
-            # nf x (nl x nnei)
-            nei_type = xp_take_along_axis(atype_ext, nlist_index, axis=1)
+            # Gather neighbor types: (nf, nall) -> (nf, nloc*nnei)
+            nei_type = xp_take_along_axis(atype_ext, nlist_2d, axis=1)
+            nei_type = xp.reshape(nei_type, (-1,))  # (nf * nloc * nnei,)
             # (nf x nl x nnei) x ng
             nei_type_index = xp.tile(xp.reshape(nei_type, (-1, 1)), (1, ng))
             if self.type_one_side:
@@ -1044,6 +1181,8 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
                 idx_j = xp.reshape(nei_type, (-1,))
                 # (nf x nl x nnei) x ng
                 idx = xp.tile(xp.reshape((idx_i + idx_j), (-1, 1)), (1, ng))
+                # Cast to int64 for PyTorch backend (take_along_dim requires Long indices)
+                idx = xp.astype(idx, xp.int64)
                 # (ntypes) * ntypes * nt
                 type_embedding_nei = xp.tile(
                     xp.reshape(type_embedding, (1, ntypes_with_padding, nt)),

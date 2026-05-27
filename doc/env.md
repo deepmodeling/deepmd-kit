@@ -76,7 +76,6 @@ Default backend.
 
 {{ pytorch_icon }} Number of subprocesses to use for data loading in the PyTorch backend.
 See [PyTorch documentation](https://pytorch.org/docs/stable/data.html) for details.
-
 :::
 
 ## C++ interface only
@@ -120,5 +119,4 @@ Tips:
 
 - Large runs can generate sizable JSON files; consider limiting numbers of MD steps, like 20.
 - Currently this feature only supports single process, or multi-process runs where each process uses a distinct GPU on the same node.
-
 :::

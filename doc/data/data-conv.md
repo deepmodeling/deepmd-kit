@@ -57,7 +57,7 @@ In the raw format, the property of one frame is provided per line, ending with `
 ```bash
 $ cat force.raw
 -0.724  2.039 -0.951  0.841 -0.464  0.363
- 6.737  1.554 -5.587 -2.803  0.062  2.222
+6.737  1.554 -5.587 -2.803  0.062  2.222
 -1.968 -0.163  1.020 -0.225 -0.789  0.343
 ```
 

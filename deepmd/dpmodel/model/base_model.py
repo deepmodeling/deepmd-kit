@@ -42,7 +42,7 @@ def make_base_model() -> type[object]:
                 if model_type == "standard":
                     model_type = kwargs.get("fitting", {}).get("type", "ener")
                 cls = cls.get_class_by_type(model_type)
-            return super().__new__(cls)
+            return object.__new__(cls)
 
         @abstractmethod
         def __call__(self, *args: Any, **kwds: Any) -> Any:
@@ -127,6 +127,14 @@ def make_base_model() -> type[object]:
                 model_type = data.get("type", "standard")
                 if model_type == "standard":
                     model_type = data.get("fitting", {}).get("type", "ener")
+                if model_type == "spin_ener":
+                    # SpinModel is not a BaseModel subclass and cannot be
+                    # registered via the plugin registry.  Dispatch directly.
+                    from deepmd.dpmodel.model.spin_model import (
+                        SpinModel,
+                    )
+
+                    return SpinModel.deserialize(data)
                 return cls.get_class_by_type(model_type).deserialize(data)
             raise NotImplementedError(f"Not implemented in class {cls.__name__}")
 
@@ -142,9 +150,10 @@ def make_base_model() -> type[object]:
             """Get the model definition script."""
             pass
 
+        @abstractmethod
         def get_min_nbor_dist(self) -> float | None:
             """Get the minimum distance between two atoms."""
-            return self.min_nbor_dist
+            pass
 
         @abstractmethod
         def get_nnei(self) -> int:
@@ -189,6 +198,17 @@ def make_base_model() -> type[object]:
                 model_type = local_jdata.get("fitting", {}).get("type", "ener")
             cls = cls.get_class_by_type(model_type)
             return cls.update_sel(train_data, type_map, local_jdata)
+
+        @abstractmethod
+        def get_observed_type_list(self) -> list[str]:
+            """Get observed types (elements) of the model during data statistics.
+
+            Returns
+            -------
+            list[str]
+                A list of the observed type names in this model.
+            """
+            pass
 
         def enable_compression(
             self,
@@ -255,10 +275,4 @@ class BaseModel(make_base_model()):
         Backend-independent BaseModel class.
     """
 
-    def __init__(self) -> None:
-        self.model_def_script = ""
-        self.min_nbor_dist = None
-
-    def get_model_def_script(self) -> str:
-        """Get the model definition script."""
-        return self.model_def_script
+    pass

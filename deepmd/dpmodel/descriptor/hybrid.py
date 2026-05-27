@@ -33,7 +33,20 @@ from deepmd.utils.version import (
 
 @BaseDescriptor.register("hybrid")
 class DescrptHybrid(BaseDescriptor, NativeOP):
-    """Concate a list of descriptors to form a new descriptor.
+    r"""Concatenate a list of descriptors to form a new descriptor.
+
+    The hybrid descriptor combines multiple descriptors by concatenation:
+
+    .. math::
+        \mathcal{D}^i = [\mathcal{D}^i_1, \mathcal{D}^i_2, ..., \mathcal{D}^i_n],
+
+    where :math:`\mathcal{D}^i_k` is the descriptor computed by the :math:`k`-th
+    sub-descriptor for atom :math:`i`.
+
+    The output dimension is the sum of all sub-descriptor dimensions:
+
+    .. math::
+        \dim(\mathcal{D}^i) = \sum_{k=1}^{n} \dim(\mathcal{D}^i_k).
 
     Parameters
     ----------
@@ -110,6 +123,40 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         """Returns the cut-off radius."""
         return np.max([descrpt.get_rcut() for descrpt in self.descrpt_list]).item()
 
+    def get_dim_chg_spin(self) -> int:
+        """Returns the dimension of charge_spin input (0 if not supported)."""
+        return max(
+            (descrpt.get_dim_chg_spin() for descrpt in self.descrpt_list), default=0
+        )
+
+    def has_default_chg_spin(self) -> bool:
+        """Returns whether the descriptor has a default charge_spin value."""
+        default_chg_spin = None
+        found_chg_spin = False
+        for descrpt in self.descrpt_list:
+            if descrpt.get_dim_chg_spin() == 0:
+                continue
+            found_chg_spin = True
+            if not descrpt.has_default_chg_spin():
+                return False
+            child_default_chg_spin = descrpt.get_default_chg_spin()
+            if child_default_chg_spin is None:
+                return False
+            if default_chg_spin is None:
+                default_chg_spin = child_default_chg_spin
+            elif child_default_chg_spin != default_chg_spin:
+                return False
+        return found_chg_spin
+
+    def get_default_chg_spin(self) -> list[float] | None:
+        """Returns the default charge_spin value, or None."""
+        if not self.has_default_chg_spin():
+            return None
+        for descrpt in self.descrpt_list:
+            if descrpt.get_dim_chg_spin() > 0:
+                return descrpt.get_default_chg_spin()
+        return None
+
     def get_rcut_smth(self) -> float:
         """Returns the radius where the neighbor information starts to smoothly decay to 0."""
         # may not be a good idea...
@@ -154,6 +201,16 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
     def has_message_passing(self) -> bool:
         """Returns whether the descriptor has message passing."""
         return any(descrpt.has_message_passing() for descrpt in self.descrpt_list)
+
+    def has_message_passing_across_ranks(self) -> bool:
+        """Returns whether per-layer node embeddings need MPI ghost exchange.
+
+        ``True`` if any child descriptor needs cross-rank message passing
+        (e.g. a hybrid wrapping a DPA3 with ``use_loc_mapping=False``).
+        """
+        return any(
+            descrpt.has_message_passing_across_ranks() for descrpt in self.descrpt_list
+        )
 
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
@@ -232,7 +289,7 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         table_stride_2: float = 0.1,
         check_frequency: int = -1,
     ) -> None:
-        """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+        """Receive the statistics (distance, max_nbor_size and env_mat_range) of the training data.
 
         Parameters
         ----------
@@ -262,6 +319,9 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
         atype_ext: Array,
         nlist: Array,
         mapping: Array | None = None,
+        fparam: Array | None = None,
+        comm_dict: dict | None = None,
+        charge_spin: Array | None = None,
     ) -> tuple[
         Array,
         Array | None,
@@ -318,7 +378,15 @@ class DescrptHybrid(BaseDescriptor, NativeOP):
                 # mixed_types is True, but descrpt.mixed_types is False
                 assert nl_distinguish_types is not None
                 nl = nl_distinguish_types[:, :, nci]
-            odescriptor, gr, g2, h2, sw = descrpt(coord_ext, atype_ext, nl, mapping)
+            odescriptor, gr, _g2, _h2, _sw = descrpt(
+                coord_ext,
+                atype_ext,
+                nl,
+                mapping,
+                fparam=fparam,
+                comm_dict=comm_dict,
+                charge_spin=charge_spin,
+            )
             out_descriptor.append(odescriptor)
             if gr is not None:
                 out_gr.append(gr)

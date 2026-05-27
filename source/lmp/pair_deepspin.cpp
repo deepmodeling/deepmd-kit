@@ -201,6 +201,15 @@ void PairDeepSpin::compute(int eflag, int vflag) {
     }
   }
 
+  // mapping (for DPA-2/3 .pt2 GNN models that gather ghost features via
+  // the LAMMPS atom-map; harmless for other models).
+  std::vector<int> mapping_vec(nall, -1);
+  if (comm->nprocs == 1 && atom->map_style != Atom::MAP_NONE) {
+    for (size_t ii = 0; ii < nall; ++ii) {
+      mapping_vec[ii] = atom->map(atom->tag[ii]);
+    }
+  }
+
   if (do_compute_aparam) {
     make_aparam_from_compute(daparam);
   } else if (aparam.size() > 0) {
@@ -242,8 +251,11 @@ void PairDeepSpin::compute(int eflag, int vflag) {
         list->inum, list->ilist, list->numneigh, list->firstneigh,
         commdata_->nswap, commdata_->sendnum, commdata_->recvnum,
         commdata_->firstrecv, commdata_->sendlist, commdata_->sendproc,
-        commdata_->recvproc, &world);
+        commdata_->recvproc, &world, comm->nprocs);
     lmp_list.set_mask(NEIGHMASK);
+    if (comm->nprocs == 1 && atom->map_style != Atom::MAP_NONE) {
+      lmp_list.set_mapping(mapping_vec.data());
+    }
     if (single_model || multi_models_no_mod_devi) {
       // cvflag_atom is the right flag for the cvatom matrix
       if (!(eflag_atom || cvflag_atom)) {
@@ -883,7 +895,7 @@ void PairDeepSpin::coeff(int narg, char** arg) {
         }
       }
       if (!found_element && "NULL" == type_name) {
-        type_idx_map.push_back(type_map.size());  // ghost type
+        type_idx_map.push_back(-1);  // virtual atom
         found_element = true;
       }
       if (!found_element) {

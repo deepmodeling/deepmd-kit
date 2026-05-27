@@ -183,6 +183,7 @@ class HLO(BaseModel):
         fparam: jnp.ndarray | None = None,
         aparam: jnp.ndarray | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: jnp.ndarray | None = None,
     ) -> dict[str, jnp.ndarray]:
         if extended_coord.shape[1] > nlist.shape[1]:
             if do_atomic_virial:
@@ -264,6 +265,10 @@ class HLO(BaseModel):
             The deserialized model
         """
         raise NotImplementedError("Not implemented")
+
+    def get_observed_type_list(self) -> list[str]:
+        """Get observed types (elements) of the model during data statistics."""
+        raise NotImplementedError("Not implemented for HLO model")
 
     def get_model_def_script(self) -> str:
         """Get the model definition script."""

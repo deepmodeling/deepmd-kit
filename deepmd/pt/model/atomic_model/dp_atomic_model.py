@@ -1,5 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import functools
 import logging
 from collections.abc import (
     Callable,
@@ -67,6 +66,9 @@ class DPAtomicModel(BaseAtomicModel):
         if hasattr(self.fitting_net, "reinit_exclude"):
             self.fitting_net.reinit_exclude(self.atom_exclude_types)
         super().init_out_stat()
+        self.add_chg_spin_ebd: bool = getattr(
+            self.descriptor, "add_chg_spin_ebd", False
+        )
         self.enable_eval_descriptor_hook = False
         self.enable_eval_fitting_last_layer_hook = False
         self.eval_descriptor_list = []
@@ -83,6 +85,11 @@ class DPAtomicModel(BaseAtomicModel):
 
     def eval_descriptor(self) -> torch.Tensor:
         """Evaluate the descriptor."""
+        if not self.eval_descriptor_list:
+            raise RuntimeError(
+                "eval_descriptor_list is empty. "
+                "Call set_eval_descriptor_hook(True) and perform a forward pass first."
+            )
         return torch.concat(self.eval_descriptor_list)
 
     def set_eval_fitting_last_layer_hook(self, enable: bool) -> None:
@@ -94,6 +101,11 @@ class DPAtomicModel(BaseAtomicModel):
 
     def eval_fitting_last_layer(self) -> torch.Tensor:
         """Evaluate the fitting last layer output."""
+        if not self.eval_fitting_last_layer_list:
+            raise RuntimeError(
+                "eval_fitting_last_layer_list is empty. "
+                "Call set_eval_fitting_last_layer_hook(True) and perform a forward pass first."
+            )
         return torch.concat(self.eval_fitting_last_layer_list)
 
     @torch.jit.export
@@ -232,6 +244,7 @@ class DPAtomicModel(BaseAtomicModel):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         comm_dict: dict[str, torch.Tensor] | None = None,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Return atomic prediction.
 
@@ -260,12 +273,21 @@ class DPAtomicModel(BaseAtomicModel):
         atype = extended_atype[:, :nloc]
         if self.do_grad_r() or self.do_grad_c():
             extended_coord.requires_grad_(True)
+
+        # Handle default chg_spin if descriptor supports it
+        if self.add_chg_spin_ebd and charge_spin is None:
+            default_cs_tensor = self.descriptor.get_default_chg_spin()
+            if default_cs_tensor is not None:
+                default_cs_tensor = default_cs_tensor.to(device=extended_coord.device)
+                charge_spin = torch.tile(default_cs_tensor.unsqueeze(0), [nframes, 1])
+
         descriptor, rot_mat, g2, h2, sw = self.descriptor(
             extended_coord,
             extended_atype,
             nlist,
             mapping=mapping,
             comm_dict=comm_dict,
+            charge_spin=charge_spin if self.add_chg_spin_ebd else None,
         )
         assert descriptor is not None
         if self.enable_eval_descriptor_hook:
@@ -289,14 +311,12 @@ class DPAtomicModel(BaseAtomicModel):
             )
         return fit_ret
 
-    def get_out_bias(self) -> torch.Tensor:
-        return self.out_bias
-
     def compute_or_load_stat(
         self,
         sampled_func: Callable[[], list[dict]],
         stat_file_path: DPPath | None = None,
         compute_or_load_out_stat: bool = True,
+        preset_observed_type: list[str] | None = None,
     ) -> None:
         """
         Compute or load the statistics parameters of the model,
@@ -321,32 +341,15 @@ class DPAtomicModel(BaseAtomicModel):
             # should not share the same parameters
             stat_file_path /= " ".join(self.type_map)
 
-        @functools.lru_cache
-        def wrapped_sampler() -> list[dict]:
-            sampled = sampled_func()
-            if self.pair_excl is not None:
-                pair_exclude_types = self.pair_excl.get_exclude_types()
-                for sample in sampled:
-                    sample["pair_exclude_types"] = list(pair_exclude_types)
-            if self.atom_excl is not None:
-                atom_exclude_types = self.atom_excl.get_exclude_types()
-                for sample in sampled:
-                    sample["atom_exclude_types"] = list(atom_exclude_types)
-            if (
-                "find_fparam" not in sampled[0]
-                and "fparam" not in sampled[0]
-                and self.has_default_fparam()
-            ):
-                default_fparam = self.get_default_fparam()
-                for sample in sampled:
-                    nframe = sample["atype"].shape[0]
-                    sample["fparam"] = default_fparam.repeat(nframe, 1)
-            return sampled
-
+        wrapped_sampler = self._make_wrapped_sampler(sampled_func)
         self.descriptor.compute_input_stats(wrapped_sampler, stat_file_path)
         self.compute_fitting_input_stat(wrapped_sampler, stat_file_path)
         if compute_or_load_out_stat:
             self.compute_or_load_out_stat(wrapped_sampler, stat_file_path)
+
+        self._collect_and_set_observed_type(
+            wrapped_sampler, stat_file_path, preset_observed_type
+        )
 
     def compute_fitting_input_stat(
         self,
@@ -383,6 +386,32 @@ class DPAtomicModel(BaseAtomicModel):
 
     def get_default_fparam(self) -> torch.Tensor | None:
         return self.fitting_net.get_default_fparam()
+
+    @torch.jit.export
+    def has_chg_spin_ebd(self) -> bool:
+        """Check if the model has charge spin embedding."""
+        return self.add_chg_spin_ebd
+
+    @torch.jit.export
+    def get_dim_chg_spin(self) -> int:
+        """Get the dimension of charge_spin input."""
+        if self.add_chg_spin_ebd:
+            return self.descriptor.get_dim_chg_spin()
+        return 0
+
+    @torch.jit.export
+    def has_default_chg_spin(self) -> bool:
+        """Check if the model has default charge_spin values."""
+        if self.add_chg_spin_ebd:
+            return self.descriptor.has_default_chg_spin()
+        return False
+
+    @torch.jit.export
+    def get_default_chg_spin(self) -> torch.Tensor | None:
+        """Get the default charge_spin values as a tensor."""
+        if self.add_chg_spin_ebd and self.descriptor.has_default_chg_spin():
+            return self.descriptor.get_default_chg_spin()
+        return None
 
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""

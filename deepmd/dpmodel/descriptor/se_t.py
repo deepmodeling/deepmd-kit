@@ -63,6 +63,24 @@ class DescrptSeT(NativeOP, BaseDescriptor):
 
     The embedding takes angles between two neighboring atoms as input.
 
+    The descriptor :math:`\mathcal{D}^i \in \mathbb{R}^{M}` is given by
+
+    .. math::
+        \mathcal{D}^i = \sum_{t_j, t_k} \frac{1}{N_{t_j} N_{t_k}} \sum_{j \in t_j, k \in t_k} \tilde{g}_{jk} \, \mathcal{N}_{t_j, t_k}(\tilde{g}_{jk}),
+
+    where :math:`\tilde{g}_{jk} = \boldsymbol{rr}_j \cdot \boldsymbol{rr}_k` is the dot product
+    of the smoothed directional vectors from the environment matrix, :math:`N_{t_j}` and
+    :math:`N_{t_k}` are the numbers of neighbors of types :math:`t_j` and :math:`t_k`,
+    and :math:`\mathcal{N}_{t_j, t_k}` is the embedding network that depends only on the
+    types of neighbor atoms :math:`j` and :math:`k`.
+
+    The smoothed directional vector :math:`\boldsymbol{rr}_j` is computed as:
+
+    .. math::
+        \boldsymbol{rr}_j = s(r_{ji}) \frac{\boldsymbol{R}_j - \boldsymbol{R}_i}{r_{ji}},
+
+    where :math:`s(r)` is the switching function.
+
     Parameters
     ----------
     rcut : float
@@ -97,6 +115,8 @@ class DescrptSeT(NativeOP, BaseDescriptor):
             Number of element types.
             Not used in this descriptor, only to be compat with input.
     """
+
+    _update_sel_cls = UpdateSel
 
     def __init__(
         self,
@@ -134,6 +154,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         self.reinit_exclude(exclude_types)
         self.trainable = trainable
         self.sel_cumsum = [0, *np.cumsum(self.sel).tolist()]
+        self.compress = False
 
         in_dim = 1  # not considiering type embedding
         embeddings = NetworkCollection(
@@ -228,6 +249,10 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         """Returns whether the descriptor has message passing."""
         return False
 
+    def has_message_passing_across_ranks(self) -> bool:
+        """Returns whether per-layer node embeddings need MPI ghost exchange."""
+        return False
+
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
         return False
@@ -290,9 +315,12 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         self.stats = env_mat_stat.stats
         mean, stddev = env_mat_stat()
         xp = array_api_compat.array_namespace(self.dstd)
+        device = array_api_compat.device(self.dstd)
         if not self.set_davg_zero:
-            self.davg = xp.asarray(mean, dtype=self.davg.dtype, copy=True)
-        self.dstd = xp.asarray(stddev, dtype=self.dstd.dtype, copy=True)
+            self.davg = xp.asarray(
+                mean, dtype=self.davg.dtype, copy=True, device=device
+            )
+        self.dstd = xp.asarray(stddev, dtype=self.dstd.dtype, copy=True, device=device)
 
     def set_stat_mean_and_stddev(
         self,
@@ -321,6 +349,9 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         atype_ext: Array,
         nlist: Array,
         mapping: Array | None = None,
+        fparam: Array | None = None,
+        comm_dict: dict | None = None,
+        charge_spin: Array | None = None,
     ) -> tuple[Array, Array]:
         """Compute the descriptor.
 
@@ -366,7 +397,11 @@ class DescrptSeT(NativeOP, BaseDescriptor):
         sec = self.sel_cumsum
 
         ng = self.neuron[-1]
-        result = xp.zeros([nf * nloc, ng], dtype=get_xp_precision(xp, self.precision))
+        result = xp.zeros(
+            [nf * nloc, ng],
+            dtype=get_xp_precision(xp, self.precision),
+            device=array_api_compat.device(coord_ext),
+        )
         exclude_mask = self.emask.build_type_exclude_mask(nlist, atype_ext)
         # merge nf and nloc axis, so for type_one_side == False,
         # we don't require atype is the same in all frames
@@ -413,10 +448,10 @@ class DescrptSeT(NativeOP, BaseDescriptor):
             if (self.exclude_types and embedding_idx in self.emask) or tj < ti:
                 self.embeddings[embedding_idx].clear()
 
-        return {
+        data = {
             "@class": "Descriptor",
             "type": "se_e3",
-            "@version": 2,
+            "@version": 3 if self.compress else 2,
             "rcut": self.rcut,
             "rcut_smth": self.rcut_smth,
             "sel": self.sel,
@@ -436,23 +471,41 @@ class DescrptSeT(NativeOP, BaseDescriptor):
             "type_map": self.type_map,
             "trainable": self.trainable,
         }
+        if self.compress:
+            data["compress"] = {
+                "@variables": {
+                    "compress_data": [to_numpy_array(d) for d in self.compress_data],
+                    "compress_info": [to_numpy_array(i) for i in self.compress_info],
+                },
+            }
+        return data
 
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeT":
         """Deserialize from dict."""
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 2, 1)
+        check_version_compatibility(data.pop("@version", 1), 3, 1)
         data.pop("@class", None)
         data.pop("type", None)
         variables = data.pop("@variables")
         embeddings = data.pop("embeddings")
         env_mat = data.pop("env_mat")
+        compress = data.pop("compress", None)
         obj = cls(**data)
 
         obj["davg"] = variables["davg"]
         obj["dstd"] = variables["dstd"]
         obj.embeddings = NetworkCollection.deserialize(embeddings)
+        if compress is not None:
+            obj._load_compress_data(compress)
         return obj
+
+    def _load_compress_data(self, compress: dict) -> None:
+        """Load compression state from serialized data."""
+        variables = compress["@variables"]
+        self.compress_data = variables["compress_data"]
+        self.compress_info = variables["compress_info"]
+        self.compress = True
 
     @classmethod
     def update_sel(
@@ -480,7 +533,7 @@ class DescrptSeT(NativeOP, BaseDescriptor):
             The minimum distance between two atoms
         """
         local_jdata_cpy = local_jdata.copy()
-        min_nbor_dist, local_jdata_cpy["sel"] = UpdateSel().update_one_sel(
+        min_nbor_dist, local_jdata_cpy["sel"] = cls._update_sel_cls().update_one_sel(
             train_data, type_map, local_jdata_cpy["rcut"], local_jdata_cpy["sel"], False
         )
         return local_jdata_cpy, min_nbor_dist

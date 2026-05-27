@@ -2,6 +2,9 @@
 from enum import (
     Enum,
 )
+from typing import (
+    Any,
+)
 
 import numpy as np
 
@@ -20,6 +23,9 @@ from deepmd.tf.loss.loss import (
 )
 from deepmd.tf.model.model import (
     Model,
+)
+from deepmd.tf.utils.learning_rate import (
+    LearningRateExp,
 )
 from deepmd.tf.utils.pair_tab import (
     PairTab,
@@ -63,7 +69,7 @@ class PairTabModel(Model):
     model_type = "ener"
 
     def __init__(
-        self, tab_file: str, rcut: float, sel: int | list[int], **kwargs
+        self, tab_file: str, rcut: float, sel: int | list[int], **kwargs: Any
     ) -> None:
         super().__init__()
         self.tab_file = tab_file
@@ -89,7 +95,7 @@ class PairTabModel(Model):
         ckpt_meta: str | None = None,
         suffix: str = "",
         reuse: bool | Enum | None = None,
-    ):
+    ) -> dict:
         """Build the model.
 
         Parameters
@@ -238,7 +244,7 @@ class PairTabModel(Model):
         # nothing needs to do
         return {}
 
-    def get_loss(self, loss: dict, lr) -> Loss | dict | None:
+    def get_loss(self, loss: dict, lr: LearningRateExp) -> Loss | dict | None:
         """Get the loss function(s)."""
         # nothing needs to do
         return

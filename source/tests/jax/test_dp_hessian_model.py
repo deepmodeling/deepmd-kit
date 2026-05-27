@@ -82,34 +82,34 @@ class TestEnergyHessianModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist)
         ret0 = md0.call(*args)
         ret1 = md1.call(*args)
         np.testing.assert_allclose(
+            to_numpy_array(ret0["atom_energy"]),
+            to_numpy_array(ret1["atom_energy"]),
+            atol=self.atol,
+        )
+        np.testing.assert_allclose(
             to_numpy_array(ret0["energy"]),
             to_numpy_array(ret1["energy"]),
             atol=self.atol,
         )
         np.testing.assert_allclose(
-            to_numpy_array(ret0["energy_redu"]),
-            to_numpy_array(ret1["energy_redu"]),
+            to_numpy_array(ret0["force"]),
+            to_numpy_array(ret1["force"]),
             atol=self.atol,
         )
         np.testing.assert_allclose(
-            to_numpy_array(ret0["energy_derv_r"]),
-            to_numpy_array(ret1["energy_derv_r"]),
+            to_numpy_array(ret0["virial"]),
+            to_numpy_array(ret1["virial"]),
             atol=self.atol,
         )
         np.testing.assert_allclose(
-            to_numpy_array(ret0["energy_derv_c_redu"]),
-            to_numpy_array(ret1["energy_derv_c_redu"]),
-            atol=self.atol,
-        )
-        np.testing.assert_allclose(
-            to_numpy_array(ret0["energy_derv_r_derv_r"]),
-            to_numpy_array(ret1["energy_derv_r_derv_r"]),
+            to_numpy_array(ret0["hessian"]),
+            to_numpy_array(ret1["hessian"]),
             atol=self.atol,
         )
         ret0 = md0.call(*args, do_atomic_virial=True)
         ret1 = md1.call(*args, do_atomic_virial=True)
         np.testing.assert_allclose(
-            to_numpy_array(ret0["energy_derv_c"]),
-            to_numpy_array(ret1["energy_derv_c"]),
+            to_numpy_array(ret0["atom_virial"]),
+            to_numpy_array(ret1["atom_virial"]),
             atol=self.atol,
         )

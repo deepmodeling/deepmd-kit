@@ -20,6 +20,9 @@ from typing import (
 from deepmd.backend.backend import (
     Backend,
 )
+from deepmd.pretrained.registry import (
+    available_model_names,
+)
 
 try:
     from deepmd._version import version as __version__
@@ -912,6 +915,15 @@ def main_parser() -> argparse.ArgumentParser:
     )
     parser_convert_backend.add_argument("INPUT", help="The input model file.")
     parser_convert_backend.add_argument("OUTPUT", help="The output model file.")
+    parser_convert_backend.add_argument(
+        "--atomic-virial",
+        action="store_true",
+        default=False,
+        help="Export .pt2/.pte models with per-atom virial correction. "
+        "This adds ~2.5x inference cost but is required for "
+        "LAMMPS compute/atom virial output. "
+        "Ignored (with a warning) for other output backends.",
+    )
 
     # * show model ******************************************************************
     parser_show = subparsers.add_parser(
@@ -942,6 +954,35 @@ def main_parser() -> argparse.ArgumentParser:
         ],
         nargs="+",
     )
+
+    # pretrained
+    parser_pretrained = subparsers.add_parser(
+        "pretrained",
+        parents=[parser_log],
+        help="Manage builtin pretrained models",
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+    )
+    pretrained_subparsers = parser_pretrained.add_subparsers(
+        dest="pretrained_command",
+        required=True,
+    )
+    parser_pretrained_download = pretrained_subparsers.add_parser(
+        "download",
+        help="Download one pretrained model",
+    )
+
+    parser_pretrained_download.add_argument(
+        "MODEL",
+        choices=available_model_names(),
+        help="Pretrained model name",
+    )
+    parser_pretrained_download.add_argument(
+        "--cache-dir",
+        default=None,
+        type=str,
+        help="Optional cache directory for pretrained model files",
+    )
+
     return parser
 
 
@@ -997,6 +1038,7 @@ def main(args: list[str] | None = None) -> None:
         "gui",
         "convert-backend",
         "show",
+        "pretrained",
     ):
         # common entrypoints
         from deepmd.entrypoints.main import main as deepmd_main

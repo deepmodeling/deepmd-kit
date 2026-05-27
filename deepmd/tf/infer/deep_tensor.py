@@ -19,6 +19,8 @@ if TYPE_CHECKING:
         Path,
     )
 
+    import ase.neighborlist
+
 
 class DeepTensor(DeepEval):
     """Evaluates a tensor model.
@@ -59,7 +61,7 @@ class DeepTensor(DeepEval):
         load_prefix: str = "load",
         default_tf_graph: bool = False,
         input_map: dict | None = None,
-        neighbor_list=None,
+        neighbor_list: "ase.neighborlist.NeighborList | None" = None,
     ) -> None:
         """Constructor."""
         DeepEval.__init__(

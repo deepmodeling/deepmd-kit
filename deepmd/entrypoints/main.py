@@ -39,6 +39,9 @@ from deepmd.infer.model_devi import (
 from deepmd.loggers.loggers import (
     set_log_handles,
 )
+from deepmd.pretrained.entrypoints import (
+    pretrained_entrypoint,
+)
 
 
 def main(args: argparse.Namespace) -> None:
@@ -97,5 +100,7 @@ def main(args: argparse.Namespace) -> None:
         convert_backend(**dict_args)
     elif args.command == "show":
         show(**dict_args)
+    elif args.command == "pretrained":
+        pretrained_entrypoint(args)
     else:
         raise ValueError(f"Unknown command: {args.command}")

@@ -13,13 +13,13 @@ Parallelism for MPI is optional and used for multiple nodes, multiple GPU cards,
 :::{tab-item} TensorFlow {{ tensorflow_icon }}
 
 To enable MPI support for training in the TensorFlow interface, one should [install horovod](../install/install-from-source.md#install-horovod-and-mpi4py) in advance.
-
 :::
+
 :::{tab-item} PyTorch {{ pytorch_icon }}
 
 Multiprocessing support for training in the PyTorch backend is implemented with [torchrun](https://pytorch.org/docs/stable/elastic/run.html).
-
 :::
+
 ::::
 
 Note that the parallelism mode is data parallelism, so it is not expected to see the training time per batch decreases.
@@ -73,13 +73,13 @@ There are several other environment variables for OpenMP, such as `KMP_BLOCKTIME
 :::{tab-item} TensorFlow {{ tensorflow_icon }}
 
 See [Intel documentation](https://www.intel.com/content/www/us/en/developer/articles/technical/maximize-tensorflow-performance-on-cpu-considerations-and-recommendations-for-inference.html) for detailed information.
-
 :::
+
 :::{tab-item} PyTorch {{ pytorch_icon }}
 
 See [PyTorch documentation](https://pytorch.org/tutorials/recipes/recipes/tuning_guide.html) for detailed information.
-
 :::
+
 ::::
 
 ## Tune the performance
@@ -99,7 +99,6 @@ export DP_INTRA_OP_PARALLELISM_THREADS=3
 export DP_INTER_OP_PARALLELISM_THREADS=2
 dp --tf train input.json
 ```
-
 :::
 
 :::{tab-item} PyTorch {{ pytorch_icon }}
@@ -110,7 +109,6 @@ export DP_INTRA_OP_PARALLELISM_THREADS=3
 export DP_INTER_OP_PARALLELISM_THREADS=2
 dp --pt train input.json
 ```
-
 :::
 
 ::::

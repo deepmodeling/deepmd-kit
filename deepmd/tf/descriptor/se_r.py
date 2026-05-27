@@ -1,5 +1,12 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 
+from collections.abc import (
+    Callable,
+)
+from typing import (
+    Any,
+)
+
 import numpy as np
 
 from deepmd.dpmodel.utils.env_mat import (
@@ -102,7 +109,7 @@ class DescrptSeR(DescrptSe):
         spin: Spin | None = None,
         type_map: list[str] | None = None,  # to be compat with input
         env_protection: float = 0.0,  # not implement!!
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         """Constructor."""
         if rcut < rcut_smth:
@@ -210,19 +217,19 @@ class DescrptSeR(DescrptSe):
                 graph=sub_graph, config=default_tf_session_config
             )
 
-    def get_rcut(self):
+    def get_rcut(self) -> float:
         """Returns the cut-off radius."""
         return self.rcut
 
-    def get_ntypes(self):
+    def get_ntypes(self) -> int:
         """Returns the number of atom types."""
         return self.ntypes
 
-    def get_dim_out(self):
+    def get_dim_out(self) -> int:
         """Returns the output dimension of this descriptor."""
         return self.filter_neuron[-1]
 
-    def get_nlist(self):
+    def get_nlist(self) -> tuple:
         """Returns neighbor information.
 
         Returns
@@ -240,15 +247,15 @@ class DescrptSeR(DescrptSe):
 
     def compute_input_stats(
         self,
-        data_coord,
-        data_box,
-        data_atype,
-        natoms_vec,
-        mesh,
-        input_dict,
-        **kwargs,
+        data_coord: list[np.ndarray],
+        data_box: list[np.ndarray],
+        data_atype: list[np.ndarray],
+        natoms_vec: list[np.ndarray],
+        mesh: list[np.ndarray],
+        input_dict: dict,
+        **kwargs: Any,
     ) -> None:
-        """Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
+        """Compute the statistics (avg and std) of the training data. The input will be normalized by the statistics.
 
         Parameters
         ----------
@@ -280,19 +287,19 @@ class DescrptSeR(DescrptSe):
         stat_dict = {"sumr": sumr, "sumn": sumn, "sumr2": sumr2}
         self.merge_input_stats(stat_dict)
 
-    def merge_input_stats(self, stat_dict) -> None:
-        """Merge the statisitcs computed from compute_input_stats to obtain the self.davg and self.dstd.
+    def merge_input_stats(self, stat_dict: dict[str, Any]) -> None:
+        """Merge the statistics computed from compute_input_stats to obtain the self.davg and self.dstd.
 
         Parameters
         ----------
         stat_dict
-                The dict of statisitcs computed from compute_input_stats, including:
+                The dict of statistics computed from compute_input_stats, including:
             sumr
-                    The sum of radial statisitcs.
+                    The sum of radial statistics.
             sumn
                     The sum of neighbor numbers.
             sumr2
-                    The sum of square of radial statisitcs.
+                    The sum of square of radial statistics.
         """
         all_davg = []
         all_dstd = []
@@ -322,7 +329,7 @@ class DescrptSeR(DescrptSe):
         check_frequency: int = -1,
         suffix: str = "",
     ) -> None:
-        """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+        """Receive the statistics (distance, max_nbor_size and env_mat_range) of the training data.
 
         Parameters
         ----------
@@ -530,8 +537,14 @@ class DescrptSeR(DescrptSe):
         return force, virial, atom_virial
 
     def _pass_filter(
-        self, inputs, atype, natoms, reuse=None, suffix="", trainable=True
-    ):
+        self,
+        inputs: tf.Tensor,
+        atype: tf.Tensor,
+        natoms: tf.Tensor,
+        reuse: bool | None = None,
+        suffix: str = "",
+        trainable: bool = True,
+    ) -> tf.Tensor:
         start_index = 0
         inputs = tf.reshape(inputs, [-1, natoms[0], self.ndescrpt])
         output = []
@@ -590,8 +603,13 @@ class DescrptSeR(DescrptSe):
         return output
 
     def _compute_dstats_sys_se_r(
-        self, data_coord, data_box, data_atype, natoms_vec, mesh
-    ):
+        self,
+        data_coord: np.ndarray,
+        data_box: np.ndarray,
+        data_atype: np.ndarray,
+        natoms_vec: np.ndarray,
+        mesh: np.ndarray,
+    ) -> tuple[list[float], list[float], list[int]]:
         dd_all = run_sess(
             self.sub_sess,
             self.stat_descrpt,
@@ -625,7 +643,7 @@ class DescrptSeR(DescrptSe):
             sysr2.append(sumr2)
         return sysr, sysr2, sysn
 
-    def _compute_std(self, sumv2, sumv, sumn):
+    def _compute_std(self, sumv2: float, sumv: float, sumn: int) -> float:
         val = np.sqrt(sumv2 / sumn - np.multiply(sumv / sumn, sumv / sumn))
         if np.abs(val) < 1e-2:
             val = 1e-2
@@ -634,16 +652,16 @@ class DescrptSeR(DescrptSe):
     @cast_precision
     def _filter_r(
         self,
-        inputs,
-        type_input,
-        natoms,
-        activation_fn=tf.nn.tanh,
-        stddev=1.0,
-        bavg=0.0,
-        name="linear",
-        reuse=None,
-        trainable=True,
-    ):
+        inputs: tf.Tensor,
+        type_input: int,
+        natoms: tf.Tensor,
+        activation_fn: Callable[[tf.Tensor], tf.Tensor] | None = tf.nn.tanh,
+        stddev: float = 1.0,
+        bavg: float = 0.0,
+        name: str = "linear",
+        reuse: bool | None = None,
+        trainable: bool = True,
+    ) -> tf.Tensor:
         # natom x nei
         outputs_size = [1, *self.filter_neuron]
         with tf.variable_scope(name, reuse=reuse):
@@ -712,7 +730,7 @@ class DescrptSeR(DescrptSe):
         return result
 
     @classmethod
-    def deserialize(cls, data: dict, suffix: str = ""):
+    def deserialize(cls, data: dict, suffix: str = "") -> "DescrptSeR":
         """Deserialize the model.
 
         Parameters
@@ -728,12 +746,13 @@ class DescrptSeR(DescrptSe):
         if cls is not DescrptSeR:
             raise NotImplementedError(f"Not implemented in class {cls.__name__}")
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 2, 1)
+        check_version_compatibility(data.pop("@version", 1), 3, 1)
         embedding_net_variables = cls.deserialize_network(
             data.pop("embeddings"), suffix=suffix
         )
         data.pop("env_mat")
         variables = data.pop("@variables")
+        data.pop("compress", None)  # tf uses frozen graph for compression
         descriptor = cls(**data)
         descriptor.embedding_net_variables = embedding_net_variables
         descriptor.davg = variables["davg"].reshape(

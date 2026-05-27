@@ -50,6 +50,9 @@ from deepmd.infer.deep_pot import (
 from deepmd.infer.deep_wfc import (
     DeepWFC,
 )
+from deepmd.utils.econf_embd import (
+    sort_element_type,
+)
 
 if TYPE_CHECKING:
     import ase.neighborlist
@@ -162,6 +165,16 @@ class DeepEval(DeepEvalBackend):
     def get_has_efield(self) -> bool:
         """Check if the model has efield."""
         return False
+
+    def get_has_spin(self) -> bool:
+        """Check if the model has spin atom types."""
+        return hasattr(self.dp, "spin")
+
+    def get_use_spin(self) -> list[bool]:
+        """Get the per-type spin usage of this model."""
+        if hasattr(self.dp, "spin"):
+            return self.dp.spin.use_spin.tolist()
+        return []
 
     def get_ntypes_spin(self) -> int:
         """Get the number of spin atom types of this model."""
@@ -358,9 +371,7 @@ class DeepEval(DeepEvalBackend):
 
         results = []
         for odef in request_defs:
-            # it seems not doing conversion
-            # dp_name = self._OUTDEF_DP2BACKEND[odef.name]
-            dp_name = odef.name
+            dp_name = self._OUTDEF_DP2BACKEND[odef.name]
             if dp_name in batch_output:
                 shape = self._get_output_shape(odef, nframes, natoms)
                 if batch_output[dp_name] is not None:
@@ -404,6 +415,31 @@ class DeepEval(DeepEvalBackend):
     def get_model_def_script(self) -> dict:
         """Get model definition script."""
         return json.loads(self.dp.get_model_def_script())
+
+    def get_observed_types(self) -> dict:
+        """Get observed types (elements) of the model during data statistics.
+
+        Returns
+        -------
+        dict
+            A dictionary containing the information of observed type in the model:
+            - 'type_num': the total number of observed types in this model.
+            - 'observed_type': a list of the observed types in this model.
+        """
+        # Try metadata first (from model_def_script)
+        model_def_script = self.get_model_def_script()
+        observed_type_list = model_def_script.get("info", {}).get("observed_type")
+        if observed_type_list is not None:
+            return {
+                "type_num": len(observed_type_list),
+                "observed_type": observed_type_list,
+            }
+        # Fallback: bias-based approach for old models
+        observed_type_list = self.dp.get_observed_type_list()
+        return {
+            "type_num": len(observed_type_list),
+            "observed_type": sort_element_type(observed_type_list),
+        }
 
     def get_model(self) -> "BaseModel":
         """Get the dpmodel BaseModel.

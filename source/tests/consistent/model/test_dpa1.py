@@ -16,6 +16,7 @@ from ..common import (
     INSTALLED_JAX,
     INSTALLED_PD,
     INSTALLED_PT,
+    INSTALLED_PT_EXPT,
     INSTALLED_TF,
     SKIP_FLAG,
     CommonTest,
@@ -43,6 +44,10 @@ if INSTALLED_PD:
     from deepmd.pd.model.model.ener_model import EnergyModel as EnergyModelPD
 else:
     EnergyModelPD = None
+if INSTALLED_PT_EXPT:
+    from deepmd.pt_expt.model import EnergyModel as EnergyModelPTExpt
+else:
+    EnergyModelPTExpt = None
 if INSTALLED_JAX:
     from deepmd.jax.model.ener_model import EnergyModel as EnergyModelJAX
     from deepmd.jax.model.model import get_model as get_model_jax
@@ -97,6 +102,7 @@ class TestDPA1Ener(CommonTest, ModelTest, unittest.TestCase):
     dp_class = EnergyModelDP
     pt_class = EnergyModelPT
     pd_class = EnergyModelPD
+    pt_expt_class = EnergyModelPTExpt
     jax_class = EnergyModelJAX
     args = model_args()
 
@@ -109,6 +115,8 @@ class TestDPA1Ener(CommonTest, ModelTest, unittest.TestCase):
             return self.RefBackend.PT
         if not self.skip_tf:
             return self.RefBackend.TF
+        if not self.skip_pt_expt and self.pt_expt_class is not None:
+            return self.RefBackend.PT_EXPT
         if not self.skip_pd:
             return self.RefBackend.PD
         if not self.skip_jax:
@@ -128,6 +136,9 @@ class TestDPA1Ener(CommonTest, ModelTest, unittest.TestCase):
             return get_model_dp(data)
         elif cls is EnergyModelPT:
             return get_model_pt(data)
+        elif cls is EnergyModelPTExpt:
+            dp_model = get_model_dp(data)
+            return EnergyModelPTExpt.deserialize(dp_model.serialize())
         elif cls is EnergyModelPD:
             return get_model_pd(data)
         elif cls is EnergyModelJAX:
@@ -201,6 +212,15 @@ class TestDPA1Ener(CommonTest, ModelTest, unittest.TestCase):
             self.box,
         )
 
+    def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
+        return self.eval_pt_expt_model(
+            pt_expt_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
     def eval_pd(self, pd_obj: Any) -> Any:
         return self.eval_pd_model(
             pd_obj,
@@ -221,23 +241,7 @@ class TestDPA1Ener(CommonTest, ModelTest, unittest.TestCase):
 
     def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
         # shape not matched. ravel...
-        if backend is self.RefBackend.DP:
-            return (
-                ret["energy_redu"].ravel(),
-                ret["energy"].ravel(),
-                SKIP_FLAG,
-                SKIP_FLAG,
-                SKIP_FLAG,
-            )
-        elif backend is self.RefBackend.PT:
-            return (
-                ret["energy"].ravel(),
-                ret["atom_energy"].ravel(),
-                ret["force"].ravel(),
-                ret["virial"].ravel(),
-                ret["atom_virial"].ravel(),
-            )
-        elif backend is self.RefBackend.TF:
+        if backend is self.RefBackend.TF:
             return (
                 ret[0].ravel(),
                 ret[1].ravel(),
@@ -245,20 +249,72 @@ class TestDPA1Ener(CommonTest, ModelTest, unittest.TestCase):
                 ret[3].ravel(),
                 ret[4].ravel(),
             )
-        elif backend is self.RefBackend.PD:
+        elif backend is self.RefBackend.DP:
             return (
-                ret["energy"].flatten(),
-                ret["atom_energy"].flatten(),
-                ret["force"].flatten(),
-                ret["virial"].flatten(),
-                ret["atom_virial"].flatten(),
-            )
-        elif backend is self.RefBackend.JAX:
-            return (
-                ret["energy_redu"].ravel(),
                 ret["energy"].ravel(),
-                ret["energy_derv_r"].ravel(),
-                ret["energy_derv_c_redu"].ravel(),
-                ret["energy_derv_c"].ravel(),
+                ret["atom_energy"].ravel(),
+                SKIP_FLAG,
+                SKIP_FLAG,
+                SKIP_FLAG,
+            )
+        elif backend in {
+            self.RefBackend.PT,
+            self.RefBackend.PT_EXPT,
+            self.RefBackend.PD,
+            self.RefBackend.JAX,
+        }:
+            return (
+                ret["energy"].ravel(),
+                ret["atom_energy"].ravel(),
+                ret["force"].ravel(),
+                ret["virial"].ravel(),
+                ret["atom_virial"].ravel(),
             )
         raise ValueError(f"Unknown backend: {backend}")
+
+
+@unittest.skipUnless(INSTALLED_PT and INSTALLED_PT_EXPT, "PyTorch is not installed")
+class TestDPA1EnerModelAPIs(unittest.TestCase):
+    """Test translated_output_def consistency across dp, pt, and pt_expt backends."""
+
+    def setUp(self) -> None:
+        data = model_args().normalize_value(
+            {
+                "type_map": ["O", "H"],
+                "descriptor": {
+                    "type": "se_atten",
+                    "sel": 40,
+                    "rcut_smth": 0.50,
+                    "rcut": 6.00,
+                    "neuron": [3, 6],
+                    "resnet_dt": False,
+                    "axis_neuron": 2,
+                    "seed": 1,
+                    "attn": 128,
+                    "attn_layer": 0,
+                    "precision": "float64",
+                },
+                "fitting_net": {
+                    "neuron": [5, 5],
+                    "resnet_dt": True,
+                    "precision": "float64",
+                    "seed": 1,
+                },
+            },
+            trim_pattern="_*",
+        )
+        self.dp_model = get_model_dp(data)
+        serialized = self.dp_model.serialize()
+        self.pt_model = EnergyModelPT.deserialize(serialized)
+        self.pt_expt_model = EnergyModelPTExpt.deserialize(serialized)
+
+    def test_translated_output_def(self) -> None:
+        """translated_output_def should return the same keys on dp, pt, and pt_expt."""
+        dp_def = self.dp_model.translated_output_def()
+        pt_def = self.pt_model.translated_output_def()
+        pt_expt_def = self.pt_expt_model.translated_output_def()
+        self.assertEqual(set(dp_def.keys()), set(pt_def.keys()))
+        self.assertEqual(set(dp_def.keys()), set(pt_expt_def.keys()))
+        for key in dp_def:
+            self.assertEqual(dp_def[key].shape, pt_def[key].shape)
+            self.assertEqual(dp_def[key].shape, pt_expt_def[key].shape)

@@ -23,6 +23,9 @@ from deepmd.jax.env import (
     flax_version,
     nnx,
 )
+from deepmd.jax.utils.network import (
+    NativeLayer,
+)
 from deepmd.jax.utils.type_embed import (
     TypeEmbedNet,
 )
@@ -40,8 +43,12 @@ class DescrptDPA3(DescrptDPA3DP):
                 value = nnx.data(value)
         elif name in {"repflows"}:
             value = DescrptBlockRepflows.deserialize(value.serialize())
-        elif name in {"type_embedding"}:
-            value = TypeEmbedNet.deserialize(value.serialize())
+        elif name in {"type_embedding", "chg_embedding", "spin_embedding"}:
+            if value is not None:
+                value = TypeEmbedNet.deserialize(value.serialize())
+        elif name in {"mix_cs_mlp"}:
+            if value is not None:
+                value = NativeLayer.deserialize(value.serialize())
         else:
             pass
         return super().__setattr__(name, value)

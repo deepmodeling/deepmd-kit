@@ -52,7 +52,7 @@ class LinearEnergyModel(DPLinearModel_):
             output_def["virial"] = out_def_data["energy_derv_c_redu"]
             output_def["virial"].squeeze(-2)
             output_def["atom_virial"] = out_def_data["energy_derv_c"]
-            output_def["atom_virial"].squeeze(-3)
+            output_def["atom_virial"].squeeze(-2)
         if "mask" in out_def_data:
             output_def["mask"] = out_def_data["mask"]
         return output_def
@@ -65,6 +65,7 @@ class LinearEnergyModel(DPLinearModel_):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         model_ret = self.forward_common(
             coord,
@@ -73,6 +74,7 @@ class LinearEnergyModel(DPLinearModel_):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
+            charge_spin=charge_spin,
         )
 
         model_predict = {}
@@ -83,7 +85,7 @@ class LinearEnergyModel(DPLinearModel_):
         if self.do_grad_c("energy"):
             model_predict["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
             if do_atomic_virial:
-                model_predict["atom_virial"] = model_ret["energy_derv_c"].squeeze(-3)
+                model_predict["atom_virial"] = model_ret["energy_derv_c"].squeeze(-2)
         else:
             model_predict["force"] = model_ret["dforce"]
         if "mask" in model_ret:
@@ -101,6 +103,7 @@ class LinearEnergyModel(DPLinearModel_):
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
         comm_dict: dict[str, torch.Tensor] | None = None,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         model_ret = self.forward_common_lower(
             extended_coord,
@@ -112,6 +115,7 @@ class LinearEnergyModel(DPLinearModel_):
             do_atomic_virial=do_atomic_virial,
             comm_dict=comm_dict,
             extra_nlist_sort=self.need_sorted_nlist_for_lower(),
+            charge_spin=charge_spin,
         )
 
         model_predict = {}

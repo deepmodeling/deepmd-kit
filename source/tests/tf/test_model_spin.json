@@ -59,8 +59,8 @@
     "limit_pref_fr": 1.0,
     "start_pref_fm": 10000,
     "limit_pref_fm": 10.0,
-    "start_pref_v": 0,
-    "limit_pref_v": 0
+    "start_pref_v": 10,
+    "limit_pref_v": 10
   },
 
   "training": {

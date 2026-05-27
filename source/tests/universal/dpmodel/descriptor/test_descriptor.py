@@ -488,6 +488,8 @@ def DescriptorParamDPA3(
     use_dynamic_sel=False,
     precision="float64",
     use_loc_mapping=True,
+    add_chg_spin_ebd=False,
+    default_chg_spin=None,
 ):
     input_dict = {
         # kwargs for repformer
@@ -535,6 +537,8 @@ def DescriptorParamDPA3(
         "use_econf_tebd": False,
         "use_tebd_bias": False,
         "use_loc_mapping": use_loc_mapping,
+        "add_chg_spin_ebd": add_chg_spin_ebd,
+        "default_chg_spin": default_chg_spin,
         "type_map": type_map,
         "seed": GLOBAL_SEED,
     }
@@ -547,7 +551,7 @@ DescriptorParamDPA3List = parameterize_func(
         {
             "update_residual_init": ("const",),
             "exclude_types": ([], [[0, 1]]),
-            "update_angle": (True, False),
+            "update_angle": (True,),
             "a_compress_rate": (1,),
             "a_compress_e_rate": (2,),
             "a_compress_use_split": (True,),
@@ -564,6 +568,21 @@ DescriptorParamDPA3List = parameterize_func(
         }
     ),
 )
+
+
+def DescriptorParamDPA3DefaultChgSpin(ntypes, rcut, rcut_smth, sel, type_map, **kwargs):
+    return DescriptorParamDPA3(
+        ntypes,
+        rcut,
+        rcut_smth,
+        sel,
+        type_map,
+        **kwargs,
+        add_chg_spin_ebd=True,
+        default_chg_spin=[5.0, 1.0],
+    )
+
+
 # to get name for the default function
 DescriptorParamDPA3 = DescriptorParamDPA3List[0]
 
@@ -639,3 +658,37 @@ class TestDescriptorDP(unittest.TestCase, DescriptorTest, DPTestCase):
             self.nt, self.rcut, self.rcut_smth, self.sel, ["O", "H"]
         )
         self.module = Descrpt(**self.input_dict)
+
+
+class TestHybridChgSpinDefaultDP(unittest.TestCase):
+    def _make_dpa3(self, default_chg_spin: list[float] | None) -> DescrptDPA3:
+        return DescrptDPA3(
+            **DescriptorParamDPA3(
+                2,
+                4.0,
+                0.5,
+                [6, 6],
+                ["O", "H"],
+                add_chg_spin_ebd=True,
+                default_chg_spin=default_chg_spin,
+            )
+        )
+
+    def test_shared_default_required_for_hybrid_default(self) -> None:
+        shared_default = DescrptHybrid(
+            list=[self._make_dpa3([5.0, 1.0]), self._make_dpa3([5.0, 1.0])]
+        )
+        self.assertTrue(shared_default.has_default_chg_spin())
+        self.assertEqual(shared_default.get_default_chg_spin(), [5.0, 1.0])
+
+        missing_default = DescrptHybrid(
+            list=[self._make_dpa3([5.0, 1.0]), self._make_dpa3(None)]
+        )
+        self.assertFalse(missing_default.has_default_chg_spin())
+        self.assertIsNone(missing_default.get_default_chg_spin())
+
+        mismatched_default = DescrptHybrid(
+            list=[self._make_dpa3([5.0, 1.0]), self._make_dpa3([6.0, 1.0])]
+        )
+        self.assertFalse(mismatched_default.has_default_chg_spin())
+        self.assertIsNone(mismatched_default.get_default_chg_spin())

@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
+from typing import (
+    Any,
+)
 
 from deepmd.tf.utils.type_embed import (
     TypeEmbedNet,
@@ -85,7 +88,7 @@ class DescrptSeAttenV2(DescrptSeAtten):
         attn_layer: int = 2,
         attn_dotr: bool = True,
         attn_mask: bool = False,
-        **kwargs,
+        **kwargs: Any,
     ) -> None:
         DescrptSeAtten.__init__(
             self,
@@ -114,7 +117,7 @@ class DescrptSeAttenV2(DescrptSeAtten):
         )
 
     @classmethod
-    def deserialize(cls, data: dict, suffix: str = ""):
+    def deserialize(cls, data: dict, suffix: str = "") -> "DescrptSeAttenV2":
         """Deserialize the model.
 
         Parameters
@@ -133,7 +136,7 @@ class DescrptSeAttenV2(DescrptSeAtten):
         if cls is not DescrptSeAttenV2:
             raise NotImplementedError(f"Not implemented in class {cls.__name__}")
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 2, 1)
+        check_version_compatibility(data.pop("@version"), 3, 1)
         data.pop("@class")
         data.pop("type")
         embedding_net_variables = cls.deserialize_network(
@@ -144,6 +147,7 @@ class DescrptSeAttenV2(DescrptSeAtten):
         )
         data.pop("env_mat")
         variables = data.pop("@variables")
+        data.pop("compress", None)  # tf uses frozen graph for compression
         type_one_side = data["type_one_side"]
         two_side_embeeding_net_variables = cls.deserialize_network_strip(
             data.pop("embeddings_strip"),

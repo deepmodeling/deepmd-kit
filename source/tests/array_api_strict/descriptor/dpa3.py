@@ -8,6 +8,9 @@ from deepmd.dpmodel.descriptor.dpa3 import DescrptDPA3 as DescrptDPA3DP
 from ..common import (
     to_array_api_strict_array,
 )
+from ..utils.network import (
+    NativeLayer,
+)
 from ..utils.type_embed import (
     TypeEmbedNet,
 )
@@ -26,8 +29,12 @@ class DescrptDPA3(DescrptDPA3DP):
             value = to_array_api_strict_array(value)
         elif name in {"repflows"}:
             value = DescrptBlockRepflows.deserialize(value.serialize())
-        elif name in {"type_embedding"}:
-            value = TypeEmbedNet.deserialize(value.serialize())
+        elif name in {"type_embedding", "chg_embedding", "spin_embedding"}:
+            if value is not None:
+                value = TypeEmbedNet.deserialize(value.serialize())
+        elif name in {"mix_cs_mlp"}:
+            if value is not None:
+                value = NativeLayer.deserialize(value.serialize())
         else:
             pass
         return super().__setattr__(name, value)

@@ -60,7 +60,7 @@ class DPChecker(BaseChecker):
                     no_device = False
                 if kw.arg == "dtype":
                     no_dtype = False
-            if no_device and node.func.expr.name == "torch":
+            if no_device and node.func.expr.name in {"torch", "xp"}:
                 # only PT needs device
                 self.add_message("no-explicit-device", node=node)
             if no_dtype:

@@ -37,7 +37,11 @@ class DPZBLModel(DPZBLModelDP):
         fparam: jnp.ndarray | None = None,
         aparam: jnp.ndarray | None = None,
         do_atomic_virial: bool = False,
+        extended_coord_corr: jnp.ndarray | None = None,
+        comm_dict: dict | None = None,
+        charge_spin: jnp.ndarray | None = None,
     ) -> dict[str, jnp.ndarray]:
+        del comm_dict  # JAX path has no MPI ghost exchange
         return forward_common_atomic(
             self,
             extended_coord,
@@ -47,6 +51,8 @@ class DPZBLModel(DPZBLModelDP):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
+            extended_coord_corr=extended_coord_corr,
+            charge_spin=charge_spin,
         )
 
     def format_nlist(

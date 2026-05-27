@@ -93,11 +93,11 @@ TYPED_TEST(TestInferDeepSpinModeDevi, cpu_build_nlist) {
   EXPECT_EQ(edir.size(), emd.size());
   EXPECT_EQ(fdir.size(), fmd.size());
   EXPECT_EQ(fmagdir.size(), fmmagd.size());
-  // EXPECT_EQ(vdir.size(), vmd.size());
+  EXPECT_EQ(vdir.size(), vmd.size());
   for (int kk = 0; kk < nmodel; ++kk) {
     EXPECT_EQ(fdir[kk].size(), fmd[kk].size());
     EXPECT_EQ(fmagdir[kk].size(), fmmagd[kk].size());
-    // EXPECT_EQ(vdir[kk].size(), vmd[kk].size());
+    EXPECT_EQ(vdir[kk].size(), vmd[kk].size());
   }
   for (int kk = 0; kk < nmodel; ++kk) {
     EXPECT_LT(fabs(edir[kk] - emd[kk]), EPSILON);
@@ -107,9 +107,9 @@ TYPED_TEST(TestInferDeepSpinModeDevi, cpu_build_nlist) {
     for (int ii = 0; ii < fmagdir[0].size(); ++ii) {
       EXPECT_LT(fabs(fmagdir[kk][ii] - fmmagd[kk][ii]), EPSILON);
     }
-    // for (int ii = 0; ii < vdir[0].size(); ++ii) {
-    //   EXPECT_LT(fabs(vdir[kk][ii] - vmd[kk][ii]), EPSILON);
-    // }
+    for (int ii = 0; ii < vdir[0].size(); ++ii) {
+      EXPECT_LT(fabs(vdir[kk][ii] - vmd[kk][ii]), EPSILON);
+    }
   }
 }
 
@@ -138,15 +138,15 @@ TYPED_TEST(TestInferDeepSpinModeDevi, cpu_build_nlist_atomic) {
   EXPECT_EQ(edir.size(), emd.size());
   EXPECT_EQ(fdir.size(), fmd.size());
   EXPECT_EQ(fmagdir.size(), fmmagd.size());
-  // EXPECT_EQ(vdir.size(), vmd.size());
+  EXPECT_EQ(vdir.size(), vmd.size());
   EXPECT_EQ(aedir.size(), aemd.size());
-  // EXPECT_EQ(avdir.size(), avmd.size());
+  EXPECT_EQ(avdir.size(), avmd.size());
   for (int kk = 0; kk < nmodel; ++kk) {
     EXPECT_EQ(fdir[kk].size(), fmd[kk].size());
     EXPECT_EQ(fmagdir[kk].size(), fmmagd[kk].size());
-    // EXPECT_EQ(vdir[kk].size(), vmd[kk].size());
+    EXPECT_EQ(vdir[kk].size(), vmd[kk].size());
     EXPECT_EQ(aedir[kk].size(), aemd[kk].size());
-    // EXPECT_EQ(avdir[kk].size(), avmd[kk].size());
+    EXPECT_EQ(avdir[kk].size(), avmd[kk].size());
   }
   for (int kk = 0; kk < nmodel; ++kk) {
     EXPECT_LT(fabs(edir[kk] - emd[kk]), EPSILON);
@@ -156,14 +156,14 @@ TYPED_TEST(TestInferDeepSpinModeDevi, cpu_build_nlist_atomic) {
     for (int ii = 0; ii < fmagdir[0].size(); ++ii) {
       EXPECT_LT(fabs(fmagdir[kk][ii] - fmmagd[kk][ii]), EPSILON);
     }
-    // for (int ii = 0; ii < vdir[0].size(); ++ii) {
-    //   EXPECT_LT(fabs(vdir[kk][ii] - vmd[kk][ii]), EPSILON);
-    // }
+    for (int ii = 0; ii < vdir[0].size(); ++ii) {
+      EXPECT_LT(fabs(vdir[kk][ii] - vmd[kk][ii]), EPSILON);
+    }
     for (int ii = 0; ii < aedir[0].size(); ++ii) {
       EXPECT_LT(fabs(aedir[kk][ii] - aemd[kk][ii]), EPSILON);
     }
-    // for (int ii = 0; ii < avdir[0].size(); ++ii) {
-    //   EXPECT_LT(fabs(avdir[kk][ii] - avmd[kk][ii]), EPSILON);
-    // }
+    for (int ii = 0; ii < avdir[0].size(); ++ii) {
+      EXPECT_LT(fabs(avdir[kk][ii] - avmd[kk][ii]), EPSILON);
+    }
   }
 }

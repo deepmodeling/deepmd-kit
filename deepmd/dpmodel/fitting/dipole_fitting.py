@@ -34,7 +34,24 @@ from .general_fitting import (
 @BaseFitting.register("dipole")
 @fitting_check_output
 class DipoleFitting(GeneralFitting):
-    r"""Fitting rotationally equivariant diploe of the system.
+    r"""Fitting rotationally equivariant dipole of the system.
+
+    The dipole :math:`\boldsymbol{\mu}` is computed from the fitting network output
+    and the rotation matrix:
+
+    .. math::
+        \boldsymbol{\mu}^i = \mathbf{M}^i \cdot \mathbf{R}^i,
+
+    where :math:`\mathbf{M}^i \in \mathbb{R}^{1 \times m_1}` is the output of the fitting
+    network for atom :math:`i`, :math:`\mathbf{R}^i \in \mathbb{R}^{m_1 \times 3}` is
+    the rotation matrix from the descriptor, and :math:`m_1` is the embedding width
+    (the dimension of the rotation matrix). The fitting network is:
+
+    .. math::
+        \mathbf{M}^i = \mathcal{L}^{(n)} \circ \mathcal{L}^{(n-1)} \circ \cdots \circ \mathcal{L}^{(0)}(\mathcal{D}^i),
+
+    where :math:`\mathcal{D}^i` is the descriptor and each layer :math:`\mathcal{L}^{(k)}`
+    is a fully connected layer with an activation function.
 
     Parameters
     ----------
@@ -181,6 +198,7 @@ class DipoleFitting(GeneralFitting):
                     r_differentiable=self.r_differentiable,
                     c_differentiable=self.c_differentiable,
                 ),
+                *self._middle_output_def(),
             ]
         )
 
@@ -222,9 +240,8 @@ class DipoleFitting(GeneralFitting):
         nframes, nloc, _ = descriptor.shape
         assert gr is not None, "Must provide the rotation matrix for dipole fitting."
         # (nframes, nloc, m1)
-        out = self._call_common(descriptor, atype, gr, g2, h2, fparam, aparam)[
-            self.var_name
-        ]
+        results = self._call_common(descriptor, atype, gr, g2, h2, fparam, aparam)
+        out = results[self.var_name]
         # (nframes * nloc, 1, m1)
         out = xp.reshape(out, (-1, 1, self.embedding_width))
         # (nframes * nloc, m1, 3)
@@ -232,5 +249,5 @@ class DipoleFitting(GeneralFitting):
         # (nframes, nloc, 3)
         # out = np.einsum("bim,bmj->bij", out, gr).squeeze(-2).reshape(nframes, nloc, 3)
         out = out @ gr
-        out = xp.reshape(out, (nframes, nloc, 3))
-        return {self.var_name: out}
+        results[self.var_name] = xp.reshape(out, (nframes, nloc, 3))
+        return results

@@ -40,6 +40,75 @@ if TYPE_CHECKING:
     )
 
 
+def merge_env_stat(
+    base_obj: Union["Descriptor", "DescriptorBlock"],
+    link_obj: Union["Descriptor", "DescriptorBlock"],
+    model_prob: float = 1.0,
+) -> None:
+    """Merge descriptor env mat stats from link_obj into base_obj.
+
+    Uses probability-weighted merging: merged = base_stats + link_stats * model_prob,
+    where model_prob = link_prob / base_prob.
+    Mutates base_obj.stats for chaining (3+ models).
+
+    Parameters
+    ----------
+    base_obj : Descriptor or DescriptorBlock
+        The base descriptor whose stats will be updated.
+    link_obj : Descriptor or DescriptorBlock
+        The linked descriptor whose stats will be merged in.
+    model_prob : float
+        The probability weight ratio (link_prob / base_prob).
+    """
+    if (
+        getattr(base_obj, "stats", None) is None
+        or getattr(link_obj, "stats", None) is None
+    ):
+        return
+    if getattr(base_obj, "set_stddev_constant", False) and getattr(
+        base_obj, "set_davg_zero", False
+    ):
+        return
+
+    # Weighted merge of StatItem objects
+    base_stats = base_obj.stats
+    link_stats = link_obj.stats
+    merged_stats = {}
+    for kk in base_stats:
+        merged_stats[kk] = base_stats[kk] + link_stats[kk] * model_prob
+
+    # Compute mean/stddev from merged stats
+    base_env = EnvMatStatSe(base_obj)
+    base_env.stats = merged_stats
+    mean, stddev = base_env()
+
+    # Update base_obj stats for chaining
+    base_obj.stats = merged_stats
+
+    # Update buffers in-place: davg/dstd (simple) or mean/stddev (blocks)
+    # mean/stddev are numpy arrays; convert to match the buffer's backend
+    if hasattr(base_obj, "davg"):
+        xp = array_api_compat.array_namespace(base_obj.dstd)
+        device = array_api_compat.device(base_obj.dstd)
+        if not getattr(base_obj, "set_davg_zero", False):
+            base_obj.davg[...] = xp.asarray(
+                mean, dtype=base_obj.davg.dtype, device=device
+            )
+        base_obj.dstd[...] = xp.asarray(
+            stddev, dtype=base_obj.dstd.dtype, device=device
+        )
+    elif hasattr(base_obj, "mean"):
+        xp = array_api_compat.array_namespace(base_obj.stddev)
+        device = array_api_compat.device(base_obj.stddev)
+        if not getattr(base_obj, "set_davg_zero", False):
+            base_obj.mean[...] = xp.asarray(
+                mean, dtype=base_obj.mean.dtype, device=device
+            )
+        base_obj.stddev[...] = xp.asarray(
+            stddev, dtype=base_obj.stddev.dtype, device=device
+        )
+
+
 class EnvMatStat(BaseEnvMatStat):
     def compute_stat(self, env_mat: dict[str, Array]) -> dict[str, StatItem]:
         """Compute the statistics of the environment matrix for a single system.
@@ -128,12 +197,12 @@ class EnvMatStatSe(EnvMatStat):
             device=array_api_compat.device(data[0]["coord"]),
         )
         for system in data:
-            coord, atype, box, natoms = (
+            coord, atype, box = (
                 system["coord"],
                 system["atype"],
                 system["box"],
-                system["natoms"],
             )
+            nframes, nloc = atype.shape[:2]
             (
                 extended_coord,
                 extended_atype,
@@ -170,12 +239,12 @@ class EnvMatStatSe(EnvMatStat):
             env_mat = xp.reshape(
                 env_mat,
                 (
-                    coord.shape[0] * coord.shape[1],
+                    nframes * nloc,
                     self.descriptor.get_nsel(),
                     self.last_dim,
                 ),
             )
-            atype = xp.reshape(atype, (coord.shape[0] * coord.shape[1],))
+            atype = xp.reshape(atype, (nframes * nloc,))
             # (1, nloc) eq (ntypes, 1), so broadcast is possible
             # shape: (ntypes, nloc)
             type_idx = xp.equal(
@@ -200,7 +269,7 @@ class EnvMatStatSe(EnvMatStat):
                 # shape: (1, nloc, nnei)
                 exclude_mask = xp.reshape(
                     pair_exclude_mask.build_type_exclude_mask(nlist, extended_atype),
-                    (1, coord.shape[0] * coord.shape[1], -1),
+                    (1, nframes * nloc, -1),
                 )
                 # shape: (ntypes, nloc, nnei)
                 type_idx = xp.logical_and(type_idx[..., None], exclude_mask)

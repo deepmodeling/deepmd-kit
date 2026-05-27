@@ -73,6 +73,23 @@ from .descriptor import (
     extend_descrpt_stat,
 )
 
+if not hasattr(torch.ops.deepmd, "tabulate_fusion_se_t_tebd"):
+
+    def tabulate_fusion_se_t_tebd(
+        argument0: torch.Tensor,
+        argument1: torch.Tensor,
+        argument2: torch.Tensor,
+        argument3: torch.Tensor,
+        argument4: int,
+    ) -> list[torch.Tensor]:
+        raise NotImplementedError(
+            "tabulate_fusion_se_t_tebd is not available since customized PyTorch OP library is not built when freezing the model. "
+            "See documentation for model compression for details."
+        )
+
+    # Note: this hack cannot actually save a model that can be run using LAMMPS.
+    torch.ops.deepmd.tabulate_fusion_se_t_tebd = tabulate_fusion_se_t_tebd
+
 
 @BaseDescriptor.register("se_e3_tebd")
 class DescrptSeTTebd(BaseDescriptor, torch.nn.Module):
@@ -192,6 +209,18 @@ class DescrptSeTTebd(BaseDescriptor, torch.nn.Module):
         # set trainable
         for param in self.parameters():
             param.requires_grad = trainable
+
+    def get_dim_chg_spin(self) -> int:
+        """Returns the dimension of charge_spin input (0 if not supported)."""
+        return 0
+
+    def has_default_chg_spin(self) -> bool:
+        """Returns whether the descriptor has a default charge_spin value."""
+        return False
+
+    def get_default_chg_spin(self) -> None:
+        """Returns the default charge_spin value, or None."""
+        return None
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -387,13 +416,14 @@ class DescrptSeTTebd(BaseDescriptor, torch.nn.Module):
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeTTebd":
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 1, 1)
+        check_version_compatibility(data.pop("@version"), 2, 1)
         data.pop("@class")
         data.pop("type")
         variables = data.pop("@variables")
         embeddings = data.pop("embeddings")
         type_embedding = data.pop("type_embedding")
         env_mat = data.pop("env_mat")
+        data.pop("compress", None)  # pt uses state_dict for compression
         tebd_input_mode = data["tebd_input_mode"]
         if tebd_input_mode in ["strip"]:
             embeddings_strip = data.pop("embeddings_strip")
@@ -423,6 +453,8 @@ class DescrptSeTTebd(BaseDescriptor, torch.nn.Module):
         nlist: torch.Tensor,
         mapping: torch.Tensor | None = None,
         comm_dict: dict[str, torch.Tensor] | None = None,
+        fparam: torch.Tensor | None = None,
+        charge_spin: torch.Tensor | None = None,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor | None,

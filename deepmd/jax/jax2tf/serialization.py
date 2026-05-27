@@ -34,7 +34,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
     if model_file.endswith(".savedmodel"):
         model = BaseModel.deserialize(data["model"])
         model_def_script = data["model_def_script"]
-        call_lower = model.call_lower
+        call_lower = model.call_common_lower
 
         tf_model = tf.Module()
 

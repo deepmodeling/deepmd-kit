@@ -1,5 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import glob
 import os
+import tempfile
 import unittest
 from typing import (
     Any,
@@ -13,6 +15,7 @@ from deepmd.env import (
 
 from ..common import (
     INSTALLED_PT,
+    INSTALLED_PT_EXPT,
     INSTALLED_TF,
     CommonTest,
     parameterized,
@@ -30,6 +33,10 @@ if INSTALLED_TF:
     from deepmd.tf.model.model import Model as FrozenModelTF
 else:
     FrozenModelTF = None
+if INSTALLED_PT_EXPT:
+    from deepmd.pt_expt.model.model import BaseModel as FrozenModelPTExpt
+else:
+    FrozenModelPTExpt = None
 
 from deepmd.utils.argcheck import (
     model_args,
@@ -47,8 +54,10 @@ dp_model = "deeppot_for_consistent_frozen.dp"
 def setUpModule() -> None:
     case = get_cases()["se_e2_a"]
     case.get_model(".dp", dp_model)
-    case.get_model(".pb", tf_model)
-    case.get_model(".pth", pt_model)
+    if INSTALLED_TF:
+        case.get_model(".pb", tf_model)
+    if INSTALLED_PT:
+        case.get_model(".pth", pt_model)
 
 
 def tearDownModule() -> None:
@@ -57,6 +66,10 @@ def tearDownModule() -> None:
             os.remove(model_file)
         except FileNotFoundError:
             pass
+    # Clean up temporary .pb files created by TF FrozenModel
+    # (tempfile.NamedTemporaryFile(suffix=".pb", dir=os.curdir, delete=False))
+    for tmp_pb in glob.glob(tempfile.gettempprefix() + "*.pb"):
+        os.remove(tmp_pb)
 
 
 @parameterized((pt_model, tf_model, dp_model))
@@ -76,6 +89,7 @@ class TestFrozen(CommonTest, ModelTest, unittest.TestCase):
     tf_class = FrozenModelTF
     dp_class = None
     pt_class = FrozenModelPT
+    pt_expt_class = FrozenModelPTExpt
     args = model_args()
 
     def skip_dp(self) -> bool:
@@ -148,12 +162,19 @@ class TestFrozen(CommonTest, ModelTest, unittest.TestCase):
             self.box,
         )
 
+    def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
+        return self.eval_pt_expt_model(
+            pt_expt_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
     def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
         # shape not matched. ravel...
-        if backend is self.RefBackend.DP:
-            return (ret["energy_redu"].ravel(), ret["energy"].ravel())
-        elif backend is self.RefBackend.PT:
-            return (ret["energy"].ravel(), ret["atom_energy"].ravel())
-        elif backend is self.RefBackend.TF:
+        if backend is self.RefBackend.TF:
             return (ret[0].ravel(), ret[1].ravel())
+        elif backend in {self.RefBackend.PT, self.RefBackend.PT_EXPT}:
+            return (ret["energy"].ravel(), ret["atom_energy"].ravel())
         raise ValueError(f"Unknown backend: {backend}")

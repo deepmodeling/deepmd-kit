@@ -92,21 +92,43 @@ class Backend(PluginVariant, make_plugin_registry("backend")):
             if backend.features & feature
         }
 
+    @classmethod
+    def match_filename(cls, filename: str) -> int:
+        """Specificity score of this backend's claim on ``filename``.
+
+        Returns a positive integer if this backend can handle the file
+        (higher = stronger / more specific claim), or 0 otherwise.
+
+        The default implementation returns 1 when ``filename`` ends with
+        one of ``cls.suffixes``. Backends with overlapping suffixes can
+        override this to disambiguate (e.g. by inspecting file content)
+        and return a higher score so they win the tie.
+        """
+        fname = str(filename).lower()
+        return 1 if any(fname.endswith(s) for s in cls.suffixes) else 0
+
     @staticmethod
     def detect_backend_by_model(filename: str) -> type["Backend"]:
         """Detect the backend of the given model file.
+
+        Calls ``match_filename`` on every registered backend and returns
+        the one with the highest specificity score (>0).
 
         Parameters
         ----------
         filename : str
             The model file name
         """
-        filename = str(filename).lower()
+        best: type[Backend] | None = None
+        best_score = 0
         for backend in Backend.get_backends().values():
-            for suffix in backend.suffixes:
-                if filename.endswith(suffix):
-                    return backend
-        raise ValueError(f"Cannot detect the backend of the model file {filename}.")
+            score = backend.match_filename(filename)
+            if score > best_score:
+                best_score = score
+                best = backend
+        if best is None:
+            raise ValueError(f"Cannot detect the backend of the model file {filename}.")
+        return best
 
     class Feature(Flag):
         """Feature flag to indicate whether the backend supports certain features."""

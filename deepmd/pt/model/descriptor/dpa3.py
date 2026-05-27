@@ -4,6 +4,7 @@ from collections.abc import (
 )
 from typing import (
     Any,
+    Optional,
 )
 
 import torch
@@ -32,6 +33,7 @@ from deepmd.pt.utils.update_sel import (
     UpdateSel,
 )
 from deepmd.pt.utils.utils import (
+    ActivationFn,
     to_numpy_array,
 )
 from deepmd.utils.data_system import (
@@ -120,8 +122,14 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
         use_tebd_bias: bool = False,
         use_loc_mapping: bool = True,
         type_map: list[str] | None = None,
+        add_chg_spin_ebd: bool = False,
+        default_chg_spin: list[float] | None = None,
     ) -> None:
         super().__init__()
+        if default_chg_spin is not None and len(default_chg_spin) != 2:
+            raise ValueError(
+                "default_chg_spin must be a list of length 2 [charge, spin]."
+            )
 
         def init_subclass_params(sub_data: Any, sub_class: Any) -> Any:
             if isinstance(sub_data, dict):
@@ -165,6 +173,7 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
             use_exp_switch=self.repflow_args.use_exp_switch,
             use_dynamic_sel=self.repflow_args.use_dynamic_sel,
             sel_reduce_factor=self.repflow_args.sel_reduce_factor,
+            sequential_update=self.repflow_args.sequential_update,
             use_loc_mapping=use_loc_mapping,
             exclude_types=exclude_types,
             env_protection=env_protection,
@@ -174,6 +183,8 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
         )
 
         self.use_econf_tebd = use_econf_tebd
+        self.add_chg_spin_ebd = add_chg_spin_ebd
+        self.default_chg_spin = default_chg_spin
         self.use_loc_mapping = use_loc_mapping
         self.use_tebd_bias = use_tebd_bias
         self.type_map = type_map
@@ -191,6 +202,34 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
         self.concat_output_tebd = concat_output_tebd
         self.precision = precision
         self.prec = PRECISION_DICT[self.precision]
+
+        if self.add_chg_spin_ebd:
+            self.act = ActivationFn(activation_function)
+            # charge range [-100, 99] mapped to indices [0, 199]
+            self.chg_embedding = TypeEmbedNet(
+                200,
+                self.tebd_dim,
+                precision=precision,
+                seed=child_seed(seed, 3),
+            )
+            # spin range [0, 99] mapped to indices [0, 99]
+            self.spin_embedding = TypeEmbedNet(
+                100,
+                self.tebd_dim,
+                precision=precision,
+                seed=child_seed(seed, 4),
+            )
+            self.mix_cs_mlp = MLPLayer(
+                2 * self.tebd_dim,
+                self.tebd_dim,
+                precision=precision,
+                seed=child_seed(seed, 5),
+            )
+        else:
+            self.chg_embedding = None
+            self.spin_embedding = None
+            self.mix_cs_mlp = None
+
         self.exclude_types = exclude_types
         self.env_protection = env_protection
         self.trainable = trainable
@@ -217,6 +256,27 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
         return self.rcut
+
+    @torch.jit.export
+    def get_dim_chg_spin(self) -> int:
+        """Get the dimension of charge_spin input."""
+        return 2 if self.add_chg_spin_ebd else 0
+
+    @torch.jit.export
+    def has_default_chg_spin(self) -> bool:
+        """Check if the descriptor has default charge_spin values."""
+        return self.default_chg_spin is not None
+
+    @torch.jit.export
+    def get_default_chg_spin(self) -> Optional[torch.Tensor]:  # noqa: UP045
+        """Get the default charge_spin values as a tensor."""
+        if self.default_chg_spin is None:
+            return None
+        return torch.tensor(
+            self.default_chg_spin,
+            dtype=self.prec,
+            device=env.DEVICE,
+        )
 
     def get_rcut_smth(self) -> float:
         """Returns the radius where the neighbor information starts to smoothly decay to 0."""
@@ -395,9 +455,15 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
             "use_econf_tebd": self.use_econf_tebd,
             "use_tebd_bias": self.use_tebd_bias,
             "use_loc_mapping": self.use_loc_mapping,
+            "add_chg_spin_ebd": self.add_chg_spin_ebd,
+            "default_chg_spin": self.default_chg_spin,
             "type_map": self.type_map,
             "type_embedding": self.type_embedding.embedding.serialize(),
         }
+        if self.add_chg_spin_ebd:
+            data["chg_embedding"] = self.chg_embedding.embedding.serialize()
+            data["spin_embedding"] = self.spin_embedding.embedding.serialize()
+            data["mix_cs_mlp"] = self.mix_cs_mlp.serialize()
         repflow_variable = {
             "edge_embd": repflows.edge_embd.serialize(),
             "angle_embd": repflows.angle_embd.serialize(),
@@ -424,11 +490,23 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
         data.pop("type")
         repflow_variable = data.pop("repflow_variable").copy()
         type_embedding = data.pop("type_embedding")
+        chg_embedding = data.pop("chg_embedding", None)
+        spin_embedding = data.pop("spin_embedding", None)
+        mix_cs_mlp = data.pop("mix_cs_mlp", None)
         data["repflow"] = RepFlowArgs(**data.pop("repflow_args"))
         obj = cls(**data)
         obj.type_embedding.embedding = TypeEmbedNetConsistent.deserialize(
             type_embedding
         )
+
+        if obj.add_chg_spin_ebd and chg_embedding is not None:
+            obj.chg_embedding.embedding = TypeEmbedNetConsistent.deserialize(
+                chg_embedding
+            )
+            obj.spin_embedding.embedding = TypeEmbedNetConsistent.deserialize(
+                spin_embedding
+            )
+            obj.mix_cs_mlp = MLPLayer.deserialize(mix_cs_mlp)
 
         def t_cvt(xx: Any) -> torch.Tensor:
             return torch.tensor(xx, dtype=obj.repflows.prec, device=env.DEVICE)
@@ -455,6 +533,8 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
         nlist: torch.Tensor,
         mapping: torch.Tensor | None = None,
         comm_dict: dict[str, torch.Tensor] | None = None,
+        fparam: torch.Tensor | None = None,
+        charge_spin: torch.Tensor | None = None,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor | None,
@@ -504,6 +584,30 @@ class DescrptDPA3(BaseDescriptor, torch.nn.Module):
             node_ebd_ext = self.type_embedding(extended_atype[:, :nloc])
         else:
             node_ebd_ext = self.type_embedding(extended_atype)
+
+        if self.add_chg_spin_ebd:
+            assert charge_spin is not None
+            assert self.chg_embedding is not None
+            assert self.spin_embedding is not None
+            charge = charge_spin[:, 0].to(dtype=torch.int64)
+            spin = charge_spin[:, 1].to(dtype=torch.int64)
+            # Validate charge range [-100, 99] (200 embedding entries)
+            if torch.any(charge < -100) or torch.any(charge > 99):
+                raise ValueError(
+                    f"charge must be in range [-100, 99], got min={charge.min().item()}, max={charge.max().item()}"
+                )
+            # Validate spin range [0, 99] (100 embedding entries)
+            if torch.any(spin < 0) or torch.any(spin >= 100):
+                raise ValueError(
+                    f"spin must be in range [0, 99], got min={spin.min().item()}, max={spin.max().item()}"
+                )
+            chg_ebd = self.chg_embedding(charge + 100)
+            spin_ebd = self.spin_embedding(spin)
+            sys_cs_embd = self.act(
+                self.mix_cs_mlp(torch.cat((chg_ebd, spin_ebd), dim=-1))
+            )
+            node_ebd_ext = node_ebd_ext + sys_cs_embd.unsqueeze(1)
+
         node_ebd_inp = node_ebd_ext[:, :nloc, :]
         # repflows
         node_ebd, edge_ebd, h2, rot_mat, sw = self.repflows(

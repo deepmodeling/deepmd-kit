@@ -89,8 +89,12 @@ class StatItem:
         if self.number == 0:
             return default
         val = np.sqrt(
-            self.squared_sum / self.number
-            - np.multiply(self.sum / self.number, self.sum / self.number)
+            np.clip(
+                self.squared_sum / self.number
+                - np.multiply(self.sum / self.number, self.sum / self.number),
+                a_min=0,
+                a_max=None,
+            )
         )
         if np.abs(val) < protection:
             val = protection

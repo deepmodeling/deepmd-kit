@@ -9,10 +9,14 @@ from pathlib import (
     Path,
 )
 
+import constants
 import numpy as np
 import pytest
 from lammps import (
     PyLammps,
+)
+from model_convert import (
+    ensure_converted_pb,
 )
 from write_lmp_data import (
     write_lmp_data_spin,
@@ -31,24 +35,29 @@ data_file_si = Path(__file__).parent / "data.si"
 data_type_map_file = Path(__file__).parent / "data_type_map.lmp"
 md_file = Path(__file__).parent / "md.out"
 
+expected_e = 3.5053686886040974e-01
 expected_ae = np.array(
-    [-5.449480235829702, -5.477427268428831, -5.123857693399778, -5.177090216511519]
+    [
+        6.8203336981159180e-02,
+        6.4899945717305470e-02,
+        1.0867432727951952e-01,
+        1.0875925888242556e-01,
+    ]
 )
-expected_e = np.sum(expected_ae)
 expected_f = np.array(
     [
-        [0.0009801138704236, -0.0463347604851765, -0.0971306357815108],
-        [-0.1470821855808306, 0.0437825717490265, 0.1068452488480858],
-        [0.0227539242796509, -0.0733473535079378, 0.1021096625763913],
-        [0.123348147430756, 0.0758995422440877, -0.1118242756429664],
+        [3.9965859059739960e-03, -1.5714685255928385e-03, 2.5489246986054267e-03],
+        [-3.2538293505478910e-03, 1.5372892024705638e-03, -2.6183962915675120e-03],
+        [-5.8572951970559290e-04, 1.2789559354576532e-04, -8.4978782279560860e-05],
+        [-1.5702703572051152e-04, -9.3716270423490900e-05, 1.5445037524164582e-04],
     ]
 )
 expected_fm = np.array(
     [
-        [0.0072488655758703, -0.0111496506342658, 0.018024837587741],
-        [-0.0469100751121456, 0.0170834549641258, 0.0338904617477562],
-        [0.0000000000000000, 0.00000000000000000, 0.00000000000000000],
-        [0.0000000000000000, 0.00000000000000000, 0.00000000000000000],
+        [3.5882891345325510e-03, -1.4332293643181068e-03, 2.1309512069449844e-03],
+        [-2.2686566316524877e-04, 1.1563585411337640e-04, -1.5585998391414227e-03],
+        [0.0000000000000000e00, 0.0000000000000000e00, 0.0000000000000000e00],
+        [0.0000000000000000e00, 0.0000000000000000e00, 0.0000000000000000e00],
     ]
 )
 
@@ -70,6 +79,88 @@ expected_fm2 = np.array(
     ]
 )
 
+expected_v = -np.array(
+    [
+        -6.5442162870715910e-04,
+        3.3133477241365930e-04,
+        3.9883281200020510e-04,
+        3.5002780951132103e-04,
+        -1.1589573685630256e-04,
+        -2.2265549504892014e-04,
+        3.4055402098896265e-04,
+        -1.9139376762381335e-04,
+        -3.3133994148957030e-04,
+        3.1589094549377213e-03,
+        -1.3741877857714818e-03,
+        -2.5227682918535005e-03,
+        -1.4131573474734480e-03,
+        6.0225037103514220e-04,
+        1.0902107277722482e-03,
+        1.4702420402848647e-03,
+        -6.1977156785934680e-04,
+        -1.1144364605899786e-03,
+        -2.1325917337790670e-03,
+        7.0758382747778870e-05,
+        -1.2848658004242357e-05,
+        1.0290158078156647e-04,
+        -2.7842261103620382e-05,
+        3.2953845020209020e-05,
+        2.2234591227388966e-04,
+        2.2930239123112260e-05,
+        -3.1997128170916170e-05,
+        -8.1674704416169310e-04,
+        -1.1094383565005458e-04,
+        1.6599006542109280e-04,
+        -1.2281050907954750e-04,
+        -5.0200238466137690e-05,
+        7.2193112591762430e-05,
+        2.7750902949636390e-04,
+        8.2718432747583720e-05,
+        -1.1997871423457964e-04,
+    ]
+).reshape(4, 9)
+
+expected_v2 = -np.array(
+    [
+        -0.0068361570854045,
+        0.0013367399255969,
+        0.0027254156851031,
+        0.0013170622611582,
+        -0.0006584860372994,
+        -0.0011202746253630,
+        0.0034372788237214,
+        -0.0014078563891643,
+        -0.0026234422772135,
+        -0.0065741762148638,
+        0.0017805968136400,
+        0.0034294170220393,
+        0.0017765463870965,
+        -0.0007431139812367,
+        -0.0013178346591454,
+        0.0028404497247166,
+        -0.0010584927243460,
+        -0.0019736773403821,
+        -0.0005990686037429,
+        -0.0006790752112473,
+        0.0009843156545704,
+        -0.0006499258389702,
+        -0.0005944102287950,
+        0.0008730050519947,
+        0.0009534901617246,
+        0.0008816224750390,
+        -0.0012893921034252,
+        -0.0004768372014215,
+        -0.0006613274582292,
+        0.0009616568976184,
+        -0.0007221357003557,
+        -0.0006885045030101,
+        0.0010101324669343,
+        0.0010319090966831,
+        0.0009955172109546,
+        -0.0014553634659113,
+    ]
+).reshape(4, 9)
+
 box = np.array([0, 13, 0, 13, 0, 13, 0, 0, 0])
 coord = np.array(
     [
@@ -90,16 +181,14 @@ spin = np.array(
 type_NiO = np.array([1, 1, 2, 2])
 
 
-sp.check_output(
-    f"{sys.executable} -m deepmd convert-from pbtxt -i {pbtxt_file2.resolve()} -o {pb_file2.resolve()}".split()
-)
-
-
 def setup_module() -> None:
     if os.environ.get("ENABLE_PYTORCH", "1") != "1":
         pytest.skip(
             "Skip test because PyTorch support is not enabled.",
         )
+    if os.environ.get("ENABLE_TENSORFLOW", "1") == "1":
+        ensure_converted_pb(pbtxt_file2, pb_file2)
+
     write_lmp_data_spin(box, coord, spin, type_NiO, data_file)
 
 
@@ -157,15 +246,15 @@ def test_pair_deepmd_virial(lammps) -> None:
     lammps.compute("pressure all pressure NULL pair")
     lammps.compute("virial all centroid/stress/atom NULL pair")
     lammps.variable("eatom atom c_peatom")
-    # for ii in range(9):
-    #     jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
-    #     lammps.variable(f"pressure{jj} equal c_pressure[{ii+1}]")
-    # for ii in range(9):
-    #     jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
-    #     lammps.variable(f"virial{jj} atom c_virial[{ii+1}]")
-    # lammps.dump(
-    #     "1 all custom 1 dump id " + " ".join([f"v_virial{ii}" for ii in range(9)])
-    # )
+    for ii in range(9):
+        jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
+        lammps.variable(f"pressure{jj} equal c_pressure[{ii + 1}]")
+    for ii in range(9):
+        jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
+        lammps.variable(f"virial{jj} atom c_virial[{ii + 1}]")
+    lammps.dump(
+        "1 all custom 1 dump id " + " ".join([f"v_virial{ii}" for ii in range(9)])
+    )
     lammps.run(0)
     assert lammps.eval("pe") == pytest.approx(expected_e)
     for ii in range(4):
@@ -176,18 +265,19 @@ def test_pair_deepmd_virial(lammps) -> None:
     assert np.array(lammps.variables["eatom"].value) == pytest.approx(
         expected_ae[idx_map]
     )
-    # vol = box[1] * box[3] * box[5]
-    # for ii in range(6):
-    #     jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
-    #     assert np.array(
-    #         lammps.variables[f"pressure{jj}"].value
-    #     ) / constants.nktv2p == pytest.approx(
-    #         -expected_v[idx_map, jj].sum(axis=0) / vol
-    #     )
-    # for ii in range(9):
-    #     assert np.array(
-    #         lammps.variables[f"virial{ii}"].value
-    #     ) / constants.nktv2p == pytest.approx(expected_v[idx_map, ii])
+    vol = box[1] * box[3] * box[5]
+    for ii in range(6):
+        jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
+        assert np.array(
+            lammps.variables[f"pressure{jj}"].value
+        ) / constants.nktv2p == pytest.approx(
+            -expected_v[idx_map, jj].sum(axis=0) / vol
+        )
+    for ii in range(9):
+        jj = [0, 4, 8, 3, 6, 7, 1, 2, 5][ii]
+        assert np.array(
+            lammps.variables[f"virial{jj}"].value
+        ) / constants.nktv2p == pytest.approx(expected_v[idx_map, jj])
 
 
 @pytest.mark.skipif(

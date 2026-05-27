@@ -2,7 +2,7 @@
 requires = [
     # TODO: unpin the upper bound when scikit-build dynamic metadata API is stable
     # dynamic metadata API is still unstable
-    "scikit-build-core>=0.5,!=0.6.0,<0.12",
+    "scikit-build-core>=0.11,!=0.6.0,<0.13",
     "packaging",
     'tomli >= 1.1.0 ; python_version < "3.11"',
     "dependency_groups",
@@ -18,7 +18,8 @@ authors = [
   {name = "DeepModeling"},
   {name = "Han Wang", email = "wang_han@iapcm.ac.cn"},
 ]
-license = {file = "LICENSE"}
+license = "LGPL-3.0-or-later"
+license-files = ["LICENSE"]
 classifiers = [
     "Natural Language :: English",
     "Operating System :: POSIX :: Linux",
@@ -33,7 +34,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
+
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Scientific/Engineering :: Physics",
     "Topic :: Scientific/Engineering :: Chemistry",
@@ -54,6 +55,8 @@ dependencies = [
     'ml_dtypes',
     'mendeleev',
     'array-api-compat',
+    'lmdb',
+    'msgpack',
 ]
 requires-python = ">=3.10"
 keywords = ["deepmd"]
@@ -146,31 +149,38 @@ dp = "deepmd.main:main"
 
 [dependency-groups]
 dev = [
-  "pre-commit",
+  "prek",
   "cmake",
   "mpich",
 ]
 pin_tensorflow_cpu = [
   # https://github.com/tensorflow/tensorflow/issues/75279
   # macos x86 has been deprecated
-  "tensorflow-cpu>=2.18,<2.21; platform_machine=='x86_64' and platform_system == 'Linux'",
+  "tensorflow-cpu==2.21.0; platform_machine=='x86_64' and platform_system == 'Linux'",
   "tensorflow~=2.18.0; (platform_machine!='x86_64' or platform_system != 'Linux') and (platform_machine!='x86_64' or platform_system != 'Darwin')",
   "tensorflow; platform_machine=='x86_64' and platform_system == 'Darwin'",
 ]
 pin_tensorflow_gpu = [
-  "tensorflow~=2.18.0",
+  "tensorflow==2.18.0",
+  # TODO: unpin protobuf after TF is upgraded to 2.21
+  # See: https://github.com/tensorflow/tensorflow/pull/103382
+  "protobuf<7.34.0",
 ]
 pin_pytorch_cpu = [
   # https://github.com/pytorch/pytorch/issues/114602
   # macos x86 has been deprecated
-  "torch>=2.8,<2.10; platform_machine!='x86_64' or platform_system != 'Darwin'",
+  "torch==2.11.0; platform_machine!='x86_64' or platform_system != 'Darwin'",
   "torch; platform_machine=='x86_64' and platform_system == 'Darwin'",
 ]
 pin_pytorch_gpu = [
   "torch==2.10.0",
 ]
-pin_jax = [
-  "jax==0.5.0;python_version>='3.10'",
+pin_jax_cpu = [
+  "jax==0.6.2; python_version=='3.10'",
+  "jax==0.10.0; python_version>='3.11'",
+]
+pin_jax_gpu = [
+  "jax[cuda12]==0.5.0;python_version>='3.10'",
 ]
 
 [tool.setuptools_scm]
@@ -411,6 +421,7 @@ convention = "numpy"
 banned-module-level-imports = [
     "deepmd.tf",
     "deepmd.pt",
+    "deepmd.pt_expt",
     "deepmd.pd",
     "deepmd.jax",
     "tensorflow",
@@ -430,14 +441,15 @@ runtime-evaluated-base-classes = ["torch.nn.Module"]
 "source/3rdparty/**" = ["ALL"]
 "backend/**" = ["ANN"]
 "data/**" = ["ANN"]
-"deepmd/tf/**" = ["TID253", "ANN"]
+"deepmd/tf/**" = ["TID253"]
 "deepmd/pt/**" = ["TID253", "B905"]
+"deepmd/pt_expt/**" = ["TID253", "B905"]
 "deepmd/jax/**" = ["TID253"]
 "deepmd/pd/**" = ["TID253", "B905"]
-
 "source/**" = ["ANN"]
 "source/tests/tf/**" = ["TID253", "ANN"]
 "source/tests/pt/**" = ["TID253", "ANN"]
+"source/tests/pt_expt/**" = ["TID253", "ANN"]
 "source/tests/jax/**" = ["TID253", "ANN"]
 "source/tests/pd/**" = ["TID253", "ANN"]
 "source/tests/universal/pt/**" = ["TID253", "ANN"]
