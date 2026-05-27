@@ -9,6 +9,9 @@ from typing import (
 
 import torch
 
+from deepmd.pt.model.descriptor.base_descriptor import (
+    BaseDescriptor,
+)
 from deepmd.pt.model.task.density import (
     DensityFittingNet,
 )
@@ -33,7 +36,7 @@ log = logging.getLogger(__name__)
 class DPDensityAtomicModel(DPAtomicModel):
     def __init__(
         self,
-        descriptor,
+        descriptor: BaseDescriptor,
         fitting: DensityFittingNet,
         type_map: list[str],
         **kwargs: Any,
@@ -342,7 +345,7 @@ class DPDensityAtomicModel(DPAtomicModel):
         self,
         merged: Callable[[], list[dict]] | list[dict],
         stat_file_path: DPPath | None = None,
-    ):
+    ) -> None:
         """
         Compute the output statistics (e.g. energy bias) for the fitting net from packed data.
 

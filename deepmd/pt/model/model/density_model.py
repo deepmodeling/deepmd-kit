@@ -2,6 +2,10 @@
 from copy import (
     deepcopy,
 )
+from typing import (
+    Any,
+    NoReturn,
+)
 
 import torch
 
@@ -28,13 +32,13 @@ class GridDensityModel(DPModelCommon, DPDensityModel_):
 
     def __init__(
         self,
-        *args,
-        **kwargs,
-    ):
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
         DPModelCommon.__init__(self)
         DPDensityModel_.__init__(self, *args, **kwargs)
 
-    def translated_output_def(self):
+    def translated_output_def(self) -> dict[str, Any]:
         out_def_data = self.model_output_def().get_data()
         output_def = {
             "density": deepcopy(out_def_data["density"]),
@@ -50,9 +54,9 @@ class GridDensityModel(DPModelCommon, DPDensityModel_):
 
     def forward(
         self,
-        coord,
-        atype,
-        grid,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        grid: torch.Tensor,
         box: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
@@ -77,14 +81,14 @@ class GridDensityModel(DPModelCommon, DPDensityModel_):
     @torch.jit.export
     def forward_lower(
         self,
-        extended_coord,
-        extended_atype,
-        nlist,
+        extended_coord: torch.Tensor,
+        extended_atype: torch.Tensor,
+        nlist: torch.Tensor,
         mapping: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
         comm_dict: dict[str, torch.Tensor] | None = None,
         charge_spin: torch.Tensor | None = None,
-    ):
+    ) -> NoReturn:
         raise NotImplementedError

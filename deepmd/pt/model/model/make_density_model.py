@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from collections.abc import Callable
+from typing import Any
 
 import torch
 
@@ -37,7 +39,7 @@ from deepmd.utils.path import (
 )
 
 
-def make_density_model(T_AtomicModel: type[BaseAtomicModel]):
+def make_density_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
     """Make a density model as a derived class of an atomic model.
 
     The model provide two interfaces.
@@ -63,11 +65,11 @@ def make_density_model(T_AtomicModel: type[BaseAtomicModel]):
     class CM(BaseModel):
         def __init__(
             self,
-            *args,
+            *args: Any,
             # underscore to prevent conflict with normal inputs
             atomic_model_: T_AtomicModel | None = None,
-            **kwargs,
-        ):
+            **kwargs: Any,
+        ) -> None:
             super().__init__(*args, **kwargs)
             if atomic_model_ is not None:
                 self.atomic_model: T_AtomicModel = atomic_model_
@@ -78,7 +80,7 @@ def make_density_model(T_AtomicModel: type[BaseAtomicModel]):
             self.global_pt_float_precision = GLOBAL_PT_FLOAT_PRECISION
             self.global_pt_ener_float_precision = GLOBAL_PT_ENER_FLOAT_PRECISION
 
-        def model_output_def(self):
+        def model_output_def(self) -> ModelOutputDef:
             """Get the output def for the model."""
             return ModelOutputDef(self.atomic_output_def())
 
@@ -216,8 +218,8 @@ def make_density_model(T_AtomicModel: type[BaseAtomicModel]):
 
         def change_out_bias(
             self,
-            merged,
-            bias_adjust_mode="change-by-statistic",
+            merged: Callable[[], list[dict]] | list[dict],
+            bias_adjust_mode: str = "change-by-statistic",
         ) -> None:
             """Change the output bias of atomic model according to the input data and the pretrained model.
 
@@ -243,12 +245,12 @@ def make_density_model(T_AtomicModel: type[BaseAtomicModel]):
 
         def forward_common_lower(
             self,
-            extended_coord,
-            extended_atype,
-            nlist,
-            grid,
-            grid_type,
-            grid_nlist,
+            extended_coord: torch.Tensor,
+            extended_atype: torch.Tensor,
+            nlist: torch.Tensor,
+            grid: torch.Tensor,
+            grid_type: torch.Tensor,
+            grid_nlist: torch.Tensor,
             mapping: torch.Tensor | None = None,
             fparam: torch.Tensor | None = None,
             aparam: torch.Tensor | None = None,
@@ -256,7 +258,7 @@ def make_density_model(T_AtomicModel: type[BaseAtomicModel]):
             do_atomic_virial: bool = False,
             comm_dict: dict[str, torch.Tensor] | None = None,
             extra_nlist_sort: bool = False,
-        ):
+        ) -> dict[str, torch.Tensor]:
             """Return model prediction. Lower interface that takes
             extended atomic coordinates and types, nlist, and mapping
             as input, and returns the predictions on the extended region.
