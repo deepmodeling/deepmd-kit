@@ -309,7 +309,9 @@ class TestCompiledModelGetattr(unittest.TestCase):
     """
 
     def _make_compiled_model(self):
-        from deepmd.pt_expt.train.training import _CompiledModel
+        from deepmd.pt_expt.train.training import (
+            _CompiledModel,
+        )
 
         class _FakeForwardLower(torch.nn.Module):
             def forward(self, *a, **kw):
