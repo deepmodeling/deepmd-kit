@@ -579,7 +579,7 @@ DescriptorParamDPA3 = DescriptorParamDPA3List[0]
 
 def _descriptor_param_variant(param_func, name: str, **fixed_kwargs: Any):
     def wrapper(*args, **kwargs):
-        return param_func(*args, **{**fixed_kwargs, **kwargs})
+        return param_func(*args, **{**kwargs, **fixed_kwargs})
 
     wrapper.__name__ = name
     wrapper.__qualname__ = name

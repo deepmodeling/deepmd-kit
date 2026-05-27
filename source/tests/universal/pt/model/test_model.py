@@ -189,6 +189,15 @@ DEFAULT_SPIN_DESCRIPTOR_PARAMS = (
     (DescriptorParamHybridMixedTTebd, DescrptHybrid),
 )
 
+DEFAULT_SPIN_FIT_DESCRIPTOR_PARAMS = (
+    (DescriptorParamSeA, DescrptSeA),
+    (DescriptorParamSeR, DescrptSeR),
+    (DescriptorParamSeT, DescrptSeT),
+    (DescriptorParamSeTTebd, DescrptSeTTebd),
+    (DescriptorParamDPA1, DescrptDPA1),
+    (DescriptorParamDPA2, DescrptDPA2),
+)
+
 
 @parameterized(
     des_parameterized=(
@@ -632,7 +641,7 @@ class TestZBLModelPT(unittest.TestCase, ZBLModelTest, PTTestCase):
         ((FittingParamEnergy, EnergyFittingNet),),  # fitting_class_param & class
     ),
     fit_parameterized=(
-        DEFAULT_SPIN_DESCRIPTOR_PARAMS[:6],  # descrpt_class_param & class
+        DEFAULT_SPIN_FIT_DESCRIPTOR_PARAMS,  # descrpt_class_param & class
         (
             *[(param_func, EnergyFittingNet) for param_func in FittingParamEnergyList],
         ),  # fitting_class_param & class
