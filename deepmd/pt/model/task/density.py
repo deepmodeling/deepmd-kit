@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import copy
 import logging
-from typing import Any
+from typing import (
+    Any,
+)
 
 import torch
 

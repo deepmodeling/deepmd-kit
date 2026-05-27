@@ -149,7 +149,9 @@ def print_summary(pred: np.ndarray, label: np.ndarray) -> None:
     sys.stdout.write(f"  RMSE                  : {rmse:.6e}" + "\n")
     sys.stdout.write(f"  MAE                   : {mae:.6e}" + "\n")
     sys.stdout.write(f"  Mean |label|          : {label_mean_abs:.6e}" + "\n")
-    sys.stdout.write(f"  epsilon_MAE (MAE/Mean|label|) : {mae / label_mean_abs:.6e}" + "\n")
+    sys.stdout.write(
+        f"  epsilon_MAE (MAE/Mean|label|) : {mae / label_mean_abs:.6e}" + "\n"
+    )
     sys.stdout.write("=" * 60 + "\n")
 
 
