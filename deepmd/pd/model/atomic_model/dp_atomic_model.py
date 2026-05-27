@@ -332,7 +332,7 @@ class DPAtomicModel(BaseAtomicModel):
             nlist,
             mapping=mapping,
             comm_dict=comm_dict,
-            fparam=fparam if self.add_chg_spin_ebd else None,
+            charge_spin=fparam if self.add_chg_spin_ebd else None,
         )
         assert descriptor is not None
         if self.enable_eval_descriptor_hook:
