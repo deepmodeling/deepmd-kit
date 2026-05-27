@@ -708,7 +708,7 @@ class DeepEval(DeepEvalBackend):
         fparam: np.ndarray | None,
         aparam: np.ndarray | None,
         request_defs: list[OutputVariableDef],
-    ):
+    ) -> tuple[np.ndarray, ...]:
         model = self.dp.to(DEVICE)
 
         nframes = coords.shape[0]

@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 from collections.abc import Callable
+from typing import Any
 
 import torch
 
@@ -26,7 +27,13 @@ log = logging.getLogger(__name__)
 
 
 class DPDensityAtomicModel(DPAtomicModel):
-    def __init__(self, descriptor, fitting, type_map, **kwargs):
+    def __init__(
+        self,
+        descriptor,
+        fitting: DensityFittingNet,
+        type_map: list[str],
+        **kwargs: Any,
+    ) -> None:
         assert isinstance(fitting, DensityFittingNet)
         super().__init__(descriptor, fitting, type_map, **kwargs)
         self.rcut = self.descriptor.get_rcut()
@@ -49,9 +56,9 @@ class DPDensityAtomicModel(DPAtomicModel):
 
     def forward_atomic(
         self,
-        extended_coord,
-        extended_atype,
-        nlist,
+        extended_coord: torch.Tensor,
+        extended_atype: torch.Tensor,
+        nlist: torch.Tensor,
         mapping: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,

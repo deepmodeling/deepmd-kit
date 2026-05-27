@@ -1,4 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import Any
+
 import torch
 
 from deepmd.pt.loss.loss import (
@@ -18,12 +20,12 @@ from deepmd.utils.data import (
 class GridDensityLoss(TaskLoss):
     def __init__(
         self,
-        starter_learning_rate=1.0,
-        start_pref_d=0.0,
-        limit_pref_d=0.0,
-        inference=False,
-        **kwargs,
-    ):
+        starter_learning_rate: float = 1.0,
+        start_pref_d: float = 0.0,
+        limit_pref_d: float = 0.0,
+        inference: bool = False,
+        **kwargs: Any,
+    ) -> None:
         r"""Construct a layer to compute loss on grid density.
 
         Parameters
@@ -47,7 +49,15 @@ class GridDensityLoss(TaskLoss):
         self.limit_pref_d = limit_pref_d
         self.inference = inference
 
-    def forward(self, input_dict, model, label, natoms, learning_rate, mae=False):
+    def forward(
+        self,
+        input_dict: dict[str, torch.Tensor],
+        model: torch.nn.Module,
+        label: dict[str, torch.Tensor],
+        natoms: int,
+        learning_rate: float,
+        mae: bool = False,
+    ) -> tuple[dict[str, torch.Tensor], torch.Tensor, dict[str, torch.Tensor]]:
         """Return loss on energy and force.
 
         Parameters
