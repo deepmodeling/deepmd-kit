@@ -50,28 +50,36 @@ def _check_underlying_ops_loaded() -> None:
     like DDP-spawned subprocesses that re-import modules from scratch
     and never see the test conftest's ``import deepmd.pt``.
     """
-    if not (
-        hasattr(torch.ops, "deepmd_export")
-        and hasattr(torch.ops.deepmd_export, "border_op")
-        and hasattr(torch.ops.deepmd_export, "border_op_backward")
-    ):
-        # Triggers cxx_op.py which torch.ops.load_library's the .so.
-        # Let import errors propagate — ABI / torch-version mismatches
-        # against libdeepmd_op_pt.so surface here with diagnostic detail
-        # (e.g. ``undefined symbol``) that the generic RuntimeError below
-        # would otherwise hide.
-        import deepmd.pt  # noqa: F401
 
-    if not (
-        hasattr(torch.ops, "deepmd_export")
-        and hasattr(torch.ops.deepmd_export, "border_op")
-        and hasattr(torch.ops.deepmd_export, "border_op_backward")
-    ):
+    def _ops_registered() -> bool:
+        return (
+            hasattr(torch.ops, "deepmd_export")
+            and hasattr(torch.ops.deepmd_export, "border_op")
+            and hasattr(torch.ops.deepmd_export, "border_op_backward")
+        )
+
+    import_err: Exception | None = None
+    if not _ops_registered():
+        # Triggers cxx_op.py which torch.ops.load_library's the .so.
+        try:
+            import deepmd.pt  # noqa: F401
+        except Exception as exc:
+            # ``deepmd/pt/__init__.py`` loads ``cxx_op`` (which registers
+            # the ops) before running ``load_entry_point("deepmd.pt")``.
+            # A broken third-party entry point can make the import raise
+            # *after* the ops were already registered, so only re-raise
+            # when the registration is still missing — that branch is the
+            # one where the error (typically an ``undefined symbol`` ABI
+            # mismatch against libdeepmd_op_pt.so) carries the diagnostic
+            # detail that the generic RuntimeError below would hide.
+            import_err = exc
+
+    if not _ops_registered():
         raise RuntimeError(
             "torch.ops.deepmd_export.{border_op,border_op_backward} "
             "are not registered. Build libdeepmd_op_pt.so and ensure "
             "deepmd.pt is importable before this module."
-        )
+        ) from import_err
 
 
 _check_underlying_ops_loaded()
