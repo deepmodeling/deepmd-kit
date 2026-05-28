@@ -6,10 +6,12 @@ from __future__ import (
 )
 
 import argparse
+from collections.abc import (
+    Sequence,
+)
 from pathlib import (
     Path,
 )
-from collections.abc import Sequence
 
 from deepmd_property_tools import (
     PropertyPredict,
