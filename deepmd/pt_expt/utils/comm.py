@@ -56,13 +56,11 @@ def _check_underlying_ops_loaded() -> None:
         and hasattr(torch.ops.deepmd_export, "border_op_backward")
     ):
         # Triggers cxx_op.py which torch.ops.load_library's the .so.
-        try:
-            import deepmd.pt  # noqa: F401
-        except Exception:
-            # If deepmd.pt itself fails to import, fall through to the
-            # explicit RuntimeError below — clearer than re-raising a
-            # potentially-unrelated import error.
-            pass
+        # Let import errors propagate — ABI / torch-version mismatches
+        # against libdeepmd_op_pt.so surface here with diagnostic detail
+        # (e.g. ``undefined symbol``) that the generic RuntimeError below
+        # would otherwise hide.
+        import deepmd.pt  # noqa: F401
 
     if not (
         hasattr(torch.ops, "deepmd_export")
