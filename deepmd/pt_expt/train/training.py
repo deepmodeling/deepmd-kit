@@ -70,13 +70,11 @@ from deepmd.utils.path import (
 
 log = logging.getLogger(__name__)
 
-# Buffer names in the fitting net that differ per task after share_params;
-# everything else in the fitting net is the same Python object across tasks.
-_TASK_SPECIFIC_BUFFER_NAMES: tuple[str, ...] = ("bias_atom_e", "case_embd")
-
 # Buffer names in atomic_model that are per-task (energy/output statistics).
 # These live one level above the fitting net and are not reached by
-# fitting-net share_params, so they must also be promoted to FX placeholders.
+# fitting-net share_params.  They are always promoted to FX placeholders
+# because model_change_out_bias may replace them out-of-place after
+# compilation, so the compiled forward must read them fresh each call.
 _ATOMIC_MODEL_TASK_BUFFER_NAMES: tuple[str, ...] = ("out_bias", "out_std")
 
 # Prefix used in task_buf_order keys to distinguish atomic_model buffers
@@ -84,19 +82,43 @@ _ATOMIC_MODEL_TASK_BUFFER_NAMES: tuple[str, ...] = ("out_bias", "out_std")
 _AM_PREFIX = "am/"
 
 
-def _get_task_buffers(model: torch.nn.Module) -> dict[str, torch.Tensor]:
-    """Return per-task buffers (fitting net + atomic model) that vary across shared tasks."""
+def _detect_task_buffers(
+    model: torch.nn.Module,
+    group_models: list["torch.nn.Module"],
+) -> dict[str, torch.Tensor]:
+    """Collect per-task buffers to promote to FX placeholders.
+
+    Fitting-net buffers are auto-detected by identity diff across
+    *group_models* (all tasks that share this model's structure key after
+    ``share_params``).  Any buffer that is a *different* Python object in at
+    least one other group member is task-specific and gets promoted.
+
+    Atomic-model buffers listed in ``_ATOMIC_MODEL_TASK_BUFFER_NAMES`` are
+    always promoted because ``model_change_out_bias`` may replace them
+    out-of-place after compilation.
+    """
     result: dict[str, torch.Tensor] = {}
-    # fitting-net task buffers
+
+    # Auto-detect fitting-net task buffers by identity diff across the group.
     try:
         fitting = model.get_fitting_net()
-        for name in _TASK_SPECIFIC_BUFFER_NAMES:
-            val = fitting._buffers.get(name)
-            if val is not None and torch.is_tensor(val):
-                result[name] = val.detach().clone()
+        for name, val in fitting._buffers.items():
+            if val is None or not torch.is_tensor(val):
+                continue
+            for other in group_models:
+                if other is model:
+                    continue
+                try:
+                    other_val = other.get_fitting_net()._buffers.get(name)
+                    if other_val is not val:
+                        result[name] = val.detach().clone()
+                        break
+                except AttributeError:
+                    pass
     except AttributeError:
         pass
-    # atomic_model task buffers (out_bias, out_std)
+
+    # Atomic-model task buffers (always promote).
     try:
         am = model.atomic_model
         for name in _ATOMIC_MODEL_TASK_BUFFER_NAMES:
@@ -105,25 +127,35 @@ def _get_task_buffers(model: torch.nn.Module) -> dict[str, torch.Tensor]:
                 result[_AM_PREFIX + name] = val.detach().clone()
     except AttributeError:
         pass
+
     return result
 
 
-def _get_model_structure_key(model: torch.nn.Module) -> int:
-    """Return an id that is identical for all tasks that share a fitting net.
+def _get_model_structure_key(model: torch.nn.Module) -> tuple[int, ...]:
+    """Return a key that is identical iff two tasks can safely share a compiled graph.
 
-    After ``share_params``, the fitting net's child sub-modules are literally
-    the same Python objects across tasks.  The first non-task-specific child's
-    ``id()`` is therefore the same for all shared tasks and unique across
-    unrelated models.
+    The key captures both the descriptor identity and the fitting-net
+    structure so that tasks sharing a fitting net but using *different*
+    descriptors (which bake distinct descriptor constants into the traced
+    graph) are never assigned the same compiled graph.
+
+    After ``share_params``, the fitting net's child sub-modules are the same
+    Python objects across tasks, so ``id(first_child)`` is equal for all
+    shared tasks and unique across unrelated models.
     """
+    descriptor_id: int = 0
     try:
-        fitting = model.get_fitting_net()
-        for name, child in fitting.named_children():
-            if name not in _TASK_SPECIFIC_BUFFER_NAMES:
-                return id(child)
+        descriptor_id = id(model.get_descriptor())
     except AttributeError:
         pass
-    return id(model)
+
+    try:
+        fitting = model.get_fitting_net()
+        for _, child in fitting.named_children():
+            return (descriptor_id, id(child))
+    except AttributeError:
+        pass
+    return (descriptor_id, id(model))
 
 
 # ---------------------------------------------------------------------------
@@ -283,9 +315,10 @@ def _trace_and_compile(
         User-supplied inductor options.  These are merged on top of the
         built-in defaults (user values take precedence).
     task_buffers : dict or None
-        Per-task fitting-net buffers (``bias_atom_e``, ``case_embd``) to
-        promote to explicit FX ``placeholder`` nodes so the compiled graph is
-        reusable across tasks that share the same structure.
+        Per-task buffers (e.g. ``bias_atom_e``, ``case_embd``, ``out_bias``,
+        ``out_std``) detected by ``_detect_task_buffers``.  These are promoted
+        to explicit FX ``placeholder`` nodes so the compiled graph is reusable
+        across tasks that share the same structure key.
 
     Returns
     -------
@@ -1092,12 +1125,34 @@ class Trainer:
             else self.wrapper
         )
 
+        from collections import (
+            defaultdict,
+        )
+
         from deepmd.dpmodel.descriptor.dpa1 import DescrptDPA1 as DescrptDPA1DP
 
+        # Pre-pass: group tasks by structure key and auto-detect per-task buffers.
+        # Grouping is needed so _detect_task_buffers can diff buffer identities
+        # across all tasks that share the same compiled graph.
+        _key_for: dict[str, tuple[int, ...]] = {}
+        _groups: defaultdict[tuple[int, ...], list[str]] = defaultdict(list)
+        for task_key in self.model_keys:
+            sk = _get_model_structure_key(wrapper_mod.model[task_key])
+            _key_for[task_key] = sk
+            _groups[sk].append(task_key)
+
+        _task_bufs_for: dict[str, dict[str, torch.Tensor]] = {}
+        for sk, group_keys in _groups.items():
+            group_models = [wrapper_mod.model[k] for k in group_keys]
+            for task_key in group_keys:
+                _task_bufs_for[task_key] = _detect_task_buffers(
+                    wrapper_mod.model[task_key], group_models
+                )
+
         # structure_key -> (compiled_lower, task_buf_order)
-        # Shared-fitting tasks produce the same structure key so only the first
-        # task triggers make_fx + torch.compile; the rest reuse the result.
-        _compiled_by_structure: dict[int, tuple] = {}
+        # Tasks with the same structure key (same descriptor + shared fitting)
+        # reuse the compiled graph; different descriptor or fitting → distinct key.
+        _compiled_by_structure: dict[tuple[int, ...], tuple] = {}
 
         for task_key in self.model_keys:
             model = wrapper_mod.model[task_key]
@@ -1124,8 +1179,8 @@ class Trainer:
                         task_key,
                     )
 
-            structure_key = _get_model_structure_key(model)
-            task_bufs = _get_task_buffers(model)
+            structure_key = _key_for[task_key]
+            task_bufs = _task_bufs_for[task_key]
 
             if structure_key in _compiled_by_structure:
                 # Shared structure: reuse the already-compiled graph.
