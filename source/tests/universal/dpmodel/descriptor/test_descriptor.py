@@ -703,7 +703,7 @@ DescriptorParamDPA1EnergyModelList = (
         DescriptorParamDPA1, "DescriptorParamDPA1_strip", tebd_input_mode="strip"
     ),
     _descriptor_param_variant(
-        DescriptorParamDPA1, "DescriptorParamDPA1_no_attention", attn_layer=0
+        DescriptorParamDPA1, "DescriptorParamDPA1_with_attention", attn_layer=2
     ),
     _descriptor_param_variant(
         DescriptorParamDPA1, "DescriptorParamDPA1_exclude_types", exclude_types=[[0, 1]]
@@ -724,6 +724,7 @@ DescriptorParamDPA1EnergyModelList = (
         DescriptorParamDPA1,
         "DescriptorParamDPA1_mixed_high_risk",
         tebd_input_mode="strip",
+        attn_layer=2,
         exclude_types=[[0, 1]],
         temperature=1.0,
         smooth_type_embedding=False,
