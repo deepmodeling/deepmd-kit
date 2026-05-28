@@ -29,7 +29,7 @@ class DummyAutoBatchSize:
         self.modes.append(enable)
 
 
-class TestPytorchOOMRetry(unittest.TestCase):
+class TestPtOOMRetry(unittest.TestCase):
     def _make_backend(self, method_name: str) -> tuple[Any, MagicMock]:
         try:
             from deepmd.pt.infer.deep_eval import (
