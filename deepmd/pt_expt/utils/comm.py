@@ -75,11 +75,18 @@ def _check_underlying_ops_loaded() -> None:
             import_err = exc
 
     if not _ops_registered():
+        if import_err is not None:
+            # Surface the raw import error (typically ``ImportError`` with
+            # ``undefined symbol`` ABI detail) instead of burying it in a
+            # generic message — that detail is what tells the user the
+            # mismatch is between libdeepmd_op_pt.so and the runtime torch,
+            # not a missing build.
+            raise import_err
         raise RuntimeError(
             "torch.ops.deepmd_export.{border_op,border_op_backward} "
             "are not registered. Build libdeepmd_op_pt.so and ensure "
             "deepmd.pt is importable before this module."
-        ) from import_err
+        )
 
 
 _check_underlying_ops_loaded()
