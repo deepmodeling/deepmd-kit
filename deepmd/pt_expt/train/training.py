@@ -1143,12 +1143,14 @@ class Trainer:
             if isinstance(m, _CompiledModel):
                 compiled_backup[task_key] = m
                 wrapper.model[task_key] = m.original_model
-        state = {
-            "model": wrapper.state_dict(),
-            "optimizer": self.optimizer.state_dict(),
-        }
-        for task_key, compiled in compiled_backup.items():
-            wrapper.model[task_key] = compiled
+        try:
+            state = {
+                "model": wrapper.state_dict(),
+                "optimizer": self.optimizer.state_dict(),
+            }
+        finally:
+            for task_key, compiled in compiled_backup.items():
+                wrapper.model[task_key] = compiled
         ckpt_path = f"{self.save_ckpt}-{step}.pt"
         torch.save(state, ckpt_path)
         # symlink latest
