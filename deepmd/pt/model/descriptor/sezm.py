@@ -339,6 +339,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
     """
 
     _ENV_DIM: int = 1  # Use se_r style (radial only) for EnvMatStatSe compatibility
+    LATEST_VERSION: float = 1.1
 
     def __init__(
         self,
@@ -395,6 +396,12 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
     ) -> None:
         super().__init__()
 
+        self.register_buffer(
+            "version_tensor",
+            torch.tensor(self.LATEST_VERSION, dtype=torch.float64, device=env.DEVICE),
+            persistent=True,
+        )
+        self.version = float(self.version_tensor.item())
         self.rcut = float(rcut)
         if env_exp is None:
             env_exp = [7, 5]
@@ -404,6 +411,12 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             )
         self.env_exp = [int(x) for x in env_exp]
         self.eps = float(eps)
+        # Floor for the envelope-squared degree normalization (GIE / env_seed).
+        # version < 1.1 keeps the tiny ``eps`` floor (legacy path, untouched);
+        # version >= 1.1 swaps in this O(1) value so sparse-neighborhood (e.g.
+        # dimer) features vanish smoothly at rcut instead of saturating and
+        # kinking just inside the cutoff.
+        self.deg_norm_floor = 0.25
 
         if isinstance(sel, int):
             sel = [sel]
@@ -998,6 +1011,9 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 mapping=mapping,
                 pair_keep_mask=pair_keep_mask,
                 eps=self.eps,
+                deg_norm_floor=(
+                    self.deg_norm_floor if self.version >= 1.1 else self.eps
+                ),
                 edge_envelope=self.edge_envelope,
                 radial_basis=self.radial_basis,
                 n_radial=self.radial_basis.n_radial,
@@ -1022,6 +1038,8 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                     L=self.lmax + 1,
                     C=self.channels,
                 )  # (E, lmax+1, C)
+                if self.version >= 1.1:
+                    radial_feat = radial_feat * edge_cache.edge_env.reshape(-1, 1, 1)
 
         # === Step 6. Env FiLM conditioning (optional, fp32+) ===
         with nvtx_range("env_film"):
@@ -1171,6 +1189,9 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 edge_mask=edge_mask,
                 compute_dtype=self.compute_dtype,
                 eps=self.eps,
+                deg_norm_floor=(
+                    self.deg_norm_floor if self.version >= 1.1 else self.eps
+                ),
                 inner_clamp=self.inner_clamp,
                 bridging_switch=self.bridging_switch,
                 edge_envelope=self.edge_envelope,
@@ -1192,6 +1213,8 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             radial_feat = radial_feat_flat.reshape(
                 radial_feat_flat.shape[0], self.lmax + 1, self.channels
             )  # (E, lmax+1, C)
+            if self.version >= 1.1:
+                radial_feat = radial_feat * edge_cache.edge_env.reshape(-1, 1, 1)
 
         # === Step 5. Env FiLM conditioning (optional, fp32+) ===
         with nvtx_range("env_film"):
@@ -1787,7 +1810,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         return {
             "@class": "Descriptor",
             "type": "SeZM",
-            "@version": 1,
+            "@version": self.version,
             "config": {
                 "ntypes": self.ntypes,
                 "sel": self.sel,
@@ -1851,13 +1874,15 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         type_val = data.pop("type")
         if type_val not in ("SeZM", "sezm", "dpa4"):
             raise ValueError(f"Invalid type for DescrptSeZM: {type_val}")
-        version = int(data.pop("@version"))
-        check_version_compatibility(version, 1, 1)
+        version = float(data.pop("@version"))
+        check_version_compatibility(version, cls.LATEST_VERSION, 1)
         config = data.pop("config")
         variables = data.pop("@variables")
         data.pop("env_mat", None)
         config.pop("s2_grid_resolution", None)
         obj = cls(**config)
+        obj.version = version
+        obj.version_tensor.fill_(version)
         template = obj.state_dict()
         state = {
             key: safe_numpy_to_tensor(
@@ -1945,7 +1970,12 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         if not has_lora(self):
             fold_lora_state_dict_keys(state_dict, prefix)
 
-        # === Step 2. Drop transient descriptor state rebuilt at construction ===
+        # === Step 2. Backfill descriptor version for legacy checkpoints ===
+        version_key = prefix + "version_tensor"
+        if version_key not in state_dict:
+            state_dict[version_key] = self.version_tensor.new_tensor(1.0)
+
+        # === Step 3. Drop transient descriptor state rebuilt at construction ===
         expected_keys = {prefix + key for key in self.state_dict().keys()}
         for full_key in list(state_dict.keys()):
             if full_key.startswith(prefix) and full_key not in expected_keys:
@@ -1960,3 +1990,4 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             unexpected_keys,
             error_msgs,
         )
+        self.version = float(self.version_tensor.item())

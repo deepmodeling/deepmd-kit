@@ -330,8 +330,8 @@ def get_sezm_model(model_params: dict) -> BaseModel:
 
     # === Bridging parameters ===
     bridging_method = str(model_params.get("bridging_method", "none")).upper()
-    bridging_r_inner = float(model_params.get("bridging_r_inner", 0.8))
-    bridging_r_outer = float(model_params.get("bridging_r_outer", 1.2))
+    bridging_r_inner = float(model_params.get("bridging_r_inner", 0.5))
+    bridging_r_outer = float(model_params.get("bridging_r_outer", 0.8))
     # Only inject bridging parameters when bridging is enabled.
     if bridging_method != "NONE":
         model_params["descriptor"]["inner_clamp_r_inner"] = bridging_r_inner
@@ -405,8 +405,8 @@ def get_sezm_spin_model(model_params: dict) -> BaseModel:
 
     # === Bridging parameters ===
     bridging_method = str(model_params.get("bridging_method", "none")).upper()
-    bridging_r_inner = float(model_params.get("bridging_r_inner", 0.8))
-    bridging_r_outer = float(model_params.get("bridging_r_outer", 1.2))
+    bridging_r_inner = float(model_params.get("bridging_r_inner", 0.5))
+    bridging_r_outer = float(model_params.get("bridging_r_outer", 0.8))
     if bridging_method != "NONE":
         model_params["descriptor"]["inner_clamp_r_inner"] = bridging_r_inner
         model_params["descriptor"]["inner_clamp_r_outer"] = bridging_r_outer

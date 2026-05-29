@@ -68,9 +68,6 @@
       "seed": 42
     },
     "use_compile": false,
-    "bridging_method": "none",
-    "bridging_r_inner": 0.8,
-    "bridging_r_outer": 1.2,
     "lora": {
       "rank": 16,
       "alpha": 16.0
@@ -110,8 +107,7 @@
         "../data/data_1",
         "../data/data_2"
       ],
-      "batch_size": 1,
-      "min_pair_dist": 1.0
+      "batch_size": 1
     },
     "validation_data": {
       "systems": [

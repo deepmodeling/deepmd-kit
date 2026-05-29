@@ -402,11 +402,6 @@ class EnvironmentInitialEmbedding(nn.Module):
         self.device = env.DEVICE
         self.precision = RESERVED_PRECISION_DICT[dtype]
         self.register_buffer(
-            "eps_tensor",
-            torch.tensor(self.eps, dtype=self.dtype, device=self.device),
-            persistent=False,
-        )
-        self.register_buffer(
             "eps_sq_tensor",
             torch.tensor(self.eps * self.eps, dtype=self.dtype, device=self.device),
             persistent=False,
@@ -549,10 +544,9 @@ class EnvironmentInitialEmbedding(nn.Module):
         env_agg = env_agg.reshape(n_nodes, 4, self.embed_dim)  # (N, 4, embed_dim)
 
         # === Step 4. Smooth normalization by envelope-squared degree ===
-        deg_scale = torch.rsqrt(edge_cache.deg + self.eps_tensor).reshape(
-            -1, 1, 1
-        )  # (N, 1, 1)
-        env_agg = env_agg * deg_scale
+        # Reuse the cache's inverse-sqrt degree so the version-aware
+        # ``deg_norm_floor`` is applied consistently with GIE.
+        env_agg = env_agg * edge_cache.inv_sqrt_deg
 
         # === Step 5. D matrix construction: D = env_agg^T @ env_agg[:,:,:axis_dim] ===
         env_agg_t = env_agg.permute(0, 2, 1)  # (N, embed_dim, 4)

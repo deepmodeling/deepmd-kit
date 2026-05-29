@@ -161,8 +161,8 @@ Enable zone bridging with:
 {
   "model": {
     "bridging_method": "zbl",
-    "bridging_r_inner": 0.8,
-    "bridging_r_outer": 1.2
+    "bridging_r_inner": 0.5,
+    "bridging_r_outer": 0.8
   }
 }
 ```

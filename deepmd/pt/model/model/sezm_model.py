@@ -599,8 +599,8 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         use_compile: bool = False,
         enable_tf32: bool = True,
         bridging_method: str = "none",
-        bridging_r_inner: float = 0.8,
-        bridging_r_outer: float = 1.2,
+        bridging_r_inner: float = 0.5,
+        bridging_r_outer: float = 0.8,
         lora: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:

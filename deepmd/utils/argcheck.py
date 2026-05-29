@@ -3129,14 +3129,14 @@ def sezm_model_args() -> Argument:
                 "bridging_r_inner",
                 float,
                 optional=True,
-                default=0.8,
+                default=0.5,
                 doc=doc_only_pt_supported + doc_bridging_r_inner,
             ),
             Argument(
                 "bridging_r_outer",
                 float,
                 optional=True,
-                default=1.2,
+                default=0.8,
                 doc=doc_only_pt_supported + doc_bridging_r_outer,
             ),
             Argument(

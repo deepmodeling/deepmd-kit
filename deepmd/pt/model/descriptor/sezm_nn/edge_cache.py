@@ -216,6 +216,7 @@ def build_edge_cache(
     mapping: torch.Tensor | None,
     pair_keep_mask: torch.Tensor,
     eps: float,
+    deg_norm_floor: float,
     edge_envelope: Callable[[torch.Tensor], torch.Tensor],
     radial_basis: Callable[[torch.Tensor], torch.Tensor],
     n_radial: int,
@@ -267,7 +268,10 @@ def build_edge_cache(
     pair_keep_mask
         Pair keep mask from `PairExcludeMask` with shape (nf, nloc, nnei). True means keep.
     eps
-        Small positive epsilon for safe norm and degree normalization.
+        Small positive epsilon for safe norm.
+    deg_norm_floor
+        Floor added to the envelope-squared degree before inverse-sqrt
+        normalization (see :func:`_finalize_edge_cache`).
     edge_envelope
         C^3 edge envelope module.
     radial_basis
@@ -380,7 +384,7 @@ def build_edge_cache(
         edge_env=edge_env,
         D_full=D_full,
         Dt_full=Dt_full,
-        eps=eps,
+        deg_norm_floor=deg_norm_floor,
     )
 
 
@@ -394,6 +398,7 @@ def build_edge_cache_from_edges(
     edge_mask: torch.Tensor,
     compute_dtype: torch.dtype,
     eps: float,
+    deg_norm_floor: float,
     inner_clamp: Callable[[torch.Tensor], torch.Tensor] | None,
     bridging_switch: Callable[[torch.Tensor], torch.Tensor] | None,
     edge_envelope: Callable[[torch.Tensor], torch.Tensor],
@@ -421,7 +426,10 @@ def build_edge_cache_from_edges(
     compute_dtype
         Promoted compute dtype used for geometry and radial features.
     eps
-        Small positive epsilon for safe norm and degree normalization.
+        Small positive epsilon for safe norm.
+    deg_norm_floor
+        Floor added to the envelope-squared degree before inverse-sqrt
+        normalization (see :func:`_finalize_edge_cache`).
     inner_clamp
         Optional inner clamp used to freeze short-range geometry below `r_inner`.
     bridging_switch
@@ -517,7 +525,7 @@ def build_edge_cache_from_edges(
         edge_env=edge_env,
         D_full=D_full,
         Dt_full=Dt_full,
-        eps=eps,
+        deg_norm_floor=deg_norm_floor,
         edge_src_gate=edge_src_gate,
     )
 
@@ -583,7 +591,7 @@ def _finalize_edge_cache(
     edge_env: torch.Tensor,
     D_full: torch.Tensor,
     Dt_full: torch.Tensor,
-    eps: float,
+    deg_norm_floor: float,
     edge_src_gate: torch.Tensor | None = None,
 ) -> EdgeFeatureCache:
     """
@@ -609,8 +617,11 @@ def _finalize_edge_cache(
         Packed Wigner-D matrices with shape (E, D, D).
     Dt_full
         Transposed packed Wigner-D matrices with shape (E, D, D).
-    eps
-        Small positive epsilon used in degree normalization.
+    deg_norm_floor
+        Floor added to the envelope-squared degree before the inverse-sqrt
+        normalization. A tiny ``eps`` reproduces the legacy behavior; an
+        ``O(1)`` value makes sparse-neighborhood features vanish smoothly at
+        ``rcut`` instead of saturating and kinking.
     edge_src_gate
         Optional per-edge SFPG weight with shape (E, 1). ``None`` in
         non-bridging mode.
@@ -624,9 +635,9 @@ def _finalize_edge_cache(
     with nvtx_range("degree"):
         deg = torch.zeros(n_nodes, dtype=edge_vec.dtype, device=edge_vec.device)  # (N,)
         deg.index_add_(0, dst, edge_env.squeeze(-1).to(dtype=edge_vec.dtype).square())
-        eps_tensor = deg.new_tensor(eps)
+        floor_tensor = deg.new_tensor(deg_norm_floor)
         inv_sqrt_deg = rearrange(
-            torch.rsqrt(deg + eps_tensor), "N -> N 1 1"
+            torch.rsqrt(deg + floor_tensor), "N -> N 1 1"
         )  # (N, 1, 1)
 
     return EdgeFeatureCache(
