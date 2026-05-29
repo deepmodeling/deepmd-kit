@@ -11,9 +11,6 @@ from deepmd.pt.model.descriptor.sezm_nn import (
     quaternion_z_rotation,
     resolve_s2_grid_resolution,
 )
-from deepmd.pt.utils import (
-    env,
-)
 
 
 def _random_quaternion(
@@ -46,7 +43,7 @@ class TestS2GridProjector(unittest.TestCase):
     """Test S2 projection invariants."""
 
     def setUp(self) -> None:
-        self.device = env.DEVICE
+        self.device = torch.device("cpu")
         torch.manual_seed(0)
 
     def test_lebedev_roundtrip_preserves_bandlimited_coefficients(self) -> None:
@@ -57,7 +54,7 @@ class TestS2GridProjector(unittest.TestCase):
             grid_resolution_list=None,
             coefficient_layout="packed",
             grid_method="lebedev",
-        )
+        ).to(self.device)
         x = torch.randn(
             5, projector.coeff_dim, 3, device=self.device, dtype=torch.float64
         )
@@ -69,7 +66,7 @@ class TestSwiGLUS2Equivariance(unittest.TestCase):
     """Test default-grid equivariance of full-m and truncated SwiGLU-S2 activations."""
 
     def setUp(self) -> None:
-        self.device = env.DEVICE
+        self.device = torch.device("cpu")
         torch.manual_seed(0)
 
     def test_default_full_m_grid_counts_keep_s2_activation_equivariant(self) -> None:
@@ -161,7 +158,7 @@ class TestSwiGLUS2Equivariance(unittest.TestCase):
             mlp_bias=False,
             trainable=False,
             seed=17 + lmax,
-        )
+        ).to(self.device)
         self.assertEqual(activation.grid_resolution_list, expected_full_m_grid)
 
         x = torch.randn(
@@ -173,7 +170,7 @@ class TestSwiGLUS2Equivariance(unittest.TestCase):
             dtype=dtype,
         )
         quat = _random_quaternion(n_batch, device=self.device, dtype=dtype)
-        d_matrix, _ = WignerDCalculator(lmax=lmax, dtype=dtype)(quat)
+        d_matrix, _ = WignerDCalculator(lmax=lmax, dtype=dtype).to(self.device)(quat)
 
         y_rotated_input = activation(_rotate_ndfc(x, d_matrix))
         y_then_rotated = _rotate_ndfc(activation(x), d_matrix)
@@ -355,7 +352,7 @@ class TestSwiGLUS2Equivariance(unittest.TestCase):
             mlp_bias=False,
             trainable=False,
             seed=27 + lmax + 100 * mmax,
-        )
+        ).to(self.device)
         self.assertEqual(activation.grid_resolution_list, expected_truncated_grid)
 
         coeff_index = build_m_major_index(lmax, mmax, device=self.device)
@@ -369,7 +366,9 @@ class TestSwiGLUS2Equivariance(unittest.TestCase):
         )
         gamma = torch.randn(n_batch, device=self.device, dtype=dtype)
         quaternion = quaternion_z_rotation(gamma)
-        d_matrix, _ = WignerDCalculator(lmax=lmax, dtype=dtype)(quaternion)
+        d_matrix, _ = WignerDCalculator(lmax=lmax, dtype=dtype).to(self.device)(
+            quaternion
+        )
         d_matrix_reduced = d_matrix.index_select(1, coeff_index).index_select(
             2,
             coeff_index,
