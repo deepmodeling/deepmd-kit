@@ -60,7 +60,16 @@ if(PACKAGE_C)
   install(TARGETS ${LIB_DEEPMD_OP}
           DESTINATION ${CMAKE_BINARY_DIR}/libdeepmd_c/lib)
 
-  set(cmake_files_install_dir "${CMAKE_BINARY_DIR}/libdeepmd_c/lib/cmake/${CMAKE_PROJECT_NAME}")
+  set(cmake_files_install_dir
+      "${CMAKE_BINARY_DIR}/libdeepmd_c/lib/cmake/${CMAKE_PROJECT_NAME}")
+  set(targets_export_name ${CMAKE_PROJECT_NAME}Targets)
+  set(generated_dir "${CMAKE_CURRENT_BINARY_DIR}/generated")
+  set(version_file "${generated_dir}/${CMAKE_PROJECT_NAME}ConfigVersion.cmake")
+  write_basic_package_version_file(
+    ${version_file}
+    VERSION $<IF:${GIT_SUMM}?${GIT_SUMM}:0.0.0>
+    COMPATIBILITY AnyNewerVersion)
+  set(config_file "${generated_dir}/${CMAKE_PROJECT_NAME}Config.cmake")
   configure_package_config_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/Config.cmake.in"
     "${config_file}"

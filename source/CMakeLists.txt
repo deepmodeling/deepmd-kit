@@ -1,6 +1,7 @@
 # new in 3.25: RUN_OUTPUT_STDOUT_VARIABLE
 cmake_minimum_required(VERSION 3.25.2)
 project(DeePMD)
+include(CMakePackageConfigHelpers)
 
 option(ENABLE_TENSORFLOW "Enable TensorFlow interface" OFF)
 option(ENABLE_PYTORCH "Enable PyTorch interface" OFF)
@@ -585,7 +586,6 @@ add_custom_target(lammps COMMAND ${CMAKE_COMMAND} -P
 
 # add configure file
 if(BUILD_CPP_IF AND NOT BUILD_PY_IF)
-  include(CMakePackageConfigHelpers)
   set(targets_export_name
       ${CMAKE_PROJECT_NAME}Targets
       CACHE INTERNAL "")
