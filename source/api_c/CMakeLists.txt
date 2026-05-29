@@ -71,8 +71,7 @@ if(PACKAGE_C)
     COMPATIBILITY AnyNewerVersion)
   set(config_file "${generated_dir}/${CMAKE_PROJECT_NAME}Config.cmake")
   configure_package_config_file(
-    "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/Config.cmake.in"
-    "${config_file}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/../cmake/Config.cmake.in" "${config_file}"
     INSTALL_DESTINATION "lib/cmake/${CMAKE_PROJECT_NAME}")
   install(FILES ${version_file} ${config_file}
           DESTINATION "${cmake_files_install_dir}")
