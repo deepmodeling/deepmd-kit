@@ -1142,7 +1142,11 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
     RANDOM_WEIGHT_STD = 0.1
     N_DISPLACEMENT_POINTS = 201
     MAX_DISPLACEMENT = 0.1
-    RCUT_NEAR_DISTANCE = 4.95
+    # Probe a bit inside the cutoff (rcut=5.0) rather than right at the edge.
+    # The smooth descriptor correctly makes near-rcut contributions vanish as
+    # ~(rcut - r)^4, so the energy bowl is only resolvable above noise a little
+    # inside the cutoff; 4.5 keeps a robust smooth-bowl signal for this guard.
+    RCUT_NEAR_DISTANCE = 4.5
     BRIDGING_R_INNER = 0.8
     BRIDGING_R_OUTER = 1.2
     ENERGY_SPAN_MARGIN = 1.0e-7

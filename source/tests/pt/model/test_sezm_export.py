@@ -371,6 +371,8 @@ class _FrozenPt2Fixture(_ClearDefaultDeviceTestCase):
             super().tearDownClass()
 
 
+# TODO: Re-enable after CI upgrades PyTorch to 2.11.
+@unittest.skip("CI PyTorch 2.10 may segfault in native AOTI compile/runtime code.")
 class TestSeZMExportArchive(_FrozenPt2Fixture):
     """AOTI ``.pt2`` archive structure + load-and-run smoke.
 
@@ -462,6 +464,8 @@ class TestSeZMExportArchive(_FrozenPt2Fixture):
             self.assertTrue(torch.isfinite(out_map[key]).all().item())
 
 
+# TODO: Re-enable after CI upgrades PyTorch to 2.11.
+@unittest.skip("CI PyTorch 2.10 may segfault in native AOTI compile/runtime code.")
 class TestSeZMViaDeepPot(_FrozenPt2Fixture):
     """Integration through the standard :class:`deepmd.infer.DeepPot` entry.
 
