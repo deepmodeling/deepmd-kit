@@ -143,9 +143,20 @@ def _get_model_structure_key(model: torch.nn.Module) -> tuple[int, ...]:
     Python objects across tasks, so ``id(first_child)`` is equal for all
     shared tasks and unique across unrelated models.
     """
+    # Use the first shared parameter tensor's id rather than the descriptor
+    # object's id: share_params makes descriptor *parameters* the same Python
+    # objects across tasks while the descriptor modules remain distinct.
+    # Two descriptors sharing params therefore collapse to the same key here,
+    # which is exactly what we want (same compiled graph).  Truly independent
+    # descriptors have distinct param objects and get distinct keys.
     descriptor_id: int = 0
     try:
-        descriptor_id = id(model.get_descriptor())
+        desc = model.get_descriptor()
+        for _, p in desc.named_parameters():
+            descriptor_id = id(p)
+            break
+        else:
+            descriptor_id = id(desc)
     except AttributeError:
         pass
 
@@ -374,7 +385,7 @@ def _trace_and_compile(
         # fitting-net buffers.
         originals: dict[str, torch.Tensor | None] = {}
         if task_buf_order:
-            for name, val in zip(task_buf_order, task_buf_vals):
+            for name, val in zip(task_buf_order, task_buf_vals, strict=True):
                 if name.startswith(_AM_PREFIX):
                     actual = name[len(_AM_PREFIX) :]
                     if _atomic_model is not None:
@@ -571,8 +582,12 @@ class _CompiledModel(torch.nn.Module):
                     else:
                         _vals.append(getattr(_fitting, _name))
                 task_buf_vals: tuple = tuple(_vals)
-            except AttributeError:
-                task_buf_vals = ()
+            except AttributeError as exc:
+                raise RuntimeError(
+                    f"Compiled graph expects task buffers {self._task_buf_order!r} "
+                    "but they could not be retrieved from the model. "
+                    "This is a bug in the compile path."
+                ) from exc
         else:
             task_buf_vals = ()
         result = self.compiled_forward_lower(
@@ -1142,7 +1157,7 @@ class Trainer:
             _groups[sk].append(task_key)
 
         _task_bufs_for: dict[str, dict[str, torch.Tensor]] = {}
-        for sk, group_keys in _groups.items():
+        for group_keys in _groups.values():
             group_models = [wrapper_mod.model[k] for k in group_keys]
             for task_key in group_keys:
                 _task_bufs_for[task_key] = _detect_task_buffers(
@@ -1406,7 +1421,7 @@ class Trainer:
             input_dict, label_dict = self.get_data(is_train=True, task_key=task_key)
 
             cur_lr_sched = self.scheduler.get_last_lr()[0]
-            model_pred, loss, more_loss = self.wrapper(
+            _model_pred, loss, more_loss = self.wrapper(
                 **input_dict,
                 cur_lr=cur_lr_sched,
                 label=label_dict,
