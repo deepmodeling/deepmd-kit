@@ -10,6 +10,7 @@ from unittest import (
 )
 
 import torch
+from packaging.version import parse as parse_version
 
 from deepmd.pt.loss import (
     EnergySpinLoss,
@@ -40,6 +41,18 @@ warnings.filterwarnings(
     "ignore",
     category=DeprecationWarning,
     module=r"torch\._functorch\._aot_autograd\.autograd_cache",
+)
+
+# TODO(torch-2.11): SeZM's ``torch.compile`` / AOT-export code paths are only
+# stable on torch 2.11.x. CI currently pins torch 2.10, where the compiled path
+# can segfault or drift, and other torch versions are similarly unstable. Skip
+# the compile-parity test off 2.11 until CI standardizes on a SeZM-compatible
+# torch, then drop this guard.
+_TORCH_VERSION = parse_version(torch.__version__)
+_SKIP_OFF_TORCH_211 = (_TORCH_VERSION.major, _TORCH_VERSION.minor) != (2, 11)
+_SKIP_OFF_TORCH_211_REASON = (
+    "SeZM's torch.compile path is only stable on torch 2.11.x; "
+    f"current torch is {torch.__version__}."
 )
 
 
@@ -370,6 +383,7 @@ class TestSeZMSpinModel(unittest.TestCase):
 
         torch.testing.assert_close(energy_with_virtual, energy_real_only)
 
+    @unittest.skipIf(_SKIP_OFF_TORCH_211, _SKIP_OFF_TORCH_211_REASON)
     def test_compile_matches_eager(self) -> None:
         """Compiled SeZM spin path should match eager predictions."""
         eager = get_model(self._build_model_params(use_compile=False)).to(self.device)
