@@ -305,7 +305,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             cc_ext, _, fp, ap, input_prec = self._input_type_cast(
                 extended_coord, fparam=fparam, aparam=aparam
             )
-            del extended_coord, fparam, aparam
+            del fparam, aparam
             atomic_ret = self.atomic_model.forward_common_atomic(
                 cc_ext,
                 extended_atype,
@@ -316,10 +316,11 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 comm_dict=comm_dict,
                 charge_spin=charge_spin,
             )
+            force_coord = atomic_ret.pop("_force_coord", cc_ext)
             model_predict = fit_output_to_model_output(
                 atomic_ret,
                 self.atomic_output_def(),
-                cc_ext,
+                force_coord,
                 do_atomic_virial=do_atomic_virial,
                 create_graph=self.training,
                 mask=atomic_ret["mask"] if "mask" in atomic_ret else None,

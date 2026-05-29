@@ -383,7 +383,9 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
         if self.atom_excl is not None:
             atom_mask *= self.atom_excl(atype)
 
-        for kk in ret_dict.keys():
+        for kk in list(ret_dict.keys()):
+            if kk.startswith("_"):
+                continue
             out_shape = ret_dict[kk].shape
             out_shape2 = 1
             for ss in out_shape[2:]:

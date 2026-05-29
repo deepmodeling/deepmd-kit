@@ -74,6 +74,34 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 to_numpy_array(ret1["energy"]),
             )
 
+    def test_forward_common_atomic_accepts_leaf_view_input(self) -> None:
+        ds = DescrptSeA(
+            self.rcut,
+            self.rcut_smth,
+            self.sel,
+        ).to(env.DEVICE)
+        ft = InvarFitting(
+            "energy",
+            self.nt,
+            ds.get_dim_out(),
+            1,
+            mixed_types=ds.mixed_types(),
+        ).to(env.DEVICE)
+        md0 = DPAtomicModel(ds, ft, type_map=["foo", "bar"]).to(env.DEVICE)
+
+        coord = to_torch_tensor(self.coord_ext).requires_grad_(True)
+        coord_view = coord.view(self.nf, self.nall, 3)
+        args = [
+            coord_view,
+            to_torch_tensor(self.atype_ext),
+            to_torch_tensor(self.nlist),
+        ]
+        atomic_ret = md0.forward_atomic(*args)
+        ret = md0.forward_common_atomic(*args)
+
+        self.assertIn("_force_coord", atomic_ret)
+        self.assertIn("energy", ret)
+
     def test_dp_consistency(self) -> None:
         nf, nloc, nnei = self.nlist.shape
         ds = DPDescrptSeA(

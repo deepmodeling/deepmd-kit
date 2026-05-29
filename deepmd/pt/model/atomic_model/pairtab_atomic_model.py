@@ -276,7 +276,7 @@ class PairTabAtomicModel(BaseAtomicModel):
         nframes, nloc, nnei = nlist.shape
         extended_coord = extended_coord.view(nframes, -1, 3)
         if self.do_grad_r() or self.do_grad_c():
-            extended_coord.requires_grad_(True)
+            extended_coord = extended_coord.detach().clone().requires_grad_(True)
 
         # this will mask all -1 in the nlist
         mask = nlist >= 0
@@ -313,6 +313,9 @@ class PairTabAtomicModel(BaseAtomicModel):
             dim=-1,
         ).unsqueeze(-1)
 
+        if self.do_grad_r() or self.do_grad_c():
+            atomic_energy = atomic_energy + 0.0 * extended_coord.sum()[..., None, None]
+            return {"energy": atomic_energy, "_force_coord": extended_coord}
         return {"energy": atomic_energy}
 
     def _pair_tabulated_inter(
