@@ -89,7 +89,7 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
         ).to(env.DEVICE)
         md0 = DPAtomicModel(ds, ft, type_map=["foo", "bar"]).to(env.DEVICE)
 
-        coord = to_torch_tensor(self.coord_ext).requires_grad_(True)
+        coord = to_torch_tensor(self.coord_ext)
         coord_view = coord.view(self.nf, self.nall, 3)
         args = [
             coord_view,

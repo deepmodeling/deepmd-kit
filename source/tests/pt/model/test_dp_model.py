@@ -142,10 +142,11 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
             self.sel,
             distinguish_types=(not md0.mixed_types()),
         )
-        coord_view = coord_ext.requires_grad_(True).view(self.nf, -1, 3)
+        coord_view = coord_ext.view(self.nf, -1, 3)
 
         ret = md0.forward_lower(coord_view, atype_ext, nlist, do_atomic_virial=True)
 
+        self.assertFalse(coord_view.requires_grad)
         self.assertIn("extended_force", ret)
         self.assertIn("virial", ret)
 
