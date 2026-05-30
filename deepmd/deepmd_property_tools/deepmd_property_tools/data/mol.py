@@ -205,10 +205,16 @@ def read_mol_coords(path: str | Path) -> tuple[list[str], np.ndarray]:
     return symbols, np.asarray(coords, dtype=np.float32)
 
 
-def smiles_to_3d_coords(smiles: str, *, random_seed: int = 42) -> tuple[list[str], np.ndarray]:
+def smiles_to_3d_coords(
+    smiles: str, *, random_seed: int = 42
+) -> tuple[list[str], np.ndarray]:
     try:
-        from rdkit import Chem
-        from rdkit.Chem import AllChem
+        from rdkit import (
+            Chem,
+        )
+        from rdkit.Chem import (
+            AllChem,
+        )
     except ImportError as exc:
         raise ImportError(
             "RDKit is required to generate 3D coordinates from SMILES. "
@@ -256,7 +262,9 @@ def smiles_to_3d_coords(smiles: str, *, random_seed: int = 42) -> tuple[list[str
         pos = conf.GetAtomPosition(atom.GetIdx())
         symbol = atom.GetSymbol()
         if symbol not in ELEMENT_INDEX:
-            raise ValueError(f"Unknown element {symbol!r} generated from SMILES {smiles!r}")
+            raise ValueError(
+                f"Unknown element {symbol!r} generated from SMILES {smiles!r}"
+            )
         symbols.append(symbol)
         coords.append([pos.x, pos.y, pos.z])
     return symbols, np.asarray(coords, dtype=np.float32)
@@ -326,7 +334,13 @@ def records_from_csv_smiles(
     smiles_col: str = "SMILES",
     overlap_tol: float = 1e-6,
     seed: int = 42,
-) -> tuple[list[tuple[list[str], np.ndarray, float, int]], list[tuple[int, str, str]], int, int, list[dict[str, Any]]]:
+) -> tuple[
+    list[tuple[list[str], np.ndarray, float, int]],
+    list[tuple[int, str, str]],
+    int,
+    int,
+    list[dict[str, Any]],
+]:
     with Path(dataset).open("r", encoding="utf-8") as fp:
         rows = list(csv.DictReader(fp))
     if not rows:
@@ -349,7 +363,9 @@ def records_from_csv_smiles(
             if has_overlapping_atoms(coords, overlap_tol):
                 skipped_overlap += 1
                 continue
-            records.append((symbols, coords, parse_property_value(row[prop_col]), row_idx))
+            records.append(
+                (symbols, coords, parse_property_value(row[prop_col]), row_idx)
+            )
             kept_rows.append(dict(row))
         except Exception as exc:
             failed_rows.append((row_idx, smiles, str(exc)))
@@ -386,22 +402,34 @@ def predict_records_from_data(
 ) -> tuple[list[list[str]], list[np.ndarray], list[dict[str, Any]]]:
     if isinstance(data, (str, Path)) or (isinstance(data, dict) and "dataset" in data):
         dataset = Path(data if isinstance(data, (str, Path)) else data["dataset"])
-        mol_dir_value = mol_dir if mol_dir is not None else data.get("mol_dir") if isinstance(data, dict) else None
-        smiles_col_value = data.get("smiles_col", smiles_col) if isinstance(data, dict) else smiles_col
+        mol_dir_value = (
+            mol_dir
+            if mol_dir is not None
+            else data.get("mol_dir")
+            if isinstance(data, dict)
+            else None
+        )
+        smiles_col_value = (
+            data.get("smiles_col", smiles_col) if isinstance(data, dict) else smiles_col
+        )
         with dataset.open("r", encoding="utf-8") as fp:
             rows = list(csv.DictReader(fp))
         if rows and property_col is not None:
             find_column(list(rows[0].keys()), [property_col, "Property", "property"])
         smiles_column = None
         if mol_dir_value is None and rows:
-            smiles_column = find_column(list(rows[0].keys()), [smiles_col_value, "SMILES", "smiles"])
+            smiles_column = find_column(
+                list(rows[0].keys()), [smiles_col_value, "SMILES", "smiles"]
+            )
         atoms: list[list[str]] = []
         coords: list[np.ndarray] = []
         kept_rows: list[dict[str, Any]] = []
         for row_idx, row in enumerate(rows):
             if mol_dir_value is None:
                 try:
-                    symbols, coord = smiles_to_3d_coords(row[smiles_column], random_seed=42 + row_idx)
+                    symbols, coord = smiles_to_3d_coords(
+                        row[smiles_column], random_seed=42 + row_idx
+                    )
                 except Exception as exc:
                     warnings.warn(
                         f"Skipping row {row_idx} during prediction because RDKit failed "
@@ -410,7 +438,9 @@ def predict_records_from_data(
                     )
                     continue
             else:
-                symbols, coord = read_mol_coords(Path(mol_dir_value) / mol_template.format(row=row_idx))
+                symbols, coord = read_mol_coords(
+                    Path(mol_dir_value) / mol_template.format(row=row_idx)
+                )
             atoms.append(symbols)
             coords.append(coord)
             kept_rows.append(dict(row))

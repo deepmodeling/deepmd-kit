@@ -11,10 +11,7 @@ from unittest import (
 )
 
 import numpy as np
-
-from deepmd_property_tools.data import (
-    mol as mol_module,
-)
+from deepmd_property_tools.data import mol as mol_module
 from deepmd_property_tools.data.mol import (
     build_used_type_map,
     has_overlapping_atoms,
@@ -70,9 +67,11 @@ def test_records_from_csv_smiles_generates_coordinates(tmp_path: Path) -> None:
             ),
         ),
     ) as smiles_mock:
-        records, failed_rows, skipped_zero, skipped_overlap, rows = records_from_csv_smiles(
-            dataset=dataset,
-            property_col="Property",
+        records, failed_rows, skipped_zero, skipped_overlap, rows = (
+            records_from_csv_smiles(
+                dataset=dataset,
+                property_col="Property",
+            )
         )
 
     smiles_mock.assert_called_once_with("O", random_seed=42)
@@ -93,9 +92,11 @@ def test_records_from_csv_smiles_collects_failed_rows(tmp_path: Path) -> None:
         "smiles_to_3d_coords",
         side_effect=ValueError("bad smiles"),
     ):
-        records, failed_rows, skipped_zero, skipped_overlap, rows = records_from_csv_smiles(
-            dataset=dataset,
-            property_col="Property",
+        records, failed_rows, skipped_zero, skipped_overlap, rows = (
+            records_from_csv_smiles(
+                dataset=dataset,
+                property_col="Property",
+            )
         )
 
     assert records == []
@@ -130,10 +131,12 @@ def test_csv_mol_path_does_not_use_smiles_generation(tmp_path: Path) -> None:
         "smiles_to_3d_coords",
         side_effect=AssertionError("SMILES generation should not be used"),
     ):
-        records, failed_rows, skipped_zero, skipped_overlap, rows = records_from_csv_mol(
-            dataset=dataset,
-            mol_dir=mol_dir,
-            property_col="Property",
+        records, failed_rows, skipped_zero, skipped_overlap, rows = (
+            records_from_csv_mol(
+                dataset=dataset,
+                mol_dir=mol_dir,
+                property_col="Property",
+            )
         )
         atoms, coords, pred_rows = predict_records_from_data(
             {"dataset": dataset, "mol_dir": mol_dir},

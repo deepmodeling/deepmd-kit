@@ -14,7 +14,6 @@ from unittest import (
 
 import numpy as np
 import pytest
-
 from deepmd_property_tools import (
     PropertyPredict,
 )

@@ -97,9 +97,7 @@ def build_frame(
         "atom_names": type_map,
         "atom_numbs": atom_numbs.tolist(),
         "atom_types": atom_types,
-        "cells": np.array(
-            [[[100.0, 0.0, 0.0], [0.0, 100.0, 0.0], [0.0, 0.0, 100.0]]]
-        ),
+        "cells": np.array([[[100.0, 0.0, 0.0], [0.0, 100.0, 0.0], [0.0, 0.0, 100.0]]]),
         "nopbc": True,
         "coords": coords[np.newaxis, :, :].astype(np.float32),
         "energies": np.zeros((1,), dtype=np.float32),
@@ -154,9 +152,7 @@ def prepare_property_data(
     failed_rows: list[tuple[int, str, str]] = []
     skipped_zero = 0
     skipped_overlap = 0
-    if isinstance(data, (str, Path)) or (
-        isinstance(data, dict) and "dataset" in data
-    ):
+    if isinstance(data, (str, Path)) or (isinstance(data, dict) and "dataset" in data):
         dataset = Path(data if isinstance(data, (str, Path)) else data["dataset"])
         mol_dir_value = (
             mol_dir

@@ -74,7 +74,9 @@ def test_train_command_accepts_smiles_without_mol_dir() -> None:
 def test_predict_command_calls_property_predict() -> None:
     predictor = mock.Mock()
     predictor.predict.return_value = [[1.0]]
-    with mock.patch.object(cli, "PropertyPredict", return_value=predictor) as predict_cls:
+    with mock.patch.object(
+        cli, "PropertyPredict", return_value=predictor
+    ) as predict_cls:
         with mock.patch("builtins.print"):
             exit_code = cli.main(
                 [
@@ -101,7 +103,9 @@ def test_predict_command_calls_property_predict() -> None:
 def test_predict_command_accepts_smiles_without_mol_dir() -> None:
     predictor = mock.Mock()
     predictor.predict.return_value = [[1.0]]
-    with mock.patch.object(cli, "PropertyPredict", return_value=predictor) as predict_cls:
+    with mock.patch.object(
+        cli, "PropertyPredict", return_value=predictor
+    ) as predict_cls:
         with mock.patch("builtins.print"):
             exit_code = cli.main(
                 [
