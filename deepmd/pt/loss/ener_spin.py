@@ -267,7 +267,13 @@ class EnergySpinLoss(TaskLoss):
                     more_loss["l2_force_m_loss"] = self.display_if_exist(
                         l2_force_mag_loss.detach(), find_force_m
                     )
-                loss += (pref_fm * l2_force_mag_loss).to(GLOBAL_PT_FLOAT_PRECISION)
+                # A batch with no magnetic atoms makes ``torch.mean`` reduce
+                # over an empty tensor (NaN), and ``0 * NaN`` is still NaN, so
+                # ``nan_to_num`` keeps such a batch's force_mag term at zero
+                # loss and zero gradient instead of poisoning the whole step.
+                loss += (pref_fm * torch.nan_to_num(l2_force_mag_loss)).to(
+                    GLOBAL_PT_FLOAT_PRECISION
+                )
                 rmse_fm = l2_force_mag_loss.sqrt()
                 more_loss["rmse_fm"] = self.display_if_exist(
                     rmse_fm.detach(), find_force_m
@@ -285,7 +291,9 @@ class EnergySpinLoss(TaskLoss):
                     l1_force_mag_loss.mean().detach(), find_force_m
                 )
                 l1_force_mag_loss = l1_force_mag_loss.sum(-1).mean(-1).sum()
-                loss += (pref_fm * l1_force_mag_loss).to(GLOBAL_PT_FLOAT_PRECISION)
+                loss += (pref_fm * torch.nan_to_num(l1_force_mag_loss)).to(
+                    GLOBAL_PT_FLOAT_PRECISION
+                )
             else:
                 raise NotImplementedError(
                     f"Loss type {self.loss_func} is not implemented for magnetic force loss."

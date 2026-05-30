@@ -51,6 +51,7 @@ dependencies = [
     'h5py',
     "h5py>=3.6.0,!=3.11.0; platform_system=='Linux' and platform_machine=='aarch64'",
     'wcmatch',
+    "einops",
     'packaging',
     'ml_dtypes',
     'mendeleev',
@@ -400,6 +401,7 @@ select = [
 ignore = [
     "ANN401", # Allow Any due to too many violations
     "E501", # line too long
+    "F722", # syntax error in type annotation for jaxtyping
     "F841", # local variable is assigned to but never used
     "RUF059", # unused-unpacked-variable
     "E741", # ambiguous variable name

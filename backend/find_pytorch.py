@@ -136,6 +136,7 @@ def get_pt_requirement(pt_version: str = "") -> dict:
             if pt_version != ""
             # https://github.com/pytorch/pytorch/commit/7e0c26d4d80d6602aed95cb680dfc09c9ce533bc
             else "torch>=2.1.0",
+            "e3nn>=0.5.9",
             *mpi_requirement,
             *cibw_requirement,
         ],
