@@ -270,15 +270,14 @@ class TestEnergyModelSeA(unittest.TestCase, DPTrainTest):
         trainer = get_trainer(config)
         trainer.run()
 
-        self.assertEqual(Path("model.ckpt-0.pt"), trainer.latest_model)
-        self.assertTrue(Path("model.ckpt-0.pt").exists())
+        expected_model = Path(trainer.save_ckpt + "-0.pt")
+        self.assertEqual(expected_model, trainer.latest_model)
+        self.assertTrue(expected_model.exists())
         self.assertEqual(
-            Path("model.ckpt-0.pt"),
+            expected_model,
             Path(Path("checkpoint").read_text().strip()),
         )
-        checkpoint = torch.load(
-            "model.ckpt-0.pt", map_location="cpu", weights_only=True
-        )
+        checkpoint = torch.load(expected_model, map_location="cpu", weights_only=True)
         train_infos = checkpoint["model"]["_extra_state"]["train_infos"]
         self.assertEqual(0, train_infos["step"])
         self.assertEqual(0.0, train_infos["lr"])
