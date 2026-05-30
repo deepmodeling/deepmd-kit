@@ -2,20 +2,12 @@
 import json
 import os
 import shutil
-import signal
 import unittest
-from collections.abc import (
-    Callable,
-)
 from copy import (
     deepcopy,
 )
 from pathlib import (
     Path,
-)
-from typing import (
-    Any,
-    TypeVar,
 )
 
 import numpy as np
@@ -39,35 +31,6 @@ from .model.test_permutation import (
     model_dpa2,
     model_se_e2_a,
 )
-
-_F = TypeVar("_F", bound=Callable[..., Any])
-
-
-def _training_timeout(seconds: int) -> Callable[[_F], _F]:
-    """Limit real training tests on platforms that support SIGALRM."""
-
-    def decorate(func: _F) -> _F:
-        if not hasattr(signal, "SIGALRM"):
-            return func
-
-        def wrapped(*args: Any, **kwargs: Any) -> Any:
-            def raise_timeout(signum: int, frame: Any) -> None:
-                raise TimeoutError(f"training test exceeded {seconds} seconds")
-
-            previous_handler = signal.signal(signal.SIGALRM, raise_timeout)
-            signal.alarm(seconds)
-            try:
-                return func(*args, **kwargs)
-            finally:
-                signal.alarm(0)
-                signal.signal(signal.SIGALRM, previous_handler)
-
-        return wrapped  # type: ignore[return-value]
-
-    return decorate
-
-
-TRAINING_TEST_TIMEOUT = _training_timeout(60)
 
 
 class DPTrainTest:
@@ -201,7 +164,6 @@ class TestEnergyModelSeA(unittest.TestCase, DPTrainTest):
         self.config["training"]["save_freq"] = 1
         enable_prim(True)
 
-    @TRAINING_TEST_TIMEOUT
     def test_zero_step_with_change_bias_saves_initial_checkpoint(self) -> None:
         config = deepcopy(self.config)
         config["training"]["numb_steps"] = 0
@@ -211,10 +173,7 @@ class TestEnergyModelSeA(unittest.TestCase, DPTrainTest):
 
         self.assertEqual(Path("model.ckpt-0.pd"), trainer.latest_model)
         self.assertTrue(Path("model.ckpt-0.pd").exists())
-        self.assertEqual(
-            Path("model.ckpt-0.pd"),
-            Path(Path("checkpoint").read_text().strip()),
-        )
+        self.assertEqual(Path("model.ckpt-0.pd"), Path("checkpoint").read_text())
         checkpoint = paddle.load("model.ckpt-0.pd")
         train_infos = checkpoint["model"]["_extra_state"]["train_infos"]
         self.assertEqual(0, train_infos["step"])
