@@ -275,7 +275,7 @@ class PairTabAtomicModel(BaseAtomicModel):
     ) -> dict[str, torch.Tensor]:
         nframes, nloc, nnei = nlist.shape
         extended_coord = extended_coord.view(nframes, -1, 3)
-        if self.do_grad_r() or self.do_grad_c():
+        if (self.do_grad_r() or self.do_grad_c()) and not extended_coord.requires_grad:
             extended_coord = extended_coord.detach().clone().requires_grad_(True)
 
         # this will mask all -1 in the nlist
