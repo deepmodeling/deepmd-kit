@@ -96,10 +96,8 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
             to_torch_tensor(self.atype_ext),
             to_torch_tensor(self.nlist),
         ]
-        atomic_ret = md0.forward_atomic(*args)
         ret = md0.forward_common_atomic(*args)
 
-        self.assertIn("_force_coord", atomic_ret)
         self.assertIn("energy", ret)
 
     def test_dp_consistency(self) -> None:

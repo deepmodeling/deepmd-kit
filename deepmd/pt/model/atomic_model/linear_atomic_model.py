@@ -259,7 +259,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         """
         nframes, nloc, nnei = nlist.shape
         if (self.do_grad_r() or self.do_grad_c()) and not extended_coord.requires_grad:
-            extended_coord = extended_coord.detach().clone().requires_grad_(True)
+            extended_coord.requires_grad_(True)
         extended_coord = extended_coord.view(nframes, -1, 3)
         sorted_rcuts, sorted_sels = self._sort_rcuts_sels()
         nlists = build_multiple_neighbor_list(
@@ -304,8 +304,6 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                 dim=0,
             ),
         }  # (nframes, nloc, 1)
-        if self.do_grad_r() or self.do_grad_c():
-            fit_ret["_force_coord"] = extended_coord
         return fit_ret
 
     def apply_out_stat(

@@ -272,7 +272,7 @@ class DPAtomicModel(BaseAtomicModel):
         nframes, nloc, nnei = nlist.shape
         atype = extended_atype[:, :nloc]
         if (self.do_grad_r() or self.do_grad_c()) and not extended_coord.requires_grad:
-            extended_coord = extended_coord.detach().clone().requires_grad_(True)
+            extended_coord.requires_grad_(True)
 
         # Handle default chg_spin if descriptor supports it
         if self.add_chg_spin_ebd and charge_spin is None:
@@ -302,8 +302,6 @@ class DPAtomicModel(BaseAtomicModel):
             fparam=fparam,
             aparam=aparam,
         )
-        if self.do_grad_r() or self.do_grad_c():
-            fit_ret["_force_coord"] = extended_coord
         if self.enable_eval_fitting_last_layer_hook:
             assert "middle_output" in fit_ret, (
                 "eval_fitting_last_layer not supported for this fitting net!"
