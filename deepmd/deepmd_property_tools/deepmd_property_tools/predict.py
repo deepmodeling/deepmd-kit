@@ -28,6 +28,7 @@ class PropertyPredict:
         load_model: str | Path,
         type_map: list[str] | None = None,
         property_name: str | None = None,
+        smiles_col: str = "SMILES",
     ) -> None:
         if not load_model:
             raise ValueError("load_model is empty")
@@ -50,6 +51,7 @@ class PropertyPredict:
                 "type_map is required when property_tools_config.json is absent"
             )
         self.property_name = property_name or config.get("property_name", "Property")
+        self.smiles_col = smiles_col
         self.datahub: DataHub | None = None
 
     def predict(
@@ -65,6 +67,7 @@ class PropertyPredict:
             save_path=self.load_model.parent,
             property_name=self.property_name,
             property_col=None,
+            smiles_col=self.smiles_col,
         )
         prefix = Path(data).stem if isinstance(data, (str, Path)) else "test"
         predictor = Predictor(

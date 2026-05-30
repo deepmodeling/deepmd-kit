@@ -40,7 +40,7 @@ def test_torchrun_command_includes_options() -> None:
     with mock.patch("subprocess.run") as run_mock:
         trainer._run_torchrun(Path("input.json"))
 
-    cmd = run_mock.call_args.args[0]
+    cmd = run_mock.call_args[0][0]
     assert "--nproc_per_node=2" in cmd
     assert "--finetune" in cmd
     assert "--use-pretrain-script" in cmd

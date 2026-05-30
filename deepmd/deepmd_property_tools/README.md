@@ -50,6 +50,14 @@ DATA/
     id1.mol
 ```
 
+CSV files with a SMILES column can also be used directly. If `mol_dir` is not provided, RDKit is used to add hydrogens, generate a 3D conformer, and optimize the geometry before DeePMD data conversion:
+
+```python
+clf.fit({"dataset": "DATA/dataset_demo.csv"})
+```
+
+The default SMILES column name is `SMILES`; use `smiles_col="smiles"` or pass `{"dataset": "...", "smiles_col": "smiles"}` for a different column name.
+
 Direct coordinate data is also supported:
 
 ```python
@@ -78,6 +86,8 @@ deepmd-property-tools train \
     --mol-dir DATA/mol_convert \
     --save-path exp_property
 ```
+
+For CSV + SMILES inputs, omit `--mol-dir`; use `--smiles-col` if the column is not named `SMILES`.
 
 Predict with a checkpoint file or an experiment directory:
 

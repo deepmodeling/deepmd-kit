@@ -45,6 +45,7 @@ class PropertyTrain:
         nproc_per_node: int = 1,
         train_ratio: float = 0.9,
         mol_template: str = "id{row}.mol",
+        smiles_col: str = "SMILES",
         overlap_tol: float = 1e-6,
         seed: int = 42,
         overwrite: bool = True,
@@ -92,6 +93,7 @@ class PropertyTrain:
         self.nproc_per_node = nproc_per_node
         self.train_ratio = train_ratio
         self.mol_template = mol_template
+        self.smiles_col = smiles_col
         self.overlap_tol = overlap_tol
         self.seed = seed
         self.overwrite = overwrite
@@ -125,6 +127,7 @@ class PropertyTrain:
             property_col=self.property_col,
             train_ratio=self.train_ratio,
             mol_template=self.mol_template,
+            smiles_col=self.smiles_col,
             overlap_tol=self.overlap_tol,
             seed=self.seed,
             overwrite=self.overwrite,
@@ -157,6 +160,7 @@ class PropertyTrain:
             "metrics": self.metrics,
             "property_name": self.property_name,
             "property_col": self.property_col,
+            "smiles_col": self.smiles_col,
             "type_map": self.datahub.result.type_map,
             "input_path": str(self.datahub.result.input_path),
             "prepared_data": str(self.datahub.result.output_dir),
