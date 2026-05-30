@@ -272,7 +272,10 @@ class TestEnergyModelSeA(unittest.TestCase, DPTrainTest):
 
         self.assertEqual(Path("model.ckpt-0.pt"), trainer.latest_model)
         self.assertTrue(Path("model.ckpt-0.pt").exists())
-        self.assertEqual(Path("model.ckpt-0.pt"), Path("checkpoint").read_text())
+        self.assertEqual(
+            Path("model.ckpt-0.pt"),
+            Path(Path("checkpoint").read_text().strip()),
+        )
         checkpoint = torch.load(
             "model.ckpt-0.pt", map_location="cpu", weights_only=True
         )

@@ -173,7 +173,10 @@ class TestEnergyModelSeA(unittest.TestCase, DPTrainTest):
 
         self.assertEqual(Path("model.ckpt-0.pd"), trainer.latest_model)
         self.assertTrue(Path("model.ckpt-0.pd").exists())
-        self.assertEqual(Path("model.ckpt-0.pd"), Path("checkpoint").read_text())
+        self.assertEqual(
+            Path("model.ckpt-0.pd"),
+            Path(Path("checkpoint").read_text().strip()),
+        )
         checkpoint = paddle.load("model.ckpt-0.pd")
         train_infos = checkpoint["model"]["_extra_state"]["train_infos"]
         self.assertEqual(0, train_infos["step"])
