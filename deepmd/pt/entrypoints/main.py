@@ -421,7 +421,12 @@ def train(
 
     # Initialize DDP
     if os.environ.get("LOCAL_RANK") is not None:
-        dist.init_process_group(backend="cuda:nccl,cpu:gloo")
+        import datetime
+
+        timeout = datetime.timedelta(
+            seconds=18000
+        )  # set a longer timeout for for large datasets or slow file systems
+        dist.init_process_group(backend="cuda:nccl,cpu:gloo", timeout=timeout)
 
     trainer = get_trainer(
         config,

@@ -813,6 +813,9 @@ class DeepmdData:
         else:
             dtype = GLOBAL_NP_FLOAT_PRECISION
         path = self._get_data_path(set_name, key)
+        if key in ["grid", "density"] and path.is_file():
+            data = path.load_numpy().astype(dtype)
+            return np.float32(1.0), data
         if path.is_file():
             data = path.load_numpy().astype(dtype)
             try:  # YWolfeee: deal with data shape error
@@ -963,6 +966,8 @@ class DeepmdData:
         data = mmap_obj[frame_idx].copy().astype(dtype, copy=False)
 
         try:
+            if key in ("grid", "density"):
+                return np.float32(1.0), data
             if vv["atomic"]:
                 # Handle type_sel logic
                 if vv["type_sel"] is not None:
