@@ -10,6 +10,7 @@ import json
 import os
 import random
 import shutil
+import warnings
 from dataclasses import (
     dataclass,
 )
@@ -28,6 +29,7 @@ from deepmd_property_tools.config import (
 from .mol import (
     build_used_type_map,
     records_from_csv_mol,
+    records_from_csv_smiles,
     records_from_direct_data,
 )
 
@@ -133,6 +135,7 @@ def prepare_property_data(
     train_ratio: float = 0.9,
     mol_dir: str | Path | None = None,
     mol_template: str = "id{row}.mol",
+    smiles_col: str = "SMILES",
     overlap_tol: float = 1e-6,
     seed: int = 42,
     overwrite: bool = False,
@@ -151,24 +154,56 @@ def prepare_property_data(
     skipped_overlap = 0
     if isinstance(data, (str, Path)) or (isinstance(data, dict) and "dataset" in data):
         dataset = Path(data if isinstance(data, (str, Path)) else data["dataset"])
-        mol_dir_value = mol_dir if mol_dir is not None else data.get("mol_dir")
-        if mol_dir_value is None:
-            raise ValueError("mol_dir is required for CSV/MOL data")
-        records, failed_rows, skipped_zero, skipped_overlap, raw_data = (
-            records_from_csv_mol(
-                dataset=dataset,
-                mol_dir=mol_dir_value,
-                property_col=property_col,
-                mol_template=mol_template,
-                overlap_tol=overlap_tol,
-            )
+        mol_dir_value = (
+            mol_dir
+            if mol_dir is not None
+            else data.get("mol_dir")
+            if isinstance(data, dict)
+            else None
         )
+        smiles_col_value = (
+            data.get("smiles_col", smiles_col) if isinstance(data, dict) else smiles_col
+        )
+        if mol_dir_value is None:
+            records, failed_rows, skipped_zero, skipped_overlap, raw_data = (
+                records_from_csv_smiles(
+                    dataset=dataset,
+                    property_col=property_col,
+                    smiles_col=smiles_col_value,
+                    overlap_tol=overlap_tol,
+                    seed=seed,
+                )
+            )
+        else:
+            records, failed_rows, skipped_zero, skipped_overlap, raw_data = (
+                records_from_csv_mol(
+                    dataset=dataset,
+                    mol_dir=mol_dir_value,
+                    property_col=property_col,
+                    mol_template=mol_template,
+                    overlap_tol=overlap_tol,
+                )
+            )
     else:
         records, raw_data = records_from_direct_data(data)
+
+    for row_idx, source, error in failed_rows:
+        warnings.warn(
+            f"Skipping row {row_idx} during training data preparation because "
+            f"coordinates could not be prepared from {source!r}: {error}",
+            RuntimeWarning,
+        )
 
     used_elements = {symbol for symbols, _, _, _ in records for symbol in symbols}
     type_map = build_used_type_map(used_elements)
     if not type_map:
+        if failed_rows:
+            row_idx, source, error = failed_rows[0]
+            raise RuntimeError(
+                "No usable elements found after filtering. "
+                f"All {len(failed_rows)} CSV row(s) failed before DeePMD conversion. "
+                f"First failure: row {row_idx}, source={source!r}, error={error}"
+            )
         raise RuntimeError("No usable elements found after filtering.")
     type_index = {el: i for i, el in enumerate(type_map)}
 

@@ -16,11 +16,9 @@ PRED_DIR = ROOT / "pred_property_20"
 PRETRAINED_MODEL = "DPA-3.2-5M"
 TRAIN_DATA = {
     "dataset": DATA_DIR / "dataset_demo.csv",
-    "mol_dir": DATA_DIR / "mol_convert",
 }
 PREDICT_DATA = {
     "dataset": DATA_DIR / "dataset_demo.csv",
-    "mol_dir": DATA_DIR / "mol_convert",
 }
 
 trainer = PropertyTrain(

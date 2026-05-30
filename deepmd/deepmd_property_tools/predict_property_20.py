@@ -20,7 +20,6 @@ predictor = PropertyPredict(load_model=MODEL_PATH)
 y_pred = predictor.predict(
     {
         "dataset": DATA_DIR / "dataset_demo.csv",
-        "mol_dir": DATA_DIR / "mol_convert",
     },
     save_path=ROOT / "pred_property_20",
 )

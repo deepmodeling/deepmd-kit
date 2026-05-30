@@ -13,6 +13,7 @@ from unittest import (
 )
 
 import numpy as np
+import pytest
 from deepmd_property_tools import (
     PropertyPredict,
 )
@@ -55,6 +56,29 @@ def test_predict_records_from_csv_without_property_column(tmp_path: Path) -> Non
     assert atoms == [["O", "H", "H"]]
     assert coords[0].shape == (3, 3)
     assert rows == [{"SMILES": "O"}]
+
+
+def test_predict_records_from_csv_skips_failed_smiles_rows(tmp_path: Path) -> None:
+    from deepmd_property_tools.data import mol as mol_module
+
+    def fake_smiles_to_3d(smiles, *, random_seed=42):
+        if smiles == "bad":
+            raise ValueError("bad smiles")
+        return ["H"], np.array([[0.0, 0.0, 0.0]], dtype=np.float32)
+
+    dataset = tmp_path / "dataset.csv"
+    dataset.write_text("SMILES\n[H]\nbad\n", encoding="utf-8")
+
+    with mock.patch.object(mol_module, "smiles_to_3d_coords", fake_smiles_to_3d):
+        with pytest.warns(RuntimeWarning, match="Skipping row 1"):
+            atoms, coords, rows = predict_records_from_data(
+                {"dataset": dataset},
+                property_col=None,
+            )
+
+    assert atoms == [["H"]]
+    assert coords[0].shape == (1, 3)
+    assert rows == [{"SMILES": "[H]"}]
 
 
 def test_predict_directory_uses_latest_checkpoint(tmp_path: Path) -> None:

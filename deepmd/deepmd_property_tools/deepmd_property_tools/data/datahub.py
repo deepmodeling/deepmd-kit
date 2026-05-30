@@ -33,6 +33,7 @@ class DataHub:
         train_ratio: float = 0.9,
         mol_dir: str | Path | None = None,
         mol_template: str = "id{row}.mol",
+        smiles_col: str = "SMILES",
         overlap_tol: float = 1e-6,
         seed: int = 42,
         overwrite: bool = False,
@@ -54,6 +55,7 @@ class DataHub:
                 train_ratio=train_ratio,
                 mol_dir=mol_dir,
                 mol_template=mol_template,
+                smiles_col=smiles_col,
                 overlap_tol=overlap_tol,
                 seed=seed,
                 overwrite=overwrite,
@@ -69,4 +71,5 @@ class DataHub:
                 property_col=property_col,
                 mol_dir=mol_dir,
                 mol_template=mol_template,
+                smiles_col=smiles_col,
             )

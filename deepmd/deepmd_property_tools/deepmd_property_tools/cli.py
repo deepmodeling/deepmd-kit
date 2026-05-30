@@ -38,7 +38,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--dataset", required=True, type=Path, help="CSV dataset path"
     )
     train_parser.add_argument(
-        "--mol-dir", required=True, type=Path, help="MOL directory path"
+        "--mol-dir", default=None, type=Path, help="MOL directory path"
+    )
+    train_parser.add_argument(
+        "--smiles-col", default="SMILES", help="CSV SMILES column"
     )
     train_parser.add_argument(
         "--save-path", required=True, type=Path, help="Experiment output directory"
@@ -68,7 +71,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--dataset", required=True, type=Path, help="CSV dataset path"
     )
     predict_parser.add_argument(
-        "--mol-dir", required=True, type=Path, help="MOL directory path"
+        "--mol-dir", default=None, type=Path, help="MOL directory path"
+    )
+    predict_parser.add_argument(
+        "--smiles-col", default="SMILES", help="CSV SMILES column"
     )
     predict_parser.add_argument(
         "--save-path", default=None, type=Path, help="Prediction output directory"
@@ -109,14 +115,21 @@ def _run_train(args: argparse.Namespace) -> None:
         numb_steps=args.numb_steps,
         batch_size=args.batch_size,
         finetune=args.finetune,
+        smiles_col=args.smiles_col,
     )
-    trainer.fit({"dataset": args.dataset, "mol_dir": args.mol_dir})
+    data = {"dataset": args.dataset, "smiles_col": args.smiles_col}
+    if args.mol_dir is not None:
+        data["mol_dir"] = args.mol_dir
+    trainer.fit(data)
 
 
 def _run_predict(args: argparse.Namespace) -> None:
-    predictor = PropertyPredict(load_model=args.model)
+    predictor = PropertyPredict(load_model=args.model, smiles_col=args.smiles_col)
+    data = {"dataset": args.dataset, "smiles_col": args.smiles_col}
+    if args.mol_dir is not None:
+        data["mol_dir"] = args.mol_dir
     y_pred = predictor.predict(
-        {"dataset": args.dataset, "mol_dir": args.mol_dir},
+        data,
         save_path=args.save_path,
     )
     print(y_pred)
