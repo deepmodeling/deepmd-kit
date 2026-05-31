@@ -430,7 +430,7 @@ class DeepEval(DeepEvalBackend):
             return {"density": out}
         else:
             out = self._eval_func(self._eval_model, numb_test, natoms)(
-                coords, cells, atom_types, fparam, aparam, request_defs
+                coords, cells, atom_types, fparam, aparam, request_defs, charge_spin
             )
         return dict(
             zip(
