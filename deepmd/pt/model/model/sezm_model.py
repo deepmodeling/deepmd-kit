@@ -87,12 +87,11 @@ Body of the traced compute
 function:
 
 * ``core_compute`` rebuilds a compact, GPU-friendly edge list from the
-  padded DeePMD neighbor list (``build_edge_list_from_nlist``), with
-  masked dummy edges appended so the edge tensor has a non-singular
-  symbolic lower bound (NOTE 10).  Edge vectors come from
-  ``index_select`` on the extended coordinate tensor, which keeps the
-  gradient path back to coordinates explicit and safe under symbolic
-  shapes (NOTE 11).
+  padded DeePMD neighbor list (``build_edge_list_from_nlist``), with a
+  single masked dummy edge appended so the edge tensor is never empty
+  (NOTE 10).  Edge vectors come from ``index_select`` on the extended
+  coordinate tensor, which keeps the gradient path back to coordinates
+  explicit and safe under symbolic shapes (NOTE 11).
 * The SeZM descriptor consumes the edge list and produces per-atom
   features.
 * The fitting network predicts per-atom energy; ``apply_out_stat`` adds
@@ -323,20 +322,17 @@ precondition for make_fx symbolic tracing.
 In eval mode we merely detach; no ``create_graph`` is requested, so the
 compiled kernel never has to build a backward graph.
 
-NOTE 10 -- Tail dummy edges
----------------------------
+NOTE 10 -- Tail dummy edge
+--------------------------
 
-``build_edge_list_from_nlist`` appends two masked edges at the end of
-every batch.  Real edge compaction happens via
+``build_edge_list_from_nlist`` appends exactly one masked edge at the
+end of every batch.  Real edge compaction happens via
 ``torch.nonzero(valid_mask)``, whose output length is data-dependent
 and can be zero in sparse or single-type systems.  make_fx cannot trace
 an "if n_edges == 0: skip" branch symbolically; without the dummy it
 would fall back to concrete shape specialization and break
-``dynamic=True``.  A pair of dummy slots also gives Inductor's batched
-matmul lowering a static ``E >= 2`` edge-axis bound, avoiding
-data-dependent layout guards on ``E == 1``.  Each dummy's ``edge_mask``
-is ``False`` so it contributes exactly zero to every downstream sum or
-gather.
+``dynamic=True``.  The dummy's ``edge_mask`` is ``False`` so it
+contributes exactly zero to every downstream sum or gather.
 
 NOTE 11 -- ``index_select`` for coordinate gradients
 ----------------------------------------------------
@@ -377,9 +373,6 @@ from typing import (
 import torch
 from einops import (
     rearrange,
-)
-from packaging.version import (
-    Version,
 )
 from torch.fx.experimental.proxy_tensor import (
     make_fx,
@@ -446,6 +439,121 @@ os.environ.setdefault("TRITON_PRINT_AUTOTUNING", "0")
 import torch._dynamo.config as _dynamo_cfg
 
 _dynamo_cfg.optimize_ddp = False
+
+# ---------------------------------------------------------------------------
+# Multi-task compile sharing
+# ---------------------------------------------------------------------------
+# Maps (structure_key..., training, do_atomic_virial, has_coord_corr) to the
+# compiled callable.  Tasks whose descriptor AND fitting-net first child have
+# the same Python-object identity (after share_params) reuse a single compiled
+# graph, avoiding N×compile-cache OOM and N DDP graph boundaries (NCCL timeout).
+_SEZM_COMPILE_CACHE: dict[tuple, Any] = {}
+
+# Maps structure_key -> task_buf_order so every instance in the same group
+# knows which buffers were promoted and in what order.
+_SEZM_TASK_BUF_ORDER: dict[tuple[int, ...], tuple[str, ...]] = {}
+
+# Prefix namespace for promoted buffer names.
+_AM_PREFIX = "am/"         # atomic_model registered buffer
+_FIT_PREFIX = "fit/"       # fitting_net registered buffer
+_FIT_ATTR_PREFIX = "fit_attr/"  # fitting_net plain tensor attribute (not in _buffers)
+
+
+def _sezm_structure_key(model: "SeZMModel") -> tuple[int, ...]:
+    """Return a key that is equal iff two SeZMModel instances can share a compiled graph.
+
+    After ``share_params``, the descriptor and fitting-net module objects
+    themselves remain *different* Python objects per task; only their
+    *submodules* (``_modules`` dict entries) are replaced with shared
+    references.  Using ``id(descriptor)`` or ``id(fitting_net)`` would
+    therefore always differ between tasks and defeat the cache.
+
+    Fix: use the id of the *first named child* of each module.  After
+    ``share_params(level=0)``, those children are the same Python objects
+    for all tasks in the same structure group, giving matching keys.
+
+    NOTE: only the FIRST child is sampled, assuming "first child shared =>
+    whole module shared" (true for level=0).  Under ``share_params(level=1)``
+    only ``type_embedding`` is shared; if it is the first child, two tasks
+    whose other descriptor weights differ would collapse to the same key and
+    wrongly reuse one compiled graph.  If level=1 + compile is ever used, key
+    on all param ids instead, e.g. ``frozenset(id(p) for p in desc.parameters())``.
+    """
+    try:
+        desc = model.atomic_model.descriptor
+        desc_id = 0
+        for _, child in desc.named_children():
+            desc_id = id(child)
+            break
+        if desc_id == 0:
+            # Descriptor has no named children (unlikely); fall back.
+            desc_id = id(desc)
+    except AttributeError:
+        desc_id = 0
+    try:
+        fitting = model.atomic_model.fitting_net
+        for _, child in fitting.named_children():
+            return (desc_id, id(child))
+        return (desc_id, id(fitting))
+    except AttributeError:
+        return (desc_id, id(model))
+
+
+def _get_sezm_task_buf_names(model: "SeZMModel") -> tuple[str, ...]:
+    """Return the ordered names of per-task buffers to promote as FX placeholders.
+
+    Always promotes:
+    * ``out_bias``, ``out_std`` on ``atomic_model`` — may be replaced
+      out-of-place by ``model_change_out_bias``, so the compiled graph must
+      never bake them as constants.
+    * ``bias_atom_e`` on the fitting net — task-specific per-type bias that
+      differs across tasks after ``share_params``.
+    * ``case_embd`` on the fitting net — task-identity vector used for
+      multi-task case conditioning; stored as a plain tensor attribute.
+    """
+    names: list[str] = []
+    try:
+        am = model.atomic_model
+        for bname in ("out_bias", "out_std"):
+            if am._buffers.get(bname) is not None:
+                names.append(_AM_PREFIX + bname)
+        try:
+            fitting = am.fitting_net
+            for bname in ("bias_atom_e",):
+                if fitting._buffers.get(bname) is not None:
+                    names.append(_FIT_PREFIX + bname)
+            for aname in ("case_embd",):
+                val = getattr(fitting, aname, None)
+                if val is not None and torch.is_tensor(val):
+                    names.append(_FIT_ATTR_PREFIX + aname)
+        except AttributeError:
+            pass
+    except AttributeError:
+        pass
+    return tuple(names)
+
+
+def _get_sezm_task_buf_vals(
+    model: "SeZMModel",
+    names: tuple[str, ...],
+) -> tuple[torch.Tensor, ...]:
+    """Return the current tensor values for the given promoted-buffer names."""
+    if not names:
+        return ()
+    am = model.atomic_model
+    try:
+        fitting = am.fitting_net
+    except AttributeError:
+        fitting = None
+    vals: list[torch.Tensor] = []
+    for name in names:
+        if name.startswith(_AM_PREFIX):
+            vals.append(am._buffers[name[len(_AM_PREFIX) :]])
+        elif name.startswith(_FIT_PREFIX):
+            vals.append(fitting._buffers[name[len(_FIT_PREFIX) :]])  # type: ignore[union-attr]
+        elif name.startswith(_FIT_ATTR_PREFIX):
+            vals.append(getattr(fitting, name[len(_FIT_ATTR_PREFIX) :]))
+    return tuple(vals)
 
 
 def _parse_optional_env_bool(var_name: str) -> bool | None:
@@ -624,6 +732,9 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         # compile products instead of evicting the other mode.
         object.__setattr__(self, "compiled_core_compute_cache", {})
         object.__setattr__(self, "compiled_dens_compute", None)
+        # Maps cache_key -> task_buf_order for this instance so forward()
+        # knows which buffers to pass and in what order.
+        object.__setattr__(self, "_task_buf_order_cache", {})
         # Training follows `use_compile`. Evaluation/inference reads
         # `DP_COMPILE_INFER` at init time and falls back to eager when unset.
         self._env_use_compile_infer: bool | None = _parse_optional_env_bool(
@@ -1010,6 +1121,14 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                             extended_coord_corr=extended_coord_corr,
                         )
                     compiled_core_compute = self.compiled_core_compute_cache[cache_key]
+                    # Read current values of per-task buffers (optimizer steps
+                    # update them in-place; out-of-place replacements from
+                    # model_change_out_bias are captured because we read fresh
+                    # each call rather than caching the values at compile time).
+                    _task_buf_vals = _get_sezm_task_buf_vals(
+                        self,
+                        getattr(self, "_task_buf_order_cache", {}).get(cache_key, ()),
+                    )
                     with nvtx_range("SeZM/core_compute"):
                         if extended_coord_corr is None:
                             model_predict_lower = compiled_core_compute(
@@ -1020,6 +1139,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                                 fp,
                                 ap,
                                 charge_spin,
+                                *_task_buf_vals,
                             )
                         else:
                             model_predict_lower = compiled_core_compute(
@@ -1031,6 +1151,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                                 ap,
                                 charge_spin,
                                 extended_coord_corr,
+                                *_task_buf_vals,
                             )
                     if (
                         self._core_compute_pending_compile_t0 is not None
@@ -1524,6 +1645,31 @@ class SeZMModel(DPModelCommon, SeZMModel_):
 
         mode = "train" if self.training else "eval"
         has_coord_corr = extended_coord_corr is not None
+        _compile_t0 = time.perf_counter()
+
+        # --- Check module-level shared cache first ---
+        # Tasks sharing the same descriptor+fitting structure (after share_params)
+        # should share one compiled graph.  If a sibling task already compiled,
+        # populate this instance's per-instance caches and return immediately.
+        structure_key = _sezm_structure_key(self)
+        cache_key = (bool(self.training), bool(do_atomic_virial), has_coord_corr)
+        full_cache_key = structure_key + cache_key
+        if full_cache_key in _SEZM_COMPILE_CACHE:
+            self.compiled_core_compute_cache[cache_key] = _SEZM_COMPILE_CACHE[
+                full_cache_key
+            ]
+            self._task_buf_order_cache[cache_key] = _SEZM_TASK_BUF_ORDER.get(
+                structure_key, ()
+            )
+            log.info(
+                "SeZM: reusing shared compiled graph "
+                "(mode=%s, atomic_virial=%s, coord_corr=%s)",
+                mode,
+                do_atomic_virial,
+                has_coord_corr,
+            )
+            return
+
         log.info(
             "SeZM: start tracing and compiling "
             "(mode=%s, atomic_virial=%s, coord_corr=%s)",
@@ -1531,7 +1677,71 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             do_atomic_virial,
             has_coord_corr,
         )
-        _compile_t0 = time.perf_counter()
+
+        # --- Detect per-task buffers to promote as FX placeholders ---
+        # These buffers differ across tasks in the same structure group (they are
+        # NOT shared by share_params) or may be replaced out-of-place after
+        # compilation.  Passing them as explicit arguments makes the compiled
+        # graph reusable across all tasks in the group.
+        task_buf_names = _get_sezm_task_buf_names(self)
+        task_buf_vals_trace = _get_sezm_task_buf_vals(self, task_buf_names)
+
+        # Resolve module references once for the buffer-patching closures.
+        _am_patch = self.atomic_model
+        try:
+            _fitting_patch: torch.nn.Module | None = _am_patch.fitting_net
+        except AttributeError:
+            _fitting_patch = None
+
+        def _patch_task_bufs(
+            vals: tuple[torch.Tensor, ...],
+        ) -> dict[str, torch.Tensor | None]:
+            """Temporarily replace model buffers/attrs with FX proxy tensors.
+
+            Executed at trace time inside compute_fn.  make_fx records the
+            proxy tensors as placeholder nodes, so the compiled graph reads them
+            as live inputs rather than baked-in constants.  The ``finally``
+            block in compute_fn always calls ``_restore_task_bufs`` to leave
+            the model in its original state after tracing.
+            """
+            saved: dict[str, torch.Tensor | None] = {}
+            for name, val in zip(task_buf_names, vals):
+                if name.startswith(_AM_PREFIX):
+                    actual = name[len(_AM_PREFIX) :]
+                    saved[name] = _am_patch._buffers.get(actual)
+                    _am_patch._buffers[actual] = val
+                elif name.startswith(_FIT_PREFIX):
+                    actual = name[len(_FIT_PREFIX) :]
+                    saved[name] = (
+                        _fitting_patch._buffers.get(actual)
+                        if _fitting_patch is not None
+                        else None
+                    )
+                    if _fitting_patch is not None:
+                        _fitting_patch._buffers[actual] = val
+                elif name.startswith(_FIT_ATTR_PREFIX):
+                    actual = name[len(_FIT_ATTR_PREFIX) :]
+                    saved[name] = getattr(_fitting_patch, actual, None)
+                    if _fitting_patch is not None:
+                        setattr(_fitting_patch, actual, val)
+            return saved
+
+        def _restore_task_bufs(
+            saved: dict[str, torch.Tensor | None],
+        ) -> None:
+            """Restore original model buffers/attrs after tracing."""
+            for name, orig in saved.items():
+                if name.startswith(_AM_PREFIX):
+                    actual = name[len(_AM_PREFIX) :]
+                    _am_patch._buffers[actual] = orig
+                elif name.startswith(_FIT_PREFIX):
+                    actual = name[len(_FIT_PREFIX) :]
+                    if _fitting_patch is not None:
+                        _fitting_patch._buffers[actual] = orig
+                elif name.startswith(_FIT_ATTR_PREFIX):
+                    actual = name[len(_FIT_ATTR_PREFIX) :]
+                    if _fitting_patch is not None:
+                        setattr(_fitting_patch, actual, orig)
 
         need_coord_grad = self.do_grad_r() or self.do_grad_c()
 
@@ -1552,6 +1762,13 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             else:
                 return coord.detach()
 
+        # NOTE: compute_fn accepts *task_buf_vals after the fixed tensor args.
+        # make_fx treats each element as a separate placeholder so the compiled
+        # graph reads them as live inputs every call — not baked-in constants.
+        # The buffer-patching trick: at trace time the proxy tensors are written
+        # into _buffers / __dict__ so that downstream code (apply_out_stat,
+        # fitting_net.forward) reads the proxies and the ops are recorded in the
+        # FX graph.  The finally block restores original state unconditionally.
         if extended_coord_corr is None:
 
             def compute_fn(
@@ -1562,21 +1779,27 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 fp: torch.Tensor,
                 ap: torch.Tensor,
                 charge_spin: torch.Tensor,
+                *task_buf_vals: torch.Tensor,
             ) -> dict[str, torch.Tensor]:
-                return self.core_compute(
-                    _prepare_coord_for_trace(extended_coord),
-                    extended_atype,
-                    nlist,
-                    mapping=mapping,
-                    fparam=fp,
-                    aparam=ap,
-                    charge_spin=charge_spin,
-                    do_atomic_virial=do_atomic_virial,
-                    extra_nlist_sort=self.need_sorted_nlist_for_lower(),
-                )
+                _saved = _patch_task_bufs(task_buf_vals)
+                try:
+                    return self.core_compute(
+                        _prepare_coord_for_trace(extended_coord),
+                        extended_atype,
+                        nlist,
+                        mapping=mapping,
+                        fparam=fp,
+                        aparam=ap,
+                        charge_spin=charge_spin,
+                        do_atomic_virial=do_atomic_virial,
+                        extra_nlist_sort=self.need_sorted_nlist_for_lower(),
+                    )
+                finally:
+                    _restore_task_bufs(_saved)
+
         else:
 
-            def compute_fn(
+            def compute_fn(  # type: ignore[misc]
                 extended_coord: torch.Tensor,
                 extended_atype: torch.Tensor,
                 nlist: torch.Tensor,
@@ -1585,22 +1808,27 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 ap: torch.Tensor,
                 charge_spin: torch.Tensor,
                 extended_coord_corr: torch.Tensor,
+                *task_buf_vals: torch.Tensor,
             ) -> dict[str, torch.Tensor]:
                 # NOTE: Spin virial uses a coordinate correction derived from the
                 # virtual-atom displacement.  Keeping it as a tensor input lets the
                 # compiled graph stay reusable across frames.
-                return self.core_compute(
-                    _prepare_coord_for_trace(extended_coord),
-                    extended_atype,
-                    nlist,
-                    mapping=mapping,
-                    fparam=fp,
-                    aparam=ap,
-                    charge_spin=charge_spin,
-                    do_atomic_virial=do_atomic_virial,
-                    extra_nlist_sort=self.need_sorted_nlist_for_lower(),
-                    extended_coord_corr=extended_coord_corr,
-                )
+                _saved = _patch_task_bufs(task_buf_vals)
+                try:
+                    return self.core_compute(
+                        _prepare_coord_for_trace(extended_coord),
+                        extended_atype,
+                        nlist,
+                        mapping=mapping,
+                        fparam=fp,
+                        aparam=ap,
+                        charge_spin=charge_spin,
+                        do_atomic_virial=do_atomic_virial,
+                        extra_nlist_sort=self.need_sorted_nlist_for_lower(),
+                        extended_coord_corr=extended_coord_corr,
+                    )
+                finally:
+                    _restore_task_bufs(_saved)
 
         # NOTE: Always trace with a fixed batch size that is free of known
         # symbolic-shape collisions.
@@ -1615,13 +1843,71 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         # ``torch.compile(dynamic=True)`` to reject later batches whose
         # nf differs from the traced constant.
         #
-        # If a future code change introduces a new explicit dimension of
-        # this size and compile starts failing with a similar shape
-        # mismatch, change this constant accordingly.
+        # The same aliasing hazard applies to the nloc / nsel axes of the
+        # nlist tensor (shape [nf, nloc, nsel]).  When nloc == nsel in the
+        # trace inputs, make_fx folds them into a single symbol and the
+        # compiled kernel hard-codes nloc = nsel for every future call.
+        # This causes wrong energy/force shapes whenever a later batch
+        # arrives with nloc != nsel (only reproducible when a training
+        # task happens to have nloc == nsel in its first batch).
+        # Fix: drop one local atom row from the trace nlist so that
+        # nlist_for_trace.shape[1] = nloc - 1 != nsel.  The nsel dimension
+        # is untouched so format_nlist takes the same no-op case-1 path.
+        #
+        # Task-buffer aliasing: task-specific buffers (out_bias, bias_atom_e,
+        # case_embd) are passed as extra arguments and also have static shapes.
+        # If trace_nf equals any of those static dims, make_fx would unify the
+        # nf symbol with that static dim — baking nf == static_dim into every
+        # compiled kernel.  We therefore collect all static buffer dims and
+        # increment trace_nf until it is free of all conflicts.
+        _reserved_dims = {1, 2, 3, 9}
+        _static_buf_dims: set[int] = set()
+        for _tbv in task_buf_vals_trace:
+            for _d in _tbv.shape:
+                if _d > 1:
+                    _static_buf_dims.add(_d)
         trace_nf = 5
+        while trace_nf in _reserved_dims or trace_nf in _static_buf_dims:
+            trace_nf += 1
+
         coord_for_trace = extended_coord[:1].repeat(trace_nf, 1, 1)
         atype_for_trace = extended_atype[:1].repeat(trace_nf, 1)
         nlist_for_trace = nlist[:1].repeat(trace_nf, 1, 1)
+        if nlist_for_trace.shape[1] == nlist_for_trace.shape[2]:
+            # nloc == nsel: drop one local atom row so that dim-1 (nloc-1)
+            # differs from dim-2 (nsel), breaking the symbolic aliasing without
+            # altering the nsel dimension or the format_nlist code path.
+            # torch.compile(dynamic=True) treats nloc as fully dynamic, so the
+            # compiled graph works correctly for all nloc at runtime.
+            nlist_for_trace = nlist_for_trace[:, :-1, :]
+        # NOTE: Anti-alias nloc against promoted buffer dims.
+        # The promoted task buffers (out_bias, bias_atom_e, case_embd) are now
+        # FX placeholder inputs with their own symbolic dims.  If nloc at trace
+        # time equals ntypes (out_bias/bias_atom_e dim) or dim_case_embd
+        # (case_embd dim), make_fx's ShapeEnv unifies the symbols and the
+        # compiled graph specialises on nloc == that_value.  Every training
+        # batch with a different nloc then fails the guard and triggers a full
+        # Dynamo/Inductor recompile — NCCL timeout when one rank recompiles
+        # while others wait at allreduce.  Dropping a row from the nlist
+        # changes the traced nloc without touching nsel or extended-atom dims,
+        # so the model's internal indexing paths are unaffected.
+        # NOTE: Anti-alias nloc against nall.  When the first batch for a task
+        # has nloc == nall (a non-PBC frame with no ghost atoms), make_fx's
+        # duck sizing unifies the nloc symbol (nlist.shape[1]) with the nall
+        # symbol (extended_coord.shape[1]).  The compiled graph then reads the
+        # slice end of ``extended_coord[:, :nloc]`` / ``extended_atype[:, :nloc]``
+        # from the nall source, so every later PBC batch yields energy/force
+        # shaped [nf, nall, ...] instead of [nf, nloc, ...].  Dropping a local
+        # atom row makes nloc_trace = nall_trace - 1, breaking the merge.
+        _nall_trace = coord_for_trace.shape[1]
+        _trace_nloc = nlist_for_trace.shape[1]
+        while _trace_nloc > 1 and (
+            _trace_nloc in _static_buf_dims
+            or _trace_nloc in _reserved_dims
+            or _trace_nloc == _nall_trace
+        ):
+            nlist_for_trace = nlist_for_trace[:, :-1, :]
+            _trace_nloc = nlist_for_trace.shape[1]
         mapping_for_trace = mapping[:1].repeat(trace_nf, 1)
         fp_for_trace = fp[:1].repeat(trace_nf, 1)
         ap_for_trace = ap[:1].repeat(trace_nf, 1, 1)
@@ -1637,6 +1923,11 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         ]
         if extended_coord_corr is not None:
             trace_args.append(extended_coord_corr[:1].repeat(trace_nf, 1, 1))
+        # Append task-buffer values last so they map to the *task_buf_vals
+        # varargs in compute_fn.  Their shapes are static (they don't vary
+        # batch-to-batch), so passing the actual tensors is correct; make_fx
+        # will create one placeholder per element.
+        trace_args.extend(task_buf_vals_trace)
 
         # NOTE: Decompose ``silu_backward`` into primitive ops.
         # PyTorch ships forward and first-order backward for SiLU but no
@@ -1658,12 +1949,52 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         # FakeTensors, so we need concrete values to resolve their
         # control flow exactly once; shapes become symbolic immediately
         # afterwards.
-        traced = make_fx(
-            compute_fn,
-            tracing_mode="symbolic",
-            _allow_non_fake_inputs=True,
-            decomposition_table=decomp_table,
-        )(*trace_args)
+        # NOTE: Disable duck sizing for the symbolic trace.
+        # make_fx builds a ShapeEnv whose ``create_symbol`` defaults every input
+        # dim to ``DimDynamic.DUCK``: with duck sizing on (the default), any two
+        # dims sharing a concrete value at trace time are assigned the SAME sympy
+        # symbol.  That is the root of every "dim X got the size of dim Y" bug
+        # here -- nloc==nall, nloc==nsel, nall==ntypes, nf==static_buf_dim all
+        # silently fuse two axes and bake an equality the later batches violate.
+        # The trim hacks above only patch the handful of pairs we anticipated;
+        # turning duck sizing off gives every axis an independent symbol so e.g.
+        # ``extended_coord[:, :nloc]`` stays parametric on nloc no matter how the
+        # trace batch's sizes coincide.
+        #
+        # ShapeEnv reads ``self.duck_shape`` as the global switch, but in torch
+        # 2.11 there is no longer a ``_config.duck_shape`` knob nor an explicit
+        # ``__init__`` parameter -- it only flows in as a ``**kwargs`` entry
+        # forwarded to the internal init (``ShapeEnv(duck_shape=False)`` works).
+        # make_fx constructs the ShapeEnv with no args, so the only portable hook
+        # is to wrap ``ShapeEnv.__init__`` on the class object and inject
+        # ``duck_shape=False`` for the duration of this trace.  Patching the
+        # class method covers every reference (proxy_tensor imported the same
+        # class object).  Restored in ``finally`` so the later
+        # torch.compile / inductor stage and any other ShapeEnv are unaffected.
+        _ss_mod = None
+        _orig_se_init = None
+        try:
+            import torch.fx.experimental.symbolic_shapes as _ss_mod  # type: ignore[no-redef]
+        except Exception:
+            _ss_mod = None
+        if _ss_mod is not None and hasattr(_ss_mod, "ShapeEnv"):
+            _orig_se_init = _ss_mod.ShapeEnv.__init__
+
+            def _no_duck_shapeenv_init(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+                kwargs.setdefault("duck_shape", False)
+                return _orig_se_init(self, *args, **kwargs)
+
+            _ss_mod.ShapeEnv.__init__ = _no_duck_shapeenv_init
+        try:
+            traced = make_fx(
+                compute_fn,
+                tracing_mode="symbolic",
+                _allow_non_fake_inputs=True,
+                decomposition_table=decomp_table,
+            )(*trace_args)
+        finally:
+            if _orig_se_init is not None:
+                _ss_mod.ShapeEnv.__init__ = _orig_se_init
 
         # NOTE: Only strip autograd-inserted detach chains in training
         # mode.  With ``create_graph=True`` make_fx wraps every saved
@@ -1735,19 +2066,42 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         # ``(training, do_atomic_virial, has_coord_corr)`` so that distinct
         # graph topologies coexist without evicting each other on every
         # ``model.eval()`` / ``model.train()`` switch.
-        cache_key = (bool(self.training), bool(do_atomic_virial), has_coord_corr)
         # NOTE: ``dynamic=True`` emits a single kernel per traced
         # shape symbol, so changes in ``nframes``, ``nall`` or edge
         # count do not trigger recompiles; and the option dict above
         # disables every Inductor/Triton feature that has ever
         # interacted badly with ``make_fx`` + double backward in
         # this project.
-        self.compiled_core_compute_cache[cache_key] = torch.compile(
+        compiled = torch.compile(
             traced,
             backend="inductor",
             dynamic=True,
             options=compile_options,
         )
+        # Populate both per-instance and module-level shared caches.
+        # The shared cache (_SEZM_COMPILE_CACHE) lets a second task with the
+        # same structure key skip re-tracing and re-compiling entirely.
+        self.compiled_core_compute_cache[cache_key] = compiled
+        self._task_buf_order_cache[cache_key] = task_buf_names
+        _SEZM_COMPILE_CACHE[full_cache_key] = compiled
+        _SEZM_TASK_BUF_ORDER[structure_key] = task_buf_names
+        # NOTE: No dist.barrier() here.
+        # The barrier premise is that all ranks reach trace_and_compile
+        # simultaneously.  That is FALSE in several trainer code paths:
+        #
+        # 1. compute_or_load_stat (training.py:417) runs on rank 0 only.
+        #    Rank 0 compiles → calls barrier → the other N-1 ranks are not
+        #    inside trace_and_compile at that moment → deadlock.
+        #
+        # 2. Validation at disp_freq is rank-0-only inside the rank guard;
+        #    if DP_COMPILE_INFER is set, same deadlock.
+        #
+        # Instead we rely on compilation being symmetric during the DDP
+        # training loop itself: all ranks pick the same task per step (same
+        # random seed), so they all hit trace_and_compile for the same task
+        # at the same step.  The compile-time gap between ranks is on the
+        # order of seconds while the NCCL default timeout is 30 minutes,
+        # so no barrier is necessary for the training-loop case.
         # torch.compile is lazy; the "finished" log is emitted after the
         # first call triggers Inductor lowering (see forward_common).
         # ``pending_key`` pairs with ``pending_t0`` so the log is only
@@ -1778,7 +2132,8 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                     "epilogue_fusion": False,
                     "triton.cudagraphs": False,
                     "shape_padding": True,
-                    "max_fusion_size": 64,
+                    "max_fusion_size": 8,
+                    "triton.persistent_reductions": False,
                 },
             ),
         )
@@ -1824,9 +2179,8 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         mapping: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
-        charge_spin: torch.Tensor | None = None,
-        *,
         do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
     ) -> torch.nn.Module:
         """Trace ``forward_common_lower`` into an exportable FX ``GraphModule``.
 
@@ -1881,8 +2235,9 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             mapping_: torch.Tensor | None,
             fparam_: torch.Tensor | None,
             aparam_: torch.Tensor | None,
-            charge_spin_: torch.Tensor | None,
+            *maybe_charge_spin: torch.Tensor | None,
         ) -> dict[str, torch.Tensor]:
+            charge_spin_ = maybe_charge_spin[0] if maybe_charge_spin else None
             return lower_fn(
                 ext_coord,
                 ext_atype,
@@ -1901,7 +2256,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 dtype=extended_coord.dtype,
                 device=extended_coord.device,
             )
-        trace_inputs = (*trace_inputs, charge_spin)
+            trace_inputs = (*trace_inputs, charge_spin)
 
         return self._trace_lower_exportable(
             fn,
@@ -1960,10 +2315,9 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         Build a compact edge list from DeePMD padded neighbor list.
 
         Edge vectors are computed via ``index_select`` on ``extended_coord``
-        so they remain differentiable w.r.t. the input coordinates.  Two
-        masked dummy edges are always appended to avoid data-dependent empty-edge
-        branches that ``make_fx`` cannot trace and singular edge-axis guards
-        in Inductor's batched matmul lowering.
+        so they remain differentiable w.r.t. the input coordinates.  One
+        masked dummy edge is always appended to avoid data-dependent empty-edge
+        branches that ``make_fx`` cannot trace.
 
         Parameters
         ----------
@@ -1977,11 +2331,11 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         Returns
         -------
         edge_index
-            Edge indices with shape (2, E+2) where E is valid edge count.
+            Edge indices with shape (2, E+1) where E is valid edge count.
         edge_vec
-            Edge vectors with shape (E+2, 3).
+            Edge vectors with shape (E+1, 3).
         edge_mask
-            Boolean mask with shape (E+2).  The trailing elements are ``False``.
+            Boolean mask with shape (E+1,).  The trailing element is ``False``.
         """
         nf, nloc, nsel = nlist.shape
         n_actual = nf * nloc
@@ -2033,22 +2387,19 @@ class SeZMModel(DPModelCommon, SeZMModel_):
 
         valid_idx = torch.nonzero(edge_mask_actual, as_tuple=False).flatten()
 
-        # === Step 3. Compact edges + append masked dummies ===
-        # NOTE: Always append two masked dummy edges.
+        # === Step 3. Compact edges + append one masked dummy ===
+        # NOTE: Always append exactly one masked dummy edge.
         # ``torch.nonzero(edge_mask_actual)`` produces a data-dependent
         # number of valid edges, which can be zero on sparse or
         # single-type systems.  make_fx cannot trace an
         # ``if n_edges == 0: skip`` branch symbolically; without the
         # dummy it would fall back to concrete shape specialisation and
-        # break ``torch.compile(dynamic=True)`` for later batches.  Two
-        # dummy edges keep the symbolic edge axis statically above one,
-        # which avoids Inductor bmm layout guards on ``E == 1``.  Each
+        # break ``torch.compile(dynamic=True)`` for later batches.  The
         # dummy edge copies entry 0 (any in-range index is fine) and
         # carries ``edge_mask=False`` so every downstream sum, gather
         # or scatter ignores it.
-        dummy_count = 2
         padded_idx = torch.cat(
-            [valid_idx, torch.zeros(dummy_count, dtype=torch.long, device=device)]
+            [valid_idx, torch.zeros(1, dtype=torch.long, device=device)]
         )
         src_sel = src_actual.index_select(0, padded_idx)
         dst_sel = dst_actual.index_select(0, padded_idx)
@@ -2057,7 +2408,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         edge_mask = torch.cat(
             [
                 torch.ones(valid_idx.shape[0], dtype=torch.bool, device=device),
-                torch.zeros(dummy_count, dtype=torch.bool, device=device),
+                torch.zeros(1, dtype=torch.bool, device=device),
             ]
         )
         return edge_index, edge_vec_sel, edge_mask
