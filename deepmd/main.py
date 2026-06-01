@@ -1143,15 +1143,25 @@ def main_parser() -> argparse.ArgumentParser:
 
     parser_dpa_data_convert = dpa_data_subparsers.add_parser(
         "convert",
-        help="Convert structure file → deepmd/npy",
+        help="Convert structure/CSV file → deepmd/npy (format auto-detected)",
         parents=[parser_log],
     )
     parser_dpa_data_convert.add_argument("--input", required=True)
     parser_dpa_data_convert.add_argument("--output", required=True)
-    parser_dpa_data_convert.add_argument("--fmt", required=True)
+    parser_dpa_data_convert.add_argument("--fmt", default=None,
+                                         help="Format hint (auto-detected if omitted). "
+                                              "Use 'smiles' for CSV+SMILES, otherwise "
+                                              "dpdata format string (extxyz, vasp/poscar, …).")
     parser_dpa_data_convert.add_argument("--type-map", default=None)
     parser_dpa_data_convert.add_argument("--no-validate", dest="validate", action="store_false")
     parser_dpa_data_convert.add_argument("--strict", action="store_true")
+    parser_dpa_data_convert.add_argument("--property-name", default="Property")
+    parser_dpa_data_convert.add_argument("--property-col", default="Property")
+    parser_dpa_data_convert.add_argument("--smiles-col", default="SMILES")
+    parser_dpa_data_convert.add_argument("--mol-dir", default=None)
+    parser_dpa_data_convert.add_argument("--train-ratio", type=float, default=0.9)
+    parser_dpa_data_convert.add_argument("--seed", type=int, default=42)
+    parser_dpa_data_convert.add_argument("--overwrite", action="store_true")
 
     parser_dpa_data_batch_convert = dpa_data_subparsers.add_parser(
         "batch-convert",
@@ -1182,23 +1192,6 @@ def main_parser() -> argparse.ArgumentParser:
     parser_dpa_data_attach.add_argument("--head", required=True)
     parser_dpa_data_attach.add_argument("--head-json", action="store_true")
     parser_dpa_data_attach.add_argument("--values", required=True)
-
-    parser_dpa_data_convert_smiles = dpa_data_subparsers.add_parser(
-        "convert-smiles",
-        help="Convert CSV (SMILES/MOL) + property labels → deepmd/npy",
-        parents=[parser_log],
-    )
-    parser_dpa_data_convert_smiles.add_argument("--dataset", required=True,
-                                                help="CSV file path.")
-    parser_dpa_data_convert_smiles.add_argument("--output", required=True,
-                                                help="Output root directory.")
-    parser_dpa_data_convert_smiles.add_argument("--property-name", default="Property")
-    parser_dpa_data_convert_smiles.add_argument("--property-col", default="Property")
-    parser_dpa_data_convert_smiles.add_argument("--train-ratio", type=float, default=0.9)
-    parser_dpa_data_convert_smiles.add_argument("--mol-dir", default=None)
-    parser_dpa_data_convert_smiles.add_argument("--smiles-col", default="SMILES")
-    parser_dpa_data_convert_smiles.add_argument("--seed", type=int, default=42)
-    parser_dpa_data_convert_smiles.add_argument("--overwrite", action="store_true")
 
     return parser
 

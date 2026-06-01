@@ -178,15 +178,33 @@ def _cmd_evaluate(args: argparse.Namespace) -> int:
 
 
 def _cmd_data_convert(args: argparse.Namespace) -> int:
-    from deepmd.dpa_tools import convert
+    from deepmd.dpa_tools.data.convert import auto_convert
 
     type_map = _maybe_split_list(args.type_map)
-    _LOG.info("Converting %s (fmt=%s) → %s", args.input, args.fmt, args.output)
-    output = convert(
-        input_path=args.input, output_dir=args.output, fmt=args.fmt,
-        type_map=type_map, validate=args.validate, strict=args.strict,
+    result = auto_convert(
+        input_path=args.input,
+        output_dir=args.output,
+        fmt=args.fmt,
+        type_map=type_map,
+        property_name=args.property_name,
+        property_col=args.property_col,
+        train_ratio=args.train_ratio,
+        smiles_col=args.smiles_col,
+        mol_dir=args.mol_dir,
+        seed=args.seed,
+        overwrite=args.overwrite,
+        validate=args.validate,
+        strict=args.strict,
     )
-    _LOG.info("Wrote deepmd/npy → %s", output)
+    if result["method"] == "smiles":
+        print(f"Train systems: {len(result['train_systems'])}")
+        print(f"Valid systems: {len(result['valid_systems'])}")
+        print(f"Type map     : {result['type_map']}")
+        print(f"Samples used : {result['samples_used']}")
+        if result["failed_rows"]:
+            print(f"Failed rows  : {len(result['failed_rows'])}")
+    else:
+        _LOG.info("Wrote deepmd/npy → %s", result["output_dir"])
     return 0
 
 
@@ -240,28 +258,6 @@ def _cmd_data_attach_labels(args: argparse.Namespace) -> int:
     return 0
 
 
-def _cmd_data_convert_smiles(args: argparse.Namespace) -> int:
-    from deepmd.dpa_tools.data.smiles import smiles_to_npy
-
-    result = smiles_to_npy(
-        data={"dataset": args.dataset, "mol_dir": args.mol_dir},
-        output_dir=args.output,
-        property_name=args.property_name,
-        property_col=args.property_col,
-        train_ratio=args.train_ratio,
-        smiles_col=args.smiles_col,
-        seed=args.seed,
-        overwrite=args.overwrite,
-    )
-    print(f"Train systems: {len(result.train_systems)}")
-    print(f"Valid systems: {len(result.valid_systems)}")
-    print(f"Type map     : {result.type_map}")
-    print(f"Samples used : {result.samples_used}")
-    if result.failed_rows:
-        print(f"Failed rows  : {len(result.failed_rows)}")
-    return 0
-
-
 # ---------------------------------------------------------------------------
 # Dispatch table
 # ---------------------------------------------------------------------------
@@ -278,7 +274,6 @@ _DISPATCH = {
 _DATA_DISPATCH = {
     "convert": _cmd_data_convert,
     "batch-convert": _cmd_data_batch_convert,
-    "convert-smiles": _cmd_data_convert_smiles,
     "validate": _cmd_data_validate,
     "attach-labels": _cmd_data_attach_labels,
 }

@@ -10,6 +10,7 @@ from .cv import cross_validate, train_test_split
 from .data import (
     SmilesDataResult,
     attach_labels,
+    auto_convert,
     batch_convert,
     check_data,
     convert,
@@ -30,6 +31,7 @@ __all__ = [
     "MFTFineTuner",
     "SmilesDataResult",
     "attach_labels",
+    "auto_convert",
     "batch_convert",
     "check_data",
     "convert",

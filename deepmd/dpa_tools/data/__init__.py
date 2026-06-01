@@ -11,7 +11,7 @@ from .type_map import (
     read_data_type_map_union,
     validate_type_map_subset,
 )
-from .convert import convert, attach_labels, batch_convert
+from .convert import auto_convert, convert, attach_labels, batch_convert
 from .validate import check_data, Issue
 from .errors import DPADataError
 
@@ -21,6 +21,7 @@ __all__ = [
     "read_checkpoint_type_map",
     "read_data_type_map_union",
     "validate_type_map_subset",
+    "auto_convert",
     "convert",
     "attach_labels",
     "batch_convert",
