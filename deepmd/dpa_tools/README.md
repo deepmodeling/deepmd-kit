@@ -68,7 +68,7 @@ Four training strategies:
 
 ```python
 model = DPAFineTuner(
-    pretrained="/path/to/DPA-3.1-3M.pt",
+    pretrained="DPA-3.1-3M",   # built-in name → auto-downloaded; or use a local path
     strategy="frozen_sklearn",
     predictor="rf",
     pooling="mean",

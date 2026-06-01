@@ -16,6 +16,7 @@ from deepmd.dpa_tools._backend import (
     get_torch_device,
     load_torch_file,
     resolve_model_branch,
+    resolve_pretrained_path,
 )
 from deepmd.dpa_tools.conditions import ConditionManager, DPAConditionError
 from deepmd.dpa_tools.data.errors import DPADataError
@@ -366,10 +367,15 @@ class DPAFineTuner:
     # -----------------------------------------------------------------------
 
     def _load_descriptor_model(self):
-        """Load the pretrained DPA checkpoint and return a (non-JIT) ModelWrapper."""
+        """Load the pretrained DPA checkpoint and return a (non-JIT) ModelWrapper.
+
+        If *pretrained* is a built-in model name (e.g. ``"DPA-3.1-3M"``)
+        rather than a local path, it is automatically downloaded.
+        """
         import torch
 
-        state_dict = load_torch_file(self.pretrained)
+        resolved = resolve_pretrained_path(self.pretrained)
+        state_dict = load_torch_file(resolved)
         if "model" in state_dict:
             state_dict = state_dict["model"]
 
