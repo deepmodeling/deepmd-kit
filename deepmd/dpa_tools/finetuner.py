@@ -263,7 +263,7 @@ class DPAFineTuner:
 
     _VALID_POOLING = {"mean", "sum", "mean+std", "mean+std+max+min"}
     _VALID_STRATEGIES = {
-        "frozen_sklearn", "linear_probe", "finetune", "scratch",
+        "frozen_sklearn", "linear_probe", "finetune", "mft", "scratch",
     }
 
     def __init__(
@@ -287,6 +287,15 @@ class DPAFineTuner:
         output_dir="./dpa_output",
         save_freq=10_000,
         disp_freq=1_000,
+        # ---- mft-only ----
+        aux_branch="MP_traj_v024_alldata_mixu",
+        aux_prob: float = 0.5,
+        aux_type_map: list[str] | None = None,
+        downstream_type_map: list[str] | None = None,
+        fitting_net_params: dict | None = None,
+        downstream_task_type: str = "property",
+        aux_batch_size: str | None = None,
+        downstream_batch_size: int | None = None,
     ):
         if pooling not in self._VALID_POOLING:
             raise ValueError(
@@ -323,6 +332,23 @@ class DPAFineTuner:
         self.output_dir      = output_dir
         self.save_freq       = save_freq
         self.disp_freq       = disp_freq
+
+        # MFT-only parameters.
+        self.aux_branch            = aux_branch
+        self.aux_prob              = aux_prob
+        self.aux_type_map          = aux_type_map
+        self.downstream_type_map   = downstream_type_map
+        self.fitting_net_params    = fitting_net_params
+        self.downstream_task_type  = downstream_task_type
+        self.aux_batch_size        = aux_batch_size
+        self.downstream_batch_size = downstream_batch_size
+
+        if strategy == "mft":
+            if not isinstance(property_name, str) or not property_name.isidentifier():
+                raise ValueError(
+                    "property_name is required when strategy='mft' and must be a "
+                    f"valid Python identifier; got {property_name!r}."
+                )
 
         # populated by fit()
         self.type_map           = []
@@ -686,11 +712,13 @@ class DPAFineTuner:
         labels=None,
         fmt=None,
         conditions=None,
+        aux_data=None,
     ):
         """Train the model.
 
         *frozen_sklearn* (default): extract descriptors, fit sklearn head.
         *linear_probe* / *finetune* / *scratch*: run ``dp --pt train``.
+        *mft*: multi-task fine-tuning (property head + force-field head).
 
         Parameters
         ----------
@@ -709,20 +737,65 @@ class DPAFineTuner:
         fmt : str, optional
             Reserved for future format support.
         conditions : dict[str, np.ndarray], optional
-            (frozen_sklearn) Named condition arrays, e.g.
-            ``{"T": np.array([300, 400])}``.  Each value is (n_frames,)
-            and is standardized per-key before concatenation to features.
+            (frozen_sklearn) Named condition arrays.
+        aux_data : str | list[str], optional
+            (mft only) Auxiliary training system directories.  Required when
+            ``strategy='mft'``; must be absent otherwise.
         """
         if self.strategy == "frozen_sklearn":
             return self._fit_sklearn(train_data, type_map, target_key, labels, fmt,
                                      conditions)
 
-        # ---- training paradigms ----
+        if self.strategy == "mft":
+            if aux_data is None:
+                raise ValueError(
+                    "strategy='mft' requires aux_data. "
+                    "Provide auxiliary system directories for the force-field head."
+                )
+            return self._fit_mft(train_data, aux_data, valid_data)
+
+        # ---- single-task training paradigms ----
+        if aux_data is not None:
+            raise ValueError(
+                f"aux_data is only valid when strategy='mft'; "
+                f"got strategy={self.strategy!r}."
+            )
+
         if type_map is None:
             type_map = self._resolve_type_maps(train_data)
 
         self.type_map = type_map
         return self._fit_training(train_data, valid_data, type_map)
+
+    def _fit_mft(self, train_data, aux_data, valid_data=None):
+        """Delegate to MFTFineTuner for multi-task fine-tuning."""
+        from deepmd.dpa_tools.mft import MFTFineTuner
+
+        mft = MFTFineTuner(
+            pretrained=self.pretrained,
+            aux_branch=self.aux_branch,
+            aux_prob=self.aux_prob,
+            aux_type_map=self.aux_type_map,
+            downstream_type_map=self.downstream_type_map,
+            fitting_net_params=self.fitting_net_params,
+            downstream_task_type=self.downstream_task_type,
+            property_name=self.property_name,
+            task_dim=self.task_dim,
+            intensive=self.intensive,
+            learning_rate=self.learning_rate,
+            stop_lr=self.stop_lr,
+            max_steps=self.max_steps,
+            batch_size=self.batch_size,
+            aux_batch_size=self.aux_batch_size,
+            downstream_batch_size=self.downstream_batch_size,
+            seed=self.seed,
+            output_dir=self.output_dir,
+            save_freq=self.save_freq,
+            disp_freq=self.disp_freq,
+        )
+        mft.fit(train_data=train_data, aux_data=aux_data, valid_data=valid_data)
+        self._fitted = True
+        return self.output_dir
 
     def _fit_sklearn(
         self,

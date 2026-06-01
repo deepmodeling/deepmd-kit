@@ -45,7 +45,7 @@ def _cmd_fit(args: argparse.Namespace) -> int:
         pooling=args.pooling,
         seed=args.seed,
         strategy=args.strategy,
-        property_name=args.property_name,
+        property_name=args.target_key or "property",
         task_dim=args.task_dim,
         intensive=args.intensive,
         learning_rate=args.learning_rate,
@@ -55,9 +55,19 @@ def _cmd_fit(args: argparse.Namespace) -> int:
         output_dir=args.output_dir,
         save_freq=args.save_freq,
         disp_freq=args.disp_freq,
+        # MFT
+        aux_branch=args.aux_branch,
+        aux_prob=args.aux_prob,
+        aux_type_map=_maybe_split_list(args.aux_type_map),
+        downstream_type_map=_maybe_split_list(args.downstream_type_map),
+        downstream_task_type=args.downstream_task_type,
+        aux_batch_size=args.aux_batch_size,
+        downstream_batch_size=args.downstream_batch_size,
     )
+    aux_data = (_maybe_split_list(args.aux_data) or [args.aux_data]
+                if args.aux_data else None)
     model.fit(train_data=train, valid_data=valid, type_map=type_map,
-              target_key=args.target_key)
+              target_key=args.target_key, aux_data=aux_data)
     if args.strategy == "frozen_sklearn":
         out = model.freeze(args.output)
         _LOG.info("Frozen model → %s", out)
@@ -94,49 +104,6 @@ def _cmd_cv(args: argparse.Namespace) -> int:
     print(f"n   = {result['n_independent']} independent groups")
     for w in result.get("warnings", []):
         print(f"[!] {w}")
-    return 0
-
-
-def _cmd_mft(args: argparse.Namespace) -> int:
-    from deepmd.dpa_tools import MFTFineTuner, load_dataset, train_test_split
-
-    systems = load_dataset(args.data, label_key=args.label_key)
-    train, valid, test = train_test_split(
-        systems,
-        group_by=args.group_by or "formula",
-        manifest=args.manifest,
-        test_size=args.test_size,
-        valid_size=args.valid_size,
-        seed=args.seed,
-    )
-    print(f"train={len(train)} valid={len(valid)} test={len(test)}")
-    aux = _maybe_split_list(args.aux_data) or [args.aux_data]
-
-    mft = MFTFineTuner(
-        pretrained=args.pretrained,
-        aux_branch=args.aux_branch,
-        aux_prob=args.aux_prob,
-        aux_type_map=_maybe_split_list(args.aux_type_map),
-        downstream_type_map=_maybe_split_list(args.downstream_type_map),
-        downstream_task_type=args.downstream_task_type,
-        property_name=args.property_name,
-        task_dim=args.task_dim,
-        intensive=args.intensive,
-        learning_rate=args.learning_rate,
-        stop_lr=args.stop_lr,
-        max_steps=args.max_steps,
-        batch_size=args.batch_size,
-        aux_batch_size=args.aux_batch_size,
-        downstream_batch_size=args.downstream_batch_size,
-        seed=args.seed,
-        output_dir=args.output_dir,
-        save_freq=args.save_freq,
-        disp_freq=args.disp_freq,
-    )
-    mft.fit(train_data=train, aux_data=aux, valid_data=valid)
-    if test:
-        res = mft.evaluate(test)
-        print(f"test MAE = {float(res['mae']):.4f}")
     return 0
 
 
@@ -178,11 +145,27 @@ def _cmd_evaluate(args: argparse.Namespace) -> int:
 
 
 def _cmd_data_convert(args: argparse.Namespace) -> int:
-    from deepmd.dpa_tools.data.convert import auto_convert
+    import glob as _glob
 
     type_map = _maybe_split_list(args.type_map)
+    input_val = args.input
+
+    # Detect glob patterns — batch mode.
+    if any(ch in input_val for ch in "*?["):
+        from deepmd.dpa_tools import batch_convert
+
+        outputs = batch_convert(
+            glob_pattern=input_val, output_dir=args.output, fmt=args.fmt or "auto",
+            type_map=type_map, validate=args.validate, strict=args.strict,
+        )
+        _LOG.info("Wrote %d deepmd/npy dirs under %s", len(outputs), args.output)
+        return 0
+
+    # Single-file mode.
+    from deepmd.dpa_tools.data.convert import auto_convert
+
     result = auto_convert(
-        input_path=args.input,
+        input_path=input_val,
         output_dir=args.output,
         fmt=args.fmt,
         type_map=type_map,
@@ -205,18 +188,6 @@ def _cmd_data_convert(args: argparse.Namespace) -> int:
             print(f"Failed rows  : {len(result['failed_rows'])}")
     else:
         _LOG.info("Wrote deepmd/npy → %s", result["output_dir"])
-    return 0
-
-
-def _cmd_data_batch_convert(args: argparse.Namespace) -> int:
-    from deepmd.dpa_tools import batch_convert
-
-    type_map = _maybe_split_list(args.type_map)
-    outputs = batch_convert(
-        glob_pattern=args.glob, output_dir=args.output, fmt=args.fmt,
-        type_map=type_map, validate=args.validate, strict=args.strict,
-    )
-    _LOG.info("Wrote %d deepmd/npy dirs under %s", len(outputs), args.output)
     return 0
 
 
@@ -265,7 +236,6 @@ def _cmd_data_attach_labels(args: argparse.Namespace) -> int:
 _DISPATCH = {
     "extract-descriptors": _cmd_extract_descriptors,
     "fit": _cmd_fit,
-    "mft": _cmd_mft,
     "cv": _cmd_cv,
     "predict": _cmd_predict,
     "evaluate": _cmd_evaluate,
@@ -273,7 +243,6 @@ _DISPATCH = {
 
 _DATA_DISPATCH = {
     "convert": _cmd_data_convert,
-    "batch-convert": _cmd_data_batch_convert,
     "validate": _cmd_data_validate,
     "attach-labels": _cmd_data_attach_labels,
 }

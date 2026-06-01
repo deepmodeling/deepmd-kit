@@ -1027,15 +1027,15 @@ def main_parser() -> argparse.ArgumentParser:
                                 help="Path to DPA checkpoint (.pt).")
     parser_dpa_fit.add_argument("--model-branch", default=None)
     parser_dpa_fit.add_argument("--strategy", default="frozen_sklearn",
-                                choices=["frozen_sklearn", "linear_probe", "finetune", "scratch"])
+                                choices=["frozen_sklearn", "linear_probe", "finetune", "mft", "scratch"])
     parser_dpa_fit.add_argument("--predictor", default="rf",
                                 choices=["rf", "linear", "ridge", "mlp"])
     parser_dpa_fit.add_argument("--pooling", default="mean",
                                 choices=["mean", "sum", "mean+std", "mean+std+max+min"])
-    parser_dpa_fit.add_argument("--target-key", default=None)
+    parser_dpa_fit.add_argument("--target-key", default=None,
+                                help="Label key under set.*/ (e.g. energy, homo, bandgap).")
     parser_dpa_fit.add_argument("--output", default="frozen_model.pth")
     parser_dpa_fit.add_argument("--type-map", default=None)
-    parser_dpa_fit.add_argument("--property-name", default="property")
     parser_dpa_fit.add_argument("--task-dim", type=int, default=1)
     parser_dpa_fit.add_argument("--intensive", action=argparse.BooleanOptionalAction, default=True)
     parser_dpa_fit.add_argument("--max-steps", type=int, default=100_000)
@@ -1046,43 +1046,24 @@ def main_parser() -> argparse.ArgumentParser:
     parser_dpa_fit.add_argument("--output-dir", default="./dpa_output")
     parser_dpa_fit.add_argument("--save-freq", type=int, default=10_000)
     parser_dpa_fit.add_argument("--disp-freq", type=int, default=1_000)
-
-    # dpa mft
-    parser_dpa_mft = dpa_subparsers.add_parser(
-        "mft",
-        help="Multi-task fine-tuning",
-        parents=[parser_log],
-    )
-    parser_dpa_mft.add_argument("--data", required=True, nargs="+",
-                                help="Downstream system directories.")
-    parser_dpa_mft.add_argument("--aux-data", required=True, nargs="+",
-                                help="Auxiliary system directories.")
-    parser_dpa_mft.add_argument("--label-key", default="energy")
-    parser_dpa_mft.add_argument("--pretrained", required=True,
-                                help="Path to DPA checkpoint (.pt).")
-    parser_dpa_mft.add_argument("--aux-branch", default="MP_traj_v024_alldata_mixu")
-    parser_dpa_mft.add_argument("--aux-prob", type=float, default=0.5)
-    parser_dpa_mft.add_argument("--aux-type-map", default=None)
-    parser_dpa_mft.add_argument("--downstream-type-map", default=None)
-    parser_dpa_mft.add_argument("--downstream-task-type", default="property",
-                                choices=["ener", "property"])
-    parser_dpa_mft.add_argument("--group-by", default="formula")
-    parser_dpa_mft.add_argument("--manifest", default=None)
-    parser_dpa_mft.add_argument("--test-size", type=float, default=0.1)
-    parser_dpa_mft.add_argument("--valid-size", type=float, default=0.1)
-    parser_dpa_mft.add_argument("--aux-batch-size", default=None)
-    parser_dpa_mft.add_argument("--downstream-batch-size", type=int, default=None)
-    parser_dpa_mft.add_argument("--property-name", default="property")
-    parser_dpa_mft.add_argument("--task-dim", type=int, default=1)
-    parser_dpa_mft.add_argument("--intensive", action=argparse.BooleanOptionalAction, default=True)
-    parser_dpa_mft.add_argument("--max-steps", type=int, default=50_000)
-    parser_dpa_mft.add_argument("--learning-rate", type=float, default=1e-3)
-    parser_dpa_mft.add_argument("--stop-lr", type=float, default=1e-5)
-    parser_dpa_mft.add_argument("--batch-size", default="auto:32")
-    parser_dpa_mft.add_argument("--seed", type=int, default=42)
-    parser_dpa_mft.add_argument("--output-dir", default="./mft_output")
-    parser_dpa_mft.add_argument("--save-freq", type=int, default=10_000)
-    parser_dpa_mft.add_argument("--disp-freq", type=int, default=1_000)
+    # MFT-only flags
+    parser_dpa_fit.add_argument("--aux-data", default=None, nargs="+",
+                                help="(mft) Auxiliary system directories.")
+    parser_dpa_fit.add_argument("--aux-branch", default="MP_traj_v024_alldata_mixu",
+                                help="(mft) Aux branch name in checkpoint.")
+    parser_dpa_fit.add_argument("--aux-prob", type=float, default=0.5,
+                                help="(mft) Sampling weight for aux branch.")
+    parser_dpa_fit.add_argument("--aux-type-map", default=None,
+                                help="(mft) Comma-separated aux element symbols.")
+    parser_dpa_fit.add_argument("--downstream-type-map", default=None,
+                                help="(mft) Comma-separated downstream element symbols.")
+    parser_dpa_fit.add_argument("--downstream-task-type", default="property",
+                                choices=["ener", "property"],
+                                help="(mft) Downstream head type.")
+    parser_dpa_fit.add_argument("--aux-batch-size", default=None,
+                                help="(mft) Batch size for aux branch.")
+    parser_dpa_fit.add_argument("--downstream-batch-size", type=int, default=None,
+                                help="(mft) Batch size for downstream.")
 
     # dpa cv
     parser_dpa_cv = dpa_subparsers.add_parser(
@@ -1162,18 +1143,6 @@ def main_parser() -> argparse.ArgumentParser:
     parser_dpa_data_convert.add_argument("--train-ratio", type=float, default=0.9)
     parser_dpa_data_convert.add_argument("--seed", type=int, default=42)
     parser_dpa_data_convert.add_argument("--overwrite", action="store_true")
-
-    parser_dpa_data_batch_convert = dpa_data_subparsers.add_parser(
-        "batch-convert",
-        help="Batch-convert glob → deepmd/npy",
-        parents=[parser_log],
-    )
-    parser_dpa_data_batch_convert.add_argument("--glob", required=True)
-    parser_dpa_data_batch_convert.add_argument("--output", required=True)
-    parser_dpa_data_batch_convert.add_argument("--fmt", required=True)
-    parser_dpa_data_batch_convert.add_argument("--type-map", default=None)
-    parser_dpa_data_batch_convert.add_argument("--no-validate", dest="validate", action="store_false")
-    parser_dpa_data_batch_convert.add_argument("--strict", action="store_true")
 
     parser_dpa_data_validate = dpa_data_subparsers.add_parser(
         "validate",
