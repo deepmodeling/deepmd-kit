@@ -38,10 +38,8 @@ install RDKit (`conda install -c conda-forge rdkit`).
 
 ```python
 from deepmd.dpa_tools import (
-    DPAFineTuner,          # train (frozen sklearn / finetune / linear probe)
+    DPAFineTuner,          # train (all strategies: frozen_sklearn, linear_probe, finetune, mft, scratch)
     DPAPredictor,          # read-only inference from frozen bundles
-    MFTFineTuner,          # multi-task fine-tuning
-    DPATrainer,            # single-task dp --pt train wrapper
     extract_descriptors,   # standalone descriptor extraction
     cross_validate,        # leak-proof cross-validation
     train_test_split,      # formula-grouped data splitting
@@ -78,6 +76,15 @@ model = DPAFineTuner(
 model.fit(train_data="/data/train", target_key="homo")
 model.predict("/data/test")
 model.freeze("model.dp-sklearn.pth")
+
+# MFT: multi-task fine-tuning (property head + force-field head)
+model = DPAFineTuner(
+    pretrained="/path/to/DPA-3.1-3M.pt",
+    strategy="mft",
+    property_name="homo",
+    aux_branch="MP_traj_v024_alldata_mixu",
+)
+model.fit(train_data="/data/qm9", aux_data="/data/spice2")
 ```
 
 ### DPAPredictor
@@ -90,21 +97,6 @@ metrics = pred.evaluate("/data/test")         # DotDict with .mae, .rmse, .r2
 # uncertainty: RF native, MLP via committee, Ridge raises
 result = pred.predict("/data/test", return_uncertainty=True)
 # → .predictions, .uncertainty
-```
-
-### MFTFineTuner
-
-Joint downstream property head + auxiliary force-field head (arXiv:2601.08486):
-
-```python
-mft = MFTFineTuner(
-    pretrained="/path/to/DPA-3.1-3M.pt",
-    downstream_task_type="property",
-    property_name="homo",
-    aux_branch="MP_traj_v024_alldata_mixu",
-)
-mft.fit(train_data="/data/qm9", aux_data="/data/spice2")
-mft.evaluate("/data/qm9_test")
 ```
 
 ### Descriptor extraction
@@ -158,7 +150,7 @@ result = cross_validate(model, systems, label_key="energy", cv=5, group_by="form
 
 ```python
 convert("POSCAR", "output_dir", fmt="extxyz", type_map=["Cu", "O"])
-batch_convert("calcs/**/OUTCAR", "npy_root", fmt="vasp/outcar")
+convert("calcs/**/OUTCAR", "npy_root", fmt="vasp/outcar")  # glob → batch mode
 check_data("/data/system")   # → list[Issue]
 attach_labels(system, head="bandgap", values=np.array([1.0, 2.0, 3.0]))
 ```
@@ -171,13 +163,12 @@ All commands live under `dp dpa` with two-level nesting:
 dp dpa
   extract-descriptors   extract pooled DPA descriptors to .npy
   fit                   train a model (any strategy)
-  mft                   multi-task fine-tuning
-  cv                    cross-validate frozen_sklearn baseline
+                        --strategy {frozen-sklearn|linear-probe|finetune|mft|scratch}
+  cv                    cross-validate (metric estimation, no model output)
   predict               predict with a frozen .pth bundle
   evaluate              evaluate a frozen .pth against stored labels
   data
-    convert             auto-detect format (CSV+SMILES or structure) → deepmd/npy
-    batch-convert       glob-based batch conversion
+    convert             single file or glob → deepmd/npy (auto-sniffs SMILES / structure)
     validate            sanity-check deepmd/npy directories
     attach-labels       inject .npy labels into a system
 ```
@@ -198,13 +189,16 @@ dp dpa data convert --input crystal.cif --output ./npy
 dp dpa fit --train-data /data/train --pretrained /path/to/DPA-3.1-3M.pt \
   --strategy frozen_sklearn --predictor rf --target-key homo
 
+# Multi-task fine-tuning (MFT)
+dp dpa fit --train-data /data/qm9 --aux-data /data/spice2 \
+  --pretrained /path/to/DPA-3.1-3M.pt --strategy mft --target-key homo
+
 # Descriptor extraction
 dp dpa extract-descriptors --data /data/sys1 /data/sys2 \
   --pretrained /path/to/DPA-3.1-3M.pt --pooling mean+std --output features.npy
 
-# Multi-task fine-tuning
-dp dpa mft --data /data/qm9 --aux-data /data/spice2 \
-  --pretrained /path/to/DPA-3.1-3M.pt --property-name homo
+# Batch convert (glob → auto-detected)
+dp dpa data convert --input "calcs/**/OUTCAR" --output ./npy_root
 ```
 
 ## Internal architecture
