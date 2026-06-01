@@ -181,6 +181,17 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
             to_numpy_array(ret0["energy"]), ret2["energy"], atol=0.001, rtol=0.001
         )
 
+    def test_forward_atomic_preserves_grad_enabled_input(self) -> None:
+        args = [
+            to_torch_tensor(ii) for ii in [self.coord_ext, self.atype_ext, self.nlist]
+        ]
+        args[0] = args[0].view(self.nf, self.nall, 3).clone().requires_grad_(True)
+        ret = self.md0.forward_atomic(*args)
+        ret["energy"].sum().backward()
+
+        self.assertTrue(args[0].requires_grad)
+        self.assertIsNotNone(args[0].grad)
+
     def test_jit(self) -> None:
         md1 = torch.jit.script(self.md1)
         # atomic model no more export methods

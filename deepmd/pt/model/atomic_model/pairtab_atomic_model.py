@@ -274,9 +274,9 @@ class PairTabAtomicModel(BaseAtomicModel):
         charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         nframes, nloc, nnei = nlist.shape
-        extended_coord = extended_coord.view(nframes, -1, 3)
         if (self.do_grad_r() or self.do_grad_c()) and not extended_coord.requires_grad:
-            extended_coord.requires_grad_(True)
+            extended_coord = extended_coord.clone().requires_grad_(True)
+        extended_coord = extended_coord.view(nframes, -1, 3)
 
         # this will mask all -1 in the nlist
         mask = nlist >= 0

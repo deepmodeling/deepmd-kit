@@ -96,6 +96,14 @@ class TestPairTab(unittest.TestCase):
             result["energy"], expected_result, rtol=0.0001, atol=0.0001
         )
 
+    def test_forward_common_atomic_preserves_grad_enabled_input(self) -> None:
+        coord = self.extended_coord.clone().requires_grad_(True)
+        ret = self.model.forward_atomic(coord, self.extended_atype, self.nlist)
+        ret["energy"].sum().backward()
+
+        self.assertTrue(coord.requires_grad)
+        self.assertIsNotNone(coord.grad)
+
     def test_jit(self) -> None:
         model = torch.jit.script(self.model)
         # atomic model no more export methods

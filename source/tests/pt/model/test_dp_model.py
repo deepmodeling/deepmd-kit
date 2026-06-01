@@ -150,6 +150,13 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
         self.assertIn("extended_force", ret)
         self.assertIn("virial", ret)
 
+        coord_view_grad = coord_ext.view(self.nf, -1, 3).clone().requires_grad_(True)
+        ret = md0.forward_lower(coord_view_grad, atype_ext, nlist, do_atomic_virial=True)
+
+        self.assertTrue(coord_view_grad.requires_grad)
+        self.assertIn("extended_force", ret)
+        self.assertIn("virial", ret)
+
     def test_dp_consistency(self) -> None:
         nf, nloc = self.atype.shape
         nfp, nap = 2, 3
