@@ -454,12 +454,12 @@ _SEZM_COMPILE_CACHE: dict[tuple, Any] = {}
 _SEZM_TASK_BUF_ORDER: dict[tuple[int, ...], tuple[str, ...]] = {}
 
 # Prefix namespace for promoted buffer names.
-_AM_PREFIX = "am/"         # atomic_model registered buffer
-_FIT_PREFIX = "fit/"       # fitting_net registered buffer
+_AM_PREFIX = "am/"  # atomic_model registered buffer
+_FIT_PREFIX = "fit/"  # fitting_net registered buffer
 _FIT_ATTR_PREFIX = "fit_attr/"  # fitting_net plain tensor attribute (not in _buffers)
 
 
-def _sezm_structure_key(model: "SeZMModel") -> tuple[int, ...]:
+def _sezm_structure_key(model: SeZMModel) -> tuple[int, ...]:
     """Return a key that is equal iff two SeZMModel instances can share a compiled graph.
 
     After ``share_params``, the descriptor and fitting-net module objects
@@ -499,7 +499,7 @@ def _sezm_structure_key(model: "SeZMModel") -> tuple[int, ...]:
         return (desc_id, id(model))
 
 
-def _get_sezm_task_buf_names(model: "SeZMModel") -> tuple[str, ...]:
+def _get_sezm_task_buf_names(model: SeZMModel) -> tuple[str, ...]:
     """Return the ordered names of per-task buffers to promote as FX placeholders.
 
     Always promotes:
@@ -534,7 +534,7 @@ def _get_sezm_task_buf_names(model: "SeZMModel") -> tuple[str, ...]:
 
 
 def _get_sezm_task_buf_vals(
-    model: "SeZMModel",
+    model: SeZMModel,
     names: tuple[str, ...],
 ) -> tuple[torch.Tensor, ...]:
     """Return the current tensor values for the given promoted-buffer names."""
