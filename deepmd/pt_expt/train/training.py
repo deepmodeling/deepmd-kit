@@ -139,28 +139,30 @@ def _get_model_structure_key(model: torch.nn.Module) -> tuple:
     descriptors (which bake distinct descriptor constants into the traced
     graph) are never assigned the same compiled graph.
 
-    Descriptor identity is determined by the frozenset of all parameter
-    tensor ids rather than the descriptor module id.  ``share_params`` leaves
-    descriptor modules as distinct Python objects while making their parameter
-    tensors the same objects.  Using the full frozenset (not just the first
-    parameter) correctly handles partial sharing: e.g. shared_level==1 on
-    DPA1/DPA2/DPA3/SE_T_TEBD shares only the type-embedding while leaving
-    the main block (se_atten, repinit/repformers, repflows, se_ttebd, …)
-    task-local.  Two partially-shared descriptors therefore produce different
-    frozensets and receive separate compiled graphs, whereas fully-shared
-    descriptors produce identical frozensets and safely reuse one graph.
+    Descriptor identity is determined by the tuple of ids of the descriptor's
+    direct child modules.  ``share_params`` replaces submodule references
+    in-place (``self._modules[k] = base._modules[k]``), so after full sharing
+    (level 0) all direct children of two descriptor instances are the same
+    Python objects → same id tuple → same structure key.  After partial
+    sharing (level 1, type-embedding only) the main block (se_atten,
+    repflows, repinit/repformers, …) is a different object → different tuple
+    → separate compiled graph.  Using child module ids rather than parameter
+    ids avoids iterating thousands of tensors while remaining correct for all
+    pt_expt descriptor types.
 
     After ``share_params``, the fitting net's child sub-modules are the same
     Python objects across tasks, so ``id(first_child)`` is equal for all
     shared tasks and unique across unrelated models.
     """
-    descriptor_key: frozenset | int = 0
+    descriptor_key: tuple
     try:
         desc = model.get_descriptor()
-        param_ids = frozenset(id(p) for p in desc.parameters())
-        descriptor_key = param_ids if param_ids else id(desc)
+        # Tuple of direct-child module ids: same for fully-shared descriptors,
+        # different for partially-shared or independent descriptors.
+        child_ids = tuple(id(m) for _, m in desc.named_children())
+        descriptor_key = child_ids if child_ids else (id(desc),)
     except AttributeError:
-        pass
+        descriptor_key = ()
 
     try:
         fitting = model.get_fitting_net()
