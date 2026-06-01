@@ -374,6 +374,9 @@ import torch
 from einops import (
     rearrange,
 )
+from packaging.version import (
+    Version,
+)
 from torch.fx.experimental.proxy_tensor import (
     make_fx,
 )
@@ -2179,8 +2182,9 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         mapping: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
-        do_atomic_virial: bool = False,
         charge_spin: torch.Tensor | None = None,
+        *,
+        do_atomic_virial: bool = False,
     ) -> torch.nn.Module:
         """Trace ``forward_common_lower`` into an exportable FX ``GraphModule``.
 
