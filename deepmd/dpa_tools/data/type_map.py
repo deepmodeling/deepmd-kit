@@ -31,11 +31,9 @@ def read_checkpoint_type_map(
     list[str]
         Element symbols.
     """
-    import torch
+    from deepmd.dpa_tools._backend import load_torch_file
 
-    from deepmd.utils.model_branch_dict import get_model_dict
-
-    sd = torch.load(pretrained, map_location="cpu", weights_only=False)
+    sd = load_torch_file(pretrained)
     if "model" in sd:
         sd = sd["model"]
 
