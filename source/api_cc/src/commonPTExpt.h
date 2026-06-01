@@ -257,6 +257,29 @@ inline JsonValue parse_json(const std::string& s) {
   return parser.parse();
 }
 
+inline std::vector<double> read_default_chg_spin(const JsonValue& metadata,
+                                                 const int dim_chg_spin) {
+  std::vector<double> default_chg_spin;
+  if (dim_chg_spin <= 0) {
+    return default_chg_spin;
+  }
+  if (!metadata.obj_val.count("default_chg_spin")) {
+    throw deepmd::deepmd_exception(
+        "Model requires charge/spin conditions but default_chg_spin is "
+        "missing from metadata.");
+  }
+  for (const auto& v : metadata["default_chg_spin"].as_array()) {
+    default_chg_spin.push_back(v.as_double());
+  }
+  if (static_cast<int>(default_chg_spin.size()) != dim_chg_spin) {
+    throw deepmd::deepmd_exception("default_chg_spin length (" +
+                                   std::to_string(default_chg_spin.size()) +
+                                   ") does not match dim_chg_spin (" +
+                                   std::to_string(dim_chg_spin) + ").");
+  }
+  return default_chg_spin;
+}
+
 // ============================================================================
 // ZIP archive reader — reads a file from a ZIP archive.
 // ============================================================================

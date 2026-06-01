@@ -454,6 +454,26 @@ def freeze(
     output: str = "frozen_model.pth",
     head: str | None = None,
 ) -> None:
+    # DPA4 / SeZM checkpoints are routed to the AOTInductor .pt2 exporter
+    from deepmd.pt.entrypoints.freeze_pt2 import (
+        freeze_sezm_to_pt2,
+        is_sezm_checkpoint,
+    )
+
+    output_path = Path(output)
+    if is_sezm_checkpoint(model):
+        out_pt2 = str(output_path.with_suffix(".pt2"))
+        freeze_sezm_to_pt2(model, out_pt2, head=head)
+        log.info(
+            "Detected DPA4 / SeZM checkpoint '%s'; saved AOTInductor archive to %s",
+            model,
+            out_pt2,
+        )
+        return
+
+    # TorchScript frozen models use the .pth suffix by convention.
+    output = str(output_path.with_suffix(".pth"))
+
     tester = inference.Tester(model, head=head)
     model = tester.model
     model.eval()
@@ -644,7 +664,9 @@ def main(args: list[str] | argparse.Namespace | None = None) -> None:
             FLAGS.model = str(checkpoint_path.joinpath(latest_ckpt_file))
         else:
             FLAGS.model = FLAGS.checkpoint_folder
-        FLAGS.output = str(Path(FLAGS.output).with_suffix(".pth"))
+        # Output suffix is decided inside freeze(): SeZM checkpoints
+        # produce ``.pt2`` (AOTInductor), every other backend produces
+        # the legacy ``.pth`` (TorchScript).
         freeze(model=FLAGS.model, output=FLAGS.output, head=FLAGS.head)
     elif FLAGS.command == "change-bias":
         change_bias(

@@ -21,6 +21,9 @@ import lmdb
 import msgpack
 import numpy as np
 
+from deepmd.dpmodel.utils.dist_check import (
+    compute_min_pair_dist_single,
+)
 from deepmd.env import (
     GLOBAL_ENER_FLOAT_PRECISION,
     GLOBAL_NP_FLOAT_PRECISION,
@@ -596,6 +599,29 @@ class LmdbDataReader:
             )
             frame["natoms"] = fallback
             frame["real_natoms_vec"] = fallback
+
+        if "min_pair_dist" in self._data_requirements and "min_pair_dist" not in frame:
+            box = frame.get("box")
+            if box is not None and np.allclose(box, 0.0):
+                box = None
+            req = self._data_requirements["min_pair_dist"]
+            min_pair_dist = float(
+                req.get("default", 0.0)
+                if isinstance(req, dict)
+                else getattr(req, "default", 0.0)
+            )
+            frame["find_min_pair_dist"] = np.float32(1.0)
+            frame["min_pair_dist"] = np.array(
+                [
+                    compute_min_pair_dist_single(
+                        frame["coord"],
+                        box,
+                        frame["atype"],
+                        stop_below=min_pair_dist,
+                    )
+                ],
+                dtype=self._resolve_dtype("min_pair_dist"),
+            )
 
         # Add find_* flags for all data keys present in the frame.
         # Core structural keys and metadata are excluded — only label-like

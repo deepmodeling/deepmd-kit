@@ -1,6 +1,7 @@
 # new in 3.25: RUN_OUTPUT_STDOUT_VARIABLE
 cmake_minimum_required(VERSION 3.25.2)
 project(DeePMD)
+include(CMakePackageConfigHelpers)
 
 option(ENABLE_TENSORFLOW "Enable TensorFlow interface" OFF)
 option(ENABLE_PYTORCH "Enable PyTorch interface" OFF)
@@ -584,34 +585,35 @@ add_custom_target(lammps COMMAND ${CMAKE_COMMAND} -P
                                  ${CMAKE_CURRENT_BINARY_DIR}/cmake_lammps.cmake)
 
 # add configure file
-if(BUILD_CPP_IF
-   AND NOT BUILD_PY_IF
-   AND NOT DEEPMD_C_ROOT)
-  include(CMakePackageConfigHelpers)
+if(BUILD_CPP_IF AND NOT BUILD_PY_IF)
   set(targets_export_name
       ${CMAKE_PROJECT_NAME}Targets
       CACHE INTERNAL "")
   set(generated_dir
       "${CMAKE_CURRENT_BINARY_DIR}/generated"
       CACHE INTERNAL "")
-  set(cmake_files_install_dir
-      "${CMAKE_INSTALL_PREFIX}/lib/cmake/${CMAKE_PROJECT_NAME}")
+  set(cmake_files_install_dir "lib/cmake/${CMAKE_PROJECT_NAME}")
   set(version_file "${generated_dir}/${CMAKE_PROJECT_NAME}ConfigVersion.cmake")
   write_basic_package_version_file(
     ${version_file}
     VERSION $<IF:${GIT_SUMM}?${GIT_SUMM}:0.0.0>
     COMPATIBILITY AnyNewerVersion)
-  install(
-    EXPORT ${targets_export_name}
-    NAMESPACE ${CMAKE_PROJECT_NAME}::
-    DESTINATION ${cmake_files_install_dir})
   set(config_file "${generated_dir}/${CMAKE_PROJECT_NAME}Config.cmake")
   configure_package_config_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake/Config.cmake.in" "${config_file}"
     INSTALL_DESTINATION ${cmake_files_install_dir})
   install(FILES ${version_file} ${config_file}
           DESTINATION ${cmake_files_install_dir})
-endif(
-  BUILD_CPP_IF
-  AND NOT BUILD_PY_IF
-  AND NOT DEEPMD_C_ROOT)
+  if(DEEPMD_C_ROOT)
+    configure_file(
+      "${CMAKE_CURRENT_SOURCE_DIR}/cmake/DeePMDImportedTargets.cmake.in"
+      "${generated_dir}/${targets_export_name}.cmake" @ONLY)
+    install(FILES "${generated_dir}/${targets_export_name}.cmake"
+            DESTINATION ${cmake_files_install_dir})
+  else()
+    install(
+      EXPORT ${targets_export_name}
+      NAMESPACE ${CMAKE_PROJECT_NAME}::
+      DESTINATION ${cmake_files_install_dir})
+  endif()
+endif()

@@ -1,0 +1,38 @@
+# DPA4 / SeZM bulk water: short MD smoke run backed by an AOTInductor .pt2 archive.
+#
+# The .pt2 file is produced by
+#     dp --pt freeze -c <checkpoint> -o frozen_model
+# against a DPA4 / SeZM training checkpoint.  The freeze CLI detects DPA4 / SeZM
+# automatically, rewrites the output suffix to .pt2 and emits a package
+# whose I/O is fp64 — matching the DeepPotPTExpt C++ contract.
+
+units           metal
+boundary        p p p
+atom_style      atomic
+atom_modify     map yes
+
+neighbor        2.0 bin
+neigh_modify    every 10 delay 0 check no
+
+read_data       water.lmp
+mass            1 16
+mass            2 2
+
+# AOTInductor models are dispatched by suffix: DeepPotPTExpt (the PyTorch
+# "exportable" backend) owns every .pt2 file via source/api_cc/src/DeepPotPTExpt.cc.
+# No plugin, no extra flags are required.
+pair_style      deepmd frozen_model.pt2
+# The training type_map ordering is (O, H); element names on pair_coeff
+# map LAMMPS atom types 1/2 to those entries explicitly.
+pair_coeff      * * O H
+
+velocity        all create 330.0 23456789
+
+fix             1 all nvt temp 330.0 330.0 0.5
+timestep        0.0005
+thermo_style    custom step pe ke etotal temp press vol
+thermo          10
+dump            1 all custom 10 water.dump id type x y z
+
+# Short smoke run; scale up for production MD.
+run             20

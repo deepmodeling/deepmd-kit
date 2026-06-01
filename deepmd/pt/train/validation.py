@@ -473,7 +473,8 @@ class FullValidator:
             atom_types=test_data["type"],
             box=test_data["box"] if data_system.pbc else None,
             fparam=test_data["fparam"]
-            if bool(test_data.get("find_fparam", 0.0))
+            if self.model.get_dim_fparam() > 0
+            and bool(test_data.get("find_fparam", 0.0))
             else None,
             aparam=test_data["aparam"] if self.model.get_dim_aparam() > 0 else None,
             include_virial=include_virial,

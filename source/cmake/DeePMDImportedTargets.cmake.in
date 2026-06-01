@@ -1,0 +1,7 @@
+if(NOT TARGET @CMAKE_PROJECT_NAME@::@LIB_DEEPMD_C@)
+  add_library(@CMAKE_PROJECT_NAME@::@LIB_DEEPMD_C@ SHARED IMPORTED)
+  set_target_properties(
+    @CMAKE_PROJECT_NAME@::@LIB_DEEPMD_C@
+    PROPERTIES IMPORTED_LOCATION "@deepmd_c@" INTERFACE_INCLUDE_DIRECTORIES
+                                              "@DEEPMD_INCLUDE_C_DIR@")
+endif()
