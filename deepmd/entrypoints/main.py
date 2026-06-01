@@ -102,5 +102,9 @@ def main(args: argparse.Namespace) -> None:
         show(**dict_args)
     elif args.command == "pretrained":
         pretrained_entrypoint(args)
+    elif args.command == "dpa":
+        from deepmd.dpa_tools.cli import main as dpa_main
+
+        dpa_main(args)
     else:
         raise ValueError(f"Unknown command: {args.command}")
