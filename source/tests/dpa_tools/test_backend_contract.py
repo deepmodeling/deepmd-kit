@@ -95,6 +95,24 @@ class TestBackendContract:
         except Exception as exc:
             pytest.skip(f"deepmd build_model_from_config not functional: {exc}")
 
+    @pytest.fixture
+    def _extractor(self):
+        """Build a model + extractor, yield it, then **always** disable the
+        descriptor hook so a test failure never leaks global state."""
+        from deepmd.dpa_tools._backend import (
+            _DescriptorExtraction,
+            build_model_from_config,
+        )
+
+        wrapper = build_model_from_config(_MINIMAL_DPA3_CONFIG)
+        wrapper.eval()
+        extractor = _DescriptorExtraction(wrapper)
+        extractor._enable_hook()
+        try:
+            yield extractor
+        finally:
+            extractor._disable_hook()
+
     def test_build_model_from_config(self):
         """``build_model_from_config`` succeeds with minimal config."""
         from deepmd.dpa_tools._backend import build_model_from_config
@@ -105,20 +123,9 @@ class TestBackendContract:
             "ModelWrapper.model must contain 'Default' key"
         )
 
-    def test_descriptor_extraction_chain(self):
+    def test_descriptor_extraction_chain(self, _extractor):
         """Full chain: build → hook → forward → eval_descriptor → shape check."""
         import torch
-
-        from deepmd.dpa_tools._backend import (
-            _DescriptorExtraction,
-            build_model_from_config,
-        )
-
-        wrapper = build_model_from_config(_MINIMAL_DPA3_CONFIG)
-        wrapper.eval()
-
-        extractor = _DescriptorExtraction(wrapper)
-        extractor._enable_hook()
 
         # Synthetic input: 1 frame, 2 atoms (H and O), reasonable distances
         n_frames = 1
@@ -133,8 +140,7 @@ class TestBackendContract:
             dtype=torch.float64,
         )
 
-        desc = extractor._run_forward(coords, atype, box)
-        extractor._disable_hook()
+        desc = _extractor._run_forward(coords, atype, box)
 
         assert desc.ndim == 3, f"expected (n_frames, n_atoms, feat_dim), got {desc.shape}"
         assert desc.shape[0] == n_frames
@@ -143,20 +149,9 @@ class TestBackendContract:
         assert not torch.any(torch.isnan(desc)), "descriptor contains NaN"
         assert not torch.any(torch.isinf(desc)), "descriptor contains Inf"
 
-    def test_descriptor_feat_dim_matches_repflow(self):
+    def test_descriptor_feat_dim_matches_repflow(self, _extractor):
         """The feature dimension matches n_dim from the repflow config."""
         import torch
-
-        from deepmd.dpa_tools._backend import (
-            _DescriptorExtraction,
-            build_model_from_config,
-        )
-
-        wrapper = build_model_from_config(_MINIMAL_DPA3_CONFIG)
-        wrapper.eval()
-
-        extractor = _DescriptorExtraction(wrapper)
-        extractor._enable_hook()
 
         coords = torch.tensor(
             [[0.0, 0.0, 0.0, 1.5, 0.0, 0.0]],
@@ -168,28 +163,16 @@ class TestBackendContract:
             dtype=torch.float64,
         )
 
-        desc = extractor._run_forward(coords, atype, box)
-        extractor._disable_hook()
+        desc = _extractor._run_forward(coords, atype, box)
 
         n_dim = _MINIMAL_DPA3_CONFIG["descriptor"]["repflow"]["n_dim"]
         assert desc.shape[2] == n_dim, (
             f"descriptor feat dim {desc.shape[2]} != repflow n_dim {n_dim}"
         )
 
-    def test_forward_common_fails_without_grad(self):
+    def test_forward_common_fails_without_grad(self, _extractor):
         """``forward_common`` requires gradients on coords — verify the guard."""
         import torch
-
-        from deepmd.dpa_tools._backend import (
-            _DescriptorExtraction,
-            build_model_from_config,
-        )
-
-        wrapper = build_model_from_config(_MINIMAL_DPA3_CONFIG)
-        wrapper.eval()
-
-        extractor = _DescriptorExtraction(wrapper)
-        extractor._enable_hook()
 
         coords = torch.tensor(
             [[0.0, 0.0, 0.0, 1.5, 0.0, 0.0]],
@@ -202,9 +185,7 @@ class TestBackendContract:
         )
 
         with pytest.raises(RuntimeError, match="grad"):
-            extractor._run_forward(coords, atype, box)
-
-        extractor._disable_hook()
+            _extractor._run_forward(coords, atype, box)
 
 
 class TestBackendHelpers:
