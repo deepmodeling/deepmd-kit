@@ -1171,7 +1171,9 @@ class Trainer:
             try:
                 base_ids = frozenset(
                     id(p)
-                    for p in wrapper_mod.model[group_keys[0]].get_descriptor().parameters()
+                    for p in wrapper_mod.model[group_keys[0]]
+                    .get_descriptor()
+                    .parameters()
                 )
             except AttributeError:
                 continue
@@ -1179,7 +1181,9 @@ class Trainer:
                 try:
                     other_ids = frozenset(
                         id(p)
-                        for p in wrapper_mod.model[other_key].get_descriptor().parameters()
+                        for p in wrapper_mod.model[other_key]
+                        .get_descriptor()
+                        .parameters()
                     )
                 except AttributeError:
                     continue
