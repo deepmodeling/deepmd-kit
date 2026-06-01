@@ -11,31 +11,31 @@ from unittest import (
 )
 
 import numpy as np
-from deepmd_property_tools.data import mol as mol_module
-from deepmd_property_tools.data.mol import (
-    build_used_type_map,
-    has_overlapping_atoms,
-    parse_property_value,
+from deepmd.dpa_tools.data import smiles as mol_module
+from deepmd.dpa_tools.data.smiles import (
+    _build_type_map_from_elements,
+    _has_overlapping_atoms,
+    _parse_property_value,
+    _records_from_csv_mol,
+    _records_from_csv_smiles,
     predict_records_from_data,
     read_mol_coords,
-    records_from_csv_mol,
-    records_from_csv_smiles,
     records_from_direct_data,
 )
 
 
-def test_parse_property_value_accepts_text_with_units() -> None:
-    assert parse_property_value("gap = -1.25 eV") == -1.25
+def test__parse_property_value_accepts_text_with_units() -> None:
+    assert _parse_property_value("gap = -1.25 eV") == -1.25
 
 
 def test_overlap_detection() -> None:
     coords = np.array([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0]], dtype=np.float32)
 
-    assert has_overlapping_atoms(coords, 1e-6)
+    assert _has_overlapping_atoms(coords, 1e-6)
 
 
 def test_type_map_uses_periodic_table_order() -> None:
-    assert build_used_type_map({"O", "C", "H"}) == ["H", "C", "O"]
+    assert _build_type_map_from_elements({"O", "C", "H"}) == ["H", "C", "O"]
 
 
 def test_records_from_direct_data() -> None:
@@ -68,7 +68,7 @@ def test_records_from_csv_smiles_generates_coordinates(tmp_path: Path) -> None:
         ),
     ) as smiles_mock:
         records, failed_rows, skipped_zero, skipped_overlap, rows = (
-            records_from_csv_smiles(
+            _records_from_csv_smiles(
                 dataset=dataset,
                 property_col="Property",
             )
@@ -93,7 +93,7 @@ def test_records_from_csv_smiles_collects_failed_rows(tmp_path: Path) -> None:
         side_effect=ValueError("bad smiles"),
     ):
         records, failed_rows, skipped_zero, skipped_overlap, rows = (
-            records_from_csv_smiles(
+            _records_from_csv_smiles(
                 dataset=dataset,
                 property_col="Property",
             )
@@ -132,7 +132,7 @@ def test_csv_mol_path_does_not_use_smiles_generation(tmp_path: Path) -> None:
         side_effect=AssertionError("SMILES generation should not be used"),
     ):
         records, failed_rows, skipped_zero, skipped_overlap, rows = (
-            records_from_csv_mol(
+            _records_from_csv_mol(
                 dataset=dataset,
                 mol_dir=mol_dir,
                 property_col="Property",

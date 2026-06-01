@@ -2,7 +2,9 @@ from .loader import load_data
 from .dataset import load_dataset
 from .smiles import (
     SmilesDataResult,
+    predict_records_from_data,
     read_mol_coords,
+    records_from_direct_data,
     smiles_to_3d_coords,
     smiles_to_npy,
 )

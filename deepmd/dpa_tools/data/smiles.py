@@ -472,3 +472,111 @@ def smiles_to_npy(
         skipped_zero=skipped_zero,
         skipped_overlap=skipped_overlap,
     )
+
+
+def records_from_direct_data(
+    data: dict[str, Any],
+) -> tuple[list[_Record], list[dict[str, Any]]]:
+    atoms = data.get("atoms")
+    coordinates = data.get("coordinates")
+    targets = data.get("target", data.get("targets"))
+    if atoms is None or coordinates is None or targets is None:
+        raise ValueError("Direct training data requires atoms, coordinates, and target")
+    if not (len(atoms) == len(coordinates) == len(targets)):
+        raise ValueError("atoms, coordinates, and target must have the same length")
+    records = []
+    rows = []
+    for idx, (symbols, coords, target) in enumerate(zip(atoms, coordinates, targets)):
+        records.append(
+            (list(symbols), np.asarray(coords, dtype=np.float32), float(target), idx)
+        )
+        rows.append({"sample_id": idx, "target": float(target)})
+    return records, rows
+
+
+def predict_records_from_data(
+    data: dict[str, Any] | str | Path,
+    *,
+    property_col: str | None = "Property",
+    mol_dir: str | Path | None = None,
+    mol_template: str = "id{row}.mol",
+    smiles_col: str = "SMILES",
+) -> tuple[list[list[str]], list[np.ndarray], list[dict[str, Any]]]:
+    if isinstance(data, (str, Path)) or (isinstance(data, dict) and "dataset" in data):
+        dataset = Path(data if isinstance(data, (str, Path)) else data["dataset"])
+        mol_dir_value = (
+            mol_dir
+            if mol_dir is not None
+            else data.get("mol_dir")
+            if isinstance(data, dict)
+            else None
+        )
+        smiles_col_value = (
+            data.get("smiles_col", smiles_col) if isinstance(data, dict) else smiles_col
+        )
+        with dataset.open("r", encoding="utf-8") as fp:
+            rows = list(csv.DictReader(fp))
+        if rows and property_col is not None:
+            _find_column(list(rows[0].keys()), [property_col, "Property", "property"])
+        smiles_column = None
+        if mol_dir_value is None and rows:
+            smiles_column = _find_column(
+                list(rows[0].keys()), [smiles_col_value, "SMILES", "smiles"]
+            )
+        atoms: list[list[str]] = []
+        coords: list[np.ndarray] = []
+        kept_rows: list[dict[str, Any]] = []
+        for row_idx, row in enumerate(rows):
+            if mol_dir_value is None:
+                try:
+                    symbols, coord = smiles_to_3d_coords(
+                        row[smiles_column], random_seed=42 + row_idx
+                    )
+                except Exception as exc:
+                    warnings.warn(
+                        f"Skipping row {row_idx} during prediction because RDKit failed "
+                        f"to generate coordinates: {exc}",
+                        RuntimeWarning,
+                    )
+                    continue
+            else:
+                symbols, coord = read_mol_coords(
+                    Path(mol_dir_value) / mol_template.format(row=row_idx)
+                )
+            atoms.append(symbols)
+            coords.append(coord)
+            kept_rows.append(dict(row))
+        return atoms, coords, kept_rows
+
+    atoms_raw = data.get("atoms")
+    coords_raw = data.get("coordinates")
+    if atoms_raw is None or coords_raw is None:
+        raise ValueError("Prediction data requires atoms and coordinates")
+    atoms = [list(symbols) for symbols in atoms_raw]
+    coords = [np.asarray(coord, dtype=np.float32) for coord in coords_raw]
+    if len(atoms) != len(coords):
+        raise ValueError("atoms and coordinates must have the same length")
+    rows = [{"sample_id": idx} for idx in range(len(atoms))]
+    return atoms, coords, rows
+
+
+# ---------------------------------------------------------------------------
+# tiny utility
+# ---------------------------------------------------------------------------
+
+
+def _deep_merge(base: dict, updates: dict) -> dict:
+    """Recursively merge *updates* into a shallow copy of *base*."""
+    import copy
+
+    result = copy.deepcopy(base)
+    _deep_update(result, updates)
+    return result
+
+
+def _deep_update(target: dict, updates: dict) -> None:
+    for key, value in updates.items():
+        if isinstance(value, dict) and isinstance(target.get(key), dict):
+            _deep_update(target[key], value)
+        else:
+            target[key] = value

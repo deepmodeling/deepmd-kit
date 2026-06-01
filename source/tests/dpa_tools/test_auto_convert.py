@@ -113,12 +113,13 @@ class TestAutoConvertSmiles:
 
     def test_explicit_fmt_smiles_overrides_sniff(self, tmp_path):
         f = tmp_path / "mol.csv"
-        f.write_text("SMILES,val\nC,1.0\n")  # single atom, still valid
+        f.write_text("SMILES,val\nC,1.0\nCC,2.0\n")
         out = tmp_path / "npy2"
 
-        result = auto_convert(str(f), str(out), fmt="smiles")
+        result = auto_convert(str(f), str(out), fmt="smiles", property_col="val")
 
         assert result["method"] == "smiles"
+        assert result["samples_used"] == 2
 
 
 class TestAutoConvertStructure:
@@ -171,7 +172,7 @@ class TestSmoke:
         from deepmd.dpa_tools.data.loader import load_data
 
         f = tmp_path / "round.csv"
-        f.write_text("SMILES,Property\nCCO,1.5\n")
+        f.write_text("SMILES,Property\nCCO,1.5\nCN,2.0\n")
         out = tmp_path / "npy"
 
         result = auto_convert(
