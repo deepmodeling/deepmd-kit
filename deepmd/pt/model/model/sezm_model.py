@@ -449,7 +449,7 @@ _dynamo_cfg.optimize_ddp = False
 # Maps (structure_key..., training, do_atomic_virial, has_coord_corr) to the
 # compiled callable.  Tasks whose descriptor AND fitting-net first child have
 # the same Python-object identity (after share_params) reuse a single compiled
-# graph, avoiding N×compile-cache OOM and N DDP graph boundaries (NCCL timeout).
+# graph, avoiding Nx compile-cache OOM and N DDP graph boundaries (NCCL timeout).
 _SEZM_COMPILE_CACHE: dict[tuple, Any] = {}
 
 # Maps structure_key -> task_buf_order so every instance in the same group
@@ -1983,7 +1983,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         if _ss_mod is not None and hasattr(_ss_mod, "ShapeEnv"):
             _orig_se_init = _ss_mod.ShapeEnv.__init__
 
-            def _no_duck_shapeenv_init(self, *args, **kwargs):  # type: ignore[no-untyped-def]
+            def _no_duck_shapeenv_init(self: Any, *args: Any, **kwargs: Any) -> None:
                 kwargs.setdefault("duck_shape", False)
                 return _orig_se_init(self, *args, **kwargs)
 
