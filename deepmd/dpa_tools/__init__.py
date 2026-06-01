@@ -7,7 +7,15 @@ __version__ = "0.1.0"
 
 from .conditions import ConditionManager, DPAConditionError
 from .cv import cross_validate, train_test_split
-from .data import attach_labels, batch_convert, check_data, convert, load_dataset
+from .data import (
+    SmilesDataResult,
+    attach_labels,
+    batch_convert,
+    check_data,
+    convert,
+    load_dataset,
+    smiles_to_npy,
+)
 from .finetuner import DPAFineTuner, extract_descriptors
 from .mft import MFTFineTuner
 from .predictor import DPAPredictor
@@ -20,6 +28,7 @@ __all__ = [
     "DPAPredictor",
     "DPATrainer",
     "MFTFineTuner",
+    "SmilesDataResult",
     "attach_labels",
     "batch_convert",
     "check_data",
@@ -27,5 +36,6 @@ __all__ = [
     "cross_validate",
     "extract_descriptors",
     "load_dataset",
+    "smiles_to_npy",
     "train_test_split",
 ]

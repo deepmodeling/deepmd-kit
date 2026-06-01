@@ -1,5 +1,11 @@
 from .loader import load_data
 from .dataset import load_dataset
+from .smiles import (
+    SmilesDataResult,
+    read_mol_coords,
+    smiles_to_3d_coords,
+    smiles_to_npy,
+)
 from .type_map import (
     read_checkpoint_type_map,
     read_data_type_map_union,
@@ -21,4 +27,8 @@ __all__ = [
     "check_data",
     "Issue",
     "DPADataError",
+    "SmilesDataResult",
+    "read_mol_coords",
+    "smiles_to_3d_coords",
+    "smiles_to_npy",
 ]

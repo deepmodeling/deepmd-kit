@@ -240,6 +240,28 @@ def _cmd_data_attach_labels(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_data_convert_smiles(args: argparse.Namespace) -> int:
+    from deepmd.dpa_tools.data.smiles import smiles_to_npy
+
+    result = smiles_to_npy(
+        data={"dataset": args.dataset, "mol_dir": args.mol_dir},
+        output_dir=args.output,
+        property_name=args.property_name,
+        property_col=args.property_col,
+        train_ratio=args.train_ratio,
+        smiles_col=args.smiles_col,
+        seed=args.seed,
+        overwrite=args.overwrite,
+    )
+    print(f"Train systems: {len(result.train_systems)}")
+    print(f"Valid systems: {len(result.valid_systems)}")
+    print(f"Type map     : {result.type_map}")
+    print(f"Samples used : {result.samples_used}")
+    if result.failed_rows:
+        print(f"Failed rows  : {len(result.failed_rows)}")
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # Dispatch table
 # ---------------------------------------------------------------------------
@@ -256,6 +278,7 @@ _DISPATCH = {
 _DATA_DISPATCH = {
     "convert": _cmd_data_convert,
     "batch-convert": _cmd_data_batch_convert,
+    "convert-smiles": _cmd_data_convert_smiles,
     "validate": _cmd_data_validate,
     "attach-labels": _cmd_data_attach_labels,
 }

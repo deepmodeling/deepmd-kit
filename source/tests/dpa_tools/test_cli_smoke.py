@@ -54,7 +54,10 @@ class TestDpaParserRegistration:
             a for a in data_parser._actions if a.dest == "dpa_data_command"
         )
         data_verbs = sorted(data_sub_action.choices)
-        for expected in ("convert", "batch-convert", "validate", "attach-labels"):
+        for expected in (
+            "convert", "batch-convert", "convert-smiles",
+            "validate", "attach-labels",
+        ):
             assert expected in data_verbs, f"{expected!r} missing from {data_verbs}"
 
 
