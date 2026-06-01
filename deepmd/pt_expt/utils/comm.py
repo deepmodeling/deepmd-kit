@@ -35,6 +35,8 @@ from __future__ import (
 
 import torch
 
+_registered: bool = False
+
 
 def _check_underlying_ops_loaded() -> None:
     """Surface a clearer error when libdeepmd_op_pt.so isn't loaded.
@@ -89,15 +91,11 @@ def _check_underlying_ops_loaded() -> None:
         )
 
 
-_check_underlying_ops_loaded()
-
-
 # ---------------------------------------------------------------------------
 # Fake (meta) impls — let make_fx / torch.export trace through.
 # ---------------------------------------------------------------------------
 
 
-@torch.library.register_fake("deepmd_export::border_op")
 def _border_op_fake(
     sendlist: torch.Tensor,
     sendproc: torch.Tensor,
@@ -112,7 +110,6 @@ def _border_op_fake(
     return torch.empty_like(g1)
 
 
-@torch.library.register_fake("deepmd_export::border_op_backward")
 def _border_op_backward_fake(
     sendlist: torch.Tensor,
     sendproc: torch.Tensor,
@@ -193,8 +190,37 @@ def _border_op_backward(
     )
 
 
-torch.library.register_autograd(
-    "deepmd_export::border_op",
-    _border_op_backward,
-    setup_context=_border_op_setup_context,
-)
+def ensure_comm_registered() -> None:
+    """Load libdeepmd_op_pt.so and register fake/autograd metadata for border_op.
+
+    Idempotent — safe to call multiple times.  Must be called before any
+    ``make_fx`` / ``torch.export`` trace that passes through border_op (i.e.
+    before the ``with_comm_dict=True`` export path in serialization.py).
+
+    Kept lazy (not called at import time) so that merely importing
+    ``deepmd.pt_expt.utils`` does not force-load libdeepmd_op_pt.so and
+    disrupt fake-op registration order in tests that don't exercise the comm
+    path at all.
+    """
+    global _registered
+    if _registered:
+        return
+    _check_underlying_ops_loaded()
+    try:
+        torch.library.register_fake("deepmd_export::border_op")(_border_op_fake)
+    except RuntimeError as e:
+        if "already has" not in str(e) and "already registered" not in str(e):
+            raise
+    try:
+        torch.library.register_fake("deepmd_export::border_op_backward")(
+            _border_op_backward_fake
+        )
+    except RuntimeError as e:
+        if "already has" not in str(e) and "already registered" not in str(e):
+            raise
+    torch.library.register_autograd(
+        "deepmd_export::border_op",
+        _border_op_backward,
+        setup_context=_border_op_setup_context,
+    )
+    _registered = True
