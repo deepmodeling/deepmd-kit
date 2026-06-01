@@ -131,7 +131,7 @@ def _detect_task_buffers(
     return result
 
 
-def _get_model_structure_key(model: torch.nn.Module) -> tuple:
+def _get_model_structure_key(model: torch.nn.Module) -> tuple[int, ...]:
     """Return a key that is identical iff two tasks can safely share a compiled graph.
 
     The key captures both the descriptor identity and the fitting-net
@@ -139,38 +139,36 @@ def _get_model_structure_key(model: torch.nn.Module) -> tuple:
     descriptors (which bake distinct descriptor constants into the traced
     graph) are never assigned the same compiled graph.
 
-    Descriptor identity is determined by the tuple of ids of the descriptor's
-    direct child modules.  ``share_params`` replaces submodule references
-    in-place (``self._modules[k] = base._modules[k]``), so after full sharing
-    (level 0) all direct children of two descriptor instances are the same
-    Python objects → same id tuple → same structure key.  After partial
-    sharing (level 1, type-embedding only) the main block (se_atten,
-    repflows, repinit/repformers, …) is a different object → different tuple
-    → separate compiled graph.  Using child module ids rather than parameter
-    ids avoids iterating thousands of tensors while remaining correct for all
-    pt_expt descriptor types.
+    Descriptor identity uses the id of the first shared parameter tensor.
+    ``share_params`` makes descriptor *parameters* the same Python objects
+    across tasks while the descriptor modules remain distinct.  Two
+    descriptors sharing params therefore collapse to the same key here.
+    Partial sharing (shared_level=1, type-embedding only) is detected in
+    ``_compile_model`` and raises an explicit error rather than silently
+    producing a wrong compiled graph.
 
     After ``share_params``, the fitting net's child sub-modules are the same
     Python objects across tasks, so ``id(first_child)`` is equal for all
     shared tasks and unique across unrelated models.
     """
-    descriptor_key: tuple
+    descriptor_id: int = 0
     try:
         desc = model.get_descriptor()
-        # Tuple of direct-child module ids: same for fully-shared descriptors,
-        # different for partially-shared or independent descriptors.
-        child_ids = tuple(id(m) for _, m in desc.named_children())
-        descriptor_key = child_ids if child_ids else (id(desc),)
+        for _, p in desc.named_parameters():
+            descriptor_id = id(p)
+            break
+        else:
+            descriptor_id = id(desc)
     except AttributeError:
-        descriptor_key = ()
+        pass
 
     try:
         fitting = model.get_fitting_net()
         for _, child in fitting.named_children():
-            return (descriptor_key, id(child))
+            return (descriptor_id, id(child))
     except AttributeError:
         pass
-    return (descriptor_key, id(model))
+    return (descriptor_id, id(model))
 
 
 # ---------------------------------------------------------------------------
@@ -1159,6 +1157,42 @@ class Trainer:
             sk = _get_model_structure_key(wrapper_mod.model[task_key])
             _key_for[task_key] = sk
             _groups[sk].append(task_key)
+
+        # Warn if tasks share a compiled graph but have partially shared
+        # descriptors (e.g. shared_level=1: type_embedding shared, main block
+        # task-local).  The structure key uses the first descriptor parameter
+        # id; when that parameter comes from the shared type_embedding, partial
+        # sharing is indistinguishable from full sharing here, and the compiled
+        # graph will bake the first task's main-block constants for all tasks.
+        # This combination is unsupported — use shared_level=0 or disable compile.
+        for group_keys in _groups.values():
+            if len(group_keys) < 2:
+                continue
+            try:
+                base_ids = frozenset(
+                    id(p)
+                    for p in wrapper_mod.model[group_keys[0]].get_descriptor().parameters()
+                )
+            except AttributeError:
+                continue
+            for other_key in group_keys[1:]:
+                try:
+                    other_ids = frozenset(
+                        id(p)
+                        for p in wrapper_mod.model[other_key].get_descriptor().parameters()
+                    )
+                except AttributeError:
+                    continue
+                if base_ids != other_ids:
+                    log.warning(
+                        "Tasks %r and %r share a compiled graph but have partially "
+                        "shared descriptors (e.g. shared_level=1). The compiled graph "
+                        "bakes the first task's descriptor constants and will produce "
+                        "wrong results for subsequent tasks. "
+                        "Use shared_level=0 or set 'enable_compile: false'.",
+                        group_keys[0],
+                        other_key,
+                    )
 
         _task_bufs_for: dict[str, dict[str, torch.Tensor]] = {}
         for group_keys in _groups.values():
