@@ -131,7 +131,7 @@ def _detect_task_buffers(
     return result
 
 
-def _get_model_structure_key(model: torch.nn.Module) -> tuple[int, ...]:
+def _get_model_structure_key(model: torch.nn.Module) -> tuple:
     """Return a key that is identical iff two tasks can safely share a compiled graph.
 
     The key captures both the descriptor identity and the fitting-net
@@ -139,34 +139,36 @@ def _get_model_structure_key(model: torch.nn.Module) -> tuple[int, ...]:
     descriptors (which bake distinct descriptor constants into the traced
     graph) are never assigned the same compiled graph.
 
+    Descriptor identity is determined by the frozenset of all parameter
+    tensor ids rather than the descriptor module id.  ``share_params`` leaves
+    descriptor modules as distinct Python objects while making their parameter
+    tensors the same objects.  Using the full frozenset (not just the first
+    parameter) correctly handles partial sharing: e.g. shared_level==1 on
+    DPA1/DPA2/DPA3/SE_T_TEBD shares only the type-embedding while leaving
+    the main block (se_atten, repinit/repformers, repflows, se_ttebd, …)
+    task-local.  Two partially-shared descriptors therefore produce different
+    frozensets and receive separate compiled graphs, whereas fully-shared
+    descriptors produce identical frozensets and safely reuse one graph.
+
     After ``share_params``, the fitting net's child sub-modules are the same
     Python objects across tasks, so ``id(first_child)`` is equal for all
     shared tasks and unique across unrelated models.
     """
-    # Use the first shared parameter tensor's id rather than the descriptor
-    # object's id: share_params makes descriptor *parameters* the same Python
-    # objects across tasks while the descriptor modules remain distinct.
-    # Two descriptors sharing params therefore collapse to the same key here,
-    # which is exactly what we want (same compiled graph).  Truly independent
-    # descriptors have distinct param objects and get distinct keys.
-    descriptor_id: int = 0
+    descriptor_key: frozenset | int = 0
     try:
         desc = model.get_descriptor()
-        for _, p in desc.named_parameters():
-            descriptor_id = id(p)
-            break
-        else:
-            descriptor_id = id(desc)
+        param_ids = frozenset(id(p) for p in desc.parameters())
+        descriptor_key = param_ids if param_ids else id(desc)
     except AttributeError:
         pass
 
     try:
         fitting = model.get_fitting_net()
         for _, child in fitting.named_children():
-            return (descriptor_id, id(child))
+            return (descriptor_key, id(child))
     except AttributeError:
         pass
-    return (descriptor_id, id(model))
+    return (descriptor_key, id(model))
 
 
 # ---------------------------------------------------------------------------
