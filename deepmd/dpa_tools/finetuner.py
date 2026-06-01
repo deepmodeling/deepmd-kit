@@ -10,6 +10,13 @@ from typing import List, Optional, Union
 import dpdata
 import numpy as np
 
+from deepmd.dpa_tools._backend import (
+    _DescriptorExtraction,
+    build_model_from_config,
+    get_torch_device,
+    load_torch_file,
+    resolve_model_branch,
+)
 from deepmd.dpa_tools.conditions import ConditionManager, DPAConditionError
 from deepmd.dpa_tools.data.errors import DPADataError
 from deepmd.dpa_tools.data.loader import load_data, _resolve_label_key, _get_source
@@ -335,13 +342,8 @@ class DPAFineTuner:
     def _load_descriptor_model(self):
         """Load the pretrained DPA checkpoint and return a (non-JIT) ModelWrapper."""
         import torch
-        from deepmd.pt.model.model import get_model
-        from deepmd.pt.train.wrapper import ModelWrapper
-        from deepmd.utils.model_branch_dict import get_model_dict
 
-        state_dict = torch.load(
-            self.pretrained, map_location="cpu", weights_only=False
-        )
+        state_dict = load_torch_file(self.pretrained)
         if "model" in state_dict:
             state_dict = state_dict["model"]
 
@@ -349,7 +351,7 @@ class DPAFineTuner:
 
         if "model_dict" in input_param:
             # Multi-task checkpoint: select the right branch
-            model_alias_dict, _ = get_model_dict(input_param["model_dict"])
+            model_alias_dict, _ = resolve_model_branch(input_param["model_dict"])
             head = self.model_branch or "Omat24"
 
             # Case-insensitive fallback
@@ -379,12 +381,11 @@ class DPAFineTuner:
         self._checkpoint_type_map = list(input_param.get("type_map", []))
 
         # Build model WITHOUT JIT so that eval_descriptor_hook works
-        model = get_model(input_param)
-        wrapper = ModelWrapper(model)
+        wrapper = build_model_from_config(input_param)
         wrapper.load_state_dict(state_dict)
         wrapper.eval()
 
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        device = get_torch_device()
         wrapper = wrapper.to(device)
         self._device = device
         return wrapper
@@ -526,17 +527,15 @@ class DPAFineTuner:
         if self._model is None:
             self._model = self._load_descriptor_model()
 
-        wrapper      = self._model
-        inner_model  = wrapper.model["Default"]
-        atomic_model = inner_model.atomic_model
-        atomic_model.set_eval_descriptor_hook(True)
+        extractor = _DescriptorExtraction(self._model)
+        extractor._enable_hook()
 
         all_features = []
 
         for system in systems:
             coords, boxes, atom_types = _load_npy_system(system)
             n_frames = coords.shape[0]
-            n_atoms  = len(atom_types)
+            n_atoms = len(atom_types)
 
             # Remap local atom-type indices to checkpoint-global indices.
             atom_types_global = self._remap_atom_types(atom_types, system)
@@ -545,10 +544,7 @@ class DPAFineTuner:
             # the descriptor produces NaN in that case.
             # Use a large 100 Å cubic box instead.
             if boxes is None:
-                boxes = (
-                    np.tile(np.eye(3) * 100.0, (n_frames, 1))
-                    .reshape(n_frames, 9)
-                )
+                boxes = np.tile(np.eye(3) * 100.0, (n_frames, 1)).reshape(n_frames, 9)
 
             # coord requires grad: forward_common calls autograd.grad
             # internally to compute forces, which fails under no_grad.
@@ -562,12 +558,8 @@ class DPAFineTuner:
             )
             box_t = torch.tensor(boxes, dtype=torch.float64, device=self._device)
 
-            # Clear accumulator before each system's forward pass
-            atomic_model.eval_descriptor_list.clear()
-            inner_model.forward_common(coord_t, atype_t, box_t)
-
             # Shape: (n_frames, n_atoms, feat_dim)
-            descrpt = atomic_model.eval_descriptor().detach()
+            descrpt = extractor._run_forward(coord_t, atype_t, box_t)
             if self.pooling == "mean":
                 feat = descrpt.mean(dim=1)
             elif self.pooling == "sum":
@@ -580,15 +572,13 @@ class DPAFineTuner:
                 mean = descrpt.mean(dim=1)
                 std = torch.nan_to_num(descrpt.std(dim=1), nan=0.0)
                 feat = torch.cat([
-                mean,
-                std,
-                descrpt.max(dim=1).values,
-                descrpt.min(dim=1).values,
+                    mean, std,
+                    descrpt.max(dim=1).values, descrpt.min(dim=1).values,
                 ], dim=-1)
             feat = torch.nan_to_num(feat, nan=0.0, posinf=0.0, neginf=0.0)
             all_features.append(feat.cpu().numpy())
 
-        atomic_model.set_eval_descriptor_hook(False)
+        extractor._disable_hook()
         return np.concatenate(all_features, axis=0)
 
     # -----------------------------------------------------------------------
@@ -902,22 +892,22 @@ class DPAFineTuner:
                 "Train the model with fit() first."
             )
 
-        import torch
-
         bundle = {
-            "pretrained":     self.pretrained,
-            "model_branch":   self.model_branch,
-            "predictor":      self.predictor,
-            "target_key":     self._target_key,
-            "type_map":       self.type_map,
-            "task_dim":       self._task_dim,
-            "predictor_type": self._predictor_type,
-            "pooling":        self.pooling,
+            "format_version":  1,
+            "pretrained":      self.pretrained,
+            "model_branch":    self.model_branch,
+            "predictor":       self.predictor,
+            "target_key":      self._target_key,
+            "type_map":        self.type_map,
+            "task_dim":        self._task_dim,
+            "predictor_type":  self._predictor_type,
+            "pooling":         self.pooling,
             "condition_manager": self._condition_manager,
         }
 
         output_path = str(output_path)
         os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+        import torch
         torch.save(bundle, output_path)
         print(f"Frozen model saved to: {output_path}")
         return output_path

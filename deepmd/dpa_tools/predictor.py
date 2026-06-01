@@ -39,9 +39,18 @@ class DPAPredictor:
     """
 
     def __init__(self, model_path: str, n_committee: int = 1):
-        import torch
+        from deepmd.dpa_tools._backend import load_torch_file
 
-        bundle = torch.load(model_path, map_location="cpu", weights_only=False)
+        bundle = load_torch_file(model_path)
+
+        # Reject bundles from future versions we cannot read.
+        fmt = bundle.get("format_version")
+        if fmt is not None and fmt != 1:
+            raise ValueError(
+                f"Unsupported frozen-model format version {fmt}. "
+                "This version of dpa_tools only supports format_version 1. "
+                "Re-freeze the model with the current dpa_tools version."
+            )
 
         # Detect models frozen with dpa_tools <0.2 (missing modern metadata).
         if "predictor" in bundle and "pooling" not in bundle:
