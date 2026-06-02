@@ -181,6 +181,22 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
             to_numpy_array(ret0["energy"]), ret2["energy"], atol=0.001, rtol=0.001
         )
 
+    def test_forward_atomic_accepts_leaf_view_input(self) -> None:
+        args = [
+            to_torch_tensor(ii) for ii in [self.coord_ext, self.atype_ext, self.nlist]
+        ]
+        coord = args[0]
+        coord_view = coord.view(self.nf, self.nall, 3)
+        coord_view_before = coord_view.detach().clone()
+        self.assertTrue(coord.is_leaf)
+        self.assertTrue(coord_view._is_view())
+        args[0] = coord_view
+        ret = self.md0.forward_atomic(*args)
+
+        self.assertFalse(coord_view.requires_grad)
+        torch.testing.assert_close(coord_view, coord_view_before)
+        self.assertIn("energy", ret)
+
     def test_forward_atomic_preserves_grad_enabled_input(self) -> None:
         args = [
             to_torch_tensor(ii) for ii in [self.coord_ext, self.atype_ext, self.nlist]
