@@ -601,6 +601,67 @@ def _check_compile_torch_version() -> None:
         )
 
 
+def _is_prime(n: int) -> bool:
+    """Return True when ``n`` is a prime integer (``n >= 2``)."""
+    if n < 2:
+        return False
+    if n < 4:
+        return True
+    if n % 2 == 0:
+        return False
+    k = 3
+    while k * k <= n:
+        if n % k == 0:
+            return False
+        k += 2
+    return True
+
+
+def _next_safe_prime(start: int, forbidden: set[int]) -> int:
+    """Return the smallest prime ``>= max(start, 5)`` not in ``forbidden``.
+
+    Used by :meth:`SeZMModel.trace_and_compile` to choose collision-free
+    trace-time sizes for ``nf``, ``nall`` and ``nloc``.  Primes ``>= 5``
+    avoid every dim PyTorch specializes on (``1`` → broadcasting,
+    ``2``/``3``/``9`` → Cartesian / virial / charge_spin literals baked
+    into model code) and guarantee distinct values, which suppresses
+    make_fx's duck-shape unification without needing the
+    ``ShapeEnv(duck_shape=False)`` patch.
+    """
+    n = max(start, 5)
+    while not _is_prime(n) or n in forbidden:
+        n += 1
+    return n
+
+
+def _trace_pad_dim(t: torch.Tensor, dim: int, target: int) -> torch.Tensor:
+    """Pad or trim ``t`` along ``dim`` so ``t.shape[dim] == target``.
+
+    Padding duplicates the last slice along ``dim``; trimming drops
+    trailing slices.  Used to coerce real-data trace inputs into the
+    prime-numbered shapes chosen by :func:`_next_safe_prime`.
+
+    Duplicating the last slice preserves valid index values inside
+    index-bearing tensors (``nlist`` neighbor indices, ``mapping``
+    extended-to-local indices) because the duplicated row reuses the
+    previously-valid row's values.  Trimming likewise never invalidates
+    indices.  Only shapes flow downstream during ``make_fx`` tracing,
+    so the exact replicated/trimmed values do not affect the FX graph.
+    """
+    cur = int(t.shape[dim])
+    if cur == target:
+        return t
+    if cur > target:
+        sl: list[slice] = [slice(None)] * t.ndim
+        sl[dim] = slice(None, target)
+        return t[tuple(sl)]
+    sl = [slice(None)] * t.ndim
+    sl[dim] = slice(-1, None)
+    last = t[tuple(sl)]
+    repeats = target - cur
+    return torch.cat([t, *([last] * repeats)], dim=dim)
+
+
 def _strip_saved_tensor_detach(gm: torch.fx.GraphModule) -> None:
     """Strip ``aten.detach`` nodes that ``make_fx`` inserts for saved tensors.
 
@@ -1833,88 +1894,92 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 finally:
                     _restore_task_bufs(_saved)
 
-        # NOTE: Always trace with a fixed batch size that is free of known
-        # symbolic-shape collisions.
+        # NOTE: Choose trace shapes that are pairwise-distinct primes >= 5.
         #
-        # make_fx(tracing_mode="symbolic") replaces shapes with sympy
-        # symbols, but the moment a symbolic dim ends up equal to a
-        # *concrete* dim elsewhere in the same tensor it collapses into
-        # a constant and the graph specialises on that batch size. Known
-        # reserved dimensions include 1 (specialisation), 2 (charge/spin
-        # width), 3 (Cartesian coordinates), and 9 (virial tensor). Any
-        # of those collisions forces
-        # ``torch.compile(dynamic=True)`` to reject later batches whose
-        # nf differs from the traced constant.
+        # ``make_fx(tracing_mode="symbolic")`` introduces a sympy symbol per
+        # input dim.  Two failure modes follow if those dims accidentally
+        # match each other or hit a PyTorch-internal "special" value:
         #
-        # The same aliasing hazard applies to the nloc / nsel axes of the
-        # nlist tensor (shape [nf, nloc, nsel]).  When nloc == nsel in the
-        # trace inputs, make_fx folds them into a single symbol and the
-        # compiled kernel hard-codes nloc = nsel for every future call.
-        # This causes wrong energy/force shapes whenever a later batch
-        # arrives with nloc != nsel (only reproducible when a training
-        # task happens to have nloc == nsel in its first batch).
-        # Fix: drop one local atom row from the trace nlist so that
-        # nlist_for_trace.shape[1] = nloc - 1 != nsel.  The nsel dimension
-        # is untouched so format_nlist takes the same no-op case-1 path.
+        # * Duck-shape unification: two input dims that share a concrete
+        #   value at trace time get the SAME sympy symbol, baking an
+        #   equality (``nloc == ntypes``, ``nloc == nall``, ...) the
+        #   compiled graph will violate on later batches.
+        # * Size specialization: dims equal to ``1`` are baked as literal
+        #   ``1`` regardless of duck-shape; values ``2``/``3``/``9`` are
+        #   commonly literals inside the model (charge/spin width,
+        #   Cartesian, virial) and may be unified with input symbols by
+        #   ShapeEnv even with duck-shape off.
         #
-        # Task-buffer aliasing: task-specific buffers (out_bias, bias_atom_e,
-        # case_embd) are passed as extra arguments and also have static shapes.
-        # If trace_nf equals any of those static dims, make_fx would unify the
-        # nf symbol with that static dim — baking nf == static_dim into every
-        # compiled kernel.  We therefore collect all static buffer dims and
-        # increment trace_nf until it is free of all conflicts.
-        _reserved_dims = {1, 2, 3, 9}
-        _static_buf_dims: set[int] = set()
+        # Picking pairwise-distinct primes ``>= 5`` for ``nf``, ``nall``,
+        # ``nloc`` rules out both failure modes in one stroke: no two
+        # symbols can fuse (distinct values), and no symbol can hit a
+        # special literal (``5+`` primes skip ``1``/``2``/``3``/``9``).
+        # ``nsel``, ``dim_fparam``, ``dim_aparam`` and ``dim_chg_spin`` are
+        # contractually fixed by the model and added to the forbidden set
+        # so the chosen primes never collide with them either.
+        _forbidden: set[int] = {1, 2, 3, 9}
         for _tbv in task_buf_vals_trace:
             for _d in _tbv.shape:
                 if _d > 1:
-                    _static_buf_dims.add(_d)
-        trace_nf = 5
-        while trace_nf in _reserved_dims or trace_nf in _static_buf_dims:
-            trace_nf += 1
+                    _forbidden.add(int(_d))
+        # Model-contracted dims kept at their real values (changing them
+        # would break the model's own assertions about ``sel``, fparam /
+        # aparam widths, charge_spin dim).  Add to forbidden so primes
+        # picked for free dims do not collide.
+        _nsel_real = int(nlist.shape[2])
+        _dim_fp = int(fp.shape[1])
+        _dim_ap = int(ap.shape[2])
+        _dim_cs = int(charge_spin.shape[1])
+        for _d in (_nsel_real, _dim_fp, _dim_ap, _dim_cs):
+            if _d > 1:
+                _forbidden.add(_d)
+        # Pick primes in physical order ``nf < nloc < nall``.  The order
+        # ``trace_nloc < trace_nall`` matters: the model slices
+        # ``extended_atype[:, :nloc]`` to get local atoms; if
+        # ``trace_nloc > trace_nall`` the slice silently truncates at
+        # trace time, breaking the captured symbolic shape relation
+        # ``atype.shape[1] == nloc``.
+        trace_nf = _next_safe_prime(5, _forbidden)
+        _forbidden.add(trace_nf)
+        trace_nloc = _next_safe_prime(trace_nf + 1, _forbidden)
+        _forbidden.add(trace_nloc)
+        trace_nall = _next_safe_prime(trace_nloc + 1, _forbidden)
 
-        coord_for_trace = extended_coord[:1].repeat(trace_nf, 1, 1)
-        atype_for_trace = extended_atype[:1].repeat(trace_nf, 1)
-        nlist_for_trace = nlist[:1].repeat(trace_nf, 1, 1)
-        if nlist_for_trace.shape[1] == nlist_for_trace.shape[2]:
-            # nloc == nsel: drop one local atom row so that dim-1 (nloc-1)
-            # differs from dim-2 (nsel), breaking the symbolic aliasing without
-            # altering the nsel dimension or the format_nlist code path.
-            # torch.compile(dynamic=True) treats nloc as fully dynamic, so the
-            # compiled graph works correctly for all nloc at runtime.
-            nlist_for_trace = nlist_for_trace[:, :-1, :]
-        # NOTE: Anti-alias nloc against promoted buffer dims.
-        # The promoted task buffers (out_bias, bias_atom_e, case_embd) are now
-        # FX placeholder inputs with their own symbolic dims.  If nloc at trace
-        # time equals ntypes (out_bias/bias_atom_e dim) or dim_case_embd
-        # (case_embd dim), make_fx's ShapeEnv unifies the symbols and the
-        # compiled graph specialises on nloc == that_value.  Every training
-        # batch with a different nloc then fails the guard and triggers a full
-        # Dynamo/Inductor recompile — NCCL timeout when one rank recompiles
-        # while others wait at allreduce.  Dropping a row from the nlist
-        # changes the traced nloc without touching nsel or extended-atom dims,
-        # so the model's internal indexing paths are unaffected.
-        # NOTE: Anti-alias nloc against nall.  When the first batch for a task
-        # has nloc == nall (a non-PBC frame with no ghost atoms), make_fx's
-        # duck sizing unifies the nloc symbol (nlist.shape[1]) with the nall
-        # symbol (extended_coord.shape[1]).  The compiled graph then reads the
-        # slice end of ``extended_coord[:, :nloc]`` / ``extended_atype[:, :nloc]``
-        # from the nall source, so every later PBC batch yields energy/force
-        # shaped [nf, nall, ...] instead of [nf, nloc, ...].  Dropping a local
-        # atom row makes nloc_trace = nall_trace - 1, breaking the merge.
-        _nall_trace = coord_for_trace.shape[1]
-        _trace_nloc = nlist_for_trace.shape[1]
-        while _trace_nloc > 1 and (
-            _trace_nloc in _static_buf_dims
-            or _trace_nloc in _reserved_dims
-            or _trace_nloc == _nall_trace
-        ):
-            nlist_for_trace = nlist_for_trace[:, :-1, :]
-            _trace_nloc = nlist_for_trace.shape[1]
-        mapping_for_trace = mapping[:1].repeat(trace_nf, 1)
-        fp_for_trace = fp[:1].repeat(trace_nf, 1)
-        ap_for_trace = ap[:1].repeat(trace_nf, 1, 1)
-        charge_spin_for_trace = charge_spin[:1].repeat(trace_nf, 1)
+        # Build trace inputs by padding/trimming real-data tensors into
+        # the chosen prime shapes.  ``_trace_pad_dim`` duplicates the
+        # last slice when padding so index-bearing tensors (``nlist``
+        # neighbor indices, ``mapping`` extended-to-local indices) keep
+        # valid values -- the duplicated row references the same atoms
+        # the previous row referenced.
+        coord_for_trace = _trace_pad_dim(extended_coord[:1], 0, trace_nf)
+        coord_for_trace = _trace_pad_dim(coord_for_trace, 1, trace_nall)
+        atype_for_trace = _trace_pad_dim(extended_atype[:1], 0, trace_nf)
+        atype_for_trace = _trace_pad_dim(atype_for_trace, 1, trace_nall)
+        nlist_for_trace = _trace_pad_dim(nlist[:1], 0, trace_nf)
+        nlist_for_trace = _trace_pad_dim(nlist_for_trace, 1, trace_nloc)
+        # Real nlist values are in ``[-1, real_nall)`` (``-1`` marks
+        # padded slots, non-negative entries index into extended_coord).
+        # After trimming ``nall`` down to ``trace_nall`` some of those
+        # values can exceed ``trace_nall``, which would produce
+        # out-of-range gather indices in ``coord_flat.index_select(0,
+        # src_ext)`` during the trace pass.  Clamp the upper bound to
+        # ``trace_nall - 1`` (the ``-1`` padding stays untouched since
+        # clamp only caps the high side).
+        nlist_for_trace = torch.clamp(nlist_for_trace, max=trace_nall - 1)
+        mapping_for_trace = _trace_pad_dim(mapping[:1], 0, trace_nf)
+        mapping_for_trace = _trace_pad_dim(mapping_for_trace, 1, trace_nall)
+        # Real mapping values are in ``[0, real_nloc)``.  If
+        # ``trace_nloc < real_nloc`` they can exceed ``trace_nloc`` and
+        # silently propagate into ``src_local`` (used as a local-atom
+        # index downstream).  Clamp to ``trace_nloc - 1``.
+        mapping_for_trace = torch.clamp(
+            mapping_for_trace, min=0, max=trace_nloc - 1
+        )
+        fp_for_trace = _trace_pad_dim(fp[:1], 0, trace_nf)
+        ap_for_trace = _trace_pad_dim(ap[:1], 0, trace_nf)
+        ap_for_trace = _trace_pad_dim(ap_for_trace, 1, trace_nloc)
+        charge_spin_for_trace = _trace_pad_dim(charge_spin[:1], 0, trace_nf)
+
         trace_args = [
             coord_for_trace,
             atype_for_trace,
@@ -1925,7 +1990,9 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             charge_spin_for_trace,
         ]
         if extended_coord_corr is not None:
-            trace_args.append(extended_coord_corr[:1].repeat(trace_nf, 1, 1))
+            corr_for_trace = _trace_pad_dim(extended_coord_corr[:1], 0, trace_nf)
+            corr_for_trace = _trace_pad_dim(corr_for_trace, 1, trace_nall)
+            trace_args.append(corr_for_trace)
         # Append task-buffer values last so they map to the *task_buf_vals
         # varargs in compute_fn.  Their shapes are static (they don't vary
         # batch-to-batch), so passing the actual tensors is correct; make_fx
@@ -1952,52 +2019,12 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         # FakeTensors, so we need concrete values to resolve their
         # control flow exactly once; shapes become symbolic immediately
         # afterwards.
-        # NOTE: Disable duck sizing for the symbolic trace.
-        # make_fx builds a ShapeEnv whose ``create_symbol`` defaults every input
-        # dim to ``DimDynamic.DUCK``: with duck sizing on (the default), any two
-        # dims sharing a concrete value at trace time are assigned the SAME sympy
-        # symbol.  That is the root of every "dim X got the size of dim Y" bug
-        # here -- nloc==nall, nloc==nsel, nall==ntypes, nf==static_buf_dim all
-        # silently fuse two axes and bake an equality the later batches violate.
-        # The trim hacks above only patch the handful of pairs we anticipated;
-        # turning duck sizing off gives every axis an independent symbol so e.g.
-        # ``extended_coord[:, :nloc]`` stays parametric on nloc no matter how the
-        # trace batch's sizes coincide.
-        #
-        # ShapeEnv reads ``self.duck_shape`` as the global switch, but in torch
-        # 2.11 there is no longer a ``_config.duck_shape`` knob nor an explicit
-        # ``__init__`` parameter -- it only flows in as a ``**kwargs`` entry
-        # forwarded to the internal init (``ShapeEnv(duck_shape=False)`` works).
-        # make_fx constructs the ShapeEnv with no args, so the only portable hook
-        # is to wrap ``ShapeEnv.__init__`` on the class object and inject
-        # ``duck_shape=False`` for the duration of this trace.  Patching the
-        # class method covers every reference (proxy_tensor imported the same
-        # class object).  Restored in ``finally`` so the later
-        # torch.compile / inductor stage and any other ShapeEnv are unaffected.
-        _ss_mod = None
-        _orig_se_init = None
-        try:
-            import torch.fx.experimental.symbolic_shapes as _ss_mod  # type: ignore[no-redef]
-        except Exception:
-            _ss_mod = None
-        if _ss_mod is not None and hasattr(_ss_mod, "ShapeEnv"):
-            _orig_se_init = _ss_mod.ShapeEnv.__init__
-
-            def _no_duck_shapeenv_init(self: Any, *args: Any, **kwargs: Any) -> None:
-                kwargs.setdefault("duck_shape", False)
-                return _orig_se_init(self, *args, **kwargs)
-
-            _ss_mod.ShapeEnv.__init__ = _no_duck_shapeenv_init
-        try:
-            traced = make_fx(
-                compute_fn,
-                tracing_mode="symbolic",
-                _allow_non_fake_inputs=True,
-                decomposition_table=decomp_table,
-            )(*trace_args)
-        finally:
-            if _orig_se_init is not None:
-                _ss_mod.ShapeEnv.__init__ = _orig_se_init
+        traced = make_fx(
+            compute_fn,
+            tracing_mode="symbolic",
+            _allow_non_fake_inputs=True,
+            decomposition_table=decomp_table,
+        )(*trace_args)
 
         # NOTE: Only strip autograd-inserted detach chains in training
         # mode.  With ``create_graph=True`` make_fx wraps every saved
@@ -2351,7 +2378,6 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             Boolean mask with shape (E+1,).  The trailing element is ``False``.
         """
         nf, nloc, nsel = nlist.shape
-        n_actual = nf * nloc
         device = extended_coord.device
         nall = extended_coord.shape[1]
         descriptor_model = self.atomic_model.descriptor
@@ -2369,12 +2395,23 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         # ``torch.where(valid_flat, neighbor_flat, 0)`` sanitises padded
         # ``-1`` entries before indexing so we never hit an out-of-range
         # gather; the corresponding edges are filtered out below anyway.
-        dst_actual = torch.arange(
-            n_actual, device=device, dtype=torch.long
-        ).repeat_interleave(nsel)
+        neighbor_flat = nlist.reshape(-1)
+        # ``dst_actual = arange(N*K) // K`` produces the same value
+        # sequence as ``arange(N).repeat_interleave(K)`` but its length
+        # is derived from ``neighbor_flat.shape[0]`` -- a single symbolic
+        # source shared with the ``torch.where`` below.  The previous
+        # ``arange(nf*nloc).repeat_interleave(nsel)`` chain could
+        # decouple from ``nlist.numel()`` in the FX graph if any
+        # upstream code path ever specialized ``nloc`` at trace time;
+        # deriving from ``neighbor_flat.shape[0]`` makes the equality
+        # structural and survives any future change in trace-shape
+        # selection in ``trace_and_compile``.
+        dst_actual = (
+            torch.arange(neighbor_flat.shape[0], device=device, dtype=torch.long)
+            // nsel
+        )
         f_idx = dst_actual // nloc
         dst_local = dst_actual % nloc
-        neighbor_flat = nlist.reshape(-1)
         valid_flat = neighbor_flat >= 0
         neighbor_safe = torch.where(
             valid_flat, neighbor_flat, torch.zeros_like(neighbor_flat)
