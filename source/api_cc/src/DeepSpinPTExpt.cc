@@ -610,6 +610,23 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
   ener.assign(flat_energy_.data_ptr<ENERGYTYPE>(),
               flat_energy_.data_ptr<ENERGYTYPE>() + flat_energy_.numel());
 
+  // Zero the reduced energy on an empty rank.  Phantoms have constant
+  // atomic outputs (per-type bias + zero-neighbour MLP) that flow into
+  // ``energy_redu`` -- and on the spin path the SpinModel doubles atoms
+  // so the bias contribution appears for both real and spin phantom
+  // halves; subtracting only the real-half exposed by
+  // ``output_map["energy"]`` after the ``[:, :nloc]`` slice leaves the
+  // spin-half leaking into the MPI-reduced LAMMPS total.  The physical
+  // contribution of a rank with no real local atoms is zero by
+  // definition, so just clear ``ener`` directly.
+  //
+  // Forces, force_mag, and virial are unaffected because phantom atomic
+  // outputs are coord-independent (no neighbours) so their derivatives
+  // are zero -- no analogous correction is needed.
+  if (phantom_n > 0) {
+    std::fill(ener.begin(), ener.end(), static_cast<ENERGYTYPE>(0));
+  }
+
   // Extract force: energy_derv_r (nf, nall, 1, 3) -> (nf, nall, 3)
   torch::Tensor force_tensor =
       output_map["energy_derv_r"].squeeze(-2).view({-1}).to(floatType);
