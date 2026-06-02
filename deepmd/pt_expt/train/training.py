@@ -70,6 +70,106 @@ from deepmd.utils.path import (
 
 log = logging.getLogger(__name__)
 
+# Buffer names in atomic_model that are per-task (energy/output statistics).
+# These live one level above the fitting net and are not reached by
+# fitting-net share_params.  They are always promoted to FX placeholders
+# because model_change_out_bias may replace them out-of-place after
+# compilation, so the compiled forward must read them fresh each call.
+_ATOMIC_MODEL_TASK_BUFFER_NAMES: tuple[str, ...] = ("out_bias", "out_std")
+
+# Prefix used in task_buf_order keys to distinguish atomic_model buffers
+# from fitting-net buffers.
+_AM_PREFIX = "am/"
+
+
+def _detect_task_buffers(
+    model: torch.nn.Module,
+    group_models: list["torch.nn.Module"],
+) -> dict[str, torch.Tensor]:
+    """Collect per-task buffers to promote to FX placeholders.
+
+    Fitting-net buffers are auto-detected by identity diff across
+    *group_models* (all tasks that share this model's structure key after
+    ``share_params``).  Any buffer that is a *different* Python object in at
+    least one other group member is task-specific and gets promoted.
+
+    Atomic-model buffers listed in ``_ATOMIC_MODEL_TASK_BUFFER_NAMES`` are
+    always promoted because ``model_change_out_bias`` may replace them
+    out-of-place after compilation.
+    """
+    result: dict[str, torch.Tensor] = {}
+
+    # Auto-detect fitting-net task buffers by identity diff across the group.
+    try:
+        fitting = model.get_fitting_net()
+        for name, val in fitting._buffers.items():
+            if val is None or not torch.is_tensor(val):
+                continue
+            for other in group_models:
+                if other is model:
+                    continue
+                try:
+                    other_val = other.get_fitting_net()._buffers.get(name)
+                    if other_val is not val:
+                        result[name] = val.detach().clone()
+                        break
+                except AttributeError:
+                    pass
+    except AttributeError:
+        pass
+
+    # Atomic-model task buffers (always promote).
+    try:
+        am = model.atomic_model
+        for name in _ATOMIC_MODEL_TASK_BUFFER_NAMES:
+            val = am._buffers.get(name)
+            if val is not None and torch.is_tensor(val):
+                result[_AM_PREFIX + name] = val.detach().clone()
+    except AttributeError:
+        pass
+
+    return result
+
+
+def _get_model_structure_key(model: torch.nn.Module) -> tuple[int, ...]:
+    """Return a key that is identical iff two tasks can safely share a compiled graph.
+
+    The key captures both the descriptor identity and the fitting-net
+    structure so that tasks sharing a fitting net but using *different*
+    descriptors (which bake distinct descriptor constants into the traced
+    graph) are never assigned the same compiled graph.
+
+    Descriptor identity uses the id of the first shared parameter tensor.
+    ``share_params`` makes descriptor *parameters* the same Python objects
+    across tasks while the descriptor modules remain distinct.  Two
+    descriptors sharing params therefore collapse to the same key here.
+    Partial sharing (shared_level=1, type-embedding only) is detected in
+    ``_compile_model`` and raises an explicit error rather than silently
+    producing a wrong compiled graph.
+
+    After ``share_params``, the fitting net's child sub-modules are the same
+    Python objects across tasks, so ``id(first_child)`` is equal for all
+    shared tasks and unique across unrelated models.
+    """
+    descriptor_id: int = 0
+    try:
+        desc = model.get_descriptor()
+        for _, p in desc.named_parameters():
+            descriptor_id = id(p)
+            break
+        else:
+            descriptor_id = id(desc)
+    except AttributeError:
+        pass
+
+    try:
+        fitting = model.get_fitting_net()
+        for _, child in fitting.named_children():
+            return (descriptor_id, id(child))
+    except AttributeError:
+        pass
+    return (descriptor_id, id(model))
+
 
 # ---------------------------------------------------------------------------
 # Helper: loss factory (reused from pt)
@@ -214,7 +314,8 @@ def _trace_and_compile(
     aparam: torch.Tensor | None,
     compile_opts: dict[str, Any] | None = None,
     charge_spin: torch.Tensor | None = None,
-) -> torch.nn.Module:
+    task_buffers: dict[str, torch.Tensor] | None = None,
+) -> tuple[torch.nn.Module, tuple[str, ...]]:
     """Symbolic-trace ``forward_lower`` and compile with inductor + dynamic=True.
 
     Parameters
@@ -226,11 +327,18 @@ def _trace_and_compile(
     compile_opts : dict or None
         User-supplied inductor options.  These are merged on top of the
         built-in defaults (user values take precedence).
+    task_buffers : dict or None
+        Per-task buffers (e.g. ``bias_atom_e``, ``case_embd``, ``out_bias``,
+        ``out_std``) detected by ``_detect_task_buffers``.  These are promoted
+        to explicit FX ``placeholder`` nodes so the compiled graph is reusable
+        across tasks that share the same structure key.
 
     Returns
     -------
-    torch.nn.Module
+    compiled : torch.nn.Module
         The compiled ``forward_lower`` callable.
+    task_buf_order : tuple[str, ...]
+        Ordered names of the promoted buffers (empty when none).
     """
     from torch.fx.experimental.proxy_tensor import (
         make_fx,
@@ -244,6 +352,24 @@ def _trace_and_compile(
     # backprop cannot reach the weights and force RMSE never decreases.
     model.train()
 
+    task_buf_order: tuple[str, ...] = tuple(task_buffers.keys()) if task_buffers else ()
+    task_buf_vals_trace: tuple[torch.Tensor, ...] = (
+        tuple(task_buffers[k] for k in task_buf_order) if task_buffers else ()
+    )
+
+    # Resolve fitting net and atomic_model once for buffer patching inside fn.
+    _fitting: torch.nn.Module | None = None
+    _atomic_model: torch.nn.Module | None = None
+    if task_buf_order:
+        try:
+            _fitting = model.get_fitting_net()
+        except AttributeError:
+            pass  # no fitting net → no fitting-net buffers to patch
+        try:
+            _atomic_model = model.atomic_model
+        except AttributeError:
+            pass  # no atomic_model → no atomic-model buffers to patch
+
     def fn(
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
@@ -252,17 +378,44 @@ def _trace_and_compile(
         fparam: torch.Tensor | None,
         aparam: torch.Tensor | None,
         charge_spin: torch.Tensor | None,
+        *task_buf_vals: torch.Tensor,
     ) -> dict[str, torch.Tensor]:
         extended_coord = extended_coord.detach().requires_grad_(True)
-        return model.forward_lower(
-            extended_coord,
-            extended_atype,
-            nlist,
-            mapping,
-            fparam=fparam,
-            aparam=aparam,
-            charge_spin=charge_spin,
-        )
+        # Temporarily patch task-specific buffers with the proxy tensors so
+        # make_fx records them as FX placeholders rather than baked-in constants.
+        # Keys prefixed with _AM_PREFIX are atomic_model buffers; the rest are
+        # fitting-net buffers.
+        originals: dict[str, torch.Tensor | None] = {}
+        if task_buf_order:
+            for name, val in zip(task_buf_order, task_buf_vals, strict=True):
+                if name.startswith(_AM_PREFIX):
+                    actual = name[len(_AM_PREFIX) :]
+                    if _atomic_model is not None:
+                        originals[name] = _atomic_model._buffers.get(actual)
+                        _atomic_model._buffers[actual] = val
+                else:
+                    if _fitting is not None:
+                        originals[name] = _fitting._buffers.get(name)
+                        _fitting._buffers[name] = val
+        try:
+            return model.forward_lower(
+                extended_coord,
+                extended_atype,
+                nlist,
+                mapping,
+                fparam=fparam,
+                aparam=aparam,
+                charge_spin=charge_spin,
+            )
+        finally:
+            for name, orig in originals.items():
+                if name.startswith(_AM_PREFIX):
+                    actual = name[len(_AM_PREFIX) :]
+                    if _atomic_model is not None:
+                        _atomic_model._buffers[actual] = orig
+                else:
+                    if _fitting is not None:
+                        _fitting._buffers[name] = orig
 
     # Pick a trace-time nframes that's unlikely to collide with any other
     # tensor dim in the graph.  The symbolic tracer merges symbols that
@@ -309,7 +462,16 @@ def _trace_and_compile(
         tracing_mode="symbolic",
         _allow_non_fake_inputs=True,
         decomposition_table=decomp_table,
-    )(ext_coord, ext_atype, nlist, mapping, fparam, aparam, charge_spin)
+    )(
+        ext_coord,
+        ext_atype,
+        nlist,
+        mapping,
+        fparam,
+        aparam,
+        charge_spin,
+        *task_buf_vals_trace,
+    )
 
     # make_fx inserts aten.detach.default for saved tensors used in the
     # decomposed autograd.grad backward ops.  These detach nodes break
@@ -344,7 +506,7 @@ def _trace_and_compile(
         backend="inductor",
         dynamic=True,
         options=inductor_options,
-    )
+    ), task_buf_order
 
 
 class _CompiledModel(torch.nn.Module):
@@ -354,10 +516,16 @@ class _CompiledModel(torch.nn.Module):
         self,
         original_model: torch.nn.Module,
         compiled_forward_lower: torch.nn.Module,
+        task_buf_order: tuple[str, ...] = (),
+        task_buffers: dict[str, torch.Tensor] | None = None,
     ) -> None:
         super().__init__()
         self.original_model = original_model
         self.compiled_forward_lower = compiled_forward_lower
+        self._task_buf_order = task_buf_order
+        # task_buffers is intentionally not stored: buffers are read from
+        # original_model.get_fitting_net() at forward time so that weight
+        # updates (load_state_dict, optimiser steps) are always reflected.
 
     def __getattr__(self, name: str) -> Any:
         # Delegate unknown lookups to original_model so that callers such as
@@ -416,8 +584,35 @@ class _CompiledModel(torch.nn.Module):
         ext_coord = ext_coord.reshape(nframes, -1, 3)
         ext_coord = ext_coord.detach().requires_grad_(True)
 
+        if self._task_buf_order:
+            try:
+                _fitting = self.original_model.get_fitting_net()
+                _am = getattr(self.original_model, "atomic_model", None)
+                _vals: list[torch.Tensor] = []
+                for _name in self._task_buf_order:
+                    if _name.startswith(_AM_PREFIX):
+                        _actual = _name[len(_AM_PREFIX) :]
+                        _vals.append(_am._buffers[_actual])
+                    else:
+                        _vals.append(getattr(_fitting, _name))
+                task_buf_vals: tuple = tuple(_vals)
+            except AttributeError as exc:
+                raise RuntimeError(
+                    f"Compiled graph expects task buffers {self._task_buf_order!r} "
+                    "but they could not be retrieved from the model. "
+                    "This is a bug in the compile path."
+                ) from exc
+        else:
+            task_buf_vals = ()
         result = self.compiled_forward_lower(
-            ext_coord, ext_atype, nlist, mapping, fparam, aparam, charge_spin
+            ext_coord,
+            ext_atype,
+            nlist,
+            mapping,
+            fparam,
+            aparam,
+            charge_spin,
+            *task_buf_vals,
         )
 
         # Translate forward_lower keys -> forward keys.
@@ -669,6 +864,7 @@ class Trainer:
         self.start_step = 0
 
         # Shared params (multi-task) ------------------------------------------
+        self._shared_links = shared_links
         if shared_links is not None:
             _data_stat_protect = np.array(
                 [
@@ -959,6 +1155,56 @@ class Trainer:
             else self.wrapper
         )
 
+        from collections import (
+            defaultdict,
+        )
+
+        from deepmd.dpmodel.descriptor.dpa1 import DescrptDPA1 as DescrptDPA1DP
+
+        # Pre-pass: group tasks by structure key and auto-detect per-task buffers.
+        # Grouping is needed so _detect_task_buffers can diff buffer identities
+        # across all tasks that share the same compiled graph.
+        _key_for: dict[str, tuple[int, ...]] = {}
+        _groups: defaultdict[tuple[int, ...], list[str]] = defaultdict(list)
+        for task_key in self.model_keys:
+            sk = _get_model_structure_key(wrapper_mod.model[task_key])
+            _key_for[task_key] = sk
+            _groups[sk].append(task_key)
+
+        # Reject partial descriptor sharing (shared_level > 0) with torch.compile.
+        # The compiled graph bakes the first task's descriptor constants, so tasks
+        # sharing a graph must have identical descriptor parameters.  partial sharing
+        # (e.g. shared_level=1, type_embedding shared but main block task-local)
+        # violates this invariant.  Check directly from the config rather than
+        # via parameter-identity heuristics.
+        if self._shared_links is not None:
+            for info in self._shared_links.values():
+                for link_item in info["links"]:
+                    if (
+                        "descriptor" in link_item["shared_type"]
+                        and int(link_item["shared_level"]) > 0
+                    ):
+                        raise RuntimeError(
+                            f"torch.compile is incompatible with partial descriptor "
+                            f"sharing (task {link_item['model_key']!r}, "
+                            f"shared_level={link_item['shared_level']}). "
+                            f"Use shared_level=0 for all descriptors, "
+                            f"or set 'enable_compile: false'."
+                        )
+
+        _task_bufs_for: dict[str, dict[str, torch.Tensor]] = {}
+        for group_keys in _groups.values():
+            group_models = [wrapper_mod.model[k] for k in group_keys]
+            for task_key in group_keys:
+                _task_bufs_for[task_key] = _detect_task_buffers(
+                    wrapper_mod.model[task_key], group_models
+                )
+
+        # structure_key -> (compiled_lower, task_buf_order)
+        # Tasks with the same structure key (same descriptor + shared fitting)
+        # reuse the compiled graph; different descriptor or fitting → distinct key.
+        _compiled_by_structure: dict[tuple[int, ...], tuple] = {}
+
         for task_key in self.model_keys:
             model = wrapper_mod.model[task_key]
 
@@ -969,8 +1215,6 @@ class Trainer:
             # is hardware-dependent.  Warn but do not reject — energies
             # remain well within training tolerance and the user may
             # accept the trade-off for compile speed.
-            from deepmd.dpmodel.descriptor.dpa1 import DescrptDPA1 as DescrptDPA1DP
-
             descriptor = model.get_descriptor()
             if isinstance(descriptor, DescrptDPA1DP):
                 n_attn = descriptor.get_numb_attn_layer()
@@ -986,54 +1230,71 @@ class Trainer:
                         task_key,
                     )
 
-            inp, _ = self.get_data(is_train=True, task_key=task_key)
-            coord = inp["coord"].detach()
-            atype = inp["atype"].detach()
-            box = inp.get("box")
-            if box is not None:
-                box = box.detach()
+            structure_key = _key_for[task_key]
+            task_bufs = _task_bufs_for[task_key]
 
-            nframes, nloc = atype.shape[:2]
-            coord_3d = coord.reshape(nframes, nloc, 3)
-            box_flat = box.reshape(nframes, 9) if box is not None else None
-
-            if box_flat is not None:
-                coord_norm = normalize_coord(coord_3d, box_flat.reshape(nframes, 3, 3))
+            if structure_key in _compiled_by_structure:
+                # Shared structure: reuse the already-compiled graph.
+                compiled_lower, task_buf_order = _compiled_by_structure[structure_key]
+                log.info(
+                    "Reusing compiled graph for task=%s (shared model structure).",
+                    task_key,
+                )
             else:
-                coord_norm = coord_3d
+                inp, _ = self.get_data(is_train=True, task_key=task_key)
+                coord = inp["coord"].detach()
+                atype = inp["atype"].detach()
+                box = inp.get("box")
+                if box is not None:
+                    box = box.detach()
 
-            ext_coord, ext_atype, mapping = extend_coord_with_ghosts(
-                coord_norm, atype, box_flat, model.get_rcut()
+                nframes, nloc = atype.shape[:2]
+                coord_3d = coord.reshape(nframes, nloc, 3)
+                box_flat = box.reshape(nframes, 9) if box is not None else None
+
+                if box_flat is not None:
+                    coord_norm = normalize_coord(
+                        coord_3d, box_flat.reshape(nframes, 3, 3)
+                    )
+                else:
+                    coord_norm = coord_3d
+
+                ext_coord, ext_atype, mapping = extend_coord_with_ghosts(
+                    coord_norm, atype, box_flat, model.get_rcut()
+                )
+                nlist_t = build_neighbor_list(
+                    ext_coord,
+                    ext_atype,
+                    nloc,
+                    model.get_rcut(),
+                    model.get_sel(),
+                    distinguish_types=False,
+                )
+                ext_coord = ext_coord.reshape(nframes, -1, 3)
+
+                fparam = inp.get("fparam")
+                aparam = inp.get("aparam")
+                charge_spin = inp.get("charge_spin")
+
+                compiled_lower, task_buf_order = _trace_and_compile(
+                    model,
+                    ext_coord,
+                    ext_atype,
+                    nlist_t,
+                    mapping,
+                    fparam,
+                    aparam,
+                    charge_spin=charge_spin,
+                    task_buffers=task_bufs if task_bufs else None,
+                    compile_opts=compile_opts,
+                )
+                _compiled_by_structure[structure_key] = (compiled_lower, task_buf_order)
+
+            wrapper_mod.model[task_key] = _CompiledModel(
+                model, compiled_lower, task_buf_order, task_bufs
             )
-            nlist_t = build_neighbor_list(
-                ext_coord,
-                ext_atype,
-                nloc,
-                model.get_rcut(),
-                model.get_sel(),
-                distinguish_types=False,
-            )
-            ext_coord = ext_coord.reshape(nframes, -1, 3)
-
-            fparam = inp.get("fparam")
-            aparam = inp.get("aparam")
-            charge_spin = inp.get("charge_spin")
-
-            compiled_lower = _trace_and_compile(
-                model,
-                ext_coord,
-                ext_atype,
-                nlist_t,
-                mapping,
-                fparam,
-                aparam,
-                charge_spin=charge_spin,
-                compile_opts=compile_opts,
-            )
-
-            wrapper_mod.model[task_key] = _CompiledModel(model, compiled_lower)
             log.info(
-                "Model compiled (task=%s, tracing_mode=symbolic, "
+                "Model compiled/reused (task=%s, tracing_mode=symbolic, "
                 "dynamic=True, backend=inductor).",
                 task_key,
             )
@@ -1212,7 +1473,7 @@ class Trainer:
             input_dict, label_dict = self.get_data(is_train=True, task_key=task_key)
 
             cur_lr_sched = self.scheduler.get_last_lr()[0]
-            model_pred, loss, more_loss = self.wrapper(
+            _model_pred, loss, more_loss = self.wrapper(
                 **input_dict,
                 cur_lr=cur_lr_sched,
                 label=label_dict,
@@ -1238,9 +1499,15 @@ class Trainer:
                 self.wrapper.eval()
 
                 if self.rank == 0:
+
+                    def _to_float(v: Any) -> float:
+                        return v.detach().item() if torch.is_tensor(v) else float(v)
+
                     if not self.multi_task:
                         train_results = {
-                            k: v for k, v in more_loss.items() if "l2_" not in k
+                            k: _to_float(v)
+                            for k, v in more_loss.items()
+                            if "l2_" not in k
                         }
 
                         # validation
@@ -1261,7 +1528,8 @@ class Trainer:
                                 for k, v in _vmore.items():
                                     if "l2_" not in k:
                                         valid_results[k] = (
-                                            valid_results.get(k, 0.0) + v * natoms
+                                            valid_results.get(k, 0.0)
+                                            + _to_float(v) * natoms
                                         )
                             if sum_natoms > 0:
                                 valid_results = {
@@ -1274,7 +1542,9 @@ class Trainer:
 
                         # current task already has loss
                         train_results[task_key] = {
-                            k: v for k, v in more_loss.items() if "l2_" not in k
+                            k: _to_float(v)
+                            for k, v in more_loss.items()
+                            if "l2_" not in k
                         }
 
                         # compute loss for other tasks
@@ -1289,7 +1559,9 @@ class Trainer:
                                     task_key=_key,
                                 )
                                 train_results[_key] = {
-                                    k: v for k, v in _more.items() if "l2_" not in k
+                                    k: _to_float(v)
+                                    for k, v in _more.items()
+                                    if "l2_" not in k
                                 }
 
                             # validation for each task
@@ -1313,7 +1585,10 @@ class Trainer:
                                     _sum_natoms += natoms
                                     for k, v in _vmore.items():
                                         if "l2_" not in k:
-                                            _vres[k] = _vres.get(k, 0.0) + v * natoms
+                                            _vres[k] = (
+                                                _vres.get(k, 0.0)
+                                                + _to_float(v) * natoms
+                                            )
                                 if _sum_natoms > 0:
                                     _vres = {
                                         k: v / _sum_natoms for k, v in _vres.items()
