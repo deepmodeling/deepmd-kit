@@ -319,7 +319,8 @@ class TestAutoTypeMap:
 
 def test_unknown_aux_branch_raises_with_branch_list(monkeypatch):
     """If aux_branch is not in the checkpoint, the error names the bad
-    branch and lists what IS available."""
+    branch and lists what IS available.  With lazy loading the error is
+    raised on first access to ``fitting_net_params``, not at construction."""
     import torch
 
     fake = _fake_sd({
@@ -329,11 +330,12 @@ def test_unknown_aux_branch_raises_with_branch_list(monkeypatch):
     })
     monkeypatch.setattr(torch, "load", lambda *a, **kw: fake)
 
+    t = MFTFineTuner(
+        pretrained="/does/not/exist.pt",
+        aux_branch="NotARealBranch",
+    )
     with pytest.raises(ValueError) as exc_info:
-        MFTFineTuner(
-            pretrained="/does/not/exist.pt",
-            aux_branch="NotARealBranch",
-        )
+        _ = t.fitting_net_params  # triggers lazy load
     msg = str(exc_info.value)
     assert "NotARealBranch" in msg
     assert "Domains_Alloy" in msg

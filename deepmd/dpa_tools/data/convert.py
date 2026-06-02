@@ -1,7 +1,15 @@
-# data/convert.py
+# SPDX-License-Identifier: LGPL-3.0-or-later
+"""Format-agnostic data conversion.
+
+Public entry point: ``auto_convert()`` — sniffs the input and routes to the
+appropriate pipeline (SMILES→npy via ``smiles_to_npy``, or structure→npy via
+``dpdata``).  CLI callers should use this instead of calling ``convert()``
+or ``smiles_to_npy()`` directly.
+"""
 
 from __future__ import annotations
 
+import csv
 import glob as _glob
 import json
 import logging
@@ -14,30 +22,139 @@ from deepmd.dpa_tools.data.validate import check_data
 
 _LOG = logging.getLogger("dpa_tools")
 
+# Recognised SMILES / molecule column names (case-insensitive).
+_SMILES_COLUMNS = frozenset({"smiles", "smi", "mol"})
+
+
+def _sniff_csv(path: str) -> set[str]:
+    """Return the set of column names from a CSV file, or ``None`` if
+    the file does not look like a table."""
+    try:
+        with open(path, newline="", encoding="utf-8") as fh:
+            reader = csv.DictReader(fh)
+            if reader.fieldnames is None:
+                return None
+            return {h.lower() for h in reader.fieldnames}
+    except Exception:
+        return None
+
+
+def _sniff_xlsx(path: str) -> set[str]:
+    """Return the set of column names from the first sheet of an Excel file,
+    or ``None`` if pandas / openpyxl is not available."""
+    try:
+        import pandas as pd
+    except ImportError:
+        return None
+    try:
+        df = pd.read_excel(path, nrows=0, engine="openpyxl")
+        return {str(h).lower() for h in df.columns}
+    except Exception:
+        return None
+
+
+def _is_smiles_input(path: str) -> bool:
+    """Return True if *path* looks like a CSV / Excel file whose columns
+    contain at least one recognised SMILES / molecule identifier."""
+    suffix = Path(path).suffix.lower()
+    columns: set[str] | None = None
+    if suffix == ".csv":
+        columns = _sniff_csv(path)
+    elif suffix in (".xlsx", ".xls"):
+        columns = _sniff_xlsx(path)
+    if columns is None:
+        return False
+    return bool(columns & _SMILES_COLUMNS)
+
 
 # ---------------------------------------------------------------------------
-# convert() — format conversion only, no label semantics
+# auto_convert — the single public entry point
+# ---------------------------------------------------------------------------
+
+
+def auto_convert(
+    input_path: str,
+    output_dir: str,
+    *,
+    fmt: str | None = None,
+    type_map: list[str] | None = None,
+    property_name: str = "Property",
+    property_col: str = "Property",
+    train_ratio: float = 0.9,
+    smiles_col: str = "SMILES",
+    mol_dir: str | None = None,
+    seed: int = 42,
+    overwrite: bool = False,
+    validate: bool = True,
+    strict: bool = False,
+) -> dict:
+    """Convert any supported input to ``deepmd/npy``, auto-detecting the format.
+
+    *If the input is a CSV / Excel file with SMILES columns* the call
+    delegates to :func:`~deepmd.dpa_tools.data.smiles.smiles_to_npy`, which
+    generates 3D conformers (via RDKit), splits into train/valid, and writes
+    the standard ``deepmd/npy`` layout.
+
+    *Otherwise* the call delegates to ``dpdata`` with ``fmt="auto"`` (or the
+    explicit *fmt* if provided), converting a single structure file (POSCAR,
+    extxyz, cif, …) into ``deepmd/npy``.
+
+    Returns a dict with keys ``"method"`` (``"smiles"`` or ``"dpdata"``) and
+    any additional metadata the chosen backend provides.
+    """
+    # --- explicit SMILES hint, or auto-sniff ---
+    if fmt == "smiles" or (fmt is None and _is_smiles_input(input_path)):
+        from deepmd.dpa_tools.data.smiles import smiles_to_npy
+
+        result = smiles_to_npy(
+            data={"dataset": input_path, "mol_dir": mol_dir},
+            output_dir=output_dir,
+            property_name=property_name,
+            property_col=property_col,
+            train_ratio=train_ratio,
+            smiles_col=smiles_col,
+            seed=seed,
+            overwrite=overwrite,
+        )
+        return {
+            "method": "smiles",
+            "train_systems": result.train_systems,
+            "valid_systems": result.valid_systems,
+            "type_map": result.type_map,
+            "samples_used": result.samples_used,
+            "failed_rows": result.failed_rows,
+        }
+
+    # --- structure file → dpdata ---
+    out = convert(
+        input_path=input_path,
+        output_dir=output_dir,
+        fmt=fmt,
+        type_map=type_map,
+        validate=validate,
+        strict=strict,
+    )
+    return {"method": "dpdata", "output_dir": out}
+
+
+# ---------------------------------------------------------------------------
+# convert() — thin dpdata wrapper (kept for programmatic use)
 # ---------------------------------------------------------------------------
 
 def convert(
     input_path: str,
     output_dir: str,
-    fmt: str,
+    fmt: str | None = None,
     type_map: list[str] = None,
     validate: bool = True,
     strict: bool = False,
 ) -> str:
-    """
-    Convert a structure/trajectory file to deepmd/npy format.
+    """Convert a structure/trajectory file to ``deepmd/npy`` format.
 
-    This is a thin convenience wrapper over dpdata. For complex conversions
-    (unit changes, selective atoms, multi-system merging) use dpdata directly.
-
-    Labeled formats (extxyz, vasp/outcar, etc.) produce a complete deepmd/npy
-    directory including ``energy.npy`` and ``force.npy``.
-    Structure-only formats (vasp/poscar, cif) produce a directory with
-    ``coord.npy`` and ``box.npy`` only. Use ``attach_labels()`` afterwards
-    to add property labels before calling ``fit()``.
+    Thin wrapper over ``dpdata``.  When *fmt* is ``None`` (or ``"auto"``),
+    dpdata auto-detects the format from the file extension or content.
+    Explicit *fmt* values (``"extxyz"``, ``"vasp/poscar"``, ``"cif"``, …)
+    are passed through to ``dpdata`` unchanged.
 
     Parameters
     ----------
@@ -45,36 +162,20 @@ def convert(
         Path to the input file or directory.
     output_dir : str
         Destination directory for the deepmd/npy output.
-    fmt : str
-        Input format string as accepted by dpdata, e.g. ``"extxyz"``,
-        ``"vasp/outcar"``, ``"vasp/poscar"``, ``"cif"``.
-        Must be provided explicitly — dpa_tools does not auto-detect formats.
+    fmt : str, optional
+        Format hint (e.g. ``"extxyz"``, ``"vasp/poscar"``).  Auto-detected
+        when ``None``.
     type_map : list[str], optional
-        Ordered element symbol list (e.g. ``["Cu", "O"]``). Controls the
-        integer encoding in ``type.raw`` and must match the target checkpoint's
-        type_map. Strongly recommended — omitting it lets dpdata infer the
-        order, which may not agree with the checkpoint.
+        Ordered element symbol list.
     validate : bool
-        If True (default), run ``check_data()`` on the output and emit any
-        findings via ``logging.warning``. Set False to skip the check.
+        Run ``check_data()`` on the output after conversion.
     strict : bool
-        If True, ``check_data()`` raises ``DPADataError`` on the first issue
-        instead of warning. Ignored when ``validate`` is False.
+        Fail on the first validation issue instead of warning.
 
     Returns
     -------
     str
-        Resolved path to the output deepmd/npy directory.
-
-    Examples
-    --------
-    >>> from deepmd.dpa_tools.data import convert, load_data, attach_labels
-    # Labeled format (energy + forces included):
-    >>> convert("train.xyz", "./data/train", fmt="extxyz", type_map=["Cu", "O"])
-    # Structure-only format, attach labels separately:
-    >>> convert("POSCAR", "./data/single", fmt="vasp/poscar", type_map=["Cu", "O"])
-    >>> system = load_data("./data/single")[0]
-    >>> attach_labels(system, head="bandgap", values=np.array([1.23]))
+        Resolved path to the output directory.
     """
     try:
         import dpdata
@@ -91,12 +192,12 @@ def convert(
     if type_map:
         to_kwargs["type_map"] = type_map
 
-    # Try labeled first; if the format carries no labels dpdata will just
-    # produce a system with empty energy/force arrays, which is harmless.
+    # Try labeled first; dpdata auto-detects when fmt is None.
+    load_kwargs = {"fmt": fmt} if fmt and fmt != "auto" else {}
     try:
-        sys = dpdata.LabeledSystem(str(input_path), fmt=fmt)
+        sys = dpdata.LabeledSystem(str(input_path), **load_kwargs)
     except Exception:
-        sys = dpdata.System(str(input_path), fmt=fmt)
+        sys = dpdata.System(str(input_path), **load_kwargs)
 
     sys.to("deepmd/npy", output_dir, **to_kwargs)
 

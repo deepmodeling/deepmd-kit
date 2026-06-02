@@ -16,6 +16,7 @@ from deepmd.dpa_tools._backend import (
     get_torch_device,
     load_torch_file,
     resolve_model_branch,
+    resolve_pretrained_path,
 )
 from deepmd.dpa_tools.conditions import ConditionManager, DPAConditionError
 from deepmd.dpa_tools.data.errors import DPADataError
@@ -30,59 +31,72 @@ from deepmd.dpa_tools.utils.dotdict import DotDict
 
 def _load_labels(
     systems: List[dpdata.System],
-    target_key: str,
+    target_key,  # str | list[str] — union type omitted for runtime simplicity
 ) -> np.ndarray:
     """Load and concatenate labels from dpdata systems.
 
-    *target_key* is resolved through ``_LABEL_KEY_ALIASES`` so that
+    *target_key* may be a single string (existing behaviour) or a list of
+    strings (new: multi-property).  When a list is given each key is loaded
+    independently and the results are stacked column-wise into a 2-D array
+    of shape ``(n_frames, len(target_key))``.
+
+    Each key is resolved through ``_LABEL_KEY_ALIASES`` so that
     ``"energy"`` → ``"energies"`` for backward compatibility.
 
-    When the resolved key is not present in ``system.data`` (dpdata only
+    When a resolved key is not present in ``system.data`` (dpdata only
     loads standard DeepMD keys), this function falls back to reading
     ``set.*/{key}.npy`` directly from the system source directory.
     """
-    resolved = _resolve_label_key(target_key)
-    all_labels = []
-    for system in systems:
-        if resolved in system.data:
-            all_labels.append(np.asarray(system.data[resolved]))
-            continue
+    keys = [target_key] if isinstance(target_key, str) else list(target_key)
+    columns = []
 
-        # Fallback: load set.*/key.npy directly from the system directory.
-        source = _get_source(system)
-        if source is not None:
-            source_path = Path(source)
-            set_dirs = sorted(source_path.glob("set.*"))
-            npy_labels = []
-            for sd in set_dirs:
-                npy_path = sd / f"{resolved}.npy"
-                if npy_path.exists():
-                    npy_labels.append(np.load(npy_path))
-            if npy_labels:
-                all_labels.append(np.concatenate(npy_labels, axis=0))
+    for key in keys:
+        resolved = _resolve_label_key(key)
+        all_labels = []
+        for system in systems:
+            if resolved in system.data:
+                all_labels.append(np.asarray(system.data[resolved]))
                 continue
 
-        # Neither dpdata nor direct .npy found — build a clear error.
-        available = sorted(system.data.keys())
-        if source is not None:
-            set_dirs = sorted(Path(source).glob("set.*"))
-            available_npy = sorted(set(
-                p.name for sd in set_dirs for p in sd.glob("*.npy")
-            ))
-        else:
-            available_npy = []
-        msg = (
-            f"Label key {resolved!r} not found. "
-            f"Checked system.data keys: {available}."
-        )
-        if available_npy:
-            msg += f" Checked set.*/npy files: {available_npy}."
-        else:
-            msg += " No system source path for direct .npy fallback."
-        msg += f" (target_key={target_key!r})."
-        raise DPADataError(msg)
+            # Fallback: load set.*/key.npy directly from the system directory.
+            source = _get_source(system)
+            if source is not None:
+                source_path = Path(source)
+                set_dirs = sorted(source_path.glob("set.*"))
+                npy_labels = []
+                for sd in set_dirs:
+                    npy_path = sd / f"{resolved}.npy"
+                    if npy_path.exists():
+                        npy_labels.append(np.load(npy_path))
+                if npy_labels:
+                    all_labels.append(np.concatenate(npy_labels, axis=0))
+                    continue
 
-    return np.concatenate(all_labels, axis=0)
+            # Neither dpdata nor direct .npy found — build a clear error.
+            available = sorted(system.data.keys())
+            if source is not None:
+                set_dirs = sorted(Path(source).glob("set.*"))
+                available_npy = sorted(set(
+                    p.name for sd in set_dirs for p in sd.glob("*.npy")
+                ))
+            else:
+                available_npy = []
+            msg = (
+                f"Label key {resolved!r} not found. "
+                f"Checked system.data keys: {available}."
+            )
+            if available_npy:
+                msg += f" Checked set.*/npy files: {available_npy}."
+            else:
+                msg += " No system source path for direct .npy fallback."
+            msg += f" (target_key={key!r})."
+            raise DPADataError(msg)
+
+        columns.append(np.concatenate(all_labels, axis=0))
+
+    if len(columns) == 1:
+        return columns[0]
+    return np.column_stack(columns)
 
 
 def _read_data_type_map(system) -> list[str]:
@@ -188,162 +202,59 @@ def extract_descriptors(
 
 
 # ---------------------------------------------------------------------------
-# Main class
+# Internal: frozen-sklearn pipeline (extracted from DPAFineTuner)
+#
+# Refactored: all descriptor-loading, feature-extraction, and sklearn-fitting
+# logic moved into this helper so DPAFineTuner is a thin dispatcher.
 # ---------------------------------------------------------------------------
 
-class DPAFineTuner:
-    """Frozen DPA descriptor + sklearn head (Path B) or single-task training.
 
-    Two modes, selected by *strategy*:
+class _FrozenSklearnPipeline:
+    """Internal helper: frozen DPA descriptor → sklearn predictor pipeline.
 
-    ==================  ======================================================
-    ``frozen_sklearn``  (default) Encode each system once with the pretrained
-                        DPA descriptor, pool, and train a lightweight sklearn
-                        regressor (Ridge / KRR / MLP) on top.
-    ``linear_probe``    Freeze the DPA backbone, train only a neural property
-                        fitting net via ``dp --pt train --finetune``.
-    ``finetune``        Load the pretrained backbone and fine-tune the full
-                        network (descriptor + fitting net).
-    ``scratch``         (known limitation) Random-initialize and train from
-                        scratch — type_map is auto-inferred correctly but
-                        ``dp --pt train`` exits before writing train.log;
-                        descriptor config likely missing required fields.
-                        Not recommended for small-data regimes.
-    ==================  ======================================================
+    Encapsulates descriptor model loading, feature extraction (with
+    caching), type-map validation / remapping, and sklearn fitting /
+    prediction / evaluation / freeze.  DPAFineTuner holds one of these
+    when ``strategy='frozen_sklearn'`` and delegates public API calls to it.
 
-    .. note::
-
-       ``strategy="scratch"`` is a known limitation as of Phase 2 closeout.
-       The entry point and auto-type_map logic are retained, but the emitted
-       ``input.json`` does not yet produce a successful ``dp --pt train`` run
-       (exit 1 before train.log).  Scratch training on 19-formula small data
-       has negligible practical value; completing it is deferred to a future
-       phase when larger datasets make random-init training meaningful.
-
-    Parameters
-    ----------
-    pretrained : str
-        Path to the pretrained DPA checkpoint (.pt).  Set to ``None`` for
-        ``scratch`` strategy.
-    model_branch : str, optional
-        Branch name for multi-task checkpoints (e.g. ``"Omat24"``).  Used
-        by ``frozen_sklearn`` for descriptor extraction.
-    predictor : str
-        sklearn head type (``frozen_sklearn`` only): ``"rf"``,
-        ``"linear"`` / ``"ridge"``, or ``"mlp"``.
-    pooling : str
-        Descriptor pooling (``frozen_sklearn`` only): ``"mean"``, ``"sum"``,
-        ``"mean+std"``, ``"mean+std+max+min"``.
-    seed : int
-        Random seed for the sklearn predictor or training.
-    strategy : str
-        ``"frozen_sklearn"`` (default), ``"linear_probe"``, ``"finetune"``,
-        or ``"scratch"``.
-    property_name : str
-        Property label filename under ``set.*/`` (training paradigms).
-    task_dim : int
-        Output dimensionality of the property head.
-    intensive : bool
-        Whether the property is intensive (mean-pool) or extensive (sum).
-    init_branch : str
-        Checkpoint branch for descriptor init (LP/FT only).
-    learning_rate, stop_lr : float
-        Exp-decay LR endpoints (training paradigms).
-    max_steps : int
-        Total training steps.
-    batch_size : str or int
-        DeepMD-kit batch_size spec.
-    loss_function : str
-        ``"mse"`` or ``"smooth_mae"``.
-    output_dir : str
-        Directory for checkpoints, input.json, and logs.
-    save_freq, disp_freq : int
-        DeepMD-kit save/display intervals.
+    Refactored: extracted from ``DPAFineTuner`` to separate the sklearn
+    code path from the training-paradigm and MFT dispatch logic.
     """
 
     _VALID_POOLING = {"mean", "sum", "mean+std", "mean+std+max+min"}
-    _VALID_STRATEGIES = {
-        "frozen_sklearn", "linear_probe", "finetune", "scratch",
-    }
 
-    def __init__(
-        self,
-        pretrained="DPA-3.1-3M",
-        model_branch=None,
-        predictor="rf",
-        pooling="mean",
-        seed=42,
-        # ---- training paradigms ----
-        strategy="frozen_sklearn",
-        property_name="property",
-        task_dim=1,
-        intensive=True,
-        init_branch="SPICE2",
-        learning_rate=1e-3,
-        stop_lr=1e-5,
-        max_steps=100_000,
-        batch_size="auto:512",
-        loss_function="mse",
-        output_dir="./dpa_output",
-        save_freq=10_000,
-        disp_freq=1_000,
-    ):
-        if pooling not in self._VALID_POOLING:
-            raise ValueError(
-                f"pooling must be one of {sorted(self._VALID_POOLING)}, "
-                f"got {pooling!r}"
-            )
-        if strategy not in self._VALID_STRATEGIES:
-            raise ValueError(
-                f"strategy must be one of {sorted(self._VALID_STRATEGIES)}; "
-                f"got {strategy!r}"
-            )
+    def __init__(self, pretrained, model_branch, predictor_type, pooling, seed):
+        self.pretrained = pretrained
+        self.model_branch = model_branch
+        self._predictor_type = predictor_type
+        self.pooling = pooling
+        self.seed = seed
 
-        self.strategy = strategy
-        # Scratch forces pretrained=None (random init, no ckpt).
-        if strategy == "scratch":
-            pretrained = None
-
-        self.pretrained      = pretrained
-        self.model_branch    = model_branch
-        self._predictor_type = predictor
-        self.pooling         = pooling
-        self.seed            = seed
-
-        # Training-paradigm params (unused by frozen_sklearn).
-        self.property_name   = property_name
-        self.task_dim        = task_dim
-        self.intensive       = intensive
-        self.init_branch     = init_branch
-        self.learning_rate   = learning_rate
-        self.stop_lr         = stop_lr
-        self.max_steps       = max_steps
-        self.batch_size      = batch_size
-        self.loss_function   = loss_function
-        self.output_dir      = output_dir
-        self.save_freq       = save_freq
-        self.disp_freq       = disp_freq
-
-        # populated by fit()
-        self.type_map           = []
-        self._target_key        = None
-        self._task_dim          = 1
-        self.predictor          = None   # sklearn object after fit()
-        self._fitted            = False
-        self._model             = None   # lazy-loaded descriptor model (cached)
-        self._device            = None   # set when model is first loaded
-        self._checkpoint_type_map = []   # set by _load_descriptor_model
+        # Populated during fit / extraction
+        self._model = None
+        self._device = None
+        self._checkpoint_type_map = []
+        self.predictor = None
+        self._task_dim = 1
+        self._target_key = None
         self._condition_manager = None
+        self._fitted = False
+        self.type_map = []
 
-    # -----------------------------------------------------------------------
-    # Internal: descriptor feature extraction
-    # -----------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Descriptor model loading
+    # ------------------------------------------------------------------
 
-    def _load_descriptor_model(self):
-        """Load the pretrained DPA checkpoint and return a (non-JIT) ModelWrapper."""
+    def load_descriptor_model(self):
+        """Load the pretrained DPA checkpoint and return a (non-JIT) ModelWrapper.
+
+        If *pretrained* is a built-in model name (e.g. ``"DPA-3.1-3M"``)
+        rather than a local path, it is automatically downloaded.
+        """
         import torch
 
-        state_dict = load_torch_file(self.pretrained)
+        resolved = resolve_pretrained_path(self.pretrained)
+        state_dict = load_torch_file(resolved)
         if "model" in state_dict:
             state_dict = state_dict["model"]
 
@@ -390,14 +301,16 @@ class DPAFineTuner:
         self._device = device
         return wrapper
 
-    def _validate_type_map(
-        self, user_type_map: list[str], systems: list
-    ) -> None:
+    # ------------------------------------------------------------------
+    # Type-map helpers
+    # ------------------------------------------------------------------
+
+    def validate_type_map(self, user_type_map, systems):
         """Raise DPADataError if any data element is not in the checkpoint type_map.
 
         The data type_map can be any subset of the checkpoint's type_map — order
         and contiguity are irrelevant. Local indices are remapped to checkpoint
-        global indices in ``_extract_features``.
+        global indices in ``extract_features``.
         """
         ckpt = self._checkpoint_type_map
         if not ckpt:
@@ -405,7 +318,7 @@ class DPAFineTuner:
 
         ckpt_set = set(ckpt)
 
-        def _check(candidate: list[str], source: str) -> None:
+        def _check(candidate, source):
             unsupported = [e for e in candidate if e not in ckpt_set]
             if unsupported:
                 ckpt_repr = (
@@ -429,9 +342,7 @@ class DPAFineTuner:
                 identifier = system.orig if hasattr(system, "orig") else "system"
                 _check(data_tm, f"atom_names of {identifier}")
 
-    def _remap_atom_types(
-        self, atom_types: np.ndarray, system
-    ) -> np.ndarray:
+    def remap_atom_types(self, atom_types, system):
         """Map local atom-type indices to checkpoint-global indices.
 
         ``atom_types`` are 0-based indices into the system's type_map.
@@ -479,32 +390,12 @@ class DPAFineTuner:
 
         return local_to_global[atom_types]
 
-    def _extract_features_cached(self, systems: list) -> np.ndarray:
-        """Call ``_extract_features`` with descriptor-cache lookup.
+    # ------------------------------------------------------------------
+    # Feature extraction  (extract_features_cached is on DPAFineTuner
+    # so that patches on DPAFineTuner._extract_features are honoured)
+    # ------------------------------------------------------------------
 
-        Uses the same cache-key scheme as ``load_or_extract()``.  Falls
-        back to direct extraction when the cache key cannot be computed
-        (e.g. the pretrained file does not exist on disk).
-        """
-        try:
-            from deepmd.dpa_tools.data.desc_cache import _cache_key, _cache_dir
-
-            key = _cache_key(systems, self.pretrained, self.pooling)
-            cache_path = _cache_dir() / f"{key}.npy"
-            if cache_path.is_file():
-                return np.load(cache_path)
-        except Exception:
-            pass
-
-        features = self._extract_features(systems)
-        try:
-            cache_path.parent.mkdir(parents=True, exist_ok=True)
-            np.save(cache_path, features)
-        except Exception:
-            pass
-        return features
-
-    def _extract_features(self, systems: list) -> np.ndarray:
+    def extract_features(self, systems):
         """Extract per-structure descriptor features by pooling over atoms.
 
         The pooling strategy is controlled by ``self.pooling``:
@@ -525,7 +416,7 @@ class DPAFineTuner:
         import torch
 
         if self._model is None:
-            self._model = self._load_descriptor_model()
+            self._model = self.load_descriptor_model()
 
         extractor = _DescriptorExtraction(self._model)
         extractor._enable_hook()
@@ -538,7 +429,7 @@ class DPAFineTuner:
             n_atoms = len(atom_types)
 
             # Remap local atom-type indices to checkpoint-global indices.
-            atom_types_global = self._remap_atom_types(atom_types, system)
+            atom_types_global = self.remap_atom_types(atom_types, system)
 
             # Non-periodic structures must NOT use all-zero box:
             # the descriptor produces NaN in that case.
@@ -580,6 +471,258 @@ class DPAFineTuner:
 
         extractor._disable_hook()
         return np.concatenate(all_features, axis=0)
+
+
+# ---------------------------------------------------------------------------
+# Main class
+# ---------------------------------------------------------------------------
+
+class DPAFineTuner:
+    """Frozen DPA descriptor + sklearn head (Path B) or single-task training.
+
+    Two modes, selected by *strategy*:
+
+    ==================  ======================================================
+    ``frozen_sklearn``  (default) Encode each system once with the pretrained
+                        DPA descriptor, pool, and train a lightweight sklearn
+                        regressor (Ridge / KRR / MLP) on top.
+    ``linear_probe``    Freeze the DPA backbone, train only a neural property
+                        fitting net via ``dp --pt train --finetune``.
+    ``finetune``        Load the pretrained backbone and fine-tune the full
+                        network (descriptor + fitting net).
+    ``scratch``         (known limitation) Random-initialize and train from
+                        scratch — type_map is auto-inferred correctly but
+                        ``dp --pt train`` exits before writing train.log;
+                        descriptor config likely missing required fields.
+                        Not recommended for small-data regimes.
+    ==================  ======================================================
+
+    .. note::
+
+       ``strategy="scratch"`` is a known limitation as of Phase 2 closeout.
+       The entry point and auto-type_map logic are retained, but the emitted
+       ``input.json`` does not yet produce a successful ``dp --pt train`` run
+       (exit 1 before train.log).  Scratch training on 19-formula small data
+       has negligible practical value; completing it is deferred to a future
+       phase when larger datasets make random-init training meaningful.
+
+    Refactored: descriptor-loading, feature-extraction, and sklearn-fitting
+    logic extracted into ``_FrozenSklearnPipeline``.  DPAFineTuner is now a
+    thin dispatcher that delegates to the pipeline for ``frozen_sklearn``
+    and to ``DPATrainer`` / ``MFTFineTuner`` for the other strategies.
+
+    Parameters
+    ----------
+    pretrained : str
+        Path to the pretrained DPA checkpoint (.pt).  Set to ``None`` for
+        ``scratch`` strategy.
+    model_branch : str, optional
+        Branch name for multi-task checkpoints (e.g. ``"Omat24"``).  Used
+        by ``frozen_sklearn`` for descriptor extraction.
+    predictor : str
+        sklearn head type (``frozen_sklearn`` only): ``"rf"``,
+        ``"linear"`` / ``"ridge"``, or ``"mlp"``.
+    pooling : str
+        Descriptor pooling (``frozen_sklearn`` only): ``"mean"``, ``"sum"``,
+        ``"mean+std"``, ``"mean+std+max+min"``.
+    seed : int
+        Random seed for the sklearn predictor or training.
+    strategy : str
+        ``"frozen_sklearn"`` (default), ``"linear_probe"``, ``"finetune"``,
+        or ``"scratch"``.
+    property_name : str
+        Property label filename under ``set.*/`` (training paradigms).
+    task_dim : int
+        Output dimensionality of the property head.
+    intensive : bool
+        Whether the property is intensive (mean-pool) or extensive (sum).
+    init_branch : str
+        Checkpoint branch for descriptor init (LP/FT only).
+    learning_rate, stop_lr : float
+        Exp-decay LR endpoints (training paradigms).
+    max_steps : int
+        Total training steps.
+    batch_size : str or int
+        DeepMD-kit batch_size spec.
+    loss_function : str
+        ``"mse"`` or ``"smooth_mae"``.
+    output_dir : str
+        Directory for checkpoints, input.json, and logs.
+    save_freq, disp_freq : int
+        DeepMD-kit save/display intervals.
+    """
+
+    _VALID_POOLING = {"mean", "sum", "mean+std", "mean+std+max+min"}
+    _VALID_STRATEGIES = {
+        "frozen_sklearn", "linear_probe", "finetune", "mft", "scratch",
+    }
+
+    def __init__(
+        self,
+        pretrained="DPA-3.1-3M",
+        model_branch=None,
+        predictor="rf",
+        pooling="mean",
+        seed=42,
+        # ---- training paradigms ----
+        strategy="frozen_sklearn",
+        property_name="property",
+        task_dim=1,
+        intensive=True,
+        init_branch="SPICE2",
+        learning_rate=1e-3,
+        stop_lr=1e-5,
+        max_steps=100_000,
+        batch_size="auto:512",
+        loss_function="mse",
+        output_dir="./dpa_output",
+        save_freq=10_000,
+        disp_freq=1_000,
+        # ---- mft-only ----
+        aux_branch="MP_traj_v024_alldata_mixu",
+        aux_prob: float = 0.5,
+        aux_type_map: list[str] | None = None,
+        downstream_type_map: list[str] | None = None,
+        fitting_net_params: dict | None = None,
+        downstream_task_type: str = "property",
+        aux_batch_size: str | None = None,
+        downstream_batch_size: int | None = None,
+    ):
+        if pooling not in self._VALID_POOLING:
+            raise ValueError(
+                f"pooling must be one of {sorted(self._VALID_POOLING)}, "
+                f"got {pooling!r}"
+            )
+        if strategy not in self._VALID_STRATEGIES:
+            raise ValueError(
+                f"strategy must be one of {sorted(self._VALID_STRATEGIES)}; "
+                f"got {strategy!r}"
+            )
+
+        self.strategy = strategy
+        # Scratch forces pretrained=None (random init, no ckpt).
+        if strategy == "scratch":
+            pretrained = None
+
+        self.pretrained      = pretrained
+        self.model_branch    = model_branch
+        self._predictor_type = predictor
+        self.pooling         = pooling
+        self.seed            = seed
+
+        # Training-paradigm params (unused by frozen_sklearn).
+        self.property_name   = property_name
+        self.task_dim        = task_dim
+        self.intensive       = intensive
+        self.init_branch     = init_branch
+        self.learning_rate   = learning_rate
+        self.stop_lr         = stop_lr
+        self.max_steps       = max_steps
+        self.batch_size      = batch_size
+        self.loss_function   = loss_function
+        self.output_dir      = output_dir
+        self.save_freq       = save_freq
+        self.disp_freq       = disp_freq
+
+        # MFT-only parameters.
+        self.aux_branch            = aux_branch
+        self.aux_prob              = aux_prob
+        self.aux_type_map          = aux_type_map
+        self.downstream_type_map   = downstream_type_map
+        self.fitting_net_params    = fitting_net_params
+        self.downstream_task_type  = downstream_task_type
+        self.aux_batch_size        = aux_batch_size
+        self.downstream_batch_size = downstream_batch_size
+
+        if strategy == "mft":
+            if not isinstance(property_name, str) or not property_name.isidentifier():
+                raise ValueError(
+                    "property_name is required when strategy='mft' and must be a "
+                    f"valid Python identifier; got {property_name!r}."
+                )
+
+        # ---- frozen_sklearn pipeline (created lazily by fit()) ----
+        self._sklearn: _FrozenSklearnPipeline | None = None
+
+        # ---- backward-compat state mirrors (delegated to pipeline) ----
+        self.type_map           = []
+        self._target_key        = None
+        self._task_dim          = 1
+        self.predictor          = None   # sklearn object after fit()
+        self._fitted            = False
+        self._model             = None   # lazy-loaded descriptor model (cached)
+        self._device            = None   # set when model is first loaded
+        self._checkpoint_type_map = []   # set by _load_descriptor_model
+        self._condition_manager = None
+
+    # ------------------------------------------------------------------
+    # Frozen-sklearn pipeline helpers (thin delegators)
+    #
+    # Each method forwards to the corresponding method on
+    # ``_FrozenSklearnPipeline``.  State set directly on DPAFineTuner
+    # (e.g. ``_checkpoint_type_map`` by tests) is propagated into the
+    # pipeline on each call so that direct setters continue to work.
+    # ------------------------------------------------------------------
+
+    def _ensure_sklearn(self):
+        """Create the pipeline on first use if it doesn't exist yet."""
+        if self._sklearn is None:
+            self._sklearn = _FrozenSklearnPipeline(
+                pretrained=self.pretrained,
+                model_branch=self.model_branch,
+                predictor_type=self._predictor_type,
+                pooling=self.pooling,
+                seed=self.seed,
+            )
+        # Sync state that external code may have set on DPAFineTuner directly.
+        self._sklearn._model = self._model
+        self._sklearn._device = self._device
+        self._sklearn._checkpoint_type_map = self._checkpoint_type_map
+        self._sklearn.type_map = self.type_map
+        return self._sklearn
+
+    def _load_descriptor_model(self):
+        return self._ensure_sklearn().load_descriptor_model()
+
+    def _validate_type_map(self, user_type_map, systems):
+        return self._ensure_sklearn().validate_type_map(user_type_map, systems)
+
+    def _remap_atom_types(self, atom_types, system):
+        return self._ensure_sklearn().remap_atom_types(atom_types, system)
+
+    def _extract_features_cached(self, systems):
+        """Call ``_extract_features`` with descriptor-cache lookup.
+
+        Kept on DPAFineTuner (not delegated) so that patches on
+        ``DPAFineTuner._extract_features`` are honoured through the
+        ``self._extract_features()`` call below.
+        """
+        try:
+            from deepmd.dpa_tools.data.desc_cache import _cache_key, _cache_dir
+
+            key = _cache_key(systems, self.pretrained, self.pooling)
+            cache_path = _cache_dir() / f"{key}.npy"
+            if cache_path.is_file():
+                return np.load(cache_path)
+        except Exception:
+            pass
+
+        features = self._extract_features(systems)
+        try:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            np.save(cache_path, features)
+        except Exception:
+            pass
+        return features
+
+    def _extract_features(self, systems):
+        return self._ensure_sklearn().extract_features(systems)
+
+    # ------------------------------------------------------------------
+    # The heavy implementations of the following methods now live in
+    # _FrozenSklearnPipeline (see class docstring above).  The thin
+    # delegators at the top of this class forward calls to the pipeline.
+    # ------------------------------------------------------------------
 
     # -----------------------------------------------------------------------
     # Public API
@@ -686,11 +829,13 @@ class DPAFineTuner:
         labels=None,
         fmt=None,
         conditions=None,
+        aux_data=None,
     ):
         """Train the model.
 
         *frozen_sklearn* (default): extract descriptors, fit sklearn head.
         *linear_probe* / *finetune* / *scratch*: run ``dp --pt train``.
+        *mft*: multi-task fine-tuning (property head + force-field head).
 
         Parameters
         ----------
@@ -709,20 +854,65 @@ class DPAFineTuner:
         fmt : str, optional
             Reserved for future format support.
         conditions : dict[str, np.ndarray], optional
-            (frozen_sklearn) Named condition arrays, e.g.
-            ``{"T": np.array([300, 400])}``.  Each value is (n_frames,)
-            and is standardized per-key before concatenation to features.
+            (frozen_sklearn) Named condition arrays.
+        aux_data : str | list[str], optional
+            (mft only) Auxiliary training system directories.  Required when
+            ``strategy='mft'``; must be absent otherwise.
         """
         if self.strategy == "frozen_sklearn":
             return self._fit_sklearn(train_data, type_map, target_key, labels, fmt,
                                      conditions)
 
-        # ---- training paradigms ----
+        if self.strategy == "mft":
+            if aux_data is None:
+                raise ValueError(
+                    "strategy='mft' requires aux_data. "
+                    "Provide auxiliary system directories for the force-field head."
+                )
+            return self._fit_mft(train_data, aux_data, valid_data)
+
+        # ---- single-task training paradigms ----
+        if aux_data is not None:
+            raise ValueError(
+                f"aux_data is only valid when strategy='mft'; "
+                f"got strategy={self.strategy!r}."
+            )
+
         if type_map is None:
             type_map = self._resolve_type_maps(train_data)
 
         self.type_map = type_map
         return self._fit_training(train_data, valid_data, type_map)
+
+    def _fit_mft(self, train_data, aux_data, valid_data=None):
+        """Delegate to MFTFineTuner for multi-task fine-tuning."""
+        from deepmd.dpa_tools.mft import MFTFineTuner
+
+        mft = MFTFineTuner(
+            pretrained=self.pretrained,
+            aux_branch=self.aux_branch,
+            aux_prob=self.aux_prob,
+            aux_type_map=self.aux_type_map,
+            downstream_type_map=self.downstream_type_map,
+            fitting_net_params=self.fitting_net_params,
+            downstream_task_type=self.downstream_task_type,
+            property_name=self.property_name,
+            task_dim=self.task_dim,
+            intensive=self.intensive,
+            learning_rate=self.learning_rate,
+            stop_lr=self.stop_lr,
+            max_steps=self.max_steps,
+            batch_size=self.batch_size,
+            aux_batch_size=self.aux_batch_size,
+            downstream_batch_size=self.downstream_batch_size,
+            seed=self.seed,
+            output_dir=self.output_dir,
+            save_freq=self.save_freq,
+            disp_freq=self.disp_freq,
+        )
+        mft.fit(train_data=train_data, aux_data=aux_data, valid_data=valid_data)
+        self._fitted = True
+        return self.output_dir
 
     def _fit_sklearn(
         self,
@@ -733,13 +923,19 @@ class DPAFineTuner:
         fmt=None,
         conditions=None,
     ):
-        """Original frozen_sklearn fit (unchanged logic)."""
+        """Fit the frozen-sklearn pipeline (delegates to ``_FrozenSklearnPipeline``).
+
+        Refactored: logic extracted to ``_FrozenSklearnPipeline``; this method
+        now orchestrates the pipeline and mirrors its state for backward compat.
+        """
         if target_key is not None and labels is not None:
             raise ValueError(
                 "target_key and labels are mutually exclusive; provide only one."
             )
         if target_key is None and labels is None:
             raise ValueError("Either target_key or labels must be provided.")
+
+        p = self._ensure_sklearn()
 
         self.type_map    = type_map or []
         self._target_key = target_key if target_key is not None else "property"
@@ -770,10 +966,20 @@ class DPAFineTuner:
 
         from deepmd.dpa_tools.utils.sklearn_heads import build_sklearn_head
 
-        head = build_sklearn_head(self._predictor_type, seed=self.seed)
+        head = build_sklearn_head(
+            self._predictor_type, seed=self.seed, n_outputs=self._task_dim,
+        )
         self.predictor = make_pipeline(StandardScaler(), head)
         self.predictor.fit(features, y_flat)
         self._fitted = True
+
+        # Mirror pipeline state for backward compat.
+        p.predictor = self.predictor
+        p.type_map = self.type_map
+        p._target_key = self._target_key
+        p._task_dim = self._task_dim
+        p._condition_manager = self._condition_manager
+        p._fitted = True
 
     def predict(self, data, fmt=None, conditions=None) -> DotDict:
         """
@@ -855,11 +1061,23 @@ class DPAFineTuner:
             )
 
         err    = predictions - labels
-        mae    = float(np.mean(np.abs(err)))
-        rmse   = float(np.sqrt(np.mean(err ** 2)))
-        ss_res = np.sum(err ** 2)
-        ss_tot = np.sum((labels - labels.mean()) ** 2)
-        r2     = float(1.0 - ss_res / ss_tot) if ss_tot > 0 else float("nan")
+        if isinstance(self._target_key, list):
+            # Per-property metrics
+            keys = self._target_key
+            mae, rmse, r2 = {}, {}, {}
+            for i, key in enumerate(keys):
+                e_i = err[:, i]
+                mae[key] = float(np.mean(np.abs(e_i)))
+                rmse[key] = float(np.sqrt(np.mean(e_i ** 2)))
+                ss_res_i = np.sum(e_i ** 2)
+                ss_tot_i = np.sum((labels[:, i] - labels[:, i].mean()) ** 2)
+                r2[key] = float(1.0 - ss_res_i / ss_tot_i) if ss_tot_i > 0 else float("nan")
+        else:
+            mae    = float(np.mean(np.abs(err)))
+            rmse   = float(np.sqrt(np.mean(err ** 2)))
+            ss_res = np.sum(err ** 2)
+            ss_tot = np.sum((labels - labels.mean()) ** 2)
+            r2     = float(1.0 - ss_res / ss_tot) if ss_tot > 0 else float("nan")
 
         return DotDict({
             "mae":         mae,
@@ -875,6 +1093,9 @@ class DPAFineTuner:
 
         The bundle contains the sklearn predictor object, the DPA checkpoint
         path, and metadata needed to reconstruct predictions.
+
+        ``target_key`` is stored as-is (``str`` or ``list[str]``).  Loading a
+        bundle with a ``list`` target_key requires dpa_tools >= 0.2.
 
         Parameters
         ----------

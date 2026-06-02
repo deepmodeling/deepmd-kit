@@ -528,19 +528,23 @@ class DPATrainer:
     # task). Sample line: "PROPERTY RMSE           : 6.065579e-02 units"
     # The output appears twice — once per system, once in "weighted average of
     # errors" — so the parser uses findall and takes the LAST match (Fix 3).
-    _RMSE_PATTERNS = [
-        # (label, regex). First pattern that matches anywhere wins.
-        ("property RMSE explicit",
-         re.compile(r"PROPERTY\s+RMSE\s*[:=]?\s*([0-9eE.+-]+)", re.IGNORECASE)),
-        ("generic rmse",
-         re.compile(r"\brmse\b\s*[:=]?\s*([0-9eE.+-]+)", re.IGNORECASE)),
-    ]
-    _MAE_PATTERNS = [
-        ("property MAE explicit",
-         re.compile(r"PROPERTY\s+MAE\s*[:=]?\s*([0-9eE.+-]+)", re.IGNORECASE)),
-        ("generic mae",
-         re.compile(r"\bmae\b\s*[:=]?\s*([0-9eE.+-]+)", re.IGNORECASE)),
-    ]
+    #
+    # Refactored: replaced fragile multi-pattern regex fallback chain with a
+    # single well-anchored regex per metric type, auto-detected from the output.
+    # Generic \brmse\b / \bmae\b fallback patterns removed; unparseable output
+    # now raises RuntimeError with the last 50 lines of stdout+stderr.
+    _PROPERTY_RMSE_RE = re.compile(
+        r"PROPERTY\s+RMSE\s+:\s*([0-9eE.+-]+)", re.IGNORECASE
+    )
+    _PROPERTY_MAE_RE = re.compile(
+        r"PROPERTY\s+MAE\s+:\s*([0-9eE.+-]+)", re.IGNORECASE
+    )
+    _ENERGY_RMSE_RE = re.compile(
+        r"Energy\s+RMSE\s+:\s*([0-9eE.+-]+)\s*\S+", re.IGNORECASE
+    )
+    _ENERGY_MAE_RE = re.compile(
+        r"Energy\s+MAE\s+:\s*([0-9eE.+-]+)\s*\S+", re.IGNORECASE
+    )
     _N_FRAMES_PATTERNS = [
         re.compile(r"number of test data\s*[:=]?\s*(\d+)", re.IGNORECASE),
         re.compile(r"#\s*of test data\s*[:=]?\s*(\d+)", re.IGNORECASE),
@@ -552,53 +556,53 @@ class DPATrainer:
         """
         Extract ``rmse``, ``mae``, ``n_frames`` from ``dp --pt test`` stdout.
 
-        Returns a dict that also includes the raw stdout and a label naming
-        which regex matched (for later calibration). Raises ``RuntimeError``
-        if neither RMSE nor MAE could be parsed — the cluster smoke test
-        should then capture the real stdout so we can add a more specific
-        pattern.
+        Auto-detects output format — ``PROPERTY MAE`` / ``PROPERTY RMSE`` for
+        property tasks, ``Energy MAE`` / ``Energy RMSE`` for ener tasks —
+        and applies a single well-anchored regex per metric type.  No generic
+        fallback patterns are used; if parsing fails a ``RuntimeError`` is
+        raised with the last 50 lines of the combined output.
+
+        Refactored: replaced fragile multi-pattern regex fallback chain with
+        format-aware, single-pattern-per-metric parsing.
         """
+        # Auto-detect output format from the presence of known metric labels.
+        if "PROPERTY MAE" in stdout or "PROPERTY RMSE" in stdout:
+            mae_re = cls._PROPERTY_MAE_RE
+            rmse_re = cls._PROPERTY_RMSE_RE
+            tag = "PROPERTY"
+        elif "Energy MAE" in stdout or "Energy RMSE" in stdout:
+            mae_re = cls._ENERGY_MAE_RE
+            rmse_re = cls._ENERGY_RMSE_RE
+            tag = "Energy"
+        else:
+            tail = "\n".join(stdout.splitlines()[-50:])
+            raise RuntimeError(
+                "Could not parse MAE or RMSE from `dp --pt test` output. "
+                "No PROPERTY MAE/RMSE or Energy MAE/RMSE lines found.\n"
+                "----- last 50 lines of combined stdout+stderr -----\n"
+                f"{tail}\n"
+                "----------------------"
+            )
+
         # Take the LAST match. dp --pt test prints per-system errors followed by
         # a "weighted average of errors" block; the weighted average is what we
         # want when multiple systems are evaluated together. For a single-system
         # test, the per-system and weighted lines have the same value.
-        rmse = None
-        rmse_label = None
-        for label, pat in cls._RMSE_PATTERNS:
-            matches = pat.findall(stdout)
-            if matches:
-                rmse = float(matches[-1])
-                rmse_label = label
-                break
+        mae_matches = mae_re.findall(stdout)
+        rmse_matches = rmse_re.findall(stdout)
 
-        mae = None
-        mae_label = None
-        for label, pat in cls._MAE_PATTERNS:
-            matches = pat.findall(stdout)
-            if matches:
-                mae = float(matches[-1])
-                mae_label = label
-                break
-
-        if rmse is None and mae is None:
+        if not mae_matches and not rmse_matches:
+            tail = "\n".join(stdout.splitlines()[-50:])
             raise RuntimeError(
-                "Could not parse RMSE or MAE from `dp --pt test` stdout. "
-                "Add a more specific pattern to DPATrainer._RMSE_PATTERNS / "
-                "_MAE_PATTERNS based on the raw output below.\n"
-                "----- raw stdout -----\n"
-                f"{stdout}\n"
+                f"Detected {tag} output format but could not extract numeric "
+                "MAE or RMSE values.\n"
+                "----- last 50 lines of combined stdout+stderr -----\n"
+                f"{tail}\n"
                 "----------------------"
             )
-        if rmse_label and rmse_label.startswith("generic"):
-            _LOG.warning(
-                "evaluate(): fell back to generic RMSE parser. "
-                "Capture stdout via _raw_stdout and add a property-explicit pattern."
-            )
-        if mae_label and mae_label.startswith("generic"):
-            _LOG.warning(
-                "evaluate(): fell back to generic MAE parser. "
-                "Capture stdout via _raw_stdout and add a property-explicit pattern."
-            )
+
+        mae = float(mae_matches[-1]) if mae_matches else float("nan")
+        rmse = float(rmse_matches[-1]) if rmse_matches else float("nan")
 
         # TODO: for the total across systems we'd need to sum all matches;
         # here we take the last (per-system) match. `n_frames` is currently
@@ -610,13 +614,10 @@ class DPATrainer:
                 n_frames = int(matches[-1])
                 break
 
-        pattern_used = "; ".join(
-            x for x in (rmse_label, mae_label) if x is not None
-        )
-
+        pattern_used = f"{tag} MAE (last); {tag} RMSE (last)"
         return {
-            "rmse": rmse if rmse is not None else float("nan"),
-            "mae": mae if mae is not None else float("nan"),
+            "rmse": rmse,
+            "mae": mae,
             "n_frames": n_frames,
             "_raw_stdout": stdout,
             "_parser_pattern_used": pattern_used,

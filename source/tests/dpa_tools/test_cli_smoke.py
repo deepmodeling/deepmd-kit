@@ -37,10 +37,10 @@ class TestDpaParserRegistration:
         )
         verbs = sorted(dpa_sub_action.choices)
         for expected in (
-            "extract-descriptors", "fit", "mft", "cv",
-            "predict", "evaluate", "data",
+            "extract-descriptors", "fit", "cv", "predict", "evaluate", "data",
         ):
             assert expected in verbs, f"{expected!r} missing from {verbs}"
+        assert "mft" not in verbs, "mft should be folded into fit --strategy mft"
 
     def test_data_subcommands_registered(self):
         from deepmd.main import main_parser
@@ -54,7 +54,7 @@ class TestDpaParserRegistration:
             a for a in data_parser._actions if a.dest == "dpa_data_command"
         )
         data_verbs = sorted(data_sub_action.choices)
-        for expected in ("convert", "batch-convert", "validate", "attach-labels"):
+        for expected in ("convert", "validate", "attach-labels"):
             assert expected in data_verbs, f"{expected!r} missing from {data_verbs}"
 
 
