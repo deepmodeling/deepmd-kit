@@ -4,6 +4,9 @@ import unittest
 from copy import (
     deepcopy,
 )
+from importlib.util import (
+    find_spec,
+)
 from pathlib import (
     Path,
 )
@@ -194,3 +197,79 @@ class TestCalculatorWithFparamAparam(unittest.TestCase):
         np.testing.assert_allclose(f0[idx_perm, :], f1, rtol=low_prec, atol=prec)
         np.testing.assert_allclose(s0, s1, rtol=low_prec, atol=prec)
         np.testing.assert_allclose(v0, v1, rtol=low_prec, atol=prec)
+
+
+_CALC_CONFIG = {
+    "type_map": ["O", "H"],
+    "descriptor": {
+        "type": "se_e2_a",
+        "sel": [20, 20],
+        "rcut_smth": 0.5,
+        "rcut": 4.0,
+        "neuron": [8],
+        "resnet_dt": False,
+        "axis_neuron": 4,
+        "seed": 1,
+    },
+    "fitting_net": {"neuron": [8], "resnet_dt": True, "seed": 1},
+}
+
+
+@unittest.skipUnless(find_spec("vesin") is not None, "vesin not installed")
+class TestCalculatorNlistBackend(unittest.TestCase):
+    """The ASE DP calculator must thread nlist_backend to DeepPot and give
+    backend-independent results.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        from deepmd.pt.model.model import (
+            get_model,
+        )
+
+        torch.manual_seed(1)
+        cls.model_file = "calc_model_nlist_backend.pth"
+        torch.jit.script(get_model(deepcopy(_CALC_CONFIG))).save(cls.model_file)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        import os
+
+        if os.path.isfile(cls.model_file):
+            os.remove(cls.model_file)
+
+    def test_calculator_nlist_backend(self) -> None:
+        from ase import (
+            Atoms,
+        )
+
+        from deepmd.calculator import (
+            DP,
+        )
+
+        rng = np.random.default_rng(7)
+        atoms = Atoms(
+            numbers=[8, 1, 1, 8, 1, 1],
+            positions=rng.random((6, 3)) * 8.0,
+            cell=np.eye(3) * 8.0,
+            pbc=True,
+        )
+        calc_native = DP(self.model_file, nlist_backend="native")
+        calc_vesin = DP(self.model_file, nlist_backend="vesin")
+        # the kwarg must reach the underlying DeepPot backend
+        self.assertEqual(calc_native.dp.deep_eval.nlist_backend, "native")
+        self.assertTrue(calc_vesin.dp.deep_eval._use_vesin)
+
+        a_native = atoms.copy()
+        a_native.calc = calc_native
+        a_vesin = atoms.copy()
+        a_vesin.calc = calc_vesin
+        np.testing.assert_allclose(
+            a_native.get_potential_energy(),
+            a_vesin.get_potential_energy(),
+            rtol=1e-10,
+            atol=1e-10,
+        )
+        np.testing.assert_allclose(
+            a_native.get_forces(), a_vesin.get_forces(), rtol=1e-10, atol=1e-10
+        )

@@ -730,6 +730,65 @@ class TestDeepEvalEner(unittest.TestCase):
                 ),
             )
 
+    @unittest.skipUnless(
+        importlib.util.find_spec("ase") is not None, "ase not installed"
+    )
+    def test_nlist_backend_auto_yields_to_neighbor_list(self) -> None:
+        # an explicit ASE neighbor_list takes precedence over the auto vesin path
+        import ase.neighborlist
+
+        dp = DeepPot(
+            self.tmpfile.name,
+            nlist_backend="auto",
+            neighbor_list=ase.neighborlist.NewPrimitiveNeighborList(
+                cutoffs=self.rcut, bothways=True
+            ),
+        )
+        self.assertFalse(dp.deep_eval._use_vesin)
+
+    @unittest.skipUnless(
+        importlib.util.find_spec("vesin") is not None
+        and importlib.util.find_spec("ase") is not None,
+        "vesin or ase not installed",
+    )
+    def test_calculator_nlist_backend(self) -> None:
+        # the ASE DP calculator must thread nlist_backend to the pt_expt backend
+        # and give backend-independent results for a .pte model.
+        from ase import (
+            Atoms,
+        )
+
+        from deepmd.calculator import (
+            DP,
+        )
+
+        rng = np.random.default_rng(GLOBAL_SEED + 51)
+        atoms = Atoms(
+            numbers=[8, 1, 1, 8, 1, 1],
+            positions=rng.random((6, 3)) * 8.0,
+            cell=np.eye(3) * 8.0,
+            pbc=True,
+        )
+        type_dict = {"O": 0, "H": 1}
+        calc_native = DP(self.tmpfile.name, type_dict=type_dict, nlist_backend="native")
+        calc_vesin = DP(self.tmpfile.name, type_dict=type_dict, nlist_backend="vesin")
+        self.assertEqual(calc_native.dp.deep_eval.nlist_backend, "native")
+        self.assertTrue(calc_vesin.dp.deep_eval._use_vesin)
+
+        a_native = atoms.copy()
+        a_native.calc = calc_native
+        a_vesin = atoms.copy()
+        a_vesin.calc = calc_vesin
+        np.testing.assert_allclose(
+            a_native.get_potential_energy(),
+            a_vesin.get_potential_energy(),
+            rtol=1e-10,
+            atol=1e-10,
+        )
+        np.testing.assert_allclose(
+            a_native.get_forces(), a_vesin.get_forces(), rtol=1e-10, atol=1e-10
+        )
+
     # spin gate-off is covered end-to-end on a real spin model in
     # test_deep_eval_spin.py::TestSpinInference.
 
