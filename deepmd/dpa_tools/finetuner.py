@@ -391,33 +391,9 @@ class _FrozenSklearnPipeline:
         return local_to_global[atom_types]
 
     # ------------------------------------------------------------------
-    # Feature extraction
+    # Feature extraction  (extract_features_cached is on DPAFineTuner
+    # so that patches on DPAFineTuner._extract_features are honoured)
     # ------------------------------------------------------------------
-
-    def extract_features_cached(self, systems):
-        """Call ``extract_features`` with descriptor-cache lookup.
-
-        Uses the same cache-key scheme as ``load_or_extract()``.  Falls
-        back to direct extraction when the cache key cannot be computed
-        (e.g. the pretrained file does not exist on disk).
-        """
-        try:
-            from deepmd.dpa_tools.data.desc_cache import _cache_key, _cache_dir
-
-            key = _cache_key(systems, self.pretrained, self.pooling)
-            cache_path = _cache_dir() / f"{key}.npy"
-            if cache_path.is_file():
-                return np.load(cache_path)
-        except Exception:
-            pass
-
-        features = self.extract_features(systems)
-        try:
-            cache_path.parent.mkdir(parents=True, exist_ok=True)
-            np.save(cache_path, features)
-        except Exception:
-            pass
-        return features
 
     def extract_features(self, systems):
         """Extract per-structure descriptor features by pooling over atoms.
@@ -683,9 +659,9 @@ class DPAFineTuner:
     # Frozen-sklearn pipeline helpers (thin delegators)
     #
     # Each method forwards to the corresponding method on
-    # ``_FrozenSklearnPipeline``.  This keeps DPAFineTuner thin while
-    # preserving backward-compat for any code (including tests) that
-    # patches or calls these private methods directly.
+    # ``_FrozenSklearnPipeline``.  State set directly on DPAFineTuner
+    # (e.g. ``_checkpoint_type_map`` by tests) is propagated into the
+    # pipeline on each call so that direct setters continue to work.
     # ------------------------------------------------------------------
 
     def _ensure_sklearn(self):
@@ -698,6 +674,11 @@ class DPAFineTuner:
                 pooling=self.pooling,
                 seed=self.seed,
             )
+        # Sync state that external code may have set on DPAFineTuner directly.
+        self._sklearn._model = self._model
+        self._sklearn._device = self._device
+        self._sklearn._checkpoint_type_map = self._checkpoint_type_map
+        self._sklearn.type_map = self.type_map
         return self._sklearn
 
     def _load_descriptor_model(self):
@@ -710,175 +691,11 @@ class DPAFineTuner:
         return self._ensure_sklearn().remap_atom_types(atom_types, system)
 
     def _extract_features_cached(self, systems):
-        return self._ensure_sklearn().extract_features_cached(systems)
-
-    def _extract_features(self, systems):
-        return self._ensure_sklearn().extract_features(systems)
-
-    # ------------------------------------------------------------------
-    # Internal methods removed — logic lives in _FrozenSklearnPipeline:
-    #   _load_descriptor_model  → _FrozenSklearnPipeline.load_descriptor_model
-    #   _validate_type_map      → _FrozenSklearnPipeline.validate_type_map
-    #   _remap_atom_types       → _FrozenSklearnPipeline.remap_atom_types
-    #   _extract_features_cached → _FrozenSklearnPipeline.extract_features_cached
-    #   _extract_features       → _FrozenSklearnPipeline.extract_features
-    # ------------------------------------------------------------------
-
-    # -----------------------------------------------------------------------
-    # Internal: descriptor feature extraction
-    # -----------------------------------------------------------------------
-
-    def _load_descriptor_model(self):
-        """Load the pretrained DPA checkpoint and return a (non-JIT) ModelWrapper.
-
-        If *pretrained* is a built-in model name (e.g. ``"DPA-3.1-3M"``)
-        rather than a local path, it is automatically downloaded.
-        """
-        import torch
-
-        resolved = resolve_pretrained_path(self.pretrained)
-        state_dict = load_torch_file(resolved)
-        if "model" in state_dict:
-            state_dict = state_dict["model"]
-
-        input_param = state_dict["_extra_state"]["model_params"]
-
-        if "model_dict" in input_param:
-            # Multi-task checkpoint: select the right branch
-            model_alias_dict, _ = resolve_model_branch(input_param["model_dict"])
-            head = self.model_branch or "Omat24"
-
-            # Case-insensitive fallback
-            if head not in model_alias_dict:
-                head_lower = head.lower()
-                for mk in model_alias_dict:
-                    if mk.lower() == head_lower:
-                        head = mk
-                        break
-            assert head in model_alias_dict, (
-                f"Branch '{head}' not found. "
-                f"Available: {list(model_alias_dict)}"
-            )
-            head = model_alias_dict[head]
-
-            # Build single-task input_param from the selected branch
-            input_param = input_param["model_dict"][head]
-
-            # Remap state dict keys: model.{head}.xxx → model.Default.xxx
-            new_sd = {"_extra_state": state_dict["_extra_state"]}
-            for key, val in state_dict.items():
-                prefix = f"model.{head}."
-                if key.startswith(prefix):
-                    new_sd[key.replace(prefix, "model.Default.", 1)] = val
-            state_dict = new_sd
-
-        self._checkpoint_type_map = list(input_param.get("type_map", []))
-
-        # Build model WITHOUT JIT so that eval_descriptor_hook works
-        wrapper = build_model_from_config(input_param)
-        wrapper.load_state_dict(state_dict)
-        wrapper.eval()
-
-        device = get_torch_device()
-        wrapper = wrapper.to(device)
-        self._device = device
-        return wrapper
-
-    def _validate_type_map(
-        self, user_type_map: list[str], systems: list
-    ) -> None:
-        """Raise DPADataError if any data element is not in the checkpoint type_map.
-
-        The data type_map can be any subset of the checkpoint's type_map — order
-        and contiguity are irrelevant. Local indices are remapped to checkpoint
-        global indices in ``_extract_features``.
-        """
-        ckpt = self._checkpoint_type_map
-        if not ckpt:
-            return  # checkpoint has no type_map metadata → skip
-
-        ckpt_set = set(ckpt)
-
-        def _check(candidate: list[str], source: str) -> None:
-            unsupported = [e for e in candidate if e not in ckpt_set]
-            if unsupported:
-                ckpt_repr = (
-                    f"{ckpt[:3] + ['...'] + ckpt[-1:]} ({len(ckpt)} elements)"
-                    if len(ckpt) > 8 else str(ckpt)
-                )
-                raise DPADataError(
-                    f"Element(s) in {source} not supported by this checkpoint.\n"
-                    f"  Data type_map     : {candidate}\n"
-                    f"  Checkpoint covers : {ckpt_repr}\n"
-                    f"  Unsupported       : {unsupported}\n"
-                    "Please re-convert your data with a supported element set."
-                )
-
-        if user_type_map:
-            _check(user_type_map, "user-provided type_map")
-
-        for system in systems:
-            data_tm = _read_data_type_map(system)
-            if data_tm:
-                identifier = system.orig if hasattr(system, "orig") else "system"
-                _check(data_tm, f"atom_names of {identifier}")
-
-    def _remap_atom_types(
-        self, atom_types: np.ndarray, system
-    ) -> np.ndarray:
-        """Map local atom-type indices to checkpoint-global indices.
-
-        ``atom_types`` are 0-based indices into the system's type_map.
-        The model expects indices into the checkpoint's ``type_map``.
-        """
-        ckpt = self._checkpoint_type_map
-
-        data_tm = _read_data_type_map(system) or list(self.type_map)
-
-        identifier = system.orig if hasattr(system, "orig") else "system"
-
-        if not data_tm:
-            if ckpt and atom_types.size and int(atom_types.max()) >= len(ckpt):
-                raise DPADataError(
-                    f"No atom_names in system and no type_map provided, "
-                    f"but atom type index {int(atom_types.max())} "
-                    f"is out of range for the checkpoint type_map "
-                    f"(size {len(ckpt)}). "
-                    "Pass type_map=[...] to fit()."
-                )
-            return atom_types
-
-        if not ckpt:
-            return atom_types
-
-        try:
-            local_to_global = np.array(
-                [ckpt.index(elem) for elem in data_tm], dtype=np.int64,
-            )
-        except ValueError as e:
-            unsupported = [e for e in data_tm if e not in set(ckpt)]
-            raise DPADataError(
-                f"Element(s) in data type_map for {identifier!r} not "
-                f"supported by this checkpoint.\n"
-                f"  Data type_map : {data_tm}\n"
-                f"  Unsupported   : {unsupported}"
-            ) from e
-
-        if atom_types.size and int(atom_types.max()) >= len(local_to_global):
-            raise DPADataError(
-                f"atom type index {int(atom_types.max())} in {identifier!r} "
-                f"exceeds the data type_map size ({len(local_to_global)}). "
-                "Check that type_map and atom_types are consistent."
-            )
-
-        return local_to_global[atom_types]
-
-    def _extract_features_cached(self, systems: list) -> np.ndarray:
         """Call ``_extract_features`` with descriptor-cache lookup.
 
-        Uses the same cache-key scheme as ``load_or_extract()``.  Falls
-        back to direct extraction when the cache key cannot be computed
-        (e.g. the pretrained file does not exist on disk).
+        Kept on DPAFineTuner (not delegated) so that patches on
+        ``DPAFineTuner._extract_features`` are honoured through the
+        ``self._extract_features()`` call below.
         """
         try:
             from deepmd.dpa_tools.data.desc_cache import _cache_key, _cache_dir
@@ -898,82 +715,14 @@ class DPAFineTuner:
             pass
         return features
 
-    def _extract_features(self, systems: list) -> np.ndarray:
-        """Extract per-structure descriptor features by pooling over atoms.
+    def _extract_features(self, systems):
+        return self._ensure_sklearn().extract_features(systems)
 
-        The pooling strategy is controlled by ``self.pooling``:
-        - ``"mean"``             → shape (n_frames, feat_dim)
-        - ``"sum"``              → shape (n_frames, feat_dim)
-        - ``"mean+std"``         → shape (n_frames, feat_dim*2)
-        - ``"mean+std+max+min"`` → shape (n_frames, feat_dim*4)
-
-        Parameters
-        ----------
-        systems : list[dpdata.System]
-            dpdata systems to extract descriptors from.
-
-        Returns
-        -------
-        np.ndarray, shape (n_frames_total, feature_dim)
-        """
-        import torch
-
-        if self._model is None:
-            self._model = self._load_descriptor_model()
-
-        extractor = _DescriptorExtraction(self._model)
-        extractor._enable_hook()
-
-        all_features = []
-
-        for system in systems:
-            coords, boxes, atom_types = _load_npy_system(system)
-            n_frames = coords.shape[0]
-            n_atoms = len(atom_types)
-
-            # Remap local atom-type indices to checkpoint-global indices.
-            atom_types_global = self._remap_atom_types(atom_types, system)
-
-            # Non-periodic structures must NOT use all-zero box:
-            # the descriptor produces NaN in that case.
-            # Use a large 100 Å cubic box instead.
-            if boxes is None:
-                boxes = np.tile(np.eye(3) * 100.0, (n_frames, 1)).reshape(n_frames, 9)
-
-            # coord requires grad: forward_common calls autograd.grad
-            # internally to compute forces, which fails under no_grad.
-            coord_t = torch.tensor(
-                coords.reshape(n_frames, n_atoms * 3), dtype=torch.float64,
-                device=self._device,
-            ).requires_grad_(True)
-            atype_t = torch.tensor(
-                np.tile(atom_types_global, (n_frames, 1)), dtype=torch.long,
-                device=self._device,
-            )
-            box_t = torch.tensor(boxes, dtype=torch.float64, device=self._device)
-
-            # Shape: (n_frames, n_atoms, feat_dim)
-            descrpt = extractor._run_forward(coord_t, atype_t, box_t)
-            if self.pooling == "mean":
-                feat = descrpt.mean(dim=1)
-            elif self.pooling == "sum":
-                feat = descrpt.sum(dim=1)
-            elif self.pooling == "mean+std":
-                mean = descrpt.mean(dim=1)
-                std = torch.nan_to_num(descrpt.std(dim=1), nan=0.0)
-                feat = torch.cat([mean, std], dim=-1)
-            elif self.pooling == "mean+std+max+min":
-                mean = descrpt.mean(dim=1)
-                std = torch.nan_to_num(descrpt.std(dim=1), nan=0.0)
-                feat = torch.cat([
-                    mean, std,
-                    descrpt.max(dim=1).values, descrpt.min(dim=1).values,
-                ], dim=-1)
-            feat = torch.nan_to_num(feat, nan=0.0, posinf=0.0, neginf=0.0)
-            all_features.append(feat.cpu().numpy())
-
-        extractor._disable_hook()
-        return np.concatenate(all_features, axis=0)
+    # ------------------------------------------------------------------
+    # The heavy implementations of the following methods now live in
+    # _FrozenSklearnPipeline (see class docstring above).  The thin
+    # delegators at the top of this class forward calls to the pipeline.
+    # ------------------------------------------------------------------
 
     # -----------------------------------------------------------------------
     # Public API
