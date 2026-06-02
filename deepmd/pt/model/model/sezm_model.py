@@ -2239,9 +2239,8 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             mapping_: torch.Tensor | None,
             fparam_: torch.Tensor | None,
             aparam_: torch.Tensor | None,
-            *maybe_charge_spin: torch.Tensor | None,
+            charge_spin_: torch.Tensor | None,
         ) -> dict[str, torch.Tensor]:
-            charge_spin_ = maybe_charge_spin[0] if maybe_charge_spin else None
             return lower_fn(
                 ext_coord,
                 ext_atype,
@@ -2252,7 +2251,6 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 charge_spin_,
             )
 
-        trace_inputs = (extended_coord, extended_atype, nlist, mapping, fparam, aparam)
         if self.get_dim_chg_spin() > 0:
             charge_spin = self.convert_charge_spin(
                 charge_spin,
@@ -2260,7 +2258,18 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 dtype=extended_coord.dtype,
                 device=extended_coord.device,
             )
-            trace_inputs = (*trace_inputs, charge_spin)
+        # Always include the charge_spin slot (possibly None) so the traced
+        # module's forward signature matches the 7-tuple the freeze pipeline
+        # passes at runtime, regardless of whether the model is conditioned.
+        trace_inputs = (
+            extended_coord,
+            extended_atype,
+            nlist,
+            mapping,
+            fparam,
+            aparam,
+            charge_spin,
+        )
 
         return self._trace_lower_exportable(
             fn,
