@@ -613,10 +613,10 @@ class TestSeZMModelCompile(unittest.TestCase):
             wigner_calc=descriptor.wigner_calc,
         )
 
-        # build_edge_list_from_nlist appends masked dummy edges;
+        # build_edge_list_from_nlist appends exactly one masked dummy edge;
         # compare only the real edges before the padded tail.
         n_real = cache_std.src.shape[0]
-        self.assertEqual(edge_mask.shape[0] - n_real, 2)
+        self.assertEqual(edge_mask.shape[0] - n_real, 1)
         self.assertFalse(edge_mask[n_real:].any().item())
         self.assertTrue(torch.equal(cache_std.src, cache_sparse.src[:n_real]))
         self.assertTrue(torch.equal(cache_std.dst, cache_sparse.dst[:n_real]))
@@ -898,13 +898,15 @@ class TestSeZMModelCompile(unittest.TestCase):
                 msg=f"multitask force mismatch at {branch}",
             )
 
-        # === Step 3. Each compiled branch owns its own compile cache; the
-        # shared descriptor weights must not collapse them into one.
-        # Step 2 ran every branch in training mode with the default
+        # === Step 3. Each branch keeps its own per-instance cache dict, but
+        # branches that share descriptor + fitting (same Python-object
+        # identity after share_params) reuse a single compiled callable via
+        # the module-level ``_SEZM_COMPILE_CACHE``.  This avoids the
+        # N x compile-cache OOM / N DDP graph boundary cost on multitask
+        # runs.  Step 2 ran every branch in training mode with the default
         # ``do_atomic_virial=False`` and no coordinate correction, so each
-        # per-branch cache dict
-        # should hold exactly that one slot, and the compiled callables
-        # at that slot must be distinct across branches. ===
+        # per-branch cache should hold exactly that one slot, and the
+        # compiled callable at that slot must be the *same* object. ===
         cache1 = wrapper_cmp.model["water_1"].compiled_core_compute_cache
         cache2 = wrapper_cmp.model["water_2"].compiled_core_compute_cache
         self.assertIsNot(cache1, cache2)
@@ -915,7 +917,7 @@ class TestSeZMModelCompile(unittest.TestCase):
         c2 = cache2[train_key]
         self.assertIsNotNone(c1)
         self.assertIsNotNone(c2)
-        self.assertIsNot(c1, c2)
+        self.assertIs(c1, c2)
 
         # === Step 4. Per-task case embedding must differentiate outputs. ===
         out_e1 = wrapper_eager.model["water_1"](coord, atype, box=box)
