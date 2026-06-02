@@ -632,6 +632,61 @@ class TestDeepEvalEner(unittest.TestCase):
         np.testing.assert_allclose(f1, f2, rtol=1e-10, atol=1e-10, err_msg="force")
         np.testing.assert_allclose(v1, v2, rtol=1e-10, atol=1e-10, err_msg="virial")
 
+    @unittest.skipUnless(
+        importlib.util.find_spec("vesin") is not None, "vesin not installed"
+    )
+    def test_vesin_neighbor_list_consistency(self) -> None:
+        """The vesin O(N) nlist must match the native builder (PBC + non-PBC)."""
+        rng = np.random.default_rng(GLOBAL_SEED + 19)
+        natoms = 5
+        coords = rng.random((1, natoms, 3)) * 8.0
+        atom_types = np.array([i % self.nt for i in range(natoms)], dtype=np.int32)
+
+        dp_native = DeepPot(self.tmpfile.name, nlist_backend="native")
+        dp_vesin = DeepPot(self.tmpfile.name, nlist_backend="vesin")
+        self.assertFalse(dp_native.deep_eval._use_vesin)
+        self.assertTrue(dp_vesin.deep_eval._use_vesin)
+
+        for cells in (np.eye(3).reshape(1, 9) * 10.0, None):
+            e1, f1, v1, ae1, av1 = dp_native.eval(
+                coords, cells, atom_types, atomic=True
+            )
+            e2, f2, v2, ae2, av2 = dp_vesin.eval(coords, cells, atom_types, atomic=True)
+            np.testing.assert_allclose(e1, e2, rtol=1e-10, atol=1e-10, err_msg="energy")
+            np.testing.assert_allclose(f1, f2, rtol=1e-10, atol=1e-10, err_msg="force")
+            np.testing.assert_allclose(v1, v2, rtol=1e-10, atol=1e-10, err_msg="virial")
+            np.testing.assert_allclose(
+                ae1, ae2, rtol=1e-10, atol=1e-10, err_msg="atom_energy"
+            )
+            np.testing.assert_allclose(
+                av1, av2, rtol=1e-10, atol=1e-10, err_msg="atom_virial"
+            )
+
+    @unittest.skipUnless(
+        importlib.util.find_spec("vesin") is not None, "vesin not installed"
+    )
+    def test_vesin_nlist_multiple_frames(self) -> None:
+        """Vesin nlist with multiple frames and auto_batch_size=False."""
+        rng = np.random.default_rng(GLOBAL_SEED + 23)
+        natoms = 4
+        nframes = 3
+        coords = rng.random((nframes, natoms, 3)) * 8.0
+        cells = np.tile(np.eye(3).reshape(1, 9) * 10.0, (nframes, 1))
+        atom_types = np.array([i % self.nt for i in range(natoms)], dtype=np.int32)
+
+        dp_native = DeepPot(
+            self.tmpfile.name, nlist_backend="native", auto_batch_size=False
+        )
+        dp_vesin = DeepPot(
+            self.tmpfile.name, nlist_backend="vesin", auto_batch_size=False
+        )
+        e1, f1, v1 = dp_native.eval(coords, cells, atom_types)
+        e2, f2, v2 = dp_vesin.eval(coords, cells, atom_types)
+
+        np.testing.assert_allclose(e1, e2, rtol=1e-10, atol=1e-10, err_msg="energy")
+        np.testing.assert_allclose(f1, f2, rtol=1e-10, atol=1e-10, err_msg="force")
+        np.testing.assert_allclose(v1, v2, rtol=1e-10, atol=1e-10, err_msg="virial")
+
 
 class TestDeepEvalEnerPt2(unittest.TestCase):
     """Test pt_expt inference for energy models via .pt2 (AOTInductor)."""

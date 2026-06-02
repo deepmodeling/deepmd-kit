@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
+import logging
 from collections.abc import (
     Callable,
 )
@@ -23,7 +24,9 @@ from deepmd.dpmodel.output_def import (
 )
 from deepmd.dpmodel.utils.nlist import (
     build_neighbor_list,
+    build_neighbor_list_vesin,
     extend_coord_with_ghosts,
+    is_vesin_available,
     nlist_distinguish_types,
 )
 from deepmd.dpmodel.utils.region import (
@@ -57,6 +60,8 @@ from deepmd.pt.utils.auto_batch_size import (
 
 if TYPE_CHECKING:
     import ase.neighborlist
+
+log = logging.getLogger(__name__)
 
 
 def _reshape_charge_spin(
@@ -103,6 +108,7 @@ class DeepEval(DeepEvalBackend):
         *args: Any,
         auto_batch_size: bool | int | AutoBatchSize = True,
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
+        nlist_backend: str = "vesin",
         **kwargs: Any,
     ) -> None:
         self.output_def = output_def
@@ -122,6 +128,7 @@ class DeepEval(DeepEvalBackend):
                 "backend: expected `.pt2` / `.pte` (deployable archives) or "
                 "`.pt` (training checkpoint)."
             )
+        self._setup_nlist_backend(nlist_backend)
 
         if isinstance(auto_batch_size, bool):
             if auto_batch_size:
@@ -134,6 +141,34 @@ class DeepEval(DeepEvalBackend):
             self.auto_batch_size = auto_batch_size
         else:
             raise TypeError("auto_batch_size should be bool, int, or AutoBatchSize")
+
+    def _setup_nlist_backend(self, nlist_backend: str) -> None:
+        """Resolve the requested neighbor-list backend for the inference path."""
+        if nlist_backend not in ("vesin", "native"):
+            raise ValueError(
+                f"Unknown nlist_backend {nlist_backend!r}; "
+                "expected 'vesin' or 'native'."
+            )
+        self.nlist_backend = nlist_backend
+        # The vesin O(N) cell list replaces the native all-pairs O(N^2) build on
+        # the host side; an explicitly supplied ASE ``neighbor_list`` still takes
+        # precedence, and spin models keep the native builder.
+        self._use_vesin = (
+            nlist_backend == "vesin"
+            and self.neighbor_list is None
+            and is_vesin_available()
+            and not self._is_spin
+        )
+        if (
+            nlist_backend == "vesin"
+            and self.neighbor_list is None
+            and not is_vesin_available()
+        ):
+            log.warning(
+                "nlist_backend='vesin' requested but the 'vesin' package is not "
+                "installed; falling back to the native O(N^2) neighbor list. "
+                "Install it with `pip install vesin` for faster inference."
+            )
 
     def _init_from_model_json(self, model_json_str: str) -> None:
         """Deserialize model.json and derive model API from the dpmodel instance."""
@@ -1053,7 +1088,25 @@ class DeepEval(DeepEvalBackend):
         )
 
         coord_input = coords.reshape(nframes, natoms, 3)
-        if self.neighbor_list is not None:
+        if self._use_vesin:
+            # vesin O(N) cell list: builds nlist in numpy, then convert to
+            # tensors.  forward_common_lower re-formats the candidate list, so
+            # the mixed/distinguished choice here only mirrors the ASE path.
+            extended_coord, extended_atype, nlist, mapping = build_neighbor_list_vesin(
+                coord_input,
+                cells.reshape(nframes, 3, 3) if cells is not None else None,
+                atom_types,
+                self._rcut,
+                self._sel,
+                distinguish_types=not self._mixed_types,
+            )
+            ext_coord_t = torch.tensor(
+                extended_coord, dtype=torch.float64, device=DEVICE
+            )
+            ext_atype_t = torch.tensor(extended_atype, dtype=torch.int64, device=DEVICE)
+            nlist_t = torch.tensor(nlist, dtype=torch.int64, device=DEVICE)
+            mapping_t = torch.tensor(mapping, dtype=torch.int64, device=DEVICE)
+        elif self.neighbor_list is not None:
             # ASE path: builds nlist in numpy, then convert to tensors
             extended_coord, extended_atype, nlist, mapping = self._build_nlist_ase(
                 coord_input,

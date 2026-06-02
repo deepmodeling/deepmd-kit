@@ -374,3 +374,163 @@ def extend_coord_with_ghosts(
         xp.reshape(extend_atype, (nf, nall)),
         xp.reshape(extend_aidx, (nf, nall)),
     )
+
+
+def is_vesin_available() -> bool:
+    """Whether the optional ``vesin`` O(N) neighbor-list backend is importable."""
+    try:
+        import vesin  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def build_neighbor_list_vesin(
+    coords: Array,
+    cells: Array | None,
+    atom_types: Array,
+    rcut: float,
+    sel: list[int],
+    distinguish_types: bool,
+) -> tuple[Array, Array, Array, Array]:
+    """Build the extended system and neighbor list with the O(N) ``vesin`` cell list.
+
+    This is a host-side, drop-in replacement for the native all-pairs O(N^2)
+    :func:`extend_input_and_build_neighbor_list` on the Python inference path.
+    The neighbor *search* is non-differentiable -- it only produces integer
+    index arrays and the gathered ghost coordinates -- so an external cell-list
+    library may be used without affecting the autograd graph of the model.
+
+    Parameters
+    ----------
+    coords : np.ndarray
+        local atom coordinates, shape (nframes, nloc, 3).
+    cells : np.ndarray or None
+        simulation cell, shape (nframes, 9) or (nframes, 3, 3). ``None`` for
+        non-periodic systems.
+    atom_types : np.ndarray
+        atom types, shape (nframes, nloc).
+    rcut : float
+        cutoff radius.
+    sel : list[int]
+        maximal number of selected neighbors (summed over types).
+    distinguish_types : bool
+        whether to reorder the neighbor list per atom type (``not mixed_types``).
+
+    Returns
+    -------
+    extended_coord : np.ndarray, shape (nframes, nall, 3)
+    extended_atype : np.ndarray, shape (nframes, nall)
+    nlist : np.ndarray, shape (nframes, nloc, sum(sel))
+    mapping : np.ndarray, shape (nframes, nall)
+    """
+    import numpy as np
+
+    coords = np.asarray(coords, dtype=np.float64).reshape(coords.shape[0], -1, 3)
+    nframes = coords.shape[0]
+    atom_types = np.asarray(atom_types).reshape(nframes, -1)
+    if cells is not None:
+        cells = np.asarray(cells, dtype=np.float64).reshape(nframes, 3, 3)
+
+    frame_results = [
+        _build_neighbor_list_vesin_single(
+            coords[ff],
+            cells[ff] if cells is not None else None,
+            atom_types[ff],
+            rcut,
+            sel,
+            distinguish_types,
+        )
+        for ff in range(nframes)
+    ]
+    # pad to a common nall across frames
+    max_nall = max(ec.shape[0] for ec, _, _, _ in frame_results)
+    ext_coords, ext_atypes, nlists, mappings = [], [], [], []
+    for ec, ea, nl, mp in frame_results:
+        pad = max_nall - ec.shape[0]
+        if pad > 0:
+            ec = np.concatenate([ec, np.zeros((pad, 3), dtype=ec.dtype)], axis=0)
+            ea = np.concatenate([ea, np.full(pad, -1, dtype=ea.dtype)], axis=0)
+            mp = np.concatenate([mp, np.zeros(pad, dtype=mp.dtype)], axis=0)
+        ext_coords.append(ec)
+        ext_atypes.append(ea)
+        nlists.append(nl)
+        mappings.append(mp)
+    return (
+        np.stack(ext_coords, axis=0),
+        np.stack(ext_atypes, axis=0),
+        np.stack(nlists, axis=0),
+        np.stack(mappings, axis=0),
+    )
+
+
+def _build_neighbor_list_vesin_single(
+    positions: Array,
+    cell: Array | None,
+    atype: Array,
+    rcut: float,
+    sel: list[int],
+    distinguish_types: bool,
+) -> tuple[Array, Array, Array, Array]:
+    """Single-frame variant of :func:`build_neighbor_list_vesin`."""
+    import numpy as np
+    import vesin
+
+    nsel = sum(sel)
+    nloc = positions.shape[0]
+    periodic = cell is not None
+    box = cell if periodic else np.zeros((3, 3), dtype=np.float64)
+
+    nl = vesin.NeighborList(cutoff=rcut, full_list=True)
+    ii, jj, ss = nl.compute(
+        points=positions, box=box, periodic=periodic, quantities="ijS"
+    )
+    ii = ii.astype(np.int64)
+    jj = jj.astype(np.int64)
+    ss = ss.astype(np.float64)
+
+    # ghost atoms: neighbors reached through a non-zero periodic shift
+    out_mask = np.any(ss != 0, axis=1)
+    out_idx = jj[out_mask]
+    out_coords = positions[out_idx] + ss[out_mask].dot(box)
+    nghost = out_idx.size
+
+    extended_coord = np.concatenate((positions, out_coords), axis=0)
+    extended_atype = np.concatenate((atype, atype[out_idx]))
+    mapping = np.concatenate((np.arange(nloc, dtype=np.int64), out_idx))
+
+    # remap neighbor column indices: ghosts -> [nloc, nloc + nghost)
+    neigh_idx = jj.copy()
+    neigh_idx[out_mask] = np.arange(nloc, nloc + nghost, dtype=np.int64)
+
+    # group pairs by center atom (vesin does not guarantee CSR ordering)
+    counts = np.bincount(ii, minlength=nloc)
+    max_nn = int(counts.max()) if counts.size > 0 else 0
+    order = np.argsort(ii, kind="stable")
+    rows = ii[order]
+    cols = np.arange(ii.size, dtype=np.int64) - np.repeat(
+        np.cumsum(counts) - counts, counts
+    )
+    dense_idx = np.full((nloc, max_nn), -1, dtype=np.int64)
+    if ii.size > 0:
+        dense_idx[rows, cols] = neigh_idx[order]
+
+    # sort candidates by distance, keep the nsel nearest within rcut, pad with -1
+    valid = dense_idx >= 0
+    lookup = np.where(valid, dense_idx, 0)
+    dists = np.linalg.norm(extended_coord[lookup] - positions[:, None, :], axis=-1)
+    valid &= dists <= rcut
+    dists = np.where(valid, dists, np.inf)
+    sort_order = np.argsort(dists, axis=-1)
+    sorted_idx = np.take_along_axis(dense_idx, sort_order, axis=-1)
+    sorted_valid = np.take_along_axis(valid, sort_order, axis=-1)
+
+    nlist = np.full((nloc, nsel), -1, dtype=np.int64)
+    keep = min(nsel, max_nn)
+    if keep > 0:
+        nlist[:, :keep] = np.where(sorted_valid[:, :keep], sorted_idx[:, :keep], -1)
+
+    if distinguish_types:
+        nlist = nlist_distinguish_types(nlist[None], extended_atype[None], sel)[0]
+
+    return extended_coord, extended_atype, nlist, mapping

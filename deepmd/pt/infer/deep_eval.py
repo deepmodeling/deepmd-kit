@@ -20,6 +20,10 @@ from deepmd.dpmodel.output_def import (
     OutputVariableCategory,
     OutputVariableDef,
 )
+from deepmd.dpmodel.utils.nlist import (
+    build_neighbor_list_vesin,
+    is_vesin_available,
+)
 from deepmd.infer.deep_dipole import (
     DeepDipole,
 )
@@ -45,6 +49,9 @@ from deepmd.infer.deep_wfc import (
 )
 from deepmd.pt.model.model import (
     get_model,
+)
+from deepmd.pt.model.model.transform_output import (
+    communicate_extended_output,
 )
 from deepmd.pt.model.network.network import (
     TypeEmbedNetConsistent,
@@ -116,6 +123,12 @@ class DeepEval(DeepEvalBackend):
     neighbor_list : ase.neighborlist.NewPrimitiveNeighborList, optional
         The ASE neighbor list class to produce the neighbor list. If None, the
         neighbor list will be built natively in the model.
+    nlist_backend : str, default: "vesin"
+        Which algorithm builds the neighbor list on the Python inference path.
+        ``"vesin"`` uses the optional O(N) ``vesin`` cell list (much faster for
+        large systems via e.g. the ASE calculator) and transparently falls back
+        to the native builder when ``vesin`` is not installed. ``"native"``
+        forces the built-in all-pairs O(N^2) builder.
     **kwargs : dict
         Keyword arguments.
     """
@@ -127,6 +140,7 @@ class DeepEval(DeepEvalBackend):
         *args: Any,
         auto_batch_size: bool | int | AutoBatchSize = True,
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
+        nlist_backend: str = "vesin",
         head: str | int | None = None,
         no_jit: bool = False,
         **kwargs: Any,
@@ -239,6 +253,33 @@ class DeepEval(DeepEvalBackend):
         if callable(self._has_spin):
             self._has_spin = self._has_spin()
         self._has_hessian = self.model_def_script.get("hessian_mode", False)
+        self._setup_nlist_backend(nlist_backend)
+
+    def _setup_nlist_backend(self, nlist_backend: str) -> None:
+        """Resolve the requested neighbor-list backend for the inference path."""
+        if nlist_backend not in ("vesin", "native"):
+            raise ValueError(
+                f"Unknown nlist_backend {nlist_backend!r}; "
+                "expected 'vesin' or 'native'."
+            )
+        self.nlist_backend = nlist_backend
+        # The vesin path is a host-side replacement for the native all-pairs
+        # neighbor-list build.  It is wired for the standard (non-spin,
+        # non-hessian) path; spin and hessian models keep the native builder.
+        self._use_vesin = (
+            nlist_backend == "vesin"
+            and is_vesin_available()
+            and not self._has_spin
+            and not self._has_hessian
+        )
+        if nlist_backend == "vesin" and not is_vesin_available():
+            log.warning(
+                "nlist_backend='vesin' requested but the 'vesin' package is not "
+                "installed; falling back to the native O(N^2) neighbor list. "
+                "Install it with `pip install vesin` for faster inference."
+            )
+        if self._use_vesin:
+            self._nsel = self.dp.model["Default"].get_nsel()
 
     def get_rcut(self) -> float:
         """Get the cutoff radius of this model."""
@@ -539,6 +580,16 @@ class DeepEval(DeepEvalBackend):
         request_defs: list[OutputVariableDef],
         charge_spin: np.ndarray | None,
     ) -> tuple[np.ndarray, ...]:
+        if self._use_vesin:
+            return self._eval_model_vesin(
+                coords,
+                cells,
+                atom_types,
+                fparam,
+                aparam,
+                request_defs,
+                charge_spin,
+            )
         model = self.dp.to(DEVICE)
         prec = NP_PRECISION_DICT[RESERVED_PRECISION_DICT[GLOBAL_PT_FLOAT_PRECISION]]
 
@@ -610,6 +661,107 @@ class DeepEval(DeepEvalBackend):
                 results.append(
                     np.full(np.abs(shape), np.nan, dtype=prec)
                 )  # this is kinda hacky
+        return tuple(results)
+
+    def _eval_model_vesin(
+        self,
+        coords: np.ndarray,
+        cells: np.ndarray | None,
+        atom_types: np.ndarray,
+        fparam: np.ndarray | None,
+        aparam: np.ndarray | None,
+        request_defs: list[OutputVariableDef],
+        charge_spin: np.ndarray | None,
+    ) -> tuple[np.ndarray, ...]:
+        """Evaluate using an O(N) ``vesin`` neighbor list built on the host.
+
+        The neighbor list is built outside the model graph and fed to the
+        exported ``forward_common_lower`` interface; the extended-region output
+        is mapped back to local atoms with :func:`communicate_extended_output`,
+        exactly mirroring the native ``forward_common`` path.  This avoids the
+        native all-pairs O(N^2) neighbor-list build, which dominates runtime for
+        large systems on the Python / ASE inference path.
+        """
+        model = self.dp.model["Default"].to(DEVICE)
+        prec = NP_PRECISION_DICT[RESERVED_PRECISION_DICT[GLOBAL_PT_FLOAT_PRECISION]]
+
+        nframes = coords.shape[0]
+        if len(atom_types.shape) == 1:
+            natoms = len(atom_types)
+            atom_types = np.tile(atom_types, nframes).reshape(nframes, -1)
+        else:
+            natoms = len(atom_types[0])
+
+        coords = coords.reshape([nframes, natoms, 3])
+        # The lower interface re-formats (distance-sort, truncate, type-split)
+        # the candidate list, so a single mixed list of the nearest sum(sel)
+        # neighbors is sufficient here (matches forward_common, which builds the
+        # nlist with mixed_types=True and distinguishes in the lower interface).
+        extended_coord, extended_atype, nlist, mapping = build_neighbor_list_vesin(
+            coords,
+            cells.reshape([nframes, 3, 3]) if cells is not None else None,
+            atom_types,
+            self.rcut,
+            [self._nsel],
+            distinguish_types=False,
+        )
+        ext_coord_input = torch.tensor(
+            extended_coord.astype(prec),
+            dtype=GLOBAL_PT_FLOAT_PRECISION,
+            device=DEVICE,
+        )
+        ext_atype_input = torch.tensor(extended_atype, dtype=torch.long, device=DEVICE)
+        nlist_input = torch.tensor(nlist, dtype=torch.long, device=DEVICE)
+        mapping_input = torch.tensor(mapping, dtype=torch.long, device=DEVICE)
+
+        if fparam is not None:
+            fparam_input = to_torch_tensor(
+                fparam.reshape(nframes, self.get_dim_fparam())
+            )
+        else:
+            fparam_input = None
+        if aparam is not None:
+            aparam_input = to_torch_tensor(
+                aparam.reshape(nframes, natoms, self.get_dim_aparam())
+            )
+        else:
+            aparam_input = None
+        if charge_spin is not None:
+            charge_spin_input = to_torch_tensor(charge_spin.reshape(nframes, 2))
+        else:
+            charge_spin_input = None
+        do_atomic_virial = any(
+            x.category == OutputVariableCategory.DERV_C for x in request_defs
+        )
+
+        model_ret = model.forward_common_lower(
+            ext_coord_input,
+            ext_atype_input,
+            nlist_input,
+            mapping_input,
+            fparam=fparam_input,
+            aparam=aparam_input,
+            do_atomic_virial=do_atomic_virial,
+            charge_spin=charge_spin_input,
+        )
+        batch_output = communicate_extended_output(
+            model_ret,
+            self.output_def,
+            mapping_input,
+            do_atomic_virial=do_atomic_virial,
+        )
+
+        results = []
+        for odef in request_defs:
+            # communicate_extended_output keys are the internal output names,
+            # which match odef.name (e.g. "energy_redu", "energy_derv_r").
+            if odef.name in batch_output and batch_output[odef.name] is not None:
+                shape = self._get_output_shape(odef, nframes, natoms)
+                out = batch_output[odef.name].reshape(shape).detach().cpu().numpy()
+                results.append(out)
+            else:
+                shape = self._get_output_shape(odef, nframes, natoms)
+                results.append(np.full(np.abs(shape), np.nan, dtype=prec))
         return tuple(results)
 
     def _eval_model_spin(

@@ -58,6 +58,8 @@ dependencies = [
     'array-api-compat',
     'lmdb',
     'msgpack',
+    # O(N) neighbor-list backend for the Python / ASE inference path
+    'vesin',
 ]
 requires-python = ">=3.10"
 keywords = ["deepmd"]
