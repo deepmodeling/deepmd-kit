@@ -1168,9 +1168,10 @@ class Trainer:
         if self._shared_links is not None:
             for info in self._shared_links.values():
                 for link_item in info["links"]:
-                    if "descriptor" in link_item["shared_type"] and int(
-                        link_item["shared_level"]
-                    ) > 0:
+                    if (
+                        "descriptor" in link_item["shared_type"]
+                        and int(link_item["shared_level"]) > 0
+                    ):
                         raise RuntimeError(
                             f"torch.compile is incompatible with partial descriptor "
                             f"sharing (task {link_item['model_key']!r}, "
