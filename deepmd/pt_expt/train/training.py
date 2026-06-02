@@ -852,6 +852,7 @@ class Trainer:
         self.start_step = 0
 
         # Shared params (multi-task) ------------------------------------------
+        self._shared_links = shared_links
         if shared_links is not None:
             _data_stat_protect = np.array(
                 [
@@ -1158,45 +1159,25 @@ class Trainer:
             _key_for[task_key] = sk
             _groups[sk].append(task_key)
 
-        # Warn if tasks share a compiled graph but have partially shared
-        # descriptors (e.g. shared_level=1: type_embedding shared, main block
-        # task-local).  The structure key uses the first descriptor parameter
-        # id; when that parameter comes from the shared type_embedding, partial
-        # sharing is indistinguishable from full sharing here, and the compiled
-        # graph will bake the first task's main-block constants for all tasks.
-        # This combination is unsupported — use shared_level=0 or disable compile.
-        for group_keys in _groups.values():
-            if len(group_keys) < 2:
-                continue
-            try:
-                base_ids = frozenset(
-                    id(p)
-                    for p in wrapper_mod.model[group_keys[0]]
-                    .get_descriptor()
-                    .parameters()
-                )
-            except AttributeError:
-                continue
-            for other_key in group_keys[1:]:
-                try:
-                    other_ids = frozenset(
-                        id(p)
-                        for p in wrapper_mod.model[other_key]
-                        .get_descriptor()
-                        .parameters()
-                    )
-                except AttributeError:
-                    continue
-                if base_ids != other_ids:
-                    log.warning(
-                        "Tasks %r and %r share a compiled graph but have partially "
-                        "shared descriptors (e.g. shared_level=1). The compiled graph "
-                        "bakes the first task's descriptor constants and will produce "
-                        "wrong results for subsequent tasks. "
-                        "Use shared_level=0 or set 'enable_compile: false'.",
-                        group_keys[0],
-                        other_key,
-                    )
+        # Reject partial descriptor sharing (shared_level > 0) with torch.compile.
+        # The compiled graph bakes the first task's descriptor constants, so tasks
+        # sharing a graph must have identical descriptor parameters.  partial sharing
+        # (e.g. shared_level=1, type_embedding shared but main block task-local)
+        # violates this invariant.  Check directly from the config rather than
+        # via parameter-identity heuristics.
+        if self._shared_links is not None:
+            for info in self._shared_links.values():
+                for link_item in info["links"]:
+                    if "descriptor" in link_item["shared_type"] and int(
+                        link_item["shared_level"]
+                    ) > 0:
+                        raise RuntimeError(
+                            f"torch.compile is incompatible with partial descriptor "
+                            f"sharing (task {link_item['model_key']!r}, "
+                            f"shared_level={link_item['shared_level']}). "
+                            f"Use shared_level=0 for all descriptors, "
+                            f"or set 'enable_compile: false'."
+                        )
 
         _task_bufs_for: dict[str, dict[str, torch.Tensor]] = {}
         for group_keys in _groups.values():
