@@ -9,12 +9,10 @@ from deepmd.dpa_tools.utils.dotdict import DotDict
 
 def _unwrap_multioutput(est):
     """If *est* is a ``MultiOutputRegressor``, return the wrapped estimator."""
-    try:
-        from sklearn.multioutput import MultiOutputRegressor
-        if isinstance(est, MultiOutputRegressor):
-            return est.estimator
-    except ImportError:
-        pass
+    from sklearn.multioutput import MultiOutputRegressor
+
+    if isinstance(est, MultiOutputRegressor):
+        return est.estimator
     return est
 
 

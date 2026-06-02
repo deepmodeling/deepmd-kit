@@ -31,7 +31,7 @@ from deepmd.dpa_tools.utils.dotdict import DotDict
 
 def _load_labels(
     systems: List[dpdata.System],
-    target_key,  # str | list[str]
+    target_key,  # str | list[str] — union type omitted for runtime simplicity
 ) -> np.ndarray:
     """Load and concatenate labels from dpdata systems.
 
