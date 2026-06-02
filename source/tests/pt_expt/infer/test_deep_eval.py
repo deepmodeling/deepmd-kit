@@ -633,7 +633,7 @@ class TestDeepEvalEner(unittest.TestCase):
         np.testing.assert_allclose(v1, v2, rtol=1e-10, atol=1e-10, err_msg="virial")
 
     @unittest.skipUnless(
-        importlib.util.find_spec("vesin") is not None, "vesin not installed"
+        importlib.util.find_spec("vesin.torch") is not None, "vesin not installed"
     )
     def test_vesin_neighbor_list_consistency(self) -> None:
         """The vesin O(N) nlist must match the native builder (PBC + non-PBC)."""
@@ -663,7 +663,7 @@ class TestDeepEvalEner(unittest.TestCase):
             )
 
     @unittest.skipUnless(
-        importlib.util.find_spec("vesin") is not None, "vesin not installed"
+        importlib.util.find_spec("vesin.torch") is not None, "vesin not installed"
     )
     def test_vesin_nlist_multiple_frames(self) -> None:
         """Vesin nlist with multiple frames and auto_batch_size=False."""
@@ -692,7 +692,7 @@ class TestDeepEvalEner(unittest.TestCase):
         self.assertEqual(dp.deep_eval.nlist_backend, "auto")
         self.assertEqual(
             dp.deep_eval._use_vesin,
-            importlib.util.find_spec("vesin") is not None,
+            importlib.util.find_spec("vesin.torch") is not None,
         )
 
     def test_nlist_backend_native_disables_vesin(self) -> None:
@@ -708,15 +708,15 @@ class TestDeepEvalEner(unittest.TestCase):
         # "auto" silently falls back; explicit "vesin" raises.
         import deepmd.pt_expt.infer.deep_eval as deep_eval_mod
 
-        original = deep_eval_mod.is_vesin_available
-        deep_eval_mod.is_vesin_available = lambda: False
+        original = deep_eval_mod.is_vesin_torch_available
+        deep_eval_mod.is_vesin_torch_available = lambda: False
         try:
             dp = DeepPot(self.tmpfile.name, nlist_backend="auto")
             self.assertFalse(dp.deep_eval._use_vesin)
             with self.assertRaises(ValueError):
                 DeepPot(self.tmpfile.name, nlist_backend="vesin")
         finally:
-            deep_eval_mod.is_vesin_available = original
+            deep_eval_mod.is_vesin_torch_available = original
 
     def test_nlist_backend_vesin_conflicts_with_neighbor_list(self) -> None:
         import ase.neighborlist
@@ -747,7 +747,7 @@ class TestDeepEvalEner(unittest.TestCase):
         self.assertFalse(dp.deep_eval._use_vesin)
 
     @unittest.skipUnless(
-        importlib.util.find_spec("vesin") is not None
+        importlib.util.find_spec("vesin.torch") is not None
         and importlib.util.find_spec("ase") is not None,
         "vesin or ase not installed",
     )

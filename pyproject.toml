@@ -58,8 +58,9 @@ dependencies = [
     'array-api-compat',
     'lmdb',
     'msgpack',
-    # O(N) neighbor-list backend for the Python / ASE inference path
-    'vesin',
+    # O(N) neighbor-list backend for the Python / ASE inference path; the
+    # [torch] extra adds vesin.torch for a device-resident (GPU) build.
+    'vesin[torch]',
 ]
 requires-python = ">=3.10"
 keywords = ["deepmd"]

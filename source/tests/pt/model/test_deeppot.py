@@ -161,7 +161,7 @@ class TestDeepPot(unittest.TestCase):
         self.assertEqual(dp.deep_eval.nlist_backend, "auto")
         self.assertEqual(
             dp.deep_eval._use_vesin,
-            importlib.util.find_spec("vesin") is not None,
+            importlib.util.find_spec("vesin.torch") is not None,
         )
 
     def test_nlist_backend_native_disables_vesin(self) -> None:
@@ -177,21 +177,21 @@ class TestDeepPot(unittest.TestCase):
         # "auto" silently falls back; explicit "vesin" raises.
         import deepmd.pt.infer.deep_eval as deep_eval_mod
 
-        original = deep_eval_mod.is_vesin_available
-        deep_eval_mod.is_vesin_available = lambda: False
+        original = deep_eval_mod.is_vesin_torch_available
+        deep_eval_mod.is_vesin_torch_available = lambda: False
         try:
             dp = DeepPot(str(self.model), nlist_backend="auto")
             self.assertFalse(dp.deep_eval._use_vesin)
             with self.assertRaises(ValueError):
                 DeepPot(str(self.model), nlist_backend="vesin")
         finally:
-            deep_eval_mod.is_vesin_available = original
+            deep_eval_mod.is_vesin_torch_available = original
 
     # spin gate-off is covered end-to-end on a real spin model in
     # TestDeepPotSpinNlistBackend below.
 
     @unittest.skipUnless(
-        importlib.util.find_spec("vesin") is not None, "vesin not installed"
+        importlib.util.find_spec("vesin.torch") is not None, "vesin not installed"
     )
     def test_nlist_backend_hessian(self) -> None:
         # hessian models: "auto" falls back to native, explicit "vesin" raises.
@@ -203,7 +203,7 @@ class TestDeepPot(unittest.TestCase):
             dp.deep_eval._setup_nlist_backend("vesin")
 
     @unittest.skipUnless(
-        importlib.util.find_spec("vesin") is not None, "vesin not installed"
+        importlib.util.find_spec("vesin.torch") is not None, "vesin not installed"
     )
     def test_nlist_backend_vesin_consistency(self) -> None:
         """Vesin O(N) nlist must match the native builder (PBC + non-PBC)."""
@@ -230,7 +230,7 @@ class TestDeepPot(unittest.TestCase):
             )
 
     @unittest.skipUnless(
-        importlib.util.find_spec("vesin") is not None, "vesin not installed"
+        importlib.util.find_spec("vesin.torch") is not None, "vesin not installed"
     )
     def test_nlist_backend_vesin_multiframe(self) -> None:
         """Vesin nlist with multiple frames must match native, for both

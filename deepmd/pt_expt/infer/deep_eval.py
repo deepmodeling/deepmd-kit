@@ -23,9 +23,7 @@ from deepmd.dpmodel.output_def import (
 )
 from deepmd.dpmodel.utils.nlist import (
     build_neighbor_list,
-    build_neighbor_list_vesin,
     extend_coord_with_ghosts,
-    is_vesin_available,
     nlist_distinguish_types,
 )
 from deepmd.dpmodel.utils.region import (
@@ -55,6 +53,10 @@ from deepmd.infer.deep_wfc import (
 )
 from deepmd.pt.utils.auto_batch_size import (
     AutoBatchSize,
+)
+from deepmd.pt_expt.utils.nlist import (
+    build_neighbor_list_vesin_torch,
+    is_vesin_torch_available,
 )
 
 if TYPE_CHECKING:
@@ -157,11 +159,11 @@ class DeepEval(DeepEvalBackend):
         unsupported = "spin" if self._is_spin else None
         if nlist_backend == "vesin":
             # explicit request: fail loudly if it cannot be honored
-            if not is_vesin_available():
+            if not is_vesin_torch_available():
                 raise ValueError(
-                    "nlist_backend='vesin' was requested but the 'vesin' package "
-                    "is not installed; install it (`pip install vesin`) or use "
-                    "nlist_backend='native' (or 'auto')."
+                    "nlist_backend='vesin' was requested but the 'vesin.torch' "
+                    "package is not installed; install it (`pip install "
+                    "vesin[torch]`) or use nlist_backend='native' (or 'auto')."
                 )
             if unsupported is not None:
                 raise ValueError(
@@ -178,7 +180,7 @@ class DeepEval(DeepEvalBackend):
             self._use_vesin = False
         else:  # auto: use vesin when possible, otherwise fall back silently
             self._use_vesin = (
-                is_vesin_available() and unsupported is None and not ase_provided
+                is_vesin_torch_available() and unsupported is None and not ase_provided
             )
 
     def _init_from_model_json(self, model_json_str: str) -> None:
@@ -1100,23 +1102,28 @@ class DeepEval(DeepEvalBackend):
 
         coord_input = coords.reshape(nframes, natoms, 3)
         if self._use_vesin:
-            # vesin O(N) cell list: builds nlist in numpy, then convert to
-            # tensors.  forward_common_lower re-formats the candidate list, so
+            # device-resident vesin.torch build: on GPU the neighbor search stays
+            # on the GPU.  forward_common_lower re-formats the candidate list, so
             # the mixed/distinguished choice here only mirrors the ASE path.
-            extended_coord, extended_atype, nlist, mapping = build_neighbor_list_vesin(
-                coord_input,
-                cells.reshape(nframes, 3, 3) if cells is not None else None,
-                atom_types,
-                self._rcut,
-                self._sel,
-                distinguish_types=not self._mixed_types,
+            coord_t = torch.tensor(coord_input, dtype=torch.float64, device=DEVICE)
+            atype_t = torch.tensor(atom_types, dtype=torch.int64, device=DEVICE)
+            box_t = (
+                torch.tensor(
+                    cells.reshape(nframes, 3, 3), dtype=torch.float64, device=DEVICE
+                )
+                if cells is not None
+                else None
             )
-            ext_coord_t = torch.tensor(
-                extended_coord, dtype=torch.float64, device=DEVICE
+            ext_coord_t, ext_atype_t, nlist_t, mapping_t = (
+                build_neighbor_list_vesin_torch(
+                    coord_t,
+                    box_t,
+                    atype_t,
+                    self._rcut,
+                    self._sel,
+                    distinguish_types=not self._mixed_types,
+                )
             )
-            ext_atype_t = torch.tensor(extended_atype, dtype=torch.int64, device=DEVICE)
-            nlist_t = torch.tensor(nlist, dtype=torch.int64, device=DEVICE)
-            mapping_t = torch.tensor(mapping, dtype=torch.int64, device=DEVICE)
         elif self.neighbor_list is not None:
             # ASE path: builds nlist in numpy, then convert to tensors
             extended_coord, extended_atype, nlist, mapping = self._build_nlist_ase(

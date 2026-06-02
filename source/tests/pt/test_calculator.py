@@ -215,7 +215,7 @@ _CALC_CONFIG = {
 }
 
 
-@unittest.skipUnless(find_spec("vesin") is not None, "vesin not installed")
+@unittest.skipUnless(find_spec("vesin.torch") is not None, "vesin not installed")
 class TestCalculatorNlistBackend(unittest.TestCase):
     """The ASE DP calculator must thread nlist_backend to DeepPot and give
     backend-independent results.

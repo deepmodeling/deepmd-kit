@@ -20,10 +20,6 @@ from deepmd.dpmodel.output_def import (
     OutputVariableCategory,
     OutputVariableDef,
 )
-from deepmd.dpmodel.utils.nlist import (
-    build_neighbor_list_vesin,
-    is_vesin_available,
-)
 from deepmd.infer.deep_dipole import (
     DeepDipole,
 )
@@ -73,6 +69,10 @@ from deepmd.pt.utils.env import (
 from deepmd.pt.utils.utils import (
     to_numpy_array,
     to_torch_tensor,
+)
+from deepmd.pt_expt.utils.nlist import (
+    build_neighbor_list_vesin_torch,
+    is_vesin_torch_available,
 )
 from deepmd.utils.batch_size import (
     RetrySignal,
@@ -279,11 +279,11 @@ class DeepEval(DeepEvalBackend):
             unsupported = "hessian"
         if nlist_backend == "vesin":
             # explicit request: fail loudly if it cannot be honored
-            if not is_vesin_available():
+            if not is_vesin_torch_available():
                 raise ValueError(
-                    "nlist_backend='vesin' was requested but the 'vesin' package "
-                    "is not installed; install it (`pip install vesin`) or use "
-                    "nlist_backend='native' (or 'auto')."
+                    "nlist_backend='vesin' was requested but the 'vesin.torch' "
+                    "package is not installed; install it (`pip install "
+                    "vesin[torch]`) or use nlist_backend='native' (or 'auto')."
                 )
             if unsupported is not None:
                 raise ValueError(
@@ -294,7 +294,7 @@ class DeepEval(DeepEvalBackend):
         elif nlist_backend == "native":
             self._use_vesin = False
         else:  # auto: use vesin when possible, otherwise fall back silently
-            self._use_vesin = is_vesin_available() and unsupported is None
+            self._use_vesin = is_vesin_torch_available() and unsupported is None
         if self._use_vesin:
             self._nsel = self.dp.model["Default"].get_nsel()
 
@@ -710,26 +710,30 @@ class DeepEval(DeepEvalBackend):
             natoms = len(atom_types[0])
 
         coords = coords.reshape([nframes, natoms, 3])
-        # The lower interface re-formats (distance-sort, truncate, type-split)
-        # the candidate list, so a single mixed list of the nearest sum(sel)
-        # neighbors is sufficient here (matches forward_common, which builds the
-        # nlist with mixed_types=True and distinguishes in the lower interface).
-        extended_coord, extended_atype, nlist, mapping = build_neighbor_list_vesin(
-            coords,
-            cells.reshape([nframes, 3, 3]) if cells is not None else None,
-            atom_types,
-            self.rcut,
-            [self._nsel],
-            distinguish_types=False,
+        # Build the neighbor list on the model's device with the vesin.torch
+        # cell list (CPU or CUDA).  The lower interface re-formats (distance-sort,
+        # truncate, type-split) the candidate list, so a single mixed list of the
+        # nearest sum(sel) neighbors is sufficient here (matches forward_common,
+        # which builds the nlist with mixed_types=True and distinguishes in the
+        # lower interface).
+        coord_t = torch.tensor(
+            coords.astype(prec), dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
         )
-        ext_coord_input = torch.tensor(
-            extended_coord.astype(prec),
-            dtype=GLOBAL_PT_FLOAT_PRECISION,
-            device=DEVICE,
+        atype_t = torch.tensor(atom_types, dtype=torch.long, device=DEVICE)
+        box_t = (
+            torch.tensor(
+                cells.reshape([nframes, 3, 3]).astype(prec),
+                dtype=GLOBAL_PT_FLOAT_PRECISION,
+                device=DEVICE,
+            )
+            if cells is not None
+            else None
         )
-        ext_atype_input = torch.tensor(extended_atype, dtype=torch.long, device=DEVICE)
-        nlist_input = torch.tensor(nlist, dtype=torch.long, device=DEVICE)
-        mapping_input = torch.tensor(mapping, dtype=torch.long, device=DEVICE)
+        ext_coord_input, ext_atype_input, nlist_input, mapping_input = (
+            build_neighbor_list_vesin_torch(
+                coord_t, box_t, atype_t, self.rcut, [self._nsel], False
+            )
+        )
 
         if fparam is not None:
             fparam_input = to_torch_tensor(
