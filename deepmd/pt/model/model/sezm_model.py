@@ -1972,9 +1972,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         # ``trace_nloc < real_nloc`` they can exceed ``trace_nloc`` and
         # silently propagate into ``src_local`` (used as a local-atom
         # index downstream).  Clamp to ``trace_nloc - 1``.
-        mapping_for_trace = torch.clamp(
-            mapping_for_trace, min=0, max=trace_nloc - 1
-        )
+        mapping_for_trace = torch.clamp(mapping_for_trace, min=0, max=trace_nloc - 1)
         fp_for_trace = _trace_pad_dim(fp[:1], 0, trace_nf)
         ap_for_trace = _trace_pad_dim(ap[:1], 0, trace_nf)
         ap_for_trace = _trace_pad_dim(ap_for_trace, 1, trace_nloc)
