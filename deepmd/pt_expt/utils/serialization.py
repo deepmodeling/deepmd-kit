@@ -768,6 +768,14 @@ def _trace_and_export(
     # matter for tracing — only that they're valid tensors of the right
     # shape and dtype.  See ``_make_comm_sample_inputs``.
     if with_comm_dict:
+        # Load libdeepmd_op_pt.so and register border_op fake/autograd
+        # metadata now — deferred from import time so normal utils imports
+        # don't force-load the op library and break fake-op ordering.
+        from deepmd.pt_expt.utils.comm import (
+            ensure_comm_registered,
+        )
+
+        ensure_comm_registered()
         if not _needs_with_comm_artifact(model):
             raise ValueError(
                 "with_comm_dict=True requested but the model's descriptor "

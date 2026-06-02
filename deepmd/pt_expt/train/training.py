@@ -359,6 +359,18 @@ class _CompiledModel(torch.nn.Module):
         self.original_model = original_model
         self.compiled_forward_lower = compiled_forward_lower
 
+    def __getattr__(self, name: str) -> Any:
+        # Delegate unknown lookups to original_model so that callers such as
+        # share_params (which calls .get_descriptor(), .atomic_model, etc.) and
+        # _compile_model (which calls .get_rcut(), .get_sel()) keep working
+        # transparently after compilation replaces the plain model with this
+        # wrapper.  nn.Module.__getattr__ is tried first so registered
+        # submodules / parameters / buffers are never shadowed.
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            return getattr(self.original_model, name)
+
     def forward(
         self,
         coord: torch.Tensor,
@@ -1119,10 +1131,26 @@ class Trainer:
 
     def save_checkpoint(self, step: int) -> None:
         self._unwrapped.train_infos["step"] = step
-        state = {
-            "model": self._unwrapped.state_dict(),
-            "optimizer": self.optimizer.state_dict(),
-        }
+        # When compiled, wrapper.model[key] is _CompiledModel whose state_dict
+        # uses keys like "original_model.*".  Restart would load into a plain
+        # ModelWrapper expecting "model.{key}.*" keys → hard crash.  Temporarily
+        # swap each _CompiledModel back to its original_model so the saved keys
+        # match what a fresh __init__ expects, then restore.
+        wrapper = self._unwrapped
+        compiled_backup: dict[str, _CompiledModel] = {}
+        for task_key in list(wrapper.model.keys()):
+            m = wrapper.model[task_key]
+            if isinstance(m, _CompiledModel):
+                compiled_backup[task_key] = m
+                wrapper.model[task_key] = m.original_model
+        try:
+            state = {
+                "model": wrapper.state_dict(),
+                "optimizer": self.optimizer.state_dict(),
+            }
+        finally:
+            for task_key, compiled in compiled_backup.items():
+                wrapper.model[task_key] = compiled
         ckpt_path = f"{self.save_ckpt}-{step}.pt"
         torch.save(state, ckpt_path)
         # symlink latest

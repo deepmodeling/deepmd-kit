@@ -67,6 +67,9 @@ from deepmd.pt.utils.utils import (
     to_numpy_array,
     to_torch_tensor,
 )
+from deepmd.utils.batch_size import (
+    RetrySignal,
+)
 from deepmd.utils.econf_embd import (
     sort_element_type,
 )
@@ -82,6 +85,18 @@ if TYPE_CHECKING:
     )
 
 log = logging.getLogger(__name__)
+
+
+def _is_sezm_model_params(model_params: dict[str, Any]) -> bool:
+    """Return whether the params describe a SeZM / DPA4 model."""
+    model_type = str(model_params.get("type", "")).lower()
+    if model_type in {"sezm", "dpa4", "sezm_spin"}:
+        return True
+    descriptor = model_params.get("descriptor")
+    if isinstance(descriptor, dict):
+        descriptor_type = str(descriptor.get("type", "")).lower()
+        return descriptor_type in {"sezm", "dpa4"}
+    return False
 
 
 class DeepEval(DeepEvalBackend):
@@ -167,7 +182,8 @@ class DeepEval(DeepEvalBackend):
                         ] = state_dict[item].clone()
                 state_dict = state_dict_head
             model = get_model(self.input_param).to(DEVICE)
-            if not self.input_param.get("hessian_mode") and not no_jit:
+            disable_jit = no_jit or _is_sezm_model_params(self.input_param)
+            if not self.input_param.get("hessian_mode") and not disable_jit:
                 model = torch.jit.script(model)
             self.dp = ModelWrapper(model)
             missing, unexpected = self.dp.load_state_dict(state_dict, strict=False)
@@ -737,7 +753,10 @@ class DeepEval(DeepEvalBackend):
         """
         out = []
         for mm in self.dp.model["Default"].modules():
-            if mm.original_name == TypeEmbedNetConsistent.__name__:
+            if (
+                getattr(mm, "original_name", type(mm).__name__)
+                == TypeEmbedNetConsistent.__name__
+            ):
                 out.append(mm(DEVICE))
         if not out:
             raise KeyError("The model has no type embedding networks.")
@@ -847,19 +866,30 @@ class DeepEval(DeepEvalBackend):
             Descriptors.
         """
         model = self.dp.model["Default"]
-        model.set_eval_descriptor_hook(True)
-        self.eval(
-            coords,
-            cells,
-            atom_types,
-            atomic=False,
-            fparam=fparam,
-            aparam=aparam,
-            **kwargs,
-        )
-        descriptor = model.eval_descriptor()
-        model.set_eval_descriptor_hook(False)
-        return to_numpy_array(descriptor)
+        while True:
+            if self.auto_batch_size is not None:
+                self.auto_batch_size.set_oom_retry_mode(True)
+            model.set_eval_descriptor_hook(True)
+            retry = False
+            try:
+                self.eval(
+                    coords,
+                    cells,
+                    atom_types,
+                    atomic=False,
+                    fparam=fparam,
+                    aparam=aparam,
+                    **kwargs,
+                )
+                descriptor = model.eval_descriptor()
+            except RetrySignal:
+                retry = True
+            finally:
+                model.set_eval_descriptor_hook(False)
+                if self.auto_batch_size is not None:
+                    self.auto_batch_size.set_oom_retry_mode(False)
+            if not retry:
+                return to_numpy_array(descriptor)
 
     def eval_fitting_last_layer(
         self,
@@ -902,16 +932,27 @@ class DeepEval(DeepEvalBackend):
             Fitting output before last layer.
         """
         model = self.dp.model["Default"]
-        model.set_eval_fitting_last_layer_hook(True)
-        self.eval(
-            coords,
-            cells,
-            atom_types,
-            atomic=False,
-            fparam=fparam,
-            aparam=aparam,
-            **kwargs,
-        )
-        fitting_net = model.eval_fitting_last_layer()
-        model.set_eval_fitting_last_layer_hook(False)
-        return to_numpy_array(fitting_net)
+        while True:
+            if self.auto_batch_size is not None:
+                self.auto_batch_size.set_oom_retry_mode(True)
+            model.set_eval_fitting_last_layer_hook(True)
+            retry = False
+            try:
+                self.eval(
+                    coords,
+                    cells,
+                    atom_types,
+                    atomic=False,
+                    fparam=fparam,
+                    aparam=aparam,
+                    **kwargs,
+                )
+                fitting_net = model.eval_fitting_last_layer()
+            except RetrySignal:
+                retry = True
+            finally:
+                model.set_eval_fitting_last_layer_hook(False)
+                if self.auto_batch_size is not None:
+                    self.auto_batch_size.set_oom_retry_mode(False)
+            if not retry:
+                return to_numpy_array(fitting_net)

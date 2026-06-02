@@ -20,6 +20,7 @@
 #include "neighbor_list.h"
 
 using deepmd::ptexpt::parse_json;
+using deepmd::ptexpt::read_default_chg_spin;
 using deepmd::ptexpt::read_zip_entry;
 
 using namespace deepmd;
@@ -96,9 +97,14 @@ void DeepSpinPTExpt::init(const std::string& model,
 
   auto metadata = parse_json(metadata_json);
   rcut = metadata["rcut"].as_double();
-  ntypes = static_cast<int>(metadata["type_map"].as_array().size());
+  ntypes = metadata.obj_val.count("ntypes")
+               ? metadata["ntypes"].as_int()
+               : static_cast<int>(metadata["type_map"].as_array().size());
   dfparam = metadata["dim_fparam"].as_int();
   daparam = metadata["dim_aparam"].as_int();
+  dim_chg_spin = metadata.obj_val.count("dim_chg_spin")
+                     ? metadata["dim_chg_spin"].as_int()
+                     : 0;
   aparam_nall = false;
 
   // Spin-specific metadata
@@ -137,6 +143,7 @@ void DeepSpinPTExpt::init(const std::string& model,
                 << std::endl;
     }
   }
+  default_chg_spin_ = read_default_chg_spin(metadata, dim_chg_spin);
 
   if (metadata.obj_val.count("do_atomic_virial")) {
     do_atomic_virial = metadata["do_atomic_virial"].as_bool();
@@ -242,6 +249,13 @@ std::vector<torch::Tensor> DeepSpinPTExpt::run_model(
   if (daparam > 0) {
     inputs.push_back(aparam);
   }
+  if (dim_chg_spin > 0) {
+    auto charge_spin = torch::tensor(default_chg_spin_, coord.options())
+                           .view({1, dim_chg_spin})
+                           .expand({coord.size(0), dim_chg_spin})
+                           .contiguous();
+    inputs.push_back(charge_spin);
+  }
   return loader->run(inputs);
 }
 
@@ -274,6 +288,13 @@ std::vector<torch::Tensor> DeepSpinPTExpt::run_model_with_comm(
   }
   if (daparam > 0) {
     inputs.push_back(aparam);
+  }
+  if (dim_chg_spin > 0) {
+    auto charge_spin = torch::tensor(default_chg_spin_, coord.options())
+                           .view({1, dim_chg_spin})
+                           .expand({coord.size(0), dim_chg_spin})
+                           .contiguous();
+    inputs.push_back(charge_spin);
   }
   for (const auto& t : comm_tensors) {
     inputs.push_back(t);

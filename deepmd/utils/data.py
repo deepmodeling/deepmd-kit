@@ -502,6 +502,26 @@ class DeepmdData:
 
         frame_data["fid"] = index
 
+        # === Compute min_pair_dist on-the-fly in DataLoader worker ===
+        if "min_pair_dist" in self.data_dict:
+            from deepmd.dpmodel.utils.dist_check import (
+                compute_min_pair_dist_single,
+            )
+
+            frame_data["find_min_pair_dist"] = np.float32(1.0)
+            min_pair_dist = float(self.data_dict["min_pair_dist"].get("default", 0.0))
+            frame_data["min_pair_dist"] = np.array(
+                [
+                    compute_min_pair_dist_single(
+                        frame_data["coord"],
+                        frame_data.get("box"),
+                        frame_data["type"],
+                        stop_below=min_pair_dist,
+                    )
+                ],
+                dtype=GLOBAL_NP_FLOAT_PRECISION,
+            )
+
         if self.modifier is not None:
             with ThreadPoolExecutor(max_workers=num_worker) as executor:
                 # Apply modifier if it exists

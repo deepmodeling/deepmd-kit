@@ -294,6 +294,77 @@ EmbeddingNet = make_embedding_network(MLP, MLPLayer)
 FittingNet = make_fitting_network(EmbeddingNet, MLP, MLPLayer)
 
 
+class GLULayer(nn.Module):
+    """
+    A GLU block for MLPs: Linear -> split -> value * act(gate).
+
+    Parameters
+    ----------
+    num_in
+        Input dimension.
+    num_out
+        Output dimension.
+    activation_function
+        Activation function applied to the gate branch.
+    precision
+        Numerical precision.
+    bias
+        Whether to use bias in the linear layer.
+    seed
+        Random seed for weight initialization.
+    trainable
+        Whether parameters are trainable.
+    """
+
+    def __init__(
+        self,
+        num_in: int,
+        num_out: int,
+        activation_function: str,
+        precision: str,
+        seed: int | list[int] | None,
+        trainable: bool,
+        bias: bool = True,
+    ) -> None:
+        super().__init__()
+        self.num_in = int(num_in)
+        self.num_out = int(num_out)
+        self.activation_function = activation_function
+        self.precision = precision
+        self.prec = PRECISION_DICT[self.precision]
+
+        self.linear = MLPLayer(
+            num_in=self.num_in,
+            num_out=2 * self.num_out,
+            bias=bias,
+            use_timestep=False,
+            activation_function=None,
+            resnet=False,
+            precision=self.precision,
+            seed=seed,
+            trainable=trainable,
+        )
+        self.activation = ActivationFn(self.activation_function)
+
+    def forward(self, xx: torch.Tensor) -> torch.Tensor:
+        """
+        Apply GLU transformation.
+
+        Parameters
+        ----------
+        xx
+            Input tensor.
+
+        Returns
+        -------
+        torch.Tensor
+            Output tensor.
+        """
+        yy = self.linear(xx)
+        val, gate = yy.chunk(2, dim=-1)
+        return val * self.activation(gate)
+
+
 class NetworkCollection(DPNetworkCollection, nn.Module):
     """PyTorch implementation of NetworkCollection."""
 

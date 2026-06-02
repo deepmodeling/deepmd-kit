@@ -11,6 +11,7 @@ Model
    train-se-atten
    dpa2
    dpa3
+   dpa4
    train-hybrid
    sel
    train-energy

@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import unittest
+from importlib.util import (
+    find_spec,
+)
 
 import numpy as np
 
@@ -300,3 +303,21 @@ class TestNeighList(unittest.TestCase):
             rtol=self.prec,
             atol=self.prec,
         )
+
+    @unittest.skipIf(find_spec("jax") is None, "JAX is not installed")
+    def test_extend_coord_jax_matches_numpy(self) -> None:
+        import jax.numpy as jnp
+
+        ecoord_np, eatype_np, mapping_np = extend_coord_with_ghosts(
+            self.coord, self.atype, self.cell, self.rcut
+        )
+        ecoord_jax, eatype_jax, mapping_jax = extend_coord_with_ghosts(
+            jnp.asarray(self.coord),
+            jnp.asarray(self.atype),
+            jnp.asarray(self.cell),
+            self.rcut,
+        )
+
+        np.testing.assert_allclose(np.asarray(ecoord_jax), ecoord_np, atol=1e-6)
+        np.testing.assert_array_equal(np.asarray(eatype_jax), eatype_np)
+        np.testing.assert_array_equal(np.asarray(mapping_jax), mapping_np)
