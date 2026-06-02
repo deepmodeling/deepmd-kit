@@ -21,6 +21,9 @@ from deepmd.pt.entrypoints.main import (
 from deepmd.pt.infer.deep_eval import (
     DeepPot,
 )
+from deepmd.pt.model.model import (
+    get_model,
+)
 
 
 class TestDeepPot(unittest.TestCase):
@@ -176,11 +179,8 @@ class TestDeepPot(unittest.TestCase):
         finally:
             deep_eval_mod.is_vesin_available = original
 
-    def test_nlist_backend_spin_gates_off_vesin(self) -> None:
-        dp = DeepPot(str(self.model), nlist_backend="vesin")
-        dp.deep_eval._has_spin = True
-        dp.deep_eval._setup_nlist_backend("vesin")
-        self.assertFalse(dp.deep_eval._use_vesin)
+    # spin gate-off is covered end-to-end on a real spin model in
+    # TestDeepPotSpinNlistBackend below.
 
     def test_nlist_backend_hessian_gates_off_vesin(self) -> None:
         dp = DeepPot(str(self.model), nlist_backend="vesin")
@@ -270,6 +270,89 @@ class TestDeepPotFrozen(TestDeepPot):
     @unittest.mock.patch("deepmd.pt.infer.deep_eval.DEVICE", torch.device("cpu"))
     def test_dp_test_cpu(self) -> None:
         self.test_dp_test()
+
+
+_SPIN_CONFIG = {
+    "type_map": ["Ni", "O"],
+    "descriptor": {
+        "type": "se_atten",
+        "sel": 30,
+        "rcut_smth": 2.0,
+        "rcut": 6.0,
+        "neuron": [2, 4, 8],
+        "axis_neuron": 4,
+        "attn": 5,
+        "attn_layer": 2,
+        "attn_dotr": True,
+        "attn_mask": False,
+        "activation_function": "tanh",
+        "scaling_factor": 1.0,
+        "normalize": True,
+        "temperature": 1.0,
+        "type_one_side": True,
+        "seed": 1,
+    },
+    "fitting_net": {"neuron": [5, 5, 5], "resnet_dt": True, "seed": 1},
+    "spin": {"use_spin": [True, False], "virtual_scale": [0.3140, 0.0]},
+}
+
+
+class TestDeepPotSpinNlistBackend(unittest.TestCase):
+    """Real spin model: nlist_backend='vesin' must gate off to the native
+    builder and the spin eval path must run end-to-end with identical results.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        torch.manual_seed(1)
+        model = get_model(deepcopy(_SPIN_CONFIG))
+        cls.model_file = "spin_model_nlist_backend.pth"
+        torch.jit.script(model).save(cls.model_file)
+        cls.coord = np.array(
+            [12.83, 2.56, 2.18, 12.09, 2.87, 2.74, 0.25, 3.32, 1.68,
+             3.36, 3.00, 1.81, 3.51, 2.51, 2.60, 4.27, 3.22, 1.56]
+        ).reshape(1, -1)  # fmt: skip
+        cls.spin = np.array(
+            [0.13, 0.02, 0.03, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+             0.14, 0.10, 0.12, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+        ).reshape(1, -1)  # fmt: skip
+        cls.atype = [0, 1, 1, 0, 1, 1]
+        cls.box = (np.eye(3) * 13.0).reshape(1, -1)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        if os.path.isfile(cls.model_file):
+            os.remove(cls.model_file)
+
+    def test_spin_model_gates_off_vesin(self) -> None:
+        dp = DeepPot(self.model_file, nlist_backend="vesin")
+        self.assertTrue(dp.deep_eval._has_spin)
+        # a real spin model must fall back to the native builder
+        self.assertFalse(dp.deep_eval._use_vesin)
+
+    @unittest.skipUnless(
+        importlib.util.find_spec("vesin") is not None, "vesin not installed"
+    )
+    def test_spin_eval_vesin_matches_native(self) -> None:
+        """Requesting vesin on a spin model runs the native spin eval path and
+        gives identical results to nlist_backend='native'.
+        """
+        dp_native = DeepPot(self.model_file, nlist_backend="native")
+        dp_vesin = DeepPot(self.model_file, nlist_backend="vesin")
+        self.assertFalse(dp_vesin.deep_eval._use_vesin)
+
+        rn = dp_native.eval(
+            self.coord, self.box, self.atype, atomic=True, spin=self.spin
+        )
+        rv = dp_vesin.eval(
+            self.coord, self.box, self.atype, atomic=True, spin=self.spin
+        )
+        # e, f, v, ae, av, fm are float outputs; mm (mask_mag) is integer.
+        for idx, name in enumerate(["e", "f", "v", "ae", "av", "fm"]):
+            np.testing.assert_allclose(
+                rn[idx], rv[idx], rtol=1e-10, atol=1e-10, err_msg=name
+            )
+        np.testing.assert_array_equal(rn[6], rv[6])  # mask_mag
 
 
 # TestFparamAparamPT: moved to infer/test_models.py

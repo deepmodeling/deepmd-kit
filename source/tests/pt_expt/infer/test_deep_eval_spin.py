@@ -375,6 +375,35 @@ class TestSpinInference:
             atol=1e-10,
         )
 
+    def test_nlist_backend_vesin_gated_off_for_spin(
+        self, spin_model_files, ext
+    ) -> None:
+        """A real spin model must gate off vesin to the native builder, and the
+        spin eval path must still run end-to-end matching the reference.
+        """
+        from deepmd.infer import (
+            DeepPot,
+        )
+
+        files, ref, _ = spin_model_files
+        dp = DeepPot(files[ext], nlist_backend="vesin")
+        # real spin model -> vesin disabled, native builder used
+        assert dp.deep_eval._use_vesin is False
+
+        e, f, v, ae, av, fm, mm = dp.eval(COORD, BOX, ATYPE, atomic=True, spin=SPIN)
+        np.testing.assert_allclose(
+            e.reshape(-1), ref["energy"].reshape(-1), rtol=1e-10, atol=1e-10
+        )
+        np.testing.assert_allclose(
+            f.reshape(-1), ref["force"].reshape(-1), rtol=1e-10, atol=1e-10
+        )
+        np.testing.assert_allclose(
+            fm.reshape(-1), ref["force_mag"].reshape(-1), rtol=1e-10, atol=1e-10
+        )
+        np.testing.assert_allclose(
+            v.reshape(-1), ref["virial"].reshape(-1), rtol=1e-10, atol=1e-10
+        )
+
 
 class TestSpinMetadataOnly:
     """Test metadata-only spin model inference through DeepPot."""

@@ -707,13 +707,8 @@ class TestDeepEvalEner(unittest.TestCase):
         finally:
             deep_eval_mod.is_vesin_available = original
 
-    def test_nlist_backend_spin_gates_off_vesin(self) -> None:
-        # spin models keep the native builder; exercise the gating branch
-        # directly (the resolved _is_spin flag drives _setup_nlist_backend).
-        dp = DeepPot(self.tmpfile.name, nlist_backend="vesin")
-        dp.deep_eval._is_spin = True
-        dp.deep_eval._setup_nlist_backend("vesin")
-        self.assertFalse(dp.deep_eval._use_vesin)
+    # spin gate-off is covered end-to-end on a real spin model in
+    # test_deep_eval_spin.py::TestSpinInference.
 
 
 class TestDeepEvalEnerPt2(unittest.TestCase):
