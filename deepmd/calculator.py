@@ -49,12 +49,13 @@ class DP(Calculator):
         will infer this information from model, by default None
     neighbor_list : ase.neighborlist.NeighborList, optional
         The neighbor list object. If None, then build the native neighbor list.
-    nlist_backend : str, default: "vesin"
-        Which algorithm builds the neighbor list. ``"vesin"`` uses the optional
-        O(N) ``vesin`` cell list (much faster for large systems) and falls back
-        to the native O(N^2) builder when ``vesin`` is not installed.
-        ``"native"`` forces the built-in all-pairs builder. Ignored when an
-        explicit ``neighbor_list`` is given.
+    nlist_backend : str, default: "auto"
+        Which algorithm builds the neighbor list. ``"auto"`` uses the optional
+        O(N) ``vesin`` cell list when applicable (much faster for large systems)
+        and silently falls back to the native O(N^2) builder otherwise.
+        ``"vesin"`` strictly requires the vesin path (raises if it is missing or
+        the model is spin / hessian); ``"native"`` forces the built-in
+        all-pairs builder. Ignored when an explicit ``neighbor_list`` is given.
     head : Union[str, None], optional
         a specific model branch choosing from pretrained model, by default None
 
@@ -96,7 +97,7 @@ class DP(Calculator):
         label: str = "DP",
         type_dict: dict[str, int] | None = None,
         neighbor_list: Optional["NeighborList"] = None,
-        nlist_backend: str = "vesin",
+        nlist_backend: str = "auto",
         head: str | None = None,
         **kwargs: Any,
     ) -> None:

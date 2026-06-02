@@ -155,9 +155,14 @@ class TestDeepPot(unittest.TestCase):
     ).reshape(1, -1, 3)
     _atype = np.array([0, 0, 0, 1, 1]).reshape(1, -1)
 
-    def test_nlist_backend_default_is_vesin(self) -> None:
+    def test_nlist_backend_default_is_auto(self) -> None:
+        # default "auto" uses vesin for this (non-spin energy) model
         dp = DeepPot(str(self.model))
-        self.assertEqual(dp.deep_eval.nlist_backend, "vesin")
+        self.assertEqual(dp.deep_eval.nlist_backend, "auto")
+        self.assertEqual(
+            dp.deep_eval._use_vesin,
+            importlib.util.find_spec("vesin") is not None,
+        )
 
     def test_nlist_backend_native_disables_vesin(self) -> None:
         dp = DeepPot(str(self.model), nlist_backend="native")
@@ -168,25 +173,34 @@ class TestDeepPot(unittest.TestCase):
         with self.assertRaises(ValueError):
             DeepPot(str(self.model), nlist_backend="bogus")
 
-    def test_nlist_backend_vesin_unavailable_falls_back(self) -> None:
+    def test_nlist_backend_vesin_unavailable(self) -> None:
+        # "auto" silently falls back; explicit "vesin" raises.
         import deepmd.pt.infer.deep_eval as deep_eval_mod
 
         original = deep_eval_mod.is_vesin_available
         deep_eval_mod.is_vesin_available = lambda: False
         try:
-            dp = DeepPot(str(self.model), nlist_backend="vesin")
+            dp = DeepPot(str(self.model), nlist_backend="auto")
             self.assertFalse(dp.deep_eval._use_vesin)
+            with self.assertRaises(ValueError):
+                DeepPot(str(self.model), nlist_backend="vesin")
         finally:
             deep_eval_mod.is_vesin_available = original
 
     # spin gate-off is covered end-to-end on a real spin model in
     # TestDeepPotSpinNlistBackend below.
 
-    def test_nlist_backend_hessian_gates_off_vesin(self) -> None:
-        dp = DeepPot(str(self.model), nlist_backend="vesin")
+    @unittest.skipUnless(
+        importlib.util.find_spec("vesin") is not None, "vesin not installed"
+    )
+    def test_nlist_backend_hessian(self) -> None:
+        # hessian models: "auto" falls back to native, explicit "vesin" raises.
+        dp = DeepPot(str(self.model), nlist_backend="auto")
         dp.deep_eval._has_hessian = True
-        dp.deep_eval._setup_nlist_backend("vesin")
+        dp.deep_eval._setup_nlist_backend("auto")
         self.assertFalse(dp.deep_eval._use_vesin)
+        with self.assertRaises(ValueError):
+            dp.deep_eval._setup_nlist_backend("vesin")
 
     @unittest.skipUnless(
         importlib.util.find_spec("vesin") is not None, "vesin not installed"
@@ -324,35 +338,33 @@ class TestDeepPotSpinNlistBackend(unittest.TestCase):
         if os.path.isfile(cls.model_file):
             os.remove(cls.model_file)
 
-    def test_spin_model_gates_off_vesin(self) -> None:
-        dp = DeepPot(self.model_file, nlist_backend="vesin")
-        self.assertTrue(dp.deep_eval._has_spin)
-        # a real spin model must fall back to the native builder
-        self.assertFalse(dp.deep_eval._use_vesin)
+    def test_spin_model_explicit_vesin_raises(self) -> None:
+        # a real spin model: explicit "vesin" must fail loudly...
+        self.assertTrue(DeepPot(self.model_file).deep_eval._has_spin)
+        with self.assertRaises(ValueError):
+            DeepPot(self.model_file, nlist_backend="vesin")
+        # ...while "auto" silently keeps the native builder.
+        dp_auto = DeepPot(self.model_file, nlist_backend="auto")
+        self.assertFalse(dp_auto.deep_eval._use_vesin)
 
-    @unittest.skipUnless(
-        importlib.util.find_spec("vesin") is not None, "vesin not installed"
-    )
-    def test_spin_eval_vesin_matches_native(self) -> None:
-        """Requesting vesin on a spin model runs the native spin eval path and
-        gives identical results to nlist_backend='native'.
+    def test_spin_eval_auto_matches_native(self) -> None:
+        """A spin model under "auto" runs the native spin eval path and gives
+        identical results to nlist_backend='native'.
         """
         dp_native = DeepPot(self.model_file, nlist_backend="native")
-        dp_vesin = DeepPot(self.model_file, nlist_backend="vesin")
-        self.assertFalse(dp_vesin.deep_eval._use_vesin)
+        dp_auto = DeepPot(self.model_file, nlist_backend="auto")
+        self.assertFalse(dp_auto.deep_eval._use_vesin)
 
         rn = dp_native.eval(
             self.coord, self.box, self.atype, atomic=True, spin=self.spin
         )
-        rv = dp_vesin.eval(
-            self.coord, self.box, self.atype, atomic=True, spin=self.spin
-        )
+        ra = dp_auto.eval(self.coord, self.box, self.atype, atomic=True, spin=self.spin)
         # e, f, v, ae, av, fm are float outputs; mm (mask_mag) is integer.
         for idx, name in enumerate(["e", "f", "v", "ae", "av", "fm"]):
             np.testing.assert_allclose(
-                rn[idx], rv[idx], rtol=1e-10, atol=1e-10, err_msg=name
+                rn[idx], ra[idx], rtol=1e-10, atol=1e-10, err_msg=name
             )
-        np.testing.assert_array_equal(rn[6], rv[6])  # mask_mag
+        np.testing.assert_array_equal(rn[6], ra[6])  # mask_mag
 
 
 # TestFparamAparamPT: moved to infer/test_models.py

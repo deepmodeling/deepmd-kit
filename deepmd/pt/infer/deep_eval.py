@@ -123,12 +123,14 @@ class DeepEval(DeepEvalBackend):
     neighbor_list : ase.neighborlist.NewPrimitiveNeighborList, optional
         The ASE neighbor list class to produce the neighbor list. If None, the
         neighbor list will be built natively in the model.
-    nlist_backend : str, default: "vesin"
+    nlist_backend : str, default: "auto"
         Which algorithm builds the neighbor list on the Python inference path.
-        ``"vesin"`` uses the optional O(N) ``vesin`` cell list (much faster for
-        large systems via e.g. the ASE calculator) and transparently falls back
-        to the native builder when ``vesin`` is not installed. ``"native"``
-        forces the built-in all-pairs O(N^2) builder.
+        ``"auto"`` uses the O(N) ``vesin`` cell list when it is applicable
+        (``vesin`` installed and a non-spin, non-hessian model) and silently
+        falls back to the native all-pairs builder otherwise. ``"vesin"``
+        strictly requires the vesin path and raises ``ValueError`` if it cannot
+        be used (vesin missing, or a spin / hessian model). ``"native"`` forces
+        the built-in all-pairs O(N^2) builder.
     **kwargs : dict
         Keyword arguments.
     """
@@ -140,7 +142,7 @@ class DeepEval(DeepEvalBackend):
         *args: Any,
         auto_batch_size: bool | int | AutoBatchSize = True,
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
-        nlist_backend: str = "vesin",
+        nlist_backend: str = "auto",
         head: str | int | None = None,
         no_jit: bool = False,
         **kwargs: Any,
@@ -256,28 +258,43 @@ class DeepEval(DeepEvalBackend):
         self._setup_nlist_backend(nlist_backend)
 
     def _setup_nlist_backend(self, nlist_backend: str) -> None:
-        """Resolve the requested neighbor-list backend for the inference path."""
-        if nlist_backend not in ("vesin", "native"):
+        """Resolve the requested neighbor-list backend for the inference path.
+
+        ``"auto"`` uses the O(N) vesin cell list when applicable and silently
+        falls back to native otherwise; ``"vesin"`` is strict and raises if it
+        cannot be honored; ``"native"`` forces the native builder.
+        """
+        if nlist_backend not in ("auto", "vesin", "native"):
             raise ValueError(
                 f"Unknown nlist_backend {nlist_backend!r}; "
-                "expected 'vesin' or 'native'."
+                "expected 'auto', 'vesin', or 'native'."
             )
         self.nlist_backend = nlist_backend
-        # The vesin path is a host-side replacement for the native all-pairs
-        # neighbor-list build.  It is wired for the standard (non-spin,
-        # non-hessian) path; spin and hessian models keep the native builder.
-        self._use_vesin = (
-            nlist_backend == "vesin"
-            and is_vesin_available()
-            and not self._has_spin
-            and not self._has_hessian
-        )
-        if nlist_backend == "vesin" and not is_vesin_available():
-            log.warning(
-                "nlist_backend='vesin' requested but the 'vesin' package is not "
-                "installed; falling back to the native O(N^2) neighbor list. "
-                "Install it with `pip install vesin` for faster inference."
-            )
+        # The vesin O(N) builder only handles the standard (non-spin,
+        # non-hessian) energy path; report why it is unavailable, if so.
+        unsupported = None
+        if self._has_spin:
+            unsupported = "spin"
+        elif self._has_hessian:
+            unsupported = "hessian"
+        if nlist_backend == "vesin":
+            # explicit request: fail loudly if it cannot be honored
+            if not is_vesin_available():
+                raise ValueError(
+                    "nlist_backend='vesin' was requested but the 'vesin' package "
+                    "is not installed; install it (`pip install vesin`) or use "
+                    "nlist_backend='native' (or 'auto')."
+                )
+            if unsupported is not None:
+                raise ValueError(
+                    f"nlist_backend='vesin' is not supported for {unsupported} "
+                    "models; use nlist_backend='native' (or 'auto')."
+                )
+            self._use_vesin = True
+        elif nlist_backend == "native":
+            self._use_vesin = False
+        else:  # auto: use vesin when possible, otherwise fall back silently
+            self._use_vesin = is_vesin_available() and unsupported is None
         if self._use_vesin:
             self._nsel = self.dp.model["Default"].get_nsel()
 

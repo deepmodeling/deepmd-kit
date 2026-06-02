@@ -687,6 +687,14 @@ class TestDeepEvalEner(unittest.TestCase):
         np.testing.assert_allclose(f1, f2, rtol=1e-10, atol=1e-10, err_msg="force")
         np.testing.assert_allclose(v1, v2, rtol=1e-10, atol=1e-10, err_msg="virial")
 
+    def test_nlist_backend_default_is_auto(self) -> None:
+        dp = DeepPot(self.tmpfile.name)
+        self.assertEqual(dp.deep_eval.nlist_backend, "auto")
+        self.assertEqual(
+            dp.deep_eval._use_vesin,
+            importlib.util.find_spec("vesin") is not None,
+        )
+
     def test_nlist_backend_native_disables_vesin(self) -> None:
         dp = DeepPot(self.tmpfile.name, nlist_backend="native")
         self.assertEqual(dp.deep_eval.nlist_backend, "native")
@@ -696,16 +704,31 @@ class TestDeepEvalEner(unittest.TestCase):
         with self.assertRaises(ValueError):
             DeepPot(self.tmpfile.name, nlist_backend="bogus")
 
-    def test_nlist_backend_vesin_unavailable_falls_back(self) -> None:
+    def test_nlist_backend_vesin_unavailable(self) -> None:
+        # "auto" silently falls back; explicit "vesin" raises.
         import deepmd.pt_expt.infer.deep_eval as deep_eval_mod
 
         original = deep_eval_mod.is_vesin_available
         deep_eval_mod.is_vesin_available = lambda: False
         try:
-            dp = DeepPot(self.tmpfile.name, nlist_backend="vesin")
+            dp = DeepPot(self.tmpfile.name, nlist_backend="auto")
             self.assertFalse(dp.deep_eval._use_vesin)
+            with self.assertRaises(ValueError):
+                DeepPot(self.tmpfile.name, nlist_backend="vesin")
         finally:
             deep_eval_mod.is_vesin_available = original
+
+    def test_nlist_backend_vesin_conflicts_with_neighbor_list(self) -> None:
+        import ase.neighborlist
+
+        with self.assertRaises(ValueError):
+            DeepPot(
+                self.tmpfile.name,
+                nlist_backend="vesin",
+                neighbor_list=ase.neighborlist.NewPrimitiveNeighborList(
+                    cutoffs=self.rcut, bothways=True
+                ),
+            )
 
     # spin gate-off is covered end-to-end on a real spin model in
     # test_deep_eval_spin.py::TestSpinInference.

@@ -378,16 +378,20 @@ class TestSpinInference:
     def test_nlist_backend_vesin_gated_off_for_spin(
         self, spin_model_files, ext
     ) -> None:
-        """A real spin model must gate off vesin to the native builder, and the
-        spin eval path must still run end-to-end matching the reference.
+        """A real spin model: explicit "vesin" must raise, while "auto" silently
+        keeps the native builder and the spin eval path still matches the ref.
         """
         from deepmd.infer import (
             DeepPot,
         )
 
         files, ref, _ = spin_model_files
-        dp = DeepPot(files[ext], nlist_backend="vesin")
-        # real spin model -> vesin disabled, native builder used
+        # explicit "vesin" is unsupported for spin -> fail loudly
+        with pytest.raises(ValueError):
+            DeepPot(files[ext], nlist_backend="vesin")
+
+        # "auto" falls back to native for the spin model
+        dp = DeepPot(files[ext], nlist_backend="auto")
         assert dp.deep_eval._use_vesin is False
 
         e, f, v, ae, av, fm, mm = dp.eval(COORD, BOX, ATYPE, atomic=True, spin=SPIN)
