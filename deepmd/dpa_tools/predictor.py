@@ -7,16 +7,27 @@ from deepmd.dpa_tools.data.loader import load_data
 from deepmd.dpa_tools.utils.dotdict import DotDict
 
 
+def _unwrap_multioutput(est):
+    """If *est* is a ``MultiOutputRegressor``, return the wrapped estimator."""
+    try:
+        from sklearn.multioutput import MultiOutputRegressor
+        if isinstance(est, MultiOutputRegressor):
+            return est.estimator
+    except ImportError:
+        pass
+    return est
+
+
 def _is_rf(est):
     from sklearn.ensemble import RandomForestRegressor
 
-    return isinstance(est, RandomForestRegressor)
+    return isinstance(_unwrap_multioutput(est), RandomForestRegressor)
 
 
 def _is_ridge(est):
     from sklearn.linear_model import Ridge
 
-    return isinstance(est, Ridge)
+    return isinstance(_unwrap_multioutput(est), Ridge)
 
 
 def _is_mlp(est):
@@ -61,7 +72,7 @@ class DPAPredictor:
             )
 
         self._predictor         = bundle["predictor"]
-        self._target_key        = bundle["target_key"]
+        self._target_key        = bundle["target_key"]  # str or list[str]
         self._type_map          = bundle["type_map"]
         self._task_dim          = bundle["task_dim"]
         self._pretrained        = bundle["pretrained"]
@@ -298,11 +309,23 @@ class DPAPredictor:
             )
 
         err    = predictions - labels
-        mae    = float(np.mean(np.abs(err)))
-        rmse   = float(np.sqrt(np.mean(err ** 2)))
-        ss_res = np.sum(err ** 2)
-        ss_tot = np.sum((labels - labels.mean()) ** 2)
-        r2     = float(1.0 - ss_res / ss_tot) if ss_tot > 0 else float("nan")
+        if isinstance(self._target_key, list):
+            # Per-property metrics
+            keys = self._target_key
+            mae, rmse, r2 = {}, {}, {}
+            for i, key in enumerate(keys):
+                e_i = err[:, i]
+                mae[key] = float(np.mean(np.abs(e_i)))
+                rmse[key] = float(np.sqrt(np.mean(e_i ** 2)))
+                ss_res_i = np.sum(e_i ** 2)
+                ss_tot_i = np.sum((labels[:, i] - labels[:, i].mean()) ** 2)
+                r2[key] = float(1.0 - ss_res_i / ss_tot_i) if ss_tot_i > 0 else float("nan")
+        else:
+            mae    = float(np.mean(np.abs(err)))
+            rmse   = float(np.sqrt(np.mean(err ** 2)))
+            ss_res = np.sum(err ** 2)
+            ss_tot = np.sum((labels - labels.mean()) ** 2)
+            r2     = float(1.0 - ss_res / ss_tot) if ss_tot > 0 else float("nan")
 
         return DotDict({
             "mae":         mae,

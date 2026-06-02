@@ -31,59 +31,72 @@ from deepmd.dpa_tools.utils.dotdict import DotDict
 
 def _load_labels(
     systems: List[dpdata.System],
-    target_key: str,
+    target_key,  # str | list[str]
 ) -> np.ndarray:
     """Load and concatenate labels from dpdata systems.
 
-    *target_key* is resolved through ``_LABEL_KEY_ALIASES`` so that
+    *target_key* may be a single string (existing behaviour) or a list of
+    strings (new: multi-property).  When a list is given each key is loaded
+    independently and the results are stacked column-wise into a 2-D array
+    of shape ``(n_frames, len(target_key))``.
+
+    Each key is resolved through ``_LABEL_KEY_ALIASES`` so that
     ``"energy"`` → ``"energies"`` for backward compatibility.
 
-    When the resolved key is not present in ``system.data`` (dpdata only
+    When a resolved key is not present in ``system.data`` (dpdata only
     loads standard DeepMD keys), this function falls back to reading
     ``set.*/{key}.npy`` directly from the system source directory.
     """
-    resolved = _resolve_label_key(target_key)
-    all_labels = []
-    for system in systems:
-        if resolved in system.data:
-            all_labels.append(np.asarray(system.data[resolved]))
-            continue
+    keys = [target_key] if isinstance(target_key, str) else list(target_key)
+    columns = []
 
-        # Fallback: load set.*/key.npy directly from the system directory.
-        source = _get_source(system)
-        if source is not None:
-            source_path = Path(source)
-            set_dirs = sorted(source_path.glob("set.*"))
-            npy_labels = []
-            for sd in set_dirs:
-                npy_path = sd / f"{resolved}.npy"
-                if npy_path.exists():
-                    npy_labels.append(np.load(npy_path))
-            if npy_labels:
-                all_labels.append(np.concatenate(npy_labels, axis=0))
+    for key in keys:
+        resolved = _resolve_label_key(key)
+        all_labels = []
+        for system in systems:
+            if resolved in system.data:
+                all_labels.append(np.asarray(system.data[resolved]))
                 continue
 
-        # Neither dpdata nor direct .npy found — build a clear error.
-        available = sorted(system.data.keys())
-        if source is not None:
-            set_dirs = sorted(Path(source).glob("set.*"))
-            available_npy = sorted(set(
-                p.name for sd in set_dirs for p in sd.glob("*.npy")
-            ))
-        else:
-            available_npy = []
-        msg = (
-            f"Label key {resolved!r} not found. "
-            f"Checked system.data keys: {available}."
-        )
-        if available_npy:
-            msg += f" Checked set.*/npy files: {available_npy}."
-        else:
-            msg += " No system source path for direct .npy fallback."
-        msg += f" (target_key={target_key!r})."
-        raise DPADataError(msg)
+            # Fallback: load set.*/key.npy directly from the system directory.
+            source = _get_source(system)
+            if source is not None:
+                source_path = Path(source)
+                set_dirs = sorted(source_path.glob("set.*"))
+                npy_labels = []
+                for sd in set_dirs:
+                    npy_path = sd / f"{resolved}.npy"
+                    if npy_path.exists():
+                        npy_labels.append(np.load(npy_path))
+                if npy_labels:
+                    all_labels.append(np.concatenate(npy_labels, axis=0))
+                    continue
 
-    return np.concatenate(all_labels, axis=0)
+            # Neither dpdata nor direct .npy found — build a clear error.
+            available = sorted(system.data.keys())
+            if source is not None:
+                set_dirs = sorted(Path(source).glob("set.*"))
+                available_npy = sorted(set(
+                    p.name for sd in set_dirs for p in sd.glob("*.npy")
+                ))
+            else:
+                available_npy = []
+            msg = (
+                f"Label key {resolved!r} not found. "
+                f"Checked system.data keys: {available}."
+            )
+            if available_npy:
+                msg += f" Checked set.*/npy files: {available_npy}."
+            else:
+                msg += " No system source path for direct .npy fallback."
+            msg += f" (target_key={key!r})."
+            raise DPADataError(msg)
+
+        columns.append(np.concatenate(all_labels, axis=0))
+
+    if len(columns) == 1:
+        return columns[0]
+    return np.column_stack(columns)
 
 
 def _read_data_type_map(system) -> list[str]:
@@ -1204,7 +1217,9 @@ class DPAFineTuner:
 
         from deepmd.dpa_tools.utils.sklearn_heads import build_sklearn_head
 
-        head = build_sklearn_head(self._predictor_type, seed=self.seed)
+        head = build_sklearn_head(
+            self._predictor_type, seed=self.seed, n_outputs=self._task_dim,
+        )
         self.predictor = make_pipeline(StandardScaler(), head)
         self.predictor.fit(features, y_flat)
         self._fitted = True
@@ -1297,11 +1312,23 @@ class DPAFineTuner:
             )
 
         err    = predictions - labels
-        mae    = float(np.mean(np.abs(err)))
-        rmse   = float(np.sqrt(np.mean(err ** 2)))
-        ss_res = np.sum(err ** 2)
-        ss_tot = np.sum((labels - labels.mean()) ** 2)
-        r2     = float(1.0 - ss_res / ss_tot) if ss_tot > 0 else float("nan")
+        if isinstance(self._target_key, list):
+            # Per-property metrics
+            keys = self._target_key
+            mae, rmse, r2 = {}, {}, {}
+            for i, key in enumerate(keys):
+                e_i = err[:, i]
+                mae[key] = float(np.mean(np.abs(e_i)))
+                rmse[key] = float(np.sqrt(np.mean(e_i ** 2)))
+                ss_res_i = np.sum(e_i ** 2)
+                ss_tot_i = np.sum((labels[:, i] - labels[:, i].mean()) ** 2)
+                r2[key] = float(1.0 - ss_res_i / ss_tot_i) if ss_tot_i > 0 else float("nan")
+        else:
+            mae    = float(np.mean(np.abs(err)))
+            rmse   = float(np.sqrt(np.mean(err ** 2)))
+            ss_res = np.sum(err ** 2)
+            ss_tot = np.sum((labels - labels.mean()) ** 2)
+            r2     = float(1.0 - ss_res / ss_tot) if ss_tot > 0 else float("nan")
 
         return DotDict({
             "mae":         mae,
@@ -1317,6 +1344,9 @@ class DPAFineTuner:
 
         The bundle contains the sklearn predictor object, the DPA checkpoint
         path, and metadata needed to reconstruct predictions.
+
+        ``target_key`` is stored as-is (``str`` or ``list[str]``).  Loading a
+        bundle with a ``list`` target_key requires dpa_tools >= 0.2.
 
         Parameters
         ----------

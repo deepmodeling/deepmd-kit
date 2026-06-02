@@ -38,6 +38,19 @@ def _cmd_fit(args: argparse.Namespace) -> int:
     valid = _maybe_split_list(args.valid_data) if args.valid_data else None
     type_map = _maybe_split_list(args.type_map)
 
+    # Parse target_key: comma-separated → list[str] (multi-property),
+    # single value → str (single-property, backward compat).
+    target_keys = _maybe_split_list(args.target_key)
+    if target_keys is None:
+        target_key = "property"
+        prop_name = "property"
+    elif len(target_keys) == 1:
+        target_key = target_keys[0]
+        prop_name = target_key
+    else:
+        target_key = target_keys
+        prop_name = target_keys[0]
+
     model = DPAFineTuner(
         pretrained=args.pretrained,
         model_branch=args.model_branch,
@@ -45,7 +58,7 @@ def _cmd_fit(args: argparse.Namespace) -> int:
         pooling=args.pooling,
         seed=args.seed,
         strategy=args.strategy,
-        property_name=args.target_key or "property",
+        property_name=prop_name,
         task_dim=args.task_dim,
         intensive=args.intensive,
         learning_rate=args.learning_rate,
@@ -67,7 +80,7 @@ def _cmd_fit(args: argparse.Namespace) -> int:
     aux_data = (_maybe_split_list(args.aux_data) or [args.aux_data]
                 if args.aux_data else None)
     model.fit(train_data=train, valid_data=valid, type_map=type_map,
-              target_key=args.target_key, aux_data=aux_data)
+              target_key=target_key, aux_data=aux_data)
     if args.strategy == "frozen_sklearn":
         out = model.freeze(args.output)
         _LOG.info("Frozen model → %s", out)

@@ -3,10 +3,8 @@
 # Single source of truth for building sklearn predictor heads.
 # Used by DPAFineTuner._fit_sklearn() and cv._build_sklearn_head().
 
-from __future__ import annotations
 
-
-def build_sklearn_head(predictor_type: str, seed: int = 42):
+def build_sklearn_head(predictor_type: str, seed: int = 42, n_outputs: int = 1):
     """Build an sklearn estimator for the given predictor type.
 
     Parameters
@@ -15,6 +13,10 @@ def build_sklearn_head(predictor_type: str, seed: int = 42):
         One of ``"rf"``, ``"linear"`` / ``"ridge"``, or ``"mlp"``.
     seed : int
         Random seed for reproducibility.
+    n_outputs : int
+        Number of output dimensions.  When > 1, ``"rf"`` and ``"ridge"``
+        are automatically wrapped in ``MultiOutputRegressor``.  ``"mlp"``
+        supports multi-output natively and ignores this parameter.
 
     Returns
     -------
@@ -29,12 +31,20 @@ def build_sklearn_head(predictor_type: str, seed: int = 42):
     if predictor_type in ("linear", "ridge"):
         from sklearn.linear_model import Ridge
 
-        return Ridge(alpha=1.0, random_state=seed)
+        est = Ridge(alpha=1.0, random_state=seed)
+        if n_outputs > 1:
+            from sklearn.multioutput import MultiOutputRegressor
+            return MultiOutputRegressor(est)
+        return est
 
     if predictor_type == "rf":
         from sklearn.ensemble import RandomForestRegressor
 
-        return RandomForestRegressor(n_estimators=100, random_state=seed)
+        est = RandomForestRegressor(n_estimators=100, random_state=seed)
+        if n_outputs > 1:
+            from sklearn.multioutput import MultiOutputRegressor
+            return MultiOutputRegressor(est)
+        return est
 
     if predictor_type == "mlp":
         from sklearn.neural_network import MLPRegressor

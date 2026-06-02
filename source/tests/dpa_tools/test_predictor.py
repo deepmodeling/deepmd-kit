@@ -29,6 +29,9 @@ _mock_torch = MagicMock()
 _mock_torch.save = _pickle_save
 _mock_torch.load = _pickle_load
 _mock_torch.cuda.is_available.return_value = False
+# Prevent scipy._lib.array_api_compat.is_torch_array from crashing
+# (it tries issubclass(cls, torch.Tensor); we make Tensor a real class).
+_mock_torch.Tensor = type("Tensor", (), {})
 
 # Inject before any dpa_tools import so the lazy `import torch` lines inside
 # freeze() / DPAPredictor.__init__ pick up the mock.
@@ -354,3 +357,135 @@ class TestRidgeUncertaintyRaises:
             pred = DPAPredictor(frozen)
             with pytest.raises(ValueError, match="Ridge regression"):
                 pred.predict(str(system), return_uncertainty=True)
+
+
+# ---------------------------------------------------------------------------
+# Multi-property tests
+# ---------------------------------------------------------------------------
+
+def _make_multi_npy_system(root: Path, n_frames: int = 5, n_atoms: int = 2) -> None:
+    """Create a minimal system with homo.npy and lumo.npy label files."""
+    (root / "type.raw").write_text("0\n1\n")
+    (root / "type_map.raw").write_text("Cu\nO\n")
+    set_dir = root / "set.000"
+    set_dir.mkdir()
+    np.save(set_dir / "coord.npy", np.zeros((n_frames, n_atoms * 3)))
+    np.save(set_dir / "box.npy", np.eye(3).reshape(1, 9).repeat(n_frames, 0))
+    np.save(set_dir / "homo.npy", -np.arange(n_frames, dtype=float) - 0.1)
+    np.save(set_dir / "lumo.npy", np.arange(n_frames, dtype=float) + 0.1)
+
+
+class TestMultiPropertyFit:
+    """fit() with list[str] target_key must produce multi-output predictions."""
+
+    @pytest.mark.parametrize("predictor_type", ["ridge", "rf", "mlp"])
+    def test_multi_output_all_predictors(self, tmp_path, predictor_type):
+        # MLP needs enough samples to split a validation set (10% of n_frames).
+        n = 50 if predictor_type == "mlp" else 5
+        system = tmp_path / "sys"
+        system.mkdir()
+        _make_multi_npy_system(system, n_frames=n)
+
+        with (
+            patch.object(DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model),
+            patch.object(DPAFineTuner, "_extract_features", _mock_extract_features),
+        ):
+            ft = DPAFineTuner(pretrained="fake.pt", predictor=predictor_type)
+            ft.fit(str(system), target_key=["homo", "lumo"])
+
+            assert ft._task_dim == 2
+            assert ft._fitted is True
+
+            result = ft.predict(str(system))
+            assert result.predictions.shape == (n, 2), (
+                f"{predictor_type}: expected ({n},2), got {result.predictions.shape}"
+            )
+
+
+class TestMultiPropertyEvaluate:
+    """evaluate() with list target_key returns per-property metrics dict."""
+
+    def test_evaluate_returns_per_property_dict(self, tmp_path):
+        system = tmp_path / "sys"
+        system.mkdir()
+        _make_multi_npy_system(system, n_frames=5)
+
+        with (
+            patch.object(DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model),
+            patch.object(DPAFineTuner, "_extract_features", _mock_extract_features),
+        ):
+            ft = DPAFineTuner(pretrained="fake.pt", predictor="ridge")
+            ft.fit(str(system), target_key=["homo", "lumo"])
+            result = ft.evaluate(str(system))
+
+        assert isinstance(result.mae, dict), f"Expected dict mae, got {type(result.mae)}"
+        assert isinstance(result.rmse, dict)
+        assert isinstance(result.r2, dict)
+        assert set(result.mae.keys()) == {"homo", "lumo"}
+        assert set(result.rmse.keys()) == {"homo", "lumo"}
+        assert set(result.r2.keys()) == {"homo", "lumo"}
+        assert all(isinstance(v, float) for v in result.mae.values())
+        assert result.predictions.shape == result.labels.shape
+        assert result.predictions.shape[0] == 5
+
+    def test_single_property_still_returns_float(self, tmp_path):
+        """Backward compat: single str target_key returns flat floats, not dict."""
+        system = tmp_path / "sys"
+        system.mkdir()
+        _make_npy_system(system, n_frames=5)
+
+        with (
+            patch.object(DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model),
+            patch.object(DPAFineTuner, "_extract_features", _mock_extract_features),
+        ):
+            ft = DPAFineTuner(pretrained="fake.pt", predictor="ridge")
+            ft.fit(str(system), target_key="energy")
+            result = ft.evaluate(str(system))
+
+        assert isinstance(result.mae, float), f"Expected float mae, got {type(result.mae)}"
+        assert isinstance(result.rmse, float)
+        assert isinstance(result.r2, float)
+
+
+class TestMultiPropertyFreezeRoundtrip:
+    """freeze/load round-trip preserves list target_key and multi-output."""
+
+    def test_freeze_load_roundtrip_list_target_key(self, tmp_path):
+        system = tmp_path / "sys"
+        system.mkdir()
+        _make_multi_npy_system(system, n_frames=5)
+
+        with (
+            patch.object(DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model),
+            patch.object(DPAFineTuner, "_extract_features", _mock_extract_features),
+        ):
+            ft = DPAFineTuner(pretrained="fake.pt", predictor="ridge")
+            ft.fit(str(system), target_key=["homo", "lumo"])
+            frozen = ft.freeze(str(tmp_path / "model.pth"))
+
+            pred = DPAPredictor(frozen)
+            result = pred.predict(str(system))
+
+        assert result.predictions.shape == (5, 2)
+        assert pred._target_key == ["homo", "lumo"]
+        assert pred._task_dim == 2
+
+    def test_freeze_load_roundtrip_evaluate_per_property(self, tmp_path):
+        system = tmp_path / "sys"
+        system.mkdir()
+        _make_multi_npy_system(system, n_frames=50)
+
+        with (
+            patch.object(DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model),
+            patch.object(DPAFineTuner, "_extract_features", _mock_extract_features),
+        ):
+            ft = DPAFineTuner(pretrained="fake.pt", predictor="mlp")
+            ft.fit(str(system), target_key=["homo", "lumo"])
+            frozen = ft.freeze(str(tmp_path / "model.pth"))
+
+            pred = DPAPredictor(frozen)
+            metrics = pred.evaluate(str(system))
+
+        assert isinstance(metrics.mae, dict)
+        assert set(metrics.mae.keys()) == {"homo", "lumo"}
+        assert metrics.predictions.shape == (50, 2)
