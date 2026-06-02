@@ -687,6 +687,34 @@ class TestDeepEvalEner(unittest.TestCase):
         np.testing.assert_allclose(f1, f2, rtol=1e-10, atol=1e-10, err_msg="force")
         np.testing.assert_allclose(v1, v2, rtol=1e-10, atol=1e-10, err_msg="virial")
 
+    def test_nlist_backend_native_disables_vesin(self) -> None:
+        dp = DeepPot(self.tmpfile.name, nlist_backend="native")
+        self.assertEqual(dp.deep_eval.nlist_backend, "native")
+        self.assertFalse(dp.deep_eval._use_vesin)
+
+    def test_nlist_backend_invalid_raises(self) -> None:
+        with self.assertRaises(ValueError):
+            DeepPot(self.tmpfile.name, nlist_backend="bogus")
+
+    def test_nlist_backend_vesin_unavailable_falls_back(self) -> None:
+        import deepmd.pt_expt.infer.deep_eval as deep_eval_mod
+
+        original = deep_eval_mod.is_vesin_available
+        deep_eval_mod.is_vesin_available = lambda: False
+        try:
+            dp = DeepPot(self.tmpfile.name, nlist_backend="vesin")
+            self.assertFalse(dp.deep_eval._use_vesin)
+        finally:
+            deep_eval_mod.is_vesin_available = original
+
+    def test_nlist_backend_spin_gates_off_vesin(self) -> None:
+        # spin models keep the native builder; exercise the gating branch
+        # directly (the resolved _is_spin flag drives _setup_nlist_backend).
+        dp = DeepPot(self.tmpfile.name, nlist_backend="vesin")
+        dp.deep_eval._is_spin = True
+        dp.deep_eval._setup_nlist_backend("vesin")
+        self.assertFalse(dp.deep_eval._use_vesin)
+
 
 class TestDeepEvalEnerPt2(unittest.TestCase):
     """Test pt_expt inference for energy models via .pt2 (AOTInductor)."""
