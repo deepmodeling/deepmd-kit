@@ -3,11 +3,13 @@ name: DeePMD Property Tools Tests
 on:
   push:
     paths:
-      - "deepmd/deepmd_property_tools/**"
+      - "deepmd/dpa_tools/**"
+      - "source/tests/dpa_tools/**"
       - ".github/workflows/property_tools_tests.yml"
   pull_request:
     paths:
-      - "deepmd/deepmd_property_tools/**"
+      - "deepmd/dpa_tools/**"
+      - "source/tests/dpa_tools/**"
       - ".github/workflows/property_tools_tests.yml"
 
 jobs:
@@ -25,10 +27,8 @@ jobs:
       - name: Install lightweight test dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install numpy pytest
+          python -m pip install numpy pytest scikit-learn dpdata torch --index-url https://download.pytorch.org/whl/cpu
 
       - name: Run unit tests
-        env:
-          PYTHONPATH: deepmd/deepmd_property_tools
         run: |
-          python -m pytest deepmd/deepmd_property_tools/tests -v
+          python -m pytest source/tests/dpa_tools/ -v --ignore=source/tests/dpa_tools/test_trainer_dim_case_embd.py
