@@ -301,22 +301,25 @@ def test_evaluate_parse_property_explicit():
     out = DPATrainer._parse_test_output(stdout)
     assert out["rmse"] == pytest.approx(0.0123)
     assert out["mae"] == pytest.approx(0.0080)
-    assert "property RMSE explicit" in out["_parser_pattern_used"]
-    assert "property MAE explicit" in out["_parser_pattern_used"]
+    assert "PROPERTY" in out["_parser_pattern_used"]
     assert out["_raw_stdout"] == stdout
 
 
 # ---------------------------------------------------------------------------
-# 8. Parser: generic fallback
+# 8. Parser: property format (no generic fallback — removed during refactor)
 # ---------------------------------------------------------------------------
 
-def test_evaluate_parse_generic_fallback():
-    stdout = "rmse = 0.0234\nmae = 0.0150\n"
+def test_evaluate_parse_property_format_explicit():
+    """Parser auto-detects PROPERTY output and matches the well-anchored regex.
+    Generic \brmse\b / \bmae\b fallback patterns were removed."""
+    stdout = (
+        "DEEPMD INFO    PROPERTY MAE            : 0.0234 units\n"
+        "DEEPMD INFO    PROPERTY RMSE           : 0.0150 units\n"
+    )
     out = DPATrainer._parse_test_output(stdout)
-    assert out["rmse"] == pytest.approx(0.0234)
-    assert out["mae"] == pytest.approx(0.0150)
-    assert "generic rmse" in out["_parser_pattern_used"]
-    assert "generic mae" in out["_parser_pattern_used"]
+    assert out["mae"] == pytest.approx(0.0234)
+    assert out["rmse"] == pytest.approx(0.0150)
+    assert "PROPERTY" in out["_parser_pattern_used"]
 
 
 # ---------------------------------------------------------------------------

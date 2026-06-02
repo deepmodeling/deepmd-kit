@@ -13,6 +13,11 @@ class MFTFineTuner:
     on a shared DPA descriptor, preventing representation collapse (per
     arXiv:2601.08486).
 
+    Refactored: ``fitting_net_params`` is now lazily resolved from the
+    checkpoint on first access rather than eagerly in ``__init__``, so
+    constructing an ``MFTFineTuner`` no longer triggers ``torch.load``
+    unless ``fit()`` (or any other accessor) actually needs the value.
+
     Parameters
     ----------
     pretrained : str
@@ -125,11 +130,9 @@ class MFTFineTuner:
         self.aux_prob = aux_prob
         self.aux_type_map = aux_type_map
         self.downstream_type_map = downstream_type_map
-        if fitting_net_params is None:
-            fitting_net_params = self._read_fitting_net_from_ckpt(
-                pretrained, aux_branch
-            )
-        self.fitting_net_params = fitting_net_params
+        # Lazy: only load from ckpt when fitting_net_params is first accessed.
+        self._fitting_net_params = fitting_net_params
+        self._fitting_net_params_resolved = (fitting_net_params is not None)
         self.downstream_task_type = downstream_task_type
         self.property_name = property_name
         self.task_dim = task_dim
@@ -149,6 +152,31 @@ class MFTFineTuner:
         self.train_data = None
         self.aux_data = None
         self.valid_data = None
+
+    # ------------------------------------------------------------------
+    # Lazy fitting_net_params resolution
+    #
+    # Refactored: torch.load is deferred from __init__ to first access
+    # so that constructing an MFTFineTuner is cheap.  The checkpoint is
+    # only read when fit() (via MFTConfigManager) or user code accesses
+    # fitting_net_params and the value was not explicitly provided.
+    # ------------------------------------------------------------------
+
+    @property
+    def fitting_net_params(self):
+        if (
+            self._fitting_net_params is None
+            and not self._fitting_net_params_resolved
+        ):
+            self._fitting_net_params = self._read_fitting_net_from_ckpt(
+                self.pretrained, self.aux_branch
+            )
+            self._fitting_net_params_resolved = True
+        return self._fitting_net_params
+
+    @fitting_net_params.setter
+    def fitting_net_params(self, value):
+        self._fitting_net_params = value
 
     @staticmethod
     def _read_fitting_net_from_ckpt(pretrained, aux_branch):
