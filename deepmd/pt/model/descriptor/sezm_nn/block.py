@@ -11,6 +11,7 @@ from __future__ import (
     annotations,
 )
 
+import os
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -18,6 +19,9 @@ from typing import (
 
 import torch
 import torch.nn as nn
+from torch.utils.checkpoint import (
+    checkpoint,
+)
 
 from deepmd.dpmodel.utils.seed import (
     child_seed,
@@ -543,6 +547,15 @@ class SeZMInteractionBlock(nn.Module):
         """
         return value[:, 0, :, :].reshape(value.shape[0], self.channels)
 
+    def _use_infer_activation_checkpoint(self, *tensors: torch.Tensor) -> bool:
+        """Return whether eval-time activation checkpointing should be used."""
+        return (
+            not self.training
+            and os.environ.get("DP_ACT_INFER") == "1"
+            and torch.is_grad_enabled()
+            and any(tensor.requires_grad for tensor in tensors)
+        )
+
     def _run_so2_unit(
         self,
         x: torch.Tensor,
@@ -566,6 +579,31 @@ class SeZMInteractionBlock(nn.Module):
         torch.Tensor
             SO(2) unit output with shape `(N, D, 1, C)`.
         """
+        if self._use_infer_activation_checkpoint(x, radial_feat):
+            edge_cache_no_proj = edge_cache._replace(
+                D_to_m_cache=None,
+                Dt_from_m_cache=None,
+            )
+            return checkpoint(
+                lambda x_, radial_feat_: self._run_so2_unit_impl(
+                    x_,
+                    edge_cache_no_proj,
+                    radial_feat_,
+                ),
+                x,
+                radial_feat,
+                use_reentrant=False,
+                preserve_rng_state=True,
+            )
+        return self._run_so2_unit_impl(x, edge_cache, radial_feat)
+
+    def _run_so2_unit_impl(
+        self,
+        x: torch.Tensor,
+        edge_cache: EdgeFeatureCache,
+        radial_feat: torch.Tensor,
+    ) -> torch.Tensor:
+        """Run the SO(2) unit implementation."""
         n_node = x.shape[0]
         ebed_dim = x.shape[1]
         channels = self.channels
@@ -591,6 +629,17 @@ class SeZMInteractionBlock(nn.Module):
         torch.Tensor
             FFN unit output with shape `(N, D, 1, C)`.
         """
+        if self._use_infer_activation_checkpoint(x):
+            return checkpoint(
+                lambda x_: self._run_ffn_unit_impl(x_, unit_idx),
+                x,
+                use_reentrant=False,
+                preserve_rng_state=True,
+            )
+        return self._run_ffn_unit_impl(x, unit_idx)
+
+    def _run_ffn_unit_impl(self, x: torch.Tensor, unit_idx: int) -> torch.Tensor:
+        """Run one FFN subblock implementation."""
         n_node = x.shape[0]
         ebed_dim = x.shape[1]
         channels = self.channels
