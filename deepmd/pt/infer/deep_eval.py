@@ -46,6 +46,9 @@ from deepmd.infer.deep_wfc import (
 from deepmd.pt.model.model import (
     get_model,
 )
+from deepmd.pt.model.model.transform_output import (
+    communicate_extended_output,
+)
 from deepmd.pt.model.network.network import (
     TypeEmbedNetConsistent,
 )
@@ -66,6 +69,10 @@ from deepmd.pt.utils.env import (
 from deepmd.pt.utils.utils import (
     to_numpy_array,
     to_torch_tensor,
+)
+from deepmd.pt_expt.utils.vesin_neighbor_list import (
+    VesinNeighborList,
+    is_vesin_torch_available,
 )
 from deepmd.utils.batch_size import (
     RetrySignal,
@@ -129,10 +136,12 @@ class DeepEval(DeepEvalBackend):
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
         head: str | int | None = None,
         no_jit: bool = False,
+        nlist_backend: str = "auto",
         **kwargs: Any,
     ) -> None:
         self.output_def = output_def
         self.model_path = model_file
+        self.neighbor_list = neighbor_list
         if str(self.model_path).endswith(".pt"):
             state_dict = torch.load(
                 model_file, map_location=env.DEVICE, weights_only=True
@@ -239,6 +248,54 @@ class DeepEval(DeepEvalBackend):
         if callable(self._has_spin):
             self._has_spin = self._has_spin()
         self._has_hessian = self.model_def_script.get("hessian_mode", False)
+        self._setup_nlist_backend(nlist_backend)
+
+    def _setup_nlist_backend(self, nlist_backend: str) -> None:
+        """Resolve the neighbor-list construction strategy from a user choice.
+
+        ``"native"`` uses the dense all-pairs builder; ``"vesin"`` forces the
+        O(N) ``vesin.torch`` cell list (raising if it is unavailable or the
+        model/inputs are unsupported); ``"auto"`` uses vesin when applicable and
+        silently falls back to the native builder otherwise.  Results are
+        unchanged either way -- only the neighbor-search cost differs.
+        """
+        if nlist_backend not in ("auto", "vesin", "native"):
+            raise ValueError(
+                f"Unknown nlist_backend '{nlist_backend}'; "
+                "expected 'auto', 'vesin', or 'native'."
+            )
+        # reason vesin cannot be used (None means it can)
+        unsupported = None
+        if self._has_spin:
+            unsupported = "spin models"
+        elif self._has_hessian:
+            unsupported = "hessian models"
+        ase_provided = self.neighbor_list is not None
+        if nlist_backend == "native":
+            self._use_vesin = False
+        elif nlist_backend == "vesin":
+            if not is_vesin_torch_available():
+                raise ImportError(
+                    "nlist_backend='vesin' was requested but 'vesin.torch' is "
+                    "not installed. Install it (`pip install vesin[torch]`) or "
+                    "use nlist_backend='native' (or 'auto')."
+                )
+            if unsupported is not None:
+                raise ValueError(
+                    f"nlist_backend='vesin' is not supported for {unsupported}; "
+                    "use nlist_backend='native' (or 'auto')."
+                )
+            if ase_provided:
+                raise ValueError(
+                    "nlist_backend='vesin' conflicts with an explicitly "
+                    "supplied ASE neighbor_list; pass only one."
+                )
+            self._use_vesin = True
+        else:  # auto: use vesin when possible, otherwise fall back silently
+            self._use_vesin = (
+                is_vesin_torch_available() and unsupported is None and not ase_provided
+            )
+        self._nlist_builder = VesinNeighborList() if self._use_vesin else None
 
     def get_rcut(self) -> float:
         """Get the cutoff radius of this model."""
@@ -586,17 +643,28 @@ class DeepEval(DeepEvalBackend):
         do_atomic_virial = any(
             x.category == OutputVariableCategory.DERV_C for x in request_defs
         )
-        batch_output = model(
-            coord_input,
-            type_input,
-            box=box_input,
-            do_atomic_virial=do_atomic_virial,
-            fparam=fparam_input,
-            aparam=aparam_input,
-            charge_spin=charge_spin_input,
-        )
-        if isinstance(batch_output, tuple):
-            batch_output = batch_output[0]
+        if self._use_vesin:
+            batch_output = self._eval_lower_vesin(
+                coord_input,
+                type_input,
+                box_input,
+                fparam_input,
+                aparam_input,
+                charge_spin_input,
+                do_atomic_virial,
+            )
+        else:
+            batch_output = model(
+                coord_input,
+                type_input,
+                box=box_input,
+                do_atomic_virial=do_atomic_virial,
+                fparam=fparam_input,
+                aparam=aparam_input,
+                charge_spin=charge_spin_input,
+            )
+            if isinstance(batch_output, tuple):
+                batch_output = batch_output[0]
 
         results = []
         for odef in request_defs:
@@ -611,6 +679,52 @@ class DeepEval(DeepEvalBackend):
                     np.full(np.abs(shape), np.nan, dtype=prec)
                 )  # this is kinda hacky
         return tuple(results)
+
+    def _eval_lower_vesin(
+        self,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        box: torch.Tensor | None,
+        fparam: torch.Tensor | None,
+        aparam: torch.Tensor | None,
+        charge_spin: torch.Tensor | None,
+        do_atomic_virial: bool,
+    ) -> dict[str, torch.Tensor]:
+        """Evaluate via the O(N) vesin-built ``(i,j,S)`` extended neighbor list.
+
+        Builds the extended representation with the vesin cell list, runs the
+        model's ``forward_common_lower``, and maps the extended outputs back to
+        local atoms with ``communicate_extended_output``.  Returns a dict keyed
+        by backend names, matching the normal ``model()`` output so the caller's
+        extraction is unchanged.  ``forward_common_atomic`` sets
+        ``requires_grad`` on the extended coordinates internally, exactly as on
+        the native path, so forces/virials are produced identically.
+        """
+        inner = self.dp.model["Default"]
+        ext_coord, ext_atype, nlist, mapping = self._nlist_builder.build(
+            coord, atype, box, self.rcut, list(inner.get_sel())
+        )
+        model_lower = inner.forward_common_lower(
+            ext_coord,
+            ext_atype,
+            nlist,
+            mapping,
+            fparam=fparam,
+            aparam=aparam,
+            do_atomic_virial=do_atomic_virial,
+            charge_spin=charge_spin,
+        )
+        predict = communicate_extended_output(
+            model_lower,
+            inner.model_output_def(),
+            mapping,
+            do_atomic_virial=do_atomic_virial,
+        )
+        return {
+            backend: predict[internal]
+            for internal, backend in self._OUTDEF_DP2BACKEND.items()
+            if predict.get(internal) is not None
+        }
 
     def _eval_model_spin(
         self,

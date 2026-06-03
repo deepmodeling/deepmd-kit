@@ -882,7 +882,7 @@ class DeepEval(DeepEvalBackend):
         sel = self._sel
         mixed_types = self._mixed_types
 
-        if getattr(self, "_nlist_builder", None) is not None:
+        if self._nlist_builder is not None:
             # O(N) cell-list strategy (e.g. vesin): builds the same extended
             # representation; the compiled forward_common_lower re-formats the
             # candidate nlist (sort, truncate, type-split).
