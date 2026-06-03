@@ -22,7 +22,6 @@ from typing import (
     Any,
 )
 
-import numpy as np
 import torch
 
 from deepmd.dpmodel.utils.neighbor_list import (
@@ -64,22 +63,17 @@ class VesinNeighborList(NeighborList):
         type-splits it.
         """
         is_numpy = not isinstance(coord, torch.Tensor)
-        # Bridge numpy (dpmodel) through CPU torch; keep torch tensors on their
-        # own device.  Avoid ``torch.as_tensor`` without an explicit device: under
-        # a non-CPU ambient default device (e.g. tests set a placeholder CUDA
-        # default) it can trigger CUDA init even for an already-CPU tensor.
-        if is_numpy:
-            coord_t = torch.from_numpy(np.ascontiguousarray(coord))
-            atype_t = torch.from_numpy(np.ascontiguousarray(atype)).to(torch.int64)
-            box_t = (
-                None
-                if box is None
-                else torch.from_numpy(np.ascontiguousarray(box)).to(coord_t.dtype)
-            )
-        else:
-            coord_t = coord
-            atype_t = atype.to(torch.int64)
-            box_t = None if box is None else box.to(coord_t.dtype)
+        # vesin runs on the device of the inputs: numpy (the dpmodel backend) is
+        # bridged through CPU torch; torch tensors stay on their own device.  Pin
+        # the ambient default device (cf. the ``with torch.device(...)`` guard
+        # around ``nl.compute`` below) so ``as_tensor`` is not affected by a
+        # placeholder default device -- e.g. tests set a CUDA default, under
+        # which a device-less ``as_tensor`` triggers CUDA init even for CPU input.
+        device = torch.device("cpu") if is_numpy else coord.device
+        with torch.device(device):
+            coord_t = torch.as_tensor(coord)
+            atype_t = torch.as_tensor(atype).to(torch.int64)
+            box_t = None if box is None else torch.as_tensor(box, dtype=coord_t.dtype)
 
         nframes = atype_t.shape[0]
         nloc = atype_t.shape[1]
