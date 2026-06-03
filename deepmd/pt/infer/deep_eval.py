@@ -142,6 +142,8 @@ class DeepEval(DeepEvalBackend):
         self.output_def = output_def
         self.model_path = model_file
         self.neighbor_list = neighbor_list
+        # data modifier, populated only for frozen .pth models that carry one
+        self.modifier = None
         if str(self.model_path).endswith(".pt"):
             state_dict = torch.load(
                 model_file, map_location=env.DEVICE, weights_only=True
@@ -270,6 +272,11 @@ class DeepEval(DeepEvalBackend):
             unsupported = "spin models"
         elif self._has_hessian:
             unsupported = "hessian models"
+        elif self.modifier is not None:
+            # the vesin path runs forward_common_lower directly, bypassing
+            # ModelWrapper.forward (which applies the data modifier); fall back
+            # to the native path so the modifier is still applied.
+            unsupported = "models with a data modifier"
         ase_provided = self.neighbor_list is not None
         if nlist_backend == "native":
             self._use_vesin = False
