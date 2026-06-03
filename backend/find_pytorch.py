@@ -142,6 +142,9 @@ def get_pt_requirement(pt_version: str = "") -> dict:
             # under the torch extra rather than the core deps (conda-forge has
             # vesin but not vesin-torch).
             "vesin[torch]",
+            # GPU O(N) cell-list neighbor list for large systems; the package
+            # requires Python >= 3.11 while deepmd-kit still supports 3.10.
+            "nvalchemi-toolkit-ops>=0.3.1; python_version >= '3.11'",
             *mpi_requirement,
             *cibw_requirement,
         ],

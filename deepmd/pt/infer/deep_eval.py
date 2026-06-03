@@ -66,6 +66,10 @@ from deepmd.pt.utils.env import (
     GLOBAL_PT_FLOAT_PRECISION,
     RESERVED_PRECISION_DICT,
 )
+from deepmd.pt.utils.nv_nlist import (
+    NvNeighborList,
+    is_nv_available,
+)
 from deepmd.pt.utils.utils import (
     to_numpy_array,
     to_torch_tensor,
@@ -255,63 +259,88 @@ class DeepEval(DeepEvalBackend):
     def _setup_nlist_backend(self, nlist_backend: str) -> None:
         """Resolve the neighbor-list construction strategy from a user choice.
 
-        ``"native"`` uses the dense all-pairs builder; ``"vesin"`` forces the
-        O(N) ``vesin.torch`` cell list (raising if it is unavailable or the
-        model/inputs are unsupported); ``"auto"`` uses vesin when applicable and
-        silently falls back to the native builder otherwise.  Results are
-        unchanged either way -- only the neighbor-search cost differs.
+        ``"native"`` uses the dense all-pairs builder; ``"vesin"`` / ``"nv"``
+        force the O(N) ``vesin.torch`` / ``nvalchemiops`` cell list (raising if
+        unavailable or the model/inputs are unsupported); ``"auto"`` picks the
+        first available O(N) builder (vesin, then nv) and otherwise falls back to
+        the native builder.  Results are unchanged either way -- only the
+        neighbor-search cost differs.
         """
-        if nlist_backend not in ("auto", "vesin", "native"):
+        inner = self.dp.model["Default"]
+        self_built = getattr(inner, "use_self_built_nlist", None)
+        if callable(self_built) and self_built():
+            # The model builds its own neighbor list and runs the native path;
+            # an external strategy would bypass it, so always use native.
+            log.info(
+                "Ignoring nlist_backend=%r: %s uses its own built-in neighbor list.",
+                nlist_backend,
+                type(inner).__name__,
+            )
+            self._nlist_builder = None
+            return
+        if nlist_backend not in ("auto", "vesin", "nv", "native"):
             raise ValueError(
                 f"Unknown nlist_backend '{nlist_backend}'; "
-                "expected 'auto', 'vesin', or 'native'."
+                "expected 'auto', 'vesin', 'nv', or 'native'."
             )
-        # reason vesin cannot be used (None means it can)
+
+        # reason an external strategy cannot be used (None means it can)
         unsupported = None
         if self._has_spin:
             unsupported = "spin models"
         elif self._has_hessian:
             unsupported = "hessian models"
         elif self.modifier is not None:
-            # the vesin path runs forward_common_lower directly, bypassing
+            # the strategy path runs forward_common_lower directly, bypassing
             # ModelWrapper.forward (which applies the data modifier); fall back
             # to the native path so the modifier is still applied.
             unsupported = "models with a data modifier"
-        elif "energy" not in self.dp.model["Default"].model_output_type():
-            # _eval_lower_vesin reconstructs the backend output from the
+        elif "energy" not in inner.model_output_type():
+            # _eval_lower_strategy reconstructs the backend output from the
             # forward_common_lower / communicate keys via _OUTDEF_DP2BACKEND,
             # which matches the model's own translation only for the energy
             # model (e.g. the polar fitting key is "polarizability" but the
-            # backend output is "polar").  Restrict vesin to energy models --
-            # the large-system inference target -- and fall back to native
-            # for the other fitting types.
+            # backend output is "polar").  Restrict strategies to energy models
+            # and fall back to native for the other fitting types.
             unsupported = "non-energy models"
         ase_provided = self.neighbor_list is not None
-        if nlist_backend == "native":
-            self._use_vesin = False
-        elif nlist_backend == "vesin":
-            if not is_vesin_torch_available():
-                raise ImportError(
-                    "nlist_backend='vesin' was requested but 'vesin.torch' is "
-                    "not installed. Install it (`pip install vesin[torch]`) or "
-                    "use nlist_backend='native' (or 'auto')."
-                )
+
+        builder = None
+        if nlist_backend in ("vesin", "nv"):
             if unsupported is not None:
                 raise ValueError(
-                    f"nlist_backend='vesin' is not supported for {unsupported}; "
-                    "use nlist_backend='native' (or 'auto')."
+                    f"nlist_backend='{nlist_backend}' is not supported for "
+                    f"{unsupported}; use nlist_backend='native' (or 'auto')."
                 )
             if ase_provided:
                 raise ValueError(
-                    "nlist_backend='vesin' conflicts with an explicitly "
-                    "supplied ASE neighbor_list; pass only one."
+                    f"nlist_backend='{nlist_backend}' conflicts with an "
+                    "explicitly supplied ASE neighbor_list; pass only one."
                 )
-            self._use_vesin = True
-        else:  # auto: use vesin when possible, otherwise fall back silently
-            self._use_vesin = (
-                is_vesin_torch_available() and unsupported is None and not ase_provided
-            )
-        self._nlist_builder = VesinNeighborList() if self._use_vesin else None
+            if nlist_backend == "vesin":
+                if not is_vesin_torch_available():
+                    raise ImportError(
+                        "nlist_backend='vesin' was requested but 'vesin.torch' "
+                        "is not installed. Install it (`pip install "
+                        "vesin[torch]`) or use nlist_backend='native' (or 'auto')."
+                    )
+                builder = VesinNeighborList()
+            elif not is_nv_available():
+                raise ImportError(
+                    "nlist_backend='nv' was requested but 'nvalchemi-toolkit-ops'"
+                    " is not installed. Install it (`pip install "
+                    "nvalchemi-toolkit-ops`) or use nlist_backend='native' "
+                    "(or 'auto')."
+                )
+            else:
+                builder = NvNeighborList()
+        elif nlist_backend == "auto" and unsupported is None and not ase_provided:
+            # Pick the first available O(N) builder; nv is GPU-only.
+            if is_vesin_torch_available():
+                builder = VesinNeighborList()
+            elif is_nv_available() and torch.cuda.is_available():
+                builder = NvNeighborList()
+        self._nlist_builder = builder
 
     def get_rcut(self) -> float:
         """Get the cutoff radius of this model."""
@@ -659,8 +688,8 @@ class DeepEval(DeepEvalBackend):
         do_atomic_virial = any(
             x.category == OutputVariableCategory.DERV_C for x in request_defs
         )
-        if self._use_vesin:
-            batch_output = self._eval_lower_vesin(
+        if self._nlist_builder is not None:
+            batch_output = self._eval_lower_strategy(
                 coord_input,
                 type_input,
                 box_input,
@@ -696,7 +725,7 @@ class DeepEval(DeepEvalBackend):
                 )  # this is kinda hacky
         return tuple(results)
 
-    def _eval_lower_vesin(
+    def _eval_lower_strategy(
         self,
         coord: torch.Tensor,
         atype: torch.Tensor,
@@ -706,15 +735,15 @@ class DeepEval(DeepEvalBackend):
         charge_spin: torch.Tensor | None,
         do_atomic_virial: bool,
     ) -> dict[str, torch.Tensor]:
-        """Evaluate via the O(N) vesin-built ``(i,j,S)`` extended neighbor list.
+        """Evaluate via the selected O(N) ``NeighborList`` strategy.
 
-        Builds the extended representation with the vesin cell list, runs the
-        model's ``forward_common_lower``, and maps the extended outputs back to
-        local atoms with ``communicate_extended_output``.  Returns a dict keyed
-        by backend names, matching the normal ``model()`` output so the caller's
-        extraction is unchanged.  ``forward_common_atomic`` sets
-        ``requires_grad`` on the extended coordinates internally, exactly as on
-        the native path, so forces/virials are produced identically.
+        Builds the extended representation with ``self._nlist_builder`` (vesin or
+        nv), runs the model's ``forward_common_lower``, and maps the extended
+        outputs back to local atoms with ``communicate_extended_output``.
+        Returns a dict keyed by backend names, matching the normal ``model()``
+        output so the caller's extraction is unchanged.  ``requires_grad`` is set
+        on the extended coordinates internally, exactly as on the native path, so
+        forces/virials are produced identically.
         """
         inner = self.dp.model["Default"]
         ext_coord, ext_atype, nlist, mapping = self._nlist_builder.build(
