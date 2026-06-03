@@ -59,6 +59,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
         charge_spin: torch.Tensor | None = None,
+        neighbor_list: Any = None,
     ) -> dict[str, torch.Tensor]:
         model_ret = self.call_common(
             coord,
@@ -68,6 +69,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             aparam=aparam,
             charge_spin=charge_spin,
             do_atomic_virial=do_atomic_virial,
+            neighbor_list=neighbor_list,
         )
         model_predict = {}
         model_predict["atom_energy"] = model_ret["energy"]
