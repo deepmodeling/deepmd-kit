@@ -86,6 +86,20 @@ def _system():
     return coords, atype, box
 
 
+def _multiframe_system(nframes: int = 3):
+    """Frames with different box sizes -> different per-frame ghost counts,
+    exercising the vesin builder's pad-to-common-nall + stack path.
+    """
+    rng = np.random.default_rng(20240604)
+    atype = np.array([0, 0, 1, 1, 2, 0, 1, 2], dtype=np.int64)
+    coords, boxes = [], []
+    for ff in range(nframes):
+        box_len = 6.0 + 1.5 * ff
+        coords.append((rng.random((len(atype), 3)) * box_len).astype(np.float64))
+        boxes.append((np.eye(3) * box_len).reshape(9).astype(np.float64))
+    return np.stack(coords, axis=0), atype, np.stack(boxes, axis=0)
+
+
 @pytest.fixture(scope="module")
 def pt_files(tmp_path_factory):
     d = tmp_path_factory.mktemp("nlist_backend")
@@ -122,6 +136,20 @@ def test_vesin_matches_native(pt_files, name: str, periodic: bool) -> None:
     dp_vesin = DeepPot(pt_files[name], nlist_backend="vesin")
     ref = dp_native.eval(coords, cells, atype, atomic=True)
     out = dp_vesin.eval(coords, cells, atype, atomic=True)
+    for a, b, label in zip(ref, out, ["e", "f", "v", "ae", "av"], strict=True):
+        np.testing.assert_allclose(
+            a, b, rtol=1e-9, atol=1e-9, err_msg=f"{name} {label}"
+        )
+
+
+@pytest.mark.parametrize("name", list(ALL_MODELS))  # descriptor family
+def test_vesin_matches_native_multiframe(pt_files, name: str) -> None:
+    """Multi-frame eval (frames with differing ghost counts) matches native."""
+    coords, atype, box = _multiframe_system()
+    dp_native = DeepPot(pt_files[name], nlist_backend="native")
+    dp_vesin = DeepPot(pt_files[name], nlist_backend="vesin")
+    ref = dp_native.eval(coords, box, atype, atomic=True)
+    out = dp_vesin.eval(coords, box, atype, atomic=True)
     for a, b, label in zip(ref, out, ["e", "f", "v", "ae", "av"], strict=True):
         np.testing.assert_allclose(
             a, b, rtol=1e-9, atol=1e-9, err_msg=f"{name} {label}"

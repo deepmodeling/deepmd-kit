@@ -253,6 +253,25 @@ def _system(natoms: int = 6, box_len: float = 10.0, seed: int = GLOBAL_SEED):
     return coord, atype, box
 
 
+def _multiframe_system(nframes: int = 3, natoms: int = 6, seed: int = GLOBAL_SEED):
+    """Multi-frame 3-type system whose frames have *different* geometries (and
+    box sizes), so the per-frame ghost counts differ and the builder's
+    pad-to-common-nall + stack path is exercised.
+    """
+    rng = np.random.default_rng(seed)
+    coords, boxes = [], []
+    for ff in range(nframes):
+        box_len = 6.0 + 1.5 * ff  # vary box -> vary ghost count per frame
+        coords.append((rng.random((natoms, 3)) * box_len).astype(np.float64))
+        boxes.append((np.eye(3) * box_len).reshape(9).astype(np.float64))
+    coord = np.stack(coords, axis=0)
+    atype = np.tile(
+        np.array([[0, 0, 1, 1, 2, 0]], dtype=np.int64)[:, :natoms], (nframes, 1)
+    )
+    box = np.stack(boxes, axis=0)
+    return coord, atype, box
+
+
 def _per_atom_neighbor_dists(ext_coord, nlist, coord):
     """Sorted, rounded valid-neighbor distances for each local atom."""
     ext_coord = np.asarray(ext_coord).reshape(-1, 3)
@@ -326,6 +345,34 @@ def test_builder_outputs_on_input_device() -> None:
         assert t.device.type == device.type
 
 
+@pytest.mark.parametrize("periodic", [False, True])  # non-PBC vs PBC
+def test_builder_multiframe_matches_default(periodic: bool) -> None:
+    """Multi-frame build (frames with differing ghost counts) exercises the
+    pad-to-common-nall + stack path; every frame's neighbor multiset must still
+    match the default builder, in numpy and torch namespaces.
+    """
+    coord_np, atype_np, box_np = _multiframe_system()
+    box_np = box_np if periodic else None
+    rcut, sel = 4.0, [20, 20, 8]
+    ec_d, _, nl_d, _ = DefaultNeighborList().build(
+        coord_np, atype_np, box_np, rcut, sel
+    )
+    ec_v, _, nl_v, _ = VesinNeighborList().build(coord_np, atype_np, box_np, rcut, sel)
+    coord_t = torch.tensor(coord_np, dtype=torch.float64)
+    atype_t = torch.tensor(atype_np, dtype=torch.int64)
+    box_t = None if box_np is None else torch.tensor(box_np, dtype=torch.float64)
+    ec_vt, _, nl_vt, _ = VesinNeighborList().build(coord_t, atype_t, box_t, rcut, sel)
+    for ff in range(coord_np.shape[0]):
+        ref = _per_atom_neighbor_dists(ec_d[ff], nl_d[ff], coord_np[ff])
+        assert _per_atom_neighbor_dists(ec_v[ff], nl_v[ff], coord_np[ff]) == ref
+        assert (
+            _per_atom_neighbor_dists(
+                ec_vt[ff].cpu().numpy(), nl_vt[ff].cpu().numpy(), coord_np[ff]
+            )
+            == ref
+        )
+
+
 @pytest.mark.parametrize("name", list(ALL_MODELS))  # descriptor family
 @pytest.mark.parametrize("periodic", [False, True])  # non-PBC vs PBC
 def test_dpmodel_equivalence(name: str, periodic: bool) -> None:
@@ -368,6 +415,33 @@ def test_pt_expt_equivalence(name: str, periodic: bool) -> None:
         np.testing.assert_allclose(
             a.detach().cpu().numpy(),
             b.detach().cpu().numpy(),
+            err_msg=f"{name} {k}",
+            **_tol(model_dict),
+        )
+
+
+@pytest.mark.parametrize("name", ["se_e2_a", "dpa1"])  # non-mixed + attention
+def test_pt_expt_multiframe_equivalence(name: str) -> None:
+    """Multi-frame (frames with differing ghost counts) pt_expt outputs are
+    invariant to the nlist strategy -- exercises the builder's per-frame pad +
+    stack feeding the batched model forward.
+    """
+    coord_np, atype_np, box_np = _multiframe_system()
+    model_dict = ALL_MODELS[name]
+    md = get_model(copy.deepcopy(model_dict))
+    md.eval()
+    atype_t = torch.tensor(atype_np, dtype=torch.int64)
+    box_t = torch.tensor(box_np, dtype=torch.float64)
+    results = {}
+    for tag, nl in (("def", DefaultNeighborList()), ("ves", VesinNeighborList())):
+        coord_t = torch.tensor(coord_np, dtype=torch.float64).requires_grad_(True)
+        results[tag] = md.forward(
+            coord_t, atype_t, box=box_t, do_atomic_virial=True, neighbor_list=nl
+        )
+    for k in ("energy", "force", "virial", "atom_virial"):
+        np.testing.assert_allclose(
+            results["def"][k].detach().cpu().numpy(),
+            results["ves"][k].detach().cpu().numpy(),
             err_msg=f"{name} {k}",
             **_tol(model_dict),
         )
