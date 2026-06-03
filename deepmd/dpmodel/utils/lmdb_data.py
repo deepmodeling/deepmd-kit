@@ -1275,6 +1275,13 @@ class DistributedSameNlocBatchSampler:
         self._seed = seed if seed is not None else 0
         self._epoch = 0
         self._block_targets = block_targets
+        self._total_batches = len(
+            SameNlocBatchSampler(
+                self._reader,
+                shuffle=False,
+                block_targets=self._block_targets,
+            )
+        )
 
     def set_epoch(self, epoch: int) -> None:
         """Set epoch for deterministic cross-rank shuffling.
@@ -1310,14 +1317,7 @@ class DistributedSameNlocBatchSampler:
 
     def __len__(self) -> int:
         """Number of batches for this rank."""
-        total = len(
-            SameNlocBatchSampler(
-                self._reader,
-                shuffle=False,
-                block_targets=self._block_targets,
-            )
-        )
-        return math.ceil(total / self._world_size)
+        return math.ceil(self._total_batches / self._world_size)
 
     @property
     def rank(self) -> int:

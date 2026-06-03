@@ -311,6 +311,9 @@ class LmdbDataset(Dataset):
 
     @property
     def index(self) -> list[int]:
+        """Number of batches per logical LMDB dataset."""
+        if not self._block_targets:
+            return self._reader.index
         return [self.total_batch]
 
     @property
