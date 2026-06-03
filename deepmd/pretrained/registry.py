@@ -6,6 +6,15 @@ from typing import (
 )
 
 MODEL_REGISTRY: dict[str, dict[str, Any]] = {
+    "DPA-3.3-1M": {
+        "urls": [
+            "https://huggingface.co/deepmodelingcommunity/DPA-3.3-1M/resolve/main/DPA-3.3-1M.pt?download=true",
+            "https://hf-mirror.com/deepmodelingcommunity/DPA-3.3-1M/resolve/main/DPA-3.3-1M.pt?download=true",
+            "https://modelscope.cn/models/DeepModelingCommunity/DPA-3.3-1M/resolve/master/DPA-3.3-1M.pt",
+        ],
+        "filename": "DPA-3.3-1M.pt",
+        "sha256": "36fe440c111108d60cda54aa7d3fccac743794de25abef4d49564b9fb896a55b",
+    },
     "DPA-3.2-5M": {
         "urls": [
             "https://huggingface.co/deepmodelingcommunity/DPA-3.2-5M/resolve/main/DPA-3.2-5M.pt?download=true",

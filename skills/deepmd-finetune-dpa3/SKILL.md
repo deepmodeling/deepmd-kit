@@ -1,6 +1,6 @@
 ---
 name: deepmd-finetune-dpa3
-description: Fine-tune a DPA3 model in DeePMD-kit using the PyTorch backend. Use when the user wants to adapt a pre-trained DPA3 model to a new downstream dataset. Supports fine-tuning from a self-trained DPA3 model (.pt checkpoint), from a multi-task pre-trained model, or from a built-in pretrained model downloaded via `dp pretrained download` (e.g., DPA-3.1-3M, DPA-3.2-5M). Covers single-task and multi-task fine-tuning workflows.
+description: Fine-tune a DPA3 model in DeePMD-kit using the PyTorch backend. Use when the user wants to adapt a pre-trained DPA3 model to a new downstream dataset. Supports fine-tuning from a self-trained DPA3 model (.pt checkpoint), from a multi-task pre-trained model, or from a built-in pretrained model downloaded via `dp pretrained download` (e.g., DPA-3.1-3M, DPA-3.2-5M, DPA-3.3-1M). Covers single-task and multi-task fine-tuning workflows.
 compatibility: Requires deepmd-kit with PyTorch backend installed. GPU strongly recommended.
 license: LGPL-3.0-or-later
 metadata:
@@ -15,7 +15,7 @@ Fine-tune a pre-trained DPA3 model on a downstream dataset. This skill covers th
 
 1. Fine-tuning from a self-trained single-task DPA3 model
 1. Fine-tuning from a multi-task pre-trained DPA3 model
-1. Fine-tuning from a built-in pretrained model (e.g., DPA-3.1-3M, DPA-3.2-5M) downloaded via `dp pretrained download`
+1. Fine-tuning from a built-in pretrained model (e.g., DPA-3.1-3M, DPA-3.2-5M, DPA-3.3-1M) downloaded via `dp pretrained download`
 
 ## Quick Start
 
@@ -32,7 +32,7 @@ dp --pt train input.json --finetune /path/to/DPA-3.2-5M.pt --use-pretrain-script
 
 1. Determine the fine-tuning scenario:
    - Does the user have a self-trained `.pt` model?
-   - Does the user want to use a built-in pretrained model (DPA-3.1-3M, DPA-3.2-5M, etc.)?
+   - Does the user want to use a built-in pretrained model (DPA-3.1-3M, DPA-3.2-5M, DPA-3.3-1M, etc.)?
    - Is the pre-trained model single-task or multi-task?
 1. If using a built-in pretrained model, download it first with `dp pretrained download`.
 1. Collect the downstream training data paths and element types.
@@ -279,6 +279,7 @@ dp pretrained download -h
 
 Currently available models include:
 
+- `DPA-3.3-1M` - 1M parameter DPA3 pretrained model
 - `DPA-3.2-5M` — latest large-scale pretrained model
 - `DPA-3.1-3M` — 3M parameter DPA3 pretrained model
 - `DPA3-Omol-Large` — large organic molecule model
