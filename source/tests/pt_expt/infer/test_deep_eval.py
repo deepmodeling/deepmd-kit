@@ -2277,6 +2277,25 @@ class TestDeepEvalNlistBackend(unittest.TestCase):
                     a, b, rtol=1e-10, atol=1e-10, err_msg=f"vesin vs native: {name}"
                 )
 
+    def test_eval_descriptor_vesin_matches_native(self) -> None:
+        """eval_descriptor bypasses forward_common_lower's format_nlist, so the
+        vesin builder must apply the same type-distinguishing as the native
+        builder for a non-mixed-type model (regression for the eval_descriptor
+        mismatch).
+        """
+        if not self._vesin_available():
+            self.skipTest("vesin.torch is not installed")
+        rng = np.random.default_rng(GLOBAL_SEED + 31)
+        natoms = 6
+        coords = rng.random((1, natoms, 3)) * 8.0
+        atom_types = np.array([i % self.nt for i in range(natoms)], dtype=np.int32)
+        dp_native = DeepPot(self.tmpfile.name, nlist_backend="native")
+        dp_vesin = DeepPot(self.tmpfile.name, nlist_backend="vesin")
+        for cells in (np.eye(3).reshape(1, 9) * 10.0, None):  # PBC and non-PBC
+            d_native = dp_native.deep_eval.eval_descriptor(coords, cells, atom_types)
+            d_vesin = dp_vesin.deep_eval.eval_descriptor(coords, cells, atom_types)
+            np.testing.assert_allclose(d_native, d_vesin, rtol=1e-10, atol=1e-10)
+
 
 if __name__ == "__main__":
     unittest.main()

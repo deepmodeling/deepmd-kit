@@ -884,9 +884,18 @@ class DeepEval(DeepEvalBackend):
 
         if self._nlist_builder is not None:
             # O(N) cell-list strategy (e.g. vesin): builds the same extended
-            # representation; the compiled forward_common_lower re-formats the
-            # candidate nlist (sort, truncate, type-split).
-            return self._nlist_builder.build(coords, atom_types, cells, rcut, sel)
+            # representation.  Match the native builder's type handling
+            # (``distinguish_types=not mixed_types``) so consumers that bypass
+            # ``forward_common_lower``'s ``format_nlist`` -- e.g.
+            # ``eval_descriptor`` calling the descriptor directly -- receive the
+            # type-distinguished nlist a non-mixed-type descriptor expects.  The
+            # main eval path is unaffected (its ``format_nlist`` re-formats).
+            extended_coord, extended_atype, nlist, mapping = self._nlist_builder.build(
+                coords, atom_types, cells, rcut, sel
+            )
+            if not mixed_types:
+                nlist = nlist_distinguish_types(nlist, extended_atype, sel)
+            return extended_coord, extended_atype, nlist, mapping
 
         if cells is not None:
             box_input = cells.reshape(nframes, 3, 3)
