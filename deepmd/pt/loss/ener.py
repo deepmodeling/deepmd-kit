@@ -607,7 +607,7 @@ class EnergyStdLoss(TaskLoss):
                     high_prec=False,
                     default=1.0,
                 )
-            )
+            )       
         return label_requirement
 
     def serialize(self) -> dict:
