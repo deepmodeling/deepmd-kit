@@ -277,6 +277,15 @@ class DeepEval(DeepEvalBackend):
             # ModelWrapper.forward (which applies the data modifier); fall back
             # to the native path so the modifier is still applied.
             unsupported = "models with a data modifier"
+        elif "energy" not in self.dp.model["Default"].model_output_type():
+            # _eval_lower_vesin reconstructs the backend output from the
+            # forward_common_lower / communicate keys via _OUTDEF_DP2BACKEND,
+            # which matches the model's own translation only for the energy
+            # model (e.g. the polar fitting key is "polarizability" but the
+            # backend output is "polar").  Restrict vesin to energy models --
+            # the large-system inference target -- and fall back to native
+            # for the other fitting types.
+            unsupported = "non-energy models"
         ase_provided = self.neighbor_list is not None
         if nlist_backend == "native":
             self._use_vesin = False
