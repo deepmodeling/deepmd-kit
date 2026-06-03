@@ -143,6 +143,18 @@ def _build_single(
     device = positions.device
     nsel = sum(sel)
     nloc = positions.shape[0]
+
+    # Empty system: vesin rejects an empty `points` array ("NULL pointer").
+    # Return an empty extended representation directly, matching the native
+    # builder's handling of a zero-atom frame.
+    if nloc == 0:
+        return (
+            positions,
+            atype,
+            torch.full((0, nsel), -1, dtype=torch.int64, device=device),
+            torch.zeros((0,), dtype=torch.int64, device=device),
+        )
+
     periodic = cell is not None
     box = (
         cell if periodic else torch.zeros((3, 3), dtype=positions.dtype, device=device)

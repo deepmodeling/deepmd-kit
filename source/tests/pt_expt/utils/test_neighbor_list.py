@@ -335,6 +335,22 @@ def test_builder_matches_default(periodic: bool) -> None:
     )
 
 
+@pytest.mark.parametrize("periodic", [False, True])  # non-PBC vs PBC
+def test_builder_empty_system(periodic: bool) -> None:
+    """A zero-atom frame must not crash vesin (which rejects empty points); the
+    builder returns an empty extended representation, matching the native path.
+    """
+    coord = np.zeros((1, 0, 3), dtype=np.float64)
+    atype = np.zeros((1, 0), dtype=np.int64)
+    box = (np.eye(3) * 10.0).reshape(1, 9).astype(np.float64) if periodic else None
+    sel = [20, 20, 8]
+    ec, ea, nl, mp = VesinNeighborList().build(coord, atype, box, 4.0, sel)
+    assert ec.shape == (1, 0, 3)
+    assert ea.shape == (1, 0)
+    assert nl.shape == (1, 0, sum(sel))
+    assert mp.shape == (1, 0)
+
+
 def test_builder_outputs_on_input_device() -> None:
     coord_np, atype_np, box_np = _system()
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
