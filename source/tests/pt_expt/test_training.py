@@ -1456,5 +1456,233 @@ class TestCompiledVaryingNatoms(unittest.TestCase):
         self.assertIsInstance(trainer.wrapper.model["Default"], _CompiledModel)
 
 
+class TestCompiledSharedFittingDifferentDescriptor(unittest.TestCase):
+    """Regression test: shared fitting with different descriptors gets distinct compiled graphs.
+
+    Before the fix, ``_get_model_structure_key`` returned the id of the first
+    fitting-net child without including the descriptor.  Two tasks sharing a
+    fitting net but using different descriptors (different rcut / sel, which
+    bake different smooth-cutoff constants into the traced graph) received the
+    same structure key — task_2 silently reused task_1's compiled graph and
+    produced wrong predictions.
+
+    The fix includes ``id(descriptor)`` in the key so each task with a
+    distinct descriptor gets its own compiled graph.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        data_dir = os.path.join(EXAMPLE_DIR, "data")
+        if not os.path.isdir(data_dir):
+            raise unittest.SkipTest(f"Example data not found: {data_dir}")
+        cls.data_dir = data_dir
+
+    def _make_config(self, enable_compile: bool) -> tuple[dict, object]:
+        """Multi-task config: shared fitting_net, DIFFERENT descriptors per task."""
+        from deepmd.pt_expt.utils.multi_task import (
+            preprocess_shared_params,
+        )
+
+        data_dir_0 = os.path.join(self.data_dir, "data_0")
+        config = {
+            "model": {
+                "shared_dict": {
+                    "my_type_map": ["O", "H"],
+                    "my_fitting": {
+                        "neuron": [16, 16],
+                        "resnet_dt": True,
+                        "seed": 1,
+                        "dim_case_embd": 2,
+                        "precision": "float64",
+                    },
+                },
+                "model_dict": {
+                    "model_1": {
+                        "type_map": "my_type_map",
+                        "descriptor": {
+                            "type": "se_e2_a",
+                            "sel": [6, 12],
+                            "rcut_smth": 0.50,
+                            "rcut": 3.00,
+                            "neuron": [8, 16],
+                            "resnet_dt": False,
+                            "axis_neuron": 4,
+                            "type_one_side": True,
+                            "precision": "float64",
+                            "seed": 1,
+                        },
+                        "fitting_net": "my_fitting",
+                        "data_stat_nbatch": 1,
+                    },
+                    "model_2": {
+                        "type_map": "my_type_map",
+                        "descriptor": {
+                            "type": "se_e2_a",
+                            "sel": [4, 8],
+                            "rcut_smth": 0.30,
+                            "rcut": 2.50,
+                            "neuron": [8, 16],
+                            "resnet_dt": False,
+                            "axis_neuron": 4,
+                            "type_one_side": True,
+                            "precision": "float64",
+                            "seed": 2,
+                        },
+                        "fitting_net": "my_fitting",
+                        "data_stat_nbatch": 1,
+                    },
+                },
+            },
+            "learning_rate": {
+                "type": "exp",
+                "decay_steps": 500,
+                "start_lr": 0.001,
+                "stop_lr": 3.51e-8,
+            },
+            "loss_dict": {
+                "model_1": {
+                    "type": "ener",
+                    "start_pref_e": 0.02,
+                    "limit_pref_e": 1,
+                    "start_pref_f": 1000,
+                    "limit_pref_f": 1,
+                    "start_pref_v": 0,
+                    "limit_pref_v": 0,
+                },
+                "model_2": {
+                    "type": "ener",
+                    "start_pref_e": 0.02,
+                    "limit_pref_e": 1,
+                    "start_pref_f": 1000,
+                    "limit_pref_f": 1,
+                    "start_pref_v": 0,
+                    "limit_pref_v": 0,
+                },
+            },
+            "training": {
+                "model_prob": {"model_1": 0.5, "model_2": 0.5},
+                "data_dict": {
+                    "model_1": {
+                        "stat_file": "./stat_files/model_1",
+                        "training_data": {"systems": [data_dir_0], "batch_size": 1},
+                        "validation_data": {
+                            "systems": [data_dir_0],
+                            "batch_size": 1,
+                            "numb_btch": 1,
+                        },
+                    },
+                    "model_2": {
+                        "stat_file": "./stat_files/model_2",
+                        "training_data": {"systems": [data_dir_0], "batch_size": 1},
+                        "validation_data": {
+                            "systems": [data_dir_0],
+                            "batch_size": 1,
+                            "numb_btch": 1,
+                        },
+                    },
+                },
+                "numb_steps": 1,
+                "seed": 10,
+                "disp_file": "lcurve.out",
+                "disp_freq": 1,
+                "save_freq": 1,
+            },
+        }
+        if enable_compile:
+            config["training"]["enable_compile"] = True
+        config["model"], shared_links = preprocess_shared_params(config["model"])
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config, multi_task=True)
+        return config, shared_links
+
+    def test_compiled_matches_eager_per_task(self) -> None:
+        """Compiled output for each task must match its own eager output.
+
+        With different descriptors, tasks must get separate compiled graphs.
+        Before the fix, task_2 reused task_1's compiled graph (rcut=3.0 baked
+        in), yielding wrong predictions for task_2 (rcut=2.5).
+        """
+        from deepmd.pt_expt.train.training import (
+            _CompiledModel,
+            _get_model_structure_key,
+        )
+
+        tmpdir = tempfile.mkdtemp(prefix="pt_expt_diff_desc_")
+        try:
+            old_cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                config_uc, shared_links_uc = self._make_config(enable_compile=False)
+                config_c, shared_links_c = self._make_config(enable_compile=True)
+
+                trainer_uc = get_trainer(config_uc, shared_links=shared_links_uc)
+                trainer_c = get_trainer(config_c, shared_links=shared_links_c)
+
+                for mk in ("model_1", "model_2"):
+                    self.assertIsInstance(
+                        trainer_c.wrapper.model[mk],
+                        _CompiledModel,
+                        f"{mk} was not compiled",
+                    )
+
+                # Different descriptors → different structure keys → separate graphs.
+                key_1 = _get_model_structure_key(
+                    trainer_c.wrapper.model["model_1"].original_model
+                )
+                key_2 = _get_model_structure_key(
+                    trainer_c.wrapper.model["model_2"].original_model
+                )
+                self.assertNotEqual(
+                    key_1,
+                    key_2,
+                    "Tasks with different descriptors must get different structure keys",
+                )
+
+                # Sync weights so compiled and uncompiled start from the same state.
+                for mk in ("model_1", "model_2"):
+                    trainer_c.wrapper.model[mk].original_model.load_state_dict(
+                        trainer_uc.wrapper.model[mk].state_dict()
+                    )
+
+                for mk in ("model_1", "model_2"):
+                    inp_dict, label_dict = trainer_uc.get_data(
+                        is_train=True, task_key=mk
+                    )
+                    cur_lr = trainer_uc.scheduler.get_last_lr()[0]
+
+                    pred_uc, loss_uc, _ = trainer_uc.wrapper(
+                        **inp_dict,
+                        cur_lr=cur_lr,
+                        label=label_dict,
+                        task_key=mk,
+                    )
+                    pred_c, loss_c, _ = trainer_c.wrapper(
+                        **inp_dict,
+                        cur_lr=cur_lr,
+                        label=label_dict,
+                        task_key=mk,
+                    )
+
+                    for key in ("atom_energy", "energy", "force"):
+                        torch.testing.assert_close(
+                            pred_c[key],
+                            pred_uc[key],
+                            atol=1e-10,
+                            rtol=1e-10,
+                            msg=f"{mk}/{key}: compiled vs eager mismatch",
+                        )
+                    torch.testing.assert_close(
+                        loss_c,
+                        loss_uc,
+                        atol=1e-10,
+                        rtol=1e-10,
+                        msg=f"{mk}/loss: compiled vs eager mismatch",
+                    )
+            finally:
+                os.chdir(old_cwd)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
 if __name__ == "__main__":
     unittest.main()

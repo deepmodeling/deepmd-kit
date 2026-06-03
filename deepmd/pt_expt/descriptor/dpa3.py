@@ -40,6 +40,10 @@ class DescrptDPA3(DescrptDPA3DP):
             if not resume:
                 merge_env_stat(base_class.repflows, self.repflows, model_prob)
             self._modules["repflows"] = base_class._modules["repflows"]
+            if self.add_chg_spin_ebd:
+                for key in ("chg_embedding", "spin_embedding", "mix_cs_mlp"):
+                    if key in base_class._modules:
+                        self._modules[key] = base_class._modules[key]
         elif shared_level == 1:
             self._modules["type_embedding"] = base_class._modules["type_embedding"]
         else:

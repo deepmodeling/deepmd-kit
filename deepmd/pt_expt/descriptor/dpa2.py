@@ -69,6 +69,8 @@ class DescrptDPA2(DescrptDPA2DP):
                 "g1_shape_tranform"
             ]
             self._modules["repformers"] = base_class._modules["repformers"]
+            if "tebd_transform" in base_class._modules:
+                self._modules["tebd_transform"] = base_class._modules["tebd_transform"]
         elif shared_level == 1:
             self._modules["type_embedding"] = base_class._modules["type_embedding"]
         else:
