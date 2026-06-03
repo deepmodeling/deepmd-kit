@@ -279,7 +279,7 @@ dp pretrained download -h
 
 Currently available models include:
 
-- `DPA-3.3-1M` - 1M parameter DPA3 pretrained model
+- `DPA-3.3-1M` — 1M parameter DPA3 pretrained model
 - `DPA-3.2-5M` — latest large-scale pretrained model
 - `DPA-3.1-3M` — 3M parameter DPA3 pretrained model
 - `DPA3-Omol-Large` — large organic molecule model
