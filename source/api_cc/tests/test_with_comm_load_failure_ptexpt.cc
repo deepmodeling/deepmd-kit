@@ -194,7 +194,10 @@ TEST_F(TestDeepSpinPTExptWithCommLoadFailure, multi_rank_compute_throws) {
   deepmd::InputNlist inlist(natoms, ilist.data(), numneigh.data(),
                             firstneigh.data());
   convert_nlist(inlist, nlist_data);
-  inlist.nswap = 1;  // simulate multi-rank without populating send/recv
+  // Multi-rank is keyed on nprocs (DeepSpinPTExpt.cc), not nswap; with
+  // has_comm_artifact_ true but the with-comm loader failed to load, the
+  // dispatch must throw.
+  inlist.nprocs = 2;
 
   double ener;
   std::vector<double> force_, force_mag, virial;
