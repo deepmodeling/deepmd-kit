@@ -177,8 +177,10 @@ TEST_F(TestDeepSpinPTExptWithCommLoadFailure, single_rank_compute_succeeds) {
 
   double ener;
   std::vector<double> force_, force_mag, virial;
+  // The fixture is built with numb_aparam=1; supply a uniform per-atom aparam.
+  std::vector<double> fparam, aparam(natoms, 1.0);
   EXPECT_NO_THROW(dp.compute(ener, force_, force_mag, virial, coord, spin,
-                             atype, empty_box, 0, inlist, 0));
+                             atype, empty_box, 0, inlist, 0, fparam, aparam));
 }
 
 TEST_F(TestDeepSpinPTExptWithCommLoadFailure, multi_rank_compute_throws) {
@@ -196,7 +198,10 @@ TEST_F(TestDeepSpinPTExptWithCommLoadFailure, multi_rank_compute_throws) {
 
   double ener;
   std::vector<double> force_, force_mag, virial;
+  // The fixture is built with numb_aparam=1; supply a uniform per-atom aparam
+  // so the throw comes from the multi-rank dispatch, not a missing aparam.
+  std::vector<double> fparam, aparam(natoms, 1.0);
   EXPECT_THROW(dp.compute(ener, force_, force_mag, virial, coord, spin, atype,
-                          empty_box, 0, inlist, 0),
+                          empty_box, 0, inlist, 0, fparam, aparam),
                deepmd::deepmd_exception);
 }

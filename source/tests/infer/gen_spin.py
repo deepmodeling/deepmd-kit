@@ -125,7 +125,14 @@ def _build_dpa3_mpi_yaml(yaml_path: str) -> None:
             "precision": "float64",
             "seed": 1,
         },
-        "fitting_net": {"neuron": [5, 5, 5], "resnet_dt": True, "seed": 1},
+        # numb_aparam=1 exercises the aparam path of DeepSpinPTExpt, including
+        # the empty-subdomain phantom-atom aparam padding (PR #5485 review).
+        "fitting_net": {
+            "neuron": [5, 5, 5],
+            "resnet_dt": True,
+            "numb_aparam": 1,
+            "seed": 1,
+        },
         "spin": {"use_spin": [True, False], "virtual_scale": [0.3140, 0.0]},
     }
 
@@ -185,7 +192,14 @@ def _build_dpa3_single_yaml(yaml_path: str) -> None:
             "precision": "float64",
             "seed": 1,
         },
-        "fitting_net": {"neuron": [5, 5, 5], "resnet_dt": True, "seed": 1},
+        # numb_aparam=1 exercises the aparam path of DeepSpinPTExpt, including
+        # the empty-subdomain phantom-atom aparam padding (PR #5485 review).
+        "fitting_net": {
+            "neuron": [5, 5, 5],
+            "resnet_dt": True,
+            "numb_aparam": 1,
+            "seed": 1,
+        },
         "spin": {"use_spin": [True, False], "virtual_scale": [0.3140, 0.0]},
     }
 
