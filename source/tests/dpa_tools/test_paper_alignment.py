@@ -164,25 +164,6 @@ def test_ft_cmd_no_model_branch_flag(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# Scratch single-task input.json
-# ---------------------------------------------------------------------------
-
-def test_scratch_cmd_no_finetune_flag(tmp_path):
-    t = _trainer(None, tmp_path, output_dir=str(tmp_path / "o"))
-    cmd = t._build_cmd("input.json")
-    assert "--finetune" not in cmd
-    assert "--model-branch" not in cmd
-
-
-def test_scratch_input_json_activation_silut_and_fix_stat_std(tmp_path):
-    t = _trainer(None, tmp_path, output_dir=str(tmp_path / "o"))
-    config = json.loads(json.dumps(t._build_config()))
-    desc = config["model"]["descriptor"]
-    assert desc["activation_function"] == "silut:3.0"
-    assert desc["repflow"]["fix_stat_std"] == 0.3
-
-
-# ---------------------------------------------------------------------------
 # MFT multi-task property-mode input.json
 # ---------------------------------------------------------------------------
 

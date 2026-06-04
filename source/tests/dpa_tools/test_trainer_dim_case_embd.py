@@ -44,13 +44,6 @@ def test_pretrained_mode_no_dim_case_embd(tmp_path):
     assert fn.get("dim_case_embd") is None
 
 
-def test_scratch_mode_no_dim_case_embd():
-    """Scratch mode (pretrained=None) loads no ckpt; never has dim_case_embd."""
-    t = _trainer(None)
-    fn = t._build_fitting_net()
-    assert fn.get("dim_case_embd") is None
-
-
 def test_user_fitting_net_params_can_set_dim_case_embd(tmp_path):
     """An explicit user-supplied dim_case_embd is still honored verbatim."""
     ckpt = tmp_path / "ckpt.pt"

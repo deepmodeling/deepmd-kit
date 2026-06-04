@@ -1,8 +1,10 @@
 # dpa_tools
 
-Fine-tuning, descriptor extraction, cross-validation, and data utilities for
-DPA-3 pretrained models.  Lives as a self-contained subpackage of `deepmd-kit`
-at `deepmd.dpa_tools`.
+Property-prediction tools built on top of DPA-3 pretrained models. `dpa_tools`
+turns molecular or atomistic structure data into `deepmd/npy` datasets, extracts
+DPA descriptors, and trains lightweight or fine-tuned property predictors for
+small- to medium-sized datasets. It lives as a self-contained subpackage of
+`deepmd-kit` at `deepmd.dpa_tools`.
 
 ## Relationship with deepmd-kit
 
@@ -16,7 +18,7 @@ at `deepmd.dpa_tools`.
   `dp --pt test`, auto-generating `input.json` config files.
 - **Inference**: deepmd-kit's built-in `DeepProperty` handles neural-network
   models; dpa_tools adds a lightweight frozen-descriptor + sklearn-head path.
-- **SMILES pipeline**: `data/smiles.py` converts CSV (SMILES or MOL files) +
+- **SMILES pipeline**: `data/smiles.py` converts CSV with SMILES columns +
   property labels into `deepmd/npy` format via RDKit 3D conformer generation.
 - **CLI**: registered as `dp dpa` subcommand group via `deepmd/main.py`.
   Torch and all DPA dependencies are loaded lazily — only when a `dp dpa ...`
@@ -30,15 +32,16 @@ at `deepmd.dpa_tools`.
 pip install deepmd-kit[dpa-tools]
 ```
 
-The `dpa-tools` extra brings in `scikit-learn`.  `torch` and `dpdata` are
-already provided by deepmd-kit's core dependencies.  For SMILES→3D conversion
-install RDKit (`conda install -c conda-forge rdkit`).
+The `dpa-tools` extra installs the Python dependencies used by this package,
+including `scikit-learn`, `dpdata`, `torch`, `rdkit`, and `e3nn`. For
+CUDA/GPU-specific PyTorch builds, install the desired PyTorch variant first or
+follow the PyTorch installation instructions for your platform.
 
 ## Python API
 
 ```python
 from deepmd.dpa_tools import (
-    DPAFineTuner,          # train (all strategies: frozen_sklearn, linear_probe, finetune, mft, scratch)
+    DPAFineTuner,          # train (strategies: frozen_sklearn, linear_probe, finetune, mft)
     DPAPredictor,          # read-only inference from frozen bundles
     extract_descriptors,   # standalone descriptor extraction
     cross_validate,        # leak-proof cross-validation
@@ -56,7 +59,7 @@ from deepmd.dpa_tools import (
 
 ### DPAFineTuner
 
-Four training strategies:
+Training strategies:
 
 | Strategy | Description | Best for |
 |----------|------------|----------|
@@ -64,7 +67,6 @@ Four training strategies:
 | `linear_probe` | Freeze backbone, train property fitting net only | Medium data, GPU |
 | `finetune` | Full-network fine-tuning | Larger data, GPU |
 | `mft` | Multi-task: property head + force-field head | Prevents representation collapse |
-| `scratch` | Train from random init (experimental) | Large-scale data only |
 
 ```python
 model = DPAFineTuner(
@@ -120,7 +122,14 @@ from deepmd.dpa_tools import auto_convert
 
 # CSV with SMILES → auto-detected, RDKit generates 3D coords
 result = auto_convert("data.csv", "./npy", property_name="homo", property_col="HOMO")
-# → {"method": "smiles", "train_systems": [...], "valid_systems": [...], ...}
+# prints: RDKit converted samples: ... / RDKit failed rows     : ...
+# → {"method": "smiles", "train_systems": [...], "valid_systems": [...],
+#    "samples_used": ..., "failed_rows": [...], "skipped_zero": ...,
+#    "skipped_overlap": ...}
+
+# To force the SMILES pipeline, pass fmt="smiles"; the value is case-insensitive
+# ("SMILES" and "Smiles" also work).
+result = auto_convert("data.csv", "./npy", fmt="SMILES", property_name="homo", property_col="HOMO")
 
 # Structure file → auto-detected by dpdata
 result = auto_convert("POSCAR", "./npy")
@@ -129,8 +138,6 @@ result = auto_convert("POSCAR", "./npy")
 
 Supports `.csv`, `.xlsx`, `.xls` for SMILES inputs and any format dpdata
 recognises for structure files (POSCAR, extxyz, cif, OUTCAR, …).
-
-A demo CSV and MOL files are included in `demo/`.
 
 ### Cross-validation
 
@@ -163,7 +170,7 @@ All commands live under `dp dpa` with two-level nesting:
 dp dpa
   extract-descriptors   extract pooled DPA descriptors to .npy
   fit                   train a model (any strategy)
-                        --strategy {frozen-sklearn|linear-probe|finetune|mft|scratch}
+                        --strategy {frozen_sklearn|linear_probe|finetune|mft}
   cv                    cross-validate (metric estimation, no model output)
   predict               predict with a frozen .pth bundle
   evaluate              evaluate a frozen .pth against stored labels
@@ -214,7 +221,6 @@ deepmd/dpa_tools/
 ├── trainer.py              # DPATrainer (dp --pt train subprocess wrapper)
 ├── cv.py                   # cross-validation + data splitting
 ├── conditions.py           # scalar condition manager (T, P)
-├── demo/                   # demo CSV + MOL files for the SMILES pipeline
 ├── config/
 │   └── manager.py          # MFT input.json generation
 ├── data/

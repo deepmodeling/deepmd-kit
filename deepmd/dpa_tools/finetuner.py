@@ -490,21 +490,7 @@ class DPAFineTuner:
                         fitting net via ``dp --pt train --finetune``.
     ``finetune``        Load the pretrained backbone and fine-tune the full
                         network (descriptor + fitting net).
-    ``scratch``         (known limitation) Random-initialize and train from
-                        scratch — type_map is auto-inferred correctly but
-                        ``dp --pt train`` exits before writing train.log;
-                        descriptor config likely missing required fields.
-                        Not recommended for small-data regimes.
     ==================  ======================================================
-
-    .. note::
-
-       ``strategy="scratch"`` is a known limitation as of Phase 2 closeout.
-       The entry point and auto-type_map logic are retained, but the emitted
-       ``input.json`` does not yet produce a successful ``dp --pt train`` run
-       (exit 1 before train.log).  Scratch training on 19-formula small data
-       has negligible practical value; completing it is deferred to a future
-       phase when larger datasets make random-init training meaningful.
 
     Refactored: descriptor-loading, feature-extraction, and sklearn-fitting
     logic extracted into ``_FrozenSklearnPipeline``.  DPAFineTuner is now a
@@ -514,8 +500,7 @@ class DPAFineTuner:
     Parameters
     ----------
     pretrained : str
-        Path to the pretrained DPA checkpoint (.pt).  Set to ``None`` for
-        ``scratch`` strategy.
+        Path to the pretrained DPA checkpoint (.pt).
     model_branch : str, optional
         Branch name for multi-task checkpoints (e.g. ``"Omat24"``).  Used
         by ``frozen_sklearn`` for descriptor extraction.
@@ -529,7 +514,7 @@ class DPAFineTuner:
         Random seed for the sklearn predictor or training.
     strategy : str
         ``"frozen_sklearn"`` (default), ``"linear_probe"``, ``"finetune"``,
-        or ``"scratch"``.
+        or ``"mft"``.
     property_name : str
         Property label filename under ``set.*/`` (training paradigms).
     task_dim : int
@@ -554,7 +539,7 @@ class DPAFineTuner:
 
     _VALID_POOLING = {"mean", "sum", "mean+std", "mean+std+max+min"}
     _VALID_STRATEGIES = {
-        "frozen_sklearn", "linear_probe", "finetune", "mft", "scratch",
+        "frozen_sklearn", "linear_probe", "finetune", "mft",
     }
 
     def __init__(
@@ -600,9 +585,6 @@ class DPAFineTuner:
             )
 
         self.strategy = strategy
-        # Scratch forces pretrained=None (random init, no ckpt).
-        if strategy == "scratch":
-            pretrained = None
 
         self.pretrained      = pretrained
         self.model_branch    = model_branch
@@ -737,8 +719,7 @@ class DPAFineTuner:
         *train_data* element set is a subset.
 
         Returns the checkpoint's type_map (e.g. 118-element full periodic
-        table for DPA-3.1-3M).  For scratch (``pretrained=None``) there is no
-        checkpoint — the type_map is the union of data ``atom_names``.
+        table for DPA-3.1-3M).
         """
         from deepmd.dpa_tools.data.type_map import (
             read_checkpoint_type_map,
@@ -750,26 +731,9 @@ class DPAFineTuner:
             systems = load_data(train_data)
         except DPADataError:
             # Data paths may not exist during testing; fall back gracefully.
-            if self.pretrained is None:
-                raise ValueError(
-                    "strategy='scratch' requires valid data paths or "
-                    "pass type_map=[...] explicitly."
-                )
             return read_checkpoint_type_map(
                 self.pretrained, branch=self.init_branch,
             )
-
-        if self.pretrained is None:
-            try:
-                tm = read_data_type_map_union(systems)
-            except ValueError:
-                raise ValueError(
-                    "strategy='scratch' requires atom_names in data "
-                    "systems, or pass type_map=[...] explicitly. "
-                    "Without a checkpoint, the global type_map cannot be "
-                    "auto-inferred."
-                )
-            return tm
 
         tm = read_checkpoint_type_map(
             self.pretrained, branch=self.init_branch,
@@ -784,7 +748,7 @@ class DPAFineTuner:
         return tm
 
     # -------------------------------------------------------------------
-    # Training-paradigm fit (linear_probe / finetune / scratch)
+    # Training-paradigm fit (linear_probe / finetune)
     # -------------------------------------------------------------------
 
     def _fit_training(self, train_data, valid_data, type_map):
@@ -834,7 +798,7 @@ class DPAFineTuner:
         """Train the model.
 
         *frozen_sklearn* (default): extract descriptors, fit sklearn head.
-        *linear_probe* / *finetune* / *scratch*: run ``dp --pt train``.
+        *linear_probe* / *finetune*: run ``dp --pt train``.
         *mft*: multi-task fine-tuning (property head + force-field head).
 
         Parameters

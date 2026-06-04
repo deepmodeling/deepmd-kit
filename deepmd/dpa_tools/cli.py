@@ -191,14 +191,16 @@ def _cmd_data_convert(args: argparse.Namespace) -> int:
         overwrite=args.overwrite,
         validate=args.validate,
         strict=args.strict,
+        verbose=False,
     )
     if result["method"] == "smiles":
         print(f"Train systems: {len(result['train_systems'])}")
         print(f"Valid systems: {len(result['valid_systems'])}")
         print(f"Type map     : {result['type_map']}")
         print(f"Samples used : {result['samples_used']}")
-        if result["failed_rows"]:
-            print(f"Failed rows  : {len(result['failed_rows'])}")
+        print(f"Failed rows  : {len(result['failed_rows'])}")
+        print(f"Skipped zero : {result['skipped_zero']}")
+        print(f"Skipped overlap: {result['skipped_overlap']}")
     else:
         _LOG.info("Wrote deepmd/npy → %s", result["output_dir"])
     return 0
