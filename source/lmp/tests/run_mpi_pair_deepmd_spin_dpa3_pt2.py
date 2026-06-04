@@ -106,7 +106,12 @@ if args.mass3 is not None:
 lammps.timestep(0.0005)
 lammps.fix("1 all nve")
 
-lammps.pair_style(f"deepspin {args.PB_FILE}")
+# The DPA3 spin fixture is built with numb_aparam=1, so supply a uniform
+# atom parameter. This exercises the aparam path in DeepSpinPTExpt, including
+# the empty-subdomain phantom-atom aparam padding; a uniform value keeps the
+# per-rank results self-consistent (real atoms get the same aparam regardless
+# of the processor grid).
+lammps.pair_style(f"deepspin {args.PB_FILE} aparam 1.0")
 lammps.pair_coeff(args.pair_coeff)
 lammps.compute("virial all centroid/stress/atom NULL pair")
 # Per-atom magnetic force components. LAMMPS does not expose ``fm``

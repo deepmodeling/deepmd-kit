@@ -263,6 +263,10 @@ def test_pair_deepmd_mpi_dpa3_spin_empty_subdomain() -> None:
     empty-rank guard for the spin path (the with-comm artifact still
     runs on rank 1 with nloc_real=0). Compares against same-archive
     mpi-1 reference.
+
+    The DPA3 spin fixture has ``numb_aparam=1`` and the runner supplies a
+    uniform aparam, so the empty rank also exercises the phantom-atom aparam
+    padding in ``DeepSpinPTExpt`` (PR #5485 review).
     """
     out_mpi = _run_mpi_subprocess(nprocs=2, data_path=data_file_empty_subdomain)
     out_ref = _run_mpi_subprocess(nprocs=1, data_path=data_file_empty_subdomain)
