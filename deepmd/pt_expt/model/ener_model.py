@@ -18,6 +18,9 @@ from deepmd.dpmodel.model.dp_model import (
 from deepmd.dpmodel.model.make_hessian_model import (
     make_hessian_model,
 )
+from deepmd.dpmodel.utils.neighbor_list import (
+    NeighborList,
+)
 
 from .make_model import (
     make_model,
@@ -59,8 +62,22 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
         charge_spin: torch.Tensor | None = None,
-        neighbor_list: Any = None,
+        neighbor_list: NeighborList | None = None,
     ) -> dict[str, torch.Tensor]:
+        """Evaluate the energy model.
+
+        Most arguments share the meaning of :meth:`call_common`.
+
+        Parameters
+        ----------
+        neighbor_list
+            The neighbor-list construction strategy forwarded to
+            :meth:`call_common`.  ``None`` uses the default all-pairs builder
+            (:class:`~deepmd.dpmodel.utils.default_neighbor_list.DefaultNeighborList`),
+            reproducing the historical behavior; an alternative strategy (e.g.
+            the ``vesin`` O(N) cell list) may be injected to accelerate
+            neighbor-list construction without changing the model outputs.
+        """
         model_ret = self.call_common(
             coord,
             atype,

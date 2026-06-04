@@ -21,6 +21,9 @@ from deepmd.dpmodel.model.base_model import (
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
 )
+from deepmd.dpmodel.utils.neighbor_list import (
+    NeighborList,
+)
 
 from .dp_model import (
     DPModelCommon,
@@ -88,8 +91,23 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         aparam: Array | None = None,
         do_atomic_virial: bool = False,
         charge_spin: Array | None = None,
-        neighbor_list: Any = None,
+        neighbor_list: NeighborList | None = None,
     ) -> dict[str, Array]:
+        """Evaluate the energy model.
+
+        Most arguments share the meaning of :meth:`call_common`.
+
+        Parameters
+        ----------
+        neighbor_list
+            The neighbor-list construction strategy forwarded to
+            :meth:`call_common`.  ``None`` uses the default all-pairs builder
+            (:class:`~deepmd.dpmodel.utils.neighbor_list.NeighborList`
+            subclass :class:`~deepmd.dpmodel.utils.default_neighbor_list.DefaultNeighborList`),
+            reproducing the historical behavior; an alternative strategy may be
+            injected to accelerate neighbor-list construction without changing
+            the model outputs.
+        """
         model_ret = self.call_common(
             coord,
             atype,
