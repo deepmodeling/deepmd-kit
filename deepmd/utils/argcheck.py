@@ -2257,8 +2257,7 @@ def fitting_aparam_output_gate_args() -> list[Argument]:
         "(sigma^2 * aparam_gate_norm)."
     )
     doc_aparam_gate_clamp = (
-        doc_only_pt_supported
-        + "If True, clamp the aparam output gate to [0, 1]."
+        doc_only_pt_supported + "If True, clamp the aparam output gate to [0, 1]."
     )
     return [
         Argument(

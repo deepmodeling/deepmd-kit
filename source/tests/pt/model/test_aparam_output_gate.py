@@ -35,9 +35,7 @@ class TestAparamOutputGate(unittest.TestCase):
         descriptor = torch.randn(nf, nloc, dim_descrpt, dtype=dtype, device=device)
         atype = torch.zeros(nf, nloc, dtype=torch.int64, device=device)
         aparam_zero = torch.zeros(nf, nloc, 1, dtype=dtype, device=device)
-        aparam_sigma = torch.full(
-            (nf, nloc, 1), sigma, dtype=dtype, device=device
-        )
+        aparam_sigma = torch.full((nf, nloc, 1), sigma, dtype=dtype, device=device)
 
         out_zero = fitting(descriptor, atype, aparam=aparam_zero)["energy"]
         out_sigma = fitting(descriptor, atype, aparam=aparam_sigma)["energy"]
@@ -70,7 +68,9 @@ class TestAparamOutputGate(unittest.TestCase):
 
         fitting_gate = fitting._compute_aparam_output_gate(aparam)
         expected = (a_val * a_val) / (sigma * sigma * norm)
-        self.assertTrue(torch.allclose(fitting_gate, torch.tensor(expected, dtype=dtype)))
+        self.assertTrue(
+            torch.allclose(fitting_gate, torch.tensor(expected, dtype=dtype))
+        )
 
     def test_serialize_roundtrip(self) -> None:
         fitting = InvarFitting(
