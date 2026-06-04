@@ -493,10 +493,14 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
         mapping[ii] = ii;
       }
       for (int ii = phantom_n; ii < nall_real; ii++) {
-        // fwd_map resolves to a *pre-padding* local index; the phantom prefix
-        // shifted every real/ghost row by phantom_n, so shift the resolved
-        // target into the post-padding local index space (no-op when
-        // phantom_n == 0).
+        // Defensive: this branch (lmp_list.mapping != nullptr) is single-rank
+        // only (set_mapping is gated on comm->nprocs==1 in pair_deepspin /
+        // pair_deepmd), while phantom_n>0 only occurs on a multi-rank empty
+        // subdomain, so the two cannot currently co-occur and the +phantom_n
+        // term is a no-op (phantom_n==0) on every reachable path.  It is kept
+        // so the mapping stays correct -- resolving fwd_map's pre-padding local
+        // index into the post-padding local index space -- if that invariant
+        // ever changes.
         mapping[ii] =
             fwd_map[lmp_list.mapping[bkw_map[ii - phantom_n]]] + phantom_n;
       }
