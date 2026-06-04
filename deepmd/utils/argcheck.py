@@ -2497,6 +2497,8 @@ def fitting_dos() -> list[Argument]:
         Argument("seed", [int, None], optional=True, doc=doc_seed),
         Argument("numb_dos", int, optional=True, default=300, doc=doc_numb_dos),
     ]
+
+
 @fitting_args_plugin.register("population", doc=doc_only_pt_supported)
 def fitting_population() -> list[Argument]:
     return [
@@ -4504,6 +4506,7 @@ def loss_dos() -> list[Argument]:
         ),
     ]
 
+
 @loss_args_plugin.register("population")
 def loss_population() -> list[Argument]:
     doc_loss_func = "The loss function to minimize, such as 'mae','smooth_mae'."
@@ -4602,6 +4605,7 @@ def loss_population() -> list[Argument]:
             doc=doc_beta,
         ),
     ]
+
 
 @loss_args_plugin.register("property")
 def loss_property() -> list[Argument]:

@@ -34,6 +34,9 @@ from deepmd.infer.deep_polar import (
     DeepGlobalPolar,
     DeepPolar,
 )
+from deepmd.infer.deep_population import (
+    DeepPopulation,
+)
 from deepmd.infer.deep_pot import (
     DeepPot,
 )
@@ -42,9 +45,6 @@ from deepmd.infer.deep_property import (
 )
 from deepmd.infer.deep_wfc import (
     DeepWFC,
-)
-from deepmd.infer.deep_population import (
-    DeepPopulation,
 )
 from deepmd.pt.model.model import (
     get_model,

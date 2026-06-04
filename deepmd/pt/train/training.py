@@ -45,8 +45,8 @@ from deepmd.pt.loss import (
     EnergyHessianStdLoss,
     EnergySpinLoss,
     EnergyStdLoss,
-    PropertyLoss,
     PopulationLoss,
+    PropertyLoss,
     TaskLoss,
     TensorLoss,
 )

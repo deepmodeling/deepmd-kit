@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
+from functools import (
+    partial,
+)
 from typing import (
     Any,
 )
@@ -17,16 +20,15 @@ from deepmd.utils.data import (
     DataRequirementItem,
 )
 
-from functools import partial
-
 log = logging.getLogger(__name__)
+
 
 class PopulationLoss(TaskLoss):
     def __init__(
         self,
         loss_func: str = "smooth_mae",
         metric: list = ["mae"],
-        starter_learning_rate: float=1.0,
+        starter_learning_rate: float = 1.0,
         start_pref_spin: float = 1.00,
         limit_pref_spin: float = 1.00,
         start_pref_spin_total: float = 1.00,
@@ -130,11 +132,24 @@ class PopulationLoss(TaskLoss):
         model_pred = model(**input_dict)
 
         coef = learning_rate / self.starter_learning_rate
-        pref_spin = self.limit_pref_spin + (self.start_pref_spin - self.limit_pref_spin) * coef
-        pref_spin_total = self.limit_pref_spin_total + (self.start_pref_spin_total - self.limit_pref_spin_total) * coef
-        pref_pop = self.limit_pref_pop + (self.start_pref_pop - self.limit_pref_pop) * coef
-        pref_pop_alpha_total = self.limit_pref_pop_alpha_total + (self.start_pref_pop_alpha_total - self.limit_pref_pop_alpha_total) * coef
-        pref_pop_beta_total = self.limit_pref_pop_beta_total + (self.start_pref_pop_beta_total - self.limit_pref_pop_beta_total) * coef
+        pref_spin = (
+            self.limit_pref_spin + (self.start_pref_spin - self.limit_pref_spin) * coef
+        )
+        pref_spin_total = (
+            self.limit_pref_spin_total
+            + (self.start_pref_spin_total - self.limit_pref_spin_total) * coef
+        )
+        pref_pop = (
+            self.limit_pref_pop + (self.start_pref_pop - self.limit_pref_pop) * coef
+        )
+        pref_pop_alpha_total = (
+            self.limit_pref_pop_alpha_total
+            + (self.start_pref_pop_alpha_total - self.limit_pref_pop_alpha_total) * coef
+        )
+        pref_pop_beta_total = (
+            self.limit_pref_pop_beta_total
+            + (self.start_pref_pop_beta_total - self.limit_pref_pop_beta_total) * coef
+        )
 
         loss = torch.zeros(1, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)[0]
         more_loss = {}
@@ -154,33 +169,22 @@ class PopulationLoss(TaskLoss):
 
         loss_func = partial(F.l1_loss, reduction="sum")
 
-        spin_loss = loss_func(
-            input=spin_pred,
-            target=spin_label
-        )
-        spin_total_loss = loss_func(
-            input=spin_total_pred,
-            target=spin_total_label
-        )
-        pop_loss = loss_func(
-            input=pop_pred,
-            target=pop_label
-        )
+        spin_loss = loss_func(input=spin_pred, target=spin_label)
+        spin_total_loss = loss_func(input=spin_total_pred, target=spin_total_label)
+        pop_loss = loss_func(input=pop_pred, target=pop_label)
         pop_alpha_total_loss = loss_func(
-            input=pop_alpha_total_pred,
-            target=pop_alpha_total_label
+            input=pop_alpha_total_pred, target=pop_alpha_total_label
         )
         pop_beta_total_loss = loss_func(
-            input=pop_beta_total_pred,
-            target=pop_beta_total_label
+            input=pop_beta_total_pred, target=pop_beta_total_label
         )
 
         loss += (
-            pref_spin * spin_loss +
-            pref_spin_total * spin_total_loss +
-            pref_pop * pop_loss +
-            pref_pop_alpha_total * pop_alpha_total_loss +
-            pref_pop_beta_total * pop_beta_total_loss
+            pref_spin * spin_loss
+            + pref_spin_total * spin_total_loss
+            + pref_pop * pop_loss
+            + pref_pop_alpha_total * pop_alpha_total_loss
+            + pref_pop_beta_total * pop_beta_total_loss
         )
 
         more_loss["spin_total"] = spin_total_pred
@@ -198,7 +202,7 @@ class PopulationLoss(TaskLoss):
         label_requirement = []
         label_requirement.append(
             DataRequirementItem(
-                'atomic_population',
+                "atomic_population",
                 ndof=self.task_dim,
                 atomic=True,
                 must=True,

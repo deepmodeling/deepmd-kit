@@ -50,12 +50,13 @@ $$
 $$
 
 This includes contributions from:
-- The total number of electrons \( N \),
-- The total number of \( \alpha \) electrons \( N_{\alpha} \),
-- The total number of \( \beta \) electrons \( N_{\beta} \),
-- The total spin \( S \),
-- The atomic spin moments \( s_{i} \),
-- The atomic populations \( \sigma \).
+
+- The total number of electrons ( N ),
+- The total number of ( \\alpha ) electrons ( N\_{\\alpha} ),
+- The total number of ( \\beta ) electrons ( N\_{\\beta} ),
+- The total spin ( S ),
+- The atomic spin moments ( s\_\{i} ),
+- The atomic populations ( \\sigma ).
 
 The loss section should be provided like
 
@@ -94,7 +95,6 @@ The training command is the same as `ener` mode, i.e.
 ```bash
 dp --pt train input_torch.json
 ```
-
 :::
 
 ::::
@@ -107,4 +107,3 @@ The detailed loss can be found in `lcurve.out`:
    1000      9.26e-02      3.10e-01      6.74e+00      9.13e-01      1.33e+00      2.17e-01    3.1e-05
 
 ```
-

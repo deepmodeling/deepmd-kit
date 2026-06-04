@@ -69,6 +69,9 @@ from .model import (
 from .polar_model import (
     PolarModel,
 )
+from .population_model import (
+    PopulationModel,
+)
 from .property_model import (
     PropertyModel,
 )
@@ -82,9 +85,7 @@ from .spin_model import (
     SpinEnergyModel,
     SpinModel,
 )
-from .population_model import (
-    PopulationModel,
-)
+
 
 def _get_standard_model_components(model_params: dict, ntypes: int) -> tuple:
     if "type_embedding" in model_params:
