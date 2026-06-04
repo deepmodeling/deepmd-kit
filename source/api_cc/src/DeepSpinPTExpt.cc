@@ -395,6 +395,14 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
     dcoord.insert(dcoord.begin(), static_cast<size_t>(phantom_n) * 3,
                   static_cast<VALUETYPE>(0));
     datype.insert(datype.begin(), static_cast<size_t>(phantom_n), 0);
+    // Keep aparam_ aligned with the padded local atoms: the phantom atoms
+    // get zero-valued atomic-parameter rows so the aparam tensor built below
+    // (shape {1, nloc, daparam}) stays consistent with the padded ``nloc``.
+    // (aparam_nall is false here, so aparam_ is a per-local-atom buffer.)
+    if (daparam > 0) {
+      aparam_.insert(aparam_.begin(), static_cast<size_t>(phantom_n) * daparam,
+                     static_cast<VALUETYPE>(0));
+    }
     nall_real += phantom_n;
     nloc_real = phantom_n;
     nloc = nall_real - nghost_real;
