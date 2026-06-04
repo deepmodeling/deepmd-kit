@@ -404,6 +404,13 @@ class GeneralFitting(Fitting):
         A list of strings. Give the name to each type of atoms.
     use_aparam_as_mask: bool
         If True, the aparam will not be used in fitting net for embedding.
+    use_aparam_output_gate: bool
+        If True and numb_aparam > 0, multiply the fitting output by
+        g = a^2 / (sigma^2 * aparam_gate_norm) using raw aparam.
+    aparam_gate_norm: float
+        Normalization factor in the aparam output gate denominator.
+    aparam_gate_clamp: bool
+        If True, clamp the aparam output gate to [0, 1].
     default_fparam: list[float], optional
         The default frame parameter. If set, when `fparam.npy` files are not included in the data system,
         this value will be used as the default value for the frame parameter in the fitting net.
@@ -430,10 +437,22 @@ class GeneralFitting(Fitting):
         remove_vaccum_contribution: list[bool] | None = None,
         type_map: list[str] | None = None,
         use_aparam_as_mask: bool = False,
+        use_aparam_output_gate: bool = False,
+        aparam_gate_norm: float = 1.0,
+        aparam_gate_clamp: bool = True,
         default_fparam: list[float] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__()
+        if use_aparam_output_gate and numb_aparam <= 0:
+            raise ValueError(
+                "use_aparam_output_gate requires numb_aparam > 0, "
+                f"got numb_aparam={numb_aparam}"
+            )
+        if aparam_gate_norm <= 0.0:
+            raise ValueError(
+                f"aparam_gate_norm must be positive, got {aparam_gate_norm}"
+            )
         self.var_name = var_name
         self.ntypes = ntypes
         self.dim_descrpt = dim_descrpt
@@ -451,6 +470,9 @@ class GeneralFitting(Fitting):
         self.seed = seed
         self.type_map = type_map
         self.use_aparam_as_mask = use_aparam_as_mask
+        self.use_aparam_output_gate = use_aparam_output_gate
+        self.aparam_gate_norm = aparam_gate_norm
+        self.aparam_gate_clamp = aparam_gate_clamp
         # order matters, should be place after the assignment of ntypes
         self.reinit_exclude(exclude_types)
         self.trainable = trainable
@@ -622,6 +644,9 @@ class GeneralFitting(Fitting):
             "trainable": [self.trainable] * (len(self.neuron) + 1),
             "layer_name": None,
             "use_aparam_as_mask": self.use_aparam_as_mask,
+            "use_aparam_output_gate": self.use_aparam_output_gate,
+            "aparam_gate_norm": self.aparam_gate_norm,
+            "aparam_gate_clamp": self.aparam_gate_clamp,
             "spin": None,
         }
 
@@ -736,6 +761,36 @@ class GeneralFitting(Fitting):
     def _extend_a_avg_std(self, xx: torch.Tensor, nb: int, nloc: int) -> torch.Tensor:
         return torch.tile(xx.view([1, 1, self.numb_aparam]), [nb, nloc, 1])
 
+    def _compute_aparam_output_gate(
+        self,
+        aparam_raw: torch.Tensor,
+    ) -> torch.Tensor:
+        """Hard-coded gate g = a^2 / (sigma^2 * norm) from raw aparam."""
+        assert self.aparam_inv_std is not None
+        sigma = 1.0 / self.aparam_inv_std
+        gate = (aparam_raw * aparam_raw) / (
+            sigma * sigma * self.aparam_gate_norm + 1e-12
+        )
+        if self.numb_aparam > 1:
+            gate = gate.prod(dim=-1, keepdim=True)
+        if self.aparam_gate_clamp:
+            gate = gate.clamp(0.0, 1.0)
+        return gate
+
+    def _apply_aparam_output_gate(
+        self,
+        outs: torch.Tensor,
+        aparam_raw: torch.Tensor | None,
+    ) -> torch.Tensor:
+        if not self.use_aparam_output_gate:
+            return outs
+        if aparam_raw is None:
+            raise ValueError(
+                "aparam is required when use_aparam_output_gate is enabled"
+            )
+        gate = self._compute_aparam_output_gate(aparam_raw)
+        return outs * gate
+
     def _forward_common(
         self,
         descriptor: torch.Tensor,
@@ -756,7 +811,20 @@ class GeneralFitting(Fitting):
             fparam = torch.tile(self.default_fparam_tensor.unsqueeze(0), [nf, 1])
 
         fparam = fparam.to(self.prec) if fparam is not None else None
-        aparam = aparam.to(self.prec) if aparam is not None else None
+        aparam_raw: torch.Tensor | None = None
+        if aparam is not None:
+            aparam = aparam.to(self.prec)
+            if self.numb_aparam > 0:
+                if aparam.numel() % (nf * self.numb_aparam) != 0:
+                    raise ValueError(
+                        f"input aparam: cannot reshape {list(aparam.shape)} "
+                        f"into ({nf}, nloc, {self.numb_aparam})."
+                    )
+                aparam_raw = aparam.view([nf, -1, self.numb_aparam])
+        if self.use_aparam_output_gate and aparam_raw is None:
+            raise ValueError(
+                "aparam is required when use_aparam_output_gate is enabled"
+            )
 
         if self.remove_vaccum_contribution is not None:
             # TODO: compute the input for vaccm when remove_vaccum_contribution is set
@@ -801,26 +869,20 @@ class GeneralFitting(Fitting):
                 )
         # check aparam dim, concate to input descriptor
         if self.numb_aparam > 0 and not self.use_aparam_as_mask:
-            assert aparam is not None, "aparam should not be None"
+            assert aparam_raw is not None, "aparam should not be None"
             assert self.aparam_avg is not None
             assert self.aparam_inv_std is not None
-            if aparam.numel() % (nf * self.numb_aparam) != 0:
-                raise ValueError(
-                    f"input aparam: cannot reshape {list(aparam.shape)} "
-                    f"into ({nf}, nloc, {self.numb_aparam})."
-                )
-            aparam = aparam.view([nf, -1, self.numb_aparam])
-            nb, nloc, _ = aparam.shape
+            nb, nloc, _ = aparam_raw.shape
             t_aparam_avg = self._extend_a_avg_std(self.aparam_avg, nb, nloc)
             t_aparam_inv_std = self._extend_a_avg_std(self.aparam_inv_std, nb, nloc)
-            aparam = (aparam - t_aparam_avg) * t_aparam_inv_std
+            aparam_embed = (aparam_raw - t_aparam_avg) * t_aparam_inv_std
             xx = torch.cat(
-                [xx, aparam],
+                [xx, aparam_embed],
                 dim=-1,
             )
             if xx_zeros is not None:
                 xx_zeros = torch.cat(
-                    [xx_zeros, aparam],
+                    [xx_zeros, aparam_embed],
                     dim=-1,
                 )
 
@@ -894,6 +956,7 @@ class GeneralFitting(Fitting):
         mask = self.emask(atype).to(torch.bool)
         # nf x nloc x nod
         outs = torch.where(mask[:, :, None], outs, 0.0)
+        outs = self._apply_aparam_output_gate(outs, aparam_raw)
         results.update({self.var_name: outs})
         return results
 

@@ -130,6 +130,9 @@ class GeneralFitting(NativeOP, BaseFitting):
         precision: str = DEFAULT_PRECISION,
         layer_name: list[str | None] | None = None,
         use_aparam_as_mask: bool = False,
+        use_aparam_output_gate: bool = False,
+        aparam_gate_norm: float = 1.0,
+        aparam_gate_clamp: bool = True,
         spin: Any = None,
         mixed_types: bool = True,
         exclude_types: list[int] = [],
@@ -138,6 +141,15 @@ class GeneralFitting(NativeOP, BaseFitting):
         seed: int | list[int] | None = None,
         default_fparam: list[float] | None = None,
     ) -> None:
+        if use_aparam_output_gate and numb_aparam <= 0:
+            raise ValueError(
+                "use_aparam_output_gate requires numb_aparam > 0, "
+                f"got numb_aparam={numb_aparam}"
+            )
+        if aparam_gate_norm <= 0.0:
+            raise ValueError(
+                f"aparam_gate_norm must be positive, got {aparam_gate_norm}"
+            )
         self.var_name = var_name
         self.ntypes = ntypes
         self.dim_descrpt = dim_descrpt
@@ -164,6 +176,9 @@ class GeneralFitting(NativeOP, BaseFitting):
         self.prec = PRECISION_DICT[self.precision.lower()]
         self.layer_name = layer_name
         self.use_aparam_as_mask = use_aparam_as_mask
+        self.use_aparam_output_gate = use_aparam_output_gate
+        self.aparam_gate_norm = aparam_gate_norm
+        self.aparam_gate_clamp = aparam_gate_clamp
         self.spin = spin
         self.mixed_types = mixed_types
         # order matters, should be place after the assignment of ntypes
@@ -594,6 +609,9 @@ class GeneralFitting(NativeOP, BaseFitting):
             "trainable": self.trainable,
             "layer_name": self.layer_name,
             "use_aparam_as_mask": self.use_aparam_as_mask,
+            "use_aparam_output_gate": self.use_aparam_output_gate,
+            "aparam_gate_norm": self.aparam_gate_norm,
+            "aparam_gate_clamp": self.aparam_gate_clamp,
             "spin": self.spin,
         }
 
@@ -609,6 +627,34 @@ class GeneralFitting(NativeOP, BaseFitting):
             obj[kk] = variables[kk]
         obj.nets = NetworkCollection.deserialize(nets)
         return obj
+
+    def _compute_aparam_output_gate(self, aparam_raw: Array) -> Array:
+        """Hard-coded gate g = a^2 / (sigma^2 * norm) from raw aparam."""
+        xp = array_api_compat.array_namespace(aparam_raw)
+        assert self.aparam_inv_std is not None
+        sigma = 1.0 / self.aparam_inv_std
+        gate = (aparam_raw * aparam_raw) / (
+            sigma * sigma * self.aparam_gate_norm + 1e-12
+        )
+        if self.numb_aparam > 1:
+            gate = xp.prod(gate, axis=-1, keepdims=True)
+        if self.aparam_gate_clamp:
+            gate = xp.clip(gate, 0.0, 1.0)
+        return gate
+
+    def _apply_aparam_output_gate(
+        self,
+        outs: Array,
+        aparam_raw: Array | None,
+    ) -> Array:
+        if not self.use_aparam_output_gate:
+            return outs
+        if aparam_raw is None:
+            raise ValueError(
+                "aparam is required when use_aparam_output_gate is enabled"
+            )
+        gate = self._compute_aparam_output_gate(aparam_raw)
+        return outs * gate
 
     def _call_common(
         self,
@@ -693,24 +739,33 @@ class GeneralFitting(NativeOP, BaseFitting):
                     [xx_zeros, fparam],
                     axis=-1,
                 )
-        # check aparam dim, concate to input descriptor
-        if self.numb_aparam > 0 and not self.use_aparam_as_mask:
-            assert aparam is not None, "aparam should not be None"
+        aparam_raw: Array | None = None
+        if self.numb_aparam > 0 and aparam is not None:
             try:
-                aparam = xp.reshape(aparam, (nf, nloc, self.numb_aparam))
+                aparam_raw = xp.reshape(aparam, (nf, nloc, self.numb_aparam))
             except (ValueError, RuntimeError) as e:
                 raise ValueError(
                     f"input aparam: cannot reshape {aparam.shape} "
                     f"into ({nf}, {nloc}, {self.numb_aparam})."
                 ) from e
-            aparam = (aparam - self.aparam_avg[...]) * self.aparam_inv_std[...]
+        if self.use_aparam_output_gate and aparam_raw is None:
+            raise ValueError(
+                "aparam is required when use_aparam_output_gate is enabled"
+            )
+
+        # check aparam dim, concate to input descriptor
+        if self.numb_aparam > 0 and not self.use_aparam_as_mask:
+            assert aparam_raw is not None, "aparam should not be None"
+            aparam_embed = (aparam_raw - self.aparam_avg[...]) * self.aparam_inv_std[
+                ...
+            ]
             xx = xp.concat(
-                [xx, aparam],
+                [xx, aparam_embed],
                 axis=-1,
             )
             if xx_zeros is not None:
                 xx_zeros = xp.concat(
-                    [xx_zeros, aparam],
+                    [xx_zeros, aparam_embed],
                     axis=-1,
                 )
 
@@ -786,6 +841,7 @@ class GeneralFitting(NativeOP, BaseFitting):
         exclude_mask = xp.astype(exclude_mask, xp.bool)
         # nf x nloc x nod
         outs = xp.where(exclude_mask[:, :, None], outs, xp.zeros_like(outs))
+        outs = self._apply_aparam_output_gate(outs, aparam_raw)
         results[self.var_name] = outs
         if self.eval_return_middle_output and len(self.neuron) > 0:
             results["middle_output"] = middle_outs
