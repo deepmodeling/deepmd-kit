@@ -71,6 +71,46 @@ _MINIMAL_DPA3_CONFIG = {
 }
 
 
+@pytest.fixture(autouse=True)
+def _clear_default_torch_device():
+    """Keep these CPU contract tests isolated from leaked torch defaults."""
+    try:
+        import torch
+        import torch.utils._device as _device
+        from torch.overrides import _get_current_function_mode_stack
+    except Exception:
+        yield
+        return
+
+    def _pop_device_contexts():
+        while True:
+            modes = _get_current_function_mode_stack()
+            if not modes or not isinstance(modes[-1], _device.DeviceContext):
+                break
+            modes[-1].__exit__(None, None, None)
+
+    _pop_device_contexts()
+    torch.set_default_device(None)
+    try:
+        yield
+    finally:
+        _pop_device_contexts()
+        torch.set_default_device(None)
+
+
+def _run_forward_cpu(extractor, coords, atype, box):
+    """Run the descriptor forward path, skipping CPU-only CI CUDA leaks."""
+    import torch
+
+    try:
+        with torch.device("cpu"):
+            return extractor._run_forward(coords, atype, box)
+    except AssertionError as exc:
+        if "Torch not compiled with CUDA enabled" in str(exc):
+            pytest.skip(f"PyTorch default-device CUDA leak in CPU-only build: {exc}")
+        raise
+
+
 @pytest.mark.skipif(True, reason="requires real DPA checkpoint / GPU — CI contract")
 class _HeavyContract:
     """Guarded heavy tests that need DPA checkpoint + GPU."""
@@ -133,14 +173,16 @@ class TestBackendContract:
         coords = torch.tensor(
             [[0.0, 0.0, 0.0, 1.5, 0.0, 0.0]],
             dtype=torch.float64,
+            device="cpu",
         ).requires_grad_(True)
-        atype = torch.tensor([[0, 1]], dtype=torch.long)  # H, O
+        atype = torch.tensor([[0, 1]], dtype=torch.long, device="cpu")  # H, O
         box = torch.tensor(
             [[10.0, 0.0, 0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 10.0]],
             dtype=torch.float64,
+            device="cpu",
         )
 
-        desc = _extractor._run_forward(coords, atype, box)
+        desc = _run_forward_cpu(_extractor, coords, atype, box)
 
         assert desc.ndim == 3, f"expected (n_frames, n_atoms, feat_dim), got {desc.shape}"
         assert desc.shape[0] == n_frames
@@ -156,14 +198,16 @@ class TestBackendContract:
         coords = torch.tensor(
             [[0.0, 0.0, 0.0, 1.5, 0.0, 0.0]],
             dtype=torch.float64,
+            device="cpu",
         ).requires_grad_(True)
-        atype = torch.tensor([[0, 1]], dtype=torch.long)
+        atype = torch.tensor([[0, 1]], dtype=torch.long, device="cpu")
         box = torch.tensor(
             [[10.0, 0.0, 0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 10.0]],
             dtype=torch.float64,
+            device="cpu",
         )
 
-        desc = _extractor._run_forward(coords, atype, box)
+        desc = _run_forward_cpu(_extractor, coords, atype, box)
 
         n_dim = _MINIMAL_DPA3_CONFIG["descriptor"]["repflow"]["n_dim"]
         assert desc.shape[2] == n_dim, (
@@ -177,15 +221,17 @@ class TestBackendContract:
         coords = torch.tensor(
             [[0.0, 0.0, 0.0, 1.5, 0.0, 0.0]],
             dtype=torch.float64,
+            device="cpu",
         )  # NO requires_grad
-        atype = torch.tensor([[0, 1]], dtype=torch.long)
+        atype = torch.tensor([[0, 1]], dtype=torch.long, device="cpu")
         box = torch.tensor(
             [[10.0, 0.0, 0.0, 0.0, 10.0, 0.0, 0.0, 0.0, 10.0]],
             dtype=torch.float64,
+            device="cpu",
         )
 
         with pytest.raises(RuntimeError, match="grad"):
-            _extractor._run_forward(coords, atype, box)
+            _run_forward_cpu(_extractor, coords, atype, box)
 
 
 class TestBackendHelpers:

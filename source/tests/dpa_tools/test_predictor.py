@@ -12,7 +12,8 @@ import numpy as np
 import pytest
 
 # ---------------------------------------------------------------------------
-# Build a minimal mock torch module backed by pickle
+# Use real torch serialization when available; otherwise fall back to a minimal
+# pickle-backed mock so these tests can still run without a torch install.
 # ---------------------------------------------------------------------------
 
 def _pickle_save(obj, path, **kwargs):
@@ -25,17 +26,23 @@ def _pickle_load(path, **kwargs):
         return pickle.load(f)
 
 
-_mock_torch = MagicMock()
-_mock_torch.save = _pickle_save
-_mock_torch.load = _pickle_load
-_mock_torch.cuda.is_available.return_value = False
-# Prevent scipy._lib.array_api_compat.is_torch_array from crashing
-# (it tries issubclass(cls, torch.Tensor); we make Tensor a real class).
-_mock_torch.Tensor = type("Tensor", (), {})
+try:
+    import torch as _torch_for_test
+except Exception:
+    _mock_torch = MagicMock()
+    _mock_torch.save = _pickle_save
+    _mock_torch.load = _pickle_load
+    _mock_torch.cuda.is_available.return_value = False
+    # Prevent scipy._lib.array_api_compat.is_torch_array from crashing
+    # (it tries issubclass(cls, torch.Tensor); we make Tensor a real class).
+    _mock_torch.Tensor = type("Tensor", (), {})
+    _torch_for_test = _mock_torch
 
-# Inject before any dpa_tools import so the lazy `import torch` lines inside
-# freeze() / DPAPredictor.__init__ pick up the mock.
-sys.modules.setdefault("torch", _mock_torch)
+    # Inject before any dpa_tools import so the lazy `import torch` lines inside
+    # freeze() / DPAPredictor.__init__ pick up the mock.
+    sys.modules.setdefault("torch", _mock_torch)
+else:
+    _torch_for_test.set_default_device(None)
 
 from deepmd.dpa_tools import DPAFineTuner, DPAPredictor  # noqa: E402
 
@@ -143,8 +150,9 @@ class TestFreezeBundleHasModelBranch:
             ft.fit(str(system), target_key="energy")
             frozen = ft.freeze(str(tmp_path / "model.pth"))
 
-        with open(frozen, "rb") as f:
-            bundle = pickle.load(f)
+        from deepmd.dpa_tools._backend import load_torch_file
+
+        bundle = load_torch_file(frozen)
 
         assert "model_branch" in bundle, "Bundle is missing 'model_branch' key"
         assert bundle["model_branch"] == "Omat24"
@@ -167,6 +175,8 @@ def _make_mlp_bundle(tmp_path, n_frames=20):
         early_stopping=False,
     ))
 
+    from deepmd.dpa_tools._backend import load_torch_file
+
     bundle = {
         "predictor":          pipeline,
         "target_key":         "energy",
@@ -178,8 +188,8 @@ def _make_mlp_bundle(tmp_path, n_frames=20):
         "condition_manager":  None,
     }
     path = str(tmp_path / "mlp_model.pth")
-    with open(path, "wb") as f:
-        pickle.dump(bundle, f)
+    _torch_for_test.save(bundle, path)
+    assert load_torch_file(path)["target_key"] == "energy"
     return path
 
 
@@ -199,6 +209,8 @@ def _make_rf_bundle(tmp_path, n_frames=20):
     y = rng.random(n_frames)
     pipeline.fit(X, y)
 
+    from deepmd.dpa_tools._backend import load_torch_file
+
     bundle = {
         "predictor":          pipeline,
         "target_key":         "energy",
@@ -210,8 +222,8 @@ def _make_rf_bundle(tmp_path, n_frames=20):
         "condition_manager":  None,
     }
     path = str(tmp_path / "rf_model.pth")
-    with open(path, "wb") as f:
-        pickle.dump(bundle, f)
+    _torch_for_test.save(bundle, path)
+    assert load_torch_file(path)["target_key"] == "energy"
     return path
 
 
