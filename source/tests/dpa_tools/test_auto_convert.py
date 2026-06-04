@@ -120,6 +120,19 @@ class TestAutoConvertSmiles:
 
         assert result["method"] == "smiles"
         assert result["samples_used"] == 2
+        assert "failed_rows" in result
+        assert "skipped_zero" in result
+        assert "skipped_overlap" in result
+
+    def test_explicit_fmt_smiles_is_case_insensitive(self, tmp_path):
+        f = tmp_path / "mol.csv"
+        f.write_text("SMILES,val\nC,1.0\nCC,2.0\n")
+        out = tmp_path / "npy3"
+
+        result = auto_convert(str(f), str(out), fmt="SMILES", property_col="val")
+
+        assert result["method"] == "smiles"
+        assert result["samples_used"] == 2
 
 
 class TestAutoConvertStructure:

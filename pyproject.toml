@@ -94,6 +94,13 @@ test = [
     # to support Array API 2024.12
     'array-api-strict>=2.2;python_version>="3.9"',
 ]
+dpa-tools = [
+    "scikit-learn",
+    "dpdata",
+    "torch",
+    "rdkit",
+    "e3nn",
+]
 docs = [
     "sphinx>=3.1.1",
     "sphinx-book-theme",

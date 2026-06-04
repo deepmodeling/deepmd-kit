@@ -287,7 +287,7 @@ def cross_validate(
     extracted **once** and a cheap sklearn head is trained per fold — even
     ``cv=5`` completes in seconds.
 
-    Training paradigms (``linear_probe`` / ``finetune`` / ``scratch`` / ``mft``)
+    Training paradigms (``linear_probe`` / ``finetune`` / ``mft``)
     are expensive: each fold re-trains a full DeepMD model.  To prevent
     accidental hour-long runs, *allow_expensive_cv* must be explicitly set
     to ``True`` for those strategies when *cv* is an integer >= 2.  Otherwise
@@ -500,7 +500,7 @@ def cross_validate(
             # Phase 2 will wire this to DPATrainer / MFTFineTuner.
             raise NotImplementedError(
                 "cross_validate for training paradigms "
-                "(linear_probe / finetune / scratch / mft) is not yet "
+                "(linear_probe / finetune / mft) is not yet "
                 "implemented. Use frozen_sklearn for now."
             )
 
@@ -548,7 +548,6 @@ def _estimate_runtime(strategy: str, n_splits: int) -> str:
     per_run = {
         "linear_probe": "~5-15 min/run",
         "finetune": "~10-30 min/run",
-        "scratch": "~20-60 min/run",
         "mft": "~20-60 min/run",
     }.get(strategy, "unknown")
     return f"{n_splits} × {per_run}"

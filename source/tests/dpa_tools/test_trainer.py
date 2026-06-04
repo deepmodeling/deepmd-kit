@@ -127,42 +127,7 @@ def test_init_validation(tmp_path, systems):
 
 
 # ---------------------------------------------------------------------------
-# 2. Scratch config
-# ---------------------------------------------------------------------------
-
-def test_config_scratch(systems, tmp_path):
-    train_glob, valid_glob = systems
-    t = DPATrainer(
-        pretrained=None,
-        freeze_backbone=False,
-        train_systems=train_glob,
-        valid_systems=valid_glob,
-        type_map=DUMMY_TYPE_MAP,
-        output_dir=str(tmp_path / "out"),
-    )
-    config = t._build_config()
-    cmd = t._build_cmd("input.json")
-
-    # Scratch: no checkpoint flags, but skip-neighbor-stat always present.
-    assert "--finetune" not in cmd
-    assert "--model-branch" not in cmd
-    assert "--skip-neighbor-stat" in cmd
-
-    # Descriptor is trainable
-    assert config["model"]["descriptor"]["trainable"] is True
-
-    # Property fitting net
-    fn = config["model"]["fitting_net"]
-    assert fn["type"] == "property"
-    assert fn["property_name"] == "homo"
-    assert fn["task_dim"] == 1
-    assert fn["intensive"] is True
-    assert fn["neuron"] == [240, 240, 240]
-    assert fn["activation_function"] == "tanh"
-
-
-# ---------------------------------------------------------------------------
-# 3. FT config
+# 2. FT config
 # ---------------------------------------------------------------------------
 
 def test_config_ft(systems, dummy_ckpt, tmp_path):

@@ -1027,7 +1027,7 @@ def main_parser() -> argparse.ArgumentParser:
                                 help="Path to DPA checkpoint (.pt).")
     parser_dpa_fit.add_argument("--model-branch", default=None)
     parser_dpa_fit.add_argument("--strategy", default="frozen_sklearn",
-                                choices=["frozen_sklearn", "linear_probe", "finetune", "mft", "scratch"])
+                                choices=["frozen_sklearn", "linear_probe", "finetune", "mft"])
     parser_dpa_fit.add_argument("--predictor", default="rf",
                                 choices=["rf", "linear", "ridge", "mlp"])
     parser_dpa_fit.add_argument("--pooling", default="mean",

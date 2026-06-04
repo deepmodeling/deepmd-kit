@@ -210,8 +210,6 @@ class DPATrainer:
     # ----- mode label (debugging convenience) -----
     @property
     def mode(self) -> str:
-        if self.pretrained is None:
-            return "Scratch"
         return "LP" if self.freeze_backbone else "FT"
 
     # ----- descriptor sourcing -----
@@ -238,9 +236,7 @@ class DPATrainer:
         else:
             descriptor = copy.deepcopy(DPA3_DESCRIPTOR_DEFAULT)
         # Paper alignment (qm9_gap input.json): silut:3.0 activation (alias of
-        # the ckpt's custom_silu:3.0) + explicit fix_stat_std=0.3. Enforced on
-        # both the ckpt-read and scratch paths so the emitted JSON matches the
-        # paper repo verbatim.
+        # the ckpt's custom_silu:3.0) + explicit fix_stat_std=0.3.
         descriptor["activation_function"] = "silut:3.0"
         descriptor["repflow"]["fix_stat_std"] = 0.3
         # LP: freeze the descriptor by setting trainable=False on the descriptor
@@ -410,8 +406,8 @@ class DPATrainer:
         Idempotency: training is skipped if a checkpoint at step
         ``>= max_steps`` exists in ``output_dir``. If ``max_steps`` is
         increased between runs (i.e. only a shorter checkpoint exists),
-        training is restarted from scratch (or from ``pretrained``) —
-        checkpoint resumption is not supported.
+        training is restarted from ``pretrained`` — checkpoint resumption is
+        not supported.
         """
         os.makedirs(self.output_dir, exist_ok=True)
 

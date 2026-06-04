@@ -26,7 +26,7 @@ _LOG = logging.getLogger("dpa_tools")
 _SMILES_COLUMNS = frozenset({"smiles", "smi", "mol"})
 
 
-def _sniff_csv(path: str) -> set[str]:
+def _sniff_csv(path: str) -> set[str] | None:
     """Return the set of column names from a CSV file, or ``None`` if
     the file does not look like a table."""
     try:
@@ -34,7 +34,20 @@ def _sniff_csv(path: str) -> set[str]:
             reader = csv.DictReader(fh)
             if reader.fieldnames is None:
                 return None
-            return {h.lower() for h in reader.fieldnames}
+
+            columns = []
+            for header in reader.fieldnames:
+                if header is None:
+                    return None
+                header = header.strip()
+                if not header:
+                    return None
+                # Reject binary/malformed files that csv.DictReader otherwise
+                # treats as a one-column header, e.g. b"\x00\x01\x02".
+                if any(ord(ch) < 32 for ch in header):
+                    return None
+                columns.append(header.lower())
+            return set(columns)
     except Exception:
         return None
 
@@ -87,6 +100,7 @@ def auto_convert(
     overwrite: bool = False,
     validate: bool = True,
     strict: bool = False,
+    verbose: bool = True,
 ) -> dict:
     """Convert any supported input to ``deepmd/npy``, auto-detecting the format.
 
@@ -103,7 +117,8 @@ def auto_convert(
     any additional metadata the chosen backend provides.
     """
     # --- explicit SMILES hint, or auto-sniff ---
-    if fmt == "smiles" or (fmt is None and _is_smiles_input(input_path)):
+    is_smiles_fmt = isinstance(fmt, str) and fmt.lower() == "smiles"
+    if is_smiles_fmt or (fmt is None and _is_smiles_input(input_path)):
         from deepmd.dpa_tools.data.smiles import smiles_to_npy
 
         result = smiles_to_npy(
@@ -116,14 +131,20 @@ def auto_convert(
             seed=seed,
             overwrite=overwrite,
         )
-        return {
+        converted = {
             "method": "smiles",
             "train_systems": result.train_systems,
             "valid_systems": result.valid_systems,
             "type_map": result.type_map,
             "samples_used": result.samples_used,
             "failed_rows": result.failed_rows,
+            "skipped_zero": result.skipped_zero,
+            "skipped_overlap": result.skipped_overlap,
         }
+        if verbose:
+            print(f"RDKit converted samples: {converted['samples_used']}")
+            print(f"RDKit failed rows     : {len(converted['failed_rows'])}")
+        return converted
 
     # --- structure file → dpdata ---
     out = convert(

@@ -1,5 +1,5 @@
 """Tests for DPAFineTuner training-paradigm strategies
-(linear_probe / finetune / scratch).
+(linear_probe / finetune).
 
 Mock ``dp --pt train`` via ``subprocess.run``; verify:
 - Correct DPATrainer params per strategy
@@ -142,10 +142,6 @@ class TestStrategyValidation:
         with pytest.raises(ValueError, match="strategy"):
             DPAFineTuner(strategy="nonexistent")
 
-    def test_scratch_forces_pretrained_none(self):
-        m = DPAFineTuner(strategy="scratch")
-        assert m.pretrained is None
-
     def test_default_is_frozen_sklearn(self):
         m = DPAFineTuner()
         assert m.strategy == "frozen_sklearn"
@@ -169,34 +165,6 @@ class TestAutoTypeMap:
         assert tm == _FULL_TYPE_MAP
         assert len(tm) == 8
         assert tm != []
-
-    def test_resolve_type_maps_scratch_from_data(self, tmp_path):
-        """Scratch (pretrained=None): type_map from data type_map.raw union."""
-        systems = _make_system_dirs(tmp_path)
-        m = DPAFineTuner(strategy="scratch")  # forces pretrained=None
-        tm = m._resolve_type_maps(systems)
-        # Data type_map.raw = ["H", "O"] → 2 elements, not checkpoint's 8
-        assert tm == ["H", "O"]
-        assert len(tm) == 2
-        assert tm != []
-
-    def test_scratch_raises_without_type_map_raw(self, tmp_path):
-        """Scratch without type_map.raw must raise (no checkpoint to fall back)."""
-        import numpy as np
-        systems = []
-        for i in range(2):
-            sysdir = tmp_path / f"sys_{i}"
-            sysdir.mkdir(parents=True)
-            sdir = sysdir / "set.000"
-            sdir.mkdir()
-            np.save(sdir / "coord.npy", np.zeros((2, 6)))
-            np.save(sdir / "box.npy", np.tile(np.eye(3).ravel(), (2, 1)))
-            np.save(sdir / "overpotential.npy", np.ones((2, 1)))
-            systems.append(str(sysdir))
-
-        m = DPAFineTuner(strategy="scratch")
-        with pytest.raises(ValueError, match="scratch"):
-            m._resolve_type_maps(systems)
 
     def test_no_type_map_raw_is_ok(self, monkeypatch, tmp_path):
         """LP/FT: missing type_map.raw should not crash (checkpoint fallback)."""
@@ -239,7 +207,6 @@ class TestTrainingParadigms:
     @pytest.mark.parametrize("strategy,expect_freeze,expect_tm_len", [
         ("linear_probe", True, 8),
         ("finetune", False, 8),
-        ("scratch", False, 2),  # scratch: type_map from data, not checkpoint
     ])
     def test_config_type_map_nonempty(
         self, tmp_path, strategy, expect_freeze, expect_tm_len,
@@ -249,9 +216,8 @@ class TestTrainingParadigms:
         systems = _make_system_dirs(tmp_path)
         valid_systems = _make_system_dirs(tmp_path, formulas=("CompC",), n=2)
 
-        pretrained = None if strategy == "scratch" else str(self._ckpt)
         m = DPAFineTuner(
-            pretrained=pretrained,
+            pretrained=str(self._ckpt),
             strategy=strategy,
             property_name="overpotential",
             task_dim=1,
@@ -278,7 +244,7 @@ class TestTrainingParadigms:
         )
         assert tm != [], "type_map is empty — would cause CUDA gather out-of-bounds"
 
-    @pytest.mark.parametrize("strategy", ["linear_probe", "finetune", "scratch"])
+    @pytest.mark.parametrize("strategy", ["linear_probe", "finetune"])
     def test_strategy_to_trainer_params(self, tmp_path, strategy):
         """Each strategy produces correct DPATrainer freeze_backbone / pretrained."""
         out_dir = tmp_path / "out"
@@ -295,9 +261,6 @@ class TestTrainingParadigms:
             output_dir=str(out_dir),
             init_branch="SPICE2",
         )
-
-        if strategy == "scratch":
-            assert m.pretrained is None  # scratch forces None
 
         with patch("subprocess.run", side_effect=_mock_dp_train(str(out_dir))):
             m._fit_training(systems, valid_systems, list(_FULL_TYPE_MAP))
