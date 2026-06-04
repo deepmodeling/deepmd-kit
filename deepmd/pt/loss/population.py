@@ -27,7 +27,7 @@ class PopulationLoss(TaskLoss):
     def __init__(
         self,
         loss_func: str = "smooth_mae",
-        metric: list = ["mae"],
+        metric: list[str] | None = None,
         starter_learning_rate: float = 1.0,
         start_pref_spin: float = 1.00,
         limit_pref_spin: float = 1.00,
@@ -42,38 +42,48 @@ class PopulationLoss(TaskLoss):
         beta: float = 1.00,
         **kwargs: Any,
     ) -> None:
-        r"""Construct a layer to compute loss on property.
+        r"""Construct a layer to compute loss on atomic charge population.
 
         Parameters
         ----------
-        task_dim : float
-            The output dimension of property fitting net.
-        var_name : str
-            The atomic property to fit, 'energy', 'dipole', and 'polar'.
         loss_func : str
-            The loss function, such as "smooth_mae", "mae", "rmse".
-        metric : list
-            The metric such as mae, rmse which will be printed.
+            The loss function. Currently only "mae" is used.
+        metric : list[str], optional
+            The metrics to display during training, e.g. ["mae"].
         starter_learning_rate : float
-            The learning rate for the model.
-        start_pref_m : float
-            The starting value for pref_m.
-        limit_pref_m : float
-            The limit value for pref_m.
-        start_pref_t : float
-            The starting value for pref_t.
-        limit_pref_t : float
-            The limit value for pref_t.
+            The initial learning rate, used to compute the prefactor schedule.
+        start_pref_spin : float
+            Prefactor for per-atom spin loss at the start of training.
+        limit_pref_spin : float
+            Prefactor for per-atom spin loss at the end of training.
+        start_pref_spin_total : float
+            Prefactor for total spin loss at the start of training.
+        limit_pref_spin_total : float
+            Prefactor for total spin loss at the end of training.
+        start_pref_pop : float
+            Prefactor for per-atom population loss at the start of training.
+        limit_pref_pop : float
+            Prefactor for per-atom population loss at the end of training.
+        start_pref_pop_alpha_total : float
+            Prefactor for total alpha population loss at the start of training.
+        limit_pref_pop_alpha_total : float
+            Prefactor for total alpha population loss at the end of training.
+        start_pref_pop_beta_total : float
+            Prefactor for total beta population loss at the start of training.
+        limit_pref_pop_beta_total : float
+            Prefactor for total beta population loss at the end of training.
         beta : float
-            The 'beta' parameter in 'smooth_mae' loss.
+            The beta parameter reserved for smooth_mae loss.
         """
         super().__init__()
         self.task_dim = 2
         self.var_name = "atom_population"
         self.loss_func = loss_func
-        self.metric = metric
+        self.metric = ["mae"] if metric is None else list(metric)
         self.beta = beta
         self.starter_learning_rate = starter_learning_rate
+        if self.starter_learning_rate <= 0.0:
+            raise ValueError("starter_learning_rate must be positive")
 
         self.start_pref_spin = start_pref_spin
         self.limit_pref_spin = limit_pref_spin
@@ -167,15 +177,18 @@ class PopulationLoss(TaskLoss):
         pop_alpha_total_label = torch.sum(pop_label[:, 0])
         pop_beta_total_label = torch.sum(pop_label[:, 1])
 
-        loss_func = partial(F.l1_loss, reduction="sum")
+        if natoms <= 0:
+            raise ValueError("natoms must be positive")
 
-        spin_loss = loss_func(input=spin_pred, target=spin_label)
-        spin_total_loss = loss_func(input=spin_total_pred, target=spin_total_label)
-        pop_loss = loss_func(input=pop_pred, target=pop_label)
-        pop_alpha_total_loss = loss_func(
+        loss_fn = partial(F.l1_loss, reduction="sum")
+
+        spin_loss = loss_fn(input=spin_pred, target=spin_label) / natoms
+        spin_total_loss = loss_fn(input=spin_total_pred, target=spin_total_label)
+        pop_loss = loss_fn(input=pop_pred, target=pop_label) / natoms
+        pop_alpha_total_loss = loss_fn(
             input=pop_alpha_total_pred, target=pop_alpha_total_label
         )
-        pop_beta_total_loss = loss_func(
+        pop_beta_total_loss = loss_fn(
             input=pop_beta_total_pred, target=pop_beta_total_label
         )
 

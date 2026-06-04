@@ -65,7 +65,7 @@ class PopulationFittingNet(InvarFitting):
         self,
         ntypes: int,
         dim_descrpt: int,
-        neuron: list[int] = [128, 128, 128],
+        neuron: list[int] | None = None,
         resnet_dt: bool = True,
         numb_fparam: int = 0,
         numb_aparam: int = 0,
@@ -78,6 +78,8 @@ class PopulationFittingNet(InvarFitting):
         type_map: list[str] | None = None,
         **kwargs: Any,
     ) -> None:
+        if neuron is None:
+            neuron = [128, 128, 128]
         super().__init__(
             var_name="population",
             ntypes=ntypes,

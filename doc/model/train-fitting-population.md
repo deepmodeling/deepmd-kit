@@ -14,7 +14,7 @@ In this example, we will show you how to train a model to fit the atomic charge 
 $deepmd_source_dir/examples/population/train/input_torch.json
 ```
 
-Similar to the `input.json` used in `ener` mode, training JSON is also divided into {ref}`model <model>`, {ref}`learning_rate <learning_rate>`, {ref}`loss <loss>` and {ref}`training <training>`. Most keywords remain the same as `ener` mode, and their meaning can be found [here](dpa3.md). To fit the `population`, one needs to modify {ref}`model[standard]/fitting_net <model[standard]/fitting_net>` and {ref}`loss <loss>`.
+Similar to the `input.json` used in `ener` mode, training JSON is also divided into {ref}`model <model>`, {ref}`learning_rate <learning_rate>`, {ref}`loss <loss>` and {ref}`training <training>`. Most keywords remain the same as `ener` mode, and their meaning can be found in the [DPA-3 training guide](dpa3.md). To fit the `population`, one needs to modify {ref}`model[standard]/fitting_net <model[standard]/fitting_net>` and {ref}`loss <loss>`.
 
 ## The fitting Network
 
@@ -101,7 +101,7 @@ dp --pt train input_torch.json
 
 The detailed loss can be found in `lcurve.out`:
 
-```
+```text
 # step    pop_alpha_total_loss_trn   pop_beta_total_loss_trn   pop_loss_trn   spin_loss_trn   spin_total_trn   spin_total_loss_trn   lr
       1      5.74e+01      2.15e+02      3.95e+02      2.73e+02      2.73e+02      2.72e+02    1.0e-03
    1000      9.26e-02      3.10e-01      6.74e+00      9.13e-01      1.33e+00      2.17e-01    3.1e-05

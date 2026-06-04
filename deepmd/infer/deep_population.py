@@ -63,8 +63,7 @@ class DeepPopulation(DeepEval):
         mixed_type: bool = False,
         **kwargs: Any,
     ) -> tuple[np.ndarray, ...]:
-        """Evaluate energy, force, and virial. If atomic is True,
-        also return atomic energy and atomic virial.
+        """Evaluate the atomic charge population.
 
         Parameters
         ----------
@@ -77,7 +76,7 @@ class DeepPopulation(DeepEval):
             The types of the atoms. If mixed_type is False, the shape is (natoms,);
             otherwise, the shape is (nframes, natoms).
         atomic : bool, optional
-            Whether to return atomic energy and atomic virial, by default False.
+            Kept for interface compatibility. Population is always returned per atom.
         fparam : np.ndarray, optional
             The frame parameters, by default None.
         aparam : np.ndarray, optional
@@ -89,18 +88,9 @@ class DeepPopulation(DeepEval):
 
         Returns
         -------
-        energy
-            The energy of the system, in shape (nframes,).
-        force
-            The force of the system, in shape (nframes, natoms, 3).
-        virial
-            The virial of the system, in shape (nframes, 9).
-        atomic_energy
-            The atomic energy of the system, in shape (nframes, natoms). Only returned
-            when atomic is True.
-        atomic_virial
-            The atomic virial of the system, in shape (nframes, natoms, 9). Only returned
-            when atomic is True.
+        atomic_population
+            The atomic charge population in shape (nframes, natoms, 2), where the
+            last dimension stores the (alpha, beta) spin channel populations.
         """
         (
             coords,
@@ -123,10 +113,7 @@ class DeepPopulation(DeepEval):
 
         atomic_population = results["population"].reshape(nframes, natoms, 2)
 
-        if atomic:
-            return (atomic_population,)
-        else:
-            return (atomic_population,)
+        return (atomic_population,)
 
 
 __all__ = ["DeepPopulation"]
