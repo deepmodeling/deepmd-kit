@@ -493,7 +493,12 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
         mapping[ii] = ii;
       }
       for (int ii = phantom_n; ii < nall_real; ii++) {
-        mapping[ii] = fwd_map[lmp_list.mapping[bkw_map[ii - phantom_n]]];
+        // fwd_map resolves to a *pre-padding* local index; the phantom prefix
+        // shifted every real/ghost row by phantom_n, so shift the resolved
+        // target into the post-padding local index space (no-op when
+        // phantom_n == 0).
+        mapping[ii] =
+            fwd_map[lmp_list.mapping[bkw_map[ii - phantom_n]]] + phantom_n;
       }
       mapping_tensor =
           torch::from_blob(mapping.data(), {1, nall_real}, int_option)
