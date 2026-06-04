@@ -2501,6 +2501,7 @@ def fitting_dos() -> list[Argument]:
 
 @fitting_args_plugin.register("population", doc=doc_only_pt_supported)
 def fitting_population() -> list[Argument]:
+    """Return the argument list for the population fitting network."""
     return [
         Argument("numb_fparam", int, optional=True, default=0),
         Argument("numb_aparam", int, optional=True, default=0),
@@ -4509,6 +4510,7 @@ def loss_dos() -> list[Argument]:
 
 @loss_args_plugin.register("population")
 def loss_population() -> list[Argument]:
+    """Return the argument list for the population loss function."""
     doc_loss_func = "The loss function to minimize, such as 'mae','smooth_mae'."
     doc_metric = "The metric for display. This list can include 'smooth_mae', 'mae', 'mse' and 'rmse'."
     doc_beta = "The 'beta' parameter in 'smooth_mae' loss."
