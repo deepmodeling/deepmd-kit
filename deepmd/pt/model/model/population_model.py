@@ -27,6 +27,11 @@ DPPopulationAtomicModel_ = make_model(DPPopulationAtomicModel)
 
 @BaseModel.register("population")
 class PopulationModel(DPModelCommon, DPPopulationAtomicModel_):
+    """Model for fitting atomic charge population.
+
+    Predicts per-atom alpha and beta spin channel electron populations.
+    """
+
     model_type = "population"
 
     def __init__(
@@ -34,10 +39,12 @@ class PopulationModel(DPModelCommon, DPPopulationAtomicModel_):
         *args: Any,
         **kwargs: Any,
     ) -> None:
+        """Initialize the PopulationModel."""
         DPModelCommon.__init__(self)
         DPPopulationAtomicModel_.__init__(self, *args, **kwargs)
 
     def translated_output_def(self) -> dict[str, OutputVariableDef]:
+        """Return the output variable definitions exposed by this model."""
         out_def_data = self.model_output_def().get_data()
         output_def = {
             "population": out_def_data["population"],
@@ -56,6 +63,7 @@ class PopulationModel(DPModelCommon, DPPopulationAtomicModel_):
         do_atomic_virial: bool = False,
         charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
+        """Compute the atomic charge population for the input structure."""
         model_ret = self.forward_common(
             coord,
             atype,
@@ -84,6 +92,7 @@ class PopulationModel(DPModelCommon, DPPopulationAtomicModel_):
         comm_dict: dict[str, torch.Tensor] | None = None,
         charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
+        """Compute the atomic charge population using the lower-level interface."""
         model_ret = self.forward_common_lower(
             extended_coord,
             extended_atype,

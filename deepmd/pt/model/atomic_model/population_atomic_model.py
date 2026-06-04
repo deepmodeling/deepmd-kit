@@ -15,9 +15,12 @@ from .dp_atomic_model import (
 
 
 class DPPopulationAtomicModel(DPAtomicModel):
+    """Atomic model for population fitting, wrapping PopulationFittingNet."""
+
     def __init__(
         self, descriptor: Any, fitting: Any, type_map: Any, **kwargs: Any
     ) -> None:
+        """Initialize DPPopulationAtomicModel, enforcing PopulationFittingNet."""
         if not isinstance(fitting, PopulationFittingNet):
             raise TypeError(
                 "fitting must be an instance of PopulationFittingNet for DPPopulationAtomicModel"

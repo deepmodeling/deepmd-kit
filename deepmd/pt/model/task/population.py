@@ -78,6 +78,7 @@ class PopulationFittingNet(InvarFitting):
         type_map: list[str] | None = None,
         **kwargs: Any,
     ) -> None:
+        """Initialize the PopulationFittingNet."""
         if neuron is None:
             neuron = [128, 128, 128]
         super().__init__(
@@ -100,6 +101,7 @@ class PopulationFittingNet(InvarFitting):
         )
 
     def output_def(self) -> FittingOutputDef:
+        """Return the output definition of the population fitting net."""
         return FittingOutputDef(
             [
                 OutputVariableDef(
@@ -114,6 +116,7 @@ class PopulationFittingNet(InvarFitting):
 
     @classmethod
     def deserialize(cls, data: dict) -> "PopulationFittingNet":
+        """Deserialize the fitting from a dict."""
         data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 4, 1)
         obj = super().deserialize(data)
