@@ -21,6 +21,12 @@ log = logging.getLogger(__name__)
 
 
 class PopulationLoss(TaskLoss):
+    """Loss function for training the atomic charge population model.
+
+    Computes weighted L1 losses for per-atom spin, total spin, per-atom
+    population, and total alpha/beta population channels.
+    """
+
     def __init__(
         self,
         loss_func: str = "smooth_mae",
