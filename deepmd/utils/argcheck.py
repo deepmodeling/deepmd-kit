@@ -46,6 +46,13 @@ doc_only_pd_supported = "(Supported Backend: Paddle) "
 # descriptors
 doc_loc_frame = "Defines a local frame at each atom, and computes the descriptor as local coordinates under this frame."
 doc_se_e2_a = "Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor."
+doc_se_a_vg = (
+    "Variational-Gaussian smooth edition of Deep Potential (VGM II). "
+    "Gaussian width sigma enters the descriptor via "
+    "sigma_ij = sqrt(sigma_i^2 + sigma_j^2) in the radial kernel and an extra "
+    "environment-matrix column. Requires aparam (one sigma per atom) in training data. "
+    "Compatible with use_aparam_output_gate in the fitting net."
+)
 doc_se_e2_r = "Used by the smooth edition of Deep Potential. Only the distance between atoms is used to construct the descriptor."
 doc_se_e3 = "Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Three-body embedding will be used by this descriptor."
 doc_se_a_tpe = "Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Type embedding will be used by this descriptor."
@@ -342,6 +349,13 @@ def descrpt_se_a_args() -> list[Argument]:
             "set_davg_zero", bool, optional=True, default=False, doc=doc_set_davg_zero
         ),
     ]
+
+
+@descrpt_args_plugin.register(
+    "se_a_vg", alias=["se_e2_a_vg"], doc=doc_only_pt_supported + doc_se_a_vg
+)
+def descrpt_se_a_vg_args() -> list[Argument]:
+    return descrpt_se_a_args()
 
 
 @descrpt_args_plugin.register(
@@ -2846,7 +2860,12 @@ def model_compression_type_args() -> Variant:
 
     return Variant(
         "type",
-        [Argument("se_e2_a", dict, model_compression(), alias=["se_a"])],
+        [
+            Argument("se_e2_a", dict, model_compression(), alias=["se_a"]),
+            Argument(
+                "se_a_vg", dict, model_compression(), alias=["se_e2_a_vg"]
+            ),
+        ],
         optional=True,
         default_tag="se_e2_a",
         doc=doc_compress_type,

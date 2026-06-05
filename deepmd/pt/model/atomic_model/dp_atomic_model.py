@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import inspect
 import logging
 from collections.abc import (
     Callable,
@@ -281,13 +282,18 @@ class DPAtomicModel(BaseAtomicModel):
                 default_cs_tensor = default_cs_tensor.to(device=extended_coord.device)
                 charge_spin = torch.tile(default_cs_tensor.unsqueeze(0), [nframes, 1])
 
+        descriptor_kwargs: dict[str, Any] = {
+            "mapping": mapping,
+            "comm_dict": comm_dict,
+            "charge_spin": charge_spin if self.add_chg_spin_ebd else None,
+        }
+        if "aparam" in inspect.signature(self.descriptor.forward).parameters:
+            descriptor_kwargs["aparam"] = aparam
         descriptor, rot_mat, g2, h2, sw = self.descriptor(
             extended_coord,
             extended_atype,
             nlist,
-            mapping=mapping,
-            comm_dict=comm_dict,
-            charge_spin=charge_spin if self.add_chg_spin_ebd else None,
+            **descriptor_kwargs,
         )
         assert descriptor is not None
         if self.enable_eval_descriptor_hook:
