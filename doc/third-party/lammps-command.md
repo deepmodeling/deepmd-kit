@@ -110,9 +110,24 @@ $$E_{v_i}=\frac{\left|D_{v_i}\right|}{\left|v_i\right|+l}$$
 
 If the keyword `fparam` is set, the given frame parameter(s) will be fed to the model.
 If the keyword `fparam_from_compute` is set, the global parameter(s) from compute command (e.g., temperature from [compute temp command](https://docs.lammps.org/compute_temp.html)) will be fed to the model as the frame parameter(s).
+If the keyword `fparam_from_fix` is set, the global parameter(s) from fix command will be fed to the model as the frame parameter(s). This is intended for generalized coordinates that are naturally carried by a fix, for example the potentiostat variable in `fix uvt`.
 If the keyword `aparam_from_compute` is set, the atomic parameter(s) from compute command (e.g., per-atom translational kinetic energy from [compute ke/atom command](https://docs.lammps.org/compute_ke_atom.html)) will be fed to the model as the atom parameter(s).
 If the keyword `aparam` is set, the given atomic parameter(s) will be fed to the model, where each atom is assumed to have the same atomic parameter(s).
 If the keyword `ttm` is set, electronic temperatures from [fix ttm command](https://docs.lammps.org/fix_ttm.html) will be fed to the model as the atomic parameters.
+
+### Computing the derivative with respect to a frame parameter
+
+The compute `deepmd/fparam/dedn` evaluates a finite-difference derivative of the DeepMD energy with respect to a chosen frame parameter source.
+
+```lammps
+compute ID group-ID deepmd/fparam/dedn source [delta]
+```
+
+- `source` can be a global variable (`v_name`), a compute (`c_ID`) or a fix (`f_ID`).
+- `source[index]` may be used for vector-valued computes or fixes, with 1-based indexing.
+- `delta` is the perturbation used in the central difference formula. If omitted, a small default perturbation is used.
+- This compute currently targets a single frame-parameter dimension, which matches the
+  constant-potential use case where the potentiostat variable is scalar.
 
 Only a single `pair_coeff` command is used with the deepmd style which specifies atom names. These are mapped to LAMMPS atom types (integers from 1 to Ntypes) by specifying Ntypes additional arguments after `* *` in the `pair_coeff` command.
 If atom names are not set in the `pair_coeff` command, the training parameter {ref}`type_map <model/type_map>` will be used by default.

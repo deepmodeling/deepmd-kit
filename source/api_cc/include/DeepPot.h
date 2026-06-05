@@ -88,6 +88,43 @@ class DeepPotBackend : public DeepBaseModelBackend {
                         const std::vector<float>& aparam,
                         const bool atomic) = 0;
   /** @} */
+
+  /**
+   * @brief Evaluate the energy, force, virial, and frame-parameter derivative.
+   *
+   * The default implementation reports that direct dE/dN output is not
+   * available for the current backend.
+   */
+  virtual void computew_dedn(std::vector<double>& ener,
+                             std::vector<double>& force,
+                             std::vector<double>& virial,
+                             std::vector<ENERGYTYPE>& dedn,
+                             const std::vector<double>& coord,
+                             const std::vector<int>& atype,
+                             const std::vector<double>& box,
+                             const int nghost,
+                             const InputNlist& inlist,
+                             const int& ago,
+                             const std::vector<double>& fparam,
+                             const std::vector<double>& aparam) {
+    throw deepmd_exception(
+        "Direct dE/dN output is not supported by this DeePMD backend");
+  }
+  virtual void computew_dedn(std::vector<double>& ener,
+                             std::vector<float>& force,
+                             std::vector<float>& virial,
+                             std::vector<ENERGYTYPE>& dedn,
+                             const std::vector<float>& coord,
+                             const std::vector<int>& atype,
+                             const std::vector<float>& box,
+                             const int nghost,
+                             const InputNlist& inlist,
+                             const int& ago,
+                             const std::vector<float>& fparam,
+                             const std::vector<float>& aparam) {
+    throw deepmd_exception(
+        "Direct dE/dN output is not supported by this DeePMD backend");
+  }
   /**
    * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
    *by using this DP.
@@ -309,6 +346,25 @@ class DeepPot : public DeepBaseModel {
   void compute(std::vector<ENERGYTYPE>& ener,
                std::vector<VALUETYPE>& force,
                std::vector<VALUETYPE>& virial,
+               const std::vector<VALUETYPE>& coord,
+               const std::vector<int>& atype,
+               const std::vector<VALUETYPE>& box,
+               const int nghost,
+               const InputNlist& inlist,
+               const int& ago,
+               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+  /** @} */
+
+  /**
+   * @brief Evaluate the energy, force, virial, and direct dE/dN output.
+   * @{
+   **/
+  template <typename VALUETYPE>
+  void compute(ENERGYTYPE& ener,
+               std::vector<VALUETYPE>& force,
+               std::vector<VALUETYPE>& virial,
+               ENERGYTYPE& dedn,
                const std::vector<VALUETYPE>& coord,
                const std::vector<int>& atype,
                const std::vector<VALUETYPE>& box,

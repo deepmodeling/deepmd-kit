@@ -119,12 +119,136 @@ static const char cite_user_deepmd_package[] =
 
 PairDeepMD::PairDeepMD(LAMMPS* lmp)
     : PairDeepBaseModel(
-          lmp, cite_user_deepmd_package, deep_pot, deep_pot_model_devi) {
+          lmp, cite_user_deepmd_package, deep_pot, deep_pot_model_devi),
+      commdata_(nullptr),
+      cached_dedn(0.0),
+      cached_dedn_valid(1) {
   // Constructor body can be empty
 }
 
 PairDeepMD::~PairDeepMD() {
   // Ensure base class destructor is called
+}
+
+void* PairDeepMD::extract(const char* str, int& dim) {
+  if (strcmp(str, "deepmd_dedn") == 0) {
+    if (!cached_dedn_valid) return nullptr;
+    dim = 0;
+    return (void*)&cached_dedn;
+  }
+  return PairDeepBaseModel::extract(str, dim);
+}
+
+double PairDeepMD::eval_energy_with_fparam(
+    const std::vector<double>& fparam_override) {
+  if (numb_models != 1) {
+    error->all(FLERR,
+               "deepmd/fparam/dedn currently supports single-model pair_style "
+               "only");
+  }
+  if (atom->sp_flag) {
+    error->all(FLERR,
+               "Pair style 'deepmd' does not support spin atoms, please use "
+               "pair style 'deepspin' instead.");
+  }
+
+  bool do_ghost = true;
+  commdata_ = (CommBrickDeepMD*)comm;
+  double** x = atom->x;
+  int* type = atom->type;
+  int nlocal = atom->nlocal;
+  int nghost = 0;
+  if (do_ghost) {
+    nghost = atom->nghost;
+  }
+  int nall = nlocal + nghost;
+
+  std::vector<int> dtype(nall);
+  for (int ii = 0; ii < nall; ++ii) {
+    dtype[ii] = type_idx_map[type[ii] - 1];
+  }
+
+  double dener(0);
+  std::vector<double> dforce(nall * 3);
+  std::vector<double> dvirial(9, 0);
+  std::vector<double> dcoord(nall * 3, 0.);
+  std::vector<double> dbox(9, 0);
+  std::vector<double> daparam;
+
+  if (dim_fparam > 0 &&
+      fparam_override.size() != static_cast<size_t>(dim_fparam)) {
+    error->all(FLERR, "fparam override has the wrong dimension");
+  }
+
+  // get box
+  dbox[0] = domain->h[0] / dist_unit_cvt_factor;  // xx
+  dbox[4] = domain->h[1] / dist_unit_cvt_factor;  // yy
+  dbox[8] = domain->h[2] / dist_unit_cvt_factor;  // zz
+  dbox[7] = domain->h[3] / dist_unit_cvt_factor;  // zy
+  dbox[6] = domain->h[4] / dist_unit_cvt_factor;  // zx
+  dbox[3] = domain->h[5] / dist_unit_cvt_factor;  // yx
+
+  // get coord
+  for (int ii = 0; ii < nall; ++ii) {
+    for (int dd = 0; dd < 3; ++dd) {
+      dcoord[ii * 3 + dd] =
+          (x[ii][dd] - domain->boxlo[dd]) / dist_unit_cvt_factor;
+    }
+  }
+
+  // mapping (for DPA-2/3 .pt2 GNN models that gather ghost features via
+  // the LAMMPS atom-map; harmless for other models).
+  std::vector<int> mapping_vec(nall, -1);
+  if (comm->nprocs == 1 && atom->map_style != Atom::MAP_NONE) {
+    for (size_t ii = 0; ii < nall; ++ii) {
+      mapping_vec[ii] = atom->map(atom->tag[ii]);
+    }
+  }
+
+  if (do_compute_aparam) {
+    make_aparam_from_compute(daparam);
+  } else if (aparam.size() > 0) {
+    make_uniform_aparam(daparam, aparam, nlocal);
+  } else if (do_ttm) {
+#ifdef USE_TTM
+    if (dim_aparam > 0) {
+      make_ttm_aparam(daparam);
+    }
+#endif
+  }
+  if (do_compute_fparam) {
+    make_fparam_from_compute(fparam);
+  } else if (do_fix_fparam) {
+    make_fparam_from_fix(fparam);
+  }
+
+  int ago = neighbor->ago;
+
+  if (do_ghost) {
+    if (list) {
+      neighbor->build_one(list);
+    }
+    deepmd_compat::InputNlist lmp_list(
+        list->inum, list->ilist, list->numneigh, list->firstneigh,
+        commdata_->nswap, commdata_->sendnum, commdata_->recvnum,
+        commdata_->firstrecv, commdata_->sendlist, commdata_->sendproc,
+        commdata_->recvproc, &world, comm->nprocs);
+    lmp_list.set_mask(NEIGHMASK);
+    if (comm->nprocs == 1 && atom->map_style != Atom::MAP_NONE) {
+      lmp_list.set_mapping(mapping_vec.data());
+    }
+
+    try {
+      deep_pot.compute(dener, dforce, dvirial, dcoord, dtype, dbox, nghost,
+                       lmp_list, ago, fparam, daparam);
+    } catch (deepmd_compat::deepmd_exception& e) {
+      error->one(FLERR, e.what());
+    }
+  } else {
+    error->all(FLERR, "unknown computational branch");
+  }
+
+  return scale[1][1] * dener * ener_unit_cvt_factor;
 }
 
 void PairDeepMD::compute(int eflag, int vflag) {
@@ -214,6 +338,8 @@ void PairDeepMD::compute(int eflag, int vflag) {
 
   if (do_compute_fparam) {
     make_fparam_from_compute(fparam);
+  } else if (do_fix_fparam) {
+    make_fparam_from_fix(fparam);
   }
 
   // int ago = numb_models > 1 ? 0 : neighbor->ago;
@@ -248,14 +374,34 @@ void PairDeepMD::compute(int eflag, int vflag) {
       // cvflag_atom is the right flag for the cvatom matrix
       if (!(eflag_atom || cvflag_atom)) {
         try {
-          deep_pot.compute(dener, dforce, dvirial, dcoord, dtype, dbox, nghost,
-                           lmp_list, ago, fparam, daparam);
+          if (dim_fparam > 0) {
+            deep_pot.compute(dener, dforce, dvirial, cached_dedn, dcoord, dtype,
+                             dbox, nghost, lmp_list, ago, fparam, daparam);
+            cached_dedn *= scale[1][1] * ener_unit_cvt_factor;
+            cached_dedn_valid = 1;
+          } else {
+            deep_pot.compute(dener, dforce, dvirial, dcoord, dtype, dbox,
+                             nghost, lmp_list, ago, fparam, daparam);
+            cached_dedn = 0.0;
+            cached_dedn_valid = 1;
+          }
         } catch (deepmd_compat::deepmd_exception& e) {
-          error->one(FLERR, e.what());
+          if (dim_fparam > 0) {
+            cached_dedn_valid = 0;
+            try {
+              deep_pot.compute(dener, dforce, dvirial, dcoord, dtype, dbox,
+                               nghost, lmp_list, ago, fparam, daparam);
+            } catch (deepmd_compat::deepmd_exception& e2) {
+              error->one(FLERR, e2.what());
+            }
+          } else {
+            error->one(FLERR, e.what());
+          }
         }
       }
       // do atomic energy and virial
       else {
+        cached_dedn_valid = 0;
         vector<double> deatom(nall * 1, 0);
         vector<double> dvatom(nall * 9, 0);
         try {
@@ -302,6 +448,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
         }
       }
     } else if (multi_models_mod_devi) {
+      cached_dedn_valid = 0;
       vector<double> deatom(nall * 1, 0);
       vector<double> dvatom(nall * 9, 0);
       vector<vector<double>> all_virial;
@@ -495,6 +642,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
     }
   } else {
     if (numb_models == 1) {
+      cached_dedn_valid = 0;
       try {
         deep_pot.compute(dener, dforce, dvirial, dcoord, dtype, dbox);
       } catch (deepmd_compat::deepmd_exception& e) {
@@ -533,6 +681,7 @@ static bool is_key(const string& input) {
   keys.push_back("fparam");
   keys.push_back("aparam");
   keys.push_back("fparam_from_compute");
+  keys.push_back("fparam_from_fix");
   keys.push_back("aparam_from_compute");
   keys.push_back("ttm");
   keys.push_back("atomic");
@@ -675,6 +824,21 @@ void PairDeepMD::settings(int narg, char** arg) {
       do_compute_fparam = true;
       compute_fparam_id = arg[iarg + 1];
       iarg += 1 + 1;
+    } else if (string(arg[iarg]) == string("fparam_from_fix")) {
+      if (iarg + 1 >= narg || is_key(arg[iarg + 1])) {
+        error->all(FLERR,
+                   "invalid fparam_from_fix key: should be "
+                   "fparam_from_fix fix_fparam_id(str) [fix_vector_index]");
+      }
+      do_fix_fparam = true;
+      fix_fparam_id = arg[iarg + 1];
+      fix_fparam_index = -1;
+      if (iarg + 2 < narg && !is_key(arg[iarg + 2])) {
+        fix_fparam_index = atoi(arg[iarg + 2]) - 1;
+        iarg += 3;
+      } else {
+        iarg += 2;
+      }
     } else if (string(arg[iarg]) == string("aparam_from_compute")) {
       for (int ii = 0; ii < 1; ++ii) {
         if (iarg + 1 + ii >= narg || is_key(arg[iarg + 1 + ii])) {
@@ -725,6 +889,15 @@ void PairDeepMD::settings(int narg, char** arg) {
         FLERR,
         "fparam and fparam_from_compute should NOT be set simultaneously");
   }
+  if (do_fix_fparam && fparam.size() > 0) {
+    error->all(FLERR,
+               "fparam and fparam_from_fix should NOT be set simultaneously");
+  }
+  if (do_fix_fparam && do_compute_fparam) {
+    error->all(FLERR,
+               "fparam_from_compute and fparam_from_fix should NOT be set "
+               "simultaneously");
+  }
 
   if (comm->me == 0) {
     if (numb_models > 1 && out_freq > 0) {
@@ -768,6 +941,14 @@ void PairDeepMD::settings(int narg, char** arg) {
     if (do_compute_fparam) {
       cout << pre << "using compute id (fparam):      ";
       cout << compute_fparam_id << "  " << endl;
+    }
+    if (do_fix_fparam) {
+      cout << pre << "using fix id (fparam):          ";
+      cout << fix_fparam_id;
+      if (fix_fparam_index >= 0) {
+        cout << "[" << fix_fparam_index + 1 << "]";
+      }
+      cout << "  " << endl;
     }
     if (do_compute_aparam) {
       cout << pre << "using compute id (aparam):      ";

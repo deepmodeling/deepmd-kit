@@ -74,6 +74,19 @@ class DeepPotTF : public DeepPotBackend {
                const std::vector<VALUETYPE>& fparam,
                const std::vector<VALUETYPE>& aparam,
                const bool atomic);
+  template <typename VALUETYPE, typename ENERGYVTYPE>
+  void compute_dedn(ENERGYVTYPE& ener,
+                    std::vector<VALUETYPE>& force,
+                    std::vector<VALUETYPE>& virial,
+                    ENERGYTYPE& dedn,
+                    const std::vector<VALUETYPE>& coord,
+                    const std::vector<int>& atype,
+                    const std::vector<VALUETYPE>& box,
+                    const int nghost,
+                    const InputNlist& lmp_list,
+                    const int& ago,
+                    const std::vector<VALUETYPE>& fparam,
+                    const std::vector<VALUETYPE>& aparam);
   /**
    * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
    *by using this DP.
@@ -239,6 +252,30 @@ class DeepPotTF : public DeepPotBackend {
                 const std::vector<float>& fparam,
                 const std::vector<float>& aparam,
                 const bool atomic);
+  void computew_dedn(std::vector<double>& ener,
+                     std::vector<double>& force,
+                     std::vector<double>& virial,
+                     std::vector<ENERGYTYPE>& dedn,
+                     const std::vector<double>& coord,
+                     const std::vector<int>& atype,
+                     const std::vector<double>& box,
+                     const int nghost,
+                     const InputNlist& inlist,
+                     const int& ago,
+                     const std::vector<double>& fparam,
+                     const std::vector<double>& aparam) override;
+  void computew_dedn(std::vector<double>& ener,
+                     std::vector<float>& force,
+                     std::vector<float>& virial,
+                     std::vector<ENERGYTYPE>& dedn,
+                     const std::vector<float>& coord,
+                     const std::vector<int>& atype,
+                     const std::vector<float>& box,
+                     const int nghost,
+                     const InputNlist& inlist,
+                     const int& ago,
+                     const std::vector<float>& fparam,
+                     const std::vector<float>& aparam) override;
   void computew(std::vector<double>& ener,
                 std::vector<double>& force,
                 std::vector<double>& virial,

@@ -396,6 +396,20 @@ extern void DP_DeepPotCompute2(DP_DeepPot* dp,
                                double* virial,
                                double* atomic_energy,
                                double* atomic_virial);
+extern void DP_DeepPotCompute2add(DP_DeepPot* dp,
+                                  const int nframes,
+                                  const int natom,
+                                  const double* coord,
+                                  const int* atype,
+                                  const double* cell,
+                                  const double* fparam,
+                                  const double* aparam,
+                                  double* energy,
+                                  double* force,
+                                  double* virial,
+                                  double* dE_dN,
+                                  double* atomic_energy,
+                                  double* atomic_virial);
 
 /**
  * @brief Evaluate the energy, force, magnetic force and virial by using a DP
@@ -482,6 +496,20 @@ extern void DP_DeepPotComputef2(DP_DeepPot* dp,
                                 float* virial,
                                 float* atomic_energy,
                                 float* atomic_virial);
+extern void DP_DeepPotComputef2add(DP_DeepPot* dp,
+                                   const int nframes,
+                                   const int natom,
+                                   const float* coord,
+                                   const int* atype,
+                                   const float* cell,
+                                   const float* fparam,
+                                   const float* aparam,
+                                   double* energy,
+                                   float* force,
+                                   float* virial,
+                                   double* dE_dN,
+                                   float* atomic_energy,
+                                   float* atomic_virial);
 
 /**
  * @brief Evaluate the energy, force, magnetic force and virial by using a DP
@@ -575,6 +603,23 @@ extern void DP_DeepPotComputeNList2(DP_DeepPot* dp,
                                     double* virial,
                                     double* atomic_energy,
                                     double* atomic_virial);
+extern void DP_DeepPotComputeNList2add(DP_DeepPot* dp,
+                                       const int nframes,
+                                       const int natom,
+                                       const double* coord,
+                                       const int* atype,
+                                       const double* cell,
+                                       const int nghost,
+                                       const DP_Nlist* nlist,
+                                       const int ago,
+                                       const double* fparam,
+                                       const double* aparam,
+                                       double* energy,
+                                       double* force,
+                                       double* virial,
+                                       double* dE_dN,
+                                       double* atomic_energy,
+                                       double* atomic_virial);
 
 /**
  * @brief Evaluate the energy, force, magnetic force and virial by using a DP
@@ -674,6 +719,23 @@ extern void DP_DeepPotComputeNListf2(DP_DeepPot* dp,
                                      float* virial,
                                      float* atomic_energy,
                                      float* atomic_virial);
+extern void DP_DeepPotComputeNListf2add(DP_DeepPot* dp,
+                                        const int nframes,
+                                        const int natom,
+                                        const float* coord,
+                                        const int* atype,
+                                        const float* cell,
+                                        const int nghost,
+                                        const DP_Nlist* nlist,
+                                        const int ago,
+                                        const float* fparam,
+                                        const float* aparam,
+                                        double* energy,
+                                        float* force,
+                                        float* virial,
+                                        double* dE_dN,
+                                        float* atomic_energy,
+                                        float* atomic_virial);
 
 /**
  * @brief Evaluate the energy, force, magnetic force and virial by using a DP

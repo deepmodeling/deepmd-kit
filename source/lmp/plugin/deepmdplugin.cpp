@@ -3,6 +3,7 @@
  * See https://docs.lammps.org/Developer_plugins.html
  */
 #include "compute_deeptensor_atom.h"
+#include "compute_deepmd_fparam_dedn.h"
 #include "deepmd_version.h"
 #include "fix_dplr.h"
 #include "lammpsplugin.h"
@@ -20,6 +21,10 @@ static Pair* pairdeepspin(LAMMPS* lmp) { return new PairDeepSpin(lmp); }
 
 static Compute* computedeepmdtensoratom(LAMMPS* lmp, int narg, char** arg) {
   return new ComputeDeeptensorAtom(lmp, narg, arg);
+}
+
+static Compute* computedeepmdfparamdedn(LAMMPS* lmp, int narg, char** arg) {
+  return new ComputeDeepmdFparamDedn(lmp, narg, arg);
 }
 
 static Fix* fixdplr(LAMMPS* lmp, int narg, char** arg) {
@@ -57,6 +62,13 @@ extern "C" void lammpsplugin_init(void* lmp, void* handle, void* regfunc) {
   plugin.info = "compute deeptensor/atom " STR_GIT_SUMM;
   plugin.author = "Han Wang";
   plugin.creator.v2 = (lammpsplugin_factory2*)&computedeepmdtensoratom;
+  (*register_plugin)(&plugin, lmp);
+
+  plugin.style = "compute";
+  plugin.name = "deepmd/fparam/dedn";
+  plugin.info = "compute deepmd/fparam/dedn " STR_GIT_SUMM;
+  plugin.author = "OpenAI";
+  plugin.creator.v2 = (lammpsplugin_factory2*)&computedeepmdfparamdedn;
   (*register_plugin)(&plugin, lmp);
 
   plugin.style = "fix";
