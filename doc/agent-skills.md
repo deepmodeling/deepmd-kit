@@ -17,7 +17,8 @@ in the DeePMD-kit repository under `skills/`.
   PyTorch backend, including input generation, neighbor-selection choices,
   training, freezing, and testing.
 - `deepmd-finetune-dpa3`: Fine-tune DPA3 models from self-trained checkpoints,
-  multi-task pretrained models, or built-in models downloaded by `dp pretrained download`.
+  multi-task pretrained models, or built-in models downloaded by `dp
+  pretrained download`.
 - `deepmd-train-se-e2-a`: Train classical Deep Potential models with the
   `se_e2_a` descriptor, including preparation of training JSON files and
   post-training validation.
@@ -58,17 +59,16 @@ If you do not have a checkout, the same skills can also be installed directly
 from GitHub:
 
 ```bash
-npx -y skills add https://github.com/deepmodeling/deepmd-kit/tree/dd428dbb15879115e5eed51aad31cce964782c3c/skills \
-    -a openclaw -y
+npx -y skills add https://github.com/deepmodeling/deepmd-kit/tree/master/skills \
+  -a openclaw -y
 ```
 
 The examples above require Node.js/npm so that `npx` is available, and they
 install the skills for OpenClaw. Replace `openclaw` with the target agent name
-when installing for another agent. The GitHub command pins the source to a
-specific commit for reproducibility and lets the skill CLI fetch the repository
-for you. For large repositories or slow networks, this can take longer than
-installing from an existing local checkout. Refresh or restart the session
-afterward so the installed skills are reloaded.
+when installing for another agent. The GitHub command lets the skill CLI fetch
+the repository for you. For large repositories or slow networks, this can take
+longer than installing from an existing local checkout. Refresh or restart the
+session afterward so the installed skills are reloaded.
 
 ## Minimal verification
 
