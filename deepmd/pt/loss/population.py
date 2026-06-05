@@ -1,8 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
-from functools import (
-    partial,
-)
 from typing import (
     Any,
 )
@@ -47,7 +44,7 @@ class PopulationLoss(TaskLoss):
         Parameters
         ----------
         loss_func : str
-            The loss function. Currently only "mae" is used.
+            The loss function: "mae", "smooth_mae", or "rmse".
         metric : list[str], optional
             The metrics to display during training, e.g. ["mae"].
         starter_learning_rate : float
@@ -180,17 +177,21 @@ class PopulationLoss(TaskLoss):
         if natoms <= 0:
             raise ValueError("natoms must be positive")
 
-        loss_fn = partial(F.l1_loss, reduction="sum")
+        def _loss(pred: torch.Tensor, tgt: torch.Tensor) -> torch.Tensor:
+            if self.loss_func == "smooth_mae":
+                return F.smooth_l1_loss(pred, tgt, reduction="sum", beta=self.beta)
+            elif self.loss_func == "mae":
+                return F.l1_loss(pred, tgt, reduction="sum")
+            elif self.loss_func == "rmse":
+                return torch.sqrt(F.mse_loss(pred, tgt, reduction="mean"))
+            else:
+                raise RuntimeError(f"Unknown loss function: {self.loss_func!r}")
 
-        spin_loss = loss_fn(input=spin_pred, target=spin_label) / natoms
-        spin_total_loss = loss_fn(input=spin_total_pred, target=spin_total_label)
-        pop_loss = loss_fn(input=pop_pred, target=pop_label) / natoms
-        pop_alpha_total_loss = loss_fn(
-            input=pop_alpha_total_pred, target=pop_alpha_total_label
-        )
-        pop_beta_total_loss = loss_fn(
-            input=pop_beta_total_pred, target=pop_beta_total_label
-        )
+        spin_loss = _loss(spin_pred, spin_label) / natoms
+        spin_total_loss = _loss(spin_total_pred, spin_total_label)
+        pop_loss = _loss(pop_pred, pop_label) / natoms
+        pop_alpha_total_loss = _loss(pop_alpha_total_pred, pop_alpha_total_label)
+        pop_beta_total_loss = _loss(pop_beta_total_pred, pop_beta_total_label)
 
         loss += (
             pref_spin * spin_loss

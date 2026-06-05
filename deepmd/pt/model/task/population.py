@@ -57,8 +57,13 @@ class PopulationFittingNet(InvarFitting):
     mixed_types : bool
         If true, use a uniform fitting net for all atom types, otherwise use
         different fitting nets for different atom types.
+    trainable : bool or list[bool]
+        If true, the fitting net is trainable. If a list, each element controls
+        the corresponding layer.
     seed : int, optional
         Random seed.
+    type_map : list[str], optional
+        A list of strings that map atom type indices to element names.
     """
 
     def __init__(
