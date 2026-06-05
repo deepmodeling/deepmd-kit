@@ -377,6 +377,7 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
             charge_spin=charge_spin,
         )
         ret_dict = self.apply_out_stat(ret_dict, atype)
+        ret_dict = self._apply_aparam_output_gate_after_out_stat(ret_dict, aparam)
 
         # nf x nloc
         atom_mask = ext_atom_mask[:, :nloc].to(torch.int32)
@@ -538,6 +539,26 @@ class BaseAtomicModel(torch.nn.Module, BaseAtomicModel_):
             stat_file_path=stat_file_path,
             bias_adjust_mode="set-by-statistic",
         )
+
+    def _apply_aparam_output_gate_after_out_stat(
+        self,
+        ret_dict: dict[str, torch.Tensor],
+        aparam: torch.Tensor | None,
+    ) -> dict[str, torch.Tensor]:
+        """Gate atomic outputs after out_bias has been applied."""
+        if not hasattr(self, "fitting_net"):
+            return ret_dict
+        fitting = self.fitting_net
+        if not fitting.use_aparam_output_gate:
+            return ret_dict
+        var_name = fitting.var_name
+        if var_name not in ret_dict:
+            return ret_dict
+        ret_dict[var_name] = fitting.apply_aparam_output_gate_to_atomic_output(
+            ret_dict[var_name],
+            aparam,
+        )
+        return ret_dict
 
     def apply_out_stat(
         self,

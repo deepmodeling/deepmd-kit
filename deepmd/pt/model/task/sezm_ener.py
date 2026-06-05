@@ -767,7 +767,6 @@ class SeZMEnergyFittingNet(InvarFitting):
 
         mask = self.emask(atype).to(torch.bool)
         outs = torch.where(mask[:, :, None], outs, 0.0)
-        outs = self._apply_aparam_output_gate(outs, aparam_raw)
         results.update({self.var_name: outs})
         return results
 

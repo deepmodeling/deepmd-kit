@@ -304,6 +304,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             charge_spin=charge_spin,
         )
         ret_dict = self.apply_out_stat(ret_dict, atype)
+        ret_dict = self._apply_aparam_output_gate_after_out_stat(ret_dict, aparam)
 
         # nf x nloc
         atom_mask = xp_take_first_n(ext_atom_mask, 1, nloc)
@@ -616,6 +617,24 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         for kk in variables.keys():
             obj[kk] = variables[kk]
         return obj
+
+    def _apply_aparam_output_gate_after_out_stat(
+        self,
+        ret_dict: dict[str, Array],
+        aparam: Array | None,
+    ) -> dict[str, Array]:
+        """Gate atomic outputs after out_bias has been applied."""
+        fitting = getattr(self, "fitting_net", None)
+        if fitting is None or not fitting.use_aparam_output_gate:
+            return ret_dict
+        var_name = fitting.var_name
+        if var_name not in ret_dict:
+            return ret_dict
+        ret_dict[var_name] = fitting.apply_aparam_output_gate_to_atomic_output(
+            ret_dict[var_name],
+            aparam,
+        )
+        return ret_dict
 
     def apply_out_stat(
         self,

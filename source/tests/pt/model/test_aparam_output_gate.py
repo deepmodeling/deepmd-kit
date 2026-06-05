@@ -15,7 +15,7 @@ device = env.DEVICE
 
 
 class TestAparamOutputGate(unittest.TestCase):
-    def test_zero_aparam_zeros_output(self) -> None:
+    def test_zero_aparam_zeros_output_with_out_bias(self) -> None:
         nf, nloc, dim_descrpt = 1, 2, 8
         sigma = 2.0
         fitting = InvarFitting(
@@ -37,8 +37,16 @@ class TestAparamOutputGate(unittest.TestCase):
         aparam_zero = torch.zeros(nf, nloc, 1, dtype=dtype, device=device)
         aparam_sigma = torch.full((nf, nloc, 1), sigma, dtype=dtype, device=device)
 
-        out_zero = fitting(descriptor, atype, aparam=aparam_zero)["energy"]
-        out_sigma = fitting(descriptor, atype, aparam=aparam_sigma)["energy"]
+        raw_zero = fitting(descriptor, atype, aparam=aparam_zero)["energy"]
+        raw_sigma = fitting(descriptor, atype, aparam=aparam_sigma)["energy"]
+        fake_out_bias = torch.full((nf, nloc, 1), 1.2, dtype=dtype, device=device)
+
+        out_zero = fitting.apply_aparam_output_gate_to_atomic_output(
+            raw_zero + fake_out_bias, aparam_zero
+        )
+        out_sigma = fitting.apply_aparam_output_gate_to_atomic_output(
+            raw_sigma + fake_out_bias, aparam_sigma
+        )
 
         self.assertTrue(torch.allclose(out_zero, torch.zeros_like(out_zero)))
         self.assertGreater(out_sigma.abs().max().item(), 0.0)

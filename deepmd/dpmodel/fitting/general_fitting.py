@@ -656,6 +656,28 @@ class GeneralFitting(NativeOP, BaseFitting):
         gate = self._compute_aparam_output_gate(aparam_raw)
         return outs * gate
 
+    def apply_aparam_output_gate_to_atomic_output(
+        self,
+        outs: Array,
+        aparam: Array | None,
+    ) -> Array:
+        """Apply the aparam gate to atomic outputs after out_bias is added."""
+        if not self.use_aparam_output_gate:
+            return outs
+        if aparam is None:
+            raise ValueError(
+                "aparam is required when use_aparam_output_gate is enabled"
+            )
+        xp = array_api_compat.array_namespace(outs, aparam)
+        try:
+            aparam_raw = xp.reshape(aparam, (outs.shape[0], outs.shape[1], self.numb_aparam))
+        except (ValueError, RuntimeError) as e:
+            raise ValueError(
+                f"input aparam: cannot reshape {aparam.shape} "
+                f"into ({outs.shape[0]}, {outs.shape[1]}, {self.numb_aparam})."
+            ) from e
+        return self._apply_aparam_output_gate(outs, aparam_raw)
+
     def _call_common(
         self,
         descriptor: Array,
@@ -841,7 +863,6 @@ class GeneralFitting(NativeOP, BaseFitting):
         exclude_mask = xp.astype(exclude_mask, xp.bool)
         # nf x nloc x nod
         outs = xp.where(exclude_mask[:, :, None], outs, xp.zeros_like(outs))
-        outs = self._apply_aparam_output_gate(outs, aparam_raw)
         results[self.var_name] = outs
         if self.eval_return_middle_output and len(self.neuron) > 0:
             results["middle_output"] = middle_outs

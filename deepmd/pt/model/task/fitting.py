@@ -791,6 +791,27 @@ class GeneralFitting(Fitting):
         gate = self._compute_aparam_output_gate(aparam_raw)
         return outs * gate
 
+    @torch.jit.export
+    def apply_aparam_output_gate_to_atomic_output(
+        self,
+        outs: torch.Tensor,
+        aparam: torch.Tensor | None,
+    ) -> torch.Tensor:
+        """Apply the aparam gate to atomic outputs after out_bias is added."""
+        if not self.use_aparam_output_gate:
+            return outs
+        if aparam is None:
+            raise ValueError(
+                "aparam is required when use_aparam_output_gate is enabled"
+            )
+        aparam_raw = aparam.to(self.prec)
+        if aparam_raw.shape[-1] != self.numb_aparam:
+            raise ValueError(
+                f"input aparam last dim {aparam_raw.shape[-1]} does not match "
+                f"numb_aparam={self.numb_aparam}"
+            )
+        return self._apply_aparam_output_gate(outs, aparam_raw)
+
     def _forward_common(
         self,
         descriptor: torch.Tensor,
@@ -956,7 +977,6 @@ class GeneralFitting(Fitting):
         mask = self.emask(atype).to(torch.bool)
         # nf x nloc x nod
         outs = torch.where(mask[:, :, None], outs, 0.0)
-        outs = self._apply_aparam_output_gate(outs, aparam_raw)
         results.update({self.var_name: outs})
         return results
 
