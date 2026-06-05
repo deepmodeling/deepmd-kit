@@ -670,7 +670,9 @@ class GeneralFitting(NativeOP, BaseFitting):
             )
         xp = array_api_compat.array_namespace(outs, aparam)
         try:
-            aparam_raw = xp.reshape(aparam, (outs.shape[0], outs.shape[1], self.numb_aparam))
+            aparam_raw = xp.reshape(
+                aparam, (outs.shape[0], outs.shape[1], self.numb_aparam)
+            )
         except (ValueError, RuntimeError) as e:
             raise ValueError(
                 f"input aparam: cannot reshape {aparam.shape} "
