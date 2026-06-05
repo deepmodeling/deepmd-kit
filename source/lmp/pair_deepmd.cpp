@@ -225,8 +225,9 @@ double PairDeepMD::eval_energy_with_fparam(
   int ago = neighbor->ago;
 
   if (do_ghost) {
-    if (list) {
-      neighbor->build_one(list);
+    if (!list) {
+      error->all(FLERR,
+                 "deepmd/fparam/dedn requires an available pair neighbor list");
     }
     deepmd_compat::InputNlist lmp_list(
         list->inum, list->ilist, list->numneigh, list->firstneigh,
