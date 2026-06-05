@@ -17,8 +17,7 @@ in the DeePMD-kit repository under `skills/`.
   PyTorch backend, including input generation, neighbor-selection choices,
   training, freezing, and testing.
 - `deepmd-finetune-dpa3`: Fine-tune DPA3 models from self-trained checkpoints,
-  multi-task pretrained models, or built-in models downloaded by `dp
-  pretrained download`.
+  multi-task pretrained models, or built-in models downloaded by `dp pretrained download`.
 - `deepmd-train-se-e2-a`: Train classical Deep Potential models with the
   `se_e2_a` descriptor, including preparation of training JSON files and
   post-training validation.
@@ -60,7 +59,7 @@ from GitHub:
 
 ```bash
 npx -y skills add https://github.com/deepmodeling/deepmd-kit/tree/dd428dbb15879115e5eed51aad31cce964782c3c/skills \
-  -a openclaw -y
+    -a openclaw -y
 ```
 
 The examples above require Node.js/npm so that `npx` is available, and they
