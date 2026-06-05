@@ -26,12 +26,12 @@ MODEL_REGISTRY: dict[str, dict[str, Any]] = {
     },
     "DPA-2.4-7M": {
         "urls": [
-            "https://huggingface.co/deepmodelingcommunity/DPA-2.4-7M/resolve/main/dpa-2.4-7M.pt?download=true",
-            "https://hf-mirror.com/deepmodelingcommunity/DPA-2.4-7M/resolve/main/dpa-2.4-7M.pt?download=true",
-            "https://modelscope.cn/models/DeepModelingCommunity/DPA-2.4-7M/resolve/master/dpa-2.4-7M.pt",
+            "https://huggingface.co/deepmodelingcommunity/DPA-2.4-7M/resolve/main/DPA-2.4-7M-patched-mt.pt?download=true",
+            "https://hf-mirror.com/deepmodelingcommunity/DPA-2.4-7M/resolve/main/DPA-2.4-7M-patched-mt.pt?download=true",
+            "https://modelscope.cn/models/DeepModelingCommunity/DPA-2.4-7M/resolve/master/DPA-2.4-7M-patched-mt.pt",
         ],
-        "filename": "dpa-2.4-7M.pt",
-        "sha256": "7a5ca2b01579d9617502b4203af839107fdcf1ec7e3ae1d66a5b14811bc5b741",
+        "filename": "DPA-2.4-7M-patched-mt.pt",
+        "sha256": "904eb5560af9ff644347dedd3ebf1e9c97929d02ee37ce3cbe895de3df711198",
     },
     "DPA3-Omol-Large": {
         "urls": [
