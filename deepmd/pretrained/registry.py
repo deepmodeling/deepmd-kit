@@ -30,7 +30,7 @@ MODEL_REGISTRY: dict[str, dict[str, Any]] = {
             "https://hf-mirror.com/deepmodelingcommunity/DPA-2.4-7M/resolve/main/DPA-2.4-7M-patched-mt.pt?download=true",
             "https://modelscope.cn/models/DeepModelingCommunity/DPA-2.4-7M/resolve/master/DPA-2.4-7M-patched-mt.pt",
         ],
-        "filename": "DPA-2.4-7M-patched-mt.pt",
+        "filename": "dpa-2.4-7M.pt",
         "sha256": "904eb5560af9ff644347dedd3ebf1e9c97929d02ee37ce3cbe895de3df711198",
     },
     "DPA3-Omol-Large": {
