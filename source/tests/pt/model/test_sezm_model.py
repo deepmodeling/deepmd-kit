@@ -613,10 +613,10 @@ class TestSeZMModelCompile(unittest.TestCase):
             wigner_calc=descriptor.wigner_calc,
         )
 
-        # build_edge_list_from_nlist appends exactly one masked dummy edge;
+        # build_edge_list_from_nlist appends masked dummy edges;
         # compare only the real edges before the padded tail.
         n_real = cache_std.src.shape[0]
-        self.assertEqual(edge_mask.shape[0] - n_real, 1)
+        self.assertEqual(edge_mask.shape[0] - n_real, 2)
         self.assertFalse(edge_mask[n_real:].any().item())
         self.assertTrue(torch.equal(cache_std.src, cache_sparse.src[:n_real]))
         self.assertTrue(torch.equal(cache_std.dst, cache_sparse.dst[:n_real]))

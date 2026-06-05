@@ -87,9 +87,10 @@ Body of the traced compute
 function:
 
 * ``core_compute`` rebuilds a compact, GPU-friendly edge list from the
-  padded DeePMD neighbor list (``build_edge_list_from_nlist``), with a
-  single masked dummy edge appended so the edge tensor is never empty
-  (NOTE 10).  Edge vectors come from ``index_select`` on the extended
+  padded DeePMD neighbor list (``build_edge_list_from_nlist``), with
+  two masked dummy edges appended so the edge tensor has a non-singular
+  symbolic lower bound (NOTE 10).  Edge vectors come from
+  ``index_select`` on the extended
   coordinate tensor, which keeps the gradient path back to coordinates
   explicit and safe under symbolic shapes (NOTE 11).
 * The SeZM descriptor consumes the edge list and produces per-atom
@@ -322,17 +323,22 @@ precondition for make_fx symbolic tracing.
 In eval mode we merely detach; no ``create_graph`` is requested, so the
 compiled kernel never has to build a backward graph.
 
-NOTE 10 -- Tail dummy edge
---------------------------
+NOTE 10 -- Tail dummy edges
+---------------------------
 
-``build_edge_list_from_nlist`` appends exactly one masked edge at the
-end of every batch.  Real edge compaction happens via
+``build_edge_list_from_nlist`` appends two masked edges at the end of
+every batch.  Real edge compaction happens via
 ``torch.nonzero(valid_mask)``, whose output length is data-dependent
-and can be zero in sparse or single-type systems.  make_fx cannot trace
-an "if n_edges == 0: skip" branch symbolically; without the dummy it
+and can be zero in sparse or single-atom systems (e.g. isolated-atom
+reference frames in training data).  make_fx cannot trace an
+"if n_edges == 0: skip" branch symbolically; without the dummies it
 would fall back to concrete shape specialization and break
-``dynamic=True``.  The dummy's ``edge_mask`` is ``False`` so it
-contributes exactly zero to every downstream sum or gather.
+``dynamic=True``.  A pair of dummy slots also gives Inductor's batched
+matmul lowering a static ``E >= 2`` edge-axis bound, avoiding
+data-dependent layout guards on ``E == 1`` that would otherwise cause
+an extra recompile when the first batch contains no real edges.  Each
+dummy's ``edge_mask`` is ``False`` so it contributes exactly zero to
+every downstream sum or gather.
 
 NOTE 11 -- ``index_select`` for coordinate gradients
 ----------------------------------------------------
@@ -2160,8 +2166,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                     "epilogue_fusion": False,
                     "triton.cudagraphs": False,
                     "shape_padding": True,
-                    "max_fusion_size": 8,
-                    "triton.persistent_reductions": False,
+                    "max_fusion_size": 64,
                 },
             ),
         )
@@ -2353,9 +2358,10 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         Build a compact edge list from DeePMD padded neighbor list.
 
         Edge vectors are computed via ``index_select`` on ``extended_coord``
-        so they remain differentiable w.r.t. the input coordinates.  One
-        masked dummy edge is always appended to avoid data-dependent empty-edge
-        branches that ``make_fx`` cannot trace.
+        so they remain differentiable w.r.t. the input coordinates.  Two
+        masked dummy edges are always appended to avoid data-dependent
+        empty-edge branches that ``make_fx`` cannot trace and singular
+        edge-axis guards in Inductor's batched matmul lowering.
 
         Parameters
         ----------
@@ -2369,11 +2375,11 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         Returns
         -------
         edge_index
-            Edge indices with shape (2, E+1) where E is valid edge count.
+            Edge indices with shape (2, E+2) where E is valid edge count.
         edge_vec
-            Edge vectors with shape (E+1, 3).
+            Edge vectors with shape (E+2, 3).
         edge_mask
-            Boolean mask with shape (E+1,).  The trailing element is ``False``.
+            Boolean mask with shape (E+2,).  The two trailing elements are ``False``.
         """
         nf, nloc, nsel = nlist.shape
         device = extended_coord.device
@@ -2435,19 +2441,25 @@ class SeZMModel(DPModelCommon, SeZMModel_):
 
         valid_idx = torch.nonzero(edge_mask_actual, as_tuple=False).flatten()
 
-        # === Step 3. Compact edges + append one masked dummy ===
-        # NOTE: Always append exactly one masked dummy edge.
+        # === Step 3. Compact edges + append masked dummies ===
+        # NOTE: Always append two masked dummy edges.
         # ``torch.nonzero(edge_mask_actual)`` produces a data-dependent
         # number of valid edges, which can be zero on sparse or
-        # single-type systems.  make_fx cannot trace an
-        # ``if n_edges == 0: skip`` branch symbolically; without the
-        # dummy it would fall back to concrete shape specialisation and
-        # break ``torch.compile(dynamic=True)`` for later batches.  The
-        # dummy edge copies entry 0 (any in-range index is fine) and
+        # single-type systems (e.g. isolated-atom reference frames).
+        # make_fx cannot trace an ``if n_edges == 0: skip`` branch
+        # symbolically; without the dummies it would fall back to
+        # concrete shape specialisation and break
+        # ``torch.compile(dynamic=True)`` for later batches.  Two dummy
+        # slots also give Inductor's batched matmul lowering a static
+        # ``E >= 2`` edge-axis bound, avoiding data-dependent layout
+        # guards on ``E == 1`` that would otherwise trigger an extra
+        # recompile when the first batch contains only a single edge.
+        # Each dummy copies entry 0 (any in-range index is fine) and
         # carries ``edge_mask=False`` so every downstream sum, gather
         # or scatter ignores it.
+        dummy_count = 2
         padded_idx = torch.cat(
-            [valid_idx, torch.zeros(1, dtype=torch.long, device=device)]
+            [valid_idx, torch.zeros(dummy_count, dtype=torch.long, device=device)]
         )
         src_sel = src_actual.index_select(0, padded_idx)
         dst_sel = dst_actual.index_select(0, padded_idx)
@@ -2456,7 +2468,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         edge_mask = torch.cat(
             [
                 torch.ones(valid_idx.shape[0], dtype=torch.bool, device=device),
-                torch.zeros(1, dtype=torch.bool, device=device),
+                torch.zeros(dummy_count, dtype=torch.bool, device=device),
             ]
         )
         return edge_index, edge_vec_sel, edge_mask
