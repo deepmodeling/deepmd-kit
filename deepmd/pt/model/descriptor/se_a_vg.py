@@ -19,11 +19,15 @@ import numpy as np
 import torch
 import torch.nn as nn
 
+from deepmd.dpmodel.utils import EnvMat as DPEnvMat
 from deepmd.dpmodel.utils.seed import (
     child_seed,
 )
 from deepmd.pt.model.descriptor import (
     DescriptorBlock,
+)
+from deepmd.pt.model.descriptor.base_descriptor import (
+    BaseDescriptor,
 )
 from deepmd.pt.model.descriptor.env_mat_vg import (
     VG_ENV_DIM,
@@ -55,22 +59,17 @@ from deepmd.pt.utils.nlist import (
 from deepmd.pt.utils.tabulate import (
     DPTabulate,
 )
+from deepmd.pt.utils.update_sel import (
+    UpdateSel,
+)
 from deepmd.pt.utils.utils import (
     ActivationFn,
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
 )
-from deepmd.dpmodel.utils import EnvMat as DPEnvMat
 from deepmd.utils.path import (
     DPPath,
-)
-
-from deepmd.pt.model.descriptor.base_descriptor import (
-    BaseDescriptor,
-)
-from deepmd.pt.utils.update_sel import (
-    UpdateSel,
 )
 
 if not hasattr(torch.ops.deepmd, "tabulate_fusion_se_a"):
@@ -263,7 +262,9 @@ class DescrptBlockSeAVg(DescriptorBlock):
             if aparam is None:
                 aparam_np = np.zeros((nframes, nloc, 1), dtype=np.float64)
             else:
-                aparam_np = np.asarray(aparam, dtype=np.float64).reshape(nframes, nloc, -1)
+                aparam_np = np.asarray(aparam, dtype=np.float64).reshape(
+                    nframes, nloc, -1
+                )
                 if aparam_np.shape[-1] != 1:
                     aparam_np = aparam_np[..., :1]
             for ff in range(nframes):
@@ -302,7 +303,9 @@ class DescrptBlockSeAVg(DescriptorBlock):
                     self.rcut_smth,
                     protection=self.env_protection,
                 )
-                env_mat = env_mat.detach().cpu().numpy().reshape(nloc, self.nnei, VG_ENV_DIM)
+                env_mat = (
+                    env_mat.detach().cpu().numpy().reshape(nloc, self.nnei, VG_ENV_DIM)
+                )
                 for ii in range(nloc):
                     ti = int(atype[ff, ii])
                     sumv[ti] += env_mat[ii]
@@ -314,9 +317,7 @@ class DescrptBlockSeAVg(DescriptorBlock):
         stddev = np.sqrt(np.maximum(var, 1e-2))
         if not self.set_davg_zero:
             self.mean.copy_(torch.tensor(mean, dtype=self.prec, device=env.DEVICE))
-        self.stddev.copy_(
-            torch.tensor(stddev, dtype=self.prec, device=env.DEVICE)
-        )
+        self.stddev.copy_(torch.tensor(stddev, dtype=self.prec, device=env.DEVICE))
 
     def enable_compression(
         self,

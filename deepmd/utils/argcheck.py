@@ -2862,9 +2862,7 @@ def model_compression_type_args() -> Variant:
         "type",
         [
             Argument("se_e2_a", dict, model_compression(), alias=["se_a"]),
-            Argument(
-                "se_a_vg", dict, model_compression(), alias=["se_e2_a_vg"]
-            ),
+            Argument("se_a_vg", dict, model_compression(), alias=["se_e2_a_vg"]),
         ],
         optional=True,
         default_tag="se_e2_a",
