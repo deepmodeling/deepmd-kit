@@ -158,6 +158,8 @@ class _DescriptorExtraction:
         torch.Tensor
             (n_frames, n_atoms, feat_dim), detached.
         """
+        if not coord.requires_grad:
+            raise RuntimeError("forward_common requires coord to have requires_grad=True")
         self._clear_accumulator()
         self._inner_model.forward_common(coord, atype, box)
         return self._atomic_model.eval_descriptor().detach()
