@@ -55,12 +55,12 @@ def _lammps(fp_value, units="metal") -> PyLammps:
     lammps.fix("1 all nve")
     lammps.variable("fp equal " + str(fp_value))
     lammps.variable("dummy equal 0.0")
-    lammps.fix("fparam all ave/time 1 1 1 v_dummy v_fp")
+    lammps.fix("fpfix all ave/time 1 1 1 v_dummy v_fp")
     lammps.pair_style(
-        f"deepmd {pb_file.resolve()} fparam_from_fix fparam 2 aparam 0.25852028"
+        f"deepmd {pb_file.resolve()} fparam_from_fix fpfix 2 aparam 0.25852028"
     )
     lammps.pair_coeff("* *")
-    lammps.compute("dedn all deepmd/fparam/dedn f_fparam[2]")
+    lammps.compute("dedn all deepmd/fparam/dedn f_fpfix[2]")
     return lammps
 
 

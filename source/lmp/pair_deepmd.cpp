@@ -122,7 +122,7 @@ PairDeepMD::PairDeepMD(LAMMPS* lmp)
           lmp, cite_user_deepmd_package, deep_pot, deep_pot_model_devi),
       commdata_(nullptr),
       cached_dedn(0.0),
-      cached_dedn_valid(1) {
+      cached_dedn_valid(0) {
   // Constructor body can be empty
 }
 
@@ -373,30 +373,12 @@ void PairDeepMD::compute(int eflag, int vflag) {
     if (single_model || multi_models_no_mod_devi) {
       // cvflag_atom is the right flag for the cvatom matrix
       if (!(eflag_atom || cvflag_atom)) {
+        cached_dedn_valid = 0;
         try {
-          if (dim_fparam > 0) {
-            deep_pot.compute(dener, dforce, dvirial, cached_dedn, dcoord, dtype,
-                             dbox, nghost, lmp_list, ago, fparam, daparam);
-            cached_dedn *= scale[1][1] * ener_unit_cvt_factor;
-            cached_dedn_valid = 1;
-          } else {
-            deep_pot.compute(dener, dforce, dvirial, dcoord, dtype, dbox,
-                             nghost, lmp_list, ago, fparam, daparam);
-            cached_dedn = 0.0;
-            cached_dedn_valid = 1;
-          }
+          deep_pot.compute(dener, dforce, dvirial, dcoord, dtype, dbox, nghost,
+                           lmp_list, ago, fparam, daparam);
         } catch (deepmd_compat::deepmd_exception& e) {
-          if (dim_fparam > 0) {
-            cached_dedn_valid = 0;
-            try {
-              deep_pot.compute(dener, dforce, dvirial, dcoord, dtype, dbox,
-                               nghost, lmp_list, ago, fparam, daparam);
-            } catch (deepmd_compat::deepmd_exception& e2) {
-              error->one(FLERR, e2.what());
-            }
-          } else {
-            error->one(FLERR, e.what());
-          }
+          error->one(FLERR, e.what());
         }
       }
       // do atomic energy and virial
