@@ -112,7 +112,7 @@ class PopulationFittingNet(InvarFitting):
                 OutputVariableDef(
                     "population",
                     [2],
-                    reducible=True,
+                    reducible=False,
                     r_differentiable=False,
                     c_differentiable=False,
                 ),
