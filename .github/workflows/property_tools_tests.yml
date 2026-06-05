@@ -30,6 +30,10 @@ jobs:
           python -m pip install "numpy>=1.21,<2.2" pytest scikit-learn dpdata
           python -m pip install torch --index-url https://download.pytorch.org/whl/cpu
 
+      - name: Prepare source-tree version module
+        run: |
+          python -c "from pathlib import Path; Path('deepmd/_version.py').write_text('version = \\\"0+unknown\\\"\\n')"
+
       - name: Run unit tests
         run: |
           python -m pytest source/tests/dpa_tools/ -v --ignore=source/tests/dpa_tools/test_trainer_dim_case_embd.py
