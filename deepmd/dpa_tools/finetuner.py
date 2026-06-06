@@ -1,9 +1,10 @@
 # dpa_tools/finetuner.py
 #
-# Path B architecture: frozen DPA descriptor → sklearn predictor
+# frozen_sklearn architecture: frozen DPA descriptor → sklearn predictor
 # DPA checkpoint is used purely as a feature extractor (no dp train).
 
 import os
+import logging
 from pathlib import Path
 from typing import List, Optional, Union
 
@@ -478,7 +479,7 @@ class _FrozenSklearnPipeline:
 # ---------------------------------------------------------------------------
 
 class DPAFineTuner:
-    """Frozen DPA descriptor + sklearn head (Path B) or single-task training.
+    """Frozen DPA descriptor + sklearn head (frozen_sklearn) or single-task training.
 
     Two modes, selected by *strategy*:
 
@@ -1094,5 +1095,6 @@ class DPAFineTuner:
         os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
         import torch
         torch.save(bundle, output_path)
-        print(f"Frozen model saved to: {output_path}")
+        _LOG = logging.getLogger("dpa_tools")
+        _LOG.info("Frozen model saved to: %s", output_path)
         return output_path

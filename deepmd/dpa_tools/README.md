@@ -136,8 +136,8 @@ result = auto_convert("POSCAR", "./npy")
 # → {"method": "dpdata", "output_dir": "..."}
 ```
 
-Supports `.csv`, `.xlsx`, `.xls` for SMILES inputs and any format dpdata
-recognises for structure files (POSCAR, extxyz, cif, OUTCAR, …).
+Supports `.csv`, for SMILES inputs and any format dpdata
+recognises for structure files (POSCAR, OUTCAR, extxyz, cif…).
 
 ### Cross-validation
 

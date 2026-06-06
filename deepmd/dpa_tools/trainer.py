@@ -11,8 +11,9 @@ Mode is selected by constructor arguments:
 | FT      | path to ckpt     | ``False``           |
 | LP      | path to ckpt     | ``True``            |
 
-MFT lives in :class:`dpa_tools.mft.MFTFineTuner`; the sklearn-head Path B
-lives in :class:`dpa_tools.finetuner.DPAFineTuner`.
+MFT lives in :class:`dpa_tools.mft.MFTFineTuner`; the sklearn-head
+(frozen_sklearn strategy) lives in
+:class:`dpa_tools.finetuner.DPAFineTuner`.
 """
 
 from __future__ import annotations

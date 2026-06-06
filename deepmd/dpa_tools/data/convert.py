@@ -170,7 +170,7 @@ def convert(
     validate: bool = True,
     strict: bool = False,
 ) -> str:
-    """Convert a structure/trajectory file to ``deepmd/npy`` format.
+    """Convert one or more structure files to ``deepmd/npy`` format.
 
     Thin wrapper over ``dpdata``.  When *fmt* is ``None`` (or ``"auto"``),
     dpdata auto-detects the format from the file extension or content.
@@ -180,7 +180,17 @@ def convert(
     Parameters
     ----------
     input_path : str
-        Path to the input file or directory.
+        Path or glob pattern to the input file(s) (e.g. ``"calcs/**/OUTCAR"``,
+        ``"raw/*.sdf"``).  Wildcards (``*``, ``?``, ``[``) are expanded via
+        :func:`glob.glob` with ``recursive=True``:
+
+        - **No wildcards** — treated as a literal path; output goes directly
+          into *output_dir*.
+        - **Glob matches 1 file** — same as literal path (output → *output_dir*).
+        - **Glob matches N > 1 files** — each match is converted into a numbered
+          subdirectory ``{output_dir}/sys_{i:04d}/`` (zero-indexed, sorted).
+        - **Glob matches nothing** — raises ``FileNotFoundError``.
+
     output_dir : str
         Destination directory for the deepmd/npy output.
     fmt : str, optional
@@ -197,6 +207,54 @@ def convert(
     -------
     str
         Resolved path to the output directory.
+    """
+    # --- glob expansion ---
+    input_str = str(input_path)
+    if any(ch in input_str for ch in "*?["):
+        matches = sorted(_glob.glob(input_str, recursive=True))
+        if not matches:
+            raise FileNotFoundError(f"No files matched pattern: {input_str}")
+        if len(matches) == 1:
+            # Single match — behave identically to literal path.
+            input_files = [(matches[0], str(Path(output_dir).resolve()))]
+        else:
+            output_root = str(Path(output_dir).resolve())
+            input_files = [
+                (m, str(Path(output_root) / f"sys_{i:04d}"))
+                for i, m in enumerate(matches)
+            ]
+    else:
+        input_files = [(input_str, str(Path(output_dir).resolve()))]
+
+    for _in_path, _out_dir in input_files:
+        _convert_one(
+            input_path=_in_path,
+            output_dir=_out_dir,
+            fmt=fmt,
+            type_map=type_map,
+            validate=validate,
+            strict=strict,
+        )
+
+    return str(Path(output_dir).resolve())
+
+
+# ---------------------------------------------------------------------------
+# _convert_one() — single-file dpdata conversion (internal helper)
+# ---------------------------------------------------------------------------
+
+
+def _convert_one(
+    input_path: str,
+    output_dir: str,
+    fmt: str | None = None,
+    type_map: list[str] = None,
+    validate: bool = True,
+    strict: bool = False,
+) -> str:
+    """Convert a single structure file to ``deepmd/npy`` format.
+
+    Internal helper called by :func:`convert` — do not use directly.
     """
     try:
         import dpdata
