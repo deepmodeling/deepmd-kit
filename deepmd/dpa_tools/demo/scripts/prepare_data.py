@@ -9,10 +9,10 @@ box, and splits into 40 training and 10 test systems.
 
 Usage::
 
-    python 01_prepare_data.py
+    python scripts/prepare_data.py
 
-Run from the ``dpa_tools/demo/`` directory (the script resolves all paths
-relative to its own location).
+Can be run from anywhere; all paths are resolved relative to the ``demo/``
+directory (the parent of this script).
 """
 
 from __future__ import annotations
@@ -26,9 +26,10 @@ from pathlib import Path
 
 import numpy as np
 
-HERE = Path(__file__).resolve().parent
-RAW_DIR = HERE / "raw"
-DATA_DIR = HERE / "data"
+# This script lives in demo/scripts/; resolve data and raw dirs against demo/.
+DEMO_DIR = Path(__file__).resolve().parent.parent
+RAW_DIR = DEMO_DIR / "raw"
+DATA_DIR = DEMO_DIR / "data"
 SDF_PATH = RAW_DIR / "gdb9.sdf"
 CSV_PATH = RAW_DIR / "gdb9.sdf.csv"
 TAR_PATH = RAW_DIR / "gdb9.tar.gz"
@@ -271,7 +272,7 @@ def main() -> None:
     print(f"n_test  : {N_TEST}")
     print(f"gap mean: {gaps.mean():.4f} eV")
     print(f"gap std : {gaps.std():.4f} eV")
-    print("Done. Run 02_fit_evaluate.py next.")
+    print("Done. Run fit_evaluate.py next.")
     print("=" * 60)
 
 

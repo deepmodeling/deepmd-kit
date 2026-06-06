@@ -4,13 +4,11 @@
 Requires the DPA-3.1-3M pretrained checkpoint.  Provide it via ``--model`` or
 set the ``DPA_MODEL_PATH`` environment variable.
 
-Usage::
+Usage (from the demo directory)::
 
-    dp dpa fit --model /path/to/DPA-3.1-3M.pt
+    python fit_evaluate.py --model /path/to/DPA-3.1-3M.pt
 
-or, from the demo directory::
-
-    python 02_fit_evaluate.py --model /path/to/DPA-3.1-3M.pt
+(or set the ``DPA_MODEL_PATH`` environment variable instead of ``--model``).
 """
 
 from __future__ import annotations
@@ -49,7 +47,7 @@ def main() -> None:
         print(
             "error: DPA-3.1-3M checkpoint not specified.\n"
             "  Provide it via --model or set the DPA_MODEL_PATH environment variable.\n"
-            "  Example: dp dpa fit --model /path/to/DPA-3.1-3M.pt",
+            "  Example: python fit_evaluate.py --model /path/to/DPA-3.1-3M.pt",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -64,14 +62,14 @@ def main() -> None:
     if not TRAIN_DIR.is_dir():
         print(
             f"error: training data not found at {TRAIN_DIR}\n"
-            "  Run 01_prepare_data.py first.",
+            "  Run scripts/prepare_data.py first.",
             file=sys.stderr,
         )
         sys.exit(1)
     if not TEST_DIR.is_dir():
         print(
             f"error: test data not found at {TEST_DIR}\n"
-            "  Run 01_prepare_data.py first.",
+            "  Run scripts/prepare_data.py first.",
             file=sys.stderr,
         )
         sys.exit(1)
