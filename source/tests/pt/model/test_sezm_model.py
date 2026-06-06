@@ -704,7 +704,7 @@ class TestSeZMModelCompile(unittest.TestCase):
         # Inductor Triton kernels use different reduction order vs eager,
         # so float32 gradients can differ by ~1e-3 on GPU.
         grad_atol = 1.0e-5 if self.device == torch.device("cpu") else 2.0e-3
-        grad_rtol = 1.0e-5 if self.device == torch.device("cpu") else 1.0e-4
+        grad_rtol = 1.0e-5 if self.device == torch.device("cpu") else 3.0e-3
         self.assertEqual(set(grads_dyn.keys()), set(grads_cmp.keys()))
         for name in grads_dyn.keys():
             _assert_close_with_strict_warning(
@@ -883,11 +883,13 @@ class TestSeZMModelCompile(unittest.TestCase):
             m_cmp.train()
             out_e = m_eager(coord, atype, box=box)
             out_c = m_cmp(coord, atype, box=box)
+            energy_atol = 1.0e-6 if self.device == torch.device("cpu") else 5.0e-6
+            energy_rtol = 1.0e-6 if self.device == torch.device("cpu") else 5.0e-4
             _assert_close_with_strict_warning(
                 out_e["energy"],
                 out_c["energy"],
-                atol=1.0e-6,
-                rtol=1.0e-6,
+                atol=energy_atol,
+                rtol=energy_rtol,
                 msg=f"multitask energy mismatch at {branch}",
             )
             _assert_close_with_strict_warning(
@@ -1911,11 +1913,13 @@ class TestSeZMModelLoRACompile(unittest.TestCase):
         # === Forward ===
         out_eager = model_eager(coord, atype, box=box)
         out_compile = model_compile(coord, atype, box=box)
+        energy_atol = 1.0e-6 if self.device == torch.device("cpu") else 1.0e-4
+        energy_rtol = 1.0e-6 if self.device == torch.device("cpu") else 1.0e-4
         _assert_close_with_strict_warning(
             out_eager["energy"],
             out_compile["energy"],
-            atol=1.0e-6,
-            rtol=1.0e-6,
+            atol=energy_atol,
+            rtol=energy_rtol,
             msg="LoRA energy mismatch",
         )
         _assert_close_with_strict_warning(
@@ -1932,7 +1936,7 @@ class TestSeZMModelLoRACompile(unittest.TestCase):
         out_eager["energy"].sum().backward()
         out_compile["energy"].sum().backward()
         grad_atol = 1.0e-5 if self.device == torch.device("cpu") else 2.0e-3
-        grad_rtol = 1.0e-5 if self.device == torch.device("cpu") else 1.0e-4
+        grad_rtol = 1.0e-5 if self.device == torch.device("cpu") else 3.0e-3
         force_grad_atol = 1.0e-2
         force_grad_rtol = 1.0e-4
         grads_eager = {

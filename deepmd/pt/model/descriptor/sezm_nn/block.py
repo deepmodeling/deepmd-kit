@@ -11,6 +11,7 @@ from __future__ import (
     annotations,
 )
 
+import os
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -18,6 +19,9 @@ from typing import (
 
 import torch
 import torch.nn as nn
+from torch.utils.checkpoint import (
+    checkpoint,
+)
 
 from deepmd.dpmodel.utils.seed import (
     child_seed,
@@ -78,9 +82,13 @@ class SeZMInteractionBlock(nn.Module):
     Parameters
     ----------
     lmax
-        Maximum spherical harmonic degree.
+        Maximum message-passing spherical harmonic degree.
+    node_lmax
+        Maximum node representation degree. If None, equals `lmax`.
     mmax
         Maximum SO(2) order (|m|) mixed inside SO(2) convolution.
+    kmax
+        Maximum Wigner-D frame order (|k|) used by SO(3) grid branches.
     channels
         Total channels per (l, m) coefficient.
     n_focus
@@ -132,9 +140,27 @@ class SeZMInteractionBlock(nn.Module):
         If True, apply post-norm on each FFN subblock output before the residual add.
     ffn_neurons
         Hidden dimension for each FFN subblock.
-    grid_mlp
-        If True, use the optional grid-MLP structure for the block-internal FFN
-        units. The final descriptor output head is unaffected.
+    node_wise_grid_mlp
+        If True, select the polynomial grid MLP operation for the SO(2)
+        convolution node-wise cross-grid path.
+    node_wise_grid_branch
+        Number of scalar-routed polynomial product branches for the node-wise
+        cross-grid path. ``0`` disables branch mixing; positive values take
+        precedence over ``node_wise_grid_mlp``.
+    message_node_grid_mlp
+        If True, select the polynomial grid MLP operation for the SO(2)
+        convolution message-node cross-grid path.
+    message_node_grid_branch
+        Number of scalar-routed polynomial product branches for the
+        message-node cross-grid path. ``0`` disables branch mixing; positive
+        values take precedence over ``message_node_grid_mlp``.
+    ffn_grid_mlp
+        If True, select the polynomial grid MLP operation for the
+        block-internal FFN grid path.
+    ffn_grid_branch
+        Number of scalar-routed polynomial product branches for the FFN grid
+        path. ``0`` disables branch mixing; positive values take precedence
+        over ``ffn_grid_mlp``.
     ffn_blocks
         Number of FFN subblocks per block.
     layer_scale
@@ -153,9 +179,24 @@ class SeZMInteractionBlock(nn.Module):
     so2_s2_activation
         If True, enable the merged scalar/grid SwiGLU-S2 activation in the SO(2)
         branch.
+    node_wise_s2
+        If True, enable the edge-local source-destination S2 product branch in
+        the SO(2) convolution.
+    node_wise_so3
+        If True, enable the corresponding edge-local SO(3) Wigner-D grid branch
+        in the SO(2) convolution.
+    message_node_s2
+        If True, enable the post-aggregation message-node S2 product branch in
+        the SO(2) convolution.
+    message_node_so3
+        If True, enable the corresponding post-aggregation SO(3) Wigner-D grid
+        branch in the SO(2) convolution.
     ffn_s2_activation
         If True, enable the merged scalar/grid SwiGLU-S2 activation in the
         default FFN activation path.
+    ffn_so3_grid
+        If True, use the SO(3) Wigner-D grid in the block-internal FFN. This
+        takes precedence over ``ffn_s2_activation``.
     so2_lebedev_quadrature
         If True, use Lebedev quadrature for the SO(2) S2 activation projector.
     ffn_lebedev_quadrature
@@ -190,7 +231,9 @@ class SeZMInteractionBlock(nn.Module):
         self,
         *,
         lmax: int,
+        node_lmax: int | None = None,
         mmax: int | None = None,
+        kmax: int = 1,
         channels: int,
         n_focus: int = 1,
         focus_dim: int = 0,
@@ -209,13 +252,23 @@ class SeZMInteractionBlock(nn.Module):
         ffn_pre_norm: bool = True,
         ffn_post_norm: bool = False,
         ffn_neurons: int = 96,
-        grid_mlp: bool = False,
+        node_wise_grid_mlp: bool = False,
+        node_wise_grid_branch: int = 0,
+        message_node_grid_mlp: bool = False,
+        message_node_grid_branch: int = 0,
+        ffn_grid_mlp: bool = False,
+        ffn_grid_branch: int = 0,
         ffn_blocks: int = 1,
         layer_scale: bool = False,
         full_attn_res: str = "none",
         block_attn_res: str = "none",
         so2_s2_activation: bool = False,
+        node_wise_s2: bool = False,
+        node_wise_so3: bool = False,
+        message_node_s2: bool = False,
+        message_node_so3: bool = False,
         ffn_s2_activation: bool = False,
+        ffn_so3_grid: bool = False,
         so2_lebedev_quadrature: bool = False,
         ffn_lebedev_quadrature: bool = False,
         so2_activation_function: str = "silu",
@@ -230,11 +283,19 @@ class SeZMInteractionBlock(nn.Module):
     ) -> None:
         super().__init__()
         self.lmax = int(lmax)
+        self.node_lmax = self.lmax if node_lmax is None else int(node_lmax)
+        if self.node_lmax < self.lmax:
+            raise ValueError("`node_lmax` must be >= `lmax`")
+        self.mp_ebed_dim = (self.lmax + 1) ** 2
+        self.node_ebed_dim = (self.node_lmax + 1) ** 2
         self.mmax = int(self.lmax if mmax is None else mmax)
         if self.mmax < 0:
             raise ValueError("`mmax` must be non-negative")
         if self.mmax > self.lmax:
             raise ValueError("`mmax` must be <= `lmax`")
+        self.kmax = int(kmax)
+        if self.kmax < 0:
+            raise ValueError("`kmax` must be non-negative")
         self.channels = int(channels)
         self.n_focus = int(n_focus)
         if self.n_focus < 1:
@@ -261,7 +322,21 @@ class SeZMInteractionBlock(nn.Module):
         self.ffn_pre_norm = bool(ffn_pre_norm)
         self.ffn_post_norm = bool(ffn_post_norm)
         self.ffn_neurons = int(ffn_neurons)
-        self.grid_mlp = bool(grid_mlp)
+        self.node_wise_grid_mlp = bool(node_wise_grid_mlp)
+        self.node_wise_grid_branch = int(node_wise_grid_branch)
+        self.message_node_grid_mlp = bool(message_node_grid_mlp)
+        self.message_node_grid_branch = int(message_node_grid_branch)
+        self.ffn_grid_mlp = bool(ffn_grid_mlp)
+        self.ffn_grid_branch = int(ffn_grid_branch)
+        if (
+            min(
+                self.node_wise_grid_branch,
+                self.message_node_grid_branch,
+                self.ffn_grid_branch,
+            )
+            < 0
+        ):
+            raise ValueError("grid branch counts must be non-negative")
         self.ffn_blocks = int(ffn_blocks)
         if self.ffn_blocks < 1:
             raise ValueError("`ffn_blocks` must be >= 1")
@@ -283,7 +358,12 @@ class SeZMInteractionBlock(nn.Module):
                 "`full_attn_res` and `block_attn_res` cannot both be enabled"
             )
         self.so2_s2_activation = bool(so2_s2_activation)
+        self.node_wise_s2 = bool(node_wise_s2)
+        self.node_wise_so3 = bool(node_wise_so3)
+        self.message_node_s2 = bool(message_node_s2)
+        self.message_node_so3 = bool(message_node_so3)
         self.ffn_s2_activation = bool(ffn_s2_activation)
+        self.ffn_so3_grid = bool(ffn_so3_grid)
         self.so2_lebedev_quadrature = bool(so2_lebedev_quadrature)
         self.ffn_lebedev_quadrature = bool(ffn_lebedev_quadrature)
         self.so2_activation_function = str(so2_activation_function)
@@ -329,6 +409,7 @@ class SeZMInteractionBlock(nn.Module):
         self.so2_conv = SO2Convolution(
             lmax=self.lmax,
             mmax=self.mmax,
+            kmax=self.kmax,
             channels=self.channels,
             n_focus=self.n_focus,
             focus_dim=self.focus_dim,
@@ -344,6 +425,14 @@ class SeZMInteractionBlock(nn.Module):
             atten_v_proj=self.use_atten_v_proj,
             atten_o_proj=self.use_atten_o_proj,
             s2_activation=self.so2_s2_activation,
+            node_wise_grid_mlp=self.node_wise_grid_mlp,
+            node_wise_grid_branch=self.node_wise_grid_branch,
+            message_node_grid_mlp=self.message_node_grid_mlp,
+            message_node_grid_branch=self.message_node_grid_branch,
+            node_wise_s2=self.node_wise_s2,
+            node_wise_so3=self.node_wise_so3,
+            message_node_s2=self.message_node_s2,
+            message_node_so3=self.message_node_so3,
             lebedev_quadrature=self.so2_lebedev_quadrature,
             activation_function=self.so2_activation_function,
             mlp_bias=self.mlp_bias,
@@ -365,7 +454,7 @@ class SeZMInteractionBlock(nn.Module):
             if self.ffn_pre_norm:
                 pre_ffn_norms.append(
                     EquivariantRMSNorm(
-                        self.lmax,
+                        self.node_lmax,
                         self.channels,
                         n_focus=1,
                         dtype=self.compute_dtype,
@@ -378,7 +467,7 @@ class SeZMInteractionBlock(nn.Module):
             if self.ffn_post_norm:
                 post_ffn_norms.append(
                     EquivariantRMSNorm(
-                        self.lmax,
+                        self.node_lmax,
                         self.channels,
                         n_focus=1,
                         dtype=self.compute_dtype,
@@ -390,12 +479,15 @@ class SeZMInteractionBlock(nn.Module):
 
             ffns.append(
                 EquivariantFFN(
-                    lmax=self.lmax,
+                    lmax=self.node_lmax,
                     channels=self.channels,
                     hidden_channels=ffn_neurons,
-                    grid_mlp=self.grid_mlp,
+                    kmax=self.kmax,
+                    grid_mlp=self.ffn_grid_mlp,
+                    grid_branch=self.ffn_grid_branch,
                     dtype=dtype,
                     s2_activation=self.ffn_s2_activation,
+                    ffn_so3_grid=self.ffn_so3_grid,
                     lebedev_quadrature=self.ffn_lebedev_quadrature,
                     activation_function=self.ffn_activation_function,
                     glu_activation=self.ffn_glu_activation,
@@ -543,6 +635,22 @@ class SeZMInteractionBlock(nn.Module):
         """
         return value[:, 0, :, :].reshape(value.shape[0], self.channels)
 
+    def _use_infer_activation_checkpoint(self, *tensors: torch.Tensor) -> bool:
+        """Return whether eval-time activation checkpointing should be used.
+
+        Disabled on the compiled inference path (``DP_COMPILE_INFER``): Inductor
+        already reuses activation buffers, so recomputation only adds latency for
+        a negligible memory gain there.
+        """
+        return (
+            not self.training
+            and os.environ.get("DP_ACT_INFER") == "1"
+            and os.environ.get("DP_COMPILE_INFER", "").strip().lower()
+            not in {"1", "true", "yes", "on"}
+            and torch.is_grad_enabled()
+            and any(tensor.requires_grad for tensor in tensors)
+        )
+
     def _run_so2_unit(
         self,
         x: torch.Tensor,
@@ -566,14 +674,45 @@ class SeZMInteractionBlock(nn.Module):
         torch.Tensor
             SO(2) unit output with shape `(N, D, 1, C)`.
         """
+        if self._use_infer_activation_checkpoint(x, radial_feat):
+            edge_cache_no_proj = edge_cache._replace(
+                D_to_m_cache=None,
+                Dt_from_m_cache=None,
+            )
+            return checkpoint(
+                lambda x_, radial_feat_: self._run_so2_unit_impl(
+                    x_,
+                    edge_cache_no_proj,
+                    radial_feat_,
+                ),
+                x,
+                radial_feat,
+                use_reentrant=False,
+                preserve_rng_state=True,
+            )
+        return self._run_so2_unit_impl(x, edge_cache, radial_feat)
+
+    def _run_so2_unit_impl(
+        self,
+        x: torch.Tensor,
+        edge_cache: EdgeFeatureCache,
+        radial_feat: torch.Tensor,
+    ) -> torch.Tensor:
+        """Run the SO(2) unit implementation."""
         n_node = x.shape[0]
-        ebed_dim = x.shape[1]
         channels = self.channels
-        x_pre = self.pre_so2_norm(x)
+        use_full_node = self.node_lmax == self.lmax
+        x_so2 = x if use_full_node else x[:, : self.mp_ebed_dim, :, :]
+        x_pre = self.pre_so2_norm(x_so2)
         so2_unit_output = self.so2_conv(
-            x_pre.reshape(n_node, ebed_dim, channels), edge_cache, radial_feat
+            x_pre.reshape(n_node, x_so2.shape[1], channels), edge_cache, radial_feat
         )
-        return self.post_so2_norm(so2_unit_output.unsqueeze(2))
+        so2_unit_output = self.post_so2_norm(so2_unit_output.unsqueeze(2))
+        if use_full_node:
+            return so2_unit_output
+        output = x.new_zeros(x.shape)
+        output[:, : self.mp_ebed_dim, :, :] = so2_unit_output
+        return output
 
     def _run_ffn_unit(self, x: torch.Tensor, unit_idx: int) -> torch.Tensor:
         """
@@ -591,6 +730,17 @@ class SeZMInteractionBlock(nn.Module):
         torch.Tensor
             FFN unit output with shape `(N, D, 1, C)`.
         """
+        if self._use_infer_activation_checkpoint(x):
+            return checkpoint(
+                lambda x_: self._run_ffn_unit_impl(x_, unit_idx),
+                x,
+                use_reentrant=False,
+                preserve_rng_state=True,
+            )
+        return self._run_ffn_unit_impl(x, unit_idx)
+
+    def _run_ffn_unit_impl(self, x: torch.Tensor, unit_idx: int) -> torch.Tensor:
+        """Run one FFN subblock implementation."""
         n_node = x.shape[0]
         ebed_dim = x.shape[1]
         channels = self.channels
@@ -773,7 +923,9 @@ class SeZMInteractionBlock(nn.Module):
             "@version": 1,
             "config": {
                 "lmax": self.lmax,
+                "node_lmax": self.node_lmax,
                 "mmax": self.mmax,
+                "kmax": self.kmax,
                 "channels": self.channels,
                 "n_focus": self.n_focus,
                 "focus_dim": self.focus_dim,
@@ -792,12 +944,22 @@ class SeZMInteractionBlock(nn.Module):
                 "ffn_pre_norm": self.ffn_pre_norm,
                 "ffn_post_norm": self.ffn_post_norm,
                 "ffn_neurons": self.ffn_neurons,
-                "grid_mlp": self.grid_mlp,
+                "node_wise_grid_mlp": self.node_wise_grid_mlp,
+                "node_wise_grid_branch": self.node_wise_grid_branch,
+                "message_node_grid_mlp": self.message_node_grid_mlp,
+                "message_node_grid_branch": self.message_node_grid_branch,
+                "ffn_grid_mlp": self.ffn_grid_mlp,
+                "ffn_grid_branch": self.ffn_grid_branch,
                 "ffn_blocks": self.ffn_blocks,
                 "full_attn_res": self.full_attn_res_mode,
                 "block_attn_res": self.block_attn_res_mode,
                 "so2_s2_activation": self.so2_s2_activation,
+                "node_wise_s2": self.node_wise_s2,
+                "node_wise_so3": self.node_wise_so3,
+                "message_node_s2": self.message_node_s2,
+                "message_node_so3": self.message_node_so3,
                 "ffn_s2_activation": self.ffn_s2_activation,
+                "ffn_so3_grid": self.ffn_so3_grid,
                 "so2_lebedev_quadrature": self.so2_lebedev_quadrature,
                 "ffn_lebedev_quadrature": self.ffn_lebedev_quadrature,
                 "so2_activation_function": self.so2_activation_function,

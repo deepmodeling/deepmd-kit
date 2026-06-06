@@ -38,14 +38,16 @@ from deepmd.utils.version import (
 
 from .activation import (
     GatedActivation,
-    SwiGLUS2Activation,
-    resolve_s2_grid_resolution,
 )
 from .attention import (
     segment_envelope_gated_softmax,
 )
 from .attn_res import (
     DepthAttnRes,
+)
+from .grid_net import (
+    S2GridNet,
+    SO3GridNet,
 )
 from .indexing import (
     build_m_major_index,
@@ -59,6 +61,9 @@ from .indexing import (
 from .norm import (
     ReducedEquivariantRMSNorm,
     ScalarRMSNorm,
+)
+from .projection import (
+    resolve_s2_grid_resolution,
 )
 from .so3 import (
     ChannelLinear,
@@ -710,6 +715,8 @@ class SO2Convolution(nn.Module):
         Maximum degree.
     mmax
         Maximum SO(2) order (|m|). If None, defaults to lmax.
+    kmax
+        Maximum Wigner-D frame order (|k|) used by SO(3) grid branches.
     channels
         Number of channels per (l, m) coefficient.
     n_focus
@@ -754,6 +761,31 @@ class SO2Convolution(nn.Module):
         If True, replace each intermediate reduced-layout gate with S2-grid
         SwiGLU. Intermediate ``SO2Linear`` layers then output ``2 * focus_dim``
         channels before the activation folds them back to ``focus_dim``.
+    node_wise_grid_mlp
+        If True, select the polynomial grid MLP operation for the node-wise
+        source-destination grid product.
+    node_wise_grid_branch
+        Number of scalar-routed polynomial product branches for the node-wise
+        grid product. ``0`` disables branch mixing; positive values take
+        precedence over ``node_wise_grid_mlp``.
+    message_node_grid_mlp
+        If True, select the polynomial grid MLP operation for the message-node
+        grid product.
+    message_node_grid_branch
+        Number of scalar-routed polynomial product branches for the
+        message-node grid product. ``0`` disables branch mixing; positive
+        values take precedence over ``message_node_grid_mlp``.
+    node_wise_s2
+        If True, add an edge-local S2 product branch between radial-fused source
+        features and destination features in the same edge frame.
+    node_wise_so3
+        If True, use the corresponding edge-local SO(3) Wigner-D grid branch.
+    message_node_s2
+        If True, add a packed-layout S2 product branch between the aggregated
+        hidden message and the destination node features before ``post_focus_mix``.
+    message_node_so3
+        If True, use the corresponding post-aggregation SO(3) Wigner-D grid
+        branch.
     lebedev_quadrature
         If True, use Lebedev quadrature for the S2 projector.
     activation_function
@@ -788,6 +820,7 @@ class SO2Convolution(nn.Module):
         *,
         lmax: int,
         mmax: int | None = None,
+        kmax: int = 1,
         channels: int,
         n_focus: int = 1,
         focus_dim: int = 0,
@@ -801,6 +834,14 @@ class SO2Convolution(nn.Module):
         atten_v_proj: bool = False,
         atten_o_proj: bool = False,
         s2_activation: bool = False,
+        node_wise_grid_mlp: bool = False,
+        node_wise_grid_branch: int = 0,
+        message_node_grid_mlp: bool = False,
+        message_node_grid_branch: int = 0,
+        node_wise_s2: bool = False,
+        node_wise_so3: bool = False,
+        message_node_s2: bool = False,
+        message_node_so3: bool = False,
         lebedev_quadrature: bool = False,
         activation_function: str = "silu",
         mlp_bias: bool = False,
@@ -819,6 +860,9 @@ class SO2Convolution(nn.Module):
             raise ValueError("`mmax` must be non-negative")
         if self.mmax > self.lmax:
             raise ValueError("`mmax` must be <= `lmax`")
+        self.kmax = int(kmax)
+        if self.kmax < 0:
+            raise ValueError("`kmax` must be non-negative")
         self.channels = int(channels)
         self.n_focus = int(n_focus)
         if self.n_focus < 1:
@@ -848,12 +892,32 @@ class SO2Convolution(nn.Module):
         self.use_atten_v_proj = bool(atten_v_proj)
         self.use_atten_o_proj = bool(atten_o_proj)
         self.s2_activation = bool(s2_activation)
+        self.node_wise_grid_mlp = bool(node_wise_grid_mlp)
+        self.node_wise_grid_branch = int(node_wise_grid_branch)
+        self.message_node_grid_mlp = bool(message_node_grid_mlp)
+        self.message_node_grid_branch = int(message_node_grid_branch)
+        if min(self.node_wise_grid_branch, self.message_node_grid_branch) < 0:
+            raise ValueError("grid branch counts must be non-negative")
+        self.node_wise_s2 = bool(node_wise_s2)
+        self.node_wise_so3 = bool(node_wise_so3)
+        self.message_node_s2 = bool(message_node_s2)
+        self.message_node_so3 = bool(message_node_so3)
         self.lebedev_quadrature = bool(lebedev_quadrature)
         self.s2_grid_method = "lebedev" if self.lebedev_quadrature else "e3nn"
         self.s2_grid_resolution = resolve_s2_grid_resolution(
             self.lmax,
             self.mmax,
             method=self.s2_grid_method,
+        )
+        base_full_grid_resolution = resolve_s2_grid_resolution(
+            self.lmax,
+            self.lmax,
+            method=self.s2_grid_method,
+        )
+        self.s2_full_grid_resolution = (
+            [max(base_full_grid_resolution), max(base_full_grid_resolution)]
+            if self.s2_grid_method == "e3nn"
+            else base_full_grid_resolution
         )
         self.activation_function = str(activation_function)
         if self.n_atten_head < 0:
@@ -928,6 +992,8 @@ class SO2Convolution(nn.Module):
         seed_depth_attn = child_seed(seed, 5)
         seed_radial_hidden = child_seed(seed, 6)
         seed_radial_degree = child_seed(seed, 7)
+        seed_node_wise_s2 = child_seed(seed, 8)
+        seed_message_node_s2 = child_seed(seed, 9)
 
         # === Step 3. Multiple SO2Linear layers ===
         self.so2_linears = nn.ModuleList(
@@ -977,12 +1043,14 @@ class SO2Convolution(nn.Module):
         for i in range(max(0, self.so2_layers - 1)):
             if self.s2_activation:
                 non_linearities.append(
-                    SwiGLUS2Activation(
+                    S2GridNet(
                         lmax=self.lmax,
                         mmax=self.mmax,
                         channels=self.so2_focus_dim,
-                        dtype=self.compute_dtype,
                         n_focus=self.n_focus,
+                        mode="self",
+                        op_type="glu",
+                        dtype=self.compute_dtype,
                         layout="nfdc",
                         grid_resolution_list=self.s2_grid_resolution,
                         coefficient_layout="m_major",
@@ -1229,6 +1297,94 @@ class SO2Convolution(nn.Module):
                 seed=seed_radial_degree,
                 trainable=trainable,
             )
+        node_wise_op = (
+            "branch"
+            if self.node_wise_grid_branch > 0
+            else ("mlp" if self.node_wise_grid_mlp else "glu")
+        )
+        node_wise_branches = max(1, self.node_wise_grid_branch)
+        message_node_op = (
+            "branch"
+            if self.message_node_grid_branch > 0
+            else ("mlp" if self.message_node_grid_mlp else "glu")
+        )
+        message_node_branches = max(1, self.message_node_grid_branch)
+        self.node_wise_grid_product: S2GridNet | SO3GridNet | None = None
+        if self.node_wise_s2 or self.node_wise_so3:
+            if self.node_wise_so3:
+                self.node_wise_grid_product = SO3GridNet(
+                    lmax=self.lmax,
+                    mmax=self.mmax,
+                    kmax=self.kmax,
+                    channels=self.so2_focus_dim,
+                    n_focus=self.n_focus,
+                    mode="cross",
+                    op_type=node_wise_op,
+                    dtype=self.compute_dtype,
+                    layout="flat",
+                    coefficient_layout="m_major",
+                    grid_branches=node_wise_branches,
+                    mlp_bias=self.mlp_bias,
+                    residual_scale_init=1e-3,
+                    trainable=trainable,
+                    seed=seed_node_wise_s2,
+                )
+            else:
+                self.node_wise_grid_product = S2GridNet(
+                    lmax=self.lmax,
+                    mmax=self.mmax,
+                    channels=self.so2_focus_dim,
+                    n_focus=self.n_focus,
+                    mode="cross",
+                    op_type=node_wise_op,
+                    dtype=self.compute_dtype,
+                    layout="flat",
+                    grid_resolution_list=self.s2_grid_resolution,
+                    grid_method=self.s2_grid_method,
+                    grid_branches=node_wise_branches,
+                    mlp_bias=self.mlp_bias,
+                    residual_scale_init=1e-3,
+                    trainable=trainable,
+                    seed=seed_node_wise_s2,
+                )
+        self.message_node_grid_product: S2GridNet | SO3GridNet | None = None
+        if self.message_node_s2 or self.message_node_so3:
+            if self.message_node_so3:
+                self.message_node_grid_product = SO3GridNet(
+                    lmax=self.lmax,
+                    kmax=self.kmax,
+                    channels=self.so2_focus_dim,
+                    n_focus=self.n_focus,
+                    mode="cross",
+                    op_type=message_node_op,
+                    dtype=self.compute_dtype,
+                    layout="flat",
+                    coefficient_layout="packed",
+                    grid_branches=message_node_branches,
+                    mlp_bias=self.mlp_bias,
+                    residual_scale_init=1e-3,
+                    trainable=trainable,
+                    seed=seed_message_node_s2,
+                )
+            else:
+                self.message_node_grid_product = S2GridNet(
+                    lmax=self.lmax,
+                    mmax=self.lmax,
+                    channels=self.so2_focus_dim,
+                    n_focus=self.n_focus,
+                    mode="cross",
+                    op_type=message_node_op,
+                    dtype=self.compute_dtype,
+                    layout="flat",
+                    grid_resolution_list=self.s2_full_grid_resolution,
+                    grid_method=self.s2_grid_method,
+                    grid_branches=message_node_branches,
+                    mlp_bias=self.mlp_bias,
+                    residual_scale_init=1e-3,
+                    trainable=trainable,
+                    coefficient_layout="packed",
+                    seed=seed_message_node_s2,
+                )
 
         # === Step 9. Pre-focus channel mixing ===
         # This projects the full channel width before the SO(2) focus split.
@@ -1291,6 +1447,7 @@ class SO2Convolution(nn.Module):
         # === Step 2. Rotate to edge-aligned local frame ===
         with nvtx_range("SO2Conv/rotate_to_local"):
             D_full = edge_cache.D_full
+            x_dst_local: torch.Tensor | None = None
             if self.use_triton_rotations and not self.training:
                 x_local = rotate_to_local_triton(
                     x=x,
@@ -1300,6 +1457,15 @@ class SO2Convolution(nn.Module):
                     dim_full=self.ebed_dim_full,
                     rotation_mode=self.triton_rotation_mode,
                 )  # (E, D_m, C_wide)
+                if self.node_wise_grid_product is not None:
+                    x_dst_local = rotate_to_local_triton(
+                        x=x,
+                        src=dst,
+                        wigner=D_full,
+                        coeff_index=self.coeff_index_m,
+                        dim_full=self.ebed_dim_full,
+                        rotation_mode=self.triton_rotation_mode,
+                    )  # (E, D_m, C_wide)
             else:
                 D_m_prime = project_D_to_m(
                     D_full=D_full,
@@ -1311,6 +1477,9 @@ class SO2Convolution(nn.Module):
                 )
                 x_src = x.index_select(0, src)  # (E, D, C_wide)
                 x_local = torch.bmm(D_m_prime, x_src)  # (E, D_m, C_wide)
+                if self.node_wise_grid_product is not None:
+                    x_dst = x.index_select(0, dst)  # (E, D, C_wide)
+                    x_dst_local = torch.bmm(D_m_prime, x_dst)  # (E, D_m, C_wide)
 
         # === Step 3. Select radial/type features for reduced layout ===
         with nvtx_range("SO2Conv/radial_fuse"):
@@ -1321,6 +1490,11 @@ class SO2Convolution(nn.Module):
                 x_local.mul_(rad_feat)
             else:
                 x_local = self.radial_degree_mixer(x_local, rad_feat)
+            if self.node_wise_grid_product is not None:
+                x_local = x_local + self.node_wise_grid_product(
+                    x_local,
+                    x_dst_local,
+                )
             rad_feat_l0_focus = rad_feat[:, 0, :].reshape(
                 n_edge, self.n_focus, self.so2_focus_dim
             )  # (E, F, Cf)
@@ -1600,7 +1774,12 @@ class SO2Convolution(nn.Module):
                     n_node, self.ebed_dim_full, self.hidden_channels
                 ).to(dtype=self.dtype)  # (N, D, C_wide)
 
-        # === Step 9. Final channel mixing ===
+        # === Step 9. Optional message-node grid product ===
+        if self.message_node_grid_product is not None:
+            with nvtx_range("SO2Conv/message_node_grid"):
+                out = out + self.message_node_grid_product(out, x)
+
+        # === Step 10. Final channel mixing ===
         with nvtx_range("SO2Conv/post_focus_mix"):
             out = self.post_focus_mix(out.unsqueeze(2)).squeeze(2)
         return out  # (N, D, C)
@@ -1614,6 +1793,7 @@ class SO2Convolution(nn.Module):
             "config": {
                 "lmax": self.lmax,
                 "mmax": self.mmax,
+                "kmax": self.kmax,
                 "channels": self.channels,
                 "n_focus": self.n_focus,
                 "focus_dim": self.focus_dim,
@@ -1627,6 +1807,14 @@ class SO2Convolution(nn.Module):
                 "atten_v_proj": self.use_atten_v_proj,
                 "atten_o_proj": self.use_atten_o_proj,
                 "s2_activation": self.s2_activation,
+                "node_wise_grid_mlp": self.node_wise_grid_mlp,
+                "node_wise_grid_branch": self.node_wise_grid_branch,
+                "message_node_grid_mlp": self.message_node_grid_mlp,
+                "message_node_grid_branch": self.message_node_grid_branch,
+                "node_wise_s2": self.node_wise_s2,
+                "node_wise_so3": self.node_wise_so3,
+                "message_node_s2": self.message_node_s2,
+                "message_node_so3": self.message_node_so3,
                 "lebedev_quadrature": self.lebedev_quadrature,
                 "activation_function": self.activation_function,
                 "mlp_bias": self.mlp_bias,

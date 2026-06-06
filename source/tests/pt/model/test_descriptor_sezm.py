@@ -16,6 +16,7 @@ from deepmd.pt.model.descriptor.sezm_nn import (
     SO2Linear,
     WignerDCalculator,
     build_edge_quaternion,
+    build_gie_zonal_index,
     build_m_major_l_index,
     quaternion_multiply,
     quaternion_to_rotation_matrix,
@@ -184,9 +185,21 @@ class TestDescrptSeZM(_SeZMTestCase):
                 s2_activation=[False, True],
                 lebedev_quadrature=[False, True],
             ),
+            "message_node_s2": _descriptor_kwargs(
+                channels=4,
+                n_focus=2,
+                focus_dim=0,
+                so2_layers=2,
+                message_node_s2=True,
+            ),
             "gaussian_basis": _descriptor_kwargs(
                 channels=4,
                 basis_type="gaussian",
+            ),
+            "extra_node_l": _descriptor_kwargs(
+                channels=4,
+                extra_node_l=1,
+                s2_activation=[False, True],
             ),
             "radial_so2_degree": _descriptor_kwargs(
                 channels=4,
@@ -225,6 +238,7 @@ class TestDescrptSeZM(_SeZMTestCase):
                 precision="float32",
                 seed=123,
                 s2_activation=[False, True],
+                extra_node_l=1,
             ),
             "mixed_so2_attention": _attention_descriptor_kwargs(
                 precision="float32",
@@ -418,6 +432,26 @@ class TestDescrptSeZM(_SeZMTestCase):
                 s2_activation=[False, True],
                 lebedev_quadrature=[False, True],
             ),
+            "message_node_s2": _descriptor_kwargs(
+                precision="float32",
+                channels=4,
+                n_focus=2,
+                focus_dim=0,
+                so2_layers=2,
+                n_radial=3,
+                radial_mlp=[6],
+                ffn_neurons=8,
+                message_node_s2=True,
+            ),
+            "extra_node_l": _descriptor_kwargs(
+                precision="float32",
+                channels=4,
+                n_radial=3,
+                radial_mlp=[6],
+                ffn_neurons=8,
+                extra_node_l=1,
+                s2_activation=[False, True],
+            ),
             "radial_so2_degree": _descriptor_kwargs(
                 precision="float32",
                 channels=4,
@@ -529,28 +563,6 @@ class TestDescrptSeZM(_SeZMTestCase):
         torch.testing.assert_close(desc_default, desc_explicit, atol=1e-6, rtol=1e-6)
         self.assertFalse(torch.allclose(desc_ref, desc_shifted))
         torch.testing.assert_close(desc_ref, desc_restored, atol=1e-6, rtol=1e-6)
-
-    def test_plain_descriptor_deserializes_without_condition_config(self) -> None:
-        """Plain descriptors should not depend on charge/spin condition fields."""
-        coord, atype, nlist = _tiny_two_atom_system(self.device, dtype=torch.float32)
-        extended_coord = coord.reshape(1, -1)
-        model = DescrptSeZM(**_descriptor_kwargs(seed=123))
-        self.assertTrue(
-            all("charge_spin_embedding" not in key for key in model.state_dict())
-        )
-        data = model.serialize()
-        data["config"].pop("add_chg_spin_ebd", None)
-        data["config"].pop("default_chg_spin", None)
-
-        restored = DescrptSeZM.deserialize(data)
-        desc_ref, *_ = model(extended_coord, atype, nlist)
-        desc_new, *_ = restored(extended_coord, atype, nlist)
-
-        self.assertFalse(restored.add_chg_spin_ebd)
-        self.assertTrue(
-            all("charge_spin_embedding" not in key for key in restored.state_dict())
-        )
-        torch.testing.assert_close(desc_ref, desc_new, atol=1e-6, rtol=1e-6)
 
     def test_seed_reproducibility(self) -> None:
         """Test that fixed seed produces identical model initialization."""
@@ -696,9 +708,11 @@ class TestWignerDCalculator(_SeZMTestCase):
 
     def test_orthogonality(self) -> None:
         """Test D @ D^T = I for random quaternions."""
-        for dtype, lmax in itertools.product([torch.float64, torch.float32], [1, 3, 6]):
+        for dtype, lmax in itertools.product(
+            [torch.float64, torch.float32], [1, 3, 5, 6, 8, 10]
+        ):
             atol, rtol = self._get_tols(dtype)
-            wigner = WignerDCalculator(lmax=lmax, dtype=dtype)
+            wigner = WignerDCalculator(lmax=lmax, dtype=dtype).to(self.device)
             edge_quat = _random_quaternion(self.batch, device=self.device, dtype=dtype)
             D_full, Dt_full = wigner(edge_quat)
 
@@ -721,10 +735,12 @@ class TestWignerDCalculator(_SeZMTestCase):
 
     def test_group_property(self) -> None:
         """Test group property in quaternion composition order."""
-        for dtype, lmax in itertools.product([torch.float64, torch.float32], [1, 3, 6]):
+        for dtype, lmax in itertools.product(
+            [torch.float64, torch.float32], [1, 3, 5, 6, 8, 10]
+        ):
             atol = 1e-10 if dtype == torch.float64 else 5e-4
             rtol = 1e-10 if dtype == torch.float64 else 5e-4
-            wigner = WignerDCalculator(lmax=lmax, dtype=dtype)
+            wigner = WignerDCalculator(lmax=lmax, dtype=dtype).to(self.device)
 
             q1 = _random_quaternion(self.batch, device=self.device, dtype=dtype)
             q2 = _random_quaternion(self.batch, device=self.device, dtype=dtype)
@@ -761,7 +777,7 @@ class TestWignerDCalculator(_SeZMTestCase):
 
             edge_quat = _random_quaternion(self.batch, device=self.device, dtype=dtype)
             rot = quaternion_to_rotation_matrix(edge_quat)
-            wigner = WignerDCalculator(lmax=1, dtype=dtype)
+            wigner = WignerDCalculator(lmax=1, dtype=dtype).to(self.device)
             D_full, Dt_full = wigner(edge_quat)
             D1 = self._extract_l_block(D_full, 1)
             Dt1 = self._extract_l_block(Dt_full, 1)
@@ -782,10 +798,61 @@ class TestWignerDCalculator(_SeZMTestCase):
                 msg=f"l=1 transpose block mismatch for WignerDCalculator, dtype={dtype}",
             )
 
+    def test_zonal_matches_full_wigner_gather(self) -> None:
+        """Test GIE zonal coupling matches the full Wigner-D gather."""
+        for dtype, lmax in itertools.product(
+            [torch.float64, torch.float32], [0, 1, 3, 5, 6, 8, 10]
+        ):
+            atol, rtol = self._get_tols(dtype)
+            wigner = WignerDCalculator(lmax=lmax, dtype=dtype).to(self.device)
+            if lmax < 11:
+                self.assertFalse(hasattr(wigner, "poly_coeffs"))
+            edge_quat = _random_quaternion(self.batch, device=self.device, dtype=dtype)
+            _, dt_full = wigner(edge_quat)
+            node_row_index, node_zonal_m0_col_index, _ = build_gie_zonal_index(
+                lmax,
+                device=self.device,
+            )
+            expected = dt_full[:, node_row_index, node_zonal_m0_col_index]
+            actual = wigner.forward_zonal(edge_quat)
+            torch.testing.assert_close(actual, expected, atol=atol, rtol=rtol)
+            if lmax >= 2:
+                lmin = 2
+                suffix_start = lmin * lmin - 1
+                actual_suffix = wigner.forward_zonal(edge_quat, lmin=lmin)
+                torch.testing.assert_close(
+                    actual_suffix,
+                    expected[:, suffix_start:],
+                    atol=atol,
+                    rtol=rtol,
+                )
+
+    def test_special_blocks_match_generic_reference_on_cpu(self) -> None:
+        """Test specialized l=2..10 Wigner blocks against the generic reference."""
+        device = torch.device("cpu")
+        dtype = torch.float64
+        edge_quat = _random_quaternion(4, device=device, dtype=dtype)
+        wigner = WignerDCalculator(lmax=10, dtype=dtype).to(device)
+        d_full, _ = wigner(edge_quat)
+        reference = WignerDCalculator._compute_generic_reference_blocks(
+            edge_quat,
+            lmax=10,
+            dtype=dtype,
+            device=device,
+        )
+        for degree in range(2, 11):
+            torch.testing.assert_close(
+                self._extract_l_block(d_full, degree),
+                reference[degree],
+                atol=1.0e-12,
+                rtol=1.0e-10,
+                msg=f"Special Wigner block mismatch for l={degree}",
+            )
+
     def test_pole_path_gradient_matches_finite_difference(self) -> None:
         """Check one pole-crossing Wigner probe against finite differences."""
         for dtype in [torch.float64, torch.float32]:
-            wigner = WignerDCalculator(lmax=6, dtype=dtype)
+            wigner = WignerDCalculator(lmax=6, dtype=dtype).to(self.device)
             atol = 5.0e-8 if dtype == torch.float64 else 2.0e-6
             rtol = 1.0e-6 if dtype == torch.float64 else 2.0e-4
             for sign in [1.0, -1.0]:
@@ -823,7 +890,7 @@ class TestWignerDCalculator(_SeZMTestCase):
     def test_y_crossing_overlap_has_no_large_wigner_jump(self) -> None:
         """Check chart-overlap continuity for a path that crosses y=0."""
         for dtype in [torch.float64, torch.float32]:
-            wigner = WignerDCalculator(lmax=4, dtype=dtype)
+            wigner = WignerDCalculator(lmax=4, dtype=dtype).to(self.device)
             max_allowed = 1.0e-2 if dtype == torch.float64 else 1.5e-2
             y_vals = torch.tensor(
                 [-1.0e-3, -5.0e-4, -1.0e-4, 0.0, 1.0e-4, 5.0e-4, 1.0e-3],

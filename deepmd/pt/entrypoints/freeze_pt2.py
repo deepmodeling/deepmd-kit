@@ -488,6 +488,7 @@ def freeze_sezm_to_pt2(
     from torch._inductor import (
         aoti_compile_and_package,
     )
+    from torch._inductor import config as inductor_config
 
     target_device = device if device is not None else DEVICE
 
@@ -587,7 +588,12 @@ def freeze_sezm_to_pt2(
         exported = move_to_device_pass(exported, target_device)
 
     out_path_str = str(out_path)
-    aoti_compile_and_package(exported, package_path=out_path_str)
+    # Match the runtime eval compile path's Inductor option: triton.max_tiles=1
+    # keeps pointwise grids 1D so the data-dependent compact-edge axis stays on
+    # Triton's x grid (limit 2**31); the default tiling places it on the y/z
+    # grid (limit 65535), which overflows for large systems.
+    with inductor_config.patch({"triton.max_tiles": 1}):
+        aoti_compile_and_package(exported, package_path=out_path_str)
 
     metadata = _collect_metadata(model, output_keys=output_keys, is_spin=is_spin)
     with zipfile.ZipFile(out_path_str, "a") as zf:
