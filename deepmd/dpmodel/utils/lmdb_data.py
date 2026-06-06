@@ -751,11 +751,17 @@ class LmdbDataReader:
     @property
     def index(self) -> list[int]:
         """Number of batches per system (single system)."""
-        return [max(1, self.nframes // self.batch_size)]
+        return [self.total_batch]
 
     @property
     def total_batch(self) -> int:
-        return self.index[0]
+        if self.mixed_batch:
+            return math.ceil(self.nframes / self.batch_size) if self.nframes else 0
+        total = 0
+        for nloc, indices in self._nloc_groups.items():
+            bs = self.get_batch_size_for_nloc(nloc)
+            total += (len(indices) + bs - 1) // bs
+        return total
 
     @property
     def batch_sizes(self) -> list[int]:
@@ -1269,6 +1275,13 @@ class DistributedSameNlocBatchSampler:
         self._seed = seed if seed is not None else 0
         self._epoch = 0
         self._block_targets = block_targets
+        self._total_batches = len(
+            SameNlocBatchSampler(
+                self._reader,
+                shuffle=False,
+                block_targets=self._block_targets,
+            )
+        )
 
     def set_epoch(self, epoch: int) -> None:
         """Set epoch for deterministic cross-rank shuffling.
@@ -1304,11 +1317,11 @@ class DistributedSameNlocBatchSampler:
 
     def __len__(self) -> int:
         """Number of batches for this rank."""
-        total = 0
-        for nloc, indices in self._reader.nloc_groups.items():
-            bs = self._reader.get_batch_size_for_nloc(nloc)
-            total += (len(indices) + bs - 1) // bs
-        return math.ceil(total / self._world_size)
+        return max(
+            0,
+            (self._total_batches + self._world_size - 1 - self._rank)
+            // self._world_size,
+        )
 
     @property
     def rank(self) -> int:

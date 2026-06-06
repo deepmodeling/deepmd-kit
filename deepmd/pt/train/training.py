@@ -649,7 +649,7 @@ class Trainer:
                 if self.num_epoch <= 0:
                     raise ValueError("training.num_epoch must be positive.")
                 if isinstance(training_data, LmdbDataset):
-                    total_numb_batch = training_data.total_batch
+                    total_numb_batch = len(self.training_dataloader)
                 else:
                     sampler_weights = to_numpy_array(
                         self.training_dataloader.sampler.weights
@@ -678,7 +678,7 @@ class Trainer:
                     )
                 for model_key in self.model_keys:
                     if isinstance(training_data[model_key], LmdbDataset):
-                        per_task_total.append(training_data[model_key].total_batch)
+                        per_task_total.append(len(self.training_dataloader[model_key]))
                     else:
                         sampler_weights = to_numpy_array(
                             self.training_dataloader[model_key].sampler.weights
