@@ -36,8 +36,8 @@ from deepmd.dpmodel.utils import (
 from deepmd.pt_expt.model import (
     get_model,
 )
-from deepmd.pt_expt.utils.env import (
-    DEVICE,
+from deepmd.pt_expt.utils import (
+    env,
 )
 from deepmd.pt_expt.utils.vesin_neighbor_list import (
     VesinNeighborList,
@@ -417,18 +417,18 @@ def test_pt_expt_equivalence(name: str, periodic: bool) -> None:
     coord_np, atype_np, box_np = _system()
     box_np = box_np if periodic else None
     model_dict = ALL_MODELS[name]
-    md = get_model(copy.deepcopy(model_dict)).to(DEVICE)
+    md = get_model(copy.deepcopy(model_dict)).to(env.DEVICE)
     md.eval()
     box_t = (
         None
         if box_np is None
-        else torch.tensor(box_np, dtype=torch.float64, device=DEVICE)
+        else torch.tensor(box_np, dtype=torch.float64, device=env.DEVICE)
     )
-    atype_t = torch.tensor(atype_np, dtype=torch.int64, device=DEVICE)
+    atype_t = torch.tensor(atype_np, dtype=torch.int64, device=env.DEVICE)
     results = {}
     for tag, nl in (("def", DefaultNeighborList()), ("ves", VesinNeighborList())):
         coord_t = torch.tensor(
-            coord_np, dtype=torch.float64, device=DEVICE
+            coord_np, dtype=torch.float64, device=env.DEVICE
         ).requires_grad_(True)
         results[tag] = md.forward(
             coord_t, atype_t, box=box_t, do_atomic_virial=True, neighbor_list=nl
@@ -453,14 +453,14 @@ def test_pt_expt_multiframe_equivalence(name: str) -> None:
     """
     coord_np, atype_np, box_np = _multiframe_system()
     model_dict = ALL_MODELS[name]
-    md = get_model(copy.deepcopy(model_dict)).to(DEVICE)
+    md = get_model(copy.deepcopy(model_dict)).to(env.DEVICE)
     md.eval()
-    atype_t = torch.tensor(atype_np, dtype=torch.int64, device=DEVICE)
-    box_t = torch.tensor(box_np, dtype=torch.float64, device=DEVICE)
+    atype_t = torch.tensor(atype_np, dtype=torch.int64, device=env.DEVICE)
+    box_t = torch.tensor(box_np, dtype=torch.float64, device=env.DEVICE)
     results = {}
     for tag, nl in (("def", DefaultNeighborList()), ("ves", VesinNeighborList())):
         coord_t = torch.tensor(
-            coord_np, dtype=torch.float64, device=DEVICE
+            coord_np, dtype=torch.float64, device=env.DEVICE
         ).requires_grad_(True)
         results[tag] = md.forward(
             coord_t, atype_t, box=box_t, do_atomic_virial=True, neighbor_list=nl
@@ -478,17 +478,17 @@ def test_pt_expt_multiframe_equivalence(name: str) -> None:
 def test_default_fallback(name: str) -> None:
     """``neighbor_list=None`` equals an explicit DefaultNeighborList byte-for-byte."""
     coord_np, atype_np, box_np = _system()
-    md = get_model(copy.deepcopy(ALL_MODELS[name])).to(DEVICE)
+    md = get_model(copy.deepcopy(ALL_MODELS[name])).to(env.DEVICE)
     md.eval()
-    box_t = torch.tensor(box_np, dtype=torch.float64, device=DEVICE)
-    atype_t = torch.tensor(atype_np, dtype=torch.int64, device=DEVICE)
+    box_t = torch.tensor(box_np, dtype=torch.float64, device=env.DEVICE)
+    atype_t = torch.tensor(atype_np, dtype=torch.int64, device=env.DEVICE)
     outs = {}
     for tag, kw in (
         ("none", {}),
         ("explicit", {"neighbor_list": DefaultNeighborList()}),
     ):
         coord_t = torch.tensor(
-            coord_np, dtype=torch.float64, device=DEVICE
+            coord_np, dtype=torch.float64, device=env.DEVICE
         ).requires_grad_(True)
         outs[tag] = md.forward(coord_t, atype_t, box=box_t, do_atomic_virial=True, **kw)
     for k in ("energy", "force", "virial"):
