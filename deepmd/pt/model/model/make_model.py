@@ -306,8 +306,12 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 extended_coord, fparam=fparam, aparam=aparam
             )
             del extended_coord, fparam, aparam
+            force_coord = cc_ext
+            if self.atomic_model.do_grad_r() or self.atomic_model.do_grad_c():
+                if not force_coord.requires_grad:
+                    force_coord = force_coord.clone().requires_grad_(True)
             atomic_ret = self.atomic_model.forward_common_atomic(
-                cc_ext,
+                force_coord,
                 extended_atype,
                 nlist,
                 mapping=mapping,
@@ -319,7 +323,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             model_predict = fit_output_to_model_output(
                 atomic_ret,
                 self.atomic_output_def(),
-                cc_ext,
+                force_coord,
                 do_atomic_virial=do_atomic_virial,
                 create_graph=self.training,
                 mask=atomic_ret["mask"] if "mask" in atomic_ret else None,
