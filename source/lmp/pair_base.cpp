@@ -205,7 +205,6 @@ void PairDeepBaseModel::make_fparam_from_fix(vector<double>& fparam) {
       fparam[jj] = fix->compute_vector(fix_fparam_index + jj);
     }
   }
-
 }
 
 void PairDeepBaseModel::make_aparam_from_compute(vector<double>& aparam) {

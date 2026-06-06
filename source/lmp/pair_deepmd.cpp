@@ -132,7 +132,9 @@ PairDeepMD::~PairDeepMD() {
 
 void* PairDeepMD::extract(const char* str, int& dim) {
   if (strcmp(str, "deepmd_dedn") == 0) {
-    if (!cached_dedn_valid) return nullptr;
+    if (!cached_dedn_valid) {
+      return nullptr;
+    }
     dim = 0;
     return (void*)&cached_dedn;
   }

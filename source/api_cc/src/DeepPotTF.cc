@@ -146,8 +146,8 @@ static void run_model_dedn(
   std::vector<Tensor> output_tensors;
   check_status(session->Run(
       input_tensors,
-      {"o_energy", "o_force", "o_dE_dN", "o_atom_energy", "o_atom_virial"},
-      {}, &output_tensors));
+      {"o_energy", "o_force", "o_dE_dN", "o_atom_energy", "o_atom_virial"}, {},
+      &output_tensors));
 
   Tensor output_e = output_tensors[0];
   Tensor output_f = output_tensors[1];

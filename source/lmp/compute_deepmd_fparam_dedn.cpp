@@ -18,12 +18,10 @@ using namespace LAMMPS_NS;
 
 /* ---------------------------------------------------------------------- */
 
-ComputeDeepmdFparamDedn::ComputeDeepmdFparamDedn(LAMMPS* lmp, int narg,
+ComputeDeepmdFparamDedn::ComputeDeepmdFparamDedn(LAMMPS* lmp,
+                                                 int narg,
                                                  char** arg)
-    : Compute(lmp, narg, arg),
-      source_index(-1),
-      delta(1.0e-6),
-      pair(nullptr) {
+    : Compute(lmp, narg, arg), source_index(-1), delta(1.0e-6), pair(nullptr) {
   if (narg < 4) {
     error->all(FLERR, "Illegal compute deepmd/fparam/dedn command");
   }
@@ -54,8 +52,7 @@ ComputeDeepmdFparamDedn::ComputeDeepmdFparamDedn(LAMMPS* lmp, int narg,
     source_type = SRC_FIX;
     source_id = token.substr(2);
   } else {
-    error->all(FLERR,
-               "Source must be a variable, compute, or fix reference");
+    error->all(FLERR, "Source must be a variable, compute, or fix reference");
   }
 
   int iarg = 4;
@@ -83,12 +80,14 @@ ComputeDeepmdFparamDedn::~ComputeDeepmdFparamDedn() = default;
 
 void ComputeDeepmdFparamDedn::init() {
   if (!force->pair) {
-    error->all(FLERR, "compute deepmd/fparam/dedn requires an active pair style");
+    error->all(FLERR,
+               "compute deepmd/fparam/dedn requires an active pair style");
   }
   pair = dynamic_cast<PairDeepMD*>(force->pair);
   if (!pair) {
-    error->all(FLERR,
-               "compute deepmd/fparam/dedn currently requires pair_style deepmd");
+    error->all(
+        FLERR,
+        "compute deepmd/fparam/dedn currently requires pair_style deepmd");
   }
   if (pair->get_dim_fparam() != 1) {
     error->all(FLERR,
@@ -177,10 +176,9 @@ double ComputeDeepmdFparamDedn::compute_scalar() {
   std::vector<double> fparam_plus(1, fparam0 + delta);
   std::vector<double> fparam_minus(1, fparam0 - delta);
 
-  double one =
-      (pair->eval_energy_with_fparam(fparam_plus) -
-       pair->eval_energy_with_fparam(fparam_minus)) /
-      (2.0 * delta);
+  double one = (pair->eval_energy_with_fparam(fparam_plus) -
+                pair->eval_energy_with_fparam(fparam_minus)) /
+               (2.0 * delta);
 
   MPI_Allreduce(&one, &scalar, 1, MPI_DOUBLE, MPI_SUM, world);
   return scalar;

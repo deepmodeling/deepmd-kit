@@ -146,8 +146,8 @@ inline void _DP_DeepPotComputeadd<float>(DP_DeepPot* dp,
                                          double* dE_dN,
                                          float* atomic_energy,
                                          float* atomic_virial) {
-  DP_DeepPotComputef2add(dp, nframes, natom, coord, atype, cell, fparam,
-                         aparam, energy, force, virial, dE_dN, atomic_energy,
+  DP_DeepPotComputef2add(dp, nframes, natom, coord, atype, cell, fparam, aparam,
+                         energy, force, virial, dE_dN, atomic_energy,
                          atomic_virial);
 }
 
@@ -334,8 +334,8 @@ inline void _DP_DeepPotComputeNListadd<float>(DP_DeepPot* dp,
                                               float* atomic_energy,
                                               float* atomic_virial) {
   DP_DeepPotComputeNListf2add(dp, nframes, natom, coord, atype, cell, nghost,
-                              nlist, ago, fparam, aparam, energy, force,
-                              virial, dE_dN, atomic_energy, atomic_virial);
+                              nlist, ago, fparam, aparam, energy, force, virial,
+                              dE_dN, atomic_energy, atomic_virial);
 }
 
 // support spin

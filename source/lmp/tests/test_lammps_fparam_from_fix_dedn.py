@@ -1,14 +1,22 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Test DeepMD fparam from fix and numeric dE/dfparam from the current state."""
 
 import os
-from pathlib import Path
+from pathlib import (
+    Path,
+)
 
 import numpy as np
 import pytest
-from lammps import PyLammps
-
-from model_convert import ensure_converted_pb
-from write_lmp_data import write_lmp_data
+from lammps import (
+    PyLammps,
+)
+from model_convert import (
+    ensure_converted_pb,
+)
+from write_lmp_data import (
+    write_lmp_data,
+)
 
 pbtxt_file = (
     Path(__file__).parent.parent.parent / "tests" / "infer" / "fparam_aparam.pbtxt"

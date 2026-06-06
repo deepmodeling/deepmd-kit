@@ -371,8 +371,7 @@ inline void DP_DeepPotCompute_variantadd(DP_DeepPot* dp,
       return;
     }
     if (!fparam) {
-      dp->exception =
-          "Direct dE/dN C API requires explicit frame parameters";
+      dp->exception = "Direct dE/dN C API requires explicit frame parameters";
       return;
     }
     constexpr double delta = 1.0e-6;
@@ -384,12 +383,12 @@ inline void DP_DeepPotCompute_variantadd(DP_DeepPot* dp,
     for (int ii = 0; ii < nframes; ++ii) {
       fparam_plus[ii] += static_cast<VALUETYPE>(delta);
       fparam_minus[ii] -= static_cast<VALUETYPE>(delta);
-      DP_REQUIRES_OK(dp, dp->dp.compute(e_plus, dummy_force, dummy_virial,
-                                        coord_, atype_, cell_, fparam_plus,
-                                        aparam_));
-      DP_REQUIRES_OK(dp, dp->dp.compute(e_minus, dummy_force, dummy_virial,
-                                        coord_, atype_, cell_, fparam_minus,
-                                        aparam_));
+      DP_REQUIRES_OK(
+          dp, dp->dp.compute(e_plus, dummy_force, dummy_virial, coord_, atype_,
+                             cell_, fparam_plus, aparam_));
+      DP_REQUIRES_OK(
+          dp, dp->dp.compute(e_minus, dummy_force, dummy_virial, coord_, atype_,
+                             cell_, fparam_minus, aparam_));
       dE_dN[ii] = (e_plus[ii] - e_minus[ii]) / (2.0 * delta);
       fparam_plus[ii] = fparam_[ii];
       fparam_minus[ii] = fparam_[ii];
@@ -677,14 +676,27 @@ inline void DP_DeepPotComputeNList_variantadd(DP_DeepPot* dp,
     throw deepmd::deepmd_exception(
         "Direct dE/dN C API currently supports single-frame evaluation only");
   }
-  DP_REQUIRES_OK(dp, dp->dp.compute(e, f, v, dedn, coord_, atype_, cell_, nghost,
-                                    nlist->nl, ago, fparam_, aparam_));
-  if (energy) energy[0] = e;
-  if (force) std::copy(f.begin(), f.end(), force);
-  if (virial) std::copy(v.begin(), v.end(), virial);
-  if (dE_dN) dE_dN[0] = dedn;
-  if (atomic_energy) std::fill(atomic_energy, atomic_energy + nframes * natoms, (VALUETYPE)0);
-  if (atomic_virial) std::fill(atomic_virial, atomic_virial + nframes * natoms * 9, (VALUETYPE)0);
+  DP_REQUIRES_OK(dp, dp->dp.compute(e, f, v, dedn, coord_, atype_, cell_,
+                                    nghost, nlist->nl, ago, fparam_, aparam_));
+  if (energy) {
+    energy[0] = e;
+  }
+  if (force) {
+    std::copy(f.begin(), f.end(), force);
+  }
+  if (virial) {
+    std::copy(v.begin(), v.end(), virial);
+  }
+  if (dE_dN) {
+    dE_dN[0] = dedn;
+  }
+  if (atomic_energy) {
+    std::fill(atomic_energy, atomic_energy + nframes * natoms, (VALUETYPE)0);
+  }
+  if (atomic_virial) {
+    std::fill(atomic_virial, atomic_virial + nframes * natoms * 9,
+              (VALUETYPE)0);
+  }
 }
 
 template void DP_DeepPotComputeNList_variantadd<double>(DP_DeepPot* dp,
