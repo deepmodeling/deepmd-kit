@@ -107,7 +107,7 @@ from deepmd.dpa_tools import DPAFineTuner
 
 model = DPAFineTuner(pretrained="DPA-3.1-3M", strategy="frozen_sklearn", predictor="rf")
 model.fit(train_data="data/train", target_key="bandgap")  # fine-tune on your labeled structures
-model.predict("data/new_structures")                      # predict for new structures
+preds = model.predict("data/new_structures").predictions   # predict for new structures
 ```
 
 The same workflow is also available from the command line as `dp dpa fit` / `dp dpa predict`.
