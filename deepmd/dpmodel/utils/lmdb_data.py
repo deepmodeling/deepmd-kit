@@ -1317,7 +1317,11 @@ class DistributedSameNlocBatchSampler:
 
     def __len__(self) -> int:
         """Number of batches for this rank."""
-        return math.ceil(self._total_batches / self._world_size)
+        return max(
+            0,
+            (self._total_batches + self._world_size - 1 - self._rank)
+            // self._world_size,
+        )
 
     @property
     def rank(self) -> int:

@@ -648,18 +648,26 @@ class TestAutoProbDataset:
             auto_prob_style="prob_sys_size;0:1:0.5;1:3:0.5",
         )
         global_batches = len(ds._batch_sampler)
-        dist_sampler = DistributedSameNlocBatchSampler(
+        dist_sampler_rank0 = DistributedSameNlocBatchSampler(
             ds._reader,
             rank=0,
             world_size=2,
             shuffle=False,
             block_targets=ds._block_targets,
         )
-        assert len(dist_sampler) == math.ceil(global_batches / 2)
+        dist_sampler_rank1 = DistributedSameNlocBatchSampler(
+            ds._reader,
+            rank=1,
+            world_size=2,
+            shuffle=False,
+            block_targets=ds._block_targets,
+        )
+        assert len(dist_sampler_rank0) == math.ceil(global_batches / 2)
+        assert len(dist_sampler_rank1) == global_batches // 2
+        assert len(dist_sampler_rank0) == len(list(dist_sampler_rank0))
+        assert len(dist_sampler_rank1) == len(list(dist_sampler_rank1))
 
     def test_distributed_len_reuses_cached_total(self, auto_prob_lmdb, monkeypatch):
-        import math
-
         calls = 0
         real_sampler = lmdb_data.SameNlocBatchSampler
 
@@ -682,15 +690,14 @@ class TestAutoProbDataset:
         )
         dist_sampler = DistributedSameNlocBatchSampler(
             ds._reader,
-            rank=0,
+            rank=1,
             world_size=2,
             shuffle=False,
             block_targets=ds._block_targets,
         )
 
         assert calls == 1
-        expected_len = math.ceil(len(ds._batch_sampler) / 2)
-        assert len(dist_sampler) == expected_len
+        expected_len = len(ds._batch_sampler) // 2
         assert len(dist_sampler) == expected_len
         assert calls == 1
 
