@@ -58,7 +58,15 @@ def load_torch_file(path: str, map_location: str = "cpu") -> dict[str, Any]:
     """
     import torch
 
-    return torch.load(path, map_location=map_location, weights_only=False)
+    try:
+        return torch.load(path, map_location=map_location, weights_only=False)
+    except RuntimeError as exc:
+        if "Invalid magic number" not in str(exc):
+            raise
+        import pickle
+
+        with open(path, "rb") as f:
+            return pickle.load(f)
 
 
 # ---------------------------------------------------------------------------
@@ -150,6 +158,8 @@ class _DescriptorExtraction:
         torch.Tensor
             (n_frames, n_atoms, feat_dim), detached.
         """
+        if not coord.requires_grad:
+            raise RuntimeError("forward_common requires coord to have requires_grad=True")
         self._clear_accumulator()
         self._inner_model.forward_common(coord, atype, box)
         return self._atomic_model.eval_descriptor().detach()

@@ -281,10 +281,12 @@ DP_ENABLE_PADDLE = "1"
 CMAKE_ARGS = "-DCMAKE_DISABLE_FIND_PACKAGE_OpenMP=1"
 
 [[tool.cibuildwheel.overrides]]
-# error: 'value' is unavailable: introduced in macOS 10.13
+# PaddlePaddle does not provide macOS x86_64 wheels for this test matrix.
 select = "*-macosx_x86_64"
 inherit.environment = "append"
+test-extras = ["cpu", "test", "lmp", "ipi", "torch"]
 environment.MACOSX_DEPLOYMENT_TARGET = "11.0"
+environment.DP_ENABLE_PADDLE = "0"
 
 [tool.cibuildwheel.linux]
 repair-wheel-command = "auditwheel repair --exclude libtensorflow_framework.so.2 --exclude libtensorflow_framework.so.1 --exclude libtensorflow_framework.so --exclude _pywrap_tensorflow_internal.so --exclude libtensorflow_cc.so.2 --exclude libc10.so --exclude libtorch.so --exclude libtorch_cpu.so --exclude libmpi.so.12 -w {dest_dir} {wheel}"
@@ -297,7 +299,7 @@ environment-pass = [
 ]
 before-all = [
     """if [ ! -z "${DP_PKG_NAME}" ]; then sed -i "s/name = \\"deepmd-kit\\"/name = \\"${DP_PKG_NAME}\\"/g" pyproject.toml; fi""",
-    """{ if [ "$(uname -m)" = "x86_64" ] ; then yum config-manager --add-repo http://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo && yum install -y cuda-nvcc-${CUDA_VERSION/./-} cuda-cudart-devel-${CUDA_VERSION/./-}; fi }""",
+    """{ if [ -n "${CUDA_VERSION}" ] && [ "$(uname -m)" = "x86_64" ] ; then yum config-manager --add-repo http://developer.download.nvidia.com/compute/cuda/repos/rhel8/x86_64/cuda-rhel8.repo && yum install -y cuda-nvcc-${CUDA_VERSION/./-} cuda-cudart-devel-${CUDA_VERSION/./-}; fi }""",
 ]
 before-build = [
 ]
