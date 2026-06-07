@@ -24,6 +24,7 @@ For more information, check the [documentation](https://deepmd.readthedocs.io/).
 - **implements the Deep Potential series models**, which have been successfully applied to finite and extended systems, including organic molecules, metals, semiconductors, insulators, etc.
 - **implements MPI and GPU supports**, making it highly efficient for high-performance parallel and distributed computing.
 - **highly modularized**, easy to adapt to different descriptors for deep learning-based potential energy models.
+- **fine-tunes pre-trained DPA models through a scikit-learn-style Python API**, via [`dpa_tools`](deepmd/dpa_tools/README.md) — construct a `DPAFineTuner`, then `fit` and `predict` to adapt a large pre-trained model to your own property dataset, with no input files to write.
 
 ### License and credits
 
@@ -97,12 +98,27 @@ Then, read on for a brief overview of the usage of DeePMD-kit. You may start wit
 dp
 ```
 
+## Fine-tune pre-trained DPA models with `dpa_tools`
+
+`dpa_tools` is a scikit-learn-style **Python API for fine-tuning pre-trained DPA atomic models** on your own dataset: you construct a `DPAFineTuner`, call `fit(...)` then `predict(...)`, and pick a transfer-learning strategy — a frozen descriptor with a scikit-learn head, linear probing, full fine-tuning, or multi-task fine-tuning — without writing any DeePMD-kit JSON config or training pipeline. Use it to adapt a large pre-trained model to a downstream materials or molecular property (energy, band gap, HOMO–LUMO gap, …) from a modest labeled dataset. It ships with DeePMD-kit (`pip install deepmd-kit[dpa-tools]`); the full guide lives in [`deepmd/dpa_tools/README.md`](deepmd/dpa_tools/README.md).
+
+```python
+from deepmd.dpa_tools import DPAFineTuner
+
+model = DPAFineTuner(pretrained="DPA-3.1-3M", strategy="frozen_sklearn", predictor="rf")
+model.fit(train_data="data/train", target_key="bandgap")  # fine-tune on your labeled structures
+model.predict("data/new_structures")                      # predict for new structures
+```
+
+The same workflow is also available from the command line as `dp dpa fit` / `dp dpa predict`.
+
 ## Code structure
 
 The code is organized as follows:
 
 - `examples`: examples.
 - `deepmd`: DeePMD-kit python modules.
+- `deepmd/dpa_tools`: scikit-learn-style Python API for fine-tuning pre-trained DPA models ([README](deepmd/dpa_tools/README.md)).
 - `source/lib`: source code of the core library.
 - `source/op`: Operator (OP) implementation.
 - `source/api_cc`: source code of DeePMD-kit C++ API.

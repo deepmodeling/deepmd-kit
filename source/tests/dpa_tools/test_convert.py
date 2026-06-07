@@ -192,3 +192,85 @@ def test_convert_strict_passed_through(tmp_path, monkeypatch):
             fmt="vasp/poscar", type_map=["Cu", "O"],
             validate=True, strict=True)
     assert seen["strict"] is True
+
+
+# ---------------------------------------------------------------------------
+# convert() glob support
+# ---------------------------------------------------------------------------
+
+
+def test_convert_glob_single_match(tmp_path):
+    """Pass a glob pattern that matches exactly one file → one system."""
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    _write_poscar(raw_dir / "input.sdf")
+
+    out = tmp_path / "out"
+    result = convert(
+        str(raw_dir / "*.sdf"),
+        str(out),
+        fmt="vasp/poscar",
+        type_map=["Cu", "O"],
+        validate=False,
+    )
+    assert Path(result).is_dir()
+    # Single match — output goes directly into output_dir (same as literal).
+    assert (Path(result) / "type.raw").exists()
+    assert (Path(result) / "set.000" / "coord.npy").exists()
+
+
+def test_convert_glob_multi_match(tmp_path):
+    """Pass a glob pattern matching 3 files → 3 numbered subdirectories."""
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+    for name in ("a.sdf", "b.sdf", "c.sdf"):
+        _write_poscar(raw_dir / name)
+
+    out = tmp_path / "out"
+    result = convert(
+        str(raw_dir / "*.sdf"),
+        str(out),
+        fmt="vasp/poscar",
+        type_map=["Cu", "O"],
+        validate=False,
+    )
+    assert Path(result).is_dir()
+    # 3 systems in sys_0000/, sys_0001/, sys_0002/
+    for sub in ("sys_0000", "sys_0001", "sys_0002"):
+        sub_dir = Path(result) / sub
+        assert sub_dir.is_dir(), f"missing {sub}"
+        assert (sub_dir / "type.raw").exists()
+        assert (sub_dir / "set.000" / "coord.npy").exists()
+    # No extra subdirectories.
+    subdirs = [p.name for p in Path(result).iterdir() if p.is_dir()]
+    assert sorted(subdirs) == ["sys_0000", "sys_0001", "sys_0002"]
+
+
+def test_convert_glob_no_match(tmp_path):
+    """Pass a glob pattern with no matches → FileNotFoundError."""
+    raw_dir = tmp_path / "raw"
+    raw_dir.mkdir()
+
+    with pytest.raises(FileNotFoundError, match="No files matched pattern"):
+        convert(
+            str(raw_dir / "*.sdf"),
+            str(tmp_path / "out"),
+            fmt="vasp/poscar",
+            type_map=["Cu", "O"],
+            validate=False,
+        )
+
+
+def test_convert_literal_path_unchanged(tmp_path):
+    """Pass a literal path with no wildcards → works as before."""
+    _write_poscar(tmp_path / "POSCAR")
+    out = tmp_path / "out"
+    result = convert(
+        str(tmp_path / "POSCAR"),
+        str(out),
+        fmt="vasp/poscar",
+        type_map=["Cu", "O"],
+        validate=False,
+    )
+    assert Path(result).is_dir()
+    assert (Path(result) / "type.raw").exists()

@@ -1,8 +1,8 @@
 # data/loader.py
 #
 # Polymorphic entry point: normalises str / Path / glob / dpdata objects
-# into a flat list[dpdata.System].  All disk-level validation is delegated
-# to dpdata; this module no longer reads .npy files or type.raw directly.
+# into a flat list[dpdata.System].  Disk I/O and format detection are
+# delegated to dpdata.
 
 from __future__ import annotations
 

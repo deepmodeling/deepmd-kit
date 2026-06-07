@@ -11,10 +11,13 @@ function body so that importing this module is cheap.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 # ``get_model_dict`` is backend-agnostic and lightweight — safe at module level.
 from deepmd.utils.model_branch_dict import get_model_dict as _get_model_dict
+
+_LOG = logging.getLogger("dpa_tools")
 
 
 # ---------------------------------------------------------------------------
@@ -45,7 +48,7 @@ def resolve_pretrained_path(pretrained: str, cache_dir: str | None = None) -> st
     from deepmd.pretrained.download import resolve_model_path as _download
 
     path = _download(pretrained, cache_dir=cache_dir)
-    print(f"Resolved pretrained model: {path}")
+    _LOG.info("Resolved pretrained model: %s", path)
     return path
 
 

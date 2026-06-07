@@ -5,8 +5,8 @@
 # (2) bulk cache under ``~/.cache/dpa_tools/desc_cache/`` keyed by
 # (aggregate data fingerprint, checkpoint mtime, pooling).
 #
-# After the data-layer refactor all systems are ``dpdata.System`` objects;
-# the cache no longer reads file mtimes directly.
+# Systems are ``dpdata.System`` objects; cache keys are computed from
+# data fingerprints and checkpoint mtimes.
 
 from __future__ import annotations
 

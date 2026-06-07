@@ -1,30 +1,14 @@
 # dpa_tools
 
-Property-prediction tools built on top of DPA-3 pretrained models. `dpa_tools`
-turns molecular or atomistic structure data into `deepmd/npy` datasets, extracts
-DPA descriptors, and trains lightweight or fine-tuned property predictors for
-small- to medium-sized datasets. It lives as a self-contained subpackage of
-`deepmd-kit` at `deepmd.dpa_tools`.
+`dpa_tools` is a scikit-learn-style **Python API for fine-tuning pre-trained DPA
+atomic models** (DPA-3 and friends) on your own dataset. You construct a
+`DPAFineTuner`, call `fit(...)` then `predict(...)`, and pick a transfer-learning
+strategy — no DeePMD-kit JSON configs or `dp train` pipelines to write. The usual
+goal is adapting a large pre-trained model to a downstream materials or molecular
+property (energy, band gap, HOMO–LUMO gap, …) from a modest labeled dataset.
 
-## Relationship with deepmd-kit
-
-`dpa_tools` sits on top of deepmd-kit without modifying any existing module:
-
-- **Model loading**: `_backend.py` is the single choke point that imports
-  `deepmd.pt.model.model.get_model` and `deepmd.pt.train.wrapper.ModelWrapper`
-  to load DPA-3 checkpoints and extract descriptors.  No other file in
-  `dpa_tools` touches `deepmd.pt.*` directly.
-- **Training**: shells out to `dp --pt train` / `dp --pt freeze` /
-  `dp --pt test`, auto-generating `input.json` config files.
-- **Inference**: deepmd-kit's built-in `DeepProperty` handles neural-network
-  models; dpa_tools adds a lightweight frozen-descriptor + sklearn-head path.
-- **SMILES pipeline**: `data/smiles.py` converts CSV with SMILES columns +
-  property labels into `deepmd/npy` format via RDKit 3D conformer generation.
-- **CLI**: registered as `dp dpa` subcommand group via `deepmd/main.py`.
-  Torch and all DPA dependencies are loaded lazily — only when a `dp dpa ...`
-  command actually runs.
-- **Lazy import**: `import deepmd.dpa_tools` does **not** trigger a `torch`
-  import.  `dp dpa --help` is equally lightweight.
+It ships as a self-contained subpackage of `deepmd-kit` at `deepmd.dpa_tools`,
+and the same workflow is also exposed on the command line as `dp dpa`.
 
 ## Installation
 
@@ -33,15 +17,70 @@ pip install deepmd-kit[dpa-tools]
 ```
 
 The `dpa-tools` extra installs the Python dependencies used by this package,
-including `scikit-learn`, `dpdata`, `torch`, `rdkit`, and `e3nn`. For
-CUDA/GPU-specific PyTorch builds, install the desired PyTorch variant first or
-follow the PyTorch installation instructions for your platform.
+including `scikit-learn`, `dpdata`, `torch`, `rdkit`, and `e3nn`. For a
+CUDA/GPU PyTorch build, install the desired PyTorch variant first, then install
+this extra.
+
+## Quickstart
+
+Fine-tune a frozen-descriptor + scikit-learn head and predict — under 10 lines:
+
+```python
+from deepmd.dpa_tools import DPAFineTuner
+
+# `pretrained` accepts a built-in model name (auto-downloaded) or a local .pt path
+model = DPAFineTuner(pretrained="DPA-3.1-3M", strategy="frozen_sklearn", predictor="rf")
+model.fit(train_data="data/train", target_key="bandgap")  # fine-tune on labeled structures
+
+preds = model.predict("data/test").predictions            # predict on new structures
+model.freeze("model.dp-sklearn.pth")                      # save a reusable bundle
+```
+
+Your data must be in `deepmd/npy` format (see [Data preparation](#data-preparation)
+to convert structure files, VASP output, or SMILES CSVs). For a complete,
+runnable example that fits a QM9 HOMO–LUMO-gap model on CPU in **under 5
+minutes**, see [`demo/`](demo/) — it ships with 50 pre-processed molecules so you
+only need a pre-trained checkpoint.
+
+## Fine-tuning strategies
+
+The strategy is the main choice you make. All four adapt the same pre-trained
+DPA backbone; they differ in how much of it they train:
+
+| Strategy | What it does | Best for |
+|----------|--------------|----------|
+| `frozen_sklearn` (default) | Freeze the backbone, extract descriptors once, fit a scikit-learn head (RF / Ridge / MLP) | Small data (<1k samples), CPU-only, fastest iteration |
+| `linear_probe` | Freeze the backbone, train only a property fitting net | Medium data, GPU available |
+| `finetune` | Fine-tune the full network | Larger data, GPU available |
+| `mft` | Multi-task: property head + an auxiliary force-field head trained jointly | Prevents representation collapse on small property datasets |
+
+```python
+# frozen_sklearn (CPU, no dp train): extract once, fit a scikit-learn head
+model = DPAFineTuner(
+    pretrained="DPA-3.1-3M",     # built-in name → auto-downloaded; or a local path
+    strategy="frozen_sklearn",
+    predictor="rf",              # "rf" | "linear"/"ridge" | "mlp"
+    pooling="mean",              # "mean" | "sum" | "mean+std" | "mean+std+max+min"
+)
+model.fit(train_data="/data/train", target_key="homo")
+model.predict("/data/test")
+model.freeze("model.dp-sklearn.pth")
+
+# mft: multi-task fine-tuning (downstream property head + auxiliary force-field head)
+model = DPAFineTuner(
+    pretrained="/path/to/DPA-3.1-3M.pt",
+    strategy="mft",
+    property_name="homo",
+    aux_branch="MP_traj_v024_alldata_mixu",
+)
+model.fit(train_data="/data/qm9", aux_data="/data/spice2")
+```
 
 ## Python API
 
 ```python
 from deepmd.dpa_tools import (
-    DPAFineTuner,          # train (strategies: frozen_sklearn, linear_probe, finetune, mft)
+    DPAFineTuner,          # fine-tune (strategies: frozen_sklearn, linear_probe, finetune, mft)
     DPAPredictor,          # read-only inference from frozen bundles
     extract_descriptors,   # standalone descriptor extraction
     cross_validate,        # leak-proof cross-validation
@@ -57,39 +96,9 @@ from deepmd.dpa_tools import (
 )
 ```
 
-### DPAFineTuner
-
-Training strategies:
-
-| Strategy | Description | Best for |
-|----------|------------|----------|
-| `frozen_sklearn` | Freeze descriptor, extract once, fit sklearn head (RF/Ridge/MLP) | Small data (<1k samples), CPU inference |
-| `linear_probe` | Freeze backbone, train property fitting net only | Medium data, GPU |
-| `finetune` | Full-network fine-tuning | Larger data, GPU |
-| `mft` | Multi-task: property head + force-field head | Prevents representation collapse |
-
-```python
-model = DPAFineTuner(
-    pretrained="DPA-3.1-3M",   # built-in name → auto-downloaded; or use a local path
-    strategy="frozen_sklearn",
-    predictor="rf",
-    pooling="mean",
-)
-model.fit(train_data="/data/train", target_key="homo")
-model.predict("/data/test")
-model.freeze("model.dp-sklearn.pth")
-
-# MFT: multi-task fine-tuning (property head + force-field head)
-model = DPAFineTuner(
-    pretrained="/path/to/DPA-3.1-3M.pt",
-    strategy="mft",
-    property_name="homo",
-    aux_branch="MP_traj_v024_alldata_mixu",
-)
-model.fit(train_data="/data/qm9", aux_data="/data/spice2")
-```
-
 ### DPAPredictor
+
+Load a frozen bundle for inference, with no training dependencies:
 
 ```python
 pred = DPAPredictor("model.dp-sklearn.pth")
@@ -103,6 +112,8 @@ result = pred.predict("/data/test", return_uncertainty=True)
 
 ### Descriptor extraction
 
+Get pooled DPA descriptors as a NumPy array (e.g. to feed your own model):
+
 ```python
 X = extract_descriptors(
     "/data/systems",
@@ -112,39 +123,33 @@ X = extract_descriptors(
 # → np.ndarray (n_frames, feat_dim * 2)
 ```
 
-### SMILES → npy conversion
+### Data preparation
 
-One command auto-detects the input format — CSV with SMILES columns routes
-through RDKit, everything else goes through dpdata:
+One command auto-detects the input format — CSV with a SMILES column routes
+through RDKit (3D conformer generation), everything else goes through dpdata:
 
 ```python
 from deepmd.dpa_tools import auto_convert
 
-# CSV with SMILES → auto-detected, RDKit generates 3D coords
-result = auto_convert("data.csv", "./npy", property_name="homo", property_col="HOMO")
-# prints: RDKit converted samples: ... / RDKit failed rows     : ...
-# → {"method": "smiles", "train_systems": [...], "valid_systems": [...],
-#    "samples_used": ..., "failed_rows": [...], "skipped_zero": ...,
-#    "skipped_overlap": ...}
+# CSV with SMILES → RDKit generates 3D coords, writes train/valid deepmd/npy
+auto_convert("data.csv", "./npy", property_name="homo", property_col="HOMO")
 
-# To force the SMILES pipeline, pass fmt="smiles"; the value is case-insensitive
-# ("SMILES" and "Smiles" also work).
-result = auto_convert("data.csv", "./npy", fmt="SMILES", property_name="homo", property_col="HOMO")
+# Structure file → auto-detected by dpdata (POSCAR, OUTCAR, extxyz, cif, …)
+auto_convert("POSCAR", "./npy")
 
-# Structure file → auto-detected by dpdata
-result = auto_convert("POSCAR", "./npy")
-# → {"method": "dpdata", "output_dir": "..."}
+# Lower-level helpers
+convert("POSCAR", "out_dir", fmt="extxyz", type_map=["Cu", "O"])
+convert("calcs/**/OUTCAR", "npy_root", fmt="vasp/outcar")  # glob → batch mode
+attach_labels(system, head="bandgap", values=np.array([1.0, 2.0, 3.0]))
+check_data("/data/system")   # → list[Issue]
 ```
 
-Supports `.csv`, `.xlsx`, `.xls` for SMILES inputs and any format dpdata
-recognises for structure files (POSCAR, extxyz, cif, OUTCAR, …).
+### Cross-validation & splitting
 
-### Cross-validation
-
-Formula-grouped to prevent same-molecule leakage:
+Formula-grouped to prevent same-molecule leakage between folds:
 
 ```python
-from deepmd.dpa_tools import cross_validate, train_test_split
+from deepmd.dpa_tools import cross_validate, train_test_split, load_dataset
 
 systems = load_dataset("/data/root", label_key="energy")
 train, valid, test = train_test_split(systems, group_by="formula", seed=42)
@@ -153,98 +158,50 @@ result = cross_validate(model, systems, label_key="energy", cv=5, group_by="form
 # → {"aggregate": {"mae_mean": ..., "rmse_std": ...}, ...}
 ```
 
-### Data tools
-
-```python
-convert("POSCAR", "output_dir", fmt="extxyz", type_map=["Cu", "O"])
-convert("calcs/**/OUTCAR", "npy_root", fmt="vasp/outcar")  # glob → batch mode
-check_data("/data/system")   # → list[Issue]
-attach_labels(system, head="bandgap", values=np.array([1.0, 2.0, 3.0]))
-```
-
 ## CLI
 
-All commands live under `dp dpa` with two-level nesting:
+The same workflow is available under `dp dpa` (two-level nesting for data tools):
 
-```
-dp dpa
-  extract-descriptors   extract pooled DPA descriptors to .npy
-  fit                   train a model (any strategy)
-                        --strategy {frozen_sklearn|linear_probe|finetune|mft}
-  cv                    cross-validate (metric estimation, no model output)
-  predict               predict with a frozen .pth bundle
-  evaluate              evaluate a frozen .pth against stored labels
-  data
-    convert             single file or glob → deepmd/npy (auto-sniffs SMILES / structure)
-    validate            sanity-check deepmd/npy directories
-    attach-labels       inject .npy labels into a system
-```
-
-`dp dpa --help` does not load torch.  The parser is pure argparse in
-`deepmd/main.py`; the handler import happens lazily in
-`deepmd/entrypoints/main.py` only when `dp dpa ...` is invoked.
+| Command | Description |
+|---------|-------------|
+| `dp dpa fit` | Fine-tune a model with any strategy (`--strategy frozen_sklearn\|linear_probe\|finetune\|mft`) |
+| `dp dpa predict` | Predict with a frozen `.pth` bundle |
+| `dp dpa evaluate` | Evaluate a frozen `.pth` against stored labels |
+| `dp dpa extract-descriptors` | Extract pooled DPA descriptors to `.npy` |
+| `dp dpa cv` | Cross-validate (metric estimation, no model output) |
+| `dp dpa data convert` | Convert a structure/CSV file or glob → `deepmd/npy` (auto-sniffs SMILES vs. structure) |
+| `dp dpa data validate` | Sanity-check `deepmd/npy` directories |
+| `dp dpa data attach-labels` | Inject `.npy` label arrays into a system |
 
 ```bash
-# CSV+SMILES — auto-detected, RDKit generates 3D coords
-dp dpa data convert --input data.csv --output ./npy --property-name homo
+# Convert data (format auto-detected)
+dp dpa data convert --input data.csv --output ./npy --property-name homo   # CSV+SMILES
+dp dpa data convert --input POSCAR --output ./npy                          # structure file
+dp dpa data convert --input "calcs/**/OUTCAR" --output ./npy_root          # glob → batch
 
-# Structure file — auto-detected by dpdata (POSCAR, extxyz, cif, …)
-dp dpa data convert --input POSCAR --output ./npy
-dp dpa data convert --input crystal.cif --output ./npy
-
-# Fine-tuning
-dp dpa fit --train-data /data/train --pretrained /path/to/DPA-3.1-3M.pt \
-  --strategy frozen_sklearn --predictor rf --target-key homo
+# Fine-tune
+dp dpa fit --train-data ./npy/train --pretrained DPA-3.1-3M \
+  --strategy frozen_sklearn --predictor rf --target-key homo --output model.pth
 
 # Multi-task fine-tuning (MFT)
 dp dpa fit --train-data /data/qm9 --aux-data /data/spice2 \
   --pretrained /path/to/DPA-3.1-3M.pt --strategy mft --target-key homo
 
-# Descriptor extraction
-dp dpa extract-descriptors --data /data/sys1 /data/sys2 \
-  --pretrained /path/to/DPA-3.1-3M.pt --pooling mean+std --output features.npy
-
-# Batch convert (glob → auto-detected)
-dp dpa data convert --input "calcs/**/OUTCAR" --output ./npy_root
+# Predict / evaluate with a frozen bundle
+dp dpa predict --model model.pth --data ./npy/test --output preds.npy
+dp dpa evaluate --model model.pth --data ./npy/test
 ```
 
-## Internal architecture
+`dp dpa --help` does not load torch — the parser is pure argparse in
+`deepmd/main.py`, and the handlers (and the DPA stack) are imported lazily only
+when a `dp dpa ...` command actually runs.
 
-```
-deepmd/dpa_tools/
-├── __init__.py            # public API, lazy imports (no torch at import time)
-├── _backend.py             # single choke point for deepmd.pt.* calls
-├── cli.py                  # dp dpa subcommand handlers
-├── finetuner.py            # DPAFineTuner (training + descriptor extraction)
-├── predictor.py            # DPAPredictor (read-only inference + uncertainty)
-├── mft.py                  # MFTFineTuner (multi-task fine-tuning)
-├── trainer.py              # DPATrainer (dp --pt train subprocess wrapper)
-├── cv.py                   # cross-validation + data splitting
-├── conditions.py           # scalar condition manager (T, P)
-├── config/
-│   └── manager.py          # MFT input.json generation
-├── data/
-│   ├── loader.py           # polymorphic data loading
-│   ├── dataset.py          # label-filtered loading
-│   ├── smiles.py           # SMILES→3D coords + CSV→npy pipeline
-│   ├── convert.py          # auto_convert (sniff + route) + convert + batch_convert
-│   ├── validate.py         # data sanity checks
-│   ├── desc_cache.py       # two-tier descriptor cache
-│   ├── type_map.py         # automatic type-map resolution
-│   └── errors.py           # DPADataError
-└── utils/
-    ├── dotdict.py          # DotDict
-    └── sklearn_heads.py    # sklearn regressor factory
-```
+## How it works (for contributors)
 
-Key design points:
-- `_backend.py` is the **only** file that imports `deepmd.pt.*` — every call
-  into deepmd internals goes through it
-- `_DescriptorExtraction` encapsulates the fragile chain
-  `wrapper.model["Default"]` → `set_eval_descriptor_hook` → `forward_common`
-  → `eval_descriptor()`
-- `auto_convert()` sniffs `.csv` / `.xlsx` for SMILES columns and routes
-  accordingly; all other formats delegate to `dpdata` with `fmt="auto"`
-- `dp --pt train/test/freeze` always runs as a subprocess, keeping
-  dpa_tools decoupled from deepmd-kit's training entry points
-- `dpdata.System` is the universal internal data format
+`dpa_tools` does not modify any existing deepmd-kit module. `_backend.py` is the
+single choke point that imports `deepmd.pt.*` to load DPA checkpoints and run the
+descriptor-extraction forward pass; training strategies that need `dp train` /
+`dp freeze` / `dp test` shell out to those subprocesses; and `dpdata.System` is
+the universal internal data format. Importing `deepmd.dpa_tools` (or running
+`dp dpa --help`) does not pull in torch. See the module docstrings in
+`finetuner.py`, `predictor.py`, `mft.py`, and `data/` for details.
