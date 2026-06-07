@@ -71,10 +71,6 @@ from .so3 import (
     FocusLinear,
     SO3Linear,
 )
-from .triton import (
-    rotate_back,
-    rotate_to_local,
-)
 from .utils import (
     ATTN_RES_MODES,
     get_promoted_dtype,
@@ -958,6 +954,23 @@ class SO2Convolution(nn.Module):
         self.use_triton_infer = os.environ.get(
             "DP_TRITON_INFER", "0"
         ).strip().lower() in ("1", "true", "yes", "on")
+        # Triton rotation kernels: block for the mmax == 1 layout, dense otherwise.
+        self._rotate_to_local_fn = None
+        self._rotate_back_fn = None
+        if self.use_triton_infer:
+            from .triton import (
+                rotate_back_block,
+                rotate_back_dense,
+                rotate_to_local_block,
+                rotate_to_local_dense,
+            )
+
+            if self.mmax == 1:
+                self._rotate_to_local_fn = rotate_to_local_block
+                self._rotate_back_fn = rotate_back_block
+            else:
+                self._rotate_to_local_fn = rotate_to_local_dense
+                self._rotate_back_fn = rotate_back_dense
 
         # === Step 1. Precompute coefficient indices for m-major reduced layout ===
         coeff_index_m = build_m_major_index(self.lmax, self.mmax, device=self.device)
@@ -1334,6 +1347,7 @@ class SO2Convolution(nn.Module):
                     dtype=self.compute_dtype,
                     layout="flat",
                     grid_resolution_list=self.s2_grid_resolution,
+                    coefficient_layout="m_major",
                     grid_method=self.s2_grid_method,
                     grid_branches=node_wise_branches,
                     mlp_bias=self.mlp_bias,
@@ -1443,26 +1457,15 @@ class SO2Convolution(nn.Module):
             D_full = edge_cache.D_full
             x_dst_local: torch.Tensor | None = None
             if self.use_triton_infer and not self.training:
-                # ``rotate_to_local`` / ``rotate_back`` pick the kernel from the
-                # coefficient layout, not from this flag: the block-diagonal
-                # kernel for the canonical m-major ``mmax == 1`` layout used here
-                # (with ``lmax`` inferred from ``ebed_dim_full``), and a dense
-                # kernel for any other ``(lmax, mmax)``. Both compose with the
-                # traced force path through their functional custom-op autograd.
-                x_local = rotate_to_local(
-                    x,
-                    src,
-                    D_full,
-                    self.coeff_index_m,
-                    self.ebed_dim_full,
+                # ``self._rotate_to_local_fn`` was bound in ``__init__`` (the
+                # block kernel for the m-major ``mmax == 1`` layout, dense
+                # otherwise).
+                x_local = self._rotate_to_local_fn(
+                    x, src, D_full, self.coeff_index_m, self.ebed_dim_full
                 )  # (E, D_m, C_wide)
                 if self.node_wise_grid_product is not None:
-                    x_dst_local = rotate_to_local(
-                        x,
-                        dst,
-                        D_full,
-                        self.coeff_index_m,
-                        self.ebed_dim_full,
+                    x_dst_local = self._rotate_to_local_fn(
+                        x, dst, D_full, self.coeff_index_m, self.ebed_dim_full
                     )  # (E, D_m, C_wide)
             else:
                 D_m_prime = project_D_to_m(
@@ -1620,7 +1623,7 @@ class SO2Convolution(nn.Module):
         with nvtx_range("SO2Conv/rotate_back"):
             Dt_full = edge_cache.Dt_full
             if self.use_triton_infer and not self.training:
-                x_message = rotate_back(
+                x_message = self._rotate_back_fn(
                     x_local,
                     Dt_full,
                     self.coeff_index_m,

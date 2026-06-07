@@ -71,6 +71,9 @@ class EdgeFeatureCache(NamedTuple):
         Used for efficient batched rotation. None if not available.
     Dt_full
         Transpose of D_full with shape (E, D, D). None if not available.
+    edge_quat
+        Per-edge global-to-local quaternion actually used to build ``D_full`` and
+        ``Dt_full`` with shape (E, 4). Includes the optional random local-Z roll.
     D_to_m_cache
         Lazy cache for projected D matrices keyed by a normalized
         ``"lmax:mmax"`` identifier.
@@ -103,6 +106,7 @@ class EdgeFeatureCache(NamedTuple):
     D_to_m_cache: dict[str, torch.Tensor] | None = None
     Dt_from_m_cache: dict[str, torch.Tensor] | None = None
     edge_src_gate: torch.Tensor | None = None
+    edge_quat: torch.Tensor | None = None
 
 
 def compute_edge_src_gate(
@@ -337,13 +341,13 @@ def build_edge_cache(
 
     # === Step 6. Edge quaternion -> Wigner-D blocks ===
     with nvtx_range("wigner_d"):
-        D_full, Dt_full = _build_edge_wigner(
+        D_full, Dt_full, edge_quat = _build_edge_wigner(
             edge_vec=edge_vec,
             edge_len=edge_len,
             eps=eps,
             random_gamma=random_gamma,
             wigner_calc=wigner_calc,
-        )  # (E, D, D), (E, D, D)
+        )  # (E, D, D), (E, D, D), (E, 4)
 
     edge_type_feat = build_edge_type_feat(type_ebed, src, dst)  # (E, C)
 
@@ -357,6 +361,7 @@ def build_edge_cache(
         edge_env=edge_env,
         D_full=D_full,
         Dt_full=Dt_full,
+        edge_quat=edge_quat,
         deg_norm_floor=deg_norm_floor,
     )
 
@@ -460,13 +465,13 @@ def build_edge_cache_from_edges(
 
     # === Step 4. Edge quaternion -> Wigner-D blocks ===
     with nvtx_range("wigner_d"):
-        D_full, Dt_full = _build_edge_wigner(
+        D_full, Dt_full, edge_quat = _build_edge_wigner(
             edge_vec=edge_vec,
             edge_len=edge_len,
             eps=eps,
             random_gamma=random_gamma,
             wigner_calc=wigner_calc,
-        )  # (E, D, D), (E, D, D)
+        )  # (E, D, D), (E, D, D), (E, 4)
 
     # === Step 5. Edge type features ===
     edge_type_feat = build_edge_type_feat(type_ebed, src, dst)
@@ -498,6 +503,7 @@ def build_edge_cache_from_edges(
         edge_env=edge_env,
         D_full=D_full,
         Dt_full=Dt_full,
+        edge_quat=edge_quat,
         deg_norm_floor=deg_norm_floor,
         edge_src_gate=edge_src_gate,
     )
@@ -510,7 +516,7 @@ def _build_edge_wigner(
     eps: float,
     random_gamma: bool,
     wigner_calc: WignerCalculatorFn,
-) -> tuple[torch.Tensor, torch.Tensor]:
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
     Build packed Wigner-D blocks from edge vectors.
 
@@ -530,8 +536,9 @@ def _build_edge_wigner(
 
     Returns
     -------
-    tuple[torch.Tensor, torch.Tensor]
-        Packed Wigner-D matrices ``(D_full, Dt_full)`` with shape ``(E, D, D)``.
+    tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+        Packed Wigner-D matrices ``(D_full, Dt_full)`` with shape ``(E, D, D)``
+        and the quaternion used to build them with shape ``(E, 4)``.
     """
     # === Step 1. Build edge-aligned quaternions ===
     edge_quat = build_edge_quaternion(
@@ -550,7 +557,8 @@ def _build_edge_wigner(
         edge_quat = quaternion_multiply(quaternion_z_rotation(gamma), edge_quat)
 
     # === Step 3. Convert quaternions to packed Wigner-D blocks ===
-    return wigner_calc(edge_quat)
+    D_full, Dt_full = wigner_calc(edge_quat)
+    return D_full, Dt_full, edge_quat
 
 
 def _finalize_edge_cache(
@@ -564,6 +572,7 @@ def _finalize_edge_cache(
     edge_env: torch.Tensor,
     D_full: torch.Tensor,
     Dt_full: torch.Tensor,
+    edge_quat: torch.Tensor,
     deg_norm_floor: float,
     edge_src_gate: torch.Tensor | None = None,
 ) -> EdgeFeatureCache:
@@ -590,6 +599,9 @@ def _finalize_edge_cache(
         Packed Wigner-D matrices with shape (E, D, D).
     Dt_full
         Transposed packed Wigner-D matrices with shape (E, D, D).
+    edge_quat
+        Global-to-local quaternions used to build the Wigner-D matrices with
+        shape (E, 4).
     deg_norm_floor
         Floor added to the envelope-squared degree before the inverse-sqrt
         normalization. A tiny ``eps`` reproduces the legacy behavior; an
@@ -627,6 +639,7 @@ def _finalize_edge_cache(
         D_to_m_cache={},
         Dt_from_m_cache={},
         edge_src_gate=edge_src_gate,
+        edge_quat=edge_quat,
     )
 
 
@@ -661,6 +674,7 @@ def _get_empty_edge_cache(
     """
     empty_long = torch.empty(0, dtype=torch.long, device=device)
     empty_vec = torch.empty(0, 3, dtype=dtype, device=device)
+    empty_quat = torch.empty(0, 4, dtype=dtype, device=device)
     empty_rbf = torch.empty(0, n_radial, dtype=dtype, device=device)
     empty_type_feat = torch.empty(0, n_channel, dtype=dtype, device=device)
     deg = torch.zeros(n_nodes, dtype=dtype, device=device)
@@ -679,6 +693,7 @@ def _get_empty_edge_cache(
         D_to_m_cache={},
         Dt_from_m_cache={},
         edge_src_gate=None,
+        edge_quat=empty_quat,
     )
 
 
@@ -835,15 +850,19 @@ def edge_cache_to_dtype(
     _D_full = cache.D_full
     _Dt_full = cache.Dt_full
     _edge_src_gate = cache.edge_src_gate
+    _edge_quat = cache.edge_quat
     D_full: torch.Tensor | None = None
     Dt_full: torch.Tensor | None = None
     edge_src_gate: torch.Tensor | None = None
+    edge_quat: torch.Tensor | None = None
     if _D_full is not None:
         D_full = _D_full.to(dtype=dtype)
     if _Dt_full is not None:
         Dt_full = _Dt_full.to(dtype=dtype)
     if _edge_src_gate is not None:
         edge_src_gate = _edge_src_gate.to(dtype=dtype)
+    if _edge_quat is not None:
+        edge_quat = _edge_quat.to(dtype=dtype)
 
     return EdgeFeatureCache(
         src=cache.src,
@@ -859,4 +878,5 @@ def edge_cache_to_dtype(
         D_to_m_cache=None if cache.D_to_m_cache is None else {},
         Dt_from_m_cache=None if cache.Dt_from_m_cache is None else {},
         edge_src_gate=edge_src_gate,
+        edge_quat=edge_quat,
     )

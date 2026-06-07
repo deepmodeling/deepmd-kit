@@ -619,7 +619,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         self.kmax = int(kmax)
         if self.kmax < 0:
             raise ValueError("`kmax` must be non-negative")
-        if self.kmax > int(lmax):
+        if self.kmax > self.lmax:
             raise ValueError("`kmax` must be <= `lmax`")
         self.ebed_dims = [get_so3_dim_of_lmax(l) for l in self.l_schedule]
         self._init_node_l_schedules(extra_node_l)
@@ -844,8 +844,14 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
 
         blocks: list[SeZMInteractionBlock] = []
         for block_idx, (l_b, node_l_b, m_b) in enumerate(
-            zip(self.l_schedule, self.node_l_schedule, self.m_schedule)
+            zip(
+                self.l_schedule,
+                self.node_l_schedule,
+                self.m_schedule,
+                strict=True,
+            )
         ):
+            k_b = min(self.kmax, l_b)
             blocks.append(
                 SeZMInteractionBlock(
                     lmax=l_b,
@@ -877,7 +883,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                     message_node_so3=self.message_node_so3,
                     ffn_s2_activation=self.ffn_s2_activation,
                     ffn_so3_grid=self.ffn_so3_grid,
-                    kmax=self.kmax,
+                    kmax=k_b,
                     so2_lebedev_quadrature=self.so2_lebedev_quadrature,
                     ffn_lebedev_quadrature=self.ffn_lebedev_quadrature,
                     n_atten_head=self.n_atten_head,
@@ -1511,12 +1517,14 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             mp_row_index,
             mp_m0_col_index,
         ]
-        edge_len = safe_norm(edge_cache.edge_vec, self.eps)
-        edge_quat = build_edge_quaternion(
-            edge_cache.edge_vec,
-            edge_len=edge_len,
-            eps=self.eps,
-        )
+        edge_quat = edge_cache.edge_quat
+        if edge_quat is None:
+            edge_len = safe_norm(edge_cache.edge_vec, self.eps)
+            edge_quat = build_edge_quaternion(
+                edge_cache.edge_vec,
+                edge_len=edge_len,
+                eps=self.eps,
+            )
         extra_coupling = self.gie_zonal_wigner_calc.forward_zonal(
             edge_quat,
             lmin=self.lmax + 1,
@@ -1676,7 +1684,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             raise ValueError("`m_schedule` must have the same length as `l_schedule`")
         if any(x < 0 for x in self.m_schedule):
             raise ValueError("`m_schedule` entries must be non-negative")
-        if any(m > l for m, l in zip(self.m_schedule, self.l_schedule)):
+        if any(m > l for m, l in zip(self.m_schedule, self.l_schedule, strict=True)):
             raise ValueError(
                 "`m_schedule` entries must satisfy `m_schedule[i] <= l_schedule[i]`"
             )

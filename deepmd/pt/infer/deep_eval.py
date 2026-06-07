@@ -325,6 +325,12 @@ class DeepEval(DeepEvalBackend):
                         "vesin[torch]`) or use nlist_backend='native' (or 'auto')."
                     )
                 builder = VesinNeighborList()
+            elif DEVICE.type != "cuda":
+                raise ValueError(
+                    "nlist_backend='nv' requires CUDA inference tensors; "
+                    f"current DEVICE is {DEVICE!s}. Use nlist_backend='native' "
+                    "(or 'auto') for CPU inference."
+                )
             elif not is_nv_available():
                 raise ImportError(
                     "nlist_backend='nv' was requested but 'nvalchemi-toolkit-ops'"
@@ -338,7 +344,7 @@ class DeepEval(DeepEvalBackend):
             # Pick the first available O(N) builder; nv is GPU-only.
             if is_vesin_torch_available():
                 builder = VesinNeighborList()
-            elif is_nv_available() and torch.cuda.is_available():
+            elif is_nv_available() and DEVICE.type == "cuda":
                 builder = NvNeighborList()
         self._nlist_builder = builder
 

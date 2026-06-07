@@ -830,9 +830,11 @@ if SEZM_CUTE_AVAILABLE:
 
 
 # === Public API ==============================================================
-def _cute_usable(*tensors: Tensor) -> bool:
+def _cute_usable(channels: int, *tensors: Tensor) -> bool:
     """Return True when the CuTe fast path is available for these tensors."""
     if not SEZM_CUTE_AVAILABLE:
+        return False
+    if int(channels) < _TN or int(channels) % _TN != 0:
         return False
     return all(
         t.is_cuda and t.dtype == torch.float32 for t in tensors if t.is_floating_point()
@@ -872,7 +874,7 @@ def rotate_to_local_cute(
     Experimental path that is not used in production. See the module docstring
     for the benchmark conclusion and why the Triton kernels were chosen instead.
     """
-    if _cute_usable(x, wigner) and src.numel() > 0:
+    if _cute_usable(x.shape[2], x, wigner) and src.numel() > 0:
         return torch.ops.sezm_cute.rotate_to_local(
             x, src, wigner, coeff_index, int(dim_full)
         )
@@ -909,7 +911,7 @@ def rotate_back_cute(
     Experimental path that is not used in production. See the module docstring
     for the benchmark conclusion and why the Triton kernels were chosen instead.
     """
-    if _cute_usable(x_local, wigner) and x_local.shape[0] > 0:
+    if _cute_usable(x_local.shape[2], x_local, wigner) and x_local.shape[0] > 0:
         return torch.ops.sezm_cute.rotate_back(
             x_local, wigner, coeff_index, int(dim_full)
         )

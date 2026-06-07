@@ -638,7 +638,8 @@ class SeZMInteractionBlock(nn.Module):
         """
         return (
             not self.training
-            and os.environ.get("DP_ACT_INFER") == "1"
+            and os.environ.get("DP_ACT_INFER", "").strip().lower()
+            in {"1", "true", "yes", "on"}
             and os.environ.get("DP_COMPILE_INFER", "").strip().lower()
             not in {"1", "true", "yes", "on"}
             and torch.is_grad_enabled()

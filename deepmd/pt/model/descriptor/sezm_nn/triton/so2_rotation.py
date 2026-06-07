@@ -39,21 +39,19 @@ Design goals
    ``input_precision="ieee"`` so the contraction runs in true IEEE FP32 (no
    TF32). This keeps the potential-energy surface smooth.
 
-3. **Compose with ``torch.compile`` (correct forces).** The public ops are
-   *modern* functional ``torch.library.custom_op`` s (``mutates_args=()``) with
-   ``register_fake`` + ``register_autograd``. The backward is itself a pair of
-   functional custom ops. We never use ``torch.autograd.Function`` and never
-   mutate an input/output tensor in place at the Python level. This is what
-   makes the gradient w.r.t. ``wigner`` survive ``make_fx`` functionalization
-   (the legacy ``autograd.Function`` + in-place path drops it, producing wrong
-   forces under ``torch.compile``).
+3. **Compose with SeZM's ``make_fx`` lowering.** The operators are functional
+   ``torch.library.custom_op`` instances (``mutates_args=()``) with registered
+   fake kernels and autograd formulas. The backward is itself expressed as
+   functional custom ops, so ``make_fx(tracing_mode="symbolic")`` can capture the
+   energy path together with the force autograd graph used by inference.
 
 Shapes / dtypes
 ---------------
-``x``/``x_local`` and ``wigner`` are float (fp32 is the supported precision for
-the smooth PES; fp16/bf16 also run but accumulate in fp32). ``src`` and
-``coeff_index`` are int64. ``E`` (edges) may exceed 2**31 elements once
-multiplied by the per-edge matrix size, so all kernels use int64 addressing.
+``x``/``x_local`` and ``wigner`` are float tensors; fp32 is the supported
+precision for the smooth potential-energy surface, while fp16/bf16 inputs
+accumulate in fp32. ``src`` and ``coeff_index`` are int64 tensors. ``E`` (edges)
+may exceed 2**31 elements once multiplied by the per-edge matrix size, so all
+kernels use int64 addressing.
 """
 
 from __future__ import (
@@ -73,11 +71,9 @@ from ..indexing import (
 
 __all__ = [
     "TRITON_ROTATION_AVAILABLE",
-    "rotate_back",
     "rotate_back_block",
     "rotate_back_dense",
     "rotate_back_reference",
-    "rotate_to_local",
     "rotate_to_local_block",
     "rotate_to_local_dense",
     "rotate_to_local_reference",
@@ -1169,13 +1165,9 @@ def _block_layout_lmax(coeff_index: Tensor, dim_full: int) -> int:
     """Return ``lmax`` if ``(coeff_index, dim_full)`` is the m-major ``mmax=1``
     layout that the block-diagonal kernels assume, else ``-1``.
 
-    Detection uses ONLY shapes / python ints -- never tensor *values* -- so it is
-    safe under ``make_fx`` / fake-tensor tracing (the production compiled
-    inference path). The test is: ``dim_full`` is a perfect square ``(lmax+1)^2``
-    and ``Dm == 3*lmax+1``. For a fixed ``lmax`` the reduced size ``Dm`` is
-    strictly increasing in ``mmax`` (``lmax+1``, ``3*lmax+1``, ``5*lmax-1``, ...),
-    so ``Dm == 3*lmax+1`` uniquely pins ``mmax == 1``; combined with the model's
-    canonical ``build_m_major_index`` ordering this fully determines the layout.
+    This intentionally checks only shape-level invariants.  The block kernels
+    ignore ``coeff_index`` values, so production callers must only use the block
+    entry points when they own the canonical m-major ``mmax=1`` index.
     """
     dim_full = int(dim_full)
     root = math.isqrt(dim_full)
@@ -1455,19 +1447,19 @@ def _block_rotate_back_bwd_impl(
 # ``wigner`` -- intact under ``torch.compile``.
 
 _rotate_to_local_op = torch.library.custom_op(
-    "sezm_accel::rotate_to_local", mutates_args=()
+    "sezm_triton::rotate_to_local", mutates_args=()
 )(_rotate_to_local_impl)
 
 _rotate_to_local_bwd_op = torch.library.custom_op(
-    "sezm_accel::rotate_to_local_bwd", mutates_args=()
+    "sezm_triton::rotate_to_local_bwd", mutates_args=()
 )(_rotate_to_local_bwd_impl)
 
-_rotate_back_op = torch.library.custom_op("sezm_accel::rotate_back", mutates_args=())(
+_rotate_back_op = torch.library.custom_op("sezm_triton::rotate_back", mutates_args=())(
     _rotate_back_impl
 )
 
 _rotate_back_bwd_op = torch.library.custom_op(
-    "sezm_accel::rotate_back_bwd", mutates_args=()
+    "sezm_triton::rotate_back_bwd", mutates_args=()
 )(_rotate_back_bwd_impl)
 
 
@@ -1529,19 +1521,19 @@ _rotate_back_op.register_autograd(
 
 # --- block-diagonal custom ops (carry only ``lmax``; no coeff_index tensor) ---
 _block_to_local_op = torch.library.custom_op(
-    "sezm_accel::rotate_to_local_block", mutates_args=()
+    "sezm_triton::rotate_to_local_block", mutates_args=()
 )(_block_rotate_to_local_impl)
 
 _block_to_local_bwd_op = torch.library.custom_op(
-    "sezm_accel::rotate_to_local_block_bwd", mutates_args=()
+    "sezm_triton::rotate_to_local_block_bwd", mutates_args=()
 )(_block_rotate_to_local_bwd_impl)
 
 _block_back_op = torch.library.custom_op(
-    "sezm_accel::rotate_back_block", mutates_args=()
+    "sezm_triton::rotate_back_block", mutates_args=()
 )(_block_rotate_back_impl)
 
 _block_back_bwd_op = torch.library.custom_op(
-    "sezm_accel::rotate_back_block_bwd", mutates_args=()
+    "sezm_triton::rotate_back_block_bwd", mutates_args=()
 )(_block_rotate_back_bwd_impl)
 
 
@@ -1600,101 +1592,43 @@ _block_back_op.register_autograd(
 # ======================================================================
 # Public API
 # ======================================================================
-def rotate_to_local(
-    x: Tensor,
-    src: Tensor,
-    wigner: Tensor,
-    coeff_index: Tensor,
-    dim_full: int,
-) -> Tensor:
-    """Fused ``global -> edge-local reduced`` rotation ``bmm(D_to_m, x[src])``.
-
-    Parameters
-    ----------
-    x
-        Node features, shape ``(N, D, C)``.
-    src
-        Source-node index per edge, shape ``(E,)`` int64.
-    wigner
-        Per-edge packed Wigner-D matrices, shape ``(E, Dw, Dw)`` with
-        ``Dw >= dim_full``.
-    coeff_index
-        m-major reduced-layout row indices, shape ``(Dm,)`` int64.
-    dim_full
-        Full packed SO(3) dimension ``D = (lmax+1)**2``.
-
-    Returns
-    -------
-    Tensor
-        Rotated reduced-layout edge features, shape ``(E, Dm, C)``.
-
-    Notes
-    -----
-    When ``(coeff_index, dim_full)`` is the m-major ``mmax=1`` layout, this
-    auto-selects the block-diagonal kernel (which assumes a block-diagonal
-    Wigner-D, as produced by the model); otherwise it uses the dense kernel.
-    """
-    lmax = _block_layout_lmax(coeff_index, dim_full)
-    if lmax >= 0:
-        return _block_to_local_op(x, src, wigner, lmax)
-    return _rotate_to_local_op(x, src, wigner, coeff_index, int(dim_full))
-
-
-def rotate_back(
-    x_local: Tensor,
-    wigner: Tensor,
-    coeff_index: Tensor,
-    dim_full: int,
-) -> Tensor:
-    """Fused ``edge-local reduced -> global`` rotation ``bmm(Dt_from_m, x_local)``.
-
-    Parameters
-    ----------
-    x_local
-        Reduced-layout edge features, shape ``(E, Dm, C)``.
-    wigner
-        Per-edge packed Wigner-D matrices, shape ``(E, Dw, Dw)`` with
-        ``Dw >= dim_full``.
-    coeff_index
-        m-major reduced-layout column indices, shape ``(Dm,)`` int64.
-    dim_full
-        Full packed SO(3) dimension ``D = (lmax+1)**2``.
-
-    Returns
-    -------
-    Tensor
-        Lifted global-layout edge features, shape ``(E, D, C)``.
-
-    Notes
-    -----
-    Auto-selects the block-diagonal kernel for the m-major ``mmax=1`` layout,
-    else the dense kernel (see ``rotate_to_local``).
-    """
-    lmax = _block_layout_lmax(coeff_index, dim_full)
-    if lmax >= 0:
-        return _block_back_op(x_local, wigner, lmax)
-    return _rotate_back_op(x_local, wigner, coeff_index, int(dim_full))
-
-
-# --- Explicit entry points (benchmarking / forcing a path) ---
+# --- Public entry points -----------------------------------------------------
 def rotate_to_local_dense(
     x: Tensor, src: Tensor, wigner: Tensor, coeff_index: Tensor, dim_full: int
 ) -> Tensor:
-    """Force the dense (general-layout) ``rotate_to_local`` kernel."""
+    """Apply the general ``global -> local`` rotation.
+
+    This entry point honors every value in ``coeff_index`` and supports any
+    reduced coefficient layout.  It computes the same operation as
+    ``rotate_to_local_reference`` while avoiding materialized gather operands on
+    CUDA.
+    """
     return _rotate_to_local_op(x, src, wigner, coeff_index, int(dim_full))
 
 
 def rotate_back_dense(
     x_local: Tensor, wigner: Tensor, coeff_index: Tensor, dim_full: int
 ) -> Tensor:
-    """Force the dense (general-layout) ``rotate_back`` kernel."""
+    """Apply the general ``local -> global`` rotation.
+
+    This entry point honors every value in ``coeff_index`` and supports any
+    reduced coefficient layout.  It computes the same operation as
+    ``rotate_back_reference`` while avoiding materialized gather operands on
+    CUDA.
+    """
     return _rotate_back_op(x_local, wigner, coeff_index, int(dim_full))
 
 
 def rotate_to_local_block(
     x: Tensor, src: Tensor, wigner: Tensor, coeff_index: Tensor, dim_full: int
 ) -> Tensor:
-    """Force the block-diagonal ``rotate_to_local`` kernel (requires mmax=1 layout)."""
+    """Apply the block-diagonal ``global -> local`` rotation.
+
+    Use this only when the caller owns the invariant that ``coeff_index`` is the
+    canonical m-major ``mmax=1`` index produced by
+    :func:`build_m_major_index`.  The kernel ignores the tensor values in
+    ``coeff_index`` and derives the layout from ``lmax``.
+    """
     lmax = _block_layout_lmax(coeff_index, dim_full)
     if lmax < 0:
         raise ValueError(
@@ -1706,7 +1640,13 @@ def rotate_to_local_block(
 def rotate_back_block(
     x_local: Tensor, wigner: Tensor, coeff_index: Tensor, dim_full: int
 ) -> Tensor:
-    """Force the block-diagonal ``rotate_back`` kernel (requires mmax=1 layout)."""
+    """Apply the block-diagonal ``local -> global`` rotation.
+
+    Use this only when the caller owns the invariant that ``coeff_index`` is the
+    canonical m-major ``mmax=1`` index produced by
+    :func:`build_m_major_index`.  The kernel ignores the tensor values in
+    ``coeff_index`` and derives the layout from ``lmax``.
+    """
     lmax = _block_layout_lmax(coeff_index, dim_full)
     if lmax < 0:
         raise ValueError(

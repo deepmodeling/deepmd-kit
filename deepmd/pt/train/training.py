@@ -11,6 +11,7 @@ from collections.abc import (
     Iterable,
 )
 from contextlib import (
+    contextmanager,
     nullcontext,
 )
 from copy import (
@@ -147,6 +148,22 @@ from deepmd.utils.path import (
 log = logging.getLogger(__name__)
 
 
+@contextmanager
+def _scoped_env_defaults(defaults: dict[str, str]) -> Generator[None, None, None]:
+    """Temporarily set missing environment variables and restore them afterward."""
+    previous = {key: os.environ.get(key) for key in defaults}
+    try:
+        for key, value in defaults.items():
+            os.environ.setdefault(key, value)
+        yield
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
+
+
 class Trainer:
     def __init__(
         self,
@@ -182,14 +199,11 @@ class Trainer:
         optimizer_params = config.get("optimizer", {})
 
         validating_params = config.get("validating") or {}
-        # NOTE: Translate eval/inference options from input.json into
-        # environment variables before any model is constructed below.
-        # SeZMModel samples these env vars exactly once inside its __init__.
-        # ``setdefault`` preserves explicit shell-level overrides.
+        infer_env_defaults = {}
         if bool(validating_params.get("compiled_infer", False)):
-            os.environ.setdefault("DP_COMPILE_INFER", "1")
+            infer_env_defaults["DP_COMPILE_INFER"] = "1"
         if bool(validating_params.get("tf32_infer", False)):
-            os.environ.setdefault("DP_TF32_INFER", "1")
+            infer_env_defaults["DP_TF32_INFER"] = "1"
         self.multi_task = "model_dict" in model_params
         self.finetune_links = finetune_links
         self.finetune_update_stat = False
@@ -446,11 +460,14 @@ class Trainer:
             }
 
         # Model
-        self.model = get_model_for_wrapper(
-            model_params,
-            resuming=resuming,
-            _loss_params=loss_param_tmp,
-        )
+        # SeZMModel samples these eval/inference env vars exactly once inside
+        # __init__; keep config-derived defaults scoped to construction.
+        with _scoped_env_defaults(infer_env_defaults):
+            self.model = get_model_for_wrapper(
+                model_params,
+                resuming=resuming,
+                _loss_params=loss_param_tmp,
+            )
         # SeZM specific process for DeNS training
         prepare_model_for_loss(self.model, loss_param_tmp)
 
