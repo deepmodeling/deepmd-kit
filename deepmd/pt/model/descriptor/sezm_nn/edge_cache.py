@@ -24,9 +24,6 @@ from einops import (
     rearrange,
 )
 
-from .triton import (
-    edge_geometry_rbf_triton,
-)
 from .utils import (
     get_promoted_dtype,
     nvtx_range,
@@ -222,7 +219,6 @@ def build_edge_cache(
     n_radial: int,
     random_gamma: bool,
     wigner_calc: WignerCalculatorFn,
-    use_geometry_rbf_triton: bool = False,
 ) -> EdgeFeatureCache:
     """
     Build the global edge cache from DeePMD padded neighbor list.
@@ -284,9 +280,6 @@ def build_edge_cache(
     wigner_calc
         Callable that converts edge-aligned quaternions into packed Wigner-D
         blocks.
-    use_geometry_rbf_triton
-        Whether to allow the standard-path fused Triton geometry/RBF chain
-        ``gather -> vec -> len -> env -> rbf``.
 
     Returns
     -------
@@ -320,47 +313,27 @@ def build_edge_cache(
         )
 
     # === Step 3-5. Edge geometry/RBF chain ===
-    # This segment covers:
     #   gather -> edge_vec -> edge_len -> edge_env -> edge_rbf
-    # The Triton path is only used on the standard non-compile path when the
-    # caller explicitly allows it (descriptor eval/inference path). Bridging
-    # primitives never enter here; they are owned by the sparse-edge path.
     coord_flat = coord.reshape(nf * nall, 3)
-    use_bessel_triton = (
-        use_geometry_rbf_triton
-        and getattr(radial_basis, "basis_type", "bessel") == "bessel"
-    )
-    if use_bessel_triton:
-        with nvtx_range("edge_geometry_rbf_triton"):
-            edge_vec, edge_len, edge_env, edge_rbf = edge_geometry_rbf_triton(
-                coord_flat=coord_flat,
-                center_coord_index=center_coord_index,
-                neighbor_coord_index=neighbor_coord_index,
-                edge_envelope=edge_envelope,
-                radial_basis=radial_basis,
-                eps=eps,
-                inner_clamp=None,
-            )
-    else:
-        # === Step 3. Gather per-edge geometry ===
-        # edge_vec points from center -> neighbor: r_ij = r_j - r_i (in Å).
-        # edge_len is the scalar distance.
-        with nvtx_range("edge_geom"):
-            center_pos = coord_flat.index_select(0, center_coord_index)
-            neighbor_pos = coord_flat.index_select(0, neighbor_coord_index)
-            edge_vec = neighbor_pos - center_pos  # (E, 3)
-            edge_len = safe_norm(edge_vec, eps)  # (E, 1)
+    # === Step 3. Gather per-edge geometry ===
+    # edge_vec points from center -> neighbor: r_ij = r_j - r_i (in Å).
+    # edge_len is the scalar distance.
+    with nvtx_range("edge_geom"):
+        center_pos = coord_flat.index_select(0, center_coord_index)
+        neighbor_pos = coord_flat.index_select(0, neighbor_coord_index)
+        edge_vec = neighbor_pos - center_pos  # (E, 3)
+        edge_len = safe_norm(edge_vec, eps)  # (E, 1)
 
-        # === Step 4. C^3 envelope weight ===
-        # Edges with r >= rcut are not removed from the cache. Their envelope is
-        # exactly zero, so messages vanish naturally while degree normalization
-        # remains smooth at the cutoff boundary.
-        with nvtx_range("envelope"):
-            edge_env = edge_envelope(edge_len)  # (E, 1)
+    # === Step 4. C^3 envelope weight ===
+    # Edges with r >= rcut are not removed from the cache. Their envelope is
+    # exactly zero, so messages vanish naturally while degree normalization
+    # remains smooth at the cutoff boundary.
+    with nvtx_range("envelope"):
+        edge_env = edge_envelope(edge_len)  # (E, 1)
 
-        # === Step 5. Radial basis (envelope already baked in) ===
-        with nvtx_range("radial_basis"):
-            edge_rbf = radial_basis(edge_len)  # (E, n_radial)
+    # === Step 5. Radial basis (envelope already baked in) ===
+    with nvtx_range("radial_basis"):
+        edge_rbf = radial_basis(edge_len)  # (E, n_radial)
 
     # === Step 6. Edge quaternion -> Wigner-D blocks ===
     with nvtx_range("wigner_d"):

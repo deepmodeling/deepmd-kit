@@ -464,6 +464,21 @@ leave energy and force MAE nearly unchanged while making the potential energy
 surface less smooth. For less smoothness-sensitive evaluation or screening
 workloads, `DP_TF32_INFER=1` or `2` may be useful for improving throughput.
 
+`DP_TRITON_INFER` enables fused block-diagonal Triton kernels for the SO(2)
+Wigner-D rotation. It applies to evaluation and inference on CUDA in eval mode
+only and is disabled by default:
+
+```bash
+export DP_TRITON_INFER=1
+```
+
+The kernels operate on the block-diagonal (by degree `l`) structure of the
+Wigner-D matrix and are numerically equivalent to the default dense rotation up
+to floating-point rounding. They retain full float32 accumulation regardless of
+`DP_TF32_INFER` and are therefore appropriate for smoothness-sensitive
+workflows. They are compatible with the compile path (`DP_COMPILE_INFER=1`) and
+reduce both latency and peak memory.
+
 ### Hardware selection
 
 DPA4/SeZM is designed for fp32 training and inference. Hardware selection

@@ -1,28 +1,17 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Public Triton entry points for SeZM SO(2) rotations."""
+"""Hardware-accelerated SeZM/DPA4 operators.
 
-from .autograd import (
-    edge_geometry_rbf_triton,
-    rotate_back_triton,
-    rotate_to_local_triton,
-)
-from .constants import (
-    SEZM_TRITON_AVAILABLE,
-    TritonRotationMode,
-)
-from .dispatch import (
-    resolve_triton_rotation_mode,
-    sezm_triton_enabled,
-    uses_triton_kernel,
+This package hosts clean, ``torch.compile``-composable Triton implementations of
+SeZM hot paths. The first member is the fused SO(2)/Wigner rotation pair used by
+the SO(2) convolution (``rotate_to_local`` / ``rotate_back``).
+"""
+
+from .so2_rotation import (
+    rotate_back,
+    rotate_to_local,
 )
 
 __all__ = [
-    "SEZM_TRITON_AVAILABLE",
-    "TritonRotationMode",
-    "edge_geometry_rbf_triton",
-    "resolve_triton_rotation_mode",
-    "rotate_back_triton",
-    "rotate_to_local_triton",
-    "sezm_triton_enabled",
-    "uses_triton_kernel",
+    "rotate_back",
+    "rotate_to_local",
 ]

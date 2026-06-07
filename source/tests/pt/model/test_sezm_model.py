@@ -586,7 +586,6 @@ class TestSeZMModelCompile(unittest.TestCase):
             n_radial=descriptor.radial_basis.n_radial,
             random_gamma=False,
             wigner_calc=descriptor.wigner_calc,
-            use_geometry_rbf_triton=False,
         )
 
         edge_index, edge_vec, edge_mask = model.build_edge_list_from_nlist(

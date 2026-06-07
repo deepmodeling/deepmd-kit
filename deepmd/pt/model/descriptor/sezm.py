@@ -33,7 +33,6 @@ from __future__ import (
 )
 
 import math
-import os
 from contextlib import (
     contextmanager,
 )
@@ -555,12 +554,6 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         self.layer_scale = bool(layer_scale)
         self.use_amp = bool(use_amp)  # and self.training
         self.trainable = bool(trainable)
-        self.use_triton = os.environ.get("DP_TRITON", "0").lower() in (
-            "1",
-            "true",
-            "yes",
-            "on",
-        )
         self.seed = seed
         self.random_gamma = bool(random_gamma)
         self.add_chg_spin_ebd = bool(add_chg_spin_ebd)
@@ -899,7 +892,6 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                     ffn_activation_function=self.ffn_activation_function,
                     ffn_glu_activation=self.ffn_glu_activation,
                     mlp_bias=self.mlp_bias,
-                    use_triton=self.use_triton,
                     eps=self.eps,
                     dtype=self.dtype,
                     seed=child_seed(seed_blocks, block_idx),
@@ -1128,7 +1120,6 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 # the model is roll-equivariant, so inference fixes gamma.
                 random_gamma=self.random_gamma and self.training,
                 wigner_calc=self.wigner_calc,
-                use_geometry_rbf_triton=(self.use_triton and not self.training),
             )
 
         ebed_dim_0 = self.node_ebed_dims[0]  # (node_lmax+1)^2

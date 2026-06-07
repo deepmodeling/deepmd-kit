@@ -601,7 +601,6 @@ def _sezm_structure_key(model: SeZMModel) -> tuple[Any, ...]:
     fitting_key = _module_shared_key(fitting)
     descriptor_state = (
         _int_pair_tuple(descriptor.exclude_types),
-        bool(descriptor.use_triton),
         bool(descriptor.use_env_seed),
         bool(descriptor.use_gie),
         bool(descriptor.random_gamma),

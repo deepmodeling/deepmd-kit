@@ -11,6 +11,7 @@ from __future__ import (
 )
 
 import math
+import os
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -71,10 +72,8 @@ from .so3 import (
     SO3Linear,
 )
 from .triton import (
-    resolve_triton_rotation_mode,
-    rotate_back_triton,
-    rotate_to_local_triton,
-    sezm_triton_enabled,
+    rotate_back,
+    rotate_to_local,
 )
 from .utils import (
     ATTN_RES_MODES,
@@ -794,9 +793,6 @@ class SO2Convolution(nn.Module):
     mlp_bias
         Whether to use bias in SO2Linear (l=0 bias) and GatedActivation
         (gate linear bias).
-    use_triton
-        If True, opt into fused Triton SO(2) rotation kernels on supported
-        CUDA dtypes. The eager projection path remains the default.
     radial_so2_mode
         Dynamic radial degree mixer mode. ``"none"`` applies elementwise
         radial modulation, ``"degree"`` applies a channel-shared dynamic
@@ -845,7 +841,6 @@ class SO2Convolution(nn.Module):
         lebedev_quadrature: bool = False,
         activation_function: str = "silu",
         mlp_bias: bool = False,
-        use_triton: bool = False,
         radial_so2_mode: str = "none",
         radial_so2_rank: int = 0,
         eps: float = 1e-7,
@@ -941,7 +936,6 @@ class SO2Convolution(nn.Module):
             else int(self.attn_focus_dim // self.n_atten_head)
         )
         self.mlp_bias = bool(mlp_bias)
-        self.use_triton = bool(use_triton)
         self.radial_so2_mode = str(radial_so2_mode).lower()
         if self.radial_so2_mode not in {"none", "degree", "degree_channel"}:
             raise ValueError(
@@ -956,10 +950,14 @@ class SO2Convolution(nn.Module):
         self.device = env.DEVICE
         self.precision = RESERVED_PRECISION_DICT[dtype]
         self.compute_dtype = get_promoted_dtype(self.dtype)
-        self.use_triton_rotations = self.use_triton and sezm_triton_enabled(
-            device=self.device,
-            dtype=self.dtype,
-        )
+        # Optional Triton rotation kernels for the SO(2) convolution, enabled by
+        # ``DP_TRITON_INFER=1`` (default disabled, in which case the dense
+        # ``bmm`` rotation is used). The flag is read once at construction so it
+        # is a compile-time constant in the traced (``make_fx``) graph, and it
+        # only takes effect during inference.
+        self.use_triton_infer = os.environ.get(
+            "DP_TRITON_INFER", "0"
+        ).strip().lower() in ("1", "true", "yes", "on")
 
         # === Step 1. Precompute coefficient indices for m-major reduced layout ===
         coeff_index_m = build_m_major_index(self.lmax, self.mmax, device=self.device)
@@ -978,10 +976,6 @@ class SO2Convolution(nn.Module):
             "rotate_inv_rescale_full", rotate_inv_rescale_full, persistent=True
         )
         self.reduced_dim = int(coeff_index_m.numel())
-        self.triton_rotation_mode = resolve_triton_rotation_mode(
-            dim_full=self.ebed_dim_full,
-            reduced_dim=self.reduced_dim,
-        )
 
         # === Step 2. Split deterministic seeds at the module top-level ===
         seed_so2_stack = child_seed(seed, 0)
@@ -1448,23 +1442,27 @@ class SO2Convolution(nn.Module):
         with nvtx_range("SO2Conv/rotate_to_local"):
             D_full = edge_cache.D_full
             x_dst_local: torch.Tensor | None = None
-            if self.use_triton_rotations and not self.training:
-                x_local = rotate_to_local_triton(
-                    x=x,
-                    src=src,
-                    wigner=D_full,
-                    coeff_index=self.coeff_index_m,
-                    dim_full=self.ebed_dim_full,
-                    rotation_mode=self.triton_rotation_mode,
+            if self.use_triton_infer and not self.training:
+                # ``rotate_to_local`` / ``rotate_back`` pick the kernel from the
+                # coefficient layout, not from this flag: the block-diagonal
+                # kernel for the canonical m-major ``mmax == 1`` layout used here
+                # (with ``lmax`` inferred from ``ebed_dim_full``), and a dense
+                # kernel for any other ``(lmax, mmax)``. Both compose with the
+                # traced force path through their functional custom-op autograd.
+                x_local = rotate_to_local(
+                    x,
+                    src,
+                    D_full,
+                    self.coeff_index_m,
+                    self.ebed_dim_full,
                 )  # (E, D_m, C_wide)
                 if self.node_wise_grid_product is not None:
-                    x_dst_local = rotate_to_local_triton(
-                        x=x,
-                        src=dst,
-                        wigner=D_full,
-                        coeff_index=self.coeff_index_m,
-                        dim_full=self.ebed_dim_full,
-                        rotation_mode=self.triton_rotation_mode,
+                    x_dst_local = rotate_to_local(
+                        x,
+                        dst,
+                        D_full,
+                        self.coeff_index_m,
+                        self.ebed_dim_full,
                     )  # (E, D_m, C_wide)
             else:
                 D_m_prime = project_D_to_m(
@@ -1621,13 +1619,12 @@ class SO2Convolution(nn.Module):
         # === Step 7. Rotate back to global frame ===
         with nvtx_range("SO2Conv/rotate_back"):
             Dt_full = edge_cache.Dt_full
-            if self.use_triton_rotations and not self.training:
-                x_message = rotate_back_triton(
-                    x_local=x_local,
-                    wigner=Dt_full,
-                    coeff_index=self.coeff_index_m,
-                    dim_full=self.ebed_dim_full,
-                    rotation_mode=self.triton_rotation_mode,
+            if self.use_triton_infer and not self.training:
+                x_message = rotate_back(
+                    x_local,
+                    Dt_full,
+                    self.coeff_index_m,
+                    self.ebed_dim_full,
                 )  # (E, D, C_wide)
             else:
                 Dt_from_m = project_Dt_from_m(
