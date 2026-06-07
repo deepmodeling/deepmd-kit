@@ -58,8 +58,6 @@ dependencies = [
     'array-api-compat',
     'lmdb',
     'msgpack',
-    # O(N) cell-list neighbor list (vesin.torch) for fast Python/ASE inference
-    'vesin[torch]',
 ]
 requires-python = ">=3.10"
 keywords = ["deepmd"]
