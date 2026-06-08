@@ -54,6 +54,10 @@ from deepmd.infer.deep_wfc import (
 from deepmd.pt.utils.auto_batch_size import (
     AutoBatchSize,
 )
+from deepmd.pt_expt.utils.vesin_neighbor_list import (
+    VesinNeighborList,
+    is_vesin_torch_available,
+)
 
 if TYPE_CHECKING:
     import ase.neighborlist
@@ -103,6 +107,7 @@ class DeepEval(DeepEvalBackend):
         *args: Any,
         auto_batch_size: bool | int | AutoBatchSize = True,
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
+        nlist_backend: str = "auto",
         **kwargs: Any,
     ) -> None:
         self.output_def = output_def
@@ -123,6 +128,8 @@ class DeepEval(DeepEvalBackend):
                 "`.pt` (training checkpoint)."
             )
 
+        self._setup_nlist_backend(nlist_backend)
+
         if isinstance(auto_batch_size, bool):
             if auto_batch_size:
                 self.auto_batch_size = AutoBatchSize()
@@ -134,6 +141,50 @@ class DeepEval(DeepEvalBackend):
             self.auto_batch_size = auto_batch_size
         else:
             raise TypeError("auto_batch_size should be bool, int, or AutoBatchSize")
+
+    def _setup_nlist_backend(self, nlist_backend: str) -> None:
+        """Resolve the neighbor-list construction strategy from a user choice.
+
+        ``"native"`` uses the dense all-pairs builder; ``"vesin"`` forces the
+        O(N) ``vesin.torch`` cell list (raising if it is unavailable or the
+        model/inputs are unsupported); ``"auto"`` uses vesin when applicable and
+        silently falls back to the native builder otherwise.  Results are
+        unchanged either way -- only the neighbor-search cost differs.
+        """
+        if nlist_backend not in ("auto", "vesin", "native"):
+            raise ValueError(
+                f"Unknown nlist_backend '{nlist_backend}'; "
+                "expected 'auto', 'vesin', or 'native'."
+            )
+        is_spin = bool(getattr(self, "_is_spin", False))
+        ase_provided = self.neighbor_list is not None
+        # reason vesin cannot be used (None means it can)
+        unsupported = "spin models" if is_spin else None
+        if nlist_backend == "native":
+            self._use_vesin = False
+        elif nlist_backend == "vesin":
+            if not is_vesin_torch_available():
+                raise ImportError(
+                    "nlist_backend='vesin' was requested but 'vesin.torch' is "
+                    "not installed. Install it (`pip install vesin[torch]`) or "
+                    "use nlist_backend='native' (or 'auto')."
+                )
+            if unsupported is not None:
+                raise ValueError(
+                    f"nlist_backend='vesin' is not supported for {unsupported}; "
+                    "use nlist_backend='native' (or 'auto')."
+                )
+            if ase_provided:
+                raise ValueError(
+                    "nlist_backend='vesin' conflicts with an explicitly "
+                    "supplied ASE neighbor_list; pass only one."
+                )
+            self._use_vesin = True
+        else:  # auto: use vesin when possible, otherwise fall back silently
+            self._use_vesin = (
+                is_vesin_torch_available() and unsupported is None and not ase_provided
+            )
+        self._nlist_builder = VesinNeighborList() if self._use_vesin else None
 
     def _init_from_model_json(self, model_json_str: str) -> None:
         """Deserialize model.json and derive model API from the dpmodel instance."""
@@ -368,9 +419,14 @@ class DeepEval(DeepEvalBackend):
         # eager inference).  Drop the latter and unwrap the former.
         cleaned: dict[str, Any] = {}
         compiled_marker = ".compiled_forward_lower."
+        # Per-task buffer copies registered on _CompiledModel (bias_atom_e,
+        # case_embd) — real values live on the original model's fitting net.
+        task_buf_marker = "._task_"
         wrapper_infix = ".original_model."
         for key, value in state_dict.items():
             if compiled_marker in key:
+                continue
+            if task_buf_marker in key:
                 continue
             if wrapper_infix in key:
                 key = key.replace(wrapper_infix, ".", 1)
@@ -825,6 +881,21 @@ class DeepEval(DeepEvalBackend):
         rcut = self._rcut
         sel = self._sel
         mixed_types = self._mixed_types
+
+        if self._nlist_builder is not None:
+            # O(N) cell-list strategy (e.g. vesin): builds the same extended
+            # representation.  Match the native builder's type handling
+            # (``distinguish_types=not mixed_types``) so consumers that bypass
+            # ``forward_common_lower``'s ``format_nlist`` -- e.g.
+            # ``eval_descriptor`` calling the descriptor directly -- receive the
+            # type-distinguished nlist a non-mixed-type descriptor expects.  The
+            # main eval path is unaffected (its ``format_nlist`` re-formats).
+            extended_coord, extended_atype, nlist, mapping = self._nlist_builder.build(
+                coords, atom_types, cells, rcut, sel
+            )
+            if not mixed_types:
+                nlist = nlist_distinguish_types(nlist, extended_atype, sel)
+            return extended_coord, extended_atype, nlist, mapping
 
         if cells is not None:
             box_input = cells.reshape(nframes, 3, 3)

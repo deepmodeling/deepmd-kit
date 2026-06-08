@@ -38,6 +38,7 @@ def format_training_message(
     wall_time: float,
     eta: int | None = None,
     current_time: datetime.datetime | None = None,
+    step_time: float | None = None,
 ) -> str:
     """Format the summary message for one training interval.
 
@@ -52,6 +53,9 @@ def format_training_message(
     current_time : datetime.datetime | None, optional
         Current local time used to estimate the finish timestamp. This is only
         used when ``eta`` is provided.
+    step_time : float | None, optional
+        Average wall-clock time per training step over this interval, in
+        seconds. Shown only when provided.
 
     Returns
     -------
@@ -59,6 +63,8 @@ def format_training_message(
         The formatted training message.
     """
     msg = f"Batch {batch:7d}: total wall time = {wall_time:.2f} s"
+    if step_time is not None:
+        msg += f", avg = {step_time:.4f} s/step"
     if isinstance(eta, int):
         eta_seconds = int(eta)
         msg += (

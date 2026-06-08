@@ -2203,5 +2203,99 @@ class TestEvalDescriptorASE(unittest.TestCase):
         np.testing.assert_allclose(f_native, f_ase, rtol=1e-10, atol=1e-10)
 
 
+class TestDeepEvalNlistBackend(unittest.TestCase):
+    """Dispatch + equivalence of the ``nlist_backend`` selection (.pte path).
+
+    The vesin O(N) neighbor-list strategy must, through the compiled
+    ``forward_common_lower``, give identical results to the dense native
+    builder; the dispatch must validate the choice and fall back / raise
+    according to ``auto`` / ``native`` / ``vesin``.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.rcut = 4.0
+        cls.rcut_smth = 0.5
+        cls.sel = [12, 10]
+        cls.nt = 2
+        cls.type_map = ["foo", "bar"]
+        ds = DescrptSeA(cls.rcut, cls.rcut_smth, cls.sel)
+        ft = EnergyFittingNet(
+            cls.nt, ds.get_dim_out(), mixed_types=ds.mixed_types(), seed=GLOBAL_SEED
+        )
+        cls.model = EnergyModel(ds, ft, type_map=cls.type_map).to(torch.float64)
+        cls.model.eval()
+        cls.tmpfile = tempfile.NamedTemporaryFile(suffix=".pte", delete=False)
+        cls.tmpfile.close()
+        deserialize_to_file(
+            cls.tmpfile.name, {"model": cls.model.serialize()}, do_atomic_virial=True
+        )
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        os.unlink(cls.tmpfile.name)
+
+    def _vesin_available(self) -> bool:
+        from deepmd.pt_expt.utils.vesin_neighbor_list import (
+            is_vesin_torch_available,
+        )
+
+        return is_vesin_torch_available()
+
+    def test_default_is_auto(self) -> None:
+        dp = DeepPot(self.tmpfile.name)
+        self.assertEqual(dp.deep_eval._use_vesin, self._vesin_available())
+
+    def test_native_disables_vesin(self) -> None:
+        dp = DeepPot(self.tmpfile.name, nlist_backend="native")
+        self.assertFalse(dp.deep_eval._use_vesin)
+
+    def test_invalid_raises(self) -> None:
+        with self.assertRaises(ValueError):
+            DeepPot(self.tmpfile.name, nlist_backend="bogus")
+
+    def test_vesin_requested_but_unavailable_raises(self) -> None:
+        if self._vesin_available():
+            self.skipTest("vesin.torch is installed; cannot test the missing path")
+        with self.assertRaises(ImportError):
+            DeepPot(self.tmpfile.name, nlist_backend="vesin")
+
+    def test_vesin_matches_native(self) -> None:
+        if not self._vesin_available():
+            self.skipTest("vesin.torch is not installed")
+        rng = np.random.default_rng(GLOBAL_SEED + 21)
+        natoms = 6
+        coords = rng.random((1, natoms, 3)) * 8.0
+        atom_types = np.array([i % self.nt for i in range(natoms)], dtype=np.int32)
+        dp_native = DeepPot(self.tmpfile.name, nlist_backend="native")
+        dp_vesin = DeepPot(self.tmpfile.name, nlist_backend="vesin")
+        for cells in (np.eye(3).reshape(1, 9) * 10.0, None):  # PBC and non-PBC
+            ref = dp_native.eval(coords, cells, atom_types, atomic=True)
+            out = dp_vesin.eval(coords, cells, atom_types, atomic=True)
+            for a, b, name in zip(ref, out, ["e", "f", "v", "ae", "av"], strict=True):
+                np.testing.assert_allclose(
+                    a, b, rtol=1e-10, atol=1e-10, err_msg=f"vesin vs native: {name}"
+                )
+
+    def test_eval_descriptor_vesin_matches_native(self) -> None:
+        """eval_descriptor bypasses forward_common_lower's format_nlist, so the
+        vesin builder must apply the same type-distinguishing as the native
+        builder for a non-mixed-type model (regression for the eval_descriptor
+        mismatch).
+        """
+        if not self._vesin_available():
+            self.skipTest("vesin.torch is not installed")
+        rng = np.random.default_rng(GLOBAL_SEED + 31)
+        natoms = 6
+        coords = rng.random((1, natoms, 3)) * 8.0
+        atom_types = np.array([i % self.nt for i in range(natoms)], dtype=np.int32)
+        dp_native = DeepPot(self.tmpfile.name, nlist_backend="native")
+        dp_vesin = DeepPot(self.tmpfile.name, nlist_backend="vesin")
+        for cells in (np.eye(3).reshape(1, 9) * 10.0, None):  # PBC and non-PBC
+            d_native = dp_native.deep_eval.eval_descriptor(coords, cells, atom_types)
+            d_vesin = dp_vesin.deep_eval.eval_descriptor(coords, cells, atom_types)
+            np.testing.assert_allclose(d_native, d_vesin, rtol=1e-10, atol=1e-10)
+
+
 if __name__ == "__main__":
     unittest.main()

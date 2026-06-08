@@ -17,9 +17,10 @@ from torch.overrides import (
     _get_current_function_mode_stack,
 )
 
-# ``deepmd.pt_expt.utils.comm`` self-bootstraps libdeepmd_op_pt.so via
-# ``_check_underlying_ops_loaded()``, so we no longer need to preload
-# ``deepmd.pt`` here.
+# ``deepmd.pt_expt.utils.comm`` is now lazy: libdeepmd_op_pt.so is only
+# loaded when ``ensure_comm_registered()`` is explicitly called from the
+# with_comm_dict export path.  Tests that don't exercise that path never
+# load the op library, preserving fake-op registration order.
 
 
 def _pop_device_contexts() -> list:

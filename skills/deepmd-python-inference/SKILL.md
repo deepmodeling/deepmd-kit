@@ -58,7 +58,7 @@ dp = DeepPot("graph.pb")
 dp = DeepPot("DPA-3.2-5M")
 ```
 
-Built-in pretrained model names include `DPA-3.2-5M`, `DPA-3.1-3M`, `DPA3-Omol-Large`, etc. DeePMD-kit will automatically download and cache the model on first use.
+Built-in pretrained model names include `DPA-3.3-1M`, `DPA-3.2-5M`, `DPA-3.1-3M`, `DPA3-Omol-Large`, etc. DeePMD-kit will automatically download and cache the model on first use.
 
 ### Predict Energy, Forces, and Virial
 
@@ -263,6 +263,7 @@ print(f"Forces:\n{f[0]}")
 To download pretrained models explicitly:
 
 ```bash
+dp pretrained download DPA-3.3-1M
 dp pretrained download DPA-3.2-5M
 dp pretrained download DPA-3.1-3M
 dp pretrained download DPA-3.2-5M --cache-dir ./models
