@@ -5,7 +5,9 @@ Used by ``deepmd.pt.model.model.sezm_model`` and
 ``deepmd.pt_expt.train.training``.
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import torch
 

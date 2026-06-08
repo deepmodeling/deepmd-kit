@@ -38,6 +38,14 @@ from deepmd.loggers.training import (
     format_training_message,
     format_training_message_per_task,
 )
+from deepmd.pt.utils.compile_utils import (
+    _next_safe_prime,
+    _trace_pad_dim,
+)
+from deepmd.pt.utils.compile_utils import rebuild_graph_module as _rebuild_graph_module
+from deepmd.pt.utils.compile_utils import (
+    strip_saved_tensor_detach as _strip_saved_tensor_detach,
+)
 from deepmd.pt_expt.loss import (
     DOSLoss,
     EnergyLoss,
@@ -63,12 +71,6 @@ from deepmd.utils.data import (
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
-)
-from deepmd.pt.utils.compile_utils import (
-    _next_safe_prime,
-    _trace_pad_dim,
-    rebuild_graph_module as _rebuild_graph_module,
-    strip_saved_tensor_detach as _strip_saved_tensor_detach,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -412,8 +414,12 @@ def _trace_and_compile(
     _forbidden.add(trace_nloc)
     trace_nall = _next_safe_prime(trace_nloc + 1, _forbidden)
 
-    ext_coord = _trace_pad_dim(_trace_pad_dim(ext_coord[:1], 0, trace_nf), 1, trace_nall)
-    ext_atype = _trace_pad_dim(_trace_pad_dim(ext_atype[:1], 0, trace_nf), 1, trace_nall)
+    ext_coord = _trace_pad_dim(
+        _trace_pad_dim(ext_coord[:1], 0, trace_nf), 1, trace_nall
+    )
+    ext_atype = _trace_pad_dim(
+        _trace_pad_dim(ext_atype[:1], 0, trace_nf), 1, trace_nall
+    )
     nlist = _trace_pad_dim(_trace_pad_dim(nlist[:1], 0, trace_nf), 1, trace_nloc)
     nlist = torch.clamp(nlist, min=-1, max=trace_nall - 1)
     mapping = _trace_pad_dim(_trace_pad_dim(mapping[:1], 0, trace_nf), 1, trace_nall)

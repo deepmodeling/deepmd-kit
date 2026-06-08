@@ -418,7 +418,9 @@ from deepmd.pt.utils import (
 from deepmd.pt.utils.compile_utils import (
     _next_safe_prime,
     _trace_pad_dim,
-    rebuild_graph_module as _rebuild_graph_module,
+)
+from deepmd.pt.utils.compile_utils import rebuild_graph_module as _rebuild_graph_module
+from deepmd.pt.utils.compile_utils import (
     strip_saved_tensor_detach as _strip_saved_tensor_detach,
 )
 from deepmd.pt.utils.nlist import (
