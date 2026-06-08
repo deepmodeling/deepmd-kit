@@ -65,52 +65,26 @@ def _trace_pad_dim(t: torch.Tensor, dim: int, target: int) -> torch.Tensor:
 
 
 def strip_saved_tensor_detach(gm: torch.fx.GraphModule) -> None:
-    """Strip ``aten.detach`` chains that ``make_fx`` inserts for saved tensors.
+    """Strip all ``aten.detach`` nodes that ``make_fx`` inserts for saved tensors.
 
     When ``make_fx`` decomposes ``autograd.grad(..., create_graph=True)``,
-    the autograd engine wraps every saved forward activation in a
-    double-detach chain (e.g. ``tanh -> detach_A -> detach_B ->
-    tanh_backward``).  These nodes sever the second-order gradient path
-    from the force loss back to model parameters.
+    the autograd engine wraps saved forward activations in detach nodes
+    (e.g. ``tanh -> detach_A -> detach_B -> tanh_backward``, or a single
+    ``activation -> detach_A -> backward_op`` for attention models).
+    These nodes sever the second-order gradient path from the force loss
+    back to model parameters.
 
-    User-explicit ``.detach()`` calls are preserved via three topology
-    rules that identify only the make_fx-inserted chains:
-
-    * *Chain inner*: input is another detach node.
-    * *Dead node*: no downstream users.
-    * *Chain head*: all users are detach nodes.
-
-    Any detach that matches none of these is left untouched.
+    All ``aten.detach.default`` nodes in the traced graph are removed.
+    User-explicit ``.detach()`` calls (e.g. ``coord.detach().requires_grad_(True)``
+    inside the traced function) are safe to remove because the caller
+    already detaches and sets ``requires_grad`` on the input before
+    invoking the compiled graph.
     """
     _DETACH = torch.ops.aten.detach.default
-
-    def _is_detach(n: torch.fx.Node) -> bool:
-        return n.op == "call_function" and n.target == _DETACH
-
-    # Pass 1 — classify against the original graph before any mutation.
-    to_remove: list[torch.fx.Node] = []
-    for node in gm.graph.nodes:
-        if not _is_detach(node):
-            continue
-        input_node = node.args[0]
-        users = list(node.users.keys())
-        is_chain_inner = _is_detach(input_node)
-        is_dead = len(users) == 0
-        # A detach is a chain head if ANY user is itself a detach node.
-        # Using `any` instead of `all` handles the branched pattern that
-        # attention models (DPA2, DPA3) produce: make_fx may assign the same
-        # "saved tensor" detach node to both a chain-continuation detach AND a
-        # direct backward op, so not all users are detaches but the node is
-        # still a make_fx-inserted chain head that must be removed.
-        is_chain_head = len(users) > 0 and any(_is_detach(u) for u in users)
-        if is_chain_inner or is_dead or is_chain_head:
-            to_remove.append(node)
-
-    # Pass 2 — rewire and erase after full classification.
-    for node in to_remove:
-        node.replace_all_uses_with(node.args[0])
-        gm.graph.erase_node(node)
-
+    for node in list(gm.graph.nodes):
+        if node.op == "call_function" and node.target == _DETACH:
+            node.replace_all_uses_with(node.args[0])
+            gm.graph.erase_node(node)
     gm.graph.lint()
     gm.recompile()
 
