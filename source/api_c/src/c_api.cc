@@ -678,8 +678,7 @@ inline void DP_DeepPotComputeNList_variantadd(DP_DeepPot* dp,
     return;
   }
   if (atomic_energy || atomic_virial) {
-    dp->exception =
-        "Direct dE/dN C API does not support atomic outputs";
+    dp->exception = "Direct dE/dN C API does not support atomic outputs";
     return;
   }
   DP_REQUIRES_OK(dp, dp->dp.compute(e, f, v, dedn, coord_, atype_, cell_,

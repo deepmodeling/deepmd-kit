@@ -106,7 +106,9 @@ def _energy_with_direct_fparam(fp_value):
         lmp.mass("1 16")
         lmp.timestep(0.0005)
         lmp.fix("1 all nve")
-        lmp.pair_style(f"deepmd {pb_file.resolve()} fparam {fp_value} aparam 0.25852028")
+        lmp.pair_style(
+            f"deepmd {pb_file.resolve()} fparam {fp_value} aparam 0.25852028"
+        )
         lmp.pair_coeff("* *")
         lmp.run(0)
         return lmp.eval("pe")
