@@ -64,6 +64,12 @@ from deepmd.utils.data import (
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
 )
+from deepmd.pt.utils.compile_utils import (
+    _next_safe_prime,
+    _trace_pad_dim,
+    rebuild_graph_module as _rebuild_graph_module,
+    strip_saved_tensor_detach as _strip_saved_tensor_detach,
+)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -265,45 +271,6 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
 # ---------------------------------------------------------------------------
 
 
-def _remove_detach_nodes(gm: torch.fx.GraphModule) -> None:
-    """Remove ``aten.detach.default`` nodes from an FX graph in-place.
-
-    ``make_fx`` inserts these nodes when recording saved tensors from the
-    autograd backward pass (``autograd.grad`` with ``create_graph=True``).
-    The detach breaks the gradient connection between saved activations and
-    model parameters, causing incorrect second-order derivatives — e.g.
-    bias gradients become zero for force-loss training.
-
-    Removing these nodes restores the gradient path so that higher-order
-    derivatives flow correctly through the decomposed backward ops.
-    """
-    graph = gm.graph
-    for node in list(graph.nodes):
-        if node.op == "call_function" and node.target == torch.ops.aten.detach.default:
-            input_node = node.args[0]
-            node.replace_all_uses_with(input_node)
-            graph.erase_node(node)
-    graph.lint()
-    gm.recompile()
-
-
-def _rebuild_graph_module(gm: torch.fx.GraphModule) -> torch.fx.GraphModule:
-    """Copy all nodes into a fresh ``torch.fx.Graph``.
-
-    After ``Graph.erase_node()`` the C-level prev/next pointers on
-    neighbouring ``Node`` objects may become stale.  When ``torch.compile``
-    (dynamo) later re-traces the graph it walks these pointers, which can
-    cause segfaults.  Rebuilding into a new graph eliminates stale pointers.
-    """
-    old_graph = gm.graph
-    new_graph = torch.fx.Graph()
-    val_map: dict[torch.fx.Node, torch.fx.Node] = {}
-    for node in old_graph.nodes:
-        val_map[node] = new_graph.node_copy(node, lambda n: val_map[n])
-    new_graph.lint()
-    return torch.fx.GraphModule(gm, new_graph)
-
-
 def _trace_and_compile(
     model: torch.nn.Module,
     ext_coord: torch.Tensor,
@@ -417,35 +384,46 @@ def _trace_and_compile(
                     if _fitting is not None:
                         _fitting._buffers[name] = orig
 
-    # Pick a trace-time nframes that's unlikely to collide with any other
-    # tensor dim in the graph.  The symbolic tracer merges symbols that
-    # are numerically equal at trace time, which bakes nframes into the
-    # compiled graph whenever it matches e.g. numb_fparam, numb_aparam,
-    # ntypes, axis_neuron, or neuron sizes (8, 16, 32, ...).  Using a
-    # prime value of 7 avoids the common small-dim collisions while still
-    # being cheap to trace.
-    _TRACE_NFRAMES = 7
-    cur_nframes = ext_coord.shape[0]
-    if cur_nframes != _TRACE_NFRAMES:
+    # Coerce trace inputs to pairwise-distinct prime sizes for nf, nloc, nall.
+    # make_fx (tracing_mode="symbolic") unifies dimension symbols that share
+    # the same concrete value at trace time, baking false equalities into the
+    # compiled graph.  Distinct primes >=5 sidestep PyTorch specialisations
+    # (0/1) and model literals (2=Cartesian, 3=3D/virial, 9=charge-spin*2+virial).
+    _forbidden: set[int] = {1, 2, 3, 9}
+    _nsel = int(nlist.shape[2])
+    if _nsel > 1:
+        _forbidden.add(_nsel)
+    try:
+        _dim_fp = model.get_dim_fparam()
+        if _dim_fp > 1:
+            _forbidden.add(_dim_fp)
+    except Exception:
+        pass
+    try:
+        _dim_ap = model.get_dim_aparam()
+        if _dim_ap > 1:
+            _forbidden.add(_dim_ap)
+    except Exception:
+        pass
 
-        def _expand(t: torch.Tensor | None) -> torch.Tensor | None:
-            if t is None:
-                return None
-            # Repeat rows so total nframes == _TRACE_NFRAMES.  Use index
-            # gather (mod) so we don't require divisibility.
-            idx = (
-                torch.arange(_TRACE_NFRAMES, dtype=torch.long, device=t.device)
-                % cur_nframes
-            )
-            return t.index_select(0, idx)
+    trace_nf = _next_safe_prime(5, _forbidden)
+    _forbidden.add(trace_nf)
+    trace_nloc = _next_safe_prime(trace_nf + 1, _forbidden)
+    _forbidden.add(trace_nloc)
+    trace_nall = _next_safe_prime(trace_nloc + 1, _forbidden)
 
-        ext_coord = _expand(ext_coord)
-        ext_atype = _expand(ext_atype)
-        nlist = _expand(nlist)
-        mapping = _expand(mapping)
-        fparam = _expand(fparam)
-        aparam = _expand(aparam)
-        charge_spin = _expand(charge_spin)
+    ext_coord = _trace_pad_dim(_trace_pad_dim(ext_coord[:1], 0, trace_nf), 1, trace_nall)
+    ext_atype = _trace_pad_dim(_trace_pad_dim(ext_atype[:1], 0, trace_nf), 1, trace_nall)
+    nlist = _trace_pad_dim(_trace_pad_dim(nlist[:1], 0, trace_nf), 1, trace_nloc)
+    nlist = torch.clamp(nlist, min=-1, max=trace_nall - 1)
+    mapping = _trace_pad_dim(_trace_pad_dim(mapping[:1], 0, trace_nf), 1, trace_nall)
+    mapping = torch.clamp(mapping, min=0, max=trace_nloc - 1)
+    if fparam is not None:
+        fparam = _trace_pad_dim(fparam[:1], 0, trace_nf)
+    if aparam is not None:
+        aparam = _trace_pad_dim(_trace_pad_dim(aparam[:1], 0, trace_nf), 1, trace_nloc)
+    if charge_spin is not None:
+        charge_spin = _trace_pad_dim(charge_spin[:1], 0, trace_nf)
 
     # Decompose silu_backward into primitive ops (sigmoid + mul + ...)
     # so that inductor can compile the graph without requiring a
@@ -476,8 +454,8 @@ def _trace_and_compile(
     # make_fx inserts aten.detach.default for saved tensors used in the
     # decomposed autograd.grad backward ops.  These detach nodes break
     # second-order gradient flow (d(force)/d(params) for force training).
-    # Removing them restores correct higher-order derivatives.
-    _remove_detach_nodes(traced_lower)
+    # Topology-based removal preserves user-explicit .detach() calls.
+    _strip_saved_tensor_detach(traced_lower)
     # Rebuild into a fresh graph to eliminate stale C-level node pointers
     # left by erase_node(), which can cause segfaults during dynamo re-trace.
     traced_lower = _rebuild_graph_module(traced_lower)

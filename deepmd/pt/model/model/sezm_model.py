@@ -415,6 +415,12 @@ from deepmd.pt.model.model.transform_output import (
 from deepmd.pt.utils import (
     env,
 )
+from deepmd.pt.utils.compile_utils import (
+    _next_safe_prime,
+    _trace_pad_dim,
+    rebuild_graph_module as _rebuild_graph_module,
+    strip_saved_tensor_detach as _strip_saved_tensor_detach,
+)
 from deepmd.pt.utils.nlist import (
     extend_input_and_build_neighbor_list,
 )
@@ -605,149 +611,6 @@ def _check_compile_torch_version() -> None:
             "SeZM `use_compile` and `DP_COMPILE_INFER` require PyTorch 2.11.x; "
             f"found torch {torch.__version__}."
         )
-
-
-def _is_prime(n: int) -> bool:
-    """Return True when ``n`` is a prime integer (``n >= 2``)."""
-    if n < 2:
-        return False
-    if n < 4:
-        return True
-    if n % 2 == 0:
-        return False
-    k = 3
-    while k * k <= n:
-        if n % k == 0:
-            return False
-        k += 2
-    return True
-
-
-def _next_safe_prime(start: int, forbidden: set[int]) -> int:
-    """Return the smallest prime ``>= max(start, 5)`` not in ``forbidden``.
-
-    Used by :meth:`SeZMModel.trace_and_compile` to choose collision-free
-    trace-time sizes for ``nf``, ``nall`` and ``nloc``.  Primes ``>= 5``
-    avoid every dim PyTorch specializes on (``1`` → broadcasting,
-    ``2``/``3``/``9`` → Cartesian / virial / charge_spin literals baked
-    into model code) and guarantee distinct values, which suppresses
-    make_fx's duck-shape unification without needing the
-    ``ShapeEnv(duck_shape=False)`` patch.
-    """
-    n = max(start, 5)
-    while not _is_prime(n) or n in forbidden:
-        n += 1
-    return n
-
-
-def _trace_pad_dim(t: torch.Tensor, dim: int, target: int) -> torch.Tensor:
-    """Pad or trim ``t`` along ``dim`` so ``t.shape[dim] == target``.
-
-    Padding duplicates the last slice along ``dim``; trimming drops
-    trailing slices.  Used to coerce real-data trace inputs into the
-    prime-numbered shapes chosen by :func:`_next_safe_prime`.
-
-    Duplicating the last slice preserves valid index values inside
-    index-bearing tensors (``nlist`` neighbor indices, ``mapping``
-    extended-to-local indices) because the duplicated row reuses the
-    previously-valid row's values.  Trimming likewise never invalidates
-    indices.  Only shapes flow downstream during ``make_fx`` tracing,
-    so the exact replicated/trimmed values do not affect the FX graph.
-    """
-    cur = int(t.shape[dim])
-    if cur == target:
-        return t
-    if cur > target:
-        sl: list[slice] = [slice(None)] * t.ndim
-        sl[dim] = slice(None, target)
-        return t[tuple(sl)]
-    sl = [slice(None)] * t.ndim
-    sl[dim] = slice(-1, None)
-    last = t[tuple(sl)]
-    repeats = target - cur
-    return torch.cat([t, *([last] * repeats)], dim=dim)
-
-
-def _strip_saved_tensor_detach(gm: torch.fx.GraphModule) -> None:
-    """Strip ``aten.detach`` nodes that ``make_fx`` inserts for saved tensors.
-
-    When ``make_fx`` decomposes ``autograd.grad(..., create_graph=True)``,
-    the autograd engine wraps every saved forward activation in a double-detach
-    chain (e.g. ``tanh -> detach_A -> detach_B -> tanh_backward``).  These
-    detach nodes block the second-order gradient path from the loss back to
-    model parameters, causing incorrect parameter updates during force-loss
-    training.
-
-    User-explicit ``.detach()`` calls (e.g. inside ``attach_edge_vec_grad``)
-    are preserved.  The two categories are distinguished by graph topology
-    alone — no hard-coded op names — using three rules:
-
-    * *Chain inner*: input is another detach node.
-    * *Dead node*: no downstream users.
-    * *Chain head*: *all* users are detach nodes.
-
-    Any detach that does **not** match these rules is treated as user-explicit
-    and left untouched.
-    """
-    _DETACH = torch.ops.aten.detach.default
-
-    def _is_detach(n: torch.fx.Node) -> bool:
-        return n.op == "call_function" and n.target == _DETACH
-
-    # NOTE: Pass 1 -- classify every detach against the *original* graph.
-    # If we erased nodes eagerly, later classifications would walk a
-    # mutated neighbourhood and misjudge the chain-inner / chain-head /
-    # dead boundaries; the double-detach pattern in particular flips
-    # class within a single erase.  Collecting first, mutating second
-    # keeps the topology rules well-defined.
-    to_remove: list[torch.fx.Node] = []
-    for node in gm.graph.nodes:
-        if not _is_detach(node):
-            continue
-        input_node = node.args[0]
-        users = list(node.users.keys())
-        is_chain_inner = _is_detach(input_node)
-        is_dead = len(users) == 0
-        is_chain_head = len(users) > 0 and all(_is_detach(u) for u in users)
-        if is_chain_inner or is_dead or is_chain_head:
-            to_remove.append(node)
-
-    # NOTE: Pass 2 -- rewire + erase atomically after the full
-    # classification.  ``replace_all_uses_with`` forwards every consumer
-    # to the detach's input; ``erase_node`` then removes the now-dead
-    # detach.  Doing both back-to-back means the graph never sits in a
-    # half-consistent state where one user sees the old detach and
-    # another the rewired source.
-    for node in to_remove:
-        node.replace_all_uses_with(node.args[0])
-        gm.graph.erase_node(node)
-
-    gm.graph.lint()
-    gm.recompile()
-
-
-def _rebuild_graph_module(gm: torch.fx.GraphModule) -> torch.fx.GraphModule:
-    """Return a fresh ``GraphModule`` whose node linked-list is newly allocated.
-
-    After ``_strip_saved_tensor_detach`` erases nodes via
-    ``Graph.erase_node()``, the internal doubly-linked list may retain
-    stale pointers to erased nodes.  When ``torch.compile`` later
-    triggers dynamo re-tracing and iterates ``graph.nodes`` to read
-    ``nd.meta`` (``output_graph.py:_create_proxy``), accessing these
-    stale entries causes a segfault.
-
-    Copying every node into a brand-new ``Graph`` builds a clean linked
-    list from scratch, side-stepping the corruption entirely.
-    """
-    old_graph = gm.graph
-    new_graph = torch.fx.Graph()
-    # node_copy needs a mapper from old nodes to their copies in new_graph.
-    val_map: dict[torch.fx.Node, torch.fx.Node] = {}
-    for node in old_graph.nodes:
-        val_map[node] = new_graph.node_copy(node, lambda n: val_map[n])
-    new_graph.lint()
-    new_gm = torch.fx.GraphModule(gm, new_graph)
-    return new_gm
 
 
 @BaseModel.register("SeZM")
