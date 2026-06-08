@@ -1693,27 +1693,27 @@ class TestFormatTrainingMessageStepTime(unittest.TestCase):
     display interval by passing ``step_time`` to ``format_training_message``
     (replacing the former standalone ``step=... step_time=...`` debug line).
     These tests cover both branches of the optional ``step_time``/``eta``
-    arguments so the "step time" segment is rendered only when requested.
+    arguments so the "avg = ... s/step" segment is rendered only when requested.
     """
 
     def test_without_step_time(self) -> None:
         """``step_time=None`` (default) omits the step-time segment."""
         msg = format_training_message(batch=100, wall_time=18.41)
         self.assertEqual(msg, "Batch     100: total wall time = 18.41 s")
-        self.assertNotIn("step time", msg)
+        self.assertNotIn("s/step", msg)
 
     def test_with_step_time(self) -> None:
         """``step_time`` is rendered with 4 decimals after the wall time."""
         msg = format_training_message(batch=100, wall_time=18.41, step_time=0.1841)
         self.assertEqual(
             msg,
-            "Batch     100: total wall time = 18.41 s, step time = 0.1841 s",
+            "Batch     100: total wall time = 18.41 s, avg = 0.1841 s/step",
         )
 
     def test_step_time_zero_is_shown(self) -> None:
         """A literal ``0.0`` step time is still shown (not treated as absent)."""
         msg = format_training_message(batch=1, wall_time=0.5, step_time=0.0)
-        self.assertIn("step time = 0.0000 s", msg)
+        self.assertIn("avg = 0.0000 s/step", msg)
 
     def test_with_step_time_and_eta(self) -> None:
         """Step time appears before the eta segment."""
@@ -1727,9 +1727,9 @@ class TestFormatTrainingMessageStepTime(unittest.TestCase):
             current_time=current_time,
             step_time=0.1841,
         )
-        self.assertIn("total wall time = 18.41 s, step time = 0.1841 s, eta = ", msg)
+        self.assertIn("total wall time = 18.41 s, avg = 0.1841 s/step, eta = ", msg)
         # ordering: wall time -> step time -> eta
-        self.assertLess(msg.index("step time"), msg.index("eta ="))
+        self.assertLess(msg.index("s/step"), msg.index("eta ="))
 
     def test_eta_without_step_time(self) -> None:
         """Eta still works when no step time is supplied."""
@@ -1739,7 +1739,7 @@ class TestFormatTrainingMessageStepTime(unittest.TestCase):
         msg = format_training_message(
             batch=100, wall_time=18.41, eta=100, current_time=current_time
         )
-        self.assertNotIn("step time", msg)
+        self.assertNotIn("s/step", msg)
         self.assertIn("eta = ", msg)
 
 

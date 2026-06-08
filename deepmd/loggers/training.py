@@ -64,7 +64,7 @@ def format_training_message(
     """
     msg = f"Batch {batch:7d}: total wall time = {wall_time:.2f} s"
     if step_time is not None:
-        msg += f", step time = {step_time:.4f} s"
+        msg += f", avg = {step_time:.4f} s/step"
     if isinstance(eta, int):
         eta_seconds = int(eta)
         msg += (
