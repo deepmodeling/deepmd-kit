@@ -117,7 +117,7 @@ If the keyword `ttm` is set, electronic temperatures from [fix ttm command](http
 
 ### Computing the derivative with respect to a frame parameter
 
-The compute `deepmd/fparam/dedn` evaluates a finite-difference derivative of the DeepMD energy with respect to a chosen frame parameter source.
+The `deepmd/fparam/dedn` compute evaluates a finite-difference derivative of the model energy with respect to a chosen frame parameter source.
 
 ```lammps
 compute ID group-ID deepmd/fparam/dedn source [delta]
