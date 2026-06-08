@@ -37,7 +37,8 @@ model.freeze("model.dp-sklearn.pth")                      # save a reusable bund
 ```
 
 Your data must be in `deepmd/npy` format (see [Data preparation](#data-preparation)
-to convert structure files, VASP output, or SMILES CSVs). For a complete,
+to convert structure files, VASP output, SMILES CSVs, or composition formulas).
+For a complete,
 runnable example that fits a QM9 HOMO–LUMO-gap model on CPU in **under 5
 minutes**, see [`demo/`](demo/) — it ships with 50 pre-processed molecules so you
 only need a pre-trained checkpoint.
@@ -86,8 +87,9 @@ from deepmd.dpa_tools import (
     cross_validate,        # leak-proof cross-validation
     train_test_split,      # formula-grouped data splitting
     # data tools
-    auto_convert,          # sniff input → route to SMILES or dpdata pipeline
+    auto_convert,          # sniff input → route to SMILES, formula, or dpdata pipeline
     smiles_to_npy,         # CSV+SMILES → deepmd/npy (train/valid split)
+    formula_to_npy,        # CSV+composition formula + POSCAR → deepmd/npy (random doping)
     convert,               # structure file → deepmd/npy (via dpdata)
     batch_convert,         # glob-based batch conversion
     check_data,            # data sanity checks
@@ -126,7 +128,9 @@ X = extract_descriptors(
 ### Data preparation
 
 One command auto-detects the input format — CSV with a SMILES column routes
-through RDKit (3D conformer generation), everything else goes through dpdata:
+through RDKit (3D conformer generation), `fmt="formula"` routes through
+composition-based random doping from a template POSCAR, and everything else
+goes through dpdata:
 
 ```python
 from deepmd.dpa_tools import auto_convert
@@ -136,6 +140,11 @@ auto_convert("data.csv", "./npy", property_name="homo", property_col="HOMO")
 
 # Structure file → auto-detected by dpdata (POSCAR, OUTCAR, extxyz, cif, …)
 auto_convert("POSCAR", "./npy")
+
+# Composition formula CSV + template POSCAR → random doping → deepmd/npy
+auto_convert("compositions.csv", "./npy", fmt="formula", poscar="template.POSCAR")
+formula_to_npy("compositions.csv", "./npy", poscar="template.POSCAR",
+               property_name="overpotential", sets=3, seed=42)
 
 # Lower-level helpers
 convert("POSCAR", "out_dir", fmt="extxyz", type_map=["Cu", "O"])
@@ -169,7 +178,7 @@ The same workflow is available under `dp dpa` (two-level nesting for data tools)
 | `dp dpa evaluate` | Evaluate a frozen `.pth` against stored labels |
 | `dp dpa extract-descriptors` | Extract pooled DPA descriptors to `.npy` |
 | `dp dpa cv` | Cross-validate (metric estimation, no model output) |
-| `dp dpa data convert` | Convert a structure/CSV file or glob → `deepmd/npy` (auto-sniffs SMILES vs. structure) |
+| `dp dpa data convert` | Convert a structure/CSV file or glob → `deepmd/npy` (auto-sniffs SMILES vs. structure, or `--fmt formula` for composition formulas) |
 | `dp dpa data validate` | Sanity-check `deepmd/npy` directories |
 | `dp dpa data attach-labels` | Inject `.npy` label arrays into a system |
 
@@ -178,6 +187,8 @@ The same workflow is available under `dp dpa` (two-level nesting for data tools)
 dp dpa data convert --input data.csv --output ./npy --property-name homo   # CSV+SMILES
 dp dpa data convert --input POSCAR --output ./npy                          # structure file
 dp dpa data convert --input "calcs/**/OUTCAR" --output ./npy_root          # glob → batch
+dp dpa data convert --input comps.csv --output ./npy --fmt formula \\      # formula CSV
+    --poscar template.POSCAR --sets 3
 
 # Fine-tune
 dp dpa fit --train-data ./npy/train --pretrained DPA-3.1-3M \

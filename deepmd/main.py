@@ -1131,7 +1131,8 @@ def main_parser() -> argparse.ArgumentParser:
     parser_dpa_data_convert.add_argument("--output", required=True)
     parser_dpa_data_convert.add_argument("--fmt", default=None,
                                          help="Format hint (auto-detected if omitted). "
-                                              "Use 'smiles' for CSV+SMILES, otherwise "
+                                              "Use 'smiles' for CSV+SMILES, 'formula' for "
+                                              "CSV+POSCAR composition formulas, otherwise "
                                               "dpdata format string (extxyz, vasp/poscar, …).")
     parser_dpa_data_convert.add_argument("--type-map", default=None)
     parser_dpa_data_convert.add_argument("--no-validate", dest="validate", action="store_false")
@@ -1142,6 +1143,20 @@ def main_parser() -> argparse.ArgumentParser:
     parser_dpa_data_convert.add_argument("--mol-dir", default=None)
     parser_dpa_data_convert.add_argument("--train-ratio", type=float, default=0.9)
     parser_dpa_data_convert.add_argument("--seed", type=int, default=42)
+    parser_dpa_data_convert.add_argument("--poscar", default=None,
+                                         help="Template POSCAR for fmt=formula.")
+    parser_dpa_data_convert.add_argument("--base-element", default=None,
+                                         help="Sublattice element to substitute "
+                                              "(fmt=formula). Auto-inferred if omitted.")
+    parser_dpa_data_convert.add_argument("--formula-col", default=0,
+                                         help="Column index or name for the formula "
+                                              "(fmt=formula, default: 0).")
+    parser_dpa_data_convert.add_argument("--property-col", default=1,
+                                         help="Column index or name for the property "
+                                              "(default: 1).")
+    parser_dpa_data_convert.add_argument("--sets", type=int, default=1,
+                                         help="Random structures per formula "
+                                              "(fmt=formula, default: 1).")
     parser_dpa_data_convert.add_argument("--overwrite", action="store_true")
 
     parser_dpa_data_validate = dpa_data_subparsers.add_parser(

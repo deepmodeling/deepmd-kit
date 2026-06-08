@@ -97,12 +97,21 @@ def auto_convert(
     smiles_col: str = "SMILES",
     mol_dir: str | None = None,
     seed: int = 42,
+    poscar: str | None = None,
+    formula_col: int | str = 0,
+    base_element: str | None = None,
+    sets: int = 1,
     overwrite: bool = False,
     validate: bool = True,
     strict: bool = False,
     verbose: bool = True,
 ) -> dict:
     """Convert any supported input to ``deepmd/npy``, auto-detecting the format.
+
+    *If ``fmt="formula"``* the call delegates to
+    :func:`~deepmd.dpa_tools.data.formula.formula_to_npy`, which reads a
+    CSV of elemental composition formulas + property values, and generates
+    doped structures from a template POSCAR via random substitution.
 
     *If the input is a CSV / Excel file with SMILES columns* the call
     delegates to :func:`~deepmd.dpa_tools.data.smiles.smiles_to_npy`, which
@@ -113,8 +122,8 @@ def auto_convert(
     explicit *fmt* if provided), converting a single structure file (POSCAR,
     extxyz, cif, …) into ``deepmd/npy``.
 
-    Returns a dict with keys ``"method"`` (``"smiles"`` or ``"dpdata"``) and
-    any additional metadata the chosen backend provides.
+    Returns a dict with keys ``"method"`` (``"formula"``, ``"smiles"``, or
+    ``"dpdata"``) and any additional metadata the chosen backend provides.
     """
     # --- explicit SMILES hint, or auto-sniff ---
     is_smiles_fmt = isinstance(fmt, str) and fmt.lower() == "smiles"
@@ -145,6 +154,25 @@ def auto_convert(
             print(f"RDKit converted samples: {converted['samples_used']}")
             print(f"RDKit failed rows     : {len(converted['failed_rows'])}")
         return converted
+
+    # --- explicit formula hint ---
+    if fmt == "formula":
+        from .formula import formula_to_npy
+
+        out = formula_to_npy(
+            csv_path=input_path,
+            output_dir=output_dir,
+            poscar=poscar,
+            formula_col=formula_col,
+            property_col=property_col,
+            property_name=property_name,
+            base_element=base_element,
+            sets=sets,
+            seed=seed,
+        )
+        if verbose:
+            print(f"Formula conversion: {len(out)} systems written.")
+        return {"method": "formula", "output_systems": out}
 
     # --- structure file → dpdata ---
     out = convert(

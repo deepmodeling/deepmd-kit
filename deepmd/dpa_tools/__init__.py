@@ -14,6 +14,7 @@ from .data import (
     batch_convert,
     check_data,
     convert,
+    formula_to_npy,
     load_dataset,
     smiles_to_npy,
 )
@@ -37,6 +38,7 @@ __all__ = [
     "convert",
     "cross_validate",
     "extract_descriptors",
+    "formula_to_npy",
     "load_dataset",
     "smiles_to_npy",
     "train_test_split",

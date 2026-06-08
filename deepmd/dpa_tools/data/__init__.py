@@ -14,6 +14,7 @@ from .type_map import (
     validate_type_map_subset,
 )
 from .convert import auto_convert, convert, attach_labels, batch_convert
+from .formula import formula_to_npy
 from .validate import check_data, Issue
 from .errors import DPADataError
 
@@ -27,6 +28,7 @@ __all__ = [
     "convert",
     "attach_labels",
     "batch_convert",
+    "formula_to_npy",
     "check_data",
     "Issue",
     "DPADataError",
