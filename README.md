@@ -98,20 +98,6 @@ Then, read on for a brief overview of the usage of DeePMD-kit. You may start wit
 dp
 ```
 
-## Fine-tune pre-trained DPA models with `dpa_tools`
-
-`dpa_tools` is a scikit-learn-style **Python API for fine-tuning pre-trained DPA atomic models** on your own dataset: you construct a `DPAFineTuner`, call `fit(...)` then `predict(...)`, and pick a transfer-learning strategy — a frozen descriptor with a scikit-learn head, linear probing, full fine-tuning, or multi-task fine-tuning — without writing any DeePMD-kit JSON config or training pipeline. Use it to adapt a large pre-trained model to a downstream materials or molecular property (energy, band gap, HOMO–LUMO gap, …) from a modest labeled dataset. It ships with DeePMD-kit (`pip install deepmd-kit[dpa-tools]`); the full guide lives in [`deepmd/dpa_tools/README.md`](deepmd/dpa_tools/README.md).
-
-```python
-from deepmd.dpa_tools import DPAFineTuner
-
-model = DPAFineTuner(pretrained="DPA-3.1-3M", strategy="frozen_sklearn", predictor="rf")
-model.fit(train_data="data/train", target_key="bandgap")  # fine-tune on your labeled structures
-preds = model.predict("data/new_structures").predictions   # predict for new structures
-```
-
-The same workflow is also available from the command line as `dp dpa fit` / `dp dpa predict`.
-
 ## Code structure
 
 The code is organized as follows:
