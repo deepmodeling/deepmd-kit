@@ -388,10 +388,24 @@ def _trace_and_compile(
 
     # Coerce trace inputs to pairwise-distinct prime sizes for nf, nloc, nall.
     # make_fx (tracing_mode="symbolic") unifies dimension symbols that share
-    # the same concrete value at trace time, baking false equalities into the
-    # compiled graph.  Distinct primes >=5 sidestep PyTorch specialisations
-    # (0/1) and model literals (2=Cartesian, 3=3D/virial, 9=charge-spin*2+virial).
-    _forbidden: set[int] = {1, 2, 3, 9}
+    # the same concrete value at trace time (duck-shape merging), baking false
+    # equalities (e.g. nf==g2_dim) into the compiled graph.
+    #
+    # Build the forbidden set from every dimension that appears in the model's
+    # own parameters and buffers.  This catches all internal architecture dims
+    # (neuron widths, g2_dim, axis_neuron, attn_head, ...) without needing to
+    # enumerate or hardcode them.  _next_safe_prime then finds the first prime
+    # >= 5 that isn't occupied by any of those dims.
+    _forbidden: set[int] = {
+        int(_d)
+        for _src in (model.parameters(), model.buffers())
+        for _p in _src
+        for _d in _p.shape
+        if _d > 1
+    }
+    # nsel is an interface dim that controls nlist width; it typically does NOT
+    # appear in weight shapes (aggregation is done by gather, not by a weight
+    # matrix indexed by neighbour count), so add it explicitly.
     _nsel = int(nlist.shape[2])
     if _nsel > 1:
         _forbidden.add(_nsel)
@@ -407,6 +421,15 @@ def _trace_and_compile(
             _forbidden.add(_dim_ap)
     except Exception:
         pass
+    if charge_spin is not None:
+        _dim_cs = int(charge_spin.shape[1])
+        if _dim_cs > 1:
+            _forbidden.add(_dim_cs)
+    # task_buf_vals dims (e.g. ntypes from out_bias/out_std).
+    for _tbv in task_buf_vals_trace:
+        for _d in _tbv.shape:
+            if _d > 1:
+                _forbidden.add(int(_d))
 
     trace_nf = _next_safe_prime(5, _forbidden)
     _forbidden.add(trace_nf)
