@@ -873,6 +873,34 @@ class TestSO3GridNet(unittest.TestCase):
                     rtol=1e-12,
                 )
 
+    def test_packed_truncated_cross_grid_net_forward(self) -> None:
+        torch.manual_seed(8500)
+        net = SO3GridNet(
+            lmax=3,
+            mmax=1,
+            kmax=1,
+            channels=2,
+            n_focus=1,
+            mode="cross",
+            op_type="glu",
+            dtype=torch.float64,
+            layout="ndfc",
+            coefficient_layout="packed",
+            trainable=False,
+        ).to(self.device)
+        coeff_dim = net.projector.coeff_dim // net.n_frames
+        query = torch.randn(
+            2,
+            coeff_dim,
+            1,
+            net.context_channels,
+            dtype=torch.float64,
+            device=self.device,
+        )
+        context = torch.randn_like(query)
+        out = net(query, context)
+        self.assertEqual(out.shape, (2, coeff_dim, 1, net.output_channels))
+
 
 class TestSO3CounterExample(unittest.TestCase):
     def setUp(self) -> None:

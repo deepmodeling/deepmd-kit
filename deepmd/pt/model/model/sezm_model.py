@@ -516,9 +516,11 @@ log = logging.getLogger(__name__)
 
 SeZMModel_ = make_model(SeZMAtomicModel)
 
-# Local-atom count above which the O(N) Toolkit-Ops cell list replaces the dense
-# all-pairs builder for periodic CUDA systems.
+# Local-atom counts above which Toolkit-Ops replaces the dense all-pairs builder.
+# Non-periodic systems switch when dense all-pairs transients become memory-heavy,
+# even though the dense path remains slightly faster at medium sizes.
 SEZM_NV_NLIST_THRESHOLD = 1024
+SEZM_NV_NONPERIODIC_NLIST_THRESHOLD = 2048
 
 # Apply the process-global PyTorch workarounds the compile pipeline relies on
 # (autotune log suppression, DDP optimiser, and the 2.12 divisibility repair)
@@ -2251,9 +2253,10 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         Used when the model constructs its own neighbor list from ``coord`` /
         ``box``, as opposed to ``forward_lower`` which receives an externally
         built nlist (e.g. from LAMMPS or an inference ``NeighborList`` strategy).
-        Large periodic CUDA systems use the O(N) Toolkit-Ops cell list
+        Large CUDA systems use the Toolkit-Ops neighbor list
         (:class:`NvNeighborList`); all other cases use the dense all-pairs
-        builder. Either way the neighbor list is trimmed to ``sum(sel)``.
+        builder. The non-periodic Toolkit-Ops path uses a larger threshold
+        because the dense builder is still faster at small sizes.
 
         Parameters
         ----------
@@ -2270,14 +2273,14 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             Extended coordinates, extended atom types, mapping, and neighbor list.
         """
         nloc = atype.shape[1]
-        if (
-            box is not None
-            and coord.is_cuda
-            and nloc >= SEZM_NV_NLIST_THRESHOLD
-            and is_nv_available()
-        ):
-            # Large periodic systems: the device-resident O(N) Toolkit-Ops cell
-            # list avoids the dense all-pairs ghost expansion.  It already keeps
+        nv_threshold = (
+            SEZM_NV_NLIST_THRESHOLD
+            if box is not None
+            else SEZM_NV_NONPERIODIC_NLIST_THRESHOLD
+        )
+        if coord.is_cuda and nloc >= nv_threshold and is_nv_available():
+            # Large systems: the device-resident Toolkit-Ops neighbor list avoids
+            # the dense all-pairs ghost expansion. It already keeps
             # the nearest sum(sel) neighbors (fixed width, like the standard
             # builder); only its (nlist, mapping) order is swapped to this
             # method's (mapping, nlist) contract.

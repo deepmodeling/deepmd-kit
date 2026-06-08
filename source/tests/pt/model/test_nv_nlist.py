@@ -4,8 +4,8 @@
 These cover the builder paths the DeepEval end-to-end equivalence test
 (``test_nlist_backend.py``) cannot reach with its small ``batch_naive`` systems:
 the ``batch_cell_list`` method and the over-capacity distance-trim path, plus the
-periodic-box requirement.  Built neighbor lists are compared against the native
-dense builder at the nlist level (edge topology + geometry).
+non-periodic path.  Built neighbor lists are compared against the native dense
+builder at the nlist level (edge topology + geometry).
 """
 
 import contextlib
@@ -161,7 +161,7 @@ class TestNVNList(unittest.TestCase):
         self,
         coord: torch.Tensor,
         atype: torch.Tensor,
-        box: torch.Tensor,
+        box: torch.Tensor | None,
         rcut: float,
         sel: list[int],
         force_cell_list: bool = False,
@@ -185,7 +185,10 @@ class TestNVNList(unittest.TestCase):
         )
         with device_ctx:
             if force_cell_list:
-                with patch.object(nv_nlist, "NV_CELL_LIST_THRESHOLD", 1):
+                with (
+                    patch.object(nv_nlist, "NV_CELL_LIST_THRESHOLD", 1),
+                    patch.object(nv_nlist, "NV_NONPERIODIC_CELL_LIST_THRESHOLD", 1),
+                ):
                     nv = builder.build(coord, atype, box, rcut, sel)
             else:
                 nv = builder.build(coord, atype, box, rcut, sel)
@@ -241,10 +244,30 @@ class TestNVNList(unittest.TestCase):
                     force_cell_list=False,
                 )
 
-    def test_requires_periodic_box(self) -> None:
-        """The cell list needs a periodic box; ``box=None`` is rejected."""
+    def test_nonperiodic_matches_native(self) -> None:
+        """Non-periodic systems keep local atoms and match the native builder."""
         for device in _TEST_DEVICES:
             with self.subTest(device=str(device)):
                 coord, atype, _ = self._build_case(1, device)
-                with self.assertRaises(ValueError):
-                    NvNeighborList().build(coord, atype, None, 3.0, [8])
+                self._assert_nv_matches_native(
+                    coord=coord,
+                    atype=atype,
+                    box=None,
+                    rcut=3.0,
+                    sel=[8],
+                    force_cell_list=False,
+                )
+
+    def test_nonperiodic_cell_list_matches_native(self) -> None:
+        """The no-box ``batch_cell_list`` path returns zero shifts."""
+        for device in _TEST_DEVICES:
+            with self.subTest(device=str(device)):
+                coord, atype, _ = self._build_case(1, device)
+                self._assert_nv_matches_native(
+                    coord=coord,
+                    atype=atype,
+                    box=None,
+                    rcut=3.0,
+                    sel=[8],
+                    force_cell_list=True,
+                )

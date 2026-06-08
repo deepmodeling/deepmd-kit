@@ -3,8 +3,7 @@
 
 A :class:`~deepmd.dpmodel.utils.neighbor_list.NeighborList` implementation that
 builds the extended representation ``(extended_coord, extended_atype, nlist,
-mapping)`` using the device-resident O(N) cell list in ``nvalchemiops``, intended
-for large periodic systems.
+mapping)`` using the device-resident neighbor-list kernels in ``nvalchemiops``.
 
 Toolkit-Ops returns a dense ``[total_atoms, max_neighbors]`` neighbor matrix over
 the flattened batch. The matrix is converted to the DeePMD extended-atom contract
@@ -19,6 +18,7 @@ from __future__ import (
     annotations,
 )
 
+import logging
 from typing import (
     Any,
 )
@@ -33,18 +33,22 @@ from deepmd.pt.utils.region import (
 )
 
 NV_CELL_LIST_THRESHOLD = 1024
+NV_NONPERIODIC_CELL_LIST_THRESHOLD = 4096
+
+log = logging.getLogger(__name__)
 
 
 def is_nv_available() -> bool:
     """Whether the ``nvalchemiops`` Toolkit-Ops neighbor list is importable."""
     try:
         import nvalchemiops.torch.neighbors  # noqa: F401
-    except ImportError:
+    except (ImportError, OSError, RuntimeError) as err:
+        log.debug("nvalchemiops Toolkit-Ops neighbor list is unavailable: %s", err)
         return False
     return True
 
 
-def choose_nv_nlist_method(nloc: int) -> str:
+def choose_nv_nlist_method(nloc: int, *, periodic: bool = True) -> str:
     """Choose the Toolkit-Ops neighbor method for a homogeneous batch.
 
     Parameters
@@ -57,18 +61,21 @@ def choose_nv_nlist_method(nloc: int) -> str:
     str
         Toolkit-Ops method name.
     """
-    if nloc >= NV_CELL_LIST_THRESHOLD:
+    threshold = (
+        NV_CELL_LIST_THRESHOLD if periodic else NV_NONPERIODIC_CELL_LIST_THRESHOLD
+    )
+    if nloc >= threshold:
         return "batch_cell_list"
     return "batch_naive"
 
 
 class NvNeighborList(NeighborList):
-    """O(N) neighbor-list strategy using the ``nvalchemiops`` cell list.
+    """Neighbor-list strategy using the ``nvalchemiops`` kernels.
 
     Implements the :class:`~deepmd.dpmodel.utils.neighbor_list.NeighborList`
     interface on torch tensors; the search runs on the device of the input
-    coordinates.  A periodic ``box`` is required -- the cell list needs a cell to
-    wrap periodic images.
+    coordinates. Periodic inputs materialize shifted ghost atoms; non-periodic
+    inputs keep only local atoms.
     """
 
     def build(
@@ -82,35 +89,37 @@ class NvNeighborList(NeighborList):
         """Build the extended system and neighbor list.
 
         See :meth:`deepmd.dpmodel.utils.neighbor_list.NeighborList.build`. The
-        returned ``nlist`` is distance-sorted and truncated to ``sum(sel)``. A
-        periodic ``box`` is required, as the cell list operates on a periodic cell.
+        returned ``nlist`` is distance-sorted and truncated to ``sum(sel)``.
         """
         from nvalchemiops.torch.neighbors import (
             neighbor_list,
         )
-
-        if box is None:
-            raise ValueError("NvNeighborList requires a periodic box; got box=None.")
 
         nf, nloc = atype.shape[:2]
         device = coord.device
         target_neighbors = int(sum(sel))
         search_capacity = target_neighbors
         total_atoms = nf * nloc
-        cell = box.reshape(nf, 3, 3).to(device=device, dtype=coord.dtype)
-        coord = normalize_coord(coord.reshape(nf, nloc, 3), cell)
+        coord = coord.reshape(nf, nloc, 3)
+        periodic = box is not None
+        if not periodic:
+            cell = None
+            pbc = None
+        else:
+            cell = box.reshape(nf, 3, 3).to(device=device, dtype=coord.dtype)
+            coord = normalize_coord(coord, cell)
+            pbc = torch.ones((nf, 3), dtype=torch.bool, device=device)
         positions_for_nlist = coord.reshape(total_atoms, 3).detach()
-        pbc = torch.ones((nf, 3), dtype=torch.bool, device=device)
         batch_idx = torch.arange(
             nf, dtype=torch.int32, device=device
         ).repeat_interleave(nloc)
         batch_ptr = torch.arange(nf + 1, dtype=torch.int32, device=device) * nloc
-        method = choose_nv_nlist_method(nloc)
+        method = choose_nv_nlist_method(nloc, periodic=periodic)
 
         # Grow the search capacity until all neighbors fit so the distance-sort
         # below selects the true nearest ``sum(sel)``.
         while True:
-            neighbor_matrix, num_neighbors, shifts = neighbor_list(
+            nlist_result = neighbor_list(
                 positions_for_nlist,
                 float(rcut),
                 cell=cell,
@@ -122,6 +131,15 @@ class NvNeighborList(NeighborList):
                 return_neighbor_list=False,
                 wrap_positions=False,
             )
+            if len(nlist_result) == 2:
+                neighbor_matrix, num_neighbors = nlist_result
+                shifts = torch.zeros(
+                    (*neighbor_matrix.shape, 3),
+                    dtype=torch.int32,
+                    device=device,
+                )
+            else:
+                neighbor_matrix, num_neighbors, shifts = nlist_result
             max_found = (
                 int(num_neighbors.max().item()) if num_neighbors.numel() > 0 else 0
             )
@@ -205,7 +223,7 @@ def _matrix_to_extended_inputs(
     *,
     coord: torch.Tensor,
     atype: torch.Tensor,
-    cell: torch.Tensor,
+    cell: torch.Tensor | None,
     nloc: int,
     neighbor_matrix: torch.Tensor,
     num_neighbors: torch.Tensor,
@@ -272,6 +290,8 @@ def _matrix_to_extended_inputs(
     shifted_edge_idx = torch.nonzero(~zero_shift, as_tuple=False).flatten()
     if shifted_edge_idx.numel() == 0:
         return coord, atype, local_mapping, nlist
+    if cell is None:
+        raise RuntimeError("Non-periodic Toolkit-Ops neighbor list returned shifts.")
 
     # === Step 3. Materialize each unique shifted atom once per frame ===
     # A shifted source may appear in many center atoms' neighbor slots.  Dedup by

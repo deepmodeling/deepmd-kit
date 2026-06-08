@@ -40,6 +40,7 @@ from .activation import (
     SwiGLU,
 )
 from .indexing import (
+    build_l_major_index,
     build_m_major_l_index,
     map_degree_idx,
 )
@@ -69,7 +70,11 @@ def _build_frame_degree_index(
     if coefficient_layout == "m_major":
         return build_m_major_l_index(lmax, mmax, device=env.DEVICE)
     if coefficient_layout == "packed":
-        return map_degree_idx(lmax, device=env.DEVICE)
+        degree_index = map_degree_idx(lmax, device=env.DEVICE)
+        if int(mmax) == int(lmax):
+            return degree_index
+        coeff_index = build_l_major_index(lmax, mmax, device=env.DEVICE)
+        return degree_index.index_select(0, coeff_index)
     raise ValueError("`coefficient_layout` must be either 'packed' or 'm_major'")
 
 

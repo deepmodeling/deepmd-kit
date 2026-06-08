@@ -198,8 +198,18 @@ def test_strategy_matches_native_multiframe(pt_files, backend: str, name: str) -
 @_BACKEND_MARKS["vesin"]
 @pytest.mark.parametrize("name", list(ALL_MODELS))
 def test_vesin_matches_native_nonperiodic(pt_files, name: str) -> None:
-    """Vesin also supports non-periodic systems (nv requires a periodic box)."""
+    """Vesin also supports non-periodic systems."""
     coords, atype, _ = _system()
     dp_native = DeepPot(pt_files[name], nlist_backend="native")
     dp_vesin = DeepPot(pt_files[name], nlist_backend="vesin")
     _assert_eval_close(dp_native, dp_vesin, coords, None, atype, f"{name} vesin nopbc")
+
+
+@_BACKEND_MARKS["nv"]
+@pytest.mark.parametrize("name", list(ALL_MODELS))
+def test_nv_matches_native_nonperiodic(pt_files, name: str) -> None:
+    """NV also supports non-periodic systems."""
+    coords, atype, _ = _system()
+    dp_native = DeepPot(pt_files[name], nlist_backend="native")
+    dp_nv = DeepPot(pt_files[name], nlist_backend="nv")
+    _assert_eval_close(dp_native, dp_nv, coords, None, atype, f"{name} nv nopbc")
