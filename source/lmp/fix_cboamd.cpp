@@ -191,7 +191,7 @@ FixCBOAMD::FixCBOAMD(LAMMPS* lmp, int narg, char** arg)
     error->all(FLERR, "Cannot open cboamd output file");
   }
   fprintf(output_file,
-          "# Step Time Energy Dipole_x Dipole_y Dipole_z Pol_xx Pol_xy Pol_xz "
+          "# Step Time Dipole_x Dipole_y Dipole_z Pol_xx Pol_xy Pol_xz "
           "Pol_yx Pol_yy Pol_yz Pol_zx Pol_zy Pol_zz");
   if (photons_enabled) {
     for (int i = 0; i < nphoton; i++) {
