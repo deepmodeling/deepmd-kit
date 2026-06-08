@@ -1,9 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Dispatch for ``dp dpa`` subcommands.
+"""CLI entry point for the ``dpa`` command.
 
-This module is imported lazily by ``deepmd.entrypoints.main`` only when
-``dp dpa ...`` is invoked — never at ``dp`` startup, so ``torch`` and the
-rest of the DPA stack are not loaded until needed.
+Unlike the deepmd-kit ``dp`` command, ``dpa`` is a standalone CLI that
+focuses solely on DPA model fine-tuning, descriptor extraction,
+cross-validation, prediction, evaluation, and data preparation.
+
+``dpa --help`` does not load torch — the parser is pure argparse and the
+handlers (and the DPA stack) are imported lazily only when a subcommand
+actually runs.
 """
 
 from __future__ import annotations
@@ -11,7 +15,9 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
+import textwrap
 from typing import Sequence
 
 import numpy as np
@@ -19,11 +25,62 @@ import numpy as np
 _LOG = logging.getLogger("dpa_tools")
 
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _get_ll(log_level: str) -> int:
+    """Convert string to python logging level.
+
+    Parameters
+    ----------
+    log_level : str
+        allowed input values are: DEBUG, INFO, WARNING, ERROR, 3, 2, 1, 0
+
+    Returns
+    -------
+    int
+        one of python logging module log levels - 10, 20, 30 or 40
+    """
+    if log_level.isdigit():
+        int_level = (4 - int(log_level)) * 10
+    else:
+        int_level = getattr(logging, log_level)
+    return int_level
+
+
+def _set_log_handles(level: int, log_path: str | None = None) -> None:
+    """Set up logging to console and optionally a file."""
+    logger = logging.getLogger("dpa_tools")
+    logger.setLevel(level)
+    # Avoid duplicate handlers on repeated calls
+    if logger.handlers:
+        return
+    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    console = logging.StreamHandler(sys.stdout)
+    console.setLevel(level)
+    console.setFormatter(formatter)
+    logger.addHandler(console)
+    if log_path:
+        os.makedirs(os.path.dirname(log_path) or ".", exist_ok=True)
+        file_handler = logging.FileHandler(log_path)
+        file_handler.setLevel(level)
+        file_handler.setFormatter(formatter)
+        logger.addHandler(file_handler)
+
+
 def _maybe_split_list(val: str | None) -> list[str] | None:
     """``"a,b,c"`` → ``["a","b","c"]``; ``None`` → ``None``."""
     if val is None:
         return None
     return [x.strip() for x in val.split(",") if x.strip()]
+
+
+class _RawTextArgDefaultsHelpFormatter(
+    argparse.RawTextHelpFormatter, argparse.ArgumentDefaultsHelpFormatter
+):
+    """Formatter for multi-line help with default values."""
 
 
 # ---------------------------------------------------------------------------
@@ -268,39 +325,281 @@ _DATA_DISPATCH = {
 
 
 # ---------------------------------------------------------------------------
-# Entry point (called from deepmd.entrypoints.main)
+# Argument parser
 # ---------------------------------------------------------------------------
 
 
-def main(args: argparse.Namespace) -> None:
-    """Dispatch a ``dp dpa`` subcommand.
+def get_parser() -> argparse.ArgumentParser:
+    """Build the standalone ``dpa`` argument parser.
+
+    Returns
+    -------
+    argparse.ArgumentParser
+        The fully configured parser for the ``dpa`` CLI.
+    """
+    try:
+        from dpa_tools import __version__
+    except ImportError:
+        __version__ = "unknown"
+
+    parser = argparse.ArgumentParser(
+        description="DPA tools — fine-tune pre-trained DPA models, extract descriptors, "
+        "cross-validate, predict, evaluate, and prepare data.",
+        formatter_class=_RawTextArgDefaultsHelpFormatter,
+    )
+
+    # Logging options (shared across all subcommands)
+    parser_log = argparse.ArgumentParser(
+        add_help=False, formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+    parser_log.add_argument(
+        "-v", "--log-level",
+        choices=["DEBUG", "3", "INFO", "2", "WARNING", "1", "ERROR", "0"],
+        default="INFO",
+        help="set verbosity level by string or number, 0=ERROR, 1=WARNING, "
+        "2=INFO and 3=DEBUG",
+    )
+    parser_log.add_argument(
+        "-l", "--log-path",
+        type=str,
+        default=None,
+        help="set log file to log messages to disk, if not specified, "
+        "the logs will only be output to console",
+    )
+
+    parser.add_argument(
+        "--version", action="version", version=f"dpa-tools v{__version__}"
+    )
+
+    subparsers = parser.add_subparsers(title="subcommands", dest="command")
+
+    # -- extract-descriptors -------------------------------------------------
+    parser_extract = subparsers.add_parser(
+        "extract-descriptors",
+        help="Extract pooled DPA descriptors to .npy",
+        parents=[parser_log],
+    )
+    parser_extract.add_argument("--data", required=True, nargs="+",
+                                help="System directories.")
+    parser_extract.add_argument("--pretrained", required=True,
+                                help="Path to DPA checkpoint (.pt).")
+    parser_extract.add_argument("--model-branch", default=None)
+    parser_extract.add_argument("--pooling", default="mean",
+                                choices=["mean", "sum", "mean+std", "mean+std+max+min"])
+    parser_extract.add_argument("--output", required=True,
+                                help="Output .npy path.")
+    parser_extract.add_argument("--no-cache", action="store_true",
+                                help="Bypass descriptor cache.")
+
+    # -- fit -----------------------------------------------------------------
+    parser_fit = subparsers.add_parser(
+        "fit",
+        help="Train a model (any strategy)",
+        parents=[parser_log],
+    )
+    parser_fit.add_argument("--train-data", required=True, nargs="+",
+                            help="Training system directories.")
+    parser_fit.add_argument("--valid-data", default=None, nargs="+",
+                            help="Validation system directories.")
+    parser_fit.add_argument("--pretrained", default="DPA-3.1-3M",
+                            help="Path to DPA checkpoint (.pt).")
+    parser_fit.add_argument("--model-branch", default=None)
+    parser_fit.add_argument("--strategy", default="frozen_sklearn",
+                            choices=["frozen_sklearn", "linear_probe", "finetune", "mft"])
+    parser_fit.add_argument("--predictor", default="rf",
+                            choices=["rf", "linear", "ridge", "mlp"])
+    parser_fit.add_argument("--pooling", default="mean",
+                            choices=["mean", "sum", "mean+std", "mean+std+max+min"])
+    parser_fit.add_argument("--target-key", default=None,
+                            help="Label key under set.*/ (e.g. energy, homo, bandgap).")
+    parser_fit.add_argument("--output", default="frozen_model.pth")
+    parser_fit.add_argument("--type-map", default=None)
+    parser_fit.add_argument("--task-dim", type=int, default=1)
+    parser_fit.add_argument("--intensive", action=argparse.BooleanOptionalAction, default=True)
+    parser_fit.add_argument("--max-steps", type=int, default=100_000)
+    parser_fit.add_argument("--learning-rate", type=float, default=1e-3)
+    parser_fit.add_argument("--stop-lr", type=float, default=1e-5)
+    parser_fit.add_argument("--batch-size", default="auto:512")
+    parser_fit.add_argument("--seed", type=int, default=42)
+    parser_fit.add_argument("--output-dir", default="./dpa_output")
+    parser_fit.add_argument("--save-freq", type=int, default=10_000)
+    parser_fit.add_argument("--disp-freq", type=int, default=1_000)
+    # MFT-only flags
+    parser_fit.add_argument("--aux-data", default=None, nargs="+",
+                            help="(mft) Auxiliary system directories.")
+    parser_fit.add_argument("--aux-branch", default="MP_traj_v024_alldata_mixu",
+                            help="(mft) Aux branch name in checkpoint.")
+    parser_fit.add_argument("--aux-prob", type=float, default=0.5,
+                            help="(mft) Sampling weight for aux branch.")
+    parser_fit.add_argument("--aux-type-map", default=None,
+                            help="(mft) Comma-separated aux element symbols.")
+    parser_fit.add_argument("--downstream-type-map", default=None,
+                            help="(mft) Comma-separated downstream element symbols.")
+    parser_fit.add_argument("--downstream-task-type", default="property",
+                            choices=["ener", "property"],
+                            help="(mft) Downstream head type.")
+    parser_fit.add_argument("--aux-batch-size", default=None,
+                            help="(mft) Batch size for aux branch.")
+    parser_fit.add_argument("--downstream-batch-size", type=int, default=None,
+                            help="(mft) Batch size for downstream.")
+
+    # -- cv ------------------------------------------------------------------
+    parser_cv = subparsers.add_parser(
+        "cv",
+        help="Cross-validate frozen_sklearn baseline",
+        parents=[parser_log],
+    )
+    parser_cv.add_argument("--data", required=True, nargs="+",
+                           help="System directories.")
+    parser_cv.add_argument("--label-key", default="energy")
+    parser_cv.add_argument("--pretrained", default="DPA-3.1-3M",
+                           help="Path to DPA checkpoint (.pt).")
+    parser_cv.add_argument("--model-branch", default=None)
+    parser_cv.add_argument("--predictor", default="rf",
+                           choices=["rf", "linear", "ridge", "mlp"])
+    parser_cv.add_argument("--pooling", default="mean",
+                           choices=["mean", "sum", "mean+std", "mean+std+max+min"])
+    parser_cv.add_argument("--cv", default="5")
+    parser_cv.add_argument("--group-by", default="formula")
+    parser_cv.add_argument("--granularity", default="composition",
+                           choices=["frame", "composition"])
+    parser_cv.add_argument("--seed", type=int, default=42)
+
+    # -- predict -------------------------------------------------------------
+    parser_predict = subparsers.add_parser(
+        "predict",
+        help="Predict with a frozen .pth bundle",
+        parents=[parser_log],
+    )
+    parser_predict.add_argument("--model", required=True,
+                                help="Path to frozen .pth.")
+    parser_predict.add_argument("--data", required=True, nargs="+",
+                                help="System directories.")
+    parser_predict.add_argument("--output", required=True,
+                                help="Output .npy path.")
+
+    # -- evaluate ------------------------------------------------------------
+    parser_evaluate = subparsers.add_parser(
+        "evaluate",
+        help="Evaluate a frozen .pth against stored labels",
+        parents=[parser_log],
+    )
+    parser_evaluate.add_argument("--model", required=True,
+                                 help="Path to frozen .pth.")
+    parser_evaluate.add_argument("--data", required=True, nargs="+",
+                                 help="System directories.")
+
+    # -- data (nested group) -------------------------------------------------
+    parser_data = subparsers.add_parser(
+        "data",
+        help="Data conversion and validation tools",
+        parents=[parser_log],
+    )
+    data_subparsers = parser_data.add_subparsers(
+        dest="data_command",
+        required=True,
+    )
+
+    # data convert
+    parser_data_convert = data_subparsers.add_parser(
+        "convert",
+        help="Convert structure/CSV file → deepmd/npy (format auto-detected)",
+        parents=[parser_log],
+    )
+    parser_data_convert.add_argument("--input", required=True)
+    parser_data_convert.add_argument("--output", required=True)
+    parser_data_convert.add_argument("--fmt", default=None,
+                                     help="Format hint (auto-detected if omitted). "
+                                          "Use 'smiles' for CSV+SMILES, 'formula' for "
+                                          "CSV+POSCAR composition formulas, otherwise "
+                                          "dpdata format string (extxyz, vasp/poscar, …).")
+    parser_data_convert.add_argument("--type-map", default=None)
+    parser_data_convert.add_argument("--no-validate", dest="validate", action="store_false")
+    parser_data_convert.add_argument("--strict", action="store_true")
+    parser_data_convert.add_argument("--property-name", default="Property")
+    parser_data_convert.add_argument("--property-col", default="Property")
+    parser_data_convert.add_argument("--smiles-col", default="SMILES")
+    parser_data_convert.add_argument("--mol-dir", default=None)
+    parser_data_convert.add_argument("--train-ratio", type=float, default=0.9)
+    parser_data_convert.add_argument("--seed", type=int, default=42)
+    parser_data_convert.add_argument("--poscar", default=None,
+                                     help="Template POSCAR for fmt=formula.")
+    parser_data_convert.add_argument("--base-element", default=None,
+                                     help="Sublattice element to substitute "
+                                          "(fmt=formula). Auto-inferred if omitted.")
+    parser_data_convert.add_argument("--formula-col", default=0,
+                                     help="Column index or name for the formula "
+                                          "(fmt=formula, default: 0).")
+    parser_data_convert.add_argument("--sets", type=int, default=1,
+                                     help="Random structures per formula "
+                                          "(fmt=formula, default: 1).")
+    parser_data_convert.add_argument("--overwrite", action="store_true")
+
+    # data validate
+    parser_data_validate = data_subparsers.add_parser(
+        "validate",
+        help="Sanity-check deepmd/npy directories",
+        parents=[parser_log],
+    )
+    parser_data_validate.add_argument("--data", required=True, nargs="+")
+    parser_data_validate.add_argument("--strict", action="store_true")
+
+    # data attach-labels
+    parser_data_attach = data_subparsers.add_parser(
+        "attach-labels",
+        help="Attach .npy labels to deepmd/npy directory",
+        parents=[parser_log],
+    )
+    parser_data_attach.add_argument("--data", required=True)
+    parser_data_attach.add_argument("--head", required=True)
+    parser_data_attach.add_argument("--head-json", action="store_true")
+    parser_data_attach.add_argument("--values", required=True)
+
+    return parser
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+
+def main(args: Sequence[str] | None = None) -> None:
+    """Entry point for the ``dpa`` CLI.
 
     Parameters
     ----------
-    args : argparse.Namespace
-        Parsed arguments from the ``dp`` CLI.  Must carry ``dpa_command``
-        and, for data subcommands, ``dpa_data_command``.
-
-    Raises
-    ------
-    SystemExit
-        Propagated from subcommand handlers on failure.
+    args : list[str], optional
+        Command-line arguments. If ``None``, ``sys.argv[1:]`` is used.
     """
-    from dpa_tools.data.errors import DPADataError
+    parser = get_parser()
+    parsed_args = parser.parse_args(args)
+
+    # Set up logging
+    log_level = _get_ll(parsed_args.log_level)
+    _set_log_handles(log_level, parsed_args.log_path)
+
+    if parsed_args.command is None:
+        parser.print_help()
+        return
 
     try:
-        if args.dpa_command == "data":
-            handler = _DATA_DISPATCH.get(args.dpa_data_command)
+        if parsed_args.command == "data":
+            handler = _DATA_DISPATCH.get(parsed_args.data_command)
             if handler is None:
-                print(f"Unknown data command: {args.dpa_data_command}", file=sys.stderr)
+                print(f"Unknown data command: {parsed_args.data_command}", file=sys.stderr)
                 sys.exit(1)
-            sys.exit(handler(args))
+            sys.exit(handler(parsed_args))
         else:
-            handler = _DISPATCH.get(args.dpa_command)
+            handler = _DISPATCH.get(parsed_args.command)
             if handler is None:
-                print(f"Unknown dpa command: {args.dpa_command}", file=sys.stderr)
+                print(f"Unknown dpa command: {parsed_args.command}", file=sys.stderr)
                 sys.exit(1)
-            sys.exit(handler(args))
-    except DPADataError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        sys.exit(1)
+            sys.exit(handler(parsed_args))
+    except Exception as exc:
+        # Lazy-import DPADataError so that --help doesn't trigger heavy imports.
+        from dpa_tools.data.errors import DPADataError
+
+        if isinstance(exc, DPADataError):
+            print(f"error: {exc}", file=sys.stderr)
+            sys.exit(1)
+        raise

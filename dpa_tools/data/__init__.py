@@ -1,22 +1,9 @@
-from .loader import load_data
-from .dataset import load_dataset
-from .smiles import (
-    SmilesDataResult,
-    predict_records_from_data,
-    read_mol_coords,
-    records_from_direct_data,
-    smiles_to_3d_coords,
-    smiles_to_npy,
-)
-from .type_map import (
-    read_checkpoint_type_map,
-    read_data_type_map_union,
-    validate_type_map_subset,
-)
-from .convert import auto_convert, convert, attach_labels, batch_convert
-from .formula import formula_to_npy
-from .validate import check_data, Issue
-from .errors import DPADataError
+# SPDX-License-Identifier: LGPL-3.0-or-later
+"""Data loading, conversion, validation, and SMILES/type-map utilities.
+
+All public names are lazily imported so that ``import dpa_tools.data``
+(and therefore ``dpa --help``) does not pull in dpdata, torch, or rdkit.
+"""
 
 __all__ = [
     "load_data",
@@ -37,3 +24,37 @@ __all__ = [
     "smiles_to_3d_coords",
     "smiles_to_npy",
 ]
+
+_LAZY = {
+    "load_data": (".loader", "load_data"),
+    "load_dataset": (".dataset", "load_dataset"),
+    "read_checkpoint_type_map": (".type_map", "read_checkpoint_type_map"),
+    "read_data_type_map_union": (".type_map", "read_data_type_map_union"),
+    "validate_type_map_subset": (".type_map", "validate_type_map_subset"),
+    "auto_convert": (".convert", "auto_convert"),
+    "convert": (".convert", "convert"),
+    "attach_labels": (".convert", "attach_labels"),
+    "batch_convert": (".convert", "batch_convert"),
+    "formula_to_npy": (".formula", "formula_to_npy"),
+    "check_data": (".validate", "check_data"),
+    "Issue": (".validate", "Issue"),
+    "DPADataError": (".errors", "DPADataError"),
+    "SmilesDataResult": (".smiles", "SmilesDataResult"),
+    "read_mol_coords": (".smiles", "read_mol_coords"),
+    "smiles_to_3d_coords": (".smiles", "smiles_to_3d_coords"),
+    "smiles_to_npy": (".smiles", "smiles_to_npy"),
+    "predict_records_from_data": (".smiles", "predict_records_from_data"),
+    "records_from_direct_data": (".smiles", "records_from_direct_data"),
+}
+
+
+def __getattr__(name: str):
+    if name in _LAZY:
+        import importlib
+
+        mod_name, attr_name = _LAZY[name]
+        mod = importlib.import_module(mod_name, __package__)
+        attr = getattr(mod, attr_name)
+        globals()[name] = attr
+        return attr
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

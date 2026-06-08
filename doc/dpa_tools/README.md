@@ -8,7 +8,7 @@ goal is adapting a large pre-trained model to a downstream materials or molecula
 property (energy, band gap, HOMO–LUMO gap, …) from a modest labeled dataset.
 
 It ships as the `dpa_tools` package alongside `deepmd-kit`,
-and the same workflow is also exposed on the command line as `dp dpa`.
+and the same workflow is also exposed on the command line as the standalone `dpa` CLI.
 
 ## Installation
 
@@ -168,41 +168,41 @@ result = cross_validate(model, systems, label_key="energy", cv=5, group_by="form
 
 ## CLI
 
-The same workflow is available under `dp dpa` (two-level nesting for data tools):
+The same workflow is available under the standalone `dpa` command (two-level nesting for data tools):
 
 | Command | Description |
 |---------|-------------|
-| `dp dpa fit` | Fine-tune a model with any strategy (`--strategy frozen_sklearn\|linear_probe\|finetune\|mft`) |
-| `dp dpa predict` | Predict with a frozen `.pth` bundle |
-| `dp dpa evaluate` | Evaluate a frozen `.pth` against stored labels |
-| `dp dpa extract-descriptors` | Extract pooled DPA descriptors to `.npy` |
-| `dp dpa cv` | Cross-validate (metric estimation, no model output) |
-| `dp dpa data convert` | Convert a structure/CSV file or glob → `deepmd/npy` (auto-sniffs SMILES vs. structure, or `--fmt formula` for composition formulas) |
-| `dp dpa data validate` | Sanity-check `deepmd/npy` directories |
-| `dp dpa data attach-labels` | Inject `.npy` label arrays into a system |
+| `dpa fit` | Fine-tune a model with any strategy (`--strategy frozen_sklearn\|linear_probe\|finetune\|mft`) |
+| `dpa predict` | Predict with a frozen `.pth` bundle |
+| `dpa evaluate` | Evaluate a frozen `.pth` against stored labels |
+| `dpa extract-descriptors` | Extract pooled DPA descriptors to `.npy` |
+| `dpa cv` | Cross-validate (metric estimation, no model output) |
+| `dpa data convert` | Convert a structure/CSV file or glob → `deepmd/npy` (auto-sniffs SMILES vs. structure, or `--fmt formula` for composition formulas) |
+| `dpa data validate` | Sanity-check `deepmd/npy` directories |
+| `dpa data attach-labels` | Inject `.npy` label arrays into a system |
 
 ```bash
 # Convert data (format auto-detected)
-dp dpa data convert --input data.csv --output ./npy --property-name homo   # CSV+SMILES
-dp dpa data convert --input POSCAR --output ./npy                          # structure file
-dp dpa data convert --input "calcs/**/OUTCAR" --output ./npy_root          # glob → batch
-dp dpa data convert --input comps.csv --output ./npy --fmt formula \\      # formula CSV
+dpa data convert --input data.csv --output ./npy --property-name homo   # CSV+SMILES
+dpa data convert --input POSCAR --output ./npy                          # structure file
+dpa data convert --input "calcs/**/OUTCAR" --output ./npy_root          # glob → batch
+dpa data convert --input comps.csv --output ./npy --fmt formula \\      # formula CSV
     --poscar template.POSCAR --sets 3
 
 # Fine-tune
-dp dpa fit --train-data ./npy/train --pretrained DPA-3.1-3M \
+dpa fit --train-data ./npy/train --pretrained DPA-3.1-3M \
   --strategy frozen_sklearn --predictor rf --target-key homo --output model.pth
 
 # Multi-task fine-tuning (MFT)
-dp dpa fit --train-data /data/qm9 --aux-data /data/spice2 \
+dpa fit --train-data /data/qm9 --aux-data /data/spice2 \
   --pretrained /path/to/DPA-3.1-3M.pt --strategy mft --target-key homo
 
 # Predict / evaluate with a frozen bundle
-dp dpa predict --model model.pth --data ./npy/test --output preds.npy
-dp dpa evaluate --model model.pth --data ./npy/test
+dpa predict --model model.pth --data ./npy/test --output preds.npy
+dpa evaluate --model model.pth --data ./npy/test
 ```
 
-`dp dpa --help` does not load torch — the parser is pure argparse in
-`deepmd/main.py`, and the handlers (and the DPA stack) are imported lazily only
-when a `dp dpa ...` command actually runs.
+`dpa --help` does not load torch — the parser is pure argparse in
+`dpa_tools/cli.py`, and the handlers (and the DPA stack) are imported lazily only
+when a `dpa ...` command actually runs.
 

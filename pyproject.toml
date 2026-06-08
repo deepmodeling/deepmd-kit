@@ -157,6 +157,7 @@ jax = [
 
 [tool.deepmd_build_backend.scripts]
 dp = "deepmd.main:main"
+dpa = "dpa_tools.main:main"
 
 [dependency-groups]
 dev = [
