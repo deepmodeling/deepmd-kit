@@ -143,8 +143,6 @@ auto_convert("POSCAR", "./npy")
 
 # Composition formula CSV + template POSCAR → random doping → deepmd/npy
 auto_convert("compositions.csv", "./npy", fmt="formula", poscar="template.POSCAR")
-formula_to_npy("compositions.csv", "./npy", poscar="template.POSCAR",
-               property_name="overpotential", sets=3, seed=42)
 
 # Lower-level helpers
 convert("POSCAR", "out_dir", fmt="extxyz", type_map=["Cu", "O"])
