@@ -40,8 +40,9 @@ Your data must be in `deepmd/npy` format (see [Data preparation](#data-preparati
 to convert structure files, VASP output, SMILES CSVs, or composition formulas).
 For a complete,
 runnable example that fits a QM9 HOMO–LUMO-gap model on CPU in **under 5
-minutes**, see [`demo/`](demo/) — it ships with 50 pre-processed molecules so you
-only need a pre-trained checkpoint.
+minutes**, open [`quickstart.ipynb`](../examples/dpa_tools/quickstart.ipynb) in
+Jupyter — it ships with 50 pre-processed molecules so you only need a
+pre-trained checkpoint.  You can also browse the full [`examples/`](../examples/dpa_tools/) directory.
 
 ## Fine-tuning strategies
 
