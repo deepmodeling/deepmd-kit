@@ -479,63 +479,87 @@ class _FrozenSklearnPipeline:
 # ---------------------------------------------------------------------------
 
 class DPAFineTuner:
-    """Frozen DPA descriptor + sklearn head (frozen_sklearn) or single-task training.
+    """Adapt a pretrained DPA model to a downstream property via transfer learning.
 
-    Two modes, selected by *strategy*:
+    Four strategies, selected by *strategy*; the first three also cover the
+    top row of ``quickstart.ipynb`` / ``fit_evaluate.py``.
 
-    ==================  ======================================================
-    ``frozen_sklearn``  (default) Encode each system once with the pretrained
-                        DPA descriptor, pool, and train a lightweight sklearn
-                        regressor (Ridge / KRR / MLP) on top.
-    ``linear_probe``    Freeze the DPA backbone, train only a neural property
-                        fitting net via ``dp --pt train --finetune``.
-    ``finetune``        Load the pretrained backbone and fine-tune the full
-                        network (descriptor + fitting net).
-    ==================  ======================================================
-
-    Refactored: descriptor-loading, feature-extraction, and sklearn-fitting
-    logic extracted into ``_FrozenSklearnPipeline``.  DPAFineTuner is now a
-    thin dispatcher that delegates to the pipeline for ``frozen_sklearn``
-    and to ``DPATrainer`` / ``MFTFineTuner`` for the other strategies.
+    ====================  =====================================================
+    ``frozen_sklearn``    (default, CPU) Freeze the DPA backbone, extract
+                          descriptors once, pool, and fit a scikit-learn
+                          regressor (Ridge, KRR, or MLP).  No GPU needed;
+                          fastest for small datasets.
+    ``linear_probe``      Freeze the backbone, train only a neural property
+                          fitting net via ``dp --pt train``.
+    ``finetune``          Fine-tune the full network (descriptor + fitting
+                          net) end-to-end via ``dp --pt train``.
+    ``mft``               Multi-task fine-tuning: a downstream property head
+                          is trained jointly with an auxiliary force/energy
+                          head to regularise the representation.  Requires
+                          *aux_data* at ``fit()`` time.
+    ====================  =====================================================
 
     Parameters
     ----------
     pretrained : str
-        Path to the pretrained DPA checkpoint (.pt).
-    model_branch : str, optional
-        Branch name for multi-task checkpoints (e.g. ``"Omat24"``).  Used
-        by ``frozen_sklearn`` for descriptor extraction.
+        Path to the pretrained DPA checkpoint (``.pt``), or a built-in name
+        such as ``"DPA-3.1-3M"`` that is auto-downloaded.
+    model_branch : str or None
+        Multi-task branch for descriptor extraction (e.g. ``"Domains_Drug"``).
+        Only used by ``frozen_sklearn``.
     predictor : str
-        sklearn head type (``frozen_sklearn`` only): ``"rf"``,
-        ``"linear"`` / ``"ridge"``, or ``"mlp"``.
+        (``frozen_sklearn`` only) scikit-learn head: ``"rf"``, ``"linear"`` /
+        ``"ridge"``, or ``"mlp"``.
     pooling : str
-        Descriptor pooling (``frozen_sklearn`` only): ``"mean"``, ``"sum"``,
-        ``"mean+std"``, ``"mean+std+max+min"``.
+        (``frozen_sklearn`` only) Descriptor pooling: ``"mean"`` (default),
+        ``"sum"``, ``"mean+std"``, or ``"mean+std+max+min"``.
     seed : int
-        Random seed for the sklearn predictor or training.
+        Random seed for the head or for full training.
     strategy : str
         ``"frozen_sklearn"`` (default), ``"linear_probe"``, ``"finetune"``,
         or ``"mft"``.
+
     property_name : str
-        Property label filename under ``set.*/`` (training paradigms).
+        Label key written under ``set.*/`` (e.g. ``"bandgap"``).  Used by
+        all non-``frozen_sklearn`` strategies, and by ``frozen_sklearn``
+        when *target_key* is not passed explicitly to ``fit()``.
     task_dim : int
-        Output dimensionality of the property head.
+        Output dimensionality of the property fitting net.
     intensive : bool
-        Whether the property is intensive (mean-pool) or extensive (sum).
+        If True (default), the property is intensive and frame-averaged;
+        if False it is extensive (summed).
     init_branch : str
-        Checkpoint branch for descriptor init (LP/FT only).
+        Checkpoint branch used to initialise the descriptor (LP / FT only).
     learning_rate, stop_lr : float
-        Exp-decay LR endpoints (training paradigms).
+        Start and end points of the exponential learning-rate schedule
+        (training paradigms).
     max_steps : int
-        Total training steps.
+        Total training steps (LP / FT / MFT).
     batch_size : str or int
-        DeepMD-kit batch_size spec.
+        DeepMD-kit batch-size spec (e.g. ``"auto:512"`` or 128).
     loss_function : str
-        ``"mse"`` or ``"smooth_mae"``.
+        ``"mse"`` or ``"smooth_mae"`` (training paradigms).
     output_dir : str
-        Directory for checkpoints, input.json, and logs.
+        Directory for ``input.json``, checkpoints, and logs.
     save_freq, disp_freq : int
-        DeepMD-kit save/display intervals.
+        Checkpoint save and log-display intervals (steps).
+
+    aux_branch : str
+        (MFT only) Pre-trained branch for the auxiliary force/energy head.
+    aux_prob : float
+        (MFT only) Probability of sampling an auxiliary batch at each step.
+    aux_type_map : list[str] or None
+        (MFT only) Type map for the auxiliary head (auto-detected if None).
+    downstream_type_map : list[str] or None
+        (MFT only) Type map for the downstream property head.
+    fitting_net_params : dict or None
+        (MFT only) Extra kwargs forwarded to the fitting-net constructor.
+    downstream_task_type : str
+        (MFT only) Task type of the downstream head (``"property"`` etc.).
+    aux_batch_size : str or None
+        (MFT only) Batch-size spec for the auxiliary head.
+    downstream_batch_size : int or None
+        (MFT only) Batch size for the downstream head.
     """
 
     _VALID_POOLING = {"mean", "sum", "mean+std", "mean+std+max+min"}
