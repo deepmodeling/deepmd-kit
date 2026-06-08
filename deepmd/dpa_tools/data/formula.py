@@ -273,10 +273,18 @@ def formula_to_npy(
             "Pass base_element= explicitly."
         )
 
-    # Parse CSV.
+    # Parse CSV — auto-detect delimiter (tab or comma).
     rows: list[tuple[str, float]] = []
     with open(csv_path, newline="", encoding="utf-8") as fh:
-        reader = csv.reader(fh)
+        # Sniff delimiter from first non-empty line.
+        first_line = ""
+        for line in fh:
+            if line.strip():
+                first_line = line
+                break
+        delimiter = "\t" if "\t" in first_line else ","
+        fh.seek(0)
+        reader = csv.reader(fh, delimiter=delimiter)
         for raw_row in reader:
             if not raw_row or all(c.strip() == "" for c in raw_row):
                 continue
