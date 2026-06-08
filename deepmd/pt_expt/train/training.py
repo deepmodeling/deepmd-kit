@@ -386,16 +386,20 @@ def _trace_and_compile(
                     if _fitting is not None:
                         _fitting._buffers[name] = orig
 
-    # Coerce trace inputs to pairwise-distinct prime sizes for nf, nloc, nall.
-    # make_fx (tracing_mode="symbolic") unifies dimension symbols that share
-    # the same concrete value at trace time (duck-shape merging), baking false
-    # equalities (e.g. nf==g2_dim) into the compiled graph.
+    # Pad nf to a safe prime; keep real nloc and nall from the data.
     #
-    # Build the forbidden set from every dimension that appears in the model's
-    # own parameters and buffers.  This catches all internal architecture dims
-    # (neuron widths, g2_dim, axis_neuron, attn_head, ...) without needing to
-    # enumerate or hardcode them.  _next_safe_prime then finds the first prime
-    # >= 5 that isn't occupied by any of those dims.
+    # make_fx (tracing_mode="symbolic") unifies dimension symbols that share
+    # the same concrete value at trace time (duck-shape merging).  We take
+    # one frame ([:1]) to normalise nf, then pad it to a prime so PyTorch
+    # does not specialise it as the constant 1.  nloc and nall come from
+    # real data (typically 50–500 and 200–5000+), so they are already too
+    # large to alias with any architecture dim and need no adjustment.
+    #
+    # The prime for nf is chosen by enumerating every dimension that appears
+    # in the model's parameters and buffers, then calling _next_safe_prime to
+    # find the first prime that doesn't collide with any of them.  This
+    # catches internal dims like g2_dim, axis_neuron, attn_head, etc.
+    # without requiring a hardcoded list.
     _forbidden: set[int] = {
         int(_d)
         for _src in (model.parameters(), model.buffers())
@@ -403,9 +407,11 @@ def _trace_and_compile(
         for _d in _p.shape
         if _d > 1
     }
-    # nsel is an interface dim that controls nlist width; it typically does NOT
-    # appear in weight shapes (aggregation is done by gather, not by a weight
-    # matrix indexed by neighbour count), so add it explicitly.
+    # Also add the real nloc and nall so trace_nf never aliases them.
+    _forbidden.add(int(ext_coord.shape[1]))   # nall
+    _forbidden.add(int(ext_atype.shape[1]))   # nall (same tensor, defensive)
+    _forbidden.add(int(nlist.shape[1]))        # nloc
+    # nsel stays at its real value; add it to forbidden for the same reason.
     _nsel = int(nlist.shape[2])
     if _nsel > 1:
         _forbidden.add(_nsel)
@@ -425,32 +431,22 @@ def _trace_and_compile(
         _dim_cs = int(charge_spin.shape[1])
         if _dim_cs > 1:
             _forbidden.add(_dim_cs)
-    # task_buf_vals dims (e.g. ntypes from out_bias/out_std).
     for _tbv in task_buf_vals_trace:
         for _d in _tbv.shape:
             if _d > 1:
                 _forbidden.add(int(_d))
 
     trace_nf = _next_safe_prime(5, _forbidden)
-    _forbidden.add(trace_nf)
-    trace_nloc = _next_safe_prime(trace_nf + 1, _forbidden)
-    _forbidden.add(trace_nloc)
-    trace_nall = _next_safe_prime(trace_nloc + 1, _forbidden)
 
-    ext_coord = _trace_pad_dim(
-        _trace_pad_dim(ext_coord[:1], 0, trace_nf), 1, trace_nall
-    )
-    ext_atype = _trace_pad_dim(
-        _trace_pad_dim(ext_atype[:1], 0, trace_nf), 1, trace_nall
-    )
-    nlist = _trace_pad_dim(_trace_pad_dim(nlist[:1], 0, trace_nf), 1, trace_nloc)
-    nlist = torch.clamp(nlist, min=-1, max=trace_nall - 1)
-    mapping = _trace_pad_dim(_trace_pad_dim(mapping[:1], 0, trace_nf), 1, trace_nall)
-    mapping = torch.clamp(mapping, min=0, max=trace_nloc - 1)
+    # Pad nf only; nloc and nall retain their real values (no clamping needed).
+    ext_coord = _trace_pad_dim(ext_coord[:1], 0, trace_nf)
+    ext_atype = _trace_pad_dim(ext_atype[:1], 0, trace_nf)
+    nlist = _trace_pad_dim(nlist[:1], 0, trace_nf)
+    mapping = _trace_pad_dim(mapping[:1], 0, trace_nf)
     if fparam is not None:
         fparam = _trace_pad_dim(fparam[:1], 0, trace_nf)
     if aparam is not None:
-        aparam = _trace_pad_dim(_trace_pad_dim(aparam[:1], 0, trace_nf), 1, trace_nloc)
+        aparam = _trace_pad_dim(aparam[:1], 0, trace_nf)
     if charge_spin is not None:
         charge_spin = _trace_pad_dim(charge_spin[:1], 0, trace_nf)
 
