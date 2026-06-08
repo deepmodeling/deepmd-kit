@@ -80,7 +80,6 @@ class PopulationLoss(TaskLoss):
         """
         super().__init__()
         self.task_dim = 2
-        self.var_name = "atom_population"
         self.loss_func = loss_func
         self.metric = ["mae"] if metric is None else list(metric)
         self.beta = beta

@@ -2516,7 +2516,7 @@ def fitting_population() -> list[Argument]:
             "neuron",
             list[int],
             optional=True,
-            default=[120, 120, 120],
+            default=[128, 128, 128],
             alias=["n_neuron"],
         ),
         Argument(
