@@ -164,24 +164,27 @@ class PopulationLoss(TaskLoss):
             + (self.start_pref_pop_beta_total - self.limit_pref_pop_beta_total) * coef
         )
 
+        if natoms <= 0:
+            raise ValueError("natoms must be positive")
+
         loss = torch.zeros(1, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)[0]
         more_loss = {}
 
-        pop_pred = model_pred["population"].reshape([-1, self.task_dim])
-        pop_label = label["atom_population"].reshape([-1, self.task_dim])
+        # Reshape to (nframes, natoms, task_dim) so per-frame totals are computed
+        # correctly without cross-frame cancellations when batch_size > 1.
+        pop_pred = model_pred["population"].reshape([-1, natoms, self.task_dim])
+        pop_label = label["atom_population"].reshape([-1, natoms, self.task_dim])
 
-        spin_pred = torch.sub(pop_pred[:, 0], pop_pred[:, 1])
-        spin_label = torch.sub(pop_label[:, 0], pop_label[:, 1])
+        spin_pred = pop_pred[:, :, 0] - pop_pred[:, :, 1]  # (nframes, natoms)
+        spin_label = pop_label[:, :, 0] - pop_label[:, :, 1]
 
-        spin_total_pred = torch.sum(spin_pred)
-        spin_total_label = torch.sum(spin_label)
-        pop_alpha_total_pred = torch.sum(pop_pred[:, 0])
-        pop_beta_total_pred = torch.sum(pop_pred[:, 1])
-        pop_alpha_total_label = torch.sum(pop_label[:, 0])
-        pop_beta_total_label = torch.sum(pop_label[:, 1])
-
-        if natoms <= 0:
-            raise ValueError("natoms must be positive")
+        # Sum over atoms within each frame → (nframes,); avoids inter-frame cancellation.
+        spin_total_pred = spin_pred.sum(dim=1)
+        spin_total_label = spin_label.sum(dim=1)
+        pop_alpha_total_pred = pop_pred[:, :, 0].sum(dim=1)
+        pop_beta_total_pred = pop_pred[:, :, 1].sum(dim=1)
+        pop_alpha_total_label = pop_label[:, :, 0].sum(dim=1)
+        pop_beta_total_label = pop_label[:, :, 1].sum(dim=1)
 
         def _loss(pred: torch.Tensor, tgt: torch.Tensor) -> torch.Tensor:
             if self.loss_func == "smooth_mae":
@@ -193,9 +196,15 @@ class PopulationLoss(TaskLoss):
             else:
                 raise RuntimeError(f"Unknown loss function: {self.loss_func!r}")
 
-        spin_loss = _loss(spin_pred, spin_label) / natoms
+        spin_loss = _loss(spin_pred.reshape(-1), spin_label.reshape(-1)) / natoms
         spin_total_loss = _loss(spin_total_pred, spin_total_label)
-        pop_loss = _loss(pop_pred, pop_label) / natoms
+        pop_loss = (
+            _loss(
+                pop_pred.reshape([-1, self.task_dim]),
+                pop_label.reshape([-1, self.task_dim]),
+            )
+            / natoms
+        )
         pop_alpha_total_loss = _loss(pop_alpha_total_pred, pop_alpha_total_label)
         pop_beta_total_loss = _loss(pop_beta_total_pred, pop_beta_total_label)
 
@@ -207,7 +216,7 @@ class PopulationLoss(TaskLoss):
             + pref_pop_beta_total * pop_beta_total_loss
         )
 
-        more_loss["spin_total"] = spin_total_pred
+        more_loss["spin_total"] = spin_total_pred.mean()
         more_loss["spin_loss"] = spin_loss
         more_loss["spin_total_loss"] = spin_total_loss
         more_loss["pop_loss"] = pop_loss
