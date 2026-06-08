@@ -392,7 +392,7 @@ def _trace_and_compile(
     # the same concrete value at trace time (duck-shape merging).  We take
     # one frame ([:1]) to normalise nf, then pad it to a prime so PyTorch
     # does not specialise it as the constant 1.  nloc and nall come from
-    # real data (typically 50–500 and 200–5000+), so they are already too
+    # real data, so they are already too
     # large to alias with any architecture dim and need no adjustment.
     #
     # The prime for nf is chosen by enumerating every dimension that appears
