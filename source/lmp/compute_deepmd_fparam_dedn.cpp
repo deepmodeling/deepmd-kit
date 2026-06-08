@@ -30,10 +30,17 @@ ComputeDeepmdFparamDedn::ComputeDeepmdFparamDedn(LAMMPS* lmp,
   auto lb = token.find('[');
   auto rb = token.find(']');
   if (lb != std::string::npos || rb != std::string::npos) {
-    if (lb == std::string::npos || rb == std::string::npos || rb <= lb + 1) {
+    if (lb == std::string::npos || rb == std::string::npos || rb <= lb + 1 ||
+        rb != token.size() - 1) {
       error->all(FLERR, "Illegal source specification in compute command");
     }
-    source_index = atoi(token.substr(lb + 1, rb - lb - 1).c_str()) - 1;
+    std::string idx = token.substr(lb + 1, rb - lb - 1);
+    char* endptr = nullptr;
+    long one_based = std::strtol(idx.c_str(), &endptr, 10);
+    if (endptr == idx.c_str() || *endptr != '\0' || one_based < 1) {
+      error->all(FLERR, "Source index must be a positive 1-based integer");
+    }
+    source_index = static_cast<int>(one_based - 1);
     token = token.substr(0, lb);
   }
 

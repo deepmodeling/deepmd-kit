@@ -673,8 +673,14 @@ inline void DP_DeepPotComputeNList_variantadd(DP_DeepPot* dp,
   std::vector<VALUETYPE> f, v;
 
   if (nframes != 1) {
-    throw deepmd::deepmd_exception(
-        "Direct dE/dN C API currently supports single-frame evaluation only");
+    dp->exception =
+        "Direct dE/dN C API currently supports single-frame evaluation only";
+    return;
+  }
+  if (atomic_energy || atomic_virial) {
+    dp->exception =
+        "Direct dE/dN C API does not support atomic outputs";
+    return;
   }
   DP_REQUIRES_OK(dp, dp->dp.compute(e, f, v, dedn, coord_, atype_, cell_,
                                     nghost, nlist->nl, ago, fparam_, aparam_));
@@ -689,13 +695,6 @@ inline void DP_DeepPotComputeNList_variantadd(DP_DeepPot* dp,
   }
   if (dE_dN) {
     dE_dN[0] = dedn;
-  }
-  if (atomic_energy) {
-    std::fill(atomic_energy, atomic_energy + nframes * natoms, (VALUETYPE)0);
-  }
-  if (atomic_virial) {
-    std::fill(atomic_virial, atomic_virial + nframes * natoms * 9,
-              (VALUETYPE)0);
   }
 }
 

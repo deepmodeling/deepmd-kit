@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include <cassert>
+#include <cstdlib>
 #include <iomanip>
 #include <iostream>
 #include <limits>
@@ -223,6 +224,8 @@ double PairDeepMD::eval_energy_with_fparam(
   } else if (do_fix_fparam) {
     make_fparam_from_fix(fparam);
   }
+  const std::vector<double>& fparam_eval =
+      fparam_override.empty() ? fparam : fparam_override;
 
   int ago = neighbor->ago;
 
@@ -243,7 +246,7 @@ double PairDeepMD::eval_energy_with_fparam(
 
     try {
       deep_pot.compute(dener, dforce, dvirial, dcoord, dtype, dbox, nghost,
-                       lmp_list, ago, fparam, daparam);
+                       lmp_list, ago, fparam_eval, daparam);
     } catch (deepmd_compat::deepmd_exception& e) {
       error->one(FLERR, e.what());
     }
@@ -819,7 +822,14 @@ void PairDeepMD::settings(int narg, char** arg) {
       fix_fparam_id = arg[iarg + 1];
       fix_fparam_index = -1;
       if (iarg + 2 < narg && !is_key(arg[iarg + 2])) {
-        fix_fparam_index = atoi(arg[iarg + 2]) - 1;
+        char* endptr = nullptr;
+        long one_based = std::strtol(arg[iarg + 2], &endptr, 10);
+        if (endptr == arg[iarg + 2] || *endptr != '\0' || one_based < 1) {
+          error->all(FLERR,
+                     "invalid fparam_from_fix key: vector index must be a "
+                     "positive 1-based integer");
+        }
+        fix_fparam_index = static_cast<int>(one_based - 1);
         iarg += 3;
       } else {
         iarg += 2;

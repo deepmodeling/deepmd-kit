@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include <cassert>
+#include <cstdlib>
 #include <iomanip>
 #include <iostream>
 #include <limits>
@@ -168,6 +169,9 @@ void PairDeepBaseModel::make_fparam_from_fix(vector<double>& fparam) {
   assert(do_fix_fparam);
 
   int ifix = modify->find_fix(fix_fparam_id);
+  if (ifix < 0) {
+    error->all(FLERR, "fix id is not found: " + fix_fparam_id);
+  }
   Fix* fix = modify->fix[ifix];
 
   if (!fix) {

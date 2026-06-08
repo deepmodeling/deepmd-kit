@@ -39,6 +39,7 @@ type_OH = np.array([1, 1, 1, 1, 1, 1])
 
 
 def setup_module() -> None:
+    """Create the converted model and data file needed by this test module."""
     if os.environ.get("ENABLE_TENSORFLOW", "1") != "1":
         pytest.skip("Skip test because TensorFlow support is not enabled.")
     ensure_converted_pb(pbtxt_file, pb_file)
@@ -46,11 +47,13 @@ def setup_module() -> None:
 
 
 def teardown_module() -> None:
+    """Remove the temporary LAMMPS data file after the tests finish."""
     if data_file.exists():
         os.remove(data_file)
 
 
 def _lammps(fp_value, units="metal") -> PyLammps:
+    """Build a LAMMPS instance configured for frame-parameter derivative tests."""
     lammps = PyLammps()
     lammps.units(units)
     lammps.boundary("p p p")
@@ -74,12 +77,14 @@ def _lammps(fp_value, units="metal") -> PyLammps:
 
 @pytest.fixture
 def lammps():
+    """Provide a ready-to-run LAMMPS instance for the default frame parameter."""
     lmp = _lammps(fp_value=0.25852028)
     yield lmp
     lmp.close()
 
 
 def _energy_at_fp(fp_value):
+    """Evaluate the potential energy at a chosen frame-parameter value."""
     lmp = _lammps(fp_value=fp_value)
     try:
         lmp.run(0)
@@ -88,12 +93,35 @@ def _energy_at_fp(fp_value):
         lmp.close()
 
 
+def _energy_with_direct_fparam(fp_value):
+    """Evaluate the potential energy using a direct fparam setting."""
+    lmp = PyLammps()
+    try:
+        lmp.units("metal")
+        lmp.boundary("p p p")
+        lmp.atom_style("atomic")
+        lmp.neighbor("2.0 bin")
+        lmp.neigh_modify("every 10 delay 0 check no")
+        lmp.read_data(data_file.resolve())
+        lmp.mass("1 16")
+        lmp.timestep(0.0005)
+        lmp.fix("1 all nve")
+        lmp.pair_style(f"deepmd {pb_file.resolve()} fparam {fp_value} aparam 0.25852028")
+        lmp.pair_coeff("* *")
+        lmp.run(0)
+        return lmp.eval("pe")
+    finally:
+        lmp.close()
+
+
 def test_pair_fparam_from_fix(lammps) -> None:
+    """Check that fparam_from_fix matches the direct fparam path."""
     lammps.run(0)
-    assert lammps.eval("pe") == pytest.approx(_energy_at_fp(0.25852028))
+    assert lammps.eval("pe") == pytest.approx(_energy_with_direct_fparam(0.25852028))
 
 
 def test_compute_deepmd_fparam_dedn(lammps) -> None:
+    """Compare the reported derivative against a central finite difference."""
     eps = 1.0e-6
     lammps.run(0)
     dedn = lammps.eval("c_dedn")
