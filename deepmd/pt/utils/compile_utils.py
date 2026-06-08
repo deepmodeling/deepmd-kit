@@ -96,7 +96,13 @@ def strip_saved_tensor_detach(gm: torch.fx.GraphModule) -> None:
         users = list(node.users.keys())
         is_chain_inner = _is_detach(input_node)
         is_dead = len(users) == 0
-        is_chain_head = len(users) > 0 and all(_is_detach(u) for u in users)
+        # A detach is a chain head if ANY user is itself a detach node.
+        # Using `any` instead of `all` handles the branched pattern that
+        # attention models (DPA2, DPA3) produce: make_fx may assign the same
+        # "saved tensor" detach node to both a chain-continuation detach AND a
+        # direct backward op, so not all users are detaches but the node is
+        # still a make_fx-inserted chain head that must be removed.
+        is_chain_head = len(users) > 0 and any(_is_detach(u) for u in users)
         if is_chain_inner or is_dead or is_chain_head:
             to_remove.append(node)
 

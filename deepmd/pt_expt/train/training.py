@@ -513,22 +513,37 @@ def _trace_and_compile(
 
 
 class _CompiledModel(torch.nn.Module):
-    """Coord extension (eager) -> compiled forward_lower (dynamic shapes)."""
+    """Coord extension (eager) -> compiled forward_lower (dynamic shapes).
+
+    Compilation is lazy: ``_trace_and_compile`` is called on the first real
+    ``forward()`` invocation using that batch's tensors, so no extra
+    ``get_data()`` call is needed during ``__init__``.  Tasks that share the
+    same model structure reuse the compiled graph via ``compiled_by_structure``.
+    """
 
     def __init__(
         self,
         original_model: torch.nn.Module,
-        compiled_forward_lower: torch.nn.Module,
+        structure_key: tuple[int, ...],
         task_buf_order: tuple[str, ...] = (),
         task_buffers: dict[str, torch.Tensor] | None = None,
+        compile_opts: dict[str, Any] | None = None,
+        compiled_by_structure: dict | None = None,
     ) -> None:
         super().__init__()
         self.original_model = original_model
-        self.compiled_forward_lower = compiled_forward_lower
+        self.compiled_forward_lower: torch.nn.Module | None = None
         self._task_buf_order = task_buf_order
-        # task_buffers is intentionally not stored: buffers are read from
-        # original_model.get_fitting_net() at forward time so that weight
-        # updates (load_state_dict, optimiser steps) are always reflected.
+        self._structure_key = structure_key
+        self._compile_opts = compile_opts
+        # Stored only for the first-forward compile call; freed afterwards.
+        self._task_buffers = task_buffers
+        # Shared dict across all _CompiledModel instances in the same Trainer.
+        # A cache hit lets a second task with the same structure reuse the
+        # already-traced graph without re-running make_fx.
+        self._compiled_by_structure: dict = (
+            compiled_by_structure if compiled_by_structure is not None else {}
+        )
 
     def __getattr__(self, name: str) -> Any:
         # Delegate unknown lookups to original_model so that callers such as
@@ -585,6 +600,43 @@ class _CompiledModel(torch.nn.Module):
             distinguish_types=False,
         )
         ext_coord = ext_coord.reshape(nframes, -1, 3)
+
+        # Lazy compile: trace on the first real forward call using this
+        # batch's tensors (prime-padded inside _trace_and_compile).
+        # Mirrors DPA4's on-cache-miss compile so no separate get_data()
+        # is needed during __init__.
+        if self.compiled_forward_lower is None:
+            if self._structure_key in self._compiled_by_structure:
+                compiled_lower, buf_order = self._compiled_by_structure[
+                    self._structure_key
+                ]
+                log.info("Reusing compiled graph (shared model structure, lazy).")
+            else:
+                log.info(
+                    "Lazy compile: tracing model on first forward call "
+                    "(structure_key=%s).",
+                    self._structure_key,
+                )
+                compiled_lower, buf_order = _trace_and_compile(
+                    self.original_model,
+                    ext_coord,
+                    ext_atype,
+                    nlist,
+                    mapping,
+                    fparam,
+                    aparam,
+                    charge_spin=charge_spin,
+                    task_buffers=self._task_buffers,
+                    compile_opts=self._compile_opts,
+                )
+                self._compiled_by_structure[self._structure_key] = (
+                    compiled_lower,
+                    buf_order,
+                )
+            self.compiled_forward_lower = compiled_lower
+            self._task_buf_order = buf_order
+            self._task_buffers = None  # free; no longer needed after compile
+
         ext_coord = ext_coord.detach().requires_grad_(True)
 
         if self._task_buf_order:
@@ -1142,14 +1194,6 @@ class Trainer:
         # 'meta'`` (pytorch/pytorch#134182).
         torch._dynamo.config.optimize_ddp = False
 
-        from deepmd.dpmodel.utils.nlist import (
-            build_neighbor_list,
-            extend_coord_with_ghosts,
-        )
-        from deepmd.dpmodel.utils.region import (
-            normalize_coord,
-        )
-
         # Under DDP, self.wrapper is a DistributedDataParallel wrapper;
         # access the underlying ModelWrapper via .module.
         wrapper_mod = (
@@ -1203,9 +1247,10 @@ class Trainer:
                     wrapper_mod.model[task_key], group_models
                 )
 
-        # structure_key -> (compiled_lower, task_buf_order)
-        # Tasks with the same structure key (same descriptor + shared fitting)
-        # reuse the compiled graph; different descriptor or fitting → distinct key.
+        # Shared cache: structure_key -> (compiled_lower, task_buf_order).
+        # Tasks with the same structure key reuse the same compiled graph.
+        # The dict is passed to every _CompiledModel instance so the lazy
+        # compile on the first forward can populate and share it.
         _compiled_by_structure: dict[tuple[int, ...], tuple] = {}
 
         for task_key in self.model_keys:
@@ -1236,69 +1281,16 @@ class Trainer:
             structure_key = _key_for[task_key]
             task_bufs = _task_bufs_for[task_key]
 
-            if structure_key in _compiled_by_structure:
-                # Shared structure: reuse the already-compiled graph.
-                compiled_lower, task_buf_order = _compiled_by_structure[structure_key]
-                log.info(
-                    "Reusing compiled graph for task=%s (shared model structure).",
-                    task_key,
-                )
-            else:
-                inp, _ = self.get_data(is_train=True, task_key=task_key)
-                coord = inp["coord"].detach()
-                atype = inp["atype"].detach()
-                box = inp.get("box")
-                if box is not None:
-                    box = box.detach()
-
-                nframes, nloc = atype.shape[:2]
-                coord_3d = coord.reshape(nframes, nloc, 3)
-                box_flat = box.reshape(nframes, 9) if box is not None else None
-
-                if box_flat is not None:
-                    coord_norm = normalize_coord(
-                        coord_3d, box_flat.reshape(nframes, 3, 3)
-                    )
-                else:
-                    coord_norm = coord_3d
-
-                ext_coord, ext_atype, mapping = extend_coord_with_ghosts(
-                    coord_norm, atype, box_flat, model.get_rcut()
-                )
-                nlist_t = build_neighbor_list(
-                    ext_coord,
-                    ext_atype,
-                    nloc,
-                    model.get_rcut(),
-                    model.get_sel(),
-                    distinguish_types=False,
-                )
-                ext_coord = ext_coord.reshape(nframes, -1, 3)
-
-                fparam = inp.get("fparam")
-                aparam = inp.get("aparam")
-                charge_spin = inp.get("charge_spin")
-
-                compiled_lower, task_buf_order = _trace_and_compile(
-                    model,
-                    ext_coord,
-                    ext_atype,
-                    nlist_t,
-                    mapping,
-                    fparam,
-                    aparam,
-                    charge_spin=charge_spin,
-                    task_buffers=task_bufs if task_bufs else None,
-                    compile_opts=compile_opts,
-                )
-                _compiled_by_structure[structure_key] = (compiled_lower, task_buf_order)
-
             wrapper_mod.model[task_key] = _CompiledModel(
-                model, compiled_lower, task_buf_order, task_bufs
+                model,
+                structure_key=structure_key,
+                task_buf_order=tuple(task_bufs.keys()) if task_bufs else (),
+                task_buffers=task_bufs if task_bufs else None,
+                compile_opts=compile_opts,
+                compiled_by_structure=_compiled_by_structure,
             )
             log.info(
-                "Model compiled/reused (task=%s, tracing_mode=symbolic, "
-                "dynamic=True, backend=inductor).",
+                "Lazy compile registered (task=%s); will trace on first forward call.",
                 task_key,
             )
 
