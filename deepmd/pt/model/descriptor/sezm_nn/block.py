@@ -572,6 +572,14 @@ class SeZMInteractionBlock(nn.Module):
             self.block_attn_res_ffns = None
             self._forward_impl = self._forward_with_residual_shortcuts
 
+        # Inference env policy, sampled once here (see
+        # ``_use_infer_activation_checkpoint``).
+        _truthy = {"1", "true", "yes", "on"}
+        self._act_infer = os.environ.get("DP_ACT_INFER", "").strip().lower() in _truthy
+        self._compile_infer = (
+            os.environ.get("DP_COMPILE_INFER", "").strip().lower() in _truthy
+        )
+
     def forward(
         self,
         x: torch.Tensor,
@@ -638,10 +646,8 @@ class SeZMInteractionBlock(nn.Module):
         """
         return (
             not self.training
-            and os.environ.get("DP_ACT_INFER", "").strip().lower()
-            in {"1", "true", "yes", "on"}
-            and os.environ.get("DP_COMPILE_INFER", "").strip().lower()
-            not in {"1", "true", "yes", "on"}
+            and self._act_infer
+            and not self._compile_infer
             and torch.is_grad_enabled()
             and any(tensor.requires_grad for tensor in tensors)
         )
