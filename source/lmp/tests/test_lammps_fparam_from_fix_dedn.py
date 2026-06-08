@@ -87,7 +87,7 @@ def _energy_at_fp(fp_value):
     """Evaluate the potential energy at a chosen frame-parameter value."""
     lmp = _lammps(fp_value=fp_value)
     try:
-        lmp.run(0)
+        lmp.run(1)
         return lmp.eval("pe")
     finally:
         lmp.close()
@@ -110,7 +110,7 @@ def _energy_with_direct_fparam(fp_value):
             f"deepmd {pb_file.resolve()} fparam {fp_value} aparam 0.25852028"
         )
         lmp.pair_coeff("* *")
-        lmp.run(0)
+        lmp.run(1)
         return lmp.eval("pe")
     finally:
         lmp.close()
@@ -118,14 +118,14 @@ def _energy_with_direct_fparam(fp_value):
 
 def test_pair_fparam_from_fix(lammps) -> None:
     """Check that fparam_from_fix matches the direct fparam path."""
-    lammps.run(0)
+    lammps.run(1)
     assert lammps.eval("pe") == pytest.approx(_energy_with_direct_fparam(0.25852028))
 
 
 def test_compute_deepmd_fparam_dedn(lammps) -> None:
     """Compare the reported derivative against a central finite difference."""
     eps = 1.0e-6
-    lammps.run(0)
+    lammps.run(1)
     dedn = lammps.eval("c_dedn")
     ref = (_energy_at_fp(0.25852028 + eps) - _energy_at_fp(0.25852028 - eps)) / (
         2.0 * eps

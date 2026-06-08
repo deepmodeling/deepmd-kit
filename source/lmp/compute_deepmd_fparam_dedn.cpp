@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include "compute_deepmd_fparam_dedn.h"
 
+#include <cerrno>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 
 #include "comm.h"
 #include "compute.h"
@@ -36,8 +38,11 @@ ComputeDeepmdFparamDedn::ComputeDeepmdFparamDedn(LAMMPS* lmp,
     }
     std::string idx = token.substr(lb + 1, rb - lb - 1);
     char* endptr = nullptr;
+    errno = 0;
     long one_based = std::strtol(idx.c_str(), &endptr, 10);
-    if (endptr == idx.c_str() || *endptr != '\0' || one_based < 1) {
+    if (endptr == idx.c_str() || *endptr != '\0' || errno == ERANGE ||
+        one_based < 1 ||
+        one_based > static_cast<long>(std::numeric_limits<int>::max()) + 1L) {
       error->all(FLERR, "Source index must be a positive 1-based integer");
     }
     source_index = static_cast<int>(one_based - 1);

@@ -677,6 +677,11 @@ inline void DP_DeepPotComputeNList_variantadd(DP_DeepPot* dp,
         "Direct dE/dN C API currently supports single-frame evaluation only";
     return;
   }
+  if (dp->dfparam != 1) {
+    dp->exception =
+        "Direct dE/dN C API currently supports only dim_fparam == 1";
+    return;
+  }
   if (atomic_energy || atomic_virial) {
     dp->exception = "Direct dE/dN C API does not support atomic outputs";
     return;
