@@ -53,6 +53,12 @@ surface along the way.  Every non-obvious choice is pinned to a source
 comment tagged ``NOTE:``; the numbered catalogue at the bottom of this
 docstring explains each tag in depth.
 
+The PyTorch ``torch.compile`` workarounds themselves -- the version
+guard, the process-global patches, the post-``make_fx`` FX graph
+repair, the trace-shape selection, and the Inductor option lockdown --
+live in :mod:`deepmd.pt.utils.compile_compat` so they can be reused
+independently of this model.
+
 Pipeline for one training batch
 ===============================
 
@@ -73,8 +79,8 @@ Pipeline for one training batch
               |     |     |      * silu_backward is decomposed        (NOTE 2)
               |     |     |      * traced graph already contains the
               |     |     |        first autograd.grad over coords
-              |     |     |-- _strip_saved_tensor_detach (train only) (NOTE 3)
-              |     |     |-- _rebuild_graph_module      (train only) (NOTE 4)
+              |     |     |-- strip_saved_tensor_detach (train only) (NOTE 3)
+              |     |     |-- rebuild_graph_module      (train only) (NOTE 4)
               |     |     |-- train: torch.compile(backend="inductor",
               |     |     |              dynamic=True, options=<locked>)  (NOTE 6)
               |     |     '-- eval:  aot_module_simplified (forward-only) (NOTE 13)
@@ -177,7 +183,7 @@ they become ordinary ops inside the FX graph and sever the gradient
 path from the force loss back to ``theta``; training then silently
 produces zero parameter updates for the second-derivative term.
 
-``_strip_saved_tensor_detach`` removes them by pure graph topology --
+``strip_saved_tensor_detach`` removes them by pure graph topology --
 no op-name matching -- so that user-explicit ``.detach()`` calls
 (e.g. cached SO2 weights, activation lookup matrices) survive:
 
@@ -193,7 +199,7 @@ inserted and removing it would be incorrect.
 NOTE 4 -- Rebuilding the FX graph from scratch
 ----------------------------------------------
 
-``Graph.erase_node`` inside ``_strip_saved_tensor_detach`` unlinks nodes
+``Graph.erase_node`` inside ``strip_saved_tensor_detach`` unlinks nodes
 from the doubly linked list that represents the graph.  On several
 PyTorch builds (observed on 2.11+cu130) it leaves the C-level
 ``prev/next`` pointers of *neighbouring* Node objects stale.  Dynamo,
@@ -201,7 +207,7 @@ when it later re-traces the ``GraphModule`` and walks ``graph.nodes``
 inside ``output_graph.py:_create_proxy`` to read ``nd.meta``,
 dereferences one of those stale pointers and segfaults.
 
-``_rebuild_graph_module`` does a single ``node_copy`` pass into a
+``rebuild_graph_module`` does a single ``node_copy`` pass into a
 freshly allocated ``torch.fx.Graph``.  The result is an equivalent graph
 whose linked list contains no erased entries, so dynamo can iterate it
 safely.  We always rebuild -- including in eval -- because a fresh
@@ -450,9 +456,6 @@ import torch
 from einops import (
     rearrange,
 )
-from packaging.version import (
-    Version,
-)
 from torch.fx.experimental.proxy_tensor import (
     make_fx,
 )
@@ -485,6 +488,19 @@ from deepmd.pt.model.model.transform_output import (
 from deepmd.pt.utils import (
     env,
 )
+from deepmd.pt.utils.compile_compat import (
+    AM_PREFIX,
+    FIT_PREFIX,
+    apply_global_compile_patches,
+    build_inductor_compile_options,
+    check_compile_torch_version,
+    get_task_buffer_names,
+    get_task_buffer_values,
+    next_safe_prime,
+    rebuild_graph_module,
+    strip_saved_tensor_detach,
+    trace_pad_dim,
+)
 from deepmd.pt.utils.nlist import (
     extend_input_and_build_neighbor_list,
 )
@@ -504,28 +520,10 @@ SeZMModel_ = make_model(SeZMAtomicModel)
 # all-pairs builder for periodic CUDA systems.
 SEZM_NV_NLIST_THRESHOLD = 1024
 
-# NOTE: Silence Inductor / Triton autotune dumps before any submodule is
-# imported.  ``torch.compile`` reads these environment variables exactly
-# once at backend initialisation; setting them after the first compile
-# would have no effect in the current run.  ``setdefault`` preserves any
-# explicit user-level override.
-os.environ.setdefault("TORCHINDUCTOR_MAX_AUTOTUNE_REPORT_CHOICES_STATS", "0")
-os.environ.setdefault("TRITON_PRINT_AUTOTUNING", "0")
-
-# NOTE: Disable DDPOptimizer graph splitting globally.
-# ``compiled_core_compute_cache`` entries / ``compiled_dens_compute`` are inner
-# ``torch.compile`` calls sitting *inside* a DDP-wrapped model;
-# DDPOptimizer assumes it sees the *whole* model and splits the FX graph
-# at DDP bucket boundaries.  For an inner submodule that heuristic
-# produces subgraphs whose outputs include symbolic integers, which then
-# crash aot_autograd with ``'int' object has no attribute 'meta'``.
-# See https://github.com/pytorch/pytorch/issues/134182.  Turning the
-# optimizer off globally is safe because SeZM always owns its own compile
-# boundary and the surrounding DDP wrapper operates on the full model
-# call.
-import torch._dynamo.config as _dynamo_cfg
-
-_dynamo_cfg.optimize_ddp = False
+# Apply the process-global PyTorch workarounds the compile pipeline relies on
+# (autotune log suppression, DDP optimiser, and the 2.12 divisibility repair)
+# once, before the first compilation in this run.
+apply_global_compile_patches()
 
 # ---------------------------------------------------------------------------
 # Multi-task compile sharing
@@ -540,9 +538,6 @@ _SEZM_COMPILE_CACHE: dict[tuple[Any, ...], Any] = {}
 # knows which buffers were promoted and in what order.
 _SEZM_TASK_BUF_ORDER: dict[tuple[Any, ...], tuple[str, ...]] = {}
 
-# Prefix namespace for promoted buffer names.
-_AM_PREFIX = "am/"
-_FIT_PREFIX = "fit/"
 _ENV_BOOL_CHOICES = {
     "1": True,
     "true": True,
@@ -639,203 +634,6 @@ def _sezm_structure_key(model: SeZMModel) -> tuple[Any, ...]:
     )
 
 
-def _get_sezm_task_buf_names(model: SeZMModel) -> tuple[str, ...]:
-    """Return the ordered names of per-task buffers to promote as FX placeholders.
-
-    Always promotes:
-    * ``out_bias``, ``out_std`` on ``atomic_model`` — may be replaced
-      out-of-place by ``model_change_out_bias``, so the compiled graph must
-      never bake them as constants.
-    * ``bias_atom_e`` on the fitting net — task-specific per-type bias that
-      differs across tasks after ``share_params``.
-    * ``case_embd`` on the fitting net — task-identity vector used for
-      multi-task case conditioning.
-    """
-    names: list[str] = []
-    atomic_model = model.atomic_model
-    fitting = atomic_model.fitting_net
-    for bname in ("out_bias", "out_std"):
-        if atomic_model._buffers.get(bname) is not None:
-            names.append(_AM_PREFIX + bname)
-    for bname in ("bias_atom_e", "case_embd"):
-        if fitting._buffers.get(bname) is not None:
-            names.append(_FIT_PREFIX + bname)
-    return tuple(names)
-
-
-def _get_sezm_task_buf_vals(
-    model: SeZMModel,
-    names: tuple[str, ...],
-) -> tuple[torch.Tensor, ...]:
-    """Return the current tensor values for the given promoted-buffer names."""
-    if not names:
-        return ()
-    atomic_model = model.atomic_model
-    fitting = atomic_model.fitting_net
-    vals: list[torch.Tensor] = []
-    for name in names:
-        if name.startswith(_AM_PREFIX):
-            vals.append(atomic_model._buffers[name[len(_AM_PREFIX) :]])
-        elif name.startswith(_FIT_PREFIX):
-            vals.append(fitting._buffers[name[len(_FIT_PREFIX) :]])
-        else:
-            raise ValueError(f"Unknown SeZM task-buffer name: {name}")
-    return tuple(vals)
-
-
-def _check_compile_torch_version() -> None:
-    """Fail fast when SeZM compile is requested on unsupported PyTorch."""
-    version = Version(torch.__version__).release
-    if len(version) < 2 or version[:2] != (2, 11):
-        raise RuntimeError(
-            "SeZM `use_compile` and `DP_COMPILE_INFER` require PyTorch 2.11.x; "
-            f"found torch {torch.__version__}."
-        )
-
-
-def _is_prime(n: int) -> bool:
-    """Return True when ``n`` is a prime integer (``n >= 2``)."""
-    if n < 2:
-        return False
-    if n < 4:
-        return True
-    if n % 2 == 0:
-        return False
-    k = 3
-    while k * k <= n:
-        if n % k == 0:
-            return False
-        k += 2
-    return True
-
-
-def _next_safe_prime(start: int, forbidden: set[int]) -> int:
-    """Return the smallest prime ``>= max(start, 5)`` not in ``forbidden``.
-
-    Used by :meth:`SeZMModel.trace_and_compile` to choose collision-free
-    trace-time sizes for ``nf``, ``nall`` and ``nloc``.  Primes ``>= 5``
-    avoid every dim PyTorch specializes on (``1`` → broadcasting,
-    ``2``/``3``/``9`` → Cartesian / virial / charge_spin literals baked
-    into model code) and guarantee distinct values, which suppresses
-    make_fx's duck-shape unification without needing the
-    ``ShapeEnv(duck_shape=False)`` patch.
-    """
-    n = max(start, 5)
-    while not _is_prime(n) or n in forbidden:
-        n += 1
-    return n
-
-
-def _trace_pad_dim(t: torch.Tensor, dim: int, target: int) -> torch.Tensor:
-    """Pad or trim ``t`` along ``dim`` so ``t.shape[dim] == target``.
-
-    Padding duplicates the last slice along ``dim``; trimming drops
-    trailing slices.  Used to coerce real-data trace inputs into the
-    prime-numbered shapes chosen by :func:`_next_safe_prime`.
-
-    Duplicating the last slice preserves valid index values inside
-    index-bearing tensors (``nlist`` neighbor indices, ``mapping``
-    extended-to-local indices) because the duplicated row reuses the
-    previously-valid row's values.  Trimming likewise never invalidates
-    indices.  Only shapes flow downstream during ``make_fx`` tracing,
-    so the exact replicated/trimmed values do not affect the FX graph.
-    """
-    cur = int(t.shape[dim])
-    if cur == target:
-        return t
-    if cur > target:
-        sl: list[slice] = [slice(None)] * t.ndim
-        sl[dim] = slice(None, target)
-        return t[tuple(sl)]
-    sl = [slice(None)] * t.ndim
-    sl[dim] = slice(-1, None)
-    last = t[tuple(sl)]
-    repeats = target - cur
-    return torch.cat([t, *([last] * repeats)], dim=dim)
-
-
-def _strip_saved_tensor_detach(gm: torch.fx.GraphModule) -> None:
-    """Strip ``aten.detach`` nodes that ``make_fx`` inserts for saved tensors.
-
-    When ``make_fx`` decomposes ``autograd.grad(..., create_graph=True)``,
-    the autograd engine wraps every saved forward activation in a double-detach
-    chain (e.g. ``tanh -> detach_A -> detach_B -> tanh_backward``).  These
-    detach nodes block the second-order gradient path from the loss back to
-    model parameters, causing incorrect parameter updates during force-loss
-    training.
-
-    User-explicit ``.detach()`` calls (e.g. inside ``attach_edge_vec_grad``)
-    are preserved.  The two categories are distinguished by graph topology
-    alone — no hard-coded op names — using three rules:
-
-    * *Chain inner*: input is another detach node.
-    * *Dead node*: no downstream users.
-    * *Chain head*: *all* users are detach nodes.
-
-    Any detach that does **not** match these rules is treated as user-explicit
-    and left untouched.
-    """
-    _DETACH = torch.ops.aten.detach.default
-
-    def _is_detach(n: torch.fx.Node) -> bool:
-        return n.op == "call_function" and n.target == _DETACH
-
-    # NOTE: Pass 1 -- classify every detach against the *original* graph.
-    # If we erased nodes eagerly, later classifications would walk a
-    # mutated neighbourhood and misjudge the chain-inner / chain-head /
-    # dead boundaries; the double-detach pattern in particular flips
-    # class within a single erase.  Collecting first, mutating second
-    # keeps the topology rules well-defined.
-    to_remove: list[torch.fx.Node] = []
-    for node in gm.graph.nodes:
-        if not _is_detach(node):
-            continue
-        input_node = node.args[0]
-        users = list(node.users.keys())
-        is_chain_inner = _is_detach(input_node)
-        is_dead = len(users) == 0
-        is_chain_head = len(users) > 0 and all(_is_detach(u) for u in users)
-        if is_chain_inner or is_dead or is_chain_head:
-            to_remove.append(node)
-
-    # NOTE: Pass 2 -- rewire + erase atomically after the full
-    # classification.  ``replace_all_uses_with`` forwards every consumer
-    # to the detach's input; ``erase_node`` then removes the now-dead
-    # detach.  Doing both back-to-back means the graph never sits in a
-    # half-consistent state where one user sees the old detach and
-    # another the rewired source.
-    for node in to_remove:
-        node.replace_all_uses_with(node.args[0])
-        gm.graph.erase_node(node)
-
-    gm.graph.lint()
-    gm.recompile()
-
-
-def _rebuild_graph_module(gm: torch.fx.GraphModule) -> torch.fx.GraphModule:
-    """Return a fresh ``GraphModule`` whose node linked-list is newly allocated.
-
-    After ``_strip_saved_tensor_detach`` erases nodes via
-    ``Graph.erase_node()``, the internal doubly-linked list may retain
-    stale pointers to erased nodes.  When ``torch.compile`` later
-    triggers dynamo re-tracing and iterates ``graph.nodes`` to read
-    ``nd.meta`` (``output_graph.py:_create_proxy``), accessing these
-    stale entries causes a segfault.
-
-    Copying every node into a brand-new ``Graph`` builds a clean linked
-    list from scratch, side-stepping the corruption entirely.
-    """
-    old_graph = gm.graph
-    new_graph = torch.fx.Graph()
-    # node_copy needs a mapper from old nodes to their copies in new_graph.
-    val_map: dict[torch.fx.Node, torch.fx.Node] = {}
-    for node in old_graph.nodes:
-        val_map[node] = new_graph.node_copy(node, lambda n: val_map[n])
-    new_graph.lint()
-    new_gm = torch.fx.GraphModule(gm, new_graph)
-    return new_gm
-
-
 @BaseModel.register("SeZM")
 @BaseModel.register("sezm")
 @BaseModel.register("DPA4")
@@ -914,7 +712,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             )
         self._tf32_infer_precision = _TF32_INFER_PRECISION_CHOICES[tf32_infer_env]
         if self.use_compile or self._env_use_compile_infer is True:
-            _check_compile_torch_version()
+            check_compile_torch_version()
 
         # === Bridging (optional short-range zone bridging) ===
         self.bridging_method: str = str(bridging_method).upper()
@@ -1298,7 +1096,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                     # update them in-place; out-of-place replacements from
                     # model_change_out_bias are captured because we read fresh
                     # each call rather than caching the values at compile time).
-                    _task_buf_vals = _get_sezm_task_buf_vals(
+                    _task_buf_vals = get_task_buffer_values(
                         self,
                         self._task_buf_order_cache[cache_key],
                     )
@@ -1856,13 +1654,11 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             has_coord_corr,
         )
 
-        # --- Detect per-task buffers to promote as FX placeholders ---
-        # These buffers differ across tasks in the same structure group (they are
-        # NOT shared by share_params) or may be replaced out-of-place after
-        # compilation.  Passing them as explicit arguments makes the compiled
-        # graph reusable across all tasks in the group.
-        task_buf_names = _get_sezm_task_buf_names(self)
-        task_buf_vals_trace = _get_sezm_task_buf_vals(self, task_buf_names)
+        # Promote the per-task buffers (see ``get_task_buffer_names``) to
+        # explicit graph inputs so one compiled graph serves the whole task
+        # group regardless of their per-task values.
+        task_buf_names = get_task_buffer_names(self)
+        task_buf_vals_trace = get_task_buffer_values(self, task_buf_names)
 
         # Resolve module references once for the buffer-patching closures.
         _am_patch = self.atomic_model
@@ -1887,12 +1683,12 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             saved: dict[str, torch.Tensor] = {}
             try:
                 for name, val in zip(task_buf_names, vals):
-                    if name.startswith(_AM_PREFIX):
-                        actual = name[len(_AM_PREFIX) :]
+                    if name.startswith(AM_PREFIX):
+                        actual = name[len(AM_PREFIX) :]
                         saved[name] = _am_patch._buffers[actual]
                         _am_patch._buffers[actual] = val
-                    elif name.startswith(_FIT_PREFIX):
-                        actual = name[len(_FIT_PREFIX) :]
+                    elif name.startswith(FIT_PREFIX):
+                        actual = name[len(FIT_PREFIX) :]
                         saved[name] = _fitting_patch._buffers[actual]
                         _fitting_patch._buffers[actual] = val
             except Exception:
@@ -1905,11 +1701,11 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         ) -> None:
             """Restore original task-local buffers after tracing."""
             for name, orig in saved.items():
-                if name.startswith(_AM_PREFIX):
-                    actual = name[len(_AM_PREFIX) :]
+                if name.startswith(AM_PREFIX):
+                    actual = name[len(AM_PREFIX) :]
                     _am_patch._buffers[actual] = orig
-                elif name.startswith(_FIT_PREFIX):
-                    actual = name[len(_FIT_PREFIX) :]
+                elif name.startswith(FIT_PREFIX):
+                    actual = name[len(FIT_PREFIX) :]
                     _fitting_patch._buffers[actual] = orig
 
         need_coord_grad = self.do_grad_r() or self.do_grad_c()
@@ -1999,29 +1795,12 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 finally:
                     _restore_task_bufs(_saved)
 
-        # NOTE: Choose trace shapes that are pairwise-distinct primes >= 5.
-        #
-        # ``make_fx(tracing_mode="symbolic")`` introduces a sympy symbol per
-        # input dim.  Two failure modes follow if those dims accidentally
-        # match each other or hit a PyTorch-internal "special" value:
-        #
-        # * Duck-shape unification: two input dims that share a concrete
-        #   value at trace time get the SAME sympy symbol, baking an
-        #   equality (``nloc == ntypes``, ``nloc == nall``, ...) the
-        #   compiled graph will violate on later batches.
-        # * Size specialization: dims equal to ``1`` are baked as literal
-        #   ``1`` regardless of duck-shape; values ``2``/``3``/``9`` are
-        #   commonly literals inside the model (charge/spin width,
-        #   Cartesian, virial) and may be unified with input symbols by
-        #   ShapeEnv even with duck-shape off.
-        #
-        # Picking pairwise-distinct primes ``>= 5`` for ``nf``, ``nall``,
-        # ``nloc`` rules out both failure modes in one stroke: no two
-        # symbols can fuse (distinct values), and no symbol can hit a
-        # special literal (``5+`` primes skip ``1``/``2``/``3``/``9``).
-        # ``nsel``, ``dim_fparam``, ``dim_aparam`` and ``dim_chg_spin`` are
-        # contractually fixed by the model and added to the forbidden set
-        # so the chosen primes never collide with them either.
+        # Trace dims are pairwise-distinct primes >= 5 so ``make_fx`` neither
+        # unifies two axes onto one symbol (duck-shape) nor specializes an axis
+        # on a literal; ``next_safe_prime`` documents why.  The forbidden set
+        # adds the model-contracted dims (``nsel``, fparam / aparam widths,
+        # charge_spin) and the promoted task-buffer dims so the chosen primes
+        # never collide with them.
         _forbidden: set[int] = {1, 2, 3, 9}
         for _tbv in task_buf_vals_trace:
             for _d in _tbv.shape:
@@ -2044,24 +1823,21 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         # ``trace_nloc > trace_nall`` the slice silently truncates at
         # trace time, breaking the captured symbolic shape relation
         # ``atype.shape[1] == nloc``.
-        trace_nf = _next_safe_prime(5, _forbidden)
+        trace_nf = next_safe_prime(5, _forbidden)
         _forbidden.add(trace_nf)
-        trace_nloc = _next_safe_prime(trace_nf + 1, _forbidden)
+        trace_nloc = next_safe_prime(trace_nf + 1, _forbidden)
         _forbidden.add(trace_nloc)
-        trace_nall = _next_safe_prime(trace_nloc + 1, _forbidden)
+        trace_nall = next_safe_prime(trace_nloc + 1, _forbidden)
 
-        # Build trace inputs by padding/trimming real-data tensors into
-        # the chosen prime shapes.  ``_trace_pad_dim`` duplicates the
-        # last slice when padding so index-bearing tensors (``nlist``
-        # neighbor indices, ``mapping`` extended-to-local indices) keep
-        # valid values -- the duplicated row references the same atoms
-        # the previous row referenced.
-        coord_for_trace = _trace_pad_dim(extended_coord[:1], 0, trace_nf)
-        coord_for_trace = _trace_pad_dim(coord_for_trace, 1, trace_nall)
-        atype_for_trace = _trace_pad_dim(extended_atype[:1], 0, trace_nf)
-        atype_for_trace = _trace_pad_dim(atype_for_trace, 1, trace_nall)
-        nlist_for_trace = _trace_pad_dim(nlist[:1], 0, trace_nf)
-        nlist_for_trace = _trace_pad_dim(nlist_for_trace, 1, trace_nloc)
+        # Build trace inputs by padding/trimming real-data tensors into the
+        # chosen prime shapes; ``trace_pad_dim`` documents how index-bearing
+        # tensors keep valid values.
+        coord_for_trace = trace_pad_dim(extended_coord[:1], 0, trace_nf)
+        coord_for_trace = trace_pad_dim(coord_for_trace, 1, trace_nall)
+        atype_for_trace = trace_pad_dim(extended_atype[:1], 0, trace_nf)
+        atype_for_trace = trace_pad_dim(atype_for_trace, 1, trace_nall)
+        nlist_for_trace = trace_pad_dim(nlist[:1], 0, trace_nf)
+        nlist_for_trace = trace_pad_dim(nlist_for_trace, 1, trace_nloc)
         # Real nlist values are in ``[-1, real_nall)`` (``-1`` marks
         # padded slots, non-negative entries index into extended_coord).
         # After trimming ``nall`` down to ``trace_nall`` some of those
@@ -2071,17 +1847,17 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         # ``trace_nall - 1`` (the ``-1`` padding stays untouched since
         # clamp only caps the high side).
         nlist_for_trace = torch.clamp(nlist_for_trace, max=trace_nall - 1)
-        mapping_for_trace = _trace_pad_dim(mapping[:1], 0, trace_nf)
-        mapping_for_trace = _trace_pad_dim(mapping_for_trace, 1, trace_nall)
+        mapping_for_trace = trace_pad_dim(mapping[:1], 0, trace_nf)
+        mapping_for_trace = trace_pad_dim(mapping_for_trace, 1, trace_nall)
         # Real mapping values are in ``[0, real_nloc)``.  If
         # ``trace_nloc < real_nloc`` they can exceed ``trace_nloc`` and
         # silently propagate into ``src_local`` (used as a local-atom
         # index downstream).  Clamp to ``trace_nloc - 1``.
         mapping_for_trace = torch.clamp(mapping_for_trace, min=0, max=trace_nloc - 1)
-        fp_for_trace = _trace_pad_dim(fp[:1], 0, trace_nf)
-        ap_for_trace = _trace_pad_dim(ap[:1], 0, trace_nf)
-        ap_for_trace = _trace_pad_dim(ap_for_trace, 1, trace_nloc)
-        charge_spin_for_trace = _trace_pad_dim(charge_spin[:1], 0, trace_nf)
+        fp_for_trace = trace_pad_dim(fp[:1], 0, trace_nf)
+        ap_for_trace = trace_pad_dim(ap[:1], 0, trace_nf)
+        ap_for_trace = trace_pad_dim(ap_for_trace, 1, trace_nloc)
+        charge_spin_for_trace = trace_pad_dim(charge_spin[:1], 0, trace_nf)
 
         trace_args = [
             coord_for_trace,
@@ -2093,8 +1869,8 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             charge_spin_for_trace,
         ]
         if extended_coord_corr is not None:
-            corr_for_trace = _trace_pad_dim(extended_coord_corr[:1], 0, trace_nf)
-            corr_for_trace = _trace_pad_dim(corr_for_trace, 1, trace_nall)
+            corr_for_trace = trace_pad_dim(extended_coord_corr[:1], 0, trace_nf)
+            corr_for_trace = trace_pad_dim(corr_for_trace, 1, trace_nall)
             trace_args.append(corr_for_trace)
         # Append task-buffer values last so they map to the *task_buf_vals
         # varargs in compute_fn.  Their shapes are static (they don't vary
@@ -2130,70 +1906,23 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         )(*trace_args)
 
         if self.training:
-            # NOTE: Training is the only mode that needs FX graph repair.
-            # ``fit_output_to_model_output(create_graph=True)`` asks autograd to
-            # keep the force graph differentiable with respect to model
-            # parameters.  During ``make_fx`` tracing, autograd represents saved
-            # forward activations through double-detach chains such as
+            # Only the training trace runs with ``create_graph=True``, so only
+            # it carries the autograd-inserted detach chains that the FX repair
+            # targets; ``strip_saved_tensor_detach`` and ``rebuild_graph_module``
+            # document why each step is required.
             #
-            #     fwd_op -> detach_A -> detach_B -> bwd_op
-            #
-            # These detaches are bookkeeping in eager autograd, but ordinary FX
-            # operators after tracing.  If left in place, they cut the
-            # second-derivative path from force loss back to theta and training
-            # silently produces zero updates for that term.  Therefore the
-            # training graph first removes only the autograd-inserted detach
-            # chains, preserving user-explicit detach nodes by graph topology.
-            _strip_saved_tensor_detach(traced)
+            # Eval/inference must not take this path: ``create_graph=False``
+            # inserts no detach chains to strip, and the eval graph carries
+            # data-dependent ``nonzero`` sizes from sparse edge compaction whose
+            # unbacked symbols fail Dynamo's shape-guard generation once the
+            # graph is copied.  The original eval GraphModule is kept so Inductor
+            # sees the traced metadata it needs.
+            strip_saved_tensor_detach(traced)
+            traced = rebuild_graph_module(traced)
 
-            # ``_strip_saved_tensor_detach`` mutates ``traced.graph`` via
-            # ``Graph.erase_node``.  On some PyTorch builds (observed on
-            # 2.11+cu130), node erasure may leave stale C-level prev/next
-            # pointers on neighbouring FX nodes; Dynamo can later dereference
-            # those stale links while re-tracing the GraphModule and segfault.
-            # Rebuilding copies the graph into a fresh linked list after all
-            # training-only erasures are complete.
-            #
-            # Eval/inference must not take this repair path.  In eval,
-            # ``create_graph=False`` means autograd does not insert the
-            # double-detach chains, so no nodes are erased.  The eval graph also
-            # contains data-dependent ``nonzero`` output sizes from sparse edge
-            # compaction; copying that graph can make the resulting unbacked
-            # symbols fail Dynamo's shape-guard generation.  Keeping the original
-            # eval GraphModule preserves the traced metadata that Inductor needs.
-            traced = _rebuild_graph_module(traced)
-
-        # NOTE: Conservative Inductor options keep SeZM's dynamic edge
-        # graph from forming overly large Triton reduction kernels
-        # (``make_ttgir`` / ``PassManager::run failed``) on some
-        # GPU/Triton combinations.
-        compile_options: dict[str, Any] = {
-            "max_autotune": False,
-            "shape_padding": True,
-            "epilogue_fusion": False,
-            "triton.cudagraphs": False,
-            "max_fusion_size": 8,
-            "triton.persistent_reductions": False,
-            # NOTE: ``mix_order_reduction`` hits multiple bugs under
-            # data-dependent symbolic shapes on PyTorch <=2.11
-            # (pytorch/pytorch#174379, #178080, #179494) -- our edge
-            # count is exactly that kind of shape.
-            "triton.mix_order_reduction": False,
-        }
-        try:
-            from torch._inductor import config as inductor_config
-
-            valid_options = inductor_config.get_config_copy()
-            compile_options = {
-                key: value
-                for key, value in compile_options.items()
-                if key.replace("-", "_") in valid_options
-            }
-        except Exception:
-            # Older/future PyTorch builds may not expose the config registry.
-            # In that case keep the curated option set and let torch.compile
-            # surface any real backend error.
-            pass
+        # The conservative Inductor option set that keeps the dynamic edge
+        # graph lowerable is centralised in ``deepmd.pt.utils.compile_compat``.
+        compile_options = build_inductor_compile_options()
 
         # NOTE: Store the compiled callable inside the plain-``dict``
         # cache ``compiled_core_compute_cache``.  The dict itself was installed

@@ -3,7 +3,6 @@ import datetime
 import functools
 import json
 import logging
-import os
 import time
 from collections.abc import (
     Callable,
@@ -11,7 +10,6 @@ from collections.abc import (
     Iterable,
 )
 from contextlib import (
-    contextmanager,
     nullcontext,
 )
 from copy import (
@@ -76,6 +74,7 @@ from deepmd.pt.train.ema import (
 )
 from deepmd.pt.train.utils import (
     clip_grad_norm_with_stable_fallback,
+    scoped_env_defaults,
 )
 from deepmd.pt.train.validation import (
     FullValidator,
@@ -146,22 +145,6 @@ from deepmd.utils.path import (
 )
 
 log = logging.getLogger(__name__)
-
-
-@contextmanager
-def _scoped_env_defaults(defaults: dict[str, str]) -> Generator[None, None, None]:
-    """Temporarily set missing environment variables and restore them afterward."""
-    previous = {key: os.environ.get(key) for key in defaults}
-    try:
-        for key, value in defaults.items():
-            os.environ.setdefault(key, value)
-        yield
-    finally:
-        for key, value in previous.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
 
 
 class Trainer:
@@ -462,7 +445,7 @@ class Trainer:
         # Model
         # SeZMModel samples these eval/inference env vars exactly once inside
         # __init__; keep config-derived defaults scoped to construction.
-        with _scoped_env_defaults(infer_env_defaults):
+        with scoped_env_defaults(infer_env_defaults):
             self.model = get_model_for_wrapper(
                 model_params,
                 resuming=resuming,
