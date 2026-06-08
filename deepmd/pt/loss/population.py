@@ -187,10 +187,13 @@ class PopulationLoss(TaskLoss):
         pop_beta_total_label = pop_label[:, :, 1].sum(dim=1)
 
         def _loss(pred: torch.Tensor, tgt: torch.Tensor) -> torch.Tensor:
-            # All branches use reduction="sum" semantics so that prefactors have
-            # consistent meaning regardless of the chosen loss_func.  For rmse we
-            # multiply the per-element RMSE by the number of elements so it scales
-            # with n just like the mae/smooth_mae sum branches.
+            """Compute a loss that scales with pred.numel() for all loss_func choices.
+
+            All branches use reduction="sum" semantics so that prefactors have
+            consistent meaning regardless of the chosen loss_func.  For rmse we
+            multiply the per-element RMSE by the number of elements so it scales
+            with n just like the mae/smooth_mae sum branches.
+            """
             if self.loss_func == "smooth_mae":
                 return F.smooth_l1_loss(pred, tgt, reduction="sum", beta=self.beta)
             elif self.loss_func == "mae":
