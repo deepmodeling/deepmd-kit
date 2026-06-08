@@ -408,9 +408,9 @@ def _trace_and_compile(
         if _d > 1
     }
     # Also add the real nloc and nall so trace_nf never aliases them.
-    _forbidden.add(int(ext_coord.shape[1]))   # nall
-    _forbidden.add(int(ext_atype.shape[1]))   # nall (same tensor, defensive)
-    _forbidden.add(int(nlist.shape[1]))        # nloc
+    _forbidden.add(int(ext_coord.shape[1]))  # nall
+    _forbidden.add(int(ext_atype.shape[1]))  # nall (same tensor, defensive)
+    _forbidden.add(int(nlist.shape[1]))  # nloc
     # nsel stays at its real value; add it to forbidden for the same reason.
     _nsel = int(nlist.shape[2])
     if _nsel > 1:
