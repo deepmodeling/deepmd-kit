@@ -225,12 +225,27 @@ class PopulationLoss(TaskLoss):
             + pref_pop_beta_total * pop_beta_total_loss
         )
 
-        more_loss["spin_total"] = spin_total_pred.mean()
-        more_loss["spin_loss"] = spin_loss
-        more_loss["spin_total_loss"] = spin_total_loss
-        more_loss["pop_loss"] = pop_loss
-        more_loss["pop_alpha_total_loss"] = pop_alpha_total_loss
-        more_loss["pop_beta_total_loss"] = pop_beta_total_loss
+        more_loss["spin_total"] = spin_total_pred.mean().detach()
+        more_loss["spin_loss"] = spin_loss.detach()
+        more_loss["spin_total_loss"] = spin_total_loss.detach()
+        more_loss["pop_loss"] = pop_loss.detach()
+        more_loss["pop_alpha_total_loss"] = pop_alpha_total_loss.detach()
+        more_loss["pop_beta_total_loss"] = pop_beta_total_loss.detach()
+
+        if "mae" in self.metric:
+            more_loss["mae"] = F.l1_loss(
+                pop_pred.reshape([-1, self.task_dim]),
+                pop_label.reshape([-1, self.task_dim]),
+                reduction="mean",
+            ).detach()
+        if "rmse" in self.metric:
+            more_loss["rmse"] = torch.sqrt(
+                F.mse_loss(
+                    pop_pred.reshape([-1, self.task_dim]),
+                    pop_label.reshape([-1, self.task_dim]),
+                    reduction="mean",
+                )
+            ).detach()
 
         return model_pred, loss, more_loss
 

@@ -38,9 +38,8 @@ The loss function for DeepPopulation has the form:
 $$
 \begin{equation}
 \begin{aligned}
-\mathcal{L}_{N} =
-& \lambda_N \left( N^{ML} - N^{DFT} \right)  +
-\\ &  \lambda_{N_{\alpha}} \left( N^{ML}_{\alpha} - N^{DFT}_{\alpha} \right)  +
+\mathcal{L} =
+& \lambda_{N_{\alpha}} \left( N^{ML}_{\alpha} - N^{DFT}_{\alpha} \right)  +
 \\ &  \lambda_{N_{\beta}} \left( N^{ML}_{\beta} - N^{DFT}_{\beta} \right) +
 \\ & \lambda_S \left( S^{ML} - S^{DFT} \right) +
 \\ & \frac{\lambda_s}{N} \sum_{i=1}^{N}  \left( s_{i}^{ML} - s_{i}^{DFT} \right) +
@@ -51,7 +50,6 @@ $$
 
 This includes contributions from:
 
-- The total number of electrons ( N ),
 - The total number of ( \\alpha ) electrons ( N\_{\\alpha} ),
 - The total number of ( \\beta ) electrons ( N\_{\\beta} ),
 - The total spin ( S ),
