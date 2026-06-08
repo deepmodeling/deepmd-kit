@@ -103,7 +103,7 @@ def main(args: argparse.Namespace) -> None:
     elif args.command == "pretrained":
         pretrained_entrypoint(args)
     elif args.command == "dpa":
-        from deepmd.dpa_tools.cli import main as dpa_main
+        from dpa_tools.cli import main as dpa_main
 
         dpa_main(args)
     else:
