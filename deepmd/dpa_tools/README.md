@@ -1,7 +1,7 @@
 # dpa_tools
 
-`dpa_tools` is a scikit-learn-style **Python API for fine-tuning pre-trained DPA
-atomic models** (DPA-3 and friends) on your own dataset. You construct a
+`dpa_tools` is a **scikit-learn-style Python API** for fine-tuning pre-trained DPA
+series models on your own dataset. You construct a
 `DPAFineTuner`, call `fit(...)` then `predict(...)`, and pick a transfer-learning
 strategy — no DeePMD-kit JSON configs or `dp train` pipelines to write. The usual
 goal is adapting a large pre-trained model to a downstream materials or molecular
@@ -196,12 +196,3 @@ dp dpa evaluate --model model.pth --data ./npy/test
 `deepmd/main.py`, and the handlers (and the DPA stack) are imported lazily only
 when a `dp dpa ...` command actually runs.
 
-## How it works (for contributors)
-
-`dpa_tools` does not modify any existing deepmd-kit module. `_backend.py` is the
-single choke point that imports `deepmd.pt.*` to load DPA checkpoints and run the
-descriptor-extraction forward pass; training strategies that need `dp train` /
-`dp freeze` / `dp test` shell out to those subprocesses; and `dpdata.System` is
-the universal internal data format. Importing `deepmd.dpa_tools` (or running
-`dp dpa --help`) does not pull in torch. See the module docstrings in
-`finetuner.py`, `predictor.py`, `mft.py`, and `data/` for details.
