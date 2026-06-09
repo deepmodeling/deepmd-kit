@@ -456,7 +456,8 @@ During training validation, the input option
 `validating.tf32_infer: true` is translated into `DP_TF32_INFER=1` before
 model construction, again without overriding an explicitly exported
 environment variable. Training forwards are controlled separately by
-`model.enable_tf32`.
+`model.enable_tf32`, independently of whether `model.use_compile` selects the
+compiled or eager training path.
 
 For molecular dynamics and other workflows that are sensitive to potential
 energy surface smoothness, keep `DP_TF32_INFER=0`. Enabling TF32 inference may

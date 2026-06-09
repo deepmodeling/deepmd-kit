@@ -3170,7 +3170,12 @@ def sezm_model_args() -> Argument:
         "Requires torch==2.11. NVIDIA GPUs require CUDA >= 12.6. "
         "Apple Silicon Macs are also supported. Tested with Python 3.13."
     )
-    doc_enable_tf32 = "If True, enable TF32 matmul precision when use_compile=True."
+    doc_enable_tf32 = (
+        "If True, enable TF32 matmul precision for CUDA training forwards. "
+        "This training-time setting is independent of `use_compile`; eval-time "
+        "TF32 is controlled separately by `validating.tf32_infer` or "
+        "`DP_TF32_INFER`."
+    )
     doc_bridging_method = (
         "Short-range bridging method. Currently supports 'ZBL'. "
         "The value is case-insensitive; set it to 'None' to disable bridging."

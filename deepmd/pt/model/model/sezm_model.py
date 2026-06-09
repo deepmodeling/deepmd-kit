@@ -2845,9 +2845,10 @@ class SeZMModel(DPModelCommon, SeZMModel_):
     def tf32_precision_ctx(self) -> Generator[None, None, None]:
         """Context manager to temporarily set TF32 matmul precision.
 
-        Training follows ``enable_tf32``. Eval/inference follows
-        ``DP_TF32_INFER``: 0 keeps ``highest`` precision, 1 selects
-        ``high``, and 2 selects ``medium``.
+        Training follows ``enable_tf32`` independently of whether the current
+        forward uses the compile path. Eval/inference follows ``DP_TF32_INFER``:
+        0 keeps ``highest`` precision, 1 selects ``high``, and 2 selects
+        ``medium``.
         """
         if not torch.cuda.is_available():
             yield
