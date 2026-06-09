@@ -181,6 +181,9 @@ TYPED_TEST(TestInferDeepPotChgSpinPtExpt, cpu_lmp_nlist_explicit) {
   std::vector<int*> firstneigh(nloc);
   deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
   convert_nlist(inlist, nlist_data);
+  // DPA3 repflows uses mapping; pass it so the C++ backend can
+  // correctly map ghost atoms back to local atoms.
+  inlist.mapping = mapping.data();
 
   double ener;
   std::vector<VALUETYPE> force_, virial;
@@ -236,6 +239,9 @@ TYPED_TEST(TestInferDeepPotChgSpinPtExpt, cpu_lmp_nlist_default) {
   std::vector<int*> firstneigh(nloc);
   deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
   convert_nlist(inlist, nlist_data);
+  // DPA3 repflows uses mapping; pass it so the C++ backend can
+  // correctly map ghost atoms back to local atoms.
+  inlist.mapping = mapping.data();
 
   double ener;
   std::vector<VALUETYPE> force_, virial;
