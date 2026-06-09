@@ -7,12 +7,16 @@ template POSCAR, into ``deepmd/npy`` systems via random atomic substitution
 on the template's base-element sublattice.
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import csv
 import random
 import re
-from pathlib import Path
+from pathlib import (
+    Path,
+)
 
 import numpy as np
 
@@ -23,6 +27,7 @@ _ELEM_FRAC_RE = re.compile(r"([A-Z][a-z]?)(\d*\.?\d*)")
 # ---------------------------------------------------------------------------
 # formula parsing
 # ---------------------------------------------------------------------------
+
 
 def parse_formula(
     formula_str: str,
@@ -70,11 +75,7 @@ def parse_formula(
     total_sub = sum(sub_fracs.values())
 
     # Infer base_element from remainder BEFORE normalisation.
-    if (
-        base_element is not None
-        and base_element not in sub_fracs
-        and total_sub < 1.0
-    ):
+    if base_element is not None and base_element not in sub_fracs and total_sub < 1.0:
         remainder = round(1.0 - total_sub, 10)
         if remainder > 0:
             sub_fracs[base_element] = remainder
@@ -93,6 +94,7 @@ def parse_formula(
 # ---------------------------------------------------------------------------
 # base element inference
 # ---------------------------------------------------------------------------
+
 
 def infer_base_element(symbols: list[str]) -> str | None:
     """Infer the substitution-sublattice host element from a list of atom symbols.
@@ -122,12 +124,13 @@ def infer_base_element(symbols: list[str]) -> str | None:
 # random doping
 # ---------------------------------------------------------------------------
 
+
 def random_doping(
-    base: "ase.Atoms",
+    base: ase.Atoms,
     fracs: dict[str, float],
     base_element: str,
     rng: random.Random,
-) -> "ase.Atoms":
+) -> ase.Atoms:
     """Randomly replace *base_element* atoms in *base* according to *fracs*.
 
     *fracs* keys are the dopant elements; values are their fractions over the
@@ -208,6 +211,7 @@ def random_doping(
 # ---------------------------------------------------------------------------
 # main conversion entry point
 # ---------------------------------------------------------------------------
+
 
 def formula_to_npy(
     csv_path: str,
@@ -360,6 +364,7 @@ def formula_to_npy(
 # ---------------------------------------------------------------------------
 # internal helpers
 # ---------------------------------------------------------------------------
+
 
 def _resolve_col(
     spec: int | str,

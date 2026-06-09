@@ -9,10 +9,14 @@ All functions that load ``torch`` or ``deepmd.pt`` keep the import inside the
 function body so that importing this module is cheap.
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import logging
-from typing import Any
+from typing import (
+    Any,
+)
 
 # ``get_model_dict`` is backend-agnostic and lightweight — safe at module level.
 from deepmd.utils.model_branch_dict import get_model_dict as _get_model_dict
@@ -27,7 +31,8 @@ _LOG = logging.getLogger("dpa_adapt")
 
 def _is_url_or_name(path: str) -> bool:
     """Return True if *path* looks like a URL or a built-in model name rather
-    than a local file path."""
+    than a local file path.
+    """
     import os as _os
 
     return not _os.path.exists(path)
@@ -83,8 +88,12 @@ def build_model_from_config(input_param: dict[str, Any]):
     Returns a ``ModelWrapper`` whose inner model is accessible as
     ``wrapper.model["Default"]``.
     """
-    from deepmd.pt.model.model import get_model
-    from deepmd.pt.train.wrapper import ModelWrapper
+    from deepmd.pt.model.model import (
+        get_model,
+    )
+    from deepmd.pt.train.wrapper import (
+        ModelWrapper,
+    )
 
     model = get_model(input_param)
     return ModelWrapper(model)
@@ -162,7 +171,9 @@ class _DescriptorExtraction:
             (n_frames, n_atoms, feat_dim), detached.
         """
         if not coord.requires_grad:
-            raise RuntimeError("forward_common requires coord to have requires_grad=True")
+            raise RuntimeError(
+                "forward_common requires coord to have requires_grad=True"
+            )
         self._clear_accumulator()
         self._inner_model.forward_common(coord, atype, box)
         return self._atomic_model.eval_descriptor().detach()

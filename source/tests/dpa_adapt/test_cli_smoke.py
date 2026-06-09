@@ -5,7 +5,9 @@ Test that all verbs are reachable, ``--help`` does not trigger eager loading
 of torch or any DPA implementation, and dispatch tables cover all verbs.
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import sys
 
@@ -14,21 +16,28 @@ class TestDpaParserRegistration:
     """Verify all dpa verbs are registered in the standalone parser."""
 
     def test_dpa_verbs_registered(self):
-        from dpa_adapt.cli import get_parser
+        from dpa_adapt.cli import (
+            get_parser,
+        )
 
         parser = get_parser()
-        sub_action = next(
-            a for a in parser._actions if a.dest == "command"
-        )
+        sub_action = next(a for a in parser._actions if a.dest == "command")
         verbs = sorted(sub_action.choices)
         for expected in (
-            "extract-descriptors", "fit", "cv", "predict", "evaluate", "data",
+            "extract-descriptors",
+            "fit",
+            "cv",
+            "predict",
+            "evaluate",
+            "data",
         ):
             assert expected in verbs, f"{expected!r} missing from {verbs}"
         assert "mft" not in verbs, "mft should be folded into fit --strategy mft"
 
     def test_data_subcommands_registered(self):
-        from dpa_adapt.cli import get_parser
+        from dpa_adapt.cli import (
+            get_parser,
+        )
 
         parser = get_parser()
         sub_action = next(a for a in parser._actions if a.dest == "command")
@@ -45,9 +54,13 @@ class TestDpaHelpNoTorch:
     """``dpa --help`` must NOT trigger a torch import."""
 
     def test_help_does_not_load_torch(self):
-        from unittest.mock import MagicMock
+        from unittest.mock import (
+            MagicMock,
+        )
 
-        from dpa_adapt.cli import get_parser
+        from dpa_adapt.cli import (
+            get_parser,
+        )
 
         # Other tests may inject a mock torch into sys.modules; that's fine
         # as long as OUR parser path doesn't cause a *new* import.
@@ -56,6 +69,7 @@ class TestDpaHelpNoTorch:
             existing = sys.modules["torch"]
             if not isinstance(existing, MagicMock):
                 import pytest
+
                 pytest.skip("torch already loaded by another test")
 
         parser = get_parser()
@@ -74,7 +88,10 @@ class TestDpaDispatch:
     """Verify the dispatch table covers all registered verbs."""
 
     def test_dispatch_keys_match_parser_verbs(self):
-        from dpa_adapt.cli import _DISPATCH, _DATA_DISPATCH, get_parser
+        from dpa_adapt.cli import (
+            _DISPATCH,
+            get_parser,
+        )
 
         parser = get_parser()
         sub_action = next(a for a in parser._actions if a.dest == "command")
@@ -92,7 +109,10 @@ class TestDpaDispatch:
         )
 
     def test_data_dispatch_keys_match_parser_verbs(self):
-        from dpa_adapt.cli import _DATA_DISPATCH, get_parser
+        from dpa_adapt.cli import (
+            _DATA_DISPATCH,
+            get_parser,
+        )
 
         parser = get_parser()
         sub_action = next(a for a in parser._actions if a.dest == "command")
@@ -121,9 +141,19 @@ class TestInitAllExports:
         import dpa_adapt
 
         for name in [
-            "DPAFineTuner", "DPAPredictor", "MFTFineTuner", "DPATrainer",
-            "cross_validate", "train_test_split", "extract_descriptors",
-            "convert", "batch_convert", "attach_labels", "check_data",
-            "load_dataset", "ConditionManager", "DPAConditionError",
+            "DPAFineTuner",
+            "DPAPredictor",
+            "MFTFineTuner",
+            "DPATrainer",
+            "cross_validate",
+            "train_test_split",
+            "extract_descriptors",
+            "convert",
+            "batch_convert",
+            "attach_labels",
+            "check_data",
+            "load_dataset",
+            "ConditionManager",
+            "DPAConditionError",
         ]:
             assert hasattr(dpa_adapt, name), f"{name!r} not found on dpa_adapt"

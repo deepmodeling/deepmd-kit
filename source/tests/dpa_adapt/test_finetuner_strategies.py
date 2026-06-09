@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Tests for DPAFineTuner training-paradigm strategies
 (linear_probe / finetune).
 
@@ -7,18 +8,24 @@ Mock ``dp --pt train`` via ``subprocess.run``; verify:
 - Config structure (input.json)
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import json
 import os
-from pathlib import Path
-from unittest.mock import patch
+from pathlib import (
+    Path,
+)
+from unittest.mock import (
+    patch,
+)
 
 import pytest
 
-from deepmd.dpa_adapt.finetuner import DPAFineTuner
-from deepmd.dpa_adapt.trainer import DPATrainer
-
+from deepmd.dpa_adapt.finetuner import (
+    DPAFineTuner,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -34,17 +41,30 @@ def _fake_ckpt_sd(type_map=None):
     descriptor = {
         "type": "dpa3",
         "repflow": {
-            "n_dim": 128, "e_dim": 64, "a_dim": 32, "nlayers": 16,
-            "e_rcut": 6.0, "e_rcut_smth": 5.3, "e_sel": 1200,
-            "a_rcut": 4.0, "a_rcut_smth": 3.5, "a_sel": 300,
-            "axis_neuron": 4, "skip_stat": True,
-            "a_compress_rate": 1, "a_compress_e_rate": 2,
+            "n_dim": 128,
+            "e_dim": 64,
+            "a_dim": 32,
+            "nlayers": 16,
+            "e_rcut": 6.0,
+            "e_rcut_smth": 5.3,
+            "e_sel": 1200,
+            "a_rcut": 4.0,
+            "a_rcut_smth": 3.5,
+            "a_sel": 300,
+            "axis_neuron": 4,
+            "skip_stat": True,
+            "a_compress_rate": 1,
+            "a_compress_e_rate": 2,
             "a_compress_use_split": True,
-            "update_angle": True, "smooth_edge_update": True,
-            "use_dynamic_sel": True, "sel_reduce_factor": 10.0,
+            "update_angle": True,
+            "smooth_edge_update": True,
+            "use_dynamic_sel": True,
+            "sel_reduce_factor": 10.0,
             "update_style": "res_residual",
-            "update_residual": 0.1, "update_residual_init": "const",
-            "n_multi_edge_message": 1, "optim_update": True,
+            "update_residual": 0.1,
+            "update_residual_init": "const",
+            "n_multi_edge_message": 1,
+            "optim_update": True,
             "use_exp_switch": True,
         },
         "activation_function": "custom_silu:3.0",
@@ -77,8 +97,10 @@ def _fake_ckpt_sd(type_map=None):
 
 def _make_system_dirs(tmp_path, formulas=("CompA", "CompB"), n=3):
     """Create minimal system dirs with type_map.raw, set.000/coord.npy,
-    and set.000/overpotential.npy."""
+    and set.000/overpotential.npy.
+    """
     import numpy as np
+
     systems = []
     for formula in formulas:
         for i in range(n):
@@ -97,8 +119,10 @@ def _make_system_dirs(tmp_path, formulas=("CompA", "CompB"), n=3):
 
 def _make_system_dirs(tmp_path, formulas=("CompA", "CompB"), n=3):
     """Create minimal system dirs with type_map.raw, set.000/coord.npy,
-    and set.000/overpotential.npy."""
+    and set.000/overpotential.npy.
+    """
     import numpy as np
+
     systems = []
     for formula in formulas:
         for i in range(n):
@@ -117,6 +141,7 @@ def _make_system_dirs(tmp_path, formulas=("CompA", "CompB"), n=3):
 
 def _mock_dp_train(ckpt_dir):
     """Return a ``subprocess.run`` side-effect that writes a fake ckpt."""
+
     def _run(cmd, *args, **kwargs):
         os.makedirs(ckpt_dir, exist_ok=True)
         # Determine max_steps from config
@@ -127,15 +152,19 @@ def _mock_dp_train(ckpt_dir):
                 step = cfg["training"]["numb_steps"]
                 (Path(ckpt_dir) / f"model.ckpt-{step}.pt").write_bytes(b"")
                 break
+
         class R:
             returncode = 0
+
         return R()
+
     return _run
 
 
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+
 
 class TestStrategyValidation:
     def test_invalid_strategy_raises(self):
@@ -153,6 +182,7 @@ class TestAutoTypeMap:
     def test_resolve_type_maps_from_checkpoint(self, monkeypatch, tmp_path):
         """LP/FT: type_map from checkpoint (8 elements)."""
         import torch
+
         monkeypatch.setattr(torch, "load", lambda *a, **kw: _fake_ckpt_sd())
 
         systems = _make_system_dirs(tmp_path)
@@ -169,9 +199,11 @@ class TestAutoTypeMap:
     def test_no_type_map_raw_is_ok(self, monkeypatch, tmp_path):
         """LP/FT: missing type_map.raw should not crash (checkpoint fallback)."""
         import torch
+
         monkeypatch.setattr(torch, "load", lambda *a, **kw: _fake_ckpt_sd())
 
         import numpy as np
+
         systems = []
         for i in range(2):
             sysdir = tmp_path / f"sys_{i}"
@@ -193,23 +225,32 @@ class TestAutoTypeMap:
 
 class TestTrainingParadigms:
     """End-to-end: each strategy builds correct config, type_map auto-inferred,
-    dp train mocked to write a fake checkpoint."""
+    dp train mocked to write a fake checkpoint.
+    """
 
     @pytest.fixture(autouse=True)
     def _mock_torch(self, monkeypatch, tmp_path):
         import torch
+
         monkeypatch.setattr(torch, "load", lambda *a, **kw: _fake_ckpt_sd())
         # DPATrainer.__init__ checks os.path.isfile(pretrained); create a
         # real file so the check passes.
         self._ckpt = tmp_path / "fake.pt"
         self._ckpt.write_bytes(b"")
 
-    @pytest.mark.parametrize("strategy,expect_freeze,expect_tm_len", [
-        ("linear_probe", True, 8),
-        ("finetune", False, 8),
-    ])
+    @pytest.mark.parametrize(
+        "strategy,expect_freeze,expect_tm_len",
+        [
+            ("linear_probe", True, 8),
+            ("finetune", False, 8),
+        ],
+    )
     def test_config_type_map_nonempty(
-        self, tmp_path, strategy, expect_freeze, expect_tm_len,
+        self,
+        tmp_path,
+        strategy,
+        expect_freeze,
+        expect_tm_len,
     ):
         """input.json must have non-empty type_map (not []) for each strategy."""
         out_dir = tmp_path / "out"
@@ -227,7 +268,9 @@ class TestTrainingParadigms:
         )
 
         with patch("subprocess.run", side_effect=_mock_dp_train(str(out_dir))):
-            ckpt = m._fit_training(systems, valid_systems, m._resolve_type_maps(systems))
+            ckpt = m._fit_training(
+                systems, valid_systems, m._resolve_type_maps(systems)
+            )
 
         assert ckpt is not None
         assert "model.ckpt-20.pt" in ckpt
@@ -341,10 +384,12 @@ class TestFitDescriptorCache:
             return np.random.default_rng(42).random((n_frames, 32))
 
         with (
-            patch.object(DPAFineTuner, "_load_descriptor_model",
-                         _mock_load_descriptor_model_cache_test),
-            patch.object(DPAFineTuner, "_extract_features",
-                         _fake_extract),
+            patch.object(
+                DPAFineTuner,
+                "_load_descriptor_model",
+                _mock_load_descriptor_model_cache_test,
+            ),
+            patch.object(DPAFineTuner, "_extract_features", _fake_extract),
         ):
             m = DPAFineTuner(pretrained=str(ckpt), predictor="ridge")
             m.fit(str(root), target_key="energy")
@@ -352,6 +397,4 @@ class TestFitDescriptorCache:
             m2 = DPAFineTuner(pretrained=str(ckpt), predictor="ridge")
             m2.fit(str(root), target_key="energy")
 
-        assert call_count == 1, (
-            f"Expected 1 extraction call, got {call_count}"
-        )
+        assert call_count == 1, f"Expected 1 extraction call, got {call_count}"

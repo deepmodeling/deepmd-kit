@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 # dpa_adapt/trainer.py
 """
 DPATrainer: drives ``dp --pt train`` for Scratch / FT / LP adaptation modes,
@@ -16,7 +17,9 @@ MFT lives in :class:`dpa_adapt.mft.MFTFineTuner`; the sklearn-head
 :class:`dpa_adapt.finetuner.DPAFineTuner`.
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import copy
 import glob as _glob
@@ -25,7 +28,6 @@ import logging
 import os
 import re
 import subprocess
-from typing import Optional, Union
 
 _LOG = logging.getLogger("dpa_adapt.trainer")
 
@@ -39,17 +41,30 @@ _LOG = logging.getLogger("dpa_adapt.trainer")
 DPA3_DESCRIPTOR_DEFAULT = {
     "type": "dpa3",
     "repflow": {
-        "n_dim": 128, "e_dim": 64, "a_dim": 32, "nlayers": 16,
-        "e_rcut": 6.0, "e_rcut_smth": 5.3, "e_sel": 1200,
-        "a_rcut": 4.0, "a_rcut_smth": 3.5, "a_sel": 300,
-        "axis_neuron": 4, "skip_stat": True,
-        "a_compress_rate": 1, "a_compress_e_rate": 2,
+        "n_dim": 128,
+        "e_dim": 64,
+        "a_dim": 32,
+        "nlayers": 16,
+        "e_rcut": 6.0,
+        "e_rcut_smth": 5.3,
+        "e_sel": 1200,
+        "a_rcut": 4.0,
+        "a_rcut_smth": 3.5,
+        "a_sel": 300,
+        "axis_neuron": 4,
+        "skip_stat": True,
+        "a_compress_rate": 1,
+        "a_compress_e_rate": 2,
         "a_compress_use_split": True,
-        "update_angle": True, "smooth_edge_update": True,
-        "use_dynamic_sel": True, "sel_reduce_factor": 10.0,
+        "update_angle": True,
+        "smooth_edge_update": True,
+        "use_dynamic_sel": True,
+        "sel_reduce_factor": 10.0,
         "update_style": "res_residual",
-        "update_residual": 0.1, "update_residual_init": "const",
-        "n_multi_edge_message": 1, "optim_update": True,
+        "update_residual": 0.1,
+        "update_residual_init": "const",
+        "n_multi_edge_message": 1,
+        "optim_update": True,
         "use_exp_switch": True,
         "fix_stat_std": 0.3,
     },
@@ -68,7 +83,7 @@ DPA3_DESCRIPTOR_DEFAULT = {
 DEFAULT_FITTING_NET = {
     "type": "property",
     "neuron": [240, 240, 240],
-    "activation_function": "tanh",   # paper Table 8
+    "activation_function": "tanh",  # paper Table 8
     "resnet_dt": True,
     "precision": "float32",
 }
@@ -79,6 +94,7 @@ _VALID_LOSSES = ("mse", "smooth_mae")
 # ---------------------------------------------------------------------------
 # DPATrainer
 # ---------------------------------------------------------------------------
+
 
 class DPATrainer:
     """
@@ -128,7 +144,7 @@ class DPATrainer:
     def __init__(
         self,
         # ---- pretraining / freezing ----
-        pretrained: Optional[str] = None,
+        pretrained: str | None = None,
         init_branch: str = "SPICE2",
         freeze_backbone: bool = False,
         # ---- downstream task ----
@@ -136,17 +152,17 @@ class DPATrainer:
         task_dim: int = 1,
         intensive: bool = True,
         # ---- data ----
-        train_systems: Union[str, list, None] = None,
-        valid_systems: Union[str, list, None] = None,
-        type_map: Optional[list] = None,
+        train_systems: str | list | None = None,
+        valid_systems: str | list | None = None,
+        type_map: list | None = None,
         # ---- model overrides ----
-        fitting_net_params: Optional[dict] = None,
+        fitting_net_params: dict | None = None,
         fparam_dim: int = 0,
         # ---- training ----
         learning_rate: float = 1e-3,
         stop_lr: float = 1e-5,
         max_steps: int = 100_000,
-        batch_size: Union[str, int] = "auto:512",
+        batch_size: str | int = "auto:512",
         loss_function: str = "mse",
         seed: int = 42,
         # ---- output ----
@@ -165,7 +181,9 @@ class DPATrainer:
                 "symbols (e.g. the SPICE2 full periodic table). "
                 "Auto-inference is intentionally not supported."
             )
-        if not isinstance(type_map, list) or not all(isinstance(x, str) for x in type_map):
+        if not isinstance(type_map, list) or not all(
+            isinstance(x, str) for x in type_map
+        ):
             raise ValueError("type_map must be a list of element symbol strings.")
         if freeze_backbone and pretrained is None:
             raise ValueError(
@@ -173,9 +191,7 @@ class DPATrainer:
                 "Set freeze_backbone=False for Scratch, or pass a pretrained ckpt."
             )
         if pretrained is not None and not os.path.isfile(pretrained):
-            raise ValueError(
-                f"pretrained checkpoint not found: {pretrained!r}."
-            )
+            raise ValueError(f"pretrained checkpoint not found: {pretrained!r}.")
         if not isinstance(property_name, str) or not property_name.isidentifier():
             raise ValueError(
                 f"property_name must be a valid Python identifier "
@@ -185,8 +201,7 @@ class DPATrainer:
             raise ValueError(f"task_dim must be an int >= 1; got {task_dim!r}.")
         if loss_function not in _VALID_LOSSES:
             raise ValueError(
-                f"loss_function must be one of {_VALID_LOSSES}; "
-                f"got {loss_function!r}."
+                f"loss_function must be one of {_VALID_LOSSES}; got {loss_function!r}."
             )
         if not isinstance(fparam_dim, int) or fparam_dim < 0:
             raise ValueError(
@@ -225,10 +240,9 @@ class DPATrainer:
 
         sd = torch.load(self.pretrained, map_location="cpu", weights_only=False)
         try:
-            descriptor = (
-                sd["model"]["_extra_state"]["model_params"]
-                ["shared_dict"]["dpa3_descriptor"]
-            )
+            descriptor = sd["model"]["_extra_state"]["model_params"]["shared_dict"][
+                "dpa3_descriptor"
+            ]
         except (KeyError, TypeError) as e:
             raise RuntimeError(
                 f"Could not locate dpa3_descriptor in checkpoint {self.pretrained}: "
@@ -282,21 +296,25 @@ class DPATrainer:
             _LOG.warning(
                 "%s resolved to only %d systems (patterns=%r). "
                 "MFT-paper BOOM splits typically yield 500/300 for train/valid.",
-                label, len(unique), patterns,
+                label,
+                len(unique),
+                patterns,
             )
         return unique
 
     # ----- config build -----
     def _build_fitting_net(self) -> dict:
         fn = copy.deepcopy(DEFAULT_FITTING_NET)
-        fn.update({
-            "property_name": self.property_name,
-            "task_dim": self.task_dim,
-            "intensive": self.intensive,
-            # verified: deepmd.utils.argcheck.fitting_property() accepts seed
-            # (inspect.getsource shows Argument("seed", [int, None], optional=True))
-            "seed": self.seed,
-        })
+        fn.update(
+            {
+                "property_name": self.property_name,
+                "task_dim": self.task_dim,
+                "intensive": self.intensive,
+                # verified: deepmd.utils.argcheck.fitting_property() accepts seed
+                # (inspect.getsource shows Argument("seed", [int, None], optional=True))
+                "seed": self.seed,
+            }
+        )
         # NB: dim_case_embd is intentionally NOT injected for FT/LP. The paper
         # qm9_gap input.json omits it: single-task `--finetune` (without
         # --model-branch) copies only the backbone and random-inits the
@@ -385,7 +403,10 @@ class DPATrainer:
         Return ``(Path | None, int)`` for the checkpoint with the largest
         step in ``output_dir``, or ``(None, 0)`` if none exist.
         """
-        from pathlib import Path
+        from pathlib import (
+            Path,
+        )
+
         ckpts = list(Path(self.output_dir).glob("model.ckpt-*.pt"))
         if not ckpts:
             return None, 0
@@ -396,7 +417,7 @@ class DPATrainer:
         latest = max(ckpts, key=step_of)
         return latest, step_of(latest)
 
-    def _final_ckpt_path(self) -> Optional[str]:
+    def _final_ckpt_path(self) -> str | None:
         latest, _ = self._find_latest_checkpoint()
         return str(latest) if latest is not None else None
 
@@ -419,8 +440,12 @@ class DPATrainer:
             does not match *fparam_dim*.
         """
         import glob
+
         import numpy as np
-        from dpa_adapt.data.errors import DPADataError
+
+        from dpa_adapt.data.errors import (
+            DPADataError,
+        )
 
         # Expand globs to system directories (same logic as _expand_systems
         # but without logging warnings — this is pure validation).
@@ -480,7 +505,9 @@ class DPATrainer:
         if latest is not None and step >= self.max_steps:
             _LOG.info(
                 "Skipping training: found %s (step %d) >= max_steps=%d",
-                latest, step, self.max_steps,
+                latest,
+                step,
+                self.max_steps,
             )
             return str(latest)
 
@@ -513,7 +540,7 @@ class DPATrainer:
         return ckpt
 
     # ----- evaluate -----
-    def evaluate(self, test_systems: Union[str, list]) -> dict:
+    def evaluate(self, test_systems: str | list) -> dict:
         """
         Run ``dp --pt test`` on the trained checkpoint.
 
@@ -554,7 +581,9 @@ class DPATrainer:
         cmd = ["dp", "--pt", "test", "-m", ckpt, "-f", datafile, "-n", "999999"]
         _LOG.info(
             "Running: %s  (with %d systems listed in %s)",
-            " ".join(cmd), len(systems), datafile,
+            " ".join(cmd),
+            len(systems),
+            datafile,
         )
 
         result = subprocess.run(cmd, capture_output=True, text=True, check=True)
@@ -576,7 +605,8 @@ class DPATrainer:
                 _LOG.warning(
                     "dp test reports %d systems but %d were resolved; "
                     "some systems may have been skipped (missing labels?)",
-                    n_found, len(systems),
+                    n_found,
+                    len(systems),
                 )
         else:
             parsed["n_systems"] = 0
@@ -600,9 +630,7 @@ class DPATrainer:
     _PROPERTY_RMSE_RE = re.compile(
         r"PROPERTY\s+RMSE\s+:\s*([0-9eE.+-]+)", re.IGNORECASE
     )
-    _PROPERTY_MAE_RE = re.compile(
-        r"PROPERTY\s+MAE\s+:\s*([0-9eE.+-]+)", re.IGNORECASE
-    )
+    _PROPERTY_MAE_RE = re.compile(r"PROPERTY\s+MAE\s+:\s*([0-9eE.+-]+)", re.IGNORECASE)
     _ENERGY_RMSE_RE = re.compile(
         r"Energy\s+RMSE\s+:\s*([0-9eE.+-]+)\s*\S+", re.IGNORECASE
     )

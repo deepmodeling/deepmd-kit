@@ -1,17 +1,24 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 # Tests for fparam (frame-level condition input) support.
 # Heavy deps (torch, dpdata, dp subprocess) are mocked throughout.
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
-import os
-from unittest.mock import patch
+from unittest.mock import (
+    patch,
+)
 
 import numpy as np
 import pytest
 
-from dpa_adapt.data.errors import DPADataError
-from dpa_adapt.trainer import DPATrainer
-
+from dpa_adapt.data.errors import (
+    DPADataError,
+)
+from dpa_adapt.trainer import (
+    DPATrainer,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -125,7 +132,8 @@ def test_validate_fparam_multiple_systems(tmp_path):
             np.save(str(sys_dir / s / "fparam.npy"), np.zeros((10, 3)))
 
     DPATrainer._validate_fparam(
-        [str(tmp_path / "sys_0"), str(tmp_path / "sys_1")], fparam_dim=3,
+        [str(tmp_path / "sys_0"), str(tmp_path / "sys_1")],
+        fparam_dim=3,
     )
 
 
@@ -137,7 +145,9 @@ def test_validate_fparam_multiple_systems(tmp_path):
 def test_finetuner_fparam_forwarded_to_trainer():
     """DPAFineTuner(fparam_dim=4, strategy='finetune') passes fparam_dim=4 to DPATrainer."""
     with patch("dpa_adapt.trainer.DPATrainer") as mock_trainer_cls:
-        from dpa_adapt.finetuner import DPAFineTuner
+        from dpa_adapt.finetuner import (
+            DPAFineTuner,
+        )
 
         ft = DPAFineTuner(
             pretrained="dummy.pt",
@@ -156,7 +166,9 @@ def test_finetuner_fparam_forwarded_to_trainer():
 def test_finetuner_fparam_zero_not_forwarded():
     """DPAFineTuner(fparam_dim=0) passes fparam_dim=0 (default, disabled)."""
     with patch("dpa_adapt.trainer.DPATrainer") as mock_trainer_cls:
-        from dpa_adapt.finetuner import DPAFineTuner
+        from dpa_adapt.finetuner import (
+            DPAFineTuner,
+        )
 
         ft = DPAFineTuner(
             pretrained="dummy.pt",
@@ -177,23 +189,37 @@ def test_finetuner_fparam_zero_not_forwarded():
 
 def test_cli_fparam_dim_parsed():
     """--fparam-dim 3 is parsed to args.fparam_dim == 3."""
-    from dpa_adapt.cli import get_parser
+    from dpa_adapt.cli import (
+        get_parser,
+    )
 
     parser = get_parser()
-    args = parser.parse_args([
-        "fit", "--train-data", "x", "--fparam-dim", "3",
-    ])
+    args = parser.parse_args(
+        [
+            "fit",
+            "--train-data",
+            "x",
+            "--fparam-dim",
+            "3",
+        ]
+    )
     assert args.fparam_dim == 3
 
 
 def test_cli_fparam_dim_default_zero():
     """Without --fparam-dim, args.fparam_dim defaults to 0."""
-    from dpa_adapt.cli import get_parser
+    from dpa_adapt.cli import (
+        get_parser,
+    )
 
     parser = get_parser()
-    args = parser.parse_args([
-        "fit", "--train-data", "x",
-    ])
+    args = parser.parse_args(
+        [
+            "fit",
+            "--train-data",
+            "x",
+        ]
+    )
     assert args.fparam_dim == 0
 
 
@@ -204,10 +230,14 @@ def test_cli_fparam_dim_default_zero():
 
 def test_mft_fparam_validate_called_on_fit():
     """MFTFineTuner.fit() calls _validate_fparam when fparam_dim > 0."""
-    with patch("dpa_adapt.trainer.DPATrainer._validate_fparam") as mock_validate, \
-         patch("dpa_adapt.config.manager.MFTConfigManager") as mock_cm_class, \
-         patch("dpa_adapt.mft.subprocess.Popen") as mock_popen:
-        from dpa_adapt.mft import MFTFineTuner
+    with (
+        patch("dpa_adapt.trainer.DPATrainer._validate_fparam") as mock_validate,
+        patch("dpa_adapt.config.manager.MFTConfigManager") as mock_cm_class,
+        patch("dpa_adapt.mft.subprocess.Popen") as mock_popen,
+    ):
+        from dpa_adapt.mft import (
+            MFTFineTuner,
+        )
 
         mock_process = mock_popen.return_value
         mock_process.stdout = []
@@ -229,10 +259,14 @@ def test_mft_fparam_validate_called_on_fit():
 
 def test_mft_fparam_validate_skipped_when_zero():
     """MFTFineTuner.fit() does NOT call _validate_fparam when fparam_dim=0."""
-    with patch("dpa_adapt.trainer.DPATrainer._validate_fparam") as mock_validate, \
-         patch("dpa_adapt.config.manager.MFTConfigManager") as mock_cm_class, \
-         patch("dpa_adapt.mft.subprocess.Popen") as mock_popen:
-        from dpa_adapt.mft import MFTFineTuner
+    with (
+        patch("dpa_adapt.trainer.DPATrainer._validate_fparam") as mock_validate,
+        patch("dpa_adapt.config.manager.MFTConfigManager") as mock_cm_class,
+        patch("dpa_adapt.mft.subprocess.Popen") as mock_popen,
+    ):
+        from dpa_adapt.mft import (
+            MFTFineTuner,
+        )
 
         mock_process = mock_popen.return_value
         mock_process.stdout = []

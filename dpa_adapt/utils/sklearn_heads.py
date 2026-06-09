@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 # utils/sklearn_heads.py
 #
 # Single source of truth for building sklearn predictor heads.
@@ -29,25 +30,37 @@ def build_sklearn_head(predictor_type: str, seed: int = 42, n_outputs: int = 1):
         If *predictor_type* is not recognised.
     """
     if predictor_type in ("linear", "ridge"):
-        from sklearn.linear_model import Ridge
+        from sklearn.linear_model import (
+            Ridge,
+        )
 
         est = Ridge(alpha=1.0, random_state=seed)
         if n_outputs > 1:
-            from sklearn.multioutput import MultiOutputRegressor
+            from sklearn.multioutput import (
+                MultiOutputRegressor,
+            )
+
             return MultiOutputRegressor(est)
         return est
 
     if predictor_type == "rf":
-        from sklearn.ensemble import RandomForestRegressor
+        from sklearn.ensemble import (
+            RandomForestRegressor,
+        )
 
         est = RandomForestRegressor(n_estimators=100, random_state=seed)
         if n_outputs > 1:
-            from sklearn.multioutput import MultiOutputRegressor
+            from sklearn.multioutput import (
+                MultiOutputRegressor,
+            )
+
             return MultiOutputRegressor(est)
         return est
 
     if predictor_type == "mlp":
-        from sklearn.neural_network import MLPRegressor
+        from sklearn.neural_network import (
+            MLPRegressor,
+        )
 
         return MLPRegressor(
             hidden_layer_sizes=(512, 512, 256),

@@ -1,7 +1,12 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import pytest
 
-from deepmd.dpa_adapt.config.manager import MFTConfigManager
-from deepmd.dpa_adapt.mft import MFTFineTuner
+from deepmd.dpa_adapt.config.manager import (
+    MFTConfigManager,
+)
+from deepmd.dpa_adapt.mft import (
+    MFTFineTuner,
+)
 
 
 class FakeTuner:
@@ -95,7 +100,9 @@ def test_systems_accepts_list():
     dd = config["training"]["data_dict"]
     assert dd["DOWNSTREAM"]["training_data"]["systems"] == ["/data/d1", "/data/d2"]
     assert dd["MP_traj_v024_alldata_mixu"]["training_data"]["systems"] == [
-        "/data/a1", "/data/a2", "/data/a3"
+        "/data/a1",
+        "/data/a2",
+        "/data/a3",
     ]
 
 
@@ -130,10 +137,12 @@ def test_fitting_net_params_used():
     config = MFTConfigManager(FakeTuner()).build()
     md = config["model"]["model_dict"]
     assert md["MP_traj_v024_alldata_mixu"]["fitting_net"] == {
-        "type": "ener", "neuron": [240, 240, 240]
+        "type": "ener",
+        "neuron": [240, 240, 240],
     }
     assert md["DOWNSTREAM"]["fitting_net"] == {
-        "type": "ener", "neuron": [240, 240, 240]
+        "type": "ener",
+        "neuron": [240, 240, 240],
     }
 
 
@@ -147,6 +156,7 @@ def test_fitting_net_default_when_none():
 
 
 # --- MFTFineTuner.__init__ auto-reading fitting_net from checkpoint ----------
+
 
 def _fake_sd(branches):
     """Build a minimal state_dict mirroring the real checkpoint layout."""
@@ -165,7 +175,8 @@ def _fake_sd(branches):
 
 def test_explicit_fitting_net_params_skips_ckpt_load(monkeypatch):
     """Backward compat: when user supplies fitting_net_params, the
-    checkpoint is not touched and the user's value is kept verbatim."""
+    checkpoint is not touched and the user's value is kept verbatim.
+    """
     import torch
 
     def _explode(*args, **kwargs):
@@ -186,14 +197,17 @@ def test_explicit_fitting_net_params_skips_ckpt_load(monkeypatch):
 
 def test_fitting_net_params_auto_read_from_ckpt(monkeypatch):
     """When fitting_net_params is omitted, MFTFineTuner pulls it out of the
-    checkpoint at the documented nested path."""
+    checkpoint at the documented nested path.
+    """
     import torch
 
     expected = {"type": "ener", "neuron": [240, 240, 240], "resnet_dt": True}
-    fake = _fake_sd({
-        "Domains_Alloy": expected,
-        "MP_traj_v024_alldata_mixu": {"type": "ener", "neuron": [120, 120]},
-    })
+    fake = _fake_sd(
+        {
+            "Domains_Alloy": expected,
+            "MP_traj_v024_alldata_mixu": {"type": "ener", "neuron": [120, 120]},
+        }
+    )
     monkeypatch.setattr(torch, "load", lambda *a, **kw: fake)
 
     t = MFTFineTuner(
@@ -205,7 +219,8 @@ def test_fitting_net_params_auto_read_from_ckpt(monkeypatch):
 
 class TestAutoTypeMap:
     """When aux_type_map / downstream_type_map are not provided, MFTFineTuner
-    auto-infers them from the checkpoint and data type_map.raw."""
+    auto-infers them from the checkpoint and data type_map.raw.
+    """
 
     def _fake_ckpt_sd(self, type_map=None):
         """Minimal DPA-3.1-3M-like state_dict with a shared type_map."""
@@ -232,8 +247,11 @@ class TestAutoTypeMap:
     def test_resolve_type_maps_sets_aux_type_map(self, monkeypatch, tmp_path):
         """_resolve_type_maps reads checkpoint type_map into aux_type_map."""
         import torch
+
         monkeypatch.setattr(
-            torch, "load", lambda *a, **kw: self._fake_ckpt_sd(),
+            torch,
+            "load",
+            lambda *a, **kw: self._fake_ckpt_sd(),
         )
 
         t = MFTFineTuner(
@@ -247,10 +265,14 @@ class TestAutoTypeMap:
 
     def test_config_has_nonempty_type_map(self, monkeypatch):
         """Generated mft_input.json must have a non-empty global type_map
-        when the user does not pass one explicitly."""
+        when the user does not pass one explicitly.
+        """
         import torch
+
         monkeypatch.setattr(
-            torch, "load", lambda *a, **kw: self._fake_ckpt_sd(),
+            torch,
+            "load",
+            lambda *a, **kw: self._fake_ckpt_sd(),
         )
 
         t = MFTFineTuner(
@@ -273,8 +295,11 @@ class TestAutoTypeMap:
     def test_explicit_type_map_still_respected(self, monkeypatch):
         """When user passes aux_type_map explicitly, it is used verbatim."""
         import torch
+
         monkeypatch.setattr(
-            torch, "load", lambda *a, **kw: self._fake_ckpt_sd(),
+            torch,
+            "load",
+            lambda *a, **kw: self._fake_ckpt_sd(),
         )
 
         t = MFTFineTuner(
@@ -292,11 +317,15 @@ class TestAutoTypeMap:
 
     def test_data_type_map_validated_against_checkpoint(self, monkeypatch, tmp_path):
         """If data type_map.raw contains elements not in the checkpoint,
-        _resolve_type_maps raises ValueError."""
-        import torch
+        _resolve_type_maps raises ValueError.
+        """
         import numpy as np
+        import torch
+
         monkeypatch.setattr(
-            torch, "load", lambda *a, **kw: self._fake_ckpt_sd(),
+            torch,
+            "load",
+            lambda *a, **kw: self._fake_ckpt_sd(),
         )
 
         t = MFTFineTuner(
@@ -309,7 +338,8 @@ class TestAutoTypeMap:
         sysdir.mkdir()
         (sysdir / "type.raw").write_text("0\n1\n")
         (sysdir / "type_map.raw").write_text("Pu\nU\n")
-        sd = sysdir / "set.000"; sd.mkdir()
+        sd = sysdir / "set.000"
+        sd.mkdir()
         np.save(sd / "coord.npy", np.zeros((1, 6)))
         np.save(sd / "box.npy", np.eye(3).reshape(1, 9))
 
@@ -320,14 +350,17 @@ class TestAutoTypeMap:
 def test_unknown_aux_branch_raises_with_branch_list(monkeypatch):
     """If aux_branch is not in the checkpoint, the error names the bad
     branch and lists what IS available.  With lazy loading the error is
-    raised on first access to ``fitting_net_params``, not at construction."""
+    raised on first access to ``fitting_net_params``, not at construction.
+    """
     import torch
 
-    fake = _fake_sd({
-        "Domains_Alloy": {"type": "ener"},
-        "MP_traj_v024_alldata_mixu": {"type": "ener"},
-        "Omat24": {"type": "ener"},
-    })
+    fake = _fake_sd(
+        {
+            "Domains_Alloy": {"type": "ener"},
+            "MP_traj_v024_alldata_mixu": {"type": "ener"},
+            "Omat24": {"type": "ener"},
+        }
+    )
     monkeypatch.setattr(torch, "load", lambda *a, **kw: fake)
 
     t = MFTFineTuner(

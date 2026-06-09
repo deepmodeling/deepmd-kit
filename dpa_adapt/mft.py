@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import glob as _glob
 import os
 import re
@@ -122,9 +123,7 @@ class MFTFineTuner:
                     f"Python identifier; got {property_name!r}."
                 )
             if not isinstance(task_dim, int) or task_dim < 1:
-                raise ValueError(
-                    f"task_dim must be an int >= 1; got {task_dim!r}."
-                )
+                raise ValueError(f"task_dim must be an int >= 1; got {task_dim!r}.")
         if not isinstance(fparam_dim, int) or fparam_dim < 0:
             raise ValueError(
                 f"fparam_dim must be a non-negative int; got {fparam_dim!r}."
@@ -137,7 +136,7 @@ class MFTFineTuner:
         self.downstream_type_map = downstream_type_map
         # Lazy: only load from ckpt when fitting_net_params is first accessed.
         self._fitting_net_params = fitting_net_params
-        self._fitting_net_params_resolved = (fitting_net_params is not None)
+        self._fitting_net_params_resolved = fitting_net_params is not None
         self.downstream_task_type = downstream_task_type
         self.property_name = property_name
         self.task_dim = task_dim
@@ -170,10 +169,7 @@ class MFTFineTuner:
 
     @property
     def fitting_net_params(self):
-        if (
-            self._fitting_net_params is None
-            and not self._fitting_net_params_resolved
-        ):
+        if self._fitting_net_params is None and not self._fitting_net_params_resolved:
             self._fitting_net_params = self._read_fitting_net_from_ckpt(
                 self.pretrained, self.aux_branch
             )
@@ -220,7 +216,9 @@ class MFTFineTuner:
         a subset, and sets ``self.aux_type_map`` and
         ``self.downstream_type_map``.
         """
-        from dpa_adapt.data.loader import load_data
+        from dpa_adapt.data.loader import (
+            load_data,
+        )
         from dpa_adapt.data.type_map import (
             read_checkpoint_type_map,
             read_data_type_map_union,
@@ -228,7 +226,8 @@ class MFTFineTuner:
         )
 
         self.aux_type_map = read_checkpoint_type_map(
-            self.pretrained, branch=self.aux_branch,
+            self.pretrained,
+            branch=self.aux_branch,
         )
 
         try:
@@ -251,7 +250,9 @@ class MFTFineTuner:
             except ValueError:
                 continue  # no atom_names — deepmd uses raw atom indices
             validate_type_map_subset(
-                elements, self.aux_type_map, label=f"{label} data",
+                elements,
+                self.aux_type_map,
+                label=f"{label} data",
             )
 
         try:
@@ -285,10 +286,14 @@ class MFTFineTuner:
         self.valid_data = valid_data
 
         if self.fparam_dim > 0:
-            from dpa_adapt.trainer import DPATrainer
+            from dpa_adapt.trainer import (
+                DPATrainer,
+            )
+
             DPATrainer._validate_fparam(train_data, self.fparam_dim)
 
         import glob
+
         train_dirs = train_data if isinstance(train_data, list) else [train_data]
         for sys_path in train_dirs:
             e_form_sets = glob.glob(os.path.join(sys_path, "set.*", "e_form.npy"))
@@ -310,7 +315,10 @@ class MFTFineTuner:
         if not self.aux_type_map:
             self._resolve_type_maps(train_data, aux_data)
 
-        from dpa_adapt.config.manager import MFTConfigManager
+        from dpa_adapt.config.manager import (
+            MFTConfigManager,
+        )
+
         cm = MFTConfigManager(self)
         config = cm.build()
         input_json = os.path.join(self.output_dir, "mft_input.json")
@@ -323,7 +331,8 @@ class MFTFineTuner:
 
         with open(log_path, "w") as log_f:
             process = subprocess.Popen(
-                cmd, shell=True,
+                cmd,
+                shell=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -366,15 +375,14 @@ class MFTFineTuner:
     _PROPERTY_RMSE_RE = re.compile(
         r"PROPERTY\s+RMSE\s+:\s*([0-9eE.+-]+)\s*\S*", re.IGNORECASE
     )
-    _N_SYSTEMS_RE = re.compile(
-        r"number of systems\s*[:=]?\s*(\d+)", re.IGNORECASE
-    )
+    _N_SYSTEMS_RE = re.compile(r"number of systems\s*[:=]?\s*(\d+)", re.IGNORECASE)
 
     @property
     def _downstream_head(self):
         """Branch/head name of the downstream task. Paper property mode uses
         "property" (matching MFTConfigManager); legacy ener mode keeps
-        "DOWNSTREAM"."""
+        "DOWNSTREAM".
+        """
         return (
             "property"
             if getattr(self, "downstream_task_type", "ener") == "property"
@@ -404,12 +412,12 @@ class MFTFineTuner:
 
         # `dp --pt freeze -c .` picks up the checkpoint file from cwd, so we
         # must cd into output_dir.
-        freeze_cmd = (
-            f"dp --pt freeze -c . -o {frozen_name} --head {head}"
-        )
+        freeze_cmd = f"dp --pt freeze -c . -o {frozen_name} --head {head}"
         result = subprocess.run(
-            freeze_cmd, shell=True,
-            capture_output=True, text=True,
+            freeze_cmd,
+            shell=True,
+            capture_output=True,
+            text=True,
             cwd=self.output_dir,
         )
         if result.returncode != 0:
@@ -443,9 +451,7 @@ class MFTFineTuner:
             if _glob.has_magic(pat):
                 matches = sorted(_glob.glob(pat))
                 if not matches:
-                    raise RuntimeError(
-                        f"Glob pattern {pat!r} resolved to 0 systems."
-                    )
+                    raise RuntimeError(f"Glob pattern {pat!r} resolved to 0 systems.")
                 resolved.extend(matches)
             else:
                 resolved.append(pat)
@@ -458,9 +464,7 @@ class MFTFineTuner:
                 seen.add(p)
                 unique.append(p)
         if not unique:
-            raise RuntimeError(
-                f"test_data {test_data!r} resolved to 0 systems."
-            )
+            raise RuntimeError(f"test_data {test_data!r} resolved to 0 systems.")
         return unique
 
     def evaluate(self, test_data):
@@ -512,10 +516,15 @@ class MFTFineTuner:
             f.write("\n".join(systems) + "\n")
 
         cmd = [
-            "dp", "--pt", "test",
-            "-m", frozen_path,
-            "-f", datafile,
-            "-n", "999999",
+            "dp",
+            "--pt",
+            "test",
+            "-m",
+            frozen_path,
+            "-f",
+            datafile,
+            "-n",
+            "999999",
         ]
         result = subprocess.run(cmd, capture_output=True, text=True)
         combined = result.stdout + "\n" + result.stderr

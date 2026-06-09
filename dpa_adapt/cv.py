@@ -1,21 +1,32 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 # cv.py
 #
 # sklearn-style split and cross-validation for dpdata systems.
 # Leak-proof: all operations group by formula / user-provided groups so that
 # the same formula never appears in both train and validation/test.
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import json
 import logging
-from pathlib import Path
-from typing import List, Optional, Union
+from pathlib import (
+    Path,
+)
 
 import numpy as np
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import (
+    make_pipeline,
+)
+from sklearn.preprocessing import (
+    StandardScaler,
+)
 
-from dpa_adapt.data.loader import _get_source, _resolve_label_key
+from dpa_adapt.data.loader import (
+    _get_source,
+    _resolve_label_key,
+)
 
 _LOG = logging.getLogger("dpa_adapt.cv")
 
@@ -23,6 +34,7 @@ _LOG = logging.getLogger("dpa_adapt.cv")
 # ---------------------------------------------------------------------------
 # internal: formula / group helpers
 # ---------------------------------------------------------------------------
+
 
 def _extract_formula(system) -> str:
     """Extract the formula name from a system.
@@ -52,6 +64,7 @@ def _group_indices(groups: list[str]) -> dict[str, list[int]]:
 # ---------------------------------------------------------------------------
 # internal: manifest parsing
 # ---------------------------------------------------------------------------
+
 
 def _build_fold_groups(
     manifest_path: str,
@@ -86,12 +99,15 @@ def _build_fold_groups(
 # internal: sklearn head builder (delegates to shared factory)
 # ---------------------------------------------------------------------------
 
+
 def _build_sklearn_head(predictor_type: str, seed: int = 42):
     """Map a predictor type string to an sklearn estimator.
 
     Delegates to ``dpa_adapt.utils.sklearn_heads.build_sklearn_head``.
     """
-    from dpa_adapt.utils.sklearn_heads import build_sklearn_head
+    from dpa_adapt.utils.sklearn_heads import (
+        build_sklearn_head,
+    )
 
     return build_sklearn_head(predictor_type, seed=seed)
 
@@ -99,6 +115,7 @@ def _build_sklearn_head(predictor_type: str, seed: int = 42):
 # ---------------------------------------------------------------------------
 # internal: per-system lazy assembly (avoids loading all descriptors at once)
 # ---------------------------------------------------------------------------
+
 
 def _load_system_labels(system, label_key: str) -> np.ndarray:
     """Load labels for a single system, shape (n_frames, ...)."""
@@ -136,17 +153,20 @@ def _assemble_from_per_system_cache(
     X : np.ndarray
     y : np.ndarray (1D)
     """
-    from dpa_adapt.data.desc_cache import get_per_system_descriptor
+    from dpa_adapt.data.desc_cache import (
+        get_per_system_descriptor,
+    )
+
     X_list, y_list = [], []
 
     for system, grp in zip(systems, groups):
         if grp not in selected_groups:
             continue
-        desc = get_per_system_descriptor(system)          # (n_frames, feat_dim)
-        lab  = _load_system_labels(system, label_key)     # (n_frames, ...)
+        desc = get_per_system_descriptor(system)  # (n_frames, feat_dim)
+        lab = _load_system_labels(system, label_key)  # (n_frames, ...)
         if granularity == "composition":
             desc = desc.mean(axis=0, keepdims=True)
-            lab  = lab.mean(axis=0, keepdims=True)
+            lab = lab.mean(axis=0, keepdims=True)
         X_list.append(desc)
         y_list.append(lab)
 
@@ -162,10 +182,11 @@ def _assemble_from_per_system_cache(
 # train_test_split
 # ---------------------------------------------------------------------------
 
+
 def train_test_split(
     systems,
-    manifest: Optional[str] = None,
-    group_by: Union[str, list[str], None] = None,
+    manifest: str | None = None,
+    group_by: str | list[str] | None = None,
     test_size: float = 0.1,
     valid_size: float = 0.1,
     seed: int = 42,
@@ -215,7 +236,7 @@ def train_test_split(
         grp = _formula_to_group(systems)
         train = [s for s, g in zip(systems, grp) if g in train_formulas]
         valid = [s for s, g in zip(systems, grp) if g in valid_formulas]
-        test  = [s for s, g in zip(systems, grp) if g in test_formulas]
+        test = [s for s, g in zip(systems, grp) if g in test_formulas]
         return train, valid, test
 
     # --- group_by ---
@@ -230,22 +251,18 @@ def train_test_split(
     elif isinstance(group_by, (list, tuple)):
         if len(group_by) != n:
             raise ValueError(
-                f"group_by list length ({len(group_by)}) must match "
-                f"systems ({n})."
+                f"group_by list length ({len(group_by)}) must match systems ({n})."
             )
         groups = list(group_by)
     else:
         raise ValueError(
-            f"group_by must be 'formula' or a list of strings; "
-            f"got {group_by!r}."
+            f"group_by must be 'formula' or a list of strings; got {group_by!r}."
         )
 
     unique_groups = sorted(set(groups))
     n_groups = len(unique_groups)
     if n_groups <= 1:
-        raise ValueError(
-            f"Only {n_groups} unique group(s) found; cannot split."
-        )
+        raise ValueError(f"Only {n_groups} unique group(s) found; cannot split.")
 
     rng = np.random.default_rng(seed)
     perm = rng.permutation(n_groups)
@@ -254,13 +271,13 @@ def train_test_split(
     n_test = max(1, int(np.ceil(n_groups * test_size)))
     n_valid = max(1, int(np.ceil((n_groups - n_test) * valid_size)))
 
-    test_groups  = set(shuffled[:n_test])
-    valid_groups = set(shuffled[n_test:n_test + n_valid])
-    train_groups = set(shuffled[n_test + n_valid:])
+    test_groups = set(shuffled[:n_test])
+    valid_groups = set(shuffled[n_test : n_test + n_valid])
+    train_groups = set(shuffled[n_test + n_valid :])
 
     train = [s for s, g in zip(systems, groups) if g in train_groups]
     valid = [s for s, g in zip(systems, groups) if g in valid_groups]
-    test  = [s for s, g in zip(systems, groups) if g in test_groups]
+    test = [s for s, g in zip(systems, groups) if g in test_groups]
 
     return train, valid, test
 
@@ -269,17 +286,18 @@ def train_test_split(
 # cross_validate
 # ---------------------------------------------------------------------------
 
+
 def cross_validate(
     model,
     systems,
     label_key: str = "energy",
-    cv: Union[str, int] = 5,
-    group_by: Union[str, list[str], None] = "formula",
+    cv: str | int = 5,
+    group_by: str | list[str] | None = "formula",
     granularity: str = "frame",
     allow_expensive_cv: bool = False,
     min_groups_warn: int = 30,
     seed: int = 42,
-    manifest: Optional[str] = None,
+    manifest: str | None = None,
 ) -> dict:
     """Leak-proof cross-validation for dpdata systems.
 
@@ -370,9 +388,7 @@ def cross_validate(
     elif isinstance(cv, int) and cv >= 2:
         n_splits = cv
     else:
-        raise ValueError(
-            f"cv must be 'holdout' or an int >= 2; got {cv!r}."
-        )
+        raise ValueError(f"cv must be 'holdout' or an int >= 2; got {cv!r}.")
 
     # ---- expensive-cv guard (NON-interactive!) ----
     if not is_cheap and n_splits >= 2 and not allow_expensive_cv:
@@ -386,7 +402,9 @@ def cross_validate(
         _LOG.warning(
             "%s %d-fold CV will train %d models. "
             "Estimated %s. This is a non-blocking warning — training proceeds.",
-            strategy, n_splits, n_splits,
+            strategy,
+            n_splits,
+            n_splits,
             _estimate_runtime(strategy, n_splits),
         )
 
@@ -444,7 +462,10 @@ def cross_validate(
     # This reuses existing desc_mean.npy when present, extracts only missing
     # systems one-by-one.  Peak memory is one system's descriptors at a time.
     if is_cheap:
-        from dpa_adapt.data.desc_cache import ensure_per_system_cache
+        from dpa_adapt.data.desc_cache import (
+            ensure_per_system_cache,
+        )
+
         ensure_per_system_cache(
             systems,
             pretrained=model.pretrained,
@@ -459,10 +480,18 @@ def cross_validate(
     for train_groups, val_groups in fold_assignments:
         if is_cheap:
             Xtr, ytr = _assemble_from_per_system_cache(
-                systems, groups, train_groups, label_key, granularity,
+                systems,
+                groups,
+                train_groups,
+                label_key,
+                granularity,
             )
             Xva, yva = _assemble_from_per_system_cache(
-                systems, groups, val_groups, label_key, granularity,
+                systems,
+                groups,
+                val_groups,
+                label_key,
+                granularity,
             )
             if Xtr.shape[0] == 0 or Xva.shape[0] == 0:
                 continue
@@ -521,18 +550,20 @@ def cross_validate(
     # ---- aggregate ----
     agg = {}
     for name, lst in [
-        ("mae", test_mae_list), ("rmse", test_rmse_list), ("r2", test_r2_list),
+        ("mae", test_mae_list),
+        ("rmse", test_rmse_list),
+        ("r2", test_r2_list),
     ]:
         vals = [v for v in lst if not np.isnan(v)]
         if vals:
             agg[f"{name}_mean"] = float(np.mean(vals))
-            agg[f"{name}_std"]  = float(np.std(vals))
+            agg[f"{name}_std"] = float(np.std(vals))
 
     return {
         "train_mae": train_mae_list,
-        "test_mae":  test_mae_list,
+        "test_mae": test_mae_list,
         "test_rmse": test_rmse_list,
-        "test_r2":   test_r2_list,
+        "test_r2": test_r2_list,
         "aggregate": agg,
         "n_independent": n_groups,
         "warnings": warnings,
@@ -543,6 +574,7 @@ def cross_validate(
 # ---------------------------------------------------------------------------
 # internal: runtime estimate
 # ---------------------------------------------------------------------------
+
 
 def _estimate_runtime(strategy: str, n_splits: int) -> str:
     per_run = {

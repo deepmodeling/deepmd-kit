@@ -1,19 +1,32 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Tests for load_dataset()."""
 
 import logging
-from pathlib import Path
+from pathlib import (
+    Path,
+)
 
 import numpy as np
 import pytest
 
-from deepmd.dpa_adapt.data.dataset import load_dataset
-from deepmd.dpa_adapt.data.errors import DPADataError
-from deepmd.dpa_adapt.data.loader import load_data
+from deepmd.dpa_adapt.data.dataset import (
+    load_dataset,
+)
+from deepmd.dpa_adapt.data.errors import (
+    DPADataError,
+)
+from deepmd.dpa_adapt.data.loader import (
+    load_data,
+)
 
 
-def _write_system(root: str, natoms: int = 2, nframes: int = 3,
-                  label_key: str = "energy",
-                  elements: list[str] = None) -> Path:
+def _write_system(
+    root: str,
+    natoms: int = 2,
+    nframes: int = 3,
+    label_key: str = "energy",
+    elements: list[str] = None,
+) -> Path:
     """Create a minimal deepmd/npy system directory. Returns its Path."""
     if elements is None:
         elements = ["H", "O"]

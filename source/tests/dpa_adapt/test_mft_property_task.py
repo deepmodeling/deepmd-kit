@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Tests for MFT downstream_task_type='property' branch.
 
 These cover the paper-faithful (arXiv:2601.08486) DOWNSTREAM=property
@@ -9,17 +10,25 @@ Back-compat: callers that don't pass downstream_task_type stay on the
 legacy ener path (used by mp_data MFT sensitivity-analysis experiments).
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import pytest
 
-from deepmd.dpa_adapt.config.manager import MFTConfigManager
-from deepmd.dpa_adapt.mft import MFTFineTuner
+from deepmd.dpa_adapt.config.manager import (
+    MFTConfigManager,
+)
+from deepmd.dpa_adapt.mft import (
+    MFTFineTuner,
+)
 
 
 class _FakePropertyTuner:
     """Tuner-shaped object configured for downstream_task_type='property'.
-    Bypasses MFTFineTuner.__init__ so tests don't need a real ckpt."""
+    Bypasses MFTFineTuner.__init__ so tests don't need a real ckpt.
+    """
+
     pretrained = "/share/DPA-3.1-3M.pt"
     aux_branch = "SPICE2"
     aux_prob = 0.5
@@ -47,7 +56,9 @@ class _FakePropertyTuner:
 class _FakeEnerTuner:
     """Legacy back-compat tuner. NO downstream_task_type attr at all —
     must still build a valid ener-mode config (mp_data sensitivity callers
-    construct tuners this way)."""
+    construct tuners this way).
+    """
+
     pretrained = "/share/DPA-3.1-3M.pt"
     aux_branch = "MP_traj_v024_alldata_mixu"
     aux_prob = 0.5
@@ -71,9 +82,11 @@ class _FakeEnerTuner:
 # Property task: config shape
 # ---------------------------------------------------------------------------
 
+
 def test_property_task_config_has_property_fitting_net():
     """DOWNSTREAM fitting_net must be type='property' with the right
-    property_name / task_dim / intensive, NOT the aux ener fitting_net."""
+    property_name / task_dim / intensive, NOT the aux ener fitting_net.
+    """
     config = MFTConfigManager(_FakePropertyTuner()).build()
     fn = config["model"]["model_dict"]["property"]["fitting_net"]
     assert fn["type"] == "property"
@@ -101,24 +114,28 @@ def test_property_task_no_force_pref_in_loss():
     """The ener-task force/virial prefs MUST NOT leak into property loss.
     This is the regression that made MFT/homo training useless: the loss
     forced the model to predict zero forces against QM9 labels that don't
-    have forces."""
+    have forces.
+    """
     config = MFTConfigManager(_FakePropertyTuner()).build()
     loss = config["loss_dict"]["property"]
     for forbidden in (
-        "start_pref_f", "limit_pref_f",
-        "start_pref_v", "limit_pref_v",
-        "start_pref_e", "limit_pref_e",
+        "start_pref_f",
+        "limit_pref_f",
+        "start_pref_v",
+        "limit_pref_v",
+        "start_pref_e",
+        "limit_pref_e",
     ):
         assert forbidden not in loss, (
-            f"property loss must not contain {forbidden}; "
-            f"got loss={loss!r}"
+            f"property loss must not contain {forbidden}; got loss={loss!r}"
         )
 
 
 def test_property_task_no_property_name_in_loss():
-    """deepmd 3.1.3 strict-mode dargs rejects unknown keys inside
+    """Deepmd 3.1.3 strict-mode dargs rejects unknown keys inside
     loss_property — property_name belongs on fitting_net, not loss.
-    (Verified empirically; see manager.py _build_property_loss docstring.)"""
+    (Verified empirically; see manager.py _build_property_loss docstring.)
+    """
     config = MFTConfigManager(_FakePropertyTuner()).build()
     loss = config["loss_dict"]["property"]
     assert "property_name" not in loss
@@ -128,9 +145,11 @@ def test_property_task_no_property_name_in_loss():
 # Property task: aux branch is unaffected
 # ---------------------------------------------------------------------------
 
+
 def test_property_task_aux_branch_keeps_ener_fitting_net():
     """The aux branch (SPICE2 force-field) must keep its ener fitting_net.
-    Only DOWNSTREAM gets the new property head."""
+    Only DOWNSTREAM gets the new property head.
+    """
     config = MFTConfigManager(_FakePropertyTuner()).build()
     aux_fn = config["model"]["model_dict"]["SPICE2"]["fitting_net"]
     assert aux_fn["type"] == "ener"
@@ -147,10 +166,13 @@ def test_property_task_aux_branch_keeps_ener_loss():
 
 def test_property_task_extensive_property():
     """When intensive=False, the property head reflects that — extensive
-    properties like total dipole moment use sum-pool."""
+    properties like total dipole moment use sum-pool.
+    """
+
     class _T(_FakePropertyTuner):
         property_name = "total_dipole"
         intensive = False
+
     config = MFTConfigManager(_T()).build()
     fn = config["model"]["model_dict"]["property"]["fitting_net"]
     assert fn["intensive"] is False
@@ -159,9 +181,11 @@ def test_property_task_extensive_property():
 
 def test_property_task_multidim_task_dim():
     """task_dim > 1 is honored (e.g. multitask HOMO+LUMO regression)."""
+
     class _T(_FakePropertyTuner):
         task_dim = 2
         property_name = "homo_lumo"
+
     config = MFTConfigManager(_T()).build()
     fn = config["model"]["model_dict"]["property"]["fitting_net"]
     assert fn["task_dim"] == 2
@@ -171,14 +195,19 @@ def test_property_task_multidim_task_dim():
 # Back-compat: ener mode is unchanged
 # ---------------------------------------------------------------------------
 
+
 def test_ener_task_unchanged_when_no_attr():
     """Tuners without downstream_task_type attr (existing mp_data callers)
     must still get the legacy ener-mode config: DOWNSTREAM reuses the aux
-    fitting_net and gets an ener loss with force/virial prefs."""
+    fitting_net and gets an ener loss with force/virial prefs.
+    """
     config = MFTConfigManager(_FakeEnerTuner()).build()
     md = config["model"]["model_dict"]
     # DOWNSTREAM fitting_net == aux fitting_net (the legacy behavior)
-    assert md["DOWNSTREAM"]["fitting_net"] == md["MP_traj_v024_alldata_mixu"]["fitting_net"]
+    assert (
+        md["DOWNSTREAM"]["fitting_net"]
+        == md["MP_traj_v024_alldata_mixu"]["fitting_net"]
+    )
     assert md["DOWNSTREAM"]["fitting_net"]["type"] == "ener"
     # ener loss with force/virial prefs
     loss = config["loss_dict"]["DOWNSTREAM"]
@@ -189,7 +218,8 @@ def test_ener_task_unchanged_when_no_attr():
 
 def test_ener_task_explicit_attr_unchanged():
     """Explicitly setting downstream_task_type='ener' is equivalent to
-    not setting it at all."""
+    not setting it at all.
+    """
     t = _FakeEnerTuner()
     t.downstream_task_type = "ener"
     config = MFTConfigManager(t).build()
@@ -202,12 +232,14 @@ def test_ener_task_explicit_attr_unchanged():
 # MFTFineTuner.__init__: argument validation
 # ---------------------------------------------------------------------------
 
+
 def test_property_task_requires_property_name(monkeypatch):
     """downstream_task_type='property' without property_name must raise."""
     import torch
 
     monkeypatch.setattr(
-        torch, "load",
+        torch,
+        "load",
         lambda *a, **kw: {
             "model": {
                 "_extra_state": {
@@ -232,7 +264,8 @@ def test_property_task_property_name_must_be_identifier(monkeypatch):
     import torch
 
     monkeypatch.setattr(
-        torch, "load",
+        torch,
+        "load",
         lambda *a, **kw: {
             "model": {
                 "_extra_state": {
@@ -257,7 +290,8 @@ def test_invalid_downstream_task_type_raises(monkeypatch):
     import torch
 
     monkeypatch.setattr(
-        torch, "load",
+        torch,
+        "load",
         lambda *a, **kw: {
             "model": {
                 "_extra_state": {
@@ -278,11 +312,13 @@ def test_invalid_downstream_task_type_raises(monkeypatch):
 
 def test_property_task_stores_attrs(monkeypatch):
     """The MFTFineTuner exposes downstream_task_type / property_name /
-    task_dim / intensive so MFTConfigManager can read them."""
+    task_dim / intensive so MFTConfigManager can read them.
+    """
     import torch
 
     monkeypatch.setattr(
-        torch, "load",
+        torch,
+        "load",
         lambda *a, **kw: {
             "model": {
                 "_extra_state": {
@@ -312,7 +348,8 @@ def test_ener_default_when_unspecified(monkeypatch):
     import torch
 
     monkeypatch.setattr(
-        torch, "load",
+        torch,
+        "load",
         lambda *a, **kw: {
             "model": {
                 "_extra_state": {

@@ -6,23 +6,23 @@ All public names are lazily imported so that ``import dpa_adapt.data``
 """
 
 __all__ = [
+    "DPADataError",
+    "Issue",
+    "SmilesDataResult",
+    "attach_labels",
+    "auto_convert",
+    "batch_convert",
+    "check_data",
+    "convert",
+    "formula_to_npy",
     "load_data",
     "load_dataset",
     "read_checkpoint_type_map",
     "read_data_type_map_union",
-    "validate_type_map_subset",
-    "auto_convert",
-    "convert",
-    "attach_labels",
-    "batch_convert",
-    "formula_to_npy",
-    "check_data",
-    "Issue",
-    "DPADataError",
-    "SmilesDataResult",
     "read_mol_coords",
     "smiles_to_3d_coords",
     "smiles_to_npy",
+    "validate_type_map_subset",
 ]
 
 _LAZY = {

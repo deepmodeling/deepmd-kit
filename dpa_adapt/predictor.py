@@ -1,15 +1,24 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 # dpa_adapt/predictor.py
 
 import numpy as np
 
-from dpa_adapt.conditions import DPAConditionError
-from dpa_adapt.data.loader import load_data
-from dpa_adapt.utils.dotdict import DotDict
+from dpa_adapt.conditions import (
+    DPAConditionError,
+)
+from dpa_adapt.data.loader import (
+    load_data,
+)
+from dpa_adapt.utils.dotdict import (
+    DotDict,
+)
 
 
 def _unwrap_multioutput(est):
     """If *est* is a ``MultiOutputRegressor``, return the wrapped estimator."""
-    from sklearn.multioutput import MultiOutputRegressor
+    from sklearn.multioutput import (
+        MultiOutputRegressor,
+    )
 
     if isinstance(est, MultiOutputRegressor):
         return est.estimator
@@ -17,19 +26,25 @@ def _unwrap_multioutput(est):
 
 
 def _is_rf(est):
-    from sklearn.ensemble import RandomForestRegressor
+    from sklearn.ensemble import (
+        RandomForestRegressor,
+    )
 
     return isinstance(_unwrap_multioutput(est), RandomForestRegressor)
 
 
 def _is_ridge(est):
-    from sklearn.linear_model import Ridge
+    from sklearn.linear_model import (
+        Ridge,
+    )
 
     return isinstance(_unwrap_multioutput(est), Ridge)
 
 
 def _is_mlp(est):
-    from sklearn.neural_network import MLPRegressor
+    from sklearn.neural_network import (
+        MLPRegressor,
+    )
 
     return isinstance(est, MLPRegressor)
 
@@ -48,7 +63,9 @@ class DPAPredictor:
     """
 
     def __init__(self, model_path: str, n_committee: int = 1):
-        from dpa_adapt._backend import load_torch_file
+        from dpa_adapt._backend import (
+            load_torch_file,
+        )
 
         bundle = load_torch_file(model_path)
 
@@ -69,15 +86,15 @@ class DPAPredictor:
                 "model.freeze(output_dir)."
             )
 
-        self._predictor         = bundle["predictor"]
-        self._target_key        = bundle["target_key"]  # str or list[str]
-        self._type_map          = bundle["type_map"]
-        self._task_dim          = bundle["task_dim"]
-        self._pretrained        = bundle["pretrained"]
-        self._model_branch      = bundle.get("model_branch")
-        self._pooling           = bundle["pooling"]
+        self._predictor = bundle["predictor"]
+        self._target_key = bundle["target_key"]  # str or list[str]
+        self._type_map = bundle["type_map"]
+        self._task_dim = bundle["task_dim"]
+        self._pretrained = bundle["pretrained"]
+        self._model_branch = bundle.get("model_branch")
+        self._pooling = bundle["pooling"]
         self._condition_manager = bundle.get("condition_manager")
-        self.n_committee        = n_committee
+        self.n_committee = n_committee
 
         # Detect estimator type from the final pipeline step.
         final_est = self._predictor.steps[-1][1]
@@ -90,7 +107,9 @@ class DPAPredictor:
         else:
             self._estimator_type = "unknown"
 
-        from dpa_adapt.finetuner import DPAFineTuner
+        from dpa_adapt.finetuner import (
+            DPAFineTuner,
+        )
 
         # TODO: replace with dedicated DescriptorExtractor class after refactor.
         # For now, DPAFineTuner is reused purely as a descriptor feature extractor.
@@ -115,10 +134,13 @@ class DPAPredictor:
                 "The single-estimator predictor is ready to use as-is."
             )
 
-        from sklearn.base import clone
+        from sklearn.base import (
+            clone,
+        )
 
-        from dpa_adapt.conditions import ConditionManager
-        from dpa_adapt.finetuner import _load_labels
+        from dpa_adapt.finetuner import (
+            _load_labels,
+        )
 
         if target_key is not None and labels is not None:
             raise ValueError("target_key and labels are mutually exclusive")
@@ -134,15 +156,12 @@ class DPAPredictor:
         if self._condition_manager is not None:
             if conditions is None:
                 raise DPAConditionError(
-                    "This model was fit with conditions. "
-                    "Pass conditions= to fit()."
+                    "This model was fit with conditions. Pass conditions= to fit()."
                 )
             X_cond = self._condition_manager.transform(conditions)
             features = np.concatenate([features, X_cond], axis=1)
         elif conditions is not None:
-            raise DPAConditionError(
-                "This model was fit without conditions."
-            )
+            raise DPAConditionError("This model was fit without conditions.")
 
         if labels is not None:
             y = np.asarray(labels)
@@ -163,9 +182,7 @@ class DPAPredictor:
 
         preds = np.array([e.predict(features) for e in self.estimators_])
         preds = preds.reshape(self.n_committee, -1, self._task_dim)
-        self.uncertainty_threshold_ = float(
-            np.percentile(np.std(preds, axis=0), 95)
-        )
+        self.uncertainty_threshold_ = float(np.percentile(np.std(preds, axis=0), 95))
 
     def _extract_and_condition(self, data, fmt, conditions):
         """Shared feature extraction + condition concatenation."""
@@ -181,19 +198,18 @@ class DPAPredictor:
         if self._condition_manager is not None:
             if conditions is None:
                 raise DPAConditionError(
-                    "This model was fit with conditions. "
-                    "Pass conditions= to predict()."
+                    "This model was fit with conditions. Pass conditions= to predict()."
                 )
             X_cond = self._condition_manager.transform(conditions)
             features = np.concatenate([features, X_cond], axis=1)
         elif conditions is not None:
-            raise DPAConditionError(
-                "This model was fit without conditions."
-            )
+            raise DPAConditionError("This model was fit without conditions.")
 
         return features
 
-    def predict(self, data, fmt=None, conditions=None, return_uncertainty=False) -> DotDict:
+    def predict(
+        self, data, fmt=None, conditions=None, return_uncertainty=False
+    ) -> DotDict:
         """
         Run inference on ``data``.
 
@@ -240,12 +256,16 @@ class DPAPredictor:
             rf = self._predictor.steps[-1][1]
             tree_preds = np.array([t.predict(X_t) for t in rf.estimators_])
             tree_preds = tree_preds.reshape(
-                len(rf.estimators_), -1, self._task_dim,
+                len(rf.estimators_),
+                -1,
+                self._task_dim,
             )
-            return DotDict({
-                "predictions": np.mean(tree_preds, axis=0),
-                "uncertainty": np.std(tree_preds, axis=0),
-            })
+            return DotDict(
+                {
+                    "predictions": np.mean(tree_preds, axis=0),
+                    "uncertainty": np.std(tree_preds, axis=0),
+                }
+            )
 
         if self._estimator_type in ("ridge", "linear"):
             raise ValueError(
@@ -257,10 +277,12 @@ class DPAPredictor:
         if self.n_committee > 1:
             preds = np.array([e.predict(features) for e in self.estimators_])
             preds = preds.reshape(self.n_committee, -1, self._task_dim)
-            return DotDict({
-                "predictions": np.mean(preds, axis=0),
-                "uncertainty": np.std(preds, axis=0),
-            })
+            return DotDict(
+                {
+                    "predictions": np.mean(preds, axis=0),
+                    "uncertainty": np.std(preds, axis=0),
+                }
+            )
 
         raise RuntimeError(
             f"Uncertainty estimation requires either estimator='rf' "
@@ -290,15 +312,19 @@ class DPAPredictor:
             predictions   : np.ndarray, shape (n_frames, task_dim)
             labels        : np.ndarray, shape (n_frames, task_dim)
         """
-        from dpa_adapt.finetuner import _load_labels
-        from dpa_adapt.data.errors import DPADataError
+        from dpa_adapt.data.errors import (
+            DPADataError,
+        )
+        from dpa_adapt.finetuner import (
+            _load_labels,
+        )
 
-        result      = self.predict(data, fmt=fmt, conditions=conditions)
+        result = self.predict(data, fmt=fmt, conditions=conditions)
         predictions = result.predictions
 
         systems = load_data(data, fmt=fmt)
-        labels  = _load_labels(systems, self._target_key)
-        labels  = labels.reshape(predictions.shape)
+        labels = _load_labels(systems, self._target_key)
+        labels = labels.reshape(predictions.shape)
 
         if predictions.shape != labels.shape:
             raise DPADataError(
@@ -306,7 +332,7 @@ class DPAPredictor:
                 f"labels {labels.shape}."
             )
 
-        err    = predictions - labels
+        err = predictions - labels
         if isinstance(self._target_key, list):
             # Per-property metrics
             keys = self._target_key
@@ -314,21 +340,25 @@ class DPAPredictor:
             for i, key in enumerate(keys):
                 e_i = err[:, i]
                 mae[key] = float(np.mean(np.abs(e_i)))
-                rmse[key] = float(np.sqrt(np.mean(e_i ** 2)))
-                ss_res_i = np.sum(e_i ** 2)
+                rmse[key] = float(np.sqrt(np.mean(e_i**2)))
+                ss_res_i = np.sum(e_i**2)
                 ss_tot_i = np.sum((labels[:, i] - labels[:, i].mean()) ** 2)
-                r2[key] = float(1.0 - ss_res_i / ss_tot_i) if ss_tot_i > 0 else float("nan")
+                r2[key] = (
+                    float(1.0 - ss_res_i / ss_tot_i) if ss_tot_i > 0 else float("nan")
+                )
         else:
-            mae    = float(np.mean(np.abs(err)))
-            rmse   = float(np.sqrt(np.mean(err ** 2)))
-            ss_res = np.sum(err ** 2)
+            mae = float(np.mean(np.abs(err)))
+            rmse = float(np.sqrt(np.mean(err**2)))
+            ss_res = np.sum(err**2)
             ss_tot = np.sum((labels - labels.mean()) ** 2)
-            r2     = float(1.0 - ss_res / ss_tot) if ss_tot > 0 else float("nan")
+            r2 = float(1.0 - ss_res / ss_tot) if ss_tot > 0 else float("nan")
 
-        return DotDict({
-            "mae":         mae,
-            "rmse":        rmse,
-            "r2":          r2,
-            "predictions": predictions,
-            "labels":      labels,
-        })
+        return DotDict(
+            {
+                "mae": mae,
+                "rmse": rmse,
+                "r2": r2,
+                "predictions": predictions,
+                "labels": labels,
+            }
+        )

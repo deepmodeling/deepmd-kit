@@ -1,18 +1,28 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Tests for batch_convert() and convert()'s validation wiring.
 
 Uses hand-written VASP POSCAR files as inputs — a single-file, structure-only
 format dpdata reads reliably, which is enough to exercise globbing, tree
 mirroring, the manifest, and skip-on-failure.
 """
+
 import importlib
 import json
 import logging
-from pathlib import Path
+from pathlib import (
+    Path,
+)
 
 import pytest
 
-from deepmd.dpa_adapt.data.convert import batch_convert, convert, _glob_base
-from deepmd.dpa_adapt.data.validate import Issue
+from deepmd.dpa_adapt.data.convert import (
+    _glob_base,
+    batch_convert,
+    convert,
+)
+from deepmd.dpa_adapt.data.validate import (
+    Issue,
+)
 
 # The dpa_adapt.data package re-exports the convert() function, which shadows
 # the submodule name — grab the real module object for monkeypatching.
@@ -42,6 +52,7 @@ def _write_poscar(path: Path) -> None:
 # _glob_base
 # ---------------------------------------------------------------------------
 
+
 def test_glob_base_recursive_wildcard():
     assert _glob_base("calcs/**/OUTCAR") == Path("calcs")
 
@@ -59,6 +70,7 @@ def test_glob_base_no_wildcard_uses_parent(tmp_path):
 # ---------------------------------------------------------------------------
 # batch_convert
 # ---------------------------------------------------------------------------
+
 
 def test_batch_convert_mirrors_input_tree(tmp_path):
     _write_poscar(tmp_path / "in" / "a" / "POSCAR")
@@ -86,7 +98,9 @@ def test_batch_convert_writes_manifest(tmp_path):
     out = tmp_path / "out"
     batch_convert(
         glob_pattern=str(tmp_path / "in" / "**" / "POSCAR"),
-        output_dir=str(out), fmt="vasp/poscar", type_map=["Cu", "O"],
+        output_dir=str(out),
+        fmt="vasp/poscar",
+        type_map=["Cu", "O"],
     )
     manifest = json.loads((out / "manifest.json").read_text())
     assert manifest["fmt"] == "vasp/poscar"
@@ -106,7 +120,9 @@ def test_batch_convert_skips_bad_file(tmp_path, caplog):
     with caplog.at_level(logging.WARNING, logger="dpa_adapt"):
         results = batch_convert(
             glob_pattern=str(tmp_path / "in" / "**" / "POSCAR"),
-            output_dir=str(out), fmt="vasp/poscar", type_map=["Cu", "O"],
+            output_dir=str(out),
+            fmt="vasp/poscar",
+            type_map=["Cu", "O"],
         )
 
     # good file converted, bad file skipped and recorded
@@ -130,14 +146,17 @@ def test_batch_convert_strict_fails_fast_on_bad_file(tmp_path):
     with pytest.raises(Exception):
         batch_convert(
             glob_pattern=str(tmp_path / "in" / "**" / "POSCAR"),
-            output_dir=str(out), fmt="vasp/poscar",
-            type_map=["Cu", "O"], strict=True,
+            output_dir=str(out),
+            fmt="vasp/poscar",
+            type_map=["Cu", "O"],
+            strict=True,
         )
 
 
 # ---------------------------------------------------------------------------
 # convert() validation wiring
 # ---------------------------------------------------------------------------
+
 
 def test_convert_validate_true_runs_check(tmp_path, monkeypatch):
     _write_poscar(tmp_path / "POSCAR")
@@ -149,8 +168,13 @@ def test_convert_validate_true_runs_check(tmp_path, monkeypatch):
         return []
 
     monkeypatch.setattr(convert_mod, "check_data", _fake_check)
-    out = convert(str(tmp_path / "POSCAR"), str(tmp_path / "out"),
-                  fmt="vasp/poscar", type_map=["Cu", "O"], validate=True)
+    out = convert(
+        str(tmp_path / "POSCAR"),
+        str(tmp_path / "out"),
+        fmt="vasp/poscar",
+        type_map=["Cu", "O"],
+        validate=True,
+    )
     assert seen["is_system"] is True  # check_data received a dpdata object
     assert seen["strict"] is False
     assert Path(out).exists()
@@ -163,19 +187,28 @@ def test_convert_validate_false_skips_check(tmp_path, monkeypatch):
         raise AssertionError("check_data must not run when validate=False")
 
     monkeypatch.setattr(convert_mod, "check_data", _boom)
-    out = convert(str(tmp_path / "POSCAR"), str(tmp_path / "out"),
-                  fmt="vasp/poscar", type_map=["Cu", "O"], validate=False)
+    out = convert(
+        str(tmp_path / "POSCAR"),
+        str(tmp_path / "out"),
+        fmt="vasp/poscar",
+        type_map=["Cu", "O"],
+        validate=False,
+    )
     assert Path(out).exists()
 
 
 def test_convert_validation_issues_are_logged(tmp_path, monkeypatch, caplog):
     _write_poscar(tmp_path / "POSCAR")
     fake = Issue("error", "sys", "", "energies", "boom description")
-    monkeypatch.setattr(convert_mod, "check_data",
-                        lambda data, strict=False: [fake])
+    monkeypatch.setattr(convert_mod, "check_data", lambda data, strict=False: [fake])
     with caplog.at_level(logging.WARNING, logger="dpa_adapt"):
-        convert(str(tmp_path / "POSCAR"), str(tmp_path / "out"),
-                fmt="vasp/poscar", type_map=["Cu", "O"], validate=True)
+        convert(
+            str(tmp_path / "POSCAR"),
+            str(tmp_path / "out"),
+            fmt="vasp/poscar",
+            type_map=["Cu", "O"],
+            validate=True,
+        )
     assert "boom description" in caplog.text
 
 
@@ -188,9 +221,14 @@ def test_convert_strict_passed_through(tmp_path, monkeypatch):
         return []
 
     monkeypatch.setattr(convert_mod, "check_data", _fake_check)
-    convert(str(tmp_path / "POSCAR"), str(tmp_path / "out"),
-            fmt="vasp/poscar", type_map=["Cu", "O"],
-            validate=True, strict=True)
+    convert(
+        str(tmp_path / "POSCAR"),
+        str(tmp_path / "out"),
+        fmt="vasp/poscar",
+        type_map=["Cu", "O"],
+        validate=True,
+        strict=True,
+    )
     assert seen["strict"] is True
 
 
@@ -286,12 +324,16 @@ class TestAutoConvertFormula:
 
     def test_formula_fmt_routes_to_formula_pipeline(self, tmp_path, monkeypatch):
         """fmt="formula" with poscar → delegates to formula_to_npy."""
-        from deepmd.dpa_adapt.data.convert import auto_convert
+        from deepmd.dpa_adapt.data.convert import (
+            auto_convert,
+        )
 
         csv = tmp_path / "comps.csv"
         csv.write_text("Ni0.5Fe0.5O2,1.23\n")
         poscar = tmp_path / "POSCAR"
-        poscar.write_text("Si\n1.0\n5.43 0 0\n0 5.43 0\n0 0 5.43\nSi\n1\nCartesian\n0 0 0\n")
+        poscar.write_text(
+            "Si\n1.0\n5.43 0 0\n0 5.43 0\n0 0 5.43\nSi\n1\nCartesian\n0 0 0\n"
+        )
         out = tmp_path / "npy"
         fake_sys_dir = str(out / "sys_0000")
 
@@ -307,10 +349,14 @@ class TestAutoConvertFormula:
         )
 
         result = auto_convert(
-            str(csv), str(out),
-            fmt="formula", poscar=str(poscar),
-            formula_col=0, property_col=1,
-            property_name="bandgap", seed=123,
+            str(csv),
+            str(out),
+            fmt="formula",
+            poscar=str(poscar),
+            formula_col=0,
+            property_col=1,
+            property_name="bandgap",
+            seed=123,
         )
 
         assert result["method"] == "formula"
@@ -318,12 +364,16 @@ class TestAutoConvertFormula:
 
     def test_formula_fmt_base_element_passed_through(self, tmp_path, monkeypatch):
         """fmt="formula" with explicit base_element passes it through."""
-        from deepmd.dpa_adapt.data.convert import auto_convert
+        from deepmd.dpa_adapt.data.convert import (
+            auto_convert,
+        )
 
         csv = tmp_path / "comps.csv"
         csv.write_text("Ni0.8Fe0.2O2,0.5\n")
         poscar = tmp_path / "POSCAR"
-        poscar.write_text("NiO\n1.0\n4.17 0 0\n0 4.17 0\n0 0 4.17\nNi O\n1 1\nCartesian\n0 0 0\n0.5 0.5 0.5\n")
+        poscar.write_text(
+            "NiO\n1.0\n4.17 0 0\n0 4.17 0\n0 0 4.17\nNi O\n1 1\nCartesian\n0 0 0\n0.5 0.5 0.5\n"
+        )
         out = tmp_path / "npy"
 
         captured = {}
@@ -339,9 +389,13 @@ class TestAutoConvertFormula:
         )
 
         auto_convert(
-            str(csv), str(out),
-            fmt="formula", poscar=str(poscar),
-            base_element="Ni", sets=5, seed=99,
+            str(csv),
+            str(out),
+            fmt="formula",
+            poscar=str(poscar),
+            base_element="Ni",
+            sets=5,
+            seed=99,
         )
 
         assert captured["base_element"] == "Ni"
@@ -352,12 +406,16 @@ class TestAutoConvertFormula:
 
     def test_formula_fmt_base_element_none_by_default(self, tmp_path, monkeypatch):
         """auto_convert defaults base_element=None → formula_to_npy infers it."""
-        from deepmd.dpa_adapt.data.convert import auto_convert
+        from deepmd.dpa_adapt.data.convert import (
+            auto_convert,
+        )
 
         csv = tmp_path / "comps.csv"
         csv.write_text("Ni0.5Fe0.5O2,1.0\n")
         poscar = tmp_path / "POSCAR"
-        poscar.write_text("NiO\n1.0\n4.17 0 0\n0 4.17 0\n0 0 4.17\nNi O\n1 1\nCartesian\n0 0 0\n0.5 0.5 0.5\n")
+        poscar.write_text(
+            "NiO\n1.0\n4.17 0 0\n0 4.17 0\n0 0 4.17\nNi O\n1 1\nCartesian\n0 0 0\n0.5 0.5 0.5\n"
+        )
         out = tmp_path / "npy"
 
         captured = {}
@@ -377,15 +435,20 @@ class TestAutoConvertFormula:
 
         assert captured["base_element"] is None
 
-    def test_formula_fmt_verbose_prints_system_count(self, tmp_path, monkeypatch,
-                                                     capsys):
+    def test_formula_fmt_verbose_prints_system_count(
+        self, tmp_path, monkeypatch, capsys
+    ):
         """fmt="formula" with verbose=True prints system count."""
-        from deepmd.dpa_adapt.data.convert import auto_convert
+        from deepmd.dpa_adapt.data.convert import (
+            auto_convert,
+        )
 
         csv = tmp_path / "comps.csv"
         csv.write_text("Ni0.5Fe0.5O2,1.0\nGd0.5Fe0.5O2,2.0\n")
         poscar = tmp_path / "POSCAR"
-        poscar.write_text("NiO\n1.0\n4.17 0 0\n0 4.17 0\n0 0 4.17\nNi O\n1 1\nCartesian\n0 0 0\n0.5 0.5 0.5\n")
+        poscar.write_text(
+            "NiO\n1.0\n4.17 0 0\n0 4.17 0\n0 0 4.17\nNi O\n1 1\nCartesian\n0 0 0\n0.5 0.5 0.5\n"
+        )
         out = tmp_path / "npy"
 
         def _fake_formula_to_npy(**kwargs):
@@ -397,8 +460,9 @@ class TestAutoConvertFormula:
             _fake_formula_to_npy,
         )
 
-        auto_convert(str(csv), str(out), fmt="formula", poscar=str(poscar),
-                     verbose=True)
+        auto_convert(
+            str(csv), str(out), fmt="formula", poscar=str(poscar), verbose=True
+        )
 
         captured = capsys.readouterr()
         assert "2 systems" in captured.out
@@ -413,7 +477,9 @@ class TestParseFormula:
     """Unit tests for formula string parsing."""
 
     def test_parse_simple_binary(self):
-        from deepmd.dpa_adapt.data.formula import parse_formula
+        from deepmd.dpa_adapt.data.formula import (
+            parse_formula,
+        )
 
         result = parse_formula("Ni0.65Gd0.35O2H1")
         assert pytest.approx(result.get("Ni", 0)) == 0.65
@@ -422,7 +488,9 @@ class TestParseFormula:
         assert result["H"] == 1.0
 
     def test_parse_base_element_inferred_as_remainder(self):
-        from deepmd.dpa_adapt.data.formula import parse_formula
+        from deepmd.dpa_adapt.data.formula import (
+            parse_formula,
+        )
 
         # Co0.10Yb0.05 totals 0.15; remainder assigned to base_element=Ni
         result = parse_formula("Co0.10Yb0.05O2H1", base_element="Ni")
@@ -431,20 +499,29 @@ class TestParseFormula:
         assert pytest.approx(result.get("Yb", 0)) == pytest.approx(0.05)
 
     def test_parse_base_element_not_assigned_when_total_is_one(self):
-        from deepmd.dpa_adapt.data.formula import parse_formula
+        from deepmd.dpa_adapt.data.formula import (
+            parse_formula,
+        )
 
         result = parse_formula("Ni0.65Gd0.35O2", base_element="Fe")
         assert "Fe" not in result
-        assert pytest.approx(sum(v for k, v in result.items() if k not in ("O", "H"))) == 1.0
+        assert (
+            pytest.approx(sum(v for k, v in result.items() if k not in ("O", "H")))
+            == 1.0
+        )
 
     def test_parse_empty_formula_raises(self):
-        from deepmd.dpa_adapt.data.formula import parse_formula
+        from deepmd.dpa_adapt.data.formula import (
+            parse_formula,
+        )
 
         with pytest.raises(ValueError, match="Could not parse"):
             parse_formula("")
 
     def test_parse_single_element_implicit_one(self):
-        from deepmd.dpa_adapt.data.formula import parse_formula
+        from deepmd.dpa_adapt.data.formula import (
+            parse_formula,
+        )
 
         # "C" with no number → treated as fraction 1.0
         result = parse_formula("O2H1")
@@ -452,7 +529,9 @@ class TestParseFormula:
         assert result["H"] == 1.0
 
     def test_parse_substitution_sublattice_normalised_to_one(self):
-        from deepmd.dpa_adapt.data.formula import parse_formula
+        from deepmd.dpa_adapt.data.formula import (
+            parse_formula,
+        )
 
         # Raw: Ni0.13, Gd0.03, Fe0.02, Co0.01, Yb0.01 — sum=0.20
         # After normalisation: each divided by 0.20
@@ -465,30 +544,40 @@ class TestInferBaseElement:
     """Unit tests for base_element auto-inference from template atoms."""
 
     def test_returns_most_frequent_non_oh_element(self):
-        from deepmd.dpa_adapt.data.formula import infer_base_element
+        from deepmd.dpa_adapt.data.formula import (
+            infer_base_element,
+        )
 
         symbols = ["Ni", "Ni", "Ni", "O", "O", "H"]
         assert infer_base_element(symbols) == "Ni"
 
     def test_skips_oh_when_other_element_present(self):
-        from deepmd.dpa_adapt.data.formula import infer_base_element
+        from deepmd.dpa_adapt.data.formula import (
+            infer_base_element,
+        )
 
         symbols = ["O", "O", "H", "H", "Fe", "Fe", "Fe"]
         assert infer_base_element(symbols) == "Fe"
 
     def test_returns_none_when_only_oh(self):
-        from deepmd.dpa_adapt.data.formula import infer_base_element
+        from deepmd.dpa_adapt.data.formula import (
+            infer_base_element,
+        )
 
         symbols = ["O", "H", "O", "H"]
         assert infer_base_element(symbols) is None
 
     def test_returns_none_for_empty_list(self):
-        from deepmd.dpa_adapt.data.formula import infer_base_element
+        from deepmd.dpa_adapt.data.formula import (
+            infer_base_element,
+        )
 
         assert infer_base_element([]) is None
 
     def test_tie_gives_first_encountered(self):
-        from deepmd.dpa_adapt.data.formula import infer_base_element
+        from deepmd.dpa_adapt.data.formula import (
+            infer_base_element,
+        )
 
         # Ni and Fe each appear twice, Ni encountered first.
         symbols = ["Ni", "Ni", "Fe", "Fe", "O", "O"]

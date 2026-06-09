@@ -1,21 +1,19 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Tests for descriptor cache (desc_cache.py)."""
 
-import os
-import time
-from pathlib import Path
-
 import numpy as np
-import pytest
 
 from deepmd.dpa_adapt.data.desc_cache import (
-    _data_fingerprint,
-    _cache_key,
     _cache_dir,
+    _cache_key,
+    _data_fingerprint,
     _per_system_cache_path,
     _system_fingerprint,
     ensure_per_system_cache,
 )
-from deepmd.dpa_adapt.data.loader import load_data
+from deepmd.dpa_adapt.data.loader import (
+    load_data,
+)
 
 
 def _make_system(tmp_path, name="sys", natoms=2, nframes=3, elements=None):
@@ -125,10 +123,13 @@ class TestEnsurePerSystemCache:
                 return np.zeros((2, 8))
 
         monkeypatch.setattr(
-            "deepmd.dpa_adapt.finetuner.DPAFineTuner", FakeFineTuner,
+            "deepmd.dpa_adapt.finetuner.DPAFineTuner",
+            FakeFineTuner,
         )
         ensure_per_system_cache(
-            [s1, s2], pretrained="/nonexistent/dummy.pt", pooling="mean",
+            [s1, s2],
+            pretrained="/nonexistent/dummy.pt",
+            pooling="mean",
         )
         assert called == [], "DPAFineTuner was called but all systems were cached"
 
@@ -149,10 +150,13 @@ class TestEnsurePerSystemCache:
             _device = None
 
         monkeypatch.setattr(
-            "deepmd.dpa_adapt.finetuner.DPAFineTuner", FakeFineTuner,
+            "deepmd.dpa_adapt.finetuner.DPAFineTuner",
+            FakeFineTuner,
         )
         ensure_per_system_cache(
-            [s1, s2], pretrained="/nonexistent/dummy.pt", pooling="mean",
+            [s1, s2],
+            pretrained="/nonexistent/dummy.pt",
+            pooling="mean",
         )
         assert len(called) == 1, (
             "DPAFineTuner should be called exactly once for the missing system"

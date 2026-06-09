@@ -1,12 +1,14 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 # dpa_adapt/finetuner.py
 #
 # frozen_sklearn architecture: frozen DPA descriptor → sklearn predictor
 # DPA checkpoint is used purely as a feature extractor (no dp train).
 
-import os
 import logging
-from pathlib import Path
-from typing import List, Optional, Union
+import os
+from pathlib import (
+    Path,
+)
 
 import dpdata
 import numpy as np
@@ -19,11 +21,21 @@ from dpa_adapt._backend import (
     resolve_model_branch,
     resolve_pretrained_path,
 )
-from dpa_adapt.conditions import ConditionManager, DPAConditionError
-from dpa_adapt.data.errors import DPADataError
-from dpa_adapt.data.loader import load_data, _resolve_label_key, _get_source
-from dpa_adapt.utils.dotdict import DotDict
-
+from dpa_adapt.conditions import (
+    ConditionManager,
+    DPAConditionError,
+)
+from dpa_adapt.data.errors import (
+    DPADataError,
+)
+from dpa_adapt.data.loader import (
+    _get_source,
+    _resolve_label_key,
+    load_data,
+)
+from dpa_adapt.utils.dotdict import (
+    DotDict,
+)
 
 # ---------------------------------------------------------------------------
 # Module-level helpers
@@ -31,7 +43,7 @@ from dpa_adapt.utils.dotdict import DotDict
 
 
 def _load_labels(
-    systems: List[dpdata.System],
+    systems: list[dpdata.System],
     target_key,  # str | list[str] — union type omitted for runtime simplicity
 ) -> np.ndarray:
     """Load and concatenate labels from dpdata systems.
@@ -77,9 +89,9 @@ def _load_labels(
             available = sorted(system.data.keys())
             if source is not None:
                 set_dirs = sorted(Path(source).glob("set.*"))
-                available_npy = sorted(set(
-                    p.name for sd in set_dirs for p in sd.glob("*.npy")
-                ))
+                available_npy = sorted(
+                    set(p.name for sd in set_dirs for p in sd.glob("*.npy"))
+                )
             else:
                 available_npy = []
             msg = (
@@ -133,11 +145,11 @@ def _load_npy_system(system: dpdata.System):
     atom_types : np.ndarray, shape (n_atoms,)
     """
     d = system.data
-    coords = np.asarray(d["coords"])       # (n_frames, n_atoms, 3)
+    coords = np.asarray(d["coords"])  # (n_frames, n_atoms, 3)
     n_atoms = coords.shape[1]
     coords = coords.reshape(coords.shape[0], n_atoms * 3)
 
-    cells = np.asarray(d["cells"])          # (n_frames, 3, 3)
+    cells = np.asarray(d["cells"])  # (n_frames, 3, 3)
     boxes = cells.reshape(cells.shape[0], 9)
 
     atom_types = np.asarray(d["atom_types"])  # (n_atoms,)
@@ -151,6 +163,7 @@ def _load_npy_system(system: dpdata.System):
 # ---------------------------------------------------------------------------
 # Public descriptor extraction
 # ---------------------------------------------------------------------------
+
 
 def extract_descriptors(
     data,
@@ -190,7 +203,9 @@ def extract_descriptors(
         Pooled descriptor features, shape ``(n_frames_total, feat_dim)``.
         ``feat_dim`` depends on the pooling strategy.
     """
-    from dpa_adapt.data.desc_cache import load_or_extract
+    from dpa_adapt.data.desc_cache import (
+        load_or_extract,
+    )
 
     systems = load_data(data)
     return load_or_extract(
@@ -252,8 +267,6 @@ class _FrozenSklearnPipeline:
         If *pretrained* is a built-in model name (e.g. ``"DPA-3.1-3M"``)
         rather than a local path, it is automatically downloaded.
         """
-        import torch
-
         resolved = resolve_pretrained_path(self.pretrained)
         state_dict = load_torch_file(resolved)
         if "model" in state_dict:
@@ -274,8 +287,7 @@ class _FrozenSklearnPipeline:
                         head = mk
                         break
             assert head in model_alias_dict, (
-                f"Branch '{head}' not found. "
-                f"Available: {list(model_alias_dict)}"
+                f"Branch '{head}' not found. Available: {list(model_alias_dict)}"
             )
             head = model_alias_dict[head]
 
@@ -324,7 +336,8 @@ class _FrozenSklearnPipeline:
             if unsupported:
                 ckpt_repr = (
                     f"{ckpt[:3] + ['...'] + ckpt[-1:]} ({len(ckpt)} elements)"
-                    if len(ckpt) > 8 else str(ckpt)
+                    if len(ckpt) > 8
+                    else str(ckpt)
                 )
                 raise DPADataError(
                     f"Element(s) in {source} not supported by this checkpoint.\n"
@@ -371,7 +384,8 @@ class _FrozenSklearnPipeline:
 
         try:
             local_to_global = np.array(
-                [ckpt.index(elem) for elem in data_tm], dtype=np.int64,
+                [ckpt.index(elem) for elem in data_tm],
+                dtype=np.int64,
             )
         except ValueError as e:
             unsupported = [e for e in data_tm if e not in set(ckpt)]
@@ -441,11 +455,13 @@ class _FrozenSklearnPipeline:
             # coord requires grad: forward_common calls autograd.grad
             # internally to compute forces, which fails under no_grad.
             coord_t = torch.tensor(
-                coords.reshape(n_frames, n_atoms * 3), dtype=torch.float64,
+                coords.reshape(n_frames, n_atoms * 3),
+                dtype=torch.float64,
                 device=self._device,
             ).requires_grad_(True)
             atype_t = torch.tensor(
-                np.tile(atom_types_global, (n_frames, 1)), dtype=torch.long,
+                np.tile(atom_types_global, (n_frames, 1)),
+                dtype=torch.long,
                 device=self._device,
             )
             box_t = torch.tensor(boxes, dtype=torch.float64, device=self._device)
@@ -463,10 +479,15 @@ class _FrozenSklearnPipeline:
             elif self.pooling == "mean+std+max+min":
                 mean = descrpt.mean(dim=1)
                 std = torch.nan_to_num(descrpt.std(dim=1), nan=0.0)
-                feat = torch.cat([
-                    mean, std,
-                    descrpt.max(dim=1).values, descrpt.min(dim=1).values,
-                ], dim=-1)
+                feat = torch.cat(
+                    [
+                        mean,
+                        std,
+                        descrpt.max(dim=1).values,
+                        descrpt.min(dim=1).values,
+                    ],
+                    dim=-1,
+                )
             feat = torch.nan_to_num(feat, nan=0.0, posinf=0.0, neginf=0.0)
             all_features.append(feat.cpu().numpy())
 
@@ -477,6 +498,7 @@ class _FrozenSklearnPipeline:
 # ---------------------------------------------------------------------------
 # Main class
 # ---------------------------------------------------------------------------
+
 
 class DPAFineTuner:
     """Adapt a pretrained DPA model to a downstream property via transfer learning.
@@ -567,7 +589,10 @@ class DPAFineTuner:
 
     _VALID_POOLING = {"mean", "sum", "mean+std", "mean+std+max+min"}
     _VALID_STRATEGIES = {
-        "frozen_sklearn", "linear_probe", "finetune", "mft",
+        "frozen_sklearn",
+        "linear_probe",
+        "finetune",
+        "mft",
     }
 
     def __init__(
@@ -604,8 +629,7 @@ class DPAFineTuner:
     ):
         if pooling not in self._VALID_POOLING:
             raise ValueError(
-                f"pooling must be one of {sorted(self._VALID_POOLING)}, "
-                f"got {pooling!r}"
+                f"pooling must be one of {sorted(self._VALID_POOLING)}, got {pooling!r}"
             )
         if strategy not in self._VALID_STRATEGIES:
             raise ValueError(
@@ -615,35 +639,35 @@ class DPAFineTuner:
 
         self.strategy = strategy
 
-        self.pretrained      = pretrained
-        self.model_branch    = model_branch
+        self.pretrained = pretrained
+        self.model_branch = model_branch
         self._predictor_type = predictor
-        self.pooling         = pooling
-        self.seed            = seed
+        self.pooling = pooling
+        self.seed = seed
 
         # Training-paradigm params (unused by frozen_sklearn).
-        self.property_name   = property_name
-        self.task_dim        = task_dim
-        self.intensive       = intensive
-        self.init_branch     = init_branch
-        self.learning_rate   = learning_rate
-        self.stop_lr         = stop_lr
-        self.max_steps       = max_steps
-        self.batch_size      = batch_size
-        self.loss_function   = loss_function
-        self.fparam_dim      = fparam_dim
-        self.output_dir      = output_dir
-        self.save_freq       = save_freq
-        self.disp_freq       = disp_freq
+        self.property_name = property_name
+        self.task_dim = task_dim
+        self.intensive = intensive
+        self.init_branch = init_branch
+        self.learning_rate = learning_rate
+        self.stop_lr = stop_lr
+        self.max_steps = max_steps
+        self.batch_size = batch_size
+        self.loss_function = loss_function
+        self.fparam_dim = fparam_dim
+        self.output_dir = output_dir
+        self.save_freq = save_freq
+        self.disp_freq = disp_freq
 
         # MFT-only parameters.
-        self.aux_branch            = aux_branch
-        self.aux_prob              = aux_prob
-        self.aux_type_map          = aux_type_map
-        self.downstream_type_map   = downstream_type_map
-        self.fitting_net_params    = fitting_net_params
-        self.downstream_task_type  = downstream_task_type
-        self.aux_batch_size        = aux_batch_size
+        self.aux_branch = aux_branch
+        self.aux_prob = aux_prob
+        self.aux_type_map = aux_type_map
+        self.downstream_type_map = downstream_type_map
+        self.fitting_net_params = fitting_net_params
+        self.downstream_task_type = downstream_task_type
+        self.aux_batch_size = aux_batch_size
         self.downstream_batch_size = downstream_batch_size
 
         if strategy == "mft":
@@ -657,14 +681,14 @@ class DPAFineTuner:
         self._sklearn: _FrozenSklearnPipeline | None = None
 
         # ---- backward-compat state mirrors (delegated to pipeline) ----
-        self.type_map           = []
-        self._target_key        = None
-        self._task_dim          = 1
-        self.predictor          = None   # sklearn object after fit()
-        self._fitted            = False
-        self._model             = None   # lazy-loaded descriptor model (cached)
-        self._device            = None   # set when model is first loaded
-        self._checkpoint_type_map = []   # set by _load_descriptor_model
+        self.type_map = []
+        self._target_key = None
+        self._task_dim = 1
+        self.predictor = None  # sklearn object after fit()
+        self._fitted = False
+        self._model = None  # lazy-loaded descriptor model (cached)
+        self._device = None  # set when model is first loaded
+        self._checkpoint_type_map = []  # set by _load_descriptor_model
         self._condition_manager = None
 
     # ------------------------------------------------------------------
@@ -710,7 +734,10 @@ class DPAFineTuner:
         ``self._extract_features()`` call below.
         """
         try:
-            from dpa_adapt.data.desc_cache import _cache_key, _cache_dir
+            from dpa_adapt.data.desc_cache import (
+                _cache_dir,
+                _cache_key,
+            )
 
             key = _cache_key(systems, self.pretrained, self.pooling)
             cache_path = _cache_dir() / f"{key}.npy"
@@ -762,11 +789,13 @@ class DPAFineTuner:
         except DPADataError:
             # Data paths may not exist during testing; fall back gracefully.
             return read_checkpoint_type_map(
-                self.pretrained, branch=self.init_branch,
+                self.pretrained,
+                branch=self.init_branch,
             )
 
         tm = read_checkpoint_type_map(
-            self.pretrained, branch=self.init_branch,
+            self.pretrained,
+            branch=self.init_branch,
         )
 
         try:
@@ -783,7 +812,9 @@ class DPAFineTuner:
 
     def _fit_training(self, train_data, valid_data, type_map):
         """Delegate to DPATrainer for single-task ``dp --pt train``."""
-        from dpa_adapt.trainer import DPATrainer
+        from dpa_adapt.trainer import (
+            DPATrainer,
+        )
 
         freeze = self.strategy == "linear_probe"
         trainer = DPATrainer(
@@ -855,8 +886,9 @@ class DPAFineTuner:
             ``strategy='mft'``; must be absent otherwise.
         """
         if self.strategy == "frozen_sklearn":
-            return self._fit_sklearn(train_data, type_map, target_key, labels, fmt,
-                                     conditions)
+            return self._fit_sklearn(
+                train_data, type_map, target_key, labels, fmt, conditions
+            )
 
         if self.strategy == "mft":
             if aux_data is None:
@@ -881,7 +913,9 @@ class DPAFineTuner:
 
     def _fit_mft(self, train_data, aux_data, valid_data=None):
         """Delegate to MFTFineTuner for multi-task fine-tuning."""
-        from dpa_adapt.mft import MFTFineTuner
+        from dpa_adapt.mft import (
+            MFTFineTuner,
+        )
 
         mft = MFTFineTuner(
             pretrained=self.pretrained,
@@ -933,7 +967,7 @@ class DPAFineTuner:
 
         p = self._ensure_sklearn()
 
-        self.type_map    = type_map or []
+        self.type_map = type_map or []
         self._target_key = target_key if target_key is not None else "property"
 
         systems = load_data(data, fmt=fmt)
@@ -957,13 +991,21 @@ class DPAFineTuner:
         self._task_dim = 1 if y.ndim == 1 else y.shape[-1]
         y_flat = y.ravel() if self._task_dim == 1 else y
 
-        from sklearn.pipeline import make_pipeline
-        from sklearn.preprocessing import StandardScaler
+        from sklearn.pipeline import (
+            make_pipeline,
+        )
+        from sklearn.preprocessing import (
+            StandardScaler,
+        )
 
-        from dpa_adapt.utils.sklearn_heads import build_sklearn_head
+        from dpa_adapt.utils.sklearn_heads import (
+            build_sklearn_head,
+        )
 
         head = build_sklearn_head(
-            self._predictor_type, seed=self.seed, n_outputs=self._task_dim,
+            self._predictor_type,
+            seed=self.seed,
+            n_outputs=self._task_dim,
         )
         self.predictor = make_pipeline(StandardScaler(), head)
         self.predictor.fit(features, y_flat)
@@ -998,27 +1040,23 @@ class DPAFineTuner:
         """
         if not self._fitted:
             raise RuntimeError(
-                "predict() was called before fit(). "
-                "Train the model with fit() first."
+                "predict() was called before fit(). Train the model with fit() first."
             )
 
-        systems     = load_data(data, fmt=fmt)
-        features    = self._extract_features(systems)
+        systems = load_data(data, fmt=fmt)
+        features = self._extract_features(systems)
 
         if self._condition_manager is not None:
             if conditions is None:
                 raise DPAConditionError(
-                    "This model was fit with conditions. "
-                    "Pass conditions= to predict()."
+                    "This model was fit with conditions. Pass conditions= to predict()."
                 )
             X_cond = self._condition_manager.transform(conditions)
             features = np.concatenate([features, X_cond], axis=1)
         elif conditions is not None:
-            raise DPAConditionError(
-                "This model was fit without conditions."
-            )
+            raise DPAConditionError("This model was fit without conditions.")
 
-        raw         = self.predictor.predict(features)
+        raw = self.predictor.predict(features)
         predictions = np.asarray(raw).reshape(-1, self._task_dim)
         return DotDict({"predictions": predictions})
 
@@ -1043,12 +1081,12 @@ class DPAFineTuner:
             predictions   : np.ndarray, shape (n_frames, task_dim)
             labels        : np.ndarray, shape (n_frames, task_dim)
         """
-        result      = self.predict(data, fmt=fmt, conditions=conditions)
+        result = self.predict(data, fmt=fmt, conditions=conditions)
         predictions = result.predictions
 
         systems = load_data(data, fmt=fmt)
-        labels  = _load_labels(systems, self._target_key)
-        labels  = labels.reshape(predictions.shape)
+        labels = _load_labels(systems, self._target_key)
+        labels = labels.reshape(predictions.shape)
 
         if predictions.shape != labels.shape:
             raise DPADataError(
@@ -1056,7 +1094,7 @@ class DPAFineTuner:
                 f"labels {labels.shape}."
             )
 
-        err    = predictions - labels
+        err = predictions - labels
         if isinstance(self._target_key, list):
             # Per-property metrics
             keys = self._target_key
@@ -1064,24 +1102,28 @@ class DPAFineTuner:
             for i, key in enumerate(keys):
                 e_i = err[:, i]
                 mae[key] = float(np.mean(np.abs(e_i)))
-                rmse[key] = float(np.sqrt(np.mean(e_i ** 2)))
-                ss_res_i = np.sum(e_i ** 2)
+                rmse[key] = float(np.sqrt(np.mean(e_i**2)))
+                ss_res_i = np.sum(e_i**2)
                 ss_tot_i = np.sum((labels[:, i] - labels[:, i].mean()) ** 2)
-                r2[key] = float(1.0 - ss_res_i / ss_tot_i) if ss_tot_i > 0 else float("nan")
+                r2[key] = (
+                    float(1.0 - ss_res_i / ss_tot_i) if ss_tot_i > 0 else float("nan")
+                )
         else:
-            mae    = float(np.mean(np.abs(err)))
-            rmse   = float(np.sqrt(np.mean(err ** 2)))
-            ss_res = np.sum(err ** 2)
+            mae = float(np.mean(np.abs(err)))
+            rmse = float(np.sqrt(np.mean(err**2)))
+            ss_res = np.sum(err**2)
             ss_tot = np.sum((labels - labels.mean()) ** 2)
-            r2     = float(1.0 - ss_res / ss_tot) if ss_tot > 0 else float("nan")
+            r2 = float(1.0 - ss_res / ss_tot) if ss_tot > 0 else float("nan")
 
-        return DotDict({
-            "mae":         mae,
-            "rmse":        rmse,
-            "r2":          r2,
-            "predictions": predictions,
-            "labels":      labels,
-        })
+        return DotDict(
+            {
+                "mae": mae,
+                "rmse": rmse,
+                "r2": r2,
+                "predictions": predictions,
+                "labels": labels,
+            }
+        )
 
     def freeze(self, output_path="frozen_model.pth") -> str:
         """
@@ -1105,26 +1147,26 @@ class DPAFineTuner:
         """
         if not self._fitted:
             raise RuntimeError(
-                "freeze() was called before fit(). "
-                "Train the model with fit() first."
+                "freeze() was called before fit(). Train the model with fit() first."
             )
 
         bundle = {
-            "format_version":  1,
-            "pretrained":      self.pretrained,
-            "model_branch":    self.model_branch,
-            "predictor":       self.predictor,
-            "target_key":      self._target_key,
-            "type_map":        self.type_map,
-            "task_dim":        self._task_dim,
-            "predictor_type":  self._predictor_type,
-            "pooling":         self.pooling,
+            "format_version": 1,
+            "pretrained": self.pretrained,
+            "model_branch": self.model_branch,
+            "predictor": self.predictor,
+            "target_key": self._target_key,
+            "type_map": self.type_map,
+            "task_dim": self._task_dim,
+            "predictor_type": self._predictor_type,
+            "pooling": self.pooling,
             "condition_manager": self._condition_manager,
         }
 
         output_path = str(output_path)
         os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
         import torch
+
         torch.save(bundle, output_path)
         _LOG = logging.getLogger("dpa_adapt")
         _LOG.info("Frozen model saved to: %s", output_path)

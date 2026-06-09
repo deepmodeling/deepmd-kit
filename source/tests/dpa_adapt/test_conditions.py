@@ -1,14 +1,21 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Tests for ConditionManager and conditions integration — no real DPA checkpoint needed."""
 
 import pickle
 import sys
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from pathlib import (
+    Path,
+)
+from unittest.mock import (
+    MagicMock,
+    patch,
+)
 
 import numpy as np
 import pytest
 
 # ---- mock torch (same pattern as test_predictor.py) ----
+
 
 def _pickle_save(obj, path, **kwargs):
     with open(path, "wb") as f:
@@ -27,11 +34,17 @@ _mock_torch.cuda.is_available.return_value = False
 
 sys.modules.setdefault("torch", _mock_torch)
 
-from deepmd.dpa_adapt import DPAFineTuner, DPAPredictor  # noqa: E402
-from deepmd.dpa_adapt.conditions import ConditionManager, DPAConditionError  # noqa: E402
-
+from deepmd.dpa_adapt import (
+    DPAFineTuner,
+    DPAPredictor,
+)
+from deepmd.dpa_adapt.conditions import (
+    ConditionManager,
+    DPAConditionError,
+)
 
 # ---- helpers ----
+
 
 def _make_npy_system(root: Path, n_frames: int = 3, n_atoms: int = 2) -> None:
     (root / "type.raw").write_text("0\n1\n")
@@ -121,7 +134,9 @@ class TestFineTunerWithConditions:
         _make_npy_system(system, n_frames=4)
 
         with (
-            patch.object(DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model),
+            patch.object(
+                DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model
+            ),
             patch.object(DPAFineTuner, "_extract_features", _mock_extract_features),
         ):
             ft = DPAFineTuner(pretrained="fake.pt", predictor="linear")
@@ -138,7 +153,9 @@ class TestFineTunerWithConditions:
         _make_npy_system(system, n_frames=4)
 
         with (
-            patch.object(DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model),
+            patch.object(
+                DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model
+            ),
             patch.object(DPAFineTuner, "_extract_features", _mock_extract_features),
         ):
             ft = DPAFineTuner(pretrained="fake.pt", predictor="linear")
@@ -154,14 +171,18 @@ class TestFineTunerWithConditions:
         _make_npy_system(system, n_frames=4)
 
         with (
-            patch.object(DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model),
+            patch.object(
+                DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model
+            ),
             patch.object(DPAFineTuner, "_extract_features", _mock_extract_features),
         ):
             ft = DPAFineTuner(pretrained="fake.pt", predictor="linear")
             ft.fit(str(system), target_key="energy")
 
             with pytest.raises(DPAConditionError, match="fit without conditions"):
-                ft.predict(str(system), conditions={"T": np.array([1.0, 2.0, 3.0, 4.0])})
+                ft.predict(
+                    str(system), conditions={"T": np.array([1.0, 2.0, 3.0, 4.0])}
+                )
 
     def test_freeze_load_with_conditions(self, tmp_path):
         system = tmp_path / "sys"
@@ -169,7 +190,9 @@ class TestFineTunerWithConditions:
         _make_npy_system(system, n_frames=4)
 
         with (
-            patch.object(DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model),
+            patch.object(
+                DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model
+            ),
             patch.object(DPAFineTuner, "_extract_features", _mock_extract_features),
         ):
             ft = DPAFineTuner(pretrained="fake.pt", predictor="linear")
@@ -196,7 +219,9 @@ class TestFineTunerNoConditions:
         _make_npy_system(system, n_frames=4)
 
         with (
-            patch.object(DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model),
+            patch.object(
+                DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model
+            ),
             patch.object(DPAFineTuner, "_extract_features", _mock_extract_features),
         ):
             ft = DPAFineTuner(pretrained="fake.pt", predictor="linear")

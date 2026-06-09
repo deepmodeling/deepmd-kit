@@ -1,12 +1,19 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Tests for DPAPredictor — no real DPA checkpoint or torch required.
 
 A mock torch module is injected into sys.modules so that torch.save /
 torch.load are backed by pickle.  All DPA descriptor calls are also mocked.
 """
+
 import pickle
 import sys
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from pathlib import (
+    Path,
+)
+from unittest.mock import (
+    MagicMock,
+    patch,
+)
 
 import numpy as np
 import pytest
@@ -15,6 +22,7 @@ import pytest
 # Use real torch serialization when available; otherwise fall back to a minimal
 # pickle-backed mock so these tests can still run without a torch install.
 # ---------------------------------------------------------------------------
+
 
 def _pickle_save(obj, path, **kwargs):
     with open(path, "wb") as f:
@@ -44,12 +52,15 @@ except Exception:
 else:
     _torch_for_test.set_default_device(None)
 
-from deepmd.dpa_adapt import DPAFineTuner, DPAPredictor  # noqa: E402
-
+from deepmd.dpa_adapt import (
+    DPAFineTuner,
+    DPAPredictor,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_npy_system(root: Path, n_frames: int = 3, n_atoms: int = 2) -> None:
     """Create a minimal deepmd/npy system directory for testing."""
@@ -79,6 +90,7 @@ def _mock_load_descriptor_model(self):
 # Tests
 # ---------------------------------------------------------------------------
 
+
 class TestPredictRoundtrip:
     """Freeze a Ridge on mock features, reload with DPAPredictor, check shape."""
 
@@ -88,7 +100,9 @@ class TestPredictRoundtrip:
         _make_npy_system(system, n_frames=4)
 
         with (
-            patch.object(DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model),
+            patch.object(
+                DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model
+            ),
             patch.object(DPAFineTuner, "_extract_features", _mock_extract_features),
         ):
             ft = DPAFineTuner(pretrained="fake.pt", predictor="linear")
@@ -111,7 +125,9 @@ class TestEvaluateReturnsMetrics:
         _make_npy_system(system, n_frames=5)
 
         with (
-            patch.object(DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model),
+            patch.object(
+                DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model
+            ),
             patch.object(DPAFineTuner, "_extract_features", _mock_extract_features),
         ):
             ft = DPAFineTuner(pretrained="fake.pt", predictor="linear")
@@ -139,7 +155,9 @@ class TestFreezeBundleHasModelBranch:
         _make_npy_system(system, n_frames=3)
 
         with (
-            patch.object(DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model),
+            patch.object(
+                DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model
+            ),
             patch.object(DPAFineTuner, "_extract_features", _mock_extract_features),
         ):
             ft = DPAFineTuner(
@@ -150,7 +168,9 @@ class TestFreezeBundleHasModelBranch:
             ft.fit(str(system), target_key="energy")
             frozen = ft.freeze(str(tmp_path / "model.pth"))
 
-        from deepmd.dpa_adapt._backend import load_torch_file
+        from deepmd.dpa_adapt._backend import (
+            load_torch_file,
+        )
 
         bundle = load_torch_file(frozen)
 
@@ -162,30 +182,42 @@ class TestFreezeBundleHasModelBranch:
 # Committee helpers
 # ---------------------------------------------------------------------------
 
+
 def _make_mlp_bundle(tmp_path, n_frames=20):
     """Create a frozen bundle with an MLPRegressor (uses random_state)."""
-    from sklearn.neural_network import MLPRegressor
-    from sklearn.pipeline import make_pipeline
-    from sklearn.preprocessing import StandardScaler
+    from sklearn.neural_network import (
+        MLPRegressor,
+    )
+    from sklearn.pipeline import (
+        make_pipeline,
+    )
+    from sklearn.preprocessing import (
+        StandardScaler,
+    )
 
-    pipeline = make_pipeline(StandardScaler(), MLPRegressor(
-        hidden_layer_sizes=(10, 5),
-        max_iter=300,
-        random_state=42,
-        early_stopping=False,
-    ))
+    pipeline = make_pipeline(
+        StandardScaler(),
+        MLPRegressor(
+            hidden_layer_sizes=(10, 5),
+            max_iter=300,
+            random_state=42,
+            early_stopping=False,
+        ),
+    )
 
-    from deepmd.dpa_adapt._backend import load_torch_file
+    from deepmd.dpa_adapt._backend import (
+        load_torch_file,
+    )
 
     bundle = {
-        "predictor":          pipeline,
-        "target_key":         "energy",
-        "type_map":           ["Cu", "O"],
-        "task_dim":           1,
-        "pretrained":         "fake.pt",
-        "pooling":            "mean",
-        "model_branch":       None,
-        "condition_manager":  None,
+        "predictor": pipeline,
+        "target_key": "energy",
+        "type_map": ["Cu", "O"],
+        "task_dim": 1,
+        "pretrained": "fake.pt",
+        "pooling": "mean",
+        "model_branch": None,
+        "condition_manager": None,
     }
     path = str(tmp_path / "mlp_model.pth")
     _torch_for_test.save(bundle, path)
@@ -195,31 +227,42 @@ def _make_mlp_bundle(tmp_path, n_frames=20):
 
 def _make_rf_bundle(tmp_path, n_frames=20):
     """Create a frozen bundle with a pre-fitted RandomForestRegressor."""
-    from sklearn.ensemble import RandomForestRegressor
-    from sklearn.pipeline import make_pipeline
-    from sklearn.preprocessing import StandardScaler
+    from sklearn.ensemble import (
+        RandomForestRegressor,
+    )
+    from sklearn.pipeline import (
+        make_pipeline,
+    )
+    from sklearn.preprocessing import (
+        StandardScaler,
+    )
 
-    pipeline = make_pipeline(StandardScaler(), RandomForestRegressor(
-        n_estimators=100,
-        random_state=42,
-    ))
+    pipeline = make_pipeline(
+        StandardScaler(),
+        RandomForestRegressor(
+            n_estimators=100,
+            random_state=42,
+        ),
+    )
     # Pre-fit on synthetic data so that tree estimators are available.
     rng = np.random.default_rng(0)
     X = rng.random((n_frames, FEAT_DIM))
     y = rng.random(n_frames)
     pipeline.fit(X, y)
 
-    from deepmd.dpa_adapt._backend import load_torch_file
+    from deepmd.dpa_adapt._backend import (
+        load_torch_file,
+    )
 
     bundle = {
-        "predictor":          pipeline,
-        "target_key":         "energy",
-        "type_map":           ["Cu", "O"],
-        "task_dim":           1,
-        "pretrained":         "fake.pt",
-        "pooling":            "mean",
-        "model_branch":       None,
-        "condition_manager":  None,
+        "predictor": pipeline,
+        "target_key": "energy",
+        "type_map": ["Cu", "O"],
+        "task_dim": 1,
+        "pretrained": "fake.pt",
+        "pooling": "mean",
+        "model_branch": None,
+        "condition_manager": None,
     }
     path = str(tmp_path / "rf_model.pth")
     _torch_for_test.save(bundle, path)
@@ -231,6 +274,7 @@ def _make_rf_bundle(tmp_path, n_frames=20):
 # Committee tests
 # ---------------------------------------------------------------------------
 
+
 class TestCommitteeFitPredict:
     """n_committee > 1 trains ensemble and returns mean+std."""
 
@@ -241,7 +285,9 @@ class TestCommitteeFitPredict:
         bundle_path = _make_mlp_bundle(tmp_path, n_frames=20)
 
         with (
-            patch.object(DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model),
+            patch.object(
+                DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model
+            ),
             patch.object(DPAFineTuner, "_extract_features", _mock_extract_features),
         ):
             pred = DPAPredictor(bundle_path, n_committee=5)
@@ -253,7 +299,9 @@ class TestCommitteeFitPredict:
         assert result.predictions.shape == (20, 1)
         assert result.uncertainty.shape == (20, 1)
         assert np.all(result.uncertainty >= 0)
-        assert np.any(result.uncertainty > 0), "Committee std should be > 0 for some samples"
+        assert np.any(result.uncertainty > 0), (
+            "Committee std should be > 0 for some samples"
+        )
 
 
 class TestCommitteeThreshold:
@@ -266,7 +314,9 @@ class TestCommitteeThreshold:
         bundle_path = _make_mlp_bundle(tmp_path, n_frames=20)
 
         with (
-            patch.object(DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model),
+            patch.object(
+                DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model
+            ),
             patch.object(DPAFineTuner, "_extract_features", _mock_extract_features),
         ):
             pred = DPAPredictor(bundle_path, n_committee=5)
@@ -286,7 +336,9 @@ class TestCommitteeN1BackwardCompat:
         _make_npy_system(system, n_frames=4)
 
         with (
-            patch.object(DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model),
+            patch.object(
+                DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model
+            ),
             patch.object(DPAFineTuner, "_extract_features", _mock_extract_features),
         ):
             ft = DPAFineTuner(pretrained="fake.pt", predictor="linear")
@@ -310,7 +362,9 @@ class TestReturnUncertaintyFalse:
         bundle_path = _make_mlp_bundle(tmp_path, n_frames=20)
 
         with (
-            patch.object(DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model),
+            patch.object(
+                DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model
+            ),
             patch.object(DPAFineTuner, "_extract_features", _mock_extract_features),
         ):
             pred = DPAPredictor(bundle_path, n_committee=5)
@@ -334,7 +388,9 @@ class TestRfUncertainty:
         bundle_path = _make_rf_bundle(tmp_path, n_frames=20)
 
         with (
-            patch.object(DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model),
+            patch.object(
+                DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model
+            ),
             patch.object(DPAFineTuner, "_extract_features", _mock_extract_features),
         ):
             pred = DPAPredictor(bundle_path)
@@ -359,7 +415,9 @@ class TestRidgeUncertaintyRaises:
         _make_npy_system(system, n_frames=4)
 
         with (
-            patch.object(DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model),
+            patch.object(
+                DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model
+            ),
             patch.object(DPAFineTuner, "_extract_features", _mock_extract_features),
         ):
             ft = DPAFineTuner(pretrained="fake.pt", predictor="linear")
@@ -374,6 +432,7 @@ class TestRidgeUncertaintyRaises:
 # ---------------------------------------------------------------------------
 # Multi-property tests
 # ---------------------------------------------------------------------------
+
 
 def _make_multi_npy_system(root: Path, n_frames: int = 5, n_atoms: int = 2) -> None:
     """Create a minimal system with homo.npy and lumo.npy label files."""
@@ -399,7 +458,9 @@ class TestMultiPropertyFit:
         _make_multi_npy_system(system, n_frames=n)
 
         with (
-            patch.object(DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model),
+            patch.object(
+                DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model
+            ),
             patch.object(DPAFineTuner, "_extract_features", _mock_extract_features),
         ):
             ft = DPAFineTuner(pretrained="fake.pt", predictor=predictor_type)
@@ -423,14 +484,18 @@ class TestMultiPropertyEvaluate:
         _make_multi_npy_system(system, n_frames=5)
 
         with (
-            patch.object(DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model),
+            patch.object(
+                DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model
+            ),
             patch.object(DPAFineTuner, "_extract_features", _mock_extract_features),
         ):
             ft = DPAFineTuner(pretrained="fake.pt", predictor="ridge")
             ft.fit(str(system), target_key=["homo", "lumo"])
             result = ft.evaluate(str(system))
 
-        assert isinstance(result.mae, dict), f"Expected dict mae, got {type(result.mae)}"
+        assert isinstance(result.mae, dict), (
+            f"Expected dict mae, got {type(result.mae)}"
+        )
         assert isinstance(result.rmse, dict)
         assert isinstance(result.r2, dict)
         assert set(result.mae.keys()) == {"homo", "lumo"}
@@ -447,14 +512,18 @@ class TestMultiPropertyEvaluate:
         _make_npy_system(system, n_frames=5)
 
         with (
-            patch.object(DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model),
+            patch.object(
+                DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model
+            ),
             patch.object(DPAFineTuner, "_extract_features", _mock_extract_features),
         ):
             ft = DPAFineTuner(pretrained="fake.pt", predictor="ridge")
             ft.fit(str(system), target_key="energy")
             result = ft.evaluate(str(system))
 
-        assert isinstance(result.mae, float), f"Expected float mae, got {type(result.mae)}"
+        assert isinstance(result.mae, float), (
+            f"Expected float mae, got {type(result.mae)}"
+        )
         assert isinstance(result.rmse, float)
         assert isinstance(result.r2, float)
 
@@ -468,7 +537,9 @@ class TestMultiPropertyFreezeRoundtrip:
         _make_multi_npy_system(system, n_frames=5)
 
         with (
-            patch.object(DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model),
+            patch.object(
+                DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model
+            ),
             patch.object(DPAFineTuner, "_extract_features", _mock_extract_features),
         ):
             ft = DPAFineTuner(pretrained="fake.pt", predictor="ridge")
@@ -488,7 +559,9 @@ class TestMultiPropertyFreezeRoundtrip:
         _make_multi_npy_system(system, n_frames=50)
 
         with (
-            patch.object(DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model),
+            patch.object(
+                DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model
+            ),
             patch.object(DPAFineTuner, "_extract_features", _mock_extract_features),
         ):
             ft = DPAFineTuner(pretrained="fake.pt", predictor="mlp")

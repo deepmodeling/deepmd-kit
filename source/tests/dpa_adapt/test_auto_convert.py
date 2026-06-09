@@ -1,11 +1,14 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Tests for ``auto_convert`` and the CSV-sniffing helpers."""
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
-from pathlib import Path
+from pathlib import (
+    Path,
+)
 
-import numpy as np
 import pytest
 
 try:
@@ -21,7 +24,6 @@ from deepmd.dpa_adapt.data.convert import (
     _sniff_xlsx,
     auto_convert,
 )
-
 
 # ---------------------------------------------------------------------------
 # CSV sniffing
@@ -70,7 +72,9 @@ class TestSniffXlsx:
         pd = pytest.importorskip("pandas")
         f = tmp_path / filename
         pd.DataFrame({"SMILES": ["CCO", "c1ccccc1"], "Prop": [1.0, 2.0]}).to_excel(
-            f, index=False, engine="openpyxl",
+            f,
+            index=False,
+            engine="openpyxl",
         )
         assert _is_smiles_input(str(f)) is True
 
@@ -78,7 +82,9 @@ class TestSniffXlsx:
         pd = pytest.importorskip("pandas")
         f = tmp_path / "data.xlsx"
         pd.DataFrame({"formula": ["H2O"], "energy": [1.0]}).to_excel(
-            f, index=False, engine="openpyxl",
+            f,
+            index=False,
+            engine="openpyxl",
         )
         assert _is_smiles_input(str(f)) is False
 
@@ -140,9 +146,7 @@ class TestAutoConvertStructure:
 
     def test_routes_poscar_to_dpdata(self, tmp_path):
         f = tmp_path / "POSCAR"
-        f.write_text(
-            "Si\n1.0\n5.43 0 0\n0 5.43 0\n0 0 5.43\nSi\n1\nCartesian\n0 0 0\n"
-        )
+        f.write_text("Si\n1.0\n5.43 0 0\n0 5.43 0\n0 0 5.43\nSi\n1\nCartesian\n0 0 0\n")
         out = tmp_path / "npy"
 
         result = auto_convert(str(f), str(out))
@@ -154,9 +158,7 @@ class TestAutoConvertStructure:
 
     def test_explicit_fmt_passed_through(self, tmp_path):
         f = tmp_path / "POSCAR"
-        f.write_text(
-            "Si\n1.0\n5.43 0 0\n0 5.43 0\n0 0 5.43\nSi\n1\nCartesian\n0 0 0\n"
-        )
+        f.write_text("Si\n1.0\n5.43 0 0\n0 5.43 0\n0 0 5.43\nSi\n1\nCartesian\n0 0 0\n")
         out = tmp_path / "npy2"
 
         result = auto_convert(str(f), str(out), fmt="vasp/poscar")
@@ -182,14 +184,17 @@ class TestSmoke:
     """Minimal round-trip: SMILES → npy → load_data."""
 
     def test_smiles_round_trip(self, tmp_path):
-        from deepmd.dpa_adapt.data.loader import load_data
+        from deepmd.dpa_adapt.data.loader import (
+            load_data,
+        )
 
         f = tmp_path / "round.csv"
         f.write_text("SMILES,Property\nCCO,1.5\nCN,2.0\n")
         out = tmp_path / "npy"
 
         result = auto_convert(
-            str(f), str(out),
+            str(f),
+            str(out),
             property_name="homo",
             property_col="Property",
         )

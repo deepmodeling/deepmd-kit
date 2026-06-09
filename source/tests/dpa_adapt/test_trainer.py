@@ -1,15 +1,23 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Tests for dpa_adapt.trainer.DPATrainer."""
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import os
-from pathlib import Path
-from unittest.mock import patch
+from pathlib import (
+    Path,
+)
+from unittest.mock import (
+    patch,
+)
 
 import pytest
 
-from deepmd.dpa_adapt.trainer import DPATrainer
-
+from deepmd.dpa_adapt.trainer import (
+    DPATrainer,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers / fixtures
@@ -32,17 +40,30 @@ def _fake_descriptor_sd() -> dict:
     descriptor = {
         "type": "dpa3",
         "repflow": {
-            "n_dim": 128, "e_dim": 64, "a_dim": 32, "nlayers": 16,
-            "e_rcut": 6.0, "e_rcut_smth": 5.3, "e_sel": 1200,
-            "a_rcut": 4.0, "a_rcut_smth": 3.5, "a_sel": 300,
-            "axis_neuron": 4, "skip_stat": True,
-            "a_compress_rate": 1, "a_compress_e_rate": 2,
+            "n_dim": 128,
+            "e_dim": 64,
+            "a_dim": 32,
+            "nlayers": 16,
+            "e_rcut": 6.0,
+            "e_rcut_smth": 5.3,
+            "e_sel": 1200,
+            "a_rcut": 4.0,
+            "a_rcut_smth": 3.5,
+            "a_sel": 300,
+            "axis_neuron": 4,
+            "skip_stat": True,
+            "a_compress_rate": 1,
+            "a_compress_e_rate": 2,
             "a_compress_use_split": True,
-            "update_angle": True, "smooth_edge_update": True,
-            "use_dynamic_sel": True, "sel_reduce_factor": 10.0,
+            "update_angle": True,
+            "smooth_edge_update": True,
+            "use_dynamic_sel": True,
+            "sel_reduce_factor": 10.0,
             "update_style": "res_residual",
-            "update_residual": 0.1, "update_residual_init": "const",
-            "n_multi_edge_message": 1, "optim_update": True,
+            "update_residual": 0.1,
+            "update_residual_init": "const",
+            "n_multi_edge_message": 1,
+            "optim_update": True,
             "use_exp_switch": True,
         },
         "activation_function": "custom_silu:3.0",
@@ -90,6 +111,7 @@ def _patch_torch_load():
 # 1. init validation
 # ---------------------------------------------------------------------------
 
+
 def test_init_validation(tmp_path, systems):
     train_glob, valid_glob = systems
 
@@ -130,6 +152,7 @@ def test_init_validation(tmp_path, systems):
 # 2. FT config
 # ---------------------------------------------------------------------------
 
+
 def test_config_ft(systems, dummy_ckpt, tmp_path):
     train_glob, valid_glob = systems
     t = DPATrainer(
@@ -158,6 +181,7 @@ def test_config_ft(systems, dummy_ckpt, tmp_path):
 # 4. LP config
 # ---------------------------------------------------------------------------
 
+
 def test_config_lp(systems, dummy_ckpt, tmp_path):
     train_glob, valid_glob = systems
     t = DPATrainer(
@@ -183,6 +207,7 @@ def test_config_lp(systems, dummy_ckpt, tmp_path):
 # ---------------------------------------------------------------------------
 # 5. Glob expansion
 # ---------------------------------------------------------------------------
+
 
 def test_glob_expansion(tmp_path):
     train_glob = _make_systems(tmp_path, "train", 70)
@@ -213,6 +238,7 @@ def test_glob_expansion(tmp_path):
 # ---------------------------------------------------------------------------
 # 6. evaluate() output parsing
 # ---------------------------------------------------------------------------
+
 
 def test_evaluate_parse(systems, tmp_path):
     train_glob, valid_glob = systems
@@ -250,13 +276,16 @@ def test_evaluate_parse(systems, tmp_path):
     assert out["n_frames"] == 42
     # evaluate() concatenates stdout + "\n" + stderr; canned_stdout must be in it.
     assert canned_stdout in out["_raw_stdout"]
-    assert "rmse" in out["_parser_pattern_used"].lower() or \
-           "mae" in out["_parser_pattern_used"].lower()
+    assert (
+        "rmse" in out["_parser_pattern_used"].lower()
+        or "mae" in out["_parser_pattern_used"].lower()
+    )
 
 
 # ---------------------------------------------------------------------------
 # 7. Parser: property-explicit pattern
 # ---------------------------------------------------------------------------
+
 
 def test_evaluate_parse_property_explicit():
     stdout = (
@@ -274,9 +303,11 @@ def test_evaluate_parse_property_explicit():
 # 8. Parser: property format (no generic fallback — removed during refactor)
 # ---------------------------------------------------------------------------
 
+
 def test_evaluate_parse_property_format_explicit():
     """Parser auto-detects PROPERTY output and matches the well-anchored regex.
-    Generic \brmse\b / \bmae\b fallback patterns were removed."""
+    Generic \brmse\b / \bmae\b fallback patterns were removed.
+    """
     stdout = (
         "DEEPMD INFO    PROPERTY MAE            : 0.0234 units\n"
         "DEEPMD INFO    PROPERTY RMSE           : 0.0150 units\n"
@@ -291,6 +322,7 @@ def test_evaluate_parse_property_format_explicit():
 # 9. Parser: unparseable input raises RuntimeError
 # ---------------------------------------------------------------------------
 
+
 def test_evaluate_parse_unparseable():
     stdout = "no numbers here"
     with pytest.raises(RuntimeError) as exc_info:
@@ -301,6 +333,7 @@ def test_evaluate_parse_unparseable():
 # ---------------------------------------------------------------------------
 # 10. Idempotency: skip when a longer checkpoint exists
 # ---------------------------------------------------------------------------
+
 
 def test_idempotency_skip_when_longer_ckpt_exists(systems, tmp_path):
     train_glob, valid_glob = systems
@@ -327,6 +360,7 @@ def test_idempotency_skip_when_longer_ckpt_exists(systems, tmp_path):
 # 11. Idempotency: retrain when only a shorter checkpoint exists
 # ---------------------------------------------------------------------------
 
+
 def test_idempotency_retrain_when_shorter_ckpt_exists(systems, tmp_path):
     train_glob, valid_glob = systems
     out_dir = tmp_path / "out_retrain"
@@ -348,8 +382,10 @@ def test_idempotency_retrain_when_shorter_ckpt_exists(systems, tmp_path):
 
     def _fake_run(cmd, *args, **kwargs):
         final_ckpt.write_bytes(b"")
+
         class R:
             returncode = 0
+
         return R()
 
     with patch("subprocess.run", side_effect=_fake_run) as run_mock:
@@ -361,6 +397,7 @@ def test_idempotency_retrain_when_shorter_ckpt_exists(systems, tmp_path):
 # ---------------------------------------------------------------------------
 # 12. Seed propagation
 # ---------------------------------------------------------------------------
+
 
 def test_seed_propagation(systems, tmp_path):
     train_glob, valid_glob = systems
@@ -386,9 +423,11 @@ def test_seed_propagation(systems, tmp_path):
 # 13. Parser: takes weighted-average (last) match
 # ---------------------------------------------------------------------------
 
+
 def test_evaluate_parse_takes_weighted_average():
     """When dp prints per-system + weighted-average blocks, return the
-    weighted average (last match)."""
+    weighted average (last match).
+    """
     stdout = (
         "PROPERTY MAE  : 0.10 units\n"
         "PROPERTY RMSE : 0.20 units\n"
@@ -407,10 +446,12 @@ def test_evaluate_parse_takes_weighted_average():
 # 14. evaluate() combines stdout + stderr
 # ---------------------------------------------------------------------------
 
+
 def test_evaluate_combines_stderr(systems, tmp_path):
     train_glob, valid_glob = systems
     t = DPATrainer(
-        train_systems=train_glob, valid_systems=valid_glob,
+        train_systems=train_glob,
+        valid_systems=valid_glob,
         type_map=DUMMY_TYPE_MAP,
         output_dir=str(tmp_path / "out_stderr"),
     )
@@ -439,13 +480,16 @@ def test_evaluate_combines_stderr(systems, tmp_path):
 # 15. evaluate() writes datafile and passes -f, not -s
 # ---------------------------------------------------------------------------
 
+
 def test_evaluate_writes_datafile_and_uses_f_flag(systems, tmp_path):
     """evaluate() must write a datafile with one system per line and
-    pass it to dp test via -f (single value), not multiplex -s flags."""
+    pass it to dp test via -f (single value), not multiplex -s flags.
+    """
     train_glob, valid_glob = systems
     out_dir = tmp_path / "out_datafile"
     t = DPATrainer(
-        train_systems=train_glob, valid_systems=valid_glob,
+        train_systems=train_glob,
+        valid_systems=valid_glob,
         type_map=DUMMY_TYPE_MAP,
         output_dir=str(out_dir),
     )

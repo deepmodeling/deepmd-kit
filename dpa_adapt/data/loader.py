@@ -1,18 +1,27 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 # data/loader.py
 #
 # Polymorphic entry point: normalises str / Path / glob / dpdata objects
 # into a flat list[dpdata.System].  Disk I/O and format detection are
 # delegated to dpdata.
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import glob as _glob
-from pathlib import Path
-from typing import List, Optional, Union
+from pathlib import (
+    Path,
+)
+from typing import (
+    Union,
+)
 
 import dpdata
 
-from dpa_adapt.data.errors import DPADataError
+from dpa_adapt.data.errors import (
+    DPADataError,
+)
 
 _SOURCE_ATTR = "_dpa_source"
 
@@ -32,18 +41,18 @@ def _resolve_label_key(key: str) -> str:
 
 # Type alias covering every form the public API accepts.
 _SystemLike = Union[str, Path, dpdata.System, dpdata.LabeledSystem]
-_DataInput = Union[_SystemLike, List[_SystemLike]]
+_DataInput = Union[_SystemLike, list[_SystemLike]]
 
 
-def _get_source(system) -> Optional[str]:
+def _get_source(system) -> str | None:
     """Return the source path stored on a system, or None."""
     return getattr(system, _SOURCE_ATTR, None)
 
 
 def load_data(
     data: _DataInput,
-    fmt: Optional[str] = None,
-) -> List[dpdata.System]:
+    fmt: str | None = None,
+) -> list[dpdata.System]:
     """
     Normalise arbitrary data input into a flat list of ``dpdata.System``.
 
@@ -72,7 +81,7 @@ def load_data(
     """
     # 1. List → recurse and flatten
     if isinstance(data, list):
-        result: List[dpdata.System] = []
+        result: list[dpdata.System] = []
         for item in data:
             result.extend(load_data(item, fmt=fmt))
         return result
@@ -96,7 +105,7 @@ def load_data(
                     "Pass fmt= explicitly or load these separately."
                 )
 
-        result: List[dpdata.System] = []
+        result: list[dpdata.System] = []
         for match in matches:
             result.extend(load_data(match, fmt=fmt))
         return result

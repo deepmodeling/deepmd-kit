@@ -1,32 +1,47 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 # data/dataset.py
 #
 # Label-aware data loading for supervised training / fine-tuning.
 # Thin layer on top of load_data() that additionally verifies every
 # system carries the requested label key (e.g. "energy", "homo").
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import logging
-from pathlib import Path
-from typing import List, Optional, Union
+from pathlib import (
+    Path,
+)
+from typing import (
+    Union,
+)
 
 import dpdata
 
-from dpa_adapt.data.errors import DPADataError
-from dpa_adapt.data.loader import load_data, _resolve_label_key
+from dpa_adapt.data.errors import (
+    DPADataError,
+)
+from dpa_adapt.data.loader import (
+    _resolve_label_key,
+    load_data,
+)
 
 _LOG = logging.getLogger("dpa_adapt.data.dataset")
 
 _DataInput = Union[
-    str, Path, dpdata.System, dpdata.LabeledSystem,
-    List[Union[str, Path, dpdata.System, dpdata.LabeledSystem]],
+    str,
+    Path,
+    dpdata.System,
+    dpdata.LabeledSystem,
+    list[str | Path | dpdata.System | dpdata.LabeledSystem],
 ]
 
 
 def load_dataset(
     data: _DataInput,
     label_key: str = "energy",
-) -> List[dpdata.LabeledSystem]:
+) -> list[dpdata.LabeledSystem]:
     """
     Load systems and keep only those that carry *label_key*.
 
@@ -56,8 +71,8 @@ def load_dataset(
 
     resolved_key = _resolve_label_key(label_key)
 
-    validated: List[dpdata.LabeledSystem] = []
-    skipped: List[str] = []
+    validated: list[dpdata.LabeledSystem] = []
+    skipped: list[str] = []
 
     for i, system in enumerate(systems):
         # dpdata stores everything (coords, energies, forces, ...) in the

@@ -1,13 +1,20 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Minimal demo: frozen_sklearn + Ridge on QM9 HOMO–LUMO gap."""
+
 import sys
-from pathlib import Path
+from pathlib import (
+    Path,
+)
 
 # Ensure repo root is on sys.path so `dpa_adapt` is importable
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
 
 import numpy as np
-from dpa_adapt import DPAFineTuner
+
+from dpa_adapt import (
+    DPAFineTuner,
+)
 
 HERE = Path(__file__).resolve().parent.parent
 DATA = HERE / "data"

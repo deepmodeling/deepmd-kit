@@ -10,15 +10,16 @@ handlers (and the DPA stack) are imported lazily only when a subcommand
 actually runs.
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import argparse
 import json
 import logging
 import os
 import sys
-import textwrap
-from typing import Sequence
+from collections.abc import Sequence
 
 import numpy as np
 
@@ -57,7 +58,9 @@ def _set_log_handles(level: int, log_path: str | None = None) -> None:
     # Avoid duplicate handlers on repeated calls
     if logger.handlers:
         return
-    formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
     console = logging.StreamHandler(sys.stdout)
     console.setLevel(level)
     console.setFormatter(formatter)
@@ -89,7 +92,9 @@ class _RawTextArgDefaultsHelpFormatter(
 
 
 def _cmd_fit(args: argparse.Namespace) -> int:
-    from dpa_adapt import DPAFineTuner
+    from dpa_adapt import (
+        DPAFineTuner,
+    )
 
     train = _maybe_split_list(args.train_data) or [args.train_data]
     valid = _maybe_split_list(args.valid_data) if args.valid_data else None
@@ -135,10 +140,16 @@ def _cmd_fit(args: argparse.Namespace) -> int:
         downstream_batch_size=args.downstream_batch_size,
         fparam_dim=args.fparam_dim,
     )
-    aux_data = (_maybe_split_list(args.aux_data) or [args.aux_data]
-                if args.aux_data else None)
-    model.fit(train_data=train, valid_data=valid, type_map=type_map,
-              target_key=target_key, aux_data=aux_data)
+    aux_data = (
+        _maybe_split_list(args.aux_data) or [args.aux_data] if args.aux_data else None
+    )
+    model.fit(
+        train_data=train,
+        valid_data=valid,
+        type_map=type_map,
+        target_key=target_key,
+        aux_data=aux_data,
+    )
     if args.strategy == "frozen_sklearn":
         out = model.freeze(args.output)
         _LOG.info("Frozen model → %s", out)
@@ -148,7 +159,11 @@ def _cmd_fit(args: argparse.Namespace) -> int:
 
 
 def _cmd_cv(args: argparse.Namespace) -> int:
-    from dpa_adapt import DPAFineTuner, cross_validate, load_dataset
+    from dpa_adapt import (
+        DPAFineTuner,
+        cross_validate,
+        load_dataset,
+    )
 
     systems = load_dataset(args.data, label_key=args.label_key)
     print(f"{len(systems)} systems")
@@ -161,7 +176,8 @@ def _cmd_cv(args: argparse.Namespace) -> int:
         seed=args.seed,
     )
     result = cross_validate(
-        model, systems,
+        model,
+        systems,
         label_key=args.label_key,
         cv=args.cv if args.cv == "holdout" else int(args.cv),
         group_by=args.group_by or "formula",
@@ -169,9 +185,15 @@ def _cmd_cv(args: argparse.Namespace) -> int:
         seed=args.seed,
     )
     a = result["aggregate"]
-    print(f"R²  = {a.get('r2_mean', float('nan')):.4f} ± {a.get('r2_std', float('nan')):.4f}")
-    print(f"MAE = {a.get('mae_mean', float('nan')):.4f} ± {a.get('mae_std', float('nan')):.4f}")
-    print(f"RMSE= {a.get('rmse_mean', float('nan')):.4f} ± {a.get('rmse_std', float('nan')):.4f}")
+    print(
+        f"R²  = {a.get('r2_mean', float('nan')):.4f} ± {a.get('r2_std', float('nan')):.4f}"
+    )
+    print(
+        f"MAE = {a.get('mae_mean', float('nan')):.4f} ± {a.get('mae_std', float('nan')):.4f}"
+    )
+    print(
+        f"RMSE= {a.get('rmse_mean', float('nan')):.4f} ± {a.get('rmse_std', float('nan')):.4f}"
+    )
     print(f"n   = {result['n_independent']} independent groups")
     for w in result.get("warnings", []):
         print(f"[!] {w}")
@@ -179,7 +201,9 @@ def _cmd_cv(args: argparse.Namespace) -> int:
 
 
 def _cmd_extract_descriptors(args: argparse.Namespace) -> int:
-    from dpa_adapt.finetuner import extract_descriptors
+    from dpa_adapt.finetuner import (
+        extract_descriptors,
+    )
 
     X = extract_descriptors(
         args.data,
@@ -194,7 +218,9 @@ def _cmd_extract_descriptors(args: argparse.Namespace) -> int:
 
 
 def _cmd_predict(args: argparse.Namespace) -> int:
-    from dpa_adapt import DPAPredictor
+    from dpa_adapt import (
+        DPAPredictor,
+    )
 
     predictor = DPAPredictor(args.model)
     result = predictor.predict(args.data)
@@ -204,7 +230,9 @@ def _cmd_predict(args: argparse.Namespace) -> int:
 
 
 def _cmd_evaluate(args: argparse.Namespace) -> int:
-    from dpa_adapt import DPAPredictor
+    from dpa_adapt import (
+        DPAPredictor,
+    )
 
     predictor = DPAPredictor(args.model)
     metrics = predictor.evaluate(args.data)
@@ -216,24 +244,31 @@ def _cmd_evaluate(args: argparse.Namespace) -> int:
 
 
 def _cmd_data_convert(args: argparse.Namespace) -> int:
-    import glob as _glob
 
     type_map = _maybe_split_list(args.type_map)
     input_val = args.input
 
     # Detect glob patterns — batch mode.
     if any(ch in input_val for ch in "*?["):
-        from dpa_adapt import batch_convert
+        from dpa_adapt import (
+            batch_convert,
+        )
 
         outputs = batch_convert(
-            glob_pattern=input_val, output_dir=args.output, fmt=args.fmt or "auto",
-            type_map=type_map, validate=args.validate, strict=args.strict,
+            glob_pattern=input_val,
+            output_dir=args.output,
+            fmt=args.fmt or "auto",
+            type_map=type_map,
+            validate=args.validate,
+            strict=args.strict,
         )
         _LOG.info("Wrote %d deepmd/npy dirs under %s", len(outputs), args.output)
         return 0
 
     # Single-file mode.
-    from dpa_adapt.data.convert import auto_convert
+    from dpa_adapt.data.convert import (
+        auto_convert,
+    )
 
     result = auto_convert(
         input_path=input_val,
@@ -269,8 +304,12 @@ def _cmd_data_convert(args: argparse.Namespace) -> int:
 
 
 def _cmd_data_validate(args: argparse.Namespace) -> int:
-    from dpa_adapt import check_data
-    from dpa_adapt.data.loader import load_data
+    from dpa_adapt import (
+        check_data,
+    )
+    from dpa_adapt.data.loader import (
+        load_data,
+    )
 
     systems = load_data(args.data)
     issues = check_data(systems, strict=False)
@@ -286,8 +325,12 @@ def _cmd_data_validate(args: argparse.Namespace) -> int:
 
 
 def _cmd_data_attach_labels(args: argparse.Namespace) -> int:
-    from dpa_adapt import attach_labels
-    from dpa_adapt.data.loader import load_data
+    from dpa_adapt import (
+        attach_labels,
+    )
+    from dpa_adapt.data.loader import (
+        load_data,
+    )
 
     values = np.load(args.values)
     if args.head_json:
@@ -297,9 +340,9 @@ def _cmd_data_attach_labels(args: argparse.Namespace) -> int:
     systems = load_data(args.data)
     if len(systems) != 1:
         _LOG.warning(
-            "attach-labels: expected 1 system from %r, got %d; "
-            "attaching to first.",
-            args.data, len(systems),
+            "attach-labels: expected 1 system from %r, got %d; attaching to first.",
+            args.data,
+            len(systems),
         )
     attach_labels(systems[0], head=head, values=values)
     _LOG.info("Labels attached to %s", args.data)
@@ -339,7 +382,9 @@ def get_parser() -> argparse.ArgumentParser:
         The fully configured parser for the ``dpa`` CLI.
     """
     try:
-        from dpa_adapt import __version__
+        from dpa_adapt import (
+            __version__,
+        )
     except ImportError:
         __version__ = "unknown"
 
@@ -354,14 +399,16 @@ def get_parser() -> argparse.ArgumentParser:
         add_help=False, formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     parser_log.add_argument(
-        "-v", "--log-level",
+        "-v",
+        "--log-level",
         choices=["DEBUG", "3", "INFO", "2", "WARNING", "1", "ERROR", "0"],
         default="INFO",
         help="set verbosity level by string or number, 0=ERROR, 1=WARNING, "
         "2=INFO and 3=DEBUG",
     )
     parser_log.add_argument(
-        "-l", "--log-path",
+        "-l",
+        "--log-path",
         type=str,
         default=None,
         help="set log file to log messages to disk, if not specified, "
@@ -380,17 +427,22 @@ def get_parser() -> argparse.ArgumentParser:
         help="Extract pooled DPA descriptors to .npy",
         parents=[parser_log],
     )
-    parser_extract.add_argument("--data", required=True, nargs="+",
-                                help="System directories.")
-    parser_extract.add_argument("--pretrained", required=True,
-                                help="Path to DPA checkpoint (.pt).")
+    parser_extract.add_argument(
+        "--data", required=True, nargs="+", help="System directories."
+    )
+    parser_extract.add_argument(
+        "--pretrained", required=True, help="Path to DPA checkpoint (.pt)."
+    )
     parser_extract.add_argument("--model-branch", default=None)
-    parser_extract.add_argument("--pooling", default="mean",
-                                choices=["mean", "sum", "mean+std", "mean+std+max+min"])
-    parser_extract.add_argument("--output", required=True,
-                                help="Output .npy path.")
-    parser_extract.add_argument("--no-cache", action="store_true",
-                                help="Bypass descriptor cache.")
+    parser_extract.add_argument(
+        "--pooling",
+        default="mean",
+        choices=["mean", "sum", "mean+std", "mean+std+max+min"],
+    )
+    parser_extract.add_argument("--output", required=True, help="Output .npy path.")
+    parser_extract.add_argument(
+        "--no-cache", action="store_true", help="Bypass descriptor cache."
+    )
 
     # -- fit -----------------------------------------------------------------
     parser_fit = subparsers.add_parser(
@@ -398,25 +450,40 @@ def get_parser() -> argparse.ArgumentParser:
         help="Train a model (any strategy)",
         parents=[parser_log],
     )
-    parser_fit.add_argument("--train-data", required=True, nargs="+",
-                            help="Training system directories.")
-    parser_fit.add_argument("--valid-data", default=None, nargs="+",
-                            help="Validation system directories.")
-    parser_fit.add_argument("--pretrained", default="DPA-3.1-3M",
-                            help="Path to DPA checkpoint (.pt).")
+    parser_fit.add_argument(
+        "--train-data", required=True, nargs="+", help="Training system directories."
+    )
+    parser_fit.add_argument(
+        "--valid-data", default=None, nargs="+", help="Validation system directories."
+    )
+    parser_fit.add_argument(
+        "--pretrained", default="DPA-3.1-3M", help="Path to DPA checkpoint (.pt)."
+    )
     parser_fit.add_argument("--model-branch", default=None)
-    parser_fit.add_argument("--strategy", default="frozen_sklearn",
-                            choices=["frozen_sklearn", "linear_probe", "finetune", "mft"])
-    parser_fit.add_argument("--predictor", default="rf",
-                            choices=["rf", "linear", "ridge", "mlp"])
-    parser_fit.add_argument("--pooling", default="mean",
-                            choices=["mean", "sum", "mean+std", "mean+std+max+min"])
-    parser_fit.add_argument("--target-key", default=None,
-                            help="Label key under set.*/ (e.g. energy, homo, bandgap).")
+    parser_fit.add_argument(
+        "--strategy",
+        default="frozen_sklearn",
+        choices=["frozen_sklearn", "linear_probe", "finetune", "mft"],
+    )
+    parser_fit.add_argument(
+        "--predictor", default="rf", choices=["rf", "linear", "ridge", "mlp"]
+    )
+    parser_fit.add_argument(
+        "--pooling",
+        default="mean",
+        choices=["mean", "sum", "mean+std", "mean+std+max+min"],
+    )
+    parser_fit.add_argument(
+        "--target-key",
+        default=None,
+        help="Label key under set.*/ (e.g. energy, homo, bandgap).",
+    )
     parser_fit.add_argument("--output", default="frozen_model.pth")
     parser_fit.add_argument("--type-map", default=None)
     parser_fit.add_argument("--task-dim", type=int, default=1)
-    parser_fit.add_argument("--intensive", action=argparse.BooleanOptionalAction, default=True)
+    parser_fit.add_argument(
+        "--intensive", action=argparse.BooleanOptionalAction, default=True
+    )
     parser_fit.add_argument("--max-steps", type=int, default=100_000)
     parser_fit.add_argument("--learning-rate", type=float, default=1e-3)
     parser_fit.add_argument("--stop-lr", type=float, default=1e-5)
@@ -426,27 +493,54 @@ def get_parser() -> argparse.ArgumentParser:
     parser_fit.add_argument("--save-freq", type=int, default=10_000)
     parser_fit.add_argument("--disp-freq", type=int, default=1_000)
     # MFT-only flags
-    parser_fit.add_argument("--aux-data", default=None, nargs="+",
-                            help="(mft) Auxiliary system directories.")
-    parser_fit.add_argument("--aux-branch", default="MP_traj_v024_alldata_mixu",
-                            help="(mft) Aux branch name in checkpoint.")
-    parser_fit.add_argument("--aux-prob", type=float, default=0.5,
-                            help="(mft) Sampling weight for aux branch.")
-    parser_fit.add_argument("--aux-type-map", default=None,
-                            help="(mft) Comma-separated aux element symbols.")
-    parser_fit.add_argument("--downstream-type-map", default=None,
-                            help="(mft) Comma-separated downstream element symbols.")
-    parser_fit.add_argument("--downstream-task-type", default="property",
-                            choices=["ener", "property"],
-                            help="(mft) Downstream head type.")
-    parser_fit.add_argument("--aux-batch-size", default=None,
-                            help="(mft) Batch size for aux branch.")
-    parser_fit.add_argument("--downstream-batch-size", type=int, default=None,
-                            help="(mft) Batch size for downstream.")
     parser_fit.add_argument(
-        "--fparam-dim", type=int, default=0,
+        "--aux-data",
+        default=None,
+        nargs="+",
+        help="(mft) Auxiliary system directories.",
+    )
+    parser_fit.add_argument(
+        "--aux-branch",
+        default="MP_traj_v024_alldata_mixu",
+        help="(mft) Aux branch name in checkpoint.",
+    )
+    parser_fit.add_argument(
+        "--aux-prob",
+        type=float,
+        default=0.5,
+        help="(mft) Sampling weight for aux branch.",
+    )
+    parser_fit.add_argument(
+        "--aux-type-map",
+        default=None,
+        help="(mft) Comma-separated aux element symbols.",
+    )
+    parser_fit.add_argument(
+        "--downstream-type-map",
+        default=None,
+        help="(mft) Comma-separated downstream element symbols.",
+    )
+    parser_fit.add_argument(
+        "--downstream-task-type",
+        default="property",
+        choices=["ener", "property"],
+        help="(mft) Downstream head type.",
+    )
+    parser_fit.add_argument(
+        "--aux-batch-size", default=None, help="(mft) Batch size for aux branch."
+    )
+    parser_fit.add_argument(
+        "--downstream-batch-size",
+        type=int,
+        default=None,
+        help="(mft) Batch size for downstream.",
+    )
+    parser_fit.add_argument(
+        "--fparam-dim",
+        type=int,
+        default=0,
         help="(linear_probe/finetune/mft) Dimensionality of per-frame condition "
-             "inputs (fparam). Requires set.*/fparam.npy in training data. Default: 0."
+        "inputs (fparam). Requires set.*/fparam.npy in training data. Default: 0.",
     )
 
     # -- cv ------------------------------------------------------------------
@@ -455,20 +549,27 @@ def get_parser() -> argparse.ArgumentParser:
         help="Cross-validate frozen_sklearn baseline",
         parents=[parser_log],
     )
-    parser_cv.add_argument("--data", required=True, nargs="+",
-                           help="System directories.")
+    parser_cv.add_argument(
+        "--data", required=True, nargs="+", help="System directories."
+    )
     parser_cv.add_argument("--label-key", default="energy")
-    parser_cv.add_argument("--pretrained", default="DPA-3.1-3M",
-                           help="Path to DPA checkpoint (.pt).")
+    parser_cv.add_argument(
+        "--pretrained", default="DPA-3.1-3M", help="Path to DPA checkpoint (.pt)."
+    )
     parser_cv.add_argument("--model-branch", default=None)
-    parser_cv.add_argument("--predictor", default="rf",
-                           choices=["rf", "linear", "ridge", "mlp"])
-    parser_cv.add_argument("--pooling", default="mean",
-                           choices=["mean", "sum", "mean+std", "mean+std+max+min"])
+    parser_cv.add_argument(
+        "--predictor", default="rf", choices=["rf", "linear", "ridge", "mlp"]
+    )
+    parser_cv.add_argument(
+        "--pooling",
+        default="mean",
+        choices=["mean", "sum", "mean+std", "mean+std+max+min"],
+    )
     parser_cv.add_argument("--cv", default="5")
     parser_cv.add_argument("--group-by", default="formula")
-    parser_cv.add_argument("--granularity", default="composition",
-                           choices=["frame", "composition"])
+    parser_cv.add_argument(
+        "--granularity", default="composition", choices=["frame", "composition"]
+    )
     parser_cv.add_argument("--seed", type=int, default=42)
 
     # -- predict -------------------------------------------------------------
@@ -477,12 +578,11 @@ def get_parser() -> argparse.ArgumentParser:
         help="Predict with a frozen .pth bundle",
         parents=[parser_log],
     )
-    parser_predict.add_argument("--model", required=True,
-                                help="Path to frozen .pth.")
-    parser_predict.add_argument("--data", required=True, nargs="+",
-                                help="System directories.")
-    parser_predict.add_argument("--output", required=True,
-                                help="Output .npy path.")
+    parser_predict.add_argument("--model", required=True, help="Path to frozen .pth.")
+    parser_predict.add_argument(
+        "--data", required=True, nargs="+", help="System directories."
+    )
+    parser_predict.add_argument("--output", required=True, help="Output .npy path.")
 
     # -- evaluate ------------------------------------------------------------
     parser_evaluate = subparsers.add_parser(
@@ -490,10 +590,10 @@ def get_parser() -> argparse.ArgumentParser:
         help="Evaluate a frozen .pth against stored labels",
         parents=[parser_log],
     )
-    parser_evaluate.add_argument("--model", required=True,
-                                 help="Path to frozen .pth.")
-    parser_evaluate.add_argument("--data", required=True, nargs="+",
-                                 help="System directories.")
+    parser_evaluate.add_argument("--model", required=True, help="Path to frozen .pth.")
+    parser_evaluate.add_argument(
+        "--data", required=True, nargs="+", help="System directories."
+    )
 
     # -- data (nested group) -------------------------------------------------
     parser_data = subparsers.add_parser(
@@ -514,13 +614,18 @@ def get_parser() -> argparse.ArgumentParser:
     )
     parser_data_convert.add_argument("--input", required=True)
     parser_data_convert.add_argument("--output", required=True)
-    parser_data_convert.add_argument("--fmt", default=None,
-                                     help="Format hint (auto-detected if omitted). "
-                                          "Use 'smiles' for CSV+SMILES, 'formula' for "
-                                          "CSV+POSCAR composition formulas, otherwise "
-                                          "dpdata format string (extxyz, vasp/poscar, …).")
+    parser_data_convert.add_argument(
+        "--fmt",
+        default=None,
+        help="Format hint (auto-detected if omitted). "
+        "Use 'smiles' for CSV+SMILES, 'formula' for "
+        "CSV+POSCAR composition formulas, otherwise "
+        "dpdata format string (extxyz, vasp/poscar, …).",
+    )
     parser_data_convert.add_argument("--type-map", default=None)
-    parser_data_convert.add_argument("--no-validate", dest="validate", action="store_false")
+    parser_data_convert.add_argument(
+        "--no-validate", dest="validate", action="store_false"
+    )
     parser_data_convert.add_argument("--strict", action="store_true")
     parser_data_convert.add_argument("--property-name", default="Property")
     parser_data_convert.add_argument("--property-col", default="Property")
@@ -528,17 +633,26 @@ def get_parser() -> argparse.ArgumentParser:
     parser_data_convert.add_argument("--mol-dir", default=None)
     parser_data_convert.add_argument("--train-ratio", type=float, default=0.9)
     parser_data_convert.add_argument("--seed", type=int, default=42)
-    parser_data_convert.add_argument("--poscar", default=None,
-                                     help="Template POSCAR for fmt=formula.")
-    parser_data_convert.add_argument("--base-element", default=None,
-                                     help="Sublattice element to substitute "
-                                          "(fmt=formula). Auto-inferred if omitted.")
-    parser_data_convert.add_argument("--formula-col", default=0,
-                                     help="Column index or name for the formula "
-                                          "(fmt=formula, default: 0).")
-    parser_data_convert.add_argument("--sets", type=int, default=1,
-                                     help="Random structures per formula "
-                                          "(fmt=formula, default: 1).")
+    parser_data_convert.add_argument(
+        "--poscar", default=None, help="Template POSCAR for fmt=formula."
+    )
+    parser_data_convert.add_argument(
+        "--base-element",
+        default=None,
+        help="Sublattice element to substitute "
+        "(fmt=formula). Auto-inferred if omitted.",
+    )
+    parser_data_convert.add_argument(
+        "--formula-col",
+        default=0,
+        help="Column index or name for the formula (fmt=formula, default: 0).",
+    )
+    parser_data_convert.add_argument(
+        "--sets",
+        type=int,
+        default=1,
+        help="Random structures per formula (fmt=formula, default: 1).",
+    )
     parser_data_convert.add_argument("--overwrite", action="store_true")
 
     # data validate
@@ -592,7 +706,9 @@ def main(args: Sequence[str] | None = None) -> None:
         if parsed_args.command == "data":
             handler = _DATA_DISPATCH.get(parsed_args.data_command)
             if handler is None:
-                print(f"Unknown data command: {parsed_args.data_command}", file=sys.stderr)
+                print(
+                    f"Unknown data command: {parsed_args.data_command}", file=sys.stderr
+                )
                 sys.exit(1)
             sys.exit(handler(parsed_args))
         else:
@@ -603,7 +719,9 @@ def main(args: Sequence[str] | None = None) -> None:
             sys.exit(handler(parsed_args))
     except Exception as exc:
         # Lazy-import DPADataError so that --help doesn't trigger heavy imports.
-        from dpa_adapt.data.errors import DPADataError
+        from dpa_adapt.data.errors import (
+            DPADataError,
+        )
 
         if isinstance(exc, DPADataError):
             print(f"error: {exc}", file=sys.stderr)

@@ -29,25 +29,27 @@ For a complete runnable example (QM9 HOMO–LUMO gap, ~5 min on CPU), see [`../.
 
 The strategy is the core choice. All four share the same pre-trained DPA backbone and differ in how much of it gets updated:
 
-| Strategy | Core Mechanism | Target Data Size | Hardware | Primary Use Case |
-|:---------|:--------------|:----------------|:---------|:----------------|
-| `frozen_sklearn` | Frozen backbone + scikit-learn regressor | Small (<1k) | CPU only | Ultra-fast benchmarking & prototyping |
-| `linear_probe` | Frozen backbone + gradient-descent linear head | Medium (1k–10k) | CPU / GPU | Balanced efficiency for linear properties |
-| `finetune` | End-to-end full parameter fine-tuning | Large (>10k) | GPU required | Maximum accuracy on large datasets |
-| `mft` | Multi-task co-training (property + force field) | Small / low-data | GPU required | Mitigating representation collapse |
+| Strategy         | Core Mechanism                                  | Target Data Size | Hardware     | Primary Use Case                          |
+| :--------------- | :---------------------------------------------- | :--------------- | :----------- | :---------------------------------------- |
+| `frozen_sklearn` | Frozen backbone + scikit-learn regressor        | Small (\<1k)     | CPU only     | Ultra-fast benchmarking & prototyping     |
+| `linear_probe`   | Frozen backbone + gradient-descent linear head  | Medium (1k–10k)  | CPU / GPU    | Balanced efficiency for linear properties |
+| `finetune`       | End-to-end full parameter fine-tuning           | Large (>10k)     | GPU required | Maximum accuracy on large datasets        |
+| `mft`            | Multi-task co-training (property + force field) | Small / low-data | GPU required | Mitigating representation collapse        |
 
 ```python
 # frozen_sklearn — CPU, no dp train, three predictor choices
 model = DPAFineTuner(
     pretrained="DPA-3.1-3M",
     strategy="frozen_sklearn",
-    predictor="rf",       # "rf" | "linear" | "mlp"
-    pooling="mean",       # "mean" | "sum" | "mean+std" | "mean+std+max+min"
+    predictor="rf",  # "rf" | "linear" | "mlp"
+    pooling="mean",  # "mean" | "sum" | "mean+std" | "mean+std+max+min"
 )
 model.fit(train_data="/data/train", target_key="homo")
 
 # linear_probe / finetune — same interface, different depth
-model = DPAFineTuner(pretrained="DPA-3.1-3M", strategy="linear_probe", property_name="homo")
+model = DPAFineTuner(
+    pretrained="DPA-3.1-3M", strategy="linear_probe", property_name="homo"
+)
 model.fit(train_data="/data/train", valid_data="/data/valid", target_key="homo")
 
 # mft — downstream property head + auxiliary force-field head jointly
@@ -78,11 +80,12 @@ auto_convert("data.csv", "./npy", property_name="homo", property_col="HOMO")
 # CSV: two columns, formula and property value (header optional)
 # e.g.  Ni0.65Gd0.15Fe0.10Co0.05Yb0.05O2H1    291.9
 auto_convert(
-    "compositions.csv", "./npy",
+    "compositions.csv",
+    "./npy",
     fmt="formula",
     poscar="template.POSCAR",
     property_name="overpotential",
-    sets=3,    # random doped structures per composition (default: 1)
+    sets=3,  # random doped structures per composition (default: 1)
 )
 ```
 
@@ -93,7 +96,7 @@ from dpa_adapt import convert, attach_labels, check_data
 
 convert("calcs/**/OUTCAR", "./npy", fmt="vasp/outcar")
 attach_labels(system, head="bandgap", values=np.array([1.0, 2.0, 3.0]))
-check_data("/data/system")   # → list[Issue]
+check_data("/data/system")  # → list[Issue]
 ```
 
 ### Context features (fparam)
@@ -123,9 +126,10 @@ After training, save a portable frozen bundle and load it with `DPAPredictor` �
 model.freeze("model.pth")
 
 from dpa_adapt import DPAPredictor
+
 pred = DPAPredictor("model.pth")
-result  = pred.predict("/data/test")    # DotDict: .predictions
-metrics = pred.evaluate("/data/test")   # DotDict: .mae, .rmse, .r2
+result = pred.predict("/data/test")  # DotDict: .predictions
+metrics = pred.evaluate("/data/test")  # DotDict: .mae, .rmse, .r2
 ```
 
 Uncertainty estimation is available for `frozen_sklearn` models:
@@ -161,19 +165,19 @@ result = cross_validate(model, systems, label_key="energy", cv=5, group_by="form
 
 ```python
 from dpa_adapt import (
-    DPAFineTuner,          # fine-tune (strategies: frozen_sklearn, linear_probe, finetune, mft)
-    DPAPredictor,          # inference from frozen bundles
-    extract_descriptors,   # standalone descriptor extraction
-    cross_validate,        # leak-proof cross-validation
-    train_test_split,      # formula-grouped splitting
-    auto_convert,          # format-sniffing data conversion
-    smiles_to_npy,         # CSV+SMILES → deepmd/npy
-    formula_csv_to_npy,    # composition formula CSV + POSCAR → deepmd/npy
-    convert,               # structure file → deepmd/npy
-    batch_convert,         # glob-based batch conversion
-    check_data,            # data sanity checks
-    attach_labels,         # inject label arrays
-    load_dataset,          # label-filtered data loading
+    DPAFineTuner,  # fine-tune (strategies: frozen_sklearn, linear_probe, finetune, mft)
+    DPAPredictor,  # inference from frozen bundles
+    extract_descriptors,  # standalone descriptor extraction
+    cross_validate,  # leak-proof cross-validation
+    train_test_split,  # formula-grouped splitting
+    auto_convert,  # format-sniffing data conversion
+    smiles_to_npy,  # CSV+SMILES → deepmd/npy
+    formula_csv_to_npy,  # composition formula CSV + POSCAR → deepmd/npy
+    convert,  # structure file → deepmd/npy
+    batch_convert,  # glob-based batch conversion
+    check_data,  # data sanity checks
+    attach_labels,  # inject label arrays
+    load_dataset,  # label-filtered data loading
 )
 ```
 
@@ -190,31 +194,31 @@ X = extract_descriptors(
 
 ## CLI
 
-| Command | Description |
-|---------|-------------|
-| `dpaad fit` | Fine-tune (`--strategy frozen_sklearn\|linear_probe\|finetune\|mft`) |
-| `dpaad predict` | Predict with a frozen `.pth` bundle |
-| `dpaad evaluate` | Evaluate against stored labels |
-| `dpaad extract-descriptors` | Extract pooled DPA descriptors to `.npy` |
-| `dpaad cv` | Cross-validate |
-| `dpaad data convert` | Convert structure / CSV / formula → `deepmd/npy` |
-| `dpaad data validate` | Sanity-check `deepmd/npy` directories |
-| `dpaad data attach-labels` | Inject `.npy` label arrays |
+| Command                     | Description                                                          |
+| --------------------------- | -------------------------------------------------------------------- |
+| `dpaad fit`                 | Fine-tune (`--strategy frozen_sklearn\|linear_probe\|finetune\|mft`) |
+| `dpaad predict`             | Predict with a frozen `.pth` bundle                                  |
+| `dpaad evaluate`            | Evaluate against stored labels                                       |
+| `dpaad extract-descriptors` | Extract pooled DPA descriptors to `.npy`                             |
+| `dpaad cv`                  | Cross-validate                                                       |
+| `dpaad data convert`        | Convert structure / CSV / formula → `deepmd/npy`                     |
+| `dpaad data validate`       | Sanity-check `deepmd/npy` directories                                |
+| `dpaad data attach-labels`  | Inject `.npy` label arrays                                           |
 
 ```bash
 # Data conversion
 dpaad data convert --input POSCAR --output ./npy
 dpaad data convert --input data.csv --output ./npy --property-name homo
 dpaad data convert --input comps.csv --output ./npy \
-  --fmt formula --poscar template.POSCAR --sets 3
+    --fmt formula --poscar template.POSCAR --sets 3
 
 # Fine-tune
 dpaad fit --train-data ./npy/train --pretrained DPA-3.1-3M \
-  --strategy frozen_sklearn --predictor rf --target-key homo --output model.pth
+    --strategy frozen_sklearn --predictor rf --target-key homo --output model.pth
 
 # MFT
 dpaad fit --train-data /data/qm9 --aux-data /data/spice2 \
-  --pretrained /path/to/DPA-3.1-3M.pt --strategy mft --target-key homo
+    --pretrained /path/to/DPA-3.1-3M.pt --strategy mft --target-key homo
 
 # Predict / evaluate
 dpaad predict --model model.pth --data ./npy/test

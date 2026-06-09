@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 # data/desc_cache.py
 #
 # Transparent on-disk cache for extracted DPA descriptors.
@@ -8,13 +9,16 @@
 # Systems are ``dpdata.System`` objects; cache keys are computed from
 # data fingerprints and checkpoint mtimes.
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import hashlib
 import logging
 import os
-from pathlib import Path
-from typing import List
+from pathlib import (
+    Path,
+)
 
 import numpy as np
 
@@ -25,6 +29,7 @@ _LOG = logging.getLogger("dpa_adapt.data.desc_cache")
 # cache directory
 # ---------------------------------------------------------------------------
 
+
 def _cache_dir() -> Path:
     base = os.environ.get("XDG_CACHE_HOME", os.path.join(str(Path.home()), ".cache"))
     return Path(base) / "dpa_adapt" / "desc_cache"
@@ -33,6 +38,7 @@ def _cache_dir() -> Path:
 # ---------------------------------------------------------------------------
 # lightweight system fingerprint (O(1) on array size, O(n) on atom count)
 # ---------------------------------------------------------------------------
+
 
 def _system_fingerprint(system) -> str:
     """Return a short hex fingerprint for a dpdata System.
@@ -71,7 +77,7 @@ def _system_fingerprint(system) -> str:
     return h.hexdigest()[:16]
 
 
-def _data_fingerprint(systems: List) -> str:
+def _data_fingerprint(systems: list) -> str:
     """Aggregate fingerprint for a list of systems (order-independent)."""
     fps = sorted(_system_fingerprint(s) for s in systems)
     h = hashlib.sha1()
@@ -80,7 +86,7 @@ def _data_fingerprint(systems: List) -> str:
     return h.hexdigest()
 
 
-def _cache_key(systems: List, pretrained: str, pooling: str) -> str:
+def _cache_key(systems: list, pretrained: str, pooling: str) -> str:
     fp = _data_fingerprint(systems)
     ckpt_mtime = os.path.getmtime(pretrained)
     payload = f"{fp}|{pretrained}|{ckpt_mtime}|{pooling}"
@@ -91,8 +97,9 @@ def _cache_key(systems: List, pretrained: str, pooling: str) -> str:
 # bulk cache
 # ---------------------------------------------------------------------------
 
+
 def load_or_extract(
-    systems: List,
+    systems: list,
     pretrained: str,
     model_branch: str = None,
     pooling: str = "mean",
@@ -127,7 +134,9 @@ def load_or_extract(
     else:
         _LOG.info("Descriptor cache bypassed (cache=False).")
 
-    from dpa_adapt.finetuner import DPAFineTuner
+    from dpa_adapt.finetuner import (
+        DPAFineTuner,
+    )
 
     extractor = DPAFineTuner(
         pretrained=pretrained,
@@ -149,6 +158,7 @@ def load_or_extract(
 # per-system cache — used by cross_validate to avoid OOM
 # ---------------------------------------------------------------------------
 
+
 def _per_system_cache_path(system) -> Path:
     """Return the cache path for a single system's descriptors."""
     fp = _system_fingerprint(system)
@@ -156,7 +166,7 @@ def _per_system_cache_path(system) -> Path:
 
 
 def ensure_per_system_cache(
-    systems: List,
+    systems: list,
     pretrained: str,
     model_branch: str = None,
     pooling: str = "mean",
@@ -166,21 +176,28 @@ def ensure_per_system_cache(
     Existing cache files are reused as-is.  Missing ones are extracted one
     system at a time for low peak memory.
     """
-    missing: List = []
+    missing: list = []
     for system in systems:
         if not _per_system_cache_path(system).is_file():
             missing.append(system)
 
     if not missing:
-        _LOG.info("All %d systems have per-system cache; nothing to extract.", len(systems))
+        _LOG.info(
+            "All %d systems have per-system cache; nothing to extract.", len(systems)
+        )
         return
 
     import torch
 
-    from dpa_adapt.finetuner import DPAFineTuner
+    from dpa_adapt.finetuner import (
+        DPAFineTuner,
+    )
 
-    _LOG.info("%d/%d systems missing per-system cache; extracting one by one...",
-              len(missing), len(systems))
+    _LOG.info(
+        "%d/%d systems missing per-system cache; extracting one by one...",
+        len(missing),
+        len(systems),
+    )
 
     extractor = DPAFineTuner(
         pretrained=pretrained,

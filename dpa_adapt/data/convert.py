@@ -7,18 +7,23 @@ appropriate pipeline (SMILES→npy via ``smiles_to_npy``, or structure→npy via
 or ``smiles_to_npy()`` directly.
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import csv
 import glob as _glob
 import json
 import logging
-from pathlib import Path
-from typing import Union
+from pathlib import (
+    Path,
+)
 
 import numpy as np
 
-from dpa_adapt.data.validate import check_data
+from dpa_adapt.data.validate import (
+    check_data,
+)
 
 _LOG = logging.getLogger("dpa_adapt")
 
@@ -28,7 +33,8 @@ _SMILES_COLUMNS = frozenset({"smiles", "smi", "mol"})
 
 def _sniff_csv(path: str) -> set[str] | None:
     """Return the set of column names from a CSV file, or ``None`` if
-    the file does not look like a table."""
+    the file does not look like a table.
+    """
     try:
         with open(path, newline="", encoding="utf-8") as fh:
             reader = csv.DictReader(fh)
@@ -54,7 +60,8 @@ def _sniff_csv(path: str) -> set[str] | None:
 
 def _sniff_xlsx(path: str) -> set[str]:
     """Return the set of column names from the first sheet of an Excel file,
-    or ``None`` if pandas / openpyxl is not available."""
+    or ``None`` if pandas / openpyxl is not available.
+    """
     try:
         import pandas as pd
     except ImportError:
@@ -68,7 +75,8 @@ def _sniff_xlsx(path: str) -> set[str]:
 
 def _is_smiles_input(path: str) -> bool:
     """Return True if *path* looks like a CSV / Excel file whose columns
-    contain at least one recognised SMILES / molecule identifier."""
+    contain at least one recognised SMILES / molecule identifier.
+    """
     suffix = Path(path).suffix.lower()
     columns: set[str] | None = None
     if suffix == ".csv":
@@ -128,7 +136,9 @@ def auto_convert(
     # --- explicit SMILES hint, or auto-sniff ---
     is_smiles_fmt = isinstance(fmt, str) and fmt.lower() == "smiles"
     if is_smiles_fmt or (fmt is None and _is_smiles_input(input_path)):
-        from dpa_adapt.data.smiles import smiles_to_npy
+        from dpa_adapt.data.smiles import (
+            smiles_to_npy,
+        )
 
         result = smiles_to_npy(
             data={"dataset": input_path, "mol_dir": mol_dir},
@@ -157,7 +167,9 @@ def auto_convert(
 
     # --- explicit formula hint ---
     if fmt == "formula":
-        from .formula import formula_to_npy
+        from .formula import (
+            formula_to_npy,
+        )
 
         out = formula_to_npy(
             csv_path=input_path,
@@ -189,6 +201,7 @@ def auto_convert(
 # ---------------------------------------------------------------------------
 # convert() — thin dpdata wrapper (kept for programmatic use)
 # ---------------------------------------------------------------------------
+
 
 def convert(
     input_path: str,
@@ -324,6 +337,7 @@ def _convert_one(
 # batch_convert() — glob many inputs into a mirrored deepmd/npy tree
 # ---------------------------------------------------------------------------
 
+
 def _glob_base(pattern: str) -> Path:
     """The fixed (non-wildcard) directory prefix of a glob pattern.
 
@@ -447,7 +461,9 @@ def batch_convert(
 
     _LOG.info(
         "[batch_convert] %d converted, %d skipped — manifest: %s",
-        len(converted), len(skipped), manifest_path,
+        len(converted),
+        len(skipped),
+        manifest_path,
     )
 
     return [c["output"] for c in converted]
@@ -463,7 +479,7 @@ def batch_convert(
 _KNOWN_DICT_HEAD_TYPES = frozenset({"property", "dos", "dipole", "polar"})
 
 
-def _key_from_head(head: Union[str, dict]) -> str:
+def _key_from_head(head: str | dict) -> str:
     """Derive the deepmd/npy filename key from a head specification.
 
     DeePMD-kit stores label ``key`` as ``set.*/key.npy``.  This function maps
@@ -518,14 +534,12 @@ def _key_from_head(head: Union[str, dict]) -> str:
         # dos / dipole / polar: key == type name
         return htype
 
-    raise TypeError(
-        f"head must be str or dict, got {type(head).__name__!r}"
-    )
+    raise TypeError(f"head must be str or dict, got {type(head).__name__!r}")
 
 
 def attach_labels(
     system,
-    head: Union[str, dict],
+    head: str | dict,
     values: np.ndarray,
 ) -> None:
     """
@@ -564,11 +578,10 @@ def attach_labels(
 
     Examples
     --------
-    >>> attach_labels(system, head="energy",
-    ...               values=np.array([-12.3, -11.8, -13.1]))
-    >>> attach_labels(system,
-    ...               head={"type": "dos", "numb_dos": 250},
-    ...               values=dos_array)   # shape (n_frames, 250)
+    >>> attach_labels(system, head="energy", values=np.array([-12.3, -11.8, -13.1]))
+    >>> attach_labels(
+    ...     system, head={"type": "dos", "numb_dos": 250}, values=dos_array
+    ... )  # shape (n_frames, 250)
     """
     key = _key_from_head(head)
     values = np.asarray(values, dtype=np.float64)

@@ -1,15 +1,23 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Tests for dpa_adapt.mft.MFTFineTuner.evaluate output parsing and pipeline."""
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import os
-from pathlib import Path
-from unittest.mock import patch
+from pathlib import (
+    Path,
+)
+from unittest.mock import (
+    patch,
+)
 
 import pytest
 
-from deepmd.dpa_adapt.mft import MFTFineTuner
-
+from deepmd.dpa_adapt.mft import (
+    MFTFineTuner,
+)
 
 DUMMY_TYPE_MAP = ["H", "C", "N", "O"]
 
@@ -17,6 +25,7 @@ DUMMY_TYPE_MAP = ["H", "C", "N", "O"]
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
 
 def _make_systems(tmp_path, prefix: str, n: int) -> str:
     """Create n empty system dirs and return a glob pattern matching them."""
@@ -64,10 +73,12 @@ def _make_finetuner(tmp_path, max_steps=100):
 # Parser: real DeepMD-kit 3.1.3 output shape
 # ---------------------------------------------------------------------------
 
+
 def test_parse_real_dp_output_shape():
     """The real `dp --pt test` output prints both 'Energy MAE' (per-molecule)
     and 'Energy MAE/Natoms' (per-atom). The parser must pick only the
-    per-molecule one."""
+    per-molecule one.
+    """
     stdout = (
         "[2026-05-19 INFO] # number of test data : 1000\n"
         "[2026-05-19 INFO] Energy MAE         : 4.314543e-02 eV\n"
@@ -82,7 +93,8 @@ def test_parse_real_dp_output_shape():
 
 def test_parse_excludes_natoms_variant_explicitly():
     """If only the /Natoms variant appears, the parser should NOT match it.
-    This guards against a regex that accidentally allows /Natoms through."""
+    This guards against a regex that accidentally allows /Natoms through.
+    """
     stdout = (
         "[INFO] Energy MAE/Natoms  : 1.234567e-03 eV\n"
         "[INFO] Energy RMSE/Natoms : 2.345678e-03 eV\n"
@@ -95,10 +107,12 @@ def test_parse_excludes_natoms_variant_explicitly():
 # Parser: weighted-average behavior (must take LAST match)
 # ---------------------------------------------------------------------------
 
+
 def test_parse_takes_weighted_average_last_match():
-    """dp --pt test prints per-system blocks followed by a
+    """Dp --pt test prints per-system blocks followed by a
     'weighted average of errors' block. Parser must return the weighted
-    average (the LAST occurrence), not the first per-system value."""
+    average (the LAST occurrence), not the first per-system value.
+    """
     stdout = (
         "[INFO] # ---------------system 0--------------\n"
         "[INFO] Energy MAE         : 1.00e-01 eV\n"
@@ -120,6 +134,7 @@ def test_parse_takes_weighted_average_last_match():
 # Parser: n_systems extraction
 # ---------------------------------------------------------------------------
 
+
 def test_parse_extracts_n_systems():
     stdout = (
         "[INFO] # number of systems : 7\n"
@@ -132,11 +147,9 @@ def test_parse_extracts_n_systems():
 
 def test_parse_n_systems_falls_back_to_resolved_count():
     """If the 'number of systems' line is missing, fall back to the count of
-    resolved system paths so the caller still gets a usable number."""
-    stdout = (
-        "[INFO] Energy MAE  : 1.00e-02 eV\n"
-        "[INFO] Energy RMSE : 2.00e-02 eV\n"
-    )
+    resolved system paths so the caller still gets a usable number.
+    """
+    stdout = "[INFO] Energy MAE  : 1.00e-02 eV\n[INFO] Energy RMSE : 2.00e-02 eV\n"
     out = MFTFineTuner._parse_test_output(stdout, n_resolved=42)
     assert out["n_systems"] == 42
 
@@ -145,9 +158,11 @@ def test_parse_n_systems_falls_back_to_resolved_count():
 # Parser: failure mode (was previously silent NaN — must now raise)
 # ---------------------------------------------------------------------------
 
+
 def test_parse_failure_raises_runtimeerror():
     """When dp test produced no Energy MAE/RMSE lines (the Bug-1 all-zero
-    failure mode), raise RuntimeError instead of silently returning NaN."""
+    failure mode), raise RuntimeError instead of silently returning NaN.
+    """
     stdout = "no MAE or RMSE lines here, just garbage"
     with pytest.raises(RuntimeError) as exc_info:
         MFTFineTuner._parse_test_output(stdout)
@@ -159,7 +174,8 @@ def test_parse_failure_raises_runtimeerror():
 
 def test_parse_failure_includes_tail_of_output():
     """Long unparseable input: tail of last 100 lines must appear in the
-    error message so the user can diagnose without grepping logs."""
+    error message so the user can diagnose without grepping logs.
+    """
     lines = [f"line_{i}" for i in range(200)]
     stdout = "\n".join(lines)
     with pytest.raises(RuntimeError) as exc_info:
@@ -174,6 +190,7 @@ def test_parse_failure_includes_tail_of_output():
 # Parser: scientific notation handling
 # ---------------------------------------------------------------------------
 
+
 def test_parse_scientific_notation():
     stdout = (
         "[INFO] Energy MAE         : 4.314543e-02 eV\n"
@@ -181,16 +198,18 @@ def test_parse_scientific_notation():
     )
     out = MFTFineTuner._parse_test_output(stdout)
     assert out["mae"] == pytest.approx(4.314543e-02)
-    assert out["rmse"] == pytest.approx(1.23e+01)
+    assert out["rmse"] == pytest.approx(1.23e01)
 
 
 # ---------------------------------------------------------------------------
 # Parser: property-mode output (PROPERTY MAE / PROPERTY RMSE)
 # ---------------------------------------------------------------------------
 
+
 def test_parse_property_output_weighted_average():
     """Property-task dp test prints per-system blocks then a
-    'weighted average of errors' block. Parser must return the LAST match."""
+    'weighted average of errors' block. Parser must return the LAST match.
+    """
     stdout = (
         "[INFO] # ---------------system 0--------------\n"
         "[INFO] PROPERTY MAE            : 2.395307e-03 units\n"
@@ -212,12 +231,11 @@ def test_parse_property_output_weighted_average():
 
 def test_parse_property_scientific_notation():
     stdout = (
-        "[INFO] PROPERTY MAE  : 1.23e-04 units\n"
-        "[INFO] PROPERTY RMSE : 5.67E+02 units\n"
+        "[INFO] PROPERTY MAE  : 1.23e-04 units\n[INFO] PROPERTY RMSE : 5.67E+02 units\n"
     )
     out = MFTFineTuner._parse_test_output(stdout)
     assert out["mae"] == pytest.approx(1.23e-04)
-    assert out["rmse"] == pytest.approx(5.67e+02)
+    assert out["rmse"] == pytest.approx(5.67e02)
 
 
 def test_parse_property_n_systems_extraction():
@@ -231,10 +249,7 @@ def test_parse_property_n_systems_extraction():
 
 
 def test_parse_property_n_systems_fallback():
-    stdout = (
-        "[INFO] PROPERTY MAE  : 0.01 units\n"
-        "[INFO] PROPERTY RMSE : 0.02 units\n"
-    )
+    stdout = "[INFO] PROPERTY MAE  : 0.01 units\n[INFO] PROPERTY RMSE : 0.02 units\n"
     out = MFTFineTuner._parse_test_output(stdout, n_resolved=99)
     assert out["n_systems"] == 99
 
@@ -243,9 +258,11 @@ def test_parse_property_n_systems_fallback():
 # evaluate(): end-to-end pipeline with mocked subprocess
 # ---------------------------------------------------------------------------
 
+
 def test_evaluate_freezes_then_tests(tmp_path):
     """evaluate() must (a) call dp freeze first to produce frozen .pth,
-    (b) then call dp test with -m pointing to that .pth, (c) parse output."""
+    (b) then call dp test with -m pointing to that .pth, (c) parse output.
+    """
     ft = _make_finetuner(tmp_path, max_steps=100)
     # Pretend training produced a ckpt
     (Path(ft.output_dir) / "model.ckpt-100.pt").write_bytes(b"")
@@ -337,7 +354,8 @@ def test_evaluate_skips_freeze_if_pth_exists(tmp_path):
 
 def test_evaluate_freeze_failure_raises(tmp_path):
     """If dp freeze fails, evaluate() must raise RuntimeError with diagnostics
-    rather than proceeding into a doomed dp test."""
+    rather than proceeding into a doomed dp test.
+    """
     ft = _make_finetuner(tmp_path, max_steps=100)
     (Path(ft.output_dir) / "model.ckpt-100.pt").write_bytes(b"")
     test_glob = _make_systems(tmp_path, "test_fz_fail", 2)
@@ -354,7 +372,8 @@ def test_evaluate_freeze_failure_raises(tmp_path):
 
 def test_evaluate_accepts_single_path(tmp_path):
     """A single non-glob string path should be written verbatim into the
-    datafile (single line) and passed via -f."""
+    datafile (single line) and passed via -f.
+    """
     ft = _make_finetuner(tmp_path, max_steps=100)
     (Path(ft.output_dir) / "model.ckpt-100.pt").write_bytes(b"")
     (Path(ft.output_dir) / "frozen_property.pth").write_bytes(b"")
@@ -433,7 +452,8 @@ def test_evaluate_accepts_list(tmp_path):
 
 def test_evaluate_missing_ckpt_raises(tmp_path):
     """If no model.ckpt-{max_steps}.pt exists and frozen.pth also missing,
-    _freeze_ckpt must raise rather than silently call freeze and explode."""
+    _freeze_ckpt must raise rather than silently call freeze and explode.
+    """
     ft = _make_finetuner(tmp_path, max_steps=100)
     test_glob = _make_systems(tmp_path, "test_no_ckpt", 2)
 

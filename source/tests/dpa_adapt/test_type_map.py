@@ -1,16 +1,22 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Tests for type_map validation and local→global atom-type remapping."""
+
 import sys
-from pathlib import Path
-from unittest.mock import MagicMock
+from unittest.mock import (
+    MagicMock,
+)
 
 import numpy as np
 import pytest
 
 sys.modules.setdefault("torch", MagicMock())
 
-from deepmd.dpa_adapt.data.errors import DPADataError  # noqa: E402
-from deepmd.dpa_adapt.data.loader import load_data  # noqa: E402
-from deepmd.dpa_adapt.finetuner import DPAFineTuner, _read_data_type_map, _load_npy_system  # noqa: E402
+from deepmd.dpa_adapt.data.errors import DPADataError
+from deepmd.dpa_adapt.data.loader import load_data
+from deepmd.dpa_adapt.finetuner import (
+    DPAFineTuner,
+    _read_data_type_map,
+)
 
 PERIODIC_PREFIX_9 = ["H", "He", "Li", "Be", "B", "C", "N", "O", "F"]
 
@@ -33,6 +39,7 @@ def _make_system(tmp_path, name, type_indices, type_map):
 # _validate_type_map
 # ---------------------------------------------------------------------------
 
+
 class TestValidateTypeMapSubset:
     def test_non_prefix_subset_accepted(self, tmp_path):
         sys = _make_system(tmp_path, "qm9", [0, 1, 2], ["H", "C", "N"])
@@ -52,7 +59,8 @@ class TestValidateTypeMapSubset:
         root.mkdir()
         (root / "type.raw").write_text("0\n")
         # No type_map.raw → no atom_names
-        sd = root / "set.000"; sd.mkdir()
+        sd = root / "set.000"
+        sd.mkdir()
         np.save(sd / "coord.npy", np.zeros((1, 3)))
         np.save(sd / "box.npy", np.eye(3).reshape(1, 9))
         sys = load_data(str(root))[0]
@@ -88,6 +96,7 @@ class TestValidateTypeMapUnsupported:
 # _remap_atom_types
 # ---------------------------------------------------------------------------
 
+
 class TestRemapAtomTypes:
     def test_remap_via_atom_names(self, tmp_path):
         sys = _make_system(tmp_path, "qm9", [0, 1, 2, 3, 4], ["H", "C", "N", "O", "F"])
@@ -108,7 +117,8 @@ class TestRemapAtomTypes:
         root = tmp_path / "sys"
         root.mkdir()
         (root / "type.raw").write_text("0\n1\n")
-        sd = root / "set.000"; sd.mkdir()
+        sd = root / "set.000"
+        sd.mkdir()
         np.save(sd / "coord.npy", np.zeros((1, 6)))
         np.save(sd / "box.npy", np.eye(3).reshape(1, 9))
         sys = load_data(str(root))[0]
@@ -122,7 +132,8 @@ class TestRemapAtomTypes:
         root = tmp_path / "sys"
         root.mkdir()
         (root / "type.raw").write_text("0\n1\n")
-        sd = root / "set.000"; sd.mkdir()
+        sd = root / "set.000"
+        sd.mkdir()
         np.save(sd / "coord.npy", np.zeros((1, 6)))
         np.save(sd / "box.npy", np.eye(3).reshape(1, 9))
         sys = load_data(str(root))[0]
@@ -135,7 +146,8 @@ class TestRemapAtomTypes:
         root = tmp_path / "sys"
         root.mkdir()
         (root / "type.raw").write_text("0\n42\n")
-        sd = root / "set.000"; sd.mkdir()
+        sd = root / "set.000"
+        sd.mkdir()
         np.save(sd / "coord.npy", np.zeros((1, 6)))
         np.save(sd / "box.npy", np.eye(3).reshape(1, 9))
         sys = load_data(str(root))[0]
@@ -158,6 +170,7 @@ class TestRemapAtomTypes:
 # _read_data_type_map
 # ---------------------------------------------------------------------------
 
+
 class TestReadDataTypeMap:
     def test_reads_elements(self, tmp_path):
         sys = _make_system(tmp_path, "sys", [0, 1, 2], ["H", "C", "N"])
@@ -168,7 +181,8 @@ class TestReadDataTypeMap:
         root.mkdir()
         (root / "type.raw").write_text("0\n")
         # No type_map.raw
-        sd = root / "set.000"; sd.mkdir()
+        sd = root / "set.000"
+        sd.mkdir()
         np.save(sd / "coord.npy", np.zeros((1, 3)))
         np.save(sd / "box.npy", np.eye(3).reshape(1, 9))
         sys = load_data(str(root))[0]

@@ -1,16 +1,17 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 # data/type_map.py
 #
 # Automatic type_map resolution: read from checkpoint, union from data,
 # validate subsets.  Users should never need to touch ``_extra_state``.
 
-from __future__ import annotations
-
-from pathlib import Path
-from typing import Optional
+from __future__ import (
+    annotations,
+)
 
 
 def read_checkpoint_type_map(
-    pretrained: str, branch: Optional[str] = None,
+    pretrained: str,
+    branch: str | None = None,
 ) -> list[str]:
     """Read the global type_map from a DPA checkpoint.
 
@@ -31,7 +32,9 @@ def read_checkpoint_type_map(
     list[str]
         Element symbols.
     """
-    from dpa_adapt._backend import load_torch_file
+    from dpa_adapt._backend import (
+        load_torch_file,
+    )
 
     sd = load_torch_file(pretrained)
     if "model" in sd:

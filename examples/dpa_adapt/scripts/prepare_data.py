@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: LGPL-3.0-or-later
 # One-time data preparation script. Data is already included in
 # demo/data/. Only re-run if you need to regenerate from raw GDB9.
 """Download QM9 GDB9 and prepare deepmd/npy systems for the quickstart demo.
@@ -15,14 +16,17 @@ Can be run from anywhere; all paths are resolved relative to the ``demo/``
 directory (the parent of this script).
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import csv
 import shutil
-import sys
 import tarfile
 import urllib.request
-from pathlib import Path
+from pathlib import (
+    Path,
+)
 
 import numpy as np
 
@@ -91,7 +95,7 @@ def _load_gaps_from_csv(n: int) -> dict[int, float]:
             if idx >= n:
                 break
             # Use pre-computed gap if available; otherwise lumo - homo.
-            if "gap" in row and row["gap"]:
+            if row.get("gap"):
                 gap_ha = float(row["gap"])
             else:
                 gap_ha = float(row["lumo"]) - float(row["homo"])
@@ -121,14 +125,62 @@ def _read_sdf_blocks(n: int) -> list[str]:
 # ---------------------------------------------------------------------------
 
 _ELEMENT_TO_Z: dict[str, int] = {
-    "H": 1, "He": 2, "Li": 3, "Be": 4, "B": 5, "C": 6, "N": 7, "O": 8, "F": 9,
-    "Ne": 10, "Na": 11, "Mg": 12, "Al": 13, "Si": 14, "P": 15, "S": 16, "Cl": 17,
-    "Ar": 18, "K": 19, "Ca": 20, "Sc": 21, "Ti": 22, "V": 23, "Cr": 24,
-    "Mn": 25, "Fe": 26, "Co": 27, "Ni": 28, "Cu": 29, "Zn": 30, "Ga": 31,
-    "Ge": 32, "As": 33, "Se": 34, "Br": 35, "Kr": 36, "Rb": 37, "Sr": 38,
-    "Y": 39, "Zr": 40, "Nb": 41, "Mo": 42, "Tc": 43, "Ru": 44, "Rh": 45,
-    "Pd": 46, "Ag": 47, "Cd": 48, "In": 49, "Sn": 50, "Sb": 51, "Te": 52,
-    "I": 53, "Xe": 54, "Cs": 55, "Ba": 56,
+    "H": 1,
+    "He": 2,
+    "Li": 3,
+    "Be": 4,
+    "B": 5,
+    "C": 6,
+    "N": 7,
+    "O": 8,
+    "F": 9,
+    "Ne": 10,
+    "Na": 11,
+    "Mg": 12,
+    "Al": 13,
+    "Si": 14,
+    "P": 15,
+    "S": 16,
+    "Cl": 17,
+    "Ar": 18,
+    "K": 19,
+    "Ca": 20,
+    "Sc": 21,
+    "Ti": 22,
+    "V": 23,
+    "Cr": 24,
+    "Mn": 25,
+    "Fe": 26,
+    "Co": 27,
+    "Ni": 28,
+    "Cu": 29,
+    "Zn": 30,
+    "Ga": 31,
+    "Ge": 32,
+    "As": 33,
+    "Se": 34,
+    "Br": 35,
+    "Kr": 36,
+    "Rb": 37,
+    "Sr": 38,
+    "Y": 39,
+    "Zr": 40,
+    "Nb": 41,
+    "Mo": 42,
+    "Tc": 43,
+    "Ru": 44,
+    "Rh": 45,
+    "Pd": 46,
+    "Ag": 47,
+    "Cd": 48,
+    "In": 49,
+    "Sn": 50,
+    "Sb": 51,
+    "Te": 52,
+    "I": 53,
+    "Xe": 54,
+    "Cs": 55,
+    "Ba": 56,
 }
 
 
@@ -230,8 +282,9 @@ def main() -> None:
     all_gaps = _load_gaps_from_csv(N_TOTAL)
     gaps = np.array([all_gaps[i] for i in range(N_TOTAL)], dtype=np.float32)
 
-    print(f"Gap stats (all {N_TOTAL}): "
-          f"mean={gaps.mean():.4f} eV, std={gaps.std():.4f} eV")
+    print(
+        f"Gap stats (all {N_TOTAL}): mean={gaps.mean():.4f} eV, std={gaps.std():.4f} eV"
+    )
 
     # 3. Read molecules from SDF ---------------------------------------------
     mol_blocks = _read_sdf_blocks(N_TOTAL)

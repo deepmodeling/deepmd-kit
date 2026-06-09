@@ -10,34 +10,148 @@ Provides the molecular data ingestion pipeline originally from
 - Write ``deepmd/npy`` directories consumable by ``DPAFineTuner`` and friends
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import csv
 import random
 import re
 import shutil
 import warnings
-from dataclasses import dataclass
-from pathlib import Path
-from typing import Any
+from dataclasses import (
+    dataclass,
+)
+from pathlib import (
+    Path,
+)
+from typing import (
+    Any,
+)
 
 import numpy as np
 
 # Period table, used to build a consistent per-checkpoint type_map.
 ELEMENTS = np.array(
     [
-        "H",  "He", "Li", "Be", "B",  "C",  "N",  "O",  "F",  "Ne",
-        "Na", "Mg", "Al", "Si", "P",  "S",  "Cl", "Ar", "K",  "Ca",
-        "Sc", "Ti", "V",  "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn",
-        "Ga", "Ge", "As", "Se", "Br", "Kr", "Rb", "Sr", "Y",  "Zr",
-        "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd", "In", "Sn",
-        "Sb", "Te", "I",  "Xe", "Cs", "Ba", "La", "Ce", "Pr", "Nd",
-        "Pm", "Sm", "Eu", "Gd", "Tb", "Dy", "Ho", "Er", "Tm", "Yb",
-        "Lu", "Hf", "Ta", "W",  "Re", "Os", "Ir", "Pt", "Au", "Hg",
-        "Tl", "Pb", "Bi", "Po", "At", "Rn", "Fr", "Ra", "Ac", "Th",
-        "Pa", "U",  "Np", "Pu", "Am", "Cm", "Bk", "Cf", "Es", "Fm",
-        "Md", "No", "Lr", "Rf", "Db", "Sg", "Bh", "Hs", "Mt", "Ds",
-        "Rg", "Cn", "Nh", "Fl", "Mc", "Lv", "Ts", "Og",
+        "H",
+        "He",
+        "Li",
+        "Be",
+        "B",
+        "C",
+        "N",
+        "O",
+        "F",
+        "Ne",
+        "Na",
+        "Mg",
+        "Al",
+        "Si",
+        "P",
+        "S",
+        "Cl",
+        "Ar",
+        "K",
+        "Ca",
+        "Sc",
+        "Ti",
+        "V",
+        "Cr",
+        "Mn",
+        "Fe",
+        "Co",
+        "Ni",
+        "Cu",
+        "Zn",
+        "Ga",
+        "Ge",
+        "As",
+        "Se",
+        "Br",
+        "Kr",
+        "Rb",
+        "Sr",
+        "Y",
+        "Zr",
+        "Nb",
+        "Mo",
+        "Tc",
+        "Ru",
+        "Rh",
+        "Pd",
+        "Ag",
+        "Cd",
+        "In",
+        "Sn",
+        "Sb",
+        "Te",
+        "I",
+        "Xe",
+        "Cs",
+        "Ba",
+        "La",
+        "Ce",
+        "Pr",
+        "Nd",
+        "Pm",
+        "Sm",
+        "Eu",
+        "Gd",
+        "Tb",
+        "Dy",
+        "Ho",
+        "Er",
+        "Tm",
+        "Yb",
+        "Lu",
+        "Hf",
+        "Ta",
+        "W",
+        "Re",
+        "Os",
+        "Ir",
+        "Pt",
+        "Au",
+        "Hg",
+        "Tl",
+        "Pb",
+        "Bi",
+        "Po",
+        "At",
+        "Rn",
+        "Fr",
+        "Ra",
+        "Ac",
+        "Th",
+        "Pa",
+        "U",
+        "Np",
+        "Pu",
+        "Am",
+        "Cm",
+        "Bk",
+        "Cf",
+        "Es",
+        "Fm",
+        "Md",
+        "No",
+        "Lr",
+        "Rf",
+        "Db",
+        "Sg",
+        "Bh",
+        "Hs",
+        "Mt",
+        "Ds",
+        "Rg",
+        "Cn",
+        "Nh",
+        "Fl",
+        "Mc",
+        "Lv",
+        "Ts",
+        "Og",
     ]
 )
 ELEMENT_INDEX: dict[str, int] = {name: i for i, name in enumerate(ELEMENTS)}
@@ -122,12 +236,18 @@ def read_mol_coords(path: str | Path) -> tuple[list[str], np.ndarray]:
 
 
 def smiles_to_3d_coords(
-    smiles: str, *, random_seed: int = 42,
+    smiles: str,
+    *,
+    random_seed: int = 42,
 ) -> tuple[list[str], np.ndarray]:
     """Generate a 3D conformer from a SMILES string via RDKit ETKDGv3."""
     try:
-        from rdkit import Chem
-        from rdkit.Chem import AllChem
+        from rdkit import (
+            Chem,
+        )
+        from rdkit.Chem import (
+            AllChem,
+        )
     except ImportError as exc:
         raise ImportError(
             "RDKit is required to generate 3D coordinates from SMILES. "
@@ -148,14 +268,15 @@ def smiles_to_3d_coords(
         status = AllChem.EmbedMolecule(mol, params)
     if status != 0:
         status = AllChem.EmbedMolecule(
-            mol, randomSeed=int(random_seed), useRandomCoords=True,
-            maxAttempts=2000, ignoreSmoothingFailures=True,
+            mol,
+            randomSeed=int(random_seed),
+            useRandomCoords=True,
+            maxAttempts=2000,
+            ignoreSmoothingFailures=True,
             enforceChirality=False,
         )
     if status != 0:
-        raise ValueError(
-            f"RDKit failed to embed 3D coordinates for SMILES: {smiles!r}"
-        )
+        raise ValueError(f"RDKit failed to embed 3D coordinates for SMILES: {smiles!r}")
     try:
         if AllChem.MMFFHasAllMoleculeParams(mol):
             AllChem.MMFFOptimizeMolecule(mol, maxIters=500)
@@ -218,7 +339,9 @@ def _records_from_csv_mol(
         rows = list(csv.DictReader(fp))
     if not rows:
         raise ValueError(f"No rows found in dataset: {dataset}")
-    prop_col = _find_column(list(rows[0].keys()), [property_col, "Property", "property"])
+    prop_col = _find_column(
+        list(rows[0].keys()), [property_col, "Property", "property"]
+    )
 
     records: list[_Record] = []
     failed_rows: list[tuple[int, str, str]] = []
@@ -255,7 +378,9 @@ def _records_from_csv_smiles(
         rows = list(csv.DictReader(fp))
     if not rows:
         raise ValueError(f"No rows found in dataset: {dataset}")
-    prop_col = _find_column(list(rows[0].keys()), [property_col, "Property", "property"])
+    prop_col = _find_column(
+        list(rows[0].keys()), [property_col, "Property", "property"]
+    )
     smiles_column = _find_column(list(rows[0].keys()), [smiles_col, "SMILES", "smiles"])
 
     records: list[_Record] = []
@@ -346,7 +471,10 @@ def smiles_to_npy(
     SmilesDataResult
     """
     import dpdata
-    from dpdata.data_type import Axis, DataType
+    from dpdata.data_type import (
+        Axis,
+        DataType,
+    )
 
     # Register the custom property + stru_id dtypes with dpdata.
     datatypes = [
@@ -361,8 +489,11 @@ def smiles_to_npy(
     if isinstance(data, (str, Path)) or (isinstance(data, dict) and "dataset" in data):
         dataset = Path(data if isinstance(data, (str, Path)) else data["dataset"])
         mol_dir_value = (
-            mol_dir if mol_dir is not None
-            else data.get("mol_dir") if isinstance(data, dict) else None
+            mol_dir
+            if mol_dir is not None
+            else data.get("mol_dir")
+            if isinstance(data, dict)
+            else None
         )
         smiles_col_value = (
             data.get("smiles_col", smiles_col) if isinstance(data, dict) else smiles_col
@@ -370,15 +501,20 @@ def smiles_to_npy(
         if mol_dir_value is None:
             records, failed_rows, skipped_zero, skipped_overlap, _raw = (
                 _records_from_csv_smiles(
-                    dataset=dataset, property_col=property_col,
-                    smiles_col=smiles_col_value, overlap_tol=overlap_tol, seed=seed,
+                    dataset=dataset,
+                    property_col=property_col,
+                    smiles_col=smiles_col_value,
+                    overlap_tol=overlap_tol,
+                    seed=seed,
                 )
             )
         else:
             records, failed_rows, skipped_zero, skipped_overlap, _raw = (
                 _records_from_csv_mol(
-                    dataset=dataset, mol_dir=mol_dir_value,
-                    property_col=property_col, mol_template=mol_template,
+                    dataset=dataset,
+                    mol_dir=mol_dir_value,
+                    property_col=property_col,
+                    mol_template=mol_template,
                     overlap_tol=overlap_tol,
                 )
             )
@@ -396,7 +532,8 @@ def smiles_to_npy(
 
     for row_idx, source, error in failed_rows:
         warnings.warn(
-            f"Skipping row {row_idx}: {source!r} — {error}", RuntimeWarning,
+            f"Skipping row {row_idx}: {source!r} — {error}",
+            RuntimeWarning,
         )
 
     # --- deduplicate elements → type_map ---
@@ -416,9 +553,13 @@ def smiles_to_npy(
         frame_data = {
             "orig": np.array([0, 0, 0], dtype=np.int32),
             "atom_names": type_map,
-            "atom_numbs": [np.count_nonzero(atom_types == i) for i in range(len(type_map))],
+            "atom_numbs": [
+                np.count_nonzero(atom_types == i) for i in range(len(type_map))
+            ],
             "atom_types": atom_types,
-            "cells": np.array([[[100.0, 0.0, 0.0], [0.0, 100.0, 0.0], [0.0, 0.0, 100.0]]]),
+            "cells": np.array(
+                [[[100.0, 0.0, 0.0], [0.0, 100.0, 0.0], [0.0, 0.0, 100.0]]]
+            ),
             "nopbc": True,
             "coords": coords[np.newaxis, :, :].astype(np.float32),
             "energies": np.zeros((1,), dtype=np.float32),
@@ -455,12 +596,8 @@ def smiles_to_npy(
     ms_train.to_deepmd_npy_mixed(str(train_dir))
     ms_valid.to_deepmd_npy_mixed(str(valid_dir))
 
-    train_systems = sorted(
-        str(p) for p in train_dir.iterdir() if p.is_dir()
-    )
-    valid_systems = sorted(
-        str(p) for p in valid_dir.iterdir() if p.is_dir()
-    )
+    train_systems = sorted(str(p) for p in train_dir.iterdir() if p.is_dir())
+    valid_systems = sorted(str(p) for p in valid_dir.iterdir() if p.is_dir())
 
     return SmilesDataResult(
         output_dir=output_path,

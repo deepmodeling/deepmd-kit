@@ -1,6 +1,5 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 import json
-import os
-
 
 # Default property-head architecture for MFT DOWNSTREAM when
 # downstream_task_type="property". Mirrors DPATrainer.DEFAULT_FITTING_NET
@@ -22,14 +21,17 @@ def _build_property_fitting_net(t) -> dict:
     """Construct a property fitting_net dict from a tuner's property params.
     The property head is independent of the aux branch's ener fitting_net
     that came out of the ckpt — reusing the ener config silently introduces
-    a force-field bias layer (Bug root cause)."""
+    a force-field bias layer (Bug root cause).
+    """
     fn = dict(_PROPERTY_FITTING_NET_BASE)
-    fn.update({
-        "property_name": t.property_name,
-        "task_dim": t.task_dim,
-        "intensive": t.intensive,
-        "seed": t.seed,
-    })
+    fn.update(
+        {
+            "property_name": t.property_name,
+            "task_dim": t.task_dim,
+            "intensive": t.intensive,
+            "seed": t.seed,
+        }
+    )
     if getattr(t, "fparam_dim", 0) > 0:
         fn["fparam_dim"] = t.fparam_dim
     return fn
@@ -39,7 +41,8 @@ def _build_property_loss() -> dict:
     """Property-task loss for DOWNSTREAM. Notes:
     - No start_pref_f / start_pref_v: HOMO/LUMO data has no forces/virials.
     - property_name MUST NOT appear here: deepmd 3.1.3 strict-mode dargs
-      rejects unknown keys inside loss_property (it belongs on fitting_net)."""
+      rejects unknown keys inside loss_property (it belongs on fitting_net).
+    """
     return {
         "type": "property",
         "loss_func": "mse",
@@ -93,17 +96,31 @@ class MFTConfigManager:
         descriptor = {
             "type": "dpa3",
             "repflow": {
-                "n_dim": 128, "e_dim": 64, "a_dim": 32, "nlayers": 16,
-                "e_rcut": 6.0, "e_rcut_smth": 5.3, "e_sel": 1200,
-                "a_rcut": 4.0, "a_rcut_smth": 3.5, "a_sel": 300,
-                "axis_neuron": 4, "skip_stat": True,
-                "a_compress_rate": 1, "a_compress_e_rate": 2,
-                "a_compress_use_split": True, "update_angle": True,
-                "smooth_edge_update": True, "use_dynamic_sel": True,
-                "sel_reduce_factor": 10.0, "update_style": "res_residual",
-                "update_residual": 0.1, "update_residual_init": "const",
-                "n_multi_edge_message": 1, "optim_update": True,
-                "use_exp_switch": True
+                "n_dim": 128,
+                "e_dim": 64,
+                "a_dim": 32,
+                "nlayers": 16,
+                "e_rcut": 6.0,
+                "e_rcut_smth": 5.3,
+                "e_sel": 1200,
+                "a_rcut": 4.0,
+                "a_rcut_smth": 3.5,
+                "a_sel": 300,
+                "axis_neuron": 4,
+                "skip_stat": True,
+                "a_compress_rate": 1,
+                "a_compress_e_rate": 2,
+                "a_compress_use_split": True,
+                "update_angle": True,
+                "smooth_edge_update": True,
+                "use_dynamic_sel": True,
+                "sel_reduce_factor": 10.0,
+                "update_style": "res_residual",
+                "update_residual": 0.1,
+                "update_residual_init": "const",
+                "n_multi_edge_message": 1,
+                "optim_update": True,
+                "use_exp_switch": True,
             },
             "activation_function": "silut:3.0" if is_property else "custom_silu:3.0",
             "precision": "float32",
@@ -112,7 +129,7 @@ class MFTConfigManager:
             "exclude_types": [],
             "env_protection": 0.0,
             "trainable": True,
-            "use_econf_tebd": False
+            "use_econf_tebd": False,
         }
         if is_property:
             descriptor["repflow"]["fix_stat_std"] = 0.3
@@ -151,44 +168,38 @@ class MFTConfigManager:
         decay_steps = 1000 if is_property else 5000
         # Per-branch batch sizes: explicit override wins, then paper defaults
         # for property mode, then the single batch_size for legacy ener mode.
-        aux_batch = (
-            getattr(t, "aux_batch_size", None)
-            or ("auto:128" if is_property else t.batch_size)
+        aux_batch = getattr(t, "aux_batch_size", None) or (
+            "auto:128" if is_property else t.batch_size
         )
-        downstream_batch = (
-            getattr(t, "downstream_batch_size", None)
-            or ("auto:512" if is_property else t.batch_size)
+        downstream_batch = getattr(t, "downstream_batch_size", None) or (
+            "auto:512" if is_property else t.batch_size
         )
         # Paper default 0.5/0.5; aux_prob (default 0.5) controls the split, the
         # downstream share is the complement. Legacy keeps downstream at 1.0.
         downstream_prob = (1.0 - t.aux_prob) if is_property else 1.0
 
         aux_systems = t.aux_data if isinstance(t.aux_data, list) else [t.aux_data]
-        train_systems = t.train_data if isinstance(t.train_data, list) else [t.train_data]
+        train_systems = (
+            t.train_data if isinstance(t.train_data, list) else [t.train_data]
+        )
 
         training = {
-            "model_prob": {
-                t.aux_branch: t.aux_prob,
-                downstream_key: downstream_prob
-            },
+            "model_prob": {t.aux_branch: t.aux_prob, downstream_key: downstream_prob},
             "data_dict": {
                 t.aux_branch: {
-                    "training_data": {
-                        "systems": aux_systems,
-                        "batch_size": aux_batch
-                    }
+                    "training_data": {"systems": aux_systems, "batch_size": aux_batch}
                 },
                 downstream_key: {
                     "training_data": {
                         "systems": train_systems,
-                        "batch_size": downstream_batch
+                        "batch_size": downstream_batch,
                     }
-                }
+                },
             },
             "numb_steps": t.max_steps,
             "save_freq": t.save_freq,
             "disp_freq": t.disp_freq,
-            "seed": t.seed
+            "seed": t.seed,
         }
         if is_property:
             # Paper qm9_gap: gradient clipping at 5.0.
@@ -198,24 +209,21 @@ class MFTConfigManager:
             "model": {
                 "shared_dict": {
                     "dpa3_descriptor": descriptor,
-                    "type_map": t.aux_type_map
+                    "type_map": t.aux_type_map,
                 },
-                "model_dict": {
-                    t.aux_branch: aux_head,
-                    downstream_key: downstream_head
-                }
+                "model_dict": {t.aux_branch: aux_head, downstream_key: downstream_head},
             },
             "learning_rate": {
                 "type": "exp",
                 "start_lr": t.learning_rate,
                 "stop_lr": t.stop_lr,
-                "decay_steps": decay_steps
+                "decay_steps": decay_steps,
             },
             "loss_dict": {
                 t.aux_branch: dict(_ENER_LOSS),
-                downstream_key: downstream_loss
+                downstream_key: downstream_loss,
             },
-            "training": training
+            "training": training,
         }
 
     def save(self, config: dict, path: str) -> str:

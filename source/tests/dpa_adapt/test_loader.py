@@ -1,17 +1,27 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Tests for data loading, dpdata integration, and attach_labels."""
 
 import numpy as np
 import pytest
 
-from deepmd.dpa_adapt.data.loader import load_data
-from deepmd.dpa_adapt.data.convert import attach_labels, _key_from_head
-from deepmd.dpa_adapt.data.errors import DPADataError
-from deepmd.dpa_adapt.finetuner import _load_labels, _load_npy_system
+from deepmd.dpa_adapt.data.convert import (
+    _key_from_head,
+    attach_labels,
+)
+from deepmd.dpa_adapt.data.errors import (
+    DPADataError,
+)
+from deepmd.dpa_adapt.data.loader import (
+    load_data,
+)
+from deepmd.dpa_adapt.finetuner import (
+    _load_labels,
+    _load_npy_system,
+)
 
 
 def _make_system(tmp_path, name="sys", set_indices=(0,), n_atoms=2, n_frames=3):
     """Create a minimal deepmd/npy system dir and load it via dpdata."""
-    import dpdata
     root = tmp_path / name
     root.mkdir()
     (root / "type.raw").write_text("\n".join(str(i % 2) for i in range(n_atoms)) + "\n")
@@ -28,6 +38,7 @@ def _make_system(tmp_path, name="sys", set_indices=(0,), n_atoms=2, n_frames=3):
 # ---------------------------------------------------------------------------
 # set.* sort ordering
 # ---------------------------------------------------------------------------
+
 
 class TestSetDirSorting:
     """dpdata preserves set.* numeric ordering during loading."""
@@ -76,6 +87,7 @@ class TestSetDirSorting:
 # load_data
 # ---------------------------------------------------------------------------
 
+
 class TestLoadData:
     def test_valid_system_returns_dpdata_system(self, tmp_path):
         system = _make_system(tmp_path)
@@ -88,13 +100,15 @@ class TestLoadData:
         root.mkdir()
         (root / "type.raw").write_text("0\n1\n")
         (root / "type_map.raw").write_text("H\nO\n")
-        sd = root / "set.000"; sd.mkdir()
+        sd = root / "set.000"
+        sd.mkdir()
         np.save(sd / "coord.npy", np.zeros((2, 6)))
         np.save(sd / "box.npy", np.tile(np.eye(3).ravel(), (2, 1)))
 
         result = load_data(str(root))
         assert len(result) == 1
         import dpdata
+
         assert isinstance(result[0], dpdata.System)
 
     def test_list_of_systems(self, tmp_path):
@@ -109,7 +123,8 @@ class TestLoadData:
         root.mkdir()
         (root / "type.raw").write_text("0\n")
         (root / "type_map.raw").write_text("H\n")
-        sd = root / "set.000"; sd.mkdir()
+        sd = root / "set.000"
+        sd.mkdir()
         np.save(sd / "coord.npy", np.zeros((2, 3)))
         np.save(sd / "box.npy", np.tile(np.eye(3).ravel(), (2, 1)))
 
@@ -150,13 +165,19 @@ class TestGlob:
 # attach_labels — _key_from_head
 # ---------------------------------------------------------------------------
 
+
 class TestKeyFromHead:
     def test_string_head(self):
         assert _key_from_head("energy") == "energy"
         assert _key_from_head("bandgap") == "bandgap"
 
     def test_dict_with_property_name(self):
-        assert _key_from_head({"type": "property", "property_name": "bandgap", "task_dim": 1}) == "bandgap"
+        assert (
+            _key_from_head(
+                {"type": "property", "property_name": "bandgap", "task_dim": 1}
+            )
+            == "bandgap"
+        )
         assert _key_from_head({"property_name": "humo"}) == "humo"
 
     def test_dict_known_types(self):
@@ -196,7 +217,11 @@ class TestAttachLabels:
     def test_dict_head_property_name(self, tmp_path):
         system = self._make_sys(tmp_path)
         values = np.array([[1.0], [2.0], [3.0]])
-        attach_labels(system, head={"type": "property", "property_name": "gap", "task_dim": 1}, values=values)
+        attach_labels(
+            system,
+            head={"type": "property", "property_name": "gap", "task_dim": 1},
+            values=values,
+        )
         assert "gap" in system.data
 
     def test_2d_values_written_correctly(self, tmp_path):
@@ -230,6 +255,7 @@ class TestAttachLabels:
 # ---------------------------------------------------------------------------
 # _load_labels — custom label key fallback
 # ---------------------------------------------------------------------------
+
 
 class TestLoadLabelsCustomKey:
     """_load_labels falls back to set.*/key.npy when key not in dpdata's store."""

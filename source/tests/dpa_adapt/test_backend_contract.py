@@ -10,11 +10,12 @@ No large checkpoint file is needed; we build a tiny model from a config
 dict and run a single forward pass.
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 import numpy as np
 import pytest
-
 
 # Smallest possible DPA-3 descriptor config that get_model accepts.
 _MINIMAL_DPA3_CONFIG = {
@@ -77,7 +78,9 @@ def _clear_default_torch_device():
     try:
         import torch
         import torch.utils._device as _device
-        from torch.overrides import _get_current_function_mode_stack
+        from torch.overrides import (
+            _get_current_function_mode_stack,
+        )
     except Exception:
         yield
         return
@@ -115,8 +118,9 @@ def _run_forward_cpu(extractor, coords, atype, box):
 class _HeavyContract:
     """Guarded heavy tests that need DPA checkpoint + GPU."""
 
-    def test_real_checkpoint_descriptor_shape(self):
-        ...  # placeholder for future Bohrium-only tests
+    def test_real_checkpoint_descriptor_shape(
+        self,
+    ): ...  # placeholder for future Bohrium-only tests
 
 
 class TestBackendContract:
@@ -130,7 +134,10 @@ class TestBackendContract:
     def _require_deepmd(self):
         """Skip if the deepmd model builder is not usable."""
         try:
-            from deepmd.dpa_adapt._backend import build_model_from_config
+            from deepmd.dpa_adapt._backend import (
+                build_model_from_config,
+            )
+
             build_model_from_config(_MINIMAL_DPA3_CONFIG)
         except Exception as exc:
             pytest.skip(f"deepmd build_model_from_config not functional: {exc}")
@@ -138,7 +145,8 @@ class TestBackendContract:
     @pytest.fixture
     def _extractor(self):
         """Build a model + extractor, yield it, then **always** disable the
-        descriptor hook so a test failure never leaks global state."""
+        descriptor hook so a test failure never leaks global state.
+        """
         from deepmd.dpa_adapt._backend import (
             _DescriptorExtraction,
             build_model_from_config,
@@ -155,7 +163,9 @@ class TestBackendContract:
 
     def test_build_model_from_config(self):
         """``build_model_from_config`` succeeds with minimal config."""
-        from deepmd.dpa_adapt._backend import build_model_from_config
+        from deepmd.dpa_adapt._backend import (
+            build_model_from_config,
+        )
 
         wrapper = build_model_from_config(_MINIMAL_DPA3_CONFIG)
         assert wrapper is not None
@@ -184,7 +194,9 @@ class TestBackendContract:
 
         desc = _run_forward_cpu(_extractor, coords, atype, box)
 
-        assert desc.ndim == 3, f"expected (n_frames, n_atoms, feat_dim), got {desc.shape}"
+        assert desc.ndim == 3, (
+            f"expected (n_frames, n_atoms, feat_dim), got {desc.shape}"
+        )
         assert desc.shape[0] == n_frames
         assert desc.shape[1] == n_atoms
         assert desc.shape[2] > 0, "feature dim must be > 0"
@@ -239,26 +251,34 @@ class TestBackendHelpers:
 
     def test_get_torch_device_returns_device(self):
         import sys
-        from unittest.mock import MagicMock
+        from unittest.mock import (
+            MagicMock,
+        )
 
         if isinstance(sys.modules.get("torch"), MagicMock):
             pytest.skip("torch is mocked by another test")
 
-        from deepmd.dpa_adapt._backend import get_torch_device
+        from deepmd.dpa_adapt._backend import (
+            get_torch_device,
+        )
 
         device = get_torch_device()
         assert device.type in ("cpu", "cuda")
 
     def test_load_torch_file_roundtrip(self, tmp_path):
         import sys
-        from unittest.mock import MagicMock
+        from unittest.mock import (
+            MagicMock,
+        )
 
         if isinstance(sys.modules.get("torch"), MagicMock):
             pytest.skip("torch is mocked by another test")
 
         import torch
 
-        from deepmd.dpa_adapt._backend import load_torch_file
+        from deepmd.dpa_adapt._backend import (
+            load_torch_file,
+        )
 
         path = str(tmp_path / "test.pt")
         data = {"key": "value", "n": 42}
@@ -272,10 +292,13 @@ class TestFormatVersion:
 
     def test_freeze_bundle_has_format_version(self, tmp_path):
         """A frozen bundle from DPAFineTuner.freeze() must carry format_version=1."""
-        import numpy as np
-        from unittest.mock import patch
+        from unittest.mock import (
+            patch,
+        )
 
-        from deepmd.dpa_adapt import DPAFineTuner
+        from deepmd.dpa_adapt import (
+            DPAFineTuner,
+        )
 
         system = tmp_path / "sys"
         system.mkdir()
@@ -299,7 +322,9 @@ class TestFormatVersion:
             ft.fit(str(system), target_key="energy")
             frozen = ft.freeze(str(tmp_path / "model.pth"))
 
-        from deepmd.dpa_adapt._backend import load_torch_file
+        from deepmd.dpa_adapt._backend import (
+            load_torch_file,
+        )
 
         bundle = load_torch_file(frozen)
         assert bundle.get("format_version") == 1, (

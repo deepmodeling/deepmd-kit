@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 # data/validate.py
 #
 # Content-level sanity checks for dpdata systems.
@@ -6,14 +7,20 @@
 # cells, misaligned frame counts) plus two coarse magnitude bounds. This is
 # NOT anomaly detection — it does not look for statistical outliers.
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
-from pathlib import Path
-from typing import List, Literal, NamedTuple, Union
+from typing import (
+    Literal,
+    NamedTuple,
+)
 
 import numpy as np
 
-from dpa_adapt.data.errors import DPADataError
+from dpa_adapt.data.errors import (
+    DPADataError,
+)
 
 # Magnitude sanity thresholds — values past these are almost never real.
 _ENERGY_MAX_EV_PER_ATOM = 1000.0
@@ -27,14 +34,16 @@ class Issue(NamedTuple):
     """A single data-quality finding from check_data()."""
 
     severity: Literal["warning", "error"]
-    system: str          # system identifier (source path or hash)
-    set_dir: str         # always "" for dpdata systems (no set.* granularity)
-    file: str            # data key the issue concerns, e.g. "energies"
-    description: str     # human-readable explanation
+    system: str  # system identifier (source path or hash)
+    set_dir: str  # always "" for dpdata systems (no set.* granularity)
+    file: str  # data key the issue concerns, e.g. "energies"
+    description: str  # human-readable explanation
 
 
 def _check_system(
-    system, identifier: str, box_det_tol: float,
+    system,
+    identifier: str,
+    box_det_tol: float,
 ) -> list[Issue]:
     """Run all content checks on a single dpdata system."""
     issues: list[Issue] = []
@@ -78,20 +87,26 @@ def _check_system(
         arr = np.asarray(arr)
         if not np.all(np.isfinite(arr)):
             n_bad = int(np.count_nonzero(~np.isfinite(arr)))
-            issues.append(_issue(
-                "error", key,
-                f"{key}: contains {n_bad} non-finite value(s) (NaN or Inf).",
-            ))
+            issues.append(
+                _issue(
+                    "error",
+                    key,
+                    f"{key}: contains {n_bad} non-finite value(s) (NaN or Inf).",
+                )
+            )
 
     # --- degenerate box (|det| below tolerance) ---
     if cells is not None and np.all(np.isfinite(cells)):
         dets = np.abs(np.linalg.det(cells))
         for fi in np.where(dets < box_det_tol)[0]:
-            issues.append(_issue(
-                "error", "cells",
-                f"cells: frame {int(fi)} has |det| = {dets[fi]:.2e} "
-                f"(< tol {box_det_tol:.0e}), likely degenerate box.",
-            ))
+            issues.append(
+                _issue(
+                    "error",
+                    "cells",
+                    f"cells: frame {int(fi)} has |det| = {dets[fi]:.2e} "
+                    f"(< tol {box_det_tol:.0e}), likely degenerate box.",
+                )
+            )
 
     # --- energy magnitude (per atom) ---
     if energies is not None and coords is not None and coords.ndim >= 2:
@@ -101,12 +116,15 @@ def _check_system(
             if n_atoms > 0:
                 per_atom = np.abs(energies) / n_atoms
                 for fi in np.where(per_atom > _ENERGY_MAX_EV_PER_ATOM)[0]:
-                    issues.append(_issue(
-                        "warning", "energies",
-                        f"energies: frame {int(fi)} has |E/atom| = "
-                        f"{per_atom[fi]:.1f} eV/atom "
-                        f"(> {_ENERGY_MAX_EV_PER_ATOM:.0f}); suspicious magnitude.",
-                    ))
+                    issues.append(
+                        _issue(
+                            "warning",
+                            "energies",
+                            f"energies: frame {int(fi)} has |E/atom| = "
+                            f"{per_atom[fi]:.1f} eV/atom "
+                            f"(> {_ENERGY_MAX_EV_PER_ATOM:.0f}); suspicious magnitude.",
+                        )
+                    )
 
     # --- force magnitude (per component) ---
     if forces is not None:
@@ -115,12 +133,15 @@ def _check_system(
             abs_f = np.abs(forces)
             per_frame_max = abs_f.max(axis=tuple(range(1, abs_f.ndim)))
             for fi in np.where(per_frame_max > _FORCE_MAX_EV_PER_ANGSTROM)[0]:
-                issues.append(_issue(
-                    "warning", "forces",
-                    f"forces: frame {int(fi)} has a force component of "
-                    f"{per_frame_max[fi]:.1f} eV/Ang "
-                    f"(> {_FORCE_MAX_EV_PER_ANGSTROM:.0f}); suspicious magnitude.",
-                ))
+                issues.append(
+                    _issue(
+                        "warning",
+                        "forces",
+                        f"forces: frame {int(fi)} has a force component of "
+                        f"{per_frame_max[fi]:.1f} eV/Ang "
+                        f"(> {_FORCE_MAX_EV_PER_ANGSTROM:.0f}); suspicious magnitude.",
+                    )
+                )
 
     # --- frame-count alignment ---
     ref = coords.shape[0] if coords.ndim >= 2 else 0
@@ -129,11 +150,14 @@ def _check_system(
         if arr is not None:
             arr = np.asarray(arr)
             if arr.ndim >= 1 and arr.shape[0] != ref and ref > 0:
-                issues.append(_issue(
-                    "error", key,
-                    f"{key} has {arr.shape[0]} frame(s) but coords has "
-                    f"{ref}; frame counts must align.",
-                ))
+                issues.append(
+                    _issue(
+                        "error",
+                        key,
+                        f"{key} has {arr.shape[0]} frame(s) but coords has "
+                        f"{ref}; frame counts must align.",
+                    )
+                )
 
     return issues
 
@@ -180,9 +204,7 @@ def check_data(
         identifier = source if source else f"system[{i}]"
         for issue in _check_system(system, identifier, box_det_tol):
             if strict:
-                raise DPADataError(
-                    f"check_data (strict): {issue.description}"
-                )
+                raise DPADataError(f"check_data (strict): {issue.description}")
             issues.append(issue)
 
     return issues

@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 # dpa_adapt/conditions.py
 """Condition manager for scalar condition inputs (e.g. temperature, pressure)."""
 
@@ -8,6 +9,7 @@ import numpy as np
 
 class DPAConditionError(Exception):
     """Raised when conditions are missing, mismatched, or used before fit."""
+
     pass
 
 
@@ -21,7 +23,9 @@ class ConditionManager:
         self._keys = None
 
     def fit(self, conditions: dict[str, np.ndarray]) -> None:
-        from sklearn.preprocessing import StandardScaler
+        from sklearn.preprocessing import (
+            StandardScaler,
+        )
 
         self._scalers = {}
         self._keys = sorted(conditions.keys())
@@ -32,9 +36,7 @@ class ConditionManager:
 
     def transform(self, conditions: dict[str, np.ndarray]) -> np.ndarray:
         if self._scalers is None:
-            raise DPAConditionError(
-                "ConditionManager.transform() called before fit()."
-            )
+            raise DPAConditionError("ConditionManager.transform() called before fit().")
         parts = []
         for key in self._keys:
             if key not in conditions:
@@ -42,9 +44,7 @@ class ConditionManager:
                     f"Condition key {key!r} was present at fit time "
                     f"but is missing from transform()."
                 )
-            x = self._scalers[key].transform(
-                np.asarray(conditions[key]).reshape(-1, 1)
-            )
+            x = self._scalers[key].transform(np.asarray(conditions[key]).reshape(-1, 1))
             parts.append(x)
         return np.hstack(parts)
 

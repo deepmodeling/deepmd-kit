@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
 """Lock DPATrainer._build_fitting_net's dim_case_embd behavior.
 
 History (the "repeatedly reverted" patch): 2026-05-18 a dim_case_embd=31
@@ -13,10 +14,13 @@ So: FT/LP fitting_net has no dim_case_embd unless the user sets it
 explicitly via fitting_net_params. These tests build config only.
 """
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
-from deepmd.dpa_adapt.trainer import DPATrainer
-
+from deepmd.dpa_adapt.trainer import (
+    DPATrainer,
+)
 
 TYPE_MAP = ["H", "C", "N", "O"]
 DUMMY_SYS = ["/data/sys"]
@@ -36,7 +40,8 @@ def _trainer(pretrained, **overrides):
 def test_pretrained_mode_no_dim_case_embd(tmp_path):
     """FT/LP (pretrained != None) must NOT inject dim_case_embd: the paper
     single-task fine-tune random-inits the property head, so there is no
-    [159, 240] checkpoint head to match."""
+    [159, 240] checkpoint head to match.
+    """
     ckpt = tmp_path / "ckpt.pt"
     ckpt.write_bytes(b"")
     t = _trainer(str(ckpt))

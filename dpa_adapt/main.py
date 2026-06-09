@@ -4,7 +4,9 @@
 This is the console_script target registered in pyproject.toml.
 """
 
-from dpa_adapt.cli import main
+from dpa_adapt.cli import (
+    main,
+)
 
 if __name__ == "__main__":
     main()
