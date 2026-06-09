@@ -93,9 +93,7 @@ def _make_env_mat_vg(
     nlist_safe = torch.where(mask, nlist, nall)
 
     coord_l = coord[:, :natoms].view(bsz, -1, 1, 3)
-    index = (
-        nlist_safe.view(bsz, -1).to(torch.int64).unsqueeze(-1).expand(-1, -1, 3)
-    )
+    index = nlist_safe.view(bsz, -1).to(torch.int64).unsqueeze(-1).expand(-1, -1, 3)
     coord_pad = torch.concat([coord, coord[:, -1:, :] + rcut], dim=1)
     coord_r = torch.gather(coord_pad, 1, index).view(bsz, natoms, nnei, 3)
     diff = coord_r - coord_l

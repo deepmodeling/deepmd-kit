@@ -4,15 +4,15 @@ import unittest
 import numpy as np
 import torch
 
+from deepmd.pt.model.atomic_model.dp_atomic_model import (
+    DPAtomicModel,
+)
 from deepmd.pt.model.descriptor.env_mat import (
     prod_env_mat,
 )
 from deepmd.pt.model.descriptor.env_mat_vg import (
     VG_ENV_DIM,
     prod_env_mat_vg,
-)
-from deepmd.pt.model.atomic_model.dp_atomic_model import (
-    DPAtomicModel,
 )
 from deepmd.pt.model.descriptor.se_a_vg import (
     DescrptSeAVg,
