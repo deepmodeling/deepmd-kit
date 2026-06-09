@@ -217,6 +217,7 @@ sdist.exclude = [
 ]
 wheel.packages = [
     "deepmd",
+    "dpa_tools",
 ]
 wheel.py-api = "py37"
 build-dir = "build/{wheel_tag}"
