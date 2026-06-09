@@ -34,9 +34,6 @@ from deepmd.pt.model.model.spin_model import (
     SpinModel,
     _lookup_type_values,
 )
-from deepmd.pt.utils.nlist import (
-    extend_input_and_build_neighbor_list,
-)
 from deepmd.pt.utils.utils import (
     to_torch_tensor,
 )
@@ -158,6 +155,7 @@ class SeZMSpinModel(SeZMModel):
                 coord, box=box, fparam=fparam, aparam=aparam
             )
             del coord, box, fparam, aparam
+            atype = atype.to(device=cc.device, dtype=torch.long)
             nf, nloc = atype.shape[:2]
             if cc.ndim == 2:
                 cc = cc.view(nf, nloc, 3)
@@ -261,6 +259,9 @@ class SeZMSpinModel(SeZMModel):
         charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Return spin-aware lower-interface predictions with internal keys."""
+        extended_atype = extended_atype.to(
+            device=extended_coord.device, dtype=torch.long
+        )
         _, nloc = nlist.shape[:2]
         (
             extended_coord_updated,
@@ -539,14 +540,7 @@ class SeZMSpinModel(SeZMModel):
         box: torch.Tensor | None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """Build the real-atom neighbor list before spin expansion."""
-        return extend_input_and_build_neighbor_list(
-            coord,
-            atype,
-            self.get_rcut(),
-            self.real_sel,
-            mixed_types=True,
-            box=box,
-        )
+        return super().build_neighbor_list(coord, atype, box)
 
     def format_nlist(
         self,

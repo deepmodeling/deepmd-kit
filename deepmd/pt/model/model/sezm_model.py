@@ -891,6 +891,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                     coord, box=box, fparam=fparam, aparam=aparam
                 )
                 del coord, box, fparam, aparam
+                atype = atype.to(device=cc.device, dtype=torch.long)
                 nf, nloc = atype.shape[:2]
                 if cc.ndim == 2:
                     cc = cc.view(nf, nloc, 3)
@@ -1562,6 +1563,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         cc_ext, _, fp, ap, input_prec = self._input_type_cast(
             extended_coord, fparam=fparam, aparam=aparam
         )
+        extended_atype = extended_atype.to(device=cc_ext.device, dtype=torch.long)
         cc_ext = cc_ext.reshape(extended_atype.shape[0], -1, 3)
         if extended_coord_corr is not None and extended_coord_corr.ndim == 2:
             extended_coord_corr = extended_coord_corr.reshape(
