@@ -47,13 +47,9 @@ class PairDeepMD : public PairDeepBaseModel {
   void settings(int, char**) override;
   void coeff(int, char**) override;
   void compute(int, int) override;
-  void* extract(const char*, int&) override;
   int pack_reverse_comm(int, int, double*) override;
   void unpack_reverse_comm(int, int*, double*) override;
-  const std::vector<double>& current_fparam() const { return fparam; }
   double eval_energy_with_fparam(const std::vector<double>& fparam_override);
-  double latest_dedn() const { return cached_dedn; }
-  bool has_latest_dedn() const { return cached_dedn_valid; }
 
  protected:
   deepmd_compat::DeepPot deep_pot;
@@ -61,8 +57,6 @@ class PairDeepMD : public PairDeepBaseModel {
 
  private:
   CommBrickDeepMD* commdata_;
-  double cached_dedn;
-  int cached_dedn_valid;
 };
 
 }  // namespace LAMMPS_NS

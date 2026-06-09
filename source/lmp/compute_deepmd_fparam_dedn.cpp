@@ -2,6 +2,7 @@
 #include "compute_deepmd_fparam_dedn.h"
 
 #include <cerrno>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <limits>
@@ -66,10 +67,20 @@ ComputeDeepmdFparamDedn::ComputeDeepmdFparamDedn(LAMMPS* lmp,
   } else {
     error->all(FLERR, "Source must be a variable, compute, or fix reference");
   }
+  if (source_id.empty()) {
+    error->all(FLERR, "Source ID must not be empty");
+  }
 
   int iarg = 4;
   if (iarg < narg) {
-    delta = atof(arg[iarg]);
+    char* endptr = nullptr;
+    errno = 0;
+    delta = std::strtod(arg[iarg], &endptr);
+    if (endptr == arg[iarg] || *endptr != '\0' || errno == ERANGE ||
+        !std::isfinite(delta)) {
+      error->all(FLERR,
+                 "delta must be a finite number in compute deepmd/fparam/dedn");
+    }
     ++iarg;
   }
   if (iarg != narg) {
@@ -178,12 +189,6 @@ double ComputeDeepmdFparamDedn::get_source_value() {
 
 double ComputeDeepmdFparamDedn::compute_scalar() {
   invoked_scalar = update->ntimestep;
-  int dim = 0;
-  if (void* ptr = pair->extract("deepmd_dedn", dim)) {
-    scalar = *static_cast<double*>(ptr);
-    return scalar;
-  }
-
   double fparam0 = get_source_value();
   std::vector<double> fparam_plus(1, fparam0 + delta);
   std::vector<double> fparam_minus(1, fparam0 - delta);

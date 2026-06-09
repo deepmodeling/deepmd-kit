@@ -95,62 +95,6 @@ inline void _DP_DeepPotCompute<float>(DP_DeepPot* dp,
                       energy, force, virial, atomic_energy, atomic_virial);
 }
 
-template <typename FPTYPE>
-inline void _DP_DeepPotComputeadd(DP_DeepPot* dp,
-                                  const int nframes,
-                                  const int natom,
-                                  const FPTYPE* coord,
-                                  const int* atype,
-                                  const FPTYPE* cell,
-                                  const FPTYPE* fparam,
-                                  const FPTYPE* aparam,
-                                  double* energy,
-                                  FPTYPE* force,
-                                  FPTYPE* virial,
-                                  double* dE_dN,
-                                  FPTYPE* atomic_energy,
-                                  FPTYPE* atomic_virial);
-
-template <>
-inline void _DP_DeepPotComputeadd<double>(DP_DeepPot* dp,
-                                          const int nframes,
-                                          const int natom,
-                                          const double* coord,
-                                          const int* atype,
-                                          const double* cell,
-                                          const double* fparam,
-                                          const double* aparam,
-                                          double* energy,
-                                          double* force,
-                                          double* virial,
-                                          double* dE_dN,
-                                          double* atomic_energy,
-                                          double* atomic_virial) {
-  DP_DeepPotCompute2add(dp, nframes, natom, coord, atype, cell, fparam, aparam,
-                        energy, force, virial, dE_dN, atomic_energy,
-                        atomic_virial);
-}
-
-template <>
-inline void _DP_DeepPotComputeadd<float>(DP_DeepPot* dp,
-                                         const int nframes,
-                                         const int natom,
-                                         const float* coord,
-                                         const int* atype,
-                                         const float* cell,
-                                         const float* fparam,
-                                         const float* aparam,
-                                         double* energy,
-                                         float* force,
-                                         float* virial,
-                                         double* dE_dN,
-                                         float* atomic_energy,
-                                         float* atomic_virial) {
-  DP_DeepPotComputef2add(dp, nframes, natom, coord, atype, cell, fparam, aparam,
-                         energy, force, virial, dE_dN, atomic_energy,
-                         atomic_virial);
-}
-
 // support spin
 template <typename FPTYPE>
 inline void _DP_DeepSpinCompute(DP_DeepSpin* dp,
@@ -271,71 +215,6 @@ inline void _DP_DeepPotComputeNList<float>(DP_DeepPot* dp,
   DP_DeepPotComputeNListf2(dp, nframes, natom, coord, atype, cell, nghost,
                            nlist, ago, fparam, aparam, energy, force, virial,
                            atomic_energy, atomic_virial);
-}
-
-template <typename FPTYPE>
-inline void _DP_DeepPotComputeNListadd(DP_DeepPot* dp,
-                                       const int nframes,
-                                       const int natom,
-                                       const FPTYPE* coord,
-                                       const int* atype,
-                                       const FPTYPE* cell,
-                                       const int nghost,
-                                       const DP_Nlist* nlist,
-                                       const int ago,
-                                       const FPTYPE* fparam,
-                                       const FPTYPE* aparam,
-                                       double* energy,
-                                       FPTYPE* force,
-                                       FPTYPE* virial,
-                                       double* dE_dN,
-                                       FPTYPE* atomic_energy,
-                                       FPTYPE* atomic_virial);
-
-template <>
-inline void _DP_DeepPotComputeNListadd<double>(DP_DeepPot* dp,
-                                               const int nframes,
-                                               const int natom,
-                                               const double* coord,
-                                               const int* atype,
-                                               const double* cell,
-                                               const int nghost,
-                                               const DP_Nlist* nlist,
-                                               const int ago,
-                                               const double* fparam,
-                                               const double* aparam,
-                                               double* energy,
-                                               double* force,
-                                               double* virial,
-                                               double* dE_dN,
-                                               double* atomic_energy,
-                                               double* atomic_virial) {
-  DP_DeepPotComputeNList2add(dp, nframes, natom, coord, atype, cell, nghost,
-                             nlist, ago, fparam, aparam, energy, force, virial,
-                             dE_dN, atomic_energy, atomic_virial);
-}
-
-template <>
-inline void _DP_DeepPotComputeNListadd<float>(DP_DeepPot* dp,
-                                              const int nframes,
-                                              const int natom,
-                                              const float* coord,
-                                              const int* atype,
-                                              const float* cell,
-                                              const int nghost,
-                                              const DP_Nlist* nlist,
-                                              const int ago,
-                                              const float* fparam,
-                                              const float* aparam,
-                                              double* energy,
-                                              float* force,
-                                              float* virial,
-                                              double* dE_dN,
-                                              float* atomic_energy,
-                                              float* atomic_virial) {
-  DP_DeepPotComputeNListf2add(dp, nframes, natom, coord, atype, cell, nghost,
-                              nlist, ago, fparam, aparam, energy, force, virial,
-                              dE_dN, atomic_energy, atomic_virial);
 }
 
 // support spin
@@ -1382,51 +1261,6 @@ class DeepPot : public DeepBaseModel {
     _DP_DeepPotComputeNList<VALUETYPE>(
         dp, nframes, natoms, coord_, atype_, box_, nghost, lmp_list.nl, ago,
         fparam__, aparam__, ener_, force_, virial_, nullptr, nullptr);
-    DP_CHECK_OK(DP_DeepPotCheckOK, dp);
-  };
-
-  template <typename VALUETYPE, typename ENERGYVTYPE>
-  void compute(
-      ENERGYVTYPE& ener,
-      std::vector<VALUETYPE>& force,
-      std::vector<VALUETYPE>& virial,
-      ENERGYVTYPE& dE_dN,
-      const std::vector<VALUETYPE>& coord,
-      const std::vector<int>& atype,
-      const std::vector<VALUETYPE>& box,
-      const int nghost,
-      const InputNlist& lmp_list,
-      const int& ago,
-      const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>()) {
-    unsigned int natoms = atype.size();
-    unsigned int nframes = natoms > 0 ? coord.size() / natoms / 3 : 1;
-    assert(nframes * natoms * 3 == coord.size());
-    if (!box.empty()) {
-      assert(box.size() == nframes * 9);
-    }
-    const VALUETYPE* coord_ = &coord[0];
-    const VALUETYPE* box_ = !box.empty() ? &box[0] : nullptr;
-    const int* atype_ = &atype[0];
-    double* ener_ = _DP_Get_Energy_Pointer(ener, nframes);
-    double* dE_dN_ = _DP_Get_Energy_Pointer(dE_dN, nframes);
-    force.resize(static_cast<size_t>(nframes) * natoms * 3);
-    virial.resize(static_cast<size_t>(nframes) * 9);
-    VALUETYPE* force_ = &force[0];
-    VALUETYPE* virial_ = &virial[0];
-    std::vector<VALUETYPE> fparam_, aparam_;
-    validate_fparam_aparam(nframes, (aparam_nall ? natoms : (natoms - nghost)),
-                           fparam, aparam);
-    tile_fparam_aparam(fparam_, nframes, dfparam, fparam);
-    tile_fparam_aparam(aparam_, nframes,
-                       (aparam_nall ? natoms : (natoms - nghost)) * daparam,
-                       aparam);
-    const VALUETYPE* fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
-    const VALUETYPE* aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
-
-    _DP_DeepPotComputeNListadd<VALUETYPE>(
-        dp, nframes, natoms, coord_, atype_, box_, nghost, lmp_list.nl, ago,
-        fparam__, aparam__, ener_, force_, virial_, dE_dN_, nullptr, nullptr);
     DP_CHECK_OK(DP_DeepPotCheckOK, dp);
   };
   /**

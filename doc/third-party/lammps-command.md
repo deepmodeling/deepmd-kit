@@ -126,8 +126,11 @@ compute ID group-ID deepmd/fparam/dedn source [delta]
 - `source` can be a global variable (`v_name`), a compute (`c_ID`) or a fix (`f_ID`).
 - `source[index]` may be used for vector-valued computes or fixes, with 1-based indexing.
 - `delta` is the perturbation used in the central difference formula. If omitted, a small default perturbation is used.
-- This compute currently targets a single frame-parameter dimension, which matches the
-  constant-potential use case where the potentiostat variable is scalar.
+- The compute performs two additional model-energy evaluations, at `source + delta`
+  and `source - delta`. It does not consume a direct derivative tensor from the model.
+- This path currently requires `pair_style deepmd` with one model and one frame-parameter
+  dimension. It therefore works with existing supported backends and models that accept
+  a scalar frame parameter; no `o_dE_dN` or other derivative output is required.
 
 Only a single `pair_coeff` command is used with the deepmd style which specifies atom names. These are mapped to LAMMPS atom types (integers from 1 to Ntypes) by specifying Ntypes additional arguments after `* *` in the `pair_coeff` command.
 If atom names are not set in the `pair_coeff` command, the training parameter {ref}`type_map <model/type_map>` will be used by default.

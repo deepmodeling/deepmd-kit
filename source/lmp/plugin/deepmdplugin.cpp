@@ -67,7 +67,7 @@ extern "C" void lammpsplugin_init(void* lmp, void* handle, void* regfunc) {
   plugin.style = "compute";
   plugin.name = "deepmd/fparam/dedn";
   plugin.info = "compute deepmd/fparam/dedn " STR_GIT_SUMM;
-  plugin.author = "OpenAI";
+  plugin.author = "Li Fu";
   plugin.creator.v2 = (lammpsplugin_factory2*)&computedeepmdfparamdedn;
   (*register_plugin)(&plugin, lmp);
 

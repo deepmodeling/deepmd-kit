@@ -2,7 +2,6 @@
 #include <string.h>
 
 #include <cassert>
-#include <cstdlib>
 #include <iomanip>
 #include <iostream>
 #include <limits>
@@ -201,7 +200,7 @@ void PairDeepBaseModel::make_fparam_from_fix(vector<double>& fparam) {
       error->all(FLERR, "fix " + fix_fparam_id +
                             " does not provide a vector for fparam");
     }
-    if (fix->size_vector < fix_fparam_index + dim_fparam) {
+    if (fix_fparam_index > fix->size_vector - dim_fparam) {
       error->all(FLERR, "fix " + fix_fparam_id +
                             " vector is shorter than fparam dimension");
     }

@@ -2,6 +2,7 @@
 #include <string.h>
 
 #include <cassert>
+#include <cerrno>
 #include <cstdlib>
 #include <iomanip>
 #include <iostream>
@@ -121,25 +122,12 @@ static const char cite_user_deepmd_package[] =
 PairDeepMD::PairDeepMD(LAMMPS* lmp)
     : PairDeepBaseModel(
           lmp, cite_user_deepmd_package, deep_pot, deep_pot_model_devi),
-      commdata_(nullptr),
-      cached_dedn(0.0),
-      cached_dedn_valid(0) {
+      commdata_(nullptr) {
   // Constructor body can be empty
 }
 
 PairDeepMD::~PairDeepMD() {
   // Ensure base class destructor is called
-}
-
-void* PairDeepMD::extract(const char* str, int& dim) {
-  if (strcmp(str, "deepmd_dedn") == 0) {
-    if (!cached_dedn_valid) {
-      return nullptr;
-    }
-    dim = 0;
-    return (void*)&cached_dedn;
-  }
-  return PairDeepBaseModel::extract(str, dim);
 }
 
 double PairDeepMD::eval_energy_with_fparam(
@@ -178,8 +166,7 @@ double PairDeepMD::eval_energy_with_fparam(
   std::vector<double> dbox(9, 0);
   std::vector<double> daparam;
 
-  if (dim_fparam > 0 &&
-      fparam_override.size() != static_cast<size_t>(dim_fparam)) {
+  if (fparam_override.size() != static_cast<size_t>(dim_fparam)) {
     error->all(FLERR, "fparam override has the wrong dimension");
   }
 
@@ -219,14 +206,6 @@ double PairDeepMD::eval_energy_with_fparam(
     }
 #endif
   }
-  if (do_compute_fparam) {
-    make_fparam_from_compute(fparam);
-  } else if (do_fix_fparam) {
-    make_fparam_from_fix(fparam);
-  }
-  const std::vector<double>& fparam_eval =
-      fparam_override.empty() ? fparam : fparam_override;
-
   int ago = neighbor->ago;
 
   if (do_ghost) {
@@ -246,7 +225,7 @@ double PairDeepMD::eval_energy_with_fparam(
 
     try {
       deep_pot.compute(dener, dforce, dvirial, dcoord, dtype, dbox, nghost,
-                       lmp_list, ago, fparam_eval, daparam);
+                       lmp_list, ago, fparam_override, daparam);
     } catch (deepmd_compat::deepmd_exception& e) {
       error->one(FLERR, e.what());
     }
@@ -379,7 +358,6 @@ void PairDeepMD::compute(int eflag, int vflag) {
     if (single_model || multi_models_no_mod_devi) {
       // cvflag_atom is the right flag for the cvatom matrix
       if (!(eflag_atom || cvflag_atom)) {
-        cached_dedn_valid = 0;
         try {
           deep_pot.compute(dener, dforce, dvirial, dcoord, dtype, dbox, nghost,
                            lmp_list, ago, fparam, daparam);
@@ -389,7 +367,6 @@ void PairDeepMD::compute(int eflag, int vflag) {
       }
       // do atomic energy and virial
       else {
-        cached_dedn_valid = 0;
         vector<double> deatom(nall * 1, 0);
         vector<double> dvatom(nall * 9, 0);
         try {
@@ -436,7 +413,6 @@ void PairDeepMD::compute(int eflag, int vflag) {
         }
       }
     } else if (multi_models_mod_devi) {
-      cached_dedn_valid = 0;
       vector<double> deatom(nall * 1, 0);
       vector<double> dvatom(nall * 9, 0);
       vector<vector<double>> all_virial;
@@ -630,7 +606,6 @@ void PairDeepMD::compute(int eflag, int vflag) {
     }
   } else {
     if (numb_models == 1) {
-      cached_dedn_valid = 0;
       try {
         deep_pot.compute(dener, dforce, dvirial, dcoord, dtype, dbox);
       } catch (deepmd_compat::deepmd_exception& e) {
@@ -823,8 +798,11 @@ void PairDeepMD::settings(int narg, char** arg) {
       fix_fparam_index = -1;
       if (iarg + 2 < narg && !is_key(arg[iarg + 2])) {
         char* endptr = nullptr;
+        errno = 0;
         long one_based = std::strtol(arg[iarg + 2], &endptr, 10);
-        if (endptr == arg[iarg + 2] || *endptr != '\0' || one_based < 1) {
+        if (endptr == arg[iarg + 2] || *endptr != '\0' || errno == ERANGE ||
+            one_based < 1 ||
+            one_based > static_cast<long>(std::numeric_limits<int>::max())) {
           error->all(FLERR,
                      "invalid fparam_from_fix key: vector index must be a "
                      "positive 1-based integer");

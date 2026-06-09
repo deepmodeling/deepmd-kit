@@ -122,9 +122,10 @@ def test_pair_fparam_from_fix(lammps) -> None:
     assert lammps.eval("pe") == pytest.approx(_energy_with_direct_fparam(0.25852028))
 
 
-def test_compute_deepmd_fparam_dedn(lammps) -> None:
-    """Compare the reported derivative against a central finite difference."""
+def test_compute_deepmd_fparam_dedn_without_direct_model_output(lammps) -> None:
+    """Check finite differences with a model that has no direct dE/dN output."""
     eps = 1.0e-6
+    assert "o_dE_dN" not in pbtxt_file.read_text()
     lammps.run(1)
     dedn = lammps.eval("c_dedn")
     ref = (_energy_at_fp(0.25852028 + eps) - _energy_at_fp(0.25852028 - eps)) / (
