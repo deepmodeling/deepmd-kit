@@ -58,12 +58,12 @@ FixCBOAMD::FixCBOAMD(LAMMPS* lmp, int narg, char** arg)
       pa(nullptr),
       fa(nullptr),
       ea(nullptr),
+      energy_photon(nullptr),
       dt(0.0),
       current_step(0),
       output_file(nullptr) {
   vector_flag = 1;
   extvector = 1;
-  size_vector = 3;
 
   if (narg < 4) {
     error->all(FLERR, "Illegal fix cboamd command");
@@ -131,6 +131,8 @@ FixCBOAMD::FixCBOAMD(LAMMPS* lmp, int narg, char** arg)
     }
   }
 
+  size_vector = photons_enabled ? 3 * nphoton + 2 : 3;
+
   // Check required parameters
   if (!model_dipole) {
     error->all(FLERR, "fix cboamd requires dipole model");
@@ -166,12 +168,19 @@ FixCBOAMD::FixCBOAMD(LAMMPS* lmp, int narg, char** arg)
   memory->create(dipole, 3, "fix_cboamd:dipole");
   memory->create(polarizability, 9, "fix_cboamd:polarizability");
   memory->create(forces_deepmd, atom->nmax * 3, "fix_cboamd:forces_deepmd");
+  for (int i = 0; i < 3; i++) {
+    dipole[i] = 0.0;
+  }
+  for (int i = 0; i < 9; i++) {
+    polarizability[i] = 0.0;
+  }
 
   if (photons_enabled) {
     memory->create(qa, nphoton, "fix_cboamd:qa");
     memory->create(pa, nphoton, "fix_cboamd:pa");
     memory->create(fa, nphoton, "fix_cboamd:fa");
     memory->create(ea, nphoton, "fix_cboamd:ea");
+    memory->create(energy_photon, nphoton, "fix_cboamd:energy_photon");
 
     // Initialize photon coordinates and momenta
     for (int i = 0; i < nphoton; i++) {
@@ -179,6 +188,7 @@ FixCBOAMD::FixCBOAMD(LAMMPS* lmp, int narg, char** arg)
       pa[i] = 0.0;
       fa[i] = 0.0;
       ea[i] = 0.0;
+      energy_photon[i] = 0.0;
     }
   }
 
@@ -226,6 +236,7 @@ FixCBOAMD::~FixCBOAMD() {
     memory->destroy(pa);
     memory->destroy(fa);
     memory->destroy(ea);
+    memory->destroy(energy_photon);
   }
 
   if (output_file) {
@@ -301,7 +312,9 @@ void FixCBOAMD::post_force(int vflag) {
   // Compute DeepMD properties
   convert_coordinates_to_deepmd_format();
   compute_deepmd_dipole();
-  // compute_deepmd_polarizability();
+  if (model_polar) {
+    compute_deepmd_polarizability();
+  }
 
   // Compute CBOA forces if photons enabled
   if (photons_enabled) {
@@ -326,7 +339,11 @@ double FixCBOAMD::compute_scalar() {
 double FixCBOAMD::compute_vector(int n) {
   // Return dipole components
   // if (n >= 0 && n < 3) return dipole[n];
+  ke_photon = 0.0;
+  pe_photon = 0.0;
   for (int i = 0; i < nphoton; i++) {
+    ke_photon += 0.5 * pa[i] * pa[i];
+    pe_photon += energy_photon[i];
     if (n == i) {
       return pa[i];
     }
@@ -337,6 +354,8 @@ double FixCBOAMD::compute_vector(int n) {
       return ea[i];
     }
   }
+  if (n == 3 * nphoton) return ke_photon;
+  if (n == 3 * nphoton + 1) return pe_photon;
 
   return 0.0;
 }
@@ -459,6 +478,7 @@ void FixCBOAMD::unpack_restart(int nlocal, int nth) {
       pa[i] = 0.0;
       fa[i] = 0.0;
       ea[i] = 0.0;
+      energy_photon[i] = 0.0;
     }
   }
 }
@@ -514,7 +534,7 @@ void FixCBOAMD::compute_deepmd_dipole() {
     // Compute dipole using DeepMD
 
     // dipole_grad_deepmd is the negative gradient of dipole w.r.t. atomic
-    // coordinates It is a flattened array of size 3 (dipole components) * N
+    // coordinates. It is a flattened array of size 3 (dipole components) * N
     // (atoms) * 3 (atomic coordinate components)
     deepmd_dipole->compute(dipole_deepmd, dipole_grad_deepmd,
                            dipole_virial_deepmd, dipole_atom_deepmd,
@@ -537,14 +557,18 @@ void FixCBOAMD::compute_deepmd_dipole() {
 void FixCBOAMD::compute_deepmd_polarizability() {
   try {
     // Compute polarizability using DeepMD
+
+    // polar_grad_deepmd is the negative gradient of polarizability w.r.t. atomic
+    // coordinates. It is a flattened array of size 9 (polarizability components)
+    // * N (atoms) * 3 (atomic coordinate components)
     deepmd_polar->compute(polar_deepmd, polar_grad_deepmd, polar_virial_deepmd,
                           polar_atom_deepmd, polar_atom_virial_deepmd,
                           coords_deepmd, atom_types_deepmd, cell_deepmd);
 
-    // Extract polarizability components (DeepMD returns in eV/A, convert to
-    // a.u.)
+    // The CO2 polar model was trained on CP2K Angstrom^3 polarizabilities.
+    // Convert to atomic units before using chi in the CBO equations.
     for (int i = 0; i < 9; i++) {
-      polarizability[i] = polar_deepmd[i] * EV_PER_ANGSTROM_TO_HARTREE_PER_BOHR;
+      polarizability[i] = polar_deepmd[i] * ANGSTROM3_TO_BOHR3;
     }
   } catch (const std::exception& e) {
     error->all(FLERR, "DeepMD polarizability computation failed: {}", e.what());
@@ -579,9 +603,21 @@ void FixCBOAMD::compute_cboa_forces() {
 
   for (int i = 0; i < nphoton; i++) {
     ea[i] = omega_photon[i] * qa[i];
+    double denominator = 1.0;
     for (int j = 0; j < 3; j++) {
       ea[i] -= lambda_photon[i] * lambda_vector[i][j] * dipole[j];
+      energy_photon[i] = ea[i] * ea[i] / 2.0;
+      if (model_polar) {
+        for (int k = 0; k < 3; k++) {
+          int pp = j * 3 + k;
+          denominator += lambda_photon[i] * lambda_photon[i] *
+                         lambda_vector[i][j] * lambda_vector[i][k] *
+                         polarizability[pp];
+        }
+      }
     }
+    ea[i] /= denominator;
+    energy_photon[i] /= denominator;
   }
 
   int nlocal = atom->nlocal;
@@ -597,8 +633,29 @@ void FixCBOAMD::compute_cboa_forces() {
         for (int alpha = 0; alpha < nphoton; alpha++) {
           // CBOA force contribution from photon alpha
           f[i][di] -= ea[alpha] * lambda_photon[alpha] *
-                      lambda_vector[alpha][di] * dipole_grad_deepmd[idx] /
+                      lambda_vector[alpha][dp] * dipole_grad_deepmd[idx] /
                       EV_TO_HARTREE;
+        }
+      }
+    }
+  }
+
+  if (model_polar) {
+    for (int pl1 = 0; pl1 < 3; pl1++) {
+      for (int pl2 = 0; pl2 < 3; pl2++) {
+        int pp = pl1 * 3 + pl2;
+        for (int i = 0; i < nlocal; i++) {
+          for (int di = 0; di < 3; di++) {
+            int idx = pp * nlocal * 3 + i * 3 + di;
+            for (int alpha = 0; alpha < nphoton; alpha++) {
+              f[i][di] -= 0.5 * ea[alpha] * ea[alpha] *
+                          lambda_photon[alpha] * lambda_photon[alpha] *
+                          lambda_vector[alpha][pl1] *
+                          lambda_vector[alpha][pl2] *
+                          polar_grad_deepmd[idx] * ANGSTROM3_TO_BOHR3 /
+                          EV_TO_HARTREE;
+            }
+          }
         }
       }
     }

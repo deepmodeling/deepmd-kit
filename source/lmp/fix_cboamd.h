@@ -110,7 +110,8 @@ class FixCBOAMD : public Fix {
   double** lambda_vector;
 
   // Photon coordinates and momenta
-  double *qa, *pa, *fa, *ea;
+  double *qa, *pa, *fa, *ea, *energy_photon;
+  double ke_photon, pe_photon;
 
   // Time step
   double dt;
@@ -136,6 +137,8 @@ class FixCBOAMD : public Fix {
   // Unit conversion constants
   static constexpr double EV_TO_HARTREE = 0.0367493;
   static constexpr double ANGSTROM_TO_BOHR = 1.88973;
+  static constexpr double ANGSTROM3_TO_BOHR3 =
+      ANGSTROM_TO_BOHR * ANGSTROM_TO_BOHR * ANGSTROM_TO_BOHR;
   static constexpr double EV_PER_ANGSTROM_TO_HARTREE_PER_BOHR = 0.0194467;
   static constexpr double PS_TO_AU =
       41.3413745758e3;  // 1 fs = 41.3413745758 a.u. of time
