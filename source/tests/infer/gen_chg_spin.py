@@ -123,12 +123,13 @@ def main():
     e_def, f_def, v_def, ae_def, av_def = dp.eval(coord, box, atype, atomic=True)
     print(f"\n// Default charge_spin total energy: {e_def[0, 0]:.18e}")  # noqa: T201
 
-    # Explicit charge_spin = [0.5, 0.8]
-    charge_spin_exp = np.array([[0.5, 0.8]], dtype=np.float64)
+    # Explicit charge_spin = [1.0, 2.0] (charge idx 101, spin idx 2 — both
+    # differ from the default [0.0, 1.0] which maps to charge idx 100, spin 1)
+    charge_spin_exp = np.array([[1.0, 2.0]], dtype=np.float64)
     e_exp, f_exp, v_exp, ae_exp, av_exp = dp.eval(
         coord, box, atype, atomic=True, charge_spin=charge_spin_exp
     )
-    print(f"\n// Explicit charge_spin [0.5, 0.8] total energy: {e_exp[0, 0]:.18e}")  # noqa: T201
+    print(f"\n// Explicit charge_spin [1.0, 2.0] total energy: {e_exp[0, 0]:.18e}")  # noqa: T201
 
     # Sanity: different charge_spin should yield different outputs
     assert not np.allclose(e_def, e_exp), (

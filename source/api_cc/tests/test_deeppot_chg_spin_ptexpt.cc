@@ -29,8 +29,10 @@ class TestInferDeepPotChgSpinPtExpt : public ::testing::Test {
                                   3.51,  2.51, 2.60, 4.27,  3.22, 1.56};
   std::vector<int> atype = {0, 1, 1, 0, 1, 1};
   std::vector<VALUETYPE> box = {13., 0., 0., 0., 13., 0., 0., 0., 13.};
-  // charge_spin is always double regardless of VALUETYPE
-  std::vector<double> charge_spin_explicit = {0.5, 0.8};
+  // charge_spin is always double regardless of VALUETYPE.
+  // [1.0, 2.0] maps to charge idx 101, spin idx 2 — both differ from the
+  // model's default_chg_spin [0.0, 1.0] (charge idx 100, spin idx 1).
+  std::vector<double> charge_spin_explicit = {1.0, 2.0};
 
   std::vector<VALUETYPE> expected_e_explicit;
   std::vector<VALUETYPE> expected_f_explicit;
