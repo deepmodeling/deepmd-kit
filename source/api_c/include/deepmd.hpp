@@ -1101,16 +1101,15 @@ class DeepPot : public DeepBaseModel {
    * @warning Natoms should not be zero when computing multiple frames.
    **/
   template <typename VALUETYPE, typename ENERGYVTYPE>
-  void compute(
-      ENERGYVTYPE& ener,
-      std::vector<VALUETYPE>& force,
-      std::vector<VALUETYPE>& virial,
-      const std::vector<VALUETYPE>& coord,
-      const std::vector<int>& atype,
-      const std::vector<VALUETYPE>& box,
-      const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
-      const std::vector<double>& charge_spin = std::vector<double>()) {
+  void compute(ENERGYVTYPE& ener,
+               std::vector<VALUETYPE>& force,
+               std::vector<VALUETYPE>& virial,
+               const std::vector<VALUETYPE>& coord,
+               const std::vector<int>& atype,
+               const std::vector<VALUETYPE>& box,
+               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+               const std::vector<double>& charge_spin = std::vector<double>()) {
     (void)charge_spin;
     unsigned int natoms = atype.size();
     unsigned int nframes = natoms > 0 ? coord.size() / natoms / 3 : 1;
@@ -1162,18 +1161,17 @@ class DeepPot : public DeepBaseModel {
    * @warning Natoms should not be zero when computing multiple frames.
    **/
   template <typename VALUETYPE, typename ENERGYVTYPE>
-  void compute(
-      ENERGYVTYPE& ener,
-      std::vector<VALUETYPE>& force,
-      std::vector<VALUETYPE>& virial,
-      std::vector<VALUETYPE>& atom_energy,
-      std::vector<VALUETYPE>& atom_virial,
-      const std::vector<VALUETYPE>& coord,
-      const std::vector<int>& atype,
-      const std::vector<VALUETYPE>& box,
-      const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
-      const std::vector<double>& charge_spin = std::vector<double>()) {
+  void compute(ENERGYVTYPE& ener,
+               std::vector<VALUETYPE>& force,
+               std::vector<VALUETYPE>& virial,
+               std::vector<VALUETYPE>& atom_energy,
+               std::vector<VALUETYPE>& atom_virial,
+               const std::vector<VALUETYPE>& coord,
+               const std::vector<int>& atype,
+               const std::vector<VALUETYPE>& box,
+               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+               const std::vector<double>& charge_spin = std::vector<double>()) {
     (void)charge_spin;
     unsigned int natoms = atype.size();
     unsigned int nframes = natoms > 0 ? coord.size() / natoms / 3 : 1;
@@ -1232,19 +1230,18 @@ class DeepPot : public DeepBaseModel {
    * @warning Natoms should not be zero when computing multiple frames.
    **/
   template <typename VALUETYPE, typename ENERGYVTYPE>
-  void compute(
-      ENERGYVTYPE& ener,
-      std::vector<VALUETYPE>& force,
-      std::vector<VALUETYPE>& virial,
-      const std::vector<VALUETYPE>& coord,
-      const std::vector<int>& atype,
-      const std::vector<VALUETYPE>& box,
-      const int nghost,
-      const InputNlist& lmp_list,
-      const int& ago,
-      const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
-      const std::vector<double>& charge_spin = std::vector<double>()) {
+  void compute(ENERGYVTYPE& ener,
+               std::vector<VALUETYPE>& force,
+               std::vector<VALUETYPE>& virial,
+               const std::vector<VALUETYPE>& coord,
+               const std::vector<int>& atype,
+               const std::vector<VALUETYPE>& box,
+               const int nghost,
+               const InputNlist& lmp_list,
+               const int& ago,
+               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+               const std::vector<double>& charge_spin = std::vector<double>()) {
     (void)charge_spin;
     unsigned int natoms = atype.size();
     unsigned int nframes = natoms > 0 ? coord.size() / natoms / 3 : 1;
@@ -1302,21 +1299,20 @@ class DeepPot : public DeepBaseModel {
    * @warning Natoms should not be zero when computing multiple frames.
    **/
   template <typename VALUETYPE, typename ENERGYVTYPE>
-  void compute(
-      ENERGYVTYPE& ener,
-      std::vector<VALUETYPE>& force,
-      std::vector<VALUETYPE>& virial,
-      std::vector<VALUETYPE>& atom_energy,
-      std::vector<VALUETYPE>& atom_virial,
-      const std::vector<VALUETYPE>& coord,
-      const std::vector<int>& atype,
-      const std::vector<VALUETYPE>& box,
-      const int nghost,
-      const InputNlist& lmp_list,
-      const int& ago,
-      const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
-      const std::vector<double>& charge_spin = std::vector<double>()) {
+  void compute(ENERGYVTYPE& ener,
+               std::vector<VALUETYPE>& force,
+               std::vector<VALUETYPE>& virial,
+               std::vector<VALUETYPE>& atom_energy,
+               std::vector<VALUETYPE>& atom_virial,
+               const std::vector<VALUETYPE>& coord,
+               const std::vector<int>& atype,
+               const std::vector<VALUETYPE>& box,
+               const int nghost,
+               const InputNlist& lmp_list,
+               const int& ago,
+               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+               const std::vector<double>& charge_spin = std::vector<double>()) {
     (void)charge_spin;
     unsigned int natoms = atype.size();
     unsigned int nframes = natoms > 0 ? coord.size() / natoms / 3 : 1;
