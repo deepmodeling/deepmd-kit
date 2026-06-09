@@ -958,7 +958,7 @@ class SO2Convolution(nn.Module):
         self._rotate_to_local_fn = None
         self._rotate_back_fn = None
         if self.use_triton_infer:
-            from .triton import (
+            from .triton.so2_rotation import (
                 rotate_back_block,
                 rotate_back_dense,
                 rotate_to_local_block,
@@ -966,11 +966,19 @@ class SO2Convolution(nn.Module):
             )
 
             if self.mmax == 1:
-                self._rotate_to_local_fn = rotate_to_local_block
-                self._rotate_back_fn = rotate_back_block
+                self._rotate_to_local_fn = lambda x, src, wigner: rotate_to_local_block(
+                    x, src, wigner, self.lmax
+                )
+                self._rotate_back_fn = lambda x_local, wigner: rotate_back_block(
+                    x_local, wigner, self.lmax
+                )
             else:
-                self._rotate_to_local_fn = rotate_to_local_dense
-                self._rotate_back_fn = rotate_back_dense
+                self._rotate_to_local_fn = lambda x, src, wigner: rotate_to_local_dense(
+                    x, src, wigner, self.coeff_index_m, self.ebed_dim_full
+                )
+                self._rotate_back_fn = lambda x_local, wigner: rotate_back_dense(
+                    x_local, wigner, self.coeff_index_m, self.ebed_dim_full
+                )
 
         # === Step 1. Precompute coefficient indices for m-major reduced layout ===
         coeff_index_m = build_m_major_index(self.lmax, self.mmax, device=self.device)
@@ -1460,12 +1468,10 @@ class SO2Convolution(nn.Module):
                 # ``self._rotate_to_local_fn`` was bound in ``__init__`` (the
                 # block kernel for the m-major ``mmax == 1`` layout, dense
                 # otherwise).
-                x_local = self._rotate_to_local_fn(
-                    x, src, D_full, self.coeff_index_m, self.ebed_dim_full
-                )  # (E, D_m, C_wide)
+                x_local = self._rotate_to_local_fn(x, src, D_full)  # (E, D_m, C_wide)
                 if self.node_wise_grid_product is not None:
                     x_dst_local = self._rotate_to_local_fn(
-                        x, dst, D_full, self.coeff_index_m, self.ebed_dim_full
+                        x, dst, D_full
                     )  # (E, D_m, C_wide)
             else:
                 D_m_prime = project_D_to_m(
@@ -1623,12 +1629,7 @@ class SO2Convolution(nn.Module):
         with nvtx_range("SO2Conv/rotate_back"):
             Dt_full = edge_cache.Dt_full
             if self.use_triton_infer and not self.training:
-                x_message = self._rotate_back_fn(
-                    x_local,
-                    Dt_full,
-                    self.coeff_index_m,
-                    self.ebed_dim_full,
-                )  # (E, D, C_wide)
+                x_message = self._rotate_back_fn(x_local, Dt_full)  # (E, D, C_wide)
             else:
                 Dt_from_m = project_Dt_from_m(
                     Dt_full=Dt_full,

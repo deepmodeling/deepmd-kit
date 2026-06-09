@@ -58,8 +58,6 @@ from __future__ import (
     annotations,
 )
 
-import math
-
 import torch
 from torch import (
     Tensor,
@@ -71,12 +69,6 @@ from ..indexing import (
 
 __all__ = [
     "TRITON_ROTATION_AVAILABLE",
-    "rotate_back_block",
-    "rotate_back_dense",
-    "rotate_back_reference",
-    "rotate_to_local_block",
-    "rotate_to_local_dense",
-    "rotate_to_local_reference",
 ]
 
 try:
@@ -1159,30 +1151,8 @@ def _launch_rotate_back_bwd(
 
 
 # ======================================================================
-# Block-diagonal launch wrappers + layout detection (mmax == 1)
+# Block-diagonal launch wrappers (mmax == 1)
 # ======================================================================
-def _block_layout_lmax(coeff_index: Tensor, dim_full: int) -> int:
-    """Return ``lmax`` if ``(coeff_index, dim_full)`` is the m-major ``mmax=1``
-    layout that the block-diagonal kernels assume, else ``-1``.
-
-    This intentionally checks only shape-level invariants.  The block kernels
-    ignore ``coeff_index`` values, so production callers must only use the block
-    entry points when they own the canonical m-major ``mmax=1`` index.
-    """
-    dim_full = int(dim_full)
-    root = math.isqrt(dim_full)
-    if root * root != dim_full:
-        return -1
-    lmax = root - 1
-    try:
-        numel = int(coeff_index.shape[0])
-    except Exception:  # pragma: no cover - exotic shape proxies
-        return -1
-    if lmax < 1 or numel != 3 * lmax + 1:
-        return -1
-    return lmax
-
-
 def _launch_bd_to_local_fwd(
     x: Tensor, src: Tensor, wigner: Tensor, lmax: int
 ) -> Tensor:
@@ -1619,37 +1589,23 @@ def rotate_back_dense(
     return _rotate_back_op(x_local, wigner, coeff_index, int(dim_full))
 
 
-def rotate_to_local_block(
-    x: Tensor, src: Tensor, wigner: Tensor, coeff_index: Tensor, dim_full: int
-) -> Tensor:
+def rotate_to_local_block(x: Tensor, src: Tensor, wigner: Tensor, lmax: int) -> Tensor:
     """Apply the block-diagonal ``global -> local`` rotation.
 
-    Use this only when the caller owns the invariant that ``coeff_index`` is the
-    canonical m-major ``mmax=1`` index produced by
-    :func:`build_m_major_index`.  The kernel ignores the tensor values in
-    ``coeff_index`` and derives the layout from ``lmax``.
+    Use this when the caller owns the invariant that the reduced layout is the
+    canonical m-major ``mmax=1`` layout for ``lmax``.  The block kernel derives
+    the reduced row order from ``lmax`` and does not consume a coefficient-index
+    tensor.
     """
-    lmax = _block_layout_lmax(coeff_index, dim_full)
-    if lmax < 0:
-        raise ValueError(
-            "rotate_to_local_block requires the m-major mmax=1 coefficient layout."
-        )
-    return _block_to_local_op(x, src, wigner, lmax)
+    return _block_to_local_op(x, src, wigner, int(lmax))
 
 
-def rotate_back_block(
-    x_local: Tensor, wigner: Tensor, coeff_index: Tensor, dim_full: int
-) -> Tensor:
+def rotate_back_block(x_local: Tensor, wigner: Tensor, lmax: int) -> Tensor:
     """Apply the block-diagonal ``local -> global`` rotation.
 
-    Use this only when the caller owns the invariant that ``coeff_index`` is the
-    canonical m-major ``mmax=1`` index produced by
-    :func:`build_m_major_index`.  The kernel ignores the tensor values in
-    ``coeff_index`` and derives the layout from ``lmax``.
+    Use this when the caller owns the invariant that ``x_local`` is ordered in
+    the canonical m-major ``mmax=1`` layout for ``lmax``.  The block kernel
+    derives the reduced column order from ``lmax`` and does not consume a
+    coefficient-index tensor.
     """
-    lmax = _block_layout_lmax(coeff_index, dim_full)
-    if lmax < 0:
-        raise ValueError(
-            "rotate_back_block requires the m-major mmax=1 coefficient layout."
-        )
-    return _block_back_op(x_local, wigner, lmax)
+    return _block_back_op(x_local, wigner, int(lmax))

@@ -94,28 +94,6 @@ class TestSeZMTritonRotationDispatch(unittest.TestCase):
             rotate_back_reference(x_local, wigner, coeff_index, dim),
         )
 
-    def test_explicit_block_uses_shape_contract_only(self):
-        device = torch.device("cpu")
-        dtype = torch.float32
-        lmax = 3
-        dim = get_so3_dim_of_lmax(lmax)
-        canonical = build_m_major_index(lmax, 1, device=device)
-        coeff_index = torch.roll(canonical, shifts=1)
-        x = torch.randn(4, dim, 3, device=device, dtype=dtype)
-        src = torch.tensor([0, 2, 1, 3, 0], dtype=torch.long, device=device)
-        wigner = torch.randn(src.numel(), dim, dim, device=device, dtype=dtype)
-        x_local = torch.randn(
-            src.numel(), coeff_index.numel(), 3, device=device, dtype=dtype
-        )
-
-        self.assertEqual(
-            rotate_to_local_block(x, src, wigner, coeff_index, dim).shape, x_local.shape
-        )
-        self.assertEqual(
-            rotate_back_block(x_local, wigner, coeff_index, dim).shape,
-            (src.numel(), dim, 3),
-        )
-
     def test_symbolic_trace_noncanonical_same_length_uses_dense_op(self):
         device = torch.device("cpu")
         dtype = torch.float32
@@ -186,7 +164,7 @@ class TestSeZMTritonRotation(unittest.TestCase):
 
         xa = x0.clone().requires_grad_(True)
         wa = w0.clone().requires_grad_(True)
-        out = rotate_to_local_block(xa, src, wa, coeff_index, dim)
+        out = rotate_to_local_block(xa, src, wa, lmax)
         xr = x0.clone().requires_grad_(True)
         wr = w0.clone().requires_grad_(True)
         ref = rotate_to_local_reference(xr, src, wr, coeff_index, dim)
@@ -206,7 +184,7 @@ class TestSeZMTritonRotation(unittest.TestCase):
 
         xa = xl0.clone().requires_grad_(True)
         wa = w0.clone().requires_grad_(True)
-        out = rotate_back_block(xa, wa, coeff_index, dim)
+        out = rotate_back_block(xa, wa, lmax)
         xr = xl0.clone().requires_grad_(True)
         wr = w0.clone().requires_grad_(True)
         ref = rotate_back_reference(xr, wr, coeff_index, dim)
@@ -248,7 +226,7 @@ class TestSeZMTritonRotation(unittest.TestCase):
         def forward_and_grad(x, wigner):
             x_req = x.detach().requires_grad_(True)
             w_req = wigner.detach().requires_grad_(True)
-            out = rotate_to_local_block(x_req, src, w_req, coeff_index, dim)
+            out = rotate_to_local_block(x_req, src, w_req, lmax)
             grad_x, grad_wigner = torch.autograd.grad(
                 out,
                 (x_req, w_req),
@@ -291,7 +269,7 @@ class TestSeZMTritonRotation(unittest.TestCase):
         def forward_and_grad(x_local, wigner):
             x_req = x_local.detach().requires_grad_(True)
             w_req = wigner.detach().requires_grad_(True)
-            out = rotate_back_block(x_req, w_req, coeff_index, dim)
+            out = rotate_back_block(x_req, w_req, lmax)
             grad_x, grad_wigner = torch.autograd.grad(
                 out,
                 (x_req, w_req),
