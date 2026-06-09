@@ -49,6 +49,9 @@ from deepmd.pt.model.model import (
 from deepmd.pt.train.wrapper import (
     ModelWrapper,
 )
+from deepmd.pt.utils.compile_compat import (
+    build_inductor_compile_options,
+)
 from deepmd.pt.utils.env import (
     DEVICE,
 )
@@ -219,6 +222,7 @@ def _collect_metadata(
     model: torch.nn.Module,
     output_keys: list[str],
     is_spin: bool | None = None,
+    do_atomic_virial: bool = False,
 ) -> dict:
     """Assemble the flat metadata dict expected by :class:`DeepPotPTExpt`.
 
@@ -261,6 +265,8 @@ def _collect_metadata(
         "mixed_types": bool(model.mixed_types()),
         "has_message_passing": _model_has_message_passing(model),
         "has_comm_artifact": False,
+        "do_atomic_virial": bool(do_atomic_virial),
+        "nnei": int(sum(model.get_sel())),
         "has_default_fparam": bool(model.has_default_fparam()),
         "default_fparam": _to_py_list(model.get_default_fparam()),
         "default_chg_spin": _to_py_list(model.get_default_chg_spin()),
@@ -468,6 +474,7 @@ def freeze_sezm_to_pt2(
     *,
     device: torch.device | None = None,
     head: str | None = None,
+    atomic_virial: bool = False,
 ) -> None:
     """Freeze a SeZM checkpoint into an AOTInductor ``.pt2`` archive.
 
@@ -484,6 +491,9 @@ def freeze_sezm_to_pt2(
         Model head to export from a multi-task checkpoint. If omitted, the
         ``Default`` head is used when present; otherwise multi-task checkpoints
         must pass an explicit head. Single-task checkpoints must pass ``None``.
+    atomic_virial
+        Whether to include per-atom virial outputs in the exported graph.
+        Disable this for fastest LAMMPS force/energy/total-virial inference.
     """
     from torch._inductor import (
         aoti_compile_and_package,
@@ -515,9 +525,6 @@ def freeze_sezm_to_pt2(
         has_spin=is_spin,
     )
 
-    # do_atomic_virial=True pulls every key that DeepPotPTExpt may read
-    # (energy, energy_redu, energy_derv_r, energy_derv_c, energy_derv_c_redu)
-    # into the traced graph.
     if is_spin:
         (
             ext_coord,
@@ -538,7 +545,7 @@ def freeze_sezm_to_pt2(
             fparam=fparam,
             aparam=aparam,
             charge_spin=charge_spin,
-            do_atomic_virial=True,
+            do_atomic_virial=atomic_virial,
         )
     else:
         (
@@ -558,7 +565,7 @@ def freeze_sezm_to_pt2(
             fparam=fparam,
             aparam=aparam,
             charge_spin=charge_spin,
-            do_atomic_virial=True,
+            do_atomic_virial=atomic_virial,
         )
 
     # Output key order is taken from a concrete run; Python dict order
@@ -588,14 +595,19 @@ def freeze_sezm_to_pt2(
         exported = move_to_device_pass(exported, target_device)
 
     out_path_str = str(out_path)
-    # Match the runtime eval compile path's Inductor option: triton.max_tiles=1
-    # keeps pointwise grids 1D so the data-dependent compact-edge axis stays on
-    # Triton's x grid (limit 2**31); the default tiling places it on the y/z
-    # grid (limit 65535), which overflows for large systems.
-    with inductor_config.patch({"triton.max_tiles": 1}):
+    compile_options = build_inductor_compile_options()
+    # Keep AOTInductor aligned with the eval compile path.  ``triton.max_tiles=1``
+    # keeps data-dependent edge axes on Triton's x grid, whose bound is large
+    # enough for production-scale neighbor lists.
+    with inductor_config.patch({**compile_options, "triton.max_tiles": 1}):
         aoti_compile_and_package(exported, package_path=out_path_str)
 
-    metadata = _collect_metadata(model, output_keys=output_keys, is_spin=is_spin)
+    metadata = _collect_metadata(
+        model,
+        output_keys=output_keys,
+        is_spin=is_spin,
+        do_atomic_virial=atomic_virial,
+    )
     with zipfile.ZipFile(out_path_str, "a") as zf:
         zf.writestr("model/extra/metadata.json", json.dumps(metadata))
         # The raw training params are preserved so `dp change-bias` and
