@@ -1,20 +1,44 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Unit tests for PopulationLoss.
+"""Unit tests for PopulationLoss and PopulationModel.
 
 Covers:
 - Correct per-frame total computation (no cross-frame cancellation for
   batch_size > 1).
 - Consistent prefactor scaling across loss_func choices.
 - Zero loss when predictions equal labels.
+- Serialize/deserialize round-trip for PopulationFittingNet.
+- End-to-end: JIT save → DeepPopulation.eval() smoke test.
 """
 
+import os
 import unittest
 
+import numpy as np
 import torch
 
+from deepmd.infer.deep_population import (
+    DeepPopulation,
+)
 from deepmd.pt.loss.population import (
     PopulationLoss,
 )
+from deepmd.pt.model.descriptor.se_a import (
+    DescrptSeA,
+)
+from deepmd.pt.model.model.population_model import (
+    PopulationModel,
+)
+from deepmd.pt.model.task.population import (
+    PopulationFittingNet,
+)
+from deepmd.pt.utils import (
+    env,
+)
+from deepmd.pt.utils.utils import (
+    to_numpy_array,
+)
+
+dtype = env.GLOBAL_PT_FLOAT_PRECISION
 
 
 def _make_label_and_pred(nframes: int, natoms: int, task_dim: int = 2):
@@ -214,6 +238,85 @@ class TestPopulationLossMAEValue(unittest.TestCase):
         # spin_pred = [1, 1], spin_label = [0, 0]
         # spin_loss = sum(|1-0|, |1-0|) / natoms = 2 / 2 = 1.0
         self.assertAlmostEqual(loss.item(), 1.0, places=6)
+
+
+class TestPopulationFittingNetSerialize(unittest.TestCase):
+    """Serialize → deserialize round-trip for PopulationFittingNet."""
+
+    def setUp(self) -> None:
+        self.rcut = 4.0
+        self.rcut_smth = 0.5
+        self.sel = [46, 92, 4]
+        self.nt = 2
+        self.dd0 = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
+
+    def test_serialize_deserialize(self) -> None:
+        """Output of deserialized fitting net must match the original."""
+        ft0 = PopulationFittingNet(
+            ntypes=self.nt,
+            dim_descrpt=self.dd0.dim_out,
+            neuron=[16, 16],
+            mixed_types=self.dd0.mixed_types(),
+        ).to(env.DEVICE)
+        ft1 = PopulationFittingNet.deserialize(ft0.serialize())
+
+        natoms = 5
+        nframes = 2
+        atype = torch.zeros(nframes, natoms, dtype=torch.int32, device=env.DEVICE)
+        descriptor = torch.rand(
+            nframes, natoms, self.dd0.dim_out, dtype=dtype, device=env.DEVICE
+        )
+        ret0 = ft0(descriptor, atype)
+        ret1 = ft1(descriptor, atype)
+        np.testing.assert_allclose(
+            to_numpy_array(ret0["population"]),
+            to_numpy_array(ret1["population"]),
+        )
+
+
+class TestPopulationModelInfer(unittest.TestCase):
+    """JIT save → DeepPopulation.eval() smoke test (mirrors TestPropertyModel)."""
+
+    def setUp(self) -> None:
+        self.natoms = 5
+        self.rcut = 4.0
+        self.nt = 2
+        self.rcut_smth = 0.5
+        self.sel = [46, 92, 4]
+        self.nf = 1
+        self.coord = 2 * torch.rand([self.natoms, 3], dtype=dtype, device="cpu")
+        cell = torch.rand([3, 3], dtype=dtype, device="cpu")
+        self.cell = (cell + cell.T) + 5.0 * torch.eye(3, device="cpu")
+        self.atype = torch.zeros(self.natoms, dtype=torch.int32, device="cpu")
+        self.dd0 = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
+        self.ft0 = PopulationFittingNet(
+            ntypes=self.nt,
+            dim_descrpt=self.dd0.dim_out,
+            neuron=[16, 16],
+            mixed_types=self.dd0.mixed_types(),
+        ).to(env.DEVICE)
+        self.type_map = ["O", "H"]
+        self.model = PopulationModel(self.dd0, self.ft0, self.type_map)
+        self.file_path = "test_population_model.pth"
+
+    def test_deeppopulation_eval(self) -> None:
+        """Save model as JIT, load as DeepPopulation, run eval."""
+        coord = self.coord.reshape(self.nf, self.natoms, 3).numpy()
+        cell = self.cell.reshape(self.nf, 9).numpy()
+        atype = self.atype.numpy()
+
+        jit_md = torch.jit.script(self.model)
+        torch.jit.save(jit_md, self.file_path)
+
+        load_md = DeepPopulation(self.file_path)
+        (populations,) = load_md.eval(
+            coords=coord, atom_types=atype, cells=cell, atomic=True
+        )
+        self.assertEqual(populations.shape, (self.nf, self.natoms, 2))
+
+    def tearDown(self) -> None:
+        if os.path.exists(self.file_path):
+            os.remove(self.file_path)
 
 
 if __name__ == "__main__":
