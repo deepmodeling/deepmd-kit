@@ -80,6 +80,29 @@ class TestAparamOutputGate(unittest.TestCase):
             torch.allclose(fitting_gate, torch.tensor(expected, dtype=dtype))
         )
 
+    def test_gate_reshape_flat_aparam(self) -> None:
+        nf, nloc, dim_descrpt = 1, 3, 4
+        sigma = 2.0
+        fitting = InvarFitting(
+            "energy",
+            ntypes=1,
+            dim_descrpt=dim_descrpt,
+            dim_out=1,
+            neuron=[4],
+            numb_aparam=1,
+            mixed_types=True,
+            use_aparam_output_gate=True,
+            aparam_gate_norm=1.0,
+            aparam_gate_clamp=False,
+        ).to(device)
+        fitting.aparam_inv_std.copy_(torch.tensor([1.0 / sigma], dtype=dtype))
+
+        outs = torch.ones(nf, nloc, 1, dtype=dtype, device=device)
+        aparam_flat = torch.full((nf * nloc,), sigma, dtype=dtype, device=device)
+        out = fitting.apply_aparam_output_gate_to_atomic_output(outs, aparam_flat)
+        expected_gate = 1.0
+        self.assertTrue(torch.allclose(out, torch.full_like(out, expected_gate)))
+
     def test_serialize_roundtrip(self) -> None:
         fitting = InvarFitting(
             "energy",

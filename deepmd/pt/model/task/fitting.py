@@ -804,12 +804,15 @@ class GeneralFitting(Fitting):
             raise ValueError(
                 "aparam is required when use_aparam_output_gate is enabled"
             )
+        nf, nloc = outs.shape[0], outs.shape[1]
         aparam_raw = aparam.to(self.prec)
-        if aparam_raw.shape[-1] != self.numb_aparam:
+        expected = nf * nloc * self.numb_aparam
+        if aparam_raw.numel() != expected:
             raise ValueError(
-                f"input aparam last dim {aparam_raw.shape[-1]} does not match "
-                f"numb_aparam={self.numb_aparam}"
+                f"input aparam: cannot reshape {list(aparam_raw.shape)} "
+                f"into ({nf}, {nloc}, {self.numb_aparam})."
             )
+        aparam_raw = aparam_raw.reshape(nf, nloc, self.numb_aparam)
         return self._apply_aparam_output_gate(outs, aparam_raw)
 
     def _forward_common(

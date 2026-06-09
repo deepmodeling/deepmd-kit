@@ -39,8 +39,6 @@ from deepmd.pt.model.descriptor.se_a import (
 )
 from deepmd.pt.model.network.mlp import (
     EmbeddingNet,
-)
-from deepmd.pt.model.network.network import (
     NetworkCollection,
 )
 from deepmd.pt.utils import (
@@ -64,6 +62,7 @@ from deepmd.pt.utils.update_sel import (
 )
 from deepmd.pt.utils.utils import (
     ActivationFn,
+    to_numpy_array,
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
@@ -254,62 +253,68 @@ class DescrptBlockSeAVg(DescriptorBlock):
         sumv2 = np.zeros_like(sumv)
         sumn = np.zeros((self.ntypes, self.nnei), dtype=np.float64)
         for system in sampled:
-            coord = np.asarray(system["coord"], dtype=np.float64)
-            atype = np.asarray(system["atype"], dtype=np.int32)
-            box = system.get("box")
+            coord = to_numpy_array(system["coord"])
+            atype_raw = system["atype"]
+            if isinstance(atype_raw, torch.Tensor):
+                atype = atype_raw.detach().cpu().numpy().astype(np.int32)
+            else:
+                atype = np.asarray(atype_raw, dtype=np.int32)
+            box_raw = system.get("box")
+            box = to_numpy_array(box_raw) if box_raw is not None else None
             nframes, nloc = atype.shape[:2]
             aparam = system.get("aparam")
             if aparam is None:
                 aparam_np = np.zeros((nframes, nloc, 1), dtype=np.float64)
             else:
-                aparam_np = np.asarray(aparam, dtype=np.float64).reshape(
-                    nframes, nloc, -1
-                )
-                if aparam_np.shape[-1] != 1:
-                    aparam_np = aparam_np[..., :1]
-            for ff in range(nframes):
-                coord_t = torch.tensor(
-                    coord[ff], dtype=self.prec, device=env.DEVICE
-                ).reshape(1, -1)
-                atype_t = torch.tensor(
-                    atype[ff], dtype=torch.long, device=env.DEVICE
-                ).reshape(1, -1)
-                box_t = None
-                if box is not None:
-                    box_t = torch.tensor(
-                        box[ff], dtype=self.prec, device=env.DEVICE
-                    ).reshape(1, 9)
-                aparam_t = torch.tensor(
-                    aparam_np[ff], dtype=self.prec, device=env.DEVICE
-                ).reshape(1, nloc, 1)
-                extended_coord, extended_atype, _, nlist = (
-                    extend_input_and_build_neighbor_list(
-                        coord_t,
-                        atype_t,
-                        self.rcut,
-                        self.sel,
-                        mixed_types=False,
-                        box=box_t,
+                aparam_flat = to_numpy_array(aparam).reshape(-1)
+                expected = nframes * nloc
+                if aparam_flat.size != expected:
+                    raise ValueError(
+                        f"aparam size {aparam_flat.size} != nframes*nloc "
+                        f"({nframes}*{nloc}={expected}); check numb_aparam "
+                        "and training data aparam layout"
                     )
-                )
-                env_mat, _, _ = prod_env_mat_vg(
-                    extended_coord,
-                    nlist,
-                    extended_atype[:, :nloc],
-                    aparam_t,
-                    self.mean,
-                    torch.ones_like(self.stddev),
+                aparam_np = aparam_flat.reshape(nframes, nloc, 1)
+            coord_t = torch.tensor(coord, dtype=self.prec, device=env.DEVICE)
+            atype_t = torch.tensor(atype, dtype=torch.long, device=env.DEVICE)
+            aparam_t = torch.tensor(aparam_np, dtype=self.prec, device=env.DEVICE)
+            box_t = None
+            if box is not None:
+                box_t = torch.tensor(box, dtype=self.prec, device=env.DEVICE)
+            extended_coord, extended_atype, _, nlist = (
+                extend_input_and_build_neighbor_list(
+                    coord_t,
+                    atype_t,
                     self.rcut,
-                    self.rcut_smth,
-                    protection=self.env_protection,
+                    self.sel,
+                    mixed_types=False,
+                    box=box_t,
                 )
-                env_mat = (
-                    env_mat.detach().cpu().numpy().reshape(nloc, self.nnei, VG_ENV_DIM)
-                )
-                for ii in range(nloc):
+            )
+            nloc_nlist = nlist.shape[1]
+            env_mat, _, _ = prod_env_mat_vg(
+                extended_coord,
+                nlist,
+                extended_atype[:, :nloc_nlist],
+                aparam_t,
+                self.mean,
+                torch.ones_like(self.stddev),
+                self.rcut,
+                self.rcut_smth,
+                protection=self.env_protection,
+            )
+            nnei_nlist = nlist.shape[2]
+            env_mat = (
+                env_mat.detach()
+                .cpu()
+                .numpy()
+                .reshape(nframes, nloc_nlist, nnei_nlist, VG_ENV_DIM)
+            )
+            for ff in range(nframes):
+                for ii in range(nloc_nlist):
                     ti = int(atype[ff, ii])
-                    sumv[ti] += env_mat[ii]
-                    sumv2[ti] += env_mat[ii] * env_mat[ii]
+                    sumv[ti] += env_mat[ff, ii]
+                    sumv2[ti] += env_mat[ff, ii] * env_mat[ff, ii]
                     sumn[ti] += 1.0
         sumn_safe = np.maximum(sumn, 1.0)[..., None]
         mean = sumv / sumn_safe
@@ -383,8 +388,7 @@ class DescrptBlockSeAVg(DescriptorBlock):
             )
         else:
             aparam = aparam.to(dtype=self.prec, device=extended_coord.device)
-            if aparam.shape[-1] != 1:
-                aparam = aparam[..., :1]
+            aparam = aparam[..., :1]
             if aparam.shape[1] != nloc:
                 aparam = aparam.reshape(nf, nloc, 1)
 
@@ -399,10 +403,11 @@ class DescrptBlockSeAVg(DescriptorBlock):
             self.rcut_smth,
             protection=self.env_protection,
         )
-        dmatrix = dmatrix.view(-1, self.nnei, VG_ENV_DIM)
+        # literal 5 (= VG_ENV_DIM) for TorchScript
+        dmatrix = dmatrix.view(-1, self.nnei, 5)
         nfnl = dmatrix.shape[0]
         xyz_scatter = torch.zeros(
-            [nfnl, VG_ENV_DIM, self.filter_neuron[-1]],
+            [nfnl, 5, self.filter_neuron[-1]],
             dtype=self.prec,
             device=extended_coord.device,
         )
@@ -412,7 +417,6 @@ class DescrptBlockSeAVg(DescriptorBlock):
                 self.filter_layers.networks,
                 self.compress_data,
                 self.compress_info,
-                strict=True,
             )
         ):
             if self.type_one_side:

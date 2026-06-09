@@ -1,8 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Environment matrix for variational-Gaussian (VG) smooth descriptors."""
 
-import math
-
 import torch
 
 from deepmd.pt.utils.preprocess import (
@@ -10,7 +8,6 @@ from deepmd.pt.utils.preprocess import (
 )
 
 VG_ENV_DIM: int = 5
-_SQRT2: float = math.sqrt(2.0)
 
 
 def vg_gaussian_radial_phi(
@@ -21,7 +18,8 @@ def vg_gaussian_radial_phi(
     """Gaussian-averaged 1/r kernel: (1/r) * erf(r / (sqrt(2)*sigma))."""
     r = length + protection
     sigma = sigma_ij + 1e-12
-    return (1.0 / r) * torch.erf(r / (_SQRT2 * sigma))
+    # literal sqrt(2) for TorchScript (module-level floats are not allowed)
+    return (1.0 / r) * torch.erf(r / (1.4142135623730951 * sigma))
 
 
 def vg_smooth_radial(
@@ -37,6 +35,23 @@ def vg_smooth_radial(
     return phi * weight
 
 
+def _normalize_aparam_vg(
+    aparam: torch.Tensor,
+    nlist: torch.Tensor,
+    nall: int,
+) -> torch.Tensor:
+    """Ensure aparam is [nf, nloc, 1] with nloc matching nlist."""
+    nf, nloc, _ = nlist.shape
+    if aparam.ndim == 2:
+        aparam = aparam.unsqueeze(-1)
+    aparam = aparam[..., :1]
+    if aparam.shape[1] == nloc:
+        return aparam
+    if aparam.shape[1] == nall:
+        return aparam[:, :nloc, :]
+    return aparam.reshape(nf, nloc, 1)
+
+
 def _gather_neighbor_sigma(
     aparam: torch.Tensor,
     nlist: torch.Tensor,
@@ -45,16 +60,20 @@ def _gather_neighbor_sigma(
 ) -> torch.Tensor:
     """Map per-atom aparam to neighbor-list sigma values."""
     nf, _, nnei = nlist.shape
-    sigma_loc = aparam[:, :nloc, 0].to(dtype=nlist.dtype)
+    mask = nlist >= 0
+    sigma_loc = aparam[:, :nloc, 0]
+    # Pad one slot so invalid neighbors (-1) can map to index nall, as in env_mat.
     sigma_ext = torch.zeros(
-        (nf, nall),
+        (nf, nall + 1),
         dtype=sigma_loc.dtype,
         device=sigma_loc.device,
     )
     sigma_ext[:, :nloc] = sigma_loc
-    index = nlist.reshape(nf, -1)
+    nlist_safe = torch.where(mask, nlist, nall).to(torch.int64)
+    index = nlist_safe.reshape(nf, -1)
     sigma_nei = torch.gather(sigma_ext, 1, index)
-    return sigma_nei.view(nf, nloc, nnei)
+    sigma_nei = sigma_nei.view(nf, nloc, nnei)
+    return torch.where(mask, sigma_nei, torch.zeros_like(sigma_nei))
 
 
 def _make_env_mat_vg(
@@ -69,20 +88,26 @@ def _make_env_mat_vg(
     bsz, natoms, nnei = nlist.shape
     coord = coord.view(bsz, -1, 3)
     nall = coord.shape[1]
+    aparam = _normalize_aparam_vg(aparam, nlist, nall)
     mask = nlist >= 0
     nlist_safe = torch.where(mask, nlist, nall)
 
     coord_l = coord[:, :natoms].view(bsz, -1, 1, 3)
-    index = nlist_safe.view(bsz, -1).unsqueeze(-1).expand(-1, -1, 3)
+    index = (
+        nlist_safe.view(bsz, -1).to(torch.int64).unsqueeze(-1).expand(-1, -1, 3)
+    )
     coord_pad = torch.concat([coord, coord[:, -1:, :] + rcut], dim=1)
     coord_r = torch.gather(coord_pad, 1, index).view(bsz, natoms, nnei, 3)
     diff = coord_r - coord_l
     length = torch.linalg.norm(diff, dim=-1, keepdim=True)
     length = length + (~mask).unsqueeze(-1)
 
-    sigma_center = aparam[:, :natoms, 0].unsqueeze(-1)
-    sigma_neighbor = _gather_neighbor_sigma(aparam, nlist, natoms, nall).unsqueeze(-1)
-    sigma_ij = torch.sqrt(sigma_center * sigma_center + sigma_neighbor * sigma_neighbor)
+    sigma_loc = aparam[:, :natoms, 0]
+    sigma_neighbor = _gather_neighbor_sigma(aparam, nlist, natoms, nall)
+    # [bsz, natoms, 1] + [bsz, natoms, nnei] -> [bsz, natoms, nnei]
+    sigma_ij = torch.sqrt(
+        sigma_loc.unsqueeze(-1).square() + sigma_neighbor.square()
+    ).unsqueeze(-1)
 
     s_val = vg_smooth_radial(
         length,
