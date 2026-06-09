@@ -480,6 +480,17 @@ to floating-point rounding. They retain full float32 accumulation regardless of
 workflows. They are compatible with the compile path (`DP_COMPILE_INFER=1`) and
 reduce both latency and peak memory.
 
+When exporting DPA4/SeZM to `.pt2`, set inference environment variables before
+running `dp --pt freeze`. The exported package is an AOTInductor artifact, so
+graph-level choices and compiler precision settings are fixed during export and
+are not re-evaluated when the `.pt2` file is later loaded by ASE or LAMMPS.
+In particular, `DP_TRITON_INFER` selects the SO(2) rotation branch that is
+captured into the exported graph, and `DP_TF32_INFER` should be set before
+export if TF32 inference is desired. `DP_ACT_INFER` is not a runtime control for
+`.pt2` inference: activation checkpointing is a Python/autograd memory-saving
+strategy, while `.pt2` inference runs a forward-only AOTI package whose force
+and virial computations have already been lowered into the exported graph.
+
 ### Hardware selection
 
 DPA4/SeZM is designed for fp32 training and inference. Hardware selection
