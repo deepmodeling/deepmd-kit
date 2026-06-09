@@ -246,8 +246,8 @@ class TestPopulationFittingNetSerialize(unittest.TestCase):
     def setUp(self) -> None:
         self.rcut = 4.0
         self.rcut_smth = 0.5
-        self.sel = [46, 92, 4]
-        self.nt = 2
+        self.sel = [46, 92, 4]  # 3 entries → DescrptSeA infers ntypes=3
+        self.nt = 3
         self.dd0 = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
 
     def test_serialize_deserialize(self) -> None:
@@ -280,14 +280,14 @@ class TestPopulationModelInfer(unittest.TestCase):
     def setUp(self) -> None:
         self.natoms = 5
         self.rcut = 4.0
-        self.nt = 2
+        self.nt = 3  # must match len(sel)
         self.rcut_smth = 0.5
-        self.sel = [46, 92, 4]
+        self.sel = [46, 92, 4]  # 3 entries → DescrptSeA infers ntypes=3
         self.nf = 1
         self.coord = 2 * torch.rand([self.natoms, 3], dtype=dtype, device="cpu")
         cell = torch.rand([3, 3], dtype=dtype, device="cpu")
         self.cell = (cell + cell.T) + 5.0 * torch.eye(3, device="cpu")
-        self.atype = torch.zeros(self.natoms, dtype=torch.int32, device="cpu")
+        self.atype = torch.tensor([0, 0, 0, 1, 2], dtype=torch.int32, device="cpu")
         self.dd0 = DescrptSeA(self.rcut, self.rcut_smth, self.sel).to(env.DEVICE)
         self.ft0 = PopulationFittingNet(
             ntypes=self.nt,
@@ -295,7 +295,7 @@ class TestPopulationModelInfer(unittest.TestCase):
             neuron=[16, 16],
             mixed_types=self.dd0.mixed_types(),
         ).to(env.DEVICE)
-        self.type_map = ["O", "H"]
+        self.type_map = ["O", "H", "B"]
         self.model = PopulationModel(self.dd0, self.ft0, self.type_map)
         self.file_path = "test_population_model.pth"
 
