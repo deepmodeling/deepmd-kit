@@ -196,7 +196,11 @@ class PopulationLoss(TaskLoss):
             spin_label_flat = spin_label.reshape(-1)[mask_flat]
             pop_pred_flat = pop_pred.reshape([-1, self.task_dim])[mask_flat]
             pop_label_flat = pop_label.reshape([-1, self.task_dim])[mask_flat]
-            # Average real atoms per frame for normalization.
+            # Normalization: use the average number of real atoms per frame.
+            # This ensures spin_loss and pop_loss scale with nframes in the
+            # same way as the no-mask case (sum / natoms ~ nframes * MAE).
+            # Frames with different real-atom counts are weighted by their
+            # atom count, which is consistent for uniformly padded batches.
             real_natoms: float | torch.Tensor = (
                 mask_float.sum(dim=1).mean().clamp(min=1.0)
             )

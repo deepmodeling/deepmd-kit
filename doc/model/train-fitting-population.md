@@ -39,14 +39,16 @@ $$
 \begin{equation}
 \begin{aligned}
 \mathcal{L} =
-& \lambda_{N_{\alpha}} \left( N^{ML}_{\alpha} - N^{DFT}_{\alpha} \right)  +
-\\ &  \lambda_{N_{\beta}} \left( N^{ML}_{\beta} - N^{DFT}_{\beta} \right) +
-\\ & \lambda_S \left( S^{ML} - S^{DFT} \right) +
-\\ & \frac{\lambda_s}{N} \sum_{i=1}^{N}  \left( s_{i}^{ML} - s_{i}^{DFT} \right) +
-\\ & \frac{\lambda_\sigma}{N} \sum_{i=1}^{N}  \left( \sigma_{i}^{ML} - \sigma_{i}^{DFT} \right)
+& \lambda_{N_{\alpha}} \ell\!\left( N^{ML}_{\alpha},\, N^{DFT}_{\alpha} \right)  +
+\\ &  \lambda_{N_{\beta}} \ell\!\left( N^{ML}_{\beta},\, N^{DFT}_{\beta} \right) +
+\\ & \lambda_S \ell\!\left( S^{ML},\, S^{DFT} \right) +
+\\ & \frac{\lambda_s}{N} \sum_{i=1}^{N} \ell\!\left( s_{i}^{ML},\, s_{i}^{DFT} \right) +
+\\ & \frac{\lambda_\sigma}{N} \sum_{i=1}^{N} \ell\!\left( \sigma_{i}^{ML},\, \sigma_{i}^{DFT} \right)
 \end{aligned}
 \end{equation}
 $$
+
+where $\ell(\hat{y}, y)$ is the chosen element-wise loss function (`mae`, `smooth_mae`, or `rmse`).
 
 This includes contributions from:
 
