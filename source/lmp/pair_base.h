@@ -65,6 +65,7 @@ class PairDeepBaseModel : public Pair {
   std::string out_file;
   int dim_fparam;
   int dim_aparam;
+  int dim_chg_spin;
   int out_each;
   int out_rel;
   int out_rel_v;
@@ -80,6 +81,7 @@ class PairDeepBaseModel : public Pair {
   std::map<int, int> old_idx_map;
   std::vector<double> fparam;
   std::vector<double> aparam;
+  std::vector<double> charge_spin;
   double eps;
   double eps_v;
 
@@ -89,6 +91,10 @@ class PairDeepBaseModel : public Pair {
   void make_aparam_from_compute(std::vector<double>& aparam);
   bool do_compute_aparam;
   std::string compute_aparam_id;
+
+  void make_charge_spin_from_compute(std::vector<double>& charge_spin);
+  bool do_compute_charge_spin;
+  std::string compute_charge_spin_id;
 
   void make_ttm_fparam(std::vector<double>& fparam);
 
