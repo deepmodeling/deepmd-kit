@@ -367,6 +367,9 @@ PairDeepBaseModel::PairDeepBaseModel(
   eps_v = 0.;
   scale = NULL;
   do_ttm = false;
+  dim_fparam = 0;
+  dim_aparam = 0;
+  dim_chg_spin = 0;
   do_compute_fparam = false;
   do_compute_aparam = false;
   do_compute_charge_spin = false;
