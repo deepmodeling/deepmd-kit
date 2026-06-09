@@ -1075,6 +1075,12 @@ class DeepPot : public DeepBaseModel {
   };
 
   /**
+   * @brief Get the dimension of the charge/spin embedding input.
+   * @return Always 0; charge_spin is not supported via the C-API path.
+   **/
+  int dim_chg_spin() const { return 0; }
+
+  /**
    * @brief Evaluate the energy, force and virial by using this DP.
    * @param[out] ener The system energy.
    * @param[out] force The force on each atom.
