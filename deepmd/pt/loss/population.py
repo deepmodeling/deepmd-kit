@@ -119,7 +119,7 @@ class PopulationLoss(TaskLoss):
         learning_rate: float = 0.0,
         mae: bool = False,
     ) -> tuple[dict[str, torch.Tensor], torch.Tensor, dict[str, torch.Tensor]]:
-        """Return loss on properties .
+        """Return loss on population properties.
 
         Parameters
         ----------
