@@ -173,17 +173,46 @@ class PopulationLoss(TaskLoss):
         # correctly without cross-frame cancellations when batch_size > 1.
         pop_pred = model_pred["population"].reshape([-1, natoms, self.task_dim])
         pop_label = label["atom_population"].reshape([-1, natoms, self.task_dim])
+        nframes = pop_pred.shape[0]
 
         spin_pred = pop_pred[:, :, 0] - pop_pred[:, :, 1]  # (nframes, natoms)
         spin_label = pop_label[:, :, 0] - pop_label[:, :, 1]
 
-        # Sum over atoms within each frame → (nframes,); avoids inter-frame cancellation.
-        spin_total_pred = spin_pred.sum(dim=1)
-        spin_total_label = spin_label.sum(dim=1)
-        pop_alpha_total_pred = pop_pred[:, :, 0].sum(dim=1)
-        pop_beta_total_pred = pop_pred[:, :, 1].sum(dim=1)
-        pop_alpha_total_label = pop_label[:, :, 0].sum(dim=1)
-        pop_beta_total_label = pop_label[:, :, 1].sum(dim=1)
+        # Apply mask for virtual/excluded atoms (mixed-type or padded batches).
+        # mask shape from model: (nframes, natoms, 1) → use as (nframes, natoms).
+        if "mask" in model_pred:
+            mask = model_pred["mask"].reshape([nframes, natoms])
+            mask_float = mask.float()
+            # Per-frame totals: sum only real atoms within each frame.
+            spin_total_pred = (spin_pred * mask_float).sum(dim=1)
+            spin_total_label = (spin_label * mask_float).sum(dim=1)
+            pop_alpha_total_pred = (pop_pred[:, :, 0] * mask_float).sum(dim=1)
+            pop_beta_total_pred = (pop_pred[:, :, 1] * mask_float).sum(dim=1)
+            pop_alpha_total_label = (pop_label[:, :, 0] * mask_float).sum(dim=1)
+            pop_beta_total_label = (pop_label[:, :, 1] * mask_float).sum(dim=1)
+            # Per-atom losses: filter to real atoms only.
+            mask_flat = mask.reshape(-1).bool()
+            spin_pred_flat = spin_pred.reshape(-1)[mask_flat]
+            spin_label_flat = spin_label.reshape(-1)[mask_flat]
+            pop_pred_flat = pop_pred.reshape([-1, self.task_dim])[mask_flat]
+            pop_label_flat = pop_label.reshape([-1, self.task_dim])[mask_flat]
+            # Average real atoms per frame for normalization.
+            real_natoms: float | torch.Tensor = (
+                mask_float.sum(dim=1).mean().clamp(min=1.0)
+            )
+        else:
+            # Sum over atoms within each frame → (nframes,).
+            spin_total_pred = spin_pred.sum(dim=1)
+            spin_total_label = spin_label.sum(dim=1)
+            pop_alpha_total_pred = pop_pred[:, :, 0].sum(dim=1)
+            pop_beta_total_pred = pop_pred[:, :, 1].sum(dim=1)
+            pop_alpha_total_label = pop_label[:, :, 0].sum(dim=1)
+            pop_beta_total_label = pop_label[:, :, 1].sum(dim=1)
+            spin_pred_flat = spin_pred.reshape(-1)
+            spin_label_flat = spin_label.reshape(-1)
+            pop_pred_flat = pop_pred.reshape([-1, self.task_dim])
+            pop_label_flat = pop_label.reshape([-1, self.task_dim])
+            real_natoms = float(natoms)
 
         def _loss(pred: torch.Tensor, tgt: torch.Tensor) -> torch.Tensor:
             """Compute a loss that scales with pred.numel() for all loss_func choices.
@@ -204,15 +233,9 @@ class PopulationLoss(TaskLoss):
             else:
                 raise RuntimeError(f"Unknown loss function: {self.loss_func!r}")
 
-        spin_loss = _loss(spin_pred.reshape(-1), spin_label.reshape(-1)) / natoms
+        spin_loss = _loss(spin_pred_flat, spin_label_flat) / real_natoms
         spin_total_loss = _loss(spin_total_pred, spin_total_label)
-        pop_loss = (
-            _loss(
-                pop_pred.reshape([-1, self.task_dim]),
-                pop_label.reshape([-1, self.task_dim]),
-            )
-            / natoms
-        )
+        pop_loss = _loss(pop_pred_flat, pop_label_flat) / real_natoms
         pop_alpha_total_loss = _loss(pop_alpha_total_pred, pop_alpha_total_label)
         pop_beta_total_loss = _loss(pop_beta_total_pred, pop_beta_total_label)
 
@@ -233,15 +256,15 @@ class PopulationLoss(TaskLoss):
 
         if "mae" in self.metric:
             more_loss["mae"] = F.l1_loss(
-                pop_pred.reshape([-1, self.task_dim]),
-                pop_label.reshape([-1, self.task_dim]),
+                pop_pred_flat,
+                pop_label_flat,
                 reduction="mean",
             ).detach()
         if "rmse" in self.metric:
             more_loss["rmse"] = torch.sqrt(
                 F.mse_loss(
-                    pop_pred.reshape([-1, self.task_dim]),
-                    pop_label.reshape([-1, self.task_dim]),
+                    pop_pred_flat,
+                    pop_label_flat,
                     reduction="mean",
                 )
             ).detach()

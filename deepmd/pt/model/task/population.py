@@ -124,6 +124,10 @@ class PopulationFittingNet(InvarFitting):
         """Deserialize the fitting from a dict."""
         data = data.copy()
         check_version_compatibility(data.pop("@version", 1), 4, 1)
+        # var_name and dim_out are hardcoded in __init__; remove them so they
+        # don't conflict with the positional arguments passed by super().__init__.
+        data.pop("var_name", None)
+        data.pop("dim_out", None)
         obj = super().deserialize(data)
         return obj
 
