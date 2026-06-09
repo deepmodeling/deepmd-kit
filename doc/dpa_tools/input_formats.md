@@ -1,6 +1,9 @@
 # Input Formats
 
-`dpa data convert` auto-detects the input type and routes it to the correct pipeline:
+> **CLI command:** `dpaad` (PyPI package: `dpa-adapt`).
+> `dpaad` is the short alias you type; both names are equivalent.
+
+`dpaad data convert` auto-detects the input type and routes it to the correct pipeline:
 **SMILES/CSV** → RDKit conformer generation, **formula CSV** → random doping from
 POSCAR template, **everything else** → dpdata (auto-detect or explicit `--fmt`).
 
@@ -20,10 +23,10 @@ POSCAR template, **everything else** → dpdata (auto-detect or explicit `--fmt`
 
 ```bash
 # Auto-detected via SMILES column
-dpa data convert --input molecules.csv --output ./npy --property-name homo
+dpaad data convert --input molecules.csv --output ./npy --property-name homo
 
 # Explicit fmt + custom column names
-dpa data convert --input data.xlsx --output ./npy --fmt smiles \
+dpaad data convert --input data.xlsx --output ./npy --fmt smiles \
     --smiles-col SMILES --property-col GAP --train-ratio 0.85 --seed 123
 ```
 
@@ -43,7 +46,7 @@ by randomly substituting atoms on the host-element sublattice.
 | `--seed` | `42` | Random seed |
 
 ```bash
-dpa data convert --input compositions.csv --output ./npy --fmt formula \
+dpaad data convert --input compositions.csv --output ./npy --fmt formula \
     --poscar template.POSCAR --sets 3 --property-col bandgap
 ```
 
@@ -127,9 +130,9 @@ extension is ambiguous or auto-detection fails.
 ### Single file
 
 ```bash
-dpa data convert --input POSCAR --output ./npy
-dpa data convert --input OUTCAR --output ./npy --fmt vasp/outcar
-dpa data convert --input traj.xyz --output ./npy --fmt extxyz
+dpaad data convert --input POSCAR --output ./npy
+dpaad data convert --input OUTCAR --output ./npy --fmt vasp/outcar
+dpaad data convert --input traj.xyz --output ./npy --fmt extxyz
 ```
 
 ### Glob patterns
@@ -143,10 +146,10 @@ When `--input` contains wildcards (`*`, `?`, `[`):
 
 ```bash
 # Single match (only one OUTCAR found)
-dpa data convert --input "run*/OUTCAR" --output ./npy
+dpaad data convert --input "run*/OUTCAR" --output ./npy
 
 # Multi-match: outputs sys_0000/, sys_0001/, …
-dpa data convert --input "calcs/**/OUTCAR" --output ./npy_root --fmt vasp/outcar
+dpaad data convert --input "calcs/**/OUTCAR" --output ./npy_root --fmt vasp/outcar
 ```
 
 ## 4. Batch Mode
@@ -165,10 +168,10 @@ Key behaviors:
 
 ```bash
 # Batch convert all OUTCAR files; each lands in a mirrored subdirectory
-dpa data convert --input "scan/**/OUTCAR" --output ./all_npy --fmt vasp/outcar
+dpaad data convert --input "scan/**/OUTCAR" --output ./all_npy --fmt vasp/outcar
 
 # Strict mode — abort on first failure
-dpa data convert --input "scan/**/OUTCAR" --output ./all_npy --fmt vasp/outcar --strict
+dpaad data convert --input "scan/**/OUTCAR" --output ./all_npy --fmt vasp/outcar --strict
 
 # Check the manifest
 cat ./all_npy/manifest.json
