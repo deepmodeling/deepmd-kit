@@ -133,6 +133,7 @@ def _cmd_fit(args: argparse.Namespace) -> int:
         downstream_task_type=args.downstream_task_type,
         aux_batch_size=args.aux_batch_size,
         downstream_batch_size=args.downstream_batch_size,
+        fparam_dim=args.fparam_dim,
     )
     aux_data = (_maybe_split_list(args.aux_data) or [args.aux_data]
                 if args.aux_data else None)
@@ -442,6 +443,11 @@ def get_parser() -> argparse.ArgumentParser:
                             help="(mft) Batch size for aux branch.")
     parser_fit.add_argument("--downstream-batch-size", type=int, default=None,
                             help="(mft) Batch size for downstream.")
+    parser_fit.add_argument(
+        "--fparam-dim", type=int, default=0,
+        help="(linear_probe/finetune/mft) Dimensionality of per-frame condition "
+             "inputs (fparam). Requires set.*/fparam.npy in training data. Default: 0."
+    )
 
     # -- cv ------------------------------------------------------------------
     parser_cv = subparsers.add_parser(
