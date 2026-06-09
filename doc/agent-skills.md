@@ -35,7 +35,7 @@ paper:
 - Mingwei Ding, Chen Huang, Yibo Hu, Yifan Li, Zitian Lu, Xingtai Yu, Duo
   Zhang, Wenxi Zhai, Tong Zhu, Qiangqiang Gu, and Jinzhe Zeng. [Automating
   Computational Chemistry Workflows via OpenClaw and Domain-Specific
-  Skills](https://doi.org/10.48550/arXiv.2603.25522). Accepted by *Journal
+  Skills](https://doi.org/10.1021/acs.jctc.6c00622). *Journal
   of Chemical Theory and Computation*, 2026.
 
 ## Install skills
