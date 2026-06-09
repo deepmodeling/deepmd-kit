@@ -354,8 +354,12 @@ double FixCBOAMD::compute_vector(int n) {
       return ea[i];
     }
   }
-  if (n == 3 * nphoton) return ke_photon;
-  if (n == 3 * nphoton + 1) return pe_photon;
+  if (n == 3 * nphoton) {
+    return ke_photon;
+  }
+  if (n == 3 * nphoton + 1) {
+    return pe_photon;
+  }
 
   return 0.0;
 }
@@ -558,8 +562,9 @@ void FixCBOAMD::compute_deepmd_polarizability() {
   try {
     // Compute polarizability using DeepMD
 
-    // polar_grad_deepmd is the negative gradient of polarizability w.r.t. atomic
-    // coordinates. It is a flattened array of size 9 (polarizability components)
+    // polar_grad_deepmd is the negative gradient of polarizability w.r.t.
+    // atomic coordinates. It is a flattened array of size 9 (polarizability
+    // components)
     // * N (atoms) * 3 (atomic coordinate components)
     deepmd_polar->compute(polar_deepmd, polar_grad_deepmd, polar_virial_deepmd,
                           polar_atom_deepmd, polar_atom_virial_deepmd,
@@ -648,12 +653,10 @@ void FixCBOAMD::compute_cboa_forces() {
           for (int di = 0; di < 3; di++) {
             int idx = pp * nlocal * 3 + i * 3 + di;
             for (int alpha = 0; alpha < nphoton; alpha++) {
-              f[i][di] -= 0.5 * ea[alpha] * ea[alpha] *
-                          lambda_photon[alpha] * lambda_photon[alpha] *
-                          lambda_vector[alpha][pl1] *
-                          lambda_vector[alpha][pl2] *
-                          polar_grad_deepmd[idx] * ANGSTROM3_TO_BOHR3 /
-                          EV_TO_HARTREE;
+              f[i][di] -= 0.5 * ea[alpha] * ea[alpha] * lambda_photon[alpha] *
+                          lambda_photon[alpha] * lambda_vector[alpha][pl1] *
+                          lambda_vector[alpha][pl2] * polar_grad_deepmd[idx] *
+                          ANGSTROM3_TO_BOHR3 / EV_TO_HARTREE;
             }
           }
         }
