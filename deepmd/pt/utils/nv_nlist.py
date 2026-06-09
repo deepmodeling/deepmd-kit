@@ -18,8 +18,10 @@ from __future__ import (
     annotations,
 )
 
+import contextlib
 import logging
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
 
@@ -36,6 +38,11 @@ NV_CELL_LIST_THRESHOLD = 1024
 NV_NONPERIODIC_CELL_LIST_THRESHOLD = 4096
 
 log = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from collections.abc import (
+        Iterator,
+    )
 
 
 def is_nv_available() -> bool:
@@ -69,6 +76,17 @@ def choose_nv_nlist_method(nloc: int, *, periodic: bool = True) -> str:
     return "batch_naive"
 
 
+@contextlib.contextmanager
+def _input_device_context(device: torch.device) -> Iterator[None]:
+    """Run third-party kernels with both default and current devices pinned."""
+    if device.type == "cuda":
+        with torch.device(device), torch.cuda.device(device):
+            yield
+    else:
+        with torch.device(device):
+            yield
+
+
 class NvNeighborList(NeighborList):
     """Neighbor-list strategy using the ``nvalchemiops`` kernels.
 
@@ -95,71 +113,72 @@ class NvNeighborList(NeighborList):
             neighbor_list,
         )
 
-        nf, nloc = atype.shape[:2]
         device = coord.device
-        target_neighbors = int(sum(sel))
-        search_capacity = target_neighbors
-        total_atoms = nf * nloc
-        coord = coord.reshape(nf, nloc, 3)
-        periodic = box is not None
-        if not periodic:
-            cell = None
-            pbc = None
-        else:
-            cell = box.reshape(nf, 3, 3).to(device=device, dtype=coord.dtype)
-            coord = normalize_coord(coord, cell)
-            pbc = torch.ones((nf, 3), dtype=torch.bool, device=device)
-        positions_for_nlist = coord.reshape(total_atoms, 3).detach()
-        batch_idx = torch.arange(
-            nf, dtype=torch.int32, device=device
-        ).repeat_interleave(nloc)
-        batch_ptr = torch.arange(nf + 1, dtype=torch.int32, device=device) * nloc
-        method = choose_nv_nlist_method(nloc, periodic=periodic)
-
-        # Grow the search capacity until all neighbors fit so the distance-sort
-        # below selects the true nearest ``sum(sel)``.
-        while True:
-            nlist_result = neighbor_list(
-                positions_for_nlist,
-                float(rcut),
-                cell=cell,
-                pbc=pbc,
-                batch_idx=batch_idx,
-                batch_ptr=batch_ptr,
-                method=method,
-                max_neighbors=int(search_capacity),
-                return_neighbor_list=False,
-                wrap_positions=False,
-            )
-            if len(nlist_result) == 2:
-                neighbor_matrix, num_neighbors = nlist_result
-                shifts = torch.zeros(
-                    (*neighbor_matrix.shape, 3),
-                    dtype=torch.int32,
-                    device=device,
-                )
+        with _input_device_context(device):
+            nf, nloc = atype.shape[:2]
+            target_neighbors = int(sum(sel))
+            search_capacity = target_neighbors
+            total_atoms = nf * nloc
+            coord = coord.reshape(nf, nloc, 3)
+            periodic = box is not None
+            if not periodic:
+                cell = None
+                pbc = None
             else:
-                neighbor_matrix, num_neighbors, shifts = nlist_result
-            max_found = (
-                int(num_neighbors.max().item()) if num_neighbors.numel() > 0 else 0
-            )
-            if max_found <= search_capacity:
-                break
-            search_capacity = max(max_found, _grow_search_capacity(search_capacity))
+                cell = box.reshape(nf, 3, 3).to(device=device, dtype=coord.dtype)
+                coord = normalize_coord(coord, cell)
+                pbc = torch.ones((nf, 3), dtype=torch.bool, device=device)
+            positions_for_nlist = coord.reshape(total_atoms, 3).detach()
+            batch_idx = torch.arange(
+                nf, dtype=torch.int32, device=device
+            ).repeat_interleave(nloc)
+            batch_ptr = torch.arange(nf + 1, dtype=torch.int32, device=device) * nloc
+            method = choose_nv_nlist_method(nloc, periodic=periodic)
 
-        extended_coord, extended_atype, mapping, nlist = _matrix_to_extended_inputs(
-            coord=coord,
-            atype=atype,
-            cell=cell,
-            nloc=nloc,
-            neighbor_matrix=neighbor_matrix,
-            num_neighbors=num_neighbors,
-            shifts=shifts,
-        )
-        nlist = _truncate_to_sel_compiled(
-            extended_coord, nlist, target_neighbors, float(rcut)
-        )
-        return extended_coord, extended_atype, nlist, mapping
+            # Grow the search capacity until all neighbors fit so the distance-sort
+            # below selects the true nearest ``sum(sel)``.
+            while True:
+                nlist_result = neighbor_list(
+                    positions_for_nlist,
+                    float(rcut),
+                    cell=cell,
+                    pbc=pbc,
+                    batch_idx=batch_idx,
+                    batch_ptr=batch_ptr,
+                    method=method,
+                    max_neighbors=int(search_capacity),
+                    return_neighbor_list=False,
+                    wrap_positions=False,
+                )
+                if len(nlist_result) == 2:
+                    neighbor_matrix, num_neighbors = nlist_result
+                    shifts = torch.zeros(
+                        (*neighbor_matrix.shape, 3),
+                        dtype=torch.int32,
+                        device=device,
+                    )
+                else:
+                    neighbor_matrix, num_neighbors, shifts = nlist_result
+                max_found = (
+                    int(num_neighbors.max().item()) if num_neighbors.numel() > 0 else 0
+                )
+                if max_found <= search_capacity:
+                    break
+                search_capacity = max(max_found, _grow_search_capacity(search_capacity))
+
+            extended_coord, extended_atype, mapping, nlist = _matrix_to_extended_inputs(
+                coord=coord,
+                atype=atype,
+                cell=cell,
+                nloc=nloc,
+                neighbor_matrix=neighbor_matrix,
+                num_neighbors=num_neighbors,
+                shifts=shifts,
+            )
+            nlist = _truncate_to_sel_compiled(
+                extended_coord, nlist, target_neighbors, float(rcut)
+            )
+            return extended_coord, extended_atype, nlist, mapping
 
 
 def _grow_search_capacity(capacity: int) -> int:

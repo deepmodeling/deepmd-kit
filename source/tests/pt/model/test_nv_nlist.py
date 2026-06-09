@@ -8,7 +8,6 @@ non-periodic path.  Built neighbor lists are compared against the native dense
 builder at the nlist level (edge topology + geometry).
 """
 
-import contextlib
 import unittest
 from unittest.mock import (
     patch,
@@ -24,6 +23,7 @@ from deepmd.pt.utils.nlist import (
 )
 from deepmd.pt.utils.nv_nlist import (
     NvNeighborList,
+    _input_device_context,
 )
 
 _NV_AVAILABLE = nv_nlist.is_nv_available()
@@ -166,24 +166,18 @@ class TestNVNList(unittest.TestCase):
         sel: list[int],
         force_cell_list: bool = False,
     ) -> None:
-        # native: (extended_coord, extended_atype, mapping, nlist)
-        native = extend_input_and_build_neighbor_list(
-            coord,
-            atype,
-            rcut,
-            sel,
-            mixed_types=True,
-            box=box,
-        )
-        # NeighborList strategy: (extended_coord, extended_atype, nlist, mapping)
-        builder = NvNeighborList()
-        # Pin the current CUDA device so the Toolkit-Ops backend launches there.
-        device_ctx = (
-            torch.cuda.device(coord.device)
-            if coord.is_cuda
-            else contextlib.nullcontext()
-        )
-        with device_ctx:
+        with _input_device_context(coord.device):
+            # native: (extended_coord, extended_atype, mapping, nlist)
+            native = extend_input_and_build_neighbor_list(
+                coord,
+                atype,
+                rcut,
+                sel,
+                mixed_types=True,
+                box=box,
+            )
+            # NeighborList strategy: (extended_coord, extended_atype, nlist, mapping)
+            builder = NvNeighborList()
             if force_cell_list:
                 with (
                     patch.object(nv_nlist, "NV_CELL_LIST_THRESHOLD", 1),
@@ -192,23 +186,25 @@ class TestNVNList(unittest.TestCase):
                     nv = builder.build(coord, atype, box, rcut, sel)
             else:
                 nv = builder.build(coord, atype, box, rcut, sel)
-        native_coord, _, native_mapping, native_nlist = native
-        nv_coord, nv_atype, nv_nlist_out, nv_mapping = nv
-        # The strategy trims to sum(sel) itself, so the width is fixed.
-        self.assertEqual(nv_nlist_out.shape[-1], sum(sel))
-        self.assertTrue(
-            torch.equal(
-                _edge_topology_from_extended(native_mapping, native_nlist),
-                _edge_topology_from_extended(nv_mapping, nv_nlist_out),
+            native_coord, _, native_mapping, native_nlist = native
+            nv_coord, nv_atype, nv_nlist_out, nv_mapping = nv
+            # The strategy trims to sum(sel) itself, so the width is fixed.
+            self.assertEqual(nv_nlist_out.shape[-1], sum(sel))
+            self.assertTrue(
+                torch.equal(
+                    _edge_topology_from_extended(native_mapping, native_nlist),
+                    _edge_topology_from_extended(nv_mapping, nv_nlist_out),
+                )
             )
-        )
-        torch.testing.assert_close(
-            _edge_geometry_from_extended(native_coord, native_mapping, native_nlist),
-            _edge_geometry_from_extended(nv_coord, nv_mapping, nv_nlist_out),
-            atol=1.0e-10,
-            rtol=1.0e-10,
-        )
-        _assert_extended_atype_matches_mapping(self, atype, nv_atype, nv_mapping)
+            torch.testing.assert_close(
+                _edge_geometry_from_extended(
+                    native_coord, native_mapping, native_nlist
+                ),
+                _edge_geometry_from_extended(nv_coord, nv_mapping, nv_nlist_out),
+                atol=1.0e-10,
+                rtol=1.0e-10,
+            )
+            _assert_extended_atype_matches_mapping(self, atype, nv_atype, nv_mapping)
 
     def test_cell_list_matches_native(self) -> None:
         """The ``batch_cell_list`` method (forced via the threshold) matches the
