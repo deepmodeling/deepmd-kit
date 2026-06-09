@@ -1452,6 +1452,7 @@ class Trainer:
         self.wrapper.train()
         wall_start = time.time()
         last_log_time = wall_start
+        last_log_step = self.start_step
 
         for step_id in range(self.start_step, self.num_steps):
             cur_lr = float(self.lr_schedule.value(step_id))
@@ -1464,9 +1465,6 @@ class Trainer:
                     p=self.model_prob,
                 )
                 task_key = self.model_keys[model_index]
-
-            if self.timing_in_training:
-                t_start = time.time()
 
             # --- forward / backward ---
             self.optimizer.zero_grad(set_to_none=True)
@@ -1487,9 +1485,6 @@ class Trainer:
                 )
 
             self._optimizer_step()
-
-            if self.timing_in_training:
-                t_end = time.time()
 
             # --- display ---
             display_step_id = step_id + 1
@@ -1598,9 +1593,14 @@ class Trainer:
                     current_time = time.time()
                     wall_elapsed = current_time - wall_start
                     interval_wall_time = current_time - last_log_time
+                    # average wall time per step over the interval since the
+                    # last log (number of steps counted exactly once across
+                    # intervals via last_log_step)
+                    interval_steps = max(1, display_step_id - last_log_step)
+                    step_time = interval_wall_time / interval_steps
                     last_log_time = current_time
+                    last_log_step = display_step_id
                     if self.timing_in_training:
-                        step_time = t_end - t_start
                         steps_completed_since_restart = max(
                             1,
                             display_step_id - self.start_step,
@@ -1619,9 +1619,9 @@ class Trainer:
                                     current_time,
                                     tz=datetime.timezone.utc,
                                 ).astimezone(),
+                                step_time=step_time,
                             )
                         )
-                        log.info("step=%d  step_time=%.4fs", display_step_id, step_time)
                     else:
                         log.info(
                             format_training_message(

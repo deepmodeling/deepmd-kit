@@ -476,7 +476,17 @@ def test_pt_expt_multiframe_equivalence(name: str) -> None:
 
 @pytest.mark.parametrize("name", list(ALL_MODELS))  # descriptor family
 def test_default_fallback(name: str) -> None:
-    """``neighbor_list=None`` equals an explicit DefaultNeighborList byte-for-byte."""
+    """``neighbor_list=None`` dispatches to the same DefaultNeighborList builder.
+
+    ``None`` and an explicit ``DefaultNeighborList()`` are the identical builder
+    (``call_common`` does ``builder = nl if nl is not None else DefaultNeighborList()``),
+    so the two forward passes are the *same computation*; on CPU they are
+    bit-identical.  We compare with a tight tolerance rather than exact equality
+    because the two passes are independent forward evaluations, and on CUDA the
+    GNN message-passing scatter (atomic adds) is not bit-reproducible run-to-run,
+    so the virial can differ by ~1 ULP between the passes (a real dispatch bug
+    would differ by orders of magnitude more).
+    """
     coord_np, atype_np, box_np = _system()
     md = get_model(copy.deepcopy(ALL_MODELS[name])).to(env.DEVICE)
     md.eval()
@@ -492,8 +502,10 @@ def test_default_fallback(name: str) -> None:
         ).requires_grad_(True)
         outs[tag] = md.forward(coord_t, atype_t, box=box_t, do_atomic_virial=True, **kw)
     for k in ("energy", "force", "virial"):
-        np.testing.assert_array_equal(
+        np.testing.assert_allclose(
             outs["none"][k].detach().cpu().numpy(),
             outs["explicit"][k].detach().cpu().numpy(),
+            rtol=1e-10,
+            atol=1e-12,
             err_msg=f"{name} {k}",
         )
