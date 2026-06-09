@@ -2336,7 +2336,11 @@ class TestDeepEvalEnerChgSpinPt2(unittest.TestCase):
                 "default_chg_spin": cls.default_chg_spin,
                 "seed": GLOBAL_SEED,
             },
-            "fitting_net": {"neuron": [5, 5, 5], "resnet_dt": True, "seed": GLOBAL_SEED},
+            "fitting_net": {
+                "neuron": [5, 5, 5],
+                "resnet_dt": True,
+                "seed": GLOBAL_SEED,
+            },
         }
 
         model = dp_get_model(copy.deepcopy(config))
@@ -2396,7 +2400,9 @@ class TestDeepEvalEnerChgSpinPt2(unittest.TestCase):
 
         e_no, f_no, v_no = self.dp.eval(coords, cells, atom_types)
         e_ex, f_ex, v_ex = self.dp.eval(
-            coords, cells, atom_types,
+            coords,
+            cells,
+            atom_types,
             charge_spin=np.array([self.default_chg_spin]),
         )
 
