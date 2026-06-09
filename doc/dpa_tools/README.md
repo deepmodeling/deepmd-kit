@@ -1,22 +1,22 @@
-# dpa_tools
+# ADAPT: Atomistic DPA Adaptation for Property Tasks
 
-`dpa_tools` is a **scikit-learn-style Python API** for fine-tuning pre-trained DPA
+`ADAPT` is a **scikit-learn-style** python package for fine-tuning pre-trained DPA
 series models on your own dataset. You construct a
 `DPAFineTuner`, call `fit(...)` then `predict(...)`, and pick a transfer-learning
 strategy — no DeePMD-kit JSON configs or `dp train` pipelines to write. The usual
 goal is adapting a large pre-trained model to a downstream materials or molecular
 property (energy, band gap, HOMO–LUMO gap, …) from a modest labeled dataset.
 
-It ships as the `dpa_tools` package alongside `deepmd-kit`,
-and the same workflow is also exposed on the command line as the standalone `dpa` CLI.
+It ships as the `dpa-adapt` package alongside `deepmd-kit`,
+and the same workflow is also exposed on the command line as the standalone `dpaad` CLI.
 
 ## Installation
 
 ```bash
-pip install deepmd-kit[dpa-tools]
+pip install deepmd-kit[dpa-adapt]
 ```
 
-The `dpa-tools` extra installs the Python dependencies used by this package,
+The `dpa-adapt` extra installs the Python dependencies used by this package,
 including `scikit-learn`, `dpdata`, `torch`, `rdkit`, and `e3nn`. For a
 CUDA/GPU PyTorch build, install the desired PyTorch variant first, then install
 this extra.
@@ -26,7 +26,7 @@ this extra.
 Fine-tune a frozen-descriptor + scikit-learn head and predict — under 10 lines:
 
 ```python
-from dpa_tools import DPAFineTuner
+from dpa_adapt import DPAFineTuner
 
 # `pretrained` accepts a built-in model name (auto-downloaded) or a local .pt path
 model = DPAFineTuner(pretrained="DPA-3.1-3M", strategy="frozen_sklearn", predictor="rf")
@@ -81,7 +81,7 @@ model.fit(train_data="/data/qm9", aux_data="/data/spice2")
 ## Python API
 
 ```python
-from dpa_tools import (
+from dpa_adapt import (
     DPAFineTuner,          # fine-tune (strategies: frozen_sklearn, linear_probe, finetune, mft)
     DPAPredictor,          # read-only inference from frozen bundles
     extract_descriptors,   # standalone descriptor extraction
@@ -134,7 +134,7 @@ composition-based random doping from a template POSCAR, and everything else
 goes through dpdata:
 
 ```python
-from dpa_tools import auto_convert
+from dpa_adapt import auto_convert
 
 # CSV with SMILES → RDKit generates 3D coords, writes train/valid deepmd/npy
 auto_convert("data.csv", "./npy", property_name="homo", property_col="HOMO")
@@ -157,7 +157,7 @@ check_data("/data/system")   # → list[Issue]
 Formula-grouped to prevent same-molecule leakage between folds:
 
 ```python
-from dpa_tools import cross_validate, train_test_split, load_dataset
+from dpa_adapt import cross_validate, train_test_split, load_dataset
 
 systems = load_dataset("/data/root", label_key="energy")
 train, valid, test = train_test_split(systems, group_by="formula", seed=42)
@@ -168,41 +168,41 @@ result = cross_validate(model, systems, label_key="energy", cv=5, group_by="form
 
 ## CLI
 
-The same workflow is available under the standalone `dpa` command (two-level nesting for data tools):
+The same workflow is available under the standalone `dpaad` command (two-level nesting for data tools):
 
 | Command | Description |
 |---------|-------------|
-| `dpa fit` | Fine-tune a model with any strategy (`--strategy frozen_sklearn\|linear_probe\|finetune\|mft`) |
-| `dpa predict` | Predict with a frozen `.pth` bundle |
-| `dpa evaluate` | Evaluate a frozen `.pth` against stored labels |
-| `dpa extract-descriptors` | Extract pooled DPA descriptors to `.npy` |
-| `dpa cv` | Cross-validate (metric estimation, no model output) |
-| `dpa data convert` | Convert a structure/CSV file or glob → `deepmd/npy` (auto-sniffs SMILES vs. structure, or `--fmt formula` for composition formulas) |
-| `dpa data validate` | Sanity-check `deepmd/npy` directories |
-| `dpa data attach-labels` | Inject `.npy` label arrays into a system |
+| `dpaad fit` | Fine-tune a model with any strategy (`--strategy frozen_sklearn\|linear_probe\|finetune\|mft`) |
+| `dpaad predict` | Predict with a frozen `.pth` bundle |
+| `dpaad evaluate` | Evaluate a frozen `.pth` against stored labels |
+| `dpaad extract-descriptors` | Extract pooled DPA descriptors to `.npy` |
+| `dpaad cv` | Cross-validate (metric estimation, no model output) |
+| `dpaad data convert` | Convert a structure/CSV file or glob → `deepmd/npy` (auto-sniffs SMILES vs. structure, or `--fmt formula` for composition formulas) |
+| `dpaad data validate` | Sanity-check `deepmd/npy` directories |
+| `dpaad data attach-labels` | Inject `.npy` label arrays into a system |
 
 ```bash
 # Convert data (format auto-detected)
-dpa data convert --input data.csv --output ./npy --property-name homo   # CSV+SMILES
-dpa data convert --input POSCAR --output ./npy                          # structure file
-dpa data convert --input "calcs/**/OUTCAR" --output ./npy_root          # glob → batch
-dpa data convert --input comps.csv --output ./npy --fmt formula \\      # formula CSV
+dpaad data convert --input data.csv --output ./npy --property-name homo   # CSV+SMILES
+dpaad data convert --input POSCAR --output ./npy                          # structure file
+dpaad data convert --input "calcs/**/OUTCAR" --output ./npy_root          # glob → batch
+dpaad data convert --input comps.csv --output ./npy --fmt formula \\      # formula CSV
     --poscar template.POSCAR --sets 3
 
 # Fine-tune
-dpa fit --train-data ./npy/train --pretrained DPA-3.1-3M \
+dpaad fit --train-data ./npy/train --pretrained DPA-3.1-3M \
   --strategy frozen_sklearn --predictor rf --target-key homo --output model.pth
 
 # Multi-task fine-tuning (MFT)
-dpa fit --train-data /data/qm9 --aux-data /data/spice2 \
+dpaad fit --train-data /data/qm9 --aux-data /data/spice2 \
   --pretrained /path/to/DPA-3.1-3M.pt --strategy mft --target-key homo
 
 # Predict / evaluate with a frozen bundle
-dpa predict --model model.pth --data ./npy/test --output preds.npy
-dpa evaluate --model model.pth --data ./npy/test
+dpaad predict --model model.pth --data ./npy/test --output preds.npy
+dpaad evaluate --model model.pth --data ./npy/test
 ```
 
-`dpa --help` does not load torch — the parser is pure argparse in
-`dpa_tools/cli.py`, and the handlers (and the DPA stack) are imported lazily only
-when a `dpa ...` command actually runs.
+`dpaad --help` does not load torch — the parser is pure argparse in
+`dpa_adapt/cli.py`, and the handlers (and the DPA stack) are imported lazily only
+when a `dpaad ...` command actually runs.
 

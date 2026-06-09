@@ -24,7 +24,7 @@ For more information, check the [documentation](https://deepmd.readthedocs.io/).
 - **implements the Deep Potential series models**, which have been successfully applied to finite and extended systems, including organic molecules, metals, semiconductors, insulators, etc.
 - **implements MPI and GPU supports**, making it highly efficient for high-performance parallel and distributed computing.
 - **highly modularized**, easy to adapt to different descriptors for deep learning-based potential energy models.
-- **fine-tunes pre-trained DPA models through a scikit-learn-style Python API**, via [`dpa_tools`](deepmd/dpa_tools/README.md) — construct a `DPAFineTuner`, then `fit` and `predict` to adapt a large pre-trained model to your own property dataset, with no input files to write.
+- **fine-tunes pre-trained DPA models through a scikit-learn-style Python API**, via [`dpa_tools`](dpa_tools/README.md) — construct a `DPAFineTuner`, then `fit` and `predict` to adapt a large pre-trained model to your own property dataset, with no input files to write.
 
 ### License and credits
 
@@ -104,7 +104,7 @@ The code is organized as follows:
 
 - `examples`: examples.
 - `deepmd`: DeePMD-kit python modules.
-- `deepmd/dpa_tools`: scikit-learn-style Python API for fine-tuning pre-trained DPA models ([README](deepmd/dpa_tools/README.md)).
+- `dpa_tools`: scikit-learn-style package for fine-tuning pre-trained DPA models.
 - `source/lib`: source code of the core library.
 - `source/op`: Operator (OP) implementation.
 - `source/api_cc`: source code of DeePMD-kit C++ API.
