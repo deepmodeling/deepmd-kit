@@ -710,10 +710,9 @@ void PairDeepMD::settings(int narg, char** arg) {
     } else if (string(arg[iarg]) == string("charge_spin_from_compute")) {
       for (int ii = 0; ii < 1; ++ii) {
         if (iarg + 1 + ii >= narg || is_key(arg[iarg + 1 + ii])) {
-          error->all(
-              FLERR,
-              "invalid charge_spin_from_compute key: should be "
-              "charge_spin_from_compute compute_charge_spin_id(str)");
+          error->all(FLERR,
+                     "invalid charge_spin_from_compute key: should be "
+                     "charge_spin_from_compute compute_charge_spin_id(str)");
         }
       }
       do_compute_charge_spin = true;

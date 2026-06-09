@@ -567,9 +567,9 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
         coord_Tensor, atype_Tensor, firstneigh_tensor, mapping_tensor,
         fparam_tensor, aparam_tensor, charge_spin_tensor, comm_tensors);
   } else {
-    flat_outputs = run_model(coord_Tensor, atype_Tensor, firstneigh_tensor,
-                             mapping_tensor, fparam_tensor, aparam_tensor,
-                             charge_spin_tensor);
+    flat_outputs =
+        run_model(coord_Tensor, atype_Tensor, firstneigh_tensor, mapping_tensor,
+                  fparam_tensor, aparam_tensor, charge_spin_tensor);
   }
 
   // Map flat outputs to internal keys
@@ -963,7 +963,7 @@ void DeepPotPTExpt::compute_nframes(ENERGYVTYPE& ener,
     if (!charge_spin.empty()) {
       size_t s_dcsp = static_cast<size_t>(dchgspin);
       frame_chg_spin.assign(charge_spin.begin() + s_ff * s_dcsp,
-                             charge_spin.begin() + (s_ff + 1) * s_dcsp);
+                            charge_spin.begin() + (s_ff + 1) * s_dcsp);
     }
     std::vector<ENERGYTYPE> frame_ener;
     std::vector<VALUETYPE> frame_force, frame_virial, frame_ae, frame_av;
@@ -1140,7 +1140,7 @@ void DeepPotPTExpt::compute_mixed_type_impl(
     if (!charge_spin.empty()) {
       size_t s_dcsp = static_cast<size_t>(dchgspin);
       frame_chg_spin.assign(charge_spin.begin() + s_ff * s_dcsp,
-                             charge_spin.begin() + (s_ff + 1) * s_dcsp);
+                            charge_spin.begin() + (s_ff + 1) * s_dcsp);
     }
     std::vector<ENERGYTYPE> frame_ener;
     std::vector<VALUETYPE> frame_force, frame_virial, frame_ae, frame_av;

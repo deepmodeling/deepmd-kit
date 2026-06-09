@@ -172,8 +172,7 @@ void PairDeepBaseModel::make_charge_spin_from_compute(
   Compute* compute = modify->compute[icompute];
 
   if (!compute) {
-    error->all(FLERR,
-               "compute id is not found: " + compute_charge_spin_id);
+    error->all(FLERR, "compute id is not found: " + compute_charge_spin_id);
   }
   charge_spin.resize(dim_chg_spin);
 

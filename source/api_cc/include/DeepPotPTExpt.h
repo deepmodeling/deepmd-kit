@@ -131,7 +131,8 @@ class DeepPotPTExpt : public DeepPotBackend {
     return has_default_fparam_;
   };
 
-  // forward to template class (no charge_spin — uses default_chg_spin_ fallback)
+  // forward to template class (no charge_spin — uses default_chg_spin_
+  // fallback)
   void computew(std::vector<double>& ener,
                 std::vector<double>& force,
                 std::vector<double>& virial,
