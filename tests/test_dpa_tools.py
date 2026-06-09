@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Tests for dpa_tools data conversion pipelines."""
+"""Tests for dpa_adapt data conversion pipelines."""
 
 import os
 import tempfile
@@ -73,7 +73,7 @@ class TestFormulaCsvToNpy:
             _write_fake_poscar(poscar_path)
             _write_formula_csv(csv_path, with_header=False)
 
-            from dpa_tools.data.formula import formula_to_npy
+            from dpa_adapt.data.formula import formula_to_npy
 
             systems = formula_to_npy(
                 csv_path=csv_path,
@@ -111,7 +111,7 @@ class TestFormulaCsvToNpy:
             _write_fake_poscar(poscar_path)
             _write_formula_csv(csv_path, with_header=True)
 
-            from dpa_tools.data.formula import formula_to_npy
+            from dpa_adapt.data.formula import formula_to_npy
 
             systems = formula_to_npy(
                 csv_path=csv_path,
@@ -134,7 +134,7 @@ class TestFormulaCsvToNpy:
 
 class TestParseFormula:
     def test_basic(self) -> None:
-        from dpa_tools.data.formula import parse_formula
+        from dpa_adapt.data.formula import parse_formula
 
         r = parse_formula("Ni0.65Gd0.15Fe0.10Co0.05Yb0.05O2H1")
         assert r == pytest.approx({
@@ -143,7 +143,7 @@ class TestParseFormula:
         })
 
     def test_base_element_inference(self) -> None:
-        from dpa_tools.data.formula import parse_formula
+        from dpa_adapt.data.formula import parse_formula
 
         # Co=0.25 total < 1.0 → Ni infers as 0.75 remainder.
         r = parse_formula("Co0.25O2H1", base_element="Ni")
@@ -152,14 +152,14 @@ class TestParseFormula:
         assert r["Ni"] == pytest.approx(0.75)
 
     def test_normalisation(self) -> None:
-        from dpa_tools.data.formula import parse_formula
+        from dpa_adapt.data.formula import parse_formula
 
         r = parse_formula("Ni0.5Co0.5O2H1")
         sub_sum = sum(v for k, v in r.items() if k not in ("O", "H"))
         assert sub_sum == pytest.approx(1.0)
 
     def test_empty_raises(self) -> None:
-        from dpa_tools.data.formula import parse_formula
+        from dpa_adapt.data.formula import parse_formula
 
         with pytest.raises(ValueError, match="Could not parse"):
             parse_formula("")
@@ -172,12 +172,12 @@ class TestParseFormula:
 
 class TestInferBaseElement:
     def test_basic(self) -> None:
-        from dpa_tools.data.formula import infer_base_element
+        from dpa_adapt.data.formula import infer_base_element
 
         assert infer_base_element(["Ni", "Ni", "O", "H"]) == "Ni"
         assert infer_base_element(["Co", "Co", "Ni", "O"]) == "Co"
 
     def test_only_o_h(self) -> None:
-        from dpa_tools.data.formula import infer_base_element
+        from dpa_adapt.data.formula import infer_base_element
 
         assert infer_base_element(["O", "H", "O"]) is None
