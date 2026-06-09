@@ -141,6 +141,7 @@ class DPATrainer:
         type_map: Optional[list] = None,
         # ---- model overrides ----
         fitting_net_params: Optional[dict] = None,
+        fparam_dim: int = 0,
         # ---- training ----
         learning_rate: float = 1e-3,
         stop_lr: float = 1e-5,
@@ -187,6 +188,10 @@ class DPATrainer:
                 f"loss_function must be one of {_VALID_LOSSES}; "
                 f"got {loss_function!r}."
             )
+        if not isinstance(fparam_dim, int) or fparam_dim < 0:
+            raise ValueError(
+                f"fparam_dim must be a non-negative int; got {fparam_dim!r}."
+            )
 
         self.pretrained = pretrained
         self.init_branch = init_branch
@@ -198,6 +203,7 @@ class DPATrainer:
         self.valid_systems = valid_systems
         self.type_map = type_map
         self.fitting_net_params = fitting_net_params
+        self.fparam_dim = fparam_dim
         self.learning_rate = learning_rate
         self.stop_lr = stop_lr
         self.max_steps = max_steps
@@ -296,6 +302,8 @@ class DPATrainer:
         # --model-branch) copies only the backbone and random-inits the
         # property head at [128, 240], so there is no [159, 240] checkpoint
         # head to size-match against. An explicit user value still wins.
+        if self.fparam_dim > 0:
+            fn["fparam_dim"] = self.fparam_dim
         if self.fitting_net_params:
             fn.update(self.fitting_net_params)
         return fn
@@ -392,6 +400,62 @@ class DPATrainer:
         latest, _ = self._find_latest_checkpoint()
         return str(latest) if latest is not None else None
 
+    # ----- fparam validation -----
+    @staticmethod
+    def _validate_fparam(systems_spec, fparam_dim: int) -> None:
+        """Check that every set.* directory contains fparam.npy with correct shape.
+
+        Parameters
+        ----------
+        systems_spec : str or list[str]
+            Glob patterns or paths to system directories.
+        fparam_dim : int
+            Expected second dimension of the fparam array (must be > 0).
+
+        Raises
+        ------
+        DPADataError
+            If any set.* directory is missing fparam.npy or its shape[1]
+            does not match *fparam_dim*.
+        """
+        import glob
+        import numpy as np
+        from dpa_tools.data.errors import DPADataError
+
+        # Expand globs to system directories (same logic as _expand_systems
+        # but without logging warnings — this is pure validation).
+        if isinstance(systems_spec, str):
+            patterns = [systems_spec]
+        else:
+            patterns = list(systems_spec)
+
+        system_dirs: list = []
+        for pat in patterns:
+            matches = sorted(glob.glob(pat))
+            system_dirs.extend(matches)
+
+        # De-duplicate while preserving order.
+        seen = set()
+        system_dirs = [d for d in system_dirs if not (d in seen or seen.add(d))]
+
+        for sys_dir in system_dirs:
+            set_dirs = sorted(glob.glob(os.path.join(sys_dir, "set.*")))
+            for sd in set_dirs:
+                fpath = os.path.join(sd, "fparam.npy")
+                if not os.path.isfile(fpath):
+                    raise DPADataError(
+                        f"fparam_dim={fparam_dim} but {fpath} is missing. "
+                        f"Every set.* directory under {sys_dir} must contain "
+                        f"fparam.npy of shape (n_frames, {fparam_dim})."
+                    )
+                shape = np.load(fpath).shape
+                if shape[1] != fparam_dim:
+                    raise DPADataError(
+                        f"fparam.npy at {fpath} has shape {shape} "
+                        f"but fparam_dim={fparam_dim}. "
+                        f"Expected shape (n_frames, {fparam_dim})."
+                    )
+
     # ----- fit -----
     def fit(self) -> str:
         """
@@ -419,6 +483,9 @@ class DPATrainer:
                 latest, step, self.max_steps,
             )
             return str(latest)
+
+        if self.fparam_dim > 0:
+            self._validate_fparam(self.train_systems, self.fparam_dim)
 
         config = self._build_config()
         input_json = os.path.join(self.output_dir, "input.json")
