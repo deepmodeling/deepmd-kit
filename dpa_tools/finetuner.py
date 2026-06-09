@@ -537,6 +537,11 @@ class DPAFineTuner:
         DeepMD-kit batch-size spec (e.g. ``"auto:512"`` or 128).
     loss_function : str
         ``"mse"`` or ``"smooth_mae"`` (training paradigms).
+    fparam_dim : int
+        (linear_probe / finetune / mft only) Dimensionality of per-frame
+        condition inputs (e.g. temperature, pressure). Requires
+        set.*/fparam.npy of shape (n_frames, fparam_dim) in every
+        training system. Default 0 (disabled).
     output_dir : str
         Directory for ``input.json``, checkpoints, and logs.
     save_freq, disp_freq : int
@@ -583,6 +588,7 @@ class DPAFineTuner:
         max_steps=100_000,
         batch_size="auto:512",
         loss_function="mse",
+        fparam_dim: int = 0,
         output_dir="./dpa_output",
         save_freq=10_000,
         disp_freq=1_000,
@@ -625,6 +631,7 @@ class DPAFineTuner:
         self.max_steps       = max_steps
         self.batch_size      = batch_size
         self.loss_function   = loss_function
+        self.fparam_dim      = fparam_dim
         self.output_dir      = output_dir
         self.save_freq       = save_freq
         self.disp_freq       = disp_freq
@@ -794,6 +801,7 @@ class DPAFineTuner:
             max_steps=self.max_steps,
             batch_size=self.batch_size,
             loss_function=self.loss_function,
+            fparam_dim=self.fparam_dim,
             seed=self.seed,
             output_dir=self.output_dir,
             save_freq=self.save_freq,
@@ -893,6 +901,7 @@ class DPAFineTuner:
             aux_batch_size=self.aux_batch_size,
             downstream_batch_size=self.downstream_batch_size,
             seed=self.seed,
+            fparam_dim=self.fparam_dim,
             output_dir=self.output_dir,
             save_freq=self.save_freq,
             disp_freq=self.disp_freq,
