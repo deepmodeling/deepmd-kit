@@ -1,4 +1,0 @@
-# Raw GDB9 source data — downloaded by scripts/prepare_data.py.
-# These files total ~300 MB and should not be committed.
-*
-!.gitignore

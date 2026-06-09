@@ -23,7 +23,7 @@ preds = model.predict("data/test").predictions
 model.freeze("model.pth")
 ```
 
-For a complete runnable example (QM9 HOMO–LUMO gap, ~5 min on CPU), open [`demo/quickstart.ipynb`](demo/quickstart.ipynb).
+For a complete runnable example (QM9 HOMO–LUMO gap, ~5 min on CPU), see [`../../examples/dpa_adapt/`](../../examples/dpa_adapt/).
 
 ## Fine-tuning strategies
 

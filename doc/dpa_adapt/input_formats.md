@@ -4,10 +4,11 @@
 > `dpaad` is the short alias you type; both names are equivalent.
 
 `dpaad data convert` auto-detects the input type and routes it to the correct pipeline:
-**SMILES/CSV** → RDKit conformer generation, **formula CSV** → random doping from
-POSCAR template, **everything else** → dpdata (auto-detect or explicit `--fmt`).
+**SMILES table** → RDKit conformer generation,
+**formula table** → random doping from a POSCAR template,
+**structure files** → dpdata (auto-detect or explicit `--fmt`).
 
-## 1. SMILES / Molecular (CSV or Excel)
+## 1. SMILES Tables (CSV or Excel)
 
 **Trigger:** file extension `.csv`/`.xlsx`/`.xls` **and** a column named
 `smiles`/`smi`/`mol` (case-insensitive).  Or pass `--fmt smiles` explicitly.
@@ -30,7 +31,7 @@ dpaad data convert --input data.xlsx --output ./npy --fmt smiles \
     --smiles-col SMILES --property-col GAP --train-ratio 0.85 --seed 123
 ```
 
-## 2. Formula Substitution (CSV + template POSCAR)
+## 2. Formula Tables (CSV + POSCAR Template)
 
 **Trigger:** `--fmt formula`.  Reads a CSV of elemental composition formulas
 (e.g. `Ni0.65Gd0.15O2H1`) and a template POSCAR, then generates doped structures
