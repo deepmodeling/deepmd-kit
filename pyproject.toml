@@ -58,8 +58,6 @@ dependencies = [
     'array-api-compat',
     'lmdb',
     'msgpack',
-    # O(N) cell-list neighbor list (vesin.torch) for fast Python/ASE inference
-    'vesin[torch]',
 ]
 requires-python = ">=3.10"
 keywords = ["deepmd"]
@@ -96,7 +94,7 @@ test = [
     # to support Array API 2024.12
     'array-api-strict>=2.2;python_version>="3.9"',
 ]
-dpa-tools = [
+dpa-adapt = [
     "scikit-learn",
     "dpdata",
     "torch",
@@ -157,6 +155,7 @@ jax = [
 
 [tool.deepmd_build_backend.scripts]
 dp = "deepmd.main:main"
+dpa = "dpa_adapt.main:main"
 
 [dependency-groups]
 dev = [
@@ -216,6 +215,7 @@ sdist.exclude = [
 ]
 wheel.packages = [
     "deepmd",
+    "dpa_adapt",
 ]
 wheel.py-api = "py37"
 build-dir = "build/{wheel_tag}"
