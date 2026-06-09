@@ -104,6 +104,7 @@ class MFTFineTuner:
         aux_batch_size=None,
         downstream_batch_size=None,
         seed=42,
+        fparam_dim: int = 0,
         output_dir="./mft_output",
         save_freq=10000,
         disp_freq=1000,
@@ -124,6 +125,10 @@ class MFTFineTuner:
                 raise ValueError(
                     f"task_dim must be an int >= 1; got {task_dim!r}."
                 )
+        if not isinstance(fparam_dim, int) or fparam_dim < 0:
+            raise ValueError(
+                f"fparam_dim must be a non-negative int; got {fparam_dim!r}."
+            )
 
         self.pretrained = pretrained
         self.aux_branch = aux_branch
@@ -144,6 +149,7 @@ class MFTFineTuner:
         self.aux_batch_size = aux_batch_size
         self.downstream_batch_size = downstream_batch_size
         self.seed = seed
+        self.fparam_dim = fparam_dim
         self.output_dir = output_dir
         self.save_freq = save_freq
         self.disp_freq = disp_freq
@@ -277,6 +283,10 @@ class MFTFineTuner:
         self.train_data = train_data
         self.aux_data = aux_data
         self.valid_data = valid_data
+
+        if self.fparam_dim > 0:
+            from dpa_tools.trainer import DPATrainer
+            DPATrainer._validate_fparam(train_data, self.fparam_dim)
 
         import glob
         train_dirs = train_data if isinstance(train_data, list) else [train_data]
