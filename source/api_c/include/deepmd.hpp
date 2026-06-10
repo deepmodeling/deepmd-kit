@@ -1892,6 +1892,11 @@ class DeepBaseModelDevi {
     return has_default_fparam_;
   }
   /**
+   * @brief Get the dimension of the charge/spin input.
+   * @return Always 0; charge_spin is not supported via the C-API path.
+   **/
+  int dim_chg_spin() const { return 0; }
+  /**
    * @param[out] avg The average of vectors.
    * @param[in] xx The vectors of all models.
    **/

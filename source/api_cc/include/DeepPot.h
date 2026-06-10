@@ -677,6 +677,16 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
                 std::vector<std::string>());
 
   /**
+   * @brief Get the dimension of the charge/spin input.
+   * @return The dimension of the charge/spin input (0 if the models have no
+   *charge/spin embedding). Taken from the first model; all models are assumed
+   *to share the same value.
+   **/
+  int dim_chg_spin() const {
+    return numb_models > 0 ? dps[0]->dim_chg_spin() : 0;
+  };
+
+  /**
    * @brief Evaluate the energy, force and virial by using these DP models.
    * @param[out] all_ener The system energies of all models.
    * @param[out] all_force The forces on each atom of all models.

@@ -514,6 +514,13 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   if (dchgspin > 0) {
     auto dbl_options = torch::TensorOptions().dtype(torch::kFloat64);
     if (!charge_spin.empty()) {
+      // Single-frame path: charge_spin must hold exactly dim_chg_spin values.
+      if (static_cast<int>(charge_spin.size()) != dchgspin) {
+        throw deepmd::deepmd_exception(
+            "charge_spin has " + std::to_string(charge_spin.size()) +
+            " values but the model expects dim_chg_spin=" +
+            std::to_string(dchgspin) + ".");
+      }
       charge_spin_tensor =
           torch::from_blob(const_cast<double*>(charge_spin.data()),
                            {1, static_cast<std::int64_t>(charge_spin.size())},
@@ -838,6 +845,13 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   if (dchgspin > 0) {
     auto dbl_options = torch::TensorOptions().dtype(torch::kFloat64);
     if (!charge_spin.empty()) {
+      // Single-frame path: charge_spin must hold exactly dim_chg_spin values.
+      if (static_cast<int>(charge_spin.size()) != dchgspin) {
+        throw deepmd::deepmd_exception(
+            "charge_spin has " + std::to_string(charge_spin.size()) +
+            " values but the model expects dim_chg_spin=" +
+            std::to_string(dchgspin) + ".");
+      }
       charge_spin_tensor =
           torch::from_blob(const_cast<double*>(charge_spin.data()),
                            {1, static_cast<std::int64_t>(charge_spin.size())},
@@ -930,6 +944,21 @@ void DeepPotPTExpt::compute_nframes(ENERGYVTYPE& ener,
   int natoms = atype.size();
   int dap = aparam.empty() ? 0 : static_cast<int>(aparam.size()) / nframes;
   int dfp = fparam.empty() ? 0 : static_cast<int>(fparam.size()) / nframes;
+  // charge_spin may be empty (default fallback), a single dim_chg_spin vector
+  // (broadcast to all frames), or nframes * dim_chg_spin (per-frame). Reject
+  // anything else up-front to avoid out-of-range slicing in the loop.
+  if (!charge_spin.empty()) {
+    size_t s_dcsp = static_cast<size_t>(dchgspin);
+    if (charge_spin.size() != s_dcsp &&
+        charge_spin.size() != s_dcsp * static_cast<size_t>(nframes)) {
+      throw deepmd::deepmd_exception(
+          "charge_spin has " + std::to_string(charge_spin.size()) +
+          " values but the model expects dim_chg_spin=" +
+          std::to_string(dchgspin) + " (per frame) or " +
+          std::to_string(dchgspin * nframes) + " (for " +
+          std::to_string(nframes) + " frames).");
+    }
+  }
   ener.clear();
   force.clear();
   virial.clear();
@@ -962,8 +991,13 @@ void DeepPotPTExpt::compute_nframes(ENERGYVTYPE& ener,
     std::vector<double> frame_chg_spin;
     if (!charge_spin.empty()) {
       size_t s_dcsp = static_cast<size_t>(dchgspin);
-      frame_chg_spin.assign(charge_spin.begin() + s_ff * s_dcsp,
-                            charge_spin.begin() + (s_ff + 1) * s_dcsp);
+      if (charge_spin.size() == s_dcsp) {
+        // single charge/spin vector broadcast to every frame
+        frame_chg_spin = charge_spin;
+      } else {
+        frame_chg_spin.assign(charge_spin.begin() + s_ff * s_dcsp,
+                              charge_spin.begin() + (s_ff + 1) * s_dcsp);
+      }
     }
     std::vector<ENERGYTYPE> frame_ener;
     std::vector<VALUETYPE> frame_force, frame_virial, frame_ae, frame_av;
@@ -1105,6 +1139,21 @@ void DeepPotPTExpt::compute_mixed_type_impl(
   int natoms = static_cast<int>(atype.size()) / nframes;
   int dap = aparam.empty() ? 0 : static_cast<int>(aparam.size()) / nframes;
   int dfp = fparam.empty() ? 0 : static_cast<int>(fparam.size()) / nframes;
+  // charge_spin may be empty (default fallback), a single dim_chg_spin vector
+  // (broadcast to all frames), or nframes * dim_chg_spin (per-frame). Reject
+  // anything else up-front to avoid out-of-range slicing in the loop.
+  if (!charge_spin.empty()) {
+    size_t s_dcsp = static_cast<size_t>(dchgspin);
+    if (charge_spin.size() != s_dcsp &&
+        charge_spin.size() != s_dcsp * static_cast<size_t>(nframes)) {
+      throw deepmd::deepmd_exception(
+          "charge_spin has " + std::to_string(charge_spin.size()) +
+          " values but the model expects dim_chg_spin=" +
+          std::to_string(dchgspin) + " (per frame) or " +
+          std::to_string(dchgspin * nframes) + " (for " +
+          std::to_string(nframes) + " frames).");
+    }
+  }
   ener.clear();
   force.clear();
   virial.clear();
@@ -1139,8 +1188,13 @@ void DeepPotPTExpt::compute_mixed_type_impl(
     std::vector<double> frame_chg_spin;
     if (!charge_spin.empty()) {
       size_t s_dcsp = static_cast<size_t>(dchgspin);
-      frame_chg_spin.assign(charge_spin.begin() + s_ff * s_dcsp,
-                            charge_spin.begin() + (s_ff + 1) * s_dcsp);
+      if (charge_spin.size() == s_dcsp) {
+        // single charge/spin vector broadcast to every frame
+        frame_chg_spin = charge_spin;
+      } else {
+        frame_chg_spin.assign(charge_spin.begin() + s_ff * s_dcsp,
+                              charge_spin.begin() + (s_ff + 1) * s_dcsp);
+      }
     }
     std::vector<ENERGYTYPE> frame_ener;
     std::vector<VALUETYPE> frame_force, frame_virial, frame_ae, frame_av;

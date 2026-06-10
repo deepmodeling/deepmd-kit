@@ -169,6 +169,9 @@ void PairDeepBaseModel::make_charge_spin_from_compute(
   assert(do_compute_charge_spin);
 
   int icompute = modify->find_compute(compute_charge_spin_id);
+  if (icompute < 0) {
+    error->all(FLERR, "compute id is not found: " + compute_charge_spin_id);
+  }
   Compute* compute = modify->compute[icompute];
 
   if (!compute) {
