@@ -229,6 +229,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         fparam: paddle.Tensor | None = None,
         aparam: paddle.Tensor | None = None,
         comm_dict: list[paddle.Tensor] | None = None,
+        charge_spin: paddle.Tensor | None = None,
     ) -> dict[str, paddle.Tensor]:
         """Common interface for atomic inference.
 
@@ -252,6 +253,8 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
             atomic parameter, shape: nf x nloc x dim_aparam
         comm_dict
             The data needed for communication for parallel inference.
+        charge_spin
+            charge and spin parameters, shape: nf x 2
 
         Returns
         -------
@@ -282,6 +285,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
             fparam=fparam,
             aparam=aparam,
             comm_dict=comm_dict,
+            charge_spin=charge_spin,
         )
         ret_dict = self.apply_out_stat(ret_dict, atype)
         # nf x nloc
@@ -311,6 +315,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         fparam: paddle.Tensor | None = None,
         aparam: paddle.Tensor | None = None,
         comm_dict: list[paddle.Tensor] | None = None,
+        charge_spin: paddle.Tensor | None = None,
     ) -> dict[str, paddle.Tensor]:
         return self.forward_common_atomic(
             extended_coord,
@@ -320,6 +325,7 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
             fparam=fparam,
             aparam=aparam,
             comm_dict=comm_dict,
+            charge_spin=charge_spin,
         )
 
     def change_type_map(

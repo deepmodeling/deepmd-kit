@@ -136,6 +136,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
             fparam: paddle.Tensor | None = None,
             aparam: paddle.Tensor | None = None,
             do_atomic_virial: bool = False,
+            charge_spin: paddle.Tensor | None = None,
         ) -> dict[str, paddle.Tensor]:
             """Return model prediction.
 
@@ -154,6 +155,8 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
                 atomic parameter. nf x nloc x nda
             do_atomic_virial
                 If calculate the atomic virial.
+            charge_spin
+                charge and spin parameters. nf x 2
 
             Returns
             -------
@@ -189,6 +192,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
                 do_atomic_virial=do_atomic_virial,
                 fparam=fp,
                 aparam=ap,
+                charge_spin=charge_spin,
             )
             model_predict = communicate_extended_output(
                 model_predict_lower,
@@ -261,6 +265,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
             do_atomic_virial: bool = False,
             comm_dict: list[paddle.Tensor] | None = None,
             extra_nlist_sort: bool = False,
+            charge_spin: paddle.Tensor | None = None,
         ) -> dict[str, paddle.Tensor]:
             """Return model prediction. Lower interface that takes
             extended atomic coordinates and types, nlist, and mapping
@@ -287,6 +292,8 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
                 The data needed for communication for parallel inference.
             extra_nlist_sort
                 whether to forcibly sort the nlist.
+            charge_spin
+                charge and spin parameters. nf x 2
 
             Returns
             -------
@@ -311,6 +318,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
                 fparam=fp,
                 aparam=ap,
                 comm_dict=comm_dict,
+                charge_spin=charge_spin,
             )
             model_predict = fit_output_to_model_output(
                 atomic_ret,
@@ -650,6 +658,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
             fparam: paddle.Tensor | None = None,
             aparam: paddle.Tensor | None = None,
             do_atomic_virial: bool = False,
+            charge_spin: paddle.Tensor | None = None,
         ) -> dict[str, paddle.Tensor]:
             # directly call the forward_common method when no specific transform rule
             return self.forward_common(
@@ -659,6 +668,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
                 fparam=fparam,
                 aparam=aparam,
                 do_atomic_virial=do_atomic_virial,
+                charge_spin=charge_spin,
             )
 
     return CM

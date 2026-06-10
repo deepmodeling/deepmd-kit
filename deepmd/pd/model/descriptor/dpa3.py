@@ -461,9 +461,14 @@ class DescrptDPA3(BaseDescriptor, paddle.nn.Layer):
         """Returns whether default charge_spin values are set."""
         return self.default_chg_spin is not None
 
-    def get_default_chg_spin(self) -> list[float] | None:
-        """Returns the default charge_spin values."""
-        return self.default_chg_spin
+    def get_default_chg_spin(self) -> paddle.Tensor | None:
+        """Get the default charge_spin values as a tensor."""
+        if self.default_chg_spin is None:
+            return None
+        return paddle.to_tensor(
+            self.default_chg_spin,
+            dtype=self.prec,
+        )
 
     def serialize(self) -> dict:
         repflows = self.repflows

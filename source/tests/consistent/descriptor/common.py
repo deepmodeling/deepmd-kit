@@ -269,9 +269,6 @@ class DescriptorTest:
             pd_obj.get_sel(),
             distinguish_types=(not mixed_types),
         )
-        fparam_pd = (
-            paddle.to_tensor(fparam).to(PD_DEVICE) if fparam is not None else None
-        )
         charge_spin_pd = (
             paddle.to_tensor(charge_spin).to(PD_DEVICE)
             if charge_spin is not None
