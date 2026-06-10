@@ -676,7 +676,7 @@ void FixCBOAMD::write_output() {
   if (comm->me == 0) {
     fprintf(output_file,
             "%d %.6f %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e "
-            "%.6e %.6e",
+            "%.6e",
             current_step, update->dt * current_step, dipole[0], dipole[1],
             dipole[2], polarizability[0], polarizability[1], polarizability[2],
             polarizability[3], polarizability[4], polarizability[5],
