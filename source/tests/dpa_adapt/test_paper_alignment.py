@@ -20,10 +20,10 @@ from unittest.mock import (
     patch,
 )
 
-from deepmd.dpa_adapt.config.manager import (
+from dpa_adapt.config.manager import (
     MFTConfigManager,
 )
-from deepmd.dpa_adapt.trainer import (
+from dpa_adapt.trainer import (
     DPATrainer,
 )
 

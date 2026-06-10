@@ -12,8 +12,8 @@ from unittest import (
 
 import numpy as np
 
-from deepmd.dpa_adapt.data import smiles as mol_module
-from deepmd.dpa_adapt.data.smiles import (
+from dpa_adapt.data import smiles as mol_module
+from dpa_adapt.data.smiles import (
     _build_type_map_from_elements,
     _has_overlapping_atoms,
     _parse_property_value,

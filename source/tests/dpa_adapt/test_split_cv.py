@@ -11,14 +11,14 @@ from pathlib import (
 import numpy as np
 import pytest
 
-from deepmd.dpa_adapt.cv import (
+from dpa_adapt.cv import (
     _build_fold_groups,
     _extract_formula,
     _formula_to_group,
     cross_validate,
     train_test_split,
 )
-from deepmd.dpa_adapt.data.loader import (
+from dpa_adapt.data.loader import (
     load_data,
 )
 
@@ -232,7 +232,7 @@ class TestStandardScalerConsistency:
             StandardScaler,
         )
 
-        from deepmd.dpa_adapt.cv import (
+        from dpa_adapt.cv import (
             _build_sklearn_head,
         )
 

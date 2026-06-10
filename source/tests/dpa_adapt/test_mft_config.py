@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import pytest
 
-from deepmd.dpa_adapt.config.manager import (
+from dpa_adapt.config.manager import (
     MFTConfigManager,
 )
-from deepmd.dpa_adapt.mft import (
+from dpa_adapt.mft import (
     MFTFineTuner,
 )
 

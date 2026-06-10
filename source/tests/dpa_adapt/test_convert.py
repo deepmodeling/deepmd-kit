@@ -15,18 +15,18 @@ from pathlib import (
 
 import pytest
 
-from deepmd.dpa_adapt.data.convert import (
+from dpa_adapt.data.convert import (
     _glob_base,
     batch_convert,
     convert,
 )
-from deepmd.dpa_adapt.data.validate import (
+from dpa_adapt.data.validate import (
     Issue,
 )
 
 # The dpa_adapt.data package re-exports the convert() function, which shadows
 # the submodule name — grab the real module object for monkeypatching.
-convert_mod = importlib.import_module("deepmd.dpa_adapt.data.convert")
+convert_mod = importlib.import_module("dpa_adapt.data.convert")
 
 
 _POSCAR = """\
@@ -324,7 +324,7 @@ class TestAutoConvertFormula:
 
     def test_formula_fmt_routes_to_formula_pipeline(self, tmp_path, monkeypatch):
         """fmt="formula" with poscar → delegates to formula_to_npy."""
-        from deepmd.dpa_adapt.data.convert import (
+        from dpa_adapt.data.convert import (
             auto_convert,
         )
 
@@ -344,7 +344,7 @@ class TestAutoConvertFormula:
             return [fake_sys_dir]
 
         monkeypatch.setattr(
-            "deepmd.dpa_adapt.data.formula.formula_to_npy",
+            "dpa_adapt.data.formula.formula_to_npy",
             _fake_formula_to_npy,
         )
 
@@ -364,7 +364,7 @@ class TestAutoConvertFormula:
 
     def test_formula_fmt_base_element_passed_through(self, tmp_path, monkeypatch):
         """fmt="formula" with explicit base_element passes it through."""
-        from deepmd.dpa_adapt.data.convert import (
+        from dpa_adapt.data.convert import (
             auto_convert,
         )
 
@@ -384,7 +384,7 @@ class TestAutoConvertFormula:
             return [str(out / "sys_0000")]
 
         monkeypatch.setattr(
-            "deepmd.dpa_adapt.data.formula.formula_to_npy",
+            "dpa_adapt.data.formula.formula_to_npy",
             _fake_formula_to_npy,
         )
 
@@ -406,7 +406,7 @@ class TestAutoConvertFormula:
 
     def test_formula_fmt_base_element_none_by_default(self, tmp_path, monkeypatch):
         """auto_convert defaults base_element=None → formula_to_npy infers it."""
-        from deepmd.dpa_adapt.data.convert import (
+        from dpa_adapt.data.convert import (
             auto_convert,
         )
 
@@ -426,7 +426,7 @@ class TestAutoConvertFormula:
             return [str(out / "sys_0000")]
 
         monkeypatch.setattr(
-            "deepmd.dpa_adapt.data.formula.formula_to_npy",
+            "dpa_adapt.data.formula.formula_to_npy",
             _fake_formula_to_npy,
         )
 
@@ -439,7 +439,7 @@ class TestAutoConvertFormula:
         self, tmp_path, monkeypatch, capsys
     ):
         """fmt="formula" with verbose=True prints system count."""
-        from deepmd.dpa_adapt.data.convert import (
+        from dpa_adapt.data.convert import (
             auto_convert,
         )
 
@@ -456,7 +456,7 @@ class TestAutoConvertFormula:
             return ["/tmp/fake/sys_0000", "/tmp/fake/sys_0001"]
 
         monkeypatch.setattr(
-            "deepmd.dpa_adapt.data.formula.formula_to_npy",
+            "dpa_adapt.data.formula.formula_to_npy",
             _fake_formula_to_npy,
         )
 
@@ -477,7 +477,7 @@ class TestParseFormula:
     """Unit tests for formula string parsing."""
 
     def test_parse_simple_binary(self):
-        from deepmd.dpa_adapt.data.formula import (
+        from dpa_adapt.data.formula import (
             parse_formula,
         )
 
@@ -488,7 +488,7 @@ class TestParseFormula:
         assert result["H"] == 1.0
 
     def test_parse_base_element_inferred_as_remainder(self):
-        from deepmd.dpa_adapt.data.formula import (
+        from dpa_adapt.data.formula import (
             parse_formula,
         )
 
@@ -499,7 +499,7 @@ class TestParseFormula:
         assert pytest.approx(result.get("Yb", 0)) == pytest.approx(0.05)
 
     def test_parse_base_element_not_assigned_when_total_is_one(self):
-        from deepmd.dpa_adapt.data.formula import (
+        from dpa_adapt.data.formula import (
             parse_formula,
         )
 
@@ -511,7 +511,7 @@ class TestParseFormula:
         )
 
     def test_parse_empty_formula_raises(self):
-        from deepmd.dpa_adapt.data.formula import (
+        from dpa_adapt.data.formula import (
             parse_formula,
         )
 
@@ -519,7 +519,7 @@ class TestParseFormula:
             parse_formula("")
 
     def test_parse_single_element_implicit_one(self):
-        from deepmd.dpa_adapt.data.formula import (
+        from dpa_adapt.data.formula import (
             parse_formula,
         )
 
@@ -529,7 +529,7 @@ class TestParseFormula:
         assert result["H"] == 1.0
 
     def test_parse_substitution_sublattice_normalised_to_one(self):
-        from deepmd.dpa_adapt.data.formula import (
+        from dpa_adapt.data.formula import (
             parse_formula,
         )
 
@@ -544,7 +544,7 @@ class TestInferBaseElement:
     """Unit tests for base_element auto-inference from template atoms."""
 
     def test_returns_most_frequent_non_oh_element(self):
-        from deepmd.dpa_adapt.data.formula import (
+        from dpa_adapt.data.formula import (
             infer_base_element,
         )
 
@@ -552,7 +552,7 @@ class TestInferBaseElement:
         assert infer_base_element(symbols) == "Ni"
 
     def test_skips_oh_when_other_element_present(self):
-        from deepmd.dpa_adapt.data.formula import (
+        from dpa_adapt.data.formula import (
             infer_base_element,
         )
 
@@ -560,7 +560,7 @@ class TestInferBaseElement:
         assert infer_base_element(symbols) == "Fe"
 
     def test_returns_none_when_only_oh(self):
-        from deepmd.dpa_adapt.data.formula import (
+        from dpa_adapt.data.formula import (
             infer_base_element,
         )
 
@@ -568,14 +568,14 @@ class TestInferBaseElement:
         assert infer_base_element(symbols) is None
 
     def test_returns_none_for_empty_list(self):
-        from deepmd.dpa_adapt.data.formula import (
+        from dpa_adapt.data.formula import (
             infer_base_element,
         )
 
         assert infer_base_element([]) is None
 
     def test_tie_gives_first_encountered(self):
-        from deepmd.dpa_adapt.data.formula import (
+        from dpa_adapt.data.formula import (
             infer_base_element,
         )
 

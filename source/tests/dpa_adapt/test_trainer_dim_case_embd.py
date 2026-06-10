@@ -18,7 +18,7 @@ from __future__ import (
     annotations,
 )
 
-from deepmd.dpa_adapt.trainer import (
+from dpa_adapt.trainer import (
     DPATrainer,
 )
 

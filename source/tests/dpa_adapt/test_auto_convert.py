@@ -18,7 +18,7 @@ try:
 except ImportError:
     _HAS_RDKIT = False
 
-from deepmd.dpa_adapt.data.convert import (
+from dpa_adapt.data.convert import (
     _is_smiles_input,
     _sniff_csv,
     _sniff_xlsx,
@@ -184,7 +184,7 @@ class TestSmoke:
     """Minimal round-trip: SMILES → npy → load_data."""
 
     def test_smiles_round_trip(self, tmp_path):
-        from deepmd.dpa_adapt.data.loader import (
+        from dpa_adapt.data.loader import (
             load_data,
         )
 

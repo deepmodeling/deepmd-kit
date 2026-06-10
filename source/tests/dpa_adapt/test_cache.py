@@ -3,7 +3,7 @@
 
 import numpy as np
 
-from deepmd.dpa_adapt.data.desc_cache import (
+from dpa_adapt.data.desc_cache import (
     _cache_dir,
     _cache_key,
     _data_fingerprint,
@@ -11,7 +11,7 @@ from deepmd.dpa_adapt.data.desc_cache import (
     _system_fingerprint,
     ensure_per_system_cache,
 )
-from deepmd.dpa_adapt.data.loader import (
+from dpa_adapt.data.loader import (
     load_data,
 )
 
@@ -123,7 +123,7 @@ class TestEnsurePerSystemCache:
                 return np.zeros((2, 8))
 
         monkeypatch.setattr(
-            "deepmd.dpa_adapt.finetuner.DPAFineTuner",
+            "dpa_adapt.finetuner.DPAFineTuner",
             FakeFineTuner,
         )
         ensure_per_system_cache(
@@ -150,7 +150,7 @@ class TestEnsurePerSystemCache:
             _device = None
 
         monkeypatch.setattr(
-            "deepmd.dpa_adapt.finetuner.DPAFineTuner",
+            "dpa_adapt.finetuner.DPAFineTuner",
             FakeFineTuner,
         )
         ensure_per_system_cache(

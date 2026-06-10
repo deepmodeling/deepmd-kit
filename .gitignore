@@ -74,3 +74,4 @@ frozen_model.*
 # Test system directories
 system/
 *.expected
+examples/dpa_adapt/raw/
