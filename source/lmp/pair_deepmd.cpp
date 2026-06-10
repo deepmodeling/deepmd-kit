@@ -317,7 +317,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
         try {
           deep_pot_model_devi.compute(all_energy, all_force, all_virial, dcoord,
                                       dtype, dbox, nghost, lmp_list, ago,
-                                      fparam, daparam);
+                                      fparam, daparam, charge_spin);
         } catch (deepmd_compat::deepmd_exception& e) {
           error->one(FLERR, e.what());
         }
@@ -326,7 +326,7 @@ void PairDeepMD::compute(int eflag, int vflag) {
           deep_pot_model_devi.compute(all_energy, all_force, all_virial,
                                       all_atom_energy, all_atom_virial, dcoord,
                                       dtype, dbox, nghost, lmp_list, ago,
-                                      fparam, daparam);
+                                      fparam, daparam, charge_spin);
         } catch (deepmd_compat::deepmd_exception& e) {
           error->one(FLERR, e.what());
         }

@@ -658,7 +658,8 @@ void DeepPotModelDevi::compute(std::vector<ENERGYTYPE>& all_energy,
                                const std::vector<int>& datype_,
                                const std::vector<VALUETYPE>& dbox,
                                const std::vector<VALUETYPE>& fparam,
-                               const std::vector<VALUETYPE>& aparam_) {
+                               const std::vector<VALUETYPE>& aparam_,
+                               const std::vector<double>& charge_spin) {
   // without nlist
   if (numb_models == 0) {
     return;
@@ -668,7 +669,7 @@ void DeepPotModelDevi::compute(std::vector<ENERGYTYPE>& all_energy,
   all_virial.resize(numb_models);
   for (unsigned ii = 0; ii < numb_models; ++ii) {
     dps[ii]->compute(all_energy[ii], all_force[ii], all_virial[ii], dcoord_,
-                     datype_, dbox, fparam, aparam_);
+                     datype_, dbox, fparam, aparam_, charge_spin);
   }
 }
 
@@ -680,7 +681,8 @@ template void DeepPotModelDevi::compute<double>(
     const std::vector<int>& datype_,
     const std::vector<double>& dbox,
     const std::vector<double>& fparam,
-    const std::vector<double>& aparam);
+    const std::vector<double>& aparam,
+    const std::vector<double>& charge_spin);
 
 template void DeepPotModelDevi::compute<float>(
     std::vector<ENERGYTYPE>& all_energy,
@@ -690,7 +692,8 @@ template void DeepPotModelDevi::compute<float>(
     const std::vector<int>& datype_,
     const std::vector<float>& dbox,
     const std::vector<float>& fparam,
-    const std::vector<float>& aparam);
+    const std::vector<float>& aparam,
+    const std::vector<double>& charge_spin);
 
 template <typename VALUETYPE>
 void DeepPotModelDevi::compute(
@@ -703,7 +706,8 @@ void DeepPotModelDevi::compute(
     const std::vector<int>& datype_,
     const std::vector<VALUETYPE>& dbox,
     const std::vector<VALUETYPE>& fparam,
-    const std::vector<VALUETYPE>& aparam_) {
+    const std::vector<VALUETYPE>& aparam_,
+    const std::vector<double>& charge_spin) {
   if (numb_models == 0) {
     return;
   }
@@ -715,7 +719,7 @@ void DeepPotModelDevi::compute(
   for (unsigned ii = 0; ii < numb_models; ++ii) {
     dps[ii]->compute(all_energy[ii], all_force[ii], all_virial[ii],
                      all_atom_energy[ii], all_atom_virial[ii], dcoord_, datype_,
-                     dbox, fparam, aparam_);
+                     dbox, fparam, aparam_, charge_spin);
   }
 }
 
@@ -729,7 +733,8 @@ template void DeepPotModelDevi::compute<double>(
     const std::vector<int>& datype_,
     const std::vector<double>& dbox,
     const std::vector<double>& fparam,
-    const std::vector<double>& aparam);
+    const std::vector<double>& aparam,
+    const std::vector<double>& charge_spin);
 
 template void DeepPotModelDevi::compute<float>(
     std::vector<ENERGYTYPE>& all_energy,
@@ -741,7 +746,8 @@ template void DeepPotModelDevi::compute<float>(
     const std::vector<int>& datype_,
     const std::vector<float>& dbox,
     const std::vector<float>& fparam,
-    const std::vector<float>& aparam);
+    const std::vector<float>& aparam,
+    const std::vector<double>& charge_spin);
 
 template <typename VALUETYPE>
 void DeepPotModelDevi::compute(std::vector<ENERGYTYPE>& all_energy,
@@ -754,7 +760,8 @@ void DeepPotModelDevi::compute(std::vector<ENERGYTYPE>& all_energy,
                                const InputNlist& lmp_list,
                                const int& ago,
                                const std::vector<VALUETYPE>& fparam,
-                               const std::vector<VALUETYPE>& aparam_) {
+                               const std::vector<VALUETYPE>& aparam_,
+                               const std::vector<double>& charge_spin) {
   if (numb_models == 0) {
     return;
   }
@@ -763,7 +770,8 @@ void DeepPotModelDevi::compute(std::vector<ENERGYTYPE>& all_energy,
   all_virial.resize(numb_models);
   for (unsigned ii = 0; ii < numb_models; ++ii) {
     dps[ii]->compute(all_energy[ii], all_force[ii], all_virial[ii], dcoord_,
-                     datype_, dbox, nghost, lmp_list, ago, fparam, aparam_);
+                     datype_, dbox, nghost, lmp_list, ago, fparam, aparam_,
+                     charge_spin);
   }
 }
 
@@ -778,7 +786,8 @@ template void DeepPotModelDevi::compute<double>(
     const InputNlist& lmp_list,
     const int& ago,
     const std::vector<double>& fparam,
-    const std::vector<double>& aparam);
+    const std::vector<double>& aparam,
+    const std::vector<double>& charge_spin);
 
 template void DeepPotModelDevi::compute<float>(
     std::vector<ENERGYTYPE>& all_energy,
@@ -791,7 +800,8 @@ template void DeepPotModelDevi::compute<float>(
     const InputNlist& lmp_list,
     const int& ago,
     const std::vector<float>& fparam,
-    const std::vector<float>& aparam);
+    const std::vector<float>& aparam,
+    const std::vector<double>& charge_spin);
 
 template <typename VALUETYPE>
 void DeepPotModelDevi::compute(
@@ -807,7 +817,8 @@ void DeepPotModelDevi::compute(
     const InputNlist& lmp_list,
     const int& ago,
     const std::vector<VALUETYPE>& fparam,
-    const std::vector<VALUETYPE>& aparam_) {
+    const std::vector<VALUETYPE>& aparam_,
+    const std::vector<double>& charge_spin) {
   if (numb_models == 0) {
     return;
   }
@@ -819,7 +830,7 @@ void DeepPotModelDevi::compute(
   for (unsigned ii = 0; ii < numb_models; ++ii) {
     dps[ii]->compute(all_energy[ii], all_force[ii], all_virial[ii],
                      all_atom_energy[ii], all_atom_virial[ii], dcoord_, datype_,
-                     dbox, nghost, lmp_list, ago, fparam, aparam_);
+                     dbox, nghost, lmp_list, ago, fparam, aparam_, charge_spin);
   }
 }
 
@@ -836,7 +847,8 @@ template void DeepPotModelDevi::compute<double>(
     const InputNlist& lmp_list,
     const int& ago,
     const std::vector<double>& fparam,
-    const std::vector<double>& aparam);
+    const std::vector<double>& aparam,
+    const std::vector<double>& charge_spin);
 
 template void DeepPotModelDevi::compute<float>(
     std::vector<ENERGYTYPE>& all_energy,
@@ -851,4 +863,5 @@ template void DeepPotModelDevi::compute<float>(
     const InputNlist& lmp_list,
     const int& ago,
     const std::vector<float>& fparam,
-    const std::vector<float>& aparam);
+    const std::vector<float>& aparam,
+    const std::vector<double>& charge_spin);

@@ -704,7 +704,8 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
                const std::vector<int>& atype,
                const std::vector<VALUETYPE>& box,
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+               const std::vector<double>& charge_spin = std::vector<double>());
 
   /**
    * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
@@ -739,7 +740,8 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
                const std::vector<int>& atype,
                const std::vector<VALUETYPE>& box,
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+               const std::vector<double>& charge_spin = std::vector<double>());
 
   /**
    * @brief Evaluate the energy, force and virial by using these DP models.
@@ -775,7 +777,8 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
                const InputNlist& lmp_list,
                const int& ago,
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+               const std::vector<double>& charge_spin = std::vector<double>());
   /**
    * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
    *by using these DP models.
@@ -815,7 +818,8 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
                const InputNlist& lmp_list,
                const int& ago,
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+               const std::vector<double>& charge_spin = std::vector<double>());
 
  protected:
   std::vector<std::shared_ptr<deepmd::DeepPot>> dps;
