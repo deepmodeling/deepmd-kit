@@ -360,7 +360,13 @@ class SO2Linear(nn.Module):
                 self._cached_weight = weight.detach()
 
         # === Step 3. Block-diagonal matmul over focus streams + reshape back ===
-        out_flat = self._block_diagonal_matmul(x_flat, weight)
+        # On CPU the block ``torch.cat`` lowers to a nested masked select that
+        # trips an Inductor AVX2 C++ codegen bug under compile, so use the
+        # numerically identical dense einsum there; GPU keeps the block-diag opt.
+        if x_flat.is_cuda:
+            out_flat = self._block_diagonal_matmul(x_flat, weight)
+        else:
+            out_flat = torch.einsum("efi,ifo->efo", x_flat, weight)
         out = out_flat.reshape(
             n_edge, self.n_focus, self.reduced_dim, self.out_channels
         )
