@@ -57,7 +57,8 @@ inline void _DP_DeepPotCompute(DP_DeepPot* dp,
                                FPTYPE* force,
                                FPTYPE* virial,
                                FPTYPE* atomic_energy,
-                               FPTYPE* atomic_virial);
+                               FPTYPE* atomic_virial,
+                               const double* charge_spin);
 
 template <>
 inline void _DP_DeepPotCompute<double>(DP_DeepPot* dp,
@@ -72,9 +73,18 @@ inline void _DP_DeepPotCompute<double>(DP_DeepPot* dp,
                                        double* force,
                                        double* virial,
                                        double* atomic_energy,
-                                       double* atomic_virial) {
-  DP_DeepPotCompute2(dp, nframes, natom, coord, atype, cell, fparam, aparam,
-                     energy, force, virial, atomic_energy, atomic_virial);
+                                       double* atomic_virial,
+                                       const double* charge_spin) {
+  // charge_spin == nullptr keeps the version-2 entry point so models without a
+  // charge/spin embedding still work against an older libdeepmd_c.
+  if (charge_spin) {
+    DP_DeepPotCompute3(dp, nframes, natom, coord, atype, cell, fparam, aparam,
+                       charge_spin, energy, force, virial, atomic_energy,
+                       atomic_virial);
+  } else {
+    DP_DeepPotCompute2(dp, nframes, natom, coord, atype, cell, fparam, aparam,
+                       energy, force, virial, atomic_energy, atomic_virial);
+  }
 }
 
 template <>
@@ -90,9 +100,16 @@ inline void _DP_DeepPotCompute<float>(DP_DeepPot* dp,
                                       float* force,
                                       float* virial,
                                       float* atomic_energy,
-                                      float* atomic_virial) {
-  DP_DeepPotComputef2(dp, nframes, natom, coord, atype, cell, fparam, aparam,
-                      energy, force, virial, atomic_energy, atomic_virial);
+                                      float* atomic_virial,
+                                      const double* charge_spin) {
+  if (charge_spin) {
+    DP_DeepPotComputef3(dp, nframes, natom, coord, atype, cell, fparam, aparam,
+                        charge_spin, energy, force, virial, atomic_energy,
+                        atomic_virial);
+  } else {
+    DP_DeepPotComputef2(dp, nframes, natom, coord, atype, cell, fparam, aparam,
+                        energy, force, virial, atomic_energy, atomic_virial);
+  }
 }
 
 // support spin
@@ -171,7 +188,8 @@ inline void _DP_DeepPotComputeNList(DP_DeepPot* dp,
                                     FPTYPE* force,
                                     FPTYPE* virial,
                                     FPTYPE* atomic_energy,
-                                    FPTYPE* atomic_virial);
+                                    FPTYPE* atomic_virial,
+                                    const double* charge_spin);
 
 template <>
 inline void _DP_DeepPotComputeNList<double>(DP_DeepPot* dp,
@@ -189,10 +207,17 @@ inline void _DP_DeepPotComputeNList<double>(DP_DeepPot* dp,
                                             double* force,
                                             double* virial,
                                             double* atomic_energy,
-                                            double* atomic_virial) {
-  DP_DeepPotComputeNList2(dp, nframes, natom, coord, atype, cell, nghost, nlist,
-                          ago, fparam, aparam, energy, force, virial,
-                          atomic_energy, atomic_virial);
+                                            double* atomic_virial,
+                                            const double* charge_spin) {
+  if (charge_spin) {
+    DP_DeepPotComputeNList3(dp, nframes, natom, coord, atype, cell, nghost,
+                            nlist, ago, fparam, aparam, charge_spin, energy,
+                            force, virial, atomic_energy, atomic_virial);
+  } else {
+    DP_DeepPotComputeNList2(dp, nframes, natom, coord, atype, cell, nghost,
+                            nlist, ago, fparam, aparam, energy, force, virial,
+                            atomic_energy, atomic_virial);
+  }
 }
 
 template <>
@@ -211,10 +236,17 @@ inline void _DP_DeepPotComputeNList<float>(DP_DeepPot* dp,
                                            float* force,
                                            float* virial,
                                            float* atomic_energy,
-                                           float* atomic_virial) {
-  DP_DeepPotComputeNListf2(dp, nframes, natom, coord, atype, cell, nghost,
-                           nlist, ago, fparam, aparam, energy, force, virial,
-                           atomic_energy, atomic_virial);
+                                           float* atomic_virial,
+                                           const double* charge_spin) {
+  if (charge_spin) {
+    DP_DeepPotComputeNListf3(dp, nframes, natom, coord, atype, cell, nghost,
+                             nlist, ago, fparam, aparam, charge_spin, energy,
+                             force, virial, atomic_energy, atomic_virial);
+  } else {
+    DP_DeepPotComputeNListf2(dp, nframes, natom, coord, atype, cell, nghost,
+                             nlist, ago, fparam, aparam, energy, force, virial,
+                             atomic_energy, atomic_virial);
+  }
 }
 
 // support spin
@@ -1069,6 +1101,7 @@ class DeepPot : public DeepBaseModel {
     DP_CHECK_OK(DP_DeepPotCheckOK, dp);
     dfparam = DP_DeepPotGetDimFParam(dp);
     daparam = DP_DeepPotGetDimAParam(dp);
+    dchgspin = DP_DeepPotGetDimChgSpin(dp);
     aparam_nall = DP_DeepPotIsAParamNAll(dp);
     has_default_fparam_ = DP_DeepPotHasDefaultFParam(dp);
     dpbase = (DP_DeepBaseModel*)dp;
@@ -1076,9 +1109,10 @@ class DeepPot : public DeepBaseModel {
 
   /**
    * @brief Get the dimension of the charge/spin embedding input.
-   * @return Always 0; charge_spin is not supported via the C-API path.
+   * @return The dimension of the charge/spin input (0 if the model has no
+   *charge/spin embedding).
    **/
-  int dim_chg_spin() const { return 0; }
+  int dim_chg_spin() const { return dchgspin; }
 
   /**
    * @brief Evaluate the energy, force and virial by using this DP.
@@ -1110,7 +1144,6 @@ class DeepPot : public DeepBaseModel {
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
                const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
                const std::vector<double>& charge_spin = std::vector<double>()) {
-    (void)charge_spin;
     unsigned int natoms = atype.size();
     unsigned int nframes = natoms > 0 ? coord.size() / natoms / 3 : 1;
     assert(nframes * natoms * 3 == coord.size());
@@ -1131,10 +1164,14 @@ class DeepPot : public DeepBaseModel {
     tile_fparam_aparam(aparam_, nframes, natoms * daparam, aparam);
     const VALUETYPE* fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
     const VALUETYPE* aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
+    // charge_spin routes to the version-3 C API; nullptr keeps version-2 so
+    // non-charge_spin models still work against an older libdeepmd_c.
+    const double* charge_spin__ =
+        (dchgspin > 0 && !charge_spin.empty()) ? charge_spin.data() : nullptr;
 
     _DP_DeepPotCompute<VALUETYPE>(dp, nframes, natoms, coord_, atype_, box_,
                                   fparam__, aparam__, ener_, force_, virial_,
-                                  nullptr, nullptr);
+                                  nullptr, nullptr, charge_spin__);
     DP_CHECK_OK(DP_DeepPotCheckOK, dp);
   };
   /**
@@ -1172,7 +1209,6 @@ class DeepPot : public DeepBaseModel {
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
                const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
                const std::vector<double>& charge_spin = std::vector<double>()) {
-    (void)charge_spin;
     unsigned int natoms = atype.size();
     unsigned int nframes = natoms > 0 ? coord.size() / natoms / 3 : 1;
     assert(nframes * natoms * 3 == coord.size());
@@ -1198,10 +1234,12 @@ class DeepPot : public DeepBaseModel {
     tile_fparam_aparam(aparam_, nframes, natoms * daparam, aparam);
     const VALUETYPE* fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
     const VALUETYPE* aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
+    const double* charge_spin__ =
+        (dchgspin > 0 && !charge_spin.empty()) ? charge_spin.data() : nullptr;
 
     _DP_DeepPotCompute<VALUETYPE>(dp, nframes, natoms, coord_, atype_, box_,
                                   fparam__, aparam__, ener_, force_, virial_,
-                                  atomic_ener_, atomic_virial_);
+                                  atomic_ener_, atomic_virial_, charge_spin__);
     DP_CHECK_OK(DP_DeepPotCheckOK, dp);
   };
 
@@ -1242,7 +1280,6 @@ class DeepPot : public DeepBaseModel {
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
                const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
                const std::vector<double>& charge_spin = std::vector<double>()) {
-    (void)charge_spin;
     unsigned int natoms = atype.size();
     unsigned int nframes = natoms > 0 ? coord.size() / natoms / 3 : 1;
     assert(nframes * natoms * 3 == coord.size());
@@ -1266,10 +1303,13 @@ class DeepPot : public DeepBaseModel {
                        aparam);
     const VALUETYPE* fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
     const VALUETYPE* aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
+    const double* charge_spin__ =
+        (dchgspin > 0 && !charge_spin.empty()) ? charge_spin.data() : nullptr;
 
     _DP_DeepPotComputeNList<VALUETYPE>(
         dp, nframes, natoms, coord_, atype_, box_, nghost, lmp_list.nl, ago,
-        fparam__, aparam__, ener_, force_, virial_, nullptr, nullptr);
+        fparam__, aparam__, ener_, force_, virial_, nullptr, nullptr,
+        charge_spin__);
     DP_CHECK_OK(DP_DeepPotCheckOK, dp);
   };
   /**
@@ -1313,7 +1353,6 @@ class DeepPot : public DeepBaseModel {
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
                const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
                const std::vector<double>& charge_spin = std::vector<double>()) {
-    (void)charge_spin;
     unsigned int natoms = atype.size();
     unsigned int nframes = natoms > 0 ? coord.size() / natoms / 3 : 1;
     assert(nframes * natoms * 3 == coord.size());
@@ -1342,11 +1381,14 @@ class DeepPot : public DeepBaseModel {
                        aparam);
     const VALUETYPE* fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
     const VALUETYPE* aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
+    const double* charge_spin__ =
+        (dchgspin > 0 && !charge_spin.empty()) ? charge_spin.data() : nullptr;
 
     _DP_DeepPotComputeNList<VALUETYPE>(dp, nframes, natoms, coord_, atype_,
                                        box_, nghost, lmp_list.nl, ago, fparam__,
                                        aparam__, ener_, force_, virial_,
-                                       atomic_ener_, atomic_virial_);
+                                       atomic_ener_, atomic_virial_,
+                                       charge_spin__);
     DP_CHECK_OK(DP_DeepPotCheckOK, dp);
   };
   /**
@@ -1475,6 +1517,7 @@ class DeepPot : public DeepBaseModel {
 
  private:
   DP_DeepPot* dp;
+  int dchgspin;
 };
 
 class DeepSpin : public DeepBaseModel {

@@ -216,10 +216,6 @@ void PairDeepMD::compute(int eflag, int vflag) {
     make_fparam_from_compute(fparam);
   }
 
-  if (do_compute_charge_spin) {
-    make_charge_spin_from_compute(charge_spin);
-  }
-
   // int ago = numb_models > 1 ? 0 : neighbor->ago;
   int ago = neighbor->ago;
   if (numb_models > 1) {
@@ -540,7 +536,6 @@ static bool is_key(const string& input) {
   keys.push_back("fparam_from_compute");
   keys.push_back("aparam_from_compute");
   keys.push_back("charge_spin");
-  keys.push_back("charge_spin_from_compute");
   keys.push_back("ttm");
   keys.push_back("atomic");
   keys.push_back("relative");
@@ -708,17 +703,6 @@ void PairDeepMD::settings(int narg, char** arg) {
         charge_spin.push_back(atof(arg[iarg + 1 + ii]));
       }
       iarg += 1 + dim_chg_spin;
-    } else if (string(arg[iarg]) == string("charge_spin_from_compute")) {
-      for (int ii = 0; ii < 1; ++ii) {
-        if (iarg + 1 + ii >= narg || is_key(arg[iarg + 1 + ii])) {
-          error->all(FLERR,
-                     "invalid charge_spin_from_compute key: should be "
-                     "charge_spin_from_compute compute_charge_spin_id(str)");
-        }
-      }
-      do_compute_charge_spin = true;
-      compute_charge_spin_id = arg[iarg + 1];
-      iarg += 1 + 1;
     } else if (string(arg[iarg]) == string("atomic")) {
       out_each = 1;
       iarg += 1;
@@ -757,11 +741,6 @@ void PairDeepMD::settings(int narg, char** arg) {
     error->all(
         FLERR,
         "fparam and fparam_from_compute should NOT be set simultaneously");
-  }
-  if (do_compute_charge_spin && charge_spin.size() > 0) {
-    error->all(FLERR,
-               "charge_spin and charge_spin_from_compute should NOT be set "
-               "simultaneously");
   }
 
   if (comm->me == 0) {

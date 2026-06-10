@@ -12,7 +12,7 @@ extern "C" {
 /** C API version. Bumped whenever the API is changed.
  * @since API version 22
  */
-#define DP_C_API_VERSION 26
+#define DP_C_API_VERSION 27
 
 /**
  * @brief Neighbor list.
@@ -669,6 +669,123 @@ extern void DP_DeepPotComputeNListf2(DP_DeepPot* dp,
                                      const int ago,
                                      const float* fparam,
                                      const float* aparam,
+                                     double* energy,
+                                     float* force,
+                                     float* virial,
+                                     float* atomic_energy,
+                                     float* atomic_virial);
+
+/**
+ * @brief Evaluate the energy, force and virial by using a DP. (double version,
+ *with charge_spin)
+ * @version 3
+ * @param[in] dp The DP to use.
+ * @param[in] nframes The number of frames.
+ * @param[in] natoms The number of atoms.
+ * @param[in] coord The coordinates of atoms. The array should be of size natoms
+ *x 3.
+ * @param[in] atype The atom types. The array should contain natoms ints.
+ * @param[in] cell The cell of the region. The array should be of size 9. Pass
+ *NULL if pbc is not used.
+ * @param[in] fparam The frame parameters. The array can be of size nframes x
+ *dim_fparam.
+ * @param[in] aparam The atom parameters. The array can be of size nframes x
+ *natoms x dim_aparam.
+ * @param[in] charge_spin The per-frame charge/spin input. The array can be of
+ *size nframes x dim_chg_spin. Pass NULL to use the model's stored
+ *default_chg_spin.
+ * @param[out] energy Output energy.
+ * @param[out] force Output force. The array should be of size natoms x 3.
+ * @param[out] virial Output virial. The array should be of size 9.
+ * @param[out] atomic_energy Output atomic energy. The array should be of size
+ *natoms.
+ * @param[out] atomic_virial Output atomic virial. The array should be of size
+ *natoms x 9.
+ * @warning The output arrays should be allocated before calling this function.
+ *Pass NULL if not required.
+ * @since API version 27
+ **/
+extern void DP_DeepPotCompute3(DP_DeepPot* dp,
+                               const int nframes,
+                               const int natoms,
+                               const double* coord,
+                               const int* atype,
+                               const double* cell,
+                               const double* fparam,
+                               const double* aparam,
+                               const double* charge_spin,
+                               double* energy,
+                               double* force,
+                               double* virial,
+                               double* atomic_energy,
+                               double* atomic_virial);
+
+/**
+ * @brief Evaluate the energy, force and virial by using a DP. (float version,
+ *with charge_spin)
+ * @version 3
+ * @since API version 27
+ **/
+extern void DP_DeepPotComputef3(DP_DeepPot* dp,
+                                const int nframes,
+                                const int natoms,
+                                const float* coord,
+                                const int* atype,
+                                const float* cell,
+                                const float* fparam,
+                                const float* aparam,
+                                const double* charge_spin,
+                                double* energy,
+                                float* force,
+                                float* virial,
+                                float* atomic_energy,
+                                float* atomic_virial);
+
+/**
+ * @brief Evaluate the energy, force and virial by using a DP with the neighbor
+ *list. (double version, with charge_spin)
+ * @version 3
+ * @param[in] charge_spin The per-frame charge/spin input. The array can be of
+ *size nframes x dim_chg_spin. Pass NULL to use the model's stored
+ *default_chg_spin.
+ * @since API version 27
+ **/
+extern void DP_DeepPotComputeNList3(DP_DeepPot* dp,
+                                    const int nframes,
+                                    const int natoms,
+                                    const double* coord,
+                                    const int* atype,
+                                    const double* cell,
+                                    const int nghost,
+                                    const DP_Nlist* nlist,
+                                    const int ago,
+                                    const double* fparam,
+                                    const double* aparam,
+                                    const double* charge_spin,
+                                    double* energy,
+                                    double* force,
+                                    double* virial,
+                                    double* atomic_energy,
+                                    double* atomic_virial);
+
+/**
+ * @brief Evaluate the energy, force and virial by using a DP with the neighbor
+ *list. (float version, with charge_spin)
+ * @version 3
+ * @since API version 27
+ **/
+extern void DP_DeepPotComputeNListf3(DP_DeepPot* dp,
+                                     const int nframes,
+                                     const int natoms,
+                                     const float* coord,
+                                     const int* atype,
+                                     const float* cell,
+                                     const int nghost,
+                                     const DP_Nlist* nlist,
+                                     const int ago,
+                                     const float* fparam,
+                                     const float* aparam,
+                                     const double* charge_spin,
                                      double* energy,
                                      float* force,
                                      float* virial,
@@ -1582,6 +1699,15 @@ int DP_DeepPotGetDimFParam(DP_DeepPot* dp);
  * @return The dimension of atomic parameters of the DP.
  */
 int DP_DeepPotGetDimAParam(DP_DeepPot* dp);
+
+/**
+ * @brief Get the dimension of the charge/spin input of a DP.
+ * @param[in] dp The DP to use.
+ * @return The dimension of the charge/spin input (0 if the model has no
+ * charge/spin embedding).
+ * @since API version 27
+ */
+int DP_DeepPotGetDimChgSpin(DP_DeepPot* dp);
 
 /**
  * @brief Check whether the atomic dimension of atomic parameters is nall

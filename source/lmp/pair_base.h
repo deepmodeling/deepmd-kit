@@ -92,10 +92,6 @@ class PairDeepBaseModel : public Pair {
   bool do_compute_aparam;
   std::string compute_aparam_id;
 
-  void make_charge_spin_from_compute(std::vector<double>& charge_spin);
-  bool do_compute_charge_spin;
-  std::string compute_charge_spin_id;
-
   void make_ttm_fparam(std::vector<double>& fparam);
 
   void make_ttm_aparam(std::vector<double>& dparam);

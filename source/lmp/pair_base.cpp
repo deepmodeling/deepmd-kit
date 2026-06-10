@@ -164,39 +164,6 @@ void PairDeepBaseModel::make_fparam_from_compute(vector<double>& fparam) {
   }
 }
 
-void PairDeepBaseModel::make_charge_spin_from_compute(
-    vector<double>& charge_spin) {
-  assert(do_compute_charge_spin);
-
-  int icompute = modify->find_compute(compute_charge_spin_id);
-  if (icompute < 0) {
-    error->all(FLERR, "compute id is not found: " + compute_charge_spin_id);
-  }
-  Compute* compute = modify->compute[icompute];
-
-  if (!compute) {
-    error->all(FLERR, "compute id is not found: " + compute_charge_spin_id);
-  }
-  charge_spin.resize(dim_chg_spin);
-
-  if (dim_chg_spin == 1) {
-    if (!(compute->invoked_flag & Compute::INVOKED_SCALAR)) {
-      compute->compute_scalar();
-      compute->invoked_flag |= Compute::INVOKED_SCALAR;
-    }
-    charge_spin[0] = compute->scalar;
-  } else if (dim_chg_spin > 1) {
-    if (!(compute->invoked_flag & Compute::INVOKED_VECTOR)) {
-      compute->compute_vector();
-      compute->invoked_flag |= Compute::INVOKED_VECTOR;
-    }
-    double* cvector = compute->vector;
-    for (int jj = 0; jj < dim_chg_spin; ++jj) {
-      charge_spin[jj] = cvector[jj];
-    }
-  }
-}
-
 void PairDeepBaseModel::make_aparam_from_compute(vector<double>& aparam) {
   assert(do_compute_aparam);
 
@@ -375,7 +342,6 @@ PairDeepBaseModel::PairDeepBaseModel(
   dim_chg_spin = 0;
   do_compute_fparam = false;
   do_compute_aparam = false;
-  do_compute_charge_spin = false;
   single_model = false;
   multi_models_mod_devi = false;
   multi_models_no_mod_devi = false;
