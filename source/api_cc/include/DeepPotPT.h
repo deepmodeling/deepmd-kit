@@ -73,6 +73,7 @@ class DeepPotPT : public DeepPotBackend {
                const std::vector<VALUETYPE>& box,
                const std::vector<VALUETYPE>& fparam,
                const std::vector<VALUETYPE>& aparam,
+               const std::vector<double>& charge_spin,
                const bool atomic);
   /**
    * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
@@ -114,6 +115,7 @@ class DeepPotPT : public DeepPotBackend {
                const int& ago,
                const std::vector<VALUETYPE>& fparam,
                const std::vector<VALUETYPE>& aparam,
+               const std::vector<double>& charge_spin,
                const bool atomic);
   /**
    * @brief Evaluate the energy, force, and virial with the mixed type
@@ -230,6 +232,15 @@ class DeepPotPT : public DeepPotBackend {
     return daparam;
   };
   /**
+   * @brief Get the dimension of the charge/spin input.
+   * @return The dimension of the charge/spin input (0 if the model has no
+   *charge/spin embedding).
+   **/
+  int dim_chg_spin() const override {
+    assert(inited);
+    return dchgspin;
+  };
+  /**
    * @brief Get the type map (element name of the atom types) of this model.
    * @param[out] type_map The type map of this model.
    **/
@@ -329,6 +340,62 @@ class DeepPotPT : public DeepPotBackend {
                            const std::vector<float>& aparam,
                            const bool atomic);
 
+  // charge_spin overloads — pass runtime charge/spin per call
+  void computew(std::vector<double>& ener,
+                std::vector<double>& force,
+                std::vector<double>& virial,
+                std::vector<double>& atom_energy,
+                std::vector<double>& atom_virial,
+                const std::vector<double>& coord,
+                const std::vector<int>& atype,
+                const std::vector<double>& box,
+                const std::vector<double>& fparam,
+                const std::vector<double>& aparam,
+                const std::vector<double>& charge_spin,
+                const bool atomic) override;
+  void computew(std::vector<double>& ener,
+                std::vector<float>& force,
+                std::vector<float>& virial,
+                std::vector<float>& atom_energy,
+                std::vector<float>& atom_virial,
+                const std::vector<float>& coord,
+                const std::vector<int>& atype,
+                const std::vector<float>& box,
+                const std::vector<float>& fparam,
+                const std::vector<float>& aparam,
+                const std::vector<double>& charge_spin,
+                const bool atomic) override;
+  void computew(std::vector<double>& ener,
+                std::vector<double>& force,
+                std::vector<double>& virial,
+                std::vector<double>& atom_energy,
+                std::vector<double>& atom_virial,
+                const std::vector<double>& coord,
+                const std::vector<int>& atype,
+                const std::vector<double>& box,
+                const int nghost,
+                const InputNlist& inlist,
+                const int& ago,
+                const std::vector<double>& fparam,
+                const std::vector<double>& aparam,
+                const std::vector<double>& charge_spin,
+                const bool atomic) override;
+  void computew(std::vector<double>& ener,
+                std::vector<float>& force,
+                std::vector<float>& virial,
+                std::vector<float>& atom_energy,
+                std::vector<float>& atom_virial,
+                const std::vector<float>& coord,
+                const std::vector<int>& atype,
+                const std::vector<float>& box,
+                const int nghost,
+                const InputNlist& inlist,
+                const int& ago,
+                const std::vector<float>& fparam,
+                const std::vector<float>& aparam,
+                const std::vector<double>& charge_spin,
+                const bool atomic) override;
+
  private:
   int num_intra_nthreads, num_inter_nthreads;
   bool inited;
@@ -336,8 +403,10 @@ class DeepPotPT : public DeepPotBackend {
   int ntypes_spin;
   int dfparam;
   int daparam;
+  int dchgspin;
   bool aparam_nall;
   bool has_default_fparam_;
+  std::vector<double> default_chg_spin_;
   // copy neighbor list info from host
   torch::jit::script::Module module;
   double rcut;

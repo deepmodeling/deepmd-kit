@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Generate chg_spin.pt2 test model and reference values.
+"""Generate chg_spin.pt2 / chg_spin.pth test models and reference values.
 
 Creates a DPA3 model with add_chg_spin_ebd=True and default_chg_spin=[0.0, 1.0],
-exports to .pt2, and writes chg_spin.expected with two sections:
+exports it to both .pt2 (AOTInductor) and .pth (TorchScript) from the same
+weights, and writes chg_spin.expected with two sections:
   [default]  -- eval with no charge_spin (uses stored default [0.0, 1.0])
-  [explicit] -- eval with charge_spin=[0.5, 0.8]
+  [explicit] -- eval with charge_spin=[1.0, 2.0]
+The .pth is verified to match the .pt2 reference for both sections.
 """
 
 import copy
@@ -71,6 +73,9 @@ def main():
         "version": "3.0.0",
     }
 
+    from deepmd.pt.utils.serialization import (
+        deserialize_to_file as pt_deserialize_to_file,
+    )
     from deepmd.pt_expt.utils.serialization import (
         deserialize_to_file as pt_expt_deserialize_to_file,
     )
@@ -81,6 +86,16 @@ def main():
     pt2_path = os.path.join(base_dir, "chg_spin.pt2")
     print(f"Exporting to {pt2_path} ...")  # noqa: T201
     pt_expt_deserialize_to_file(pt2_path, copy.deepcopy(data), do_atomic_virial=True)
+
+    pth_path = os.path.join(base_dir, "chg_spin.pth")
+    print(f"Exporting to {pth_path} ...")  # noqa: T201
+    try:
+        pt_deserialize_to_file(pth_path, copy.deepcopy(data))
+    except RuntimeError as e:
+        # Custom ops may not be available in all build environments; .pth
+        # generation is not critical (the .pth test skips if the file is
+        # missing / PyTorch support is off).
+        print(f"WARNING: .pth export failed ({e}), skipping.")  # noqa: T201
     print("Export done.")  # noqa: T201
 
     from deepmd.infer import (
@@ -136,6 +151,19 @@ def main():
         "Default and explicit charge_spin gave identical energy — charge_spin may be ignored"
     )
 
+    # NoPbc variants (box=None) — used by the .pth nlist test, which mirrors the
+    # established DPA3 .pth pattern (NoPbc lmp_nlist, nghost=0) and so needs its
+    # own reference values.
+    e_np_def, f_np_def, v_np_def, ae_np_def, av_np_def = dp.eval(
+        coord, None, atype, atomic=True
+    )
+    e_np_exp, f_np_exp, v_np_exp, ae_np_exp, av_np_exp = dp.eval(
+        coord, None, atype, atomic=True, charge_spin=charge_spin_exp
+    )
+    assert not np.allclose(e_np_def, e_np_exp), (
+        "NoPbc: default and explicit charge_spin gave identical energy"
+    )
+
     ref_path = os.path.join(base_dir, "chg_spin.expected")
     write_expected_ref(
         ref_path,
@@ -150,10 +178,53 @@ def main():
                 "expected_f": f_exp[0],
                 "expected_v": av_exp[0],
             },
+            "nopbc_default": {
+                "expected_e": ae_np_def[0, :, 0],
+                "expected_f": f_np_def[0],
+                "expected_v": av_np_def[0],
+            },
+            "nopbc_explicit": {
+                "expected_e": ae_np_exp[0, :, 0],
+                "expected_f": f_np_exp[0],
+                "expected_v": av_np_exp[0],
+            },
         },
         source_script="source/tests/infer/gen_chg_spin.py",
     )
     print(f"Wrote {ref_path}")  # noqa: T201
+
+    # ---- Verify .pth reproduces the .pt2 reference (PBC + NoPbc) ----
+    if os.path.exists(pth_path):
+        dp_pth = DeepPot(pth_path)
+        assert dp_pth.deep_eval.get_dim_chg_spin() == 2
+        tol = 1e-10
+        e_def_p, f_def_p, v_def_p = dp_pth.eval(coord, box, atype)
+        e_exp_p, f_exp_p, v_exp_p = dp_pth.eval(
+            coord, box, atype, charge_spin=charge_spin_exp
+        )
+        np.testing.assert_allclose(e_def_p, e_def, atol=tol, err_msg="pth default e")
+        np.testing.assert_allclose(f_def_p, f_def, atol=tol, err_msg="pth default f")
+        np.testing.assert_allclose(e_exp_p, e_exp, atol=tol, err_msg="pth explicit e")
+        np.testing.assert_allclose(f_exp_p, f_exp, atol=tol, err_msg="pth explicit f")
+        # NoPbc parity (the .pth nlist test uses NoPbc)
+        e_np_def_p, f_np_def_p, _ = dp_pth.eval(coord, None, atype)
+        e_np_exp_p, f_np_exp_p, _ = dp_pth.eval(
+            coord, None, atype, charge_spin=charge_spin_exp
+        )
+        np.testing.assert_allclose(
+            e_np_def_p, e_np_def, atol=tol, err_msg="pth nopbc default e"
+        )
+        np.testing.assert_allclose(
+            e_np_exp_p, e_np_exp, atol=tol, err_msg="pth nopbc explicit e"
+        )
+        # different charge_spin must change the .pth output too
+        assert not np.allclose(e_def_p, e_exp_p), (
+            ".pth: default and explicit charge_spin gave identical energy"
+        )
+        print("// .pth matches .pt2 reference (PBC + NoPbc).")  # noqa: T201
+    else:
+        print("\n// Skipping .pth verification (file not generated).")  # noqa: T201
+
     print("\nDone!")  # noqa: T201
 
 
