@@ -23,7 +23,7 @@ from unittest.mock import (
 
 import pytest
 
-from deepmd.dpa_adapt.finetuner import (
+from dpa_adapt.finetuner import (
     DPAFineTuner,
 )
 

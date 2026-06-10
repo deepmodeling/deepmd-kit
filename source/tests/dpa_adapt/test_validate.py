@@ -4,13 +4,13 @@
 import numpy as np
 import pytest
 
-from deepmd.dpa_adapt.data.errors import (
+from dpa_adapt.data.errors import (
     DPADataError,
 )
-from deepmd.dpa_adapt.data.loader import (
+from dpa_adapt.data.loader import (
     load_data,
 )
-from deepmd.dpa_adapt.data.validate import (
+from dpa_adapt.data.validate import (
     check_data,
 )
 
@@ -180,7 +180,7 @@ def test_list_input_aggregates_across_systems(tmp_path):
     s2_root.mkdir()
     (s2_root / "type.raw").write_text("0\n0\n")
     (s2_root / "type_map.raw").write_text("H\nH\n")
-    from deepmd.dpa_adapt.data.loader import (
+    from dpa_adapt.data.loader import (
         load_data,
     )
     from tests.dpa_adapt.test_validate import (

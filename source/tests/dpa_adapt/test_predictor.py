@@ -52,7 +52,7 @@ except Exception:
 else:
     _torch_for_test.set_default_device(None)
 
-from deepmd.dpa_adapt import (
+from dpa_adapt import (
     DPAFineTuner,
     DPAPredictor,
 )
@@ -168,7 +168,7 @@ class TestFreezeBundleHasModelBranch:
             ft.fit(str(system), target_key="energy")
             frozen = ft.freeze(str(tmp_path / "model.pth"))
 
-        from deepmd.dpa_adapt._backend import (
+        from dpa_adapt._backend import (
             load_torch_file,
         )
 
@@ -205,7 +205,7 @@ def _make_mlp_bundle(tmp_path, n_frames=20):
         ),
     )
 
-    from deepmd.dpa_adapt._backend import (
+    from dpa_adapt._backend import (
         load_torch_file,
     )
 
@@ -250,7 +250,7 @@ def _make_rf_bundle(tmp_path, n_frames=20):
     y = rng.random(n_frames)
     pipeline.fit(X, y)
 
-    from deepmd.dpa_adapt._backend import (
+    from dpa_adapt._backend import (
         load_torch_file,
     )
 

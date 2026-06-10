@@ -16,10 +16,10 @@ from __future__ import (
 
 import pytest
 
-from deepmd.dpa_adapt.config.manager import (
+from dpa_adapt.config.manager import (
     MFTConfigManager,
 )
-from deepmd.dpa_adapt.mft import (
+from dpa_adapt.mft import (
     MFTFineTuner,
 )
 

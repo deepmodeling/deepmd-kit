@@ -15,7 +15,7 @@ from unittest.mock import (
 
 import pytest
 
-from deepmd.dpa_adapt.mft import (
+from dpa_adapt.mft import (
     MFTFineTuner,
 )
 

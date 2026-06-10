@@ -11,9 +11,9 @@ import pytest
 
 sys.modules.setdefault("torch", MagicMock())
 
-from deepmd.dpa_adapt.data.errors import DPADataError
-from deepmd.dpa_adapt.data.loader import load_data
-from deepmd.dpa_adapt.finetuner import (
+from dpa_adapt.data.errors import DPADataError
+from dpa_adapt.data.loader import load_data
+from dpa_adapt.finetuner import (
     DPAFineTuner,
     _read_data_type_map,
 )

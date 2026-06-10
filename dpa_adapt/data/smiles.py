@@ -2,7 +2,7 @@
 """SMILES → 3D coordinates → deepmd/npy conversion.
 
 Provides the molecular data ingestion pipeline originally from
-``deepmd_property_tools``:
+``dpa_adapt``:
 
 - Parse CSV files with SMILES (or pre-generated MOL files) and property labels
 - Generate 3D conformers via RDKit (ETKDGv3 + MMFF/UFF optimisation)

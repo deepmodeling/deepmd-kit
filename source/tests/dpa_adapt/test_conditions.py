@@ -34,11 +34,11 @@ _mock_torch.cuda.is_available.return_value = False
 
 sys.modules.setdefault("torch", _mock_torch)
 
-from deepmd.dpa_adapt import (
+from dpa_adapt import (
     DPAFineTuner,
     DPAPredictor,
 )
-from deepmd.dpa_adapt.conditions import (
+from dpa_adapt.conditions import (
     ConditionManager,
     DPAConditionError,
 )

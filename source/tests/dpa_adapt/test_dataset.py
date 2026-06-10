@@ -9,13 +9,13 @@ from pathlib import (
 import numpy as np
 import pytest
 
-from deepmd.dpa_adapt.data.dataset import (
+from dpa_adapt.data.dataset import (
     load_dataset,
 )
-from deepmd.dpa_adapt.data.errors import (
+from dpa_adapt.data.errors import (
     DPADataError,
 )
-from deepmd.dpa_adapt.data.loader import (
+from dpa_adapt.data.loader import (
     load_data,
 )
 

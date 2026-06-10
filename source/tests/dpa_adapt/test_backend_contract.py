@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Contract tests for ``deepmd.dpa_adapt._backend``.
+"""Contract tests for ``dpa_adapt._backend``.
 
 These tests call **real** deepmd APIs — no mocks — on a minimal synthetic
 DPA-3 descriptor model.  Their purpose is to catch silent breakage when
@@ -134,7 +134,7 @@ class TestBackendContract:
     def _require_deepmd(self):
         """Skip if the deepmd model builder is not usable."""
         try:
-            from deepmd.dpa_adapt._backend import (
+            from dpa_adapt._backend import (
                 build_model_from_config,
             )
 
@@ -147,7 +147,7 @@ class TestBackendContract:
         """Build a model + extractor, yield it, then **always** disable the
         descriptor hook so a test failure never leaks global state.
         """
-        from deepmd.dpa_adapt._backend import (
+        from dpa_adapt._backend import (
             _DescriptorExtraction,
             build_model_from_config,
         )
@@ -163,7 +163,7 @@ class TestBackendContract:
 
     def test_build_model_from_config(self):
         """``build_model_from_config`` succeeds with minimal config."""
-        from deepmd.dpa_adapt._backend import (
+        from dpa_adapt._backend import (
             build_model_from_config,
         )
 
@@ -258,7 +258,7 @@ class TestBackendHelpers:
         if isinstance(sys.modules.get("torch"), MagicMock):
             pytest.skip("torch is mocked by another test")
 
-        from deepmd.dpa_adapt._backend import (
+        from dpa_adapt._backend import (
             get_torch_device,
         )
 
@@ -276,7 +276,7 @@ class TestBackendHelpers:
 
         import torch
 
-        from deepmd.dpa_adapt._backend import (
+        from dpa_adapt._backend import (
             load_torch_file,
         )
 
@@ -296,7 +296,7 @@ class TestFormatVersion:
             patch,
         )
 
-        from deepmd.dpa_adapt import (
+        from dpa_adapt import (
             DPAFineTuner,
         )
 
@@ -322,7 +322,7 @@ class TestFormatVersion:
             ft.fit(str(system), target_key="energy")
             frozen = ft.freeze(str(tmp_path / "model.pth"))
 
-        from deepmd.dpa_adapt._backend import (
+        from dpa_adapt._backend import (
             load_torch_file,
         )
 

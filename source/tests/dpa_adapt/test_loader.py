@@ -4,17 +4,17 @@
 import numpy as np
 import pytest
 
-from deepmd.dpa_adapt.data.convert import (
+from dpa_adapt.data.convert import (
     _key_from_head,
     attach_labels,
 )
-from deepmd.dpa_adapt.data.errors import (
+from dpa_adapt.data.errors import (
     DPADataError,
 )
-from deepmd.dpa_adapt.data.loader import (
+from dpa_adapt.data.loader import (
     load_data,
 )
-from deepmd.dpa_adapt.finetuner import (
+from dpa_adapt.finetuner import (
     _load_labels,
     _load_npy_system,
 )
