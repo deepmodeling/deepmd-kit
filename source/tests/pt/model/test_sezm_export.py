@@ -13,6 +13,7 @@ from __future__ import (
 import contextlib
 import copy
 import json
+import os
 import tempfile
 import unittest
 import zipfile
@@ -216,18 +217,24 @@ class TestSeZMExportPipeline(_ClearDefaultDeviceTestCase):
     it must reproduce the eager result exactly.  Drift here implies a
     bug in ``forward_common_lower_exportable`` or the dynamic-shape
     spec, not in AOTI.  The pipeline is built once per class because
-    ``make_fx`` and ``.pte`` round-trip dominate wall time.
+    ``make_fx`` and ``.pte`` round-trip dominate wall time.  Subclasses
+    set ``TRITON_INFER`` to drive the identical pipeline through the
+    opt-in Triton inference kernels.
     """
+
+    # ``DP_TRITON_INFER`` policy applied while the model is constructed.
+    TRITON_INFER = "0"
 
     @classmethod
     def setUpClass(cls) -> None:
         super().setUpClass()
         try:
-            cls.model = _build_tiny_sezm_model()
-            cls.sample_inputs = _make_sample(cls.model, nloc=7, start=2)
-            cls.traced, cls.loaded, cls._pte_tmp = cls._build_pipeline(
-                cls.model, cls.sample_inputs
-            )
+            with mock.patch.dict(os.environ, {"DP_TRITON_INFER": cls.TRITON_INFER}):
+                cls.model = _build_tiny_sezm_model()
+                cls.sample_inputs = _make_sample(cls.model, nloc=7, start=2)
+                cls.traced, cls.loaded, cls._pte_tmp = cls._build_pipeline(
+                    cls.model, cls.sample_inputs
+                )
         except Exception:
             super().tearDownClass()
             raise
@@ -324,6 +331,54 @@ class TestSeZMExportPipeline(_ClearDefaultDeviceTestCase):
         loaded_out = self.loaded(*infer_inputs)
         self._assert_dict_allclose(
             eager_out, loaded_out, context="loaded (.pte) vs eager (infer shape)"
+        )
+
+
+class TestSeZMExportPipelineTritonInfer(TestSeZMExportPipeline):
+    """The same trace / ``.pte`` pipeline exercised with ``DP_TRITON_INFER=1``.
+
+    Inheriting the parity suite asserts the Triton-enabled model still traces,
+    exports, and reloads, and that the loaded ``.pte`` reproduces its eager
+    forward — including the force path, whose custom ``*_bwd`` ops run inside
+    ``_AutoDispatchBelowAutograd`` during the export's no-grad replay and must
+    therefore be closed-form.  Two checks are added: the captured graph routes
+    through the custom ops, and the Triton ``.pte`` matches the dense (Triton-off)
+    inference, proving ``DP_TRITON_INFER`` swaps the implementation without
+    changing results.
+    """
+
+    TRITON_INFER = "1"
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        super().setUpClass()
+        try:
+            with mock.patch.dict(os.environ, {"DP_TRITON_INFER": "0"}):
+                dense_model = _build_tiny_sezm_model()
+            cls.dense_out = _eager_forward(dense_model, cls.sample_inputs)
+        except Exception:
+            super().tearDownClass()
+            raise
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        try:
+            if hasattr(cls, "dense_out"):
+                delattr(cls, "dense_out")
+        finally:
+            super().tearDownClass()
+
+    def test_force_graph_carries_triton_ops(self) -> None:
+        """``DP_TRITON_INFER=1`` must route the descriptor through the custom ops."""
+        code = self.traced.code
+        self.assertIn("radial_mix_block_bwd", code)
+        self.assertIn("rotate_to_local", code)
+
+    def test_loaded_pte_matches_dense(self) -> None:
+        """The Triton-on ``.pte`` reproduces the dense-path inference."""
+        loaded_out = self.loaded(*self.sample_inputs)
+        self._assert_dict_allclose(
+            self.dense_out, loaded_out, context="triton .pte vs dense eager"
         )
 
 

@@ -224,6 +224,7 @@ class TestSeZMSpinModel(unittest.TestCase):
     def test_forward_lower_matches_forward(self) -> None:
         """Lower spin interface should match the standard spin forward path."""
         model = get_model(self._build_model_params()).to(self.device)
+        model.eval()
         out = model(self.coord, self.atype, spin=self.spin, box=self.box)
         extended_coord, extended_atype, mapping, nlist = (
             extend_input_and_build_neighbor_list(
