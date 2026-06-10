@@ -1306,10 +1306,10 @@ class DeepPot : public DeepBaseModel {
     const double* charge_spin__ =
         (dchgspin > 0 && !charge_spin.empty()) ? charge_spin.data() : nullptr;
 
-    _DP_DeepPotComputeNList<VALUETYPE>(
-        dp, nframes, natoms, coord_, atype_, box_, nghost, lmp_list.nl, ago,
-        fparam__, aparam__, ener_, force_, virial_, nullptr, nullptr,
-        charge_spin__);
+    _DP_DeepPotComputeNList<VALUETYPE>(dp, nframes, natoms, coord_, atype_,
+                                       box_, nghost, lmp_list.nl, ago, fparam__,
+                                       aparam__, ener_, force_, virial_,
+                                       nullptr, nullptr, charge_spin__);
     DP_CHECK_OK(DP_DeepPotCheckOK, dp);
   };
   /**
@@ -1384,11 +1384,10 @@ class DeepPot : public DeepBaseModel {
     const double* charge_spin__ =
         (dchgspin > 0 && !charge_spin.empty()) ? charge_spin.data() : nullptr;
 
-    _DP_DeepPotComputeNList<VALUETYPE>(dp, nframes, natoms, coord_, atype_,
-                                       box_, nghost, lmp_list.nl, ago, fparam__,
-                                       aparam__, ener_, force_, virial_,
-                                       atomic_ener_, atomic_virial_,
-                                       charge_spin__);
+    _DP_DeepPotComputeNList<VALUETYPE>(
+        dp, nframes, natoms, coord_, atype_, box_, nghost, lmp_list.nl, ago,
+        fparam__, aparam__, ener_, force_, virial_, atomic_ener_,
+        atomic_virial_, charge_spin__);
     DP_CHECK_OK(DP_DeepPotCheckOK, dp);
   };
   /**

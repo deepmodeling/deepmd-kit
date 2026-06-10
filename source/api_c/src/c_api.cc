@@ -425,23 +425,24 @@ template void DP_DeepSpinCompute_variant<float>(DP_DeepSpin* dp,
                                                 float* atomic_virial);
 
 template <typename VALUETYPE>
-inline void DP_DeepPotComputeNList_variant(DP_DeepPot* dp,
-                                           const int nframes,
-                                           const int natoms,
-                                           const VALUETYPE* coord,
-                                           const int* atype,
-                                           const VALUETYPE* cell,
-                                           const int nghost,
-                                           const DP_Nlist* nlist,
-                                           const int ago,
-                                           const VALUETYPE* fparam,
-                                           const VALUETYPE* aparam,
-                                           double* energy,
-                                           VALUETYPE* force,
-                                           VALUETYPE* virial,
-                                           VALUETYPE* atomic_energy,
-                                           VALUETYPE* atomic_virial,
-                                           const double* charge_spin = nullptr) {
+inline void DP_DeepPotComputeNList_variant(
+    DP_DeepPot* dp,
+    const int nframes,
+    const int natoms,
+    const VALUETYPE* coord,
+    const int* atype,
+    const VALUETYPE* cell,
+    const int nghost,
+    const DP_Nlist* nlist,
+    const int ago,
+    const VALUETYPE* fparam,
+    const VALUETYPE* aparam,
+    double* energy,
+    VALUETYPE* force,
+    VALUETYPE* virial,
+    VALUETYPE* atomic_energy,
+    VALUETYPE* atomic_virial,
+    const double* charge_spin = nullptr) {
   // init C++ vectors from C arrays
   std::vector<VALUETYPE> coord_(coord, coord + nframes * natoms * 3);
   std::vector<int> atype_(atype, atype + natoms);
@@ -475,10 +476,9 @@ inline void DP_DeepPotComputeNList_variant(DP_DeepPot* dp,
         dp, dp->dp.compute(e, f, v, ae, av, coord_, atype_, cell_, nghost,
                            nlist->nl, ago, fparam_, aparam_, charge_spin_));
   } else {
-    DP_REQUIRES_OK(dp,
-                   dp->dp.compute(e, f, v, coord_, atype_, cell_, nghost,
-                                  nlist->nl, ago, fparam_, aparam_,
-                                  charge_spin_));
+    DP_REQUIRES_OK(
+        dp, dp->dp.compute(e, f, v, coord_, atype_, cell_, nghost, nlist->nl,
+                           ago, fparam_, aparam_, charge_spin_));
   }
   // copy from C++ vectors to C arrays, if not NULL pointer
   if (energy) {
