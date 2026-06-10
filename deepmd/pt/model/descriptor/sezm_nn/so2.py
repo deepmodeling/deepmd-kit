@@ -326,6 +326,11 @@ class SO2Linear(nn.Module):
         # Invalidated on train() via overridden method below.
         self._cached_weight: torch.Tensor | None = None
 
+        # Export override for the block-diagonal vs dense matmul branch below.
+        # ``None`` keeps the runtime ``x_flat.is_cuda`` dispatch; the freeze sets
+        # it so the AOTI graph follows the *target* device, not the CPU trace.
+        self._force_block_diag_matmul: bool | None = None
+
         # The assembled SO(2) weight is block-diagonal over |m| groups; the
         # forward contracts only the diagonal blocks (see _block_diagonal_matmul).
         # Each |m| group occupies a contiguous (in, out) block on the diagonal.
@@ -360,10 +365,17 @@ class SO2Linear(nn.Module):
                 self._cached_weight = weight.detach()
 
         # === Step 3. Block-diagonal matmul over focus streams + reshape back ===
-        # On CPU the block ``torch.cat`` lowers to a nested masked select that
-        # trips an Inductor AVX2 C++ codegen bug under compile, so use the
-        # numerically identical dense einsum there; GPU keeps the block-diag opt.
-        if x_flat.is_cuda:
+        # The dense einsum is a CPU-only fallback: its block ``torch.cat`` lowering
+        # trips an Inductor AVX2 C++ codegen bug, so only CPU needs it. Every other
+        # device uses the block-diagonal contraction, which skips the structural
+        # off-|m| zeros. ``make_fx`` resolves this Python branch at trace time, so
+        # the freeze pins ``_force_block_diag_matmul`` to the AOTI target device
+        # (tracing always runs on CPU regardless of where the artifact will run).
+        if self._force_block_diag_matmul is None:
+            use_block_diag = not x_flat.is_cpu
+        else:
+            use_block_diag = self._force_block_diag_matmul
+        if use_block_diag:
             out_flat = self._block_diagonal_matmul(x_flat, weight)
         else:
             out_flat = torch.einsum("efi,ifo->efo", x_flat, weight)

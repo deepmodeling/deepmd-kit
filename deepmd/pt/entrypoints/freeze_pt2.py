@@ -43,6 +43,9 @@ from deepmd.dpmodel.utils.nlist import (
 from deepmd.dpmodel.utils.region import (
     normalize_coord,
 )
+from deepmd.pt.model.descriptor.sezm_nn.so2 import (
+    SO2Linear,
+)
 from deepmd.pt.model.model import (
     get_model,
 )
@@ -517,6 +520,17 @@ def freeze_sezm_to_pt2(
     ModelWrapper(model).load_state_dict(state_dict)
     model.eval()
     model.to("cpu")
+
+    # The SO(2) linear mixer selects its block-diagonal vs dense matmul from a
+    # Python device branch that make_fx resolves at trace time. Since tracing
+    # always runs on CPU, pin the choice to the AOTI target device: non-CPU
+    # targets bake the block-diagonal contraction (which skips the structural
+    # off-|m| zeros); CPU targets keep the dense einsum that dodges the Inductor
+    # AVX2 codegen bug.
+    force_block_diag = target_device.type != "cpu"
+    for module in model.modules():
+        if isinstance(module, SO2Linear):
+            module._force_block_diag_matmul = force_block_diag
 
     _, sample_inputs_cpu = _resolve_nframes(
         model,
