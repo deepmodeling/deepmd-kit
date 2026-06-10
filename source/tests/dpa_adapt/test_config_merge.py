@@ -5,7 +5,7 @@ from __future__ import (
     annotations,
 )
 
-from deepmd.dpa_adapt.data.smiles import _deep_merge  # re-exported for reuse
+from dpa_adapt.data.smiles import _deep_merge  # re-exported for reuse
 
 
 def test_merge_deep_updates_nested_dicts() -> None:

@@ -3,12 +3,12 @@ name: DeePMD Property Tools Tests
 on:
   push:
     paths:
-      - "deepmd/dpa_adapt/**"
+      - "dpa_adapt/**"
       - "source/tests/dpa_adapt/**"
       - ".github/workflows/property_tools_tests.yml"
   pull_request:
     paths:
-      - "deepmd/dpa_adapt/**"
+      - "dpa_adapt/**"
       - "source/tests/dpa_adapt/**"
       - ".github/workflows/property_tools_tests.yml"
 
