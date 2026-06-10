@@ -296,14 +296,14 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
     // flip the descriptor into parallel mode).
     if (do_message_passing) {
       outputs_ival = module.run_method(
-          "forward_lower", coord_wrapped_Tensor, atype_Tensor, firstneigh_tensor,
-          mapping_tensor, fparam_tensor, aparam_tensor, do_atom_virial_tensor,
-          comm_dict, charge_spin_tensor);
+          "forward_lower", coord_wrapped_Tensor, atype_Tensor,
+          firstneigh_tensor, mapping_tensor, fparam_tensor, aparam_tensor,
+          do_atom_virial_tensor, comm_dict, charge_spin_tensor);
     } else {
       outputs_ival = module.run_method(
-          "forward_lower", coord_wrapped_Tensor, atype_Tensor, firstneigh_tensor,
-          mapping_tensor, fparam_tensor, aparam_tensor, do_atom_virial_tensor,
-          c10::IValue(), charge_spin_tensor);
+          "forward_lower", coord_wrapped_Tensor, atype_Tensor,
+          firstneigh_tensor, mapping_tensor, fparam_tensor, aparam_tensor,
+          do_atom_virial_tensor, c10::IValue(), charge_spin_tensor);
     }
   } else {
     outputs_ival =

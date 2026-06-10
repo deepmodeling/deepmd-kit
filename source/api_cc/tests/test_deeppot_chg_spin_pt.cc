@@ -220,9 +220,9 @@ TYPED_TEST(TestInferDeepPotChgSpinPtNoPbc, cpu_lmp_nlist_explicit) {
   double& expected_tot_e = this->expected_tot_e_explicit;
   deepmd::DeepPot& dp = this->dp;
 
-  std::vector<std::vector<int>> nlist_data = {
-      {1, 2, 3, 4, 5}, {0, 2, 3, 4, 5}, {0, 1, 3, 4, 5},
-      {0, 1, 2, 4, 5}, {0, 1, 2, 3, 5}, {0, 1, 2, 3, 4}};
+  std::vector<std::vector<int>> nlist_data = {{1, 2, 3, 4, 5}, {0, 2, 3, 4, 5},
+                                              {0, 1, 3, 4, 5}, {0, 1, 2, 4, 5},
+                                              {0, 1, 2, 3, 5}, {0, 1, 2, 3, 4}};
   std::vector<int> ilist(natoms), numneigh(natoms);
   std::vector<int*> firstneigh(natoms);
   deepmd::InputNlist inlist(natoms, &ilist[0], &numneigh[0], &firstneigh[0]);
@@ -255,9 +255,9 @@ TYPED_TEST(TestInferDeepPotChgSpinPtNoPbc, cpu_lmp_nlist_default) {
   double& expected_tot_e = this->expected_tot_e_default;
   deepmd::DeepPot& dp = this->dp;
 
-  std::vector<std::vector<int>> nlist_data = {
-      {1, 2, 3, 4, 5}, {0, 2, 3, 4, 5}, {0, 1, 3, 4, 5},
-      {0, 1, 2, 4, 5}, {0, 1, 2, 3, 5}, {0, 1, 2, 3, 4}};
+  std::vector<std::vector<int>> nlist_data = {{1, 2, 3, 4, 5}, {0, 2, 3, 4, 5},
+                                              {0, 1, 3, 4, 5}, {0, 1, 2, 4, 5},
+                                              {0, 1, 2, 3, 5}, {0, 1, 2, 3, 4}};
   std::vector<int> ilist(natoms), numneigh(natoms);
   std::vector<int*> firstneigh(natoms);
   deepmd::InputNlist inlist(natoms, &ilist[0], &numneigh[0], &firstneigh[0]);
