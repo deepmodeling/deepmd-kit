@@ -1,16 +1,16 @@
-name: DeePMD Property Tools Tests
+name: dpa_adapt Tests
 
 on:
   push:
     paths:
       - "dpa_adapt/**"
       - "source/tests/dpa_adapt/**"
-      - ".github/workflows/property_tools_tests.yml"
+      - ".github/workflows/dpa_adapt_tests.yml"
   pull_request:
     paths:
       - "dpa_adapt/**"
       - "source/tests/dpa_adapt/**"
-      - ".github/workflows/property_tools_tests.yml"
+      - ".github/workflows/dpa_adapt_tests.yml"
 
 jobs:
   test:

@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Tests for recursive dict merge (was deepmd_property_tools ConfigHandler)."""
+"""Tests for recursive dict merge (was dpa_adapt ConfigHandler)."""
 
 from __future__ import (
     annotations,
