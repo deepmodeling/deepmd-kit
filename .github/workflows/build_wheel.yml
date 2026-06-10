@@ -146,32 +146,27 @@ jobs:
         run: |
           set -eo pipefail
           should_push="${{ github.repository_owner == 'deepmodeling' && github.event_name == 'push' && github.actor != 'dependabot[bot]' }}"
-          # Convert multi-line tags/labels into CLI flags using temp files to
-          # avoid heredoc issues with GitHub Actions expression expansion.
           echo "${{ steps.meta.outputs.tags }}${{ matrix.variant }}" > /tmp/docker_tags.txt
           echo "${{ steps.meta.outputs.labels }}" > /tmp/docker_labels.txt
-          tag_args=""
+          echo "=== TAGS ===" && cat -n /tmp/docker_tags.txt
+          echo "=== LABELS ===" && cat -n /tmp/docker_labels.txt
+          # Build docker CLI args as a flat string, appending -t / --label flags.
+          args="--file source/install/docker/Dockerfile"
+          args="$args --build-arg VARIANT=${{ matrix.variant }}"
+          args="$args --build-arg CUDA_VERSION=${{ matrix.cuda_version }}"
           while IFS= read -r t; do
-            [ -n "$t" ] && tag_args="$tag_args -t $t"
+            [ -n "$t" ] && args="$args -t $t"
           done < /tmp/docker_tags.txt
-          label_args=""
           while IFS= read -r l; do
-            [ -n "$l" ] && label_args="$label_args --label $l"
+            [ -n "$l" ] && args="$args --label $l"
           done < /tmp/docker_labels.txt
-          # Build the flag list as an array to avoid word-splitting surprises.
-          build_args=(
-            --file source/install/docker/Dockerfile
-            --build-arg "VARIANT=${{ matrix.variant }}"
-            --build-arg "CUDA_VERSION=${{ matrix.cuda_version }}"
-          )
-          [ -n "$tag_args" ] && build_args+=($tag_args)
-          [ -n "$label_args" ] && build_args+=($label_args)
-          [ "$should_push" = "true" ] && build_args+=(--push)
+          [ "$should_push" = "true" ] && args="$args --push"
+          echo "=== DOCKER ARGS ===" && echo "$args source/install/docker"
           max_retry=3
           for i in $(seq 1 $max_retry); do
             echo "Docker build attempt $i/$max_retry ..."
             set +e
-            docker buildx build "${build_args[@]}" source/install/docker
+            docker buildx build $args source/install/docker
             ec=$?
             set -e
             [ $ec -eq 0 ] && exit 0
