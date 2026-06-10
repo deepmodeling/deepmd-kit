@@ -11,6 +11,9 @@
 
 #include "DeepPot.h"
 #include "DeepPotPTExpt.h"
+#if defined(BUILD_PYTORCH)
+#include "../src/commonPTExpt.h"
+#endif
 #include "neighbor_list.h"
 #include "test_utils.h"
 
@@ -93,6 +96,35 @@ template <class VALUETYPE>
 deepmd::DeepPot TestInferDeepPotAPtExpt<VALUETYPE>::dp;
 
 TYPED_TEST_SUITE(TestInferDeepPotAPtExpt, ValueTypes);
+
+#if defined(BUILD_PYTORCH)
+TEST(TestPtExptMetadata, default_chg_spin_is_optional_when_dim_is_zero) {
+  auto metadata = deepmd::ptexpt::parse_json("{}");
+  auto value = deepmd::ptexpt::read_default_chg_spin(metadata, 0);
+  EXPECT_TRUE(value.empty());
+}
+
+TEST(TestPtExptMetadata, default_chg_spin_is_read_when_required) {
+  auto metadata =
+      deepmd::ptexpt::parse_json(R"({"default_chg_spin": [0.0, 1.0]})");
+  auto value = deepmd::ptexpt::read_default_chg_spin(metadata, 2);
+  ASSERT_EQ(value.size(), 2);
+  EXPECT_DOUBLE_EQ(value[0], 0.0);
+  EXPECT_DOUBLE_EQ(value[1], 1.0);
+}
+
+TEST(TestPtExptMetadata, default_chg_spin_missing_throws) {
+  auto metadata = deepmd::ptexpt::parse_json("{}");
+  EXPECT_THROW(deepmd::ptexpt::read_default_chg_spin(metadata, 2),
+               deepmd::deepmd_exception);
+}
+
+TEST(TestPtExptMetadata, default_chg_spin_length_mismatch_throws) {
+  auto metadata = deepmd::ptexpt::parse_json(R"({"default_chg_spin": [0.0]})");
+  EXPECT_THROW(deepmd::ptexpt::read_default_chg_spin(metadata, 2),
+               deepmd::deepmd_exception);
+}
+#endif
 
 TYPED_TEST(TestInferDeepPotAPtExpt, cpu_build_nlist) {
   using VALUETYPE = TypeParam;

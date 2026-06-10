@@ -6,6 +6,7 @@ import shutil
 import signal
 import tempfile
 import unittest
+import warnings
 from collections.abc import (
     Callable,
 )
@@ -38,6 +39,7 @@ from deepmd.pt.utils.finetune import (
     get_finetune_rules,
 )
 from deepmd.pt.utils.multi_task import (
+    _cascade_top_level_defaults,
     preprocess_shared_params,
 )
 from deepmd.utils.argcheck import (
@@ -1007,6 +1009,81 @@ class TestFullValidation(unittest.TestCase):
         config = update_deepmd_input(config, warning=False)
         with self.assertRaisesRegex(ValueError, "multi-task"):
             normalize(config, multi_task=True)
+
+
+class TestMultiTaskUtils(unittest.TestCase):
+    def test_cascade_top_level_defaults(self) -> None:
+        cfg = {"foo": 1, "model_dict": {"a": {}, "b": {"foo": 2}}}
+        _cascade_top_level_defaults(cfg)
+
+        self.assertEqual(cfg["model_dict"]["a"]["foo"], 1)
+        self.assertEqual(cfg["model_dict"]["b"]["foo"], 2)
+        self.assertNotIn("foo", cfg)
+
+    def test_cascade_keeps_reserved_top_level_keys(self) -> None:
+        cfg = {"shared_dict": {"x": 1}, "model_dict": {"a": {}}}
+        _cascade_top_level_defaults(cfg)
+
+        self.assertIn("shared_dict", cfg)
+        self.assertNotIn("shared_dict", cfg["model_dict"]["a"])
+
+    def test_cascade_deepcopy_independence(self) -> None:
+        cfg = {"foo": [1, 2], "model_dict": {"a": {}, "b": {}}}
+        _cascade_top_level_defaults(cfg)
+        cfg["model_dict"]["a"]["foo"].append(99)
+
+        self.assertEqual(cfg["model_dict"]["b"]["foo"], [1, 2])
+
+
+class TestSkippedTrainingBatch(unittest.TestCase):
+    def setUp(self) -> None:
+        self._cwd = os.getcwd()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        os.chdir(self._tmpdir.name)
+        input_json = str(Path(__file__).parent / "water/se_atten.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        self.config = convert_optimizer_v31_to_v32(self.config, warning=False)
+        data_file = [str(Path(__file__).parent / "water/data/data_0")]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
+        self.config["model"] = deepcopy(model_se_e2_a)
+        self.config["training"]["numb_steps"] = 2
+        self.config["training"]["save_freq"] = 2
+        self.config["training"]["disp_training"] = False
+        self.config["validating"] = {
+            "full_validation": False,
+            "ema_full_validation": False,
+        }
+
+    def tearDown(self) -> None:
+        os.chdir(self._cwd)
+        self._tmpdir.cleanup()
+
+    def test_skipped_batch_does_not_advance_scheduler(self) -> None:
+        trainer = get_trainer(deepcopy(self.config))
+        original_get_data = trainer.get_data
+        skipped = {"done": False}
+
+        def get_data(
+            is_train: bool = True, task_key: str = "Default"
+        ) -> tuple[dict, dict, dict]:
+            if is_train and not skipped["done"]:
+                skipped["done"] = True
+                return {}, {}, {}
+            return original_get_data(is_train=is_train, task_key=task_key)
+
+        trainer.get_data = get_data
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "error",
+                message=r"Detected call of `lr_scheduler\.step\(\)` before `optimizer\.step\(\)`.*",
+                category=UserWarning,
+            )
+            trainer.run()
+
+        self.assertTrue(skipped["done"])
+        self.assertEqual(trainer.scheduler.last_epoch, 1)
 
 
 class TestEMATraining(unittest.TestCase):

@@ -35,6 +35,8 @@ from __future__ import (
 
 import torch
 
+_registered: bool = False
+
 
 def _check_underlying_ops_loaded() -> None:
     """Surface a clearer error when libdeepmd_op_pt.so isn't loaded.
@@ -50,25 +52,38 @@ def _check_underlying_ops_loaded() -> None:
     like DDP-spawned subprocesses that re-import modules from scratch
     and never see the test conftest's ``import deepmd.pt``.
     """
-    if not (
-        hasattr(torch.ops, "deepmd_export")
-        and hasattr(torch.ops.deepmd_export, "border_op")
-        and hasattr(torch.ops.deepmd_export, "border_op_backward")
-    ):
+
+    def _ops_registered() -> bool:
+        return (
+            hasattr(torch.ops, "deepmd_export")
+            and hasattr(torch.ops.deepmd_export, "border_op")
+            and hasattr(torch.ops.deepmd_export, "border_op_backward")
+        )
+
+    import_err: Exception | None = None
+    if not _ops_registered():
         # Triggers cxx_op.py which torch.ops.load_library's the .so.
         try:
             import deepmd.pt  # noqa: F401
-        except Exception:
-            # If deepmd.pt itself fails to import, fall through to the
-            # explicit RuntimeError below — clearer than re-raising a
-            # potentially-unrelated import error.
-            pass
+        except Exception as exc:
+            # ``deepmd/pt/__init__.py`` loads ``cxx_op`` (which registers
+            # the ops) before running ``load_entry_point("deepmd.pt")``.
+            # A broken third-party entry point can make the import raise
+            # *after* the ops were already registered, so only re-raise
+            # when the registration is still missing — that branch is the
+            # one where the error (typically an ``undefined symbol`` ABI
+            # mismatch against libdeepmd_op_pt.so) carries the diagnostic
+            # detail that the generic RuntimeError below would hide.
+            import_err = exc
 
-    if not (
-        hasattr(torch.ops, "deepmd_export")
-        and hasattr(torch.ops.deepmd_export, "border_op")
-        and hasattr(torch.ops.deepmd_export, "border_op_backward")
-    ):
+    if not _ops_registered():
+        if import_err is not None:
+            # Surface the raw import error (typically ``ImportError`` with
+            # ``undefined symbol`` ABI detail) instead of burying it in a
+            # generic message — that detail is what tells the user the
+            # mismatch is between libdeepmd_op_pt.so and the runtime torch,
+            # not a missing build.
+            raise import_err
         raise RuntimeError(
             "torch.ops.deepmd_export.{border_op,border_op_backward} "
             "are not registered. Build libdeepmd_op_pt.so and ensure "
@@ -76,15 +91,11 @@ def _check_underlying_ops_loaded() -> None:
         )
 
 
-_check_underlying_ops_loaded()
-
-
 # ---------------------------------------------------------------------------
 # Fake (meta) impls — let make_fx / torch.export trace through.
 # ---------------------------------------------------------------------------
 
 
-@torch.library.register_fake("deepmd_export::border_op")
 def _border_op_fake(
     sendlist: torch.Tensor,
     sendproc: torch.Tensor,
@@ -99,7 +110,6 @@ def _border_op_fake(
     return torch.empty_like(g1)
 
 
-@torch.library.register_fake("deepmd_export::border_op_backward")
 def _border_op_backward_fake(
     sendlist: torch.Tensor,
     sendproc: torch.Tensor,
@@ -180,8 +190,37 @@ def _border_op_backward(
     )
 
 
-torch.library.register_autograd(
-    "deepmd_export::border_op",
-    _border_op_backward,
-    setup_context=_border_op_setup_context,
-)
+def ensure_comm_registered() -> None:
+    """Load libdeepmd_op_pt.so and register fake/autograd metadata for border_op.
+
+    Idempotent — safe to call multiple times.  Must be called before any
+    ``make_fx`` / ``torch.export`` trace that passes through border_op (i.e.
+    before the ``with_comm_dict=True`` export path in serialization.py).
+
+    Kept lazy (not called at import time) so that merely importing
+    ``deepmd.pt_expt.utils`` does not force-load libdeepmd_op_pt.so and
+    disrupt fake-op registration order in tests that don't exercise the comm
+    path at all.
+    """
+    global _registered
+    if _registered:
+        return
+    _check_underlying_ops_loaded()
+    try:
+        torch.library.register_fake("deepmd_export::border_op")(_border_op_fake)
+    except RuntimeError as e:
+        if "already has" not in str(e) and "already registered" not in str(e):
+            raise
+    try:
+        torch.library.register_fake("deepmd_export::border_op_backward")(
+            _border_op_backward_fake
+        )
+    except RuntimeError as e:
+        if "already has" not in str(e) and "already registered" not in str(e):
+            raise
+    torch.library.register_autograd(
+        "deepmd_export::border_op",
+        _border_op_backward,
+        setup_context=_border_op_setup_context,
+    )
+    _registered = True

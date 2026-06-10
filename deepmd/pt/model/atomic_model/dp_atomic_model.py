@@ -271,8 +271,8 @@ class DPAtomicModel(BaseAtomicModel):
         """
         nframes, nloc, nnei = nlist.shape
         atype = extended_atype[:, :nloc]
-        if self.do_grad_r() or self.do_grad_c():
-            extended_coord.requires_grad_(True)
+        if (self.do_grad_r() or self.do_grad_c()) and not extended_coord.requires_grad:
+            extended_coord = extended_coord.clone().requires_grad_(True)
 
         # Handle default chg_spin if descriptor supports it
         if self.add_chg_spin_ebd and charge_spin is None:

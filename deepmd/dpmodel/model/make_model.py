@@ -38,10 +38,9 @@ from deepmd.dpmodel.output_def import (
     check_operation_applied,
 )
 from deepmd.dpmodel.utils import (
-    build_neighbor_list,
-    extend_coord_with_ghosts,
+    DefaultNeighborList,
+    NeighborList,
     nlist_distinguish_types,
-    normalize_coord,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -78,6 +77,7 @@ def model_call_from_call_lower(
     do_atomic_virial: bool = False,
     coord_corr_for_virial: Array | None = None,
     charge_spin: Array | None = None,
+    neighbor_list: NeighborList | None = None,
 ) -> dict[str, Array]:
     """Return model prediction from lower interface.
 
@@ -96,6 +96,12 @@ def model_call_from_call_lower(
         atomic parameter. nf x nloc x nda
     do_atomic_virial
         If calculate the atomic virial.
+    neighbor_list
+        The neighbor-list construction strategy.  ``None`` uses the default
+        all-pairs builder (:class:`DefaultNeighborList`), reproducing the
+        historical behavior.  An alternative strategy (e.g. an O(N) cell list)
+        may be injected to speed up neighbor-list construction; it returns the
+        same extended representation, so model outputs are unchanged.
 
     Returns
     -------
@@ -107,26 +113,9 @@ def model_call_from_call_lower(
     nframes, nloc = atype.shape[:2]
     cc, bb, fp, ap = coord, box, fparam, aparam
     del coord, box, fparam, aparam
-    if bb is not None:
-        coord_normalized = normalize_coord(
-            cc.reshape(nframes, nloc, 3),
-            bb.reshape(nframes, 3, 3),
-        )
-    else:
-        xp = array_api_compat.array_namespace(cc)
-        coord_normalized = xp.reshape(cc, (nframes, nloc, 3))
-    extended_coord, extended_atype, mapping = extend_coord_with_ghosts(
-        coord_normalized, atype, bb, rcut
-    )
-    nlist = build_neighbor_list(
-        extended_coord,
-        extended_atype,
-        nloc,
-        rcut,
-        sel,
-        # types will be distinguished in the lower interface,
-        # so it doesn't need to be distinguished here
-        distinguish_types=False,
+    builder = neighbor_list if neighbor_list is not None else DefaultNeighborList()
+    extended_coord, extended_atype, nlist, mapping = builder.build(
+        cc, atype, bb, rcut, sel
     )
     extended_coord = extended_coord.reshape(nframes, -1, 3)
     if coord_corr_for_virial is not None:
@@ -269,6 +258,7 @@ def make_model(
             do_atomic_virial: bool = False,
             coord_corr_for_virial: Array | None = None,
             charge_spin: Array | None = None,
+            neighbor_list: NeighborList | None = None,
         ) -> dict[str, Array]:
             """Return model prediction.
 
@@ -290,6 +280,11 @@ def make_model(
             coord_corr_for_virial
                 The coordinates correction for virial.
                 shape: nf x (nloc x 3)
+            neighbor_list
+                The neighbor-list construction strategy.  ``None`` uses the
+                default all-pairs builder; an alternative strategy (e.g. an O(N)
+                cell list) may be injected to speed up neighbor-list construction
+                without changing model outputs.
 
             Returns
             -------
@@ -316,6 +311,7 @@ def make_model(
                 do_atomic_virial=do_atomic_virial,
                 coord_corr_for_virial=coord_corr_for_virial,
                 charge_spin=cs,
+                neighbor_list=neighbor_list,
             )
             model_predict = self._output_type_cast(model_predict, input_prec)
             return model_predict

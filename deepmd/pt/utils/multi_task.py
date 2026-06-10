@@ -14,6 +14,26 @@ from deepmd.pt.model.task import (
 )
 
 
+def _cascade_top_level_defaults(model_config: dict[str, Any]) -> None:
+    """In-place: lower model-wide ``model.<key>`` entries into each branch.
+
+    Any key at the top of ``model`` other than ``model_dict`` / ``shared_dict``
+    is ``setdefault``-copied into every ``model_dict`` entry (explicit branch
+    values win) and then removed from the top level so the multi-task
+    argcheck, which only accepts ``model_dict`` / ``shared_dict`` there,
+    does not reject it as an unknown field.
+    """
+    _RESERVED_TOP_LEVEL = ("model_dict", "shared_dict")
+    top_level_defaults = {
+        k: deepcopy(v) for k, v in model_config.items() if k not in _RESERVED_TOP_LEVEL
+    }
+    for branch in model_config["model_dict"].values():
+        for k, v in top_level_defaults.items():
+            branch.setdefault(k, deepcopy(v))
+    for k in top_level_defaults:
+        model_config.pop(k, None)
+
+
 def preprocess_shared_params(
     model_config: dict[str, Any],
 ) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -93,9 +113,14 @@ def preprocess_shared_params(
             ]
         }
     }
-
+    Any key placed directly under ``model`` other than ``model_dict`` /
+    ``shared_dict`` is lowered into every branch via ``_cascade_top_level_defaults``
+    (explicit branch values win), so model-wide switches can be written
+    once at the top level.
     """
     assert "model_dict" in model_config, "only multi-task model can use this method!"
+    _cascade_top_level_defaults(model_config)
+
     supported_types = ["type_map", "descriptor", "fitting_net"]
     shared_dict = model_config.get("shared_dict", {})
     shared_links = {}

@@ -12,6 +12,9 @@ import numpy as np
 import pytest
 import torch
 
+from deepmd.dpmodel.utils import (
+    lmdb_data,
+)
 from deepmd.dpmodel.utils.lmdb_data import (
     DistributedSameNlocBatchSampler,
     LmdbDataReader,
@@ -623,6 +626,80 @@ class TestAutoProbDataset:
         )
         count = sum(len(batch) for batch in ds._batch_sampler)
         assert count > 300  # expanded
+
+    def test_total_batch_matches_auto_prob_sampler(self, auto_prob_lmdb):
+        ds = LmdbDataset(
+            auto_prob_lmdb,
+            type_map=["O", "H"],
+            batch_size=4,
+            auto_prob_style="prob_sys_size;0:1:0.5;1:3:0.5",
+        )
+        assert ds.total_batch == len(ds._batch_sampler)
+        assert ds.index == [ds.total_batch]
+        assert ds.index != ds._reader.index
+
+    def test_distributed_len_includes_auto_prob_expansion(self, auto_prob_lmdb):
+        import math
+
+        ds = LmdbDataset(
+            auto_prob_lmdb,
+            type_map=["O", "H"],
+            batch_size=4,
+            auto_prob_style="prob_sys_size;0:1:0.5;1:3:0.5",
+        )
+        global_batches = len(ds._batch_sampler)
+        dist_sampler_rank0 = DistributedSameNlocBatchSampler(
+            ds._reader,
+            rank=0,
+            world_size=2,
+            shuffle=False,
+            block_targets=ds._block_targets,
+        )
+        dist_sampler_rank1 = DistributedSameNlocBatchSampler(
+            ds._reader,
+            rank=1,
+            world_size=2,
+            shuffle=False,
+            block_targets=ds._block_targets,
+        )
+        assert len(dist_sampler_rank0) == math.ceil(global_batches / 2)
+        assert len(dist_sampler_rank1) == global_batches // 2
+        assert len(dist_sampler_rank0) == len(list(dist_sampler_rank0))
+        assert len(dist_sampler_rank1) == len(list(dist_sampler_rank1))
+
+    def test_distributed_len_reuses_cached_total(self, auto_prob_lmdb, monkeypatch):
+        calls = 0
+        real_sampler = lmdb_data.SameNlocBatchSampler
+
+        class CountingSameNlocBatchSampler(real_sampler):
+            def __init__(self, *args, **kwargs):
+                nonlocal calls
+                calls += 1
+                super().__init__(*args, **kwargs)
+
+        monkeypatch.setattr(
+            lmdb_data,
+            "SameNlocBatchSampler",
+            CountingSameNlocBatchSampler,
+        )
+        ds = LmdbDataset(
+            auto_prob_lmdb,
+            type_map=["O", "H"],
+            batch_size=4,
+            auto_prob_style="prob_sys_size;0:1:0.5;1:3:0.5",
+        )
+        dist_sampler = DistributedSameNlocBatchSampler(
+            ds._reader,
+            rank=1,
+            world_size=2,
+            shuffle=False,
+            block_targets=ds._block_targets,
+        )
+
+        assert calls == 1
+        expected_len = len(ds._batch_sampler) // 2
+        assert len(dist_sampler) == expected_len
+        assert calls == 1
 
 
 class TestMergeLmdbSystemIds:

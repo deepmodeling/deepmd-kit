@@ -1,0 +1,201 @@
+{
+  "_comment": "DPA4/SeZM multitask example with a shared descriptor and case-conditioned shared fitting network.",
+  "model": {
+    "use_compile": false,
+    "enable_tf32": true,
+    "shared_dict": {
+      "type_map": [
+        "O",
+        "H"
+      ],
+      "descriptor": {
+        "type": "DPA4",
+        "sel": 120,
+        "rcut": 6.0,
+        "env_exp": [
+          7,
+          5
+        ],
+        "channels": 64,
+        "n_radial": 16,
+        "radial_mlp": [
+          0
+        ],
+        "use_env_seed": true,
+        "random_gamma": true,
+        "lmax": 3,
+        "mmax": 1,
+        "n_blocks": 3,
+        "so2_layers": 4,
+        "so2_norm": false,
+        "so2_attn_res": "none",
+        "radial_so2_mode": "degree_channel",
+        "radial_so2_rank": 1,
+        "n_focus": 1,
+        "focus_dim": 0,
+        "n_atten_head": 1,
+        "atten_f_mix": false,
+        "atten_v_proj": false,
+        "atten_o_proj": false,
+        "ffn_neurons": 0,
+        "grid_mlp": false,
+        "ffn_blocks": 1,
+        "sandwich_norm": [
+          false,
+          true,
+          true,
+          false
+        ],
+        "mlp_bias": false,
+        "layer_scale": false,
+        "full_attn_res": "none",
+        "block_attn_res": "none",
+        "s2_activation": [
+          false,
+          true
+        ],
+        "lebedev_quadrature": true,
+        "activation_function": "silu",
+        "glu_activation": true,
+        "use_amp": true,
+        "precision": "float32",
+        "seed": 42
+      },
+      "shared_fit_with_id": {
+        "type": "dpa4_ener",
+        "neuron": [
+          0
+        ],
+        "activation_function": "silu",
+        "precision": "float32",
+        "dim_case_embd": 2,
+        "case_film_embd": true,
+        "seed": 42
+      }
+    },
+    "model_dict": {
+      "water_1": {
+        "type": "DPA4",
+        "type_map": "type_map",
+        "descriptor": "descriptor",
+        "fitting_net": "shared_fit_with_id",
+        "model_branch_alias": [
+          "Default",
+          "Water"
+        ],
+        "info": {
+          "description": "Water branch with shared DPA4/SeZM descriptor and case-embedded shared fitting net"
+        }
+      },
+      "water_2": {
+        "type": "DPA4",
+        "type_map": "type_map",
+        "descriptor": "descriptor",
+        "fitting_net": "shared_fit_with_id",
+        "model_branch_alias": [
+          "Water2"
+        ],
+        "info": {
+          "description": "Second water branch with shared DPA4/SeZM descriptor and case-embedded shared fitting net"
+        }
+      }
+    }
+  },
+  "learning_rate": {
+    "type": "wsd",
+    "start_lr": 4.5e-4,
+    "stop_lr": 1e-6,
+    "warmup_steps": 5000,
+    "warmup_start_factor": 0.2,
+    "decay_phase_ratio": 0.65,
+    "decay_type": "cosine"
+  },
+  "loss_dict": {
+    "water_1": {
+      "type": "ener",
+      "loss_func": "mae",
+      "f_use_norm": true,
+      "start_pref_e": 20,
+      "limit_pref_e": 20,
+      "start_pref_f": 20,
+      "limit_pref_f": 20,
+      "start_pref_v": 5,
+      "limit_pref_v": 5
+    },
+    "water_2": {
+      "type": "ener",
+      "loss_func": "mae",
+      "f_use_norm": true,
+      "start_pref_e": 20,
+      "limit_pref_e": 20,
+      "start_pref_f": 20,
+      "limit_pref_f": 20,
+      "start_pref_v": 5,
+      "limit_pref_v": 5
+    }
+  },
+  "optimizer": {
+    "type": "HybridMuon",
+    "muon_mode": "slice",
+    "magma_muon": true,
+    "lr_adjust": 0.0,
+    "weight_decay": 0.001
+  },
+  "training": {
+    "model_prob": {
+      "water_1": 0.5,
+      "water_2": 0.5
+    },
+    "data_dict": {
+      "water_1": {
+        "stat_file": "./dpa4_water_1.hdf5",
+        "training_data": {
+          "systems": [
+            "../data/data_0",
+            "../data/data_1",
+            "../data/data_2"
+          ],
+          "batch_size": 1
+        },
+        "validation_data": {
+          "systems": [
+            "../data/data_3"
+          ],
+          "batch_size": 1,
+          "numb_batch": 1
+        }
+      },
+      "water_2": {
+        "stat_file": "./dpa4_water_2.hdf5",
+        "training_data": {
+          "systems": [
+            "../data/data_0",
+            "../data/data_1",
+            "../data/data_2"
+          ],
+          "batch_size": 1
+        }
+      }
+    },
+    "numb_steps": 2000000,
+    "gradient_max_norm": 5.0,
+    "save_freq": 2000,
+    "max_ckpt_keep": 3,
+    "enable_ema": true,
+    "ema_decay": 0.999,
+    "ema_ckpt_keep": 3,
+    "disp_file": "lcurve.out",
+    "disp_freq": 1000,
+    "disp_avg": true,
+    "disp_training": true,
+    "time_training": true,
+    "tensorboard": false,
+    "enable_profiler": false,
+    "tensorboard_freq": 1000,
+    "tensorboard_log_dir": "tb_log",
+    "profiling": false,
+    "profiling_file": "timeline.json",
+    "zero_stage": 1,
+    "seed": 42
+  }
+}

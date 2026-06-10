@@ -51,6 +51,7 @@ dependencies = [
     'h5py',
     "h5py>=3.6.0,!=3.11.0; platform_system=='Linux' and platform_machine=='aarch64'",
     'wcmatch',
+    "einops",
     'packaging',
     'ml_dtypes',
     'mendeleev',
@@ -88,6 +89,7 @@ test = [
     "pytest-cov",
     "pytest-sugar",
     "pytest-split",
+    "pytest-timeout",
     "dpgui",
     # to support Array API 2024.12
     'array-api-strict>=2.2;python_version>="3.9"',
@@ -399,6 +401,7 @@ select = [
 ignore = [
     "ANN401", # Allow Any due to too many violations
     "E501", # line too long
+    "F722", # syntax error in type annotation for jaxtyping
     "F841", # local variable is assigned to but never used
     "RUF059", # unused-unpacked-variable
     "E741", # ambiguous variable name
@@ -464,6 +467,7 @@ runtime-evaluated-base-classes = ["torch.nn.Module"]
 
 [tool.pytest.ini_options]
 markers = "run"
+timeout = 1800
 
 [tool.coverage.run]
 plugins = ["source.3rdparty.coverage_plugins.jit_plugin"]
