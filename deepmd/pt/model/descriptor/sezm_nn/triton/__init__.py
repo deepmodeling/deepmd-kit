@@ -6,10 +6,18 @@ paths.  Kernel entry points are internal implementation details of the SeZM
 descriptor; the package-level API only exposes availability.
 """
 
+from .radial_mix import (
+    RADIAL_MIX_TRITON_AVAILABLE,
+)
 from .so2_rotation import (
     TRITON_ROTATION_AVAILABLE,
 )
 
+# Both kernel modules guard their ``@triton.jit`` definitions behind a ``triton``
+# import, so the two module-level checks are equivalent. Expose a single
+# package-level availability flag.
+TRITON_AVAILABLE = TRITON_ROTATION_AVAILABLE and RADIAL_MIX_TRITON_AVAILABLE
+
 __all__ = [
-    "TRITON_ROTATION_AVAILABLE",
+    "TRITON_AVAILABLE",
 ]

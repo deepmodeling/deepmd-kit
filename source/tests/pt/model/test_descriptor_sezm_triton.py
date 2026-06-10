@@ -1,8 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Unit tests for the block-diagonal Triton SO(2)/Wigner rotation kernels
-(opt-in via ``DP_TRITON_INFER``).
+"""Unit tests for the opt-in Triton inference kernels of the SeZM descriptor
+(enabled via ``DP_TRITON_INFER``): the block-diagonal SO(2)/Wigner rotation and
+the fused dynamic radial degree mixer.
 
-Two properties are checked against the eager PyTorch reference:
+For the rotation kernels two properties are checked against the eager PyTorch
+reference:
 
 1. Numerical correctness of ``rotate_to_local`` / ``rotate_back`` (forward and
    backward) across ``lmax`` 2-5 with ``mmax == 1`` -- the only layout the block
@@ -28,6 +30,14 @@ from torch.fx.experimental.proxy_tensor import (
 from deepmd.pt.model.descriptor.sezm_nn.indexing import (
     build_m_major_index,
     get_so3_dim_of_lmax,
+)
+from deepmd.pt.model.descriptor.sezm_nn.so2 import (
+    DynamicRadialDegreeMixer,
+)
+from deepmd.pt.model.descriptor.sezm_nn.triton.radial_mix import (
+    RADIAL_MIX_TRITON_AVAILABLE,
+    radial_mix_block,
+    radial_mix_reference,
 )
 from deepmd.pt.model.descriptor.sezm_nn.triton.so2_rotation import (
     TRITON_ROTATION_AVAILABLE,
@@ -399,6 +409,138 @@ class TestSeZMTritonRotation(unittest.TestCase):
         torch.testing.assert_close(grad_x_eager, grad_x_ref, **self.tol)
         torch.testing.assert_close(grad_w_eager, grad_w_ref, **self.tol)
         self.assertGreater(float(grad_w_eager.abs().max()), 0.0)
+
+
+@unittest.skipIf(not _CUDA, "CUDA is required for the Triton radial-mix kernel")
+@unittest.skipIf(not RADIAL_MIX_TRITON_AVAILABLE, "Triton is not available")
+class TestSeZMTritonRadialMix(unittest.TestCase):
+    """Fused dynamic radial degree mixer (``degree_channel``, ``mmax == 1``).
+
+    The Triton kernel and its eager reference are checked against the production
+    scatter path of :class:`DynamicRadialDegreeMixer`, and the forward/backward
+    are checked for symbolic ``make_fx`` composability with the inference-force
+    autograd graph.
+    """
+
+    def setUp(self):
+        self.device = torch.device("cuda")
+        self.dtype = torch.float32
+        self.n_edge, self.channels, self.rank = 4096, 64, 1
+        self.tol = {"rtol": 2e-4, "atol": 2e-4}
+
+    def _mixer(self, lmax):
+        return (
+            DynamicRadialDegreeMixer(
+                lmax=lmax,
+                mmax=1,
+                channels=self.channels,
+                mode="degree_channel",
+                rank=self.rank,
+                dtype=self.dtype,
+                seed=1,
+                trainable=True,
+            )
+            .to(self.device)
+            .eval()
+        )
+
+    def _inputs(self, mixer, seed):
+        gen = torch.Generator(device=self.device).manual_seed(seed)
+        x_local = torch.randn(
+            self.n_edge,
+            mixer.reduced_dim,
+            self.channels,
+            device=self.device,
+            dtype=self.dtype,
+            generator=gen,
+        )
+        radial_feat = torch.randn(
+            self.n_edge,
+            mixer.reduced_dim,
+            self.channels,
+            device=self.device,
+            dtype=self.dtype,
+            generator=gen,
+        )
+        compact = mixer._project_radial(radial_feat).view(
+            self.n_edge, mixer.degree_kernel_size, self.rank
+        )
+        return x_local, radial_feat, compact
+
+    def test_reference_matches_module_eager_path(self):
+        """The block-split reference reproduces the module's dense scatter path."""
+        for lmax in (2, 3, 4, 5):
+            with self.subTest(lmax=lmax):
+                mixer = self._mixer(lmax)
+                # Force the dense scatter path regardless of the ambient flag.
+                mixer._radial_mix_block = None
+                x_local, radial_feat, compact = self._inputs(mixer, seed=lmax)
+                with torch.no_grad():
+                    module_out = mixer(x_local, radial_feat)
+                    ref_out = radial_mix_reference(
+                        compact, x_local, mixer.channel_basis, lmax
+                    )
+                torch.testing.assert_close(ref_out, module_out, **self.tol)
+
+    def test_triton_forward_matches_reference(self):
+        for lmax in (2, 3, 4, 5):
+            with self.subTest(lmax=lmax):
+                mixer = self._mixer(lmax)
+                x_local, _, compact = self._inputs(mixer, seed=lmax)
+                with torch.no_grad():
+                    out = radial_mix_block(compact, x_local, mixer.channel_basis, lmax)
+                    ref = radial_mix_reference(
+                        compact, x_local, mixer.channel_basis, lmax
+                    )
+                torch.testing.assert_close(out, ref, **self.tol)
+
+    def test_triton_backward_matches_reference(self):
+        """Backward correctness on a fresh first call (checks reset_to_zero)."""
+        for lmax in (2, 3, 4, 5):
+            with self.subTest(lmax=lmax):
+                mixer = self._mixer(lmax)
+                x_local, _, compact = self._inputs(mixer, seed=lmax)
+                grad_out = torch.randn_like(x_local)
+
+                ca = compact.detach().requires_grad_(True)
+                xa = x_local.detach().requires_grad_(True)
+                out = radial_mix_block(ca, xa, mixer.channel_basis, lmax)
+                grad_ca, grad_xa = torch.autograd.grad(out, [ca, xa], grad_out)
+
+                cr = compact.detach().requires_grad_(True)
+                xr = x_local.detach().requires_grad_(True)
+                ref = radial_mix_reference(cr, xr, mixer.channel_basis, lmax)
+                grad_cr, grad_xr = torch.autograd.grad(ref, [cr, xr], grad_out)
+
+                torch.testing.assert_close(grad_ca, grad_cr, **self.tol)
+                torch.testing.assert_close(grad_xa, grad_xr, **self.tol)
+
+    def test_symbolic_make_fx_forward_backward_matches_eager(self):
+        """Symbolic FX captures the mixer forward and its inference-force graph."""
+        lmax = 3
+        mixer = self._mixer(lmax)
+        x_local, _, compact = self._inputs(mixer, seed=7)
+        channel_basis = mixer.channel_basis
+        grad_seed = torch.randn_like(x_local)
+
+        def forward_and_grad(compact, x_local):
+            compact_req = compact.detach().requires_grad_(True)
+            x_req = x_local.detach().requires_grad_(True)
+            out = radial_mix_block(compact_req, x_req, channel_basis, lmax)
+            grad_compact, grad_x = torch.autograd.grad(
+                out, (compact_req, x_req), grad_seed
+            )
+            return out, grad_compact, grad_x
+
+        eager = forward_and_grad(compact, x_local)
+        traced = make_fx(
+            forward_and_grad,
+            tracing_mode="symbolic",
+            _allow_non_fake_inputs=True,
+        )(compact, x_local)
+        for got, want in zip(traced(compact, x_local), eager, strict=True):
+            torch.testing.assert_close(got, want, **self.tol)
+        self.assertIn("sezm_triton.radial_mix_block", traced.code)
 
 
 if __name__ == "__main__":

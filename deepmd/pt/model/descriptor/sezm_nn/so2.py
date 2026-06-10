@@ -11,7 +11,6 @@ from __future__ import (
 )
 
 import math
-import os
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -78,6 +77,7 @@ from .utils import (
     np_safe,
     nvtx_range,
     safe_numpy_to_tensor,
+    use_triton_infer,
 )
 
 if TYPE_CHECKING:
@@ -326,6 +326,71 @@ class SO2Linear(nn.Module):
         # Invalidated on train() via overridden method below.
         self._cached_weight: torch.Tensor | None = None
 
+        # The assembled SO(2) weight is block-diagonal over |m| groups; the
+        # forward contracts only the diagonal blocks (see _block_diagonal_matmul).
+        # Each |m| group occupies a contiguous (in, out) block on the diagonal.
+        self._block_diag_slices = self._build_block_diag_slices()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Parameters
+        ----------
+        x
+            Input with shape (E, F, D_m_trunc, Cin), where D_m_trunc is the
+            coefficient dimension of the m-major layout truncated by `mmax`.
+
+        Returns
+        -------
+        torch.Tensor
+            Output with shape (E, F, D_m_trunc, Cout), where Cout is output channels.
+        """
+        # === Step 1. Flatten coefficient + channel axes for matmul ===
+        # (E, F, D_m, Cin) -> (E, F, D_m*Cin)
+        n_edge = x.shape[0]
+        in_dim_total = self.reduced_dim * self.in_channels
+        x_flat = x.reshape(n_edge, self.n_focus, in_dim_total)
+
+        # === Step 2. Get block-diagonal weight (cached in eval+no_grad) ===
+        if self._cached_weight is not None:
+            weight = self._cached_weight
+        else:
+            weight = self._build_so2_weight()
+            # Cache only in eval mode with grad disabled (pure inference).
+            if not self.training and not torch.is_grad_enabled():
+                self._cached_weight = weight.detach()
+
+        # === Step 3. Block-diagonal matmul over focus streams + reshape back ===
+        out_flat = self._block_diagonal_matmul(x_flat, weight)
+        out = out_flat.reshape(
+            n_edge, self.n_focus, self.reduced_dim, self.out_channels
+        )
+
+        # === Step 4. Bias on l=0 scalar index ===
+        if self.mlp_bias:
+            bias0 = self.bias0.view(self.n_focus, self.out_channels)
+            out[:, :, 0, :] = out[:, :, 0, :] + bias0.unsqueeze(0)
+        return out
+
+    def _build_block_diag_slices(self) -> list[tuple[int, int, int, int]]:
+        """Return the ``(in_start, in_end, out_start, out_end)`` diagonal blocks.
+
+        One entry per ``|m|`` group in m-major order: ``m = 0`` spans
+        ``lmax + 1`` coefficients and each ``|m| > 0`` spans ``2 * (lmax - m + 1)``
+        coefficients (negative and positive orders).
+        """
+        group_sizes = [self.lmax + 1] + [
+            2 * (self.lmax - m + 1) for m in range(1, self.mmax + 1)
+        ]
+        slices: list[tuple[int, int, int, int]] = []
+        in_off = out_off = 0
+        for num in group_sizes:
+            in_width = num * self.in_channels
+            out_width = num * self.out_channels
+            slices.append((in_off, in_off + in_width, out_off, out_off + out_width))
+            in_off += in_width
+            out_off += out_width
+        return slices
+
     def train(self, mode: bool = True) -> SO2Linear:
         """Invalidate weight cache when switching to training mode."""
         self._cached_weight = None
@@ -401,46 +466,38 @@ class SO2Linear(nn.Module):
             weight[pi0:pi1, :, po0:po1] = w_u  # pos_in -> pos_out
         return weight
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
+    def _block_diagonal_matmul(
+        self, x_flat: torch.Tensor, weight: torch.Tensor
+    ) -> torch.Tensor:
+        """Contract only the diagonal ``|m|`` blocks of the assembled weight.
+
+        ``weight`` is block-diagonal over ``|m|`` (cross-``|m|`` blocks are
+        exactly zero), so concatenating the per-group matmuls reproduces the
+        dense ``einsum`` over the full ``(D_m*Cin, D_m*Cout)`` matrix while
+        skipping the structural zeros. The result is fp32-equivalent to the
+        dense path up to the matmul reduction order.
+
         Parameters
         ----------
-        x
-            Input with shape (E, F, D_m_trunc, Cin), where D_m_trunc is the
-            coefficient dimension of the m-major layout truncated by `mmax`.
+        x_flat : torch.Tensor
+            Flattened input with shape ``(E, F, D_m*Cin)``.
+        weight : torch.Tensor
+            Assembled block-diagonal weight with shape ``(D_m*Cin, F, D_m*Cout)``.
 
         Returns
         -------
         torch.Tensor
-            Output with shape (E, F, D_m_trunc, Cout), where Cout is output channels.
+            Flattened output with shape ``(E, F, D_m*Cout)``.
         """
-        # === Step 1. Flatten coefficient + channel axes for matmul ===
-        # (E, F, D_m, Cin) -> (E, F, D_m*Cin)
-        n_edge = x.shape[0]
-        in_dim_total = self.reduced_dim * self.in_channels
-        x_flat = x.reshape(n_edge, self.n_focus, in_dim_total)
-
-        # === Step 2. Get block-diagonal weight (cached in eval+no_grad) ===
-        if self._cached_weight is not None:
-            weight = self._cached_weight
-        else:
-            weight = self._build_so2_weight()
-            # Cache only in eval mode with grad disabled (pure inference).
-            if not self.training and not torch.is_grad_enabled():
-                self._cached_weight = weight.detach()
-
-        # === Step 3. Batched matmul over focus streams + reshape back ===
-        # einsum "efi,ifo->efo": (E,F,D_m*Cin) x (D_m*Cin,F,D_m*Cout) -> (E,F,D_m*Cout)
-        out_flat = torch.einsum("efi,ifo->efo", x_flat, weight)
-        out = out_flat.reshape(
-            n_edge, self.n_focus, self.reduced_dim, self.out_channels
-        )
-
-        # === Step 4. Bias on l=0 scalar index ===
-        if self.mlp_bias:
-            bias0 = self.bias0.view(self.n_focus, self.out_channels)
-            out[:, :, 0, :] = out[:, :, 0, :] + bias0.unsqueeze(0)
-        return out
+        blocks = [
+            torch.einsum(
+                "efi,ifo->efo",
+                x_flat[:, :, in0:in1],
+                weight[in0:in1, :, out0:out1],
+            )
+            for in0, in1, out0, out1 in self._block_diag_slices
+        ]
+        return torch.cat(blocks, dim=-1)
 
     def serialize(self) -> dict[str, Any]:
         trainable = all(p.requires_grad for p in self.parameters())
@@ -577,6 +634,23 @@ class DynamicRadialDegreeMixer(nn.Module):
         for p in self.parameters():
             p.requires_grad = trainable
 
+        # Inference fast path (opt-in via ``DP_TRITON_INFER``): a fused Triton
+        # kernel replaces the dense scatter and the tiny batched matmul of the
+        # ``degree_channel`` low-rank branch in the ``mmax == 1`` layout.
+        self.use_triton_infer = use_triton_infer()
+        self._radial_mix_block = None
+        if (
+            self.use_triton_infer
+            and self.mode == "degree_channel"
+            and self.rank > 0
+            and self.mmax == 1
+        ):
+            from .triton.radial_mix import (
+                radial_mix_block,
+            )
+
+            self._radial_mix_block = radial_mix_block
+
     def _build_dense_scatter_indices(self) -> tuple[torch.Tensor, torch.Tensor]:
         compact_indices: list[int] = []
         dense_indices: list[int] = []
@@ -669,6 +743,10 @@ class DynamicRadialDegreeMixer(nn.Module):
             compact = kernel_flat.view(
                 x_local.shape[0], self.degree_kernel_size, self.rank
             )
+            if self._radial_mix_block is not None and not self.training:
+                return self._radial_mix_block(
+                    compact, x_local, self.channel_basis, self.lmax
+                )
             kernel = self._scatter_rank_kernel(compact)
             mixed = torch.einsum("eoir,eic->eorc", kernel, x_local)
             channel_basis = self.channel_basis.view(1, 1, self.rank, self.channels)
@@ -946,14 +1024,12 @@ class SO2Convolution(nn.Module):
         self.device = env.DEVICE
         self.precision = RESERVED_PRECISION_DICT[dtype]
         self.compute_dtype = get_promoted_dtype(self.dtype)
-        # Optional Triton rotation kernels for the SO(2) convolution, enabled by
+        # Optional Triton inference kernels for the SO(2) convolution, enabled by
         # ``DP_TRITON_INFER=1`` (default disabled, in which case the dense
         # ``bmm`` rotation is used). The flag is read once at construction so it
         # is a compile-time constant in the traced (``make_fx``) graph, and it
         # only takes effect during inference.
-        self.use_triton_infer = os.environ.get(
-            "DP_TRITON_INFER", "0"
-        ).strip().lower() in ("1", "true", "yes", "on")
+        self.use_triton_infer = use_triton_infer()
         # Triton rotation kernels: block for the mmax == 1 layout, dense otherwise.
         self._rotate_to_local_fn = None
         self._rotate_back_fn = None
