@@ -2139,16 +2139,15 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
    *same aparam.
    **/
   template <typename VALUETYPE>
-  void compute(
-      std::vector<double>& ener,
-      std::vector<std::vector<VALUETYPE>>& force,
-      std::vector<std::vector<VALUETYPE>>& virial,
-      const std::vector<VALUETYPE>& coord,
-      const std::vector<int>& atype,
-      const std::vector<VALUETYPE>& box,
-      const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
-      const std::vector<double>& charge_spin = std::vector<double>()) {
+  void compute(std::vector<double>& ener,
+               std::vector<std::vector<VALUETYPE>>& force,
+               std::vector<std::vector<VALUETYPE>>& virial,
+               const std::vector<VALUETYPE>& coord,
+               const std::vector<int>& atype,
+               const std::vector<VALUETYPE>& box,
+               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+               const std::vector<double>& charge_spin = std::vector<double>()) {
     // charge_spin is not supported via the C-API model-deviation path.
     (void)charge_spin;
     unsigned int natoms = atype.size();
@@ -2221,18 +2220,17 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
    *same aparam.
    **/
   template <typename VALUETYPE>
-  void compute(
-      std::vector<double>& ener,
-      std::vector<std::vector<VALUETYPE>>& force,
-      std::vector<std::vector<VALUETYPE>>& virial,
-      std::vector<std::vector<VALUETYPE>>& atom_energy,
-      std::vector<std::vector<VALUETYPE>>& atom_virial,
-      const std::vector<VALUETYPE>& coord,
-      const std::vector<int>& atype,
-      const std::vector<VALUETYPE>& box,
-      const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
-      const std::vector<double>& charge_spin = std::vector<double>()) {
+  void compute(std::vector<double>& ener,
+               std::vector<std::vector<VALUETYPE>>& force,
+               std::vector<std::vector<VALUETYPE>>& virial,
+               std::vector<std::vector<VALUETYPE>>& atom_energy,
+               std::vector<std::vector<VALUETYPE>>& atom_virial,
+               const std::vector<VALUETYPE>& coord,
+               const std::vector<int>& atype,
+               const std::vector<VALUETYPE>& box,
+               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+               const std::vector<double>& charge_spin = std::vector<double>()) {
     // charge_spin is not supported via the C-API model-deviation path.
     (void)charge_spin;
     unsigned int natoms = atype.size();
@@ -2321,19 +2319,18 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
    *same aparam.
    **/
   template <typename VALUETYPE>
-  void compute(
-      std::vector<double>& ener,
-      std::vector<std::vector<VALUETYPE>>& force,
-      std::vector<std::vector<VALUETYPE>>& virial,
-      const std::vector<VALUETYPE>& coord,
-      const std::vector<int>& atype,
-      const std::vector<VALUETYPE>& box,
-      const int nghost,
-      const InputNlist& lmp_list,
-      const int& ago,
-      const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
-      const std::vector<double>& charge_spin = std::vector<double>()) {
+  void compute(std::vector<double>& ener,
+               std::vector<std::vector<VALUETYPE>>& force,
+               std::vector<std::vector<VALUETYPE>>& virial,
+               const std::vector<VALUETYPE>& coord,
+               const std::vector<int>& atype,
+               const std::vector<VALUETYPE>& box,
+               const int nghost,
+               const InputNlist& lmp_list,
+               const int& ago,
+               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+               const std::vector<double>& charge_spin = std::vector<double>()) {
     // charge_spin is not supported via the C-API model-deviation path.
     (void)charge_spin;
     unsigned int natoms = atype.size();
@@ -2412,21 +2409,20 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
    *same aparam.
    **/
   template <typename VALUETYPE>
-  void compute(
-      std::vector<double>& ener,
-      std::vector<std::vector<VALUETYPE>>& force,
-      std::vector<std::vector<VALUETYPE>>& virial,
-      std::vector<std::vector<VALUETYPE>>& atom_energy,
-      std::vector<std::vector<VALUETYPE>>& atom_virial,
-      const std::vector<VALUETYPE>& coord,
-      const std::vector<int>& atype,
-      const std::vector<VALUETYPE>& box,
-      const int nghost,
-      const InputNlist& lmp_list,
-      const int& ago,
-      const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
-      const std::vector<double>& charge_spin = std::vector<double>()) {
+  void compute(std::vector<double>& ener,
+               std::vector<std::vector<VALUETYPE>>& force,
+               std::vector<std::vector<VALUETYPE>>& virial,
+               std::vector<std::vector<VALUETYPE>>& atom_energy,
+               std::vector<std::vector<VALUETYPE>>& atom_virial,
+               const std::vector<VALUETYPE>& coord,
+               const std::vector<int>& atype,
+               const std::vector<VALUETYPE>& box,
+               const int nghost,
+               const InputNlist& lmp_list,
+               const int& ago,
+               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+               const std::vector<double>& charge_spin = std::vector<double>()) {
     // charge_spin is not supported via the C-API model-deviation path.
     (void)charge_spin;
     unsigned int natoms = atype.size();
