@@ -290,22 +290,17 @@ if RADIAL_MIX_TRITON_AVAILABLE:
         )
 
     @triton.jit
-    def _mix_bwd_block(
+    def _mix_bwd_grad_x_block(
         edge,
         chan,
         cmask,
         go_ptr,
-        x_ptr,
         k_ptr,
         cb_ptr,
         gx_ptr,
-        gk_ptr,
         go_se,
         go_sr,
         go_sc,
-        x_se,
-        x_sr,
-        x_sc,
         k_se,
         k_sk,
         k_sr,
@@ -314,21 +309,16 @@ if RADIAL_MIX_TRITON_AVAILABLE:
         gx_se,
         gx_sr,
         gx_sc,
-        gk_se,
-        gk_sk,
-        gk_sr,
         COEFF0: tl.constexpr,
         COMPACT0: tl.constexpr,
         NUM_L: tl.constexpr,
         RANK: tl.constexpr,
     ):
-        """Backward of one diagonal block.
+        """Input gradient of one diagonal block.
 
-        ``grad_x[i] = sum_r cb[r] sum_o K_r[o,i] grad_out[o]`` and
-        ``grad_K_r[o,i] = sum_c cb[r,c] x[i,c] grad_out[o,c]``. Both accumulators
-        are scattered with ``atomic_add`` into the zero-initialized outputs: the
-        ``m = -1`` and ``m = +1`` blocks share the ``compact`` slots, so their
-        contributions must sum.
+        Computes ``grad_x[i] = sum_r cb[r] sum_o K_r[o,i] grad_out[o]``. Each edge
+        owns its rows and the three blocks address disjoint coefficient rows, so
+        the result is written once with a plain store rather than an atomic add.
         """
         for i in tl.static_range(0, NUM_L):
             grad_x = tl.zeros(chan.shape, dtype=tl.float32)
@@ -351,37 +341,86 @@ if RADIAL_MIX_TRITON_AVAILABLE:
                     ).to(tl.float32)
                     partial += kval * go_vec
                 grad_x += cb_vec * partial
-            tl.atomic_add(
+            tl.store(
                 gx_ptr + edge * gx_se + (COEFF0 + i) * gx_sr + chan * gx_sc,
-                grad_x,
+                grad_x.to(gx_ptr.dtype.element_ty),
                 mask=cmask,
             )
+
+    @triton.jit
+    def _mix_bwd_grad_k_block(
+        edge,
+        chan,
+        cmask,
+        go_ptr,
+        x_ptr,
+        cb_ptr,
+        gk_ptr,
+        go_se,
+        go_sr,
+        go_sc,
+        x_se,
+        x_sr,
+        x_sc,
+        cb_sr,
+        cb_sc,
+        gk_se,
+        gk_sk,
+        gk_sr,
+        COEFF0: tl.constexpr,
+        COEFF1: tl.constexpr,
+        COMPACT0: tl.constexpr,
+        NUM_L: tl.constexpr,
+        RANK: tl.constexpr,
+        SHARED: tl.constexpr,
+    ):
+        """Kernel gradient of one diagonal block.
+
+        Computes ``grad_K_r[o,i] = sum_c cb[r,c] x[i,c] grad_out[o,c]``. The
+        ``m = -1`` and ``m = +1`` blocks (``SHARED``) write the same ``compact``
+        slots; their contributions are summed in registers and stored once, which
+        removes the atomic add and the zero-initialization the original required.
+        """
         for o in tl.static_range(0, NUM_L):
             go_vec = tl.load(
                 go_ptr + edge * go_se + (COEFF0 + o) * go_sr + chan * go_sc,
                 mask=cmask,
                 other=0.0,
             ).to(tl.float32)
+            if SHARED:
+                go_vec_sh = tl.load(
+                    go_ptr + edge * go_se + (COEFF1 + o) * go_sr + chan * go_sc,
+                    mask=cmask,
+                    other=0.0,
+                ).to(tl.float32)
             for i in tl.static_range(0, NUM_L):
                 x_vec = tl.load(
                     x_ptr + edge * x_se + (COEFF0 + i) * x_sr + chan * x_sc,
                     mask=cmask,
                     other=0.0,
                 ).to(tl.float32)
+                prod = go_vec * x_vec
+                if SHARED:
+                    x_vec_sh = tl.load(
+                        x_ptr + edge * x_se + (COEFF1 + i) * x_sr + chan * x_sc,
+                        mask=cmask,
+                        other=0.0,
+                    ).to(tl.float32)
+                    prod += go_vec_sh * x_vec_sh
                 for r in tl.static_range(0, RANK):
                     cb_vec = tl.load(
                         cb_ptr + r * cb_sr + chan * cb_sc, mask=cmask, other=0.0
                     ).to(tl.float32)
-                    grad_k = tl.sum(tl.where(cmask, go_vec * x_vec * cb_vec, 0.0))
-                    tl.atomic_add(
+                    grad_k = tl.sum(tl.where(cmask, prod * cb_vec, 0.0))
+                    tl.store(
                         gk_ptr
                         + edge * gk_se
                         + (COMPACT0 + i * NUM_L + o) * gk_sk
                         + r * gk_sr,
-                        grad_k,
+                        grad_k.to(gk_ptr.dtype.element_ty),
                     )
 
-    @triton.autotune(configs=_CONFIGS, key=_KEY, reset_to_zero=["gx_ptr", "gk_ptr"])
+    @triton.autotune(configs=_CONFIGS, key=_KEY)
     @triton.jit
     def _radial_mix_bwd_kernel(
         go_ptr,
@@ -417,13 +456,12 @@ if RADIAL_MIX_TRITON_AVAILABLE:
         chan = tl.arange(0, BLOCK_C)
         cmask = chan < channels
         num_l0: tl.constexpr = LMAX + 1
-        strides = (
+
+        # === Step 1. Input gradient: three disjoint coefficient blocks ===
+        grad_x_strides = (
             go_se,
             go_sr,
             go_sc,
-            x_se,
-            x_sr,
-            x_sc,
             k_se,
             k_sk,
             k_sr,
@@ -432,57 +470,95 @@ if RADIAL_MIX_TRITON_AVAILABLE:
             gx_se,
             gx_sr,
             gx_sc,
-            gk_se,
-            gk_sk,
-            gk_sr,
         )
-        _mix_bwd_block(
+        _mix_bwd_grad_x_block(
             edge,
             chan,
             cmask,
             go_ptr,
-            x_ptr,
             k_ptr,
             cb_ptr,
             gx_ptr,
-            gk_ptr,
-            *strides,
+            *grad_x_strides,
             0,
             0,
             num_l0,
             RANK,
         )
-        _mix_bwd_block(
+        _mix_bwd_grad_x_block(
             edge,
             chan,
             cmask,
             go_ptr,
-            x_ptr,
             k_ptr,
             cb_ptr,
             gx_ptr,
-            gk_ptr,
-            *strides,
+            *grad_x_strides,
             num_l0,
             num_l0 * num_l0,
             LMAX,
             RANK,
         )
-        _mix_bwd_block(
+        _mix_bwd_grad_x_block(
             edge,
             chan,
             cmask,
             go_ptr,
-            x_ptr,
             k_ptr,
             cb_ptr,
             gx_ptr,
-            gk_ptr,
-            *strides,
+            *grad_x_strides,
             num_l0 + LMAX,
             num_l0 * num_l0,
             LMAX,
             RANK,
+        )
+
+        # === Step 2. Kernel gradient: m=0 block, then summed m=+-1 blocks ===
+        grad_k_strides = (
+            go_se,
+            go_sr,
+            go_sc,
+            x_se,
+            x_sr,
+            x_sc,
+            cb_sr,
+            cb_sc,
+            gk_se,
+            gk_sk,
+            gk_sr,
+        )
+        _mix_bwd_grad_k_block(
+            edge,
+            chan,
+            cmask,
+            go_ptr,
+            x_ptr,
+            cb_ptr,
+            gk_ptr,
+            *grad_k_strides,
+            0,
+            0,
+            0,
+            num_l0,
+            RANK,
+            False,
+        )
+        _mix_bwd_grad_k_block(
+            edge,
+            chan,
+            cmask,
+            go_ptr,
+            x_ptr,
+            cb_ptr,
+            gk_ptr,
+            *grad_k_strides,
+            num_l0,
+            num_l0 + LMAX,
+            num_l0 * num_l0,
+            LMAX,
+            RANK,
+            True,
         )
 
 
@@ -539,8 +615,10 @@ def _launch_backward(
 ) -> tuple[Tensor, Tensor]:
     n_edge, reduced_dim, channels = x_local.shape
     rank = int(compact.shape[-1])
-    grad_x = torch.zeros_like(x_local)
-    grad_compact = torch.zeros_like(compact)
+    # Every output element is written exactly once (input rows are disjoint and
+    # the shared m=+-1 kernel slots are summed in-register), so no zero-init.
+    grad_x = torch.empty_like(x_local)
+    grad_compact = torch.empty_like(compact)
     if n_edge == 0:
         return grad_compact, grad_x
     _radial_mix_bwd_kernel[(n_edge,)](

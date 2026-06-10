@@ -929,6 +929,178 @@ if TRITON_ROTATION_AVAILABLE:
                     mask=cmask,
                 )
 
+    @triton.autotune(configs=_BD_CONFIGS, key=["channels"])
+    @triton.jit
+    def _bd_back_so2_fwd_kernel(
+        xl_ptr,
+        w_ptr,
+        out_ptr,
+        n_edge,
+        channels,
+        xl_se,
+        xl_sf,
+        xl_sr,
+        xl_sc,
+        w_se,
+        w_sr,
+        w_sk,
+        o_se,
+        o_sd,
+        o_sc,
+        LMAX: tl.constexpr,
+        FOCUS_DIM: tl.constexpr,
+        BLOCK_C: tl.constexpr,
+    ):
+        """Block-diagonal rotate_back reading the per-focus layout in place.
+
+        ``out[e, l^2+j, c] = sum_m W[e, l^2+j, l^2+l+m] * x_local[e, f, (l,m), cf]``
+        with ``c = f * FOCUS_DIM + cf``. Decoding the channel as ``(f, cf)`` folds
+        the ``(F, D_m, Cf) -> (D_m, C_wide)`` transpose into the addressing, so the
+        caller passes the SO(2) focus tensor without an explicit copy.
+        """
+        edge = tl.program_id(0).to(tl.int64)
+        chan = tl.arange(0, BLOCK_C)
+        cmask = chan < channels
+        xl_co = (chan // FOCUS_DIM) * xl_sf + (chan % FOCUS_DIM) * xl_sc
+        for l in tl.static_range(0, LMAX + 1):
+            base = l * l
+            r0 = base + l
+            xl0 = tl.load(
+                xl_ptr + edge * xl_se + l * xl_sr + xl_co, mask=cmask, other=0.0
+            ).to(tl.float32)
+            if l >= 1:
+                xl_m = tl.load(
+                    xl_ptr + edge * xl_se + (LMAX + l) * xl_sr + xl_co,
+                    mask=cmask,
+                    other=0.0,
+                ).to(tl.float32)
+                xl_p = tl.load(
+                    xl_ptr + edge * xl_se + (2 * LMAX + l) * xl_sr + xl_co,
+                    mask=cmask,
+                    other=0.0,
+                ).to(tl.float32)
+            for j in tl.static_range(0, 2 * l + 1):
+                d = base + j
+                acc = tl.load(w_ptr + edge * w_se + d * w_sr + r0 * w_sk) * xl0
+                if l >= 1:
+                    acc += (
+                        tl.load(w_ptr + edge * w_se + d * w_sr + (r0 - 1) * w_sk) * xl_m
+                    )
+                    acc += (
+                        tl.load(w_ptr + edge * w_se + d * w_sr + (r0 + 1) * w_sk) * xl_p
+                    )
+                tl.store(
+                    out_ptr + edge * o_se + d * o_sd + chan * o_sc,
+                    acc.to(out_ptr.dtype.element_ty),
+                    mask=cmask,
+                )
+
+    @triton.autotune(configs=_BD_CONFIGS, key=["channels"])
+    @triton.jit
+    def _bd_back_so2_bwd_kernel(
+        go_ptr,
+        xl_ptr,
+        w_ptr,
+        gxl_ptr,
+        gw_ptr,
+        n_edge,
+        channels,
+        go_se,
+        go_sd,
+        go_sc,
+        xl_se,
+        xl_sf,
+        xl_sr,
+        xl_sc,
+        w_se,
+        w_sr,
+        w_sk,
+        gxl_se,
+        gxl_sf,
+        gxl_sr,
+        gxl_sc,
+        gw_se,
+        gw_sr,
+        gw_sk,
+        LMAX: tl.constexpr,
+        FOCUS_DIM: tl.constexpr,
+        BLOCK_C: tl.constexpr,
+    ):
+        """Backward of :func:`_bd_back_so2_fwd_kernel`.
+
+        Writes ``grad_x_local`` in the per-focus layout (decoding the channel as
+        ``(f, cf)`` exactly as the forward) and accumulates ``grad_W`` over the
+        full channel width, i.e. summed across focus streams.
+        """
+        edge = tl.program_id(0).to(tl.int64)
+        chan = tl.arange(0, BLOCK_C)
+        cmask = chan < channels
+        xl_co = (chan // FOCUS_DIM) * xl_sf + (chan % FOCUS_DIM) * xl_sc
+        gxl_co = (chan // FOCUS_DIM) * gxl_sf + (chan % FOCUS_DIM) * gxl_sc
+        for l in tl.static_range(0, LMAX + 1):
+            base = l * l
+            r0 = base + l
+            xl0 = tl.load(
+                xl_ptr + edge * xl_se + l * xl_sr + xl_co, mask=cmask, other=0.0
+            ).to(tl.float32)
+            gxl0 = tl.zeros((BLOCK_C,), dtype=tl.float32)
+            if l >= 1:
+                xl_m = tl.load(
+                    xl_ptr + edge * xl_se + (LMAX + l) * xl_sr + xl_co,
+                    mask=cmask,
+                    other=0.0,
+                ).to(tl.float32)
+                xl_p = tl.load(
+                    xl_ptr + edge * xl_se + (2 * LMAX + l) * xl_sr + xl_co,
+                    mask=cmask,
+                    other=0.0,
+                ).to(tl.float32)
+                gxl_m = tl.zeros((BLOCK_C,), dtype=tl.float32)
+                gxl_p = tl.zeros((BLOCK_C,), dtype=tl.float32)
+            for j in tl.static_range(0, 2 * l + 1):
+                d = base + j
+                go_d = tl.load(
+                    go_ptr + edge * go_se + d * go_sd + chan * go_sc,
+                    mask=cmask,
+                    other=0.0,
+                ).to(tl.float32)
+                gxl0 += tl.load(w_ptr + edge * w_se + d * w_sr + r0 * w_sk) * go_d
+                tl.store(
+                    gw_ptr + edge * gw_se + d * gw_sr + r0 * gw_sk,
+                    tl.sum(go_d * xl0).to(gw_ptr.dtype.element_ty),
+                )
+                if l >= 1:
+                    gxl_m += (
+                        tl.load(w_ptr + edge * w_se + d * w_sr + (r0 - 1) * w_sk) * go_d
+                    )
+                    gxl_p += (
+                        tl.load(w_ptr + edge * w_se + d * w_sr + (r0 + 1) * w_sk) * go_d
+                    )
+                    tl.store(
+                        gw_ptr + edge * gw_se + d * gw_sr + (r0 - 1) * gw_sk,
+                        tl.sum(go_d * xl_m).to(gw_ptr.dtype.element_ty),
+                    )
+                    tl.store(
+                        gw_ptr + edge * gw_se + d * gw_sr + (r0 + 1) * gw_sk,
+                        tl.sum(go_d * xl_p).to(gw_ptr.dtype.element_ty),
+                    )
+            tl.store(
+                gxl_ptr + edge * gxl_se + l * gxl_sr + gxl_co,
+                gxl0.to(gxl_ptr.dtype.element_ty),
+                mask=cmask,
+            )
+            if l >= 1:
+                tl.store(
+                    gxl_ptr + edge * gxl_se + (LMAX + l) * gxl_sr + gxl_co,
+                    gxl_m.to(gxl_ptr.dtype.element_ty),
+                    mask=cmask,
+                )
+                tl.store(
+                    gxl_ptr + edge * gxl_se + (2 * LMAX + l) * gxl_sr + gxl_co,
+                    gxl_p.to(gxl_ptr.dtype.element_ty),
+                    mask=cmask,
+                )
+
 
 # ======================================================================
 # Triton launch wrappers
@@ -1290,6 +1462,79 @@ def _launch_bd_back_bwd(
     return grad_x_local, grad_wigner
 
 
+def _launch_bd_back_so2_fwd(x_local_4d: Tensor, wigner: Tensor, lmax: int) -> Tensor:
+    n_edge, n_focus, _reduced, focus_dim = (int(s) for s in x_local_4d.shape)
+    channels = n_focus * focus_dim
+    dim_full = (lmax + 1) ** 2
+    out = torch.empty(
+        (n_edge, dim_full, channels), dtype=x_local_4d.dtype, device=x_local_4d.device
+    )
+    if n_edge == 0:
+        return out
+    _bd_back_so2_fwd_kernel[(n_edge,)](
+        x_local_4d,
+        wigner,
+        out,
+        n_edge,
+        channels,
+        x_local_4d.stride(0),
+        x_local_4d.stride(1),
+        x_local_4d.stride(2),
+        x_local_4d.stride(3),
+        wigner.stride(0),
+        wigner.stride(1),
+        wigner.stride(2),
+        out.stride(0),
+        out.stride(1),
+        out.stride(2),
+        LMAX=lmax,
+        FOCUS_DIM=focus_dim,
+        BLOCK_C=_tile_dim(channels),
+    )
+    return out
+
+
+def _launch_bd_back_so2_bwd(
+    grad_out: Tensor, x_local_4d: Tensor, wigner: Tensor, lmax: int
+) -> tuple[Tensor, Tensor]:
+    n_edge, n_focus, _reduced, focus_dim = (int(s) for s in x_local_4d.shape)
+    channels = n_focus * focus_dim
+    grad_x_local = torch.empty_like(x_local_4d)
+    grad_wigner = torch.zeros_like(wigner)
+    if n_edge == 0:
+        return grad_x_local, grad_wigner
+    _bd_back_so2_bwd_kernel[(n_edge,)](
+        grad_out,
+        x_local_4d,
+        wigner,
+        grad_x_local,
+        grad_wigner,
+        n_edge,
+        channels,
+        grad_out.stride(0),
+        grad_out.stride(1),
+        grad_out.stride(2),
+        x_local_4d.stride(0),
+        x_local_4d.stride(1),
+        x_local_4d.stride(2),
+        x_local_4d.stride(3),
+        wigner.stride(0),
+        wigner.stride(1),
+        wigner.stride(2),
+        grad_x_local.stride(0),
+        grad_x_local.stride(1),
+        grad_x_local.stride(2),
+        grad_x_local.stride(3),
+        grad_wigner.stride(0),
+        grad_wigner.stride(1),
+        grad_wigner.stride(2),
+        LMAX=lmax,
+        FOCUS_DIM=focus_dim,
+        BLOCK_C=_tile_dim(channels),
+    )
+    return grad_x_local, grad_wigner
+
+
 # ======================================================================
 # Dispatch helpers (triton on CUDA float, eager otherwise)
 # ======================================================================
@@ -1609,3 +1854,105 @@ def rotate_back_block(x_local: Tensor, wigner: Tensor, lmax: int) -> Tensor:
     coefficient-index tensor.
     """
     return _block_back_op(x_local, wigner, int(lmax))
+
+
+# ======================================================================
+# Layout-aware block rotate_back (per-focus SO(2) layout, mmax == 1)
+# ======================================================================
+# Consumes the (E, F, D_m, Cf) focus layout produced by the SO(2) layers so the
+# caller can skip the ``transpose(1, 2).contiguous()`` that would otherwise
+# materialize (E, D_m, F * Cf) before the inverse rotation.
+
+
+def _block_rotate_back_so2_impl(
+    x_local_4d: Tensor, wigner: Tensor, lmax: int
+) -> Tensor:
+    if not _use_triton(x_local_4d):
+        n_edge, n_focus, reduced_dim, focus_dim = x_local_4d.shape
+        x_std = x_local_4d.transpose(1, 2).reshape(
+            n_edge, reduced_dim, n_focus * focus_dim
+        )
+        coeff = build_m_major_index(int(lmax), 1, device=x_local_4d.device)
+        return rotate_back_reference(x_std, wigner, coeff, (int(lmax) + 1) ** 2)
+    return _launch_bd_back_so2_fwd(x_local_4d, wigner, int(lmax))
+
+
+def _block_rotate_back_so2_bwd_impl(
+    grad_out: Tensor, x_local_4d: Tensor, wigner: Tensor, lmax: int
+) -> tuple[Tensor, Tensor]:
+    if not _use_triton(x_local_4d):
+        n_edge, n_focus, reduced_dim, focus_dim = x_local_4d.shape
+        x_std = x_local_4d.transpose(1, 2).reshape(
+            n_edge, reduced_dim, n_focus * focus_dim
+        )
+        coeff = build_m_major_index(int(lmax), 1, device=x_local_4d.device)
+        grad_x_std, grad_wigner = _rotate_back_bwd_eager(
+            grad_out, x_std, wigner, coeff, (int(lmax) + 1) ** 2
+        )
+        grad_x_local = grad_x_std.reshape(
+            n_edge, reduced_dim, n_focus, focus_dim
+        ).transpose(1, 2)
+        return grad_x_local, grad_wigner
+    return _launch_bd_back_so2_bwd(grad_out.contiguous(), x_local_4d, wigner, int(lmax))
+
+
+_block_back_so2_op = torch.library.custom_op(
+    "sezm_triton::rotate_back_block_so2", mutates_args=()
+)(_block_rotate_back_so2_impl)
+
+_block_back_so2_bwd_op = torch.library.custom_op(
+    "sezm_triton::rotate_back_block_so2_bwd", mutates_args=()
+)(_block_rotate_back_so2_bwd_impl)
+
+
+@_block_back_so2_op.register_fake
+def _(x_local_4d, wigner, lmax):
+    n_edge, n_focus, _reduced, focus_dim = x_local_4d.shape
+    return x_local_4d.new_empty((n_edge, (int(lmax) + 1) ** 2, n_focus * focus_dim))
+
+
+@_block_back_so2_bwd_op.register_fake
+def _(grad_out, x_local_4d, wigner, lmax):
+    return torch.empty_like(x_local_4d), torch.empty_like(wigner)
+
+
+def _block_back_so2_setup_context(ctx, inputs, output):
+    x_local_4d, wigner, lmax = inputs
+    ctx.save_for_backward(x_local_4d, wigner)
+    ctx.lmax = lmax
+
+
+def _block_back_so2_backward(ctx, grad_out):
+    x_local_4d, wigner = ctx.saved_tensors
+    grad_x_local, grad_wigner = _block_back_so2_bwd_op(
+        grad_out, x_local_4d, wigner, ctx.lmax
+    )
+    return grad_x_local, grad_wigner, None
+
+
+_block_back_so2_op.register_autograd(
+    _block_back_so2_backward, setup_context=_block_back_so2_setup_context
+)
+
+
+def rotate_back_block_so2(x_local_4d: Tensor, wigner: Tensor, lmax: int) -> Tensor:
+    """Block-diagonal ``local -> global`` rotation reading the per-focus layout.
+
+    Parameters
+    ----------
+    x_local_4d : Tensor
+        Local features with shape (E, F, reduced_dim, Cf) in the canonical m-major
+        ``mmax=1`` layout, where C_wide = F * Cf.
+    wigner : Tensor
+        Transposed Wigner-D with shape (E, D, D), D = (lmax + 1) ** 2.
+    lmax : int
+        Maximum degree.
+
+    Returns
+    -------
+    Tensor
+        Global-frame message with shape (E, D, C_wide). The per-focus to packed
+        channel mapping ``c = f * Cf + cf`` folds the inverse transpose into the
+        kernel addressing, avoiding an explicit copy.
+    """
+    return _block_back_so2_op(x_local_4d, wigner, int(lmax))

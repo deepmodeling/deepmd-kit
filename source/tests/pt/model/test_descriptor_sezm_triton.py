@@ -42,6 +42,7 @@ from deepmd.pt.model.descriptor.sezm_nn.triton.radial_mix import (
 from deepmd.pt.model.descriptor.sezm_nn.triton.so2_rotation import (
     TRITON_ROTATION_AVAILABLE,
     rotate_back_block,
+    rotate_back_block_so2,
     rotate_back_dense,
     rotate_back_reference,
     rotate_to_local_block,
@@ -219,6 +220,55 @@ class TestSeZMTritonRotation(unittest.TestCase):
             with self.subTest(lmax=lmax):
                 xl0, w0, coeff_index, dim = self._local_inputs(lmax, seed=lmax)
                 self._assert_back_matches_reference(xl0, w0, coeff_index, dim)
+
+    def test_rotate_back_so2_matches_block_on_focus_layout(self):
+        """The layout-aware rotate_back reads the per-focus layout (E, F, D_m, Cf)
+        directly and reproduces the standard block kernel on the transposed
+        (E, D_m, F * Cf) input, forward and backward (including grad_wigner on the
+        block entries). This is the in-place transpose the SeZM SO(2) pipeline
+        avoids materializing.
+        """
+        n_focus, focus_dim = 2, 8
+        for lmax in (2, 3, 4, 5):
+            with self.subTest(lmax=lmax):
+                gen = torch.Generator(device=self.device).manual_seed(lmax)
+                reduced = 3 * lmax + 1
+                mask = _block_mask(lmax, self.device)
+                x4 = torch.randn(
+                    self.n_edge,
+                    n_focus,
+                    reduced,
+                    focus_dim,
+                    device=self.device,
+                    dtype=self.dtype,
+                    generator=gen,
+                )
+                w0 = _block_diagonal_wigner(
+                    self.n_edge, lmax, self.device, self.dtype, gen
+                )
+
+                xa = x4.clone().requires_grad_(True)
+                wa = w0.clone().requires_grad_(True)
+                out = rotate_back_block_so2(xa, wa, lmax)
+
+                x_std = x4.transpose(1, 2).reshape(
+                    self.n_edge, reduced, n_focus * focus_dim
+                )
+                xr = x_std.clone().requires_grad_(True)
+                wr = w0.clone().requires_grad_(True)
+                ref = rotate_back_block(xr, wr, lmax)
+                torch.testing.assert_close(out, ref, **self.tol)
+
+                grad_out = torch.randn_like(ref)
+                gxa, gwa = torch.autograd.grad(
+                    out, [xa, wa], grad_out, retain_graph=True
+                )
+                gxr, gwr = torch.autograd.grad(ref, [xr, wr], grad_out)
+                gxa_std = gxa.transpose(1, 2).reshape(
+                    self.n_edge, reduced, n_focus * focus_dim
+                )
+                torch.testing.assert_close(gxa_std, gxr, **self.tol)
+                torch.testing.assert_close(gwa[:, mask], gwr[:, mask], **self.tol)
 
     def test_symbolic_make_fx_rotate_to_local_forward_backward_matches_eager(self):
         """Symbolic FX captures rotate_to_local forward and autograd graph."""

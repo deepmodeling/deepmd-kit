@@ -1035,7 +1035,7 @@ class SO2Convolution(nn.Module):
         self._rotate_back_fn = None
         if self.use_triton_infer:
             from .triton.so2_rotation import (
-                rotate_back_block,
+                rotate_back_block_so2,
                 rotate_back_dense,
                 rotate_to_local_block,
                 rotate_to_local_dense,
@@ -1045,7 +1045,10 @@ class SO2Convolution(nn.Module):
                 self._rotate_to_local_fn = lambda x, src, wigner: rotate_to_local_block(
                     x, src, wigner, self.lmax
                 )
-                self._rotate_back_fn = lambda x_local, wigner: rotate_back_block(
+                # The block kernel reads the (E, F, D_m, Cf) focus layout directly,
+                # so the rotate-back path passes ``x_local`` before the global
+                # reshape and the transpose-back copy is skipped (see Step 7).
+                self._rotate_back_fn = lambda x_local, wigner: rotate_back_block_so2(
                     x_local, wigner, self.lmax
                 )
             else:
@@ -1695,27 +1698,32 @@ class SO2Convolution(nn.Module):
             )
             x_local = x_local * alpha.unsqueeze(-1).unsqueeze(-1)
 
-        # Restore reduced global layout for inverse rotation
-        x_local = x_local.transpose(1, 2).contiguous()  # (E, D_m, F, Cf)
-        x_local = x_local.reshape(
-            n_edge, self.reduced_dim, self.hidden_channels
-        )  # (E, D_m, C_wide)
-
         # === Step 7. Rotate back to global frame ===
         with nvtx_range("SO2Conv/rotate_back"):
             Dt_full = edge_cache.Dt_full
-            if self.use_triton_infer and not self.training:
+            if self.use_triton_infer and self.mmax == 1 and not self.training:
+                # The block kernel consumes the (E, F, D_m, Cf) focus layout in
+                # place, folding the inverse transpose into its channel addressing.
                 x_message = self._rotate_back_fn(x_local, Dt_full)  # (E, D, C_wide)
             else:
-                Dt_from_m = project_Dt_from_m(
-                    Dt_full=Dt_full,
-                    coeff_index_m=self.coeff_index_m,
-                    ebed_dim_full=self.ebed_dim_full,
-                    cache=edge_cache.Dt_from_m_cache,
-                    key_lmax=self.lmax,
-                    key_mmax=self.mmax,
+                # Restore reduced global layout (E, D_m, C_wide) for inverse rotation.
+                x_local = (
+                    x_local.transpose(1, 2)
+                    .contiguous()
+                    .reshape(n_edge, self.reduced_dim, self.hidden_channels)
                 )
-                x_message = torch.bmm(Dt_from_m, x_local)  # (E, D, C_wide)
+                if self.use_triton_infer and not self.training:
+                    x_message = self._rotate_back_fn(x_local, Dt_full)  # (E, D, C_wide)
+                else:
+                    Dt_from_m = project_Dt_from_m(
+                        Dt_full=Dt_full,
+                        coeff_index_m=self.coeff_index_m,
+                        ebed_dim_full=self.ebed_dim_full,
+                        cache=edge_cache.Dt_from_m_cache,
+                        key_lmax=self.lmax,
+                        key_mmax=self.mmax,
+                    )
+                    x_message = torch.bmm(Dt_from_m, x_local)  # (E, D, C_wide)
             # Reduced layouts keep only 2*mmax+1 orders for l>mmax. Applying the
             # inverse-rotation degree rescale after the global lift restores the
             # full-basis amplitude expected by the block output contract.
