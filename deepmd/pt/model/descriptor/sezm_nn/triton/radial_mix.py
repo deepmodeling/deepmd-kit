@@ -127,13 +127,65 @@ def radial_mix_reference(
 def _radial_mix_backward_reference(
     grad_out: Tensor, compact: Tensor, x_local: Tensor, channel_basis: Tensor, lmax: int
 ) -> tuple[Tensor, Tensor]:
-    """Eager backward returning ``(grad_compact, grad_x_local)`` via autograd."""
-    with torch.enable_grad():
-        compact_req = compact.detach().requires_grad_(True)
-        x_req = x_local.detach().requires_grad_(True)
-        out = radial_mix_reference(compact_req, x_req, channel_basis, lmax)
-        grad_compact, grad_x = torch.autograd.grad(out, [compact_req, x_req], grad_out)
-    return grad_compact, grad_x
+    """Closed-form eager backward of :func:`radial_mix_reference`.
+
+    Gradients are evaluated analytically per diagonal block, mirroring the
+    contractions of the Triton backward. A closed form is required rather than a
+    nested ``autograd.grad``: this routine is the CPU backend of the
+    ``radial_mix_block_bwd`` operator, which carries no autograd formula and is
+    consequently dispatched under ``_AutoDispatchBelowAutograd`` whenever the
+    force graph is replayed without grad (the SeZM ``.pt2`` freeze does so under
+    :func:`torch.no_grad`). That guard excludes the autograd key, so a nested
+    ``autograd.grad`` would observe an output without a ``grad_fn``.
+
+    Parameters
+    ----------
+    grad_out : Tensor
+        Upstream gradient with shape ``(E, reduced_dim, C)``.
+    compact : Tensor
+        Projected radial degree kernel with shape ``(E, degree_kernel_size, R)``.
+    x_local : Tensor
+        Edge-local reduced features with shape ``(E, reduced_dim, C)``.
+    channel_basis : Tensor
+        Per-rank channel basis with shape ``(R, C)``.
+    lmax : int
+        Maximum spherical-harmonic degree.
+
+    Returns
+    -------
+    tuple[Tensor, Tensor]
+        Gradients ``(grad_compact, grad_x_local)``, matching ``compact`` and
+        ``x_local`` in shape respectively.
+    """
+    n_edge, reduced_dim, channels = x_local.shape
+    grad_x_local = torch.zeros_like(x_local)
+    grad_compact = torch.zeros_like(compact)
+    for coeff0, comp0, num_l in _block_layout(int(lmax)):
+        # Forward of this block (see ``radial_mix_reference``):
+        #   out[e, o, c] = sum_{i, r} K[e, o, i, r] * x[e, i, c] * cb[r, c]
+        #   with K[e, o, i, r] = compact[e, comp0 + i * num_l + o, r].
+        k_block = (
+            compact[:, comp0 : comp0 + num_l * num_l, :]
+            .reshape(n_edge, num_l, num_l, -1)
+            .permute(0, 2, 1, 3)
+        )  # (E, o, i, R)
+        x_block = x_local[:, coeff0 : coeff0 + num_l, :]  # (E, i, C)
+        g_block = grad_out[:, coeff0 : coeff0 + num_l, :]  # (E, o, C)
+
+        # grad_x[e, i, c] = sum_r cb[r, c] * sum_o K[e, o, i, r] * g[e, o, c].
+        gx = torch.einsum("eoir,eoc->eicr", k_block, g_block)  # (E, i, C, R)
+        grad_x_local[:, coeff0 : coeff0 + num_l, :] += torch.einsum(
+            "eicr,rc->eic", gx, channel_basis
+        )
+
+        # grad_K[e, o, i, r] = sum_c cb[r, c] * x[e, i, c] * g[e, o, c], scattered
+        # back to the compact slot comp0 + i * num_l + o. The shared m = +-1
+        # blocks address the same slots, so the in-place add accumulates both.
+        gk = torch.einsum("eoc,eic,rc->eoir", g_block, x_block, channel_basis)
+        grad_compact[:, comp0 : comp0 + num_l * num_l, :] += gk.permute(
+            0, 2, 1, 3
+        ).reshape(n_edge, num_l * num_l, -1)
+    return grad_compact, grad_x_local
 
 
 # ======================================================================
