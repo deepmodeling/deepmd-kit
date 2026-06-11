@@ -1,0 +1,233 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
+import unittest
+from typing import (
+    Any,
+    ClassVar,
+)
+
+import numpy as np
+from dargs import (
+    Argument,
+)
+
+from deepmd.dpmodel.descriptor.dpa4 import DescrptDPA4 as DescrptDPA4DP
+from deepmd.env import (
+    GLOBAL_NP_FLOAT_PRECISION,
+)
+from deepmd.utils.argcheck import (
+    descrpt_se_zm_args,
+)
+
+from ..common import (
+    INSTALLED_PT,
+    CommonTest,
+    parameterized_cases,
+)
+from .common import (
+    DescriptorTest,
+)
+
+if INSTALLED_PT:
+    from deepmd.pt.model.descriptor.sezm import DescrptSeZM as DescrptDPA4PT
+else:
+    DescrptDPA4PT = None
+
+# not implemented
+DescrptDPA4TF = None
+
+
+DPA4_CASE_FIELDS = (
+    "precision",
+    "grid_branch",
+    "s2_activation",
+    "basis_type",
+)
+
+DPA4_BASELINE_CASE = {
+    "precision": "float64",
+    "grid_branch": [1, 1, 1],
+    "s2_activation": [False, True],
+    "basis_type": "bessel",
+}
+
+
+def dpa4_case(**overrides: Any) -> tuple:
+    unknown = set(overrides) - set(DPA4_BASELINE_CASE)
+    if unknown:
+        raise KeyError(f"Unknown DPA4 case override(s): {sorted(unknown)}")
+    case = dict(DPA4_BASELINE_CASE)
+    case.update(overrides)
+    return tuple(case[field] for field in DPA4_CASE_FIELDS)
+
+
+# curated cases (one-factor-at-a-time, dpa3 precedent) instead of full
+# cross product to keep CI runtime sane
+DPA4_CURATED_CASES = (
+    # baseline coverage
+    dpa4_case(),
+    # grid branch disabled
+    dpa4_case(grid_branch=[0, 0, 0]),
+    # no S2 activation in any FFN
+    dpa4_case(s2_activation=[False, False]),
+    # gaussian radial basis
+    dpa4_case(basis_type="gaussian"),
+    # float32 baseline
+    dpa4_case(precision="float32"),
+    # float32 mixed high-risk path
+    dpa4_case(
+        precision="float32",
+        grid_branch=[0, 0, 0],
+        s2_activation=[False, False],
+        basis_type="gaussian",
+    ),
+)
+
+
+@parameterized_cases(*DPA4_CURATED_CASES)
+class TestDPA4(CommonTest, DescriptorTest, unittest.TestCase):
+    @property
+    def data(self) -> dict:
+        (
+            precision,
+            grid_branch,
+            s2_activation,
+            basis_type,
+        ) = self.param
+        return {
+            "ntypes": self.ntypes,
+            "sel": 10,
+            "rcut": 4.0,
+            "channels": 16,
+            "n_radial": 8,
+            "basis_type": basis_type,
+            "lmax": 2,
+            "mmax": 1,
+            "n_blocks": 2,
+            "grid_branch": grid_branch,
+            "s2_activation": s2_activation,
+            "random_gamma": False,
+            "precision": precision,
+            "trainable": False,
+            "seed": 20251208,
+        }
+
+    @property
+    def skip_pt(self) -> bool:
+        (
+            _precision,
+            _grid_branch,
+            _s2_activation,
+            _basis_type,
+        ) = self.param
+        return CommonTest.skip_pt
+
+    skip_dp = False
+    skip_tf = True
+    skip_jax = True
+    skip_pd = True
+    skip_pt_expt = True
+    skip_array_api_strict = True
+
+    tf_class = DescrptDPA4TF
+    dp_class = DescrptDPA4DP
+    pt_class = DescrptDPA4PT
+    pt_expt_class = None
+    jax_class = None
+    pd_class = None
+    array_api_strict_class = None
+    args: ClassVar[list] = [
+        *descrpt_se_zm_args(),
+        Argument("ntypes", int, optional=False),
+    ]
+
+    def setUp(self) -> None:
+        CommonTest.setUp(self)
+
+        self.ntypes = 2
+        self.coords = np.array(
+            [
+                12.83,
+                2.56,
+                2.18,
+                12.09,
+                2.87,
+                2.74,
+                00.25,
+                3.32,
+                1.68,
+                3.36,
+                3.00,
+                1.81,
+                3.51,
+                2.51,
+                2.60,
+                4.27,
+                3.22,
+                1.56,
+            ],
+            dtype=GLOBAL_NP_FLOAT_PRECISION,
+        )
+        self.atype = np.array([0, 1, 1, 0, 1, 1], dtype=np.int32)
+        self.box = np.array(
+            [13.0, 0.0, 0.0, 0.0, 13.0, 0.0, 0.0, 0.0, 13.0],
+            dtype=GLOBAL_NP_FLOAT_PRECISION,
+        )
+        self.natoms = np.array([6, 6, 2, 4], dtype=np.int32)
+
+    def build_tf(self, obj: Any, suffix: str) -> tuple[list, dict]:
+        raise NotImplementedError("DPA4 is not implemented in TensorFlow")
+
+    def eval_dp(self, dp_obj: Any) -> Any:
+        return self.eval_dp_descriptor(
+            dp_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+            mixed_types=True,
+        )
+
+    def eval_pt(self, pt_obj: Any) -> Any:
+        return self.eval_pt_descriptor(
+            pt_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+            mixed_types=True,
+        )
+
+    def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
+        return (ret[0],)
+
+    @property
+    def rtol(self) -> float:
+        """Relative tolerance for comparing the return value."""
+        (
+            precision,
+            _grid_branch,
+            _s2_activation,
+            _basis_type,
+        ) = self.param
+        if precision == "float64":
+            return 1e-10
+        elif precision == "float32":
+            return 1e-4
+        else:
+            raise ValueError(f"Unknown precision: {precision}")
+
+    @property
+    def atol(self) -> float:
+        """Absolute tolerance for comparing the return value."""
+        (
+            precision,
+            _grid_branch,
+            _s2_activation,
+            _basis_type,
+        ) = self.param
+        if precision == "float64":
+            return 1e-10
+        elif precision == "float32":
+            return 1e-4
+        else:
+            raise ValueError(f"Unknown precision: {precision}")

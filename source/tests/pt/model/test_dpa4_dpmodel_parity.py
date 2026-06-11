@@ -3642,3 +3642,89 @@ class TestEndToEndParity:
         assert e_dp.shape == tuple(e_pt.shape)
         # end-to-end tolerance: rtol 1e-10 / atol 1e-12
         assert_parity(e_dp, e_pt, rtol=1e-10, atol=1e-12)
+
+
+class TestModelDefCompat:
+    """Pin the pt SeZM energy model serialized-dict contract for dpmodel.
+
+    Full dpmodel model assembly (SeZMModel / sezm_atomic in dpmodel) is
+    PR-2/PR-3 scope; until then these tests pin the contract: the pt model's
+    serialized descriptor/fitting sub-dicts must deserialize via the dpmodel
+    classes, and the out-of-scope top-level fields must stay disabled for
+    the core config.
+    """
+
+    # top-level keys of SeZMModel.serialize() the dpmodel port relies on
+    KNOWN_TOP_LEVEL_KEYS = frozenset(
+        {
+            "@class",
+            "@version",
+            "type",
+            "atomic_model",
+            "bridging_method",
+            "bridging_r_inner",
+            "bridging_r_outer",
+            "lora",
+        }
+    )
+
+    def _build_model(self):
+        from deepmd.pt.model.model import (
+            get_model,
+        )
+
+        cfg = {
+            "type": "dpa4",
+            "type_map": ["O", "H"],
+            "descriptor": {
+                "type": "dpa4",
+                "sel": 10,
+                "rcut": 4.0,
+                "channels": 16,
+                "n_radial": 8,
+                "lmax": 2,
+                "mmax": 1,
+                "n_blocks": 2,
+                "precision": "float64",
+                "seed": 42,
+            },
+            "fitting_net": {
+                "type": "dpa4_ener",
+                "neuron": [0],
+                "precision": "float64",
+                "seed": 42,
+            },
+        }
+        return get_model(cfg)
+
+    def test_serialized_subdicts_deserialize_via_dpmodel(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4 import (
+            DescrptDPA4,
+        )
+        from deepmd.dpmodel.fitting.dpa4_ener import (
+            SeZMEnergyFittingNet,
+        )
+
+        model = self._build_model()
+        data = model.serialize()
+        atomic = data["atomic_model"]
+        assert "descriptor" in atomic, sorted(atomic)
+        assert "fitting" in atomic, sorted(atomic)
+        dp_descr = DescrptDPA4.deserialize(atomic["descriptor"])
+        dp_fit = SeZMEnergyFittingNet.deserialize(atomic["fitting"])
+        assert dp_fit.dim_descrpt == dp_descr.get_dim_out()
+
+    def test_top_level_fields_pinned(self) -> None:
+        model = self._build_model()
+        data = model.serialize()
+        unknown = set(data) - self.KNOWN_TOP_LEVEL_KEYS
+        assert not unknown, (
+            f"pt SeZMModel.serialize() gained new top-level field(s) {sorted(unknown)}; "
+            "the dpmodel DPA4 model port (PR-2/PR-3) must be updated to handle them "
+            "before this contract test is extended."
+        )
+        # out-of-scope features must be disabled for the core config
+        assert str(data["bridging_method"]).lower() == "none", data["bridging_method"]
+        assert data["lora"] is None, data["lora"]
+        # core-config atomic_model must have no density fitting attached
+        assert data["atomic_model"].get("dens_fitting") is None
