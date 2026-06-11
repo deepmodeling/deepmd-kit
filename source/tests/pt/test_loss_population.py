@@ -212,7 +212,6 @@ class TestPopulationLossMAEValue(unittest.TestCase):
     def test_mae_spin_value(self):
         """Spin = alpha - beta; error counted correctly."""
         natoms = 2
-        nframes = 1
         pop_pred = torch.tensor([[[2.0, 1.0], [2.0, 1.0]]])  # spin = 1 per atom
         pop_label = torch.tensor([[[1.0, 1.0], [1.0, 1.0]]])  # spin = 0 per atom
         model_pred = {"population": pop_pred}
