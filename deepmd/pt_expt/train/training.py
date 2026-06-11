@@ -39,9 +39,7 @@ from deepmd.loggers.training import (
     format_training_message_per_task,
 )
 from deepmd.pt.utils.compile_compat import next_safe_prime as _next_safe_prime
-from deepmd.pt.utils.compile_compat import (
-    rebuild_graph_module as _rebuild_graph_module,
-)
+from deepmd.pt.utils.compile_compat import rebuild_graph_module as _rebuild_graph_module
 from deepmd.pt.utils.compile_compat import (
     strip_saved_tensor_detach as _strip_saved_tensor_detach,
 )
