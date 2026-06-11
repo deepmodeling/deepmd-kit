@@ -544,13 +544,12 @@ void FixCBOAMD::compute_deepmd_dipole() {
                            dipole_virial_deepmd, dipole_atom_deepmd,
                            dipole_atom_virial_deepmd, coords_deepmd,
                            atom_types_deepmd, cell_deepmd);
-    // Extract dipole components (DeepMD returns in eV/A, convert to a.u.)
-    // dipole[0] = dipole_deepmd[0] * ANGSTROM_TO_BOHR;
-    // dipole[1] = dipole_deepmd[1] * ANGSTROM_TO_BOHR;
-    // dipole[2] = dipole_deepmd[2] * ANGSTROM_TO_BOHR;
-    dipole[0] = dipole_deepmd[0];
-    dipole[1] = dipole_deepmd[1];
-    dipole[2] = dipole_deepmd[2];
+    // The CO2 dipole model is trained on Wannier-center displacements in
+    // e*Angstrom. Convert the length unit to Bohr before using atomic-unit CBO
+    // equations.
+    dipole[0] = dipole_deepmd[0] * ANGSTROM_TO_BOHR;
+    dipole[1] = dipole_deepmd[1] * ANGSTROM_TO_BOHR;
+    dipole[2] = dipole_deepmd[2] * ANGSTROM_TO_BOHR;
   } catch (const std::exception& e) {
     error->all(FLERR, "DeepMD dipole computation failed: {}", e.what());
   }
