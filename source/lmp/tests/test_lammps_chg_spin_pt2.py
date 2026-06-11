@@ -25,9 +25,7 @@ from write_lmp_data import (
 )
 
 pt2_file = Path(__file__).parent.parent.parent / "tests" / "infer" / "chg_spin.pt2"
-ref_file = (
-    Path(__file__).parent.parent.parent / "tests" / "infer" / "chg_spin.expected"
-)
+ref_file = Path(__file__).parent.parent.parent / "tests" / "infer" / "chg_spin.expected"
 data_file = Path(__file__).parent / "data_chg_spin_pt2.lmp"
 
 # Reference values written by source/tests/infer/gen_chg_spin.py (PBC case):
