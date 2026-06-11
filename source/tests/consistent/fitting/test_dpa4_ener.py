@@ -6,9 +6,7 @@ from typing import (
 
 import numpy as np
 
-from deepmd.dpmodel.fitting.dpa4_ener import (
-    SeZMEnergyFittingNet as SeZMEnerFittingDP,
-)
+from deepmd.dpmodel.fitting.dpa4_ener import SeZMEnergyFittingNet as SeZMEnerFittingDP
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
@@ -28,9 +26,7 @@ from .common import (
 if INSTALLED_PT:
     import torch
 
-    from deepmd.pt.model.task.sezm_ener import (
-        SeZMEnergyFittingNet as SeZMEnerFittingPT,
-    )
+    from deepmd.pt.model.task.sezm_ener import SeZMEnergyFittingNet as SeZMEnerFittingPT
     from deepmd.pt.utils.env import DEVICE as PT_DEVICE
 else:
     SeZMEnerFittingPT = None

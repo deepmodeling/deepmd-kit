@@ -9,8 +9,8 @@ import torch
 
 from deepmd.dpmodel.utils.lebedev import (
     LEBEDEV_PRECISION_TO_NPOINTS,
-    load_lebedev_rule as load_lebedev_rule_np,
 )
+from deepmd.dpmodel.utils.lebedev import load_lebedev_rule as load_lebedev_rule_np
 
 __all__ = [
     "LEBEDEV_PRECISION_TO_NPOINTS",

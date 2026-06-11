@@ -15,18 +15,10 @@ import numpy as np
 import pytest
 import torch
 
-from deepmd.dpmodel.descriptor.dpa4_nn import (
-    indexing as dp_indexing,
-)
-from deepmd.dpmodel.descriptor.dpa4_nn import (
-    utils as dp_utils,
-)
-from deepmd.pt.model.descriptor.sezm_nn import (
-    indexing as pt_indexing,
-)
-from deepmd.pt.model.descriptor.sezm_nn import (
-    utils as pt_utils,
-)
+from deepmd.dpmodel.descriptor.dpa4_nn import indexing as dp_indexing
+from deepmd.dpmodel.descriptor.dpa4_nn import utils as dp_utils
+from deepmd.pt.model.descriptor.sezm_nn import indexing as pt_indexing
+from deepmd.pt.model.descriptor.sezm_nn import utils as pt_utils
 
 
 def pt_state_to_numpy(module: torch.nn.Module) -> dict[str, np.ndarray]:
@@ -409,12 +401,8 @@ class TestRadialParity:
     )  # with hidden layers (Linear+RMSNorm+act) and pure-linear (no hidden) branch
     @pytest.mark.parametrize("activation", ["silu", "tanh"])  # activation mapping
     def test_radial_mlp(self, mlp_layers, activation) -> None:
-        from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
-            RadialMLP as DPRadialMLP,
-        )
-        from deepmd.pt.model.descriptor.sezm_nn.radial import (
-            RadialMLP as PTRadialMLP,
-        )
+        from deepmd.dpmodel.descriptor.dpa4_nn.radial import RadialMLP as DPRadialMLP
+        from deepmd.pt.model.descriptor.sezm_nn.radial import RadialMLP as PTRadialMLP
 
         pt_mod = PTRadialMLP(
             mlp_layers,
@@ -441,9 +429,7 @@ class TestRadialParity:
         assert_parity(dp_mod.call(x), pt_mod(torch.from_numpy(x)))
 
     def test_radial_mlp_roundtrip(self) -> None:
-        from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
-            RadialMLP as DPRadialMLP,
-        )
+        from deepmd.dpmodel.descriptor.dpa4_nn.radial import RadialMLP as DPRadialMLP
 
         dp_mod = DPRadialMLP(
             [16, 32, 24],
@@ -460,18 +446,14 @@ class TestRadialParity:
 
     def test_radial_mlp_zero_input_is_zero(self) -> None:
         # bias-free design contract: RadialMLP(0) = 0
-        from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
-            RadialMLP as DPRadialMLP,
-        )
+        from deepmd.dpmodel.descriptor.dpa4_nn.radial import RadialMLP as DPRadialMLP
 
         dp_mod = DPRadialMLP([8, 16, 4], precision="float64", seed=3)
         out = dp_mod.call(np.zeros((5, 8), dtype=np.float64))
         np.testing.assert_array_equal(np.asarray(out), 0.0)
 
     def test_radial_mlp_unsupported_activation(self) -> None:
-        from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
-            RadialMLP as DPRadialMLP,
-        )
+        from deepmd.dpmodel.descriptor.dpa4_nn.radial import RadialMLP as DPRadialMLP
 
         dp_mod = DPRadialMLP([4, 8, 4], activation_function="nope", seed=0)
         with pytest.raises(NotImplementedError):
@@ -511,9 +493,7 @@ class TestRadialParity:
         from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
             RadialBasis as DPRadialBasis,
         )
-        from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
-            RadialMLP as DPRadialMLP,
-        )
+        from deepmd.dpmodel.descriptor.dpa4_nn.radial import RadialMLP as DPRadialMLP
 
         with pytest.raises(ValueError):  # rcut <= 0
             DPEnvelope(rcut=0.0)
@@ -536,9 +516,7 @@ class TestRadialParity:
         from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
             RadialBasis as DPRadialBasis,
         )
-        from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
-            RadialMLP as DPRadialMLP,
-        )
+        from deepmd.dpmodel.descriptor.dpa4_nn.radial import RadialMLP as DPRadialMLP
 
         for klass in (DPEnvelope, DPRadialBasis, DPRadialMLP, DPRMSNorm):
             with pytest.raises(ValueError):
@@ -1384,12 +1362,8 @@ class TestS2GridParity:
         seed=7,
     ):
         """Build a pt S2GridNet, perturb its params, and copy them into dp."""
-        from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import (
-            S2GridNet as DPS2GridNet,
-        )
-        from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
-            S2GridNet as PTS2GridNet,
-        )
+        from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import S2GridNet as DPS2GridNet
+        from deepmd.pt.model.descriptor.sezm_nn.grid_net import S2GridNet as PTS2GridNet
 
         pt_net = PTS2GridNet(
             lmax=lmax,
@@ -1627,9 +1601,7 @@ class TestS2GridParity:
     @pytest.mark.parametrize("op_type", ["glu", "branch"])  # grid operation
     @pytest.mark.parametrize("mlp_bias", [False, True])  # scalar gate bias
     def test_s2_grid_net_serialize_roundtrip(self, op_type, mlp_bias) -> None:
-        from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import (
-            S2GridNet as DPS2GridNet,
-        )
+        from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import S2GridNet as DPS2GridNet
 
         pt_net, dp_net = self._build_grid_nets(
             lmax=2, op_type=op_type, layout="ndfc", mlp_bias=mlp_bias
@@ -1661,9 +1633,7 @@ class TestS2GridParity:
 
     # ------------------------------------------------ (d) not-ported guards
     def test_not_ported_guards(self) -> None:
-        from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import (
-            S2GridNet as DPS2GridNet,
-        )
+        from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import S2GridNet as DPS2GridNet
         from deepmd.dpmodel.descriptor.dpa4_nn.projection import (
             S2GridProjector as DPS2GridProjector,
         )
@@ -1695,9 +1665,7 @@ class TestS2GridParity:
         from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import (
             GridBranch as DPGridBranch,
         )
-        from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import (
-            S2GridNet as DPS2GridNet,
-        )
+        from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import S2GridNet as DPS2GridNet
         from deepmd.dpmodel.descriptor.dpa4_nn.projection import (
             S2GridProjector as DPS2GridProjector,
         )
@@ -2720,27 +2688,15 @@ def _build_real_edge_caches(
     from deepmd.dpmodel.descriptor.dpa4_nn.edge_cache import (
         build_edge_cache as dp_build_edge_cache,
     )
-    from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
-        C3CutoffEnvelope as DPEnvelope,
-    )
-    from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
-        RadialBasis as DPRadialBasis,
-    )
-    from deepmd.dpmodel.descriptor.dpa4_nn.wignerd import (
-        WignerDCalculator as DPWigner,
-    )
+    from deepmd.dpmodel.descriptor.dpa4_nn.radial import C3CutoffEnvelope as DPEnvelope
+    from deepmd.dpmodel.descriptor.dpa4_nn.radial import RadialBasis as DPRadialBasis
+    from deepmd.dpmodel.descriptor.dpa4_nn.wignerd import WignerDCalculator as DPWigner
     from deepmd.pt.model.descriptor.sezm_nn.edge_cache import (
         build_edge_cache as pt_build_edge_cache,
     )
-    from deepmd.pt.model.descriptor.sezm_nn.radial import (
-        C3CutoffEnvelope as PTEnvelope,
-    )
-    from deepmd.pt.model.descriptor.sezm_nn.radial import (
-        RadialBasis as PTRadialBasis,
-    )
-    from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
-        WignerDCalculator as PTWigner,
-    )
+    from deepmd.pt.model.descriptor.sezm_nn.radial import C3CutoffEnvelope as PTEnvelope
+    from deepmd.pt.model.descriptor.sezm_nn.radial import RadialBasis as PTRadialBasis
+    from deepmd.pt.model.descriptor.sezm_nn.wignerd import WignerDCalculator as PTWigner
 
     pt_rb = PTRadialBasis(rcut=rcut, n_radial=n_radial, dtype=torch.float64)
     rng = np.random.default_rng(seed)
@@ -3341,8 +3297,12 @@ class TestDescriptorParity:
         return kwargs
 
     def _build_descr_pair(self, perturb_seed=2130, **overrides):
-        from deepmd.dpmodel.descriptor.dpa4 import DescrptDPA4
-        from deepmd.pt.model.descriptor.sezm import DescrptSeZM
+        from deepmd.dpmodel.descriptor.dpa4 import (
+            DescrptDPA4,
+        )
+        from deepmd.pt.model.descriptor.sezm import (
+            DescrptSeZM,
+        )
 
         kwargs = self._descr_kwargs(**overrides)
         pt_mod = DescrptSeZM(**kwargs).double().eval()
@@ -3428,8 +3388,12 @@ class TestDescriptorParity:
         self._assert_descr_parity(pt_mod, dp_mod)
 
     def test_descriptor_cross_deserialize(self) -> None:
-        from deepmd.dpmodel.descriptor.dpa4 import DescrptDPA4
-        from deepmd.pt.model.descriptor.sezm import DescrptSeZM
+        from deepmd.dpmodel.descriptor.dpa4 import (
+            DescrptDPA4,
+        )
+        from deepmd.pt.model.descriptor.sezm import (
+            DescrptSeZM,
+        )
 
         pt_mod, dp_mod, _ = self._build_descr_pair()
         # dp serialize emits exactly the pt state_dict key set

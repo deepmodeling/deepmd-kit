@@ -2,11 +2,11 @@
 from .dipole_fitting import (
     DipoleFitting,
 )
-from .dpa4_ener import (
-    SeZMEnergyFittingNet,
-)
 from .dos_fitting import (
     DOSFittingNet,
+)
+from .dpa4_ener import (
+    SeZMEnergyFittingNet,
 )
 from .ener_fitting import (
     EnergyFittingNet,

@@ -47,7 +47,9 @@ class TestRealSphericalHarmonics:
     def test_matches_e3nn(self, lmax):
         pytest.importorskip("e3nn")
         import torch
-        from e3nn import o3
+        from e3nn import (
+            o3,
+        )
 
         rng = np.random.default_rng(0)
         v = rng.standard_normal((64, 3))
