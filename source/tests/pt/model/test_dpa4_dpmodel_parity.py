@@ -1752,6 +1752,7 @@ def _build_so2_edge_data(
     channels,
     masked="none",
     with_gate=False,
+    n_radial=None,
 ):
     """Build matching pt (sparse) and dp (padded) edge caches.
 
@@ -1761,6 +1762,10 @@ def _build_so2_edge_data(
     share identical Wigner-D blocks built from the (parity-proven) dpmodel
     ``WignerDCalculator``. Invalid slots intentionally keep garbage (nonzero)
     envelope/feature values so a missing mask shows up as a parity failure.
+
+    ``n_radial``: when not None, ``edge_rbf`` is filled with random values of
+    width ``n_radial`` (garbage in masked slots too); otherwise it stays the
+    zero (E, 1) placeholder used by consumers that ignore ``edge_rbf``.
 
     ``masked`` is one of:
     - ``"none"``: all slots valid;
@@ -1804,6 +1809,10 @@ def _build_so2_edge_data(
     D_full, Dt_full = WignerDCalculator(lmax, precision="float64").call(quat)
     D_full = np.asarray(D_full)
     Dt_full = np.asarray(Dt_full)
+    if n_radial is None:
+        edge_rbf = np.zeros((n_edge, 1))
+    else:
+        edge_rbf = rng.normal(size=(n_edge, n_radial))
     edge_env = rng.uniform(0.2, 1.0, size=(n_edge, 1))
     deg = ((edge_env[:, 0] ** 2) * mask).reshape(nloc, nnei).sum(axis=1)
     inv_sqrt_deg = (1.0 / np.sqrt(deg + 1.0)).reshape(nloc, 1, 1)
@@ -1817,7 +1826,7 @@ def _build_so2_edge_data(
         dst=t(dst[valid]),
         edge_type_feat=t(np.zeros((n_valid, channels))),
         edge_vec=t(edge_vec[valid]),
-        edge_rbf=t(np.zeros((n_valid, 1))),
+        edge_rbf=t(edge_rbf[valid]),
         edge_env=t(edge_env[valid]),
         deg=t(deg),
         inv_sqrt_deg=t(inv_sqrt_deg),
@@ -1830,7 +1839,7 @@ def _build_so2_edge_data(
         dst=dst,
         edge_type_feat=np.zeros((n_edge, channels)),
         edge_vec=edge_vec,
-        edge_rbf=np.zeros((n_edge, 1)),
+        edge_rbf=edge_rbf,
         edge_env=edge_env,
         deg=deg,
         inv_sqrt_deg=inv_sqrt_deg,
@@ -2269,6 +2278,331 @@ class TestSO2Parity:
             DPSO2Conv.deserialize({"@class": "NotConv", "@version": 1})
 
 
+class TestEmbeddingParity:
+    nloc = 5
+    nnei = 4
+
+    def _perturb(self, pt_mod: torch.nn.Module, seed: int) -> None:
+        rng = np.random.default_rng(seed)
+        with torch.no_grad():
+            for p in pt_mod.parameters():
+                p += torch.from_numpy(0.1 * rng.normal(size=tuple(p.shape)))
+
+    # ---------- SeZMTypeEmbedding ----------
+    @pytest.mark.parametrize("padding", [False, True])  # zero padding row branch
+    def test_type_embedding(self, padding) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.embedding import (
+            SeZMTypeEmbedding as DPTypeEmbed,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.embedding import (
+            SeZMTypeEmbedding as PTTypeEmbed,
+        )
+
+        ntypes, embed_dim = 4, 6
+        pt_mod = PTTypeEmbed(
+            ntypes=ntypes,
+            embed_dim=embed_dim,
+            dtype=torch.float64,
+            seed=21,
+            trainable=True,
+            padding=padding,
+        )
+        dp_mod = DPTypeEmbed(
+            ntypes=ntypes,
+            embed_dim=embed_dim,
+            precision="float64",
+            seed=21,
+            padding=padding,
+        )
+        state = pt_state_to_numpy(pt_mod)
+        # pt has no serialize(); the @variables key set must equal the pt
+        # state_dict key set so the weights map one-to-one.
+        assert set(dp_mod.serialize()["@variables"]) == set(state)
+        assert state["adam_type_embedding"].shape == dp_mod.adam_type_embedding.shape
+        dp_mod.adam_type_embedding = state["adam_type_embedding"]
+        rng = np.random.default_rng(2070)
+        # include the padding row index ntypes when padding=True
+        atype = rng.integers(0, ntypes + 1 if padding else ntypes, size=(3, 5))
+        assert_parity(dp_mod.call(atype), pt_mod(torch.from_numpy(atype)))
+        if padding:
+            pad_out = np.asarray(dp_mod.call(np.full((2,), ntypes, dtype=np.int64)))
+            np.testing.assert_array_equal(pad_out, 0.0)
+
+    @pytest.mark.parametrize("padding", [False, True])  # zero padding row branch
+    def test_type_embedding_roundtrip(self, padding) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.embedding import (
+            SeZMTypeEmbedding as DPTypeEmbed,
+        )
+
+        dp_mod = DPTypeEmbed(
+            ntypes=3, embed_dim=4, precision="float64", seed=22, padding=padding
+        )
+        dp_mod2 = DPTypeEmbed.deserialize(dp_mod.serialize())
+        atype = np.array([0, 2, 1, 1], dtype=np.int64)
+        np.testing.assert_array_equal(
+            np.asarray(dp_mod.call(atype)), np.asarray(dp_mod2.call(atype))
+        )
+
+    def test_type_embedding_errors(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.embedding import (
+            SeZMTypeEmbedding as DPTypeEmbed,
+        )
+
+        with pytest.raises(ValueError):  # non-positive ntypes
+            DPTypeEmbed(ntypes=0, embed_dim=4)
+        with pytest.raises(ValueError):  # non-positive embed_dim
+            DPTypeEmbed(ntypes=3, embed_dim=0)
+        with pytest.raises(ValueError):  # wrong class tag
+            DPTypeEmbed.deserialize({"@class": "NotTypeEmbed", "@version": 1})
+        dp_mod = DPTypeEmbed(ntypes=3, embed_dim=4, precision="float64")
+        data = dp_mod.serialize()
+        data["@variables"]["adam_type_embedding"] = np.zeros((2, 4))
+        with pytest.raises(ValueError):  # table shape mismatch
+            DPTypeEmbed.deserialize(data)
+
+    # ---------- GeometricInitialEmbedding ----------
+    def _build_gie_pair(self, lmax, channels):
+        from deepmd.dpmodel.descriptor.dpa4_nn.embedding import (
+            GeometricInitialEmbedding as DPGIE,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.embedding import (
+            GeometricInitialEmbedding as PTGIE,
+        )
+
+        pt_mod = PTGIE(lmax=lmax, channels=channels, dtype=torch.float64)
+        # pt serialize() is config-only; the dp module is weight-free.
+        dp_mod = DPGIE.deserialize(pt_mod.serialize())
+        return pt_mod, dp_mod
+
+    @pytest.mark.parametrize(
+        "masked", ["none", "slots", "node"]
+    )  # padded-slot patterns (node = one all-masked destination)
+    @pytest.mark.parametrize(
+        "zonal_provided", [False, True]
+    )  # zonal_coupling: None (gather from Dt_full, core lmax_node==lmax_mp)
+    #    vs provided (core lmax_node>lmax_mp via _build_gie_zonal_coupling)
+    @pytest.mark.parametrize("with_gate", [False, True])  # SFPG gate branch
+    def test_gie(self, masked, zonal_provided, with_gate) -> None:
+        lmax, channels = 2, 4
+        pt_mod, dp_mod = self._build_gie_pair(lmax, channels)
+        rng = np.random.default_rng(2071)
+        pt_cache, dp_cache, radial, radial_valid, _, valid = _build_so2_edge_data(
+            rng,
+            nloc=self.nloc,
+            nnei=self.nnei,
+            lmax=lmax,
+            channels=channels,
+            masked=masked,
+            with_gate=with_gate,
+        )
+        if zonal_provided:
+            rows = dp_mod.non_scalar_row_index
+            cols = dp_mod.zonal_m0_col_index_for_row
+            dp_zonal = np.asarray(dp_cache.Dt_full)[:, rows, cols]
+            pt_zonal = pt_cache.Dt_full[
+                :, torch.from_numpy(rows), torch.from_numpy(cols)
+            ]
+        else:
+            dp_zonal = pt_zonal = None
+        out_dp = dp_mod.call(
+            n_nodes=self.nloc,
+            edge_cache=dp_cache,
+            radial_feat=radial[:, 1:, :],
+            zonal_coupling=dp_zonal,
+        )
+        out_pt = pt_mod(
+            n_nodes=self.nloc,
+            edge_cache=pt_cache,
+            radial_feat=torch.from_numpy(radial_valid[:, 1:, :]),
+            zonal_coupling=pt_zonal,
+        )
+        assert_parity(out_dp, out_pt)
+        # l=0 row must be exactly zero (comes from type embedding instead)
+        np.testing.assert_array_equal(np.asarray(out_dp)[:, 0, :], 0.0)
+
+    def test_gie_lmax0(self) -> None:
+        # lmax=0 short-circuit: all-zero (N, 1, C) on both sides
+        pt_mod, dp_mod = self._build_gie_pair(0, 3)
+        rng = np.random.default_rng(2072)
+        pt_cache, dp_cache, _, _, _, _ = _build_so2_edge_data(
+            rng, nloc=self.nloc, nnei=self.nnei, lmax=1, channels=3
+        )
+        out_dp = np.asarray(
+            dp_mod.call(n_nodes=self.nloc, edge_cache=dp_cache, radial_feat=None)
+        )
+        out_pt = pt_mod(n_nodes=self.nloc, edge_cache=pt_cache, radial_feat=None)
+        assert out_dp.shape == (self.nloc, 1, 3)
+        np.testing.assert_array_equal(out_dp, out_pt.detach().cpu().numpy())
+        np.testing.assert_array_equal(out_dp, 0.0)
+
+    def test_gie_roundtrip(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.embedding import (
+            GeometricInitialEmbedding as DPGIE,
+        )
+
+        dp_mod = DPGIE(lmax=3, channels=4, precision="float64")
+        dp_mod2 = DPGIE.deserialize(dp_mod.serialize())
+        rng = np.random.default_rng(2073)
+        _, dp_cache, radial, _, _, _ = _build_so2_edge_data(
+            rng, nloc=self.nloc, nnei=self.nnei, lmax=3, channels=4, masked="slots"
+        )
+        out1 = dp_mod.call(
+            n_nodes=self.nloc, edge_cache=dp_cache, radial_feat=radial[:, 1:, :]
+        )
+        out2 = dp_mod2.call(
+            n_nodes=self.nloc, edge_cache=dp_cache, radial_feat=radial[:, 1:, :]
+        )
+        np.testing.assert_array_equal(np.asarray(out1), np.asarray(out2))
+
+    def test_gie_errors(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.embedding import (
+            GeometricInitialEmbedding as DPGIE,
+        )
+
+        with pytest.raises(ValueError):  # wrong class tag
+            DPGIE.deserialize({"@class": "NotGIE", "@version": 1})
+        dp_mod = DPGIE(lmax=2, channels=4, precision="float64")
+        rng = np.random.default_rng(2074)
+        _, dp_cache, radial, _, _, _ = _build_so2_edge_data(
+            rng, nloc=self.nloc, nnei=self.nnei, lmax=2, channels=4
+        )
+        with pytest.raises(ValueError):  # E not a multiple of N
+            dp_mod.call(n_nodes=3, edge_cache=dp_cache, radial_feat=radial[:, 1:, :])
+
+    # ---------- EnvironmentInitialEmbedding ----------
+    n_radial = 5
+    ntypes = 3
+
+    def _env_kwargs(self, **overrides):
+        kwargs = {
+            "ntypes": self.ntypes,
+            "n_radial": self.n_radial,
+            "channels": 4,
+            "embed_dim": 12,
+            "axis_dim": 3,
+            "type_dim": 4,
+            "hidden_dim": 8,
+            "mlp_bias": False,
+            "activation_function": "silu",
+            "eps": 1e-7,
+        }
+        kwargs.update(overrides)
+        return kwargs
+
+    def _build_env_pair(self, seed=23, perturb_seed=2075, **overrides):
+        from deepmd.dpmodel.descriptor.dpa4_nn.embedding import (
+            EnvironmentInitialEmbedding as DPEnv,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.embedding import (
+            EnvironmentInitialEmbedding as PTEnv,
+        )
+
+        kwargs = self._env_kwargs(**overrides)
+        pt_mod = PTEnv(**kwargs, dtype=torch.float64, seed=seed, trainable=True)
+        # output_proj is zero-initialized; perturb so the output is nonzero
+        self._perturb(pt_mod, perturb_seed)
+        dp_mod = DPEnv.deserialize(pt_mod.serialize())
+        return pt_mod, dp_mod
+
+    def _assert_env_parity(
+        self, pt_mod, dp_mod, *, masked="slots", with_gate=False
+    ) -> None:
+        rng = np.random.default_rng(2076)
+        pt_cache, dp_cache, _, _, _, _ = _build_so2_edge_data(
+            rng,
+            nloc=self.nloc,
+            nnei=self.nnei,
+            lmax=1,
+            channels=4,
+            masked=masked,
+            with_gate=with_gate,
+            n_radial=self.n_radial,
+        )
+        atype = rng.integers(0, self.ntypes, size=(self.nloc,))
+        out_dp = dp_mod.call(edge_cache=dp_cache, atype_flat=atype, n_nodes=self.nloc)
+        out_pt = pt_mod(
+            edge_cache=pt_cache,
+            atype_flat=torch.from_numpy(atype),
+            n_nodes=self.nloc,
+        )
+        assert_parity(out_dp, out_pt)
+
+    @pytest.mark.parametrize(
+        "masked", ["none", "slots", "node"]
+    )  # padded-slot patterns (node = one all-masked destination)
+    @pytest.mark.parametrize("mlp_bias", [False, True])  # MLP bias branch
+    def test_env_embedding(self, masked, mlp_bias) -> None:
+        pt_mod, dp_mod = self._build_env_pair(mlp_bias=mlp_bias)
+        self._assert_env_parity(pt_mod, dp_mod, masked=masked)
+
+    def test_env_embedding_src_gate(self) -> None:
+        pt_mod, dp_mod = self._build_env_pair()
+        self._assert_env_parity(pt_mod, dp_mod, with_gate=True)
+
+    def test_env_embedding_wide_rbf(self) -> None:
+        # embed_dim - 2*type_dim > 32 exercises the non-clamped rbf_out_dim
+        pt_mod, dp_mod = self._build_env_pair(embed_dim=42, axis_dim=3)
+        self._assert_env_parity(pt_mod, dp_mod)
+
+    @pytest.mark.parametrize("mlp_bias", [False, True])  # MLP bias branch
+    def test_env_embedding_serialize_keys(self, mlp_bias) -> None:
+        pt_mod, dp_mod = self._build_env_pair(mlp_bias=mlp_bias)
+        assert set(dp_mod.serialize()["@variables"]) == set(pt_mod.state_dict())
+
+    def test_env_embedding_roundtrip(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.embedding import (
+            EnvironmentInitialEmbedding as DPEnv,
+        )
+
+        _, dp_mod = self._build_env_pair(mlp_bias=True)
+        dp_mod2 = DPEnv.deserialize(dp_mod.serialize())
+        rng = np.random.default_rng(2077)
+        _, dp_cache, _, _, _, _ = _build_so2_edge_data(
+            rng,
+            nloc=self.nloc,
+            nnei=self.nnei,
+            lmax=1,
+            channels=4,
+            masked="slots",
+            n_radial=self.n_radial,
+        )
+        atype = rng.integers(0, self.ntypes, size=(self.nloc,))
+        out1 = dp_mod.call(edge_cache=dp_cache, atype_flat=atype, n_nodes=self.nloc)
+        out2 = dp_mod2.call(edge_cache=dp_cache, atype_flat=atype, n_nodes=self.nloc)
+        np.testing.assert_array_equal(np.asarray(out1), np.asarray(out2))
+
+    def test_env_embedding_errors(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.embedding import (
+            EnvironmentInitialEmbedding as DPEnv,
+        )
+
+        with pytest.raises(ValueError):  # axis_dim must be < embed_dim
+            DPEnv(**self._env_kwargs(axis_dim=12), precision="float64")
+        with pytest.raises(ValueError):  # wrong class tag
+            DPEnv.deserialize({"@class": "NotEnv", "@version": 1})
+        dp_mod = DPEnv(**self._env_kwargs(), precision="float64", seed=2)
+        data = dp_mod.serialize()
+        data["@variables"].pop("output_proj.matrix")
+        with pytest.raises(ValueError):  # variable key set mismatch
+            DPEnv.deserialize(data)
+        data = dp_mod.serialize()
+        data["@variables"]["output_proj.matrix"] = np.zeros((2, 2))
+        with pytest.raises(ValueError):  # variable shape mismatch
+            DPEnv.deserialize(data)
+        rng = np.random.default_rng(2078)
+        _, dp_cache, _, _, _, _ = _build_so2_edge_data(
+            rng,
+            nloc=self.nloc,
+            nnei=self.nnei,
+            lmax=1,
+            channels=4,
+            n_radial=self.n_radial,
+        )
+        atype = rng.integers(0, self.ntypes, size=(self.nloc,))
+        with pytest.raises(ValueError):  # E not a multiple of N
+            dp_mod.call(edge_cache=dp_cache, atype_flat=atype, n_nodes=3)
+
+
 class TestNoTorchImport:
     def test_dpa4_nn_does_not_import_torch(self) -> None:
         code = (
@@ -2284,7 +2618,8 @@ class TestNoTorchImport:
             "deepmd.dpmodel.descriptor.dpa4_nn.grid_net, "
             "deepmd.dpmodel.descriptor.dpa4_nn.so2, "
             "deepmd.dpmodel.descriptor.dpa4_nn.attention, "
-            "deepmd.dpmodel.descriptor.dpa4_nn.edge_cache; "
+            "deepmd.dpmodel.descriptor.dpa4_nn.edge_cache, "
+            "deepmd.dpmodel.descriptor.dpa4_nn.embedding; "
             "print('torch' in sys.modules)"
         )
         out = subprocess.run(
