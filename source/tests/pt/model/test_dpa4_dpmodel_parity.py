@@ -314,12 +314,245 @@ class TestUtilsParity:
             )
 
 
+class TestRadialParity:
+    rcut = 6.0
+
+    def _r_grid(self) -> np.ndarray:
+        # r=0 (sinc/envelope zero-distance branch), r=rcut (envelope boundary),
+        # r>rcut (envelope-zero branch), plus a dense inside/outside sweep
+        return np.concatenate(
+            [[0.0, self.rcut, self.rcut + 0.5], np.linspace(0.05, 6.5, 200)]
+        )[:, None]
+
+    @pytest.mark.parametrize("exponent", [5, 7])  # envelope polynomial exponent
+    def test_envelope(self, exponent) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
+            C3CutoffEnvelope as DPEnvelope,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.radial import (
+            C3CutoffEnvelope as PTEnvelope,
+        )
+
+        pt_mod = PTEnvelope(rcut=self.rcut, exponent=exponent, dtype=torch.float64)
+        dp_mod = DPEnvelope(rcut=self.rcut, exponent=exponent, precision="float64")
+        r = self._r_grid()
+        res = dp_mod.call(r)
+        assert_parity(res, pt_mod(torch.from_numpy(r)))
+        # boundary contract: E(0)=1, E(r>=rcut)=0 exactly
+        np.testing.assert_array_equal(np.asarray(res)[0], 1.0)
+        np.testing.assert_array_equal(np.asarray(res)[r[:, 0] >= self.rcut], 0.0)
+
+    def test_envelope_roundtrip(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
+            C3CutoffEnvelope as DPEnvelope,
+        )
+
+        dp_mod = DPEnvelope(rcut=self.rcut, exponent=5, precision="float64")
+        dp_mod2 = DPEnvelope.deserialize(dp_mod.serialize())
+        r = self._r_grid()
+        np.testing.assert_array_equal(
+            np.asarray(dp_mod.call(r)), np.asarray(dp_mod2.call(r))
+        )
+
+    @pytest.mark.parametrize("basis_type", ["bessel", "gaussian"])  # both bases
+    @pytest.mark.parametrize("exponent", [5, 7])  # envelope exponent
+    def test_radial_basis(self, basis_type, exponent) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
+            RadialBasis as DPRadialBasis,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.radial import (
+            RadialBasis as PTRadialBasis,
+        )
+
+        n_radial = 16
+        pt_mod = PTRadialBasis(
+            rcut=self.rcut,
+            basis_type=basis_type,
+            n_radial=n_radial,
+            dtype=torch.float64,
+            exponent=exponent,
+        )
+        # perturb the trained frequencies so parity exercises copied weights,
+        # not just identical deterministic init
+        rng = np.random.default_rng(2030)
+        with torch.no_grad():
+            pt_mod.adam_freqs += torch.from_numpy(0.05 * rng.normal(size=(1, n_radial)))
+        serialized = pt_mod.serialize()
+        # pt state_dict key contract: only the trainable frequencies
+        assert list(serialized["@variables"]) == ["adam_freqs"]
+        dp_mod = DPRadialBasis.deserialize(serialized)
+        r = self._r_grid()
+        assert_parity(dp_mod.call(r), pt_mod(torch.from_numpy(r)))
+
+    @pytest.mark.parametrize("basis_type", ["bessel", "gaussian"])  # both bases
+    def test_radial_basis_roundtrip(self, basis_type) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
+            RadialBasis as DPRadialBasis,
+        )
+
+        dp_mod = DPRadialBasis(
+            rcut=self.rcut,
+            basis_type=basis_type,
+            n_radial=12,
+            precision="float64",
+            exponent=7,
+        )
+        dp_mod2 = DPRadialBasis.deserialize(dp_mod.serialize())
+        r = self._r_grid()
+        np.testing.assert_array_equal(
+            np.asarray(dp_mod.call(r)), np.asarray(dp_mod2.call(r))
+        )
+
+    @pytest.mark.parametrize(
+        "mlp_layers",
+        [[16, 32, 24], [16, 24]],
+    )  # with hidden layers (Linear+RMSNorm+act) and pure-linear (no hidden) branch
+    @pytest.mark.parametrize("activation", ["silu", "tanh"])  # activation mapping
+    def test_radial_mlp(self, mlp_layers, activation) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
+            RadialMLP as DPRadialMLP,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.radial import (
+            RadialMLP as PTRadialMLP,
+        )
+
+        pt_mod = PTRadialMLP(
+            mlp_layers,
+            activation_function=activation,
+            dtype=torch.float64,
+            seed=11,
+        )
+        # perturb all parameters (RMSNorm scale inits to ones, which would
+        # otherwise make the scale copy untested)
+        rng = np.random.default_rng(2031)
+        with torch.no_grad():
+            for p in pt_mod.parameters():
+                p += torch.from_numpy(0.1 * rng.normal(size=tuple(p.shape)))
+        serialized = pt_mod.serialize()
+        # pt state_dict key contract: Sequential index 3*i for linear `matrix`,
+        # 3*i+1 for RMSNorm `adam_scale` (activation modules are parameter-free)
+        n_lin = len(mlp_layers) - 1
+        expected_keys = {f"{3 * i}.matrix" for i in range(n_lin)} | {
+            f"{3 * i + 1}.adam_scale" for i in range(n_lin - 1)
+        }
+        assert set(serialized["@variables"]) == expected_keys
+        dp_mod = DPRadialMLP.deserialize(serialized)
+        x = rng.normal(size=(50, mlp_layers[0]))
+        assert_parity(dp_mod.call(x), pt_mod(torch.from_numpy(x)))
+
+    def test_radial_mlp_roundtrip(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
+            RadialMLP as DPRadialMLP,
+        )
+
+        dp_mod = DPRadialMLP(
+            [16, 32, 24],
+            activation_function="silu",
+            precision="float64",
+            seed=5,
+        )
+        dp_mod2 = DPRadialMLP.deserialize(dp_mod.serialize())
+        rng = np.random.default_rng(2032)
+        x = rng.normal(size=(50, 16))
+        np.testing.assert_array_equal(
+            np.asarray(dp_mod.call(x)), np.asarray(dp_mod2.call(x))
+        )
+
+    def test_radial_mlp_zero_input_is_zero(self) -> None:
+        # bias-free design contract: RadialMLP(0) = 0
+        from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
+            RadialMLP as DPRadialMLP,
+        )
+
+        dp_mod = DPRadialMLP([8, 16, 4], precision="float64", seed=3)
+        out = dp_mod.call(np.zeros((5, 8), dtype=np.float64))
+        np.testing.assert_array_equal(np.asarray(out), 0.0)
+
+    def test_radial_mlp_unsupported_activation(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
+            RadialMLP as DPRadialMLP,
+        )
+
+        dp_mod = DPRadialMLP([4, 8, 4], activation_function="nope", seed=0)
+        with pytest.raises(NotImplementedError):
+            dp_mod.call(np.zeros((2, 4), dtype=np.float64))
+
+    def test_rmsnorm_parity_and_roundtrip(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.norm import RMSNorm as DPRMSNorm
+        from deepmd.pt.model.descriptor.sezm_nn.norm import RMSNorm as PTRMSNorm
+
+        channels = 24
+        pt_mod = PTRMSNorm(channels=channels, dtype=torch.float64, trainable=True)
+        rng = np.random.default_rng(2033)
+        with torch.no_grad():
+            pt_mod.adam_scale += torch.from_numpy(0.1 * rng.normal(size=(channels,)))
+        serialized = pt_mod.serialize()
+        assert list(serialized["@variables"]) == ["adam_scale"]
+        dp_mod = DPRMSNorm.deserialize(serialized)
+        x64 = rng.normal(size=(50, channels))
+        assert_parity(dp_mod.call(x64), pt_mod(torch.from_numpy(x64)))
+        # input-dtype promotion branch: fp32 input with fp64 params,
+        # output cast back to fp32 in both implementations
+        x32 = x64.astype(np.float32)
+        res32 = dp_mod.call(x32)
+        ref32 = pt_mod(torch.from_numpy(x32))
+        assert np.asarray(res32).dtype == np.float32
+        np.testing.assert_array_equal(np.asarray(res32), ref32.detach().numpy())
+        # serialize roundtrip is exact
+        dp_mod2 = DPRMSNorm.deserialize(dp_mod.serialize())
+        np.testing.assert_array_equal(
+            np.asarray(dp_mod.call(x64)), np.asarray(dp_mod2.call(x64))
+        )
+
+    def test_constructor_errors(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
+            C3CutoffEnvelope as DPEnvelope,
+        )
+        from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
+            RadialBasis as DPRadialBasis,
+        )
+        from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
+            RadialMLP as DPRadialMLP,
+        )
+
+        with pytest.raises(ValueError):  # rcut <= 0
+            DPEnvelope(rcut=0.0)
+        with pytest.raises(ValueError):  # exponent <= 0
+            DPEnvelope(rcut=6.0, exponent=0)
+        with pytest.raises(ValueError):  # rcut <= 0
+            DPRadialBasis(rcut=-1.0)
+        with pytest.raises(ValueError):  # n_radial <= 0
+            DPRadialBasis(rcut=6.0, n_radial=0)
+        with pytest.raises(ValueError):  # unknown basis_type
+            DPRadialBasis(rcut=6.0, basis_type="chebyshev")
+        with pytest.raises(ValueError):  # mlp_layers too short
+            DPRadialMLP([16])
+
+    def test_deserialize_wrong_class(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.norm import RMSNorm as DPRMSNorm
+        from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
+            C3CutoffEnvelope as DPEnvelope,
+        )
+        from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
+            RadialBasis as DPRadialBasis,
+        )
+        from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
+            RadialMLP as DPRadialMLP,
+        )
+
+        for klass in (DPEnvelope, DPRadialBasis, DPRadialMLP, DPRMSNorm):
+            with pytest.raises(ValueError):
+                klass.deserialize({"@class": "Nope", "@version": 1})
+
+
 class TestNoTorchImport:
     def test_dpa4_nn_does_not_import_torch(self) -> None:
         code = (
             "import sys; "
             "import deepmd.dpmodel.descriptor.dpa4_nn.indexing, "
-            "deepmd.dpmodel.descriptor.dpa4_nn.utils; "
+            "deepmd.dpmodel.descriptor.dpa4_nn.utils, "
+            "deepmd.dpmodel.descriptor.dpa4_nn.norm, "
+            "deepmd.dpmodel.descriptor.dpa4_nn.radial; "
             "print('torch' in sys.modules)"
         )
         out = subprocess.run(
