@@ -74,7 +74,10 @@ def load_lebedev_rule(precision: int) -> tuple[np.ndarray, np.ndarray]:
         point_key = f"points_{rule_key}"
         weight_key = f"weights_{rule_key}"
         if point_key not in rules or weight_key not in rules:
-            raise ValueError(f"Lebedev rule with precision {precision} is not packaged")
+            raise ValueError(
+                f"Lebedev rule with precision {precision} is not packaged; "
+                f"available precisions: {sorted(LEBEDEV_PRECISION_TO_NPOINTS)}"
+            )
         points = rules[point_key]
         weights = rules[weight_key]
     return points, weights
