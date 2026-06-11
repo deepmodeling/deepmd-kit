@@ -102,7 +102,7 @@ jobs:
           ENABLE_PADDLE: ${{ matrix.enable_paddle && '1' || '0' }}
         if: ${{ !matrix.check_memleak }}
       - name: Upload coverage to Codecov (non-blocking)
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         continue-on-error: true
         with:
           use_oidc: true
