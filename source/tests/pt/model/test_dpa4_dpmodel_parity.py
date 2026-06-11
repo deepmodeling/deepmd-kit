@@ -3479,3 +3479,166 @@ class TestNoTorchImport:
             [sys.executable, "-c", code], capture_output=True, text=True, check=True
         )
         assert out.stdout.strip() == "False"
+
+
+class TestFittingParity:
+    nf = 2
+    nloc = 6
+    in_dim = 12
+    ntypes = 2
+
+    def _build_pair(self, **overrides):
+        from deepmd.dpmodel.fitting.dpa4_ener import (
+            SeZMEnergyFittingNet as SeZMEnergyFittingNetDP,
+        )
+        from deepmd.pt.model.task.sezm_ener import (
+            SeZMEnergyFittingNet as SeZMEnergyFittingNetPT,
+        )
+
+        kwargs = {
+            "ntypes": self.ntypes,
+            "dim_descrpt": self.in_dim,
+            "neuron": [0],
+            "precision": "float64",
+            "seed": 5,
+        }
+        kwargs.update(overrides)
+        pt_mod = SeZMEnergyFittingNetPT(**kwargs).eval()
+        # bias_atom_e is zero-initialized; perturb for a nontrivial bias path
+        rng = np.random.default_rng(2140)
+        with torch.no_grad():
+            pt_mod.bias_atom_e += torch.from_numpy(
+                rng.normal(size=tuple(pt_mod.bias_atom_e.shape))
+            )
+        dp_mod = SeZMEnergyFittingNetDP.deserialize(pt_mod.serialize())
+        return pt_mod, dp_mod
+
+    def _inputs(self, seed=2141):
+        rng = np.random.default_rng(seed)
+        descriptor = rng.normal(size=(self.nf, self.nloc, self.in_dim))
+        # cover both atom types
+        atype = rng.integers(0, self.ntypes, size=(self.nf, self.nloc))
+        atype[0, 0], atype[0, 1] = 0, 1
+        return descriptor, atype
+
+    def _assert_fitting_parity(self, pt_mod, dp_mod, fparam=None, aparam=None):
+        descriptor, atype = self._inputs()
+        out_dp = dp_mod.call(descriptor, atype, fparam=fparam, aparam=aparam)["energy"]
+        out_pt = pt_mod(
+            torch.from_numpy(descriptor),
+            torch.from_numpy(atype),
+            fparam=None if fparam is None else torch.from_numpy(fparam),
+            aparam=None if aparam is None else torch.from_numpy(aparam),
+        )["energy"]
+        assert out_dp.shape == tuple(out_pt.shape)
+        assert_parity(out_dp, out_pt)
+
+    @pytest.mark.parametrize("bias_out", [False, True])  # output-layer bias
+    @pytest.mark.parametrize(
+        "neuron", [[0], [32], [16, 16], []]
+    )  # auto-width / fixed / deep / direct linear
+    def test_fitting(self, neuron, bias_out) -> None:
+        pt_mod, dp_mod = self._build_pair(neuron=neuron, bias_out=bias_out)
+        self._assert_fitting_parity(pt_mod, dp_mod)
+
+    def test_fitting_fparam_aparam(self) -> None:
+        pt_mod, dp_mod = self._build_pair(numb_fparam=2, numb_aparam=3)
+        rng = np.random.default_rng(2142)
+        fparam = rng.normal(size=(self.nf, 2))
+        aparam = rng.normal(size=(self.nf, self.nloc, 3))
+        self._assert_fitting_parity(pt_mod, dp_mod, fparam=fparam, aparam=aparam)
+
+    def test_fitting_default_fparam(self) -> None:
+        # fparam=None falls back to the default frame parameter on both sides
+        pt_mod, dp_mod = self._build_pair(numb_fparam=2, default_fparam=[0.5, -1.5])
+        self._assert_fitting_parity(pt_mod, dp_mod)
+
+    def test_fitting_not_mixed_types(self) -> None:
+        # one GLU net per atom type
+        pt_mod, dp_mod = self._build_pair(mixed_types=False)
+        self._assert_fitting_parity(pt_mod, dp_mod)
+
+    def test_fitting_exclude_types(self) -> None:
+        pt_mod, dp_mod = self._build_pair(exclude_types=[0])
+        self._assert_fitting_parity(pt_mod, dp_mod)
+
+    @pytest.mark.parametrize("bias_out", [False, True])  # output-layer bias
+    def test_fitting_cross_deserialize(self, bias_out) -> None:
+        from deepmd.dpmodel.fitting.dpa4_ener import (
+            SeZMEnergyFittingNet as SeZMEnergyFittingNetDP,
+        )
+        from deepmd.pt.model.task.sezm_ener import (
+            SeZMEnergyFittingNet as SeZMEnergyFittingNetPT,
+        )
+
+        pt_mod, dp_mod = self._build_pair(neuron=[16], bias_out=bias_out)
+        data = dp_mod.serialize()
+        assert data["type"] == "sezm_ener"
+        # the dp serialization carries exactly the pt state_dict key set
+        flat = {k: v for k, v in data["@variables"].items() if v is not None}
+        for ii, net in enumerate(data["nets"]["networks"]):
+            for kk, vv in net["@variables"].items():
+                flat[f"filter_layers.networks.{ii}.{kk}"] = vv
+        assert set(flat) == set(pt_state_to_numpy(pt_mod))
+        # serialized dict key sets match between backends
+        assert set(data) == set(pt_mod.serialize())
+        # pt <- dp
+        pt_mod2 = SeZMEnergyFittingNetPT.deserialize(data).eval()
+        self._assert_fitting_parity(pt_mod2, dp_mod)
+        # dp <- dp roundtrip is bit-exact
+        dp_mod2 = SeZMEnergyFittingNetDP.deserialize(data)
+        descriptor, atype = self._inputs()
+        out1 = np.asarray(dp_mod.call(descriptor, atype)["energy"])
+        out2 = np.asarray(dp_mod2.call(descriptor, atype)["energy"])
+        np.testing.assert_array_equal(out1, out2)
+
+
+class TestEndToEndParity:
+    """Chain descriptor and fitting: full dpmodel DPA4 atomic-energy math."""
+
+    def test_descriptor_fitting_chain(self) -> None:
+        from deepmd.dpmodel.fitting.dpa4_ener import (
+            SeZMEnergyFittingNet as SeZMEnergyFittingNetDP,
+        )
+        from deepmd.pt.model.task.sezm_ener import (
+            SeZMEnergyFittingNet as SeZMEnergyFittingNetPT,
+        )
+
+        helper = TestDescriptorParity()
+        pt_descr, dp_descr, _ = helper._build_descr_pair()
+        in_dim = dp_descr.get_dim_out()
+        pt_fit = SeZMEnergyFittingNetPT(
+            ntypes=3,
+            dim_descrpt=in_dim,
+            neuron=[0],
+            precision="float64",
+            seed=11,
+        ).eval()
+        rng = np.random.default_rng(2143)
+        with torch.no_grad():
+            pt_fit.bias_atom_e += torch.from_numpy(
+                rng.normal(size=tuple(pt_fit.bias_atom_e.shape))
+            )
+        dp_fit = SeZMEnergyFittingNetDP.deserialize(pt_fit.serialize())
+
+        inp = helper._inputs()
+        coord, atype_ext, nlist, mp = (
+            inp["coord"],
+            inp["atype_ext"],
+            inp["nlist"],
+            inp["mapping"],
+        )
+        nf, nloc = nlist.shape[:2]
+        atype_loc = atype_ext[:, :nloc]
+        d_dp = dp_descr.call(coord.reshape(nf, -1), atype_ext, nlist, mapping=mp)[0]
+        e_dp = dp_fit.call(d_dp, atype_loc)["energy"]
+        d_pt = pt_descr(
+            torch.from_numpy(coord),
+            torch.from_numpy(atype_ext),
+            torch.from_numpy(nlist),
+            mapping=torch.from_numpy(mp),
+        )[0]
+        e_pt = pt_fit(d_pt, torch.from_numpy(atype_loc))["energy"]
+        assert e_dp.shape == tuple(e_pt.shape)
+        # end-to-end tolerance: rtol 1e-10 / atol 1e-12
+        assert_parity(e_dp, e_pt, rtol=1e-10, atol=1e-12)

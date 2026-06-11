@@ -2,6 +2,9 @@
 from .dipole_fitting import (
     DipoleFitting,
 )
+from .dpa4_ener import (
+    SeZMEnergyFittingNet,
+)
 from .dos_fitting import (
     DOSFittingNet,
 )
@@ -28,5 +31,6 @@ __all__ = [
     "InvarFitting",
     "PolarFitting",
     "PropertyFittingNet",
+    "SeZMEnergyFittingNet",
     "make_base_fitting",
 ]
