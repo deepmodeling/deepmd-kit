@@ -113,12 +113,6 @@ class TestDPA4(CommonTest, DescriptorTest, unittest.TestCase):
 
     @property
     def skip_pt(self) -> bool:
-        (
-            _precision,
-            _grid_branch,
-            _s2_activation,
-            _basis_type,
-        ) = self.param
         return CommonTest.skip_pt
 
     skip_dp = False

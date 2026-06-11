@@ -147,7 +147,10 @@ class PairExcludeMask:
         # (nf * nloc * nnei,)
         type_ij_flat = xp.reshape(type_ij, (-1,))
         mask = xp.reshape(
-            xp.take(self.type_mask[...], type_ij_flat),
+            xp.take(
+                xp.asarray(self.type_mask[...], device=array_api_compat.device(nlist)),
+                type_ij_flat,
+            ),
             (nf, nloc, nnei),
         )
         return mask

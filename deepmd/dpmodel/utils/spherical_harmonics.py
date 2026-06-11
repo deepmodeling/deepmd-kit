@@ -63,7 +63,7 @@ def real_spherical_harmonics(vecs: np.ndarray, lmax: int) -> np.ndarray:
     if lmax < 0:
         raise ValueError(f"lmax must be non-negative, got {lmax}")
     vecs = np.asarray(vecs, dtype=np.float64)
-    if vecs.shape[-1] != 3:
+    if vecs.ndim == 0 or vecs.shape[-1] != 3:
         raise ValueError(f"vecs must have shape (..., 3), got {vecs.shape}")
     lead_shape = vecs.shape[:-1]
     vecs = vecs.reshape(-1, 3)

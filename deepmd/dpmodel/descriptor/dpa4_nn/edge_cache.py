@@ -202,6 +202,9 @@ def _build_edge_mask_and_src(
     # pt's src_ok filter: drop (here: mask) edges mapping outside [0, nloc).
     mask = mask & (src_local >= 0) & (src_local < nloc)
     src_local_safe = xp.where(mask, src_local, xp.zeros_like(src_local))
+    # Re-zero nlist_safe after the src_ok update so coordinate gathers stay
+    # in-bounds when callers pass local nlists with out-of-range entries.
+    nlist_safe = xp.where(mask, nlist_safe, xp.zeros_like(nlist_safe))
     return mask, nlist_safe, src_local_safe
 
 

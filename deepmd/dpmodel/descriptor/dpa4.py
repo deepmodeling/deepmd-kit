@@ -849,8 +849,13 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             shift_logits = film[:, self.channels :]
             scale_hat = self.film_scale_norm(scale_logits)
             shift_hat = self.film_shift_norm(shift_logits)
-            scale_strength = xp.exp(self.film_scale_strength_log[...])
-            shift_strength = xp.exp(self.film_shift_strength_log[...])
+            device = array_api_compat.device(scale_hat)
+            scale_strength = xp.exp(
+                xp.asarray(self.film_scale_strength_log, device=device)
+            )
+            shift_strength = xp.exp(
+                xp.asarray(self.film_shift_strength_log, device=device)
+            )
             scale = 1.0 + scale_strength * xp.tanh(scale_hat)
             shift = shift_strength * xp.tanh(shift_hat)
             x0_out = type_ebed * scale + shift

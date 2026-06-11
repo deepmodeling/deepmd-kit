@@ -55,10 +55,6 @@ class TestDPA4Ener(CommonTest, FittingTest, unittest.TestCase):
 
     @property
     def skip_pt(self) -> bool:
-        (
-            _precision,
-            _neuron,
-        ) = self.param
         return CommonTest.skip_pt
 
     skip_dp = False

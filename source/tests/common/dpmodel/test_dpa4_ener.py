@@ -51,6 +51,20 @@ class TestGuards:
         with pytest.raises(ValueError, match="neuron"):
             make_fitting(neuron=[-1])
 
+    @pytest.mark.parametrize(
+        "key",
+        [
+            (0, 0),  # wrong length (ndim=1)
+            (-1,),  # negative type index
+            (2,),  # type index >= ntypes
+            5,  # int index out of bounds
+        ],
+    )  # invalid network-collection keys
+    def test_network_collection_invalid_key(self, key) -> None:
+        fitting = make_fitting()
+        with pytest.raises(ValueError):
+            fitting.nets[key]
+
 
 class TestAutoNeuron:
     def test_auto_width_marker(self) -> None:

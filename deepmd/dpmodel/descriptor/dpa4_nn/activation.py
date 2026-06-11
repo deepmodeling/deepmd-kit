@@ -211,7 +211,9 @@ class GatedActivation(NativeOP):
         if self.lmax == 0:
             return x0
 
-        gate_weight = self.gate_linear.weight[...]
+        gate_weight = xp.asarray(
+            self.gate_linear.weight[...], device=array_api_compat.device(x)
+        )
         input_dtype = gate_scalar_source.dtype
         if input_dtype != gate_weight.dtype:
             gate_scalar_source = xp.astype(gate_scalar_source, gate_weight.dtype)

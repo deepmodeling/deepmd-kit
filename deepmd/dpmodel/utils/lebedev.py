@@ -65,6 +65,10 @@ def load_lebedev_rule(precision: int) -> tuple[np.ndarray, np.ndarray]:
         shape ``(A,)``. The weights sum to one, so the sphere integral is
         ``4*pi*sum(weights*f(points))``.
     """
+    if not isinstance(precision, (int, np.integer)) or isinstance(precision, bool):
+        raise TypeError(
+            f"`precision` must be an integer, got {type(precision).__name__}"
+        )
     rule_key = f"{int(precision):03d}"
     if not LEBEDEV_RULES_FILE.exists():
         raise FileNotFoundError(

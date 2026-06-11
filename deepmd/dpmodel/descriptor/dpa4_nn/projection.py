@@ -123,7 +123,9 @@ class BaseGridProjector(NativeOP):
     def to_grid(self, embedding: Any) -> Any:
         """Project flattened coefficients ``(N, J, C)`` to grid fields ``(N, G, C)``."""
         xp = array_api_compat.array_namespace(embedding)
-        to_grid_mat = self.to_grid_mat[...]
+        to_grid_mat = xp.asarray(
+            self.to_grid_mat[...], device=array_api_compat.device(embedding)
+        )
         if to_grid_mat.dtype != embedding.dtype:
             to_grid_mat = xp.astype(to_grid_mat, embedding.dtype)
         # einsum "gj,njc->ngc" as a broadcast batched matmul
@@ -132,7 +134,9 @@ class BaseGridProjector(NativeOP):
     def from_grid(self, grid: Any) -> Any:
         """Project grid fields ``(N, G, C)`` back to flattened coefficients ``(N, J, C)``."""
         xp = array_api_compat.array_namespace(grid)
-        from_grid_mat = self.from_grid_mat[...]
+        from_grid_mat = xp.asarray(
+            self.from_grid_mat[...], device=array_api_compat.device(grid)
+        )
         if from_grid_mat.dtype != grid.dtype:
             from_grid_mat = xp.astype(from_grid_mat, grid.dtype)
         # einsum "jg,ngc->njc" as a broadcast batched matmul

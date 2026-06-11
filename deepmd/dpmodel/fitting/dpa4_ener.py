@@ -247,15 +247,26 @@ class SeZMNetworkCollection:
                 key = tuple([int(tt) for tt in key.split("_")[1:]])
             else:
                 raise TypeError(key)
-            assert isinstance(key, tuple)
-            assert len(key) == self.ndim
+            if len(key) != self.ndim:
+                raise ValueError(
+                    f"key {key} has length {len(key)}, expected ndim {self.ndim}"
+                )
+            if any(not (0 <= int(tt) < self.ntypes) for tt in key):
+                raise ValueError(
+                    f"key {key} contains type indices outside [0, {self.ntypes})"
+                )
             idx = sum([tt * self.ntypes**ii for ii, tt in enumerate(key)])
+        if not (0 <= idx < self.ntypes**self.ndim):
+            raise ValueError(
+                f"key {key} maps to index {idx}, outside [0, {self.ntypes**self.ndim})"
+            )
         return idx
 
     def __getitem__(self, key: int | tuple | str) -> GLUFittingNet:
         idx = self._convert_key(key)
         nn = self._networks[idx]
-        assert nn is not None
+        if nn is None:
+            raise ValueError(f"network for key {key} is not set")
         return nn
 
     def __setitem__(self, key: int | tuple | str, value: Any) -> None:

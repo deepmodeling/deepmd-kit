@@ -850,6 +850,21 @@ class TestNormParity:
                 precision="float64",
             )
 
+    @pytest.mark.parametrize("mmax", [-1, 3])  # below 0 / above lmax
+    def test_reduced_equivariant_rmsnorm_invalid_mmax(self, mmax) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.norm import (
+            ReducedEquivariantRMSNorm as DPReducedEquivariantRMSNorm,
+        )
+
+        with pytest.raises(ValueError, match="mmax"):
+            DPReducedEquivariantRMSNorm(
+                lmax=2,
+                mmax=mmax,
+                channels=4,
+                degree_index_m=np.array([0, 1, 2], dtype=np.int64),
+                precision="float64",
+            )
+
     @pytest.mark.parametrize("ndim", [2, 3])  # (B, C) and (B, F, C) branches
     def test_scalar_rmsnorm(self, ndim) -> None:
         from deepmd.dpmodel.descriptor.dpa4_nn.norm import (
@@ -1652,6 +1667,10 @@ class TestS2GridParity:
             DPS2GridProjector(lmax=2, precision="float64", grid_method="e3nn")
         with pytest.raises(NotImplementedError, match="lebedev_quadrature"):
             DPS2GridNet(**{**common, "grid_method": "e3nn"})
+        # default grid_method is "lebedev" (deliberate divergence from pt's
+        # "e3nn" default, which dp rejects): default construction works
+        net = DPS2GridNet(**{k: v for k, v in common.items() if k != "grid_method"})
+        assert net.grid_method == "lebedev"
         with pytest.raises(NotImplementedError, match="grid_mlp"):
             # GridMLP (grid_mlp=True) is not ported
             DPS2GridNet(**{**common, "op_type": "mlp"})
@@ -2825,6 +2844,47 @@ class TestEdgeCacheParity:
         assert dp_cache.D_to_m_cache == {}
         assert dp_cache.Dt_from_m_cache == {}
 
+    def test_out_of_range_local_index_masked(self) -> None:
+        # a local nlist entry >= nloc with mapping=None must be masked out
+        # and must not break the coordinate gather (nlist_safe is re-zeroed
+        # after the final src_ok mask update)
+        from deepmd.dpmodel.descriptor.dpa4_nn.edge_cache import (
+            build_edge_cache as dp_build_edge_cache,
+        )
+        from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
+            C3CutoffEnvelope as DPEnvelope,
+        )
+        from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
+            RadialBasis as DPRadialBasis,
+        )
+        from deepmd.dpmodel.descriptor.dpa4_nn.wignerd import (
+            WignerDCalculator as DPWigner,
+        )
+
+        inputs = self._inputs(local_nlist=True, nall=self.nloc)
+        nlist = inputs["nlist"].copy()
+        nlist[0, 0, 0] = self.nloc  # out of [0, nloc), would gather OOB
+        n_radial = 8
+        cache = dp_build_edge_cache(
+            type_ebed=inputs["type_ebed"],
+            extended_coord=inputs["coord"],
+            nlist=nlist,
+            mapping=None,
+            pair_keep_mask=inputs["pair_keep_mask"],
+            eps=1e-7,
+            deg_norm_floor=1e-12,
+            edge_envelope=DPEnvelope(rcut=6.0, precision="float64"),
+            radial_basis=DPRadialBasis(
+                rcut=6.0, n_radial=n_radial, precision="float64"
+            ),
+            n_radial=n_radial,
+            random_gamma=False,
+            wigner_calc=DPWigner(self.lmax, precision="float64"),
+        )
+        mask = np.asarray(cache.edge_mask).reshape(self.nf, self.nloc, self.nnei)
+        assert not mask[0, 0, 0]
+        assert np.isfinite(np.asarray(cache.edge_vec)).all()
+
     def test_masked_edge_inertness(self) -> None:
         # an extra all-(-1) neighbor column must not change the masked-view
         # fields or the degree normalization
@@ -3386,6 +3446,27 @@ class TestDescriptorParity:
         # node degrees above message-passing degrees (GIE zonal wigner path)
         pt_mod, dp_mod, _ = self._build_descr_pair(extra_node_l=1)
         self._assert_descr_parity(pt_mod, dp_mod)
+
+    def test_descriptor_torch_namespace(self) -> None:
+        # the dp descriptor must run under the torch array namespace as well:
+        # feeding torch tensors must yield a torch tensor matching the numpy
+        # result (catches raw numpy attributes mixed into xp arithmetic)
+        _, dp_mod, _ = self._build_descr_pair(use_env_seed=True)
+        inp = self._inputs()
+        nf = inp["coord"].shape[0]
+        coord = inp["coord"].reshape(nf, -1)
+        atype_ext, nlist, mp = inp["atype_ext"], inp["nlist"], inp["mapping"]
+        out_np = dp_mod.call(coord, atype_ext, nlist, mapping=mp)[0]
+        out_t = dp_mod.call(
+            torch.from_numpy(coord).to(device="cpu"),
+            torch.from_numpy(atype_ext.astype(np.int64)).to(device="cpu"),
+            torch.from_numpy(nlist.astype(np.int64)).to(device="cpu"),
+            mapping=torch.from_numpy(mp.astype(np.int64)).to(device="cpu"),
+        )[0]
+        assert isinstance(out_t, torch.Tensor)
+        np.testing.assert_allclose(
+            out_t.numpy(), np.asarray(out_np), rtol=1e-12, atol=1e-14
+        )
 
     def test_descriptor_cross_deserialize(self) -> None:
         from deepmd.dpmodel.descriptor.dpa4 import (

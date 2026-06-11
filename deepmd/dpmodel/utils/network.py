@@ -282,10 +282,12 @@ class NativeLayer(NativeOP):
             raise ValueError("w, b, and activation_function must be set")
         xp = array_api_compat.array_namespace(x)
         fn = get_activation_fn(self.activation_function)
+        device = array_api_compat.device(x)
+        w = xp.asarray(self.w[...], device=device)
         y = (
-            xp.matmul(x, self.w[...]) + self.b[...]
+            xp.matmul(x, w) + xp.asarray(self.b[...], device=device)
             if self.b is not None
-            else xp.matmul(x, self.w[...])
+            else xp.matmul(x, w)
         )
         if y.dtype != x.dtype:
             # workaround for bfloat16

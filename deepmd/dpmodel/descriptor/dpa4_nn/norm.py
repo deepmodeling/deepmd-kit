@@ -93,7 +93,7 @@ class RMSNorm(NativeOP):
             Normalized array with shape `(..., C)`, same dtype as input.
         """
         xp = array_api_compat.array_namespace(x)
-        scale = self.adam_scale[...]
+        scale = xp.asarray(self.adam_scale[...], device=array_api_compat.device(x))
         in_dtype = x.dtype
         if in_dtype != scale.dtype:
             x = xp.astype(x, scale.dtype)
@@ -232,8 +232,9 @@ class EquivariantRMSNorm(NativeOP):
             Normalized features with shape `(N, D, F, C)`, same dtype as input.
         """
         xp = array_api_compat.array_namespace(x)
-        scale = self.adam_scale[...]
-        bias = self.bias[...]
+        device = array_api_compat.device(x)
+        scale = xp.asarray(self.adam_scale[...], device=device)
+        bias = xp.asarray(self.bias[...], device=device)
         balance_weight = xp.asarray(
             self.balance_weight, device=array_api_compat.device(x)
         )
@@ -381,6 +382,10 @@ class ReducedEquivariantRMSNorm(NativeOP):
     ) -> None:
         self.lmax = int(lmax)
         self.mmax = int(mmax)
+        if self.mmax < 0:
+            raise ValueError("`mmax` must be non-negative")
+        if self.mmax > self.lmax:
+            raise ValueError("`mmax` must be <= `lmax`")
         self.channels = int(channels)
         self.n_focus = int(n_focus)
         self.eps = float(eps)
@@ -429,8 +434,9 @@ class ReducedEquivariantRMSNorm(NativeOP):
             input.
         """
         xp = array_api_compat.array_namespace(x)
-        scale = self.adam_scale[...]
-        bias0_w = self.bias0[...]
+        device = array_api_compat.device(x)
+        scale = xp.asarray(self.adam_scale[...], device=device)
+        bias0_w = xp.asarray(self.bias0[...], device=device)
         balance_weight = xp.asarray(
             self.balance_weight, device=array_api_compat.device(x)
         )
@@ -592,7 +598,7 @@ class ScalarRMSNorm(NativeOP):
             Normalized array with the same shape as input and same dtype.
         """
         xp = array_api_compat.array_namespace(x)
-        scale = self.adam_scale[...]
+        scale = xp.asarray(self.adam_scale[...], device=array_api_compat.device(x))
         in_dtype = x.dtype
         if in_dtype != scale.dtype:
             x = xp.astype(x, scale.dtype)

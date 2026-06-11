@@ -62,6 +62,7 @@ from deepmd.dpmodel.array_api import (
     xp_sigmoid,
 )
 from deepmd.dpmodel.common import (
+    get_xp_precision,
     to_numpy_array,
 )
 from deepmd.dpmodel.utils.seed import (
@@ -354,7 +355,7 @@ class BaseGridNet(NativeOP):
         """Apply the configured grid net and restore the input layout."""
         xp = array_api_compat.array_namespace(query)
         input_dtype = query.dtype
-        compute_dtype = self.scalar_gate.weight[...].dtype
+        compute_dtype = get_xp_precision(xp, self.precision)
         query_ndfc = self._to_ndfc(query)
         left, right = self._split_self_query(query_ndfc)
         scalar_pair = self._make_scalar_pair(left, right, compute_dtype)
@@ -422,7 +423,9 @@ class BaseGridNet(NativeOP):
         # einsum "gd,ndfc->ngfc" (n_frames == 1) as a broadcast batched matmul
         xp = array_api_compat.array_namespace(coeff)
         n_batch, coeff_dim, n_focus, _ = coeff.shape
-        to_grid_mat = self.projector.to_grid_mat[...]
+        to_grid_mat = xp.asarray(
+            self.projector.to_grid_mat[...], device=array_api_compat.device(coeff)
+        )
         if to_grid_mat.dtype != coeff.dtype:
             to_grid_mat = xp.astype(to_grid_mat, coeff.dtype)
         flat = xp.reshape(coeff, (n_batch, coeff_dim, n_focus * self.channels))
@@ -436,7 +439,9 @@ class BaseGridNet(NativeOP):
         xp = array_api_compat.array_namespace(grid)
         n_batch, n_grid, n_focus, _ = grid.shape
         coeff_dim = self.projector.coeff_dim
-        from_grid_mat = self.projector.from_grid_mat[...]
+        from_grid_mat = xp.asarray(
+            self.projector.from_grid_mat[...], device=array_api_compat.device(grid)
+        )
         if from_grid_mat.dtype != grid.dtype:
             from_grid_mat = xp.astype(from_grid_mat, grid.dtype)
         flat = xp.reshape(grid, (n_batch, n_grid, n_focus * self.channels))
@@ -516,7 +521,11 @@ class S2GridNet(BaseGridNet):
         layout: str,
         grid_resolution_list: list[int] | None = None,
         coefficient_layout: str = "packed",
-        grid_method: str = "e3nn",
+        # Deliberate divergence from pt's default ("e3nn"): the e3nn
+        # product-grid branch is not ported to dpmodel and always raises, so
+        # the only usable default here is "lebedev". Checkpoint compatibility
+        # is unaffected because serialize always records the explicit value.
+        grid_method: str = "lebedev",
         grid_branches: int = 1,
         residual_scale_init: float | None = None,
         mlp_bias: bool = False,

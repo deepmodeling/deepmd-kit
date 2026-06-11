@@ -146,6 +146,8 @@ class SeZMTypeEmbedding(NativeOP):
         atype
             Atom types with shape (...,). Valid type range is [0, ntypes-1]
             (plus the padding row index ``ntypes`` when ``padding=True``).
+            Negative type ids are invalid input and are NOT validated here
+            (caller contract).
 
         Returns
         -------
@@ -153,7 +155,9 @@ class SeZMTypeEmbedding(NativeOP):
             Type embeddings with shape (..., embed_dim).
         """
         xp = array_api_compat.array_namespace(atype)
-        weight = self.adam_type_embedding[...]
+        weight = xp.asarray(
+            self.adam_type_embedding[...], device=array_api_compat.device(atype)
+        )
         # pt embedding.py:143 torch.embedding -> flat int64 take + reshape.
         index = xp.astype(xp.reshape(atype, (-1,)), xp.int64)
         out = xp.take(weight, index, axis=0)
