@@ -3292,6 +3292,167 @@ class TestBlockParity:
             DPBlock.deserialize({"@class": "NotBlock", "@version": 1})
 
 
+def _build_descriptor_inputs(rng, *, nf, nloc, nall, nnei, ntypes=3):
+    """Build a real two-frame descriptor fixture with ghosts and mapping.
+
+    Extends the Task-10 ``_build_real_edge_inputs`` fixture with consistent
+    extended atom types (``atype_ext`` derived from the local types via the
+    ghost mapping); includes -1 padding slots and one broken mapping entry.
+    """
+    inputs = _build_real_edge_inputs(
+        rng, nf=nf, nloc=nloc, nall=nall, nnei=nnei, channels=1
+    )
+    mapping = inputs["mapping"]
+    atype_loc = rng.integers(0, ntypes, size=(nf, nloc))
+    atype_ext = np.take_along_axis(atype_loc, np.clip(mapping, 0, nloc - 1), axis=1)
+    return {
+        "coord": inputs["coord"],  # (nf, nall, 3)
+        "atype_ext": atype_ext,  # (nf, nall)
+        "nlist": inputs["nlist"],  # (nf, nloc, nnei), -1 padded
+        "mapping": mapping,  # (nf, nall), one -1 entry
+    }
+
+
+class TestDescriptorParity:
+    nf = 2
+    nloc = 6
+    nall = 10
+    nnei = 12
+
+    def _descr_kwargs(self, **overrides):
+        # small core DPA4 config (see task spec)
+        kwargs = {
+            "ntypes": 3,
+            "sel": self.nnei,
+            "rcut": 4.0,
+            "channels": 16,
+            "n_radial": 8,
+            "lmax": 3,
+            "mmax": 1,
+            "n_blocks": 2,
+            "grid_branch": [1, 1, 1],
+            "s2_activation": [False, True],
+            "random_gamma": False,
+            "exclude_types": [(0, 0)],
+            "precision": "float64",
+            "seed": 42,
+        }
+        kwargs.update(overrides)
+        return kwargs
+
+    def _build_descr_pair(self, perturb_seed=2130, **overrides):
+        from deepmd.dpmodel.descriptor.dpa4 import DescrptDPA4
+        from deepmd.pt.model.descriptor.sezm import DescrptSeZM
+
+        kwargs = self._descr_kwargs(**overrides)
+        pt_mod = DescrptSeZM(**kwargs).double().eval()
+        # several projections are zero-initialized; perturb for nonzero output
+        rng = np.random.default_rng(perturb_seed)
+        with torch.no_grad():
+            for p in pt_mod.parameters():
+                p += torch.from_numpy(0.05 * rng.normal(size=tuple(p.shape)))
+        dp_mod = DescrptDPA4.deserialize(pt_mod.serialize())
+        return pt_mod, dp_mod, kwargs
+
+    def _inputs(self, seed=2131):
+        rng = np.random.default_rng(seed)
+        return _build_descriptor_inputs(
+            rng, nf=self.nf, nloc=self.nloc, nall=self.nall, nnei=self.nnei
+        )
+
+    def _assert_descr_parity(self, pt_mod, dp_mod, *, mapping=True) -> None:
+        inp = self._inputs()
+        coord, atype_ext, nlist, mp = (
+            inp["coord"],
+            inp["atype_ext"],
+            inp["nlist"],
+            inp["mapping"],
+        )
+        if not mapping:
+            # mapping-free path: neighbor indices already local (no ghosts)
+            rng = np.random.default_rng(2132)
+            inp_local = _build_real_edge_inputs(
+                rng,
+                nf=self.nf,
+                nloc=self.nloc,
+                nall=self.nloc,
+                nnei=self.nnei,
+                channels=1,
+                local_nlist=True,
+            )
+            coord, nlist, mp = inp_local["coord"], inp_local["nlist"], None
+            atype_ext = rng.integers(0, 3, size=(self.nf, self.nloc))
+        nf = coord.shape[0]
+        out_dp = dp_mod.call(
+            coord.reshape(nf, -1),
+            atype_ext,
+            nlist,
+            mapping=mp,
+        )
+        out_pt = pt_mod(
+            torch.from_numpy(coord),
+            torch.from_numpy(atype_ext),
+            torch.from_numpy(nlist),
+            mapping=None if mp is None else torch.from_numpy(mp),
+        )
+        assert out_dp[0].shape == tuple(out_pt[0].shape)
+        # descriptor-level tolerance: rtol 1e-10 / atol 1e-12
+        assert_parity(out_dp[0], out_pt[0], rtol=1e-10, atol=1e-12)
+        # unused returns are None on the dp side (pt returns empty tensors)
+        assert out_dp[1:] == (None, None, None, None)
+
+    @pytest.mark.parametrize("use_env_seed", [False, True])  # env FiLM + GIE seeding
+    @pytest.mark.parametrize("n_blocks", [1, 2])  # interaction block stack depth
+    def test_descriptor(self, use_env_seed, n_blocks) -> None:
+        pt_mod, dp_mod, _ = self._build_descr_pair(
+            use_env_seed=use_env_seed, n_blocks=n_blocks
+        )
+        self._assert_descr_parity(pt_mod, dp_mod)
+
+    @pytest.mark.parametrize(
+        "exclude_types", [[], [(0, 0)]]
+    )  # pair-exclusion off vs on
+    def test_descriptor_exclude_types(self, exclude_types) -> None:
+        pt_mod, dp_mod, _ = self._build_descr_pair(exclude_types=exclude_types)
+        self._assert_descr_parity(pt_mod, dp_mod)
+
+    def test_descriptor_no_mapping(self) -> None:
+        # pt forward accepts mapping=None when neighbor indices are local;
+        # mapping is NOT required by either backend
+        pt_mod, dp_mod, _ = self._build_descr_pair()
+        self._assert_descr_parity(pt_mod, dp_mod, mapping=False)
+
+    def test_descriptor_extra_node_l(self) -> None:
+        # node degrees above message-passing degrees (GIE zonal wigner path)
+        pt_mod, dp_mod, _ = self._build_descr_pair(extra_node_l=1)
+        self._assert_descr_parity(pt_mod, dp_mod)
+
+    def test_descriptor_cross_deserialize(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4 import DescrptDPA4
+        from deepmd.pt.model.descriptor.sezm import DescrptSeZM
+
+        pt_mod, dp_mod, _ = self._build_descr_pair()
+        # dp serialize emits exactly the pt state_dict key set
+        data = dp_mod.serialize()
+        assert set(data["@variables"]) == set(pt_state_to_numpy(pt_mod))
+        assert data["type"] == "SeZM"
+        # pt <- dp: load the dp serialization into a fresh pt descriptor
+        pt_mod2 = DescrptSeZM.deserialize(data).double().eval()
+        self._assert_descr_parity(pt_mod2, dp_mod)
+        # dp <- dp roundtrip is bit-exact
+        dp_mod2 = DescrptDPA4.deserialize(data)
+        inp = self._inputs()
+        nf = inp["coord"].shape[0]
+        args = (
+            inp["coord"].reshape(nf, -1),
+            inp["atype_ext"],
+            inp["nlist"],
+        )
+        out1 = np.asarray(dp_mod.call(*args, mapping=inp["mapping"])[0])
+        out2 = np.asarray(dp_mod2.call(*args, mapping=inp["mapping"])[0])
+        np.testing.assert_array_equal(out1, out2)
+
+
 class TestNoTorchImport:
     def test_dpa4_nn_does_not_import_torch(self) -> None:
         code = (
@@ -3310,7 +3471,8 @@ class TestNoTorchImport:
             "deepmd.dpmodel.descriptor.dpa4_nn.edge_cache, "
             "deepmd.dpmodel.descriptor.dpa4_nn.embedding, "
             "deepmd.dpmodel.descriptor.dpa4_nn.ffn, "
-            "deepmd.dpmodel.descriptor.dpa4_nn.block; "
+            "deepmd.dpmodel.descriptor.dpa4_nn.block, "
+            "deepmd.dpmodel.descriptor.dpa4; "
             "print('torch' in sys.modules)"
         )
         out = subprocess.run(
