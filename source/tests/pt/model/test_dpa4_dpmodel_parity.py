@@ -223,7 +223,12 @@ class TestUtilsParity:
         res = dp_utils.safe_norm(x)
         ref = pt_utils.safe_norm(torch.from_numpy(x))
         assert res.shape == (8, 1)
-        np.testing.assert_allclose(res, ref.numpy(), rtol=1e-15, atol=0.0)
+        if dtype == "float64":
+            np.testing.assert_allclose(res, ref.numpy(), rtol=1e-15, atol=0.0)
+        else:
+            # fp32: numpy and torch may differ by ~1 ulp depending on the
+            # runner's BLAS/SIMD codegen, so bit-exact equality is brittle.
+            np.testing.assert_allclose(res, ref.numpy(), rtol=2e-7, atol=2e-7)
 
     def test_safe_norm_all_zero(self) -> None:
         # pure eps branch: norm of zero vector equals eps exactly
@@ -241,7 +246,10 @@ class TestUtilsParity:
         res = dp_utils.safe_norm(x)
         ref = pt_utils.safe_norm(torch.from_numpy(x))
         assert np.asarray(res).dtype == np.float16
-        np.testing.assert_array_equal(np.asarray(res), ref.numpy())
+        # the internal fp32 math may differ by ~1 ulp across runners, which
+        # can flip the final fp16 rounding; compare at ~1 ulp fp16 instead
+        # of bit-exact equality.
+        np.testing.assert_allclose(np.asarray(res), ref.numpy(), rtol=1e-3, atol=1e-3)
 
     def test_safe_norm_torch_input(self) -> None:
         # dpmodel safe_norm is array-API: must accept torch tensors
