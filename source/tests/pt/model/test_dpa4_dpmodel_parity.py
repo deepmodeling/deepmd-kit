@@ -545,6 +545,209 @@ class TestRadialParity:
                 klass.deserialize({"@class": "Nope", "@version": 1})
 
 
+def _make_edge_vectors() -> np.ndarray:
+    """Random edge vectors plus the polar/eps corner cases of the quaternion charts."""
+    rng = np.random.default_rng(1)
+    vec = rng.standard_normal((128, 3))
+    vec[0] = [0.0, 0.0, 1.0]  # +z axis (rb_small branch in the Wigner path)
+    vec[1] = [0.0, 0.0, -1.0]  # -z axis (antiparallel pole, ra_small branch)
+    vec[2] = [1e-9, 0.0, 1.0]  # near +z (eps branch of the +z chart)
+    vec[3] = [0.0, 1.0, 0.0]  # +y (e3nn polar axis)
+    vec[4] = [0.0, -1.0, 0.0]  # -y
+    vec[5] = [1e-9, 0.0, -1.0]  # near -z (eps branch of the -z chart)
+    vec[6] = [0.0, 0.0, 0.0]  # zero-length edge (eps-floored normalization)
+    vec[7] = [0.3, -0.4, 0.0]  # equator (chart blend midpoint region)
+    return vec
+
+
+class TestWignerDParity:
+    def test_build_edge_quaternion(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.wignerd import (
+            build_edge_quaternion as dp_build_edge_quaternion,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
+            build_edge_quaternion as pt_build_edge_quaternion,
+        )
+
+        vec = _make_edge_vectors()
+        vec_t = torch.tensor(vec, dtype=torch.float64, device=CPU)
+        # edge_len omitted branch
+        quat_dp = dp_build_edge_quaternion(vec)
+        quat_pt = pt_build_edge_quaternion(vec_t)
+        assert_parity(quat_dp, quat_pt)
+        # edge_len provided branch
+        edge_len = np.linalg.norm(vec, axis=-1, keepdims=True)
+        quat_dp = dp_build_edge_quaternion(vec, edge_len=edge_len)
+        quat_pt = pt_build_edge_quaternion(
+            vec_t,
+            edge_len=torch.tensor(edge_len, dtype=torch.float64, device=CPU),
+        )
+        assert_parity(quat_dp, quat_pt)
+        # the quaternion rotates the unit edge direction onto local +z
+        from deepmd.dpmodel.descriptor.dpa4_nn.wignerd import (
+            quaternion_to_rotation_matrix as dp_quaternion_to_rotation_matrix,
+        )
+
+        rot = dp_quaternion_to_rotation_matrix(quat_dp)
+        unit = vec / np.sqrt(np.sum(vec * vec, axis=-1, keepdims=True) + 1e-14)
+        local = np.einsum("eij,ej->ei", rot, unit)
+        scale = np.linalg.norm(unit, axis=-1)  # ~0 for the zero-length edge row
+        np.testing.assert_allclose(local[:, 2], scale, atol=1e-10)
+        np.testing.assert_allclose(local[:, :2], 0.0, atol=1e-10)
+
+    def test_quaternion_helpers(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn import wignerd as dp_w
+        from deepmd.pt.model.descriptor.sezm_nn import wignerd as pt_w
+
+        rng = np.random.default_rng(2)
+        q1 = rng.standard_normal((16, 4))
+        q2 = rng.standard_normal((16, 4))
+        gamma = rng.standard_normal((16,))
+        weight = rng.uniform(0.0, 1.0, (16,))
+        q1_t = torch.tensor(q1, dtype=torch.float64, device=CPU)
+        q2_t = torch.tensor(q2, dtype=torch.float64, device=CPU)
+        assert_parity(
+            dp_w.quaternion_multiply(q1, q2), pt_w.quaternion_multiply(q1_t, q2_t)
+        )
+        assert_parity(
+            dp_w.quaternion_z_rotation(gamma),
+            pt_w.quaternion_z_rotation(
+                torch.tensor(gamma, dtype=torch.float64, device=CPU)
+            ),
+        )
+        assert_parity(dp_w.quaternion_normalize(q1), pt_w.quaternion_normalize(q1_t))
+        assert_parity(
+            dp_w.quaternion_to_rotation_matrix(dp_w.quaternion_normalize(q1)),
+            pt_w.quaternion_to_rotation_matrix(pt_w.quaternion_normalize(q1_t)),
+        )
+        assert_parity(
+            dp_w.quaternion_nlerp(q1, q2, weight),
+            pt_w.quaternion_nlerp(
+                q1_t, q2_t, torch.tensor(weight, dtype=torch.float64, device=CPU)
+            ),
+        )
+
+    @pytest.mark.parametrize("lmax", [0, 1, 2, 3, 4])  # degree range incl. beyond-core
+    def test_quat_and_d(self, lmax) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.wignerd import (
+            WignerDCalculator as DPWignerDCalculator,
+        )
+        from deepmd.dpmodel.descriptor.dpa4_nn.wignerd import (
+            build_edge_quaternion as dp_build_edge_quaternion,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
+            WignerDCalculator as PTWignerDCalculator,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
+            build_edge_quaternion as pt_build_edge_quaternion,
+        )
+
+        vec = _make_edge_vectors()
+        quat_dp = dp_build_edge_quaternion(vec)
+        quat_pt = pt_build_edge_quaternion(
+            torch.tensor(vec, dtype=torch.float64, device=CPU)
+        )
+        assert_parity(quat_dp, quat_pt)
+
+        calc_dp = DPWignerDCalculator(lmax, precision="float64")
+        calc_pt = PTWignerDCalculator(lmax, dtype=torch.float64)
+        D_dp, Dt_dp = calc_dp(quat_dp)
+        D_pt, Dt_pt = calc_pt(quat_pt)
+        dim = (lmax + 1) ** 2
+        assert D_dp.shape == (vec.shape[0], dim, dim)
+        assert_parity(D_dp, D_pt)
+        assert_parity(Dt_dp, Dt_pt)
+        # rotation property: D @ Dt == I
+        eye = np.broadcast_to(np.eye(dim), D_dp.shape)
+        np.testing.assert_allclose(D_dp @ Dt_dp, eye, atol=1e-11)
+
+    @pytest.mark.parametrize("lmax", [2, 4])  # calculator degree
+    @pytest.mark.parametrize("lmin", [1, 2, 3, 4, 5])  # zonal start degree
+    def test_forward_zonal(self, lmax, lmin) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.wignerd import (
+            WignerDCalculator as DPWignerDCalculator,
+        )
+        from deepmd.dpmodel.descriptor.dpa4_nn.wignerd import (
+            build_edge_quaternion as dp_build_edge_quaternion,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
+            WignerDCalculator as PTWignerDCalculator,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
+            build_edge_quaternion as pt_build_edge_quaternion,
+        )
+
+        vec = _make_edge_vectors()
+        quat_dp = dp_build_edge_quaternion(vec)
+        quat_pt = pt_build_edge_quaternion(
+            torch.tensor(vec, dtype=torch.float64, device=CPU)
+        )
+        calc_dp = DPWignerDCalculator(lmax, precision="float64")
+        calc_pt = PTWignerDCalculator(lmax, dtype=torch.float64)
+        z_dp = calc_dp.forward_zonal(quat_dp, lmin=lmin)
+        z_pt = calc_pt.forward_zonal(quat_pt, lmin=lmin)
+        n_expected = max((lmax + 1) ** 2 - lmin * lmin, 0)
+        assert z_dp.shape == (vec.shape[0], n_expected)
+        assert tuple(z_pt.shape) == (vec.shape[0], n_expected)
+        assert_parity(z_dp, z_pt)
+
+    def test_call_works_on_torch_tensors(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.wignerd import (
+            WignerDCalculator as DPWignerDCalculator,
+        )
+        from deepmd.dpmodel.descriptor.dpa4_nn.wignerd import (
+            build_edge_quaternion as dp_build_edge_quaternion,
+        )
+
+        vec = _make_edge_vectors()
+        quat_np = dp_build_edge_quaternion(vec)
+        quat_t = dp_build_edge_quaternion(
+            torch.tensor(vec, dtype=torch.float64, device=CPU)
+        )
+        assert isinstance(quat_t, torch.Tensor)
+        assert_parity(quat_np, quat_t)
+        calc_dp = DPWignerDCalculator(3, precision="float64")
+        D_np, Dt_np = calc_dp(quat_np)
+        D_t, Dt_t = calc_dp(quat_t)
+        assert isinstance(D_t, torch.Tensor)
+        assert_parity(D_np, D_t)
+        assert_parity(Dt_np, Dt_t)
+        z_np = calc_dp.forward_zonal(quat_np, lmin=2)
+        z_t = calc_dp.forward_zonal(quat_t, lmin=2)
+        assert_parity(z_np, z_t)
+
+    def test_serialize(self) -> None:
+        # pt WignerDCalculator has buffers, but they are all derived constants:
+        # its serialize() emits only {"@class", "@version"} and deserialize()
+        # is delegated to the parent (raises NotImplementedError). The dpmodel
+        # port mirrors that contract exactly; no @variables roundtrip exists.
+        from deepmd.dpmodel.descriptor.dpa4_nn.wignerd import (
+            WignerDCalculator as DPWignerDCalculator,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
+            WignerDCalculator as PTWignerDCalculator,
+        )
+
+        calc_dp = DPWignerDCalculator(2, precision="float64")
+        calc_pt = PTWignerDCalculator(2, dtype=torch.float64)
+        assert calc_dp.serialize() == calc_pt.serialize()
+        with pytest.raises(NotImplementedError):
+            DPWignerDCalculator.deserialize(calc_dp.serialize())
+        with pytest.raises(ValueError):
+            DPWignerDCalculator.deserialize({"@class": "Nope", "@version": 1})
+
+    def test_errors(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.wignerd import (
+            WignerDCalculator as DPWignerDCalculator,
+        )
+
+        with pytest.raises(ValueError):  # negative lmax
+            DPWignerDCalculator(-1, precision="float64")
+        calc = DPWignerDCalculator(2, precision="float64")
+        with pytest.raises(ValueError):  # lmin < 1
+            calc.forward_zonal(np.zeros((4, 4)), lmin=0)
+
+
 class TestNoTorchImport:
     def test_dpa4_nn_does_not_import_torch(self) -> None:
         code = (
@@ -552,7 +755,8 @@ class TestNoTorchImport:
             "import deepmd.dpmodel.descriptor.dpa4_nn.indexing, "
             "deepmd.dpmodel.descriptor.dpa4_nn.utils, "
             "deepmd.dpmodel.descriptor.dpa4_nn.norm, "
-            "deepmd.dpmodel.descriptor.dpa4_nn.radial; "
+            "deepmd.dpmodel.descriptor.dpa4_nn.radial, "
+            "deepmd.dpmodel.descriptor.dpa4_nn.wignerd; "
             "print('torch' in sys.modules)"
         )
         out = subprocess.run(
