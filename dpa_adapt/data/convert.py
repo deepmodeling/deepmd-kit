@@ -107,6 +107,7 @@ def auto_convert(
     mol_template: str = "id{row}.mol",
     split_seed: int | None = None,
     conformer_seed: int | None = None,
+    seed: int = 42,
     poscar: str | None = None,
     formula_col: str = "formula",
     base_element: str | None = None,
@@ -184,7 +185,7 @@ def auto_convert(
             property_name=property_name,
             base_element=base_element,
             sets=sets,
-            seed=42,
+            seed=seed,
         )
         if verbose:
             print(f"Formula conversion: {len(out)} systems written.")
