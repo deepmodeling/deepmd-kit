@@ -333,6 +333,18 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
             param.stop_gradient = not trainable
         self.compress = False
 
+    def get_dim_chg_spin(self) -> int:
+        """Returns the dimension of charge_spin input (0 if not supported)."""
+        return 0
+
+    def has_default_chg_spin(self) -> bool:
+        """Returns whether the descriptor has a default charge_spin value."""
+        return False
+
+    def get_default_chg_spin(self) -> None:
+        """Returns the default charge_spin value, or None."""
+        return None
+
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
         return self.rcut
@@ -734,10 +746,8 @@ class DescrptDPA2(BaseDescriptor, paddle.nn.Layer):
         mapping: paddle.Tensor | None = None,
         comm_dict: list[paddle.Tensor] | None = None,
         fparam: paddle.Tensor | None = None,
+        charge_spin: paddle.Tensor | None = None,
     ) -> tuple[
-        paddle.Tensor,
-        paddle.Tensor | None,
-        paddle.Tensor | None,
         paddle.Tensor | None,
         paddle.Tensor | None,
     ]:

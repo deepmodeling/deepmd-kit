@@ -190,6 +190,18 @@ class DescrptSeTTebd(BaseDescriptor, paddle.nn.Layer):
         for param in self.parameters():
             param.stop_gradient = not trainable
 
+    def get_dim_chg_spin(self) -> int:
+        """Returns the dimension of charge_spin input (0 if not supported)."""
+        return 0
+
+    def has_default_chg_spin(self) -> bool:
+        """Returns whether the descriptor has a default charge_spin value."""
+        return False
+
+    def get_default_chg_spin(self) -> None:
+        """Returns the default charge_spin value, or None."""
+        return None
+
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
         return self.se_ttebd.get_rcut()
@@ -438,6 +450,7 @@ class DescrptSeTTebd(BaseDescriptor, paddle.nn.Layer):
         mapping: paddle.Tensor | None = None,
         comm_dict: list[paddle.Tensor] | None = None,
         fparam: paddle.Tensor | None = None,
+        charge_spin: paddle.Tensor | None = None,
     ) -> paddle.Tensor:
         """Compute the descriptor.
 
