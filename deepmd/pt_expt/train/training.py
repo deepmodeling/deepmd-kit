@@ -477,8 +477,9 @@ def _trace_and_compile(
     # make_fx inserts aten.detach.default for saved tensors used in the
     # decomposed autograd.grad backward ops.  These detach nodes break
     # second-order gradient flow (d(force)/d(params) for force training).
-    # Topology-based removal preserves user-explicit .detach() calls.
-    _strip_saved_tensor_detach(traced_lower)
+    # The training trace is fed already-detached, grad-enabled inputs, so
+    # every detach is removed unconditionally to restore the gradient path.
+    _strip_saved_tensor_detach(traced_lower, remove_all=True)
     # Rebuild into a fresh graph to eliminate stale C-level node pointers
     # left by erase_node(), which can cause segfaults during dynamo re-trace.
     traced_lower = _rebuild_graph_module(traced_lower)
