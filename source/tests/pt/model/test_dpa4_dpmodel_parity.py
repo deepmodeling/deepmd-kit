@@ -748,6 +748,598 @@ class TestWignerDParity:
             calc.forward_zonal(np.zeros((4, 4)), lmin=0)
 
 
+class TestNormParity:
+    channels = 8
+
+    def _perturb(self, pt_mod: torch.nn.Module, seed: int) -> None:
+        # perturb all parameters (scales init to ones / biases to zeros, which
+        # would otherwise make the parameter copy untested)
+        rng = np.random.default_rng(seed)
+        with torch.no_grad():
+            for p in pt_mod.parameters():
+                p += torch.from_numpy(0.1 * rng.normal(size=tuple(p.shape)))
+
+    @pytest.mark.parametrize("lmax", [0, 2, 3])  # 0 covers the scalar-only branch
+    @pytest.mark.parametrize("n_focus", [1, 2])  # focus streams
+    def test_equivariant_rmsnorm(self, lmax, n_focus) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.norm import (
+            EquivariantRMSNorm as DPEquivariantRMSNorm,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.norm import (
+            EquivariantRMSNorm as PTEquivariantRMSNorm,
+        )
+
+        pt_mod = PTEquivariantRMSNorm(
+            lmax, self.channels, n_focus, dtype=torch.float64, trainable=True
+        )
+        self._perturb(pt_mod, 2040)
+        serialized = pt_mod.serialize()
+        # pt state_dict key contract: 2 parameters + 2 persistent buffers
+        assert set(serialized["@variables"]) == {
+            "adam_scale",
+            "bias",
+            "expand_index",
+            "balance_weight",
+        }
+        dp_mod = DPEquivariantRMSNorm.deserialize(serialized)
+        rng = np.random.default_rng(2041)
+        x = rng.normal(size=(17, (lmax + 1) ** 2, n_focus, self.channels))
+        x[0] = 0.0  # all-zeros row exercises the eps path
+        assert_parity(dp_mod.call(x), pt_mod(torch.from_numpy(x)))
+
+    def test_equivariant_rmsnorm_roundtrip(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.norm import (
+            EquivariantRMSNorm as DPEquivariantRMSNorm,
+        )
+
+        dp_mod = DPEquivariantRMSNorm(2, self.channels, 2, precision="float64")
+        dp_mod2 = DPEquivariantRMSNorm.deserialize(dp_mod.serialize())
+        rng = np.random.default_rng(2042)
+        x = rng.normal(size=(17, 9, 2, self.channels))
+        np.testing.assert_array_equal(
+            np.asarray(dp_mod.call(x)), np.asarray(dp_mod2.call(x))
+        )
+
+    @pytest.mark.parametrize(
+        "lmax,mmax", [(0, 0), (2, 1), (2, 2), (3, 2)]
+    )  # (0,0) covers the scalar-only branch; mmax<lmax covers truncation
+    @pytest.mark.parametrize("n_focus", [1, 2])  # focus streams
+    def test_reduced_equivariant_rmsnorm(self, lmax, mmax, n_focus) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.norm import (
+            ReducedEquivariantRMSNorm as DPReducedEquivariantRMSNorm,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.norm import (
+            ReducedEquivariantRMSNorm as PTReducedEquivariantRMSNorm,
+        )
+
+        degree_index_m = dp_indexing.build_m_major_l_index(lmax, mmax)
+        pt_mod = PTReducedEquivariantRMSNorm(
+            lmax=lmax,
+            mmax=mmax,
+            channels=self.channels,
+            degree_index_m=torch.tensor(degree_index_m, dtype=torch.long, device=CPU),
+            n_focus=n_focus,
+            dtype=torch.float64,
+            trainable=True,
+        )
+        self._perturb(pt_mod, 2043)
+        serialized = pt_mod.serialize()
+        # pt state_dict key contract: 2 parameters + 2 persistent buffers
+        assert set(serialized["@variables"]) == {
+            "degree_index_m",
+            "balance_weight",
+            "adam_scale",
+            "bias0",
+        }
+        dp_mod = DPReducedEquivariantRMSNorm.deserialize(serialized)
+        rng = np.random.default_rng(2044)
+        x = rng.normal(size=(17, n_focus, degree_index_m.size, self.channels))
+        x[0] = 0.0  # all-zeros row exercises the eps path
+        assert_parity(dp_mod.call(x), pt_mod(torch.from_numpy(x)))
+
+    def test_reduced_equivariant_rmsnorm_roundtrip(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.norm import (
+            ReducedEquivariantRMSNorm as DPReducedEquivariantRMSNorm,
+        )
+
+        degree_index_m = dp_indexing.build_m_major_l_index(2, 1)
+        dp_mod = DPReducedEquivariantRMSNorm(
+            lmax=2,
+            mmax=1,
+            channels=self.channels,
+            degree_index_m=degree_index_m,
+            n_focus=2,
+            precision="float64",
+        )
+        dp_mod2 = DPReducedEquivariantRMSNorm.deserialize(dp_mod.serialize())
+        rng = np.random.default_rng(2045)
+        x = rng.normal(size=(17, 2, degree_index_m.size, self.channels))
+        np.testing.assert_array_equal(
+            np.asarray(dp_mod.call(x)), np.asarray(dp_mod2.call(x))
+        )
+
+    def test_reduced_equivariant_rmsnorm_invalid_degree_index(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.norm import (
+            ReducedEquivariantRMSNorm as DPReducedEquivariantRMSNorm,
+        )
+
+        with pytest.raises(ValueError):  # degree 5 > lmax leaves zero weights
+            DPReducedEquivariantRMSNorm(
+                lmax=2,
+                mmax=1,
+                channels=4,
+                degree_index_m=np.array([0, 1, 5], dtype=np.int64),
+                precision="float64",
+            )
+
+    @pytest.mark.parametrize("ndim", [2, 3])  # (B, C) and (B, F, C) branches
+    def test_scalar_rmsnorm(self, ndim) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.norm import (
+            ScalarRMSNorm as DPScalarRMSNorm,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.norm import (
+            ScalarRMSNorm as PTScalarRMSNorm,
+        )
+
+        n_focus = 1 if ndim == 2 else 2
+        pt_mod = PTScalarRMSNorm(
+            channels=self.channels,
+            n_focus=n_focus,
+            dtype=torch.float64,
+            trainable=True,
+        )
+        self._perturb(pt_mod, 2046)
+        serialized = pt_mod.serialize()
+        assert list(serialized["@variables"]) == ["adam_scale"]
+        dp_mod = DPScalarRMSNorm.deserialize(serialized)
+        rng = np.random.default_rng(2047)
+        shape = (17, self.channels) if ndim == 2 else (17, n_focus, self.channels)
+        x = rng.normal(size=shape)
+        x[0] = 0.0  # all-zeros row exercises the eps path
+        assert_parity(dp_mod.call(x), pt_mod(torch.from_numpy(x)))
+        # serialize roundtrip is exact
+        dp_mod2 = DPScalarRMSNorm.deserialize(dp_mod.serialize())
+        np.testing.assert_array_equal(
+            np.asarray(dp_mod.call(x)), np.asarray(dp_mod2.call(x))
+        )
+
+    def test_norm_fp32_input_branch(self) -> None:
+        # input-dtype promotion branch: fp32 input with fp64 params, output is
+        # cast back to fp32. Compared against pt at fp32 round-off level (the
+        # internal fp64 math is bit-identical, the final downcast is 1 ulp).
+        from deepmd.dpmodel.descriptor.dpa4_nn.norm import (
+            EquivariantRMSNorm as DPEquivariantRMSNorm,
+        )
+        from deepmd.dpmodel.descriptor.dpa4_nn.norm import (
+            ScalarRMSNorm as DPScalarRMSNorm,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.norm import (
+            EquivariantRMSNorm as PTEquivariantRMSNorm,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.norm import (
+            ScalarRMSNorm as PTScalarRMSNorm,
+        )
+
+        rng = np.random.default_rng(2048)
+        pt_eq = PTEquivariantRMSNorm(
+            2, self.channels, 1, dtype=torch.float64, trainable=True
+        )
+        dp_eq = DPEquivariantRMSNorm.deserialize(pt_eq.serialize())
+        x32 = rng.normal(size=(17, 9, 1, self.channels)).astype(np.float32)
+        res = dp_eq.call(x32)
+        ref = pt_eq(torch.from_numpy(x32))
+        assert np.asarray(res).dtype == np.float32
+        np.testing.assert_allclose(
+            np.asarray(res), ref.detach().numpy(), rtol=2e-7, atol=2e-7
+        )
+
+        pt_sc = PTScalarRMSNorm(
+            channels=self.channels, dtype=torch.float64, trainable=True
+        )
+        dp_sc = DPScalarRMSNorm.deserialize(pt_sc.serialize())
+        x32 = rng.normal(size=(17, self.channels)).astype(np.float32)
+        res = dp_sc.call(x32)
+        ref = pt_sc(torch.from_numpy(x32))
+        assert np.asarray(res).dtype == np.float32
+        np.testing.assert_allclose(
+            np.asarray(res), ref.detach().numpy(), rtol=2e-7, atol=2e-7
+        )
+
+    def test_deserialize_wrong_class(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.norm import (
+            EquivariantRMSNorm as DPEquivariantRMSNorm,
+        )
+        from deepmd.dpmodel.descriptor.dpa4_nn.norm import (
+            ReducedEquivariantRMSNorm as DPReducedEquivariantRMSNorm,
+        )
+        from deepmd.dpmodel.descriptor.dpa4_nn.norm import (
+            ScalarRMSNorm as DPScalarRMSNorm,
+        )
+
+        for klass in (
+            DPEquivariantRMSNorm,
+            DPReducedEquivariantRMSNorm,
+            DPScalarRMSNorm,
+        ):
+            with pytest.raises(ValueError):
+                klass.deserialize({"@class": "Nope", "@version": 1})
+
+
+class TestSO3LinearParity:
+    in_channels = 8
+    out_channels = 6
+
+    @pytest.mark.parametrize("lmax", [0, 2, 3])  # 0 covers the scalar-only branch
+    @pytest.mark.parametrize("mlp_bias", [False, True])  # l=0 bias branch
+    @pytest.mark.parametrize("n_focus", [1, 2])  # focus streams
+    def test_so3_linear(self, lmax, mlp_bias, n_focus) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.so3 import SO3Linear as DPSO3Linear
+        from deepmd.pt.model.descriptor.sezm_nn.so3 import SO3Linear as PTSO3Linear
+
+        pt_mod = PTSO3Linear(
+            lmax=lmax,
+            in_channels=self.in_channels,
+            out_channels=self.out_channels,
+            n_focus=n_focus,
+            dtype=torch.float64,
+            mlp_bias=mlp_bias,
+            trainable=True,
+            seed=21,
+        )
+        # bias inits to zeros; perturb so the bias copy is exercised
+        rng = np.random.default_rng(2050)
+        with torch.no_grad():
+            for p in pt_mod.parameters():
+                p += torch.from_numpy(0.1 * rng.normal(size=tuple(p.shape)))
+        serialized = pt_mod.serialize()
+        expected_keys = {"weight", "expand_index"} | ({"bias"} if mlp_bias else set())
+        assert set(serialized["@variables"]) == expected_keys
+        dp_mod = DPSO3Linear.deserialize(serialized)
+        x = rng.normal(size=(17, (lmax + 1) ** 2, n_focus, self.in_channels))
+        assert_parity(dp_mod.call(x), pt_mod(torch.from_numpy(x)))
+
+    @pytest.mark.parametrize("mlp_bias", [False, True])  # l=0 bias branch
+    def test_so3_linear_roundtrip(self, mlp_bias) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.so3 import SO3Linear as DPSO3Linear
+
+        dp_mod = DPSO3Linear(
+            lmax=2,
+            in_channels=self.in_channels,
+            out_channels=self.out_channels,
+            n_focus=2,
+            precision="float64",
+            mlp_bias=mlp_bias,
+            seed=7,
+        )
+        dp_mod2 = DPSO3Linear.deserialize(dp_mod.serialize())
+        rng = np.random.default_rng(2051)
+        x = rng.normal(size=(17, 9, 2, self.in_channels))
+        np.testing.assert_array_equal(
+            np.asarray(dp_mod.call(x)), np.asarray(dp_mod2.call(x))
+        )
+
+    def test_so3_linear_init_std_branches(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.so3 import SO3Linear as DPSO3Linear
+
+        # init_std=0.0 -> exact zero init
+        dp_zero = DPSO3Linear(
+            lmax=2,
+            in_channels=self.in_channels,
+            out_channels=self.out_channels,
+            precision="float64",
+            init_std=0.0,
+        )
+        np.testing.assert_array_equal(dp_zero.weight, 0.0)
+        # init_std>0 -> normal init (nonzero)
+        dp_norm = DPSO3Linear(
+            lmax=2,
+            in_channels=self.in_channels,
+            out_channels=self.out_channels,
+            precision="float64",
+            seed=3,
+            init_std=0.5,
+        )
+        assert np.any(dp_norm.weight != 0.0)
+
+    @pytest.mark.parametrize("bias", [False, True])  # bias branch
+    def test_focus_linear(self, bias) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.so3 import FocusLinear as DPFocusLinear
+        from deepmd.pt.model.descriptor.sezm_nn.so3 import FocusLinear as PTFocusLinear
+
+        n_focus = 2
+        pt_mod = PTFocusLinear(
+            in_channels=self.in_channels,
+            out_channels=self.out_channels,
+            n_focus=n_focus,
+            dtype=torch.float64,
+            bias=bias,
+            trainable=True,
+            seed=5,
+        )
+        rng = np.random.default_rng(2052)
+        with torch.no_grad():
+            for p in pt_mod.parameters():
+                p += torch.from_numpy(0.1 * rng.normal(size=tuple(p.shape)))
+        # pt FocusLinear has no serialize(); copy the state_dict fragment
+        # (keys "weight"/"bias") directly, the contract used by nested modules
+        state = pt_state_to_numpy(pt_mod)
+        assert set(state) == ({"weight", "bias"} if bias else {"weight"})
+        dp_mod = DPFocusLinear(
+            in_channels=self.in_channels,
+            out_channels=self.out_channels,
+            n_focus=n_focus,
+            precision="float64",
+            bias=bias,
+            seed=5,
+        )
+        dp_mod.weight = state["weight"]
+        if bias:
+            dp_mod.bias = state["bias"]
+        x = rng.normal(size=(17, n_focus, self.in_channels))
+        assert_parity(dp_mod.call(x), pt_mod(torch.from_numpy(x)))
+        # serialize roundtrip is exact
+        dp_mod2 = DPFocusLinear.deserialize(dp_mod.serialize())
+        np.testing.assert_array_equal(
+            np.asarray(dp_mod.call(x)), np.asarray(dp_mod2.call(x))
+        )
+
+    @pytest.mark.parametrize("bias", [False, True])  # bias branch
+    def test_channel_linear(self, bias) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.so3 import (
+            ChannelLinear as DPChannelLinear,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.so3 import (
+            ChannelLinear as PTChannelLinear,
+        )
+
+        pt_mod = PTChannelLinear(
+            in_channels=self.in_channels,
+            out_channels=self.out_channels,
+            dtype=torch.float64,
+            bias=bias,
+            trainable=True,
+            seed=6,
+        )
+        rng = np.random.default_rng(2053)
+        with torch.no_grad():
+            for p in pt_mod.parameters():
+                p += torch.from_numpy(0.1 * rng.normal(size=tuple(p.shape)))
+        # pt ChannelLinear has no serialize(); copy the state_dict fragment
+        state = pt_state_to_numpy(pt_mod)
+        assert set(state) == ({"weight", "bias"} if bias else {"weight"})
+        dp_mod = DPChannelLinear(
+            in_channels=self.in_channels,
+            out_channels=self.out_channels,
+            precision="float64",
+            bias=bias,
+            seed=6,
+        )
+        dp_mod.weight = state["weight"]
+        if bias:
+            dp_mod.bias = state["bias"]
+        # leading axes are batch: exercise a 3D input
+        x = rng.normal(size=(17, 4, self.in_channels))
+        assert_parity(dp_mod.call(x), pt_mod(torch.from_numpy(x)))
+        # serialize roundtrip is exact
+        dp_mod2 = DPChannelLinear.deserialize(dp_mod.serialize())
+        np.testing.assert_array_equal(
+            np.asarray(dp_mod.call(x)), np.asarray(dp_mod2.call(x))
+        )
+
+    def test_focus_channel_linear_init_std_branch(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.so3 import (
+            ChannelLinear as DPChannelLinear,
+        )
+        from deepmd.dpmodel.descriptor.dpa4_nn.so3 import FocusLinear as DPFocusLinear
+
+        # init_std branch: normal(0, init_std) instead of uniform
+        dp_f = DPFocusLinear(
+            in_channels=64,
+            out_channels=64,
+            n_focus=1,
+            precision="float64",
+            seed=8,
+            init_std=0.01,
+        )
+        dp_c = DPChannelLinear(
+            in_channels=64,
+            out_channels=64,
+            precision="float64",
+            seed=8,
+            init_std=0.01,
+        )
+        for w in (dp_f.weight, dp_c.weight):
+            # uniform init would have std ~ bound/sqrt(3) = 0.072; normal 0.01
+            assert np.std(w) < 0.02
+
+    def test_deserialize_wrong_class(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.so3 import (
+            ChannelLinear as DPChannelLinear,
+        )
+        from deepmd.dpmodel.descriptor.dpa4_nn.so3 import FocusLinear as DPFocusLinear
+        from deepmd.dpmodel.descriptor.dpa4_nn.so3 import SO3Linear as DPSO3Linear
+
+        for klass in (DPSO3Linear, DPFocusLinear, DPChannelLinear):
+            with pytest.raises(ValueError):
+                klass.deserialize({"@class": "Nope", "@version": 1})
+
+
+class TestGatedActivationParity:
+    channels = 8
+
+    def _build_pair(self, *, lmax, mmax, n_focus, mlp_bias, layout, activation):
+        from deepmd.dpmodel.descriptor.dpa4_nn.activation import (
+            GatedActivation as DPGatedActivation,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.activation import (
+            GatedActivation as PTGatedActivation,
+        )
+
+        pt_mod = PTGatedActivation(
+            lmax=lmax,
+            mmax=mmax,
+            channels=self.channels,
+            n_focus=n_focus,
+            dtype=torch.float64,
+            activation_function=activation,
+            mlp_bias=mlp_bias,
+            layout=layout,
+            trainable=True,
+            seed=31,
+        )
+        # perturb all parameters (gate bias inits to zeros)
+        rng = np.random.default_rng(2060)
+        with torch.no_grad():
+            for p in pt_mod.parameters():
+                p += torch.from_numpy(0.05 * rng.normal(size=tuple(p.shape)))
+        serialized = pt_mod.serialize()
+        expected_keys = {"expand_index"}
+        if lmax > 0:
+            expected_keys |= {"gate_linear.weight"}
+            if mlp_bias:
+                expected_keys |= {"gate_linear.bias"}
+        assert set(serialized["@variables"]) == expected_keys
+        dp_mod = DPGatedActivation.deserialize(serialized)
+        return dp_mod, pt_mod
+
+    def _shape(self, lmax, mmax, n_focus, layout):
+        if mmax is None:
+            ncoeff = (lmax + 1) ** 2
+        else:
+            ncoeff = dp_indexing.build_m_major_l_index(lmax, mmax).size
+        if layout == "nfdc":
+            return (17, n_focus, ncoeff, self.channels)
+        return (17, ncoeff, n_focus, self.channels)
+
+    @pytest.mark.parametrize("layout", ["nfdc", "ndfc"])  # tensor layout
+    @pytest.mark.parametrize("use_gate", [False, True])  # standard vs GLU mode
+    def test_gated_activation(self, layout, use_gate) -> None:
+        lmax, n_focus = 2, 2
+        dp_mod, pt_mod = self._build_pair(
+            lmax=lmax,
+            mmax=None,
+            n_focus=n_focus,
+            mlp_bias=False,
+            layout=layout,
+            activation="silu",
+        )
+        rng = np.random.default_rng(2061)
+        shape = self._shape(lmax, None, n_focus, layout)
+        x = rng.normal(size=shape)
+        if use_gate:
+            gate = rng.normal(size=shape)
+            res = dp_mod.call(x, gate=gate)
+            ref = pt_mod(torch.from_numpy(x), gate=torch.from_numpy(gate))
+        else:
+            res = dp_mod.call(x)
+            ref = pt_mod(torch.from_numpy(x))
+        assert_parity(res, ref)
+
+    @pytest.mark.parametrize("mlp_bias", [False, True])  # gate-linear bias branch
+    def test_gated_activation_mmax_reduced(self, mlp_bias) -> None:
+        # m-major reduced layout branch (mmax provided) + tanh activation
+        lmax, mmax, n_focus = 3, 1, 1
+        dp_mod, pt_mod = self._build_pair(
+            lmax=lmax,
+            mmax=mmax,
+            n_focus=n_focus,
+            mlp_bias=mlp_bias,
+            layout="ndfc",
+            activation="tanh",
+        )
+        rng = np.random.default_rng(2062)
+        x = rng.normal(size=self._shape(lmax, mmax, n_focus, "ndfc"))
+        assert_parity(dp_mod.call(x), pt_mod(torch.from_numpy(x)))
+
+    @pytest.mark.parametrize("use_gate", [False, True])  # standard vs GLU mode
+    def test_gated_activation_lmax0(self, use_gate) -> None:
+        # lmax=0 branch: scalar-only output, no gate_linear
+        dp_mod, pt_mod = self._build_pair(
+            lmax=0,
+            mmax=None,
+            n_focus=1,
+            mlp_bias=False,
+            layout="nfdc",
+            activation="silu",
+        )
+        assert dp_mod.gate_linear is None
+        rng = np.random.default_rng(2063)
+        shape = self._shape(0, None, 1, "nfdc")
+        x = rng.normal(size=shape)
+        if use_gate:
+            gate = rng.normal(size=shape)
+            res = dp_mod.call(x, gate=gate)
+            ref = pt_mod(torch.from_numpy(x), gate=torch.from_numpy(gate))
+        else:
+            res = dp_mod.call(x)
+            ref = pt_mod(torch.from_numpy(x))
+        assert_parity(res, ref)
+
+    def test_gated_activation_fp32_input_branch(self) -> None:
+        # input-dtype promotion branch: fp32 input with fp64 gate params;
+        # compared at fp32 round-off level (downcast happens at different
+        # points in the two implementations)
+        dp_mod, pt_mod = self._build_pair(
+            lmax=2,
+            mmax=None,
+            n_focus=1,
+            mlp_bias=False,
+            layout="nfdc",
+            activation="silu",
+        )
+        rng = np.random.default_rng(2064)
+        x32 = rng.normal(size=self._shape(2, None, 1, "nfdc")).astype(np.float32)
+        res = dp_mod.call(x32)
+        ref = pt_mod(torch.from_numpy(x32))
+        assert np.asarray(res).dtype == np.float32
+        np.testing.assert_allclose(
+            np.asarray(res), ref.detach().numpy(), rtol=2e-6, atol=2e-7
+        )
+
+    def test_gated_activation_roundtrip(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.activation import (
+            GatedActivation as DPGatedActivation,
+        )
+
+        dp_mod = DPGatedActivation(
+            lmax=2,
+            channels=self.channels,
+            n_focus=2,
+            precision="float64",
+            mlp_bias=True,
+            layout="ndfc",
+            seed=13,
+        )
+        dp_mod2 = DPGatedActivation.deserialize(dp_mod.serialize())
+        rng = np.random.default_rng(2065)
+        x = rng.normal(size=(17, 9, 2, self.channels))
+        np.testing.assert_array_equal(
+            np.asarray(dp_mod.call(x)), np.asarray(dp_mod2.call(x))
+        )
+
+    def test_gated_activation_errors(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.activation import (
+            GatedActivation as DPGatedActivation,
+        )
+
+        with pytest.raises(ValueError):  # mmax < 0
+            DPGatedActivation(lmax=2, mmax=-1, channels=4)
+        with pytest.raises(ValueError):  # mmax > lmax
+            DPGatedActivation(lmax=2, mmax=3, channels=4)
+        with pytest.raises(ValueError):  # invalid layout
+            DPGatedActivation(lmax=2, channels=4, layout="cfdn")
+        with pytest.raises(ValueError):  # wrong class
+            DPGatedActivation.deserialize({"@class": "Nope", "@version": 1})
+
+    def test_swiglu(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.activation import SwiGLU as DPSwiGLU
+        from deepmd.pt.model.descriptor.sezm_nn.activation import SwiGLU as PTSwiGLU
+
+        rng = np.random.default_rng(2066)
+        x = rng.normal(size=(17, 3, 2 * self.channels))
+        assert_parity(DPSwiGLU().call(x), PTSwiGLU()(torch.from_numpy(x)))
+
+
 class TestNoTorchImport:
     def test_dpa4_nn_does_not_import_torch(self) -> None:
         code = (
@@ -756,6 +1348,8 @@ class TestNoTorchImport:
             "deepmd.dpmodel.descriptor.dpa4_nn.utils, "
             "deepmd.dpmodel.descriptor.dpa4_nn.norm, "
             "deepmd.dpmodel.descriptor.dpa4_nn.radial, "
+            "deepmd.dpmodel.descriptor.dpa4_nn.so3, "
+            "deepmd.dpmodel.descriptor.dpa4_nn.activation, "
             "deepmd.dpmodel.descriptor.dpa4_nn.wignerd; "
             "print('torch' in sys.modules)"
         )
