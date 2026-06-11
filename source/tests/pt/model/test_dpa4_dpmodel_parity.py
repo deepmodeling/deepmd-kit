@@ -2379,8 +2379,8 @@ class TestEmbeddingParity:
     )  # padded-slot patterns (node = one all-masked destination)
     @pytest.mark.parametrize(
         "zonal_provided", [False, True]
-    )  # zonal_coupling: None (gather from Dt_full, core lmax_node==lmax_mp)
-    #    vs provided (core lmax_node>lmax_mp via _build_gie_zonal_coupling)
+    )  # zonal_coupling: None (gather from Dt_full) vs provided-zonal input
+    #    path with D_node == D_cache only
     @pytest.mark.parametrize("with_gate", [False, True])  # SFPG gate branch
     def test_gie(self, masked, zonal_provided, with_gate) -> None:
         lmax, channels = 2, 4
@@ -2396,6 +2396,9 @@ class TestEmbeddingParity:
             with_gate=with_gate,
         )
         if zonal_provided:
+            # Scope: provided-zonal here uses D_node == D_cache; the genuine
+            # lmax_node > lmax_mp (dim_full != ebed_dim) path is exercised by
+            # the descriptor-level tests in a later task.
             rows = dp_mod.non_scalar_row_index
             cols = dp_mod.zonal_m0_col_index_for_row
             dp_zonal = np.asarray(dp_cache.Dt_full)[:, rows, cols]

@@ -172,7 +172,7 @@ class SeZMTypeEmbedding(NativeOP):
                 "ntypes": self.ntypes,
                 "embed_dim": self.embed_dim,
                 "padding": self.padding,
-                "precision": np.dtype(PRECISION_DICT[self.precision]).name,
+                "precision": self.precision.lower(),
                 "trainable": self.trainable,
                 "seed": None,
             },
@@ -363,7 +363,7 @@ class GeometricInitialEmbedding(NativeOP):
             "@version": 1,
             "lmax": self.lmax,
             "channels": self.channels,
-            "precision": np.dtype(PRECISION_DICT[self.precision]).name,
+            "precision": self.precision.lower(),
         }
 
     @classmethod
@@ -684,7 +684,7 @@ class EnvironmentInitialEmbedding(NativeOP):
                 "mlp_bias": self.mlp_bias,
                 "activation_function": self.activation_function,
                 "eps": self.eps,
-                "precision": np.dtype(PRECISION_DICT[self.precision]).name,
+                "precision": self.precision.lower(),
                 "trainable": self.trainable,
                 "seed": None,
             },
