@@ -1,28 +1,23 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Public Triton entry points for SeZM SO(2) rotations."""
+"""Hardware-accelerated SeZM/DPA4 operators.
 
-from .autograd import (
-    edge_geometry_rbf_triton,
-    rotate_back_triton,
-    rotate_to_local_triton,
+This package hosts ``make_fx``-composable Triton implementations of SeZM hot
+paths.  Kernel entry points are internal implementation details of the SeZM
+descriptor; the package-level API only exposes availability.
+"""
+
+from .radial_mix import (
+    RADIAL_MIX_TRITON_AVAILABLE,
 )
-from .constants import (
-    SEZM_TRITON_AVAILABLE,
-    TritonRotationMode,
+from .so2_rotation import (
+    TRITON_ROTATION_AVAILABLE,
 )
-from .dispatch import (
-    resolve_triton_rotation_mode,
-    sezm_triton_enabled,
-    uses_triton_kernel,
-)
+
+# Both kernel modules guard their ``@triton.jit`` definitions behind a ``triton``
+# import, so the two module-level checks are equivalent. Expose a single
+# package-level availability flag.
+TRITON_AVAILABLE = TRITON_ROTATION_AVAILABLE and RADIAL_MIX_TRITON_AVAILABLE
 
 __all__ = [
-    "SEZM_TRITON_AVAILABLE",
-    "TritonRotationMode",
-    "edge_geometry_rbf_triton",
-    "resolve_triton_rotation_mode",
-    "rotate_back_triton",
-    "rotate_to_local_triton",
-    "sezm_triton_enabled",
-    "uses_triton_kernel",
+    "TRITON_AVAILABLE",
 ]

@@ -6,6 +6,10 @@ from __future__ import (
 )
 
 import math
+import os
+from contextlib import (
+    contextmanager,
+)
 from typing import (
     TYPE_CHECKING,
 )
@@ -15,6 +19,7 @@ import torch
 if TYPE_CHECKING:
     from collections.abc import (
         Callable,
+        Generator,
         Iterable,
     )
 
@@ -148,3 +153,19 @@ def stable_clip_grad_norm(
             param.grad.detach().mul_(clip_coef)
 
     return torch.tensor(total_norm, dtype=torch.float64, device=first_device)
+
+
+@contextmanager
+def scoped_env_defaults(defaults: dict[str, str]) -> Generator[None, None, None]:
+    """Temporarily set missing environment variables and restore them afterward."""
+    previous = {key: os.environ.get(key) for key in defaults}
+    try:
+        for key, value in defaults.items():
+            os.environ.setdefault(key, value)
+        yield
+    finally:
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value

@@ -307,6 +307,7 @@ def get_sezm_model(model_params: dict) -> BaseModel:
     model_params = copy.deepcopy(model_params)
     model_params.setdefault("descriptor", {})
     model_params.setdefault("fitting_net", {})
+    model_params["descriptor"].setdefault("type", "dpa4")
 
     ntypes = len(model_params["type_map"])
     model_params["descriptor"]["ntypes"] = ntypes
@@ -378,6 +379,7 @@ def get_sezm_spin_model(model_params: dict) -> BaseModel:
     model_params = copy.deepcopy(model_params)
     model_params.setdefault("descriptor", {})
     model_params.setdefault("fitting_net", {})
+    model_params["descriptor"].setdefault("type", "dpa4")
     _normalize_spin_use_spin(model_params)
     real_sel = model_params["descriptor"].get("sel", 120)
     real_sel_list = [int(real_sel)] if isinstance(real_sel, int) else list(real_sel)

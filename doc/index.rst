@@ -46,6 +46,7 @@ DeePMD-kit is a package written in Python/C++, designed to minimize the effort r
    dpa_adapt/README
    cli
    third-party/index
+   agent-skills
    nvnmd/index
    env
    troubleshooting/index
