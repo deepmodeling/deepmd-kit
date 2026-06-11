@@ -27,6 +27,9 @@ random points, matching to machine precision):
   so that ``sum_m Y_lm(v)^2 = 1`` for every unit vector ``v``.
 - ``normalize=True``: input vectors are normalized internally before
   evaluation, making the output invariant to the input vector length.
+- Zero vectors: e3nn clamps the norm instead of dividing by zero, so a zero
+  input vector yields ``[Y00, 0, 0, ...] = [1, 0, 0, ...]``. This module
+  reproduces that exactly (no NaN, no runtime warning).
 """
 
 import numpy as np
@@ -46,7 +49,8 @@ def real_spherical_harmonics(vecs: np.ndarray, lmax: int) -> np.ndarray:
     vecs
         Input vectors with shape ``(..., 3)``. They do not need to be
         normalized; vectors are normalized internally (e3nn
-        ``normalize=True``).
+        ``normalize=True``). Zero vectors map to ``[1, 0, 0, ...]``
+        exactly as in e3nn (which clamps the norm before dividing).
     lmax
         Maximum angular degree, any non-negative integer.
 
@@ -63,8 +67,12 @@ def real_spherical_harmonics(vecs: np.ndarray, lmax: int) -> np.ndarray:
         raise ValueError(f"vecs must have shape (..., 3), got {vecs.shape}")
     lead_shape = vecs.shape[:-1]
     vecs = vecs.reshape(-1, 3)
-    # normalize=True: e3nn normalizes the input vectors internally
-    vecs = vecs / np.linalg.norm(vecs, axis=-1, keepdims=True)
+    # normalize=True: e3nn normalizes the input vectors internally.
+    # e3nn clamps the norm, so zero vectors stay zero instead of becoming
+    # NaN; the corresponding l >= 1 output components are zeroed below.
+    norm = np.linalg.norm(vecs, axis=-1, keepdims=True)
+    zero_mask = norm == 0.0
+    vecs = vecs / np.where(zero_mask, 1.0, norm)
     x, y, z = vecs[:, 0], vecs[:, 1], vecs[:, 2]
     # e3nn polar axis is y: standard axes (x_s, y_s, z_s) = (z, x, y)
     cos_theta = np.clip(y, -1.0, 1.0)
@@ -75,7 +83,9 @@ def real_spherical_harmonics(vecs: np.ndarray, lmax: int) -> np.ndarray:
     # Fully normalized associated Legendre functions (Condon-Shortley-free):
     #   pbar[l][m] = sqrt((2l+1)/(4*pi) * (l-m)!/(l+m)!) * P_l^m(cos_theta)
     # computed with the standard stable recurrences on the normalized
-    # functions (no factorials, no overflow for large lmax).
+    # functions (no factorials, no overflow for large lmax). See DLMF
+    # §14.10 (https://dlmf.nist.gov/14.10) and Holmes & Featherstone,
+    # J. Geodesy 76, 279-299 (2002), doi:10.1007/s00190-002-0216-2.
     pbar = [[None] * (ll + 1) for ll in range(lmax + 1)]
     pbar[0][0] = np.full(nbatch, np.sqrt(1.0 / (4.0 * np.pi)))
     # diagonal: pbar[m][m]
@@ -95,6 +105,9 @@ def real_spherical_harmonics(vecs: np.ndarray, lmax: int) -> np.ndarray:
 
     out = np.zeros((nbatch, (lmax + 1) ** 2), dtype=np.float64)
     sqrt2 = np.sqrt(2.0)
+    # sin(m*phi) / cos(m*phi): computed once per order m, reused across l
+    sin_mphi = [None] + [np.sin(m * phi) for m in range(1, lmax + 1)]
+    cos_mphi = [None] + [np.cos(m * phi) for m in range(1, lmax + 1)]
     for ll in range(lmax + 1):
         # normalization="norm": scale orthonormal SH by sqrt(4*pi/(2l+1))
         scale = np.sqrt(4.0 * np.pi / (2.0 * ll + 1.0))
@@ -102,6 +115,12 @@ def real_spherical_harmonics(vecs: np.ndarray, lmax: int) -> np.ndarray:
         out[:, center] = scale * pbar[ll][0]
         for m in range(1, ll + 1):
             base = sqrt2 * scale * pbar[ll][m]
-            out[:, center - m] = base * np.sin(m * phi)
-            out[:, center + m] = base * np.cos(m * phi)
+            out[:, center - m] = base * sin_mphi[m]
+            out[:, center + m] = base * cos_mphi[m]
+    # e3nn zero-vector behavior: the clamped-norm zero vector evaluates the
+    # degree-l polynomials at the origin, giving exactly [1, 0, 0, ...].
+    # The theta/phi recurrences above are ill-defined there, so enforce it.
+    zero_out = np.zeros((lmax + 1) ** 2, dtype=np.float64)
+    zero_out[0] = 1.0
+    out = np.where(zero_mask, zero_out, out)
     return out.reshape(*lead_shape, (lmax + 1) ** 2)

@@ -88,6 +88,66 @@ class TestRealSphericalHarmonics:
         flat = real_spherical_harmonics(v.reshape(-1, 3), 3)
         np.testing.assert_allclose(out.reshape(-1, 16), flat, rtol=0, atol=0)
 
+    # e3nn-free convention pin: the l=1 block under normalization="norm"
+    # is exactly the unit input vector in (x, y, z) order (m = -1, 0, +1).
+    def test_l1_block_is_unit_vector(self):
+        rng = np.random.default_rng(3)
+        v = rng.standard_normal((128, 3))
+        v /= np.linalg.norm(v, axis=1, keepdims=True)
+        out = real_spherical_harmonics(v, 1)
+        np.testing.assert_allclose(out[:, 1:4], v, rtol=1e-12, atol=1e-14)
+
+    def test_basis_vectors_lmax2(self):
+        # e3nn-free convention pin: analytic SH values at lmax=2 for the
+        # Cartesian basis vectors. Cross-checked against
+        # e3nn.o3.spherical_harmonics([0, 1, 2], v, normalize=True,
+        # normalization="norm"): the analytic values below equal the e3nn
+        # output to the last bit (max |diff| = 0.0).
+        h = np.sqrt(3.0) / 2.0
+        cases = [
+            ((1.0, 0.0, 0.0), [1.0, 1.0, 0.0, 0.0, 0.0, 0.0, -0.5, 0.0, -h]),
+            ((0.0, 1.0, 0.0), [1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0]),
+            ((0.0, 0.0, 1.0), [1.0, 0.0, 0.0, 1.0, 0.0, 0.0, -0.5, 0.0, h]),
+        ]
+        for vec, ref in cases:
+            out = real_spherical_harmonics(np.array([vec]), 2)
+            np.testing.assert_allclose(out[0], ref, rtol=1e-12, atol=1e-15)
+
+    @pytest.mark.filterwarnings("error")
+    def test_zero_vector(self):
+        # e3nn's normalize=True clamps the norm, so a zero vector maps to
+        # [Y00, 0, 0, ...] = [1, 0, ...]. Verified against
+        # e3nn.o3.spherical_harmonics([0, 1, 2], zeros, normalize=True,
+        # normalization="norm") -> [1, 0, 0, 0, 0, 0, 0, 0, 0].
+        expected = np.zeros(9)
+        expected[0] = 1.0
+        with np.errstate(invalid="raise", divide="raise"):
+            out = real_spherical_harmonics(np.zeros((1, 3)), 2)
+        np.testing.assert_allclose(out[0], expected, rtol=0, atol=0)
+
+    @pytest.mark.filterwarnings("error")
+    def test_zero_vector_mixed_batch(self):
+        # batch mixing zero and unit vectors: zero rows give [1, 0, ...],
+        # nonzero rows are unaffected by the zero-vector guard
+        rng = np.random.default_rng(4)
+        v = rng.standard_normal((6, 3))
+        v /= np.linalg.norm(v, axis=1, keepdims=True)
+        v[1] = 0.0
+        v[4] = 0.0
+        with np.errstate(invalid="raise", divide="raise"):
+            out = real_spherical_harmonics(v, 2)
+        expected_zero = np.zeros(9)
+        expected_zero[0] = 1.0
+        for i in (1, 4):
+            np.testing.assert_allclose(out[i], expected_zero, rtol=0, atol=0)
+        nonzero = [0, 2, 3, 5]
+        np.testing.assert_allclose(
+            out[nonzero],
+            real_spherical_harmonics(v[nonzero], 2),
+            rtol=0,
+            atol=0,
+        )
+
     def test_quadrature_orthogonality(self):
         lmax = 3
         pts, wts = load_lebedev_rule(2 * lmax + 1)
