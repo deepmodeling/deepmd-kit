@@ -1336,6 +1336,407 @@ class TestGatedActivationParity:
         assert_parity(DPSwiGLU().call(x), PTSwiGLU()(torch.from_numpy(x)))
 
 
+class TestS2GridParity:
+    channels = 8
+
+    # ---------------------------------------------------------------- helpers
+    def _build_projectors(self, lmax, mmax, coefficient_layout):
+        from deepmd.dpmodel.descriptor.dpa4_nn.projection import (
+            S2GridProjector as DPS2GridProjector,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.projection import (
+            S2GridProjector as PTS2GridProjector,
+        )
+
+        pt_proj = PTS2GridProjector(
+            lmax=lmax,
+            mmax=mmax,
+            dtype=torch.float64,
+            coefficient_layout=coefficient_layout,
+            grid_method="lebedev",
+        )
+        dp_proj = DPS2GridProjector(
+            lmax=lmax,
+            mmax=mmax,
+            precision="float64",
+            coefficient_layout=coefficient_layout,
+            grid_method="lebedev",
+        )
+        return pt_proj, dp_proj
+
+    def _build_grid_nets(
+        self,
+        *,
+        lmax,
+        op_type,
+        layout,
+        mlp_bias=False,
+        n_focus=1,
+        mmax=None,
+        coefficient_layout="packed",
+        grid_branches=1,
+        seed=7,
+    ):
+        """Build a pt S2GridNet, perturb its params, and copy them into dp."""
+        from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import (
+            S2GridNet as DPS2GridNet,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
+            S2GridNet as PTS2GridNet,
+        )
+
+        pt_net = PTS2GridNet(
+            lmax=lmax,
+            mmax=mmax,
+            channels=self.channels,
+            n_focus=n_focus,
+            mode="self",
+            op_type=op_type,
+            dtype=torch.float64,
+            layout=layout,
+            coefficient_layout=coefficient_layout,
+            grid_method="lebedev",
+            grid_branches=grid_branches,
+            mlp_bias=mlp_bias,
+            trainable=True,
+            seed=seed,
+        )
+        rng = np.random.default_rng(2100)
+        with torch.no_grad():
+            for p in pt_net.parameters():
+                p += torch.from_numpy(0.1 * rng.normal(size=tuple(p.shape)))
+        dp_net = DPS2GridNet(
+            lmax=lmax,
+            mmax=mmax,
+            channels=self.channels,
+            n_focus=n_focus,
+            mode="self",
+            op_type=op_type,
+            precision="float64",
+            layout=layout,
+            coefficient_layout=coefficient_layout,
+            grid_method="lebedev",
+            grid_branches=grid_branches,
+            mlp_bias=mlp_bias,
+            trainable=True,
+            seed=seed,
+        )
+        # pt S2GridNet has no serialize(); copy the state_dict fragment with
+        # the pt key names (the contract used by the dp serialize format)
+        state = pt_state_to_numpy(pt_net)
+        expected_keys = {"scalar_gate.weight"}
+        if mlp_bias:
+            expected_keys.add("scalar_gate.bias")
+        if op_type == "branch":
+            expected_keys |= {
+                "grid_op.left_proj.weight",
+                "grid_op.right_proj.weight",
+                "grid_op.router.weight",
+                "grid_op.out_proj.weight",
+            }
+        assert set(state) == expected_keys
+        dp_net.scalar_gate.weight = state["scalar_gate.weight"]
+        if mlp_bias:
+            dp_net.scalar_gate.bias = state["scalar_gate.bias"]
+        if op_type == "branch":
+            for name in ("left_proj", "right_proj", "router", "out_proj"):
+                getattr(dp_net.grid_op, name).weight = state[f"grid_op.{name}.weight"]
+        return pt_net, dp_net
+
+    # ------------------------------------------------- (a) projector constants
+    @pytest.mark.parametrize("lmax,mmax", [(2, 2), (3, 3), (3, 2)])  # degree/order
+    @pytest.mark.parametrize(
+        "coefficient_layout", ["packed", "m_major"]
+    )  # coefficient ordering
+    def test_projector_constants(self, lmax, mmax, coefficient_layout) -> None:
+        pt_proj, dp_proj = self._build_projectors(lmax, mmax, coefficient_layout)
+        assert dp_proj.grid_resolution_list == pt_proj.grid_resolution_list
+        assert dp_proj.grid_size == pt_proj.grid_size
+        assert dp_proj.coeff_dim == pt_proj.coeff_dim
+        assert dp_proj.packed_dim == pt_proj.packed_dim
+        # validates the numpy-SH replacement of e3nn end-to-end
+        assert_parity(dp_proj.to_grid_mat, pt_proj.to_grid_mat)
+        assert_parity(dp_proj.from_grid_mat, pt_proj.from_grid_mat)
+        # to_grid / from_grid forwards
+        rng = np.random.default_rng(2080)
+        x = rng.normal(size=(7, dp_proj.coeff_dim, 5))
+        assert_parity(dp_proj.to_grid(x), pt_proj.to_grid(torch.from_numpy(x)))
+        g = rng.normal(size=(7, dp_proj.grid_size, 5))
+        assert_parity(dp_proj.from_grid(g), pt_proj.from_grid(torch.from_numpy(g)))
+
+    @pytest.mark.parametrize("lmax", [2, 3])  # max degree
+    def test_projector_quadrature_identity(self, lmax) -> None:
+        # Lebedev path: from_grid o to_grid is the identity at machine
+        # precision (full mmax == lmax, packed layout)
+        from deepmd.dpmodel.descriptor.dpa4_nn.projection import (
+            S2GridProjector as DPS2GridProjector,
+        )
+
+        dp_proj = DPS2GridProjector(
+            lmax=lmax, precision="float64", grid_method="lebedev"
+        )
+        prod = np.matmul(dp_proj.from_grid_mat, dp_proj.to_grid_mat)
+        np.testing.assert_allclose(prod, np.eye(dp_proj.coeff_dim), atol=1e-13)
+
+    def test_projector_serialize(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.projection import (
+            S2GridProjector as DPS2GridProjector,
+        )
+
+        pt_proj, dp_proj = self._build_projectors(3, 2, "m_major")
+        # the serialize contracts are identical
+        assert dp_proj.serialize() == pt_proj.serialize()
+        # dp deserializes pt's real serialize() output
+        dp_from_pt = DPS2GridProjector.deserialize(pt_proj.serialize())
+        np.testing.assert_array_equal(dp_from_pt.to_grid_mat, dp_proj.to_grid_mat)
+        np.testing.assert_array_equal(dp_from_pt.from_grid_mat, dp_proj.from_grid_mat)
+        # dp roundtrip is exact
+        dp_proj2 = DPS2GridProjector.deserialize(dp_proj.serialize())
+        np.testing.assert_array_equal(dp_proj2.to_grid_mat, dp_proj.to_grid_mat)
+        np.testing.assert_array_equal(dp_proj2.from_grid_mat, dp_proj.from_grid_mat)
+        with pytest.raises(ValueError):  # wrong class
+            DPS2GridProjector.deserialize({"@class": "Nope", "@version": 1})
+
+    @pytest.mark.parametrize("method", ["lebedev", "e3nn"])  # quadrature backend
+    @pytest.mark.parametrize("lmax,mmax", [(2, 2), (3, 2), (4, 4)])  # degree/order
+    def test_resolve_s2_grid_resolution(self, method, lmax, mmax) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.projection import (
+            resolve_s2_grid_resolution as dp_resolve,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.projection import (
+            resolve_s2_grid_resolution as pt_resolve,
+        )
+
+        assert dp_resolve(lmax, mmax, method=method) == pt_resolve(
+            lmax, mmax, method=method
+        )
+        with pytest.raises(ValueError):  # invalid method
+            dp_resolve(lmax, mmax, method="cartesian")
+
+    # ------------------------------------------ (b) S2GridNet forward parity
+    @pytest.mark.parametrize("lmax", [2, 3])  # max degree
+    @pytest.mark.parametrize("op_type", ["glu", "branch"])  # grid operation
+    def test_s2_grid_net(self, lmax, op_type) -> None:
+        # ffn-style core usage: mode="self", layout="ndfc", packed, n_focus=1
+        pt_net, dp_net = self._build_grid_nets(
+            lmax=lmax, op_type=op_type, layout="ndfc"
+        )
+        rng = np.random.default_rng(2081)
+        n_coeff = (lmax + 1) ** 2
+        x = rng.normal(size=(11, n_coeff, 1, 2 * self.channels))
+        assert_parity(dp_net.call(x), pt_net(torch.from_numpy(x)))
+
+    @pytest.mark.parametrize("mlp_bias", [False, True])  # scalar gate bias
+    def test_s2_grid_net_nfdc_m_major(self, mlp_bias) -> None:
+        # so2-style usage: mode="self", op_type="glu", layout="nfdc",
+        # m-major coefficients truncated at mmax < lmax, multiple foci
+        lmax, mmax, n_focus = 3, 2, 2
+        pt_net, dp_net = self._build_grid_nets(
+            lmax=lmax,
+            mmax=mmax,
+            op_type="glu",
+            layout="nfdc",
+            mlp_bias=mlp_bias,
+            n_focus=n_focus,
+            coefficient_layout="m_major",
+        )
+        n_coeff = dp_net.projector.coeff_dim
+        assert n_coeff == pt_net.projector.coeff_dim
+        rng = np.random.default_rng(2082)
+        x = rng.normal(size=(11, n_focus, n_coeff, 2 * self.channels))
+        assert_parity(dp_net.call(x), pt_net(torch.from_numpy(x)))
+
+    def test_s2_grid_net_fp32_input(self) -> None:
+        # fp32 input through a float64-precision net exercises the cast
+        # branches; the output dtype must match the input dtype as in pt
+        pt_net, dp_net = self._build_grid_nets(lmax=2, op_type="branch", layout="ndfc")
+        rng = np.random.default_rng(2083)
+        x = rng.normal(size=(11, 9, 1, 2 * self.channels)).astype(np.float32)
+        dp_out = dp_net.call(x)
+        assert dp_out.dtype == np.float32
+        pt_out = pt_net(torch.from_numpy(x))
+        assert pt_out.dtype == torch.float32
+        np.testing.assert_allclose(
+            np.asarray(dp_out), pt_out.detach().cpu().numpy(), rtol=1e-6, atol=1e-6
+        )
+
+    # ------------------------------------------- (c) GridBranch forward parity
+    @pytest.mark.parametrize("n_branches", [1, 2])  # router branches
+    def test_grid_branch(self, n_branches) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import (
+            GridBranch as DPGridBranch,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
+            GridBranch as PTGridBranch,
+        )
+
+        pt_mod = PTGridBranch(
+            channels=self.channels,
+            n_branches=n_branches,
+            dtype=torch.float64,
+            trainable=True,
+            seed=9,
+        )
+        rng = np.random.default_rng(2084)
+        with torch.no_grad():
+            for p in pt_mod.parameters():
+                p += torch.from_numpy(0.1 * rng.normal(size=tuple(p.shape)))
+        state = pt_state_to_numpy(pt_mod)
+        assert set(state) == {
+            "left_proj.weight",
+            "right_proj.weight",
+            "router.weight",
+            "out_proj.weight",
+        }
+        dp_mod = DPGridBranch(
+            channels=self.channels,
+            n_branches=n_branches,
+            precision="float64",
+            seed=9,
+        )
+        for name in ("left_proj", "right_proj", "router", "out_proj"):
+            getattr(dp_mod, name).weight = state[f"{name}.weight"]
+        n_batch, n_grid, n_focus = 5, 26, 2
+        query = rng.normal(size=(n_batch, n_grid, n_focus, self.channels))
+        context = rng.normal(size=(n_batch, n_grid, n_focus, self.channels))
+        scalar = rng.normal(size=(n_batch, n_focus, 2 * self.channels))
+        assert_parity(
+            dp_mod.call(query, context, scalar),
+            pt_mod(
+                torch.from_numpy(query),
+                torch.from_numpy(context),
+                torch.from_numpy(scalar),
+            ),
+        )
+        # serialize roundtrip is exact; @variables keys match the pt state dict
+        ser = dp_mod.serialize()
+        assert set(ser["@variables"]) == set(state)
+        dp_mod2 = DPGridBranch.deserialize(ser)
+        np.testing.assert_array_equal(
+            np.asarray(dp_mod.call(query, context, scalar)),
+            np.asarray(dp_mod2.call(query, context, scalar)),
+        )
+
+    # ------------------------------------------------------ (e) serialization
+    @pytest.mark.parametrize("op_type", ["glu", "branch"])  # grid operation
+    @pytest.mark.parametrize("mlp_bias", [False, True])  # scalar gate bias
+    def test_s2_grid_net_serialize_roundtrip(self, op_type, mlp_bias) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import (
+            S2GridNet as DPS2GridNet,
+        )
+
+        pt_net, dp_net = self._build_grid_nets(
+            lmax=2, op_type=op_type, layout="ndfc", mlp_bias=mlp_bias
+        )
+        ser = dp_net.serialize()
+        # @variables key set equals the pt state_dict key set exactly
+        assert set(ser["@variables"]) == set(pt_state_to_numpy(pt_net))
+        dp_net2 = DPS2GridNet.deserialize(ser)
+        rng = np.random.default_rng(2085)
+        x = rng.normal(size=(11, 9, 1, 2 * self.channels))
+        np.testing.assert_array_equal(
+            np.asarray(dp_net.call(x)), np.asarray(dp_net2.call(x))
+        )
+        # loading pt's real state_dict values through deserialize also works
+        ser_pt = dict(ser)
+        ser_pt["@variables"] = pt_state_to_numpy(pt_net)
+        dp_net3 = DPS2GridNet.deserialize(ser_pt)
+        assert_parity(dp_net3.call(x), pt_net(torch.from_numpy(x)))
+        with pytest.raises(ValueError):  # wrong class
+            DPS2GridNet.deserialize({"@class": "Nope", "@version": 1})
+
+    def test_grid_branch_deserialize_wrong_class(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import (
+            GridBranch as DPGridBranch,
+        )
+
+        with pytest.raises(ValueError):
+            DPGridBranch.deserialize({"@class": "Nope", "@version": 1})
+
+    # ------------------------------------------------ (d) not-ported guards
+    def test_not_ported_guards(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import (
+            S2GridNet as DPS2GridNet,
+        )
+        from deepmd.dpmodel.descriptor.dpa4_nn.projection import (
+            S2GridProjector as DPS2GridProjector,
+        )
+
+        common = {
+            "lmax": 2,
+            "channels": 4,
+            "mode": "self",
+            "op_type": "glu",
+            "precision": "float64",
+            "layout": "ndfc",
+            "grid_method": "lebedev",
+        }
+        with pytest.raises(NotImplementedError, match="lebedev_quadrature"):
+            # e3nn product grid (lebedev_quadrature=False) is not ported
+            DPS2GridProjector(lmax=2, precision="float64", grid_method="e3nn")
+        with pytest.raises(NotImplementedError, match="lebedev_quadrature"):
+            DPS2GridNet(**{**common, "grid_method": "e3nn"})
+        with pytest.raises(NotImplementedError, match="grid_mlp"):
+            # GridMLP (grid_mlp=True) is not ported
+            DPS2GridNet(**{**common, "op_type": "mlp"})
+        with pytest.raises(NotImplementedError, match="node_wise_s2"):
+            # cross mode backs node_wise_s2/message_node_s2 only
+            DPS2GridNet(**{**common, "mode": "cross"})
+        with pytest.raises(NotImplementedError, match="residual_scale_init"):
+            DPS2GridNet(**common, residual_scale_init=1e-3)
+
+    def test_value_errors(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import (
+            GridBranch as DPGridBranch,
+        )
+        from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import (
+            S2GridNet as DPS2GridNet,
+        )
+        from deepmd.dpmodel.descriptor.dpa4_nn.projection import (
+            S2GridProjector as DPS2GridProjector,
+        )
+
+        common = {
+            "lmax": 2,
+            "channels": 4,
+            "mode": "self",
+            "op_type": "glu",
+            "precision": "float64",
+            "layout": "ndfc",
+            "grid_method": "lebedev",
+        }
+        with pytest.raises(ValueError):  # unknown grid method
+            DPS2GridProjector(lmax=2, grid_method="cartesian")
+        with pytest.raises(ValueError):  # negative mmax
+            DPS2GridProjector(lmax=2, mmax=-1, grid_method="lebedev")
+        with pytest.raises(ValueError):  # mmax > lmax
+            DPS2GridProjector(lmax=2, mmax=3, grid_method="lebedev")
+        with pytest.raises(ValueError):  # bad coefficient layout
+            DPS2GridProjector(
+                lmax=2, grid_method="lebedev", coefficient_layout="l_major"
+            )
+        with pytest.raises(ValueError):  # non-packaged [precision, n_points]
+            DPS2GridProjector(
+                lmax=2, grid_method="lebedev", grid_resolution_list=[7, 10]
+            )
+        with pytest.raises(ValueError):  # wrong resolution list length
+            DPS2GridProjector(lmax=2, grid_method="lebedev", grid_resolution_list=[7])
+        with pytest.raises(ValueError):  # unknown mode
+            DPS2GridNet(**{**common, "mode": "pair"})
+        with pytest.raises(ValueError):  # unknown op_type
+            DPS2GridNet(**{**common, "op_type": "attention"})
+        with pytest.raises(ValueError):  # unknown layout
+            DPS2GridNet(**{**common, "layout": "cdfn"})
+        with pytest.raises(ValueError):  # flat layout is cross-only
+            DPS2GridNet(**{**common, "layout": "flat"})
+        with pytest.raises(ValueError):  # n_branches must be positive
+            DPGridBranch(channels=4, n_branches=0, precision="float64")
+        dp_net = DPS2GridNet(**common)
+        rng = np.random.default_rng(2086)
+        with pytest.raises(ValueError):  # wrong query channel count
+            dp_net.call(rng.normal(size=(3, 9, 1, 5)))
+
+
 class TestNoTorchImport:
     def test_dpa4_nn_does_not_import_torch(self) -> None:
         code = (
@@ -1346,7 +1747,9 @@ class TestNoTorchImport:
             "deepmd.dpmodel.descriptor.dpa4_nn.radial, "
             "deepmd.dpmodel.descriptor.dpa4_nn.so3, "
             "deepmd.dpmodel.descriptor.dpa4_nn.activation, "
-            "deepmd.dpmodel.descriptor.dpa4_nn.wignerd; "
+            "deepmd.dpmodel.descriptor.dpa4_nn.wignerd, "
+            "deepmd.dpmodel.descriptor.dpa4_nn.projection, "
+            "deepmd.dpmodel.descriptor.dpa4_nn.grid_net; "
             "print('torch' in sys.modules)"
         )
         out = subprocess.run(
