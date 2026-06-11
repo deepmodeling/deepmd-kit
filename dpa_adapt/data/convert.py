@@ -104,9 +104,11 @@ def auto_convert(
     train_ratio: float = 0.9,
     smiles_col: str = "SMILES",
     mol_dir: str | None = None,
-    seed: int = 42,
+    mol_template: str = "id{row}.mol",
+    split_seed: int | None = None,
+    conformer_seed: int | None = None,
     poscar: str | None = None,
-    formula_col: int | str = 0,
+    formula_col: str = "formula",
     base_element: str | None = None,
     sets: int = 1,
     overwrite: bool = False,
@@ -147,7 +149,9 @@ def auto_convert(
             property_col=property_col,
             train_ratio=train_ratio,
             smiles_col=smiles_col,
-            seed=seed,
+            mol_template=mol_template,
+            split_seed=split_seed,
+            conformer_seed=conformer_seed,
             overwrite=overwrite,
         )
         converted = {
@@ -180,7 +184,7 @@ def auto_convert(
             property_name=property_name,
             base_element=base_element,
             sets=sets,
-            seed=seed,
+            seed=42,
         )
         if verbose:
             print(f"Formula conversion: {len(out)} systems written.")

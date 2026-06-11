@@ -184,7 +184,7 @@ def _parse_property_value(raw_value: object) -> float:
 
 
 # ---------------------------------------------------------------------------
-# MOL file reader
+# Pre-generated structure readers
 # ---------------------------------------------------------------------------
 
 
@@ -228,6 +228,83 @@ def read_mol_coords(path: str | Path) -> tuple[list[str], np.ndarray]:
         coords.append([x, y, z])
 
     return symbols, np.asarray(coords, dtype=np.float32)
+
+
+def _read_xyz_coords(path: str | Path) -> tuple[list[str], np.ndarray]:
+    xyz_path = Path(path)
+    lines = xyz_path.read_text(encoding="utf-8", errors="ignore").splitlines()
+    if len(lines) < 2:
+        raise ValueError(f"Bad XYZ file (too short): {xyz_path}")
+    try:
+        natoms = int(lines[0].strip())
+    except ValueError:
+        raise ValueError(f"Bad XYZ atom count line: {xyz_path}") from None
+    atom_lines = lines[2 : 2 + natoms]
+    if len(atom_lines) != natoms:
+        raise ValueError(f"Bad XYZ atom block length: {xyz_path}")
+
+    symbols: list[str] = []
+    coords: list[list[float]] = []
+    for atom_line in atom_lines:
+        parts = atom_line.split()
+        if len(parts) < 4:
+            raise ValueError(f"Bad XYZ atom line: {xyz_path}")
+        symbol = parts[0]
+        if symbol not in ELEMENT_INDEX:
+            raise ValueError(f"Unknown element {symbol!r} in {xyz_path}")
+        symbols.append(symbol)
+        coords.append([float(parts[1]), float(parts[2]), float(parts[3])])
+    return symbols, np.asarray(coords, dtype=np.float32)
+
+
+def _read_rdkit_coords(path: str | Path) -> tuple[list[str], np.ndarray]:
+    structure_path = Path(path)
+    try:
+        from rdkit import Chem
+    except ImportError as exc:
+        raise ImportError(
+            "RDKit is required to read .sdf and .pdb files from mol_dir."
+        ) from exc
+
+    suffix = structure_path.suffix.lower()
+    if suffix == ".sdf":
+        supplier = Chem.SDMolSupplier(str(structure_path), removeHs=False)
+        mol = next((m for m in supplier if m is not None), None)
+    elif suffix == ".pdb":
+        mol = Chem.MolFromPDBFile(str(structure_path), removeHs=False)
+    else:
+        raise ValueError(f"Unsupported structure file extension: {structure_path}")
+    if mol is None:
+        raise ValueError(f"Could not read structure file: {structure_path}")
+    if mol.GetNumConformers() == 0:
+        raise ValueError(f"Structure file has no 3D conformer: {structure_path}")
+
+    conf = mol.GetConformer()
+    symbols: list[str] = []
+    coords: list[list[float]] = []
+    for atom in mol.GetAtoms():
+        symbol = atom.GetSymbol()
+        if symbol not in ELEMENT_INDEX:
+            raise ValueError(f"Unknown element {symbol!r} in {structure_path}")
+        pos = conf.GetAtomPosition(atom.GetIdx())
+        symbols.append(symbol)
+        coords.append([pos.x, pos.y, pos.z])
+    return symbols, np.asarray(coords, dtype=np.float32)
+
+
+def read_structure_coords(path: str | Path) -> tuple[list[str], np.ndarray]:
+    structure_path = Path(path)
+    suffix = structure_path.suffix.lower()
+    if suffix == ".mol":
+        return read_mol_coords(structure_path)
+    if suffix == ".xyz":
+        return _read_xyz_coords(structure_path)
+    if suffix in {".sdf", ".pdb"}:
+        return _read_rdkit_coords(structure_path)
+    raise ValueError(
+        f"Unsupported pre-generated structure file extension {suffix!r}; "
+        "expected .mol, .sdf, .xyz, or .pdb"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -349,9 +426,9 @@ def _records_from_csv_mol(
     skipped_overlap = 0
     kept_rows: list[dict[str, Any]] = []
     for row_idx, row in enumerate(rows):
-        mol_path = (Path(mol_dir) / mol_template.format(row=row_idx)).resolve()
+        structure_path = (Path(mol_dir) / mol_template.format(row=row_idx)).resolve()
         try:
-            symbols, coords = read_mol_coords(mol_path)
+            symbols, coords = read_structure_coords(structure_path)
             if np.allclose(coords, 0.0):
                 skipped_zero += 1
                 continue
@@ -363,7 +440,7 @@ def _records_from_csv_mol(
             )
             kept_rows.append(dict(row))
         except Exception as exc:
-            failed_rows.append((row_idx, str(mol_path), str(exc)))
+            failed_rows.append((row_idx, str(structure_path), str(exc)))
     return records, failed_rows, skipped_zero, skipped_overlap, kept_rows
 
 
@@ -372,7 +449,7 @@ def _records_from_csv_smiles(
     property_col: str,
     smiles_col: str = "SMILES",
     overlap_tol: float = 1e-6,
-    seed: int = 42,
+    conformer_seed: int = 42,
 ) -> tuple[list[_Record], list[tuple[int, str, str]], int, int, list[dict[str, Any]]]:
     with Path(dataset).open("r", encoding="utf-8") as fp:
         rows = list(csv.DictReader(fp))
@@ -391,7 +468,9 @@ def _records_from_csv_smiles(
     for row_idx, row in enumerate(rows):
         smiles = row[smiles_column]
         try:
-            symbols, coords = smiles_to_3d_coords(smiles, random_seed=seed + row_idx)
+            symbols, coords = smiles_to_3d_coords(
+                smiles, random_seed=conformer_seed + row_idx
+            )
             if np.allclose(coords, 0.0):
                 skipped_zero += 1
                 continue
@@ -435,10 +514,11 @@ def smiles_to_npy(
     mol_template: str = "id{row}.mol",
     smiles_col: str = "SMILES",
     overlap_tol: float = 1e-6,
-    seed: int = 42,
+    split_seed: int | None = None,
+    conformer_seed: int | None = None,
     overwrite: bool = False,
 ) -> SmilesDataResult:
-    """Convert a CSV of molecules (SMILES or MOL files) into ``deepmd/npy``.
+    """Convert a CSV of molecules (SMILES or pre-generated structures) into ``deepmd/npy``.
 
     Parameters
     ----------
@@ -453,16 +533,19 @@ def smiles_to_npy(
     train_ratio :
         Fraction of samples used for training (remainder = validation).
     mol_dir :
-        Directory containing pre-generated ``.mol`` files.  When omitted,
+        Directory containing pre-generated structure files.  When omitted,
         SMILES are converted to 3D via RDKit.
     mol_template :
-        Template for MOL filenames, e.g. ``"id{row}.mol"``.
+        Template for structure filenames, e.g. ``"id{row}.mol"``. Supported
+        extensions are ``.mol``, ``.sdf``, ``.xyz``, and ``.pdb``.
     smiles_col :
         CSV column containing SMILES strings.
     overlap_tol :
         Minimum inter-atomic distance (Å) below which a structure is rejected.
-    seed :
-        Random seed for train/valid split and conformer generation.
+    split_seed : int, optional
+        Random seed for train/valid splitting. Defaults to 42.
+    conformer_seed : int, optional
+        Random seed for RDKit 3D conformer generation. Defaults to 42.
     overwrite :
         If True, remove *output_dir* before writing.
 
@@ -475,6 +558,11 @@ def smiles_to_npy(
         Axis,
         DataType,
     )
+
+    if split_seed is None:
+        split_seed = 42
+    if conformer_seed is None:
+        conformer_seed = 42
 
     # Register the custom property + stru_id dtypes with dpdata.
     datatypes = [
@@ -505,7 +593,7 @@ def smiles_to_npy(
                     property_col=property_col,
                     smiles_col=smiles_col_value,
                     overlap_tol=overlap_tol,
-                    seed=seed,
+                    conformer_seed=conformer_seed,
                 )
             )
         else:
@@ -579,7 +667,7 @@ def smiles_to_npy(
         shutil.rmtree(output_path)
     output_path.mkdir(parents=True, exist_ok=True)
 
-    rng = random.Random(seed)
+    rng = random.Random(split_seed)
     indices = list(range(n_total))
     rng.shuffle(indices)
     train_count = max(1, min(int(n_total * train_ratio), n_total - 1))

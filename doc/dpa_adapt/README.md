@@ -1,6 +1,6 @@
-# ADAPT: Atomistic DPA Adaptation for Property Tasks
+# DPA-ADAPT: Atomistic DPA Adaptation for Property Tasks
 
-**ADAPT** is a scikit-learn-style Python package for fine-tuning pre-trained DPA models on your own materials or molecular property dataset. No DeePMD-kit JSON configs or `dp train` pipelines to write.
+**DPA-ADAPT** (`dpa-adapt`, Python import `dpa_adapt`) is a toolkit for adapting pretrained DPA models to downstream atomistic property prediction tasks. The main CLI is `dpa-adapt`; the optional short alias is `dpaad`. No DeePMD-kit JSON configs or `dp train` pipelines to write.
 
 ## Installation
 
@@ -194,35 +194,35 @@ X = extract_descriptors(
 
 ## CLI
 
-| Command                     | Description                                                          |
-| --------------------------- | -------------------------------------------------------------------- |
-| `dpaad fit`                 | Fine-tune (`--strategy frozen_sklearn\|linear_probe\|finetune\|mft`) |
-| `dpaad predict`             | Predict with a frozen `.pth` bundle                                  |
-| `dpaad evaluate`            | Evaluate against stored labels                                       |
-| `dpaad extract-descriptors` | Extract pooled DPA descriptors to `.npy`                             |
-| `dpaad cv`                  | Cross-validate                                                       |
-| `dpaad data convert`        | Convert structure / CSV / formula → `deepmd/npy`                     |
-| `dpaad data validate`       | Sanity-check `deepmd/npy` directories                                |
-| `dpaad data attach-labels`  | Inject `.npy` label arrays                                           |
+| Command | Description |
+|---------|-------------|
+| `dpa-adapt fit` / `dpaad fit` | Fine-tune (`--strategy frozen_sklearn\|linear_probe\|finetune\|mft`) |
+| `dpa-adapt predict` / `dpaad predict` | Predict with a frozen `.pth` bundle |
+| `dpa-adapt evaluate` / `dpaad evaluate` | Evaluate against stored labels |
+| `dpa-adapt extract-descriptors` / `dpaad extract-descriptors` | Extract pooled DPA descriptors to `.npy` |
+| `dpa-adapt cv` / `dpaad cv` | Cross-validate |
+| `dpa-adapt data convert` / `dpaad data convert` | Convert structure / CSV / formula → `deepmd/npy` |
+| `dpa-adapt data validate` / `dpaad data validate` | Sanity-check `deepmd/npy` directories |
+| `dpa-adapt data attach-labels` / `dpaad data attach-labels` | Inject `.npy` label arrays |
 
 ```bash
 # Data conversion
-dpaad data convert --input POSCAR --output ./npy
+dpa-adapt data convert --input POSCAR --output ./npy
 dpaad data convert --input data.csv --output ./npy --property-name homo
-dpaad data convert --input comps.csv --output ./npy \
-    --fmt formula --poscar template.POSCAR --sets 3
+dpa-adapt data convert --input comps.csv --output ./npy \
+  --fmt formula --poscar template.POSCAR --sets 3
 
 # Fine-tune
-dpaad fit --train-data ./npy/train --pretrained DPA-3.1-3M \
-    --strategy frozen_sklearn --predictor rf --target-key homo --output model.pth
+dpa-adapt fit --train-data ./npy/train --pretrained DPA-3.1-3M \
+  --strategy frozen_sklearn --predictor rf --target-key homo --output model.pth
 
 # MFT
 dpaad fit --train-data /data/qm9 --aux-data /data/spice2 \
-    --pretrained /path/to/DPA-3.1-3M.pt --strategy mft --target-key homo
+  --pretrained /path/to/DPA-3.1-3M.pt --strategy mft --target-key homo
 
 # Predict / evaluate
-dpaad predict --model model.pth --data ./npy/test
-dpaad evaluate --model model.pth --data ./npy/test
+dpa-adapt predict --model model.pth --data ./npy/test
+dpa-adapt evaluate --model model.pth --data ./npy/test
 ```
 
-`dpaad --help` does not load torch — all heavy imports are lazy.
+`dpa-adapt --help` and `dpaad --help` do not load torch — all heavy imports are lazy.
