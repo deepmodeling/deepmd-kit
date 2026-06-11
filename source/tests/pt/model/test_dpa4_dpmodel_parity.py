@@ -2195,6 +2195,29 @@ class TestSO2Parity:
         pt_mod, dp_mod, kwargs = self._build_conv_pair(n_atten_head=n_atten_head)
         self._assert_conv_parity(pt_mod, dp_mod, kwargs, with_gate=True)
 
+    def test_so2_convolution_real_edge_cache(self) -> None:
+        # end-to-end: REAL pt build_edge_cache vs REAL dp build_edge_cache
+        # feeding the same weight-copied SO2Convolution (no synthetic cache)
+        pt_mod, dp_mod, kwargs = self._build_conv_pair()
+        rng = np.random.default_rng(2096)
+        nf, nloc, nall, nnei = 1, self.nloc, self.nloc + 3, self.nnei
+        inputs = _build_real_edge_inputs(
+            rng,
+            nf=nf,
+            nloc=nloc,
+            nall=nall,
+            nnei=nnei,
+            channels=kwargs["channels"],
+        )
+        pt_cache, dp_cache = _build_real_edge_caches(inputs, lmax=kwargs["lmax"])
+        valid = inputs["valid"]
+        dim_full = (kwargs["lmax"] + 1) ** 2
+        radial = rng.normal(size=(nf * nloc * nnei, kwargs["lmax"] + 1, 4))
+        x = rng.normal(size=(nf * nloc, dim_full, kwargs["channels"]))
+        out_dp = dp_mod.call(x, dp_cache, radial)
+        out_pt = pt_mod(torch.from_numpy(x), pt_cache, torch.from_numpy(radial[valid]))
+        assert_parity(out_dp, out_pt)
+
     def test_so2_convolution_full_mmax(self) -> None:
         # mmax == lmax: rotate_inv_rescale is all ones
         pt_mod, dp_mod, kwargs = self._build_conv_pair(lmax=2, mmax=2)
@@ -2604,6 +2627,324 @@ class TestEmbeddingParity:
         atype = rng.integers(0, self.ntypes, size=(self.nloc,))
         with pytest.raises(ValueError):  # E not a multiple of N
             dp_mod.call(edge_cache=dp_cache, atype_flat=atype, n_nodes=3)
+
+
+def _build_real_edge_inputs(
+    rng,
+    *,
+    nf,
+    nloc,
+    nall,
+    nnei,
+    channels,
+    local_nlist=False,
+):
+    """Build numpy inputs for a real ``build_edge_cache`` run.
+
+    Includes -1 padding slots, ghosts (``nall > nloc``) mapping back to their
+    owners, one broken mapping entry (``mapping == -1``, exercising pt's
+    ``src_ok`` drop), and a non-empty type-pair exclusion ``(0, 1)``.
+    When ``local_nlist`` is True, neighbor indices are drawn directly from the
+    local range and ``mapping`` is ``None`` (pt's mapping-free branch).
+    """
+    ntypes = 3
+    coord = rng.uniform(0.0, 4.0, size=(nf, nall, 3))
+    atype = rng.integers(0, ntypes, size=(nf, nloc))
+    if local_nlist:
+        mapping = None
+        atype_ext = atype
+        hi = nloc
+    else:
+        n_ghost = nall - nloc
+        mapping = np.concatenate(
+            [
+                np.tile(np.arange(nloc, dtype=np.int64), (nf, 1)),
+                rng.integers(0, nloc, size=(nf, n_ghost)),
+            ],
+            axis=1,
+        )
+        mapping[:, -1] = -1  # broken ghost: pt drops via src_ok, dp masks
+        atype_ext = np.take_along_axis(atype, np.clip(mapping, 0, nloc - 1), axis=1)
+        hi = nall
+    # neighbors over the extended axis, excluding the center itself
+    nlist = rng.integers(0, hi, size=(nf, nloc, nnei))
+    center = np.arange(nloc)[None, :, None]
+    nlist = np.where(nlist == center, (nlist + 1) % hi, nlist)
+    nlist[rng.uniform(size=nlist.shape) < 0.25] = -1  # padding slots
+    # pair_keep_mask from exclude pair (0, 1), built on extended types
+    nl_safe = np.where(nlist >= 0, nlist, 0)
+    nb_type = np.take_along_axis(atype_ext, nl_safe.reshape(nf, -1), axis=1).reshape(
+        nf, nloc, nnei
+    )
+    ct = atype[:, :, None]
+    pair_keep_mask = ~(((ct == 0) & (nb_type == 1)) | ((ct == 1) & (nb_type == 0)))
+    type_ebed = rng.normal(size=(nf * nloc, channels))
+    # expected validity mask, computed independently in numpy
+    if local_nlist:
+        src_local = nl_safe
+    else:
+        src_local = np.take_along_axis(
+            mapping, nl_safe.reshape(nf, -1), axis=1
+        ).reshape(nf, nloc, nnei)
+    valid = (
+        (nlist >= 0) & pair_keep_mask & (src_local >= 0) & (src_local < nloc)
+    ).reshape(-1)
+    return {
+        "coord": coord,
+        "nlist": nlist,
+        "mapping": mapping,
+        "pair_keep_mask": pair_keep_mask,
+        "type_ebed": type_ebed,
+        "valid": valid,
+    }
+
+
+def _build_real_edge_caches(
+    inputs,
+    *,
+    lmax,
+    rcut=6.0,
+    n_radial=8,
+    deg_norm_floor=1e-12,
+    eps=1e-7,
+    random_gamma=False,
+    gamma=None,
+    seed=2090,
+):
+    """Run the REAL pt and dp ``build_edge_cache`` on identical inputs.
+
+    The pt ``RadialBasis`` frequencies are perturbed and weight-copied into
+    the dp side via ``deserialize`` so parity exercises copied weights.
+    Returns ``(pt_cache, dp_cache)``.
+    """
+    from deepmd.dpmodel.descriptor.dpa4_nn.edge_cache import (
+        build_edge_cache as dp_build_edge_cache,
+    )
+    from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
+        C3CutoffEnvelope as DPEnvelope,
+    )
+    from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
+        RadialBasis as DPRadialBasis,
+    )
+    from deepmd.dpmodel.descriptor.dpa4_nn.wignerd import (
+        WignerDCalculator as DPWigner,
+    )
+    from deepmd.pt.model.descriptor.sezm_nn.edge_cache import (
+        build_edge_cache as pt_build_edge_cache,
+    )
+    from deepmd.pt.model.descriptor.sezm_nn.radial import (
+        C3CutoffEnvelope as PTEnvelope,
+    )
+    from deepmd.pt.model.descriptor.sezm_nn.radial import (
+        RadialBasis as PTRadialBasis,
+    )
+    from deepmd.pt.model.descriptor.sezm_nn.wignerd import (
+        WignerDCalculator as PTWigner,
+    )
+
+    pt_rb = PTRadialBasis(rcut=rcut, n_radial=n_radial, dtype=torch.float64)
+    rng = np.random.default_rng(seed)
+    with torch.no_grad():
+        pt_rb.adam_freqs += torch.from_numpy(0.05 * rng.normal(size=(1, n_radial)))
+    dp_rb = DPRadialBasis.deserialize(pt_rb.serialize())
+    pt_env = PTEnvelope(rcut=rcut, dtype=torch.float64)
+    dp_env = DPEnvelope(rcut=rcut, precision="float64")
+    pt_wig = PTWigner(lmax, dtype=torch.float64)
+    dp_wig = DPWigner(lmax, precision="float64")
+
+    t = torch.from_numpy
+    mapping = inputs["mapping"]
+    pt_cache = pt_build_edge_cache(
+        type_ebed=t(inputs["type_ebed"]),
+        extended_coord=t(inputs["coord"]),
+        nlist=t(inputs["nlist"]),
+        mapping=None if mapping is None else t(mapping),
+        pair_keep_mask=t(inputs["pair_keep_mask"]),
+        eps=eps,
+        deg_norm_floor=deg_norm_floor,
+        edge_envelope=pt_env,
+        radial_basis=pt_rb,
+        n_radial=n_radial,
+        random_gamma=random_gamma,
+        wigner_calc=pt_wig,
+    )
+    dp_cache = dp_build_edge_cache(
+        type_ebed=inputs["type_ebed"],
+        extended_coord=inputs["coord"],
+        nlist=inputs["nlist"],
+        mapping=mapping,
+        pair_keep_mask=inputs["pair_keep_mask"],
+        eps=eps,
+        deg_norm_floor=deg_norm_floor,
+        edge_envelope=dp_env,
+        radial_basis=dp_rb,
+        n_radial=n_radial,
+        random_gamma=random_gamma,
+        wigner_calc=dp_wig,
+        gamma=gamma,
+    )
+    return pt_cache, dp_cache
+
+
+class TestEdgeCacheParity:
+    nf = 2
+    nloc = 6
+    nall = 10
+    nnei = 12
+    channels = 4
+    lmax = 2
+
+    def _inputs(self, seed=2086, **overrides):
+        rng = np.random.default_rng(seed)
+        kwargs = {
+            "nf": self.nf,
+            "nloc": self.nloc,
+            "nall": self.nall,
+            "nnei": self.nnei,
+            "channels": self.channels,
+        }
+        kwargs.update(overrides)
+        return _build_real_edge_inputs(rng, **kwargs)
+
+    @pytest.mark.parametrize("local_nlist", [False, True])  # mapping None branch
+    @pytest.mark.parametrize(
+        "deg_norm_floor", [1e-12, 1.0]
+    )  # legacy-eps floor vs O(1) floor
+    def test_real_build_parity(self, local_nlist, deg_norm_floor) -> None:
+        inputs = self._inputs(
+            local_nlist=local_nlist,
+            nall=self.nloc if local_nlist else self.nall,
+        )
+        valid = inputs["valid"]
+        pt_cache, dp_cache = _build_real_edge_caches(
+            inputs, lmax=self.lmax, deg_norm_floor=deg_norm_floor
+        )
+        # the dp validity mask matches the independently computed mask, and
+        # pt's sparse edges occupy exactly those slots (in row-major order)
+        np.testing.assert_array_equal(np.asarray(dp_cache.edge_mask), valid)
+        assert pt_cache.src.shape[0] == int(valid.sum())
+        # padded dst contract: node-contiguous repeat of arange(nf * nloc)
+        np.testing.assert_array_equal(
+            np.asarray(dp_cache.dst),
+            np.repeat(np.arange(self.nf * self.nloc), self.nnei),
+        )
+        # indices on valid slots are exactly pt's sparse indices
+        np.testing.assert_array_equal(
+            np.asarray(dp_cache.src)[valid], pt_cache.src.numpy()
+        )
+        np.testing.assert_array_equal(
+            np.asarray(dp_cache.dst)[valid], pt_cache.dst.numpy()
+        )
+        # per-edge fields: compare masked entries against pt's sparse outputs
+        for name in (
+            "edge_vec",
+            "edge_rbf",
+            "edge_env",
+            "edge_type_feat",
+            "edge_quat",
+            "D_full",
+            "Dt_full",
+        ):
+            assert_parity(
+                np.asarray(getattr(dp_cache, name))[valid], getattr(pt_cache, name)
+            )
+        # node-level normalization compares directly
+        assert_parity(dp_cache.deg, pt_cache.deg)
+        assert_parity(dp_cache.inv_sqrt_deg, pt_cache.inv_sqrt_deg)
+        # everything is finite, including masked slots
+        for name in (
+            "edge_vec",
+            "edge_rbf",
+            "edge_env",
+            "edge_type_feat",
+            "edge_quat",
+            "D_full",
+            "Dt_full",
+            "deg",
+            "inv_sqrt_deg",
+        ):
+            assert np.isfinite(np.asarray(getattr(dp_cache, name))).all(), name
+        # standard path carries no source gate
+        assert dp_cache.edge_src_gate is None
+        assert dp_cache.D_to_m_cache == {}
+        assert dp_cache.Dt_from_m_cache == {}
+
+    def test_masked_edge_inertness(self) -> None:
+        # an extra all-(-1) neighbor column must not change the masked-view
+        # fields or the degree normalization
+        inputs = self._inputs()
+        pad = -np.ones((self.nf, self.nloc, 1), dtype=inputs["nlist"].dtype)
+        inputs2 = dict(inputs)
+        inputs2["nlist"] = np.concatenate([inputs["nlist"], pad], axis=-1)
+        inputs2["pair_keep_mask"] = np.concatenate(
+            [
+                inputs["pair_keep_mask"],
+                np.ones((self.nf, self.nloc, 1), dtype=bool),
+            ],
+            axis=-1,
+        )
+        _, cache = _build_real_edge_caches(inputs, lmax=self.lmax)
+        _, cache2 = _build_real_edge_caches(inputs2, lmax=self.lmax)
+        n_nodes = self.nf * self.nloc
+        mask = np.asarray(cache.edge_mask).reshape(n_nodes, self.nnei)
+        mask2 = np.asarray(cache2.edge_mask).reshape(n_nodes, self.nnei + 1)
+        np.testing.assert_array_equal(mask2[:, : self.nnei], mask)
+        np.testing.assert_array_equal(mask2[:, self.nnei], False)
+        for name in ("edge_vec", "edge_rbf", "edge_env", "edge_quat", "D_full"):
+            a = np.asarray(getattr(cache, name))
+            b = np.asarray(getattr(cache2, name))
+            a = a.reshape(n_nodes, self.nnei, -1)[mask.astype(bool)]
+            b = b.reshape(n_nodes, self.nnei + 1, -1)[mask2.astype(bool)]
+            np.testing.assert_array_equal(a, b, err_msg=name)
+        np.testing.assert_array_equal(np.asarray(cache.deg), np.asarray(cache2.deg))
+        np.testing.assert_array_equal(
+            np.asarray(cache.inv_sqrt_deg), np.asarray(cache2.inv_sqrt_deg)
+        )
+
+    def test_random_gamma(self) -> None:
+        # pt draws gamma internally with torch.rand, so the draw cannot be
+        # injected identically into both sides; the dp branch is verified by
+        # determinism (injected gamma) and gauge properties instead.
+        inputs = self._inputs()
+        n_edge = self.nf * self.nloc * self.nnei
+        gamma = np.random.default_rng(7).uniform(0.0, 2.0 * np.pi, n_edge)
+        _, base = _build_real_edge_caches(inputs, lmax=self.lmax)
+        _, c1 = _build_real_edge_caches(
+            inputs, lmax=self.lmax, random_gamma=True, gamma=gamma
+        )
+        _, c2 = _build_real_edge_caches(
+            inputs, lmax=self.lmax, random_gamma=True, gamma=gamma
+        )
+        # determinism with an injected gamma
+        np.testing.assert_array_equal(np.asarray(c1.D_full), np.asarray(c2.D_full))
+        np.testing.assert_array_equal(
+            np.asarray(c1.edge_quat), np.asarray(c2.edge_quat)
+        )
+        # the roll is a gauge choice: D stays orthogonal ...
+        d = np.asarray(c1.D_full)
+        dt = np.asarray(c1.Dt_full)
+        eye = np.broadcast_to(np.eye(d.shape[-1]), d.shape)
+        np.testing.assert_allclose(d @ dt, eye, rtol=1e-12, atol=1e-12)
+        # ... the l=0 block is unchanged ...
+        np.testing.assert_allclose(
+            d[:, 0, 0], np.asarray(base.D_full)[:, 0, 0], rtol=1e-12, atol=1e-14
+        )
+        # ... and the rotation-independent fields are bit-identical
+        for name in ("edge_vec", "edge_env", "edge_rbf", "deg", "inv_sqrt_deg"):
+            np.testing.assert_array_equal(
+                np.asarray(getattr(c1, name)),
+                np.asarray(getattr(base, name)),
+                err_msg=name,
+            )
+        # internal-draw branch (gamma=None) runs and stays finite
+        _, c3 = _build_real_edge_caches(inputs, lmax=self.lmax, random_gamma=True)
+        assert np.isfinite(np.asarray(c3.D_full)).all()
+        np.testing.assert_allclose(
+            np.asarray(c3.D_full)[:, 0, 0],
+            np.asarray(base.D_full)[:, 0, 0],
+            rtol=1e-12,
+            atol=1e-14,
+        )
 
 
 class TestNoTorchImport:
