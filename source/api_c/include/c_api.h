@@ -1464,6 +1464,102 @@ void DP_DeepPotModelDeviComputeNListf2(DP_DeepPotModelDevi* dp,
                                        float* atomic_virial);
 
 /**
+ * @brief Evaluate energy, force and virial with a DP model deviation.
+ *(double version, with charge_spin)
+ * @version 3
+ * @param[in] charge_spin The per-frame charge/spin input. The array should be
+ *of size nframes x dim_chg_spin. Pass NULL to use the model's stored
+ *default_chg_spin.
+ * @since API version 27
+ **/
+void DP_DeepPotModelDeviCompute3(DP_DeepPotModelDevi* dp,
+                                 const int nframes,
+                                 const int natoms,
+                                 const double* coord,
+                                 const int* atype,
+                                 const double* cell,
+                                 const double* fparam,
+                                 const double* aparam,
+                                 const double* charge_spin,
+                                 double* energy,
+                                 double* force,
+                                 double* virial,
+                                 double* atomic_energy,
+                                 double* atomic_virial);
+
+/**
+ * @brief Evaluate energy, force and virial with a DP model deviation.
+ *(float version, with charge_spin)
+ * @version 3
+ * @since API version 27
+ **/
+void DP_DeepPotModelDeviComputef3(DP_DeepPotModelDevi* dp,
+                                  const int nframes,
+                                  const int natoms,
+                                  const float* coord,
+                                  const int* atype,
+                                  const float* cell,
+                                  const float* fparam,
+                                  const float* aparam,
+                                  const double* charge_spin,
+                                  double* energy,
+                                  float* force,
+                                  float* virial,
+                                  float* atomic_energy,
+                                  float* atomic_virial);
+
+/**
+ * @brief Evaluate energy, force and virial with a DP model deviation and a
+ *neighbor list. (double version, with charge_spin)
+ * @version 3
+ * @param[in] charge_spin The per-frame charge/spin input. The array should be
+ *of size nframes x dim_chg_spin. Pass NULL to use the model's stored
+ *default_chg_spin.
+ * @since API version 27
+ **/
+void DP_DeepPotModelDeviComputeNList3(DP_DeepPotModelDevi* dp,
+                                      const int nframes,
+                                      const int natoms,
+                                      const double* coord,
+                                      const int* atype,
+                                      const double* cell,
+                                      const int nghost,
+                                      const DP_Nlist* nlist,
+                                      const int ago,
+                                      const double* fparam,
+                                      const double* aparam,
+                                      const double* charge_spin,
+                                      double* energy,
+                                      double* force,
+                                      double* virial,
+                                      double* atomic_energy,
+                                      double* atomic_virial);
+
+/**
+ * @brief Evaluate energy, force and virial with a DP model deviation and a
+ *neighbor list. (float version, with charge_spin)
+ * @version 3
+ * @since API version 27
+ **/
+void DP_DeepPotModelDeviComputeNListf3(DP_DeepPotModelDevi* dp,
+                                       const int nframes,
+                                       const int natoms,
+                                       const float* coord,
+                                       const int* atype,
+                                       const float* cell,
+                                       const int nghost,
+                                       const DP_Nlist* nlist,
+                                       const int ago,
+                                       const float* fparam,
+                                       const float* aparam,
+                                       const double* charge_spin,
+                                       double* energy,
+                                       float* force,
+                                       float* virial,
+                                       float* atomic_energy,
+                                       float* atomic_virial);
+
+/**
  * @brief Evaluate the energy, force, magnetic force and virial by using a DP
  *spin model deviation with neighbor list. (float version)
  * @version 2
@@ -1755,6 +1851,14 @@ int DP_DeepPotModelDeviGetDimFParam(DP_DeepPotModelDevi* dp);
  * @return The dimension of atomic parameters of the DP Model Deviation.
  */
 int DP_DeepPotModelDeviGetDimAParam(DP_DeepPotModelDevi* dp);
+
+/**
+ * @brief Get the dimension of the charge/spin input of a DP Model Deviation.
+ * @param[in] dp The DP Model Deviation to use.
+ * @return The dimension of the charge/spin input (0 if none).
+ * @since API version 27
+ */
+int DP_DeepPotModelDeviGetDimChgSpin(DP_DeepPotModelDevi* dp);
 
 /**
  * @brief Check whether the atomic dimension of atomic parameters is nall
