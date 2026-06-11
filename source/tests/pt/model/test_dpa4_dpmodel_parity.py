@@ -1,9 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Parity tests: dpmodel dpa4_nn modules vs the reference pt sezm_nn modules.
+"""Parity tests: dpmodel ``dpa4_nn`` modules vs the reference pt ``sezm_nn`` modules.
 
-Every test builds the pt module in float64, copies its weights into the
-dpmodel module (never seed-matching), and compares forward outputs at
-rtol=1e-12 — same math, sequential CPU, so near-bit equality is expected.
+This file is extended task-by-task as the DPA4 port progresses. Index-table and
+numeric-helper parity is exact (``assert_array_equal`` / tight rtol). Module-level
+weight-copy parity tests (build the pt module in float64, copy its ``state_dict``
+into the dpmodel module via ``pt_state_to_numpy``, compare forwards with
+``assert_parity``) are added by the tasks that port each module.
 """
 
 import subprocess
@@ -12,17 +14,6 @@ import sys
 import numpy as np
 import pytest
 import torch
-
-
-def pt_state_to_numpy(module: torch.nn.Module) -> dict[str, np.ndarray]:
-    return {k: v.detach().cpu().numpy() for k, v in module.state_dict().items()}
-
-
-def assert_parity(a, t, rtol=1e-12, atol=1e-14):
-    np.testing.assert_allclose(
-        np.asarray(a), t.detach().cpu().numpy(), rtol=rtol, atol=atol
-    )
-
 
 from deepmd.dpmodel.descriptor.dpa4_nn import (
     indexing as dp_indexing,
@@ -36,6 +27,17 @@ from deepmd.pt.model.descriptor.sezm_nn import (
 from deepmd.pt.model.descriptor.sezm_nn import (
     utils as pt_utils,
 )
+
+
+def pt_state_to_numpy(module: torch.nn.Module) -> dict[str, np.ndarray]:
+    return {k: v.detach().cpu().numpy() for k, v in module.state_dict().items()}
+
+
+def assert_parity(a, t, rtol=1e-12, atol=1e-14):
+    np.testing.assert_allclose(
+        np.asarray(a), t.detach().cpu().numpy(), rtol=rtol, atol=atol
+    )
+
 
 CPU = torch.device("cpu")
 
@@ -90,6 +92,13 @@ class TestIndexingParity:
         ref = pt_indexing.build_m_major_index(lmax, mmax, device=CPU)
         assert res.dtype == np.int64
         np.testing.assert_array_equal(res, ref.numpy())
+
+    def test_m_major_index_literal(self) -> None:
+        # layout contract anchor, cross-checked with sezm_nn docs:
+        # lmax=2, mmax=1: m=0 block (l=0..2), then m=-1, then m=+1
+        np.testing.assert_array_equal(
+            dp_indexing.build_m_major_index(2, 1), [0, 2, 6, 1, 5, 3, 7]
+        )
 
     @pytest.mark.parametrize("lmax", [1, 2, 3, 4])  # max spherical harmonic degree
     @pytest.mark.parametrize("mmax", [1, 2])  # max order |m|
