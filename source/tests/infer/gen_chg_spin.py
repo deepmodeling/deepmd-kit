@@ -88,9 +88,15 @@ def main():
     pt_expt_deserialize_to_file(pt2_path, copy.deepcopy(data), do_atomic_virial=True)
 
     pth_path = os.path.join(base_dir, "chg_spin.pth")
+    # Remove any stale .pth first so a failed export below cannot leave an old
+    # artifact that the parity check would then validate against.
+    if os.path.exists(pth_path):
+        os.remove(pth_path)
+    pth_generated = False
     print(f"Exporting to {pth_path} ...")  # noqa: T201
     try:
         pt_deserialize_to_file(pth_path, copy.deepcopy(data))
+        pth_generated = True
     except RuntimeError as e:
         # Custom ops may not be available in all build environments; .pth
         # generation is not critical (the .pth test skips if the file is
@@ -194,7 +200,7 @@ def main():
     print(f"Wrote {ref_path}")  # noqa: T201
 
     # ---- Verify .pth reproduces the .pt2 reference (PBC + NoPbc) ----
-    if os.path.exists(pth_path):
+    if pth_generated:
         dp_pth = DeepPot(pth_path)
         assert dp_pth.deep_eval.get_dim_chg_spin() == 2
         tol = 1e-10

@@ -315,6 +315,11 @@ class DeepPotPT : public DeepPotBackend {
                 const std::vector<float>& fparam,
                 const std::vector<float>& aparam,
                 const bool atomic);
+  // Keep the base charge_spin-aware computew / computew_mixed_type overloads
+  // visible: the non-charge_spin declarations below would otherwise hide them
+  // for callers using the static type DeepPotPT.
+  using DeepPotBackend::computew;
+  using DeepPotBackend::computew_mixed_type;
   void computew_mixed_type(std::vector<double>& ener,
                            std::vector<double>& force,
                            std::vector<double>& virial,

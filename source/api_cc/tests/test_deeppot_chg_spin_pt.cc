@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <fstream>
 #include <vector>
 
 #include "DeepPot.h"
@@ -79,6 +80,13 @@ class TestInferDeepPotChgSpinPt : public ::testing::Test {
                expected_tot_e_default, expected_tot_v_default);
     natoms = e_exp.size();
 
+    {
+      std::ifstream model_file(kModelPath);
+      if (!model_file.good()) {
+        GTEST_SKIP() << "Skip because " << kModelPath
+                     << " was not generated (e.g. .pth export was skipped).";
+      }
+    }
     dp.init(kModelPath);
   }
 
@@ -200,6 +208,13 @@ class TestInferDeepPotChgSpinPtNoPbc : public ::testing::Test {
                expected_tot_e_default, expected_tot_v_default);
     natoms = e_exp.size();
 
+    {
+      std::ifstream model_file(kModelPath);
+      if (!model_file.good()) {
+        GTEST_SKIP() << "Skip because " << kModelPath
+                     << " was not generated (e.g. .pth export was skipped).";
+      }
+    }
     dp.init(kModelPath);
   }
 

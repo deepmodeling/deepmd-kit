@@ -269,6 +269,13 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
   if (dchgspin > 0) {
     auto dbl_options = torch::TensorOptions().dtype(torch::kFloat64);
     if (!charge_spin.empty()) {
+      // Single-frame path: charge_spin must hold exactly dim_chg_spin values.
+      if (static_cast<int>(charge_spin.size()) != dchgspin) {
+        throw deepmd::deepmd_exception(
+            "charge_spin has " + std::to_string(charge_spin.size()) +
+            " values but the model expects dim_chg_spin=" +
+            std::to_string(dchgspin) + ".");
+      }
       charge_spin_tensor =
           torch::from_blob(const_cast<double*>(charge_spin.data()),
                            {1, static_cast<std::int64_t>(charge_spin.size())},
@@ -276,6 +283,12 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
               .clone()
               .to(device);
     } else if (!default_chg_spin_.empty()) {
+      if (static_cast<int>(default_chg_spin_.size()) != dchgspin) {
+        throw deepmd::deepmd_exception(
+            "default_chg_spin has " + std::to_string(default_chg_spin_.size()) +
+            " values but the model expects dim_chg_spin=" +
+            std::to_string(dchgspin) + ".");
+      }
       charge_spin_tensor =
           torch::from_blob(const_cast<double*>(default_chg_spin_.data()),
                            {1, dchgspin}, dbl_options)
@@ -466,6 +479,13 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
     auto dbl_options = torch::TensorOptions().dtype(torch::kFloat64);
     c10::optional<torch::Tensor> charge_spin_tensor;
     if (!charge_spin.empty()) {
+      // Single-frame path: charge_spin must hold exactly dim_chg_spin values.
+      if (static_cast<int>(charge_spin.size()) != dchgspin) {
+        throw deepmd::deepmd_exception(
+            "charge_spin has " + std::to_string(charge_spin.size()) +
+            " values but the model expects dim_chg_spin=" +
+            std::to_string(dchgspin) + ".");
+      }
       charge_spin_tensor =
           torch::from_blob(const_cast<double*>(charge_spin.data()),
                            {1, static_cast<std::int64_t>(charge_spin.size())},
@@ -473,6 +493,12 @@ void DeepPotPT::compute(ENERGYVTYPE& ener,
               .clone()
               .to(device);
     } else if (!default_chg_spin_.empty()) {
+      if (static_cast<int>(default_chg_spin_.size()) != dchgspin) {
+        throw deepmd::deepmd_exception(
+            "default_chg_spin has " + std::to_string(default_chg_spin_.size()) +
+            " values but the model expects dim_chg_spin=" +
+            std::to_string(dchgspin) + ".");
+      }
       charge_spin_tensor =
           torch::from_blob(const_cast<double*>(default_chg_spin_.data()),
                            {1, dchgspin}, dbl_options)

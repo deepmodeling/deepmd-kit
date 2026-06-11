@@ -865,6 +865,33 @@ inline double* _DP_Get_Energy_Pointer(double& vec, const int nframes) {
 namespace deepmd {
 namespace hpp {
 /**
+ * @brief Validate a runtime charge_spin vector and return a raw pointer to it
+ * (or nullptr when empty, which falls back to the model's default_chg_spin).
+ * @param[in] charge_spin The per-frame charge/spin values.
+ * @param[in] dchgspin The model's charge/spin dimension (0 if unsupported).
+ * @param[in] nframes The number of frames.
+ * @return charge_spin.data() if non-empty and valid, otherwise nullptr.
+ */
+inline const double* validate_charge_spin(
+    const std::vector<double>& charge_spin,
+    const int dchgspin,
+    const unsigned int nframes) {
+  if (charge_spin.empty()) {
+    return nullptr;
+  }
+  if (dchgspin == 0) {
+    throw deepmd::hpp::deepmd_exception(
+        "charge_spin was provided, but this model does not support "
+        "charge/spin conditioning");
+  }
+  if (charge_spin.size() != static_cast<size_t>(nframes) * dchgspin) {
+    throw deepmd::hpp::deepmd_exception(
+        "the dim of charge_spin provided is not consistent with what the "
+        "model uses");
+  }
+  return charge_spin.data();
+}
+/**
  * @brief Neighbor list.
  **/
 struct InputNlist {
@@ -1091,7 +1118,7 @@ class DeepPot : public DeepBaseModel {
   /**
    * @brief DP constructor without initialization.
    **/
-  DeepPot() : dp(nullptr) {};
+  DeepPot() : dp(nullptr), dchgspin(0) {};
   ~DeepPot() { DP_DeleteDeepPot(dp); };
   /**
    * @brief DP constructor with initialization.
@@ -1102,7 +1129,7 @@ class DeepPot : public DeepBaseModel {
   DeepPot(const std::string& model,
           const int& gpu_rank = 0,
           const std::string& file_content = "")
-      : dp(nullptr) {
+      : dp(nullptr), dchgspin(0) {
     try {
       init(model, gpu_rank, file_content);
     } catch (...) {
@@ -1144,7 +1171,10 @@ class DeepPot : public DeepBaseModel {
    * @return The dimension of the charge/spin input (0 if the model has no
    *charge/spin embedding).
    **/
-  int dim_chg_spin() const { return dchgspin; }
+  int dim_chg_spin() const {
+    assert(dp);
+    return dchgspin;
+  }
 
   /**
    * @brief Evaluate the energy, force and virial by using this DP.
@@ -1199,7 +1229,7 @@ class DeepPot : public DeepBaseModel {
     // charge_spin routes to the version-3 C API; nullptr keeps version-2 so
     // non-charge_spin models still work against an older libdeepmd_c.
     const double* charge_spin__ =
-        (dchgspin > 0 && !charge_spin.empty()) ? charge_spin.data() : nullptr;
+        validate_charge_spin(charge_spin, dchgspin, nframes);
 
     _DP_DeepPotCompute<VALUETYPE>(dp, nframes, natoms, coord_, atype_, box_,
                                   fparam__, aparam__, ener_, force_, virial_,
@@ -1267,7 +1297,7 @@ class DeepPot : public DeepBaseModel {
     const VALUETYPE* fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
     const VALUETYPE* aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
     const double* charge_spin__ =
-        (dchgspin > 0 && !charge_spin.empty()) ? charge_spin.data() : nullptr;
+        validate_charge_spin(charge_spin, dchgspin, nframes);
 
     _DP_DeepPotCompute<VALUETYPE>(dp, nframes, natoms, coord_, atype_, box_,
                                   fparam__, aparam__, ener_, force_, virial_,
@@ -1336,7 +1366,7 @@ class DeepPot : public DeepBaseModel {
     const VALUETYPE* fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
     const VALUETYPE* aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
     const double* charge_spin__ =
-        (dchgspin > 0 && !charge_spin.empty()) ? charge_spin.data() : nullptr;
+        validate_charge_spin(charge_spin, dchgspin, nframes);
 
     _DP_DeepPotComputeNList<VALUETYPE>(dp, nframes, natoms, coord_, atype_,
                                        box_, nghost, lmp_list.nl, ago, fparam__,
@@ -1414,7 +1444,7 @@ class DeepPot : public DeepBaseModel {
     const VALUETYPE* fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
     const VALUETYPE* aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
     const double* charge_spin__ =
-        (dchgspin > 0 && !charge_spin.empty()) ? charge_spin.data() : nullptr;
+        validate_charge_spin(charge_spin, dchgspin, nframes);
 
     _DP_DeepPotComputeNList<VALUETYPE>(
         dp, nframes, natoms, coord_, atype_, box_, nghost, lmp_list.nl, ago,
@@ -2137,13 +2167,14 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
   /**
    * @brief DP model deviation constructor without initialization.
    **/
-  DeepPotModelDevi() : dp(nullptr) {};
+  DeepPotModelDevi() : dp(nullptr), dchgspin(0) {};
   ~DeepPotModelDevi() { DP_DeleteDeepPotModelDevi(dp); };
   /**
    * @brief DP model deviation constructor with initialization.
    * @param[in] models The names of the frozen model file.
    **/
-  DeepPotModelDevi(const std::vector<std::string>& models) : dp(nullptr) {
+  DeepPotModelDevi(const std::vector<std::string>& models)
+      : dp(nullptr), dchgspin(0) {
     try {
       init(models);
     } catch (...) {
@@ -2203,7 +2234,10 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
    * @return The dimension of the charge/spin input (0 if the models have no
    *charge/spin embedding).
    **/
-  int dim_chg_spin() const { return dchgspin; }
+  int dim_chg_spin() const {
+    assert(dp);
+    return dchgspin;
+  }
 
   /**
    * @brief Evaluate the energy, force and virial by using this DP model
@@ -2262,7 +2296,7 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
     const VALUETYPE* fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
     const VALUETYPE* aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
     const double* charge_spin__ =
-        (dchgspin > 0 && !charge_spin.empty()) ? charge_spin.data() : nullptr;
+        validate_charge_spin(charge_spin, dchgspin, nframes);
 
     _DP_DeepPotModelDeviCompute<VALUETYPE>(dp, natoms, coord_, atype_, box_,
                                            fparam__, aparam__, ener_, force_,
@@ -2351,7 +2385,7 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
     const VALUETYPE* fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
     const VALUETYPE* aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
     const double* charge_spin__ =
-        (dchgspin > 0 && !charge_spin.empty()) ? charge_spin.data() : nullptr;
+        validate_charge_spin(charge_spin, dchgspin, nframes);
 
     _DP_DeepPotModelDeviCompute<VALUETYPE>(
         dp, natoms, coord_, atype_, box_, fparam__, aparam__, ener_, force_,
@@ -2450,7 +2484,7 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
     const VALUETYPE* fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
     const VALUETYPE* aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
     const double* charge_spin__ =
-        (dchgspin > 0 && !charge_spin.empty()) ? charge_spin.data() : nullptr;
+        validate_charge_spin(charge_spin, dchgspin, nframes);
 
     _DP_DeepPotModelDeviComputeNList<VALUETYPE>(
         dp, natoms, coord_, atype_, box_, nghost, lmp_list.nl, ago, fparam__,
@@ -2546,7 +2580,7 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
     const VALUETYPE* fparam__ = !fparam_.empty() ? &fparam_[0] : nullptr;
     const VALUETYPE* aparam__ = !aparam_.empty() ? &aparam_[0] : nullptr;
     const double* charge_spin__ =
-        (dchgspin > 0 && !charge_spin.empty()) ? charge_spin.data() : nullptr;
+        validate_charge_spin(charge_spin, dchgspin, nframes);
 
     _DP_DeepPotModelDeviComputeNList<VALUETYPE>(
         dp, natoms, coord_, atype_, box_, nghost, lmp_list.nl, ago, fparam__,
