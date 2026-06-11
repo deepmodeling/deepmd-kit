@@ -905,8 +905,8 @@ class TestNormParity:
 
     def test_norm_fp32_input_branch(self) -> None:
         # input-dtype promotion branch: fp32 input with fp64 params, output is
-        # cast back to fp32. Compared against pt at fp32 round-off level (the
-        # internal fp64 math is bit-identical, the final downcast is 1 ulp).
+        # cast back to fp32. The downcast happens at the same point in both
+        # implementations, so the results are bit-identical.
         from deepmd.dpmodel.descriptor.dpa4_nn.norm import (
             EquivariantRMSNorm as DPEquivariantRMSNorm,
         )
@@ -929,9 +929,7 @@ class TestNormParity:
         res = dp_eq.call(x32)
         ref = pt_eq(torch.from_numpy(x32))
         assert np.asarray(res).dtype == np.float32
-        np.testing.assert_allclose(
-            np.asarray(res), ref.detach().numpy(), rtol=2e-7, atol=2e-7
-        )
+        np.testing.assert_array_equal(np.asarray(res), ref.detach().numpy())
 
         pt_sc = PTScalarRMSNorm(
             channels=self.channels, dtype=torch.float64, trainable=True
@@ -941,9 +939,7 @@ class TestNormParity:
         res = dp_sc.call(x32)
         ref = pt_sc(torch.from_numpy(x32))
         assert np.asarray(res).dtype == np.float32
-        np.testing.assert_allclose(
-            np.asarray(res), ref.detach().numpy(), rtol=2e-7, atol=2e-7
-        )
+        np.testing.assert_array_equal(np.asarray(res), ref.detach().numpy())
 
     def test_deserialize_wrong_class(self) -> None:
         from deepmd.dpmodel.descriptor.dpa4_nn.norm import (
@@ -1277,8 +1273,8 @@ class TestGatedActivationParity:
 
     def test_gated_activation_fp32_input_branch(self) -> None:
         # input-dtype promotion branch: fp32 input with fp64 gate params;
-        # compared at fp32 round-off level (downcast happens at different
-        # points in the two implementations)
+        # compared at ~1-2 ulp fp32 (downcast happens at different points
+        # in the two implementations)
         dp_mod, pt_mod = self._build_pair(
             lmax=2,
             mmax=None,
@@ -1293,7 +1289,7 @@ class TestGatedActivationParity:
         ref = pt_mod(torch.from_numpy(x32))
         assert np.asarray(res).dtype == np.float32
         np.testing.assert_allclose(
-            np.asarray(res), ref.detach().numpy(), rtol=2e-6, atol=2e-7
+            np.asarray(res), ref.detach().numpy(), rtol=3e-7, atol=3e-7
         )
 
     def test_gated_activation_roundtrip(self) -> None:
