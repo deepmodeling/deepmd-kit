@@ -59,7 +59,7 @@ class TestPopulationLossZero(unittest.TestCase):
         natoms = 4
         nframes = 2
         task_dim = 2
-        pop = torch.ones(nframes, natoms, task_dim)
+        pop = torch.ones(nframes, natoms, task_dim, device=env.DEVICE)
         model_pred = {"population": pop}
         label = {"atom_population": pop.clone()}
         loss_fn = PopulationLoss(
@@ -87,8 +87,8 @@ class TestPopulationLossNoFrameCancellation(unittest.TestCase):
         # Frame 1: pred alpha-beta totals = delta below label
         # Construct so spin_total error = +delta for frame 0, -delta for frame 1.
         # Use alpha=pred, beta=0 for simplicity.
-        pop_pred = torch.zeros(2, natoms, 2)
-        pop_label = torch.zeros(2, natoms, 2)
+        pop_pred = torch.zeros(2, natoms, 2, device=env.DEVICE)
+        pop_label = torch.zeros(2, natoms, 2, device=env.DEVICE)
         # Frame 0: each atom contributes delta/natoms extra alpha → total +delta
         pop_pred[0, :, 0] = delta / natoms
         # Frame 1: label alpha is delta/natoms above pred → total -delta
@@ -137,8 +137,8 @@ class TestPopulationLossPrefactorScaling(unittest.TestCase):
         natoms = 3
         task_dim = 2
         # Constant error per atom across all frames.
-        pop_pred = torch.ones(nframes, natoms, task_dim)
-        pop_label = torch.zeros(nframes, natoms, task_dim)
+        pop_pred = torch.ones(nframes, natoms, task_dim, device=env.DEVICE)
+        pop_label = torch.zeros(nframes, natoms, task_dim, device=env.DEVICE)
         model_pred = {"population": pop_pred}
         label = {"atom_population": pop_label}
         loss_fn = PopulationLoss(
@@ -173,8 +173,8 @@ class TestPopulationLossMAEValue(unittest.TestCase):
         nframes = 2
         task_dim = 2
         # pred = 1, label = 0 everywhere → error = 1 per element
-        pop_pred = torch.ones(nframes, natoms, task_dim)
-        pop_label = torch.zeros(nframes, natoms, task_dim)
+        pop_pred = torch.ones(nframes, natoms, task_dim, device=env.DEVICE)
+        pop_label = torch.zeros(nframes, natoms, task_dim, device=env.DEVICE)
         model_pred = {"population": pop_pred}
         label = {"atom_population": pop_label}
 
@@ -201,8 +201,10 @@ class TestPopulationLossMAEValue(unittest.TestCase):
     def test_mae_spin_value(self):
         """Spin = alpha - beta; error counted correctly."""
         natoms = 2
-        pop_pred = torch.tensor([[[2.0, 1.0], [2.0, 1.0]]])  # spin = 1 per atom
-        pop_label = torch.tensor([[[1.0, 1.0], [1.0, 1.0]]])  # spin = 0 per atom
+        # spin = 1 per atom
+        pop_pred = torch.tensor([[[2.0, 1.0], [2.0, 1.0]]], device=env.DEVICE)
+        # spin = 0 per atom
+        pop_label = torch.tensor([[[1.0, 1.0], [1.0, 1.0]]], device=env.DEVICE)
         model_pred = {"population": pop_pred}
         label = {"atom_population": pop_label}
 
