@@ -41,17 +41,6 @@ from deepmd.pt.utils.utils import (
 dtype = env.GLOBAL_PT_FLOAT_PRECISION
 
 
-def _make_label_and_pred(nframes: int, natoms: int, task_dim: int = 2):
-    """Return (model_pred, label) dicts with random population tensors."""
-    rng = torch.Generator()
-    rng.manual_seed(42)
-    pop_pred = torch.rand(nframes, natoms, task_dim, generator=rng)
-    pop_label = torch.rand(nframes, natoms, task_dim, generator=rng)
-    model_pred = {"population": pop_pred}
-    label = {"atom_population": pop_label}
-    return model_pred, label, pop_pred, pop_label
-
-
 class FakeModel(torch.nn.Module):
     """Thin wrapper so PopulationLoss can call model(**input_dict)."""
 
@@ -257,7 +246,7 @@ class TestPopulationFittingNetSerialize(unittest.TestCase):
             neuron=[16, 16],
             mixed_types=self.dd0.mixed_types(),
         ).to(env.DEVICE)
-        ft1 = PopulationFittingNet.deserialize(ft0.serialize())
+        ft1 = PopulationFittingNet.deserialize(ft0.serialize()).to(env.DEVICE)
 
         natoms = 5
         nframes = 2
