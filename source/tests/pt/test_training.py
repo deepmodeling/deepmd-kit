@@ -265,6 +265,25 @@ class TestEnergyModelSeA(unittest.TestCase, DPTrainTest):
         )
         self.assertTrue(Path("out.json").exists())
 
+    def test_zero_step_with_change_bias_saves_initial_checkpoint(self) -> None:
+        config = deepcopy(self.config)
+        config["training"]["numb_steps"] = 0
+        config["training"]["change_bias_after_training"] = True
+        trainer = get_trainer(config)
+        trainer.run()
+
+        expected_model = Path(trainer.save_ckpt + "-0.pt")
+        self.assertEqual(expected_model, trainer.latest_model)
+        self.assertTrue(expected_model.exists())
+        self.assertEqual(
+            expected_model,
+            Path(Path("checkpoint").read_text().strip()),
+        )
+        checkpoint = torch.load(expected_model, map_location="cpu", weights_only=True)
+        train_infos = checkpoint["model"]["_extra_state"]["train_infos"]
+        self.assertEqual(0, train_infos["step"])
+        self.assertEqual(0.0, train_infos["lr"])
+
     def tearDown(self) -> None:
         DPTrainTest.tearDown(self)
         for ff in ["out.json", "input.yaml"]:

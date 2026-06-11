@@ -11,6 +11,7 @@ from pathlib import (
 )
 
 import numpy as np
+import paddle
 
 from deepmd.pd.entrypoints.main import (
     get_trainer,
@@ -162,6 +163,25 @@ class TestEnergyModelSeA(unittest.TestCase, DPTrainTest):
         self.config["training"]["numb_steps"] = 1
         self.config["training"]["save_freq"] = 1
         enable_prim(True)
+
+    def test_zero_step_with_change_bias_saves_initial_checkpoint(self) -> None:
+        config = deepcopy(self.config)
+        config["training"]["numb_steps"] = 0
+        config["training"]["change_bias_after_training"] = True
+        trainer = get_trainer(config)
+        trainer.run()
+
+        expected_model = Path(trainer.save_ckpt + "-0.pd")
+        self.assertEqual(expected_model, trainer.latest_model)
+        self.assertTrue(expected_model.exists())
+        self.assertEqual(
+            expected_model,
+            Path(Path("checkpoint").read_text().strip()),
+        )
+        checkpoint = paddle.load(expected_model)
+        train_infos = checkpoint["model"]["_extra_state"]["train_infos"]
+        self.assertEqual(0, train_infos["step"])
+        self.assertEqual(0.0, train_infos["lr"])
 
     def tearDown(self) -> None:
         DPTrainTest.tearDown(self)
