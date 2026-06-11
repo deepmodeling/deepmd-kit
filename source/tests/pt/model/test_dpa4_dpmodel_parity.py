@@ -2947,6 +2947,351 @@ class TestEdgeCacheParity:
         )
 
 
+class TestFFNParity:
+    n_node = 11
+    channels = 8
+
+    def _perturb(self, pt_mod: torch.nn.Module, seed: int) -> None:
+        rng = np.random.default_rng(seed)
+        with torch.no_grad():
+            for p in pt_mod.parameters():
+                p += torch.from_numpy(0.1 * rng.normal(size=tuple(p.shape)))
+
+    def _ffn_kwargs(self, **overrides):
+        kwargs = {
+            "lmax": 3,
+            "channels": self.channels,
+            "hidden_channels": self.channels,
+            "kmax": 1,
+            "grid_mlp": False,
+            "grid_branch": 0,
+            "s2_activation": False,
+            "ffn_so3_grid": False,
+            "lebedev_quadrature": True,
+            "activation_function": "silu",
+            "glu_activation": True,
+            "mlp_bias": False,
+        }
+        kwargs.update(overrides)
+        return kwargs
+
+    def _build_ffn_pair(self, seed=29, perturb_seed=2110, **overrides):
+        from deepmd.dpmodel.descriptor.dpa4_nn.ffn import EquivariantFFN as DPFFN
+        from deepmd.pt.model.descriptor.sezm_nn.ffn import EquivariantFFN as PTFFN
+
+        kwargs = self._ffn_kwargs(**overrides)
+        pt_mod = PTFFN(**kwargs, dtype=torch.float64, seed=seed, trainable=True)
+        # so3_linear_2 is zero-initialized; perturb so the output is nonzero
+        self._perturb(pt_mod, perturb_seed)
+        dp_mod = DPFFN.deserialize(pt_mod.serialize())
+        return pt_mod, dp_mod, kwargs
+
+    def _assert_ffn_parity(self, pt_mod, dp_mod, kwargs, seed=2111) -> None:
+        rng = np.random.default_rng(seed)
+        dim = (kwargs["lmax"] + 1) ** 2
+        x = rng.normal(size=(self.n_node, dim, 1, kwargs["channels"]))
+        out_dp = dp_mod.call(x)
+        out_pt = pt_mod(torch.from_numpy(x))
+        assert out_dp.shape == tuple(out_pt.shape)
+        assert_parity(out_dp, out_pt)
+
+    @pytest.mark.parametrize("lmax", [2, 3])  # degree truncation (core=3)
+    @pytest.mark.parametrize("s2_activation", [False, True])  # S2 grid path (core=True)
+    @pytest.mark.parametrize("glu_activation", [False, True])  # GLU gating (core=True)
+    def test_ffn(self, lmax, s2_activation, glu_activation) -> None:
+        pt_mod, dp_mod, kwargs = self._build_ffn_pair(
+            lmax=lmax, s2_activation=s2_activation, glu_activation=glu_activation
+        )
+        self._assert_ffn_parity(pt_mod, dp_mod, kwargs)
+
+    @pytest.mark.parametrize("grid_branch", [0, 1])  # branch mixer off/on (core=1)
+    def test_ffn_grid_branch(self, grid_branch) -> None:
+        pt_mod, dp_mod, kwargs = self._build_ffn_pair(
+            s2_activation=True, grid_branch=grid_branch
+        )
+        self._assert_ffn_parity(pt_mod, dp_mod, kwargs)
+
+    @pytest.mark.parametrize("mlp_bias", [False, True])  # l=0 / gate bias branch
+    def test_ffn_mlp_bias(self, mlp_bias) -> None:
+        pt_mod, dp_mod, kwargs = self._build_ffn_pair(mlp_bias=mlp_bias)
+        self._assert_ffn_parity(pt_mod, dp_mod, kwargs)
+
+    @pytest.mark.parametrize("s2_activation", [False, True])  # both act sub-modules
+    def test_ffn_roundtrip(self, s2_activation) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.ffn import EquivariantFFN as DPFFN
+
+        pt_mod, dp_mod, kwargs = self._build_ffn_pair(
+            s2_activation=s2_activation, grid_branch=1 if s2_activation else 0
+        )
+        data = dp_mod.serialize()
+        # exact pt state_dict key-set match
+        assert set(data["@variables"]) == set(pt_state_to_numpy(pt_mod))
+        dp_mod2 = DPFFN.deserialize(data)
+        rng = np.random.default_rng(2112)
+        dim = (kwargs["lmax"] + 1) ** 2
+        x = rng.normal(size=(self.n_node, dim, 1, kwargs["channels"]))
+        np.testing.assert_array_equal(
+            np.asarray(dp_mod.call(x)), np.asarray(dp_mod2.call(x))
+        )
+
+    def test_ffn_guards(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.ffn import EquivariantFFN as DPFFN
+
+        with pytest.raises(NotImplementedError, match="ffn_so3_grid"):
+            DPFFN(**self._ffn_kwargs(ffn_so3_grid=True), precision="float64")
+        # grid_mlp guard is delegated to S2GridNet's op_type='mlp' NIE
+        with pytest.raises(NotImplementedError, match="mlp"):
+            DPFFN(
+                **self._ffn_kwargs(s2_activation=True, grid_mlp=True),
+                precision="float64",
+            )
+
+    def test_ffn_errors(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.ffn import EquivariantFFN as DPFFN
+
+        with pytest.raises(ValueError):  # kmax must be non-negative
+            DPFFN(**self._ffn_kwargs(kmax=-1), precision="float64")
+        with pytest.raises(ValueError):  # grid_branch must be non-negative
+            DPFFN(**self._ffn_kwargs(grid_branch=-1), precision="float64")
+        with pytest.raises(ValueError):  # wrong class tag
+            DPFFN.deserialize({"@class": "NotFFN", "@version": 1})
+        dp_mod = DPFFN(**self._ffn_kwargs(), precision="float64", seed=3)
+        with pytest.raises(KeyError):  # missing sub-module variables
+            dp_mod._load_variables({"so3_linear_1.weight": dp_mod.so3_linear_1.weight})
+        with pytest.raises(KeyError):  # unknown variables rejected
+            dp_mod._load_variables({**dp_mod._variables(), "extra.weight": 0.0})
+
+
+class TestBlockParity:
+    nloc = 5
+    nnei = 4
+    channels = 4
+
+    def _perturb(self, pt_mod: torch.nn.Module, seed: int) -> None:
+        rng = np.random.default_rng(seed)
+        with torch.no_grad():
+            for p in pt_mod.parameters():
+                p += torch.from_numpy(0.1 * rng.normal(size=tuple(p.shape)))
+
+    def _block_kwargs(self, **overrides):
+        # core DPA4 config (sandwich_norm=[F,T,T,F], so2 s2 off, ffn s2 on)
+        kwargs = {
+            "lmax": 3,
+            "node_lmax": None,
+            "mmax": 1,
+            "kmax": 1,
+            "channels": self.channels,
+            "n_focus": 1,
+            "focus_dim": 0,
+            "focus_compete": True,
+            "so2_norm": False,
+            "so2_layers": 4,
+            "so2_attn_res": "none",
+            "radial_so2_mode": "degree_channel",
+            "radial_so2_rank": 1,
+            "n_atten_head": 1,
+            "so2_pre_norm": False,
+            "so2_post_norm": True,
+            "ffn_pre_norm": True,
+            "ffn_post_norm": False,
+            "ffn_neurons": self.channels,
+            "ffn_grid_branch": 1,
+            "ffn_blocks": 1,
+            "ffn_s2_activation": True,
+            "so2_lebedev_quadrature": True,
+            "ffn_lebedev_quadrature": True,
+            "so2_activation_function": "silu",
+            "ffn_activation_function": "silu",
+            "ffn_glu_activation": True,
+            "mlp_bias": False,
+            "eps": 1e-7,
+        }
+        kwargs.update(overrides)
+        return kwargs
+
+    def _build_block_pair(self, seed=31, perturb_seed=2120, **overrides):
+        from deepmd.dpmodel.descriptor.dpa4_nn.block import (
+            SeZMInteractionBlock as DPBlock,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.block import (
+            SeZMInteractionBlock as PTBlock,
+        )
+
+        kwargs = self._block_kwargs(**overrides)
+        pt_mod = PTBlock(**kwargs, dtype=torch.float64, seed=seed, trainable=True)
+        # zero-initialized residual projections; perturb so the output is nonzero
+        self._perturb(pt_mod, perturb_seed)
+        dp_mod = DPBlock.deserialize(pt_mod.serialize())
+        return pt_mod, dp_mod, kwargs
+
+    def _node_dim(self, kwargs):
+        node_lmax = kwargs["node_lmax"]
+        if node_lmax is None:
+            node_lmax = kwargs["lmax"]
+        return (node_lmax + 1) ** 2
+
+    def _assert_block_parity(self, pt_mod, dp_mod, kwargs, *, masked="slots") -> None:
+        rng = np.random.default_rng(2121)
+        pt_cache, dp_cache, radial, radial_valid, _, _ = _build_so2_edge_data(
+            rng,
+            nloc=self.nloc,
+            nnei=self.nnei,
+            lmax=kwargs["lmax"],
+            channels=kwargs["channels"],
+            masked=masked,
+        )
+        node_dim = self._node_dim(kwargs)
+        x = rng.normal(size=(self.nloc, node_dim, 1, kwargs["channels"]))
+        out_dp = dp_mod.call(x, dp_cache, radial)
+        out_pt = pt_mod(torch.from_numpy(x), pt_cache, torch.from_numpy(radial_valid))
+        assert out_dp[1:] == (None, None, None)
+        assert out_pt[1] is None and out_pt[2] is None and out_pt[3] is None
+        assert_parity(out_dp[0], out_pt[0])
+
+    @pytest.mark.parametrize("so2_layers", [2, 4])  # SO(2) layer depth (core=4)
+    def test_block(self, so2_layers) -> None:
+        pt_mod, dp_mod, kwargs = self._build_block_pair(so2_layers=so2_layers)
+        self._assert_block_parity(pt_mod, dp_mod, kwargs)
+
+    @pytest.mark.parametrize(
+        "sandwich",
+        [
+            (False, True, True, False),  # core [so2_pre, so2_post, ffn_pre, ffn_post]
+            (True, False, False, True),  # flips every norm flag's branch
+        ],
+    )
+    def test_block_sandwich_norm(self, sandwich) -> None:
+        so2_pre, so2_post, ffn_pre, ffn_post = sandwich
+        pt_mod, dp_mod, kwargs = self._build_block_pair(
+            so2_pre_norm=so2_pre,
+            so2_post_norm=so2_post,
+            ffn_pre_norm=ffn_pre,
+            ffn_post_norm=ffn_post,
+        )
+        self._assert_block_parity(pt_mod, dp_mod, kwargs)
+
+    def test_block_ffn_blocks(self) -> None:
+        # multiple FFN subblocks exercise the per-subblock loop and seeds
+        pt_mod, dp_mod, kwargs = self._build_block_pair(ffn_blocks=2)
+        self._assert_block_parity(pt_mod, dp_mod, kwargs)
+
+    def test_block_node_lmax(self) -> None:
+        # node_lmax > lmax: SO(2) acts on the truncated slice, zero-pads above
+        pt_mod, dp_mod, kwargs = self._build_block_pair(lmax=2, node_lmax=3, mmax=1)
+        self._assert_block_parity(pt_mod, dp_mod, kwargs)
+
+    def test_block_mlp_bias(self) -> None:
+        pt_mod, dp_mod, kwargs = self._build_block_pair(mlp_bias=True)
+        self._assert_block_parity(pt_mod, dp_mod, kwargs)
+
+    def test_block_plain_ffn_act(self) -> None:
+        # ffn_s2_activation=False: FFN uses the GatedActivation path
+        pt_mod, dp_mod, kwargs = self._build_block_pair(
+            ffn_s2_activation=False, ffn_grid_branch=0
+        )
+        self._assert_block_parity(pt_mod, dp_mod, kwargs)
+
+    def test_block_real_edge_cache(self) -> None:
+        # end-to-end: REAL pt build_edge_cache vs REAL dp build_edge_cache
+        # feeding the same weight-copied block (no synthetic cache)
+        pt_mod, dp_mod, kwargs = self._build_block_pair()
+        rng = np.random.default_rng(2122)
+        nf, nloc, nall, nnei = 1, self.nloc, self.nloc + 3, self.nnei
+        inputs = _build_real_edge_inputs(
+            rng,
+            nf=nf,
+            nloc=nloc,
+            nall=nall,
+            nnei=nnei,
+            channels=kwargs["channels"],
+        )
+        pt_cache, dp_cache = _build_real_edge_caches(inputs, lmax=kwargs["lmax"])
+        valid = inputs["valid"]
+        node_dim = self._node_dim(kwargs)
+        radial = rng.normal(
+            size=(nf * nloc * nnei, kwargs["lmax"] + 1, kwargs["channels"])
+        )
+        x = rng.normal(size=(nf * nloc, node_dim, 1, kwargs["channels"]))
+        out_dp = dp_mod.call(x, dp_cache, radial)
+        out_pt = pt_mod(torch.from_numpy(x), pt_cache, torch.from_numpy(radial[valid]))
+        assert_parity(out_dp[0], out_pt[0])
+        # masked-slot garbage is inert end-to-end: scribble into invalid slots
+        # (finite O(10) garbage: the padded layout computes exp() on masked
+        # attention logits before zero-weighting them, so the garbage must
+        # not overflow exp; see attention.segment_envelope_gated_softmax)
+        radial2 = radial.copy()
+        radial2[~valid] = 10.0
+        out_dp2 = dp_mod.call(x, dp_cache, radial2)
+        np.testing.assert_array_equal(np.asarray(out_dp[0]), np.asarray(out_dp2[0]))
+
+    def test_block_roundtrip(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.block import (
+            SeZMInteractionBlock as DPBlock,
+        )
+
+        pt_mod, dp_mod, kwargs = self._build_block_pair(ffn_blocks=2)
+        data = dp_mod.serialize()
+        # exact pt state_dict key-set match
+        assert set(data["@variables"]) == set(pt_state_to_numpy(pt_mod))
+        dp_mod2 = DPBlock.deserialize(data)
+        rng = np.random.default_rng(2123)
+        _, dp_cache, radial, _, _, _ = _build_so2_edge_data(
+            rng,
+            nloc=self.nloc,
+            nnei=self.nnei,
+            lmax=kwargs["lmax"],
+            channels=kwargs["channels"],
+            masked="slots",
+        )
+        x = rng.normal(size=(self.nloc, self._node_dim(kwargs), 1, self.channels))
+        out1 = np.asarray(dp_mod.call(x, dp_cache, radial)[0])
+        out2 = np.asarray(dp_mod2.call(x, dp_cache, radial)[0])
+        np.testing.assert_array_equal(out1, out2)
+
+    @pytest.mark.parametrize(
+        "flag,value",
+        [
+            ("full_attn_res", "independent"),  # block-level DepthAttnRes
+            ("full_attn_res", "dependent"),  # block-level DepthAttnRes
+            ("block_attn_res", "independent"),  # block-level DepthAttnRes
+            ("block_attn_res", "dependent"),  # block-level DepthAttnRes
+            ("layer_scale", True),  # block-level FFN LayerScale
+            ("so2_s2_activation", True),  # delegated to SO2Convolution
+            ("node_wise_s2", True),  # delegated to SO2Convolution
+            ("message_node_so3", True),  # delegated to SO2Convolution
+            ("ffn_so3_grid", True),  # delegated to EquivariantFFN
+        ],
+    )
+    def test_block_guards(self, flag, value) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.block import (
+            SeZMInteractionBlock as DPBlock,
+        )
+
+        match = "s2_activation" if flag == "so2_s2_activation" else flag
+        with pytest.raises(NotImplementedError, match=match):
+            DPBlock(**self._block_kwargs(**{flag: value}), precision="float64")
+
+    def test_block_errors(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.block import (
+            SeZMInteractionBlock as DPBlock,
+        )
+
+        with pytest.raises(ValueError):  # node_lmax must be >= lmax
+            DPBlock(**self._block_kwargs(node_lmax=2), precision="float64")
+        with pytest.raises(ValueError):  # mmax must be <= lmax
+            DPBlock(**self._block_kwargs(mmax=4), precision="float64")
+        with pytest.raises(ValueError):  # ffn_blocks must be >= 1
+            DPBlock(**self._block_kwargs(ffn_blocks=0), precision="float64")
+        with pytest.raises(ValueError):  # unknown full_attn_res token
+            DPBlock(**self._block_kwargs(full_attn_res="depth"), precision="float64")
+        with pytest.raises(ValueError):  # unknown block_attn_res token
+            DPBlock(**self._block_kwargs(block_attn_res="depth"), precision="float64")
+        with pytest.raises(ValueError):  # negative grid branch count
+            DPBlock(**self._block_kwargs(ffn_grid_branch=-1), precision="float64")
+        with pytest.raises(ValueError):  # wrong class tag
+            DPBlock.deserialize({"@class": "NotBlock", "@version": 1})
+
+
 class TestNoTorchImport:
     def test_dpa4_nn_does_not_import_torch(self) -> None:
         code = (
@@ -2963,7 +3308,9 @@ class TestNoTorchImport:
             "deepmd.dpmodel.descriptor.dpa4_nn.so2, "
             "deepmd.dpmodel.descriptor.dpa4_nn.attention, "
             "deepmd.dpmodel.descriptor.dpa4_nn.edge_cache, "
-            "deepmd.dpmodel.descriptor.dpa4_nn.embedding; "
+            "deepmd.dpmodel.descriptor.dpa4_nn.embedding, "
+            "deepmd.dpmodel.descriptor.dpa4_nn.ffn, "
+            "deepmd.dpmodel.descriptor.dpa4_nn.block; "
             "print('torch' in sys.modules)"
         )
         out = subprocess.run(
