@@ -1743,6 +1743,532 @@ class TestS2GridParity:
             dp_net.call(rng.normal(size=(3, 9, 1, 5)))
 
 
+def _build_so2_edge_data(
+    rng,
+    *,
+    nloc,
+    nnei,
+    lmax,
+    channels,
+    masked="none",
+    with_gate=False,
+):
+    """Build matching pt (sparse) and dp (padded) edge caches.
+
+    The dp cache uses the padded layout (E = nloc * nnei with ``edge_mask``);
+    the pt cache keeps only the valid slots (flat sparse edges in the same
+    row-major slot order pt's ``torch.nonzero`` would produce). Both sides
+    share identical Wigner-D blocks built from the (parity-proven) dpmodel
+    ``WignerDCalculator``. Invalid slots intentionally keep garbage (nonzero)
+    envelope/feature values so a missing mask shows up as a parity failure.
+
+    ``masked`` is one of:
+    - ``"none"``: all slots valid;
+    - ``"slots"``: a few scattered invalid slots;
+    - ``"node"``: node 2 fully masked (no incoming edges) plus one extra slot.
+    """
+    from deepmd.dpmodel.descriptor.dpa4_nn.edge_cache import (
+        EdgeCache,
+    )
+    from deepmd.dpmodel.descriptor.dpa4_nn.wignerd import (
+        WignerDCalculator,
+        build_edge_quaternion,
+    )
+    from deepmd.pt.model.descriptor.sezm_nn.edge_cache import (
+        EdgeFeatureCache,
+    )
+
+    n_edge = nloc * nnei
+    dim_full = (lmax + 1) ** 2
+    src = np.array(
+        [(i + 1 + k) % nloc for i in range(nloc) for k in range(nnei)],
+        dtype=np.int64,
+    )
+    dst = np.repeat(np.arange(nloc, dtype=np.int64), nnei)
+    mask = np.ones(n_edge, dtype=np.float64)
+    if masked == "slots":
+        mask[3] = 0.0
+        mask[nnei + 1] = 0.0
+        mask[-1] = 0.0
+    elif masked == "node":
+        mask[2 * nnei : 3 * nnei] = 0.0  # node 2: no incoming edges at all
+        mask[3] = 0.0
+    elif masked != "none":
+        raise ValueError(f"unknown masked mode {masked}")
+    valid = mask > 0.5
+    n_valid = int(valid.sum())
+
+    edge_vec = rng.normal(size=(n_edge, 3))
+    edge_vec /= np.linalg.norm(edge_vec, axis=-1, keepdims=True)
+    quat = build_edge_quaternion(edge_vec)
+    D_full, Dt_full = WignerDCalculator(lmax, precision="float64").call(quat)
+    D_full = np.asarray(D_full)
+    Dt_full = np.asarray(Dt_full)
+    edge_env = rng.uniform(0.2, 1.0, size=(n_edge, 1))
+    deg = ((edge_env[:, 0] ** 2) * mask).reshape(nloc, nnei).sum(axis=1)
+    inv_sqrt_deg = (1.0 / np.sqrt(deg + 1.0)).reshape(nloc, 1, 1)
+    edge_src_gate = rng.uniform(0.1, 1.0, size=(n_edge, 1)) if with_gate else None
+    radial = rng.normal(size=(n_edge, lmax + 1, channels))
+    x = rng.normal(size=(nloc, dim_full, channels))
+
+    t = torch.from_numpy
+    pt_cache = EdgeFeatureCache(
+        src=t(src[valid]),
+        dst=t(dst[valid]),
+        edge_type_feat=t(np.zeros((n_valid, channels))),
+        edge_vec=t(edge_vec[valid]),
+        edge_rbf=t(np.zeros((n_valid, 1))),
+        edge_env=t(edge_env[valid]),
+        deg=t(deg),
+        inv_sqrt_deg=t(inv_sqrt_deg),
+        D_full=t(D_full[valid]),
+        Dt_full=t(Dt_full[valid]),
+        edge_src_gate=None if edge_src_gate is None else t(edge_src_gate[valid]),
+    )
+    dp_cache = EdgeCache(
+        src=src,
+        dst=dst,
+        edge_type_feat=np.zeros((n_edge, channels)),
+        edge_vec=edge_vec,
+        edge_rbf=np.zeros((n_edge, 1)),
+        edge_env=edge_env,
+        deg=deg,
+        inv_sqrt_deg=inv_sqrt_deg,
+        D_full=D_full,
+        Dt_full=Dt_full,
+        edge_src_gate=edge_src_gate,
+        edge_mask=mask,
+    )
+    return pt_cache, dp_cache, radial, radial[valid], x, valid
+
+
+class TestSO2Parity:
+    nloc = 5
+    nnei = 4
+
+    def _perturb(self, pt_mod: torch.nn.Module, seed: int) -> None:
+        rng = np.random.default_rng(seed)
+        with torch.no_grad():
+            for p in pt_mod.parameters():
+                p += torch.from_numpy(0.1 * rng.normal(size=tuple(p.shape)))
+
+    # ---------- SO2Linear ----------
+    @pytest.mark.parametrize(
+        "lmax,mmax", [(2, 0), (2, 1), (2, 2), (3, 1), (3, 2)]
+    )  # degree/order truncations (mmax=0 covers the empty weight_m branch)
+    @pytest.mark.parametrize("mlp_bias", [False, True])  # l=0 bias branch
+    @pytest.mark.parametrize("n_focus", [1, 2])  # focus streams
+    def test_so2_linear(self, lmax, mmax, mlp_bias, n_focus) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.so2 import SO2Linear as DPSO2Linear
+        from deepmd.pt.model.descriptor.sezm_nn.so2 import SO2Linear as PTSO2Linear
+
+        pt_mod = PTSO2Linear(
+            lmax=lmax,
+            mmax=mmax,
+            in_channels=5,
+            out_channels=3,
+            n_focus=n_focus,
+            dtype=torch.float64,
+            mlp_bias=mlp_bias,
+            seed=11,
+            trainable=True,
+        )
+        self._perturb(pt_mod, 2052)
+        serialized = pt_mod.serialize()
+        dp_mod = DPSO2Linear.deserialize(serialized)
+        rng = np.random.default_rng(2053)
+        x = rng.normal(size=(13, n_focus, dp_mod.reduced_dim, 5))
+        assert_parity(dp_mod.call(x), pt_mod(torch.from_numpy(x)))
+
+    def test_so2_linear_roundtrip(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.so2 import SO2Linear as DPSO2Linear
+
+        dp_mod = DPSO2Linear(
+            lmax=3,
+            mmax=1,
+            in_channels=4,
+            out_channels=4,
+            n_focus=2,
+            precision="float64",
+            mlp_bias=True,
+            seed=4,
+        )
+        dp_mod2 = DPSO2Linear.deserialize(dp_mod.serialize())
+        rng = np.random.default_rng(2054)
+        x = rng.normal(size=(9, 2, dp_mod.reduced_dim, 4))
+        np.testing.assert_array_equal(
+            np.asarray(dp_mod.call(x)), np.asarray(dp_mod2.call(x))
+        )
+
+    def test_so2_linear_errors(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.so2 import SO2Linear as DPSO2Linear
+
+        with pytest.raises(ValueError):  # mmax > lmax
+            DPSO2Linear(lmax=2, mmax=3, in_channels=2, out_channels=2)
+        with pytest.raises(ValueError):  # negative mmax
+            DPSO2Linear(lmax=2, mmax=-1, in_channels=2, out_channels=2)
+        with pytest.raises(ValueError):  # wrong class tag
+            DPSO2Linear.deserialize({"@class": "NotSO2Linear", "@version": 1})
+
+    # ---------- DynamicRadialDegreeMixer ----------
+    @pytest.mark.parametrize(
+        "mode,rank",
+        [
+            ("degree", 0),  # channel-shared degree kernel
+            ("degree_channel", 0),  # full per-channel kernel
+            ("degree_channel", 1),  # low-rank factorization (core)
+            ("degree_channel", 2),  # low-rank, rank > 1
+        ],
+    )
+    def test_radial_degree_mixer(self, mode, rank) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.so2 import (
+            DynamicRadialDegreeMixer as DPMixer,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.so2 import (
+            DynamicRadialDegreeMixer as PTMixer,
+        )
+
+        pt_mod = PTMixer(
+            lmax=3,
+            mmax=1,
+            channels=4,
+            mode=mode,
+            rank=rank,
+            dtype=torch.float64,
+            seed=5,
+            trainable=True,
+        )
+        self._perturb(pt_mod, 2055)
+        dp_mod = DPMixer(
+            lmax=3,
+            mmax=1,
+            channels=4,
+            mode=mode,
+            rank=rank,
+            precision="float64",
+            seed=5,
+        )
+        # pt has no standalone serialize(); load the pt state_dict fragment
+        dp_mod._load_variables(pt_state_to_numpy(pt_mod))
+        rng = np.random.default_rng(2056)
+        x_local = rng.normal(size=(17, dp_mod.reduced_dim, 4))
+        radial = rng.normal(size=(17, dp_mod.reduced_dim, 4))
+        assert_parity(
+            dp_mod.call(x_local, radial),
+            pt_mod(torch.from_numpy(x_local), torch.from_numpy(radial)),
+        )
+
+    def test_radial_degree_mixer_roundtrip(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.so2 import (
+            DynamicRadialDegreeMixer as DPMixer,
+        )
+
+        dp_mod = DPMixer(
+            lmax=3,
+            mmax=1,
+            channels=4,
+            mode="degree_channel",
+            rank=1,
+            precision="float64",
+            seed=6,
+        )
+        dp_mod2 = DPMixer.deserialize(dp_mod.serialize())
+        rng = np.random.default_rng(2057)
+        x_local = rng.normal(size=(7, dp_mod.reduced_dim, 4))
+        radial = rng.normal(size=(7, dp_mod.reduced_dim, 4))
+        np.testing.assert_array_equal(
+            np.asarray(dp_mod.call(x_local, radial)),
+            np.asarray(dp_mod2.call(x_local, radial)),
+        )
+
+    def test_radial_degree_mixer_errors(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.so2 import (
+            DynamicRadialDegreeMixer as DPMixer,
+        )
+
+        common = {"lmax": 2, "mmax": 1, "channels": 4, "precision": "float64"}
+        with pytest.raises(ValueError):  # unknown mode
+            DPMixer(mode="channel", **common)
+        with pytest.raises(ValueError):  # negative rank
+            DPMixer(mode="degree_channel", rank=-1, **common)
+        with pytest.raises(ValueError):  # non-positive channels
+            DPMixer(lmax=2, mmax=1, channels=0, mode="degree")
+        with pytest.raises(ValueError):  # mmax > lmax
+            DPMixer(lmax=2, mmax=3, channels=4, mode="degree")
+        dp_mod = DPMixer(mode="degree", **common)
+        rng = np.random.default_rng(2058)
+        good = rng.normal(size=(3, dp_mod.reduced_dim, 4))
+        with pytest.raises(ValueError):  # shape mismatch between inputs
+            dp_mod.call(good, good[:, :, :2])
+        with pytest.raises(ValueError):  # incompatible reduced layout
+            dp_mod.call(good[:, :3, :], good[:, :3, :])
+        with pytest.raises(ValueError):  # wrong class tag
+            DPMixer.deserialize({"@class": "NotMixer", "@version": 1})
+
+    # ---------- segment softmax ----------
+    @pytest.mark.parametrize(
+        "masked", ["none", "slots", "node"]
+    )  # padded-slot patterns (node = one all-masked destination)
+    @pytest.mark.parametrize("use_src_weight", [False, True])  # SFPG gate branch
+    def test_segment_envelope_gated_softmax(self, masked, use_src_weight) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.attention import (
+            segment_envelope_gated_softmax as dp_softmax,
+        )
+        from deepmd.pt.model.descriptor.sezm_nn.attention import (
+            segment_envelope_gated_softmax as pt_softmax,
+        )
+
+        rng = np.random.default_rng(2059)
+        nloc, nnei, n_focus, n_head = self.nloc, self.nnei, 2, 3
+        pt_cache, dp_cache, _, _, _, valid = _build_so2_edge_data(
+            rng,
+            nloc=nloc,
+            nnei=nnei,
+            lmax=2,
+            channels=4,
+            masked=masked,
+            with_gate=use_src_weight,
+        )
+        n_edge = nloc * nnei
+        logits = rng.normal(size=(n_edge, n_focus, n_head))
+        # mixed signs exercise both stable-softplus branches for zeta
+        z_bias_raw = rng.normal(size=(n_focus, n_head))
+        alpha_dp = dp_softmax(
+            logits=logits,
+            edge_env=dp_cache.edge_env,
+            n_nodes=nloc,
+            z_bias_raw=z_bias_raw,
+            eps=1e-7,
+            src_weight=dp_cache.edge_src_gate,
+            edge_mask=dp_cache.edge_mask,
+        )
+        alpha_pt = pt_softmax(
+            logits=torch.from_numpy(logits[valid]),
+            edge_env=pt_cache.edge_env,
+            dst=pt_cache.dst,
+            n_nodes=nloc,
+            z_bias_raw=torch.from_numpy(z_bias_raw),
+            eps=1e-7,
+            src_weight=pt_cache.edge_src_gate,
+        )
+        alpha_dp = np.asarray(alpha_dp)
+        np.testing.assert_allclose(
+            alpha_dp[valid],
+            alpha_pt.detach().cpu().numpy(),
+            rtol=1e-12,
+            atol=1e-14,
+        )
+        # invalid slots must produce exactly zero attention weights
+        np.testing.assert_array_equal(alpha_dp[~valid], 0.0)
+        assert np.all(np.isfinite(alpha_dp))
+
+    def test_segment_softmax_errors(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.attention import (
+            segment_envelope_gated_softmax as dp_softmax,
+        )
+
+        rng = np.random.default_rng(2062)
+        with pytest.raises(ValueError):  # E not a multiple of n_nodes
+            dp_softmax(
+                logits=rng.normal(size=(7, 1, 1)),
+                edge_env=rng.uniform(size=(7, 1)),
+                n_nodes=3,
+                z_bias_raw=np.zeros((1, 1)),
+                eps=1e-7,
+            )
+
+    # ---------- SO2Convolution ----------
+    def _conv_kwargs(self, **overrides):
+        kwargs = {
+            "lmax": 3,
+            "mmax": 1,
+            "kmax": 1,
+            "channels": 4,
+            "n_focus": 1,
+            "focus_dim": 0,
+            "focus_compete": True,
+            "so2_norm": False,
+            "so2_layers": 2,
+            "so2_attn_res": "none",
+            "layer_scale": False,
+            "n_atten_head": 1,
+            "radial_so2_mode": "degree_channel",
+            "radial_so2_rank": 1,
+            "lebedev_quadrature": True,
+            "activation_function": "silu",
+            "mlp_bias": False,
+            "eps": 1e-7,
+        }
+        kwargs.update(overrides)
+        return kwargs
+
+    def _build_conv_pair(self, seed=17, perturb_seed=2060, **overrides):
+        from deepmd.dpmodel.descriptor.dpa4_nn.so2 import SO2Convolution as DPSO2Conv
+        from deepmd.pt.model.descriptor.sezm_nn.so2 import SO2Convolution as PTSO2Conv
+
+        kwargs = self._conv_kwargs(**overrides)
+        pt_mod = PTSO2Conv(**kwargs, dtype=torch.float64, seed=seed, trainable=True)
+        # post_focus_mix is zero-initialized; perturb so the output is nonzero
+        self._perturb(pt_mod, perturb_seed)
+        dp_mod = DPSO2Conv.deserialize(pt_mod.serialize())
+        return pt_mod, dp_mod, kwargs
+
+    def _assert_conv_parity(
+        self, pt_mod, dp_mod, kwargs, *, masked="slots", with_gate=False
+    ) -> None:
+        rng = np.random.default_rng(2061)
+        pt_cache, dp_cache, radial, radial_valid, x, _ = _build_so2_edge_data(
+            rng,
+            nloc=self.nloc,
+            nnei=self.nnei,
+            lmax=kwargs["lmax"],
+            channels=kwargs["channels"],
+            masked=masked,
+            with_gate=with_gate,
+        )
+        out_dp = dp_mod.call(x, dp_cache, radial)
+        out_pt = pt_mod(torch.from_numpy(x), pt_cache, torch.from_numpy(radial_valid))
+        assert_parity(out_dp, out_pt)
+
+    @pytest.mark.parametrize("masked", ["none", "slots"])  # padded-slot pattern
+    @pytest.mark.parametrize("so2_layers", [2, 4])  # SO(2) layer loop depth (core=4)
+    def test_so2_convolution(self, masked, so2_layers) -> None:
+        pt_mod, dp_mod, kwargs = self._build_conv_pair(so2_layers=so2_layers)
+        self._assert_conv_parity(pt_mod, dp_mod, kwargs, masked=masked)
+
+    def test_so2_convolution_all_masked_node(self) -> None:
+        # one destination with zero valid incoming edges
+        pt_mod, dp_mod, kwargs = self._build_conv_pair()
+        self._assert_conv_parity(pt_mod, dp_mod, kwargs, masked="node")
+
+    @pytest.mark.parametrize(
+        "radial_so2_mode,radial_so2_rank",
+        [
+            ("none", 0),  # elementwise radial modulation
+            ("degree", 0),  # channel-shared dynamic degree kernel
+            ("degree_channel", 0),  # full per-channel dynamic kernel
+        ],
+    )
+    def test_so2_convolution_radial_modes(
+        self, radial_so2_mode, radial_so2_rank
+    ) -> None:
+        pt_mod, dp_mod, kwargs = self._build_conv_pair(
+            radial_so2_mode=radial_so2_mode, radial_so2_rank=radial_so2_rank
+        )
+        self._assert_conv_parity(pt_mod, dp_mod, kwargs)
+
+    @pytest.mark.parametrize(
+        "n_atten_head", [0, 2]
+    )  # 0 = plain envelope sum, 2 = multi-head attention
+    def test_so2_convolution_atten_heads(self, n_atten_head) -> None:
+        pt_mod, dp_mod, kwargs = self._build_conv_pair(n_atten_head=n_atten_head)
+        self._assert_conv_parity(pt_mod, dp_mod, kwargs)
+
+    @pytest.mark.parametrize("focus_compete", [False, True])  # competition branch
+    def test_so2_convolution_multi_focus(self, focus_compete) -> None:
+        # n_focus=2 also activates the hidden-width ChannelLinear projection
+        pt_mod, dp_mod, kwargs = self._build_conv_pair(
+            n_focus=2, focus_compete=focus_compete
+        )
+        self._assert_conv_parity(pt_mod, dp_mod, kwargs)
+
+    def test_so2_convolution_so2_norm(self) -> None:
+        pt_mod, dp_mod, kwargs = self._build_conv_pair(so2_norm=True, so2_layers=3)
+        self._assert_conv_parity(pt_mod, dp_mod, kwargs)
+
+    def test_so2_convolution_mlp_bias(self) -> None:
+        # exercises bias0 + the layer-0 envelope bias correction
+        pt_mod, dp_mod, kwargs = self._build_conv_pair(mlp_bias=True)
+        self._assert_conv_parity(pt_mod, dp_mod, kwargs)
+
+    @pytest.mark.parametrize("n_atten_head", [0, 1])  # gate enters both paths
+    def test_so2_convolution_src_gate(self, n_atten_head) -> None:
+        pt_mod, dp_mod, kwargs = self._build_conv_pair(n_atten_head=n_atten_head)
+        self._assert_conv_parity(pt_mod, dp_mod, kwargs, with_gate=True)
+
+    def test_so2_convolution_full_mmax(self) -> None:
+        # mmax == lmax: rotate_inv_rescale is all ones
+        pt_mod, dp_mod, kwargs = self._build_conv_pair(lmax=2, mmax=2)
+        self._assert_conv_parity(pt_mod, dp_mod, kwargs)
+
+    def test_so2_convolution_roundtrip(self) -> None:
+        _, dp_mod, kwargs = self._build_conv_pair(
+            n_focus=2, so2_norm=True, mlp_bias=True
+        )
+        from deepmd.dpmodel.descriptor.dpa4_nn.so2 import SO2Convolution as DPSO2Conv
+
+        dp_mod2 = DPSO2Conv.deserialize(dp_mod.serialize())
+        rng = np.random.default_rng(2063)
+        _, dp_cache, radial, _, x, _ = _build_so2_edge_data(
+            rng,
+            nloc=self.nloc,
+            nnei=self.nnei,
+            lmax=kwargs["lmax"],
+            channels=kwargs["channels"],
+            masked="slots",
+        )
+        out1 = np.asarray(dp_mod.call(x, dp_cache, radial))
+        # the D_to_m projections are cached in the EdgeCache dicts; reuse is exact
+        out2 = np.asarray(dp_mod2.call(x, dp_cache, radial))
+        np.testing.assert_array_equal(out1, out2)
+
+    @pytest.mark.parametrize(
+        "flag,value",
+        [
+            ("so2_attn_res", "independent"),  # DepthAttnRes
+            ("so2_attn_res", "dependent"),  # DepthAttnRes
+            ("layer_scale", True),  # per-layer LayerScale
+            ("n_atten_head", -1),  # ValueError, not NotImplementedError
+            ("atten_f_mix", True),  # focus-merged attention
+            ("atten_v_proj", True),  # value projection
+            ("atten_o_proj", True),  # output projection
+            ("s2_activation", True),  # S2-grid SwiGLU non-linearity
+            ("node_wise_s2", True),  # edge-local S2 grid product
+            ("node_wise_so3", True),  # edge-local SO(3) grid product
+            ("message_node_s2", True),  # post-aggregation S2 grid product
+            ("message_node_so3", True),  # post-aggregation SO(3) grid product
+        ],
+    )
+    def test_so2_convolution_guards(self, flag, value) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.so2 import SO2Convolution as DPSO2Conv
+
+        kwargs = self._conv_kwargs(**{flag: value})
+        if flag == "n_atten_head":
+            with pytest.raises(ValueError):
+                DPSO2Conv(**kwargs, precision="float64")
+        else:
+            with pytest.raises(NotImplementedError, match=flag):
+                DPSO2Conv(**kwargs, precision="float64")
+
+    def test_so2_convolution_errors(self) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.so2 import SO2Convolution as DPSO2Conv
+
+        with pytest.raises(ValueError):  # head count must divide focus width
+            DPSO2Conv(**self._conv_kwargs(n_atten_head=3), precision="float64")
+        with pytest.raises(ValueError):  # so2_layers must be >= 1
+            DPSO2Conv(**self._conv_kwargs(so2_layers=0), precision="float64")
+        with pytest.raises(ValueError):  # n_focus must be >= 1
+            DPSO2Conv(**self._conv_kwargs(n_focus=0), precision="float64")
+        with pytest.raises(ValueError):  # unknown radial mode
+            DPSO2Conv(
+                **self._conv_kwargs(radial_so2_mode="degree_rank"),
+                precision="float64",
+            )
+        with pytest.raises(ValueError):  # mmax > lmax
+            DPSO2Conv(**self._conv_kwargs(mmax=4), precision="float64")
+        with pytest.raises(ValueError):  # unknown so2_attn_res token
+            DPSO2Conv(**self._conv_kwargs(so2_attn_res="depth"), precision="float64")
+        dp_mod = DPSO2Conv(**self._conv_kwargs(), precision="float64", seed=1)
+        rng = np.random.default_rng(2064)
+        _, dp_cache, radial, _, x, _ = _build_so2_edge_data(
+            rng, nloc=self.nloc, nnei=self.nnei, lmax=3, channels=4
+        )
+        with pytest.raises(ValueError):  # E not a multiple of N
+            dp_mod.call(x[:3], dp_cache, radial)
+        with pytest.raises(ValueError):  # wrong class tag
+            DPSO2Conv.deserialize({"@class": "NotConv", "@version": 1})
+
+
 class TestNoTorchImport:
     def test_dpa4_nn_does_not_import_torch(self) -> None:
         code = (
@@ -1755,7 +2281,10 @@ class TestNoTorchImport:
             "deepmd.dpmodel.descriptor.dpa4_nn.activation, "
             "deepmd.dpmodel.descriptor.dpa4_nn.wignerd, "
             "deepmd.dpmodel.descriptor.dpa4_nn.projection, "
-            "deepmd.dpmodel.descriptor.dpa4_nn.grid_net; "
+            "deepmd.dpmodel.descriptor.dpa4_nn.grid_net, "
+            "deepmd.dpmodel.descriptor.dpa4_nn.so2, "
+            "deepmd.dpmodel.descriptor.dpa4_nn.attention, "
+            "deepmd.dpmodel.descriptor.dpa4_nn.edge_cache; "
             "print('torch' in sys.modules)"
         )
         out = subprocess.run(
