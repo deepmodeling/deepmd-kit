@@ -511,23 +511,22 @@ inline void _DP_DeepPotModelDeviComputeNList(DP_DeepPotModelDevi* dp,
                                              FPTYPE* atomic_virial);
 
 template <>
-inline void _DP_DeepPotModelDeviComputeNList<double>(
-    DP_DeepPotModelDevi* dp,
-    const int natom,
-    const double* coord,
-    const int* atype,
-    const double* cell,
-    const int nghost,
-    const DP_Nlist* nlist,
-    const int ago,
-    const double* fparam,
-    const double* aparam,
-    const double* charge_spin,
-    double* energy,
-    double* force,
-    double* virial,
-    double* atomic_energy,
-    double* atomic_virial) {
+inline void _DP_DeepPotModelDeviComputeNList<double>(DP_DeepPotModelDevi* dp,
+                                                     const int natom,
+                                                     const double* coord,
+                                                     const int* atype,
+                                                     const double* cell,
+                                                     const int nghost,
+                                                     const DP_Nlist* nlist,
+                                                     const int ago,
+                                                     const double* fparam,
+                                                     const double* aparam,
+                                                     const double* charge_spin,
+                                                     double* energy,
+                                                     double* force,
+                                                     double* virial,
+                                                     double* atomic_energy,
+                                                     double* atomic_virial) {
   if (charge_spin) {
     DP_DeepPotModelDeviComputeNList3(
         dp, 1, natom, coord, atype, cell, nghost, nlist, ago, fparam, aparam,
@@ -872,9 +871,10 @@ namespace hpp {
  * @return charge_spin.data() if non-empty and valid, otherwise nullptr.
  */
 template <typename FPTYPE>
-inline const FPTYPE* validate_charge_spin(const std::vector<FPTYPE>& charge_spin,
-                                          const int dchgspin,
-                                          const unsigned int nframes) {
+inline const FPTYPE* validate_charge_spin(
+    const std::vector<FPTYPE>& charge_spin,
+    const int dchgspin,
+    const unsigned int nframes) {
   if (charge_spin.empty()) {
     return nullptr;
   }
@@ -1196,15 +1196,16 @@ class DeepPot : public DeepBaseModel {
    * @warning Natoms should not be zero when computing multiple frames.
    **/
   template <typename VALUETYPE, typename ENERGYVTYPE>
-  void compute(ENERGYVTYPE& ener,
-               std::vector<VALUETYPE>& force,
-               std::vector<VALUETYPE>& virial,
-               const std::vector<VALUETYPE>& coord,
-               const std::vector<int>& atype,
-               const std::vector<VALUETYPE>& box,
-               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& charge_spin = std::vector<VALUETYPE>()) {
+  void compute(
+      ENERGYVTYPE& ener,
+      std::vector<VALUETYPE>& force,
+      std::vector<VALUETYPE>& virial,
+      const std::vector<VALUETYPE>& coord,
+      const std::vector<int>& atype,
+      const std::vector<VALUETYPE>& box,
+      const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE>& charge_spin = std::vector<VALUETYPE>()) {
     unsigned int natoms = atype.size();
     unsigned int nframes = natoms > 0 ? coord.size() / natoms / 3 : 1;
     assert(nframes * natoms * 3 == coord.size());
@@ -1259,17 +1260,18 @@ class DeepPot : public DeepBaseModel {
    * @warning Natoms should not be zero when computing multiple frames.
    **/
   template <typename VALUETYPE, typename ENERGYVTYPE>
-  void compute(ENERGYVTYPE& ener,
-               std::vector<VALUETYPE>& force,
-               std::vector<VALUETYPE>& virial,
-               std::vector<VALUETYPE>& atom_energy,
-               std::vector<VALUETYPE>& atom_virial,
-               const std::vector<VALUETYPE>& coord,
-               const std::vector<int>& atype,
-               const std::vector<VALUETYPE>& box,
-               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& charge_spin = std::vector<VALUETYPE>()) {
+  void compute(
+      ENERGYVTYPE& ener,
+      std::vector<VALUETYPE>& force,
+      std::vector<VALUETYPE>& virial,
+      std::vector<VALUETYPE>& atom_energy,
+      std::vector<VALUETYPE>& atom_virial,
+      const std::vector<VALUETYPE>& coord,
+      const std::vector<int>& atype,
+      const std::vector<VALUETYPE>& box,
+      const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE>& charge_spin = std::vector<VALUETYPE>()) {
     unsigned int natoms = atype.size();
     unsigned int nframes = natoms > 0 ? coord.size() / natoms / 3 : 1;
     assert(nframes * natoms * 3 == coord.size());
@@ -1298,10 +1300,9 @@ class DeepPot : public DeepBaseModel {
     const VALUETYPE* charge_spin__ =
         validate_charge_spin(charge_spin, dchgspin, nframes);
 
-    _DP_DeepPotCompute<VALUETYPE>(dp, nframes, natoms, coord_, atype_, box_,
-                                  fparam__, aparam__, charge_spin__, ener_,
-                                  force_, virial_, atomic_ener_,
-                                  atomic_virial_);
+    _DP_DeepPotCompute<VALUETYPE>(
+        dp, nframes, natoms, coord_, atype_, box_, fparam__, aparam__,
+        charge_spin__, ener_, force_, virial_, atomic_ener_, atomic_virial_);
     DP_CHECK_OK(DP_DeepPotCheckOK, dp);
   };
 
@@ -1330,18 +1331,19 @@ class DeepPot : public DeepBaseModel {
    * @warning Natoms should not be zero when computing multiple frames.
    **/
   template <typename VALUETYPE, typename ENERGYVTYPE>
-  void compute(ENERGYVTYPE& ener,
-               std::vector<VALUETYPE>& force,
-               std::vector<VALUETYPE>& virial,
-               const std::vector<VALUETYPE>& coord,
-               const std::vector<int>& atype,
-               const std::vector<VALUETYPE>& box,
-               const int nghost,
-               const InputNlist& lmp_list,
-               const int& ago,
-               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& charge_spin = std::vector<VALUETYPE>()) {
+  void compute(
+      ENERGYVTYPE& ener,
+      std::vector<VALUETYPE>& force,
+      std::vector<VALUETYPE>& virial,
+      const std::vector<VALUETYPE>& coord,
+      const std::vector<int>& atype,
+      const std::vector<VALUETYPE>& box,
+      const int nghost,
+      const InputNlist& lmp_list,
+      const int& ago,
+      const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE>& charge_spin = std::vector<VALUETYPE>()) {
     unsigned int natoms = atype.size();
     unsigned int nframes = natoms > 0 ? coord.size() / natoms / 3 : 1;
     assert(nframes * natoms * 3 == coord.size());
@@ -1401,20 +1403,21 @@ class DeepPot : public DeepBaseModel {
    * @warning Natoms should not be zero when computing multiple frames.
    **/
   template <typename VALUETYPE, typename ENERGYVTYPE>
-  void compute(ENERGYVTYPE& ener,
-               std::vector<VALUETYPE>& force,
-               std::vector<VALUETYPE>& virial,
-               std::vector<VALUETYPE>& atom_energy,
-               std::vector<VALUETYPE>& atom_virial,
-               const std::vector<VALUETYPE>& coord,
-               const std::vector<int>& atype,
-               const std::vector<VALUETYPE>& box,
-               const int nghost,
-               const InputNlist& lmp_list,
-               const int& ago,
-               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& charge_spin = std::vector<VALUETYPE>()) {
+  void compute(
+      ENERGYVTYPE& ener,
+      std::vector<VALUETYPE>& force,
+      std::vector<VALUETYPE>& virial,
+      std::vector<VALUETYPE>& atom_energy,
+      std::vector<VALUETYPE>& atom_virial,
+      const std::vector<VALUETYPE>& coord,
+      const std::vector<int>& atype,
+      const std::vector<VALUETYPE>& box,
+      const int nghost,
+      const InputNlist& lmp_list,
+      const int& ago,
+      const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE>& charge_spin = std::vector<VALUETYPE>()) {
     unsigned int natoms = atype.size();
     unsigned int nframes = natoms > 0 ? coord.size() / natoms / 3 : 1;
     assert(nframes * natoms * 3 == coord.size());
@@ -1446,10 +1449,10 @@ class DeepPot : public DeepBaseModel {
     const VALUETYPE* charge_spin__ =
         validate_charge_spin(charge_spin, dchgspin, nframes);
 
-    _DP_DeepPotComputeNList<VALUETYPE>(
-        dp, nframes, natoms, coord_, atype_, box_, nghost, lmp_list.nl, ago,
-        fparam__, aparam__, charge_spin__, ener_, force_, virial_, atomic_ener_,
-        atomic_virial_);
+    _DP_DeepPotComputeNList<VALUETYPE>(dp, nframes, natoms, coord_, atype_,
+                                       box_, nghost, lmp_list.nl, ago, fparam__,
+                                       aparam__, charge_spin__, ener_, force_,
+                                       virial_, atomic_ener_, atomic_virial_);
     DP_CHECK_OK(DP_DeepPotCheckOK, dp);
   };
   /**
@@ -2260,15 +2263,16 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
    *same aparam.
    **/
   template <typename VALUETYPE>
-  void compute(std::vector<double>& ener,
-               std::vector<std::vector<VALUETYPE>>& force,
-               std::vector<std::vector<VALUETYPE>>& virial,
-               const std::vector<VALUETYPE>& coord,
-               const std::vector<int>& atype,
-               const std::vector<VALUETYPE>& box,
-               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& charge_spin = std::vector<VALUETYPE>()) {
+  void compute(
+      std::vector<double>& ener,
+      std::vector<std::vector<VALUETYPE>>& force,
+      std::vector<std::vector<VALUETYPE>>& virial,
+      const std::vector<VALUETYPE>& coord,
+      const std::vector<int>& atype,
+      const std::vector<VALUETYPE>& box,
+      const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE>& charge_spin = std::vector<VALUETYPE>()) {
     // charge_spin is not supported via the C-API model-deviation path.
     unsigned int natoms = atype.size();
     unsigned int nframes = 1;
@@ -2342,17 +2346,18 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
    *same aparam.
    **/
   template <typename VALUETYPE>
-  void compute(std::vector<double>& ener,
-               std::vector<std::vector<VALUETYPE>>& force,
-               std::vector<std::vector<VALUETYPE>>& virial,
-               std::vector<std::vector<VALUETYPE>>& atom_energy,
-               std::vector<std::vector<VALUETYPE>>& atom_virial,
-               const std::vector<VALUETYPE>& coord,
-               const std::vector<int>& atype,
-               const std::vector<VALUETYPE>& box,
-               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& charge_spin = std::vector<VALUETYPE>()) {
+  void compute(
+      std::vector<double>& ener,
+      std::vector<std::vector<VALUETYPE>>& force,
+      std::vector<std::vector<VALUETYPE>>& virial,
+      std::vector<std::vector<VALUETYPE>>& atom_energy,
+      std::vector<std::vector<VALUETYPE>>& atom_virial,
+      const std::vector<VALUETYPE>& coord,
+      const std::vector<int>& atype,
+      const std::vector<VALUETYPE>& box,
+      const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE>& charge_spin = std::vector<VALUETYPE>()) {
     // charge_spin is not supported via the C-API model-deviation path.
     unsigned int natoms = atype.size();
     unsigned int nframes = 1;
@@ -2442,18 +2447,19 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
    *same aparam.
    **/
   template <typename VALUETYPE>
-  void compute(std::vector<double>& ener,
-               std::vector<std::vector<VALUETYPE>>& force,
-               std::vector<std::vector<VALUETYPE>>& virial,
-               const std::vector<VALUETYPE>& coord,
-               const std::vector<int>& atype,
-               const std::vector<VALUETYPE>& box,
-               const int nghost,
-               const InputNlist& lmp_list,
-               const int& ago,
-               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& charge_spin = std::vector<VALUETYPE>()) {
+  void compute(
+      std::vector<double>& ener,
+      std::vector<std::vector<VALUETYPE>>& force,
+      std::vector<std::vector<VALUETYPE>>& virial,
+      const std::vector<VALUETYPE>& coord,
+      const std::vector<int>& atype,
+      const std::vector<VALUETYPE>& box,
+      const int nghost,
+      const InputNlist& lmp_list,
+      const int& ago,
+      const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE>& charge_spin = std::vector<VALUETYPE>()) {
     unsigned int natoms = atype.size();
     unsigned int nframes = 1;
     assert(natoms * 3 == coord.size());
@@ -2532,20 +2538,21 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
    *same aparam.
    **/
   template <typename VALUETYPE>
-  void compute(std::vector<double>& ener,
-               std::vector<std::vector<VALUETYPE>>& force,
-               std::vector<std::vector<VALUETYPE>>& virial,
-               std::vector<std::vector<VALUETYPE>>& atom_energy,
-               std::vector<std::vector<VALUETYPE>>& atom_virial,
-               const std::vector<VALUETYPE>& coord,
-               const std::vector<int>& atype,
-               const std::vector<VALUETYPE>& box,
-               const int nghost,
-               const InputNlist& lmp_list,
-               const int& ago,
-               const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& charge_spin = std::vector<VALUETYPE>()) {
+  void compute(
+      std::vector<double>& ener,
+      std::vector<std::vector<VALUETYPE>>& force,
+      std::vector<std::vector<VALUETYPE>>& virial,
+      std::vector<std::vector<VALUETYPE>>& atom_energy,
+      std::vector<std::vector<VALUETYPE>>& atom_virial,
+      const std::vector<VALUETYPE>& coord,
+      const std::vector<int>& atype,
+      const std::vector<VALUETYPE>& box,
+      const int nghost,
+      const InputNlist& lmp_list,
+      const int& ago,
+      const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+      const std::vector<VALUETYPE>& charge_spin = std::vector<VALUETYPE>()) {
     unsigned int natoms = atype.size();
     unsigned int nframes = 1;
     assert(natoms * 3 == coord.size());

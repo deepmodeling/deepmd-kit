@@ -730,20 +730,21 @@ inline void flatten_vector(std::vector<VALUETYPE>& onedv,
 }
 
 template <typename VALUETYPE>
-void DP_DeepPotModelDeviCompute_variant(DP_DeepPotModelDevi* dp,
-                                        const int nframes,
-                                        const int natoms,
-                                        const VALUETYPE* coord,
-                                        const int* atype,
-                                        const VALUETYPE* cell,
-                                        const VALUETYPE* fparam,
-                                        const VALUETYPE* aparam,
-                                        double* energy,
-                                        VALUETYPE* force,
-                                        VALUETYPE* virial,
-                                        VALUETYPE* atomic_energy,
-                                        VALUETYPE* atomic_virial,
-                                        const VALUETYPE* charge_spin = nullptr) {
+void DP_DeepPotModelDeviCompute_variant(
+    DP_DeepPotModelDevi* dp,
+    const int nframes,
+    const int natoms,
+    const VALUETYPE* coord,
+    const int* atype,
+    const VALUETYPE* cell,
+    const VALUETYPE* fparam,
+    const VALUETYPE* aparam,
+    double* energy,
+    VALUETYPE* force,
+    VALUETYPE* virial,
+    VALUETYPE* atomic_energy,
+    VALUETYPE* atomic_virial,
+    const VALUETYPE* charge_spin = nullptr) {
   if (nframes > 1) {
     throw std::runtime_error("nframes > 1 not supported yet");
   }
