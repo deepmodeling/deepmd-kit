@@ -202,7 +202,9 @@ def main():
     # ---- Verify .pth reproduces the .pt2 reference (PBC + NoPbc) ----
     if pth_generated:
         dp_pth = DeepPot(pth_path)
-        assert dp_pth.deep_eval.get_dim_chg_spin() == 2
+        # Note: the .pth (pt) DeepEval does not expose get_dim_chg_spin (only
+        # the .pt2 / pt_expt one does); the energy/force parity below is the
+        # real check that charge_spin is threaded for the .pth backend.
         tol = 1e-10
         e_def_p, f_def_p, v_def_p = dp_pth.eval(coord, box, atype)
         e_exp_p, f_exp_p, v_exp_p = dp_pth.eval(
