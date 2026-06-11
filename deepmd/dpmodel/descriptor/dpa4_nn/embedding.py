@@ -134,7 +134,9 @@ class SeZMTypeEmbedding(NativeOP):
         rng = np.random.default_rng(child_seed(seed, 0))
         table = rng.normal(scale=init_std, size=(self.ntypes, self.embed_dim))
         if self.padding:
-            table = np.concatenate([table, np.zeros((1, self.embed_dim))], axis=0)
+            table = np.concatenate(
+                [table, np.zeros((1, self.embed_dim), dtype=table.dtype)], axis=0
+            )
         self.adam_type_embedding = table.astype(prec)
 
     def call(self, atype: Any) -> Any:

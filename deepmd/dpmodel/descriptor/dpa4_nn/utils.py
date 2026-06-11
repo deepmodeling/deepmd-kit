@@ -48,7 +48,7 @@ def init_trunc_normal_fan_in_out(
     Uses Xavier-like variance scaling: std = scale / sqrt(fan_in + fan_out).
     Truncation at +/-3*std prevents extreme outliers.
 
-    Numpy equivalent of the pt version: the weight is filled in place from a
+    NumPy equivalent of the pt version: the weight is filled in place from a
     ``np.random.default_rng(seed)`` stream (distribution-equivalent to the
     torch version, not RNG-stream-identical).
 
@@ -117,7 +117,7 @@ def get_promoted_dtype(dtype: Any) -> Any:
     For bf16/fp16, use float32 to ensure numerical stability
     in computation and storage compatibility.
 
-    Numpy equivalent of the pt version; accepts a numpy dtype (including
+    NumPy equivalent of the pt version; accepts a numpy dtype (including
     ``ml_dtypes.bfloat16``) and returns a numpy dtype.
     """
     name = getattr(dtype, "name", None) or str(dtype)

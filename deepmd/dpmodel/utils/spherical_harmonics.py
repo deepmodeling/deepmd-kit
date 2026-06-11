@@ -87,7 +87,7 @@ def real_spherical_harmonics(vecs: np.ndarray, lmax: int) -> np.ndarray:
     # §14.10 (https://dlmf.nist.gov/14.10) and Holmes & Featherstone,
     # J. Geodesy 76, 279-299 (2002), doi:10.1007/s00190-002-0216-2.
     pbar = [[None] * (ll + 1) for ll in range(lmax + 1)]
-    pbar[0][0] = np.full(nbatch, np.sqrt(1.0 / (4.0 * np.pi)))
+    pbar[0][0] = np.full(nbatch, np.sqrt(1.0 / (4.0 * np.pi)), dtype=np.float64)
     # diagonal: pbar[m][m]
     for m in range(1, lmax + 1):
         pbar[m][m] = (
