@@ -19,6 +19,17 @@ from deepmd.dpmodel.descriptor.dpa4_nn import indexing as dp_indexing
 from deepmd.dpmodel.descriptor.dpa4_nn import utils as dp_utils
 from deepmd.pt.model.descriptor.sezm_nn import indexing as pt_indexing
 from deepmd.pt.model.descriptor.sezm_nn import utils as pt_utils
+from deepmd.pt.utils import env as pt_env
+
+
+@pytest.fixture(autouse=True)
+def _pt_reference_on_cpu(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Parity tests compare pt modules against CPU numpy reference math at
+    # rtol 1e-12, so the pt side must run on CPU (CUDA differs at ULP level
+    # and is nondeterministic for scatter ops). The pt sezm modules build
+    # parameters on env.DEVICE, which is cuda:0 on GPU runners — pin it to
+    # CPU for the duration of each test.
+    monkeypatch.setattr(pt_env, "DEVICE", torch.device("cpu"))
 
 
 def pt_state_to_numpy(module: torch.nn.Module) -> dict[str, np.ndarray]:
