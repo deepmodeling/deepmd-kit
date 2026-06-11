@@ -7,54 +7,40 @@
       "H"
     ],
     "descriptor": {
-      "type": "DPA4",
       "sel": 120,
       "rcut": 6.0,
-      "env_exp": [
-        7,
-        5
-      ],
-      "channels": 64,
+      "channels": 32,
       "n_radial": 16,
-      "radial_mlp": [
-        0
-      ],
       "use_env_seed": true,
-      "random_gamma": true,
       "lmax": 3,
       "mmax": 1,
-      "n_blocks": 3,
-      "so2_layers": 4,
-      "so2_norm": false,
-      "so2_attn_res": "none",
+      "n_blocks": 2,
+      "so2_layers": 3,
       "radial_so2_mode": "degree_channel",
       "radial_so2_rank": 1,
-      "n_focus": 1,
+      "n_focus": 2,
       "focus_dim": 0,
       "n_atten_head": 1,
-      "atten_f_mix": false,
-      "atten_v_proj": false,
-      "atten_o_proj": false,
       "ffn_neurons": 0,
-      "grid_mlp": false,
-      "ffn_blocks": 1,
+      "ffn_so3_grid": true,
+      "grid_mlp": [
+        false,
+        false,
+        false
+      ],
+      "grid_branch": [
+        1,
+        1,
+        1
+      ],
+      "ffn_blocks": 2,
       "sandwich_norm": [
         false,
         true,
         true,
         false
       ],
-      "mlp_bias": false,
-      "layer_scale": false,
-      "full_attn_res": "none",
-      "block_attn_res": "none",
-      "s2_activation": [
-        false,
-        true
-      ],
-      "lebedev_quadrature": true,
-      "activation_function": "silu",
-      "glu_activation": true,
+      "message_node_so3": true,
       "use_amp": true,
       "precision": "float32",
       "seed": 42
@@ -63,7 +49,6 @@
       "neuron": [
         0
       ],
-      "activation_function": "silu",
       "precision": "float32",
       "seed": 42
     },
@@ -92,9 +77,6 @@
   },
   "optimizer": {
     "type": "HybridMuon",
-    "muon_mode": "slice",
-    "magma_muon": true,
-    "lr_adjust": 0.0,
     "weight_decay": 0.001
   },
   "training": {
@@ -134,5 +116,9 @@
     "profiling_file": "timeline.json",
     "zero_stage": 1,
     "seed": 42
+  },
+  "validating": {
+    "compiled_infer": false,
+    "tf32_infer": false
   }
 }

@@ -8,10 +8,7 @@ and quaternion-based Wigner-D utilities used by the SeZM descriptor and model.
 
 from .activation import (
     GatedActivation,
-    S2GridProjector,
     SwiGLU,
-    SwiGLUS2Activation,
-    resolve_s2_grid_resolution,
 )
 from .attention import (
     segment_envelope_gated_softmax,
@@ -45,7 +42,15 @@ from .embedding import (
 from .ffn import (
     EquivariantFFN,
 )
+from .grid_net import (
+    BaseGridNet,
+    GridBranch,
+    GridMLP,
+    S2GridNet,
+    SO3GridNet,
+)
 from .indexing import (
+    build_gie_zonal_index,
     build_l_major_index,
     build_m_major_index,
     build_m_major_l_index,
@@ -75,6 +80,13 @@ from .norm import (
     ReducedEquivariantRMSNorm,
     RMSNorm,
     ScalarRMSNorm,
+)
+from .projection import (
+    BaseGridProjector,
+    S2GridProjector,
+    SO3GridProjector,
+    resolve_s2_grid_resolution,
+    resolve_so3_grid,
 )
 from .radial import (
     BridgingSwitch,
@@ -115,6 +127,8 @@ from .wignerd import (
 __all__ = [
     "ATTN_RES_MODES",
     "LEBEDEV_PRECISION_TO_NPOINTS",
+    "BaseGridNet",
+    "BaseGridProjector",
     "BridgingSwitch",
     "C3CutoffEnvelope",
     "ChannelLinear",
@@ -129,6 +143,8 @@ __all__ = [
     "ForceEmbedding",
     "GatedActivation",
     "GeometricInitialEmbedding",
+    "GridBranch",
+    "GridMLP",
     "InnerClamp",
     "LoRASO2",
     "LoRASO3",
@@ -136,9 +152,12 @@ __all__ = [
     "RadialBasis",
     "RadialMLP",
     "ReducedEquivariantRMSNorm",
+    "S2GridNet",
     "S2GridProjector",
     "SO2Convolution",
     "SO2Linear",
+    "SO3GridNet",
+    "SO3GridProjector",
     "SO3Linear",
     "ScalarRMSNorm",
     "SeZMDeNSFittingNet",
@@ -147,13 +166,13 @@ __all__ = [
     "SeZMInteractionBlock",
     "SeZMTypeEmbedding",
     "SwiGLU",
-    "SwiGLUS2Activation",
     "WignerDCalculator",
     "apply_lora_to_sezm",
     "build_edge_cache",
     "build_edge_cache_from_edges",
     "build_edge_quaternion",
     "build_edge_type_feat",
+    "build_gie_zonal_index",
     "build_l_major_index",
     "build_m_major_index",
     "build_m_major_l_index",
@@ -179,6 +198,7 @@ __all__ = [
     "quaternion_to_rotation_matrix",
     "quaternion_z_rotation",
     "resolve_s2_grid_resolution",
+    "resolve_so3_grid",
     "safe_norm",
     "safe_numpy_to_tensor",
     "segment_envelope_gated_softmax",

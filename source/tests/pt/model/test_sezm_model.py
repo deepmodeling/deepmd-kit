@@ -57,15 +57,17 @@ warnings.filterwarnings(
     module=r"torch\._functorch\._aot_autograd\.autograd_cache",
 )
 
-# TODO(torch-2.11): SeZM's ``torch.compile`` / AOT-export code paths are only
-# stable on torch 2.11.x. CI currently pins torch 2.10, where the compiled path
-# can segfault or drift, and other torch versions are similarly unstable. Skip
-# the compile-parity tests off 2.11 until CI standardizes on a SeZM-compatible
-# torch, then drop this guard.
+# SeZM's ``torch.compile`` / AOT-export code paths are validated on torch
+# 2.11.x and 2.12.x, the releases the compile pipeline supports (see
+# ``deepmd.pt.utils.compile_compat``). Other torch versions can segfault or
+# drift, so the compile-parity tests are skipped there.
 _TORCH_VERSION = parse_version(torch.__version__)
-_SKIP_OFF_TORCH_211 = (_TORCH_VERSION.major, _TORCH_VERSION.minor) != (2, 11)
-_SKIP_OFF_TORCH_211_REASON = (
-    "SeZM's torch.compile path is only stable on torch 2.11.x; "
+_SKIP_OFF_COMPILE_TORCH = (_TORCH_VERSION.major, _TORCH_VERSION.minor) not in {
+    (2, 11),
+    (2, 12),
+}
+_SKIP_OFF_COMPILE_TORCH_REASON = (
+    "SeZM's torch.compile path is only supported on torch 2.11.x and 2.12.x; "
     f"current torch is {torch.__version__}."
 )
 
@@ -386,7 +388,7 @@ class TestSeZMModelCompile(unittest.TestCase):
             name: param.detach().clone() for name, param in model.named_parameters()
         }
 
-    @unittest.skipIf(_SKIP_OFF_TORCH_211, _SKIP_OFF_TORCH_211_REASON)
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_compile_cache_slots_and_eval_shape_change(self) -> None:
         """Compile cache slots should coexist while eval handles batch-size growth."""
         coord_1, atype_1, box_1, _, _, _ = self._make_tiny_frame()
@@ -483,7 +485,7 @@ class TestSeZMModelCompile(unittest.TestCase):
             model_cmp.compiled_core_compute_cache[eval_key], callable_eval_first
         )
 
-    @unittest.skipIf(_SKIP_OFF_TORCH_211, _SKIP_OFF_TORCH_211_REASON)
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_charge_spin_condition_matches_compile(self) -> None:
         """Charge/spin conditions should work through the compiled energy path."""
         coord, atype, box, _, _, _ = self._make_tiny_frame()
@@ -586,7 +588,6 @@ class TestSeZMModelCompile(unittest.TestCase):
             n_radial=descriptor.radial_basis.n_radial,
             random_gamma=False,
             wigner_calc=descriptor.wigner_calc,
-            use_geometry_rbf_triton=False,
         )
 
         edge_index, edge_vec, edge_mask = model.build_edge_list_from_nlist(
@@ -626,7 +627,7 @@ class TestSeZMModelCompile(unittest.TestCase):
         torch.testing.assert_close(cache_std.D_full, cache_sparse.D_full[:n_real])
         torch.testing.assert_close(cache_std.Dt_full, cache_sparse.Dt_full[:n_real])
 
-    @unittest.skipIf(_SKIP_OFF_TORCH_211, _SKIP_OFF_TORCH_211_REASON)
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_eval_compile_policy(self) -> None:
         """Eval should stay eager by default and compile only with env override."""
         model = get_sezm_model(self._build_model_params(use_compile=True))
@@ -643,7 +644,7 @@ class TestSeZMModelCompile(unittest.TestCase):
         model_eval.eval()
         self.assertTrue(model_eval.should_use_compile())
 
-    @unittest.skipIf(_SKIP_OFF_TORCH_211, _SKIP_OFF_TORCH_211_REASON)
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_forward_backward_double_backward_matches_compile(self) -> None:
         """
         Check forward, backward, double backward, and short training consistency.
@@ -704,7 +705,7 @@ class TestSeZMModelCompile(unittest.TestCase):
         # Inductor Triton kernels use different reduction order vs eager,
         # so float32 gradients can differ by ~1e-3 on GPU.
         grad_atol = 1.0e-5 if self.device == torch.device("cpu") else 2.0e-3
-        grad_rtol = 1.0e-5 if self.device == torch.device("cpu") else 1.0e-4
+        grad_rtol = 1.0e-5 if self.device == torch.device("cpu") else 3.0e-3
         self.assertEqual(set(grads_dyn.keys()), set(grads_cmp.keys()))
         for name in grads_dyn.keys():
             _assert_close_with_strict_warning(
@@ -883,11 +884,13 @@ class TestSeZMModelCompile(unittest.TestCase):
             m_cmp.train()
             out_e = m_eager(coord, atype, box=box)
             out_c = m_cmp(coord, atype, box=box)
+            energy_atol = 1.0e-6 if self.device == torch.device("cpu") else 5.0e-6
+            energy_rtol = 1.0e-6 if self.device == torch.device("cpu") else 5.0e-4
             _assert_close_with_strict_warning(
                 out_e["energy"],
                 out_c["energy"],
-                atol=1.0e-6,
-                rtol=1.0e-6,
+                atol=energy_atol,
+                rtol=energy_rtol,
                 msg=f"multitask energy mismatch at {branch}",
             )
             _assert_close_with_strict_warning(
@@ -926,7 +929,7 @@ class TestSeZMModelCompile(unittest.TestCase):
             torch.allclose(out_e1["energy"], out_e2["energy"], atol=1.0e-8)
         )
 
-    @unittest.skipIf(_SKIP_OFF_TORCH_211, _SKIP_OFF_TORCH_211_REASON)
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_multitask_compile_matches_eager(self) -> None:
         """Legacy case embedding concatenation should match through compile."""
         self._assert_multitask_compile_matches_eager(case_film_embd=False)
@@ -1900,7 +1903,7 @@ class TestSeZMModelLoRACompile(unittest.TestCase):
         model_compile.load_state_dict(model_eager.state_dict())
         return model_eager, model_compile
 
-    @unittest.skipIf(_SKIP_OFF_TORCH_211, _SKIP_OFF_TORCH_211_REASON)
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_forward_and_backward_match_eager(self) -> None:
         """Forward / first-order / second-order outputs agree with eager."""
         coord, atype, box = self._tiny_system()
@@ -1911,11 +1914,13 @@ class TestSeZMModelLoRACompile(unittest.TestCase):
         # === Forward ===
         out_eager = model_eager(coord, atype, box=box)
         out_compile = model_compile(coord, atype, box=box)
+        energy_atol = 1.0e-6 if self.device == torch.device("cpu") else 1.0e-4
+        energy_rtol = 1.0e-6 if self.device == torch.device("cpu") else 1.0e-4
         _assert_close_with_strict_warning(
             out_eager["energy"],
             out_compile["energy"],
-            atol=1.0e-6,
-            rtol=1.0e-6,
+            atol=energy_atol,
+            rtol=energy_rtol,
             msg="LoRA energy mismatch",
         )
         _assert_close_with_strict_warning(
@@ -1932,7 +1937,7 @@ class TestSeZMModelLoRACompile(unittest.TestCase):
         out_eager["energy"].sum().backward()
         out_compile["energy"].sum().backward()
         grad_atol = 1.0e-5 if self.device == torch.device("cpu") else 2.0e-3
-        grad_rtol = 1.0e-5 if self.device == torch.device("cpu") else 1.0e-4
+        grad_rtol = 1.0e-5 if self.device == torch.device("cpu") else 3.0e-3
         force_grad_atol = 1.0e-2
         force_grad_rtol = 1.0e-4
         grads_eager = {

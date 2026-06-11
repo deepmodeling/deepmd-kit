@@ -38,14 +38,16 @@ from deepmd.utils.version import (
 
 from .activation import (
     GatedActivation,
-    SwiGLUS2Activation,
-    resolve_s2_grid_resolution,
 )
 from .attention import (
     segment_envelope_gated_softmax,
 )
 from .attn_res import (
     DepthAttnRes,
+)
+from .grid_net import (
+    S2GridNet,
+    SO3GridNet,
 )
 from .indexing import (
     build_m_major_index,
@@ -60,16 +62,13 @@ from .norm import (
     ReducedEquivariantRMSNorm,
     ScalarRMSNorm,
 )
+from .projection import (
+    resolve_s2_grid_resolution,
+)
 from .so3 import (
     ChannelLinear,
     FocusLinear,
     SO3Linear,
-)
-from .triton import (
-    resolve_triton_rotation_mode,
-    rotate_back_triton,
-    rotate_to_local_triton,
-    sezm_triton_enabled,
 )
 from .utils import (
     ATTN_RES_MODES,
@@ -78,6 +77,7 @@ from .utils import (
     np_safe,
     nvtx_range,
     safe_numpy_to_tensor,
+    use_triton_infer,
 )
 
 if TYPE_CHECKING:
@@ -326,6 +326,89 @@ class SO2Linear(nn.Module):
         # Invalidated on train() via overridden method below.
         self._cached_weight: torch.Tensor | None = None
 
+        # Export override for the block-diagonal vs dense matmul branch below.
+        # ``None`` keeps the runtime ``x_flat.is_cuda`` dispatch; the freeze sets
+        # it so the AOTI graph follows the *target* device, not the CPU trace.
+        self._force_block_diag_matmul: bool | None = None
+
+        # The assembled SO(2) weight is block-diagonal over |m| groups; the
+        # forward contracts only the diagonal blocks (see _block_diagonal_matmul).
+        # Each |m| group occupies a contiguous (in, out) block on the diagonal.
+        self._block_diag_slices = self._build_block_diag_slices()
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Parameters
+        ----------
+        x
+            Input with shape (E, F, D_m_trunc, Cin), where D_m_trunc is the
+            coefficient dimension of the m-major layout truncated by `mmax`.
+
+        Returns
+        -------
+        torch.Tensor
+            Output with shape (E, F, D_m_trunc, Cout), where Cout is output channels.
+        """
+        # === Step 1. Flatten coefficient + channel axes for matmul ===
+        # (E, F, D_m, Cin) -> (E, F, D_m*Cin)
+        n_edge = x.shape[0]
+        in_dim_total = self.reduced_dim * self.in_channels
+        x_flat = x.reshape(n_edge, self.n_focus, in_dim_total)
+
+        # === Step 2. Get block-diagonal weight (cached in eval+no_grad) ===
+        if self._cached_weight is not None:
+            weight = self._cached_weight
+        else:
+            weight = self._build_so2_weight()
+            # Cache only in eval mode with grad disabled (pure inference).
+            if not self.training and not torch.is_grad_enabled():
+                self._cached_weight = weight.detach()
+
+        # === Step 3. Block-diagonal matmul over focus streams + reshape back ===
+        # The dense einsum is a CPU-only fallback: its block ``torch.cat`` lowering
+        # trips an Inductor AVX2 C++ codegen bug, so only CPU needs it. Every other
+        # device uses the block-diagonal contraction, which skips the structural
+        # off-|m| zeros. ``make_fx`` resolves this Python branch at trace time, so
+        # the freeze pins ``_force_block_diag_matmul`` to the AOTI target device
+        # (tracing always runs on CPU regardless of where the artifact will run).
+        if self._force_block_diag_matmul is None:
+            use_block_diag = not x_flat.is_cpu
+        else:
+            use_block_diag = self._force_block_diag_matmul
+        if use_block_diag:
+            out_flat = self._block_diagonal_matmul(x_flat, weight)
+        else:
+            out_flat = torch.einsum("efi,ifo->efo", x_flat, weight)
+        out = out_flat.reshape(
+            n_edge, self.n_focus, self.reduced_dim, self.out_channels
+        )
+
+        # === Step 4. Bias on l=0 scalar index ===
+        if self.mlp_bias:
+            bias0 = self.bias0.view(self.n_focus, self.out_channels)
+            out[:, :, 0, :] = out[:, :, 0, :] + bias0.unsqueeze(0)
+        return out
+
+    def _build_block_diag_slices(self) -> list[tuple[int, int, int, int]]:
+        """Return the ``(in_start, in_end, out_start, out_end)`` diagonal blocks.
+
+        One entry per ``|m|`` group in m-major order: ``m = 0`` spans
+        ``lmax + 1`` coefficients and each ``|m| > 0`` spans ``2 * (lmax - m + 1)``
+        coefficients (negative and positive orders).
+        """
+        group_sizes = [self.lmax + 1] + [
+            2 * (self.lmax - m + 1) for m in range(1, self.mmax + 1)
+        ]
+        slices: list[tuple[int, int, int, int]] = []
+        in_off = out_off = 0
+        for num in group_sizes:
+            in_width = num * self.in_channels
+            out_width = num * self.out_channels
+            slices.append((in_off, in_off + in_width, out_off, out_off + out_width))
+            in_off += in_width
+            out_off += out_width
+        return slices
+
     def train(self, mode: bool = True) -> SO2Linear:
         """Invalidate weight cache when switching to training mode."""
         self._cached_weight = None
@@ -401,46 +484,38 @@ class SO2Linear(nn.Module):
             weight[pi0:pi1, :, po0:po1] = w_u  # pos_in -> pos_out
         return weight
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
+    def _block_diagonal_matmul(
+        self, x_flat: torch.Tensor, weight: torch.Tensor
+    ) -> torch.Tensor:
+        """Contract only the diagonal ``|m|`` blocks of the assembled weight.
+
+        ``weight`` is block-diagonal over ``|m|`` (cross-``|m|`` blocks are
+        exactly zero), so concatenating the per-group matmuls reproduces the
+        dense ``einsum`` over the full ``(D_m*Cin, D_m*Cout)`` matrix while
+        skipping the structural zeros. The result is fp32-equivalent to the
+        dense path up to the matmul reduction order.
+
         Parameters
         ----------
-        x
-            Input with shape (E, F, D_m_trunc, Cin), where D_m_trunc is the
-            coefficient dimension of the m-major layout truncated by `mmax`.
+        x_flat : torch.Tensor
+            Flattened input with shape ``(E, F, D_m*Cin)``.
+        weight : torch.Tensor
+            Assembled block-diagonal weight with shape ``(D_m*Cin, F, D_m*Cout)``.
 
         Returns
         -------
         torch.Tensor
-            Output with shape (E, F, D_m_trunc, Cout), where Cout is output channels.
+            Flattened output with shape ``(E, F, D_m*Cout)``.
         """
-        # === Step 1. Flatten coefficient + channel axes for matmul ===
-        # (E, F, D_m, Cin) -> (E, F, D_m*Cin)
-        n_edge = x.shape[0]
-        in_dim_total = self.reduced_dim * self.in_channels
-        x_flat = x.reshape(n_edge, self.n_focus, in_dim_total)
-
-        # === Step 2. Get block-diagonal weight (cached in eval+no_grad) ===
-        if self._cached_weight is not None:
-            weight = self._cached_weight
-        else:
-            weight = self._build_so2_weight()
-            # Cache only in eval mode with grad disabled (pure inference).
-            if not self.training and not torch.is_grad_enabled():
-                self._cached_weight = weight.detach()
-
-        # === Step 3. Batched matmul over focus streams + reshape back ===
-        # einsum "efi,ifo->efo": (E,F,D_m*Cin) x (D_m*Cin,F,D_m*Cout) -> (E,F,D_m*Cout)
-        out_flat = torch.einsum("efi,ifo->efo", x_flat, weight)
-        out = out_flat.reshape(
-            n_edge, self.n_focus, self.reduced_dim, self.out_channels
-        )
-
-        # === Step 4. Bias on l=0 scalar index ===
-        if self.mlp_bias:
-            bias0 = self.bias0.view(self.n_focus, self.out_channels)
-            out[:, :, 0, :] = out[:, :, 0, :] + bias0.unsqueeze(0)
-        return out
+        blocks = [
+            torch.einsum(
+                "efi,ifo->efo",
+                x_flat[:, :, in0:in1],
+                weight[in0:in1, :, out0:out1],
+            )
+            for in0, in1, out0, out1 in self._block_diag_slices
+        ]
+        return torch.cat(blocks, dim=-1)
 
     def serialize(self) -> dict[str, Any]:
         trainable = all(p.requires_grad for p in self.parameters())
@@ -577,6 +652,23 @@ class DynamicRadialDegreeMixer(nn.Module):
         for p in self.parameters():
             p.requires_grad = trainable
 
+        # Inference fast path (opt-in via ``DP_TRITON_INFER``): a fused Triton
+        # kernel replaces the dense scatter and the tiny batched matmul of the
+        # ``degree_channel`` low-rank branch in the ``mmax == 1`` layout.
+        self.use_triton_infer = use_triton_infer()
+        self._radial_mix_block = None
+        if (
+            self.use_triton_infer
+            and self.mode == "degree_channel"
+            and self.rank > 0
+            and self.mmax == 1
+        ):
+            from .triton.radial_mix import (
+                radial_mix_block,
+            )
+
+            self._radial_mix_block = radial_mix_block
+
     def _build_dense_scatter_indices(self) -> tuple[torch.Tensor, torch.Tensor]:
         compact_indices: list[int] = []
         dense_indices: list[int] = []
@@ -669,6 +761,10 @@ class DynamicRadialDegreeMixer(nn.Module):
             compact = kernel_flat.view(
                 x_local.shape[0], self.degree_kernel_size, self.rank
             )
+            if self._radial_mix_block is not None and not self.training:
+                return self._radial_mix_block(
+                    compact, x_local, self.channel_basis, self.lmax
+                )
             kernel = self._scatter_rank_kernel(compact)
             mixed = torch.einsum("eoir,eic->eorc", kernel, x_local)
             channel_basis = self.channel_basis.view(1, 1, self.rank, self.channels)
@@ -710,6 +806,8 @@ class SO2Convolution(nn.Module):
         Maximum degree.
     mmax
         Maximum SO(2) order (|m|). If None, defaults to lmax.
+    kmax
+        Maximum Wigner-D frame order (|k|) used by SO(3) grid branches.
     channels
         Number of channels per (l, m) coefficient.
     n_focus
@@ -754,6 +852,31 @@ class SO2Convolution(nn.Module):
         If True, replace each intermediate reduced-layout gate with S2-grid
         SwiGLU. Intermediate ``SO2Linear`` layers then output ``2 * focus_dim``
         channels before the activation folds them back to ``focus_dim``.
+    node_wise_grid_mlp
+        If True, select the polynomial grid MLP operation for the node-wise
+        source-destination grid product.
+    node_wise_grid_branch
+        Number of scalar-routed polynomial product branches for the node-wise
+        grid product. ``0`` disables branch mixing; positive values take
+        precedence over ``node_wise_grid_mlp``.
+    message_node_grid_mlp
+        If True, select the polynomial grid MLP operation for the message-node
+        grid product.
+    message_node_grid_branch
+        Number of scalar-routed polynomial product branches for the
+        message-node grid product. ``0`` disables branch mixing; positive
+        values take precedence over ``message_node_grid_mlp``.
+    node_wise_s2
+        If True, add an edge-local S2 product branch between radial-fused source
+        features and destination features in the same edge frame.
+    node_wise_so3
+        If True, use the corresponding edge-local SO(3) Wigner-D grid branch.
+    message_node_s2
+        If True, add a packed-layout S2 product branch between the aggregated
+        hidden message and the destination node features before ``post_focus_mix``.
+    message_node_so3
+        If True, use the corresponding post-aggregation SO(3) Wigner-D grid
+        branch.
     lebedev_quadrature
         If True, use Lebedev quadrature for the S2 projector.
     activation_function
@@ -762,9 +885,6 @@ class SO2Convolution(nn.Module):
     mlp_bias
         Whether to use bias in SO2Linear (l=0 bias) and GatedActivation
         (gate linear bias).
-    use_triton
-        If True, opt into fused Triton SO(2) rotation kernels on supported
-        CUDA dtypes. The eager projection path remains the default.
     radial_so2_mode
         Dynamic radial degree mixer mode. ``"none"`` applies elementwise
         radial modulation, ``"degree"`` applies a channel-shared dynamic
@@ -788,6 +908,7 @@ class SO2Convolution(nn.Module):
         *,
         lmax: int,
         mmax: int | None = None,
+        kmax: int = 1,
         channels: int,
         n_focus: int = 1,
         focus_dim: int = 0,
@@ -801,10 +922,17 @@ class SO2Convolution(nn.Module):
         atten_v_proj: bool = False,
         atten_o_proj: bool = False,
         s2_activation: bool = False,
+        node_wise_grid_mlp: bool = False,
+        node_wise_grid_branch: int = 0,
+        message_node_grid_mlp: bool = False,
+        message_node_grid_branch: int = 0,
+        node_wise_s2: bool = False,
+        node_wise_so3: bool = False,
+        message_node_s2: bool = False,
+        message_node_so3: bool = False,
         lebedev_quadrature: bool = False,
         activation_function: str = "silu",
         mlp_bias: bool = False,
-        use_triton: bool = False,
         radial_so2_mode: str = "none",
         radial_so2_rank: int = 0,
         eps: float = 1e-7,
@@ -819,6 +947,9 @@ class SO2Convolution(nn.Module):
             raise ValueError("`mmax` must be non-negative")
         if self.mmax > self.lmax:
             raise ValueError("`mmax` must be <= `lmax`")
+        self.kmax = int(kmax)
+        if self.kmax < 0:
+            raise ValueError("`kmax` must be non-negative")
         self.channels = int(channels)
         self.n_focus = int(n_focus)
         if self.n_focus < 1:
@@ -848,12 +979,32 @@ class SO2Convolution(nn.Module):
         self.use_atten_v_proj = bool(atten_v_proj)
         self.use_atten_o_proj = bool(atten_o_proj)
         self.s2_activation = bool(s2_activation)
+        self.node_wise_grid_mlp = bool(node_wise_grid_mlp)
+        self.node_wise_grid_branch = int(node_wise_grid_branch)
+        self.message_node_grid_mlp = bool(message_node_grid_mlp)
+        self.message_node_grid_branch = int(message_node_grid_branch)
+        if min(self.node_wise_grid_branch, self.message_node_grid_branch) < 0:
+            raise ValueError("grid branch counts must be non-negative")
+        self.node_wise_s2 = bool(node_wise_s2)
+        self.node_wise_so3 = bool(node_wise_so3)
+        self.message_node_s2 = bool(message_node_s2)
+        self.message_node_so3 = bool(message_node_so3)
         self.lebedev_quadrature = bool(lebedev_quadrature)
         self.s2_grid_method = "lebedev" if self.lebedev_quadrature else "e3nn"
         self.s2_grid_resolution = resolve_s2_grid_resolution(
             self.lmax,
             self.mmax,
             method=self.s2_grid_method,
+        )
+        base_full_grid_resolution = resolve_s2_grid_resolution(
+            self.lmax,
+            self.lmax,
+            method=self.s2_grid_method,
+        )
+        self.s2_full_grid_resolution = (
+            [max(base_full_grid_resolution), max(base_full_grid_resolution)]
+            if self.s2_grid_method == "e3nn"
+            else base_full_grid_resolution
         )
         self.activation_function = str(activation_function)
         if self.n_atten_head < 0:
@@ -877,7 +1028,6 @@ class SO2Convolution(nn.Module):
             else int(self.attn_focus_dim // self.n_atten_head)
         )
         self.mlp_bias = bool(mlp_bias)
-        self.use_triton = bool(use_triton)
         self.radial_so2_mode = str(radial_so2_mode).lower()
         if self.radial_so2_mode not in {"none", "degree", "degree_channel"}:
             raise ValueError(
@@ -892,10 +1042,40 @@ class SO2Convolution(nn.Module):
         self.device = env.DEVICE
         self.precision = RESERVED_PRECISION_DICT[dtype]
         self.compute_dtype = get_promoted_dtype(self.dtype)
-        self.use_triton_rotations = self.use_triton and sezm_triton_enabled(
-            device=self.device,
-            dtype=self.dtype,
-        )
+        # Optional Triton inference kernels for the SO(2) convolution, enabled by
+        # ``DP_TRITON_INFER=1`` (default disabled, in which case the dense
+        # ``bmm`` rotation is used). The flag is read once at construction so it
+        # is a compile-time constant in the traced (``make_fx``) graph, and it
+        # only takes effect during inference.
+        self.use_triton_infer = use_triton_infer()
+        # Triton rotation kernels: block for the mmax == 1 layout, dense otherwise.
+        self._rotate_to_local_fn = None
+        self._rotate_back_fn = None
+        if self.use_triton_infer:
+            from .triton.so2_rotation import (
+                rotate_back_block_so2,
+                rotate_back_dense,
+                rotate_to_local_block,
+                rotate_to_local_dense,
+            )
+
+            if self.mmax == 1:
+                self._rotate_to_local_fn = lambda x, src, wigner: rotate_to_local_block(
+                    x, src, wigner, self.lmax
+                )
+                # The block kernel reads the (E, F, D_m, Cf) focus layout directly,
+                # so the rotate-back path passes ``x_local`` before the global
+                # reshape and the transpose-back copy is skipped (see Step 7).
+                self._rotate_back_fn = lambda x_local, wigner: rotate_back_block_so2(
+                    x_local, wigner, self.lmax
+                )
+            else:
+                self._rotate_to_local_fn = lambda x, src, wigner: rotate_to_local_dense(
+                    x, src, wigner, self.coeff_index_m, self.ebed_dim_full
+                )
+                self._rotate_back_fn = lambda x_local, wigner: rotate_back_dense(
+                    x_local, wigner, self.coeff_index_m, self.ebed_dim_full
+                )
 
         # === Step 1. Precompute coefficient indices for m-major reduced layout ===
         coeff_index_m = build_m_major_index(self.lmax, self.mmax, device=self.device)
@@ -914,10 +1094,6 @@ class SO2Convolution(nn.Module):
             "rotate_inv_rescale_full", rotate_inv_rescale_full, persistent=True
         )
         self.reduced_dim = int(coeff_index_m.numel())
-        self.triton_rotation_mode = resolve_triton_rotation_mode(
-            dim_full=self.ebed_dim_full,
-            reduced_dim=self.reduced_dim,
-        )
 
         # === Step 2. Split deterministic seeds at the module top-level ===
         seed_so2_stack = child_seed(seed, 0)
@@ -928,6 +1104,8 @@ class SO2Convolution(nn.Module):
         seed_depth_attn = child_seed(seed, 5)
         seed_radial_hidden = child_seed(seed, 6)
         seed_radial_degree = child_seed(seed, 7)
+        seed_node_wise_s2 = child_seed(seed, 8)
+        seed_message_node_s2 = child_seed(seed, 9)
 
         # === Step 3. Multiple SO2Linear layers ===
         self.so2_linears = nn.ModuleList(
@@ -977,12 +1155,14 @@ class SO2Convolution(nn.Module):
         for i in range(max(0, self.so2_layers - 1)):
             if self.s2_activation:
                 non_linearities.append(
-                    SwiGLUS2Activation(
+                    S2GridNet(
                         lmax=self.lmax,
                         mmax=self.mmax,
                         channels=self.so2_focus_dim,
-                        dtype=self.compute_dtype,
                         n_focus=self.n_focus,
+                        mode="self",
+                        op_type="glu",
+                        dtype=self.compute_dtype,
                         layout="nfdc",
                         grid_resolution_list=self.s2_grid_resolution,
                         coefficient_layout="m_major",
@@ -1229,6 +1409,95 @@ class SO2Convolution(nn.Module):
                 seed=seed_radial_degree,
                 trainable=trainable,
             )
+        node_wise_op = (
+            "branch"
+            if self.node_wise_grid_branch > 0
+            else ("mlp" if self.node_wise_grid_mlp else "glu")
+        )
+        node_wise_branches = max(1, self.node_wise_grid_branch)
+        message_node_op = (
+            "branch"
+            if self.message_node_grid_branch > 0
+            else ("mlp" if self.message_node_grid_mlp else "glu")
+        )
+        message_node_branches = max(1, self.message_node_grid_branch)
+        self.node_wise_grid_product: S2GridNet | SO3GridNet | None = None
+        if self.node_wise_s2 or self.node_wise_so3:
+            if self.node_wise_so3:
+                self.node_wise_grid_product = SO3GridNet(
+                    lmax=self.lmax,
+                    mmax=self.mmax,
+                    kmax=self.kmax,
+                    channels=self.so2_focus_dim,
+                    n_focus=self.n_focus,
+                    mode="cross",
+                    op_type=node_wise_op,
+                    dtype=self.compute_dtype,
+                    layout="flat",
+                    coefficient_layout="m_major",
+                    grid_branches=node_wise_branches,
+                    mlp_bias=self.mlp_bias,
+                    residual_scale_init=1e-3,
+                    trainable=trainable,
+                    seed=seed_node_wise_s2,
+                )
+            else:
+                self.node_wise_grid_product = S2GridNet(
+                    lmax=self.lmax,
+                    mmax=self.mmax,
+                    channels=self.so2_focus_dim,
+                    n_focus=self.n_focus,
+                    mode="cross",
+                    op_type=node_wise_op,
+                    dtype=self.compute_dtype,
+                    layout="flat",
+                    grid_resolution_list=self.s2_grid_resolution,
+                    coefficient_layout="m_major",
+                    grid_method=self.s2_grid_method,
+                    grid_branches=node_wise_branches,
+                    mlp_bias=self.mlp_bias,
+                    residual_scale_init=1e-3,
+                    trainable=trainable,
+                    seed=seed_node_wise_s2,
+                )
+        self.message_node_grid_product: S2GridNet | SO3GridNet | None = None
+        if self.message_node_s2 or self.message_node_so3:
+            if self.message_node_so3:
+                self.message_node_grid_product = SO3GridNet(
+                    lmax=self.lmax,
+                    kmax=self.kmax,
+                    channels=self.so2_focus_dim,
+                    n_focus=self.n_focus,
+                    mode="cross",
+                    op_type=message_node_op,
+                    dtype=self.compute_dtype,
+                    layout="flat",
+                    coefficient_layout="packed",
+                    grid_branches=message_node_branches,
+                    mlp_bias=self.mlp_bias,
+                    residual_scale_init=1e-3,
+                    trainable=trainable,
+                    seed=seed_message_node_s2,
+                )
+            else:
+                self.message_node_grid_product = S2GridNet(
+                    lmax=self.lmax,
+                    mmax=self.lmax,
+                    channels=self.so2_focus_dim,
+                    n_focus=self.n_focus,
+                    mode="cross",
+                    op_type=message_node_op,
+                    dtype=self.compute_dtype,
+                    layout="flat",
+                    grid_resolution_list=self.s2_full_grid_resolution,
+                    grid_method=self.s2_grid_method,
+                    grid_branches=message_node_branches,
+                    mlp_bias=self.mlp_bias,
+                    residual_scale_init=1e-3,
+                    trainable=trainable,
+                    coefficient_layout="packed",
+                    seed=seed_message_node_s2,
+                )
 
         # === Step 9. Pre-focus channel mixing ===
         # This projects the full channel width before the SO(2) focus split.
@@ -1291,15 +1560,16 @@ class SO2Convolution(nn.Module):
         # === Step 2. Rotate to edge-aligned local frame ===
         with nvtx_range("SO2Conv/rotate_to_local"):
             D_full = edge_cache.D_full
-            if self.use_triton_rotations and not self.training:
-                x_local = rotate_to_local_triton(
-                    x=x,
-                    src=src,
-                    wigner=D_full,
-                    coeff_index=self.coeff_index_m,
-                    dim_full=self.ebed_dim_full,
-                    rotation_mode=self.triton_rotation_mode,
-                )  # (E, D_m, C_wide)
+            x_dst_local: torch.Tensor | None = None
+            if self.use_triton_infer and not self.training:
+                # ``self._rotate_to_local_fn`` was bound in ``__init__`` (the
+                # block kernel for the m-major ``mmax == 1`` layout, dense
+                # otherwise).
+                x_local = self._rotate_to_local_fn(x, src, D_full)  # (E, D_m, C_wide)
+                if self.node_wise_grid_product is not None:
+                    x_dst_local = self._rotate_to_local_fn(
+                        x, dst, D_full
+                    )  # (E, D_m, C_wide)
             else:
                 D_m_prime = project_D_to_m(
                     D_full=D_full,
@@ -1311,6 +1581,9 @@ class SO2Convolution(nn.Module):
                 )
                 x_src = x.index_select(0, src)  # (E, D, C_wide)
                 x_local = torch.bmm(D_m_prime, x_src)  # (E, D_m, C_wide)
+                if self.node_wise_grid_product is not None:
+                    x_dst = x.index_select(0, dst)  # (E, D, C_wide)
+                    x_dst_local = torch.bmm(D_m_prime, x_dst)  # (E, D_m, C_wide)
 
         # === Step 3. Select radial/type features for reduced layout ===
         with nvtx_range("SO2Conv/radial_fuse"):
@@ -1321,6 +1594,11 @@ class SO2Convolution(nn.Module):
                 x_local.mul_(rad_feat)
             else:
                 x_local = self.radial_degree_mixer(x_local, rad_feat)
+            if self.node_wise_grid_product is not None:
+                x_local = x_local + self.node_wise_grid_product(
+                    x_local,
+                    x_dst_local,
+                )
             rad_feat_l0_focus = rad_feat[:, 0, :].reshape(
                 n_edge, self.n_focus, self.so2_focus_dim
             )  # (E, F, Cf)
@@ -1438,33 +1716,32 @@ class SO2Convolution(nn.Module):
             )
             x_local = x_local * alpha.unsqueeze(-1).unsqueeze(-1)
 
-        # Restore reduced global layout for inverse rotation
-        x_local = x_local.transpose(1, 2).contiguous()  # (E, D_m, F, Cf)
-        x_local = x_local.reshape(
-            n_edge, self.reduced_dim, self.hidden_channels
-        )  # (E, D_m, C_wide)
-
         # === Step 7. Rotate back to global frame ===
         with nvtx_range("SO2Conv/rotate_back"):
             Dt_full = edge_cache.Dt_full
-            if self.use_triton_rotations and not self.training:
-                x_message = rotate_back_triton(
-                    x_local=x_local,
-                    wigner=Dt_full,
-                    coeff_index=self.coeff_index_m,
-                    dim_full=self.ebed_dim_full,
-                    rotation_mode=self.triton_rotation_mode,
-                )  # (E, D, C_wide)
+            if self.use_triton_infer and self.mmax == 1 and not self.training:
+                # The block kernel consumes the (E, F, D_m, Cf) focus layout in
+                # place, folding the inverse transpose into its channel addressing.
+                x_message = self._rotate_back_fn(x_local, Dt_full)  # (E, D, C_wide)
             else:
-                Dt_from_m = project_Dt_from_m(
-                    Dt_full=Dt_full,
-                    coeff_index_m=self.coeff_index_m,
-                    ebed_dim_full=self.ebed_dim_full,
-                    cache=edge_cache.Dt_from_m_cache,
-                    key_lmax=self.lmax,
-                    key_mmax=self.mmax,
+                # Restore reduced global layout (E, D_m, C_wide) for inverse rotation.
+                x_local = (
+                    x_local.transpose(1, 2)
+                    .contiguous()
+                    .reshape(n_edge, self.reduced_dim, self.hidden_channels)
                 )
-                x_message = torch.bmm(Dt_from_m, x_local)  # (E, D, C_wide)
+                if self.use_triton_infer and not self.training:
+                    x_message = self._rotate_back_fn(x_local, Dt_full)  # (E, D, C_wide)
+                else:
+                    Dt_from_m = project_Dt_from_m(
+                        Dt_full=Dt_full,
+                        coeff_index_m=self.coeff_index_m,
+                        ebed_dim_full=self.ebed_dim_full,
+                        cache=edge_cache.Dt_from_m_cache,
+                        key_lmax=self.lmax,
+                        key_mmax=self.mmax,
+                    )
+                    x_message = torch.bmm(Dt_from_m, x_local)  # (E, D, C_wide)
             # Reduced layouts keep only 2*mmax+1 orders for l>mmax. Applying the
             # inverse-rotation degree rescale after the global lift restores the
             # full-basis amplitude expected by the block output contract.
@@ -1600,7 +1877,12 @@ class SO2Convolution(nn.Module):
                     n_node, self.ebed_dim_full, self.hidden_channels
                 ).to(dtype=self.dtype)  # (N, D, C_wide)
 
-        # === Step 9. Final channel mixing ===
+        # === Step 9. Optional message-node grid product ===
+        if self.message_node_grid_product is not None:
+            with nvtx_range("SO2Conv/message_node_grid"):
+                out = out + self.message_node_grid_product(out, x)
+
+        # === Step 10. Final channel mixing ===
         with nvtx_range("SO2Conv/post_focus_mix"):
             out = self.post_focus_mix(out.unsqueeze(2)).squeeze(2)
         return out  # (N, D, C)
@@ -1614,6 +1896,7 @@ class SO2Convolution(nn.Module):
             "config": {
                 "lmax": self.lmax,
                 "mmax": self.mmax,
+                "kmax": self.kmax,
                 "channels": self.channels,
                 "n_focus": self.n_focus,
                 "focus_dim": self.focus_dim,
@@ -1627,6 +1910,14 @@ class SO2Convolution(nn.Module):
                 "atten_v_proj": self.use_atten_v_proj,
                 "atten_o_proj": self.use_atten_o_proj,
                 "s2_activation": self.s2_activation,
+                "node_wise_grid_mlp": self.node_wise_grid_mlp,
+                "node_wise_grid_branch": self.node_wise_grid_branch,
+                "message_node_grid_mlp": self.message_node_grid_mlp,
+                "message_node_grid_branch": self.message_node_grid_branch,
+                "node_wise_s2": self.node_wise_s2,
+                "node_wise_so3": self.node_wise_so3,
+                "message_node_s2": self.message_node_s2,
+                "message_node_so3": self.message_node_so3,
                 "lebedev_quadrature": self.lebedev_quadrature,
                 "activation_function": self.activation_function,
                 "mlp_bias": self.mlp_bias,
