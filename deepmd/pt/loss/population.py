@@ -166,13 +166,16 @@ class PopulationLoss(TaskLoss):
         if natoms <= 0:
             raise ValueError("natoms must be positive")
 
-        loss = torch.zeros(1, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=env.DEVICE)[0]
-        more_loss = {}
-
         # Reshape to (nframes, natoms, task_dim) so per-frame totals are computed
         # correctly without cross-frame cancellations when batch_size > 1.
         pop_pred = model_pred["population"].reshape([-1, natoms, self.task_dim])
         pop_label = label["atom_population"].reshape([-1, natoms, self.task_dim])
+
+        # Initialize loss on the same device as the model output so that CPU-only
+        # test environments (where env.DEVICE may resolve to cuda but CUDA is not
+        # compiled) do not raise AssertionError when accumulating into the tensor.
+        loss = pop_pred.new_zeros(1, dtype=env.GLOBAL_PT_FLOAT_PRECISION)[0]
+        more_loss = {}
         nframes = pop_pred.shape[0]
 
         spin_pred = pop_pred[:, :, 0] - pop_pred[:, :, 1]  # (nframes, natoms)
