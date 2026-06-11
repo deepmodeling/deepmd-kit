@@ -1,34 +1,49 @@
 # Input Formats
 
-> **CLI command:** `dpaad` (PyPI package: `dpa-adapt`).
-> `dpaad` is the short alias you type; both names are equivalent.
+> **Project/package name:** `dpa-adapt`
+> **Python import:** `dpa_adapt`
+> **Main CLI:** `dpa-adapt`
+> **Optional short alias:** `dpaad`
+> **Display name:** DPA-ADAPT — Atomistic DPA Adaptation for Property Tasks
 
-`dpaad data convert` auto-detects the input type and routes it to the correct pipeline:
-**SMILES table** → RDKit conformer generation,
+`dpa-adapt data convert` auto-detects the input type and routes it to the correct pipeline:
+**SMILES table** → RDKit 3D conformer generation,
 **formula table** → random doping from a POSCAR template,
 **structure files** → dpdata (auto-detect or explicit `--fmt`).
 
-## 1. SMILES Tables (CSV or Excel)
+## 1. SMILES Tables (CSV)
 
-**Trigger:** file extension `.csv`/`.xlsx`/`.xls` **and** a column named
-`smiles`/`smi`/`mol` (case-insensitive). Or pass `--fmt smiles` explicitly.
+**Trigger:** file extension `.csv`/`.xlsx`/`.xls` **and** a SMILES column.
+By default, the converter reads `SMILES`/`smiles`; use `--smiles-col` for
+other column names such as `smi` or `mol`. Or pass `--fmt smiles` explicitly.
 
-| Parameter         | Default    | Description                                                                |
-| ----------------- | ---------- | -------------------------------------------------------------------------- |
-| `--smiles-col`    | `SMILES`   | Column name for SMILES strings                                             |
-| `--property-col`  | `Property` | Column name for target property                                            |
-| `--property-name` | `Property` | Label key written into each system                                         |
-| `--train-ratio`   | `0.9`      | Fraction of rows used for training set                                     |
-| `--mol-dir`       | —          | Directory of pre-generated `.mol` files (skips RDKit conformer generation) |
-| `--seed`          | `42`       | Random seed for conformer generation and train/valid split                 |
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `--smiles-col` | `SMILES` | Column name for SMILES strings |
+| `--property-col` | `Property` | Input table column to read target values from |
+| `--property-name` | `Property` | Output label name written as `set.*/{property_name}.npy` |
+| `--train-ratio` | `0.9` | Fraction of samples used for training set |
+| `--mol-dir` | — | Directory of pre-generated `.mol`, `.sdf`, `.xyz`, or `.pdb` structure files (skips RDKit 3D conformer generation) |
+| `--mol-template` | `id{row}.mol` | Filename template under `--mol-dir`; use `{row}` for the CSV row index |
+| `--split-seed` | `42` | Random seed for train/valid splitting |
+| `--conformer-seed` | `42` | Random seed for RDKit 3D conformer generation |
 
 ```bash
 # Auto-detected via SMILES column
-dpaad data convert --input molecules.csv --output ./npy --property-name homo
+dpa-adapt data convert --input molecules.csv --output ./npy \
+    --property-col homo --property-name homo
+# Short alias
+dpaad data convert --input molecules.csv --output ./npy \
+    --property-col homo --property-name homo
 
 # Explicit fmt + custom column names
-dpaad data convert --input data.xlsx --output ./npy --fmt smiles \
-    --smiles-col SMILES --property-col GAP --train-ratio 0.85 --seed 123
+dpa-adapt data convert --input data.csv --output ./npy --fmt smiles \
+    --smiles-col smi --property-col GAP --train-ratio 0.85 \
+    --split-seed 42 --conformer-seed 43
+# Short alias
+dpaad data convert --input data.csv --output ./npy --fmt smiles \
+    --smiles-col smi --property-col GAP --train-ratio 0.85 \
+    --split-seed 42 --conformer-seed 43
 ```
 
 ## 2. Formula Tables (CSV + POSCAR Template)
@@ -37,103 +52,107 @@ dpaad data convert --input data.xlsx --output ./npy --fmt smiles \
 (e.g. `Ni0.65Gd0.15O2H1`) and a template POSCAR, then generates doped structures
 by randomly substituting atoms on the host-element sublattice.
 
-| Parameter        | Default      | Description                                                                                           |
-| ---------------- | ------------ | ----------------------------------------------------------------------------------------------------- |
-| `--poscar`       | *(required)* | Template POSCAR file for the host lattice                                                             |
-| `--formula-col`  | `0`          | Column index (0-based) or name for the formula string                                                 |
-| `--base-element` | auto         | Host element to substitute. Inferred as the most frequent non-O/H element in the template if omitted. |
-| `--sets`         | `1`          | Number of random structures generated per formula row                                                 |
-| `--property-col` | `1`          | Column index or name for the target property value                                                    |
-| `--seed`         | `42`         | Random seed                                                                                           |
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `--poscar` | *(required)* | Template POSCAR file for the host lattice |
+| `--formula-col` | `formula` | Input CSV column or 0-based column index to read composition formulas from |
+| `--base-element` | auto | Host element to substitute. Inferred as the most frequent non-O/H element in the template if omitted. |
+| `--sets` | `1` | Number of random structures generated per formula row |
+| `--property-col` | `Property` | Input CSV column or 0-based column index to read target values from |
+| `--property-name` | `Property` | Output label name written as `set.*/{property_name}.npy` |
+| `--seed` | `42` | Random seed for selecting substituted host-atom sites |
 
 ```bash
+dpa-adapt data convert --input compositions.csv --output ./npy --fmt formula \
+    --poscar template.POSCAR --sets 3 \
+    --formula-col formula --property-col bandgap --property-name bandgap
+# Short alias
 dpaad data convert --input compositions.csv --output ./npy --fmt formula \
-    --poscar template.POSCAR --sets 3 --property-col bandgap
+    --poscar template.POSCAR --sets 3 \
+    --formula-col formula --property-col bandgap --property-name bandgap
 ```
 
 ## 3. Structure Files via dpdata
 
-**Trigger:** all other cases (no SMILES columns, not `--fmt formula`/`smiles`).
+**Trigger:** inputs not routed to the SMILES or formula pipelines. This means
+`--fmt` is neither `smiles` nor `formula`; when `--fmt` is omitted, CSV inputs
+are routed here only if they do not contain a recognized SMILES column.
 Calls dpdata for format auto-detection or explicit conversion.
 
 ### Common Formats
 
-| `--fmt` value                     | Typical file(s)     | Notes                                              |
-| --------------------------------- | ------------------- | -------------------------------------------------- |
-| `extxyz`                          | `*.xyz`             | Extended XYZ (includes cell & per-atom properties) |
-| `xyz`                             | `*.xyz`             | Plain XYZ                                          |
-| `vasp/poscar`                     | `POSCAR`            | VASP input structure                               |
-| `vasp/contcar`                    | `CONTCAR`           | VASP final structure                               |
-| `vasp/outcar`                     | `OUTCAR`            | VASP output (energies, forces, stress)             |
-| `vasp/xml`                        | `vasprun.xml`       | VASP XML output                                    |
-| `abacus/scf`                      | SCF output          | ABACUS SCF calculation                             |
-| `abacus/md`                       | MD output           | ABACUS molecular dynamics                          |
-| `abacus/stru`                     | `STRU`              | ABACUS input structure                             |
-| `abacus/relax`                    | Relax output        | ABACUS relaxation                                  |
-| `abacus/pw/scf`                   | PW SCF output       | ABACUS plane-wave SCF                              |
-| `abacus/lcao/scf`                 | LCAO SCF output     | ABACUS LCAO SCF                                    |
-| `abacus/pw/md`                    | PW MD output        | ABACUS plane-wave MD                               |
-| `abacus/lcao/md`                  | LCAO MD output      | ABACUS LCAO MD                                     |
-| `abacus/pw/relax`                 | PW relax output     | ABACUS plane-wave relaxation                       |
-| `abacus/lcao/relax`               | LCAO relax output   | ABACUS LCAO relaxation                             |
-| `cp2k/aimd_output`                | CP2K MD output      | CP2K AIMD output file                              |
-| `cp2k/output`                     | CP2K SCF output     | CP2K single-point output                           |
-| `deepmd/npy`                      | `set.*/` dirs       | DeePMD-kit npy format                              |
-| `deepmd/raw`                      | `set.*/` dirs       | DeePMD-kit raw format                              |
-| `deepmd/comp`                     | `set.*/` dirs       | DeePMD-kit compressed npy                          |
-| `deepmd/hdf5`                     | `*.hdf5`            | DeePMD-kit HDF5 format                             |
-| `lammps/dump`                     | `dump.*`            | LAMMPS dump trajectory                             |
-| `lammps/lmp`                      | `*.lmp`             | LAMMPS data file                                   |
-| `qe/cp/traj`                      | CP trajectory       | Quantum ESPRESSO Car-Parrinello MD                 |
-| `qe/pw/scf`                       | PWscf output        | Quantum ESPRESSO PWscf                             |
-| `siesta/output`                   | Siesta output       | SIESTA SCF output                                  |
-| `siesta/aimd_output`              | Siesta MD output    | SIESTA AIMD output                                 |
-| `gaussian/log`                    | `*.log`             | Gaussian log file                                  |
-| `gaussian/fchk`                   | `*.fchk`            | Gaussian formatted checkpoint                      |
-| `gaussian/md`                     | Gaussian MD output  | Gaussian MD trajectory                             |
-| `gaussian/gjf`                    | `*.gjf`             | Gaussian input file                                |
-| `amber/md`                        | Amber MD output     | Amber MD trajectory                                |
-| `gromacs/gro`                     | `*.gro`             | GROMACS coordinate file                            |
-| `pwmat/output`                    | `REPORT`/`MOVEMENT` | PWmat output                                       |
-| `pwmat/atom.config`               | `atom.config`       | PWmat input structure                              |
-| `pwmat/movement`                  | `MOVEMENT`          | PWmat MD trajectory                                |
-| `pwmat/mlmd`                      | `MLMD`              | PWmat MLMD output                                  |
-| `fhi_aims/output`                 | FHI-aims output     | FHI-aims calculation                               |
-| `fhi_aims/md`                     | FHI-aims MD output  | FHI-aims MD trajectory                             |
-| `fhi_aims/scf`                    | FHI-aims SCF output | FHI-aims SCF                                       |
-| `psi4/out`                        | Psi4 output         | Psi4 calculation output                            |
-| `psi4/inp`                        | Psi4 input          | Psi4 input file                                    |
-| `orca/spout`                      | ORCA output         | ORCA single-point output                           |
-| `sqm/out`                         | SQM output          | SQM output                                         |
-| `sqm/in`                          | SQM input           | SQM input                                          |
-| `openmx/md`                       | OpenMX MD output    | OpenMX MD trajectory                               |
-| `n2p2`                            | n2p2 output         | n2p2/NNPack output                                 |
-| `dftbplus`                        | DFTB+ output        | DFTB+ detailed.xml                                 |
-| `mol` / `mol_file`                | `*.mol`             | MDL Molfile                                        |
-| `sdf` / `sdf_file`                | `*.sdf`             | MDL SDFile                                         |
-| `ase/structure`                   | Any ASE format      | ASE structure (single frame)                       |
-| `ase/traj`                        | Any ASE trajectory  | ASE trajectory (multi-frame)                       |
-| `pymatgen/structure`              | pymatgen objects    | pymatgen Structure                                 |
-| `pymatgen/molecule`               | pymatgen objects    | pymatgen Molecule                                  |
-| `pymatgen/computedstructureentry` | pymatgen objects    | pymatgen ComputedStructureEntry                    |
-| `quip/gap/xyz`                    | `*.xyz`             | QUIP/GAP extended XYZ                              |
-| `mace/xyz`                        | `*.xyz`             | MACE extended XYZ                                  |
-| `nequip/xyz`                      | `*.xyz`             | NequIP extended XYZ                                |
-| `gpumd/xyz`                       | `*.xyz`             | GPUMD extended XYZ                                 |
-| `lmdb`                            | LMDB dir            | DeePMD-kit LMDB format                             |
-| `list`                            | List-format dir     | List of system directories                         |
-| `3dmol`                           | 3Dmol format        | 3Dmol.js format                                    |
+| `--fmt` value | Typical file(s) | Notes |
+|---|---|---|
+| `extxyz` / `mace/xyz` / `nequip/xyz` / `gpumd/xyz` / `quip/gap/xyz` | `*.xyz` | Extended XYZ variants |
+| `xyz` | `*.xyz` | Plain XYZ |
+| `vasp/poscar` / `vasp/contcar` | `POSCAR`, `CONTCAR` | VASP input/final structure |
+| `vasp/outcar` | `OUTCAR` | VASP output (energies, forces, stress) |
+| `vasp/xml` | `vasprun.xml` | VASP XML output |
+| `vasp/string` | VASP structure string | VASP structure from a string |
+| `abacus/stru` / `stru` | `STRU` | ABACUS input structure |
+| `abacus/scf` / `abacus/pw/scf` / `abacus/lcao/scf` | SCF output | ABACUS SCF calculation |
+| `abacus/md` / `abacus/pw/md` / `abacus/lcao/md` | MD output | ABACUS molecular dynamics |
+| `abacus/relax` / `abacus/pw/relax` / `abacus/lcao/relax` | Relax output | ABACUS relaxation |
+| `cp2k/aimd_output` | CP2K MD output | CP2K AIMD output file |
+| `cp2k/output` | CP2K SCF output | CP2K single-point output |
+| `deepmd/raw` | `set.*/` dirs | DeePMD-kit raw format |
+| `deepmd/comp` / `deepmd/npy` | `set.*/` dirs | DeePMD-kit compressed/npy format |
+| `deepmd/npy/mixed` | mixed `deepmd/npy` dir | DeePMD-kit mixed npy format |
+| `deepmd/hdf5` | `*.hdf5` | DeePMD-kit HDF5 format |
+| `lammps/dump` / `dump` | `dump.*` | LAMMPS dump trajectory |
+| `lammps/lmp` / `lmp` | `*.lmp` | LAMMPS data file |
+| `qe/cp/traj` | CP trajectory | Quantum ESPRESSO Car-Parrinello MD |
+| `qe/pw/scf` | PWscf output | Quantum ESPRESSO PWscf |
+| `siesta/output` | Siesta output | SIESTA SCF output |
+| `siesta/aimd_output` | Siesta MD output | SIESTA AIMD output |
+| `gaussian/log` | `*.log` | Gaussian log file |
+| `gaussian/fchk` | `*.fchk` | Gaussian formatted checkpoint |
+| `gaussian/md` | Gaussian MD output | Gaussian MD trajectory |
+| `gaussian/gjf` | `*.gjf` | Gaussian input file |
+| `amber/md` | Amber MD output | Amber MD trajectory |
+| `gromacs/gro` / `gro` | `*.gro` | GROMACS coordinate file |
+| `pwmat/output` / `pwmat/movement` / `pwmat/mlmd` | `REPORT`, `MOVEMENT`, `MLMD` | PWmat output / movement / MLMD |
+| `pwmat/final.config` / `pwmat/atom.config` | `final.config`, `atom.config` | PWmat final/input structure |
+| `fhi_aims/output` / `fhi_aims/md` | FHI-aims output/MD | FHI-aims calculation or MD trajectory |
+| `fhi_aims/scf` | FHI-aims SCF output | FHI-aims SCF |
+| `psi4/out` | Psi4 output | Psi4 calculation output |
+| `psi4/inp` | Psi4 input | Psi4 input file |
+| `orca/spout` | ORCA output | ORCA single-point output |
+| `sqm/out` | SQM output | SQM output |
+| `sqm/in` | SQM input | SQM input |
+| `openmx/md` | OpenMX MD output | OpenMX MD trajectory |
+| `n2p2` | n2p2 output | n2p2/NNPack output |
+| `dftbplus` | DFTB+ output | DFTB+ detailed.xml |
+| `mol` / `mol_file` | `*.mol` | MDL Molfile |
+| `sdf` / `sdf_file` | `*.sdf` | MDL SDFile |
+| `ase/structure` | Any ASE format | ASE structure (single frame) |
+| `ase/traj` | Any ASE trajectory | ASE trajectory (multi-frame) |
+| `pymatgen/structure` | pymatgen objects | pymatgen Structure |
+| `pymatgen/molecule` | pymatgen objects | pymatgen Molecule |
+| `pymatgen/computedstructureentry` | pymatgen objects | pymatgen ComputedStructureEntry |
+| `lmdb` | LMDB dir | DeePMD-kit LMDB format |
+| `list` | List-format dir | List of system directories |
+| `3dmol` | 3Dmol format | 3Dmol.js format |
 
-Omit `--fmt` for dpdata auto-detection (works for most common formats like
-POSCAR, OUTCAR, extxyz, etc.). Pass `--fmt` explicitly when the file
-extension is ambiguous or auto-detection fails.
+You can omit `--fmt` and let dpdata infer the input format from the file name
+or content. For example, files named `POSCAR`, `OUTCAR`, or `*.xyz` are often
+recognized automatically. Use `--fmt` when the file name is ambiguous or
+auto-detection fails.
 
 ### Single file
 
 ```bash
+dpa-adapt data convert --input POSCAR --output ./npy
 dpaad data convert --input POSCAR --output ./npy
+
+dpa-adapt data convert --input OUTCAR --output ./npy --fmt vasp/outcar
 dpaad data convert --input OUTCAR --output ./npy --fmt vasp/outcar
-dpaad data convert --input traj.xyz --output ./npy --fmt extxyz
+
+dpa-adapt data convert --input traj.xyz --output ./npy --fmt xyz
+dpaad data convert --input traj.xyz --output ./npy --fmt xyz
+
+dpa-adapt data convert --input traj.extxyz --output ./npy --fmt extxyz
+dpaad data convert --input traj.extxyz --output ./npy --fmt extxyz
 ```
 
 ### Glob patterns
@@ -147,9 +166,11 @@ When `--input` contains wildcards (`*`, `?`, `[`):
 
 ```bash
 # Single match (only one OUTCAR found)
+dpa-adapt data convert --input "run*/OUTCAR" --output ./npy
 dpaad data convert --input "run*/OUTCAR" --output ./npy
 
 # Multi-match: outputs sys_0000/, sys_0001/, …
+dpa-adapt data convert --input "calcs/**/OUTCAR" --output ./npy_root --fmt vasp/outcar
 dpaad data convert --input "calcs/**/OUTCAR" --output ./npy_root --fmt vasp/outcar
 ```
 
@@ -169,9 +190,11 @@ Key behaviors:
 
 ```bash
 # Batch convert all OUTCAR files; each lands in a mirrored subdirectory
+dpa-adapt data convert --input "scan/**/OUTCAR" --output ./all_npy --fmt vasp/outcar
 dpaad data convert --input "scan/**/OUTCAR" --output ./all_npy --fmt vasp/outcar
 
 # Strict mode — abort on first failure
+dpa-adapt data convert --input "scan/**/OUTCAR" --output ./all_npy --fmt vasp/outcar --strict
 dpaad data convert --input "scan/**/OUTCAR" --output ./all_npy --fmt vasp/outcar --strict
 
 # Check the manifest

@@ -280,7 +280,9 @@ def _cmd_data_convert(args: argparse.Namespace) -> int:
         train_ratio=args.train_ratio,
         smiles_col=args.smiles_col,
         mol_dir=args.mol_dir,
-        seed=args.seed,
+        mol_template=args.mol_template,
+        split_seed=args.split_seed,
+        conformer_seed=args.conformer_seed,
         poscar=args.poscar,
         formula_col=args.formula_col,
         base_element=args.base_element,
@@ -631,28 +633,24 @@ def get_parser() -> argparse.ArgumentParser:
     parser_data_convert.add_argument("--property-col", default="Property")
     parser_data_convert.add_argument("--smiles-col", default="SMILES")
     parser_data_convert.add_argument("--mol-dir", default=None)
+    parser_data_convert.add_argument("--mol-template", default="id{row}.mol",
+                                     help="Filename template under --mol-dir; use {row} for the CSV row index.")
     parser_data_convert.add_argument("--train-ratio", type=float, default=0.9)
-    parser_data_convert.add_argument("--seed", type=int, default=42)
-    parser_data_convert.add_argument(
-        "--poscar", default=None, help="Template POSCAR for fmt=formula."
-    )
-    parser_data_convert.add_argument(
-        "--base-element",
-        default=None,
-        help="Sublattice element to substitute "
-        "(fmt=formula). Auto-inferred if omitted.",
-    )
-    parser_data_convert.add_argument(
-        "--formula-col",
-        default=0,
-        help="Column index or name for the formula (fmt=formula, default: 0).",
-    )
-    parser_data_convert.add_argument(
-        "--sets",
-        type=int,
-        default=1,
-        help="Random structures per formula (fmt=formula, default: 1).",
-    )
+    parser_data_convert.add_argument("--split-seed", type=int, default=None,
+                                     help="Random seed for train/valid split (SMILES input).")
+    parser_data_convert.add_argument("--conformer-seed", type=int, default=None,
+                                     help="Random seed for RDKit conformer generation (SMILES input).")
+    parser_data_convert.add_argument("--poscar", default=None,
+                                     help="Template POSCAR for fmt=formula.")
+    parser_data_convert.add_argument("--base-element", default=None,
+                                     help="Sublattice element to substitute "
+                                          "(fmt=formula). Auto-inferred if omitted.")
+    parser_data_convert.add_argument("--formula-col", default="formula",
+                                     help="Column index or name for the formula "
+                                          "(fmt=formula, default: formula).")
+    parser_data_convert.add_argument("--sets", type=int, default=1,
+                                     help="Random structures per formula "
+                                          "(fmt=formula, default: 1).")
     parser_data_convert.add_argument("--overwrite", action="store_true")
 
     # data validate

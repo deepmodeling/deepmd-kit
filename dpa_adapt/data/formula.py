@@ -217,20 +217,18 @@ def formula_to_npy(
     csv_path: str,
     output_dir: str,
     poscar: str,
-    formula_col: int | str = 0,
-    property_col: int | str = 1,
-    property_name: str = "property",
+    formula_col: str = "formula",
+    property_col: str = "Property",
+    property_name: str = "Property",
     base_element: str | None = None,
     sets: int = 1,
     seed: int = 42,
 ) -> list[str]:
     """Convert a formula CSV + template POSCAR to ``deepmd/npy`` systems.
 
-    CSV format: two or more columns.  The formula column holds composition
+    CSV format: two or more named columns. The formula column holds composition
     strings (e.g. ``Ni0.65Gd0.15Fe0.10Co0.05Yb0.05O2H1``); the property
-    column holds the scalar target value.  Header auto-detected: if the first
-    data row's property column cannot be parsed as ``float``, that row is
-    skipped as a header.
+    column holds the scalar target value.
 
     For each CSV row, *sets* random doped structures are generated.  Each
     structure is written as a ``deepmd/npy`` system under
@@ -244,13 +242,13 @@ def formula_to_npy(
         Destination directory for ``deepmd/npy`` output.
     poscar : str
         Path to template POSCAR (VASP format).
-    formula_col : int | str
-        Column index (0-based) or column name for the formula.  Default: 0.
-    property_col : int | str
-        Column index (0-based) or column name for the property value.  Default: 1.
+    formula_col : str
+        Column name for the formula.  Default: ``"formula"``.
+    property_col : str
+        Column name for the property value.  Default: ``"Property"``.
     property_name : str
         Label key written into each system (``set.000/{property_name}.npy``).
-        Default: ``"property"``.
+        Default: ``"Property"``.
     base_element : str | None
         Host element for random substitution.  Auto-inferred from the template
         POSCAR when ``None``.
@@ -288,21 +286,25 @@ def formula_to_npy(
                 break
         delimiter = "\t" if "\t" in first_line else ","
         fh.seek(0)
-        reader = csv.reader(fh, delimiter=delimiter)
+        reader = csv.DictReader(fh, delimiter=delimiter)
+        if reader.fieldnames is None:
+            raise ValueError(f"No header row found in formula CSV: {csv_path!r}")
+        formula_header = _resolve_col(formula_col, reader.fieldnames)
+        property_header = _resolve_col(property_col, reader.fieldnames)
         for raw_row in reader:
-            if not raw_row or all(c.strip() == "" for c in raw_row):
+            if raw_row is None or all((v or "").strip() == "" for v in raw_row.values()):
                 continue
-            row_values = [c.strip() for c in raw_row]
-            # Resolve column indices from names if needed.
-            fidx = _resolve_col(formula_col, row_values, allow_name=True)
-            pidx = _resolve_col(property_col, row_values, allow_name=True)
-            formula_str = row_values[fidx]
-            prop_str = row_values[pidx]
+            formula_str = (raw_row.get(formula_header) or "").strip()
+            prop_str = (raw_row.get(property_header) or "").strip()
+            if not formula_str:
+                raise ValueError(f"Empty formula value in column {formula_header!r}")
             try:
                 prop_val = float(prop_str)
             except ValueError:
-                # Likely a header row — skip.
-                continue
+                raise ValueError(
+                    f"Could not parse property value {prop_str!r} "
+                    f"from column {property_header!r}"
+                ) from None
             rows.append((formula_str, prop_val))
 
     if not rows:
@@ -367,21 +369,12 @@ def formula_to_npy(
 
 
 def _resolve_col(
-    spec: int | str,
-    row_values: list[str],
-    allow_name: bool = False,
-) -> int:
-    """Resolve a column specifier to an integer index.
-
-    - *int* → used directly.
-    - *str* + ``allow_name=True`` → looks up the column name in *row_values*
-      (case-insensitive), falling back to ``int(spec)``.
-    """
-    if isinstance(spec, int):
-        return spec
-    if allow_name:
-        lower_map = {v.lower(): i for i, v in enumerate(row_values)}
-        key = spec.lower()
-        if key in lower_map:
-            return lower_map[key]
-    return int(spec)
+    spec: str,
+    fieldnames: list[str],
+) -> str:
+    """Resolve a case-insensitive column name to the exact CSV header."""
+    lower_map = {name.lower(): name for name in fieldnames if name is not None}
+    key = str(spec).lower()
+    if key in lower_map:
+        return lower_map[key]
+    raise KeyError(f"Column {spec!r} not found in CSV header {fieldnames}")

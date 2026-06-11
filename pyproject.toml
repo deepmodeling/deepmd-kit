@@ -155,7 +155,8 @@ jax = [
 
 [tool.deepmd_build_backend.scripts]
 dp = "deepmd.main:main"
-dpa = "dpa_adapt.main:main"
+dpa-adapt = "dpa_adapt.main:main"
+dpaad = "dpa_adapt.main:main"
 
 [dependency-groups]
 dev = [
