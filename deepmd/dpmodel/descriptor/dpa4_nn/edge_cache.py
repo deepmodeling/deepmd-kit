@@ -46,6 +46,11 @@ class EdgeCache:
     (``E = nf * nloc * nnei``); see the module docstring for the layout
     contract. Node-level arrays use the local node axis ``N = nf * nloc``.
 
+    An ``EdgeCache`` must not be reused across forward passes:
+    ``D_to_m_cache``/``Dt_from_m_cache`` are keyed only by ``"lmax:mmax"``,
+    not by the contents of ``D_full``, so reuse with different Wigner blocks
+    would silently return stale projections.
+
     Parameters
     ----------
     src
@@ -55,8 +60,9 @@ class EdgeCache:
     dst
         Destination (center) node indices with shape (E,). In the padded
         layout this is slot-implicit and MUST equal
-        ``arange(nf * nloc)`` repeated ``nnei`` times; aggregation code
-        relies on this ordering.
+        ``arange(nf * nloc)`` with each index repeated ``nnei`` consecutive
+        times (i.e. ``np.repeat(np.arange(nf * nloc), nnei)``;
+        node-contiguous order); aggregation code relies on this ordering.
     edge_type_feat
         Per-edge type embeddings with shape (E, C), computed as src+dst.
     edge_vec
@@ -78,10 +84,13 @@ class EdgeCache:
         Transpose of D_full with shape (E, D, D). None if not available.
     D_to_m_cache
         Lazy cache for projected D matrices keyed by a normalized
-        ``"lmax:mmax"`` identifier.
+        ``"lmax:mmax"`` identifier. The key does not capture the contents
+        of ``D_full``, so the cache is only valid for the forward pass
+        that created this ``EdgeCache`` (see the class docstring).
     Dt_from_m_cache
         Lazy cache for projected Dt matrices keyed by a normalized
-        ``"lmax:mmax"`` identifier.
+        ``"lmax:mmax"`` identifier. Same single-forward-pass validity
+        caveat as ``D_to_m_cache``.
     edge_src_gate
         Optional per-edge Source Freeze Propagation Gate (SFPG) weight with
         shape (E, 1). Present only in bridging mode; ``None`` otherwise.
