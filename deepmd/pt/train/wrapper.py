@@ -198,12 +198,14 @@ class ModelWrapper(torch.nn.Module):
         # treated as constants while coordinate gradients remain enabled.
         if self.inference_only:
             with self._frozen_parameter_context():
-                return self._forward_without_loss(task_key, input_dict)
+                model_pred = self._forward_without_loss(task_key, input_dict)
+            return model_pred, None, None
         # Training wrappers may request predictions without loss construction
         # and still backpropagate those predictions into model parameters
         # (for example, KFWrapper updates).
         if skip_loss:
-            return self._forward_without_loss(task_key, input_dict)
+            model_pred = self._forward_without_loss(task_key, input_dict)
+            return model_pred, None, None
 
         natoms = atype.shape[-1]
         model_pred, loss, more_loss = self.loss[task_key](
@@ -242,14 +244,14 @@ class ModelWrapper(torch.nn.Module):
         self,
         task_key: str,
         input_dict: dict[str, Any],
-    ) -> tuple[Any, None, None]:
+    ) -> Any:
         """Return predictions without constructing a loss."""
         model_pred = self.model[task_key](**input_dict)
         if self.modifier is not None:
             modifier_pred = self.modifier(**input_dict)
             for key, value in modifier_pred.items():
                 model_pred[key] = model_pred[key] + value
-        return model_pred, None, None
+        return model_pred
 
     def set_extra_state(self, state: dict) -> None:
         self.model_params = state["model_params"]
