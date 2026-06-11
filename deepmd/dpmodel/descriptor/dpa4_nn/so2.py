@@ -1236,7 +1236,8 @@ class SO2Convolution(NativeOP):
             if layer_idx != 0 or so2_linear.bias0 is None:
                 return x_local
             bias0 = xp.reshape(
-                so2_linear.bias0[...], (1, self.n_focus, so2_linear.out_channels)
+                xp.asarray(so2_linear.bias0[...], device=device),
+                (1, self.n_focus, so2_linear.out_channels),
             )
             if so2_linear.out_channels == self.so2_focus_dim:
                 radial_factor = rad_feat_l0_focus

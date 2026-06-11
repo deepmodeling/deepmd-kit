@@ -295,7 +295,7 @@ class NativeLayer(NativeOP):
             y = xp.astype(y, x.dtype)
         y = fn(y)
         if self.idt is not None:
-            y = y * self.idt
+            y = y * xp.asarray(self.idt, device=array_api_compat.device(x))
         if self.resnet and self.w.shape[1] == self.w.shape[0]:
             y = y + x
         elif self.resnet and self.w.shape[1] == 2 * self.w.shape[0]:

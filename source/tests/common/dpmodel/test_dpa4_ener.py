@@ -62,7 +62,8 @@ class TestGuards:
     )  # invalid network-collection keys
     def test_network_collection_invalid_key(self, key) -> None:
         fitting = make_fitting()
-        with pytest.raises(ValueError):
+        # __getitem__ raises KeyError per the lookup-method convention
+        with pytest.raises(KeyError):
             fitting.nets[key]
 
 

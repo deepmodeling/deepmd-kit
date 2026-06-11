@@ -248,16 +248,16 @@ class SeZMNetworkCollection:
             else:
                 raise TypeError(key)
             if len(key) != self.ndim:
-                raise ValueError(
+                raise KeyError(
                     f"key {key} has length {len(key)}, expected ndim {self.ndim}"
                 )
             if any(not (0 <= int(tt) < self.ntypes) for tt in key):
-                raise ValueError(
+                raise KeyError(
                     f"key {key} contains type indices outside [0, {self.ntypes})"
                 )
             idx = sum([tt * self.ntypes**ii for ii, tt in enumerate(key)])
         if not (0 <= idx < self.ntypes**self.ndim):
-            raise ValueError(
+            raise KeyError(
                 f"key {key} maps to index {idx}, outside [0, {self.ntypes**self.ndim})"
             )
         return idx
@@ -266,7 +266,7 @@ class SeZMNetworkCollection:
         idx = self._convert_key(key)
         nn = self._networks[idx]
         if nn is None:
-            raise ValueError(f"network for key {key} is not set")
+            raise KeyError(f"network for key {key} is not set")
         return nn
 
     def __setitem__(self, key: int | tuple | str, value: Any) -> None:

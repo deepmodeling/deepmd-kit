@@ -55,7 +55,11 @@ class AtomExcludeMask:
         xp = array_api_compat.array_namespace(atype)
         nf, natom = atype.shape
         return xp.reshape(
-            xp.take(self.type_mask[...], xp.reshape(atype, (-1,)), axis=0),
+            xp.take(
+                xp.asarray(self.type_mask[...], device=array_api_compat.device(atype)),
+                xp.reshape(atype, (-1,)),
+                axis=0,
+            ),
             (nf, natom),
         )
 
