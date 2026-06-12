@@ -54,7 +54,7 @@ model.fit(train_data="/data/qm9", aux_data="/data/spice2")
 ## Data preparation
 
 DPA-ADAPT trains on `deepmd/npy` data. Use `dpa-adapt data convert` (or the Python
-`auto_convert` helper) to route common inputs into the right conversion pipeline:
+`convert` helper) to route common inputs into the right conversion pipeline:
 
 - **SMILES CSV**: a `.csv` file with a `SMILES`/`smiles` column. RDKit generates 3D
   conformers, or existing `.mol`/`.sdf`/`.xyz`/`.pdb` files can be supplied with
@@ -67,19 +67,19 @@ DPA-ADAPT trains on `deepmd/npy` data. Use `dpa-adapt data convert` (or the Pyth
   inputs.
 
 ```python
-from dpa_adapt import auto_convert
+from dpa_adapt import convert
 
 # Structure file / trajectory → dpdata → deepmd/npy
-auto_convert("POSCAR", "./npy")
-auto_convert("OUTCAR", "./npy", fmt="vasp/outcar")
-auto_convert("traj.extxyz", "./npy", fmt="extxyz")
+convert("POSCAR", "./npy")
+convert("OUTCAR", "./npy", fmt="vasp/outcar")
+convert("traj.extxyz", "./npy", fmt="extxyz")
 
 # Glob patterns: one match is converted as one system; multiple matches are batched.
-auto_convert("calcs/**/OUTCAR", "./npy_root", fmt="vasp/outcar")
+convert("calcs/**/OUTCAR", "./npy_root", fmt="vasp/outcar")
 
 # CSV with a SMILES column → RDKit 3D conformers → deepmd/npy.
 # property_col names the input target column and output label name.
-auto_convert(
+convert(
     "molecules.csv",
     "./npy",
     fmt="smiles",          # optional when a SMILES/smiles column is present
@@ -89,7 +89,7 @@ auto_convert(
 )
 
 # CSV + pre-generated molecular structures: skip RDKit conformer generation.
-auto_convert(
+convert(
     "molecules.csv",
     "./npy",
     fmt="smiles",
@@ -103,7 +103,7 @@ auto_convert(
 # CSV: header required; defaults are formula_col="formula" and property_col="Property".
 # e.g.  formula,Property
 #       Ni0.65Gd0.15Fe0.10Co0.05Yb0.05O2H1,291.9
-auto_convert(
+convert(
     "compositions.csv",
     "./npy",
     fmt="formula",
@@ -134,10 +134,10 @@ dpa-adapt data convert --input "calcs/**/OUTCAR" --output ./npy_root --fmt vasp/
 Lower-level helpers:
 
 ```python
-from dpa_adapt import convert, batch_convert, attach_labels, check_data
+from dpa_adapt import convert, attach_labels, check_data
 
 convert("OUTCAR", "./npy", fmt="vasp/outcar")
-batch_convert("calcs/**/OUTCAR", "./npy_root", fmt="vasp/outcar")
+convert("calcs/**/OUTCAR", "./npy_root", fmt="vasp/outcar")
 attach_labels(system, head="bandgap", values=np.array([1.0, 2.0, 3.0]))
 check_data("/data/system")  # → list[Issue]
 ```
@@ -216,11 +216,9 @@ from dpa_adapt import (
     extract_descriptors,  # standalone descriptor extraction
     cross_validate,  # leak-proof cross-validation
     train_test_split,  # formula-grouped splitting
-    auto_convert,  # format-sniffing data conversion
+    convert,  # format-sniffing data conversion
     smiles_to_npy,  # CSV+SMILES → deepmd/npy
     formula_to_npy,  # composition formula CSV + POSCAR → deepmd/npy
-    convert,  # structure file → deepmd/npy
-    batch_convert,  # glob-based batch conversion
     check_data,  # data sanity checks
     attach_labels,  # inject label arrays
     load_dataset,  # label-filtered data loading

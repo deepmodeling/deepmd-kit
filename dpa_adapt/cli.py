@@ -246,32 +246,13 @@ def _cmd_evaluate(args: argparse.Namespace) -> int:
 def _cmd_data_convert(args: argparse.Namespace) -> int:
 
     type_map = _maybe_split_list(args.type_map)
-    input_val = args.input
 
-    # Detect glob patterns — batch mode.
-    if any(ch in input_val for ch in "*?["):
-        from dpa_adapt import (
-            batch_convert,
-        )
-
-        outputs = batch_convert(
-            glob_pattern=input_val,
-            output_dir=args.output,
-            fmt=args.fmt or "auto",
-            type_map=type_map,
-            validate=args.validate,
-            strict=args.strict,
-        )
-        _LOG.info("Wrote %d deepmd/npy dirs under %s", len(outputs), args.output)
-        return 0
-
-    # Single-file mode.
-    from dpa_adapt.data.convert import (
-        auto_convert,
+    from dpa_adapt import (
+        convert,
     )
 
-    result = auto_convert(
-        input_path=input_val,
+    result = convert(
+        input_path=args.input,
         output_dir=args.output,
         fmt=args.fmt,
         type_map=type_map,
@@ -301,6 +282,9 @@ def _cmd_data_convert(args: argparse.Namespace) -> int:
         print(f"Failed rows  : {len(result['failed_rows'])}")
         print(f"Skipped zero : {result['skipped_zero']}")
         print(f"Skipped overlap: {result['skipped_overlap']}")
+    elif result["method"] == "batch_dpdata":
+        print(f"Output dirs  : {len(result['output_dirs'])}")
+        print(f"Manifest     : {result['manifest']}")
     else:
         _LOG.info("Wrote deepmd/npy → %s", result["output_dir"])
     return 0
