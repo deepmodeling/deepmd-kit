@@ -510,7 +510,7 @@ class DPAFineTuner:
                           descriptors once, pool, and fit a scikit-learn
                           regressor (Ridge, KRR, or MLP).  No GPU needed;
                           fastest for small datasets.
-    ``linear_probe``      Freeze the backbone, train only a neural property
+    ``frozen_head``      Freeze the backbone, train only a neural property
                           fitting net via ``dp --pt train``.
     ``finetune``          Fine-tune the full network (descriptor + fitting
                           net) end-to-end via ``dp --pt train``.
@@ -536,7 +536,7 @@ class DPAFineTuner:
     seed : int
         Random seed for the head or for full training.
     strategy : str
-        ``"frozen_sklearn"`` (default), ``"linear_probe"``, ``"finetune"``,
+        ``"frozen_sklearn"`` (default), ``"frozen_head"``, ``"finetune"``,
         or ``"mft"``.
 
     property_name : str
@@ -560,7 +560,7 @@ class DPAFineTuner:
     loss_function : str
         ``"mse"`` or ``"smooth_mae"`` (training paradigms).
     fparam_dim : int
-        (linear_probe / finetune / mft only) Dimensionality of per-frame
+        (frozen_head / finetune / mft only) Dimensionality of per-frame
         condition inputs (e.g. temperature, pressure). Requires
         set.*/fparam.npy of shape (n_frames, fparam_dim) in every
         training system. Default 0 (disabled).
@@ -590,7 +590,7 @@ class DPAFineTuner:
     _VALID_POOLING = {"mean", "sum", "mean+std", "mean+std+max+min"}
     _VALID_STRATEGIES = {
         "frozen_sklearn",
-        "linear_probe",
+        "frozen_head",
         "finetune",
         "mft",
     }
@@ -807,7 +807,7 @@ class DPAFineTuner:
         return tm
 
     # -------------------------------------------------------------------
-    # Training-paradigm fit (linear_probe / finetune)
+    # Training-paradigm fit (frozen_head / finetune)
     # -------------------------------------------------------------------
 
     def _fit_training(self, train_data, valid_data, type_map):
@@ -816,7 +816,7 @@ class DPAFineTuner:
             DPATrainer,
         )
 
-        freeze = self.strategy == "linear_probe"
+        freeze = self.strategy == "frozen_head"
         trainer = DPATrainer(
             pretrained=self.pretrained,
             init_branch=self.init_branch,
@@ -860,7 +860,7 @@ class DPAFineTuner:
         """Train the model.
 
         *frozen_sklearn* (default): extract descriptors, fit sklearn head.
-        *linear_probe* / *finetune*: run ``dp --pt train``.
+        *frozen_head* / *finetune*: run ``dp --pt train``.
         *mft*: multi-task fine-tuning (property head + force-field head).
 
         Parameters

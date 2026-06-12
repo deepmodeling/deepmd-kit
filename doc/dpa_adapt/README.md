@@ -12,17 +12,6 @@ Installs `scikit-learn`, `dpdata`, `ase`, `rdkit`, and `e3nn` alongside DeePMD-k
 
 ## Quickstart
 
-Five lines to fine-tune and predict on CPU:
-
-```python
-from dpa_adapt import DPAFineTuner
-
-model = DPAFineTuner(pretrained="DPA-3.1-3M", strategy="frozen_sklearn", predictor="rf")
-model.fit(train_data="data/train", target_key="bandgap")
-preds = model.predict("data/test").predictions
-model.freeze("model.pth")
-```
-
 For a complete runnable example (QM9 HOMO–LUMO gap, ~5 min on CPU), see [`../../examples/dpa_adapt/`](../../examples/dpa_adapt/).
 
 ## Fine-tuning strategies
@@ -32,7 +21,7 @@ The strategy is the core choice. All four share the same pre-trained DPA backbon
 | Strategy         | Core Mechanism                                  | Target Data Size | Hardware     | Primary Use Case                          |
 | :--------------- | :---------------------------------------------- | :--------------- | :----------- | :---------------------------------------- |
 | `frozen_sklearn` | Frozen backbone + scikit-learn regressor        | Small (\<1k)     | CPU only     | Ultra-fast benchmarking & prototyping     |
-| `linear_probe`   | Frozen backbone + gradient-descent linear head  | Medium (1k–10k)  | CPU / GPU    | Balanced efficiency for linear properties |
+| `frozen_head`    | Frozen backbone + DeepMD property fitting head  | Medium (1k–10k)  | CPU / GPU    | Train only the property head while keeping the pretrained DPA backbone frozen |
 | `finetune`       | End-to-end full parameter fine-tuning           | Large (>10k)     | GPU required | Maximum accuracy on large datasets        |
 | `mft`            | Multi-task co-training (property + force field) | Small / low-data | GPU required | Mitigating representation collapse        |
 
@@ -46,9 +35,9 @@ model = DPAFineTuner(
 )
 model.fit(train_data="/data/train", target_key="homo")
 
-# linear_probe / finetune — same interface, different depth
+# frozen_head / finetune — same interface, different depth
 model = DPAFineTuner(
-    pretrained="DPA-3.1-3M", strategy="linear_probe", property_name="homo"
+    pretrained="DPA-3.1-3M", strategy="frozen_head", property_name="homo"
 )
 model.fit(train_data="/data/train", valid_data="/data/valid", target_key="homo")
 
@@ -111,7 +100,7 @@ model.predict(test_data, conditions={"temperature": T_test})
 # ConditionManager standardizes and concatenates values to the descriptor
 ```
 
-**linear_probe / finetune / mft** — place `fparam.npy` of shape `(nframes, fparam_dim)` in each `set.*/` directory alongside `coord.npy`, then declare the dimension at construction:
+**frozen_head / finetune / mft** — place `fparam.npy` of shape `(nframes, fparam_dim)` in each `set.*/` directory alongside `coord.npy`, then declare the dimension at construction:
 
 ```python
 model = DPAFineTuner(strategy="finetune", fparam_dim=2)
@@ -165,7 +154,7 @@ result = cross_validate(model, systems, label_key="energy", cv=5, group_by="form
 
 ```python
 from dpa_adapt import (
-    DPAFineTuner,  # fine-tune (strategies: frozen_sklearn, linear_probe, finetune, mft)
+    DPAFineTuner,  # fine-tune (strategies: frozen_sklearn, frozen_head, finetune, mft)
     DPAPredictor,  # inference from frozen bundles
     extract_descriptors,  # standalone descriptor extraction
     cross_validate,  # leak-proof cross-validation
@@ -196,7 +185,7 @@ X = extract_descriptors(
 
 | Command | Description |
 |---------|-------------|
-| `dpa-adapt fit` / `dpaad fit` | Fine-tune (`--strategy frozen_sklearn\|linear_probe\|finetune\|mft`) |
+| `dpa-adapt fit` / `dpaad fit` | Fine-tune (`--strategy frozen_sklearn\|frozen_head\|finetune\|mft`) |
 | `dpa-adapt predict` / `dpaad predict` | Predict with a frozen `.pth` bundle |
 | `dpa-adapt evaluate` / `dpaad evaluate` | Evaluate against stored labels |
 | `dpa-adapt extract-descriptors` / `dpaad extract-descriptors` | Extract pooled DPA descriptors to `.npy` |

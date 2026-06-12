@@ -98,6 +98,7 @@ dpa-adapt = [
     "scikit-learn",
     "dpdata",
     "torch",
+    "ase",
     "rdkit",
     "e3nn",
 ]
