@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Entry point for the ``dpa`` CLI.
+"""Entry point for the ``dpa-adapt`` and ``dpaad`` CLIs.
 
 This is the console_script target registered in pyproject.toml.
 """

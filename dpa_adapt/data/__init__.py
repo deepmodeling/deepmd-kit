@@ -2,7 +2,8 @@
 """Data loading, conversion, validation, and SMILES/type-map utilities.
 
 All public names are lazily imported so that ``import dpa_adapt.data``
-(and therefore ``dpa --help``) does not pull in dpdata, torch, or rdkit.
+(and therefore ``dpa-adapt --help`` / ``dpaad --help``) does not pull in
+dpdata, torch, or rdkit.
 """
 
 __all__ = [

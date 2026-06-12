@@ -39,7 +39,7 @@ model.fit(train_data="/data/train", target_key="homo")
 model = DPAFineTuner(
     pretrained="DPA-3.1-3M", strategy="frozen_head", property_name="homo"
 )
-model.fit(train_data="/data/train", valid_data="/data/valid", target_key="homo")
+model.fit(train_data="/data/train", valid_data="/data/valid")
 
 # mft — downstream property head + auxiliary force-field head jointly
 model = DPAFineTuner(
@@ -53,40 +53,97 @@ model.fit(train_data="/data/qm9", aux_data="/data/spice2")
 
 ## Data preparation
 
-Your data must be in `deepmd/npy` format. `auto_convert` detects the input format automatically:
+DPA-ADAPT trains on `deepmd/npy` data. Use `dpa-adapt data convert` (or the Python
+`auto_convert` helper) to route common inputs into the right conversion pipeline:
+
+- **SMILES CSV**: a `.csv` file with a `SMILES`/`smiles` column. RDKit generates 3D
+  conformers, or existing `.mol`/`.sdf`/`.xyz`/`.pdb` files can be supplied with
+  `mol_dir`.
+- **Formula CSV + POSCAR template**: pass `fmt="formula"` and `poscar=...` to create
+  doped structures by random substitution on the host-element sublattice.
+- **Structure files / trajectories**: POSCAR, OUTCAR, `*.xyz`, `vasprun.xml`, ABACUS,
+  CP2K, Gaussian, LAMMPS, ASE, `deepmd/raw`, `deepmd/npy`, LMDB, and other dpdata
+  formats. Omit `fmt` when dpdata can infer it; set `fmt` explicitly for ambiguous
+  inputs.
 
 ```python
 from dpa_adapt import auto_convert
 
-# Structure file → dpdata (POSCAR, OUTCAR, extxyz, cif, …)
+# Structure file / trajectory → dpdata → deepmd/npy
 auto_convert("POSCAR", "./npy")
-auto_convert("calcs/**/OUTCAR", "./npy", fmt="vasp/outcar")  # glob → batch
+auto_convert("OUTCAR", "./npy", fmt="vasp/outcar")
+auto_convert("traj.extxyz", "./npy", fmt="extxyz")
 
-# CSV with SMILES column → RDKit 3D conformers → deepmd/npy
-auto_convert("data.csv", "./npy", property_name="homo", property_col="HOMO")
+# Glob patterns: one match is converted as one system; multiple matches are batched.
+auto_convert("calcs/**/OUTCAR", "./npy_root", fmt="vasp/outcar")
 
-# Composition formula CSV + template POSCAR → random atomic substitution → deepmd/npy
-# CSV: two columns, formula and property value (header optional)
-# e.g.  Ni0.65Gd0.15Fe0.10Co0.05Yb0.05O2H1    291.9
+# CSV with a SMILES column → RDKit 3D conformers → deepmd/npy.
+# property_col names the input target column and output label name.
+auto_convert(
+    "molecules.csv",
+    "./npy",
+    fmt="smiles",          # optional when a SMILES/smiles column is present
+    smiles_col="SMILES",
+    property_col="HOMO",
+    train_ratio=0.9,
+)
+
+# CSV + pre-generated molecular structures: skip RDKit conformer generation.
+auto_convert(
+    "molecules.csv",
+    "./npy",
+    fmt="smiles",
+    smiles_col="SMILES",
+    property_col="GAP",
+    mol_dir="./mol_files",
+    mol_template="id{row}.sdf",
+)
+
+# Composition formula CSV + template POSCAR → random atomic substitution → deepmd/npy.
+# CSV: header required; defaults are formula_col="formula" and property_col="Property".
+# e.g.  formula,Property
+#       Ni0.65Gd0.15Fe0.10Co0.05Yb0.05O2H1,291.9
 auto_convert(
     "compositions.csv",
     "./npy",
     fmt="formula",
     poscar="template.POSCAR",
-    property_name="overpotential",
-    sets=3,  # random doped structures per composition (default: 1)
+    formula_col="formula",
+    property_col="bandgap",
+    sets=3,        # random doped structures per composition row (default: 1)
+    seed=42,
 )
+```
+
+CLI equivalents:
+
+```bash
+# SMILES table
+dpa-adapt data convert --input molecules.csv --output ./npy \
+  --fmt smiles --smiles-col SMILES --property-col HOMO --train-ratio 0.9
+
+# Formula table + POSCAR template
+dpa-adapt data convert --input compositions.csv --output ./npy --fmt formula \
+  --poscar template.POSCAR --formula-col formula --property-col bandgap --sets 3
+
+# Structure file or glob of calculation outputs
+dpa-adapt data convert --input POSCAR --output ./npy
+dpa-adapt data convert --input "calcs/**/OUTCAR" --output ./npy_root --fmt vasp/outcar
 ```
 
 Lower-level helpers:
 
 ```python
-from dpa_adapt import convert, attach_labels, check_data
+from dpa_adapt import convert, batch_convert, attach_labels, check_data
 
-convert("calcs/**/OUTCAR", "./npy", fmt="vasp/outcar")
+convert("OUTCAR", "./npy", fmt="vasp/outcar")
+batch_convert("calcs/**/OUTCAR", "./npy_root", fmt="vasp/outcar")
 attach_labels(system, head="bandgap", values=np.array([1.0, 2.0, 3.0]))
 check_data("/data/system")  # → list[Issue]
 ```
+
+For the full option list and supported dpdata formats, see
+[`input_formats.md`](input_formats.md).
 
 ### Context features (fparam)
 
@@ -161,7 +218,7 @@ from dpa_adapt import (
     train_test_split,  # formula-grouped splitting
     auto_convert,  # format-sniffing data conversion
     smiles_to_npy,  # CSV+SMILES → deepmd/npy
-    formula_csv_to_npy,  # composition formula CSV + POSCAR → deepmd/npy
+    formula_to_npy,  # composition formula CSV + POSCAR → deepmd/npy
     convert,  # structure file → deepmd/npy
     batch_convert,  # glob-based batch conversion
     check_data,  # data sanity checks
@@ -196,10 +253,16 @@ X = extract_descriptors(
 
 ```bash
 # Data conversion
+# Structure file
 dpa-adapt data convert --input POSCAR --output ./npy
-dpaad data convert --input data.csv --output ./npy --property-name homo
-dpa-adapt data convert --input comps.csv --output ./npy \
-  --fmt formula --poscar template.POSCAR --sets 3
+
+# SMILES CSV: --property-col names the input target column and output label name.
+dpaad data convert --input data.csv --output ./npy --fmt smiles \
+  --property-col homo
+
+# Formula CSV + POSCAR template
+dpa-adapt data convert --input comps.csv --output ./npy --fmt formula \
+  --poscar template.POSCAR --formula-col formula --property-col bandgap --sets 3
 
 # Fine-tune
 dpa-adapt fit --train-data ./npy/train --pretrained DPA-3.1-3M \
@@ -210,7 +273,7 @@ dpaad fit --train-data /data/qm9 --aux-data /data/spice2 \
   --pretrained /path/to/DPA-3.1-3M.pt --strategy mft --target-key homo
 
 # Predict / evaluate
-dpa-adapt predict --model model.pth --data ./npy/test
+dpa-adapt predict --model model.pth --data ./npy/test --output pred.npy
 dpa-adapt evaluate --model model.pth --data ./npy/test
 ```
 
