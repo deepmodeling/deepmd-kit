@@ -1,13 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""CLI entry point for the ``dpa`` command.
+"""CLI entry point for the ``dpa-adapt`` and ``dpaad`` commands.
 
-Unlike the deepmd-kit ``dp`` command, ``dpa`` is a standalone CLI that
+Unlike the deepmd-kit ``dp`` command, ``dpa-adapt`` is a standalone CLI that
 focuses solely on DPA model fine-tuning, descriptor extraction,
 cross-validation, prediction, evaluation, and data preparation.
 
-``dpa --help`` does not load torch — the parser is pure argparse and the
-handlers (and the DPA stack) are imported lazily only when a subcommand
-actually runs.
+``dpa-adapt --help`` and ``dpaad --help`` do not load torch — the parser is
+pure argparse and the handlers (and the DPA stack) are imported lazily only
+when a subcommand actually runs.
 """
 
 from __future__ import (
@@ -287,6 +287,7 @@ def _cmd_data_convert(args: argparse.Namespace) -> int:
         formula_col=args.formula_col,
         base_element=args.base_element,
         sets=args.sets,
+        seed=args.seed,
         overwrite=args.overwrite,
         validate=args.validate,
         strict=args.strict,
@@ -376,12 +377,12 @@ _DATA_DISPATCH = {
 
 
 def get_parser() -> argparse.ArgumentParser:
-    """Build the standalone ``dpa`` argument parser.
+    """Build the standalone ``dpa-adapt`` / ``dpaad`` argument parser.
 
     Returns
     -------
     argparse.ArgumentParser
-        The fully configured parser for the ``dpa`` CLI.
+        The fully configured parser for the ``dpa-adapt`` / ``dpaad`` CLI.
     """
     try:
         from dpa_adapt import (
@@ -651,6 +652,9 @@ def get_parser() -> argparse.ArgumentParser:
     parser_data_convert.add_argument("--sets", type=int, default=1,
                                      help="Random structures per formula "
                                           "(fmt=formula, default: 1).")
+    parser_data_convert.add_argument("--seed", type=int, default=42,
+                                     help="Random seed for selecting substituted host-atom sites "
+                                          "(fmt=formula, default: 42).")
     parser_data_convert.add_argument("--overwrite", action="store_true")
 
     # data validate
@@ -682,7 +686,7 @@ def get_parser() -> argparse.ArgumentParser:
 
 
 def main(args: Sequence[str] | None = None) -> None:
-    """Entry point for the ``dpa`` CLI.
+    """Entry point for the ``dpa-adapt`` / ``dpaad`` CLI.
 
     Parameters
     ----------
@@ -712,7 +716,7 @@ def main(args: Sequence[str] | None = None) -> None:
         else:
             handler = _DISPATCH.get(parsed_args.command)
             if handler is None:
-                print(f"Unknown dpa command: {parsed_args.command}", file=sys.stderr)
+                print(f"Unknown dpa-adapt command: {parsed_args.command}", file=sys.stderr)
                 sys.exit(1)
             sys.exit(handler(parsed_args))
     except Exception as exc:

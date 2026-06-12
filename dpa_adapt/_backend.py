@@ -41,13 +41,25 @@ def _is_url_or_name(path: str) -> bool:
 def resolve_pretrained_path(pretrained: str, cache_dir: str | None = None) -> str:
     """Resolve *pretrained* to a local file path, downloading if necessary.
 
-    If *pretrained* is a local path that exists, it is returned unchanged.
-    Otherwise it is treated as a built-in model name (e.g. ``"DPA-3.1-3M"``)
-    and resolved via :func:`deepmd.pretrained.download.resolve_model_path`.
+    If *pretrained* is a local checkpoint path, it is returned unchanged.  This
+    includes non-existing path-like values so callers can raise their own
+    context-specific ``not found`` errors or tests can monkeypatch checkpoint
+    loading.  Bare names (e.g. ``"DPA-3.1-3M"``) are resolved via
+    :func:`deepmd.pretrained.download.resolve_model_path`.
     """
     import os as _os
+    from pathlib import Path as _Path
 
     if _os.path.isfile(pretrained):
+        return pretrained
+
+    p = _Path(pretrained)
+    is_path_like = (
+        p.is_absolute()
+        or any(sep and sep in pretrained for sep in (_os.sep, _os.altsep))
+        or p.suffix.lower() in {".pt", ".pth"}
+    )
+    if is_path_like:
         return pretrained
 
     from deepmd.pretrained.download import resolve_model_path as _download

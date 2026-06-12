@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Smoke tests for the standalone ``dpa`` CLI.
+"""Smoke tests for the standalone ``dpa-adapt`` / ``dpaad`` CLI.
 
 Test that all verbs are reachable, ``--help`` does not trigger eager loading
 of torch or any DPA implementation, and dispatch tables cover all verbs.
@@ -12,8 +12,8 @@ from __future__ import (
 import sys
 
 
-class TestDpaParserRegistration:
-    """Verify all dpa verbs are registered in the standalone parser."""
+class TestDpaAdaptParserRegistration:
+    """Verify all dpa-adapt verbs are registered in the standalone parser."""
 
     def test_dpa_verbs_registered(self):
         from dpa_adapt.cli import (
@@ -50,8 +50,8 @@ class TestDpaParserRegistration:
             assert expected in data_verbs, f"{expected!r} missing from {data_verbs}"
 
 
-class TestDpaHelpNoTorch:
-    """``dpa --help`` must NOT trigger a torch import."""
+class TestDpaAdaptHelpNoTorch:
+    """``dpa-adapt --help`` must NOT trigger a torch import."""
 
     def test_help_does_not_load_torch(self):
         from unittest.mock import (
@@ -80,7 +80,7 @@ class TestDpaHelpNoTorch:
 
         if not torch_already:
             assert "torch" not in sys.modules, (
-                "torch was loaded during dpa --help path!"
+                "torch was loaded during dpa-adapt --help path!"
             )
 
 
