@@ -104,9 +104,9 @@ void DeepPotPTExpt::init(const std::string& model,
                : static_cast<int>(metadata["type_map"].as_array().size());
   dfparam = metadata["dim_fparam"].as_int();
   daparam = metadata["dim_aparam"].as_int();
-  dim_chg_spin = metadata.obj_val.count("dim_chg_spin")
-                     ? metadata["dim_chg_spin"].as_int()
-                     : 0;
+  dchgspin = metadata.obj_val.count("dim_chg_spin")
+                 ? metadata["dim_chg_spin"].as_int()
+                 : 0;
   aparam_nall = false;  // pt_expt models use nloc for aparam
   if (metadata.obj_val.count("has_default_fparam")) {
     has_default_fparam_ = metadata["has_default_fparam"].as_bool();
@@ -132,7 +132,7 @@ void DeepPotPTExpt::init(const std::string& model,
                 << std::endl;
     }
   }
-  default_chg_spin_ = read_default_chg_spin(metadata, dim_chg_spin);
+  default_chg_spin_ = read_default_chg_spin(metadata, dchgspin);
 
   if (metadata.obj_val.count("do_atomic_virial")) {
     do_atomic_virial = metadata["do_atomic_virial"].as_bool();
@@ -241,10 +241,10 @@ std::vector<torch::Tensor> DeepPotPTExpt::run_model(
     const torch::Tensor& nlist,
     const torch::Tensor& mapping,
     const torch::Tensor& fparam,
-    const torch::Tensor& aparam) {
-  // Only include fparam/aparam if the model was exported with them.
-  // When fparam/aparam are None at export time, AOTInductor compiles
-  // the model with fewer inputs (e.g. 4 instead of 6).
+    const torch::Tensor& aparam,
+    const torch::Tensor& charge_spin) {
+  // Only include fparam/aparam/charge_spin if the model was exported with them.
+  // When they are None at export time, AOTInductor compiles with fewer inputs.
   std::vector<torch::Tensor> inputs = {coord, atype, nlist, mapping};
   if (dfparam > 0) {
     inputs.push_back(fparam);
@@ -252,11 +252,7 @@ std::vector<torch::Tensor> DeepPotPTExpt::run_model(
   if (daparam > 0) {
     inputs.push_back(aparam);
   }
-  if (dim_chg_spin > 0) {
-    auto charge_spin = torch::tensor(default_chg_spin_, coord.options())
-                           .view({1, dim_chg_spin})
-                           .expand({coord.size(0), dim_chg_spin})
-                           .contiguous();
+  if (dchgspin > 0) {
     inputs.push_back(charge_spin);
   }
   return loader->run(inputs);
@@ -269,6 +265,7 @@ std::vector<torch::Tensor> DeepPotPTExpt::run_model_with_comm(
     const torch::Tensor& mapping,
     const torch::Tensor& fparam,
     const torch::Tensor& aparam,
+    const torch::Tensor& charge_spin,
     const std::vector<at::Tensor>& comm_tensors) {
   if (!with_comm_loader) {
     throw deepmd::deepmd_exception(
@@ -293,11 +290,7 @@ std::vector<torch::Tensor> DeepPotPTExpt::run_model_with_comm(
   if (daparam > 0) {
     inputs.push_back(aparam);
   }
-  if (dim_chg_spin > 0) {
-    auto charge_spin = torch::tensor(default_chg_spin_, coord.options())
-                           .view({1, dim_chg_spin})
-                           .expand({coord.size(0), dim_chg_spin})
-                           .contiguous();
+  if (dchgspin > 0) {
     inputs.push_back(charge_spin);
   }
   for (const auto& t : comm_tensors) {
@@ -334,6 +327,7 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
                             const int& ago,
                             const std::vector<VALUETYPE>& fparam,
                             const std::vector<VALUETYPE>& aparam,
+                            const std::vector<double>& charge_spin,
                             const bool atomic) {
   // Fail fast before allocating any tensors: refuse to run if the caller
   // asked for atomic virial but the .pt2 was exported without it.
@@ -514,6 +508,39 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
     aparam_tensor = torch::zeros({0}, options).to(device);
   }
 
+  // Build charge_spin tensor: use runtime value when provided, fall back to
+  // default_chg_spin_ stored in the .pt2 metadata.
+  at::Tensor charge_spin_tensor;
+  if (dchgspin > 0) {
+    auto dbl_options = torch::TensorOptions().dtype(torch::kFloat64);
+    if (!charge_spin.empty()) {
+      // Single-frame path: charge_spin must hold exactly dim_chg_spin values.
+      if (static_cast<int>(charge_spin.size()) != dchgspin) {
+        throw deepmd::deepmd_exception(
+            "charge_spin has " + std::to_string(charge_spin.size()) +
+            " values but the model expects dim_chg_spin=" +
+            std::to_string(dchgspin) + ".");
+      }
+      charge_spin_tensor =
+          torch::from_blob(const_cast<double*>(charge_spin.data()),
+                           {1, static_cast<std::int64_t>(charge_spin.size())},
+                           dbl_options)
+              .clone()
+              .to(device);
+    } else if (!default_chg_spin_.empty()) {
+      charge_spin_tensor =
+          torch::from_blob(const_cast<double*>(default_chg_spin_.data()),
+                           {1, dchgspin}, dbl_options)
+              .clone()
+              .to(device);
+    } else {
+      throw deepmd::deepmd_exception(
+          "charge_spin is empty and no default_chg_spin is available in the "
+          ".pt2 metadata. Provide charge_spin explicitly or regenerate the "
+          "model with a default charge/spin value.");
+    }
+  }
+
   // ``use_with_comm`` was computed earlier alongside the fail-fast
   // dispatch check.  Use the with-comm artifact for the multi-rank case
   // (the regular artifact uses the mapping tensor to gather ghost
@@ -545,10 +572,11 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
     }
     flat_outputs = run_model_with_comm(
         coord_Tensor, atype_Tensor, firstneigh_tensor, mapping_tensor,
-        fparam_tensor, aparam_tensor, comm_tensors);
+        fparam_tensor, aparam_tensor, charge_spin_tensor, comm_tensors);
   } else {
-    flat_outputs = run_model(coord_Tensor, atype_Tensor, firstneigh_tensor,
-                             mapping_tensor, fparam_tensor, aparam_tensor);
+    flat_outputs =
+        run_model(coord_Tensor, atype_Tensor, firstneigh_tensor, mapping_tensor,
+                  fparam_tensor, aparam_tensor, charge_spin_tensor);
   }
 
   // Map flat outputs to internal keys
@@ -624,6 +652,7 @@ template void DeepPotPTExpt::compute<double, std::vector<ENERGYTYPE>>(
     const int& ago,
     const std::vector<double>& fparam,
     const std::vector<double>& aparam,
+    const std::vector<double>& charge_spin,
     const bool atomic);
 template void DeepPotPTExpt::compute<float, std::vector<ENERGYTYPE>>(
     std::vector<ENERGYTYPE>& ener,
@@ -639,6 +668,7 @@ template void DeepPotPTExpt::compute<float, std::vector<ENERGYTYPE>>(
     const int& ago,
     const std::vector<float>& fparam,
     const std::vector<float>& aparam,
+    const std::vector<double>& charge_spin,
     const bool atomic);
 
 template <typename VALUETYPE, typename ENERGYVTYPE>
@@ -652,6 +682,7 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
                             const std::vector<VALUETYPE>& box,
                             const std::vector<VALUETYPE>& fparam,
                             const std::vector<VALUETYPE>& aparam,
+                            const std::vector<double>& charge_spin,
                             const bool atomic) {
   // Fail fast before allocating any tensors (same check as the nlist
   // overload — see its comment).
@@ -668,7 +699,7 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   if (nframes > 1) {
     // Multi-frame: loop over frames and concatenate
     compute_nframes(ener, force, virial, atom_energy, atom_virial, nframes,
-                    coord, atype, box, fparam, aparam, atomic);
+                    coord, atype, box, fparam, aparam, charge_spin, atomic);
     return;
   }
   // The .pt2 model only contains forward_common_lower, which requires
@@ -808,9 +839,43 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
     aparam_tensor = torch::zeros({0}, options).to(device);
   }
 
+  // Build charge_spin tensor: use runtime value when provided, fall back to
+  // default_chg_spin_ stored in the .pt2 metadata.
+  at::Tensor charge_spin_tensor;
+  if (dchgspin > 0) {
+    auto dbl_options = torch::TensorOptions().dtype(torch::kFloat64);
+    if (!charge_spin.empty()) {
+      // Single-frame path: charge_spin must hold exactly dim_chg_spin values.
+      if (static_cast<int>(charge_spin.size()) != dchgspin) {
+        throw deepmd::deepmd_exception(
+            "charge_spin has " + std::to_string(charge_spin.size()) +
+            " values but the model expects dim_chg_spin=" +
+            std::to_string(dchgspin) + ".");
+      }
+      charge_spin_tensor =
+          torch::from_blob(const_cast<double*>(charge_spin.data()),
+                           {1, static_cast<std::int64_t>(charge_spin.size())},
+                           dbl_options)
+              .clone()
+              .to(device);
+    } else if (!default_chg_spin_.empty()) {
+      charge_spin_tensor =
+          torch::from_blob(const_cast<double*>(default_chg_spin_.data()),
+                           {1, dchgspin}, dbl_options)
+              .clone()
+              .to(device);
+    } else {
+      throw deepmd::deepmd_exception(
+          "charge_spin is empty and no default_chg_spin is available in the "
+          ".pt2 metadata. Provide charge_spin explicitly or regenerate the "
+          "model with a default charge/spin value.");
+    }
+  }
+
   // 5. Run the .pt2 model
-  auto flat_outputs = run_model(coord_Tensor, atype_Tensor, nlist_tensor,
-                                mapping_tensor, fparam_tensor, aparam_tensor);
+  auto flat_outputs =
+      run_model(coord_Tensor, atype_Tensor, nlist_tensor, mapping_tensor,
+                fparam_tensor, aparam_tensor, charge_spin_tensor);
 
   // 6. Map flat outputs to internal keys
   std::map<std::string, torch::Tensor> output_map;
@@ -874,10 +939,26 @@ void DeepPotPTExpt::compute_nframes(ENERGYVTYPE& ener,
                                     const std::vector<VALUETYPE>& box,
                                     const std::vector<VALUETYPE>& fparam,
                                     const std::vector<VALUETYPE>& aparam,
+                                    const std::vector<double>& charge_spin,
                                     const bool atomic) {
   int natoms = atype.size();
   int dap = aparam.empty() ? 0 : static_cast<int>(aparam.size()) / nframes;
   int dfp = fparam.empty() ? 0 : static_cast<int>(fparam.size()) / nframes;
+  // charge_spin may be empty (default fallback), a single dim_chg_spin vector
+  // (broadcast to all frames), or nframes * dim_chg_spin (per-frame). Reject
+  // anything else up-front to avoid out-of-range slicing in the loop.
+  if (!charge_spin.empty()) {
+    size_t s_dcsp = static_cast<size_t>(dchgspin);
+    if (charge_spin.size() != s_dcsp &&
+        charge_spin.size() != s_dcsp * static_cast<size_t>(nframes)) {
+      throw deepmd::deepmd_exception(
+          "charge_spin has " + std::to_string(charge_spin.size()) +
+          " values but the model expects dim_chg_spin=" +
+          std::to_string(dchgspin) + " (per frame) or " +
+          std::to_string(dchgspin * nframes) + " (for " +
+          std::to_string(nframes) + " frames).");
+    }
+  }
   ener.clear();
   force.clear();
   virial.clear();
@@ -907,10 +988,22 @@ void DeepPotPTExpt::compute_nframes(ENERGYVTYPE& ener,
       frame_aparam.assign(aparam.begin() + s_ff * s_dap,
                           aparam.begin() + (s_ff + 1) * s_dap);
     }
+    std::vector<double> frame_chg_spin;
+    if (!charge_spin.empty()) {
+      size_t s_dcsp = static_cast<size_t>(dchgspin);
+      if (charge_spin.size() == s_dcsp) {
+        // single charge/spin vector broadcast to every frame
+        frame_chg_spin = charge_spin;
+      } else {
+        frame_chg_spin.assign(charge_spin.begin() + s_ff * s_dcsp,
+                              charge_spin.begin() + (s_ff + 1) * s_dcsp);
+      }
+    }
     std::vector<ENERGYTYPE> frame_ener;
     std::vector<VALUETYPE> frame_force, frame_virial, frame_ae, frame_av;
     compute(frame_ener, frame_force, frame_virial, frame_ae, frame_av,
-            frame_coord, atype, frame_box, frame_fparam, frame_aparam, atomic);
+            frame_coord, atype, frame_box, frame_fparam, frame_aparam,
+            frame_chg_spin, atomic);
     ener.insert(ener.end(), frame_ener.begin(), frame_ener.end());
     force.insert(force.end(), frame_force.begin(), frame_force.end());
     virial.insert(virial.end(), frame_virial.begin(), frame_virial.end());
@@ -932,6 +1025,7 @@ template void DeepPotPTExpt::compute<double, std::vector<ENERGYTYPE>>(
     const std::vector<double>& box,
     const std::vector<double>& fparam,
     const std::vector<double>& aparam,
+    const std::vector<double>& charge_spin,
     const bool atomic);
 template void DeepPotPTExpt::compute<float, std::vector<ENERGYTYPE>>(
     std::vector<ENERGYTYPE>& ener,
@@ -944,6 +1038,7 @@ template void DeepPotPTExpt::compute<float, std::vector<ENERGYTYPE>>(
     const std::vector<float>& box,
     const std::vector<float>& fparam,
     const std::vector<float>& aparam,
+    const std::vector<double>& charge_spin,
     const bool atomic);
 
 void DeepPotPTExpt::get_type_map(std::string& type_map_str) {
@@ -953,7 +1048,7 @@ void DeepPotPTExpt::get_type_map(std::string& type_map_str) {
   }
 }
 
-// forward to template method
+// forward to template method (no runtime charge_spin — uses default_chg_spin_)
 void DeepPotPTExpt::computew(std::vector<double>& ener,
                              std::vector<double>& force,
                              std::vector<double>& virial,
@@ -967,7 +1062,7 @@ void DeepPotPTExpt::computew(std::vector<double>& ener,
                              const bool atomic) {
   translate_error([&] {
     compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
-            fparam, aparam, atomic);
+            fparam, aparam, {}, atomic);
   });
 }
 void DeepPotPTExpt::computew(std::vector<double>& ener,
@@ -983,7 +1078,7 @@ void DeepPotPTExpt::computew(std::vector<double>& ener,
                              const bool atomic) {
   translate_error([&] {
     compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
-            fparam, aparam, atomic);
+            fparam, aparam, {}, atomic);
   });
 }
 void DeepPotPTExpt::computew(std::vector<double>& ener,
@@ -1002,7 +1097,7 @@ void DeepPotPTExpt::computew(std::vector<double>& ener,
                              const bool atomic) {
   translate_error([&] {
     compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
-            nghost, inlist, ago, fparam, aparam, atomic);
+            nghost, inlist, ago, fparam, aparam, {}, atomic);
   });
 }
 void DeepPotPTExpt::computew(std::vector<double>& ener,
@@ -1021,7 +1116,7 @@ void DeepPotPTExpt::computew(std::vector<double>& ener,
                              const bool atomic) {
   translate_error([&] {
     compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
-            nghost, inlist, ago, fparam, aparam, atomic);
+            nghost, inlist, ago, fparam, aparam, {}, atomic);
   });
 }
 template <typename VALUETYPE>
@@ -1037,12 +1132,28 @@ void DeepPotPTExpt::compute_mixed_type_impl(
     const std::vector<VALUETYPE>& box,
     const std::vector<VALUETYPE>& fparam,
     const std::vector<VALUETYPE>& aparam,
+    const std::vector<double>& charge_spin,
     const bool atomic) {
   // Mixed-type: atype has nframes * natoms elements.
   // Loop over frames, each with its own atype slice.
   int natoms = static_cast<int>(atype.size()) / nframes;
   int dap = aparam.empty() ? 0 : static_cast<int>(aparam.size()) / nframes;
   int dfp = fparam.empty() ? 0 : static_cast<int>(fparam.size()) / nframes;
+  // charge_spin may be empty (default fallback), a single dim_chg_spin vector
+  // (broadcast to all frames), or nframes * dim_chg_spin (per-frame). Reject
+  // anything else up-front to avoid out-of-range slicing in the loop.
+  if (!charge_spin.empty()) {
+    size_t s_dcsp = static_cast<size_t>(dchgspin);
+    if (charge_spin.size() != s_dcsp &&
+        charge_spin.size() != s_dcsp * static_cast<size_t>(nframes)) {
+      throw deepmd::deepmd_exception(
+          "charge_spin has " + std::to_string(charge_spin.size()) +
+          " values but the model expects dim_chg_spin=" +
+          std::to_string(dchgspin) + " (per frame) or " +
+          std::to_string(dchgspin * nframes) + " (for " +
+          std::to_string(nframes) + " frames).");
+    }
+  }
   ener.clear();
   force.clear();
   virial.clear();
@@ -1074,11 +1185,22 @@ void DeepPotPTExpt::compute_mixed_type_impl(
       frame_aparam.assign(aparam.begin() + s_ff * s_dap,
                           aparam.begin() + (s_ff + 1) * s_dap);
     }
+    std::vector<double> frame_chg_spin;
+    if (!charge_spin.empty()) {
+      size_t s_dcsp = static_cast<size_t>(dchgspin);
+      if (charge_spin.size() == s_dcsp) {
+        // single charge/spin vector broadcast to every frame
+        frame_chg_spin = charge_spin;
+      } else {
+        frame_chg_spin.assign(charge_spin.begin() + s_ff * s_dcsp,
+                              charge_spin.begin() + (s_ff + 1) * s_dcsp);
+      }
+    }
     std::vector<ENERGYTYPE> frame_ener;
     std::vector<VALUETYPE> frame_force, frame_virial, frame_ae, frame_av;
     compute(frame_ener, frame_force, frame_virial, frame_ae, frame_av,
             frame_coord, frame_atype, frame_box, frame_fparam, frame_aparam,
-            atomic);
+            frame_chg_spin, atomic);
     ener.insert(ener.end(), frame_ener.begin(), frame_ener.end());
     force.insert(force.end(), frame_force.begin(), frame_force.end());
     virial.insert(virial.end(), frame_virial.begin(), frame_virial.end());
@@ -1103,7 +1225,8 @@ void DeepPotPTExpt::computew_mixed_type(std::vector<double>& ener,
                                         const bool atomic) {
   translate_error([&] {
     compute_mixed_type_impl(ener, force, virial, atom_energy, atom_virial,
-                            nframes, coord, atype, box, fparam, aparam, atomic);
+                            nframes, coord, atype, box, fparam, aparam, {},
+                            atomic);
   });
 }
 void DeepPotPTExpt::computew_mixed_type(std::vector<double>& ener,
@@ -1120,7 +1243,122 @@ void DeepPotPTExpt::computew_mixed_type(std::vector<double>& ener,
                                         const bool atomic) {
   translate_error([&] {
     compute_mixed_type_impl(ener, force, virial, atom_energy, atom_virial,
-                            nframes, coord, atype, box, fparam, aparam, atomic);
+                            nframes, coord, atype, box, fparam, aparam, {},
+                            atomic);
+  });
+}
+
+// charge_spin overloads — pass runtime charge/spin value through to compute()
+void DeepPotPTExpt::computew(std::vector<double>& ener,
+                             std::vector<double>& force,
+                             std::vector<double>& virial,
+                             std::vector<double>& atom_energy,
+                             std::vector<double>& atom_virial,
+                             const std::vector<double>& coord,
+                             const std::vector<int>& atype,
+                             const std::vector<double>& box,
+                             const std::vector<double>& fparam,
+                             const std::vector<double>& aparam,
+                             const std::vector<double>& charge_spin,
+                             const bool atomic) {
+  translate_error([&] {
+    compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
+            fparam, aparam, charge_spin, atomic);
+  });
+}
+void DeepPotPTExpt::computew(std::vector<double>& ener,
+                             std::vector<float>& force,
+                             std::vector<float>& virial,
+                             std::vector<float>& atom_energy,
+                             std::vector<float>& atom_virial,
+                             const std::vector<float>& coord,
+                             const std::vector<int>& atype,
+                             const std::vector<float>& box,
+                             const std::vector<float>& fparam,
+                             const std::vector<float>& aparam,
+                             const std::vector<double>& charge_spin,
+                             const bool atomic) {
+  translate_error([&] {
+    compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
+            fparam, aparam, charge_spin, atomic);
+  });
+}
+void DeepPotPTExpt::computew(std::vector<double>& ener,
+                             std::vector<double>& force,
+                             std::vector<double>& virial,
+                             std::vector<double>& atom_energy,
+                             std::vector<double>& atom_virial,
+                             const std::vector<double>& coord,
+                             const std::vector<int>& atype,
+                             const std::vector<double>& box,
+                             const int nghost,
+                             const InputNlist& inlist,
+                             const int& ago,
+                             const std::vector<double>& fparam,
+                             const std::vector<double>& aparam,
+                             const std::vector<double>& charge_spin,
+                             const bool atomic) {
+  translate_error([&] {
+    compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
+            nghost, inlist, ago, fparam, aparam, charge_spin, atomic);
+  });
+}
+void DeepPotPTExpt::computew(std::vector<double>& ener,
+                             std::vector<float>& force,
+                             std::vector<float>& virial,
+                             std::vector<float>& atom_energy,
+                             std::vector<float>& atom_virial,
+                             const std::vector<float>& coord,
+                             const std::vector<int>& atype,
+                             const std::vector<float>& box,
+                             const int nghost,
+                             const InputNlist& inlist,
+                             const int& ago,
+                             const std::vector<float>& fparam,
+                             const std::vector<float>& aparam,
+                             const std::vector<double>& charge_spin,
+                             const bool atomic) {
+  translate_error([&] {
+    compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
+            nghost, inlist, ago, fparam, aparam, charge_spin, atomic);
+  });
+}
+void DeepPotPTExpt::computew_mixed_type(std::vector<double>& ener,
+                                        std::vector<double>& force,
+                                        std::vector<double>& virial,
+                                        std::vector<double>& atom_energy,
+                                        std::vector<double>& atom_virial,
+                                        const int& nframes,
+                                        const std::vector<double>& coord,
+                                        const std::vector<int>& atype,
+                                        const std::vector<double>& box,
+                                        const std::vector<double>& fparam,
+                                        const std::vector<double>& aparam,
+                                        const std::vector<double>& charge_spin,
+                                        const bool atomic) {
+  translate_error([&] {
+    compute_mixed_type_impl(ener, force, virial, atom_energy, atom_virial,
+                            nframes, coord, atype, box, fparam, aparam,
+                            charge_spin, atomic);
+  });
+}
+void DeepPotPTExpt::computew_mixed_type(std::vector<double>& ener,
+                                        std::vector<float>& force,
+                                        std::vector<float>& virial,
+                                        std::vector<float>& atom_energy,
+                                        std::vector<float>& atom_virial,
+                                        const int& nframes,
+                                        const std::vector<float>& coord,
+                                        const std::vector<int>& atype,
+                                        const std::vector<float>& box,
+                                        const std::vector<float>& fparam,
+                                        const std::vector<float>& aparam,
+                                        const std::vector<double>& charge_spin,
+                                        const bool atomic) {
+  translate_error([&] {
+    compute_mixed_type_impl(ener, force, virial, atom_energy, atom_virial,
+                            nframes, coord, atype, box, fparam, aparam,
+                            charge_spin, atomic);
   });
 }
 #endif

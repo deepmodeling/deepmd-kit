@@ -87,9 +87,12 @@ else:
 	PID5=$!
 	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_model_devi.py &
 	PID6=$!
+	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_chg_spin.py &
+	PID9=$!
 	wait $PID4
 	wait $PID5
 	wait $PID6
+	wait $PID9
 
 	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_spin.py &
 	PID7=$!

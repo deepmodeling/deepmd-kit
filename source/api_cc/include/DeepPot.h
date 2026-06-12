@@ -198,6 +198,115 @@ class DeepPotBackend : public DeepBaseModelBackend {
                                    const std::vector<float>& aparam,
                                    const bool atomic) = 0;
   /** @} */
+
+  /**
+   * @brief Get dimension of charge/spin condition inputs.
+   * Returns 0 for backends that do not support charge/spin conditioning.
+   **/
+  virtual int dim_chg_spin() const { return 0; }
+
+  // charge_spin-aware computew overloads.  Default implementations call the
+  // existing pure-virtual overloads (ignoring charge_spin) so that backends
+  // that do not support charge/spin do not need any changes.  DeepPotPTExpt
+  // overrides these to thread charge_spin through to the model.
+  virtual void computew(std::vector<double>& ener,
+                        std::vector<double>& force,
+                        std::vector<double>& virial,
+                        std::vector<double>& atom_energy,
+                        std::vector<double>& atom_virial,
+                        const std::vector<double>& coord,
+                        const std::vector<int>& atype,
+                        const std::vector<double>& box,
+                        const std::vector<double>& fparam,
+                        const std::vector<double>& aparam,
+                        const std::vector<double>& charge_spin,
+                        const bool atomic) {
+    computew(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
+             fparam, aparam, atomic);
+  }
+  virtual void computew(std::vector<double>& ener,
+                        std::vector<float>& force,
+                        std::vector<float>& virial,
+                        std::vector<float>& atom_energy,
+                        std::vector<float>& atom_virial,
+                        const std::vector<float>& coord,
+                        const std::vector<int>& atype,
+                        const std::vector<float>& box,
+                        const std::vector<float>& fparam,
+                        const std::vector<float>& aparam,
+                        const std::vector<double>& charge_spin,
+                        const bool atomic) {
+    computew(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
+             fparam, aparam, atomic);
+  }
+  virtual void computew(std::vector<double>& ener,
+                        std::vector<double>& force,
+                        std::vector<double>& virial,
+                        std::vector<double>& atom_energy,
+                        std::vector<double>& atom_virial,
+                        const std::vector<double>& coord,
+                        const std::vector<int>& atype,
+                        const std::vector<double>& box,
+                        const int nghost,
+                        const InputNlist& inlist,
+                        const int& ago,
+                        const std::vector<double>& fparam,
+                        const std::vector<double>& aparam,
+                        const std::vector<double>& charge_spin,
+                        const bool atomic) {
+    computew(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
+             nghost, inlist, ago, fparam, aparam, atomic);
+  }
+  virtual void computew(std::vector<double>& ener,
+                        std::vector<float>& force,
+                        std::vector<float>& virial,
+                        std::vector<float>& atom_energy,
+                        std::vector<float>& atom_virial,
+                        const std::vector<float>& coord,
+                        const std::vector<int>& atype,
+                        const std::vector<float>& box,
+                        const int nghost,
+                        const InputNlist& inlist,
+                        const int& ago,
+                        const std::vector<float>& fparam,
+                        const std::vector<float>& aparam,
+                        const std::vector<double>& charge_spin,
+                        const bool atomic) {
+    computew(ener, force, virial, atom_energy, atom_virial, coord, atype, box,
+             nghost, inlist, ago, fparam, aparam, atomic);
+  }
+  virtual void computew_mixed_type(std::vector<double>& ener,
+                                   std::vector<double>& force,
+                                   std::vector<double>& virial,
+                                   std::vector<double>& atom_energy,
+                                   std::vector<double>& atom_virial,
+                                   const int& nframes,
+                                   const std::vector<double>& coord,
+                                   const std::vector<int>& atype,
+                                   const std::vector<double>& box,
+                                   const std::vector<double>& fparam,
+                                   const std::vector<double>& aparam,
+                                   const std::vector<double>& charge_spin,
+                                   const bool atomic) {
+    computew_mixed_type(ener, force, virial, atom_energy, atom_virial, nframes,
+                        coord, atype, box, fparam, aparam, atomic);
+  }
+  virtual void computew_mixed_type(std::vector<double>& ener,
+                                   std::vector<float>& force,
+                                   std::vector<float>& virial,
+                                   std::vector<float>& atom_energy,
+                                   std::vector<float>& atom_virial,
+                                   const int& nframes,
+                                   const std::vector<float>& coord,
+                                   const std::vector<int>& atype,
+                                   const std::vector<float>& box,
+                                   const std::vector<float>& fparam,
+                                   const std::vector<float>& aparam,
+                                   const std::vector<double>& charge_spin,
+                                   const bool atomic) {
+    computew_mixed_type(ener, force, virial, atom_energy, atom_virial, nframes,
+                        coord, atype, box, fparam, aparam, atomic);
+  }
 };
 
 /**
@@ -259,7 +368,8 @@ class DeepPot : public DeepBaseModel {
                const std::vector<int>& atype,
                const std::vector<VALUETYPE>& box,
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+               const std::vector<double>& charge_spin = std::vector<double>());
   template <typename VALUETYPE>
   void compute(std::vector<ENERGYTYPE>& ener,
                std::vector<VALUETYPE>& force,
@@ -268,7 +378,8 @@ class DeepPot : public DeepBaseModel {
                const std::vector<int>& atype,
                const std::vector<VALUETYPE>& box,
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+               const std::vector<double>& charge_spin = std::vector<double>());
   /** @} */
   /**
    * @brief Evaluate the energy, force and virial by using this DP.
@@ -304,7 +415,8 @@ class DeepPot : public DeepBaseModel {
                const InputNlist& inlist,
                const int& ago,
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+               const std::vector<double>& charge_spin = std::vector<double>());
   template <typename VALUETYPE>
   void compute(std::vector<ENERGYTYPE>& ener,
                std::vector<VALUETYPE>& force,
@@ -316,7 +428,8 @@ class DeepPot : public DeepBaseModel {
                const InputNlist& inlist,
                const int& ago,
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+               const std::vector<double>& charge_spin = std::vector<double>());
   /** @} */
   /**
    * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
@@ -351,7 +464,8 @@ class DeepPot : public DeepBaseModel {
                const std::vector<int>& atype,
                const std::vector<VALUETYPE>& box,
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+               const std::vector<double>& charge_spin = std::vector<double>());
   template <typename VALUETYPE>
   void compute(std::vector<ENERGYTYPE>& ener,
                std::vector<VALUETYPE>& force,
@@ -362,7 +476,8 @@ class DeepPot : public DeepBaseModel {
                const std::vector<int>& atype,
                const std::vector<VALUETYPE>& box,
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+               const std::vector<double>& charge_spin = std::vector<double>());
   /** @} */
 
   /**
@@ -404,7 +519,8 @@ class DeepPot : public DeepBaseModel {
                const InputNlist& lmp_list,
                const int& ago,
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+               const std::vector<double>& charge_spin = std::vector<double>());
   template <typename VALUETYPE>
   void compute(std::vector<ENERGYTYPE>& ener,
                std::vector<VALUETYPE>& force,
@@ -418,7 +534,8 @@ class DeepPot : public DeepBaseModel {
                const InputNlist& lmp_list,
                const int& ago,
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+               const std::vector<double>& charge_spin = std::vector<double>());
   /** @} */
   /**
    * @brief Evaluate the energy, force, and virial with the mixed type
@@ -453,7 +570,8 @@ class DeepPot : public DeepBaseModel {
       const std::vector<int>& atype,
       const std::vector<VALUETYPE>& box,
       const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+      const std::vector<double>& charge_spin = std::vector<double>());
   template <typename VALUETYPE>
   void compute_mixed_type(
       std::vector<ENERGYTYPE>& ener,
@@ -464,7 +582,8 @@ class DeepPot : public DeepBaseModel {
       const std::vector<int>& atype,
       const std::vector<VALUETYPE>& box,
       const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+      const std::vector<double>& charge_spin = std::vector<double>());
   /** @} */
   /**
    * @brief Evaluate the energy, force, and virial with the mixed type
@@ -503,7 +622,8 @@ class DeepPot : public DeepBaseModel {
       const std::vector<int>& atype,
       const std::vector<VALUETYPE>& box,
       const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+      const std::vector<double>& charge_spin = std::vector<double>());
   template <typename VALUETYPE>
   void compute_mixed_type(
       std::vector<ENERGYTYPE>& ener,
@@ -516,8 +636,12 @@ class DeepPot : public DeepBaseModel {
       const std::vector<int>& atype,
       const std::vector<VALUETYPE>& box,
       const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+      const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+      const std::vector<double>& charge_spin = std::vector<double>());
   /** @} */
+
+  int dim_chg_spin() const;
+
  protected:
   std::shared_ptr<deepmd::DeepPotBackend> dp;
 };
@@ -553,6 +677,16 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
                 std::vector<std::string>());
 
   /**
+   * @brief Get the dimension of the charge/spin input.
+   * @return The dimension of the charge/spin input (0 if the models have no
+   *charge/spin embedding). Taken from the first model; all models are assumed
+   *to share the same value.
+   **/
+  int dim_chg_spin() const {
+    return numb_models > 0 ? dps[0]->dim_chg_spin() : 0;
+  };
+
+  /**
    * @brief Evaluate the energy, force and virial by using these DP models.
    * @param[out] all_ener The system energies of all models.
    * @param[out] all_force The forces on each atom of all models.
@@ -580,7 +714,8 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
                const std::vector<int>& atype,
                const std::vector<VALUETYPE>& box,
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+               const std::vector<double>& charge_spin = std::vector<double>());
 
   /**
    * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
@@ -615,7 +750,8 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
                const std::vector<int>& atype,
                const std::vector<VALUETYPE>& box,
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+               const std::vector<double>& charge_spin = std::vector<double>());
 
   /**
    * @brief Evaluate the energy, force and virial by using these DP models.
@@ -651,7 +787,8 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
                const InputNlist& lmp_list,
                const int& ago,
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+               const std::vector<double>& charge_spin = std::vector<double>());
   /**
    * @brief Evaluate the energy, force, virial, atomic energy, and atomic virial
    *by using these DP models.
@@ -691,7 +828,8 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
                const InputNlist& lmp_list,
                const int& ago,
                const std::vector<VALUETYPE>& fparam = std::vector<VALUETYPE>(),
-               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>());
+               const std::vector<VALUETYPE>& aparam = std::vector<VALUETYPE>(),
+               const std::vector<double>& charge_spin = std::vector<double>());
 
  protected:
   std::vector<std::shared_ptr<deepmd::DeepPot>> dps;

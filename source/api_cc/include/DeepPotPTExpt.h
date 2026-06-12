@@ -77,6 +77,7 @@ class DeepPotPTExpt : public DeepPotBackend {
                const int& ago,
                const std::vector<VALUETYPE>& fparam,
                const std::vector<VALUETYPE>& aparam,
+               const std::vector<double>& charge_spin,
                const bool atomic);
   /**
    * @brief Evaluate without nlist (standalone — builds nlist, folds back).
@@ -92,6 +93,7 @@ class DeepPotPTExpt : public DeepPotBackend {
                const std::vector<VALUETYPE>& box,
                const std::vector<VALUETYPE>& fparam,
                const std::vector<VALUETYPE>& aparam,
+               const std::vector<double>& charge_spin,
                const bool atomic);
 
  public:
@@ -115,6 +117,10 @@ class DeepPotPTExpt : public DeepPotBackend {
     assert(inited);
     return daparam;
   };
+  int dim_chg_spin() const override {
+    assert(inited);
+    return dchgspin;
+  };
   void get_type_map(std::string& type_map);
   bool is_aparam_nall() const {
     assert(inited);
@@ -125,7 +131,8 @@ class DeepPotPTExpt : public DeepPotBackend {
     return has_default_fparam_;
   };
 
-  // forward to template class
+  // forward to template class (no charge_spin — uses default_chg_spin_
+  // fallback)
   void computew(std::vector<double>& ener,
                 std::vector<double>& force,
                 std::vector<double>& virial,
@@ -201,12 +208,94 @@ class DeepPotPTExpt : public DeepPotBackend {
                            const std::vector<float>& aparam,
                            const bool atomic);
 
+  // charge_spin overloads — pass runtime charge/spin per call
+  void computew(std::vector<double>& ener,
+                std::vector<double>& force,
+                std::vector<double>& virial,
+                std::vector<double>& atom_energy,
+                std::vector<double>& atom_virial,
+                const std::vector<double>& coord,
+                const std::vector<int>& atype,
+                const std::vector<double>& box,
+                const std::vector<double>& fparam,
+                const std::vector<double>& aparam,
+                const std::vector<double>& charge_spin,
+                const bool atomic) override;
+  void computew(std::vector<double>& ener,
+                std::vector<float>& force,
+                std::vector<float>& virial,
+                std::vector<float>& atom_energy,
+                std::vector<float>& atom_virial,
+                const std::vector<float>& coord,
+                const std::vector<int>& atype,
+                const std::vector<float>& box,
+                const std::vector<float>& fparam,
+                const std::vector<float>& aparam,
+                const std::vector<double>& charge_spin,
+                const bool atomic) override;
+  void computew(std::vector<double>& ener,
+                std::vector<double>& force,
+                std::vector<double>& virial,
+                std::vector<double>& atom_energy,
+                std::vector<double>& atom_virial,
+                const std::vector<double>& coord,
+                const std::vector<int>& atype,
+                const std::vector<double>& box,
+                const int nghost,
+                const InputNlist& inlist,
+                const int& ago,
+                const std::vector<double>& fparam,
+                const std::vector<double>& aparam,
+                const std::vector<double>& charge_spin,
+                const bool atomic) override;
+  void computew(std::vector<double>& ener,
+                std::vector<float>& force,
+                std::vector<float>& virial,
+                std::vector<float>& atom_energy,
+                std::vector<float>& atom_virial,
+                const std::vector<float>& coord,
+                const std::vector<int>& atype,
+                const std::vector<float>& box,
+                const int nghost,
+                const InputNlist& inlist,
+                const int& ago,
+                const std::vector<float>& fparam,
+                const std::vector<float>& aparam,
+                const std::vector<double>& charge_spin,
+                const bool atomic) override;
+  void computew_mixed_type(std::vector<double>& ener,
+                           std::vector<double>& force,
+                           std::vector<double>& virial,
+                           std::vector<double>& atom_energy,
+                           std::vector<double>& atom_virial,
+                           const int& nframes,
+                           const std::vector<double>& coord,
+                           const std::vector<int>& atype,
+                           const std::vector<double>& box,
+                           const std::vector<double>& fparam,
+                           const std::vector<double>& aparam,
+                           const std::vector<double>& charge_spin,
+                           const bool atomic) override;
+  void computew_mixed_type(std::vector<double>& ener,
+                           std::vector<float>& force,
+                           std::vector<float>& virial,
+                           std::vector<float>& atom_energy,
+                           std::vector<float>& atom_virial,
+                           const int& nframes,
+                           const std::vector<float>& coord,
+                           const std::vector<int>& atype,
+                           const std::vector<float>& box,
+                           const std::vector<float>& fparam,
+                           const std::vector<float>& aparam,
+                           const std::vector<double>& charge_spin,
+                           const bool atomic) override;
+
  private:
   bool inited;
   int ntypes;
   int dfparam;
   int daparam;
-  int dim_chg_spin;
+  int dchgspin;
   bool aparam_nall;
   bool has_default_fparam_;
   std::vector<double> default_fparam_;
@@ -255,6 +344,7 @@ class DeepPotPTExpt : public DeepPotBackend {
                        const std::vector<VALUETYPE>& box,
                        const std::vector<VALUETYPE>& fparam,
                        const std::vector<VALUETYPE>& aparam,
+                       const std::vector<double>& charge_spin,
                        const bool atomic);
 
   /**
@@ -272,6 +362,7 @@ class DeepPotPTExpt : public DeepPotBackend {
                                const std::vector<VALUETYPE>& box,
                                const std::vector<VALUETYPE>& fparam,
                                const std::vector<VALUETYPE>& aparam,
+                               const std::vector<double>& charge_spin,
                                const bool atomic);
 
   /**
@@ -282,6 +373,7 @@ class DeepPotPTExpt : public DeepPotBackend {
    * @param[in] mapping Mapping tensor.
    * @param[in] fparam Frame parameter tensor (or empty).
    * @param[in] aparam Atomic parameter tensor (or empty).
+   * @param[in] charge_spin Charge/spin tensor (or empty).
    * @return Vector of output tensors in sorted key order.
    */
   std::vector<torch::Tensor> run_model(const torch::Tensor& coord,
@@ -289,13 +381,15 @@ class DeepPotPTExpt : public DeepPotBackend {
                                        const torch::Tensor& nlist,
                                        const torch::Tensor& mapping,
                                        const torch::Tensor& fparam,
-                                       const torch::Tensor& aparam);
+                                       const torch::Tensor& aparam,
+                                       const torch::Tensor& charge_spin);
 
   /**
    * @brief Run the with-comm .pt2 artifact with comm tensors appended.
    *
    * @param[in] base 4-6 base inputs (coord, atype, nlist, mapping,
    *            fparam?, aparam?) — same as ``run_model``.
+   * @param[in] charge_spin Charge/spin tensor (or empty).
    * @param[in] comm_tensors 8 comm tensors in canonical positional
    *            order: send_list, send_proc, recv_proc, send_num,
    *            recv_num, communicator, nlocal, nghost.
@@ -307,6 +401,7 @@ class DeepPotPTExpt : public DeepPotBackend {
       const torch::Tensor& mapping,
       const torch::Tensor& fparam,
       const torch::Tensor& aparam,
+      const torch::Tensor& charge_spin,
       const std::vector<at::Tensor>& comm_tensors);
 
   /**

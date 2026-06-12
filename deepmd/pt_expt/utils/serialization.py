@@ -460,6 +460,9 @@ def _collect_metadata(model: torch.nn.Module, is_spin: bool = False) -> dict:
         "nnei": sum(model.get_sel()),
         "dim_fparam": model.get_dim_fparam(),
         "dim_aparam": model.get_dim_aparam(),
+        "dim_chg_spin": (
+            model.get_dim_chg_spin() if hasattr(model, "get_dim_chg_spin") else 0
+        ),
         "mixed_types": model.mixed_types(),
         "has_default_fparam": model.has_default_fparam(),
         "default_fparam": model.get_default_fparam(),
