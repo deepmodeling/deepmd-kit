@@ -20,6 +20,7 @@ from deepmd.utils.argcheck import (
 
 from ..common import (
     INSTALLED_PT,
+    INSTALLED_PT_EXPT,
     CommonTest,
     parameterized_cases,
 )
@@ -31,6 +32,10 @@ if INSTALLED_PT:
     from deepmd.pt.model.descriptor.sezm import DescrptSeZM as DescrptDPA4PT
 else:
     DescrptDPA4PT = None
+if INSTALLED_PT_EXPT:
+    from deepmd.pt_expt.descriptor.dpa4 import DescrptDPA4 as DescrptDPA4PTExpt
+else:
+    DescrptDPA4PTExpt = None
 
 # not implemented
 DescrptDPA4TF = None
@@ -119,13 +124,13 @@ class TestDPA4(CommonTest, DescriptorTest, unittest.TestCase):
     skip_tf = True
     skip_jax = True
     skip_pd = True
-    skip_pt_expt = True
+    skip_pt_expt = not INSTALLED_PT_EXPT
     skip_array_api_strict = True
 
     tf_class = DescrptDPA4TF
     dp_class = DescrptDPA4DP
     pt_class = DescrptDPA4PT
-    pt_expt_class = None
+    pt_expt_class = DescrptDPA4PTExpt
     jax_class = None
     pd_class = None
     array_api_strict_class = None
@@ -184,6 +189,16 @@ class TestDPA4(CommonTest, DescriptorTest, unittest.TestCase):
     def eval_pt(self, pt_obj: Any) -> Any:
         return self.eval_pt_descriptor(
             pt_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+            mixed_types=True,
+        )
+
+    def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
+        return self.eval_pt_expt_descriptor(
+            pt_expt_obj,
             self.natoms,
             self.coords,
             self.atype,
