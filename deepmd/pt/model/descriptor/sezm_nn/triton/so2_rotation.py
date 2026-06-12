@@ -39,11 +39,23 @@ Design goals
    ``input_precision="ieee"`` so the contraction runs in true IEEE FP32 (no
    TF32). This keeps the potential-energy surface smooth.
 
-3. **Compose with SeZM's ``make_fx`` lowering.** The operators are functional
-   ``torch.library.custom_op`` instances (``mutates_args=()``) with registered
-   fake kernels and autograd formulas. The backward is itself expressed as
-   functional custom ops, so ``make_fx(tracing_mode="symbolic")`` can capture the
-   energy path together with the force autograd graph used by inference.
+3. **Compose with SeZM's ``make_fx`` lowering *and* the AOTInductor freeze.**
+   The operators are functional ``torch.library.triton_op`` instances
+   (``mutates_args=()``) with registered fake kernels and autograd formulas; the
+   backward is itself a ``triton_op``, so ``make_fx(tracing_mode="symbolic")``
+   can capture the energy path together with the force autograd graph used by
+   inference. Unlike ``torch.library.custom_op`` (opaque to the compiler, hence
+   emitted as a *runtime dispatcher* call that the C++ ``.pt2`` runtime cannot
+   resolve), a ``triton_op`` wraps its kernel launch in ``wrap_triton`` so
+   Inductor sees through to the Triton kernel and **bakes the cubin into the
+   AOTInductor package**. That is what lets the frozen ``.pt2`` run the Triton
+   path inside the LAMMPS C++ runtime (``DeepPotPTExpt`` /
+   ``AOTIModelPackageLoader``), with no Python op registration available. The
+   ``_use_triton`` device/dtype branch below stays a plain Python ``if``: the
+   op is opaque under ``make_fx`` (CPU trace), and Inductor resolves the branch
+   at compile time on the post-``move_to_device`` CUDA tensors, so CUDA fp32
+   targets bake the Triton kernel while CPU / fp64 targets bake the eager
+   reference.
 
 Shapes / dtypes
 ---------------
@@ -61,6 +73,9 @@ from __future__ import (
 import torch
 from torch import (
     Tensor,
+)
+from torch.library import (
+    wrap_triton,
 )
 
 from ..indexing import (
@@ -1110,6 +1125,19 @@ def _grid_over_rows(n_edge: int, rows: int):
     return lambda meta: (n_edge, triton.cdiv(rows, meta["BLOCK_M"]))
 
 
+def _has_no_edges(n_edge: int) -> bool:
+    """Return true for eager zero-edge calls without guarding symbolic edges.
+
+    Under ``torch.library.triton_op`` decomposition (AOTInductor freeze), the
+    edge dimension can be a data-dependent SymInt produced from the neighbour
+    list.  Converting it to a Python ``int`` would force a guard such as
+    ``u0 + 2`` and abort export.  We only need the zero-edge early return in
+    eager Python execution; compiled production graphs always see a non-empty
+    representative trace and use dynamic shapes for later calls.
+    """
+    return type(n_edge) is int and n_edge == 0
+
+
 def _inverse_index(coeff_index: Tensor, dim_full: int) -> Tensor:
     """Inverse permutation ``inv[k] = m`` where ``coeff_index[m] == k`` else ``-1``.
 
@@ -1131,13 +1159,13 @@ def _launch_rotate_to_local_fwd(
     coeff_index: Tensor,
     dim_full: int,
 ) -> Tensor:
-    n_edge = int(src.shape[0])
+    n_edge = src.shape[0]
     reduced_dim = int(coeff_index.shape[0])
     channels = int(x.shape[2])
     out = torch.empty((n_edge, reduced_dim, channels), dtype=x.dtype, device=x.device)
-    if n_edge == 0:
+    if _has_no_edges(n_edge):
         return out
-    _to_local_fwd_kernel[_grid_over_rows(n_edge, reduced_dim)](
+    wrap_triton(_to_local_fwd_kernel)[_grid_over_rows(n_edge, reduced_dim)](
         x,
         src,
         wigner,
@@ -1169,16 +1197,16 @@ def _launch_rotate_to_local_bwd(
     coeff_index: Tensor,
     dim_full: int,
 ) -> tuple[Tensor, Tensor]:
-    n_edge = int(src.shape[0])
+    n_edge = src.shape[0]
     reduced_dim = int(coeff_index.shape[0])
     channels = int(x.shape[2])
     grad_x = torch.zeros_like(x)
     grad_wigner = torch.zeros_like(wigner)
-    if n_edge == 0:
+    if _has_no_edges(n_edge):
         return grad_x, grad_wigner
 
     # --- grad_x: per-edge GEMM atomically scattered into grad_x by src ---
-    _to_local_bwd_dx_kernel[_grid_over_rows(n_edge, dim_full)](
+    wrap_triton(_to_local_bwd_dx_kernel)[_grid_over_rows(n_edge, dim_full)](
         grad_out,
         src,
         wigner,
@@ -1201,7 +1229,7 @@ def _launch_rotate_to_local_bwd(
     )
 
     # --- grad_wigner: per-edge GEMM written into rows ``coeff_index`` ---
-    _to_local_bwd_dw_kernel[_grid_over_rows(n_edge, reduced_dim)](
+    wrap_triton(_to_local_bwd_dw_kernel)[_grid_over_rows(n_edge, reduced_dim)](
         grad_out,
         x,
         src,
@@ -1231,16 +1259,16 @@ def _launch_rotate_back_fwd(
     coeff_index: Tensor,
     dim_full: int,
 ) -> Tensor:
-    n_edge = int(x_local.shape[0])
+    n_edge = x_local.shape[0]
     reduced_dim = int(coeff_index.shape[0])
     channels = int(x_local.shape[2])
     out = torch.empty(
         (n_edge, dim_full, channels), dtype=x_local.dtype, device=x_local.device
     )
-    if n_edge == 0:
+    if _has_no_edges(n_edge):
         return out
     inv_index = _inverse_index(coeff_index, dim_full)
-    _back_fwd_kernel[_grid_over_rows(n_edge, dim_full)](
+    wrap_triton(_back_fwd_kernel)[_grid_over_rows(n_edge, dim_full)](
         x_local,
         wigner,
         inv_index,
@@ -1270,16 +1298,16 @@ def _launch_rotate_back_bwd(
     coeff_index: Tensor,
     dim_full: int,
 ) -> tuple[Tensor, Tensor]:
-    n_edge = int(x_local.shape[0])
+    n_edge = x_local.shape[0]
     reduced_dim = int(coeff_index.shape[0])
     channels = int(x_local.shape[2])
     grad_x_local = torch.empty_like(x_local)
     grad_wigner = torch.zeros_like(wigner)
-    if n_edge == 0:
+    if _has_no_edges(n_edge):
         return grad_x_local, grad_wigner
 
     inv_index = _inverse_index(coeff_index, dim_full)
-    _back_bwd_dx_kernel[_grid_over_rows(n_edge, dim_full)](
+    wrap_triton(_back_bwd_dx_kernel)[_grid_over_rows(n_edge, dim_full)](
         grad_out,
         wigner,
         inv_index,
@@ -1299,7 +1327,7 @@ def _launch_rotate_back_bwd(
         grad_x_local.stride(2),
         BLOCK_N=_tile_dim(channels),
     )
-    _back_bwd_dw_kernel[_grid_over_rows(n_edge, dim_full)](
+    wrap_triton(_back_bwd_dw_kernel)[_grid_over_rows(n_edge, dim_full)](
         grad_out,
         x_local,
         inv_index,
@@ -1328,12 +1356,12 @@ def _launch_rotate_back_bwd(
 def _launch_bd_to_local_fwd(
     x: Tensor, src: Tensor, wigner: Tensor, lmax: int
 ) -> Tensor:
-    n_edge = int(src.shape[0])
+    n_edge = src.shape[0]
     channels = int(x.shape[2])
     out = torch.empty((n_edge, 3 * lmax + 1, channels), dtype=x.dtype, device=x.device)
-    if n_edge == 0:
+    if _has_no_edges(n_edge):
         return out
-    _bd_to_local_fwd_kernel[(n_edge,)](
+    wrap_triton(_bd_to_local_fwd_kernel)[(n_edge,)](
         x,
         src,
         wigner,
@@ -1358,13 +1386,13 @@ def _launch_bd_to_local_fwd(
 def _launch_bd_to_local_bwd(
     grad_out: Tensor, x: Tensor, src: Tensor, wigner: Tensor, lmax: int
 ) -> tuple[Tensor, Tensor]:
-    n_edge = int(src.shape[0])
+    n_edge = src.shape[0]
     channels = int(x.shape[2])
     grad_x = torch.zeros_like(x)
     grad_wigner = torch.zeros_like(wigner)
-    if n_edge == 0:
+    if _has_no_edges(n_edge):
         return grad_x, grad_wigner
-    _bd_to_local_bwd_kernel[(n_edge,)](
+    wrap_triton(_bd_to_local_bwd_kernel)[(n_edge,)](
         grad_out,
         x,
         src,
@@ -1395,15 +1423,15 @@ def _launch_bd_to_local_bwd(
 
 
 def _launch_bd_back_fwd(x_local: Tensor, wigner: Tensor, lmax: int) -> Tensor:
-    n_edge = int(x_local.shape[0])
+    n_edge = x_local.shape[0]
     channels = int(x_local.shape[2])
     dim_full = (lmax + 1) ** 2
     out = torch.empty(
         (n_edge, dim_full, channels), dtype=x_local.dtype, device=x_local.device
     )
-    if n_edge == 0:
+    if _has_no_edges(n_edge):
         return out
-    _bd_back_fwd_kernel[(n_edge,)](
+    wrap_triton(_bd_back_fwd_kernel)[(n_edge,)](
         x_local,
         wigner,
         out,
@@ -1427,13 +1455,13 @@ def _launch_bd_back_fwd(x_local: Tensor, wigner: Tensor, lmax: int) -> Tensor:
 def _launch_bd_back_bwd(
     grad_out: Tensor, x_local: Tensor, wigner: Tensor, lmax: int
 ) -> tuple[Tensor, Tensor]:
-    n_edge = int(x_local.shape[0])
+    n_edge = x_local.shape[0]
     channels = int(x_local.shape[2])
     grad_x_local = torch.empty_like(x_local)
     grad_wigner = torch.zeros_like(wigner)
-    if n_edge == 0:
+    if _has_no_edges(n_edge):
         return grad_x_local, grad_wigner
-    _bd_back_bwd_kernel[(n_edge,)](
+    wrap_triton(_bd_back_bwd_kernel)[(n_edge,)](
         grad_out,
         x_local,
         wigner,
@@ -1463,15 +1491,17 @@ def _launch_bd_back_bwd(
 
 
 def _launch_bd_back_so2_fwd(x_local_4d: Tensor, wigner: Tensor, lmax: int) -> Tensor:
-    n_edge, n_focus, _reduced, focus_dim = (int(s) for s in x_local_4d.shape)
+    n_edge = x_local_4d.shape[0]
+    n_focus = int(x_local_4d.shape[1])
+    focus_dim = int(x_local_4d.shape[3])
     channels = n_focus * focus_dim
     dim_full = (lmax + 1) ** 2
     out = torch.empty(
         (n_edge, dim_full, channels), dtype=x_local_4d.dtype, device=x_local_4d.device
     )
-    if n_edge == 0:
+    if _has_no_edges(n_edge):
         return out
-    _bd_back_so2_fwd_kernel[(n_edge,)](
+    wrap_triton(_bd_back_so2_fwd_kernel)[(n_edge,)](
         x_local_4d,
         wigner,
         out,
@@ -1497,13 +1527,15 @@ def _launch_bd_back_so2_fwd(x_local_4d: Tensor, wigner: Tensor, lmax: int) -> Te
 def _launch_bd_back_so2_bwd(
     grad_out: Tensor, x_local_4d: Tensor, wigner: Tensor, lmax: int
 ) -> tuple[Tensor, Tensor]:
-    n_edge, n_focus, _reduced, focus_dim = (int(s) for s in x_local_4d.shape)
+    n_edge = x_local_4d.shape[0]
+    n_focus = int(x_local_4d.shape[1])
+    focus_dim = int(x_local_4d.shape[3])
     channels = n_focus * focus_dim
     grad_x_local = torch.empty_like(x_local_4d)
     grad_wigner = torch.zeros_like(wigner)
-    if n_edge == 0:
+    if _has_no_edges(n_edge):
         return grad_x_local, grad_wigner
-    _bd_back_so2_bwd_kernel[(n_edge,)](
+    wrap_triton(_bd_back_so2_bwd_kernel)[(n_edge,)](
         grad_out,
         x_local_4d,
         wigner,
@@ -1655,25 +1687,28 @@ def _block_rotate_back_bwd_impl(
 
 
 # ======================================================================
-# Modern functional custom ops + fake + autograd registration
+# Functional triton_op + fake + autograd registration
 # ======================================================================
-# Forward and backward are both *functional* custom ops (mutates_args=()), so
+# Forward and backward are both *functional* triton_ops (mutates_args=()), so
 # functionalization keeps the full gradient path -- including grad w.r.t.
-# ``wigner`` -- intact under ``torch.compile``.
+# ``wigner`` -- intact under ``torch.compile``. ``triton_op`` (vs ``custom_op``)
+# additionally lets Inductor see through to the wrapped Triton kernel and bake
+# the cubin into the AOTInductor ``.pt2`` so the LAMMPS C++ runtime needs no
+# Python registration.
 
-_rotate_to_local_op = torch.library.custom_op(
+_rotate_to_local_op = torch.library.triton_op(
     "sezm_triton::rotate_to_local", mutates_args=()
 )(_rotate_to_local_impl)
 
-_rotate_to_local_bwd_op = torch.library.custom_op(
+_rotate_to_local_bwd_op = torch.library.triton_op(
     "sezm_triton::rotate_to_local_bwd", mutates_args=()
 )(_rotate_to_local_bwd_impl)
 
-_rotate_back_op = torch.library.custom_op("sezm_triton::rotate_back", mutates_args=())(
+_rotate_back_op = torch.library.triton_op("sezm_triton::rotate_back", mutates_args=())(
     _rotate_back_impl
 )
 
-_rotate_back_bwd_op = torch.library.custom_op(
+_rotate_back_bwd_op = torch.library.triton_op(
     "sezm_triton::rotate_back_bwd", mutates_args=()
 )(_rotate_back_bwd_impl)
 
@@ -1735,19 +1770,19 @@ _rotate_back_op.register_autograd(
 
 
 # --- block-diagonal custom ops (carry only ``lmax``; no coeff_index tensor) ---
-_block_to_local_op = torch.library.custom_op(
+_block_to_local_op = torch.library.triton_op(
     "sezm_triton::rotate_to_local_block", mutates_args=()
 )(_block_rotate_to_local_impl)
 
-_block_to_local_bwd_op = torch.library.custom_op(
+_block_to_local_bwd_op = torch.library.triton_op(
     "sezm_triton::rotate_to_local_block_bwd", mutates_args=()
 )(_block_rotate_to_local_bwd_impl)
 
-_block_back_op = torch.library.custom_op(
+_block_back_op = torch.library.triton_op(
     "sezm_triton::rotate_back_block", mutates_args=()
 )(_block_rotate_back_impl)
 
-_block_back_bwd_op = torch.library.custom_op(
+_block_back_bwd_op = torch.library.triton_op(
     "sezm_triton::rotate_back_block_bwd", mutates_args=()
 )(_block_rotate_back_bwd_impl)
 
@@ -1896,11 +1931,11 @@ def _block_rotate_back_so2_bwd_impl(
     return _launch_bd_back_so2_bwd(grad_out.contiguous(), x_local_4d, wigner, int(lmax))
 
 
-_block_back_so2_op = torch.library.custom_op(
+_block_back_so2_op = torch.library.triton_op(
     "sezm_triton::rotate_back_block_so2", mutates_args=()
 )(_block_rotate_back_so2_impl)
 
-_block_back_so2_bwd_op = torch.library.custom_op(
+_block_back_so2_bwd_op = torch.library.triton_op(
     "sezm_triton::rotate_back_block_so2_bwd", mutates_args=()
 )(_block_rotate_back_so2_bwd_impl)
 
