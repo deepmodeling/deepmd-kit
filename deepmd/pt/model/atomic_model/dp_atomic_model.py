@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import inspect
 import logging
 from collections.abc import (
     Callable,
@@ -73,6 +74,9 @@ class DPAtomicModel(BaseAtomicModel):
         self.enable_eval_fitting_last_layer_hook = False
         self.eval_descriptor_list = []
         self.eval_fitting_last_layer_list = []
+        self._descriptor_accepts_aparam = (
+            "aparam" in inspect.signature(self.descriptor.forward).parameters
+        )
 
     eval_descriptor_list: list[torch.Tensor]
     eval_fitting_last_layer_list: list[torch.Tensor]
@@ -281,14 +285,26 @@ class DPAtomicModel(BaseAtomicModel):
                 default_cs_tensor = default_cs_tensor.to(device=extended_coord.device)
                 charge_spin = torch.tile(default_cs_tensor.unsqueeze(0), [nframes, 1])
 
-        descriptor, rot_mat, g2, h2, sw = self.descriptor(
-            extended_coord,
-            extended_atype,
-            nlist,
-            mapping=mapping,
-            comm_dict=comm_dict,
-            charge_spin=charge_spin if self.add_chg_spin_ebd else None,
-        )
+        charge_spin_arg = charge_spin if self.add_chg_spin_ebd else None
+        if self._descriptor_accepts_aparam:
+            descriptor, rot_mat, g2, h2, sw = self.descriptor(
+                extended_coord,
+                extended_atype,
+                nlist,
+                mapping=mapping,
+                comm_dict=comm_dict,
+                charge_spin=charge_spin_arg,
+                aparam=aparam,
+            )
+        else:
+            descriptor, rot_mat, g2, h2, sw = self.descriptor(
+                extended_coord,
+                extended_atype,
+                nlist,
+                mapping=mapping,
+                comm_dict=comm_dict,
+                charge_spin=charge_spin_arg,
+            )
         assert descriptor is not None
         if self.enable_eval_descriptor_hook:
             self.eval_descriptor_list.append(descriptor.detach())

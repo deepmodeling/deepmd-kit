@@ -145,8 +145,13 @@ def get_spin_model(model_params: dict) -> SpinModel:
         or model_params["descriptor"]["env_protection"] == 0.0
     ):
         model_params["descriptor"]["env_protection"] = 0.01
-    if model_params["descriptor"]["type"] in ["se_e2_a"]:
-        # only expand sel for se_e2_a
+    if model_params["descriptor"]["type"] in [
+        "se_e2_a",
+        "se_a",
+        "se_a_vg",
+        "se_e2_a_vg",
+    ]:
+        # only expand sel for se_a family descriptors
         model_params["descriptor"]["sel"] += model_params["descriptor"]["sel"]
     backbone_model = get_standard_model(model_params)
     return SpinEnergyModel(backbone_model=backbone_model, spin=spin)

@@ -46,6 +46,13 @@ doc_only_pd_supported = "(Supported Backend: Paddle) "
 # descriptors
 doc_loc_frame = "Defines a local frame at each atom, and computes the descriptor as local coordinates under this frame."
 doc_se_e2_a = "Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor."
+doc_se_a_vg = (
+    "Variational-Gaussian smooth edition of Deep Potential (VGM II). "
+    "Gaussian width sigma enters the descriptor via "
+    "sigma_ij = sqrt(sigma_i^2 + sigma_j^2) in the radial kernel and an extra "
+    "environment-matrix column. Requires aparam (one sigma per atom) in training data. "
+    "Compatible with use_aparam_output_gate in the fitting net."
+)
 doc_se_e2_r = "Used by the smooth edition of Deep Potential. Only the distance between atoms is used to construct the descriptor."
 doc_se_e3 = "Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Three-body embedding will be used by this descriptor."
 doc_se_a_tpe = "Used by the smooth edition of Deep Potential. The full relative coordinates are used to construct the descriptor. Type embedding will be used by this descriptor."
@@ -357,6 +364,13 @@ def descrpt_se_a_args() -> list[Argument]:
             "set_davg_zero", bool, optional=True, default=False, doc=doc_set_davg_zero
         ),
     ]
+
+
+@descrpt_args_plugin.register(
+    "se_a_vg", alias=["se_e2_a_vg"], doc=doc_only_pt_supported + doc_se_a_vg
+)
+def descrpt_se_a_vg_args() -> list[Argument]:
+    return descrpt_se_a_args()
 
 
 @descrpt_args_plugin.register(
@@ -2380,6 +2394,49 @@ def descrpt_variant_type_args(exclude_hybrid: bool = False) -> Variant:
 fitting_args_plugin = ArgsPlugin()
 
 
+def fitting_aparam_output_gate_args() -> list[Argument]:
+    """Arguments for the hard-coded aparam output gate in fitting nets."""
+    doc_use_aparam_output_gate = (
+        doc_only_pt_supported
+        + "If True and numb_aparam > 0, multiply the fitting output by "
+        "g = a^2 / (sigma^2 * aparam_gate_norm), where a is the raw aparam "
+        "and sigma is the standard deviation from training statistics. "
+        "g is 0 when a = 0. aparam is still embedded in the fitting net unless "
+        "use_aparam_as_mask is True."
+    )
+    doc_aparam_gate_norm = (
+        doc_only_pt_supported
+        + "Normalization factor in the aparam output gate denominator "
+        "(sigma^2 * aparam_gate_norm)."
+    )
+    doc_aparam_gate_clamp = (
+        doc_only_pt_supported + "If True, clamp the aparam output gate to [0, 1]."
+    )
+    return [
+        Argument(
+            "use_aparam_output_gate",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_use_aparam_output_gate,
+        ),
+        Argument(
+            "aparam_gate_norm",
+            float,
+            optional=True,
+            default=1.0,
+            doc=doc_aparam_gate_norm,
+        ),
+        Argument(
+            "aparam_gate_clamp",
+            bool,
+            optional=True,
+            default=True,
+            doc=doc_aparam_gate_clamp,
+        ),
+    ]
+
+
 @fitting_args_plugin.register("ener", doc=doc_ener)
 def fitting_ener() -> list[Argument]:
     doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
@@ -2469,6 +2526,7 @@ def fitting_ener() -> list[Argument]:
             default=False,
             doc=doc_use_aparam_as_mask,
         ),
+        *fitting_aparam_output_gate_args(),
     ]
 
 
@@ -2572,6 +2630,7 @@ def fitting_sezm_ener() -> list[Argument]:
             default=False,
             doc=doc_only_pt_supported + doc_case_film_embd,
         ),
+        *fitting_aparam_output_gate_args(),
     ]
 
 
@@ -2940,7 +2999,10 @@ def model_compression_type_args() -> Variant:
 
     return Variant(
         "type",
-        [Argument("se_e2_a", dict, model_compression(), alias=["se_a"])],
+        [
+            Argument("se_e2_a", dict, model_compression(), alias=["se_a"]),
+            Argument("se_a_vg", dict, model_compression(), alias=["se_e2_a_vg"]),
+        ],
         optional=True,
         default_tag="se_e2_a",
         doc=doc_compress_type,
