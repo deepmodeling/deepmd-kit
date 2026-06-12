@@ -5,6 +5,11 @@ import re
 import subprocess
 import sys
 
+from dpa_adapt._backend import (
+    load_torch_file,
+    resolve_pretrained_path,
+)
+
 
 class MFTFineTuner:
     """
@@ -129,7 +134,7 @@ class MFTFineTuner:
                 f"fparam_dim must be a non-negative int; got {fparam_dim!r}."
             )
 
-        self.pretrained = pretrained
+        self.pretrained = resolve_pretrained_path(pretrained)
         self.aux_branch = aux_branch
         self.aux_prob = aux_prob
         self.aux_type_map = aux_type_map
@@ -187,9 +192,7 @@ class MFTFineTuner:
         checkpoint. Raises ValueError listing available branches if
         ``aux_branch`` isn't present.
         """
-        import torch
-
-        sd = torch.load(pretrained, map_location="cpu", weights_only=False)
+        sd = load_torch_file(resolve_pretrained_path(pretrained))
         try:
             model_dict = sd["model"]["_extra_state"]["model_params"]["model_dict"]
         except (KeyError, TypeError) as e:

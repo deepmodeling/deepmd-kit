@@ -34,8 +34,10 @@ def read_checkpoint_type_map(
     """
     from dpa_adapt._backend import (
         load_torch_file,
+        resolve_pretrained_path,
     )
 
+    pretrained = resolve_pretrained_path(pretrained)
     sd = load_torch_file(pretrained)
     if "model" in sd:
         sd = sd["model"]

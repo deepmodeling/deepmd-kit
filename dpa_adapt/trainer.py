@@ -29,6 +29,10 @@ import os
 import re
 import subprocess
 
+from dpa_adapt._backend import (
+    resolve_pretrained_path,
+)
+
 _LOG = logging.getLogger("dpa_adapt.trainer")
 
 
@@ -190,8 +194,10 @@ class DPATrainer:
                 "LP requires a pretrained checkpoint to freeze. "
                 "Set freeze_backbone=False for Scratch, or pass a pretrained ckpt."
             )
-        if pretrained is not None and not os.path.isfile(pretrained):
-            raise ValueError(f"pretrained checkpoint not found: {pretrained!r}.")
+        if pretrained is not None:
+            pretrained = resolve_pretrained_path(pretrained)
+            if not os.path.isfile(pretrained):
+                raise ValueError(f"pretrained checkpoint not found: {pretrained!r}.")
         if not isinstance(property_name, str) or not property_name.isidentifier():
             raise ValueError(
                 f"property_name must be a valid Python identifier "
