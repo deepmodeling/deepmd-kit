@@ -614,6 +614,11 @@ class _CompiledModel(torch.nn.Module):
         # invokes it with None.  ``aparam`` has no default (it is required
         # whenever ``dim_aparam > 0``), so it needs no normalization; a genuine
         # absence is reported by ``forward_lower`` itself, as in eager mode.
+        # ``get_default_*`` may return either a tensor or a raw ``list[float]``
+        # (the sezm descriptor stores ``default_chg_spin`` as a list, and only
+        # ``sezm_atomic_model`` wraps it via ``new_tensor``; the dp_atomic_model
+        # family returns the descriptor list as-is), so coerce with
+        # ``torch.as_tensor`` and ``reshape`` to ``(1, dim)`` before broadcasting.
         _model = self.original_model
         _dim_fparam = (
             _model.get_dim_fparam() if hasattr(_model, "get_dim_fparam") else 0
@@ -622,8 +627,10 @@ class _CompiledModel(torch.nn.Module):
             _default_fparam = _model.get_default_fparam()
             if _default_fparam is not None:
                 fparam = (
-                    _default_fparam.to(device=ext_coord.device, dtype=ext_coord.dtype)
-                    .view(1, _dim_fparam)
+                    torch.as_tensor(
+                        _default_fparam, dtype=ext_coord.dtype, device=ext_coord.device
+                    )
+                    .reshape(1, _dim_fparam)
                     .expand(nframes, -1)
                 )
         _dim_cs = (
@@ -633,8 +640,10 @@ class _CompiledModel(torch.nn.Module):
             _default_cs = _model.get_default_chg_spin()
             if _default_cs is not None:
                 charge_spin = (
-                    _default_cs.to(device=ext_coord.device, dtype=ext_coord.dtype)
-                    .view(1, _dim_cs)
+                    torch.as_tensor(
+                        _default_cs, dtype=ext_coord.dtype, device=ext_coord.device
+                    )
+                    .reshape(1, _dim_cs)
                     .expand(nframes, -1)
                 )
 
