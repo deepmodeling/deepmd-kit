@@ -426,15 +426,20 @@ class SO2Linear(NativeOP):
             self.bias0 = np.asarray(variables["bias0"], dtype=prec).reshape(
                 self.bias0.shape
             )
+        # Rebuild the list and assign the whole attribute (rather than
+        # item-assignment) so that pt_expt, which converts the list to a
+        # torch ParameterList, can re-convert the new value cleanly.
+        new_weight_m = []
         for m_idx in range(len(self.weight_m)):
             key = f"weight_m.{m_idx}"
             value = np.asarray(variables[key], dtype=prec)
-            if value.shape != self.weight_m[m_idx].shape:
+            if value.shape != tuple(self.weight_m[m_idx].shape):
                 raise ValueError(
                     f"{key} shape {value.shape} does not match the expected "
-                    f"shape {self.weight_m[m_idx].shape}"
+                    f"shape {tuple(self.weight_m[m_idx].shape)}"
                 )
-            self.weight_m[m_idx] = value
+            new_weight_m.append(value)
+        self.weight_m = new_weight_m
 
     def serialize(self) -> dict[str, Any]:
         """Serialize the SO2Linear to a dict (pt-compatible format)."""

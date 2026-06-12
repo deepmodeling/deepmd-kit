@@ -548,7 +548,13 @@ class EnvironmentInitialEmbedding(NativeOP):
             seed=child_seed(seed, 3),
             trainable=self.trainable,
         )
-        self.output_proj.w = np.zeros_like(self.output_proj.w)
+        # Use an explicit shape/dtype instead of np.zeros_like(self.output_proj.w):
+        # in pt_expt the attribute is a requires-grad torch Parameter, on which
+        # numpy __array__ conversion raises.
+        self.output_proj.w = np.zeros(
+            (self.embed_dim * self.axis_dim, 2 * self.channels),
+            dtype=PRECISION_DICT[self.precision.lower()],
+        )
 
     def call(
         self,
