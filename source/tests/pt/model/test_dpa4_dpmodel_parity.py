@@ -28,8 +28,17 @@ def _pt_reference_on_cpu(monkeypatch: pytest.MonkeyPatch) -> None:
     # rtol 1e-12, so the pt side must run on CPU (CUDA differs at ULP level
     # and is nondeterministic for scatter ops). The pt sezm modules build
     # parameters on env.DEVICE, which is cuda:0 on GPU runners — pin it to
-    # CPU for the duration of each test.
-    monkeypatch.setattr(pt_env, "DEVICE", torch.device("cpu"))
+    # CPU for the duration of each test. Some pt modules snapshot the device
+    # at import time instead of reading env.DEVICE; patch those too.
+    import deepmd.pt.model.network.layernorm as pt_layernorm
+    import deepmd.pt.model.network.mlp as pt_mlp
+    import deepmd.pt.model.task.sezm_ener as pt_sezm_ener
+
+    cpu = torch.device("cpu")
+    monkeypatch.setattr(pt_env, "DEVICE", cpu)
+    monkeypatch.setattr(pt_mlp, "device", cpu)
+    monkeypatch.setattr(pt_layernorm, "device", cpu)
+    monkeypatch.setattr(pt_sezm_ener, "DEVICE", cpu)
 
 
 def pt_state_to_numpy(module: torch.nn.Module) -> dict[str, np.ndarray]:
