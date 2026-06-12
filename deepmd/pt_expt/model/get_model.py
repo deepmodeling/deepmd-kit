@@ -115,6 +115,8 @@ def get_sezm_model(data: dict) -> EnergyModel:
 
     Mirrors :func:`deepmd.pt.model.model.get_sezm_model` so that dpa4/sezm
     training configs are interchangeable between the pt and pt_expt backends.
+    In addition to the ``SeZM``/``sezm``/``dpa4`` aliases accepted by pt,
+    pt_expt also accepts ``DPA4``.
     The pt-only SeZM extensions (bridging, LoRA, compile, spin,
     preset_out_bias) are not supported here and raise
     ``NotImplementedError``.

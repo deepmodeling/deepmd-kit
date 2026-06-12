@@ -132,16 +132,19 @@ class TestGetModelDPA4(unittest.TestCase):
     def test_unsupported_keys_raise(self) -> None:
         """pt-only SeZM model-level features fail fast with NotImplementedError."""
         cases = {
-            "spin": {"use_spin": [True, False], "virtual_scale": [0.3]},
-            "bridging_method": "ZBL",
-            "lora": {"rank": 4},
-            "use_compile": True,
-            "preset_out_bias": {"energy": [None, 1.0]},
+            "spin": ({"use_spin": [True, False], "virtual_scale": [0.3]}, "Spin DPA4"),
+            "bridging_method": ("ZBL", "`bridging_method` is not supported"),
+            "lora": ({"rank": 4}, "`lora` is not supported"),
+            "use_compile": (True, "`use_compile` is not supported"),
+            "preset_out_bias": (
+                {"energy": [None, 1.0]},
+                "`preset_out_bias` is not supported",
+            ),
         }
-        for key, value in cases.items():
+        for key, (value, msg_regex) in cases.items():
             raw = _make_raw_model_config()
             raw[key] = value
-            with self.assertRaises(NotImplementedError, msg=f"key={key}"):
+            with self.assertRaisesRegex(NotImplementedError, msg_regex):
                 get_model(raw)
 
     def test_default_unsupported_values_pass(self) -> None:
