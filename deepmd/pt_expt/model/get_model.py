@@ -115,8 +115,15 @@ def get_sezm_model(data: dict) -> EnergyModel:
 
     Mirrors :func:`deepmd.pt.model.model.get_sezm_model` so that dpa4/sezm
     training configs are interchangeable between the pt and pt_expt backends.
-    The pt-only SeZM extensions (bridging, LoRA, compile, spin) are not
-    supported here and raise ``NotImplementedError``.
+    The pt-only SeZM extensions (bridging, LoRA, compile, spin,
+    preset_out_bias) are not supported here and raise
+    ``NotImplementedError``.
+
+    Notes
+    -----
+    ``enable_tf32`` is accepted but ignored: the pt backend uses it to toggle
+    TF32 matmul precision, while the pt_expt backend always runs at full
+    ("highest") matmul precision, which is numerically conservative.
     """
     data = copy.deepcopy(data)
     if "spin" in data:
@@ -134,6 +141,10 @@ def get_sezm_model(data: dict) -> EnergyModel:
     if data.get("use_compile"):
         raise NotImplementedError(
             "`use_compile` is not supported for DPA4/SeZM in the pt_expt backend."
+        )
+    if data.get("preset_out_bias"):
+        raise NotImplementedError(
+            "`preset_out_bias` is not supported for DPA4/SeZM in the pt_expt backend."
         )
     data.pop("type", None)
     data.setdefault("descriptor", {})

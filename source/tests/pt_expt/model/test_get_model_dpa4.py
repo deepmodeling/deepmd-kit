@@ -136,6 +136,7 @@ class TestGetModelDPA4(unittest.TestCase):
             "bridging_method": "ZBL",
             "lora": {"rank": 4},
             "use_compile": True,
+            "preset_out_bias": {"energy": [None, 1.0]},
         }
         for key, value in cases.items():
             raw = _make_raw_model_config()
@@ -149,6 +150,7 @@ class TestGetModelDPA4(unittest.TestCase):
         self.assertEqual(model_params["bridging_method"], "None")
         self.assertIsNone(model_params["lora"])
         self.assertFalse(model_params["use_compile"])
+        self.assertIsNone(model_params.get("preset_out_bias"))
         model = get_model(copy.deepcopy(model_params))
         self.assertIsInstance(model, EnergyModel)
 
