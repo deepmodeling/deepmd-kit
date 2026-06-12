@@ -73,7 +73,8 @@ from deepmd.pt.train.ema import (
     get_ema_validation_log_path,
 )
 from deepmd.pt.train.utils import (
-    clip_grad_norm_with_stable_fallback,
+    NonFiniteGradGuard,
+    clip_grad_norm_,
     scoped_env_defaults,
 )
 from deepmd.pt.train.validation import (
@@ -718,6 +719,7 @@ class Trainer:
 
         # Learning rate
         self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
+        self.nonfinite_grad_guard = NonFiniteGradGuard()
         self.lr_schedule = get_lr(config["learning_rate"])
 
         # Minimum pairwise distance for filtering unphysical frames during training
@@ -1412,12 +1414,12 @@ class Trainer:
                             for name, p in self.wrapper.named_parameters()
                             if p.grad is not None
                         ]
-                    total_norm = clip_grad_norm_with_stable_fallback(
+                    total_norm = clip_grad_norm_(
                         self.wrapper.parameters(),
                         self.gradient_max_norm,
-                        use_stable_fallback=self.zero_stage < 2,
-                        named_parameters=self.wrapper.named_parameters,
+                        stable=self.zero_stage < 2,
                     )
+                    self.nonfinite_grad_guard.update(total_norm)
                 with torch.device(DEVICE):
                     self.optimizer.step()
                 self.scheduler.step()
@@ -1758,6 +1760,11 @@ class Trainer:
                 )
                 or (display_step_id) == self.num_steps
             ) and (self.zero_stage > 0 or self.rank == 0 or dist.get_rank() == 0):
+                # Abort before writing if any gradient norm since the previous
+                # checkpoint was non-finite.
+                self.nonfinite_grad_guard.raise_if_nonfinite(
+                    self.wrapper.named_parameters
+                )
                 # Handle the case if rank 0 aborted and re-assigned
                 self.latest_model = Path(self.save_ckpt + f"-{display_step_id}.pt")
                 self.save_model(self.latest_model, lr=cur_lr, step=_step_id)
