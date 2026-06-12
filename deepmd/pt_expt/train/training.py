@@ -615,7 +615,9 @@ class _CompiledModel(torch.nn.Module):
         # whenever ``dim_aparam > 0``), so it needs no normalization; a genuine
         # absence is reported by ``forward_lower`` itself, as in eager mode.
         _model = self.original_model
-        _dim_fparam = _model.get_dim_fparam() if hasattr(_model, "get_dim_fparam") else 0
+        _dim_fparam = (
+            _model.get_dim_fparam() if hasattr(_model, "get_dim_fparam") else 0
+        )
         if fparam is None and _dim_fparam > 0:
             _default_fparam = _model.get_default_fparam()
             if _default_fparam is not None:
@@ -624,7 +626,9 @@ class _CompiledModel(torch.nn.Module):
                     .view(1, _dim_fparam)
                     .expand(nframes, -1)
                 )
-        _dim_cs = _model.get_dim_chg_spin() if hasattr(_model, "get_dim_chg_spin") else 0
+        _dim_cs = (
+            _model.get_dim_chg_spin() if hasattr(_model, "get_dim_chg_spin") else 0
+        )
         if charge_spin is None and _dim_cs > 0:
             _default_cs = _model.get_default_chg_spin()
             if _default_cs is not None:
