@@ -15,11 +15,11 @@ from deepmd.dpmodel import (
     DEFAULT_PRECISION,
     NativeOP,
 )
-from deepmd.dpmodel.common import (
-    to_numpy_array,
-)
 from deepmd.dpmodel.array_api import (
     Array,
+)
+from deepmd.dpmodel.common import (
+    to_numpy_array,
 )
 from deepmd.dpmodel.utils.network import (
     NativeLayer,

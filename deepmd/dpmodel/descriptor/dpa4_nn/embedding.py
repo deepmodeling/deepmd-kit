@@ -39,16 +39,15 @@ from typing import (
 )
 
 import array_api_compat
-
-from deepmd.dpmodel.array_api import (
-    xp_asarray_nodetach,
-)
 import numpy as np
 
 from deepmd.dpmodel import (
     DEFAULT_PRECISION,
     PRECISION_DICT,
     NativeOP,
+)
+from deepmd.dpmodel.array_api import (
+    xp_asarray_nodetach,
 )
 from deepmd.dpmodel.common import (
     to_numpy_array,

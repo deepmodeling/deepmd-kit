@@ -22,11 +22,11 @@ from typing import (
 )
 
 import array_api_compat
+import numpy as np
 
 from deepmd.dpmodel.array_api import (
     xp_asarray_nodetach,
 )
-import numpy as np
 
 
 def get_so3_dim_of_lmax(lmax: int) -> int:

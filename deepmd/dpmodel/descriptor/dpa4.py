@@ -39,6 +39,9 @@ import numpy as np
 from deepmd.dpmodel import (
     NativeOP,
 )
+from deepmd.dpmodel.array_api import (
+    xp_asarray_nodetach,
+)
 from deepmd.dpmodel.common import (
     PRECISION_DICT,
     get_xp_precision,
@@ -94,10 +97,6 @@ from .dpa4_nn.utils import (
 )
 from .dpa4_nn.wignerd import (
     WignerDCalculator,
-)
-
-from deepmd.dpmodel.array_api import (
-    xp_asarray_nodetach,
 )
 
 if TYPE_CHECKING:
