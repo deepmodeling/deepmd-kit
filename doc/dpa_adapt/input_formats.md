@@ -13,15 +13,14 @@
 
 ## 1. SMILES Tables (CSV)
 
-**Trigger:** file extension `.csv`/`.xlsx`/`.xls` **and** a SMILES column.
+**Trigger:** file extension `.csv` **and** a SMILES column.
 By default, the converter reads `SMILES`/`smiles`; use `--smiles-col` for
 other column names such as `smi` or `mol`. Or pass `--fmt smiles` explicitly.
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `--smiles-col` | `SMILES` | Column name for SMILES strings |
-| `--property-col` | `Property` | Input table column to read target values from |
-| `--property-name` | `Property` | Output label name written as `set.*/{property_name}.npy` |
+| `--property-col` | `Property` | Input table column to read target values from; also used as the output label name |
 | `--train-ratio` | `0.9` | Fraction of samples used for training set |
 | `--mol-dir` | — | Directory of pre-generated `.mol`, `.sdf`, `.xyz`, or `.pdb` structure files (skips RDKit 3D conformer generation) |
 | `--mol-template` | `id{row}.mol` | Filename template under `--mol-dir`; use `{row}` for the CSV row index |
@@ -31,10 +30,10 @@ other column names such as `smi` or `mol`. Or pass `--fmt smiles` explicitly.
 ```bash
 # Auto-detected via SMILES column
 dpa-adapt data convert --input molecules.csv --output ./npy \
-    --property-col homo --property-name homo
+    --property-col homo
 # Short alias
 dpaad data convert --input molecules.csv --output ./npy \
-    --property-col homo --property-name homo
+    --property-col homo
 
 # Explicit fmt + custom column names
 dpa-adapt data convert --input data.csv --output ./npy --fmt smiles \
@@ -55,21 +54,20 @@ by randomly substituting atoms on the host-element sublattice.
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `--poscar` | *(required)* | Template POSCAR file for the host lattice |
-| `--formula-col` | `formula` | Input CSV column or 0-based column index to read composition formulas from |
+| `--formula-col` | `formula` | Input CSV column name to read composition formulas from |
 | `--base-element` | auto | Host element to substitute. Inferred as the most frequent non-O/H element in the template if omitted. |
 | `--sets` | `1` | Number of random structures generated per formula row |
-| `--property-col` | `Property` | Input CSV column or 0-based column index to read target values from |
-| `--property-name` | `Property` | Output label name written as `set.*/{property_name}.npy` |
+| `--property-col` | `Property` | Input CSV column name to read target values from; also used as the output label name |
 | `--seed` | `42` | Random seed for selecting substituted host-atom sites |
 
 ```bash
 dpa-adapt data convert --input compositions.csv --output ./npy --fmt formula \
     --poscar template.POSCAR --sets 3 \
-    --formula-col formula --property-col bandgap --property-name bandgap
+    --formula-col formula --property-col bandgap
 # Short alias
 dpaad data convert --input compositions.csv --output ./npy --fmt formula \
     --poscar template.POSCAR --sets 3 \
-    --formula-col formula --property-col bandgap --property-name bandgap
+    --formula-col formula --property-col bandgap
 ```
 
 ## 3. Structure Files via dpdata
