@@ -55,6 +55,7 @@ class DeepEvalBackend(ABC):
     _OUTDEF_DP2BACKEND: ClassVar[dict] = {
         "energy": "atom_energy",
         "energy_redu": "energy",
+        "population": "population",
         "energy_derv_r": "force",
         "energy_derv_r_mag": "force_mag",
         "energy_derv_c": "atom_virial",
