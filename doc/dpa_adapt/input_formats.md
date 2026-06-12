@@ -56,8 +56,11 @@ Formula input supports two table styles:
 
 - Headered CSV/TSV: comma- or tab-delimited with named columns, such as
   `formula,Property`.
-- Headerless TXT/CSV-style rows: whitespace-delimited with integer column
-  indices, such as `Ni0.65Gd0.15Fe0.10Co0.05Yb0.05O2H1    291.9`.
+- Headered delimited text: comma, tab, semicolon, or pipe (`|`) delimiters
+  with named columns.
+- Headerless delimited or whitespace rows: use integer column indices, such as
+  `Ni0.65Gd0.15Fe0.10Co0.05Yb0.05O2H1    291.9` or
+  `Ni0.65Gd0.15Fe0.10Co0.05Yb0.05O2H1|291.9`.
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
@@ -82,6 +85,10 @@ dpaad data convert --input compositions.csv --output ./npy --fmt formula \
 dpa-adapt data convert --input 20260514.txt --output ./npy --fmt formula \
     --poscar template.POSCAR --formula-col 0 --property-col 1 \
     --property-name overpotential
+
+# Headerless pipe-delimited TXT works the same way
+dpa-adapt data convert --input compositions.txt --output ./npy --fmt formula \
+    --poscar template.POSCAR --formula-col 0 --property-col 1
 ```
 
 ## 3. Structure Files via dpdata
