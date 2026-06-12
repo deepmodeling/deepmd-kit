@@ -101,10 +101,9 @@ class NonFiniteGradGuard:
             The gradient norm returned by :func:`clip_grad_norm_`.
         """
         nonfinite = ~torch.isfinite(total_norm)
-        if self._nonfinite is None:
-            self._nonfinite = nonfinite
-        else:
-            self._nonfinite |= nonfinite
+        if self._nonfinite is not None:
+            nonfinite |= self._nonfinite.to(nonfinite.device)
+        self._nonfinite = nonfinite
 
     def raise_if_nonfinite(
         self,
