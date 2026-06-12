@@ -21,36 +21,35 @@ from deepmd.pt.model.descriptor.sezm_nn import indexing as pt_indexing
 from deepmd.pt.model.descriptor.sezm_nn import utils as pt_utils
 from deepmd.pt.utils import env as pt_env
 
+# pt reference modules run on their native device (house convention).
+# On CPU the pt and numpy fp64 math is identical to ~1 ulp, so the parity
+# gate is near-bit (rtol 1e-12).  On CUDA, fp64 kernels differ from CPU
+# numpy at ULP level per op and index_add_ uses nondeterministic atomics,
+# so the gate is relaxed to rtol 1e-10 — still orders of magnitude below
+# any logic bug.
+PT_DEVICE = pt_env.DEVICE
+_ON_CPU = PT_DEVICE.type == "cpu"
+PT_RTOL, PT_ATOL = (1e-12, 1e-14) if _ON_CPU else (1e-10, 1e-12)
 
-@pytest.fixture(autouse=True)
-def _pt_reference_on_cpu(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Parity tests compare pt modules against CPU numpy reference math at
-    # rtol 1e-12, so the pt side must run on CPU (CUDA differs at ULP level
-    # and is nondeterministic for scatter ops). The pt sezm modules build
-    # parameters on env.DEVICE, which is cuda:0 on GPU runners — pin it to
-    # CPU for the duration of each test. Some pt modules snapshot the device
-    # at import time instead of reading env.DEVICE; patch those too.
-    import deepmd.pt.model.network.layernorm as pt_layernorm
-    import deepmd.pt.model.network.mlp as pt_mlp
-    import deepmd.pt.model.task.sezm_ener as pt_sezm_ener
 
-    cpu = torch.device("cpu")
-    monkeypatch.setattr(pt_env, "DEVICE", cpu)
-    monkeypatch.setattr(pt_mlp, "device", cpu)
-    monkeypatch.setattr(pt_layernorm, "device", cpu)
-    monkeypatch.setattr(pt_sezm_ener, "DEVICE", cpu)
+def to_pt(x: np.ndarray) -> torch.Tensor:
+    """Move a numpy array onto the pt reference device."""
+    return torch.from_numpy(np.ascontiguousarray(x)).to(PT_DEVICE)
 
 
 def pt_state_to_numpy(module: torch.nn.Module) -> dict[str, np.ndarray]:
     return {k: v.detach().cpu().numpy() for k, v in module.state_dict().items()}
 
 
-def assert_parity(a, t, rtol=1e-12, atol=1e-14):
+def assert_parity(a, t, rtol=PT_RTOL, atol=PT_ATOL):
     np.testing.assert_allclose(
         np.asarray(a), t.detach().cpu().numpy(), rtol=rtol, atol=atol
     )
 
 
+# The pt indexing helpers below are pure functions taking an explicit
+# ``device``; their integer index tables are device-independent, so they
+# stay CPU-pinned to allow direct ``.numpy()`` comparison.
 CPU = torch.device("cpu")
 
 
@@ -169,7 +168,7 @@ class TestIndexingParity:
         rng = np.random.default_rng(2026)
         nfull = dp_indexing.get_so3_dim_of_lmax(4)
         d_full_np = rng.normal(size=(5, nfull, nfull))
-        d_full_pt = torch.from_numpy(d_full_np)
+        d_full_pt = torch.from_numpy(d_full_np)  # CPU: pure fn, CPU index table
         idx_np = dp_indexing.build_m_major_index(lmax, mmax)
         idx_pt = pt_indexing.build_m_major_index(lmax, mmax, device=CPU)
         ebed = dp_indexing.get_so3_dim_of_lmax(lmax)
@@ -193,7 +192,7 @@ class TestIndexingParity:
         rng = np.random.default_rng(2027)
         nfull = dp_indexing.get_so3_dim_of_lmax(4)
         dt_full_np = rng.normal(size=(5, nfull, nfull))
-        dt_full_pt = torch.from_numpy(dt_full_np)
+        dt_full_pt = torch.from_numpy(dt_full_np)  # CPU: pure fn, CPU index table
         idx_np = dp_indexing.build_m_major_index(lmax, mmax)
         idx_pt = pt_indexing.build_m_major_index(lmax, mmax, device=CPU)
         ebed = dp_indexing.get_so3_dim_of_lmax(lmax)
@@ -219,6 +218,7 @@ class TestIndexingParity:
         rng = np.random.default_rng(2028)
         nfull = dp_indexing.get_so3_dim_of_lmax(4)
         d_full_np = rng.normal(size=(5, nfull, nfull))
+        # CPU on purpose: pins the dp class's torch-namespace behavior
         d_full_pt = torch.from_numpy(d_full_np)
         idx_np = dp_indexing.build_m_major_index(lmax, mmax)
         ebed = dp_indexing.get_so3_dim_of_lmax(lmax)
@@ -241,21 +241,29 @@ class TestUtilsParity:
         x[2, :] = 0.0
         x[5, :] = 0.0
         res = dp_utils.safe_norm(x)
-        ref = pt_utils.safe_norm(torch.from_numpy(x))
+        ref = pt_utils.safe_norm(to_pt(x))
         assert res.shape == (8, 1)
         if dtype == "float64":
-            np.testing.assert_allclose(res, ref.numpy(), rtol=1e-15, atol=0.0)
+            # fp64: ~1 ulp on CPU; device-conditional gate on CUDA
+            np.testing.assert_allclose(
+                res, ref.cpu().numpy(), rtol=1e-15 if _ON_CPU else PT_RTOL, atol=0.0
+            )
         else:
             # fp32: numpy and torch may differ by ~1 ulp depending on the
-            # runner's BLAS/SIMD codegen, so bit-exact equality is brittle.
-            np.testing.assert_allclose(res, ref.numpy(), rtol=2e-7, atol=2e-7)
+            # runner's BLAS/SIMD codegen; CUDA fp32 kernels diverge further
+            # from CPU numpy, so widen the gate there only.
+            fp32_tol = 2e-7 if _ON_CPU else 1e-5
+            np.testing.assert_allclose(
+                res, ref.cpu().numpy(), rtol=fp32_tol, atol=fp32_tol
+            )
 
     def test_safe_norm_all_zero(self) -> None:
         # pure eps branch: norm of zero vector equals eps exactly
         x = np.zeros((4, 3), dtype=np.float64)
         res = dp_utils.safe_norm(x, eps=1e-7)
-        ref = pt_utils.safe_norm(torch.from_numpy(x), eps=1e-7)
-        np.testing.assert_allclose(res, ref.numpy(), rtol=1e-15, atol=0.0)
+        ref = pt_utils.safe_norm(to_pt(x), eps=1e-7)
+        # pure-eps branch is exact on any device
+        np.testing.assert_allclose(res, ref.cpu().numpy(), rtol=1e-15, atol=0.0)
         np.testing.assert_allclose(np.asarray(res), 1e-7, rtol=1e-15)
 
     def test_safe_norm_float16_promotion(self) -> None:
@@ -264,18 +272,23 @@ class TestUtilsParity:
         x = rng.normal(size=(8, 3)).astype(np.float16)
         x[3, :] = 0.0
         res = dp_utils.safe_norm(x)
-        ref = pt_utils.safe_norm(torch.from_numpy(x))
+        ref = pt_utils.safe_norm(to_pt(x))
         assert np.asarray(res).dtype == np.float16
         # the internal fp32 math may differ by ~1 ulp across runners, which
         # can flip the final fp16 rounding; compare at ~1 ulp fp16 instead
-        # of bit-exact equality.
-        np.testing.assert_allclose(np.asarray(res), ref.numpy(), rtol=1e-3, atol=1e-3)
+        # of bit-exact equality. 1e-3 is already ulp-of-fp16, so it is
+        # device-tolerant (CPU and CUDA alike).
+        np.testing.assert_allclose(
+            np.asarray(res), ref.cpu().numpy(), rtol=1e-3, atol=1e-3
+        )
 
     def test_safe_norm_torch_input(self) -> None:
         # dpmodel safe_norm is array-API: must accept torch tensors
         rng = np.random.default_rng(999)
         x = rng.normal(size=(8, 3))
         x[0, :] = 0.0
+        # CPU on purpose: pins the dp function's torch-namespace behavior;
+        # both sides see identical CPU tensors, so the compare stays exact.
         res = dp_utils.safe_norm(torch.from_numpy(x))
         assert isinstance(res, torch.Tensor)
         ref = pt_utils.safe_norm(torch.from_numpy(x))
@@ -357,7 +370,7 @@ class TestRadialParity:
         dp_mod = DPEnvelope(rcut=self.rcut, exponent=exponent, precision="float64")
         r = self._r_grid()
         res = dp_mod.call(r)
-        assert_parity(res, pt_mod(torch.from_numpy(r)))
+        assert_parity(res, pt_mod(to_pt(r)))
         # boundary contract: E(0)=1, E(r>=rcut)=0 exactly
         np.testing.assert_array_equal(np.asarray(res)[0], 1.0)
         np.testing.assert_array_equal(np.asarray(res)[r[:, 0] >= self.rcut], 0.0)
@@ -396,13 +409,13 @@ class TestRadialParity:
         # not just identical deterministic init
         rng = np.random.default_rng(2030)
         with torch.no_grad():
-            pt_mod.adam_freqs += torch.from_numpy(0.05 * rng.normal(size=(1, n_radial)))
+            pt_mod.adam_freqs += to_pt(0.05 * rng.normal(size=(1, n_radial)))
         serialized = pt_mod.serialize()
         # pt state_dict key contract: only the trainable frequencies
         assert list(serialized["@variables"]) == ["adam_freqs"]
         dp_mod = DPRadialBasis.deserialize(serialized)
         r = self._r_grid()
-        assert_parity(dp_mod.call(r), pt_mod(torch.from_numpy(r)))
+        assert_parity(dp_mod.call(r), pt_mod(to_pt(r)))
 
     @pytest.mark.parametrize("basis_type", ["bessel", "gaussian"])  # both bases
     def test_radial_basis_roundtrip(self, basis_type) -> None:
@@ -443,7 +456,7 @@ class TestRadialParity:
         rng = np.random.default_rng(2031)
         with torch.no_grad():
             for p in pt_mod.parameters():
-                p += torch.from_numpy(0.1 * rng.normal(size=tuple(p.shape)))
+                p += to_pt(0.1 * rng.normal(size=tuple(p.shape)))
         serialized = pt_mod.serialize()
         # pt state_dict key contract: Sequential index 3*i for linear `matrix`,
         # 3*i+1 for RMSNorm `adam_scale` (activation modules are parameter-free)
@@ -454,7 +467,7 @@ class TestRadialParity:
         assert set(serialized["@variables"]) == expected_keys
         dp_mod = DPRadialMLP.deserialize(serialized)
         x = rng.normal(size=(50, mlp_layers[0]))
-        assert_parity(dp_mod.call(x), pt_mod(torch.from_numpy(x)))
+        assert_parity(dp_mod.call(x), pt_mod(to_pt(x)))
 
     def test_radial_mlp_roundtrip(self) -> None:
         from deepmd.dpmodel.descriptor.dpa4_nn.radial import RadialMLP as DPRadialMLP
@@ -495,19 +508,28 @@ class TestRadialParity:
         pt_mod = PTRMSNorm(channels=channels, dtype=torch.float64, trainable=True)
         rng = np.random.default_rng(2033)
         with torch.no_grad():
-            pt_mod.adam_scale += torch.from_numpy(0.1 * rng.normal(size=(channels,)))
+            pt_mod.adam_scale += to_pt(0.1 * rng.normal(size=(channels,)))
         serialized = pt_mod.serialize()
         assert list(serialized["@variables"]) == ["adam_scale"]
         dp_mod = DPRMSNorm.deserialize(serialized)
         x64 = rng.normal(size=(50, channels))
-        assert_parity(dp_mod.call(x64), pt_mod(torch.from_numpy(x64)))
+        assert_parity(dp_mod.call(x64), pt_mod(to_pt(x64)))
         # input-dtype promotion branch: fp32 input with fp64 params,
         # output cast back to fp32 in both implementations
         x32 = x64.astype(np.float32)
         res32 = dp_mod.call(x32)
-        ref32 = pt_mod(torch.from_numpy(x32))
+        ref32 = pt_mod(to_pt(x32))
         assert np.asarray(res32).dtype == np.float32
-        np.testing.assert_array_equal(np.asarray(res32), ref32.detach().numpy())
+        if _ON_CPU:
+            # identical CPU fp32 truncation points: bit-exact
+            np.testing.assert_array_equal(
+                np.asarray(res32), ref32.detach().cpu().numpy()
+            )
+        else:
+            # CUDA fp32 kernels differ from CPU numpy at ulp level
+            np.testing.assert_allclose(
+                np.asarray(res32), ref32.detach().cpu().numpy(), rtol=1e-5, atol=1e-6
+            )
         # serialize roundtrip is exact
         dp_mod2 = DPRMSNorm.deserialize(dp_mod.serialize())
         np.testing.assert_array_equal(
@@ -576,7 +598,7 @@ class TestWignerDParity:
         )
 
         vec = _make_edge_vectors()
-        vec_t = torch.tensor(vec, dtype=torch.float64, device=CPU)
+        vec_t = torch.tensor(vec, dtype=torch.float64, device=PT_DEVICE)
         # edge_len omitted branch
         quat_dp = dp_build_edge_quaternion(vec)
         quat_pt = pt_build_edge_quaternion(vec_t)
@@ -586,7 +608,7 @@ class TestWignerDParity:
         quat_dp = dp_build_edge_quaternion(vec, edge_len=edge_len)
         quat_pt = pt_build_edge_quaternion(
             vec_t,
-            edge_len=torch.tensor(edge_len, dtype=torch.float64, device=CPU),
+            edge_len=torch.tensor(edge_len, dtype=torch.float64, device=PT_DEVICE),
         )
         assert_parity(quat_dp, quat_pt)
         # the quaternion rotates the unit edge direction onto local +z
@@ -610,15 +632,15 @@ class TestWignerDParity:
         q2 = rng.standard_normal((16, 4))
         gamma = rng.standard_normal((16,))
         weight = rng.uniform(0.0, 1.0, (16,))
-        q1_t = torch.tensor(q1, dtype=torch.float64, device=CPU)
-        q2_t = torch.tensor(q2, dtype=torch.float64, device=CPU)
+        q1_t = torch.tensor(q1, dtype=torch.float64, device=PT_DEVICE)
+        q2_t = torch.tensor(q2, dtype=torch.float64, device=PT_DEVICE)
         assert_parity(
             dp_w.quaternion_multiply(q1, q2), pt_w.quaternion_multiply(q1_t, q2_t)
         )
         assert_parity(
             dp_w.quaternion_z_rotation(gamma),
             pt_w.quaternion_z_rotation(
-                torch.tensor(gamma, dtype=torch.float64, device=CPU)
+                torch.tensor(gamma, dtype=torch.float64, device=PT_DEVICE)
             ),
         )
         assert_parity(dp_w.quaternion_normalize(q1), pt_w.quaternion_normalize(q1_t))
@@ -629,7 +651,7 @@ class TestWignerDParity:
         assert_parity(
             dp_w.quaternion_nlerp(q1, q2, weight),
             pt_w.quaternion_nlerp(
-                q1_t, q2_t, torch.tensor(weight, dtype=torch.float64, device=CPU)
+                q1_t, q2_t, torch.tensor(weight, dtype=torch.float64, device=PT_DEVICE)
             ),
         )
 
@@ -651,7 +673,7 @@ class TestWignerDParity:
         vec = _make_edge_vectors()
         quat_dp = dp_build_edge_quaternion(vec)
         quat_pt = pt_build_edge_quaternion(
-            torch.tensor(vec, dtype=torch.float64, device=CPU)
+            torch.tensor(vec, dtype=torch.float64, device=PT_DEVICE)
         )
         assert_parity(quat_dp, quat_pt)
 
@@ -686,7 +708,7 @@ class TestWignerDParity:
         vec = _make_edge_vectors()
         quat_dp = dp_build_edge_quaternion(vec)
         quat_pt = pt_build_edge_quaternion(
-            torch.tensor(vec, dtype=torch.float64, device=CPU)
+            torch.tensor(vec, dtype=torch.float64, device=PT_DEVICE)
         )
         calc_dp = DPWignerDCalculator(lmax, precision="float64")
         calc_pt = PTWignerDCalculator(lmax, dtype=torch.float64)
@@ -707,6 +729,7 @@ class TestWignerDParity:
 
         vec = _make_edge_vectors()
         quat_np = dp_build_edge_quaternion(vec)
+        # CPU on purpose: pins the dp function's torch-namespace behavior
         quat_t = dp_build_edge_quaternion(
             torch.tensor(vec, dtype=torch.float64, device=CPU)
         )
@@ -763,7 +786,7 @@ class TestNormParity:
         rng = np.random.default_rng(seed)
         with torch.no_grad():
             for p in pt_mod.parameters():
-                p += torch.from_numpy(0.1 * rng.normal(size=tuple(p.shape)))
+                p += to_pt(0.1 * rng.normal(size=tuple(p.shape)))
 
     @pytest.mark.parametrize("lmax", [0, 2, 3])  # 0 covers the scalar-only branch
     @pytest.mark.parametrize("n_focus", [1, 2])  # focus streams
@@ -791,7 +814,7 @@ class TestNormParity:
         rng = np.random.default_rng(2041)
         x = rng.normal(size=(17, (lmax + 1) ** 2, n_focus, self.channels))
         x[0] = 0.0  # all-zeros row exercises the eps path
-        assert_parity(dp_mod.call(x), pt_mod(torch.from_numpy(x)))
+        assert_parity(dp_mod.call(x), pt_mod(to_pt(x)))
 
     def test_equivariant_rmsnorm_roundtrip(self) -> None:
         from deepmd.dpmodel.descriptor.dpa4_nn.norm import (
@@ -823,7 +846,9 @@ class TestNormParity:
             lmax=lmax,
             mmax=mmax,
             channels=self.channels,
-            degree_index_m=torch.tensor(degree_index_m, dtype=torch.long, device=CPU),
+            degree_index_m=torch.tensor(
+                degree_index_m, dtype=torch.long, device=PT_DEVICE
+            ),
             n_focus=n_focus,
             dtype=torch.float64,
             trainable=True,
@@ -841,7 +866,7 @@ class TestNormParity:
         rng = np.random.default_rng(2044)
         x = rng.normal(size=(17, n_focus, degree_index_m.size, self.channels))
         x[0] = 0.0  # all-zeros row exercises the eps path
-        assert_parity(dp_mod.call(x), pt_mod(torch.from_numpy(x)))
+        assert_parity(dp_mod.call(x), pt_mod(to_pt(x)))
 
     def test_reduced_equivariant_rmsnorm_roundtrip(self) -> None:
         from deepmd.dpmodel.descriptor.dpa4_nn.norm import (
@@ -917,7 +942,7 @@ class TestNormParity:
         shape = (17, self.channels) if ndim == 2 else (17, n_focus, self.channels)
         x = rng.normal(size=shape)
         x[0] = 0.0  # all-zeros row exercises the eps path
-        assert_parity(dp_mod.call(x), pt_mod(torch.from_numpy(x)))
+        assert_parity(dp_mod.call(x), pt_mod(to_pt(x)))
         # serialize roundtrip is exact
         dp_mod2 = DPScalarRMSNorm.deserialize(dp_mod.serialize())
         np.testing.assert_array_equal(
@@ -949,10 +974,13 @@ class TestNormParity:
         dp_eq = DPEquivariantRMSNorm.deserialize(pt_eq.serialize())
         x32 = rng.normal(size=(17, 9, 1, self.channels)).astype(np.float32)
         res = dp_eq.call(x32)
-        ref = pt_eq(torch.from_numpy(x32))
+        ref = pt_eq(to_pt(x32))
         assert np.asarray(res).dtype == np.float32
+        # fp32: a few ulp on CPU; CUDA fp32 kernels diverge further from
+        # CPU numpy, so widen under CUDA only
+        fp32_tol = 2e-7 if _ON_CPU else 1e-5
         np.testing.assert_allclose(
-            np.asarray(res), ref.detach().numpy(), rtol=2e-7, atol=2e-7
+            np.asarray(res), ref.detach().cpu().numpy(), rtol=fp32_tol, atol=fp32_tol
         )
 
         pt_sc = PTScalarRMSNorm(
@@ -961,10 +989,10 @@ class TestNormParity:
         dp_sc = DPScalarRMSNorm.deserialize(pt_sc.serialize())
         x32 = rng.normal(size=(17, self.channels)).astype(np.float32)
         res = dp_sc.call(x32)
-        ref = pt_sc(torch.from_numpy(x32))
+        ref = pt_sc(to_pt(x32))
         assert np.asarray(res).dtype == np.float32
         np.testing.assert_allclose(
-            np.asarray(res), ref.detach().numpy(), rtol=2e-7, atol=2e-7
+            np.asarray(res), ref.detach().cpu().numpy(), rtol=fp32_tol, atol=fp32_tol
         )
 
     def test_deserialize_wrong_class(self) -> None:
@@ -1012,13 +1040,13 @@ class TestSO3LinearParity:
         rng = np.random.default_rng(2050)
         with torch.no_grad():
             for p in pt_mod.parameters():
-                p += torch.from_numpy(0.1 * rng.normal(size=tuple(p.shape)))
+                p += to_pt(0.1 * rng.normal(size=tuple(p.shape)))
         serialized = pt_mod.serialize()
         expected_keys = {"weight", "expand_index"} | ({"bias"} if mlp_bias else set())
         assert set(serialized["@variables"]) == expected_keys
         dp_mod = DPSO3Linear.deserialize(serialized)
         x = rng.normal(size=(17, (lmax + 1) ** 2, n_focus, self.in_channels))
-        assert_parity(dp_mod.call(x), pt_mod(torch.from_numpy(x)))
+        assert_parity(dp_mod.call(x), pt_mod(to_pt(x)))
 
     @pytest.mark.parametrize("mlp_bias", [False, True])  # l=0 bias branch
     def test_so3_linear_roundtrip(self, mlp_bias) -> None:
@@ -1081,7 +1109,7 @@ class TestSO3LinearParity:
         rng = np.random.default_rng(2052)
         with torch.no_grad():
             for p in pt_mod.parameters():
-                p += torch.from_numpy(0.1 * rng.normal(size=tuple(p.shape)))
+                p += to_pt(0.1 * rng.normal(size=tuple(p.shape)))
         # pt FocusLinear has no serialize(); copy the state_dict fragment
         # (keys "weight"/"bias") directly, the contract used by nested modules
         state = pt_state_to_numpy(pt_mod)
@@ -1098,7 +1126,7 @@ class TestSO3LinearParity:
         if bias:
             dp_mod.bias = state["bias"]
         x = rng.normal(size=(17, n_focus, self.in_channels))
-        assert_parity(dp_mod.call(x), pt_mod(torch.from_numpy(x)))
+        assert_parity(dp_mod.call(x), pt_mod(to_pt(x)))
         # serialize roundtrip is exact
         dp_mod2 = DPFocusLinear.deserialize(dp_mod.serialize())
         np.testing.assert_array_equal(
@@ -1125,7 +1153,7 @@ class TestSO3LinearParity:
         rng = np.random.default_rng(2053)
         with torch.no_grad():
             for p in pt_mod.parameters():
-                p += torch.from_numpy(0.1 * rng.normal(size=tuple(p.shape)))
+                p += to_pt(0.1 * rng.normal(size=tuple(p.shape)))
         # pt ChannelLinear has no serialize(); copy the state_dict fragment
         state = pt_state_to_numpy(pt_mod)
         assert set(state) == ({"weight", "bias"} if bias else {"weight"})
@@ -1141,7 +1169,7 @@ class TestSO3LinearParity:
             dp_mod.bias = state["bias"]
         # leading axes are batch: exercise a 3D input
         x = rng.normal(size=(17, 4, self.in_channels))
-        assert_parity(dp_mod.call(x), pt_mod(torch.from_numpy(x)))
+        assert_parity(dp_mod.call(x), pt_mod(to_pt(x)))
         # serialize roundtrip is exact
         dp_mod2 = DPChannelLinear.deserialize(dp_mod.serialize())
         np.testing.assert_array_equal(
@@ -1213,7 +1241,7 @@ class TestGatedActivationParity:
         rng = np.random.default_rng(2060)
         with torch.no_grad():
             for p in pt_mod.parameters():
-                p += torch.from_numpy(0.05 * rng.normal(size=tuple(p.shape)))
+                p += to_pt(0.05 * rng.normal(size=tuple(p.shape)))
         serialized = pt_mod.serialize()
         expected_keys = {"expand_index"}
         if lmax > 0:
@@ -1251,10 +1279,10 @@ class TestGatedActivationParity:
         if use_gate:
             gate = rng.normal(size=shape)
             res = dp_mod.call(x, gate=gate)
-            ref = pt_mod(torch.from_numpy(x), gate=torch.from_numpy(gate))
+            ref = pt_mod(to_pt(x), gate=to_pt(gate))
         else:
             res = dp_mod.call(x)
-            ref = pt_mod(torch.from_numpy(x))
+            ref = pt_mod(to_pt(x))
         assert_parity(res, ref)
 
     @pytest.mark.parametrize("mlp_bias", [False, True])  # gate-linear bias branch
@@ -1271,7 +1299,7 @@ class TestGatedActivationParity:
         )
         rng = np.random.default_rng(2062)
         x = rng.normal(size=self._shape(lmax, mmax, n_focus, "ndfc"))
-        assert_parity(dp_mod.call(x), pt_mod(torch.from_numpy(x)))
+        assert_parity(dp_mod.call(x), pt_mod(to_pt(x)))
 
     @pytest.mark.parametrize("use_gate", [False, True])  # standard vs GLU mode
     def test_gated_activation_lmax0(self, use_gate) -> None:
@@ -1291,10 +1319,10 @@ class TestGatedActivationParity:
         if use_gate:
             gate = rng.normal(size=shape)
             res = dp_mod.call(x, gate=gate)
-            ref = pt_mod(torch.from_numpy(x), gate=torch.from_numpy(gate))
+            ref = pt_mod(to_pt(x), gate=to_pt(gate))
         else:
             res = dp_mod.call(x)
-            ref = pt_mod(torch.from_numpy(x))
+            ref = pt_mod(to_pt(x))
         assert_parity(res, ref)
 
     def test_gated_activation_fp32_input_branch(self) -> None:
@@ -1313,10 +1341,15 @@ class TestGatedActivationParity:
         rng = np.random.default_rng(2064)
         x32 = rng.normal(size=self._shape(2, None, 1, "nfdc")).astype(np.float32)
         res = dp_mod.call(x32)
-        ref = pt_mod(torch.from_numpy(x32))
+        ref = pt_mod(to_pt(x32))
         assert np.asarray(res).dtype == np.float32
+        # fp32 round-off headroom on CPU; wider under CUDA (kernel/codegen
+        # truncation points differ from CPU numpy)
         np.testing.assert_allclose(
-            np.asarray(res), ref.detach().numpy(), rtol=2e-6, atol=2e-7
+            np.asarray(res),
+            ref.detach().cpu().numpy(),
+            rtol=2e-6 if _ON_CPU else 1e-5,
+            atol=2e-7 if _ON_CPU else 1e-6,
         )
 
     def test_gated_activation_roundtrip(self) -> None:
@@ -1360,7 +1393,7 @@ class TestGatedActivationParity:
 
         rng = np.random.default_rng(2066)
         x = rng.normal(size=(17, 3, 2 * self.channels))
-        assert_parity(DPSwiGLU().call(x), PTSwiGLU()(torch.from_numpy(x)))
+        assert_parity(DPSwiGLU().call(x), PTSwiGLU()(to_pt(x)))
 
 
 class TestS2GridParity:
@@ -1427,7 +1460,7 @@ class TestS2GridParity:
         rng = np.random.default_rng(2100)
         with torch.no_grad():
             for p in pt_net.parameters():
-                p += torch.from_numpy(0.1 * rng.normal(size=tuple(p.shape)))
+                p += to_pt(0.1 * rng.normal(size=tuple(p.shape)))
         dp_net = DPS2GridNet(
             lmax=lmax,
             mmax=mmax,
@@ -1483,9 +1516,9 @@ class TestS2GridParity:
         # to_grid / from_grid forwards
         rng = np.random.default_rng(2080)
         x = rng.normal(size=(7, dp_proj.coeff_dim, 5))
-        assert_parity(dp_proj.to_grid(x), pt_proj.to_grid(torch.from_numpy(x)))
+        assert_parity(dp_proj.to_grid(x), pt_proj.to_grid(to_pt(x)))
         g = rng.normal(size=(7, dp_proj.grid_size, 5))
-        assert_parity(dp_proj.from_grid(g), pt_proj.from_grid(torch.from_numpy(g)))
+        assert_parity(dp_proj.from_grid(g), pt_proj.from_grid(to_pt(g)))
 
     @pytest.mark.parametrize("lmax", [2, 3])  # max degree
     def test_projector_quadrature_identity(self, lmax) -> None:
@@ -1547,7 +1580,7 @@ class TestS2GridParity:
         rng = np.random.default_rng(2081)
         n_coeff = (lmax + 1) ** 2
         x = rng.normal(size=(11, n_coeff, 1, 2 * self.channels))
-        assert_parity(dp_net.call(x), pt_net(torch.from_numpy(x)))
+        assert_parity(dp_net.call(x), pt_net(to_pt(x)))
 
     @pytest.mark.parametrize("mlp_bias", [False, True])  # scalar gate bias
     def test_s2_grid_net_nfdc_m_major(self, mlp_bias) -> None:
@@ -1567,7 +1600,7 @@ class TestS2GridParity:
         assert n_coeff == pt_net.projector.coeff_dim
         rng = np.random.default_rng(2082)
         x = rng.normal(size=(11, n_focus, n_coeff, 2 * self.channels))
-        assert_parity(dp_net.call(x), pt_net(torch.from_numpy(x)))
+        assert_parity(dp_net.call(x), pt_net(to_pt(x)))
 
     def test_s2_grid_net_fp32_input(self) -> None:
         # fp32 input through a float64-precision net exercises the cast
@@ -1577,7 +1610,7 @@ class TestS2GridParity:
         x = rng.normal(size=(11, 9, 1, 2 * self.channels)).astype(np.float32)
         dp_out = dp_net.call(x)
         assert dp_out.dtype == np.float32
-        pt_out = pt_net(torch.from_numpy(x))
+        pt_out = pt_net(to_pt(x))
         assert pt_out.dtype == torch.float32
         np.testing.assert_allclose(
             np.asarray(dp_out), pt_out.detach().cpu().numpy(), rtol=1e-6, atol=1e-6
@@ -1603,7 +1636,7 @@ class TestS2GridParity:
         rng = np.random.default_rng(2084)
         with torch.no_grad():
             for p in pt_mod.parameters():
-                p += torch.from_numpy(0.1 * rng.normal(size=tuple(p.shape)))
+                p += to_pt(0.1 * rng.normal(size=tuple(p.shape)))
         state = pt_state_to_numpy(pt_mod)
         assert set(state) == {
             "left_proj.weight",
@@ -1626,9 +1659,9 @@ class TestS2GridParity:
         assert_parity(
             dp_mod.call(query, context, scalar),
             pt_mod(
-                torch.from_numpy(query),
-                torch.from_numpy(context),
-                torch.from_numpy(scalar),
+                to_pt(query),
+                to_pt(context),
+                to_pt(scalar),
             ),
         )
         # serialize roundtrip is exact; @variables keys match the pt state dict
@@ -1662,7 +1695,7 @@ class TestS2GridParity:
         ser_pt = dict(ser)
         ser_pt["@variables"] = pt_state_to_numpy(pt_net)
         dp_net3 = DPS2GridNet.deserialize(ser_pt)
-        assert_parity(dp_net3.call(x), pt_net(torch.from_numpy(x)))
+        assert_parity(dp_net3.call(x), pt_net(to_pt(x)))
         with pytest.raises(ValueError):  # wrong class
             DPS2GridNet.deserialize({"@class": "Nope", "@version": 1})
 
@@ -1874,7 +1907,7 @@ class TestSO2Parity:
         rng = np.random.default_rng(seed)
         with torch.no_grad():
             for p in pt_mod.parameters():
-                p += torch.from_numpy(0.1 * rng.normal(size=tuple(p.shape)))
+                p += to_pt(0.1 * rng.normal(size=tuple(p.shape)))
 
     # ---------- SO2Linear ----------
     @pytest.mark.parametrize(
@@ -1902,7 +1935,7 @@ class TestSO2Parity:
         dp_mod = DPSO2Linear.deserialize(serialized)
         rng = np.random.default_rng(2053)
         x = rng.normal(size=(13, n_focus, dp_mod.reduced_dim, 5))
-        assert_parity(dp_mod.call(x), pt_mod(torch.from_numpy(x)))
+        assert_parity(dp_mod.call(x), pt_mod(to_pt(x)))
 
     def test_so2_linear_roundtrip(self) -> None:
         from deepmd.dpmodel.descriptor.dpa4_nn.so2 import SO2Linear as DPSO2Linear
@@ -1979,7 +2012,7 @@ class TestSO2Parity:
         radial = rng.normal(size=(17, dp_mod.reduced_dim, 4))
         assert_parity(
             dp_mod.call(x_local, radial),
-            pt_mod(torch.from_numpy(x_local), torch.from_numpy(radial)),
+            pt_mod(to_pt(x_local), to_pt(radial)),
         )
 
     def test_radial_degree_mixer_roundtrip(self) -> None:
@@ -2067,11 +2100,11 @@ class TestSO2Parity:
             edge_mask=dp_cache.edge_mask,
         )
         alpha_pt = pt_softmax(
-            logits=torch.from_numpy(logits[valid]),
+            logits=to_pt(logits[valid]),
             edge_env=pt_cache.edge_env,
             dst=pt_cache.dst,
             n_nodes=nloc,
-            z_bias_raw=torch.from_numpy(z_bias_raw),
+            z_bias_raw=to_pt(z_bias_raw),
             eps=1e-7,
             src_weight=pt_cache.edge_src_gate,
         )
@@ -2079,8 +2112,8 @@ class TestSO2Parity:
         np.testing.assert_allclose(
             alpha_dp[valid],
             alpha_pt.detach().cpu().numpy(),
-            rtol=1e-12,
-            atol=1e-14,
+            rtol=PT_RTOL,
+            atol=PT_ATOL,
         )
         # invalid slots must produce exactly zero attention weights
         np.testing.assert_array_equal(alpha_dp[~valid], 0.0)
@@ -2151,7 +2184,7 @@ class TestSO2Parity:
             with_gate=with_gate,
         )
         out_dp = dp_mod.call(x, dp_cache, radial)
-        out_pt = pt_mod(torch.from_numpy(x), pt_cache, torch.from_numpy(radial_valid))
+        out_pt = pt_mod(to_pt(x), pt_cache, to_pt(radial_valid))
         assert_parity(out_dp, out_pt)
 
     @pytest.mark.parametrize("masked", ["none", "slots"])  # padded-slot pattern
@@ -2230,7 +2263,7 @@ class TestSO2Parity:
         radial = rng.normal(size=(nf * nloc * nnei, kwargs["lmax"] + 1, 4))
         x = rng.normal(size=(nf * nloc, dim_full, kwargs["channels"]))
         out_dp = dp_mod.call(x, dp_cache, radial)
-        out_pt = pt_mod(torch.from_numpy(x), pt_cache, torch.from_numpy(radial[valid]))
+        out_pt = pt_mod(to_pt(x), pt_cache, to_pt(radial[valid]))
         assert_parity(out_dp, out_pt)
 
     def test_so2_convolution_full_mmax(self) -> None:
@@ -2324,7 +2357,7 @@ class TestEmbeddingParity:
         rng = np.random.default_rng(seed)
         with torch.no_grad():
             for p in pt_mod.parameters():
-                p += torch.from_numpy(0.1 * rng.normal(size=tuple(p.shape)))
+                p += to_pt(0.1 * rng.normal(size=tuple(p.shape)))
 
     # ---------- SeZMTypeEmbedding ----------
     @pytest.mark.parametrize("padding", [False, True])  # zero padding row branch
@@ -2361,7 +2394,7 @@ class TestEmbeddingParity:
         rng = np.random.default_rng(2070)
         # include the padding row index ntypes when padding=True
         atype = rng.integers(0, ntypes + 1 if padding else ntypes, size=(3, 5))
-        assert_parity(dp_mod.call(atype), pt_mod(torch.from_numpy(atype)))
+        assert_parity(dp_mod.call(atype), pt_mod(to_pt(atype)))
         if padding:
             pad_out = np.asarray(dp_mod.call(np.full((2,), ntypes, dtype=np.int64)))
             np.testing.assert_array_equal(pad_out, 0.0)
@@ -2440,9 +2473,7 @@ class TestEmbeddingParity:
             rows = dp_mod.non_scalar_row_index
             cols = dp_mod.zonal_m0_col_index_for_row
             dp_zonal = np.asarray(dp_cache.Dt_full)[:, rows, cols]
-            pt_zonal = pt_cache.Dt_full[
-                :, torch.from_numpy(rows), torch.from_numpy(cols)
-            ]
+            pt_zonal = pt_cache.Dt_full[:, to_pt(rows), to_pt(cols)]
         else:
             dp_zonal = pt_zonal = None
         out_dp = dp_mod.call(
@@ -2454,7 +2485,7 @@ class TestEmbeddingParity:
         out_pt = pt_mod(
             n_nodes=self.nloc,
             edge_cache=pt_cache,
-            radial_feat=torch.from_numpy(radial_valid[:, 1:, :]),
+            radial_feat=to_pt(radial_valid[:, 1:, :]),
             zonal_coupling=pt_zonal,
         )
         assert_parity(out_dp, out_pt)
@@ -2563,7 +2594,7 @@ class TestEmbeddingParity:
         out_dp = dp_mod.call(edge_cache=dp_cache, atype_flat=atype, n_nodes=self.nloc)
         out_pt = pt_mod(
             edge_cache=pt_cache,
-            atype_flat=torch.from_numpy(atype),
+            atype_flat=to_pt(atype),
             n_nodes=self.nloc,
         )
         assert_parity(out_dp, out_pt)
@@ -2748,7 +2779,7 @@ def _build_real_edge_caches(
     pt_rb = PTRadialBasis(rcut=rcut, n_radial=n_radial, dtype=torch.float64)
     rng = np.random.default_rng(seed)
     with torch.no_grad():
-        pt_rb.adam_freqs += torch.from_numpy(0.05 * rng.normal(size=(1, n_radial)))
+        pt_rb.adam_freqs += to_pt(0.05 * rng.normal(size=(1, n_radial)))
     dp_rb = DPRadialBasis.deserialize(pt_rb.serialize())
     pt_env = PTEnvelope(rcut=rcut, dtype=torch.float64)
     dp_env = DPEnvelope(rcut=rcut, precision="float64")
@@ -2833,10 +2864,10 @@ class TestEdgeCacheParity:
         )
         # indices on valid slots are exactly pt's sparse indices
         np.testing.assert_array_equal(
-            np.asarray(dp_cache.src)[valid], pt_cache.src.numpy()
+            np.asarray(dp_cache.src)[valid], pt_cache.src.cpu().numpy()
         )
         np.testing.assert_array_equal(
-            np.asarray(dp_cache.dst)[valid], pt_cache.dst.numpy()
+            np.asarray(dp_cache.dst)[valid], pt_cache.dst.cpu().numpy()
         )
         # per-edge fields: compare masked entries against pt's sparse outputs
         for name in (
@@ -2999,7 +3030,7 @@ class TestFFNParity:
         rng = np.random.default_rng(seed)
         with torch.no_grad():
             for p in pt_mod.parameters():
-                p += torch.from_numpy(0.1 * rng.normal(size=tuple(p.shape)))
+                p += to_pt(0.1 * rng.normal(size=tuple(p.shape)))
 
     def _ffn_kwargs(self, **overrides):
         kwargs = {
@@ -3035,7 +3066,7 @@ class TestFFNParity:
         dim = (kwargs["lmax"] + 1) ** 2
         x = rng.normal(size=(self.n_node, dim, 1, kwargs["channels"]))
         out_dp = dp_mod.call(x)
-        out_pt = pt_mod(torch.from_numpy(x))
+        out_pt = pt_mod(to_pt(x))
         assert out_dp.shape == tuple(out_pt.shape)
         assert_parity(out_dp, out_pt)
 
@@ -3115,7 +3146,7 @@ class TestBlockParity:
         rng = np.random.default_rng(seed)
         with torch.no_grad():
             for p in pt_mod.parameters():
-                p += torch.from_numpy(0.1 * rng.normal(size=tuple(p.shape)))
+                p += to_pt(0.1 * rng.normal(size=tuple(p.shape)))
 
     def _block_kwargs(self, **overrides):
         # core DPA4 config (sandwich_norm=[F,T,T,F], so2 s2 off, ffn s2 on)
@@ -3187,7 +3218,7 @@ class TestBlockParity:
         node_dim = self._node_dim(kwargs)
         x = rng.normal(size=(self.nloc, node_dim, 1, kwargs["channels"]))
         out_dp = dp_mod.call(x, dp_cache, radial)
-        out_pt = pt_mod(torch.from_numpy(x), pt_cache, torch.from_numpy(radial_valid))
+        out_pt = pt_mod(to_pt(x), pt_cache, to_pt(radial_valid))
         assert out_dp[1:] == (None, None, None)
         assert out_pt[1] is None and out_pt[2] is None and out_pt[3] is None
         assert_parity(out_dp[0], out_pt[0])
@@ -3257,7 +3288,7 @@ class TestBlockParity:
         )
         x = rng.normal(size=(nf * nloc, node_dim, 1, kwargs["channels"]))
         out_dp = dp_mod.call(x, dp_cache, radial)
-        out_pt = pt_mod(torch.from_numpy(x), pt_cache, torch.from_numpy(radial[valid]))
+        out_pt = pt_mod(to_pt(x), pt_cache, to_pt(radial[valid]))
         assert_parity(out_dp[0], out_pt[0])
         # masked-slot garbage is inert end-to-end: scribble into invalid slots
         # (finite O(10) garbage: the padded layout computes exp() on masked
@@ -3398,7 +3429,7 @@ class TestDescriptorParity:
         rng = np.random.default_rng(perturb_seed)
         with torch.no_grad():
             for p in pt_mod.parameters():
-                p += torch.from_numpy(0.05 * rng.normal(size=tuple(p.shape)))
+                p += to_pt(0.05 * rng.normal(size=tuple(p.shape)))
         dp_mod = DescrptDPA4.deserialize(pt_mod.serialize())
         return pt_mod, dp_mod, kwargs
 
@@ -3438,10 +3469,10 @@ class TestDescriptorParity:
             mapping=mp,
         )
         out_pt = pt_mod(
-            torch.from_numpy(coord),
-            torch.from_numpy(atype_ext),
-            torch.from_numpy(nlist),
-            mapping=None if mp is None else torch.from_numpy(mp),
+            to_pt(coord),
+            to_pt(atype_ext),
+            to_pt(nlist),
+            mapping=None if mp is None else to_pt(mp),
         )
         assert out_dp[0].shape == tuple(out_pt[0].shape)
         # descriptor-level tolerance: rtol 1e-10 / atol 1e-12
@@ -3485,6 +3516,9 @@ class TestDescriptorParity:
         coord = inp["coord"].reshape(nf, -1)
         atype_ext, nlist, mp = inp["atype_ext"], inp["nlist"], inp["mapping"]
         out_np = dp_mod.call(coord, atype_ext, nlist, mapping=mp)[0]
+        # CPU on purpose: this pins the dp class's torch-namespace
+        # behavior (not device placement); CPU keeps the dp-vs-dp compare
+        # at the strict device-independent gate.
         out_t = dp_mod.call(
             torch.from_numpy(coord).to(device="cpu"),
             torch.from_numpy(atype_ext.astype(np.int64)).to(device="cpu"),
@@ -3580,7 +3614,7 @@ class TestFittingParity:
         # bias_atom_e is zero-initialized; perturb for a nontrivial bias path
         rng = np.random.default_rng(2140)
         with torch.no_grad():
-            pt_mod.bias_atom_e += torch.from_numpy(
+            pt_mod.bias_atom_e += to_pt(
                 rng.normal(size=tuple(pt_mod.bias_atom_e.shape))
             )
         dp_mod = SeZMEnergyFittingNetDP.deserialize(pt_mod.serialize())
@@ -3598,10 +3632,10 @@ class TestFittingParity:
         descriptor, atype = self._inputs()
         out_dp = dp_mod.call(descriptor, atype, fparam=fparam, aparam=aparam)["energy"]
         out_pt = pt_mod(
-            torch.from_numpy(descriptor),
-            torch.from_numpy(atype),
-            fparam=None if fparam is None else torch.from_numpy(fparam),
-            aparam=None if aparam is None else torch.from_numpy(aparam),
+            to_pt(descriptor),
+            to_pt(atype),
+            fparam=None if fparam is None else to_pt(fparam),
+            aparam=None if aparam is None else to_pt(aparam),
         )["energy"]
         assert out_dp.shape == tuple(out_pt.shape)
         assert_parity(out_dp, out_pt)
@@ -3689,7 +3723,7 @@ class TestEndToEndParity:
         ).eval()
         rng = np.random.default_rng(2143)
         with torch.no_grad():
-            pt_fit.bias_atom_e += torch.from_numpy(
+            pt_fit.bias_atom_e += to_pt(
                 rng.normal(size=tuple(pt_fit.bias_atom_e.shape))
             )
         dp_fit = SeZMEnergyFittingNetDP.deserialize(pt_fit.serialize())
@@ -3706,12 +3740,12 @@ class TestEndToEndParity:
         d_dp = dp_descr.call(coord.reshape(nf, -1), atype_ext, nlist, mapping=mp)[0]
         e_dp = dp_fit.call(d_dp, atype_loc)["energy"]
         d_pt = pt_descr(
-            torch.from_numpy(coord),
-            torch.from_numpy(atype_ext),
-            torch.from_numpy(nlist),
-            mapping=torch.from_numpy(mp),
+            to_pt(coord),
+            to_pt(atype_ext),
+            to_pt(nlist),
+            mapping=to_pt(mp),
         )[0]
-        e_pt = pt_fit(d_pt, torch.from_numpy(atype_loc))["energy"]
+        e_pt = pt_fit(d_pt, to_pt(atype_loc))["energy"]
         assert e_dp.shape == tuple(e_pt.shape)
         # end-to-end tolerance: rtol 1e-10 / atol 1e-12
         assert_parity(e_dp, e_pt, rtol=1e-10, atol=1e-12)
