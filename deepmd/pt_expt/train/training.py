@@ -605,16 +605,26 @@ class _CompiledModel(torch.nn.Module):
         # Mirrors DPA4's on-cache-miss compile so no separate get_data()
         # is needed during __init__.
         if self.compiled_forward_lower is None:
-            if self._structure_key in self._compiled_by_structure:
-                compiled_lower, buf_order = self._compiled_by_structure[
-                    self._structure_key
-                ]
+            # The traced graph bakes in which optional inputs are present:
+            # ``forward_lower`` branches on ``None``, so a graph traced with
+            # ``fparam`` present contains ``aten._to_copy(fparam, ...)`` and
+            # crashes if later invoked with ``fparam=None``.  Under
+            # ``share_params`` two multitask tasks share the same structure key
+            # (same descriptor / fitting-net objects) yet their datasets may
+            # differ in optional-input presence, so the presence pattern must
+            # be part of the cache key or one task would reuse the other's
+            # incompatible graph.
+            opt_presence = (fparam is None, aparam is None, charge_spin is None)
+            cache_key = (*self._structure_key, *opt_presence)
+            if cache_key in self._compiled_by_structure:
+                compiled_lower, buf_order = self._compiled_by_structure[cache_key]
                 log.info("Reusing compiled graph (shared model structure, lazy).")
             else:
                 log.info(
                     "Lazy compile: tracing model on first forward call "
-                    "(structure_key=%s).",
+                    "(structure_key=%s, optional_inputs_present=%s).",
                     self._structure_key,
+                    tuple(not _is_none for _is_none in opt_presence),
                 )
                 compiled_lower, buf_order = _trace_and_compile(
                     self.original_model,
@@ -628,7 +638,7 @@ class _CompiledModel(torch.nn.Module):
                     task_buffers=self._task_buffers,
                     compile_opts=self._compile_opts,
                 )
-                self._compiled_by_structure[self._structure_key] = (
+                self._compiled_by_structure[cache_key] = (
                     compiled_lower,
                     buf_order,
                 )
