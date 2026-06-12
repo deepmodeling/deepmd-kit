@@ -275,7 +275,7 @@ def _cmd_data_convert(args: argparse.Namespace) -> int:
         output_dir=args.output,
         fmt=args.fmt,
         type_map=type_map,
-        property_name=args.property_name,
+        property_name=args.property_name or args.property_col,
         property_col=args.property_col,
         train_ratio=args.train_ratio,
         smiles_col=args.smiles_col,
@@ -629,7 +629,7 @@ def get_parser() -> argparse.ArgumentParser:
         "--no-validate", dest="validate", action="store_false"
     )
     parser_data_convert.add_argument("--strict", action="store_true")
-    parser_data_convert.add_argument("--property-name", default="Property")
+    parser_data_convert.add_argument("--property-name", default=None)
     parser_data_convert.add_argument("--property-col", default="Property")
     parser_data_convert.add_argument("--smiles-col", default="SMILES")
     parser_data_convert.add_argument("--mol-dir", default=None)
