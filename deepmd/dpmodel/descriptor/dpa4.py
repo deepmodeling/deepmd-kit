@@ -96,6 +96,10 @@ from .dpa4_nn.wignerd import (
     WignerDCalculator,
 )
 
+from deepmd.dpmodel.array_api import (
+    xp_asarray_nodetach,
+)
+
 if TYPE_CHECKING:
     from deepmd.dpmodel.array_api import (
         Array,
@@ -856,10 +860,10 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             shift_hat = self.film_shift_norm(shift_logits)
             device = array_api_compat.device(scale_hat)
             scale_strength = xp.exp(
-                xp.asarray(self.film_scale_strength_log, device=device)
+                xp_asarray_nodetach(xp, self.film_scale_strength_log, device=device)
             )
             shift_strength = xp.exp(
-                xp.asarray(self.film_shift_strength_log, device=device)
+                xp_asarray_nodetach(xp, self.film_shift_strength_log, device=device)
             )
             scale = 1.0 + scale_strength * xp.tanh(scale_hat)
             shift = shift_strength * xp.tanh(shift_hat)
@@ -934,7 +938,9 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         mp_cols = self.gie.zonal_m0_col_index_for_row[:mp_row_count]
         Dt_full = edge_cache.Dt_full
         dim_full = Dt_full.shape[-1]
-        flat_index = xp.asarray(mp_rows * dim_full + mp_cols, device=device)
+        flat_index = xp_asarray_nodetach(
+            xp, mp_rows * dim_full + mp_cols, device=device
+        )
         mp_coupling = xp.take(
             xp.reshape(Dt_full, (n_edge, dim_full * dim_full)),
             flat_index,

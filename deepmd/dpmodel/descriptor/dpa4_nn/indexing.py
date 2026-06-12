@@ -22,6 +22,10 @@ from typing import (
 )
 
 import array_api_compat
+
+from deepmd.dpmodel.array_api import (
+    xp_asarray_nodetach,
+)
 import numpy as np
 
 
@@ -169,7 +173,9 @@ def project_D_to_m(
 
     xp = array_api_compat.array_namespace(D_full)
     D_block = D_full[:, :ebed_dim_full, :ebed_dim_full]
-    index = xp.asarray(coeff_index_m, device=array_api_compat.device(D_full))
+    index = xp_asarray_nodetach(
+        xp, coeff_index_m, device=array_api_compat.device(D_full)
+    )
     proj = xp.take(D_block, index, axis=1)
     if cache is not None:
         cache[cache_key] = proj
@@ -223,7 +229,9 @@ def project_Dt_from_m(
 
     xp = array_api_compat.array_namespace(Dt_full)
     Dt_block = Dt_full[:, :ebed_dim_full, :ebed_dim_full]
-    index = xp.asarray(coeff_index_m, device=array_api_compat.device(Dt_full))
+    index = xp_asarray_nodetach(
+        xp, coeff_index_m, device=array_api_compat.device(Dt_full)
+    )
     proj = xp.take(Dt_block, index, axis=2)
     if cache is not None:
         cache[cache_key] = proj

@@ -145,3 +145,43 @@ class TestDescrptDPA4(TestCaseSingleFrameWithNlist):
             rtol=1e-12,
             atol=1e-12,
         )
+
+    def test_trainable_parameters(self) -> None:
+        # `_promote_trainable_tree` must promote every weight that is a
+        # trainable nn.Parameter in the reference pt SeZM implementation
+        # (full 1:1 gradient parity is proven in
+        # source/tests/pt/model/test_dpa4_ptexpt_grad_parity.py)
+        dd0 = make_descriptor(self.nt, self.sel_mix, self.rcut, use_env_seed=True).to(
+            self.device
+        )
+        param_names = dict(dd0.named_parameters())
+        buffer_names = dict(dd0.named_buffers())
+        # spot-check known trainable weights are Parameters
+        for name in (
+            "type_embedding.adam_type_embedding",
+            "radial_basis.adam_freqs",
+            "film_scale_strength_log",
+            "blocks.0.so2_conv.so2_linears.0.weight_m0",
+            "blocks.0.so2_conv.so2_linears.0.weight_m.0",
+            "blocks.0.so2_conv.non_linearities.0.gate_linear.weight",
+            "blocks.0.post_so2_norm.adam_scale",
+            "blocks.0.ffns.0.act.grid_op.left_proj.weight",
+            "output_ffn.so3_linear_1.weight",
+        ):
+            assert name in param_names, f"{name} not promoted to Parameter"
+            assert param_names[name].requires_grad
+        # spot-check constants stay buffers (pt registers them as buffers)
+        for name in (
+            "mean",
+            "stddev",
+            "blocks.0.post_so2_norm.balance_weight",
+            "blocks.0.so2_conv.rotate_inv_rescale_full",
+        ):
+            assert name in buffer_names, f"{name} should stay a buffer"
+            assert name not in param_names
+        # wigner tables must never be trainable
+        assert not any("wigner" in n.lower() for n in param_names)
+        # all promoted parameters are float and trainable
+        for name, p in param_names.items():
+            assert p.is_floating_point(), name
+            assert p.requires_grad, name

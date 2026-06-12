@@ -21,6 +21,10 @@ from typing import (
 )
 
 import array_api_compat
+
+from deepmd.dpmodel.array_api import (
+    xp_asarray_nodetach,
+)
 import numpy as np
 
 from deepmd.dpmodel import (
@@ -93,7 +97,9 @@ class RMSNorm(NativeOP):
             Normalized array with shape `(..., C)`, same dtype as input.
         """
         xp = array_api_compat.array_namespace(x)
-        scale = xp.asarray(self.adam_scale[...], device=array_api_compat.device(x))
+        scale = xp_asarray_nodetach(
+            xp, self.adam_scale[...], device=array_api_compat.device(x)
+        )
         in_dtype = x.dtype
         if in_dtype != scale.dtype:
             x = xp.astype(x, scale.dtype)
@@ -233,10 +239,10 @@ class EquivariantRMSNorm(NativeOP):
         """
         xp = array_api_compat.array_namespace(x)
         device = array_api_compat.device(x)
-        scale = xp.asarray(self.adam_scale[...], device=device)
-        bias = xp.asarray(self.bias[...], device=device)
-        balance_weight = xp.asarray(
-            self.balance_weight, device=array_api_compat.device(x)
+        scale = xp_asarray_nodetach(xp, self.adam_scale[...], device=device)
+        bias = xp_asarray_nodetach(xp, self.bias[...], device=device)
+        balance_weight = xp_asarray_nodetach(
+            xp, self.balance_weight, device=array_api_compat.device(x)
         )
         in_dtype = x.dtype
         if in_dtype != scale.dtype:
@@ -261,7 +267,9 @@ class EquivariantRMSNorm(NativeOP):
             xt = xt * inv_rms
 
         # === Step 3. Apply per-degree affine parameters ===
-        expand_index = xp.asarray(self.expand_index, device=array_api_compat.device(x))
+        expand_index = xp_asarray_nodetach(
+            xp, self.expand_index, device=array_api_compat.device(x)
+        )
         expanded_scale = xp.take(scale, expand_index, axis=0)
         expanded_scale = expanded_scale[None, ...]  # (1, D, F, C)
         x0 = x0 * expanded_scale[:, :1, :, :]
@@ -435,10 +443,10 @@ class ReducedEquivariantRMSNorm(NativeOP):
         """
         xp = array_api_compat.array_namespace(x)
         device = array_api_compat.device(x)
-        scale = xp.asarray(self.adam_scale[...], device=device)
-        bias0_w = xp.asarray(self.bias0[...], device=device)
-        balance_weight = xp.asarray(
-            self.balance_weight, device=array_api_compat.device(x)
+        scale = xp_asarray_nodetach(xp, self.adam_scale[...], device=device)
+        bias0_w = xp_asarray_nodetach(xp, self.bias0[...], device=device)
+        balance_weight = xp_asarray_nodetach(
+            xp, self.balance_weight, device=array_api_compat.device(x)
         )
         in_dtype = x.dtype
         if in_dtype != scale.dtype:
@@ -464,8 +472,8 @@ class ReducedEquivariantRMSNorm(NativeOP):
             xt = xt * inv_rms
 
         # === Step 3. Apply per-degree affine parameters ===
-        degree_index_m = xp.asarray(
-            self.degree_index_m, device=array_api_compat.device(x)
+        degree_index_m = xp_asarray_nodetach(
+            xp, self.degree_index_m, device=array_api_compat.device(x)
         )
         expanded_scale = xp.take(scale, degree_index_m, axis=1)
         expanded_scale = expanded_scale[None, ...]  # (1, F, D_m_trunc, C)
@@ -598,7 +606,9 @@ class ScalarRMSNorm(NativeOP):
             Normalized array with the same shape as input and same dtype.
         """
         xp = array_api_compat.array_namespace(x)
-        scale = xp.asarray(self.adam_scale[...], device=array_api_compat.device(x))
+        scale = xp_asarray_nodetach(
+            xp, self.adam_scale[...], device=array_api_compat.device(x)
+        )
         in_dtype = x.dtype
         if in_dtype != scale.dtype:
             x = xp.astype(x, scale.dtype)

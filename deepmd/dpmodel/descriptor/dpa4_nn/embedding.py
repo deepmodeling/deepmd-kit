@@ -39,6 +39,10 @@ from typing import (
 )
 
 import array_api_compat
+
+from deepmd.dpmodel.array_api import (
+    xp_asarray_nodetach,
+)
 import numpy as np
 
 from deepmd.dpmodel import (
@@ -157,8 +161,8 @@ class SeZMTypeEmbedding(NativeOP):
             Type embeddings with shape (..., embed_dim).
         """
         xp = array_api_compat.array_namespace(atype)
-        weight = xp.asarray(
-            self.adam_type_embedding[...], device=array_api_compat.device(atype)
+        weight = xp_asarray_nodetach(
+            xp, self.adam_type_embedding[...], device=array_api_compat.device(atype)
         )
         # pt embedding.py:143 torch.embedding -> flat int64 take + reshape.
         index = xp.astype(xp.reshape(atype, (-1,)), xp.int64)
@@ -297,7 +301,8 @@ class GeometricInitialEmbedding(NativeOP):
         if zonal_coupling is None:
             Dt_full = edge_cache.Dt_full  # (E, D, D)
             dim_full = Dt_full.shape[-1]
-            flat_index = xp.asarray(
+            flat_index = xp_asarray_nodetach(
+                xp,
                 self.non_scalar_row_index * dim_full + self.zonal_m0_col_index_for_row,
                 device=device,
             )
@@ -310,7 +315,9 @@ class GeometricInitialEmbedding(NativeOP):
         # === Step 3. Broadcast radial features per row ===
         # Each non-scalar packed row reuses the radial feature of its degree l
         # (pt embedding.py:245-250, index_select on axis 1).
-        radial_slot_index = xp.asarray(self.radial_slot_index_for_row, device=device)
+        radial_slot_index = xp_asarray_nodetach(
+            xp, self.radial_slot_index_for_row, device=device
+        )
         radial_value_for_row = xp.take(
             radial_feat, radial_slot_index, axis=1
         )  # (E, D-1, C)
