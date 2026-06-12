@@ -1868,7 +1868,7 @@ def _build_so2_edge_data(
     radial = rng.normal(size=(n_edge, lmax + 1, channels))
     x = rng.normal(size=(nloc, dim_full, channels))
 
-    t = torch.from_numpy
+    t = to_pt
     pt_cache = EdgeFeatureCache(
         src=t(src[valid]),
         dst=t(dst[valid]),
@@ -2786,7 +2786,7 @@ def _build_real_edge_caches(
     pt_wig = PTWigner(lmax, dtype=torch.float64)
     dp_wig = DPWigner(lmax, precision="float64")
 
-    t = torch.from_numpy
+    t = to_pt
     mapping = inputs["mapping"]
     pt_cache = pt_build_edge_cache(
         type_ebed=t(inputs["type_ebed"]),
