@@ -6,7 +6,8 @@
 > **Optional short alias:** `dpaad`
 > **Display name:** DPA-ADAPT — Atomistic DPA Adaptation for Property Tasks
 
-`dpa-adapt data convert` auto-detects the input type and routes it to the correct pipeline:
+`dpa-adapt data convert` and the Python `dpa_adapt.convert()` helper
+auto-detect the input type and route it to the correct pipeline:
 **SMILES table** → RDKit 3D conformer generation,
 **formula table** → random doping from a POSCAR template,
 **structure files** → dpdata (auto-detect or explicit `--fmt`).
@@ -45,19 +46,27 @@ dpaad data convert --input data.csv --output ./npy --fmt smiles \
     --split-seed 42 --conformer-seed 43
 ```
 
-## 2. Formula Tables (CSV + POSCAR Template)
+## 2. Formula Tables (CSV/TXT + POSCAR Template)
 
-**Trigger:** `--fmt formula`. Reads a CSV of elemental composition formulas
-(e.g. `Ni0.65Gd0.15O2H1`) and a template POSCAR, then generates doped structures
-by randomly substituting atoms on the host-element sublattice.
+**Trigger:** `--fmt formula`. Reads a table of elemental composition formulas
+(e.g. `Ni0.65Gd0.15O2H1`) and a template POSCAR, then generates doped
+structures by randomly substituting atoms on the host-element sublattice.
+
+Formula input supports two table styles:
+
+- Headered CSV/TSV: comma- or tab-delimited with named columns, such as
+  `formula,Property`.
+- Headerless TXT/CSV-style rows: whitespace-delimited with integer column
+  indices, such as `Ni0.65Gd0.15Fe0.10Co0.05Yb0.05O2H1    291.9`.
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
 | `--poscar` | *(required)* | Template POSCAR file for the host lattice |
-| `--formula-col` | `formula` | Input CSV column name to read composition formulas from |
+| `--formula-col` | `formula` | Input table column to read composition formulas from; use a column name for headered files or a 0-based index for headerless whitespace files |
 | `--base-element` | auto | Host element to substitute. Inferred as the most frequent non-O/H element in the template if omitted. |
 | `--sets` | `1` | Number of random structures generated per formula row |
-| `--property-col` | `Property` | Input CSV column name to read target values from; also used as the output label name |
+| `--property-col` | `Property` | Input table column to read target values from; use a column name for headered files or a 0-based index for headerless whitespace files |
+| `--property-name` | value of `--property-col` | Output label name written as `set.*/{property_name}.npy` |
 | `--seed` | `42` | Random seed for selecting substituted host-atom sites |
 
 ```bash
@@ -68,6 +77,11 @@ dpa-adapt data convert --input compositions.csv --output ./npy --fmt formula \
 dpaad data convert --input compositions.csv --output ./npy --fmt formula \
     --poscar template.POSCAR --sets 3 \
     --formula-col formula --property-col bandgap
+
+# Headerless whitespace-delimited TXT: formula in column 0, target in column 1
+dpa-adapt data convert --input 20260514.txt --output ./npy --fmt formula \
+    --poscar template.POSCAR --formula-col 0 --property-col 1 \
+    --property-name overpotential
 ```
 
 ## 3. Structure Files via dpdata
@@ -155,46 +169,21 @@ dpaad data convert --input traj.extxyz --output ./npy --fmt extxyz
 
 ### Glob patterns
 
-When `--input` contains wildcards (`*`, `?`, `[`):
+When `--input` contains wildcards (`*`, `?`, `[`), conversion uses mirrored
+batch output:
 
-- **1 match** → treated as a single file (output directly into `--output`).
-- **N > 1 matches** → each match is converted into a numbered subdirectory
-  `{output}/sys_{i:04d}/` (zero-indexed, sorted).
+- **1 or more matches** → each matched file is converted into an output
+  directory that mirrors its path relative to the non-wildcard prefix.
 - **0 matches** → `FileNotFoundError`.
+- A `manifest.json` is written into the output root, recording converted and
+  skipped files.
 
 ```bash
-# Single match (only one OUTCAR found)
-dpa-adapt data convert --input "run*/OUTCAR" --output ./npy
-dpaad data convert --input "run*/OUTCAR" --output ./npy
-
-# Multi-match: outputs sys_0000/, sys_0001/, …
+# Glob output mirrors the input tree under ./npy_root
 dpa-adapt data convert --input "calcs/**/OUTCAR" --output ./npy_root --fmt vasp/outcar
 dpaad data convert --input "calcs/**/OUTCAR" --output ./npy_root --fmt vasp/outcar
 ```
 
-## 4. Batch Mode
-
-**Trigger:** `--input` with glob wildcards and N > 1 matches. Uses
-`batch_convert()` internally.
-
-Key behaviors:
-
-- Output directory tree mirrors the input tree structure (relative to the
-  non-wildcard prefix of the glob pattern).
-- A `manifest.json` is written into the output root, recording every
-  converted and skipped file.
-- When `--strict` is set, the first conversion error fails immediately.
-  Without it (default), errors are skipped and logged.
-
-```bash
-# Batch convert all OUTCAR files; each lands in a mirrored subdirectory
-dpa-adapt data convert --input "scan/**/OUTCAR" --output ./all_npy --fmt vasp/outcar
-dpaad data convert --input "scan/**/OUTCAR" --output ./all_npy --fmt vasp/outcar
-
-# Strict mode — abort on first failure
-dpa-adapt data convert --input "scan/**/OUTCAR" --output ./all_npy --fmt vasp/outcar --strict
-dpaad data convert --input "scan/**/OUTCAR" --output ./all_npy --fmt vasp/outcar --strict
-
-# Check the manifest
-cat ./all_npy/manifest.json
-```
+For example, `calcs/run1/OUTCAR` is written as `npy_root/run1/OUTCAR/`.
+When `--strict` is set, the first conversion error fails immediately. Without
+it, errors are skipped and logged in the manifest.
