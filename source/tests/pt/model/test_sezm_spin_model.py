@@ -394,7 +394,7 @@ class TestSeZMSpinModel(unittest.TestCase):
         out_eager = eager(self.coord, self.atype, spin=self.spin, box=self.box)
         out_compiled = compiled(self.coord, self.atype, spin=self.spin, box=self.box)
 
-        self.assertIn((False, False, True), compiled.compiled_core_compute_cache)
+        self.assertIn((False, True), compiled.compiled_core_compute_cache)
         _assert_close_with_strict_warning(
             out_compiled["energy"],
             out_eager["energy"],
