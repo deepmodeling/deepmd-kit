@@ -110,6 +110,64 @@ def get_standard_model(data: dict) -> EnergyModel:
     return model
 
 
+def get_sezm_model(data: dict) -> EnergyModel:
+    """Build a pt_expt energy model from a DPA4/SeZM model config.
+
+    Mirrors :func:`deepmd.pt.model.model.get_sezm_model` so that dpa4/sezm
+    training configs are interchangeable between the pt and pt_expt backends.
+    The pt-only SeZM extensions (bridging, LoRA, compile, spin) are not
+    supported here and raise ``NotImplementedError``.
+    """
+    data = copy.deepcopy(data)
+    if "spin" in data:
+        raise NotImplementedError(
+            "Spin DPA4/SeZM models are not supported in the pt_expt backend."
+        )
+    if str(data.get("bridging_method", "none")).lower() != "none":
+        raise NotImplementedError(
+            "`bridging_method` is not supported for DPA4/SeZM in the pt_expt backend."
+        )
+    if data.get("lora") is not None:
+        raise NotImplementedError(
+            "`lora` is not supported for DPA4/SeZM in the pt_expt backend."
+        )
+    if data.get("use_compile"):
+        raise NotImplementedError(
+            "`use_compile` is not supported for DPA4/SeZM in the pt_expt backend."
+        )
+    data.pop("type", None)
+    data.setdefault("descriptor", {})
+    data.setdefault("fitting_net", {})
+    data["descriptor"].setdefault("type", "dpa4")
+    data["fitting_net"].setdefault("type", "dpa4_ener")
+
+    # keep descriptor.exclude_types and model pair_exclude_types consistent
+    descriptor_exclude_types = [
+        list(pair) for pair in (data["descriptor"].get("exclude_types") or [])
+    ]
+    if "pair_exclude_types" in data:
+        pair_exclude_types = [list(pair) for pair in (data["pair_exclude_types"] or [])]
+        if descriptor_exclude_types and descriptor_exclude_types != pair_exclude_types:
+            raise ValueError(
+                "SeZM `pair_exclude_types` and `descriptor.exclude_types` must match "
+                "when both are provided."
+            )
+    else:
+        pair_exclude_types = descriptor_exclude_types
+    data["pair_exclude_types"] = pair_exclude_types
+    data["descriptor"]["exclude_types"] = copy.deepcopy(pair_exclude_types)
+
+    ntypes = len(data["type_map"])
+    descriptor, fitting, _ = _get_standard_model_components(data, ntypes)
+    return EnergyModel(
+        descriptor=descriptor,
+        fitting=fitting,
+        type_map=data["type_map"],
+        atom_exclude_types=data.get("atom_exclude_types", []),
+        pair_exclude_types=pair_exclude_types,
+    )
+
+
 def get_linear_model(model_params: dict) -> BaseModel:
     """Get a linear energy model from a config dictionary.
 
@@ -213,5 +271,7 @@ def get_model(data: dict) -> BaseModel:
         return get_standard_model(data)
     elif model_type == "linear_ener":
         return get_linear_model(data)
+    elif model_type in ("dpa4", "DPA4", "sezm", "SeZM"):
+        return get_sezm_model(data)
     else:
         return BaseModel.get_class_by_type(model_type).get_model(data)

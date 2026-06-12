@@ -762,6 +762,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         mapping: Array | None = None,
         fparam: Array | None = None,
         comm_dict: dict | None = None,
+        charge_spin: Array | None = None,
     ) -> tuple[Array, Any, Any, Any, Any]:
         """Compute the DPA4 descriptor.
 
@@ -780,6 +781,10 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             Frame parameters; not used by DPA4 (interface compatibility).
         comm_dict
             MPI communication metadata; not used (interface compatibility).
+        charge_spin
+            Charge/spin embedding input; must be None since
+            ``add_chg_spin_ebd=True`` is rejected at construction
+            (interface compatibility with ``DPAtomicModel``).
 
         Returns
         -------
