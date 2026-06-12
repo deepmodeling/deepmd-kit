@@ -465,7 +465,7 @@ def get_parser() -> argparse.ArgumentParser:
     parser_fit.add_argument(
         "--strategy",
         default="frozen_sklearn",
-        choices=["frozen_sklearn", "linear_probe", "finetune", "mft"],
+        choices=["frozen_sklearn", "frozen_head", "finetune", "mft"],
     )
     parser_fit.add_argument(
         "--predictor", default="rf", choices=["rf", "linear", "ridge", "mlp"]
@@ -541,7 +541,7 @@ def get_parser() -> argparse.ArgumentParser:
         "--fparam-dim",
         type=int,
         default=0,
-        help="(linear_probe/finetune/mft) Dimensionality of per-frame condition "
+        help="(frozen_head/finetune/mft) Dimensionality of per-frame condition "
         "inputs (fparam). Requires set.*/fparam.npy in training data. Default: 0.",
     )
 

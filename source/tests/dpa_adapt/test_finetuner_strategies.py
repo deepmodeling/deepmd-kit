@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Tests for DPAFineTuner training-paradigm strategies
-(linear_probe / finetune).
+(frozen_head / finetune).
 
 Mock ``dp --pt train`` via ``subprocess.run``; verify:
 - Correct DPATrainer params per strategy
@@ -188,7 +188,7 @@ class TestAutoTypeMap:
         systems = _make_system_dirs(tmp_path)
         m = DPAFineTuner(
             pretrained="/fake.pt",
-            strategy="linear_probe",
+            strategy="frozen_head",
             init_branch="SPICE2",
         )
         tm = m._resolve_type_maps(systems)
@@ -241,7 +241,7 @@ class TestTrainingParadigms:
     @pytest.mark.parametrize(
         "strategy,expect_freeze,expect_tm_len",
         [
-            ("linear_probe", True, 8),
+            ("frozen_head", True, 8),
             ("finetune", False, 8),
         ],
     )
@@ -287,7 +287,7 @@ class TestTrainingParadigms:
         )
         assert tm != [], "type_map is empty — would cause CUDA gather out-of-bounds"
 
-    @pytest.mark.parametrize("strategy", ["linear_probe", "finetune"])
+    @pytest.mark.parametrize("strategy", ["frozen_head", "finetune"])
     def test_strategy_to_trainer_params(self, tmp_path, strategy):
         """Each strategy produces correct DPATrainer freeze_backbone / pretrained."""
         out_dir = tmp_path / "out"
@@ -317,7 +317,7 @@ class TestTrainingParadigms:
         assert fn["intensive"] is True
 
         # LP must freeze backbone
-        if strategy == "linear_probe":
+        if strategy == "frozen_head":
             assert cfg["model"]["descriptor"]["trainable"] is False
         else:
             assert cfg["model"]["descriptor"]["trainable"] is True
