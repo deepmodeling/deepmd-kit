@@ -49,6 +49,7 @@ class PairDeepMD : public PairDeepBaseModel {
   void compute(int, int) override;
   int pack_reverse_comm(int, int, double*) override;
   void unpack_reverse_comm(int, int*, double*) override;
+  double eval_energy_with_fparam(const std::vector<double>& fparam_override);
 
  protected:
   deepmd_compat::DeepPot deep_pot;
