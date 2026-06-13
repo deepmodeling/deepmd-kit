@@ -951,6 +951,7 @@ def main_parser() -> argparse.ArgumentParser:
             "fitting-net",
             "size",
             "observed-type",
+            "serialization-tree",
         ],
         nargs="+",
     )

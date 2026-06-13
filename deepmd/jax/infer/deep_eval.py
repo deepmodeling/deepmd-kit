@@ -187,6 +187,16 @@ class DeepEval(DeepEvalBackend):
         """Get the number of spin atom types of this model."""
         return 0
 
+    def serialize(self) -> dict[str, Any]:
+        from deepmd.jax.utils.serialization import (
+            serialize_from_file,
+        )
+
+        data = serialize_from_file(self.model_path)
+        if "model" not in data:
+            raise RuntimeError("Serialized model data does not contain key 'model'.")
+        return data["model"]
+
     def eval(
         self,
         coords: np.ndarray,
