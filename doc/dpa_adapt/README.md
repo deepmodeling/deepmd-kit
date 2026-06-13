@@ -37,7 +37,9 @@ model.fit(train_data="/data/train/*", target_key="homo")
 
 # frozen_head / finetune — same interface, different depth
 model = DPAFineTuner(
-    pretrained="DPA-3.1-3M", strategy="frozen_head", property_name="homo"
+    pretrained="DPA-3.1-3M", 
+    strategy="frozen_head",  #"frozen_head" | "finetune"
+    property_name="homo",
 )
 model.fit(train_data="/data/train", valid_data="/data/valid")
 
