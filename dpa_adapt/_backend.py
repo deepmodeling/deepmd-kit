@@ -50,6 +50,8 @@ def resolve_pretrained_path(pretrained: str, cache_dir: str | None = None) -> st
     import os as _os
     from pathlib import Path as _Path
 
+    pretrained = _os.fspath(pretrained)
+
     if _os.path.isfile(pretrained):
         return pretrained
 
@@ -66,7 +68,7 @@ def resolve_pretrained_path(pretrained: str, cache_dir: str | None = None) -> st
 
     path = _download(pretrained, cache_dir=cache_dir)
     _LOG.info("Resolved pretrained model: %s", path)
-    return path
+    return _os.fspath(path)
 
 
 def load_torch_file(path: str, map_location: str = "cpu") -> dict[str, Any]:
