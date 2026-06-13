@@ -84,8 +84,8 @@ class NonFiniteGradGuard:
 
     :meth:`update` accumulates the non-finite condition on device; the result is
     read back only by :meth:`raise_if_nonfinite`. Calling the check before each
-    checkpoint keeps a diverged step from being written while leaving the training
-    step free of host reads.
+    checkpoint keeps a diverged interval from being written while leaving the
+    training step free of host reads.
     """
 
     def __init__(self) -> None:
@@ -112,7 +112,7 @@ class NonFiniteGradGuard:
         """
         Raise if any norm accumulated since the previous call was non-finite.
 
-        On failure the offending parameters are reported via
+        On failure the current gradient state is reported via
         :func:`raise_nonfinite_gradient_norm`.
 
         Parameters
@@ -137,11 +137,12 @@ def raise_nonfinite_gradient_norm(
     named_parameters: Iterable[tuple[str, torch.nn.Parameter]],
 ) -> None:
     """
-    Raise a ``RuntimeError`` reporting which gradients are non-finite.
+    Raise a ``RuntimeError`` reporting the current non-finite gradients.
 
-    Parameters whose gradient is non-finite are listed by name and shape. When
-    every individual gradient is finite, the overflow originated in the norm
-    reduction rather than in a single parameter.
+    Parameters whose current gradient is non-finite are listed by name and shape.
+    When every current individual gradient is finite, the accumulated guard flag
+    came from an earlier step in the checkpoint interval or from the norm
+    reduction.
 
     Parameters
     ----------
@@ -165,7 +166,10 @@ def raise_nonfinite_gradient_norm(
     detail = (
         "\n".join(bad_params)
         if bad_params
-        else "  (all individual gradients finite; overflow in the norm reduction)"
+        else (
+            "  (all current individual gradients are finite; non-finite norm was "
+            "recorded earlier in the checkpoint interval or in the norm reduction)"
+        )
     )
     raise RuntimeError(
         "Non-finite gradient norm; training has diverged.\n"

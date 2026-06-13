@@ -1753,18 +1753,18 @@ class Trainer:
                     ),
                 )
 
-            if (
-                (
-                    (display_step_id) % self.save_freq == 0
-                    and _step_id != self.start_step
-                )
-                or (display_step_id) == self.num_steps
-            ) and (self.zero_stage > 0 or self.rank == 0 or dist.get_rank() == 0):
+            should_save_checkpoint = (
+                (display_step_id) % self.save_freq == 0 and _step_id != self.start_step
+            ) or (display_step_id) == self.num_steps
+            if should_save_checkpoint:
                 # Abort before writing if any gradient norm since the previous
                 # checkpoint was non-finite.
                 self.nonfinite_grad_guard.raise_if_nonfinite(
                     self.wrapper.named_parameters
                 )
+            if should_save_checkpoint and (
+                self.zero_stage > 0 or self.rank == 0 or dist.get_rank() == 0
+            ):
                 # Handle the case if rank 0 aborted and re-assigned
                 self.latest_model = Path(self.save_ckpt + f"-{display_step_id}.pt")
                 self.save_model(self.latest_model, lr=cur_lr, step=_step_id)

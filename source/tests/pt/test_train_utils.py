@@ -33,7 +33,7 @@ class TestClipGradNorm(unittest.TestCase):
 
     def test_stable_norm_survives_float32_overflow(self) -> None:
         # A single parameter whose gradient sum-of-squares overflows float32 is
-        # still clipped via the float64 reduction rather than aborting.
+        # still clipped via the scaled reduction rather than aborting.
         p = torch.nn.Parameter(torch.zeros(128, dtype=torch.float32, device="cpu"))
         p.grad = torch.full((128,), 1.0e19, dtype=torch.float32, device="cpu")
 
@@ -42,7 +42,7 @@ class TestClipGradNorm(unittest.TestCase):
 
         self.assertEqual(total_norm.dtype, torch.float64)
         self.assertTrue(torch.isfinite(total_norm))
-        self.assertAlmostEqual(clipped_norm.item(), 2.0, places=3)
+        self.assertAlmostEqual(clipped_norm.item(), 2.0, places=5)
 
     def test_sharded_path_clips_finite_grads(self) -> None:
         # The non-stable branch (sharded DTensor grads under FSDP2) still clips
@@ -54,6 +54,21 @@ class TestClipGradNorm(unittest.TestCase):
 
         self.assertTrue(torch.isfinite(norm))
         self.assertAlmostEqual(p.grad.item(), 1.0, places=5)
+
+    def test_nonfinite_grad_is_deferred_to_guard(self) -> None:
+        for stable in (True, False):
+            for grad_value in (float("nan"), float("inf")):
+                with self.subTest(stable=stable, grad_value=grad_value):
+                    p = torch.nn.Parameter(torch.zeros(4, device="cpu"))
+                    p.grad = torch.full((4,), grad_value, device="cpu")
+
+                    total_norm = clip_grad_norm_([p], max_norm=1.0, stable=stable)
+
+                    self.assertFalse(torch.isfinite(total_norm))
+                    guard = NonFiniteGradGuard()
+                    guard.update(total_norm)
+                    with self.assertRaisesRegex(RuntimeError, "p"):
+                        guard.raise_if_nonfinite(lambda: [("p", p)])
 
 
 class TestNonFiniteGradGuard(unittest.TestCase):
@@ -80,10 +95,10 @@ class TestNonFiniteGradGuard(unittest.TestCase):
 
     def test_reports_reduction_overflow(self) -> None:
         # The norm was flagged non-finite, yet every individual gradient is
-        # finite, so the message attributes it to the reduction.
+        # currently finite, so the message reports the deferred diagnostic state.
         guard = NonFiniteGradGuard()
         guard.update(torch.tensor(float("inf"), device="cpu"))
-        with self.assertRaisesRegex(RuntimeError, "norm reduction"):
+        with self.assertRaisesRegex(RuntimeError, "checkpoint interval"):
             guard.raise_if_nonfinite(self._named(1.0))
 
     def test_resets_after_check(self) -> None:
