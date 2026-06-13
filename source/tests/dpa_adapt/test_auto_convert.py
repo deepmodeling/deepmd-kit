@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Tests for ``auto_convert`` and the CSV-sniffing helpers."""
+"""Tests for ``convert`` and the CSV-sniffing helpers."""
 
 from __future__ import (
     annotations,
@@ -22,7 +22,7 @@ from dpa_adapt.data.convert import (
     _is_smiles_input,
     _sniff_csv,
     _sniff_xlsx,
-    auto_convert,
+    convert,
 )
 
 # ---------------------------------------------------------------------------
@@ -96,20 +96,20 @@ class TestSniffXlsx:
 
 
 # ---------------------------------------------------------------------------
-# auto_convert routing
+# convert routing
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.skipif(not _HAS_RDKIT, reason="RDKit not installed")
 class TestAutoConvertSmiles:
-    """auto_convert routes CSV-with-SMILES to the SMILES pipeline."""
+    """convert routes CSV-with-SMILES to the SMILES pipeline."""
 
     def test_routes_csv_smiles_to_smiles_method(self, tmp_path):
         f = tmp_path / "mol.csv"
         f.write_text("SMILES,Property\nCCO,1.5\nCN,2.0\n")
         out = tmp_path / "npy"
 
-        result = auto_convert(str(f), str(out))
+        result = convert(str(f), str(out))
 
         assert result["method"] == "smiles"
         assert result["samples_used"] == 2
@@ -122,7 +122,7 @@ class TestAutoConvertSmiles:
         f.write_text("SMILES,val\nC,1.0\nCC,2.0\n")
         out = tmp_path / "npy2"
 
-        result = auto_convert(str(f), str(out), fmt="smiles", property_col="val")
+        result = convert(str(f), str(out), fmt="smiles", property_col="val")
 
         assert result["method"] == "smiles"
         assert result["samples_used"] == 2
@@ -135,21 +135,21 @@ class TestAutoConvertSmiles:
         f.write_text("SMILES,val\nC,1.0\nCC,2.0\n")
         out = tmp_path / "npy3"
 
-        result = auto_convert(str(f), str(out), fmt="SMILES", property_col="val")
+        result = convert(str(f), str(out), fmt="SMILES", property_col="val")
 
         assert result["method"] == "smiles"
         assert result["samples_used"] == 2
 
 
 class TestAutoConvertStructure:
-    """auto_convert routes structure files through dpdata."""
+    """convert routes structure files through dpdata."""
 
     def test_routes_poscar_to_dpdata(self, tmp_path):
         f = tmp_path / "POSCAR"
         f.write_text("Si\n1.0\n5.43 0 0\n0 5.43 0\n0 0 5.43\nSi\n1\nCartesian\n0 0 0\n")
         out = tmp_path / "npy"
 
-        result = auto_convert(str(f), str(out))
+        result = convert(str(f), str(out))
 
         assert result["method"] == "dpdata"
         out_dir = result["output_dir"]
@@ -161,7 +161,7 @@ class TestAutoConvertStructure:
         f.write_text("Si\n1.0\n5.43 0 0\n0 5.43 0\n0 0 5.43\nSi\n1\nCartesian\n0 0 0\n")
         out = tmp_path / "npy2"
 
-        result = auto_convert(str(f), str(out), fmt="vasp/poscar")
+        result = convert(str(f), str(out), fmt="vasp/poscar")
 
         assert result["method"] == "dpdata"
 
@@ -176,7 +176,7 @@ class TestAutoConvertNoSmiles:
 
         # dpdata may or may not handle this, but it must NOT go to SMILES
         with pytest.raises(Exception):  # dpdata won't recognise it either
-            auto_convert(str(f), str(out))
+            convert(str(f), str(out))
 
 
 @pytest.mark.skipif(not _HAS_RDKIT, reason="RDKit not installed")
@@ -192,7 +192,7 @@ class TestSmoke:
         f.write_text("SMILES,Property\nCCO,1.5\nCN,2.0\n")
         out = tmp_path / "npy"
 
-        result = auto_convert(
+        result = convert(
             str(f),
             str(out),
             property_name="homo",

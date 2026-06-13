@@ -275,7 +275,8 @@ def formula_to_npy(
             "Pass base_element= explicitly."
         )
 
-    # Parse CSV — auto-detect delimiter (tab or comma).
+    # Parse CSV/TXT — headered delimited files, headerless delimited files when
+    # columns are integer indices, or headerless whitespace files.
     rows: list[tuple[str, float]] = []
     with open(csv_path, newline="", encoding="utf-8") as fh:
         # Sniff delimiter from first non-empty line.
@@ -284,28 +285,60 @@ def formula_to_npy(
             if line.strip():
                 first_line = line
                 break
-        delimiter = "\t" if "\t" in first_line else ","
         fh.seek(0)
-        reader = csv.DictReader(fh, delimiter=delimiter)
-        if reader.fieldnames is None:
-            raise ValueError(f"No header row found in formula CSV: {csv_path!r}")
-        formula_header = _resolve_col(formula_col, reader.fieldnames)
-        property_header = _resolve_col(property_col, reader.fieldnames)
-        for raw_row in reader:
-            if raw_row is None or all((v or "").strip() == "" for v in raw_row.values()):
-                continue
-            formula_str = (raw_row.get(formula_header) or "").strip()
-            prop_str = (raw_row.get(property_header) or "").strip()
-            if not formula_str:
-                raise ValueError(f"Empty formula value in column {formula_header!r}")
-            try:
-                prop_val = float(prop_str)
-            except ValueError:
-                raise ValueError(
-                    f"Could not parse property value {prop_str!r} "
-                    f"from column {property_header!r}"
-                ) from None
-            rows.append((formula_str, prop_val))
+        delimiter = _sniff_table_delimiter(first_line)
+        if delimiter is not None and _is_int_like(formula_col) and _is_int_like(
+            property_col
+        ):
+            formula_idx = _resolve_col_index(formula_col)
+            property_idx = _resolve_col_index(property_col)
+            reader = csv.reader(fh, delimiter=delimiter)
+            for line_no, fields in enumerate(reader, start=1):
+                if not fields or all(v.strip() == "" for v in fields):
+                    continue
+                try:
+                    formula_str = fields[formula_idx].strip()
+                    prop_str = fields[property_idx].strip()
+                except IndexError:
+                    raise ValueError(
+                        f"Line {line_no} in {csv_path!r} has {len(fields)} "
+                        f"field(s), cannot read columns {formula_idx} and "
+                        f"{property_idx}."
+                    ) from None
+                rows.append((formula_str, _parse_property_value(prop_str, line_no)))
+        elif delimiter is None:
+            formula_idx = _resolve_col_index(formula_col)
+            property_idx = _resolve_col_index(property_col)
+            for line_no, line in enumerate(fh, start=1):
+                if not line.strip():
+                    continue
+                fields = line.split()
+                try:
+                    formula_str = fields[formula_idx].strip()
+                    prop_str = fields[property_idx].strip()
+                except IndexError:
+                    raise ValueError(
+                        f"Line {line_no} in {csv_path!r} has {len(fields)} "
+                        f"field(s), cannot read columns {formula_idx} and "
+                        f"{property_idx}."
+                    ) from None
+                rows.append((formula_str, _parse_property_value(prop_str, line_no)))
+        else:
+            reader = csv.DictReader(fh, delimiter=delimiter)
+            if reader.fieldnames is None:
+                raise ValueError(f"No header row found in formula CSV: {csv_path!r}")
+            formula_header = _resolve_col(formula_col, reader.fieldnames)
+            property_header = _resolve_col(property_col, reader.fieldnames)
+            for raw_row in reader:
+                if raw_row is None or all(
+                    (v or "").strip() == "" for v in raw_row.values()
+                ):
+                    continue
+                formula_str = (raw_row.get(formula_header) or "").strip()
+                prop_str = (raw_row.get(property_header) or "").strip()
+                if not formula_str:
+                    raise ValueError(f"Empty formula value in column {formula_header!r}")
+                rows.append((formula_str, _parse_property_value(prop_str)))
 
     if not rows:
         raise ValueError(
@@ -378,3 +411,43 @@ def _resolve_col(
     if key in lower_map:
         return lower_map[key]
     raise KeyError(f"Column {spec!r} not found in CSV header {fieldnames}")
+
+
+def _sniff_table_delimiter(first_line: str) -> str | None:
+    """Detect common one-character table delimiters."""
+    for delimiter in ("\t", ",", ";", "|"):
+        if delimiter in first_line:
+            return delimiter
+    return None
+
+
+def _is_int_like(spec: int | str) -> bool:
+    """Return True when *spec* can be used as a 0-based column index."""
+    try:
+        int(spec)
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def _resolve_col_index(spec: int | str) -> int:
+    """Resolve an integer-like column spec for headerless files."""
+    try:
+        idx = int(spec)
+    except (TypeError, ValueError):
+        raise ValueError(
+            "Headerless formula files require integer column "
+            f"indices, got {spec!r}."
+        ) from None
+    if idx < 0:
+        raise ValueError(f"Column index must be non-negative, got {idx}.")
+    return idx
+
+
+def _parse_property_value(prop_str: str, line_no: int | None = None) -> float:
+    """Parse a property value with a useful error message."""
+    try:
+        return float(prop_str)
+    except ValueError:
+        location = f" on line {line_no}" if line_no is not None else ""
+        raise ValueError(f"Could not parse property value {prop_str!r}{location}") from None

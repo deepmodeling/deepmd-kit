@@ -1,10 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Format-agnostic data conversion.
 
-Public entry point: ``auto_convert()`` — sniffs the input and routes to the
-appropriate pipeline (SMILES→npy via ``smiles_to_npy``, or structure→npy via
-``dpdata``).  CLI callers should use this instead of calling ``convert()``
-or ``smiles_to_npy()`` directly.
+Public entry point: ``convert()`` — sniffs the input and routes to the
+appropriate pipeline: SMILES tables, formula tables, single structure files,
+or globbed batches of structure files.
 """
 
 from __future__ import (
@@ -89,11 +88,11 @@ def _is_smiles_input(path: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# auto_convert — the single public entry point
+# convert — the single public entry point
 # ---------------------------------------------------------------------------
 
 
-def auto_convert(
+def convert(
     input_path: str,
     output_dir: str,
     *,
@@ -129,12 +128,15 @@ def auto_convert(
     generates 3D conformers (via RDKit), splits into train/valid, and writes
     the standard ``deepmd/npy`` layout.
 
-    *Otherwise* the call delegates to ``dpdata`` with ``fmt="auto"`` (or the
-    explicit *fmt* if provided), converting a single structure file (POSCAR,
-    extxyz, cif, …) into ``deepmd/npy``.
+    *If the input is a glob pattern* the call converts each matched structure
+    file into a mirrored output tree and writes ``manifest.json``.
 
-    Returns a dict with keys ``"method"`` (``"formula"``, ``"smiles"``, or
-    ``"dpdata"``) and any additional metadata the chosen backend provides.
+    *Otherwise* the call delegates to ``dpdata`` with auto-detection (or the
+    explicit *fmt* if provided), converting a single structure file into
+    ``deepmd/npy``.
+
+    Returns a dict with ``"method"`` and additional metadata from the chosen
+    backend.
     """
     # --- explicit SMILES hint, or auto-sniff ---
     is_smiles_fmt = isinstance(fmt, str) and fmt.lower() == "smiles"
@@ -191,8 +193,25 @@ def auto_convert(
             print(f"Formula conversion: {len(out)} systems written.")
         return {"method": "formula", "output_systems": out}
 
-    # --- structure file → dpdata ---
-    out = convert(
+    # --- structure glob → batch dpdata ---
+    input_str = str(input_path)
+    if any(ch in input_str for ch in "*?["):
+        outputs = _batch_convert(
+            glob_pattern=input_str,
+            output_dir=output_dir,
+            fmt=fmt or "auto",
+            type_map=type_map,
+            validate=validate,
+            strict=strict,
+        )
+        return {
+            "method": "batch_dpdata",
+            "output_dirs": outputs,
+            "manifest": str(Path(output_dir).resolve() / "manifest.json"),
+        }
+
+    # --- single structure file → dpdata ---
+    out = _convert_dpdata(
         input_path=input_path,
         output_dir=output_dir,
         fmt=fmt,
@@ -204,11 +223,11 @@ def auto_convert(
 
 
 # ---------------------------------------------------------------------------
-# convert() — thin dpdata wrapper (kept for programmatic use)
+# _convert_dpdata() — thin dpdata wrapper
 # ---------------------------------------------------------------------------
 
 
-def convert(
+def _convert_dpdata(
     input_path: str,
     output_dir: str,
     fmt: str | None = None,
@@ -216,71 +235,15 @@ def convert(
     validate: bool = True,
     strict: bool = False,
 ) -> str:
-    """Convert one or more structure files to ``deepmd/npy`` format.
-
-    Thin wrapper over ``dpdata``.  When *fmt* is ``None`` (or ``"auto"``),
-    dpdata auto-detects the format from the file extension or content.
-    Explicit *fmt* values (``"extxyz"``, ``"vasp/poscar"``, ``"cif"``, …)
-    are passed through to ``dpdata`` unchanged.
-
-    Parameters
-    ----------
-    input_path : str
-        Path or glob pattern to the input file(s) (e.g. ``"calcs/**/OUTCAR"``,
-        ``"raw/*.sdf"``).  Wildcards (``*``, ``?``, ``[``) are expanded via
-        :func:`glob.glob` with ``recursive=True``:
-
-        - **No wildcards** — treated as a literal path; output goes directly
-          into *output_dir*.
-        - **Glob matches 1 file** — same as literal path (output → *output_dir*).
-        - **Glob matches N > 1 files** — each match is converted into a numbered
-          subdirectory ``{output_dir}/sys_{i:04d}/`` (zero-indexed, sorted).
-        - **Glob matches nothing** — raises ``FileNotFoundError``.
-
-    output_dir : str
-        Destination directory for the deepmd/npy output.
-    fmt : str, optional
-        Format hint (e.g. ``"extxyz"``, ``"vasp/poscar"``).  Auto-detected
-        when ``None``.
-    type_map : list[str], optional
-        Ordered element symbol list.
-    validate : bool
-        Run ``check_data()`` on the output after conversion.
-    strict : bool
-        Fail on the first validation issue instead of warning.
-
-    Returns
-    -------
-    str
-        Resolved path to the output directory.
-    """
-    # --- glob expansion ---
-    input_str = str(input_path)
-    if any(ch in input_str for ch in "*?["):
-        matches = sorted(_glob.glob(input_str, recursive=True))
-        if not matches:
-            raise FileNotFoundError(f"No files matched pattern: {input_str}")
-        if len(matches) == 1:
-            # Single match — behave identically to literal path.
-            input_files = [(matches[0], str(Path(output_dir).resolve()))]
-        else:
-            output_root = str(Path(output_dir).resolve())
-            input_files = [
-                (m, str(Path(output_root) / f"sys_{i:04d}"))
-                for i, m in enumerate(matches)
-            ]
-    else:
-        input_files = [(input_str, str(Path(output_dir).resolve()))]
-
-    for _in_path, _out_dir in input_files:
-        _convert_one(
-            input_path=_in_path,
-            output_dir=_out_dir,
-            fmt=fmt,
-            type_map=type_map,
-            validate=validate,
-            strict=strict,
-        )
+    """Convert one structure file to ``deepmd/npy`` via ``dpdata``."""
+    _convert_one(
+        input_path=input_path,
+        output_dir=str(Path(output_dir).resolve()),
+        fmt=fmt,
+        type_map=type_map,
+        validate=validate,
+        strict=strict,
+    )
 
     return str(Path(output_dir).resolve())
 
@@ -300,7 +263,7 @@ def _convert_one(
 ) -> str:
     """Convert a single structure file to ``deepmd/npy`` format.
 
-    Internal helper called by :func:`convert` — do not use directly.
+    Internal helper called by :func:`_convert_dpdata` — do not use directly.
     """
     try:
         import dpdata
@@ -339,7 +302,7 @@ def _convert_one(
 
 
 # ---------------------------------------------------------------------------
-# batch_convert() — glob many inputs into a mirrored deepmd/npy tree
+# _batch_convert() — glob many inputs into a mirrored deepmd/npy tree
 # ---------------------------------------------------------------------------
 
 
@@ -363,7 +326,7 @@ def _glob_base(pattern: str) -> Path:
     return base
 
 
-def batch_convert(
+def _batch_convert(
     glob_pattern: str,
     output_dir: str,
     fmt: str,
@@ -391,11 +354,11 @@ def batch_convert(
     output_dir : str
         Root directory for the mirrored deepmd/npy output tree.
     fmt : str
-        dpdata format string, applied to every match (see ``convert()``).
+        dpdata format string, applied to every match.
     type_map : list[str], optional
         Ordered element symbol list, passed through to ``convert()``.
     validate : bool
-        Passed through to ``convert()`` — validate each converted system.
+        Passed through to the dpdata converter.
     strict : bool
         If True, the first failure (a conversion error or, when ``validate``
         is on, a validation issue) raises instead of being skipped. If False
@@ -414,6 +377,8 @@ def batch_convert(
 
     base = _glob_base(glob_pattern)
     matches = sorted(_glob.glob(glob_pattern, recursive=recursive))
+    if not matches:
+        raise FileNotFoundError(f"No files matched pattern: {glob_pattern}")
 
     converted: list[dict] = []
     skipped: list[dict] = []
@@ -421,6 +386,12 @@ def batch_convert(
     for input_path in matches:
         in_path = Path(input_path)
         if not in_path.is_file():
+            skipped.append(
+                {
+                    "input": str(in_path),
+                    "error": "matched path is not a file",
+                }
+            )
             continue
         try:
             rel = in_path.relative_to(base)
@@ -429,7 +400,7 @@ def batch_convert(
         # Mirror the input tree; the file stem is the leaf system directory.
         out_sub = output_root / rel.parent / in_path.stem
         try:
-            out = convert(
+            out = _convert_dpdata(
                 input_path=str(in_path),
                 output_dir=str(out_sub),
                 fmt=fmt,
@@ -441,7 +412,7 @@ def batch_convert(
         except Exception as e:
             if strict:
                 raise
-            # Drop the output subdir if convert() created it but wrote
+            # Drop the output subdir if conversion created it but wrote
             # nothing — an empty dir would just make load_data() and the
             # split_* helpers choke later, and keeps the return value in
             # sync with what's actually on disk. A half-written dir (dpdata
@@ -451,7 +422,7 @@ def batch_convert(
                     out_sub.rmdir()
                 except OSError:
                     pass  # races / permissions — don't block the batch
-            _LOG.warning("[batch_convert] skipping %s: %s", in_path, e)
+            _LOG.warning("[convert] skipping %s: %s", in_path, e)
             skipped.append({"input": str(in_path), "error": str(e)})
 
     manifest = {
@@ -465,7 +436,7 @@ def batch_convert(
     manifest_path.write_text(json.dumps(manifest, indent=2))
 
     _LOG.info(
-        "[batch_convert] %d converted, %d skipped — manifest: %s",
+        "[convert] %d converted, %d skipped — manifest: %s",
         len(converted),
         len(skipped),
         manifest_path,

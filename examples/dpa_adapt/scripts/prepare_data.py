@@ -5,8 +5,8 @@
 """Download QM9 GDB9 and prepare deepmd/npy systems for the quickstart demo.
 
 Reads molecules 1–50 from the SDF, reads HOMO-LUMO gaps from the companion
-CSV file, converts each molecule to ``deepmd/npy`` format with a 100 Å cubic
-box, and splits into 40 training and 10 test systems.
+CSV file, stages a small 50-row dataset, converts it with ``dpa_adapt.convert``,
+and splits into 40 training and 10 test systems.
 
 Usage::
 
@@ -22,6 +22,7 @@ from __future__ import (
 
 import csv
 import shutil
+import sys
 import tarfile
 import urllib.request
 from pathlib import (
@@ -30,10 +31,19 @@ from pathlib import (
 
 import numpy as np
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+
+from dpa_adapt import (
+    convert,
+)
+
 # This script lives in demo/scripts/; resolve data and raw dirs against demo/.
 DEMO_DIR = Path(__file__).resolve().parent.parent
 RAW_DIR = DEMO_DIR / "raw"
 DATA_DIR = DEMO_DIR / "data"
+STAGED_DIR = RAW_DIR / "qm9_50"
+STAGED_MOL_DIR = STAGED_DIR / "mol"
+STAGED_CSV_PATH = STAGED_DIR / "qm9_50.csv"
 SDF_PATH = RAW_DIR / "gdb9.sdf"
 CSV_PATH = RAW_DIR / "gdb9.sdf.csv"
 TAR_PATH = RAW_DIR / "gdb9.tar.gz"
@@ -120,149 +130,35 @@ def _read_sdf_blocks(n: int) -> list[str]:
     return blocks[:n]
 
 
-# ---------------------------------------------------------------------------
-# V2000 SDF parser (dpdata's built-in SDF reader does not support System.from)
-# ---------------------------------------------------------------------------
-
-_ELEMENT_TO_Z: dict[str, int] = {
-    "H": 1,
-    "He": 2,
-    "Li": 3,
-    "Be": 4,
-    "B": 5,
-    "C": 6,
-    "N": 7,
-    "O": 8,
-    "F": 9,
-    "Ne": 10,
-    "Na": 11,
-    "Mg": 12,
-    "Al": 13,
-    "Si": 14,
-    "P": 15,
-    "S": 16,
-    "Cl": 17,
-    "Ar": 18,
-    "K": 19,
-    "Ca": 20,
-    "Sc": 21,
-    "Ti": 22,
-    "V": 23,
-    "Cr": 24,
-    "Mn": 25,
-    "Fe": 26,
-    "Co": 27,
-    "Ni": 28,
-    "Cu": 29,
-    "Zn": 30,
-    "Ga": 31,
-    "Ge": 32,
-    "As": 33,
-    "Se": 34,
-    "Br": 35,
-    "Kr": 36,
-    "Rb": 37,
-    "Sr": 38,
-    "Y": 39,
-    "Zr": 40,
-    "Nb": 41,
-    "Mo": 42,
-    "Tc": 43,
-    "Ru": 44,
-    "Rh": 45,
-    "Pd": 46,
-    "Ag": 47,
-    "Cd": 48,
-    "In": 49,
-    "Sn": 50,
-    "Sb": 51,
-    "Te": 52,
-    "I": 53,
-    "Xe": 54,
-    "Cs": 55,
-    "Ba": 56,
-}
-
-
-def _parse_v2000_block(mol_block: str) -> tuple[list[str], np.ndarray]:
-    """Parse a V2000 SDF molecule block, returning (symbols, coords).
-
-    coords shape: (n_atoms, 3), float32.
-    """
-    lines = mol_block.strip().split("\n")
-
-    # Find the counts line (contains "V2000" or "V3000")
-    counts_idx = None
-    for i, line in enumerate(lines):
-        if "V2000" in line:
-            counts_idx = i
-            break
-    if counts_idx is None:
-        raise ValueError("No V2000 counts line found in SDF block")
-
-    counts_line = lines[counts_idx]
-    n_atoms = int(counts_line[:3].strip())
-
-    symbols: list[str] = []
-    coords_list: list[tuple[float, float, float]] = []
-
-    for i in range(counts_idx + 1, counts_idx + 1 + n_atoms):
-        line = lines[i]
-        x = float(line[0:10].strip())
-        y = float(line[10:20].strip())
-        z = float(line[20:30].strip())
-        symbol = line[31:34].strip()
-        # Handle two-letter symbols like "Cl", "Br" where the first char
-        # might be at column 31 and the second at 32.
-        if not symbol:
-            # Fallback: try wider extraction
-            symbol = line[30:34].strip()
-        symbols.append(symbol)
-        coords_list.append((x, y, z))
-
-    coords = np.array(coords_list, dtype=np.float32)
-    return symbols, coords
-
-
-def _system_to_npy(
-    mol_block: str,
-    output_dir: Path,
-    gap_ev: float,
+def _stage_qm9_subset(
+    mol_blocks: list[str],
+    gaps: np.ndarray,
 ) -> None:
-    """Convert one SDF molecule block to ``deepmd/npy`` and attach the label.
+    """Write a 50-row CSV plus one single-molecule SDF per row."""
+    if STAGED_DIR.exists():
+        shutil.rmtree(STAGED_DIR)
+    STAGED_MOL_DIR.mkdir(parents=True)
 
-    Parses the V2000 block manually and creates a dpdata System with a
-    100 Å cubic box.
-    """
-    import dpdata
+    with STAGED_CSV_PATH.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=["mol_id", "gap"])
+        writer.writeheader()
+        for i, (block, gap) in enumerate(zip(mol_blocks, gaps)):
+            (STAGED_MOL_DIR / f"id{i}.sdf").write_text(
+                block.strip() + "\n$$$$\n",
+                encoding="utf-8",
+            )
+            writer.writerow({"mol_id": f"gdb_{i + 1}", "gap": f"{float(gap):.10f}"})
 
-    symbols, coords = _parse_v2000_block(mol_block)
-    n_atoms = len(symbols)
 
-    # Build local type_map index
-    _type_to_idx = {s: i for i, s in enumerate(TYPE_MAP)}
-    atom_types = np.array([_type_to_idx[s] for s in symbols], dtype=np.int32)
-
-    # Count atoms per type
-    atom_numbs = [int((atom_types == i).sum()) for i in range(len(TYPE_MAP))]
-
-    sys = dpdata.System()
-    sys.data["atom_names"] = list(TYPE_MAP)
-    sys.data["atom_numbs"] = atom_numbs
-    sys.data["atom_types"] = atom_types
-    sys.data["coords"] = coords.reshape(1, n_atoms, 3)
-    sys.data["cells"] = np.tile(np.eye(3) * BOX_LENGTH, (1, 1, 1)).reshape(1, 3, 3)
-    sys.data["orig"] = np.zeros(3)
-    sys.data["nopbc"] = False
-
-    output_dir.mkdir(parents=True, exist_ok=True)
-    sys.to("deepmd/npy", str(output_dir))
-
-    # Write the label as gap.npy so DPAFineTuner.evaluate() finds it via
-    # target_key="gap".
-    set_dir = output_dir / "set.000"
-    set_dir.mkdir(parents=True, exist_ok=True)
-    np.save(str(set_dir / "gap.npy"), np.array([gap_ev], dtype=np.float32))
+def _collect_labels(system_dirs: list[str]) -> np.ndarray:
+    """Collect all gap labels from generated system directories."""
+    chunks = []
+    for sys_dir in sorted(Path(p) for p in system_dirs):
+        for set_dir in sorted(sys_dir.glob("set.*")):
+            chunks.append(np.load(set_dir / "gap.npy").reshape(-1))
+    if not chunks:
+        return np.asarray([], dtype=np.float32)
+    return np.concatenate(chunks).astype(np.float32)
 
 
 # ---------------------------------------------------------------------------
@@ -289,34 +185,46 @@ def main() -> None:
     # 3. Read molecules from SDF ---------------------------------------------
     mol_blocks = _read_sdf_blocks(N_TOTAL)
 
-    # 4. Split ---------------------------------------------------------------
-    train_blocks = mol_blocks[:N_TRAIN]
-    test_blocks = mol_blocks[N_TRAIN:]
-    train_gaps = gaps[:N_TRAIN]
-    test_gaps = gaps[N_TRAIN:]
+    # 4. Stage the 50-row raw subset -----------------------------------------
+    _stage_qm9_subset(mol_blocks, gaps)
 
-    # 5. Convert to deepmd/npy ------------------------------------------------
-    # Train
-    train_dir = DATA_DIR / "train"
-    if train_dir.exists():
-        shutil.rmtree(train_dir)
-    for i, (block, gap) in enumerate(zip(train_blocks, train_gaps)):
-        out = train_dir / f"sys_{i:04d}"
-        print(f"  train [{i + 1}/{N_TRAIN}] → {out}")
-        _system_to_npy(block, out, float(gap))
+    # 5. Convert to deepmd/npy via dpa_adapt.convert --------------------------
+    if DATA_DIR.exists():
+        shutil.rmtree(DATA_DIR)
+    result = convert(
+        str(STAGED_CSV_PATH),
+        str(DATA_DIR),
+        fmt="smiles",
+        mol_dir=str(STAGED_MOL_DIR),
+        mol_template="id{row}.sdf",
+        property_col="gap",
+        property_name="gap",
+        train_ratio=N_TRAIN / N_TOTAL,
+        split_seed=42,
+        overwrite=True,
+        verbose=False,
+    )
 
-    # Test
+    # Keep the historical demo layout: data/test rather than data/valid.
+    valid_dir = DATA_DIR / "valid"
     test_dir = DATA_DIR / "test"
-    if test_dir.exists():
-        shutil.rmtree(test_dir)
-    for i, (block, gap) in enumerate(zip(test_blocks, test_gaps)):
-        out = test_dir / f"sys_{i:04d}"
-        print(f"  test  [{i + 1}/{N_TEST}]  → {out}")
-        _system_to_npy(block, out, float(gap))
+    valid_dir.rename(test_dir)
+    train_systems = sorted(result["train_systems"])
+    test_systems = sorted(str(p) for p in test_dir.iterdir() if p.is_dir())
 
-    # 6. Write aggregated labels ---------------------------------------------
-    np.save(str(DATA_DIR / "train_labels.npy"), train_gaps.astype(np.float32))
-    np.save(str(DATA_DIR / "test_labels.npy"), test_gaps.astype(np.float32))
+    # 6. Write aggregated labels in generated-system order --------------------
+    train_labels = _collect_labels(train_systems)
+    test_labels = _collect_labels(test_systems)
+    np.save(str(DATA_DIR / "train_labels.npy"), train_labels)
+    np.save(str(DATA_DIR / "test_labels.npy"), test_labels)
+    print(
+        f"  train systems → {DATA_DIR / 'train'} "
+        f"({len(train_systems)} dirs, {train_labels.shape[0]} samples)"
+    )
+    print(
+        f"  test systems  → {test_dir} "
+        f"({len(test_systems)} dirs, {test_labels.shape[0]} samples)"
+    )
 
     # 7. Summary --------------------------------------------------------------
     print()

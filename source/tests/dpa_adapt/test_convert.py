@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Tests for batch_convert() and convert()'s validation wiring.
+"""Tests for convert() routing and validation wiring.
 
 Uses hand-written VASP POSCAR files as inputs — a single-file, structure-only
 format dpdata reads reliably, which is enough to exercise globbing, tree
@@ -17,7 +17,6 @@ import pytest
 
 from dpa_adapt.data.convert import (
     _glob_base,
-    batch_convert,
     convert,
 )
 from dpa_adapt.data.validate import (
@@ -68,22 +67,24 @@ def test_glob_base_no_wildcard_uses_parent(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# batch_convert
+# convert() glob batch routing
 # ---------------------------------------------------------------------------
 
 
-def test_batch_convert_mirrors_input_tree(tmp_path):
+def test_convert_glob_mirrors_input_tree(tmp_path):
     _write_poscar(tmp_path / "in" / "a" / "POSCAR")
     _write_poscar(tmp_path / "in" / "b" / "c" / "POSCAR")
     out = tmp_path / "out"
 
-    results = batch_convert(
-        glob_pattern=str(tmp_path / "in" / "**" / "POSCAR"),
-        output_dir=str(out),
+    result = convert(
+        str(tmp_path / "in" / "**" / "POSCAR"),
+        str(out),
         fmt="vasp/poscar",
         type_map=["Cu", "O"],
     )
+    results = result["output_dirs"]
 
+    assert result["method"] == "batch_dpdata"
     assert len(results) == 2
     # input tree mirrored, file stem used as the leaf system directory
     assert (out / "a" / "POSCAR" / "type.raw").exists()
@@ -93,15 +94,16 @@ def test_batch_convert_mirrors_input_tree(tmp_path):
     assert all(Path(r).is_dir() for r in results)
 
 
-def test_batch_convert_writes_manifest(tmp_path):
+def test_convert_glob_writes_manifest(tmp_path):
     _write_poscar(tmp_path / "in" / "a" / "POSCAR")
     out = tmp_path / "out"
-    batch_convert(
-        glob_pattern=str(tmp_path / "in" / "**" / "POSCAR"),
-        output_dir=str(out),
+    result = convert(
+        str(tmp_path / "in" / "**" / "POSCAR"),
+        str(out),
         fmt="vasp/poscar",
         type_map=["Cu", "O"],
     )
+    assert result["manifest"] == str(out.resolve() / "manifest.json")
     manifest = json.loads((out / "manifest.json").read_text())
     assert manifest["fmt"] == "vasp/poscar"
     assert manifest["type_map"] == ["Cu", "O"]
@@ -110,7 +112,7 @@ def test_batch_convert_writes_manifest(tmp_path):
     assert manifest["converted"][0]["input"].endswith("POSCAR")
 
 
-def test_batch_convert_skips_bad_file(tmp_path, caplog):
+def test_convert_glob_skips_bad_file(tmp_path, caplog):
     _write_poscar(tmp_path / "in" / "good" / "POSCAR")
     bad = tmp_path / "in" / "bad" / "POSCAR"
     bad.parent.mkdir(parents=True)
@@ -118,12 +120,13 @@ def test_batch_convert_skips_bad_file(tmp_path, caplog):
     out = tmp_path / "out"
 
     with caplog.at_level(logging.WARNING, logger="dpa_adapt"):
-        results = batch_convert(
-            glob_pattern=str(tmp_path / "in" / "**" / "POSCAR"),
-            output_dir=str(out),
+        result = convert(
+            str(tmp_path / "in" / "**" / "POSCAR"),
+            str(out),
             fmt="vasp/poscar",
             type_map=["Cu", "O"],
         )
+    results = result["output_dirs"]
 
     # good file converted, bad file skipped and recorded
     assert len(results) == 1
@@ -138,15 +141,15 @@ def test_batch_convert_skips_bad_file(tmp_path, caplog):
     assert not (out / "bad" / "POSCAR").exists()
 
 
-def test_batch_convert_strict_fails_fast_on_bad_file(tmp_path):
+def test_convert_glob_strict_fails_fast_on_bad_file(tmp_path):
     bad = tmp_path / "in" / "bad" / "POSCAR"
     bad.parent.mkdir(parents=True)
     bad.write_text("garbage not a poscar\n")
     out = tmp_path / "out"
     with pytest.raises(Exception):
-        batch_convert(
-            glob_pattern=str(tmp_path / "in" / "**" / "POSCAR"),
-            output_dir=str(out),
+        convert(
+            str(tmp_path / "in" / "**" / "POSCAR"),
+            str(out),
             fmt="vasp/poscar",
             type_map=["Cu", "O"],
             strict=True,
@@ -168,13 +171,14 @@ def test_convert_validate_true_runs_check(tmp_path, monkeypatch):
         return []
 
     monkeypatch.setattr(convert_mod, "check_data", _fake_check)
-    out = convert(
+    result = convert(
         str(tmp_path / "POSCAR"),
         str(tmp_path / "out"),
         fmt="vasp/poscar",
         type_map=["Cu", "O"],
         validate=True,
     )
+    out = result["output_dir"]
     assert seen["is_system"] is True  # check_data received a dpdata object
     assert seen["strict"] is False
     assert Path(out).exists()
@@ -187,13 +191,14 @@ def test_convert_validate_false_skips_check(tmp_path, monkeypatch):
         raise AssertionError("check_data must not run when validate=False")
 
     monkeypatch.setattr(convert_mod, "check_data", _boom)
-    out = convert(
+    result = convert(
         str(tmp_path / "POSCAR"),
         str(tmp_path / "out"),
         fmt="vasp/poscar",
         type_map=["Cu", "O"],
         validate=False,
     )
+    out = result["output_dir"]
     assert Path(out).exists()
 
 
@@ -238,7 +243,7 @@ def test_convert_strict_passed_through(tmp_path, monkeypatch):
 
 
 def test_convert_glob_single_match(tmp_path):
-    """Pass a glob pattern that matches exactly one file → one system."""
+    """Pass a glob pattern that matches exactly one file → batch output."""
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
     _write_poscar(raw_dir / "input.sdf")
@@ -251,14 +256,17 @@ def test_convert_glob_single_match(tmp_path):
         type_map=["Cu", "O"],
         validate=False,
     )
-    assert Path(result).is_dir()
-    # Single match — output goes directly into output_dir (same as literal).
-    assert (Path(result) / "type.raw").exists()
-    assert (Path(result) / "set.000" / "coord.npy").exists()
+    assert result["method"] == "batch_dpdata"
+    assert len(result["output_dirs"]) == 1
+    system_dir = out / "input"
+    assert system_dir.is_dir()
+    assert (system_dir / "type.raw").exists()
+    assert (system_dir / "set.000" / "coord.npy").exists()
+    assert (out / "manifest.json").exists()
 
 
 def test_convert_glob_multi_match(tmp_path):
-    """Pass a glob pattern matching 3 files → 3 numbered subdirectories."""
+    """Pass a glob pattern matching 3 files → mirrored batch output."""
     raw_dir = tmp_path / "raw"
     raw_dir.mkdir()
     for name in ("a.sdf", "b.sdf", "c.sdf"):
@@ -272,16 +280,15 @@ def test_convert_glob_multi_match(tmp_path):
         type_map=["Cu", "O"],
         validate=False,
     )
-    assert Path(result).is_dir()
-    # 3 systems in sys_0000/, sys_0001/, sys_0002/
-    for sub in ("sys_0000", "sys_0001", "sys_0002"):
-        sub_dir = Path(result) / sub
+    assert result["method"] == "batch_dpdata"
+    assert len(result["output_dirs"]) == 3
+    for sub in ("a", "b", "c"):
+        sub_dir = out / sub
         assert sub_dir.is_dir(), f"missing {sub}"
         assert (sub_dir / "type.raw").exists()
         assert (sub_dir / "set.000" / "coord.npy").exists()
-    # No extra subdirectories.
-    subdirs = [p.name for p in Path(result).iterdir() if p.is_dir()]
-    assert sorted(subdirs) == ["sys_0000", "sys_0001", "sys_0002"]
+    subdirs = [p.name for p in out.iterdir() if p.is_dir()]
+    assert sorted(subdirs) == ["a", "b", "c"]
 
 
 def test_convert_glob_no_match(tmp_path):
@@ -310,24 +317,21 @@ def test_convert_literal_path_unchanged(tmp_path):
         type_map=["Cu", "O"],
         validate=False,
     )
-    assert Path(result).is_dir()
-    assert (Path(result) / "type.raw").exists()
+    assert result["method"] == "dpdata"
+    assert Path(result["output_dir"]).is_dir()
+    assert (Path(result["output_dir"]) / "type.raw").exists()
 
 
 # ---------------------------------------------------------------------------
-# auto_convert — formula pipeline (fmt="formula")
+# convert — formula pipeline (fmt="formula")
 # ---------------------------------------------------------------------------
 
 
 class TestAutoConvertFormula:
-    """auto_convert routes fmt="formula" to formula_to_npy."""
+    """convert routes fmt="formula" to formula_to_npy."""
 
     def test_formula_fmt_routes_to_formula_pipeline(self, tmp_path, monkeypatch):
         """fmt="formula" with poscar → delegates to formula_to_npy."""
-        from dpa_adapt.data.convert import (
-            auto_convert,
-        )
-
         csv = tmp_path / "comps.csv"
         csv.write_text("Ni0.5Fe0.5O2,1.23\n")
         poscar = tmp_path / "POSCAR"
@@ -337,7 +341,7 @@ class TestAutoConvertFormula:
         out = tmp_path / "npy"
         fake_sys_dir = str(out / "sys_0000")
 
-        # The auto_convert() function does "from .formula import formula_to_npy"
+        # The convert() function does "from .formula import formula_to_npy"
         # at call time, so we mock the formula module's attribute directly.
         def _fake_formula_to_npy(**kwargs):
             Path(kwargs["output_dir"]).mkdir(parents=True, exist_ok=True)
@@ -348,7 +352,7 @@ class TestAutoConvertFormula:
             _fake_formula_to_npy,
         )
 
-        result = auto_convert(
+        result = convert(
             str(csv),
             str(out),
             fmt="formula",
@@ -364,10 +368,6 @@ class TestAutoConvertFormula:
 
     def test_formula_fmt_base_element_passed_through(self, tmp_path, monkeypatch):
         """fmt="formula" with explicit base_element passes it through."""
-        from dpa_adapt.data.convert import (
-            auto_convert,
-        )
-
         csv = tmp_path / "comps.csv"
         csv.write_text("Ni0.8Fe0.2O2,0.5\n")
         poscar = tmp_path / "POSCAR"
@@ -388,7 +388,7 @@ class TestAutoConvertFormula:
             _fake_formula_to_npy,
         )
 
-        auto_convert(
+        convert(
             str(csv),
             str(out),
             fmt="formula",
@@ -405,10 +405,7 @@ class TestAutoConvertFormula:
         assert captured["poscar"] == str(poscar)
 
     def test_formula_fmt_base_element_none_by_default(self, tmp_path, monkeypatch):
-        """auto_convert defaults base_element=None → formula_to_npy infers it."""
-        from dpa_adapt.data.convert import (
-            auto_convert,
-        )
+        """convert defaults base_element=None → formula_to_npy infers it."""
 
         csv = tmp_path / "comps.csv"
         csv.write_text("Ni0.5Fe0.5O2,1.0\n")
@@ -431,7 +428,7 @@ class TestAutoConvertFormula:
         )
 
         # Call WITHOUT base_element — should pass None through.
-        auto_convert(str(csv), str(out), fmt="formula", poscar=str(poscar))
+        convert(str(csv), str(out), fmt="formula", poscar=str(poscar))
 
         assert captured["base_element"] is None
 
@@ -439,10 +436,6 @@ class TestAutoConvertFormula:
         self, tmp_path, monkeypatch, capsys
     ):
         """fmt="formula" with verbose=True prints system count."""
-        from dpa_adapt.data.convert import (
-            auto_convert,
-        )
-
         csv = tmp_path / "comps.csv"
         csv.write_text("Ni0.5Fe0.5O2,1.0\nGd0.5Fe0.5O2,2.0\n")
         poscar = tmp_path / "POSCAR"
@@ -460,7 +453,7 @@ class TestAutoConvertFormula:
             _fake_formula_to_npy,
         )
 
-        auto_convert(
+        convert(
             str(csv), str(out), fmt="formula", poscar=str(poscar), verbose=True
         )
 

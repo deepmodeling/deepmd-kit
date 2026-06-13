@@ -149,7 +149,6 @@ class TestInitAllExports:
             "train_test_split",
             "extract_descriptors",
             "convert",
-            "batch_convert",
             "attach_labels",
             "check_data",
             "load_dataset",
