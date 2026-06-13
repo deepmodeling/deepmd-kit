@@ -397,10 +397,10 @@ class DPATrainer:
         # mismatch. `--skip-neighbor-stat` is kept (paper omits it, but our
         # data-stat pass is too slow); deepmd honors `training.save_ckpt` from
         # the JSON so no `--output` flag is needed.
-        cmd = ["dp", "--pt", "train", input_json]
+        cmd = ["dp", "--pt", "train", str(input_json)]
         cmd += ["--skip-neighbor-stat"]
         if self.pretrained is not None:
-            cmd += ["--finetune", self.pretrained]
+            cmd += ["--finetune", str(self.pretrained)]
         return cmd
 
     # ----- checkpoint discovery -----
