@@ -366,10 +366,10 @@ def descrpt_se_a_args() -> list[Argument]:
 )
 def descrpt_se_zm_args() -> list[Argument]:
     # Follows exact order of docstring in sezm.py DescrptSeZM class
-    doc_sel = 'The maximum number of neighbors. It can be:\n\n\
-    - `int`: the total maximum number of neighbors within `rcut` (all types combined)\n\n\
-    - `list[int]`: sel[i] specifies the maximum number of type-i neighbors within `rcut`\n\n\
-    - `str`: Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors with in the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally the number is wrapped up to 4 divisible. The option "auto" is equivalent to "auto:1.1".'
+    doc_sel = 'The neighbor-search capacity, with a default of 256. The conservative energy path keeps every neighbor within `rcut` regardless of this value, so `sel` only sets the initial search capacity of the O(N) `nvalchemiops` builder (which grows on demand) and never truncates the energy-path neighbor list. The denoising (`dens`) and spin paths still cap the neighbor list at `sum(sel)`, so for those modes `sel` must cover the true maximum neighbor count. It can be:\n\n\
+    - `int`: the total capacity across all atom types.\n\n\
+    - `list[int]`: `sel[i]` is the type-i capacity; only `sum(sel)` is used.\n\n\
+    - `str`: "auto" or "auto:factor" sizes `sel` from the training data via neighbor statistics (`factor` larger than 1, rounded up to a multiple of 4; "auto" equals "auto:1.1"). This requires the neighbor-statistics pass and is therefore unavailable under `--skip-neighbor-stat`.'
     doc_rcut = "The cut-off radius."
     doc_env_exp = (
         "C^3 cutoff envelope exponents `[rbf_env_exp, edge_env_exp]`. "
@@ -636,9 +636,7 @@ def descrpt_se_zm_args() -> list[Argument]:
     doc_trainable = "If the parameters in the descriptor are trainable."
     doc_seed = "Random seed for parameter initialization."
     return [
-        Argument(
-            "sel", [int, list[int], str], optional=True, default="auto", doc=doc_sel
-        ),
+        Argument("sel", [int, list[int], str], optional=True, default=256, doc=doc_sel),
         Argument("rcut", float, optional=True, default=6.0, doc=doc_rcut),
         Argument(
             "env_exp",

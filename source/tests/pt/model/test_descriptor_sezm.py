@@ -1520,45 +1520,6 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
             ),
         )
 
-    def _assert_bridged_boundary_energy_curve_is_smooth(
-        self,
-        n_atten_head: int,
-        *,
-        use_amp: bool,
-        n_focus: int,
-        nearest_distance: float,
-        boundary_label: str,
-    ) -> None:
-        """Check that one bridged boundary probe keeps one smooth minimum."""
-        model = self._build_random_weight_model(
-            n_atten_head,
-            use_amp=use_amp,
-            n_focus=n_focus,
-            bridging_method="ZBL",
-            bridging_r_inner=self.BRIDGING_R_INNER,
-            bridging_r_outer=self.BRIDGING_R_OUTER,
-        )
-        displacements, energies = self._scan_total_energy_curve(
-            model,
-            nearest_distance=nearest_distance,
-        )
-        self.assertTrue(torch.isfinite(energies).all().item())
-
-        stats = self._collect_curve_statistics(energies, displacements)
-        self._assert_curve_has_usable_signal(
-            stats,
-            label=f"Bridged {boundary_label} (use_amp={use_amp}, n_focus={n_focus})",
-            n_atten_head=n_atten_head,
-        )
-        self.assertEqual(
-            stats["curve_kind"],
-            "minimum",
-            (
-                f"Bridged {boundary_label} probe should form one symmetric repulsive bowl "
-                f"for n_atten_head={n_atten_head}, use_amp={use_amp}, n_focus={n_focus}: {stats}"
-            ),
-        )
-
     def test_scaled_cutoff_near_energy_curve_is_smooth_across_attention_modes(
         self,
     ) -> None:
@@ -1575,41 +1536,78 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
                             n_focus=n_focus,
                         )
 
-    def test_scaled_bridging_inner_energy_curve_is_smooth_across_attention_modes(
+    def _assert_bridging_force_consistent_across_switch(
         self,
+        model: torch.nn.Module,
+        *,
+        eps: float = 1.0e-5,
     ) -> None:
-        """Check the bridged near-r_inner PES shape across attention and AMP modes."""
-        for use_amp in (False, True):
-            for n_atten_head in (0, 1, 2):
-                for n_focus in (1, 2):
-                    with self.subTest(
-                        n_atten_head=n_atten_head, use_amp=use_amp, n_focus=n_focus
-                    ):
-                        self._assert_bridged_boundary_energy_curve_is_smooth(
-                            n_atten_head,
-                            use_amp=use_amp,
-                            n_focus=n_focus,
-                            nearest_distance=self.BRIDGING_R_INNER,
-                            boundary_label="r_inner",
-                        )
+        """Assert the bridged force matches a finite difference of the energy.
 
-    def test_scaled_bridging_outer_energy_curve_is_smooth_across_attention_modes(
-        self,
-    ) -> None:
-        """Check the bridged near-r_outer PES shape across attention and AMP modes."""
+        A finite, isolated cluster keeps the neighbor count bounded and equal to
+        the physical neighbors within ``rcut``, so the check is independent of
+        the periodic-image count and of ``sel``.  Atom 1 slides along ``x`` from
+        below ``r_inner`` to above ``r_outer`` while the spectator atoms stay
+        beyond ``r_outer``; if the ``BridgingSwitch`` blend kinked at either
+        boundary, the analytical force (``-dE/dx``) would diverge from the
+        central finite difference there.
+        """
+        distances = torch.linspace(0.70, 1.30, 25, dtype=self.dtype, device=self.device)
+        # Isolated cluster: atom 0 anchor, atom 1 probe (slides on x), spectators
+        # fixed beyond r_outer but inside rcut so only the probe crosses a switch.
+        template = torch.tensor(
+            [
+                [0.0, 0.0, 0.0],
+                [0.0, 0.0, 0.0],
+                [0.0, 2.6, 0.0],
+                [0.0, 0.0, 2.8],
+                [-3.0, 0.2, 0.0],
+            ],
+            dtype=self.dtype,
+            device=self.device,
+        )
+        atype = torch.tensor([[0, 1, 0, 1, 0]], dtype=torch.int32, device=self.device)
+        # Three coordinate frames per scan point: the probe distance and its
+        # +/- eps neighbors for a central difference of the total energy.
+        offsets = torch.tensor([0.0, eps, -eps], dtype=self.dtype, device=self.device)
+        probe_x = (distances.unsqueeze(1) + offsets.unsqueeze(0)).reshape(-1)
+        n_frame = probe_x.shape[0]
+        coord = template.unsqueeze(0).repeat(n_frame, 1, 1)
+        coord[:, 1, 0] = probe_x
+        result = model(coord, atype.expand(n_frame, -1), box=None)
+        energy = result["energy"][:, 0].reshape(-1, 3)
+        self.assertTrue(torch.isfinite(energy).all().item())
+        fd_force = -(energy[:, 1] - energy[:, 2]) / (2.0 * eps)
+        analytical_force = result["force"][::3, 1, 0]
+        torch.testing.assert_close(analytical_force, fd_force, atol=1.0e-6, rtol=1.0e-4)
+        # Below r_inner the gate freezes the network term and the ZBL repulsion
+        # dominates, so the closest probe must be pushed outward (+x).
+        self.assertGreater(
+            analytical_force[0].item(),
+            0.0,
+            "bridged short-range force should be repulsive",
+        )
+
+    def test_bridging_force_consistent_across_switch_boundaries(self) -> None:
+        """The bridged total energy stays conservative and C1-smooth across both
+        switch boundaries on a bounded, sel-independent isolated cluster, and is
+        repulsive at short range.
+        """
         for use_amp in (False, True):
             for n_atten_head in (0, 1, 2):
                 for n_focus in (1, 2):
                     with self.subTest(
                         n_atten_head=n_atten_head, use_amp=use_amp, n_focus=n_focus
                     ):
-                        self._assert_bridged_boundary_energy_curve_is_smooth(
+                        model = self._build_random_weight_model(
                             n_atten_head,
                             use_amp=use_amp,
                             n_focus=n_focus,
-                            nearest_distance=self.BRIDGING_R_OUTER,
-                            boundary_label="r_outer",
+                            bridging_method="ZBL",
+                            bridging_r_inner=self.BRIDGING_R_INNER,
+                            bridging_r_outer=self.BRIDGING_R_OUTER,
                         )
+                        self._assert_bridging_force_consistent_across_switch(model)
 
 
 class TestSourceFreezePropagationGate(TestDescriptorEnergyCurveSmoothness):

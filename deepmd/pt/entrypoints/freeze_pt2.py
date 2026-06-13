@@ -58,6 +58,9 @@ from deepmd.pt.utils.compile_compat import (
 from deepmd.pt.utils.env import (
     DEVICE,
 )
+from deepmd.pt_expt.utils.edge_schema import (
+    edge_schema_from_extended,
+)
 from deepmd.utils.model_branch_dict import (
     get_model_dict,
 )
@@ -97,13 +100,13 @@ def _model_has_message_passing(model: torch.nn.Module) -> bool:
 
 
 def _strip_shape_assertions(graph_module: torch.nn.Module) -> None:
-    """Remove deferred shape assertions from spin export graphs.
+    """Remove deferred shape assertions from SeZM export graphs.
 
-    The spin lower path slices tensors using both ``nall`` and ``nloc`` after
-    virtual atom expansion. ``torch.export`` may turn valid dynamic cases into
-    deferred ``Ne(nall, nloc)`` assertions, even though the graph works for both
-    NoPBC and ghost-atom inputs. The generic pt_expt spin exporter applies the
-    same cleanup.
+    SeZM lower inputs intentionally keep extended-atom and local-atom axes
+    independent: regular exports pass ghost coordinates through ``coord`` while
+    ``atype`` remains local-only, and spin exports slice both ``nall`` and
+    ``nloc`` after virtual atom expansion. ``torch.export`` may turn these valid
+    dynamic cases into deferred ``Ne(nall, nloc)`` assertions.
     """
     graph = graph_module.graph
     for node in list(graph.nodes):
@@ -257,18 +260,20 @@ def _collect_metadata(
                 "intensive": vdef.intensive,
             }
         )
+    exports_atomic_virial = True if not is_spin else bool(do_atomic_virial)
     metadata = {
         "type_map": list(model.get_type_map()),
         "ntypes": _get_model_ntypes(model),
         "rcut": float(model.get_rcut()),
         "sel": [int(s) for s in model.get_sel()],
+        "lower_input_kind": "nlist" if is_spin else "edge_vec",
         "dim_fparam": int(model.get_dim_fparam()),
         "dim_aparam": int(model.get_dim_aparam()),
         "dim_chg_spin": int(model.get_dim_chg_spin()),
         "mixed_types": bool(model.mixed_types()),
         "has_message_passing": _model_has_message_passing(model),
         "has_comm_artifact": False,
-        "do_atomic_virial": bool(do_atomic_virial),
+        "do_atomic_virial": exports_atomic_virial,
         "nnei": int(sum(model.get_sel())),
         "has_default_fparam": bool(model.has_default_fparam()),
         "default_fparam": _to_py_list(model.get_default_fparam()),
@@ -377,7 +382,24 @@ def _make_sample_inputs(
             aparam,
             charge_spin,
         )
-    return ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin
+    formatted_nlist: torch.Tensor = model.format_nlist(ext_coord, ext_atype, nlist_t)
+    edge_schema = edge_schema_from_extended(
+        ext_coord,
+        ext_atype[:, :nloc],
+        formatted_nlist,
+        mapping_t,
+    )
+    return (
+        edge_schema.coord,
+        edge_schema.atype,
+        edge_schema.edge_index,
+        edge_schema.edge_vec,
+        edge_schema.edge_scatter_index,
+        edge_schema.edge_mask,
+        fparam,
+        aparam,
+        charge_spin,
+    )
 
 
 def _resolve_nframes(
@@ -423,29 +445,20 @@ def _resolve_nframes(
 def _build_dynamic_shapes(
     sample_inputs: tuple[torch.Tensor | None, ...],
 ) -> tuple:
-    """Positional ``dynamic_shapes`` for the traced
-    ``(ext_coord, ext_atype, nlist, mapping, fparam, aparam)`` signature.
-    """
+    """Build positional dynamic-shape constraints for the traced lower input."""
     nframes_dim = torch.export.Dim("nframes", min=1)
     has_spin = (
         len(sample_inputs) >= 7
         and sample_inputs[2] is not None
         and sample_inputs[2].is_floating_point()
     )
-    has_charge_spin = (has_spin and len(sample_inputs) == 8) or (
-        not has_spin and len(sample_inputs) == 7
-    )
-    # Spin export currently generates a valid lower-bound guard from its
-    # virtual-atom split/concat pattern. Matching the bound keeps export strict,
-    # while `_strip_shape_assertions` removes the spurious deferred guards later.
     nall_dim = torch.export.Dim("nall", min=4 if has_spin else 1)
     nloc_dim = torch.export.Dim("nloc", min=1)
-    fparam = sample_inputs[5] if has_spin else sample_inputs[4]
-    aparam = sample_inputs[6] if has_spin else sample_inputs[5]
-    charge_spin = None
-    if has_charge_spin:
-        charge_spin = sample_inputs[7] if has_spin else sample_inputs[6]
+    nedge_dim = torch.export.Dim("nedge", min=2)
     if has_spin:
+        fparam = sample_inputs[5]
+        aparam = sample_inputs[6]
+        charge_spin = sample_inputs[7] if len(sample_inputs) == 8 else None
         shapes = (
             {0: nframes_dim, 1: nall_dim},  # extended_coord
             {0: nframes_dim, 1: nall_dim},  # extended_atype
@@ -455,18 +468,23 @@ def _build_dynamic_shapes(
             {0: nframes_dim} if fparam is not None else None,
             {0: nframes_dim, 1: nloc_dim} if aparam is not None else None,
         )
-        if has_charge_spin:
+        if len(sample_inputs) == 8:
             shapes = (*shapes, {0: nframes_dim} if charge_spin is not None else None)
         return shapes
+    fparam = sample_inputs[6]
+    aparam = sample_inputs[7]
+    charge_spin = sample_inputs[8] if len(sample_inputs) == 9 else None
     shapes = (
         {0: nframes_dim, 1: nall_dim},  # extended_coord: (nframes, nall, 3)
-        {0: nframes_dim, 1: nall_dim},  # extended_atype: (nframes, nall)
-        {0: nframes_dim, 1: nloc_dim},  # nlist: (nframes, nloc, nnei)
-        {0: nframes_dim, 1: nall_dim},  # mapping: (nframes, nall)
+        {0: nframes_dim, 1: nloc_dim},  # atype
+        {1: nedge_dim},  # edge_index
+        {0: nedge_dim},  # edge_vec
+        {1: nedge_dim},  # edge_scatter_index
+        {0: nedge_dim},  # edge_mask
         {0: nframes_dim} if fparam is not None else None,
         {0: nframes_dim, 1: nloc_dim} if aparam is not None else None,
     )
-    if has_charge_spin:
+    if len(sample_inputs) == 9:
         shapes = (*shapes, {0: nframes_dim} if charge_spin is not None else None)
     return shapes
 
@@ -561,27 +579,29 @@ def freeze_sezm_to_pt2(
             fparam=fparam,
             aparam=aparam,
             charge_spin=charge_spin,
-            do_atomic_virial=atomic_virial,
         )
     else:
         (
-            ext_coord,
-            ext_atype,
-            nlist_t,
-            mapping_t,
+            coord,
+            atype,
+            edge_index,
+            edge_vec,
+            edge_scatter_index,
+            edge_mask,
             fparam,
             aparam,
             charge_spin,
         ) = sample_inputs_cpu
         traced = model.forward_common_lower_exportable(
-            ext_coord,
-            ext_atype,
-            nlist_t,
-            mapping_t,
+            coord,
+            atype,
+            edge_index,
+            edge_vec,
+            edge_scatter_index,
+            edge_mask,
             fparam=fparam,
             aparam=aparam,
             charge_spin=charge_spin,
-            do_atomic_virial=atomic_virial,
         )
 
     # Output key order is taken from a concrete run; Python dict order
@@ -598,8 +618,7 @@ def freeze_sezm_to_pt2(
         strict=False,
         prefer_deferred_runtime_asserts_over_guards=True,
     )
-    if is_spin:
-        _strip_shape_assertions(exported.graph_module)
+    _strip_shape_assertions(exported.graph_module)
 
     # move_to_device_pass handles FakeTensor device propagation cleanly;
     # a naive .to(device) on the exported program does not.

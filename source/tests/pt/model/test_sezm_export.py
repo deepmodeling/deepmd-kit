@@ -195,18 +195,28 @@ def _eager_forward(
     sample_inputs: tuple,
 ) -> dict[str, torch.Tensor]:
     """Mirror the trace closure: fresh leaf coord + ``requires_grad=True``."""
-    ext_coord, ext_atype, nlist, mapping, fparam, aparam, charge_spin = sample_inputs
+    (
+        ext_coord,
+        atype,
+        edge_index,
+        edge_vec,
+        edge_scatter_index,
+        edge_mask,
+        fparam,
+        aparam,
+        charge_spin,
+    ) = sample_inputs
     eager_coord = ext_coord.detach().clone().requires_grad_(True)
     return model.forward_common_lower(
         eager_coord,
-        ext_atype,
-        nlist,
-        mapping=mapping,
+        atype,
+        edge_index,
+        edge_vec,
+        edge_scatter_index,
+        edge_mask,
         fparam=fparam,
         aparam=aparam,
         charge_spin=charge_spin,
-        do_atomic_virial=True,
-        extra_nlist_sort=model.need_sorted_nlist_for_lower(),
     )
 
 
@@ -262,7 +272,6 @@ class TestSeZMExportPipeline(_ClearDefaultDeviceTestCase):
     ]:
         traced = model.forward_common_lower_exportable(
             *sample_inputs,
-            do_atomic_virial=True,
         )
         exported = torch.export.export(
             traced,
@@ -456,6 +465,7 @@ class TestSeZMExportArchive(_FrozenPt2Fixture):
             "ntypes",
             "rcut",
             "sel",
+            "lower_input_kind",
             "dim_fparam",
             "dim_aparam",
             "dim_chg_spin",
@@ -473,6 +483,7 @@ class TestSeZMExportArchive(_FrozenPt2Fixture):
         self.assertEqual(metadata["ntypes"], len(self.params["type_map"]))
         self.assertEqual(metadata["rcut"], self.params["descriptor"]["rcut"])
         self.assertEqual(list(metadata["sel"]), list(self.params["descriptor"]["sel"]))
+        self.assertEqual(metadata["lower_input_kind"], "edge_vec")
         self.assertTrue(metadata["mixed_types"])
         self.assertFalse(metadata["is_spin"])
         self.assertEqual(metadata["dim_fparam"], 0)
@@ -710,7 +721,7 @@ class TestSeZMFreezeGuards(_ClearDefaultDeviceTestCase):
         metadata = _collect_metadata(model, ["energy"])
         dynamic_shapes = _build_dynamic_shapes(sample_inputs)
 
-        self.assertEqual(len(sample_inputs), 7)
+        self.assertEqual(len(sample_inputs), 9)
         self.assertEqual(sample_inputs[-1].shape, (5, 2))
         self.assertEqual(len(dynamic_shapes), len(sample_inputs))
         self.assertEqual(metadata["dim_chg_spin"], 2)
@@ -818,6 +829,7 @@ class TestSeZMFreezeGuards(_ClearDefaultDeviceTestCase):
                 )
 
         self.assertTrue(metadata["is_spin"])
+        self.assertEqual(metadata["lower_input_kind"], "nlist")
         self.assertEqual(metadata["type_map"], params["type_map"])
         self.assertEqual(metadata["ntypes"], len(params["type_map"]))
         self.assertEqual(metadata["dim_chg_spin"], 0)

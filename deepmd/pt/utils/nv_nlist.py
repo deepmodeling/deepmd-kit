@@ -30,10 +30,14 @@ from typing import (
 import torch
 
 from deepmd.dpmodel.utils.neighbor_list import (
+    EdgeNeighborList,
     NeighborList,
 )
 from deepmd.pt.utils.region import (
     normalize_coord,
+)
+from deepmd.pt_expt.utils.edge_schema import (
+    edge_schema_from_neighbor_matrix,
 )
 
 NV_CELL_LIST_THRESHOLD = 1024
@@ -153,7 +157,8 @@ class NvNeighborList(NeighborList):
         box: Any,
         rcut: float,
         sel: list[int],
-    ) -> tuple[Any, Any, Any, Any]:
+        return_mode: str = "extended",
+    ) -> tuple[Any, Any, Any, Any] | EdgeNeighborList:
         """Build the extended system and neighbor list.
 
         See :meth:`deepmd.dpmodel.utils.neighbor_list.NeighborList.build`. The
@@ -226,6 +231,21 @@ class NvNeighborList(NeighborList):
                 if max_found <= search_capacity:
                     break
                 search_capacity = max(max_found, _grow_search_capacity(search_capacity))
+
+            if return_mode == "edges":
+                return edge_schema_from_neighbor_matrix(
+                    coord=coord,
+                    atype=atype,
+                    cell=cell,
+                    neighbor_matrix=neighbor_matrix,
+                    num_neighbors=num_neighbors,
+                    shifts=shifts,
+                    rcut=float(rcut),
+                )
+            if return_mode != "extended":
+                raise ValueError(
+                    f"Unsupported neighbor-list return_mode: {return_mode!r}"
+                )
 
             extended_coord, extended_atype, mapping, nlist = _matrix_to_extended_inputs(
                 coord=coord,
