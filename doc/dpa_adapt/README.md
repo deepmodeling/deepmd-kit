@@ -33,7 +33,7 @@ model = DPAFineTuner(
     predictor="rf",  # "rf" | "linear" | "mlp"
     pooling="mean",  # "mean" | "sum" | "mean+std" | "mean+std+max+min"
 )
-model.fit(train_data="/data/train", target_key="homo")
+model.fit(train_data="/data/train/*", target_key="homo")
 
 # frozen_head / finetune — same interface, different depth
 model = DPAFineTuner(

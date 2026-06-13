@@ -7,9 +7,6 @@ from pathlib import (
     Path,
 )
 
-# Ensure repo root is on sys.path so `dpa_adapt` is importable
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent.parent))
-
 import numpy as np
 
 from dpa_adapt import (
