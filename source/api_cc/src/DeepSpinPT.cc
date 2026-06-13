@@ -170,6 +170,7 @@ void DeepSpinPT::compute(ENERGYVTYPE& ener,
   if (ago == 0) {
     nlist_data.copy_from_nlist(lmp_list, nall - nghost);
     nlist_data.shuffle_exclude_empty(fwd_map);
+    nlist_data.filter_by_distance(dcoord, static_cast<VALUETYPE>(rcut));
     nlist_data.padding();
     if (do_message_passing) {
       if (has_null_atoms) {

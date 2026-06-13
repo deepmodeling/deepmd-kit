@@ -136,4 +136,39 @@ TEST(TestNeighborListData, RoundTripWithEmptyRows) {
   EXPECT_EQ(out.numneigh[3], 1);
 }
 
+TEST(TestNeighborListData, FilterByDistanceUsesIlistCenters) {
+  NeighborListData data;
+  data.ilist = {3, 0, 1};
+  data.jlist = {{0, 2, 4}, {1, 2, -1}, {3, 4}};
+  const std::vector<double> coord = {
+      0.0,  0.0, 0.0,  // atom 0
+      2.0,  0.0, 0.0,  // atom 1
+      7.0,  0.0, 0.0,  // atom 2
+      1.0,  0.0, 0.0,  // atom 3
+      10.0, 0.0, 0.0,  // atom 4
+  };
+
+  data.filter_by_distance(coord, 5.0);
+
+  ASSERT_EQ(data.jlist.size(), 3);
+  EXPECT_EQ(data.jlist[0], (std::vector<int>{0}));
+  EXPECT_EQ(data.jlist[1], (std::vector<int>{1}));
+  EXPECT_EQ(data.jlist[2], (std::vector<int>{3}));
+}
+
+TEST(TestNeighborListData, FilterByDistanceClearsInvalidCenterRows) {
+  NeighborListData data;
+  data.ilist = {0, 5};
+  data.jlist = {{1}, {0, 1}};
+  const std::vector<float> coord = {
+      0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f,
+  };
+
+  data.filter_by_distance(coord, 2.0f);
+
+  ASSERT_EQ(data.jlist.size(), 2);
+  EXPECT_EQ(data.jlist[0], (std::vector<int>{1}));
+  EXPECT_TRUE(data.jlist[1].empty());
+}
+
 }  // namespace deepmd

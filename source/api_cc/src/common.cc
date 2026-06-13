@@ -344,6 +344,47 @@ void deepmd::NeighborListData::shuffle_exclude_empty(
   ilist = new_ilist;
   jlist = new_jlist;
 }
+
+template <typename VALUETYPE>
+void deepmd::NeighborListData::filter_by_distance(
+    const std::vector<VALUETYPE>& coord, const VALUETYPE cutoff) {
+  const size_t nall = coord.size() / 3;
+  const VALUETYPE cutoff_sq = cutoff * cutoff;
+  for (size_t ii = 0; ii < jlist.size(); ++ii) {
+    const int center = ilist[ii];
+    auto& row = jlist[ii];
+    if (center < 0 || static_cast<size_t>(center) >= nall) {
+      row.clear();
+      continue;
+    }
+
+    size_t write_pos = 0;
+    const size_t center_offset = static_cast<size_t>(center) * 3;
+    for (const int neighbor : row) {
+      if (neighbor < 0 || static_cast<size_t>(neighbor) >= nall) {
+        continue;
+      }
+      const size_t neighbor_offset = static_cast<size_t>(neighbor) * 3;
+      const VALUETYPE dx = coord[neighbor_offset] - coord[center_offset];
+      const VALUETYPE dy =
+          coord[neighbor_offset + 1] - coord[center_offset + 1];
+      const VALUETYPE dz =
+          coord[neighbor_offset + 2] - coord[center_offset + 2];
+      const VALUETYPE rr = dx * dx + dy * dy + dz * dz;
+      if (rr <= cutoff_sq) {
+        row[write_pos++] = neighbor;
+      }
+    }
+    row.resize(write_pos);
+  }
+}
+
+template void deepmd::NeighborListData::filter_by_distance<double>(
+    const std::vector<double>& coord, const double cutoff);
+
+template void deepmd::NeighborListData::filter_by_distance<float>(
+    const std::vector<float>& coord, const float cutoff);
+
 void deepmd::NeighborListData::padding() {
   size_t max_length = 0;
   for (const auto& row : jlist) {

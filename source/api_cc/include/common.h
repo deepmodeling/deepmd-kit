@@ -43,6 +43,18 @@ struct NeighborListData {
   void shuffle(const std::vector<int>& fwd_map);
   void shuffle(const deepmd::AtomMap& map);
   void shuffle_exclude_empty(const std::vector<int>& fwd_map);
+  /**
+   * @brief Remove neighbor entries whose geometric distance exceeds cutoff.
+   * @param[in] coord Coordinates of the extended atoms, shaped as nall x 3.
+   * @param[in] cutoff Model cutoff distance in the same unit as coord.
+   *
+   * The neighbor rows may be backed by a LAMMPS skin list.  The model lower
+   * interface consumes a cutoff neighbor list, so this method trims the copied
+   * list after atom remapping and before dense tensor padding.
+   */
+  template <typename VALUETYPE>
+  void filter_by_distance(const std::vector<VALUETYPE>& coord,
+                          const VALUETYPE cutoff);
   void make_inlist(InputNlist& inlist);
   void padding();
 };

@@ -314,6 +314,7 @@ void DeepTensorPT::compute(std::vector<VALUETYPE>& global_tensor,
   // Process neighbor list following DeepPotPT pattern
   nlist_data.copy_from_nlist(lmp_list, nall - nghost);
   nlist_data.shuffle_exclude_empty(fwd_map);
+  nlist_data.filter_by_distance(dcoord, static_cast<VALUETYPE>(rcut));
   nlist_data.padding();
 
   at::Tensor firstneigh = createNlistTensor(nlist_data.jlist);
