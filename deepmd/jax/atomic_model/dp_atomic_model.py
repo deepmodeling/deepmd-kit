@@ -1,12 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Any,
-)
-
+import deepmd.jax.descriptor as _jax_descriptor  # noqa: F401
+import deepmd.jax.fitting.fitting as _jax_fitting  # noqa: F401
+import deepmd.jax.utils.exclude_mask as _jax_exclude_mask  # noqa: F401
 from deepmd.dpmodel.atomic_model.dp_atomic_model import DPAtomicModel as DPAtomicModelDP
-from deepmd.jax.atomic_model.base_atomic_model import (
-    base_atomic_model_set_attr,
-)
 from deepmd.jax.common import (
     flax_module,
 )
@@ -44,10 +40,6 @@ def make_jax_dp_atomic_model_from_dpmodel(
         """The base descriptor class."""
         base_fitting_cls = BaseFitting
         """The base fitting class."""
-
-        def __setattr__(self, name: str, value: Any) -> None:
-            value = base_atomic_model_set_attr(name, value)
-            return super().__setattr__(name, value)
 
         def forward_common_atomic(
             self,
