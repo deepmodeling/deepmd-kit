@@ -308,13 +308,20 @@ def nlist_distinguish_types(
     snsel = tnlist.shape[2]
     for ii, ss in enumerate(sel):
         # nloc x s(nsel)
-        # to int because bool cannot be sort on GPU
-        pick_mask = (tnlist == ii).to(torch.int32)
-        # nloc x s(nsel), stable sort, nearer neighbors first
-        pick_mask, imap = torch.sort(pick_mask, dim=-1, descending=True, stable=True)
-        # nloc x s(nsel)
+        mask = tnlist == ii
+        order = (
+            snsel - torch.arange(snsel, device=mask.device, dtype=torch.int64)
+        ).view(1, 1, -1)
+        key = torch.where(
+            mask,
+            order.to(torch.float32),
+            torch.full_like(order, -1, dtype=torch.float32),
+        )
+        topk_vals, imap = torch.topk(key, ss, dim=-1, largest=True)
+        # nloc x nsel[ii]
         inlist = torch.gather(nlist, 2, imap)
-        inlist = inlist.masked_fill(~(pick_mask.to(torch.bool)), -1)
+        valid = topk_vals > 0
+        inlist = inlist.masked_fill(~valid, -1)
         # nloc x nsel[ii]
         ret_nlist.append(inlist[..., :ss])
     return torch.concat(ret_nlist, dim=-1)
