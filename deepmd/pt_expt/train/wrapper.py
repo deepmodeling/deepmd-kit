@@ -1,5 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
+from collections.abc import (
+    Generator,
+)
+from contextlib import (
+    contextmanager,
+)
 from typing import (
     Any,
 )
@@ -193,19 +199,54 @@ class ModelWrapper(torch.nn.Module):
             "charge_spin": charge_spin,
         }
 
-        model_pred = self.model[task_key](**input_dict)
-
-        if self.inference_only or label is None:
+        if self.inference_only:
+            with self._frozen_parameter_context():
+                model_pred = self._forward_without_loss(task_key, input_dict)
             return model_pred, None, None
-        else:
-            natoms = atype.shape[-1]
-            loss, more_loss = self.loss[task_key](
-                cur_lr,
-                natoms,
-                model_pred,
-                label,
-            )
-            return model_pred, loss, more_loss
+
+        model_pred = self._forward_without_loss(task_key, input_dict)
+        if label is None:
+            return model_pred, None, None
+
+        natoms = atype.shape[-1]
+        loss, more_loss = self.loss[task_key](
+            cur_lr,
+            natoms,
+            model_pred,
+            label,
+        )
+        return model_pred, loss, more_loss
+
+    @contextmanager
+    def _frozen_parameter_context(self) -> Generator[None, None, None]:
+        """
+        Freeze model parameters during pure inference.
+
+        Inference still differentiates model outputs with respect to
+        coordinates for force and virial evaluation. Parameter gradients are not
+        needed in that path, so disabling them keeps the autograd graph smaller
+        without changing coordinate derivatives.
+        """
+        params = tuple(self.parameters())
+        requires_grad = tuple(param.requires_grad for param in params)
+        if not any(requires_grad):
+            yield
+            return
+        for param in params:
+            param.requires_grad_(False)
+        try:
+            yield
+        finally:
+            for param, flag in zip(params, requires_grad, strict=True):
+                param.requires_grad_(flag)
+
+    def _forward_without_loss(
+        self,
+        task_key: str,
+        input_dict: dict[str, Any],
+    ) -> dict[str, torch.Tensor]:
+        """Return model predictions without constructing a loss."""
+        return self.model[task_key](**input_dict)
 
     def set_extra_state(self, state: dict) -> None:
         self.model_params = state.get("model_params", {})
