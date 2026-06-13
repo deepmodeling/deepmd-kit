@@ -21,14 +21,18 @@ matches the *uncompressed* result on that **identical** nlist (energy and force
 to machine precision). On that same input the buggy se_a op diverged grossly,
 so this guard would catch an analogous se_r regression.
 
-Note: unlike se_a (whose zero-direction neighbors make ``forward_lower`` invariant
-to the neighbor-list representation), se_r's mean reduction is *not* invariant to
-how the nlist is laid out (clean per-type rcut-bounded vs flat over-cut). So the
-reference here is the uncompressed evaluation on the *same* over-cut nlist, not on
-a separate clean nlist -- that isolates the compression op from se_r's intrinsic
-nlist-representation sensitivity (verified: compressed == uncompressed on a given
-nlist to ~1e-16; the clean-vs-over-cut uncompressed gap is a separate ~1e-4 effect
-unrelated to compression).
+Why compare on the *same* nlist (not against a clean rcut-bounded one): this
+over-cut nlist has width ``== nnei`` and contains out-of-``rcut`` neighbors, so
+``format_nlist`` takes its *pad* branch (``n_nnei > nnei`` is false), which does
+NOT re-sort or rcut-filter. The pad branch is therefore mildly order-dependent
+(``nlist_distinguish_types`` truncates per-type sections in raw nlist order and
+lets over-``rcut`` neighbors leak in), so reversing the nlist shifts the
+*uncompressed* energy by ~1e-4. This is a property of ``format_nlist``, NOT of
+the reduction, and it affects se_a and se_r identically (uncompressed se_a shifts
+~4e-6 on the same input). Comparing compressed vs uncompressed on the *identical*
+nlist cancels that shared pad-branch effect and isolates the compression op:
+verified ``rel == 0`` (energy + force) -- whereas the buggy se_a op diverged
+grossly on this same input.
 """
 
 import copy
