@@ -77,7 +77,7 @@ jobs:
           path: .test_durations_${{ matrix.group }}
           include-hidden-files: true
       - name: Upload coverage to Codecov (non-blocking)
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         continue-on-error: true
         with:
           use_oidc: true
