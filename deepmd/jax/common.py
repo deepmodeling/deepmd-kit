@@ -8,6 +8,10 @@ from functools import (
 from importlib import (
     import_module,
 )
+from threading import (
+    Condition,
+    get_ident,
+)
 from typing import (
     Any,
     TypeVar,
@@ -74,6 +78,8 @@ _AUTO_WRAPPED_CLASSES: dict[type[NativeOP], type[Any]] = {}
 _FLAX_0_12 = Version("0.12.0")
 _REGISTRATIONS_READY = False
 _REGISTRATIONS_IN_PROGRESS = False
+_REGISTRATIONS_OWNER: int | None = None
+_REGISTRATIONS_COND = Condition()
 _REGISTRATION_MODULES = (
     "deepmd.jax.utils.network",
     "deepmd.jax.utils.exclude_mask",
@@ -105,18 +111,32 @@ def _looks_like_dpmodel_object(value: Any) -> bool:
 
 
 def _ensure_registrations() -> None:
-    global _REGISTRATIONS_IN_PROGRESS, _REGISTRATIONS_READY
+    global _REGISTRATIONS_IN_PROGRESS, _REGISTRATIONS_OWNER, _REGISTRATIONS_READY
 
-    if _REGISTRATIONS_READY or _REGISTRATIONS_IN_PROGRESS:
-        return
+    current_thread = get_ident()
+    with _REGISTRATIONS_COND:
+        if _REGISTRATIONS_READY:
+            return
+        while _REGISTRATIONS_IN_PROGRESS:
+            if _REGISTRATIONS_OWNER == current_thread:
+                return
+            _REGISTRATIONS_COND.wait()
+            if _REGISTRATIONS_READY:
+                return
+        _REGISTRATIONS_IN_PROGRESS = True
+        _REGISTRATIONS_OWNER = current_thread
 
-    _REGISTRATIONS_IN_PROGRESS = True
+    success = False
     try:
         for module in _REGISTRATION_MODULES:
             import_module(module)
-        _REGISTRATIONS_READY = True
+        success = True
     finally:
-        _REGISTRATIONS_IN_PROGRESS = False
+        with _REGISTRATIONS_COND:
+            _REGISTRATIONS_READY = success
+            _REGISTRATIONS_IN_PROGRESS = False
+            _REGISTRATIONS_OWNER = None
+            _REGISTRATIONS_COND.notify_all()
 
 
 def try_convert_module(value: Any) -> Any | None:
@@ -148,13 +168,17 @@ def _auto_wrap_native_op(value: NativeOP) -> Any:
     return wrapped_cls.deserialize(value.serialize())
 
 
-def _wrap_list(value: list[Any]) -> list[Any] | nnx.List:
-    if Version(flax_version) >= _FLAX_0_12:
+def _use_nnx_list() -> bool:
+    return Version(flax_version) >= _FLAX_0_12 and hasattr(nnx, "List")
+
+
+def _wrap_list(value: list[Any]) -> Any:
+    if _use_nnx_list():
         return nnx.List([nnx.data(item) for item in value])
     return value
 
 
-def _try_convert_list(value: list[Any]) -> list[Any] | nnx.List | None:
+def _try_convert_list(value: list[Any]) -> Any | None:
     if not value:
         return None
 
@@ -189,7 +213,7 @@ def dpmodel_setattr(obj: nnx.Module, name: str, value: Any) -> tuple[bool, Any]:
     if (
         isinstance(value, list)
         and name in getattr(obj, "_jax_data_list_attrs", ())
-        and Version(flax_version) >= _FLAX_0_12
+        and _use_nnx_list()
     ):
         return False, _try_convert_list(value) or _wrap_list(value)
 

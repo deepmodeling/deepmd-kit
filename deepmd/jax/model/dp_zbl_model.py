@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from deepmd.dpmodel.model.dp_zbl_model import DPZBLModel as DPZBLModelDP
-from deepmd.jax.atomic_model.linear_atomic_model import (
-    DPZBLLinearEnergyAtomicModel as DPZBLLinearEnergyAtomicModel,
+from deepmd.jax.atomic_model.linear_atomic_model import (  # noqa: F401
+    DPZBLLinearEnergyAtomicModel as _DPZBLLinearEnergyAtomicModel,
 )
 from deepmd.jax.common import (
     flax_module,
