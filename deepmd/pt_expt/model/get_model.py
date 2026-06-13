@@ -153,6 +153,18 @@ def get_sezm_model(data: dict) -> EnergyModel:
     data.setdefault("fitting_net", {})
     data["descriptor"].setdefault("type", "dpa4")
     data["fitting_net"].setdefault("type", "dpa4_ener")
+    # the DPA4/SeZM model type is a fixed descriptor/fitting contract; reject
+    # explicit mismatching component types instead of silently building them
+    if data["descriptor"]["type"] not in ("dpa4", "DPA4", "sezm", "SeZM"):
+        raise ValueError(
+            "Model type 'dpa4' requires a DPA4/SeZM descriptor, but got "
+            f"descriptor type '{data['descriptor']['type']}'."
+        )
+    if data["fitting_net"]["type"] not in ("dpa4_ener", "sezm_ener"):
+        raise ValueError(
+            "Model type 'dpa4' requires the DPA4/SeZM energy fitting net, but got "
+            f"fitting_net type '{data['fitting_net']['type']}'."
+        )
 
     # keep descriptor.exclude_types and model pair_exclude_types consistent
     descriptor_exclude_types = [

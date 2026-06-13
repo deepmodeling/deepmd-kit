@@ -107,6 +107,27 @@ class TestGetModelDPA4(unittest.TestCase):
         model = get_model(raw)
         self.assertIsInstance(model, EnergyModel)
 
+    def test_explicit_matching_component_types_ok(self) -> None:
+        """Explicit dpa4/sezm descriptor and fitting types are accepted."""
+        for desc_type, fit_type in (("dpa4", "dpa4_ener"), ("sezm", "sezm_ener")):
+            raw = _make_raw_model_config()
+            raw["descriptor"]["type"] = desc_type
+            raw["fitting_net"]["type"] = fit_type
+            model = get_model(raw)
+            self.assertIsInstance(model, EnergyModel, msg=f"{desc_type}/{fit_type}")
+
+    def test_explicit_mismatching_descriptor_type_raises(self) -> None:
+        raw = _make_raw_model_config()
+        raw["descriptor"]["type"] = "se_e2_a"
+        with self.assertRaisesRegex(ValueError, "requires a DPA4/SeZM descriptor"):
+            get_model(raw)
+
+    def test_explicit_mismatching_fitting_type_raises(self) -> None:
+        raw = _make_raw_model_config()
+        raw["fitting_net"]["type"] = "ener"
+        with self.assertRaisesRegex(ValueError, "energy fitting net"):
+            get_model(raw)
+
     def test_pair_exclude_types_from_descriptor(self) -> None:
         """descriptor.exclude_types propagates when pair_exclude_types absent."""
         raw = _make_raw_model_config()

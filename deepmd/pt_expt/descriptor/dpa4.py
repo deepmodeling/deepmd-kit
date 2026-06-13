@@ -114,6 +114,14 @@ def _promote_trainable_tree(module: torch.nn.Module) -> torch.nn.Module:
         names = _TRAINABLE_ATTRS.get(type(sub).__name__)
         if names is not None:
             _promote_trainable(sub, names)
+    # Freeze every Parameter under a ``trainable=False`` module.  This covers
+    # parameters that exist regardless of the promotion table above, e.g. the
+    # ``SO2Linear.weight_m`` list, which ``_try_convert_list`` converts to a
+    # ParameterList with ``requires_grad=True`` unconditionally.
+    for sub in module.modules():
+        if getattr(sub, "trainable", True) is False:
+            for p in sub.parameters(recurse=True):
+                p.requires_grad_(False)
     return module
 
 

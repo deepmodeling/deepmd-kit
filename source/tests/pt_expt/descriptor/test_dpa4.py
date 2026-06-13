@@ -185,3 +185,23 @@ class TestDescrptDPA4(TestCaseSingleFrameWithNlist):
         for name, p in param_names.items():
             assert p.is_floating_point(), name
             assert p.requires_grad, name
+
+    @pytest.mark.parametrize(
+        "via_deserialize", [False, True]
+    )  # constructor vs round-trip
+    def test_trainable_false_freezes_all_parameters(self, via_deserialize) -> None:
+        # trainable=False must freeze every parameter, including ParameterList
+        # entries such as SO2Linear.weight_m (mmax>=1) that dpmodel_setattr
+        # converts with requires_grad=True
+        dd0 = make_descriptor(
+            self.nt, self.sel_mix, self.rcut, use_env_seed=True, trainable=False
+        ).to(self.device)
+        if via_deserialize:
+            dd0 = DescrptDPA4.deserialize(dd0.serialize())
+        params = dict(dd0.named_parameters())
+        assert any(".weight_m." in n for n in params)  # mmax>=1 exercised
+        frozen = [n for n, p in params.items() if not p.requires_grad]
+        assert frozen == list(params), (
+            f"trainable=False left parameters trainable: "
+            f"{sorted(set(params) - set(frozen))}"
+        )
