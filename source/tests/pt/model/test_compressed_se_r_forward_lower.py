@@ -14,11 +14,21 @@ iterates every neighbor), and the descriptor reduces over neighbors with an
 order-independent ``mean``. Consequently ``need_sorted_nlist_for_lower()``
 correctly stays ``False`` for se_r and needs no ``self.compress`` override.
 
-This test locks in that immunity: it runs compressed ``forward_lower`` with an
-over-``rcut`` FLAT nlist reversed so padding / out-of-``rcut`` neighbors precede
-the real ones -- exactly the input that broke se_a -- and asserts the compressed
-energy/forces still match the uncompressed reference. It is expected to pass
-without any production code change.
+This test locks in that immunity. It runs ``forward_lower`` on an over-``rcut``
+FLAT nlist reversed so padding / out-of-``rcut`` neighbors precede the real ones
+-- exactly the input that broke se_a -- and asserts that the *compressed* result
+matches the *uncompressed* result on that **identical** nlist (energy and force
+to machine precision). On that same input the buggy se_a op diverged grossly,
+so this guard would catch an analogous se_r regression.
+
+Note: unlike se_a (whose zero-direction neighbors make ``forward_lower`` invariant
+to the neighbor-list representation), se_r's mean reduction is *not* invariant to
+how the nlist is laid out (clean per-type rcut-bounded vs flat over-cut). So the
+reference here is the uncompressed evaluation on the *same* over-cut nlist, not on
+a separate clean nlist -- that isolates the compression op from se_r's intrinsic
+nlist-representation sensitivity (verified: compressed == uncompressed on a given
+nlist to ~1e-16; the clean-vs-over-cut uncompressed gap is a separate ~1e-4 effect
+unrelated to compression).
 """
 
 import copy
@@ -101,28 +111,10 @@ class TestCompressedSeRForwardLower(unittest.TestCase):
         rcut = self.model.get_rcut()
         sel = self.model.get_sel()
 
-        # reference: uncompressed forward_lower with a clean rcut-bounded nlist
-        ec, ea, mp, nlist = extend_input_and_build_neighbor_list(
-            coord.unsqueeze(0),
-            atype.unsqueeze(0),
-            rcut,
-            sel,
-            mixed_types=self.model.mixed_types(),
-            box=cell.unsqueeze(0),
-        )
-        ref = self.model.forward_lower(ec, ea, nlist, mp, do_atomic_virial=False)
-
-        # enable compression (lower bound below the true min distance -> no extrapolation)
-        self.model.min_nbor_dist = torch.tensor(
-            0.9 * self._min_nbor_dist(coord, cell),
-            dtype=env.GLOBAL_PT_FLOAT_PRECISION,
-            device=env.DEVICE,
-        )
-        self.model.enable_compression()
-
         # over-rcut FLAT neighbor list (mimics LAMMPS rcut+skin), reversed so the
-        # out-of-rcut / padding neighbors precede the real ones.
-        ec2, ea2, mp2, nlist2 = extend_input_and_build_neighbor_list(
+        # out-of-rcut / padding neighbors precede the real ones -- the exact input
+        # that broke compressed se_a.
+        ec, ea, mp, nlist = extend_input_and_build_neighbor_list(
             coord.unsqueeze(0),
             atype.unsqueeze(0),
             rcut + 2.0,
@@ -130,13 +122,25 @@ class TestCompressedSeRForwardLower(unittest.TestCase):
             mixed_types=True,
             box=cell.unsqueeze(0),
         )
-        nlist2 = torch.flip(nlist2, dims=[-1])
-        out = self.model.forward_lower(ec2, ea2, nlist2, mp2, do_atomic_virial=False)
+        nlist = torch.flip(nlist, dims=[-1])
+
+        # reference: uncompressed forward_lower on this exact nlist
+        ref = self.model.forward_lower(ec, ea, nlist, mp, do_atomic_virial=False)
+
+        # enable compression (lower bound below the true min distance -> no
+        # extrapolation) and rerun forward_lower on the IDENTICAL nlist
+        self.model.min_nbor_dist = torch.tensor(
+            0.9 * self._min_nbor_dist(coord, cell),
+            dtype=env.GLOBAL_PT_FLOAT_PRECISION,
+            device=env.DEVICE,
+        )
+        self.model.enable_compression()
+        out = self.model.forward_lower(ec, ea, nlist, mp, do_atomic_virial=False)
 
         torch.testing.assert_close(out["energy"], ref["energy"], rtol=1e-10, atol=1e-10)
         natoms = coord.shape[0]
         f_ref = reduce_tensor(ref["extended_force"], mp, natoms)
-        f_out = reduce_tensor(out["extended_force"], mp2, natoms)
+        f_out = reduce_tensor(out["extended_force"], mp, natoms)
         torch.testing.assert_close(f_out, f_ref, rtol=1e-10, atol=1e-10)
 
 
