@@ -194,15 +194,25 @@ Uncertainty estimates can drive active learning (query most uncertain candidates
 
 ## Cross-validation
 
-Formula-grouped splitting prevents same-composition leakage between folds:
+Formula-grouped splitting prevents same-composition leakage between folds.
+`group_by` accepts `"formula"` (uses each system's directory name as the group
+key — requires directories named by formula, e.g. `H2O/`, `CH4/`) or a list
+of labels the same length as `systems`:
 
 ```python
 from dpa_adapt import cross_validate, train_test_split, load_dataset
 
 systems = load_dataset("/data/root", label_key="energy")
+
+# Case 1: directory names are formulas (e.g. data/H2O/, data/CH4/)
 train, valid, test = train_test_split(systems, group_by="formula", seed=42)
 
-result = cross_validate(model, systems, label_key="energy", cv=5, group_by="formula")
+# Case 2: directory names are not formulas (e.g. QM9's sys_0000, sys_0001, …)
+formulas = ["H2O", "H2O", "CH4", "CH4", ...]  # one label per system
+train, valid, test = train_test_split(systems, group_by=formulas, seed=42)
+
+# Cross-validate (same group_by options apply)
+result = cross_validate(model, systems, label_key="energy", cv=5, group_by=formulas)
 # → {"aggregate": {"mae_mean": ..., "rmse_std": ...}, ...}
 ```
 
