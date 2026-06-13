@@ -149,22 +149,19 @@ For the full option list and supported dpdata formats, see
 
 ### Context features (fparam)
 
-fparam lets you condition the model on system-level context such as temperature, pressure, or experimental conditions.
-
-**frozen_sklearn** — pass a dict of numpy arrays at fit and predict time:
+fparam lets you condition the model on system-level context such as temperature, humidity, pressure, or any per-frame scalar.  All strategies use the same interface: place `fparam.npy` of shape `(n_frames, fparam_dim)` in each `set.*/` directory alongside `coord.npy` and declare the dimension at construction.
 
 ```python
-model.fit(train_data, conditions={"temperature": T_train})
-model.predict(test_data, conditions={"temperature": T_test})
-# ConditionManager standardizes and concatenates values to the descriptor
+# works identically for frozen_sklearn, frozen_head, finetune, and mft
+model = DPAFineTuner(strategy="frozen_sklearn", fparam_dim=2)
+model.fit(train_data="data/train", target_key="property")
+# fparam.npy is read automatically — no conditions= dict needed
 ```
 
-**frozen_head / finetune / mft** — place `fparam.npy` of shape `(nframes, fparam_dim)` in each `set.*/` directory alongside `coord.npy`, then declare the dimension at construction:
-
-```python
-model = DPAFineTuner(strategy="finetune", fparam_dim=2)
-model.fit(train_data)  # reads fparam.npy automatically
-```
+| Strategy | How fparam is used |
+|---|---|
+| `frozen_sklearn` | columns are standardized via `ConditionManager` and concatenated to the descriptor |
+| `frozen_head` / `finetune` / `mft` | passed into the fitting net as `numb_fparam` |
 
 ## Inference and uncertainty
 

@@ -33,7 +33,7 @@ def _build_property_fitting_net(t) -> dict:
         }
     )
     if getattr(t, "fparam_dim", 0) > 0:
-        fn["fparam_dim"] = t.fparam_dim
+        fn["numb_fparam"] = t.fparam_dim
     return fn
 
 

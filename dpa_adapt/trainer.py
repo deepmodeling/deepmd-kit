@@ -327,7 +327,7 @@ class DPATrainer:
         # property head at [128, 240], so there is no [159, 240] checkpoint
         # head to size-match against. An explicit user value still wins.
         if self.fparam_dim > 0:
-            fn["fparam_dim"] = self.fparam_dim
+            fn["numb_fparam"] = self.fparam_dim
         if self.fitting_net_params:
             fn.update(self.fitting_net_params)
         return fn
