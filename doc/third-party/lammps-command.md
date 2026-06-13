@@ -49,7 +49,7 @@ pair_style deepmd models ... keyword value ...
 - models = frozen model(s) to compute the interaction.
   If multiple models are provided, then only the first model serves to provide energy and force prediction for each timestep of molecular dynamics,
   and the model deviation will be computed among all models every `out_freq` timesteps.
-- keyword = _out_file_ or _out_freq_ or _fparam_ or _fparam_from_compute_ or _aparam_from_compute_ or _atomic_ or _relative_ or _relative_v_ or _aparam_ or _ttm_
+- keyword = _out_file_ or _out_freq_ or _fparam_ or _fparam_from_compute_ or _fparam_from_fix_ or _aparam_from_compute_ or _atomic_ or _relative_ or _relative_v_ or _aparam_ or _ttm_
 
 <pre>
     <i>out_file</i> value = filename
@@ -60,6 +60,9 @@ pair_style deepmd models ... keyword value ...
         parameters = one or more frame parameters required for model evaluation.
     <i>fparam_from_compute</i> value = id
         id = compute id used to update the frame parameter.
+    <i>fparam_from_fix</i> value = id [index]
+        id = fix ID used to update the frame parameter.
+        index = optional 1-based starting index for a global fix vector.
     <i>aparam_from_compute</i> value = id
         id = compute id used to update the atom parameter.
     <i>atomic</i> = no value is required.
@@ -110,27 +113,10 @@ $$E_{v_i}=\frac{\left|D_{v_i}\right|}{\left|v_i\right|+l}$$
 
 If the keyword `fparam` is set, the given frame parameter(s) will be fed to the model.
 If the keyword `fparam_from_compute` is set, the global parameter(s) from compute command (e.g., temperature from [compute temp command](https://docs.lammps.org/compute_temp.html)) will be fed to the model as the frame parameter(s).
-If the keyword `fparam_from_fix` is set, the global parameter(s) from fix command will be fed to the model as the frame parameter(s). This is intended for generalized coordinates that are naturally carried by a fix, for example the potentiostat variable in `fix uvt`.
+If the keyword `fparam_from_fix` is set, the global parameter(s) from fix command will be fed to the model as the frame parameter(s). This is intended for generalized coordinates that are naturally carried by a fix, for example the potentiostat variable in `fix uvt`. See [compute `deepmd/fparam/dedn`](#compute-deepmdfparamdedn) for evaluating the corresponding energy derivative.
 If the keyword `aparam_from_compute` is set, the atomic parameter(s) from compute command (e.g., per-atom translational kinetic energy from [compute ke/atom command](https://docs.lammps.org/compute_ke_atom.html)) will be fed to the model as the atom parameter(s).
 If the keyword `aparam` is set, the given atomic parameter(s) will be fed to the model, where each atom is assumed to have the same atomic parameter(s).
 If the keyword `ttm` is set, electronic temperatures from [fix ttm command](https://docs.lammps.org/fix_ttm.html) will be fed to the model as the atomic parameters.
-
-### Computing the derivative with respect to a frame parameter
-
-The `deepmd/fparam/dedn` compute evaluates a finite-difference derivative of the model energy with respect to a chosen frame parameter source.
-
-```lammps
-compute ID group-ID deepmd/fparam/dedn source [delta]
-```
-
-- `source` can be a global variable (`v_name`), a compute (`c_ID`) or a fix (`f_ID`).
-- `source[index]` may be used for vector-valued computes or fixes, with 1-based indexing.
-- `delta` is the perturbation used in the central difference formula. If omitted, a small default perturbation is used.
-- The compute performs two additional model-energy evaluations, at `source + delta`
-  and `source - delta`. It does not consume a direct derivative tensor from the model.
-- This path currently requires `pair_style deepmd` with one model and one frame-parameter
-  dimension. It therefore works with existing supported backends and models that accept
-  a scalar frame parameter; no `o_dE_dN` or other derivative output is required.
 
 Only a single `pair_coeff` command is used with the deepmd style which specifies atom names. These are mapped to LAMMPS atom types (integers from 1 to Ntypes) by specifying Ntypes additional arguments after `* *` in the `pair_coeff` command.
 If atom names are not set in the `pair_coeff` command, the training parameter {ref}`type_map <model/type_map>` will be used by default.
@@ -215,6 +201,23 @@ Please note that the virial and atomic virial are not currently supported in spi
 ### Restrictions
 
 - The `deepspin` pair style is provided in the USER-DEEPMD package, which is compiled from the DeePMD-kit, visit the [DeePMD-kit website](https://github.com/deepmodeling/deepmd-kit) for more information.
+
+## compute `deepmd/fparam/dedn`
+
+The `deepmd/fparam/dedn` compute evaluates a finite-difference derivative of the model energy with respect to a chosen frame parameter source.
+
+```lammps
+compute ID group-ID deepmd/fparam/dedn source [delta]
+```
+
+- `source` can be a global variable (`v_name`), a compute (`c_ID`) or a fix (`f_ID`).
+- `source[index]` may be used for vector-valued computes or fixes, with 1-based indexing.
+- `delta` is the perturbation used in the central difference formula. If omitted, a small default perturbation is used.
+- The compute performs two additional model-energy evaluations, at `source + delta`
+  and `source - delta`. It does not consume a direct derivative tensor from the model.
+- This path currently requires `pair_style deepmd` with one model and one frame-parameter
+  dimension. It therefore works with existing supported backends and models that accept
+  a scalar frame parameter; no `o_dE_dN` or other derivative output is required.
 
 ## Compute tensorial properties
 
