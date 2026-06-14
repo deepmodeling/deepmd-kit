@@ -64,7 +64,7 @@ FixCBOAMD::FixCBOAMD(LAMMPS* lmp, int narg, char** arg)
       ea(nullptr),
       energy_photon(nullptr),
       dt(0.0),
-      current_step(0),
+      output_ready(false),
       output_file(nullptr) {
   vector_flag = 1;
   extvector = 1;
@@ -288,6 +288,8 @@ void FixCBOAMD::init() {
 
 void FixCBOAMD::setup(int vflag) {
   post_force(vflag);
+  write_output();
+  output_ready = false;
   // // Initialize DeepMD calculations
   // convert_coordinates_to_deepmd_format();
   // compute_deepmd_dipole();
@@ -315,6 +317,10 @@ void FixCBOAMD::final_integrate() {
     // Update photon momenta using Velocity Verlet
     pa[alpha] += 0.5 * fa[alpha] * dt * PS_TO_AU;
   }
+  if (output_ready) {
+    write_output();
+    output_ready = false;
+  }
 }
 
 /* ---------------------------------------------------------------------- */
@@ -337,10 +343,7 @@ void FixCBOAMD::post_force(int vflag) {
     compute_cboa_forces();
   }
 
-  // Write output
-  write_output();
-
-  current_step++;
+  output_ready = true;
 }
 
 /* ---------------------------------------------------------------------- */
@@ -697,8 +700,9 @@ void FixCBOAMD::compute_cboa_forces() {
         for (int alpha = 0; alpha < nphoton; alpha++) {
           // CBOA force contribution from photon alpha
           f[i][di] -= ea[alpha] * lambda_photon[alpha] *
-                      lambda_vector[alpha][dp] * dipole_grad_deepmd[idx] *
-                      dipole_grad_to_au / EV_TO_HARTREE;
+                      lambda_vector[alpha][dp] *
+                      dipole_grad_deepmd[idx] * dipole_grad_to_au *
+                      HARTREE_PER_BOHR_TO_EV_PER_ANGSTROM;
         }
       }
     }
@@ -715,7 +719,8 @@ void FixCBOAMD::compute_cboa_forces() {
               f[i][di] -= 0.5 * ea[alpha] * ea[alpha] * lambda_photon[alpha] *
                           lambda_photon[alpha] * lambda_vector[alpha][pl1] *
                           lambda_vector[alpha][pl2] * polar_grad_deepmd[idx] *
-                          polar_grad_to_au / EV_TO_HARTREE;
+                          polar_grad_to_au *
+                          HARTREE_PER_BOHR_TO_EV_PER_ANGSTROM;
             }
           }
         }
@@ -736,7 +741,8 @@ void FixCBOAMD::write_output() {
     fprintf(output_file,
             "%d %.6f %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e "
             "%.6e",
-            current_step, update->dt * current_step, dipole[0], dipole[1],
+            update->ntimestep, update->dt * update->ntimestep, dipole[0],
+            dipole[1],
             dipole[2], polarizability[0], polarizability[1], polarizability[2],
             polarizability[3], polarizability[4], polarizability[5],
             polarizability[6], polarizability[7], polarizability[8]);
