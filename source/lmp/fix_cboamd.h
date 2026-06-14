@@ -147,8 +147,6 @@ class FixCBOAMD : public Fix {
   static constexpr double EV_TO_HARTREE = 0.0367493;
   static constexpr double ANGSTROM_TO_BOHR = 1.88973;
   static constexpr double BOHR_TO_ANGSTROM = 1.0 / ANGSTROM_TO_BOHR;
-  static constexpr double HARTREE_PER_BOHR_TO_EV_PER_ANGSTROM =
-      1.0 / (EV_TO_HARTREE * BOHR_TO_ANGSTROM);
   static constexpr double ANGSTROM3_TO_BOHR3 =
       ANGSTROM_TO_BOHR * ANGSTROM_TO_BOHR * ANGSTROM_TO_BOHR;
   static constexpr double EV_PER_ANGSTROM_TO_HARTREE_PER_BOHR = 0.0194467;
