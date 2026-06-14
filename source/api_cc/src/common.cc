@@ -9,6 +9,9 @@
 #include <string>
 
 #include "AtomMap.h"
+#ifndef BUILD_TENSORFLOW
+#include "BackendPlugin.h"
+#endif
 #include "device.h"
 #if defined(_WIN32)
 #if defined(_WIN32_WINNT)
@@ -460,16 +463,7 @@ static inline void _load_single_op_library(std::string library_name) {
   _load_library_path(dso_path);
 }
 
-void deepmd::load_op_library() {
-#ifdef BUILD_TENSORFLOW
-  _load_single_op_library("deepmd_op");
-#endif
-#ifdef BUILD_PYTORCH
-  _load_single_op_library("deepmd_op_pt");
-#endif
-#ifdef BUILD_PADDLE
-  _load_single_op_library("deepmd_op_pd");
-#endif
+static inline void _load_customized_plugins() {
   // load customized plugins
   const char* env_customized_plugins = std::getenv("DP_PLUGIN_PATH");
   if (env_customized_plugins) {
@@ -487,6 +481,31 @@ void deepmd::load_op_library() {
       _load_library_path(plugin);
     }
   }
+}
+
+void deepmd::load_op_library() {
+#ifdef BUILD_TENSORFLOW
+  _load_single_op_library("deepmd_op");
+#endif
+#ifdef BUILD_PYTORCH
+  _load_single_op_library("deepmd_op_pt");
+#endif
+#ifdef BUILD_PADDLE
+  _load_single_op_library("deepmd_op_pd");
+#endif
+  _load_customized_plugins();
+}
+
+void deepmd::load_op_library(DPBackend backend) {
+  if (deepmd::DPBackend::TensorFlow == backend) {
+    _load_single_op_library("deepmd_op");
+  } else if (deepmd::DPBackend::PyTorch == backend ||
+             deepmd::DPBackend::PyTorchExportable == backend) {
+    _load_single_op_library("deepmd_op_pt");
+  } else if (deepmd::DPBackend::Paddle == backend) {
+    _load_single_op_library("deepmd_op_pd");
+  }
+  _load_customized_plugins();
 }
 
 std::string deepmd::name_prefix(const std::string& scope) {
@@ -1258,8 +1277,7 @@ void deepmd::convert_pbtxt_to_pb(std::string fn_pb_txt, std::string fn_pb) {
                       std::ios::out | std::ios::trunc | std::ios::binary);
   graph_def.SerializeToOstream(&output);
 #else
-  throw deepmd::deepmd_exception(
-      "convert_pbtxt_to_pb: TensorFlow backend is not enabled.");
+  convert_pbtxt_to_pb_from_plugin(fn_pb_txt, fn_pb);
 #endif
 }
 

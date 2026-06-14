@@ -431,7 +431,7 @@ void DeepPotTF::init(const std::string& model,
   get_env_nthreads(num_intra_nthreads, num_inter_nthreads);
   options.config.set_inter_op_parallelism_threads(num_inter_nthreads);
   options.config.set_intra_op_parallelism_threads(num_intra_nthreads);
-  deepmd::load_op_library();
+  deepmd::load_op_library(deepmd::DPBackend::TensorFlow);
 
   if (file_content.size() == 0) {
     check_status(ReadBinaryProto(Env::Default(), model, graph_def));

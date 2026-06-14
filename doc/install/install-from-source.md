@@ -370,11 +370,28 @@ The installation requires CMake 3.25.2 or later for all platforms (CPU, CUDA, an
 pip install -U cmake
 ```
 
-You must enable at least one backend.
+For a backend-enabled install, enable at least one backend.
+If you only want backend-neutral C/C++ libraries, use the backend-neutral tab below and provide backend plugins at runtime.
 If you enable two or more backends, these backend libraries must be built in a compatible way, e.g. using the same `_GLIBCXX_USE_CXX11_ABI` flag.
 We recommend using [conda packages](https://docs.deepmodeling.com/faq/conda.html) from [conda-forge](https://conda-forge.org), which are usually compatible to each other.
 
 ::::{tab-set}
+
+:::{tab-item} Backend-neutral C/C++ libraries
+
+To build only `libdeepmd_cc` and `libdeepmd_c` without backend plugins, leave all backend options disabled, or set them explicitly:
+
+```bash
+cmake -DBUILD_CPP_IF=ON -DBUILD_PY_IF=OFF \
+  -DENABLE_TENSORFLOW=OFF -DENABLE_PYTORCH=OFF \
+  -DENABLE_JAX=OFF -DENABLE_PADDLE=OFF \
+  -DCMAKE_INSTALL_PREFIX=$deepmd_root ..
+```
+
+This install does not include backend plugins.
+Use backend plugin libraries from a backend-enabled build or package at runtime, either by placing them next to the installed C/C++ libraries or by setting {envvar}`DP_BACKEND_PLUGIN_PATH`.
+See [C/C++ backend plugins](../inference/cxx.md#backend-plugins) for runtime plugin discovery.
+:::
 
 :::{tab-item} TensorFlow {{ tensorflow_icon }} / JAX {{ jax_icon }}
 
