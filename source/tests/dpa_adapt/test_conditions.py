@@ -132,6 +132,7 @@ class TestFineTunerWithConditions:
         system = tmp_path / "sys"
         system.mkdir()
         _make_npy_system(system, n_frames=4)
+        np.save(system / "set.000" / "fparam.npy", np.zeros((4, 1)))
 
         with (
             patch.object(
@@ -139,18 +140,23 @@ class TestFineTunerWithConditions:
             ),
             patch.object(DPAFineTuner, "_extract_features", _mock_extract_features),
         ):
-            ft = DPAFineTuner(pretrained="fake.pt", predictor="linear")
-            cond = {"T": np.array([300.0, 400.0, 500.0, 600.0])}
-            ft.fit(str(system), target_key="energy", conditions=cond)
+            ft = DPAFineTuner(pretrained="fake.pt", predictor="linear", fparam_dim=1)
+            ft.fit(str(system), target_key="energy")
 
         # The pipeline's first step (StandardScaler) reveals the input dim
         scaler = ft.predictor.named_steps["standardscaler"]
         assert scaler.n_features_in_ == FEAT_DIM + 1
 
     def test_predict_missing_conditions_raises(self, tmp_path):
-        system = tmp_path / "sys"
-        system.mkdir()
-        _make_npy_system(system, n_frames=4)
+        system_fit = tmp_path / "sys_fit"
+        system_fit.mkdir()
+        _make_npy_system(system_fit, n_frames=4)
+        np.save(system_fit / "set.000" / "fparam.npy", np.zeros((4, 1)))
+
+        system_predict = tmp_path / "sys_predict"
+        system_predict.mkdir()
+        _make_npy_system(system_predict, n_frames=4)
+        # No fparam.npy here — should trigger DPAConditionError on predict
 
         with (
             patch.object(
@@ -158,17 +164,18 @@ class TestFineTunerWithConditions:
             ),
             patch.object(DPAFineTuner, "_extract_features", _mock_extract_features),
         ):
-            ft = DPAFineTuner(pretrained="fake.pt", predictor="linear")
-            cond = {"T": np.array([300.0, 400.0, 500.0, 600.0])}
-            ft.fit(str(system), target_key="energy", conditions=cond)
+            ft = DPAFineTuner(pretrained="fake.pt", predictor="linear", fparam_dim=1)
+            ft.fit(str(system_fit), target_key="energy")
 
-            with pytest.raises(DPAConditionError, match="fit with conditions"):
-                ft.predict(str(system))
+            with pytest.raises(DPAConditionError, match="fit with fparam"):
+                ft.predict(str(system_predict))
 
-    def test_predict_unexpected_conditions_raises(self, tmp_path):
+    def test_predict_with_unexpected_fparam_does_not_raise(self, tmp_path):
         system = tmp_path / "sys"
         system.mkdir()
         _make_npy_system(system, n_frames=4)
+        # fparam.npy present even though model was NOT trained with fparam_dim
+        np.save(system / "set.000" / "fparam.npy", np.zeros((4, 1)))
 
         with (
             patch.object(
@@ -179,15 +186,16 @@ class TestFineTunerWithConditions:
             ft = DPAFineTuner(pretrained="fake.pt", predictor="linear")
             ft.fit(str(system), target_key="energy")
 
-            with pytest.raises(DPAConditionError, match="fit without conditions"):
-                ft.predict(
-                    str(system), conditions={"T": np.array([1.0, 2.0, 3.0, 4.0])}
-                )
+            # fparam.npy is silently ignored when model was fitted without fparam_dim
+            result = ft.predict(str(system))
+
+        assert result.predictions.shape == (4, 1)
 
     def test_freeze_load_with_conditions(self, tmp_path):
         system = tmp_path / "sys"
         system.mkdir()
         _make_npy_system(system, n_frames=4)
+        np.save(system / "set.000" / "fparam.npy", np.zeros((4, 1)))
 
         with (
             patch.object(
@@ -195,14 +203,13 @@ class TestFineTunerWithConditions:
             ),
             patch.object(DPAFineTuner, "_extract_features", _mock_extract_features),
         ):
-            ft = DPAFineTuner(pretrained="fake.pt", predictor="linear")
-            cond = {"T": np.array([300.0, 400.0, 500.0, 600.0])}
-            ft.fit(str(system), target_key="energy", conditions=cond)
+            ft = DPAFineTuner(pretrained="fake.pt", predictor="linear", fparam_dim=1)
+            ft.fit(str(system), target_key="energy")
 
             frozen = ft.freeze(str(tmp_path / "model.pth"))
 
             pred = DPAPredictor(frozen)
-            result = pred.predict(str(system), conditions=cond)
+            result = pred.predict(str(system))
 
         assert result.predictions.shape == (4, 1)
 

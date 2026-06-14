@@ -72,10 +72,10 @@ def test_trainer_fparam_dim_non_int_raises():
 
 
 def test_trainer_fparam_dim_injected_in_fitting_net():
-    """DPATrainer(fparam_dim=3)._build_fitting_net() includes fparam_dim=3."""
+    """DPATrainer(fparam_dim=3)._build_fitting_net() includes numb_fparam=3."""
     t = _make_dummy_trainer(fparam_dim=3)
     fn = t._build_fitting_net()
-    assert fn["fparam_dim"] == 3
+    assert fn["numb_fparam"] == 3
 
 
 def test_trainer_fparam_dim_zero_not_injected():
