@@ -21,8 +21,7 @@ Flags merely forwarded to sub-components keep their guards there (delegated,
 not duplicated here): ``so2_attn_res``, ``so2_s2_activation``,
 ``node_wise_s2/so3``, ``message_node_s2/so3``, ``atten_f_mix``,
 ``atten_v_proj``, ``atten_o_proj`` (raised by ``SO2Convolution``) and
-``ffn_so3_grid``, ``ffn_grid_mlp`` with the grid path active (raised by
-``EquivariantFFN`` / ``S2GridNet``).
+``ffn_so3_grid`` with the grid path active (raised by ``EquivariantFFN``).
 
 The pt eval-time activation-checkpoint / nvtx instrumentation
 (``DP_ACT_INFER``, ``DP_COMPILE_INFER``, ``nvtx_range``) is pt-runtime-only
