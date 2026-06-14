@@ -149,22 +149,19 @@ For the full option list and supported dpdata formats, see
 
 ### Context features (fparam)
 
-fparam lets you condition the model on system-level context such as temperature, pressure, or experimental conditions.
-
-**frozen_sklearn** — pass a dict of numpy arrays at fit and predict time:
+fparam lets you condition the model on system-level context such as temperature, humidity, pressure, or any per-frame scalar.  All strategies use the same interface: place `fparam.npy` of shape `(n_frames, fparam_dim)` in each `set.*/` directory alongside `coord.npy` and declare the dimension at construction.
 
 ```python
-model.fit(train_data, conditions={"temperature": T_train})
-model.predict(test_data, conditions={"temperature": T_test})
-# ConditionManager standardizes and concatenates values to the descriptor
+# works identically for frozen_sklearn, frozen_head, finetune, and mft
+model = DPAFineTuner(strategy="frozen_sklearn", fparam_dim=2)
+model.fit(train_data="data/train", target_key="property")
+# fparam.npy is read automatically — no conditions= dict needed
 ```
 
-**frozen_head / finetune / mft** — place `fparam.npy` of shape `(nframes, fparam_dim)` in each `set.*/` directory alongside `coord.npy`, then declare the dimension at construction:
-
-```python
-model = DPAFineTuner(strategy="finetune", fparam_dim=2)
-model.fit(train_data)  # reads fparam.npy automatically
-```
+| Strategy | How fparam is used |
+|---|---|
+| `frozen_sklearn` | columns are standardized via `ConditionManager` and concatenated to the descriptor |
+| `frozen_head` / `finetune` / `mft` | passed into the fitting net as `numb_fparam` |
 
 ## Inference and uncertainty
 
@@ -197,15 +194,25 @@ Uncertainty estimates can drive active learning (query most uncertain candidates
 
 ## Cross-validation
 
-Formula-grouped splitting prevents same-composition leakage between folds:
+Formula-grouped splitting prevents same-composition leakage between folds.
+`group_by` accepts `"formula"` (uses each system's directory name as the group
+key — requires directories named by formula, e.g. `H2O/`, `CH4/`) or a list
+of labels the same length as `systems`:
 
 ```python
 from dpa_adapt import cross_validate, train_test_split, load_dataset
 
 systems = load_dataset("/data/root", label_key="energy")
+
+# Case 1: directory names are formulas (e.g. data/H2O/, data/CH4/)
 train, valid, test = train_test_split(systems, group_by="formula", seed=42)
 
-result = cross_validate(model, systems, label_key="energy", cv=5, group_by="formula")
+# Case 2: directory names are not formulas (e.g. QM9's sys_0000, sys_0001, …)
+formulas = ["H2O", "H2O", "CH4", "CH4", ...]  # one label per system
+train, valid, test = train_test_split(systems, group_by=formulas, seed=42)
+
+# Cross-validate (same group_by options apply)
+result = cross_validate(model, systems, label_key="energy", cv=5, group_by=formulas)
 # → {"aggregate": {"mae_mean": ..., "rmse_std": ...}, ...}
 ```
 

@@ -120,7 +120,7 @@ class DPAPredictor:
             pooling=self._pooling,
         )
 
-    def fit(self, data, target_key=None, labels=None, fmt=None, conditions=None):
+    def fit(self, data, target_key=None, labels=None, fmt=None):
         """Train committee members for uncertainty estimation.
 
         Only valid when *n_committee* > 1.  Clones the frozen sklearn
@@ -140,6 +140,7 @@ class DPAPredictor:
 
         from dpa_adapt.finetuner import (
             _load_labels,
+            _read_fparam_from_systems,
         )
 
         if target_key is not None and labels is not None:
@@ -154,14 +155,14 @@ class DPAPredictor:
         features = self._extractor._extract_features(systems)
 
         if self._condition_manager is not None:
+            conditions = _read_fparam_from_systems(systems)
             if conditions is None:
                 raise DPAConditionError(
-                    "This model was fit with conditions. Pass conditions= to fit()."
+                    "This model was fit with fparam but set.*/fparam.npy "
+                    "was not found in the data."
                 )
             X_cond = self._condition_manager.transform(conditions)
             features = np.concatenate([features, X_cond], axis=1)
-        elif conditions is not None:
-            raise DPAConditionError("This model was fit without conditions.")
 
         if labels is not None:
             y = np.asarray(labels)
@@ -184,34 +185,38 @@ class DPAPredictor:
         preds = preds.reshape(self.n_committee, -1, self._task_dim)
         self.uncertainty_threshold_ = float(np.percentile(np.std(preds, axis=0), 95))
 
-    def _extract_and_condition(self, data, fmt, conditions):
-        """Shared feature extraction + condition concatenation."""
+    def _extract_and_condition(self, data, fmt):
+        """Shared feature extraction + fparam auto-read."""
+        from dpa_adapt.finetuner import (
+            _read_fparam_from_systems,
+        )
+
         systems = load_data(data, fmt=fmt)
-        # Load the model first so the checkpoint type_map is available, then
-        # validate before extracting features (extraction relies on the data
-        # type_map being a subset of the checkpoint's).
         if self._extractor._model is None:
             self._extractor._model = self._extractor._load_descriptor_model()
         self._extractor._validate_type_map(self._type_map, systems)
         features = self._extractor._extract_features(systems)
 
         if self._condition_manager is not None:
+            conditions = _read_fparam_from_systems(systems)
             if conditions is None:
                 raise DPAConditionError(
-                    "This model was fit with conditions. Pass conditions= to predict()."
+                    "This model was fit with fparam but set.*/fparam.npy "
+                    "was not found in the data."
                 )
             X_cond = self._condition_manager.transform(conditions)
             features = np.concatenate([features, X_cond], axis=1)
-        elif conditions is not None:
-            raise DPAConditionError("This model was fit without conditions.")
 
         return features
 
     def predict(
-        self, data, fmt=None, conditions=None, return_uncertainty=False
+        self, data, fmt=None, return_uncertainty=False
     ) -> DotDict:
         """
         Run inference on ``data``.
+
+        fparam is automatically read from ``set.*/fparam.npy`` when the
+        model was fit with fparam.
 
         Parameters
         ----------
@@ -219,9 +224,6 @@ class DPAPredictor:
             Path(s) to deepmd/npy system directories.
         fmt : str, optional
             Reserved for future format support.
-        conditions : dict[str, np.ndarray], optional
-            Named condition arrays.  Required when the model was fit with
-            conditions; must be absent otherwise.
         return_uncertainty : bool
             When True, include ``"uncertainty"`` (per-sample std) in the
             result.  Behaviour depends on estimator type and committee
@@ -233,7 +235,7 @@ class DPAPredictor:
             ``predictions`` : np.ndarray, shape (n_frames, task_dim)
             ``uncertainty`` : np.ndarray, shape (n_frames, task_dim)  (if requested)
         """
-        features = self._extract_and_condition(data, fmt, conditions)
+        features = self._extract_and_condition(data, fmt)
 
         if return_uncertainty:
             return self._predict_with_uncertainty(features)
@@ -291,7 +293,7 @@ class DPAPredictor:
             f"with n_committee={self.n_committee}."
         )
 
-    def evaluate(self, data, fmt=None, conditions=None) -> DotDict:
+    def evaluate(self, data, fmt=None) -> DotDict:
         """
         Predict on ``data`` and compute evaluation metrics against stored labels.
 
@@ -301,9 +303,6 @@ class DPAPredictor:
             Path(s) to deepmd/npy system directories with label files.
         fmt : str, optional
             Reserved for future format support.
-        conditions : dict[str, np.ndarray], optional
-            Named condition arrays.  Required when the model was fit with
-            conditions; must be absent otherwise.
 
         Returns
         -------
@@ -319,7 +318,7 @@ class DPAPredictor:
             _load_labels,
         )
 
-        result = self.predict(data, fmt=fmt, conditions=conditions)
+        result = self.predict(data, fmt=fmt)
         predictions = result.predictions
 
         systems = load_data(data, fmt=fmt)

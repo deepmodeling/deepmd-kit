@@ -112,6 +112,33 @@ def _load_labels(
     return np.column_stack(columns)
 
 
+def _read_fparam_from_systems(
+    systems: list[dpdata.System],
+) -> dict[str, np.ndarray] | None:
+    """Auto-read fparam.npy from each system's ``set.*/`` directories.
+
+    Returns a dict mapping ``"fparam_0"``, ``"fparam_1"``, ... to 1-D
+    arrays of length ``n_frames_total``, suitable for passing as
+    ``conditions=`` to :meth:`ConditionManager.fit_transform`.
+
+    Returns ``None`` when no system has a ``set.*/fparam.npy`` file.
+    """
+    all_fparams = []
+    for system in systems:
+        source = _get_source(system)
+        if source is None:
+            continue
+        fps = sorted(Path(source).glob("set.*/fparam.npy"))
+        if not fps:
+            continue
+        arrs = [np.load(str(fp)) for fp in fps]
+        all_fparams.append(np.concatenate(arrs, axis=0))
+    if not all_fparams:
+        return None
+    combined = np.concatenate(all_fparams, axis=0)  # (n_frames, fparam_dim)
+    return {f"fparam_{i}": combined[:, i] for i in range(combined.shape[1])}
+
+
 def _read_data_type_map(system) -> list[str]:
     """Read element symbols from a dpdata System's ``atom_names``.
 
@@ -560,10 +587,12 @@ class DPAFineTuner:
     loss_function : str
         ``"mse"`` or ``"smooth_mae"`` (training paradigms).
     fparam_dim : int
-        (frozen_head / finetune / mft only) Dimensionality of per-frame
-        condition inputs (e.g. temperature, pressure). Requires
-        set.*/fparam.npy of shape (n_frames, fparam_dim) in every
-        training system. Default 0 (disabled).
+        Dimension of per-frame context features (e.g. temperature,
+        humidity).  When > 0, ``set.*/fparam.npy`` of shape
+        ``(n_frames, fparam_dim)`` is read automatically for all
+        strategies.  For ``frozen_sklearn``, fparam columns are
+        standardized and concatenated to the descriptor via
+        ``ConditionManager``.  Default 0 (disabled).
     output_dir : str
         Directory for ``input.json``, checkpoints, and logs.
     save_freq, disp_freq : int
@@ -854,7 +883,6 @@ class DPAFineTuner:
         target_key=None,
         labels=None,
         fmt=None,
-        conditions=None,
         aux_data=None,
     ):
         """Train the model.
@@ -879,15 +907,13 @@ class DPAFineTuner:
             (frozen_sklearn) Pre-computed labels.
         fmt : str, optional
             Reserved for future format support.
-        conditions : dict[str, np.ndarray], optional
-            (frozen_sklearn) Named condition arrays.
         aux_data : str | list[str], optional
             (mft only) Auxiliary training system directories.  Required when
             ``strategy='mft'``; must be absent otherwise.
         """
         if self.strategy == "frozen_sklearn":
             return self._fit_sklearn(
-                train_data, type_map, target_key, labels, fmt, conditions
+                train_data, type_map, target_key, labels, fmt
             )
 
         if self.strategy == "mft":
@@ -951,7 +977,6 @@ class DPAFineTuner:
         target_key=None,
         labels=None,
         fmt=None,
-        conditions=None,
     ):
         """Fit the frozen-sklearn pipeline (delegates to ``_FrozenSklearnPipeline``).
 
@@ -978,10 +1003,12 @@ class DPAFineTuner:
         features = self._extract_features_cached(systems)
 
         self._condition_manager = None
-        if conditions is not None:
-            self._condition_manager = ConditionManager()
-            X_cond = self._condition_manager.fit_transform(conditions)
-            features = np.concatenate([features, X_cond], axis=1)
+        if self.fparam_dim > 0:
+            conditions = _read_fparam_from_systems(systems)
+            if conditions is not None:
+                self._condition_manager = ConditionManager()
+                X_cond = self._condition_manager.fit_transform(conditions)
+                features = np.concatenate([features, X_cond], axis=1)
 
         if labels is not None:
             y = np.asarray(labels)
@@ -1019,9 +1046,12 @@ class DPAFineTuner:
         p._condition_manager = self._condition_manager
         p._fitted = True
 
-    def predict(self, data, fmt=None, conditions=None) -> DotDict:
+    def predict(self, data, fmt=None) -> DotDict:
         """
         Extract features and run the fitted sklearn predictor.
+
+        fparam is automatically read from ``set.*/fparam.npy`` when the
+        model was fit with ``fparam_dim > 0``.
 
         Parameters
         ----------
@@ -1029,9 +1059,6 @@ class DPAFineTuner:
             Path(s) to deepmd/npy system directories.
         fmt : str, optional
             Reserved for future format support.
-        conditions : dict[str, np.ndarray], optional
-            Named condition arrays.  Required when the model was fit with
-            conditions; must be absent otherwise.
 
         Returns
         -------
@@ -1047,20 +1074,20 @@ class DPAFineTuner:
         features = self._extract_features(systems)
 
         if self._condition_manager is not None:
+            conditions = _read_fparam_from_systems(systems)
             if conditions is None:
                 raise DPAConditionError(
-                    "This model was fit with conditions. Pass conditions= to predict()."
+                    "This model was fit with fparam but set.*/fparam.npy "
+                    "was not found in the test data."
                 )
             X_cond = self._condition_manager.transform(conditions)
             features = np.concatenate([features, X_cond], axis=1)
-        elif conditions is not None:
-            raise DPAConditionError("This model was fit without conditions.")
 
         raw = self.predictor.predict(features)
         predictions = np.asarray(raw).reshape(-1, self._task_dim)
         return DotDict({"predictions": predictions})
 
-    def evaluate(self, data, fmt=None, conditions=None) -> DotDict:
+    def evaluate(self, data, fmt=None) -> DotDict:
         """
         Predict on ``data`` and compute evaluation metrics against stored labels.
 
@@ -1070,9 +1097,6 @@ class DPAFineTuner:
             Path(s) to deepmd/npy system directories with label files.
         fmt : str, optional
             Reserved for future format support.
-        conditions : dict[str, np.ndarray], optional
-            Named condition arrays.  Required when the model was fit with
-            conditions; must be absent otherwise.
 
         Returns
         -------
@@ -1081,7 +1105,7 @@ class DPAFineTuner:
             predictions   : np.ndarray, shape (n_frames, task_dim)
             labels        : np.ndarray, shape (n_frames, task_dim)
         """
-        result = self.predict(data, fmt=fmt, conditions=conditions)
+        result = self.predict(data, fmt=fmt)
         predictions = result.predictions
 
         systems = load_data(data, fmt=fmt)
