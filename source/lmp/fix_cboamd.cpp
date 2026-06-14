@@ -543,13 +543,12 @@ void FixCBOAMD::set_dipole_unit(const char* unit) {
       strcmp(unit, "e_Bohr") == 0 || strcmp(unit, "e_bohr") == 0) {
     dipole_value_to_au = 1.0;
     dipole_grad_to_au = BOHR_TO_ANGSTROM;
-  } else if (strcmp(unit, "eAngstrom") == 0 ||
-             strcmp(unit, "eangstrom") == 0 ||
+  } else if (strcmp(unit, "eAngstrom") == 0 || strcmp(unit, "eangstrom") == 0 ||
              strcmp(unit, "e*Angstrom") == 0 ||
              strcmp(unit, "e*angstrom") == 0 ||
              strcmp(unit, "e_Angstrom") == 0 ||
-             strcmp(unit, "e_angstrom") == 0 ||
-             strcmp(unit, "eAng") == 0 || strcmp(unit, "eang") == 0) {
+             strcmp(unit, "e_angstrom") == 0 || strcmp(unit, "eAng") == 0 ||
+             strcmp(unit, "eang") == 0) {
     dipole_value_to_au = ANGSTROM_TO_BOHR;
     dipole_grad_to_au = 1.0;
   } else {
@@ -569,8 +568,7 @@ void FixCBOAMD::set_polarizability_unit(const char* unit) {
       strcmp(unit, "Bohr^3") == 0 || strcmp(unit, "bohr^3") == 0) {
     polar_value_to_au = 1.0;
     polar_grad_to_au = BOHR_TO_ANGSTROM;
-  } else if (strcmp(unit, "Angstrom3") == 0 ||
-             strcmp(unit, "angstrom3") == 0 ||
+  } else if (strcmp(unit, "Angstrom3") == 0 || strcmp(unit, "angstrom3") == 0 ||
              strcmp(unit, "Angstrom^3") == 0 ||
              strcmp(unit, "angstrom^3") == 0 || strcmp(unit, "A3") == 0 ||
              strcmp(unit, "a3") == 0) {
@@ -699,9 +697,8 @@ void FixCBOAMD::compute_cboa_forces() {
         for (int alpha = 0; alpha < nphoton; alpha++) {
           // CBOA force contribution from photon alpha
           f[i][di] -= ea[alpha] * lambda_photon[alpha] *
-                      lambda_vector[alpha][dp] *
-                      dipole_grad_deepmd[idx] * dipole_grad_to_au /
-                      EV_TO_HARTREE;
+                      lambda_vector[alpha][dp] * dipole_grad_deepmd[idx] *
+                      dipole_grad_to_au / EV_TO_HARTREE;
         }
       }
     }
