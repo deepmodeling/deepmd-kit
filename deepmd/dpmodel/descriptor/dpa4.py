@@ -1053,8 +1053,8 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             # pt interface-compatibility buffers
             "version_tensor": np.asarray(self.version, dtype=np.float64),
             "_empty_tensor": np.zeros((0,), dtype=np.float64),
-            "mean": np.asarray(self.mean, dtype=model_np_prec),
-            "stddev": np.asarray(self.stddev, dtype=model_np_prec),
+            "mean": to_numpy_array(self.mean).astype(model_np_prec),
+            "stddev": to_numpy_array(self.stddev).astype(model_np_prec),
         }
 
         def add(prefix: str, sub_vars: dict[str, Any]) -> None:
@@ -1083,7 +1083,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         def wigner_buffers(calc: WignerDCalculator) -> dict[str, np.ndarray]:
             return {
                 "l1_perm": np.asarray([1, 2, 0], dtype=np.int64),
-                "l1_sign_outer": np.asarray(calc.l1_sign_outer, dtype=np.float64),
+                "l1_sign_outer": to_numpy_array(calc.l1_sign_outer).astype(np.float64),
             }
 
         add("wigner_calc.", wigner_buffers(self.wigner_calc))
