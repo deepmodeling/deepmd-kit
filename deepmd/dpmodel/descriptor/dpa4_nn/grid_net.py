@@ -59,6 +59,7 @@ from deepmd.dpmodel import (
     NativeOP,
 )
 from deepmd.dpmodel.array_api import (
+    xp_asarray_nodetach,
     xp_sigmoid,
 )
 from deepmd.dpmodel.common import (
@@ -423,8 +424,8 @@ class BaseGridNet(NativeOP):
         # einsum "gd,ndfc->ngfc" (n_frames == 1) as a broadcast batched matmul
         xp = array_api_compat.array_namespace(coeff)
         n_batch, coeff_dim, n_focus, _ = coeff.shape
-        to_grid_mat = xp.asarray(
-            self.projector.to_grid_mat[...], device=array_api_compat.device(coeff)
+        to_grid_mat = xp_asarray_nodetach(
+            xp, self.projector.to_grid_mat[...], device=array_api_compat.device(coeff)
         )
         if to_grid_mat.dtype != coeff.dtype:
             to_grid_mat = xp.astype(to_grid_mat, coeff.dtype)
@@ -439,8 +440,8 @@ class BaseGridNet(NativeOP):
         xp = array_api_compat.array_namespace(grid)
         n_batch, n_grid, n_focus, _ = grid.shape
         coeff_dim = self.projector.coeff_dim
-        from_grid_mat = xp.asarray(
-            self.projector.from_grid_mat[...], device=array_api_compat.device(grid)
+        from_grid_mat = xp_asarray_nodetach(
+            xp, self.projector.from_grid_mat[...], device=array_api_compat.device(grid)
         )
         if from_grid_mat.dtype != grid.dtype:
             from_grid_mat = xp.astype(from_grid_mat, grid.dtype)

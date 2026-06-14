@@ -46,6 +46,9 @@ from deepmd.dpmodel import (
     PRECISION_DICT,
     NativeOP,
 )
+from deepmd.dpmodel.array_api import (
+    xp_asarray_nodetach,
+)
 from deepmd.dpmodel.common import (
     to_numpy_array,
 )
@@ -157,8 +160,8 @@ class SeZMTypeEmbedding(NativeOP):
             Type embeddings with shape (..., embed_dim).
         """
         xp = array_api_compat.array_namespace(atype)
-        weight = xp.asarray(
-            self.adam_type_embedding[...], device=array_api_compat.device(atype)
+        weight = xp_asarray_nodetach(
+            xp, self.adam_type_embedding[...], device=array_api_compat.device(atype)
         )
         # pt embedding.py:143 torch.embedding -> flat int64 take + reshape.
         index = xp.astype(xp.reshape(atype, (-1,)), xp.int64)
@@ -297,7 +300,8 @@ class GeometricInitialEmbedding(NativeOP):
         if zonal_coupling is None:
             Dt_full = edge_cache.Dt_full  # (E, D, D)
             dim_full = Dt_full.shape[-1]
-            flat_index = xp.asarray(
+            flat_index = xp_asarray_nodetach(
+                xp,
                 self.non_scalar_row_index * dim_full + self.zonal_m0_col_index_for_row,
                 device=device,
             )
@@ -310,7 +314,9 @@ class GeometricInitialEmbedding(NativeOP):
         # === Step 3. Broadcast radial features per row ===
         # Each non-scalar packed row reuses the radial feature of its degree l
         # (pt embedding.py:245-250, index_select on axis 1).
-        radial_slot_index = xp.asarray(self.radial_slot_index_for_row, device=device)
+        radial_slot_index = xp_asarray_nodetach(
+            xp, self.radial_slot_index_for_row, device=device
+        )
         radial_value_for_row = xp.take(
             radial_feat, radial_slot_index, axis=1
         )  # (E, D-1, C)
@@ -548,7 +554,13 @@ class EnvironmentInitialEmbedding(NativeOP):
             seed=child_seed(seed, 3),
             trainable=self.trainable,
         )
-        self.output_proj.w = np.zeros_like(self.output_proj.w)
+        # Use an explicit shape/dtype instead of np.zeros_like(self.output_proj.w):
+        # in pt_expt the attribute is a requires-grad torch Parameter, on which
+        # numpy __array__ conversion raises.
+        self.output_proj.w = np.zeros(
+            (self.embed_dim * self.axis_dim, 2 * self.channels),
+            dtype=PRECISION_DICT[self.precision.lower()],
+        )
 
     def call(
         self,
