@@ -304,9 +304,9 @@ class TestChangeBias(unittest.TestCase):
             updated_state[peer_key].untyped_storage().data_ptr(),
         )
         updated_bias = updated_state["model.Default.atomic_model.out_bias"]
-        expected_bias = torch.as_tensor(user_bias, dtype=updated_bias.dtype).view(
-            updated_bias.shape
-        )
+        expected_bias = torch.as_tensor(
+            user_bias, dtype=updated_bias.dtype, device=updated_bias.device
+        ).view(updated_bias.shape)
         torch.testing.assert_close(updated_bias, expected_bias)
 
     def test_change_bias_frozen_pte(self) -> None:
