@@ -270,6 +270,26 @@ static std::string take_plugin_error(
   return message;
 }
 
+template <typename Function>
+void* call_backend_create(const std::shared_ptr<PluginHandle>& plugin,
+                          char*& error_message,
+                          const std::string& action,
+                          Function create) {
+  try {
+    return create();
+  } catch (const std::exception& e) {
+    std::string message = take_plugin_error(plugin, error_message);
+    throw deepmd::deepmd_exception(action + " from " + plugin->path +
+                                   ": plugin threw an exception: " + e.what() +
+                                   (message.empty() ? "" : ": " + message));
+  } catch (...) {
+    std::string message = take_plugin_error(plugin, error_message);
+    throw deepmd::deepmd_exception(action + " from " + plugin->path +
+                                   ": plugin threw an unknown exception" +
+                                   (message.empty() ? "" : ": " + message));
+  }
+}
+
 std::shared_ptr<deepmd::DeepPotBackend>
 deepmd::create_deeppot_backend_from_plugin(DPBackend backend,
                                            const std::string& model,
@@ -278,25 +298,18 @@ deepmd::create_deeppot_backend_from_plugin(DPBackend backend,
   std::shared_ptr<PluginHandle> plugin = load_plugin(backend);
 
   char* error_message = nullptr;
-  void* backend_handle = nullptr;
-  try {
-    backend_handle =
-        plugin->create_deeppot(model.c_str(), gpu_rank, file_content.data(),
-                               file_content.size(), &error_message);
-  } catch (const deepmd::deepmd_exception&) {
-    throw;
-  } catch (const std::exception& e) {
-    throw deepmd::deepmd_exception("Backend plugin " + plugin->path +
-                                   " threw an exception: " + e.what());
-  } catch (...) {
-    throw deepmd::deepmd_exception("Backend plugin " + plugin->path +
-                                   " threw an unknown exception");
-  }
+  const std::string action =
+      "Failed to create " + backend_name(backend) + " DeepPot backend";
+  void* backend_handle =
+      call_backend_create(plugin, error_message, action, [&]() {
+        return plugin->create_deeppot(model.c_str(), gpu_rank,
+                                      file_content.data(), file_content.size(),
+                                      &error_message);
+      });
 
   if (backend_handle == nullptr) {
     std::string message = take_plugin_error(plugin, error_message);
-    throw deepmd::deepmd_exception("Failed to create " + backend_name(backend) +
-                                   " DeepPot backend from " + plugin->path +
+    throw deepmd::deepmd_exception(action + " from " + plugin->path +
                                    (message.empty() ? "" : ": " + message));
   }
 
@@ -323,13 +336,16 @@ deepmd::create_deepspin_backend_from_plugin(DPBackend backend,
           plugin, DEEPMD_DEEPSPIN_PLUGIN_DELETE_SYMBOL);
 
   char* error_message = nullptr;
+  const std::string action =
+      "Failed to create " + backend_name(backend) + " DeepSpin backend";
   void* backend_handle =
-      create_deepspin(model.c_str(), gpu_rank, file_content.data(),
-                      file_content.size(), &error_message);
+      call_backend_create(plugin, error_message, action, [&]() {
+        return create_deepspin(model.c_str(), gpu_rank, file_content.data(),
+                               file_content.size(), &error_message);
+      });
   if (backend_handle == nullptr) {
     std::string message = take_plugin_error(plugin, error_message);
-    throw deepmd::deepmd_exception("Failed to create " + backend_name(backend) +
-                                   " DeepSpin backend from " + plugin->path +
+    throw deepmd::deepmd_exception(action + " from " + plugin->path +
                                    (message.empty() ? "" : ": " + message));
   }
   if (error_message != nullptr) {
@@ -356,12 +372,16 @@ deepmd::create_deeptensor_backend_from_plugin(DPBackend backend,
           plugin, DEEPMD_DEEPTENSOR_PLUGIN_DELETE_SYMBOL);
 
   char* error_message = nullptr;
-  void* backend_handle = create_deeptensor(model.c_str(), gpu_rank,
-                                           name_scope.c_str(), &error_message);
+  const std::string action =
+      "Failed to create " + backend_name(backend) + " DeepTensor backend";
+  void* backend_handle =
+      call_backend_create(plugin, error_message, action, [&]() {
+        return create_deeptensor(model.c_str(), gpu_rank, name_scope.c_str(),
+                                 &error_message);
+      });
   if (backend_handle == nullptr) {
     std::string message = take_plugin_error(plugin, error_message);
-    throw deepmd::deepmd_exception("Failed to create " + backend_name(backend) +
-                                   " DeepTensor backend from " + plugin->path +
+    throw deepmd::deepmd_exception(action + " from " + plugin->path +
                                    (message.empty() ? "" : ": " + message));
   }
   if (error_message != nullptr) {
@@ -389,13 +409,16 @@ deepmd::create_dipole_charge_modifier_backend_from_plugin(
           plugin, DEEPMD_DIPOLE_CHARGE_MODIFIER_PLUGIN_DELETE_SYMBOL);
 
   char* error_message = nullptr;
-  void* backend_handle = create_modifier(model.c_str(), gpu_rank,
-                                         name_scope.c_str(), &error_message);
+  const std::string action = "Failed to create " + backend_name(backend) +
+                             " DipoleChargeModifier backend";
+  void* backend_handle =
+      call_backend_create(plugin, error_message, action, [&]() {
+        return create_modifier(model.c_str(), gpu_rank, name_scope.c_str(),
+                               &error_message);
+      });
   if (backend_handle == nullptr) {
     std::string message = take_plugin_error(plugin, error_message);
-    throw deepmd::deepmd_exception("Failed to create " + backend_name(backend) +
-                                   " DipoleChargeModifier backend from " +
-                                   plugin->path +
+    throw deepmd::deepmd_exception(action + " from " + plugin->path +
                                    (message.empty() ? "" : ": " + message));
   }
   if (error_message != nullptr) {

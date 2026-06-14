@@ -28,7 +28,7 @@ See {cpp:class}`deepmd::DeepPot` for details.
 You can compile `infer_water.cpp` using `gcc`:
 
 ```sh
-gcc infer_water.cpp -L $deepmd_root/lib -L $tensorflow_root/lib -I $deepmd_root/include -Wl,--no-as-needed -ldeepmd_cc -lstdc++ -ltensorflow_cc -Wl,-rpath=$deepmd_root/lib -Wl,-rpath=$tensorflow_root/lib -o infer_water
+gcc infer_water.cpp -L $deepmd_root/lib -I $deepmd_root/include -Wl,--no-as-needed -ldeepmd_cc -lstdc++ -Wl,-rpath=$deepmd_root/lib -o infer_water
 ```
 
 and then run the program:
@@ -36,6 +36,36 @@ and then run the program:
 ```sh
 ./infer_water
 ```
+
+## Backend plugins
+
+The C and C++ libraries load backend implementations as runtime plugins.
+An application links to `libdeepmd_cc` or `libdeepmd_c`; it does not need to link directly to TensorFlow, PyTorch, JAX, or Paddle.
+When a model is opened, DeePMD-kit detects the backend from the model format and loads only the corresponding backend plugin.
+
+The plugin library names are:
+
+- TensorFlow: `libdeepmd_backend_tf.so`
+- PyTorch: `libdeepmd_backend_pt.so`
+- PyTorch exportable: `libdeepmd_backend_ptexpt.so`
+- JAX: `libdeepmd_backend_jax.so`
+- Paddle: `libdeepmd_backend_pd.so`
+
+On macOS the suffix is `.dylib`; on Windows the libraries use `.dll` without the `lib` prefix.
+Native installs and the pre-compiled C library package place these plugins in the same `lib` directory as `libdeepmd_cc` and `libdeepmd_c`.
+Python wheels place them in `deepmd/lib`.
+
+The backend plugin search order is:
+
+1. directories listed in {envvar}`DP_BACKEND_PLUGIN_PATH`, split by `:` on Unix and `;` on Windows;
+1. the directory that contains `libdeepmd_cc`;
+1. the platform dynamic loader search path for the bare plugin library name.
+
+If the requested plugin or its backend runtime cannot be loaded, only that backend fails with a `Unable to load ... backend plugin` error.
+Other backends can still run as long as their own plugins and runtime libraries are available.
+This also allows a no-backend `libdeepmd_cc` or `libdeepmd_c` build; install or copy the backend plugin next to the library, or set {envvar}`DP_BACKEND_PLUGIN_PATH`, before loading a model that uses that backend.
+
+{envvar}`DP_PLUGIN_PATH` is different: it is used for customized OP plugin libraries after the backend has been selected.
 
 ## C interface
 
@@ -85,7 +115,7 @@ See {cpp:func}`DP_DeepPotCompute` for details.
 You can compile `infer_water.c` using `gcc`:
 
 ```sh
-gcc infer_water.c -L $deepmd_root/lib -L $tensorflow_root/lib -I $deepmd_root/include -Wl,--no-as-needed -ldeepmd_c -Wl,-rpath=$deepmd_root/lib -Wl,-rpath=$tensorflow_root/lib -o infer_water
+gcc infer_water.c -L $deepmd_root/lib -I $deepmd_root/include -Wl,--no-as-needed -ldeepmd_c -Wl,-rpath=$deepmd_root/lib -o infer_water
 ```
 
 and then run the program:
@@ -120,7 +150,7 @@ See {cpp:class}`deepmd::hpp::DeepPot` for details.
 You can compile `infer_water_hpp.cpp` using `gcc`:
 
 ```sh
-gcc infer_water_hpp.cpp -L $deepmd_root/lib -L $tensorflow_root/lib -I $deepmd_root/include -Wl,--no-as-needed -ldeepmd_c -Wl,-rpath=$deepmd_root/lib -Wl,-rpath=$tensorflow_root/lib -o infer_water_hpp
+gcc infer_water_hpp.cpp -L $deepmd_root/lib -I $deepmd_root/include -Wl,--no-as-needed -ldeepmd_c -Wl,-rpath=$deepmd_root/lib -o infer_water_hpp
 ```
 
 and then run the program:

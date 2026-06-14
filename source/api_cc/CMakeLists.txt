@@ -82,6 +82,8 @@ function(deepmd_configure_backend_plugin target_name)
 endfunction()
 
 if(ENABLE_TENSORFLOW)
+  # TensorFlow helper functions in common.cc are compiled with BUILD_TENSORFLOW
+  # into this plugin so the main libdeepmd_cc can stay backend-neutral.
   add_library(
     deepmd_backend_tf SHARED
     src/DataModifierTF.cc src/DeepPotTF.cc src/DeepPotTFPlugin.cc
