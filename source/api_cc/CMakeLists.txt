@@ -87,9 +87,16 @@ if(ENABLE_TENSORFLOW)
     src/DataModifierTF.cc src/DeepPotTF.cc src/DeepPotTFPlugin.cc
     src/DeepSpinTF.cc src/DeepTensorTF.cc src/common.cc)
   deepmd_configure_backend_plugin(deepmd_backend_tf)
-  target_link_libraries(
-    deepmd_backend_tf PRIVATE TensorFlow::tensorflow_cc
-                              TensorFlow::tensorflow_framework)
+  if(UNIX AND NOT APPLE)
+    target_link_libraries(
+      deepmd_backend_tf
+      PRIVATE -Wl,--no-as-needed TensorFlow::tensorflow_cc -Wl,--as-needed
+              TensorFlow::tensorflow_framework)
+  else()
+    target_link_libraries(
+      deepmd_backend_tf PRIVATE TensorFlow::tensorflow_cc
+                                TensorFlow::tensorflow_framework)
+  endif()
   target_compile_definitions(deepmd_backend_tf PRIVATE BUILD_TENSORFLOW
                                                        TF_PRIVATE)
   if(Protobuf_LIBRARY)
