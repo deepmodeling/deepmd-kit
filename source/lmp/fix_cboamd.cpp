@@ -700,9 +700,8 @@ void FixCBOAMD::compute_cboa_forces() {
         for (int alpha = 0; alpha < nphoton; alpha++) {
           // CBOA force contribution from photon alpha
           f[i][di] -= ea[alpha] * lambda_photon[alpha] *
-                      lambda_vector[alpha][dp] *
-                      dipole_grad_deepmd[idx] * dipole_grad_to_au *
-                      HARTREE_PER_BOHR_TO_EV_PER_ANGSTROM;
+                      lambda_vector[alpha][dp] * dipole_grad_deepmd[idx] *
+                      dipole_grad_to_au * HARTREE_PER_BOHR_TO_EV_PER_ANGSTROM;
         }
       }
     }
@@ -742,10 +741,10 @@ void FixCBOAMD::write_output() {
             "%d %.6f %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e %.6e "
             "%.6e",
             update->ntimestep, update->dt * update->ntimestep, dipole[0],
-            dipole[1],
-            dipole[2], polarizability[0], polarizability[1], polarizability[2],
-            polarizability[3], polarizability[4], polarizability[5],
-            polarizability[6], polarizability[7], polarizability[8]);
+            dipole[1], dipole[2], polarizability[0], polarizability[1],
+            polarizability[2], polarizability[3], polarizability[4],
+            polarizability[5], polarizability[6], polarizability[7],
+            polarizability[8]);
 
     if (photons_enabled) {
       for (int i = 0; i < nphoton; i++) {
