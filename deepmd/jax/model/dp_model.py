@@ -1,8 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Any,
-)
-
 from deepmd.dpmodel.model import (
     DPModelCommon,
 )
@@ -41,11 +37,6 @@ def make_jax_dp_model_from_dpmodel(
 
     @flax_module
     class jax_model(dpmodel_model):
-        def __setattr__(self, name: str, value: Any) -> None:
-            if name == "atomic_model":
-                value = jax_atomicmodel.deserialize(value.serialize())
-            return super().__setattr__(name, value)
-
         def forward_common_atomic(
             self,
             extended_coord: jnp.ndarray,
