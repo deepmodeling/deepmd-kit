@@ -49,6 +49,10 @@ FixCBOAMD::FixCBOAMD(LAMMPS* lmp, int narg, char** arg)
       dipole(nullptr),
       polarizability(nullptr),
       forces_deepmd(nullptr),
+      dipole_value_to_au(ANGSTROM_TO_BOHR),
+      dipole_grad_to_au(1.0),
+      polar_value_to_au(ANGSTROM3_TO_BOHR3),
+      polar_grad_to_au(ANGSTROM_TO_BOHR * ANGSTROM_TO_BOHR),
       photons_enabled(false),
       nphoton(0),
       omega_photon(nullptr),
@@ -83,6 +87,18 @@ FixCBOAMD::FixCBOAMD(LAMMPS* lmp, int narg, char** arg)
         error->all(FLERR, "Illegal fix cboamd command");
       }
       model_polar = utils::strdup(arg[iarg + 1]);
+      iarg += 2;
+    } else if (strcmp(arg[iarg], "dipole_unit") == 0) {
+      if (iarg + 1 >= narg) {
+        error->all(FLERR, "Illegal fix cboamd command");
+      }
+      set_dipole_unit(arg[iarg + 1]);
+      iarg += 2;
+    } else if (strcmp(arg[iarg], "polarizability_unit") == 0) {
+      if (iarg + 1 >= narg) {
+        error->all(FLERR, "Illegal fix cboamd command");
+      }
+      set_polarizability_unit(arg[iarg + 1]);
       iarg += 2;
     } else if (strcmp(arg[iarg], "photons") == 0) {
       if (iarg + 1 >= narg) {
@@ -519,6 +535,57 @@ void FixCBOAMD::init_deepmd_models() {
 
 /* ---------------------------------------------------------------------- */
 
+void FixCBOAMD::set_dipole_unit(const char* unit) {
+  if (strcmp(unit, "au") == 0 || strcmp(unit, "atomic") == 0 ||
+      strcmp(unit, "atomic_unit") == 0 || strcmp(unit, "atomic_units") == 0 ||
+      strcmp(unit, "eBohr") == 0 || strcmp(unit, "ebohr") == 0 ||
+      strcmp(unit, "e*Bohr") == 0 || strcmp(unit, "e*bohr") == 0 ||
+      strcmp(unit, "e_Bohr") == 0 || strcmp(unit, "e_bohr") == 0) {
+    dipole_value_to_au = 1.0;
+    dipole_grad_to_au = BOHR_TO_ANGSTROM;
+  } else if (strcmp(unit, "eAngstrom") == 0 ||
+             strcmp(unit, "eangstrom") == 0 ||
+             strcmp(unit, "e*Angstrom") == 0 ||
+             strcmp(unit, "e*angstrom") == 0 ||
+             strcmp(unit, "e_Angstrom") == 0 ||
+             strcmp(unit, "e_angstrom") == 0 ||
+             strcmp(unit, "eAng") == 0 || strcmp(unit, "eang") == 0) {
+    dipole_value_to_au = ANGSTROM_TO_BOHR;
+    dipole_grad_to_au = 1.0;
+  } else {
+    error->all(FLERR,
+               "Unsupported fix cboamd dipole_unit '{}'; use au, eBohr, or "
+               "eAngstrom",
+               unit);
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
+void FixCBOAMD::set_polarizability_unit(const char* unit) {
+  if (strcmp(unit, "au") == 0 || strcmp(unit, "atomic") == 0 ||
+      strcmp(unit, "atomic_unit") == 0 || strcmp(unit, "atomic_units") == 0 ||
+      strcmp(unit, "Bohr3") == 0 || strcmp(unit, "bohr3") == 0 ||
+      strcmp(unit, "Bohr^3") == 0 || strcmp(unit, "bohr^3") == 0) {
+    polar_value_to_au = 1.0;
+    polar_grad_to_au = BOHR_TO_ANGSTROM;
+  } else if (strcmp(unit, "Angstrom3") == 0 ||
+             strcmp(unit, "angstrom3") == 0 ||
+             strcmp(unit, "Angstrom^3") == 0 ||
+             strcmp(unit, "angstrom^3") == 0 || strcmp(unit, "A3") == 0 ||
+             strcmp(unit, "a3") == 0) {
+    polar_value_to_au = ANGSTROM3_TO_BOHR3;
+    polar_grad_to_au = ANGSTROM_TO_BOHR * ANGSTROM_TO_BOHR;
+  } else {
+    error->all(FLERR,
+               "Unsupported fix cboamd polarizability_unit '{}'; use au or "
+               "Angstrom3",
+               unit);
+  }
+}
+
+/* ---------------------------------------------------------------------- */
+
 void FixCBOAMD::cleanup_deepmd_models() {
   // Clean up DeepMD models
   if (deepmd_dipole) {
@@ -544,12 +611,9 @@ void FixCBOAMD::compute_deepmd_dipole() {
                            dipole_virial_deepmd, dipole_atom_deepmd,
                            dipole_atom_virial_deepmd, coords_deepmd,
                            atom_types_deepmd, cell_deepmd);
-    // The CO2 dipole model is trained on Wannier-center displacements in
-    // e*Angstrom. Convert the length unit to Bohr before using atomic-unit CBO
-    // equations.
-    dipole[0] = dipole_deepmd[0] * ANGSTROM_TO_BOHR;
-    dipole[1] = dipole_deepmd[1] * ANGSTROM_TO_BOHR;
-    dipole[2] = dipole_deepmd[2] * ANGSTROM_TO_BOHR;
+    dipole[0] = dipole_deepmd[0] * dipole_value_to_au;
+    dipole[1] = dipole_deepmd[1] * dipole_value_to_au;
+    dipole[2] = dipole_deepmd[2] * dipole_value_to_au;
   } catch (const std::exception& e) {
     error->all(FLERR, "DeepMD dipole computation failed: {}", e.what());
   }
@@ -569,10 +633,8 @@ void FixCBOAMD::compute_deepmd_polarizability() {
                           polar_atom_deepmd, polar_atom_virial_deepmd,
                           coords_deepmd, atom_types_deepmd, cell_deepmd);
 
-    // The CO2 polar model was trained on CP2K Angstrom^3 polarizabilities.
-    // Convert to atomic units before using chi in the CBO equations.
     for (int i = 0; i < 9; i++) {
-      polarizability[i] = polar_deepmd[i] * ANGSTROM3_TO_BOHR3;
+      polarizability[i] = polar_deepmd[i] * polar_value_to_au;
     }
   } catch (const std::exception& e) {
     error->all(FLERR, "DeepMD polarizability computation failed: {}", e.what());
@@ -637,7 +699,8 @@ void FixCBOAMD::compute_cboa_forces() {
         for (int alpha = 0; alpha < nphoton; alpha++) {
           // CBOA force contribution from photon alpha
           f[i][di] -= ea[alpha] * lambda_photon[alpha] *
-                      lambda_vector[alpha][dp] * dipole_grad_deepmd[idx] /
+                      lambda_vector[alpha][dp] *
+                      dipole_grad_deepmd[idx] * dipole_grad_to_au /
                       EV_TO_HARTREE;
         }
       }
@@ -655,7 +718,7 @@ void FixCBOAMD::compute_cboa_forces() {
               f[i][di] -= 0.5 * ea[alpha] * ea[alpha] * lambda_photon[alpha] *
                           lambda_photon[alpha] * lambda_vector[alpha][pl1] *
                           lambda_vector[alpha][pl2] * polar_grad_deepmd[idx] *
-                          ANGSTROM3_TO_BOHR3 / EV_TO_HARTREE;
+                          polar_grad_to_au / EV_TO_HARTREE;
             }
           }
         }

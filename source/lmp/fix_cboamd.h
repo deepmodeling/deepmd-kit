@@ -87,6 +87,14 @@ class FixCBOAMD : public Fix {
   double* polarizability;
   double* forces_deepmd;
 
+  // Tensor-unit conversion factors from model output to atomic units. Values
+  // and coordinate gradients need different factors because DeepMD gradients
+  // are with respect to Angstrom coordinates.
+  double dipole_value_to_au;
+  double dipole_grad_to_au;
+  double polar_value_to_au;
+  double polar_grad_to_au;
+
   // DeepMD computation arrays
   std::vector<double> coords_deepmd;
   std::vector<int> atom_types_deepmd;
@@ -130,6 +138,8 @@ class FixCBOAMD : public Fix {
   void update_photon_coordinates();
   void compute_cboa_forces();
   void write_output();
+  void set_dipole_unit(const char*);
+  void set_polarizability_unit(const char*);
 
   // DeepMD computation helpers
   void convert_coordinates_to_deepmd_format();
@@ -137,6 +147,7 @@ class FixCBOAMD : public Fix {
   // Unit conversion constants
   static constexpr double EV_TO_HARTREE = 0.0367493;
   static constexpr double ANGSTROM_TO_BOHR = 1.88973;
+  static constexpr double BOHR_TO_ANGSTROM = 1.0 / ANGSTROM_TO_BOHR;
   static constexpr double ANGSTROM3_TO_BOHR3 =
       ANGSTROM_TO_BOHR * ANGSTROM_TO_BOHR * ANGSTROM_TO_BOHR;
   static constexpr double EV_PER_ANGSTROM_TO_HARTREE_PER_BOHR = 0.0194467;
