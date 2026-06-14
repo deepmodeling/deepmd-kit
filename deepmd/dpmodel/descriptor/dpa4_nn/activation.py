@@ -287,7 +287,7 @@ class GatedActivation(NativeOP):
         )
         prec = PRECISION_DICT[obj.precision.lower()]
         expand_index = np.asarray(variables["expand_index"], dtype=np.int64)
-        if not np.array_equal(expand_index, obj.expand_index):
+        if not np.array_equal(expand_index, to_numpy_array(obj.expand_index)):
             raise ValueError("expand_index does not match the lmax/mmax tables")
         if obj.gate_linear is not None:
             weight = np.asarray(variables["gate_linear.weight"], dtype=prec)

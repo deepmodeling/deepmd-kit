@@ -326,7 +326,7 @@ class EquivariantRMSNorm(NativeOP):
         )
         prec = PRECISION_DICT[obj.precision.lower()]
         expand_index = np.asarray(variables["expand_index"], dtype=np.int64)
-        if not np.array_equal(expand_index, obj.expand_index):
+        if not np.array_equal(expand_index, to_numpy_array(obj.expand_index)):
             raise ValueError("expand_index does not match the lmax-derived table")
         for name in ("adam_scale", "bias", "balance_weight"):
             value = np.asarray(variables[name], dtype=prec)
@@ -535,7 +535,7 @@ class ReducedEquivariantRMSNorm(NativeOP):
         )
         prec = PRECISION_DICT[obj.precision.lower()]
         degree_index_m = np.asarray(variables["degree_index_m"], dtype=np.int64)
-        if not np.array_equal(degree_index_m, obj.degree_index_m):
+        if not np.array_equal(degree_index_m, to_numpy_array(obj.degree_index_m)):
             raise ValueError("degree_index_m variable does not match the config")
         for name in ("balance_weight", "adam_scale", "bias0"):
             value = np.asarray(variables[name], dtype=prec)

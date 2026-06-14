@@ -539,7 +539,7 @@ class SO3Linear(NativeOP):
         )
         prec = PRECISION_DICT[obj.precision.lower()]
         expand_index = np.asarray(variables["expand_index"], dtype=np.int64)
-        if not np.array_equal(expand_index, obj.expand_index):
+        if not np.array_equal(expand_index, to_numpy_array(obj.expand_index)):
             raise ValueError("expand_index does not match the lmax-derived table")
         weight = np.asarray(variables["weight"], dtype=prec)
         if weight.shape != obj.weight.shape:

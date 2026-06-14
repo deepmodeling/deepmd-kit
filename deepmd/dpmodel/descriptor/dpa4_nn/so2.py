@@ -119,7 +119,11 @@ def _check_shape_assign(obj: Any, attr: str, value: Any, dtype: Any, key: str) -
 def _check_index_table(expected: np.ndarray, value: Any, key: str) -> None:
     """Validate that a serialized integer index table matches the rebuilt one."""
     arr = np.asarray(value, dtype=np.int64)
-    if not np.array_equal(arr.reshape(-1), np.asarray(expected).reshape(-1)):
+    # ``expected`` is a rebuilt buffer that may be a (possibly CUDA) torch
+    # tensor in the pt_expt backend; ``np.asarray`` raises on CUDA tensors and
+    # ``np.array_equal`` would silently swallow that into ``False``. Convert via
+    # ``to_numpy_array`` (dlpack-through-CPU fallback) before comparing.
+    if not np.array_equal(arr.reshape(-1), to_numpy_array(expected).reshape(-1)):
         raise ValueError(f"{key} does not match the table derived from the config")
 
 
