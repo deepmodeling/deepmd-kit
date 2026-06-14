@@ -41,6 +41,37 @@ from deepmd.utils.path import (
 log = logging.getLogger(__name__)
 
 
+def _update_changed_model_tensors(
+    target_state_dict: dict[str, Any],
+    source_state_dict: dict[str, Any],
+) -> None:
+    """Copy changed tensors into an existing state dict without breaking aliases."""
+    import torch
+
+    for key, source_value in source_state_dict.items():
+        if key == "_extra_state":
+            continue
+        if key not in target_state_dict:
+            target_state_dict[key] = (
+                source_value.detach().clone()
+                if torch.is_tensor(source_value)
+                else source_value
+            )
+            continue
+        target_value = target_state_dict[key]
+        if torch.is_tensor(target_value) and torch.is_tensor(source_value):
+            if (
+                target_value.shape == source_value.shape
+                and target_value.dtype == source_value.dtype
+            ):
+                if not torch.equal(target_value, source_value):
+                    target_value.copy_(source_value)
+            else:
+                target_state_dict[key] = source_value.detach().clone()
+        elif target_value != source_value:
+            target_state_dict[key] = source_value
+
+
 def _detect_lmdb_path(systems_raw: Any) -> str | None:
     """Return the LMDB path when ``systems_raw`` is a scalar LMDB string.
 
@@ -596,12 +627,7 @@ def change_bias(
             output if output is not None else input_file.replace(".pt", "_updated.pt")
         )
         wrapper = ModelWrapper(model_to_change)
-        if "model" in old_state_dict:
-            old_state_dict["model"] = wrapper.state_dict()
-            old_state_dict["model"]["_extra_state"] = extra_state
-        else:
-            old_state_dict = wrapper.state_dict()
-            old_state_dict["_extra_state"] = extra_state
+        _update_changed_model_tensors(model_state_dict, wrapper.state_dict())
         torch.save(old_state_dict, output_path)
     elif input_file.endswith((".pte", ".pt2")):
         output_path = (
