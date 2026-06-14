@@ -18,6 +18,9 @@ from deepmd.dpmodel import (
 from deepmd.dpmodel.array_api import (
     Array,
 )
+from deepmd.dpmodel.common import (
+    to_numpy_array,
+)
 from deepmd.dpmodel.utils.network import (
     NativeLayer,
     get_activation_fn,
@@ -156,11 +159,15 @@ class GLUFittingNet(NativeOP):
         """Serialize the network to a dict (pt state_dict key contract)."""
         variables: dict[str, Any] = {}
         for layer_idx, layer in enumerate(self.hidden_layers):
-            variables[f"hidden_layers.{layer_idx}.linear.matrix"] = layer.w
-            variables[f"hidden_layers.{layer_idx}.linear.bias"] = layer.b
-        variables["output_layer.matrix"] = self.output_layer.w
+            variables[f"hidden_layers.{layer_idx}.linear.matrix"] = to_numpy_array(
+                layer.w
+            )
+            variables[f"hidden_layers.{layer_idx}.linear.bias"] = to_numpy_array(
+                layer.b
+            )
+        variables["output_layer.matrix"] = to_numpy_array(self.output_layer.w)
         if self.bias_out:
-            variables["output_layer.bias"] = self.output_layer.b
+            variables["output_layer.bias"] = to_numpy_array(self.output_layer.b)
         return {
             "@class": "GLUFittingNet",
             "@version": 1,

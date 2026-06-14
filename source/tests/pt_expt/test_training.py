@@ -8,6 +8,7 @@ Verifies that:
 4. Loss decreases over those steps
 """
 
+import copy
 import datetime
 import os
 import shutil
@@ -123,6 +124,32 @@ _DESCRIPTOR_DPA3 = {
     "precision": "float64",
     "concat_output_tebd": False,
     "seed": 1,
+}
+
+
+# DPA4/SeZM uses a dedicated model type ("dpa4") with fixed descriptor and
+# fitting types, so it gets a full model config rather than only a descriptor
+# dict that can be swapped into ``_make_config``.
+_MODEL_DPA4 = {
+    "type": "dpa4",
+    "type_map": ["O", "H"],
+    "descriptor": {
+        "type": "dpa4",
+        "sel": 20,
+        "rcut": 4.0,
+        "channels": 16,
+        "n_radial": 8,
+        "lmax": 2,
+        "mmax": 1,
+        "n_blocks": 2,
+        "seed": 1,
+    },
+    "fitting_net": {
+        "type": "dpa4_ener",
+        "neuron": [0],
+        "seed": 1,
+    },
+    "data_stat_nbatch": 1,
 }
 
 
@@ -282,6 +309,15 @@ class TestTraining(unittest.TestCase):
         config = _make_config(self.data_dir, numb_steps=5)
         config = update_deepmd_input(config, warning=False)
         config = normalize(config)
+        self._run_training(config)
+
+    def test_training_loop_dpa4(self) -> None:
+        """Run a few DPA4/SeZM training steps (model type "dpa4" dispatch)."""
+        config = _make_config(self.data_dir, numb_steps=5)
+        config["model"] = copy.deepcopy(_MODEL_DPA4)
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+        self.assertEqual(config["model"]["type"], "dpa4")
         self._run_training(config)
 
     def test_training_loop_compiled(self) -> None:

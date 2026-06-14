@@ -29,6 +29,9 @@ from deepmd.dpmodel import (
     PRECISION_DICT,
     NativeOP,
 )
+from deepmd.dpmodel.array_api import (
+    xp_asarray_nodetach,
+)
 from deepmd.dpmodel.common import (
     to_numpy_array,
 )
@@ -411,7 +414,9 @@ class RadialBasis(NativeOP):
             (N, n_rbf). The output is smoothly truncated to zero at r = rcut.
         """
         xp = array_api_compat.array_namespace(r)
-        freqs = xp.asarray(self.adam_freqs, device=array_api_compat.device(r))
+        freqs = xp_asarray_nodetach(
+            xp, self.adam_freqs, device=array_api_compat.device(r)
+        )
         # === Step 1. Radial basis ===
         # Shape: (N, 1) * (1, n_radial) -> (N, n_radial)
         if self.basis_type == "bessel":
