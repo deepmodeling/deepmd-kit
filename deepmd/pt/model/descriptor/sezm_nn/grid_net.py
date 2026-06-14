@@ -20,6 +20,7 @@ from __future__ import (
 )
 
 from typing import (
+    TYPE_CHECKING,
     Literal,
 )
 
@@ -54,6 +55,11 @@ from .so3 import (
     FocusLinear,
 )
 
+if TYPE_CHECKING:
+    from collections.abc import (
+        Callable,
+    )
+
 GridNetLayout = Literal["ndfc", "nfdc", "flat"]
 GridNetMode = Literal["self", "cross"]
 GridNetOp = Literal["glu", "mlp", "branch"]
@@ -78,6 +84,70 @@ def _build_frame_degree_index(
     raise ValueError("`coefficient_layout` must be either 'packed' or 'm_major'")
 
 
+def _project_frames(
+    coeff: torch.Tensor, proj: ChannelLinear, n_frames: int
+) -> torch.Tensor:
+    """
+    Apply a channel-only linear map to each Wigner-D frame independently.
+
+    Parameters
+    ----------
+    coeff : torch.Tensor
+        Frame-packed coefficients with shape ``(N, D, F, n_frames * C_in)``.
+    proj : ChannelLinear
+        Linear map acting on the per-frame channel axis (``C_in -> C_out``).
+    n_frames : int
+        Number of Wigner-D frames packed along the trailing axis.
+
+    Returns
+    -------
+    torch.Tensor
+        Projected coefficients with shape ``(N, D, F, n_frames * C_out)``.
+
+    Notes
+    -----
+    ``to_grid`` and ``from_grid`` are frame-wise linear and commute with any
+    channel map, so applying the map at coefficient resolution here is identical
+    to applying it on the grid field while touching ``n_frames``-fold fewer rows
+    than the ``G``-point grid.
+    """
+    n_batch, coeff_dim, n_focus, _ = coeff.shape
+    projected = proj(coeff.reshape(n_batch, coeff_dim, n_focus, n_frames, -1))
+    return projected.reshape(n_batch, coeff_dim, n_focus, -1)
+
+
+class GridProduct(nn.Module):
+    """Parameter-free quadratic grid product ``u(g) * v(g)``."""
+
+    def forward(
+        self,
+        left: torch.Tensor,
+        right: torch.Tensor,
+        scalar_pair: torch.Tensor,
+        *,
+        to_grid: Callable[[torch.Tensor], torch.Tensor],
+        from_grid: Callable[[torch.Tensor], torch.Tensor],
+    ) -> torch.Tensor:
+        """
+        Combine two coefficient operands by a point-wise grid product.
+
+        Parameters
+        ----------
+        left, right : torch.Tensor
+            Coefficient operands with shape ``(N, D, F, n_frames * C)``.
+        scalar_pair : torch.Tensor
+            Invariant routing signal; unused on this path.
+        to_grid, from_grid : Callable
+            Coefficient/grid projectors supplied by the owning grid net.
+
+        Returns
+        -------
+        torch.Tensor
+            Coefficient result with shape ``(N, D, F, n_frames * C)``.
+        """
+        return from_grid(to_grid(left) * to_grid(right))
+
+
 class GridMLP(nn.Module):
     """Polynomial point-wise MLP applied independently at every grid point."""
 
@@ -86,6 +156,7 @@ class GridMLP(nn.Module):
         *,
         channels: int,
         mode: GridNetMode,
+        n_frames: int,
         dtype: torch.dtype,
         trainable: bool,
         seed: int | list[int] | None = None,
@@ -95,6 +166,7 @@ class GridMLP(nn.Module):
         self.mode = str(mode).lower()
         if self.mode not in {"self", "cross"}:
             raise ValueError("`mode` must be either 'self' or 'cross'")
+        self.n_frames = int(n_frames)
         self.input_channels = (
             2 * self.channels if self.mode == "self" else self.channels
         )
@@ -125,24 +197,51 @@ class GridMLP(nn.Module):
         )
 
     def forward(
-        self, query_grid: torch.Tensor, context_grid: torch.Tensor
+        self,
+        left: torch.Tensor,
+        right: torch.Tensor,
+        scalar_pair: torch.Tensor,
+        *,
+        to_grid: Callable[[torch.Tensor], torch.Tensor],
+        from_grid: Callable[[torch.Tensor], torch.Tensor],
     ) -> torch.Tensor:
         """
-        Apply the point-wise polynomial MLP to ``(N, G, F, C)`` grid fields.
+        Apply the polynomial point-wise MLP on coefficient operands.
 
-        In self mode, both projections see ``concat(query_grid, context_grid)``
-        and can form self and cross quadratic channel terms.  In cross mode,
-        the query and context roles stay separate:
-        ``(W_q query_grid) * (W_c context_grid)``.
+        In self mode, both projections see the per-frame concatenation of the
+        two operands and can form self and cross quadratic channel terms.  In
+        cross mode the query and context roles stay separate:
+        ``(W_q query) * (W_c context)``.
+
+        Parameters
+        ----------
+        left, right : torch.Tensor
+            Coefficient operands with shape ``(N, D, F, n_frames * C)``.
+        scalar_pair : torch.Tensor
+            Invariant routing signal; unused on this path.
+        to_grid, from_grid : Callable
+            Coefficient/grid projectors supplied by the owning grid net.
+
+        Returns
+        -------
+        torch.Tensor
+            Coefficient result with shape ``(N, D, F, n_frames * C)``.
         """
+        # === Step 1. Channel projections at coefficient resolution ===
         if self.mode == "self":
-            grid = torch.cat([query_grid, context_grid], dim=-1)
-            left = self.left_proj(grid)
-            right = self.right_proj(grid)
+            shape = (*left.shape[:-1], self.n_frames, -1)
+            fused = torch.cat(
+                [left.reshape(shape), right.reshape(shape)], dim=-1
+            ).reshape(*left.shape[:-1], -1)  # per-frame concat -> (N, D, F, K*2C)
+            left = _project_frames(fused, self.left_proj, self.n_frames)
+            right = _project_frames(fused, self.right_proj, self.n_frames)
         else:
-            left = self.left_proj(query_grid)
-            right = self.right_proj(context_grid)
-        return self.out_proj(left * right)
+            left = _project_frames(left, self.left_proj, self.n_frames)
+            right = _project_frames(right, self.right_proj, self.n_frames)
+
+        # === Step 2. Quadratic product on the grid, projected back ===
+        coeff = from_grid(to_grid(left) * to_grid(right))
+        return _project_frames(coeff, self.out_proj, self.n_frames)
 
 
 class GridBranch(nn.Module):
@@ -159,6 +258,7 @@ class GridBranch(nn.Module):
         *,
         channels: int,
         n_branches: int,
+        n_frames: int,
         dtype: torch.dtype,
         trainable: bool,
         seed: int | list[int] | None = None,
@@ -168,6 +268,7 @@ class GridBranch(nn.Module):
         self.n_branches = int(n_branches)
         if self.n_branches < 1:
             raise ValueError("`n_branches` must be positive")
+        self.n_frames = int(n_frames)
         self.left_proj = ChannelLinear(
             in_channels=self.channels,
             out_channels=self.n_branches * self.channels,
@@ -203,35 +304,43 @@ class GridBranch(nn.Module):
 
     def forward(
         self,
-        query_grid: torch.Tensor,
-        context_grid: torch.Tensor,
+        left: torch.Tensor,
+        right: torch.Tensor,
         scalar_pair: torch.Tensor,
+        *,
+        to_grid: Callable[[torch.Tensor], torch.Tensor],
+        from_grid: Callable[[torch.Tensor], torch.Tensor],
     ) -> torch.Tensor:
         """
-        Apply scalar-routed grid branch mixing.
+        Apply scalar-routed grid branch mixing on coefficient operands.
 
         Parameters
         ----------
-        query_grid
-            First grid source with shape ``(N, G, F, C)``.
-        context_grid
-            Second grid source with shape ``(N, G, F, C)``.
-        scalar_pair
+        left, right : torch.Tensor
+            Coefficient operands with shape ``(N, D, F, n_frames * C)``.
+        scalar_pair : torch.Tensor
             Invariant router source with shape ``(N, F, 2*C)``.
+        to_grid, from_grid : Callable
+            Coefficient/grid projectors supplied by the owning grid net.
+
+        Returns
+        -------
+        torch.Tensor
+            Coefficient result with shape ``(N, D, F, n_frames * C)``.
         """
-        n_batch, n_grid, n_focus, _ = query_grid.shape
-        left = self.left_proj(query_grid)
-        right = self.right_proj(context_grid)
-        value = (left * right).reshape(
-            n_batch,
-            n_grid,
-            n_focus,
-            self.n_branches,
-            self.channels,
-        )  # (N, G, F, N_branches, C)
+        # === Step 1. Branch channel projections at coefficient resolution ===
+        left = _project_frames(left, self.left_proj, self.n_frames)
+        right = _project_frames(right, self.right_proj, self.n_frames)
+
+        # === Step 2. Quadratic branches on the grid, routed by scalars ===
+        value = to_grid(left) * to_grid(right)  # (N, G, F, N_branches * C)
+        n_batch, n_grid, n_focus, _ = value.shape
+        value = value.reshape(n_batch, n_grid, n_focus, self.n_branches, self.channels)
         router = torch.softmax(self.router(scalar_pair), dim=-1)  # (N, F, N_branches)
         out = torch.einsum("ngfhc,nfh->ngfc", value, router)  # (N, G, F, C)
-        return self.out_proj(out)
+
+        # === Step 3. Project back to coefficients and mix output channels ===
+        return _project_frames(from_grid(out), self.out_proj, self.n_frames)
 
 
 class FrameContract(nn.Module):
@@ -407,9 +516,10 @@ class BaseGridNet(nn.Module):
             init_std=0.01,
         )
         if self.op_type == "mlp":
-            self.grid_op = GridMLP(
+            self.grid_op: nn.Module = GridMLP(
                 channels=self.channels,
                 mode=self.mode,
+                n_frames=self.n_frames,
                 dtype=self.dtype,
                 trainable=trainable,
                 seed=child_seed(seed, 1),
@@ -418,12 +528,13 @@ class BaseGridNet(nn.Module):
             self.grid_op = GridBranch(
                 channels=self.channels,
                 n_branches=grid_branches,
+                n_frames=self.n_frames,
                 dtype=self.dtype,
                 trainable=trainable,
                 seed=child_seed(seed, 1),
             )
         else:
-            self.grid_op = nn.Identity()
+            self.grid_op = GridProduct()
 
         if residual_scale_init is None:
             self.residual_scale = None
@@ -448,8 +559,13 @@ class BaseGridNet(nn.Module):
         input_dtype = query.dtype
         query_ndfc, shape_info = self._to_ndfc(query)
         left, right, scalar_pair = self._prepare_pair(query_ndfc, context)
-        grid_out = self._apply_grid_op(left, right, scalar_pair)
-        coeff_out = self._from_grid(grid_out)
+        coeff_out = self.grid_op(
+            left.to(dtype=self.dtype),
+            right.to(dtype=self.dtype),
+            scalar_pair,
+            to_grid=self._to_grid,
+            from_grid=self._from_grid,
+        )
         coeff_out = self._apply_scalar_path(coeff_out, scalar_pair)
         coeff_out = self._contract_frames(coeff_out)
         coeff_out = self._apply_residual_scale(coeff_out)
@@ -498,20 +614,6 @@ class BaseGridNet(nn.Module):
             self.frame_expand(context_ndfc),
             scalar_pair,
         )
-
-    def _apply_grid_op(
-        self,
-        left: torch.Tensor,
-        right: torch.Tensor,
-        scalar_pair: torch.Tensor,
-    ) -> torch.Tensor:
-        left_grid = self._to_grid(left.to(dtype=self.dtype))
-        right_grid = self._to_grid(right.to(dtype=self.dtype))
-        if self.op_type == "glu":
-            return left_grid * right_grid
-        if self.op_type == "mlp":
-            return self.grid_op(left_grid, right_grid)
-        return self.grid_op(left_grid, right_grid, scalar_pair)
 
     def _contract_frames(self, coeff: torch.Tensor) -> torch.Tensor:
         if self.frame_contract is None:
@@ -576,14 +678,10 @@ class BaseGridNet(nn.Module):
         return coeff_view[:, 0, :, self.frame_zero_index, :]
 
     def _to_grid(self, coeff: torch.Tensor) -> torch.Tensor:
+        # The per-frame channel width is inferred so the projector also serves
+        # widened operands (e.g. a branch hidden width ``n_branches * C``).
         n_batch, coeff_dim, n_focus, _ = coeff.shape
-        coeff_view = coeff.reshape(
-            n_batch,
-            coeff_dim,
-            n_focus,
-            self.n_frames,
-            self.channels,
-        )
+        coeff_view = coeff.reshape(n_batch, coeff_dim, n_focus, self.n_frames, -1)
         to_grid = self.projector.to_grid_mat.reshape(
             self.projector.grid_size,
             coeff_dim,
@@ -592,6 +690,7 @@ class BaseGridNet(nn.Module):
         return torch.einsum("gdk,ndfkc->ngfc", to_grid, coeff_view)
 
     def _from_grid(self, grid: torch.Tensor) -> torch.Tensor:
+        # Channel width is inferred to match the (possibly widened) grid field.
         n_batch, _, n_focus, _ = grid.shape
         coeff_dim = self.projector.coeff_dim // self.n_frames
         from_grid = self.projector.from_grid_mat.reshape(
@@ -600,7 +699,7 @@ class BaseGridNet(nn.Module):
             self.projector.grid_size,
         )
         coeff = torch.einsum("dkg,ngfc->ndfkc", from_grid, grid)
-        return coeff.reshape(n_batch, coeff_dim, n_focus, self.expanded_channels)
+        return coeff.reshape(n_batch, coeff_dim, n_focus, -1)
 
     def _to_ndfc(self, value: torch.Tensor) -> tuple[torch.Tensor, tuple[int, ...]]:
         if self.layout == "ndfc":
