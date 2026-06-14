@@ -65,6 +65,21 @@ If the requested plugin or its backend runtime cannot be loaded, only that backe
 Other backends can still run as long as their own plugins and runtime libraries are available.
 This also allows a no-backend `libdeepmd_cc` or `libdeepmd_c` build; install or copy the backend plugin next to the library, or set {envvar}`DP_BACKEND_PLUGIN_PATH`, before loading a model that uses that backend.
 
+To build only the backend-neutral C/C++ libraries from source, leave all backend options disabled, or set them explicitly:
+
+```sh
+cmake -S $deepmd_source_dir/source -B build-no-backend \
+    -DBUILD_CPP_IF=ON -DBUILD_PY_IF=OFF \
+    -DENABLE_TENSORFLOW=OFF -DENABLE_PYTORCH=OFF \
+    -DENABLE_JAX=OFF -DENABLE_PADDLE=OFF \
+    -DCMAKE_INSTALL_PREFIX=$deepmd_root
+cmake --build build-no-backend --target deepmd_cc deepmd_c
+cmake --install build-no-backend
+```
+
+This install does not include backend plugins.
+Use backend plugin libraries from a backend-enabled build or package at runtime.
+
 {envvar}`DP_PLUGIN_PATH` is different: it is used for customized OP plugin libraries after the backend has been selected.
 
 ## C interface
