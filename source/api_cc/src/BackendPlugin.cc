@@ -283,7 +283,7 @@ deepmd::create_deeppot_backend_from_plugin(DPBackend backend,
     backend_handle =
         plugin->create_deeppot(model.c_str(), gpu_rank, file_content.data(),
                                file_content.size(), &error_message);
-  } catch (const deepmd::deepmd_exception& e) {
+  } catch (const deepmd::deepmd_exception&) {
     throw;
   } catch (const std::exception& e) {
     throw deepmd::deepmd_exception("Backend plugin " + plugin->path +
@@ -406,4 +406,38 @@ deepmd::create_dipole_charge_modifier_backend_from_plugin(
       [plugin, delete_modifier](DipoleChargeModifierBase* ptr) {
         delete_modifier(ptr);
       });
+}
+
+void deepmd::convert_pbtxt_to_pb_from_plugin(const std::string& fn_pb_txt,
+                                             const std::string& fn_pb) {
+  std::shared_ptr<PluginHandle> plugin = load_plugin(DPBackend::TensorFlow);
+  deepmd_convert_pbtxt_to_pb_fn convert_pbtxt_to_pb =
+      load_typed_symbol<deepmd_convert_pbtxt_to_pb_fn>(
+          plugin, DEEPMD_CONVERT_PBTXT_TO_PB_PLUGIN_SYMBOL);
+
+  char* error_message = nullptr;
+  int status = 1;
+  try {
+    status =
+        convert_pbtxt_to_pb(fn_pb_txt.c_str(), fn_pb.c_str(), &error_message);
+  } catch (const deepmd::deepmd_exception&) {
+    throw;
+  } catch (const std::exception& e) {
+    throw deepmd::deepmd_exception("Backend plugin " + plugin->path +
+                                   " threw an exception: " + e.what());
+  } catch (...) {
+    throw deepmd::deepmd_exception("Backend plugin " + plugin->path +
+                                   " threw an unknown exception");
+  }
+
+  if (status != 0) {
+    std::string message = take_plugin_error(plugin, error_message);
+    throw deepmd::deepmd_exception(
+        "Failed to convert pbtxt with TensorFlow backend plugin from " +
+        plugin->path + (message.empty() ? "" : ": " + message));
+  }
+
+  if (error_message != nullptr) {
+    plugin->free_error(error_message);
+  }
 }

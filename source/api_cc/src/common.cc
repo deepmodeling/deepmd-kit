@@ -9,6 +9,9 @@
 #include <string>
 
 #include "AtomMap.h"
+#ifndef BUILD_TENSORFLOW
+#include "BackendPlugin.h"
+#endif
 #include "device.h"
 #if defined(_WIN32)
 #if defined(_WIN32_WINNT)
@@ -1274,8 +1277,7 @@ void deepmd::convert_pbtxt_to_pb(std::string fn_pb_txt, std::string fn_pb) {
                       std::ios::out | std::ios::trunc | std::ios::binary);
   graph_def.SerializeToOstream(&output);
 #else
-  throw deepmd::deepmd_exception(
-      "convert_pbtxt_to_pb: TensorFlow backend is not enabled.");
+  convert_pbtxt_to_pb_from_plugin(fn_pb_txt, fn_pb);
 #endif
 }
 
