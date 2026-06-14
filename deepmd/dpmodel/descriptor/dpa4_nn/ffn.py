@@ -11,10 +11,6 @@ config):
 
 - ``ffn_so3_grid=True`` — the pt path instantiates ``SO3GridNet``
   (pt ffn.py:209), which is not ported to dpmodel.
-- ``grid_mlp=True`` together with the grid path active selects
-  ``op_type='mlp'`` for ``S2GridNet`` (pt ffn.py:206); the delegate
-  ``S2GridNet`` constructor raises for that op type (``GridMLP`` is not
-  ported), so no duplicate guard is added here.
 """
 
 from __future__ import (
@@ -85,9 +81,9 @@ class EquivariantFFN(NativeOP):
     kmax
         Maximum Wigner-D frame order (|k|) used by the SO3 Wigner-D FFN grid.
     grid_mlp
-        If True, select the polynomial grid MLP operation when the
-        block-internal FFN grid path is enabled. Not ported: the delegate
-        ``S2GridNet`` raises ``NotImplementedError`` for ``op_type='mlp'``.
+        If True, select the polynomial grid MLP operation (``op_type='mlp'``)
+        when the block-internal FFN grid path is enabled. ``grid_branch`` takes
+        precedence when positive.
     grid_branch
         Number of scalar-routed polynomial product branches used when the
         block-internal FFN grid path is enabled. ``0`` disables this branch
@@ -203,7 +199,6 @@ class EquivariantFFN(NativeOP):
                 if self.use_grid_branch
                 else ("mlp" if self.use_grid_mlp else "glu")
             )
-            # op_type='mlp' raises NotImplementedError inside S2GridNet
             self.act: NativeOP = S2GridNet(
                 lmax=self.lmax,
                 channels=self.hidden_channels,

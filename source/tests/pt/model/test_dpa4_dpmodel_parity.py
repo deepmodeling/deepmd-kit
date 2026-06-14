@@ -1483,20 +1483,17 @@ class TestS2GridParity:
         expected_keys = {"scalar_gate.weight"}
         if mlp_bias:
             expected_keys.add("scalar_gate.bias")
-        if op_type == "branch":
-            expected_keys |= {
-                "grid_op.left_proj.weight",
-                "grid_op.right_proj.weight",
-                "grid_op.router.weight",
-                "grid_op.out_proj.weight",
-            }
+        grid_op_params = {
+            "mlp": ("left_proj", "right_proj", "out_proj"),
+            "branch": ("left_proj", "right_proj", "router", "out_proj"),
+        }.get(op_type, ())
+        expected_keys |= {f"grid_op.{name}.weight" for name in grid_op_params}
         assert set(state) == expected_keys
         dp_net.scalar_gate.weight = state["scalar_gate.weight"]
         if mlp_bias:
             dp_net.scalar_gate.bias = state["scalar_gate.bias"]
-        if op_type == "branch":
-            for name in ("left_proj", "right_proj", "router", "out_proj"):
-                getattr(dp_net.grid_op, name).weight = state[f"grid_op.{name}.weight"]
+        for name in grid_op_params:
+            getattr(dp_net.grid_op, name).weight = state[f"grid_op.{name}.weight"]
         return pt_net, dp_net
 
     # ------------------------------------------------- (a) projector constants
@@ -1571,7 +1568,7 @@ class TestS2GridParity:
 
     # ------------------------------------------ (b) S2GridNet forward parity
     @pytest.mark.parametrize("lmax", [2, 3])  # max degree
-    @pytest.mark.parametrize("op_type", ["glu", "branch"])  # grid operation
+    @pytest.mark.parametrize("op_type", ["glu", "mlp", "branch"])  # grid operation
     def test_s2_grid_net(self, lmax, op_type) -> None:
         # ffn-style core usage: mode="self", layout="ndfc", packed, n_focus=1
         pt_net, dp_net = self._build_grid_nets(
@@ -1629,6 +1626,7 @@ class TestS2GridParity:
         pt_mod = PTGridBranch(
             channels=self.channels,
             n_branches=n_branches,
+            n_frames=1,
             dtype=torch.float64,
             trainable=True,
             seed=9,
@@ -1652,16 +1650,26 @@ class TestS2GridParity:
         )
         for name in ("left_proj", "right_proj", "router", "out_proj"):
             getattr(dp_mod, name).weight = state[f"{name}.weight"]
-        n_batch, n_grid, n_focus = 5, 26, 2
-        query = rng.normal(size=(n_batch, n_grid, n_focus, self.channels))
-        context = rng.normal(size=(n_batch, n_grid, n_focus, self.channels))
+        n_batch, n_coeff, n_focus = 5, 26, 2
+        left = rng.normal(size=(n_batch, n_coeff, n_focus, self.channels))
+        right = rng.normal(size=(n_batch, n_coeff, n_focus, self.channels))
         scalar = rng.normal(size=(n_batch, n_focus, 2 * self.channels))
+
+        # Both backends take coefficient operands and defer the grid transform
+        # to injected to_grid/from_grid callables (pt's so3grid layout). The
+        # unit injects identity projectors; real projector behavior is covered
+        # by the S2GridNet parity tests above.
+        def identity(t):
+            return t
+
         assert_parity(
-            dp_mod.call(query, context, scalar),
+            dp_mod.call(left, right, scalar, to_grid=identity, from_grid=identity),
             pt_mod(
-                to_pt(query),
-                to_pt(context),
+                to_pt(left),
+                to_pt(right),
                 to_pt(scalar),
+                to_grid=identity,
+                from_grid=identity,
             ),
         )
         # serialize roundtrip is exact; @variables keys match the pt state dict
@@ -1669,12 +1677,81 @@ class TestS2GridParity:
         assert set(ser["@variables"]) == set(state)
         dp_mod2 = DPGridBranch.deserialize(ser)
         np.testing.assert_array_equal(
-            np.asarray(dp_mod.call(query, context, scalar)),
-            np.asarray(dp_mod2.call(query, context, scalar)),
+            np.asarray(
+                dp_mod.call(left, right, scalar, to_grid=identity, from_grid=identity)
+            ),
+            np.asarray(
+                dp_mod2.call(left, right, scalar, to_grid=identity, from_grid=identity)
+            ),
+        )
+
+    # --------------------------------------------- (c') GridMLP forward parity
+    @pytest.mark.parametrize("mode", ["self", "cross"])  # pairing mode
+    def test_grid_mlp(self, mode) -> None:
+        from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import GridMLP as DPGridMLP
+        from deepmd.pt.model.descriptor.sezm_nn.grid_net import GridMLP as PTGridMLP
+
+        pt_mod = PTGridMLP(
+            channels=self.channels,
+            mode=mode,
+            n_frames=1,
+            dtype=torch.float64,
+            trainable=True,
+            seed=9,
+        )
+        rng = np.random.default_rng(2087)
+        with torch.no_grad():
+            for p in pt_mod.parameters():
+                p += to_pt(0.1 * rng.normal(size=tuple(p.shape)))
+        state = pt_state_to_numpy(pt_mod)
+        assert set(state) == {
+            "left_proj.weight",
+            "right_proj.weight",
+            "out_proj.weight",
+        }
+        dp_mod = DPGridMLP(
+            channels=self.channels,
+            mode=mode,
+            precision="float64",
+            seed=9,
+        )
+        for name in ("left_proj", "right_proj", "out_proj"):
+            getattr(dp_mod, name).weight = state[f"{name}.weight"]
+        n_batch, n_coeff, n_focus = 5, 26, 2
+        left = rng.normal(size=(n_batch, n_coeff, n_focus, self.channels))
+        right = rng.normal(size=(n_batch, n_coeff, n_focus, self.channels))
+        # GridMLP ignores scalar_pair; both backends take coefficient operands
+        # and defer the grid transform to injected to_grid/from_grid callables.
+        scalar = rng.normal(size=(n_batch, n_focus, 2 * self.channels))
+
+        def identity(t):
+            return t
+
+        assert_parity(
+            dp_mod.call(left, right, scalar, to_grid=identity, from_grid=identity),
+            pt_mod(
+                to_pt(left),
+                to_pt(right),
+                to_pt(scalar),
+                to_grid=identity,
+                from_grid=identity,
+            ),
+        )
+        # serialize roundtrip is exact; @variables keys match the pt state dict
+        ser = dp_mod.serialize()
+        assert set(ser["@variables"]) == set(state)
+        dp_mod2 = DPGridMLP.deserialize(ser)
+        np.testing.assert_array_equal(
+            np.asarray(
+                dp_mod.call(left, right, scalar, to_grid=identity, from_grid=identity)
+            ),
+            np.asarray(
+                dp_mod2.call(left, right, scalar, to_grid=identity, from_grid=identity)
+            ),
         )
 
     # ------------------------------------------------------ (e) serialization
-    @pytest.mark.parametrize("op_type", ["glu", "branch"])  # grid operation
+    @pytest.mark.parametrize("op_type", ["glu", "mlp", "branch"])  # grid operation
     @pytest.mark.parametrize("mlp_bias", [False, True])  # scalar gate bias
     def test_s2_grid_net_serialize_roundtrip(self, op_type, mlp_bias) -> None:
         from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import S2GridNet as DPS2GridNet
@@ -1732,9 +1809,6 @@ class TestS2GridParity:
         # "e3nn" default, which dp rejects): default construction works
         net = DPS2GridNet(**{k: v for k, v in common.items() if k != "grid_method"})
         assert net.grid_method == "lebedev"
-        with pytest.raises(NotImplementedError, match="grid_mlp"):
-            # GridMLP (grid_mlp=True) is not ported
-            DPS2GridNet(**{**common, "op_type": "mlp"})
         with pytest.raises(NotImplementedError, match="node_wise_s2"):
             # cross mode backs node_wise_s2/message_node_s2 only
             DPS2GridNet(**{**common, "mode": "cross"})
@@ -3114,12 +3188,6 @@ class TestFFNParity:
 
         with pytest.raises(NotImplementedError, match="ffn_so3_grid"):
             DPFFN(**self._ffn_kwargs(ffn_so3_grid=True), precision="float64")
-        # grid_mlp guard is delegated to S2GridNet's op_type='mlp' NIE
-        with pytest.raises(NotImplementedError, match="mlp"):
-            DPFFN(
-                **self._ffn_kwargs(s2_activation=True, grid_mlp=True),
-                precision="float64",
-            )
 
     def test_ffn_errors(self) -> None:
         from deepmd.dpmodel.descriptor.dpa4_nn.ffn import EquivariantFFN as DPFFN
