@@ -7,6 +7,8 @@ from typing import (
     Any,
 )
 
+import numpy as np
+
 from deepmd.dpmodel.descriptor import (
     DescrptDPA1,
     DescrptDPA2,
@@ -24,6 +26,9 @@ from deepmd.dpmodel.descriptor.dpa2 import (
 from deepmd.dpmodel.descriptor.dpa3 import (
     RepFlowArgs,
 )
+from deepmd.dpmodel.descriptor.repflows import (
+    DescrptBlockRepflows,
+)
 
 from ....consistent.common import (
     parameterize_func,
@@ -35,6 +40,9 @@ from ....seed import (
 from ....utils import (
     CI,
     TEST_DEVICE,
+)
+from ...common.cases.cases import (
+    TestCaseSingleFrameWithNlist,
 )
 from ...common.cases.descriptor.descriptor import (
     DescriptorTest,
@@ -896,6 +904,68 @@ class TestDescriptorDP(unittest.TestCase, DescriptorTest, DPTestCase):
             self.nt, self.rcut, self.rcut_smth, self.sel, ["O", "H"]
         )
         self.module = Descrpt(**self.input_dict)
+
+
+class TestDPA3StaticDynamicSelDP(unittest.TestCase, TestCaseSingleFrameWithNlist):
+    """Check that the internal static dynamic layout is value-equivalent."""
+
+    def setUp(self) -> None:
+        TestCaseSingleFrameWithNlist.setUp(self)
+
+    def _make_dpa3(self, use_static_dynamic_sel: bool) -> DescrptDPA3:
+        # The switch is intentionally class-level and internal, so tests toggle
+        # it only around construction and then restore the previous backend mode.
+        old_use_static_dynamic_sel = DescrptBlockRepflows._use_static_dynamic_sel
+        DescrptBlockRepflows._use_static_dynamic_sel = use_static_dynamic_sel
+        try:
+            return DescrptDPA3(
+                **DescriptorParamDPA3(
+                    self.nt,
+                    self.rcut,
+                    self.rcut_smth,
+                    self.sel,
+                    ["O", "H"],
+                    smooth_edge_update=True,
+                    use_dynamic_sel=True,
+                )
+            )
+        finally:
+            DescrptBlockRepflows._use_static_dynamic_sel = old_use_static_dynamic_sel
+
+    def test_static_dynamic_sel_matches_packed_dynamic_sel(self) -> None:
+        packed = self._make_dpa3(False)
+        static = self._make_dpa3(True)
+
+        packed_out = packed(
+            self.coord_ext,
+            self.atype_ext,
+            self.nlist,
+            mapping=self.mapping,
+        )
+        static_out = static(
+            self.coord_ext,
+            self.atype_ext,
+            self.nlist,
+            mapping=self.mapping,
+        )
+
+        np.testing.assert_allclose(packed_out[0], static_out[0], atol=self.atol)
+        np.testing.assert_allclose(packed_out[1], static_out[1], atol=self.atol)
+
+        # Static dynamic selection keeps all edge slots.  Masking out padding
+        # should recover the compact dynamic edge/h2/sw tensors exactly:
+        #   compact_edges == static_edges[nlist != -1].
+        valid_edge_mask = np.reshape(self.nlist != -1, (-1,))
+        assert static_out[2].shape[0] == self.nf * self.nloc * sum(self.sel)
+        np.testing.assert_allclose(
+            packed_out[2], static_out[2][valid_edge_mask], atol=self.atol
+        )
+        np.testing.assert_allclose(
+            packed_out[3], static_out[3][valid_edge_mask], atol=self.atol
+        )
+        np.testing.assert_allclose(
+            packed_out[4], static_out[4][valid_edge_mask], atol=self.atol
+        )
 
 
 class TestHybridChgSpinDefaultDP(unittest.TestCase):
