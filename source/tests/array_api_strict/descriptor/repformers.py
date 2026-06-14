@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 from typing import (
-    Any,
+    ClassVar,
 )
 
 from deepmd.dpmodel.descriptor.repformers import (
@@ -17,82 +17,41 @@ from deepmd.dpmodel.descriptor.repformers import LocalAtten as LocalAttenDP
 from deepmd.dpmodel.descriptor.repformers import RepformerLayer as RepformerLayerDP
 
 from ..common import (
-    to_array_api_strict_array,
+    array_api_strict_module,
 )
-from ..utils.exclude_mask import (
-    PairExcludeMask,
-)
-from ..utils.network import (
-    LayerNorm,
-    NativeLayer,
-)
+from ..utils import exclude_mask as _strict_exclude_mask  # noqa: F401
+from ..utils import network as _strict_network  # noqa: F401
 
 
+@array_api_strict_module
 class DescrptBlockRepformers(DescrptBlockRepformersDP):
-    def __setattr__(self, name: str, value: Any) -> None:
-        if name in {"mean", "stddev"}:
-            value = to_array_api_strict_array(value)
-        elif name in {"layers"}:
-            value = [RepformerLayer.deserialize(layer.serialize()) for layer in value]
-        elif name == "g2_embd":
-            value = NativeLayer.deserialize(value.serialize())
-        elif name == "env_mat":
-            # env_mat doesn't store any value
-            pass
-        elif name == "emask":
-            value = PairExcludeMask(value.ntypes, value.exclude_types)
-
-        return super().__setattr__(name, value)
+    pass
 
 
+@array_api_strict_module
 class Atten2Map(Atten2MapDP):
-    def __setattr__(self, name: str, value: Any) -> None:
-        if name in {"mapqk"}:
-            value = NativeLayer.deserialize(value.serialize())
-        return super().__setattr__(name, value)
+    pass
 
 
+@array_api_strict_module
 class Atten2MultiHeadApply(Atten2MultiHeadApplyDP):
-    def __setattr__(self, name: str, value: Any) -> None:
-        if name in {"mapv", "head_map"}:
-            value = NativeLayer.deserialize(value.serialize())
-        return super().__setattr__(name, value)
+    pass
 
 
+@array_api_strict_module
 class Atten2EquiVarApply(Atten2EquiVarApplyDP):
-    def __setattr__(self, name: str, value: Any) -> None:
-        if name in {"head_map"}:
-            value = NativeLayer.deserialize(value.serialize())
-        return super().__setattr__(name, value)
+    pass
 
 
+@array_api_strict_module
 class LocalAtten(LocalAttenDP):
-    def __setattr__(self, name: str, value: Any) -> None:
-        if name in {"mapq", "mapkv", "head_map"}:
-            value = NativeLayer.deserialize(value.serialize())
-        return super().__setattr__(name, value)
+    pass
 
 
+@array_api_strict_module
 class RepformerLayer(RepformerLayerDP):
-    def __setattr__(self, name: str, value: Any) -> None:
-        if name in {"linear1", "linear2", "g1_self_mlp", "proj_g1g2", "proj_g1g1g2"}:
-            if value is not None:
-                value = NativeLayer.deserialize(value.serialize())
-        elif name in {"g1_residual", "g2_residual", "h2_residual"}:
-            value = [to_array_api_strict_array(vv) for vv in value]
-        elif name in {"attn2g_map"}:
-            if value is not None:
-                value = Atten2Map.deserialize(value.serialize())
-        elif name in {"attn2_mh_apply"}:
-            if value is not None:
-                value = Atten2MultiHeadApply.deserialize(value.serialize())
-        elif name in {"attn2_lm"}:
-            if value is not None:
-                value = LayerNorm.deserialize(value.serialize())
-        elif name in {"attn2_ev_apply"}:
-            if value is not None:
-                value = Atten2EquiVarApply.deserialize(value.serialize())
-        elif name in {"loc_attn"}:
-            if value is not None:
-                value = LocalAtten.deserialize(value.serialize())
-        return super().__setattr__(name, value)
+    _array_api_strict_data_list_attrs: ClassVar[set[str]] = {
+        "g1_residual",
+        "g2_residual",
+        "h2_residual",
+    }
