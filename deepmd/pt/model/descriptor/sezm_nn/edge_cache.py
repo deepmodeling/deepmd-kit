@@ -20,6 +20,7 @@ from typing import (
 )
 
 import torch
+import torch.nn.functional as F
 from einops import (
     rearrange,
 )
@@ -450,7 +451,10 @@ def build_edge_cache_from_edges(
     edge_vec = edge_vec.to(dtype=compute_dtype)
     edge_keep_f = edge_keep.to(dtype=compute_dtype).unsqueeze(-1)
     edge_vec = edge_vec * edge_keep_f
-    edge_vec = edge_vec + (1.0 - edge_keep_f) * edge_vec.new_tensor([0.0, 0.0, 1.0])
+    # Masked-out edges (zeroed above) are assigned the canonical +z direction so the
+    # length normalization and quaternion construction remain finite. Padding the
+    # keep-complement into the z channel constructs this term entirely on device.
+    edge_vec = edge_vec + F.pad(1.0 - edge_keep_f, (2, 0))
 
     # === Step 3. Edge length, envelope, and radial basis ===
     with nvtx_range("envelope"):
@@ -620,9 +624,8 @@ def _finalize_edge_cache(
     with nvtx_range("degree"):
         deg = torch.zeros(n_nodes, dtype=edge_vec.dtype, device=edge_vec.device)  # (N,)
         deg.index_add_(0, dst, edge_env.squeeze(-1).to(dtype=edge_vec.dtype).square())
-        floor_tensor = deg.new_tensor(deg_norm_floor)
         inv_sqrt_deg = rearrange(
-            torch.rsqrt(deg + floor_tensor), "N -> N 1 1"
+            torch.rsqrt(deg + deg_norm_floor), "N -> N 1 1"
         )  # (N, 1, 1)
 
     return EdgeFeatureCache(
