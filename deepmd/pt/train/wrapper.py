@@ -1,5 +1,11 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
+from collections.abc import (
+    Generator,
+)
+from contextlib import (
+    contextmanager,
+)
 from typing import (
     Any,
 )
@@ -161,7 +167,7 @@ class ModelWrapper(torch.nn.Module):
         cur_lr: torch.Tensor | None = None,
         label: torch.Tensor | None = None,
         task_key: torch.Tensor | None = None,
-        inference_only: bool = False,
+        skip_loss: bool = False,
         do_atomic_virial: bool = False,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
@@ -188,23 +194,64 @@ class ModelWrapper(torch.nn.Module):
         if has_spin:
             input_dict["spin"] = spin
 
-        if self.inference_only or inference_only:
-            model_pred = self.model[task_key](**input_dict)
-            if self.modifier is not None:
-                modifier_pred = self.modifier(**input_dict)
-                for k, v in modifier_pred.items():
-                    model_pred[k] = model_pred[k] + v
+        # A loss-free wrapper is a pure inference object, so parameters can be
+        # treated as constants while coordinate gradients remain enabled.
+        if self.inference_only:
+            with self._frozen_parameter_context():
+                model_pred = self._forward_without_loss(task_key, input_dict)
             return model_pred, None, None
-        else:
-            natoms = atype.shape[-1]
-            model_pred, loss, more_loss = self.loss[task_key](
-                input_dict,
-                self.model[task_key],
-                label,
-                natoms=natoms,
-                learning_rate=cur_lr,
-            )
-            return model_pred, loss, more_loss
+        # Training wrappers may request predictions without loss construction
+        # and still backpropagate those predictions into model parameters
+        # (for example, KFWrapper updates).
+        if skip_loss:
+            model_pred = self._forward_without_loss(task_key, input_dict)
+            return model_pred, None, None
+
+        natoms = atype.shape[-1]
+        model_pred, loss, more_loss = self.loss[task_key](
+            input_dict,
+            self.model[task_key],
+            label,
+            natoms=natoms,
+            learning_rate=cur_lr,
+        )
+        return model_pred, loss, more_loss
+
+    @contextmanager
+    def _frozen_parameter_context(self) -> Generator[None, None, None]:
+        """
+        Freeze model parameters during pure inference.
+
+        Conservative inference still differentiates model outputs with respect
+        to coordinates to obtain forces and virials. Parameter gradients are not
+        part of that contract, so disabling them trims the autograd graph while
+        leaving the coordinate-gradient path intact.
+        """
+        params = tuple(self.parameters())
+        requires_grad = tuple(param.requires_grad for param in params)
+        if not any(requires_grad):
+            yield
+            return
+        for param in params:
+            param.requires_grad_(False)
+        try:
+            yield
+        finally:
+            for param, flag in zip(params, requires_grad, strict=True):
+                param.requires_grad_(flag)
+
+    def _forward_without_loss(
+        self,
+        task_key: str,
+        input_dict: dict[str, Any],
+    ) -> Any:
+        """Return predictions without constructing a loss."""
+        model_pred = self.model[task_key](**input_dict)
+        if self.modifier is not None:
+            modifier_pred = self.modifier(**input_dict)
+            for key, value in modifier_pred.items():
+                model_pred[key] = model_pred[key] + value
+        return model_pred
 
     def set_extra_state(self, state: dict) -> None:
         self.model_params = state["model_params"]
