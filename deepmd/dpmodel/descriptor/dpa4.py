@@ -41,6 +41,7 @@ from deepmd.dpmodel import (
 )
 from deepmd.dpmodel.array_api import (
     xp_asarray_nodetach,
+    xp_take_first_n,
 )
 from deepmd.dpmodel.common import (
     PRECISION_DICT,
@@ -811,7 +812,11 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         pair_keep_mask = self.emask.build_type_exclude_mask(nlist, atype_ext) != 0
 
         # === Step 2. Type embedding (l=0) ===
-        atype_loc = atype_ext[:, :nloc]
+        # Use ``xp_take_first_n`` (torch.index_select) rather than a plain
+        # ``[:, :nloc]`` slice: the slice makes torch.export emit a spurious
+        # ``Ne(nall, nloc)`` contiguity guard that breaks the ``nall == nloc``
+        # (NoPBC, no ghost atoms) case in the compiled .pt2 artifact.
+        atype_loc = xp_take_first_n(atype_ext, 1, nloc)
         type_ebed = xp.reshape(
             self.type_embedding(atype_loc), (n_nodes, self.channels)
         )  # (N, C)
