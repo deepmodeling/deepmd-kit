@@ -6,6 +6,8 @@
 
 import logging
 import os
+import re
+import subprocess
 from pathlib import (
     Path,
 )
@@ -871,6 +873,128 @@ class DPAFineTuner:
         self._fitted = True
         return ckpt_path
 
+    def _latest_training_checkpoint(self) -> str:
+        ckpts = list(Path(self.output_dir).glob("model.ckpt-*.pt"))
+        if not ckpts:
+            raise RuntimeError(
+                f"No model.ckpt-*.pt found in {self.output_dir}; call fit() first."
+            )
+
+        def step_of(path):
+            return int(path.stem.split("-")[-1])
+
+        return str(max(ckpts, key=step_of))
+
+    @staticmethod
+    def _expand_system_specs(data) -> list[str]:
+        import glob
+
+        patterns = [data] if isinstance(data, str) else list(data)
+        systems = []
+        for pattern in patterns:
+            matches = sorted(glob.glob(str(pattern)))
+            systems.extend(matches or [str(pattern)])
+
+        seen = set()
+        systems = [s for s in systems if not (s in seen or seen.add(s))]
+        if not systems:
+            raise DPADataError(f"No systems matched {data!r}.")
+        return systems
+
+    def _run_training_predict(self, data, fmt=None) -> DotDict:
+        """Run ``dp --pt test`` and parse property predictions from detail files."""
+        from dpa_adapt.trainer import (
+            DPATrainer,
+        )
+
+        if fmt is not None:
+            raise ValueError(
+                "fmt is not supported for frozen_head/finetune predict(); "
+                "provide deepmd/npy system directories."
+            )
+
+        ckpt = self._latest_training_checkpoint()
+        systems = self._expand_system_specs(data)
+
+        output_dir = Path(self.output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+        datafile = output_dir / "predict_systems.txt"
+        datafile.write_text("\n".join(systems) + "\n")
+
+        detail_prefix = output_dir / "predict_detail"
+        for old in output_dir.glob(f"{detail_prefix.name}.property.out.*"):
+            old.unlink()
+
+        cmd = [
+            "dp",
+            "--pt",
+            "test",
+            "-m",
+            ckpt,
+            "-f",
+            str(datafile),
+            "-n",
+            "999999",
+            "-d",
+            str(detail_prefix),
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        combined = result.stdout + "\n" + result.stderr
+
+        detail_files = sorted(
+            output_dir.glob(f"{detail_prefix.name}.property.out.*"),
+            key=lambda p: int(p.name.rsplit(".", 1)[-1]),
+        )
+        if not detail_files:
+            raise RuntimeError(
+                "dp --pt test completed but no property detail files were written. "
+                f"Command was: {' '.join(cmd)}"
+            )
+
+        rows = []
+        for path in detail_files:
+            arr = np.loadtxt(path)
+            arr = np.asarray(arr, dtype=float)
+            if arr.ndim == 1:
+                arr = arr.reshape(1, -1)
+            if arr.shape[1] < 2:
+                raise RuntimeError(
+                    f"Expected at least two columns in {path}, got shape {arr.shape}."
+                )
+            rows.append(arr[:, :2])
+
+        values = np.concatenate(rows, axis=0)
+        if values.shape[0] % self.task_dim != 0:
+            raise RuntimeError(
+                f"Could not reshape property detail rows {values.shape[0]} "
+                f"into task_dim={self.task_dim}."
+            )
+
+        values = values.reshape(-1, self.task_dim, 2)
+        labels = values[:, :, 0]
+        predictions = values[:, :, 1]
+        if self.task_dim == 1:
+            labels = labels.reshape(-1, 1)
+            predictions = predictions.reshape(-1, 1)
+
+        metrics = DPATrainer._parse_test_output(combined)
+        n_sys_match = re.search(
+            r"number of systems\s*[:=]?\s*(\d+)", combined, re.IGNORECASE
+        )
+        n_systems = int(n_sys_match.group(1)) if n_sys_match else len(systems)
+        return DotDict(
+            {
+                "predictions": predictions,
+                "labels": labels,
+                "mae": metrics["mae"],
+                "rmse": metrics["rmse"],
+                "n_frames": metrics["n_frames"],
+                "n_systems": n_systems,
+                "detail_prefix": str(detail_prefix),
+                "_raw_stdout": combined,
+            }
+        )
+
     # -------------------------------------------------------------------
     # fit (dispatch)
     # -------------------------------------------------------------------
@@ -1048,10 +1172,12 @@ class DPAFineTuner:
 
     def predict(self, data, fmt=None) -> DotDict:
         """
-        Extract features and run the fitted sklearn predictor.
+        Predict with the adapted model.
 
-        fparam is automatically read from ``set.*/fparam.npy`` when the
-        model was fit with ``fparam_dim > 0``.
+        ``frozen_sklearn`` extracts features and runs the fitted sklearn
+        predictor. ``frozen_head`` and ``finetune`` run ``dp --pt test`` on
+        the latest ``model.ckpt-*.pt`` in ``output_dir`` and parse the
+        property predictions from DeepMD's detail files.
 
         Parameters
         ----------
@@ -1065,6 +1191,9 @@ class DPAFineTuner:
         DotDict
             ``predictions`` : np.ndarray, shape (n_frames, task_dim)
         """
+        if self.strategy in {"frozen_head", "finetune"}:
+            return self._run_training_predict(data, fmt=fmt)
+
         if not self._fitted:
             raise RuntimeError(
                 "predict() was called before fit(). Train the model with fit() first."
@@ -1105,6 +1234,18 @@ class DPAFineTuner:
             predictions   : np.ndarray, shape (n_frames, task_dim)
             labels        : np.ndarray, shape (n_frames, task_dim)
         """
+        if self.strategy in {"frozen_head", "finetune"}:
+            result = self._run_training_predict(data, fmt=fmt)
+            labels = result.labels
+            predictions = result.predictions
+            err = predictions - labels
+            ss_res = np.sum(err**2)
+            ss_tot = np.sum((labels - labels.mean()) ** 2)
+            result["r2"] = (
+                float(1.0 - ss_res / ss_tot) if ss_tot > 0 else float("nan")
+            )
+            return result
+
         result = self.predict(data, fmt=fmt)
         predictions = result.predictions
 
