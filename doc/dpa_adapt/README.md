@@ -34,6 +34,8 @@ model = DPAFineTuner(
     pooling="mean",  # "mean" | "sum" | "mean+std" | "mean+std+max+min"
 )
 model.fit(train_data="/data/train/*", target_key="homo")
+pred = model.predict(data=str("/data/test"))
+metrics = model.evaluate(data=str("/data/test"))
 
 # frozen_head / finetune — same interface, different depth
 model = DPAFineTuner(
@@ -44,6 +46,8 @@ model = DPAFineTuner(
     batch_size=512,
 )
 model.fit(train_data="/data/train", valid_data="/data/valid")
+pred = model.predict(data=str("/data/test"))
+metrics = model.evaluate(data=str("/data/test"))
 
 # mft — downstream property head + auxiliary force-field head jointly
 model = DPAFineTuner(
@@ -52,7 +56,9 @@ model = DPAFineTuner(
     property_name="homo",
     aux_branch="MP_traj_v024_alldata_mixu",
 )
-model.fit(train_data="/data/qm9", aux_data="/data/spice2")
+model.fit(train_data="/data/train", aux_data="/data/spice2")
+pred = model.predict(data=str("/data/test"))
+metrics = model.evaluate(data=str("/data/test"))
 ```
 
 ## Data preparation

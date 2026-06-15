@@ -5,9 +5,14 @@ import re
 import subprocess
 import sys
 
+import numpy as np
+
 from dpa_adapt._backend import (
     load_torch_file,
     resolve_pretrained_path,
+)
+from dpa_adapt.utils.dotdict import (
+    DotDict,
 )
 
 
@@ -533,6 +538,104 @@ class MFTFineTuner:
         combined = result.stdout + "\n" + result.stderr
 
         return self._parse_test_output(combined, n_resolved=len(systems))
+
+    def predict(self, test_data) -> DotDict:
+        """
+        Predict property labels with the downstream MFT property head.
+
+        This uses the same frozen downstream head as ``evaluate()``, but passes
+        ``-d`` to ``dp --pt test`` and parses the generated property detail
+        files so callers get frame-level labels and predictions.
+        """
+        if self._downstream_head != "property":
+            raise RuntimeError(
+                "MFT predict() is only supported for downstream_task_type='property'. "
+                "Energy-mode MFT can still use evaluate() for aggregate metrics."
+            )
+
+        frozen_path = self._freeze_ckpt()
+        systems = self._resolve_test_data(test_data)
+
+        os.makedirs(self.output_dir, exist_ok=True)
+        datafile = os.path.join(self.output_dir, "predict_systems.txt")
+        with open(datafile, "w") as f:
+            f.write("\n".join(systems) + "\n")
+
+        detail_prefix = os.path.join(self.output_dir, "predict_detail")
+        detail_name = os.path.basename(detail_prefix)
+        for old in _glob.glob(
+            os.path.join(self.output_dir, f"{detail_name}.property.out.*")
+        ):
+            os.remove(old)
+
+        cmd = [
+            "dp",
+            "--pt",
+            "test",
+            "-m",
+            frozen_path,
+            "-f",
+            datafile,
+            "-n",
+            "999999",
+            "-d",
+            detail_prefix,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        combined = result.stdout + "\n" + result.stderr
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"dp --pt test failed (return code {result.returncode}).\n"
+                f"cmd: {' '.join(cmd)}\n"
+                f"stdout:\n{result.stdout}\n"
+                f"stderr:\n{result.stderr}"
+            )
+
+        detail_files = sorted(
+            _glob.glob(os.path.join(self.output_dir, f"{detail_name}.property.out.*")),
+            key=lambda p: int(os.path.basename(p).rsplit(".", 1)[-1]),
+        )
+        if not detail_files:
+            raise RuntimeError(
+                "dp --pt test completed but no property detail files were written. "
+                f"Command was: {' '.join(cmd)}"
+            )
+
+        rows = []
+        for path in detail_files:
+            arr = np.loadtxt(path)
+            arr = np.asarray(arr, dtype=float)
+            if arr.ndim == 1:
+                arr = arr.reshape(1, -1)
+            if arr.shape[1] < 2:
+                raise RuntimeError(
+                    f"Expected at least two columns in {path}, got shape {arr.shape}."
+                )
+            rows.append(arr[:, :2])
+
+        values = np.concatenate(rows, axis=0)
+        if values.shape[0] % self.task_dim != 0:
+            raise RuntimeError(
+                f"Could not reshape property detail rows {values.shape[0]} "
+                f"into task_dim={self.task_dim}."
+            )
+
+        values = values.reshape(-1, self.task_dim, 2)
+        labels = values[:, :, 0]
+        predictions = values[:, :, 1]
+        if self.task_dim == 1:
+            labels = labels.reshape(-1, 1)
+            predictions = predictions.reshape(-1, 1)
+
+        metrics = self._parse_test_output(combined, n_resolved=len(systems))
+        metrics.update(
+            {
+                "predictions": predictions,
+                "labels": labels,
+                "detail_prefix": detail_prefix,
+            }
+        )
+        return DotDict(metrics)
 
     @classmethod
     def _parse_test_output(cls, combined: str, n_resolved: int = 0) -> dict:

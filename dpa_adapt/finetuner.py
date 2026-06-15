@@ -710,6 +710,7 @@ class DPAFineTuner:
 
         # ---- frozen_sklearn pipeline (created lazily by fit()) ----
         self._sklearn: _FrozenSklearnPipeline | None = None
+        self._mft = None
 
         # ---- backward-compat state mirrors (delegated to pipeline) ----
         self.type_map = []
@@ -1063,36 +1064,42 @@ class DPAFineTuner:
 
     def _fit_mft(self, train_data, aux_data, valid_data=None):
         """Delegate to MFTFineTuner for multi-task fine-tuning."""
+        mft = self._ensure_mft()
+        mft.fit(train_data=train_data, aux_data=aux_data, valid_data=valid_data)
+        self._fitted = True
+        return self.output_dir
+
+    def _ensure_mft(self):
+        """Create the MFT delegate on first use."""
         from dpa_adapt.mft import (
             MFTFineTuner,
         )
 
-        mft = MFTFineTuner(
-            pretrained=self.pretrained,
-            aux_branch=self.aux_branch,
-            aux_prob=self.aux_prob,
-            aux_type_map=self.aux_type_map,
-            downstream_type_map=self.downstream_type_map,
-            fitting_net_params=self.fitting_net_params,
-            downstream_task_type=self.downstream_task_type,
-            property_name=self.property_name,
-            task_dim=self.task_dim,
-            intensive=self.intensive,
-            learning_rate=self.learning_rate,
-            stop_lr=self.stop_lr,
-            max_steps=self.max_steps,
-            batch_size=self.batch_size,
-            aux_batch_size=self.aux_batch_size,
-            downstream_batch_size=self.downstream_batch_size,
-            seed=self.seed,
-            fparam_dim=self.fparam_dim,
-            output_dir=self.output_dir,
-            save_freq=self.save_freq,
-            disp_freq=self.disp_freq,
-        )
-        mft.fit(train_data=train_data, aux_data=aux_data, valid_data=valid_data)
-        self._fitted = True
-        return self.output_dir
+        if self._mft is None:
+            self._mft = MFTFineTuner(
+                pretrained=self.pretrained,
+                aux_branch=self.aux_branch,
+                aux_prob=self.aux_prob,
+                aux_type_map=self.aux_type_map,
+                downstream_type_map=self.downstream_type_map,
+                fitting_net_params=self.fitting_net_params,
+                downstream_task_type=self.downstream_task_type,
+                property_name=self.property_name,
+                task_dim=self.task_dim,
+                intensive=self.intensive,
+                learning_rate=self.learning_rate,
+                stop_lr=self.stop_lr,
+                max_steps=self.max_steps,
+                batch_size=self.batch_size,
+                aux_batch_size=self.aux_batch_size,
+                downstream_batch_size=self.downstream_batch_size,
+                seed=self.seed,
+                fparam_dim=self.fparam_dim,
+                output_dir=self.output_dir,
+                save_freq=self.save_freq,
+                disp_freq=self.disp_freq,
+            )
+        return self._mft
 
     def _fit_sklearn(
         self,
@@ -1175,8 +1182,7 @@ class DPAFineTuner:
         Predict with the adapted model.
 
         ``frozen_sklearn`` extracts features and runs the fitted sklearn
-        predictor. ``frozen_head`` and ``finetune`` run ``dp --pt test`` on
-        the latest ``model.ckpt-*.pt`` in ``output_dir`` and parse the
+        predictor. Training strategies run ``dp --pt test`` and parse the
         property predictions from DeepMD's detail files.
 
         Parameters
@@ -1193,6 +1199,13 @@ class DPAFineTuner:
         """
         if self.strategy in {"frozen_head", "finetune"}:
             return self._run_training_predict(data, fmt=fmt)
+        if self.strategy == "mft":
+            if fmt is not None:
+                raise ValueError(
+                    "fmt is not supported for mft predict(); "
+                    "provide deepmd/npy system directories."
+                )
+            return self._ensure_mft().predict(data)
 
         if not self._fitted:
             raise RuntimeError(
@@ -1236,6 +1249,22 @@ class DPAFineTuner:
         """
         if self.strategy in {"frozen_head", "finetune"}:
             result = self._run_training_predict(data, fmt=fmt)
+            labels = result.labels
+            predictions = result.predictions
+            err = predictions - labels
+            ss_res = np.sum(err**2)
+            ss_tot = np.sum((labels - labels.mean()) ** 2)
+            result["r2"] = (
+                float(1.0 - ss_res / ss_tot) if ss_tot > 0 else float("nan")
+            )
+            return result
+        if self.strategy == "mft":
+            if fmt is not None:
+                raise ValueError(
+                    "fmt is not supported for mft evaluate(); "
+                    "provide deepmd/npy system directories."
+                )
+            result = self._ensure_mft().predict(data)
             labels = result.labels
             predictions = result.predictions
             err = predictions - labels
