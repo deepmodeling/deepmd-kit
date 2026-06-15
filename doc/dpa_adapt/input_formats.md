@@ -102,7 +102,6 @@ Calls dpdata for format auto-detection or explicit conversion.
 
 | `--fmt` value | Typical file(s) | Notes |
 |---|---|---|
-| `extxyz` / `mace/xyz` / `nequip/xyz` / `gpumd/xyz` / `quip/gap/xyz` | `*.xyz` | Extended XYZ variants |
 | `xyz` | `*.xyz` | Plain XYZ |
 | `vasp/poscar` / `vasp/contcar` | `POSCAR`, `CONTCAR` | VASP input/final structure |
 | `vasp/outcar` | `OUTCAR` | VASP output (energies, forces, stress) |
@@ -169,9 +168,6 @@ dpaad data convert --input OUTCAR --output ./npy --fmt vasp/outcar
 
 dpa-adapt data convert --input traj.xyz --output ./npy --fmt xyz
 dpaad data convert --input traj.xyz --output ./npy --fmt xyz
-
-dpa-adapt data convert --input traj.extxyz --output ./npy --fmt extxyz
-dpaad data convert --input traj.extxyz --output ./npy --fmt extxyz
 ```
 
 ### Glob patterns
