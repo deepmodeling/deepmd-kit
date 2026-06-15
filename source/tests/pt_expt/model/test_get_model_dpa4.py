@@ -99,6 +99,45 @@ class TestGetModelDPA4(unittest.TestCase):
             model = get_model(model_params)
             self.assertIsInstance(model, EnergyModel, msg=f"alias={alias}")
 
+    def test_serialize_deserialize_alias(self) -> None:
+        """Round-trip locks the sezm_ener/dpa4_ener -> EnergyModel alias.
+
+        Fast (no-AOTI) regression guard: the model-type alias is otherwise
+        only exercised by the CI-skipped AOTI freeze test.
+        """
+        from deepmd.pt_expt.model.model import (
+            BaseModel,
+        )
+
+        model = get_model(_make_raw_model_config()).to(self.device)
+        data = model.serialize()
+        # serialized layout: top-level "standard", fitting "sezm_ener"
+        self.assertEqual(data["type"], "standard")
+        self.assertEqual(data["fitting"]["type"], "sezm_ener")
+        self.assertEqual(
+            model.atomic_model.fitting_net.serialize()["type"], "sezm_ener"
+        )
+        # the alias resolution must not raise and must rebuild an EnergyModel
+        model2 = BaseModel.deserialize(model.serialize())
+        self.assertIsInstance(model2, EnergyModel)
+        model2 = model2.to(self.device)
+        # forward-smoke the deserialized model to prove the round-trip works
+        generator = torch.Generator(device=self.device).manual_seed(1)
+        cell = 5.0 * torch.eye(3, dtype=torch.float64, device=self.device)
+        coord = (
+            torch.rand(
+                [1, 5, 3],
+                dtype=torch.float64,
+                device=self.device,
+                generator=generator,
+            )
+            @ cell
+        ).requires_grad_(True)
+        atype = torch.tensor([[0, 0, 0, 1, 1]], dtype=torch.int64, device=self.device)
+        ret0 = model(coord, atype, cell.reshape(1, 9))
+        ret = model2(coord, atype, cell.reshape(1, 9))
+        self.assertEqual(ret["energy"].shape, ret0["energy"].shape)
+
     def test_descriptor_fitting_type_defaults(self) -> None:
         """Descriptor/fitting type keys default to dpa4/dpa4_ener when absent."""
         raw = _make_raw_model_config()
