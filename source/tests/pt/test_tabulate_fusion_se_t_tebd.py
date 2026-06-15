@@ -1913,6 +1913,34 @@ class TestTabulateFusionSeTTebdOp(unittest.TestCase):
             rtol=self.prec,
         )
 
+    def test_second_order_backward(self) -> None:
+        forward_result = torch.ops.deepmd.tabulate_fusion_se_t_tebd(
+            self.table_tensor,
+            self.table_info_tensor,
+            self.em_x_tensor,
+            self.em_tensor,
+            self.last_layer_size,
+        )
+
+        descriptor_tensor = forward_result[0]
+        dy_tensor = torch.ones_like(descriptor_tensor, requires_grad=True)
+        dy_dem_x = torch.autograd.grad(
+            descriptor_tensor,
+            self.em_x_tensor,
+            grad_outputs=dy_tensor,
+            create_graph=True,
+        )[0]
+
+        dz_dy_tensor = torch.autograd.grad(
+            dy_dem_x.sum(),
+            dy_tensor,
+        )[0]
+
+        self.assertIsNotNone(dz_dy_tensor)
+        self.assertEqual(dz_dy_tensor.shape, descriptor_tensor.shape)
+        self.assertTrue(torch.isfinite(dz_dy_tensor).all())
+        self.assertGreater(dz_dy_tensor.abs().max().item(), 0.0)
+
 
 if __name__ == "__main__":
     unittest.main()
