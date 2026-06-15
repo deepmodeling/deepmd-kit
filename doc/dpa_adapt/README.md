@@ -74,7 +74,6 @@ from dpa_adapt import convert
 # Structure file / trajectory → dpdata → deepmd/npy
 convert("POSCAR", "./npy")
 convert("OUTCAR", "./npy", fmt="vasp/outcar")
-convert("traj.extxyz", "./npy", fmt="extxyz")
 
 # Glob patterns: one match is converted as one system; multiple matches are batched.
 convert("calcs/**/OUTCAR", "./npy_root", fmt="vasp/outcar")

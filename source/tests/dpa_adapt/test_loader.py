@@ -158,7 +158,7 @@ class TestGlob:
 
         with pytest.raises(DPADataError, match="Failed to load"):
             # Not deepmd/npy → skips the directory pre-check, tries dpdata
-            load_data(str(tmp_path / "file.xyz"), fmt="extxyz")
+            load_data(str(tmp_path / "file.xyz"), fmt="xyz")
 
 
 # ---------------------------------------------------------------------------

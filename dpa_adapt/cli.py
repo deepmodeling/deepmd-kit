@@ -597,7 +597,7 @@ def get_parser() -> argparse.ArgumentParser:
         help="Format hint (auto-detected if omitted). "
         "Use 'smiles' for CSV+SMILES, 'formula' for "
         "CSV+POSCAR composition formulas, otherwise "
-        "dpdata format string (extxyz, vasp/poscar, …).",
+        "dpdata format string (vasp/poscar, vasp/outcar, …).",
     )
     parser_data_convert.add_argument("--type-map", default=None)
     parser_data_convert.add_argument(
