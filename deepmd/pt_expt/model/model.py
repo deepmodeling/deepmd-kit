@@ -6,6 +6,9 @@ from typing import (
 from deepmd.dpmodel.model.base_model import (
     make_base_model,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 
 class BaseModel(make_base_model()):
@@ -49,6 +52,11 @@ class BaseModel(make_base_model()):
     def _unwrap_pt_sezm_model(data: dict[str, Any]) -> dict[str, Any]:
         """Unwrap pt's ``SeZMModel`` serialization to the inner atomic dict."""
         data = data.copy()
+        # The pt SeZM model wrapper serialises with ``@version`` 1.  Validate
+        # before discarding it so a future incompatible wrapper schema is not
+        # silently mis-deserialized (the wrapper only carries the guarded
+        # bridging/lora extras below, so the accepted range is narrow).
+        check_version_compatibility(int(data.get("@version", 1)), 1, 1)
         bridging_method = str(data.get("bridging_method", "none")).lower()
         if bridging_method not in ("none", ""):
             raise NotImplementedError(
@@ -79,6 +87,13 @@ class BaseModel(make_base_model()):
         rejected because pt_expt only implements the energy path.
         """
         data = data.copy()
+        # pt emits ``@version`` 3 for ``sezm_atomic``; the standard dpmodel
+        # atomic-model deserialize requires exactly 2.  The only schema delta
+        # between the two is the stripped ``dens`` state below, so coercion is
+        # safe for the known-compatible range {2, 3}.  Validate the incoming
+        # version BEFORE coercing so a future incompatible pt schema (e.g.
+        # ``@version`` 4) is rejected loudly instead of mis-deserialized.
+        check_version_compatibility(int(data.get("@version", 2)), 3, 2)
         if data.pop("dens_fitting", None) is not None:
             raise NotImplementedError(
                 "Deserializing a pt SeZM/DPA4 checkpoint with a `dens` "
