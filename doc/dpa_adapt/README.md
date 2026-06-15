@@ -40,6 +40,8 @@ model = DPAFineTuner(
     pretrained="DPA-3.1-3M", 
     strategy="frozen_head",  #"frozen_head" | "finetune"
     property_name="homo",
+    learning_rate=1e-3,
+    batch_size=512,
 )
 model.fit(train_data="/data/train", valid_data="/data/valid")
 
