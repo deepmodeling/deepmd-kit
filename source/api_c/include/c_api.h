@@ -724,6 +724,30 @@ extern void DP_DeepPotCompute3(DP_DeepPot* dp,
  * @brief Evaluate the energy, force and virial by using a DP. (float version,
  *with charge_spin)
  * @version 3
+ * @param[in] dp The DP to use.
+ * @param[in] nframes The number of frames.
+ * @param[in] natoms The number of atoms.
+ * @param[in] coord The coordinates of atoms. The array should be of size natoms
+ *x 3.
+ * @param[in] atype The atom types. The array should contain natoms ints.
+ * @param[in] cell The cell of the region. The array should be of size 9. Pass
+ *NULL if pbc is not used.
+ * @param[in] fparam The frame parameters. The array can be of size nframes x
+ *dim_fparam.
+ * @param[in] aparam The atom parameters. The array can be of size nframes x
+ *natoms x dim_aparam.
+ * @param[in] charge_spin The per-frame charge/spin input. The array can be of
+ *size nframes x dim_chg_spin. Pass NULL to use the model's stored
+ *default_chg_spin.
+ * @param[out] energy Output energy.
+ * @param[out] force Output force. The array should be of size natoms x 3.
+ * @param[out] virial Output virial. The array should be of size 9.
+ * @param[out] atomic_energy Output atomic energy. The array should be of size
+ *natoms.
+ * @param[out] atomic_virial Output atomic virial. The array should be of size
+ *natoms x 9.
+ * @warning The output arrays should be allocated before calling this function.
+ *Pass NULL if not required.
  * @since API version 27
  **/
 extern void DP_DeepPotComputef3(DP_DeepPot* dp,
@@ -745,9 +769,33 @@ extern void DP_DeepPotComputef3(DP_DeepPot* dp,
  * @brief Evaluate the energy, force and virial by using a DP with the neighbor
  *list. (double version, with charge_spin)
  * @version 3
+ * @param[in] dp The DP to use.
+ * @param[in] nframes The number of frames.
+ * @param[in] natoms The number of atoms.
+ * @param[in] coord The coordinates of atoms. The array should be of size natoms
+ *x 3.
+ * @param[in] atype The atom types. The array should contain natoms ints.
+ * @param[in] cell The cell of the region. The array should be of size 9. Pass
+ *NULL if pbc is not used.
+ * @param[in] nghost The number of ghost atoms.
+ * @param[in] nlist The neighbor list.
+ * @param[in] ago Update the internal neighbour list if ago is 0.
+ * @param[in] fparam The frame parameters. The array can be of size nframes x
+ *dim_fparam.
+ * @param[in] aparam The atom parameters. The array can be of size nframes x
+ *natoms x dim_aparam.
  * @param[in] charge_spin The per-frame charge/spin input. The array can be of
  *size nframes x dim_chg_spin. Pass NULL to use the model's stored
  *default_chg_spin.
+ * @param[out] energy Output energy.
+ * @param[out] force Output force. The array should be of size natoms x 3.
+ * @param[out] virial Output virial. The array should be of size 9.
+ * @param[out] atomic_energy Output atomic energy. The array should be of size
+ *natoms.
+ * @param[out] atomic_virial Output atomic virial. The array should be of size
+ *natoms x 9.
+ * @warning The output arrays should be allocated before calling this function.
+ *Pass NULL if not required.
  * @since API version 27
  **/
 extern void DP_DeepPotComputeNList3(DP_DeepPot* dp,
@@ -772,6 +820,33 @@ extern void DP_DeepPotComputeNList3(DP_DeepPot* dp,
  * @brief Evaluate the energy, force and virial by using a DP with the neighbor
  *list. (float version, with charge_spin)
  * @version 3
+ * @param[in] dp The DP to use.
+ * @param[in] nframes The number of frames.
+ * @param[in] natoms The number of atoms.
+ * @param[in] coord The coordinates of atoms. The array should be of size natoms
+ *x 3.
+ * @param[in] atype The atom types. The array should contain natoms ints.
+ * @param[in] cell The cell of the region. The array should be of size 9. Pass
+ *NULL if pbc is not used.
+ * @param[in] nghost The number of ghost atoms.
+ * @param[in] nlist The neighbor list.
+ * @param[in] ago Update the internal neighbour list if ago is 0.
+ * @param[in] fparam The frame parameters. The array can be of size nframes x
+ *dim_fparam.
+ * @param[in] aparam The atom parameters. The array can be of size nframes x
+ *natoms x dim_aparam.
+ * @param[in] charge_spin The per-frame charge/spin input. The array can be of
+ *size nframes x dim_chg_spin. Pass NULL to use the model's stored
+ *default_chg_spin.
+ * @param[out] energy Output energy.
+ * @param[out] force Output force. The array should be of size natoms x 3.
+ * @param[out] virial Output virial. The array should be of size 9.
+ * @param[out] atomic_energy Output atomic energy. The array should be of size
+ *natoms.
+ * @param[out] atomic_virial Output atomic virial. The array should be of size
+ *natoms x 9.
+ * @warning The output arrays should be allocated before calling this function.
+ *Pass NULL if not required.
  * @since API version 27
  **/
 extern void DP_DeepPotComputeNListf3(DP_DeepPot* dp,
@@ -1467,9 +1542,32 @@ void DP_DeepPotModelDeviComputeNListf2(DP_DeepPotModelDevi* dp,
  * @brief Evaluate energy, force and virial with a DP model deviation.
  *(double version, with charge_spin)
  * @version 3
+ * @param[in] dp The DP model deviation to use.
+ * @param[in] nframes The number of frames. Only 1 is supported.
+ * @param[in] natoms The number of atoms.
+ * @param[in] coord The coordinates of atoms. The array should be of size natoms
+ *x 3.
+ * @param[in] atype The atom types. The array should contain natoms ints.
+ * @param[in] cell The cell of the region. The array should be of size 9. Pass
+ *NULL if pbc is not used.
+ * @param[in] fparam The frame parameters. The array can be of size nframes x
+ *dim_fparam.
+ * @param[in] aparam The atom parameters. The array can be of size nframes x
+ *natoms x dim_aparam.
  * @param[in] charge_spin The per-frame charge/spin input. The array should be
  *of size nframes x dim_chg_spin. Pass NULL to use the model's stored
  *default_chg_spin.
+ * @param[out] energy Output energy of all models.
+ * @param[out] force Output force of all models. The array should be of size
+ *nmodels x natoms x 3.
+ * @param[out] virial Output virial of all models. The array should be of size
+ *nmodels x 9.
+ * @param[out] atomic_energy Output atomic energy of all models. The array
+ *should be of size nmodels x natoms.
+ * @param[out] atomic_virial Output atomic virial of all models. The array
+ *should be of size nmodels x natoms x 9.
+ * @warning The output arrays should be allocated before calling this function.
+ *Pass NULL if not required.
  * @since API version 27
  **/
 void DP_DeepPotModelDeviCompute3(DP_DeepPotModelDevi* dp,
@@ -1491,6 +1589,32 @@ void DP_DeepPotModelDeviCompute3(DP_DeepPotModelDevi* dp,
  * @brief Evaluate energy, force and virial with a DP model deviation.
  *(float version, with charge_spin)
  * @version 3
+ * @param[in] dp The DP model deviation to use.
+ * @param[in] nframes The number of frames. Only 1 is supported.
+ * @param[in] natoms The number of atoms.
+ * @param[in] coord The coordinates of atoms. The array should be of size natoms
+ *x 3.
+ * @param[in] atype The atom types. The array should contain natoms ints.
+ * @param[in] cell The cell of the region. The array should be of size 9. Pass
+ *NULL if pbc is not used.
+ * @param[in] fparam The frame parameters. The array can be of size nframes x
+ *dim_fparam.
+ * @param[in] aparam The atom parameters. The array can be of size nframes x
+ *natoms x dim_aparam.
+ * @param[in] charge_spin The per-frame charge/spin input. The array should be
+ *of size nframes x dim_chg_spin. Pass NULL to use the model's stored
+ *default_chg_spin.
+ * @param[out] energy Output energy of all models.
+ * @param[out] force Output force of all models. The array should be of size
+ *nmodels x natoms x 3.
+ * @param[out] virial Output virial of all models. The array should be of size
+ *nmodels x 9.
+ * @param[out] atomic_energy Output atomic energy of all models. The array
+ *should be of size nmodels x natoms.
+ * @param[out] atomic_virial Output atomic virial of all models. The array
+ *should be of size nmodels x natoms x 9.
+ * @warning The output arrays should be allocated before calling this function.
+ *Pass NULL if not required.
  * @since API version 27
  **/
 void DP_DeepPotModelDeviComputef3(DP_DeepPotModelDevi* dp,
@@ -1512,9 +1636,35 @@ void DP_DeepPotModelDeviComputef3(DP_DeepPotModelDevi* dp,
  * @brief Evaluate energy, force and virial with a DP model deviation and a
  *neighbor list. (double version, with charge_spin)
  * @version 3
+ * @param[in] dp The DP model deviation to use.
+ * @param[in] nframes The number of frames. Only 1 is supported.
+ * @param[in] natoms The number of atoms.
+ * @param[in] coord The coordinates of atoms. The array should be of size natoms
+ *x 3.
+ * @param[in] atype The atom types. The array should contain natoms ints.
+ * @param[in] cell The cell of the region. The array should be of size 9. Pass
+ *NULL if pbc is not used.
+ * @param[in] nghost The number of ghost atoms.
+ * @param[in] nlist The neighbor list.
+ * @param[in] ago Update the internal neighbour list if ago is 0.
+ * @param[in] fparam The frame parameters. The array can be of size nframes x
+ *dim_fparam.
+ * @param[in] aparam The atom parameters. The array can be of size nframes x
+ *natoms x dim_aparam.
  * @param[in] charge_spin The per-frame charge/spin input. The array should be
  *of size nframes x dim_chg_spin. Pass NULL to use the model's stored
  *default_chg_spin.
+ * @param[out] energy Output energy of all models.
+ * @param[out] force Output force of all models. The array should be of size
+ *nmodels x natoms x 3.
+ * @param[out] virial Output virial of all models. The array should be of size
+ *nmodels x 9.
+ * @param[out] atomic_energy Output atomic energy of all models. The array
+ *should be of size nmodels x natoms.
+ * @param[out] atomic_virial Output atomic virial of all models. The array
+ *should be of size nmodels x natoms x 9.
+ * @warning The output arrays should be allocated before calling this function.
+ *Pass NULL if not required.
  * @since API version 27
  **/
 void DP_DeepPotModelDeviComputeNList3(DP_DeepPotModelDevi* dp,
@@ -1539,6 +1689,35 @@ void DP_DeepPotModelDeviComputeNList3(DP_DeepPotModelDevi* dp,
  * @brief Evaluate energy, force and virial with a DP model deviation and a
  *neighbor list. (float version, with charge_spin)
  * @version 3
+ * @param[in] dp The DP model deviation to use.
+ * @param[in] nframes The number of frames. Only 1 is supported.
+ * @param[in] natoms The number of atoms.
+ * @param[in] coord The coordinates of atoms. The array should be of size natoms
+ *x 3.
+ * @param[in] atype The atom types. The array should contain natoms ints.
+ * @param[in] cell The cell of the region. The array should be of size 9. Pass
+ *NULL if pbc is not used.
+ * @param[in] nghost The number of ghost atoms.
+ * @param[in] nlist The neighbor list.
+ * @param[in] ago Update the internal neighbour list if ago is 0.
+ * @param[in] fparam The frame parameters. The array can be of size nframes x
+ *dim_fparam.
+ * @param[in] aparam The atom parameters. The array can be of size nframes x
+ *natoms x dim_aparam.
+ * @param[in] charge_spin The per-frame charge/spin input. The array should be
+ *of size nframes x dim_chg_spin. Pass NULL to use the model's stored
+ *default_chg_spin.
+ * @param[out] energy Output energy of all models.
+ * @param[out] force Output force of all models. The array should be of size
+ *nmodels x natoms x 3.
+ * @param[out] virial Output virial of all models. The array should be of size
+ *nmodels x 9.
+ * @param[out] atomic_energy Output atomic energy of all models. The array
+ *should be of size nmodels x natoms.
+ * @param[out] atomic_virial Output atomic virial of all models. The array
+ *should be of size nmodels x natoms x 9.
+ * @warning The output arrays should be allocated before calling this function.
+ *Pass NULL if not required.
  * @since API version 27
  **/
 void DP_DeepPotModelDeviComputeNListf3(DP_DeepPotModelDevi* dp,

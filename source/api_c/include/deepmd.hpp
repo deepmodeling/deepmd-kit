@@ -1193,6 +1193,10 @@ class DeepPot : public DeepBaseModel {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @param[in] charge_spin The per-frame charge/spin input. The array can be
+   *of size nframes x dim_chg_spin. Then all frames are assumed to be provided
+   *with the same charge_spin. Leave it empty to use the model's stored
+   *default_chg_spin.
    * @warning Natoms should not be zero when computing multiple frames.
    **/
   template <typename VALUETYPE, typename ENERGYVTYPE>
@@ -1257,6 +1261,10 @@ class DeepPot : public DeepBaseModel {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @param[in] charge_spin The per-frame charge/spin input. The array can be
+   *of size nframes x dim_chg_spin. Then all frames are assumed to be provided
+   *with the same charge_spin. Leave it empty to use the model's stored
+   *default_chg_spin.
    * @warning Natoms should not be zero when computing multiple frames.
    **/
   template <typename VALUETYPE, typename ENERGYVTYPE>
@@ -1328,6 +1336,10 @@ class DeepPot : public DeepBaseModel {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @param[in] charge_spin The per-frame charge/spin input. The array can be
+   *of size nframes x dim_chg_spin. Then all frames are assumed to be provided
+   *with the same charge_spin. Leave it empty to use the model's stored
+   *default_chg_spin.
    * @warning Natoms should not be zero when computing multiple frames.
    **/
   template <typename VALUETYPE, typename ENERGYVTYPE>
@@ -1400,6 +1412,10 @@ class DeepPot : public DeepBaseModel {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @param[in] charge_spin The per-frame charge/spin input. The array can be
+   *of size nframes x dim_chg_spin. Then all frames are assumed to be provided
+   *with the same charge_spin. Leave it empty to use the model's stored
+   *default_chg_spin.
    * @warning Natoms should not be zero when computing multiple frames.
    **/
   template <typename VALUETYPE, typename ENERGYVTYPE>
@@ -2261,6 +2277,10 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @param[in] charge_spin The per-frame charge/spin input. The array can be
+   *of size nframes x dim_chg_spin. Then all frames are assumed to be provided
+   *with the same charge_spin. Leave it empty to use the model's stored
+   *default_chg_spin.
    **/
   template <typename VALUETYPE>
   void compute(
@@ -2344,6 +2364,10 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @param[in] charge_spin The per-frame charge/spin input. The array can be
+   *of size nframes x dim_chg_spin. Then all frames are assumed to be provided
+   *with the same charge_spin. Leave it empty to use the model's stored
+   *default_chg_spin.
    **/
   template <typename VALUETYPE>
   void compute(
@@ -2445,6 +2469,10 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @param[in] charge_spin The per-frame charge/spin input. The array can be
+   *of size nframes x dim_chg_spin. Then all frames are assumed to be provided
+   *with the same charge_spin. Leave it empty to use the model's stored
+   *default_chg_spin.
    **/
   template <typename VALUETYPE>
   void compute(
@@ -2536,6 +2564,10 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @param[in] charge_spin The per-frame charge/spin input. The array can be
+   *of size nframes x dim_chg_spin. Then all frames are assumed to be provided
+   *with the same charge_spin. Leave it empty to use the model's stored
+   *default_chg_spin.
    **/
   template <typename VALUETYPE>
   void compute(

@@ -358,6 +358,10 @@ class DeepPot : public DeepBaseModel {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @param[in] charge_spin The charge/spin parameter. The array can be of size
+   *nframes x dim_chg_spin.
+   * dim_chg_spin. Then all frames are assumed to be provided with the same
+   *charge_spin. Leave it empty to use the model's stored default_chg_spin.
    * @{
    **/
   template <typename VALUETYPE>
@@ -402,6 +406,10 @@ class DeepPot : public DeepBaseModel {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @param[in] charge_spin The charge/spin parameter. The array can be of size
+   *nframes x dim_chg_spin.
+   * dim_chg_spin. Then all frames are assumed to be provided with the same
+   *charge_spin. Leave it empty to use the model's stored default_chg_spin.
    * @{
    **/
   template <typename VALUETYPE>
@@ -452,6 +460,10 @@ class DeepPot : public DeepBaseModel {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @param[in] charge_spin The charge/spin parameter. The array can be of size
+   *nframes x dim_chg_spin.
+   * dim_chg_spin. Then all frames are assumed to be provided with the same
+   *charge_spin. Leave it empty to use the model's stored default_chg_spin.
    * @{
    **/
   template <typename VALUETYPE>
@@ -504,6 +516,10 @@ class DeepPot : public DeepBaseModel {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @param[in] charge_spin The charge/spin parameter. The array can be of size
+   *nframes x dim_chg_spin.
+   * dim_chg_spin. Then all frames are assumed to be provided with the same
+   *charge_spin. Leave it empty to use the model's stored default_chg_spin.
    * @{
    **/
   template <typename VALUETYPE>
@@ -558,6 +574,10 @@ class DeepPot : public DeepBaseModel {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @param[in] charge_spin The charge/spin parameter. The array can be of size
+   *nframes x dim_chg_spin.
+   * dim_chg_spin. Then all frames are assumed to be provided with the same
+   *charge_spin. Leave it empty to use the model's stored default_chg_spin.
    * @{
    **/
   template <typename VALUETYPE>
@@ -608,6 +628,10 @@ class DeepPot : public DeepBaseModel {
    * nframes x natoms x dim_aparam.
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam.
+   * @param[in] charge_spin The charge/spin parameter. The array can be of size
+   *nframes x dim_chg_spin.
+   * dim_chg_spin. Then all frames are assumed to be provided with the same
+   *charge_spin. Leave it empty to use the model's stored default_chg_spin.
    * @{
    **/
   template <typename VALUETYPE>
@@ -705,6 +729,10 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam. dim_aparam. Then all frames and atoms are provided with the
    *same aparam.
+   * @param[in] charge_spin The charge/spin parameter. The array can be of size
+   *nframes x dim_chg_spin.
+   * dim_chg_spin. Then all frames are assumed to be provided with the same
+   *charge_spin. Leave it empty to use the model's stored default_chg_spin.
    **/
   template <typename VALUETYPE>
   void compute(std::vector<ENERGYTYPE>& all_ener,
@@ -739,6 +767,10 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam. dim_aparam. Then all frames and atoms are provided with the
    *same aparam.
+   * @param[in] charge_spin The charge/spin parameter. The array can be of size
+   *nframes x dim_chg_spin.
+   * dim_chg_spin. Then all frames are assumed to be provided with the same
+   *charge_spin. Leave it empty to use the model's stored default_chg_spin.
    **/
   template <typename VALUETYPE>
   void compute(std::vector<ENERGYTYPE>& all_ener,
@@ -775,6 +807,10 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam. dim_aparam. Then all frames and atoms are provided with the
    *same aparam.
+   * @param[in] charge_spin The charge/spin parameter. The array can be of size
+   *nframes x dim_chg_spin.
+   * dim_chg_spin. Then all frames are assumed to be provided with the same
+   *charge_spin. Leave it empty to use the model's stored default_chg_spin.
    **/
   template <typename VALUETYPE>
   void compute(std::vector<ENERGYTYPE>& all_ener,
@@ -814,6 +850,10 @@ class DeepPotModelDevi : public DeepBaseModelDevi {
    * natoms x dim_aparam. Then all frames are assumed to be provided with the
    *same aparam. dim_aparam. Then all frames and atoms are provided with the
    *same aparam.
+   * @param[in] charge_spin The charge/spin parameter. The array can be of size
+   *nframes x dim_chg_spin.
+   * dim_chg_spin. Then all frames are assumed to be provided with the same
+   *charge_spin. Leave it empty to use the model's stored default_chg_spin.
    **/
   template <typename VALUETYPE>
   void compute(std::vector<ENERGYTYPE>& all_ener,
