@@ -5,15 +5,16 @@ from typing import (
 )
 
 import numpy as np
-from packaging.version import (
-    Version,
-)
 
 from deepmd.dpmodel.common import (
     NativeOP,
 )
+from deepmd.dpmodel.utils.network import EmbeddingNet as EmbeddingNetDP
+from deepmd.dpmodel.utils.network import FittingNet as FittingNetDP
+from deepmd.dpmodel.utils.network import Identity as IdentityDP
 from deepmd.dpmodel.utils.network import LayerNorm as LayerNormDP
 from deepmd.dpmodel.utils.network import NativeLayer as NativeLayerDP
+from deepmd.dpmodel.utils.network import NativeNet as NativeNetDP
 from deepmd.dpmodel.utils.network import NetworkCollection as NetworkCollectionDP
 from deepmd.dpmodel.utils.network import (
     make_embedding_network,
@@ -23,10 +24,10 @@ from deepmd.dpmodel.utils.network import (
 from deepmd.jax.common import (
     ArrayAPIVariable,
     flax_module,
+    register_dpmodel_mapping,
     to_jax_array,
 )
 from deepmd.jax.env import (
-    flax_version,
     nnx,
 )
 
@@ -47,6 +48,8 @@ class ArrayAPIParam(nnx.Param):
 
 @flax_module
 class NativeLayer(NativeLayerDP):
+    _jax_skip_auto_convert_attrs: ClassVar[set[str]] = {"w", "b", "idt"}
+
     def __setattr__(self, name: str, value: Any) -> None:
         if name in {"w", "b", "idt"}:
             value = to_jax_array(value)
@@ -60,10 +63,7 @@ class NativeLayer(NativeLayerDP):
 
 @flax_module
 class NativeNet(make_multilayer_network(NativeLayer, NativeOP)):
-    def __setattr__(self, name: str, value: Any) -> None:
-        if name in {"layers"} and Version(flax_version) >= Version("0.12.0"):
-            value = nnx.List(value)
-        return super().__setattr__(name, value)
+    pass
 
 
 class EmbeddingNet(make_embedding_network(NativeNet, NativeLayer)):
@@ -76,17 +76,55 @@ class FittingNet(make_fitting_network(EmbeddingNet, NativeNet, NativeLayer)):
 
 @flax_module
 class NetworkCollection(NetworkCollectionDP):
+    _jax_data_list_attrs: ClassVar[set[str]] = {"_networks"}
+
     NETWORK_TYPE_MAP: ClassVar[dict[str, type]] = {
         "network": NativeNet,
         "embedding_network": EmbeddingNet,
         "fitting_network": FittingNet,
     }
 
-    def __setattr__(self, name: str, value: Any) -> None:
-        if name in {"_networks"} and Version(flax_version) >= Version("0.12.0"):
-            value = nnx.List([nnx.data(item) for item in value])
-        return super().__setattr__(name, value)
-
 
 class LayerNorm(LayerNormDP, NativeLayer):
     pass
+
+
+@flax_module
+class Identity(IdentityDP):
+    pass
+
+
+register_dpmodel_mapping(
+    NativeNetDP,
+    lambda v: NativeNet.deserialize(v.serialize()),
+)
+
+register_dpmodel_mapping(
+    EmbeddingNetDP,
+    lambda v: EmbeddingNet.deserialize(v.serialize()),
+)
+
+register_dpmodel_mapping(
+    FittingNetDP,
+    lambda v: FittingNet.deserialize(v.serialize()),
+)
+
+register_dpmodel_mapping(
+    NativeLayerDP,
+    lambda v: NativeLayer.deserialize(v.serialize()),
+)
+
+register_dpmodel_mapping(
+    LayerNormDP,
+    lambda v: LayerNorm.deserialize(v.serialize()),
+)
+
+register_dpmodel_mapping(
+    NetworkCollectionDP,
+    lambda v: NetworkCollection.deserialize(v.serialize()),
+)
+
+register_dpmodel_mapping(
+    IdentityDP,
+    lambda v: Identity(),
+)
