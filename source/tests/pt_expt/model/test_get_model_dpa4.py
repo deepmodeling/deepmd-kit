@@ -2,8 +2,10 @@
 """Tests for the DPA4/SeZM model-type dispatch in pt_expt ``get_model``."""
 
 import copy
+import logging
 import unittest
 
+import pytest
 import torch
 
 from deepmd.pt_expt.model import (
@@ -216,6 +218,36 @@ class TestGetModelDPA4(unittest.TestCase):
         self.assertIsNone(model_params.get("preset_out_bias"))
         model = get_model(copy.deepcopy(model_params))
         self.assertIsInstance(model, EnergyModel)
+
+
+# `enable_tf32` toggles TF32 matmul precision in pt but is ignored by pt_expt
+# (always "highest" precision); a truthy value must emit a warn-once message.
+@pytest.mark.parametrize("enable_tf32", [True, False])  # truthy warns, falsy silent
+def test_enable_tf32_warns_once(enable_tf32, caplog, monkeypatch) -> None:
+    import importlib
+
+    # the package __init__ rebinds the name ``get_model`` to the function, so
+    # ``import ...get_model as`` would shadow the submodule; load it explicitly
+    gm_mod = importlib.import_module("deepmd.pt_expt.model.get_model")
+
+    # reset the warn-once flag so the assertion is deterministic regardless of
+    # test ordering (other get_sezm_model calls may have already warned)
+    monkeypatch.setattr(gm_mod, "_ENABLE_TF32_WARNED", False)
+
+    raw = _make_raw_model_config(enable_tf32=enable_tf32)
+
+    with caplog.at_level(logging.WARNING, logger=gm_mod.log.name):
+        gm_mod.get_sezm_model(raw)
+    matches = [r for r in caplog.records if "enable_tf32" in r.getMessage()]
+    if enable_tf32:
+        assert len(matches) == 1, caplog.text
+        # a second call must NOT warn again (warn-once per process)
+        caplog.clear()
+        with caplog.at_level(logging.WARNING, logger=gm_mod.log.name):
+            gm_mod.get_sezm_model(_make_raw_model_config(enable_tf32=enable_tf32))
+        assert not [r for r in caplog.records if "enable_tf32" in r.getMessage()]
+    else:
+        assert not matches, caplog.text
 
 
 if __name__ == "__main__":

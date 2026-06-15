@@ -26,6 +26,7 @@ from __future__ import (
     annotations,
 )
 
+import logging
 import math
 from typing import (
     TYPE_CHECKING,
@@ -35,6 +36,12 @@ from typing import (
 
 import array_api_compat
 import numpy as np
+
+log = logging.getLogger(__name__)
+
+# Warn at most once per process that ``use_amp`` has no effect on the
+# dpmodel/pt_expt backend (it is a pt-runtime CUDA autocast switch).
+_USE_AMP_WARNED = False
 
 from deepmd.dpmodel import (
     NativeOP,
@@ -324,6 +331,14 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         # pt-runtime-only switch (CUDA bfloat16 autocast during training);
         # accepted for config compatibility and ignored by dpmodel.
         self.use_amp = bool(use_amp)
+        if self.use_amp:
+            global _USE_AMP_WARNED
+            if not _USE_AMP_WARNED:
+                log.warning(
+                    "`use_amp` has no effect on the dpmodel/pt_expt backend "
+                    "(it is a pt-runtime CUDA autocast switch); ignoring it."
+                )
+                _USE_AMP_WARNED = True
         self.trainable = bool(trainable)
         self.seed = seed
         self.random_gamma = bool(random_gamma)
