@@ -1183,7 +1183,13 @@ class SO2Convolution(NativeOP):
         device = array_api_compat.device(x)
         src, dst = edge_cache.src, edge_cache.dst
         n_node = x.shape[0]
-        n_edge = int(src.shape[0])
+        # Keep ``n_edge``/``n_node`` symbolic (no ``int()``): they are the
+        # products ``nf*nloc*nnei`` / ``nf*nloc``. Casting to a Python int
+        # specializes them to the trace-time sample shape (breaking
+        # torch.export with a dynamic ``nloc`` dim); the ``Mod`` check stays
+        # statically known and the ``(n_node, nnei, ...)`` reshape below
+        # recovers the layout symbolically.
+        n_edge = src.shape[0]
         if n_node <= 0 or n_edge % n_node != 0:
             raise ValueError(
                 "padded-edge layout requires E to be a multiple of N; "

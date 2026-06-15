@@ -88,12 +88,17 @@ def segment_envelope_gated_softmax(
     n_edge, n_focus, n_head = logits.shape
     n_channel = n_focus * n_head
     eps_f = float(eps)
-    if n_nodes <= 0 or n_edge % int(n_nodes) != 0:
+    # Keep ``n_nodes`` symbolic (no ``int()``): it is the product ``nf*nloc``,
+    # and casting to a Python int specializes it to the trace-time sample
+    # shape, which breaks torch.export with a dynamic ``nloc`` dim. The
+    # ``Mod`` check below stays statically known (``E == n_nodes*nnei``) and
+    # the ``(n_nodes, nnei, ...)`` reshapes recover the layout symbolically.
+    if n_nodes <= 0 or n_edge % n_nodes != 0:
         raise ValueError(
             "padded-edge layout requires E to be a multiple of n_nodes; "
             f"got E={n_edge}, n_nodes={n_nodes}"
         )
-    nnei = n_edge // int(n_nodes)
+    nnei = n_edge // n_nodes
     device = array_api_compat.device(logits)
 
     # === Step 1. Flatten (F, H) and build the effective per-edge weight ===
