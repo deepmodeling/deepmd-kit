@@ -45,6 +45,7 @@ from deepmd.dpmodel import (
     NativeOP,
 )
 from deepmd.dpmodel.array_api import (
+    xp_asarray_nodetach,
     xp_sigmoid,
 )
 from deepmd.dpmodel.common import (
@@ -118,7 +119,11 @@ def _check_shape_assign(obj: Any, attr: str, value: Any, dtype: Any, key: str) -
 def _check_index_table(expected: np.ndarray, value: Any, key: str) -> None:
     """Validate that a serialized integer index table matches the rebuilt one."""
     arr = np.asarray(value, dtype=np.int64)
-    if not np.array_equal(arr.reshape(-1), np.asarray(expected).reshape(-1)):
+    # ``expected`` is a rebuilt buffer that may be a (possibly CUDA) torch
+    # tensor in the pt_expt backend; ``np.asarray`` raises on CUDA tensors and
+    # ``np.array_equal`` would silently swallow that into ``False``. Convert via
+    # ``to_numpy_array`` (dlpack-through-CPU fallback) before comparing.
+    if not np.array_equal(arr.reshape(-1), to_numpy_array(expected).reshape(-1)):
         raise ValueError(f"{key} does not match the table derived from the config")
 
 
@@ -354,7 +359,7 @@ class SO2Linear(NativeOP):
         num_m0 = self.lmax + 1
         device = array_api_compat.device(x)
         weight_m0 = xp.reshape(
-            xp.asarray(self.weight_m0[...], device=device),
+            xp_asarray_nodetach(xp, self.weight_m0[...], device=device),
             (num_m0 * self.in_channels, self.n_focus, num_m0 * self.out_channels),
         )
         weight_m0 = xp.permute_dims(weight_m0, (1, 0, 2))  # (F, in, out)
@@ -366,7 +371,8 @@ class SO2Linear(NativeOP):
             ib = ni1 - ni0  # in_block size
             ob = no1 - no0  # out_block size
             w = xp.reshape(
-                xp.asarray(w[...], device=device), (ib, self.n_focus, 2 * ob)
+                xp_asarray_nodetach(xp, w[...], device=device),
+                (ib, self.n_focus, 2 * ob),
             )
             w = xp.permute_dims(w, (1, 0, 2))  # (F, in_blk, 2*out_blk)
             w_u = w[:, :, :ob]  # (F, in_blk, out_blk)
@@ -392,7 +398,7 @@ class SO2Linear(NativeOP):
         # === Step 3. Bias on l=0 scalar index ===
         if self.mlp_bias:
             bias0 = xp.reshape(
-                xp.asarray(self.bias0[...], device=device),
+                xp_asarray_nodetach(xp, self.bias0[...], device=device),
                 (self.n_focus, self.out_channels),
             )
             out0 = out[:, :, :1, :] + bias0[None, :, None, :]
@@ -426,15 +432,20 @@ class SO2Linear(NativeOP):
             self.bias0 = np.asarray(variables["bias0"], dtype=prec).reshape(
                 self.bias0.shape
             )
+        # Rebuild the list and assign the whole attribute (rather than
+        # item-assignment) so that pt_expt, which converts the list to a
+        # torch ParameterList, can re-convert the new value cleanly.
+        new_weight_m = []
         for m_idx in range(len(self.weight_m)):
             key = f"weight_m.{m_idx}"
             value = np.asarray(variables[key], dtype=prec)
-            if value.shape != self.weight_m[m_idx].shape:
+            if value.shape != tuple(self.weight_m[m_idx].shape):
                 raise ValueError(
                     f"{key} shape {value.shape} does not match the expected "
-                    f"shape {self.weight_m[m_idx].shape}"
+                    f"shape {tuple(self.weight_m[m_idx].shape)}"
                 )
-            self.weight_m[m_idx] = value
+            new_weight_m.append(value)
+        self.weight_m = new_weight_m
 
     def serialize(self) -> dict[str, Any]:
         """Serialize the SO2Linear to a dict (pt-compatible format)."""
@@ -616,16 +627,17 @@ class DynamicRadialDegreeMixer(NativeOP):
             radial_feat[:, : self.lmax + 1, :],
             (radial_feat.shape[0], self.input_dim),
         )
-        weight = xp.asarray(
-            self.weight[...], device=array_api_compat.device(radial_feat)
+        weight = xp_asarray_nodetach(
+            xp, self.weight[...], device=array_api_compat.device(radial_feat)
         )
         return xp.matmul(radial_m0, weight)
 
     def _scatter_dense(self, xp: Any, compact: Any, device: Any) -> Any:
         """Scatter the compact per-block kernel into the dense (D_m*D_m, ...) layout."""
-        gather_index = xp.asarray(self._dense_gather_index, device=device)
+        gather_index = xp_asarray_nodetach(xp, self._dense_gather_index, device=device)
         scatter_mask = xp.astype(
-            xp.asarray(self._dense_scatter_mask, device=device), compact.dtype
+            xp_asarray_nodetach(xp, self._dense_scatter_mask, device=device),
+            compact.dtype,
         )
         dense = xp.take(compact, gather_index, axis=1)
         if compact.ndim == 2:
@@ -670,7 +682,7 @@ class DynamicRadialDegreeMixer(NativeOP):
             kernel = xp.permute_dims(kernel, (0, 1, 3, 2))
             mixed = xp.matmul(kernel, x_local[:, None, :, :])
             channel_basis = xp.reshape(
-                xp.asarray(self.channel_basis[...], device=device),
+                xp_asarray_nodetach(xp, self.channel_basis[...], device=device),
                 (1, 1, self.rank, self.channels),
             )
             return xp.sum(mixed * channel_basis, axis=2)
@@ -1204,7 +1216,7 @@ class SO2Convolution(NativeOP):
         x_local = xp.matmul(D_m_prime, x_src)  # (E, D_m, C_wide)
 
         # === Step 3. Select radial/type features for reduced layout ===
-        degree_index_m = xp.asarray(self.degree_index_m, device=device)
+        degree_index_m = xp_asarray_nodetach(xp, self.degree_index_m, device=device)
         rad_feat = xp.take(radial_feat, degree_index_m, axis=1)  # (E, D_m, C)
         if self.radial_hidden_proj is not None:
             rad_feat = self.radial_hidden_proj(rad_feat)
@@ -1236,7 +1248,7 @@ class SO2Convolution(NativeOP):
             if layer_idx != 0 or so2_linear.bias0 is None:
                 return x_local
             bias0 = xp.reshape(
-                xp.asarray(so2_linear.bias0[...], device=device),
+                xp_asarray_nodetach(xp, so2_linear.bias0[...], device=device),
                 (1, self.n_focus, so2_linear.out_channels),
             )
             if so2_linear.out_channels == self.so2_focus_dim:
@@ -1273,7 +1285,9 @@ class SO2Convolution(NativeOP):
 
         # === Step 6. Cross-focus softmax competition ===
         if self.focus_compete and self.n_focus > 1:
-            compete_w = xp.asarray(self.adamw_focus_compete_w[...], device=device)
+            compete_w = xp_asarray_nodetach(
+                xp, self.adamw_focus_compete_w[...], device=device
+            )
             gate_in = xp.astype(focus_gate_src, compete_w.dtype)
             gate_normed = self.focus_compete_norm(gate_in)  # (E, F, Cf)
             # einsum "efi,if->ef"
@@ -1284,7 +1298,9 @@ class SO2Convolution(NativeOP):
             if self.mlp_bias:
                 focus_logits = (
                     focus_logits
-                    + xp.asarray(self.focus_compete_bias[...], device=device)[None, :]
+                    + xp_asarray_nodetach(
+                        xp, self.focus_compete_bias[...], device=device
+                    )[None, :]
                 )
             focus_logits = focus_logits / self.focus_softmax_tau
             logits_max = xp.max(focus_logits, axis=1, keepdims=True)
@@ -1316,7 +1332,8 @@ class SO2Convolution(NativeOP):
         # inverse-rotation degree rescale after the global lift restores the
         # full-basis amplitude expected by the block output contract.
         rescale = xp.astype(
-            xp.asarray(self.rotate_inv_rescale_full, device=device), x_message.dtype
+            xp_asarray_nodetach(xp, self.rotate_inv_rescale_full, device=device),
+            x_message.dtype,
         )
         x_message = x_message * xp.reshape(rescale, (1, -1, 1))
 
@@ -1347,7 +1364,7 @@ class SO2Convolution(NativeOP):
             out = out * inv_sqrt_deg  # (N, D, C_wide)
         else:
             # === Step 8.1. Build attention logits from scalar channels ===
-            qk_w = xp.asarray(self.attn_q_proj.weight[...], device=device)
+            qk_w = xp_asarray_nodetach(xp, self.attn_q_proj.weight[...], device=device)
             x_l0_node = xp.reshape(
                 x[:, 0, :], (n_node, self.attn_n_focus, self.attn_focus_dim)
             )  # (N, Fa, Ca)
@@ -1370,7 +1387,8 @@ class SO2Convolution(NativeOP):
             radial_l0 = xp.astype(radial_l0, qk_w.dtype)
             # einsum "efi,ifo->efo" as a broadcast batched matmul.
             logit_w = xp.permute_dims(
-                xp.asarray(self.adamw_attn_logit_w[...], device=device), (1, 0, 2)
+                xp_asarray_nodetach(xp, self.adamw_attn_logit_w[...], device=device),
+                (1, 0, 2),
             )  # (Fa, Ca, H)
             radial_bias = xp.matmul(radial_l0[:, :, None, :], logit_w[None, ...])[
                 ..., 0, :
@@ -1387,7 +1405,9 @@ class SO2Convolution(NativeOP):
                 logits=attn_logits,
                 edge_env=xp.astype(edge_cache.edge_env, attn_logits.dtype),
                 n_nodes=n_node,
-                z_bias_raw=xp.asarray(self.adamw_attn_z_bias_raw, device=device),
+                z_bias_raw=xp_asarray_nodetach(
+                    xp, self.adamw_attn_z_bias_raw, device=device
+                ),
                 eps=self.eps,
                 src_weight=(
                     None
@@ -1434,7 +1454,8 @@ class SO2Convolution(NativeOP):
 
             # === Step 8.4. Output-side head gate ===
             gate_w = xp.permute_dims(
-                xp.asarray(self.adamw_attn_gate_w[...], device=device), (1, 0, 2)
+                xp_asarray_nodetach(xp, self.adamw_attn_gate_w[...], device=device),
+                (1, 0, 2),
             )  # (Fa, Ca, H)
             gate_in = self.attn_output_gate_norm(x_l0_node)
             attn_output_gate = xp_sigmoid(

@@ -41,6 +41,10 @@ from typing import (
 import array_api_compat
 import numpy as np
 
+from deepmd.dpmodel.array_api import (
+    xp_asarray_nodetach,
+)
+
 from .utils import (
     safe_norm,
 )
@@ -323,7 +327,9 @@ def build_edge_cache(
     # === Step 4. Rewrite invalid slots to the safe +z dummy vector ===
     # Gradient safety: see the function docstring.
     maskf = xp.astype(mask_flat, vec.dtype)[:, None]  # (E, 1)
-    z_unit = xp.asarray(np.array([[0.0, 0.0, 1.0]]), dtype=vec.dtype, device=device)
+    z_unit = xp_asarray_nodetach(
+        xp, np.array([[0.0, 0.0, 1.0]]), dtype=vec.dtype, device=device
+    )
     edge_vec = vec * maskf + (1.0 - maskf) * z_unit
     edge_len = safe_norm(edge_vec, eps)  # (E, 1)
 
@@ -336,7 +342,9 @@ def build_edge_cache(
     if random_gamma:
         if gamma is None:
             gamma = np.random.default_rng().uniform(0.0, 2.0 * math.pi, n_edge)
-        gamma = xp.astype(xp.asarray(gamma, device=device), edge_quat.dtype)
+        gamma = xp.astype(
+            xp_asarray_nodetach(xp, gamma, device=device), edge_quat.dtype
+        )
         edge_quat = quaternion_multiply(quaternion_z_rotation(gamma), edge_quat)
     D_full, Dt_full = wigner_calc(edge_quat)
 

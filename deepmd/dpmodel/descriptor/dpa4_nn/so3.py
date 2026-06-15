@@ -39,6 +39,9 @@ from deepmd.dpmodel import (
     PRECISION_DICT,
     NativeOP,
 )
+from deepmd.dpmodel.array_api import (
+    xp_asarray_nodetach,
+)
 from deepmd.dpmodel.common import (
     to_numpy_array,
 )
@@ -139,14 +142,18 @@ class FocusLinear(NativeOP):
             Projected array with shape (B, F, Cout).
         """
         xp = array_api_compat.array_namespace(x)
-        weight = xp.asarray(self.weight[...], device=array_api_compat.device(x))
+        weight = xp_asarray_nodetach(
+            xp, self.weight[...], device=array_api_compat.device(x)
+        )
         weight = xp.reshape(weight, (self.in_channels, self.n_focus, self.out_channels))
         # einsum "bfi,ifo->bfo" as a broadcast batched matmul:
         # (B, F, 1, Cin) @ (1, F, Cin, Cout) -> (B, F, 1, Cout)
         weight = xp.permute_dims(weight, (1, 0, 2))  # (F, Cin, Cout)
         out = xp.matmul(x[:, :, None, :], weight[None, ...])[..., 0, :]
         if self.use_bias:
-            bias = xp.asarray(self.bias[...], device=array_api_compat.device(x))
+            bias = xp_asarray_nodetach(
+                xp, self.bias[...], device=array_api_compat.device(x)
+            )
             bias = xp.reshape(bias, (self.n_focus, self.out_channels))
             out = out + bias[None, ...]
         return out
@@ -285,9 +292,9 @@ class ChannelLinear(NativeOP):
         xp = array_api_compat.array_namespace(x)
         # einsum "...i,io->...o" is a plain matmul on the last axis
         device = array_api_compat.device(x)
-        out = xp.matmul(x, xp.asarray(self.weight[...], device=device))
+        out = xp.matmul(x, xp_asarray_nodetach(xp, self.weight[...], device=device))
         if self.use_bias:
-            out = out + xp.asarray(self.bias[...], device=device)
+            out = out + xp_asarray_nodetach(xp, self.bias[...], device=device)
         return out
 
     def serialize(self) -> dict[str, Any]:
@@ -457,11 +464,15 @@ class SO3Linear(NativeOP):
         # === Step 1. Expand per-l weights to packed coefficient layout ===
         # (L, Cin, F*Cout) -> (L, Cin, F, Cout)
         weight = xp.reshape(
-            xp.asarray(self.weight[...], device=array_api_compat.device(x)),
+            xp_asarray_nodetach(
+                xp, self.weight[...], device=array_api_compat.device(x)
+            ),
             (self.lmax + 1, self.in_channels, self.n_focus, self.out_channels),
         )  # (L, Cin, F, Cout)
         # (L, Cin, F, Cout) -> (D, Cin, F, Cout)
-        expand_index = xp.asarray(self.expand_index, device=array_api_compat.device(x))
+        expand_index = xp_asarray_nodetach(
+            xp, self.expand_index, device=array_api_compat.device(x)
+        )
         weight_expanded = xp.take(weight, expand_index, axis=0)
 
         # === Step 2. Per-focus, per-degree channel mixing ===
@@ -474,7 +485,9 @@ class SO3Linear(NativeOP):
 
         # === Step 3. Add l=0 bias ===
         if self.mlp_bias:
-            bias = xp.asarray(self.bias[...], device=array_api_compat.device(x))
+            bias = xp_asarray_nodetach(
+                xp, self.bias[...], device=array_api_compat.device(x)
+            )
             bias = xp.reshape(bias, (self.n_focus, self.out_channels))
             out0 = out[:, :1, :, :] + bias[None, None, ...]
             out = xp.concat([out0, out[:, 1:, :, :]], axis=1) if self.lmax > 0 else out0
@@ -526,7 +539,7 @@ class SO3Linear(NativeOP):
         )
         prec = PRECISION_DICT[obj.precision.lower()]
         expand_index = np.asarray(variables["expand_index"], dtype=np.int64)
-        if not np.array_equal(expand_index, obj.expand_index):
+        if not np.array_equal(expand_index, to_numpy_array(obj.expand_index)):
             raise ValueError("expand_index does not match the lmax-derived table")
         weight = np.asarray(variables["weight"], dtype=prec)
         if weight.shape != obj.weight.shape:

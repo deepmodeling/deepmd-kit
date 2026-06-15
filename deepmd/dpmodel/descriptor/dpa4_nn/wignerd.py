@@ -46,6 +46,9 @@ from deepmd.dpmodel import (
     DEFAULT_PRECISION,
     NativeOP,
 )
+from deepmd.dpmodel.array_api import (
+    xp_asarray_nodetach,
+)
 from deepmd.dpmodel.common import (
     get_xp_precision,
 )
@@ -691,7 +694,7 @@ class WignerDCalculator(NativeOP):
             segments.append(xp.reshape(packed, (n_edge, packed_size * packed_size)))
         segments.append(xp.zeros((n_edge, 1), dtype=dtype, device=device))
         values = xp.concat(segments, axis=1)
-        idx = xp.asarray(self.full_gather_idx, device=device)
+        idx = xp_asarray_nodetach(xp, self.full_gather_idx, device=device)
         D_full = xp.reshape(
             xp.take(values, idx, axis=1),
             (n_edge, self.dim_full, self.dim_full),
@@ -756,7 +759,7 @@ class WignerDCalculator(NativeOP):
         # row/column permutation [1, 2, 0], applied structurally (no gather)
         rot = xp.stack([rot[..., 1, :], rot[..., 2, :], rot[..., 0, :]], axis=-2)
         rot = xp.stack([rot[..., 1], rot[..., 2], rot[..., 0]], axis=-1)
-        sign = xp.asarray(self.l1_sign_outer, dtype=dtype, device=device)
+        sign = xp_asarray_nodetach(xp, self.l1_sign_outer, dtype=dtype, device=device)
         return rot * sign
 
     def _compute_packed_blocks(self, q: Any, xp: Any, dtype: Any, device: Any) -> Any:
@@ -769,10 +772,10 @@ class WignerDCalculator(NativeOP):
         D_re, D_im = self._wigner_d_matrix_realpair(
             ra_re, ra_im, rb_re, rb_im, xp, dtype, device
         )
-        u_re = xp.asarray(self.poly_u_re, dtype=dtype, device=device)
-        u_im = xp.asarray(self.poly_u_im, dtype=dtype, device=device)
-        u_re_t = xp.asarray(self.poly_u_re_t, dtype=dtype, device=device)
-        u_im_t = xp.asarray(self.poly_u_im_t, dtype=dtype, device=device)
+        u_re = xp_asarray_nodetach(xp, self.poly_u_re, dtype=dtype, device=device)
+        u_im = xp_asarray_nodetach(xp, self.poly_u_im, dtype=dtype, device=device)
+        u_re_t = xp_asarray_nodetach(xp, self.poly_u_re_t, dtype=dtype, device=device)
+        u_im_t = xp_asarray_nodetach(xp, self.poly_u_im_t, dtype=dtype, device=device)
         temp_re = xp.matmul(D_re, u_re_t) + xp.matmul(D_im, u_im_t)
         temp_im = xp.matmul(D_im, u_re_t) - xp.matmul(D_re, u_im_t)
         return xp.matmul(u_re, temp_re) - xp.matmul(u_im, temp_im)
@@ -805,7 +808,7 @@ class WignerDCalculator(NativeOP):
         rb_im = xp.astype(rb_im, f64)
 
         def cv(arr: np.ndarray) -> Any:  # constant table -> xp on input device
-            return xp.asarray(arr, device=device)
+            return xp_asarray_nodetach(xp, arr, device=device)
 
         eps = float(np.finfo(np.float64).eps)
         eps_sq = eps * eps
@@ -929,16 +932,18 @@ class WignerDCalculator(NativeOP):
         horner_sum = _vectorized_horner(
             xp,
             ratio,
-            xp.asarray(case.horner, device=device),
-            xp.asarray(case.horner_step_mask, device=device),
+            xp_asarray_nodetach(xp, case.horner, device=device),
+            xp_asarray_nodetach(xp, case.horner_step_mask, device=device),
         )
         ra_powers = xp.exp(
-            log_ra[:, None] * xp.asarray(case.ra_exp, device=device)[None, :]
+            log_ra[:, None]
+            * xp_asarray_nodetach(xp, case.ra_exp, device=device)[None, :]
         )
         rb_powers = xp.exp(
-            log_rb[:, None] * xp.asarray(case.rb_exp, device=device)[None, :]
+            log_rb[:, None]
+            * xp_asarray_nodetach(xp, case.rb_exp, device=device)[None, :]
         )
-        signed_coeff = xp.asarray(case.signed_coeff, device=device)
+        signed_coeff = xp_asarray_nodetach(xp, case.signed_coeff, device=device)
         magnitude = signed_coeff[None, :] * ra_powers * rb_powers
         return magnitude * horner_sum
 
