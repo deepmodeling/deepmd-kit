@@ -513,62 +513,178 @@ def _key_from_head(head: str | dict) -> str:
     raise TypeError(f"head must be str or dict, got {type(head).__name__!r}")
 
 
-def attach_labels(
-    system,
+def _attach_single(
+    sys_path: str | Path,
     head: str | dict,
     values: np.ndarray,
 ) -> None:
-    """
-    Attach per-frame property labels to a dpdata system.
-
-    Uses the same ``head`` specification language as ``DPAFineTuner.fit()``,
-    so users only need to learn one vocabulary for describing properties.
-
-    Labels are stored directly in the system's ``data`` dict under the
-    resolved key.
+    """Write label values to the set.*/ directory of a single deepmd/npy system.
 
     Parameters
     ----------
-    system : dpdata.System or dpdata.LabeledSystem
-        The target system (modified in-place).
+    sys_path : str | Path
+        Path to a single deepmd/npy system directory containing set.*/ subdirs.
     head : str | dict
-        Property head specification — same as ``DPAFineTuner(head=...)``:
-
-        - ``"energy"``
-          → stores as ``system.data["energies"]``, shape ``(n_frames,)``
-        - ``"bandgap"`` (any plain string)
-          → stores as ``system.data["bandgap"]``, shape ``(n_frames,)`` or ``(n_frames, N)``
-        - ``{"type": "property", "property_name": "bandgap", "task_dim": 1}``
-          → stores as ``system.data["bandgap"]``, shape ``(n_frames, 1)``
-        - ``{"type": "dos", "numb_dos": 250}``
-          → stores as ``system.data["dos"]``, shape ``(n_frames, 250)``
+        Property head specification — resolved to a .npy filename via
+        :func:`_key_from_head`.
     values : np.ndarray
-        Per-frame label array. First axis must equal total number of frames
-        in the system.
+        Per-frame label array.  First axis must match the frame count in
+        ``set.*/coord.npy``.
 
-    Notes
-    -----
-    **Idempotency**: calling ``attach_labels`` twice with the *same* head on
-    the same system overwrites the existing data. Calling with *different*
-    heads writes separate keys.
-
-    Examples
-    --------
-    >>> attach_labels(system, head="energy", values=np.array([-12.3, -11.8, -13.1]))
-    >>> attach_labels(
-    ...     system, head={"type": "dos", "numb_dos": 250}, values=dos_array
-    ... )  # shape (n_frames, 250)
+    Raises
+    ------
+    ValueError
+        If *sys_path* is not a directory, no set.*/ dirs are found,
+        coord.npy is missing, or the frame count mismatches.
+    NotImplementedError
+        If more than one set.*/ directory exists (multi-set not yet supported).
     """
+    sys_path = Path(sys_path)
+    if not sys_path.is_dir():
+        raise ValueError(f"System path is not a directory: {sys_path}")
+
     key = _key_from_head(head)
     values = np.asarray(values, dtype=np.float64)
 
-    coords = np.asarray(system.data["coords"])
+    set_dirs = sorted(sys_path.glob("set.*"))
+    if not set_dirs:
+        raise ValueError(
+            f"No set.* directories found in {sys_path} — "
+            "is this a valid deepmd/npy system directory?"
+        )
+    if len(set_dirs) > 1:
+        raise NotImplementedError(
+            f"Multiple set.* directories found in {sys_path}. "
+            "attach_labels currently supports single-set systems only. "
+            f"Found: {[d.name for d in set_dirs]}"
+        )
+
+    set_dir = set_dirs[0]
+    coord_path = set_dir / "coord.npy"
+    if not coord_path.is_file():
+        raise ValueError(
+            f"coord.npy not found in {set_dir}. Expected at: {coord_path}"
+        )
+
+    coords = np.load(coord_path)
     n_frames = coords.shape[0]
 
     if values.shape[0] != n_frames:
         raise ValueError(
             f"values has {values.shape[0]} frames but system "
-            f"contains {n_frames} frames."
+            f"contains {n_frames} frames (from {coord_path})."
         )
 
-    system.data[key] = values
+    np.save(str(set_dir / f"{key}.npy"), values)
+
+
+def attach_labels(
+    data: str | Path,
+    head: str | dict,
+    values: np.ndarray,
+) -> None:
+    """Inject label values into one or more deepmd/npy systems.
+
+    Auto-detects single vs multi-system input:
+
+    - **Single system**: *data* contains ``set.*/`` directories directly.
+      *values* must match the frame count (``values.shape[0] == n_frames``).
+    - **Multi system**: *data* contains subdirectories (``sys_0000/``,
+      ``sys_0001/``, …); systems are matched to *values* in ``sorted()``
+      order.  *values* must have ``values.shape[0] == n_systems`` and
+      each element is written to the corresponding system's ``set.*/`` dir.
+
+    Labels are written as ``set.*/{key}.npy`` on disk, where *key* is
+    resolved from *head* via :func:`_key_from_head`.
+
+    Parameters
+    ----------
+    data : str | Path
+        Path to a single deepmd/npy system (contains ``set.*/`` subdirs) or
+        a parent directory containing system subdirectories.
+    head : str | dict
+        Property head specification — same vocabulary as
+        ``DPAFineTuner(head=...)``:
+
+        - ``"energy"`` → writes ``set.*/energy.npy``
+        - ``"bandgap"`` (any plain string) → writes ``set.*/bandgap.npy``
+        - ``{"type": "property", "property_name": "bandgap", "task_dim": 1}``
+          → writes ``set.*/bandgap.npy``
+        - ``{"type": "dos", "numb_dos": 250}`` → writes ``set.*/dos.npy``
+    values : np.ndarray
+        For single-system: shape ``(n_frames,)`` or ``(n_frames, dim)``.
+        For multi-system: shape ``(n_systems,)`` or ``(n_systems, dim)``;
+        each element is assigned to the corresponding system directory
+        (in ``sorted()`` order).
+
+    Raises
+    ------
+    ValueError
+        If *data* is not a directory, has an unrecognised structure,
+        or the frame / system count mismatches.
+    NotImplementedError
+        If a system has more than one ``set.*/`` directory.
+
+    Notes
+    -----
+    **Idempotency**: calling ``attach_labels`` twice with the *same* head on
+    the same system overwrites the existing file.  Calling with *different*
+    heads writes separate ``.npy`` files.
+
+    Examples
+    --------
+    Single system:
+
+    >>> attach_labels("sys_0000/", head="bandgap", values=np.array([1.0]))
+
+    Multi system — ``values[i]`` → ``sorted(glob("npy/*/"))[i]``:
+
+    >>> labels = np.load("labels.npy")  # shape (n_systems,)
+    >>> attach_labels("./npy/", head="bandgap", values=labels)
+
+    CLI (works for both single and multi-system):
+
+    .. code-block:: bash
+
+        dpaad data attach-labels --data ./npy/ --head bandgap --values labels.npy
+    """
+    data = Path(data)
+    if not data.is_dir():
+        raise ValueError(f"Data path is not a directory: {data}")
+
+    # Detect single-system: set.*/ subdirs directly under data
+    has_set_dirs = any(
+        p.is_dir() and p.name.startswith("set.")
+        for p in data.iterdir()
+    )
+
+    if has_set_dirs:
+        _attach_single(data, head, values)
+        return
+
+    # Multi-system: glob non-hidden subdirectories as system dirs
+    sys_dirs = sorted(
+        p for p in data.iterdir()
+        if p.is_dir() and not p.name.startswith(".")
+    )
+    if not sys_dirs:
+        raise ValueError(
+            f"No set.* directories or system subdirectories found "
+            f"in {data}.\n"
+            "Expected either:\n"
+            "  (a) a single system with set.*/ subdirs, or\n"
+            "  (b) a parent directory containing system subdirectories\n"
+            "      (each with their own set.*/)."
+        )
+
+    values_arr = np.asarray(values)
+    if values_arr.shape[0] != len(sys_dirs):
+        raise ValueError(
+            f"values has {values_arr.shape[0]} entries along the first "
+            f"axis but found {len(sys_dirs)} system directories in {data}. "
+            "In multi-system mode, values.shape[0] must equal the number "
+            "of system subdirectories (sorted alphabetically)."
+        )
+
+    for sys_dir, sub_vals in zip(sys_dirs, values_arr):
+        _attach_single(sys_dir, head, sub_vals)

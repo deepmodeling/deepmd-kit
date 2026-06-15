@@ -204,52 +204,142 @@ class TestKeyFromHead:
             _key_from_head(42)
 
 
-class TestAttachLabels:
-    def _make_sys(self, tmp_path, n_atoms=2, n_frames=3):
-        return _make_system(tmp_path, n_atoms=n_atoms, n_frames=n_frames)
+def _make_system_path(tmp_path, name="sys", set_indices=(0,), n_atoms=2, n_frames=3):
+    """Create a minimal deepmd/npy system directory on disk (no dpdata loading).
 
-    def test_string_head_stores_in_data(self, tmp_path):
-        system = self._make_sys(tmp_path, n_frames=3)
-        attach_labels(system, head="bandgap", values=np.array([1.0, 2.0, 3.0]))
-        assert "bandgap" in system.data
-        np.testing.assert_array_equal(system.data["bandgap"], [1.0, 2.0, 3.0])
+    Returns the **Path** to the system root.
+    """
+    root = tmp_path / name
+    root.mkdir()
+    (root / "type.raw").write_text(
+        "\n".join(str(i % 2) for i in range(n_atoms)) + "\n"
+    )
+    (root / "type_map.raw").write_text("H\nO\n")
+    for idx in set_indices:
+        sd = root / f"set.{idx:03d}"
+        sd.mkdir()
+        np.save(sd / "coord.npy", np.random.rand(n_frames, n_atoms * 3))
+        np.save(sd / "box.npy", np.tile(np.eye(3).ravel(), (n_frames, 1)))
+        np.save(sd / "energy.npy", np.random.rand(n_frames))
+    return root
+
+
+class TestAttachLabels:
+    """Path-based attach_labels: single and multi-system."""
+
+    # ── single-system ────────────────────────────────────────────────────
+
+    def test_string_head_writes_npy(self, tmp_path):
+        sys_path = _make_system_path(tmp_path, name="sys", n_frames=3)
+        attach_labels(sys_path, head="bandgap", values=np.array([1.0, 2.0, 3.0]))
+        written = np.load(sys_path / "set.000" / "bandgap.npy")
+        np.testing.assert_array_equal(written, [1.0, 2.0, 3.0])
 
     def test_dict_head_property_name(self, tmp_path):
-        system = self._make_sys(tmp_path)
+        sys_path = _make_system_path(tmp_path, name="sys", n_frames=3)
         values = np.array([[1.0], [2.0], [3.0]])
         attach_labels(
-            system,
+            sys_path,
             head={"type": "property", "property_name": "gap", "task_dim": 1},
             values=values,
         )
-        assert "gap" in system.data
+        written = np.load(sys_path / "set.000" / "gap.npy")
+        np.testing.assert_array_equal(written, values)
 
     def test_2d_values_written_correctly(self, tmp_path):
-        system = self._make_sys(tmp_path, n_frames=3)
+        sys_path = _make_system_path(tmp_path, name="sys", n_frames=3)
         values = np.arange(3 * 250, dtype=float).reshape(3, 250)
-        attach_labels(system, head={"type": "dos", "numb_dos": 250}, values=values)
-        assert system.data["dos"].shape == (3, 250)
-        np.testing.assert_array_equal(system.data["dos"], values)
+        attach_labels(sys_path, head={"type": "dos", "numb_dos": 250}, values=values)
+        written = np.load(sys_path / "set.000" / "dos.npy")
+        assert written.shape == (3, 250)
+        np.testing.assert_array_equal(written, values)
 
     def test_frame_count_mismatch_raises(self, tmp_path):
-        system = self._make_sys(tmp_path, n_frames=3)
-        with pytest.raises(ValueError, match="3 frames"):
-            attach_labels(system, head="energy", values=np.array([1.0, 2.0]))
+        sys_path = _make_system_path(tmp_path, name="sys", n_frames=3)
+        with pytest.raises(ValueError, match="frames"):
+            attach_labels(sys_path, head="energy", values=np.array([1.0, 2.0]))
 
     def test_same_key_overwrites(self, tmp_path):
-        system = self._make_sys(tmp_path, n_frames=3)
-        attach_labels(system, head="energy", values=np.array([1.0, 2.0, 3.0]))
-        attach_labels(system, head="energy", values=np.array([9.0, 8.0, 7.0]))
-        np.testing.assert_array_equal(system.data["energy"], [9.0, 8.0, 7.0])
+        sys_path = _make_system_path(tmp_path, name="sys", n_frames=3)
+        attach_labels(sys_path, head="energy", values=np.array([1.0, 2.0, 3.0]))
+        attach_labels(sys_path, head="energy", values=np.array([9.0, 8.0, 7.0]))
+        written = np.load(sys_path / "set.000" / "energy.npy")
+        np.testing.assert_array_equal(written, [9.0, 8.0, 7.0])
 
     def test_different_keys_are_additive(self, tmp_path):
-        system = self._make_sys(tmp_path, n_frames=3)
-        attach_labels(system, head="energy", values=np.array([1.0, 2.0, 3.0]))
-        attach_labels(system, head="bandgap", values=np.array([4.0, 5.0, 6.0]))
-        assert "energy" in system.data
-        assert "bandgap" in system.data
-        np.testing.assert_array_equal(system.data["energy"], [1.0, 2.0, 3.0])
-        np.testing.assert_array_equal(system.data["bandgap"], [4.0, 5.0, 6.0])
+        sys_path = _make_system_path(tmp_path, name="sys", n_frames=3)
+        attach_labels(sys_path, head="energy", values=np.array([1.0, 2.0, 3.0]))
+        attach_labels(sys_path, head="bandgap", values=np.array([4.0, 5.0, 6.0]))
+        e_written = np.load(sys_path / "set.000" / "energy.npy")
+        b_written = np.load(sys_path / "set.000" / "bandgap.npy")
+        np.testing.assert_array_equal(e_written, [1.0, 2.0, 3.0])
+        np.testing.assert_array_equal(b_written, [4.0, 5.0, 6.0])
+
+    def test_multi_set_not_implemented(self, tmp_path):
+        sys_path = _make_system_path(
+            tmp_path, name="sys", set_indices=(0, 1), n_frames=3
+        )
+        with pytest.raises(NotImplementedError, match="Multiple set"):
+            attach_labels(sys_path, head="energy", values=np.array([1.0, 2.0, 3.0]))
+
+    def test_no_set_dir_raises(self, tmp_path):
+        empty = tmp_path / "empty"
+        empty.mkdir()
+        (empty / "type.raw").write_text("0\n")
+        with pytest.raises(ValueError, match="No set"):
+            attach_labels(empty, head="energy", values=np.array([1.0]))
+
+    def test_path_is_file_raises(self, tmp_path):
+        f = tmp_path / "not_a_dir"
+        f.write_text("dummy")
+        with pytest.raises(ValueError, match="not a directory"):
+            attach_labels(f, head="energy", values=np.array([1.0]))
+
+    def test_coord_npy_missing_raises(self, tmp_path):
+        sys_path = _make_system_path(tmp_path, name="sys", n_frames=3)
+        (sys_path / "set.000" / "coord.npy").unlink()
+        with pytest.raises(ValueError, match="coord.npy not found"):
+            attach_labels(sys_path, head="energy", values=np.array([1.0, 2.0, 3.0]))
+
+    # ── multi-system ─────────────────────────────────────────────────────
+
+    def test_multi_system_all_written(self, tmp_path):
+        parent = tmp_path / "multi"
+        parent.mkdir()
+        for i in range(3):
+            _make_system_path(parent, name=f"sys_{i:04d}", n_frames=2)
+        values = np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]])
+        attach_labels(parent, head="bandgap", values=values)
+        for i in range(3):
+            written = np.load(parent / f"sys_{i:04d}" / "set.000" / "bandgap.npy")
+            np.testing.assert_array_equal(written, values[i])
+
+    def test_multi_system_values_mismatch_raises(self, tmp_path):
+        parent = tmp_path / "multi"
+        parent.mkdir()
+        _make_system_path(parent, name="sys_0000", n_frames=2)
+        _make_system_path(parent, name="sys_0001", n_frames=2)
+        with pytest.raises(ValueError, match="entries along the first axis"):
+            attach_labels(
+                parent, head="bandgap",
+                values=np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]),
+            )
+
+    def test_multi_system_no_subdirs_raises(self, tmp_path):
+        empty = tmp_path / "empty"
+        empty.mkdir()
+        with pytest.raises(ValueError, match="No set.* directories or system"):
+            attach_labels(empty, head="energy", values=np.array([1.0]))
+
+    def test_multi_system_hidden_dirs_ignored(self, tmp_path):
+        parent = tmp_path / "multi"
+        parent.mkdir()
+        _make_system_path(parent, name="sys_0000", n_frames=2)
+        (parent / ".hidden").mkdir()
+        values = np.array([[1.0, 2.0]])
+        attach_labels(parent, head="bandgap", values=values)
+        written = np.load(parent / "sys_0000" / "set.000" / "bandgap.npy")
+        np.testing.assert_array_equal(written, [1.0, 2.0])
 
 
 # ---------------------------------------------------------------------------

@@ -140,7 +140,14 @@ from dpa_adapt import convert, attach_labels, check_data
 
 convert("OUTCAR", "./npy", fmt="vasp/outcar")
 convert("calcs/**/OUTCAR", "./npy_root", fmt="vasp/outcar")
-attach_labels(system, head="bandgap", values=np.array([1.0, 2.0, 3.0]))
+
+# Single system
+attach_labels("./npy/", head="bandgap", values=np.array([1.0, 2.0, 3.0]))
+
+# Multiple systems: values[i] → sorted(glob("npy/*/"))[i]
+labels = np.load("labels.npy")  # shape (n_systems,)
+attach_labels("./npy/", head="bandgap", values=labels)
+
 check_data("/data/system")  # → list[Issue]
 ```
 

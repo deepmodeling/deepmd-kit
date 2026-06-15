@@ -315,23 +315,13 @@ def _cmd_data_attach_labels(args: argparse.Namespace) -> int:
     from dpa_adapt import (
         attach_labels,
     )
-    from dpa_adapt.data.loader import (
-        load_data,
-    )
 
     values = np.load(args.values)
     if args.head_json:
         head = json.loads(args.head)
     else:
         head = args.head
-    systems = load_data(args.data)
-    if len(systems) != 1:
-        _LOG.warning(
-            "attach-labels: expected 1 system from %r, got %d; attaching to first.",
-            args.data,
-            len(systems),
-        )
-    attach_labels(systems[0], head=head, values=values)
+    attach_labels(args.data, head=head, values=values)
     _LOG.info("Labels attached to %s", args.data)
     return 0
 
