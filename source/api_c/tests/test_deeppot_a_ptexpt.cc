@@ -169,16 +169,7 @@ TEST_F(TestInferDeepPotAPtExptC, numb_types_spin) {
 
 TEST_F(TestInferDeepPotAPtExptC, type_map) {
   const char* type_map = DP_DeepPotGetTypeMap(dp);
-  std::string type_map_str(type_map);
-  std::istringstream iss(type_map_str);
-  std::vector<std::string> types;
-  std::string token;
-  while (iss >> token) {
-    types.push_back(token);
-  }
-  EXPECT_EQ(types.size(), 2);
-  EXPECT_EQ(types[0], "O");
-  EXPECT_EQ(types[1], "H");
+  EXPECT_STREQ(type_map, "O H");
   DP_DeleteChar(type_map);
 }
 
