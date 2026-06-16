@@ -554,6 +554,22 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type[BaseModel]:
             """Get the number (dimension) of frame parameters of this atomic model."""
             return self.atomic_model.get_dim_fparam()
 
+        def has_chg_spin_ebd(self) -> bool:
+            """Check if the model has charge spin embedding."""
+            return self.atomic_model.has_chg_spin_ebd()
+
+        def get_dim_chg_spin(self) -> int:
+            """Get the dimension of charge_spin input."""
+            return self.atomic_model.get_dim_chg_spin()
+
+        def has_default_chg_spin(self) -> bool:
+            """Check if the model has default charge_spin values."""
+            return self.atomic_model.has_default_chg_spin()
+
+        def get_default_chg_spin(self) -> paddle.Tensor | None:
+            """Get the default charge_spin values."""
+            return self.atomic_model.get_default_chg_spin()
+
         def get_dim_aparam(self) -> int:
             """Get the number (dimension) of atomic parameters of this atomic model."""
             return self.atomic_model.get_dim_aparam()

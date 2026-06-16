@@ -181,6 +181,22 @@ class BaseAtomicModel(paddle.nn.Layer, BaseAtomicModel_):
         else:
             self.pair_excl = PairExcludeMask(self.get_ntypes(), self.pair_exclude_types)
 
+    def has_chg_spin_ebd(self) -> bool:
+        """Check if the model has charge spin embedding."""
+        return False
+
+    def get_dim_chg_spin(self) -> int:
+        """Get the dimension of charge_spin input."""
+        return 0
+
+    def has_default_chg_spin(self) -> bool:
+        """Check if the model has default charge_spin values."""
+        return False
+
+    def get_default_chg_spin(self) -> paddle.Tensor | None:
+        """Get the default charge_spin values."""
+        return None
+
     # to make jit happy...
     def make_atom_mask(
         self,
