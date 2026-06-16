@@ -1,38 +1,22 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Any,
-)
-
-from packaging.version import (
-    Version,
-)
-
+import deepmd.jax.descriptor.dpa1 as _jax_dpa1  # noqa: F401
+import deepmd.jax.descriptor.dpa2 as _jax_dpa2  # noqa: F401
+import deepmd.jax.descriptor.dpa3 as _jax_dpa3  # noqa: F401
+import deepmd.jax.descriptor.se_atten_v2 as _jax_se_atten_v2  # noqa: F401
+import deepmd.jax.descriptor.se_e2_a as _jax_se_e2_a  # noqa: F401
+import deepmd.jax.descriptor.se_e2_r as _jax_se_e2_r  # noqa: F401
+import deepmd.jax.descriptor.se_t as _jax_se_t  # noqa: F401
+import deepmd.jax.descriptor.se_t_tebd as _jax_se_t_tebd  # noqa: F401
 from deepmd.dpmodel.descriptor.hybrid import DescrptHybrid as DescrptHybridDP
 from deepmd.jax.common import (
-    ArrayAPIVariable,
     flax_module,
-    to_jax_array,
 )
 from deepmd.jax.descriptor.base_descriptor import (
     BaseDescriptor,
-)
-from deepmd.jax.env import (
-    flax_version,
-    nnx,
 )
 
 
 @BaseDescriptor.register("hybrid")
 @flax_module
 class DescrptHybrid(DescrptHybridDP):
-    def __setattr__(self, name: str, value: Any) -> None:
-        if name in {"nlist_cut_idx"}:
-            value = [ArrayAPIVariable(to_jax_array(vv)) for vv in value]
-            if Version(flax_version) >= Version("0.12.0"):
-                value = nnx.List([nnx.data(item) for item in value])
-        elif name in {"descrpt_list"}:
-            value = [BaseDescriptor.deserialize(vv.serialize()) for vv in value]
-            if Version(flax_version) >= Version("0.12.0"):
-                value = nnx.List([nnx.data(item) for item in value])
-
-        return super().__setattr__(name, value)
+    pass

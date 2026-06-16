@@ -871,4 +871,13 @@ class DescrptBlockSeA(DescriptorBlock):
 
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the descriptor block needs sorted nlist when using `forward_lower`."""
-        return False
+        # The compressed tabulate op (`tabulate_fusion_se_a`) uses an
+        # `is_sorted` early-termination that stops accumulating as soon as it
+        # meets a neighbor whose env-mat direction is zero (padding, or an
+        # out-of-rcut neighbor with sw==0). It therefore assumes such neighbors
+        # are trailing. The `forward_lower` neighbor list coming from C++/LAMMPS
+        # (rcut+skin, not pre-sorted) can interleave zero-direction neighbors
+        # before real ones, which would silently drop real neighbors. Forcing a
+        # sorted nlist (extra_nlist_sort) filters out-of-rcut neighbors and puts
+        # all padding last, restoring the op's invariant. See discussion #5438.
+        return self.compress
