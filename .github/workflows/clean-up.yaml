@@ -14,3 +14,4 @@ jobs:
     - name: See GPU information
       run: nvidia-smi
     - run: ls /dev/nvidia* /usr/lib/x86_64-linux-gnu/libcuda* /usr/lib/x86_64-linux-gnu/libnvidia*
+    - run: which nvcc
