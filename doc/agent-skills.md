@@ -3,8 +3,9 @@
 DeePMD-kit provides official [Agent Skills](https://agentskills.io/what-are-skills) that help AI agents run
 DeePMD-kit workflows in a reproducible way. These skills capture
 project-specific operating knowledge—such as training inputs, model
-deployment, LAMMPS integration, and Python inference patterns—so an agent can
-turn a high-level request into concrete files, commands, and validation steps.
+selection, deployment, LAMMPS integration, and Python inference patterns—so an
+agent can turn a high-level request into concrete files, commands, and
+validation steps.
 
 The DeePMD-kit skills were initially developed in the
 [Computational Chemistry Agent Skills](https://github.com/jinzhezenggroup/computational-chemistry-agent-skills)
@@ -13,14 +14,13 @@ in the DeePMD-kit repository under `skills/`.
 
 ## List of skills
 
-- `deepmd-train-dpa3`: Train DeePMD-kit models with the DPA3 descriptor and the
-  PyTorch backend, including input generation, neighbor-selection choices,
-  training, freezing, and testing.
+- `deepmd-train`: Choose a DeePMD-kit model family, then train from scratch.
+  The skill uses progressive disclosure: the top-level workflow handles common
+  training steps and model selection, while model-specific configuration lives
+  under `skills/deepmd-train/models/` and is read only after a model is chosen.
+  Current references include DPA3 and se_e2_a.
 - `deepmd-finetune-dpa3`: Fine-tune DPA3 models from self-trained checkpoints,
   multi-task pretrained models, or built-in models downloaded by `dp pretrained download`.
-- `deepmd-train-se-e2-a`: Train classical Deep Potential models with the
-  `se_e2_a` descriptor, including preparation of training JSON files and
-  post-training validation.
 - `deepmd-python-inference`: Run Python and CLI inference with trained or
   frozen DeePMD-kit models, including energy, force, virial, descriptor, and
   model-deviation workflows.
@@ -76,7 +76,7 @@ without launching an expensive calculation. For example:
 
 - “Use the `deepmd-python-inference` skill to write a minimal Python snippet
   for loading a frozen DeePMD-kit model and evaluating one frame.”
-- “Use the `deepmd-train-dpa3` skill to draft a small DPA3 training input for a
-  water dataset, but do not start training.”
+- “Use the `deepmd-train` skill to choose between DPA3 and se_e2_a for a small
+  water dataset and draft a training input, but do not start training.”
 - “Use the `lammps-deepmd` skill to prepare an NVT LAMMPS input file for a
   DeePMD-kit model, and explain each command.”
