@@ -178,7 +178,7 @@ class TestEnergyModelSeA(unittest.TestCase, DPTrainTest):
             expected_model,
             Path(Path("checkpoint").read_text().strip()),
         )
-        checkpoint = paddle.load(expected_model)
+        checkpoint = paddle.load(str(expected_model))
         train_infos = checkpoint["model"]["_extra_state"]["train_infos"]
         self.assertEqual(0, train_infos["step"])
         self.assertEqual(0.0, train_infos["lr"])
