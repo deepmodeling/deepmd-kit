@@ -23,15 +23,13 @@ jobs:
     #   options: --gpus all
     if: github.repository_owner == 'deepmodeling' && (github.event_name == 'pull_request' && github.event.label && github.event.label.name == 'Test CUDA' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group')
     steps:
-      - name: Make sudo and git work
-        run: apt-get update && apt-get install -y sudo git
       - uses: actions/checkout@v6
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
           # cache: 'pip'
       - name: Install wget and unzip
-        run: apt-get update && apt-get install -y wget unzip
+        run: sudo apt-get update && sudo apt-get install -y wget unzip
       - uses: lukka/get-cmake@latest
         with:
           useLocalCache: true
