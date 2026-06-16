@@ -39,12 +39,8 @@ import torch
 from deepmd.infer import (
     DeepPot,
 )
-from deepmd.pt.model.model import (
-    get_model as pt_get_model,
-)
-from deepmd.pt.train.wrapper import (
-    ModelWrapper as PtModelWrapper,
-)
+from deepmd.pt.model.model import get_model as pt_get_model
+from deepmd.pt.train.wrapper import ModelWrapper as PtModelWrapper
 from deepmd.pt_expt.utils.serialization import (
     deserialize_to_file,
 )

@@ -19,9 +19,7 @@ import copy
 import pytest
 import torch
 
-from deepmd.pt.model.model import (
-    get_model as pt_get_model,
-)
+from deepmd.pt.model.model import get_model as pt_get_model
 from deepmd.pt_expt.model.ener_model import (
     EnergyModel,
 )
