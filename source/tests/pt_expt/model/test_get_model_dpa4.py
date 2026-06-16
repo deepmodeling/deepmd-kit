@@ -230,9 +230,9 @@ def test_enable_tf32_warns_once(enable_tf32, caplog, monkeypatch) -> None:
     # ``import ...get_model as`` would shadow the submodule; load it explicitly
     gm_mod = importlib.import_module("deepmd.pt_expt.model.get_model")
 
-    # reset the warn-once flag so the assertion is deterministic regardless of
+    # reset the warn-once set so the assertion is deterministic regardless of
     # test ordering (other get_sezm_model calls may have already warned)
-    monkeypatch.setattr(gm_mod, "_ENABLE_TF32_WARNED", False)
+    monkeypatch.setattr(gm_mod, "_WARNED_ONCE", set())
 
     raw = _make_raw_model_config(enable_tf32=enable_tf32)
 

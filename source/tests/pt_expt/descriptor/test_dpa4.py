@@ -213,23 +213,26 @@ class TestDescrptDPA4(TestCaseSingleFrameWithNlist):
 def test_use_amp_warns_once(use_amp, caplog, monkeypatch) -> None:
     import logging
 
-    import deepmd.dpmodel.descriptor.dpa4 as dpa4_mod
+    # The descriptor module's logger name is its module path; derive it from the
+    # already-imported class to avoid a second (mixed-style) import of the module.
+    logger_name = DPDescrptDPA4.__module__
 
-    # reset the warn-once flag so the assertion is deterministic regardless of
-    # test ordering (other constructions in the suite may have already warned)
-    monkeypatch.setattr(dpa4_mod, "_USE_AMP_WARNED", False)
+    # reset the warn-once set so the assertion is deterministic regardless of
+    # test ordering (other constructions in the suite may have already warned).
+    # String target lets pytest resolve the module without an import statement.
+    monkeypatch.setattr(f"{logger_name}._WARNED_ONCE", set())
 
     def _construct() -> None:
         make_descriptor(2, [10, 10], 4.0, use_amp=use_amp)
 
-    with caplog.at_level(logging.WARNING, logger=dpa4_mod.log.name):
+    with caplog.at_level(logging.WARNING, logger=logger_name):
         _construct()
     matches = [r for r in caplog.records if "use_amp" in r.getMessage()]
     if use_amp:
         assert len(matches) == 1, caplog.text
         # second construction must NOT warn again (warn-once per process)
         caplog.clear()
-        with caplog.at_level(logging.WARNING, logger=dpa4_mod.log.name):
+        with caplog.at_level(logging.WARNING, logger=logger_name):
             _construct()
         assert not [r for r in caplog.records if "use_amp" in r.getMessage()]
     else:

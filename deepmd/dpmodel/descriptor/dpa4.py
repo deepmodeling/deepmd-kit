@@ -39,9 +39,8 @@ import numpy as np
 
 log = logging.getLogger(__name__)
 
-# Warn at most once per process that ``use_amp`` has no effect on the
-# dpmodel/pt_expt backend (it is a pt-runtime CUDA autocast switch).
-_USE_AMP_WARNED = False
+# Warn at most once per process for backend-ignored switches (keyed by name).
+_WARNED_ONCE: set[str] = set()
 
 from deepmd.dpmodel import (
     NativeOP,
@@ -331,14 +330,12 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         # pt-runtime-only switch (CUDA bfloat16 autocast during training);
         # accepted for config compatibility and ignored by dpmodel.
         self.use_amp = bool(use_amp)
-        if self.use_amp:
-            global _USE_AMP_WARNED
-            if not _USE_AMP_WARNED:
-                log.warning(
-                    "`use_amp` has no effect on the dpmodel/pt_expt backend "
-                    "(it is a pt-runtime CUDA autocast switch); ignoring it."
-                )
-                _USE_AMP_WARNED = True
+        if self.use_amp and "use_amp" not in _WARNED_ONCE:
+            log.warning(
+                "`use_amp` has no effect on the dpmodel/pt_expt backend "
+                "(it is a pt-runtime CUDA autocast switch); ignoring it."
+            )
+            _WARNED_ONCE.add("use_amp")
         self.trainable = bool(trainable)
         self.seed = seed
         self.random_gamma = bool(random_gamma)

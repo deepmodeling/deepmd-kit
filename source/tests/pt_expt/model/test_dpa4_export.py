@@ -29,9 +29,9 @@ import zipfile
 import numpy as np
 import pytest
 
-# Trigger registration of the deepmd_export::border_op opaque wrapper
-# (needed by the with-comm artifact at runtime / load time).
-import deepmd.pt_expt.utils.comm  # noqa: F401  # lgtm[py/unused-import]
+# Note: registration of the deepmd_export::border_op opaque wrapper (needed by
+# the with-comm artifact) happens inside ``deserialize_to_file`` via
+# ``ensure_comm_registered()``; no explicit comm import is required here.
 from deepmd.pt_expt.model.get_model import (
     get_model,
 )
