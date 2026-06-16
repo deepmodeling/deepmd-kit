@@ -78,7 +78,8 @@ def test_ensure_fake_registered_skips_monkeypatched_fallback() -> None:
     # Snapshot any existing (possibly cached real op) attribute so we can restore.
     had_attr = op_name in ns.__dict__
     saved = ns.__dict__.get(op_name)
-    was_registered = qualname in tabulate_ops._registered
+    # ensure_fake_registered() may touch several op names; snapshot the whole set.
+    saved_registered = set(tabulate_ops._registered)
 
     def _fallback(*args, **kwargs):
         raise NotImplementedError
@@ -102,7 +103,5 @@ def test_ensure_fake_registered_skips_monkeypatched_fallback() -> None:
             setattr(ns, op_name, saved)
         else:
             ns.__dict__.pop(op_name, None)
-        if was_registered:
-            tabulate_ops._registered.add(qualname)
-        else:
-            tabulate_ops._registered.discard(qualname)
+        tabulate_ops._registered.clear()
+        tabulate_ops._registered.update(saved_registered)
