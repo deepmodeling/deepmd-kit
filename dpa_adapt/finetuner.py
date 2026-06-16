@@ -744,7 +744,8 @@ class DPAFineTuner:
             )
         # Sync state that external code may have set on DPAFineTuner directly.
         self._sklearn._model = self._model
-        self._sklearn._device = self._device
+        if self._device is not None:
+            self._sklearn._device = self._device
         self._sklearn._checkpoint_type_map = self._checkpoint_type_map
         self._sklearn.type_map = self.type_map
         return self._sklearn
