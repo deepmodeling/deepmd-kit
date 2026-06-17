@@ -12,17 +12,14 @@ are:
 * ``mode='self'``: one input ``(N, D, F, 2*C)`` or ``(N, F, D, 2*C)``.
 * grid values: ``(N, G, F, C)`` after S2 projection.
 
-Ported names: ``BaseGridNet`` (``mode='self'``; ``op_type`` 'glu'/'branch'),
-``S2GridNet``, ``GridBranch``.
+Ported names: ``BaseGridNet`` (``mode='self'``; ``op_type`` 'glu'/'mlp'/
+'branch'), ``S2GridNet``, ``GridBranch``, ``GridMLP``.
 
 Skipped names, with consumer evidence from the pt sources:
 
 - ``SO3GridNet``: only constructed by ``so2.py`` (``node_wise_so3``,
   ``message_node_so3``) and ``ffn.py`` (``ffn_so3_grid``) — all disabled in
   the core DPA4 config.
-- ``GridMLP``: only selected via ``op_type='mlp'`` (``grid_mlp=True`` paths);
-  the core config has ``grid_mlp=[False, False, False]``. ``BaseGridNet``
-  raises ``NotImplementedError`` for ``op_type='mlp'``.
 
 Guarded (routable from the shared ``S2GridNet`` entry point but only used by
 the disabled ``node_wise_s2``/``message_node_s2`` grid products in
@@ -117,6 +114,173 @@ def _build_frame_degree_index(
         coeff_index = build_l_major_index(lmax, mmax)
         return degree_index[coeff_index]
     raise ValueError("`coefficient_layout` must be either 'packed' or 'm_major'")
+
+
+class GridMLP(NativeOP):
+    """
+    Polynomial point-wise MLP applied independently at every grid point.
+
+    The op is a pure quadratic channel product with no nonlinearity: two
+    channel-linear projections of the grid fields are multiplied and projected
+    back. In ``self`` mode both projections see ``concat(query, context)`` and
+    can form self and cross quadratic channel terms; in ``cross`` mode the
+    query and context roles stay separate (``(W_q query) * (W_c context)``).
+
+    Parameters
+    ----------
+    channels : int
+        Number of channels per grid point.
+    mode : str
+        Pairing mode; ``"self"`` or ``"cross"``.
+    precision : str
+        Parameter precision.
+    mlp_bias : bool
+        Whether to use bias in the channel-linear projections. The pt
+        ``GridMLP`` is always bias-free; this flag is threaded through so the
+        net's ``mlp_bias`` setting reaches the grid op, but pt parity only
+        holds when ``mlp_bias=False``.
+    trainable : bool
+        Whether parameters are trainable.
+    seed : int | list[int] | None
+        Random seed for weight initialization.
+    """
+
+    def __init__(
+        self,
+        *,
+        channels: int,
+        mode: str,
+        precision: str = DEFAULT_PRECISION,
+        mlp_bias: bool = False,
+        trainable: bool = True,
+        seed: int | list[int] | None = None,
+    ) -> None:
+        self.channels = int(channels)
+        self.mode = str(mode).lower()
+        if self.mode not in {"self", "cross"}:
+            raise ValueError("`mode` must be either 'self' or 'cross'")
+        self.precision = precision
+        self.mlp_bias = bool(mlp_bias)
+        self.trainable = bool(trainable)
+        self.input_channels = (
+            2 * self.channels if self.mode == "self" else self.channels
+        )
+        self.hidden_channels = 2 * self.channels
+        self.left_proj = ChannelLinear(
+            in_channels=self.input_channels,
+            out_channels=self.hidden_channels,
+            precision=precision,
+            bias=self.mlp_bias,
+            trainable=trainable,
+            seed=child_seed(seed, 0),
+        )
+        self.right_proj = ChannelLinear(
+            in_channels=self.input_channels,
+            out_channels=self.hidden_channels,
+            precision=precision,
+            bias=self.mlp_bias,
+            trainable=trainable,
+            seed=child_seed(seed, 1),
+        )
+        self.out_proj = ChannelLinear(
+            in_channels=self.hidden_channels,
+            out_channels=self.channels,
+            precision=precision,
+            bias=self.mlp_bias,
+            trainable=trainable,
+            seed=child_seed(seed, 2),
+        )
+
+    def call(self, query_grid: Any, context_grid: Any) -> Any:
+        """
+        Apply the point-wise polynomial MLP to ``(N, G, F, C)`` grid fields.
+
+        Parameters
+        ----------
+        query_grid
+            First grid source with shape ``(N, G, F, C)``.
+        context_grid
+            Second grid source with shape ``(N, G, F, C)``.
+        """
+        xp = array_api_compat.array_namespace(query_grid)
+        if self.mode == "self":
+            grid = xp.concat([query_grid, context_grid], axis=-1)
+            left = self.left_proj(grid)
+            right = self.right_proj(grid)
+        else:
+            left = self.left_proj(query_grid)
+            right = self.right_proj(context_grid)
+        return self.out_proj(left * right)  # (N, G, F, C)
+
+    def serialize(self) -> dict[str, Any]:
+        """Serialize the GridMLP to a dict.
+
+        The pt ``GridMLP`` has no ``serialize()``; the ``@variables`` keys
+        here match the pt ``state_dict`` key names.
+        """
+        variables = {
+            "left_proj.weight": to_numpy_array(self.left_proj.weight),
+            "right_proj.weight": to_numpy_array(self.right_proj.weight),
+            "out_proj.weight": to_numpy_array(self.out_proj.weight),
+        }
+        if self.mlp_bias:
+            variables["left_proj.bias"] = to_numpy_array(self.left_proj.bias)
+            variables["right_proj.bias"] = to_numpy_array(self.right_proj.bias)
+            variables["out_proj.bias"] = to_numpy_array(self.out_proj.bias)
+        return {
+            "@class": "GridMLP",
+            "@version": 1,
+            "config": {
+                "channels": self.channels,
+                "mode": self.mode,
+                "precision": np.dtype(PRECISION_DICT[self.precision]).name,
+                "mlp_bias": self.mlp_bias,
+                "trainable": self.trainable,
+                "seed": None,
+            },
+            "@variables": variables,
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict[str, Any]) -> GridMLP:
+        """Deserialize a GridMLP from a dict."""
+        data = data.copy()
+        data_cls = data.pop("@class")
+        if data_cls != "GridMLP":
+            raise ValueError(f"Invalid class for GridMLP: {data_cls}")
+        version = int(data.pop("@version"))
+        check_version_compatibility(version, 1, 1)
+        config = data.pop("config")
+        variables = data.pop("@variables")
+        obj = cls(
+            channels=int(config["channels"]),
+            mode=str(config["mode"]),
+            precision=str(config["precision"]),
+            mlp_bias=bool(config["mlp_bias"]),
+            trainable=bool(config["trainable"]),
+            seed=config.get("seed"),
+        )
+        obj._load_variables(variables)
+        return obj
+
+    def _load_variables(self, variables: dict[str, Any]) -> None:
+        prec = PRECISION_DICT[self.precision.lower()]
+        for name, proj in (
+            ("left_proj", self.left_proj),
+            ("right_proj", self.right_proj),
+            ("out_proj", self.out_proj),
+        ):
+            weight = np.asarray(variables[f"{name}.weight"], dtype=prec)
+            if weight.shape != proj.weight.shape:
+                raise ValueError(
+                    f"{name}.weight shape {weight.shape} does not match "
+                    f"the expected shape {proj.weight.shape}"
+                )
+            proj.weight = weight
+            if self.mlp_bias:
+                proj.bias = np.asarray(variables[f"{name}.bias"], dtype=prec).reshape(
+                    proj.bias.shape
+                )
 
 
 class GridBranch(NativeOP):
@@ -544,10 +708,6 @@ class BaseGridNet(NativeOP):
         self.op_type = str(op_type).lower()
         if self.op_type not in {"glu", "mlp", "branch"}:
             raise ValueError("`op_type` must be one of 'glu', 'mlp', or 'branch'")
-        if self.op_type == "mlp":
-            raise NotImplementedError(
-                "op_type='mlp' (grid_mlp=True paths) is not ported to dpmodel"
-            )
         self.precision = precision
         self.layout = str(layout).lower()
         if self.layout not in {"ndfc", "nfdc", "flat"}:
@@ -579,8 +739,17 @@ class BaseGridNet(NativeOP):
             seed=child_seed(seed, 0),
             init_std=0.01,
         )
-        if self.op_type == "branch":
-            self.grid_op: GridBranch | None = GridBranch(
+        if self.op_type == "mlp":
+            self.grid_op: GridMLP | GridBranch | None = GridMLP(
+                channels=self.channels,
+                mode=self.mode,
+                precision=self.precision,
+                mlp_bias=self.mlp_bias,
+                trainable=trainable,
+                seed=child_seed(seed, 1),
+            )
+        elif self.op_type == "branch":
+            self.grid_op = GridBranch(
                 channels=self.channels,
                 n_branches=grid_branches,
                 precision=self.precision,
@@ -622,6 +791,8 @@ class BaseGridNet(NativeOP):
         right_grid = self._to_grid(right)
         if self.op_type == "glu":
             return left_grid * right_grid
+        if self.op_type == "mlp":
+            return self.grid_op(left_grid, right_grid)
         return self.grid_op(left_grid, right_grid, scalar_pair)
 
     def _apply_scalar_path(self, coeff: Any, scalar_pair: Any) -> Any:
@@ -724,8 +895,7 @@ class S2GridNet(BaseGridNet):
     mode : str
         Pairing mode; only ``"self"`` is ported.
     op_type : str
-        Point-wise grid operation; ``"glu"`` or ``"branch"`` (``"mlp"`` is
-        not ported).
+        Point-wise grid operation; ``"glu"``, ``"mlp"``, or ``"branch"``.
     precision : str
         Parameter precision.
     layout : str
@@ -808,7 +978,7 @@ class S2GridNet(BaseGridNet):
         variables = {"scalar_gate.weight": to_numpy_array(self.scalar_gate.weight)}
         if self.mlp_bias:
             variables["scalar_gate.bias"] = to_numpy_array(self.scalar_gate.bias)
-        if self.op_type == "branch":
+        if self.op_type in {"branch", "mlp"}:
             grid_op_data = self.grid_op.serialize()["@variables"]
             for key, value in grid_op_data.items():
                 variables[f"grid_op.{key}"] = value
@@ -875,7 +1045,7 @@ class S2GridNet(BaseGridNet):
             obj.scalar_gate.bias = np.asarray(
                 variables["scalar_gate.bias"], dtype=prec
             ).reshape(obj.scalar_gate.bias.shape)
-        if obj.op_type == "branch":
+        if obj.op_type in {"branch", "mlp"}:
             obj.grid_op._load_variables(
                 {
                     key[len("grid_op.") :]: value
