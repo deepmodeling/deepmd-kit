@@ -42,10 +42,13 @@ class MFTFineTuner:
         normalizes it against DOWNSTREAM weight of 1.0. This is the primary
         experimental variable for sensitivity analysis.
         Example: aux_prob=0.5 → aux:downstream ≈ 1:2 sampling ratio.
-    aux_type_map : list[str]
-        Element symbols for the aux data directory.
-    downstream_type_map : list[str]
-        Element symbols for the downstream data directory.
+    type_map : list[str], optional
+        The global (shared) type map for MFT training. Both the aux and
+        downstream branches share a single descriptor, which uses this
+        type_map to map element symbols to integer indices. It must be a
+        superset (union) of the elements appearing in both datasets. When
+        omitted, it is auto-detected from the pretrained checkpoint (which
+        covers the full periodic table for DPA-3.1-3M).
     fitting_net_params : dict, optional
         Fitting net architecture for the aux branch. Must match the
         checkpoint exactly. When omitted (the default), it is read
@@ -54,20 +57,17 @@ class MFTFineTuner:
         Pass an explicit dict only if you need to override the checkpoint's
         config (e.g. for experiments).
     downstream_task_type : str
-        Either ``"ener"`` (force-field head, the legacy default) or
-        ``"property"`` (intensive scalar head, e.g. HOMO/LUMO). Selects how
+        Either ``"property"`` (intensive scalar head, e.g. HOMO/LUMO, the
+        default) or ``"ener"`` (force-field head, legacy mode). Selects how
         the DOWNSTREAM branch's fitting_net and loss are built:
 
-        * ``"ener"`` — DOWNSTREAM reuses the aux fitting_net dict and an
-          ener-style loss with force/virial prefs. This is what the
-          mp_data sensitivity-analysis MFT experiments rely on.
         * ``"property"`` — DOWNSTREAM gets a fresh ``type: property``
           fitting_net (using ``property_name``, ``task_dim``, ``intensive``)
           and a property-style MSE loss with no force/virial prefs. This
           is what arXiv:2601.08486 Table 3 / Fig 2 reports for HOMO/LUMO.
-        Required for paper-faithful BOOM evaluation on QM9. Default
-        ``"ener"`` preserves back-compat with existing sensitivity-analysis
-        callers.
+        * ``"ener"`` — DOWNSTREAM reuses the aux fitting_net dict and an
+          ener-style loss with force/virial prefs. This is the legacy mode
+          used by earlier mp_data sensitivity-analysis MFT experiments.
     property_name : str, optional
         Required when ``downstream_task_type="property"``. Name of the
         per-system property file (e.g. ``"homo"`` reads ``set.*/homo.npy``).
@@ -106,10 +106,9 @@ class MFTFineTuner:
         pretrained,
         aux_branch="MP_traj_v024_alldata_mixu",
         aux_prob=0.5,
-        aux_type_map=None,
-        downstream_type_map=None,
+        type_map=None,
         fitting_net_params=None,
-        downstream_task_type="ener",
+        downstream_task_type="property",
         property_name=None,
         task_dim=1,
         intensive=True,
@@ -146,11 +145,10 @@ class MFTFineTuner:
                 f"fparam_dim must be a non-negative int; got {fparam_dim!r}."
             )
 
+        self.type_map = type_map
         self.pretrained = resolve_pretrained_path(pretrained)
         self.aux_branch = aux_branch
         self.aux_prob = aux_prob
-        self.aux_type_map = aux_type_map
-        self.downstream_type_map = downstream_type_map
         # Lazy: only load from ckpt when fitting_net_params is first accessed.
         self._fitting_net_params = fitting_net_params
         self._fitting_net_params_resolved = fitting_net_params is not None
@@ -224,14 +222,20 @@ class MFTFineTuner:
             )
         return model_dict[aux_branch]["fitting_net"]
 
-    def _resolve_type_maps(self, train_data, aux_data):
-        """Auto-infer aux_type_map from checkpoint and validate data type_maps.
+    def _validate_and_resolve_type_map(self, train_data, aux_data):
+        """Validate and resolve the global type_map for MFT training.
 
-        Called by fit() when the user has not explicitly provided aux_type_map
-        or downstream_type_map.  Reads the checkpoint's global type_map (118
-        elements for DPA-3.1-3M), validates that each dataset's elements are
-        a subset, and sets ``self.aux_type_map`` and
-        ``self.downstream_type_map``.
+        Always called by ``fit()`` — whether ``type_map`` is user-provided
+        or auto-detected.
+
+        - If ``type_map`` was not provided, auto-detect it from the
+          pretrained checkpoint (which covers the full periodic table for
+          DPA-3.1-3M, so it is always a superset).
+        - If ``type_map`` was provided, validate that it covers all elements
+          appearing in both the downstream and aux datasets (i.e. it must
+          be the union of the two datasets' element sets).
+        - In both cases, validate that each dataset's elements are a subset
+          of the global type_map.
         """
         from dpa_adapt.data.loader import (
             load_data,
@@ -242,11 +246,7 @@ class MFTFineTuner:
             validate_type_map_subset,
         )
 
-        self.aux_type_map = read_checkpoint_type_map(
-            self.pretrained,
-            branch=self.aux_branch,
-        )
-
+        # Read elements from both datasets.
         try:
             train_systems = load_data(train_data)
         except Exception:
@@ -256,6 +256,42 @@ class MFTFineTuner:
         except Exception:
             aux_systems = []
 
+        if self.type_map is None:
+            # Auto-detect from checkpoint — always a superset.
+            self.type_map = read_checkpoint_type_map(
+                self.pretrained,
+                branch=self.aux_branch,
+            )
+        else:
+            # User-provided: validate that it covers both datasets.
+            downstream_elems = []
+            aux_elems = []
+            try:
+                downstream_elems = read_data_type_map_union(train_systems)
+            except ValueError:
+                pass  # no atom_names — deepmd uses raw atom indices
+            try:
+                aux_elems = read_data_type_map_union(aux_systems)
+            except ValueError:
+                pass
+
+            required = set(downstream_elems) | set(aux_elems)
+            missing = required - set(self.type_map)
+            if missing:
+                raise ValueError(
+                    "The provided type_map is missing elements "
+                    "required by the training data.\n"
+                    f"  Missing elements: {sorted(missing)}\n"
+                    f"  Downstream data elements: "
+                    f"{sorted(downstream_elems) if downstream_elems else '(none)'}\n"
+                    f"  Aux data elements: "
+                    f"{sorted(aux_elems) if aux_elems else '(none)'}\n"
+                    f"  Provided type_map: {self.type_map}\n"
+                    "The type_map must be the union (superset) of both "
+                    "datasets' elements."
+                )
+
+        # Validate both datasets are subsets of the global type_map.
         for label, systems in [
             ("downstream", train_systems),
             ("aux", aux_systems),
@@ -268,14 +304,9 @@ class MFTFineTuner:
                 continue  # no atom_names — deepmd uses raw atom indices
             validate_type_map_subset(
                 elements,
-                self.aux_type_map,
+                self.type_map,
                 label=f"{label} data",
             )
-
-        try:
-            self.downstream_type_map = read_data_type_map_union(train_systems)
-        except ValueError:
-            self.downstream_type_map = []
 
     def fit(self, train_data, aux_data, valid_data=None):
         """
@@ -325,12 +356,9 @@ class MFTFineTuner:
 
         os.makedirs(self.output_dir, exist_ok=True)
 
-        # Auto-infer type_maps when not explicitly provided.
-        # Without this, the global type_map in mft_input.json is [] and
-        # deepmd hits a CUDA device-side assert "index out of bounds" when
-        # gathering real_atom_types (local indices) against an empty map.
-        if not self.aux_type_map:
-            self._resolve_type_maps(train_data, aux_data)
+        # Validate and resolve type_map — always runs, whether type_map
+        # is user-provided or auto-detected.
+        self._validate_and_resolve_type_map(train_data, aux_data)
 
         from dpa_adapt.config.manager import (
             MFTConfigManager,
@@ -365,8 +393,9 @@ class MFTFineTuner:
 
         if process.returncode != 0:
             raise RuntimeError(
-                f"dp train failed (return code {process.returncode}). "
-                f"See {log_path} for details."
+                f"dp --pt train failed (return code {process.returncode}).\n"
+                f"cmd: {cmd}\n"
+                f"See {log_path} for full output."
             )
 
     # ----- evaluate -----
@@ -545,6 +574,13 @@ class MFTFineTuner:
         ]
         result = subprocess.run(cmd, capture_output=True, text=True)
         combined = result.stdout + "\n" + result.stderr
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"dp --pt test failed (return code {result.returncode}).\n"
+                f"cmd: {' '.join(cmd)}\n"
+                f"stdout:\n{result.stdout}\n"
+                f"stderr:\n{result.stderr}"
+            )
 
         return self._parse_test_output(combined, n_resolved=len(systems))
 

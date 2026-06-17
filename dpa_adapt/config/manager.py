@@ -213,7 +213,7 @@ class MFTConfigManager:
             "model": {
                 "shared_dict": {
                     "dpa3_descriptor": descriptor,
-                    "type_map": t.aux_type_map,
+                    "type_map": t.type_map,
                 },
                 "model_dict": {t.aux_branch: aux_head, downstream_key: downstream_head},
             },
@@ -242,8 +242,9 @@ class MFTConfigManager:
 
     def build_cmd(self, input_json_path: str) -> str:
         t = self.t
-        # MFT 模式：不加 --model-branch（branch 由 model_dict key 控制）
-        # descriptor 完整参数已在 config 中，不再需要 --use-pretrain-script
+        # MFT mode: do not pass --model-branch (branches are keyed by model_dict).
+        # The full descriptor config is already in the JSON, so
+        # --use-pretrain-script is not needed.
         return (
             f"dp --pt train {input_json_path} "
             f"--skip-neighbor-stat "

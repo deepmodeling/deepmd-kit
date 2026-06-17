@@ -18,12 +18,12 @@ For a complete runnable example (QM9 HOMO–LUMO gap, ~5 min on CPU), see [`../.
 
 The strategy is the core choice. All four share the same pre-trained DPA backbone and differ in how much of it gets updated:
 
-| Strategy         | Core Mechanism                                  | Target Data Size | Hardware     | Primary Use Case                          |
-| :--------------- | :---------------------------------------------- | :--------------- | :----------- | :---------------------------------------- |
-| `frozen_sklearn` | Frozen backbone + scikit-learn regressor        | Small (\<1k)     | CPU only     | Ultra-fast benchmarking & prototyping     |
-| `frozen_head`    | Frozen backbone + DeepMD property fitting head  | Medium (1k–10k)  | CPU / GPU    | Train only the property head while keeping the pretrained DPA backbone frozen |
-| `finetune`       | End-to-end full parameter fine-tuning           | Large (>10k)     | GPU required | Maximum accuracy on large datasets        |
-| `mft`            | Multi-task co-training (property + force field) | Small / low-data | GPU required | Mitigating representation collapse        |
+| Strategy         | Core Mechanism                                  | Target Data Size | Primary Use Case                          |
+| :--------------- | :---------------------------------------------- | :--------------- | :---------------------------------------- |
+| `frozen_sklearn` | Frozen backbone + scikit-learn regressor        | Small (\<1k)     | Ultra-fast benchmarking & prototyping     |
+| `frozen_head`    | Frozen backbone + DeepMD property fitting head  | Medium (1k–10k)  | Train only the property head while keeping the pretrained DPA backbone frozen |
+| `finetune`       | End-to-end full parameter fine-tuning           | Large (>10k)     | Maximum accuracy on large datasets        |
+| `mft`            | Multi-task co-training (property + force field) | Small / low-data | Mitigating representation collapse        |
 
 ### frozen_sklearn — CPU-only, scikit-learn predictor
 
@@ -61,7 +61,7 @@ Both delegate to `dp --pt train` and accept the same parameters.  The only
 difference: `frozen_head` freezes the DPA backbone (train only the fitting
 head), while `finetune` updates all parameters end-to-end.
 
-frozen_head 适合中等数据量（1k–10k），finetune 适合大数据量（>10k，需 GPU）。
+`frozen_head` suits medium datasets (1k–10k); `finetune` targets large datasets (>10k, GPU required).
 
 ```python
 model = DPAFineTuner(
@@ -141,9 +141,9 @@ model = DPAFineTuner(
     # ---- MFT-specific ----
     aux_branch="MP_traj_v024_alldata_mixu",   # checkpoint branch for aux force head
     aux_prob=0.5,                              # aux sampling weight (downstream = 1 - aux_prob)
-    downstream_task_type="property",           # "property" | "ener" (legacy default)
-    aux_type_map=None,                         # element symbols for aux data (auto-detect)
-    downstream_type_map=None,                  # element symbols for downstream data
+    downstream_task_type="property",           # "property" (default) | "ener" (legacy)
+    type_map=None,                             # global (shared) type map; must be union of
+                                               #   both datasets' elements (auto-detect)
     aux_batch_size=None,                       # batch size for aux head (None = auto)
     downstream_batch_size=None,                # batch size for downstream head (None = auto)
     # ---- fitting net (aux head only; downstream uses property defaults) ----
@@ -177,9 +177,8 @@ metrics = model.evaluate(data="/data/test")    # .mae, .rmse, .r2
 |-----------|------|---------|-------------|
 | `aux_branch` | `str` | `"MP_traj_v024_alldata_mixu"` | Checkpoint branch to initialize the auxiliary force/energy head. Use `dp --pt show <ckpt> model-branch` to list options. |
 | `aux_prob` | `float` | `0.5` | Sampling weight for the aux branch. Downstream weight = `1.0 - aux_prob`. |
-| `downstream_task_type` | `str` | `"ener"` | `"property"` (intensive scalar head) or `"ener"` (force-field head, legacy default) |
-| `aux_type_map` | `list[str]` or `None` | `None` | Element symbols for aux data; auto-detected if `None` |
-| `downstream_type_map` | `list[str]` or `None` | `None` | Element symbols for downstream data; auto-detected if `None` |
+| `downstream_task_type` | `str` | `"property"` | `"property"` (intensive scalar head, e.g. HOMO/LUMO) or `"ener"` (force-field head, legacy mode) |
+| `type_map` | `list[str]` or `None` | `None` | Global (shared) type map for MFT. Both branches share a single descriptor, so this must be the **union** of all elements appearing in either dataset. Auto-detected from the pretrained checkpoint if `None`. |
 | `aux_batch_size` | `str` or `None` | `None` | Batch size for aux head; auto-selected if `None` |
 | `downstream_batch_size` | `int` or `None` | `None` | Batch size for downstream head; auto-selected if `None` |
 | `fitting_net_params` | `dict` or `None` | `None` | Overrides for the **aux** fitting net; downstream uses property defaults. `None` = auto-read from checkpoint. |
