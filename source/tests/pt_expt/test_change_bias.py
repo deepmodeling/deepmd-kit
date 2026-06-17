@@ -279,6 +279,36 @@ class TestChangeBias(unittest.TestCase):
         expected_bias = np.array(user_bias).reshape(updated_bias.shape)
         np.testing.assert_allclose(updated_bias, expected_bias)
 
+    def test_change_bias_preserves_checkpoint_storage_aliases(self) -> None:
+        alias_path = os.path.join(self.tmpdir, "model_alias.pt")
+        output_path = os.path.join(self.tmpdir, "model_alias_user_bias.pt")
+        state_dict = torch.load(self.model_path, map_location=DEVICE, weights_only=True)
+        model_state = state_dict["model"]
+        key = "model.Default.atomic_model.descriptor.davg"
+        peer_key = "model.Default.atomic_model.descriptor.dstd"
+        self.assertIn(key, model_state)
+        self.assertIn(peer_key, model_state)
+        model_state[peer_key] = model_state[key]
+        torch.save(state_dict, alias_path)
+
+        user_bias = [0.1, 3.2]
+        run_dp(
+            f"dp --pt-expt change-bias {alias_path} "
+            f"-b {' '.join(str(v) for v in user_bias)} -o {output_path}"
+        )
+        updated_state = torch.load(output_path, map_location=DEVICE, weights_only=True)[
+            "model"
+        ]
+        self.assertEqual(
+            updated_state[key].untyped_storage().data_ptr(),
+            updated_state[peer_key].untyped_storage().data_ptr(),
+        )
+        updated_bias = updated_state["model.Default.atomic_model.out_bias"]
+        expected_bias = torch.as_tensor(
+            user_bias, dtype=updated_bias.dtype, device=updated_bias.device
+        ).view(updated_bias.shape)
+        torch.testing.assert_close(updated_bias, expected_bias)
+
     def test_change_bias_frozen_pte(self) -> None:
         from deepmd.pt_expt.model.model import (
             BaseModel,
