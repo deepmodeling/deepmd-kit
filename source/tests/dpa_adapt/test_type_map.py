@@ -9,7 +9,9 @@ from unittest.mock import (
 import numpy as np
 import pytest
 
-sys.modules.setdefault("torch", MagicMock())
+_mock_torch_tm = MagicMock()
+_mock_torch_tm.Tensor = type("Tensor", (), {})
+sys.modules.setdefault("torch", _mock_torch_tm)
 
 from dpa_adapt.data.errors import DPADataError
 from dpa_adapt.data.loader import load_data
