@@ -38,13 +38,55 @@ pred = model.predict(data=str("/data/test"))
 metrics = model.evaluate(data=str("/data/test"))
 
 # frozen_head / finetune — same interface, different depth
+#
+# Both strategies delegate to `dp --pt train` under the hood and accept the
+# same set of training parameters.  frozen_head freezes the DPA backbone and
+# only trains a new property fitting head; finetune updates the full network
+# end-to-end.
+#
+# All parameters below are deepmd-kit native — they map directly to fields
+# in the generated input.json.
 model = DPAFineTuner(
-    pretrained="DPA-3.1-3M", 
-    strategy="frozen_head",  #"frozen_head" | "finetune"
-    property_name="homo",
-    learning_rate=1e-3,
-    batch_size=512,
+    pretrained="DPA-3.1-3M",
+    strategy="frozen_head",          # "frozen_head" | "finetune"
+
+    # ---- task definition ----
+    property_name="homo",            # label key under set.*/
+    task_dim=1,                      # output dimensionality
+    intensive=True,                  # True = intensive (mean-pooled), False = extensive
+    init_branch="SPICE2",            # checkpoint branch for descriptor init
+
+    # ---- fitting net (optional, deepmd-kit defaults: neuron=[240,240,240], tanh, resnet_dt=True) ----
+    fitting_net_params={             # deepmd-kit fitting_net fields, e.g.
+        "neuron": [128, 128, 128],   #   hidden layer sizes
+        "activation_function": "relu",
+        "resnet_dt": True,
+        # "numb_fparam": …,          #   auto-set from fparam_dim, do not pass manually
+    },
+
+    # ---- learning rate schedule (deepmd-kit "exp" scheduler) ----
+    learning_rate=1e-3,              # start_lr
+    stop_lr=1e-5,                    # end_lr
+    decay_steps=1000,                # steps between LR decays
+    warmup_steps=0,                  # linear LR warmup (0 = disabled)
+
+    # ---- training loop ----
+    max_steps=100_000,               # total training steps
+    batch_size="auto:512",           # deepmd-kit batch_size spec
+    loss_function="mse",             # "mse" | "smooth_mae"
+
+    # ---- context features (optional) ----
+    fparam_dim=0,                    # > 0 reads set.*/fparam.npy automatically
+
+    # ---- reproducibility ----
+    seed=42,
+
+    # ---- output ----
+    output_dir="./dpa_output",       # input.json, checkpoints, logs
+    save_freq=10_000,                # checkpoint save interval (steps)
+    disp_freq=1_000,                 # log display interval (steps)
 )
+
 model.fit(train_data="/data/train", valid_data="/data/valid")
 pred = model.predict(data=str("/data/test"))
 metrics = model.evaluate(data=str("/data/test"))
