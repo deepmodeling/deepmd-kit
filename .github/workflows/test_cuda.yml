@@ -43,6 +43,8 @@ jobs:
           && sudo dpkg -i cuda-keyring_1.1-1_all.deb \
           && sudo apt-get update \
           && sudo apt-get -y install cuda-toolkit-12-9 cudnn9-cuda-12
+          echo "CUDA_PATH=/usr/local/cuda-12.9" >> $GITHUB_ENV
+          echo "/usr/local/cuda-12.9/bin" >> $GITHUB_PATH
         # if: false # skip as we use nvidia image
       - run: python -m pip install -U uv
       - run: source/install/uv_with_retry.sh pip install --system --group pin_tensorflow_gpu --group pin_pytorch_gpu --group pin_jax_gpu
