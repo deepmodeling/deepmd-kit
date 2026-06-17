@@ -46,6 +46,9 @@ DPA4_CASE_FIELDS = (
     "grid_branch",
     "s2_activation",
     "basis_type",
+    "ffn_so3_grid",
+    "message_node_so3",
+    "grid_mlp",
 )
 
 DPA4_BASELINE_CASE = {
@@ -53,6 +56,9 @@ DPA4_BASELINE_CASE = {
     "grid_branch": [1, 1, 1],
     "s2_activation": [False, True],
     "basis_type": "bessel",
+    "ffn_so3_grid": False,
+    "message_node_so3": False,
+    "grid_mlp": False,
 }
 
 
@@ -85,6 +91,15 @@ DPA4_CURATED_CASES = (
         s2_activation=[False, False],
         basis_type="gaussian",
     ),
+    # SO(3) Wigner-D grid in the block-internal FFN
+    dpa4_case(ffn_so3_grid=True),
+    # SO(3) Wigner-D grid in the post-aggregation message-node path
+    dpa4_case(message_node_so3=True),
+    # both SO(3) grid paths enabled together
+    dpa4_case(ffn_so3_grid=True, message_node_so3=True),
+    # grid MLP point-wise op (op_type='mlp'); needs grid_branch=0 on the path,
+    # since positive grid_branch entries take precedence over grid_mlp
+    dpa4_case(grid_branch=[0, 0, 0], grid_mlp=True),
 )
 
 
@@ -97,6 +112,9 @@ class TestDPA4(CommonTest, DescriptorTest, unittest.TestCase):
             grid_branch,
             s2_activation,
             basis_type,
+            ffn_so3_grid,
+            message_node_so3,
+            grid_mlp,
         ) = self.param
         return {
             "ntypes": self.ntypes,
@@ -110,6 +128,9 @@ class TestDPA4(CommonTest, DescriptorTest, unittest.TestCase):
             "n_blocks": 2,
             "grid_branch": grid_branch,
             "s2_activation": s2_activation,
+            "ffn_so3_grid": ffn_so3_grid,
+            "message_node_so3": message_node_so3,
+            "grid_mlp": grid_mlp,
             "random_gamma": False,
             "precision": precision,
             "trainable": False,
@@ -217,6 +238,9 @@ class TestDPA4(CommonTest, DescriptorTest, unittest.TestCase):
             _grid_branch,
             _s2_activation,
             _basis_type,
+            _ffn_so3_grid,
+            _message_node_so3,
+            _grid_mlp,
         ) = self.param
         if precision == "float64":
             return 1e-10
@@ -233,6 +257,9 @@ class TestDPA4(CommonTest, DescriptorTest, unittest.TestCase):
             _grid_branch,
             _s2_activation,
             _basis_type,
+            _ffn_so3_grid,
+            _message_node_so3,
+            _grid_mlp,
         ) = self.param
         if precision == "float64":
             return 1e-10
