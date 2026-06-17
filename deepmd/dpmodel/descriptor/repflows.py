@@ -282,6 +282,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
                 "The JAX exportable dynamic-selection layout materializes "
                 "fixed angle capacity nf * nloc * a_sel * a_sel. Keep a_sel "
                 "modest for exportable DPA-3 models.",
+                stacklevel=2,
             )
         self.use_loc_mapping = use_loc_mapping
         self.sel_reduce_factor = sel_reduce_factor
