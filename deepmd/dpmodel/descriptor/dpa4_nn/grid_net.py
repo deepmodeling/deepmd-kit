@@ -15,16 +15,16 @@ are:
 Ported names: ``BaseGridNet`` (``mode='self'``; ``op_type`` 'glu'/'mlp'/
 'branch'), ``S2GridNet``, ``GridBranch``, ``GridMLP``.
 
+``mode='cross'`` (with ``layout='flat'`` and ``residual_scale_init``) is
+ported for the S2 projector (``n_frames == 1``): query and context stay
+separate and there is no frame_expand/frame_contract machinery.
+
 Skipped names, with consumer evidence from the pt sources:
 
 - ``SO3GridNet``: only constructed by ``so2.py`` (``node_wise_so3``,
   ``message_node_so3``) and ``ffn.py`` (``ffn_so3_grid``) — all disabled in
-  the core DPA4 config.
-
-Guarded (routable from the shared ``S2GridNet`` entry point but only used by
-the disabled ``node_wise_s2``/``message_node_s2`` grid products in
-``so2.py``): ``mode='cross'`` (and with it ``layout='flat'``) and
-``residual_scale_init is not None`` raise ``NotImplementedError``.
+  the core DPA4 config. The SO(3) cross-mode frame machinery (FrameExpand/
+  FrameContract, ``n_frames > 1``) is wired by the SO3 projector port.
 
 Serialization contract: the pt ``S2GridNet`` and ``GridBranch`` define no
 ``serialize()`` (they only appear nested inside larger modules'
@@ -650,15 +650,17 @@ class FrameExpand(_FrameMixer):
 
 class BaseGridNet(NativeOP):
     """
-    Shared implementation for S2 grid nets (``mode='self'`` only).
+    Shared implementation for S2 grid nets (``n_frames == 1``).
 
     ``mode='self'`` expects one input whose last channel axis contains two
     branches; the first half supplies the SwiGLU gates of the scalar path.
+    ``mode='cross'`` expects separate query and context inputs (each with
+    ``channels`` channels) and supports ``layout='flat'`` and
+    ``residual_scale_init``.
 
-    The pt ``mode='cross'`` path (with ``layout='flat'``,
-    ``residual_scale_init``, and the SO(3) frame machinery) backs the
-    ``node_wise_s2``/``message_node_s2`` grid products only, which are
-    disabled in the core DPA4 config; it is not ported.
+    The SO(3) frame machinery (FrameExpand/FrameContract, ``n_frames > 1``)
+    that backs ``SO3GridNet`` cross-mode is not part of this base; the
+    ``n_frames != 1`` guard keeps it out until the SO3 projector is wired.
     """
 
     def __init__(
@@ -689,11 +691,6 @@ class BaseGridNet(NativeOP):
         self.mode = str(mode).lower()
         if self.mode not in {"self", "cross"}:
             raise ValueError("`mode` must be either 'self' or 'cross'")
-        if self.mode == "cross":
-            raise NotImplementedError(
-                "mode='cross' (node_wise_s2/message_node_s2 grid products) "
-                "is not ported to dpmodel"
-            )
         self.op_type = str(op_type).lower()
         if self.op_type not in {"glu", "mlp", "branch"}:
             raise ValueError("`op_type` must be one of 'glu', 'mlp', or 'branch'")
@@ -706,16 +703,28 @@ class BaseGridNet(NativeOP):
         self.mlp_bias = bool(mlp_bias)
         self.trainable = bool(trainable)
         self.expanded_channels = self.n_frames * self.channels
-        self.query_channels = 2 * self.expanded_channels
+        # The dpmodel port does not include the SO(3) frame_expand/frame_contract
+        # machinery (frame_expand is None for the ported S2 path), so the cross
+        # query/context/output widths all collapse to ``expanded_channels``.
+        self.query_channels = (
+            2 * self.expanded_channels
+            if self.mode == "self"
+            else self.expanded_channels
+        )
+        self.context_channels = self.expanded_channels
         self.output_channels = self.expanded_channels
         self.frame_zero_index = 0
-        if residual_scale_init is not None:
-            raise NotImplementedError(
-                "`residual_scale_init` is only used by the cross-mode "
-                "node_wise_s2/message_node_s2 grid products, which are not "
-                "ported to dpmodel"
+        self.residual_scale_init = (
+            None if residual_scale_init is None else float(residual_scale_init)
+        )
+        if self.residual_scale_init is None:
+            self.residual_scale = None
+        else:
+            prec = PRECISION_DICT[self.precision.lower()]
+            self.residual_scale = (
+                np.ones((self.n_focus, self.output_channels), dtype=prec)
+                * self.residual_scale_init
             )
-        self.residual_scale = None
 
         self.scalar_act = SwiGLU()
         self.scalar_gate = FocusLinear(
@@ -756,14 +765,45 @@ class BaseGridNet(NativeOP):
         input_dtype = query.dtype
         compute_dtype = get_xp_precision(xp, self.precision)
         query_ndfc = self._to_ndfc(query)
-        left, right = self._split_self_query(query_ndfc)
-        scalar_pair = self._make_scalar_pair(left, right, compute_dtype)
+        left, right, scalar_pair = self._prepare_pair(
+            query_ndfc, context, compute_dtype
+        )
         grid_out = self._apply_grid_op(left, right, scalar_pair, compute_dtype)
         coeff_out = self._from_grid(grid_out)
         coeff_out = self._apply_scalar_path(coeff_out, scalar_pair)
+        coeff_out = self._apply_residual_scale(coeff_out)
         if coeff_out.dtype != input_dtype:
             coeff_out = xp.astype(coeff_out, input_dtype)
         return self._restore_layout(coeff_out)
+
+    def _prepare_pair(
+        self,
+        query: Any,
+        context: Any,
+        compute_dtype: Any,
+    ) -> tuple[Any, Any, Any]:
+        if self.mode == "self":
+            left, right = self._split_self_query(query)
+            scalar_pair = self._make_scalar_pair(left, right, compute_dtype)
+            return left, right, scalar_pair
+        return self._prepare_cross_pair(query, context, compute_dtype)
+
+    def _prepare_cross_pair(
+        self,
+        query: Any,
+        context: Any,
+        compute_dtype: Any,
+    ) -> tuple[Any, Any, Any]:
+        if context is None:
+            raise ValueError("`context` is required when `mode='cross'`")
+        context_ndfc = self._to_ndfc(context)
+        # The ported S2 path has no frame_expand, so query and context keep
+        # their incoming (N, D, F, C) shape and share the ``context_channels``
+        # width (mirrors the pt frame_expand-is-None branch).
+        self._check_last_dim(query, self.context_channels, "query")
+        self._check_last_dim(context_ndfc, self.context_channels, "context")
+        scalar_pair = self._make_scalar_pair(query, context_ndfc, compute_dtype)
+        return query, context_ndfc, scalar_pair
 
     def _apply_grid_op(
         self,
@@ -784,6 +824,22 @@ class BaseGridNet(NativeOP):
         if self.op_type == "mlp":
             return self.grid_op(left_grid, right_grid)
         return self.grid_op(left_grid, right_grid, scalar_pair)
+
+    def _apply_residual_scale(self, coeff: Any) -> Any:
+        if self.residual_scale is None:
+            return coeff
+        xp = array_api_compat.array_namespace(coeff)
+        scale = xp_asarray_nodetach(
+            xp,
+            self.residual_scale[...],
+            device=array_api_compat.device(coeff),
+        )
+        if scale.dtype != coeff.dtype:
+            scale = xp.astype(scale, coeff.dtype)
+        # broadcast (n_focus, output_channels) over (N, D, F, C)
+        return coeff * xp.reshape(
+            scale, (1, 1, self.n_focus, self.output_channels)
+        )
 
     def _apply_scalar_path(self, coeff: Any, scalar_pair: Any) -> Any:
         xp = array_api_compat.array_namespace(coeff)
@@ -852,15 +908,23 @@ class BaseGridNet(NativeOP):
     def _to_ndfc(self, value: Any) -> Any:
         if self.layout == "ndfc":
             return value
-        # "nfdc": (N, F, D, C) -> (N, D, F, C); "flat" is cross-only (blocked)
         xp = array_api_compat.array_namespace(value)
-        return xp.permute_dims(value, (0, 2, 1, 3))
+        if self.layout == "nfdc":
+            # (N, F, D, C) -> (N, D, F, C)
+            return xp.permute_dims(value, (0, 2, 1, 3))
+        # "flat" (cross-only): (N, D, F*C) -> (N, D, F, C)
+        n_batch, coeff_dim, _ = value.shape
+        return xp.reshape(value, (n_batch, coeff_dim, self.n_focus, -1))
 
     def _restore_layout(self, value: Any) -> Any:
         if self.layout == "ndfc":
             return value
         xp = array_api_compat.array_namespace(value)
-        return xp.permute_dims(value, (0, 2, 1, 3))
+        if self.layout == "nfdc":
+            return xp.permute_dims(value, (0, 2, 1, 3))
+        # "flat" (cross-only): (N, D, F, C) -> (N, D, F*C)
+        n_batch, coeff_dim, _, _ = value.shape
+        return xp.reshape(value, (n_batch, coeff_dim, -1))
 
     def _check_last_dim(self, value: Any, expected: int, name: str) -> None:
         if value.shape[-1] != expected:
@@ -883,13 +947,14 @@ class S2GridNet(BaseGridNet):
     n_focus : int
         Number of focus streams.
     mode : str
-        Pairing mode; only ``"self"`` is ported.
+        Pairing mode; ``"self"`` or ``"cross"``.
     op_type : str
         Point-wise grid operation; ``"glu"``, ``"mlp"``, or ``"branch"``.
     precision : str
         Parameter precision.
     layout : str
-        Tensor layout convention: ``"ndfc"`` or ``"nfdc"``.
+        Tensor layout convention: ``"ndfc"``, ``"nfdc"``, or ``"flat"``
+        (``"flat"`` is cross-mode only).
     grid_resolution_list : list[int] | None
         Lebedev ``[precision, n_points]`` pair; resolved automatically if None.
     coefficient_layout : str
@@ -899,7 +964,8 @@ class S2GridNet(BaseGridNet):
     grid_branches : int
         Number of scalar-routed branches when ``op_type='branch'``.
     residual_scale_init : float | None
-        Not ported (cross-mode only); must be None.
+        If set, scales the grid-net output by a per-(focus, channel) parameter
+        initialised to this value (cross-mode use). ``None`` disables it.
     mlp_bias : bool
         Whether to use bias in the scalar gate projection.
     trainable : bool
@@ -972,6 +1038,10 @@ class S2GridNet(BaseGridNet):
             grid_op_data = self.grid_op.serialize()["@variables"]
             for key, value in grid_op_data.items():
                 variables[f"grid_op.{key}"] = value
+        # ``residual_scale`` is an nn.Parameter directly on the pt module, so the
+        # @variables key matches its pt state_dict key.
+        if self.residual_scale is not None:
+            variables["residual_scale"] = to_numpy_array(self.residual_scale)
         return {
             "@class": "S2GridNet",
             "@version": 1,
@@ -988,6 +1058,7 @@ class S2GridNet(BaseGridNet):
                 "coefficient_layout": self.projector.coefficient_layout,
                 "grid_method": self.grid_method,
                 "grid_branches": self.grid_branches,
+                "residual_scale_init": self.residual_scale_init,
                 "mlp_bias": self.mlp_bias,
                 "trainable": self.trainable,
                 "seed": None,
@@ -1019,6 +1090,7 @@ class S2GridNet(BaseGridNet):
             coefficient_layout=str(config["coefficient_layout"]),
             grid_method=str(config["grid_method"]),
             grid_branches=int(config["grid_branches"]),
+            residual_scale_init=config.get("residual_scale_init"),
             mlp_bias=bool(config["mlp_bias"]),
             trainable=bool(config["trainable"]),
             seed=config.get("seed"),
@@ -1043,4 +1115,12 @@ class S2GridNet(BaseGridNet):
                     if key.startswith("grid_op.")
                 }
             )
+        if obj.residual_scale is not None:
+            residual_scale = np.asarray(variables["residual_scale"], dtype=prec)
+            if residual_scale.shape != obj.residual_scale.shape:
+                raise ValueError(
+                    f"residual_scale shape {residual_scale.shape} does not match "
+                    f"the expected shape {obj.residual_scale.shape}"
+                )
+            obj.residual_scale = residual_scale
         return obj
