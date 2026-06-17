@@ -582,9 +582,11 @@ class DPAFineTuner:
     learning_rate, stop_lr : float
         Start and end points of the exponential learning-rate schedule
         (training paradigms).
-    decay_steps : int
+    decay_steps : int or None
         Steps between LR decays for the ``exp`` scheduler (deepmd-kit
-        native).  Default 1000.
+        native).  ``None`` (default) auto-selects: 1000 for
+        ``frozen_head``/``finetune``; 1000 for MFT property mode,
+        5000 for MFT ener mode.
     warmup_steps : int
         Linear LR warmup steps (deepmd-kit native).  0 = disabled.
     max_steps : int
@@ -648,7 +650,7 @@ class DPAFineTuner:
         init_branch="SPICE2",
         learning_rate=1e-3,
         stop_lr=1e-5,
-        decay_steps: int = 1000,
+        decay_steps: int | None = None,  # None → auto: 1000 for training, MFT auto-detect
         warmup_steps: int = 0,
         max_steps=100_000,
         batch_size="auto:512",
@@ -873,7 +875,7 @@ class DPAFineTuner:
             fitting_net_params=self.fitting_net_params,
             learning_rate=self.learning_rate,
             stop_lr=self.stop_lr,
-            decay_steps=self.decay_steps,
+            decay_steps=self.decay_steps if self.decay_steps is not None else 1000,
             warmup_steps=self.warmup_steps,
             max_steps=self.max_steps,
             batch_size=self.batch_size,
@@ -1103,6 +1105,8 @@ class DPAFineTuner:
                 intensive=self.intensive,
                 learning_rate=self.learning_rate,
                 stop_lr=self.stop_lr,
+                decay_steps=self.decay_steps,
+                warmup_steps=self.warmup_steps,
                 max_steps=self.max_steps,
                 batch_size=self.batch_size,
                 aux_batch_size=self.aux_batch_size,

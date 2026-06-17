@@ -92,11 +92,52 @@ pred = model.predict(data=str("/data/test"))
 metrics = model.evaluate(data=str("/data/test"))
 
 # mft — downstream property head + auxiliary force-field head jointly
+#
+# Jointly trains a downstream property head with an auxiliary force/energy
+# head on a shared DPA descriptor, preventing representation collapse.
+# Accepts all frozen_head/finetune params plus MFT-specific ones below.
 model = DPAFineTuner(
     pretrained="/path/to/DPA-3.1-3M.pt",
     strategy="mft",
-    property_name="homo",
-    aux_branch="MP_traj_v024_alldata_mixu",
+
+    # ---- task definition (same as frozen_head/finetune) ----
+    property_name="homo",            # label key under set.*/ (property mode only)
+    task_dim=1,
+    intensive=True,
+    init_branch="SPICE2",
+
+    # ---- MFT-specific ----
+    aux_branch="MP_traj_v024_alldata_mixu",  # checkpoint branch for aux force head
+    aux_prob=0.5,                    # aux sampling weight (downstream = 1.0 - aux_prob)
+    downstream_task_type="property", # "property" | "ener" (legacy default)
+    aux_type_map=None,               # element symbols for aux data (auto-detect if None)
+    downstream_type_map=None,        # element symbols for downstream data
+    aux_batch_size=None,             # batch size for aux head (None = auto)
+    downstream_batch_size=None,      # batch size for downstream head (None = auto)
+
+    # ---- fitting net (optional, for aux head; downstream uses property defaults) ----
+    fitting_net_params=None,         # aux fitting net overrides (None = auto-read from ckpt)
+
+    # ---- learning rate schedule (deepmd-kit "exp" scheduler) ----
+    learning_rate=1e-3,
+    stop_lr=1e-5,
+    decay_steps=None,                # None → auto: 1000 for property, 5000 for ener
+    warmup_steps=0,
+
+    # ---- training loop ----
+    max_steps=50_000,
+    batch_size="auto:32",
+
+    # ---- context features (optional) ----
+    fparam_dim=0,
+
+    # ---- reproducibility ----
+    seed=42,
+
+    # ---- output ----
+    output_dir="./mft_output",
+    save_freq=10_000,
+    disp_freq=1_000,
 )
 model.fit(train_data="/data/train", aux_data="/data/spice2")
 pred = model.predict(data=str("/data/test"))
