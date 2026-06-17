@@ -1430,11 +1430,13 @@ class TestS2GridParity:
         lmax,
         op_type,
         layout,
+        mode="self",
         mlp_bias=False,
         n_focus=1,
         mmax=None,
         coefficient_layout="packed",
         grid_branches=1,
+        residual_scale_init=None,
         seed=7,
     ):
         """Build a pt S2GridNet, perturb its params, and copy them into dp."""
@@ -1446,13 +1448,14 @@ class TestS2GridParity:
             mmax=mmax,
             channels=self.channels,
             n_focus=n_focus,
-            mode="self",
+            mode=mode,
             op_type=op_type,
             dtype=torch.float64,
             layout=layout,
             coefficient_layout=coefficient_layout,
             grid_method="lebedev",
             grid_branches=grid_branches,
+            residual_scale_init=residual_scale_init,
             mlp_bias=mlp_bias,
             trainable=True,
             seed=seed,
@@ -1466,13 +1469,14 @@ class TestS2GridParity:
             mmax=mmax,
             channels=self.channels,
             n_focus=n_focus,
-            mode="self",
+            mode=mode,
             op_type=op_type,
             precision="float64",
             layout=layout,
             coefficient_layout=coefficient_layout,
             grid_method="lebedev",
             grid_branches=grid_branches,
+            residual_scale_init=residual_scale_init,
             mlp_bias=mlp_bias,
             trainable=True,
             seed=seed,
@@ -1483,20 +1487,28 @@ class TestS2GridParity:
         expected_keys = {"scalar_gate.weight"}
         if mlp_bias:
             expected_keys.add("scalar_gate.bias")
-        if op_type == "branch":
+        if op_type == "mlp":
+            expected_keys |= {
+                "grid_op.left_proj.weight",
+                "grid_op.right_proj.weight",
+                "grid_op.out_proj.weight",
+            }
+        elif op_type == "branch":
             expected_keys |= {
                 "grid_op.left_proj.weight",
                 "grid_op.right_proj.weight",
                 "grid_op.router.weight",
                 "grid_op.out_proj.weight",
             }
+        if residual_scale_init is not None:
+            expected_keys.add("residual_scale")
         assert set(state) == expected_keys
-        dp_net.scalar_gate.weight = state["scalar_gate.weight"]
-        if mlp_bias:
-            dp_net.scalar_gate.bias = state["scalar_gate.bias"]
-        if op_type == "branch":
-            for name in ("left_proj", "right_proj", "router", "out_proj"):
-                getattr(dp_net.grid_op, name).weight = state[f"grid_op.{name}.weight"]
+        # load through the dp serialize() schema (the pt state_dict key names
+        # match the dp @variables keys exactly), which copies the scalar gate,
+        # the grid op weights and (when set) residual_scale in one shot.
+        ser = dp_net.serialize()
+        ser["@variables"] = state
+        dp_net = DPS2GridNet.deserialize(ser)
         return pt_net, dp_net
 
     # ------------------------------------------------- (a) projector constants
@@ -1707,7 +1719,86 @@ class TestS2GridParity:
         with pytest.raises(ValueError):
             DPGridBranch.deserialize({"@class": "Nope", "@version": 1})
 
-    # ------------------------------------------------ (d) not-ported guards
+    # --------------------------------------------- (d) cross-mode parity
+    def _cross_inputs(self, rng, dp_net, *, n_batch=11, dtype=np.float64):
+        """Build matching cross-mode (query, context) inputs for an S2GridNet.
+
+        For the S2 path (no frame machinery) the query/context channel widths
+        both collapse to ``channels``; ``layout='flat'`` flattens the focus
+        axis into the last dim while ``ndfc`` keeps it explicit.
+        """
+        n_coeff = dp_net.projector.coeff_dim
+        if dp_net.layout == "flat":
+            shape = (n_batch, n_coeff, dp_net.n_focus * self.channels)
+        else:
+            shape = (n_batch, n_coeff, dp_net.n_focus, self.channels)
+        query = rng.normal(size=shape).astype(dtype)
+        context = rng.normal(size=shape).astype(dtype)
+        return query, context
+
+    @pytest.mark.parametrize("op_type", ["glu", "mlp", "branch"])  # grid operation
+    @pytest.mark.parametrize("layout", ["ndfc", "flat"])  # flat is cross-only
+    def test_s2_grid_net_cross(self, op_type, layout) -> None:
+        # cross mode backs node_wise_s2 / message_node_s2; op_type='mlp' is the
+        # GridMLP path and layout='flat' is the cross-only flattened layout.
+        # lmax=3, mmax=1 (mmax<lmax) + m_major exercises the flagship config.
+        pt_net, dp_net = self._build_grid_nets(
+            lmax=3,
+            mmax=1,
+            op_type=op_type,
+            layout=layout,
+            mode="cross",
+            coefficient_layout="m_major",
+            grid_branches=2 if op_type == "branch" else 1,
+        )
+        rng = np.random.default_rng(2087)
+        query, context = self._cross_inputs(rng, dp_net)
+        assert_parity(dp_net.call(query, context), pt_net(to_pt(query), to_pt(context)))
+
+    def test_s2_grid_net_residual_scale(self) -> None:
+        # residual_scale_init scales the cross-mode output by a per-(focus,
+        # channel) parameter; copied through the dp @variables schema.
+        pt_net, dp_net = self._build_grid_nets(
+            lmax=2,
+            op_type="glu",
+            layout="ndfc",
+            mode="cross",
+            residual_scale_init=0.5,
+        )
+        assert dp_net.residual_scale is not None
+        rng = np.random.default_rng(2088)
+        query, context = self._cross_inputs(rng, dp_net)
+        assert_parity(dp_net.call(query, context), pt_net(to_pt(query), to_pt(context)))
+
+    def test_s2_grid_net_cross_fp32(self) -> None:
+        # fp32 input through a float64-precision cross-mode net: the S2 grid
+        # reduction sums over many Lebedev points, so fp32 accumulation can
+        # drift; a loose ~1e-4 budget (device-conditional) accounts for it
+        # rather than the fp64 near-bit gate.
+        pt_net, dp_net = self._build_grid_nets(
+            lmax=3,
+            mmax=1,
+            op_type="branch",
+            layout="ndfc",
+            mode="cross",
+            coefficient_layout="m_major",
+            grid_branches=2,
+        )
+        rng = np.random.default_rng(2089)
+        query, context = self._cross_inputs(rng, dp_net, dtype=np.float32)
+        dp_out = dp_net.call(query, context)
+        pt_out = pt_net(to_pt(query), to_pt(context))
+        assert dp_out.dtype == np.float32
+        assert pt_out.dtype == torch.float32
+        fp32_tol = 1e-4 if _ON_CPU else 1e-3
+        np.testing.assert_allclose(
+            np.asarray(dp_out),
+            pt_out.detach().cpu().numpy(),
+            rtol=fp32_tol,
+            atol=fp32_tol,
+        )
+
+    # ------------------------------------------------ (e) not-ported guards
     def test_not_ported_guards(self) -> None:
         from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import S2GridNet as DPS2GridNet
         from deepmd.dpmodel.descriptor.dpa4_nn.projection import (
@@ -1723,8 +1814,11 @@ class TestS2GridParity:
             "layout": "ndfc",
             "grid_method": "lebedev",
         }
+        # The e3nn product grid (lebedev_quadrature=False) remains the only
+        # not-ported path; mode='cross', op_type='mlp', layout='flat' and
+        # residual_scale_init are all now supported (see the parity tests
+        # above).
         with pytest.raises(NotImplementedError, match="lebedev_quadrature"):
-            # e3nn product grid (lebedev_quadrature=False) is not ported
             DPS2GridProjector(lmax=2, precision="float64", grid_method="e3nn")
         with pytest.raises(NotImplementedError, match="lebedev_quadrature"):
             DPS2GridNet(**{**common, "grid_method": "e3nn"})
@@ -1732,14 +1826,6 @@ class TestS2GridParity:
         # "e3nn" default, which dp rejects): default construction works
         net = DPS2GridNet(**{k: v for k, v in common.items() if k != "grid_method"})
         assert net.grid_method == "lebedev"
-        with pytest.raises(NotImplementedError, match="grid_mlp"):
-            # GridMLP (grid_mlp=True) is not ported
-            DPS2GridNet(**{**common, "op_type": "mlp"})
-        with pytest.raises(NotImplementedError, match="node_wise_s2"):
-            # cross mode backs node_wise_s2/message_node_s2 only
-            DPS2GridNet(**{**common, "mode": "cross"})
-        with pytest.raises(NotImplementedError, match="residual_scale_init"):
-            DPS2GridNet(**common, residual_scale_init=1e-3)
 
     def test_value_errors(self) -> None:
         from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import (
@@ -2293,6 +2379,36 @@ class TestSO2Parity:
         np.testing.assert_array_equal(out1, out2)
 
     @pytest.mark.parametrize(
+        "flag,grid_mlp_flag",
+        [
+            ("node_wise_s2", "node_wise_grid_mlp"),  # edge-local S2 grid product
+            ("node_wise_so3", "node_wise_grid_mlp"),  # edge-local SO(3) grid product
+            ("message_node_s2", "message_node_grid_mlp"),  # post-agg S2 grid product
+            ("message_node_so3", "message_node_grid_mlp"),  # post-agg SO(3) grid prod
+        ],
+    )
+    @pytest.mark.parametrize("grid_mlp", [False, True])  # glu (False) vs GridMLP (True)
+    def test_so2_convolution_grid(self, flag, grid_mlp_flag, grid_mlp) -> None:
+        # cross-mode grid products wired into SO2Convolution. ``node_wise_*``
+        # is the edge-local (query/context split) path; ``message_node_*`` is
+        # the post-aggregation path. The default conv config is lmax=3, mmax=1
+        # (mmax<lmax) so the flagship truncated config is exercised here.
+        overrides = {flag: True}
+        if grid_mlp:
+            overrides[grid_mlp_flag] = True
+        pt_mod, dp_mod, kwargs = self._build_conv_pair(**overrides)
+        self._assert_conv_parity(pt_mod, dp_mod, kwargs)
+
+    @pytest.mark.parametrize(
+        "flag", ["node_wise_so3", "message_node_so3"]
+    )  # SO(3) grid products parametrised by the frame half-width kmax
+    def test_so2_convolution_grid_kmax2(self, flag) -> None:
+        # kmax=2 widens the SO(3) frame set to {0,-1,1,-2,2}; default tests use
+        # kmax=1, so this closes the kmax>1 coverage gap for an SO3 grid path.
+        pt_mod, dp_mod, kwargs = self._build_conv_pair(**{flag: True}, kmax=2)
+        self._assert_conv_parity(pt_mod, dp_mod, kwargs)
+
+    @pytest.mark.parametrize(
         "flag,value",
         [
             ("so2_attn_res", "independent"),  # DepthAttnRes
@@ -2303,10 +2419,6 @@ class TestSO2Parity:
             ("atten_v_proj", True),  # value projection
             ("atten_o_proj", True),  # output projection
             ("s2_activation", True),  # S2-grid SwiGLU non-linearity
-            ("node_wise_s2", True),  # edge-local S2 grid product
-            ("node_wise_so3", True),  # edge-local SO(3) grid product
-            ("message_node_s2", True),  # post-aggregation S2 grid product
-            ("message_node_so3", True),  # post-aggregation SO(3) grid product
         ],
     )
     def test_so2_convolution_guards(self, flag, value) -> None:
@@ -3109,15 +3221,35 @@ class TestFFNParity:
             np.asarray(dp_mod.call(x)), np.asarray(dp_mod2.call(x))
         )
 
+    @pytest.mark.parametrize("grid_mlp", [False, True])  # SO3 glu vs GridMLP op
+    @pytest.mark.parametrize("kmax", [1, 2])  # SO(3) frame half-width (core gap=2)
+    def test_ffn_so3_grid(self, grid_mlp, kmax) -> None:
+        # ffn_so3_grid enables the SO3 Wigner-D FFN grid path (SO3GridNet,
+        # self-mode). grid_mlp=True selects the GridMLP point-wise op; kmax=2
+        # widens the frame set, closing the kmax>1 coverage gap for SO3 grids.
+        pt_mod, dp_mod, kwargs = self._build_ffn_pair(
+            ffn_so3_grid=True, grid_mlp=grid_mlp, kmax=kmax
+        )
+        self._assert_ffn_parity(pt_mod, dp_mod, kwargs)
+
+    @pytest.mark.parametrize("grid_mlp", [False, True])  # S2 glu vs GridMLP op
+    def test_ffn_s2_grid_mlp(self, grid_mlp) -> None:
+        # the S2 grid path (s2_activation=True) with grid_mlp selecting the
+        # GridMLP point-wise op (grid_mlp=True) vs the default glu (False).
+        pt_mod, dp_mod, kwargs = self._build_ffn_pair(
+            s2_activation=True, grid_mlp=grid_mlp
+        )
+        self._assert_ffn_parity(pt_mod, dp_mod, kwargs)
+
     def test_ffn_guards(self) -> None:
         from deepmd.dpmodel.descriptor.dpa4_nn.ffn import EquivariantFFN as DPFFN
 
-        with pytest.raises(NotImplementedError, match="ffn_so3_grid"):
-            DPFFN(**self._ffn_kwargs(ffn_so3_grid=True), precision="float64")
-        # grid_mlp guard is delegated to S2GridNet's op_type='mlp' NIE
-        with pytest.raises(NotImplementedError, match="mlp"):
+        # The e3nn product grid (lebedev_quadrature=False) on the S2 grid path
+        # remains the only not-ported FFN path; ffn_so3_grid and grid_mlp are
+        # now supported (see test_ffn_so3_grid / the grid_mlp parity below).
+        with pytest.raises(NotImplementedError, match="lebedev_quadrature"):
             DPFFN(
-                **self._ffn_kwargs(s2_activation=True, grid_mlp=True),
+                **self._ffn_kwargs(s2_activation=True, lebedev_quadrature=False),
                 precision="float64",
             )
 
@@ -3324,6 +3456,21 @@ class TestBlockParity:
         np.testing.assert_array_equal(out1, out2)
 
     @pytest.mark.parametrize(
+        "flag",
+        [
+            "node_wise_s2",  # delegated to SO2Convolution (cross-mode S2 grid)
+            "message_node_so3",  # delegated to SO2Convolution (cross-mode SO3 grid)
+            "ffn_so3_grid",  # delegated to EquivariantFFN (SO3GridNet self-mode)
+        ],
+    )
+    def test_block_grid(self, flag) -> None:
+        # block-level wiring of the grid flags through to SO2Convolution /
+        # EquivariantFFN. Default block config is lmax=3, mmax=1 (mmax<lmax),
+        # kmax=1, so the truncated flagship config is exercised.
+        pt_mod, dp_mod, kwargs = self._build_block_pair(**{flag: True})
+        self._assert_block_parity(pt_mod, dp_mod, kwargs)
+
+    @pytest.mark.parametrize(
         "flag,value",
         [
             ("full_attn_res", "independent"),  # block-level DepthAttnRes
@@ -3332,9 +3479,6 @@ class TestBlockParity:
             ("block_attn_res", "dependent"),  # block-level DepthAttnRes
             ("layer_scale", True),  # block-level FFN LayerScale
             ("so2_s2_activation", True),  # delegated to SO2Convolution
-            ("node_wise_s2", True),  # delegated to SO2Convolution
-            ("message_node_so3", True),  # delegated to SO2Convolution
-            ("ffn_so3_grid", True),  # delegated to EquivariantFFN
         ],
     )
     def test_block_guards(self, flag, value) -> None:

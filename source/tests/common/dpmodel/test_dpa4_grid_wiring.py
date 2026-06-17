@@ -135,6 +135,51 @@ class TestS2CrossPath:
         assert isinstance(block.so2_conv.message_node_grid_product, SO3GridNet)
 
 
+# all three grid paths at once: S2 cross-mode node-wise grid, SO3 cross-mode
+# message-node grid, SO3 self-mode FFN grid.
+_ALL_GRID_FLAGS = {
+    "node_wise_s2": True,
+    "message_node_so3": True,
+    "ffn_so3_grid": True,
+}
+
+
+class TestGridInvariance:
+    """Physical invariances of the descriptor with the grid paths enabled.
+
+    Exercises all three grid paths at once so a missing edge mask or a
+    neighbor-order dependence in any of them surfaces here.
+    """
+
+    def test_permutation_invariance(self) -> None:
+        # permuting the neighbor (slot) order within each atom's nlist row must
+        # not change the per-atom descriptor: the grid products aggregate over
+        # neighbors symmetrically.
+        dd = make_descriptor(**_ALL_GRID_FLAGS)
+        coord, atype, nlist = make_inputs()
+        nf, nloc = atype.shape
+        out = np.asarray(dd.call(coord.reshape(nf, -1), atype, nlist)[0])
+        rng = np.random.default_rng(17)
+        nnei = nlist.shape[-1]
+        perm = rng.permutation(nnei)
+        nlist_perm = nlist[:, :, perm]
+        out_perm = np.asarray(dd.call(coord.reshape(nf, -1), atype, nlist_perm)[0])
+        np.testing.assert_allclose(out_perm, out, rtol=1e-10, atol=1e-12)
+
+    def test_masked_edge_noop(self) -> None:
+        # an extra all-(-1) neighbor column must not change the descriptor with
+        # the grid paths on (the cross-mode grid products must respect the edge
+        # mask of the padded layout).
+        dd = make_descriptor(**_ALL_GRID_FLAGS)
+        coord, atype, nlist = make_inputs()
+        nf, nloc = atype.shape
+        out = np.asarray(dd.call(coord.reshape(nf, -1), atype, nlist)[0])
+        pad = -np.ones((nf, nloc, 1), dtype=nlist.dtype)
+        nlist2 = np.concatenate([nlist, pad], axis=-1)
+        out2 = np.asarray(dd.call(coord.reshape(nf, -1), atype, nlist2)[0])
+        np.testing.assert_allclose(out2, out, rtol=1e-10, atol=1e-12)
+
+
 class TestDescriptorParityVsPt:
     """Weight-copy parity: build pt ``DescrptSeZM``, copy into dpmodel via
     ``DescrptDPA4.deserialize(pt.serialize())``, compare descriptor outputs.
