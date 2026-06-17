@@ -370,3 +370,55 @@ def _normalize_s2_grid_resolution(
     if resolution[0] < 1 or resolution[1] < 1:
         raise ValueError("grid resolutions must be positive")
     return resolution
+
+
+def resolve_so3_grid(
+    lmax: int,
+    *,
+    kmax: int = 1,
+    lebedev_precision: int | None = None,
+) -> tuple[int, int, int]:
+    """
+    Resolve the default SO(3) quadrature as Lebedev sphere times gamma samples.
+
+    The Lebedev precision follows the same conservative ``3*lmax`` rule used by
+    the S2 grid path.  The gamma grid is chosen for the quadratic grid products
+    used by the SO(3) grid nets, whose third-angle frequency can reach
+    ``k1 + k2 - kout``.
+    """
+    lmax_i = int(lmax)
+    kmax_i = int(kmax)
+    if kmax_i < 0:
+        raise ValueError("`kmax` must be non-negative")
+    if lebedev_precision is None:
+        required_precision = 3 * lmax_i
+        for precision, n_points in LEBEDEV_PRECISION_TO_NPOINTS.items():
+            if precision >= required_precision:
+                lebedev_precision = precision
+                lebedev_npoints = n_points
+                break
+        else:
+            raise ValueError(
+                f"No packaged Lebedev rule has precision >= {required_precision}"
+            )
+    else:
+        lebedev_precision = int(lebedev_precision)
+        lebedev_npoints = LEBEDEV_PRECISION_TO_NPOINTS.get(lebedev_precision)
+        if lebedev_npoints is None:
+            raise ValueError(
+                f"Lebedev rule with precision {lebedev_precision} is not packaged"
+            )
+
+    # A quadratic product followed by analysis can contain gamma frequencies up
+    # to ``3*kmax``.  A uniform grid with more samples than that frequency
+    # resolves the integer Fourier modes exactly.
+    n_gamma = 1 if kmax_i == 0 else 3 * kmax_i + 1
+    return int(lebedev_precision), int(lebedev_npoints), int(n_gamma)
+
+
+def _build_so3_frame_set(kmax: int) -> list[int]:
+    """Build the symmetric frame-index set with zero first."""
+    kmax_i = int(kmax)
+    if kmax_i < 0:
+        raise ValueError("`kmax` must be non-negative")
+    return [0, *[frame for kk in range(1, kmax_i + 1) for frame in (-kk, kk)]]
