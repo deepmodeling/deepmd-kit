@@ -31,6 +31,9 @@ from deepmd.utils.data import (
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
 )
+from deepmd.utils.path import (
+    DPPath,
+)
 
 from .model import (
     Model,
@@ -92,9 +95,11 @@ class LinearModel(Model):
                 raise ValueError("Models have different ntypes")
         return self.models[0].get_ntypes()
 
-    def data_stat(self, data: DeepmdDataSystem) -> None:
+    def data_stat(
+        self, data: DeepmdDataSystem, stat_file_path: DPPath | None = None
+    ) -> None:
         for model in self.models:
-            model.data_stat(data)
+            model.data_stat(data, stat_file_path=stat_file_path)
 
     def init_variables(
         self,

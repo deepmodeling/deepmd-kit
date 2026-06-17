@@ -5,6 +5,10 @@ from typing import (
 
 import numpy as np
 
+from deepmd.utils.path import (
+    DPPath,
+)
+
 from deepmd.tf.env import (
     MODEL_VERSION,
     global_cvt_2_ener_float,
@@ -19,6 +23,9 @@ from deepmd.tf.utils.pair_tab import (
 )
 from deepmd.tf.utils.spin import (
     Spin,
+)
+from deepmd.tf.utils.stat import (
+    compute_output_stats,
 )
 from deepmd.tf.utils.type_embed import (
     TypeEmbedNet,
@@ -134,13 +141,17 @@ class EnerModel(StandardModel):
         """Get the number of atomic parameters."""
         return self.numb_aparam
 
-    def data_stat(self, data: DeepmdDataSystem) -> None:
+    def data_stat(
+        self, data: DeepmdDataSystem, stat_file_path: DPPath | None = None
+    ) -> None:
         all_stat = make_stat_input(data, self.data_stat_nbatch, merge_sys=False)
         m_all_stat = merge_sys_stat(all_stat)
         self._compute_input_stat(
             m_all_stat, protection=self.data_stat_protect, mixed_type=data.mixed_type
         )
-        self._compute_output_stat(all_stat, mixed_type=data.mixed_type)
+        self._compute_output_stat(
+            all_stat, mixed_type=data.mixed_type, stat_file_path=stat_file_path
+        )
         # self.bias_atom_e = data.compute_energy_shift(self.rcond)
 
     def _compute_input_stat(
@@ -168,11 +179,48 @@ class EnerModel(StandardModel):
             )
         self.fitting.compute_input_stats(all_stat, protection=protection)
 
-    def _compute_output_stat(self, all_stat: dict, mixed_type: bool = False) -> None:
-        if mixed_type:
-            self.fitting.compute_output_stats(all_stat, mixed_type=mixed_type)
+    def _compute_output_stat(
+        self,
+        all_stat: dict,
+        mixed_type: bool = False,
+        stat_file_path: DPPath | None = None,
+    ) -> None:
+        if stat_file_path is not None:
+            # Add type_map subdirectory for consistency with PyTorch backend.
+            # Descriptors and fitting nets with different type maps should not
+            # share the same statistics.
+            if self.type_map is not None:
+                stat_file_path = stat_file_path / " ".join(self.type_map)
+
+            # Use the new stat functionality with file save/load.
+            m_all_stat = merge_sys_stat(all_stat)
+            assigned_bias = None
+            if len(self.fitting.atom_ener) > 0:
+                assigned_bias = np.array(
+                    [
+                        ee if ee is not None else np.nan
+                        for ee in self.fitting.atom_ener_v
+                    ]
+                )
+            bias_out, _ = compute_output_stats(
+                m_all_stat,
+                self.ntypes,
+                keys=["energy"],
+                stat_file_path=stat_file_path,
+                rcond=getattr(self.fitting, "rcond", None),
+                mixed_type=mixed_type,
+                assigned_bias=assigned_bias,
+            )
+
+            if "energy" in bias_out:
+                # TensorFlow fitting code historically stores a 1-D bias vector,
+                # while stat files use the PyTorch-compatible (ntypes, 1) shape.
+                self.fitting.bias_atom_e = bias_out["energy"].ravel()
         else:
-            self.fitting.compute_output_stats(all_stat)
+            if mixed_type:
+                self.fitting.compute_output_stats(all_stat, mixed_type=mixed_type)
+            else:
+                self.fitting.compute_output_stats(all_stat)
 
     def build(
         self,

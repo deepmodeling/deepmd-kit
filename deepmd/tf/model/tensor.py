@@ -20,6 +20,9 @@ from deepmd.tf.utils.type_embed import (
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
 )
+from deepmd.utils.path import (
+    DPPath,
+)
 
 from .model import (
     StandardModel,
@@ -90,7 +93,9 @@ class TensorModel(StandardModel):
     def get_out_size(self) -> int:
         return self.fitting.get_out_size()
 
-    def data_stat(self, data: DeepmdDataSystem) -> None:
+    def data_stat(
+        self, data: DeepmdDataSystem, stat_file_path: DPPath | None = None
+    ) -> None:
         all_stat = make_stat_input(data, self.data_stat_nbatch, merge_sys=False)
         m_all_stat = merge_sys_stat(all_stat)
         self._compute_input_stat(m_all_stat, protection=self.data_stat_protect)

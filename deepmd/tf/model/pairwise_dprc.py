@@ -39,6 +39,9 @@ from deepmd.utils.data import (
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
 )
+from deepmd.utils.path import (
+    DPPath,
+)
 
 
 @Model.register("pairwise_dprc")
@@ -319,9 +322,9 @@ class PairwiseDPRc(Model):
     def get_ntypes(self) -> int:
         return self.ntypes
 
-    def data_stat(self, data: dict) -> None:
-        self.qm_model.data_stat(data)
-        self.qmmm_model.data_stat(data)
+    def data_stat(self, data: dict, stat_file_path: DPPath | None = None) -> None:
+        self.qm_model.data_stat(data, stat_file_path=stat_file_path)
+        self.qmmm_model.data_stat(data, stat_file_path=stat_file_path)
 
     def init_variables(
         self,

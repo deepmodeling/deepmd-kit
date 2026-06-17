@@ -33,6 +33,10 @@ from deepmd.env import (
 from deepmd.tf.descriptor.descriptor import (
     Descriptor,
 )
+from deepmd.utils.path import (
+    DPPath,
+)
+
 from deepmd.tf.env import (
     GLOBAL_TF_FLOAT_PRECISION,
     tf,
@@ -473,7 +477,7 @@ class Model(ABC, make_plugin_registry("model")):
         """Get the number of types."""
 
     @abstractmethod
-    def data_stat(self, data: dict) -> None:
+    def data_stat(self, data: dict, stat_file_path: DPPath | None = None) -> None:
         """Data staticis."""
 
     def get_feed_dict(
