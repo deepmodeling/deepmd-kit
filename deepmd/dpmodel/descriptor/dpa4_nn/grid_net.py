@@ -1016,6 +1016,56 @@ class BaseGridNet(NativeOP):
                 f"`{name}` last dimension must be {expected}, got {value.shape[-1]}"
             )
 
+    def _load_variables(self, variables: dict[str, Any]) -> None:
+        """Load variables keyed by the pt ``state_dict`` key names.
+
+        Handles ``scalar_gate``, the optional ``grid_op`` (branch/mlp), the
+        optional SO(3) ``frame_expand``/``frame_contract`` per-degree mixers,
+        and the optional ``residual_scale`` parameter. ``S2GridNet`` leaves the
+        frame mixers as ``None`` so the corresponding keys are absent.
+        """
+        prec = PRECISION_DICT[self.precision.lower()]
+        weight = np.asarray(variables["scalar_gate.weight"], dtype=prec)
+        if weight.shape != self.scalar_gate.weight.shape:
+            raise ValueError(
+                f"scalar_gate.weight shape {weight.shape} does not match "
+                f"the expected shape {self.scalar_gate.weight.shape}"
+            )
+        self.scalar_gate.weight = weight
+        if self.mlp_bias:
+            self.scalar_gate.bias = np.asarray(
+                variables["scalar_gate.bias"], dtype=prec
+            ).reshape(self.scalar_gate.bias.shape)
+        if self.op_type in {"branch", "mlp"}:
+            self.grid_op._load_variables(
+                {
+                    key[len("grid_op.") :]: value
+                    for key, value in variables.items()
+                    if key.startswith("grid_op.")
+                }
+            )
+        for name, mixer in (
+            ("frame_expand", self.frame_expand),
+            ("frame_contract", self.frame_contract),
+        ):
+            if mixer is None:
+                continue
+            mixer_weight = np.asarray(variables[f"{name}.weight"], dtype=prec)
+            if mixer_weight.shape != mixer.weight.shape:
+                raise ValueError(
+                    f"{name}.weight shape {mixer_weight.shape} does not match "
+                    f"the expected shape {mixer.weight.shape}"
+                )
+            mixer.weight = mixer_weight
+        if self.residual_scale is not None:
+            residual_scale = np.asarray(variables["residual_scale"], dtype=prec)
+            if residual_scale.shape != self.residual_scale.shape:
+                raise ValueError(
+                    f"residual_scale shape {residual_scale.shape} does not match "
+                    f"the expected shape {self.residual_scale.shape}"
+                )
+            self.residual_scale = residual_scale
+
 
 class S2GridNet(BaseGridNet):
     """Grid net using an S2 spherical-harmonic projector (Lebedev only).
@@ -1179,34 +1229,7 @@ class S2GridNet(BaseGridNet):
             trainable=bool(config["trainable"]),
             seed=config.get("seed"),
         )
-        prec = PRECISION_DICT[obj.precision.lower()]
-        weight = np.asarray(variables["scalar_gate.weight"], dtype=prec)
-        if weight.shape != obj.scalar_gate.weight.shape:
-            raise ValueError(
-                f"scalar_gate.weight shape {weight.shape} does not match "
-                f"the expected shape {obj.scalar_gate.weight.shape}"
-            )
-        obj.scalar_gate.weight = weight
-        if obj.mlp_bias:
-            obj.scalar_gate.bias = np.asarray(
-                variables["scalar_gate.bias"], dtype=prec
-            ).reshape(obj.scalar_gate.bias.shape)
-        if obj.op_type in {"branch", "mlp"}:
-            obj.grid_op._load_variables(
-                {
-                    key[len("grid_op.") :]: value
-                    for key, value in variables.items()
-                    if key.startswith("grid_op.")
-                }
-            )
-        if obj.residual_scale is not None:
-            residual_scale = np.asarray(variables["residual_scale"], dtype=prec)
-            if residual_scale.shape != obj.residual_scale.shape:
-                raise ValueError(
-                    f"residual_scale shape {residual_scale.shape} does not match "
-                    f"the expected shape {obj.residual_scale.shape}"
-                )
-            obj.residual_scale = residual_scale
+        obj._load_variables(variables)
         return obj
 
 
@@ -1407,45 +1430,5 @@ class SO3GridNet(BaseGridNet):
             trainable=bool(config["trainable"]),
             seed=config.get("seed"),
         )
-        prec = PRECISION_DICT[obj.precision.lower()]
-        weight = np.asarray(variables["scalar_gate.weight"], dtype=prec)
-        if weight.shape != obj.scalar_gate.weight.shape:
-            raise ValueError(
-                f"scalar_gate.weight shape {weight.shape} does not match "
-                f"the expected shape {obj.scalar_gate.weight.shape}"
-            )
-        obj.scalar_gate.weight = weight
-        if obj.mlp_bias:
-            obj.scalar_gate.bias = np.asarray(
-                variables["scalar_gate.bias"], dtype=prec
-            ).reshape(obj.scalar_gate.bias.shape)
-        if obj.op_type in {"branch", "mlp"}:
-            obj.grid_op._load_variables(
-                {
-                    key[len("grid_op.") :]: value
-                    for key, value in variables.items()
-                    if key.startswith("grid_op.")
-                }
-            )
-        for name, mixer in (
-            ("frame_expand", obj.frame_expand),
-            ("frame_contract", obj.frame_contract),
-        ):
-            if mixer is None:
-                continue
-            mixer_weight = np.asarray(variables[f"{name}.weight"], dtype=prec)
-            if mixer_weight.shape != mixer.weight.shape:
-                raise ValueError(
-                    f"{name}.weight shape {mixer_weight.shape} does not match "
-                    f"the expected shape {mixer.weight.shape}"
-                )
-            mixer.weight = mixer_weight
-        if obj.residual_scale is not None:
-            residual_scale = np.asarray(variables["residual_scale"], dtype=prec)
-            if residual_scale.shape != obj.residual_scale.shape:
-                raise ValueError(
-                    f"residual_scale shape {residual_scale.shape} does not match "
-                    f"the expected shape {obj.residual_scale.shape}"
-                )
-            obj.residual_scale = residual_scale
+        obj._load_variables(variables)
         return obj
