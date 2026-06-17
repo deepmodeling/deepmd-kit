@@ -82,6 +82,11 @@ class MFTFineTuner:
         Initial learning rate.
     stop_lr : float
         Final learning rate.
+    decay_steps : int
+        Steps between LR decays for the ``exp`` scheduler (deepmd-kit native).
+        Default 1000 (property mode) or 5000 (ener mode).
+    warmup_steps : int
+        Linear LR warmup steps (deepmd-kit native).  0 = disabled.
     max_steps : int
         Total training steps.
     batch_size : str | int
@@ -110,6 +115,8 @@ class MFTFineTuner:
         intensive=True,
         learning_rate=1e-3,
         stop_lr=1e-5,
+        decay_steps=None,  # None → auto: 1000 for property, 5000 for ener
+        warmup_steps=0,
         max_steps=50000,
         batch_size="auto:32",
         aux_batch_size=None,
@@ -153,6 +160,8 @@ class MFTFineTuner:
         self.intensive = intensive
         self.learning_rate = learning_rate
         self.stop_lr = stop_lr
+        self.decay_steps = decay_steps
+        self.warmup_steps = warmup_steps
         self.max_steps = max_steps
         self.batch_size = batch_size
         self.aux_batch_size = aux_batch_size
