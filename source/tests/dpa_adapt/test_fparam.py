@@ -245,6 +245,7 @@ def test_mft_fparam_validate_called_on_fit():
 
         mft = MFTFineTuner(
             pretrained="dummy.pt",
+            property_name="homo",
             fparam_dim=3,
             type_map=["H"],
         )
@@ -273,6 +274,7 @@ def test_mft_fparam_validate_skipped_when_zero():
 
         mft = MFTFineTuner(
             pretrained="dummy.pt",
+            property_name="homo",
             fparam_dim=0,
             type_map=["H"],
         )

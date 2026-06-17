@@ -190,6 +190,7 @@ def test_explicit_fitting_net_params_skips_ckpt_load(monkeypatch):
     t = MFTFineTuner(
         pretrained="/does/not/exist.pt",
         aux_branch="Domains_Alloy",
+        property_name="homo",
         fitting_net_params=custom,
     )
     assert t.fitting_net_params == custom
@@ -213,6 +214,7 @@ def test_fitting_net_params_auto_read_from_ckpt(monkeypatch):
     t = MFTFineTuner(
         pretrained="/does/not/exist.pt",
         aux_branch="Domains_Alloy",
+        property_name="homo",
     )
     assert t.fitting_net_params == expected
 
@@ -257,6 +259,7 @@ class TestAutoTypeMap:
         t = MFTFineTuner(
             pretrained="/fake.pt",
             aux_branch="Domains_Alloy",
+            property_name="homo",
         )
         assert t.type_map is None
 
@@ -278,6 +281,7 @@ class TestAutoTypeMap:
         t = MFTFineTuner(
             pretrained="/fake.pt",
             aux_branch="Domains_Alloy",
+            property_name="homo",
         )
         t.train_data = "/data/downstream"
         t.aux_data = "/data/aux"
@@ -305,6 +309,7 @@ class TestAutoTypeMap:
         t = MFTFineTuner(
             pretrained="/fake.pt",
             aux_branch="Domains_Alloy",
+            property_name="homo",
             type_map=["Cu", "O"],
         )
         t.train_data = "/data/downstream"
@@ -330,6 +335,7 @@ class TestAutoTypeMap:
         t = MFTFineTuner(
             pretrained="/fake.pt",
             aux_branch="Domains_Alloy",
+            property_name="homo",
         )
 
         # Create a system with an unsupported element
@@ -365,6 +371,7 @@ def test_unknown_aux_branch_raises_with_branch_list(monkeypatch):
     t = MFTFineTuner(
         pretrained="/does/not/exist.pt",
         aux_branch="NotARealBranch",
+        property_name="homo",
     )
     with pytest.raises(ValueError) as exc_info:
         _ = t.fitting_net_params  # triggers lazy load
