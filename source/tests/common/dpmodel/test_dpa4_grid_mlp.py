@@ -190,7 +190,6 @@ def test_s2gridnet_op_type_mlp_parity(lmax, channels) -> None:
         layout="ndfc",
         coefficient_layout="packed",
         grid_method="lebedev",
-        mlp_bias=False,
         trainable=False,
         seed=17 + lmax,
     )
@@ -204,7 +203,6 @@ def test_s2gridnet_op_type_mlp_parity(lmax, channels) -> None:
         layout="ndfc",
         coefficient_layout="packed",
         grid_method="lebedev",
-        mlp_bias=False,
         trainable=False,
         seed=17 + lmax,
     )
@@ -240,7 +238,6 @@ def test_s2gridnet_op_type_mlp_equivariance(lmax, channels) -> None:
         layout="ndfc",
         coefficient_layout="packed",
         grid_method="lebedev",
-        mlp_bias=False,
         trainable=False,
         seed=31 + lmax,
     )

@@ -134,15 +134,16 @@ class GridMLP(NativeOP):
         Pairing mode; ``"self"`` or ``"cross"``.
     precision : str
         Parameter precision.
-    mlp_bias : bool
-        Whether to use bias in the channel-linear projections. The pt
-        ``GridMLP`` is always bias-free; this flag is threaded through so the
-        net's ``mlp_bias`` setting reaches the grid op, but pt parity only
-        holds when ``mlp_bias=False``.
     trainable : bool
         Whether parameters are trainable.
     seed : int | list[int] | None
         Random seed for weight initialization.
+
+    Notes
+    -----
+    Like the pt ``GridMLP``, the three channel-linear projections are always
+    bias-free (the net-level ``mlp_bias`` flag only affects the scalar gate,
+    not the grid op).
     """
 
     def __init__(
@@ -151,7 +152,6 @@ class GridMLP(NativeOP):
         channels: int,
         mode: str,
         precision: str = DEFAULT_PRECISION,
-        mlp_bias: bool = False,
         trainable: bool = True,
         seed: int | list[int] | None = None,
     ) -> None:
@@ -160,7 +160,6 @@ class GridMLP(NativeOP):
         if self.mode not in {"self", "cross"}:
             raise ValueError("`mode` must be either 'self' or 'cross'")
         self.precision = precision
-        self.mlp_bias = bool(mlp_bias)
         self.trainable = bool(trainable)
         self.input_channels = (
             2 * self.channels if self.mode == "self" else self.channels
@@ -170,7 +169,7 @@ class GridMLP(NativeOP):
             in_channels=self.input_channels,
             out_channels=self.hidden_channels,
             precision=precision,
-            bias=self.mlp_bias,
+            bias=False,
             trainable=trainable,
             seed=child_seed(seed, 0),
         )
@@ -178,7 +177,7 @@ class GridMLP(NativeOP):
             in_channels=self.input_channels,
             out_channels=self.hidden_channels,
             precision=precision,
-            bias=self.mlp_bias,
+            bias=False,
             trainable=trainable,
             seed=child_seed(seed, 1),
         )
@@ -186,7 +185,7 @@ class GridMLP(NativeOP):
             in_channels=self.hidden_channels,
             out_channels=self.channels,
             precision=precision,
-            bias=self.mlp_bias,
+            bias=False,
             trainable=trainable,
             seed=child_seed(seed, 2),
         )
@@ -223,10 +222,6 @@ class GridMLP(NativeOP):
             "right_proj.weight": to_numpy_array(self.right_proj.weight),
             "out_proj.weight": to_numpy_array(self.out_proj.weight),
         }
-        if self.mlp_bias:
-            variables["left_proj.bias"] = to_numpy_array(self.left_proj.bias)
-            variables["right_proj.bias"] = to_numpy_array(self.right_proj.bias)
-            variables["out_proj.bias"] = to_numpy_array(self.out_proj.bias)
         return {
             "@class": "GridMLP",
             "@version": 1,
@@ -234,7 +229,6 @@ class GridMLP(NativeOP):
                 "channels": self.channels,
                 "mode": self.mode,
                 "precision": np.dtype(PRECISION_DICT[self.precision]).name,
-                "mlp_bias": self.mlp_bias,
                 "trainable": self.trainable,
                 "seed": None,
             },
@@ -256,7 +250,6 @@ class GridMLP(NativeOP):
             channels=int(config["channels"]),
             mode=str(config["mode"]),
             precision=str(config["precision"]),
-            mlp_bias=bool(config["mlp_bias"]),
             trainable=bool(config["trainable"]),
             seed=config.get("seed"),
         )
@@ -277,10 +270,6 @@ class GridMLP(NativeOP):
                     f"the expected shape {proj.weight.shape}"
                 )
             proj.weight = weight
-            if self.mlp_bias:
-                proj.bias = np.asarray(variables[f"{name}.bias"], dtype=prec).reshape(
-                    proj.bias.shape
-                )
 
 
 class GridBranch(NativeOP):
@@ -740,11 +729,12 @@ class BaseGridNet(NativeOP):
             init_std=0.01,
         )
         if self.op_type == "mlp":
+            # GridMLP projections are bias-free (mirrors pt); the net-level
+            # mlp_bias only affects the scalar gate, not the grid op.
             self.grid_op: GridMLP | GridBranch | None = GridMLP(
                 channels=self.channels,
                 mode=self.mode,
                 precision=self.precision,
-                mlp_bias=self.mlp_bias,
                 trainable=trainable,
                 seed=child_seed(seed, 1),
             )
