@@ -131,6 +131,10 @@ class DPATrainer:
         ``property_name``, ``task_dim``, ``intensive``, ``seed``.
     learning_rate, stop_lr : float
         Exp-decay LR endpoints.
+    decay_steps : int
+        Steps between LR decays (deepmd-kit ``exp`` scheduler).  Default 1000.
+    warmup_steps : int
+        Linear LR warmup steps (deepmd-kit native).  0 = disabled.
     max_steps : int
         Total training steps.
     batch_size : str or int
@@ -165,6 +169,8 @@ class DPATrainer:
         # ---- training ----
         learning_rate: float = 1e-3,
         stop_lr: float = 1e-5,
+        decay_steps: int = 1000,
+        warmup_steps: int = 0,
         max_steps: int = 100_000,
         batch_size: str | int = "auto:512",
         loss_function: str = "mse",
@@ -227,6 +233,8 @@ class DPATrainer:
         self.fparam_dim = fparam_dim
         self.learning_rate = learning_rate
         self.stop_lr = stop_lr
+        self.decay_steps = decay_steps
+        self.warmup_steps = warmup_steps
         self.max_steps = max_steps
         self.batch_size = batch_size
         self.loss_function = loss_function
@@ -364,8 +372,8 @@ class DPATrainer:
                 "type": "exp",
                 "start_lr": self.learning_rate,
                 "stop_lr": self.stop_lr,
-                # Paper qm9_gap: decay_steps=1000 (we previously used 5000).
-                "decay_steps": 1000,
+                "decay_steps": self.decay_steps,
+                **({"warmup_steps": self.warmup_steps} if self.warmup_steps > 0 else {}),
             },
             "training": {
                 "training_data": {
