@@ -1017,6 +1017,7 @@ class Trainer:
                 float(self.opt_param["adam_beta2"]),
             )
             weight_decay = float(self.opt_param["weight_decay"])
+            runtime_named_parameters = tuple(self.wrapper.named_parameters())
 
             if self.opt_type in ("Adam", "AdamW"):
                 cls = torch.optim.Adam if self.opt_type == "Adam" else torch.optim.AdamW
@@ -1037,7 +1038,6 @@ class Trainer:
                     "lr_adjust": float(self.opt_param["lr_adjust"]),
                     "lr_adjust_coeff": float(self.opt_param["lr_adjust_coeff"]),
                     "muon_mode": str(self.opt_param.get("muon_mode", "slice")),
-                    "named_parameters": tuple(self.wrapper.named_parameters()),
                     "enable_gram": bool(self.opt_param.get("enable_gram")),
                     "flash_muon": bool(self.opt_param.get("flash_muon")),
                     "magma_muon": bool(self.opt_param.get("magma_muon")),
@@ -1056,6 +1056,11 @@ class Trainer:
                 weight_decay=weight_decay,
                 **extra,
             )
+            if self.opt_type == "HybridMuon":
+                target_optimizer = (
+                    self.optimizer.optim if self.zero_stage == 1 else self.optimizer
+                )
+                target_optimizer.set_param_names(runtime_named_parameters)
             self._load_optimizer_state(optimizer_state_dict)
             self.scheduler = self._create_lr_scheduler(
                 self.optimizer,
