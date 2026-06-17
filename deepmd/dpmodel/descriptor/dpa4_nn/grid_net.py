@@ -20,9 +20,6 @@ Skipped names, with consumer evidence from the pt sources:
 - ``SO3GridNet``: only constructed by ``so2.py`` (``node_wise_so3``,
   ``message_node_so3``) and ``ffn.py`` (``ffn_so3_grid``) — all disabled in
   the core DPA4 config.
-- ``FrameContract``, ``FrameExpand``, ``_build_frame_degree_index``: only
-  constructed by ``SO3GridNet`` (``mode='cross'``); the S2 projector always
-  has ``n_frames == 1``, so the frame machinery is unreachable here.
 - ``GridMLP``: only selected via ``op_type='mlp'`` (``grid_mlp=True`` paths);
   the core config has ``grid_mlp=[False, False, False]``. ``BaseGridNet``
   raises ``NotImplementedError`` for ``op_type='mlp'``.
@@ -46,6 +43,7 @@ from __future__ import (
     annotations,
 )
 
+import math
 from typing import (
     Any,
 )
@@ -76,6 +74,11 @@ from deepmd.utils.version import (
 from .activation import (
     SwiGLU,
 )
+from .indexing import (
+    build_l_major_index,
+    build_m_major_l_index,
+    map_degree_idx,
+)
 from .projection import (
     BaseGridProjector,
     S2GridProjector,
@@ -91,6 +94,29 @@ def _softmax_last_axis(x: Any) -> Any:
     xp = array_api_compat.array_namespace(x)
     e_x = xp.exp(x - xp.max(x, axis=-1, keepdims=True))
     return e_x / xp.sum(e_x, axis=-1, keepdims=True)
+
+
+def _build_frame_degree_index(
+    *,
+    lmax: int,
+    mmax: int,
+    coefficient_layout: str,
+) -> np.ndarray:
+    """Build the per-coefficient degree index used by frame channel mixers.
+
+    The torch version's ``device`` parameter is dropped: the output is a static
+    ``np.int64`` table mapping each coefficient row to its degree ``l``.
+    """
+    coefficient_layout = str(coefficient_layout).lower()
+    if coefficient_layout == "m_major":
+        return build_m_major_l_index(lmax, mmax)
+    if coefficient_layout == "packed":
+        degree_index = map_degree_idx(lmax)
+        if int(mmax) == int(lmax):
+            return degree_index
+        coeff_index = build_l_major_index(lmax, mmax)
+        return degree_index[coeff_index]
+    raise ValueError("`coefficient_layout` must be either 'packed' or 'm_major'")
 
 
 class GridBranch(NativeOP):
@@ -254,6 +280,219 @@ class GridBranch(NativeOP):
                     f"the expected shape {proj.weight.shape}"
                 )
             proj.weight = weight
+
+
+class _FrameMixer(NativeOP):
+    """Shared base for the per-degree frame channel mixers.
+
+    The pt ``FrameContract``/``FrameExpand`` are unparameterised ``nn.Module``
+    wrappers around a per-degree weight of shape ``(lmax + 1, in_ch, out_ch)``
+    selected by a static degree-index buffer.  ``mode='self'`` S2 grid nets
+    have ``n_frames == 1`` and never construct these; they back the SO(3)
+    cross-mode grid products only.  Subclasses set ``in_channels`` /
+    ``out_channels`` and the init ``bound`` (the pt weight init).
+    """
+
+    def __init__(
+        self,
+        *,
+        lmax: int,
+        mmax: int,
+        coefficient_layout: str,
+        n_frames: int,
+        channels: int,
+        in_channels: int,
+        out_channels: int,
+        init_bound: float,
+        precision: str = DEFAULT_PRECISION,
+        trainable: bool = True,
+        seed: int | list[int] | None = None,
+    ) -> None:
+        self.lmax = int(lmax)
+        self.mmax = int(mmax)
+        self.coefficient_layout = str(coefficient_layout).lower()
+        self.n_frames = int(n_frames)
+        self.channels = int(channels)
+        self.precision = precision
+        self.trainable = bool(trainable)
+        self.degree_index = _build_frame_degree_index(
+            lmax=self.lmax,
+            mmax=self.mmax,
+            coefficient_layout=self.coefficient_layout,
+        )
+        prec = PRECISION_DICT[self.precision.lower()]
+        rng = np.random.default_rng(seed)
+        shape = (self.lmax + 1, int(in_channels), int(out_channels))
+        self.weight = rng.uniform(-init_bound, init_bound, size=shape).astype(prec)
+
+    def call(self, coeff: Any) -> Any:
+        """Apply the per-degree frame/channel map preserving the order index.
+
+        ``einsum("ndfi,dio->ndfo", coeff, weight[degree_index])`` is realised as
+        a broadcast batched matmul (the gathered weight ``(D, i, o)`` broadcasts
+        over the leading frame batch dim of ``coeff``).
+        """
+        xp = array_api_compat.array_namespace(coeff)
+        device = array_api_compat.device(coeff)
+        weight = xp_asarray_nodetach(xp, self.weight[...], device=device)
+        if weight.dtype != coeff.dtype:
+            weight = xp.astype(weight, coeff.dtype)
+        degree_index = xp_asarray_nodetach(xp, self.degree_index, device=device)
+        weight = xp.take(weight, degree_index, axis=0)  # (D, i, o)
+        # (N, D, F, i) @ (1, D, i, o) -> (N, D, F, o)
+        return xp.matmul(coeff, weight[None, ...])
+
+    def _serialize_config(self) -> dict[str, Any]:
+        return {
+            "lmax": self.lmax,
+            "mmax": self.mmax,
+            "coefficient_layout": self.coefficient_layout,
+            "n_frames": self.n_frames,
+            "channels": self.channels,
+            "precision": np.dtype(PRECISION_DICT[self.precision]).name,
+            "trainable": self.trainable,
+            "seed": None,
+        }
+
+    @classmethod
+    def _deserialize(cls, data: dict[str, Any]) -> Any:
+        data = data.copy()
+        data_cls = data.pop("@class")
+        if data_cls != cls.__name__:
+            raise ValueError(f"Invalid class for {cls.__name__}: {data_cls}")
+        version = int(data.pop("@version"))
+        check_version_compatibility(version, 1, 1)
+        config = data.pop("config")
+        variables = data.pop("@variables")
+        obj = cls(
+            lmax=int(config["lmax"]),
+            mmax=int(config["mmax"]),
+            coefficient_layout=str(config["coefficient_layout"]),
+            n_frames=int(config["n_frames"]),
+            channels=int(config["channels"]),
+            precision=str(config["precision"]),
+            trainable=bool(config["trainable"]),
+            seed=config.get("seed"),
+        )
+        prec = PRECISION_DICT[obj.precision.lower()]
+        weight = np.asarray(variables["weight"], dtype=prec)
+        if weight.shape != obj.weight.shape:
+            raise ValueError(
+                f"weight shape {weight.shape} does not match "
+                f"the expected shape {obj.weight.shape}"
+            )
+        obj.weight = weight
+        return obj
+
+
+class FrameContract(_FrameMixer):
+    """Per-degree frame/channel contraction that preserves the order index.
+
+    Maps ``(N, D, F, K*C) -> (N, D, F, C)`` with a per-degree weight of shape
+    ``(lmax + 1, K*C, C)`` where ``K`` is ``n_frames``.
+    """
+
+    def __init__(
+        self,
+        *,
+        lmax: int,
+        mmax: int,
+        coefficient_layout: str,
+        n_frames: int,
+        channels: int,
+        precision: str = DEFAULT_PRECISION,
+        trainable: bool = True,
+        seed: int | list[int] | None = None,
+    ) -> None:
+        n_frames = int(n_frames)
+        channels = int(channels)
+        super().__init__(
+            lmax=lmax,
+            mmax=mmax,
+            coefficient_layout=coefficient_layout,
+            n_frames=n_frames,
+            channels=channels,
+            in_channels=n_frames * channels,
+            out_channels=channels,
+            init_bound=1.0 / math.sqrt(n_frames * channels),
+            precision=precision,
+            trainable=trainable,
+            seed=seed,
+        )
+
+    def serialize(self) -> dict[str, Any]:
+        """Serialize the FrameContract to a dict.
+
+        The pt ``FrameContract`` has no ``serialize()``; the ``@variables``
+        key (``weight``) matches the pt ``state_dict`` key name. ``degree_index``
+        is a non-persistent buffer in pt and is rebuilt from the config.
+        """
+        return {
+            "@class": "FrameContract",
+            "@version": 1,
+            "config": self._serialize_config(),
+            "@variables": {"weight": to_numpy_array(self.weight)},
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict[str, Any]) -> FrameContract:
+        """Deserialize a FrameContract from a dict."""
+        return cls._deserialize(data)
+
+
+class FrameExpand(_FrameMixer):
+    """Per-degree frame/channel expansion that preserves the order index.
+
+    Maps ``(N, D, F, C) -> (N, D, F, K*C)`` with a per-degree weight of shape
+    ``(lmax + 1, C, K*C)`` where ``K`` is ``n_frames``.
+    """
+
+    def __init__(
+        self,
+        *,
+        lmax: int,
+        mmax: int,
+        coefficient_layout: str,
+        n_frames: int,
+        channels: int,
+        precision: str = DEFAULT_PRECISION,
+        trainable: bool = True,
+        seed: int | list[int] | None = None,
+    ) -> None:
+        n_frames = int(n_frames)
+        channels = int(channels)
+        super().__init__(
+            lmax=lmax,
+            mmax=mmax,
+            coefficient_layout=coefficient_layout,
+            n_frames=n_frames,
+            channels=channels,
+            in_channels=channels,
+            out_channels=n_frames * channels,
+            init_bound=1.0 / math.sqrt(channels),
+            precision=precision,
+            trainable=trainable,
+            seed=seed,
+        )
+
+    def serialize(self) -> dict[str, Any]:
+        """Serialize the FrameExpand to a dict.
+
+        The pt ``FrameExpand`` has no ``serialize()``; the ``@variables``
+        key (``weight``) matches the pt ``state_dict`` key name. ``degree_index``
+        is a non-persistent buffer in pt and is rebuilt from the config.
+        """
+        return {
+            "@class": "FrameExpand",
+            "@version": 1,
+            "config": self._serialize_config(),
+            "@variables": {"weight": to_numpy_array(self.weight)},
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict[str, Any]) -> FrameExpand:
+        """Deserialize a FrameExpand from a dict."""
+        return cls._deserialize(data)
 
 
 class BaseGridNet(NativeOP):
