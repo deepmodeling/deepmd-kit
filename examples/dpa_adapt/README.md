@@ -16,8 +16,8 @@ examples/dpa_adapt/
 │   ├── train_labels.npy
 │   └── test_labels.npy
 ├── scripts/
-│   ├── run_evaluate_sklearn.py   # frozen_sklearn demo: DPA-3.1-3M + Ridge
-│   ├── run_evaluate_finetune.py  # frozen_head demo: DPA-3.1-3M fine-tuning
+│   ├── run_evaluate_frozen_sklearn.py   # frozen_sklearn demo: DPA-3.1-3M + Ridge
+│   ├── run_evaluate_frozen_head.py      # frozen_head demo: DPA-3.1-3M fine-tuning
 │   └── prepare_data.py           # regenerate data/ from raw GDB9 data
 └── README.md
 ```
@@ -30,19 +30,19 @@ From this directory, run either (or both):
 
 ```bash
 # frozen_sklearn strategy — extract DPA features, fit a Ridge regressor
-python scripts/run_evaluate_sklearn.py
+python scripts/run_evaluate_frozen_sklearn.py
 
 # frozen_head strategy — fine-tune the prediction head with gradient steps
-python scripts/run_evaluate_finetune.py
+python scripts/run_evaluate_frozen_head.py
 ```
 
-### `run_evaluate_sklearn.py`
+### `run_evaluate_frozen_sklearn.py`
 
 Uses the `frozen_sklearn` strategy with the `Domains_Drug` model branch.
 DPA-3.1-3M features are extracted from the training systems and a Ridge (`linear`)
 regressor is fitted on top. Prints MAE, RMSE, and R² on the test set.
 
-### `run_evaluate_finetune.py`
+### `run_evaluate_frozen_head.py`
 
 Uses the `frozen_head` strategy. A fresh prediction head is trained on top of
 frozen DPA-3.1-3M features with `learning_rate=1e-3`, `batch_size=128`,
