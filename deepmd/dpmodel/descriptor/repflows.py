@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import warnings
 from collections.abc import (
     Callable,
 )
@@ -276,6 +277,12 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         # descriptor/layer behavior stable even if a backend temporarily changes
         # the class attribute while constructing a model.
         self._use_static_dynamic_sel = type(self)._use_static_dynamic_sel
+        if self.use_dynamic_sel and self._use_static_dynamic_sel:
+            warnings.warn(
+                "The JAX exportable dynamic-selection layout materializes "
+                "fixed angle capacity nf * nloc * a_sel * a_sel. Keep a_sel "
+                "modest for exportable DPA-3 models.",
+            )
         self.use_loc_mapping = use_loc_mapping
         self.sel_reduce_factor = sel_reduce_factor
         self.sequential_update = sequential_update
