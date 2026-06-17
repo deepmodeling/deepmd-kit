@@ -33,10 +33,6 @@ from deepmd.env import (
 from deepmd.tf.descriptor.descriptor import (
     Descriptor,
 )
-from deepmd.utils.path import (
-    DPPath,
-)
-
 from deepmd.tf.env import (
     GLOBAL_TF_FLOAT_PRECISION,
     tf,
@@ -79,6 +75,9 @@ from deepmd.tf.utils.type_embed import (
 )
 from deepmd.utils.data import (
     DataRequirementItem,
+)
+from deepmd.utils.path import (
+    DPPath,
 )
 from deepmd.utils.plugin import (
     make_plugin_registry,

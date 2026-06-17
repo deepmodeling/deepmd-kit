@@ -5,10 +5,6 @@ from typing import (
 
 import numpy as np
 
-from deepmd.utils.path import (
-    DPPath,
-)
-
 from deepmd.tf.env import (
     MODEL_VERSION,
     global_cvt_2_ener_float,
@@ -29,6 +25,9 @@ from deepmd.tf.utils.stat import (
 )
 from deepmd.tf.utils.type_embed import (
     TypeEmbedNet,
+)
+from deepmd.utils.path import (
+    DPPath,
 )
 
 from .model import (
