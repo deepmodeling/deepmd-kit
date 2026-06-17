@@ -13,9 +13,9 @@ class FakeTuner:
     pretrained = "/share/DPA-3.1-3M.pt"
     aux_branch = "MP_traj_v024_alldata_mixu"
     aux_prob = 0.5
-    aux_type_map = ["Cu", "O"]
-    downstream_type_map = ["Cu", "O"]
+    type_map = ["Cu", "O"]
     fitting_net_params = {"type": "ener", "neuron": [240, 240, 240]}
+    downstream_task_type = "ener"
     learning_rate = 1e-3
     stop_lr = 1e-5
     max_steps = 1000
@@ -218,8 +218,8 @@ def test_fitting_net_params_auto_read_from_ckpt(monkeypatch):
 
 
 class TestAutoTypeMap:
-    """When aux_type_map / downstream_type_map are not provided, MFTFineTuner
-    auto-infers them from the checkpoint and data type_map.raw.
+    """When type_map is not provided, MFTFineTuner auto-detects it from the
+    checkpoint and validates data type_maps.
     """
 
     def _fake_ckpt_sd(self, type_map=None):
@@ -244,8 +244,8 @@ class TestAutoTypeMap:
             }
         }
 
-    def test_resolve_type_maps_sets_aux_type_map(self, monkeypatch, tmp_path):
-        """_resolve_type_maps reads checkpoint type_map into aux_type_map."""
+    def test_validate_and_resolve_sets_type_map(self, monkeypatch, tmp_path):
+        """_validate_and_resolve_type_map reads checkpoint type_map."""
         import torch
 
         monkeypatch.setattr(
@@ -258,10 +258,10 @@ class TestAutoTypeMap:
             pretrained="/fake.pt",
             aux_branch="Domains_Alloy",
         )
-        assert t.aux_type_map is None
+        assert t.type_map is None
 
-        t._resolve_type_maps(str(tmp_path), str(tmp_path))
-        assert t.aux_type_map == ["H", "He", "Li", "Be", "B", "C", "N", "O"]
+        t._validate_and_resolve_type_map(str(tmp_path), str(tmp_path))
+        assert t.type_map == ["H", "He", "Li", "Be", "B", "C", "N", "O"]
 
     def test_config_has_nonempty_type_map(self, monkeypatch):
         """Generated mft_input.json must have a non-empty global type_map
@@ -281,7 +281,7 @@ class TestAutoTypeMap:
         )
         t.train_data = "/data/downstream"
         t.aux_data = "/data/aux"
-        t._resolve_type_maps(t.train_data, t.aux_data)
+        t._validate_and_resolve_type_map(t.train_data, t.aux_data)
 
         config = MFTConfigManager(t).build()
         shared = config["model"]["shared_dict"]
@@ -293,7 +293,7 @@ class TestAutoTypeMap:
         assert shared["type_map"] != []
 
     def test_explicit_type_map_still_respected(self, monkeypatch):
-        """When user passes aux_type_map explicitly, it is used verbatim."""
+        """When user passes type_map explicitly, it is used verbatim."""
         import torch
 
         monkeypatch.setattr(
@@ -305,8 +305,7 @@ class TestAutoTypeMap:
         t = MFTFineTuner(
             pretrained="/fake.pt",
             aux_branch="Domains_Alloy",
-            aux_type_map=["Cu", "O"],
-            downstream_type_map=["Cu", "O"],
+            type_map=["Cu", "O"],
         )
         t.train_data = "/data/downstream"
         t.aux_data = "/data/aux"
@@ -317,7 +316,7 @@ class TestAutoTypeMap:
 
     def test_data_type_map_validated_against_checkpoint(self, monkeypatch, tmp_path):
         """If data type_map.raw contains elements not in the checkpoint,
-        _resolve_type_maps raises ValueError.
+        _validate_and_resolve_type_map raises ValueError.
         """
         import numpy as np
         import torch
@@ -344,7 +343,7 @@ class TestAutoTypeMap:
         np.save(sd / "box.npy", np.eye(3).reshape(1, 9))
 
         with pytest.raises(ValueError, match="Pu"):
-            t._resolve_type_maps(str(sysdir), str(tmp_path))
+            t._validate_and_resolve_type_map(str(sysdir), str(tmp_path))
 
 
 def test_unknown_aux_branch_raises_with_branch_list(monkeypatch):

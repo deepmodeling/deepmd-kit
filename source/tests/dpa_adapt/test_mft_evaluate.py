@@ -46,8 +46,7 @@ def _make_finetuner(tmp_path, max_steps=100):
     ft.pretrained = str(tmp_path / "dummy.pt")
     ft.aux_branch = "SPICE2"
     ft.aux_prob = 0.5
-    ft.aux_type_map = DUMMY_TYPE_MAP
-    ft.downstream_type_map = DUMMY_TYPE_MAP
+    ft.type_map = DUMMY_TYPE_MAP
     ft.fitting_net_params = {}
     # Paper property-mode evaluation: downstream head is named "property".
     ft.downstream_task_type = "property"

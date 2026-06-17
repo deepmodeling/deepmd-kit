@@ -246,8 +246,7 @@ def test_mft_fparam_validate_called_on_fit():
         mft = MFTFineTuner(
             pretrained="dummy.pt",
             fparam_dim=3,
-            aux_type_map=["H"],
-            downstream_type_map=["H"],
+            type_map=["H"],
         )
         mft.fit(train_data="dummy_train", aux_data="dummy_aux")
 
@@ -275,8 +274,7 @@ def test_mft_fparam_validate_skipped_when_zero():
         mft = MFTFineTuner(
             pretrained="dummy.pt",
             fparam_dim=0,
-            aux_type_map=["H"],
-            downstream_type_map=["H"],
+            type_map=["H"],
         )
         mft.fit(train_data="dummy_train", aux_data="dummy_aux")
 
