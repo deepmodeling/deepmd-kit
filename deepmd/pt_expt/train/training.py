@@ -67,6 +67,9 @@ from deepmd.pt_expt.utils.stat import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
+from deepmd.utils.finetune import (
+    warn_configuration_mismatch_during_finetune,
+)
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
 )
@@ -1119,6 +1122,29 @@ class Trainer:
                         pretrained_wrapper.model[_model_key_from].change_type_map(
                             finetune_rule.get_finetune_tmap(),
                             model_with_new_type_stat=model_with_new_type_stat,
+                        )
+
+                for model_key in self.model_keys:
+                    finetune_rule = finetune_links[model_key]
+                    _model_key_from = finetune_rule.get_model_branch()
+                    input_model_params = (
+                        model_params["model_dict"][model_key]
+                        if self.multi_task
+                        else model_params
+                    )
+                    branch_pretrained_model_params = (
+                        pretrained_model_params["model_dict"][_model_key_from]
+                        if "model_dict" in pretrained_model_params
+                        else pretrained_model_params
+                    )
+                    if (
+                        "descriptor" in input_model_params
+                        and "descriptor" in branch_pretrained_model_params
+                    ):
+                        warn_configuration_mismatch_during_finetune(
+                            input_model_params["descriptor"],
+                            branch_pretrained_model_params["descriptor"],
+                            _model_key_from,
                         )
 
                 # Selective weight copy (per-branch key remapping)
