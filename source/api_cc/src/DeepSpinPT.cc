@@ -476,9 +476,12 @@ template void DeepSpinPT::compute<float, std::vector<ENERGYTYPE>>(
     const bool atomic);
 void DeepSpinPT::get_type_map(std::string& type_map) {
   auto ret = module.run_method("get_type_map").toList();
+  type_map.clear();
   for (const torch::IValue& element : ret) {
-    type_map += torch::str(element);  // Convert each element to a string
-    type_map += " ";                  // Add a space between elements
+    if (!type_map.empty()) {
+      type_map += " ";
+    }
+    type_map += torch::str(element);
   }
 }
 

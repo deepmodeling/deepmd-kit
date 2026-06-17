@@ -33,6 +33,7 @@ from deepmd.dpmodel import (
     NativeOP,
 )
 from deepmd.dpmodel.array_api import (
+    xp_asarray_nodetach,
     xp_sigmoid,
 )
 from deepmd.dpmodel.common import (
@@ -211,8 +212,8 @@ class GatedActivation(NativeOP):
         if self.lmax == 0:
             return x0
 
-        gate_weight = xp.asarray(
-            self.gate_linear.weight[...], device=array_api_compat.device(x)
+        gate_weight = xp_asarray_nodetach(
+            xp, self.gate_linear.weight[...], device=array_api_compat.device(x)
         )
         input_dtype = gate_scalar_source.dtype
         if input_dtype != gate_weight.dtype:
@@ -224,7 +225,9 @@ class GatedActivation(NativeOP):
             gating_scalars,
             (x.shape[0], gate_scalar_source.shape[1], self.lmax, self.channels),
         )
-        expand_index = xp.asarray(self.expand_index, device=array_api_compat.device(x))
+        expand_index = xp_asarray_nodetach(
+            xp, self.expand_index, device=array_api_compat.device(x)
+        )
         gates = xp.take(gating_scalars, expand_index, axis=2)  # (N, F, D-1, C)
         if self.layout == "ndfc":
             gates = xp.permute_dims(gates, (0, 2, 1, 3))  # (N, D-1, F, C)
@@ -284,7 +287,7 @@ class GatedActivation(NativeOP):
         )
         prec = PRECISION_DICT[obj.precision.lower()]
         expand_index = np.asarray(variables["expand_index"], dtype=np.int64)
-        if not np.array_equal(expand_index, obj.expand_index):
+        if not np.array_equal(expand_index, to_numpy_array(obj.expand_index)):
             raise ValueError("expand_index does not match the lmax/mmax tables")
         if obj.gate_linear is not None:
             weight = np.asarray(variables["gate_linear.weight"], dtype=prec)

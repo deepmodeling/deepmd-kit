@@ -477,7 +477,7 @@ def freeze_sezm_to_pt2(
     *,
     device: torch.device | None = None,
     head: str | None = None,
-    atomic_virial: bool = False,
+    atomic_virial: bool = True,
 ) -> None:
     """Freeze a SeZM checkpoint into an AOTInductor ``.pt2`` archive.
 
@@ -495,8 +495,10 @@ def freeze_sezm_to_pt2(
         ``Default`` head is used when present; otherwise multi-task checkpoints
         must pass an explicit head. Single-task checkpoints must pass ``None``.
     atomic_virial
-        Whether to include per-atom virial outputs in the exported graph.
-        Disable this for fastest LAMMPS force/energy/total-virial inference.
+        Whether the exported model exposes per-atom virial.  Enabled by
+        default: the edge-force scatter assembles the per-atom virial as a
+        free by-product of the single backward, so exporting it carries no
+        compute cost.
     """
     from torch._inductor import (
         aoti_compile_and_package,

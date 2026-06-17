@@ -46,6 +46,9 @@ from deepmd.dpmodel import (
     PRECISION_DICT,
     NativeOP,
 )
+from deepmd.dpmodel.array_api import (
+    xp_asarray_nodetach,
+)
 from deepmd.dpmodel.common import (
     to_numpy_array,
 )
@@ -157,8 +160,8 @@ class SeZMTypeEmbedding(NativeOP):
             Type embeddings with shape (..., embed_dim).
         """
         xp = array_api_compat.array_namespace(atype)
-        weight = xp.asarray(
-            self.adam_type_embedding[...], device=array_api_compat.device(atype)
+        weight = xp_asarray_nodetach(
+            xp, self.adam_type_embedding[...], device=array_api_compat.device(atype)
         )
         # pt embedding.py:143 torch.embedding -> flat int64 take + reshape.
         index = xp.astype(xp.reshape(atype, (-1,)), xp.int64)
@@ -287,8 +290,14 @@ class GeometricInitialEmbedding(NativeOP):
             return xp.zeros(
                 (n_nodes, self.ebed_dim, self.channels), dtype=dtype, device=device
             )
-        n_edge = int(edge_cache.dst.shape[0])
-        nnei = _edge_layout(n_edge, int(n_nodes))
+        # Keep ``n_edge``/``n_nodes`` symbolic (no ``int()``): they are the
+        # products ``nf*nloc*nnei`` / ``nf*nloc``. Casting to a Python int
+        # specializes them to the trace-time sample shape (e.g. nf*nloc==14),
+        # which breaks torch.export with a dynamic ``nloc`` dim. ``_edge_layout``
+        # returns a symbolic ``nnei`` and the masked-sum reshapes below use
+        # ``-1`` for the node axis to recover it symbolically.
+        n_edge = edge_cache.dst.shape[0]
+        nnei = _edge_layout(n_edge, n_nodes)
 
         # === Step 2. Gather all m=0 columns (l >= 1) in one shot ===
         # pt embedding.py:235-241 pairs one packed non-scalar row with the
@@ -297,7 +306,8 @@ class GeometricInitialEmbedding(NativeOP):
         if zonal_coupling is None:
             Dt_full = edge_cache.Dt_full  # (E, D, D)
             dim_full = Dt_full.shape[-1]
-            flat_index = xp.asarray(
+            flat_index = xp_asarray_nodetach(
+                xp,
                 self.non_scalar_row_index * dim_full + self.zonal_m0_col_index_for_row,
                 device=device,
             )
@@ -310,7 +320,9 @@ class GeometricInitialEmbedding(NativeOP):
         # === Step 3. Broadcast radial features per row ===
         # Each non-scalar packed row reuses the radial feature of its degree l
         # (pt embedding.py:245-250, index_select on axis 1).
-        radial_slot_index = xp.asarray(self.radial_slot_index_for_row, device=device)
+        radial_slot_index = xp_asarray_nodetach(
+            xp, self.radial_slot_index_for_row, device=device
+        )
         radial_value_for_row = xp.take(
             radial_feat, radial_slot_index, axis=1
         )  # (E, D-1, C)
@@ -339,7 +351,7 @@ class GeometricInitialEmbedding(NativeOP):
         non_scalar_out = xp.sum(
             xp.reshape(
                 non_scalar_message,
-                (n_nodes, nnei, self.ebed_dim - 1, self.channels),
+                (-1, nnei, self.ebed_dim - 1, self.channels),
             ),
             axis=1,
         )  # (N, D-1, C)
@@ -548,7 +560,13 @@ class EnvironmentInitialEmbedding(NativeOP):
             seed=child_seed(seed, 3),
             trainable=self.trainable,
         )
-        self.output_proj.w = np.zeros_like(self.output_proj.w)
+        # Use an explicit shape/dtype instead of np.zeros_like(self.output_proj.w):
+        # in pt_expt the attribute is a requires-grad torch Parameter, on which
+        # numpy __array__ conversion raises.
+        self.output_proj.w = np.zeros(
+            (self.embed_dim * self.axis_dim, 2 * self.channels),
+            dtype=PRECISION_DICT[self.precision.lower()],
+        )
 
     def call(
         self,
@@ -580,8 +598,11 @@ class EnvironmentInitialEmbedding(NativeOP):
         edge_vec = edge_cache.edge_vec  # (E, 3)
         edge_rbf = edge_cache.edge_rbf  # (E, n_radial)
         edge_env = edge_cache.edge_env  # (E, 1)
-        n_edge = int(dst.shape[0])
-        nnei = _edge_layout(n_edge, int(n_nodes))
+        # Keep ``n_edge``/``n_nodes`` symbolic (no ``int()``); see the matching
+        # comment in ``GeometricInitialEmbedding.call`` for why casting to a
+        # Python int breaks torch.export with a dynamic ``nloc`` dim.
+        n_edge = dst.shape[0]
+        nnei = _edge_layout(n_edge, n_nodes)
 
         # === Step 1. Construct r_tilde = [s, s*r_hat] ===
         # s = edge_env * (1/r), r_hat = edge_vec / r (pt embedding.py:489-495)
@@ -629,7 +650,7 @@ class EnvironmentInitialEmbedding(NativeOP):
                 xp.reshape(edge_mask, (n_edge, 1)), outer_flat.dtype
             )
         env_agg = xp.sum(
-            xp.reshape(outer_flat, (n_nodes, nnei, 4 * self.embed_dim)),
+            xp.reshape(outer_flat, (-1, nnei, 4 * self.embed_dim)),
             axis=1,
         )  # (N, 4*embed_dim)
         env_agg = xp.reshape(env_agg, (n_nodes, 4, self.embed_dim))
