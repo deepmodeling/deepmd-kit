@@ -3388,6 +3388,7 @@ def linear_ener_model_args() -> Argument:
         'If "mean", the weights are set to be 1 / len(models). '
         'If "sum", the weights are set to be 1.'
     )
+    doc_shared_dict = "The definition of the shared parameters used in the `models` within linear model."
     models_args = model_args(exclude_hybrid=True)
     models_args.name = "models"
     models_args.fold_subdoc = True
@@ -3404,6 +3405,9 @@ def linear_ener_model_args() -> Argument:
                 [list, str],
                 optional=False,
                 doc=doc_weights,
+            ),
+            Argument(
+                "shared_dict", dict, optional=True, default={}, doc=doc_shared_dict
             ),
         ],
         doc=doc_only_tf_supported,
