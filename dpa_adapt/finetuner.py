@@ -615,10 +615,10 @@ class DPAFineTuner:
         (MFT only) Pre-trained branch for the auxiliary force/energy head.
     aux_prob : float
         (MFT only) Probability of sampling an auxiliary batch at each step.
-    aux_type_map : list[str] or None
-        (MFT only) Type map for the auxiliary head (auto-detected if None).
-    downstream_type_map : list[str] or None
-        (MFT only) Type map for the downstream property head.
+    type_map : list[str] or None
+        (MFT only) The global (shared) type map. Both branches share a single
+        descriptor, so this must be the union of elements in both datasets.
+        Auto-detected from the checkpoint if not provided.
     downstream_task_type : str
         (MFT only) Task type of the downstream head (``"property"`` etc.).
     aux_batch_size : str or None
@@ -663,8 +663,7 @@ class DPAFineTuner:
         # ---- mft-only ----
         aux_branch="MP_traj_v024_alldata_mixu",
         aux_prob: float = 0.5,
-        aux_type_map: list[str] | None = None,
-        downstream_type_map: list[str] | None = None,
+        type_map: list[str] | None = None,
         downstream_task_type: str = "property",
         aux_batch_size: str | None = None,
         downstream_batch_size: int | None = None,
@@ -708,8 +707,7 @@ class DPAFineTuner:
         # MFT-only parameters.
         self.aux_branch = aux_branch
         self.aux_prob = aux_prob
-        self.aux_type_map = aux_type_map
-        self.downstream_type_map = downstream_type_map
+        self.type_map = type_map
         self.downstream_task_type = downstream_task_type
         self.aux_batch_size = aux_batch_size
         self.downstream_batch_size = downstream_batch_size
@@ -726,7 +724,8 @@ class DPAFineTuner:
         self._mft = None
 
         # ---- backward-compat state mirrors (delegated to pipeline) ----
-        self.type_map = []
+        if self.type_map is None:
+            self.type_map = []
         self._target_key = None
         self._task_dim = 1
         self.predictor = None  # sklearn object after fit()
@@ -955,8 +954,15 @@ class DPAFineTuner:
             "-d",
             str(detail_prefix),
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        result = subprocess.run(cmd, capture_output=True, text=True)
         combined = result.stdout + "\n" + result.stderr
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"dp --pt test failed (return code {result.returncode}).\n"
+                f"cmd: {' '.join(cmd)}\n"
+                f"stdout:\n{result.stdout}\n"
+                f"stderr:\n{result.stderr}"
+            )
 
         detail_files = sorted(
             output_dir.glob(f"{detail_prefix.name}.property.out.*"),
@@ -1096,8 +1102,7 @@ class DPAFineTuner:
                 pretrained=self.pretrained,
                 aux_branch=self.aux_branch,
                 aux_prob=self.aux_prob,
-                aux_type_map=self.aux_type_map,
-                downstream_type_map=self.downstream_type_map,
+                type_map=self.type_map,
                 fitting_net_params=self.fitting_net_params,
                 downstream_task_type=self.downstream_task_type,
                 property_name=self.property_name,

@@ -543,7 +543,14 @@ class DPATrainer:
         cmd = self._build_cmd(input_json)
         # fit() deliberately echoes the CLI so the user can rerun it manually.
         print("Running:", " ".join(cmd))
-        subprocess.run(cmd, check=True)
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"dp --pt train failed (return code {result.returncode}).\n"
+                f"cmd: {' '.join(cmd)}\n"
+                f"stdout:\n{result.stdout}\n"
+                f"stderr:\n{result.stderr}"
+            )
 
         ckpt = self._final_ckpt_path()
         if ckpt is None:
@@ -600,7 +607,14 @@ class DPATrainer:
             datafile,
         )
 
-        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"dp --pt test failed (return code {result.returncode}).\n"
+                f"cmd: {' '.join(cmd)}\n"
+                f"stdout:\n{result.stdout}\n"
+                f"stderr:\n{result.stderr}"
+            )
         # DeepMD-kit logs PROPERTY MAE/RMSE to stderr (Python logging default).
         # Feed both streams to the parser.
         combined = result.stdout + "\n" + result.stderr

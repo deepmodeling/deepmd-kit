@@ -190,8 +190,7 @@ class _PropertyTuner:
     pretrained = "/share/DPA-3.1-3M.pt"
     aux_branch = "SPICE2"
     aux_prob = 0.5
-    aux_type_map = ["H", "C", "N", "O"]
-    downstream_type_map = ["H", "C", "N", "O"]
+    type_map = ["H", "C", "N", "O"]
     fitting_net_params = {
         "type": "ener",
         "neuron": [240, 240, 240],
@@ -310,8 +309,7 @@ class _EnerTuner:
     pretrained = "/share/DPA-3.1-3M.pt"
     aux_branch = "MP_traj_v024_alldata_mixu"
     aux_prob = 0.5
-    aux_type_map = ["Cu", "O"]
-    downstream_type_map = ["Cu", "O"]
+    type_map = ["Cu", "O"]
     fitting_net_params = {"type": "ener", "neuron": [240, 240, 240]}
     learning_rate = 1e-3
     stop_lr = 1e-5

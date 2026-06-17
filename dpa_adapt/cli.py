@@ -133,8 +133,7 @@ def _cmd_fit(args: argparse.Namespace) -> int:
         # MFT
         aux_branch=args.aux_branch,
         aux_prob=args.aux_prob,
-        aux_type_map=_maybe_split_list(args.aux_type_map),
-        downstream_type_map=_maybe_split_list(args.downstream_type_map),
+        type_map=_maybe_split_list(args.mft_type_map),
         downstream_task_type=args.downstream_task_type,
         aux_batch_size=args.aux_batch_size,
         downstream_batch_size=args.downstream_batch_size,
@@ -488,14 +487,12 @@ def get_parser() -> argparse.ArgumentParser:
         help="(mft) Sampling weight for aux branch.",
     )
     parser_fit.add_argument(
-        "--aux-type-map",
+        "--mft-type-map",
         default=None,
-        help="(mft) Comma-separated aux element symbols.",
-    )
-    parser_fit.add_argument(
-        "--downstream-type-map",
-        default=None,
-        help="(mft) Comma-separated downstream element symbols.",
+        help="(mft) Global (shared) type map for MFT. Must be the union of "
+        "elements in both aux and downstream datasets. "
+        "Comma-separated, e.g. 'H,C,N,O'. "
+        "Auto-detected from checkpoint if omitted.",
     )
     parser_fit.add_argument(
         "--downstream-task-type",
