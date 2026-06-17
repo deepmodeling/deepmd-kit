@@ -67,9 +67,7 @@ def _copy_s2gridnet(dp_net: S2GridNet, pt_net) -> None:
 def test_s2_cross_parity(op_type, lmax, channels) -> None:
     import torch
 
-    from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
-        S2GridNet as PTS2GridNet,
-    )
+    from deepmd.pt.model.descriptor.sezm_nn.grid_net import S2GridNet as PTS2GridNet
 
     n_focus = 1
     common = {
@@ -146,9 +144,7 @@ def test_s2_cross_equivariance(op_type, lmax, channels) -> None:
 def test_layout_flat_parity(op_type) -> None:
     import torch
 
-    from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
-        S2GridNet as PTS2GridNet,
-    )
+    from deepmd.pt.model.descriptor.sezm_nn.grid_net import S2GridNet as PTS2GridNet
 
     lmax, channels, n_focus = 2, 2, 2
     common = {
@@ -187,9 +183,7 @@ def test_layout_flat_parity(op_type) -> None:
 def test_residual_scale_parity(residual_scale_init) -> None:
     import torch
 
-    from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
-        S2GridNet as PTS2GridNet,
-    )
+    from deepmd.pt.model.descriptor.sezm_nn.grid_net import S2GridNet as PTS2GridNet
 
     lmax, channels, n_focus = 2, 2, 1
     common = {
@@ -254,9 +248,7 @@ def test_residual_scale_parity(residual_scale_init) -> None:
 def test_self_mode_regression(op_type) -> None:
     import torch
 
-    from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
-        S2GridNet as PTS2GridNet,
-    )
+    from deepmd.pt.model.descriptor.sezm_nn.grid_net import S2GridNet as PTS2GridNet
 
     lmax, channels, n_focus = 2, 2, 1
     common = {

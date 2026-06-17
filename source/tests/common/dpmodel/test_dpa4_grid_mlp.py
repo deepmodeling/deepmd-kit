@@ -56,9 +56,7 @@ def _copy_s2gridnet_mlp(dp_net: S2GridNet, pt_net) -> None:
 def test_grid_mlp_parity_self(channels) -> None:
     import torch
 
-    from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
-        GridMLP as PTGridMLP,
-    )
+    from deepmd.pt.model.descriptor.sezm_nn.grid_net import GridMLP as PTGridMLP
 
     pt_obj = PTGridMLP(
         channels=channels,
@@ -91,9 +89,7 @@ def test_grid_mlp_parity_self(channels) -> None:
 def test_grid_mlp_parity_cross(channels) -> None:
     import torch
 
-    from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
-        GridMLP as PTGridMLP,
-    )
+    from deepmd.pt.model.descriptor.sezm_nn.grid_net import GridMLP as PTGridMLP
 
     pt_obj = PTGridMLP(
         channels=channels,
@@ -175,9 +171,7 @@ def test_grid_mlp_torch_namespace(mode) -> None:
 def test_s2gridnet_op_type_mlp_parity(lmax, channels) -> None:
     import torch
 
-    from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
-        S2GridNet as PTS2GridNet,
-    )
+    from deepmd.pt.model.descriptor.sezm_nn.grid_net import S2GridNet as PTS2GridNet
 
     n_focus = 1
     pt_net = PTS2GridNet(

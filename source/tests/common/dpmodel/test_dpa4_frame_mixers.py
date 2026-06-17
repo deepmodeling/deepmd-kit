@@ -79,9 +79,7 @@ def test_frame_contract_parity(lmax, channels, kmax) -> None:
 def test_frame_expand_parity(lmax, channels, kmax) -> None:
     import torch
 
-    from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
-        FrameExpand as PTFrameExpand,
-    )
+    from deepmd.pt.model.descriptor.sezm_nn.grid_net import FrameExpand as PTFrameExpand
 
     n_frames = 2 * kmax + 1
     pt_obj = PTFrameExpand(

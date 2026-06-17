@@ -75,9 +75,7 @@ def _copy_so3gridnet(dp_net: SO3GridNet, pt_net) -> None:
 def test_so3_self_parity(op_type, kmax) -> None:
     import torch
 
-    from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
-        SO3GridNet as PTSO3GridNet,
-    )
+    from deepmd.pt.model.descriptor.sezm_nn.grid_net import SO3GridNet as PTSO3GridNet
 
     lmax, channels, n_focus = 2, 2, 1
     common = {
@@ -155,9 +153,7 @@ def test_so3_self_equivariance(op_type, kmax) -> None:
 def test_so3_cross_parity(op_type, kmax) -> None:
     import torch
 
-    from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
-        SO3GridNet as PTSO3GridNet,
-    )
+    from deepmd.pt.model.descriptor.sezm_nn.grid_net import SO3GridNet as PTSO3GridNet
 
     lmax, channels, n_focus = 2, 2, 1
     common = {
@@ -242,9 +238,7 @@ def test_so3_cross_equivariance(op_type, kmax) -> None:
 def test_so3_cross_flat_parity(op_type) -> None:
     import torch
 
-    from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
-        SO3GridNet as PTSO3GridNet,
-    )
+    from deepmd.pt.model.descriptor.sezm_nn.grid_net import SO3GridNet as PTSO3GridNet
 
     lmax, channels, n_focus, kmax = 2, 2, 2, 1
     common = {
@@ -381,9 +375,7 @@ def test_torch_namespace(mode) -> None:
 def test_s2_regression(mode) -> None:
     import torch
 
-    from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
-        S2GridNet as PTS2GridNet,
-    )
+    from deepmd.pt.model.descriptor.sezm_nn.grid_net import S2GridNet as PTS2GridNet
 
     lmax, channels, n_focus = 2, 2, 1
     common = {
