@@ -75,6 +75,7 @@ from deepmd.pt.utils.lmdb_dataset import (
     is_lmdb,
 )
 from deepmd.pt.utils.multi_task import (
+    preprocess_linear_shared_params,
     preprocess_shared_params,
 )
 from deepmd.pt.utils.stat import (
@@ -329,6 +330,8 @@ def train(
         assert "RANDOM" not in config["model"]["model_dict"], (
             "Model name can not be 'RANDOM' in multi-task mode!"
         )
+    elif config["model"].get("type") == "linear_ener":
+        config["model"], shared_links = preprocess_linear_shared_params(config["model"])
 
     # update fine-tuning config
     finetune_links = None

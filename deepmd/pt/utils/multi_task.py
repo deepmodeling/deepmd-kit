@@ -36,6 +36,7 @@ def _cascade_top_level_defaults(model_config: dict[str, Any]) -> None:
 
 def preprocess_shared_params(
     model_config: dict[str, Any],
+    require_shared_type_map: bool = True,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Preprocess the model params for multitask model, and generate the links dict for further sharing.
 
@@ -167,7 +168,10 @@ def preprocess_shared_params(
                 item_params = model_params_item[item_key]
                 if isinstance(item_params, str):
                     replace_one_item(model_params_item, item_key, item_params)
-                elif item_params.get("type", "") == "hybrid":
+                elif (
+                    isinstance(item_params, dict)
+                    and item_params.get("type", "") == "hybrid"
+                ):
                     for ii, hybrid_item in enumerate(item_params["list"]):
                         if isinstance(hybrid_item, str):
                             replace_one_item(
@@ -187,8 +191,47 @@ def preprocess_shared_params(
         )
         # little trick to make spin models in the front to be the base models,
         # because its type embeddings are more general.
-    assert len(type_map_keys) == 1, "Multitask model must have only one type_map!"
+    if require_shared_type_map:
+        assert len(type_map_keys) == 1, "Multitask model must have only one type_map!"
+    else:
+        assert len(type_map_keys) <= 1, "Model must not reference multiple type_maps!"
     return model_config, shared_links
+
+
+def preprocess_linear_shared_params(
+    model_config: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any] | None]:
+    """Preprocess ``shared_dict`` references in a linear-energy model config.
+
+    Linear models store their branches in a list named ``models``, while the
+    shared-parameter preprocessor works on named ``model_dict`` branches.  This
+    adapter temporarily names linear submodels ``model_0``, ``model_1``, ... so
+    the same ``shared_dict`` syntax and link generation can be reused.
+    """
+    if "shared_dict" not in model_config:
+        return model_config, None
+
+    linear_config = deepcopy(model_config)
+    shared_config = {
+        "model_dict": {
+            f"model_{idx}": sub_model
+            for idx, sub_model in enumerate(linear_config["models"])
+        },
+        "shared_dict": linear_config["shared_dict"],
+    }
+    shared_config, shared_links = preprocess_shared_params(
+        shared_config,
+        require_shared_type_map=False,
+    )
+    linear_config["models"] = [
+        shared_config["model_dict"][f"model_{idx}"]
+        for idx in range(len(linear_config["models"]))
+    ]
+    if "type_map" not in linear_config and linear_config["models"]:
+        first_type_map = linear_config["models"][0].get("type_map")
+        if isinstance(first_type_map, list):
+            linear_config["type_map"] = deepcopy(first_type_map)
+    return linear_config, shared_links
 
 
 def get_class_name(item_key: str, item_params: dict[str, Any]) -> type:

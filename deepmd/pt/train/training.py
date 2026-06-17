@@ -717,6 +717,14 @@ class Trainer:
                     rank=self.rank,
                 )
 
+        # Linear-model share params
+        if not self.multi_task and shared_links is not None:
+            self.model.share_params(
+                shared_links,
+                resume=(resuming and not self.finetune_update_stat) or self.rank != 0,
+                data_stat_protect=model_params.get("data_stat_protect", 1e-2),
+            )
+
         # Learning rate
         self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
         self.nonfinite_grad_guard = NonFiniteGradGuard()
@@ -929,7 +937,7 @@ class Trainer:
                 )
 
         # Multi-task share params
-        if shared_links is not None:
+        if self.multi_task and shared_links is not None:
             _data_stat_protect = np.array(
                 [
                     model_params["model_dict"][ii].get("data_stat_protect", 1e-2)

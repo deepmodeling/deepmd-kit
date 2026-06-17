@@ -32,6 +32,9 @@ from deepmd.pt.model.task import (
 from deepmd.pt.model.task.sezm_ener import (
     SeZMEnergyFittingNet,
 )
+from deepmd.pt.utils.multi_task import (
+    preprocess_linear_shared_params,
+)
 from deepmd.utils.spin import (
     Spin,
 )
@@ -154,6 +157,7 @@ def get_spin_model(model_params: dict) -> SpinModel:
 
 def get_linear_model(model_params: dict) -> LinearEnergyModel:
     model_params = copy.deepcopy(model_params)
+    model_params, shared_links = preprocess_linear_shared_params(model_params)
     weights = model_params.get("weights", "mean")
     list_of_models = []
     ntypes = len(model_params["type_map"])
@@ -185,13 +189,15 @@ def get_linear_model(model_params: dict) -> LinearEnergyModel:
 
     atom_exclude_types = model_params.get("atom_exclude_types", [])
     pair_exclude_types = model_params.get("pair_exclude_types", [])
-    return LinearEnergyModel(
+    model = LinearEnergyModel(
         models=list_of_models,
         type_map=model_params["type_map"],
         weights=weights,
         atom_exclude_types=atom_exclude_types,
         pair_exclude_types=pair_exclude_types,
     )
+    model.shared_links = shared_links
+    return model
 
 
 def get_zbl_model(model_params: dict) -> DPZBLModel:

@@ -3388,6 +3388,11 @@ def linear_ener_model_args() -> Argument:
         'If "mean", the weights are set to be 1 / len(models). '
         'If "sum", the weights are set to be 1.'
     )
+    doc_shared_dict = (
+        "Named shared items that can be referenced by sub-model type_map, "
+        "descriptor, or fitting_net fields. This follows the multi-task "
+        "shared_dict syntax."
+    )
     models_args = model_args(exclude_hybrid=True)
     models_args.name = "models"
     models_args.fold_subdoc = True
@@ -3404,6 +3409,12 @@ def linear_ener_model_args() -> Argument:
                 [list, str],
                 optional=False,
                 doc=doc_weights,
+            ),
+            Argument(
+                "shared_dict",
+                dict,
+                optional=True,
+                doc=doc_only_pt_supported + doc_shared_dict,
             ),
         ],
         doc=doc_only_tf_supported,
