@@ -91,6 +91,10 @@ else:
 	wait $PID5
 	wait $PID6
 
+	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_dpa4.py &
+	PID9=$!
+	wait $PID9
+
 	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_spin.py &
 	PID7=$!
 	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_spin_model_devi.py &

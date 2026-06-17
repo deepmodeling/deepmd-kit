@@ -26,6 +26,7 @@ from __future__ import (
     annotations,
 )
 
+import logging
 import math
 from typing import (
     TYPE_CHECKING,
@@ -36,11 +37,17 @@ from typing import (
 import array_api_compat
 import numpy as np
 
+log = logging.getLogger(__name__)
+
+# Warn at most once per process for backend-ignored switches (keyed by name).
+_WARNED_ONCE: set[str] = set()
+
 from deepmd.dpmodel import (
     NativeOP,
 )
 from deepmd.dpmodel.array_api import (
     xp_asarray_nodetach,
+    xp_take_first_n,
 )
 from deepmd.dpmodel.common import (
     PRECISION_DICT,
@@ -323,6 +330,12 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         # pt-runtime-only switch (CUDA bfloat16 autocast during training);
         # accepted for config compatibility and ignored by dpmodel.
         self.use_amp = bool(use_amp)
+        if self.use_amp and "use_amp" not in _WARNED_ONCE:
+            log.warning(
+                "`use_amp` has no effect on the dpmodel/pt_expt backend "
+                "(it is a pt-runtime CUDA autocast switch); ignoring it."
+            )
+            _WARNED_ONCE.add("use_amp")
         self.trainable = bool(trainable)
         self.seed = seed
         self.random_gamma = bool(random_gamma)
@@ -811,7 +824,11 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         pair_keep_mask = self.emask.build_type_exclude_mask(nlist, atype_ext) != 0
 
         # === Step 2. Type embedding (l=0) ===
-        atype_loc = atype_ext[:, :nloc]
+        # Use ``xp_take_first_n`` (torch.index_select) rather than a plain
+        # ``[:, :nloc]`` slice: the slice makes torch.export emit a spurious
+        # ``Ne(nall, nloc)`` contiguity guard that breaks the ``nall == nloc``
+        # (NoPBC, no ghost atoms) case in the compiled .pt2 artifact.
+        atype_loc = xp_take_first_n(atype_ext, 1, nloc)
         type_ebed = xp.reshape(
             self.type_embedding(atype_loc), (n_nodes, self.channels)
         )  # (N, C)
