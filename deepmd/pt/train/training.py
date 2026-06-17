@@ -73,7 +73,8 @@ from deepmd.pt.train.ema import (
     get_ema_validation_log_path,
 )
 from deepmd.pt.train.utils import (
-    clip_grad_norm_with_stable_fallback,
+    NonFiniteGradGuard,
+    clip_grad_norm_,
     scoped_env_defaults,
 )
 from deepmd.pt.train.validation import (
@@ -718,6 +719,7 @@ class Trainer:
 
         # Learning rate
         self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
+        self.nonfinite_grad_guard = NonFiniteGradGuard()
         self.lr_schedule = get_lr(config["learning_rate"])
 
         # Minimum pairwise distance for filtering unphysical frames during training
@@ -1015,6 +1017,7 @@ class Trainer:
                 float(self.opt_param["adam_beta2"]),
             )
             weight_decay = float(self.opt_param["weight_decay"])
+            runtime_named_parameters = tuple(self.wrapper.named_parameters())
 
             if self.opt_type in ("Adam", "AdamW"):
                 cls = torch.optim.Adam if self.opt_type == "Adam" else torch.optim.AdamW
@@ -1035,7 +1038,6 @@ class Trainer:
                     "lr_adjust": float(self.opt_param["lr_adjust"]),
                     "lr_adjust_coeff": float(self.opt_param["lr_adjust_coeff"]),
                     "muon_mode": str(self.opt_param.get("muon_mode", "slice")),
-                    "named_parameters": tuple(self.wrapper.named_parameters()),
                     "enable_gram": bool(self.opt_param.get("enable_gram")),
                     "flash_muon": bool(self.opt_param.get("flash_muon")),
                     "magma_muon": bool(self.opt_param.get("magma_muon")),
@@ -1054,6 +1056,11 @@ class Trainer:
                 weight_decay=weight_decay,
                 **extra,
             )
+            if self.opt_type == "HybridMuon":
+                target_optimizer = (
+                    self.optimizer.optim if self.zero_stage == 1 else self.optimizer
+                )
+                target_optimizer.set_param_names(runtime_named_parameters)
             self._load_optimizer_state(optimizer_state_dict)
             self.scheduler = self._create_lr_scheduler(
                 self.optimizer,
@@ -1412,12 +1419,12 @@ class Trainer:
                             for name, p in self.wrapper.named_parameters()
                             if p.grad is not None
                         ]
-                    total_norm = clip_grad_norm_with_stable_fallback(
+                    total_norm = clip_grad_norm_(
                         self.wrapper.parameters(),
                         self.gradient_max_norm,
-                        use_stable_fallback=self.zero_stage < 2,
-                        named_parameters=self.wrapper.named_parameters,
+                        stable=self.zero_stage < 2,
                     )
+                    self.nonfinite_grad_guard.update(total_norm)
                 with torch.device(DEVICE):
                     self.optimizer.step()
                 self.scheduler.step()
@@ -1751,13 +1758,18 @@ class Trainer:
                     ),
                 )
 
-            if (
-                (
-                    (display_step_id) % self.save_freq == 0
-                    and _step_id != self.start_step
+            should_save_checkpoint = (
+                (display_step_id) % self.save_freq == 0 and _step_id != self.start_step
+            ) or (display_step_id) == self.num_steps
+            if should_save_checkpoint:
+                # Abort before writing if any gradient norm since the previous
+                # checkpoint was non-finite.
+                self.nonfinite_grad_guard.raise_if_nonfinite(
+                    self.wrapper.named_parameters
                 )
-                or (display_step_id) == self.num_steps
-            ) and (self.zero_stage > 0 or self.rank == 0 or dist.get_rank() == 0):
+            if should_save_checkpoint and (
+                self.zero_stage > 0 or self.rank == 0 or dist.get_rank() == 0
+            ):
                 # Handle the case if rank 0 aborted and re-assigned
                 self.latest_model = Path(self.save_ckpt + f"-{display_step_id}.pt")
                 self.save_model(self.latest_model, lr=cur_lr, step=_step_id)

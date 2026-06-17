@@ -165,7 +165,11 @@ class MFTConfigManager:
                 "fitting_net": downstream_fitting_net,
             }
 
-        decay_steps = 1000 if is_property else 5000
+        decay_steps = (
+            t.decay_steps
+            if getattr(t, "decay_steps", None) is not None
+            else (1000 if is_property else 5000)
+        )
         # Per-branch batch sizes: explicit override wins, then paper defaults
         # for property mode, then the single batch_size for legacy ener mode.
         aux_batch = getattr(t, "aux_batch_size", None) or (
@@ -218,6 +222,11 @@ class MFTConfigManager:
                 "start_lr": t.learning_rate,
                 "stop_lr": t.stop_lr,
                 "decay_steps": decay_steps,
+                **(
+                    {"warmup_steps": t.warmup_steps}
+                    if getattr(t, "warmup_steps", 0) > 0
+                    else {}
+                ),
             },
             "loss_dict": {
                 t.aux_branch: dict(_ENER_LOSS),

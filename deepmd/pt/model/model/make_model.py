@@ -501,7 +501,26 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 nlist = torch.where(rr > rcut, -1, nlist)
                 nlist = nlist[..., :nnei]
             else:  # not extra_nlist_sort and n_nnei <= nnei:
-                pass  # great!
+                # No reordering is needed here (these descriptors reduce over
+                # neighbors order-independently), but we must still drop
+                # neighbors beyond rcut.  The C++/LAMMPS neighbor list is built
+                # with rcut+skin and is NOT rcut-filtered before forward_lower;
+                # without this, out-of-rcut neighbors leak into the descriptor
+                # whenever the per-atom neighbor count <= nnei (this branch),
+                # making the result order-dependent (see discussion #5438).
+                n_nf, n_nloc, n_nnei = nlist.shape
+                m_real_nei = nlist >= 0
+                coord0 = extended_coord[:, :n_nloc, :]
+                index = (
+                    torch.where(m_real_nei, nlist, 0)
+                    .view(n_nf, n_nloc * n_nnei, 1)
+                    .expand(-1, -1, 3)
+                )
+                coord1 = torch.gather(extended_coord, 1, index).view(
+                    n_nf, n_nloc, n_nnei, 3
+                )
+                rr = torch.linalg.norm(coord0[:, :, None, :] - coord1, dim=-1)
+                nlist = torch.where(m_real_nei & (rr > rcut), -1, nlist)
             assert nlist.shape[-1] == nnei
             return nlist
 

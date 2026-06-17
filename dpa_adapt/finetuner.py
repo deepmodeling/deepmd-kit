@@ -582,12 +582,23 @@ class DPAFineTuner:
     learning_rate, stop_lr : float
         Start and end points of the exponential learning-rate schedule
         (training paradigms).
+    decay_steps : int or None
+        Steps between LR decays for the ``exp`` scheduler (deepmd-kit
+        native).  ``None`` (default) auto-selects: 1000 for
+        ``frozen_head``/``finetune``; 1000 for MFT property mode,
+        5000 for MFT ener mode.
+    warmup_steps : int
+        Linear LR warmup steps (deepmd-kit native).  0 = disabled.
     max_steps : int
         Total training steps (LP / FT / MFT).
     batch_size : str or int
         DeepMD-kit batch-size spec (e.g. ``"auto:512"`` or 128).
     loss_function : str
         ``"mse"`` or ``"smooth_mae"`` (training paradigms).
+    fitting_net_params : dict or None
+        Extra kwargs merged into the fitting-net config (e.g.
+        ``{"neuron": [128, 128]}``).  Applies to ``frozen_head``,
+        ``finetune``, and ``mft`` strategies.
     fparam_dim : int
         Dimension of per-frame context features (e.g. temperature,
         humidity).  When > 0, ``set.*/fparam.npy`` of shape
@@ -608,8 +619,6 @@ class DPAFineTuner:
         (MFT only) Type map for the auxiliary head (auto-detected if None).
     downstream_type_map : list[str] or None
         (MFT only) Type map for the downstream property head.
-    fitting_net_params : dict or None
-        (MFT only) Extra kwargs forwarded to the fitting-net constructor.
     downstream_task_type : str
         (MFT only) Task type of the downstream head (``"property"`` etc.).
     aux_batch_size : str or None
@@ -641,9 +650,12 @@ class DPAFineTuner:
         init_branch="SPICE2",
         learning_rate=1e-3,
         stop_lr=1e-5,
+        decay_steps: int | None = None,  # None → auto: 1000 for training, MFT auto-detect
+        warmup_steps: int = 0,
         max_steps=100_000,
         batch_size="auto:512",
         loss_function="mse",
+        fitting_net_params: dict | None = None,
         fparam_dim: int = 0,
         output_dir="./dpa_output",
         save_freq=10_000,
@@ -653,7 +665,6 @@ class DPAFineTuner:
         aux_prob: float = 0.5,
         aux_type_map: list[str] | None = None,
         downstream_type_map: list[str] | None = None,
-        fitting_net_params: dict | None = None,
         downstream_task_type: str = "property",
         aux_batch_size: str | None = None,
         downstream_batch_size: int | None = None,
@@ -683,9 +694,12 @@ class DPAFineTuner:
         self.init_branch = init_branch
         self.learning_rate = learning_rate
         self.stop_lr = stop_lr
+        self.decay_steps = decay_steps
+        self.warmup_steps = warmup_steps
         self.max_steps = max_steps
         self.batch_size = batch_size
         self.loss_function = loss_function
+        self.fitting_net_params = fitting_net_params
         self.fparam_dim = fparam_dim
         self.output_dir = output_dir
         self.save_freq = save_freq
@@ -696,7 +710,6 @@ class DPAFineTuner:
         self.aux_prob = aux_prob
         self.aux_type_map = aux_type_map
         self.downstream_type_map = downstream_type_map
-        self.fitting_net_params = fitting_net_params
         self.downstream_task_type = downstream_task_type
         self.aux_batch_size = aux_batch_size
         self.downstream_batch_size = downstream_batch_size
@@ -860,8 +873,11 @@ class DPAFineTuner:
             train_systems=train_data,
             valid_systems=valid_data,
             type_map=type_map,
+            fitting_net_params=self.fitting_net_params,
             learning_rate=self.learning_rate,
             stop_lr=self.stop_lr,
+            decay_steps=self.decay_steps if self.decay_steps is not None else 1000,
+            warmup_steps=self.warmup_steps,
             max_steps=self.max_steps,
             batch_size=self.batch_size,
             loss_function=self.loss_function,
@@ -1090,6 +1106,8 @@ class DPAFineTuner:
                 intensive=self.intensive,
                 learning_rate=self.learning_rate,
                 stop_lr=self.stop_lr,
+                decay_steps=self.decay_steps,
+                warmup_steps=self.warmup_steps,
                 max_steps=self.max_steps,
                 batch_size=self.batch_size,
                 aux_batch_size=self.aux_batch_size,

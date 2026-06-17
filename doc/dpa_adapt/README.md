@@ -25,41 +25,164 @@ The strategy is the core choice. All four share the same pre-trained DPA backbon
 | `finetune`       | End-to-end full parameter fine-tuning           | Large (>10k)     | GPU required | Maximum accuracy on large datasets        |
 | `mft`            | Multi-task co-training (property + force field) | Small / low-data | GPU required | Mitigating representation collapse        |
 
+### frozen_sklearn — CPU-only, scikit-learn predictor
+
+Freezes the DPA backbone as a feature extractor and fits a scikit-learn
+regressor on the pooled descriptors.  No GPU, no `dp train` — fastest path
+for small datasets.
+
 ```python
-# frozen_sklearn — CPU, no dp train, three predictor choices
 model = DPAFineTuner(
     pretrained="DPA-3.1-3M",
     strategy="frozen_sklearn",
-    predictor="rf",  # "rf" | "linear" | "mlp"
-    pooling="mean",  # "mean" | "sum" | "mean+std" | "mean+std+max+min"
+    predictor="rf",      # "rf" | "linear" | "mlp"
+    pooling="mean",      # "mean" | "sum" | "mean+std" | "mean+std+max+min"
+    model_branch=None,   # multi-task branch for descriptor extraction
+    fparam_dim=0,        # > 0 reads set.*/fparam.npy and concatenates to descriptor
+    seed=42,
 )
 model.fit(train_data="/data/train/*", target_key="homo")
-pred = model.predict(data=str("/data/test"))
-metrics = model.evaluate(data=str("/data/test"))
+pred = model.predict(data="/data/test")
+metrics = model.evaluate(data="/data/test")    # .mae, .rmse, .r2
+```
 
-# frozen_head / finetune — same interface, different depth
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `pretrained` | `str` | `"DPA-3.1-3M"` | Checkpoint path or built-in name |
+| `predictor` | `str` | `"rf"` | `"rf"` (random forest), `"linear"` (Ridge), `"mlp"` (MLPRegressor) |
+| `pooling` | `str` | `"mean"` | `"mean"`, `"sum"`, `"mean+std"`, `"mean+std+max+min"` |
+| `model_branch` | `str` or `None` | `None` | Multi-task branch for descriptor extraction (e.g. `"Domains_Drug"`) |
+| `fparam_dim` | `int` | `0` | Dimension of per-frame context features; > 0 reads `set.*/fparam.npy` |
+| `seed` | `int` | `42` | Random seed for the sklearn head |
+
+### frozen_head / finetune — dp train with frozen or trainable backbone
+
+Both delegate to `dp --pt train` and accept the same parameters.  The only
+difference: `frozen_head` freezes the DPA backbone (train only the fitting
+head), while `finetune` updates all parameters end-to-end.
+
+frozen_head 适合中等数据量（1k–10k），finetune 适合大数据量（>10k，需 GPU）。
+
+```python
 model = DPAFineTuner(
-    pretrained="DPA-3.1-3M", 
-    strategy="frozen_head",  #"frozen_head" | "finetune"
+    pretrained="DPA-3.1-3M",
+    strategy="frozen_head",          # "frozen_head" | "finetune"
+    # ---- task ----
     property_name="homo",
-    learning_rate=1e-3,
-    batch_size=512,
+    task_dim=1,
+    intensive=True,                  # True = intensive (mean-pooled), False = extensive
+    init_branch="SPICE2",            # checkpoint branch for descriptor init
+    # ---- fitting net ----
+    fitting_net_params=None,         # dict overriding fitting_net fields, e.g.
+    # {                             #   {"neuron": [128,128,128], "activation_function": "relu"}
+    #   "neuron": [128, 128],       #   (default: neuron=[240,240,240], tanh, resnet_dt=True)
+    #   "activation_function": "relu",
+    # },
+    # ---- learning rate ----
+    learning_rate=1e-3,              # start_lr
+    stop_lr=1e-5,                    # end_lr
+    decay_steps=None,                # None → 1000; or explicit int
+    warmup_steps=0,                  # linear LR warmup (0 = disabled)
+    # ---- training ----
+    max_steps=100_000,
+    batch_size="auto:512",           # deepmd-kit batch_size spec
+    loss_function="mse",             # "mse" | "smooth_mae"
+    # ---- optional ----
+    fparam_dim=0,                    # > 0 reads set.*/fparam.npy → numb_fparam
+    seed=42,
+    # ---- output ----
+    output_dir="./dpa_output",
+    save_freq=10_000,
+    disp_freq=1_000,
 )
 model.fit(train_data="/data/train", valid_data="/data/valid")
-pred = model.predict(data=str("/data/test"))
-metrics = model.evaluate(data=str("/data/test"))
+pred = model.predict(data="/data/test")
+metrics = model.evaluate(data="/data/test")    # .mae, .rmse, .r2
+```
 
-# mft — downstream property head + auxiliary force-field head jointly
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `pretrained` | `str` | `"DPA-3.1-3M"` | Checkpoint path or built-in name |
+| `strategy` | `str` | `"frozen_sklearn"` | `"frozen_head"` (freeze backbone) or `"finetune"` (full update) |
+| `property_name` | `str` | `"property"` | Label key under `set.*/`, e.g. `"homo"` reads `set.*/homo.npy` |
+| `task_dim` | `int` | `1` | Output dimensionality of the property fitting net |
+| `intensive` | `bool` | `True` | `True` = mean-pool over atoms (intensive); `False` = sum (extensive) |
+| `init_branch` | `str` | `"SPICE2"` | Checkpoint branch used to initialise the descriptor |
+| `fitting_net_params` | `dict` or `None` | `None` | Overrides for fitting-net fields (`neuron`, `activation_function`, `resnet_dt`, etc.) |
+| `learning_rate` | `float` | `1e-3` | Start learning rate (`start_lr` in deepmd-kit `exp` scheduler) |
+| `stop_lr` | `float` | `1e-5` | End learning rate |
+| `decay_steps` | `int` or `None` | `None` | Steps between LR decays; `None` → 1000 |
+| `warmup_steps` | `int` | `0` | Linear LR warmup steps; 0 = disabled |
+| `max_steps` | `int` | `100_000` | Total training steps (`numb_steps`) |
+| `batch_size` | `str` or `int` | `"auto:512"` | deepmd-kit batch_size spec (e.g. `"auto:256"` or `128`) |
+| `loss_function` | `str` | `"mse"` | `"mse"` or `"smooth_mae"` |
+| `fparam_dim` | `int` | `0` | Dimension of per-frame context features; > 0 reads `set.*/fparam.npy` |
+| `seed` | `int` | `42` | Random seed (descriptor, fitting net, training) |
+| `output_dir` | `str` | `"./dpa_output"` | Directory for `input.json`, checkpoints, and logs |
+| `save_freq` | `int` | `10_000` | Checkpoint save interval in steps |
+| `disp_freq` | `int` | `1_000` | Log display interval in steps |
+
+### mft — Multi-task fine-tuning (property + force field)
+
+Jointly trains a downstream property head with an auxiliary force/energy head
+on a shared DPA descriptor, preventing representation collapse on small
+datasets.  Requires GPU.  Inherits all `frozen_head`/`finetune` parameters
+plus the MFT-specific ones below.
+
+```python
 model = DPAFineTuner(
     pretrained="/path/to/DPA-3.1-3M.pt",
     strategy="mft",
+    # ---- task (same as frozen_head/finetune) ----
     property_name="homo",
-    aux_branch="MP_traj_v024_alldata_mixu",
+    task_dim=1,
+    intensive=True,
+    init_branch="SPICE2",
+    # ---- MFT-specific ----
+    aux_branch="MP_traj_v024_alldata_mixu",   # checkpoint branch for aux force head
+    aux_prob=0.5,                              # aux sampling weight (downstream = 1 - aux_prob)
+    downstream_task_type="property",           # "property" | "ener" (legacy default)
+    aux_type_map=None,                         # element symbols for aux data (auto-detect)
+    downstream_type_map=None,                  # element symbols for downstream data
+    aux_batch_size=None,                       # batch size for aux head (None = auto)
+    downstream_batch_size=None,                # batch size for downstream head (None = auto)
+    # ---- fitting net (aux head only; downstream uses property defaults) ----
+    fitting_net_params=None,                   # None = auto-read from checkpoint
+    # ---- learning rate ----
+    learning_rate=1e-3,
+    stop_lr=1e-5,
+    decay_steps=None,                          # None → 1000 (property) or 5000 (ener)
+    warmup_steps=0,
+    # ---- training ----
+    max_steps=50_000,
+    batch_size="auto:32",
+    # ---- optional ----
+    fparam_dim=0,
+    seed=42,
+    # ---- output ----
+    output_dir="./mft_output",
+    save_freq=10_000,
+    disp_freq=1_000,
 )
 model.fit(train_data="/data/train", aux_data="/data/spice2")
-pred = model.predict(data=str("/data/test"))
-metrics = model.evaluate(data=str("/data/test"))
+pred = model.predict(data="/data/test")
+metrics = model.evaluate(data="/data/test")    # .mae, .rmse, .r2
 ```
+
+**Shared parameters** — all `frozen_head`/`finetune` parameters above also apply to MFT.
+
+**MFT-specific parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| `aux_branch` | `str` | `"MP_traj_v024_alldata_mixu"` | Checkpoint branch to initialize the auxiliary force/energy head. Use `dp --pt show <ckpt> model-branch` to list options. |
+| `aux_prob` | `float` | `0.5` | Sampling weight for the aux branch. Downstream weight = `1.0 - aux_prob`. |
+| `downstream_task_type` | `str` | `"ener"` | `"property"` (intensive scalar head) or `"ener"` (force-field head, legacy default) |
+| `aux_type_map` | `list[str]` or `None` | `None` | Element symbols for aux data; auto-detected if `None` |
+| `downstream_type_map` | `list[str]` or `None` | `None` | Element symbols for downstream data; auto-detected if `None` |
+| `aux_batch_size` | `str` or `None` | `None` | Batch size for aux head; auto-selected if `None` |
+| `downstream_batch_size` | `int` or `None` | `None` | Batch size for downstream head; auto-selected if `None` |
+| `fitting_net_params` | `dict` or `None` | `None` | Overrides for the **aux** fitting net; downstream uses property defaults. `None` = auto-read from checkpoint. |
 
 ## Data preparation
 

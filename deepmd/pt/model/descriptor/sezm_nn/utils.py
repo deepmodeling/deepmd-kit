@@ -129,7 +129,7 @@ def safe_norm(x: torch.Tensor, eps: float = 1e-7) -> torch.Tensor:
     in_dtype = x.dtype
     if in_dtype in (torch.float16, torch.bfloat16):
         x = x.float()
-    eps_sq = x.new_tensor(float(eps) * float(eps))
+    eps_sq = float(eps) * float(eps)
     norm = torch.sqrt(torch.sum(x * x, dim=-1, keepdim=True) + eps_sq)
     return norm.to(dtype=in_dtype)
 
