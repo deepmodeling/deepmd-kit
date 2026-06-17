@@ -13,11 +13,10 @@ Ported names: ``BaseGridProjector``, ``S2GridProjector`` (Lebedev branch),
 ``resolve_s2_grid_resolution`` (as-is, both methods — pure arithmetic), and
 ``_normalize_s2_grid_resolution``.
 
-Skipped names (SO(3) Wigner-D grid machinery; consumed only by
-``SO3GridNet`` in pt ``grid_net.py``, which backs the ``node_wise_so3``,
-``message_node_so3``, and ``ffn_so3_grid`` paths — all disabled in the core
-DPA4 config): ``SO3GridProjector``, ``resolve_so3_grid``,
-``_build_so3_frame_set``.
+SO(3) Wigner-D grid machinery (consumed by ``SO3GridNet`` in
+``grid_net.py``, which backs the ``node_wise_so3``, ``message_node_so3``,
+and ``ffn_so3_grid`` paths): ``resolve_so3_grid`` and ``_build_so3_frame_set``
+are ported here; ``SO3GridProjector`` is still pending.
 
 Not ported (guarded): the e3nn product-grid branch of ``S2GridProjector``
 (``grid_method="e3nn"``, i.e. ``lebedev_quadrature=False``) raises
