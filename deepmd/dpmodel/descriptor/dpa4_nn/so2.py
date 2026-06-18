@@ -1824,6 +1824,7 @@ class SO2Convolution(NativeOP):
             )
         if self.radial_degree_mixer is not None:
             self.radial_degree_mixer._load_variables(sub_vars("radial_degree_mixer"))
+
         # Grid products have no ``_load_variables``; reuse their config (from a
         # fresh ``serialize()``) plus the loaded @variables and re-deserialize
         # in place. This exercises the full grid-net serialize round-trip.
