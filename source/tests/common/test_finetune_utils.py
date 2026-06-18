@@ -55,3 +55,20 @@ def test_descriptor_config_warning_skips_default_only_difference(monkeypatch, ca
         )
 
     assert caplog.text == ""
+
+
+def test_descriptor_config_warning_distinguishes_none_from_missing(monkeypatch, caplog):
+    monkeypatch.setattr(
+        finetune,
+        "_normalize_descriptor_for_compare",
+        lambda descriptor: descriptor,
+    )
+
+    with caplog.at_level(logging.WARNING):
+        finetune.warn_configuration_mismatch_during_finetune(
+            {"type": "dpa3", "input_none": None},
+            {"type": "dpa3", "pretrained_none": None},
+        )
+
+    assert "input_none: input=None, pretrained=(missing)" in caplog.text
+    assert "pretrained_none: input=(missing), pretrained=None" in caplog.text

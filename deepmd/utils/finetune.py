@@ -13,6 +13,7 @@ from typing import (
 log = logging.getLogger(__name__)
 
 _IGNORED_DESCRIPTOR_KEYS = frozenset({"trainable"})
+_MISSING = object()
 _MAX_DESCRIPTOR_CONFIG_DIFFS = 20
 _MAX_CONFIG_VALUE_LENGTH = 200
 
@@ -56,9 +57,9 @@ def _iter_descriptor_config_differences(
                 continue
             key_path = f"{prefix}.{key}" if prefix else str(key)
             if key not in input_config:
-                differences.append((key_path, None, pretrained_config[key]))
+                differences.append((key_path, _MISSING, pretrained_config[key]))
             elif key not in pretrained_config:
-                differences.append((key_path, input_config[key], None))
+                differences.append((key_path, input_config[key], _MISSING))
             else:
                 differences.extend(
                     _iter_descriptor_config_differences(
@@ -102,11 +103,13 @@ def _format_descriptor_differences(
     shown = differences[:_MAX_DESCRIPTOR_CONFIG_DIFFS]
     for key, input_value, pretrained_value in shown:
         input_text = (
-            "(missing)" if input_value is None else _format_config_value(input_value)
+            "(missing)"
+            if input_value is _MISSING
+            else _format_config_value(input_value)
         )
         pretrained_text = (
             "(missing)"
-            if pretrained_value is None
+            if pretrained_value is _MISSING
             else _format_config_value(pretrained_value)
         )
         if overwrite:
