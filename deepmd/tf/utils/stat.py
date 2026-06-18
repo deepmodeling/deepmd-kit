@@ -3,6 +3,13 @@ import logging
 
 import numpy as np
 
+from deepmd.dpmodel.utils.stat import (
+    _restore_observed_type_from_file,
+    _save_observed_type_to_file,
+)
+from deepmd.utils.econf_embd import (
+    sort_element_type,
+)
 from deepmd.utils.out_stat import (
     compute_stats_from_redu,
 )
@@ -15,7 +22,7 @@ log = logging.getLogger(__name__)
 
 def _restore_from_file(
     stat_file_path: DPPath | None,
-    keys: list[str] = ["energy"],
+    keys: list[str] | None = None,
 ) -> tuple[dict[str, np.ndarray] | None, dict[str, np.ndarray] | None]:
     """Restore bias and std from stat file.
 
@@ -33,6 +40,8 @@ def _restore_from_file(
     ret_std : dict or None
         Standard deviation values for each key
     """
+    if keys is None:
+        keys = ["energy"]
     if stat_file_path is None:
         return None, None
     stat_files = [stat_file_path / f"bias_atom_{kk}" for kk in keys]
@@ -90,7 +99,7 @@ def _post_process_stat(
     """Post process the statistics.
 
     For global statistics, we do not have the std for each type of atoms,
-    thus fake the output std by ones for all the types.
+    thus broadcast the global std to all the types.
     If the shape of out_std is already the same as out_bias,
     we do not need to do anything.
     """
@@ -99,14 +108,46 @@ def _post_process_stat(
         if vv.shape == out_std[kk].shape:
             new_std[kk] = out_std[kk]
         else:
-            new_std[kk] = np.ones_like(vv)
+            ntypes = vv.shape[0]
+            reps = [ntypes] + [1] * (vv.ndim - 1)
+            new_std[kk] = np.tile(out_std[kk], reps)
     return out_bias, new_std
+
+
+def collect_observed_types_from_stat(
+    all_stat: dict,
+    type_map: list[str],
+) -> list[str]:
+    """Collect observed element types from TensorFlow statistics batches."""
+    observed_indices: set[int] = set()
+    for sys_type in all_stat["type"]:
+        for batch_type in sys_type:
+            observed_indices.update(
+                np.unique(np.asarray(batch_type)).astype(int).tolist()
+            )
+    return sort_element_type(
+        [type_map[ii] for ii in sorted(observed_indices) if 0 <= ii < len(type_map)]
+    )
+
+
+def save_observed_types_to_file(
+    stat_file_path: DPPath | None,
+    all_stat: dict,
+    type_map: list[str],
+) -> None:
+    """Save observed types to the stat file if they are not already present."""
+    if stat_file_path is None:
+        return
+    observed = _restore_observed_type_from_file(stat_file_path)
+    if observed is None:
+        observed = collect_observed_types_from_stat(all_stat, type_map)
+        _save_observed_type_to_file(stat_file_path, observed)
 
 
 def compute_output_stats(
     all_stat: dict,
     ntypes: int,
-    keys: list[str] = ["energy"],
+    keys: list[str] | None = None,
     stat_file_path: DPPath | None = None,
     rcond: float | None = None,
     mixed_type: bool = False,
@@ -141,6 +182,9 @@ def compute_output_stats(
     std_out : dict
         Computed standard deviation values with shape (ntypes, 1) for compatibility
     """
+    if keys is None:
+        keys = ["energy"]
+
     # Try to restore from file first
     bias_out, std_out = _restore_from_file(stat_file_path, keys)
 
@@ -196,7 +240,7 @@ def compute_output_stats(
 
             # For std, we initially get a scalar from compute_stats_from_redu.
             # To match PyTorch behavior exactly, we use the post-processing logic
-            # that sets std to ones when shape doesn't match bias shape.
+            # that broadcasts the global std when shape doesn't match bias shape.
             std_out[key] = std.reshape(1, 1)  # First reshape to (1, 1)
 
             log.info(

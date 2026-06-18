@@ -22,6 +22,7 @@ from deepmd.tf.utils.spin import (
 )
 from deepmd.tf.utils.stat import (
     compute_output_stats,
+    save_observed_types_to_file,
 )
 from deepmd.tf.utils.type_embed import (
     TypeEmbedNet,
@@ -192,6 +193,7 @@ class EnerModel(StandardModel):
                 stat_file_path = stat_file_path / " ".join(self.type_map)
 
             # Use the new stat functionality with file save/load.
+            save_observed_types_to_file(stat_file_path, all_stat, self.type_map)
             m_all_stat = merge_sys_stat(all_stat)
             assigned_bias = None
             if len(self.fitting.atom_ener) > 0:

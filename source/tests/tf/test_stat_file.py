@@ -15,6 +15,12 @@ from deepmd.tf.entrypoints.train import (
 from deepmd.tf.train.run_options import (
     RunOptions,
 )
+from deepmd.tf.utils.argcheck import (
+    normalize,
+)
+from deepmd.tf.utils.compat import (
+    update_deepmd_input,
+)
 
 from .common import (
     tests_path,
@@ -38,6 +44,7 @@ class TestStatFile(unittest.TestCase):
         self.jdata["training"]["numb_steps"] = 10
         self.jdata["training"]["disp_freq"] = 1
         self.jdata["training"]["save_freq"] = 5
+        self.jdata = normalize(update_deepmd_input(self.jdata, warning=False))
 
     def test_stat_file_tf(self) -> None:
         """Test that stat_file parameter works in TensorFlow training."""

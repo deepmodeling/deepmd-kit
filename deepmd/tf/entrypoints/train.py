@@ -244,12 +244,14 @@ def _do_work(
     if not is_compress:
         stat_file_raw = jdata["training"].get("stat_file", None)
         if stat_file_raw is not None and run_opt.is_chief:
-            if not Path(stat_file_raw).exists():
+            stat_file_target = Path(stat_file_raw)
+            stat_file_target.parent.mkdir(parents=True, exist_ok=True)
+            if not stat_file_target.exists():
                 if stat_file_raw.endswith((".h5", ".hdf5")):
                     with h5py.File(stat_file_raw, "w") as f:
                         pass
                 else:
-                    Path(stat_file_raw).mkdir()
+                    stat_file_target.mkdir(parents=True, exist_ok=True)
             stat_file_path = DPPath(stat_file_raw, "a")
 
     # decouple the training data from the model compress process
