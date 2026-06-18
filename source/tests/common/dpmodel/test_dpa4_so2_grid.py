@@ -71,20 +71,20 @@ def _perturb(pt_mod, seed):
     rng = np.random.default_rng(seed)
     with torch.no_grad():
         for p in pt_mod.parameters():
-            p += _to_pt(0.1 * rng.normal(size=tuple(p.shape)))
+            p += _to_pt(0.1 * rng.normal(size=tuple(p.shape))).to(p.dtype)
 
 
-def _build_conv_pair(seed=17, perturb_seed=2060, **overrides):
+def _build_conv_pair(seed=17, perturb_seed=2060, dtype=None, **overrides):
     import torch
 
     from deepmd.pt.model.descriptor.sezm_nn.so2 import (
         SO2Convolution as PTSO2Conv,
     )
 
+    if dtype is None:
+        dtype = torch.float64
     kwargs = _base_kwargs(**overrides)
-    pt_mod = PTSO2Conv(**kwargs, dtype=torch.float64, seed=seed, trainable=True).to(
-        "cpu"
-    )
+    pt_mod = PTSO2Conv(**kwargs, dtype=dtype, seed=seed, trainable=True).to("cpu")
     # post_focus_mix is zero-initialized; perturb so the output is nonzero and
     # the (residual-scaled) grid-product contribution is observable.
     _perturb(pt_mod, perturb_seed)
@@ -92,7 +92,9 @@ def _build_conv_pair(seed=17, perturb_seed=2060, **overrides):
     return pt_mod, dp_mod, kwargs
 
 
-def _build_edge_data(rng, *, nloc, nnei, lmax, channels, masked="slots"):
+def _build_edge_data(
+    rng, *, nloc, nnei, lmax, channels, masked="slots", np_dtype=np.float64
+):
     """Build matching pt (sparse) and dp (padded) edge caches on CPU."""
     from deepmd.dpmodel.descriptor.dpa4_nn.edge_cache import (
         EdgeCache,
@@ -135,11 +137,25 @@ def _build_edge_data(rng, *, nloc, nnei, lmax, channels, masked="slots"):
     radial = rng.normal(size=(n_edge, lmax + 1, channels))
     x = rng.normal(size=(nloc, dim_full, channels))
 
+    # Cast all float caches/inputs to the requested precision; both pt and dp
+    # then consume bit-identical inputs (the only divergence is the in-module
+    # accumulation order/precision).
+    edge_vec = edge_vec.astype(np_dtype)
+    edge_rbf = edge_rbf.astype(np_dtype)
+    edge_env = edge_env.astype(np_dtype)
+    deg = deg.astype(np_dtype)
+    inv_sqrt_deg = inv_sqrt_deg.astype(np_dtype)
+    D_full = D_full.astype(np_dtype)
+    Dt_full = Dt_full.astype(np_dtype)
+    radial = radial.astype(np_dtype)
+    x = x.astype(np_dtype)
+    edge_type_feat_np = np.zeros((n_edge, channels), dtype=np_dtype)
+
     t = _to_pt
     pt_cache = EdgeFeatureCache(
         src=t(src[valid]),
         dst=t(dst[valid]),
-        edge_type_feat=t(np.zeros((n_valid, channels))),
+        edge_type_feat=t(edge_type_feat_np[valid]),
         edge_vec=t(edge_vec[valid]),
         edge_rbf=t(edge_rbf[valid]),
         edge_env=t(edge_env[valid]),
@@ -152,7 +168,7 @@ def _build_edge_data(rng, *, nloc, nnei, lmax, channels, masked="slots"):
     dp_cache = EdgeCache(
         src=src,
         dst=dst,
-        edge_type_feat=np.zeros((n_edge, channels)),
+        edge_type_feat=edge_type_feat_np,
         edge_vec=edge_vec,
         edge_rbf=edge_rbf,
         edge_env=edge_env,
@@ -166,7 +182,9 @@ def _build_edge_data(rng, *, nloc, nnei, lmax, channels, masked="slots"):
     return pt_cache, dp_cache, radial, radial[valid], x
 
 
-def _assert_conv_parity(pt_mod, dp_mod, kwargs, *, masked="slots"):
+def _assert_conv_parity(
+    pt_mod, dp_mod, kwargs, *, masked="slots", np_dtype=np.float64, rtol=RTOL, atol=ATOL
+):
     rng = np.random.default_rng(2061)
     pt_cache, dp_cache, radial, radial_valid, x = _build_edge_data(
         rng,
@@ -175,10 +193,11 @@ def _assert_conv_parity(pt_mod, dp_mod, kwargs, *, masked="slots"):
         lmax=kwargs["lmax"],
         channels=kwargs["channels"],
         masked=masked,
+        np_dtype=np_dtype,
     )
     out_dp = dp_mod.call(x, dp_cache, radial)
     out_pt = pt_mod(_to_pt(x), pt_cache, _to_pt(radial_valid))
-    _assert_parity(out_dp, out_pt)
+    _assert_parity(out_dp, out_pt, rtol=rtol, atol=atol)
 
 
 @pytest.mark.parametrize("masked", ["none", "slots"])  # padded-slot pattern
@@ -256,6 +275,25 @@ def test_so2_grid_branch_cross() -> None:
         lebedev_quadrature=False,
     )
     _assert_conv_parity(pt_mod, dp_mod, kwargs)
+
+
+def test_so2_message_node_so3_fp32_parity() -> None:
+    # fp32 parity for the example-config-shaped (lmax=3, mmax=1) message_node_so3
+    # cross product. The flagship examples/water/dpa4/input.json runs
+    # precision: float32; the grid path reduces over many Lebedev points, so the
+    # right budget is the "computation-in-fp32" one (~1e-4), not fp64 bit-parity.
+    import torch
+
+    pt_mod, dp_mod, kwargs = _build_conv_pair(
+        message_node_so3=True,
+        lmax=3,
+        mmax=1,
+        lebedev_quadrature=False,
+        dtype=torch.float32,
+    )
+    _assert_conv_parity(
+        pt_mod, dp_mod, kwargs, np_dtype=np.float32, rtol=1e-4, atol=1e-4
+    )
 
 
 @pytest.mark.parametrize("masked", ["none", "slots"])  # padded-slot pattern

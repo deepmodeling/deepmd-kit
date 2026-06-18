@@ -47,6 +47,7 @@ def _build_so3_nets(
     mlp_bias=False,
     lebedev_precision=None,
     residual_scale_init=None,
+    precision="float64",
     seed=7,
 ):
     """Build a pt + dp ``SO3GridNet`` with identical (perturbed) weights."""
@@ -56,6 +57,7 @@ def _build_so3_nets(
         SO3GridNet as PTSO3GridNet,
     )
 
+    pt_dtype = {"float64": torch.float64, "float32": torch.float32}[precision]
     common = {
         "lmax": lmax,
         "mmax": mmax,
@@ -73,13 +75,13 @@ def _build_so3_nets(
         "trainable": True,
         "seed": seed,
     }
-    pt_net = PTSO3GridNet(dtype=torch.float64, **common).to("cpu")
+    pt_net = PTSO3GridNet(dtype=pt_dtype, **common).to("cpu")
     rng = np.random.default_rng(2100)
     with torch.no_grad():
         for p in pt_net.parameters():
-            p += torch.from_numpy(0.1 * rng.normal(size=tuple(p.shape)))
+            p += torch.from_numpy(0.1 * rng.normal(size=tuple(p.shape))).to(p.dtype)
 
-    dp_net = DPSO3GridNet(precision="float64", **common)
+    dp_net = DPSO3GridNet(precision=precision, **common)
 
     state = {k: v.detach().cpu().numpy() for k, v in pt_net.state_dict().items()}
     expected = {"scalar_gate.weight"}
@@ -273,6 +275,38 @@ def test_so3_cross_flat_parity(op_type) -> None:
     pt_out = _run(pt_net, query, context, "pt")
     assert dp_out.shape == query.shape
     np.testing.assert_allclose(dp_out, pt_out, rtol=1e-12, atol=1e-12)
+
+
+@pytest.mark.parametrize("mode", ["self", "cross"])  # pairing mode
+@pytest.mark.parametrize("op_type", ["glu", "mlp"])  # grid operation
+def test_so3_fp32_parity(mode, op_type) -> None:
+    """fp32 weight-copied SO3GridNet matches pt at ~1e-4.
+
+    The flagship ``examples/water/dpa4/input.json`` runs ``precision:
+    float32``. The grid path reduces over many Lebedev quadrature points, so
+    fp32 accumulation error is far above the 1-2 ulp budget; the right budget
+    is the "computation-in-fp32" one (rtol/atol ~1e-4), not bit-parity.
+    """
+    lmax, n_focus, n_batch, kmax = 2, 2, 5, 2
+    pt_net, dp_net = _build_so3_nets(
+        mode=mode,
+        op_type=op_type,
+        layout="ndfc",
+        lmax=lmax,
+        kmax=kmax,
+        n_focus=n_focus,
+        precision="float32",
+    )
+    rng = np.random.default_rng(123)
+    query, context = _make_so3_inputs(
+        dp_net=dp_net, mode=mode, layout="ndfc", n_batch=n_batch, rng=rng
+    )
+    query = query.astype(np.float32)
+    if context is not None:
+        context = context.astype(np.float32)
+    dp_out = _run(dp_net, query, context, "dp")
+    pt_out = _run(pt_net, query, context, "pt")
+    np.testing.assert_allclose(dp_out, pt_out, rtol=1e-4, atol=1e-4)
 
 
 # === serialize ======================================================
