@@ -1827,15 +1827,32 @@ class SO2Convolution(NativeOP):
         # Grid products have no ``_load_variables``; reuse their config (from a
         # fresh ``serialize()``) plus the loaded @variables and re-deserialize
         # in place. This exercises the full grid-net serialize round-trip.
+        def _grid_product_vars(prefix: str, template: dict) -> dict:
+            # Reject schema drift: the loaded @variables keys must exactly match
+            # the fresh template's, so an unexpected ``<prefix>.*`` key fails the
+            # conversion loudly instead of being silently dropped.
+            loaded = sub_vars(prefix)
+            expected = set(template["@variables"])
+            if set(loaded) != expected:
+                raise ValueError(
+                    f"{prefix} @variables keys {sorted(loaded)} do not match "
+                    f"the expected keys {sorted(expected)}"
+                )
+            return loaded
+
         if self.node_wise_grid_product is not None:
             template = self.node_wise_grid_product.serialize()
-            template["@variables"] = sub_vars("node_wise_grid_product")
+            template["@variables"] = _grid_product_vars(
+                "node_wise_grid_product", template
+            )
             self.node_wise_grid_product = type(self.node_wise_grid_product).deserialize(
                 template
             )
         if self.message_node_grid_product is not None:
             template = self.message_node_grid_product.serialize()
-            template["@variables"] = sub_vars("message_node_grid_product")
+            template["@variables"] = _grid_product_vars(
+                "message_node_grid_product", template
+            )
             self.message_node_grid_product = type(
                 self.message_node_grid_product
             ).deserialize(template)

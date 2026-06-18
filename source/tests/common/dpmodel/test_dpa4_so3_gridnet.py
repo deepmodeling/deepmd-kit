@@ -13,6 +13,8 @@ module-level ``deepmd.pt`` imports under ``source/tests/common``; pt modules are
 pinned to CPU (``.to("cpu")``) under the CUDA-default-device CI.
 """
 
+import copy
+
 import array_api_compat
 import numpy as np
 import pytest
@@ -432,3 +434,40 @@ def test_s2_regression(mode) -> None:
     dp_out = _run(dp_net, query, context, "dp")
     pt_out = _run(pt_net, query, context, "pt")
     np.testing.assert_allclose(dp_out, pt_out, rtol=1e-12, atol=1e-12)
+
+
+def test_so3_cross_mixed_precision_runs() -> None:
+    """fp32 inputs through an fp64 SO3GridNet cross net run cleanly.
+
+    ``_FrameMixer`` casts its weights to the operand dtype, so operands are
+    lifted to compute precision before frame expansion (matching pt's fp64
+    FrameExpand); the mixed-precision path must run and stay close to the
+    fp64-input result.
+    """
+    _pt, dp_net = _build_so3_nets(
+        mode="cross", op_type="glu", layout="ndfc", precision="float64"
+    )
+    rng = np.random.default_rng(909)
+    query, context = _make_so3_inputs(
+        dp_net=dp_net, mode="cross", layout="ndfc", n_batch=3, rng=rng
+    )
+    out32 = np.asarray(
+        dp_net.call(query.astype(np.float32), context.astype(np.float32))
+    )
+    out64 = np.asarray(dp_net.call(query, context))
+    assert np.all(np.isfinite(out32))
+    np.testing.assert_allclose(out32, out64, rtol=1e-4, atol=1e-4)
+
+
+def test_so3_deserialize_rejects_bad_projector() -> None:
+    """SO3GridNet.deserialize validates the nested projector @class/@version."""
+    _pt, dp_net = _build_so3_nets(mode="self", op_type="glu", layout="ndfc")
+    data = dp_net.serialize()
+    bad_class = copy.deepcopy(data)
+    bad_class["config"]["projector"]["@class"] = "S2GridProjector"
+    with pytest.raises(ValueError, match="projector"):
+        DPSO3GridNet.deserialize(bad_class)
+    bad_ver = copy.deepcopy(data)
+    bad_ver["config"]["projector"]["@version"] = 99
+    with pytest.raises(Exception):
+        DPSO3GridNet.deserialize(bad_ver)

@@ -951,6 +951,15 @@ class BaseGridNet(NativeOP):
         scalar_pair = xp.concat([query[:, 0, :, :], context_ndfc[:, 0, :, :]], axis=-1)
         if scalar_pair.dtype != compute_dtype:
             scalar_pair = xp.astype(scalar_pair, compute_dtype)
+        # Lift operands to compute_dtype BEFORE frame expansion so FrameExpand
+        # runs in the net's precision. ``_FrameMixer.call`` casts its weights to
+        # the operand dtype, so without this an fp32 input through an fp64 grid
+        # net would expand in fp32 and only upcast afterward; pt's fp64
+        # FrameExpand weights force fp64 expansion, so this matches pt.
+        if query.dtype != compute_dtype:
+            query = xp.astype(query, compute_dtype)
+        if context_ndfc.dtype != compute_dtype:
+            context_ndfc = xp.astype(context_ndfc, compute_dtype)
         return (
             self.frame_expand(query),
             self.frame_expand(context_ndfc),
@@ -1529,7 +1538,14 @@ class SO3GridNet(BaseGridNet):
         check_version_compatibility(version, 1, 1)
         config = data.pop("config")
         variables = data.pop("@variables")
-        projector_config = config["projector"]["config"]
+        projector_data = config["projector"]
+        projector_cls = projector_data.get("@class")
+        if projector_cls != "SO3GridProjector":
+            raise ValueError(
+                f"Invalid nested projector class for SO3GridNet: {projector_cls}"
+            )
+        check_version_compatibility(int(projector_data.get("@version", 1)), 1, 1)
+        projector_config = projector_data["config"]
         obj = cls(
             lmax=int(projector_config["lmax"]),
             mmax=int(projector_config["mmax"]),
