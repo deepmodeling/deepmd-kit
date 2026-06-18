@@ -21,10 +21,10 @@ general ``n_frames``), ``S2GridNet``, ``GridProduct``, ``GridMLP``,
 ``n_frames`` (the ``_to_grid``/``_from_grid`` frame-axis contraction). The S2
 path (``n_frames == 1``, ``mode='self'``) keeps a dedicated fast branch that is
 byte-identical to the previous S2-only specialization. The SO(3) frame
-machinery (``SO3GridNet``, ``FrameContract``, ``FrameExpand``) is not ported
-here; ``BaseGridNet`` exposes ``frame_expand``/``frame_contract`` seams (kept
-``None`` for S2) so a later SO(3) port can plug them in without touching the
-shared forward.
+machinery (``SO3GridNet``, ``FrameContract``, ``FrameExpand``) is ported here;
+``SO3GridNet`` builds an ``SO3GridProjector`` (``n_frames = 2 * kmax + 1``) and,
+in ``mode='cross'``, plugs ``FrameExpand``/``FrameContract`` into the
+``BaseGridNet`` ``frame_expand``/``frame_contract`` seams (kept ``None`` for S2).
 
 Serialization contract: the pt ``S2GridNet`` and ``GridBranch`` define no
 ``serialize()`` (they only appear nested inside larger modules'
@@ -81,6 +81,7 @@ from .indexing import (
 from .projection import (
     BaseGridProjector,
     S2GridProjector,
+    SO3GridProjector,
 )
 from .so3 import (
     ChannelLinear,
@@ -1334,6 +1335,256 @@ class S2GridNet(BaseGridNet):
                     f"the expected shape {obj.residual_scale.shape}"
                 )
             obj.residual_scale = residual_scale
+        if obj.op_type in {"mlp", "branch"}:
+            obj.grid_op._load_variables(
+                {
+                    key[len("grid_op.") :]: value
+                    for key, value in variables.items()
+                    if key.startswith("grid_op.")
+                }
+            )
+        return obj
+
+
+class SO3GridNet(BaseGridNet):
+    """Grid net using a Wigner-D SO(3) projector with frame indices.
+
+    dpmodel port of the current pt
+    ``deepmd.pt.model.descriptor.sezm_nn.grid_net.SO3GridNet``. Unlike
+    ``S2GridNet`` (``n_frames == 1``), the SO(3) projector packs
+    ``n_frames = 2 * kmax + 1`` Wigner-D frames along the trailing channel axis,
+    exercising the general ``n_frames > 1`` ``_to_grid``/``_from_grid`` paths of
+    ``BaseGridNet``. In ``mode='cross'`` it additionally builds the per-degree
+    :class:`FrameExpand` / :class:`FrameContract` channel mixers and plugs them
+    into the ``BaseGridNet`` ``frame_expand``/``frame_contract`` seam: the query
+    and context are expanded ``C -> n_frames * C`` before the grid product and
+    contracted ``n_frames * C -> C`` afterwards.
+
+    Parameters
+    ----------
+    lmax : int
+        Maximum spherical harmonic degree.
+    mmax : int | None
+        Maximum order kept in the coefficient layout. If None, use ``lmax``.
+    kmax : int
+        Frame band width; ``n_frames = 2 * kmax + 1`` Wigner-D frames.
+    channels : int
+        Number of channels per (l, m) coefficient (per frame).
+    n_focus : int
+        Number of focus streams.
+    mode : str
+        Pairing mode; ``"self"`` or ``"cross"``.
+    op_type : str
+        Point-wise grid operation; ``"glu"``, ``"mlp"`` or ``"branch"``.
+    precision : str
+        Parameter precision.
+    layout : str
+        Tensor layout convention: ``"ndfc"``, ``"nfdc"`` or ``"flat"``
+        (``"flat"`` is cross-only).
+    lebedev_precision : int | None
+        Lebedev algebraic precision; resolved automatically if None.
+    coefficient_layout : str
+        ``"packed"`` or ``"m_major"`` coefficient ordering.
+    grid_branches : int
+        Number of scalar-routed branches when ``op_type='branch'``.
+    residual_scale_init : float | None
+        Initial value of the per-(focus, channel) residual scale; ``None``
+        disables the residual scale.
+    mlp_bias : bool
+        Whether to use bias in the scalar gate projection.
+    trainable : bool
+        Whether parameters are trainable.
+    seed : int | list[int] | None
+        Random seed for weight initialization.
+    """
+
+    def __init__(
+        self,
+        *,
+        lmax: int,
+        mmax: int | None = None,
+        kmax: int = 1,
+        channels: int,
+        n_focus: int = 1,
+        mode: str,
+        op_type: str,
+        precision: str = DEFAULT_PRECISION,
+        layout: str,
+        lebedev_precision: int | None = None,
+        coefficient_layout: str = "packed",
+        grid_branches: int = 1,
+        residual_scale_init: float | None = None,
+        mlp_bias: bool = False,
+        trainable: bool = True,
+        seed: int | list[int] | None = None,
+    ) -> None:
+        projector = SO3GridProjector(
+            lmax=lmax,
+            mmax=mmax,
+            kmax=kmax,
+            precision=precision,
+            lebedev_precision=lebedev_precision,
+            coefficient_layout=coefficient_layout,
+        )
+        self.frames = projector.frame_set
+        self.kmax = projector.kmax
+        self.lebedev_precision = projector.lebedev_precision
+        self.n_gamma = projector.n_gamma
+        self.grid_branches = int(grid_branches)
+        frame_expand: FrameExpand | None = None
+        frame_contract: FrameContract | None = None
+        if str(mode).lower() == "cross":
+            # pt builds the frame mixers with child_seed(seed, 4)/(seed, 5);
+            # ``BaseGridNet`` uses child_seed(seed, 0)/(seed, 1) for scalar_gate
+            # /grid_op, so these branches never collide.
+            frame_expand = FrameExpand(
+                lmax=lmax,
+                mmax=projector.mmax,
+                coefficient_layout=coefficient_layout,
+                n_frames=projector.n_frames,
+                channels=channels,
+                precision=precision,
+                trainable=trainable,
+                seed=child_seed(seed, 4),
+            )
+            frame_contract = FrameContract(
+                lmax=lmax,
+                mmax=projector.mmax,
+                coefficient_layout=coefficient_layout,
+                n_frames=projector.n_frames,
+                channels=channels,
+                precision=precision,
+                trainable=trainable,
+                seed=child_seed(seed, 5),
+            )
+        super().__init__(
+            projector=projector,
+            channels=channels,
+            n_focus=n_focus,
+            mode=mode,
+            op_type=op_type,
+            precision=precision,
+            layout=layout,
+            mlp_bias=mlp_bias,
+            trainable=trainable,
+            grid_branches=grid_branches,
+            frame_expand=frame_expand,
+            frame_contract=frame_contract,
+            residual_scale_init=residual_scale_init,
+            seed=seed,
+        )
+
+    def serialize(self) -> dict[str, Any]:
+        """Serialize the SO3GridNet to a dict.
+
+        The pt ``SO3GridNet`` has no ``serialize()``; the ``@variables`` keys
+        here match the pt ``state_dict`` key names (``scalar_gate.weight``,
+        ``grid_op.*``, ``frame_expand.weight``, ``frame_contract.weight``,
+        ``residual_scale``) so pt state-dict fragments load directly. The
+        projector matrices are non-persistent buffers in pt and are rebuilt
+        from the nested projector config on deserialization.
+        """
+        variables = {"scalar_gate.weight": to_numpy_array(self.scalar_gate.weight)}
+        if self.mlp_bias:
+            variables["scalar_gate.bias"] = to_numpy_array(self.scalar_gate.bias)
+        if self.op_type in {"mlp", "branch"}:
+            grid_op_data = self.grid_op.serialize()["@variables"]
+            for key, value in grid_op_data.items():
+                variables[f"grid_op.{key}"] = value
+        if self.frame_expand is not None:
+            variables["frame_expand.weight"] = to_numpy_array(self.frame_expand.weight)
+        if self.frame_contract is not None:
+            variables["frame_contract.weight"] = to_numpy_array(
+                self.frame_contract.weight
+            )
+        if self.residual_scale is not None:
+            variables["residual_scale"] = to_numpy_array(self.residual_scale)
+        return {
+            "@class": "SO3GridNet",
+            "@version": 1,
+            "config": {
+                "channels": self.channels,
+                "n_focus": self.n_focus,
+                "mode": self.mode,
+                "op_type": self.op_type,
+                "precision": np.dtype(PRECISION_DICT[self.precision]).name,
+                "layout": self.layout,
+                "grid_branches": self.grid_branches,
+                "residual_scale_init": self.residual_scale_init,
+                "mlp_bias": self.mlp_bias,
+                "trainable": self.trainable,
+                "seed": None,
+                "projector": self.projector.serialize(),
+            },
+            "@variables": variables,
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict[str, Any]) -> SO3GridNet:
+        """Deserialize an SO3GridNet from a dict."""
+        data = data.copy()
+        data_cls = data.pop("@class")
+        if data_cls != "SO3GridNet":
+            raise ValueError(f"Invalid class for SO3GridNet: {data_cls}")
+        version = int(data.pop("@version"))
+        check_version_compatibility(version, 1, 1)
+        config = data.pop("config")
+        variables = data.pop("@variables")
+        projector_config = config["projector"]["config"]
+        obj = cls(
+            lmax=int(projector_config["lmax"]),
+            mmax=int(projector_config["mmax"]),
+            kmax=int(projector_config["kmax"]),
+            channels=int(config["channels"]),
+            n_focus=int(config["n_focus"]),
+            mode=str(config["mode"]),
+            op_type=str(config["op_type"]),
+            precision=str(config["precision"]),
+            layout=str(config["layout"]),
+            lebedev_precision=int(projector_config["lebedev_precision"]),
+            coefficient_layout=str(projector_config["coefficient_layout"]),
+            grid_branches=int(config["grid_branches"]),
+            residual_scale_init=config.get("residual_scale_init"),
+            mlp_bias=bool(config["mlp_bias"]),
+            trainable=bool(config["trainable"]),
+            seed=config.get("seed"),
+        )
+        prec = PRECISION_DICT[obj.precision.lower()]
+        weight = np.asarray(variables["scalar_gate.weight"], dtype=prec)
+        if weight.shape != obj.scalar_gate.weight.shape:
+            raise ValueError(
+                f"scalar_gate.weight shape {weight.shape} does not match "
+                f"the expected shape {obj.scalar_gate.weight.shape}"
+            )
+        obj.scalar_gate.weight = weight
+        if obj.mlp_bias:
+            obj.scalar_gate.bias = np.asarray(
+                variables["scalar_gate.bias"], dtype=prec
+            ).reshape(obj.scalar_gate.bias.shape)
+        if obj.residual_scale is not None:
+            residual_scale = np.asarray(variables["residual_scale"], dtype=prec)
+            if residual_scale.shape != obj.residual_scale.shape:
+                raise ValueError(
+                    f"residual_scale shape {residual_scale.shape} does not match "
+                    f"the expected shape {obj.residual_scale.shape}"
+                )
+            obj.residual_scale = residual_scale
+        if obj.frame_expand is not None:
+            expand_weight = np.asarray(variables["frame_expand.weight"], dtype=prec)
+            if expand_weight.shape != obj.frame_expand.weight.shape:
+                raise ValueError(
+                    f"frame_expand.weight shape {expand_weight.shape} does not "
+                    f"match the expected shape {obj.frame_expand.weight.shape}"
+                )
+            obj.frame_expand.weight = expand_weight
+        if obj.frame_contract is not None:
+            contract_weight = np.asarray(variables["frame_contract.weight"], dtype=prec)
+            if contract_weight.shape != obj.frame_contract.weight.shape:
+                raise ValueError(
+                    f"frame_contract.weight shape {contract_weight.shape} does "
+                    f"not match the expected shape {obj.frame_contract.weight.shape}"
+                )
+            obj.frame_contract.weight = contract_weight
         if obj.op_type in {"mlp", "branch"}:
             obj.grid_op._load_variables(
                 {
