@@ -30,6 +30,7 @@ import re
 import subprocess
 
 from dpa_adapt._backend import (
+    resolve_dp_command,
     resolve_pretrained_path,
 )
 
@@ -405,7 +406,7 @@ class DPATrainer:
         # mismatch. `--skip-neighbor-stat` is kept (paper omits it, but our
         # data-stat pass is too slow); deepmd honors `training.save_ckpt` from
         # the JSON so no `--output` flag is needed.
-        cmd = ["dp", "--pt", "train", str(input_json)]
+        cmd = [resolve_dp_command(), "--pt", "train", str(input_json)]
         cmd += ["--skip-neighbor-stat"]
         if self.pretrained is not None:
             cmd += ["--finetune", str(self.pretrained)]
@@ -599,7 +600,17 @@ class DPATrainer:
         with open(datafile, "w") as f:
             f.write("\n".join(systems) + "\n")
 
-        cmd = ["dp", "--pt", "test", "-m", ckpt, "-f", datafile, "-n", "999999"]
+        cmd = [
+            resolve_dp_command(),
+            "--pt",
+            "test",
+            "-m",
+            ckpt,
+            "-f",
+            datafile,
+            "-n",
+            "999999",
+        ]
         _LOG.info(
             "Running: %s  (with %d systems listed in %s)",
             " ".join(cmd),

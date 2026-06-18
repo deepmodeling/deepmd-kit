@@ -1,13 +1,10 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Minimal demo: frozen_sklearn + Ridge on QM9 HOMO–LUMO gap."""
+"""Minimal demo: frozen_sklearn + Ridge on QM9 HOMO-LUMO gap."""
 
-import sys
 from pathlib import (
     Path,
 )
-
-import numpy as np
 
 from dpa_adapt import (
     DPAFineTuner,
@@ -26,7 +23,6 @@ model = DPAFineTuner(
 model.fit(train_data=str(DATA / "train" / "*"), target_key="gap")
 
 m = model.evaluate(data=str(DATA / "test" / "*"))
-true = np.load(DATA / "test_labels.npy")
 print(f"MAE  = {m.mae:.4f} eV")
 print(f"RMSE = {m.rmse:.4f} eV")
-print(f"R²   = {m.r2:.4f}")
+print(f"R2   = {m.r2:.4f}")

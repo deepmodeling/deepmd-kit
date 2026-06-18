@@ -72,7 +72,8 @@ def test_build_cmd_flags():
     cmd = cm.build_cmd("input.json")
     assert "--use-pretrain-script" not in cmd
     assert "--model-branch" not in cmd
-    assert "--finetune /share/DPA-3.1-3M.pt" in cmd
+    assert "--finetune" in cmd
+    assert cmd[cmd.index("--finetune") + 1] == "/share/DPA-3.1-3M.pt"
     assert "--skip-neighbor-stat" in cmd
 
 

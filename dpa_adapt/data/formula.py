@@ -324,21 +324,55 @@ def formula_to_npy(
                     ) from None
                 rows.append((formula_str, _parse_property_value(prop_str, line_no)))
         else:
-            reader = csv.DictReader(fh, delimiter=delimiter)
-            if reader.fieldnames is None:
-                raise ValueError(f"No header row found in formula CSV: {csv_path!r}")
-            formula_header = _resolve_col(formula_col, reader.fieldnames)
-            property_header = _resolve_col(property_col, reader.fieldnames)
-            for raw_row in reader:
-                if raw_row is None or all(
-                    (v or "").strip() == "" for v in raw_row.values()
-                ):
-                    continue
-                formula_str = (raw_row.get(formula_header) or "").strip()
-                prop_str = (raw_row.get(property_header) or "").strip()
-                if not formula_str:
-                    raise ValueError(f"Empty formula value in column {formula_header!r}")
-                rows.append((formula_str, _parse_property_value(prop_str)))
+            raw_rows = [
+                fields
+                for fields in csv.reader(fh, delimiter=delimiter)
+                if fields and any(v.strip() for v in fields)
+            ]
+            if not raw_rows:
+                raise ValueError(f"No data rows found in formula CSV: {csv_path!r}")
+
+            fieldnames = raw_rows[0]
+            try:
+                formula_header = _resolve_col(formula_col, fieldnames)
+                try:
+                    property_header = _resolve_col(property_col, fieldnames)
+                except KeyError:
+                    if property_col == "Property" and property_name != property_col:
+                        property_header = _resolve_col(property_name, fieldnames)
+                    else:
+                        raise
+            except KeyError:
+                if not _looks_like_headerless_row(fieldnames):
+                    raise
+                for line_no, fields in enumerate(raw_rows, start=1):
+                    if len(fields) < 2:
+                        raise ValueError(
+                            f"Line {line_no} in {csv_path!r} has {len(fields)} "
+                            "field(s), cannot read default columns 0 and 1."
+                        )
+                    rows.append(
+                        (
+                            fields[0].strip(),
+                            _parse_property_value(fields[1].strip(), line_no),
+                        )
+                    )
+            else:
+                reader = csv.DictReader(
+                    [delimiter.join(row) for row in raw_rows[1:]],
+                    fieldnames=fieldnames,
+                    delimiter=delimiter,
+                )
+                for raw_row in reader:
+                    if all((v or "").strip() == "" for v in raw_row.values()):
+                        continue
+                    formula_str = (raw_row.get(formula_header) or "").strip()
+                    prop_str = (raw_row.get(property_header) or "").strip()
+                    if not formula_str:
+                        raise ValueError(
+                            f"Empty formula value in column {formula_header!r}"
+                        )
+                    rows.append((formula_str, _parse_property_value(prop_str)))
 
     if not rows:
         raise ValueError(
@@ -411,6 +445,18 @@ def _resolve_col(
     if key in lower_map:
         return lower_map[key]
     raise KeyError(f"Column {spec!r} not found in CSV header {fieldnames}")
+
+
+def _looks_like_headerless_row(fields: list[str]) -> bool:
+    """Return True if a delimited row looks like ``formula,value`` data."""
+    if len(fields) < 2:
+        return False
+    try:
+        parse_formula(fields[0])
+        float(fields[1])
+    except ValueError:
+        return False
+    return True
 
 
 def _sniff_table_delimiter(first_line: str) -> str | None:
