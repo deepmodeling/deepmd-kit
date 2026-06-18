@@ -1645,6 +1645,7 @@ class TestS2GridParity:
         dp_mod = DPGridBranch(
             channels=self.channels,
             n_branches=n_branches,
+            n_frames=1,
             precision="float64",
             seed=9,
         )
@@ -1859,7 +1860,7 @@ class TestS2GridParity:
         with pytest.raises(ValueError):  # flat layout is cross-only
             DPS2GridNet(**{**common, "layout": "flat"})
         with pytest.raises(ValueError):  # n_branches must be positive
-            DPGridBranch(channels=4, n_branches=0, precision="float64")
+            DPGridBranch(channels=4, n_branches=0, n_frames=1, precision="float64")
         dp_net = DPS2GridNet(**common)
         rng = np.random.default_rng(2086)
         with pytest.raises(ValueError):  # wrong query channel count

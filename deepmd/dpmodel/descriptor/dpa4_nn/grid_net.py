@@ -359,12 +359,20 @@ class GridBranch(NativeOP):
     quadratic product of grid fields, so rotations only act through the grid
     argument and the operation remains as band-limited as the product path.
 
+    Frame-aware port of the pt ``GridBranch``: operands are packed as
+    ``(N, D, F, n_frames * C)`` and every channel projection is applied to each
+    Wigner-D frame independently through :func:`_project_frames`. The S2 case
+    (``n_frames == 1``) reduces to a plain per-channel projection, byte-for-byte
+    identical to the previous S2-only specialization.
+
     Parameters
     ----------
     channels : int
-        Number of channels per grid point.
+        Number of channels per grid point (per frame).
     n_branches : int
         Number of scalar-routed product branches.
+    n_frames : int
+        Number of Wigner-D frames packed along the trailing channel axis.
     precision : str
         Parameter precision.
     trainable : bool
@@ -378,6 +386,7 @@ class GridBranch(NativeOP):
         *,
         channels: int,
         n_branches: int,
+        n_frames: int,
         precision: str = DEFAULT_PRECISION,
         trainable: bool = True,
         seed: int | list[int] | None = None,
@@ -386,6 +395,7 @@ class GridBranch(NativeOP):
         self.n_branches = int(n_branches)
         if self.n_branches < 1:
             raise ValueError("`n_branches` must be positive")
+        self.n_frames = int(n_frames)
         self.precision = precision
         self.trainable = bool(trainable)
         self.left_proj = ChannelLinear(
@@ -433,23 +443,27 @@ class GridBranch(NativeOP):
         """
         Apply scalar-routed grid branch mixing on coefficient operands.
 
-        The channel maps are applied at coefficient resolution and the grid
-        transform is deferred to the injected ``to_grid``/``from_grid``
-        callables, matching the pt ``GridBranch`` specialized to the S2
-        ``n_frames == 1`` case (so no per-frame packing is needed).
+        The channel maps are applied at coefficient resolution (per Wigner-D
+        frame via :func:`_project_frames`) and the grid transform is deferred to
+        the injected ``to_grid``/``from_grid`` callables, matching the pt
+        ``GridBranch``. The router operates on invariant scalars only, so the
+        softmax is frame-independent.
 
         Parameters
         ----------
         left, right
-            Coefficient operands with shape ``(N, D, F, C)``.
+            Coefficient operands with shape ``(N, D, F, n_frames * C)``.
         scalar_pair
             Invariant router source with shape ``(N, F, 2*C)``.
         to_grid, from_grid
             Coefficient/grid projectors supplied by the owning grid net.
         """
         xp = array_api_compat.array_namespace(left)
-        left = self.left_proj(left)  # (N, D, F, N_branches * C)
-        right = self.right_proj(right)  # (N, D, F, N_branches * C)
+        # === Step 1. Branch channel projections at coefficient resolution ===
+        left = _project_frames(left, self.left_proj, self.n_frames)
+        right = _project_frames(right, self.right_proj, self.n_frames)
+
+        # === Step 2. Quadratic branches on the grid, routed by scalars ===
         value = to_grid(left) * to_grid(right)  # (N, G, F, N_branches * C)
         n_batch, n_grid, n_focus, _ = value.shape
         value = xp.reshape(
@@ -459,7 +473,9 @@ class GridBranch(NativeOP):
         router = _softmax_last_axis(self.router(scalar_pair))  # (N, F, N_branches)
         # einsum "ngfhc,nfh->ngfc" as a broadcast sum over the branch axis
         out = xp.sum(value * router[:, None, :, :, None], axis=3)  # (N, G, F, C)
-        return self.out_proj(from_grid(out))  # (N, D, F, C)
+
+        # === Step 3. Project back to coefficients and mix output channels ===
+        return _project_frames(from_grid(out), self.out_proj, self.n_frames)
 
     def serialize(self) -> dict[str, Any]:
         """Serialize the GridBranch to a dict.
@@ -473,6 +489,7 @@ class GridBranch(NativeOP):
             "config": {
                 "channels": self.channels,
                 "n_branches": self.n_branches,
+                "n_frames": self.n_frames,
                 "precision": np.dtype(PRECISION_DICT[self.precision]).name,
                 "trainable": self.trainable,
                 "seed": None,
@@ -499,6 +516,7 @@ class GridBranch(NativeOP):
         obj = cls(
             channels=int(config["channels"]),
             n_branches=int(config["n_branches"]),
+            n_frames=int(config["n_frames"]),
             precision=str(config["precision"]),
             trainable=bool(config["trainable"]),
             seed=config.get("seed"),
@@ -616,6 +634,7 @@ class BaseGridNet(NativeOP):
             self.grid_op = GridBranch(
                 channels=self.channels,
                 n_branches=grid_branches,
+                n_frames=self.n_frames,
                 precision=self.precision,
                 trainable=trainable,
                 seed=child_seed(seed, 1),
