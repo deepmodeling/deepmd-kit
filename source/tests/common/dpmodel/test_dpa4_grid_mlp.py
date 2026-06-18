@@ -64,7 +64,7 @@ def test_grid_mlp_parity_self(channels) -> None:
         dtype=torch.float64,
         trainable=True,
         seed=0,
-    )
+    ).to("cpu")
     dp_obj = GridMLP(
         channels=channels,
         mode="self",
@@ -97,7 +97,7 @@ def test_grid_mlp_parity_cross(channels) -> None:
         dtype=torch.float64,
         trainable=True,
         seed=1,
-    )
+    ).to("cpu")
     dp_obj = GridMLP(
         channels=channels,
         mode="cross",
@@ -186,7 +186,7 @@ def test_s2gridnet_op_type_mlp_parity(lmax, channels) -> None:
         grid_method="lebedev",
         trainable=False,
         seed=17 + lmax,
-    )
+    ).to("cpu")
     dp_net = S2GridNet(
         lmax=lmax,
         channels=channels,

@@ -49,7 +49,7 @@ def test_frame_contract_parity(lmax, channels, kmax) -> None:
         dtype=torch.float64,
         trainable=True,
         seed=0,
-    )
+    ).to("cpu")
     dp_obj = FrameContract(
         lmax=lmax,
         mmax=lmax,
@@ -91,7 +91,7 @@ def test_frame_expand_parity(lmax, channels, kmax) -> None:
         dtype=torch.float64,
         trainable=True,
         seed=0,
-    )
+    ).to("cpu")
     dp_obj = FrameExpand(
         lmax=lmax,
         mmax=lmax,

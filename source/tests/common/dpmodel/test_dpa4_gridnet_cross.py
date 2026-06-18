@@ -83,7 +83,7 @@ def test_s2_cross_parity(op_type, lmax, channels) -> None:
         "trainable": False,
         "seed": 17 + lmax,
     }
-    pt_net = PTS2GridNet(dtype=torch.float64, **common)
+    pt_net = PTS2GridNet(dtype=torch.float64, **common).to("cpu")
     dp_net = S2GridNet(precision="float64", **common)
     _copy_s2gridnet(dp_net, pt_net)
 
@@ -160,7 +160,7 @@ def test_layout_flat_parity(op_type) -> None:
         "trainable": False,
         "seed": 53,
     }
-    pt_net = PTS2GridNet(dtype=torch.float64, **common)
+    pt_net = PTS2GridNet(dtype=torch.float64, **common).to("cpu")
     dp_net = S2GridNet(precision="float64", **common)
     _copy_s2gridnet(dp_net, pt_net)
 
@@ -199,7 +199,7 @@ def test_residual_scale_parity(residual_scale_init) -> None:
         "trainable": False,
         "seed": 71,
     }
-    pt_net = PTS2GridNet(dtype=torch.float64, **common)
+    pt_net = PTS2GridNet(dtype=torch.float64, **common).to("cpu")
     dp_net = S2GridNet(precision="float64", **common)
     _copy_s2gridnet(dp_net, pt_net)
 
@@ -264,7 +264,7 @@ def test_self_mode_regression(op_type) -> None:
         "trainable": False,
         "seed": 19,
     }
-    pt_net = PTS2GridNet(dtype=torch.float64, **common)
+    pt_net = PTS2GridNet(dtype=torch.float64, **common).to("cpu")
     dp_net = S2GridNet(precision="float64", **common)
     _copy_s2gridnet(dp_net, pt_net)
 
