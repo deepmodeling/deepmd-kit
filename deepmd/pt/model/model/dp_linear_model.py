@@ -81,19 +81,23 @@ class LinearEnergyModel(DPLinearModel_):
             shared_base = shared_links[shared_item]["links"][0]
             class_type_base = shared_base["shared_type"]
             model_key_base = shared_base["model_key"]
-            shared_level_base = shared_base["shared_level"]
+            shared_level_base = int(shared_base["shared_level"])
+            previous_shared_level = shared_level_base
             if "descriptor" in class_type_base:
                 base_class = get_descriptor_class(model_key_base, class_type_base)
                 for link_item in shared_links[shared_item]["links"][1:]:
                     class_type_link = link_item["shared_type"]
                     model_key_link = link_item["model_key"]
                     shared_level_link = int(link_item["shared_level"])
-                    assert shared_level_link >= shared_level_base, (
-                        "The shared_links must be sorted by shared_level!"
-                    )
-                    assert "descriptor" in class_type_link, (
-                        f"Class type mismatched: {class_type_base} vs {class_type_link}!"
-                    )
+                    if shared_level_link < previous_shared_level:
+                        raise ValueError(
+                            "The shared_links must be sorted by shared_level!"
+                        )
+                    previous_shared_level = shared_level_link
+                    if "descriptor" not in class_type_link:
+                        raise ValueError(
+                            f"Class type mismatched: {class_type_base} vs {class_type_link}!"
+                        )
                     link_class = get_descriptor_class(model_key_link, class_type_link)
                     link_class.share_params(
                         base_class, shared_level_link, resume=resume
@@ -113,12 +117,15 @@ class LinearEnergyModel(DPLinearModel_):
                         class_type_link = link_item["shared_type"]
                         model_key_link = link_item["model_key"]
                         shared_level_link = int(link_item["shared_level"])
-                        assert shared_level_link >= shared_level_base, (
-                            "The shared_links must be sorted by shared_level!"
-                        )
-                        assert class_type_base == class_type_link, (
-                            f"Class type mismatched: {class_type_base} vs {class_type_link}!"
-                        )
+                        if shared_level_link < previous_shared_level:
+                            raise ValueError(
+                                "The shared_links must be sorted by shared_level!"
+                            )
+                        previous_shared_level = shared_level_link
+                        if class_type_base != class_type_link:
+                            raise ValueError(
+                                f"Class type mismatched: {class_type_base} vs {class_type_link}!"
+                            )
                         link_model = get_sub_model(model_key_link)
                         link_class = getattr(link_model, class_type_link)
                         if model_key_prob_map is None:
