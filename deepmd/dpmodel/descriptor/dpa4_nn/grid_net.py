@@ -97,6 +97,37 @@ def _softmax_last_axis(x: Any) -> Any:
     return e_x / xp.sum(e_x, axis=-1, keepdims=True)
 
 
+def _project_frames(coeff: Any, proj: ChannelLinear, n_frames: int) -> Any:
+    """
+    Apply a channel-only linear map to each Wigner-D frame independently.
+
+    Parameters
+    ----------
+    coeff
+        Frame-packed coefficients with shape ``(N, D, F, n_frames * C_in)``.
+    proj : ChannelLinear
+        Linear map acting on the per-frame channel axis (``C_in -> C_out``).
+    n_frames : int
+        Number of Wigner-D frames packed along the trailing axis.
+
+    Returns
+    -------
+    Array
+        Projected coefficients with shape ``(N, D, F, n_frames * C_out)``.
+
+    Notes
+    -----
+    ``to_grid`` and ``from_grid`` are frame-wise linear and commute with any
+    channel map, so applying the map at coefficient resolution here is identical
+    to applying it on the grid field while touching ``n_frames``-fold fewer rows
+    than the ``G``-point grid.
+    """
+    xp = array_api_compat.array_namespace(coeff)
+    n_batch, coeff_dim, n_focus, _ = coeff.shape
+    projected = proj(xp.reshape(coeff, (n_batch, coeff_dim, n_focus, n_frames, -1)))
+    return xp.reshape(projected, (n_batch, coeff_dim, n_focus, -1))
+
+
 class GridProduct(NativeOP):
     """Parameter-free quadratic grid product ``u(g) * v(g)``."""
 
