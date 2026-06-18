@@ -9,6 +9,9 @@ from copy import (
 from pathlib import (
     Path,
 )
+from unittest.mock import (
+    patch,
+)
 
 import numpy as np
 import paddle
@@ -164,7 +167,14 @@ class TestEnergyModelSeA(unittest.TestCase, DPTrainTest):
         self.config["training"]["save_freq"] = 1
         enable_prim(True)
 
-    def test_zero_step_with_change_bias_saves_initial_checkpoint(self) -> None:
+    @patch("deepmd.pd.train.training.model_change_out_bias")
+    def test_zero_step_with_change_bias_saves_initial_checkpoint(
+        self, mocked_change_out_bias
+    ) -> None:
+        def keep_model(model, *_args, **_kwargs):
+            return model
+
+        mocked_change_out_bias.side_effect = keep_model
         config = deepcopy(self.config)
         config["training"]["numb_steps"] = 0
         config["training"]["change_bias_after_training"] = True
@@ -182,6 +192,7 @@ class TestEnergyModelSeA(unittest.TestCase, DPTrainTest):
         train_infos = checkpoint["model"]["_extra_state"]["train_infos"]
         self.assertEqual(0, train_infos["step"])
         self.assertEqual(0.0, train_infos["lr"])
+        mocked_change_out_bias.assert_not_called()
 
     def tearDown(self) -> None:
         DPTrainTest.tearDown(self)
