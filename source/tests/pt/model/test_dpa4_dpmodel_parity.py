@@ -3184,11 +3184,16 @@ class TestFFNParity:
             np.asarray(dp_mod.call(x)), np.asarray(dp_mod2.call(x))
         )
 
-    def test_ffn_guards(self) -> None:
-        from deepmd.dpmodel.descriptor.dpa4_nn.ffn import EquivariantFFN as DPFFN
-
-        with pytest.raises(NotImplementedError, match="ffn_so3_grid"):
-            DPFFN(**self._ffn_kwargs(ffn_so3_grid=True), precision="float64")
+    @pytest.mark.parametrize("grid_branch", [0, 1])  # branch mixer off/on
+    @pytest.mark.parametrize("grid_mlp", [False, True])  # polynomial grid MLP op
+    def test_ffn_so3_grid(self, grid_mlp, grid_branch) -> None:
+        # ffn_so3_grid=True wires SO3GridNet(mode='self'); grid_n_frames=2*kmax+1
+        pt_mod, dp_mod, kwargs = self._build_ffn_pair(
+            ffn_so3_grid=True, grid_mlp=grid_mlp, grid_branch=grid_branch
+        )
+        assert dp_mod.ffn_so3_grid
+        assert dp_mod.grid_n_frames == 2 * kwargs["kmax"] + 1
+        self._assert_ffn_parity(pt_mod, dp_mod, kwargs)
 
     def test_ffn_errors(self) -> None:
         from deepmd.dpmodel.descriptor.dpa4_nn.ffn import EquivariantFFN as DPFFN
@@ -3335,6 +3340,11 @@ class TestBlockParity:
         )
         self._assert_block_parity(pt_mod, dp_mod, kwargs)
 
+    def test_block_ffn_so3_grid(self) -> None:
+        # ffn_so3_grid=True: block FFN uses SO3GridNet(mode='self')
+        pt_mod, dp_mod, kwargs = self._build_block_pair(ffn_so3_grid=True)
+        self._assert_block_parity(pt_mod, dp_mod, kwargs)
+
     def test_block_real_edge_cache(self) -> None:
         # end-to-end: REAL pt build_edge_cache vs REAL dp build_edge_cache
         # feeding the same weight-copied block (no synthetic cache)
@@ -3403,7 +3413,6 @@ class TestBlockParity:
             ("so2_s2_activation", True),  # delegated to SO2Convolution
             ("node_wise_s2", True),  # delegated to SO2Convolution
             ("message_node_so3", True),  # delegated to SO2Convolution
-            ("ffn_so3_grid", True),  # delegated to EquivariantFFN
         ],
     )
     def test_block_guards(self, flag, value) -> None:
