@@ -123,6 +123,23 @@ class GridProduct(NativeOP):
         """
         return from_grid(to_grid(left) * to_grid(right))
 
+    def serialize(self) -> dict[str, Any]:
+        """Serialize the parameter-free grid product to a dict."""
+        return {
+            "@class": "GridProduct",
+            "@version": 1,
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict[str, Any]) -> GridProduct:
+        """Deserialize a GridProduct from a dict."""
+        data = data.copy()
+        data_cls = data.pop("@class", "GridProduct")
+        if data_cls != "GridProduct":
+            raise ValueError(f"Invalid class for GridProduct: {data_cls}")
+        check_version_compatibility(int(data.pop("@version", 1)), 1, 1)
+        return cls()
+
 
 class GridMLP(NativeOP):
     """
