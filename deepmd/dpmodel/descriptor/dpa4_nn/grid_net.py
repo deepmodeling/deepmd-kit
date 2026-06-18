@@ -40,12 +40,11 @@ from __future__ import (
     annotations,
 )
 
+import math
 from typing import (
     TYPE_CHECKING,
     Any,
 )
-
-import math
 
 import array_api_compat
 import numpy as np

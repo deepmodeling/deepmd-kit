@@ -10,15 +10,11 @@ under ``source/tests/common``.
 import numpy as np
 import pytest
 
-from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import (
-    GridProduct as DPGridProduct,
-)
+from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import GridProduct as DPGridProduct
 from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import (
     _project_frames,
 )
-from deepmd.dpmodel.descriptor.dpa4_nn.so3 import (
-    ChannelLinear as DPChannelLinear,
-)
+from deepmd.dpmodel.descriptor.dpa4_nn.so3 import ChannelLinear as DPChannelLinear
 
 
 @pytest.mark.parametrize("n_frames", [1, 2, 3])  # number of Wigner-D frames
@@ -29,9 +25,7 @@ def test_project_frames_parity(n_frames) -> None:
     from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
         _project_frames as pt_project_frames,
     )
-    from deepmd.pt.model.descriptor.sezm_nn.so3 import (
-        ChannelLinear as PTChannelLinear,
-    )
+    from deepmd.pt.model.descriptor.sezm_nn.so3 import ChannelLinear as PTChannelLinear
 
     c_in, c_out = 4, 6
     # pin to CPU so torch.from_numpy fp64 inputs and the module agree under the
@@ -108,14 +102,9 @@ def test_grid_product_parity() -> None:
     """The dpmodel ``GridProduct`` matches pt over a real S2 projector's grid fns."""
     import torch
 
-    from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
-        GridProduct as PTGridProduct,
-        S2GridNet as PTS2GridNet,
-    )
-
-    from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import (
-        S2GridNet as DPS2GridNet,
-    )
+    from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import S2GridNet as DPS2GridNet
+    from deepmd.pt.model.descriptor.sezm_nn.grid_net import GridProduct as PTGridProduct
+    from deepmd.pt.model.descriptor.sezm_nn.grid_net import S2GridNet as PTS2GridNet
 
     lmax, channels, n_focus = 2, 4, 1
     # op_type='glu' makes grid_op a GridProduct; we reuse the nets only for

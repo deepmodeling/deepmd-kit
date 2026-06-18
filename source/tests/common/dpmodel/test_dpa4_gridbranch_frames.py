@@ -21,9 +21,7 @@ import array_api_compat
 import numpy as np
 import pytest
 
-from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import (
-    GridBranch as DPGridBranch,
-)
+from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import GridBranch as DPGridBranch
 
 
 def _make_grid_fns(to_mat, from_mat, n_frames):
@@ -94,9 +92,7 @@ def test_gridbranch_parity(n_frames, n_branches) -> None:
     """The dpmodel ``GridBranch`` matches pt over identical frame-aware grid fns."""
     import torch
 
-    from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
-        GridBranch as PTGridBranch,
-    )
+    from deepmd.pt.model.descriptor.sezm_nn.grid_net import GridBranch as PTGridBranch
 
     channels, n_batch, coeff_dim, n_focus, grid_size = 4, 5, 9, 2, 7
     rng = np.random.default_rng(2026)
@@ -164,14 +160,9 @@ def test_gridbranch_s2_regression(n_branches) -> None:
     """
     import torch
 
-    from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
-        GridBranch as PTGridBranch,
-        S2GridNet as PTS2GridNet,
-    )
-
-    from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import (
-        S2GridNet as DPS2GridNet,
-    )
+    from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import S2GridNet as DPS2GridNet
+    from deepmd.pt.model.descriptor.sezm_nn.grid_net import GridBranch as PTGridBranch
+    from deepmd.pt.model.descriptor.sezm_nn.grid_net import S2GridNet as PTS2GridNet
 
     lmax, channels, n_focus = 2, 4, 1
     # op_type='glu' makes grid_op a GridProduct; we reuse the nets only for

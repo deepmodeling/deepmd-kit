@@ -19,9 +19,7 @@ import array_api_compat
 import numpy as np
 import pytest
 
-from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import (
-    GridMLP as DPGridMLP,
-)
+from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import GridMLP as DPGridMLP
 
 
 def _make_grid_fns(to_mat, from_mat, n_frames):
@@ -90,9 +88,7 @@ def test_gridmlp_parity(n_frames, mode) -> None:
     """The dpmodel ``GridMLP`` matches pt over identical frame-aware grid fns."""
     import torch
 
-    from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
-        GridMLP as PTGridMLP,
-    )
+    from deepmd.pt.model.descriptor.sezm_nn.grid_net import GridMLP as PTGridMLP
 
     channels, n_batch, coeff_dim, n_focus, grid_size = 4, 5, 9, 2, 7
     rng = np.random.default_rng(2026)
@@ -154,14 +150,9 @@ def test_gridmlp_s2_regression(mode) -> None:
     """
     import torch
 
-    from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
-        GridMLP as PTGridMLP,
-        S2GridNet as PTS2GridNet,
-    )
-
-    from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import (
-        S2GridNet as DPS2GridNet,
-    )
+    from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import S2GridNet as DPS2GridNet
+    from deepmd.pt.model.descriptor.sezm_nn.grid_net import GridMLP as PTGridMLP
+    from deepmd.pt.model.descriptor.sezm_nn.grid_net import S2GridNet as PTS2GridNet
 
     lmax, channels, n_focus = 2, 4, 1
     # op_type='glu' makes grid_op a GridProduct; we reuse the nets only for

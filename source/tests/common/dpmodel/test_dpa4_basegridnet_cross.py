@@ -15,9 +15,7 @@ import array_api_compat
 import numpy as np
 import pytest
 
-from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import (
-    S2GridNet as DPS2GridNet,
-)
+from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import S2GridNet as DPS2GridNet
 
 
 def _grid_op_param_names(op_type):
@@ -45,9 +43,7 @@ def _build_nets(
     """Build a pt + dp ``S2GridNet`` with identical (perturbed) weights."""
     import torch
 
-    from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
-        S2GridNet as PTS2GridNet,
-    )
+    from deepmd.pt.model.descriptor.sezm_nn.grid_net import S2GridNet as PTS2GridNet
 
     common = {
         "lmax": lmax,

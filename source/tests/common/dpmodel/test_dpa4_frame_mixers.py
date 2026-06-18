@@ -16,9 +16,9 @@ under the CUDA-default-device CI configuration.
 import numpy as np
 import pytest
 
+from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import FrameContract as DPFrameContract
+from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import FrameExpand as DPFrameExpand
 from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import (
-    FrameContract as DPFrameContract,
-    FrameExpand as DPFrameExpand,
     _build_frame_degree_index,
 )
 
@@ -83,9 +83,7 @@ def test_frame_expand_parity(lmax, channels, kmax) -> None:
     """The dpmodel ``FrameExpand`` matches pt with weight-copied fp64 weights."""
     import torch
 
-    from deepmd.pt.model.descriptor.sezm_nn.grid_net import (
-        FrameExpand as PTFrameExpand,
-    )
+    from deepmd.pt.model.descriptor.sezm_nn.grid_net import FrameExpand as PTFrameExpand
 
     n_frames = 2 * kmax + 1
     coeff_dim = (lmax + 1) ** 2

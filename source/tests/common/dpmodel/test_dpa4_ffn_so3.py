@@ -19,9 +19,7 @@ CPU (``.to("cpu")``) under the CUDA-default-device CI.
 import numpy as np
 import pytest
 
-from deepmd.dpmodel.descriptor.dpa4_nn.ffn import (
-    EquivariantFFN as DPFFN,
-)
+from deepmd.dpmodel.descriptor.dpa4_nn.ffn import EquivariantFFN as DPFFN
 
 
 def _build_ffn_pair(*, lmax, channels, hidden_channels, ffn_config, seed=7):
@@ -34,9 +32,7 @@ def _build_ffn_pair(*, lmax, channels, hidden_channels, ffn_config, seed=7):
     """
     import torch
 
-    from deepmd.pt.model.descriptor.sezm_nn.ffn import (
-        EquivariantFFN as PTFFN,
-    )
+    from deepmd.pt.model.descriptor.sezm_nn.ffn import EquivariantFFN as PTFFN
 
     pt_ffn = PTFFN(
         lmax=lmax,
@@ -102,9 +98,7 @@ def test_ffn_so3_grid_parity(grid_mlp, grid_branch) -> None:
 
 def test_ffn_so3_grid_constructs() -> None:
     """The dp FFN with ffn_so3_grid=True constructs and runs (no NotImplementedError)."""
-    from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import (
-        SO3GridNet as DPSO3GridNet,
-    )
+    from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import SO3GridNet as DPSO3GridNet
 
     lmax, channels, hidden_channels, kmax = 3, 8, 8, 1
     ffn = DPFFN(

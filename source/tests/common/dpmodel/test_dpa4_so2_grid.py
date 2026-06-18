@@ -17,9 +17,7 @@ CPU (``.to("cpu")``) under the CUDA-default-device CI.
 import numpy as np
 import pytest
 
-from deepmd.dpmodel.descriptor.dpa4_nn.so2 import (
-    SO2Convolution as DPSO2Conv,
-)
+from deepmd.dpmodel.descriptor.dpa4_nn.so2 import SO2Convolution as DPSO2Conv
 
 # fp64 weight-copied parity is near-bit on CPU.
 RTOL, ATOL = 1e-12, 1e-14
@@ -77,9 +75,7 @@ def _perturb(pt_mod, seed):
 def _build_conv_pair(seed=17, perturb_seed=2060, dtype=None, **overrides):
     import torch
 
-    from deepmd.pt.model.descriptor.sezm_nn.so2 import (
-        SO2Convolution as PTSO2Conv,
-    )
+    from deepmd.pt.model.descriptor.sezm_nn.so2 import SO2Convolution as PTSO2Conv
 
     if dtype is None:
         dtype = torch.float64
