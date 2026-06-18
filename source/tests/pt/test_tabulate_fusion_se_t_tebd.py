@@ -13,6 +13,9 @@ from deepmd.pt.utils import (
 from ..consistent.common import (
     parameterized,
 )
+from .tabulate_test_utils import (
+    assert_second_order_backward_matches_finite_difference,
+)
 
 
 @parameterized((torch.float64, torch.float32))
@@ -1923,23 +1926,10 @@ class TestTabulateFusionSeTTebdOp(unittest.TestCase):
         )
 
         descriptor_tensor = forward_result[0]
-        dy_tensor = torch.ones_like(descriptor_tensor, requires_grad=True)
-        dy_dem_x = torch.autograd.grad(
+        assert_second_order_backward_matches_finite_difference(
             descriptor_tensor,
             self.em_x_tensor,
-            grad_outputs=dy_tensor,
-            create_graph=True,
-        )[0]
-
-        dz_dy_tensor = torch.autograd.grad(
-            dy_dem_x.sum(),
-            dy_tensor,
-        )[0]
-
-        self.assertIsNotNone(dz_dy_tensor)
-        self.assertEqual(dz_dy_tensor.shape, descriptor_tensor.shape)
-        self.assertTrue(torch.isfinite(dz_dy_tensor).all())
-        self.assertGreater(dz_dy_tensor.abs().max().item(), 0.0)
+        )
 
 
 if __name__ == "__main__":
