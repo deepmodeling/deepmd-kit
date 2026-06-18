@@ -1712,6 +1712,7 @@ class TestS2GridParity:
         dp_mod = DPGridMLP(
             channels=self.channels,
             mode=mode,
+            n_frames=1,
             precision="float64",
             seed=9,
         )

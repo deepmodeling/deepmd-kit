@@ -176,15 +176,20 @@ class GridMLP(NativeOP):
     """
     Polynomial point-wise MLP applied independently at every grid point.
 
-    Specialized to the S2 ``n_frames == 1`` case, so the per-frame packing of
-    the pt ``GridMLP`` collapses to a plain channel concatenation in self mode.
+    Frame-aware port of the pt ``GridMLP``: operands are packed as
+    ``(N, D, F, n_frames * C)`` and every channel projection is applied to each
+    Wigner-D frame independently through :func:`_project_frames`. The S2 case
+    (``n_frames == 1``) reduces to a plain per-channel projection, byte-for-byte
+    identical to the previous S2-only specialization.
 
     Parameters
     ----------
     channels : int
-        Number of channels per grid point.
+        Number of channels per grid point (per frame).
     mode : str
         Pairing mode, either ``"self"`` or ``"cross"``.
+    n_frames : int
+        Number of Wigner-D frames packed along the trailing channel axis.
     precision : str
         Parameter precision.
     trainable : bool
@@ -198,6 +203,7 @@ class GridMLP(NativeOP):
         *,
         channels: int,
         mode: str,
+        n_frames: int,
         precision: str = DEFAULT_PRECISION,
         trainable: bool = True,
         seed: int | list[int] | None = None,
@@ -206,6 +212,7 @@ class GridMLP(NativeOP):
         self.mode = str(mode).lower()
         if self.mode not in {"self", "cross"}:
             raise ValueError("`mode` must be either 'self' or 'cross'")
+        self.n_frames = int(n_frames)
         self.precision = precision
         self.trainable = bool(trainable)
         self.input_channels = (
@@ -241,7 +248,7 @@ class GridMLP(NativeOP):
         self,
         left: Any,
         right: Any,
-        scalar_pair: Any,
+        scalar_pair: Any = None,
         *,
         to_grid: Callable[[Any], Any],
         from_grid: Callable[[Any], Any],
@@ -249,29 +256,38 @@ class GridMLP(NativeOP):
         """
         Apply the polynomial point-wise MLP on coefficient operands.
 
-        In self mode both projections see the concatenation of the two operands
-        and can form self and cross quadratic channel terms. In cross mode the
-        query and context roles stay separate: ``(W_q query) * (W_c context)``.
+        In self mode both projections see the per-frame concatenation of the
+        two operands and can form self and cross quadratic channel terms. In
+        cross mode the query and context roles stay separate:
+        ``(W_q query) * (W_c context)``.
 
         Parameters
         ----------
         left, right
-            Coefficient operands with shape ``(N, D, F, C)``.
+            Coefficient operands with shape ``(N, D, F, n_frames * C)``.
         scalar_pair
             Invariant routing signal; unused on this path.
         to_grid, from_grid
             Coefficient/grid projectors supplied by the owning grid net.
         """
+        # === Step 1. Channel projections at coefficient resolution ===
         if self.mode == "self":
             xp = array_api_compat.array_namespace(left)
-            fused = xp.concat([left, right], axis=-1)  # (N, D, F, 2C)
-            left = self.left_proj(fused)
-            right = self.right_proj(fused)
+            left_shape = tuple(left.shape)
+            shape = (*left_shape[:-1], self.n_frames, -1)
+            fused = xp.concat(
+                [xp.reshape(left, shape), xp.reshape(right, shape)], axis=-1
+            )  # per-frame concat -> (N, D, F, n_frames, 2C)
+            fused = xp.reshape(fused, (*left_shape[:-1], -1))  # (N, D, F, n_frames*2C)
+            left = _project_frames(fused, self.left_proj, self.n_frames)
+            right = _project_frames(fused, self.right_proj, self.n_frames)
         else:
-            left = self.left_proj(left)
-            right = self.right_proj(right)
-        coeff = from_grid(to_grid(left) * to_grid(right))  # (N, D, F, 2C)
-        return self.out_proj(coeff)  # (N, D, F, C)
+            left = _project_frames(left, self.left_proj, self.n_frames)
+            right = _project_frames(right, self.right_proj, self.n_frames)
+
+        # === Step 2. Quadratic product on the grid, projected back ===
+        coeff = from_grid(to_grid(left) * to_grid(right))
+        return _project_frames(coeff, self.out_proj, self.n_frames)
 
     def serialize(self) -> dict[str, Any]:
         """Serialize the GridMLP to a dict.
@@ -285,6 +301,7 @@ class GridMLP(NativeOP):
             "config": {
                 "channels": self.channels,
                 "mode": self.mode,
+                "n_frames": self.n_frames,
                 "precision": np.dtype(PRECISION_DICT[self.precision]).name,
                 "trainable": self.trainable,
                 "seed": None,
@@ -310,6 +327,7 @@ class GridMLP(NativeOP):
         obj = cls(
             channels=int(config["channels"]),
             mode=str(config["mode"]),
+            n_frames=int(config["n_frames"]),
             precision=str(config["precision"]),
             trainable=bool(config["trainable"]),
             seed=config.get("seed"),
@@ -589,6 +607,7 @@ class BaseGridNet(NativeOP):
             self.grid_op: NativeOP = GridMLP(
                 channels=self.channels,
                 mode=self.mode,
+                n_frames=self.n_frames,
                 precision=self.precision,
                 trainable=trainable,
                 seed=child_seed(seed, 1),
