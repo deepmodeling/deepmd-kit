@@ -12,8 +12,9 @@ are:
 * ``mode='self'``: one input ``(N, D, F, 2*C)`` or ``(N, F, D, 2*C)``.
 * grid values: ``(N, G, F, C)`` after S2 projection.
 
-Ported names: ``BaseGridNet`` (``mode='self'``; ``op_type`` 'glu'/'branch'),
-``S2GridNet``, ``GridBranch``.
+Ported names: ``BaseGridNet`` (``mode='self'``; ``op_type``
+'glu'/'mlp'/'branch'), ``S2GridNet``, ``GridProduct``, ``GridMLP``,
+``GridBranch``.
 
 Skipped names, with consumer evidence from the pt sources:
 
@@ -23,9 +24,6 @@ Skipped names, with consumer evidence from the pt sources:
 - ``FrameContract``, ``FrameExpand``, ``_build_frame_degree_index``: only
   constructed by ``SO3GridNet`` (``mode='cross'``); the S2 projector always
   has ``n_frames == 1``, so the frame machinery is unreachable here.
-- ``GridMLP``: only selected via ``op_type='mlp'`` (``grid_mlp=True`` paths);
-  the core config has ``grid_mlp=[False, False, False]``. ``BaseGridNet``
-  raises ``NotImplementedError`` for ``op_type='mlp'``.
 
 Guarded (routable from the shared ``S2GridNet`` entry point but only used by
 the disabled ``node_wise_s2``/``message_node_s2`` grid products in
@@ -47,6 +45,7 @@ from __future__ import (
 )
 
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
 
@@ -85,12 +84,222 @@ from .so3 import (
     FocusLinear,
 )
 
+if TYPE_CHECKING:
+    from collections.abc import (
+        Callable,
+    )
+
 
 def _softmax_last_axis(x: Any) -> Any:
     """Numerically stable softmax on the last axis (matches torch.softmax)."""
     xp = array_api_compat.array_namespace(x)
     e_x = xp.exp(x - xp.max(x, axis=-1, keepdims=True))
     return e_x / xp.sum(e_x, axis=-1, keepdims=True)
+
+
+class GridProduct(NativeOP):
+    """Parameter-free quadratic grid product ``u(g) * v(g)``."""
+
+    def call(
+        self,
+        left: Any,
+        right: Any,
+        scalar_pair: Any,
+        *,
+        to_grid: Callable[[Any], Any],
+        from_grid: Callable[[Any], Any],
+    ) -> Any:
+        """
+        Combine two coefficient operands by a point-wise grid product.
+
+        Parameters
+        ----------
+        left, right
+            Coefficient operands with shape ``(N, D, F, C)``.
+        scalar_pair
+            Invariant routing signal; unused on this path.
+        to_grid, from_grid
+            Coefficient/grid projectors supplied by the owning grid net.
+        """
+        return from_grid(to_grid(left) * to_grid(right))
+
+    def serialize(self) -> dict[str, Any]:
+        """Serialize the parameter-free grid product to a dict."""
+        return {
+            "@class": "GridProduct",
+            "@version": 1,
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict[str, Any]) -> GridProduct:
+        """Deserialize a GridProduct from a dict."""
+        data = data.copy()
+        data_cls = data.pop("@class", "GridProduct")
+        if data_cls != "GridProduct":
+            raise ValueError(f"Invalid class for GridProduct: {data_cls}")
+        check_version_compatibility(int(data.pop("@version", 1)), 1, 1)
+        return cls()
+
+
+class GridMLP(NativeOP):
+    """
+    Polynomial point-wise MLP applied independently at every grid point.
+
+    Specialized to the S2 ``n_frames == 1`` case, so the per-frame packing of
+    the pt ``GridMLP`` collapses to a plain channel concatenation in self mode.
+
+    Parameters
+    ----------
+    channels : int
+        Number of channels per grid point.
+    mode : str
+        Pairing mode, either ``"self"`` or ``"cross"``.
+    precision : str
+        Parameter precision.
+    trainable : bool
+        Whether parameters are trainable.
+    seed : int | list[int] | None
+        Random seed for weight initialization.
+    """
+
+    def __init__(
+        self,
+        *,
+        channels: int,
+        mode: str,
+        precision: str = DEFAULT_PRECISION,
+        trainable: bool = True,
+        seed: int | list[int] | None = None,
+    ) -> None:
+        self.channels = int(channels)
+        self.mode = str(mode).lower()
+        if self.mode not in {"self", "cross"}:
+            raise ValueError("`mode` must be either 'self' or 'cross'")
+        self.precision = precision
+        self.trainable = bool(trainable)
+        self.input_channels = (
+            2 * self.channels if self.mode == "self" else self.channels
+        )
+        self.hidden_channels = 2 * self.channels
+        self.left_proj = ChannelLinear(
+            in_channels=self.input_channels,
+            out_channels=self.hidden_channels,
+            precision=precision,
+            bias=False,
+            trainable=trainable,
+            seed=child_seed(seed, 0),
+        )
+        self.right_proj = ChannelLinear(
+            in_channels=self.input_channels,
+            out_channels=self.hidden_channels,
+            precision=precision,
+            bias=False,
+            trainable=trainable,
+            seed=child_seed(seed, 1),
+        )
+        self.out_proj = ChannelLinear(
+            in_channels=self.hidden_channels,
+            out_channels=self.channels,
+            precision=precision,
+            bias=False,
+            trainable=trainable,
+            seed=child_seed(seed, 2),
+        )
+
+    def call(
+        self,
+        left: Any,
+        right: Any,
+        scalar_pair: Any,
+        *,
+        to_grid: Callable[[Any], Any],
+        from_grid: Callable[[Any], Any],
+    ) -> Any:
+        """
+        Apply the polynomial point-wise MLP on coefficient operands.
+
+        In self mode both projections see the concatenation of the two operands
+        and can form self and cross quadratic channel terms. In cross mode the
+        query and context roles stay separate: ``(W_q query) * (W_c context)``.
+
+        Parameters
+        ----------
+        left, right
+            Coefficient operands with shape ``(N, D, F, C)``.
+        scalar_pair
+            Invariant routing signal; unused on this path.
+        to_grid, from_grid
+            Coefficient/grid projectors supplied by the owning grid net.
+        """
+        if self.mode == "self":
+            xp = array_api_compat.array_namespace(left)
+            fused = xp.concat([left, right], axis=-1)  # (N, D, F, 2C)
+            left = self.left_proj(fused)
+            right = self.right_proj(fused)
+        else:
+            left = self.left_proj(left)
+            right = self.right_proj(right)
+        coeff = from_grid(to_grid(left) * to_grid(right))  # (N, D, F, 2C)
+        return self.out_proj(coeff)  # (N, D, F, C)
+
+    def serialize(self) -> dict[str, Any]:
+        """Serialize the GridMLP to a dict.
+
+        The pt ``GridMLP`` has no ``serialize()``; the ``@variables`` keys here
+        match the pt ``state_dict`` key names.
+        """
+        return {
+            "@class": "GridMLP",
+            "@version": 1,
+            "config": {
+                "channels": self.channels,
+                "mode": self.mode,
+                "precision": np.dtype(PRECISION_DICT[self.precision]).name,
+                "trainable": self.trainable,
+                "seed": None,
+            },
+            "@variables": {
+                "left_proj.weight": to_numpy_array(self.left_proj.weight),
+                "right_proj.weight": to_numpy_array(self.right_proj.weight),
+                "out_proj.weight": to_numpy_array(self.out_proj.weight),
+            },
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict[str, Any]) -> GridMLP:
+        """Deserialize a GridMLP from a dict."""
+        data = data.copy()
+        data_cls = data.pop("@class")
+        if data_cls != "GridMLP":
+            raise ValueError(f"Invalid class for GridMLP: {data_cls}")
+        version = int(data.pop("@version"))
+        check_version_compatibility(version, 1, 1)
+        config = data.pop("config")
+        variables = data.pop("@variables")
+        obj = cls(
+            channels=int(config["channels"]),
+            mode=str(config["mode"]),
+            precision=str(config["precision"]),
+            trainable=bool(config["trainable"]),
+            seed=config.get("seed"),
+        )
+        obj._load_variables(variables)
+        return obj
+
+    def _load_variables(self, variables: dict[str, Any]) -> None:
+        prec = PRECISION_DICT[self.precision.lower()]
+        for name, proj in (
+            ("left_proj", self.left_proj),
+            ("right_proj", self.right_proj),
+            ("out_proj", self.out_proj),
+        ):
+            weight = np.asarray(variables[f"{name}.weight"], dtype=prec)
+            if weight.shape != proj.weight.shape:
+                raise ValueError(
+                    f"{name}.weight shape {weight.shape} does not match "
+                    f"the expected shape {proj.weight.shape}"
+                )
+            proj.weight = weight
 
 
 class GridBranch(NativeOP):
@@ -165,34 +374,43 @@ class GridBranch(NativeOP):
 
     def call(
         self,
-        query_grid: Any,
-        context_grid: Any,
+        left: Any,
+        right: Any,
         scalar_pair: Any,
+        *,
+        to_grid: Callable[[Any], Any],
+        from_grid: Callable[[Any], Any],
     ) -> Any:
         """
-        Apply scalar-routed grid branch mixing.
+        Apply scalar-routed grid branch mixing on coefficient operands.
+
+        The channel maps are applied at coefficient resolution and the grid
+        transform is deferred to the injected ``to_grid``/``from_grid``
+        callables, matching the pt ``GridBranch`` specialized to the S2
+        ``n_frames == 1`` case (so no per-frame packing is needed).
 
         Parameters
         ----------
-        query_grid
-            First grid source with shape ``(N, G, F, C)``.
-        context_grid
-            Second grid source with shape ``(N, G, F, C)``.
+        left, right
+            Coefficient operands with shape ``(N, D, F, C)``.
         scalar_pair
             Invariant router source with shape ``(N, F, 2*C)``.
+        to_grid, from_grid
+            Coefficient/grid projectors supplied by the owning grid net.
         """
-        xp = array_api_compat.array_namespace(query_grid)
-        n_batch, n_grid, n_focus, _ = query_grid.shape
-        left = self.left_proj(query_grid)
-        right = self.right_proj(context_grid)
+        xp = array_api_compat.array_namespace(left)
+        left = self.left_proj(left)  # (N, D, F, N_branches * C)
+        right = self.right_proj(right)  # (N, D, F, N_branches * C)
+        value = to_grid(left) * to_grid(right)  # (N, G, F, N_branches * C)
+        n_batch, n_grid, n_focus, _ = value.shape
         value = xp.reshape(
-            left * right,
+            value,
             (n_batch, n_grid, n_focus, self.n_branches, self.channels),
         )  # (N, G, F, N_branches, C)
         router = _softmax_last_axis(self.router(scalar_pair))  # (N, F, N_branches)
         # einsum "ngfhc,nfh->ngfc" as a broadcast sum over the branch axis
         out = xp.sum(value * router[:, None, :, :, None], axis=3)  # (N, G, F, C)
-        return self.out_proj(out)
+        return self.out_proj(from_grid(out))  # (N, D, F, C)
 
     def serialize(self) -> dict[str, Any]:
         """Serialize the GridBranch to a dict.
@@ -305,10 +523,6 @@ class BaseGridNet(NativeOP):
         self.op_type = str(op_type).lower()
         if self.op_type not in {"glu", "mlp", "branch"}:
             raise ValueError("`op_type` must be one of 'glu', 'mlp', or 'branch'")
-        if self.op_type == "mlp":
-            raise NotImplementedError(
-                "op_type='mlp' (grid_mlp=True paths) is not ported to dpmodel"
-            )
         self.precision = precision
         self.layout = str(layout).lower()
         if self.layout not in {"ndfc", "nfdc", "flat"}:
@@ -340,8 +554,16 @@ class BaseGridNet(NativeOP):
             seed=child_seed(seed, 0),
             init_std=0.01,
         )
-        if self.op_type == "branch":
-            self.grid_op: GridBranch | None = GridBranch(
+        if self.op_type == "mlp":
+            self.grid_op: NativeOP = GridMLP(
+                channels=self.channels,
+                mode=self.mode,
+                precision=self.precision,
+                trainable=trainable,
+                seed=child_seed(seed, 1),
+            )
+        elif self.op_type == "branch":
+            self.grid_op = GridBranch(
                 channels=self.channels,
                 n_branches=grid_branches,
                 precision=self.precision,
@@ -349,8 +571,7 @@ class BaseGridNet(NativeOP):
                 seed=child_seed(seed, 1),
             )
         else:
-            # pt uses nn.Identity() here (parameter-free, no state-dict keys)
-            self.grid_op = None
+            self.grid_op = GridProduct()
 
     def call(self, query: Any, context: Any = None) -> Any:
         """Apply the configured grid net and restore the input layout."""
@@ -360,8 +581,7 @@ class BaseGridNet(NativeOP):
         query_ndfc = self._to_ndfc(query)
         left, right = self._split_self_query(query_ndfc)
         scalar_pair = self._make_scalar_pair(left, right, compute_dtype)
-        grid_out = self._apply_grid_op(left, right, scalar_pair, compute_dtype)
-        coeff_out = self._from_grid(grid_out)
+        coeff_out = self._apply_grid_op(left, right, scalar_pair, compute_dtype)
         coeff_out = self._apply_scalar_path(coeff_out, scalar_pair)
         if coeff_out.dtype != input_dtype:
             coeff_out = xp.astype(coeff_out, input_dtype)
@@ -379,11 +599,13 @@ class BaseGridNet(NativeOP):
             left = xp.astype(left, compute_dtype)
         if right.dtype != compute_dtype:
             right = xp.astype(right, compute_dtype)
-        left_grid = self._to_grid(left)
-        right_grid = self._to_grid(right)
-        if self.op_type == "glu":
-            return left_grid * right_grid
-        return self.grid_op(left_grid, right_grid, scalar_pair)
+        return self.grid_op(
+            left,
+            right,
+            scalar_pair,
+            to_grid=self._to_grid,
+            from_grid=self._from_grid,
+        )
 
     def _apply_scalar_path(self, coeff: Any, scalar_pair: Any) -> Any:
         xp = array_api_compat.array_namespace(coeff)
@@ -421,33 +643,34 @@ class BaseGridNet(NativeOP):
         return coeff[:, 0, :, :]
 
     def _to_grid(self, coeff: Any) -> Any:
-        # einsum "gd,ndfc->ngfc" (n_frames == 1) as a broadcast batched matmul
+        # einsum "gd,ndfc->ngfc" (n_frames == 1) as a broadcast batched matmul.
+        # The per-point channel width is inferred so the projector also serves
+        # widened operands (e.g. a branch hidden width ``n_branches * C``).
         xp = array_api_compat.array_namespace(coeff)
-        n_batch, coeff_dim, n_focus, _ = coeff.shape
+        n_batch, coeff_dim, n_focus, n_channels = coeff.shape
         to_grid_mat = xp_asarray_nodetach(
             xp, self.projector.to_grid_mat[...], device=array_api_compat.device(coeff)
         )
         if to_grid_mat.dtype != coeff.dtype:
             to_grid_mat = xp.astype(to_grid_mat, coeff.dtype)
-        flat = xp.reshape(coeff, (n_batch, coeff_dim, n_focus * self.channels))
+        flat = xp.reshape(coeff, (n_batch, coeff_dim, n_focus * n_channels))
         out = xp.matmul(to_grid_mat[None, ...], flat)  # (N, G, F*C)
-        return xp.reshape(
-            out, (n_batch, self.projector.grid_size, n_focus, self.channels)
-        )
+        return xp.reshape(out, (n_batch, self.projector.grid_size, n_focus, n_channels))
 
     def _from_grid(self, grid: Any) -> Any:
-        # einsum "dg,ngfc->ndfc" (n_frames == 1) as a broadcast batched matmul
+        # einsum "dg,ngfc->ndfc" (n_frames == 1) as a broadcast batched matmul.
+        # The channel width is inferred to match the (possibly widened) grid.
         xp = array_api_compat.array_namespace(grid)
-        n_batch, n_grid, n_focus, _ = grid.shape
+        n_batch, n_grid, n_focus, n_channels = grid.shape
         coeff_dim = self.projector.coeff_dim
         from_grid_mat = xp_asarray_nodetach(
             xp, self.projector.from_grid_mat[...], device=array_api_compat.device(grid)
         )
         if from_grid_mat.dtype != grid.dtype:
             from_grid_mat = xp.astype(from_grid_mat, grid.dtype)
-        flat = xp.reshape(grid, (n_batch, n_grid, n_focus * self.channels))
+        flat = xp.reshape(grid, (n_batch, n_grid, n_focus * n_channels))
         out = xp.matmul(from_grid_mat[None, ...], flat)  # (N, D, F*C)
-        return xp.reshape(out, (n_batch, coeff_dim, n_focus, self.expanded_channels))
+        return xp.reshape(out, (n_batch, coeff_dim, n_focus, n_channels))
 
     def _to_ndfc(self, value: Any) -> Any:
         if self.layout == "ndfc":
@@ -569,7 +792,7 @@ class S2GridNet(BaseGridNet):
         variables = {"scalar_gate.weight": to_numpy_array(self.scalar_gate.weight)}
         if self.mlp_bias:
             variables["scalar_gate.bias"] = to_numpy_array(self.scalar_gate.bias)
-        if self.op_type == "branch":
+        if self.op_type in {"mlp", "branch"}:
             grid_op_data = self.grid_op.serialize()["@variables"]
             for key, value in grid_op_data.items():
                 variables[f"grid_op.{key}"] = value
@@ -636,7 +859,7 @@ class S2GridNet(BaseGridNet):
             obj.scalar_gate.bias = np.asarray(
                 variables["scalar_gate.bias"], dtype=prec
             ).reshape(obj.scalar_gate.bias.shape)
-        if obj.op_type == "branch":
+        if obj.op_type in {"mlp", "branch"}:
             obj.grid_op._load_variables(
                 {
                     key[len("grid_op.") :]: value
