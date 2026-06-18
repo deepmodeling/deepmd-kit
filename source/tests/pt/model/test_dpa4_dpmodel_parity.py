@@ -2378,10 +2378,6 @@ class TestSO2Parity:
             ("atten_v_proj", True),  # value projection
             ("atten_o_proj", True),  # output projection
             ("s2_activation", True),  # S2-grid SwiGLU non-linearity
-            ("node_wise_s2", True),  # edge-local S2 grid product
-            ("node_wise_so3", True),  # edge-local SO(3) grid product
-            ("message_node_s2", True),  # post-aggregation S2 grid product
-            ("message_node_so3", True),  # post-aggregation SO(3) grid product
         ],
     )
     def test_so2_convolution_guards(self, flag, value) -> None:
@@ -3411,8 +3407,6 @@ class TestBlockParity:
             ("block_attn_res", "dependent"),  # block-level DepthAttnRes
             ("layer_scale", True),  # block-level FFN LayerScale
             ("so2_s2_activation", True),  # delegated to SO2Convolution
-            ("node_wise_s2", True),  # delegated to SO2Convolution
-            ("message_node_so3", True),  # delegated to SO2Convolution
         ],
     )
     def test_block_guards(self, flag, value) -> None:

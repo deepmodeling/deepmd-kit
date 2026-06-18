@@ -19,8 +19,9 @@ block.py itself, all unused by the core DPA4 config):
 
 Flags merely forwarded to sub-components keep their guards there (delegated,
 not duplicated here): ``so2_attn_res``, ``so2_s2_activation``,
-``node_wise_s2/so3``, ``message_node_s2/so3``, ``atten_f_mix``,
-``atten_v_proj``, ``atten_o_proj`` (raised by ``SO2Convolution``).
+``atten_f_mix``, ``atten_v_proj``, ``atten_o_proj`` (raised by
+``SO2Convolution``). The cross-mode grid products (``node_wise_s2/so3``,
+``message_node_s2/so3``) are ported and forwarded to ``SO2Convolution``.
 
 The pt eval-time activation-checkpoint / nvtx instrumentation
 (``DP_ACT_INFER``, ``DP_COMPILE_INFER``, ``nvtx_range``) is pt-runtime-only
