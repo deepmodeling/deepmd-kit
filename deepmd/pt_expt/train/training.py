@@ -67,11 +67,11 @@ from deepmd.pt_expt.utils.stat import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
-from deepmd.utils.finetune import (
-    warn_configuration_mismatch_during_finetune,
-)
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
+)
+from deepmd.utils.finetune import (
+    warn_configuration_mismatch_during_finetune,
 )
 from deepmd.utils.path import (
     DPPath,

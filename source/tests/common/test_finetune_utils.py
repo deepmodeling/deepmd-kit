@@ -1,7 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
 
-from deepmd.utils import finetune
+from deepmd.utils import (
+    finetune,
+)
 
 
 def test_descriptor_config_warning_reports_nested_difference(monkeypatch, caplog):
