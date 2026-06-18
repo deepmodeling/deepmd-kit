@@ -3,32 +3,28 @@
 Grid-space nonlinearities for DPA4/SeZM coefficient tensors.
 
 This module is the dpmodel port of
-``deepmd.pt.model.descriptor.sezm_nn.grid_net``, restricted to the S2/Lebedev
-path used by the core DPA4 configuration. A grid net receives coefficient
-tensors, converts them to quadrature values, applies one point-wise grid
-operation, and projects the result back to coefficients. The public shapes
-are:
+``deepmd.pt.model.descriptor.sezm_nn.grid_net``. A grid net receives
+coefficient tensors, converts them to quadrature values, applies one
+point-wise grid operation, and projects the result back to coefficients. The
+public shapes are:
 
 * ``mode='self'``: one input ``(N, D, F, 2*C)`` or ``(N, F, D, 2*C)``.
-* grid values: ``(N, G, F, C)`` after S2 projection.
+* ``mode='cross'``: separate query/context inputs each with ``C`` channels.
+* grid values: ``(N, G, F, C)`` after S2 or SO(3) projection.
 
-Ported names: ``BaseGridNet`` (``mode='self'``; ``op_type``
-'glu'/'mlp'/'branch'), ``S2GridNet``, ``GridProduct``, ``GridMLP``,
+Ported names: ``BaseGridNet`` (``mode`` 'self'/'cross'; ``op_type``
+'glu'/'mlp'/'branch'; ``layout`` 'ndfc'/'nfdc'/'flat'; ``residual_scale_init``;
+general ``n_frames``), ``S2GridNet``, ``GridProduct``, ``GridMLP``,
 ``GridBranch``.
 
-Skipped names, with consumer evidence from the pt sources:
-
-- ``SO3GridNet``: only constructed by ``so2.py`` (``node_wise_so3``,
-  ``message_node_so3``) and ``ffn.py`` (``ffn_so3_grid``) — all disabled in
-  the core DPA4 config.
-- ``FrameContract``, ``FrameExpand``, ``_build_frame_degree_index``: only
-  constructed by ``SO3GridNet`` (``mode='cross'``); the S2 projector always
-  has ``n_frames == 1``, so the frame machinery is unreachable here.
-
-Guarded (routable from the shared ``S2GridNet`` entry point but only used by
-the disabled ``node_wise_s2``/``message_node_s2`` grid products in
-``so2.py``): ``mode='cross'`` (and with it ``layout='flat'``) and
-``residual_scale_init is not None`` raise ``NotImplementedError``.
+``BaseGridNet`` mirrors the current pt ``BaseGridNet`` for arbitrary
+``n_frames`` (the ``_to_grid``/``_from_grid`` frame-axis contraction). The S2
+path (``n_frames == 1``, ``mode='self'``) keeps a dedicated fast branch that is
+byte-identical to the previous S2-only specialization. The SO(3) frame
+machinery (``SO3GridNet``, ``FrameContract``, ``FrameExpand``) is not ported
+here; ``BaseGridNet`` exposes ``frame_expand``/``frame_contract`` seams (kept
+``None`` for S2) so a later SO(3) port can plug them in without touching the
+shared forward.
 
 Serialization contract: the pt ``S2GridNet`` and ``GridBranch`` define no
 ``serialize()`` (they only appear nested inside larger modules'
@@ -543,15 +539,19 @@ class GridBranch(NativeOP):
 
 class BaseGridNet(NativeOP):
     """
-    Shared implementation for S2 grid nets (``mode='self'`` only).
+    Shared implementation for S2 and SO(3) grid nets.
 
     ``mode='self'`` expects one input whose last channel axis contains two
     branches; the first half supplies the SwiGLU gates of the scalar path.
+    ``mode='cross'`` expects separate query and context inputs.
 
-    The pt ``mode='cross'`` path (with ``layout='flat'``,
-    ``residual_scale_init``, and the SO(3) frame machinery) backs the
-    ``node_wise_s2``/``message_node_s2`` grid products only, which are
-    disabled in the core DPA4 config; it is not ported.
+    Mirrors the current pt ``BaseGridNet``: ``mode`` ('self'/'cross'),
+    ``layout`` ('ndfc'/'nfdc'/'flat'), ``residual_scale_init`` and arbitrary
+    ``n_frames`` are all supported. The S2 (``n_frames == 1``) path keeps a
+    dedicated fast branch in ``_to_grid``/``_from_grid``/``_apply_scalar_path``
+    that is byte-identical to the previous S2-only specialization. The SO(3)
+    frame machinery (``frame_expand``/``frame_contract``) is built by the
+    not-yet-ported ``SO3GridNet``; the seams here stay ``None`` for S2.
     """
 
     def __init__(
@@ -567,6 +567,8 @@ class BaseGridNet(NativeOP):
         mlp_bias: bool,
         trainable: bool = True,
         grid_branches: int = 1,
+        frame_expand: NativeOP | None = None,
+        frame_contract: NativeOP | None = None,
         residual_scale_init: float | None = None,
         seed: int | list[int] | None = None,
     ) -> None:
@@ -575,18 +577,9 @@ class BaseGridNet(NativeOP):
         self.channels = int(channels)
         self.n_focus = int(n_focus)
         self.n_frames = int(projector.n_frames)
-        if self.n_frames != 1:
-            raise ValueError(
-                "dpmodel BaseGridNet only supports S2 projectors (n_frames == 1)"
-            )
         self.mode = str(mode).lower()
         if self.mode not in {"self", "cross"}:
             raise ValueError("`mode` must be either 'self' or 'cross'")
-        if self.mode == "cross":
-            raise NotImplementedError(
-                "mode='cross' (node_wise_s2/message_node_s2 grid products) "
-                "is not ported to dpmodel"
-            )
         self.op_type = str(op_type).lower()
         if self.op_type not in {"glu", "mlp", "branch"}:
             raise ValueError("`op_type` must be one of 'glu', 'mlp', or 'branch'")
@@ -599,16 +592,36 @@ class BaseGridNet(NativeOP):
         self.mlp_bias = bool(mlp_bias)
         self.trainable = bool(trainable)
         self.expanded_channels = self.n_frames * self.channels
-        self.query_channels = 2 * self.expanded_channels
-        self.output_channels = self.expanded_channels
-        self.frame_zero_index = 0
-        if residual_scale_init is not None:
-            raise NotImplementedError(
-                "`residual_scale_init` is only used by the cross-mode "
-                "node_wise_s2/message_node_s2 grid products, which are not "
-                "ported to dpmodel"
+        # ``frame_expand``/``frame_contract`` are the SO(3) frame machinery
+        # (built only by ``SO3GridNet`` in cross mode). They stay ``None`` for
+        # S2 (``n_frames == 1``); the seam below lets a later SO(3) port plug
+        # them in without touching the shared forward.
+        self.frame_expand = frame_expand
+        self.frame_contract = frame_contract
+        self.query_channels = (
+            2 * self.expanded_channels
+            if self.mode == "self"
+            else (
+                self.channels
+                if self.frame_expand is not None
+                else self.expanded_channels
             )
-        self.residual_scale = None
+        )
+        self.context_channels = (
+            self.channels if self.frame_expand is not None else self.expanded_channels
+        )
+        self.output_channels = (
+            self.channels if self.frame_contract is not None else self.expanded_channels
+        )
+        self.frame_zero_index = int(getattr(projector, "frame_zero_index", 0))
+        self.residual_scale_init = residual_scale_init
+        if residual_scale_init is None:
+            self.residual_scale: np.ndarray | None = None
+        else:
+            prec = PRECISION_DICT[self.precision.lower()]
+            self.residual_scale = np.ones(
+                (self.n_focus, self.output_channels), dtype=prec
+            ) * float(residual_scale_init)
 
         self.scalar_act = SwiGLU()
         self.scalar_gate = FocusLinear(
@@ -647,14 +660,73 @@ class BaseGridNet(NativeOP):
         xp = array_api_compat.array_namespace(query)
         input_dtype = query.dtype
         compute_dtype = get_xp_precision(xp, self.precision)
-        query_ndfc = self._to_ndfc(query)
-        left, right = self._split_self_query(query_ndfc)
-        scalar_pair = self._make_scalar_pair(left, right, compute_dtype)
+        query_ndfc, shape_info = self._to_ndfc(query)
+        left, right, scalar_pair = self._prepare_pair(
+            query_ndfc, context, compute_dtype
+        )
         coeff_out = self._apply_grid_op(left, right, scalar_pair, compute_dtype)
         coeff_out = self._apply_scalar_path(coeff_out, scalar_pair)
+        coeff_out = self._contract_frames(coeff_out)
+        coeff_out = self._apply_residual_scale(coeff_out)
         if coeff_out.dtype != input_dtype:
             coeff_out = xp.astype(coeff_out, input_dtype)
-        return self._restore_layout(coeff_out)
+        return self._restore_layout(coeff_out, shape_info)
+
+    def _prepare_pair(
+        self, query: Any, context: Any, compute_dtype: Any
+    ) -> tuple[Any, Any, Any]:
+        if self.mode == "self":
+            return self._prepare_self_pair(query, compute_dtype)
+        return self._prepare_cross_pair(query, context, compute_dtype)
+
+    def _prepare_self_pair(
+        self, query: Any, compute_dtype: Any
+    ) -> tuple[Any, Any, Any]:
+        left, right = self._split_self_query(query)
+        scalar_pair = self._make_scalar_pair(left, right, compute_dtype)
+        return left, right, scalar_pair
+
+    def _prepare_cross_pair(
+        self, query: Any, context: Any, compute_dtype: Any
+    ) -> tuple[Any, Any, Any]:
+        if context is None:
+            raise ValueError("`context` is required when `mode='cross'`")
+        context_ndfc, _ = self._to_ndfc(context)
+        self._check_last_dim(query, self.context_channels, "query")
+        self._check_last_dim(context_ndfc, self.context_channels, "context")
+        if self.frame_expand is None:
+            scalar_pair = self._make_scalar_pair(query, context_ndfc, compute_dtype)
+            return query, context_ndfc, scalar_pair
+        # SO(3) frame-expansion seam (built only by a later SO3GridNet port):
+        # the scalar pair is read from the d=0 slice before expansion, then
+        # both operands are lifted to the frame-packed width.
+        xp = array_api_compat.array_namespace(query)
+        scalar_pair = xp.concat([query[:, 0, :, :], context_ndfc[:, 0, :, :]], axis=-1)
+        if scalar_pair.dtype != compute_dtype:
+            scalar_pair = xp.astype(scalar_pair, compute_dtype)
+        return (
+            self.frame_expand(query),
+            self.frame_expand(context_ndfc),
+            scalar_pair,
+        )
+
+    def _contract_frames(self, coeff: Any) -> Any:
+        if self.frame_contract is None:
+            return coeff
+        return self.frame_contract(coeff)
+
+    def _apply_residual_scale(self, coeff: Any) -> Any:
+        if self.residual_scale is None:
+            return coeff
+        xp = array_api_compat.array_namespace(coeff)
+        residual_scale = xp_asarray_nodetach(
+            xp, self.residual_scale[...], device=array_api_compat.device(coeff)
+        )
+        if residual_scale.dtype != coeff.dtype:
+            residual_scale = xp.astype(residual_scale, coeff.dtype)
+        return coeff * xp.reshape(
+            residual_scale, (1, 1, self.n_focus, self.output_channels)
+        )
 
     def _apply_grid_op(
         self,
@@ -680,11 +752,32 @@ class BaseGridNet(NativeOP):
         xp = array_api_compat.array_namespace(coeff)
         scalar_out = self.scalar_act(scalar_pair)  # (N, F, C)
         scalar_gate = xp_sigmoid(self.scalar_gate(scalar_pair))  # (N, F, C)
-        coeff = coeff * scalar_gate[:, None, :, :]
-        # gradient-safe equivalent of the pt in-place
-        # ``coeff_view[:, 0, :, 0, :].add_(scalar_out)`` (n_frames == 1)
-        head = coeff[:, :1, :, :] + scalar_out[:, None, :, :]
-        return xp.concat([head, coeff[:, 1:, :, :]], axis=1)
+        if self.n_frames == 1:
+            # Fast S2 path (byte-identical to the previous specialization).
+            coeff = coeff * scalar_gate[:, None, :, :]
+            # gradient-safe equivalent of the pt in-place
+            # ``coeff_view[:, 0, :, 0, :].add_(scalar_out)`` (n_frames == 1)
+            head = coeff[:, :1, :, :] + scalar_out[:, None, :, :]
+            return xp.concat([head, coeff[:, 1:, :, :]], axis=1)
+        # General frame-packed path mirroring the pt
+        # ``coeff_view = coeff.reshape(N, D, F, K, C)`` followed by a gated
+        # multiply and an in-place add into ``[:, 0, :, frame_zero_index, :]``.
+        n_batch, coeff_dim, n_focus, _ = coeff.shape
+        coeff_view = xp.reshape(
+            coeff, (n_batch, coeff_dim, n_focus, self.n_frames, self.channels)
+        )
+        coeff_view = coeff_view * scalar_gate[:, None, :, None, :]
+        # gradient-safe in-place add into the d=0, frame_zero_index slice
+        fzi = self.frame_zero_index
+        head = coeff_view[:, :1, :, :, :]  # (N, 1, F, K, C)
+        pre = head[:, :, :, :fzi, :]
+        mid = head[:, :, :, fzi : fzi + 1, :] + scalar_out[:, None, :, None, :]
+        post = head[:, :, :, fzi + 1 :, :]
+        head = xp.concat([pre, mid, post], axis=3)
+        coeff_view = xp.concat([head, coeff_view[:, 1:, :, :, :]], axis=1)
+        return xp.reshape(
+            coeff_view, (n_batch, coeff_dim, n_focus, self.expanded_channels)
+        )
 
     def _split_self_query(self, query: Any) -> tuple[Any, Any]:
         self._check_last_dim(query, self.query_channels, "query")
@@ -708,51 +801,103 @@ class BaseGridNet(NativeOP):
         return scalar_pair
 
     def _extract_scalar(self, coeff: Any) -> Any:
-        # (N, D, F, C) -> the (l=0, m=0) scalar slice (N, F, C); n_frames == 1
-        return coeff[:, 0, :, :]
+        # (N, D, F, K*C) -> the (l=0, m=0) scalar slice (N, F, C).
+        if self.n_frames == 1:
+            return coeff[:, 0, :, :]
+        xp = array_api_compat.array_namespace(coeff)
+        n_batch, coeff_dim, n_focus, _ = coeff.shape
+        coeff_view = xp.reshape(
+            coeff, (n_batch, coeff_dim, n_focus, self.n_frames, self.channels)
+        )
+        return coeff_view[:, 0, :, self.frame_zero_index, :]
 
     def _to_grid(self, coeff: Any) -> Any:
-        # einsum "gd,ndfc->ngfc" (n_frames == 1) as a broadcast batched matmul.
-        # The per-point channel width is inferred so the projector also serves
-        # widened operands (e.g. a branch hidden width ``n_branches * C``).
         xp = array_api_compat.array_namespace(coeff)
-        n_batch, coeff_dim, n_focus, n_channels = coeff.shape
         to_grid_mat = xp_asarray_nodetach(
             xp, self.projector.to_grid_mat[...], device=array_api_compat.device(coeff)
         )
         if to_grid_mat.dtype != coeff.dtype:
             to_grid_mat = xp.astype(to_grid_mat, coeff.dtype)
-        flat = xp.reshape(coeff, (n_batch, coeff_dim, n_focus * n_channels))
-        out = xp.matmul(to_grid_mat[None, ...], flat)  # (N, G, F*C)
+        if self.n_frames == 1:
+            # einsum "gd,ndfc->ngfc" as a broadcast batched matmul. The per-point
+            # channel width is inferred so the projector also serves widened
+            # operands (e.g. a branch hidden width ``n_branches * C``).
+            n_batch, coeff_dim, n_focus, n_channels = coeff.shape
+            flat = xp.reshape(coeff, (n_batch, coeff_dim, n_focus * n_channels))
+            out = xp.matmul(to_grid_mat[None, ...], flat)  # (N, G, F*C)
+            return xp.reshape(
+                out, (n_batch, self.projector.grid_size, n_focus, n_channels)
+            )
+        # General SO(3) frame-packed path mirroring the pt
+        # ``einsum("gdk,ndfkc->ngfc", to_grid.reshape(G, D, K), coeff_view)``.
+        # ``to_grid_mat`` columns are ordered (d outer, k inner), so the operand
+        # is permuted to the matching ``(d, k)`` flattening before the matmul.
+        n_batch, coeff_dim, n_focus, last = coeff.shape
+        n_channels = last // self.n_frames
+        coeff_view = xp.reshape(
+            coeff, (n_batch, coeff_dim, n_focus, self.n_frames, n_channels)
+        )
+        coeff_dk = xp.permute_dims(coeff_view, (0, 1, 3, 2, 4))  # (N, D, K, F, C)
+        coeff_flat = xp.reshape(
+            coeff_dk, (n_batch, coeff_dim * self.n_frames, n_focus * n_channels)
+        )
+        out = xp.matmul(to_grid_mat[None, ...], coeff_flat)  # (N, G, F*C)
         return xp.reshape(out, (n_batch, self.projector.grid_size, n_focus, n_channels))
 
     def _from_grid(self, grid: Any) -> Any:
-        # einsum "dg,ngfc->ndfc" (n_frames == 1) as a broadcast batched matmul.
-        # The channel width is inferred to match the (possibly widened) grid.
         xp = array_api_compat.array_namespace(grid)
-        n_batch, n_grid, n_focus, n_channels = grid.shape
-        coeff_dim = self.projector.coeff_dim
         from_grid_mat = xp_asarray_nodetach(
             xp, self.projector.from_grid_mat[...], device=array_api_compat.device(grid)
         )
         if from_grid_mat.dtype != grid.dtype:
             from_grid_mat = xp.astype(from_grid_mat, grid.dtype)
+        if self.n_frames == 1:
+            # einsum "dg,ngfc->ndfc" as a broadcast batched matmul. The channel
+            # width is inferred to match the (possibly widened) grid field.
+            n_batch, n_grid, n_focus, n_channels = grid.shape
+            coeff_dim = self.projector.coeff_dim
+            flat = xp.reshape(grid, (n_batch, n_grid, n_focus * n_channels))
+            out = xp.matmul(from_grid_mat[None, ...], flat)  # (N, D, F*C)
+            return xp.reshape(out, (n_batch, coeff_dim, n_focus, n_channels))
+        # General SO(3) frame-packed path mirroring the pt
+        # ``einsum("dkg,ngfc->ndfkc", from_grid.reshape(D, K, G), grid)`` then a
+        # reshape to ``(N, D, F, K*C)``. ``from_grid_mat`` rows are ordered
+        # (d outer, k inner); the matmul output is reshaped/permuted to match.
+        n_batch, n_grid, n_focus, n_channels = grid.shape
+        coeff_dim = self.projector.coeff_dim // self.n_frames
         flat = xp.reshape(grid, (n_batch, n_grid, n_focus * n_channels))
-        out = xp.matmul(from_grid_mat[None, ...], flat)  # (N, D, F*C)
-        return xp.reshape(out, (n_batch, coeff_dim, n_focus, n_channels))
+        out = xp.matmul(from_grid_mat[None, ...], flat)  # (N, D*K, F*C)
+        out = xp.reshape(out, (n_batch, coeff_dim, self.n_frames, n_focus, n_channels))
+        out = xp.permute_dims(out, (0, 1, 3, 2, 4))  # (N, D, F, K, C)
+        return xp.reshape(
+            out, (n_batch, coeff_dim, n_focus, self.n_frames * n_channels)
+        )
 
-    def _to_ndfc(self, value: Any) -> Any:
+    def _to_ndfc(self, value: Any) -> tuple[Any, tuple[int, ...]]:
+        shape_info = tuple(value.shape)
+        if self.layout == "ndfc":
+            return value, shape_info
+        if self.layout == "nfdc":
+            # (N, F, D, C) -> (N, D, F, C)
+            xp = array_api_compat.array_namespace(value)
+            return xp.permute_dims(value, (0, 2, 1, 3)), shape_info
+        # "flat": (N, D, F*k*C) -> (N, D, F, k*C)
+        xp = array_api_compat.array_namespace(value)
+        n_batch, coeff_dim, _ = value.shape
+        return (
+            xp.reshape(value, (n_batch, coeff_dim, self.n_focus, -1)),
+            shape_info,
+        )
+
+    def _restore_layout(self, value: Any, shape_info: tuple[int, ...]) -> Any:
         if self.layout == "ndfc":
             return value
-        # "nfdc": (N, F, D, C) -> (N, D, F, C); "flat" is cross-only (blocked)
         xp = array_api_compat.array_namespace(value)
-        return xp.permute_dims(value, (0, 2, 1, 3))
-
-    def _restore_layout(self, value: Any) -> Any:
-        if self.layout == "ndfc":
-            return value
-        xp = array_api_compat.array_namespace(value)
-        return xp.permute_dims(value, (0, 2, 1, 3))
+        if self.layout == "nfdc":
+            return xp.permute_dims(value, (0, 2, 1, 3))
+        # "flat": (N, D, F, k*C) -> (N, D, F*k*C)
+        n_batch, coeff_dim, _ = shape_info
+        return xp.reshape(value, (n_batch, coeff_dim, -1))
 
     def _check_last_dim(self, value: Any, expected: int, name: str) -> None:
         if value.shape[-1] != expected:
@@ -775,14 +920,14 @@ class S2GridNet(BaseGridNet):
     n_focus : int
         Number of focus streams.
     mode : str
-        Pairing mode; only ``"self"`` is ported.
+        Pairing mode; ``"self"`` or ``"cross"``.
     op_type : str
-        Point-wise grid operation; ``"glu"`` or ``"branch"`` (``"mlp"`` is
-        not ported).
+        Point-wise grid operation; ``"glu"``, ``"mlp"`` or ``"branch"``.
     precision : str
         Parameter precision.
     layout : str
-        Tensor layout convention: ``"ndfc"`` or ``"nfdc"``.
+        Tensor layout convention: ``"ndfc"``, ``"nfdc"`` or ``"flat"``
+        (``"flat"`` is cross-only).
     grid_resolution_list : list[int] | None
         Lebedev ``[precision, n_points]`` pair; resolved automatically if None.
     coefficient_layout : str
@@ -792,7 +937,8 @@ class S2GridNet(BaseGridNet):
     grid_branches : int
         Number of scalar-routed branches when ``op_type='branch'``.
     residual_scale_init : float | None
-        Not ported (cross-mode only); must be None.
+        Initial value of the per-(focus, channel) residual scale; ``None``
+        disables the residual scale.
     mlp_bias : bool
         Whether to use bias in the scalar gate projection.
     trainable : bool
@@ -865,6 +1011,9 @@ class S2GridNet(BaseGridNet):
             grid_op_data = self.grid_op.serialize()["@variables"]
             for key, value in grid_op_data.items():
                 variables[f"grid_op.{key}"] = value
+        if self.residual_scale is not None:
+            # pt state-dict key name for the (n_focus, output_channels) parameter
+            variables["residual_scale"] = to_numpy_array(self.residual_scale)
         return {
             "@class": "S2GridNet",
             "@version": 1,
@@ -881,6 +1030,7 @@ class S2GridNet(BaseGridNet):
                 "coefficient_layout": self.projector.coefficient_layout,
                 "grid_method": self.grid_method,
                 "grid_branches": self.grid_branches,
+                "residual_scale_init": self.residual_scale_init,
                 "mlp_bias": self.mlp_bias,
                 "trainable": self.trainable,
                 "seed": None,
@@ -912,6 +1062,7 @@ class S2GridNet(BaseGridNet):
             coefficient_layout=str(config["coefficient_layout"]),
             grid_method=str(config["grid_method"]),
             grid_branches=int(config["grid_branches"]),
+            residual_scale_init=config.get("residual_scale_init"),
             mlp_bias=bool(config["mlp_bias"]),
             trainable=bool(config["trainable"]),
             seed=config.get("seed"),
@@ -928,6 +1079,14 @@ class S2GridNet(BaseGridNet):
             obj.scalar_gate.bias = np.asarray(
                 variables["scalar_gate.bias"], dtype=prec
             ).reshape(obj.scalar_gate.bias.shape)
+        if obj.residual_scale is not None:
+            residual_scale = np.asarray(variables["residual_scale"], dtype=prec)
+            if residual_scale.shape != obj.residual_scale.shape:
+                raise ValueError(
+                    f"residual_scale shape {residual_scale.shape} does not match "
+                    f"the expected shape {obj.residual_scale.shape}"
+                )
+            obj.residual_scale = residual_scale
         if obj.op_type in {"mlp", "branch"}:
             obj.grid_op._load_variables(
                 {

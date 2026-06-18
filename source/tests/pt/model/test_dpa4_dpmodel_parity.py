@@ -1811,11 +1811,10 @@ class TestS2GridParity:
         # "e3nn" default, which dp rejects): default construction works
         net = DPS2GridNet(**{k: v for k, v in common.items() if k != "grid_method"})
         assert net.grid_method == "lebedev"
-        with pytest.raises(NotImplementedError, match="node_wise_s2"):
-            # cross mode backs node_wise_s2/message_node_s2 only
-            DPS2GridNet(**{**common, "mode": "cross"})
-        with pytest.raises(NotImplementedError, match="residual_scale_init"):
-            DPS2GridNet(**common, residual_scale_init=1e-3)
+        # cross mode and residual_scale_init are now ported (see
+        # test_dpa4_basegridnet_cross.py for parity coverage); they construct.
+        DPS2GridNet(**{**common, "mode": "cross"})
+        DPS2GridNet(**common, residual_scale_init=1e-3)
 
     def test_value_errors(self) -> None:
         from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import (
