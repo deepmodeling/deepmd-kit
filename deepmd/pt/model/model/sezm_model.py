@@ -715,7 +715,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 f"DP_TF32_INFER must be one of 0/1/2, got {tf32_infer_env!r}"
             )
         self._tf32_infer_precision = _TF32_INFER_PRECISION_CHOICES[tf32_infer_env]
-        if self.use_compile or self._env_use_compile_infer is True:
+        if self._env_use_compile_infer is True:
             check_compile_torch_version()
 
         # === Bridging (optional short-range zone bridging) ===
@@ -1615,6 +1615,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         compiled callable is stored outside the ``nn.Module`` tree so
         FSDP/DDP cannot see or shard its duplicated parameters.
         """
+        check_compile_torch_version()
         from torch._decomp import (
             get_decompositions,
         )
@@ -2046,6 +2047,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
 
     def compile_dens(self) -> None:
         """Compile the direct-force `dens` path."""
+        check_compile_torch_version()
         from torch._inductor import config as inductor_config
 
         log.info("SeZM: start compiling dens path")
@@ -2091,6 +2093,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         *sample_inputs: torch.Tensor | None,
     ) -> torch.nn.Module:
         """Trace a lower-interface closure into an exportable FX graph."""
+        check_compile_torch_version()
         from torch._decomp import (
             get_decompositions,
         )
