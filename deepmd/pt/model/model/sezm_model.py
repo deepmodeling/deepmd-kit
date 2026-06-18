@@ -236,8 +236,9 @@ NOTE 6 -- Inductor / Triton option lockdown
 
 One Inductor option set governs both backends: ``torch.compile`` takes it
 as ``options=`` for training, and the eval path (NOTE 13) applies it via
-``torch._inductor.config.patch`` around ``compile_fx_inner``, adding
-``triton.max_tiles=1``.  The options are:
+``torch._inductor.config.patch`` around ``compile_fx_inner``.  The set
+includes ``triton.max_tiles=1``, so the 1D launch-grid constraint applies to
+both graphs.  The options are:
 
 * ``max_autotune=False``
       Autotune regresses on dynamic shapes because each recompile rolls
@@ -1983,11 +1984,10 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             def _inductor_inference_compiler(
                 fx_gm: torch.fx.GraphModule, fx_inputs: list[Any]
             ) -> Any:
-                # max_tiles=1 keeps pointwise grids 1D so the data-dependent
-                # edge axis stays on Triton's x grid (limit 2**31); the default
-                # tiling places it on the y/z grid (limit 65535), which
-                # overflows for large systems.
-                with _ind_cfg.patch({**compile_options, "triton.max_tiles": 1}):
+                # ``compile_options`` already includes ``triton.max_tiles=1``
+                # from ``build_inductor_compile_options``, so the 1D launch-grid
+                # constraint applies to both the training and evaluation graphs.
+                with _ind_cfg.patch(compile_options):
                     return compile_fx_inner(fx_gm, fx_inputs)
 
             # select_decomp_table keeps the decomposition set aligned with
