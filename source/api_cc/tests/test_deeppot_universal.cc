@@ -30,6 +30,7 @@ struct ModelCase {
   double float_tol;
   bool supports_float;
   bool supports_nframes;
+  bool supports_lmp_nlist_mapping;
 };
 
 struct VariantDeepPotCase {
@@ -140,19 +141,20 @@ std::vector<ModelCase> model_cases() {
   return {
       {"tensorflow_pb", Backend::TensorFlow, "../../tests/infer/deeppot.pbtxt",
        true, &deepmd_test::tf_deeppot_ref(),
-       &deepmd_test::tf_deeppot_no_pbc_ref(), 1e-10, 1e-4, true, true},
+       &deepmd_test::tf_deeppot_no_pbc_ref(), 1e-10, 1e-4, true, true, true},
       {"pytorch_pth", Backend::PyTorch, "../../tests/infer/deeppot_sea.pth",
        false, &deepmd_test::sea_deeppot_ref(),
-       &deepmd_test::sea_deeppot_no_pbc_ref(), 1e-10, 1e-4, true, false},
+       &deepmd_test::sea_deeppot_no_pbc_ref(), 1e-10, 1e-4, true, false, true},
       {"pytorch_pt2", Backend::PTExpt, "../../tests/infer/deeppot_sea.pt2",
        false, &deepmd_test::sea_deeppot_ref(),
-       &deepmd_test::sea_deeppot_no_pbc_ref(), 1e-10, 1e-4, true, false},
+       &deepmd_test::sea_deeppot_no_pbc_ref(), 1e-10, 1e-4, true, false, true},
       {"jax_savedmodel", Backend::JAX,
        "../../tests/infer/deeppot_sea.savedmodel", false,
-       &deepmd_test::sea_deeppot_ref(), nullptr, 1e-10, 1e-4, true, false},
+       &deepmd_test::sea_deeppot_ref(), nullptr, 1e-10, 1e-4, true, false,
+       true},
       {"paddle_json", Backend::Paddle, "../../tests/infer/deeppot_sea.json",
        false, &deepmd_test::sea_deeppot_ref(), nullptr, 1e-7, 1e-4, false,
-       false}};
+       false, false}};
 }
 
 std::vector<VariantDeepPotCase> variant_deeppot_cases() {
@@ -714,7 +716,8 @@ template <typename ValueType>
 void check_lmp_nlist(deepmd::DeepPot& dp,
                      const deepmd_test::DeepPotRef& ref,
                      const double tol,
-                     const double cutoff_scale = 1.0) {
+                     const double cutoff_scale = 1.0,
+                     const bool set_mapping = true) {
   const int natoms = static_cast<int>(deepmd_test::deeppot_atype().size());
   const std::vector<ValueType> coord(deepmd_test::deeppot_coord().begin(),
                                      deepmd_test::deeppot_coord().end());
@@ -734,7 +737,9 @@ void check_lmp_nlist(deepmd::DeepPot& dp,
   deepmd::InputNlist inlist(nloc, ilist.data(), numneigh.data(),
                             firstneigh.data());
   convert_nlist(inlist, nlist_data);
-  inlist.mapping = mapping.data();
+  if (set_mapping) {
+    inlist.mapping = mapping.data();
+  }
 
   for (int ago = 0; ago < 2; ++ago) {
     double energy = 0.0;
@@ -752,7 +757,8 @@ void check_lmp_nlist(deepmd::DeepPot& dp,
 template <typename ValueType>
 void check_lmp_nlist_atomic(deepmd::DeepPot& dp,
                             const deepmd_test::DeepPotRef& ref,
-                            const double tol) {
+                            const double tol,
+                            const bool set_mapping = true) {
   const int natoms = static_cast<int>(deepmd_test::deeppot_atype().size());
   const std::vector<ValueType> coord(deepmd_test::deeppot_coord().begin(),
                                      deepmd_test::deeppot_coord().end());
@@ -772,7 +778,9 @@ void check_lmp_nlist_atomic(deepmd::DeepPot& dp,
   deepmd::InputNlist inlist(nloc, ilist.data(), numneigh.data(),
                             firstneigh.data());
   convert_nlist(inlist, nlist_data);
-  inlist.mapping = mapping.data();
+  if (set_mapping) {
+    inlist.mapping = mapping.data();
+  }
 
   for (int ago = 0; ago < 2; ++ago) {
     double energy = 0.0;
@@ -843,7 +851,8 @@ template <typename ValueType>
 void check_lmp_nlist_type_sel(deepmd::DeepPot& dp,
                               const deepmd_test::DeepPotRef& ref,
                               const double tol,
-                              const bool atomic) {
+                              const bool atomic,
+                              const bool set_mapping = true) {
   constexpr int nvir = 2;
   std::vector<ValueType> coord(deepmd_test::deeppot_coord().begin(),
                                deepmd_test::deeppot_coord().end());
@@ -871,7 +880,9 @@ void check_lmp_nlist_type_sel(deepmd::DeepPot& dp,
   deepmd::InputNlist inlist(nloc, ilist.data(), numneigh.data(),
                             firstneigh.data());
   convert_nlist(inlist, nlist_data);
-  inlist.mapping = mapping.data();
+  if (set_mapping) {
+    inlist.mapping = mapping.data();
+  }
 
   double energy = 0.0;
   std::vector<ValueType> force_all(nall * 3, 0.0), virial(9, 0.0);
@@ -1016,7 +1027,8 @@ void check_lmp_nlist_frames(deepmd::DeepPot& dp,
                             const double tol,
                             const int nframes,
                             const bool atomic,
-                            const double cutoff_scale = 1.0) {
+                            const double cutoff_scale = 1.0,
+                            const bool set_mapping = true) {
   const int natoms = static_cast<int>(deepmd_test::deeppot_atype().size());
   const std::vector<ValueType> coord =
       cast_values<ValueType>(deepmd_test::deeppot_coord());
@@ -1039,7 +1051,9 @@ void check_lmp_nlist_frames(deepmd::DeepPot& dp,
   deepmd::InputNlist inlist(nloc, ilist.data(), numneigh.data(),
                             firstneigh.data());
   convert_nlist(inlist, nlist_data);
-  inlist.mapping = mapping.data();
+  if (set_mapping) {
+    inlist.mapping = mapping.data();
+  }
 
   for (int ago = 0; ago < 2; ++ago) {
     std::vector<double> energy;
@@ -1076,7 +1090,8 @@ void check_lmp_nlist_type_sel_frames(deepmd::DeepPot& dp,
                                      const deepmd_test::DeepPotRef& ref,
                                      const double tol,
                                      const int nframes,
-                                     const bool atomic) {
+                                     const bool atomic,
+                                     const bool set_mapping = true) {
   constexpr int nvir = 2;
   const std::vector<ValueType> base_coord =
       cast_values<ValueType>(deepmd_test::deeppot_coord());
@@ -1108,7 +1123,9 @@ void check_lmp_nlist_type_sel_frames(deepmd::DeepPot& dp,
   deepmd::InputNlist inlist(nloc, ilist.data(), numneigh.data(),
                             firstneigh.data());
   convert_nlist(inlist, nlist_data);
-  inlist.mapping = mapping.data();
+  if (set_mapping) {
+    inlist.mapping = mapping.data();
+  }
 
   std::vector<double> energy;
   std::vector<ValueType> force_all;
@@ -1295,7 +1312,8 @@ TEST_P(UniversalDeepPotTest, FiniteDifferenceFloat) {
 }
 
 TEST_P(UniversalDeepPotTest, LmpNlistDouble) {
-  check_lmp_nlist<double>(dp, *GetParam().ref, GetParam().double_tol);
+  check_lmp_nlist<double>(dp, *GetParam().ref, GetParam().double_tol, 1.0,
+                          GetParam().supports_lmp_nlist_mapping);
 }
 
 TEST_P(UniversalDeepPotTest, LmpNlistFloat) {
@@ -1303,11 +1321,13 @@ TEST_P(UniversalDeepPotTest, LmpNlistFloat) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " does not provide float inference coverage.";
   }
-  check_lmp_nlist<float>(dp, *GetParam().ref, GetParam().float_tol);
+  check_lmp_nlist<float>(dp, *GetParam().ref, GetParam().float_tol, 1.0,
+                         GetParam().supports_lmp_nlist_mapping);
 }
 
 TEST_P(UniversalDeepPotTest, LmpNlistAtomicDouble) {
-  check_lmp_nlist_atomic<double>(dp, *GetParam().ref, GetParam().double_tol);
+  check_lmp_nlist_atomic<double>(dp, *GetParam().ref, GetParam().double_tol,
+                                 GetParam().supports_lmp_nlist_mapping);
 }
 
 TEST_P(UniversalDeepPotTest, LmpNlistAtomicFloat) {
@@ -1315,11 +1335,13 @@ TEST_P(UniversalDeepPotTest, LmpNlistAtomicFloat) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " does not provide float inference coverage.";
   }
-  check_lmp_nlist_atomic<float>(dp, *GetParam().ref, GetParam().float_tol);
+  check_lmp_nlist_atomic<float>(dp, *GetParam().ref, GetParam().float_tol,
+                                GetParam().supports_lmp_nlist_mapping);
 }
 
 TEST_P(UniversalDeepPotTest, LmpNlistDoubleCutoffTwice) {
-  check_lmp_nlist<double>(dp, *GetParam().ref, GetParam().double_tol, 2.0);
+  check_lmp_nlist<double>(dp, *GetParam().ref, GetParam().double_tol, 2.0,
+                          GetParam().supports_lmp_nlist_mapping);
 }
 
 TEST_P(UniversalDeepPotTest, LmpNlistFloatCutoffTwice) {
@@ -1327,12 +1349,14 @@ TEST_P(UniversalDeepPotTest, LmpNlistFloatCutoffTwice) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " does not provide float inference coverage.";
   }
-  check_lmp_nlist<float>(dp, *GetParam().ref, GetParam().float_tol, 2.0);
+  check_lmp_nlist<float>(dp, *GetParam().ref, GetParam().float_tol, 2.0,
+                         GetParam().supports_lmp_nlist_mapping);
 }
 
 TEST_P(UniversalDeepPotTest, LmpNlistTypeSelDouble) {
   check_lmp_nlist_type_sel<double>(dp, *GetParam().ref, GetParam().double_tol,
-                                   false);
+                                   false,
+                                   GetParam().supports_lmp_nlist_mapping);
 }
 
 TEST_P(UniversalDeepPotTest, LmpNlistTypeSelFloat) {
@@ -1341,12 +1365,12 @@ TEST_P(UniversalDeepPotTest, LmpNlistTypeSelFloat) {
                  << " does not provide float inference coverage.";
   }
   check_lmp_nlist_type_sel<float>(dp, *GetParam().ref, GetParam().float_tol,
-                                  false);
+                                  false, GetParam().supports_lmp_nlist_mapping);
 }
 
 TEST_P(UniversalDeepPotTest, LmpNlistTypeSelAtomicDouble) {
   check_lmp_nlist_type_sel<double>(dp, *GetParam().ref, GetParam().double_tol,
-                                   true);
+                                   true, GetParam().supports_lmp_nlist_mapping);
 }
 
 TEST_P(UniversalDeepPotTest, LmpNlistTypeSelAtomicFloat) {
@@ -1355,7 +1379,7 @@ TEST_P(UniversalDeepPotTest, LmpNlistTypeSelAtomicFloat) {
                  << " does not provide float inference coverage.";
   }
   check_lmp_nlist_type_sel<float>(dp, *GetParam().ref, GetParam().float_tol,
-                                  true);
+                                  true, GetParam().supports_lmp_nlist_mapping);
 }
 
 TEST_P(UniversalDeepPotTest, ComputeNoPbcDouble) {
@@ -1454,7 +1478,8 @@ TEST_P(UniversalDeepPotTest, NFramesLmpNlistDouble) {
                  << " nframes coverage is not enabled.";
   }
   check_lmp_nlist_frames<double>(dp, *GetParam().ref, GetParam().double_tol, 2,
-                                 false);
+                                 false, 1.0,
+                                 GetParam().supports_lmp_nlist_mapping);
 }
 
 TEST_P(UniversalDeepPotTest, NFramesLmpNlistFloat) {
@@ -1467,7 +1492,8 @@ TEST_P(UniversalDeepPotTest, NFramesLmpNlistFloat) {
                  << " nframes coverage is not enabled.";
   }
   check_lmp_nlist_frames<float>(dp, *GetParam().ref, GetParam().float_tol, 2,
-                                false);
+                                false, 1.0,
+                                GetParam().supports_lmp_nlist_mapping);
 }
 
 TEST_P(UniversalDeepPotTest, NFramesLmpNlistAtomicDouble) {
@@ -1476,7 +1502,8 @@ TEST_P(UniversalDeepPotTest, NFramesLmpNlistAtomicDouble) {
                  << " nframes coverage is not enabled.";
   }
   check_lmp_nlist_frames<double>(dp, *GetParam().ref, GetParam().double_tol, 2,
-                                 true);
+                                 true, 1.0,
+                                 GetParam().supports_lmp_nlist_mapping);
 }
 
 TEST_P(UniversalDeepPotTest, NFramesLmpNlistAtomicFloat) {
@@ -1489,7 +1516,8 @@ TEST_P(UniversalDeepPotTest, NFramesLmpNlistAtomicFloat) {
                  << " nframes coverage is not enabled.";
   }
   check_lmp_nlist_frames<float>(dp, *GetParam().ref, GetParam().float_tol, 2,
-                                true);
+                                true, 1.0,
+                                GetParam().supports_lmp_nlist_mapping);
 }
 
 TEST_P(UniversalDeepPotTest, NFramesLmpNlistDoubleCutoffTwice) {
@@ -1498,7 +1526,8 @@ TEST_P(UniversalDeepPotTest, NFramesLmpNlistDoubleCutoffTwice) {
                  << " nframes coverage is not enabled.";
   }
   check_lmp_nlist_frames<double>(dp, *GetParam().ref, GetParam().double_tol, 2,
-                                 false, 2.0);
+                                 false, 2.0,
+                                 GetParam().supports_lmp_nlist_mapping);
 }
 
 TEST_P(UniversalDeepPotTest, NFramesLmpNlistFloatCutoffTwice) {
@@ -1511,7 +1540,8 @@ TEST_P(UniversalDeepPotTest, NFramesLmpNlistFloatCutoffTwice) {
                  << " nframes coverage is not enabled.";
   }
   check_lmp_nlist_frames<float>(dp, *GetParam().ref, GetParam().float_tol, 2,
-                                false, 2.0);
+                                false, 2.0,
+                                GetParam().supports_lmp_nlist_mapping);
 }
 
 TEST_P(UniversalDeepPotTest, NFramesLmpNlistTypeSelDouble) {
@@ -1519,8 +1549,9 @@ TEST_P(UniversalDeepPotTest, NFramesLmpNlistTypeSelDouble) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " nframes coverage is not enabled.";
   }
-  check_lmp_nlist_type_sel_frames<double>(dp, *GetParam().ref,
-                                          GetParam().double_tol, 2, false);
+  const bool set_mapping = GetParam().supports_lmp_nlist_mapping;
+  check_lmp_nlist_type_sel_frames<double>(
+      dp, *GetParam().ref, GetParam().double_tol, 2, false, set_mapping);
 }
 
 TEST_P(UniversalDeepPotTest, NFramesLmpNlistTypeSelFloat) {
@@ -1532,8 +1563,9 @@ TEST_P(UniversalDeepPotTest, NFramesLmpNlistTypeSelFloat) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " nframes coverage is not enabled.";
   }
-  check_lmp_nlist_type_sel_frames<float>(dp, *GetParam().ref,
-                                         GetParam().float_tol, 2, false);
+  const bool set_mapping = GetParam().supports_lmp_nlist_mapping;
+  check_lmp_nlist_type_sel_frames<float>(
+      dp, *GetParam().ref, GetParam().float_tol, 2, false, set_mapping);
 }
 
 TEST_P(UniversalDeepPotTest, NFramesLmpNlistTypeSelAtomicDouble) {
@@ -1541,8 +1573,9 @@ TEST_P(UniversalDeepPotTest, NFramesLmpNlistTypeSelAtomicDouble) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " nframes coverage is not enabled.";
   }
-  check_lmp_nlist_type_sel_frames<double>(dp, *GetParam().ref,
-                                          GetParam().double_tol, 2, true);
+  const bool set_mapping = GetParam().supports_lmp_nlist_mapping;
+  check_lmp_nlist_type_sel_frames<double>(
+      dp, *GetParam().ref, GetParam().double_tol, 2, true, set_mapping);
 }
 
 TEST_P(UniversalDeepPotTest, NFramesLmpNlistTypeSelAtomicFloat) {
@@ -1554,8 +1587,9 @@ TEST_P(UniversalDeepPotTest, NFramesLmpNlistTypeSelAtomicFloat) {
     GTEST_SKIP() << backend_name(GetParam().backend)
                  << " nframes coverage is not enabled.";
   }
-  check_lmp_nlist_type_sel_frames<float>(dp, *GetParam().ref,
-                                         GetParam().float_tol, 2, true);
+  const bool set_mapping = GetParam().supports_lmp_nlist_mapping;
+  check_lmp_nlist_type_sel_frames<float>(
+      dp, *GetParam().ref, GetParam().float_tol, 2, true, set_mapping);
 }
 
 TEST_P(UniversalDeepPotTest, NFramesComputeNoPbcDouble) {
