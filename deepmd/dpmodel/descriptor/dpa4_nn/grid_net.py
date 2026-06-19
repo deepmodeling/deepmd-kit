@@ -1544,7 +1544,9 @@ class SO3GridNet(BaseGridNet):
             raise ValueError(
                 f"Invalid nested projector class for SO3GridNet: {projector_cls}"
             )
-        check_version_compatibility(int(projector_data.get("@version", 1)), 1, 1)
+        if "@version" not in projector_data:
+            raise ValueError("nested SO3GridProjector payload is missing '@version'")
+        check_version_compatibility(int(projector_data["@version"]), 1, 1)
         projector_config = projector_data["config"]
         obj = cls(
             lmax=int(projector_config["lmax"]),

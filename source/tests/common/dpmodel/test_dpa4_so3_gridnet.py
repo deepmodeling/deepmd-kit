@@ -469,5 +469,9 @@ def test_so3_deserialize_rejects_bad_projector() -> None:
         DPSO3GridNet.deserialize(bad_class)
     bad_ver = copy.deepcopy(data)
     bad_ver["config"]["projector"]["@version"] = 99
-    with pytest.raises(Exception):
+    with pytest.raises(ValueError, match="version"):
         DPSO3GridNet.deserialize(bad_ver)
+    missing_ver = copy.deepcopy(data)
+    del missing_ver["config"]["projector"]["@version"]
+    with pytest.raises(ValueError, match="@version"):
+        DPSO3GridNet.deserialize(missing_ver)
