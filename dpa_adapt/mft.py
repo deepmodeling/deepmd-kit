@@ -9,6 +9,7 @@ import numpy as np
 
 from dpa_adapt._backend import (
     load_torch_file,
+    resolve_dp_command,
     resolve_pretrained_path,
 )
 from dpa_adapt.utils.dotdict import (
@@ -371,13 +372,12 @@ class MFTFineTuner:
         cmd = cm.build_cmd(input_json)
 
         log_path = os.path.join(self.output_dir, "train.log")
-        print(f"Running: {cmd}")
+        print("Running:", " ".join(cmd))
         print(f"Log: {log_path}")
 
         with open(log_path, "w") as log_f:
             process = subprocess.Popen(
                 cmd,
-                shell=True,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
@@ -458,10 +458,19 @@ class MFTFineTuner:
 
         # `dp --pt freeze -c .` picks up the checkpoint file from cwd, so we
         # must cd into output_dir.
-        freeze_cmd = f"dp --pt freeze -c . -o {frozen_name} --head {head}"
+        freeze_cmd = [
+            resolve_dp_command(),
+            "--pt",
+            "freeze",
+            "-c",
+            ".",
+            "-o",
+            frozen_name,
+            "--head",
+            head,
+        ]
         result = subprocess.run(
             freeze_cmd,
-            shell=True,
             capture_output=True,
             text=True,
             cwd=self.output_dir,
@@ -469,7 +478,7 @@ class MFTFineTuner:
         if result.returncode != 0:
             raise RuntimeError(
                 f"dp --pt freeze failed (return code {result.returncode}).\n"
-                f"cmd: {freeze_cmd}\n"
+                f"cmd: {' '.join(freeze_cmd)}\n"
                 f"cwd: {self.output_dir}\n"
                 f"stdout:\n{result.stdout}\n"
                 f"stderr:\n{result.stderr}"
@@ -562,7 +571,7 @@ class MFTFineTuner:
             f.write("\n".join(systems) + "\n")
 
         cmd = [
-            "dp",
+            resolve_dp_command(),
             "--pt",
             "test",
             "-m",
@@ -614,7 +623,7 @@ class MFTFineTuner:
             os.remove(old)
 
         cmd = [
-            "dp",
+            resolve_dp_command(),
             "--pt",
             "test",
             "-m",

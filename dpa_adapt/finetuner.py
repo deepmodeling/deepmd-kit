@@ -20,6 +20,7 @@ from dpa_adapt._backend import (
     build_model_from_config,
     get_torch_device,
     load_torch_file,
+    resolve_dp_command,
     resolve_model_branch,
     resolve_pretrained_path,
 )
@@ -943,7 +944,7 @@ class DPAFineTuner:
             old.unlink()
 
         cmd = [
-            "dp",
+            resolve_dp_command(),
             "--pt",
             "test",
             "-m",
