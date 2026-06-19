@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: LGPL-3.0-or-later
 # One-time data preparation script. Data is already included in
-# demo/data/. Only re-run if you need to regenerate from raw GDB9.
+# examples/dpa_adapt/data/. Only re-run if you need to regenerate from raw GDB9.
 """Download QM9 GDB9 and prepare deepmd/npy systems for the quickstart demo.
 
-Reads molecules 1–50 from the SDF, reads HOMO-LUMO gaps from the companion
+Reads molecules 1-50 from the SDF, reads HOMO-LUMO gaps from the companion
 CSV file, stages a small 50-row dataset, converts it with ``dpa_adapt.convert``,
 and splits into 40 training and 10 test systems.
 
@@ -12,8 +12,8 @@ Usage::
 
     python scripts/prepare_data.py
 
-Can be run from anywhere; all paths are resolved relative to the ``demo/``
-directory (the parent of this script).
+Can be run from anywhere; all paths are resolved relative to the
+``examples/dpa_adapt/`` directory (the parent of this script).
 """
 
 from __future__ import (
@@ -35,7 +35,8 @@ from dpa_adapt import (
     convert,
 )
 
-# This script lives in demo/scripts/; resolve data and raw dirs against demo/.
+# This script lives in examples/dpa_adapt/scripts/; resolve data and raw dirs
+# against examples/dpa_adapt/.
 DEMO_DIR = Path(__file__).resolve().parent.parent
 RAW_DIR = DEMO_DIR / "raw"
 DATA_DIR = DEMO_DIR / "data"
@@ -50,10 +51,10 @@ TAR_URL = "https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/gdb9.tar.gz"
 N_TRAIN = 40
 N_TEST = 10
 N_TOTAL = N_TRAIN + N_TEST
-BOX_LENGTH = 100.0  # Å — cubic box for non-periodic systems
+BOX_LENGTH = 100.0  # Angstrom, cubic box for non-periodic systems
 TYPE_MAP = ["H", "C", "N", "O", "F"]
 
-# Hartree → eV conversion factor
+# Hartree to eV conversion factor
 HARTREE_TO_EV = 27.211386245988
 
 
@@ -72,17 +73,17 @@ def _download_and_extract(force: bool = False) -> None:
     RAW_DIR.mkdir(parents=True, exist_ok=True)
 
     if not TAR_PATH.exists() or force:
-        print(f"Downloading {TAR_URL} …")
+        print(f"Downloading {TAR_URL} ...")
         urllib.request.urlretrieve(TAR_URL, TAR_PATH)
-        print(f"Downloaded → {TAR_PATH}")
+        print(f"Downloaded -> {TAR_PATH}")
 
-    print("Extracting from tarball …")
+    print("Extracting from tarball ...")
     with tarfile.open(TAR_PATH, "r:gz") as tar:
         for member in tar.getmembers():
             name = Path(member.name).name
             if name in ("gdb9.sdf", "gdb9.sdf.csv"):
                 if not (RAW_DIR / name).exists() or force:
-                    print(f"  Extracting {name} ({member.size / 1024 / 1024:.1f} MB) …")
+                    print(f"  Extracting {name} ({member.size / 1024 / 1024:.1f} MB) ...")
                     tar.extract(member, path=str(RAW_DIR))
     print("Extraction complete.")
 
@@ -116,7 +117,7 @@ def _read_sdf_blocks(n: int) -> list[str]:
 
     GDB9 molecules are separated by ``$$$$``.
     """
-    print(f"Reading {SDF_PATH} …")
+    print(f"Reading {SDF_PATH} ...")
     raw_text = SDF_PATH.read_text(encoding="utf-8")
 
     blocks = raw_text.split("$$$$")
@@ -166,7 +167,7 @@ def _collect_labels(system_dirs: list[str]) -> np.ndarray:
 
 def main() -> None:
     print("=" * 60)
-    print("DPA Tools — Quickstart Data Preparation")
+    print("DPA Tools - Quickstart Data Preparation")
     print("=" * 60)
 
     # 1. Download & extract --------------------------------------------------
@@ -216,11 +217,11 @@ def main() -> None:
     np.save(str(DATA_DIR / "train_labels.npy"), train_labels)
     np.save(str(DATA_DIR / "test_labels.npy"), test_labels)
     print(
-        f"  train systems → {DATA_DIR / 'train'} "
+        f"  train systems -> {DATA_DIR / 'train'} "
         f"({len(train_systems)} dirs, {train_labels.shape[0]} samples)"
     )
     print(
-        f"  test systems  → {test_dir} "
+        f"  test systems  -> {test_dir} "
         f"({len(test_systems)} dirs, {test_labels.shape[0]} samples)"
     )
 
@@ -231,7 +232,7 @@ def main() -> None:
     print(f"n_test  : {N_TEST}")
     print(f"gap mean: {gaps.mean():.4f} eV")
     print(f"gap std : {gaps.std():.4f} eV")
-    print("Done. Run fit_evaluate.py next.")
+    print("Done. Run one of the evaluation scripts next.")
     print("=" * 60)
 
 

@@ -31,6 +31,7 @@ _mock_torch = MagicMock()
 _mock_torch.save = _pickle_save
 _mock_torch.load = _pickle_load
 _mock_torch.cuda.is_available.return_value = False
+_mock_torch.Tensor = type("Tensor", (), {})
 
 sys.modules.setdefault("torch", _mock_torch)
 

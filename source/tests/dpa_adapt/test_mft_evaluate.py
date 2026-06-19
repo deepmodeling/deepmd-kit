@@ -286,8 +286,8 @@ def test_evaluate_freezes_then_tests(tmp_path):
 
     def _fake_run(cmd, *args, **kwargs):
         calls.append({"cmd": cmd, "kwargs": kwargs})
-        # First call is freeze (shell command); simulate by creating frozen.pth
-        if isinstance(cmd, str) and "freeze" in cmd:
+        # First call is freeze; simulate by creating frozen.pth.
+        if "freeze" in cmd:
             cwd = kwargs.get("cwd", ".")
             Path(cwd, "frozen_property.pth").write_bytes(b"")
             return _Result(stdout="frozen ok", stderr="", rc=0)
@@ -297,11 +297,11 @@ def test_evaluate_freezes_then_tests(tmp_path):
     with patch("subprocess.run", side_effect=_fake_run):
         out = ft.evaluate(test_glob)
 
-    # 1. freeze was called first as a shell command with cwd=output_dir
+    # 1. freeze was called first with cwd=output_dir
     assert len(calls) == 2
-    assert isinstance(calls[0]["cmd"], str)
-    assert "dp --pt freeze" in calls[0]["cmd"]
-    assert "--head property" in calls[0]["cmd"]
+    assert isinstance(calls[0]["cmd"], list)
+    assert "freeze" in calls[0]["cmd"]
+    assert calls[0]["cmd"][calls[0]["cmd"].index("--head") + 1] == "property"
     assert calls[0]["kwargs"].get("cwd") == ft.output_dir
 
     # 2. dp test was called with frozen .pth via -m, list-form cmd
@@ -347,7 +347,7 @@ def test_evaluate_skips_freeze_if_pth_exists(tmp_path):
 
     assert len(calls) == 1, f"Expected only dp test, got {len(calls)} calls"
     assert isinstance(calls[0], list)
-    assert calls[0][:3] == ["dp", "--pt", "test"]
+    assert calls[0][1:3] == ["--pt", "test"]
     assert out["mae"] == pytest.approx(5.0e-03)
 
 

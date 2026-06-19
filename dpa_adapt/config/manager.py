@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
 
+from dpa_adapt._backend import (
+    resolve_dp_command,
+)
+
 # Default property-head architecture for MFT DOWNSTREAM when
 # downstream_task_type="property". Mirrors DPATrainer.DEFAULT_FITTING_NET
 # (trainer.py L64-70) plus dim_case_embd=31, which the DPA-3.1-3M ckpt
@@ -240,13 +244,17 @@ class MFTConfigManager:
             json.dump(config, f, indent=2)
         return path
 
-    def build_cmd(self, input_json_path: str) -> str:
+    def build_cmd(self, input_json_path: str) -> list[str]:
         t = self.t
         # MFT mode: do not pass --model-branch (branches are keyed by model_dict).
         # The full descriptor config is already in the JSON, so
         # --use-pretrain-script is not needed.
-        return (
-            f"dp --pt train {input_json_path} "
-            f"--skip-neighbor-stat "
-            f"--finetune {t.pretrained}"
-        )
+        return [
+            resolve_dp_command(),
+            "--pt",
+            "train",
+            input_json_path,
+            "--skip-neighbor-stat",
+            "--finetune",
+            t.pretrained,
+        ]
