@@ -3,7 +3,6 @@
 
 import json
 import os
-import shutil
 import subprocess
 import tempfile
 import unittest
@@ -114,7 +113,12 @@ class TestStatFileConsistency(unittest.TestCase):
         cmd.extend(["--log-level", "WARNING"])
 
         result = subprocess.run(
-            cmd, cwd=temp_dir, capture_output=True, text=True, env=env
+            cmd,
+            cwd=temp_dir,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=120,
         )
 
         if result.returncode != 0:
@@ -216,16 +220,6 @@ class TestStatFileConsistency(unittest.TestCase):
 
             # Compare the generated stat files
             self._compare_stat_directories(tf_stat_dir, pt_stat_dir)
-
-    def tearDown(self) -> None:
-        """Clean up any temporary files."""
-        # Clean up any leftover files
-        for path in ["checkpoint", "lcurve.out", "model.ckpt"]:
-            if os.path.exists(path):
-                if os.path.isdir(path):
-                    shutil.rmtree(path)
-                else:
-                    os.remove(path)
 
 
 if __name__ == "__main__":

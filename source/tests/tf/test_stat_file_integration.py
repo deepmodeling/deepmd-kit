@@ -27,8 +27,8 @@ class TestStatFileIntegration(unittest.TestCase):
     def tearDown(self) -> None:
         tf.reset_default_graph()
 
-    def test_stat_file_save_and_load(self) -> None:
-        """Test that stat_file can be saved and loaded in TF training."""
+    def test_stat_file_path_is_accepted_and_created(self) -> None:
+        """Test that TF training accepts training.stat_file and creates its directory."""
         # Create a minimal training configuration
         config = {
             "model": {
@@ -107,6 +107,7 @@ class TestStatFileIntegration(unittest.TestCase):
             # The main validation is that the code didn't crash with an unrecognized parameter
             # and that the stat file directory was created.
             stat_path = Path(stat_file_path)
+            self.assertTrue(stat_path.exists(), "Stat file path should be created")
             self.assertTrue(stat_path.is_dir(), "Stat file path should be a directory")
 
 

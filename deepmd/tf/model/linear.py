@@ -98,8 +98,11 @@ class LinearModel(Model):
     def data_stat(
         self, data: DeepmdDataSystem, stat_file_path: DPPath | None = None
     ) -> None:
-        for model in self.models:
-            model.data_stat(data, stat_file_path=stat_file_path)
+        for ii, model in enumerate(self.models):
+            model_stat_path = (
+                None if stat_file_path is None else stat_file_path / f"model{ii}"
+            )
+            model.data_stat(data, stat_file_path=model_stat_path)
 
     def init_variables(
         self,
