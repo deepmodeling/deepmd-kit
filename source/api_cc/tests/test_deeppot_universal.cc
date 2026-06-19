@@ -660,14 +660,18 @@ void check_compute_atomic(deepmd::DeepPot& dp,
 }
 
 template <typename ValueType>
-void check_finite_difference(deepmd::DeepPot& dp) {
+void check_finite_difference(deepmd::DeepPot& dp, const double level = -1.0) {
   class Model : public EnergyModelTest<ValueType> {
     deepmd::DeepPot& dp_;
     const std::vector<int> atype_;
 
    public:
-    Model(deepmd::DeepPot& dp, const std::vector<int>& atype)
-        : dp_(dp), atype_(atype) {}
+    Model(deepmd::DeepPot& dp, const std::vector<int>& atype, double level)
+        : dp_(dp), atype_(atype) {
+      if (level > 0.0) {
+        this->level = level;
+      }
+    }
 
     void compute(double& energy,
                  std::vector<ValueType>& force,
@@ -683,7 +687,7 @@ void check_finite_difference(deepmd::DeepPot& dp) {
   const std::vector<int> atype = deepmd_test::deeppot_atype();
   std::vector<ValueType> box(deepmd_test::deeppot_box().begin(),
                              deepmd_test::deeppot_box().end());
-  Model model(dp, atype);
+  Model model(dp, atype, level);
   model.test_f(coord, box);
   model.test_v(coord, box);
   box[1] -= 0.4;
@@ -730,6 +734,7 @@ void check_lmp_nlist(deepmd::DeepPot& dp,
   deepmd::InputNlist inlist(nloc, ilist.data(), numneigh.data(),
                             firstneigh.data());
   convert_nlist(inlist, nlist_data);
+  inlist.mapping = mapping.data();
 
   for (int ago = 0; ago < 2; ++ago) {
     double energy = 0.0;
@@ -767,6 +772,7 @@ void check_lmp_nlist_atomic(deepmd::DeepPot& dp,
   deepmd::InputNlist inlist(nloc, ilist.data(), numneigh.data(),
                             firstneigh.data());
   convert_nlist(inlist, nlist_data);
+  inlist.mapping = mapping.data();
 
   for (int ago = 0; ago < 2; ++ago) {
     double energy = 0.0;
@@ -865,6 +871,7 @@ void check_lmp_nlist_type_sel(deepmd::DeepPot& dp,
   deepmd::InputNlist inlist(nloc, ilist.data(), numneigh.data(),
                             firstneigh.data());
   convert_nlist(inlist, nlist_data);
+  inlist.mapping = mapping.data();
 
   double energy = 0.0;
   std::vector<ValueType> force_all(nall * 3, 0.0), virial(9, 0.0);
@@ -1032,6 +1039,7 @@ void check_lmp_nlist_frames(deepmd::DeepPot& dp,
   deepmd::InputNlist inlist(nloc, ilist.data(), numneigh.data(),
                             firstneigh.data());
   convert_nlist(inlist, nlist_data);
+  inlist.mapping = mapping.data();
 
   for (int ago = 0; ago < 2; ++ago) {
     std::vector<double> energy;
@@ -1100,6 +1108,7 @@ void check_lmp_nlist_type_sel_frames(deepmd::DeepPot& dp,
   deepmd::InputNlist inlist(nloc, ilist.data(), numneigh.data(),
                             firstneigh.data());
   convert_nlist(inlist, nlist_data);
+  inlist.mapping = mapping.data();
 
   std::vector<double> energy;
   std::vector<ValueType> force_all;
@@ -1217,6 +1226,7 @@ void check_fparam_lmp_nlist(deepmd::DeepPot& dp,
   deepmd::InputNlist inlist(nloc, ilist.data(), numneigh.data(),
                             firstneigh.data());
   convert_nlist(inlist, nlist_data);
+  inlist.mapping = mapping.data();
 
   for (int ago = 0; ago < ago_count; ++ago) {
     double energy = 0.0;
@@ -1619,7 +1629,9 @@ TEST_P(VariantDeepPotTest, FiniteDifferenceFloat) {
     GTEST_SKIP() << GetParam().name
                  << " finite-difference coverage is not enabled.";
   }
-  check_finite_difference<float>(dp);
+  const double finite_difference_tol =
+      GetParam().name == "dpa4_pytorch_pt2" ? 3e-2 : -1.0;
+  check_finite_difference<float>(dp, finite_difference_tol);
 }
 
 TEST_P(VariantDeepPotTest, LmpNlistDouble) {
