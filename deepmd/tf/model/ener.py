@@ -5,6 +5,15 @@ from typing import (
 
 import numpy as np
 
+from deepmd.dpmodel.utils.batch import (
+    normalize_batch,
+)
+from deepmd.dpmodel.utils.stat import (
+    _restore_observed_type_from_file,
+    _save_observed_type_to_file,
+    collect_observed_types,
+    compute_output_stats,
+)
 from deepmd.tf.env import (
     MODEL_VERSION,
     global_cvt_2_ener_float,
@@ -20,10 +29,6 @@ from deepmd.tf.utils.pair_tab import (
 from deepmd.tf.utils.spin import (
     Spin,
 )
-from deepmd.tf.utils.stat import (
-    compute_output_stats,
-    save_observed_types_to_file,
-)
 from deepmd.tf.utils.type_embed import (
     TypeEmbedNet,
 )
@@ -38,6 +43,42 @@ from .model_stat import (
     make_stat_input,
     merge_sys_stat,
 )
+
+
+def _pack_stat_batches(all_stat: dict) -> list[dict[str, Any]]:
+    """Pack TensorFlow statistics batches into backend-agnostic samples."""
+    first_key = next(iter(all_stat.keys()))
+    nsystems = len(all_stat[first_key])
+    sampled = []
+    for sys_idx in range(nsystems):
+        merged = {}
+        for key, values in all_stat.items():
+            sys_values = values[sys_idx]
+            if isinstance(sys_values[0], np.ndarray):
+                if sys_values[0].ndim >= 2:
+                    merged[key] = np.concatenate(sys_values, axis=0)
+                else:
+                    # 1-D arrays such as natoms_vec are per-system constants.
+                    merged[key] = sys_values[0]
+            else:
+                # Scalar flags such as find_*.
+                merged[key] = sys_values[0]
+        sampled.append(normalize_batch(merged))
+    return sampled
+
+
+def _save_observed_types_to_file(
+    stat_file_path: DPPath | None,
+    sampled: list[dict[str, Any]],
+    type_map: list[str],
+) -> None:
+    """Save observed atom types using the backend-agnostic dpmodel helpers."""
+    if stat_file_path is None:
+        return
+    observed = _restore_observed_type_from_file(stat_file_path)
+    if observed is None:
+        observed = collect_observed_types(sampled, type_map)
+        _save_observed_type_to_file(stat_file_path, observed)
 
 
 @StandardModel.register("ener")
@@ -192,25 +233,20 @@ class EnerModel(StandardModel):
             if self.type_map is not None:
                 stat_file_path = stat_file_path / " ".join(self.type_map)
 
-            # Use the new stat functionality with file save/load.
-            save_observed_types_to_file(stat_file_path, all_stat, self.type_map)
-            m_all_stat = merge_sys_stat(all_stat)
-            assigned_bias = None
+            # Reuse the backend-agnostic dpmodel stat implementation instead of
+            # maintaining a TensorFlow copy of the same save/load/stat logic.
+            sampled = _pack_stat_batches(all_stat)
+            _save_observed_types_to_file(stat_file_path, sampled, self.type_map)
+            preset_bias = None
             if len(self.fitting.atom_ener) > 0:
-                assigned_bias = np.array(
-                    [
-                        ee if ee is not None else np.nan
-                        for ee in self.fitting.atom_ener_v
-                    ]
-                )
+                preset_bias = {"energy": self.fitting.atom_ener_v}
             bias_out, _ = compute_output_stats(
-                m_all_stat,
+                sampled,
                 self.ntypes,
                 keys=["energy"],
                 stat_file_path=stat_file_path,
                 rcond=getattr(self.fitting, "rcond", None),
-                mixed_type=mixed_type,
-                assigned_bias=assigned_bias,
+                preset_bias=preset_bias,
             )
 
             if "energy" in bias_out:
