@@ -28,11 +28,14 @@ Design goals
    non-zeros, with the channel axis vectorized and one program per edge.
 2. **Match eager fp32 accuracy.** Accumulation is in fp32, matching the smooth
    potential-energy surface contract used throughout the SeZM descriptor.
-3. **Compose with the SeZM ``make_fx`` lowering.** The forward and backward are
-   functional ``torch.library.custom_op`` instances (``mutates_args=()``) with
-   registered fake kernels and an autograd formula, so
+3. **Compose with the SeZM ``make_fx`` lowering *and* the AOTInductor freeze.**
+   The forward and backward are functional ``torch.library.triton_op`` instances
+   (``mutates_args=()``) with registered fake kernels and an autograd formula, so
    ``make_fx(tracing_mode="symbolic")`` captures the energy path together with
-   the force autograd graph used by inference.
+   the force autograd graph used by inference. ``triton_op`` + ``wrap_triton``
+   (vs ``custom_op``) lets Inductor see through to the Triton kernel and bake the
+   cubin into the AOTInductor ``.pt2``, so the frozen package runs the fused
+   mixer inside the LAMMPS C++ runtime without any Python op registration.
 
 Inference-only contract
 -----------------------
@@ -51,6 +54,9 @@ from __future__ import (
 import torch
 from torch import (
     Tensor,
+)
+from torch.library import (
+    wrap_triton,
 )
 
 __all__ = [
@@ -625,15 +631,20 @@ def _tile_channels(channels: int) -> int:
     return tile
 
 
+def _has_no_edges(n_edge: int) -> bool:
+    """Return true for eager zero-edge calls without guarding symbolic edges."""
+    return type(n_edge) is int and n_edge == 0
+
+
 def _launch_forward(
     x_local: Tensor, compact: Tensor, channel_basis: Tensor, lmax: int
 ) -> Tensor:
     n_edge, reduced_dim, channels = x_local.shape
     rank = int(compact.shape[-1])
     out = torch.empty_like(x_local)
-    if n_edge == 0:
+    if _has_no_edges(n_edge):
         return out
-    _radial_mix_fwd_kernel[(n_edge,)](
+    wrap_triton(_radial_mix_fwd_kernel)[(n_edge,)](
         x_local,
         compact,
         channel_basis,
@@ -671,9 +682,9 @@ def _launch_backward(
     # the shared m=+-1 kernel slots are summed in-register), so no zero-init.
     grad_x = torch.empty_like(x_local)
     grad_compact = torch.empty_like(compact)
-    if n_edge == 0:
+    if _has_no_edges(n_edge):
         return grad_compact, grad_x
-    _radial_mix_bwd_kernel[(n_edge,)](
+    wrap_triton(_radial_mix_bwd_kernel)[(n_edge,)](
         grad_out.contiguous(),
         x_local,
         compact,
@@ -751,13 +762,15 @@ def _backward_impl(
 
 
 # ======================================================================
-# Functional custom ops + fake + autograd registration
+# Functional triton_op + fake + autograd registration
 # ======================================================================
-_radial_mix_op = torch.library.custom_op(
+# ``triton_op`` (not ``custom_op``) so Inductor bakes the Triton cubin into the
+# AOTInductor ``.pt2``; the LAMMPS C++ runtime then needs no Python registration.
+_radial_mix_op = torch.library.triton_op(
     "sezm_triton::radial_mix_block", mutates_args=()
 )(_forward_impl)
 
-_radial_mix_bwd_op = torch.library.custom_op(
+_radial_mix_bwd_op = torch.library.triton_op(
     "sezm_triton::radial_mix_block_bwd", mutates_args=()
 )(_backward_impl)
 

@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <fstream>
+#include <string>
 #include <vector>
 
 #include "DeepSpin.h"
@@ -94,6 +95,12 @@ TYPED_TEST(TestInferDeepSpinDpaPtExpt, test_get_use_spin) {
   EXPECT_TRUE(use_spin[0]);   // Ni has spin
   EXPECT_FALSE(use_spin[1]);  // O has no spin
   EXPECT_FALSE(use_spin[2]);  // H has no spin
+}
+
+TYPED_TEST(TestInferDeepSpinDpaPtExpt, type_map) {
+  std::string type_map;
+  this->dp.get_type_map(type_map);
+  EXPECT_EQ(type_map, "Ni O H");
 }
 
 TYPED_TEST(TestInferDeepSpinDpaPtExpt, cpu_build_nlist) {

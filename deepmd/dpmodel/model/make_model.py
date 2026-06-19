@@ -652,11 +652,29 @@ def make_model(
                 ret = xp_take_along_axis(ret, ret_mapping, axis=2)
                 ret = xp.where(rr > rcut, -1, ret)
                 ret = ret[..., :nnei]
-            # not extra_nlist_sort and n_nnei <= nnei:
-            elif n_nnei == nnei:
-                ret = nlist
             else:
-                pass
+                # not extra_nlist_sort and n_nnei <= nnei: no reordering is
+                # needed (these descriptors reduce over neighbors order-
+                # independently), but we must still drop neighbors beyond rcut.
+                # The C++/LAMMPS neighbor list is built with rcut+skin and is
+                # NOT rcut-filtered before forward_lower; without this, out-of-
+                # rcut neighbors leak into the descriptor whenever the per-atom
+                # neighbor count <= nnei (this branch), making the result
+                # order-dependent (see discussion #5438).
+                if n_nnei == nnei:
+                    ret = nlist
+                # else (n_nnei < nnei): `ret` is already padded to nnei above.
+                n_nf, n_nloc, n_pad = ret.shape
+                m_real_nei = ret >= 0
+                coord0 = xp_take_first_n(extended_coord, 1, n_nloc)
+                index = xp.tile(
+                    xp.where(m_real_nei, ret, 0).reshape(n_nf, n_nloc * n_pad, 1),
+                    (1, 1, 3),
+                )
+                coord1 = xp_take_along_axis(extended_coord, index, axis=1)
+                coord1 = coord1.reshape(n_nf, n_nloc, n_pad, 3)
+                rr = xp.linalg.norm(coord0[:, :, None, :] - coord1, axis=-1)
+                ret = xp.where(m_real_nei & (rr > rcut), -1, ret)
             assert ret.shape[-1] == nnei
             return ret
 

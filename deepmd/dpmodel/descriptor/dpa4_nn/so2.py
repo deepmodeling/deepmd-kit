@@ -22,8 +22,11 @@ over the padded edge axis.
 
 Branches guarded with ``NotImplementedError`` (flags unused by the core DPA4
 config): ``so2_attn_res != "none"``, ``layer_scale``, ``s2_activation``,
-``atten_f_mix``, ``atten_v_proj``, ``atten_o_proj``, ``node_wise_s2``,
-``node_wise_so3``, ``message_node_s2``, ``message_node_so3``.
+``atten_f_mix``, ``atten_v_proj``, ``atten_o_proj``.
+
+The cross-mode SO(3)/S2 grid products (``node_wise_s2``/``node_wise_so3`` and
+``message_node_s2``/``message_node_so3``) are ported and wired into the
+convolution, mirroring the pt ``SO2Convolution`` forward placement.
 """
 
 from __future__ import (
@@ -45,6 +48,7 @@ from deepmd.dpmodel import (
     NativeOP,
 )
 from deepmd.dpmodel.array_api import (
+    xp_asarray_nodetach,
     xp_sigmoid,
 )
 from deepmd.dpmodel.common import (
@@ -62,6 +66,10 @@ from .activation import (
 )
 from .attention import (
     segment_envelope_gated_softmax,
+)
+from .grid_net import (
+    S2GridNet,
+    SO3GridNet,
 )
 from .indexing import (
     build_m_major_index,
@@ -118,7 +126,11 @@ def _check_shape_assign(obj: Any, attr: str, value: Any, dtype: Any, key: str) -
 def _check_index_table(expected: np.ndarray, value: Any, key: str) -> None:
     """Validate that a serialized integer index table matches the rebuilt one."""
     arr = np.asarray(value, dtype=np.int64)
-    if not np.array_equal(arr.reshape(-1), np.asarray(expected).reshape(-1)):
+    # ``expected`` is a rebuilt buffer that may be a (possibly CUDA) torch
+    # tensor in the pt_expt backend; ``np.asarray`` raises on CUDA tensors and
+    # ``np.array_equal`` would silently swallow that into ``False``. Convert via
+    # ``to_numpy_array`` (dlpack-through-CPU fallback) before comparing.
+    if not np.array_equal(arr.reshape(-1), to_numpy_array(expected).reshape(-1)):
         raise ValueError(f"{key} does not match the table derived from the config")
 
 
@@ -354,7 +366,7 @@ class SO2Linear(NativeOP):
         num_m0 = self.lmax + 1
         device = array_api_compat.device(x)
         weight_m0 = xp.reshape(
-            xp.asarray(self.weight_m0[...], device=device),
+            xp_asarray_nodetach(xp, self.weight_m0[...], device=device),
             (num_m0 * self.in_channels, self.n_focus, num_m0 * self.out_channels),
         )
         weight_m0 = xp.permute_dims(weight_m0, (1, 0, 2))  # (F, in, out)
@@ -366,7 +378,8 @@ class SO2Linear(NativeOP):
             ib = ni1 - ni0  # in_block size
             ob = no1 - no0  # out_block size
             w = xp.reshape(
-                xp.asarray(w[...], device=device), (ib, self.n_focus, 2 * ob)
+                xp_asarray_nodetach(xp, w[...], device=device),
+                (ib, self.n_focus, 2 * ob),
             )
             w = xp.permute_dims(w, (1, 0, 2))  # (F, in_blk, 2*out_blk)
             w_u = w[:, :, :ob]  # (F, in_blk, out_blk)
@@ -392,7 +405,7 @@ class SO2Linear(NativeOP):
         # === Step 3. Bias on l=0 scalar index ===
         if self.mlp_bias:
             bias0 = xp.reshape(
-                xp.asarray(self.bias0[...], device=device),
+                xp_asarray_nodetach(xp, self.bias0[...], device=device),
                 (self.n_focus, self.out_channels),
             )
             out0 = out[:, :, :1, :] + bias0[None, :, None, :]
@@ -426,15 +439,20 @@ class SO2Linear(NativeOP):
             self.bias0 = np.asarray(variables["bias0"], dtype=prec).reshape(
                 self.bias0.shape
             )
+        # Rebuild the list and assign the whole attribute (rather than
+        # item-assignment) so that pt_expt, which converts the list to a
+        # torch ParameterList, can re-convert the new value cleanly.
+        new_weight_m = []
         for m_idx in range(len(self.weight_m)):
             key = f"weight_m.{m_idx}"
             value = np.asarray(variables[key], dtype=prec)
-            if value.shape != self.weight_m[m_idx].shape:
+            if value.shape != tuple(self.weight_m[m_idx].shape):
                 raise ValueError(
                     f"{key} shape {value.shape} does not match the expected "
-                    f"shape {self.weight_m[m_idx].shape}"
+                    f"shape {tuple(self.weight_m[m_idx].shape)}"
                 )
-            self.weight_m[m_idx] = value
+            new_weight_m.append(value)
+        self.weight_m = new_weight_m
 
     def serialize(self) -> dict[str, Any]:
         """Serialize the SO2Linear to a dict (pt-compatible format)."""
@@ -616,16 +634,17 @@ class DynamicRadialDegreeMixer(NativeOP):
             radial_feat[:, : self.lmax + 1, :],
             (radial_feat.shape[0], self.input_dim),
         )
-        weight = xp.asarray(
-            self.weight[...], device=array_api_compat.device(radial_feat)
+        weight = xp_asarray_nodetach(
+            xp, self.weight[...], device=array_api_compat.device(radial_feat)
         )
         return xp.matmul(radial_m0, weight)
 
     def _scatter_dense(self, xp: Any, compact: Any, device: Any) -> Any:
         """Scatter the compact per-block kernel into the dense (D_m*D_m, ...) layout."""
-        gather_index = xp.asarray(self._dense_gather_index, device=device)
+        gather_index = xp_asarray_nodetach(xp, self._dense_gather_index, device=device)
         scatter_mask = xp.astype(
-            xp.asarray(self._dense_scatter_mask, device=device), compact.dtype
+            xp_asarray_nodetach(xp, self._dense_scatter_mask, device=device),
+            compact.dtype,
         )
         dense = xp.take(compact, gather_index, axis=1)
         if compact.ndim == 2:
@@ -670,7 +689,7 @@ class DynamicRadialDegreeMixer(NativeOP):
             kernel = xp.permute_dims(kernel, (0, 1, 3, 2))
             mixed = xp.matmul(kernel, x_local[:, None, :, :])
             channel_basis = xp.reshape(
-                xp.asarray(self.channel_basis[...], device=device),
+                xp_asarray_nodetach(xp, self.channel_basis[...], device=device),
                 (1, 1, self.rank, self.channels),
             )
             return xp.sum(mixed * channel_basis, axis=2)
@@ -887,21 +906,25 @@ class SO2Convolution(NativeOP):
         self.node_wise_so3 = bool(node_wise_so3)
         self.message_node_s2 = bool(message_node_s2)
         self.message_node_so3 = bool(message_node_so3)
-        if self.node_wise_s2 or self.node_wise_so3:
-            raise NotImplementedError(
-                "node_wise_s2/node_wise_so3 grid products are not ported to dpmodel"
-            )
-        if self.message_node_s2 or self.message_node_so3:
-            raise NotImplementedError(
-                "message_node_s2/message_node_so3 grid products are not ported "
-                "to dpmodel"
-            )
         self.lebedev_quadrature = bool(lebedev_quadrature)
         self.s2_grid_method = "lebedev" if self.lebedev_quadrature else "e3nn"
         self.s2_grid_resolution = resolve_s2_grid_resolution(
             self.lmax,
             self.mmax,
             method=self.s2_grid_method,
+        )
+        base_full_grid_resolution = resolve_s2_grid_resolution(
+            self.lmax,
+            self.lmax,
+            method=self.s2_grid_method,
+        )
+        # Mirror pt: the e3nn product-grid branch squares the max resolution.
+        # dpmodel only ports the Lebedev backend (the e3nn S2GridNet raises),
+        # so this just preserves the config-recorded resolution for parity.
+        self.s2_full_grid_resolution = (
+            [max(base_full_grid_resolution), max(base_full_grid_resolution)]
+            if self.s2_grid_method == "e3nn"
+            else base_full_grid_resolution
         )
         self.activation_function = str(activation_function)
         self.attn_n_focus = self.n_focus
@@ -952,6 +975,8 @@ class SO2Convolution(NativeOP):
         seed_gate = child_seed(seed, 4)
         seed_radial_hidden = child_seed(seed, 6)
         seed_radial_degree = child_seed(seed, 7)
+        seed_node_wise_s2 = child_seed(seed, 8)
+        seed_message_node_s2 = child_seed(seed, 9)
 
         # === Step 3. Multiple SO2Linear layers ===
         # (s2_activation is guarded above, so out_channels == so2_focus_dim.)
@@ -1115,6 +1140,100 @@ class SO2Convolution(NativeOP):
                 trainable=trainable,
             )
 
+        # === Step 8.5. Optional cross-mode grid products ===
+        # ``op_type`` selection mirrors pt: ``branch`` (count > 0) takes
+        # precedence over ``mlp``, else ``glu``. When both ``*_s2`` and
+        # ``*_so3`` are set the SO(3) branch wins (per the argcheck doc).
+        node_wise_op = (
+            "branch"
+            if self.node_wise_grid_branch > 0
+            else ("mlp" if self.node_wise_grid_mlp else "glu")
+        )
+        node_wise_branches = max(1, self.node_wise_grid_branch)
+        message_node_op = (
+            "branch"
+            if self.message_node_grid_branch > 0
+            else ("mlp" if self.message_node_grid_mlp else "glu")
+        )
+        message_node_branches = max(1, self.message_node_grid_branch)
+        self.node_wise_grid_product: S2GridNet | SO3GridNet | None = None
+        if self.node_wise_s2 or self.node_wise_so3:
+            if self.node_wise_so3:
+                self.node_wise_grid_product = SO3GridNet(
+                    lmax=self.lmax,
+                    mmax=self.mmax,
+                    kmax=self.kmax,
+                    channels=self.so2_focus_dim,
+                    n_focus=self.n_focus,
+                    mode="cross",
+                    op_type=node_wise_op,
+                    precision=self.compute_precision,
+                    layout="flat",
+                    coefficient_layout="m_major",
+                    grid_branches=node_wise_branches,
+                    mlp_bias=self.mlp_bias,
+                    residual_scale_init=1e-3,
+                    trainable=trainable,
+                    seed=seed_node_wise_s2,
+                )
+            else:
+                self.node_wise_grid_product = S2GridNet(
+                    lmax=self.lmax,
+                    mmax=self.mmax,
+                    channels=self.so2_focus_dim,
+                    n_focus=self.n_focus,
+                    mode="cross",
+                    op_type=node_wise_op,
+                    precision=self.compute_precision,
+                    layout="flat",
+                    grid_resolution_list=self.s2_grid_resolution,
+                    coefficient_layout="m_major",
+                    grid_method=self.s2_grid_method,
+                    grid_branches=node_wise_branches,
+                    mlp_bias=self.mlp_bias,
+                    residual_scale_init=1e-3,
+                    trainable=trainable,
+                    seed=seed_node_wise_s2,
+                )
+        self.message_node_grid_product: S2GridNet | SO3GridNet | None = None
+        if self.message_node_s2 or self.message_node_so3:
+            if self.message_node_so3:
+                self.message_node_grid_product = SO3GridNet(
+                    lmax=self.lmax,
+                    kmax=self.kmax,
+                    channels=self.so2_focus_dim,
+                    n_focus=self.n_focus,
+                    mode="cross",
+                    op_type=message_node_op,
+                    precision=self.compute_precision,
+                    layout="flat",
+                    coefficient_layout="packed",
+                    grid_branches=message_node_branches,
+                    mlp_bias=self.mlp_bias,
+                    residual_scale_init=1e-3,
+                    trainable=trainable,
+                    seed=seed_message_node_s2,
+                )
+            else:
+                self.message_node_grid_product = S2GridNet(
+                    lmax=self.lmax,
+                    mmax=self.lmax,
+                    channels=self.so2_focus_dim,
+                    n_focus=self.n_focus,
+                    mode="cross",
+                    op_type=message_node_op,
+                    precision=self.compute_precision,
+                    layout="flat",
+                    grid_resolution_list=self.s2_full_grid_resolution,
+                    grid_method=self.s2_grid_method,
+                    grid_branches=message_node_branches,
+                    mlp_bias=self.mlp_bias,
+                    residual_scale_init=1e-3,
+                    trainable=trainable,
+                    coefficient_layout="packed",
+                    seed=seed_message_node_s2,
+                )
+
         # === Step 9. Pre-focus channel mixing ===
         # This projects the full channel width before the SO(2) focus split.
         self.pre_focus_mix = SO3Linear(
@@ -1171,7 +1290,13 @@ class SO2Convolution(NativeOP):
         device = array_api_compat.device(x)
         src, dst = edge_cache.src, edge_cache.dst
         n_node = x.shape[0]
-        n_edge = int(src.shape[0])
+        # Keep ``n_edge``/``n_node`` symbolic (no ``int()``): they are the
+        # products ``nf*nloc*nnei`` / ``nf*nloc``. Casting to a Python int
+        # specializes them to the trace-time sample shape (breaking
+        # torch.export with a dynamic ``nloc`` dim); the ``Mod`` check stays
+        # statically known and the ``(n_node, nnei, ...)`` reshape below
+        # recovers the layout symbolically.
+        n_edge = src.shape[0]
         if n_node <= 0 or n_edge % n_node != 0:
             raise ValueError(
                 "padded-edge layout requires E to be a multiple of N; "
@@ -1202,9 +1327,16 @@ class SO2Convolution(NativeOP):
         src_idx = xp.astype(xp.reshape(src, (n_edge,)), xp.int64)
         x_src = xp.take(x, src_idx, axis=0)  # (E, D, C_wide)
         x_local = xp.matmul(D_m_prime, x_src)  # (E, D_m, C_wide)
+        # pt rotates the *destination* node into the same edge frame for the
+        # node-wise cross-mode grid product (raw, before radial modulation).
+        x_dst_local: Any = None
+        if self.node_wise_grid_product is not None:
+            dst_idx_nw = xp.astype(xp.reshape(dst, (n_edge,)), xp.int64)
+            x_dst = xp.take(x, dst_idx_nw, axis=0)  # (E, D, C_wide)
+            x_dst_local = xp.matmul(D_m_prime, x_dst)  # (E, D_m, C_wide)
 
         # === Step 3. Select radial/type features for reduced layout ===
-        degree_index_m = xp.asarray(self.degree_index_m, device=device)
+        degree_index_m = xp_asarray_nodetach(xp, self.degree_index_m, device=device)
         rad_feat = xp.take(radial_feat, degree_index_m, axis=1)  # (E, D_m, C)
         if self.radial_hidden_proj is not None:
             rad_feat = self.radial_hidden_proj(rad_feat)
@@ -1212,6 +1344,11 @@ class SO2Convolution(NativeOP):
             x_local = x_local * rad_feat
         else:
             x_local = self.radial_degree_mixer(x_local, rad_feat)
+        # pt Step 3: edge-local cross-mode grid product between the
+        # radial-fused source (query) and the raw destination (context),
+        # added as a residual in the reduced m-major layout (E, D_m, C_wide).
+        if self.node_wise_grid_product is not None:
+            x_local = x_local + self.node_wise_grid_product(x_local, x_dst_local)
         rad_feat_l0_focus = xp.reshape(
             rad_feat[:, 0, :], (n_edge, self.n_focus, self.so2_focus_dim)
         )  # (E, F, Cf)
@@ -1236,7 +1373,7 @@ class SO2Convolution(NativeOP):
             if layer_idx != 0 or so2_linear.bias0 is None:
                 return x_local
             bias0 = xp.reshape(
-                xp.asarray(so2_linear.bias0[...], device=device),
+                xp_asarray_nodetach(xp, so2_linear.bias0[...], device=device),
                 (1, self.n_focus, so2_linear.out_channels),
             )
             if so2_linear.out_channels == self.so2_focus_dim:
@@ -1273,7 +1410,9 @@ class SO2Convolution(NativeOP):
 
         # === Step 6. Cross-focus softmax competition ===
         if self.focus_compete and self.n_focus > 1:
-            compete_w = xp.asarray(self.adamw_focus_compete_w[...], device=device)
+            compete_w = xp_asarray_nodetach(
+                xp, self.adamw_focus_compete_w[...], device=device
+            )
             gate_in = xp.astype(focus_gate_src, compete_w.dtype)
             gate_normed = self.focus_compete_norm(gate_in)  # (E, F, Cf)
             # einsum "efi,if->ef"
@@ -1284,7 +1423,9 @@ class SO2Convolution(NativeOP):
             if self.mlp_bias:
                 focus_logits = (
                     focus_logits
-                    + xp.asarray(self.focus_compete_bias[...], device=device)[None, :]
+                    + xp_asarray_nodetach(
+                        xp, self.focus_compete_bias[...], device=device
+                    )[None, :]
                 )
             focus_logits = focus_logits / self.focus_softmax_tau
             logits_max = xp.max(focus_logits, axis=1, keepdims=True)
@@ -1316,7 +1457,8 @@ class SO2Convolution(NativeOP):
         # inverse-rotation degree rescale after the global lift restores the
         # full-basis amplitude expected by the block output contract.
         rescale = xp.astype(
-            xp.asarray(self.rotate_inv_rescale_full, device=device), x_message.dtype
+            xp_asarray_nodetach(xp, self.rotate_inv_rescale_full, device=device),
+            x_message.dtype,
         )
         x_message = x_message * xp.reshape(rescale, (1, -1, 1))
 
@@ -1347,7 +1489,7 @@ class SO2Convolution(NativeOP):
             out = out * inv_sqrt_deg  # (N, D, C_wide)
         else:
             # === Step 8.1. Build attention logits from scalar channels ===
-            qk_w = xp.asarray(self.attn_q_proj.weight[...], device=device)
+            qk_w = xp_asarray_nodetach(xp, self.attn_q_proj.weight[...], device=device)
             x_l0_node = xp.reshape(
                 x[:, 0, :], (n_node, self.attn_n_focus, self.attn_focus_dim)
             )  # (N, Fa, Ca)
@@ -1370,7 +1512,8 @@ class SO2Convolution(NativeOP):
             radial_l0 = xp.astype(radial_l0, qk_w.dtype)
             # einsum "efi,ifo->efo" as a broadcast batched matmul.
             logit_w = xp.permute_dims(
-                xp.asarray(self.adamw_attn_logit_w[...], device=device), (1, 0, 2)
+                xp_asarray_nodetach(xp, self.adamw_attn_logit_w[...], device=device),
+                (1, 0, 2),
             )  # (Fa, Ca, H)
             radial_bias = xp.matmul(radial_l0[:, :, None, :], logit_w[None, ...])[
                 ..., 0, :
@@ -1387,7 +1530,9 @@ class SO2Convolution(NativeOP):
                 logits=attn_logits,
                 edge_env=xp.astype(edge_cache.edge_env, attn_logits.dtype),
                 n_nodes=n_node,
-                z_bias_raw=xp.asarray(self.adamw_attn_z_bias_raw, device=device),
+                z_bias_raw=xp_asarray_nodetach(
+                    xp, self.adamw_attn_z_bias_raw, device=device
+                ),
                 eps=self.eps,
                 src_weight=(
                     None
@@ -1434,7 +1579,8 @@ class SO2Convolution(NativeOP):
 
             # === Step 8.4. Output-side head gate ===
             gate_w = xp.permute_dims(
-                xp.asarray(self.adamw_attn_gate_w[...], device=device), (1, 0, 2)
+                xp_asarray_nodetach(xp, self.adamw_attn_gate_w[...], device=device),
+                (1, 0, 2),
             )  # (Fa, Ca, H)
             gate_in = self.attn_output_gate_norm(x_l0_node)
             attn_output_gate = xp_sigmoid(
@@ -1452,6 +1598,13 @@ class SO2Convolution(NativeOP):
                 ),
                 x.dtype,
             )  # (N, D, C_wide)
+
+        # === Step 9. Optional message-node grid product ===
+        # pt: post-aggregation packed-layout cross-mode product between the
+        # aggregated message (query) and the pre-focus-mixed node features
+        # (context), added as a residual before the final channel mixing.
+        if self.message_node_grid_product is not None:
+            out = out + self.message_node_grid_product(out, x)
 
         # === Step 10. Final channel mixing ===
         out = self.post_focus_mix(out[:, :, None, :])[:, :, 0, :]
@@ -1503,6 +1656,15 @@ class SO2Convolution(NativeOP):
         if self.radial_degree_mixer is not None:
             for key, value in self.radial_degree_mixer._variables().items():
                 variables[f"radial_degree_mixer.{key}"] = value
+        # Cross-mode grid products: nest each net's @variables under the pt
+        # state_dict attribute name so ``deserialize(pt.serialize())`` matches.
+        for name, grid in (
+            ("node_wise_grid_product", self.node_wise_grid_product),
+            ("message_node_grid_product", self.message_node_grid_product),
+        ):
+            if grid is not None:
+                for key, value in grid.serialize()["@variables"].items():
+                    variables[f"{name}.{key}"] = value
         for name, mix in (
             ("pre_focus_mix", self.pre_focus_mix),
             ("post_focus_mix", self.post_focus_mix),
@@ -1662,6 +1824,39 @@ class SO2Convolution(NativeOP):
             )
         if self.radial_degree_mixer is not None:
             self.radial_degree_mixer._load_variables(sub_vars("radial_degree_mixer"))
+
+        # Grid products have no ``_load_variables``; reuse their config (from a
+        # fresh ``serialize()``) plus the loaded @variables and re-deserialize
+        # in place. This exercises the full grid-net serialize round-trip.
+        def _grid_product_vars(prefix: str, template: dict) -> dict:
+            # Reject schema drift: the loaded @variables keys must exactly match
+            # the fresh template's, so an unexpected ``<prefix>.*`` key fails the
+            # conversion loudly instead of being silently dropped.
+            loaded = sub_vars(prefix)
+            expected = set(template["@variables"])
+            if set(loaded) != expected:
+                raise ValueError(
+                    f"{prefix} @variables keys {sorted(loaded)} do not match "
+                    f"the expected keys {sorted(expected)}"
+                )
+            return loaded
+
+        if self.node_wise_grid_product is not None:
+            template = self.node_wise_grid_product.serialize()
+            template["@variables"] = _grid_product_vars(
+                "node_wise_grid_product", template
+            )
+            self.node_wise_grid_product = type(self.node_wise_grid_product).deserialize(
+                template
+            )
+        if self.message_node_grid_product is not None:
+            template = self.message_node_grid_product.serialize()
+            template["@variables"] = _grid_product_vars(
+                "message_node_grid_product", template
+            )
+            self.message_node_grid_product = type(
+                self.message_node_grid_product
+            ).deserialize(template)
         for name, mix in (
             ("pre_focus_mix", self.pre_focus_mix),
             ("post_focus_mix", self.post_focus_mix),

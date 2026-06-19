@@ -20,6 +20,7 @@ from deepmd.utils.argcheck import (
 
 from ..common import (
     INSTALLED_PT,
+    INSTALLED_PT_EXPT,
     CommonTest,
     parameterized_cases,
 )
@@ -31,6 +32,10 @@ if INSTALLED_PT:
     from deepmd.pt.model.descriptor.sezm import DescrptSeZM as DescrptDPA4PT
 else:
     DescrptDPA4PT = None
+if INSTALLED_PT_EXPT:
+    from deepmd.pt_expt.descriptor.dpa4 import DescrptDPA4 as DescrptDPA4PTExpt
+else:
+    DescrptDPA4PTExpt = None
 
 # not implemented
 DescrptDPA4TF = None
@@ -41,6 +46,9 @@ DPA4_CASE_FIELDS = (
     "grid_branch",
     "s2_activation",
     "basis_type",
+    "ffn_so3_grid",
+    "message_node_so3",
+    "grid_mlp",
 )
 
 DPA4_BASELINE_CASE = {
@@ -48,6 +56,9 @@ DPA4_BASELINE_CASE = {
     "grid_branch": [1, 1, 1],
     "s2_activation": [False, True],
     "basis_type": "bessel",
+    "ffn_so3_grid": False,
+    "message_node_so3": False,
+    "grid_mlp": False,
 }
 
 
@@ -80,6 +91,14 @@ DPA4_CURATED_CASES = (
         s2_activation=[False, False],
         basis_type="gaussian",
     ),
+    # SO(3) Wigner-D FFN grid (example-config flag)
+    dpa4_case(ffn_so3_grid=True),
+    # post-aggregation SO(3) cross-grid message (example-config flag)
+    dpa4_case(message_node_so3=True),
+    # both SO(3) grid paths on (mirrors examples/water/dpa4/input.json)
+    dpa4_case(ffn_so3_grid=True, message_node_so3=True),
+    # polynomial grid MLP op (grid_branch=0 so grid_mlp takes effect)
+    dpa4_case(grid_mlp=True, grid_branch=[0, 0, 0]),
 )
 
 
@@ -92,6 +111,9 @@ class TestDPA4(CommonTest, DescriptorTest, unittest.TestCase):
             grid_branch,
             s2_activation,
             basis_type,
+            ffn_so3_grid,
+            message_node_so3,
+            grid_mlp,
         ) = self.param
         return {
             "ntypes": self.ntypes,
@@ -105,6 +127,9 @@ class TestDPA4(CommonTest, DescriptorTest, unittest.TestCase):
             "n_blocks": 2,
             "grid_branch": grid_branch,
             "s2_activation": s2_activation,
+            "ffn_so3_grid": ffn_so3_grid,
+            "message_node_so3": message_node_so3,
+            "grid_mlp": grid_mlp,
             "random_gamma": False,
             "precision": precision,
             "trainable": False,
@@ -119,13 +144,13 @@ class TestDPA4(CommonTest, DescriptorTest, unittest.TestCase):
     skip_tf = True
     skip_jax = True
     skip_pd = True
-    skip_pt_expt = True
+    skip_pt_expt = not INSTALLED_PT_EXPT
     skip_array_api_strict = True
 
     tf_class = DescrptDPA4TF
     dp_class = DescrptDPA4DP
     pt_class = DescrptDPA4PT
-    pt_expt_class = None
+    pt_expt_class = DescrptDPA4PTExpt
     jax_class = None
     pd_class = None
     array_api_strict_class = None
@@ -191,18 +216,23 @@ class TestDPA4(CommonTest, DescriptorTest, unittest.TestCase):
             mixed_types=True,
         )
 
+    def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
+        return self.eval_pt_expt_descriptor(
+            pt_expt_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+            mixed_types=True,
+        )
+
     def extract_ret(self, ret: Any, backend) -> tuple[np.ndarray, ...]:
         return (ret[0],)
 
     @property
     def rtol(self) -> float:
         """Relative tolerance for comparing the return value."""
-        (
-            precision,
-            _grid_branch,
-            _s2_activation,
-            _basis_type,
-        ) = self.param
+        precision = self.param[0]
         if precision == "float64":
             return 1e-10
         elif precision == "float32":
@@ -213,12 +243,7 @@ class TestDPA4(CommonTest, DescriptorTest, unittest.TestCase):
     @property
     def atol(self) -> float:
         """Absolute tolerance for comparing the return value."""
-        (
-            precision,
-            _grid_branch,
-            _s2_activation,
-            _basis_type,
-        ) = self.param
+        precision = self.param[0]
         if precision == "float64":
             return 1e-10
         elif precision == "float32":

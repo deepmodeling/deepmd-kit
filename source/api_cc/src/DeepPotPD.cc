@@ -677,6 +677,7 @@ void DeepPotPD::get_type_map(std::string& type_map) {
 
   std::vector<int> type_map_arr(type_map_size, 0);
   type_map_tensor->CopyToCpu(type_map_arr.data());
+  type_map.clear();
   for (auto char_c : type_map_arr) {
     type_map += std::string(1, char_c);
   }

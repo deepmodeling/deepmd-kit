@@ -15,6 +15,36 @@ from packaging.version import (
 Array = np.ndarray | Any  # Any to support JAX, PyTorch, etc. arrays
 
 
+def xp_asarray_nodetach(
+    xp: Any,
+    obj: Any,
+    *,
+    dtype: Any = None,
+    device: Any = None,
+) -> Array:
+    """``xp.asarray`` that preserves autograd for backend tensors.
+
+    ``torch.asarray`` detaches its input from the autograd graph, so calling
+    ``xp.asarray`` on a weight attribute that is already a backend tensor
+    (e.g. a ``torch.nn.Parameter`` registered by the pt_expt backend)
+    silently breaks gradient flow to that weight.  This helper converts
+    genuine non-backend data (numpy arrays, python scalars/lists) via
+    ``xp.asarray``; backend tensors are returned as-is, with an optional
+    differentiable dtype cast via ``xp.astype``.
+
+    The ``device`` argument only applies to the conversion path: backend
+    tensors are assumed to already live on the working device (they are
+    created together with the inputs).
+    """
+    if isinstance(obj, np.ndarray) or not array_api_compat.is_array_api_obj(obj):
+        if dtype is None:
+            return xp.asarray(obj, device=device)
+        return xp.asarray(obj, dtype=dtype, device=device)
+    if dtype is not None and obj.dtype != dtype:
+        obj = xp.astype(obj, dtype)
+    return obj
+
+
 # array api adds take_along_axis in https://github.com/data-apis/array-api/pull/816
 # but it hasn't been released yet
 # below is a pure Python implementation of take_along_axis

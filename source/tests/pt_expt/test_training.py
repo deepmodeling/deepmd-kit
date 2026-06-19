@@ -8,6 +8,7 @@ Verifies that:
 4. Loss decreases over those steps
 """
 
+import copy
 import datetime
 import os
 import shutil
@@ -123,6 +124,32 @@ _DESCRIPTOR_DPA3 = {
     "precision": "float64",
     "concat_output_tebd": False,
     "seed": 1,
+}
+
+
+# DPA4/SeZM uses a dedicated model type ("dpa4") with fixed descriptor and
+# fitting types, so it gets a full model config rather than only a descriptor
+# dict that can be swapped into ``_make_config``.
+_MODEL_DPA4 = {
+    "type": "dpa4",
+    "type_map": ["O", "H"],
+    "descriptor": {
+        "type": "dpa4",
+        "sel": 20,
+        "rcut": 4.0,
+        "channels": 16,
+        "n_radial": 8,
+        "lmax": 2,
+        "mmax": 1,
+        "n_blocks": 2,
+        "seed": 1,
+    },
+    "fitting_net": {
+        "type": "dpa4_ener",
+        "neuron": [0],
+        "seed": 1,
+    },
+    "data_stat_nbatch": 1,
 }
 
 
@@ -284,6 +311,15 @@ class TestTraining(unittest.TestCase):
         config = normalize(config)
         self._run_training(config)
 
+    def test_training_loop_dpa4(self) -> None:
+        """Run a few DPA4/SeZM training steps (model type "dpa4" dispatch)."""
+        config = _make_config(self.data_dir, numb_steps=5)
+        config["model"] = copy.deepcopy(_MODEL_DPA4)
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+        self.assertEqual(config["model"]["type"], "dpa4")
+        self._run_training(config)
+
     def test_training_loop_compiled(self) -> None:
         """Run a few training steps with torch.compile enabled."""
         config = _make_config(self.data_dir, numb_steps=5)
@@ -307,19 +343,15 @@ class TestCompiledModelGetattr(unittest.TestCase):
     """Unit tests for _CompiledModel attribute delegation.
 
     These tests do not require example data or torch.compile — they use a
-    lightweight mock original_model and a no-op compiled_forward_lower to
-    verify that __getattr__ correctly forwards unknown attributes/methods to
-    the wrapped original model.
+    lightweight mock original_model to verify that __getattr__ correctly
+    forwards unknown attributes/methods to the wrapped original model.
+    Compilation is lazy, so no compiled_forward_lower is needed for construction.
     """
 
     def _make_compiled_model(self):
         from deepmd.pt_expt.train.training import (
             _CompiledModel,
         )
-
-        class _FakeForwardLower(torch.nn.Module):
-            def forward(self, *a, **kw):
-                pass
 
         class _FakeModel(torch.nn.Module):
             def get_rcut(self):
@@ -335,7 +367,7 @@ class TestCompiledModelGetattr(unittest.TestCase):
             def get_descriptor(self):
                 return self
 
-        return _CompiledModel(_FakeModel(), _FakeForwardLower())
+        return _CompiledModel(_FakeModel(), structure_key=(7,))
 
     def test_delegates_method(self) -> None:
         """Unknown method calls are forwarded to original_model."""
@@ -355,10 +387,12 @@ class TestCompiledModelGetattr(unittest.TestCase):
     def test_own_attrs_not_delegated(self) -> None:
         """Attributes owned by _CompiledModel itself are NOT delegated."""
         cm = self._make_compiled_model()
-        # original_model and compiled_forward_lower are registered submodules
-        # of _CompiledModel — they must not fall through to delegation.
+        # original_model is a registered submodule and must not fall through
+        # to delegation.  compiled_forward_lower is None before the first
+        # forward call (lazy compile) — accessing it must return None, not
+        # delegate to original_model.
         self.assertIsInstance(cm.original_model, torch.nn.Module)
-        self.assertIsInstance(cm.compiled_forward_lower, torch.nn.Module)
+        self.assertIsNone(cm.compiled_forward_lower)
 
     def test_missing_attr_raises(self) -> None:
         """Accessing an attribute missing from both wrapper and original raises."""
@@ -403,15 +437,21 @@ class TestCompiledDynamicShapes(unittest.TestCase):
                 # The wrapper.model should be a _CompiledModel
                 compiled_model = trainer.wrapper.model["Default"]
                 self.assertIsInstance(compiled_model, _CompiledModel)
+                # Lazy compile: compiled_forward_lower is None before any forward.
+                self.assertIsNone(compiled_model.compiled_forward_lower)
 
                 trainer.wrapper.train()
-                for _ in range(3):
+                for step in range(3):
                     trainer.optimizer.zero_grad(set_to_none=True)
                     inp, lab = trainer.get_data(is_train=True)
                     lr = trainer.scheduler.get_last_lr()[0]
                     _, loss, _ = trainer.wrapper(**inp, cur_lr=lr, label=lab)
                     loss.backward()
                     trainer.optimizer.step()
+
+                    # After first forward, compiled_forward_lower must be set.
+                    if step == 0:
+                        self.assertIsNotNone(compiled_model.compiled_forward_lower)
 
                     # Loss should be a finite scalar at every step
                     self.assertFalse(torch.isnan(loss))

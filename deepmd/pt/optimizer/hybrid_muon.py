@@ -958,8 +958,7 @@ class HybridMuonOptimizer(Optimizer):
         # === Step 3. Build parameter id -> name mapping ===
         self._param_name_map: dict[int, str] = {}
         if named_parameters is not None:
-            for name, param in named_parameters:
-                self._param_name_map[id(param)] = str(name)
+            self.set_param_names(named_parameters)
 
         # Static parameter routing: built once on first step() call.
         self._routing_built = False
@@ -980,6 +979,22 @@ class HybridMuonOptimizer(Optimizer):
         # ``use_foreach=False`` explicitly because several ``torch._foreach_*``
         # ops lack DTensor sharding propagation on older PyTorch builds.
         self._use_foreach = self._resolve_foreach(use_foreach)
+
+    def set_param_names(
+        self, named_parameters: Iterable[tuple[str, torch.Tensor]]
+    ) -> None:
+        """
+        Set runtime-only parameter names used for name-based routing.
+
+        The mapping intentionally stays outside optimizer defaults and
+        ``param_groups`` so optimizer checkpoints do not persist full
+        ``(name, Parameter)`` tuples. Under ZeRO-1 this avoids gathering a
+        duplicate model-sized object graph during ``consolidate_state_dict``.
+        """
+        self._param_name_map = {
+            id(param): str(name) for name, param in named_parameters
+        }
+        self._routing_built = False
 
     @staticmethod
     def _resolve_foreach(use_foreach: bool | None) -> bool:

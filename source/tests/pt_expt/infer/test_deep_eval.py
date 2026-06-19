@@ -2297,5 +2297,119 @@ class TestDeepEvalNlistBackend(unittest.TestCase):
             np.testing.assert_allclose(d_native, d_vesin, rtol=1e-10, atol=1e-10)
 
 
+class TestDeepEvalEnerChgSpinPt2(unittest.TestCase):
+    """Test .pt2 inference with charge_spin (DPA3 with add_chg_spin_ebd=True)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        import copy
+
+        from deepmd.dpmodel.model.model import get_model as dp_get_model
+
+        cls.nt = 2
+        cls.default_chg_spin = [0.5, 0.8]
+
+        config = {
+            "type_map": ["O", "H"],
+            "descriptor": {
+                "type": "dpa3",
+                "repflow": {
+                    "n_dim": 8,
+                    "e_dim": 5,
+                    "a_dim": 4,
+                    "nlayers": 2,
+                    "e_rcut": 6.0,
+                    "e_rcut_smth": 2.0,
+                    "e_sel": 30,
+                    "a_rcut": 4.0,
+                    "a_rcut_smth": 2.0,
+                    "a_sel": 20,
+                    "axis_neuron": 4,
+                    "update_angle": True,
+                    "update_style": "res_residual",
+                    "update_residual_init": "const",
+                    "smooth_edge_update": True,
+                },
+                "concat_output_tebd": True,
+                "precision": "float64",
+                "add_chg_spin_ebd": True,
+                "default_chg_spin": cls.default_chg_spin,
+                "seed": GLOBAL_SEED,
+            },
+            "fitting_net": {
+                "neuron": [5, 5, 5],
+                "resnet_dt": True,
+                "seed": GLOBAL_SEED,
+            },
+        }
+
+        model = dp_get_model(copy.deepcopy(config))
+        cls.model_data = {
+            "model": model.serialize(),
+            "model_def_script": config,
+            "backend": "dpmodel",
+            "software": "deepmd-kit",
+            "version": "3.0.0",
+        }
+
+        cls.tmpfile = tempfile.NamedTemporaryFile(suffix=".pt2", delete=False)
+        cls.tmpfile.close()
+        torch.set_default_device(None)
+        try:
+            deserialize_to_file(cls.tmpfile.name, cls.model_data, do_atomic_virial=True)
+        finally:
+            torch.set_default_device("cuda:9999999")
+
+        cls.dp = DeepPot(cls.tmpfile.name)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        import os
+
+        os.unlink(cls.tmpfile.name)
+
+    def test_dim_chg_spin(self) -> None:
+        self.assertEqual(self.dp.deep_eval.get_dim_chg_spin(), 2)
+
+    def test_charge_spin_takes_effect(self) -> None:
+        """Different charge_spin values must produce different outputs."""
+        rng = np.random.default_rng(GLOBAL_SEED)
+        natoms = 5
+        coords = rng.random((1, natoms, 3)) * 8.0
+        cells = np.eye(3).reshape(1, 9) * 10.0
+        atom_types = np.array([i % self.nt for i in range(natoms)], dtype=np.int32)
+
+        e0, f0, v0 = self.dp.eval(
+            coords, cells, atom_types, charge_spin=np.array([[0.0, 0.0]])
+        )
+        e1, f1, v1 = self.dp.eval(
+            coords, cells, atom_types, charge_spin=np.array([[1.0, 2.0]])
+        )
+
+        assert not np.allclose(e0, e1), (
+            "Changing charge_spin did not change output — charge_spin may be ignored"
+        )
+
+    def test_default_matches_explicit_default(self) -> None:
+        """Eval without charge_spin should use stored default and match explicit."""
+        rng = np.random.default_rng(GLOBAL_SEED)
+        natoms = 5
+        coords = rng.random((1, natoms, 3)) * 8.0
+        cells = np.eye(3).reshape(1, 9) * 10.0
+        atom_types = np.array([i % self.nt for i in range(natoms)], dtype=np.int32)
+
+        e_no, f_no, v_no = self.dp.eval(coords, cells, atom_types)
+        e_ex, f_ex, v_ex = self.dp.eval(
+            coords,
+            cells,
+            atom_types,
+            charge_spin=np.array([self.default_chg_spin]),
+        )
+
+        np.testing.assert_allclose(e_no, e_ex, atol=1e-10)
+        np.testing.assert_allclose(f_no, f_ex, atol=1e-10)
+        np.testing.assert_allclose(v_no, v_ex, atol=1e-10)
+
+
 if __name__ == "__main__":
     unittest.main()

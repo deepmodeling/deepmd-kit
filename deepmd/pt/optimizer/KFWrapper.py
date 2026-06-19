@@ -28,7 +28,7 @@ class KFOptimizerWrapper:
     def update_energy(
         self, inputs: dict, Etot_label: torch.Tensor, update_prefactor: float = 1
     ) -> None:
-        model_pred, _, _ = self.model(**inputs, inference_only=True)
+        model_pred, _, _ = self.model(**inputs, skip_loss=True)
         Etot_predict = model_pred["energy"]
         natoms_sum = int(inputs["atype"].shape[-1])
         self.optimizer.set_grad_prefactor(natoms_sum)
@@ -66,7 +66,7 @@ class KFOptimizerWrapper:
 
         for i in range(index.shape[0]):
             self.optimizer.zero_grad()
-            model_pred, _, _ = self.model(**inputs, inference_only=True)
+            model_pred, _, _ = self.model(**inputs, skip_loss=True)
             Etot_predict = model_pred["energy"]
             natoms_sum = int(inputs["atype"].shape[-1])
             force_predict = model_pred["force"]
@@ -105,7 +105,7 @@ class KFOptimizerWrapper:
 
         for i in range(index.shape[0]):
             self.optimizer.zero_grad()
-            model_pred, _, _ = self.model(**inputs, inference_only=True)
+            model_pred, _, _ = self.model(**inputs, skip_loss=True)
             updated_coord = model_pred["updated_coord"]
             natoms_sum = int(inputs["atype"].shape[-1])
             error_tmp = clean_coord[:, index[i]] - updated_coord[:, index[i]]

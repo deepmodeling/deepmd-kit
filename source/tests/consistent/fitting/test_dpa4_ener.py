@@ -16,6 +16,7 @@ from deepmd.utils.argcheck import (
 
 from ..common import (
     INSTALLED_PT,
+    INSTALLED_PT_EXPT,
     CommonTest,
     parameterized,
 )
@@ -30,6 +31,15 @@ if INSTALLED_PT:
     from deepmd.pt.utils.env import DEVICE as PT_DEVICE
 else:
     SeZMEnerFittingPT = None
+if INSTALLED_PT_EXPT:
+    import torch
+
+    from deepmd.pt_expt.fitting.dpa4_ener import (
+        SeZMEnergyFittingNet as SeZMEnerFittingPTExpt,
+    )
+    from deepmd.pt_expt.utils.env import DEVICE as PT_EXPT_DEVICE
+else:
+    SeZMEnerFittingPTExpt = None
 
 # not implemented
 SeZMEnerFittingTF = None
@@ -61,13 +71,13 @@ class TestDPA4Ener(CommonTest, FittingTest, unittest.TestCase):
     skip_tf = True
     skip_jax = True
     skip_pd = True
-    skip_pt_expt = True
+    skip_pt_expt = not INSTALLED_PT_EXPT
     skip_array_api_strict = True
 
     tf_class = SeZMEnerFittingTF
     dp_class = SeZMEnerFittingDP
     pt_class = SeZMEnerFittingPT
-    pt_expt_class = None
+    pt_expt_class = SeZMEnerFittingPTExpt
     jax_class = None
     pd_class = None
     array_api_strict_class = None
@@ -106,6 +116,17 @@ class TestDPA4Ener(CommonTest, FittingTest, unittest.TestCase):
             pt_obj(
                 torch.from_numpy(self.inputs).to(device=PT_DEVICE),
                 torch.from_numpy(self.atype.reshape(1, -1)).to(device=PT_DEVICE),
+            )["energy"]
+            .detach()
+            .cpu()
+            .numpy()
+        )
+
+    def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
+        return (
+            pt_expt_obj(
+                torch.from_numpy(self.inputs).to(device=PT_EXPT_DEVICE),
+                torch.from_numpy(self.atype.reshape(1, -1)).to(device=PT_EXPT_DEVICE),
             )["energy"]
             .detach()
             .cpu()
