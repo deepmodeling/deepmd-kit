@@ -104,8 +104,6 @@ else:
 	PID8=$!
 	wait $PID7
 	wait $PID8
-
-	env ${_GEN_ENV} python ${INFER_SCRIPT_PATH}/gen_corrupt_with_comm.py
 fi
 if [ "${ENABLE_PADDLE:-TRUE}" == "TRUE" ]; then
 	PADDLE_INFERENCE_DIR=${BUILD_TMP_DIR}/paddle_inference_install_dir
