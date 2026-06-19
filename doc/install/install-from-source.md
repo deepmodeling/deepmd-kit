@@ -534,6 +534,14 @@ There's no need for building TensorFlow's C++ interface.
 There's no need for downloading PyTorch's C++ libraries.
 :::
 
+:::{cmake:variable} DEEPMD_BYPASS_TORCH_CUDA_CHECK
+
+**Type**: `BOOL` (`ON`/`OFF`), Default: `ON`
+
+{{ pytorch_icon }} If `TRUE`, bypass PyTorch's CUDA toolkit discovery when `nvcc` is unavailable and DeePMD-kit is not building CUDA support.
+This helps CPU-only PyTorch builds use CUDA-enabled PyTorch wheels without requiring a local CUDA compiler.
+:::
+
 :::{cmake:variable} ENABLE_NATIVE_OPTIMIZATION
 
 **Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`

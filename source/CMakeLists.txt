@@ -5,6 +5,8 @@ include(CMakePackageConfigHelpers)
 
 option(ENABLE_TENSORFLOW "Enable TensorFlow interface" OFF)
 option(ENABLE_PYTORCH "Enable PyTorch interface" OFF)
+option(DEEPMD_BYPASS_TORCH_CUDA_CHECK
+       "Bypass PyTorch CUDA toolkit discovery when nvcc is unavailable" ON)
 option(ENABLE_JAX "Enable JAX interface" OFF)
 if(ENABLE_TENSORFLOW)
   # JAX requires TF C interface, contained in TF C++ library
@@ -335,6 +337,17 @@ if(BUILD_CPP_IF
   list(APPEND CMAKE_PREFIX_PATH ${PYTORCH_CMAKE_PREFIX_PATH})
 endif()
 if(ENABLE_PYTORCH AND NOT DEEPMD_C_ROOT)
+  if(DEEPMD_BYPASS_TORCH_CUDA_CHECK AND NOT USE_CUDA_TOOLKIT)
+    find_program(DEEPMD_NVCC_EXECUTABLE nvcc HINTS "$ENV{CUDA_HOME}/bin"
+                                                   "$ENV{CUDA_PATH}/bin")
+    if(NOT DEEPMD_NVCC_EXECUTABLE AND NOT TARGET torch::cudart)
+      message(
+        STATUS
+          "nvcc not found; bypassing PyTorch CUDA toolkit discovery for this CPU-only build"
+      )
+      add_library(torch::cudart INTERFACE IMPORTED)
+    endif()
+  endif()
   find_package(Torch REQUIRED)
   if(NOT Torch_VERSION VERSION_LESS "2.1.0")
     set_if_higher(CMAKE_CXX_STANDARD 17)
