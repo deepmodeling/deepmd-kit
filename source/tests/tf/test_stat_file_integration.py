@@ -12,12 +12,21 @@ from pathlib import (
 from deepmd.tf.entrypoints.train import (
     train,
 )
+from deepmd.tf.env import (
+    tf,
+)
 
 # Get the test data directory
 tests_path = Path(__file__).parent.parent.parent.parent / "examples"
 
 
 class TestStatFileIntegration(unittest.TestCase):
+    def setUp(self) -> None:
+        tf.reset_default_graph()
+
+    def tearDown(self) -> None:
+        tf.reset_default_graph()
+
     def test_stat_file_save_and_load(self) -> None:
         """Test that stat_file can be saved and loaded in TF training."""
         # Create a minimal training configuration
@@ -72,13 +81,14 @@ class TestStatFileIntegration(unittest.TestCase):
 
             # Add stat_file to config
             config["training"]["stat_file"] = stat_file_path
+            config["training"]["disp_file"] = os.path.join(temp_dir, "lcurve.out")
+            config["training"]["save_ckpt"] = os.path.join(temp_dir, "model.ckpt")
 
             # Write config
             with open(config_file, "w") as f:
                 json.dump(config, f, indent=2)
 
-            # Attempt to run training
-            # This will fail due to missing data but should still process stat_file parameter
+            # Run a short training and verify stat_file is accepted by the TF pipeline.
             train(
                 INPUT=config_file,
                 init_model=None,
@@ -95,15 +105,9 @@ class TestStatFileIntegration(unittest.TestCase):
             )
 
             # The main validation is that the code didn't crash with an unrecognized parameter
-            # and that if the stat file directory was attempted to be created, it exists
+            # and that the stat file directory was created.
             stat_path = Path(stat_file_path)
-            if stat_path.exists():
-                self.assertTrue(
-                    stat_path.is_dir(), "Stat file path should be a directory"
-                )
-
-            # This test primarily validates that the stat_file parameter is accepted
-            # and processed without errors in the TF pipeline
+            self.assertTrue(stat_path.is_dir(), "Stat file path should be a directory")
 
 
 if __name__ == "__main__":

@@ -28,7 +28,7 @@ class TestStatFileConsistency(unittest.TestCase):
         self.config_base = {
             "model": {
                 "type_map": ["O", "H"],
-                "data_stat_nbatch": 5,  # Small for testing
+                "data_stat_nbatch": 80,  # Cover the whole test set for deterministic stats
                 "descriptor": {
                     "type": "se_e2_a",
                     "sel": [2, 4],
@@ -65,6 +65,7 @@ class TestStatFileConsistency(unittest.TestCase):
                     "systems": [],  # Will be filled with test data
                     "batch_size": 1,
                 },
+                "seed": 42,
                 "numb_steps": 1,  # Minimal training to just generate stat files
                 "disp_freq": 1,
                 "save_freq": 1,
@@ -178,14 +179,21 @@ class TestStatFileConsistency(unittest.TestCase):
                     f"Shape mismatch in {subdir}/{filename}",
                 )
 
-                # Values should be very close (allow for small numerical differences)
-                np.testing.assert_allclose(
-                    tf_data,
-                    pt_data,
-                    rtol=1e-4,
-                    atol=1e-6,
-                    err_msg=f"Values differ in {subdir}/{filename}",
-                )
+                if np.issubdtype(tf_data.dtype, np.number):
+                    # Values should be very close (allow for small numerical differences)
+                    np.testing.assert_allclose(
+                        tf_data,
+                        pt_data,
+                        rtol=1e-4,
+                        atol=1e-6,
+                        err_msg=f"Values differ in {subdir}/{filename}",
+                    )
+                else:
+                    np.testing.assert_array_equal(
+                        tf_data,
+                        pt_data,
+                        err_msg=f"Values differ in {subdir}/{filename}",
+                    )
 
     @unittest.skipUnless(
         INSTALLED_TF and INSTALLED_PT, "TensorFlow and PyTorch required"
