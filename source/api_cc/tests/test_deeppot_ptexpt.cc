@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 // Test C++ inference for pt_expt (.pt2) backend.
-// Uses the same model (converted from deeppot_sea.pth) and reference values
-// as test_deeppot_pt.cc to verify cross-backend consistency.
+// Uses the same model (converted from deeppot_sea.pth) and shared universal
+// DeepPot reference values to verify PTExpt-specific behavior.
 #include <gtest/gtest.h>
 
 #include <algorithm>
@@ -29,7 +29,7 @@ class TestInferDeepPotAPtExpt : public ::testing::Test {
                                       8.37,  10.70, 5.76,  2.95, 7.21, 0.83};
   std::vector<int> atype = {0, 1, 1, 0, 1, 1};
   std::vector<VALUETYPE> box = {13., 0., 0., 0., 13., 0., 0., 0., 13.};
-  // Same reference values as test_deeppot_pt.cc (model converted from .pth)
+  // Same reference values as deeppot_universal_data.h.
   std::vector<VALUETYPE> expected_e = {-93.016873944029,  -185.923296645958,
                                        -185.927096544970, -93.019371018039,
                                        -185.926179995548, -185.924351901852};
@@ -634,7 +634,7 @@ class TestInferDeepPotAPtExptNoPbc : public ::testing::Test {
                                       8.37,  10.70, 5.76,  2.95, 7.21, 0.83};
   std::vector<int> atype = {0, 1, 1, 0, 1, 1};
   std::vector<VALUETYPE> box = {};
-  // Same reference values as TestInferDeepPotAPtNoPbc in test_deeppot_pt.cc
+  // Same NoPBC reference values as deeppot_universal_data.h.
   std::vector<VALUETYPE> expected_e = {-93.003304908874,  -185.915806542480,
                                        -185.928116717624, -93.017934934346,
                                        -185.924393412278, -185.923906740801};
