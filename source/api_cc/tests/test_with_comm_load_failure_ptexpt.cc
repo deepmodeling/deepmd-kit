@@ -60,10 +60,11 @@ class TestDeepPotPTExptWithCommLoadFailure : public ::testing::Test {
 #if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
     GTEST_SKIP() << "Skip because PyTorch / pt_expt support is not enabled.";
 #endif
-    ASSERT_TRUE(file_exists(kPotCorrupt))
-        << kPotCorrupt
-        << " not found. Run source/tests/infer/"
-           "gen_corrupt_with_comm.py first.";
+    if (!file_exists(kPotCorrupt)) {
+      GTEST_SKIP() << "Skipping: " << kPotCorrupt
+                   << " not found. Run source/tests/infer/"
+                      "gen_corrupt_with_comm.py first.";
+    }
     // Init must succeed: the with-comm loader fails internally and the
     // catch block keeps the regular single-rank artifact usable.
     ASSERT_NO_THROW(dp.init(kPotCorrupt));
@@ -149,10 +150,11 @@ class TestDeepSpinPTExptWithCommLoadFailure : public ::testing::Test {
     GTEST_SKIP() << "Skip because PyTorch / pt_expt spin support is not "
                     "enabled.";
 #endif
-    ASSERT_TRUE(file_exists(kSpinCorrupt))
-        << kSpinCorrupt
-        << " not found. Run source/tests/infer/"
-           "gen_corrupt_with_comm.py first.";
+    if (!file_exists(kSpinCorrupt)) {
+      GTEST_SKIP() << "Skipping: " << kSpinCorrupt
+                   << " not found. Run source/tests/infer/"
+                      "gen_corrupt_with_comm.py first.";
+    }
     ASSERT_NO_THROW(dp.init(kSpinCorrupt));
   }
 };
