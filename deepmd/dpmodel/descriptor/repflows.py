@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import warnings
 from collections.abc import (
     Callable,
 )
@@ -196,6 +197,11 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         Whether the block is trainable
     """
 
+    # Internal-only switch used by backends that cannot export/trace arrays with
+    # runtime-sized edge/angle dimensions.  It is deliberately not exposed in
+    # input JSON or serialization: users still only see ``use_dynamic_sel``.
+    _use_static_dynamic_sel: bool = False
+
     def __init__(
         self,
         e_rcut: float,
@@ -267,6 +273,17 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         self.edge_init_use_dist = edge_init_use_dist
         self.use_exp_switch = use_exp_switch
         self.use_dynamic_sel = use_dynamic_sel
+        # Snapshot the class-level backend choice on the instance.  This keeps
+        # descriptor/layer behavior stable even if a backend temporarily changes
+        # the class attribute while constructing a model.
+        self._use_static_dynamic_sel = type(self)._use_static_dynamic_sel
+        if self.use_dynamic_sel and self._use_static_dynamic_sel:
+            warnings.warn(
+                "The JAX exportable dynamic-selection layout materializes "
+                "fixed angle capacity nf * nloc * a_sel * a_sel. Keep a_sel "
+                "modest for exportable DPA-3 models.",
+                stacklevel=2,
+            )
         self.use_loc_mapping = use_loc_mapping
         self.sel_reduce_factor = sel_reduce_factor
         self.sequential_update = sequential_update
@@ -348,6 +365,10 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
                 )
             )
         self.layers = layers
+        # RepFlowLayer has the same internal switch; keep all layers in the same
+        # layout mode as the descriptor block that owns them.
+        for layer in self.layers:
+            layer._use_static_dynamic_sel = self._use_static_dynamic_sel
 
         wanted_shape = (self.ntypes, self.nnei, 4)
         self.env_mat_edge = EnvMat(
@@ -632,28 +653,58 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
 
         if self.use_dynamic_sel:
             # get graph index
-            edge_index, angle_index = get_graph_index(
-                nlist,
-                nlist_mask,
-                a_nlist_mask,
-                nall,
-                use_loc_mapping=self.use_loc_mapping,
-            )
-            # flat all the tensors
-            # n_edge x 1
-            edge_input = edge_input[nlist_mask]
-            # n_edge x 3
-            h2 = h2[nlist_mask]
-            # n_edge x 1
-            sw = sw[nlist_mask]
+            if self._use_static_dynamic_sel:
+                # Keep the dynamic-selection math but use fixed capacities:
+                #   n_edge = nf * nloc * e_sel
+                #   n_angle = nf * nloc * a_sel * a_sel
+                # Invalid padded slots have sw=0 (or pair a_sw=0), so for every
+                # owner i:
+                #   sum_{j=1}^{e_sel} sw_ij m_ij
+                #     = sum_{j in N(i)} sw_ij m_ij.
+                # Thus the output matches compact dynamic selection while the
+                # tensor shapes remain trace/export friendly.
+                edge_index, angle_index = _get_static_graph_index(
+                    nlist,
+                    a_nlist_mask,
+                    nall,
+                    use_loc_mapping=self.use_loc_mapping,
+                )
+                # fixed-size flattened layout: (nf * nloc * sel) x ...
+                edge_input = xp.reshape(edge_input, (-1, edge_input.shape[-1]))
+                h2 = xp.reshape(h2, (-1, h2.shape[-1]))
+                sw = xp.reshape(sw, (-1,))
+            else:
+                edge_index, angle_index = get_graph_index(
+                    nlist,
+                    nlist_mask,
+                    a_nlist_mask,
+                    nall,
+                    use_loc_mapping=self.use_loc_mapping,
+                )
+                # flat all the tensors
+                # n_edge x 1
+                edge_input = edge_input[nlist_mask]
+                # n_edge x 3
+                h2 = h2[nlist_mask]
+                # n_edge x 1
+                sw = sw[nlist_mask]
             # nb x nloc x a_nnei x a_nnei
             a_nlist_mask = xp.logical_and(
                 a_nlist_mask[:, :, :, None], a_nlist_mask[:, :, None, :]
             )
-            # n_angle x 1
-            angle_input = angle_input[a_nlist_mask]
-            # n_angle x 1
-            a_sw = (a_sw[:, :, :, None] * a_sw[:, :, None, :])[a_nlist_mask]
+            if self._use_static_dynamic_sel:
+                # The angle graph keeps all (j, k) pairs in the a_sel square.
+                # Pairs involving padded angle neighbors are zeroed by
+                # a_sw_ij * a_sw_ik before reduction, preserving the compact
+                # dynamic result.
+                # fixed-size flattened layout: (nf * nloc * a_sel * a_sel) x ...
+                angle_input = xp.reshape(angle_input, (-1, angle_input.shape[-1]))
+                a_sw = xp.reshape(a_sw[:, :, :, None] * a_sw[:, :, None, :], (-1,))
+            else:
+                # n_angle x 1
+                angle_input = angle_input[a_nlist_mask]
+                # n_angle x 1
+                a_sw = (a_sw[:, :, :, None] * a_sw[:, :, None, :])[a_nlist_mask]
         else:
             edge_index = xp.zeros(
                 [2, 1], dtype=nlist.dtype, device=array_api_compat.device(nlist)
@@ -765,6 +816,11 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         obj.edge_embd = edge_embd
         obj.angle_embd = angle_embd
         obj.layers = layers
+        # ``_use_static_dynamic_sel`` is intentionally not serialized.  After a
+        # backend-specific class deserializes the block, propagate the backend's
+        # class-level default to the restored layers.
+        for layer in obj.layers:
+            layer._use_static_dynamic_sel = obj._use_static_dynamic_sel
         obj.env_mat_edge = env_mat_edge
         obj.env_mat_angle = env_mat_angle
         obj.mean = davg
@@ -819,6 +875,77 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
                 "dstd": to_numpy_array(self["dstd"]),
             },
         }
+
+
+def _get_static_graph_index(
+    nlist: Array,
+    a_nlist_mask: Array,
+    nall: int,
+    use_loc_mapping: bool = True,
+) -> tuple[Array, Array]:
+    """Build graph indices with fixed edge/angle capacities.
+
+    This mirrors ``get_graph_index`` but keeps all padded slots instead of
+    compacting with masks, so the first dimension is shape-static.
+
+    Edge slot formula, for frame ``f``, local atom ``i``, edge slot ``j``:
+
+        ``p = (f * nloc + i) * nnei + j``
+        ``n2e[p] = f * nloc + i``
+        ``n_ext2e[p] = f * nall + nlist[f, i, j]``
+
+    If ``use_loc_mapping`` is true, ``nlist`` has already been remapped to local
+    indices, so the frame stride is ``nloc`` instead of ``nall``.
+
+    Angle slot formula, for angle pair ``(j, k)``:
+
+        ``q = ((f * nloc + i) * a_sel + j) * a_sel + k``
+        ``n2a[q] = f * nloc + i``
+        ``eij2a[q] = p(f, i, j)``
+        ``eik2a[q] = p(f, i, k)``
+
+    Padded edge/angle slots are intentionally included. Their messages vanish
+    because the corresponding switch weights are zero before owner reductions.
+    """
+    xp = array_api_compat.array_namespace(nlist, a_nlist_mask)
+
+    nf, nloc, nnei = nlist.shape
+    _, _, a_nnei = a_nlist_mask.shape
+    dev = array_api_compat.device(nlist)
+
+    nlist_loc_index = xp.arange(nf * nloc, dtype=nlist.dtype, device=dev)
+    n2e_index = xp.broadcast_to(
+        xp.reshape(nlist_loc_index, (nf, nloc, 1)), (nf, nloc, nnei)
+    )
+    n2e_index = xp.reshape(n2e_index, (-1,))
+
+    frame_shift = xp.arange(nf, dtype=nlist.dtype, device=dev) * (
+        nall if not use_loc_mapping else nloc
+    )
+    shifted_nlist = nlist + frame_shift[:, xp.newaxis, xp.newaxis]
+    n_ext2e_index = xp.reshape(shifted_nlist, (-1,))
+
+    n2a_index = xp.broadcast_to(
+        xp.reshape(nlist_loc_index, (nf, nloc, 1, 1)), (nf, nloc, a_nnei, a_nnei)
+    )
+    n2a_index = xp.reshape(n2a_index, (-1,))
+
+    edge_id = xp.reshape(
+        xp.arange(nf * nloc * nnei, dtype=nlist.dtype, device=dev),
+        (nf, nloc, nnei),
+    )[:, :, :a_nnei]
+    eij2a_index = xp.broadcast_to(
+        edge_id[:, :, :, xp.newaxis], (nf, nloc, a_nnei, a_nnei)
+    )
+    eij2a_index = xp.reshape(eij2a_index, (-1,))
+    eik2a_index = xp.broadcast_to(
+        edge_id[:, :, xp.newaxis, :], (nf, nloc, a_nnei, a_nnei)
+    )
+    eik2a_index = xp.reshape(eik2a_index, (-1,))
+
+    edge_index_result = xp.stack([n2e_index, n_ext2e_index], axis=0)
+    angle_index_result = xp.stack([n2a_index, eij2a_index, eik2a_index], axis=0)
+    return edge_index_result, angle_index_result
 
 
 def _cal_hg_dynamic(
@@ -934,6 +1061,10 @@ def symmetrization_op_dynamic(
 
 
 class RepFlowLayer(NativeOP):
+    # Mirrors the descriptor-block internal switch.  The owning block writes the
+    # instance value during construction/deserialization.
+    _use_static_dynamic_sel: bool = False
+
     def __init__(
         self,
         e_rcut: float,
@@ -1004,6 +1135,9 @@ class RepFlowLayer(NativeOP):
         self.optim_update = optim_update
         self.smooth_edge_update = smooth_edge_update
         self.use_dynamic_sel = use_dynamic_sel
+        # Default instance value for standalone RepFlowLayer construction.
+        # DescrptBlockRepflows overwrites it for regular DPA-3 use.
+        self._use_static_dynamic_sel = type(self)._use_static_dynamic_sel
         self.sel_reduce_factor = sel_reduce_factor
         self.sequential_update = sequential_update
         self.dynamic_e_sel = self.nnei / self.sel_reduce_factor
@@ -1476,9 +1610,16 @@ class RepFlowLayer(NativeOP):
         )
         nb, nloc, nnei = nlist.shape
         nall = node_ebd_ext.shape[1]
+        # In compact dynamic mode ``n_edge`` is the number of real edges.  In
+        # static dynamic mode it is the fixed edge capacity; padded entries carry
+        # zero switch weights, so owner reductions are unchanged.
         # int cannot jit; do not run it when self.use_dynamic_sel == False
         n_edge = (
-            int(xp.sum(xp.astype(nlist_mask, xp.int32))) if self.use_dynamic_sel else 0
+            h2.shape[0]
+            if self.use_dynamic_sel and self._use_static_dynamic_sel
+            else int(xp.sum(xp.astype(nlist_mask, xp.int32)))
+            if self.use_dynamic_sel
+            else 0
         )
         node_ebd = xp_take_first_n(node_ebd_ext, 1, nloc)
         assert (nb, nloc) == node_ebd.shape[:2]

@@ -2077,7 +2077,8 @@ def dpa3_repflow_args() -> list[Argument]:
     doc_a_rcut_smth = "Where to start smoothing for angle. For example the 1/r term is smoothed from `rcut` to `rcut_smth`."
     doc_a_sel = 'Maximally possible number of selected angle neighbors. It can be:\n\n\
     - `int`. The maximum number of neighbor atoms to be considered. We recommend it to be less than 200. \n\n\
-    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors within the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally, the number is rounded up to a multiple of 4. The option "auto" is equivalent to "auto:1.1".'
+    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`. In detail it counts the maximal number of neighbors within the cutoff radius for each type of neighbor, then multiply the maximum by the "factor". Finally, the number is rounded up to a multiple of 4. The option "auto" is equivalent to "auto:1.1". \n\n\
+    For JAX export, DPA3 uses static shapes and materializes angle-pair work arrays with size proportional to `nf * nloc * a_sel^2`. Keep `a_sel` no larger than needed, including when `use_dynamic_sel` is enabled.'
     doc_a_compress_rate = (
         "The compression rate for angular messages. The default value is 0, indicating no compression. "
         " If a non-zero integer c is provided, the node and edge dimensions will be compressed "
@@ -2151,6 +2152,8 @@ def dpa3_repflow_args() -> list[Argument]:
         "without padding to a fixed selection numbers. "
         "When enabled, users can safely set larger values for `e_sel` or `a_sel` (e.g., 1200 or 300, respectively) "
         "to guarantee capturing all neighbors within the cutoff radius. "
+        "For JAX export, the static upper bound still controls memory use; in particular, angle-pair work arrays "
+        "scale as `nf * nloc * a_sel^2`. "
         "Note that when using dynamic selection, the `smooth_edge_update` must be True. "
     )
     doc_sel_reduce_factor = (
