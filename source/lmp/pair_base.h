@@ -43,6 +43,7 @@ class PairDeepBaseModel : public Pair {
   void print_summary(const std::string pre) const;
   int get_node_rank();
   void cum_sum(std::map<int, int>&, std::map<int, int>&);
+  int get_dim_fparam() const { return dim_fparam; }
 
   std::string get_file_content(const std::string& model);
   std::vector<std::string> get_file_content(
@@ -88,6 +89,10 @@ class PairDeepBaseModel : public Pair {
   void make_fparam_from_compute(std::vector<double>& fparam);
   bool do_compute_fparam;
   std::string compute_fparam_id;
+  void make_fparam_from_fix(std::vector<double>& fparam);
+  bool do_fix_fparam;
+  std::string fix_fparam_id;
+  int fix_fparam_index;
   void make_aparam_from_compute(std::vector<double>& aparam);
   bool do_compute_aparam;
   std::string compute_aparam_id;
