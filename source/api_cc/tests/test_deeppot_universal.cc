@@ -32,6 +32,31 @@ struct ModelCase {
   bool supports_nframes;
 };
 
+struct VariantDeepPotCase {
+  std::string name;
+  Backend backend;
+  std::string model_path;
+  bool convert_pbtxt;
+  const deepmd_test::DeepPotRef* builtin_ref;
+  const deepmd_test::DeepPotRef* builtin_no_pbc_ref;
+  std::string ref_path;
+  std::string ref_section;
+  std::string no_pbc_ref_section;
+  double double_tol;
+  double float_tol;
+  bool supports_float;
+  bool supports_finite_difference;
+  bool supports_lmp_nlist;
+  bool supports_lmp_nlist_atomic;
+  bool supports_lmp_nlist_cutoff_twice;
+  bool supports_lmp_nlist_type_sel;
+  bool supports_print_summary;
+  bool supports_no_pbc_simple;
+  bool supports_no_pbc_atomic;
+  bool supports_no_pbc_lmp_nlist;
+  bool supports_no_pbc_lmp_nlist_atomic;
+};
+
 struct FParamAParamCase {
   std::string name;
   Backend backend;
@@ -130,6 +155,207 @@ std::vector<ModelCase> model_cases() {
        false}};
 }
 
+std::vector<VariantDeepPotCase> variant_deeppot_cases() {
+  return {{"tensorflow_r",
+           Backend::TensorFlow,
+           "../../tests/infer/deeppot-r.pbtxt",
+           true,
+           &deepmd_test::tf_deeppot_r_ref(),
+           &deepmd_test::tf_deeppot_r_no_pbc_ref(),
+           "",
+           "",
+           "",
+           1e-10,
+           1e-4,
+           true,
+           true,
+           true,
+           true,
+           true,
+           true,
+           false,
+           true,
+           false,
+           false,
+           false},
+          {"dpa_jax_savedmodel",
+           Backend::JAX,
+           "../../tests/infer/deeppot_dpa.savedmodel",
+           false,
+           &deepmd_test::jax_dpa_deeppot_ref(),
+           &deepmd_test::jax_dpa_deeppot_no_pbc_ref(),
+           "",
+           "",
+           "",
+           1e-7,
+           1e-1,
+           true,
+           false,
+           false,
+           false,
+           false,
+           false,
+           false,
+           true,
+           true,
+           true,
+           true},
+          {"dpa1_pytorch_pth",
+           Backend::PyTorch,
+           "../../tests/infer/deeppot_dpa1.pth",
+           false,
+           nullptr,
+           nullptr,
+           "../../tests/infer/deeppot_dpa1.expected",
+           "pbc",
+           "nopbc",
+           1e-10,
+           1e-4,
+           true,
+           false,
+           false,
+           false,
+           false,
+           false,
+           false,
+           true,
+           false,
+           true,
+           false},
+          {"dpa1_pytorch_pt2",
+           Backend::PTExpt,
+           "../../tests/infer/deeppot_dpa1.pt2",
+           false,
+           nullptr,
+           nullptr,
+           "../../tests/infer/deeppot_dpa1.expected",
+           "pbc",
+           "nopbc",
+           1e-10,
+           1e-4,
+           true,
+           true,
+           true,
+           true,
+           true,
+           true,
+           true,
+           true,
+           false,
+           true,
+           false},
+          {"dpa2_pytorch_pth",
+           Backend::PyTorch,
+           "../../tests/infer/deeppot_dpa2.pth",
+           false,
+           nullptr,
+           nullptr,
+           "../../tests/infer/deeppot_dpa2.expected",
+           "pbc",
+           "nopbc",
+           1e-10,
+           1e-4,
+           true,
+           false,
+           false,
+           false,
+           false,
+           false,
+           false,
+           true,
+           true,
+           true,
+           true},
+          {"dpa2_pytorch_pt2",
+           Backend::PTExpt,
+           "../../tests/infer/deeppot_dpa2.pt2",
+           false,
+           nullptr,
+           nullptr,
+           "../../tests/infer/deeppot_dpa2.expected",
+           "pbc",
+           "nopbc",
+           1e-10,
+           1e-4,
+           true,
+           true,
+           true,
+           true,
+           true,
+           true,
+           true,
+           true,
+           false,
+           true,
+           false},
+          {"dpa3_pytorch_pth",
+           Backend::PyTorch,
+           "../../tests/infer/deeppot_dpa3.pth",
+           false,
+           nullptr,
+           nullptr,
+           "../../tests/infer/deeppot_dpa3.expected",
+           "pbc",
+           "nopbc",
+           1e-10,
+           1e-4,
+           true,
+           false,
+           false,
+           false,
+           false,
+           false,
+           false,
+           true,
+           false,
+           true,
+           false},
+          {"dpa3_pytorch_pt2",
+           Backend::PTExpt,
+           "../../tests/infer/deeppot_dpa3.pt2",
+           false,
+           nullptr,
+           nullptr,
+           "../../tests/infer/deeppot_dpa3.expected",
+           "pbc",
+           "nopbc",
+           1e-10,
+           1e-4,
+           true,
+           true,
+           true,
+           true,
+           true,
+           true,
+           true,
+           true,
+           false,
+           true,
+           false},
+          {"dpa4_pytorch_pt2",
+           Backend::PTExpt,
+           "../../tests/infer/deeppot_dpa4.pt2",
+           false,
+           nullptr,
+           nullptr,
+           "../../tests/infer/deeppot_dpa4.expected",
+           "pbc",
+           "nopbc",
+           1e-10,
+           1e-4,
+           true,
+           true,
+           true,
+           true,
+           true,
+           true,
+           true,
+           true,
+           false,
+           true,
+           false}};
+}
+
 std::vector<FParamAParamCase> fparam_aparam_cases() {
   return {{"tensorflow_pb", Backend::TensorFlow,
            "../../tests/infer/fparam_aparam.pbtxt", true,
@@ -166,6 +392,17 @@ deepmd_test::DeepPotRef load_fparam_ref(const std::string& ref_path) {
   return ref;
 }
 
+deepmd_test::DeepPotRef load_expected_ref(const std::string& ref_path,
+                                          const std::string& section) {
+  deepmd_test::ExpectedRef ref_file;
+  ref_file.load(ref_path);
+  deepmd_test::DeepPotRef ref;
+  ref.atomic_energy = ref_file.get<double>(section, "expected_e");
+  ref.force = ref_file.get<double>(section, "expected_f");
+  ref.atomic_virial = ref_file.get<double>(section, "expected_v");
+  return ref;
+}
+
 class UniversalDeepPotTest : public ::testing::TestWithParam<ModelCase> {
  protected:
   deepmd::DeepPot dp;
@@ -182,6 +419,64 @@ class UniversalDeepPotTest : public ::testing::TestWithParam<ModelCase> {
     std::string model_path = param.model_path;
     if (param.convert_pbtxt) {
       converted_model = "deeppot_universal_" + param.name + ".pb";
+      deepmd::convert_pbtxt_to_pb(param.model_path, converted_model);
+      model_path = converted_model;
+    }
+    dp.init(model_path);
+  }
+
+  void TearDown() override {
+    if (!converted_model.empty()) {
+      remove(converted_model.c_str());
+    }
+  }
+};
+
+class VariantDeepPotTest : public ::testing::TestWithParam<VariantDeepPotCase> {
+ protected:
+  deepmd::DeepPot dp;
+  std::string converted_model;
+  deepmd_test::DeepPotRef loaded_ref;
+  deepmd_test::DeepPotRef loaded_no_pbc_ref;
+  const deepmd_test::DeepPotRef* ref = nullptr;
+  const deepmd_test::DeepPotRef* no_pbc_ref = nullptr;
+
+  void SetUp() override {
+    const auto& param = GetParam();
+    if (!backend_enabled(param.backend)) {
+      GTEST_SKIP() << backend_name(param.backend) << " support is not enabled.";
+    }
+    ASSERT_TRUE(path_exists(param.model_path))
+        << "Model artifact is not available: " << param.model_path;
+
+    if (param.builtin_ref != nullptr) {
+      ref = param.builtin_ref;
+    } else {
+      ASSERT_TRUE(path_exists(param.ref_path))
+          << "Reference artifact is not available: " << param.ref_path;
+      loaded_ref = load_expected_ref(param.ref_path, param.ref_section);
+      ref = &loaded_ref;
+    }
+
+    const bool needs_no_pbc_ref = param.supports_no_pbc_simple ||
+                                  param.supports_no_pbc_atomic ||
+                                  param.supports_no_pbc_lmp_nlist ||
+                                  param.supports_no_pbc_lmp_nlist_atomic;
+    if (needs_no_pbc_ref) {
+      if (param.builtin_no_pbc_ref != nullptr) {
+        no_pbc_ref = param.builtin_no_pbc_ref;
+      } else {
+        ASSERT_TRUE(path_exists(param.ref_path))
+            << "Reference artifact is not available: " << param.ref_path;
+        loaded_no_pbc_ref =
+            load_expected_ref(param.ref_path, param.no_pbc_ref_section);
+        no_pbc_ref = &loaded_no_pbc_ref;
+      }
+    }
+
+    std::string model_path = param.model_path;
+    if (param.convert_pbtxt) {
+      converted_model = "deeppot_variant_" + param.name + ".pb";
       deepmd::convert_pbtxt_to_pb(param.model_path, converted_model);
       model_path = converted_model;
     }
@@ -277,11 +572,13 @@ void expect_reference(const double energy,
                       const std::vector<ValueType>& virial,
                       const deepmd_test::DeepPotRef& ref,
                       const double tol) {
-  const int natoms = static_cast<int>(deepmd_test::deeppot_atype().size());
+  const int natoms = static_cast<int>(ref.atomic_energy.size());
   const std::vector<double> expected_virial = deepmd_test::total_virial(ref);
 
   ASSERT_EQ(force.size(), static_cast<size_t>(natoms * 3));
   ASSERT_EQ(virial.size(), 9U);
+  ASSERT_EQ(ref.force.size(), static_cast<size_t>(natoms * 3));
+  ASSERT_EQ(ref.atomic_virial.size(), static_cast<size_t>(natoms * 9));
 
   EXPECT_NEAR(energy, deepmd_test::total_energy(ref), tol);
   for (int ii = 0; ii < natoms * 3; ++ii) {
@@ -300,7 +597,7 @@ void expect_atomic_reference(const double energy,
                              const std::vector<ValueType>& atomic_virial,
                              const deepmd_test::DeepPotRef& ref,
                              const double tol) {
-  const int natoms = static_cast<int>(deepmd_test::deeppot_atype().size());
+  const int natoms = static_cast<int>(ref.atomic_energy.size());
 
   expect_reference(energy, force, virial, ref, tol);
   ASSERT_EQ(atomic_energy.size(), static_cast<size_t>(natoms));
@@ -487,6 +784,52 @@ void check_lmp_nlist_atomic(deepmd::DeepPot& dp,
                           9);
     expect_atomic_reference(energy, force, virial, atomic_energy, atomic_virial,
                             ref, tol);
+  }
+}
+
+std::vector<std::vector<int>> make_full_nlist_data(const int natoms) {
+  std::vector<std::vector<int>> nlist_data(natoms);
+  for (int ii = 0; ii < natoms; ++ii) {
+    nlist_data[ii].reserve(natoms - 1);
+    for (int jj = 0; jj < natoms; ++jj) {
+      if (ii != jj) {
+        nlist_data[ii].push_back(jj);
+      }
+    }
+  }
+  return nlist_data;
+}
+
+template <typename ValueType>
+void check_no_pbc_lmp_nlist(deepmd::DeepPot& dp,
+                            const deepmd_test::DeepPotRef& ref,
+                            const double tol,
+                            const bool atomic) {
+  const int natoms = static_cast<int>(deepmd_test::deeppot_atype().size());
+  const std::vector<ValueType> coord(deepmd_test::deeppot_coord().begin(),
+                                     deepmd_test::deeppot_coord().end());
+  const std::vector<int> atype = deepmd_test::deeppot_atype();
+  const std::vector<ValueType> box;
+  std::vector<std::vector<int>> nlist_data = make_full_nlist_data(natoms);
+  std::vector<int> ilist(natoms), numneigh(natoms);
+  std::vector<int*> firstneigh(natoms);
+  deepmd::InputNlist inlist(natoms, ilist.data(), numneigh.data(),
+                            firstneigh.data());
+  convert_nlist(inlist, nlist_data);
+
+  double energy = 0.0;
+  std::vector<ValueType> force;
+  std::vector<ValueType> virial;
+  if (atomic) {
+    std::vector<ValueType> atomic_energy;
+    std::vector<ValueType> atomic_virial;
+    dp.compute(energy, force, virial, atomic_energy, atomic_virial, coord,
+               atype, box, 0, inlist, 0);
+    expect_atomic_reference(energy, force, virial, atomic_energy, atomic_virial,
+                            ref, tol);
+  } else {
+    dp.compute(energy, force, virial, coord, atype, box, 0, inlist, 0);
+    expect_reference(energy, force, virial, ref, tol);
   }
 }
 
@@ -1235,6 +1578,211 @@ TEST_P(UniversalDeepPotTest, NFramesComputeNoPbcFloat) {
                                      GetParam().float_tol, 2, false);
 }
 
+TEST_P(VariantDeepPotTest, ComputeDouble) {
+  check_compute_atomic<double>(dp, *ref, GetParam().double_tol);
+}
+
+TEST_P(VariantDeepPotTest, ComputeFloat) {
+  if (!GetParam().supports_float) {
+    GTEST_SKIP() << backend_name(GetParam().backend)
+                 << " does not provide float inference coverage.";
+  }
+  check_compute_atomic<float>(dp, *ref, GetParam().float_tol);
+}
+
+TEST_P(VariantDeepPotTest, ComputeSimpleDouble) {
+  check_compute_simple<double>(dp, *ref, GetParam().double_tol);
+}
+
+TEST_P(VariantDeepPotTest, ComputeSimpleFloat) {
+  if (!GetParam().supports_float) {
+    GTEST_SKIP() << backend_name(GetParam().backend)
+                 << " does not provide float inference coverage.";
+  }
+  check_compute_simple<float>(dp, *ref, GetParam().float_tol);
+}
+
+TEST_P(VariantDeepPotTest, FiniteDifferenceDouble) {
+  if (!GetParam().supports_finite_difference) {
+    GTEST_SKIP() << GetParam().name
+                 << " finite-difference coverage is not enabled.";
+  }
+  check_finite_difference<double>(dp);
+}
+
+TEST_P(VariantDeepPotTest, FiniteDifferenceFloat) {
+  if (!GetParam().supports_float) {
+    GTEST_SKIP() << backend_name(GetParam().backend)
+                 << " does not provide float inference coverage.";
+  }
+  if (!GetParam().supports_finite_difference) {
+    GTEST_SKIP() << GetParam().name
+                 << " finite-difference coverage is not enabled.";
+  }
+  check_finite_difference<float>(dp);
+}
+
+TEST_P(VariantDeepPotTest, LmpNlistDouble) {
+  if (!GetParam().supports_lmp_nlist) {
+    GTEST_SKIP() << GetParam().name << " LAMMPS nlist coverage is not enabled.";
+  }
+  check_lmp_nlist<double>(dp, *ref, GetParam().double_tol);
+}
+
+TEST_P(VariantDeepPotTest, LmpNlistFloat) {
+  if (!GetParam().supports_float) {
+    GTEST_SKIP() << backend_name(GetParam().backend)
+                 << " does not provide float inference coverage.";
+  }
+  if (!GetParam().supports_lmp_nlist) {
+    GTEST_SKIP() << GetParam().name << " LAMMPS nlist coverage is not enabled.";
+  }
+  check_lmp_nlist<float>(dp, *ref, GetParam().float_tol);
+}
+
+TEST_P(VariantDeepPotTest, LmpNlistAtomicDouble) {
+  if (!GetParam().supports_lmp_nlist_atomic) {
+    GTEST_SKIP() << GetParam().name
+                 << " atomic LAMMPS nlist coverage is not enabled.";
+  }
+  check_lmp_nlist_atomic<double>(dp, *ref, GetParam().double_tol);
+}
+
+TEST_P(VariantDeepPotTest, LmpNlistAtomicFloat) {
+  if (!GetParam().supports_float) {
+    GTEST_SKIP() << backend_name(GetParam().backend)
+                 << " does not provide float inference coverage.";
+  }
+  if (!GetParam().supports_lmp_nlist_atomic) {
+    GTEST_SKIP() << GetParam().name
+                 << " atomic LAMMPS nlist coverage is not enabled.";
+  }
+  check_lmp_nlist_atomic<float>(dp, *ref, GetParam().float_tol);
+}
+
+TEST_P(VariantDeepPotTest, LmpNlistDoubleCutoffTwice) {
+  if (!GetParam().supports_lmp_nlist_cutoff_twice) {
+    GTEST_SKIP() << GetParam().name
+                 << " doubled-cutoff LAMMPS nlist coverage is not enabled.";
+  }
+  check_lmp_nlist<double>(dp, *ref, GetParam().double_tol, 2.0);
+}
+
+TEST_P(VariantDeepPotTest, LmpNlistFloatCutoffTwice) {
+  if (!GetParam().supports_float) {
+    GTEST_SKIP() << backend_name(GetParam().backend)
+                 << " does not provide float inference coverage.";
+  }
+  if (!GetParam().supports_lmp_nlist_cutoff_twice) {
+    GTEST_SKIP() << GetParam().name
+                 << " doubled-cutoff LAMMPS nlist coverage is not enabled.";
+  }
+  check_lmp_nlist<float>(dp, *ref, GetParam().float_tol, 2.0);
+}
+
+TEST_P(VariantDeepPotTest, LmpNlistTypeSelDouble) {
+  if (!GetParam().supports_lmp_nlist_type_sel) {
+    GTEST_SKIP() << GetParam().name
+                 << " type-selected LAMMPS nlist coverage is not enabled.";
+  }
+  check_lmp_nlist_type_sel<double>(dp, *ref, GetParam().double_tol, false);
+}
+
+TEST_P(VariantDeepPotTest, LmpNlistTypeSelFloat) {
+  if (!GetParam().supports_float) {
+    GTEST_SKIP() << backend_name(GetParam().backend)
+                 << " does not provide float inference coverage.";
+  }
+  if (!GetParam().supports_lmp_nlist_type_sel) {
+    GTEST_SKIP() << GetParam().name
+                 << " type-selected LAMMPS nlist coverage is not enabled.";
+  }
+  check_lmp_nlist_type_sel<float>(dp, *ref, GetParam().float_tol, false);
+}
+
+TEST_P(VariantDeepPotTest, PrintSummary) {
+  if (!GetParam().supports_print_summary) {
+    GTEST_SKIP() << GetParam().name << " summary coverage is not enabled.";
+  }
+  dp.print_summary("");
+}
+
+TEST_P(VariantDeepPotTest, ComputeSimpleNoPbcDouble) {
+  if (!GetParam().supports_no_pbc_simple) {
+    GTEST_SKIP() << GetParam().name << " NoPBC coverage is not enabled.";
+  }
+  check_compute_simple<double>(dp, *no_pbc_ref, GetParam().double_tol, false);
+}
+
+TEST_P(VariantDeepPotTest, ComputeSimpleNoPbcFloat) {
+  if (!GetParam().supports_float) {
+    GTEST_SKIP() << backend_name(GetParam().backend)
+                 << " does not provide float inference coverage.";
+  }
+  if (!GetParam().supports_no_pbc_simple) {
+    GTEST_SKIP() << GetParam().name << " NoPBC coverage is not enabled.";
+  }
+  check_compute_simple<float>(dp, *no_pbc_ref, GetParam().float_tol, false);
+}
+
+TEST_P(VariantDeepPotTest, ComputeNoPbcDouble) {
+  if (!GetParam().supports_no_pbc_atomic) {
+    GTEST_SKIP() << GetParam().name << " atomic NoPBC coverage is not enabled.";
+  }
+  check_compute_atomic<double>(dp, *no_pbc_ref, GetParam().double_tol, false);
+}
+
+TEST_P(VariantDeepPotTest, ComputeNoPbcFloat) {
+  if (!GetParam().supports_float) {
+    GTEST_SKIP() << backend_name(GetParam().backend)
+                 << " does not provide float inference coverage.";
+  }
+  if (!GetParam().supports_no_pbc_atomic) {
+    GTEST_SKIP() << GetParam().name << " atomic NoPBC coverage is not enabled.";
+  }
+  check_compute_atomic<float>(dp, *no_pbc_ref, GetParam().float_tol, false);
+}
+
+TEST_P(VariantDeepPotTest, NoPbcLmpNlistDouble) {
+  if (!GetParam().supports_no_pbc_lmp_nlist) {
+    GTEST_SKIP() << GetParam().name
+                 << " NoPBC LAMMPS nlist coverage is not enabled.";
+  }
+  check_no_pbc_lmp_nlist<double>(dp, *no_pbc_ref, GetParam().double_tol, false);
+}
+
+TEST_P(VariantDeepPotTest, NoPbcLmpNlistFloat) {
+  if (!GetParam().supports_float) {
+    GTEST_SKIP() << backend_name(GetParam().backend)
+                 << " does not provide float inference coverage.";
+  }
+  if (!GetParam().supports_no_pbc_lmp_nlist) {
+    GTEST_SKIP() << GetParam().name
+                 << " NoPBC LAMMPS nlist coverage is not enabled.";
+  }
+  check_no_pbc_lmp_nlist<float>(dp, *no_pbc_ref, GetParam().float_tol, false);
+}
+
+TEST_P(VariantDeepPotTest, NoPbcLmpNlistAtomicDouble) {
+  if (!GetParam().supports_no_pbc_lmp_nlist_atomic) {
+    GTEST_SKIP() << GetParam().name
+                 << " atomic NoPBC LAMMPS nlist coverage is not enabled.";
+  }
+  check_no_pbc_lmp_nlist<double>(dp, *no_pbc_ref, GetParam().double_tol, true);
+}
+
+TEST_P(VariantDeepPotTest, NoPbcLmpNlistAtomicFloat) {
+  if (!GetParam().supports_float) {
+    GTEST_SKIP() << backend_name(GetParam().backend)
+                 << " does not provide float inference coverage.";
+  }
+  if (!GetParam().supports_no_pbc_lmp_nlist_atomic) {
+    GTEST_SKIP() << GetParam().name
+                 << " atomic NoPBC LAMMPS nlist coverage is not enabled.";
+  }
+  check_no_pbc_lmp_nlist<float>(dp, *no_pbc_ref, GetParam().float_tol, true);
+}
+
 TEST_P(FParamAParamDeepPotTest, Metadata) {
   EXPECT_EQ(dp.dim_fparam(), 1);
   EXPECT_EQ(dp.dim_aparam(), 1);
@@ -1362,6 +1910,14 @@ INSTANTIATE_TEST_SUITE_P(
     UniversalDeepPotTest,
     ::testing::ValuesIn(model_cases()),
     [](const ::testing::TestParamInfo<UniversalDeepPotTest::ParamType>& info) {
+      return info.param.name;
+    });
+
+INSTANTIATE_TEST_SUITE_P(
+    ModelVariants,
+    VariantDeepPotTest,
+    ::testing::ValuesIn(variant_deeppot_cases()),
+    [](const ::testing::TestParamInfo<VariantDeepPotTest::ParamType>& info) {
       return info.param.name;
     });
 
