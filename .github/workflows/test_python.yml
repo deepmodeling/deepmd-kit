@@ -45,6 +45,7 @@ jobs:
           HOROVOD_WITH_MPI: 1
           # https://cmake.org/cmake/help/latest/variable/CMAKE_POLICY_VERSION_MINIMUM.html
           CMAKE_POLICY_VERSION_MINIMUM: 3.5
+          UV_HTTP_TIMEOUT: 120
       - run: dp --version
       - name: Get durations from cache
         uses: actions/cache@v5
