@@ -185,8 +185,9 @@ def get_linear_model(model_params: dict) -> LinearEnergyModel:
             for idx, sub_model_params in enumerate(model_params["models"][1:], start=1):
                 if sub_model_params["type_map"] != first_type_map:
                     raise ValueError(
-                        "All linear sub-model type_map values must be identical "
-                        "when linear_ener has no top-level type_map."
+                        f"Linear sub-model {idx} type_map differs from sub-model 0. "
+                        "All type_map values must be identical when linear_ener "
+                        "has no top-level type_map."
                     )
             model_params["type_map"] = copy.deepcopy(first_type_map)
 
