@@ -43,6 +43,9 @@ from .model_stat import (
     make_stat_input,
     merge_sys_stat,
 )
+from .stat_file import (
+    add_type_map_to_stat_path,
+)
 
 
 def _pack_stat_batches(all_stat: dict) -> list[dict[str, Any]]:
@@ -70,10 +73,10 @@ def _pack_stat_batches(all_stat: dict) -> list[dict[str, Any]]:
 def _save_observed_types_to_file(
     stat_file_path: DPPath | None,
     sampled: list[dict[str, Any]],
-    type_map: list[str],
+    type_map: list[str] | None,
 ) -> None:
     """Save observed atom types using the backend-agnostic dpmodel helpers."""
-    if stat_file_path is None:
+    if stat_file_path is None or type_map is None:
         return
     observed = _restore_observed_type_from_file(stat_file_path)
     if observed is None:
@@ -187,8 +190,12 @@ class EnerModel(StandardModel):
     ) -> None:
         all_stat = make_stat_input(data, self.data_stat_nbatch, merge_sys=False)
         m_all_stat = merge_sys_stat(all_stat)
+        stat_file_path = add_type_map_to_stat_path(stat_file_path, self.type_map)
         self._compute_input_stat(
-            m_all_stat, protection=self.data_stat_protect, mixed_type=data.mixed_type
+            m_all_stat,
+            protection=self.data_stat_protect,
+            mixed_type=data.mixed_type,
+            stat_file_path=stat_file_path,
         )
         self._compute_output_stat(
             all_stat, mixed_type=data.mixed_type, stat_file_path=stat_file_path
@@ -196,7 +203,11 @@ class EnerModel(StandardModel):
         # self.bias_atom_e = data.compute_energy_shift(self.rcond)
 
     def _compute_input_stat(
-        self, all_stat: dict, protection: float = 1e-2, mixed_type: bool = False
+        self,
+        all_stat: dict,
+        protection: float = 1e-2,
+        mixed_type: bool = False,
+        stat_file_path: DPPath | None = None,
     ) -> None:
         if mixed_type:
             self.descrpt.compute_input_stats(
@@ -208,6 +219,7 @@ class EnerModel(StandardModel):
                 all_stat,
                 mixed_type,
                 all_stat["real_natoms_vec"],
+                stat_file_path=stat_file_path,
             )
         else:
             self.descrpt.compute_input_stats(
@@ -217,8 +229,11 @@ class EnerModel(StandardModel):
                 all_stat["natoms_vec"],
                 all_stat["default_mesh"],
                 all_stat,
+                stat_file_path=stat_file_path,
             )
-        self.fitting.compute_input_stats(all_stat, protection=protection)
+        self.fitting.compute_input_stats(
+            all_stat, protection=protection, stat_file_path=stat_file_path
+        )
 
     def _compute_output_stat(
         self,
@@ -226,38 +241,26 @@ class EnerModel(StandardModel):
         mixed_type: bool = False,
         stat_file_path: DPPath | None = None,
     ) -> None:
-        if stat_file_path is not None:
-            # Add type_map subdirectory for consistency with PyTorch backend.
-            # Descriptors and fitting nets with different type maps should not
-            # share the same statistics.
-            if self.type_map is not None:
-                stat_file_path = stat_file_path / " ".join(self.type_map)
+        # Reuse the backend-agnostic dpmodel stat implementation instead of
+        # maintaining a TensorFlow copy of the same save/load/stat logic.
+        sampled = _pack_stat_batches(all_stat)
+        _save_observed_types_to_file(stat_file_path, sampled, self.type_map)
+        preset_bias = None
+        if len(self.fitting.atom_ener) > 0:
+            preset_bias = {"energy": self.fitting.atom_ener_v}
+        bias_out, _ = compute_output_stats(
+            sampled,
+            self.ntypes,
+            keys=["energy"],
+            stat_file_path=stat_file_path,
+            rcond=getattr(self.fitting, "rcond", None),
+            preset_bias=preset_bias,
+        )
 
-            # Reuse the backend-agnostic dpmodel stat implementation instead of
-            # maintaining a TensorFlow copy of the same save/load/stat logic.
-            sampled = _pack_stat_batches(all_stat)
-            _save_observed_types_to_file(stat_file_path, sampled, self.type_map)
-            preset_bias = None
-            if len(self.fitting.atom_ener) > 0:
-                preset_bias = {"energy": self.fitting.atom_ener_v}
-            bias_out, _ = compute_output_stats(
-                sampled,
-                self.ntypes,
-                keys=["energy"],
-                stat_file_path=stat_file_path,
-                rcond=getattr(self.fitting, "rcond", None),
-                preset_bias=preset_bias,
-            )
-
-            if "energy" in bias_out:
-                # TensorFlow fitting code historically stores a 1-D bias vector,
-                # while stat files use the PyTorch-compatible (ntypes, 1) shape.
-                self.fitting.bias_atom_e = bias_out["energy"].ravel()
-        else:
-            if mixed_type:
-                self.fitting.compute_output_stats(all_stat, mixed_type=mixed_type)
-            else:
-                self.fitting.compute_output_stats(all_stat)
+        if "energy" in bias_out:
+            # TensorFlow fitting code historically stores a 1-D bias vector,
+            # while stat files use the PyTorch-compatible (ntypes, 1) shape.
+            self.fitting.bias_atom_e = bias_out["energy"].ravel()
 
     def build(
         self,

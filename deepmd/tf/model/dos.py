@@ -25,6 +25,9 @@ from .model_stat import (
     make_stat_input,
     merge_sys_stat,
 )
+from .stat_file import (
+    add_type_map_to_stat_path,
+)
 
 
 @StandardModel.register("dos")
@@ -100,14 +103,22 @@ class DOSModel(StandardModel):
     ) -> None:
         all_stat = make_stat_input(data, self.data_stat_nbatch, merge_sys=False)
         m_all_stat = merge_sys_stat(all_stat)
+        stat_file_path = add_type_map_to_stat_path(stat_file_path, self.type_map)
         self._compute_input_stat(
-            m_all_stat, protection=self.data_stat_protect, mixed_type=data.mixed_type
+            m_all_stat,
+            protection=self.data_stat_protect,
+            mixed_type=data.mixed_type,
+            stat_file_path=stat_file_path,
         )
         # self._compute_output_stat(all_stat, mixed_type=data.mixed_type)
         # self.bias_atom_e = data.compute_energy_shift(self.rcond)
 
     def _compute_input_stat(
-        self, all_stat: dict, protection: float = 1e-2, mixed_type: bool = False
+        self,
+        all_stat: dict,
+        protection: float = 1e-2,
+        mixed_type: bool = False,
+        stat_file_path: DPPath | None = None,
     ) -> None:
         if mixed_type:
             self.descrpt.compute_input_stats(
@@ -119,6 +130,7 @@ class DOSModel(StandardModel):
                 all_stat,
                 mixed_type,
                 all_stat["real_natoms_vec"],
+                stat_file_path=stat_file_path,
             )
         else:
             self.descrpt.compute_input_stats(
@@ -128,8 +140,11 @@ class DOSModel(StandardModel):
                 all_stat["natoms_vec"],
                 all_stat["default_mesh"],
                 all_stat,
+                stat_file_path=stat_file_path,
             )
-        self.fitting.compute_input_stats(all_stat, protection=protection)
+        self.fitting.compute_input_stats(
+            all_stat, protection=protection, stat_file_path=stat_file_path
+        )
 
     def _compute_output_stat(self, all_stat: dict, mixed_type: bool = False) -> None:
         if mixed_type:

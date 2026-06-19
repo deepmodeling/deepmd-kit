@@ -90,6 +90,9 @@ from .descriptor import (
 from .se_a import (
     DescrptSeA,
 )
+from .stat import (
+    load_or_compute_se_input_stats,
+)
 
 log = logging.getLogger(__name__)
 
@@ -373,7 +376,8 @@ class DescrptSeAtten(DescrptSeA):
         **kwargs
             Additional keyword arguments.
         """
-        if True:
+
+        def compute_stats() -> dict[str, Any]:
             sumr = []
             suma = []
             sumn = []
@@ -418,7 +422,16 @@ class DescrptSeAtten(DescrptSeA):
                 "sumr2": sumr2,
                 "suma2": suma2,
             }
-            self.merge_input_stats(stat_dict)
+            return stat_dict
+
+        stat_dict = load_or_compute_se_input_stats(
+            self,
+            kwargs.get("stat_file_path"),
+            last_dim=4,
+            compute=compute_stats,
+            mixed_types=True,
+        )
+        self.merge_input_stats(stat_dict)
 
     def enable_compression(
         self,

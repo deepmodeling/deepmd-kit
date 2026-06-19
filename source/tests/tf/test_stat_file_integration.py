@@ -109,6 +109,12 @@ class TestStatFileIntegration(unittest.TestCase):
             stat_path = Path(stat_file_path)
             self.assertTrue(stat_path.exists(), "Stat file path should be created")
             self.assertTrue(stat_path.is_dir(), "Stat file path should be a directory")
+            type_path = stat_path / "O H"
+            self.assertTrue(type_path.is_dir(), "Type-map stat directory should exist")
+            self.assertTrue(
+                any(child.is_dir() for child in type_path.iterdir()),
+                "Descriptor stat hash directory should be created",
+            )
 
 
 if __name__ == "__main__":

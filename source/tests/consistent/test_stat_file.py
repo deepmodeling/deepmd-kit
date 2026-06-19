@@ -4,8 +4,12 @@
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
+from copy import (
+    deepcopy,
+)
 from pathlib import (
     Path,
 )
@@ -95,7 +99,7 @@ class TestStatFileConsistency(unittest.TestCase):
         stat_dir : str
             Directory for stat files
         """
-        config_copy = config.copy()
+        config_copy = deepcopy(config)
         config_copy["training"]["stat_file"] = stat_dir
         config_copy["training"]["training_data"]["systems"] = [str(self.test_data_path)]
 
@@ -106,9 +110,15 @@ class TestStatFileConsistency(unittest.TestCase):
 
         # Run training with specified backend using subprocess
         env = os.environ.copy()
-        cmd = ["dp", "train", config_file]
+        dp_cmd = Path(sys.executable).with_name("dp")
+        base_cmd = (
+            [str(dp_cmd)]
+            if dp_cmd.exists()
+            else [sys.executable, "-c", "from deepmd.main import main; main()"]
+        )
+        cmd = [*base_cmd, "train", config_file]
         if backend == "pt":
-            cmd = ["dp", "--pt", "train", config_file]
+            cmd = [*base_cmd, "--pt", "train", config_file]
 
         cmd.extend(["--log-level", "WARNING"])
 
@@ -149,55 +159,47 @@ class TestStatFileConsistency(unittest.TestCase):
         self.assertTrue(tf_path.is_dir(), "TensorFlow stat path should be a directory")
         self.assertTrue(pt_path.is_dir(), "PyTorch stat path should be a directory")
 
-        # Get type map subdirectories
-        tf_subdirs = sorted([d.name for d in tf_path.iterdir() if d.is_dir()])
-        pt_subdirs = sorted([d.name for d in pt_path.iterdir() if d.is_dir()])
-
-        self.assertEqual(
-            tf_subdirs, pt_subdirs, "Both backends should create same subdirectories"
+        tf_files = sorted(
+            ff.relative_to(tf_path) for ff in tf_path.rglob("*") if ff.is_file()
+        )
+        pt_files = sorted(
+            ff.relative_to(pt_path) for ff in pt_path.rglob("*") if ff.is_file()
         )
 
-        # Compare files in each subdirectory
-        for subdir in tf_subdirs:
-            tf_subdir = tf_path / subdir
-            pt_subdir = pt_path / subdir
+        self.assertEqual(tf_files, pt_files, "Both backends should create same files")
+        self.assertTrue(
+            any(len(ff.parts) > 2 for ff in tf_files),
+            "Descriptor stat files should be saved under their hash directory",
+        )
 
-            tf_files = sorted([f.name for f in tf_subdir.iterdir() if f.is_file()])
-            pt_files = sorted([f.name for f in pt_subdir.iterdir() if f.is_file()])
+        for filename in tf_files:
+            tf_file = tf_path / filename
+            pt_file = pt_path / filename
+
+            tf_data = np.load(tf_file)
+            pt_data = np.load(pt_file)
 
             self.assertEqual(
-                tf_files, pt_files, f"Files in {subdir} should be identical"
+                tf_data.shape,
+                pt_data.shape,
+                f"Shape mismatch in {filename}",
             )
 
-            # Compare file contents
-            for filename in tf_files:
-                tf_file = tf_subdir / filename
-                pt_file = pt_subdir / filename
-
-                tf_data = np.load(tf_file)
-                pt_data = np.load(pt_file)
-
-                self.assertEqual(
-                    tf_data.shape,
-                    pt_data.shape,
-                    f"Shape mismatch in {subdir}/{filename}",
+            if np.issubdtype(tf_data.dtype, np.number):
+                # Values should be very close (allow for small numerical differences)
+                np.testing.assert_allclose(
+                    tf_data,
+                    pt_data,
+                    rtol=1e-4,
+                    atol=1e-6,
+                    err_msg=f"Values differ in {filename}",
                 )
-
-                if np.issubdtype(tf_data.dtype, np.number):
-                    # Values should be very close (allow for small numerical differences)
-                    np.testing.assert_allclose(
-                        tf_data,
-                        pt_data,
-                        rtol=1e-4,
-                        atol=1e-6,
-                        err_msg=f"Values differ in {subdir}/{filename}",
-                    )
-                else:
-                    np.testing.assert_array_equal(
-                        tf_data,
-                        pt_data,
-                        err_msg=f"Values differ in {subdir}/{filename}",
-                    )
+            else:
+                np.testing.assert_array_equal(
+                    tf_data,
+                    pt_data,
+                    err_msg=f"Values differ in {filename}",
+                )
 
     @unittest.skipUnless(
         INSTALLED_TF and INSTALLED_PT, "TensorFlow and PyTorch required"

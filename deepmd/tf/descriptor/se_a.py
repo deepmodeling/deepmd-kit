@@ -77,6 +77,9 @@ from .descriptor import (
 from .se import (
     DescrptSe,
 )
+from .stat import (
+    load_or_compute_se_input_stats,
+)
 
 
 @Descriptor.register("se_e2_a")
@@ -374,7 +377,8 @@ class DescrptSeA(DescrptSe):
         **kwargs
             Additional keyword arguments.
         """
-        if True:
+
+        def compute_stats() -> dict[str, Any]:
             sumr = []
             suma = []
             sumn = []
@@ -398,7 +402,16 @@ class DescrptSeA(DescrptSe):
                 "sumr2": sumr2,
                 "suma2": suma2,
             }
-            self.merge_input_stats(stat_dict)
+            return stat_dict
+
+        stat_dict = load_or_compute_se_input_stats(
+            self,
+            kwargs.get("stat_file_path"),
+            last_dim=4,
+            compute=compute_stats,
+            mixed_types=False,
+        )
+        self.merge_input_stats(stat_dict)
 
     def merge_input_stats(self, stat_dict: dict[str, Any]) -> None:
         """Merge the statistics computed from compute_input_stats to obtain the self.davg and self.dstd.

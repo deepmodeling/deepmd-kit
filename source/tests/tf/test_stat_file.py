@@ -80,12 +80,15 @@ class TestStatFile(unittest.TestCase):
             # Check if stat files were created
             stat_path = Path(stat_file_path)
             self.assertTrue(stat_path.exists(), "Stat file directory should be created")
-
-            # Check for energy bias and std files
-
-            # At minimum, the directory structure should be created
-            # Even if files aren't created due to insufficient data, the directory should exist
             self.assertTrue(stat_path.is_dir(), "Stat file path should be a directory")
+            type_path = stat_path / "O H"
+            self.assertTrue(type_path.is_dir(), "Type-map stat directory should exist")
+            self.assertTrue((type_path / "bias_atom_energy").is_file())
+            self.assertTrue((type_path / "std_atom_energy").is_file())
+            self.assertTrue(
+                any(child.is_dir() for child in type_path.iterdir()),
+                "Descriptor stat hash directory should be created",
+            )
 
 
 if __name__ == "__main__":
