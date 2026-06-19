@@ -1645,6 +1645,7 @@ class TestS2GridParity:
         dp_mod = DPGridBranch(
             channels=self.channels,
             n_branches=n_branches,
+            n_frames=1,
             precision="float64",
             seed=9,
         )
@@ -1712,6 +1713,7 @@ class TestS2GridParity:
         dp_mod = DPGridMLP(
             channels=self.channels,
             mode=mode,
+            n_frames=1,
             precision="float64",
             seed=9,
         )
@@ -1809,11 +1811,10 @@ class TestS2GridParity:
         # "e3nn" default, which dp rejects): default construction works
         net = DPS2GridNet(**{k: v for k, v in common.items() if k != "grid_method"})
         assert net.grid_method == "lebedev"
-        with pytest.raises(NotImplementedError, match="node_wise_s2"):
-            # cross mode backs node_wise_s2/message_node_s2 only
-            DPS2GridNet(**{**common, "mode": "cross"})
-        with pytest.raises(NotImplementedError, match="residual_scale_init"):
-            DPS2GridNet(**common, residual_scale_init=1e-3)
+        # cross mode and residual_scale_init are now ported (see
+        # test_dpa4_basegridnet_cross.py for parity coverage); they construct.
+        DPS2GridNet(**{**common, "mode": "cross"})
+        DPS2GridNet(**common, residual_scale_init=1e-3)
 
     def test_value_errors(self) -> None:
         from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import (
@@ -1858,7 +1859,7 @@ class TestS2GridParity:
         with pytest.raises(ValueError):  # flat layout is cross-only
             DPS2GridNet(**{**common, "layout": "flat"})
         with pytest.raises(ValueError):  # n_branches must be positive
-            DPGridBranch(channels=4, n_branches=0, precision="float64")
+            DPGridBranch(channels=4, n_branches=0, n_frames=1, precision="float64")
         dp_net = DPS2GridNet(**common)
         rng = np.random.default_rng(2086)
         with pytest.raises(ValueError):  # wrong query channel count
@@ -2377,10 +2378,6 @@ class TestSO2Parity:
             ("atten_v_proj", True),  # value projection
             ("atten_o_proj", True),  # output projection
             ("s2_activation", True),  # S2-grid SwiGLU non-linearity
-            ("node_wise_s2", True),  # edge-local S2 grid product
-            ("node_wise_so3", True),  # edge-local SO(3) grid product
-            ("message_node_s2", True),  # post-aggregation S2 grid product
-            ("message_node_so3", True),  # post-aggregation SO(3) grid product
         ],
     )
     def test_so2_convolution_guards(self, flag, value) -> None:
@@ -3183,11 +3180,16 @@ class TestFFNParity:
             np.asarray(dp_mod.call(x)), np.asarray(dp_mod2.call(x))
         )
 
-    def test_ffn_guards(self) -> None:
-        from deepmd.dpmodel.descriptor.dpa4_nn.ffn import EquivariantFFN as DPFFN
-
-        with pytest.raises(NotImplementedError, match="ffn_so3_grid"):
-            DPFFN(**self._ffn_kwargs(ffn_so3_grid=True), precision="float64")
+    @pytest.mark.parametrize("grid_branch", [0, 1])  # branch mixer off/on
+    @pytest.mark.parametrize("grid_mlp", [False, True])  # polynomial grid MLP op
+    def test_ffn_so3_grid(self, grid_mlp, grid_branch) -> None:
+        # ffn_so3_grid=True wires SO3GridNet(mode='self'); grid_n_frames=2*kmax+1
+        pt_mod, dp_mod, kwargs = self._build_ffn_pair(
+            ffn_so3_grid=True, grid_mlp=grid_mlp, grid_branch=grid_branch
+        )
+        assert dp_mod.ffn_so3_grid
+        assert dp_mod.grid_n_frames == 2 * kwargs["kmax"] + 1
+        self._assert_ffn_parity(pt_mod, dp_mod, kwargs)
 
     def test_ffn_errors(self) -> None:
         from deepmd.dpmodel.descriptor.dpa4_nn.ffn import EquivariantFFN as DPFFN
@@ -3334,6 +3336,11 @@ class TestBlockParity:
         )
         self._assert_block_parity(pt_mod, dp_mod, kwargs)
 
+    def test_block_ffn_so3_grid(self) -> None:
+        # ffn_so3_grid=True: block FFN uses SO3GridNet(mode='self')
+        pt_mod, dp_mod, kwargs = self._build_block_pair(ffn_so3_grid=True)
+        self._assert_block_parity(pt_mod, dp_mod, kwargs)
+
     def test_block_real_edge_cache(self) -> None:
         # end-to-end: REAL pt build_edge_cache vs REAL dp build_edge_cache
         # feeding the same weight-copied block (no synthetic cache)
@@ -3400,9 +3407,6 @@ class TestBlockParity:
             ("block_attn_res", "dependent"),  # block-level DepthAttnRes
             ("layer_scale", True),  # block-level FFN LayerScale
             ("so2_s2_activation", True),  # delegated to SO2Convolution
-            ("node_wise_s2", True),  # delegated to SO2Convolution
-            ("message_node_so3", True),  # delegated to SO2Convolution
-            ("ffn_so3_grid", True),  # delegated to EquivariantFFN
         ],
     )
     def test_block_guards(self, flag, value) -> None:

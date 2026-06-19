@@ -164,9 +164,6 @@ class TestDescrptDPA4:
             ("block_attn_res", "dependent"),  # DepthAttnRes
             ("so2_attn_res", "independent"),  # SO(2) DepthAttnRes
             ("s2_activation", [True, True]),  # so2-side S2 activation
-            ("node_wise_s2", True),  # SO(2) cross-grid product
-            ("message_node_so3", True),  # SO(2) cross-grid product
-            ("ffn_so3_grid", True),  # SO(3) Wigner-D FFN grid
             ("atten_f_mix", True),  # SO(2) attention focus mix
             ("atten_v_proj", True),  # SO(2) attention value projection
             ("atten_o_proj", True),  # SO(2) attention output projection
@@ -186,7 +183,10 @@ class TestDescrptDPA4:
             ("full_attn_res", "none"),
             ("s2_activation", [False, True]),
             ("node_wise_s2", False),
-            ("ffn_so3_grid", False),
+            ("node_wise_so3", True),  # SO(2) edge-local SO(3) cross-grid product
+            ("message_node_so3", True),  # SO(2) post-agg SO(3) cross-grid product
+            ("ffn_so3_grid", False),  # SO(3) Wigner-D FFN grid off
+            ("ffn_so3_grid", True),  # SO(3) Wigner-D FFN grid on (now wired)
             ("use_amp", True),  # pt-runtime-only switch: accepted and ignored
             ("use_amp", False),
         ],
