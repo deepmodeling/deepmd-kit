@@ -18,8 +18,14 @@ from deepmd.jax.env import (
     jax,
     jax_export,
 )
+from deepmd.jax.model.base_model import (
+    BaseModel,
+)
 from deepmd.jax.train.trainer import (
     DPTrainer,
+)
+from deepmd.jax.utils.update_sel import (
+    use_jax_update_sel,
 )
 from deepmd.utils import random as dp_random
 from deepmd.utils.argcheck import (
@@ -138,8 +144,9 @@ def train(
     jdata = update_deepmd_input(jdata, warning=True, dump="input_v2_compat.json")
 
     jdata = normalize(jdata)
+    min_nbor_dist = None
     if not skip_neighbor_stat:
-        jdata = update_sel(jdata)
+        jdata, min_nbor_dist = update_sel(jdata)
 
     with open(output, "w") as fp:
         json.dump(jdata, fp, indent=4)
@@ -155,6 +162,8 @@ def train(
         init_model=init_model,
         restart=restart,
     )
+    if min_nbor_dist is not None:
+        model.model.min_nbor_dist = min_nbor_dist
     rcut = model.model.get_rcut()
     type_map = model.model.get_type_map()
     if len(type_map) == 0:
@@ -193,11 +202,21 @@ def train(
     log.info(f"wall time: {(end_time - start_time):.3f} s")
 
 
-def update_sel(jdata: dict) -> dict:
+def update_sel(jdata: dict) -> tuple[dict, float | None]:
     """Update descriptor selections from neighbor statistics when available."""
     log.info(
-        "Skip neighbor statistics update for JAX training; "
-        "BaseModel.update_sel currently needs more memory than expected."
+        "Calculate neighbor statistics... (add --skip-neighbor-stat to skip this step)"
     )
-    # TODO: Restore BaseModel.update_sel once the JAX data path avoids OOM.
-    return jdata.copy()
+    jdata_cpy = jdata.copy()
+    type_map = jdata["model"].get("type_map")
+    train_data = get_data(
+        jdata["training"]["training_data"],
+        0,  # not used
+        type_map,
+        None,  # not used
+    )
+    with use_jax_update_sel():
+        jdata_cpy["model"], min_nbor_dist = BaseModel.update_sel(
+            train_data, type_map, jdata["model"]
+        )
+    return jdata_cpy, min_nbor_dist

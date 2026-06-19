@@ -49,7 +49,7 @@ pair_style deepmd models ... keyword value ...
 - models = frozen model(s) to compute the interaction.
   If multiple models are provided, then only the first model serves to provide energy and force prediction for each timestep of molecular dynamics,
   and the model deviation will be computed among all models every `out_freq` timesteps.
-- keyword = _out_file_ or _out_freq_ or _fparam_ or _fparam_from_compute_ or _fparam_from_fix_ or _aparam_from_compute_ or _atomic_ or _relative_ or _relative_v_ or _aparam_ or _ttm_
+- keyword = _out_file_ or _out_freq_ or _fparam_ or _fparam_from_compute_ or _fparam_from_fix_ or _aparam_from_compute_ or _charge_spin_ or _atomic_ or _relative_ or _relative_v_ or _aparam_ or _ttm_
 
 <pre>
     <i>out_file</i> value = filename
@@ -65,6 +65,8 @@ pair_style deepmd models ... keyword value ...
         index = optional 1-based starting index for a global fix vector.
     <i>aparam_from_compute</i> value = id
         id = compute id used to update the atom parameter.
+    <i>charge_spin</i> value = parameters
+        parameters = the per-frame charge/spin values (dim_chg_spin numbers) required by models trained with a charge/spin embedding (e.g. DPA-3 with add_chg_spin_ebd). If omitted, the model's stored default_chg_spin is used.
     <i>atomic</i> = no value is required.
         If this keyword is set, the force model deviation of each atom will be output.
     <i>relative</i> value = level
@@ -91,6 +93,8 @@ compute    TEMP all temp
 
 pair_style deepmd ener.pb aparam_from_compute 1
 compute    1 all ke/atom
+
+pair_style deepmd dpa3.pth charge_spin 1.0 2.0
 ```
 
 ### Description
@@ -116,6 +120,7 @@ If the keyword `fparam_from_compute` is set, the global parameter(s) from comput
 If the keyword `fparam_from_fix` is set, the global parameter(s) from fix command will be fed to the model as the frame parameter(s). This is intended for generalized coordinates that are naturally carried by a fix, for example the potentiostat variable in `fix uvt`. See [compute `deepmd/fparam/dedn`](#compute-deepmdfparamdedn) for evaluating the corresponding energy derivative.
 If the keyword `aparam_from_compute` is set, the atomic parameter(s) from compute command (e.g., per-atom translational kinetic energy from [compute ke/atom command](https://docs.lammps.org/compute_ke_atom.html)) will be fed to the model as the atom parameter(s).
 If the keyword `aparam` is set, the given atomic parameter(s) will be fed to the model, where each atom is assumed to have the same atomic parameter(s).
+If the keyword `charge_spin` is set, the given per-frame charge/spin value(s) will be fed to models that were trained with a charge/spin embedding (e.g. DPA-3 with `add_chg_spin_ebd`). If the keyword is not set, the model's stored `default_chg_spin` (if any) is used.
 If the keyword `ttm` is set, electronic temperatures from [fix ttm command](https://docs.lammps.org/fix_ttm.html) will be fed to the model as the atomic parameters.
 
 Only a single `pair_coeff` command is used with the deepmd style which specifies atom names. These are mapped to LAMMPS atom types (integers from 1 to Ntypes) by specifying Ntypes additional arguments after `* *` in the `pair_coeff` command.

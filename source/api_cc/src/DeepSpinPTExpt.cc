@@ -1028,9 +1028,12 @@ template void DeepSpinPTExpt::compute<float, std::vector<ENERGYTYPE>>(
     const bool atomic);
 
 void DeepSpinPTExpt::get_type_map(std::string& type_map_str) {
+  type_map_str.clear();
   for (const auto& t : type_map) {
+    if (!type_map_str.empty()) {
+      type_map_str += " ";
+    }
     type_map_str += t;
-    type_map_str += " ";
   }
 }
 

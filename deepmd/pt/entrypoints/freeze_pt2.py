@@ -43,11 +43,17 @@ from deepmd.dpmodel.utils.nlist import (
 from deepmd.dpmodel.utils.region import (
     normalize_coord,
 )
+from deepmd.pt.model.descriptor.sezm_nn.so2 import (
+    SO2Linear,
+)
 from deepmd.pt.model.model import (
     get_model,
 )
 from deepmd.pt.train.wrapper import (
     ModelWrapper,
+)
+from deepmd.pt.utils.compile_compat import (
+    build_inductor_compile_options,
 )
 from deepmd.pt.utils.env import (
     DEVICE,
@@ -219,6 +225,7 @@ def _collect_metadata(
     model: torch.nn.Module,
     output_keys: list[str],
     is_spin: bool | None = None,
+    do_atomic_virial: bool = False,
 ) -> dict:
     """Assemble the flat metadata dict expected by :class:`DeepPotPTExpt`.
 
@@ -261,6 +268,8 @@ def _collect_metadata(
         "mixed_types": bool(model.mixed_types()),
         "has_message_passing": _model_has_message_passing(model),
         "has_comm_artifact": False,
+        "do_atomic_virial": bool(do_atomic_virial),
+        "nnei": int(sum(model.get_sel())),
         "has_default_fparam": bool(model.has_default_fparam()),
         "default_fparam": _to_py_list(model.get_default_fparam()),
         "default_chg_spin": _to_py_list(model.get_default_chg_spin()),
@@ -468,6 +477,7 @@ def freeze_sezm_to_pt2(
     *,
     device: torch.device | None = None,
     head: str | None = None,
+    atomic_virial: bool = True,
 ) -> None:
     """Freeze a SeZM checkpoint into an AOTInductor ``.pt2`` archive.
 
@@ -484,10 +494,16 @@ def freeze_sezm_to_pt2(
         Model head to export from a multi-task checkpoint. If omitted, the
         ``Default`` head is used when present; otherwise multi-task checkpoints
         must pass an explicit head. Single-task checkpoints must pass ``None``.
+    atomic_virial
+        Whether the exported model exposes per-atom virial.  Enabled by
+        default: the edge-force scatter assembles the per-atom virial as a
+        free by-product of the single backward, so exporting it carries no
+        compute cost.
     """
     from torch._inductor import (
         aoti_compile_and_package,
     )
+    from torch._inductor import config as inductor_config
 
     target_device = device if device is not None else DEVICE
 
@@ -507,6 +523,17 @@ def freeze_sezm_to_pt2(
     model.eval()
     model.to("cpu")
 
+    # The SO(2) linear mixer selects its block-diagonal vs dense matmul from a
+    # Python device branch that make_fx resolves at trace time. Since tracing
+    # always runs on CPU, pin the choice to the AOTI target device: non-CPU
+    # targets bake the block-diagonal contraction (which skips the structural
+    # off-|m| zeros); CPU targets keep the dense einsum that dodges the Inductor
+    # AVX2 codegen bug.
+    force_block_diag = target_device.type != "cpu"
+    for module in model.modules():
+        if isinstance(module, SO2Linear):
+            module._force_block_diag_matmul = force_block_diag
+
     _, sample_inputs_cpu = _resolve_nframes(
         model,
         nloc=7,
@@ -514,9 +541,6 @@ def freeze_sezm_to_pt2(
         has_spin=is_spin,
     )
 
-    # do_atomic_virial=True pulls every key that DeepPotPTExpt may read
-    # (energy, energy_redu, energy_derv_r, energy_derv_c, energy_derv_c_redu)
-    # into the traced graph.
     if is_spin:
         (
             ext_coord,
@@ -537,7 +561,7 @@ def freeze_sezm_to_pt2(
             fparam=fparam,
             aparam=aparam,
             charge_spin=charge_spin,
-            do_atomic_virial=True,
+            do_atomic_virial=atomic_virial,
         )
     else:
         (
@@ -557,7 +581,7 @@ def freeze_sezm_to_pt2(
             fparam=fparam,
             aparam=aparam,
             charge_spin=charge_spin,
-            do_atomic_virial=True,
+            do_atomic_virial=atomic_virial,
         )
 
     # Output key order is taken from a concrete run; Python dict order
@@ -587,9 +611,19 @@ def freeze_sezm_to_pt2(
         exported = move_to_device_pass(exported, target_device)
 
     out_path_str = str(out_path)
-    aoti_compile_and_package(exported, package_path=out_path_str)
+    compile_options = build_inductor_compile_options()
+    # Keep AOTInductor aligned with the eval compile path.  ``triton.max_tiles=1``
+    # keeps data-dependent edge axes on Triton's x grid, whose bound is large
+    # enough for production-scale neighbor lists.
+    with inductor_config.patch({**compile_options, "triton.max_tiles": 1}):
+        aoti_compile_and_package(exported, package_path=out_path_str)
 
-    metadata = _collect_metadata(model, output_keys=output_keys, is_spin=is_spin)
+    metadata = _collect_metadata(
+        model,
+        output_keys=output_keys,
+        is_spin=is_spin,
+        do_atomic_virial=atomic_virial,
+    )
     with zipfile.ZipFile(out_path_str, "a") as zf:
         zf.writestr("model/extra/metadata.json", json.dumps(metadata))
         # The raw training params are preserved so `dp change-bias` and

@@ -251,6 +251,21 @@ class ArgsPlugin:
                 raise ValueError(f"Invalid return type {type(args)}")
         return arguments
 
+    def get_argument(self, name: str) -> Argument:
+        """Get one registered argument by its canonical tag."""
+        for (arg_name, alias, doc), metd in self.__plugin.plugins.items():
+            if arg_name != name:
+                continue
+            args = metd()
+            if isinstance(args, Argument):
+                return args
+            if isinstance(args, list):
+                return Argument(
+                    name=arg_name, dtype=dict, sub_fields=args, alias=alias, doc=doc
+                )
+            raise ValueError(f"Invalid return type {type(args)}")
+        raise KeyError(f"Unknown argument plugin: {name}")
+
 
 descrpt_args_plugin = ArgsPlugin()
 
@@ -365,12 +380,12 @@ def descrpt_se_zm_args() -> list[Argument]:
     doc_channels = "Total channels per (l,m) coefficient."
     doc_basis_type = "Radial basis type. Supported values are `bessel` and `gaussian`."
     doc_n_radial = "Number of radial basis functions."
-    doc_radial_mlp = "Hidden layer sizes for radial networks. An output layer of size (l_schedule[0]+1)*channels will be automatically appended. Use 0 as a placeholder to be replaced by channels."
+    doc_radial_mlp = "Hidden layer sizes for radial networks. An output layer of size (l_schedule[0]+extra_node_l+1)*channels will be automatically appended. Use 0 as a placeholder to be replaced by channels."
     doc_use_env_seed = (
         "If True, seed the initial node state with local-environment information: "
         "apply environment matrix FiLM conditioning on l=0 features using 4D "
         "[s, s*r_hat] representation, and enable the non-scalar geometric initial "
-        "embedding when l_schedule[0] > 0. If False, the initial state contains "
+        "embedding when l_schedule[0] + extra_node_l > 0. If False, the initial state contains "
         "only atom-local scalar features before message passing. Internal dimensions "
         "are derived from channels: embed_dim=min(channels, 128), "
         "axis_dim=min(4 if embed_dim < 64 else 8, embed_dim-1), "
@@ -390,6 +405,12 @@ def descrpt_se_zm_args() -> list[Argument]:
         "Schedule of mmax per block. Must have the same length as "
         "`l_schedule` and satisfy `m_schedule[i] <= l_schedule[i]`. "
         "If set, `mmax` will be ignored."
+    )
+    doc_extra_node_l = (
+        "Extra node representation degree above each message-passing degree. "
+        "`0` keeps the node representation identical to `l_schedule`. In general, "
+        "block `i` uses node degree `l_schedule[i] + extra_node_l`, while SO(2) "
+        "message passing still uses `l_schedule[i]`."
     )
     doc_n_blocks = "Number of blocks (only used when `l_schedule` is None)."
     doc_block_attn_res = (
@@ -498,23 +519,70 @@ def descrpt_se_zm_args() -> list[Argument]:
         '`activation_function="silu"`. '
         "`ffn_enabled=true` makes the block-internal FFN path use "
         '`activation_function="silu"` and `glu_activation=true`. '
-        "S2-grid resolutions are resolved automatically per block. The e3nn "
-        "SO(2) grid is `[2 * mmax + 4, ceil_even(3 * lmax + 2)]`, and the "
-        "e3nn FFN grid is lifted to `[max(R_phi, R_theta), max(R_phi, R_theta)]`. "
+        "S2-grid resolutions are resolved automatically per block. The tensor-product "
+        "SO(2) grid uses the message-passing lmax as `[2 * mmax + 4, ceil_even(3 * lmax + 2)]`, "
+        "and the tensor-product FFN grid is lifted from the node lmax to `[max(R_phi, R_theta), max(R_phi, R_theta)]`. "
         "Lebedev branches use the smallest packaged rule with precision at "
         "least `3 * lmax`. "
         "The final scalar output FFN is unchanged."
+    )
+    doc_ffn_so3_grid = (
+        "If True, use the Wigner-D SO(3) grid in the block-internal FFN. "
+        "This option takes precedence over the FFN grid path and ignores "
+        "`s2_activation[1]`; the SO(2) branch still follows `s2_activation[0]`."
+    )
+    doc_node_wise_s2 = (
+        "If True, enable an edge-local S2 pointwise product branch between "
+        "source and destination node features inside the SO(2) convolution."
+    )
+    doc_node_wise_so3 = (
+        "If True, enable the corresponding edge-local SO(3) Wigner-D grid-net "
+        "branch. It uses the source side as query and the destination side as "
+        "context. When enabled together with `node_wise_s2`, the SO(3) branch "
+        "is used for this path."
+    )
+    doc_message_node_s2 = (
+        "If True, enable a post-aggregation S2 pointwise product branch between "
+        "hidden messages and destination node features inside the SO(2) convolution."
+    )
+    doc_message_node_so3 = (
+        "If True, enable the corresponding post-aggregation SO(3) Wigner-D "
+        "grid-net branch. The message is used as query and the node state as "
+        "context. When enabled together with `message_node_s2`, the SO(3) "
+        "branch is used for this path."
     )
     doc_lebedev_quadrature = (
         "Either one boolean applied to both S2 branches, or two booleans "
         "`[so2_enabled, ffn_enabled]` aligned with `s2_activation`. If a branch "
         "is enabled here, its S2 projector uses packaged Lebedev quadrature "
-        "rules instead of the e3nn product grid. The default keeps the existing "
-        "e3nn behavior."
+        "rules instead of the tensor-product sphere grid. The default enables "
+        "Lebedev quadrature for both S2 branches."
     )
-    doc_grid_ffn = (
-        "If True, use the optional grid-MLP structure for the block-internal "
-        "equivariant FFN. This does not change the final `l=0` output head."
+    doc_grid_mlp = (
+        "Either one boolean applied to every grid path, or three booleans "
+        "`[node_wise, message_node, ffn]` selecting the polynomial point-wise "
+        "grid MLP operation per grid path. The grid MLP projects the two grid "
+        "fields, multiplies them point-wise, and projects the result back to "
+        "grid channels. On any path whose `grid_branch` entry is positive it is "
+        "overridden by branch mixing, and it has no effect on the final `l=0` "
+        "output head."
+    )
+    doc_grid_branch = (
+        "Either one non-negative integer applied to every grid path, or three "
+        "integers `[node_wise, message_node, ffn]` setting the number of "
+        "scalar-routed polynomial product branches per grid path. `0` disables "
+        "branch mixing on that path; positive values select branch mixing and "
+        "take precedence over `grid_mlp`. Branch weights are computed from "
+        "`l=0` scalar features only, while each branch is a quadratic product "
+        "of two channel-mixed grid fields. The `node_wise` and `message_node` "
+        "entries control the SO(2) convolution cross-grid paths, and the `ffn` "
+        "entry controls the block-internal FFN grid path."
+    )
+    doc_kmax = (
+        "Maximum Wigner-D frame order used by SO(3) grid nets. The frame set is "
+        "`[0, -1, 1, ..., -kmax, kmax]`. `kmax=1` is the default low-cost "
+        "setting that opens odd/antisymmetric coupling paths. The gamma grid is "
+        "resolved internally from `kmax`."
     )
     doc_activation_function = (
         f"Base activation function for helper MLPs, the SO(2) gated activation "
@@ -607,7 +675,25 @@ def descrpt_se_zm_args() -> list[Argument]:
             doc=doc_mmax,
         ),
         Argument(
+            "kmax",
+            int,
+            optional=True,
+            default=1,
+            extra_check=lambda x: x >= 0,
+            extra_check_errmsg="must be >= 0",
+            doc=doc_only_pt_supported + doc_kmax,
+        ),
+        Argument(
             "m_schedule", list[int], optional=True, default=None, doc=doc_m_schedule
+        ),
+        Argument(
+            "extra_node_l",
+            int,
+            optional=True,
+            default=0,
+            extra_check=lambda x: x >= 0,
+            extra_check_errmsg="must be >= 0",
+            doc=doc_extra_node_l,
         ),
         Argument("n_blocks", int, optional=True, default=3, doc=doc_n_blocks),
         Argument("so2_norm", bool, optional=True, default=False, doc=doc_so2_norm),
@@ -682,10 +768,28 @@ def descrpt_se_zm_args() -> list[Argument]:
         ),
         Argument(
             "grid_mlp",
-            bool,
+            [bool, list[bool]],
             optional=True,
             default=False,
-            doc=doc_only_pt_supported + doc_grid_ffn,
+            extra_check=lambda x: isinstance(x, bool) or len(x) == 3,
+            extra_check_errmsg="must be a boolean or a list of three booleans: [node_wise, message_node, ffn]",
+            doc=doc_only_pt_supported + doc_grid_mlp,
+        ),
+        Argument(
+            "grid_branch",
+            [int, list[int]],
+            optional=True,
+            default=0,
+            extra_check=lambda x: (
+                (isinstance(x, int) and x >= 0)
+                or (
+                    isinstance(x, list)
+                    and len(x) == 3
+                    and all(isinstance(i, int) and i >= 0 for i in x)
+                )
+            ),
+            extra_check_errmsg="must be a non-negative int or a list of three non-negative ints: [node_wise, message_node, ffn]",
+            doc=doc_only_pt_supported + doc_grid_branch,
         ),
         Argument(
             "ffn_blocks",
@@ -741,6 +845,41 @@ def descrpt_se_zm_args() -> list[Argument]:
             extra_check=lambda x: len(x) == 2,
             extra_check_errmsg="must be a list of two booleans: [so2_activation, ffn_activation]",
             doc=doc_only_pt_supported + doc_s2_activation,
+        ),
+        Argument(
+            "ffn_so3_grid",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_ffn_so3_grid,
+        ),
+        Argument(
+            "node_wise_s2",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_node_wise_s2,
+        ),
+        Argument(
+            "node_wise_so3",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_node_wise_so3,
+        ),
+        Argument(
+            "message_node_s2",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_message_node_s2,
+        ),
+        Argument(
+            "message_node_so3",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_message_node_so3,
         ),
         Argument(
             "lebedev_quadrature",
@@ -3031,7 +3170,12 @@ def sezm_model_args() -> Argument:
         "Requires torch==2.11. NVIDIA GPUs require CUDA >= 12.6. "
         "Apple Silicon Macs are also supported. Tested with Python 3.13."
     )
-    doc_enable_tf32 = "If True, enable TF32 matmul precision when use_compile=True."
+    doc_enable_tf32 = (
+        "If True, enable TF32 matmul precision for CUDA training forwards. "
+        "This training-time setting is independent of `use_compile`; eval-time "
+        "TF32 is controlled separately by `validating.tf32_infer` or "
+        "`DP_TF32_INFER`."
+    )
     doc_bridging_method = (
         "Short-range bridging method. Currently supports 'ZBL'. "
         "The value is case-insensitive; set it to 'None' to disable bridging."
@@ -3080,14 +3224,30 @@ def sezm_model_args() -> Argument:
                 "descriptor",
                 dict,
                 [],
-                [descrpt_variant_type_args()],
+                [
+                    Variant(
+                        "type",
+                        [descrpt_args_plugin.get_argument("dpa4")],
+                        optional=True,
+                        default_tag="dpa4",
+                        doc="The type of the descriptor.",
+                    )
+                ],
                 doc=doc_only_pt_supported + doc_descrpt,
             ),
             Argument(
                 "fitting_net",
                 dict,
                 [],
-                [fitting_variant_type_args()],
+                [
+                    Variant(
+                        "type",
+                        [fitting_args_plugin.get_argument("dpa4_ener")],
+                        optional=True,
+                        default_tag="dpa4_ener",
+                        doc="The type of the fitting.",
+                    )
+                ],
                 doc=doc_only_pt_supported + doc_fitting,
             ),
             Argument(
@@ -5193,6 +5353,14 @@ def validating_args() -> Argument:
         "meaningful when `model.use_compile=true`; has no effect on models "
         "that do not implement the SeZM-style eval compile path."
     )
+    doc_tf32_infer = (
+        "Whether to enable TF32 `high` matmul precision for eval-time forwards "
+        "(including regular validation and full validation). When `true`, this "
+        "flag is translated into `DP_TF32_INFER=1` at trainer startup before any "
+        "model is constructed. A manually exported `DP_TF32_INFER` takes "
+        "precedence over this option. This does not affect training forwards, "
+        "which are controlled by `model.enable_tf32`."
+    )
     args = [
         Argument(
             "full_validation",
@@ -5267,6 +5435,13 @@ def validating_args() -> Argument:
             optional=True,
             default=False,
             doc=doc_only_pt_supported + doc_compiled_infer,
+        ),
+        Argument(
+            "tf32_infer",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_tf32_infer,
         ),
     ]
     return Argument(

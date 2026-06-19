@@ -24,6 +24,9 @@ from deepmd.jax.entrypoints.freeze import (
 from deepmd.jax.entrypoints.main import (
     main,
 )
+from deepmd.jax.entrypoints.train import (
+    update_sel,
+)
 from deepmd.utils.compat import (
     convert_optimizer_v31_to_v32,
 )
@@ -136,6 +139,30 @@ class TestJAXTraining(unittest.TestCase):
 
         self.assertEqual(proc.returncode, 0, proc.stdout + proc.stderr)
         self.assertIn(1, _lcurve_steps(self.work_dir / "lcurve.out"))
+
+    @patch("deepmd.jax.entrypoints.train.get_data")
+    @patch("deepmd.jax.utils.update_sel.UpdateSel.get_nbor_stat")
+    def test_update_sel_uses_jax_neighbor_stat(self, get_nbor_stat, get_data) -> None:
+        """JAX update_sel should calculate neighbor statistics instead of skipping."""
+        get_nbor_stat.return_value = 0.5, [10, 20]
+        jdata = {
+            "model": {
+                "type_map": ["O", "H"],
+                "descriptor": {
+                    "type": "se_e2_a",
+                    "rcut": 6.0,
+                    "sel": "auto",
+                },
+            },
+            "training": {"training_data": {}},
+        }
+
+        updated, min_nbor_dist = update_sel(jdata)
+
+        self.assertEqual(updated["model"]["descriptor"]["sel"], [12, 24])
+        self.assertEqual(min_nbor_dist, 0.5)
+        get_data.assert_called_once_with({}, 0, ["O", "H"], None)
+        get_nbor_stat.assert_called_once()
 
     @patch("deepmd.jax.entrypoints.freeze.deserialize_to_file")
     @patch("deepmd.jax.entrypoints.freeze.serialize_from_file")

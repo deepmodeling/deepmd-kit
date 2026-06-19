@@ -3,7 +3,6 @@ import datetime
 import functools
 import json
 import logging
-import os
 import time
 from collections.abc import (
     Callable,
@@ -74,7 +73,9 @@ from deepmd.pt.train.ema import (
     get_ema_validation_log_path,
 )
 from deepmd.pt.train.utils import (
-    clip_grad_norm_with_stable_fallback,
+    NonFiniteGradGuard,
+    clip_grad_norm_,
+    scoped_env_defaults,
 )
 from deepmd.pt.train.validation import (
     FullValidator,
@@ -181,18 +182,12 @@ class Trainer:
         training_params = config["training"]
         optimizer_params = config.get("optimizer", {})
 
-        # NOTE: Translate ``validating.compiled_infer`` (input.json opt-in)
-        # into the ``DP_COMPILE_INFER`` environment variable *before* any
-        # model is constructed below.  SeZMModel samples this env var
-        # exactly once inside its __init__ (see ``_env_use_compile_infer``
-        # in ``deepmd/pt/model/model/sezm_model.py``) and uses the cached
-        # value to decide whether eval / full-validation forwards take
-        # the compile path.  Setting it later would be silently ignored
-        # for the rest of the run.  ``setdefault`` preserves any explicit
-        # shell-level override so a user who manually exported
-        # ``DP_COMPILE_INFER`` (either direction) stays in control.
-        if bool((config.get("validating") or {}).get("compiled_infer", False)):
-            os.environ.setdefault("DP_COMPILE_INFER", "1")
+        validating_params = config.get("validating") or {}
+        infer_env_defaults = {}
+        if bool(validating_params.get("compiled_infer", False)):
+            infer_env_defaults["DP_COMPILE_INFER"] = "1"
+        if bool(validating_params.get("tf32_infer", False)):
+            infer_env_defaults["DP_TF32_INFER"] = "1"
         self.multi_task = "model_dict" in model_params
         self.finetune_links = finetune_links
         self.finetune_update_stat = False
@@ -449,11 +444,14 @@ class Trainer:
             }
 
         # Model
-        self.model = get_model_for_wrapper(
-            model_params,
-            resuming=resuming,
-            _loss_params=loss_param_tmp,
-        )
+        # SeZMModel samples these eval/inference env vars exactly once inside
+        # __init__; keep config-derived defaults scoped to construction.
+        with scoped_env_defaults(infer_env_defaults):
+            self.model = get_model_for_wrapper(
+                model_params,
+                resuming=resuming,
+                _loss_params=loss_param_tmp,
+            )
         # SeZM specific process for DeNS training
         prepare_model_for_loss(self.model, loss_param_tmp)
 
@@ -721,6 +719,7 @@ class Trainer:
 
         # Learning rate
         self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
+        self.nonfinite_grad_guard = NonFiniteGradGuard()
         self.lr_schedule = get_lr(config["learning_rate"])
 
         # Minimum pairwise distance for filtering unphysical frames during training
@@ -1018,6 +1017,7 @@ class Trainer:
                 float(self.opt_param["adam_beta2"]),
             )
             weight_decay = float(self.opt_param["weight_decay"])
+            runtime_named_parameters = tuple(self.wrapper.named_parameters())
 
             if self.opt_type in ("Adam", "AdamW"):
                 cls = torch.optim.Adam if self.opt_type == "Adam" else torch.optim.AdamW
@@ -1038,7 +1038,6 @@ class Trainer:
                     "lr_adjust": float(self.opt_param["lr_adjust"]),
                     "lr_adjust_coeff": float(self.opt_param["lr_adjust_coeff"]),
                     "muon_mode": str(self.opt_param.get("muon_mode", "slice")),
-                    "named_parameters": tuple(self.wrapper.named_parameters()),
                     "enable_gram": bool(self.opt_param.get("enable_gram")),
                     "flash_muon": bool(self.opt_param.get("flash_muon")),
                     "magma_muon": bool(self.opt_param.get("magma_muon")),
@@ -1057,6 +1056,11 @@ class Trainer:
                 weight_decay=weight_decay,
                 **extra,
             )
+            if self.opt_type == "HybridMuon":
+                target_optimizer = (
+                    self.optimizer.optim if self.zero_stage == 1 else self.optimizer
+                )
+                target_optimizer.set_param_names(runtime_named_parameters)
             self._load_optimizer_state(optimizer_state_dict)
             self.scheduler = self._create_lr_scheduler(
                 self.optimizer,
@@ -1093,7 +1097,6 @@ class Trainer:
         self.full_validator = None
         self.ema_full_validator = None
 
-        validating_params = config.get("validating") or {}
         self.full_validator = self._create_full_validator(
             validating_params=validating_params,
             validation_data=validation_data,
@@ -1416,12 +1419,12 @@ class Trainer:
                             for name, p in self.wrapper.named_parameters()
                             if p.grad is not None
                         ]
-                    total_norm = clip_grad_norm_with_stable_fallback(
+                    total_norm = clip_grad_norm_(
                         self.wrapper.parameters(),
                         self.gradient_max_norm,
-                        use_stable_fallback=self.zero_stage < 2,
-                        named_parameters=self.wrapper.named_parameters,
+                        stable=self.zero_stage < 2,
                     )
+                    self.nonfinite_grad_guard.update(total_norm)
                 with torch.device(DEVICE):
                     self.optimizer.step()
                 self.scheduler.step()
@@ -1755,13 +1758,18 @@ class Trainer:
                     ),
                 )
 
-            if (
-                (
-                    (display_step_id) % self.save_freq == 0
-                    and _step_id != self.start_step
+            should_save_checkpoint = (
+                (display_step_id) % self.save_freq == 0 and _step_id != self.start_step
+            ) or (display_step_id) == self.num_steps
+            if should_save_checkpoint:
+                # Abort before writing if any gradient norm since the previous
+                # checkpoint was non-finite.
+                self.nonfinite_grad_guard.raise_if_nonfinite(
+                    self.wrapper.named_parameters
                 )
-                or (display_step_id) == self.num_steps
-            ) and (self.zero_stage > 0 or self.rank == 0 or dist.get_rank() == 0):
+            if should_save_checkpoint and (
+                self.zero_stage > 0 or self.rank == 0 or dist.get_rank() == 0
+            ):
                 # Handle the case if rank 0 aborted and re-assigned
                 self.latest_model = Path(self.save_ckpt + f"-{display_step_id}.pt")
                 self.save_model(self.latest_model, lr=cur_lr, step=_step_id)

@@ -33,13 +33,15 @@ from deepmd.utils.version import (
 
 from .activation import (
     GatedActivation,
-    S2GridProjector,
-    SwiGLU,
-    SwiGLUS2Activation,
+)
+from .grid_net import (
+    S2GridNet,
+    SO3GridNet,
+)
+from .projection import (
     resolve_s2_grid_resolution,
 )
 from .so3 import (
-    ChannelLinear,
     SO3Linear,
 )
 from .utils import (
@@ -59,10 +61,10 @@ class EquivariantFFN(nn.Module):
     Default structure (glu_activation=True):
         SO3 linear (in -> 2*hidden) -> split -> GatedActivation(val, gate) -> SO3 linear (hidden -> out)
 
-    Optional grid-FFN structure (grid_mlp=True):
+    Optional grid-FFN structure (s2_activation=True or ffn_so3_grid=True):
         SO3 linear (in -> hidden)
-        -> project packed SO(3) coefficients to the S2 grid
-        -> packed S2-grid point-wise MLP on hidden features
+        -> project packed SO(3) coefficients to the S2 or SO3 grid
+        -> grid GLU, polynomial MLP, or scalar-routed attention on hidden features
         -> project grid features back to packed SO(3) coefficients
         -> add scalar LinearSwiGLU branch to l=0
         -> SO3 linear (hidden -> out)
@@ -84,15 +86,21 @@ class EquivariantFFN(nn.Module):
         Number of channels per (l, m) coefficient.
     hidden_channels
         Hidden dimension for the FFN.
+    kmax
+        Maximum Wigner-D frame order (|k|) used by the SO3 Wigner-D FFN grid.
     grid_mlp
-        If True, use the optional grid-MLP FFN structure on the block-internal
-        FFN path. This path takes precedence over the simpler activation-only
-        path inside this module.
+        If True, select the polynomial grid MLP operation when the
+        block-internal FFN grid path is enabled.
+    grid_branch
+        Number of scalar-routed polynomial product branches used when the
+        block-internal FFN grid path is enabled. ``0`` disables this branch
+        mixer. Positive values take precedence over ``grid_mlp``.
     dtype
         Parameter dtype.
     s2_activation
-        If True and ``grid_mlp=False``, replace the default GatedActivation path
-        with the merged scalar/grid SwiGLU-S2 activation.
+        If True, enable the S2 FFN grid path.
+    ffn_so3_grid
+        If True, enable the SO3 Wigner-D FFN grid path.
     lebedev_quadrature
         If True, use Lebedev quadrature for the S2 projector in this FFN.
     activation_function
@@ -115,9 +123,12 @@ class EquivariantFFN(nn.Module):
         lmax: int,
         channels: int,
         hidden_channels: int,
+        kmax: int = 1,
         grid_mlp: bool = False,
+        grid_branch: int = 0,
         dtype: torch.dtype,
         s2_activation: bool = False,
+        ffn_so3_grid: bool = False,
         lebedev_quadrature: bool = False,
         activation_function: str = "silu",
         glu_activation: bool = True,
@@ -129,8 +140,16 @@ class EquivariantFFN(nn.Module):
         self.lmax = int(lmax)
         self.channels = int(channels)
         self.hidden_channels = int(hidden_channels)
+        self.kmax = int(kmax)
+        if self.kmax < 0:
+            raise ValueError("`kmax` must be non-negative")
         self.use_grid_mlp = bool(grid_mlp)
+        self.grid_branch = int(grid_branch)
+        if self.grid_branch < 0:
+            raise ValueError("`grid_branch` must be non-negative")
+        self.use_grid_branch = self.grid_branch > 0
         self.s2_activation = bool(s2_activation)
+        self.ffn_so3_grid = bool(ffn_so3_grid)
         self.lebedev_quadrature = bool(lebedev_quadrature)
         self.s2_grid_method = "lebedev" if self.lebedev_quadrature else "e3nn"
         base_grid = resolve_s2_grid_resolution(
@@ -150,6 +169,7 @@ class EquivariantFFN(nn.Module):
         self.compute_dtype = get_promoted_dtype(self.dtype)
         self.device = env.DEVICE
         self.precision = RESERVED_PRECISION_DICT[dtype]
+        self.grid_n_frames = 2 * self.kmax + 1 if self.ffn_so3_grid else 1
 
         # === Step 0. Split deterministic seeds at the module top-level ===
         seed_so3_in = child_seed(seed, 0)
@@ -157,10 +177,11 @@ class EquivariantFFN(nn.Module):
         seed_so3_out = child_seed(seed, 2)
 
         # === First SO3Linear for channel mixing ===
-        # Grid-FFN keeps the hidden width and performs the nonlinear expansion
-        # inside the scalar/grid point-wise MLPs.
+        self.use_grid_net = self.s2_activation or self.ffn_so3_grid
         linear1_out_channels = self.hidden_channels
-        if not self.use_grid_mlp:
+        if self.use_grid_net:
+            linear1_out_channels = 2 * self.grid_n_frames * self.hidden_channels
+        else:
             linear1_out_channels = (
                 2 * self.hidden_channels
                 if self.glu_activation
@@ -178,50 +199,44 @@ class EquivariantFFN(nn.Module):
         )
 
         # === Equivariant nonlinearity path ===
-        self.scalar_mlp: nn.Module | None = None
-        self.grid_projector: S2GridProjector | None = None
-        self.pointwise_grid_mlp: nn.Module | None = None
-        if self.use_grid_mlp:
-            self.scalar_mlp = nn.Sequential(
-                ChannelLinear(
-                    in_channels=self.channels,
-                    out_channels=2 * self.hidden_channels,
-                    dtype=dtype,
-                    bias=self.mlp_bias,
+        if self.use_grid_net:
+            grid_op = (
+                "branch"
+                if self.use_grid_branch
+                else ("mlp" if self.use_grid_mlp else "glu")
+            )
+            if self.ffn_so3_grid:
+                self.act = SO3GridNet(
+                    lmax=self.lmax,
+                    kmax=self.kmax,
+                    channels=self.hidden_channels,
+                    n_focus=1,
+                    mode="self",
+                    op_type=grid_op,
+                    dtype=self.compute_dtype,
+                    layout="ndfc",
+                    grid_branches=max(1, self.grid_branch),
+                    mlp_bias=self.mlp_bias,
                     trainable=trainable,
-                    seed=child_seed(seed_act, 0),
-                ),
-                SwiGLU(),
-            )
-            self.grid_projector = S2GridProjector(
-                lmax=self.lmax,
-                mmax=self.lmax,
-                dtype=dtype,
-                grid_resolution_list=self.s2_grid_resolution,
-                coefficient_layout="packed",
-                grid_method=self.s2_grid_method,
-            )
-            self.pointwise_grid_mlp = PointwiseGridMLP(
-                channels=self.hidden_channels,
-                dtype=dtype,
-                trainable=trainable,
-                seed=child_seed(seed_act, 1),
-            )
-            self.act = nn.Identity()
-        elif self.s2_activation:
-            self.act = SwiGLUS2Activation(
-                lmax=self.lmax,
-                channels=self.hidden_channels,
-                dtype=self.compute_dtype,
-                n_focus=1,
-                layout="ndfc",
-                grid_resolution_list=self.s2_grid_resolution,
-                coefficient_layout="packed",
-                grid_method=self.s2_grid_method,
-                mlp_bias=self.mlp_bias,
-                trainable=trainable,
-                seed=seed_act,
-            )
+                    seed=seed_act,
+                )
+            else:
+                self.act = S2GridNet(
+                    lmax=self.lmax,
+                    channels=self.hidden_channels,
+                    n_focus=1,
+                    mode="self",
+                    op_type=grid_op,
+                    dtype=self.compute_dtype,
+                    layout="ndfc",
+                    grid_resolution_list=self.s2_grid_resolution,
+                    coefficient_layout="packed",
+                    grid_method=self.s2_grid_method,
+                    grid_branches=max(1, self.grid_branch),
+                    mlp_bias=self.mlp_bias,
+                    trainable=trainable,
+                    seed=seed_act,
+                )
         else:
             self.act = GatedActivation(
                 lmax=self.lmax,
@@ -238,7 +253,7 @@ class EquivariantFFN(nn.Module):
         # Zero-initialized so residual path starts near-identity.
         self.so3_linear_2 = SO3Linear(
             lmax=self.lmax,
-            in_channels=self.hidden_channels,
+            in_channels=self.grid_n_frames * self.hidden_channels,
             out_channels=self.channels,
             n_focus=1,
             dtype=dtype,
@@ -264,20 +279,10 @@ class EquivariantFFN(nn.Module):
             Output with shape (N, D, F, C).
         """
         # === Step 1. Input up projection ===
-        x_input = x
         x = self.so3_linear_1(x)
 
         # === Step 2. Equivariant nonlinearity ===
-        if self.use_grid_mlp:
-            scalar_outputs = self.scalar_mlp(x_input.select(dim=1, index=0))
-            x_flat, shape_info = self._flatten_grid_inputs(x)
-            x_grid = self.grid_projector.to_grid(x_flat.to(dtype=self.dtype))
-            x_grid = self.pointwise_grid_mlp(x_grid)
-            x = self._restore_grid_outputs(
-                self.grid_projector.from_grid(x_grid), shape_info
-            )
-            x[:, 0, :, :].add_(scalar_outputs)
-        elif self.s2_activation:
+        if self.use_grid_net:
             x = self.act(x)
         elif self.glu_activation:
             # Split into value and gate branches along channel dimension
@@ -292,23 +297,6 @@ class EquivariantFFN(nn.Module):
 
         return x
 
-    def _flatten_grid_inputs(
-        self, x: torch.Tensor
-    ) -> tuple[torch.Tensor, tuple[int, int, int]]:
-        n_batch, coeff_dim, n_focus, _ = x.shape
-        return (
-            x.permute(0, 2, 1, 3).reshape(n_batch * n_focus, coeff_dim, x.shape[-1]),
-            (n_batch, coeff_dim, n_focus),
-        )
-
-    def _restore_grid_outputs(
-        self, x: torch.Tensor, shape_info: tuple[int, int, int]
-    ) -> torch.Tensor:
-        n_batch, coeff_dim, n_focus = shape_info
-        return x.reshape(n_batch, n_focus, coeff_dim, self.hidden_channels).permute(
-            0, 2, 1, 3
-        )
-
     def serialize(self) -> dict[str, Any]:
         trainable = all(p.requires_grad for p in self.parameters())
         state = self.state_dict()
@@ -319,9 +307,12 @@ class EquivariantFFN(nn.Module):
                 "lmax": self.lmax,
                 "channels": self.channels,
                 "hidden_channels": self.hidden_channels,
+                "kmax": self.kmax,
                 "grid_mlp": self.use_grid_mlp,
+                "grid_branch": self.grid_branch,
                 "precision": RESERVED_PRECISION_DICT[self.dtype],
                 "s2_activation": self.s2_activation,
+                "ffn_so3_grid": self.ffn_so3_grid,
                 "lebedev_quadrature": self.lebedev_quadrature,
                 "activation_function": self.activation_function,
                 "glu_activation": self.glu_activation,
@@ -354,53 +345,3 @@ class EquivariantFFN(nn.Module):
         }
         obj.load_state_dict(state)
         return obj
-
-
-class PointwiseGridMLP(nn.Module):
-    """
-    Apply a two-layer point-wise MLP on flattened S2 grid features.
-
-    Parameters
-    ----------
-    channels
-        Hidden feature dimension on the grid.
-    dtype
-        Parameter dtype.
-    trainable
-        Whether parameters are trainable.
-    seed
-        Random seed for weight initialization.
-    """
-
-    def __init__(
-        self,
-        *,
-        channels: int,
-        dtype: torch.dtype,
-        trainable: bool,
-        seed: int | list[int] | None = None,
-    ) -> None:
-        super().__init__()
-        self.channels = int(channels)
-        self.linear_1 = ChannelLinear(
-            in_channels=self.channels,
-            out_channels=2 * self.channels,
-            dtype=dtype,
-            bias=False,
-            trainable=trainable,
-            seed=child_seed(seed, 0),
-        )
-        self.act = SwiGLU()
-        self.linear_2 = ChannelLinear(
-            in_channels=self.channels,
-            out_channels=self.channels,
-            dtype=dtype,
-            bias=False,
-            trainable=trainable,
-            seed=child_seed(seed, 1),
-        )
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Apply the point-wise grid MLP."""
-        x = self.act(self.linear_1(x))
-        return self.linear_2(x)

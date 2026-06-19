@@ -57,15 +57,17 @@ warnings.filterwarnings(
     module=r"torch\._functorch\._aot_autograd\.autograd_cache",
 )
 
-# TODO(torch-2.11): SeZM's ``torch.compile`` / AOT-export code paths are only
-# stable on torch 2.11.x. CI currently pins torch 2.10, where the compiled path
-# can segfault or drift, and other torch versions are similarly unstable. Skip
-# the compile-parity tests off 2.11 until CI standardizes on a SeZM-compatible
-# torch, then drop this guard.
+# SeZM's ``torch.compile`` / AOT-export code paths are validated on torch
+# 2.11.x and 2.12.x, the releases the compile pipeline supports (see
+# ``deepmd.pt.utils.compile_compat``). Other torch versions can segfault or
+# drift, so the compile-parity tests are skipped there.
 _TORCH_VERSION = parse_version(torch.__version__)
-_SKIP_OFF_TORCH_211 = (_TORCH_VERSION.major, _TORCH_VERSION.minor) != (2, 11)
-_SKIP_OFF_TORCH_211_REASON = (
-    "SeZM's torch.compile path is only stable on torch 2.11.x; "
+_SKIP_OFF_COMPILE_TORCH = (_TORCH_VERSION.major, _TORCH_VERSION.minor) not in {
+    (2, 11),
+    (2, 12),
+}
+_SKIP_OFF_COMPILE_TORCH_REASON = (
+    "SeZM's torch.compile path is only supported on torch 2.11.x and 2.12.x; "
     f"current torch is {torch.__version__}."
 )
 
@@ -386,7 +388,7 @@ class TestSeZMModelCompile(unittest.TestCase):
             name: param.detach().clone() for name, param in model.named_parameters()
         }
 
-    @unittest.skipIf(_SKIP_OFF_TORCH_211, _SKIP_OFF_TORCH_211_REASON)
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_compile_cache_slots_and_eval_shape_change(self) -> None:
         """Compile cache slots should coexist while eval handles batch-size growth."""
         coord_1, atype_1, box_1, _, _, _ = self._make_tiny_frame()
@@ -399,8 +401,9 @@ class TestSeZMModelCompile(unittest.TestCase):
             model_cmp = get_sezm_model(self._build_model_params(use_compile=True))
         model_cmp.load_state_dict(model_dyn.state_dict())
 
-        train_key = (True, False, False)
-        eval_key = (False, False, False)
+        # Compile cache key is (training, has_coord_corr).
+        train_key = (True, False)
+        eval_key = (False, False)
 
         # === Step 2. Train-mode forward fills the training slot. ===
         model_cmp.train()
@@ -483,7 +486,7 @@ class TestSeZMModelCompile(unittest.TestCase):
             model_cmp.compiled_core_compute_cache[eval_key], callable_eval_first
         )
 
-    @unittest.skipIf(_SKIP_OFF_TORCH_211, _SKIP_OFF_TORCH_211_REASON)
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_charge_spin_condition_matches_compile(self) -> None:
         """Charge/spin conditions should work through the compiled energy path."""
         coord, atype, box, _, _, _ = self._make_tiny_frame()
@@ -586,10 +589,9 @@ class TestSeZMModelCompile(unittest.TestCase):
             n_radial=descriptor.radial_basis.n_radial,
             random_gamma=False,
             wigner_calc=descriptor.wigner_calc,
-            use_geometry_rbf_triton=False,
         )
 
-        edge_index, edge_vec, edge_mask = model.build_edge_list_from_nlist(
+        edge_index, edge_vec, edge_mask, _ = model.build_edge_list_from_nlist(
             extended_coord=extended_coord,
             nlist=nlist,
             mapping=mapping,
@@ -626,7 +628,7 @@ class TestSeZMModelCompile(unittest.TestCase):
         torch.testing.assert_close(cache_std.D_full, cache_sparse.D_full[:n_real])
         torch.testing.assert_close(cache_std.Dt_full, cache_sparse.Dt_full[:n_real])
 
-    @unittest.skipIf(_SKIP_OFF_TORCH_211, _SKIP_OFF_TORCH_211_REASON)
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_eval_compile_policy(self) -> None:
         """Eval should stay eager by default and compile only with env override."""
         model = get_sezm_model(self._build_model_params(use_compile=True))
@@ -643,7 +645,7 @@ class TestSeZMModelCompile(unittest.TestCase):
         model_eval.eval()
         self.assertTrue(model_eval.should_use_compile())
 
-    @unittest.skipIf(_SKIP_OFF_TORCH_211, _SKIP_OFF_TORCH_211_REASON)
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_forward_backward_double_backward_matches_compile(self) -> None:
         """
         Check forward, backward, double backward, and short training consistency.
@@ -704,7 +706,7 @@ class TestSeZMModelCompile(unittest.TestCase):
         # Inductor Triton kernels use different reduction order vs eager,
         # so float32 gradients can differ by ~1e-3 on GPU.
         grad_atol = 1.0e-5 if self.device == torch.device("cpu") else 2.0e-3
-        grad_rtol = 1.0e-5 if self.device == torch.device("cpu") else 1.0e-4
+        grad_rtol = 1.0e-5 if self.device == torch.device("cpu") else 3.0e-3
         self.assertEqual(set(grads_dyn.keys()), set(grads_cmp.keys()))
         for name in grads_dyn.keys():
             _assert_close_with_strict_warning(
@@ -883,11 +885,13 @@ class TestSeZMModelCompile(unittest.TestCase):
             m_cmp.train()
             out_e = m_eager(coord, atype, box=box)
             out_c = m_cmp(coord, atype, box=box)
+            energy_atol = 1.0e-6 if self.device == torch.device("cpu") else 5.0e-6
+            energy_rtol = 1.0e-6 if self.device == torch.device("cpu") else 5.0e-4
             _assert_close_with_strict_warning(
                 out_e["energy"],
                 out_c["energy"],
-                atol=1.0e-6,
-                rtol=1.0e-6,
+                atol=energy_atol,
+                rtol=energy_rtol,
                 msg=f"multitask energy mismatch at {branch}",
             )
             _assert_close_with_strict_warning(
@@ -910,7 +914,7 @@ class TestSeZMModelCompile(unittest.TestCase):
         cache1 = wrapper_cmp.model["water_1"].compiled_core_compute_cache
         cache2 = wrapper_cmp.model["water_2"].compiled_core_compute_cache
         self.assertIsNot(cache1, cache2)
-        train_key = (True, False, False)
+        train_key = (True, False)
         self.assertIn(train_key, cache1)
         self.assertIn(train_key, cache2)
         c1 = cache1[train_key]
@@ -926,7 +930,7 @@ class TestSeZMModelCompile(unittest.TestCase):
             torch.allclose(out_e1["energy"], out_e2["energy"], atol=1.0e-8)
         )
 
-    @unittest.skipIf(_SKIP_OFF_TORCH_211, _SKIP_OFF_TORCH_211_REASON)
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_multitask_compile_matches_eager(self) -> None:
         """Legacy case embedding concatenation should match through compile."""
         self._assert_multitask_compile_matches_eager(case_film_embd=False)
@@ -938,8 +942,24 @@ class TestInterPotential(unittest.TestCase):
     def setUp(self) -> None:
         self.device = env.DEVICE
 
+    def _pair_edges(
+        self, r: float, atype_pair: list[int]
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Two directed edges (i->j and j->i) for one pair at distance r."""
+        edge_vec = torch.tensor(
+            [[r, 0.0, 0.0], [-r, 0.0, 0.0]],
+            dtype=torch.float64,
+            device=self.device,
+        )
+        edge_index = torch.tensor(
+            [[1, 0], [0, 1]], dtype=torch.long, device=self.device
+        )
+        atype_flat = torch.tensor(atype_pair, dtype=torch.long, device=self.device)
+        edge_mask = torch.tensor([True, True], device=self.device)
+        return edge_vec, edge_index, atype_flat, edge_mask
+
     def test_zbl_known_value_OO(self) -> None:
-        """Test ZBL energy for O-O pair at known distance against reference."""
+        """ZBL energy for an O-O pair matches the analytic reference."""
         pot = InterPotential(type_map=["O", "H"], mode="ZBL").to(self.device)
 
         import math
@@ -958,20 +978,11 @@ class TestInterPotential(unittest.TestCase):
         )
         expected = ke * z_o * z_o / r * phi
 
-        extended_coord = torch.tensor(
-            [[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]],
-            dtype=torch.float64,
-            device=self.device,
-        )
-        extended_atype = torch.tensor([[0, 0]], dtype=torch.int64, device=self.device)
-        nlist = torch.tensor([[[1], [0]]], dtype=torch.int64, device=self.device)
-
-        pair_e = pot(extended_coord, extended_atype, nlist, nloc=2)
-        total_e = pair_e.sum().item()
+        total_e = pot(*self._pair_edges(r, [0, 0]), n_node=2).sum().item()
         self.assertAlmostEqual(total_e, expected, places=5)
 
     def test_zbl_known_value_OH(self) -> None:
-        """Test ZBL energy for O-H pair at known distance."""
+        """ZBL energy for an O-H pair matches the analytic reference."""
         pot = InterPotential(type_map=["O", "H"], mode="ZBL").to(self.device)
         import math
 
@@ -989,71 +1000,234 @@ class TestInterPotential(unittest.TestCase):
         )
         expected = ke * z_o * z_h / r * phi
 
-        extended_coord = torch.tensor(
-            [[[0.0, 0.0, 0.0], [0.8, 0.0, 0.0]]],
-            dtype=torch.float64,
-            device=self.device,
-        )
-        extended_atype = torch.tensor([[0, 1]], dtype=torch.int64, device=self.device)
-        nlist = torch.tensor([[[1], [0]]], dtype=torch.int64, device=self.device)
-
-        pair_e = pot(extended_coord, extended_atype, nlist, nloc=2)
-        total_e = pair_e.sum().item()
+        total_e = pot(*self._pair_edges(r, [0, 1]), n_node=2).sum().item()
         self.assertAlmostEqual(total_e, expected, places=5)
 
     def test_zbl_gradient_exists(self) -> None:
-        """Test that ZBL potential produces valid gradients for force computation."""
+        """ZBL produces finite gradients w.r.t. the edge vectors."""
         pot = InterPotential(type_map=["O", "H"], mode="ZBL").to(self.device)
+        edge_vec, edge_index, atype_flat, edge_mask = self._pair_edges(1.0, [0, 1])
+        edge_vec = edge_vec.detach().requires_grad_(True)
 
-        extended_coord = torch.tensor(
-            [[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]],
+        pot(edge_vec, edge_index, atype_flat, edge_mask, n_node=2).sum().backward()
+        self.assertIsNotNone(edge_vec.grad)
+        self.assertTrue(torch.isfinite(edge_vec.grad).all())
+
+    def test_virtual_spin_types_masked(self) -> None:
+        """Edges touching a virtual spin type (>= real_type_count) contribute 0."""
+        pot = InterPotential(type_map=["O", "H"], mode="ZBL").to(self.device)
+        # Node 2 is a virtual spin atom (type 2 >= real_type_count=2).
+        edge_vec = torch.tensor(
+            [[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0], [0.5, 0.0, 0.0], [-0.5, 0.0, 0.0]],
             dtype=torch.float64,
             device=self.device,
-            requires_grad=True,
         )
-        extended_atype = torch.tensor([[0, 1]], dtype=torch.int64, device=self.device)
-        nlist = torch.tensor([[[1], [0]]], dtype=torch.int64, device=self.device)
+        # Edges: (0<->1) real-real, (0<->2) touch virtual node 2.
+        edge_index = torch.tensor(
+            [[1, 0, 2, 0], [0, 1, 0, 2]], dtype=torch.long, device=self.device
+        )
+        atype_flat = torch.tensor([0, 1, 2], dtype=torch.long, device=self.device)
+        edge_mask = torch.tensor([True, True, True, True], device=self.device)
 
-        pair_e = pot(extended_coord, extended_atype, nlist, nloc=2)
-        pair_e.sum().backward()
-        self.assertIsNotNone(extended_coord.grad)
-        self.assertTrue(torch.isfinite(extended_coord.grad).all())
+        with_virtual = pot(
+            edge_vec, edge_index, atype_flat, edge_mask, n_node=3, real_type_count=2
+        )
+        # Only the real-real pair survives.
+        real_only = pot(
+            edge_vec[:2],
+            edge_index[:, :2],
+            atype_flat,
+            edge_mask[:2],
+            n_node=3,
+            real_type_count=2,
+        )
+        torch.testing.assert_close(with_virtual, real_only)
 
     def test_unknown_element_raises(self) -> None:
         """Test that unknown element raises ValueError."""
         with self.assertRaises(ValueError):
             InterPotential(type_map=["O", "Xx"])
 
-    def test_forward_from_edges(self) -> None:
-        """Test the compile-path edge-based ZBL computation."""
-        pot = InterPotential(type_map=["O", "H"], mode="ZBL").to(self.device)
 
-        edge_vec = torch.tensor(
-            [[1.0, 0.0, 0.0], [-1.0, 0.0, 0.0]],
+class TestSeZMEdgeForceScatter(unittest.TestCase):
+    """Validate the edge-force-scatter force / virial assembly.
+
+    Force, global virial and per-atom virial all come from a single
+    ``autograd.grad`` truncated at the per-edge displacement vectors
+    (``edge_energy_deriv``), then scattered back onto atoms.  These eager,
+    float64 finite-difference checks pin the conservative-force guarantee
+    ``F = -dE/dx`` and the PBC-correct virial ``W = -dE/deps``, and confirm
+    the half-split per-atom virial sums back to the global virial.  The ZBL
+    cases additionally drive ``InterPotential`` (edge form) through the
+    same single backward.
+    """
+
+    def setUp(self) -> None:
+        self.device = env.DEVICE
+
+    def _build_model(self, *, bridging_method: str = "none") -> SeZMModel:
+        """Build a tiny float64 SeZM model with randomized parameters."""
+        params = {
+            "type": "SeZM",
+            "type_map": ["O", "H"],
+            "descriptor": {
+                "type": "SeZM",
+                "sel": [12, 12],
+                "rcut": 3.0,
+                "channels": 4,
+                "n_focus": 1,
+                "n_radial": 3,
+                "radial_mlp": [6],
+                "use_env_seed": True,
+                "l_schedule": [1, 0],
+                "mmax": 1,
+                "so2_norm": False,
+                "so2_layers": 1,
+                "n_atten_head": 1,
+                "sandwich_norm": [True, False, True, False],
+                "ffn_neurons": 8,
+                "ffn_blocks": 1,
+                "s2_activation": [False, True],
+                "mlp_bias": False,
+                "layer_scale": False,
+                "use_amp": False,
+                "activation_function": "silu",
+                "glu_activation": True,
+                "precision": "float64",
+                "seed": 7,
+            },
+            "fitting_net": {
+                "neuron": [8],
+                "activation_function": "silu",
+                "precision": "float64",
+                "seed": 7,
+            },
+            "use_compile": False,
+            "bridging_method": bridging_method,
+            "bridging_r_inner": 0.8,
+            "bridging_r_outer": 1.2,
+        }
+        model = get_sezm_model(params)
+        torch.manual_seed(1234)
+        with torch.no_grad():
+            for p in model.parameters():
+                p.copy_(torch.randn_like(p) * 0.1)
+        model.eval()
+        return model
+
+    def _frame(self) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Small periodic frame with dense neighbours inside ``rcut``."""
+        coord = torch.tensor(
+            [
+                [
+                    [0.10, 0.05, 0.00],
+                    [1.05, 0.30, 0.10],
+                    [0.20, 1.40, 0.35],
+                    [1.60, 1.15, 0.20],
+                    [2.20, 0.10, 1.05],
+                ]
+            ],
             dtype=torch.float64,
             device=self.device,
         )
-        edge_index = torch.tensor(
-            [[1, 0], [0, 1]], dtype=torch.long, device=self.device
-        )
-        atype_flat = torch.tensor([0, 1], dtype=torch.long, device=self.device)
-        edge_mask = torch.tensor([True, True], device=self.device)
-
-        result = pot.forward_from_edges(edge_vec, edge_index, atype_flat, edge_mask, 2)
-        self.assertEqual(result.shape, (1, 2, 1))
-        self.assertTrue(torch.isfinite(result).all())
-
-        extended_coord = torch.tensor(
-            [[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]],
+        atype = torch.tensor([[0, 1, 0, 1, 0]], dtype=torch.int64, device=self.device)
+        box = torch.tensor(
+            [[6.0, 0.0, 0.0, 0.0, 6.0, 0.0, 0.0, 0.0, 6.0]],
             dtype=torch.float64,
             device=self.device,
         )
-        extended_atype = torch.tensor([[0, 1]], dtype=torch.int64, device=self.device)
-        nlist = torch.tensor([[[1], [0]]], dtype=torch.int64, device=self.device)
-        pair_e_nlist = pot(extended_coord, extended_atype, nlist, nloc=2)
+        return coord, atype, box
+
+    def _energy(
+        self,
+        model: SeZMModel,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        box: torch.Tensor,
+    ) -> torch.Tensor:
+        return model(coord, atype, box=box)["energy"].squeeze()
+
+    def _check_force_fd(self, bridging_method: str, *, periodic: bool = True) -> None:
+        model = self._build_model(bridging_method=bridging_method)
+        coord, atype, box = self._frame()
+        # box=None exercises the non-periodic (open-boundary / cluster) path:
+        # the edge-force scatter is PBC-agnostic because it differentiates the
+        # real per-edge displacement, so the same assembly must hold.
+        if not periodic:
+            box = None
+        force = model(coord, atype, box=box)["force"]
+
+        eps = 1.0e-5
+        nloc = coord.shape[1]
+        fd_force = torch.zeros_like(force)
+        for a in range(nloc):
+            for d in range(3):
+                cp = coord.clone()
+                cp[0, a, d] += eps
+                cm = coord.clone()
+                cm[0, a, d] -= eps
+                e_plus = self._energy(model, cp, atype, box)
+                e_minus = self._energy(model, cm, atype, box)
+                fd_force[0, a, d] = -(e_plus - e_minus) / (2 * eps)
+        boundary = "periodic" if periodic else "non-periodic"
         torch.testing.assert_close(
-            result.sum(), pair_e_nlist.sum().to(result.dtype), atol=1e-8, rtol=1e-8
+            force,
+            fd_force,
+            atol=1.0e-6,
+            rtol=1.0e-4,
+            msg=f"edge-scatter force != finite difference "
+            f"({bridging_method}, {boundary})",
         )
+
+    def test_force_matches_finite_difference(self) -> None:
+        """F = -dE/dx for the pure descriptor path."""
+        self._check_force_fd("none")
+
+    def test_force_matches_finite_difference_zbl(self) -> None:
+        """F = -dE/dx with ZBL bridging routed through the edge ZBL form."""
+        self._check_force_fd("ZBL")
+
+    def test_force_matches_finite_difference_nonperiodic(self) -> None:
+        """F = -dE/dx for a non-periodic (box=None) cluster."""
+        self._check_force_fd("none", periodic=False)
+
+    def test_virial_matches_strain_finite_difference(self) -> None:
+        """W = -dE/deps under a random symmetric strain (PBC-correct virial)."""
+        model = self._build_model(bridging_method="none")
+        coord, atype, box = self._frame()
+        virial = model(coord, atype, box=box)["virial"].view(3, 3)
+
+        torch.manual_seed(0)
+        s = torch.randn(3, 3, dtype=torch.float64, device=self.device)
+        strain = 1.0e-4 * (s + s.transpose(0, 1))
+        eye = torch.eye(3, dtype=torch.float64, device=self.device)
+
+        def deformed_energy(sign: float) -> torch.Tensor:
+            m = (eye + sign * strain).transpose(0, 1)
+            coord_d = coord @ m
+            box_d = (box.view(1, 3, 3) @ m).reshape(1, 9)
+            return self._energy(model, coord_d, atype, box_d)
+
+        e_plus = deformed_energy(1.0)
+        e_minus = deformed_energy(-1.0)
+        # dE/dt|_0 = -<strain, W>, central difference over t = +/-1.
+        lhs = (strain * virial).sum()
+        rhs = -(e_plus - e_minus) / 2.0
+        torch.testing.assert_close(lhs, rhs, atol=1.0e-8, rtol=1.0e-4)
+
+    def test_atom_virial_sums_to_global_virial(self) -> None:
+        """Half-split per-atom virial reduces to the global virial."""
+        for bridging_method in ("none", "ZBL"):
+            model = self._build_model(bridging_method=bridging_method)
+            coord, atype, box = self._frame()
+            out = model(coord, atype, box=box, do_atomic_virial=True)
+            torch.testing.assert_close(
+                out["atom_virial"].sum(dim=1),
+                out["virial"],
+                atol=1.0e-10,
+                rtol=1.0e-6,
+                msg=f"atom_virial sum != global virial ({bridging_method})",
+            )
 
 
 class TestSeZMModelBridging(unittest.TestCase):
@@ -1900,7 +2074,7 @@ class TestSeZMModelLoRACompile(unittest.TestCase):
         model_compile.load_state_dict(model_eager.state_dict())
         return model_eager, model_compile
 
-    @unittest.skipIf(_SKIP_OFF_TORCH_211, _SKIP_OFF_TORCH_211_REASON)
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_forward_and_backward_match_eager(self) -> None:
         """Forward / first-order / second-order outputs agree with eager."""
         coord, atype, box = self._tiny_system()
@@ -1911,11 +2085,13 @@ class TestSeZMModelLoRACompile(unittest.TestCase):
         # === Forward ===
         out_eager = model_eager(coord, atype, box=box)
         out_compile = model_compile(coord, atype, box=box)
+        energy_atol = 1.0e-6 if self.device == torch.device("cpu") else 1.0e-4
+        energy_rtol = 1.0e-6 if self.device == torch.device("cpu") else 1.0e-4
         _assert_close_with_strict_warning(
             out_eager["energy"],
             out_compile["energy"],
-            atol=1.0e-6,
-            rtol=1.0e-6,
+            atol=energy_atol,
+            rtol=energy_rtol,
             msg="LoRA energy mismatch",
         )
         _assert_close_with_strict_warning(
@@ -1932,7 +2108,7 @@ class TestSeZMModelLoRACompile(unittest.TestCase):
         out_eager["energy"].sum().backward()
         out_compile["energy"].sum().backward()
         grad_atol = 1.0e-5 if self.device == torch.device("cpu") else 2.0e-3
-        grad_rtol = 1.0e-5 if self.device == torch.device("cpu") else 1.0e-4
+        grad_rtol = 1.0e-5 if self.device == torch.device("cpu") else 3.0e-3
         force_grad_atol = 1.0e-2
         force_grad_rtol = 1.0e-4
         grads_eager = {

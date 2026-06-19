@@ -944,8 +944,7 @@ TYPED_TEST_SUITE(TestDeepPotPTExptMetadata, ValueTypes);
 TYPED_TEST(TestDeepPotPTExptMetadata, type_map) {
   std::string type_map;
   this->dp.get_type_map(type_map);
-  EXPECT_NE(type_map.find("O"), std::string::npos);
-  EXPECT_NE(type_map.find("H"), std::string::npos);
+  EXPECT_EQ(type_map, "O H");
 }
 
 TYPED_TEST(TestDeepPotPTExptMetadata, cutoff) {
