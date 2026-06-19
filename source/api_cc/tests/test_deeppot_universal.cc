@@ -22,6 +22,7 @@ struct ModelCase {
   std::string model_path;
   bool convert_pbtxt;
   const deepmd_test::DeepPotRef* ref;
+  const deepmd_test::DeepPotRef* no_pbc_ref;
   double double_tol;
   double float_tol;
   bool supports_float;
@@ -87,16 +88,19 @@ std::string backend_name(Backend backend) {
 std::vector<ModelCase> model_cases() {
   return {
       {"tensorflow_pb", Backend::TensorFlow, "../../tests/infer/deeppot.pbtxt",
-       true, &deepmd_test::tf_deeppot_ref(), 1e-10, 1e-4, true},
+       true, &deepmd_test::tf_deeppot_ref(),
+       &deepmd_test::tf_deeppot_no_pbc_ref(), 1e-10, 1e-4, true},
       {"pytorch_pth", Backend::PyTorch, "../../tests/infer/deeppot_sea.pth",
-       false, &deepmd_test::sea_deeppot_ref(), 1e-10, 1e-4, true},
+       false, &deepmd_test::sea_deeppot_ref(),
+       &deepmd_test::sea_deeppot_no_pbc_ref(), 1e-10, 1e-4, true},
       {"pytorch_pt2", Backend::PTExpt, "../../tests/infer/deeppot_sea.pt2",
-       false, &deepmd_test::sea_deeppot_ref(), 1e-10, 1e-4, true},
+       false, &deepmd_test::sea_deeppot_ref(),
+       &deepmd_test::sea_deeppot_no_pbc_ref(), 1e-10, 1e-4, true},
       {"jax_savedmodel", Backend::JAX,
        "../../tests/infer/deeppot_sea.savedmodel", false,
-       &deepmd_test::sea_deeppot_ref(), 1e-10, 1e-4, true},
+       &deepmd_test::sea_deeppot_ref(), nullptr, 1e-10, 1e-4, true},
       {"paddle_json", Backend::Paddle, "../../tests/infer/deeppot_sea.json",
-       false, &deepmd_test::sea_deeppot_ref(), 1e-7, 1e-4, false}};
+       false, &deepmd_test::sea_deeppot_ref(), nullptr, 1e-7, 1e-4, false}};
 }
 
 class UniversalDeepPotTest : public ::testing::TestWithParam<ModelCase> {
@@ -147,12 +151,16 @@ TEST_P(UniversalDeepPotTest, Metadata) {
 template <typename ValueType>
 void check_compute(deepmd::DeepPot& dp,
                    const deepmd_test::DeepPotRef& ref,
-                   const double tol) {
+                   const double tol,
+                   const bool use_box = true) {
   const int natoms = static_cast<int>(deepmd_test::deeppot_atype().size());
   const std::vector<ValueType> coord(deepmd_test::deeppot_coord().begin(),
                                      deepmd_test::deeppot_coord().end());
-  const std::vector<ValueType> box(deepmd_test::deeppot_box().begin(),
-                                   deepmd_test::deeppot_box().end());
+  std::vector<ValueType> box;
+  if (use_box) {
+    box.assign(deepmd_test::deeppot_box().begin(),
+               deepmd_test::deeppot_box().end());
+  }
   const std::vector<int> atype = deepmd_test::deeppot_atype();
   const std::vector<double> expected_virial = deepmd_test::total_virial(ref);
 
@@ -194,6 +202,27 @@ TEST_P(UniversalDeepPotTest, ComputeFloat) {
                  << " does not provide float inference coverage.";
   }
   check_compute<float>(dp, *GetParam().ref, GetParam().float_tol);
+}
+
+TEST_P(UniversalDeepPotTest, ComputeNoPbcDouble) {
+  if (GetParam().no_pbc_ref == nullptr) {
+    GTEST_SKIP() << backend_name(GetParam().backend)
+                 << " NoPBC reference is not available.";
+  }
+  check_compute<double>(dp, *GetParam().no_pbc_ref, GetParam().double_tol,
+                        false);
+}
+
+TEST_P(UniversalDeepPotTest, ComputeNoPbcFloat) {
+  if (!GetParam().supports_float) {
+    GTEST_SKIP() << backend_name(GetParam().backend)
+                 << " does not provide float inference coverage.";
+  }
+  if (GetParam().no_pbc_ref == nullptr) {
+    GTEST_SKIP() << backend_name(GetParam().backend)
+                 << " NoPBC reference is not available.";
+  }
+  check_compute<float>(dp, *GetParam().no_pbc_ref, GetParam().float_tol, false);
 }
 
 INSTANTIATE_TEST_SUITE_P(

@@ -197,42 +197,6 @@ TYPED_TEST(TestInferDeepPotAPtExpt, cpu_build_nlist_numfv) {
   model.test_v(coord, box_);
 }
 
-TYPED_TEST(TestInferDeepPotAPtExpt, cpu_build_nlist_atomic) {
-  using VALUETYPE = TypeParam;
-  std::vector<VALUETYPE>& coord = this->coord;
-  std::vector<int>& atype = this->atype;
-  std::vector<VALUETYPE>& box = this->box;
-  std::vector<VALUETYPE>& expected_e = this->expected_e;
-  std::vector<VALUETYPE>& expected_f = this->expected_f;
-  std::vector<VALUETYPE>& expected_v = this->expected_v;
-  int& natoms = this->natoms;
-  double& expected_tot_e = this->expected_tot_e;
-  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
-  deepmd::DeepPot& dp = this->dp;
-  double ener;
-  std::vector<VALUETYPE> force, virial, atom_ener, atom_vir;
-  dp.compute(ener, force, virial, atom_ener, atom_vir, coord, atype, box);
-
-  EXPECT_EQ(force.size(), natoms * 3);
-  EXPECT_EQ(virial.size(), 9);
-  EXPECT_EQ(atom_ener.size(), natoms);
-  EXPECT_EQ(atom_vir.size(), natoms * 9);
-
-  EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
-  for (int ii = 0; ii < natoms * 3; ++ii) {
-    EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
-  }
-  for (int ii = 0; ii < 3 * 3; ++ii) {
-    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
-  }
-  for (int ii = 0; ii < natoms; ++ii) {
-    EXPECT_LT(fabs(atom_ener[ii] - expected_e[ii]), EPSILON);
-  }
-  for (int ii = 0; ii < natoms * 9; ++ii) {
-    EXPECT_LT(fabs(atom_vir[ii] - expected_v[ii]), EPSILON);
-  }
-}
-
 TYPED_TEST(TestInferDeepPotAPtExpt, cpu_lmp_nlist) {
   using VALUETYPE = TypeParam;
   std::vector<VALUETYPE>& coord = this->coord;
@@ -764,42 +728,6 @@ TYPED_TEST(TestInferDeepPotAPtExptNoPbc, cpu_build_nlist) {
   }
 }
 
-TYPED_TEST(TestInferDeepPotAPtExptNoPbc, cpu_build_nlist_atomic) {
-  using VALUETYPE = TypeParam;
-  std::vector<VALUETYPE>& coord = this->coord;
-  std::vector<int>& atype = this->atype;
-  std::vector<VALUETYPE>& box = this->box;
-  std::vector<VALUETYPE>& expected_e = this->expected_e;
-  std::vector<VALUETYPE>& expected_f = this->expected_f;
-  std::vector<VALUETYPE>& expected_v = this->expected_v;
-  int& natoms = this->natoms;
-  double& expected_tot_e = this->expected_tot_e;
-  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
-  deepmd::DeepPot& dp = this->dp;
-  double ener;
-  std::vector<VALUETYPE> force, virial, atom_ener, atom_vir;
-  dp.compute(ener, force, virial, atom_ener, atom_vir, coord, atype, box);
-
-  EXPECT_EQ(force.size(), natoms * 3);
-  EXPECT_EQ(virial.size(), 9);
-  EXPECT_EQ(atom_ener.size(), natoms);
-  EXPECT_EQ(atom_vir.size(), natoms * 9);
-
-  EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
-  for (int ii = 0; ii < natoms * 3; ++ii) {
-    EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
-  }
-  for (int ii = 0; ii < 3 * 3; ++ii) {
-    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
-  }
-  for (int ii = 0; ii < natoms; ++ii) {
-    EXPECT_LT(fabs(atom_ener[ii] - expected_e[ii]), EPSILON);
-  }
-  for (int ii = 0; ii < natoms * 9; ++ii) {
-    EXPECT_LT(fabs(atom_vir[ii] - expected_v[ii]), EPSILON);
-  }
-}
-
 // Multi-frame PBC test via compute_mixed_type
 TYPED_TEST(TestInferDeepPotAPtExpt, cpu_build_nlist_nframes) {
   using VALUETYPE = TypeParam;
@@ -914,57 +842,6 @@ TEST(TestDeepPotPTExptParser, load_tiny_file) {
   deepmd::DeepPot dp;
   EXPECT_THROW(dp.init(tmpfile), deepmd::deepmd_exception);
   std::remove(tmpfile.c_str());
-}
-
-// Metadata accessor tests — exercise JSON parser on a real model
-template <class VALUETYPE>
-class TestDeepPotPTExptMetadata : public ::testing::Test {
- protected:
-  static deepmd::DeepPot dp;
-  static void SetUpTestSuite() {
-#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
-    dp.init("../../tests/infer/deeppot_sea.pt2");
-#endif
-  }
-  void SetUp() override {
-#if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT
-    GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
-#endif
-  };
-  void TearDown() override {};
-
-  static void TearDownTestSuite() { dp = deepmd::DeepPot(); }
-};
-
-template <class VALUETYPE>
-deepmd::DeepPot TestDeepPotPTExptMetadata<VALUETYPE>::dp;
-
-TYPED_TEST_SUITE(TestDeepPotPTExptMetadata, ValueTypes);
-
-TYPED_TEST(TestDeepPotPTExptMetadata, type_map) {
-  std::string type_map;
-  this->dp.get_type_map(type_map);
-  EXPECT_EQ(type_map, "O H");
-}
-
-TYPED_TEST(TestDeepPotPTExptMetadata, cutoff) {
-  EXPECT_GT(this->dp.cutoff(), 0.0);
-}
-
-TYPED_TEST(TestDeepPotPTExptMetadata, ntypes) {
-  EXPECT_EQ(this->dp.numb_types(), 2);
-}
-
-TYPED_TEST(TestDeepPotPTExptMetadata, dim_fparam_zero) {
-  EXPECT_EQ(this->dp.dim_fparam(), 0);
-}
-
-TYPED_TEST(TestDeepPotPTExptMetadata, dim_aparam_zero) {
-  EXPECT_EQ(this->dp.dim_aparam(), 0);
-}
-
-TYPED_TEST(TestDeepPotPTExptMetadata, no_default_fparam) {
-  EXPECT_FALSE(this->dp.has_default_fparam());
 }
 
 // JSON parser type-coverage via fparam model

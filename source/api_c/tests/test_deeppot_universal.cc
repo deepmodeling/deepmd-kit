@@ -22,6 +22,7 @@ struct ModelCase {
   std::string model_path;
   bool convert_pbtxt;
   const deepmd_test::DeepPotRef* ref;
+  const deepmd_test::DeepPotRef* no_pbc_ref;
   double double_tol;
   double float_tol;
   bool supports_float;
@@ -87,16 +88,19 @@ std::string backend_name(Backend backend) {
 std::vector<ModelCase> model_cases() {
   return {
       {"tensorflow_pb", Backend::TensorFlow, "../../tests/infer/deeppot.pbtxt",
-       true, &deepmd_test::tf_deeppot_ref(), 1e-10, 1e-4, true},
+       true, &deepmd_test::tf_deeppot_ref(),
+       &deepmd_test::tf_deeppot_no_pbc_ref(), 1e-10, 1e-4, true},
       {"pytorch_pth", Backend::PyTorch, "../../tests/infer/deeppot_sea.pth",
-       false, &deepmd_test::sea_deeppot_ref(), 1e-10, 1e-4, true},
+       false, &deepmd_test::sea_deeppot_ref(),
+       &deepmd_test::sea_deeppot_no_pbc_ref(), 1e-10, 1e-4, true},
       {"pytorch_pt2", Backend::PTExpt, "../../tests/infer/deeppot_sea.pt2",
-       false, &deepmd_test::sea_deeppot_ref(), 1e-10, 1e-4, true},
+       false, &deepmd_test::sea_deeppot_ref(),
+       &deepmd_test::sea_deeppot_no_pbc_ref(), 1e-10, 1e-4, true},
       {"jax_savedmodel", Backend::JAX,
        "../../tests/infer/deeppot_sea.savedmodel", false,
-       &deepmd_test::sea_deeppot_ref(), 1e-10, 1e-4, true},
+       &deepmd_test::sea_deeppot_ref(), nullptr, 1e-10, 1e-4, true},
       {"paddle_json", Backend::Paddle, "../../tests/infer/deeppot_sea.json",
-       false, &deepmd_test::sea_deeppot_ref(), 1e-7, 1e-4, false}};
+       false, &deepmd_test::sea_deeppot_ref(), nullptr, 1e-7, 1e-4, false}};
 }
 
 class UniversalDeepPotCTest : public ::testing::TestWithParam<ModelCase> {
@@ -219,6 +223,73 @@ void check_compute_float(DP_DeepPot* dp,
   }
 }
 
+void check_compute_legacy_double(DP_DeepPot* dp,
+                                 const deepmd_test::DeepPotRef& ref,
+                                 const double* box,
+                                 const double tol) {
+  const int natoms = static_cast<int>(deepmd_test::deeppot_atype().size());
+  const std::vector<double>& coord = deepmd_test::deeppot_coord();
+  const std::vector<int>& atype = deepmd_test::deeppot_atype();
+  const std::vector<double> expected_virial = deepmd_test::total_virial(ref);
+
+  double energy = 0.0;
+  std::vector<double> force(natoms * 3);
+  std::vector<double> virial(9);
+  std::vector<double> atomic_energy(natoms);
+  std::vector<double> atomic_virial(natoms * 9);
+  DP_DeepPotCompute(dp, natoms, coord.data(), atype.data(), box, &energy,
+                    force.data(), virial.data(), atomic_energy.data(),
+                    atomic_virial.data());
+
+  EXPECT_NEAR(energy, deepmd_test::total_energy(ref), tol);
+  for (int ii = 0; ii < natoms * 3; ++ii) {
+    EXPECT_NEAR(force[ii], ref.force[ii], tol);
+  }
+  for (size_t ii = 0; ii < 9; ++ii) {
+    EXPECT_NEAR(virial[ii], expected_virial[ii], tol);
+  }
+  for (int ii = 0; ii < natoms; ++ii) {
+    EXPECT_NEAR(atomic_energy[ii], ref.atomic_energy[ii], tol);
+  }
+  for (int ii = 0; ii < natoms * 9; ++ii) {
+    EXPECT_NEAR(atomic_virial[ii], ref.atomic_virial[ii], tol);
+  }
+}
+
+void check_compute_legacy_float(DP_DeepPot* dp,
+                                const deepmd_test::DeepPotRef& ref,
+                                const float* box,
+                                const double tol) {
+  const int natoms = static_cast<int>(deepmd_test::deeppot_atype().size());
+  const std::vector<float> coord(deepmd_test::deeppot_coord().begin(),
+                                 deepmd_test::deeppot_coord().end());
+  const std::vector<int>& atype = deepmd_test::deeppot_atype();
+  const std::vector<double> expected_virial = deepmd_test::total_virial(ref);
+
+  double energy = 0.0;
+  std::vector<float> force(natoms * 3);
+  std::vector<float> virial(9);
+  std::vector<float> atomic_energy(natoms);
+  std::vector<float> atomic_virial(natoms * 9);
+  DP_DeepPotComputef(dp, natoms, coord.data(), atype.data(), box, &energy,
+                     force.data(), virial.data(), atomic_energy.data(),
+                     atomic_virial.data());
+
+  EXPECT_NEAR(energy, deepmd_test::total_energy(ref), tol);
+  for (int ii = 0; ii < natoms * 3; ++ii) {
+    EXPECT_NEAR(force[ii], ref.force[ii], tol);
+  }
+  for (size_t ii = 0; ii < 9; ++ii) {
+    EXPECT_NEAR(virial[ii], expected_virial[ii], tol);
+  }
+  for (int ii = 0; ii < natoms; ++ii) {
+    EXPECT_NEAR(atomic_energy[ii], ref.atomic_energy[ii], tol);
+  }
+  for (int ii = 0; ii < natoms * 9; ++ii) {
+    EXPECT_NEAR(atomic_virial[ii], ref.atomic_virial[ii], tol);
+  }
+}
+
 TEST_P(UniversalDeepPotCTest, ComputeDouble) {
   check_compute_double(dp, *GetParam().ref, GetParam().double_tol);
 }
@@ -229,6 +300,45 @@ TEST_P(UniversalDeepPotCTest, ComputeFloat) {
                  << " does not provide float inference coverage.";
   }
   check_compute_float(dp, *GetParam().ref, GetParam().float_tol);
+}
+
+TEST_P(UniversalDeepPotCTest, ComputeLegacyDouble) {
+  const std::vector<double>& box = deepmd_test::deeppot_box();
+  check_compute_legacy_double(dp, *GetParam().ref, box.data(),
+                              GetParam().double_tol);
+}
+
+TEST_P(UniversalDeepPotCTest, ComputeLegacyFloat) {
+  if (!GetParam().supports_float) {
+    GTEST_SKIP() << backend_name(GetParam().backend)
+                 << " does not provide float inference coverage.";
+  }
+  const std::vector<double>& box_double = deepmd_test::deeppot_box();
+  const std::vector<float> box(box_double.begin(), box_double.end());
+  check_compute_legacy_float(dp, *GetParam().ref, box.data(),
+                             GetParam().float_tol);
+}
+
+TEST_P(UniversalDeepPotCTest, ComputeLegacyNoPbcDouble) {
+  if (GetParam().no_pbc_ref == nullptr) {
+    GTEST_SKIP() << backend_name(GetParam().backend)
+                 << " NoPBC reference is not available.";
+  }
+  check_compute_legacy_double(dp, *GetParam().no_pbc_ref, nullptr,
+                              GetParam().double_tol);
+}
+
+TEST_P(UniversalDeepPotCTest, ComputeLegacyNoPbcFloat) {
+  if (!GetParam().supports_float) {
+    GTEST_SKIP() << backend_name(GetParam().backend)
+                 << " does not provide float inference coverage.";
+  }
+  if (GetParam().no_pbc_ref == nullptr) {
+    GTEST_SKIP() << backend_name(GetParam().backend)
+                 << " NoPBC reference is not available.";
+  }
+  check_compute_legacy_float(dp, *GetParam().no_pbc_ref, nullptr,
+                             GetParam().float_tol);
 }
 
 INSTANTIATE_TEST_SUITE_P(
