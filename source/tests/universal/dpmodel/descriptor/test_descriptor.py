@@ -912,7 +912,12 @@ class TestDPA3StaticDynamicSelDP(unittest.TestCase, TestCaseSingleFrameWithNlist
     def setUp(self) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
 
-    def _make_dpa3(self, use_static_dynamic_sel: bool) -> DescrptDPA3:
+    def _make_dpa3(
+        self,
+        use_static_dynamic_sel: bool,
+        *,
+        use_loc_mapping: bool,
+    ) -> DescrptDPA3:
         # The switch is intentionally class-level and internal, so tests toggle
         # it only around construction and then restore the previous backend mode.
         old_use_static_dynamic_sel = DescrptBlockRepflows._use_static_dynamic_sel
@@ -927,45 +932,53 @@ class TestDPA3StaticDynamicSelDP(unittest.TestCase, TestCaseSingleFrameWithNlist
                     ["O", "H"],
                     smooth_edge_update=True,
                     use_dynamic_sel=True,
+                    use_loc_mapping=use_loc_mapping,
                 )
             )
         finally:
             DescrptBlockRepflows._use_static_dynamic_sel = old_use_static_dynamic_sel
 
     def test_static_dynamic_sel_matches_packed_dynamic_sel(self) -> None:
-        packed = self._make_dpa3(False)
-        static = self._make_dpa3(True)
+        for use_loc_mapping in (True, False):
+            packed = self._make_dpa3(
+                False,
+                use_loc_mapping=use_loc_mapping,
+            )
+            static = self._make_dpa3(
+                True,
+                use_loc_mapping=use_loc_mapping,
+            )
 
-        packed_out = packed(
-            self.coord_ext,
-            self.atype_ext,
-            self.nlist,
-            mapping=self.mapping,
-        )
-        static_out = static(
-            self.coord_ext,
-            self.atype_ext,
-            self.nlist,
-            mapping=self.mapping,
-        )
+            packed_out = packed(
+                self.coord_ext,
+                self.atype_ext,
+                self.nlist,
+                mapping=self.mapping,
+            )
+            static_out = static(
+                self.coord_ext,
+                self.atype_ext,
+                self.nlist,
+                mapping=self.mapping,
+            )
 
-        np.testing.assert_allclose(packed_out[0], static_out[0], atol=self.atol)
-        np.testing.assert_allclose(packed_out[1], static_out[1], atol=self.atol)
+            np.testing.assert_allclose(packed_out[0], static_out[0], atol=self.atol)
+            np.testing.assert_allclose(packed_out[1], static_out[1], atol=self.atol)
 
-        # Static dynamic selection keeps all edge slots.  Masking out padding
-        # should recover the compact dynamic edge/h2/sw tensors exactly:
-        #   compact_edges == static_edges[nlist != -1].
-        valid_edge_mask = np.reshape(self.nlist != -1, (-1,))
-        assert static_out[2].shape[0] == self.nf * self.nloc * sum(self.sel)
-        np.testing.assert_allclose(
-            packed_out[2], static_out[2][valid_edge_mask], atol=self.atol
-        )
-        np.testing.assert_allclose(
-            packed_out[3], static_out[3][valid_edge_mask], atol=self.atol
-        )
-        np.testing.assert_allclose(
-            packed_out[4], static_out[4][valid_edge_mask], atol=self.atol
-        )
+            # Static dynamic selection keeps all edge slots.  Masking out padding
+            # should recover the compact dynamic edge/h2/sw tensors exactly:
+            #   compact_edges == static_edges[nlist != -1].
+            valid_edge_mask = np.reshape(self.nlist != -1, (-1,))
+            assert static_out[2].shape[0] == self.nf * self.nloc * sum(self.sel)
+            np.testing.assert_allclose(
+                packed_out[2], static_out[2][valid_edge_mask], atol=self.atol
+            )
+            np.testing.assert_allclose(
+                packed_out[3], static_out[3][valid_edge_mask], atol=self.atol
+            )
+            np.testing.assert_allclose(
+                packed_out[4], static_out[4][valid_edge_mask], atol=self.atol
+            )
 
 
 class TestHybridChgSpinDefaultDP(unittest.TestCase):
