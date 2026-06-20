@@ -12,6 +12,7 @@
 #define gpuGetLastError cudaGetLastError
 #define gpuDeviceSynchronize cudaDeviceSynchronize
 #define gpuMemcpy cudaMemcpy
+#define gpuMemcpyAsync cudaMemcpyAsync
 #define gpuMemcpyDeviceToHost cudaMemcpyDeviceToHost
 #define gpuMemcpyHostToDevice cudaMemcpyHostToDevice
 #define gpuMemcpyDeviceToDevice cudaMemcpyDeviceToDevice

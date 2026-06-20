@@ -15,6 +15,7 @@
 #define gpuGetLastError hipGetLastError
 #define gpuDeviceSynchronize hipDeviceSynchronize
 #define gpuMemcpy hipMemcpy
+#define gpuMemcpyAsync hipMemcpyAsync
 #define gpuMemcpyDeviceToHost hipMemcpyDeviceToHost
 #define gpuMemcpyHostToDevice hipMemcpyHostToDevice
 #define gpuMemcpyDeviceToDevice hipMemcpyDeviceToDevice

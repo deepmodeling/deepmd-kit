@@ -8,10 +8,20 @@
 #endif
 #include <torch/torch.h>
 
+#include <cstddef>
 #include <cstdint>
 
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
 #include "device.h"
+#endif
+#if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
+#if defined(__has_include)
+#if __has_include(<c10/cuda/impl/cuda_cmake_macros.h>) && \
+    __has_include(<c10/cuda/CUDAStream.h>)
+#include <c10/cuda/CUDAStream.h>
+#define DEEPMD_HAS_C10_CUDA_STREAM 1
+#endif
+#endif
 #endif
 
 #ifdef USE_MPI
@@ -26,6 +36,31 @@ MPI_Datatype get_mpi_type<float>() {
 template <>
 MPI_Datatype get_mpi_type<double>() {
   return MPI_DOUBLE;
+}
+#endif
+
+#if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
+template <typename FPTYPE>
+static void gpu_memcpy_d2d_current_stream(FPTYPE* dst,
+                                          const FPTYPE* src,
+                                          std::size_t count) {
+  if (count == 0) {
+    return;
+  }
+  // Use the project CUDA/HIP abstraction for the async copy itself.  If the
+  // lightweight c10 stream API is available, enqueue on PyTorch's current
+  // stream to preserve ordering with neighbouring PyTorch ops.  Some build
+  // jobs use a PyTorch include layout without c10/cuda generated headers, so
+  // keep a no-c10 fallback to avoid pulling in unavailable optional headers.
+#if defined(DEEPMD_HAS_C10_CUDA_STREAM)
+  auto stream = c10::cuda::getCurrentCUDAStream().stream();
+#elif defined(GOOGLE_CUDA)
+  cudaStream_t stream = nullptr;
+#elif defined(TENSORFLOW_USE_ROCM)
+  hipStream_t stream = nullptr;
+#endif
+  DPErrcheck(gpuMemcpyAsync(dst, src, count * sizeof(FPTYPE),
+                            gpuMemcpyDeviceToDevice, stream));
 }
 #endif
 
@@ -148,9 +183,8 @@ class Border : public torch::autograd::Function<Border> {
         // where USE_MPI is on but the call site uses CPU tensors
         // (e.g. unit tests of border_op without MPI init).
         if (recv_g1_tensor.is_cuda()) {
-          gpuMemcpy(recv_g1, send_g1,
-                    (unsigned long)nsend * tensor_size * sizeof(FPTYPE),
-                    gpuMemcpyDeviceToDevice);
+          gpu_memcpy_d2d_current_stream(recv_g1, send_g1,
+                                        (std::size_t)nsend * tensor_size);
         } else {
           memcpy(recv_g1, send_g1,
                  (unsigned long)nsend * tensor_size * sizeof(FPTYPE));
@@ -334,9 +368,8 @@ class Border : public torch::autograd::Function<Border> {
           // gpuMemcpy path silently fails with cudaErrorInvalidValue
           // and leaves recv_g1 uninitialized.
           if (recv_g1_tensor.is_cuda()) {
-            gpuMemcpy(recv_g1, send_g1,
-                      (unsigned long)nrecv * tensor_size * sizeof(FPTYPE),
-                      gpuMemcpyDeviceToDevice);
+            gpu_memcpy_d2d_current_stream(recv_g1, send_g1,
+                                          (std::size_t)nrecv * tensor_size);
           } else {
             memcpy(recv_g1, send_g1,
                    (unsigned long)nrecv * tensor_size * sizeof(FPTYPE));
@@ -543,6 +576,26 @@ DEEPMD_MAYBE_UNUSED torch::Tensor border_op_export(
   return out[0].clone();
 }
 
+DEEPMD_MAYBE_UNUSED torch::Tensor border_op_meta(const torch::Tensor&,
+                                                 const torch::Tensor&,
+                                                 const torch::Tensor&,
+                                                 const torch::Tensor&,
+                                                 const torch::Tensor&,
+                                                 const torch::Tensor& g1_tensor,
+                                                 const torch::Tensor&,
+                                                 const torch::Tensor&,
+                                                 const torch::Tensor&) {
+  // Metadata-only implementation for PyTorch's Meta/FakeTensor dispatch.
+  // PyTorch's custom-op checks require a FakeTensor kernel (also called a
+  // meta kernel) for compile/export/FX support, and check that it returns the
+  // same tensor metadata (sizes/strides/dtype/device/etc.) as the real op:
+  // https://docs.pytorch.org/docs/stable/library.html#torch.library.opcheck
+  // The concrete border_op mutates g1 and the export wrapper returns a cloned
+  // Tensor with exactly g1's metadata, so empty_like(g1) is the shape-only
+  // result without touching data_ptr(), MPI, or CUDA/HIP runtime state.
+  return torch::empty_like(g1_tensor);
+}
+
 DEEPMD_MAYBE_UNUSED torch::Tensor border_op_backward_export(
     const torch::Tensor& sendlist_tensor,
     const torch::Tensor& sendproc_tensor,
@@ -557,6 +610,22 @@ DEEPMD_MAYBE_UNUSED torch::Tensor border_op_backward_export(
                             sendnum_tensor, recvnum_tensor, grad_g1,
                             communicator_tensor, nlocal_tensor, nghost_tensor)
       .clone();
+}
+
+DEEPMD_MAYBE_UNUSED torch::Tensor border_op_backward_meta(
+    const torch::Tensor&,
+    const torch::Tensor&,
+    const torch::Tensor&,
+    const torch::Tensor&,
+    const torch::Tensor&,
+    const torch::Tensor& grad_g1,
+    const torch::Tensor&,
+    const torch::Tensor&,
+    const torch::Tensor&) {
+  // Same metadata rule as border_op_meta: border_op_backward returns a Tensor
+  // with the same metadata as grad_g1, so FakeTensor/Meta dispatch can infer
+  // the result without executing the real MPI/CUDA/HIP communication kernel.
+  return torch::empty_like(grad_g1);
 }
 }  // namespace
 #undef DEEPMD_MAYBE_UNUSED
@@ -578,6 +647,10 @@ TORCH_LIBRARY_FRAGMENT(deepmd_export, m) {
 TORCH_LIBRARY_IMPL(deepmd_export, CPU, m) {
   m.impl("border_op", border_op_export);
   m.impl("border_op_backward", border_op_backward_export);
+}
+TORCH_LIBRARY_IMPL(deepmd_export, Meta, m) {
+  m.impl("border_op", border_op_meta);
+  m.impl("border_op_backward", border_op_backward_meta);
 }
 #if defined(GOOGLE_CUDA) || defined(TENSORFLOW_USE_ROCM)
 TORCH_LIBRARY_IMPL(deepmd_export, CUDA, m) {
