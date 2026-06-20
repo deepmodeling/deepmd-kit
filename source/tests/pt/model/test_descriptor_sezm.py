@@ -155,6 +155,30 @@ class TestDescrptSeZM(_SeZMTestCase):
         self.assertTrue(torch.all(torch.isfinite(extended_coord.grad)))
         return model
 
+    def test_so3_readout_empty_edge_shrinking_schedule(self) -> None:
+        """so3_readout glu/mlp must handle the empty-edge path.
+
+        With a shrinking ``l_schedule`` and no edges (every atom isolated),
+        ``_forward_blocks`` is skipped so ``x`` keeps the *initial* node degree
+        ``node_ebed_dims[0]``; the readout must truncate it to the final degree
+        ``node_ebed_dims[-1]`` (what ``output_ffn`` is built for) before the FFN.
+        Regression for the readout shape mismatch on isolated atoms.
+        """
+        coord, atype, _ = _tiny_two_atom_system(self.device, dtype=torch.float32)
+        extended_coord = coord.reshape(1, -1).detach().requires_grad_(True)
+        # all neighbors masked out -> edge_cache.src.numel() == 0 -> blocks skipped
+        nlist = torch.full((1, 2, 2), -1, dtype=torch.int64, device=self.device)
+        for readout in ("glu", "mlp"):
+            with self.subTest(so3_readout=readout):
+                model = DescrptSeZM(
+                    **_descriptor_kwargs(l_schedule=[2, 1], so3_readout=readout)
+                )
+                desc, *_ = model(
+                    extended_coord, atype, nlist, mapping=None, comm_dict=None
+                )
+                self.assertEqual(desc.shape, (1, 2, 4))
+                self.assertTrue(torch.all(torch.isfinite(desc)))
+
     def test_forward_with_descriptor_variants(self) -> None:
         """Test forward/backward smoke paths for compact descriptor variants."""
         cases = {

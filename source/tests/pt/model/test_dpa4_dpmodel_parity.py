@@ -3578,6 +3578,60 @@ class TestDescriptorParity:
         pt_mod, dp_mod, _ = self._build_descr_pair(extra_node_l=1)
         self._assert_descr_parity(pt_mod, dp_mod)
 
+    @pytest.mark.parametrize(
+        "so3_readout", ["glu", "mlp"]
+    )  # SO(3) grid readout: quadratic grid product vs point-wise grid MLP
+    def test_descriptor_so3_readout(self, so3_readout) -> None:
+        # so3_readout!="none" feeds the full (N, D, 1, C) node tensor to the
+        # output FFN so the SO(3) Wigner-D grid folds l>0 into l=0. The pt
+        # reference is pinned to CPU so the parity holds under the CUDA default
+        # device; the gate stays at the strict fp64 descriptor tolerance.
+        from deepmd.dpmodel.descriptor.dpa4 import (
+            DescrptDPA4,
+        )
+        from deepmd.pt.model.descriptor.sezm import (
+            DescrptSeZM,
+        )
+
+        kwargs = self._descr_kwargs(so3_readout=so3_readout)
+        pt_mod = DescrptSeZM(**kwargs).double().eval().to("cpu")
+        # so3_linear_2 / output projections are zero-initialized; perturb so the
+        # readout output is nontrivial (otherwise it is identically ~0)
+        rng = np.random.default_rng(2160)
+        with torch.no_grad():
+            for p in pt_mod.parameters():
+                p += torch.from_numpy(0.05 * rng.normal(size=tuple(p.shape))).to("cpu")
+        dp_mod = DescrptDPA4.deserialize(pt_mod.serialize())
+        assert dp_mod.so3_readout == so3_readout
+
+        inp = self._inputs()
+        coord, atype_ext, nlist, mp = (
+            inp["coord"],
+            inp["atype_ext"],
+            inp["nlist"],
+            inp["mapping"],
+        )
+        nf = coord.shape[0]
+        out_dp = np.asarray(
+            dp_mod.call(coord.reshape(nf, -1), atype_ext, nlist, mapping=mp)[0]
+        )
+        out_pt = (
+            pt_mod(
+                torch.from_numpy(coord).to("cpu"),
+                torch.from_numpy(atype_ext.astype(np.int64)).to("cpu"),
+                torch.from_numpy(nlist.astype(np.int64)).to("cpu"),
+                mapping=torch.from_numpy(mp.astype(np.int64)).to("cpu"),
+            )[0]
+            .detach()
+            .cpu()
+            .numpy()
+        )
+        assert out_dp.shape == out_pt.shape
+        # nontrivial output magnitude (guards against a trivially-zero readout)
+        assert np.abs(out_dp).max() > 1e-6
+        # strict fp64 descriptor-level gate
+        np.testing.assert_allclose(out_dp, out_pt, rtol=1e-10, atol=1e-12)
+
     def test_descriptor_torch_namespace(self) -> None:
         # the dp descriptor must run under the torch array namespace as well:
         # feeding torch tensors must yield a torch tensor matching the numpy

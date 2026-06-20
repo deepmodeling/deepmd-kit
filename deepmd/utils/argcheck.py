@@ -551,6 +551,16 @@ def descrpt_se_zm_args() -> list[Argument]:
         "context. When enabled together with `message_node_s2`, the SO(3) "
         "branch is used for this path."
     )
+    doc_so3_readout = (
+        "Read-out FFN mode for the final l=0 descriptor. `none` applies a "
+        "degree-0 scalar FFN to the l=0 slice only; l>0 coefficients are "
+        "discarded before the read-out. `glu` and `mlp` apply a full equivariant "
+        "FFN on the SO(3) Wigner-D grid so l>0 geometry is folded into l=0 "
+        "before the scalar is extracted; the value selects the quadratic grid "
+        "product (`glu`) or the polynomial point-wise grid MLP (`mlp`). The "
+        "read-out degree equals the node degree of the last interaction block; "
+        "the Wigner-D frame order follows `kmax`."
+    )
     doc_lebedev_quadrature = (
         "Either one boolean applied to both S2 branches, or two booleans "
         "`[so2_enabled, ffn_enabled]` aligned with `s2_activation`. If a branch "
@@ -880,6 +890,15 @@ def descrpt_se_zm_args() -> list[Argument]:
             optional=True,
             default=False,
             doc=doc_only_pt_supported + doc_message_node_so3,
+        ),
+        Argument(
+            "so3_readout",
+            str,
+            optional=True,
+            default="none",
+            extra_check=lambda x: x in ("none", "glu", "mlp"),
+            extra_check_errmsg="must be one of 'none', 'glu', or 'mlp'",
+            doc=doc_only_pt_supported + doc_so3_readout,
         ),
         Argument(
             "lebedev_quadrature",
