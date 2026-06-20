@@ -49,6 +49,7 @@ DPA4_CASE_FIELDS = (
     "ffn_so3_grid",
     "message_node_so3",
     "grid_mlp",
+    "so3_readout",
 )
 
 DPA4_BASELINE_CASE = {
@@ -59,6 +60,7 @@ DPA4_BASELINE_CASE = {
     "ffn_so3_grid": False,
     "message_node_so3": False,
     "grid_mlp": False,
+    "so3_readout": "none",
 }
 
 
@@ -99,6 +101,10 @@ DPA4_CURATED_CASES = (
     dpa4_case(ffn_so3_grid=True, message_node_so3=True),
     # polynomial grid MLP op (grid_branch=0 so grid_mlp takes effect)
     dpa4_case(grid_mlp=True, grid_branch=[0, 0, 0]),
+    # SO(3) readout: GLU grid product folds l>0 into the l=0 output
+    dpa4_case(so3_readout="glu"),
+    # SO(3) readout: point-wise grid MLP folds l>0 into the l=0 output
+    dpa4_case(so3_readout="mlp"),
 )
 
 
@@ -114,6 +120,7 @@ class TestDPA4(CommonTest, DescriptorTest, unittest.TestCase):
             ffn_so3_grid,
             message_node_so3,
             grid_mlp,
+            so3_readout,
         ) = self.param
         return {
             "ntypes": self.ntypes,
@@ -130,6 +137,7 @@ class TestDPA4(CommonTest, DescriptorTest, unittest.TestCase):
             "ffn_so3_grid": ffn_so3_grid,
             "message_node_so3": message_node_so3,
             "grid_mlp": grid_mlp,
+            "so3_readout": so3_readout,
             "random_gamma": False,
             "precision": precision,
             "trainable": False,
