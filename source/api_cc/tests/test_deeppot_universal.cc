@@ -1,37 +1,23 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include <gtest/gtest.h>
-#include <sys/stat.h>
 
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <exception>
 #include <string>
 #include <type_traits>
 #include <vector>
 
-#include "../../tests/infer/deeppot_universal_data.h"
 #include "DeepPot.h"
 #include "DeepPotPTExpt.h"
+#include "deeppot_universal_test_common.h"
 #include "expected_ref.h"
 #include "test_utils.h"
 
 namespace {
 
-enum class Backend { TensorFlow, PyTorch, PTExpt, JAX, Paddle };
-
-struct ModelCase {
-  std::string name;
-  Backend backend;
-  std::string model_path;
-  bool convert_pbtxt;
-  const deepmd_test::DeepPotRef* ref;
-  const deepmd_test::DeepPotRef* no_pbc_ref;
-  double double_tol;
-  double float_tol;
-  bool supports_float;
-  bool supports_nframes;
-  bool supports_lmp_nlist_mapping;
-};
+using namespace deepmd_test::universal;
 
 struct VariantDeepPotCase {
   std::string name;
@@ -58,18 +44,6 @@ struct VariantDeepPotCase {
   bool supports_no_pbc_lmp_nlist_atomic;
 };
 
-struct FParamAParamCase {
-  std::string name;
-  Backend backend;
-  std::string model_path;
-  bool convert_pbtxt;
-  const deepmd_test::DeepPotRef* builtin_ref;
-  std::string ref_path;
-  double double_tol;
-  double float_tol;
-  bool supports_float;
-};
-
 struct DefaultFParamCase {
   std::string name;
   Backend backend;
@@ -80,88 +54,11 @@ struct DefaultFParamCase {
   bool supports_float;
 };
 
-bool path_exists(const std::string& path) {
-  struct stat statbuf;
-  return stat(path.c_str(), &statbuf) == 0;
-}
-
-bool backend_enabled(Backend backend) {
-  switch (backend) {
-    case Backend::TensorFlow:
-#ifdef BUILD_TENSORFLOW
-      return true;
-#else
-      return false;
-#endif
-    case Backend::PyTorch:
-#ifdef BUILD_PYTORCH
-      return true;
-#else
-      return false;
-#endif
-    case Backend::PTExpt:
-#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
-      return true;
-#else
-      return false;
-#endif
-    case Backend::JAX:
-#ifdef BUILD_JAX
-      return true;
-#else
-      return false;
-#endif
-    case Backend::Paddle:
-#ifdef BUILD_PADDLE
-      return true;
-#else
-      return false;
-#endif
-  }
-  return false;
-}
-
-std::string backend_name(Backend backend) {
-  switch (backend) {
-    case Backend::TensorFlow:
-      return "TensorFlow";
-    case Backend::PyTorch:
-      return "PyTorch";
-    case Backend::PTExpt:
-      return "PTExpt";
-    case Backend::JAX:
-      return "JAX";
-    case Backend::Paddle:
-      return "Paddle";
-  }
-  return "Unknown";
-}
-
-std::vector<ModelCase> model_cases() {
-  return {
-      {"tensorflow_pb", Backend::TensorFlow, "../../tests/infer/deeppot.pbtxt",
-       true, &deepmd_test::tf_deeppot_ref(),
-       &deepmd_test::tf_deeppot_no_pbc_ref(), 1e-10, 1e-4, true, true, true},
-      {"pytorch_pth", Backend::PyTorch, "../../tests/infer/deeppot_sea.pth",
-       false, &deepmd_test::sea_deeppot_ref(),
-       &deepmd_test::sea_deeppot_no_pbc_ref(), 1e-10, 1e-4, true, false, true},
-      {"pytorch_pt2", Backend::PTExpt, "../../tests/infer/deeppot_sea.pt2",
-       false, &deepmd_test::sea_deeppot_ref(),
-       &deepmd_test::sea_deeppot_no_pbc_ref(), 1e-10, 1e-4, true, false, true},
-      {"jax_savedmodel", Backend::JAX,
-       "../../tests/infer/deeppot_sea.savedmodel", false,
-       &deepmd_test::sea_deeppot_ref(), nullptr, 1e-10, 1e-4, true, false,
-       true},
-      {"paddle_json", Backend::Paddle, "../../tests/infer/deeppot_sea.json",
-       false, &deepmd_test::sea_deeppot_ref(), nullptr, 1e-7, 1e-4, false,
-       false, false}};
-}
-
 std::vector<VariantDeepPotCase> variant_deeppot_cases() {
   return {{"tensorflow_r",
            Backend::TensorFlow,
            "../../tests/infer/deeppot-r.pbtxt",
-           true,
+           /*convert_pbtxt=*/true,
            &deepmd_test::tf_deeppot_r_ref(),
            &deepmd_test::tf_deeppot_r_no_pbc_ref(),
            "",
@@ -169,21 +66,21 @@ std::vector<VariantDeepPotCase> variant_deeppot_cases() {
            "",
            1e-10,
            1e-4,
-           true,
-           true,
-           true,
-           true,
-           true,
-           true,
-           false,
-           true,
-           false,
-           false,
-           false},
+           /*supports_float=*/true,
+           /*supports_finite_difference=*/true,
+           /*supports_lmp_nlist=*/true,
+           /*supports_lmp_nlist_atomic=*/true,
+           /*supports_lmp_nlist_cutoff_twice=*/true,
+           /*supports_lmp_nlist_type_sel=*/true,
+           /*supports_print_summary=*/false,
+           /*supports_no_pbc_simple=*/true,
+           /*supports_no_pbc_atomic=*/false,
+           /*supports_no_pbc_lmp_nlist=*/false,
+           /*supports_no_pbc_lmp_nlist_atomic=*/false},
           {"dpa_jax_savedmodel",
            Backend::JAX,
            "../../tests/infer/deeppot_dpa.savedmodel",
-           false,
+           /*convert_pbtxt=*/false,
            &deepmd_test::jax_dpa_deeppot_ref(),
            &deepmd_test::jax_dpa_deeppot_no_pbc_ref(),
            "",
@@ -191,21 +88,21 @@ std::vector<VariantDeepPotCase> variant_deeppot_cases() {
            "",
            1e-7,
            1e-1,
-           true,
-           false,
-           false,
-           false,
-           false,
-           false,
-           false,
-           true,
-           true,
-           true,
-           true},
+           /*supports_float=*/true,
+           /*supports_finite_difference=*/false,
+           /*supports_lmp_nlist=*/false,
+           /*supports_lmp_nlist_atomic=*/false,
+           /*supports_lmp_nlist_cutoff_twice=*/false,
+           /*supports_lmp_nlist_type_sel=*/false,
+           /*supports_print_summary=*/false,
+           /*supports_no_pbc_simple=*/true,
+           /*supports_no_pbc_atomic=*/true,
+           /*supports_no_pbc_lmp_nlist=*/true,
+           /*supports_no_pbc_lmp_nlist_atomic=*/true},
           {"dpa1_pytorch_pth",
            Backend::PyTorch,
            "../../tests/infer/deeppot_dpa1.pth",
-           false,
+           /*convert_pbtxt=*/false,
            nullptr,
            nullptr,
            "../../tests/infer/deeppot_dpa1.expected",
@@ -213,21 +110,21 @@ std::vector<VariantDeepPotCase> variant_deeppot_cases() {
            "nopbc",
            1e-10,
            1e-4,
-           true,
-           false,
-           false,
-           false,
-           false,
-           false,
-           false,
-           true,
-           false,
-           true,
-           false},
+           /*supports_float=*/true,
+           /*supports_finite_difference=*/false,
+           /*supports_lmp_nlist=*/false,
+           /*supports_lmp_nlist_atomic=*/false,
+           /*supports_lmp_nlist_cutoff_twice=*/false,
+           /*supports_lmp_nlist_type_sel=*/false,
+           /*supports_print_summary=*/false,
+           /*supports_no_pbc_simple=*/true,
+           /*supports_no_pbc_atomic=*/false,
+           /*supports_no_pbc_lmp_nlist=*/true,
+           /*supports_no_pbc_lmp_nlist_atomic=*/false},
           {"dpa1_pytorch_pt2",
            Backend::PTExpt,
            "../../tests/infer/deeppot_dpa1.pt2",
-           false,
+           /*convert_pbtxt=*/false,
            nullptr,
            nullptr,
            "../../tests/infer/deeppot_dpa1.expected",
@@ -235,21 +132,21 @@ std::vector<VariantDeepPotCase> variant_deeppot_cases() {
            "nopbc",
            1e-10,
            1e-4,
-           true,
-           true,
-           true,
-           true,
-           true,
-           true,
-           true,
-           true,
-           false,
-           true,
-           false},
+           /*supports_float=*/true,
+           /*supports_finite_difference=*/true,
+           /*supports_lmp_nlist=*/true,
+           /*supports_lmp_nlist_atomic=*/true,
+           /*supports_lmp_nlist_cutoff_twice=*/true,
+           /*supports_lmp_nlist_type_sel=*/true,
+           /*supports_print_summary=*/true,
+           /*supports_no_pbc_simple=*/true,
+           /*supports_no_pbc_atomic=*/false,
+           /*supports_no_pbc_lmp_nlist=*/true,
+           /*supports_no_pbc_lmp_nlist_atomic=*/false},
           {"dpa2_pytorch_pth",
            Backend::PyTorch,
            "../../tests/infer/deeppot_dpa2.pth",
-           false,
+           /*convert_pbtxt=*/false,
            nullptr,
            nullptr,
            "../../tests/infer/deeppot_dpa2.expected",
@@ -257,21 +154,21 @@ std::vector<VariantDeepPotCase> variant_deeppot_cases() {
            "nopbc",
            1e-10,
            1e-4,
-           true,
-           false,
-           false,
-           false,
-           false,
-           false,
-           false,
-           true,
-           true,
-           true,
-           true},
+           /*supports_float=*/true,
+           /*supports_finite_difference=*/false,
+           /*supports_lmp_nlist=*/false,
+           /*supports_lmp_nlist_atomic=*/false,
+           /*supports_lmp_nlist_cutoff_twice=*/false,
+           /*supports_lmp_nlist_type_sel=*/false,
+           /*supports_print_summary=*/false,
+           /*supports_no_pbc_simple=*/true,
+           /*supports_no_pbc_atomic=*/true,
+           /*supports_no_pbc_lmp_nlist=*/true,
+           /*supports_no_pbc_lmp_nlist_atomic=*/true},
           {"dpa2_pytorch_pt2",
            Backend::PTExpt,
            "../../tests/infer/deeppot_dpa2.pt2",
-           false,
+           /*convert_pbtxt=*/false,
            nullptr,
            nullptr,
            "../../tests/infer/deeppot_dpa2.expected",
@@ -279,21 +176,21 @@ std::vector<VariantDeepPotCase> variant_deeppot_cases() {
            "nopbc",
            1e-10,
            1e-4,
-           true,
-           true,
-           true,
-           true,
-           true,
-           true,
-           true,
-           true,
-           false,
-           true,
-           false},
+           /*supports_float=*/true,
+           /*supports_finite_difference=*/true,
+           /*supports_lmp_nlist=*/true,
+           /*supports_lmp_nlist_atomic=*/true,
+           /*supports_lmp_nlist_cutoff_twice=*/true,
+           /*supports_lmp_nlist_type_sel=*/true,
+           /*supports_print_summary=*/true,
+           /*supports_no_pbc_simple=*/true,
+           /*supports_no_pbc_atomic=*/false,
+           /*supports_no_pbc_lmp_nlist=*/true,
+           /*supports_no_pbc_lmp_nlist_atomic=*/false},
           {"dpa3_pytorch_pth",
            Backend::PyTorch,
            "../../tests/infer/deeppot_dpa3.pth",
-           false,
+           /*convert_pbtxt=*/false,
            nullptr,
            nullptr,
            "../../tests/infer/deeppot_dpa3.expected",
@@ -301,21 +198,21 @@ std::vector<VariantDeepPotCase> variant_deeppot_cases() {
            "nopbc",
            1e-10,
            1e-4,
-           true,
-           false,
-           false,
-           false,
-           false,
-           false,
-           false,
-           true,
-           false,
-           true,
-           false},
+           /*supports_float=*/true,
+           /*supports_finite_difference=*/false,
+           /*supports_lmp_nlist=*/false,
+           /*supports_lmp_nlist_atomic=*/false,
+           /*supports_lmp_nlist_cutoff_twice=*/false,
+           /*supports_lmp_nlist_type_sel=*/false,
+           /*supports_print_summary=*/false,
+           /*supports_no_pbc_simple=*/true,
+           /*supports_no_pbc_atomic=*/false,
+           /*supports_no_pbc_lmp_nlist=*/true,
+           /*supports_no_pbc_lmp_nlist_atomic=*/false},
           {"dpa3_pytorch_pt2",
            Backend::PTExpt,
            "../../tests/infer/deeppot_dpa3.pt2",
-           false,
+           /*convert_pbtxt=*/false,
            nullptr,
            nullptr,
            "../../tests/infer/deeppot_dpa3.expected",
@@ -323,21 +220,21 @@ std::vector<VariantDeepPotCase> variant_deeppot_cases() {
            "nopbc",
            1e-10,
            1e-4,
-           true,
-           true,
-           true,
-           true,
-           true,
-           true,
-           true,
-           true,
-           false,
-           true,
-           false},
+           /*supports_float=*/true,
+           /*supports_finite_difference=*/true,
+           /*supports_lmp_nlist=*/true,
+           /*supports_lmp_nlist_atomic=*/true,
+           /*supports_lmp_nlist_cutoff_twice=*/true,
+           /*supports_lmp_nlist_type_sel=*/true,
+           /*supports_print_summary=*/true,
+           /*supports_no_pbc_simple=*/true,
+           /*supports_no_pbc_atomic=*/false,
+           /*supports_no_pbc_lmp_nlist=*/true,
+           /*supports_no_pbc_lmp_nlist_atomic=*/false},
           {"dpa4_pytorch_pt2",
            Backend::PTExpt,
            "../../tests/infer/deeppot_dpa4.pt2",
-           false,
+           /*convert_pbtxt=*/false,
            nullptr,
            nullptr,
            "../../tests/infer/deeppot_dpa4.expected",
@@ -345,53 +242,28 @@ std::vector<VariantDeepPotCase> variant_deeppot_cases() {
            "nopbc",
            1e-10,
            1e-4,
-           true,
-           true,
-           true,
-           true,
-           true,
-           true,
-           true,
-           true,
-           false,
-           true,
-           false}};
-}
-
-std::vector<FParamAParamCase> fparam_aparam_cases() {
-  return {{"tensorflow_pb", Backend::TensorFlow,
-           "../../tests/infer/fparam_aparam.pbtxt", true,
-           &deepmd_test::tf_fparam_aparam_ref(), "", 1e-10, 1e-4, true},
-          {"pytorch_pth", Backend::PyTorch,
-           "../../tests/infer/fparam_aparam.pth", false, nullptr,
-           "../../tests/infer/fparam_aparam.expected", 1e-7, 1e-4, true},
-          {"pytorch_pt2", Backend::PTExpt,
-           "../../tests/infer/fparam_aparam.pt2", false, nullptr,
-           "../../tests/infer/fparam_aparam.expected", 1e-7, 1e-4, true}};
+           /*supports_float=*/true,
+           /*supports_finite_difference=*/true,
+           /*supports_lmp_nlist=*/true,
+           /*supports_lmp_nlist_atomic=*/true,
+           /*supports_lmp_nlist_cutoff_twice=*/true,
+           /*supports_lmp_nlist_type_sel=*/true,
+           /*supports_print_summary=*/true,
+           /*supports_no_pbc_simple=*/true,
+           /*supports_no_pbc_atomic=*/false,
+           /*supports_no_pbc_lmp_nlist=*/true,
+           /*supports_no_pbc_lmp_nlist_atomic=*/false}};
 }
 
 std::vector<DefaultFParamCase> default_fparam_cases() {
-  return {
-      {"pytorch_pth", Backend::PyTorch,
-       "../../tests/infer/fparam_aparam_default.pth",
-       "../../tests/infer/fparam_aparam_default.expected", 1e-7, 1e-4, true},
-      {"pytorch_pt2", Backend::PTExpt,
-       "../../tests/infer/fparam_aparam_default.pt2",
-       "../../tests/infer/fparam_aparam_default.expected", 1e-7, 1e-4, true}};
-}
-
-deepmd_test::DeepPotRef load_fparam_ref(const std::string& ref_path) {
-  deepmd_test::ExpectedRef ref_file;
-  ref_file.load(ref_path);
-  deepmd_test::DeepPotRef ref;
-  ref.atomic_energy = ref_file.get<double>("default", "expected_e");
-  ref.force = ref_file.get<double>("default", "expected_f");
-  ref.atomic_virial = ref_file.get<double>("default", "expected_v");
-  ref.numb_types = 1;
-  ref.dim_fparam = 1;
-  ref.dim_aparam = 1;
-  ref.type_map = "O";
-  return ref;
+  return {{"pytorch_pth", Backend::PyTorch,
+           "../../tests/infer/fparam_aparam_default.pth",
+           "../../tests/infer/fparam_aparam_default.expected", 1e-7, 1e-4,
+           /*supports_float=*/true},
+          {"pytorch_pt2", Backend::PTExpt,
+           "../../tests/infer/fparam_aparam_default.pt2",
+           "../../tests/infer/fparam_aparam_default.expected", 1e-7, 1e-4,
+           /*supports_float=*/true}};
 }
 
 deepmd_test::DeepPotRef load_expected_ref(const std::string& ref_path,
@@ -403,6 +275,26 @@ deepmd_test::DeepPotRef load_expected_ref(const std::string& ref_path,
   ref.force = ref_file.get<double>(section, "expected_f");
   ref.atomic_virial = ref_file.get<double>(section, "expected_v");
   return ref;
+}
+
+::testing::AssertionResult convert_pbtxt_model(const std::string& source,
+                                               const std::string& target) {
+  try {
+    deepmd::convert_pbtxt_to_pb(source, target);
+  } catch (const std::exception& e) {
+    return ::testing::AssertionFailure() << "pbtxt-to-pb conversion failed for "
+                                         << source << ": " << e.what();
+  } catch (...) {
+    return ::testing::AssertionFailure() << "pbtxt-to-pb conversion failed for "
+                                         << source << ": unknown exception";
+  }
+
+  if (!path_exists(target)) {
+    return ::testing::AssertionFailure()
+           << "pbtxt-to-pb conversion failed for " << source
+           << ": output was not created: " << target;
+  }
+  return ::testing::AssertionSuccess();
 }
 
 class UniversalDeepPotTest : public ::testing::TestWithParam<ModelCase> {
@@ -421,7 +313,7 @@ class UniversalDeepPotTest : public ::testing::TestWithParam<ModelCase> {
     std::string model_path = param.model_path;
     if (param.convert_pbtxt) {
       converted_model = "deeppot_universal_" + param.name + ".pb";
-      deepmd::convert_pbtxt_to_pb(param.model_path, converted_model);
+      ASSERT_TRUE(convert_pbtxt_model(param.model_path, converted_model));
       model_path = converted_model;
     }
     dp.init(model_path);
@@ -479,7 +371,7 @@ class VariantDeepPotTest : public ::testing::TestWithParam<VariantDeepPotCase> {
     std::string model_path = param.model_path;
     if (param.convert_pbtxt) {
       converted_model = "deeppot_variant_" + param.name + ".pb";
-      deepmd::convert_pbtxt_to_pb(param.model_path, converted_model);
+      ASSERT_TRUE(convert_pbtxt_model(param.model_path, converted_model));
       model_path = converted_model;
     }
     dp.init(model_path);
@@ -519,7 +411,7 @@ class FParamAParamDeepPotTest
     std::string model_path = param.model_path;
     if (param.convert_pbtxt) {
       converted_model = "deeppot_fparam_aparam_" + param.name + ".pb";
-      deepmd::convert_pbtxt_to_pb(param.model_path, converted_model);
+      ASSERT_TRUE(convert_pbtxt_model(param.model_path, converted_model));
       model_path = converted_model;
     }
     dp.init(model_path);

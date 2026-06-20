@@ -1,145 +1,37 @@
 // SPDX-License-Identifier: LGPL-3.0-or-later
 #include <gtest/gtest.h>
-#include <sys/stat.h>
 
 #include <cmath>
 #include <cstdio>
-#include <cstring>
+#include <exception>
 #include <string>
 #include <vector>
 
-#include "../../api_cc/tests/expected_ref.h"
-#include "../../tests/infer/deeppot_universal_data.h"
-#include "DeepPotPTExpt.h"
+#include "../../api_cc/tests/deeppot_universal_test_common.h"
 #include "c_api.h"
 
 namespace {
 
-enum class Backend { TensorFlow, PyTorch, PTExpt, JAX, Paddle };
+using namespace deepmd_test::universal;
 
-struct ModelCase {
-  std::string name;
-  Backend backend;
-  std::string model_path;
-  bool convert_pbtxt;
-  const deepmd_test::DeepPotRef* ref;
-  const deepmd_test::DeepPotRef* no_pbc_ref;
-  double double_tol;
-  double float_tol;
-  bool supports_float;
-};
-
-struct FParamAParamCase {
-  std::string name;
-  Backend backend;
-  std::string model_path;
-  bool convert_pbtxt;
-  const deepmd_test::DeepPotRef* builtin_ref;
-  std::string ref_path;
-  double double_tol;
-  double float_tol;
-  bool supports_float;
-};
-
-bool path_exists(const std::string& path) {
-  struct stat statbuf;
-  return stat(path.c_str(), &statbuf) == 0;
-}
-
-bool backend_enabled(Backend backend) {
-  switch (backend) {
-    case Backend::TensorFlow:
-#ifdef BUILD_TENSORFLOW
-      return true;
-#else
-      return false;
-#endif
-    case Backend::PyTorch:
-#ifdef BUILD_PYTORCH
-      return true;
-#else
-      return false;
-#endif
-    case Backend::PTExpt:
-#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
-      return true;
-#else
-      return false;
-#endif
-    case Backend::JAX:
-#ifdef BUILD_JAX
-      return true;
-#else
-      return false;
-#endif
-    case Backend::Paddle:
-#ifdef BUILD_PADDLE
-      return true;
-#else
-      return false;
-#endif
+::testing::AssertionResult convert_pbtxt_model(const std::string& source,
+                                               const std::string& target) {
+  try {
+    DP_ConvertPbtxtToPb(source.c_str(), target.c_str());
+  } catch (const std::exception& e) {
+    return ::testing::AssertionFailure() << "pbtxt-to-pb conversion failed for "
+                                         << source << ": " << e.what();
+  } catch (...) {
+    return ::testing::AssertionFailure() << "pbtxt-to-pb conversion failed for "
+                                         << source << ": unknown exception";
   }
-  return false;
-}
 
-std::string backend_name(Backend backend) {
-  switch (backend) {
-    case Backend::TensorFlow:
-      return "TensorFlow";
-    case Backend::PyTorch:
-      return "PyTorch";
-    case Backend::PTExpt:
-      return "PTExpt";
-    case Backend::JAX:
-      return "JAX";
-    case Backend::Paddle:
-      return "Paddle";
+  if (!path_exists(target)) {
+    return ::testing::AssertionFailure()
+           << "pbtxt-to-pb conversion failed for " << source
+           << ": output was not created: " << target;
   }
-  return "Unknown";
-}
-
-std::vector<ModelCase> model_cases() {
-  return {
-      {"tensorflow_pb", Backend::TensorFlow, "../../tests/infer/deeppot.pbtxt",
-       true, &deepmd_test::tf_deeppot_ref(),
-       &deepmd_test::tf_deeppot_no_pbc_ref(), 1e-10, 1e-4, true},
-      {"pytorch_pth", Backend::PyTorch, "../../tests/infer/deeppot_sea.pth",
-       false, &deepmd_test::sea_deeppot_ref(),
-       &deepmd_test::sea_deeppot_no_pbc_ref(), 1e-10, 1e-4, true},
-      {"pytorch_pt2", Backend::PTExpt, "../../tests/infer/deeppot_sea.pt2",
-       false, &deepmd_test::sea_deeppot_ref(),
-       &deepmd_test::sea_deeppot_no_pbc_ref(), 1e-10, 1e-4, true},
-      {"jax_savedmodel", Backend::JAX,
-       "../../tests/infer/deeppot_sea.savedmodel", false,
-       &deepmd_test::sea_deeppot_ref(), nullptr, 1e-10, 1e-4, true},
-      {"paddle_json", Backend::Paddle, "../../tests/infer/deeppot_sea.json",
-       false, &deepmd_test::sea_deeppot_ref(), nullptr, 1e-7, 1e-4, false}};
-}
-
-std::vector<FParamAParamCase> fparam_aparam_cases() {
-  return {{"tensorflow_pb", Backend::TensorFlow,
-           "../../tests/infer/fparam_aparam.pbtxt", true,
-           &deepmd_test::tf_fparam_aparam_ref(), "", 1e-10, 1e-4, true},
-          {"pytorch_pth", Backend::PyTorch,
-           "../../tests/infer/fparam_aparam.pth", false, nullptr,
-           "../../tests/infer/fparam_aparam.expected", 1e-7, 1e-4, true},
-          {"pytorch_pt2", Backend::PTExpt,
-           "../../tests/infer/fparam_aparam.pt2", false, nullptr,
-           "../../tests/infer/fparam_aparam.expected", 1e-7, 1e-4, true}};
-}
-
-deepmd_test::DeepPotRef load_fparam_ref(const std::string& ref_path) {
-  deepmd_test::ExpectedRef ref_file;
-  ref_file.load(ref_path);
-  deepmd_test::DeepPotRef ref;
-  ref.atomic_energy = ref_file.get<double>("default", "expected_e");
-  ref.force = ref_file.get<double>("default", "expected_f");
-  ref.atomic_virial = ref_file.get<double>("default", "expected_v");
-  ref.numb_types = 1;
-  ref.dim_fparam = 1;
-  ref.dim_aparam = 1;
-  ref.type_map = "O";
-  return ref;
+  return ::testing::AssertionSuccess();
 }
 
 class UniversalDeepPotCTest : public ::testing::TestWithParam<ModelCase> {
@@ -158,7 +50,7 @@ class UniversalDeepPotCTest : public ::testing::TestWithParam<ModelCase> {
     std::string model_path = param.model_path;
     if (param.convert_pbtxt) {
       converted_model = "deeppot_c_universal_" + param.name + ".pb";
-      DP_ConvertPbtxtToPb(param.model_path.c_str(), converted_model.c_str());
+      ASSERT_TRUE(convert_pbtxt_model(param.model_path, converted_model));
       model_path = converted_model;
     }
     dp = DP_NewDeepPot(model_path.c_str());
@@ -204,7 +96,7 @@ class FParamAParamDeepPotCTest
     std::string model_path = param.model_path;
     if (param.convert_pbtxt) {
       converted_model = "deeppot_c_fparam_aparam_" + param.name + ".pb";
-      DP_ConvertPbtxtToPb(param.model_path.c_str(), converted_model.c_str());
+      ASSERT_TRUE(convert_pbtxt_model(param.model_path, converted_model));
       model_path = converted_model;
     }
     dp = DP_NewDeepPot(model_path.c_str());
