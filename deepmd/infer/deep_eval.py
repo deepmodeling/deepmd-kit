@@ -278,6 +278,7 @@ class DeepEvalBackend(ABC):
         atom_types: np.ndarray,
         fparam: np.ndarray | None = None,
         aparam: np.ndarray | None = None,
+        dtype: str = "fp32",
         **kwargs: Any,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Evaluate the descriptor, atomic feature, and structural feature.
@@ -308,6 +309,8 @@ class DeepEvalBackend(ABC):
             - nframes x natoms x dim_aparam.
             - natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
             - dim_aparam. Then all frames and atoms are provided with the same aparam.
+        dtype
+            Output dtype: ``"fp32"``, ``"fp64"``, or ``"native"``.
 
         Returns
         -------
@@ -553,6 +556,7 @@ class DeepEval(ABC):
         fparam: np.ndarray | None = None,
         aparam: np.ndarray | None = None,
         mixed_type: bool = False,
+        dtype: str = "native",
         **kwargs: Any,
     ) -> np.ndarray:
         """Evaluate descriptors by using this DP.
@@ -587,6 +591,8 @@ class DeepEval(ABC):
             Whether to perform the mixed_type mode.
             If True, the input data has the mixed_type format (see doc/model/train_se_atten.md),
             in which frames in a system may have different natoms_vec(s), with the same nloc.
+        dtype
+            Output dtype: ``"fp32"``, ``"fp64"``, or ``"native"``.
 
         Returns
         -------
@@ -602,13 +608,11 @@ class DeepEval(ABC):
             nframes,
             natoms,
         ) = self._standard_input(coords, cells, atom_types, fparam, aparam, mixed_type)
+        eval_kwargs = {"fparam": fparam, "aparam": aparam, **kwargs}
+        if dtype != "native":
+            eval_kwargs["dtype"] = dtype
         descriptor = self.deep_eval.eval_descriptor(
-            coords,
-            cells,
-            atom_types,
-            fparam=fparam,
-            aparam=aparam,
-            **kwargs,
+            coords, cells, atom_types, **eval_kwargs
         )
         return descriptor
 
@@ -620,6 +624,7 @@ class DeepEval(ABC):
         fparam: np.ndarray | None = None,
         aparam: np.ndarray | None = None,
         mixed_type: bool = False,
+        dtype: str = "native",
         **kwargs: Any,
     ) -> np.ndarray:
         """Evaluate fitting before last layer by using this DP.
@@ -654,6 +659,8 @@ class DeepEval(ABC):
             Whether to perform the mixed_type mode.
             If True, the input data has the mixed_type format (see doc/model/train_se_atten.md),
             in which frames in a system may have different natoms_vec(s), with the same nloc.
+        dtype
+            Output dtype: ``"fp32"``, ``"fp64"``, or ``"native"``.
 
         Returns
         -------
@@ -669,13 +676,11 @@ class DeepEval(ABC):
             nframes,
             natoms,
         ) = self._standard_input(coords, cells, atom_types, fparam, aparam, mixed_type)
+        eval_kwargs = {"fparam": fparam, "aparam": aparam, **kwargs}
+        if dtype != "native":
+            eval_kwargs["dtype"] = dtype
         fitting = self.deep_eval.eval_fitting_last_layer(
-            coords,
-            cells,
-            atom_types,
-            fparam=fparam,
-            aparam=aparam,
-            **kwargs,
+            coords, cells, atom_types, **eval_kwargs
         )
         return fitting
 
@@ -687,6 +692,7 @@ class DeepEval(ABC):
         fparam: np.ndarray | None = None,
         aparam: np.ndarray | None = None,
         mixed_type: bool = False,
+        dtype: str = "fp32",
         **kwargs: Any,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Evaluate the descriptor, atomic feature, and structural feature.
@@ -695,8 +701,11 @@ class DeepEval(ABC):
         virial autograd. The descriptor is the per-atom local-environment
         representation; the atomic feature is the activation after the last
         fitting hidden layer; the structural feature is the masked atom-sum of
-        the atomic feature, a whole-structure summary whose projection through
-        the fitting output layer reproduces the (bias-free) total energy.
+        the atomic feature, a whole-structure summary. For models with a single
+        shared fitting network, projecting the structural feature through the
+        fitting output layer reproduces the (bias-free) total energy. All three
+        embeddings are returned as float32, which is ample for downstream
+        analysis.
 
         Parameters
         ----------
@@ -725,6 +734,8 @@ class DeepEval(ABC):
             Whether to perform the mixed_type mode.
             If True, the input data has the mixed_type format (see doc/model/train_se_atten.md),
             in which frames in a system may have different natoms_vec(s), with the same nloc.
+        dtype
+            Output dtype: ``"fp32"``, ``"fp64"``, or ``"native"``.
 
         Returns
         -------
@@ -756,6 +767,7 @@ class DeepEval(ABC):
             atom_types,
             fparam=fparam,
             aparam=aparam,
+            dtype=dtype,
             **kwargs,
         )
 

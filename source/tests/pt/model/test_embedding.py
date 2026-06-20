@@ -5,10 +5,11 @@ import os
 import shutil
 import tempfile
 import unittest
-from unittest import (
-    mock,
+from types import (
+    SimpleNamespace,
 )
 
+import h5py
 import numpy as np
 import torch
 from packaging.version import parse as parse_version
@@ -16,6 +17,7 @@ from packaging.version import parse as parse_version
 from deepmd.infer.deep_pot import (
     DeepPot,
 )
+from deepmd.pt.infer.deep_eval import DeepEval as PTDeepEval
 from deepmd.pt.model.model import (
     get_model,
     get_sezm_model,
@@ -168,7 +170,9 @@ class TestSeZMEmbeddingForward(unittest.TestCase):
 
     @unittest.skipIf(_SKIP_COMPILE, _SKIP_COMPILE_REASON)
     def test_compiled_matches_eager(self) -> None:
-        with mock.patch.dict(os.environ, {"DP_COMPILE_INFER": "1"}, clear=False):
+        with unittest.mock.patch.dict(
+            os.environ, {"DP_COMPILE_INFER": "1"}, clear=False
+        ):
             model_cmp = get_sezm_model(_sezm_params()).to(self.device)
         model_cmp.load_state_dict(self.model.state_dict())
         model_cmp.eval()
@@ -221,20 +225,173 @@ class TestEmbeddingDeepEvalAPI(unittest.TestCase):
         self.assertEqual(descriptor.shape[:2], (1, natoms))
         self.assertEqual(atomic_feature.shape[:2], (1, natoms))
         self.assertEqual(structural_feature.shape, (1, atomic_feature.shape[2]))
-        # Every embedding is stored in float32, independent of the inference
-        # interface precision.
+        # Embeddings are returned as float32.
         self.assertEqual(descriptor.dtype, np.float32)
         self.assertEqual(atomic_feature.dtype, np.float32)
         self.assertEqual(structural_feature.dtype, np.float32)
 
-    def test_standard_model_raises(self) -> None:
+    def test_standard_model_embedding(self) -> None:
+        # Standard energy models reuse the base-class embedding path; the
+        # descriptor and atomic feature flow through the same neighbor list as
+        # the energy forward.
         params = _se_e2_a_params()
         model = get_model(params)
+        _randomize(model)
         path = self._save_checkpoint(model, params, "se_e2_a.pt")
 
         dp = DeepPot(path)
-        with self.assertRaises(NotImplementedError):
-            dp.eval_embedding(self.coord_np, self.cell_np, self.atype_np)
+        descriptor, atomic_feature, structural_feature = dp.eval_embedding(
+            self.coord_np, self.cell_np, self.atype_np
+        )
+
+        natoms = int(self.atype_np.shape[0])
+        self.assertEqual(descriptor.shape[:2], (1, natoms))
+        self.assertEqual(atomic_feature.shape[:2], (1, natoms))
+        self.assertEqual(structural_feature.shape, (1, atomic_feature.shape[2]))
+        # Embeddings are returned as float32.
+        self.assertEqual(descriptor.dtype, np.float32)
+        self.assertEqual(atomic_feature.dtype, np.float32)
+        self.assertEqual(structural_feature.dtype, np.float32)
+        # The structural feature is the atom-sum of the atomic feature.
+        np.testing.assert_allclose(
+            structural_feature[0],
+            atomic_feature[0].sum(axis=0),
+            rtol=1e-4,
+            atol=1e-5,
+        )
+        # eval_descriptor / eval_fitting_last_layer are thin wrappers that slice
+        # the embedding output (independent forward passes match to round-off).
+        np.testing.assert_allclose(
+            dp.eval_descriptor(
+                self.coord_np, self.cell_np, self.atype_np, dtype="fp32"
+            ),
+            descriptor,
+            rtol=1e-10,
+            atol=1e-12,
+        )
+        np.testing.assert_allclose(
+            dp.eval_fitting_last_layer(
+                self.coord_np, self.cell_np, self.atype_np, dtype="fp32"
+            ),
+            atomic_feature,
+            rtol=1e-10,
+            atol=1e-12,
+        )
+
+    def test_standard_model_embedding_without_hidden_layers(self) -> None:
+        params = _se_e2_a_params()
+        params["fitting_net"]["neuron"] = []
+        model = get_model(params)
+        _randomize(model)
+        path = self._save_checkpoint(model, params, "se_e2_a_no_hidden.pt")
+
+        dp = DeepPot(path)
+        descriptor, atomic_feature, structural_feature = dp.eval_embedding(
+            self.coord_np, self.cell_np, self.atype_np
+        )
+
+        self.assertEqual(atomic_feature.shape, descriptor.shape)
+        self.assertEqual(structural_feature.shape, (1, atomic_feature.shape[2]))
+        self.assertEqual(atomic_feature.dtype, np.float32)
+
+    def test_eval_embedding_dtype_fp64(self) -> None:
+        params = _se_e2_a_params()
+        model = get_model(params)
+        path = self._save_checkpoint(model, params, "se_e2_a_fp64.pt")
+
+        dp = DeepPot(path)
+        descriptor, atomic_feature, structural_feature = dp.eval_embedding(
+            self.coord_np, self.cell_np, self.atype_np, dtype="fp64"
+        )
+
+        self.assertEqual(descriptor.dtype, np.float64)
+        self.assertEqual(atomic_feature.dtype, np.float64)
+        self.assertEqual(structural_feature.dtype, np.float64)
+        self.assertEqual(
+            dp.eval_descriptor(
+                self.coord_np, self.cell_np, self.atype_np, dtype="fp64"
+            ).dtype,
+            np.float64,
+        )
+
+    def test_old_frozen_model_without_embedding_raises(self) -> None:
+        backend = object.__new__(PTDeepEval)
+        backend._has_spin = False
+        backend.dp = SimpleNamespace(model={"Default": object()})
+
+        with self.assertRaisesRegex(NotImplementedError, "re-freeze"):
+            PTDeepEval.eval_embedding(
+                backend,
+                self.coord_np,
+                self.cell_np,
+                self.atype_np,
+            )
+
+
+class TestEmbeddingEntrypoint(unittest.TestCase):
+    """Validate the HDF5 entrypoint without requiring on-disk systems."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.mkdtemp()
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self._tmp, ignore_errors=True)
+
+    def test_embedding_writes_hdf5_from_datafile(self) -> None:
+        import importlib
+
+        embedding_module = importlib.import_module("deepmd.entrypoints.embedding")
+        datafile = os.path.join(self._tmp, "systems.txt")
+        output = os.path.join(self._tmp, "embedding.hdf5")
+        with open(datafile, "w") as fp:
+            fp.write("/tmp/a/sys\n\n/tmp/b/sys\n")
+
+        class FakeData:
+            mixed_type = False
+            pbc = False
+
+            def __init__(self, *args, **kwargs) -> None:
+                pass
+
+            def get_test(self) -> dict[str, np.ndarray]:
+                return {
+                    "coord": np.zeros((1, 2, 3), dtype=np.float64),
+                    "box": np.zeros((1, 9), dtype=np.float64),
+                    "type": np.array([[0, 1]], dtype=np.int32),
+                }
+
+        descriptor = np.zeros((1, 2, 3), dtype=np.float64)
+        atomic_feature = np.ones((1, 2, 4), dtype=np.float64)
+        structural_feature = atomic_feature.sum(axis=1)
+        dp = unittest.mock.Mock()
+        dp.get_type_map.return_value = ["A", "B"]
+        dp.get_dim_fparam.return_value = 0
+        dp.get_dim_aparam.return_value = 0
+        dp.eval_embedding.return_value = (
+            descriptor,
+            atomic_feature,
+            structural_feature,
+        )
+
+        with (
+            unittest.mock.patch.object(embedding_module, "DeepEval", return_value=dp),
+            unittest.mock.patch.object(embedding_module, "DeepmdData", FakeData),
+        ):
+            embedding_module.embedding(
+                model="model.pt",
+                system=".",
+                datafile=datafile,
+                output=output,
+                dtype="fp64",
+            )
+
+        self.assertEqual(dp.eval_embedding.call_count, 2)
+        self.assertIsNone(dp.eval_embedding.call_args.args[1])
+        self.assertEqual(dp.eval_embedding.call_args.kwargs["dtype"], "fp64")
+        with h5py.File(output, "r") as h5file:
+            self.assertEqual(set(h5file.keys()), {"sys", "sys_1"})
+            self.assertEqual(h5file["sys"]["descriptor"].dtype, np.float64)
+            self.assertEqual(h5file["sys_1"].attrs["system"], "/tmp/b/sys")
 
 
 if __name__ == "__main__":

@@ -70,6 +70,7 @@ def embedding(
     datafile: str,
     output: str = "embedding.hdf5",
     head: str | None = None,
+    dtype: str = "fp32",
     **kwargs: Any,
 ) -> None:
     """Evaluate embeddings for the given systems and store them in one HDF5 file.
@@ -92,6 +93,9 @@ def embedding(
         embedding datasets.
     head : str, optional
         (Supported backend: PyTorch) Task head if in multi-task mode.
+    dtype : str
+        Output dtype for embedding arrays: ``"fp32"``, ``"fp64"``, or
+        ``"native"``.
     **kwargs
         Additional arguments.
 
@@ -105,8 +109,8 @@ def embedding(
     ``structural_feature`` (nframes, dim_hidden), and ``atom_types``
     (nframes, natoms), together with an ``nframes`` attribute; the frame axis
     follows the system's frame order. The model ``type_map`` is stored as a
-    file-level attribute. The three embedding datasets are stored as float32,
-    and all datasets use gzip + shuffle compression.
+    file-level attribute. The three embedding datasets are stored using the
+    selected ``dtype``, and all datasets use gzip + shuffle compression.
 
     Raises
     ------
@@ -115,7 +119,7 @@ def embedding(
     """
     if datafile is not None:
         with open(datafile) as datalist:
-            all_sys = datalist.read().splitlines()
+            all_sys = [line.strip() for line in datalist if line.strip()]
     else:
         all_sys = expand_sys_str(system)
 
@@ -173,6 +177,7 @@ def embedding(
                 fparam=fparam,
                 aparam=aparam,
                 mixed_type=mixed_type,
+                dtype=dtype,
             )
 
             group_name = _unique_group_name(system_path, used_names)

@@ -650,15 +650,8 @@ def _sezm_structure_key(model: SeZMModel) -> tuple[Any, ...]:
         descriptor.inner_clamp_r_outer,
         int(descriptor.get_dim_chg_spin()),
     )
-    fitting_state = (
-        _int_tuple(fitting.exclude_types),
-        bool(fitting.eval_return_middle_output),
-    )
-    atomic_state = (
-        _int_tuple(atomic_model.atom_exclude_types),
-        bool(atomic_model.enable_eval_descriptor_hook),
-        bool(atomic_model.enable_eval_fitting_last_layer_hook),
-    )
+    fitting_state = (_int_tuple(fitting.exclude_types),)
+    atomic_state = (_int_tuple(atomic_model.atom_exclude_types),)
     model_state = (
         str(model.bridging_method),
         model.inter_potential is not None,
@@ -1424,48 +1417,37 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         if self.atomic_model.atom_excl is not None:
             atom_mask = atom_mask * self.atomic_model.atom_excl(atype)
 
-        # === Embedding short circuit ===
-        # The embedding command needs three plain forward outputs: the per-atom
-        # descriptor, the per-atom last hidden activation, and the
-        # structure-level pooled feature (the masked atom-sum of the last hidden
-        # activation).  All force/virial autograd below is skipped, and every
-        # output is stored in float32.
-        if embedding_only:
-            fit_ret = self.atomic_model.fitting_net._forward_common(
-                descriptor,
-                atype,
-                fparam=fparam,
-                aparam=aparam,
-                return_atomic_feature=True,
-            )
-            atomic_feature = fit_ret["atomic_feature"]
-            structural_feature = (
-                atomic_feature * atom_mask[:, :, None].to(atomic_feature.dtype)
-            ).sum(dim=1)
-            return {
-                "descriptor": descriptor.to(torch.float32),
-                "atomic_feature": atomic_feature.to(torch.float32),
-                "structural_feature": structural_feature.to(torch.float32),
-            }
-
-        if self.atomic_model.enable_eval_descriptor_hook:
-            self.atomic_model.eval_descriptor_list.append(descriptor.detach())
-
-        # === Step 3. Fitting net + output statistics ===
+        # === Step 3. Fitting net ===
+        # The same fitting forward serves both modes; ``embedding_only`` only asks
+        # it to also return the last hidden activation.
         with nvtx_range("SeZM/fitting_net"):
             fit_ret = self.atomic_model.fitting_net(
                 descriptor,
                 atype,
                 fparam=fparam,
                 aparam=aparam,
+                return_atomic_feature=embedding_only,
             )
-        if self.atomic_model.enable_eval_fitting_last_layer_hook:
-            assert "middle_output" in fit_ret, (
-                "eval_fitting_last_layer not supported for this fitting net!"
-            )
-            self.atomic_model.eval_fitting_last_layer_list.append(
-                fit_ret.pop("middle_output").detach()
-            )
+
+        # === Embedding short circuit ===
+        # The embedding path returns three plain forward outputs: the per-atom
+        # descriptor, the per-atom last hidden activation, and the
+        # structure-level pooled feature (the masked atom-sum of the last hidden
+        # activation).  All force/virial autograd below is skipped; the outputs
+        # stay in native precision and are cast to float32 by the DeepEval
+        # embedding API.
+        if embedding_only:
+            atomic_feature = fit_ret["atomic_feature"]
+            structural_feature = (
+                atomic_feature * atom_mask[:, :, None].to(atomic_feature.dtype)
+            ).sum(dim=1)
+            return {
+                "descriptor": descriptor,
+                "atomic_feature": atomic_feature,
+                "structural_feature": structural_feature,
+            }
+
+        # === Step 3b. Output statistics ===
         with nvtx_range("SeZM/apply_out_stat"):
             fit_ret = self.atomic_model.apply_out_stat(fit_ret, atype)
 
@@ -1609,8 +1591,6 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 force_embedding=force_embedding,
                 charge_spin=charge_spin,
             )
-        if self.atomic_model.enable_eval_descriptor_hook:
-            self.atomic_model.eval_descriptor_list.append(descriptor.detach())
 
         # === Step 4. Dens fitting net ===
         with nvtx_range("SeZM/dens_fitting_net"):
@@ -1622,13 +1602,6 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 fparam=fparam,
                 aparam=aparam,
                 return_components=True,
-            )
-        if self.atomic_model.enable_eval_fitting_last_layer_hook:
-            assert "middle_output" in fit_ret, (
-                "eval_fitting_last_layer not supported for this fitting net!"
-            )
-            self.atomic_model.eval_fitting_last_layer_list.append(
-                fit_ret.pop("middle_output").detach()
             )
         return torch.cat(
             [

@@ -218,6 +218,22 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
         # self.assertEqual(md3.get_rcut(), self.rcut)
         # self.assertEqual(md3.get_type_map(), ["foo", "bar"])
 
+    def test_forward_embedding(self) -> None:
+        # The embedding of a DP+ZBL model is taken from its DP sub-model.
+        self.assertTrue(self.md0.has_embedding())
+        args = [
+            to_torch_tensor(ii) for ii in [self.coord_ext, self.atype_ext, self.nlist]
+        ]
+        emb = self.md0.forward_embedding(*args)
+        for key in ("descriptor", "atomic_feature", "structural_feature"):
+            self.assertIn(key, emb)
+        self.assertEqual(tuple(emb["descriptor"].shape[:2]), (self.nf, self.nloc))
+        self.assertEqual(tuple(emb["atomic_feature"].shape[:2]), (self.nf, self.nloc))
+        self.assertEqual(
+            tuple(emb["structural_feature"].shape),
+            (self.nf, emb["atomic_feature"].shape[2]),
+        )
+
 
 class TestRemmapMethod(unittest.TestCase):
     def test_valid(self) -> None:

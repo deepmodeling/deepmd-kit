@@ -492,6 +492,13 @@ def main_parser() -> argparse.ArgumentParser:
         help="Output directory for descriptor files. Descriptors will be saved as desc/(system_name).npy",
     )
     parser_eval_desc.add_argument(
+        "--dtype",
+        choices=["fp32", "fp64", "native"],
+        default="native",
+        type=str,
+        help="Output dtype for descriptors. `native` keeps the model output precision (default).",
+    )
+    parser_eval_desc.add_argument(
         "--head",
         "--model-branch",
         default=None,
@@ -517,7 +524,9 @@ def main_parser() -> argparse.ArgumentParser:
         "--model",
         default="model.ckpt.pt",
         type=str,
-        help="PyTorch SeZM/DPA4 training checkpoint (suffix .pt). The frozen .pt2 package is not supported.",
+        help="(Supported backend: PyTorch) Energy model to import: a training "
+        "checkpoint (suffix .pt) or a frozen model (suffix .pth). SeZM/DPA4 "
+        "only supports the .pt checkpoint; the frozen .pt2 package is not supported.",
     )
     parser_embedding_subgroup = parser_embedding.add_mutually_exclusive_group()
     parser_embedding_subgroup.add_argument(
@@ -541,6 +550,13 @@ def main_parser() -> argparse.ArgumentParser:
         type=str,
         help="Output HDF5 file. Each system is stored as a group holding the "
         "descriptor, atomic_feature, and structural_feature datasets.",
+    )
+    parser_embedding.add_argument(
+        "--dtype",
+        choices=["fp32", "fp64", "native"],
+        default="fp32",
+        type=str,
+        help="Output dtype for embeddings. `native` keeps the model output precision.",
     )
     parser_embedding.add_argument(
         "--head",

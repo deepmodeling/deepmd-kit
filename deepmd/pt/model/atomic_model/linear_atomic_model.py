@@ -271,12 +271,14 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
 
         raw_nlists = [
             nlists[get_multiple_nlist_key(rcut, sel)]
-            for rcut, sel in zip(self.get_model_rcuts(), self.get_model_nsels())
+            for rcut, sel in zip(
+                self.get_model_rcuts(), self.get_model_nsels(), strict=True
+            )
         ]
         nlists_ = [
             nl if mt else nlist_distinguish_types(nl, extended_atype, sel)
             for mt, nl, sel in zip(
-                self.mixed_types_list, raw_nlists, self.get_model_sels()
+                self.mixed_types_list, raw_nlists, self.get_model_sels(), strict=True
             )
         ]
         ener_list = []
@@ -305,6 +307,66 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             ),
         }  # (nframes, nloc, 1)
         return fit_ret
+
+    def has_embedding(self) -> bool:
+        """A linear model supports embeddings if any sub-model does."""
+        for model in self.models:
+            if model.has_embedding():
+                return True
+        return False
+
+    def forward_embedding(
+        self,
+        extended_coord: torch.Tensor,
+        extended_atype: torch.Tensor,
+        nlist: torch.Tensor,
+        mapping: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        charge_spin: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
+        """Return the embedding of the first descriptor-fitting sub-model.
+
+        A linear/ZBL combination carries one learned descriptor-fitting model
+        (e.g. the DP part of a DP+ZBL model) whose embedding is well defined; the
+        per-sub-model neighbor lists are rebuilt exactly as in `forward_atomic`.
+        """
+        nframes, nloc, nnei = nlist.shape
+        extended_coord = extended_coord.view(nframes, -1, 3)
+        sorted_rcuts, sorted_sels = self._sort_rcuts_sels()
+        nlists = build_multiple_neighbor_list(
+            extended_coord.detach(),
+            nlist,
+            sorted_rcuts,
+            sorted_sels,
+        )
+        raw_nlists = [
+            nlists[get_multiple_nlist_key(rcut, sel)]
+            for rcut, sel in zip(
+                self.get_model_rcuts(), self.get_model_nsels(), strict=True
+            )
+        ]
+        nlists_ = [
+            nl if mt else nlist_distinguish_types(nl, extended_atype, sel)
+            for mt, nl, sel in zip(
+                self.mixed_types_list, raw_nlists, self.get_model_sels(), strict=True
+            )
+        ]
+        for i, model in enumerate(self.models):
+            if model.has_embedding():
+                type_map_model = self.mapping_list[i].to(extended_atype.device)
+                return model.forward_embedding(
+                    extended_coord,
+                    type_map_model[extended_atype],
+                    nlists_[i],
+                    mapping,
+                    fparam,
+                    aparam,
+                    charge_spin,
+                )
+        raise NotImplementedError(
+            "This linear model has no embedding-capable sub-model."
+        )
 
     def apply_out_stat(
         self,

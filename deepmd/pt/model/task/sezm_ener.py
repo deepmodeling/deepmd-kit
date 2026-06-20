@@ -764,8 +764,6 @@ class SeZMEnergyFittingNet(InvarFitting):
 
         fitting = self.filter_layers.networks[0]
         atom_property = fitting(xx, self.case_embd)
-        if self.eval_return_middle_output:
-            results["middle_output"] = fitting.call_until_last(xx, self.case_embd)
         if return_atomic_feature:
             results["atomic_feature"] = fitting.call_until_last(xx, self.case_embd)
         if xx_zeros is not None:

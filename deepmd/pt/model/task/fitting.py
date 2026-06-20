@@ -548,8 +548,6 @@ class GeneralFitting(Fitting):
         for param in self.parameters():
             param.requires_grad = self.trainable
 
-        self.eval_return_middle_output = False
-
     def reinit_exclude(
         self,
         exclude_types: list[int] = [],
@@ -680,9 +678,6 @@ class GeneralFitting(Fitting):
         self.case_embd = torch.eye(self.dim_case_embd, dtype=self.prec, device=device)[
             case_idx
         ]
-
-    def set_return_middle_output(self, return_middle_output: bool = True) -> None:
-        self.eval_return_middle_output = return_middle_output
 
     def __setitem__(self, key: str, value: torch.Tensor) -> None:
         if key in ["bias_atom_e"]:
@@ -845,18 +840,8 @@ class GeneralFitting(Fitting):
         )  # jit assertion
         results = {}
 
-        if return_atomic_feature and not self.mixed_types:
-            raise NotImplementedError(
-                "Returning the atomic feature is only implemented for "
-                "mixed-type fitting networks."
-            )
-
         if self.mixed_types:
             atom_property = self.filter_layers.networks[0](xx)
-            if self.eval_return_middle_output:
-                results["middle_output"] = self.filter_layers.networks[
-                    0
-                ].call_until_last(xx)
             if return_atomic_feature:
                 results["atomic_feature"] = self.filter_layers.networks[
                     0
@@ -867,23 +852,28 @@ class GeneralFitting(Fitting):
                 outs + atom_property + self.bias_atom_e[atype].to(self.prec)
             )  # Shape is [nframes, natoms[0], net_dim_out]
         else:
-            if self.eval_return_middle_output:
-                outs_middle = torch.zeros(
-                    (nf, nloc, self.neuron[-1]),
-                    dtype=self.prec,
-                    device=descriptor.device,
-                )  # jit assertion
+            if return_atomic_feature:
+                # Each atom carries the last hidden activation of its own type
+                # network, gathered by summing the type-masked contributions.
+                atomic_feature_type: torch.Tensor = self.filter_layers.networks[
+                    0
+                ].call_until_last(xx)
+                mask = (atype == 0).unsqueeze(-1)
+                atomic_feature = torch.where(
+                    mask,
+                    atomic_feature_type,
+                    torch.zeros_like(atomic_feature_type),
+                )
                 for type_i, ll in enumerate(self.filter_layers.networks):
-                    mask = (atype == type_i).unsqueeze(-1)
-                    mask = torch.tile(mask, (1, 1, net_dim_out))
-                    middle_output_type = ll.call_until_last(xx)
-                    middle_output_type = torch.where(
-                        torch.tile(mask, (1, 1, self.neuron[-1])),
-                        middle_output_type,
-                        0.0,
-                    )
-                    outs_middle = outs_middle + middle_output_type
-                results["middle_output"] = outs_middle
+                    if type_i > 0:
+                        mask = (atype == type_i).unsqueeze(-1)
+                        atomic_feature_type = ll.call_until_last(xx)
+                        atomic_feature = atomic_feature + torch.where(
+                            mask,
+                            atomic_feature_type,
+                            torch.zeros_like(atomic_feature_type),
+                        )
+                results["atomic_feature"] = atomic_feature
             for type_i, ll in enumerate(self.filter_layers.networks):
                 mask = (atype == type_i).unsqueeze(-1)
                 mask = torch.tile(mask, (1, 1, net_dim_out))

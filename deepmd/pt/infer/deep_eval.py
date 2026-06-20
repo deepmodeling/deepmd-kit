@@ -78,9 +78,6 @@ from deepmd.pt_expt.utils.vesin_neighbor_list import (
     VesinNeighborList,
     is_vesin_torch_available,
 )
-from deepmd.utils.batch_size import (
-    RetrySignal,
-)
 from deepmd.utils.econf_embd import (
     sort_element_type,
 )
@@ -96,6 +93,12 @@ if TYPE_CHECKING:
     )
 
 log = logging.getLogger(__name__)
+
+
+_EMBEDDING_DTYPE_TO_TORCH = {
+    "fp32": torch.float32,
+    "fp64": torch.float64,
+}
 
 
 def _is_sezm_model_params(model_params: dict[str, Any]) -> bool:
@@ -1026,9 +1029,15 @@ class DeepEval(DeepEvalBackend):
         atom_types: np.ndarray,
         fparam: np.ndarray | None = None,
         aparam: np.ndarray | None = None,
+        dtype: str = "native",
         **kwargs: Any,
     ) -> np.ndarray:
         """Evaluate descriptors by using this DP.
+
+        .. deprecated::
+            Use :meth:`eval_embedding` instead, which returns the descriptor
+            together with the atomic and structural features in a single
+            forward pass. This method is a thin wrapper kept for compatibility.
 
         Parameters
         ----------
@@ -1053,37 +1062,24 @@ class DeepEval(DeepEvalBackend):
             - nframes x natoms x dim_aparam.
             - natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
             - dim_aparam. Then all frames and atoms are provided with the same aparam.
+        dtype
+            Output dtype: ``"fp32"``, ``"fp64"``, or ``"native"``.
 
         Returns
         -------
         descriptor
             Descriptors.
         """
-        model = self.dp.model["Default"]
-        while True:
-            if self.auto_batch_size is not None:
-                self.auto_batch_size.set_oom_retry_mode(True)
-            model.set_eval_descriptor_hook(True)
-            retry = False
-            try:
-                self.eval(
-                    coords,
-                    cells,
-                    atom_types,
-                    atomic=False,
-                    fparam=fparam,
-                    aparam=aparam,
-                    **kwargs,
-                )
-                descriptor = model.eval_descriptor()
-            except RetrySignal:
-                retry = True
-            finally:
-                model.set_eval_descriptor_hook(False)
-                if self.auto_batch_size is not None:
-                    self.auto_batch_size.set_oom_retry_mode(False)
-            if not retry:
-                return to_numpy_array(descriptor)
+        descriptor, _, _ = self.eval_embedding(
+            coords,
+            cells,
+            atom_types,
+            fparam=fparam,
+            aparam=aparam,
+            dtype=dtype,
+            **kwargs,
+        )
+        return descriptor
 
     def eval_fitting_last_layer(
         self,
@@ -1092,9 +1088,15 @@ class DeepEval(DeepEvalBackend):
         atom_types: np.ndarray,
         fparam: np.ndarray | None = None,
         aparam: np.ndarray | None = None,
+        dtype: str = "native",
         **kwargs: Any,
     ) -> np.ndarray:
         """Evaluate fitting before last layer by using this DP.
+
+        .. deprecated::
+            Use :meth:`eval_embedding` instead, which returns this activation as
+            the ``atomic_feature`` output. This method is a thin wrapper kept
+            for compatibility.
 
         Parameters
         ----------
@@ -1119,37 +1121,24 @@ class DeepEval(DeepEvalBackend):
             - nframes x natoms x dim_aparam.
             - natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
             - dim_aparam. Then all frames and atoms are provided with the same aparam.
+        dtype
+            Output dtype: ``"fp32"``, ``"fp64"``, or ``"native"``.
 
         Returns
         -------
         fitting
             Fitting output before last layer.
         """
-        model = self.dp.model["Default"]
-        while True:
-            if self.auto_batch_size is not None:
-                self.auto_batch_size.set_oom_retry_mode(True)
-            model.set_eval_fitting_last_layer_hook(True)
-            retry = False
-            try:
-                self.eval(
-                    coords,
-                    cells,
-                    atom_types,
-                    atomic=False,
-                    fparam=fparam,
-                    aparam=aparam,
-                    **kwargs,
-                )
-                fitting_net = model.eval_fitting_last_layer()
-            except RetrySignal:
-                retry = True
-            finally:
-                model.set_eval_fitting_last_layer_hook(False)
-                if self.auto_batch_size is not None:
-                    self.auto_batch_size.set_oom_retry_mode(False)
-            if not retry:
-                return to_numpy_array(fitting_net)
+        _, atomic_feature, _ = self.eval_embedding(
+            coords,
+            cells,
+            atom_types,
+            fparam=fparam,
+            aparam=aparam,
+            dtype=dtype,
+            **kwargs,
+        )
+        return atomic_feature
 
     def eval_embedding(
         self,
@@ -1159,6 +1148,7 @@ class DeepEval(DeepEvalBackend):
         fparam: np.ndarray | None = None,
         aparam: np.ndarray | None = None,
         charge_spin: np.ndarray | None = None,
+        dtype: str = "fp32",
         **kwargs: Any,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         """Evaluate the descriptor, atomic feature, and structural feature.
@@ -1167,9 +1157,11 @@ class DeepEval(DeepEvalBackend):
         force or virial autograd. The descriptor is the per-atom
         local-environment representation; the atomic feature is the activation
         after the last fitting hidden layer; the structural feature is the
-        masked atom-sum of the atomic feature, a whole-structure summary whose
-        projection through the fitting output layer reproduces the (bias-free)
-        total energy.
+        masked atom-sum of the atomic feature, a whole-structure summary. For
+        models with a single shared fitting network, projecting the structural
+        feature through the fitting output layer reproduces the (bias-free)
+        total energy. All three embeddings are returned as float32, which is
+        ample for downstream analysis.
 
         Parameters
         ----------
@@ -1197,6 +1189,8 @@ class DeepEval(DeepEvalBackend):
         charge_spin
             The frame-level charge and spin conditions.
             The array should be of size nframes x 2
+        dtype
+            Output dtype: ``"fp32"``, ``"fp64"``, or ``"native"``.
 
         Returns
         -------
@@ -1213,10 +1207,18 @@ class DeepEval(DeepEvalBackend):
         NotImplementedError
             If the loaded model does not support embedding extraction.
         """
-        if self._has_spin or not _is_sezm_model_params(self.model_def_script):
+        if self._has_spin:
             raise NotImplementedError(
-                "eval_embedding is currently only supported for SeZM/DPA4 "
-                "energy models in the PyTorch backend."
+                "eval_embedding is not supported for spin models in the "
+                "PyTorch backend."
+            )
+        if dtype not in ("fp32", "fp64", "native"):
+            raise ValueError("dtype must be one of 'fp32', 'fp64', or 'native'.")
+        if not hasattr(self.dp.model["Default"], "forward_embedding"):
+            raise NotImplementedError(
+                "eval_embedding requires a model frozen with forward_embedding "
+                "support. Please re-freeze the model with a newer DeePMD-kit "
+                "version."
             )
         atom_types = np.array(atom_types, dtype=np.int32)
         coords = np.array(coords)
@@ -1226,7 +1228,7 @@ class DeepEval(DeepEvalBackend):
             coords, atom_types, len(atom_types.shape) > 1
         )
         return self._eval_func(self._eval_embedding, numb_test, natoms)(
-            coords, cells, atom_types, fparam, aparam, charge_spin
+            coords, cells, atom_types, fparam, aparam, charge_spin, dtype
         )
 
     def _eval_embedding(
@@ -1237,8 +1239,12 @@ class DeepEval(DeepEvalBackend):
         fparam: np.ndarray | None,
         aparam: np.ndarray | None,
         charge_spin: np.ndarray | None,
+        dtype: str,
     ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
         self.dp.to(DEVICE)
+        # A data modifier augments physical outputs after the model forward in
+        # ModelWrapper. It does not define or transform descriptor/fitting
+        # features, so embeddings are intentionally taken from the neural model.
         model = self.dp.model["Default"]
         prec = NP_PRECISION_DICT[RESERVED_PRECISION_DICT[GLOBAL_PT_FLOAT_PRECISION]]
 
@@ -1291,8 +1297,17 @@ class DeepEval(DeepEvalBackend):
             aparam=aparam_input,
             charge_spin=charge_spin_input,
         )
+
+        def cast_output(value: torch.Tensor) -> np.ndarray:
+            value = value.detach()
+            if dtype != "native":
+                value = value.to(_EMBEDDING_DTYPE_TO_TORCH[dtype])
+            return value.cpu().numpy()
+
+        # Single output-precision boundary: the model produces embeddings in its
+        # native precision, and this API chooses the emitted dtype.
         return (
-            out["descriptor"].detach().cpu().numpy(),
-            out["atomic_feature"].detach().cpu().numpy(),
-            out["structural_feature"].detach().cpu().numpy(),
+            cast_output(out["descriptor"]),
+            cast_output(out["atomic_feature"]),
+            cast_output(out["structural_feature"]),
         )
