@@ -59,7 +59,7 @@ jobs:
         run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/astral-sh/uv/releases/download/0.2.24/uv-installer.sh | sh
         if: runner.os != 'Linux'
       - name: Build wheels
-        uses: pypa/cibuildwheel@v4.0
+        uses: pypa/cibuildwheel@v4.1
         env:
           CIBW_BUILD_VERBOSITY: 1
           CIBW_ARCHS: all
@@ -143,37 +143,15 @@ jobs:
           images: ghcr.io/deepmodeling/deepmd-kit
 
       - name: Build and push Docker image
-        run: |
-          set -eo pipefail
-          should_push="${{ github.repository_owner == 'deepmodeling' && github.event_name == 'push' && github.actor != 'dependabot[bot]' }}"
-          echo "${{ steps.meta.outputs.tags }}${{ matrix.variant }}" > /tmp/docker_tags.txt
-          echo "${{ steps.meta.outputs.labels }}" > /tmp/docker_labels.txt
-          # Build args as a bash array so values with spaces survive word splitting.
-          args=(
-            --file source/install/docker/Dockerfile
-            --build-arg "VARIANT=${{ matrix.variant }}"
-            --build-arg "CUDA_VERSION=${{ matrix.cuda_version }}"
-          )
-          while IFS= read -r t; do
-            [ -n "$t" ] && args+=(-t "$t")
-          done < /tmp/docker_tags.txt
-          while IFS= read -r l; do
-            [ -n "$l" ] && args+=(--label "$l")
-          done < /tmp/docker_labels.txt
-          [ "$should_push" = "true" ] && args+=(--push)
-          max_retry=3
-          for i in $(seq 1 $max_retry); do
-            echo "Docker build attempt $i/$max_retry ..."
-            set +e
-            docker buildx build "${args[@]}" source/install/docker
-            ec=$?
-            set -e
-            [ $ec -eq 0 ] && exit 0
-            echo "Docker build failed (exit $ec), retrying in 5s ..."
-            sleep 5
-          done
-          echo "Docker build failed after $max_retry attempts."
-          exit 1
+        uses: docker/build-push-action@v7
+        with:
+          context: source/install/docker
+          push: ${{ github.repository_owner == 'deepmodeling' && github.event_name == 'push' && github.actor != 'dependabot[bot]' }}
+          tags: ${{ steps.meta.outputs.tags }}${{ matrix.variant }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            VARIANT=${{ matrix.variant }}
+            CUDA_VERSION=${{ matrix.cuda_version }}
 
   build_pypi_index:
     needs: [build_wheels, build_sdist]
