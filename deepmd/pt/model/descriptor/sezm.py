@@ -1238,7 +1238,10 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 .reshape(n_nodes, 1, 1, self.channels)
                 .to(dtype=self.compute_dtype)
                 if self.so3_readout == "none"
-                else x.to(dtype=self.compute_dtype)
+                # truncate to the final node degree: the empty-edge path
+                # skips the blocks, leaving x at node_ebed_dims[0]; output_ffn
+                # is built for node_ebed_dims[-1]. No-op when blocks ran.
+                else x[:, : self.node_ebed_dims[-1], :, :].to(dtype=self.compute_dtype)
             )
             x_scalar = (ffn_in + self.output_ffn(ffn_in))[:, 0:1, :, :]
 
@@ -1418,7 +1421,10 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 .reshape(n_nodes, 1, 1, self.channels)
                 .to(dtype=self.compute_dtype)
                 if self.so3_readout == "none"
-                else x.to(dtype=self.compute_dtype)
+                # truncate to the final node degree: the empty-edge path
+                # skips the blocks, leaving x at node_ebed_dims[0]; output_ffn
+                # is built for node_ebed_dims[-1]. No-op when blocks ran.
+                else x[:, : self.node_ebed_dims[-1], :, :].to(dtype=self.compute_dtype)
             )
             x_scalar = (ffn_in + self.output_ffn(ffn_in))[:, 0:1, :, :]
 

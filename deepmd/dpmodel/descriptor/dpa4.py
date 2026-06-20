@@ -949,7 +949,12 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                 compute_prec,
             )  # (N, 1, 1, C)
         else:
-            ffn_in = xp.astype(x, compute_prec)  # (N, D, 1, C)
+            # truncate to the final node degree (what output_ffn is built for);
+            # no-op in the normal path (blocks already shrank x), defensive vs
+            # any path that leaves x at the initial degree. Mirrors pt.
+            ffn_in = xp.astype(
+                x[:, : self.node_ebed_dims[-1], :, :], compute_prec
+            )  # (N, D, 1, C)
         x_scalar = (ffn_in + self.output_ffn(ffn_in))[:, 0:1, :, :]
 
         # === Step 11. Reshape and return ===
