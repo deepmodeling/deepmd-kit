@@ -271,6 +271,56 @@ class DeepEvalBackend(ABC):
         """
         raise NotImplementedError
 
+    def eval_embedding(
+        self,
+        coords: np.ndarray,
+        cells: np.ndarray | None,
+        atom_types: np.ndarray,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+        **kwargs: Any,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Evaluate the descriptor, atomic feature, and structural feature.
+
+        A single forward pass produces all three embeddings without force or
+        virial autograd.
+
+        Parameters
+        ----------
+        coords
+            The coordinates of atoms.
+            The array should be of size nframes x natoms x 3
+        cells
+            The cell of the region.
+            If None then non-PBC is assumed, otherwise using PBC.
+            The array should be of size nframes x 9
+        atom_types
+            The atom types
+            The list should contain natoms ints
+        fparam
+            The frame parameter.
+            The array can be of size :
+            - nframes x dim_fparam.
+            - dim_fparam. Then all frames are assumed to be provided with the same fparam.
+        aparam
+            The atomic parameter
+            The array can be of size :
+            - nframes x natoms x dim_aparam.
+            - natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
+            - dim_aparam. Then all frames and atoms are provided with the same aparam.
+
+        Returns
+        -------
+        descriptor
+            The per-atom descriptor, of size nframes x natoms x dim_descriptor.
+        atomic_feature
+            The per-atom last hidden activation, of size
+            nframes x natoms x dim_hidden.
+        structural_feature
+            The per-structure pooled feature, of size nframes x dim_hidden.
+        """
+        raise NotImplementedError
+
     def eval_typeebd(self) -> np.ndarray:
         """Evaluate output of type embedding network by using this model.
 
@@ -628,6 +678,86 @@ class DeepEval(ABC):
             **kwargs,
         )
         return fitting
+
+    def eval_embedding(
+        self,
+        coords: np.ndarray,
+        cells: np.ndarray | None,
+        atom_types: np.ndarray,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+        mixed_type: bool = False,
+        **kwargs: Any,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Evaluate the descriptor, atomic feature, and structural feature.
+
+        A single forward pass produces all three embeddings without force or
+        virial autograd. The descriptor is the per-atom local-environment
+        representation; the atomic feature is the activation after the last
+        fitting hidden layer; the structural feature is the masked atom-sum of
+        the atomic feature, a whole-structure summary whose projection through
+        the fitting output layer reproduces the (bias-free) total energy.
+
+        Parameters
+        ----------
+        coords
+            The coordinates of atoms.
+            The array should be of size nframes x natoms x 3
+        cells
+            The cell of the region.
+            If None then non-PBC is assumed, otherwise using PBC.
+            The array should be of size nframes x 9
+        atom_types
+            The atom types
+            The list should contain natoms ints
+        fparam
+            The frame parameter.
+            The array can be of size :
+            - nframes x dim_fparam.
+            - dim_fparam. Then all frames are assumed to be provided with the same fparam.
+        aparam
+            The atomic parameter
+            The array can be of size :
+            - nframes x natoms x dim_aparam.
+            - natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
+            - dim_aparam. Then all frames and atoms are provided with the same aparam.
+        mixed_type
+            Whether to perform the mixed_type mode.
+            If True, the input data has the mixed_type format (see doc/model/train_se_atten.md),
+            in which frames in a system may have different natoms_vec(s), with the same nloc.
+
+        Returns
+        -------
+        descriptor
+            The per-atom descriptor, of size nframes x natoms x dim_descriptor.
+        atomic_feature
+            The per-atom last hidden activation, of size
+            nframes x natoms x dim_hidden.
+        structural_feature
+            The per-structure pooled feature, of size nframes x dim_hidden.
+
+        Raises
+        ------
+        NotImplementedError
+            If the loaded model does not support embedding extraction.
+        """
+        (
+            coords,
+            cells,
+            atom_types,
+            fparam,
+            aparam,
+            nframes,
+            natoms,
+        ) = self._standard_input(coords, cells, atom_types, fparam, aparam, mixed_type)
+        return self.deep_eval.eval_embedding(
+            coords,
+            cells,
+            atom_types,
+            fparam=fparam,
+            aparam=aparam,
+            **kwargs,
+        )
 
     def eval_typeebd(self) -> np.ndarray:
         """Evaluate output of type embedding network by using this model.

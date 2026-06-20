@@ -729,6 +729,8 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         # full, or EMA full -- therefore reuses cached compile products
         # instead of evicting the other mode.
         object.__setattr__(self, "compiled_core_compute_cache", {})
+        object.__setattr__(self, "compiled_embedding", None)
+        object.__setattr__(self, "_embedding_task_buf_order", None)
         object.__setattr__(self, "compiled_dens_compute", None)
         # Maps cache_key -> task_buf_order for this instance so forward()
         # knows which buffers to pass and in what order.
@@ -881,6 +883,63 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             model_predict["updated_coord"] += coord
         return model_predict
 
+    def forward_embedding(
+        self,
+        coord: Float[Tensor, "nf nloc 3"] | Float[Tensor, "nf nloc_x3"],
+        atype: Int[Tensor, "nf nloc"],
+        box: Float[Tensor, "nf 9"] | None = None,
+        fparam: Float[Tensor, "nf ndf"] | None = None,
+        aparam: Float[Tensor, "nf nloc nda"] | None = None,
+        charge_spin: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
+        """
+        Extract embeddings in a single forward, without force/virial autograd.
+
+        Reuses the standard ``ener`` neighbor-list and descriptor path and honors
+        the ``DP_COMPILE_INFER`` compile setting through a dedicated embedding
+        graph cache.
+
+        Parameters
+        ----------
+        coord
+            Coordinates with shape (nf, nloc*3) or (nf, nloc, 3) in Å.
+        atype
+            Atom types with shape (nf, nloc).
+        box
+            Box tensor with shape (nf, 9) in Å, or None.
+        fparam
+            Frame parameters with shape (nf, ndf) or None.
+        aparam
+            Atomic parameters with shape (nf, nloc, nda) or None.
+        charge_spin
+            Frame-level charge and spin conditions with shape (nf, 2).
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            ``descriptor`` with shape (nf, nloc, d), ``atomic_feature`` with
+            shape (nf, nloc, h), and ``structural_feature`` with shape (nf, h).
+
+        Raises
+        ------
+        NotImplementedError
+            If the model is not in the ``ener`` execution mode.
+        """
+        if self.get_active_mode() != "ener":
+            raise NotImplementedError(
+                "Embedding extraction is only supported in the SeZM `ener` mode."
+            )
+        with torch.no_grad():
+            return self.forward_common(
+                coord,
+                atype,
+                box,
+                fparam=fparam,
+                aparam=aparam,
+                charge_spin=charge_spin,
+                embedding_only=True,
+            )
+
     def forward_common(
         self,
         coord: Float[Tensor, "nf nloc 3"] | Float[Tensor, "nf nloc_x3"],
@@ -892,6 +951,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         force_input: Float[Tensor, "nf nloc 3"] | None = None,
         noise_mask: torch.Tensor | None = None,
         charge_spin: torch.Tensor | None = None,
+        embedding_only: bool = False,
     ) -> dict[str, torch.Tensor]:
         """
         Return model prediction using standard neighbor list.
@@ -975,6 +1035,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 aparam=ap,
                 charge_spin=charge_spin,
                 input_prec=input_prec,
+                embedding_only=embedding_only,
             )
 
     def forward_common_lower(
@@ -992,6 +1053,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         charge_spin: torch.Tensor | None = None,
         input_prec: torch.dtype | None = None,
         use_compile: bool | None = None,
+        embedding_only: bool = False,
     ) -> dict[str, torch.Tensor]:
         """
         Run the conservative SeZM lower interface on explicit edge vectors.
@@ -1045,25 +1107,44 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                     device=coord.device,
                 )
                 has_coord_corr = extended_coord_corr is not None
-                cache_key = (bool(self.training), has_coord_corr)
-                if cache_key not in self.compiled_core_compute_cache:
-                    self.trace_and_compile(
-                        coord,
-                        atype,
-                        edge_index,
-                        edge_vec,
-                        edge_scatter_index,
-                        edge_mask,
-                        fp,
-                        ap,
-                        charge_spin,
-                        extended_coord_corr=extended_coord_corr,
-                    )
-                compiled_core_compute = self.compiled_core_compute_cache[cache_key]
-                task_buf_vals = get_task_buffer_values(
-                    self,
-                    self._task_buf_order_cache[cache_key],
-                )
+                if embedding_only:
+                    # Eval-only graph: a single slot, with no
+                    # (training, coord_corr) key and no cross-task sharing.
+                    if self.compiled_embedding is None:
+                        self.trace_and_compile(
+                            coord,
+                            atype,
+                            edge_index,
+                            edge_vec,
+                            edge_scatter_index,
+                            edge_mask,
+                            fp,
+                            ap,
+                            charge_spin,
+                            embedding_only=True,
+                        )
+                    cache_key = None
+                    compiled_core_compute = self.compiled_embedding
+                    task_buf_order = self._embedding_task_buf_order
+                else:
+                    cache_key = (bool(self.training), has_coord_corr)
+                    if cache_key not in self.compiled_core_compute_cache:
+                        self.trace_and_compile(
+                            coord,
+                            atype,
+                            edge_index,
+                            edge_vec,
+                            edge_scatter_index,
+                            edge_mask,
+                            fp,
+                            ap,
+                            charge_spin,
+                            extended_coord_corr=extended_coord_corr,
+                        )
+                    compiled_core_compute = self.compiled_core_compute_cache[cache_key]
+                    task_buf_order = self._task_buf_order_cache[cache_key]
+                assert task_buf_order is not None
+                task_buf_vals = get_task_buffer_values(self, task_buf_order)
                 grad_ctx: Any = nullcontext() if self.training else torch.no_grad()
                 with nvtx_range("SeZM/core_compute"), grad_ctx:
                     if extended_coord_corr is None:
@@ -1120,6 +1201,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                         aparam=ap,
                         charge_spin=charge_spin,
                         extended_coord_corr=extended_coord_corr,
+                        embedding_only=embedding_only,
                     )
         return self._output_type_cast(model_predict, input_prec)
 
@@ -1261,6 +1343,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         charge_spin: torch.Tensor | None = None,
         comm_dict: dict[str, torch.Tensor] | None = None,
         extended_coord_corr: torch.Tensor | None = None,
+        embedding_only: bool = False,
     ) -> dict[str, torch.Tensor]:
         """
         Compute SeZM lower outputs from the unified edge-vector schema.
@@ -1295,6 +1378,9 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         extended_coord_corr
             Coordinates correction for virial with shape ``(nf, nscatter, 3)`` or
             ``None``.
+        embedding_only
+            When ``True``, return only the embedding outputs and skip the
+            force/virial autograd entirely.
 
         Returns
         -------
@@ -1302,7 +1388,9 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             DeePMD lower-style outputs (energy, energy_redu, energy_derv_r,
             energy_derv_c, energy_derv_c_redu, mask).  The per-atom virial
             (energy_derv_c) is always produced; callers decide whether to keep
-            it.
+            it.  When ``embedding_only`` is ``True``, instead returns
+            ``descriptor`` (nf, nloc, d), ``atomic_feature`` (nf, nloc, h), and
+            ``structural_feature`` (nf, h).
         """
         del comm_dict
         nf, nloc = atype.shape[:2]
@@ -1315,8 +1403,10 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         # SeZM differentiates only the pure map ``(edge_vec, theta) -> E``.
         # This keeps coordinate gathering and shift application outside the
         # differentiated region while preserving conservative forces through the
-        # scatter indices below.
-        edge_vec = edge_vec.detach().requires_grad_(True)
+        # scatter indices below.  The embedding path produces no force, so it
+        # keeps ``edge_vec`` detached and never allocates an autograd leaf.
+        if not embedding_only:
+            edge_vec = edge_vec.detach().requires_grad_(True)
 
         # === Step 2. Descriptor forward ===
         with nvtx_range("SeZM/descriptor"):
@@ -1328,6 +1418,36 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 edge_mask=edge_mask,
                 charge_spin=charge_spin,
             )
+
+        # === Atom mask ===
+        atom_mask = self.atomic_model.make_atom_mask(atype).to(torch.int32)
+        if self.atomic_model.atom_excl is not None:
+            atom_mask = atom_mask * self.atomic_model.atom_excl(atype)
+
+        # === Embedding short circuit ===
+        # The embedding command needs three plain forward outputs: the per-atom
+        # descriptor, the per-atom last hidden activation, and the
+        # structure-level pooled feature (the masked atom-sum of the last hidden
+        # activation).  All force/virial autograd below is skipped, and every
+        # output is stored in float32.
+        if embedding_only:
+            fit_ret = self.atomic_model.fitting_net._forward_common(
+                descriptor,
+                atype,
+                fparam=fparam,
+                aparam=aparam,
+                return_atomic_feature=True,
+            )
+            atomic_feature = fit_ret["atomic_feature"]
+            structural_feature = (
+                atomic_feature * atom_mask[:, :, None].to(atomic_feature.dtype)
+            ).sum(dim=1)
+            return {
+                "descriptor": descriptor.to(torch.float32),
+                "atomic_feature": atomic_feature.to(torch.float32),
+                "structural_feature": structural_feature.to(torch.float32),
+            }
+
         if self.atomic_model.enable_eval_descriptor_hook:
             self.atomic_model.eval_descriptor_list.append(descriptor.detach())
 
@@ -1350,9 +1470,6 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             fit_ret = self.atomic_model.apply_out_stat(fit_ret, atype)
 
         # === Step 4. Apply atom mask ===
-        atom_mask = self.atomic_model.make_atom_mask(atype).to(torch.int32)
-        if self.atomic_model.atom_excl is not None:
-            atom_mask *= self.atomic_model.atom_excl(atype)
         for key in fit_ret.keys():
             out_shape = fit_ret[key].shape
             flat_dim = 1
@@ -1647,6 +1764,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         ap: torch.Tensor,
         charge_spin: torch.Tensor,
         extended_coord_corr: torch.Tensor | None = None,
+        embedding_only: bool = False,
     ) -> None:
         """Trace ``core_compute()`` with ``make_fx`` and cache the compiled callable.
 
@@ -1676,7 +1794,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         structure_key = _sezm_structure_key(self)
         cache_key = (bool(self.training), has_coord_corr)
         full_cache_key = structure_key + cache_key
-        if full_cache_key in _SEZM_COMPILE_CACHE:
+        if not embedding_only and full_cache_key in _SEZM_COMPILE_CACHE:
             self.compiled_core_compute_cache[cache_key] = _SEZM_COMPILE_CACHE[
                 full_cache_key
             ]
@@ -1795,6 +1913,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                         fparam=fp,
                         aparam=ap,
                         charge_spin=charge_spin,
+                        embedding_only=embedding_only,
                     )
                 finally:
                     _restore_task_bufs(_saved)
@@ -1830,6 +1949,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                         aparam=ap,
                         charge_spin=charge_spin,
                         extended_coord_corr=extended_coord_corr,
+                        embedding_only=embedding_only,
                     )
                 finally:
                     _restore_task_bufs(_saved)
@@ -2055,6 +2175,17 @@ class SeZMModel(DPModelCommon, SeZMModel_):
 
                 def compiled(*args: Any, _fn: Any = _compiled_flat) -> dict[str, Any]:
                     return dict(zip(_keys, _fn(*args)))
+
+        # The embedding graph is eval-only with a single slot (cache key
+        # ``None``) and is not shared across tasks.  It reuses the pending-compile
+        # timer so its compile time is logged after the first compiled call,
+        # robust whether the AOT lowering is eager or lazy.
+        if embedding_only:
+            object.__setattr__(self, "compiled_embedding", compiled)
+            object.__setattr__(self, "_embedding_task_buf_order", task_buf_names)
+            self._core_compute_pending_compile_t0 = _compile_t0
+            self._core_compute_pending_compile_key = None
+            return
 
         # Populate both per-instance and module-level shared caches.
         # The shared cache (_SEZM_COMPILE_CACHE) lets a second task with the
@@ -2666,8 +2797,11 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             self._core_compute_pending_compile_t0 = None
             self._core_compute_pending_compile_key = None
             # Drop every compile slot so the next forward retraces against the
-            # reinitialised fitting head.
+            # reinitialised fitting head.  The embedding graph reads the same
+            # fitting head, so it is invalidated together with the energy graph.
             self.compiled_core_compute_cache.clear()
+            object.__setattr__(self, "compiled_embedding", None)
+            object.__setattr__(self, "_embedding_task_buf_order", None)
 
     # =========================================================================
     # Bridging Helpers

@@ -1150,3 +1150,149 @@ class DeepEval(DeepEvalBackend):
                     self.auto_batch_size.set_oom_retry_mode(False)
             if not retry:
                 return to_numpy_array(fitting_net)
+
+    def eval_embedding(
+        self,
+        coords: np.ndarray,
+        cells: np.ndarray | None,
+        atom_types: np.ndarray,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+        charge_spin: np.ndarray | None = None,
+        **kwargs: Any,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Evaluate the descriptor, atomic feature, and structural feature.
+
+        A single forward pass produces all three embeddings without any
+        force or virial autograd. The descriptor is the per-atom
+        local-environment representation; the atomic feature is the activation
+        after the last fitting hidden layer; the structural feature is the
+        masked atom-sum of the atomic feature, a whole-structure summary whose
+        projection through the fitting output layer reproduces the (bias-free)
+        total energy.
+
+        Parameters
+        ----------
+        coords
+            The coordinates of atoms.
+            The array should be of size nframes x natoms x 3
+        cells
+            The cell of the region.
+            If None then non-PBC is assumed, otherwise using PBC.
+            The array should be of size nframes x 9
+        atom_types
+            The atom types
+            The list should contain natoms ints
+        fparam
+            The frame parameter.
+            The array can be of size :
+            - nframes x dim_fparam.
+            - dim_fparam. Then all frames are assumed to be provided with the same fparam.
+        aparam
+            The atomic parameter
+            The array can be of size :
+            - nframes x natoms x dim_aparam.
+            - natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
+            - dim_aparam. Then all frames and atoms are provided with the same aparam.
+        charge_spin
+            The frame-level charge and spin conditions.
+            The array should be of size nframes x 2
+
+        Returns
+        -------
+        descriptor
+            The per-atom descriptor, of size nframes x natoms x dim_descriptor.
+        atomic_feature
+            The per-atom last hidden activation, of size
+            nframes x natoms x dim_hidden.
+        structural_feature
+            The per-structure pooled feature, of size nframes x dim_hidden.
+
+        Raises
+        ------
+        NotImplementedError
+            If the loaded model does not support embedding extraction.
+        """
+        if self._has_spin or not _is_sezm_model_params(self.model_def_script):
+            raise NotImplementedError(
+                "eval_embedding is currently only supported for SeZM/DPA4 "
+                "energy models in the PyTorch backend."
+            )
+        atom_types = np.array(atom_types, dtype=np.int32)
+        coords = np.array(coords)
+        if cells is not None:
+            cells = np.array(cells)
+        natoms, numb_test = self._get_natoms_and_nframes(
+            coords, atom_types, len(atom_types.shape) > 1
+        )
+        return self._eval_func(self._eval_embedding, numb_test, natoms)(
+            coords, cells, atom_types, fparam, aparam, charge_spin
+        )
+
+    def _eval_embedding(
+        self,
+        coords: np.ndarray,
+        cells: np.ndarray | None,
+        atom_types: np.ndarray,
+        fparam: np.ndarray | None,
+        aparam: np.ndarray | None,
+        charge_spin: np.ndarray | None,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        self.dp.to(DEVICE)
+        model = self.dp.model["Default"]
+        prec = NP_PRECISION_DICT[RESERVED_PRECISION_DICT[GLOBAL_PT_FLOAT_PRECISION]]
+
+        nframes = coords.shape[0]
+        if len(atom_types.shape) == 1:
+            natoms = len(atom_types)
+            atom_types = np.tile(atom_types, nframes).reshape(nframes, -1)
+        else:
+            natoms = len(atom_types[0])
+
+        coord_input = torch.tensor(
+            coords.reshape([nframes, natoms, 3]).astype(prec),
+            dtype=GLOBAL_PT_FLOAT_PRECISION,
+            device=DEVICE,
+        )
+        type_input = torch.tensor(
+            atom_types.astype(NP_PRECISION_DICT[RESERVED_PRECISION_DICT[torch.long]]),
+            dtype=torch.long,
+            device=DEVICE,
+        )
+        box_input = (
+            torch.tensor(
+                cells.reshape([nframes, 3, 3]).astype(prec),
+                dtype=GLOBAL_PT_FLOAT_PRECISION,
+                device=DEVICE,
+            )
+            if cells is not None
+            else None
+        )
+        fparam_input = (
+            to_torch_tensor(fparam.reshape(nframes, self.get_dim_fparam()))
+            if fparam is not None
+            else None
+        )
+        aparam_input = (
+            to_torch_tensor(aparam.reshape(nframes, natoms, self.get_dim_aparam()))
+            if aparam is not None
+            else None
+        )
+        charge_spin_input = (
+            to_torch_tensor(charge_spin.reshape(nframes, 2))
+            if charge_spin is not None
+            else None
+        )
+        out = model.forward_embedding(
+            coord_input,
+            type_input,
+            box=box_input,
+            fparam=fparam_input,
+            aparam=aparam_input,
+            charge_spin=charge_spin_input,
+        )
+        return (
+            out["descriptor"].detach().cpu().numpy(),
+            out["atomic_feature"].detach().cpu().numpy(),
+            out["structural_feature"].detach().cpu().numpy(),
+        )

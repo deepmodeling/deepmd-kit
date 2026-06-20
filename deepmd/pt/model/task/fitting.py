@@ -745,6 +745,7 @@ class GeneralFitting(Fitting):
         h2: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
+        return_atomic_feature: bool = False,
     ) -> dict[str, torch.Tensor]:
         # cast the input to internal precsion
         xx = descriptor.to(self.prec)
@@ -844,10 +845,20 @@ class GeneralFitting(Fitting):
         )  # jit assertion
         results = {}
 
+        if return_atomic_feature and not self.mixed_types:
+            raise NotImplementedError(
+                "Returning the atomic feature is only implemented for "
+                "mixed-type fitting networks."
+            )
+
         if self.mixed_types:
             atom_property = self.filter_layers.networks[0](xx)
             if self.eval_return_middle_output:
                 results["middle_output"] = self.filter_layers.networks[
+                    0
+                ].call_until_last(xx)
+            if return_atomic_feature:
+                results["atomic_feature"] = self.filter_layers.networks[
                     0
                 ].call_until_last(xx)
             if xx_zeros is not None:

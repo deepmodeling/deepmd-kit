@@ -499,6 +499,57 @@ def main_parser() -> argparse.ArgumentParser:
         help="(Supported backend: PyTorch) Task head (alias: model branch) to use if in multi-task mode.",
     )
 
+    # * embedding script *************************************************************
+    parser_embedding = subparsers.add_parser(
+        "embed",
+        parents=[parser_log],
+        help="evaluate model embeddings (descriptor, atomic feature, structural feature)",
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent(
+            """\
+        examples:
+            dp embed -m model.ckpt.pt -s /path/to/system -o embedding.hdf5
+        """
+        ),
+    )
+    parser_embedding.add_argument(
+        "-m",
+        "--model",
+        default="model.ckpt.pt",
+        type=str,
+        help="PyTorch SeZM/DPA4 training checkpoint (suffix .pt). The frozen .pt2 package is not supported.",
+    )
+    parser_embedding_subgroup = parser_embedding.add_mutually_exclusive_group()
+    parser_embedding_subgroup.add_argument(
+        "-s",
+        "--system",
+        default=".",
+        type=str,
+        help="The system dir. Recursively detect systems in this directory",
+    )
+    parser_embedding_subgroup.add_argument(
+        "-f",
+        "--datafile",
+        default=None,
+        type=str,
+        help="The path to the datafile, each line of which is a path to one data system.",
+    )
+    parser_embedding.add_argument(
+        "-o",
+        "--output",
+        default="embedding.hdf5",
+        type=str,
+        help="Output HDF5 file. Each system is stored as a group holding the "
+        "descriptor, atomic_feature, and structural_feature datasets.",
+    )
+    parser_embedding.add_argument(
+        "--head",
+        "--model-branch",
+        default=None,
+        type=str,
+        help="(Supported backend: PyTorch) Task head (alias: model branch) to use if in multi-task mode.",
+    )
+
     # * compress model *****************************************************************
     # Compress a model, which including tabulating the embedding-net.
     # The table is composed of fifth-order polynomial coefficients and is assembled
@@ -1032,6 +1083,7 @@ def main(args: list[str] | None = None) -> None:
     if args.command in (
         "test",
         "eval-desc",
+        "embed",
         "doc-train-input",
         "model-devi",
         "neighbor-stat",
