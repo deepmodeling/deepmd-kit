@@ -74,7 +74,7 @@ class LinearEnergyModel(DPLinearModel_):
                 return sub_model.descriptor
             if "hybrid" in shared_type:
                 hybrid_index = int(shared_type.split("_")[-1])
-                return sub_model.descriptor.descriptor_list[hybrid_index]
+                return sub_model.descriptor.descrpt_list[hybrid_index]
             raise RuntimeError(f"Unknown class_type {shared_type}!")
 
         for shared_item in shared_links:
