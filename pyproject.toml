@@ -58,6 +58,7 @@ dependencies = [
     'array-api-compat',
     'lmdb',
     'msgpack',
+    'dpdata>=1.0.1',
 ]
 requires-python = ">=3.10"
 keywords = ["deepmd"]
@@ -81,7 +82,6 @@ repository = "https://github.com/deepmodeling/deepmd-kit"
 # which can be read by the build backend.
 [tool.deepmd_build_backend.optional-dependencies]
 test = [
-    "dpdata>=0.2.7",
     # ASE issue: https://gitlab.com/ase/ase/-/merge_requests/2843
     # fixed in 3.23.0
     "ase>=3.23.0",

@@ -1,9 +1,16 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import collections
+import hashlib
 import logging
+import os
+import shutil
+import time
 import warnings
 from functools import (
     cached_property,
+)
+from pathlib import (
+    Path,
 )
 from typing import (
     Any,
@@ -29,6 +36,10 @@ from deepmd.utils.out_stat import (
 )
 
 log = logging.getLogger(__name__)
+
+_DPDATA_CACHE_DIR = ".deepmd_dpdata_cache"
+_DPDATA_DEFAULT_OUT_FORMAT = "lmdb"
+_DPDATA_CONVERSION_CACHE: dict[tuple[str, str, str, str], list[str]] = {}
 
 
 class DeepmdDataSystem:
@@ -672,6 +683,263 @@ class DeepmdDataSystem:
         return ret
 
 
+class LmdbDataSystem:
+    """A DeepmdDataSystem-compatible adapter for LMDB datasets.
+
+    The adapter returns raw DeePMD-style numpy batches (``type``,
+    ``natoms_vec``, ``default_mesh``) so it can be consumed by the legacy
+    TensorFlow/JAX training paths. Consumers that need the dpmodel canonical
+    format can still call ``normalize_batch`` on its output.
+    """
+
+    def __init__(
+        self,
+        lmdb_path: str,
+        type_map: list[str],
+        batch_size: int | str = "auto",
+        auto_prob_style: str | None = None,
+        seed: int | None = None,
+    ) -> None:
+        if not type_map:
+            raise ValueError(
+                "LMDB datasets require a non-empty model/type_map because "
+                "LMDB stores atom type indices and the training data adapter "
+                "must map them to element names."
+            )
+
+        from deepmd.dpmodel.utils.lmdb_data import (
+            LmdbDataReader,
+            SameNlocBatchSampler,
+            compute_block_targets,
+        )
+
+        self.lmdb_path = lmdb_path
+        self._reader = LmdbDataReader(
+            lmdb_path, type_map, batch_size, mixed_batch=False
+        )
+        self._type_map = list(type_map)
+        self.mixed_type = self._detect_mixed_type()
+        self.nsystems = 1
+        self.system_dirs = [lmdb_path]
+        self.natoms = [max(self._reader.frame_nlocs) if self._reader.frame_nlocs else 0]
+        self.batch_size = [self._reader.batch_size]
+        self.nbatches = [self._reader.total_batch]
+        self.sys_probs = [1.0]
+        self.data_systems = [self]
+        self._nloc_set_indices = {
+            f"{self.lmdb_path}#nloc={nloc}": indices
+            for nloc, indices in sorted(self._reader.nloc_groups.items())
+        }
+        self.dirs = list(self._nloc_set_indices)
+        self.pbc = self._detect_pbc()
+        self._data_dict = {
+            "box": {
+                "ndof": 9,
+                "atomic": False,
+                "must": False,
+                "high_prec": False,
+                "type_sel": None,
+                "repeat": 1,
+                "default": 0.0,
+                "dtype": None,
+                "output_natoms_for_type_sel": False,
+            },
+            "coord": {
+                "ndof": 3,
+                "atomic": True,
+                "must": True,
+                "high_prec": False,
+                "type_sel": None,
+                "repeat": 1,
+                "default": 0.0,
+                "dtype": None,
+                "output_natoms_for_type_sel": False,
+            },
+            "numb_copy": {
+                "ndof": 1,
+                "atomic": False,
+                "must": False,
+                "high_prec": False,
+                "type_sel": None,
+                "repeat": 1,
+                "default": 1,
+                "dtype": int,
+                "output_natoms_for_type_sel": False,
+            },
+        }
+
+        block_targets = None
+        if auto_prob_style is not None and self._reader.frame_system_ids is not None:
+            block_targets = compute_block_targets(
+                auto_prob_style,
+                self._reader.nsystems,
+                self._reader.system_nframes,
+            )
+        self._sampler = SameNlocBatchSampler(
+            self._reader,
+            shuffle=True,
+            seed=seed,
+            block_targets=block_targets,
+        )
+        self._iter = iter(self._sampler)
+
+    def _detect_mixed_type(self) -> bool:
+        """Return True when frames cannot be represented as fixed-type data."""
+        if len(self._reader.nloc_groups) > 1:
+            return True
+        if len(self._reader) == 0:
+            return False
+        ref_type = self._reader[0]["atype"]
+        for idx in range(1, len(self._reader)):
+            if not np.array_equal(self._reader[idx]["atype"], ref_type):
+                return True
+        return False
+
+    def _detect_pbc(self) -> bool:
+        """Return True when LMDB frames contain a non-zero simulation box."""
+        if len(self._reader) == 0:
+            return False
+        box = self._reader[0].get("box")
+        return box is not None and not np.allclose(box, 0.0)
+
+    def add_data_requirements(
+        self, data_requirements: list[DataRequirementItem]
+    ) -> None:
+        """Add label/auxiliary data requirements."""
+        for item in data_requirements:
+            self._data_dict[item.key] = item.dict
+        self._reader.add_data_requirement(data_requirements)
+
+    def add_data_requirement(self, data_requirement: list[DataRequirementItem]) -> None:
+        """Alias used by DataLoader-style backends."""
+        self.add_data_requirements(data_requirement)
+
+    def add(
+        self,
+        key: str,
+        ndof: int,
+        atomic: bool = False,
+        must: bool = False,
+        high_prec: bool = False,
+        type_sel: list[int] | None = None,
+        repeat: int = 1,
+        default: float = 0.0,
+        dtype: np.dtype | None = None,
+        output_natoms_for_type_sel: bool = False,
+    ) -> None:
+        item = DataRequirementItem(
+            key,
+            ndof,
+            atomic=atomic,
+            must=must,
+            high_prec=high_prec,
+            type_sel=type_sel,
+            repeat=repeat,
+            default=default,
+            dtype=dtype,
+            output_natoms_for_type_sel=output_natoms_for_type_sel,
+        )
+        self.add_data_requirements([item])
+
+    def get_data_dict(self, ii: int = 0) -> dict[str, dict[str, Any]]:
+        del ii
+        return self._data_dict
+
+    def _load_set(self, set_name: str) -> dict[str, Any]:
+        """Load one same-nloc LMDB group for legacy neighbor-stat code."""
+        indices = self._nloc_set_indices[str(set_name)]
+        frames = [self._reader[int(idx)] for idx in indices]
+        return self._stack_frames(frames)
+
+    def _next_indices(self) -> list[int]:
+        try:
+            return next(self._iter)
+        except StopIteration:
+            self._iter = iter(self._sampler)
+            return next(self._iter)
+
+    def _stack_frames(self, frames: list[dict[str, Any]]) -> dict[str, Any]:
+        out: dict[str, Any] = {}
+        structural_keys = {"coord", "box"}
+        for key in frames[0]:
+            if key in {"atype", "fid", "natoms", "real_natoms_vec"}:
+                continue
+            if key.startswith("find_") and key[5:] not in self._data_dict:
+                continue
+            if (
+                not key.startswith("find_")
+                and key not in structural_keys
+                and key not in self._data_dict
+            ):
+                continue
+            if key.startswith("find_"):
+                out[key] = np.asarray(frames[0][key], dtype=np.float32)
+            elif frames[0][key] is None:
+                out[key] = None
+            else:
+                arr = np.stack([frame[key] for frame in frames])
+                data_info = self._data_dict.get(key)
+                if data_info is not None and data_info["atomic"] and arr.ndim >= 3:
+                    arr = arr.reshape(arr.shape[0], -1)
+                out[key] = arr
+
+        atype = np.stack([frame["atype"] for frame in frames]).astype(np.int32)
+        real_natoms_vec = np.stack([frame["natoms"] for frame in frames]).astype(
+            np.int32
+        )
+        nloc = int(real_natoms_vec[:, 0].max())
+        natoms_vec = np.concatenate(
+            (
+                np.array([nloc, nloc], dtype=np.int32),
+                real_natoms_vec[:, 2:].max(axis=0).astype(np.int32),
+            )
+        )
+
+        out["type"] = atype
+        out["natoms_vec"] = natoms_vec
+        out["real_natoms_vec"] = real_natoms_vec
+        if "box" not in out or out["box"] is None:
+            out["box"] = np.zeros((len(frames), 9), dtype=GLOBAL_NP_FLOAT_PRECISION)
+            out["find_box"] = np.float32(0.0)
+        elif "find_box" not in out:
+            out["find_box"] = np.float32(0.0 if np.allclose(out["box"], 0.0) else 1.0)
+        if "find_coord" not in out:
+            out["find_coord"] = np.float32(1.0)
+        if "numb_copy" not in out:
+            out["numb_copy"] = np.ones((len(frames), 1), dtype=np.int64)
+            out["find_numb_copy"] = np.float32(0.0)
+        out["default_mesh"] = np.asarray(
+            make_default_mesh(bool(float(out["find_box"]) > 0.5), self.mixed_type),
+            dtype=np.int32,
+        )
+        return out
+
+    def get_batch(self, sys_idx: int | None = None) -> dict[str, Any]:
+        del sys_idx
+        indices = self._next_indices()
+        frames = [self._reader[int(idx)] for idx in indices]
+        return self._stack_frames(frames)
+
+    def get_nsystems(self) -> int:
+        return self.nsystems
+
+    def get_natoms(self) -> int:
+        return self.natoms[0]
+
+    def get_ntypes(self) -> int:
+        return len(self._type_map)
+
+    def get_type_map(self) -> list[str]:
+        return self._type_map
+
+    def get_batch_size(self) -> list[int]:
+        return self.batch_size
+
+    def print_summary(self, name: str, prob: Any | None = None) -> None:
+        del prob
+        self._reader.print_summary(name, self.sys_probs)
+
+
 def _format_name_length(name: str, width: int) -> str:
     if len(name) <= width:
         return "{: >{}}".format(name, width)
@@ -815,14 +1083,212 @@ def prob_sys_size_ext(keywords: str, nsystems: int, nbatch: int) -> list[float]:
     return sys_probs
 
 
+def _is_deepmd_data_format(fmt: str) -> bool:
+    return fmt in {
+        "deepmd",
+        "deepmd/raw",
+        "deepmd/npy",
+        "deepmd/comp",
+        "deepmd/npy/mixed",
+        "deepmd/hdf5",
+        "lmdb",
+    }
+
+
+def _looks_like_extxyz(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    try:
+        with path.open() as fp:
+            fp.readline()
+            comment = fp.readline()
+    except OSError:
+        return False
+    return "Properties=" in comment or "Lattice=" in comment
+
+
+def _normalize_dpdata_format(fmt: str, source: Path) -> str:
+    fmt = fmt.lower()
+    if fmt == "ase":
+        return "ase/structure"
+    if fmt != "auto":
+        return fmt
+    suffix = source.suffix.lower().lstrip(".")
+    if suffix == "traj":
+        return "ase/traj"
+    if suffix == "extxyz" or (suffix == "xyz" and _looks_like_extxyz(source)):
+        return "extxyz"
+    return suffix or fmt
+
+
+def _iter_conversion_inputs(path: str, patterns: list[str] | None) -> list[str]:
+    if patterns is None:
+        return [path]
+    root = Path(path)
+    if not root.is_dir():
+        return [path]
+    matches = []
+    for pattern in patterns:
+        matches.extend(str(match) for match in root.rglob(pattern))
+    return sorted(set(matches))
+
+
+def _conversion_cache_path(source: Path, fmt: str, out_fmt: str) -> Path:
+    source_resolved = source.resolve(strict=False)
+    digest = hashlib.sha1(f"{source_resolved}|{fmt}|{out_fmt}".encode()).hexdigest()[
+        :16
+    ]
+    stem = source_resolved.stem or source_resolved.name or "dataset"
+    safe_out_fmt = out_fmt.replace("/", "-")
+    suffix = ".lmdb" if out_fmt == "lmdb" else ""
+    return Path.cwd() / _DPDATA_CACHE_DIR / f"{stem}-{safe_out_fmt}-{digest}{suffix}"
+
+
+def _source_mtime(source: Path, cache_file: Path) -> float:
+    if source.is_file():
+        return source.stat().st_mtime
+    if not source.is_dir():
+        return 0.0
+    cache_dir = cache_file.parent.resolve(strict=False)
+    latest = source.stat().st_mtime
+    for item in source.rglob("*"):
+        try:
+            item_resolved = item.resolve(strict=False)
+            if item_resolved == cache_file or cache_dir in item_resolved.parents:
+                continue
+            latest = max(latest, item.stat().st_mtime)
+        except OSError:
+            continue
+    return latest
+
+
+def _is_conversion_current(source: Path, output: Path) -> bool:
+    if not output.exists():
+        return False
+    return output.stat().st_mtime >= _source_mtime(source, output)
+
+
+def _wait_for_conversion(source: Path, output: Path, lock_path: Path) -> bool:
+    for _ in range(300):
+        if not lock_path.exists():
+            return _is_conversion_current(source, output)
+        if _is_conversion_current(source, output):
+            return True
+        time.sleep(1.0)
+    return False
+
+
+def _remove_path(path: Path) -> None:
+    if path.is_dir():
+        shutil.rmtree(path)
+    elif path.exists():
+        path.unlink()
+
+
+def _write_dpdata_conversion(
+    source: Path, fmt: str, out_fmt: str, output: Path
+) -> None:
+    try:
+        import dpdata
+    except ImportError as exc:
+        raise ImportError(
+            "dpdata is required when training_data.format or "
+            "validation_data.format is specified. Install dpdata to enable "
+            "automatic dataset conversion."
+        ) from exc
+
+    tmp_output = output.with_name(f".{output.name}.{os.getpid()}.tmp")
+    _remove_path(tmp_output)
+    try:
+        multi_systems = dpdata.MultiSystems()
+        try:
+            multi_systems.load_systems_from_file(str(source), fmt=fmt)
+        except NotImplementedError:
+            labeled_system = dpdata.LabeledSystem(str(source), fmt=fmt)
+            multi_systems = dpdata.MultiSystems(labeled_system)
+        if len(multi_systems) == 0:
+            raise RuntimeError(f"No frames were loaded by dpdata from {source}")
+        multi_systems.to(out_fmt, str(tmp_output))
+        _remove_path(output)
+        os.replace(tmp_output, output)
+    except Exception:
+        _remove_path(tmp_output)
+        raise
+
+
+def _convert_system_by_dpdata(
+    source_path: str, fmt: str, out_fmt: str | None
+) -> list[str]:
+    if out_fmt is None:
+        out_fmt = _DPDATA_DEFAULT_OUT_FORMAT
+    source = Path(source_path)
+    fmt = _normalize_dpdata_format(fmt, source)
+    out_fmt = out_fmt.lower()
+    cache_key = (
+        str(Path.cwd().resolve(strict=False)),
+        str(source.resolve(strict=False)),
+        fmt,
+        out_fmt,
+    )
+    if cache_key in _DPDATA_CONVERSION_CACHE:
+        return _DPDATA_CONVERSION_CACHE[cache_key]
+
+    output = _conversion_cache_path(source, fmt, out_fmt)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = output.with_suffix(output.suffix + ".lock")
+    if not _is_conversion_current(source, output):
+        while True:
+            try:
+                lock_fd = os.open(lock_path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            except FileExistsError:
+                if _wait_for_conversion(source, output, lock_path):
+                    break
+                raise TimeoutError(
+                    f"Timed out waiting for dpdata conversion lock {lock_path}"
+                ) from None
+            else:
+                with os.fdopen(lock_fd, "w") as fp:
+                    fp.write(str(os.getpid()))
+                try:
+                    if not _is_conversion_current(source, output):
+                        log.info(
+                            "Converting %s from dpdata format %s to %s at %s",
+                            source,
+                            fmt,
+                            out_fmt,
+                            output,
+                        )
+                        _write_dpdata_conversion(source, fmt, out_fmt, output)
+                finally:
+                    try:
+                        lock_path.unlink()
+                    except FileNotFoundError:
+                        pass
+                break
+
+    if out_fmt == "lmdb":
+        converted_systems = [str(output)]
+    else:
+        converted_systems = expand_sys_str(str(output))
+    if not converted_systems:
+        raise RuntimeError(f"No DeePMD systems were found in converted file {output}")
+    _DPDATA_CONVERSION_CACHE[cache_key] = converted_systems
+    return converted_systems
+
+
 def process_systems(
-    systems: str | list[str], patterns: list[str] | None = None
+    systems: str | list[str],
+    patterns: list[str] | None = None,
+    fmt: str | None = None,
+    out_fmt: str | None = None,
 ) -> list[str]:
     """Process the user-input systems.
 
     If it is a single directory, search for all the systems in the directory.
     If it is a list, each item in the list is treated as a directory to search.
     If it is a single LMDB path, return it directly without expansion.
+    If fmt is specified and is not a DeePMD data format, each input path is
+    converted by dpdata and the converted systems are returned.
     Check if the systems are valid.
 
     Parameters
@@ -831,20 +1297,17 @@ def process_systems(
         The user-input systems
     patterns : list of str, optional
         The patterns to match the systems, by default None
+    fmt : str, optional
+        The dpdata input format. If None, no conversion is performed.
+    out_fmt : str, optional
+        The dpdata output format. If None, ``lmdb`` is used when fmt triggers
+        conversion.
 
     Returns
     -------
     result_systems: list of str
         The valid systems
     """
-    from deepmd.dpmodel.utils.lmdb_data import (
-        is_lmdb,
-    )
-
-    # LMDB path: return directly without expansion
-    if isinstance(systems, str) and is_lmdb(systems):
-        return [systems]
-
     # Normalize input to a list of paths to search
     if isinstance(systems, str):
         search_paths = [systems]
@@ -856,15 +1319,31 @@ def process_systems(
             f"Invalid systems type: {type(systems)}. Must be str or list[str]."
         )
 
+    if fmt is not None:
+        fmt = fmt.lower()
+        if _is_deepmd_data_format(fmt):
+            fmt = None
+
+    from deepmd.dpmodel.utils.lmdb_data import (
+        is_lmdb,
+    )
+
     # Iterate over the search_paths list and apply expansion logic to each path
     result_systems = []
     for path in search_paths:
-        if patterns is None:
+        if fmt is not None:
+            for input_path in _iter_conversion_inputs(path, patterns):
+                result_systems.extend(
+                    _convert_system_by_dpdata(input_path, fmt, out_fmt)
+                )
+        elif is_lmdb(path):
+            result_systems.append(path)
+        elif patterns is None:
             expanded_paths = expand_sys_str(path)
+            result_systems.extend(expanded_paths)
         else:
             expanded_paths = rglob_sys_str(path, patterns)
-
-        result_systems.extend(expanded_paths)
+            result_systems.extend(expanded_paths)
 
     return result_systems
 
@@ -875,7 +1354,7 @@ def get_data(
     type_map: list[str] | None,
     modifier: Any | None,
     multi_task_mode: bool = False,
-) -> DeepmdDataSystem:
+) -> DeepmdDataSystem | LmdbDataSystem:
     """Get the data system.
 
     Parameters
@@ -898,12 +1377,34 @@ def get_data(
     """
     systems = jdata["systems"]
     rglob_patterns = jdata.get("rglob_patterns", None)
-    systems = process_systems(systems, patterns=rglob_patterns)
+    data_format = jdata.get("format", None)
+    out_format = jdata.get("out_format", jdata.get("output_format", None))
+    systems = process_systems(
+        systems, patterns=rglob_patterns, fmt=data_format, out_fmt=out_format
+    )
 
     batch_size = jdata["batch_size"]
     sys_probs = jdata.get("sys_probs", None)
     auto_prob = jdata.get("auto_prob", "prob_sys_size")
     optional_type_map = not multi_task_mode
+
+    from deepmd.dpmodel.utils.lmdb_data import (
+        is_lmdb,
+    )
+
+    if len(systems) == 1 and is_lmdb(systems[0]):
+        if type_map is None:
+            raise ValueError(
+                "LMDB training data requires model/type_map to be set. "
+                "Set model/type_map or choose training_data.out_format="
+                "'deepmd/hdf5' for automatic conversion."
+            )
+        return LmdbDataSystem(
+            lmdb_path=systems[0],
+            type_map=type_map,
+            batch_size=batch_size,
+            auto_prob_style=auto_prob,
+        )
 
     data = DeepmdDataSystem(
         systems=systems,
