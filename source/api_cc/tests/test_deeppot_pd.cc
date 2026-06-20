@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cmath>
 #include <fstream>
+#include <string>
 #include <vector>
 
 #include "DeepPot.h"
@@ -88,6 +89,12 @@ class TestInferDeepPotAPd : public ::testing::Test {
 };
 
 TYPED_TEST_SUITE(TestInferDeepPotAPd, PDValueTypes);
+
+TYPED_TEST(TestInferDeepPotAPd, type_map) {
+  std::string type_map = "stale";
+  this->dp.get_type_map(type_map);
+  EXPECT_EQ(type_map, "O H");
+}
 
 TYPED_TEST(TestInferDeepPotAPd, cpu_build_nlist) {
   using VALUETYPE = TypeParam;

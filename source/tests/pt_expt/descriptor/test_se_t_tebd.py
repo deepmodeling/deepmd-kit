@@ -91,8 +91,11 @@ class TestDescrptSeTTebd(TestCaseSingleFrameWithNlist):
             self.atype_ext,
             self.nlist,
         )
-        # se_t_tebd should return gr and sw, compare only descriptor and sw for now
-        # TODO: investigate why gr is None
+        # se_t_tebd contracts three-body angular information into a rotationally
+        # invariant descriptor, so it does not expose a separate equivariant
+        # single-particle representation (gr). Compare descriptor and sw here.
+        assert gr1 is None
+        assert gr2 is None
         np.testing.assert_allclose(
             rd1.detach().cpu().numpy(),
             rd2,
@@ -100,14 +103,6 @@ class TestDescrptSeTTebd(TestCaseSingleFrameWithNlist):
             atol=atol,
             err_msg=err_msg,
         )
-        if gr1 is not None and gr2 is not None:
-            np.testing.assert_allclose(
-                gr1.detach().cpu().numpy(),
-                gr2,
-                rtol=rtol,
-                atol=atol,
-                err_msg=err_msg,
-            )
         np.testing.assert_allclose(
             sw1.detach().cpu().numpy(),
             sw2,

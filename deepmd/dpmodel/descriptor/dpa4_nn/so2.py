@@ -22,8 +22,11 @@ over the padded edge axis.
 
 Branches guarded with ``NotImplementedError`` (flags unused by the core DPA4
 config): ``so2_attn_res != "none"``, ``layer_scale``, ``s2_activation``,
-``atten_f_mix``, ``atten_v_proj``, ``atten_o_proj``, ``node_wise_s2``,
-``node_wise_so3``, ``message_node_s2``, ``message_node_so3``.
+``atten_f_mix``, ``atten_v_proj``, ``atten_o_proj``.
+
+The cross-mode SO(3)/S2 grid products (``node_wise_s2``/``node_wise_so3`` and
+``message_node_s2``/``message_node_so3``) are ported and wired into the
+convolution, mirroring the pt ``SO2Convolution`` forward placement.
 """
 
 from __future__ import (
@@ -63,6 +66,10 @@ from .activation import (
 )
 from .attention import (
     segment_envelope_gated_softmax,
+)
+from .grid_net import (
+    S2GridNet,
+    SO3GridNet,
 )
 from .indexing import (
     build_m_major_index,
@@ -899,21 +906,25 @@ class SO2Convolution(NativeOP):
         self.node_wise_so3 = bool(node_wise_so3)
         self.message_node_s2 = bool(message_node_s2)
         self.message_node_so3 = bool(message_node_so3)
-        if self.node_wise_s2 or self.node_wise_so3:
-            raise NotImplementedError(
-                "node_wise_s2/node_wise_so3 grid products are not ported to dpmodel"
-            )
-        if self.message_node_s2 or self.message_node_so3:
-            raise NotImplementedError(
-                "message_node_s2/message_node_so3 grid products are not ported "
-                "to dpmodel"
-            )
         self.lebedev_quadrature = bool(lebedev_quadrature)
         self.s2_grid_method = "lebedev" if self.lebedev_quadrature else "e3nn"
         self.s2_grid_resolution = resolve_s2_grid_resolution(
             self.lmax,
             self.mmax,
             method=self.s2_grid_method,
+        )
+        base_full_grid_resolution = resolve_s2_grid_resolution(
+            self.lmax,
+            self.lmax,
+            method=self.s2_grid_method,
+        )
+        # Mirror pt: the e3nn product-grid branch squares the max resolution.
+        # dpmodel only ports the Lebedev backend (the e3nn S2GridNet raises),
+        # so this just preserves the config-recorded resolution for parity.
+        self.s2_full_grid_resolution = (
+            [max(base_full_grid_resolution), max(base_full_grid_resolution)]
+            if self.s2_grid_method == "e3nn"
+            else base_full_grid_resolution
         )
         self.activation_function = str(activation_function)
         self.attn_n_focus = self.n_focus
@@ -964,6 +975,8 @@ class SO2Convolution(NativeOP):
         seed_gate = child_seed(seed, 4)
         seed_radial_hidden = child_seed(seed, 6)
         seed_radial_degree = child_seed(seed, 7)
+        seed_node_wise_s2 = child_seed(seed, 8)
+        seed_message_node_s2 = child_seed(seed, 9)
 
         # === Step 3. Multiple SO2Linear layers ===
         # (s2_activation is guarded above, so out_channels == so2_focus_dim.)
@@ -1127,6 +1140,100 @@ class SO2Convolution(NativeOP):
                 trainable=trainable,
             )
 
+        # === Step 8.5. Optional cross-mode grid products ===
+        # ``op_type`` selection mirrors pt: ``branch`` (count > 0) takes
+        # precedence over ``mlp``, else ``glu``. When both ``*_s2`` and
+        # ``*_so3`` are set the SO(3) branch wins (per the argcheck doc).
+        node_wise_op = (
+            "branch"
+            if self.node_wise_grid_branch > 0
+            else ("mlp" if self.node_wise_grid_mlp else "glu")
+        )
+        node_wise_branches = max(1, self.node_wise_grid_branch)
+        message_node_op = (
+            "branch"
+            if self.message_node_grid_branch > 0
+            else ("mlp" if self.message_node_grid_mlp else "glu")
+        )
+        message_node_branches = max(1, self.message_node_grid_branch)
+        self.node_wise_grid_product: S2GridNet | SO3GridNet | None = None
+        if self.node_wise_s2 or self.node_wise_so3:
+            if self.node_wise_so3:
+                self.node_wise_grid_product = SO3GridNet(
+                    lmax=self.lmax,
+                    mmax=self.mmax,
+                    kmax=self.kmax,
+                    channels=self.so2_focus_dim,
+                    n_focus=self.n_focus,
+                    mode="cross",
+                    op_type=node_wise_op,
+                    precision=self.compute_precision,
+                    layout="flat",
+                    coefficient_layout="m_major",
+                    grid_branches=node_wise_branches,
+                    mlp_bias=self.mlp_bias,
+                    residual_scale_init=1e-3,
+                    trainable=trainable,
+                    seed=seed_node_wise_s2,
+                )
+            else:
+                self.node_wise_grid_product = S2GridNet(
+                    lmax=self.lmax,
+                    mmax=self.mmax,
+                    channels=self.so2_focus_dim,
+                    n_focus=self.n_focus,
+                    mode="cross",
+                    op_type=node_wise_op,
+                    precision=self.compute_precision,
+                    layout="flat",
+                    grid_resolution_list=self.s2_grid_resolution,
+                    coefficient_layout="m_major",
+                    grid_method=self.s2_grid_method,
+                    grid_branches=node_wise_branches,
+                    mlp_bias=self.mlp_bias,
+                    residual_scale_init=1e-3,
+                    trainable=trainable,
+                    seed=seed_node_wise_s2,
+                )
+        self.message_node_grid_product: S2GridNet | SO3GridNet | None = None
+        if self.message_node_s2 or self.message_node_so3:
+            if self.message_node_so3:
+                self.message_node_grid_product = SO3GridNet(
+                    lmax=self.lmax,
+                    kmax=self.kmax,
+                    channels=self.so2_focus_dim,
+                    n_focus=self.n_focus,
+                    mode="cross",
+                    op_type=message_node_op,
+                    precision=self.compute_precision,
+                    layout="flat",
+                    coefficient_layout="packed",
+                    grid_branches=message_node_branches,
+                    mlp_bias=self.mlp_bias,
+                    residual_scale_init=1e-3,
+                    trainable=trainable,
+                    seed=seed_message_node_s2,
+                )
+            else:
+                self.message_node_grid_product = S2GridNet(
+                    lmax=self.lmax,
+                    mmax=self.lmax,
+                    channels=self.so2_focus_dim,
+                    n_focus=self.n_focus,
+                    mode="cross",
+                    op_type=message_node_op,
+                    precision=self.compute_precision,
+                    layout="flat",
+                    grid_resolution_list=self.s2_full_grid_resolution,
+                    grid_method=self.s2_grid_method,
+                    grid_branches=message_node_branches,
+                    mlp_bias=self.mlp_bias,
+                    residual_scale_init=1e-3,
+                    trainable=trainable,
+                    coefficient_layout="packed",
+                    seed=seed_message_node_s2,
+                )
+
         # === Step 9. Pre-focus channel mixing ===
         # This projects the full channel width before the SO(2) focus split.
         self.pre_focus_mix = SO3Linear(
@@ -1183,7 +1290,13 @@ class SO2Convolution(NativeOP):
         device = array_api_compat.device(x)
         src, dst = edge_cache.src, edge_cache.dst
         n_node = x.shape[0]
-        n_edge = int(src.shape[0])
+        # Keep ``n_edge``/``n_node`` symbolic (no ``int()``): they are the
+        # products ``nf*nloc*nnei`` / ``nf*nloc``. Casting to a Python int
+        # specializes them to the trace-time sample shape (breaking
+        # torch.export with a dynamic ``nloc`` dim); the ``Mod`` check stays
+        # statically known and the ``(n_node, nnei, ...)`` reshape below
+        # recovers the layout symbolically.
+        n_edge = src.shape[0]
         if n_node <= 0 or n_edge % n_node != 0:
             raise ValueError(
                 "padded-edge layout requires E to be a multiple of N; "
@@ -1214,6 +1327,13 @@ class SO2Convolution(NativeOP):
         src_idx = xp.astype(xp.reshape(src, (n_edge,)), xp.int64)
         x_src = xp.take(x, src_idx, axis=0)  # (E, D, C_wide)
         x_local = xp.matmul(D_m_prime, x_src)  # (E, D_m, C_wide)
+        # pt rotates the *destination* node into the same edge frame for the
+        # node-wise cross-mode grid product (raw, before radial modulation).
+        x_dst_local: Any = None
+        if self.node_wise_grid_product is not None:
+            dst_idx_nw = xp.astype(xp.reshape(dst, (n_edge,)), xp.int64)
+            x_dst = xp.take(x, dst_idx_nw, axis=0)  # (E, D, C_wide)
+            x_dst_local = xp.matmul(D_m_prime, x_dst)  # (E, D_m, C_wide)
 
         # === Step 3. Select radial/type features for reduced layout ===
         degree_index_m = xp_asarray_nodetach(xp, self.degree_index_m, device=device)
@@ -1224,6 +1344,11 @@ class SO2Convolution(NativeOP):
             x_local = x_local * rad_feat
         else:
             x_local = self.radial_degree_mixer(x_local, rad_feat)
+        # pt Step 3: edge-local cross-mode grid product between the
+        # radial-fused source (query) and the raw destination (context),
+        # added as a residual in the reduced m-major layout (E, D_m, C_wide).
+        if self.node_wise_grid_product is not None:
+            x_local = x_local + self.node_wise_grid_product(x_local, x_dst_local)
         rad_feat_l0_focus = xp.reshape(
             rad_feat[:, 0, :], (n_edge, self.n_focus, self.so2_focus_dim)
         )  # (E, F, Cf)
@@ -1474,6 +1599,13 @@ class SO2Convolution(NativeOP):
                 x.dtype,
             )  # (N, D, C_wide)
 
+        # === Step 9. Optional message-node grid product ===
+        # pt: post-aggregation packed-layout cross-mode product between the
+        # aggregated message (query) and the pre-focus-mixed node features
+        # (context), added as a residual before the final channel mixing.
+        if self.message_node_grid_product is not None:
+            out = out + self.message_node_grid_product(out, x)
+
         # === Step 10. Final channel mixing ===
         out = self.post_focus_mix(out[:, :, None, :])[:, :, 0, :]
         return out  # (N, D, C)
@@ -1524,6 +1656,15 @@ class SO2Convolution(NativeOP):
         if self.radial_degree_mixer is not None:
             for key, value in self.radial_degree_mixer._variables().items():
                 variables[f"radial_degree_mixer.{key}"] = value
+        # Cross-mode grid products: nest each net's @variables under the pt
+        # state_dict attribute name so ``deserialize(pt.serialize())`` matches.
+        for name, grid in (
+            ("node_wise_grid_product", self.node_wise_grid_product),
+            ("message_node_grid_product", self.message_node_grid_product),
+        ):
+            if grid is not None:
+                for key, value in grid.serialize()["@variables"].items():
+                    variables[f"{name}.{key}"] = value
         for name, mix in (
             ("pre_focus_mix", self.pre_focus_mix),
             ("post_focus_mix", self.post_focus_mix),
@@ -1683,6 +1824,39 @@ class SO2Convolution(NativeOP):
             )
         if self.radial_degree_mixer is not None:
             self.radial_degree_mixer._load_variables(sub_vars("radial_degree_mixer"))
+
+        # Grid products have no ``_load_variables``; reuse their config (from a
+        # fresh ``serialize()``) plus the loaded @variables and re-deserialize
+        # in place. This exercises the full grid-net serialize round-trip.
+        def _grid_product_vars(prefix: str, template: dict) -> dict:
+            # Reject schema drift: the loaded @variables keys must exactly match
+            # the fresh template's, so an unexpected ``<prefix>.*`` key fails the
+            # conversion loudly instead of being silently dropped.
+            loaded = sub_vars(prefix)
+            expected = set(template["@variables"])
+            if set(loaded) != expected:
+                raise ValueError(
+                    f"{prefix} @variables keys {sorted(loaded)} do not match "
+                    f"the expected keys {sorted(expected)}"
+                )
+            return loaded
+
+        if self.node_wise_grid_product is not None:
+            template = self.node_wise_grid_product.serialize()
+            template["@variables"] = _grid_product_vars(
+                "node_wise_grid_product", template
+            )
+            self.node_wise_grid_product = type(self.node_wise_grid_product).deserialize(
+                template
+            )
+        if self.message_node_grid_product is not None:
+            template = self.message_node_grid_product.serialize()
+            template["@variables"] = _grid_product_vars(
+                "message_node_grid_product", template
+            )
+            self.message_node_grid_product = type(
+                self.message_node_grid_product
+            ).deserialize(template)
         for name, mix in (
             ("pre_focus_mix", self.pre_focus_mix),
             ("post_focus_mix", self.post_focus_mix),

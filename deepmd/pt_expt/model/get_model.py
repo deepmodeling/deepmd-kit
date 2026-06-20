@@ -7,6 +7,7 @@ constructed objects are ``torch.nn.Module`` subclasses.
 """
 
 import copy
+import logging
 from typing import (
     Any,
 )
@@ -43,6 +44,11 @@ from deepmd.pt_expt.model.spin_ener_model import (
 from deepmd.utils.spin import (
     Spin,
 )
+
+log = logging.getLogger(__name__)
+
+# Warn at most once per process for backend-ignored switches (keyed by name).
+_WARNED_ONCE: set[str] = set()
 
 
 def _get_standard_model_components(
@@ -128,6 +134,12 @@ def get_sezm_model(data: dict) -> EnergyModel:
     ("highest") matmul precision, which is numerically conservative.
     """
     data = copy.deepcopy(data)
+    if bool(data.get("enable_tf32", True)) and "enable_tf32" not in _WARNED_ONCE:
+        log.warning(
+            "`enable_tf32` has no effect on the pt_expt backend, which "
+            "always runs at full ('highest') matmul precision; ignoring it."
+        )
+        _WARNED_ONCE.add("enable_tf32")
     if "spin" in data:
         raise NotImplementedError(
             "Spin DPA4/SeZM models are not supported in the pt_expt backend."

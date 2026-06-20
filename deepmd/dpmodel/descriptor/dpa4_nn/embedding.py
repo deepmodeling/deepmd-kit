@@ -290,8 +290,14 @@ class GeometricInitialEmbedding(NativeOP):
             return xp.zeros(
                 (n_nodes, self.ebed_dim, self.channels), dtype=dtype, device=device
             )
-        n_edge = int(edge_cache.dst.shape[0])
-        nnei = _edge_layout(n_edge, int(n_nodes))
+        # Keep ``n_edge``/``n_nodes`` symbolic (no ``int()``): they are the
+        # products ``nf*nloc*nnei`` / ``nf*nloc``. Casting to a Python int
+        # specializes them to the trace-time sample shape (e.g. nf*nloc==14),
+        # which breaks torch.export with a dynamic ``nloc`` dim. ``_edge_layout``
+        # returns a symbolic ``nnei`` and the masked-sum reshapes below use
+        # ``-1`` for the node axis to recover it symbolically.
+        n_edge = edge_cache.dst.shape[0]
+        nnei = _edge_layout(n_edge, n_nodes)
 
         # === Step 2. Gather all m=0 columns (l >= 1) in one shot ===
         # pt embedding.py:235-241 pairs one packed non-scalar row with the
@@ -345,7 +351,7 @@ class GeometricInitialEmbedding(NativeOP):
         non_scalar_out = xp.sum(
             xp.reshape(
                 non_scalar_message,
-                (n_nodes, nnei, self.ebed_dim - 1, self.channels),
+                (-1, nnei, self.ebed_dim - 1, self.channels),
             ),
             axis=1,
         )  # (N, D-1, C)
@@ -592,8 +598,11 @@ class EnvironmentInitialEmbedding(NativeOP):
         edge_vec = edge_cache.edge_vec  # (E, 3)
         edge_rbf = edge_cache.edge_rbf  # (E, n_radial)
         edge_env = edge_cache.edge_env  # (E, 1)
-        n_edge = int(dst.shape[0])
-        nnei = _edge_layout(n_edge, int(n_nodes))
+        # Keep ``n_edge``/``n_nodes`` symbolic (no ``int()``); see the matching
+        # comment in ``GeometricInitialEmbedding.call`` for why casting to a
+        # Python int breaks torch.export with a dynamic ``nloc`` dim.
+        n_edge = dst.shape[0]
+        nnei = _edge_layout(n_edge, n_nodes)
 
         # === Step 1. Construct r_tilde = [s, s*r_hat] ===
         # s = edge_env * (1/r), r_hat = edge_vec / r (pt embedding.py:489-495)
@@ -641,7 +650,7 @@ class EnvironmentInitialEmbedding(NativeOP):
                 xp.reshape(edge_mask, (n_edge, 1)), outer_flat.dtype
             )
         env_agg = xp.sum(
-            xp.reshape(outer_flat, (n_nodes, nnei, 4 * self.embed_dim)),
+            xp.reshape(outer_flat, (-1, nnei, 4 * self.embed_dim)),
             axis=1,
         )  # (N, 4*embed_dim)
         env_agg = xp.reshape(env_agg, (n_nodes, 4, self.embed_dim))
