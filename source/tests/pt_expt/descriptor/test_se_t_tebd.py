@@ -18,14 +18,16 @@ from deepmd.pt_expt.utils.env import (
     PRECISION_DICT,
 )
 
-from ...pt.model.test_env_mat import (
+from ...common.test_mixins import (
     TestCaseSingleFrameWithNlist,
-)
-from ...pt.model.test_mlp import (
     get_tols,
 )
 from ...seed import (
     GLOBAL_SEED,
+)
+from ..export_helpers import (
+    export_save_load_and_compare,
+    make_descriptor_dynamic_shapes,
 )
 
 
@@ -89,8 +91,11 @@ class TestDescrptSeTTebd(TestCaseSingleFrameWithNlist):
             self.atype_ext,
             self.nlist,
         )
-        # se_t_tebd should return gr and sw, compare only descriptor and sw for now
-        # TODO: investigate why gr is None
+        # se_t_tebd contracts three-body angular information into a rotationally
+        # invariant descriptor, so it does not expose a separate equivariant
+        # single-particle representation (gr). Compare descriptor and sw here.
+        assert gr1 is None
+        assert gr2 is None
         np.testing.assert_allclose(
             rd1.detach().cpu().numpy(),
             rd2,
@@ -98,14 +103,6 @@ class TestDescrptSeTTebd(TestCaseSingleFrameWithNlist):
             atol=atol,
             err_msg=err_msg,
         )
-        if gr1 is not None and gr2 is not None:
-            np.testing.assert_allclose(
-                gr1.detach().cpu().numpy(),
-                gr2,
-                rtol=rtol,
-                atol=atol,
-                err_msg=err_msg,
-            )
         np.testing.assert_allclose(
             sw1.detach().cpu().numpy(),
             sw2,
@@ -143,6 +140,51 @@ class TestDescrptSeTTebd(TestCaseSingleFrameWithNlist):
             torch.tensor(self.nlist, dtype=int, device=self.device),
         )
         torch.export.export(dd0, inputs)
+
+    @pytest.mark.parametrize("prec", ["float64", "float32"])  # precision
+    def test_compressed_forward(self, prec) -> None:
+        from deepmd.pt.cxx_op import (
+            ENABLE_CUSTOMIZED_OP,
+        )
+
+        if not ENABLE_CUSTOMIZED_OP:
+            pytest.skip("Custom OP library not built")
+        rng = np.random.default_rng(GLOBAL_SEED)
+        _, _, nnei = self.nlist.shape
+        davg = rng.normal(size=(self.nt, nnei, 4))
+        dstd = rng.normal(size=(self.nt, nnei, 4))
+        dstd = 0.1 + np.abs(dstd)
+
+        dtype = PRECISION_DICT[prec]
+        atol = 1e-5 if prec == "float32" else 1e-10
+        dd0 = DescrptSeTTebd(
+            self.rcut,
+            self.rcut_smth,
+            self.sel,
+            self.nt,
+            precision=prec,
+            tebd_input_mode="strip",
+            seed=GLOBAL_SEED,
+        ).to(self.device)
+        dd0.davg = torch.tensor(davg, dtype=dtype, device=self.device)
+        dd0.dstd = torch.tensor(dstd, dtype=dtype, device=self.device)
+
+        coord_ext = torch.tensor(self.coord_ext, dtype=dtype, device=self.device)
+        atype_ext = torch.tensor(self.atype_ext, dtype=int, device=self.device)
+        nlist = torch.tensor(self.nlist, dtype=int, device=self.device)
+
+        # uncompressed forward
+        rd0, _, _, _, _ = dd0(coord_ext, atype_ext, nlist)
+        # enable compression and forward again
+        dd0.enable_compression(0.5)
+        rd1, _, _, _, _ = dd0(coord_ext, atype_ext, nlist)
+
+        assert rd0.shape == rd1.shape
+        np.testing.assert_allclose(
+            rd0.detach().cpu().numpy(),
+            rd1.detach().cpu().numpy(),
+            atol=atol,
+        )
 
     @pytest.mark.parametrize("prec", ["float64"])  # precision
     def test_make_fx(self, prec) -> None:
@@ -192,3 +234,46 @@ class TestDescrptSeTTebd(TestCaseSingleFrameWithNlist):
             rtol=rtol,
             atol=atol,
         )
+
+        # --- symbolic trace + export + .pte round-trip ---
+        dynamic_shapes = make_descriptor_dynamic_shapes(has_mapping=False)
+        inputs = (coord_ext, atype_ext, nlist)
+        export_save_load_and_compare(
+            fn,
+            inputs,
+            (rd_eager, grad_eager),
+            dynamic_shapes,
+            rtol=rtol,
+            atol=atol,
+        )
+
+    @pytest.mark.parametrize("shared_level", [0, 1])  # sharing level
+    def test_share_params(self, shared_level) -> None:
+        """share_params level 0: share all; level 1: share type_embedding only."""
+        rng = np.random.default_rng(GLOBAL_SEED)
+        _, _, nnei = self.nlist.shape
+        davg0 = rng.normal(size=(self.nt, nnei, 4))
+        dstd0 = 0.1 + np.abs(rng.normal(size=(self.nt, nnei, 4)))
+
+        dd0 = DescrptSeTTebd(
+            self.rcut, self.rcut_smth, self.sel, self.nt, seed=GLOBAL_SEED
+        ).to(self.device)
+        dd1 = DescrptSeTTebd(
+            self.rcut, self.rcut_smth, self.sel, self.nt, seed=GLOBAL_SEED + 1
+        ).to(self.device)
+        dd0.davg = torch.tensor(davg0, dtype=torch.float64, device=self.device)
+        dd0.dstd = torch.tensor(dstd0, dtype=torch.float64, device=self.device)
+
+        dd1.share_params(dd0, shared_level=shared_level)
+
+        # type_embedding is always shared
+        assert dd1._modules["type_embedding"] is dd0._modules["type_embedding"]
+
+        if shared_level == 0:
+            assert dd1._modules["se_ttebd"] is dd0._modules["se_ttebd"]
+        elif shared_level == 1:
+            assert dd1._modules["se_ttebd"] is not dd0._modules["se_ttebd"]
+
+        # invalid level raises
+        with pytest.raises(NotImplementedError):
+            dd1.share_params(dd0, shared_level=2)

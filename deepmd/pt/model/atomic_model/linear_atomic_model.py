@@ -57,7 +57,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         self,
         models: list[BaseAtomicModel],
         type_map: list[str],
-        weights: str | list[float] | None = "mean",
+        weights: str | list[float] = "mean",
         **kwargs: Any,
     ) -> None:
         super().__init__(type_map, **kwargs)
@@ -233,6 +233,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         comm_dict: dict[str, torch.Tensor] | None = None,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Return atomic prediction.
 
@@ -257,8 +258,8 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
             the result dict, defined by the fitting net output def.
         """
         nframes, nloc, nnei = nlist.shape
-        if self.do_grad_r() or self.do_grad_c():
-            extended_coord.requires_grad_(True)
+        if (self.do_grad_r() or self.do_grad_c()) and not extended_coord.requires_grad:
+            extended_coord = extended_coord.clone().requires_grad_(True)
         extended_coord = extended_coord.view(nframes, -1, 3)
         sorted_rcuts, sorted_sels = self._sort_rcuts_sels()
         nlists = build_multiple_neighbor_list(
@@ -292,6 +293,7 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
                     fparam,
                     aparam,
                     comm_dict=comm_dict,
+                    charge_spin=charge_spin,
                 )["energy"]
             )
         weights = self._compute_weight(extended_coord, extended_atype, nlists_)
@@ -373,10 +375,11 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
         dd.update(
             {
                 "@class": "Model",
-                "@version": 2,
+                "@version": 3,
                 "type": "linear",
                 "models": [model.serialize() for model in self.models],
                 "type_map": self.type_map,
+                "weights": self.weights,
             }
         )
         return dd
@@ -384,7 +387,9 @@ class LinearEnergyAtomicModel(BaseAtomicModel):
     @classmethod
     def deserialize(cls, data: dict) -> "LinearEnergyAtomicModel":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 2), 2, 1)
+        check_version_compatibility(data.pop("@version", 2), 3, 1)
+        if "weights" not in data:
+            data["weights"] = "mean"
         data.pop("@class", None)
         data.pop("type", None)
         models = [

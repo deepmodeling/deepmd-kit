@@ -12,7 +12,7 @@ from deepmd.pt_expt.utils.exclude_mask import (
     PairExcludeMask,
 )
 
-from ...pt.model.test_env_mat import (
+from ...common.test_mixins import (
     TestCaseSingleFrameWithNlist,
 )
 

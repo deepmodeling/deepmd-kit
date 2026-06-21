@@ -18,14 +18,16 @@ from deepmd.pt_expt.utils.env import (
     PRECISION_DICT,
 )
 
-from ...pt.model.test_env_mat import (
+from ...common.test_mixins import (
     TestCaseSingleFrameWithNlist,
-)
-from ...pt.model.test_mlp import (
     get_tols,
 )
 from ...seed import (
     GLOBAL_SEED,
+)
+from ..export_helpers import (
+    export_save_load_and_compare,
+    make_descriptor_dynamic_shapes,
 )
 
 
@@ -33,6 +35,14 @@ class TestDescrptDPA1(TestCaseSingleFrameWithNlist):
     def setup_method(self) -> None:
         TestCaseSingleFrameWithNlist.setUp(self)
         self.device = env.DEVICE
+
+    @pytest.mark.parametrize("attn", [0, 2])  # attn_layer (zero / non-zero paths)
+    def test_get_numb_attn_layer(self, attn) -> None:
+        """Cover both code paths: attn_layer == 0 and attn_layer > 0."""
+        dd = DescrptDPA1(
+            self.rcut, self.rcut_smth, self.sel_mix, self.nt, attn_layer=attn
+        )
+        assert dd.get_numb_attn_layer() == attn
 
     @pytest.mark.parametrize("idt", [False, True])  # resnet_dt
     @pytest.mark.parametrize("sm", [False, True])  # smooth_type_embedding
@@ -132,6 +142,56 @@ class TestDescrptDPA1(TestCaseSingleFrameWithNlist):
         )
         torch.export.export(dd0, inputs)
 
+    @pytest.mark.parametrize("prec", ["float64", "float32"])  # precision
+    def test_compressed_forward(self, prec) -> None:
+        from deepmd.pt.cxx_op import (
+            ENABLE_CUSTOMIZED_OP,
+        )
+
+        if not ENABLE_CUSTOMIZED_OP:
+            pytest.skip("Custom OP library not built")
+        rng = np.random.default_rng(GLOBAL_SEED)
+        _, _, nnei = self.nlist.shape
+        davg = rng.normal(size=(self.nt, nnei, 4))
+        dstd = rng.normal(size=(self.nt, nnei, 4))
+        dstd = 0.1 + np.abs(dstd)
+
+        dtype = PRECISION_DICT[prec]
+        # float32 tabulation error grows with embedding-net output magnitude;
+        # bias init N(0,1) (matching pt) widens the range vs. the earlier
+        # Glorot bias init, observed max-abs diff ~3.2e-5 — set 4e-5 with
+        # ~25% headroom over the measured value.
+        atol = 4e-5 if prec == "float32" else 1e-10
+        dd0 = DescrptDPA1(
+            self.rcut,
+            self.rcut_smth,
+            self.sel_mix,
+            self.nt,
+            precision=prec,
+            tebd_input_mode="strip",
+            attn_layer=0,
+            seed=GLOBAL_SEED,
+        ).to(self.device)
+        dd0.se_atten.mean = torch.tensor(davg, dtype=dtype, device=self.device)
+        dd0.se_atten.stddev = torch.tensor(dstd, dtype=dtype, device=self.device)
+
+        coord_ext = torch.tensor(self.coord_ext, dtype=dtype, device=self.device)
+        atype_ext = torch.tensor(self.atype_ext, dtype=int, device=self.device)
+        nlist = torch.tensor(self.nlist, dtype=int, device=self.device)
+
+        # uncompressed forward
+        rd0, _, _, _, _ = dd0(coord_ext, atype_ext, nlist)
+        # enable compression and forward again
+        dd0.enable_compression(0.5)
+        rd1, _, _, _, _ = dd0(coord_ext, atype_ext, nlist)
+
+        assert rd0.shape == rd1.shape
+        np.testing.assert_allclose(
+            rd0.detach().cpu().numpy(),
+            rd1.detach().cpu().numpy(),
+            atol=atol,
+        )
+
     @pytest.mark.parametrize("prec", ["float64"])  # precision
     def test_make_fx(self, prec) -> None:
         rng = np.random.default_rng(GLOBAL_SEED)
@@ -179,3 +239,95 @@ class TestDescrptDPA1(TestCaseSingleFrameWithNlist):
             rtol=rtol,
             atol=atol,
         )
+
+        # --- symbolic trace + export + .pte round-trip ---
+        dynamic_shapes = make_descriptor_dynamic_shapes(has_mapping=False)
+        inputs = (coord_ext, atype_ext, nlist)
+        export_save_load_and_compare(
+            fn,
+            inputs,
+            (rd_eager, grad_eager),
+            dynamic_shapes,
+            rtol=rtol,
+            atol=atol,
+        )
+
+    @pytest.mark.parametrize("shared_level", [0, 1])  # sharing level
+    def test_share_params(self, shared_level) -> None:
+        """share_params level 0: share all; level 1: share type_embedding only."""
+        rng = np.random.default_rng(GLOBAL_SEED)
+        _, _, nnei = self.nlist.shape
+        davg0 = rng.normal(size=(self.nt, nnei, 4))
+        dstd0 = 0.1 + np.abs(rng.normal(size=(self.nt, nnei, 4)))
+
+        dd0 = DescrptDPA1(
+            self.rcut,
+            self.rcut_smth,
+            self.sel_mix,
+            self.nt,
+            attn_layer=2,
+            seed=GLOBAL_SEED,
+        ).to(self.device)
+        dd1 = DescrptDPA1(
+            self.rcut,
+            self.rcut_smth,
+            self.sel_mix,
+            self.nt,
+            attn_layer=2,
+            seed=GLOBAL_SEED + 1,
+        ).to(self.device)
+        dd0.se_atten.mean = torch.tensor(davg0, dtype=torch.float64, device=self.device)
+        dd0.se_atten.stddev = torch.tensor(
+            dstd0, dtype=torch.float64, device=self.device
+        )
+
+        dd1.share_params(dd0, shared_level=shared_level)
+
+        # type_embedding is always shared
+        assert dd1._modules["type_embedding"] is dd0._modules["type_embedding"]
+
+        if shared_level == 0:
+            assert dd1._modules["se_atten"] is dd0._modules["se_atten"]
+        elif shared_level == 1:
+            assert dd1._modules["se_atten"] is not dd0._modules["se_atten"]
+
+        # invalid level raises
+        with pytest.raises(NotImplementedError):
+            dd1.share_params(dd0, shared_level=2)
+
+
+def test_has_message_passing_across_ranks() -> None:
+    """DPA1 (se_atten) is single-layer attention; no cross-rank
+    feature exchange is needed at multi-rank deployment.
+    """
+    import copy
+
+    from deepmd.dpmodel.model.model import (
+        get_model,
+    )
+
+    config = {
+        "type_map": ["O", "H"],
+        "descriptor": {
+            "type": "se_atten",
+            "rcut": 6.0,
+            "rcut_smth": 0.5,
+            "sel": 20,
+            "neuron": [2, 4],
+            "axis_neuron": 2,
+            "attn": 5,
+            "attn_layer": 1,
+            "type_one_side": True,
+            "precision": "float64",
+            "seed": 1,
+        },
+        "fitting_net": {
+            "neuron": [4, 4],
+            "resnet_dt": True,
+            "precision": "float64",
+            "seed": 1,
+        },
+    }
+    desc = get_model(copy.deepcopy(config)).atomic_model.descriptor
+    assert desc.has_message_passing() is False
+    assert desc.has_message_passing_across_ranks() is False

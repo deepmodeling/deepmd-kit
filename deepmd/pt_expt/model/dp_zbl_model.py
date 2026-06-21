@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import types
 from typing import (
     Any,
 )
@@ -16,6 +17,7 @@ from deepmd.dpmodel.model.dp_model import (
 )
 
 from .make_model import (
+    _pad_nlist_for_export,
     make_model,
 )
 from .model import (
@@ -43,6 +45,7 @@ class DPZBLModel(DPModelCommon, DPZBLModel_):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         model_ret = self.call_common(
             coord,
@@ -50,6 +53,7 @@ class DPZBLModel(DPModelCommon, DPZBLModel_):
             box,
             fparam=fparam,
             aparam=aparam,
+            charge_spin=charge_spin,
             do_atomic_virial=do_atomic_virial,
         )
         model_predict = {}
@@ -74,6 +78,7 @@ class DPZBLModel(DPModelCommon, DPZBLModel_):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         model_ret = self.call_common_lower(
             extended_coord,
@@ -82,6 +87,7 @@ class DPZBLModel(DPModelCommon, DPZBLModel_):
             mapping,
             fparam=fparam,
             aparam=aparam,
+            charge_spin=charge_spin,
             do_atomic_virial=do_atomic_virial,
         )
         model_predict = {}
@@ -126,6 +132,8 @@ class DPZBLModel(DPModelCommon, DPZBLModel_):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
+        **make_fx_kwargs: Any,
     ) -> torch.nn.Module:
         model = self
 
@@ -136,8 +144,10 @@ class DPZBLModel(DPModelCommon, DPZBLModel_):
             mapping: torch.Tensor | None,
             fparam: torch.Tensor | None,
             aparam: torch.Tensor | None,
+            charge_spin: torch.Tensor | None,
         ) -> dict[str, torch.Tensor]:
             extended_coord = extended_coord.detach().requires_grad_(True)
+            nlist = _pad_nlist_for_export(nlist)
             return model.forward_lower(
                 extended_coord,
                 extended_atype,
@@ -145,9 +155,25 @@ class DPZBLModel(DPModelCommon, DPZBLModel_):
                 mapping,
                 fparam=fparam,
                 aparam=aparam,
+                charge_spin=charge_spin,
                 do_atomic_virial=do_atomic_virial,
             )
 
-        return make_fx(fn)(
-            extended_coord, extended_atype, nlist, mapping, fparam, aparam
-        )
+        # Force `_format_nlist`'s sort branch into the compiled graph so the
+        # exported model tolerates oversized nlists at runtime — see
+        # make_model.py for the full rationale.
+        _orig_need_sort = model.need_sorted_nlist_for_lower
+        model.need_sorted_nlist_for_lower = types.MethodType(lambda self: True, model)
+        try:
+            traced = make_fx(fn, **make_fx_kwargs)(
+                extended_coord,
+                extended_atype,
+                nlist,
+                mapping,
+                fparam,
+                aparam,
+                charge_spin,
+            )
+        finally:
+            model.need_sorted_nlist_for_lower = _orig_need_sort
+        return traced

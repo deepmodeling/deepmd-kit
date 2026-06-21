@@ -9,11 +9,17 @@ from .dipole_model import (
 from .dos_model import (
     DOSModel,
 )
+from .dp_linear_model import (
+    LinearEnergyModel,
+)
 from .dp_zbl_model import (
     DPZBLModel,
 )
 from .ener_model import (
     EnergyModel,
+)
+from .frozen import (
+    FrozenModel,
 )
 from .get_model import (
     get_model,
@@ -27,6 +33,9 @@ from .polar_model import (
 from .property_model import (
     PropertyModel,
 )
+from .spin_ener_model import (
+    SpinEnergyModel,
+)
 
 __all__ = [
     "BaseModel",
@@ -34,8 +43,11 @@ __all__ = [
     "DPZBLModel",
     "DipoleModel",
     "EnergyModel",
+    "FrozenModel",
+    "LinearEnergyModel",
     "PolarModel",
     "PropertyModel",
+    "SpinEnergyModel",
     "get_model",
     "make_hessian_model",
 ]

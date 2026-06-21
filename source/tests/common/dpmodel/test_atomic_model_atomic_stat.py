@@ -208,6 +208,7 @@ class TestAtomicModelStat(unittest.TestCase, TestCaseSingleFrameWithNlist):
         expected_std[0, :, :1] = np.array([0.0, 0.816496]).reshape(
             2, 1
         )  # updating std for foo based on [5.0, 5.0, 5.0], [5.0, 6.0, 7.0]]
+        expected_std[1, :, :] = np.zeros([2, 2])
         np.testing.assert_almost_equal(md0.out_std, expected_std, decimal=4)
         # nt x odim
         foo_bias = np.array([5.0, 6.0]).reshape(2, 1)

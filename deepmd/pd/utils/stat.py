@@ -144,7 +144,7 @@ def _post_process_stat(
     """Post process the statistics.
 
     For global statistics, we do not have the std for each type of atoms,
-    thus fake the output std by ones for all the types.
+    thus broadcast the global std to all the types.
     If the shape of out_std is already the same as out_bias,
     we do not need to do anything.
 
@@ -154,7 +154,9 @@ def _post_process_stat(
         if vv.shape == out_std[kk].shape:
             new_std[kk] = out_std[kk]
         else:
-            new_std[kk] = np.ones_like(vv)
+            ntypes = vv.shape[0]
+            reps = [ntypes] + [1] * (vv.ndim - 1)
+            new_std[kk] = np.tile(out_std[kk], reps)
     return out_bias, new_std
 
 

@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import datetime
 import functools
 import json
 import logging
@@ -7,6 +8,9 @@ from collections.abc import (
     Callable,
     Generator,
     Iterable,
+)
+from contextlib import (
+    nullcontext,
 )
 from copy import (
     deepcopy,
@@ -35,6 +39,7 @@ from deepmd.loggers.training import (
 )
 from deepmd.pt.loss import (
     DenoiseLoss,
+    DeNSLoss,
     DOSLoss,
     EnergyHessianStdLoss,
     EnergySpinLoss,
@@ -43,15 +48,38 @@ from deepmd.pt.loss import (
     TaskLoss,
     TensorLoss,
 )
+from deepmd.pt.model.descriptor.sezm_nn import (
+    apply_lora_to_sezm,
+    build_merged_state_dict,
+    strip_lora_from_extra_state,
+)
 from deepmd.pt.model.model import (
     get_model,
     get_zbl_model,
+)
+from deepmd.pt.model.model.sezm_model import (
+    SeZMModel,
 )
 from deepmd.pt.optimizer import (
     AdaMuonOptimizer,
     HybridMuonOptimizer,
     KFOptimizerWrapper,
     LKFOptimizer,
+)
+from deepmd.pt.train.ema import (
+    EMA_CHECKPOINT_KEY,
+    ModelEMA,
+    get_ema_checkpoint_prefix,
+    get_ema_validation_log_path,
+)
+from deepmd.pt.train.utils import (
+    NonFiniteGradGuard,
+    clip_grad_norm_,
+    scoped_env_defaults,
+)
+from deepmd.pt.train.validation import (
+    FullValidator,
+    resolve_full_validation_start_step,
 )
 from deepmd.pt.train.wrapper import (
     ModelWrapper,
@@ -73,6 +101,11 @@ from deepmd.pt.utils.env import (
 from deepmd.pt.utils.learning_rate import (
     BaseLR,
 )
+from deepmd.pt.utils.lmdb_dataset import (
+    LmdbDataset,
+    _collate_lmdb_batch,
+    _SameNlocBatchSamplerTorch,
+)
 from deepmd.pt.utils.stat import (
     make_stat_input,
 )
@@ -93,9 +126,13 @@ from torch.distributed.checkpoint.state_dict import (
     get_optimizer_state_dict,
     set_optimizer_state_dict,
 )
-from torch.distributed.fsdp import (
-    fully_shard,
-)
+
+try:
+    from torch.distributed.fsdp import (
+        fully_shard,
+    )
+except ImportError:
+    fully_shard = None  # type: ignore[assignment]
 from torch.distributed.optim import (
     ZeroRedundancyOptimizer,
 )
@@ -144,6 +181,13 @@ class Trainer:
         model_params = config["model"]
         training_params = config["training"]
         optimizer_params = config.get("optimizer", {})
+
+        validating_params = config.get("validating") or {}
+        infer_env_defaults = {}
+        if bool(validating_params.get("compiled_infer", False)):
+            infer_env_defaults["DP_COMPILE_INFER"] = "1"
+        if bool(validating_params.get("tf32_infer", False)):
+            infer_env_defaults["DP_TF32_INFER"] = "1"
         self.multi_task = "model_dict" in model_params
         self.finetune_links = finetune_links
         self.finetune_update_stat = False
@@ -158,7 +202,7 @@ class Trainer:
 
         # Iteration config
         self.num_steps = training_params.get("numb_steps")
-        self.num_epoch = training_params.get("num_epoch")
+        self.num_epoch = training_params.get("numb_epoch")
         self.num_epoch_dict = training_params.get("num_epoch_dict")
         self.disp_file = training_params.get("disp_file", "lcurve.out")
         self.disp_freq = training_params.get("disp_freq", 1000)
@@ -166,6 +210,10 @@ class Trainer:
         self.save_ckpt = training_params.get("save_ckpt", "model.ckpt")
         self.save_freq = training_params.get("save_freq", 1000)
         self.max_ckpt_keep = training_params.get("max_ckpt_keep", 5)
+        self.enable_ema = bool(training_params.get("enable_ema", False))
+        self.ema_decay = float(training_params.get("ema_decay", 0.999))
+        self.ema_ckpt_keep = int(training_params.get("ema_ckpt_keep", 3))
+        self.ema_save_ckpt = get_ema_checkpoint_prefix(self.save_ckpt)
         self.display_in_training = training_params.get("disp_training", True)
         self.timing_in_training = training_params.get("time_training", True)
         self.change_bias_after_training = training_params.get(
@@ -176,10 +224,12 @@ class Trainer:
             raise ValueError(
                 f"training.zero_stage must be 0, 1, 2, or 3, got {self.zero_stage}"
             )
-        if self.zero_stage > 0 and not self.is_distributed:
+        if self.enable_ema and self.zero_stage >= 2:
             raise ValueError(
-                "training.zero_stage requires distributed launch via torchrun."
+                "training.enable_ema currently only supports training.zero_stage < 2."
             )
+        if self.zero_stage > 0 and not self.is_distributed:
+            self.zero_stage = 0
         if self.zero_stage > 0 and self.change_bias_after_training:
             raise ValueError(
                 "training.zero_stage does not support change_bias_after_training."
@@ -217,8 +267,8 @@ class Trainer:
                 yield from it
 
         def get_data_loader(
-            _training_data: DpLoaderSet,
-            _validation_data: DpLoaderSet | None,
+            _training_data: DpLoaderSet | LmdbDataset,
+            _validation_data: DpLoaderSet | LmdbDataset | None,
             _training_params: dict[str, Any],
         ) -> tuple[
             DataLoader,
@@ -227,6 +277,62 @@ class Trainer:
             Generator[Any, None, None] | None,
             int,
         ]:
+            def get_dataloader_and_iter_lmdb(
+                _data: LmdbDataset,
+            ) -> tuple[DataLoader, Generator[Any, None, None]]:
+                if _data.mixed_batch:
+                    # TODO [mixed_batch=True]: Replace SameNlocBatchSampler with
+                    # RandomSampler(replacement=False) + padding collate_fn.
+                    # Changes needed:
+                    #   1. _collate_lmdb_batch: pad coord/force/atype to max_nloc,
+                    #      add "atom_mask" bool tensor (nframes, max_nloc)
+                    #   2. Use RandomSampler(_data, replacement=False) as sampler
+                    #   3. Use fixed batch_size in DataLoader (not batch_sampler)
+                    #   4. Model forward: apply atom_mask to descriptor/fitting
+                    #   5. Loss: mask out padded atoms in force loss
+                    raise NotImplementedError(
+                        "mixed_batch=True training is not yet supported."
+                    )
+                # mixed_batch=False: group frames by nloc, each batch same nloc.
+                # SameNlocBatchSampler yields list[int] per batch, all same nloc.
+                # Auto batch_size is computed per-nloc-group inside the sampler.
+                from deepmd.dpmodel.utils.lmdb_data import (
+                    SameNlocBatchSampler,
+                )
+
+                _block_targets = getattr(_data, "_block_targets", None)
+
+                if self.world_size > 1:
+                    from deepmd.dpmodel.utils.lmdb_data import (
+                        DistributedSameNlocBatchSampler,
+                    )
+
+                    _inner_sampler = DistributedSameNlocBatchSampler(
+                        _data._reader,
+                        rank=self.rank,
+                        world_size=self.world_size,
+                        shuffle=True,
+                        seed=_training_params.get("seed", None),
+                        block_targets=_block_targets,
+                    )
+                else:
+                    _inner_sampler = SameNlocBatchSampler(
+                        _data._reader,
+                        shuffle=True,
+                        block_targets=_block_targets,
+                    )
+
+                _batch_sampler = _SameNlocBatchSamplerTorch(_inner_sampler)
+                _dataloader = DataLoader(
+                    _data,
+                    batch_sampler=_batch_sampler,
+                    num_workers=0,
+                    collate_fn=_collate_lmdb_batch,
+                    pin_memory=(DEVICE != "cpu"),
+                )
+                _data_iter = cycle_iterator(_dataloader)
+                return _dataloader, _data_iter
+
             def get_dataloader_and_iter(
                 _data: DpLoaderSet, _params: dict[str, Any]
             ) -> tuple[DataLoader, Generator[Any, None, None]]:
@@ -249,17 +355,28 @@ class Trainer:
                 _data_iter = cycle_iterator(_dataloader)
                 return _dataloader, _data_iter
 
-            training_dataloader, training_data_iter = get_dataloader_and_iter(
-                _training_data, _training_params["training_data"]
-            )
+            if isinstance(_training_data, LmdbDataset):
+                training_dataloader, training_data_iter = get_dataloader_and_iter_lmdb(
+                    _training_data
+                )
+            else:
+                training_dataloader, training_data_iter = get_dataloader_and_iter(
+                    _training_data, _training_params["training_data"]
+                )
 
             if _validation_data is not None:
-                (
-                    validation_dataloader,
-                    validation_data_iter,
-                ) = get_dataloader_and_iter(
-                    _validation_data, _training_params["validation_data"]
-                )
+                if isinstance(_validation_data, LmdbDataset):
+                    (
+                        validation_dataloader,
+                        validation_data_iter,
+                    ) = get_dataloader_and_iter_lmdb(_validation_data)
+                else:
+                    (
+                        validation_dataloader,
+                        validation_data_iter,
+                    ) = get_dataloader_and_iter(
+                        _validation_data, _training_params["validation_data"]
+                    )
                 valid_numb_batch = _training_params["validation_data"].get(
                     "numb_btch", 1
                 )
@@ -327,11 +444,16 @@ class Trainer:
             }
 
         # Model
-        self.model = get_model_for_wrapper(
-            model_params,
-            resuming=resuming,
-            _loss_params=loss_param_tmp,
-        )
+        # SeZMModel samples these eval/inference env vars exactly once inside
+        # __init__; keep config-derived defaults scoped to construction.
+        with scoped_env_defaults(infer_env_defaults):
+            self.model = get_model_for_wrapper(
+                model_params,
+                resuming=resuming,
+                _loss_params=loss_param_tmp,
+            )
+        # SeZM specific process for DeNS training
+        prepare_model_for_loss(self.model, loss_param_tmp)
 
         # Loss
         if not self.multi_task:
@@ -356,9 +478,26 @@ class Trainer:
             # add data requirement for labels
             data_requirement = self.loss.label_requirement
             data_requirement += get_additional_data_requirement(self.model)
+            min_pair_dist = float(
+                training_params.get("training_data", {}).get("min_pair_dist", 0.0)
+            )
+            if min_pair_dist > 0.0:
+                data_requirement.append(
+                    DataRequirementItem(
+                        "min_pair_dist",
+                        ndof=1,
+                        atomic=False,
+                        must=False,
+                        high_prec=False,
+                        default=min_pair_dist,
+                    )
+                )
             training_data.add_data_requirement(data_requirement)
             if validation_data is not None:
-                validation_data.add_data_requirement(data_requirement)
+                validation_data.add_data_requirement(
+                    self.loss.label_requirement
+                    + get_additional_data_requirement(self.model)
+                )
             # Preload and apply modifiers to all data before computing statistics
             training_data.preload_and_modify_all_data_torch()
             if validation_data is not None:
@@ -387,12 +526,17 @@ class Trainer:
                 self.valid_numb_batch,
             ) = get_data_loader(training_data, validation_data, training_params)
             training_data.print_summary(
-                "training", to_numpy_array(self.training_dataloader.sampler.weights)
+                "training",
+                to_numpy_array(self.training_dataloader.sampler.weights)
+                if not isinstance(training_data, LmdbDataset)
+                else [1.0],
             )
             if validation_data is not None:
                 validation_data.print_summary(
                     "validation",
-                    to_numpy_array(self.validation_dataloader.sampler.weights),
+                    to_numpy_array(self.validation_dataloader.sampler.weights)
+                    if not isinstance(validation_data, LmdbDataset)
+                    else [1.0],
                 )
         else:
             (
@@ -409,9 +553,26 @@ class Trainer:
                 data_requirement += get_additional_data_requirement(
                     self.model[model_key]
                 )
+                min_pair_dist = float(
+                    training_params.get("training_data", {}).get("min_pair_dist", 0.0)
+                )
+                if min_pair_dist > 0.0:
+                    data_requirement.append(
+                        DataRequirementItem(
+                            "min_pair_dist",
+                            ndof=1,
+                            atomic=False,
+                            must=False,
+                            high_prec=False,
+                            default=min_pair_dist,
+                        )
+                    )
                 training_data[model_key].add_data_requirement(data_requirement)
                 if validation_data[model_key] is not None:
-                    validation_data[model_key].add_data_requirement(data_requirement)
+                    validation_data[model_key].add_data_requirement(
+                        self.loss[model_key].label_requirement
+                        + get_additional_data_requirement(self.model[model_key])
+                    )
                 # Preload and apply modifiers to all data before computing statistics
                 training_data[model_key].preload_and_modify_all_data_torch()
                 if validation_data[model_key] is not None:
@@ -458,7 +619,9 @@ class Trainer:
 
                 training_data[model_key].print_summary(
                     f"training in {model_key}",
-                    to_numpy_array(self.training_dataloader[model_key].sampler.weights),
+                    to_numpy_array(self.training_dataloader[model_key].sampler.weights)
+                    if not isinstance(training_data[model_key], LmdbDataset)
+                    else [1.0],
                 )
                 if (
                     validation_data is not None
@@ -468,7 +631,9 @@ class Trainer:
                         f"validation in {model_key}",
                         to_numpy_array(
                             self.validation_dataloader[model_key].sampler.weights
-                        ),
+                        )
+                        if not isinstance(validation_data[model_key], LmdbDataset)
+                        else [1.0],
                     )
 
         # Resolve training steps
@@ -481,13 +646,16 @@ class Trainer:
                     )
                 if self.num_epoch <= 0:
                     raise ValueError("training.num_epoch must be positive.")
-                sampler_weights = to_numpy_array(
-                    self.training_dataloader.sampler.weights
-                )
-                total_numb_batch = compute_total_numb_batch(
-                    training_data.index,
-                    sampler_weights,
-                )
+                if isinstance(training_data, LmdbDataset):
+                    total_numb_batch = len(self.training_dataloader)
+                else:
+                    sampler_weights = to_numpy_array(
+                        self.training_dataloader.sampler.weights
+                    )
+                    total_numb_batch = compute_total_numb_batch(
+                        training_data.index,
+                        sampler_weights,
+                    )
                 if total_numb_batch <= 0:
                     raise ValueError(
                         "Total number of training batches must be positive."
@@ -507,15 +675,18 @@ class Trainer:
                         "are mutually exclusive."
                     )
                 for model_key in self.model_keys:
-                    sampler_weights = to_numpy_array(
-                        self.training_dataloader[model_key].sampler.weights
-                    )
-                    per_task_total.append(
-                        compute_total_numb_batch(
-                            training_data[model_key].index,
-                            sampler_weights,
+                    if isinstance(training_data[model_key], LmdbDataset):
+                        per_task_total.append(len(self.training_dataloader[model_key]))
+                    else:
+                        sampler_weights = to_numpy_array(
+                            self.training_dataloader[model_key].sampler.weights
                         )
-                    )
+                        per_task_total.append(
+                            compute_total_numb_batch(
+                                training_data[model_key].index,
+                                sampler_weights,
+                            )
+                        )
                 (
                     self.model_prob,
                     self.num_steps,
@@ -548,7 +719,13 @@ class Trainer:
 
         # Learning rate
         self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
+        self.nonfinite_grad_guard = NonFiniteGradGuard()
         self.lr_schedule = get_lr(config["learning_rate"])
+
+        # Minimum pairwise distance for filtering unphysical frames during training
+        self.min_pair_dist = training_params.get("training_data", {}).get(
+            "min_pair_dist", 0.0
+        )
 
         # JIT
         if JIT:
@@ -560,12 +737,18 @@ class Trainer:
 
         # resuming and finetune
         optimizer_state_dict = None
+        ema_state_dict = None
         if resuming:
             log.info(f"Resuming from {resume_model}.")
             state_dict = torch.load(
                 resume_model, map_location=DEVICE, weights_only=True
             )
             if "model" in state_dict:
+                ema_state_dict = (
+                    state_dict.get(EMA_CHECKPOINT_KEY)
+                    if finetune_model is None and self.restart_training
+                    else None
+                )
                 optimizer_state_dict = (
                     state_dict["optimizer"] if finetune_model is None else None
                 )
@@ -692,6 +875,9 @@ class Trainer:
                         "_extra_state"
                     ]
 
+                # Always use current model_params so newly added fields
+                # (e.g. bridging_method) are persisted in checkpoints.
+                state_dict["_extra_state"] = self.wrapper.state_dict()["_extra_state"]
                 self.wrapper.load_state_dict(state_dict)
 
                 # change bias for fine-tuning
@@ -760,9 +946,44 @@ class Trainer:
                 data_stat_protect=_data_stat_protect[0],
             )
 
+        # LoRA injection (single-task only; argcheck rejects multi-task).
+        self._lora_enabled = False
+        if not self.multi_task:
+            _lora_cfg = model_params.get("lora")
+            if _lora_cfg is not None:
+                # "Default" is the fixed key ModelWrapper assigns to the sole
+                # single-task model (see wrapper.py); finetune `--model-branch`
+                # has already selected pretrained weights for this slot.
+                _branch_model = self.wrapper.model["Default"]
+                if not isinstance(_branch_model, SeZMModel):
+                    log.warning(
+                        "[LoRA] skipping: model is not SeZMModel; "
+                        "LoRA fine-tuning is only supported for SeZM."
+                    )
+                else:
+                    apply_lora_to_sezm(
+                        _branch_model,
+                        rank=int(_lora_cfg["rank"]),
+                        alpha=_lora_cfg.get("alpha"),
+                    )
+                    self._lora_enabled = True
+                    log.info(
+                        f"[LoRA] injected: rank={_lora_cfg['rank']}, "
+                        f"alpha={_lora_cfg.get('alpha', _lora_cfg['rank'])}"
+                    )
+
         if self.is_distributed:
             torch.cuda.set_device(LOCAL_RANK)
             if self.zero_stage >= 2:
+                if fully_shard is None:
+                    raise RuntimeError(
+                        "training.zero_stage>=2 requires FSDP2, which is only "
+                        "available in PyTorch >= 2.6 "
+                        "(``torch.distributed.fsdp.fully_shard``). "
+                        f"Current PyTorch is {torch.__version__}. "
+                        "Please upgrade PyTorch, or set training.zero_stage "
+                        "to 0 or 1 to stay on the DDP / ZeRO-1 path."
+                    )
                 # FSDP2 does NOT broadcast params (unlike DDP constructor).
                 # Ensure all ranks share identical weights before sharding.
                 for p in self.wrapper.parameters():
@@ -796,6 +1017,7 @@ class Trainer:
                 float(self.opt_param["adam_beta2"]),
             )
             weight_decay = float(self.opt_param["weight_decay"])
+            runtime_named_parameters = tuple(self.wrapper.named_parameters())
 
             if self.opt_type in ("Adam", "AdamW"):
                 cls = torch.optim.Adam if self.opt_type == "Adam" else torch.optim.AdamW
@@ -815,9 +1037,15 @@ class Trainer:
                     "momentum": float(self.opt_param["momentum"]),
                     "lr_adjust": float(self.opt_param["lr_adjust"]),
                     "lr_adjust_coeff": float(self.opt_param["lr_adjust_coeff"]),
-                    "muon_2d_only": bool(self.opt_param["muon_2d_only"]),
-                    "min_2d_dim": int(self.opt_param["min_2d_dim"]),
-                    "flash_muon": bool(self.opt_param["flash_muon"]),
+                    "muon_mode": str(self.opt_param.get("muon_mode", "slice")),
+                    "enable_gram": bool(self.opt_param.get("enable_gram")),
+                    "flash_muon": bool(self.opt_param.get("flash_muon")),
+                    "magma_muon": bool(self.opt_param.get("magma_muon")),
+                    # FSDP2 shards parameters as DTensor; several torch._foreach_*
+                    # ops lack DTensor sharding propagation on older PyTorch, so
+                    # fall back to the per-tensor path under zero_stage >= 2.
+                    # DDP / ZeRO-1 keep plain tensors and use the default.
+                    "use_foreach": False if self.zero_stage >= 2 else None,
                 }
             else:
                 raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
@@ -828,13 +1056,24 @@ class Trainer:
                 weight_decay=weight_decay,
                 **extra,
             )
+            if self.opt_type == "HybridMuon":
+                target_optimizer = (
+                    self.optimizer.optim if self.zero_stage == 1 else self.optimizer
+                )
+                target_optimizer.set_param_names(runtime_named_parameters)
             self._load_optimizer_state(optimizer_state_dict)
-            self.scheduler = torch.optim.lr_scheduler.LambdaLR(
+            self.scheduler = self._create_lr_scheduler(
                 self.optimizer,
-                lambda step: (
-                    self.lr_schedule.value(step + self.start_step) / initial_lr
-                ),
-                last_epoch=self.start_step - 1,
+                self.lr_schedule,
+                self.start_step,
+            )
+
+        self.model_ema = None
+        if self.enable_ema:
+            self.model_ema = ModelEMA(
+                self.model,
+                decay=self.ema_decay,
+                state=ema_state_dict,
             )
 
         if self.zero_stage > 0 and self.rank == 0:
@@ -855,10 +1094,153 @@ class Trainer:
         self.enable_profiler = training_params.get("enable_profiler", False)
         self.profiling = training_params.get("profiling", False)
         self.profiling_file = training_params.get("profiling_file", "timeline.json")
+        self.full_validator = None
+        self.ema_full_validator = None
+
+        self.full_validator = self._create_full_validator(
+            validating_params=validating_params,
+            validation_data=validation_data,
+        )
+        self.ema_full_validator = self._create_ema_full_validator(
+            validating_params=validating_params,
+            validation_data=validation_data,
+        )
 
         # Log model parameter count
         if self.rank == 0:
             self._log_parameter_count()
+
+    @staticmethod
+    def _create_lr_scheduler(
+        optimizer: torch.optim.Optimizer,
+        lr_schedule: BaseLR,
+        start_step: int,
+    ) -> torch.optim.lr_scheduler.LambdaLR:
+        base_lr = float(lr_schedule.start_lr)
+        for group in optimizer.param_groups:
+            group["initial_lr"] = base_lr
+        return torch.optim.lr_scheduler.LambdaLR(
+            optimizer,
+            lambda step: lr_schedule.value(step) / base_lr,
+            last_epoch=start_step - 1,
+        )
+
+    def _create_full_validator(
+        self,
+        *,
+        validating_params: dict[str, Any],
+        validation_data: DpLoaderSet | None,
+    ) -> FullValidator | None:
+        """Create the runtime full validator when it is active."""
+        if not self._is_validation_requested(validating_params, "full_validation"):
+            return None
+        self._raise_if_full_validation_unsupported(validation_data)
+        if validation_data is None:
+            raise RuntimeError(
+                "validation_data must be available after full validation checks."
+            )
+        return FullValidator(
+            validating_params=validating_params,
+            validation_data=validation_data,
+            model=self.model,
+            state_store=self._get_inner_module().train_infos,
+            num_steps=self.num_steps,
+            rank=self.rank,
+            zero_stage=self.zero_stage,
+            restart_training=self.restart_training,
+            checkpoint_dir=Path(self.save_ckpt).parent,
+        )
+
+    def _create_ema_full_validator(
+        self,
+        *,
+        validating_params: dict[str, Any],
+        validation_data: DpLoaderSet | None,
+    ) -> FullValidator | None:
+        """Create the runtime EMA full validator when it is active."""
+        if not self._is_validation_requested(
+            validating_params, "full_validation"
+        ) or not validating_params.get("ema_full_validation", False):
+            return None
+        self._raise_if_full_validation_unsupported(validation_data)
+        if self.model_ema is None:
+            raise ValueError(
+                "validating.ema_full_validation requires `training.enable_ema=true`."
+            )
+        if validation_data is None:
+            raise RuntimeError(
+                "validation_data must be available after EMA full validation checks."
+            )
+        ema_validating_params = dict(validating_params)
+        ema_validating_params["full_validation"] = True
+        return FullValidator(
+            validating_params=ema_validating_params,
+            validation_data=validation_data,
+            model=self.model,
+            state_store=self.model_ema.validation_state,
+            num_steps=self.num_steps,
+            rank=self.rank,
+            zero_stage=self.zero_stage,
+            restart_training=self.restart_training,
+            checkpoint_dir=Path(self.save_ckpt).parent,
+            full_val_file=get_ema_validation_log_path(
+                validating_params.get("full_val_file", "val.log")
+            ),
+            best_checkpoint_prefix="best_ema.ckpt",
+            emit_best_save_log=False,
+            model_eval_context=lambda: self.model_ema.apply_shadow(self.model),
+        )
+
+    def _is_validation_requested(
+        self,
+        validating_params: dict[str, Any],
+        flag_name: str,
+    ) -> bool:
+        """Check whether a full validation flow can trigger during this run."""
+        if not validating_params.get(flag_name, False):
+            return False
+        start_step = resolve_full_validation_start_step(
+            validating_params.get("full_val_start", 0.5),
+            self.num_steps,
+        )
+        return start_step is not None and start_step <= self.num_steps
+
+    def _raise_if_full_validation_unsupported(
+        self,
+        validation_data: DpLoaderSet | None,
+    ) -> None:
+        """Validate runtime full validation constraints."""
+        if self.multi_task:
+            raise ValueError(
+                "validating.full_validation only supports single-task energy "
+                "training; multi-task training is not supported."
+            )
+
+        has_spin = getattr(self.model, "has_spin", False)
+        if callable(has_spin):
+            has_spin = has_spin()
+        if has_spin or isinstance(self.loss, EnergySpinLoss):
+            raise ValueError(
+                "validating.full_validation only supports single-task energy "
+                "training; spin-energy training is not supported."
+            )
+
+        if not isinstance(self.loss, EnergyStdLoss):
+            raise ValueError(
+                "validating.full_validation only supports single-task energy training."
+            )
+
+        if validation_data is None:
+            raise ValueError(
+                "validating.full_validation requires `training.validation_data` "
+                "to be configured."
+            )
+
+        if self.zero_stage >= 2:
+            raise ValueError(
+                "validating.full_validation only supports single-task energy "
+                "training with training.zero_stage < 2."
+            )
 
     @staticmethod
     def _count_parameters(model: torch.nn.Module) -> tuple[int, int]:
@@ -1001,6 +1383,10 @@ class Trainer:
             input_dict, label_dict, log_dict = self.get_data(
                 is_train=True, task_key=task_key
             )
+            # All frames filtered by min_pair_dist (single-GPU only;
+            # DDP path in get_data() always keeps at least one frame)
+            if not input_dict:
+                return
             if SAMPLER_RECORD:
                 print_str = f"Step {_step_id}: sample system{log_dict['sid']}  frame{log_dict['fid']}\n"
                 fout1.write(print_str)
@@ -1033,29 +1419,12 @@ class Trainer:
                             for name, p in self.wrapper.named_parameters()
                             if p.grad is not None
                         ]
-                    # FSDP2 sharded DTensor gradients don't support error_if_nonfinite; use manual isfinite check instead.
-                    total_norm = torch.nn.utils.clip_grad_norm_(
+                    total_norm = clip_grad_norm_(
                         self.wrapper.parameters(),
                         self.gradient_max_norm,
+                        stable=self.zero_stage < 2,
                     )
-                    if not torch.isfinite(total_norm):
-                        bad_params = []
-                        for name, p in self.wrapper.named_parameters():
-                            if p.grad is not None:
-                                grad_norm = p.grad.data.norm()
-                                if not torch.isfinite(grad_norm):
-                                    bad_params.append(
-                                        f"  {name}: grad_norm={grad_norm}, shape={list(p.shape)}"
-                                    )
-                        detail = (
-                            "\n".join(bad_params)
-                            if bad_params
-                            else "  (all individual grads finite, overflow in norm reduction)"
-                        )
-                        raise RuntimeError(
-                            f"Non-finite gradient norm: {total_norm}\n"
-                            f"Parameters with non-finite gradients:\n{detail}"
-                        )
+                    self.nonfinite_grad_guard.update(total_norm)
                 with torch.device(DEVICE):
                     self.optimizer.step()
                 self.scheduler.step()
@@ -1129,6 +1498,9 @@ class Trainer:
             else:
                 raise ValueError(f"Not supported optimizer type '{self.opt_type}'")
 
+            if self.model_ema is not None:
+                self.model_ema.update(self.model)
+
             if self.disp_avg:
                 # Accumulate loss for averaging over display interval
                 self.step_count_in_interval += 1
@@ -1141,6 +1513,8 @@ class Trainer:
                                 self.train_loss_accu[item] = 0.0
                     for item in more_loss:
                         if "l2_" not in item:
+                            if item not in self.train_loss_accu:
+                                self.train_loss_accu[item] = 0.0
                             self.train_loss_accu[item] += more_loss[item]
                 else:
                     # Accumulate loss for multi-task
@@ -1283,25 +1657,25 @@ class Trainer:
                                 train_results[_key] = log_loss_train(
                                     loss, more_loss, _task_key=_key
                                 )
-                        valid_results[_key] = log_loss_valid(_task_key=_key)
-                        if self.rank == 0:
-                            log.info(
-                                format_training_message_per_task(
-                                    batch=display_step_id,
-                                    task_name=_key + "_trn",
-                                    rmse=train_results[_key],
-                                    learning_rate=cur_lr,
-                                )
-                            )
-                            if valid_results[_key]:
+                            valid_results[_key] = log_loss_valid(_task_key=_key)
+                            if self.rank == 0:
                                 log.info(
                                     format_training_message_per_task(
                                         batch=display_step_id,
-                                        task_name=_key + "_val",
-                                        rmse=valid_results[_key],
-                                        learning_rate=None,
+                                        task_name=_key + "_trn",
+                                        rmse=train_results[_key],
+                                        learning_rate=cur_lr,
                                     )
                                 )
+                                if valid_results[_key]:
+                                    log.info(
+                                        format_training_message_per_task(
+                                            batch=display_step_id,
+                                            task_name=_key + "_val",
+                                            rmse=valid_results[_key],
+                                            learning_rate=None,
+                                        )
+                                    )
                 self.wrapper.train()
 
                 if self.disp_avg:
@@ -1333,6 +1707,10 @@ class Trainer:
                             batch=display_step_id,
                             wall_time=train_time,
                             eta=eta,
+                            current_time=datetime.datetime.fromtimestamp(
+                                current_time,
+                                tz=datetime.timezone.utc,
+                            ).astimezone(),
                         )
                     )
                 if (
@@ -1357,13 +1735,41 @@ class Trainer:
                         fout, display_step_id, cur_lr, train_results, valid_results
                     )
 
-            if (
-                (
-                    (display_step_id) % self.save_freq == 0
-                    and _step_id != self.start_step
+            if self.full_validator is not None:
+                self.full_validator.run(
+                    step_id=_step_id,
+                    display_step=display_step_id,
+                    lr=cur_lr,
+                    save_checkpoint=(
+                        self.save_model_merged
+                        if self._lora_enabled
+                        else self.save_model
+                    ),
                 )
-                or (display_step_id) == self.num_steps
-            ) and (self.zero_stage > 0 or self.rank == 0 or dist.get_rank() == 0):
+            if self.ema_full_validator is not None:
+                self.ema_full_validator.run(
+                    step_id=_step_id,
+                    display_step=display_step_id,
+                    lr=cur_lr,
+                    save_checkpoint=(
+                        self.save_ema_model_merged
+                        if self._lora_enabled
+                        else self.save_ema_model
+                    ),
+                )
+
+            should_save_checkpoint = (
+                (display_step_id) % self.save_freq == 0 and _step_id != self.start_step
+            ) or (display_step_id) == self.num_steps
+            if should_save_checkpoint:
+                # Abort before writing if any gradient norm since the previous
+                # checkpoint was non-finite.
+                self.nonfinite_grad_guard.raise_if_nonfinite(
+                    self.wrapper.named_parameters
+                )
+            if should_save_checkpoint and (
+                self.zero_stage > 0 or self.rank == 0 or dist.get_rank() == 0
+            ):
                 # Handle the case if rank 0 aborted and re-assigned
                 self.latest_model = Path(self.save_ckpt + f"-{display_step_id}.pt")
                 self.save_model(self.latest_model, lr=cur_lr, step=_step_id)
@@ -1372,6 +1778,16 @@ class Trainer:
                     symlink_prefix_files(self.latest_model.stem, self.save_ckpt)
                     with open("checkpoint", "w") as f:
                         f.write(str(self.latest_model))
+                if self.model_ema is not None:
+                    self.latest_ema_model = Path(
+                        self.ema_save_ckpt + f"-{display_step_id}.pt"
+                    )
+                    self.save_ema_model(self.latest_ema_model, lr=cur_lr, step=_step_id)
+                    if self.rank == 0 or dist.get_rank() == 0:
+                        symlink_prefix_files(
+                            self.latest_ema_model.stem,
+                            self.ema_save_ckpt,
+                        )
 
             # tensorboard
             if self.enable_tensorboard and (
@@ -1430,7 +1846,11 @@ class Trainer:
             if JIT:
                 break
 
-        if self.change_bias_after_training and (self.rank == 0 or dist.get_rank() == 0):
+        if (
+            self.change_bias_after_training
+            and self.num_steps > self.start_step
+            and (self.rank == 0 or dist.get_rank() == 0)
+        ):
             if not self.multi_task:
                 self.model = model_change_out_bias(
                     self.model,
@@ -1451,11 +1871,24 @@ class Trainer:
             symlink_prefix_files(self.latest_model.stem, self.save_ckpt)
             with open("checkpoint", "w") as f:
                 f.write(str(self.latest_model))
+            if self.model_ema is not None:
+                self.latest_ema_model = Path(
+                    self.ema_save_ckpt + f"-{self.num_steps}.pt"
+                )
+                self.save_ema_model(
+                    self.latest_ema_model,
+                    lr=cur_lr,
+                    step=self.num_steps - 1,
+                )
+                symlink_prefix_files(self.latest_ema_model.stem, self.ema_save_ckpt)
 
         if self.num_steps == 0 and self.zero_stage > 0:
             # ZeRO-1 / FSDP: all ranks participate in save_model (collective op)
             self.latest_model = Path(self.save_ckpt + "-0.pt")
             self.save_model(self.latest_model, lr=0, step=0)
+            if self.model_ema is not None:
+                self.latest_ema_model = Path(self.ema_save_ckpt + "-0.pt")
+                self.save_ema_model(self.latest_ema_model, lr=0, step=0)
 
         if (
             self.rank == 0 or dist.get_rank() == 0
@@ -1465,10 +1898,15 @@ class Trainer:
                     # When num_steps is 0, the checkpoint is never saved in the loop
                     self.latest_model = Path(self.save_ckpt + "-0.pt")
                     self.save_model(self.latest_model, lr=0, step=0)
+                    if self.model_ema is not None:
+                        self.latest_ema_model = Path(self.ema_save_ckpt + "-0.pt")
+                        self.save_ema_model(self.latest_ema_model, lr=0, step=0)
                 log.info(f"Saved model to {self.latest_model}")
                 symlink_prefix_files(self.latest_model.stem, self.save_ckpt)
                 with open("checkpoint", "w") as f:
                     f.write(str(self.latest_model))
+                if self.model_ema is not None:
+                    symlink_prefix_files(self.latest_ema_model.stem, self.ema_save_ckpt)
 
             if self.timing_in_training and self.timed_steps:
                 msg = f"average training time: {self.total_train_time / self.timed_steps:.4f} s/batch"
@@ -1505,48 +1943,242 @@ class Trainer:
                     f"The profiling trace has been saved to: {self.profiling_file}"
                 )
 
-    def save_model(self, save_path: str, lr: float = 0.0, step: int = 0) -> None:
-        module = self._get_inner_module()
-        module.train_infos["lr"] = float(lr)
-        module.train_infos["step"] = step
+    def _collect_checkpoint_states(
+        self,
+        *,
+        use_ema_weights: bool = False,
+        include_optimizer: bool = True,
+    ) -> tuple[dict[str, Any], dict[str, Any] | None]:
+        """Collect model and optimizer states for checkpointing.
 
-        # === Collect state dicts ===
-        if self.zero_stage >= 2:
-            # FSDP2: collective op, all ranks participate; rank 0 gets full state
-            options = StateDictOptions(full_state_dict=True, cpu_offload=True)
-            model_state = get_model_state_dict(self.wrapper, options=options)
-            optim_state = get_optimizer_state_dict(
-                self.wrapper, self.optimizer, options=options
-            )
-        elif self.zero_stage == 1:
-            # ZeRO-1: consolidate sharded optimizer state to rank 0
-            model_state = module.state_dict()
-            self.optimizer.consolidate_state_dict(to=0)
-            optim_state = (
-                deepcopy(self.optimizer.state_dict()) if self.rank == 0 else {}
-            )
-        else:
-            model_state = module.state_dict()
-            optim_state = deepcopy(self.optimizer.state_dict())
+        Parameters
+        ----------
+        use_ema_weights : bool
+            If True, temporarily swap in EMA shadow weights before collecting
+            the model state dict.
+        include_optimizer : bool
+            If False, skip collecting the optimizer state. Used for EMA ckpts
+            where the optimizer state is meaningless: EMA has no optimizer of
+            its own, and the main model's optimizer state corresponds to a
+            different parameter trajectory.
+
+        Returns
+        -------
+        tuple[dict[str, Any], dict[str, Any] | None]
+            (model_state, optim_state). optim_state is None when
+            include_optimizer is False.
+        """
+        module = self._get_inner_module()
+        ema_context = (
+            self.model_ema.apply_shadow(self.model)
+            if use_ema_weights and self.model_ema is not None
+            else nullcontext()
+        )
+        with ema_context:
+            if self.zero_stage >= 2:
+                # FSDP2: collective op, all ranks participate; rank 0 gets full state
+                options = StateDictOptions(full_state_dict=True, cpu_offload=True)
+                model_state = get_model_state_dict(self.wrapper, options=options)
+                optim_state = (
+                    get_optimizer_state_dict(
+                        self.wrapper, self.optimizer, options=options
+                    )
+                    if include_optimizer
+                    else None
+                )
+            elif self.zero_stage == 1:
+                # ZeRO-1: consolidate sharded optimizer state to rank 0.
+                model_state = module.state_dict()
+                if use_ema_weights:
+                    # state_dict() tensors share storage with live parameters; clone
+                    # them before the EMA context restores the original weights.
+                    model_state = deepcopy(model_state)
+                if include_optimizer:
+                    self.optimizer.consolidate_state_dict(to=0)
+                    optim_state = self.optimizer.state_dict() if self.rank == 0 else {}
+                else:
+                    optim_state = None
+            else:
+                model_state = module.state_dict()
+                if use_ema_weights:
+                    # Same storage-sharing issue as zero_stage == 1.
+                    model_state = deepcopy(model_state)
+                optim_state = self.optimizer.state_dict() if include_optimizer else None
+        return model_state, optim_state
+
+    @staticmethod
+    def _parse_checkpoint_step(path: Path, prefix_name: str) -> int | None:
+        """Parse the checkpoint step from ``<prefix>-<step>.pt`` filenames."""
+        checkpoint_prefix = f"{prefix_name}-"
+        if path.suffix != ".pt" or not path.name.startswith(checkpoint_prefix):
+            return None
+        step_text = path.name[len(checkpoint_prefix) : -len(path.suffix)]
+        if not step_text.isdigit():
+            return None
+        return int(step_text)
+
+    def _write_checkpoint(
+        self,
+        save_path: Path,
+        checkpoint_data: dict[str, Any],
+        *,
+        ckpt_prefix: str,
+        max_ckpt_keep: int,
+    ) -> None:
+        """Write a checkpoint file and apply prefix-based cleanup."""
+        prefix_name = Path(ckpt_prefix).name
 
         # === Only rank 0 writes to disk ===
         if self.rank != 0:
             return
-        for item in optim_state["param_groups"]:
-            item["lr"] = float(item["lr"])
-        torch.save(
-            {"model": model_state, "optimizer": optim_state},
-            save_path,
-        )
+        optim_state = checkpoint_data.get("optimizer")
+        if optim_state is not None:
+            for item in optim_state["param_groups"]:
+                item["lr"] = float(item["lr"])
+        torch.save(checkpoint_data, save_path)
         checkpoint_dir = save_path.parent
-        checkpoint_files = [
-            f
-            for f in checkpoint_dir.glob("*.pt")
-            if not f.is_symlink() and f.name.startswith(self.save_ckpt)
-        ]
-        if len(checkpoint_files) > self.max_ckpt_keep:
-            checkpoint_files.sort(key=lambda x: x.stat().st_mtime)
-            checkpoint_files[0].unlink()
+        checkpoint_files = []
+        for checkpoint_file in checkpoint_dir.glob("*.pt"):
+            step = self._parse_checkpoint_step(checkpoint_file, prefix_name)
+            if checkpoint_file.is_symlink() or step is None:
+                continue
+            checkpoint_files.append((checkpoint_file, step))
+
+        current_step = self._parse_checkpoint_step(save_path, prefix_name)
+        if current_step is not None:
+            fresh_checkpoint_files = []
+            for checkpoint_file, step in checkpoint_files:
+                if step > current_step:
+                    checkpoint_file.unlink()
+                else:
+                    fresh_checkpoint_files.append((checkpoint_file, step))
+            checkpoint_files = fresh_checkpoint_files
+
+        checkpoint_files.sort(key=lambda item: (item[1], item[0].name))
+        while len(checkpoint_files) > max_ckpt_keep:
+            checkpoint_files.pop(0)[0].unlink()
+
+    def save_model(
+        self,
+        save_path: str | Path,
+        lr: float = 0.0,
+        step: int = 0,
+        *,
+        ckpt_prefix: str | None = None,
+        max_ckpt_keep: int | None = None,
+        use_ema_weights: bool = False,
+        include_ema_state: bool = True,
+        include_optimizer: bool = True,
+    ) -> None:
+        module = self._get_inner_module()
+        module.train_infos["lr"] = float(lr)
+        module.train_infos["step"] = step
+        model_state, optim_state = self._collect_checkpoint_states(
+            use_ema_weights=use_ema_weights,
+            include_optimizer=include_optimizer,
+        )
+        checkpoint_data: dict[str, Any] = {"model": model_state}
+        if optim_state is not None:
+            checkpoint_data["optimizer"] = optim_state
+        if include_ema_state and self.model_ema is not None and self.rank == 0:
+            checkpoint_data[EMA_CHECKPOINT_KEY] = self.model_ema.state_dict()
+        self._write_checkpoint(
+            Path(save_path),
+            checkpoint_data,
+            ckpt_prefix=self.save_ckpt if ckpt_prefix is None else ckpt_prefix,
+            max_ckpt_keep=(
+                self.max_ckpt_keep if max_ckpt_keep is None else max_ckpt_keep
+            ),
+        )
+
+    def save_ema_model(
+        self, save_path: str | Path, lr: float = 0.0, step: int = 0
+    ) -> None:
+        """Save an EMA-weight checkpoint using the regular checkpoint format."""
+        if self.model_ema is None:
+            raise ValueError(
+                "EMA checkpoint saving requires `training.enable_ema=true`."
+            )
+        self.save_model(
+            save_path,
+            lr=lr,
+            step=step,
+            ckpt_prefix=self.ema_save_ckpt,
+            max_ckpt_keep=self.ema_ckpt_keep,
+            use_ema_weights=True,
+            include_ema_state=False,
+            include_optimizer=False,
+        )
+
+    def save_model_merged(
+        self,
+        save_path: str | Path,
+        lr: float = 0.0,
+        step: int = 0,
+        *,
+        ckpt_prefix: str | None = None,
+        max_ckpt_keep: int | None = None,
+        use_ema_weights: bool = False,
+    ) -> None:
+        """Save a plain SeZM checkpoint with LoRA adapters folded into base weights.
+
+        Behaviour relative to :meth:`save_model`:
+
+        - state_dict: every ``A_by_l`` / ``B_by_l`` / ``A_m0`` / ``B_m0`` /
+          ``A_m.*`` / ``B_m.*`` key is removed; the corresponding ``weight`` /
+          ``weight_m0`` / ``weight_m.*`` tensors absorb ``ΔW = BA·scaling``.
+        - ``_extra_state.model_params``: the ``lora`` entry is stripped (both
+          single-task and multi-task layouts) so the resulting checkpoint
+          loads as plain SeZM without re-triggering LoRA injection.
+        - optimizer state is **not** saved.  Optimizer moments are keyed on
+          LoRA parameters that no longer exist in the merged layout, so
+          resuming training from a merged checkpoint is not supported.
+        - EMA state is **not** saved (this is a deployment snapshot).
+        - The live ``self.wrapper`` / ``optimizer`` / ``model_ema`` are
+          untouched; the fold happens on a detached copy of the state dict.
+
+        Intended use: validator-driven best-topk checkpoint saves for LoRA
+        fine-tune runs.  For plain (non-LoRA) runs the result is bit-level
+        identical to a regular :meth:`save_model` output minus optimizer
+        and EMA state.
+        """
+        module = self._get_inner_module()
+        module.train_infos["lr"] = float(lr)
+        module.train_infos["step"] = step
+        model_state, _ = self._collect_checkpoint_states(
+            use_ema_weights=use_ema_weights,
+            include_optimizer=False,
+        )
+        merged_state = build_merged_state_dict(module, state_dict=model_state)
+        if "_extra_state" in merged_state:
+            merged_state["_extra_state"] = strip_lora_from_extra_state(
+                merged_state["_extra_state"]
+            )
+        self._write_checkpoint(
+            Path(save_path),
+            {"model": merged_state},
+            ckpt_prefix=self.save_ckpt if ckpt_prefix is None else ckpt_prefix,
+            max_ckpt_keep=(
+                self.max_ckpt_keep if max_ckpt_keep is None else max_ckpt_keep
+            ),
+        )
+
+    def save_ema_model_merged(
+        self, save_path: str | Path, lr: float = 0.0, step: int = 0
+    ) -> None:
+        """EMA-weight variant of :meth:`save_model_merged`."""
+        if self.model_ema is None:
+            raise ValueError(
+                "EMA checkpoint saving requires `training.enable_ema=true`."
+            )
+        self.save_model_merged(
+            save_path,
+            lr=lr,
+            step=step,
+            ckpt_prefix=self.ema_save_ckpt,
+            max_ckpt_keep=self.ema_ckpt_keep,
+            use_ema_weights=True,
+        )
 
     def get_data(
         self, is_train: bool = True, task_key: str = "Default"
@@ -1560,6 +2192,27 @@ class Trainer:
         if iterator is None:
             return {}, {}, {}
         batch_data = next(iterator)
+        # === Filter frames with atoms too close (training only) ===
+        if is_train and self.min_pair_dist > 0.0 and "min_pair_dist" in batch_data:
+            min_dists = batch_data["min_pair_dist"]
+            if isinstance(min_dists, torch.Tensor):
+                valid_mask = min_dists.squeeze(-1) >= self.min_pair_dist
+                n_total = valid_mask.shape[0]
+                n_valid = int(valid_mask.sum().item())
+                if n_valid == 0:
+                    # Under distributed training (DDP/FSDP), every rank must
+                    # participate in backward() to avoid collective communication
+                    # deadlock.  Keep one frame as a fallback instead of
+                    # skipping the entire batch.
+                    if dist.is_available() and dist.is_initialized():
+                        valid_mask[0] = True
+                        n_valid = 1
+                    else:
+                        return {}, {}, {}
+                if n_valid < n_total:
+                    for key, val in batch_data.items():
+                        if isinstance(val, torch.Tensor) and val.shape[0] == n_total:
+                            batch_data[key] = val[valid_mask]
         for key in batch_data.keys():
             if key == "sid" or key == "fid" or key == "box" or "find_" in key:
                 continue
@@ -1579,13 +2232,20 @@ class Trainer:
             "box",
             "fparam",
             "aparam",
+            "charge_spin",
         ]
         input_dict = dict.fromkeys(input_keys)
         label_dict = {}
         for item_key in batch_data:
             if item_key in input_keys:
-                if item_key != "fparam" or batch_data["find_fparam"] != 0.0:
-                    input_dict[item_key] = batch_data[item_key]
+                if item_key == "fparam" and batch_data.get("find_fparam", 1.0) == 0.0:
+                    continue
+                if (
+                    item_key == "charge_spin"
+                    and batch_data.get("find_charge_spin", 1.0) == 0.0
+                ):
+                    continue
+                input_dict[item_key] = batch_data[item_key]
             else:
                 if item_key not in ["sid", "fid"]:
                     label_dict[item_key] = batch_data[item_key]
@@ -1699,12 +2359,43 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
             DataRequirementItem("spin", ndof=3, atomic=True, must=True)
         ]
         additional_data_requirement += spin_requirement_items
+    if _model.has_chg_spin_ebd():
+        has_default_cs = _model.has_default_chg_spin()
+        cs_default = (
+            _model.get_default_chg_spin().cpu().numpy() if has_default_cs else 0.0
+        )
+        additional_data_requirement.append(
+            DataRequirementItem(
+                "charge_spin",
+                ndof=2,
+                atomic=False,
+                must=not has_default_cs,
+                default=cs_default,
+            )
+        )
     return additional_data_requirement
 
 
 def whether_hessian(loss_params: dict[str, Any]) -> bool:
     loss_type = loss_params.get("type", "ener")
     return loss_type == "ener" and loss_params.get("start_pref_h", 0.0) > 0.0
+
+
+def prepare_model_for_loss(
+    model: Any,
+    loss_params: dict[str, Any] | None,
+) -> None:
+    """Align model execution mode with the configured training loss."""
+    if loss_params is None:
+        return
+    if isinstance(model, dict):
+        for model_key, sub_model in model.items():
+            sub_loss = loss_params.get(model_key)
+            if sub_loss is not None:
+                prepare_model_for_loss(sub_model, sub_loss)
+        return
+    if hasattr(model, "set_active_mode_from_loss"):
+        model.set_active_mode_from_loss(loss_params.get("type", "ener"))
 
 
 def get_loss(
@@ -1717,6 +2408,9 @@ def get_loss(
     elif loss_type == "ener":
         loss_params["starter_learning_rate"] = start_lr
         return EnergyStdLoss(**loss_params)
+    elif loss_type == "dens":
+        loss_params["starter_learning_rate"] = start_lr
+        return DeNSLoss(**loss_params)
     elif loss_type == "dos":
         loss_params["starter_learning_rate"] = start_lr
         loss_params["numb_dos"] = _model.model_output_def()["dos"].output_size

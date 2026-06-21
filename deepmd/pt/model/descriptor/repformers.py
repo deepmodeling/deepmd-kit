@@ -32,6 +32,9 @@ from deepmd.pt.utils.env_mat_stat import (
 from deepmd.pt.utils.exclude_mask import (
     PairExcludeMask,
 )
+from deepmd.pt.utils.safe_gradient import (
+    safe_for_norm,
+)
 from deepmd.pt.utils.spin import (
     concat_switch_virtual,
 )
@@ -446,7 +449,7 @@ class DescrptBlockRepformers(DescriptorBlock):
         if not self.direct_dist:
             g2, h2 = torch.split(dmatrix, [1, 3], dim=-1)
         else:
-            g2, h2 = torch.linalg.norm(diff, dim=-1, keepdim=True), diff
+            g2, h2 = safe_for_norm(diff, dim=-1, keepdim=True), diff
             g2 = g2 / self.rcut
             h2 = h2 / self.rcut
         # nb x nloc x nnei x ng2
@@ -454,7 +457,7 @@ class DescrptBlockRepformers(DescriptorBlock):
 
         # set all padding positions to index of 0
         # if the a neighbor is real or not is indicated by nlist_mask
-        nlist[nlist == -1] = 0
+        nlist = torch.where(nlist == -1, 0, nlist)
         # nb x nall x ng1
         if comm_dict is None:
             assert mapping is not None

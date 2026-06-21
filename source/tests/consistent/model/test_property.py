@@ -1205,9 +1205,9 @@ class TestPropertyModelAPIs(unittest.TestCase):
 
         self.assertEqual(dp_observed, pt_observed)
         self.assertEqual(dp_observed, pe_observed)
-        # Property model uses stats_distinguish_types=False, so all types
+        # When property model uses stats_distinguish_types=False, all types
         # get the same (non-zero) bias — both types appear observed.
-        self.assertEqual(dp_observed, ["O", "H"])
+        self.assertEqual(dp_observed, ["O"])
 
 
 @parameterized(

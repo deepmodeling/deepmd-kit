@@ -6,6 +6,15 @@ from typing import (
 )
 
 MODEL_REGISTRY: dict[str, dict[str, Any]] = {
+    "DPA-3.3-1M": {
+        "urls": [
+            "https://huggingface.co/deepmodelingcommunity/DPA-3.3-1M/resolve/main/DPA-3.3-1M.pt?download=true",
+            "https://hf-mirror.com/deepmodelingcommunity/DPA-3.3-1M/resolve/main/DPA-3.3-1M.pt?download=true",
+            "https://modelscope.cn/models/DeepModelingCommunity/DPA-3.3-1M/resolve/master/DPA-3.3-1M.pt",
+        ],
+        "filename": "DPA-3.3-1M.pt",
+        "sha256": "36fe440c111108d60cda54aa7d3fccac743794de25abef4d49564b9fb896a55b",
+    },
     "DPA-3.2-5M": {
         "urls": [
             "https://huggingface.co/deepmodelingcommunity/DPA-3.2-5M/resolve/main/DPA-3.2-5M.pt?download=true",
@@ -26,12 +35,21 @@ MODEL_REGISTRY: dict[str, dict[str, Any]] = {
     },
     "DPA-2.4-7M": {
         "urls": [
-            "https://huggingface.co/deepmodelingcommunity/DPA-2.4-7M/resolve/main/dpa-2.4-7M.pt?download=true",
-            "https://hf-mirror.com/deepmodelingcommunity/DPA-2.4-7M/resolve/main/dpa-2.4-7M.pt?download=true",
-            "https://modelscope.cn/models/DeepModelingCommunity/DPA-2.4-7M/resolve/master/dpa-2.4-7M.pt",
+            "https://huggingface.co/deepmodelingcommunity/DPA-2.4-7M/resolve/main/DPA-2.4-7M-patched-mt.pt?download=true",
+            "https://hf-mirror.com/deepmodelingcommunity/DPA-2.4-7M/resolve/main/DPA-2.4-7M-patched-mt.pt?download=true",
+            "https://modelscope.cn/models/DeepModelingCommunity/DPA-2.4-7M/resolve/master/DPA-2.4-7M-patched-mt.pt",
         ],
         "filename": "dpa-2.4-7M.pt",
-        "sha256": "7a5ca2b01579d9617502b4203af839107fdcf1ec7e3ae1d66a5b14811bc5b741",
+        "sha256": "904eb5560af9ff644347dedd3ebf1e9c97929d02ee37ce3cbe895de3df711198",
+    },
+    "DPA3-Omol-Large": {
+        "urls": [
+            "https://huggingface.co/deepmodelingcommunity/DPA3-Omol-Large/resolve/main/DPA3-Omol-Large.pt?download=true",
+            "https://hf-mirror.com/deepmodelingcommunity/DPA3-Omol-Large/resolve/main/DPA3-Omol-Large.pt?download=true",
+            "https://modelscope.cn/models/DeepModelingCommunity/DPA3-Omol-Large/resolve/master/DPA3-Omol-Large.pt",
+        ],
+        "filename": "DPA3-Omol-Large.pt",
+        "sha256": "dc4d252b31450b41eb3546cc48f640ad0831c0b5d069ce27d996e0ff58fc037a",
     },
 }
 

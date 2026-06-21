@@ -24,14 +24,16 @@ from deepmd.pt_expt.utils.env import (
     PRECISION_DICT,
 )
 
-from ...pt.model.test_env_mat import (
+from ...common.test_mixins import (
     TestCaseSingleFrameWithNlist,
-)
-from ...pt.model.test_mlp import (
     get_tols,
 )
 from ...seed import (
     GLOBAL_SEED,
+)
+from ..export_helpers import (
+    export_save_load_and_compare,
+    make_descriptor_dynamic_shapes,
 )
 
 
@@ -217,3 +219,138 @@ class TestDescrptHybrid(TestCaseSingleFrameWithNlist):
             rtol=rtol,
             atol=atol,
         )
+
+        # --- symbolic trace + export + .pte round-trip ---
+        dynamic_shapes = make_descriptor_dynamic_shapes(has_mapping=False)
+        inputs = (coord_ext, atype_ext, nlist)
+        export_save_load_and_compare(
+            fn,
+            inputs,
+            (rd_eager, grad_eager),
+            dynamic_shapes,
+            rtol=rtol,
+            atol=atol,
+        )
+
+    def test_share_params(self) -> None:
+        """share_params level 0: recursively shares all sub-descriptors."""
+        rng = np.random.default_rng(GLOBAL_SEED)
+        _, _, nnei = self.nlist.shape
+        davg4 = rng.normal(size=(self.nt, nnei, 4))
+        dstd4 = 0.1 + np.abs(rng.normal(size=(self.nt, nnei, 4)))
+
+        dd0 = DescrptHybrid(
+            list=[
+                DescrptSeA(self.rcut, self.rcut_smth, self.sel, seed=GLOBAL_SEED),
+                DescrptSeR(self.rcut, self.rcut_smth, self.sel, seed=GLOBAL_SEED),
+            ]
+        ).to(self.device)
+        dd1 = DescrptHybrid(
+            list=[
+                DescrptSeA(self.rcut, self.rcut_smth, self.sel, seed=GLOBAL_SEED + 1),
+                DescrptSeR(self.rcut, self.rcut_smth, self.sel, seed=GLOBAL_SEED + 1),
+            ]
+        ).to(self.device)
+
+        # set stats on dd0's sub-descriptors
+        dd0.descrpt_list[0].davg = torch.tensor(
+            davg4, dtype=torch.float64, device=self.device
+        )
+        dd0.descrpt_list[0].dstd = torch.tensor(
+            dstd4, dtype=torch.float64, device=self.device
+        )
+        dd0.descrpt_list[1].davg = torch.tensor(
+            davg4[..., :1], dtype=torch.float64, device=self.device
+        )
+        dd0.descrpt_list[1].dstd = torch.tensor(
+            dstd4[..., :1], dtype=torch.float64, device=self.device
+        )
+
+        dd1.share_params(dd0, shared_level=0)
+
+        # each sub-descriptor's modules/buffers are shared
+        for ii in range(len(dd0.descrpt_list)):
+            for key in dd0.descrpt_list[ii]._modules:
+                assert (
+                    dd1.descrpt_list[ii]._modules[key]
+                    is dd0.descrpt_list[ii]._modules[key]
+                )
+            for key in dd0.descrpt_list[ii]._buffers:
+                assert (
+                    dd1.descrpt_list[ii]._buffers[key]
+                    is dd0.descrpt_list[ii]._buffers[key]
+                )
+
+        # invalid level raises
+        with pytest.raises(NotImplementedError):
+            dd1.share_params(dd0, shared_level=1)
+
+
+def _se_e2_a_child() -> dict:
+    return {
+        "type": "se_e2_a",
+        "rcut": 6.0,
+        "rcut_smth": 0.5,
+        "sel": [20, 20],
+        "neuron": [2, 4],
+        "axis_neuron": 2,
+        "type_one_side": True,
+        "precision": "float64",
+        "seed": 1,
+    }
+
+
+def _dpa3_child(use_loc_mapping: bool) -> dict:
+    return {
+        "type": "dpa3",
+        "repflow": {
+            "n_dim": 8,
+            "e_dim": 6,
+            "a_dim": 4,
+            "nlayers": 1,
+            "e_rcut": 4.0,
+            "e_rcut_smth": 0.5,
+            "e_sel": 8,
+            "a_rcut": 3.5,
+            "a_rcut_smth": 0.5,
+            "a_sel": 4,
+            "axis_neuron": 4,
+            "update_angle": False,
+        },
+        "use_loc_mapping": use_loc_mapping,
+    }
+
+
+@pytest.mark.parametrize(
+    "child_factory,expected_hmp,expected_hmp_ar",
+    [
+        (_se_e2_a_child, False, False),
+        (lambda: _dpa3_child(use_loc_mapping=True), True, False),
+        (lambda: _dpa3_child(use_loc_mapping=False), True, True),
+    ],
+    ids=["se_e2_a-only", "dpa3-ulm-true", "dpa3-ulm-false"],
+)
+def test_has_message_passing_across_ranks(
+    child_factory, expected_hmp, expected_hmp_ar
+) -> None:
+    """Hybrid descriptor recurses into its children; cross-rank message
+    passing is required iff any child needs it. Closes the structural
+    side of catalog Tier-1 #1.
+    """
+    import copy
+
+    from deepmd.dpmodel.model.model import (
+        get_model,
+    )
+
+    config = {
+        "type_map": ["O", "H"],
+        "descriptor": {
+            "type": "hybrid",
+            "list": [child_factory()],
+        },
+        "fitting_net": {"neuron": [4, 4], "seed": 1},
+    }
+    desc = get_model(copy.deepcopy(config)).atomic_model.descriptor
+    assert desc.has_message_passing() is expected_hmp
+    assert desc.has_message_passing_across_ranks() is expected_hmp_ar

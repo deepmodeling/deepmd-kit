@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import contextlib
+import datetime
 import functools
 import logging
 import time
@@ -140,7 +141,7 @@ class Trainer:
 
         # Iteration config
         self.num_steps = training_params.get("numb_steps")
-        self.num_epoch = training_params.get("num_epoch")
+        self.num_epoch = training_params.get("numb_epoch")
         self.num_epoch_dict = training_params.get("num_epoch_dict")
         self.acc_freq: int = training_params.get(
             "acc_freq", 1
@@ -982,6 +983,10 @@ class Trainer:
                             batch=display_step_id,
                             wall_time=train_time,
                             eta=eta,
+                            current_time=datetime.datetime.fromtimestamp(
+                                current_time,
+                                tz=datetime.timezone.utc,
+                            ).astimezone(),
                         )
                     )
                 # the first training time is not accurate
@@ -1033,7 +1038,11 @@ class Trainer:
             if JIT:
                 break
 
-        if self.change_bias_after_training and (self.rank == 0 or dist.get_rank() == 0):
+        if (
+            self.change_bias_after_training
+            and self.num_steps > self.start_step
+            and (self.rank == 0 or dist.get_rank() == 0)
+        ):
             if not self.multi_task:
                 self.model = model_change_out_bias(
                     self.model,

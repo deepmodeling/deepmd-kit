@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import datetime
 import logging
 import os
 import shutil
@@ -603,10 +604,20 @@ class DPTrainer:
                     toc = time.time()
                     test_time = toc - tic
                     wall_time = toc - wall_time_tic
+                    displayed_batches = max(
+                        1,
+                        min(self.disp_freq, int(cur_batch - start_batch)),
+                    )
+                    eta = int((stop_batch - cur_batch) / displayed_batches * wall_time)
                     log.info(
                         format_training_message(
                             batch=cur_batch,
                             wall_time=wall_time,
+                            eta=eta,
+                            current_time=datetime.datetime.fromtimestamp(
+                                toc,
+                                tz=datetime.timezone.utc,
+                            ).astimezone(),
                         )
                     )
                     # the first training time is not accurate

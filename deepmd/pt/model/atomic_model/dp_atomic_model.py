@@ -244,6 +244,7 @@ class DPAtomicModel(BaseAtomicModel):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         comm_dict: dict[str, torch.Tensor] | None = None,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Return atomic prediction.
 
@@ -270,23 +271,15 @@ class DPAtomicModel(BaseAtomicModel):
         """
         nframes, nloc, nnei = nlist.shape
         atype = extended_atype[:, :nloc]
-        if self.do_grad_r() or self.do_grad_c():
-            extended_coord.requires_grad_(True)
+        if (self.do_grad_r() or self.do_grad_c()) and not extended_coord.requires_grad:
+            extended_coord = extended_coord.clone().requires_grad_(True)
 
-        # Handle default fparam if fitting net supports it
-        if (
-            hasattr(self.fitting_net, "get_dim_fparam")
-            and self.fitting_net.get_dim_fparam() > 0
-            and fparam is None
-        ):
-            # use default fparam
-            default_fparam_tensor = self.fitting_net.get_default_fparam()
-            assert default_fparam_tensor is not None
-            fparam_input_for_des = torch.tile(
-                default_fparam_tensor.unsqueeze(0), [nframes, 1]
-            )
-        else:
-            fparam_input_for_des = fparam
+        # Handle default chg_spin if descriptor supports it
+        if self.add_chg_spin_ebd and charge_spin is None:
+            default_cs_tensor = self.descriptor.get_default_chg_spin()
+            if default_cs_tensor is not None:
+                default_cs_tensor = default_cs_tensor.to(device=extended_coord.device)
+                charge_spin = torch.tile(default_cs_tensor.unsqueeze(0), [nframes, 1])
 
         descriptor, rot_mat, g2, h2, sw = self.descriptor(
             extended_coord,
@@ -294,7 +287,7 @@ class DPAtomicModel(BaseAtomicModel):
             nlist,
             mapping=mapping,
             comm_dict=comm_dict,
-            fparam=fparam_input_for_des if self.add_chg_spin_ebd else None,
+            charge_spin=charge_spin if self.add_chg_spin_ebd else None,
         )
         assert descriptor is not None
         if self.enable_eval_descriptor_hook:
@@ -393,6 +386,32 @@ class DPAtomicModel(BaseAtomicModel):
 
     def get_default_fparam(self) -> torch.Tensor | None:
         return self.fitting_net.get_default_fparam()
+
+    @torch.jit.export
+    def has_chg_spin_ebd(self) -> bool:
+        """Check if the model has charge spin embedding."""
+        return self.add_chg_spin_ebd
+
+    @torch.jit.export
+    def get_dim_chg_spin(self) -> int:
+        """Get the dimension of charge_spin input."""
+        if self.add_chg_spin_ebd:
+            return self.descriptor.get_dim_chg_spin()
+        return 0
+
+    @torch.jit.export
+    def has_default_chg_spin(self) -> bool:
+        """Check if the model has default charge_spin values."""
+        if self.add_chg_spin_ebd:
+            return self.descriptor.has_default_chg_spin()
+        return False
+
+    @torch.jit.export
+    def get_default_chg_spin(self) -> torch.Tensor | None:
+        """Get the default charge_spin values as a tensor."""
+        if self.add_chg_spin_ebd and self.descriptor.has_default_chg_spin():
+            return self.descriptor.get_default_chg_spin()
+        return None
 
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""

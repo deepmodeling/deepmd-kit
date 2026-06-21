@@ -178,15 +178,18 @@ def _try_convert_list(name: str, value: list) -> torch.nn.Module | None:
     """
     if not value:
         return None
-    # List of torch.nn.Module → ModuleList
-    if all(isinstance(v, torch.nn.Module) for v in value):
-        return torch.nn.ModuleList(value)
-    # List of NativeOP (not yet Module) → convert each + ModuleList
-    if all(
-        isinstance(v, NativeOP) and not isinstance(v, torch.nn.Module) for v in value
+    # List of (torch.nn.Module | NativeOP | None) with at least one module-like
+    # entry → ModuleList (None entries are preserved: optional sub-modules such
+    # as per-degree activations/norms are None when disabled).  Plain NativeOP
+    # entries are converted first.
+    if any(isinstance(v, (torch.nn.Module, NativeOP)) for v in value) and all(
+        v is None or isinstance(v, (torch.nn.Module, NativeOP)) for v in value
     ):
         converted = []
         for v in value:
+            if v is None or isinstance(v, torch.nn.Module):
+                converted.append(v)
+                continue
             c = try_convert_module(v)
             if c is None:
                 raise TypeError(
@@ -460,6 +463,25 @@ def torch_module(
             return self.call_lower(*args, **kwargs)
 
         TorchModule.forward_lower = forward_lower
+
+    # Auto-register dpmodel base → pt_expt converter so that auto-wrapped
+    # parent objects (e.g. atomic models) get pt_expt sub-components instead
+    # of generic dpmodel wrappers (which lack methods like enable_compression).
+    if hasattr(TorchModule, "deserialize"):
+        for base in module.__bases__:
+            if (
+                base is not NativeOP
+                and issubclass(base, NativeOP)
+                and hasattr(base, "serialize")
+                and base not in _DPMODEL_TO_PT_EXPT
+            ):
+                # Capture TorchModule in closure via default arg
+                def _converter(
+                    v: NativeOP, _cls: type = TorchModule
+                ) -> torch.nn.Module:
+                    return _cls.deserialize(v.serialize())
+
+                _DPMODEL_TO_PT_EXPT[base] = _converter
 
     return TorchModule
 

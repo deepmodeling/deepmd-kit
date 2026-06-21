@@ -15,6 +15,7 @@ from deepmd.dpmodel import (
 from deepmd.dpmodel.array_api import (
     Array,
     xp_take_along_axis,
+    xp_take_first_n,
 )
 from deepmd.dpmodel.common import (
     cast_precision,
@@ -596,6 +597,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         self.rcut_smth = self.repinit.get_rcut_smth()
         self.trainable = trainable
         self.add_tebd_to_repinit_out = add_tebd_to_repinit_out
+        self.compress = False
 
         self.repinit_out_dim = self.repinit.dim_out
         if self.repinit_args.use_three_body:
@@ -684,6 +686,16 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         return any(
             [self.repinit.has_message_passing(), self.repformers.has_message_passing()]
         )
+
+    def has_message_passing_across_ranks(self) -> bool:
+        """Returns whether per-layer node embeddings need MPI ghost exchange.
+
+        DPA2's repformers always passes ``g1`` in ``[nb, nall, n_dim]``
+        layout (no ``use_loc_mapping`` opt-out exists at the block level),
+        so multi-rank deployment always needs cross-rank exchange of
+        per-atom features between layers.
+        """
+        return self.repformers.has_message_passing_across_ranks()
 
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the descriptor needs sorted nlist when using `forward_lower`."""
@@ -829,6 +841,8 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         nlist: Array,
         mapping: Array | None = None,
         fparam: Array | None = None,
+        comm_dict: dict | None = None,
+        charge_spin: Array | None = None,
     ) -> tuple[Array, Array, Array, Array, Array]:
         """Compute the descriptor.
 
@@ -842,6 +856,11 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             The neighbor list. shape: nf x nloc x nnei
         mapping
             The index mapping, maps extended region index to local region.
+        comm_dict
+            MPI communication metadata for parallel inference. Forwarded to
+            the repformer block (the message-passing part). The repinit
+            sub-block does no message passing and does not receive it.
+            ``None`` for non-parallel inference (default).
 
         Returns
         -------
@@ -877,7 +896,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             xp.take(type_embedding, xp.reshape(atype_ext, (-1,)), axis=0),
             (nframes, nall, self.tebd_dim),
         )
-        g1_inp = g1_ext[:, :nloc, :]
+        g1_inp = xp_take_first_n(g1_ext, 1, nloc)
         g1, _, _, _, _ = self.repinit(
             nlist_dict[
                 get_multiple_nlist_key(self.repinit.get_rcut(), self.repinit.get_nsel())
@@ -910,11 +929,18 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             assert self.tebd_transform is not None
             g1 = g1 + self.tebd_transform(g1_inp)
         # mapping g1
-        assert mapping is not None
-        mapping_ext = xp.tile(
-            xp.reshape(mapping, (nframes, nall, 1)), (1, 1, g1.shape[-1])
-        )
-        g1_ext = xp_take_along_axis(g1, mapping_ext, axis=1)
+        if comm_dict is None:
+            # non-parallel: gather g1 -> g1_ext via mapping, hand the
+            # nall-sized embedding to the repformer block.
+            assert mapping is not None
+            mapping_ext = xp.tile(
+                xp.expand_dims(mapping, axis=-1), (1, 1, g1.shape[-1])
+            )
+            g1_ext = xp_take_along_axis(g1, mapping_ext, axis=1)
+        else:
+            # parallel mode: hand the local-only g1 to the repformer block;
+            # its per-layer override fills ghosts via the MPI exchange.
+            g1_ext = g1
         # repformer
         g1, g2, h2, rot_mat, sw = self.repformers(
             nlist_dict[
@@ -926,6 +952,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             atype_ext,
             g1_ext,
             mapping,
+            comm_dict=comm_dict,
         )
         if self.concat_output_tebd:
             g1 = xp.concat([g1, g1_inp], axis=-1)
@@ -938,7 +965,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         data = {
             "@class": "Descriptor",
             "type": "dpa2",
-            "@version": 3,
+            "@version": 4 if self.compress else 3,
             "ntypes": self.ntypes,
             "repinit_args": self.repinit_args.serialize(),
             "repformer_args": self.repformer_args.serialize(),
@@ -973,6 +1000,21 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
             repinit_variable.update(
                 {"embeddings_strip": repinit.embeddings_strip.serialize()}
             )
+        if self.compress:
+            compress_dict: dict = {
+                "@variables": {
+                    "type_embd_data": to_numpy_array(self.type_embd_data),
+                },
+                "geo_compress": self.geo_compress,
+            }
+            if self.geo_compress:
+                compress_dict["@variables"]["compress_data"] = [
+                    to_numpy_array(d) for d in self.compress_data
+                ]
+                compress_dict["@variables"]["compress_info"] = [
+                    to_numpy_array(i) for i in self.compress_info
+                ]
+            repinit_variable["compress"] = compress_dict
         repformers_variable = {
             "g2_embd": repformers.g2_embd.serialize(),
             "repformer_layers": [layer.serialize() for layer in repformers.layers],
@@ -1016,7 +1058,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
     def deserialize(cls, data: dict) -> "DescrptDPA2":
         data = data.copy()
         version = data.pop("@version")
-        check_version_compatibility(version, 3, 1)
+        check_version_compatibility(version, 4, 1)
         data.pop("@class")
         data.pop("type")
         repinit_variable = data.pop("repinit_variable").copy()
@@ -1040,6 +1082,7 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         # compat with version 1
         if "use_tebd_bias" not in data:
             data["use_tebd_bias"] = True
+        compress = repinit_variable.pop("compress", None)
         obj = cls(**data)
         obj.type_embedding = TypeEmbedNet.deserialize(type_embedding)
         if add_tebd_to_repinit_out:
@@ -1089,7 +1132,19 @@ class DescrptDPA2(NativeOP, BaseDescriptor):
         obj.repformers.layers = [
             RepformerLayer.deserialize(layer) for layer in repformer_layers
         ]
+        if compress is not None:
+            obj._load_compress_data(compress)
         return obj
+
+    def _load_compress_data(self, compress: dict) -> None:
+        """Load compression state from serialized data."""
+        variables = compress["@variables"]
+        self.type_embd_data = variables["type_embd_data"]
+        self.geo_compress = compress.get("geo_compress", False)
+        if self.geo_compress:
+            self.compress_data = variables["compress_data"]
+            self.compress_info = variables["compress_info"]
+        self.compress = True
 
     @classmethod
     def update_sel(

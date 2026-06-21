@@ -173,6 +173,7 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         self.type_map = type_map
         self.emask = PairExcludeMask(self.ntypes, self.exclude_types)
         self.env_protection = env_protection
+        self.compress = False
 
         in_dim = 1  # not considiering type embedding
         embeddings = NetworkCollection(
@@ -254,6 +255,10 @@ class DescrptSeR(NativeOP, BaseDescriptor):
 
     def has_message_passing(self) -> bool:
         """Returns whether the descriptor has message passing."""
+        return False
+
+    def has_message_passing_across_ranks(self) -> bool:
+        """Returns whether per-layer node embeddings need MPI ghost exchange."""
         return False
 
     def need_sorted_nlist_for_lower(self) -> bool:
@@ -370,6 +375,8 @@ class DescrptSeR(NativeOP, BaseDescriptor):
         nlist: Array,
         mapping: Array | None = None,
         fparam: Array | None = None,
+        comm_dict: dict | None = None,
+        charge_spin: Array | None = None,
     ) -> Array:
         """Compute the descriptor.
 
@@ -438,10 +445,10 @@ class DescrptSeR(NativeOP, BaseDescriptor):
 
     def serialize(self) -> dict:
         """Serialize the descriptor to dict."""
-        return {
+        data = {
             "@class": "Descriptor",
             "type": "se_r",
-            "@version": 2,
+            "@version": 3 if self.compress else 2,
             "rcut": self.rcut,
             "rcut_smth": self.rcut_smth,
             "sel": self.sel,
@@ -464,23 +471,41 @@ class DescrptSeR(NativeOP, BaseDescriptor):
             },
             "type_map": self.type_map,
         }
+        if self.compress:
+            data["compress"] = {
+                "@variables": {
+                    "compress_data": [to_numpy_array(d) for d in self.compress_data],
+                    "compress_info": [to_numpy_array(i) for i in self.compress_info],
+                },
+            }
+        return data
 
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeR":
         """Deserialize from dict."""
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 2, 1)
+        check_version_compatibility(data.pop("@version", 1), 3, 1)
         data.pop("@class", None)
         data.pop("type", None)
         variables = data.pop("@variables")
         embeddings = data.pop("embeddings")
         env_mat = data.pop("env_mat")
+        compress = data.pop("compress", None)
         obj = cls(**data)
 
         obj["davg"] = variables["davg"]
         obj["dstd"] = variables["dstd"]
         obj.embeddings = NetworkCollection.deserialize(embeddings)
+        if compress is not None:
+            obj._load_compress_data(compress)
         return obj
+
+    def _load_compress_data(self, compress: dict) -> None:
+        """Load compression state from serialized data."""
+        variables = compress["@variables"]
+        self.compress_data = variables["compress_data"]
+        self.compress_info = variables["compress_info"]
+        self.compress = True
 
     @classmethod
     def update_sel(

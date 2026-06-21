@@ -60,10 +60,15 @@ input_files = (
     p_examples / "water" / "dpa2" / "input_torch_compressible.json",
     p_examples / "water" / "dpa3" / "input_torch.json",
     p_examples / "water" / "dpa3" / "input_torch_dynamic.json",
+    p_examples / "water" / "dpa4" / "input.json",
+    p_examples / "water" / "dpa4" / "input-zbl.json",
+    p_examples / "water" / "dpa4" / "input-spin.json",
+    p_examples / "water" / "dpa4" / "lmp" / "input.json",
     p_examples / "property" / "train" / "input_torch.json",
     p_examples / "water" / "se_e3_tebd" / "input_torch.json",
     p_examples / "hessian" / "single_task" / "input.json",
     p_examples / "water" / "se_e2_a" / "input_torch_num_epoch.json",
+    p_examples / "lmdb_downsample_data" / "input_lmdb.json",
 )
 
 input_files_multi = (
@@ -71,6 +76,7 @@ input_files_multi = (
     p_examples / "water_multi_task" / "pytorch_example" / "input_torch_sharefit.json",
     p_examples / "water_multi_task" / "pytorch_example" / "input_torch_with_alias.json",
     p_examples / "hessian" / "multi_task" / "input.json",
+    p_examples / "water" / "dpa4" / "input_multitask.json",
     p_examples
     / "water_multi_task"
     / "pytorch_example"

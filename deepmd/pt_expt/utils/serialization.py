@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import ctypes
 import json
+from typing import (
+    Any,
+)
 
 import numpy as np
 import torch
@@ -14,6 +18,58 @@ from deepmd.dpmodel.utils.region import (
 from deepmd.dpmodel.utils.serialization import (
     traverse_model_dict,
 )
+
+# ---------------------------------------------------------------------------
+# AOTInductor ``.pt2`` archive layout.
+#
+# PyTorch 2.11 tightened the single-model ``.pt2`` convention so that every
+# entry in the ZIP archive must live under the top-level ``model/`` directory.
+# Any stray root-level file makes
+# ``torch.export.pt2_archive._package.load_pt2`` raise ``RuntimeError`` at
+# load time; the upper-level ``torch._inductor.package.package.load_package``
+# then emits a misleading ``Loading outdated pt2 file. Please regenerate
+# your package.`` warning and falls back to the legacy C++ loader.
+#
+# deepmd-kit therefore stores its metadata JSON blobs under ``model/extra/``
+# so that the strict ``load_pt2`` loader accepts the archive without
+# complaint.  The C++ reader (``commonPTExpt.h::read_zip_entry``) resolves
+# this layout transparently because it matches ``entry_name`` as a
+# ``/``-delimited suffix.
+# ---------------------------------------------------------------------------
+PT2_EXTRA_PREFIX = "model/extra/"
+
+
+def _strip_shape_assertions(graph_module: torch.nn.Module) -> None:
+    """Neutralise shape-guard assertion nodes in a spin model's exported graph.
+
+    ``torch.export`` inserts ``aten._assert_scalar`` nodes for symbolic shape
+    relationships discovered during tracing.  For the spin model, the atom-
+    doubling logic creates slice patterns that depend on ``(nall - nloc)``,
+    producing guards like ``Ne(nall, nloc)``.  These guards are spurious: the
+    model computes correct results even when ``nall == nloc`` (NoPBC, no ghost
+    atoms).
+
+    This function is **only called for spin models** (guarded by ``if is_spin``
+    in ``_trace_and_export``).  The assertion messages use opaque symbolic
+    variable names (e.g. ``Ne(s22, s96)``) rather than human-readable names,
+    so filtering by message content is not reliable.  Since
+    ``prefer_deferred_runtime_asserts_over_guards=True`` converts all shape
+    guards into these deferred assertions, and the only shape relationships in
+    the spin model involve nall/nloc, neutralising all of them is safe in this
+    context.
+
+    We replace each assertion's condition with ``True`` rather than erasing the
+    node; erasing nodes can disturb the FX graph structure and produce NaN
+    gradients on some Python/torch versions.
+    """
+    graph = graph_module.graph
+    for node in list(graph.nodes):
+        if (
+            node.op == "call_function"
+            and node.target is torch.ops.aten._assert_scalar.default
+        ):
+            node.args = (True, node.args[1])
+    graph_module.recompile()
 
 
 def _numpy_to_json_serializable(model_obj: dict) -> dict:
@@ -45,10 +101,102 @@ def _json_to_numpy(model_obj: dict) -> dict:
     )
 
 
+def _metadata_value_to_json(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, torch.Tensor):
+        return value.detach().cpu().tolist()
+    if isinstance(value, np.ndarray):
+        return value.tolist()
+    return value
+
+
+def _needs_with_comm_artifact(model: torch.nn.Module) -> bool:
+    """Return ``True`` if the model needs a "with-comm" AOTI artifact compiled.
+
+    The with-comm artifact carries the per-layer ``deepmd_export::border_op``
+    calls that exchange node-embedding tensors across MPI ranks. Multi-rank
+    LAMMPS dispatches to it when the descriptor's message passing extends
+    across rank boundaries (i.e. layers consume neighbour features that
+    live on a different rank). Non-GNN descriptors and GNN descriptors with
+    ``use_loc_mapping=True`` keep all per-layer messaging local to each
+    rank's owned atoms; they need only the regular artifact.
+
+    Delegates to ``descriptor.has_message_passing_across_ranks()``, which
+    descriptor classes implement explicitly. Returns ``False`` defensively
+    when the model has no single descriptor (linear/zbl/frozen) or when
+    the method is somehow missing or raises.
+    """
+    desc = getattr(getattr(model, "atomic_model", None), "descriptor", None)
+    if desc is None or not hasattr(desc, "has_message_passing_across_ranks"):
+        return False
+    try:
+        return bool(desc.has_message_passing_across_ranks())
+    except (AttributeError, NotImplementedError):
+        return False
+
+
+# Module-level cache for the trace-time sendlist buffer. The pointer
+# value embedded in ``send_list_tensor`` references this numpy array's
+# data; the array must outlive the trace + export call.  Caching here
+# (rather than per-call) is fine because the contents are never read by
+# the exported graph at runtime — only by the eager call inside
+# ``make_fx`` when extracting output keys, and by ``torch.export`` when
+# materializing example inputs.
+_TRACE_SENDLIST_KEEPALIVE: list[np.ndarray] = []
+
+
+def _make_comm_sample_inputs(
+    nloc: int,
+    nghost: int,
+    device: torch.device,
+) -> tuple[torch.Tensor, ...]:
+    """Build trivial-but-valid comm tensors for tracing the with-comm variant.
+
+    Phase 0 finding: tracing with ``nswap == 0`` causes the dim to
+    specialize, so we must use ``nswap >= 1``.  We use ``nswap == 1``
+    with a single self-send swap whose sendlist points to ``nghost``
+    local atoms (the actual indices don't matter for the trace — only
+    the validity of the pointer matters; ``border_op`` is opaque to
+    ``torch.export`` via the ``deepmd_export::border_op`` wrapper).
+
+    Returns ``(send_list, send_proc, recv_proc, send_num, recv_num,
+    communicator, nlocal_ts, nghost_ts)`` — 8 tensors, matching the
+    canonical positional order of
+    ``forward_common_lower_exportable_with_comm``.
+    """
+    nswap = 1
+    send_count = max(1, nghost)
+    # The trace-time sendlist must be a real ``int**``: a tensor of
+    # int64 values, each value the address of a contiguous int32 array.
+    indices = np.zeros(send_count, dtype=np.int32)
+    _TRACE_SENDLIST_KEEPALIVE.append(indices)
+    addr = indices.ctypes.data_as(ctypes.c_void_p).value
+    send_list = torch.tensor([addr], dtype=torch.int64, device=device)
+    send_proc = torch.zeros(nswap, dtype=torch.int32, device=device)
+    recv_proc = torch.zeros(nswap, dtype=torch.int32, device=device)
+    send_num = torch.tensor([send_count], dtype=torch.int32, device=device)
+    recv_num = torch.tensor([send_count], dtype=torch.int32, device=device)
+    communicator = torch.zeros(1, dtype=torch.int64, device=device)
+    nlocal_ts = torch.tensor(nloc, dtype=torch.int32, device=device)
+    nghost_ts = torch.tensor(nghost, dtype=torch.int32, device=device)
+    return (
+        send_list,
+        send_proc,
+        recv_proc,
+        send_num,
+        recv_num,
+        communicator,
+        nlocal_ts,
+        nghost_ts,
+    )
+
+
 def _make_sample_inputs(
     model: torch.nn.Module,
     nframes: int = 1,
-    nloc: int = 2,
+    nloc: int = 7,
+    has_spin: bool = False,
 ) -> tuple[torch.Tensor, ...]:
     """Create sample inputs for tracing forward_lower.
 
@@ -60,11 +208,15 @@ def _make_sample_inputs(
         Number of frames.
     nloc : int
         Number of local atoms.
+    has_spin : bool
+        If True, create an extended spin tensor and return 7 tensors.
 
     Returns
     -------
     tuple
-        (ext_coord, ext_atype, nlist, mapping, fparam, aparam)
+        (ext_coord, ext_atype, nlist, mapping, fparam, aparam, charge_spin) or
+        (ext_coord, ext_atype, ext_spin, nlist, mapping, fparam, aparam,
+        charge_spin) when has_spin.
     """
     rcut = model.get_rcut()
     sel = model.get_sel()
@@ -110,67 +262,181 @@ def _make_sample_inputs(
     extended_coord = extended_coord.reshape(nframes, -1, 3)
 
     # Convert to torch tensors
-    from deepmd.pt_expt.utils.env import (
-        DEVICE,
-    )
+    import deepmd.pt_expt.utils.env as _env
 
-    ext_coord = torch.tensor(extended_coord, dtype=torch.float64, device=DEVICE)
-    ext_atype = torch.tensor(extended_atype, dtype=torch.int64, device=DEVICE)
-    nlist_t = torch.tensor(nlist, dtype=torch.int64, device=DEVICE)
-    mapping_t = torch.tensor(mapping, dtype=torch.int64, device=DEVICE)
+    ext_coord = torch.tensor(extended_coord, dtype=torch.float64, device=_env.DEVICE)
+    ext_atype = torch.tensor(extended_atype, dtype=torch.int64, device=_env.DEVICE)
+    nlist_t = torch.tensor(nlist, dtype=torch.int64, device=_env.DEVICE)
+    mapping_t = torch.tensor(mapping, dtype=torch.int64, device=_env.DEVICE)
 
     if dim_fparam > 0:
-        fparam = torch.zeros(nframes, dim_fparam, dtype=torch.float64, device=DEVICE)
+        fparam = torch.zeros(
+            nframes, dim_fparam, dtype=torch.float64, device=_env.DEVICE
+        )
     else:
         fparam = None
 
     if dim_aparam > 0:
         aparam = torch.zeros(
-            nframes, nloc, dim_aparam, dtype=torch.float64, device=DEVICE
+            nframes, nloc, dim_aparam, dtype=torch.float64, device=_env.DEVICE
         )
     else:
         aparam = None
 
-    return ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam
+    dim_chg_spin = model.get_dim_chg_spin() if hasattr(model, "get_dim_chg_spin") else 0
+    if dim_chg_spin > 0:
+        charge_spin = torch.zeros(
+            nframes, dim_chg_spin, dtype=torch.float64, device=_env.DEVICE
+        )
+    else:
+        charge_spin = None
+
+    if has_spin:
+        nall = extended_coord.shape[1]
+        ext_spin = torch.zeros(
+            nframes, nall, 3, dtype=torch.float64, device=_env.DEVICE
+        )
+        return (
+            ext_coord,
+            ext_atype,
+            ext_spin,
+            nlist_t,
+            mapping_t,
+            fparam,
+            aparam,
+            charge_spin,
+        )
+
+    return ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin
 
 
 def _build_dynamic_shapes(
-    _ext_coord: torch.Tensor,
-    _ext_atype: torch.Tensor,
-    _nlist: torch.Tensor,
-    _mapping: torch.Tensor,
-    fparam: torch.Tensor | None,
-    aparam: torch.Tensor | None,
+    *sample_inputs: torch.Tensor | None,
+    has_spin: bool = False,
+    with_comm_dict: bool = False,
+    model_nnei: int = 1,
 ) -> tuple:
     """Build dynamic shape specifications for torch.export.
 
-    Marks nframes, nloc and nall as dynamic dimensions so the exported
-    program handles arbitrary frame and atom counts.
+    Marks nframes, nloc, nall and nnei as dynamic dimensions so the exported
+    program handles arbitrary frame, atom and neighbor counts.
 
+    When ``with_comm_dict`` is True, 8 additional comm tensors are
+    appended to the returned tuple — matching the positional order of
+    ``forward_common_lower_exportable_with_comm``.  ``nswap`` is the
+    only dynamic dim among them; the rest are scalar or fixed-size.
+
+    Parameters
+    ----------
+    *sample_inputs : torch.Tensor | None
+        Sample inputs: 6 tensors (non-spin) or 7 (spin), optionally
+        followed by 8 comm tensors when ``with_comm_dict``.
+    has_spin : bool
+        Whether the inputs include an extended_spin tensor.
+    with_comm_dict : bool
+        Whether the inputs include the 8 comm tensors.
+    model_nnei : int
+        The model's sum(sel).  Used as the min for the dynamic nnei dim.
     Returns a tuple (not dict) to match positional args of the make_fx
     traced module, whose arg names may have suffixes like ``_1``.
     """
-    nframes_dim = torch.export.Dim("nframes", min=1)
-    nall_dim = torch.export.Dim("nall", min=1)
-    nloc_dim = torch.export.Dim("nloc", min=1)
-
-    return (
-        {0: nframes_dim, 1: nall_dim},  # extended_coord: (nframes, nall, 3)
-        {0: nframes_dim, 1: nall_dim},  # extended_atype: (nframes, nall)
-        {0: nframes_dim, 1: nloc_dim},  # nlist: (nframes, nloc, nnei)
-        {0: nframes_dim, 1: nall_dim},  # mapping: (nframes, nall)
-        {0: nframes_dim} if fparam is not None else None,  # fparam
-        {0: nframes_dim, 1: nloc_dim} if aparam is not None else None,  # aparam
+    # When tracing the with-comm variant, nframes is static at 1.
+    # Rationale: pt_expt's Repflow/Repformer parallel-mode override
+    # mirrors pt's repflows.py:593 ``node_ebd.squeeze(0)`` /
+    # ``…unsqueeze(0)`` pattern, which only works for nb=1. LAMMPS
+    # always drives inference with one frame so this matches reality.
+    # Marking nframes static (not dynamic) means it does not
+    # participate in duck-sizing — so the nframes==2 collision-avoidance
+    # chosen for the regular variant is *not* needed here, and the
+    # static value (1) is safe regardless of other tensors' sizes.
+    nframes_dim: torch.export.Dim | int = (
+        1 if with_comm_dict else torch.export.Dim("nframes", min=1)
     )
+    # Spin models double atom count internally (real + virtual). Some
+    # GNN ops in the spin path generate a min=4 constraint on the
+    # *pre-doubling* nall axis (matches "Suggested fixes" from
+    # torch.export's CONSTRAINT_VIOLATION error). Bump the min for spin
+    # so the export does not error on the inferred guard.
+    nall_min = 4 if has_spin else 1
+    nall_dim = torch.export.Dim("nall", min=nall_min)
+    nloc_dim = torch.export.Dim("nloc", min=1)
+    nnei_dim = torch.export.Dim("nnei", min=max(1, model_nnei))
+
+    if has_spin:
+        # (ext_coord, ext_atype, ext_spin, nlist, mapping, fparam, aparam, charge_spin)
+        fparam = sample_inputs[5]
+        aparam = sample_inputs[6]
+        charge_spin = sample_inputs[7]
+        base = (
+            {0: nframes_dim, 1: nall_dim},  # extended_coord: (nframes, nall, 3)
+            {0: nframes_dim, 1: nall_dim},  # extended_atype: (nframes, nall)
+            {0: nframes_dim, 1: nall_dim},  # extended_spin: (nframes, nall, 3)
+            {
+                0: nframes_dim,
+                1: nloc_dim,
+                2: nnei_dim,
+            },  # nlist: (nframes, nloc, nnei) — nnei is dynamic
+            {0: nframes_dim, 1: nall_dim},  # mapping: (nframes, nall)
+            {0: nframes_dim} if fparam is not None else None,  # fparam
+            {0: nframes_dim, 1: nloc_dim} if aparam is not None else None,  # aparam
+            {0: nframes_dim} if charge_spin is not None else None,  # charge_spin
+        )
+    else:
+        # (ext_coord, ext_atype, nlist, mapping, fparam, aparam, charge_spin)
+        fparam = sample_inputs[4]
+        aparam = sample_inputs[5]
+        charge_spin = sample_inputs[6]
+        base = (
+            {0: nframes_dim, 1: nall_dim},  # extended_coord: (nframes, nall, 3)
+            {0: nframes_dim, 1: nall_dim},  # extended_atype: (nframes, nall)
+            {
+                0: nframes_dim,
+                1: nloc_dim,
+                2: nnei_dim,
+            },  # nlist: (nframes, nloc, nnei) — nnei is dynamic
+            {0: nframes_dim, 1: nall_dim},  # mapping: (nframes, nall)
+            {0: nframes_dim} if fparam is not None else None,  # fparam
+            {0: nframes_dim, 1: nloc_dim} if aparam is not None else None,  # aparam
+            {0: nframes_dim} if charge_spin is not None else None,  # charge_spin
+        )
+
+    if not with_comm_dict:
+        return base
+
+    # All 8 comm tensors have static shapes:
+    #   send_list, send_proc, recv_proc, send_num, recv_num: (nswap,)
+    #   communicator: (1,)
+    #   nlocal, nghost: scalar
+    # nswap is fixed once at LAMMPS init (it depends on the processor
+    # grid which doesn't change at runtime), so it's safe to bake it
+    # in as static at the trace value.  Marking nswap dynamic instead
+    # raises a Constraints-violated error because the trace specialises
+    # it to the sample value (1) downstream of border_op anyway —
+    # there is no graph variation across nswap values.
+    return (*base, None, None, None, None, None, None, None, None)
 
 
-def _collect_metadata(model: torch.nn.Module) -> dict:
-    """Collect metadata from the model for storage in .pte extra_files."""
-    # Serialize the fitting output definitions so that ModelOutputDef
-    # can be reconstructed at inference time without loading the full model.
-    fitting_output_def = model.atomic_output_def()
+def _collect_metadata(model: torch.nn.Module, is_spin: bool = False) -> dict:
+    """Collect metadata from the model for C++ inference.
+
+    This metadata is stored as ``metadata.json`` in both .pt2 and .pte archives.
+    Training config is stored separately in ``model_def_script.json``.  C++ reads
+    flat JSON fields because compiling model API methods as AOTInductor
+    entry points is impractical (~12 s per trivial function) and string
+    outputs (``get_type_map``) cannot be expressed as tensor I/O.
+
+    The ``fitting_output_defs`` list is also included so that
+    ``ModelOutputDef`` can be reconstructed without loading the full model.
+    """
+    if is_spin:
+        fitting_output_def = model.model_output_def().def_outp
+    else:
+        fitting_output_def = model.atomic_output_def()
     fitting_output_defs = []
     for vdef in fitting_output_def.get_data().values():
+        # Keep metadata aligned with physical fitting outputs only.
+        if is_spin and vdef.name == "mask":
+            continue
         fitting_output_defs.append(
             {
                 "name": vdef.name,
@@ -179,117 +445,619 @@ def _collect_metadata(model: torch.nn.Module) -> dict:
                 "r_differentiable": vdef.r_differentiable,
                 "c_differentiable": vdef.c_differentiable,
                 "atomic": vdef.atomic,
-                "category": vdef.category,
+                # OutputVariableCategory is an IntEnum; force plain int for
+                # deterministic JSON serialisation across Python versions.
+                "category": int(vdef.category),
                 "r_hessian": vdef.r_hessian,
                 "magnetic": vdef.magnetic,
                 "intensive": vdef.intensive,
             }
         )
-    return {
+    meta = {
         "type_map": model.get_type_map(),
         "rcut": model.get_rcut(),
         "sel": model.get_sel(),
-        "model_output_type": model.model_output_type(),
+        "nnei": sum(model.get_sel()),
         "dim_fparam": model.get_dim_fparam(),
         "dim_aparam": model.get_dim_aparam(),
+        "dim_chg_spin": (
+            model.get_dim_chg_spin() if hasattr(model, "get_dim_chg_spin") else 0
+        ),
         "mixed_types": model.mixed_types(),
-        "sel_type": model.get_sel_type(),
+        "has_default_fparam": model.has_default_fparam(),
+        "default_fparam": model.get_default_fparam(),
+        "has_chg_spin_ebd": (
+            model.has_chg_spin_ebd() if hasattr(model, "has_chg_spin_ebd") else False
+        ),
+        "has_default_chg_spin": (
+            model.has_default_chg_spin()
+            if hasattr(model, "has_default_chg_spin")
+            else False
+        ),
+        "default_chg_spin": (
+            _metadata_value_to_json(model.get_default_chg_spin())
+            if hasattr(model, "get_default_chg_spin")
+            else None
+        ),
         "fitting_output_defs": fitting_output_defs,
+        # sel_type enables `DeepEval.get_sel_type()` without a dpmodel
+        # round-trip; required for dipole/polar/wfc models in metadata-only
+        # inference (energy models return []).
+        "sel_type": [int(t) for t in model.get_sel_type()],
+        "is_spin": is_spin,
     }
+    if is_spin:
+        meta["ntypes_spin"] = model.spin.get_ntypes_spin()
+        meta["use_spin"] = [bool(v) for v in model.spin.use_spin]
+    # Whether multi-rank LAMMPS needs a second "with-comm" AOTI artifact
+    # (per-layer ghost-feature MPI exchange via deepmd_export::border_op).
+    # The C++ DeepPotPTExpt / DeepSpinPTExpt loaders branch on this flag.
+    meta["has_comm_artifact"] = _needs_with_comm_artifact(model)
+
+    # Whether the model's regular .pt2 graph consumes the ``mapping``
+    # tensor to gather per-layer ghost-atom features from local atoms.
+    # Mirrors the descriptor's ``has_message_passing()`` API: True for
+    # any message-passing descriptor (DPA2, DPA3, hybrids over those);
+    # False for non-message-passing descriptors (se_e2_a, DPA1, etc.).
+    # The C++ side gates its fail-fast on this — an absent mapping is
+    # fatal only for models that would silently corrupt ghost features
+    # otherwise.
+    #
+    # Lookup order: model -> atomic_model -> descriptor.  Going through
+    # ``atomic_model.has_message_passing()`` is important for composite
+    # atomic models (e.g. ``LinearAtomicModel`` in DP-ZBL) which don't
+    # expose a single ``.descriptor`` but do aggregate the flag across
+    # their sub-models.  ``descriptor.has_message_passing()`` is the
+    # fallback for any future wrapper that lacks the higher-level
+    # methods.
+    def _probe_has_message_passing(obj: object) -> bool | None:
+        if obj is None or not hasattr(obj, "has_message_passing"):
+            return None
+        try:
+            return bool(obj.has_message_passing())
+        except (AttributeError, NotImplementedError):
+            return None
+
+    result: bool | None = None
+    for obj in (
+        model,
+        getattr(model, "atomic_model", None),
+        getattr(getattr(model, "atomic_model", None), "descriptor", None),
+    ):
+        result = _probe_has_message_passing(obj)
+        if result is not None:
+            break
+    meta["has_message_passing"] = result if result is not None else False
+    return meta
 
 
 def serialize_from_file(model_file: str) -> dict:
-    """Serialize a .pte model file to a dictionary.
+    """Serialize a .pte or .pt2 model file to a dictionary.
 
-    Reads the model dict stored in the extra_files of the .pte archive.
+    Reads the model dict stored in the model archive.
 
     Parameters
     ----------
     model_file : str
-        The .pte model file to be serialized.
+        The model file to be serialized (.pte or .pt2).
 
     Returns
     -------
     dict
-        The serialized model data.
+        The serialized model data.  If the archive contains
+        ``model_def_script.json`` (training config), it is included
+        under the ``"model_def_script"`` key.
     """
-    extra_files = {"model.json": ""}
+    if model_file.endswith(".pt2"):
+        return _serialize_from_file_pt2(model_file)
+    else:
+        return _serialize_from_file_pte(model_file)
+
+
+def _serialize_from_file_pte(model_file: str) -> dict:
+    """Serialize a .pte model file to a dictionary."""
+    extra_files = {"model.json": "", "model_def_script.json": ""}
     torch.export.load(model_file, extra_files=extra_files)
     model_dict = json.loads(extra_files["model.json"])
     model_dict = _json_to_numpy(model_dict)
+    if extra_files["model_def_script.json"]:
+        model_dict["model_def_script"] = json.loads(
+            extra_files["model_def_script.json"]
+        )
     return model_dict
 
 
-def deserialize_to_file(model_file: str, data: dict) -> None:
-    """Deserialize a dictionary to a .pte model file.
+def _serialize_from_file_pt2(model_file: str) -> dict:
+    """Serialize a .pt2 model file to a dictionary.
+
+    Reads the model dict stored in the ``model/extra/`` directory of the
+    ``.pt2`` ZIP archive.
+    """
+    import zipfile
+
+    model_json_entry = PT2_EXTRA_PREFIX + "model.json"
+    model_def_script_entry = PT2_EXTRA_PREFIX + "model_def_script.json"
+    with zipfile.ZipFile(model_file, "r") as zf:
+        names = zf.namelist()
+        if model_json_entry not in names:
+            raise ValueError(
+                f"Invalid .pt2 file '{model_file}': missing '{model_json_entry}'"
+            )
+        model_json = zf.read(model_json_entry).decode("utf-8")
+        model_def_script_json = ""
+        if model_def_script_entry in names:
+            model_def_script_json = zf.read(model_def_script_entry).decode("utf-8")
+    model_dict = json.loads(model_json)
+    model_dict = _json_to_numpy(model_dict)
+    if model_def_script_json:
+        model_dict["model_def_script"] = json.loads(model_def_script_json)
+    return model_dict
+
+
+def deserialize_to_file(
+    model_file: str,
+    data: dict,
+    model_json_override: dict | None = None,
+    do_atomic_virial: bool = False,
+) -> None:
+    """Deserialize a dictionary to a .pte or .pt2 model file.
 
     Builds a pt_expt model from the dict, traces it via make_fx,
-    exports with dynamic shapes, and saves using torch.export.save.
+    exports with dynamic shapes, and saves.
 
     Parameters
     ----------
     model_file : str
-        The .pte model file to be saved.
+        The model file to be saved (.pte or .pt2).
     data : dict
         The dictionary to be deserialized (same format as dpmodel's
         serialize output, with "model" and optionally "model_def_script" keys).
+        If ``data["model_def_script"]`` is present, it is embedded in the
+        output so that ``--use-pretrain-script`` can extract descriptor/fitting
+        params at finetune time.
+    model_json_override : dict or None
+        If provided, this dict is stored in model.json instead of ``data``.
+        Used by ``dp compress`` to store the compressed model dict while
+        tracing the uncompressed model (make_fx cannot trace custom ops).
+    do_atomic_virial : bool
+        If True, export with per-atom virial correction (3 extra backward
+        passes, ~2.5x slower).  Default False for best performance.
     """
-    from deepmd.pt_expt.model.model import (
-        BaseModel,
-    )
+    if model_file.endswith(".pt2"):
+        _deserialize_to_file_pt2(
+            model_file, data, model_json_override, do_atomic_virial
+        )
+    else:
+        _deserialize_to_file_pte(
+            model_file, data, model_json_override, do_atomic_virial
+        )
 
-    # 1. Deserialize into a pt_expt model
-    model = BaseModel.deserialize(data["model"])
-    model.eval()
 
-    # 2. Collect metadata
-    metadata = _collect_metadata(model)
+def _trace_and_export(
+    data: dict,
+    model_json_override: dict | None = None,
+    with_comm_dict: bool = False,
+    do_atomic_virial: bool = False,
+) -> tuple:
+    """Common logic: build model, trace, export.
 
-    # 3. Create sample inputs for tracing
-    # Use nframes=2 so make_fx doesn't specialize on nframes=1
-    ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam = _make_sample_inputs(
-        model, nframes=2
-    )
+    Parameters
+    ----------
+    data
+        Serialized model dict (with "model" and optionally
+        "model_def_script" keys).
+    model_json_override
+        Optional alternate dict to embed as model.json (used by
+        ``dp compress`` to store the compressed model dict while
+        tracing the uncompressed one).
+    with_comm_dict
+        If True, trace ``forward_common_lower_exportable_with_comm``
+        instead of the regular variant. The resulting exported program
+        accepts 8 additional positional comm tensors (``send_list``,
+        ``send_proc``, ``recv_proc``, ``send_num``, ``recv_num``,
+        ``communicator``, ``nlocal``, ``nghost``) used by the pt_expt
+        Repflow/Repformer override to drive MPI ghost-atom exchange.
+        Only valid for models that need cross-rank ghost-feature exchange
+        (see ``_needs_with_comm_artifact``).
+    do_atomic_virial
+        If True, the traced graph computes per-atom virial (extra
+        autograd.grad backward passes); off by default to keep .pt2
+        inference fast. Mirrors PR #5407 in upstream master.
 
-    # 4. Trace via forward_common_lower_exportable (make_fx)
-    # Uses internal keys (energy, energy_redu, energy_derv_r, etc.)
-    # so that communicate_extended_output can be applied at inference time.
-    traced = model.forward_common_lower_exportable(
-        ext_coord,
-        ext_atype,
-        nlist_t,
-        mapping_t,
-        fparam=fparam,
-        aparam=aparam,
-        do_atomic_virial=True,
-        tracing_mode="symbolic",
-        _allow_non_fake_inputs=True,
-    )
-
-    # 5. Build dynamic shapes and export
-    dynamic_shapes = _build_dynamic_shapes(
-        ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam
-    )
-    exported = torch.export.export(
-        traced,
-        (ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam),
-        dynamic_shapes=dynamic_shapes,
-        strict=False,
-    )
-
-    # 6. Prepare extra files
-    # Serialize the full model dict for cross-backend conversion
+    Returns
+    -------
+    tuple
+        ``(exported, metadata, data_for_json, output_keys)``.
+    """
     from copy import (
         deepcopy,
     )
 
-    data_for_json = deepcopy(data)
+    import deepmd.pt_expt.utils.env as _env
+    from deepmd.pt_expt.model.model import (
+        BaseModel,
+    )
+
+    target_device = _env.DEVICE
+
+    # Detect spin model
+    is_spin = data["model"].get("type") == "spin_ener"
+
+    # 1. Deserialize model on CPU for make_fx tracing.
+    # make_fx with _allow_non_fake_inputs=True keeps real model parameters;
+    # on CUDA the autograd engine requires CUDA streams for those real
+    # tensors during torch.autograd.grad, but proxy-tensor dispatch doesn't
+    # set streams up → assertion failure.  Tracing on CPU avoids this.
+    if is_spin:
+        from deepmd.pt_expt.model.spin_model import (
+            SpinModel,
+        )
+
+        model = SpinModel.deserialize(data["model"])
+    else:
+        model = BaseModel.deserialize(data["model"])
+    model.to("cpu")
+    model.eval()
+
+    # 2. Collect metadata
+    metadata = _collect_metadata(model, is_spin=is_spin)
+
+    # 3. Create sample inputs on CPU for tracing
+    # torch.export's duck-sizing unifies dimensions with the same sample value,
+    # so nframes must differ from every other dimension in the sample tensors.
+    # We first build with nframes=2, collect all non-batch dimension sizes,
+    # then rebuild if there is a collision.
+    _orig_device = _env.DEVICE
+    _env.DEVICE = torch.device("cpu")
+    try:
+        if with_comm_dict:
+            # The pt_expt parallel-mode override (in pt's repflows.py
+            # line 593 too) uses ``squeeze(0)`` / ``unsqueeze(0)`` on
+            # ``node_ebd`` and so requires ``nframes == 1``.  LAMMPS
+            # always drives inference with one frame, so this is the
+            # only realistic shape — and we mark dim 0 static in
+            # ``_build_dynamic_shapes`` to match.
+            nframes = 1
+            sample_inputs = _make_sample_inputs(
+                model,
+                nframes=nframes,
+                has_spin=is_spin,
+            )
+        else:
+            nframes = 2
+            sample_inputs = _make_sample_inputs(
+                model,
+                nframes=nframes,
+                has_spin=is_spin,
+            )
+            # Collect all dimension sizes except dim-0 (nframes) from every tensor
+            other_dims: set[int] = set()
+            for t in sample_inputs:
+                if t is not None:
+                    other_dims.update(t.shape[1:])
+            while nframes in other_dims:
+                nframes += 1
+            if nframes != 2:
+                sample_inputs = _make_sample_inputs(
+                    model, nframes=nframes, has_spin=is_spin
+                )
+    finally:
+        _env.DEVICE = _orig_device
+
+    if is_spin:
+        (
+            ext_coord,
+            ext_atype,
+            ext_spin,
+            nlist_t,
+            mapping_t,
+            fparam,
+            aparam,
+            charge_spin,
+        ) = sample_inputs
+    else:
+        (
+            ext_coord,
+            ext_atype,
+            nlist_t,
+            mapping_t,
+            fparam,
+            aparam,
+            charge_spin,
+        ) = sample_inputs
+
+    # 3b. Build comm-tensor sample inputs when tracing the with-comm
+    # variant (only valid for GNN models). The actual values don't
+    # matter for tracing — only that they're valid tensors of the right
+    # shape and dtype.  See ``_make_comm_sample_inputs``.
+    if with_comm_dict:
+        # Load libdeepmd_op_pt.so and register border_op fake/autograd
+        # metadata now — deferred from import time so normal utils imports
+        # don't force-load the op library and break fake-op ordering.
+        from deepmd.pt_expt.utils.comm import (
+            ensure_comm_registered,
+        )
+
+        ensure_comm_registered()
+        if not _needs_with_comm_artifact(model):
+            raise ValueError(
+                "with_comm_dict=True requested but the model's descriptor "
+                "does not need cross-rank message passing "
+                "(has_message_passing_across_ranks() is False) — "
+                "there's nothing to compile."
+            )
+        nloc_sample = nlist_t.shape[1]
+        nall_sample = ext_atype.shape[1]
+        nghost_sample = nall_sample - nloc_sample
+        comm_inputs = _make_comm_sample_inputs(
+            nloc=nloc_sample,
+            nghost=nghost_sample,
+            device=torch.device("cpu"),
+        )
+        sample_inputs = sample_inputs + comm_inputs
+
+    # 4. Trace via make_fx on CPU.
+    # This decomposes torch.autograd.grad into aten ops so the resulting
+    # GraphModule no longer contains autograd calls.
+    if is_spin:
+        if with_comm_dict:
+            traced = model.forward_common_lower_exportable_with_comm(
+                ext_coord,
+                ext_atype,
+                ext_spin,
+                nlist_t,
+                mapping_t,
+                fparam,
+                aparam,
+                charge_spin,
+                *comm_inputs,
+                do_atomic_virial=do_atomic_virial,
+                tracing_mode="symbolic",
+                _allow_non_fake_inputs=True,
+            )
+        else:
+            traced = model.forward_common_lower_exportable(
+                ext_coord,
+                ext_atype,
+                ext_spin,
+                nlist_t,
+                mapping_t,
+                fparam=fparam,
+                aparam=aparam,
+                do_atomic_virial=do_atomic_virial,
+                charge_spin=charge_spin,
+                tracing_mode="symbolic",
+                _allow_non_fake_inputs=True,
+            )
+        # 5. Extract output keys from the CPU-traced module.
+        sample_out = traced(*sample_inputs)
+    else:
+        if with_comm_dict:
+            traced = model.forward_common_lower_exportable_with_comm(
+                ext_coord,
+                ext_atype,
+                nlist_t,
+                mapping_t,
+                fparam,
+                aparam,
+                charge_spin,
+                *comm_inputs,
+                do_atomic_virial=do_atomic_virial,
+                tracing_mode="symbolic",
+                _allow_non_fake_inputs=True,
+            )
+        else:
+            traced = model.forward_common_lower_exportable(
+                ext_coord,
+                ext_atype,
+                nlist_t,
+                mapping_t,
+                fparam=fparam,
+                aparam=aparam,
+                do_atomic_virial=do_atomic_virial,
+                charge_spin=charge_spin,
+                tracing_mode="symbolic",
+                _allow_non_fake_inputs=True,
+            )
+        # 5. Extract output keys from the CPU-traced module.
+        sample_out = traced(*sample_inputs)
+
+    output_keys = list(sample_out.keys())
+
+    # 6. Export on CPU.
+    # make_fx on CPU bakes device='cpu' into tensor-creation ops in the
+    # graph.  Exporting on CPU keeps devices consistent; we move the
+    # ExportedProgram to the target device afterwards via the official
+    # move_to_device_pass (avoids FakeTensor device-propagation errors).
+    dynamic_shapes = _build_dynamic_shapes(
+        *sample_inputs,
+        has_spin=is_spin,
+        with_comm_dict=with_comm_dict,
+        model_nnei=sum(model.get_sel()),
+    )
+    exported = torch.export.export(
+        traced,
+        sample_inputs,
+        dynamic_shapes=dynamic_shapes,
+        strict=False,
+        prefer_deferred_runtime_asserts_over_guards=True,
+    )
+
+    if is_spin:
+        # The spin model's atom-doubling slice patterns depend on
+        # (nall - nloc), producing guards like Ne(nall, nloc).  These are
+        # spurious — the model is correct when nall == nloc (NoPBC).
+        # Non-spin models don't emit shape guards because the short-circuit
+        # order in `_format_nlist` (dpmodel) keeps the dynamic `nnei` axis
+        # free of symbolic comparisons when `extra_nlist_sort=True`
+        # (see `forward_common_lower_exportable` in pt_expt/model/make_model.py).
+        _strip_shape_assertions(exported.graph_module)
+
+    # 7. Move the exported program to the target device if needed.
+    if target_device.type != "cpu":
+        from torch.export.passes import (
+            move_to_device_pass,
+        )
+
+        exported = move_to_device_pass(exported, target_device)
+
+    # 8. Record export-time config in metadata
+    metadata["do_atomic_virial"] = do_atomic_virial
+
+    # 9. Prepare JSON-serializable model dict
+    json_source = model_json_override if model_json_override is not None else data
+    data_for_json = deepcopy(json_source)
     data_for_json = _numpy_to_json_serializable(data_for_json)
 
+    return exported, metadata, data_for_json, output_keys
+
+
+def _deserialize_to_file_pte(
+    model_file: str,
+    data: dict,
+    model_json_override: dict | None = None,
+    do_atomic_virial: bool = False,
+) -> None:
+    """Deserialize a dictionary to a .pte model file."""
+    exported, metadata, data_for_json, output_keys = _trace_and_export(
+        data, model_json_override, do_atomic_virial=do_atomic_virial
+    )
+
+    model_def_script = data.get("model_def_script") or {}
+    metadata["output_keys"] = output_keys
     extra_files = {
-        "model_def_script.json": json.dumps(metadata),
+        "metadata.json": json.dumps(metadata),
+        "model_def_script.json": json.dumps(model_def_script),
         "model.json": json.dumps(data_for_json, separators=(",", ":")),
     }
 
-    # 7. Save
     torch.export.save(exported, model_file, extra_files=extra_files)
+
+
+def _deserialize_to_file_pt2(
+    model_file: str,
+    data: dict,
+    model_json_override: dict | None = None,
+    do_atomic_virial: bool = False,
+) -> None:
+    """Deserialize a dictionary to a .pt2 model file (AOTInductor).
+
+    Uses torch._inductor.aoti_compile_and_package to compile the exported
+    program into a .pt2 package (ZIP archive with compiled shared libraries),
+    then embeds metadata into the archive.
+
+    For models whose descriptor reports
+    ``has_message_passing_across_ranks() == True`` (DPA2, DPA3 with
+    ``use_loc_mapping=False``, or hybrids wrapping such children),
+    compiles a SECOND ``with-comm`` artifact and packs it alongside the
+    regular one. The ``with-comm`` variant accepts comm-dict tensors as
+    additional positional inputs and drives MPI ghost-atom exchange via
+    ``deepmd_export::border_op``. The C++ ``DeepPotPTExpt`` loader picks
+    the artifact based on the LAMMPS rank count at runtime.
+
+    Layout inside the .pt2 ZIP (PyTorch 2.11 strict layout):
+        regular   →  artifact at ``model/`` (AOTInductor's own layout)
+        with-comm →  ``model/extra/forward_lower_with_comm.pt2`` (nested ZIP)
+        metadata  →  ``model/extra/metadata.json`` with
+                     ``has_comm_artifact`` flag. The C++ reader matches
+                     by ``/``-delimited suffix so the legacy root-level
+                     ``extra/`` layout still loads.
+
+    Old .pt2 files (pre-this-change) lack ``has_comm_artifact`` so the
+    C++ loader must default to ``False`` when the field is missing.
+    """
+    import os
+    import tempfile
+    import zipfile
+
+    from torch._inductor import (
+        aoti_compile_and_package,
+    )
+
+    # First artifact: regular (no comm). Always produced.
+    exported, metadata, data_for_json, output_keys = _trace_and_export(
+        data, model_json_override, do_atomic_virial=do_atomic_virial
+    )
+    metadata["output_keys"] = output_keys
+
+    # On CUDA, aggressive kernel fusion (default realize_opcount_threshold=30)
+    # causes NaN in the backward pass (force/virial) of attention-based
+    # descriptors (DPA1, DPA2). Setting threshold=0 prevents fusion and
+    # avoids the NaN. Only applied on CUDA; CPU compilation is unaffected.
+    #
+    # NOTE: ``torch._inductor.config`` is a process-wide singleton. The
+    # save/restore pattern here is NOT thread-safe — concurrent AOTInductor
+    # compilations from multiple threads would race on this global. Callers
+    # must serialise ``.pt2`` exports if running under a thread pool.
+    # Processes are fine (each has its own inductor config).
+    import torch._inductor.config as _inductor_config
+
+    import deepmd.pt_expt.utils.env as _env
+
+    is_cuda = _env.DEVICE.type == "cuda"
+    saved_threshold = _inductor_config.realize_opcount_threshold
+    if is_cuda:
+        _inductor_config.realize_opcount_threshold = 0
+    try:
+        aoti_compile_and_package(exported, package_path=model_file)
+    finally:
+        _inductor_config.realize_opcount_threshold = saved_threshold
+
+    # Second artifact: with-comm. Only for descriptors whose message
+    # passing extends across rank boundaries. The flag was computed
+    # from the model in ``_collect_metadata`` and is already in
+    # ``metadata`` here.
+    has_comm_artifact = bool(metadata.get("has_comm_artifact"))
+    with_comm_bytes: bytes | None = None
+    with_comm_output_keys: list[str] | None = None
+    if has_comm_artifact:
+        exported_wc, _meta_wc, _data_wc, with_comm_output_keys = _trace_and_export(
+            data,
+            model_json_override,
+            with_comm_dict=True,
+            do_atomic_virial=do_atomic_virial,
+        )
+        with tempfile.TemporaryDirectory() as td:
+            wc_path = os.path.join(td, "forward_lower_with_comm.pt2")
+            saved_threshold = _inductor_config.realize_opcount_threshold
+            if is_cuda:
+                _inductor_config.realize_opcount_threshold = 0
+            try:
+                aoti_compile_and_package(exported_wc, package_path=wc_path)
+            finally:
+                _inductor_config.realize_opcount_threshold = saved_threshold
+            with open(wc_path, "rb") as f:
+                with_comm_bytes = f.read()
+        # The output keys are identical between the two artifacts (same
+        # forward_lower output dict); record only one set in metadata.
+        # If they ever diverge we'll surface a hard error here.
+        if with_comm_output_keys != output_keys:
+            raise RuntimeError(
+                "with-comm artifact output keys diverge from regular: "
+                f"regular={output_keys} vs with_comm={with_comm_output_keys}"
+            )
+
+    # Embed metadata + supplementary files into the .pt2 ZIP archive.
+    # Entries are placed under ``model/extra/`` so the strict PyTorch
+    # 2.11 ``load_pt2`` loader accepts the archive without emitting the
+    # "outdated pt2 file" fallback warning.  See the module-level
+    # comment on ``PT2_EXTRA_PREFIX`` for the rationale.  The C++ reader
+    # (``commonPTExpt.h::read_zip_entry``) accepts both the legacy
+    # root-level ``extra/`` layout and the new ``model/extra/`` layout
+    # via suffix matching, so the with-comm artifact moves with the
+    # rest.
+    model_def_script = data.get("model_def_script") or {}
+    with zipfile.ZipFile(model_file, "a") as zf:
+        zf.writestr(PT2_EXTRA_PREFIX + "metadata.json", json.dumps(metadata))
+        zf.writestr(
+            PT2_EXTRA_PREFIX + "model_def_script.json",
+            json.dumps(model_def_script),
+        )
+        zf.writestr(
+            PT2_EXTRA_PREFIX + "model.json",
+            json.dumps(data_for_json, separators=(",", ":")),
+        )
+        if with_comm_bytes is not None:
+            zf.writestr(
+                PT2_EXTRA_PREFIX + "forward_lower_with_comm.pt2", with_comm_bytes
+            )

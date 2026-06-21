@@ -46,6 +46,9 @@ from deepmd.infer.deep_wfc import (
 from deepmd.pt.model.model import (
     get_model,
 )
+from deepmd.pt.model.model.transform_output import (
+    communicate_extended_output,
+)
 from deepmd.pt.model.network.network import (
     TypeEmbedNetConsistent,
 )
@@ -63,9 +66,20 @@ from deepmd.pt.utils.env import (
     GLOBAL_PT_FLOAT_PRECISION,
     RESERVED_PRECISION_DICT,
 )
+from deepmd.pt.utils.nv_nlist import (
+    NvNeighborList,
+    is_nv_available,
+)
 from deepmd.pt.utils.utils import (
     to_numpy_array,
     to_torch_tensor,
+)
+from deepmd.pt_expt.utils.vesin_neighbor_list import (
+    VesinNeighborList,
+    is_vesin_torch_available,
+)
+from deepmd.utils.batch_size import (
+    RetrySignal,
 )
 from deepmd.utils.econf_embd import (
     sort_element_type,
@@ -82,6 +96,18 @@ if TYPE_CHECKING:
     )
 
 log = logging.getLogger(__name__)
+
+
+def _is_sezm_model_params(model_params: dict[str, Any]) -> bool:
+    """Return whether the params describe a SeZM / DPA4 model."""
+    model_type = str(model_params.get("type", "")).lower()
+    if model_type in {"sezm", "dpa4", "sezm_spin"}:
+        return True
+    descriptor = model_params.get("descriptor")
+    if isinstance(descriptor, dict):
+        descriptor_type = str(descriptor.get("type", "")).lower()
+        return descriptor_type in {"sezm", "dpa4"}
+    return False
 
 
 class DeepEval(DeepEvalBackend):
@@ -114,10 +140,14 @@ class DeepEval(DeepEvalBackend):
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
         head: str | int | None = None,
         no_jit: bool = False,
+        nlist_backend: str = "auto",
         **kwargs: Any,
     ) -> None:
         self.output_def = output_def
         self.model_path = model_file
+        self.neighbor_list = neighbor_list
+        # data modifier, populated only for frozen .pth models that carry one
+        self.modifier = None
         if str(self.model_path).endswith(".pt"):
             state_dict = torch.load(
                 model_file, map_location=env.DEVICE, weights_only=True
@@ -167,10 +197,22 @@ class DeepEval(DeepEvalBackend):
                         ] = state_dict[item].clone()
                 state_dict = state_dict_head
             model = get_model(self.input_param).to(DEVICE)
-            if not self.input_param.get("hessian_mode") and not no_jit:
+            disable_jit = no_jit or _is_sezm_model_params(self.input_param)
+            if not self.input_param.get("hessian_mode") and not disable_jit:
                 model = torch.jit.script(model)
             self.dp = ModelWrapper(model)
-            self.dp.load_state_dict(state_dict)
+            missing, unexpected = self.dp.load_state_dict(state_dict, strict=False)
+            if missing:
+                log.warning(
+                    "Checkpoint loaded with missing keys (likely from an older "
+                    "version): %s",
+                    missing,
+                )
+            if unexpected:
+                log.warning(
+                    "Checkpoint loaded with unexpected keys: %s",
+                    unexpected,
+                )
         elif str(self.model_path).endswith(".pth"):
             extra_files = {"data_modifier.pth": ""}
             model = torch.jit.load(
@@ -212,6 +254,99 @@ class DeepEval(DeepEvalBackend):
         if callable(self._has_spin):
             self._has_spin = self._has_spin()
         self._has_hessian = self.model_def_script.get("hessian_mode", False)
+        self._setup_nlist_backend(nlist_backend)
+
+    def _setup_nlist_backend(self, nlist_backend: str) -> None:
+        """Resolve the neighbor-list construction strategy from a user choice.
+
+        ``"native"`` uses the dense all-pairs builder; ``"vesin"`` / ``"nv"``
+        force the O(N) ``vesin.torch`` / ``nvalchemiops`` cell list (raising if
+        unavailable or the model/inputs are unsupported); ``"auto"`` picks the
+        first available O(N) builder (vesin, then nv) and otherwise falls back to
+        the native builder.  Results are unchanged either way -- only the
+        neighbor-search cost differs.
+        """
+        inner = self.dp.model["Default"]
+        self_built = getattr(inner, "use_self_built_nlist", None)
+        if callable(self_built) and self_built():
+            # The model builds its own neighbor list and runs the native path;
+            # an external strategy would bypass it, so always use native.
+            log.info(
+                "Ignoring nlist_backend=%r: %s uses its own built-in neighbor list.",
+                nlist_backend,
+                type(inner).__name__,
+            )
+            self._nlist_builder = None
+            return
+        if nlist_backend not in ("auto", "vesin", "nv", "native"):
+            raise ValueError(
+                f"Unknown nlist_backend '{nlist_backend}'; "
+                "expected 'auto', 'vesin', 'nv', or 'native'."
+            )
+
+        # reason an external strategy cannot be used (None means it can)
+        unsupported = None
+        if self._has_spin:
+            unsupported = "spin models"
+        elif self._has_hessian:
+            unsupported = "hessian models"
+        elif self.modifier is not None:
+            # the strategy path runs forward_common_lower directly, bypassing
+            # ModelWrapper.forward (which applies the data modifier); fall back
+            # to the native path so the modifier is still applied.
+            unsupported = "models with a data modifier"
+        elif "energy" not in inner.model_output_type():
+            # _eval_lower_strategy reconstructs the backend output from the
+            # forward_common_lower / communicate keys via _OUTDEF_DP2BACKEND,
+            # which matches the model's own translation only for the energy
+            # model (e.g. the polar fitting key is "polarizability" but the
+            # backend output is "polar").  Restrict strategies to energy models
+            # and fall back to native for the other fitting types.
+            unsupported = "non-energy models"
+        ase_provided = self.neighbor_list is not None
+
+        builder = None
+        if nlist_backend in ("vesin", "nv"):
+            if unsupported is not None:
+                raise ValueError(
+                    f"nlist_backend='{nlist_backend}' is not supported for "
+                    f"{unsupported}; use nlist_backend='native' (or 'auto')."
+                )
+            if ase_provided:
+                raise ValueError(
+                    f"nlist_backend='{nlist_backend}' conflicts with an "
+                    "explicitly supplied ASE neighbor_list; pass only one."
+                )
+            if nlist_backend == "vesin":
+                if not is_vesin_torch_available():
+                    raise ImportError(
+                        "nlist_backend='vesin' was requested but 'vesin.torch' "
+                        "is not installed. Install it (`pip install "
+                        "vesin[torch]`) or use nlist_backend='native' (or 'auto')."
+                    )
+                builder = VesinNeighborList()
+            elif DEVICE.type != "cuda":
+                raise ValueError(
+                    "nlist_backend='nv' requires CUDA inference tensors; "
+                    f"current DEVICE is {DEVICE!s}. Use nlist_backend='native' "
+                    "(or 'auto') for CPU inference."
+                )
+            elif not is_nv_available():
+                raise ImportError(
+                    "nlist_backend='nv' was requested but 'nvalchemi-toolkit-ops'"
+                    " is not installed. Install it (`pip install "
+                    "nvalchemi-toolkit-ops`) or use nlist_backend='native' "
+                    "(or 'auto')."
+                )
+            else:
+                builder = NvNeighborList()
+        elif nlist_backend == "auto" and unsupported is None and not ase_provided:
+            # Pick the first available O(N) builder; nv is GPU-only.
+            if is_vesin_torch_available():
+                builder = VesinNeighborList()
+            elif is_nv_available() and DEVICE.type == "cuda":
+                builder = NvNeighborList()
+        self._nlist_builder = builder
 
     def get_rcut(self) -> float:
         """Get the cutoff radius of this model."""
@@ -239,6 +374,20 @@ class DeepEval(DeepEvalBackend):
             return self.dp.model["Default"].has_default_fparam()
         except AttributeError:
             # for compatibility with old models
+            return False
+
+    def has_chg_spin_ebd(self) -> bool:
+        """Check if the model has charge spin embedding."""
+        try:
+            return self.dp.model["Default"].has_chg_spin_ebd()
+        except AttributeError:
+            return False
+
+    def has_default_chg_spin(self) -> bool:
+        """Check if the model has default charge_spin values."""
+        try:
+            return self.dp.model["Default"].has_default_chg_spin()
+        except AttributeError:
             return False
 
     def get_intensive(self) -> bool:
@@ -303,6 +452,13 @@ class DeepEval(DeepEvalBackend):
         """Check if the model has spin atom types."""
         return self._has_spin
 
+    def get_use_spin(self) -> list[bool]:
+        """Get the per-type spin usage of this model."""
+        if self._has_spin:
+            model = self.dp.model["Default"]
+            return model.spin.use_spin.tolist()
+        return []
+
     def get_has_hessian(self) -> bool:
         """Check if the model has hessian."""
         return self._has_hessian
@@ -326,6 +482,7 @@ class DeepEval(DeepEvalBackend):
         atomic: bool = False,
         fparam: np.ndarray | None = None,
         aparam: np.ndarray | None = None,
+        charge_spin: np.ndarray | None = None,
         **kwargs: Any,
     ) -> dict[str, np.ndarray]:
         """Evaluate the energy, force and virial by using this DP.
@@ -375,7 +532,7 @@ class DeepEval(DeepEvalBackend):
         request_defs = self._get_request_defs(atomic)
         if "spin" not in kwargs or kwargs["spin"] is None:
             out = self._eval_func(self._eval_model, numb_test, natoms)(
-                coords, cells, atom_types, fparam, aparam, request_defs
+                coords, cells, atom_types, fparam, aparam, request_defs, charge_spin
             )
         else:
             out = self._eval_func(self._eval_model_spin, numb_test, natoms)(
@@ -386,6 +543,7 @@ class DeepEval(DeepEvalBackend):
                 fparam,
                 aparam,
                 request_defs,
+                charge_spin,
             )
         return dict(
             zip(
@@ -487,6 +645,7 @@ class DeepEval(DeepEvalBackend):
         fparam: np.ndarray | None,
         aparam: np.ndarray | None,
         request_defs: list[OutputVariableDef],
+        charge_spin: np.ndarray | None,
     ) -> tuple[np.ndarray, ...]:
         model = self.dp.to(DEVICE)
         prec = NP_PRECISION_DICT[RESERVED_PRECISION_DICT[GLOBAL_PT_FLOAT_PRECISION]]
@@ -528,19 +687,35 @@ class DeepEval(DeepEvalBackend):
             )
         else:
             aparam_input = None
+        if charge_spin is not None:
+            charge_spin_input = to_torch_tensor(charge_spin.reshape(nframes, 2))
+        else:
+            charge_spin_input = None
         do_atomic_virial = any(
             x.category == OutputVariableCategory.DERV_C for x in request_defs
         )
-        batch_output = model(
-            coord_input,
-            type_input,
-            box=box_input,
-            do_atomic_virial=do_atomic_virial,
-            fparam=fparam_input,
-            aparam=aparam_input,
-        )
-        if isinstance(batch_output, tuple):
-            batch_output = batch_output[0]
+        if self._nlist_builder is not None:
+            batch_output = self._eval_lower_strategy(
+                coord_input,
+                type_input,
+                box_input,
+                fparam_input,
+                aparam_input,
+                charge_spin_input,
+                do_atomic_virial,
+            )
+        else:
+            batch_output = model(
+                coord_input,
+                type_input,
+                box=box_input,
+                do_atomic_virial=do_atomic_virial,
+                fparam=fparam_input,
+                aparam=aparam_input,
+                charge_spin=charge_spin_input,
+            )
+            if isinstance(batch_output, tuple):
+                batch_output = batch_output[0]
 
         results = []
         for odef in request_defs:
@@ -556,6 +731,52 @@ class DeepEval(DeepEvalBackend):
                 )  # this is kinda hacky
         return tuple(results)
 
+    def _eval_lower_strategy(
+        self,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        box: torch.Tensor | None,
+        fparam: torch.Tensor | None,
+        aparam: torch.Tensor | None,
+        charge_spin: torch.Tensor | None,
+        do_atomic_virial: bool,
+    ) -> dict[str, torch.Tensor]:
+        """Evaluate via the selected O(N) ``NeighborList`` strategy.
+
+        Builds the extended representation with ``self._nlist_builder`` (vesin or
+        nv), runs the model's ``forward_common_lower``, and maps the extended
+        outputs back to local atoms with ``communicate_extended_output``.
+        Returns a dict keyed by backend names, matching the normal ``model()``
+        output so the caller's extraction is unchanged.  ``requires_grad`` is set
+        on the extended coordinates internally, exactly as on the native path, so
+        forces/virials are produced identically.
+        """
+        inner = self.dp.model["Default"]
+        ext_coord, ext_atype, nlist, mapping = self._nlist_builder.build(
+            coord, atype, box, self.rcut, list(inner.get_sel())
+        )
+        model_lower = inner.forward_common_lower(
+            ext_coord,
+            ext_atype,
+            nlist,
+            mapping,
+            fparam=fparam,
+            aparam=aparam,
+            do_atomic_virial=do_atomic_virial,
+            charge_spin=charge_spin,
+        )
+        predict = communicate_extended_output(
+            model_lower,
+            inner.model_output_def(),
+            mapping,
+            do_atomic_virial=do_atomic_virial,
+        )
+        return {
+            backend: predict[internal]
+            for internal, backend in self._OUTDEF_DP2BACKEND.items()
+            if predict.get(internal) is not None
+        }
+
     def _eval_model_spin(
         self,
         coords: np.ndarray,
@@ -565,6 +786,7 @@ class DeepEval(DeepEvalBackend):
         fparam: np.ndarray | None,
         aparam: np.ndarray | None,
         request_defs: list[OutputVariableDef],
+        charge_spin: np.ndarray | None,
     ) -> tuple[np.ndarray, ...]:
         model = self.dp.to(DEVICE)
 
@@ -606,6 +828,10 @@ class DeepEval(DeepEvalBackend):
             )
         else:
             aparam_input = None
+        if charge_spin is not None:
+            charge_spin_input = to_torch_tensor(charge_spin.reshape(nframes, 2))
+        else:
+            charge_spin_input = None
 
         do_atomic_virial = any(
             x.category == OutputVariableCategory.DERV_C_REDU for x in request_defs
@@ -618,6 +844,7 @@ class DeepEval(DeepEvalBackend):
             do_atomic_virial=do_atomic_virial,
             fparam=fparam_input,
             aparam=aparam_input,
+            charge_spin=charge_spin_input,
         )
         if isinstance(batch_output, tuple):
             batch_output = batch_output[0]
@@ -691,7 +918,10 @@ class DeepEval(DeepEvalBackend):
         """
         out = []
         for mm in self.dp.model["Default"].modules():
-            if mm.original_name == TypeEmbedNetConsistent.__name__:
+            if (
+                getattr(mm, "original_name", type(mm).__name__)
+                == TypeEmbedNetConsistent.__name__
+            ):
                 out.append(mm(DEVICE))
         if not out:
             raise KeyError("The model has no type embedding networks.")
@@ -812,19 +1042,30 @@ class DeepEval(DeepEvalBackend):
             Descriptors.
         """
         model = self.dp.model["Default"]
-        model.set_eval_descriptor_hook(True)
-        self.eval(
-            coords,
-            cells,
-            atom_types,
-            atomic=False,
-            fparam=fparam,
-            aparam=aparam,
-            **kwargs,
-        )
-        descriptor = model.eval_descriptor()
-        model.set_eval_descriptor_hook(False)
-        return to_numpy_array(descriptor)
+        while True:
+            if self.auto_batch_size is not None:
+                self.auto_batch_size.set_oom_retry_mode(True)
+            model.set_eval_descriptor_hook(True)
+            retry = False
+            try:
+                self.eval(
+                    coords,
+                    cells,
+                    atom_types,
+                    atomic=False,
+                    fparam=fparam,
+                    aparam=aparam,
+                    **kwargs,
+                )
+                descriptor = model.eval_descriptor()
+            except RetrySignal:
+                retry = True
+            finally:
+                model.set_eval_descriptor_hook(False)
+                if self.auto_batch_size is not None:
+                    self.auto_batch_size.set_oom_retry_mode(False)
+            if not retry:
+                return to_numpy_array(descriptor)
 
     def eval_fitting_last_layer(
         self,
@@ -867,16 +1108,27 @@ class DeepEval(DeepEvalBackend):
             Fitting output before last layer.
         """
         model = self.dp.model["Default"]
-        model.set_eval_fitting_last_layer_hook(True)
-        self.eval(
-            coords,
-            cells,
-            atom_types,
-            atomic=False,
-            fparam=fparam,
-            aparam=aparam,
-            **kwargs,
-        )
-        fitting_net = model.eval_fitting_last_layer()
-        model.set_eval_fitting_last_layer_hook(False)
-        return to_numpy_array(fitting_net)
+        while True:
+            if self.auto_batch_size is not None:
+                self.auto_batch_size.set_oom_retry_mode(True)
+            model.set_eval_fitting_last_layer_hook(True)
+            retry = False
+            try:
+                self.eval(
+                    coords,
+                    cells,
+                    atom_types,
+                    atomic=False,
+                    fparam=fparam,
+                    aparam=aparam,
+                    **kwargs,
+                )
+                fitting_net = model.eval_fitting_last_layer()
+            except RetrySignal:
+                retry = True
+            finally:
+                model.set_eval_fitting_last_layer_hook(False)
+                if self.auto_batch_size is not None:
+                    self.auto_batch_size.set_oom_retry_mode(False)
+            if not retry:
+                return to_numpy_array(fitting_net)

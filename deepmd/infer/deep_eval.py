@@ -166,6 +166,14 @@ class DeepEvalBackend(ABC):
         """Check if the model has default frame parameters."""
         return False
 
+    def has_chg_spin_ebd(self) -> bool:
+        """Check if the model has charge spin embedding."""
+        return False
+
+    def has_default_chg_spin(self) -> bool:
+        """Check if the model has default charge_spin values."""
+        return False
+
     @abstractmethod
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this DP."""
@@ -323,6 +331,17 @@ class DeepEvalBackend(ABC):
         """Check if the model has spin atom types."""
         return False
 
+    def get_use_spin(self) -> list[bool]:
+        """Get the per-type spin usage of this model.
+
+        Returns
+        -------
+        list[bool]
+            A list of bool indicating whether each atom type uses spin.
+            Empty list if the model does not have spin.
+        """
+        return []
+
     def get_has_hessian(self) -> bool:
         """Check if the model has hessian."""
         return False
@@ -454,6 +473,14 @@ class DeepEval(ABC):
     def has_default_fparam(self) -> bool:
         """Check if the model has default frame parameters."""
         return self.deep_eval.has_default_fparam()
+
+    def has_chg_spin_ebd(self) -> bool:
+        """Check if the model has charge spin embedding."""
+        return self.deep_eval.has_chg_spin_ebd()
+
+    def has_default_chg_spin(self) -> bool:
+        """Check if the model has default charge_spin values."""
+        return self.deep_eval.has_default_chg_spin()
 
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this DP."""
@@ -719,6 +746,18 @@ class DeepEval(ABC):
     def has_spin(self) -> bool:
         """Check if the model has spin."""
         return self.deep_eval.get_has_spin()
+
+    @property
+    def use_spin(self) -> list[bool]:
+        """Get the per-type spin usage of this model.
+
+        Returns
+        -------
+        list[bool]
+            A list of bool indicating whether each atom type uses spin.
+            Empty list if the model does not have spin.
+        """
+        return self.deep_eval.get_use_spin()
 
     @property
     def has_hessian(self) -> bool:

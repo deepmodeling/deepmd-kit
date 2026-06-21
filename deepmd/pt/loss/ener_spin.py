@@ -18,6 +18,9 @@ from deepmd.pt.utils.env import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
+from deepmd.utils.version import (
+    check_version_compatibility,
+)
 
 
 class EnergySpinLoss(TaskLoss):
@@ -35,8 +38,9 @@ class EnergySpinLoss(TaskLoss):
         start_pref_ae: float = 0.0,
         limit_pref_ae: float = 0.0,
         enable_atom_ener_coeff: bool = False,
-        use_l1_all: bool = False,
+        loss_func: str = "mse",
         inference: bool = False,
+        intensive_ener_virial: bool = False,
         **kwargs: Any,
     ) -> None:
         r"""Construct a layer to compute loss on energy, real force, magnetic force and virial.
@@ -67,14 +71,26 @@ class EnergySpinLoss(TaskLoss):
             The prefactor of atomic energy loss at the end of the training.
         enable_atom_ener_coeff : bool
             if true, the energy will be computed as \sum_i c_i E_i
-        use_l1_all : bool
-            Whether to use L1 loss, if False (default), it will use L2 loss.
+        loss_func : str
+            Loss function type for energy, force, and virial terms.
+            Options: 'mse' (Mean Squared Error, L2 loss, default) or 'mae' (Mean Absolute Error, L1 loss).
+            MAE loss is less sensitive to outliers compared to MSE loss.
         inference : bool
             If true, it will output all losses found in output, ignoring the pre-factors.
+        intensive_ener_virial : bool
+            Controls the normalization exponent used for the MSE energy and virial loss terms.
+            If true, those MSE terms use intensive normalization by the square of the number of
+            atoms (1/N^2), which is consistent with per-atom RMSE reporting. If false (default),
+            the legacy normalization (1/N) is used for those MSE terms. Note that this 1/N^2
+            behavior does not apply to the MAE code paths: MAE energy/virial losses do not use
+            the `intensive_ener_virial` exponent in the same way. The default is false for backward
+            compatibility with models trained using deepmd-kit <= 3.1.3.
         **kwargs
             Other keyword arguments.
         """
         super().__init__()
+
+        self.loss_func = loss_func
         self.starter_learning_rate = starter_learning_rate
         self.has_e = (start_pref_e != 0.0 and limit_pref_e != 0.0) or inference
         self.has_fr = (start_pref_fr != 0.0 and limit_pref_fr != 0.0) or inference
@@ -93,8 +109,8 @@ class EnergySpinLoss(TaskLoss):
         self.start_pref_ae = start_pref_ae
         self.limit_pref_ae = limit_pref_ae
         self.enable_atom_ener_coeff = enable_atom_ener_coeff
-        self.use_l1_all = use_l1_all
         self.inference = inference
+        self.intensive_ener_virial = intensive_ener_virial
 
     def forward(
         self,
@@ -139,6 +155,10 @@ class EnergySpinLoss(TaskLoss):
         # more_loss['log_keys'] = []  # showed when validation on the fly
         # more_loss['test_keys'] = []  # showed when doing dp test
         atom_norm = 1.0 / natoms
+        # Normalization exponent controls loss scaling with system size:
+        # - norm_exp=2 (intensive_ener_virial=True): loss uses 1/N² scaling, making it independent of system size
+        # - norm_exp=1 (intensive_ener_virial=False, legacy): loss uses 1/N scaling, which varies with system size
+        norm_exp = 2 if self.intensive_ener_virial else 1
         if self.has_e and "energy" in model_pred and "energy" in label:
             energy_pred = model_pred["energy"]
             energy_label = label["energy"]
@@ -157,19 +177,19 @@ class EnergySpinLoss(TaskLoss):
                 energy_pred = torch.sum(atom_ener_coeff * atom_ener_pred, dim=1)
             find_energy = label.get("find_energy", 0.0)
             pref_e = pref_e * find_energy
-            if not self.use_l1_all:
+            if self.loss_func == "mse":
                 l2_ener_loss = torch.mean(torch.square(energy_pred - energy_label))
                 if not self.inference:
                     more_loss["l2_ener_loss"] = self.display_if_exist(
                         l2_ener_loss.detach(), find_energy
                     )
-                loss += atom_norm * (pref_e * l2_ener_loss)
+                loss += atom_norm**norm_exp * (pref_e * l2_ener_loss)
                 rmse_e = l2_ener_loss.sqrt() * atom_norm
                 more_loss["rmse_e"] = self.display_if_exist(
                     rmse_e.detach(), find_energy
                 )
                 # more_loss['log_keys'].append('rmse_e')
-            else:  # use l1 and for all atoms
+            elif self.loss_func == "mae":
                 l1_ener_loss = F.l1_loss(
                     energy_pred.reshape(-1),
                     energy_label.reshape(-1),
@@ -185,6 +205,10 @@ class EnergySpinLoss(TaskLoss):
                     find_energy,
                 )
                 # more_loss['log_keys'].append('rmse_e')
+            else:
+                raise NotImplementedError(
+                    f"Loss type {self.loss_func} is not implemented for energy loss."
+                )
             if mae:
                 mae_e = torch.mean(torch.abs(energy_pred - energy_label)) * atom_norm
                 more_loss["mae_e"] = self.display_if_exist(mae_e.detach(), find_energy)
@@ -196,7 +220,7 @@ class EnergySpinLoss(TaskLoss):
         if self.has_fr and "force" in model_pred and "force" in label:
             find_force_r = label.get("find_force", 0.0)
             pref_fr = pref_fr * find_force_r
-            if not self.use_l1_all:
+            if self.loss_func == "mse":
                 diff_fr = label["force"] - model_pred["force"]
                 l2_force_real_loss = torch.mean(torch.square(diff_fr))
                 if not self.inference:
@@ -213,7 +237,7 @@ class EnergySpinLoss(TaskLoss):
                     more_loss["mae_fr"] = self.display_if_exist(
                         mae_fr.detach(), find_force_r
                     )
-            else:
+            elif self.loss_func == "mae":
                 l1_force_real_loss = F.l1_loss(
                     label["force"], model_pred["force"], reduction="none"
                 )
@@ -222,6 +246,10 @@ class EnergySpinLoss(TaskLoss):
                 )
                 l1_force_real_loss = l1_force_real_loss.sum(-1).mean(-1).sum()
                 loss += (pref_fr * l1_force_real_loss).to(GLOBAL_PT_FLOAT_PRECISION)
+            else:
+                raise NotImplementedError(
+                    f"Loss type {self.loss_func} is not implemented for real force loss."
+                )
 
         if self.has_fm and "force_mag" in model_pred and "force_mag" in label:
             find_force_m = label.get("find_force_mag", 0.0)
@@ -232,14 +260,20 @@ class EnergySpinLoss(TaskLoss):
             model_pred_force_mag = model_pred["force_mag"][atomic_mask].view(
                 nframes, -1, 3
             )
-            if not self.use_l1_all:
+            if self.loss_func == "mse":
                 diff_fm = label_force_mag - model_pred_force_mag
                 l2_force_mag_loss = torch.mean(torch.square(diff_fm))
                 if not self.inference:
                     more_loss["l2_force_m_loss"] = self.display_if_exist(
                         l2_force_mag_loss.detach(), find_force_m
                     )
-                loss += (pref_fm * l2_force_mag_loss).to(GLOBAL_PT_FLOAT_PRECISION)
+                # A batch with no magnetic atoms makes ``torch.mean`` reduce
+                # over an empty tensor (NaN), and ``0 * NaN`` is still NaN, so
+                # ``nan_to_num`` keeps such a batch's force_mag term at zero
+                # loss and zero gradient instead of poisoning the whole step.
+                loss += (pref_fm * torch.nan_to_num(l2_force_mag_loss)).to(
+                    GLOBAL_PT_FLOAT_PRECISION
+                )
                 rmse_fm = l2_force_mag_loss.sqrt()
                 more_loss["rmse_fm"] = self.display_if_exist(
                     rmse_fm.detach(), find_force_m
@@ -249,7 +283,7 @@ class EnergySpinLoss(TaskLoss):
                     more_loss["mae_fm"] = self.display_if_exist(
                         mae_fm.detach(), find_force_m
                     )
-            else:
+            elif self.loss_func == "mae":
                 l1_force_mag_loss = F.l1_loss(
                     label_force_mag, model_pred_force_mag, reduction="none"
                 )
@@ -257,7 +291,13 @@ class EnergySpinLoss(TaskLoss):
                     l1_force_mag_loss.mean().detach(), find_force_m
                 )
                 l1_force_mag_loss = l1_force_mag_loss.sum(-1).mean(-1).sum()
-                loss += (pref_fm * l1_force_mag_loss).to(GLOBAL_PT_FLOAT_PRECISION)
+                loss += (pref_fm * torch.nan_to_num(l1_force_mag_loss)).to(
+                    GLOBAL_PT_FLOAT_PRECISION
+                )
+            else:
+                raise NotImplementedError(
+                    f"Loss type {self.loss_func} is not implemented for magnetic force loss."
+                )
 
         if self.has_ae and "atom_energy" in model_pred and "atom_ener" in label:
             atom_ener = model_pred["atom_energy"]
@@ -266,34 +306,70 @@ class EnergySpinLoss(TaskLoss):
             pref_ae = pref_ae * find_atom_ener
             atom_ener_reshape = atom_ener.reshape(-1)
             atom_ener_label_reshape = atom_ener_label.reshape(-1)
-            l2_atom_ener_loss = torch.square(
-                atom_ener_label_reshape - atom_ener_reshape
-            ).mean()
-            if not self.inference:
-                more_loss["l2_atom_ener_loss"] = self.display_if_exist(
-                    l2_atom_ener_loss.detach(), find_atom_ener
+
+            if self.loss_func == "mse":
+                l2_atom_ener_loss = torch.square(
+                    atom_ener_label_reshape - atom_ener_reshape
+                ).mean()
+                if not self.inference:
+                    more_loss["l2_atom_ener_loss"] = self.display_if_exist(
+                        l2_atom_ener_loss.detach(), find_atom_ener
+                    )
+                loss += (pref_ae * l2_atom_ener_loss).to(GLOBAL_PT_FLOAT_PRECISION)
+                rmse_ae = l2_atom_ener_loss.sqrt()
+                more_loss["rmse_ae"] = self.display_if_exist(
+                    rmse_ae.detach(), find_atom_ener
                 )
-            loss += (pref_ae * l2_atom_ener_loss).to(GLOBAL_PT_FLOAT_PRECISION)
-            rmse_ae = l2_atom_ener_loss.sqrt()
-            more_loss["rmse_ae"] = self.display_if_exist(
-                rmse_ae.detach(), find_atom_ener
-            )
+            elif self.loss_func == "mae":
+                l1_atom_ener_loss = F.l1_loss(
+                    atom_ener_reshape,
+                    atom_ener_label_reshape,
+                    reduction="mean",
+                )
+                loss += (pref_ae * l1_atom_ener_loss).to(GLOBAL_PT_FLOAT_PRECISION)
+                more_loss["mae_ae"] = self.display_if_exist(
+                    l1_atom_ener_loss.detach(), find_atom_ener
+                )
+            else:
+                raise NotImplementedError(
+                    f"Loss type {self.loss_func} is not implemented for atomic energy loss."
+                )
 
         if self.has_v and "virial" in model_pred and "virial" in label:
             find_virial = label.get("find_virial", 0.0)
             pref_v = pref_v * find_virial
             diff_v = label["virial"] - model_pred["virial"].reshape(-1, 9)
-            l2_virial_loss = torch.mean(torch.square(diff_v))
-            if not self.inference:
-                more_loss["l2_virial_loss"] = self.display_if_exist(
-                    l2_virial_loss.detach(), find_virial
+
+            if self.loss_func == "mse":
+                l2_virial_loss = torch.mean(torch.square(diff_v))
+                if not self.inference:
+                    more_loss["l2_virial_loss"] = self.display_if_exist(
+                        l2_virial_loss.detach(), find_virial
+                    )
+                loss += atom_norm**norm_exp * (pref_v * l2_virial_loss)
+                rmse_v = l2_virial_loss.sqrt() * atom_norm
+                more_loss["rmse_v"] = self.display_if_exist(
+                    rmse_v.detach(), find_virial
                 )
-            loss += atom_norm * (pref_v * l2_virial_loss)
-            rmse_v = l2_virial_loss.sqrt() * atom_norm
-            more_loss["rmse_v"] = self.display_if_exist(rmse_v.detach(), find_virial)
-            if mae:
-                mae_v = torch.mean(torch.abs(diff_v)) * atom_norm
-                more_loss["mae_v"] = self.display_if_exist(mae_v.detach(), find_virial)
+                if mae:
+                    mae_v = torch.mean(torch.abs(diff_v)) * atom_norm
+                    more_loss["mae_v"] = self.display_if_exist(
+                        mae_v.detach(), find_virial
+                    )
+            elif self.loss_func == "mae":
+                l1_virial_loss = F.l1_loss(
+                    label["virial"].reshape(-1),
+                    model_pred["virial"].reshape(-1),
+                    reduction="mean",
+                )
+                loss += atom_norm * (pref_v * l1_virial_loss)
+                more_loss["mae_v"] = self.display_if_exist(
+                    l1_virial_loss.detach() * atom_norm, find_virial
+                )
+            else:
+                raise NotImplementedError(
+                    f"Loss type {self.loss_func} is not implemented for virial loss."
+                )
 
         if not self.inference:
             more_loss["rmse"] = torch.sqrt(loss.detach())
@@ -354,3 +430,36 @@ class EnergySpinLoss(TaskLoss):
                 )
             )
         return label_requirement
+
+    def serialize(self) -> dict:
+        """Serialize the loss module."""
+        return {
+            "@class": "EnergySpinLoss",
+            "@version": 2,
+            "starter_learning_rate": self.starter_learning_rate,
+            "start_pref_e": self.start_pref_e,
+            "limit_pref_e": self.limit_pref_e,
+            "start_pref_fr": self.start_pref_fr,
+            "limit_pref_fr": self.limit_pref_fr,
+            "start_pref_fm": self.start_pref_fm,
+            "limit_pref_fm": self.limit_pref_fm,
+            "start_pref_v": self.start_pref_v,
+            "limit_pref_v": self.limit_pref_v,
+            "start_pref_ae": self.start_pref_ae,
+            "limit_pref_ae": self.limit_pref_ae,
+            "enable_atom_ener_coeff": self.enable_atom_ener_coeff,
+            "loss_func": self.loss_func,
+            "intensive_ener_virial": self.intensive_ener_virial,
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict) -> "EnergySpinLoss":
+        """Deserialize the loss module."""
+        data = data.copy()
+        version = data.pop("@version")
+        check_version_compatibility(version, 2, 1)
+        data.pop("@class")
+        # Handle backward compatibility for older versions without intensive_ener_virial
+        if version < 2:
+            data.setdefault("intensive_ener_virial", False)
+        return cls(**data)

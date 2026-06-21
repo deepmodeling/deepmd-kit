@@ -210,6 +210,7 @@ class InvarFitting(GeneralFitting):
                     r_differentiable=True,
                     c_differentiable=True,
                 ),
+                *self._middle_output_def(),
             ]
         )
 

@@ -44,6 +44,7 @@ class PolarModel(DPModelCommon, DPPolarModel_):
         fparam: Array | None = None,
         aparam: Array | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: Array | None = None,
     ) -> dict[str, Array]:
         model_ret = self.call_common(
             coord,
@@ -52,6 +53,7 @@ class PolarModel(DPModelCommon, DPPolarModel_):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
+            charge_spin=charge_spin,
         )
         model_predict = {}
         model_predict["polar"] = model_ret["polarizability"]
@@ -69,6 +71,7 @@ class PolarModel(DPModelCommon, DPPolarModel_):
         fparam: Array | None = None,
         aparam: Array | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: Array | None = None,
     ) -> dict[str, Array]:
         model_ret = self.call_common_lower(
             extended_coord,
@@ -78,6 +81,7 @@ class PolarModel(DPModelCommon, DPPolarModel_):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=do_atomic_virial,
+            charge_spin=charge_spin,
         )
         model_predict = {}
         model_predict["polar"] = model_ret["polarizability"]

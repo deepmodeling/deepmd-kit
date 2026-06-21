@@ -22,6 +22,10 @@ from deepmd.utils.errors import (
 log = logging.getLogger(__name__)
 
 
+class RetrySignal(Exception):
+    """Signal to retry execution after OOM error."""
+
+
 class AutoBatchSize(ABC):
     """This class allows DeePMD-kit to automatically decide the maximum
     batch size that will not cause an OOM error.
@@ -41,6 +45,8 @@ class AutoBatchSize(ABC):
         is not set
     factor : float, default: 2.
         increased factor
+    silent : bool, default: False
+        whether to suppress auto batch size informational logs
 
     Attributes
     ----------
@@ -52,8 +58,15 @@ class AutoBatchSize(ABC):
         minimal not working batch size
     """
 
-    def __init__(self, initial_batch_size: int = 1024, factor: float = 2.0) -> None:
+    def __init__(
+        self,
+        initial_batch_size: int = 1024,
+        factor: float = 2.0,
+        *,
+        silent: bool = False,
+    ) -> None:
         # See also PyTorchLightning/pytorch-lightning#1638
+        self.silent = silent
         self.current_batch_size = initial_batch_size
         DP_INFER_BATCH_SIZE = int(os.environ.get("DP_INFER_BATCH_SIZE", 0))
         if DP_INFER_BATCH_SIZE > 0:
@@ -68,13 +81,15 @@ class AutoBatchSize(ABC):
                 self.minimal_not_working_batch_size = (
                     self.maximum_working_batch_size + 1
                 )
-                log.warning(
-                    "You can use the environment variable DP_INFER_BATCH_SIZE to"
-                    "control the inference batch size (nframes * natoms). "
-                    f"The default value is {initial_batch_size}."
-                )
+                if not self.silent:
+                    log.warning(
+                        "You can use the environment variable DP_INFER_BATCH_SIZE to"
+                        "control the inference batch size (nframes * natoms). "
+                        f"The default value is {initial_batch_size}."
+                    )
 
         self.factor = factor
+        self.oom_retry_mode = False
 
     def execute(
         self, callable: Callable, start_index: int, natoms: int
@@ -125,6 +140,8 @@ class AutoBatchSize(ABC):
                 ) from e
             # adjust the next batch size
             self._adjust_batch_size(1.0 / self.factor)
+            if self.oom_retry_mode:
+                raise RetrySignal from e
             return 0, None
         else:
             n_tot = n_batch * natoms
@@ -143,9 +160,10 @@ class AutoBatchSize(ABC):
     def _adjust_batch_size(self, factor: float) -> None:
         old_batch_size = self.current_batch_size
         self.current_batch_size = int(self.current_batch_size * factor)
-        log.info(
-            f"Adjust batch size from {old_batch_size} to {self.current_batch_size}"
-        )
+        if not self.silent:
+            log.info(
+                f"Adjust batch size from {old_batch_size} to {self.current_batch_size}"
+            )
 
     def execute_all(
         self,
@@ -281,3 +299,20 @@ class AutoBatchSize(ABC):
         bool
             True if the exception is an OOM error
         """
+
+    def set_oom_retry_mode(self, enable: bool) -> None:
+        """Set OOM retry mode.
+
+        In OOM retry mode, an OOM during execution may reduce the current
+        batch size and raise :class:`RetrySignal` to indicate that execution
+        should be retried.
+
+        Callers that want all data to be re-executed must catch
+        :class:`RetrySignal` and restart the full evaluation themselves.
+
+        Parameters
+        ----------
+        enable : bool
+            True to enable OOM retry mode
+        """
+        self.oom_retry_mode = enable

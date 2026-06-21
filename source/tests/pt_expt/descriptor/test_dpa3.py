@@ -21,14 +21,16 @@ from deepmd.pt_expt.utils.env import (
     PRECISION_DICT,
 )
 
-from ...pt.model.test_env_mat import (
+from ...common.test_mixins import (
     TestCaseSingleFrameWithNlist,
-)
-from ...pt.model.test_mlp import (
     get_tols,
 )
 from ...seed import (
     GLOBAL_SEED,
+)
+from ..export_helpers import (
+    export_save_load_and_compare,
+    make_descriptor_dynamic_shapes,
 )
 
 
@@ -124,6 +126,89 @@ class TestDescrptDPA3(TestCaseSingleFrameWithNlist):
             rd2,
             rtol=rtol,
             atol=atol,
+        )
+
+    @pytest.mark.parametrize("cs_mode", ["explicit_chg_spin", "default_chg_spin"])
+    def test_consistency_chg_spin(self, cs_mode) -> None:
+        rng = np.random.default_rng(GLOBAL_SEED)
+        nf, nloc, nnei = self.nlist.shape
+        davg = rng.normal(size=(self.nt, nnei, 4))
+        dstd = 0.1 + np.abs(rng.normal(size=(self.nt, nnei, 4)))
+
+        prec = "float64"
+        dtype = PRECISION_DICT[prec]
+        rtol, atol = get_tols(prec)
+        atol = 1e-8
+
+        default_chg_spin = [5.0, 1.0] if cs_mode == "default_chg_spin" else None
+
+        repflow = RepFlowArgs(
+            n_dim=20,
+            e_dim=10,
+            a_dim=8,
+            nlayers=3,
+            e_rcut=self.rcut,
+            e_rcut_smth=self.rcut_smth,
+            e_sel=nnei,
+            a_rcut=self.rcut - 0.1,
+            a_rcut_smth=self.rcut_smth,
+            a_sel=nnei - 1,
+            axis_neuron=4,
+            update_angle=True,
+            update_style="res_residual",
+            update_residual_init="const",
+            smooth_edge_update=True,
+        )
+
+        dd0 = DescrptDPA3(
+            self.nt,
+            repflow=repflow,
+            exclude_types=[],
+            precision=prec,
+            add_chg_spin_ebd=True,
+            default_chg_spin=default_chg_spin,
+            seed=GLOBAL_SEED,
+        ).to(self.device)
+        dd0.repflows.mean = torch.tensor(davg, dtype=dtype, device=self.device)
+        dd0.repflows.stddev = torch.tensor(dstd, dtype=dtype, device=self.device)
+
+        # descriptor.forward does not apply default_chg_spin fallback;
+        # always pass an explicit charge_spin tensor here.
+        charge_spin = torch.tensor([[5, 1]], dtype=dtype, device=self.device).expand(
+            nf, -1
+        )
+        charge_spin_np = np.array([[5, 1]], dtype=np.float64).repeat(nf, axis=0)
+
+        coord_ext = torch.tensor(self.coord_ext, dtype=dtype, device=self.device)
+        atype_ext = torch.tensor(self.atype_ext, dtype=int, device=self.device)
+        nlist_t = torch.tensor(self.nlist, dtype=int, device=self.device)
+        mapping_t = torch.tensor(self.mapping, dtype=int, device=self.device)
+
+        rd0, _, _, _, _ = dd0(
+            coord_ext, atype_ext, nlist_t, mapping_t, charge_spin=charge_spin
+        )
+        # serialization round-trip preserves default_chg_spin
+        dd1 = DescrptDPA3.deserialize(dd0.serialize())
+        rd1, _, _, _, _ = dd1(
+            coord_ext, atype_ext, nlist_t, mapping_t, charge_spin=charge_spin
+        )
+        np.testing.assert_allclose(
+            rd0.detach().cpu().numpy(),
+            rd1.detach().cpu().numpy(),
+            rtol=rtol,
+            atol=atol,
+        )
+        # vs dpmodel
+        dd2 = DPDescrptDPA3.deserialize(dd0.serialize())
+        rd2, _, _, _, _ = dd2.call(
+            self.coord_ext,
+            self.atype_ext,
+            self.nlist,
+            self.mapping,
+            charge_spin=charge_spin_np,
+        )
+        np.testing.assert_allclose(
+            rd0.detach().cpu().numpy(), rd2, rtol=rtol, atol=atol
         )
 
     @pytest.mark.parametrize("prec", ["float64", "float32"])  # precision
@@ -246,3 +331,106 @@ class TestDescrptDPA3(TestCaseSingleFrameWithNlist):
             rtol=rtol,
             atol=atol,
         )
+
+        # --- symbolic trace + export + .pte round-trip ---
+        dynamic_shapes = make_descriptor_dynamic_shapes(has_mapping=True)
+        inputs = (coord_ext, atype_ext, nlist, mapping)
+        export_save_load_and_compare(
+            fn,
+            inputs,
+            (rd_eager, grad_eager),
+            dynamic_shapes,
+            rtol=rtol,
+            atol=atol,
+        )
+
+    @pytest.mark.parametrize("shared_level", [0, 1])  # sharing level
+    def test_share_params(self, shared_level) -> None:
+        """share_params level 0: share all; level 1: share type_embedding only."""
+        rng = np.random.default_rng(GLOBAL_SEED)
+        nf, nloc, nnei = self.nlist.shape
+        davg0 = rng.normal(size=(self.nt, nnei, 4))
+        dstd0 = 0.1 + np.abs(rng.normal(size=(self.nt, nnei, 4)))
+
+        repflow = RepFlowArgs(
+            n_dim=20,
+            e_dim=10,
+            a_dim=8,
+            nlayers=3,
+            e_rcut=self.rcut,
+            e_rcut_smth=self.rcut_smth,
+            e_sel=nnei,
+            a_rcut=self.rcut - 0.1,
+            a_rcut_smth=self.rcut_smth,
+            a_sel=nnei - 1,
+            axis_neuron=4,
+            update_angle=True,
+            update_style="res_residual",
+            update_residual_init="const",
+            smooth_edge_update=True,
+        )
+
+        dd0 = DescrptDPA3(
+            self.nt, repflow=repflow, exclude_types=[], seed=GLOBAL_SEED
+        ).to(self.device)
+        dd1 = DescrptDPA3(
+            self.nt, repflow=repflow, exclude_types=[], seed=GLOBAL_SEED + 1
+        ).to(self.device)
+        dd0.repflows.mean = torch.tensor(davg0, dtype=torch.float64, device=self.device)
+        dd0.repflows.stddev = torch.tensor(
+            dstd0, dtype=torch.float64, device=self.device
+        )
+
+        dd1.share_params(dd0, shared_level=shared_level)
+
+        # type_embedding is always shared
+        assert dd1._modules["type_embedding"] is dd0._modules["type_embedding"]
+
+        if shared_level == 0:
+            assert dd1._modules["repflows"] is dd0._modules["repflows"]
+        elif shared_level == 1:
+            assert dd1._modules["repflows"] is not dd0._modules["repflows"]
+
+        # invalid level raises
+        with pytest.raises(NotImplementedError):
+            dd1.share_params(dd0, shared_level=2)
+
+
+@pytest.mark.parametrize("use_loc_mapping", [True, False])
+def test_has_message_passing_across_ranks(use_loc_mapping) -> None:
+    """DPA3 always reports message passing; cross-rank only when
+    ``use_loc_mapping=False`` (so per-layer node embeddings must flow
+    via MPI ghost exchange instead of a local gather).
+    """
+    import copy
+
+    from deepmd.dpmodel.model.model import (
+        get_model,
+    )
+
+    config = {
+        "type_map": ["O", "H"],
+        "descriptor": {
+            "type": "dpa3",
+            "repflow": {
+                "n_dim": 8,
+                "e_dim": 6,
+                "a_dim": 4,
+                "nlayers": 1,
+                "e_rcut": 4.0,
+                "e_rcut_smth": 0.5,
+                "e_sel": 8,
+                "a_rcut": 3.5,
+                "a_rcut_smth": 0.5,
+                "a_sel": 4,
+                "axis_neuron": 4,
+                "update_angle": False,
+            },
+            "use_loc_mapping": use_loc_mapping,
+        },
+        "fitting_net": {"neuron": [16, 16], "seed": 1},
+    }
+    model = get_model(copy.deepcopy(config))
+    desc = model.atomic_model.descriptor
+    assert desc.has_message_passing() is True
+    assert desc.has_message_passing_across_ranks() is (not use_loc_mapping)

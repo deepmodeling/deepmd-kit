@@ -18,6 +18,9 @@ from deepmd.dpmodel.model.dp_model import (
 from deepmd.dpmodel.model.make_hessian_model import (
     make_hessian_model,
 )
+from deepmd.dpmodel.utils.neighbor_list import (
+    NeighborList,
+)
 
 from .make_model import (
     make_model,
@@ -30,6 +33,8 @@ DPEnergyModel_ = make_model(DPEnergyAtomicModel, T_Bases=(BaseModel,))
 
 
 @BaseModel.register("ener")
+@BaseModel.register("sezm_ener")
+@BaseModel.register("dpa4_ener")
 class EnergyModel(DPModelCommon, DPEnergyModel_):
     def __init__(
         self,
@@ -58,14 +63,32 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
+        neighbor_list: NeighborList | None = None,
     ) -> dict[str, torch.Tensor]:
+        """Evaluate the energy model.
+
+        Most arguments share the meaning of :meth:`call_common`.
+
+        Parameters
+        ----------
+        neighbor_list
+            The neighbor-list construction strategy forwarded to
+            :meth:`call_common`.  ``None`` uses the default all-pairs builder
+            (:class:`~deepmd.dpmodel.utils.default_neighbor_list.DefaultNeighborList`),
+            reproducing the historical behavior; an alternative strategy (e.g.
+            the ``vesin`` O(N) cell list) may be injected to accelerate
+            neighbor-list construction without changing the model outputs.
+        """
         model_ret = self.call_common(
             coord,
             atype,
             box,
             fparam=fparam,
             aparam=aparam,
+            charge_spin=charge_spin,
             do_atomic_virial=do_atomic_virial,
+            neighbor_list=neighbor_list,
         )
         model_predict = {}
         model_predict["atom_energy"] = model_ret["energy"]
@@ -91,6 +114,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         model_ret = self.call_common_lower(
             extended_coord,
@@ -99,6 +123,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             mapping,
             fparam=fparam,
             aparam=aparam,
+            charge_spin=charge_spin,
             do_atomic_virial=do_atomic_virial,
         )
         model_predict = {}
@@ -145,6 +170,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
         **make_fx_kwargs: Any,
     ) -> torch.nn.Module:
         """Trace ``forward_lower`` into an exportable module.
@@ -175,6 +201,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             mapping,
             fparam=fparam,
             aparam=aparam,
+            charge_spin=charge_spin,
             do_atomic_virial=do_atomic_virial,
             **make_fx_kwargs,
         )
@@ -191,9 +218,16 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             mapping: torch.Tensor | None,
             fparam: torch.Tensor | None,
             aparam: torch.Tensor | None,
+            charge_spin: torch.Tensor | None,
         ) -> dict[str, torch.Tensor]:
             model_ret = traced(
-                extended_coord, extended_atype, nlist, mapping, fparam, aparam
+                extended_coord,
+                extended_atype,
+                nlist,
+                mapping,
+                fparam,
+                aparam,
+                charge_spin,
             )
             model_predict: dict[str, torch.Tensor] = {}
             model_predict["atom_energy"] = model_ret["energy"]
@@ -211,5 +245,5 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             return model_predict
 
         return make_fx(fn, **make_fx_kwargs)(
-            extended_coord, extended_atype, nlist, mapping, fparam, aparam
+            extended_coord, extended_atype, nlist, mapping, fparam, aparam, charge_spin
         )

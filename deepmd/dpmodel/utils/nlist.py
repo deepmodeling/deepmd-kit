@@ -5,6 +5,7 @@ import array_api_compat
 from deepmd.dpmodel.array_api import (
     Array,
     xp_take_along_axis,
+    xp_take_first_n,
 )
 
 from .region import (
@@ -243,8 +244,7 @@ def build_multiple_neighbor_list(
         nlist = xp.concat([nlist, pad], axis=-1)
         nsel = nsels[-1]
     coord1 = xp.reshape(coord, (nb, -1, 3))
-    nall = coord1.shape[1]
-    coord0 = coord1[:, :nloc, :]
+    coord0 = xp_take_first_n(coord1, 1, nloc)
     nlist_mask = nlist == -1
     tnlist_0 = xp.where(nlist_mask, xp.zeros_like(nlist), nlist)
     index = xp.tile(xp.reshape(tnlist_0, (nb, nloc * nsel, 1)), (1, 1, 3))
@@ -355,9 +355,16 @@ def extend_coord_with_ghosts(
         shift_idx = xp.take(xyz, xp.argsort(xp.linalg.vector_norm(xyz, axis=1)), axis=0)
         ns, _ = shift_idx.shape
         nall = ns * nloc
-        # shift_vec = xp.einsum("sd,fdk->fsk", shift_idx, cell)
-        shift_vec = xp.tensordot(shift_idx, cell, axes=([1], [1]))
-        shift_vec = xp.permute_dims(shift_vec, (1, 0, 2))
+        if array_api_compat.is_jax_namespace(xp):
+            # Avoid JAX internal errors in tensordot.
+            shift_vec = xp.sum(
+                shift_idx[xp.newaxis, :, :, xp.newaxis] * cell[:, xp.newaxis, :, :],
+                axis=2,
+            )
+        else:
+            # shift_vec = xp.einsum("sd,fdk->fsk", shift_idx, cell)
+            shift_vec = xp.tensordot(shift_idx, cell, axes=([1], [1]))
+            shift_vec = xp.permute_dims(shift_vec, (1, 0, 2))
         extend_coord = coord[:, None, :, :] + shift_vec[:, :, None, :]
         extend_atype = xp.tile(atype[:, :, xp.newaxis], (1, ns, 1))
         extend_aidx = xp.tile(aidx[:, :, xp.newaxis], (1, ns, 1))

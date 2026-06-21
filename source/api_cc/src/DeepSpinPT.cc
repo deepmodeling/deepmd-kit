@@ -31,22 +31,6 @@ void DeepSpinPT::translate_error(std::function<void()> f) {
   }
 }
 
-torch::Tensor createNlistTensor2(const std::vector<std::vector<int>>& data) {
-  size_t total_size = 0;
-  for (const auto& row : data) {
-    total_size += row.size();
-  }
-  std::vector<int> flat_data;
-  flat_data.reserve(total_size);
-  for (const auto& row : data) {
-    flat_data.insert(flat_data.end(), row.begin(), row.end());
-  }
-
-  torch::Tensor flat_tensor = torch::tensor(flat_data, torch::kInt32);
-  int nloc = data.size();
-  int nnei = nloc > 0 ? total_size / nloc : 0;
-  return flat_tensor.view({1, nloc, nnei});
-}
 DeepSpinPT::DeepSpinPT() : inited(false) {}
 DeepSpinPT::DeepSpinPT(const std::string& model,
                        const int& gpu_rank,
@@ -202,14 +186,14 @@ void DeepSpinPT::compute(ENERGYVTYPE& ener,
     if (lmp_list.mapping) {
       std::vector<std::int64_t> mapping(nall_real);
       for (size_t ii = 0; ii < nall_real; ii++) {
-        mapping[ii] = lmp_list.mapping[fwd_map[ii]];
+        mapping[ii] = fwd_map[lmp_list.mapping[bkw_map[ii]]];
       }
       mapping_tensor =
           torch::from_blob(mapping.data(), {1, nall_real}, int_option)
               .to(device);
     }
   }
-  at::Tensor firstneigh = createNlistTensor2(nlist_data.jlist);
+  at::Tensor firstneigh = createNlistTensor(nlist_data.jlist);
   firstneigh_tensor = firstneigh.to(torch::kInt64).to(device);
   bool do_atom_virial_tensor = atomic;
   c10::optional<torch::Tensor> fparam_tensor;
@@ -492,9 +476,12 @@ template void DeepSpinPT::compute<float, std::vector<ENERGYTYPE>>(
     const bool atomic);
 void DeepSpinPT::get_type_map(std::string& type_map) {
   auto ret = module.run_method("get_type_map").toList();
+  type_map.clear();
   for (const torch::IValue& element : ret) {
-    type_map += torch::str(element);  // Convert each element to a string
-    type_map += " ";                  // Add a space between elements
+    if (!type_map.empty()) {
+      type_map += " ";
+    }
+    type_map += torch::str(element);
   }
 }
 

@@ -915,6 +915,15 @@ def main_parser() -> argparse.ArgumentParser:
     )
     parser_convert_backend.add_argument("INPUT", help="The input model file.")
     parser_convert_backend.add_argument("OUTPUT", help="The output model file.")
+    parser_convert_backend.add_argument(
+        "--atomic-virial",
+        action="store_true",
+        default=False,
+        help="Export .pt2/.pte models with per-atom virial correction. "
+        "This adds ~2.5x inference cost but is required for "
+        "LAMMPS compute/atom virial output. "
+        "Ignored (with a warning) for other output backends.",
+    )
 
     # * show model ******************************************************************
     parser_show = subparsers.add_parser(

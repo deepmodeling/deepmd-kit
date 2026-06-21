@@ -144,7 +144,7 @@ class DescrptHybrid(Descriptor):
         real_natoms_vec: list | None = None,
         **kwargs: Any,
     ) -> None:
-        """Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
+        """Compute the statistics (avg and std) of the training data. The input will be normalized by the statistics.
 
         Parameters
         ----------
@@ -183,22 +183,22 @@ class DescrptHybrid(Descriptor):
             )
 
     def merge_input_stats(self, stat_dict: dict[str, float]) -> None:
-        """Merge the statisitcs computed from compute_input_stats to obtain the self.davg and self.dstd.
+        """Merge the statistics computed from compute_input_stats to obtain the self.davg and self.dstd.
 
         Parameters
         ----------
         stat_dict
-                The dict of statisitcs computed from compute_input_stats, including:
+                The dict of statistics computed from compute_input_stats, including:
             sumr
-                    The sum of radial statisitcs.
+                    The sum of radial statistics.
             suma
-                    The sum of relative coord statisitcs.
+                    The sum of relative coord statistics.
             sumn
                     The sum of neighbor numbers.
             sumr2
-                    The sum of square of radial statisitcs.
+                    The sum of square of radial statistics.
             suma2
-                    The sum of square of relative coord statisitcs.
+                    The sum of square of relative coord statistics.
         """
         for ii in self.descrpt_list:
             ii.merge_input_stats(stat_dict)
@@ -315,7 +315,7 @@ class DescrptHybrid(Descriptor):
         check_frequency: int = -1,
         suffix: str = "",
     ) -> None:
-        """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the
+        """Receive the statistics (distance, max_nbor_size and env_mat_range) of the
         training data.
 
         Parameters

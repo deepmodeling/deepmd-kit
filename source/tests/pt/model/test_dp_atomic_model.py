@@ -74,6 +74,67 @@ class TestDPAtomicModel(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 to_numpy_array(ret1["energy"]),
             )
 
+    def test_forward_common_atomic_accepts_leaf_view_input(self) -> None:
+        ds = DescrptSeA(
+            self.rcut,
+            self.rcut_smth,
+            self.sel,
+        ).to(env.DEVICE)
+        ft = InvarFitting(
+            "energy",
+            self.nt,
+            ds.get_dim_out(),
+            1,
+            mixed_types=ds.mixed_types(),
+        ).to(env.DEVICE)
+        md0 = DPAtomicModel(ds, ft, type_map=["foo", "bar"]).to(env.DEVICE)
+
+        coord = to_torch_tensor(self.coord_ext)
+        coord_view = coord.view(self.nf, self.nall, 3)
+        coord_view_before = coord_view.detach().clone()
+        self.assertTrue(coord.is_leaf)
+        self.assertTrue(coord_view._is_view())
+        args = [
+            coord_view,
+            to_torch_tensor(self.atype_ext),
+            to_torch_tensor(self.nlist),
+        ]
+        ret = md0.forward_common_atomic(*args)
+
+        self.assertFalse(coord_view.requires_grad)
+        torch.testing.assert_close(coord_view, coord_view_before)
+        self.assertIn("energy", ret)
+        self.assertEqual(ret["energy"].shape, (self.nf, self.nloc, 1))
+        self.assertTrue(torch.isfinite(ret["energy"]).all())
+
+    def test_forward_common_atomic_preserves_grad_enabled_input(self) -> None:
+        ds = DescrptSeA(
+            self.rcut,
+            self.rcut_smth,
+            self.sel,
+        ).to(env.DEVICE)
+        ft = InvarFitting(
+            "energy",
+            self.nt,
+            ds.get_dim_out(),
+            1,
+            mixed_types=ds.mixed_types(),
+        ).to(env.DEVICE)
+        md0 = DPAtomicModel(ds, ft, type_map=["foo", "bar"]).to(env.DEVICE)
+
+        coord = to_torch_tensor(self.coord_ext)
+        coord_view = coord.view(self.nf, self.nall, 3).clone().requires_grad_(True)
+        args = [
+            coord_view,
+            to_torch_tensor(self.atype_ext),
+            to_torch_tensor(self.nlist),
+        ]
+        ret = md0.forward_common_atomic(*args)
+        ret["energy"].sum().backward()
+
+        self.assertTrue(coord_view.requires_grad)
+        self.assertIsNotNone(coord_view.grad)
+
     def test_dp_consistency(self) -> None:
         nf, nloc, nnei = self.nlist.shape
         ds = DPDescrptSeA(

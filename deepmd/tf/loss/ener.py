@@ -17,6 +17,9 @@ from deepmd.tf.utils.sess import (
 from deepmd.utils.data import (
     DataRequirementItem,
 )
+from deepmd.utils.loss import (
+    resolve_huber_deltas,
+)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -87,8 +90,24 @@ class EnerStdLoss(Loss):
         - For absolute prediction errors within D: quadratic loss (0.5 * (error**2))
         - For absolute errors exceeding D: linear loss (D * |error| - 0.5 * D)
         Formula: loss = 0.5 * (error**2) if |error| <= D else D * (|error| - 0.5 * D).
-    huber_delta : float
-        The threshold delta (D) used for Huber loss, controlling transition between L2 and L1 loss.
+    huber_delta : float | list[float]
+        The threshold delta (D) used for Huber loss, controlling transition between
+        L2 and L1 loss. It can be either one float shared by all terms or a list of
+        three values ordered as [energy, force, virial].
+    loss_func : str
+        Loss function type. Options: 'mse' or 'mae'.
+        Not implemented in TF backend, only for serialization compatibility.
+    f_use_norm : bool
+        If True, use L2 norm of force vectors for loss calculation.
+        Not implemented in TF backend, only for serialization compatibility.
+    intensive_ener_virial : bool
+        Controls the normalization used for energy and virial terms in the non-Huber
+        MSE branch of this TF loss. If true, that branch uses intensive normalization
+        by the square of the number of atoms (1/N^2); if false (default), it uses the
+        legacy normalization (1/N). When ``use_huber=True``, the residual is still
+        normalized by 1/N before applying the Huber loss, so ``intensive_ener_virial`` may not
+        change behavior in that path. The default is false for backward compatibility
+        with models trained using deepmd-kit <= 3.1.3.
     **kwargs
         Other keyword arguments.
     """
@@ -112,9 +131,27 @@ class EnerStdLoss(Loss):
         limit_pref_gf: float = 0.0,
         numb_generalized_coord: int = 0,
         use_huber: bool = False,
-        huber_delta: float = 0.01,
+        huber_delta: float | list[float] = 0.01,
+        loss_func: str = "mse",
+        f_use_norm: bool = False,
+        intensive_ener_virial: bool = False,
         **kwargs: Any,
     ) -> None:
+        if loss_func != "mse":
+            raise NotImplementedError(
+                f"TensorFlow backend only supports loss_func='mse', got '{loss_func}'."
+            )
+        self.loss_func = loss_func
+        self.f_use_norm = f_use_norm
+        if self.f_use_norm:
+            raise NotImplementedError(
+                "TensorFlow backend does not support f_use_norm=True."
+            )
+        if kwargs.get("use_default_pf", False):
+            raise NotImplementedError(
+                "TensorFlow backend does not support use_default_pf=True."
+            )
+
         self.starter_learning_rate = starter_learning_rate
         self.start_pref_e = start_pref_e
         self.limit_pref_e = limit_pref_e
@@ -143,6 +180,12 @@ class EnerStdLoss(Loss):
             )
         self.use_huber = use_huber
         self.huber_delta = huber_delta
+        self.intensive_ener_virial = intensive_ener_virial
+        (
+            self._huber_delta_energy,
+            self._huber_delta_force,
+            self._huber_delta_virial,
+        ) = resolve_huber_deltas(huber_delta)
         if self.use_huber and (
             self.has_pf or self.has_gf or self.relative_f is not None
         ):
@@ -325,14 +368,18 @@ class EnerStdLoss(Loss):
 
         loss = 0
         more_loss = {}
+        # Normalization exponent controls loss scaling with system size:
+        # - norm_exp=2 (intensive_ener_virial=True): loss uses 1/N² scaling, making it independent of system size
+        # - norm_exp=1 (intensive_ener_virial=False, legacy): loss uses 1/N scaling, which varies with system size
+        norm_exp = 2 if self.intensive_ener_virial else 1
         if self.has_e:
             if not self.use_huber:
-                loss += atom_norm_ener * (pref_e * l2_ener_loss)
+                loss += atom_norm_ener**norm_exp * (pref_e * l2_ener_loss)
             else:
                 l_huber_loss = custom_huber_loss(
                     atom_norm_ener * energy,
                     atom_norm_ener * energy_hat,
-                    delta=self.huber_delta,
+                    delta=self._huber_delta_energy,
                 )
                 loss += pref_e * l_huber_loss
             more_loss["l2_ener_loss"] = self.display_if_exist(l2_ener_loss, find_energy)
@@ -343,7 +390,7 @@ class EnerStdLoss(Loss):
                 l_huber_loss = custom_huber_loss(
                     tf.reshape(force, [-1]),
                     tf.reshape(force_hat, [-1]),
-                    delta=self.huber_delta,
+                    delta=self._huber_delta_force,
                 )
                 loss += pref_f * l_huber_loss
             more_loss["l2_force_loss"] = self.display_if_exist(
@@ -351,12 +398,14 @@ class EnerStdLoss(Loss):
             )
         if self.has_v:
             if not self.use_huber:
-                loss += global_cvt_2_ener_float(atom_norm * (pref_v * l2_virial_loss))
+                loss += global_cvt_2_ener_float(
+                    atom_norm**norm_exp * (pref_v * l2_virial_loss)
+                )
             else:
                 l_huber_loss = custom_huber_loss(
                     atom_norm * tf.reshape(virial, [-1]),
                     atom_norm * tf.reshape(virial_hat, [-1]),
-                    delta=self.huber_delta,
+                    delta=self._huber_delta_virial,
                 )
                 loss += pref_v * l_huber_loss
             more_loss["l2_virial_loss"] = self.display_if_exist(
@@ -369,7 +418,7 @@ class EnerStdLoss(Loss):
                 l_huber_loss = custom_huber_loss(
                     tf.reshape(atom_ener, [-1]),
                     tf.reshape(atom_ener_hat, [-1]),
-                    delta=self.huber_delta,
+                    delta=self._huber_delta_energy,
                 )
                 loss += pref_ae * l_huber_loss
             more_loss["l2_atom_ener_loss"] = self.display_if_exist(
@@ -512,7 +561,7 @@ class EnerStdLoss(Loss):
         """
         return {
             "@class": "EnergyLoss",
-            "@version": 2,
+            "@version": 4,
             "starter_learning_rate": self.starter_learning_rate,
             "start_pref_e": self.start_pref_e,
             "limit_pref_e": self.limit_pref_e,
@@ -531,6 +580,10 @@ class EnerStdLoss(Loss):
             "numb_generalized_coord": self.numb_generalized_coord,
             "use_huber": self.use_huber,
             "huber_delta": self.huber_delta,
+            "loss_func": self.loss_func,
+            "f_use_norm": self.f_use_norm,
+            "use_default_pf": getattr(self, "use_default_pf", False),
+            "intensive_ener_virial": self.intensive_ener_virial,
         }
 
     @classmethod
@@ -550,8 +603,12 @@ class EnerStdLoss(Loss):
             The deserialized loss module
         """
         data = data.copy()
-        check_version_compatibility(data.pop("@version"), 2, 1)
+        version = data.pop("@version")
+        check_version_compatibility(version, 4, 1)
         data.pop("@class")
+        # Handle backward compatibility for older versions without intensive_ener_virial
+        if version < 3:
+            data.setdefault("intensive_ener_virial", False)
         return cls(**data)
 
 
@@ -574,7 +631,14 @@ class EnerSpinLoss(Loss):
         relative_f: float | None = None,
         enable_atom_ener_coeff: bool = False,
         use_spin: list | None = None,
+        loss_func: str = "mse",
+        intensive_ener_virial: bool = False,
     ) -> None:
+        if loss_func != "mse":
+            raise NotImplementedError(
+                f"TensorFlow backend only supports loss_func='mse', got '{loss_func}'."
+            )
+        self.loss_func = loss_func
         self.starter_learning_rate = starter_learning_rate
         self.start_pref_e = start_pref_e
         self.limit_pref_e = limit_pref_e
@@ -591,6 +655,7 @@ class EnerSpinLoss(Loss):
         self.relative_f = relative_f
         self.enable_atom_ener_coeff = enable_atom_ener_coeff
         self.use_spin = use_spin
+        self.intensive_ener_virial = intensive_ener_virial
         self.has_e = self.start_pref_e != 0.0 or self.limit_pref_e != 0.0
         self.has_fr = self.start_pref_fr != 0.0 or self.limit_pref_fr != 0.0
         self.has_fm = self.start_pref_fm != 0.0 or self.limit_pref_fm != 0.0
@@ -676,6 +741,10 @@ class EnerSpinLoss(Loss):
 
         atom_norm = 1.0 / global_cvt_2_tf_float(natoms[0])
         atom_norm_ener = 1.0 / global_cvt_2_ener_float(natoms[0])
+        # loss normalization exponent:
+        # - norm_exp=2 (intensive_ener_virial=True): loss uses 1/N² scaling, making it independent of system size
+        # - norm_exp=1 (intensive_ener_virial=False, legacy): loss uses 1/N scaling, which varies with system size
+        norm_exp = 2 if self.intensive_ener_virial else 1
         pref_e = global_cvt_2_ener_float(
             find_energy
             * (
@@ -725,7 +794,7 @@ class EnerSpinLoss(Loss):
         l2_loss = 0
         more_loss = {}
         if self.has_e:
-            l2_loss += atom_norm_ener * (pref_e * l2_ener_loss)
+            l2_loss += atom_norm_ener**norm_exp * (pref_e * l2_ener_loss)
         more_loss["l2_ener_loss"] = self.display_if_exist(l2_ener_loss, find_energy)
         if self.has_fr:
             l2_loss += global_cvt_2_ener_float(pref_fr * l2_force_r_loss)
@@ -738,7 +807,9 @@ class EnerSpinLoss(Loss):
             l2_force_m_loss, find_force
         )
         if self.has_v:
-            l2_loss += global_cvt_2_ener_float(atom_norm * (pref_v * l2_virial_loss))
+            l2_loss += global_cvt_2_ener_float(
+                atom_norm**norm_exp * (pref_v * l2_virial_loss)
+            )
         more_loss["l2_virial_loss"] = self.display_if_exist(l2_virial_loss, find_virial)
         if self.has_ae:
             l2_loss += global_cvt_2_ener_float(pref_ae * l2_atom_ener_loss)
@@ -925,6 +996,67 @@ class EnerSpinLoss(Loss):
                 )
             )
         return data_requirements
+
+    def serialize(self, suffix: str = "") -> dict:
+        """Serialize the loss module.
+
+        Parameters
+        ----------
+        suffix : str
+            The suffix of the loss module
+
+        Returns
+        -------
+        dict
+            The serialized loss module
+        """
+        return {
+            "@class": "EnergySpinLoss",
+            "@version": 2,
+            "starter_learning_rate": self.starter_learning_rate,
+            "start_pref_e": self.start_pref_e,
+            "limit_pref_e": self.limit_pref_e,
+            "start_pref_fr": self.start_pref_fr,
+            "limit_pref_fr": self.limit_pref_fr,
+            "start_pref_fm": self.start_pref_fm,
+            "limit_pref_fm": self.limit_pref_fm,
+            "start_pref_v": self.start_pref_v,
+            "limit_pref_v": self.limit_pref_v,
+            "start_pref_ae": self.start_pref_ae,
+            "limit_pref_ae": self.limit_pref_ae,
+            "start_pref_pf": self.start_pref_pf,
+            "limit_pref_pf": self.limit_pref_pf,
+            "relative_f": self.relative_f,
+            "enable_atom_ener_coeff": self.enable_atom_ener_coeff,
+            "use_spin": self.use_spin,
+            "loss_func": self.loss_func,
+            "intensive_ener_virial": self.intensive_ener_virial,
+        }
+
+    @classmethod
+    def deserialize(cls, data: dict, suffix: str = "") -> "EnerSpinLoss":
+        """Deserialize the loss module.
+
+        Parameters
+        ----------
+        data : dict
+            The serialized loss module
+        suffix : str
+            The suffix of the loss module
+
+        Returns
+        -------
+        EnerSpinLoss
+            The deserialized loss module
+        """
+        data = data.copy()
+        version = data.pop("@version")
+        check_version_compatibility(version, 2, 1)
+        data.pop("@class")
+        # Handle backward compatibility for older versions without intensive_ener_virial
+        if version < 2:
+            data.setdefault("intensive_ener_virial", False)
+        return cls(**data)
 
 
 class EnerDipoleLoss(Loss):

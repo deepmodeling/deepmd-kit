@@ -139,6 +139,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             aparam: torch.Tensor | None = None,
             do_atomic_virial: bool = False,
             coord_corr_for_virial: torch.Tensor | None = None,
+            charge_spin: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
             """Return model prediction.
 
@@ -204,6 +205,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 fparam=fp,
                 aparam=ap,
                 extended_coord_corr=extended_coord_corr,
+                charge_spin=charge_spin,
             )
             model_predict = communicate_extended_output(
                 model_predict_lower,
@@ -259,6 +261,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             comm_dict: dict[str, torch.Tensor] | None = None,
             extra_nlist_sort: bool = False,
             extended_coord_corr: torch.Tensor | None = None,
+            charge_spin: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
             """Return model prediction. Lower interface that takes
             extended atomic coordinates and types, nlist, and mapping
@@ -303,19 +306,24 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 extended_coord, fparam=fparam, aparam=aparam
             )
             del extended_coord, fparam, aparam
+            force_coord = cc_ext
+            if self.atomic_model.do_grad_r() or self.atomic_model.do_grad_c():
+                if not force_coord.requires_grad:
+                    force_coord = force_coord.clone().requires_grad_(True)
             atomic_ret = self.atomic_model.forward_common_atomic(
-                cc_ext,
+                force_coord,
                 extended_atype,
                 nlist,
                 mapping=mapping,
                 fparam=fp,
                 aparam=ap,
                 comm_dict=comm_dict,
+                charge_spin=charge_spin,
             )
             model_predict = fit_output_to_model_output(
                 atomic_ret,
                 self.atomic_output_def(),
-                cc_ext,
+                force_coord,
                 do_atomic_virial=do_atomic_virial,
                 create_graph=self.training,
                 mask=atomic_ret["mask"] if "mask" in atomic_ret else None,
@@ -493,7 +501,26 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 nlist = torch.where(rr > rcut, -1, nlist)
                 nlist = nlist[..., :nnei]
             else:  # not extra_nlist_sort and n_nnei <= nnei:
-                pass  # great!
+                # No reordering is needed here (these descriptors reduce over
+                # neighbors order-independently), but we must still drop
+                # neighbors beyond rcut.  The C++/LAMMPS neighbor list is built
+                # with rcut+skin and is NOT rcut-filtered before forward_lower;
+                # without this, out-of-rcut neighbors leak into the descriptor
+                # whenever the per-atom neighbor count <= nnei (this branch),
+                # making the result order-dependent (see discussion #5438).
+                n_nf, n_nloc, n_nnei = nlist.shape
+                m_real_nei = nlist >= 0
+                coord0 = extended_coord[:, :n_nloc, :]
+                index = (
+                    torch.where(m_real_nei, nlist, 0)
+                    .view(n_nf, n_nloc * n_nnei, 1)
+                    .expand(-1, -1, 3)
+                )
+                coord1 = torch.gather(extended_coord, 1, index).view(
+                    n_nf, n_nloc, n_nnei, 3
+                )
+                rr = torch.linalg.norm(coord0[:, :, None, :] - coord1, dim=-1)
+                nlist = torch.where(m_real_nei & (rr > rcut), -1, nlist)
             assert nlist.shape[-1] == nnei
             return nlist
 
@@ -550,6 +577,26 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
 
         def get_default_fparam(self) -> torch.Tensor | None:
             return self.atomic_model.get_default_fparam()
+
+        @torch.jit.export
+        def has_chg_spin_ebd(self) -> bool:
+            """Check if the model has charge spin embedding."""
+            return self.atomic_model.has_chg_spin_ebd()
+
+        @torch.jit.export
+        def get_dim_chg_spin(self) -> int:
+            """Get the dimension of charge_spin input."""
+            return self.atomic_model.get_dim_chg_spin()
+
+        @torch.jit.export
+        def has_default_chg_spin(self) -> bool:
+            """Check if the model has default charge_spin values."""
+            return self.atomic_model.has_default_chg_spin()
+
+        @torch.jit.export
+        def get_default_chg_spin(self) -> torch.Tensor | None:
+            """Get the default charge_spin values."""
+            return self.atomic_model.get_default_chg_spin()
 
         @torch.jit.export
         def get_dim_aparam(self) -> int:
@@ -670,6 +717,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             fparam: torch.Tensor | None = None,
             aparam: torch.Tensor | None = None,
             do_atomic_virial: bool = False,
+            charge_spin: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
             # directly call the forward_common method when no specific transform rule
             return self.forward_common(
@@ -679,6 +727,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 fparam=fparam,
                 aparam=aparam,
                 do_atomic_virial=do_atomic_virial,
+                charge_spin=charge_spin,
             )
 
     return CM

@@ -2,7 +2,7 @@
 requires = [
     # TODO: unpin the upper bound when scikit-build dynamic metadata API is stable
     # dynamic metadata API is still unstable
-    "scikit-build-core>=0.5,!=0.6.0,<0.13",
+    "scikit-build-core>=0.11,!=0.6.0,<0.13",
     "packaging",
     'tomli >= 1.1.0 ; python_version < "3.11"',
     "dependency_groups",
@@ -18,7 +18,8 @@ authors = [
   {name = "DeepModeling"},
   {name = "Han Wang", email = "wang_han@iapcm.ac.cn"},
 ]
-license = {file = "LICENSE"}
+license = "LGPL-3.0-or-later"
+license-files = ["LICENSE"]
 classifiers = [
     "Natural Language :: English",
     "Operating System :: POSIX :: Linux",
@@ -33,7 +34,7 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
-    "License :: OSI Approved :: GNU Lesser General Public License v3 (LGPLv3)",
+
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
     "Topic :: Scientific/Engineering :: Physics",
     "Topic :: Scientific/Engineering :: Chemistry",
@@ -50,10 +51,13 @@ dependencies = [
     'h5py',
     "h5py>=3.6.0,!=3.11.0; platform_system=='Linux' and platform_machine=='aarch64'",
     'wcmatch',
+    "einops",
     'packaging',
     'ml_dtypes',
     'mendeleev',
     'array-api-compat',
+    'lmdb',
+    'msgpack',
 ]
 requires-python = ">=3.10"
 keywords = ["deepmd"]
@@ -85,6 +89,7 @@ test = [
     "pytest-cov",
     "pytest-sugar",
     "pytest-split",
+    "pytest-timeout",
     "dpgui",
     # to support Array API 2024.12
     'array-api-strict>=2.2;python_version>="3.9"',
@@ -166,14 +171,18 @@ pin_tensorflow_gpu = [
 pin_pytorch_cpu = [
   # https://github.com/pytorch/pytorch/issues/114602
   # macos x86 has been deprecated
-  "torch==2.10.0; platform_machine!='x86_64' or platform_system != 'Darwin'",
+  "torch==2.11.0; platform_machine!='x86_64' or platform_system != 'Darwin'",
   "torch; platform_machine=='x86_64' and platform_system == 'Darwin'",
 ]
 pin_pytorch_gpu = [
   "torch==2.10.0",
 ]
-pin_jax = [
-  "jax==0.5.0;python_version>='3.10'",
+pin_jax_cpu = [
+  "jax==0.6.2; python_version=='3.10'",
+  "jax==0.10.0; python_version>='3.11'",
+]
+pin_jax_gpu = [
+  "jax[cuda12]==0.5.0;python_version>='3.10'",
 ]
 
 [tool.setuptools_scm]
@@ -392,6 +401,7 @@ select = [
 ignore = [
     "ANN401", # Allow Any due to too many violations
     "E501", # line too long
+    "F722", # syntax error in type annotation for jaxtyping
     "F841", # local variable is assigned to but never used
     "RUF059", # unused-unpacked-variable
     "E741", # ambiguous variable name
@@ -457,6 +467,7 @@ runtime-evaluated-base-classes = ["torch.nn.Module"]
 
 [tool.pytest.ini_options]
 markers = "run"
+timeout = 1800
 
 [tool.coverage.run]
 plugins = ["source.3rdparty.coverage_plugins.jit_plugin"]

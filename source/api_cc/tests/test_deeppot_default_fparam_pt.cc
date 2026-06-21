@@ -10,12 +10,20 @@
 #include <vector>
 
 #include "DeepPot.h"
+#include "expected_ref.h"
 #include "neighbor_list.h"
 #include "test_utils.h"
 
 // 1e-10 cannot pass; unclear bug or not
 #undef EPSILON
 #define EPSILON (std::is_same<VALUETYPE, double>::value ? 1e-7 : 1e-4)
+
+namespace {
+constexpr const char* kRefPath =
+    "../../tests/infer/fparam_aparam_default.expected";
+constexpr const char* kModelPath =
+    "../../tests/infer/fparam_aparam_default.pth";
+}  // namespace
 
 template <class VALUETYPE>
 class TestInferDeepPotDefaultFParamPt : public ::testing::Test {
@@ -30,36 +38,9 @@ class TestInferDeepPotDefaultFParamPt : public ::testing::Test {
                                    0.25852028, 0.25852028, 0.25852028};
   // explicit fparam for backward compat test
   std::vector<VALUETYPE> fparam = {0.25852028};
-  // expected values computed with default fparam
-  std::vector<VALUETYPE> expected_e = {
-      -1.038271223729637e-01, -7.285433579124989e-02, -9.467600492266426e-02,
-      -1.467050207422953e-01, -7.660561676973243e-02, -7.277296000253175e-02};
-  std::vector<VALUETYPE> expected_f = {
-      6.622266941151356e-02,  5.278739714221517e-02,  2.265728009692279e-02,
-      -2.606048291367521e-02, -4.538812303131843e-02, 1.058247419681242e-02,
-      1.679392617013225e-01,  -2.257826240741907e-03, -4.490146347357200e-02,
-      -1.148364179422036e-01, -1.169790528013792e-02, 6.140403441496690e-02,
-      -8.078778123309406e-02, -5.838879041789346e-02, 6.773641084621368e-02,
-      -1.247724902386317e-02, 6.494524782787654e-02,  -1.174787360813438e-01};
-  std::vector<VALUETYPE> expected_v = {
-      -1.589185601903571e-01, 2.586167090689234e-03,  -1.575150812459097e-04,
-      -1.855360549216658e-02, 1.949822308966458e-02,  -1.006552178977554e-02,
-      3.177030388421500e-02,  1.714350280402170e-03,  -1.290389705296196e-03,
-      -8.553511587973063e-02, -5.654638208496338e-03, -1.286955066237458e-02,
-      2.464156699303163e-02,  -2.398203243424216e-02, -1.957110698882903e-02,
-      2.233493653505151e-02,  6.107843889444162e-03,  1.707076397717704e-03,
-      -1.653994136896924e-01, 3.894358809712642e-02,  -2.169596032233905e-02,
-      6.819702786555932e-03,  -5.018240707559808e-03, 2.640663592968395e-03,
-      -1.985295554050314e-03, -3.638422207618973e-02, 2.342932709960212e-02,
-      -8.501331666888623e-02, -2.181253119706635e-03, 4.311299629419011e-03,
-      -1.910329576491371e-03, -1.808810428459616e-03, -1.540075460017380e-03,
-      -1.173703527688186e-02, -2.596307050960764e-03, 6.705026635782070e-03,
-      -9.038454847872568e-02, 3.011717694088482e-02,  -5.083053967307887e-02,
-      -2.951212926932095e-03, 2.342446057919113e-02,  -4.091208178777853e-02,
-      -1.648470670751170e-02, -2.872262362355538e-02, 4.763925761561248e-02,
-      -8.300037376165001e-02, 1.020429200603740e-03,  -1.026734257188870e-03,
-      5.678534821710347e-02,  1.273635858276582e-02,  -1.530143401888294e-02,
-      -1.061672032476309e-01, -2.486859787145545e-02, 2.875323543588796e-02};
+  std::vector<VALUETYPE> expected_e;
+  std::vector<VALUETYPE> expected_f;
+  std::vector<VALUETYPE> expected_v;
   int natoms;
   double expected_tot_e;
   std::vector<VALUETYPE> expected_tot_v;
@@ -70,14 +51,19 @@ class TestInferDeepPotDefaultFParamPt : public ::testing::Test {
 #ifndef BUILD_PYTORCH
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
-    dp.init("../../tests/infer/fparam_aparam_default.pth");
+    deepmd_test::ExpectedRef ref;
+    ref.load(kRefPath);
+    expected_e = ref.get<VALUETYPE>("default", "expected_e");
+    expected_f = ref.get<VALUETYPE>("default", "expected_f");
+    expected_v = ref.get<VALUETYPE>("default", "expected_v");
+
+    dp.init(kModelPath);
 
     natoms = expected_e.size();
     EXPECT_EQ(natoms * 3, expected_f.size());
     EXPECT_EQ(natoms * 9, expected_v.size());
     expected_tot_e = 0.;
-    expected_tot_v.resize(9);
-    std::fill(expected_tot_v.begin(), expected_tot_v.end(), 0.);
+    expected_tot_v.assign(9, 0.);
     for (int ii = 0; ii < natoms; ++ii) {
       expected_tot_e += expected_e[ii];
     }

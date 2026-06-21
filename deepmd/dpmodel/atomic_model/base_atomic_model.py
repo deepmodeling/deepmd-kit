@@ -156,6 +156,22 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         """Get the default frame parameters."""
         return None
 
+    def has_chg_spin_ebd(self) -> bool:
+        """Check if the model has charge spin embedding."""
+        return False
+
+    def get_dim_chg_spin(self) -> int:
+        """Get the dimension of charge_spin input."""
+        return 0
+
+    def has_default_chg_spin(self) -> bool:
+        """Check if the model has default charge_spin values."""
+        return False
+
+    def get_default_chg_spin(self) -> list[float] | None:
+        """Get the default charge_spin values."""
+        return None
+
     def reinit_atom_exclude(
         self,
         exclude_types: list[int] = [],
@@ -206,6 +222,20 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         self.reinit_pair_exclude(
             map_pair_exclude_types(self.pair_exclude_types, remap_index)
         )
+        if has_new_type:
+            xp = array_api_compat.array_namespace(self.out_bias)
+            extend_shape = [
+                self.out_bias.shape[0],
+                len(type_map),
+                *list(self.out_bias.shape[2:]),
+            ]
+            device = array_api_compat.device(self.out_bias)
+            extend_bias = xp.zeros(
+                extend_shape, dtype=self.out_bias.dtype, device=device
+            )
+            self.out_bias = xp.concat([self.out_bias, extend_bias], axis=1)
+            extend_std = xp.ones(extend_shape, dtype=self.out_std.dtype, device=device)
+            self.out_std = xp.concat([self.out_std, extend_std], axis=1)
         self.out_bias = self.out_bias[:, remap_index, :]
         self.out_std = self.out_std[:, remap_index, :]
 
@@ -217,6 +247,8 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         mapping: Array | None = None,
         fparam: Array | None = None,
         aparam: Array | None = None,
+        comm_dict: dict | None = None,
+        charge_spin: Array | None = None,
     ) -> dict[str, Array]:
         """Common interface for atomic inference.
 
@@ -238,6 +270,9 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             frame parameters, shape: nf x dim_fparam
         aparam
             atomic parameter, shape: nf x nloc x dim_aparam
+        comm_dict
+            MPI communication metadata for parallel inference. ``None`` for
+            non-parallel inference (default).
 
         Returns
         -------
@@ -265,6 +300,8 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             mapping=mapping,
             fparam=fparam,
             aparam=aparam,
+            comm_dict=comm_dict,
+            charge_spin=charge_spin,
         )
         ret_dict = self.apply_out_stat(ret_dict, atype)
 
@@ -293,6 +330,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         mapping: Array | None = None,
         fparam: Array | None = None,
         aparam: Array | None = None,
+        charge_spin: Array | None = None,
     ) -> dict[str, Array]:
         return self.forward_common_atomic(
             extended_coord,
@@ -301,6 +339,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             mapping=mapping,
             fparam=fparam,
             aparam=aparam,
+            charge_spin=charge_spin,
         )
 
     def get_intensive(self) -> bool:
@@ -505,6 +544,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             box: np.ndarray | None,
             fparam: np.ndarray | None = None,
             aparam: np.ndarray | None = None,
+            charge_spin: np.ndarray | None = None,
         ) -> dict[str, np.ndarray]:
             # Get reference array to determine the target array type and device
             # Use out_bias as reference since it's always present
@@ -524,6 +564,8 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
                 fparam = xp.asarray(fparam, device=device)
             if aparam is not None:
                 aparam = xp.asarray(aparam, device=device)
+            if charge_spin is not None:
+                charge_spin = xp.asarray(charge_spin, device=device)
 
             (
                 extended_coord,
@@ -545,6 +587,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
                 mapping=mapping,
                 fparam=fparam,
                 aparam=aparam,
+                charge_spin=charge_spin,
             )
             # Convert outputs back to numpy arrays
             return {kk: to_numpy_array(vv) for kk, vv in atomic_ret.items()}

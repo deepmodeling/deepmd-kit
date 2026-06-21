@@ -1,8 +1,4 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Any,
-)
-
 from deepmd.dpmodel.model import (
     DPModelCommon,
 )
@@ -41,11 +37,6 @@ def make_jax_dp_model_from_dpmodel(
 
     @flax_module
     class jax_model(dpmodel_model):
-        def __setattr__(self, name: str, value: Any) -> None:
-            if name == "atomic_model":
-                value = jax_atomicmodel.deserialize(value.serialize())
-            return super().__setattr__(name, value)
-
         def forward_common_atomic(
             self,
             extended_coord: jnp.ndarray,
@@ -55,7 +46,11 @@ def make_jax_dp_model_from_dpmodel(
             fparam: jnp.ndarray | None = None,
             aparam: jnp.ndarray | None = None,
             do_atomic_virial: bool = False,
+            extended_coord_corr: jnp.ndarray | None = None,
+            comm_dict: dict | None = None,
+            charge_spin: jnp.ndarray | None = None,
         ) -> dict[str, jnp.ndarray]:
+            del comm_dict  # JAX path has no MPI ghost exchange
             return forward_common_atomic(
                 self,
                 extended_coord,
@@ -65,6 +60,8 @@ def make_jax_dp_model_from_dpmodel(
                 fparam=fparam,
                 aparam=aparam,
                 do_atomic_virial=do_atomic_virial,
+                extended_coord_corr=extended_coord_corr,
+                charge_spin=charge_spin,
             )
 
         def format_nlist(

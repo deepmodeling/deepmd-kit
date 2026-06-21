@@ -64,6 +64,9 @@ from deepmd.pd.utils.utils import (
     to_numpy_array,
     to_paddle_tensor,
 )
+from deepmd.utils.batch_size import (
+    RetrySignal,
+)
 from deepmd.utils.econf_embd import (
     sort_element_type,
 )
@@ -296,6 +299,13 @@ class DeepEval(DeepEvalBackend):
     def get_has_spin(self) -> bool:
         """Check if the model has spin atom types."""
         return self._has_spin
+
+    def get_use_spin(self) -> list[bool]:
+        """Get the per-type spin usage of this model."""
+        if self._has_spin:
+            model = self.dp.model["Default"]
+            return model.spin.use_spin.tolist()
+        return []
 
     def get_has_hessian(self) -> bool:
         """Check if the model has hessian."""
@@ -829,19 +839,30 @@ class DeepEval(DeepEvalBackend):
         model = (
             self.dp.model["Default"] if isinstance(self.dp, ModelWrapper) else self.dp
         )
-        model.set_eval_descriptor_hook(True)
-        self.eval(
-            coords,
-            cells,
-            atom_types,
-            atomic=False,
-            fparam=fparam,
-            aparam=aparam,
-            **kwargs,
-        )
-        descriptor = model.eval_descriptor()
-        model.set_eval_descriptor_hook(False)
-        return to_numpy_array(descriptor)
+        while True:
+            if self.auto_batch_size is not None:
+                self.auto_batch_size.set_oom_retry_mode(True)
+            model.set_eval_descriptor_hook(True)
+            retry = False
+            try:
+                self.eval(
+                    coords,
+                    cells,
+                    atom_types,
+                    atomic=False,
+                    fparam=fparam,
+                    aparam=aparam,
+                    **kwargs,
+                )
+                descriptor = model.eval_descriptor()
+            except RetrySignal:
+                retry = True
+            finally:
+                model.set_eval_descriptor_hook(False)
+                if self.auto_batch_size is not None:
+                    self.auto_batch_size.set_oom_retry_mode(False)
+            if not retry:
+                return to_numpy_array(descriptor)
 
     def eval_fitting_last_layer(
         self,
@@ -884,16 +905,27 @@ class DeepEval(DeepEvalBackend):
             Fitting output before last layer.
         """
         model = self.dp.model["Default"]
-        model.set_eval_fitting_last_layer_hook(True)
-        self.eval(
-            coords,
-            cells,
-            atom_types,
-            atomic=False,
-            fparam=fparam,
-            aparam=aparam,
-            **kwargs,
-        )
-        fitting_net = model.eval_fitting_last_layer()
-        model.set_eval_fitting_last_layer_hook(False)
-        return to_numpy_array(fitting_net)
+        while True:
+            if self.auto_batch_size is not None:
+                self.auto_batch_size.set_oom_retry_mode(True)
+            model.set_eval_fitting_last_layer_hook(True)
+            retry = False
+            try:
+                self.eval(
+                    coords,
+                    cells,
+                    atom_types,
+                    atomic=False,
+                    fparam=fparam,
+                    aparam=aparam,
+                    **kwargs,
+                )
+                fitting_net = model.eval_fitting_last_layer()
+            except RetrySignal:
+                retry = True
+            finally:
+                model.set_eval_fitting_last_layer_hook(False)
+                if self.auto_batch_size is not None:
+                    self.auto_batch_size.set_oom_retry_mode(False)
+            if not retry:
+                return to_numpy_array(fitting_net)

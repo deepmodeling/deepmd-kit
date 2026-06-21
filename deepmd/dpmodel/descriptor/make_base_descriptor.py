@@ -96,6 +96,18 @@ def make_base_descriptor(
             """Returns the embedding dimension of g2."""
             pass
 
+        def get_dim_chg_spin(self) -> int:
+            """Returns the dimension of charge_spin input (0 if not supported)."""
+            return 0
+
+        def has_default_chg_spin(self) -> bool:
+            """Returns whether the descriptor has a default charge_spin value."""
+            return False
+
+        def get_default_chg_spin(self) -> Any:
+            """Returns the default charge_spin value, or None."""
+            return None
+
         @abstractmethod
         def mixed_types(self) -> bool:
             """Returns if the descriptor requires a neighbor list that distinguish different
@@ -106,6 +118,24 @@ def make_base_descriptor(
         @abstractmethod
         def has_message_passing(self) -> bool:
             """Returns whether the descriptor has message passing."""
+
+        def has_message_passing_across_ranks(self) -> bool:
+            """Returns whether the descriptor's message passing extends across rank
+            boundaries — i.e. whether it requires cross-rank exchange of intermediate
+            atomic features (per-layer node embeddings) during the forward pass.
+
+            Distinct from generic ghost-coord/force exchange that every LAMMPS
+            pair_style does. This question gates whether the pt_expt backend
+            compiles a second "with-comm" AOTI artifact for multi-rank deployment.
+
+            Concrete default ``False`` (non-GNN behavior) so pt and pd backend
+            descriptors that subclass ``BaseDescriptor`` directly do not have
+            to implement this method until they grow a multi-rank GNN path of
+            their own. GNN descriptors that need MPI ghost-feature exchange
+            (DPA2, DPA3 with ``use_loc_mapping=False``, hybrids wrapping such
+            children) override to return ``True``.
+            """
+            return False
 
         @abstractmethod
         def need_sorted_nlist_for_lower(self) -> bool:
@@ -162,7 +192,7 @@ def make_base_descriptor(
             table_stride_2: float = 0.1,
             check_frequency: int = -1,
         ) -> None:
-            """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+            """Receive the statistics (distance, max_nbor_size and env_mat_range) of the training data.
 
             Parameters
             ----------
@@ -187,6 +217,7 @@ def make_base_descriptor(
             nlist: Array,
             mapping: Array | None = None,
             fparam: Array | None = None,
+            charge_spin: Array | None = None,
         ) -> Array:
             """Calculate descriptor."""
             pass

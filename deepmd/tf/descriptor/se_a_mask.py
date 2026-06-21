@@ -234,7 +234,7 @@ class DescrptSeAMask(DescrptSeA):
         input_dict: dict,
         **kwargs: Any,
     ) -> None:
-        """Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
+        """Compute the statistics (avg and std) of the training data. The input will be normalized by the statistics.
 
         Parameters
         ----------

@@ -137,6 +137,18 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
             seed=seed,
         )
 
+    def get_dim_chg_spin(self) -> int:
+        """Returns the dimension of charge_spin input (0 if not supported)."""
+        return 0
+
+    def has_default_chg_spin(self) -> bool:
+        """Returns whether the descriptor has a default charge_spin value."""
+        return False
+
+    def get_default_chg_spin(self) -> None:
+        """Returns the default charge_spin value, or None."""
+        return None
+
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
         return self.sea.get_rcut()
@@ -262,7 +274,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         table_stride_2: float = 0.1,
         check_frequency: int = -1,
     ) -> None:
-        """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+        """Receive the statistics (distance, max_nbor_size and env_mat_range) of the training data.
 
         Parameters
         ----------
@@ -309,6 +321,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         mapping: torch.Tensor | None = None,
         comm_dict: dict[str, torch.Tensor] | None = None,
         fparam: torch.Tensor | None = None,
+        charge_spin: torch.Tensor | None = None,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor | None,
@@ -412,12 +425,13 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
     @classmethod
     def deserialize(cls, data: dict) -> "DescrptSeA":
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 2, 1)
+        check_version_compatibility(data.pop("@version", 1), 3, 1)
         data.pop("@class", None)
         data.pop("type", None)
         variables = data.pop("@variables")
         embeddings = data.pop("embeddings")
         env_mat = data.pop("env_mat")
+        data.pop("compress", None)  # pt uses state_dict for compression
         obj = cls(**data)
 
         def t_cvt(xx: Any) -> torch.Tensor:
@@ -857,4 +871,13 @@ class DescrptBlockSeA(DescriptorBlock):
 
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the descriptor block needs sorted nlist when using `forward_lower`."""
-        return False
+        # The compressed tabulate op (`tabulate_fusion_se_a`) uses an
+        # `is_sorted` early-termination that stops accumulating as soon as it
+        # meets a neighbor whose env-mat direction is zero (padding, or an
+        # out-of-rcut neighbor with sw==0). It therefore assumes such neighbors
+        # are trailing. The `forward_lower` neighbor list coming from C++/LAMMPS
+        # (rcut+skin, not pre-sorted) can interleave zero-direction neighbors
+        # before real ones, which would silently drop real neighbors. Forcing a
+        # sorted nlist (extra_nlist_sort) filters out-of-rcut neighbors and puts
+        # all padding last, restoring the op's invariant. See discussion #5438.
+        return self.compress

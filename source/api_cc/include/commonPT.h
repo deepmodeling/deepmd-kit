@@ -101,6 +101,45 @@ inline void build_comm_dict_with_virtual_atoms(
                   remapped_sendnum.data(), remapped_recvnum.data());
 }
 
+/**
+ * @brief Flatten a jagged neighbor list into a [1, nloc, nnei] tensor.
+ *
+ * Each row in @p data may have a different number of neighbors.  Short rows
+ * are padded with -1.  The output width is max(min_nnei, max_row_length).
+ * No truncation or distance sorting is done — the model's format_nlist
+ * handles that on-device.
+ *
+ * If @p min_nnei is 0 (the default used by the .pth callers) and every row
+ * is empty (no atom has any neighbor — fully-dissociated system), the
+ * output shape is [1, nloc, 0].  PyTorch accepts zero-sized dimensions, and
+ * the eager `_format_nlist` pads it back up to sum(sel).  .pt2 callers
+ * always pass @p min_nnei = sum(sel) > 0, so the output width is at least
+ * sum(sel) for them.
+ *
+ * @param data      Jagged neighbor list: data[i] holds neighbor indices
+ *                  for local atom i.
+ * @param min_nnei  Minimum width of the nnei dimension.  For .pt2 models
+ *                  this should be sum(sel) from the model metadata, because
+ *                  torch.export marks nnei >= sum(sel) as a dynamic constraint.
+ *                  For .pth models 0 (the default) is fine.
+ */
+inline torch::Tensor createNlistTensor(
+    const std::vector<std::vector<int>>& data, int min_nnei = 0) {
+  int nloc = static_cast<int>(data.size());
+  int nnei = min_nnei;
+  for (int ii = 0; ii < nloc; ++ii) {
+    nnei = std::max(nnei, static_cast<int>(data[ii].size()));
+  }
+  std::vector<int> flat_data(static_cast<size_t>(nloc) * nnei, -1);
+  for (int ii = 0; ii < nloc; ++ii) {
+    for (size_t jj = 0; jj < data[ii].size(); ++jj) {
+      flat_data[static_cast<size_t>(ii) * nnei + jj] = data[ii][jj];
+    }
+  }
+  torch::Tensor flat_tensor = torch::tensor(flat_data, torch::kInt32);
+  return flat_tensor.view({1, nloc, nnei});
+}
+
 }  // namespace deepmd
 
 #endif  // BUILD_PYTORCH

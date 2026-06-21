@@ -21,6 +21,9 @@ from deepmd.dpmodel.model.base_model import (
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
 )
+from deepmd.dpmodel.utils.neighbor_list import (
+    NeighborList,
+)
 
 from .dp_model import (
     DPModelCommon,
@@ -33,6 +36,8 @@ DPEnergyModel_ = make_model(DPEnergyAtomicModel, T_Bases=(NativeOP, BaseModel))
 
 
 @BaseModel.register("ener")
+@BaseModel.register("sezm_ener")
+@BaseModel.register("dpa4_ener")
 class EnergyModel(DPModelCommon, DPEnergyModel_):
     r"""Energy model that predicts total energy and derived quantities.
 
@@ -87,14 +92,33 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         fparam: Array | None = None,
         aparam: Array | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: Array | None = None,
+        neighbor_list: NeighborList | None = None,
     ) -> dict[str, Array]:
+        """Evaluate the energy model.
+
+        Most arguments share the meaning of :meth:`call_common`.
+
+        Parameters
+        ----------
+        neighbor_list
+            The neighbor-list construction strategy forwarded to
+            :meth:`call_common`.  ``None`` uses the default all-pairs builder
+            (:class:`~deepmd.dpmodel.utils.neighbor_list.NeighborList`
+            subclass :class:`~deepmd.dpmodel.utils.default_neighbor_list.DefaultNeighborList`),
+            reproducing the historical behavior; an alternative strategy may be
+            injected to accelerate neighbor-list construction without changing
+            the model outputs.
+        """
         model_ret = self.call_common(
             coord,
             atype,
             box,
             fparam=fparam,
             aparam=aparam,
+            charge_spin=charge_spin,
             do_atomic_virial=do_atomic_virial,
+            neighbor_list=neighbor_list,
         )
         model_predict = {}
         model_predict["atom_energy"] = model_ret["energy"]
@@ -120,6 +144,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         fparam: Array | None = None,
         aparam: Array | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: Array | None = None,
     ) -> dict[str, Array]:
         model_ret = self.call_common_lower(
             extended_coord,
@@ -128,6 +153,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             mapping,
             fparam=fparam,
             aparam=aparam,
+            charge_spin=charge_spin,
             do_atomic_virial=do_atomic_virial,
         )
         model_predict = {}

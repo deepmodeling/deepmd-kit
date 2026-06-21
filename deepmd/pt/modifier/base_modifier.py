@@ -83,6 +83,7 @@ class BaseModifier(torch.nn.Module, make_base_modifier()):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """Compute energy, force, and virial corrections."""
 

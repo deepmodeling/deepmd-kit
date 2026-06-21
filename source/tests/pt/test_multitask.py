@@ -59,6 +59,25 @@ class MultiTaskTrainTest:
         self.share_fitting = getattr(self, "share_fitting", False)
         trainer = get_trainer(deepcopy(self.config), shared_links=self.shared_links)
         trainer.run()
+
+        # check lcurve.out columns for all model keys
+        with open("lcurve.out") as f:
+            lines = f.readlines()
+        header_line = lines[0]
+        header_cols = header_line.strip().lstrip("#").split()
+        # each model key should appear in header columns
+        model_keys = list(self.config["training"]["model_prob"].keys())
+        for mk in model_keys:
+            cols_for_model = [c for c in header_cols if mk in c]
+            self.assertGreater(
+                len(cols_for_model), 0, f"No lcurve columns found for {mk}"
+            )
+        # data line column count should match header
+        data_lines = [l for l in lines if not l.startswith("#")]
+        self.assertGreater(len(data_lines), 0, "No data lines in lcurve.out")
+        data_cols = data_lines[0].split()
+        self.assertEqual(len(data_cols), len(header_cols))
+
         # check model keys
         self.assertEqual(len(trainer.wrapper.model), 2)
         self.assertIn("model_1", trainer.wrapper.model)

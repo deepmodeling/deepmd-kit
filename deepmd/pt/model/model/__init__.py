@@ -29,6 +29,9 @@ from deepmd.pt.model.descriptor.base_descriptor import (
 from deepmd.pt.model.task import (
     BaseFitting,
 )
+from deepmd.pt.model.task.sezm_ener import (
+    SeZMEnergyFittingNet,
+)
 from deepmd.utils.spin import (
     Spin,
 )
@@ -69,6 +72,12 @@ from .polar_model import (
 from .property_model import (
     PropertyModel,
 )
+from .sezm_model import (
+    SeZMModel,
+)
+from .sezm_spin_model import (
+    SeZMSpinModel,
+)
 from .spin_model import (
     SpinEnergyModel,
     SpinModel,
@@ -102,14 +111,19 @@ def _get_standard_model_components(model_params: dict, ntypes: int) -> tuple:
     return descriptor, fitting, fitting_net["type"]
 
 
-def get_spin_model(model_params: dict) -> SpinModel:
-    model_params = copy.deepcopy(model_params)
+def _normalize_spin_use_spin(model_params: dict) -> None:
+    """Normalize spin.use_spin from type indices to per-type booleans."""
     if not model_params["spin"]["use_spin"] or isinstance(
         model_params["spin"]["use_spin"][0], int
     ):
         use_spin = np.full(len(model_params["type_map"]), False, dtype=bool)
         use_spin[model_params["spin"]["use_spin"]] = True
         model_params["spin"]["use_spin"] = use_spin.tolist()
+
+
+def get_spin_model(model_params: dict) -> SpinModel:
+    model_params = copy.deepcopy(model_params)
+    _normalize_spin_use_spin(model_params)
     # include virtual spin and placeholder types
     model_params["type_map"] += [item + "_spin" for item in model_params["type_map"]]
     spin = Spin(
@@ -144,6 +158,8 @@ def get_linear_model(model_params: dict) -> LinearEnergyModel:
     list_of_models = []
     ntypes = len(model_params["type_map"])
     for sub_model_params in model_params["models"]:
+        if "type_map" not in sub_model_params:
+            sub_model_params["type_map"] = model_params["type_map"]
         if "descriptor" in sub_model_params:
             # descriptor
             sub_model_params["descriptor"]["ntypes"] = ntypes
@@ -286,6 +302,154 @@ def get_standard_model(model_params: dict) -> BaseModel:
     return model
 
 
+def get_sezm_model(model_params: dict) -> BaseModel:
+    model_params_old = model_params
+    model_params = copy.deepcopy(model_params)
+    model_params.setdefault("descriptor", {})
+    model_params.setdefault("fitting_net", {})
+    model_params["descriptor"].setdefault("type", "dpa4")
+
+    ntypes = len(model_params["type_map"])
+    model_params["descriptor"]["ntypes"] = ntypes
+    model_params["descriptor"]["type_map"] = copy.deepcopy(model_params["type_map"])
+    descriptor_exclude_types = [
+        list(pair) for pair in (model_params["descriptor"].get("exclude_types") or [])
+    ]
+    if "pair_exclude_types" in model_params:
+        pair_exclude_types = [
+            list(pair) for pair in (model_params["pair_exclude_types"] or [])
+        ]
+        if descriptor_exclude_types and descriptor_exclude_types != pair_exclude_types:
+            raise ValueError(
+                "SeZM `pair_exclude_types` and `descriptor.exclude_types` must match "
+                "when both are provided."
+            )
+    else:
+        pair_exclude_types = descriptor_exclude_types
+    model_params["pair_exclude_types"] = pair_exclude_types
+    model_params["descriptor"]["exclude_types"] = copy.deepcopy(pair_exclude_types)
+
+    # === Bridging parameters ===
+    bridging_method = str(model_params.get("bridging_method", "none")).upper()
+    bridging_r_inner = float(model_params.get("bridging_r_inner", 0.5))
+    bridging_r_outer = float(model_params.get("bridging_r_outer", 0.8))
+    # Only inject bridging parameters when bridging is enabled.
+    if bridging_method != "NONE":
+        model_params["descriptor"]["inner_clamp_r_inner"] = bridging_r_inner
+        model_params["descriptor"]["inner_clamp_r_outer"] = bridging_r_outer
+
+    descriptor = BaseDescriptor(**model_params["descriptor"])
+
+    fitting_net = copy.deepcopy(model_params["fitting_net"])
+    fitting_net.pop("type", None)
+    fitting_net["ntypes"] = descriptor.get_ntypes()
+    fitting_net["type_map"] = copy.deepcopy(model_params["type_map"])
+    fitting_net["mixed_types"] = descriptor.mixed_types()
+    fitting_net["dim_descrpt"] = descriptor.get_dim_out()
+    fitting = SeZMEnergyFittingNet(**fitting_net)
+    atom_exclude_types = model_params.get("atom_exclude_types", [])
+    preset_out_bias = model_params.get("preset_out_bias")
+    preset_out_bias = _convert_preset_out_bias_to_array(
+        preset_out_bias, model_params["type_map"]
+    )
+    data_stat_protect = model_params.get("data_stat_protect", 1e-2)
+    use_compile = bool(model_params.get("use_compile", False))
+    enable_tf32 = bool(model_params.get("enable_tf32", True))
+
+    model = SeZMModel(
+        descriptor=descriptor,
+        fitting=fitting,
+        type_map=model_params["type_map"],
+        atom_exclude_types=atom_exclude_types,
+        pair_exclude_types=pair_exclude_types,
+        preset_out_bias=preset_out_bias,
+        data_stat_protect=data_stat_protect,
+        use_compile=use_compile,
+        enable_tf32=enable_tf32,
+        bridging_method=bridging_method,
+        bridging_r_inner=bridging_r_inner,
+        bridging_r_outer=bridging_r_outer,
+    )
+    model.model_def_script = json.dumps(model_params_old)
+    return model
+
+
+def get_sezm_spin_model(model_params: dict) -> BaseModel:
+    model_params_old = model_params
+    model_params = copy.deepcopy(model_params)
+    model_params.setdefault("descriptor", {})
+    model_params.setdefault("fitting_net", {})
+    model_params["descriptor"].setdefault("type", "dpa4")
+    _normalize_spin_use_spin(model_params)
+    real_sel = model_params["descriptor"].get("sel", 120)
+    real_sel_list = [int(real_sel)] if isinstance(real_sel, int) else list(real_sel)
+    real_nsel = int(sum(real_sel_list))
+    model_params["descriptor"]["sel"] = [2 * real_nsel + 1]
+
+    spin = Spin(
+        use_spin=model_params["spin"]["use_spin"],
+        virtual_scale=model_params["spin"]["virtual_scale"],
+    )
+    model_params["type_map"] += [item + "_spin" for item in model_params["type_map"]]
+    pair_exclude_types = spin.get_pair_exclude_types(
+        exclude_types=model_params.get("pair_exclude_types", None)
+    )
+    model_params["pair_exclude_types"] = pair_exclude_types
+    model_params["descriptor"]["exclude_types"] = pair_exclude_types
+    atom_exclude_types = spin.get_atom_exclude_types(
+        exclude_types=model_params.get("atom_exclude_types", None)
+    )
+    model_params["atom_exclude_types"] = atom_exclude_types
+
+    ntypes = len(model_params["type_map"])
+    model_params["descriptor"]["ntypes"] = ntypes
+    model_params["descriptor"]["type_map"] = copy.deepcopy(model_params["type_map"])
+
+    # === Bridging parameters ===
+    bridging_method = str(model_params.get("bridging_method", "none")).upper()
+    bridging_r_inner = float(model_params.get("bridging_r_inner", 0.5))
+    bridging_r_outer = float(model_params.get("bridging_r_outer", 0.8))
+    if bridging_method != "NONE":
+        model_params["descriptor"]["inner_clamp_r_inner"] = bridging_r_inner
+        model_params["descriptor"]["inner_clamp_r_outer"] = bridging_r_outer
+
+    descriptor = BaseDescriptor(**model_params["descriptor"])
+
+    fitting_net = copy.deepcopy(model_params["fitting_net"])
+    fitting_net.pop("type", None)
+    fitting_net["ntypes"] = descriptor.get_ntypes()
+    fitting_net["type_map"] = copy.deepcopy(model_params["type_map"])
+    fitting_net["mixed_types"] = descriptor.mixed_types()
+    fitting_net["dim_descrpt"] = descriptor.get_dim_out()
+    fitting = SeZMEnergyFittingNet(**fitting_net)
+    preset_out_bias = model_params.get("preset_out_bias")
+    preset_out_bias = _convert_preset_out_bias_to_array(
+        preset_out_bias, model_params["type_map"]
+    )
+    data_stat_protect = model_params.get("data_stat_protect", 1e-2)
+    use_compile = bool(model_params.get("use_compile", False))
+    enable_tf32 = bool(model_params.get("enable_tf32", True))
+
+    model = SeZMSpinModel(
+        descriptor=descriptor,
+        fitting=fitting,
+        type_map=model_params["type_map"],
+        atom_exclude_types=atom_exclude_types,
+        pair_exclude_types=pair_exclude_types,
+        preset_out_bias=preset_out_bias,
+        data_stat_protect=data_stat_protect,
+        use_compile=use_compile,
+        enable_tf32=enable_tf32,
+        bridging_method=bridging_method,
+        bridging_r_inner=bridging_r_inner,
+        bridging_r_outer=bridging_r_outer,
+        real_sel=real_sel_list,
+        spin=spin,
+    )
+    model.model_def_script = json.dumps(model_params_old)
+    return model
+
+
 def get_model(model_params: dict) -> Any:
     model_type = model_params.get("type", "standard")
     if model_type == "standard":
@@ -297,6 +461,10 @@ def get_model(model_params: dict) -> Any:
             return get_standard_model(model_params)
     elif model_type == "linear_ener":
         return get_linear_model(model_params)
+    elif model_type in ("SeZM", "sezm", "dpa4"):
+        if "spin" in model_params:
+            return get_sezm_spin_model(model_params)
+        return get_sezm_model(model_params)
     else:
         return BaseModel.get_class_by_type(model_type).get_model(model_params)
 
@@ -311,9 +479,12 @@ __all__ = [
     "FrozenModel",
     "LinearEnergyModel",
     "PolarModel",
+    "SeZMModel",
+    "SeZMSpinModel",
     "SpinEnergyModel",
     "SpinModel",
     "get_model",
+    "get_sezm_spin_model",
     "make_hessian_model",
     "make_model",
 ]

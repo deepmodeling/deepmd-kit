@@ -526,7 +526,7 @@ model:
     embeddings:
       "@class": NetworkCollection
       "@version": 1
-      ndim: 2
+      ndim: 1
       network_type: embedding_network
       networks:
         - "@class": EmbeddingNetwork
@@ -916,7 +916,7 @@ model:
     type: se_e2_a
     type_map: &id001
       - O
-    type_one_side: false
+    type_one_side: true
   fitting:
     "@class": Fitting
     "@variables":
@@ -2012,7 +2012,7 @@ model_def_script:
     set_davg_zero: false
     trainable: true
     type: se_e2_a
-    type_one_side: false
+    type_one_side: true
   fitting_net:
     activation_function: tanh
     atom_ener: *id004

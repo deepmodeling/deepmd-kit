@@ -164,6 +164,7 @@ def get_spin_model(data: dict) -> SpinModel:
     data : dict
         The data to construct the model.
     """
+    data = copy.deepcopy(data)
     # include virtual spin and placeholder types
     data["type_map"] += [item + "_spin" for item in data["type_map"]]
     spin = Spin(

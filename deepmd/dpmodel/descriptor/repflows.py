@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import warnings
 from collections.abc import (
     Callable,
 )
@@ -13,6 +14,7 @@ from deepmd.dpmodel import (
 from deepmd.dpmodel.array_api import (
     Array,
     xp_take_along_axis,
+    xp_take_first_n,
 )
 from deepmd.dpmodel.common import (
     to_numpy_array,
@@ -195,6 +197,11 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         Whether the block is trainable
     """
 
+    # Internal-only switch used by backends that cannot export/trace arrays with
+    # runtime-sized edge/angle dimensions.  It is deliberately not exposed in
+    # input JSON or serialization: users still only see ``use_dynamic_sel``.
+    _use_static_dynamic_sel: bool = False
+
     def __init__(
         self,
         e_rcut: float,
@@ -229,6 +236,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         use_exp_switch: bool = False,
         use_dynamic_sel: bool = False,
         sel_reduce_factor: float = 10.0,
+        sequential_update: bool = False,
         use_loc_mapping: bool = True,
         seed: int | list[int] | None = None,
         trainable: bool = True,
@@ -265,8 +273,20 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         self.edge_init_use_dist = edge_init_use_dist
         self.use_exp_switch = use_exp_switch
         self.use_dynamic_sel = use_dynamic_sel
+        # Snapshot the class-level backend choice on the instance.  This keeps
+        # descriptor/layer behavior stable even if a backend temporarily changes
+        # the class attribute while constructing a model.
+        self._use_static_dynamic_sel = type(self)._use_static_dynamic_sel
+        if self.use_dynamic_sel and self._use_static_dynamic_sel:
+            warnings.warn(
+                "The JAX exportable dynamic-selection layout materializes "
+                "fixed angle capacity nf * nloc * a_sel * a_sel. Keep a_sel "
+                "modest for exportable DPA-3 models.",
+                stacklevel=2,
+            )
         self.use_loc_mapping = use_loc_mapping
         self.sel_reduce_factor = sel_reduce_factor
+        self.sequential_update = sequential_update
         if self.use_dynamic_sel and not self.smooth_edge_update:
             raise NotImplementedError(
                 "smooth_edge_update must be True when use_dynamic_sel is True!"
@@ -338,12 +358,17 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
                     optim_update=self.optim_update,
                     use_dynamic_sel=self.use_dynamic_sel,
                     sel_reduce_factor=self.sel_reduce_factor,
+                    sequential_update=self.sequential_update,
                     smooth_edge_update=self.smooth_edge_update,
                     seed=child_seed(child_seed(seed, 1), ii),
                     trainable=trainable,
                 )
             )
         self.layers = layers
+        # RepFlowLayer has the same internal switch; keep all layers in the same
+        # layout mode as the descriptor block that owns them.
+        for layer in self.layers:
+            layer._use_static_dynamic_sel = self._use_static_dynamic_sel
 
         wanted_shape = (self.ntypes, self.nnei, 4)
         self.env_mat_edge = EnvMat(
@@ -505,6 +530,32 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         self.exclude_types = exclude_types
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
 
+    def _exchange_ghosts(
+        self,
+        node_ebd: Array,
+        mapping_tiled: Array | None,
+        comm_dict: dict | None,
+        nall: int,
+        nloc: int,
+    ) -> Array:
+        """Build node_ebd_ext (the ghost-aware embedding) for the per-layer loop.
+
+        Default: array-api gather via the pre-tiled `mapping_tiled`, or pass the
+        local-only `node_ebd` through when ``self.use_loc_mapping`` is set.
+        ``comm_dict``, ``nall``, ``nloc`` are unused in this default impl; they
+        exist so the pt_expt subclass can perform the per-layer MPI ghost
+        exchange (``deepmd_export::border_op``) when ``comm_dict is not None``.
+        """
+        del comm_dict, nall, nloc
+        if self.use_loc_mapping:
+            return node_ebd
+        if mapping_tiled is None:
+            raise ValueError(
+                "`mapping` is required when use_loc_mapping=False unless "
+                "`_exchange_ghosts` is overridden for parallel comm handling."
+            )
+        return xp_take_along_axis(node_ebd, mapping_tiled, axis=1)
+
     def call(
         self,
         nlist: Array,
@@ -513,6 +564,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         atype_embd_ext: Array | None = None,
         mapping: Array | None = None,
         type_embedding: Array | None = None,
+        comm_dict: dict | None = None,
     ) -> tuple[Array, Array, Array, Array, Array]:
         xp = array_api_compat.array_namespace(nlist, coord_ext, atype_ext)
         nframes, nloc, nnei = nlist.shape
@@ -562,7 +614,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
 
         # get node embedding
         # nb x nloc x tebd_dim
-        atype_embd = atype_embd_ext[:, :nloc, :]
+        atype_embd = xp_take_first_n(atype_embd_ext, 1, nloc)
         assert list(atype_embd.shape) == [nframes, nloc, self.n_dim]
 
         node_ebd = self.act(atype_embd)
@@ -601,28 +653,58 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
 
         if self.use_dynamic_sel:
             # get graph index
-            edge_index, angle_index = get_graph_index(
-                nlist,
-                nlist_mask,
-                a_nlist_mask,
-                nall,
-                use_loc_mapping=self.use_loc_mapping,
-            )
-            # flat all the tensors
-            # n_edge x 1
-            edge_input = edge_input[nlist_mask]
-            # n_edge x 3
-            h2 = h2[nlist_mask]
-            # n_edge x 1
-            sw = sw[nlist_mask]
+            if self._use_static_dynamic_sel:
+                # Keep the dynamic-selection math but use fixed capacities:
+                #   n_edge = nf * nloc * e_sel
+                #   n_angle = nf * nloc * a_sel * a_sel
+                # Invalid padded slots have sw=0 (or pair a_sw=0), so for every
+                # owner i:
+                #   sum_{j=1}^{e_sel} sw_ij m_ij
+                #     = sum_{j in N(i)} sw_ij m_ij.
+                # Thus the output matches compact dynamic selection while the
+                # tensor shapes remain trace/export friendly.
+                edge_index, angle_index = _get_static_graph_index(
+                    nlist,
+                    a_nlist_mask,
+                    nall,
+                    use_loc_mapping=self.use_loc_mapping,
+                )
+                # fixed-size flattened layout: (nf * nloc * sel) x ...
+                edge_input = xp.reshape(edge_input, (-1, edge_input.shape[-1]))
+                h2 = xp.reshape(h2, (-1, h2.shape[-1]))
+                sw = xp.reshape(sw, (-1,))
+            else:
+                edge_index, angle_index = get_graph_index(
+                    nlist,
+                    nlist_mask,
+                    a_nlist_mask,
+                    nall,
+                    use_loc_mapping=self.use_loc_mapping,
+                )
+                # flat all the tensors
+                # n_edge x 1
+                edge_input = edge_input[nlist_mask]
+                # n_edge x 3
+                h2 = h2[nlist_mask]
+                # n_edge x 1
+                sw = sw[nlist_mask]
             # nb x nloc x a_nnei x a_nnei
             a_nlist_mask = xp.logical_and(
                 a_nlist_mask[:, :, :, None], a_nlist_mask[:, :, None, :]
             )
-            # n_angle x 1
-            angle_input = angle_input[a_nlist_mask]
-            # n_angle x 1
-            a_sw = (a_sw[:, :, :, None] * a_sw[:, :, None, :])[a_nlist_mask]
+            if self._use_static_dynamic_sel:
+                # The angle graph keeps all (j, k) pairs in the a_sel square.
+                # Pairs involving padded angle neighbors are zeroed by
+                # a_sw_ij * a_sw_ik before reduction, preserving the compact
+                # dynamic result.
+                # fixed-size flattened layout: (nf * nloc * a_sel * a_sel) x ...
+                angle_input = xp.reshape(angle_input, (-1, angle_input.shape[-1]))
+                a_sw = xp.reshape(a_sw[:, :, :, None] * a_sw[:, :, None, :], (-1,))
+            else:
+                # n_angle x 1
+                angle_input = angle_input[a_nlist_mask]
+                # n_angle x 1
+                a_sw = (a_sw[:, :, :, None] * a_sw[:, :, None, :])[a_nlist_mask]
         else:
             edge_index = xp.zeros(
                 [2, 1], dtype=nlist.dtype, device=array_api_compat.device(nlist)
@@ -640,15 +722,24 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         # nf x nloc x a_nnei x a_nnei x a_dim [OR] n_angle x a_dim
         angle_ebd = self.angle_embd(angle_input)
 
-        # nb x nall x n_dim
-        mapping = xp.tile(xp.reshape(mapping, (nframes, -1, 1)), (1, 1, self.n_dim))
+        # nb x nall x n_dim (pre-tiled mapping reused across layers when not
+        # using comm_dict). Skip the tile when mapping is None — pt_expt's
+        # parallel-mode override consults comm_dict instead.
+        mapping_tiled = (
+            xp.tile(xp.expand_dims(mapping, axis=-1), (1, 1, self.n_dim))
+            if mapping is not None
+            else None
+        )
         for idx, ll in enumerate(self.layers):
             # node_ebd:     nb x nloc x n_dim
-            # node_ebd_ext: nb x nall x n_dim
-            node_ebd_ext = (
-                node_ebd
-                if self.use_loc_mapping
-                else xp_take_along_axis(node_ebd, mapping, axis=1)
+            # node_ebd_ext: nb x nall x n_dim (or nb x nloc x n_dim when
+            #               use_loc_mapping=True)
+            node_ebd_ext = self._exchange_ghosts(
+                node_ebd,
+                mapping_tiled,
+                comm_dict,
+                nall,
+                nloc,
             )
             node_ebd, edge_ebd, angle_ebd = ll.call(
                 node_ebd_ext,
@@ -695,6 +786,16 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         """Returns whether the descriptor block has message passing."""
         return True
 
+    def has_message_passing_across_ranks(self) -> bool:
+        """Returns whether per-layer node embeddings need MPI ghost exchange.
+
+        Repflows passes ``node_ebd`` either in ``[nb, nloc, n_dim]`` layout
+        (``use_loc_mapping=True``: messages stay within the rank's local atoms)
+        or ``[nb, nall, n_dim]`` layout (``use_loc_mapping=False``: ghost slots
+        must be filled by cross-rank exchange before each layer).
+        """
+        return not self.use_loc_mapping
+
     def need_sorted_nlist_for_lower(self) -> bool:
         """Returns whether the descriptor block needs sorted nlist when using `forward_lower`."""
         return True
@@ -715,6 +816,11 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         obj.edge_embd = edge_embd
         obj.angle_embd = angle_embd
         obj.layers = layers
+        # ``_use_static_dynamic_sel`` is intentionally not serialized.  After a
+        # backend-specific class deserializes the block, propagate the backend's
+        # class-level default to the restored layers.
+        for layer in obj.layers:
+            layer._use_static_dynamic_sel = obj._use_static_dynamic_sel
         obj.env_mat_edge = env_mat_edge
         obj.env_mat_angle = env_mat_angle
         obj.mean = davg
@@ -756,6 +862,7 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
             "smooth_edge_update": self.smooth_edge_update,
             "use_dynamic_sel": self.use_dynamic_sel,
             "sel_reduce_factor": self.sel_reduce_factor,
+            "sequential_update": self.sequential_update,
             "use_loc_mapping": self.use_loc_mapping,
             # variables
             "edge_embd": self.edge_embd.serialize(),
@@ -768,6 +875,77 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
                 "dstd": to_numpy_array(self["dstd"]),
             },
         }
+
+
+def _get_static_graph_index(
+    nlist: Array,
+    a_nlist_mask: Array,
+    nall: int,
+    use_loc_mapping: bool = True,
+) -> tuple[Array, Array]:
+    """Build graph indices with fixed edge/angle capacities.
+
+    This mirrors ``get_graph_index`` but keeps all padded slots instead of
+    compacting with masks, so the first dimension is shape-static.
+
+    Edge slot formula, for frame ``f``, local atom ``i``, edge slot ``j``:
+
+        ``p = (f * nloc + i) * nnei + j``
+        ``n2e[p] = f * nloc + i``
+        ``n_ext2e[p] = f * nall + nlist[f, i, j]``
+
+    If ``use_loc_mapping`` is true, ``nlist`` has already been remapped to local
+    indices, so the frame stride is ``nloc`` instead of ``nall``.
+
+    Angle slot formula, for angle pair ``(j, k)``:
+
+        ``q = ((f * nloc + i) * a_sel + j) * a_sel + k``
+        ``n2a[q] = f * nloc + i``
+        ``eij2a[q] = p(f, i, j)``
+        ``eik2a[q] = p(f, i, k)``
+
+    Padded edge/angle slots are intentionally included. Their messages vanish
+    because the corresponding switch weights are zero before owner reductions.
+    """
+    xp = array_api_compat.array_namespace(nlist, a_nlist_mask)
+
+    nf, nloc, nnei = nlist.shape
+    _, _, a_nnei = a_nlist_mask.shape
+    dev = array_api_compat.device(nlist)
+
+    nlist_loc_index = xp.arange(nf * nloc, dtype=nlist.dtype, device=dev)
+    n2e_index = xp.broadcast_to(
+        xp.reshape(nlist_loc_index, (nf, nloc, 1)), (nf, nloc, nnei)
+    )
+    n2e_index = xp.reshape(n2e_index, (-1,))
+
+    frame_shift = xp.arange(nf, dtype=nlist.dtype, device=dev) * (
+        nall if not use_loc_mapping else nloc
+    )
+    shifted_nlist = nlist + frame_shift[:, xp.newaxis, xp.newaxis]
+    n_ext2e_index = xp.reshape(shifted_nlist, (-1,))
+
+    n2a_index = xp.broadcast_to(
+        xp.reshape(nlist_loc_index, (nf, nloc, 1, 1)), (nf, nloc, a_nnei, a_nnei)
+    )
+    n2a_index = xp.reshape(n2a_index, (-1,))
+
+    edge_id = xp.reshape(
+        xp.arange(nf * nloc * nnei, dtype=nlist.dtype, device=dev),
+        (nf, nloc, nnei),
+    )[:, :, :a_nnei]
+    eij2a_index = xp.broadcast_to(
+        edge_id[:, :, :, xp.newaxis], (nf, nloc, a_nnei, a_nnei)
+    )
+    eij2a_index = xp.reshape(eij2a_index, (-1,))
+    eik2a_index = xp.broadcast_to(
+        edge_id[:, :, xp.newaxis, :], (nf, nloc, a_nnei, a_nnei)
+    )
+    eik2a_index = xp.reshape(eik2a_index, (-1,))
+
+    edge_index_result = xp.stack([n2e_index, n_ext2e_index], axis=0)
+    angle_index_result = xp.stack([n2a_index, eij2a_index, eik2a_index], axis=0)
+    return edge_index_result, angle_index_result
 
 
 def _cal_hg_dynamic(
@@ -883,6 +1061,10 @@ def symmetrization_op_dynamic(
 
 
 class RepFlowLayer(NativeOP):
+    # Mirrors the descriptor-block internal switch.  The owning block writes the
+    # instance value during construction/deserialization.
+    _use_static_dynamic_sel: bool = False
+
     def __init__(
         self,
         e_rcut: float,
@@ -904,6 +1086,7 @@ class RepFlowLayer(NativeOP):
         optim_update: bool = True,
         use_dynamic_sel: bool = False,
         sel_reduce_factor: float = 10.0,
+        sequential_update: bool = False,
         smooth_edge_update: bool = False,
         activation_function: str = "silu",
         update_style: str = "res_residual",
@@ -952,9 +1135,19 @@ class RepFlowLayer(NativeOP):
         self.optim_update = optim_update
         self.smooth_edge_update = smooth_edge_update
         self.use_dynamic_sel = use_dynamic_sel
+        # Default instance value for standalone RepFlowLayer construction.
+        # DescrptBlockRepflows overwrites it for regular DPA-3 use.
+        self._use_static_dynamic_sel = type(self)._use_static_dynamic_sel
         self.sel_reduce_factor = sel_reduce_factor
+        self.sequential_update = sequential_update
         self.dynamic_e_sel = self.nnei / self.sel_reduce_factor
         self.dynamic_a_sel = self.a_sel / self.sel_reduce_factor
+        if self.sequential_update and self.update_style != "res_residual":
+            raise NotImplementedError(
+                "sequential_update only supports update_style='res_residual'!"
+            )
+        if self.sequential_update and not self.update_angle:
+            raise NotImplementedError("sequential_update requires update_angle=True!")
 
         assert update_residual_init in [
             "norm",
@@ -1417,11 +1610,18 @@ class RepFlowLayer(NativeOP):
         )
         nb, nloc, nnei = nlist.shape
         nall = node_ebd_ext.shape[1]
+        # In compact dynamic mode ``n_edge`` is the number of real edges.  In
+        # static dynamic mode it is the fixed edge capacity; padded entries carry
+        # zero switch weights, so owner reductions are unchanged.
         # int cannot jit; do not run it when self.use_dynamic_sel == False
         n_edge = (
-            int(xp.sum(xp.astype(nlist_mask, xp.int32))) if self.use_dynamic_sel else 0
+            h2.shape[0]
+            if self.use_dynamic_sel and self._use_static_dynamic_sel
+            else int(xp.sum(xp.astype(nlist_mask, xp.int32)))
+            if self.use_dynamic_sel
+            else 0
         )
-        node_ebd = node_ebd_ext[:, :nloc, :]
+        node_ebd = xp_take_first_n(node_ebd_ext, 1, nloc)
         assert (nb, nloc) == node_ebd.shape[:2]
         if not self.use_dynamic_sel:
             assert (nb, nloc, nnei) == h2.shape[:3]
@@ -1445,6 +1645,30 @@ class RepFlowLayer(NativeOP):
             )
         )
 
+        if self.sequential_update and self.update_angle:
+            return self._call_sequential(
+                xp,
+                node_ebd,
+                node_ebd_ext,
+                edge_ebd,
+                h2,
+                angle_ebd,
+                nei_node_ebd,
+                nlist,
+                nlist_mask,
+                sw,
+                a_nlist_mask,
+                a_sw,
+                n2e_index,
+                n_ext2e_index,
+                n2a_index,
+                eij2a_index,
+                eik2a_index,
+                nb,
+                nloc,
+                n_edge,
+            )
+
         n_update_list: list[Array] = [node_ebd]
         e_update_list: list[Array] = [edge_ebd]
         a_update_list: list[Array] = [angle_ebd]
@@ -1454,6 +1678,268 @@ class RepFlowLayer(NativeOP):
         n_update_list.append(node_self_mlp)
 
         # node sym (grrg + drrd)
+        node_sym = self._compute_node_sym(
+            xp,
+            edge_ebd,
+            nei_node_ebd,
+            h2,
+            nlist_mask,
+            sw,
+            n2e_index,
+            nb,
+            nloc,
+        )
+        n_update_list.append(node_sym)
+
+        # node edge message
+        node_edge_update = self._compute_node_edge_message(
+            xp,
+            node_ebd,
+            node_ebd_ext,
+            edge_ebd,
+            nei_node_ebd,
+            sw,
+            nlist,
+            n2e_index,
+            n_ext2e_index,
+            nb,
+            nloc,
+        )
+        if self.n_multi_edge_message > 1:
+            # nb x nloc x h x n_dim
+            node_edge_update_mul_head = xp.reshape(
+                node_edge_update, (nb, nloc, self.n_multi_edge_message, self.n_dim)
+            )
+            for head_index in range(self.n_multi_edge_message):
+                n_update_list.append(node_edge_update_mul_head[:, :, head_index, :])
+        else:
+            n_update_list.append(node_edge_update)
+        # update node_ebd
+        n_updated = self.list_update(n_update_list, "node")
+
+        # edge self message
+        edge_self_update = self._compute_edge_self_update(
+            xp,
+            node_ebd,
+            node_ebd_ext,
+            edge_ebd,
+            nei_node_ebd,
+            nlist,
+            n2e_index,
+            n_ext2e_index,
+            nb,
+            nloc,
+        )
+        e_update_list.append(edge_self_update)
+
+        if self.update_angle:
+            assert self.angle_self_linear is not None
+            assert self.edge_angle_linear1 is not None
+            assert self.edge_angle_linear2 is not None
+
+            node_ebd_for_angle, edge_ebd_for_angle = self._prepare_angle_embeddings(
+                xp, node_ebd, edge_ebd, a_nlist_mask
+            )
+
+            # edge angle message
+            edge_angle_update = self._compute_angle_update(
+                xp,
+                angle_ebd,
+                node_ebd_for_angle,
+                edge_ebd_for_angle,
+                "edge",
+                n2a_index,
+                eij2a_index,
+                eik2a_index,
+                nb,
+                nloc,
+            )
+            e_update_list.append(
+                self._compute_edge_angle_reduction(
+                    xp,
+                    edge_angle_update,
+                    edge_ebd,
+                    a_sw,
+                    a_nlist_mask,
+                    nb,
+                    nloc,
+                    n_edge,
+                    eij2a_index,
+                )
+            )
+            # update edge_ebd
+            e_updated = self.list_update(e_update_list, "edge")
+
+            # angle self message
+            angle_self_update = self._compute_angle_update(
+                xp,
+                angle_ebd,
+                node_ebd_for_angle,
+                edge_ebd_for_angle,
+                "angle",
+                n2a_index,
+                eij2a_index,
+                eik2a_index,
+                nb,
+                nloc,
+            )
+            a_update_list.append(angle_self_update)
+        else:
+            # update edge_ebd
+            e_updated = self.list_update(e_update_list, "edge")
+
+        # update angle_ebd
+        a_updated = self.list_update(a_update_list, "angle")
+        return n_updated, e_updated, a_updated
+
+    def _call_sequential(
+        self,
+        xp: object,
+        node_ebd: Array,
+        node_ebd_ext: Array,
+        edge_ebd: Array,
+        h2: Array,
+        angle_ebd: Array,
+        nei_node_ebd: Array,
+        nlist: Array,
+        nlist_mask: Array,
+        sw: Array,
+        a_nlist_mask: Array,
+        a_sw: Array,
+        n2e_index: Array,
+        n_ext2e_index: Array,
+        n2a_index: Array,
+        eij2a_index: Array,
+        eik2a_index: Array,
+        nb: int,
+        nloc: int,
+        n_edge: int,
+    ) -> tuple[Array, Array, Array]:
+        """Sequential update path: edge_self -> angle_self -> edge_angle -> node.
+
+        Each phase consumes the most recent update of its inputs (instead of
+        the parallel path which uses the same ``edge_ebd``/``angle_ebd`` for
+        all branches). Residuals are applied immediately after each phase.
+        """
+        assert self.update_style == "res_residual"
+        assert self.update_angle
+        assert self.angle_self_linear is not None
+        assert self.edge_angle_linear1 is not None
+        assert self.edge_angle_linear2 is not None
+
+        # Phase 1: edge self update -> apply residual immediately.
+        edge_self_update = self._compute_edge_self_update(
+            xp,
+            node_ebd,
+            node_ebd_ext,
+            edge_ebd,
+            nei_node_ebd,
+            nlist,
+            n2e_index,
+            n_ext2e_index,
+            nb,
+            nloc,
+        )
+        edge_ebd_s1 = edge_ebd + self.e_residual[0] * edge_self_update
+
+        # Phase 2: angle self message uses the updated edge embedding.
+        node_ebd_for_angle, edge_ebd_for_angle = self._prepare_angle_embeddings(
+            xp, node_ebd, edge_ebd_s1, a_nlist_mask
+        )
+        angle_self_update = self._compute_angle_update(
+            xp,
+            angle_ebd,
+            node_ebd_for_angle,
+            edge_ebd_for_angle,
+            "angle",
+            n2a_index,
+            eij2a_index,
+            eik2a_index,
+            nb,
+            nloc,
+        )
+        a_updated = angle_ebd + self.a_residual[0] * angle_self_update
+
+        # Phase 3: edge angle message uses the updated angle embedding.
+        edge_angle_update = self._compute_angle_update(
+            xp,
+            a_updated,
+            node_ebd_for_angle,
+            edge_ebd_for_angle,
+            "edge",
+            n2a_index,
+            eij2a_index,
+            eik2a_index,
+            nb,
+            nloc,
+        )
+        edge_angle_reduced = self._compute_edge_angle_reduction(
+            xp,
+            edge_angle_update,
+            edge_ebd_s1,
+            a_sw,
+            a_nlist_mask,
+            nb,
+            nloc,
+            n_edge,
+            eij2a_index,
+        )
+        e_updated = edge_ebd_s1 + self.e_residual[1] * edge_angle_reduced
+
+        # Phase 4: node updates use the fully updated edge embedding.
+        n_update_list: list[Array] = [node_ebd]
+        n_update_list.append(self.act(self.node_self_mlp(node_ebd)))
+        n_update_list.append(
+            self._compute_node_sym(
+                xp,
+                e_updated,
+                nei_node_ebd,
+                h2,
+                nlist_mask,
+                sw,
+                n2e_index,
+                nb,
+                nloc,
+            )
+        )
+        node_edge_update = self._compute_node_edge_message(
+            xp,
+            node_ebd,
+            node_ebd_ext,
+            e_updated,
+            nei_node_ebd,
+            sw,
+            nlist,
+            n2e_index,
+            n_ext2e_index,
+            nb,
+            nloc,
+        )
+        if self.n_multi_edge_message > 1:
+            node_edge_update_mul_head = xp.reshape(
+                node_edge_update,
+                (nb, nloc, self.n_multi_edge_message, self.n_dim),
+            )
+            for head_index in range(self.n_multi_edge_message):
+                n_update_list.append(node_edge_update_mul_head[:, :, head_index, :])
+        else:
+            n_update_list.append(node_edge_update)
+        n_updated = self.list_update(n_update_list, "node")
+        return n_updated, e_updated, a_updated
+
+    def _compute_node_sym(
+        self,
+        xp: object,
+        edge_ebd: Array,
+        nei_node_ebd: Array,
+        h2: Array,
+        nlist_mask: Array,
+        sw: Array,
+        n2e_index: Array,
+        nb: int,
+        nloc: int,
+    ) -> Array:
+        """Compute node symmetrization update (grrg + drrd)."""
         node_sym_list: list[Array] = []
         node_sym_list.append(
             symmetrization_op(
@@ -1497,12 +1983,25 @@ class RepFlowLayer(NativeOP):
                 axis_neuron=self.axis_neuron,
             )
         )
-        node_sym = self.act(self.node_sym_linear(xp.concat(node_sym_list, axis=-1)))
-        n_update_list.append(node_sym)
+        return self.act(self.node_sym_linear(xp.concat(node_sym_list, axis=-1)))
 
+    def _compute_node_edge_message(
+        self,
+        xp: object,
+        node_ebd: Array,
+        node_ebd_ext: Array,
+        edge_ebd: Array,
+        nei_node_ebd: Array,
+        sw: Array,
+        nlist: Array,
+        n2e_index: Array,
+        n_ext2e_index: Array,
+        nb: int,
+        nloc: int,
+    ) -> Array:
+        """Compute node edge message and reduce over neighbor dimension."""
         if not self.optim_update:
             if not self.use_dynamic_sel:
-                # nb x nloc x nnei x (n_dim * 2 + e_dim)
                 edge_info = xp.concat(
                     [
                         xp.tile(
@@ -1515,7 +2014,6 @@ class RepFlowLayer(NativeOP):
                     axis=-1,
                 )
             else:
-                # n_edge x (n_dim * 2 + e_dim)
                 edge_info = xp.concat(
                     [
                         xp.take(
@@ -1528,13 +2026,6 @@ class RepFlowLayer(NativeOP):
                     ],
                     axis=-1,
                 )
-        else:
-            edge_info = None
-
-        # node edge message
-        # nb x nloc x nnei x (h * n_dim)
-        if not self.optim_update:
-            assert edge_info is not None
             node_edge_update = self.act(
                 self.node_edge_linear(edge_info)
             ) * xp.expand_dims(sw, axis=-1)
@@ -1574,24 +2065,51 @@ class RepFlowLayer(NativeOP):
                 / self.dynamic_e_sel
             )
         )
-        if self.n_multi_edge_message > 1:
-            # nb x nloc x h x n_dim
-            node_edge_update_mul_head = xp.reshape(
-                node_edge_update, (nb, nloc, self.n_multi_edge_message, self.n_dim)
-            )
-            for head_index in range(self.n_multi_edge_message):
-                n_update_list.append(node_edge_update_mul_head[:, :, head_index, :])
-        else:
-            n_update_list.append(node_edge_update)
-        # update node_ebd
-        n_updated = self.list_update(n_update_list, "node")
+        return node_edge_update
 
-        # edge self message
+    def _compute_edge_self_update(
+        self,
+        xp: object,
+        node_ebd: Array,
+        node_ebd_ext: Array,
+        edge_ebd: Array,
+        nei_node_ebd: Array,
+        nlist: Array,
+        n2e_index: Array,
+        n_ext2e_index: Array,
+        nb: int,
+        nloc: int,
+    ) -> Array:
+        """Compute edge self update."""
         if not self.optim_update:
-            assert edge_info is not None
-            edge_self_update = self.act(self.edge_self_linear(edge_info))
+            if not self.use_dynamic_sel:
+                edge_info = xp.concat(
+                    [
+                        xp.tile(
+                            xp.reshape(node_ebd, (nb, nloc, 1, self.n_dim)),
+                            (1, 1, self.nnei, 1),
+                        ),
+                        nei_node_ebd,
+                        edge_ebd,
+                    ],
+                    axis=-1,
+                )
+            else:
+                edge_info = xp.concat(
+                    [
+                        xp.take(
+                            xp.reshape(node_ebd, (-1, self.n_dim)),
+                            n2e_index,
+                            axis=0,
+                        ),
+                        nei_node_ebd,
+                        edge_ebd,
+                    ],
+                    axis=-1,
+                )
+            return self.act(self.edge_self_linear(edge_info))
         else:
-            edge_self_update = self.act(
+            return self.act(
                 self.optim_edge_update(
                     node_ebd,
                     node_ebd_ext,
@@ -1609,220 +2127,229 @@ class RepFlowLayer(NativeOP):
                     "edge",
                 )
             )
-        e_update_list.append(edge_self_update)
 
-        if self.update_angle:
-            assert self.angle_self_linear is not None
-            assert self.edge_angle_linear1 is not None
-            assert self.edge_angle_linear2 is not None
-            # get angle info
-            if self.a_compress_rate != 0:
-                if not self.a_compress_use_split:
-                    assert self.a_compress_n_linear is not None
-                    assert self.a_compress_e_linear is not None
-                    node_ebd_for_angle = self.a_compress_n_linear(node_ebd)
-                    edge_ebd_for_angle = self.a_compress_e_linear(edge_ebd)
-                else:
-                    # use the first a_compress_dim dim for node and edge
-                    node_ebd_for_angle = node_ebd[..., : self.n_a_compress_dim]
-                    edge_ebd_for_angle = edge_ebd[..., : self.e_a_compress_dim]
+    def _prepare_angle_embeddings(
+        self,
+        xp: object,
+        node_ebd: Array,
+        edge_ebd: Array,
+        a_nlist_mask: Array,
+    ) -> tuple[Array, Array]:
+        """Prepare compressed node/edge embeddings for angle computation."""
+        if self.a_compress_rate != 0:
+            if not self.a_compress_use_split:
+                assert self.a_compress_n_linear is not None
+                assert self.a_compress_e_linear is not None
+                node_ebd_for_angle = self.a_compress_n_linear(node_ebd)
+                edge_ebd_for_angle = self.a_compress_e_linear(edge_ebd)
             else:
-                node_ebd_for_angle = node_ebd
-                edge_ebd_for_angle = edge_ebd
-
-            if not self.use_dynamic_sel:
-                # nb x nloc x a_nnei x e_dim
-                edge_ebd_for_angle = edge_ebd_for_angle[..., : self.a_sel, :]
-                # nb x nloc x a_nnei x e_dim
-                edge_ebd_for_angle = xp.where(
-                    xp.expand_dims(a_nlist_mask, axis=-1),
-                    edge_ebd_for_angle,
-                    xp.zeros_like(edge_ebd_for_angle),
-                )
-            if not self.optim_update:
-                # nb x nloc x a_nnei x a_nnei x n_dim [OR] n_angle x n_dim
-                node_for_angle_info = (
-                    xp.tile(
-                        xp.reshape(
-                            node_ebd_for_angle, (nb, nloc, 1, 1, self.n_a_compress_dim)
-                        ),
-                        (1, 1, self.a_sel, self.a_sel, 1),
-                    )
-                    if not self.use_dynamic_sel
-                    else xp.take(
-                        xp.reshape(node_ebd_for_angle, (-1, self.n_a_compress_dim)),
-                        n2a_index,
-                        axis=0,
-                    )
-                )
-
-                # nb x nloc x (a_nnei) x a_nnei x e_dim [OR] n_angle x e_dim
-                edge_for_angle_k = (
-                    xp.tile(
-                        xp.reshape(
-                            edge_ebd_for_angle,
-                            (nb, nloc, 1, self.a_sel, self.e_a_compress_dim),
-                        ),
-                        (1, 1, self.a_sel, 1, 1),
-                    )
-                    if not self.use_dynamic_sel
-                    else xp.take(
-                        edge_ebd_for_angle,
-                        eik2a_index,
-                        axis=0,
-                    )
-                )
-                # nb x nloc x a_nnei x (a_nnei) x e_dim
-                edge_for_angle_j = (
-                    xp.tile(
-                        xp.reshape(
-                            edge_ebd_for_angle,
-                            (nb, nloc, self.a_sel, 1, self.e_a_compress_dim),
-                        ),
-                        (1, 1, 1, self.a_sel, 1),
-                    )
-                    if not self.use_dynamic_sel
-                    else xp.take(
-                        edge_ebd_for_angle,
-                        eij2a_index,
-                        axis=0,
-                    )
-                )
-                # nb x nloc x a_nnei x a_nnei x (e_dim + e_dim)
-                edge_for_angle_info = xp.concat(
-                    [edge_for_angle_k, edge_for_angle_j], axis=-1
-                )
-                angle_info_list = [angle_ebd]
-                angle_info_list.append(node_for_angle_info)
-                angle_info_list.append(edge_for_angle_info)
-                # nb x nloc x a_nnei x a_nnei x (a + n_dim + e_dim*2) or (a + a/c + a/c)
-                # [OR]
-                # n_angle x (a + n_dim + e_dim*2) or (a + a/c + a/c)
-                angle_info = xp.concat(angle_info_list, axis=-1)
-            else:
-                angle_info = None
-
-            # edge angle message
-            # nb x nloc x a_nnei x a_nnei x e_dim [OR] n_angle x e_dim
-            if not self.optim_update:
-                assert angle_info is not None
-                edge_angle_update = self.act(self.edge_angle_linear1(angle_info))
-            else:
-                edge_angle_update = self.act(
-                    self.optim_angle_update(
-                        angle_ebd,
-                        node_ebd_for_angle,
-                        edge_ebd_for_angle,
-                        "edge",
-                    )
-                    if not self.use_dynamic_sel
-                    else self.optim_angle_update_dynamic(
-                        angle_ebd,
-                        node_ebd_for_angle,
-                        edge_ebd_for_angle,
-                        n2a_index,
-                        eij2a_index,
-                        eik2a_index,
-                        "edge",
-                    )
-                )
-            if not self.use_dynamic_sel:
-                # nb x nloc x a_nnei x a_nnei x e_dim
-                weighted_edge_angle_update = (
-                    a_sw[:, :, :, xp.newaxis, xp.newaxis]
-                    * a_sw[:, :, xp.newaxis, :, xp.newaxis]
-                    * edge_angle_update
-                )
-                # nb x nloc x a_nnei x e_dim
-                reduced_edge_angle_update = xp.sum(
-                    weighted_edge_angle_update, axis=-2
-                ) / (self.a_sel**0.5)
-                # nb x nloc x nnei x e_dim
-                padding_edge_angle_update = xp.concat(
-                    [
-                        reduced_edge_angle_update,
-                        xp.zeros(
-                            (nb, nloc, self.nnei - self.a_sel, self.e_dim),
-                            dtype=edge_ebd.dtype,
-                            device=array_api_compat.device(edge_ebd),
-                        ),
-                    ],
-                    axis=2,
-                )
-            else:
-                # n_angle x e_dim
-                weighted_edge_angle_update = edge_angle_update * xp.expand_dims(
-                    a_sw, axis=-1
-                )
-                # n_edge x e_dim
-                padding_edge_angle_update = aggregate(
-                    weighted_edge_angle_update,
-                    eij2a_index,
-                    average=False,
-                    num_owner=n_edge,
-                ) / (self.dynamic_a_sel**0.5)
-
-            if not self.smooth_edge_update:
-                # will be deprecated in the future
-                # not support dynamic index, will pass anyway
-                if self.use_dynamic_sel:
-                    raise NotImplementedError(
-                        "smooth_edge_update must be True when use_dynamic_sel is True!"
-                    )
-                full_mask = xp.concat(
-                    [
-                        a_nlist_mask,
-                        xp.zeros(
-                            (nb, nloc, self.nnei - self.a_sel),
-                            dtype=a_nlist_mask.dtype,
-                            device=array_api_compat.device(a_nlist_mask),
-                        ),
-                    ],
-                    axis=-1,
-                )
-                padding_edge_angle_update = xp.where(
-                    xp.expand_dims(full_mask, axis=-1),
-                    padding_edge_angle_update,
-                    edge_ebd,
-                )
-            e_update_list.append(
-                self.act(self.edge_angle_linear2(padding_edge_angle_update))
-            )
-            # update edge_ebd
-            e_updated = self.list_update(e_update_list, "edge")
-
-            # angle self message
-            # nb x nloc x a_nnei x a_nnei x dim_a
-            if not self.optim_update:
-                assert angle_info is not None
-                angle_self_update = self.act(self.angle_self_linear(angle_info))
-            else:
-                angle_self_update = self.act(
-                    self.optim_angle_update(
-                        angle_ebd,
-                        node_ebd_for_angle,
-                        edge_ebd_for_angle,
-                        "angle",
-                    )
-                    if not self.use_dynamic_sel
-                    else self.optim_angle_update_dynamic(
-                        angle_ebd,
-                        node_ebd_for_angle,
-                        edge_ebd_for_angle,
-                        n2a_index,
-                        eij2a_index,
-                        eik2a_index,
-                        "angle",
-                    )
-                )
-            a_update_list.append(angle_self_update)
+                node_ebd_for_angle = node_ebd[..., : self.n_a_compress_dim]
+                edge_ebd_for_angle = edge_ebd[..., : self.e_a_compress_dim]
         else:
-            # update edge_ebd
-            e_updated = self.list_update(e_update_list, "edge")
+            node_ebd_for_angle = node_ebd
+            edge_ebd_for_angle = edge_ebd
 
-        # update angle_ebd
-        a_updated = self.list_update(a_update_list, "angle")
-        return n_updated, e_updated, a_updated
+        if not self.use_dynamic_sel:
+            edge_ebd_for_angle = edge_ebd_for_angle[..., : self.a_sel, :]
+            edge_ebd_for_angle = xp.where(
+                xp.expand_dims(a_nlist_mask, axis=-1),
+                edge_ebd_for_angle,
+                xp.zeros_like(edge_ebd_for_angle),
+            )
+        return node_ebd_for_angle, edge_ebd_for_angle
+
+    def _compute_angle_update(
+        self,
+        xp: object,
+        angle_ebd: Array,
+        node_ebd_for_angle: Array,
+        edge_ebd_for_angle: Array,
+        feat: str,
+        n2a_index: Array,
+        eij2a_index: Array,
+        eik2a_index: Array,
+        nb: int,
+        nloc: int,
+    ) -> Array:
+        """Compute angle-based update (for edge_angle or angle_self).
+
+        Parameters
+        ----------
+        feat : str
+            "edge" for edge_angle_linear1, "angle" for angle_self_linear.
+        """
+        if not self.optim_update:
+            node_for_angle_info = (
+                xp.tile(
+                    xp.reshape(
+                        node_ebd_for_angle,
+                        (nb, nloc, 1, 1, self.n_a_compress_dim),
+                    ),
+                    (1, 1, self.a_sel, self.a_sel, 1),
+                )
+                if not self.use_dynamic_sel
+                else xp.take(
+                    xp.reshape(node_ebd_for_angle, (-1, self.n_a_compress_dim)),
+                    n2a_index,
+                    axis=0,
+                )
+            )
+            edge_for_angle_k = (
+                xp.tile(
+                    xp.reshape(
+                        edge_ebd_for_angle,
+                        (nb, nloc, 1, self.a_sel, self.e_a_compress_dim),
+                    ),
+                    (1, 1, self.a_sel, 1, 1),
+                )
+                if not self.use_dynamic_sel
+                else xp.take(
+                    edge_ebd_for_angle,
+                    eik2a_index,
+                    axis=0,
+                )
+            )
+            edge_for_angle_j = (
+                xp.tile(
+                    xp.reshape(
+                        edge_ebd_for_angle,
+                        (nb, nloc, self.a_sel, 1, self.e_a_compress_dim),
+                    ),
+                    (1, 1, 1, self.a_sel, 1),
+                )
+                if not self.use_dynamic_sel
+                else xp.take(
+                    edge_ebd_for_angle,
+                    eij2a_index,
+                    axis=0,
+                )
+            )
+            edge_for_angle_info = xp.concat(
+                [edge_for_angle_k, edge_for_angle_j], axis=-1
+            )
+            angle_info = xp.concat(
+                [angle_ebd, node_for_angle_info, edge_for_angle_info], axis=-1
+            )
+            if feat == "edge":
+                assert self.edge_angle_linear1 is not None
+                return self.act(self.edge_angle_linear1(angle_info))
+            else:
+                assert self.angle_self_linear is not None
+                return self.act(self.angle_self_linear(angle_info))
+        else:
+            if feat == "edge":
+                return self.act(
+                    self.optim_angle_update(
+                        angle_ebd,
+                        node_ebd_for_angle,
+                        edge_ebd_for_angle,
+                        "edge",
+                    )
+                    if not self.use_dynamic_sel
+                    else self.optim_angle_update_dynamic(
+                        angle_ebd,
+                        node_ebd_for_angle,
+                        edge_ebd_for_angle,
+                        n2a_index,
+                        eij2a_index,
+                        eik2a_index,
+                        "edge",
+                    )
+                )
+            else:
+                return self.act(
+                    self.optim_angle_update(
+                        angle_ebd,
+                        node_ebd_for_angle,
+                        edge_ebd_for_angle,
+                        "angle",
+                    )
+                    if not self.use_dynamic_sel
+                    else self.optim_angle_update_dynamic(
+                        angle_ebd,
+                        node_ebd_for_angle,
+                        edge_ebd_for_angle,
+                        n2a_index,
+                        eij2a_index,
+                        eik2a_index,
+                        "angle",
+                    )
+                )
+
+    def _compute_edge_angle_reduction(
+        self,
+        xp: object,
+        edge_angle_update: Array,
+        edge_ebd_fallback: Array,
+        a_sw: Array,
+        a_nlist_mask: Array,
+        nb: int,
+        nloc: int,
+        n_edge: int,
+        eij2a_index: Array,
+    ) -> Array:
+        """Reduce edge angle update over angle dimension, pad, and apply linear2.
+
+        Parameters
+        ----------
+        edge_ebd_fallback : Array
+            Edge embedding used for non-smooth padding fallback.
+        """
+        assert self.edge_angle_linear2 is not None
+        if not self.use_dynamic_sel:
+            weighted_edge_angle_update = (
+                a_sw[:, :, :, xp.newaxis, xp.newaxis]
+                * a_sw[:, :, xp.newaxis, :, xp.newaxis]
+                * edge_angle_update
+            )
+            reduced_edge_angle_update = xp.sum(weighted_edge_angle_update, axis=-2) / (
+                self.a_sel**0.5
+            )
+            padding_edge_angle_update = xp.concat(
+                [
+                    reduced_edge_angle_update,
+                    xp.zeros(
+                        (nb, nloc, self.nnei - self.a_sel, self.e_dim),
+                        dtype=edge_ebd_fallback.dtype,
+                        device=array_api_compat.device(edge_ebd_fallback),
+                    ),
+                ],
+                axis=2,
+            )
+        else:
+            weighted_edge_angle_update = edge_angle_update * xp.expand_dims(
+                a_sw, axis=-1
+            )
+            padding_edge_angle_update = aggregate(
+                weighted_edge_angle_update,
+                eij2a_index,
+                average=False,
+                num_owner=n_edge,
+            ) / (self.dynamic_a_sel**0.5)
+
+        if not self.smooth_edge_update:
+            if self.use_dynamic_sel:
+                raise NotImplementedError(
+                    "smooth_edge_update must be True when use_dynamic_sel is True!"
+                )
+            full_mask = xp.concat(
+                [
+                    a_nlist_mask,
+                    xp.zeros(
+                        (nb, nloc, self.nnei - self.a_sel),
+                        dtype=a_nlist_mask.dtype,
+                        device=array_api_compat.device(a_nlist_mask),
+                    ),
+                ],
+                axis=-1,
+            )
+            padding_edge_angle_update = xp.where(
+                xp.expand_dims(full_mask, axis=-1),
+                padding_edge_angle_update,
+                edge_ebd_fallback,
+            )
+
+        return self.act(self.edge_angle_linear2(padding_edge_angle_update))
 
     def list_update_res_avg(
         self,
@@ -1906,6 +2433,7 @@ class RepFlowLayer(NativeOP):
             "smooth_edge_update": self.smooth_edge_update,
             "use_dynamic_sel": self.use_dynamic_sel,
             "sel_reduce_factor": self.sel_reduce_factor,
+            "sequential_update": self.sequential_update,
             "node_self_mlp": self.node_self_mlp.serialize(),
             "node_sym_linear": self.node_sym_linear.serialize(),
             "node_edge_linear": self.node_edge_linear.serialize(),

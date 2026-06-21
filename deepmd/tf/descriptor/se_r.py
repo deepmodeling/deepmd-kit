@@ -255,7 +255,7 @@ class DescrptSeR(DescrptSe):
         input_dict: dict,
         **kwargs: Any,
     ) -> None:
-        """Compute the statisitcs (avg and std) of the training data. The input will be normalized by the statistics.
+        """Compute the statistics (avg and std) of the training data. The input will be normalized by the statistics.
 
         Parameters
         ----------
@@ -288,18 +288,18 @@ class DescrptSeR(DescrptSe):
         self.merge_input_stats(stat_dict)
 
     def merge_input_stats(self, stat_dict: dict[str, Any]) -> None:
-        """Merge the statisitcs computed from compute_input_stats to obtain the self.davg and self.dstd.
+        """Merge the statistics computed from compute_input_stats to obtain the self.davg and self.dstd.
 
         Parameters
         ----------
         stat_dict
-                The dict of statisitcs computed from compute_input_stats, including:
+                The dict of statistics computed from compute_input_stats, including:
             sumr
-                    The sum of radial statisitcs.
+                    The sum of radial statistics.
             sumn
                     The sum of neighbor numbers.
             sumr2
-                    The sum of square of radial statisitcs.
+                    The sum of square of radial statistics.
         """
         all_davg = []
         all_dstd = []
@@ -329,7 +329,7 @@ class DescrptSeR(DescrptSe):
         check_frequency: int = -1,
         suffix: str = "",
     ) -> None:
-        """Receive the statisitcs (distance, max_nbor_size and env_mat_range) of the training data.
+        """Receive the statistics (distance, max_nbor_size and env_mat_range) of the training data.
 
         Parameters
         ----------
@@ -746,12 +746,13 @@ class DescrptSeR(DescrptSe):
         if cls is not DescrptSeR:
             raise NotImplementedError(f"Not implemented in class {cls.__name__}")
         data = data.copy()
-        check_version_compatibility(data.pop("@version", 1), 2, 1)
+        check_version_compatibility(data.pop("@version", 1), 3, 1)
         embedding_net_variables = cls.deserialize_network(
             data.pop("embeddings"), suffix=suffix
         )
         data.pop("env_mat")
         variables = data.pop("@variables")
+        data.pop("compress", None)  # tf uses frozen graph for compression
         descriptor = cls(**data)
         descriptor.embedding_net_variables = embedding_net_variables
         descriptor.davg = variables["davg"].reshape(

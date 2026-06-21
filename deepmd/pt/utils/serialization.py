@@ -72,7 +72,21 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
     """
     if not model_file.endswith(".pth"):
         raise ValueError("PyTorch backend only supports converting .pth file")
-    model = BaseModel.deserialize(data["model"])
+    model_data = data["model"]
+    if model_data.get("type") == "spin_ener":
+        from deepmd.pt.model.model.spin_model import (
+            SpinEnergyModel,
+        )
+
+        model = SpinEnergyModel.deserialize(model_data)
+    elif model_data.get("type") == "sezm_spin":
+        from deepmd.pt.model.model.sezm_spin_model import (
+            SeZMSpinModel,
+        )
+
+        model = SeZMSpinModel.deserialize(model_data)
+    else:
+        model = BaseModel.deserialize(model_data)
     # JIT will happy in this way...
     model.model_def_script = json.dumps(data["model_def_script"])
     if "min_nbor_dist" in data.get("@variables", {}):

@@ -690,6 +690,7 @@ def print_summary(
     nbatches: list[int],
     sys_probs: list[float],
     pbc: list[bool],
+    e_max: list[int] | None = None,
 ) -> None:
     """Print summary of systems.
 
@@ -711,6 +712,8 @@ def print_summary(
         The probabilities
     pbc : list of bool
         The periodic boundary conditions
+    e_max : list of int, optional
+        The maximal number of valid edges per frame for each system.
     """
     # width 65
     sys_width = 42
@@ -718,25 +721,53 @@ def print_summary(
         f"---Summary of DataSystem: {name.capitalize():13s}-----------------------------------------------"
     )
     log.info("Found %d System(s):", nsystems)
-    log.info(
-        "%s  %6s  %6s  %6s  %9s  %3s",
-        _format_name_length("system", sys_width),
-        "natoms",
-        "bch_sz",
-        "n_bch",
-        "prob",
-        "pbc",
-    )
-    for ii in range(nsystems):
+    use_e_max = e_max is not None and len(e_max) == nsystems
+    if use_e_max:
+        emax_width = max(5, len(str(max(e_max))))
         log.info(
-            "%s  %6d  %6d  %6d  %9.3e  %3s",
-            _format_name_length(system_dirs[ii], sys_width),
-            natoms[ii],
-            batch_size[ii],
-            nbatches[ii],
-            sys_probs[ii],
-            "T" if pbc[ii] else "F",
+            "%s  %-6s  %-*s  %-6s  %-6s  %-9s  %-3s",
+            _format_name_length("system", sys_width),
+            "natoms",
+            emax_width,
+            "e_max",
+            "bch_sz",
+            "n_bch",
+            "prob",
+            "pbc",
         )
+    else:
+        log.info(
+            "%s  %-6s  %-6s  %-6s  %-9s  %-3s",
+            _format_name_length("system", sys_width),
+            "natoms",
+            "bch_sz",
+            "n_bch",
+            "prob",
+            "pbc",
+        )
+    for ii in range(nsystems):
+        if use_e_max:
+            log.info(
+                "%s  %6d  %*d  %6d  %6d  %9.3e  %3s",
+                _format_name_length(system_dirs[ii], sys_width),
+                natoms[ii],
+                emax_width,
+                e_max[ii],
+                batch_size[ii],
+                nbatches[ii],
+                sys_probs[ii],
+                "T" if pbc[ii] else "F",
+            )
+        else:
+            log.info(
+                "%s  %6d  %6d  %6d  %9.3e  %3s",
+                _format_name_length(system_dirs[ii], sys_width),
+                natoms[ii],
+                batch_size[ii],
+                nbatches[ii],
+                sys_probs[ii],
+                "T" if pbc[ii] else "F",
+            )
     log.info(
         "--------------------------------------------------------------------------------------"
     )
@@ -791,6 +822,7 @@ def process_systems(
 
     If it is a single directory, search for all the systems in the directory.
     If it is a list, each item in the list is treated as a directory to search.
+    If it is a single LMDB path, return it directly without expansion.
     Check if the systems are valid.
 
     Parameters
@@ -805,6 +837,14 @@ def process_systems(
     result_systems: list of str
         The valid systems
     """
+    from deepmd.dpmodel.utils.lmdb_data import (
+        is_lmdb,
+    )
+
+    # LMDB path: return directly without expansion
+    if isinstance(systems, str) and is_lmdb(systems):
+        return [systems]
+
     # Normalize input to a list of paths to search
     if isinstance(systems, str):
         search_paths = [systems]

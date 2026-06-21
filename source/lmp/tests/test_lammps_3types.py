@@ -1,7 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import os
-import subprocess as sp
-import sys
 from pathlib import (
     Path,
 )
@@ -10,6 +8,9 @@ import numpy as np
 import pytest
 from lammps import (
     PyLammps,
+)
+from model_convert import (
+    ensure_converted_pb,
 )
 from write_lmp_data import (
     write_lmp_data,
@@ -244,19 +245,15 @@ type_HO = np.array([2, 1, 1, 2, 1, 1, 3])
 # https://github.com/lammps/lammps/blob/1e1311cf401c5fc2614b5d6d0ff3230642b76597/src/update.cpp#L193
 nktv2p = 1.6021765e6
 
-sp.check_output(
-    f"{sys.executable} -m deepmd convert-from pbtxt -i {pbtxt_file.resolve()} -o {pb_file.resolve()}".split()
-)
-sp.check_output(
-    f"{sys.executable} -m deepmd convert-from pbtxt -i {pbtxt_file2.resolve()} -o {pb_file2.resolve()}".split()
-)
-
 
 def setup_module() -> None:
     if os.environ.get("ENABLE_TENSORFLOW", "1") != "1":
         pytest.skip(
             "Skip test because TensorFlow support is not enabled.",
         )
+    ensure_converted_pb(pbtxt_file, pb_file)
+    ensure_converted_pb(pbtxt_file2, pb_file2)
+
     write_lmp_data(box, coord, type_OH, data_file)
     write_lmp_data(box, coord, type_HO, data_type_map_file)
 

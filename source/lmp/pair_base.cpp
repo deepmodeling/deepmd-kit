@@ -99,6 +99,11 @@ int PairDeepBaseModel::get_node_rank() {
 }
 
 std::string PairDeepBaseModel::get_file_content(const std::string& model) {
+  // .pt2 (AOTInductor) models do not support in-memory loading.
+  // Return empty so that init() loads from the file path directly.
+  if (model.size() >= 4 && model.compare(model.size() - 4, 4, ".pt2") == 0) {
+    return std::string();
+  }
   int myrank = 0, root = 0;
   MPI_Comm_rank(MPI_COMM_WORLD, &myrank);
   int nchar = 0;
@@ -155,6 +160,52 @@ void PairDeepBaseModel::make_fparam_from_compute(vector<double>& fparam) {
     double* cvector = compute->vector;
     for (int jj = 0; jj < dim_fparam; ++jj) {
       fparam[jj] = cvector[jj];
+    }
+  }
+}
+
+void PairDeepBaseModel::make_fparam_from_fix(vector<double>& fparam) {
+  assert(do_fix_fparam);
+
+  int ifix = modify->find_fix(fix_fparam_id);
+  if (ifix < 0) {
+    error->all(FLERR, "fix id is not found: " + fix_fparam_id);
+  }
+  Fix* fix = modify->fix[ifix];
+
+  if (!fix) {
+    error->all(FLERR, "fix id is not found: " + fix_fparam_id);
+  }
+  fparam.resize(dim_fparam);
+
+  if (fix_fparam_index < 0) {
+    if (dim_fparam == 1) {
+      if (!fix->scalar_flag) {
+        error->all(FLERR, "fix " + fix_fparam_id +
+                              " does not provide a scalar for fparam");
+      }
+      fparam[0] = fix->compute_scalar();
+    } else if (dim_fparam > 1) {
+      if (!fix->scalar_flag) {
+        error->all(FLERR, "fix " + fix_fparam_id +
+                              " does not provide a scalar for fparam");
+      }
+      double value = fix->compute_scalar();
+      for (int jj = 0; jj < dim_fparam; ++jj) {
+        fparam[jj] = value;
+      }
+    }
+  } else {
+    if (!fix->vector_flag) {
+      error->all(FLERR, "fix " + fix_fparam_id +
+                            " does not provide a vector for fparam");
+    }
+    if (fix_fparam_index > fix->size_vector - dim_fparam) {
+      error->all(FLERR, "fix " + fix_fparam_id +
+                            " vector is shorter than fparam dimension");
+    }
+    for (int jj = 0; jj < dim_fparam; ++jj) {
+      fparam[jj] = fix->compute_vector(fix_fparam_index + jj);
     }
   }
 }
@@ -332,7 +383,12 @@ PairDeepBaseModel::PairDeepBaseModel(
   eps_v = 0.;
   scale = NULL;
   do_ttm = false;
+  dim_fparam = 0;
+  dim_aparam = 0;
+  dim_chg_spin = 0;
   do_compute_fparam = false;
+  do_fix_fparam = false;
+  fix_fparam_index = -1;
   do_compute_aparam = false;
   single_model = false;
   multi_models_mod_devi = false;

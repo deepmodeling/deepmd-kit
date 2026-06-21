@@ -3,10 +3,12 @@ from deepmd.dpmodel.utils.learning_rate import (
     BaseLR,
     LearningRateCosine,
     LearningRateExp,
+    LearningRateWSD,
 )
 
 __all__ = [
     "BaseLR",
     "LearningRateCosine",
     "LearningRateExp",
+    "LearningRateWSD",
 ]

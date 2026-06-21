@@ -78,7 +78,6 @@ class DPTabulate(BaseTabulate):
             neuron,
             type_one_side,
             exclude_types,
-            False,
         )
 
         self.descrpt_type = self._get_descrpt_type()

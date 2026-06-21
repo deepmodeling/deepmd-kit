@@ -17,8 +17,10 @@ You can run `dp pretrained download -h` to see the currently supported model lis
 
 Examples in this release include:
 
+- `DPA-3.3-1M`
 - `DPA-3.2-5M`
 - `DPA-3.1-3M`
+- `DPA3-Omol-Large`
 
 ## Examples
 
