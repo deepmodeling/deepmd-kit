@@ -147,7 +147,12 @@ class TestStatFileConsistency(unittest.TestCase):
                 f"stderr: {result.stderr}"
             )
 
-    def _compare_stat_directories(self, tf_stat_dir: str, pt_stat_dir: str) -> None:
+    def _compare_stat_directories(
+        self,
+        tf_stat_dir: str,
+        pt_stat_dir: str,
+        selected_names: set[str] | None = None,
+    ) -> None:
         """Compare stat file directories between TensorFlow and PyTorch.
 
         Parameters
@@ -156,6 +161,8 @@ class TestStatFileConsistency(unittest.TestCase):
             TensorFlow stat file directory
         pt_stat_dir : str
             PyTorch stat file directory
+        selected_names : set[str], optional
+            Basenames of stat files to compare. When omitted, compare every file.
         """
         tf_path = Path(tf_stat_dir)
         pt_path = Path(pt_stat_dir)
@@ -174,12 +181,26 @@ class TestStatFileConsistency(unittest.TestCase):
         pt_files = sorted(
             ff.relative_to(pt_path) for ff in pt_path.rglob("*") if ff.is_file()
         )
+        if selected_names is not None:
+            tf_files = [ff for ff in tf_files if ff.name in selected_names]
+            pt_files = [ff for ff in pt_files if ff.name in selected_names]
+            self.assertEqual(
+                {ff.name for ff in tf_files},
+                selected_names,
+                "TensorFlow should create the selected stat files",
+            )
+            self.assertEqual(
+                {ff.name for ff in pt_files},
+                selected_names,
+                "PyTorch should create the selected stat files",
+            )
 
         self.assertEqual(tf_files, pt_files, "Both backends should create same files")
-        self.assertTrue(
-            any(len(ff.parts) > 2 for ff in tf_files),
-            "Descriptor stat files should be saved under their hash directory",
-        )
+        if selected_names is None:
+            self.assertTrue(
+                any(len(ff.parts) > 2 for ff in tf_files),
+                "Descriptor stat files should be saved under their hash directory",
+            )
 
         for filename in tf_files:
             tf_file = tf_path / filename
@@ -235,8 +256,8 @@ class TestStatFileConsistency(unittest.TestCase):
     @unittest.skipUnless(
         INSTALLED_TF and INSTALLED_PT, "TensorFlow and PyTorch required"
     )
-    def test_stat_file_consistency_unequal_frame_systems(self) -> None:
-        """Test TF/PT stat consistency when systems have unequal frame counts."""
+    def test_output_stat_file_consistency_unequal_frame_systems(self) -> None:
+        """Test TF/PT output-stat consistency with unequal frame counts."""
         config = deepcopy(self.config_base)
         config["training"]["training_data"]["systems"] = [
             str(path) for path in self.unequal_frame_data_paths
@@ -246,14 +267,20 @@ class TestStatFileConsistency(unittest.TestCase):
             tf_stat_dir = os.path.join(temp_dir, "tf_stat")
             pt_stat_dir = os.path.join(temp_dir, "pt_stat")
 
-            # This case catches the per-system vs per-frame energy-bias regression
+            # This case catches the per-system vs per-frame output-bias regression
             # distinction: the legacy TF path weighted each system equally, whereas
             # the shared stat implementation used by stat files weights frames
-            # consistently with the PyTorch backend.
+            # consistently with the PyTorch backend. Descriptor input statistics are
+            # collected by backend-specific pipelines, so compare only the shared
+            # output-stat files that determine the restored energy bias.
             self._run_training_with_stat_file("tf", config, temp_dir, tf_stat_dir)
             self._run_training_with_stat_file("pt", config, temp_dir, pt_stat_dir)
 
-            self._compare_stat_directories(tf_stat_dir, pt_stat_dir)
+            self._compare_stat_directories(
+                tf_stat_dir,
+                pt_stat_dir,
+                selected_names={"bias_atom_energy", "std_atom_energy"},
+            )
 
 
 if __name__ == "__main__":
