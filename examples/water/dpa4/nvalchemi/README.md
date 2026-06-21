@@ -7,7 +7,7 @@ molecular-dynamics framework. The model is loaded through
 PyTorch model to any `nvalchemi` dynamics engine.
 
 For a conceptual overview and the full API reference, see the user guide at
-`doc/inference/nvalchemi.md`.
+`doc/third-party/nvalchemi.md`.
 
 ## Prerequisites
 
