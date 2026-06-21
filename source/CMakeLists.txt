@@ -13,7 +13,8 @@ endif()
 option(ENABLE_PADDLE "Enable Paddle interface" OFF)
 option(BUILD_TESTING "Build test and enable coverage" OFF)
 option(ALLOW_NO_BACKEND
-       "Allow a backend-neutral C/C++ build without built-in backend plugins" OFF)
+       "Allow a backend-neutral C/C++ build without built-in backend plugins"
+       OFF)
 set(DEEPMD_C_ROOT
     ""
     CACHE PATH "Path to imported DeePMD-kit C library")
@@ -443,10 +444,11 @@ if(NOT DEEPMD_C_ROOT)
     if(ALLOW_NO_BACKEND)
       message(STATUS "- none (backend-neutral C/C++ library only)")
     else()
-      message(FATAL_ERROR
-              "No backend is enabled. Enable at least one backend, or set "
-              "ALLOW_NO_BACKEND=ON for a backend-neutral C/C++ library that "
-              "loads backend plugins at runtime.")
+      message(
+        FATAL_ERROR
+          "No backend is enabled. Enable at least one backend, or set "
+          "ALLOW_NO_BACKEND=ON for a backend-neutral C/C++ library that "
+          "loads backend plugins at runtime.")
     endif()
   endif()
 endif()

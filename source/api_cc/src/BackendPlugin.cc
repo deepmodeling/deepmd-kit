@@ -242,9 +242,9 @@ std::shared_ptr<PluginHandle> load_plugin(deepmd::DPBackend backend) {
               load_symbol(handle, candidate,
                           deepmd::DEEPMD_DEEPPOT_PLUGIN_DELETE_SYMBOL));
       plugin->free_error =
-          reinterpret_cast<deepmd::deepmd_free_backend_error_fn>(load_symbol(
-              handle, candidate,
-              deepmd::DEEPMD_BACKEND_PLUGIN_FREE_ERROR_SYMBOL));
+          reinterpret_cast<deepmd::deepmd_free_backend_error_fn>(
+              load_symbol(handle, candidate,
+                          deepmd::DEEPMD_BACKEND_PLUGIN_FREE_ERROR_SYMBOL));
     } catch (const std::exception& e) {
       errors << "\n  " << candidate << ": " << e.what();
       close_library(handle);
