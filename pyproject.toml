@@ -130,6 +130,9 @@ lmp = [
 ipi = [
     "ipi",
 ]
+nvalchemi = [
+    "nvalchemi-toolkit",
+]
 gui = [
     "dpgui",
 ]
@@ -482,6 +485,8 @@ runtime-evaluated-base-classes = ["torch.nn.Module"]
 "**/tests/**/test_*.py" = ["ANN"]
 "**/tests/**/*_test.py" = ["ANN"]
 "**/*.ipynb" = ["T20"]  # printing in a nb file is expected
+# Example / demo scripts are run directly: top-level imports and prints are fine.
+"examples/**/*.py" = ["T20", "TID253"]
 
 [tool.pytest.ini_options]
 markers = "run"
