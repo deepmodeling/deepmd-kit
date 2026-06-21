@@ -113,7 +113,10 @@ class TestDeepEvalEner(unittest.TestCase):
         data = self.dp.deep_eval.serialize()
         self.assertEqual(data["@class"], self.model.serialize()["@class"])
         self.assertEqual(data["type"], self.model.serialize()["type"])
-        self.assertEqual(data, serialize_from_file(self.tmpfile.name)["model"])
+        # The serialized model tree contains NumPy array leaves, so unittest's
+        # dict equality would try to coerce elementwise array comparisons to a
+        # single bool and fail with an ambiguous truth-value error.
+        np.testing.assert_equal(data, serialize_from_file(self.tmpfile.name)["model"])
 
     def test_eval_consistency(self) -> None:
         """Test that DeepPot.eval gives same results as direct model forward."""
