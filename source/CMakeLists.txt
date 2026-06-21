@@ -338,12 +338,16 @@ if(BUILD_CPP_IF
 endif()
 if(ENABLE_PYTORCH AND NOT DEEPMD_C_ROOT)
   if(DEEPMD_BYPASS_TORCH_CUDA_CHECK AND NOT USE_CUDA_TOOLKIT)
-    find_program(DEEPMD_NVCC_EXECUTABLE nvcc HINTS "$ENV{CUDA_HOME}/bin"
-                                                   "$ENV{CUDA_PATH}/bin")
+    find_package(CUDAToolkit QUIET)
+    if(CUDAToolkit_FOUND)
+      set(DEEPMD_NVCC_EXECUTABLE ${CUDAToolkit_NVCC_EXECUTABLE})
+    else()
+      set(DEEPMD_NVCC_EXECUTABLE "DEEPMD_NVCC_EXECUTABLE-NOTFOUND")
+    endif()
     if(NOT DEEPMD_NVCC_EXECUTABLE AND NOT TARGET torch::cudart)
       message(
         STATUS
-          "nvcc not found; bypassing PyTorch CUDA toolkit discovery for this CPU-only build"
+          "CUDAToolkit/nvcc not found; bypassing PyTorch CUDA toolkit discovery for this CPU-only build"
       )
       add_library(torch::cudart INTERFACE IMPORTED)
     endif()

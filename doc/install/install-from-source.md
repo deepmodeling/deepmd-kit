@@ -538,7 +538,7 @@ There's no need for downloading PyTorch's C++ libraries.
 
 **Type**: `BOOL` (`ON`/`OFF`), Default: `ON`
 
-{{ pytorch_icon }} If `TRUE`, bypass PyTorch's CUDA toolkit discovery when `nvcc` is unavailable and DeePMD-kit is not building CUDA support.
+{{ pytorch_icon }} If `TRUE`, bypass PyTorch's CUDA toolkit discovery when CMake cannot find CUDAToolkit/`nvcc` and DeePMD-kit is not building CUDA support.
 This helps CPU-only PyTorch builds use CUDA-enabled PyTorch wheels without requiring a local CUDA compiler.
 :::
 
