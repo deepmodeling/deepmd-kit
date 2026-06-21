@@ -656,6 +656,11 @@ class Trainer:
                         training_data.index,
                         sampler_weights,
                     )
+                # Sampler weights carry tiny per-rank floating-point noise, so
+                # the rounded batch count can differ by one unit across ranks.
+                # Pin it to rank 0 before deriving num_steps so every rank
+                # shares the same training and full-validation schedule.
+                total_numb_batch = self._broadcast_value_from_rank0(total_numb_batch)
                 if total_numb_batch <= 0:
                     raise ValueError(
                         "Total number of training batches must be positive."
@@ -687,6 +692,7 @@ class Trainer:
                                 sampler_weights,
                             )
                         )
+                per_task_total = self._broadcast_value_from_rank0(per_task_total)
                 (
                     self.model_prob,
                     self.num_steps,
@@ -1109,6 +1115,24 @@ class Trainer:
         # Log model parameter count
         if self.rank == 0:
             self._log_parameter_count()
+
+    def _broadcast_value_from_rank0(self, value: Any) -> Any:
+        """Return rank 0's copy of ``value`` on every rank.
+
+        ``num_steps`` derived from ``num_epoch`` ultimately depends on the
+        per-rank sampler weights, whose tiny floating-point differences can
+        shift the rounded batch count -- and therefore ``num_steps`` -- by a
+        single unit across ranks. A drifting ``num_steps`` makes ranks
+        disagree on the full-validation start step, so some ranks enter the
+        validation barrier while the others keep training, deadlocking the
+        mismatched collective calls. Pinning every rank to rank 0's value
+        keeps the whole training schedule in lockstep.
+        """
+        if not self.is_distributed:
+            return value
+        holder = [value]
+        dist.broadcast_object_list(holder, src=0, device=DEVICE)
+        return holder[0]
 
     @staticmethod
     def _create_lr_scheduler(
