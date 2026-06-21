@@ -9,6 +9,9 @@ from pathlib import (
 from deepmd.common import (
     j_loader,
 )
+from deepmd.tf.descriptor.stat import (
+    load_or_compute_se_input_stats,
+)
 from deepmd.tf.entrypoints.train import (
     _do_work,
 )
@@ -24,10 +27,43 @@ from deepmd.tf.utils.argcheck import (
 from deepmd.tf.utils.compat import (
     update_deepmd_input,
 )
+from deepmd.utils.path import (
+    DPPath,
+)
 
 from .common import (
     tests_path,
 )
+
+
+class _FakeSeADescriptor:
+    rcut_smth = 0.5
+
+    def get_sel(self) -> list[int]:
+        return [2, 4]
+
+    def get_ntypes(self) -> int:
+        return 2
+
+    def get_rcut(self) -> float:
+        return 4.0
+
+
+class _FakeSeRDescriptor:
+    rcut_r_smth = 0.5
+
+    def __init__(self) -> None:
+        self.sel_r = [2, 4]
+
+    def get_ntypes(self) -> int:
+        return 2
+
+    def get_rcut(self) -> float:
+        return 4.0
+
+
+class _FakeSeAttenDescriptor(_FakeSeADescriptor):
+    pass
 
 
 class TestStatFile(unittest.TestCase):
@@ -89,6 +125,81 @@ class TestStatFile(unittest.TestCase):
                 any(child.is_dir() for child in type_path.iterdir()),
                 "Descriptor stat hash directory should be created",
             )
+
+
+class TestDescriptorStatFile(unittest.TestCase):
+    def _assert_load_round_trip(
+        self,
+        descrpt,
+        stat_dict: dict,
+        last_dim: int,
+        mixed_types: bool = False,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            stat_path = DPPath(str(Path(temp_dir)), "a")
+
+            saved = load_or_compute_se_input_stats(
+                descrpt,
+                stat_path,
+                last_dim=last_dim,
+                compute=lambda: stat_dict,
+                mixed_types=mixed_types,
+            )
+
+            def fail_if_recomputed() -> dict:
+                self.fail("Descriptor statistics should have been loaded from file")
+
+            loaded = load_or_compute_se_input_stats(
+                descrpt,
+                stat_path,
+                last_dim=last_dim,
+                compute=fail_if_recomputed,
+                mixed_types=mixed_types,
+            )
+
+            self.assertEqual(saved, stat_dict)
+            self.assertEqual(loaded, stat_dict)
+
+    def test_se_a_descriptor_stats_reload_from_file(self) -> None:
+        """Exercise the angular descriptor-stat save/load path."""
+        self._assert_load_round_trip(
+            _FakeSeADescriptor(),
+            {
+                "sumr": [[1.0, 2.0]],
+                "sumn": [[3.0, 4.0]],
+                "sumr2": [[5.0, 6.0]],
+                "suma": [[7.0, 8.0]],
+                "suma2": [[9.0, 10.0]],
+            },
+            last_dim=4,
+        )
+
+    def test_se_r_descriptor_stats_reload_from_file(self) -> None:
+        """Exercise the radial-only descriptor-stat save/load path."""
+        self._assert_load_round_trip(
+            _FakeSeRDescriptor(),
+            {
+                "sumr": [[1.0, 2.0]],
+                "sumn": [[3.0, 4.0]],
+                "sumr2": [[5.0, 6.0]],
+            },
+            last_dim=1,
+        )
+
+    def test_se_atten_descriptor_stats_reload_from_mixed_type_hash(self) -> None:
+        """Exercise the mixed-type descriptor-stat hash branch used by se_atten."""
+        self._assert_load_round_trip(
+            _FakeSeAttenDescriptor(),
+            {
+                "sumr": [[1.0, 2.0]],
+                "sumn": [[3.0, 4.0]],
+                "sumr2": [[5.0, 6.0]],
+                "suma": [[7.0, 8.0]],
+                "suma2": [[9.0, 10.0]],
+            },
+            last_dim=4,
+            mixed_types=True,
+        )
 
 
 if __name__ == "__main__":

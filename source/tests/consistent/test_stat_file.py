@@ -78,10 +78,16 @@ class TestStatFileConsistency(unittest.TestCase):
         # Find the test data directory
         examples_path = Path(__file__).parent.parent.parent.parent / "examples"
         self.test_data_path = examples_path / "water" / "data" / "data_0"
+        self.unequal_frame_data_paths = [
+            examples_path / "water" / "data" / "data_0",
+            examples_path / "water" / "data" / "data_1",
+        ]
 
         # Skip if test data not available
         if not self.test_data_path.exists():
             self.skipTest("Test data not available")
+        if any(not path.exists() for path in self.unequal_frame_data_paths):
+            self.skipTest("Unequal-frame test data not available")
 
     def _run_training_with_stat_file(
         self, backend: str, config: dict, temp_dir: str, stat_dir: str
@@ -101,7 +107,10 @@ class TestStatFileConsistency(unittest.TestCase):
         """
         config_copy = deepcopy(config)
         config_copy["training"]["stat_file"] = stat_dir
-        config_copy["training"]["training_data"]["systems"] = [str(self.test_data_path)]
+        if not config_copy["training"]["training_data"]["systems"]:
+            config_copy["training"]["training_data"]["systems"] = [
+                str(self.test_data_path)
+            ]
 
         config_file = os.path.join(temp_dir, f"input_{backend}.json")
 
@@ -221,6 +230,29 @@ class TestStatFileConsistency(unittest.TestCase):
             )
 
             # Compare the generated stat files
+            self._compare_stat_directories(tf_stat_dir, pt_stat_dir)
+
+    @unittest.skipUnless(
+        INSTALLED_TF and INSTALLED_PT, "TensorFlow and PyTorch required"
+    )
+    def test_stat_file_consistency_unequal_frame_systems(self) -> None:
+        """Test TF/PT stat consistency when systems have unequal frame counts."""
+        config = deepcopy(self.config_base)
+        config["training"]["training_data"]["systems"] = [
+            str(path) for path in self.unequal_frame_data_paths
+        ]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            tf_stat_dir = os.path.join(temp_dir, "tf_stat")
+            pt_stat_dir = os.path.join(temp_dir, "pt_stat")
+
+            # This case catches the per-system vs per-frame energy-bias regression
+            # distinction: the legacy TF path weighted each system equally, whereas
+            # the shared stat implementation used by stat files weights frames
+            # consistently with the PyTorch backend.
+            self._run_training_with_stat_file("tf", config, temp_dir, tf_stat_dir)
+            self._run_training_with_stat_file("pt", config, temp_dir, pt_stat_dir)
+
             self._compare_stat_directories(tf_stat_dir, pt_stat_dir)
 
 

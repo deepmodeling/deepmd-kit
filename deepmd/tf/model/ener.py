@@ -242,7 +242,10 @@ class EnerModel(StandardModel):
         stat_file_path: DPPath | None = None,
     ) -> None:
         # Reuse the backend-agnostic dpmodel stat implementation instead of
-        # maintaining a TensorFlow copy of the same save/load/stat logic.
+        # maintaining a TensorFlow copy of the same save/load/stat logic. This
+        # intentionally uses the dpmodel/PT per-frame energy-bias regression even
+        # when no stat file is provided, so TF computes the same initial bias it
+        # would later restore from a cross-backend stat file.
         sampled = _pack_stat_batches(all_stat)
         _save_observed_types_to_file(stat_file_path, sampled, self.type_map)
         preset_bias = None
