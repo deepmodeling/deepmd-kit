@@ -8,6 +8,5 @@ Note that the model for inference is required to be compatible with the DeePMD-k
 
    python
    embedding
-   nvalchemi
    cxx
    nodejs
