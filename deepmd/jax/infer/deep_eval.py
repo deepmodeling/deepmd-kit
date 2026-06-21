@@ -188,6 +188,13 @@ class DeepEval(DeepEvalBackend):
         return 0
 
     def serialize(self) -> dict[str, Any]:
+        if str(self.model_path).endswith(".savedmodel"):
+            from deepmd.jax.model.model import (
+                get_model,
+            )
+
+            return get_model(self.get_model_def_script()).serialize()
+
         from deepmd.jax.utils.serialization import (
             serialize_from_file,
         )

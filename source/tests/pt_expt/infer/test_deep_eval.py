@@ -113,7 +113,7 @@ class TestDeepEvalEner(unittest.TestCase):
         data = self.dp.deep_eval.serialize()
         self.assertEqual(data["@class"], self.model.serialize()["@class"])
         self.assertEqual(data["type"], self.model.serialize()["type"])
-        self.assertEqual(data, serialize_from_file(self.tmpfile.name))
+        self.assertEqual(data, serialize_from_file(self.tmpfile.name)["model"])
 
     def test_eval_consistency(self) -> None:
         """Test that DeepPot.eval gives same results as direct model forward."""

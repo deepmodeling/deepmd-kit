@@ -203,12 +203,12 @@ def serialize_from_file(model_file: str) -> dict:
         data["@variables"].pop("stablehlo")
         return data
     elif model_file.endswith(".savedmodel"):
-        from deepmd.tf.utils.serialization import (
-            serialize_from_file as serialize_savedmodel,
+        raise ValueError(
+            "JAX SavedModel does not support lossless file serialization. "
+            "Use DeepEval.serialize() for a structure-only model tree."
         )
-
-        return serialize_savedmodel(model_file)
     else:
         raise ValueError(
-            "JAX backend only supports converting .jax directory, .hlo, and .savedmodel"
+            "JAX backend only supports lossless file serialization for .jax "
+            "directory and .hlo."
         )
