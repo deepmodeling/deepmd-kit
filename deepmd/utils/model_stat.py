@@ -63,6 +63,7 @@ def collect_batches(
                 if dd == "natoms_vec":
                     stat_data[dd] = stat_data[dd].astype(np.int32)
                 sys_stat[dd].append(stat_data[dd])
+        _append_missing_type_frames(data, ii, sys_stat)
         for dd in sys_stat:
             if merge_sys:
                 for bb in sys_stat[dd]:
@@ -70,6 +71,86 @@ def collect_batches(
             else:
                 all_stat[dd].append(sys_stat[dd])
     return all_stat
+
+
+def _append_missing_type_frames(
+    data: Any, sys_idx: int, sys_stat: dict[str, list[Any]]
+) -> None:
+    """Append representative mixed-type frames for types missed by sampling.
+
+    Energy/output bias statistics regress one bias per atom type from the sampled
+    frame compositions.  Mixed-type systems can contain types that do not appear
+    in the small random statistics sample.  When that happens, append the first
+    frame containing each missing type so the regression is constrained for every
+    type that exists in the underlying system.  Standard (non-mixed) systems have
+    fixed composition and do not need augmentation.
+    """
+    if "real_natoms_vec" not in sys_stat or not hasattr(data, "data_systems"):
+        return
+    if getattr(data, "mixed_systems", False):
+        # In mixed-system batching sys_idx is intentionally ignored by get_batch;
+        # keep the historical sampling behaviour rather than guessing ownership.
+        return
+    data_system = data.data_systems[sys_idx]
+    dataset_counts, first_frame_for_type = _mixed_type_coverage(data_system)
+    if dataset_counts is None or first_frame_for_type is None:
+        return
+    sampled_counts = np.concatenate(sys_stat["real_natoms_vec"], axis=0)[:, 2:].sum(
+        axis=0
+    )
+    missing_types = np.flatnonzero((dataset_counts > 0) & (sampled_counts == 0))
+    if len(missing_types) == 0:
+        return
+
+    used_frames: set[int] = set()
+    while len(missing_types) > 0:
+        frame_idx = first_frame_for_type[int(missing_types[0])]
+        if frame_idx < 0 or frame_idx in used_frames:
+            break
+        used_frames.add(frame_idx)
+        extra_batch = data_system.get_single_frame(frame_idx, num_worker=1)
+        extra_batch["natoms_vec"] = data.natoms_vec[sys_idx].astype(np.int32)
+        extra_batch["default_mesh"] = data.default_mesh[sys_idx]
+        for key, value in extra_batch.items():
+            if key == "natoms_vec":
+                value = value.astype(np.int32)
+            if (
+                key not in {"natoms_vec", "default_mesh"}
+                and isinstance(value, np.ndarray)
+                and value.ndim >= 1
+            ):
+                value = value.reshape((1, *value.shape))
+            sys_stat[key].append(value)
+        sampled_counts += (
+            extra_batch["real_natoms_vec"].reshape(1, -1)[:, 2:].sum(axis=0)
+        )
+        missing_types = np.flatnonzero((dataset_counts > 0) & (sampled_counts == 0))
+
+
+def _mixed_type_coverage(
+    data_system: Any,
+) -> tuple[np.ndarray | None, np.ndarray | None]:
+    """Return full mixed-type counts and a representative frame per type."""
+    if not getattr(data_system, "mixed_type", False):
+        return None, None
+    ntypes = data_system.get_ntypes()
+    counts = np.zeros(ntypes, dtype=np.int64)
+    first_frame_for_type = np.full(ntypes, -1, dtype=np.int64)
+    frame_offset = 0
+    for set_dir, frame_end in zip(
+        data_system.dirs, data_system.prefix_sum, strict=True
+    ):
+        real_type = (set_dir / "real_atom_types.npy").load_numpy()
+        if getattr(data_system, "enforce_type_map", False):
+            real_type = data_system.type_idx_map[real_type].astype(np.int32)
+        real_type = real_type.reshape(frame_end - frame_offset, data_system.natoms)
+        for type_i in range(ntypes):
+            frame_hits = np.flatnonzero((real_type == type_i).any(axis=1))
+            counts[type_i] += int((real_type == type_i).sum())
+            if first_frame_for_type[type_i] < 0 and len(frame_hits) > 0:
+                first_frame_for_type[type_i] = frame_offset + int(frame_hits[0])
+        frame_offset = frame_end
+    return counts, first_frame_for_type
 
 
 def make_stat_input(
