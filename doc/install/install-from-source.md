@@ -385,9 +385,11 @@ To build only `libdeepmd_cc` and `libdeepmd_c` without backend plugins, leave al
 cmake -DBUILD_CPP_IF=ON -DBUILD_PY_IF=OFF \
   -DENABLE_TENSORFLOW=OFF -DENABLE_PYTORCH=OFF \
   -DENABLE_JAX=OFF -DENABLE_PADDLE=OFF \
+  -DALLOW_NO_BACKEND=ON \
   -DCMAKE_INSTALL_PREFIX=$deepmd_root ..
 ```
 
+`ALLOW_NO_BACKEND=ON` is required as an explicit opt-in so CMake can distinguish this layout from an accidental build with all backends disabled.
 This install does not include backend plugins.
 Use backend plugin libraries from a backend-enabled build or package at runtime, either by placing them next to the installed C/C++ libraries or by setting {envvar}`DP_BACKEND_PLUGIN_PATH`.
 See [C/C++ backend plugins](../inference/cxx.md#backend-plugins) for runtime plugin discovery.
@@ -471,6 +473,14 @@ If {cmake:variable}`ENABLE_TENSORFLOW` is `OFF`, the TensorFlow C library is use
 **Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
 
 {{ paddle_icon }} Whether building the Paddle backend.
+:::
+
+:::{cmake:variable} ALLOW_NO_BACKEND
+
+**Type**: `BOOL` (`ON`/`OFF`), Default: `OFF`
+
+Allow building backend-neutral C/C++ libraries with all backend options disabled.
+Set this to `ON` only when you plan to provide backend plugin libraries at runtime, for example next to `libdeepmd_cc`/`libdeepmd_c` or through {envvar}`DP_BACKEND_PLUGIN_PATH`.
 :::
 
 :::{cmake:variable} TENSORFLOW_ROOT

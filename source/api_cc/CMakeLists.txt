@@ -127,6 +127,13 @@ if(ENABLE_JAX)
   deepmd_configure_backend_plugin(deepmd_backend_jax)
   target_link_libraries(deepmd_backend_jax PRIVATE TensorFlow::tensorflow_c)
   target_compile_definitions(deepmd_backend_jax PRIVATE BUILD_JAX)
+  if(ENABLE_TENSORFLOW)
+    # ENABLE_TENSORFLOW turns ENABLE_JAX on in source/CMakeLists.txt so
+    # TensorFlow-only user configurations keep the historical ability to load
+    # JAX2TF SavedModels. Define BUILD_TENSORFLOW too, matching the plugin
+    # wrapper guard and making that compatibility intentional.
+    target_compile_definitions(deepmd_backend_jax PRIVATE BUILD_TENSORFLOW)
+  endif()
 endif()
 
 if(ENABLE_PADDLE AND NOT BUILD_PY_IF)

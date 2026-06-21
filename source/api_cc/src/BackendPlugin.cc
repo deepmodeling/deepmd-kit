@@ -4,6 +4,7 @@
 #include <cstdlib>
 #include <exception>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <sstream>
 #include <vector>
@@ -149,6 +150,17 @@ void* open_library(const std::string& path, std::string& error) {
 #endif
 }
 
+void close_library(void* handle) {
+  if (handle == nullptr) {
+    return;
+  }
+#if defined(_WIN32)
+  FreeLibrary(reinterpret_cast<HMODULE>(handle));
+#else
+  dlclose(handle);
+#endif
+}
+
 void* load_symbol(void* handle,
                   const std::string& path,
                   const char* symbol_name) {
@@ -220,15 +232,29 @@ std::shared_ptr<PluginHandle> load_plugin(deepmd::DPBackend backend) {
     std::shared_ptr<PluginHandle> plugin(new PluginHandle);
     plugin->handle = handle;
     plugin->path = candidate;
-    plugin->create_deeppot =
-        reinterpret_cast<deepmd::deepmd_create_deeppot_backend_fn>(load_symbol(
-            handle, candidate, deepmd::DEEPMD_DEEPPOT_PLUGIN_CREATE_SYMBOL));
-    plugin->delete_deeppot =
-        reinterpret_cast<deepmd::deepmd_delete_deeppot_backend_fn>(load_symbol(
-            handle, candidate, deepmd::DEEPMD_DEEPPOT_PLUGIN_DELETE_SYMBOL));
-    plugin->free_error = reinterpret_cast<deepmd::deepmd_free_backend_error_fn>(
-        load_symbol(handle, candidate,
-                    deepmd::DEEPMD_BACKEND_PLUGIN_FREE_ERROR_SYMBOL));
+    try {
+      plugin->create_deeppot =
+          reinterpret_cast<deepmd::deepmd_create_deeppot_backend_fn>(
+              load_symbol(handle, candidate,
+                          deepmd::DEEPMD_DEEPPOT_PLUGIN_CREATE_SYMBOL));
+      plugin->delete_deeppot =
+          reinterpret_cast<deepmd::deepmd_delete_deeppot_backend_fn>(
+              load_symbol(handle, candidate,
+                          deepmd::DEEPMD_DEEPPOT_PLUGIN_DELETE_SYMBOL));
+      plugin->free_error =
+          reinterpret_cast<deepmd::deepmd_free_backend_error_fn>(load_symbol(
+              handle, candidate,
+              deepmd::DEEPMD_BACKEND_PLUGIN_FREE_ERROR_SYMBOL));
+    } catch (const std::exception& e) {
+      errors << "\n  " << candidate << ": " << e.what();
+      close_library(handle);
+      continue;
+    } catch (...) {
+      errors << "\n  " << candidate
+             << ": unknown error while resolving backend plugin symbols";
+      close_library(handle);
+      continue;
+    }
     plugins[backend] = plugin;
     return plugin;
   }
