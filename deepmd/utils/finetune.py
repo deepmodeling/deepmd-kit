@@ -18,6 +18,32 @@ _MAX_DESCRIPTOR_CONFIG_DIFFS = 20
 _MAX_CONFIG_VALUE_LENGTH = 200
 
 
+def _infer_synthetic_type_count(descriptor: Mapping[str, Any]) -> int:
+    """Infer a safe type count for descriptor-only normalization.
+
+    The real model ``type_map`` is not available at every finetune warning call
+    site. Use descriptor fields that explicitly encode per-type lists to avoid
+    normalizing a 3+-type descriptor against the historical two-type stub. This
+    is still a best-effort normalization helper: intentional type-map changes
+    may still show up in type-count-dependent fields such as ``sel``.
+    """
+    type_count = 2
+    for key in ("sel", "sel_a", "sel_r"):
+        value = descriptor.get(key)
+        if isinstance(value, list) and all(isinstance(item, int) for item in value):
+            type_count = max(type_count, len(value))
+    exclude_types = descriptor.get("exclude_types")
+    if isinstance(exclude_types, list):
+        for pair in exclude_types:
+            if (
+                isinstance(pair, list)
+                and len(pair) == 2
+                and all(isinstance(item, int) for item in pair)
+            ):
+                type_count = max(type_count, pair[0] + 1, pair[1] + 1)
+    return type_count
+
+
 def _normalize_descriptor_for_compare(
     descriptor: Mapping[str, Any],
 ) -> Mapping[str, Any]:
@@ -30,7 +56,9 @@ def _normalize_descriptor_for_compare(
         "model": {
             "descriptor": deepcopy(dict(descriptor)),
             "fitting_net": {"neuron": [240, 240, 240]},
-            "type_map": ["H", "O"],
+            "type_map": [
+                f"Type{ii}" for ii in range(_infer_synthetic_type_count(descriptor))
+            ],
         },
         "training": {"training_data": {"systems": ["fake"]}, "numb_steps": 100},
     }
@@ -86,9 +114,11 @@ def _descriptor_config_differences(
         )
     except Exception:
         # Some in-flight or legacy descriptor schemas may not be normalizable with
-        # the minimal synthetic config above. In that case, still compare the raw
-        # descriptors so users get a best-effort warning.
-        pass
+        # the minimal synthetic config above. If either side fails, compare raw
+        # descriptor against raw descriptor; mixing normalized and raw values would
+        # report implicit defaults as spurious differences.
+        input_descriptor_cmp = input_descriptor
+        pretrained_descriptor_cmp = pretrained_descriptor
     return _iter_descriptor_config_differences(
         input_descriptor_cmp, pretrained_descriptor_cmp
     )
@@ -155,9 +185,10 @@ def warn_configuration_mismatch_during_finetune(
         return
     log.warning(
         "Descriptor configuration mismatch detected between input.json and "
-        f"pretrained model (branch '{model_branch}'). State dict initialization "
-        "will only use compatible descriptor parameters from the pretrained model; "
-        "other parameters keep their current initialization:\n"
+        f"pretrained model (branch '{model_branch}'). Only descriptor parameters "
+        "that are compatible with the pretrained model can be reused; "
+        "incompatible parameters may be reinitialized, skipped, or rejected by "
+        "backend-specific loading:\n"
         + _format_descriptor_differences(differences, overwrite=False)
     )
 
