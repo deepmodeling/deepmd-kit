@@ -4,9 +4,6 @@ from typing import (
     Any,
 )
 
-from deepmd.dpmodel.utils.serialization import (
-    Node,
-)
 from deepmd.infer.deep_eval import (
     DeepEval,
 )
@@ -154,5 +151,15 @@ def show(
             log.info(f"Observed types: {observed_types['observed_type']} ")
 
     if "serialization-tree" in ATTRIBUTES:
-        root = Node.deserialize(model.serialize())
-        log.info("Model serialization tree:\n" + str(root))
+        from deepmd.dpmodel.utils.serialization import (
+            Node,
+        )
+
+        if model_is_multi_task:
+            for branch in model_params["model_dict"]:
+                branch_model = DeepEval(INPUT, head=branch)
+                root = Node.deserialize(branch_model.serialize())
+                log.info("Model serialization tree of branch %s:\n%s", branch, root)
+        else:
+            root = Node.deserialize(model.serialize())
+            log.info("Model serialization tree:\n%s", root)
