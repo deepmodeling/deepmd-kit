@@ -602,93 +602,6 @@ void TabulateFusionSeRGradGradForward(const torch::Tensor& table_tensor,
   }
 }
 
-class TabulateFusionSeAOp
-    : public torch::autograd::Function<TabulateFusionSeAOp> {
- public:
-  static torch::autograd::variable_list forward(
-      torch::autograd::AutogradContext* ctx,
-      const torch::Tensor& table_tensor,
-      const torch::Tensor& table_info_tensor,
-      const torch::Tensor& em_x_tensor,
-      const torch::Tensor& em_tensor,
-      int64_t last_layer_size) {
-    bool type_flag = (table_tensor.dtype() == torch::kDouble) ? true : false;
-    if (type_flag) {
-      return forward_t<double>(ctx, table_tensor, table_info_tensor,
-                               em_x_tensor, em_tensor, last_layer_size);
-    } else {
-      return forward_t<float>(ctx, table_tensor, table_info_tensor, em_x_tensor,
-                              em_tensor, last_layer_size);
-    }
-  }
-
-  template <typename FPTYPE>
-  static torch::autograd::variable_list forward_t(
-      torch::autograd::AutogradContext* ctx,
-      const torch::Tensor& table_tensor,
-      const torch::Tensor& table_info_tensor,
-      const torch::Tensor& em_x_tensor,
-      const torch::Tensor& em_tensor,
-      int64_t last_layer_size) {
-    // allocate output tensors
-    auto options = torch::TensorOptions()
-                       .dtype(table_tensor.dtype())
-                       .device(table_tensor.device());
-    torch::Tensor descriptor_tensor =
-        torch::empty({em_tensor.size(0), 4, last_layer_size}, options);
-    // compute
-    TabulateFusionSeAForward<FPTYPE>(table_tensor, table_info_tensor,
-                                     em_x_tensor, em_tensor, at::Tensor(),
-                                     last_layer_size, descriptor_tensor);
-    // save data
-    ctx->save_for_backward({table_tensor, table_info_tensor, em_x_tensor,
-                            em_tensor, descriptor_tensor});
-    return {descriptor_tensor};
-  }
-
-  static torch::autograd::variable_list backward(
-      torch::autograd::AutogradContext* ctx,
-      torch::autograd::variable_list grad_output) {
-    torch::autograd::variable_list saved_variables = ctx->get_saved_variables();
-    torch::Tensor table_tensor = saved_variables[0];
-    bool type_flag = (table_tensor.dtype() == torch::kDouble) ? true : false;
-    if (type_flag) {
-      return backward_t<double>(ctx, grad_output);
-    } else {
-      return backward_t<float>(ctx, grad_output);
-    }
-  }
-
-  template <typename FPTYPE>
-  static torch::autograd::variable_list backward_t(
-      torch::autograd::AutogradContext* ctx,
-      torch::autograd::variable_list grad_output) {
-    // load data
-    torch::autograd::variable_list saved_variables = ctx->get_saved_variables();
-    torch::Tensor table_tensor = saved_variables[0];
-    torch::Tensor table_info_tensor = saved_variables[1];
-    torch::Tensor em_x_tensor = saved_variables[2];
-    torch::Tensor em_tensor = saved_variables[3];
-    torch::Tensor two_embed_tensor = at::Tensor();
-    torch::Tensor descriptor_tensor = saved_variables[4];
-
-    // ensure the gradient output is contiguous
-    torch::Tensor dy_tensor = grad_output[0].contiguous();
-    // allocate output tensors
-    torch::Tensor dy_dem_x_tensor = torch::zeros_like(em_x_tensor);
-    torch::Tensor dy_dem_tensor = torch::zeros_like(em_tensor);
-    torch::Tensor dy_dtwo_tensor = at::Tensor();
-    // compute
-    TabulateFusionSeAGradForward<FPTYPE>(
-        table_tensor, table_info_tensor, em_x_tensor, em_tensor,
-        two_embed_tensor, dy_tensor, descriptor_tensor, dy_dem_x_tensor,
-        dy_dem_tensor, dy_dtwo_tensor);
-
-    return {at::Tensor(), at::Tensor(), dy_dem_x_tensor, dy_dem_tensor,
-            at::Tensor()};
-  }
-};
-
 class TabulateFusionSeAGradOp
     : public torch::autograd::Function<TabulateFusionSeAGradOp> {
  private:
@@ -767,8 +680,12 @@ class TabulateFusionSeAGradOp
 
     bool is_sorted = true;
 
-    torch::Tensor dz_dy_dem_x_tensor = grad_output[0].contiguous();
-    torch::Tensor dz_dy_dem_tensor = grad_output[1].contiguous();
+    torch::Tensor dz_dy_dem_x_tensor = grad_output[0].defined()
+                                           ? grad_output[0].contiguous()
+                                           : torch::zeros_like(em_x_tensor);
+    torch::Tensor dz_dy_dem_tensor = grad_output[1].defined()
+                                         ? grad_output[1].contiguous()
+                                         : torch::zeros_like(em_tensor);
     // allocate output tensors
     torch::Tensor dz_dy_tensor = torch::empty_like(descriptor_tensor);
     // compute
@@ -831,6 +748,186 @@ class TabulateFusionSeAGradGradOp
   }
 };
 
+class TabulateFusionSeAOp
+    : public torch::autograd::Function<TabulateFusionSeAOp> {
+ public:
+  static torch::autograd::variable_list forward(
+      torch::autograd::AutogradContext* ctx,
+      const torch::Tensor& table_tensor,
+      const torch::Tensor& table_info_tensor,
+      const torch::Tensor& em_x_tensor,
+      const torch::Tensor& em_tensor,
+      int64_t last_layer_size) {
+    bool type_flag = (table_tensor.dtype() == torch::kDouble) ? true : false;
+    if (type_flag) {
+      return forward_t<double>(ctx, table_tensor, table_info_tensor,
+                               em_x_tensor, em_tensor, last_layer_size);
+    } else {
+      return forward_t<float>(ctx, table_tensor, table_info_tensor, em_x_tensor,
+                              em_tensor, last_layer_size);
+    }
+  }
+
+  template <typename FPTYPE>
+  static torch::autograd::variable_list forward_t(
+      torch::autograd::AutogradContext* ctx,
+      const torch::Tensor& table_tensor,
+      const torch::Tensor& table_info_tensor,
+      const torch::Tensor& em_x_tensor,
+      const torch::Tensor& em_tensor,
+      int64_t last_layer_size) {
+    // allocate output tensors
+    auto options = torch::TensorOptions()
+                       .dtype(table_tensor.dtype())
+                       .device(table_tensor.device());
+    torch::Tensor descriptor_tensor =
+        torch::empty({em_tensor.size(0), 4, last_layer_size}, options);
+    // compute
+    TabulateFusionSeAForward<FPTYPE>(table_tensor, table_info_tensor,
+                                     em_x_tensor, em_tensor, at::Tensor(),
+                                     last_layer_size, descriptor_tensor);
+    // save data
+    ctx->save_for_backward({table_tensor, table_info_tensor, em_x_tensor,
+                            em_tensor, descriptor_tensor});
+    return {descriptor_tensor};
+  }
+
+  static torch::autograd::variable_list backward(
+      torch::autograd::AutogradContext* ctx,
+      torch::autograd::variable_list grad_output) {
+    torch::autograd::variable_list saved_variables = ctx->get_saved_variables();
+    torch::Tensor table_tensor = saved_variables[0];
+    bool type_flag = (table_tensor.dtype() == torch::kDouble) ? true : false;
+    if (type_flag) {
+      return backward_t<double>(ctx, grad_output);
+    } else {
+      return backward_t<float>(ctx, grad_output);
+    }
+  }
+
+  template <typename FPTYPE>
+  static torch::autograd::variable_list backward_t(
+      torch::autograd::AutogradContext* ctx,
+      torch::autograd::variable_list grad_output) {
+    // load data
+    torch::autograd::variable_list saved_variables = ctx->get_saved_variables();
+    torch::Tensor table_tensor = saved_variables[0];
+    torch::Tensor table_info_tensor = saved_variables[1];
+    torch::Tensor em_x_tensor = saved_variables[2];
+    torch::Tensor em_tensor = saved_variables[3];
+    torch::Tensor descriptor_tensor = saved_variables[4];
+
+    // ensure the gradient output is contiguous
+    torch::Tensor dy_tensor = grad_output[0].contiguous();
+    torch::autograd::variable_list dy_dem_tensors =
+        TabulateFusionSeAGradOp::apply(table_tensor, table_info_tensor,
+                                       em_x_tensor, em_tensor, dy_tensor,
+                                       descriptor_tensor);
+
+    return {at::Tensor(), at::Tensor(), dy_dem_tensors[0], dy_dem_tensors[1],
+            at::Tensor()};
+  }
+};
+
+class TabulateFusionSeAttenGradOp
+    : public torch::autograd::Function<TabulateFusionSeAttenGradOp> {
+ public:
+  static torch::autograd::variable_list forward(
+      torch::autograd::AutogradContext* ctx,
+      const torch::Tensor& table_tensor,
+      const torch::Tensor& table_info_tensor,
+      const torch::Tensor& em_x_tensor,
+      const torch::Tensor& em_tensor,
+      const torch::Tensor& two_embed_tensor,
+      const torch::Tensor& dy_tensor,
+      const torch::Tensor& descriptor_tensor,
+      bool is_sorted) {
+    bool type_flag = (table_tensor.dtype() == torch::kDouble) ? true : false;
+    if (type_flag) {
+      return forward_t<double>(ctx, table_tensor, table_info_tensor,
+                               em_x_tensor, em_tensor, two_embed_tensor,
+                               dy_tensor, descriptor_tensor, is_sorted);
+    } else {
+      return forward_t<float>(ctx, table_tensor, table_info_tensor, em_x_tensor,
+                              em_tensor, two_embed_tensor, dy_tensor,
+                              descriptor_tensor, is_sorted);
+    }
+  }
+
+  template <typename FPTYPE>
+  static torch::autograd::variable_list forward_t(
+      torch::autograd::AutogradContext* ctx,
+      const torch::Tensor& table_tensor,
+      const torch::Tensor& table_info_tensor,
+      const torch::Tensor& em_x_tensor,
+      const torch::Tensor& em_tensor,
+      const torch::Tensor& two_embed_tensor,
+      const torch::Tensor& dy_tensor,
+      const torch::Tensor& descriptor_tensor,
+      bool is_sorted) {
+    torch::Tensor dy_dem_x_tensor = torch::zeros_like(em_x_tensor);
+    torch::Tensor dy_dem_tensor = torch::zeros_like(em_tensor);
+    torch::Tensor dy_dtwo_tensor = torch::zeros_like(two_embed_tensor);
+    TabulateFusionSeAGradForward<FPTYPE>(
+        table_tensor, table_info_tensor, em_x_tensor, em_tensor,
+        two_embed_tensor, dy_tensor, descriptor_tensor, dy_dem_x_tensor,
+        dy_dem_tensor, dy_dtwo_tensor);
+
+    ctx->save_for_backward({table_tensor, table_info_tensor, em_x_tensor,
+                            em_tensor, two_embed_tensor, descriptor_tensor});
+    ctx->saved_data["is_sorted"] = is_sorted;
+
+    return torch::autograd::variable_list{dy_dem_x_tensor, dy_dem_tensor,
+                                          dy_dtwo_tensor};
+  }
+
+  static torch::autograd::variable_list backward(
+      torch::autograd::AutogradContext* ctx,
+      torch::autograd::variable_list grad_output) {
+    torch::autograd::variable_list saved_variables = ctx->get_saved_variables();
+    torch::Tensor table_tensor = saved_variables[0];
+    bool type_flag = (table_tensor.dtype() == torch::kDouble) ? true : false;
+    if (type_flag) {
+      return backward_t<double>(ctx, grad_output);
+    } else {
+      return backward_t<float>(ctx, grad_output);
+    }
+  }
+
+  template <typename FPTYPE>
+  static torch::autograd::variable_list backward_t(
+      torch::autograd::AutogradContext* ctx,
+      torch::autograd::variable_list grad_output) {
+    torch::autograd::variable_list saved_variables = ctx->get_saved_variables();
+    torch::Tensor table_tensor = saved_variables[0];
+    torch::Tensor table_info_tensor = saved_variables[1];
+    torch::Tensor em_x_tensor = saved_variables[2];
+    torch::Tensor em_tensor = saved_variables[3];
+    torch::Tensor two_embed_tensor = saved_variables[4];
+    torch::Tensor descriptor_tensor = saved_variables[5];
+    bool is_sorted = ctx->saved_data["is_sorted"].toBool();
+
+    torch::Tensor dz_dy_dem_x_tensor = grad_output[0].defined()
+                                           ? grad_output[0].contiguous()
+                                           : torch::zeros_like(em_x_tensor);
+    torch::Tensor dz_dy_dem_tensor = grad_output[1].defined()
+                                         ? grad_output[1].contiguous()
+                                         : torch::zeros_like(em_tensor);
+    torch::Tensor dz_dy_dtwo_tensor = grad_output[2].defined()
+                                          ? grad_output[2].contiguous()
+                                          : torch::zeros_like(two_embed_tensor);
+    torch::Tensor dz_dy_tensor = torch::empty_like(descriptor_tensor);
+    TabulateFusionSeAGradGradForward<FPTYPE>(
+        table_tensor, table_info_tensor, em_x_tensor, em_tensor,
+        two_embed_tensor, dz_dy_dem_x_tensor, dz_dy_dem_tensor,
+        dz_dy_dtwo_tensor, descriptor_tensor, is_sorted, dz_dy_tensor);
+
+    return torch::autograd::variable_list{
+        at::Tensor(), at::Tensor(), at::Tensor(), at::Tensor(),
+        at::Tensor(), dz_dy_tensor, at::Tensor(), at::Tensor()};
+  }
+};
+
 class TabulateFusionSeAttenOp
     : public torch::autograd::Function<TabulateFusionSeAttenOp> {
  public:
@@ -878,6 +975,7 @@ class TabulateFusionSeAttenOp
     // save data
     ctx->save_for_backward({table_tensor, table_info_tensor, em_x_tensor,
                             em_tensor, two_embed_tensor, descriptor_tensor});
+    ctx->saved_data["is_sorted"] = is_sorted;
     return {descriptor_tensor};
   }
 
@@ -906,20 +1004,101 @@ class TabulateFusionSeAttenOp
     torch::Tensor em_tensor = saved_variables[3];
     torch::Tensor two_embed_tensor = saved_variables[4];
     torch::Tensor descriptor_tensor = saved_variables[5];
+    bool is_sorted = ctx->saved_data["is_sorted"].toBool();
 
     torch::Tensor dy_tensor = grad_output[0].contiguous();
-    // allocate output tensors
+    torch::autograd::variable_list dy_dem_tensors =
+        TabulateFusionSeAttenGradOp::apply(
+            table_tensor, table_info_tensor, em_x_tensor, em_tensor,
+            two_embed_tensor, dy_tensor, descriptor_tensor, is_sorted);
+
+    return {at::Tensor(),      at::Tensor(),      dy_dem_tensors[0],
+            dy_dem_tensors[1], dy_dem_tensors[2], at::Tensor(),
+            at::Tensor()};
+  }
+};
+
+class TabulateFusionSeTGradOp
+    : public torch::autograd::Function<TabulateFusionSeTGradOp> {
+ public:
+  static torch::autograd::variable_list forward(
+      torch::autograd::AutogradContext* ctx,
+      const torch::Tensor& table_tensor,
+      const torch::Tensor& table_info_tensor,
+      const torch::Tensor& em_x_tensor,
+      const torch::Tensor& em_tensor,
+      const torch::Tensor& dy_tensor,
+      const torch::Tensor& descriptor_tensor) {
+    bool type_flag = (table_tensor.dtype() == torch::kDouble) ? true : false;
+    if (type_flag) {
+      return forward_t<double>(ctx, table_tensor, table_info_tensor,
+                               em_x_tensor, em_tensor, dy_tensor,
+                               descriptor_tensor);
+    } else {
+      return forward_t<float>(ctx, table_tensor, table_info_tensor, em_x_tensor,
+                              em_tensor, dy_tensor, descriptor_tensor);
+    }
+  }
+
+  template <typename FPTYPE>
+  static torch::autograd::variable_list forward_t(
+      torch::autograd::AutogradContext* ctx,
+      const torch::Tensor& table_tensor,
+      const torch::Tensor& table_info_tensor,
+      const torch::Tensor& em_x_tensor,
+      const torch::Tensor& em_tensor,
+      const torch::Tensor& dy_tensor,
+      const torch::Tensor& descriptor_tensor) {
     torch::Tensor dy_dem_x_tensor = torch::zeros_like(em_x_tensor);
     torch::Tensor dy_dem_tensor = torch::zeros_like(em_tensor);
-    torch::Tensor dy_dtwo_tensor = torch::zeros_like(two_embed_tensor);
-    // compute
-    TabulateFusionSeAGradForward<FPTYPE>(
-        table_tensor, table_info_tensor, em_x_tensor, em_tensor,
-        two_embed_tensor, dy_tensor, descriptor_tensor, dy_dem_x_tensor,
-        dy_dem_tensor, dy_dtwo_tensor);
+    TabulateFusionSeTGradForward<FPTYPE>(
+        table_tensor, table_info_tensor, em_x_tensor, em_tensor, dy_tensor,
+        descriptor_tensor, dy_dem_x_tensor, dy_dem_tensor);
 
-    return {at::Tensor(),   at::Tensor(), dy_dem_x_tensor, dy_dem_tensor,
-            dy_dtwo_tensor, at::Tensor(), at::Tensor()};
+    ctx->save_for_backward({table_tensor, table_info_tensor, em_x_tensor,
+                            em_tensor, descriptor_tensor});
+
+    return torch::autograd::variable_list{dy_dem_x_tensor, dy_dem_tensor};
+  }
+
+  static torch::autograd::variable_list backward(
+      torch::autograd::AutogradContext* ctx,
+      torch::autograd::variable_list grad_output) {
+    torch::autograd::variable_list saved_variables = ctx->get_saved_variables();
+    torch::Tensor table_tensor = saved_variables[0];
+    bool type_flag = (table_tensor.dtype() == torch::kDouble) ? true : false;
+    if (type_flag) {
+      return backward_t<double>(ctx, grad_output);
+    } else {
+      return backward_t<float>(ctx, grad_output);
+    }
+  }
+
+  template <typename FPTYPE>
+  static torch::autograd::variable_list backward_t(
+      torch::autograd::AutogradContext* ctx,
+      torch::autograd::variable_list grad_output) {
+    torch::autograd::variable_list saved_variables = ctx->get_saved_variables();
+    torch::Tensor table_tensor = saved_variables[0];
+    torch::Tensor table_info_tensor = saved_variables[1];
+    torch::Tensor em_x_tensor = saved_variables[2];
+    torch::Tensor em_tensor = saved_variables[3];
+    torch::Tensor descriptor_tensor = saved_variables[4];
+
+    torch::Tensor dz_dy_dem_x_tensor = grad_output[0].defined()
+                                           ? grad_output[0].contiguous()
+                                           : torch::zeros_like(em_x_tensor);
+    torch::Tensor dz_dy_dem_tensor = grad_output[1].defined()
+                                         ? grad_output[1].contiguous()
+                                         : torch::zeros_like(em_tensor);
+    torch::Tensor dz_dy_tensor = torch::empty_like(descriptor_tensor);
+    TabulateFusionSeTGradGradForward<FPTYPE>(
+        table_tensor, table_info_tensor, em_x_tensor, em_tensor,
+        dz_dy_dem_x_tensor, dz_dy_dem_tensor, descriptor_tensor, dz_dy_tensor);
+
+    return torch::autograd::variable_list{at::Tensor(), at::Tensor(),
+                                          at::Tensor(), at::Tensor(),
+                                          dz_dy_tensor, at::Tensor()};
   }
 };
 
@@ -993,16 +1172,88 @@ class TabulateFusionSeTOp
     torch::Tensor descriptor_tensor = saved_variables[4];
 
     torch::Tensor dy_tensor = grad_output[0].contiguous();
-    // allocate output tensors
-    torch::Tensor dy_dem_x_tensor = torch::zeros_like(em_x_tensor);
-    torch::Tensor dy_dem_tensor = torch::zeros_like(em_tensor);
-    // compute
-    TabulateFusionSeTGradForward<FPTYPE>(
-        table_tensor, table_info_tensor, em_x_tensor, em_tensor, dy_tensor,
-        descriptor_tensor, dy_dem_x_tensor, dy_dem_tensor);
+    torch::autograd::variable_list dy_dem_tensors =
+        TabulateFusionSeTGradOp::apply(table_tensor, table_info_tensor,
+                                       em_x_tensor, em_tensor, dy_tensor,
+                                       descriptor_tensor);
 
-    return {at::Tensor(), at::Tensor(), dy_dem_x_tensor, dy_dem_tensor,
+    return {at::Tensor(), at::Tensor(), dy_dem_tensors[0], dy_dem_tensors[1],
             at::Tensor()};
+  }
+};
+
+class TabulateFusionSeRGradOp
+    : public torch::autograd::Function<TabulateFusionSeRGradOp> {
+ public:
+  static torch::autograd::variable_list forward(
+      torch::autograd::AutogradContext* ctx,
+      const torch::Tensor& table_tensor,
+      const torch::Tensor& table_info_tensor,
+      const torch::Tensor& em_tensor,
+      const torch::Tensor& dy_tensor,
+      const torch::Tensor& descriptor_tensor) {
+    bool type_flag = (table_tensor.dtype() == torch::kDouble) ? true : false;
+    if (type_flag) {
+      return forward_t<double>(ctx, table_tensor, table_info_tensor, em_tensor,
+                               dy_tensor, descriptor_tensor);
+    } else {
+      return forward_t<float>(ctx, table_tensor, table_info_tensor, em_tensor,
+                              dy_tensor, descriptor_tensor);
+    }
+  }
+
+  template <typename FPTYPE>
+  static torch::autograd::variable_list forward_t(
+      torch::autograd::AutogradContext* ctx,
+      const torch::Tensor& table_tensor,
+      const torch::Tensor& table_info_tensor,
+      const torch::Tensor& em_tensor,
+      const torch::Tensor& dy_tensor,
+      const torch::Tensor& descriptor_tensor) {
+    torch::Tensor dy_dem_tensor = torch::zeros_like(em_tensor);
+    TabulateFusionSeRGradForward<FPTYPE>(table_tensor, table_info_tensor,
+                                         em_tensor, dy_tensor,
+                                         descriptor_tensor, dy_dem_tensor);
+
+    ctx->save_for_backward(
+        {table_tensor, table_info_tensor, em_tensor, descriptor_tensor});
+
+    return torch::autograd::variable_list{dy_dem_tensor};
+  }
+
+  static torch::autograd::variable_list backward(
+      torch::autograd::AutogradContext* ctx,
+      torch::autograd::variable_list grad_output) {
+    torch::autograd::variable_list saved_variables = ctx->get_saved_variables();
+    torch::Tensor table_tensor = saved_variables[0];
+    bool type_flag = (table_tensor.dtype() == torch::kDouble) ? true : false;
+    if (type_flag) {
+      return backward_t<double>(ctx, grad_output);
+    } else {
+      return backward_t<float>(ctx, grad_output);
+    }
+  }
+
+  template <typename FPTYPE>
+  static torch::autograd::variable_list backward_t(
+      torch::autograd::AutogradContext* ctx,
+      torch::autograd::variable_list grad_output) {
+    torch::autograd::variable_list saved_variables = ctx->get_saved_variables();
+    torch::Tensor table_tensor = saved_variables[0];
+    torch::Tensor table_info_tensor = saved_variables[1];
+    torch::Tensor em_tensor = saved_variables[2];
+    torch::Tensor descriptor_tensor = saved_variables[3];
+
+    torch::Tensor dz_dy_dem_tensor = grad_output[0].defined()
+                                         ? grad_output[0].contiguous()
+                                         : torch::zeros_like(em_tensor);
+    torch::Tensor dz_dy_tensor = torch::empty_like(descriptor_tensor);
+    TabulateFusionSeRGradGradForward<FPTYPE>(table_tensor, table_info_tensor,
+                                             em_tensor, dz_dy_dem_tensor,
+                                             descriptor_tensor, dz_dy_tensor);
+
+    return torch::autograd::variable_list{
+        at::Tensor(), at::Tensor(), at::Tensor(), dz_dy_tensor, at::Tensor()};
   }
 };
 
@@ -1072,14 +1323,93 @@ class TabulateFusionSeROp
     torch::Tensor descriptor_tensor = saved_variables[3];
 
     torch::Tensor dy_tensor = grad_output[0].contiguous();
-    // allocate output tensors
-    torch::Tensor dy_dem_tensor = torch::zeros_like(em_tensor);
-    // compute
-    TabulateFusionSeRGradForward<FPTYPE>(table_tensor, table_info_tensor,
-                                         em_tensor, dy_tensor,
-                                         descriptor_tensor, dy_dem_tensor);
+    torch::autograd::variable_list dy_dem_tensors =
+        TabulateFusionSeRGradOp::apply(table_tensor, table_info_tensor,
+                                       em_tensor, dy_tensor, descriptor_tensor);
 
-    return {at::Tensor(), at::Tensor(), dy_dem_tensor, at::Tensor()};
+    return {at::Tensor(), at::Tensor(), dy_dem_tensors[0], at::Tensor()};
+  }
+};
+
+class TabulateFusionSeTTebdGradOp
+    : public torch::autograd::Function<TabulateFusionSeTTebdGradOp> {
+ public:
+  static torch::autograd::variable_list forward(
+      torch::autograd::AutogradContext* ctx,
+      const torch::Tensor& table_tensor,
+      const torch::Tensor& table_info_tensor,
+      const torch::Tensor& em_x_tensor,
+      const torch::Tensor& em_tensor,
+      const torch::Tensor& dy_tensor,
+      const torch::Tensor& descriptor_tensor) {
+    bool type_flag = (table_tensor.dtype() == torch::kDouble) ? true : false;
+    if (type_flag) {
+      return forward_t<double>(ctx, table_tensor, table_info_tensor,
+                               em_x_tensor, em_tensor, dy_tensor,
+                               descriptor_tensor);
+    } else {
+      return forward_t<float>(ctx, table_tensor, table_info_tensor, em_x_tensor,
+                              em_tensor, dy_tensor, descriptor_tensor);
+    }
+  }
+
+  template <typename FPTYPE>
+  static torch::autograd::variable_list forward_t(
+      torch::autograd::AutogradContext* ctx,
+      const torch::Tensor& table_tensor,
+      const torch::Tensor& table_info_tensor,
+      const torch::Tensor& em_x_tensor,
+      const torch::Tensor& em_tensor,
+      const torch::Tensor& dy_tensor,
+      const torch::Tensor& descriptor_tensor) {
+    torch::Tensor dy_dem_x_tensor = torch::zeros_like(em_x_tensor);
+    TabulateFusionSeTTebdGradForward<FPTYPE>(
+        table_tensor, table_info_tensor, em_x_tensor, em_tensor, dy_tensor,
+        descriptor_tensor, dy_dem_x_tensor);
+
+    ctx->save_for_backward({table_tensor, table_info_tensor, em_x_tensor,
+                            em_tensor, descriptor_tensor});
+
+    return torch::autograd::variable_list{dy_dem_x_tensor};
+  }
+
+  static torch::autograd::variable_list backward(
+      torch::autograd::AutogradContext* ctx,
+      torch::autograd::variable_list grad_output) {
+    torch::autograd::variable_list saved_variables = ctx->get_saved_variables();
+    torch::Tensor table_tensor = saved_variables[0];
+    bool type_flag = (table_tensor.dtype() == torch::kDouble) ? true : false;
+    if (type_flag) {
+      return backward_t<double>(ctx, grad_output);
+    } else {
+      return backward_t<float>(ctx, grad_output);
+    }
+  }
+
+  template <typename FPTYPE>
+  static torch::autograd::variable_list backward_t(
+      torch::autograd::AutogradContext* ctx,
+      torch::autograd::variable_list grad_output) {
+    torch::autograd::variable_list saved_variables = ctx->get_saved_variables();
+    torch::Tensor table_tensor = saved_variables[0];
+    torch::Tensor table_info_tensor = saved_variables[1];
+    torch::Tensor em_x_tensor = saved_variables[2];
+    torch::Tensor em_tensor = saved_variables[3];
+    torch::Tensor descriptor_tensor = saved_variables[4];
+
+    torch::Tensor dz_dy_dem_x_tensor =
+        grad_output[0].defined()
+            ? grad_output[0].contiguous().view(
+                  {em_tensor.size(0), em_tensor.size(1), em_tensor.size(2)})
+            : torch::zeros_like(em_tensor);
+    torch::Tensor dz_dy_tensor = torch::empty_like(descriptor_tensor);
+    TabulateFusionSeTTebdGradGradForward<FPTYPE>(
+        table_tensor, table_info_tensor, em_x_tensor, em_tensor,
+        dz_dy_dem_x_tensor, descriptor_tensor, dz_dy_tensor);
+
+    return torch::autograd::variable_list{at::Tensor(), at::Tensor(),
+                                          at::Tensor(), at::Tensor(),
+                                          dz_dy_tensor, at::Tensor()};
   }
 };
 
@@ -1155,14 +1485,12 @@ class TabulateFusionSeTTebdOp
     torch::Tensor descriptor_tensor = saved_variables[4];
 
     torch::Tensor dy_tensor = grad_output[0].contiguous();
-    // allocate output tensors
-    torch::Tensor dy_dem_x_tensor = torch::zeros_like(em_x_tensor);
-    // compute
-    TabulateFusionSeTTebdGradForward<FPTYPE>(
-        table_tensor, table_info_tensor, em_x_tensor, em_tensor, dy_tensor,
-        descriptor_tensor, dy_dem_x_tensor);
+    torch::autograd::variable_list dy_dem_tensors =
+        TabulateFusionSeTTebdGradOp::apply(table_tensor, table_info_tensor,
+                                           em_x_tensor, em_tensor, dy_tensor,
+                                           descriptor_tensor);
 
-    return {at::Tensor(), at::Tensor(), dy_dem_x_tensor, at::Tensor(),
+    return {at::Tensor(), at::Tensor(), dy_dem_tensors[0], at::Tensor(),
             at::Tensor()};
   }
 };

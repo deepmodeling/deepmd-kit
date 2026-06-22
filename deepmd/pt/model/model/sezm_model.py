@@ -101,13 +101,13 @@ Body of the traced compute
 ``core_compute`` so that make_fx sees a pure tensor-in / tensor-out
 function:
 
-* ``core_compute`` rebuilds a compact, GPU-friendly edge list from the
-  padded DeePMD neighbor list (``build_edge_list_from_nlist``), with
-  two masked dummy edges appended so the edge tensor has a non-singular
-  symbolic lower bound (NOTE 10).  Edge vectors are gathered from the
-  extended coordinate tensor and then **detached into a fresh leaf**
-  (``edge_vec.detach().requires_grad_(True)``), so the gather lives
-  entirely outside the autograd region (NOTE 11).
+* ``core_compute`` consumes the unified edge-vector schema prepared by its
+  caller.  Two masked dummy edges are appended by the schema builders so the
+  edge tensor has a non-singular symbolic lower bound (NOTE 10).
+  Edge vectors are then **detached into a fresh leaf**
+  (``edge_vec.detach().requires_grad_(True)``), so neighbor construction,
+  shift application and coordinate gathers live outside the autograd region
+  (NOTE 11).
 * The SeZM descriptor and the analytical ZBL term (``InterPotential``)
   both consume that edge-vector leaf, so the energy depends on coordinates
   *only* through ``edge_vec``.
@@ -236,8 +236,9 @@ NOTE 6 -- Inductor / Triton option lockdown
 
 One Inductor option set governs both backends: ``torch.compile`` takes it
 as ``options=`` for training, and the eval path (NOTE 13) applies it via
-``torch._inductor.config.patch`` around ``compile_fx_inner``, adding
-``triton.max_tiles=1``.  The options are:
+``torch._inductor.config.patch`` around ``compile_fx_inner``.  The set
+includes ``triton.max_tiles=1``, so the 1D launch-grid constraint applies to
+both graphs.  The options are:
 
 * ``max_autotune=False``
       Autotune regresses on dynamic shapes because each recompile rolls
@@ -350,8 +351,8 @@ differentiated region.
 NOTE 10 -- Tail dummy edges
 ---------------------------
 
-``build_edge_list_from_nlist`` appends two masked edges at the end of
-every batch.  Real edge compaction happens via
+The edge-schema builders append two masked edges at the end of every batch.
+Real edge compaction happens via
 ``torch.nonzero(valid_mask)``, whose output length is data-dependent
 and can be zero in sparse or single-atom systems (e.g. isolated-atom
 reference frames in training data).  make_fx cannot trace an
@@ -467,6 +468,7 @@ if TYPE_CHECKING:
 
     from jaxtyping import Float, Int
     from torch import Tensor
+    from deepmd.dpmodel.utils.neighbor_list import EdgeNeighborList, NeighborList
 
 from deepmd.pt.model.atomic_model.sezm_atomic_model import (
     SeZMAtomicModel,
@@ -484,7 +486,6 @@ from deepmd.pt.model.model.model import (
     BaseModel,
 )
 from deepmd.pt.model.model.transform_output import (
-    communicate_extended_output,
     edge_energy_deriv,
 )
 from deepmd.pt.utils import (
@@ -503,12 +504,16 @@ from deepmd.pt.utils.compile_compat import (
     strip_saved_tensor_detach,
     trace_pad_dim,
 )
-from deepmd.pt.utils.nlist import (
-    extend_input_and_build_neighbor_list,
-)
 from deepmd.pt.utils.nv_nlist import (
     NvNeighborList,
     is_nv_available,
+)
+from deepmd.pt_expt.utils.edge_schema import (
+    edge_schema_from_extended,
+)
+from deepmd.pt_expt.utils.vesin_neighbor_list import (
+    VesinNeighborList,
+    is_vesin_torch_available,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -518,11 +523,46 @@ log = logging.getLogger(__name__)
 
 SeZMModel_ = make_model(SeZMAtomicModel)
 
-# Local-atom counts above which Toolkit-Ops replaces the dense all-pairs builder.
-# Non-periodic systems switch when dense all-pairs transients become memory-heavy,
-# even though the dense path remains slightly faster at medium sizes.
-SEZM_NV_NLIST_THRESHOLD = 1024
-SEZM_NV_NONPERIODIC_NLIST_THRESHOLD = 2048
+
+def _select_neighbor_builder(nf: int, device: torch.device) -> NeighborList:
+    """Select the O(N) neighbor builder for the given batch shape and device.
+
+    A single CPU frame uses ``vesin``: its lightweight cell list has no
+    per-frame batching to amortize and avoids the ``nvalchemiops`` (Warp)
+    launch overhead. Every other case -- any CUDA input or any multi-frame
+    batch -- uses ``nvalchemiops``, whose batched kernel amortizes the launch
+    cost across frames. Both builders keep every neighbor within ``rcut``, so
+    the resulting edge set never depends on ``sel``. ``vesin`` also serves as
+    the fallback when ``nvalchemiops`` is absent.
+
+    Parameters
+    ----------
+    nf : int
+        Number of frames in the batch.
+    device : torch.device
+        Device of the input coordinates.
+
+    Returns
+    -------
+    NeighborList
+        A builder instance whose ``build`` method produces the neighbor list.
+
+    Raises
+    ------
+    RuntimeError
+        If neither ``nvalchemiops`` nor ``vesin`` is importable.
+    """
+    if device.type == "cpu" and nf == 1 and is_vesin_torch_available():
+        return VesinNeighborList()
+    if is_nv_available():
+        return NvNeighborList()
+    if is_vesin_torch_available():
+        return VesinNeighborList()
+    raise RuntimeError(
+        "SeZM neighbor-list construction requires either 'nvalchemiops' or "
+        "'vesin', but neither is importable."
+    )
+
 
 # Apply the process-global PyTorch workarounds the compile pipeline relies on
 # (autotune log suppression, DDP optimiser, and the 2.12 divisibility repair)
@@ -715,7 +755,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 f"DP_TF32_INFER must be one of 0/1/2, got {tf32_infer_env!r}"
             )
         self._tf32_infer_precision = _TF32_INFER_PRECISION_CHOICES[tf32_infer_env]
-        if self.use_compile or self._env_use_compile_infer is True:
+        if self._env_use_compile_infer is True:
             check_compile_torch_version()
 
         # === Bridging (optional short-range zone bridging) ===
@@ -898,31 +938,192 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 if cc.ndim == 2:
                     cc = cc.view(nf, nloc, 3)
 
-            # === Step 2. Build neighbor list ===
+            # === Step 2. Build geometry schema ===
             with nvtx_range("SeZM/build_neighbor_list"):
-                # extended_coord: (nf, nall, 3), extended_atype: (nf, nall)
-                # mapping: (nf, nall), nlist: (nf, nloc, nsel)
-                extended_coord, extended_atype, mapping, nlist = (
-                    self.build_neighbor_list(cc, atype, bb)
-                )
+                if self.get_active_mode() == "dens":
+                    # extended_coord: (nf, nall, 3), extended_atype: (nf, nall)
+                    # nlist: (nf, nloc, nsel), mapping: (nf, nall)
+                    extended_coord, extended_atype, nlist, mapping = (
+                        self.build_extended_neighbor_list(cc, atype, bb)
+                    )
+                else:
+                    edge_schema = self.build_neighbor_list(cc, atype, bb)
 
-            # === Step 3. Run the shared extended-input path ===
-            return self.forward_common_after_nlist(
-                extended_coord,
-                extended_atype,
-                mapping,
-                nlist,
-                atype,
-                fp,
-                ap,
-                input_prec,
-                do_atomic_virial=do_atomic_virial,
-                force_input=force_input,
-                noise_mask=noise_mask,
+            # === Step 3. Run the model compute path ===
+            if self.get_active_mode() == "dens":
+                return self.forward_common_lower_dens(
+                    extended_coord,
+                    extended_atype,
+                    mapping,
+                    nlist,
+                    atype,
+                    fp,
+                    ap,
+                    input_prec,
+                    force_input=force_input,
+                    noise_mask=noise_mask,
+                    charge_spin=charge_spin,
+                )
+            return self.forward_common_lower(
+                edge_schema.coord,
+                edge_schema.atype,
+                edge_schema.edge_index,
+                edge_schema.edge_vec,
+                edge_schema.edge_scatter_index,
+                edge_schema.edge_mask,
+                fparam=fp,
+                aparam=ap,
                 charge_spin=charge_spin,
+                input_prec=input_prec,
             )
 
-    def forward_common_after_nlist(
+    def forward_common_lower(
+        self,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        edge_index: torch.Tensor,
+        edge_vec: torch.Tensor,
+        edge_scatter_index: torch.Tensor,
+        edge_mask: torch.Tensor,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
+        extended_coord_corr: torch.Tensor | None = None,
+        charge_spin: torch.Tensor | None = None,
+        input_prec: torch.dtype | None = None,
+        use_compile: bool | None = None,
+    ) -> dict[str, torch.Tensor]:
+        """
+        Run the conservative SeZM lower interface on explicit edge vectors.
+
+        ``edge_vec`` is the only coordinate-dependent geometry entering the
+        descriptor.  ``edge_scatter_index`` defines the force/virial scatter
+        domain, which may be local atoms for Python inference or local-plus-ghost
+        slots for LAMMPS.
+        """
+        del comm_dict
+        coord, _, fp, ap, inferred_input_prec = self._input_type_cast(
+            coord,
+            fparam=fparam,
+            aparam=aparam,
+        )
+        if input_prec is None:
+            input_prec = inferred_input_prec
+        if coord.ndim == 2:
+            coord = coord.reshape(atype.shape[0], -1, 3)
+        atype = atype.to(device=coord.device, dtype=torch.long)
+        edge_index = edge_index.to(device=coord.device, dtype=torch.long)
+        edge_vec = edge_vec.to(device=coord.device, dtype=coord.dtype)
+        edge_scatter_index = edge_scatter_index.to(
+            device=coord.device, dtype=torch.long
+        )
+        edge_mask = edge_mask.to(device=coord.device, dtype=torch.bool)
+        if extended_coord_corr is not None:
+            extended_coord_corr = extended_coord_corr.to(
+                device=coord.device, dtype=coord.dtype
+            )
+            if extended_coord_corr.ndim == 2:
+                extended_coord_corr = extended_coord_corr.reshape(atype.shape[0], -1, 3)
+        nf = atype.shape[0]
+        should_compile = (
+            self.should_use_compile() if use_compile is None else use_compile
+        )
+        charge_spin = self.convert_charge_spin(
+            charge_spin,
+            nf=nf,
+            dtype=coord.dtype,
+            device=coord.device,
+        )
+        with self.tf32_precision_ctx():
+            if should_compile:
+                fp, ap = self.convert_fp_ap(
+                    fp,
+                    ap,
+                    nf=nf,
+                    nloc=atype.shape[1],
+                    dtype=coord.dtype,
+                    device=coord.device,
+                )
+                has_coord_corr = extended_coord_corr is not None
+                cache_key = (bool(self.training), has_coord_corr)
+                if cache_key not in self.compiled_core_compute_cache:
+                    self.trace_and_compile(
+                        coord,
+                        atype,
+                        edge_index,
+                        edge_vec,
+                        edge_scatter_index,
+                        edge_mask,
+                        fp,
+                        ap,
+                        charge_spin,
+                        extended_coord_corr=extended_coord_corr,
+                    )
+                compiled_core_compute = self.compiled_core_compute_cache[cache_key]
+                task_buf_vals = get_task_buffer_values(
+                    self,
+                    self._task_buf_order_cache[cache_key],
+                )
+                grad_ctx: Any = nullcontext() if self.training else torch.no_grad()
+                with nvtx_range("SeZM/core_compute"), grad_ctx:
+                    if extended_coord_corr is None:
+                        model_predict = compiled_core_compute(
+                            coord,
+                            atype,
+                            edge_index,
+                            edge_vec,
+                            edge_scatter_index,
+                            edge_mask,
+                            fp,
+                            ap,
+                            charge_spin,
+                            *task_buf_vals,
+                        )
+                    else:
+                        model_predict = compiled_core_compute(
+                            coord,
+                            atype,
+                            edge_index,
+                            edge_vec,
+                            edge_scatter_index,
+                            edge_mask,
+                            fp,
+                            ap,
+                            charge_spin,
+                            extended_coord_corr,
+                            *task_buf_vals,
+                        )
+                if (
+                    self._core_compute_pending_compile_t0 is not None
+                    and self._core_compute_pending_compile_key == cache_key
+                ):
+                    if torch.cuda.is_available():
+                        torch.cuda.synchronize()
+                    log.info(
+                        "SeZM: finished compiling (mode=%s, coord_corr=%s) in %.2fs",
+                        "train" if self.training else "eval",
+                        has_coord_corr,
+                        time.perf_counter() - self._core_compute_pending_compile_t0,
+                    )
+                    self._core_compute_pending_compile_t0 = None
+                    self._core_compute_pending_compile_key = None
+            else:
+                with nvtx_range("SeZM/core_compute"):
+                    model_predict = self.core_compute(
+                        coord,
+                        atype,
+                        edge_index,
+                        edge_vec,
+                        edge_scatter_index,
+                        edge_mask,
+                        fparam=fp,
+                        aparam=ap,
+                        charge_spin=charge_spin,
+                        extended_coord_corr=extended_coord_corr,
+                    )
+        return self._output_type_cast(model_predict, input_prec)
+
+    def forward_common_lower_dens(
         self,
         extended_coord: torch.Tensor,
         extended_atype: torch.Tensor,
@@ -933,14 +1134,12 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         ap: torch.Tensor | None,
         input_prec: torch.dtype,
         *,
-        do_atomic_virial: bool = False,
         force_input: torch.Tensor | None = None,
         noise_mask: torch.Tensor | None = None,
-        extended_coord_corr: torch.Tensor | None = None,
         charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """
-        Run SeZM from already-built extended inputs.
+        Run the denoising/direct-force path from already-built extended inputs.
 
         Parameters
         ----------
@@ -960,16 +1159,12 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             Cast atomic parameters with shape (nf, nloc, nda), or None.
         input_prec
             Original input precision used for output casting.
-        do_atomic_virial
-            Whether to compute per-atom virial.
         force_input
             Optional atom-wise force input for the ``dens`` path with shape
             (nf, nloc, 3).
         noise_mask
             Optional atom-wise corruption mask for the ``dens`` path with
             shape (nf, nloc).
-        extended_coord_corr
-            Coordinate correction for virial with shape (nf, nall, 3), or None.
         charge_spin
             Frame-level charge and spin conditions with shape `(nf, 2)`.
 
@@ -985,171 +1180,68 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             dtype=extended_coord.dtype,
             device=extended_coord.device,
         )
-        active_mode = self.get_active_mode()
-        if active_mode == "dens":
-            # === Step 1. `dens` path (no coordinate gradients needed) ===
-            extended_coord = extended_coord.detach()
-            force_input, noise_mask = self.canonicalize_dens_inputs(
-                force_input,
-                noise_mask,
-                nf=nf,
-                nloc=nloc,
-                dtype=extended_coord.dtype,
-                device=extended_coord.device,
+        # === Step 1. Denoising path (no coordinate gradients needed) ===
+        extended_coord = extended_coord.detach()
+        force_input, noise_mask = self.canonicalize_dens_inputs(
+            force_input,
+            noise_mask,
+            nf=nf,
+            nloc=nloc,
+            dtype=extended_coord.dtype,
+            device=extended_coord.device,
+        )
+
+        with self.tf32_precision_ctx():
+            if self.should_use_compile():
+                fp, ap = self.convert_fp_ap(
+                    fp,
+                    ap,
+                    nf=nf,
+                    nloc=nloc,
+                    dtype=extended_coord.dtype,
+                    device=extended_coord.device,
+                )
+                if self.compiled_dens_compute is None or not self._dens_compiled:
+                    self.compile_dens()
+                with nvtx_range("SeZM/core_compute_dens"):
+                    compute_ret = self.compiled_dens_compute(
+                        extended_coord,
+                        extended_atype,
+                        nlist,
+                        mapping,
+                        force_input=force_input,
+                        noise_mask=noise_mask,
+                        fparam=fp,
+                        aparam=ap,
+                        charge_spin=charge_spin,
+                    )
+                if self._dens_pending_compile_t0 is not None:
+                    if torch.cuda.is_available():
+                        torch.cuda.synchronize()
+                    log.info(
+                        "SeZM: finished compiling dens path in %.2fs",
+                        time.perf_counter() - self._dens_pending_compile_t0,
+                    )
+                    self._dens_pending_compile_t0 = None
+            else:
+                with nvtx_range("SeZM/core_compute_dens"):
+                    compute_ret = self.core_compute_dens(
+                        extended_coord,
+                        extended_atype,
+                        nlist,
+                        mapping,
+                        force_input=force_input,
+                        noise_mask=noise_mask,
+                        fparam=fp,
+                        aparam=ap,
+                        charge_spin=charge_spin,
+                    )
+        with nvtx_range("SeZM/post_process"):
+            model_predict = self.post_process_output_dens(
+                compute_ret,
+                atype,
+                noise_mask=noise_mask,
             )
-
-            with self.tf32_precision_ctx():
-                if self.should_use_compile():
-                    fp, ap = self.convert_fp_ap(
-                        fp,
-                        ap,
-                        nf=nf,
-                        nloc=nloc,
-                        dtype=extended_coord.dtype,
-                        device=extended_coord.device,
-                    )
-                    if self.compiled_dens_compute is None or not self._dens_compiled:
-                        self.compile_dens()
-                    with nvtx_range("SeZM/core_compute_dens"):
-                        compute_ret = self.compiled_dens_compute(
-                            extended_coord,
-                            extended_atype,
-                            nlist,
-                            mapping,
-                            force_input=force_input,
-                            noise_mask=noise_mask,
-                            fparam=fp,
-                            aparam=ap,
-                            charge_spin=charge_spin,
-                        )
-                    if self._dens_pending_compile_t0 is not None:
-                        if torch.cuda.is_available():
-                            torch.cuda.synchronize()
-                        log.info(
-                            "SeZM: finished compiling dens path in %.2fs",
-                            time.perf_counter() - self._dens_pending_compile_t0,
-                        )
-                        self._dens_pending_compile_t0 = None
-                else:
-                    with nvtx_range("SeZM/core_compute_dens"):
-                        compute_ret = self.core_compute_dens(
-                            extended_coord,
-                            extended_atype,
-                            nlist,
-                            mapping,
-                            force_input=force_input,
-                            noise_mask=noise_mask,
-                            fparam=fp,
-                            aparam=ap,
-                            charge_spin=charge_spin,
-                        )
-            with nvtx_range("SeZM/post_process"):
-                model_predict = self.post_process_output_dens(
-                    compute_ret,
-                    atype,
-                    noise_mask=noise_mask,
-                )
-        else:
-            # === Step 1. `ener` path (edges built inside core_compute) ===
-            with self.tf32_precision_ctx():
-                if self.should_use_compile():
-                    fp, ap = self.convert_fp_ap(
-                        fp,
-                        ap,
-                        nf=nf,
-                        nloc=nloc,
-                        dtype=extended_coord.dtype,
-                        device=extended_coord.device,
-                    )
-                    has_coord_corr = extended_coord_corr is not None
-                    cache_key = (bool(self.training), has_coord_corr)
-                    if cache_key not in self.compiled_core_compute_cache:
-                        self.trace_and_compile(
-                            extended_coord,
-                            extended_atype,
-                            nlist,
-                            mapping,
-                            fp,
-                            ap,
-                            charge_spin,
-                            extended_coord_corr=extended_coord_corr,
-                        )
-                    compiled_core_compute = self.compiled_core_compute_cache[cache_key]
-                    # Read current values of per-task buffers (optimizer steps
-                    # update them in-place; out-of-place replacements from
-                    # model_change_out_bias are captured because we read fresh
-                    # each call rather than caching the values at compile time).
-                    _task_buf_vals = get_task_buffer_values(
-                        self,
-                        self._task_buf_order_cache[cache_key],
-                    )
-                    # NOTE: Inference needs no autograd tape -- the force
-                    # (-dE/dx) is already materialised as forward ops in the
-                    # traced graph, so keeping the tape would only make
-                    # AOTAutograd save the full forward activation set for a
-                    # backward eval never runs (see NOTE 13).  Training keeps it
-                    # for the force-loss second derivative.
-                    grad_ctx: Any = nullcontext() if self.training else torch.no_grad()
-                    with nvtx_range("SeZM/core_compute"), grad_ctx:
-                        if extended_coord_corr is None:
-                            model_predict_lower = compiled_core_compute(
-                                extended_coord,
-                                extended_atype,
-                                nlist,
-                                mapping,
-                                fp,
-                                ap,
-                                charge_spin,
-                                *_task_buf_vals,
-                            )
-                        else:
-                            model_predict_lower = compiled_core_compute(
-                                extended_coord,
-                                extended_atype,
-                                nlist,
-                                mapping,
-                                fp,
-                                ap,
-                                charge_spin,
-                                extended_coord_corr,
-                                *_task_buf_vals,
-                            )
-                    if (
-                        self._core_compute_pending_compile_t0 is not None
-                        and self._core_compute_pending_compile_key == cache_key
-                    ):
-                        if torch.cuda.is_available():
-                            torch.cuda.synchronize()
-                        log.info(
-                            "SeZM: finished compiling "
-                            "(mode=%s, coord_corr=%s) in %.2fs",
-                            "train" if self.training else "eval",
-                            has_coord_corr,
-                            time.perf_counter() - self._core_compute_pending_compile_t0,
-                        )
-                        self._core_compute_pending_compile_t0 = None
-                        self._core_compute_pending_compile_key = None
-                else:
-                    with nvtx_range("SeZM/core_compute"):
-                        model_predict_lower = self.core_compute(
-                            extended_coord,
-                            extended_atype,
-                            nlist,
-                            mapping=mapping,
-                            fparam=fp,
-                            aparam=ap,
-                            charge_spin=charge_spin,
-                            extra_nlist_sort=self.need_sorted_nlist_for_lower(),
-                            extended_coord_corr=extended_coord_corr,
-                        )
-
-            with nvtx_range("SeZM/communicate_output"):
-                model_predict = communicate_extended_output(
-                    model_predict_lower,
-                    self.model_output_def(),
-                    mapping,
-                    do_atomic_virial=do_atomic_virial,
-                )
 
         # === Step 2. Type cast output ===
         with nvtx_range("SeZM/output_type_cast"):
@@ -1158,35 +1250,40 @@ class SeZMModel(DPModelCommon, SeZMModel_):
 
     def core_compute(
         self,
-        extended_coord: torch.Tensor,
-        extended_atype: torch.Tensor,
-        nlist: torch.Tensor,
-        mapping: torch.Tensor | None = None,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        edge_index: torch.Tensor,
+        edge_vec: torch.Tensor,
+        edge_scatter_index: torch.Tensor,
+        edge_mask: torch.Tensor,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         charge_spin: torch.Tensor | None = None,
         comm_dict: dict[str, torch.Tensor] | None = None,
-        extra_nlist_sort: bool = False,
         extended_coord_corr: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """
-        Compute SeZM lower outputs from extended inputs.
+        Compute SeZM lower outputs from the unified edge-vector schema.
 
-        Builds compact sparse edges, runs descriptor and fitting evaluation,
-        applies output masking and the optional analytical pair potential,
-        then calls ``edge_energy_deriv`` (edge-force scatter) for force /
-        virial / per-atom virial.
+        The caller owns neighbor-list construction.  Periodic images enter the
+        model only through ``edge_vec``; LAMMPS ghost atoms are the zero-shift
+        instance of the same contract.
 
         Parameters
         ----------
-        extended_coord
-            Coordinates in extended region with shape (nf, nall, 3).
-        extended_atype
-            Atom types in extended region with shape (nf, nall).
-        nlist
-            Neighbor list with shape (nf, nloc, nsel).
-        mapping
-            Extended-to-local mapping with shape (nf, nall), or ``None``.
+        coord
+            Coordinates that define the force-scatter domain with shape
+            ``(nf, nscatter, 3)``.
+        atype
+            Local atom types with shape ``(nf, nloc)``.
+        edge_index
+            Message-passing indices in flattened local-owner space.
+        edge_vec
+            Per-edge displacement vectors in Å.
+        edge_scatter_index
+            Force/virial scatter indices in flattened ``coord`` space.
+        edge_mask
+            Boolean validity mask aligned with ``edge_vec``.
         fparam
             Frame parameters with shape (nf, ndf), or ``None``.
         aparam
@@ -1195,10 +1292,9 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             Frame-level charge and spin conditions with shape `(nf, 2)`.
         comm_dict
             Communication data for parallel inference. Currently unused.
-        extra_nlist_sort
-            Whether to forcibly sort the nlist.
         extended_coord_corr
-            Coordinates correction for virial with shape (nf, nall, 3) or ``None``.
+            Coordinates correction for virial with shape ``(nf, nscatter, 3)`` or
+            ``None``.
 
         Returns
         -------
@@ -1209,32 +1305,23 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             it.
         """
         del comm_dict
-        nlist = self.format_nlist(
-            extended_coord, extended_atype, nlist, extra_nlist_sort=extra_nlist_sort
-        )
-        nf, nloc, _ = nlist.shape
-        atype = extended_atype[:, :nloc]
+        nf, nloc = atype.shape[:2]
+        nscatter = coord.shape[1]
         descriptor_model = self.atomic_model.descriptor
 
-        # === Step 1. Build compact sparse edges ===
-        edge_index, edge_vec, edge_mask, edge_index_ext = (
-            self.build_edge_list_from_nlist(
-                extended_coord=extended_coord,
-                nlist=nlist,
-                mapping=mapping,
-            )
-        )
-        # Edge displacements are the autograd leaf for the force / virial
-        # backward.  The coordinate gather that produced ``edge_vec`` stays a
-        # pure forward op, so the differentiated region is the function
-        # ``(edge_vec, theta) -> E``; this keeps the make_fx symbolic trace and
-        # second-order lowering clean (see doc/outisli/dpa4.md §12.4).
+        # === Step 1. Establish the force-autograd endpoint ===
+        # Neighbor-list construction and periodic-image resolution are explicit
+        # caller responsibilities.  Once the edge displacements are supplied,
+        # SeZM differentiates only the pure map ``(edge_vec, theta) -> E``.
+        # This keeps coordinate gathering and shift application outside the
+        # differentiated region while preserving conservative forces through the
+        # scatter indices below.
         edge_vec = edge_vec.detach().requires_grad_(True)
 
         # === Step 2. Descriptor forward ===
         with nvtx_range("SeZM/descriptor"):
             descriptor, _ = descriptor_model.forward_with_edges(
-                extended_coord=extended_coord[:, :nloc, :],
+                extended_coord=coord[:, :nloc, :],
                 extended_atype=atype,
                 edge_index=edge_index,
                 edge_vec=edge_vec,
@@ -1263,8 +1350,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             fit_ret = self.atomic_model.apply_out_stat(fit_ret, atype)
 
         # === Step 4. Apply atom mask ===
-        ext_atom_mask = self.atomic_model.make_atom_mask(extended_atype)
-        atom_mask = ext_atom_mask[:, :nloc].to(torch.int32)
+        atom_mask = self.atomic_model.make_atom_mask(atype).to(torch.int32)
         if self.atomic_model.atom_excl is not None:
             atom_mask *= self.atomic_model.atom_excl(atype)
         for key in fit_ret.keys():
@@ -1303,15 +1389,14 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         energy_redu = torch.sum(
             energy_atom.to(env.GLOBAL_PT_ENER_FLOAT_PRECISION), dim=1
         )
-        nall = extended_coord.shape[1]
         energy_derv_r, energy_derv_c, energy_derv_c_redu = edge_energy_deriv(
             energy_redu,
             edge_vec,
-            edge_index_ext[0],
-            edge_index_ext[1],
+            edge_scatter_index[0],
+            edge_scatter_index[1],
             edge_mask,
             nf,
-            nall,
+            nscatter,
             create_graph=self.training,
             extended_coord_corr=extended_coord_corr,
         )
@@ -1440,29 +1525,36 @@ class SeZMModel(DPModelCommon, SeZMModel_):
     @torch.jit.export
     def forward_lower(
         self,
-        extended_coord: Float[Tensor, "nf nall_x3"] | Float[Tensor, "nf nall 3"],
-        extended_atype: Int[Tensor, "nf nall"],
-        nlist: Int[Tensor, "nf nloc nsel"],
-        mapping: Int[Tensor, "nf nall"] | None = None,
+        coord: Float[Tensor, "nf nscatter_x3"] | Float[Tensor, "nf nscatter 3"],
+        atype: Int[Tensor, "nf nloc"],
+        edge_index: Int[Tensor, "two nedge"],
+        edge_vec: Float[Tensor, "nedge 3"],
+        edge_scatter_index: Int[Tensor, "two nedge"],
+        edge_mask: torch.Tensor,
         fparam: Float[Tensor, "nf ndf"] | None = None,
-        aparam: Float[Tensor, "nf nall nda"] | None = None,
+        aparam: Float[Tensor, "nf nloc nda"] | None = None,
         do_atomic_virial: bool = False,
         comm_dict: dict[str, torch.Tensor] | None = None,
         charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         """
-        Lower-level public forward using the DeePMD lower-interface contract.
+        Lower-level public forward using the compact-edge contract.
 
         Parameters
         ----------
-        extended_coord
-            Extended coordinates with shape (nf, nall*3) or (nf, nall, 3) in Å.
-        extended_atype
-            Extended atom types with shape (nf, nall).
-        nlist
-            Neighbor list with shape (nf, nloc, nsel).
-        mapping
-            Mapping indices with shape (nf, nall), or None.
+        coord
+            Coordinates defining the force-scatter domain with shape
+            ``(nf, nscatter*3)`` or ``(nf, nscatter, 3)`` in Å.
+        atype
+            Local atom types with shape (nf, nloc).
+        edge_index
+            Message-passing edge indices in flattened local-atom space.
+        edge_vec
+            Edge displacement vectors in Å.
+        edge_scatter_index
+            Force-scatter edge indices in flattened extended-atom space.
+        edge_mask
+            Boolean edge-validity mask aligned with `edge_index`.
         fparam
             Frame parameters with shape (nf, ndf) or None.
         aparam
@@ -1494,22 +1586,18 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             raise NotImplementedError(
                 "SeZM `forward_lower` only supports the conservative `ener` mode."
             )
-        cc_ext, _, fp, ap, input_prec = self._input_type_cast(
-            extended_coord, fparam=fparam, aparam=aparam
-        )
         model_ret = self.forward_common_lower(
-            cc_ext,
-            extended_atype,
-            nlist,
-            mapping,
-            fparam=fp,
-            aparam=ap,
-            do_atomic_virial=do_atomic_virial,
+            coord,
+            atype,
+            edge_index,
+            edge_vec,
+            edge_scatter_index,
+            edge_mask,
+            fparam=fparam,
+            aparam=aparam,
             comm_dict=comm_dict,
-            extra_nlist_sort=self.need_sorted_nlist_for_lower(),
             charge_spin=charge_spin,
         )
-        model_ret = self._output_type_cast(model_ret, input_prec)
         if self.get_fitting_net() is not None:
             model_predict: dict[str, torch.Tensor] = {}
 
@@ -1543,61 +1631,18 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             model_predict = model_ret
         return model_predict
 
-    def forward_common_lower(
-        self,
-        extended_coord: torch.Tensor,
-        extended_atype: torch.Tensor,
-        nlist: torch.Tensor,
-        mapping: torch.Tensor | None = None,
-        fparam: torch.Tensor | None = None,
-        aparam: torch.Tensor | None = None,
-        do_atomic_virial: bool = False,
-        comm_dict: dict[str, torch.Tensor] | None = None,
-        extra_nlist_sort: bool = False,
-        extended_coord_corr: torch.Tensor | None = None,
-        charge_spin: torch.Tensor | None = None,
-    ) -> dict[str, torch.Tensor]:
-        """Public lower interface with dtype casting around ``core_compute()``."""
-        cc_ext, _, fp, ap, input_prec = self._input_type_cast(
-            extended_coord, fparam=fparam, aparam=aparam
-        )
-        extended_atype = extended_atype.to(device=cc_ext.device, dtype=torch.long)
-        cc_ext = cc_ext.reshape(extended_atype.shape[0], -1, 3)
-        if extended_coord_corr is not None and extended_coord_corr.ndim == 2:
-            extended_coord_corr = extended_coord_corr.reshape(
-                extended_atype.shape[0], -1, 3
-            )
-        nf = extended_atype.shape[0]
-        charge_spin = self.convert_charge_spin(
-            charge_spin,
-            nf=nf,
-            dtype=cc_ext.dtype,
-            device=cc_ext.device,
-        )
-        model_predict = self.core_compute(
-            cc_ext,
-            extended_atype,
-            nlist,
-            mapping=mapping,
-            fparam=fp,
-            aparam=ap,
-            charge_spin=charge_spin,
-            comm_dict=comm_dict,
-            extra_nlist_sort=extra_nlist_sort,
-            extended_coord_corr=extended_coord_corr,
-        )
-        return self._output_type_cast(model_predict, input_prec)
-
     # =========================================================================
     # Compile Utilities
     # =========================================================================
 
     def trace_and_compile(
         self,
-        extended_coord: torch.Tensor,
-        extended_atype: torch.Tensor,
-        nlist: torch.Tensor,
-        mapping: torch.Tensor,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        edge_index: torch.Tensor,
+        edge_vec: torch.Tensor,
+        edge_scatter_index: torch.Tensor,
+        edge_mask: torch.Tensor,
         fp: torch.Tensor,
         ap: torch.Tensor,
         charge_spin: torch.Tensor,
@@ -1615,6 +1660,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         compiled callable is stored outside the ``nn.Module`` tree so
         FSDP/DDP cannot see or shard its duplicated parameters.
         """
+        check_compile_torch_version()
         from torch._decomp import (
             get_decompositions,
         )
@@ -1726,10 +1772,12 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         if extended_coord_corr is None:
 
             def compute_fn(
-                extended_coord: torch.Tensor,
-                extended_atype: torch.Tensor,
-                nlist: torch.Tensor,
-                mapping: torch.Tensor,
+                coord: torch.Tensor,
+                atype: torch.Tensor,
+                edge_index: torch.Tensor,
+                edge_vec: torch.Tensor,
+                edge_scatter_index: torch.Tensor,
+                edge_mask: torch.Tensor,
                 fp: torch.Tensor,
                 ap: torch.Tensor,
                 charge_spin: torch.Tensor,
@@ -1738,14 +1786,15 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 _saved = _patch_task_bufs(task_buf_vals)
                 try:
                     return self.core_compute(
-                        _prepare_coord_for_trace(extended_coord),
-                        extended_atype,
-                        nlist,
-                        mapping=mapping,
+                        _prepare_coord_for_trace(coord),
+                        atype,
+                        edge_index,
+                        edge_vec,
+                        edge_scatter_index,
+                        edge_mask,
                         fparam=fp,
                         aparam=ap,
                         charge_spin=charge_spin,
-                        extra_nlist_sort=self.need_sorted_nlist_for_lower(),
                     )
                 finally:
                     _restore_task_bufs(_saved)
@@ -1753,10 +1802,12 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         else:
 
             def compute_fn(  # type: ignore[misc]
-                extended_coord: torch.Tensor,
-                extended_atype: torch.Tensor,
-                nlist: torch.Tensor,
-                mapping: torch.Tensor,
+                coord: torch.Tensor,
+                atype: torch.Tensor,
+                edge_index: torch.Tensor,
+                edge_vec: torch.Tensor,
+                edge_scatter_index: torch.Tensor,
+                edge_mask: torch.Tensor,
                 fp: torch.Tensor,
                 ap: torch.Tensor,
                 charge_spin: torch.Tensor,
@@ -1769,14 +1820,15 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 _saved = _patch_task_bufs(task_buf_vals)
                 try:
                     return self.core_compute(
-                        _prepare_coord_for_trace(extended_coord),
-                        extended_atype,
-                        nlist,
-                        mapping=mapping,
+                        _prepare_coord_for_trace(coord),
+                        atype,
+                        edge_index,
+                        edge_vec,
+                        edge_scatter_index,
+                        edge_mask,
                         fparam=fp,
                         aparam=ap,
                         charge_spin=charge_spin,
-                        extra_nlist_sort=self.need_sorted_nlist_for_lower(),
                         extended_coord_corr=extended_coord_corr,
                     )
                 finally:
@@ -1785,7 +1837,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         # Trace dims are pairwise-distinct primes >= 5 so ``make_fx`` neither
         # unifies two axes onto one symbol (duck-shape) nor specializes an axis
         # on a literal; ``next_safe_prime`` documents why.  The forbidden set
-        # adds the model-contracted dims (``nsel``, fparam / aparam widths,
+        # adds the model-contracted dims (fparam / aparam widths,
         # charge_spin) and the promoted task-buffer dims so the chosen primes
         # never collide with them.
         _forbidden: set[int] = {1, 2, 3, 9}
@@ -1793,54 +1845,45 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             for _d in _tbv.shape:
                 if _d > 1:
                     _forbidden.add(int(_d))
-        # Model-contracted dims kept at their real values (changing them
-        # would break the model's own assertions about ``sel``, fparam /
-        # aparam widths, charge_spin dim).  Add to forbidden so primes
-        # picked for free dims do not collide.
-        _nsel_real = int(nlist.shape[2])
+        # Model-contracted dims kept at their real values.  Add them to the
+        # forbidden set so free symbolic axes do not collide.
         _dim_fp = int(fp.shape[1])
         _dim_ap = int(ap.shape[2])
         _dim_cs = int(charge_spin.shape[1])
-        for _d in (_nsel_real, _dim_fp, _dim_ap, _dim_cs):
+        for _d in (_dim_fp, _dim_ap, _dim_cs):
             if _d > 1:
                 _forbidden.add(_d)
-        # Pick primes in physical order ``nf < nloc < nall``.  The order
-        # ``trace_nloc < trace_nall`` matters: the model slices
-        # ``extended_atype[:, :nloc]`` to get local atoms; if
-        # ``trace_nloc > trace_nall`` the slice silently truncates at
-        # trace time, breaking the captured symbolic shape relation
-        # ``atype.shape[1] == nloc``.
+        # Pick distinct primes for free axes. ``nscatter`` may be larger than
+        # ``nloc`` for LAMMPS ghost domains, so keep it separately symbolic.
         trace_nf = next_safe_prime(5, _forbidden)
         _forbidden.add(trace_nf)
         trace_nloc = next_safe_prime(trace_nf + 1, _forbidden)
         _forbidden.add(trace_nloc)
-        trace_nall = next_safe_prime(trace_nloc + 1, _forbidden)
+        trace_nscatter = next_safe_prime(trace_nloc + 1, _forbidden)
+        _forbidden.add(trace_nscatter)
+        trace_nedge = next_safe_prime(trace_nscatter + 1, _forbidden)
 
         # Build trace inputs by padding/trimming real-data tensors into the
         # chosen prime shapes; ``trace_pad_dim`` documents how index-bearing
         # tensors keep valid values.
-        coord_for_trace = trace_pad_dim(extended_coord[:1], 0, trace_nf)
-        coord_for_trace = trace_pad_dim(coord_for_trace, 1, trace_nall)
-        atype_for_trace = trace_pad_dim(extended_atype[:1], 0, trace_nf)
-        atype_for_trace = trace_pad_dim(atype_for_trace, 1, trace_nall)
-        nlist_for_trace = trace_pad_dim(nlist[:1], 0, trace_nf)
-        nlist_for_trace = trace_pad_dim(nlist_for_trace, 1, trace_nloc)
-        # Real nlist values are in ``[-1, real_nall)`` (``-1`` marks
-        # padded slots, non-negative entries index into extended_coord).
-        # After trimming ``nall`` down to ``trace_nall`` some of those
-        # values can exceed ``trace_nall``, which would produce
-        # out-of-range gather indices in ``coord_flat.index_select(0,
-        # src_ext)`` during the trace pass.  Clamp the upper bound to
-        # ``trace_nall - 1`` (the ``-1`` padding stays untouched since
-        # clamp only caps the high side).
-        nlist_for_trace = torch.clamp(nlist_for_trace, max=trace_nall - 1)
-        mapping_for_trace = trace_pad_dim(mapping[:1], 0, trace_nf)
-        mapping_for_trace = trace_pad_dim(mapping_for_trace, 1, trace_nall)
-        # Real mapping values are in ``[0, real_nloc)``.  If
-        # ``trace_nloc < real_nloc`` they can exceed ``trace_nloc`` and
-        # silently propagate into ``src_local`` (used as a local-atom
-        # index downstream).  Clamp to ``trace_nloc - 1``.
-        mapping_for_trace = torch.clamp(mapping_for_trace, min=0, max=trace_nloc - 1)
+        coord_for_trace = trace_pad_dim(coord[:1], 0, trace_nf)
+        coord_for_trace = trace_pad_dim(coord_for_trace, 1, trace_nscatter)
+        atype_for_trace = trace_pad_dim(atype[:1], 0, trace_nf)
+        atype_for_trace = trace_pad_dim(atype_for_trace, 1, trace_nloc)
+        edge_index_for_trace = trace_pad_dim(edge_index, 1, trace_nedge)
+        edge_index_for_trace = torch.clamp(
+            edge_index_for_trace,
+            min=0,
+            max=trace_nf * trace_nloc - 1,
+        )
+        edge_scatter_for_trace = trace_pad_dim(edge_scatter_index, 1, trace_nedge)
+        edge_scatter_for_trace = torch.clamp(
+            edge_scatter_for_trace,
+            min=0,
+            max=trace_nf * trace_nscatter - 1,
+        )
+        edge_vec_for_trace = trace_pad_dim(edge_vec, 0, trace_nedge)
+        edge_mask_for_trace = trace_pad_dim(edge_mask, 0, trace_nedge)
         fp_for_trace = trace_pad_dim(fp[:1], 0, trace_nf)
         ap_for_trace = trace_pad_dim(ap[:1], 0, trace_nf)
         ap_for_trace = trace_pad_dim(ap_for_trace, 1, trace_nloc)
@@ -1849,15 +1892,17 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         trace_args = [
             coord_for_trace,
             atype_for_trace,
-            nlist_for_trace,
-            mapping_for_trace,
+            edge_index_for_trace,
+            edge_vec_for_trace,
+            edge_scatter_for_trace,
+            edge_mask_for_trace,
             fp_for_trace,
             ap_for_trace,
             charge_spin_for_trace,
         ]
         if extended_coord_corr is not None:
             corr_for_trace = trace_pad_dim(extended_coord_corr[:1], 0, trace_nf)
-            corr_for_trace = trace_pad_dim(corr_for_trace, 1, trace_nall)
+            corr_for_trace = trace_pad_dim(corr_for_trace, 1, trace_nscatter)
             trace_args.append(corr_for_trace)
         # Append task-buffer values last so they map to the *task_buf_vals
         # varargs in compute_fn.  Their shapes are static (they don't vary
@@ -1982,11 +2027,10 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             def _inductor_inference_compiler(
                 fx_gm: torch.fx.GraphModule, fx_inputs: list[Any]
             ) -> Any:
-                # max_tiles=1 keeps pointwise grids 1D so the data-dependent
-                # edge axis stays on Triton's x grid (limit 2**31); the default
-                # tiling places it on the y/z grid (limit 65535), which
-                # overflows for large systems.
-                with _ind_cfg.patch({**compile_options, "triton.max_tiles": 1}):
+                # ``compile_options`` already includes ``triton.max_tiles=1``
+                # from ``build_inductor_compile_options``, so the 1D launch-grid
+                # constraint applies to both the training and evaluation graphs.
+                with _ind_cfg.patch(compile_options):
                     return compile_fx_inner(fx_gm, fx_inputs)
 
             # select_decomp_table keeps the decomposition set aligned with
@@ -1995,7 +2039,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             # device: AOTAutograd's PhiloxStateTracker allocates an RNG-state
             # tensor without an explicit device, which otherwise lands on a
             # stray default device and raises "invalid device ordinal".
-            with torch.no_grad(), torch.device(extended_coord.device):
+            with torch.no_grad(), torch.device(coord.device):
                 _compiled_flat = aot_module_simplified(
                     traced,
                     example_inputs,
@@ -2046,6 +2090,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
 
     def compile_dens(self) -> None:
         """Compile the direct-force `dens` path."""
+        check_compile_torch_version()
         from torch._inductor import config as inductor_config
 
         log.info("SeZM: start compiling dens path")
@@ -2091,6 +2136,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         *sample_inputs: torch.Tensor | None,
     ) -> torch.nn.Module:
         """Trace a lower-interface closure into an exportable FX graph."""
+        check_compile_torch_version()
         from torch._decomp import (
             get_decompositions,
         )
@@ -2106,15 +2152,15 @@ class SeZMModel(DPModelCommon, SeZMModel_):
 
     def forward_common_lower_exportable(
         self,
-        extended_coord: torch.Tensor,
-        extended_atype: torch.Tensor,
-        nlist: torch.Tensor,
-        mapping: torch.Tensor | None = None,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        edge_index: torch.Tensor,
+        edge_vec: torch.Tensor,
+        edge_scatter_index: torch.Tensor,
+        edge_mask: torch.Tensor,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         charge_spin: torch.Tensor | None = None,
-        *,
-        do_atomic_virial: bool = False,
     ) -> torch.nn.Module:
         """Trace ``forward_common_lower`` into an exportable FX ``GraphModule``.
 
@@ -2134,13 +2180,14 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             )
 
         model = self
-        extra_sort = self.need_sorted_nlist_for_lower()
 
         def lower_fn(
-            ext_coord: torch.Tensor,
-            ext_atype: torch.Tensor,
-            nlist_: torch.Tensor,
-            mapping_: torch.Tensor | None,
+            coord_: torch.Tensor,
+            atype_: torch.Tensor,
+            edge_index_: torch.Tensor,
+            edge_vec_: torch.Tensor,
+            edge_scatter_index_: torch.Tensor,
+            edge_mask_: torch.Tensor,
             fparam_: torch.Tensor | None,
             aparam_: torch.Tensor | None,
             charge_spin_: torch.Tensor | None,
@@ -2150,33 +2197,42 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             # endpoint is the per-edge ``edge_vec`` leaf created inside
             # ``core_compute`` (edge-force scatter), so the coordinates carry
             # no grad endpoint here.
-            ext_coord = ext_coord.detach()
+            coord_ = coord_.detach()
+            edge_vec_ = edge_vec_.detach()
             return model.forward_common_lower(
-                ext_coord,
-                ext_atype,
-                nlist_,
-                mapping_,
+                coord_,
+                atype_,
+                edge_index_,
+                edge_vec_,
+                edge_scatter_index_,
+                edge_mask_,
                 fparam=fparam_,
                 aparam=aparam_,
-                do_atomic_virial=do_atomic_virial,
-                extra_nlist_sort=extra_sort,
                 charge_spin=charge_spin_,
+                # Export tracing must capture the eager lower graph itself.  The
+                # runtime compile cache is a deployment optimisation around that
+                # graph and must not be entered while make_fx is tracing it.
+                use_compile=False,
             )
 
         def fn(
-            ext_coord: torch.Tensor,
-            ext_atype: torch.Tensor,
-            nlist_: torch.Tensor,
-            mapping_: torch.Tensor | None,
+            coord_: torch.Tensor,
+            atype_: torch.Tensor,
+            edge_index_: torch.Tensor,
+            edge_vec_: torch.Tensor,
+            edge_scatter_index_: torch.Tensor,
+            edge_mask_: torch.Tensor,
             fparam_: torch.Tensor | None,
             aparam_: torch.Tensor | None,
             charge_spin_: torch.Tensor | None,
         ) -> dict[str, torch.Tensor]:
             return lower_fn(
-                ext_coord,
-                ext_atype,
-                nlist_,
-                mapping_,
+                coord_,
+                atype_,
+                edge_index_,
+                edge_vec_,
+                edge_scatter_index_,
+                edge_mask_,
                 fparam_,
                 aparam_,
                 charge_spin_,
@@ -2185,18 +2241,20 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         if self.get_dim_chg_spin() > 0:
             charge_spin = self.convert_charge_spin(
                 charge_spin,
-                nf=extended_atype.shape[0],
-                dtype=extended_coord.dtype,
-                device=extended_coord.device,
+                nf=atype.shape[0],
+                dtype=coord.dtype,
+                device=coord.device,
             )
         # Always include the charge_spin slot (possibly None) so the traced
-        # module's forward signature matches the 7-tuple the freeze pipeline
+        # module's forward signature matches the freeze pipeline
         # passes at runtime, regardless of whether the model is conditioned.
         trace_inputs = (
-            extended_coord,
-            extended_atype,
-            nlist,
-            mapping,
+            coord,
+            atype,
+            edge_index,
+            edge_vec,
+            edge_scatter_index,
+            edge_mask,
             fparam,
             aparam,
             charge_spin,
@@ -2227,64 +2285,43 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         coord: Float[Tensor, "nf nloc 3"] | Float[Tensor, "nf nloc_x3"],
         atype: Int[Tensor, "nf nloc"],
         box: Float[Tensor, "nf 9"] | None,
-    ) -> tuple[
-        Float[Tensor, "nf nall 3"],
-        Int[Tensor, "nf nall"],
-        Int[Tensor, "nf nall"],
-        Int[Tensor, "nf nloc nsel"],
-    ]:
-        """
-        Build extended inputs and the neighbor list for the ``forward`` entry.
-
-        Used when the model constructs its own neighbor list from ``coord`` /
-        ``box``, as opposed to ``forward_lower`` which receives an externally
-        built nlist (e.g. from LAMMPS or an inference ``NeighborList`` strategy).
-        Large CUDA systems use the Toolkit-Ops neighbor list
-        (:class:`NvNeighborList`); all other cases use the dense all-pairs
-        builder. The non-periodic Toolkit-Ops path uses a larger threshold
-        because the dense builder is still faster at small sizes.
-
-        Parameters
-        ----------
-        coord
-            Coordinates with shape (nf, nloc, 3) in Å.
-        atype
-            Atom types with shape (nf, nloc).
-        box
-            Box tensor with shape (nf, 9) in Å, or None.
-
-        Returns
-        -------
-        tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]
-            Extended coordinates, extended atom types, mapping, and neighbor list.
-        """
-        nloc = atype.shape[1]
-        nv_threshold = (
-            SEZM_NV_NLIST_THRESHOLD
-            if box is not None
-            else SEZM_NV_NONPERIODIC_NLIST_THRESHOLD
-        )
-        if coord.is_cuda and nloc >= nv_threshold and is_nv_available():
-            # Large systems: the device-resident Toolkit-Ops neighbor list avoids
-            # the dense all-pairs ghost expansion. It already keeps
-            # the nearest sum(sel) neighbors (fixed width, like the standard
-            # builder); only its (nlist, mapping) order is swapped to this
-            # method's (mapping, nlist) contract.
-            extended_coord, extended_atype, nlist, mapping = NvNeighborList().build(
-                coord.view(atype.shape[0], nloc, 3),
-                atype,
-                box,
-                self.get_rcut(),
-                self.get_sel(),
-            )
-            return extended_coord, extended_atype, mapping, nlist
-        return extend_input_and_build_neighbor_list(
-            coord,
+    ) -> EdgeNeighborList:
+        """Build the unified edge-vector schema for the ``forward`` entry."""
+        nf, nloc = atype.shape[:2]
+        return _select_neighbor_builder(nf, coord.device).build(
+            coord.view(nf, nloc, 3),
             atype,
+            box,
             self.get_rcut(),
             self.get_sel(),
-            mixed_types=True,
-            box=box,
+            return_mode="edges",
+        )
+
+    def build_extended_neighbor_list(
+        self,
+        coord: Float[Tensor, "nf nloc 3"] | Float[Tensor, "nf nloc_x3"],
+        atype: Int[Tensor, "nf nloc"],
+        box: Float[Tensor, "nf 9"] | None,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Build the historical extended-coordinate representation.
+
+        This helper is retained for modes whose physical preprocessing still
+        requires explicit extended atoms, such as the denoising path and the spin
+        virtual-atom transform.  The conservative SeZM energy path converts the
+        result to :class:`EdgeNeighborList` before entering ``core_compute``.
+
+        Returns the :class:`~deepmd.dpmodel.utils.neighbor_list.NeighborList`
+        contract order ``(extended_coord, extended_atype, nlist, mapping)``.
+        """
+        nf, nloc = atype.shape[:2]
+        return _select_neighbor_builder(nf, coord.device).build(
+            coord.view(nf, nloc, 3),
+            atype,
+            box,
+            self.get_rcut(),
+            self.get_sel(),
+            return_mode="extended",
         )
 
     def build_edge_list_from_nlist(
@@ -2295,15 +2332,11 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         mapping: torch.Tensor | None,
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
         """
-        Build a compact edge list from DeePMD padded neighbor list.
+        Build a compact edge list from a DeePMD padded neighbor list.
 
-        Edge vectors are gathered from ``extended_coord`` with ghosts'
-        real (periodic-image) coordinates, so ``edge_vec`` is the true
-        minimum-image displacement and the edge-force-scatter virial is
-        PBC-correct without any extended-coordinate trick.  Two masked dummy
-        edges are always appended to avoid data-dependent empty-edge branches
-        that ``make_fx`` cannot trace and singular edge-axis guards in
-        Inductor's batched matmul lowering.
+        This adapter is retained for the denoising path and legacy tests.  The
+        conservative energy path builds :class:`EdgeNeighborList` directly and
+        enters ``forward_common_lower`` with explicit edge vectors.
 
         Two index spaces are returned.  ``edge_index`` uses *local* node
         indices ``[0, nf * nloc)`` (neighbours mapped to their local image)
@@ -2331,127 +2364,28 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             Edge vectors with shape (E+2, 3).
         edge_mask
             Boolean mask with shape (E+2,).  The two trailing elements are ``False``.
-        edge_index_ext
-            Extended (src, dst) indices with shape (2, E+2), values in
-            ``[0, nf * nall)``, aligned 1:1 with ``edge_index`` / ``edge_vec``.
+        edge_scatter_index
+            Scatter-domain (src, dst) indices with shape (2, E+2), aligned
+            1:1 with ``edge_index`` and ``edge_vec``.
         """
-        nf, nloc, nsel = nlist.shape
-        device = extended_coord.device
-        nall = extended_coord.shape[1]
-
-        # === Step 1. Build per-edge geometry via gather ===
-        # Edge vectors come from ``torch.gather`` rather than advanced indexing
-        # ``coord_flat[...]``: gather lowers to an explicit, symbolic-shape
-        # -friendly op under make_fx, while advanced indexing under symbolic
-        # shapes can silently truncate gradients.  ``core_compute`` detaches the
-        # result into the ``edge_vec`` autograd leaf, so this gather is a pure
-        # forward op.  ``torch.where(valid_flat, neighbor_flat, 0)`` sanitises
-        # padded ``-1`` entries before indexing so we never hit an
-        # out-of-range gather; the corresponding edges are filtered out below.
-        neighbor_flat = nlist.reshape(-1)
-        # ``dst_actual = arange(N*K) // K`` produces the same value
-        # sequence as ``arange(N).repeat_interleave(K)`` but its length
-        # is derived from ``neighbor_flat.shape[0]`` -- a single symbolic
-        # source shared with the ``torch.where`` below.  The previous
-        # ``arange(nf*nloc).repeat_interleave(nsel)`` chain could
-        # decouple from ``nlist.numel()`` in the FX graph if any
-        # upstream code path ever specialized ``nloc`` at trace time;
-        # deriving from ``neighbor_flat.shape[0]`` makes the equality
-        # structural and survives any future change in trace-shape
-        # selection in ``trace_and_compile``.
-        dst_actual = (
-            torch.arange(neighbor_flat.shape[0], device=device, dtype=torch.long)
-            // nsel
+        nloc = nlist.shape[1]
+        atype = torch.empty(
+            (nlist.shape[0], nloc),
+            dtype=torch.long,
+            device=extended_coord.device,
         )
-        f_idx = dst_actual // nloc
-        dst_local = dst_actual % nloc
-        valid_flat = neighbor_flat >= 0
-        neighbor_safe = torch.where(
-            valid_flat, neighbor_flat, torch.zeros_like(neighbor_flat)
-        )
-        # Gather coordinates within each frame instead of flattening
-        # ``(nf, nall)`` into one index space.  The flattened form is
-        # mathematically correct, but Inductor may lower
-        # ``coord_flat.index_select(0, f_idx * nall + local_idx)`` to a kernel
-        # that asserts the composite index against ``nall`` rather than
-        # ``nf * nall`` when ``nf > 1``.  Frame-local gather keeps the same
-        # differentiable path to coordinates while making every indirect index
-        # visibly bounded by the atom axis.
-        neighbor_safe_2d = neighbor_safe.to(dtype=torch.long).view(nf, nloc * nsel)
-        nei_coord = torch.gather(
+        edge_schema = edge_schema_from_extended(
             extended_coord,
-            1,
-            neighbor_safe_2d.unsqueeze(-1).expand(-1, -1, 3),
-        ).reshape(-1, 3)
-        dst_coord = torch.gather(
-            extended_coord[:, :nloc, :],
-            1,
-            dst_local.view(nf, -1).unsqueeze(-1).expand(-1, -1, 3),
-        ).reshape(-1, 3)
-        diff = nei_coord - dst_coord
-        edge_len2 = torch.sum(diff * diff, dim=-1)
-
-        # === Step 2. Build compact src/dst (local indices) ===
-        if mapping is None:
-            src_local = neighbor_safe.to(dtype=torch.long)
-        else:
-            src_local = torch.gather(mapping, 1, neighbor_safe_2d).reshape(-1)
-        src_actual = f_idx * nloc + src_local.to(dtype=torch.long)
-
-        # Extended-index counterparts for the edge-force scatter.  The
-        # neighbour keeps its ghost identity (``neighbor_safe`` indexes
-        # ``[0, nall)``) while the centre, always a local atom, occupies its
-        # own slot ``dst_local`` in the extended layout.  Scattering the edge
-        # gradient onto these indices yields per-ghost extended force /
-        # virial, the exact contract ``communicate_extended_output`` reduces.
-        src_ext = f_idx * nall + neighbor_safe.to(dtype=torch.long)
-        dst_ext = f_idx * nall + dst_local
-
-        # Filter: valid nlist entry AND src in [0, nloc) AND non-zero distance.
-        src_local_valid = (src_local >= 0) & (src_local < nloc)
-        len_positive = edge_len2 > 1e-10
-        edge_mask_actual = valid_flat & src_local_valid & len_positive
-
-        valid_idx = torch.nonzero(edge_mask_actual, as_tuple=False).flatten()
-
-        # === Step 3. Compact edges + append masked dummies ===
-        # NOTE: Always append two masked dummy edges.
-        # ``torch.nonzero(edge_mask_actual)`` produces a data-dependent
-        # number of valid edges, which can be zero on sparse or
-        # single-type systems (e.g. isolated-atom reference frames).
-        # make_fx cannot trace an ``if n_edges == 0: skip`` branch
-        # symbolically; without the dummies it would fall back to
-        # concrete shape specialisation and break
-        # ``torch.compile(dynamic=True)`` for later batches.  Two dummy
-        # slots also give Inductor's batched matmul lowering a static
-        # ``E >= 2`` edge-axis bound, avoiding data-dependent layout
-        # guards on ``E == 1`` that would otherwise trigger an extra
-        # recompile when the first batch contains only a single edge.
-        # Each dummy copies entry 0 (any in-range index is fine) and
-        # carries ``edge_mask=False`` so every downstream sum, gather
-        # or scatter ignores it.
-        dummy_count = 2
-        padded_idx = torch.cat(
-            [valid_idx, torch.zeros(dummy_count, dtype=torch.long, device=device)]
+            atype,
+            nlist,
+            mapping,
         )
-        src_sel = src_actual.index_select(0, padded_idx)
-        dst_sel = dst_actual.index_select(0, padded_idx)
-        edge_vec_sel = diff.index_select(0, padded_idx)
-        edge_index = torch.stack([src_sel, dst_sel], dim=0)
-        edge_index_ext = torch.stack(
-            [
-                src_ext.index_select(0, padded_idx),
-                dst_ext.index_select(0, padded_idx),
-            ],
-            dim=0,
+        return (
+            edge_schema.edge_index,
+            edge_schema.edge_vec,
+            edge_schema.edge_mask,
+            edge_schema.edge_scatter_index,
         )
-        edge_mask = torch.cat(
-            [
-                torch.ones(valid_idx.shape[0], dtype=torch.bool, device=device),
-                torch.zeros(dummy_count, dtype=torch.bool, device=device),
-            ]
-        )
-        return edge_index, edge_vec_sel, edge_mask, edge_index_ext
 
     # =========================================================================
     # Input Canonicalization

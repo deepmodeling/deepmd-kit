@@ -29,6 +29,7 @@ from unittest import (
 
 import numpy as np
 import torch
+from packaging.version import parse as parse_version
 
 from deepmd.pt.entrypoints.freeze_pt2 import (
     _build_dynamic_shapes,
@@ -61,6 +62,15 @@ _REQUIRED_OUTPUT_KEYS = {
     "energy_derv_c",
     "energy_derv_c_redu",
 }
+_TORCH_VERSION = parse_version(torch.__version__)
+_SKIP_OFF_COMPILE_TORCH = (_TORCH_VERSION.major, _TORCH_VERSION.minor) not in {
+    (2, 11),
+    (2, 12),
+}
+_SKIP_OFF_COMPILE_TORCH_REASON = (
+    "SeZM's torch.compile/export path is only supported on torch 2.11.x and "
+    f"2.12.x; current torch is {torch.__version__}."
+)
 
 
 def _tiny_sezm_model_params() -> dict:
@@ -195,21 +205,32 @@ def _eager_forward(
     sample_inputs: tuple,
 ) -> dict[str, torch.Tensor]:
     """Mirror the trace closure: fresh leaf coord + ``requires_grad=True``."""
-    ext_coord, ext_atype, nlist, mapping, fparam, aparam, charge_spin = sample_inputs
+    (
+        ext_coord,
+        atype,
+        edge_index,
+        edge_vec,
+        edge_scatter_index,
+        edge_mask,
+        fparam,
+        aparam,
+        charge_spin,
+    ) = sample_inputs
     eager_coord = ext_coord.detach().clone().requires_grad_(True)
     return model.forward_common_lower(
         eager_coord,
-        ext_atype,
-        nlist,
-        mapping=mapping,
+        atype,
+        edge_index,
+        edge_vec,
+        edge_scatter_index,
+        edge_mask,
         fparam=fparam,
         aparam=aparam,
         charge_spin=charge_spin,
-        do_atomic_virial=True,
-        extra_nlist_sort=model.need_sorted_nlist_for_lower(),
     )
 
 
+@unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
 class TestSeZMExportPipeline(_ClearDefaultDeviceTestCase):
     """Bitwise trace / export / ``.pte`` round-trip parity (``rtol=1e-10``).
 
@@ -262,7 +283,6 @@ class TestSeZMExportPipeline(_ClearDefaultDeviceTestCase):
     ]:
         traced = model.forward_common_lower_exportable(
             *sample_inputs,
-            do_atomic_virial=True,
         )
         exported = torch.export.export(
             traced,
@@ -456,6 +476,7 @@ class TestSeZMExportArchive(_FrozenPt2Fixture):
             "ntypes",
             "rcut",
             "sel",
+            "lower_input_kind",
             "dim_fparam",
             "dim_aparam",
             "dim_chg_spin",
@@ -473,6 +494,7 @@ class TestSeZMExportArchive(_FrozenPt2Fixture):
         self.assertEqual(metadata["ntypes"], len(self.params["type_map"]))
         self.assertEqual(metadata["rcut"], self.params["descriptor"]["rcut"])
         self.assertEqual(list(metadata["sel"]), list(self.params["descriptor"]["sel"]))
+        self.assertEqual(metadata["lower_input_kind"], "edge_vec")
         self.assertTrue(metadata["mixed_types"])
         self.assertFalse(metadata["is_spin"])
         self.assertEqual(metadata["dim_fparam"], 0)
@@ -710,7 +732,7 @@ class TestSeZMFreezeGuards(_ClearDefaultDeviceTestCase):
         metadata = _collect_metadata(model, ["energy"])
         dynamic_shapes = _build_dynamic_shapes(sample_inputs)
 
-        self.assertEqual(len(sample_inputs), 7)
+        self.assertEqual(len(sample_inputs), 9)
         self.assertEqual(sample_inputs[-1].shape, (5, 2))
         self.assertEqual(len(dynamic_shapes), len(sample_inputs))
         self.assertEqual(metadata["dim_chg_spin"], 2)
@@ -756,6 +778,7 @@ class TestSeZMFreezeGuards(_ClearDefaultDeviceTestCase):
             with self.assertRaises(ValueError):
                 freeze_sezm_to_pt2(str(ckpt_path), str(out))
 
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_freeze_accepts_multi_task_dpa4_head(self) -> None:
         """Multitask DPA4 checkpoints should export the selected branch."""
 
@@ -793,6 +816,7 @@ class TestSeZMFreezeGuards(_ClearDefaultDeviceTestCase):
 
         self.assertEqual(model_def["type"], "dpa4")
 
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_freeze_accepts_spin_checkpoint_metadata(self) -> None:
         """SeZM spin checkpoints should export a spin-compatible pt2 contract."""
 
@@ -818,6 +842,7 @@ class TestSeZMFreezeGuards(_ClearDefaultDeviceTestCase):
                 )
 
         self.assertTrue(metadata["is_spin"])
+        self.assertEqual(metadata["lower_input_kind"], "nlist")
         self.assertEqual(metadata["type_map"], params["type_map"])
         self.assertEqual(metadata["ntypes"], len(params["type_map"]))
         self.assertEqual(metadata["dim_chg_spin"], 0)

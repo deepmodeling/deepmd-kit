@@ -7,7 +7,6 @@
       "H"
     ],
     "descriptor": {
-      "sel": 120,
       "rcut": 6.0,
       "channels": 32,
       "n_radial": 16,
@@ -23,6 +22,7 @@
       "n_atten_head": 1,
       "ffn_neurons": 0,
       "ffn_so3_grid": true,
+      "so3_readout": "mlp",
       "grid_mlp": [
         false,
         false,
