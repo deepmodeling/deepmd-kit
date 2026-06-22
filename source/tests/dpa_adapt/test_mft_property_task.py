@@ -358,7 +358,8 @@ def test_ener_default_when_unspecified(monkeypatch):
             }
         },
     )
-    t = MFTFineTuner(pretrained="/does/not/exist.pt", aux_branch="Foo",
-                     downstream_task_type="ener")
+    t = MFTFineTuner(
+        pretrained="/does/not/exist.pt", aux_branch="Foo", downstream_task_type="ener"
+    )
     assert t.downstream_task_type == "ener"
     assert t.property_name is None

@@ -260,7 +260,9 @@ def _read_xyz_coords(path: str | Path) -> tuple[list[str], np.ndarray]:
 def _read_rdkit_coords(path: str | Path) -> tuple[list[str], np.ndarray]:
     structure_path = Path(path)
     try:
-        from rdkit import Chem
+        from rdkit import (
+            Chem,
+        )
     except ImportError as exc:
         raise ImportError(
             "RDKit is required to read .sdf and .pdb files from mol_dir."

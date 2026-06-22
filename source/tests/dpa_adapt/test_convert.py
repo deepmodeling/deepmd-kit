@@ -405,8 +405,7 @@ class TestAutoConvertFormula:
         assert captured["poscar"] == str(poscar)
 
     def test_formula_fmt_base_element_none_by_default(self, tmp_path, monkeypatch):
-        """convert defaults base_element=None → formula_to_npy infers it."""
-
+        """Convert defaults base_element=None → formula_to_npy infers it."""
         csv = tmp_path / "comps.csv"
         csv.write_text("Ni0.5Fe0.5O2,1.0\n")
         poscar = tmp_path / "POSCAR"
@@ -453,9 +452,7 @@ class TestAutoConvertFormula:
             _fake_formula_to_npy,
         )
 
-        convert(
-            str(csv), str(out), fmt="formula", poscar=str(poscar), verbose=True
-        )
+        convert(str(csv), str(out), fmt="formula", poscar=str(poscar), verbose=True)
 
         captured = capsys.readouterr()
         assert "2 systems" in captured.out

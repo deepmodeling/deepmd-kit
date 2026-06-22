@@ -287,8 +287,10 @@ def formula_to_npy(
                 break
         fh.seek(0)
         delimiter = _sniff_table_delimiter(first_line)
-        if delimiter is not None and _is_int_like(formula_col) and _is_int_like(
-            property_col
+        if (
+            delimiter is not None
+            and _is_int_like(formula_col)
+            and _is_int_like(property_col)
         ):
             formula_idx = _resolve_col_index(formula_col)
             property_idx = _resolve_col_index(property_col)
@@ -482,8 +484,7 @@ def _resolve_col_index(spec: int | str) -> int:
         idx = int(spec)
     except (TypeError, ValueError):
         raise ValueError(
-            "Headerless formula files require integer column "
-            f"indices, got {spec!r}."
+            f"Headerless formula files require integer column indices, got {spec!r}."
         ) from None
     if idx < 0:
         raise ValueError(f"Column index must be non-negative, got {idx}.")
@@ -496,4 +497,6 @@ def _parse_property_value(prop_str: str, line_no: int | None = None) -> float:
         return float(prop_str)
     except ValueError:
         location = f" on line {line_no}" if line_no is not None else ""
-        raise ValueError(f"Could not parse property value {prop_str!r}{location}") from None
+        raise ValueError(
+            f"Could not parse property value {prop_str!r}{location}"
+        ) from None

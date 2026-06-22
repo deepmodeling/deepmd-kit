@@ -22,7 +22,6 @@ from __future__ import (
 
 import csv
 import shutil
-import sys
 import tarfile
 import urllib.request
 from pathlib import (
@@ -83,7 +82,9 @@ def _download_and_extract(force: bool = False) -> None:
             name = Path(member.name).name
             if name in ("gdb9.sdf", "gdb9.sdf.csv"):
                 if not (RAW_DIR / name).exists() or force:
-                    print(f"  Extracting {name} ({member.size / 1024 / 1024:.1f} MB) ...")
+                    print(
+                        f"  Extracting {name} ({member.size / 1024 / 1024:.1f} MB) ..."
+                    )
                     tar.extract(member, path=str(RAW_DIR))
     print("Extraction complete.")
 

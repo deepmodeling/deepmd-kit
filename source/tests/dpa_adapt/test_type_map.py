@@ -13,8 +13,12 @@ _mock_torch = MagicMock()
 _mock_torch.Tensor = type("Tensor", (), {})
 sys.modules.setdefault("torch", _mock_torch)
 
-from dpa_adapt.data.errors import DPADataError
-from dpa_adapt.data.loader import load_data
+from dpa_adapt.data.errors import (
+    DPADataError,
+)
+from dpa_adapt.data.loader import (
+    load_data,
+)
 from dpa_adapt.finetuner import (
     DPAFineTuner,
     _read_data_type_map,

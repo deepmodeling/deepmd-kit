@@ -651,7 +651,8 @@ class DPAFineTuner:
         init_branch="SPICE2",
         learning_rate=1e-3,
         stop_lr=1e-5,
-        decay_steps: int | None = None,  # None → auto: 1000 for training, MFT auto-detect
+        decay_steps: int
+        | None = None,  # None → auto: 1000 for training, MFT auto-detect
         warmup_steps: int = 0,
         max_steps=100_000,
         batch_size="auto:512",
@@ -1061,9 +1062,7 @@ class DPAFineTuner:
             ``strategy='mft'``; must be absent otherwise.
         """
         if self.strategy == "frozen_sklearn":
-            return self._fit_sklearn(
-                train_data, type_map, target_key, labels, fmt
-            )
+            return self._fit_sklearn(train_data, type_map, target_key, labels, fmt)
 
         if self.strategy == "mft":
             if aux_data is None:
@@ -1279,9 +1278,7 @@ class DPAFineTuner:
             err = predictions - labels
             ss_res = np.sum(err**2)
             ss_tot = np.sum((labels - labels.mean()) ** 2)
-            result["r2"] = (
-                float(1.0 - ss_res / ss_tot) if ss_tot > 0 else float("nan")
-            )
+            result["r2"] = float(1.0 - ss_res / ss_tot) if ss_tot > 0 else float("nan")
             return result
         if self.strategy == "mft":
             if fmt is not None:
@@ -1295,9 +1292,7 @@ class DPAFineTuner:
             err = predictions - labels
             ss_res = np.sum(err**2)
             ss_tot = np.sum((labels - labels.mean()) ** 2)
-            result["r2"] = (
-                float(1.0 - ss_res / ss_tot) if ss_tot > 0 else float("nan")
-            )
+            result["r2"] = float(1.0 - ss_res / ss_tot) if ss_tot > 0 else float("nan")
             return result
 
         result = self.predict(data, fmt=fmt)

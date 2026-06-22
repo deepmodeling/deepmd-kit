@@ -374,7 +374,9 @@ class DPATrainer:
                 "start_lr": self.learning_rate,
                 "stop_lr": self.stop_lr,
                 "decay_steps": self.decay_steps,
-                **({"warmup_steps": self.warmup_steps} if self.warmup_steps > 0 else {}),
+                **(
+                    {"warmup_steps": self.warmup_steps} if self.warmup_steps > 0 else {}
+                ),
             },
             "training": {
                 "training_data": {

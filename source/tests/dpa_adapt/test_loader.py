@@ -211,9 +211,7 @@ def _make_system_path(tmp_path, name="sys", set_indices=(0,), n_atoms=2, n_frame
     """
     root = tmp_path / name
     root.mkdir()
-    (root / "type.raw").write_text(
-        "\n".join(str(i % 2) for i in range(n_atoms)) + "\n"
-    )
+    (root / "type.raw").write_text("\n".join(str(i % 2) for i in range(n_atoms)) + "\n")
     (root / "type_map.raw").write_text("H\nO\n")
     for idx in set_indices:
         sd = root / f"set.{idx:03d}"
@@ -321,7 +319,8 @@ class TestAttachLabels:
         _make_system_path(parent, name="sys_0001", n_frames=2)
         with pytest.raises(ValueError, match="entries along the first axis"):
             attach_labels(
-                parent, head="bandgap",
+                parent,
+                head="bandgap",
                 values=np.array([[1.0, 2.0], [3.0, 4.0], [5.0, 6.0]]),
             )
 

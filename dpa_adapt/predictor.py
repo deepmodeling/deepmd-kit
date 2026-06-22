@@ -209,9 +209,7 @@ class DPAPredictor:
 
         return features
 
-    def predict(
-        self, data, fmt=None, return_uncertainty=False
-    ) -> DotDict:
+    def predict(self, data, fmt=None, return_uncertainty=False) -> DotDict:
         """
         Run inference on ``data``.
 

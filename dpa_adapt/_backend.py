@@ -27,9 +27,9 @@ _LOG = logging.getLogger("dpa_adapt")
 def resolve_dp_command() -> str:
     """Return the ``dp`` executable associated with the current Python env."""
     import os as _os
-    from pathlib import Path as _Path
     import shutil as _shutil
     import sys as _sys
+    from pathlib import Path as _Path
 
     exe_name = "dp.exe" if _os.name == "nt" else "dp"
     candidate = _Path(_sys.executable).resolve().parent / exe_name

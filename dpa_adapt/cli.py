@@ -19,7 +19,9 @@ import json
 import logging
 import os
 import sys
-from collections.abc import Sequence
+from collections.abc import (
+    Sequence,
+)
 
 import numpy as np
 
@@ -605,27 +607,51 @@ def get_parser() -> argparse.ArgumentParser:
     parser_data_convert.add_argument("--property-col", default="Property")
     parser_data_convert.add_argument("--smiles-col", default="SMILES")
     parser_data_convert.add_argument("--mol-dir", default=None)
-    parser_data_convert.add_argument("--mol-template", default="id{row}.mol",
-                                     help="Filename template under --mol-dir; use {row} for the CSV row index.")
+    parser_data_convert.add_argument(
+        "--mol-template",
+        default="id{row}.mol",
+        help="Filename template under --mol-dir; use {row} for the CSV row index.",
+    )
     parser_data_convert.add_argument("--train-ratio", type=float, default=0.9)
-    parser_data_convert.add_argument("--split-seed", type=int, default=None,
-                                     help="Random seed for train/valid split (SMILES input).")
-    parser_data_convert.add_argument("--conformer-seed", type=int, default=None,
-                                     help="Random seed for RDKit conformer generation (SMILES input).")
-    parser_data_convert.add_argument("--poscar", default=None,
-                                     help="Template POSCAR for fmt=formula.")
-    parser_data_convert.add_argument("--base-element", default=None,
-                                     help="Sublattice element to substitute "
-                                          "(fmt=formula). Auto-inferred if omitted.")
-    parser_data_convert.add_argument("--formula-col", default="formula",
-                                     help="Column index or name for the formula "
-                                          "(fmt=formula, default: formula).")
-    parser_data_convert.add_argument("--sets", type=int, default=1,
-                                     help="Random structures per formula "
-                                          "(fmt=formula, default: 1).")
-    parser_data_convert.add_argument("--seed", type=int, default=42,
-                                     help="Random seed for selecting substituted host-atom sites "
-                                          "(fmt=formula, default: 42).")
+    parser_data_convert.add_argument(
+        "--split-seed",
+        type=int,
+        default=None,
+        help="Random seed for train/valid split (SMILES input).",
+    )
+    parser_data_convert.add_argument(
+        "--conformer-seed",
+        type=int,
+        default=None,
+        help="Random seed for RDKit conformer generation (SMILES input).",
+    )
+    parser_data_convert.add_argument(
+        "--poscar", default=None, help="Template POSCAR for fmt=formula."
+    )
+    parser_data_convert.add_argument(
+        "--base-element",
+        default=None,
+        help="Sublattice element to substitute "
+        "(fmt=formula). Auto-inferred if omitted.",
+    )
+    parser_data_convert.add_argument(
+        "--formula-col",
+        default="formula",
+        help="Column index or name for the formula (fmt=formula, default: formula).",
+    )
+    parser_data_convert.add_argument(
+        "--sets",
+        type=int,
+        default=1,
+        help="Random structures per formula (fmt=formula, default: 1).",
+    )
+    parser_data_convert.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Random seed for selecting substituted host-atom sites "
+        "(fmt=formula, default: 42).",
+    )
     parser_data_convert.add_argument("--overwrite", action="store_true")
 
     # data validate
@@ -687,7 +713,9 @@ def main(args: Sequence[str] | None = None) -> None:
         else:
             handler = _DISPATCH.get(parsed_args.command)
             if handler is None:
-                print(f"Unknown dpa-adapt command: {parsed_args.command}", file=sys.stderr)
+                print(
+                    f"Unknown dpa-adapt command: {parsed_args.command}", file=sys.stderr
+                )
                 sys.exit(1)
             sys.exit(handler(parsed_args))
     except Exception as exc:

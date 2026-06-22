@@ -562,9 +562,7 @@ def _attach_single(
     set_dir = set_dirs[0]
     coord_path = set_dir / "coord.npy"
     if not coord_path.is_file():
-        raise ValueError(
-            f"coord.npy not found in {set_dir}. Expected at: {coord_path}"
-        )
+        raise ValueError(f"coord.npy not found in {set_dir}. Expected at: {coord_path}")
 
     coords = np.load(coord_path)
     n_frames = coords.shape[0]
@@ -653,10 +651,7 @@ def attach_labels(
         raise ValueError(f"Data path is not a directory: {data}")
 
     # Detect single-system: set.*/ subdirs directly under data
-    has_set_dirs = any(
-        p.is_dir() and p.name.startswith("set.")
-        for p in data.iterdir()
-    )
+    has_set_dirs = any(p.is_dir() and p.name.startswith("set.") for p in data.iterdir())
 
     if has_set_dirs:
         _attach_single(data, head, values)
@@ -664,8 +659,7 @@ def attach_labels(
 
     # Multi-system: glob non-hidden subdirectories as system dirs
     sys_dirs = sorted(
-        p for p in data.iterdir()
-        if p.is_dir() and not p.name.startswith(".")
+        p for p in data.iterdir() if p.is_dir() and not p.name.startswith(".")
     )
     if not sys_dirs:
         raise ValueError(

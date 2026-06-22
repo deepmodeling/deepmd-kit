@@ -5,7 +5,9 @@
 import os
 import sys
 import tempfile
-from pathlib import Path
+from pathlib import (
+    Path,
+)
 
 # Ensure the *installed* deepmd-kit (with C extensions) is used instead of
 # the source checkout when running from the project root.
@@ -43,14 +45,15 @@ def check(description, condition):
 
 
 def section(title):
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"  {title}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
 
 def run_cli(args):
     """Run a dpa-adapt CLI command via sys.executable."""
     import subprocess as _sp
+
     code = (
         "import sys; "
         "_sp = [p for p in sys.path if 'site-packages' in p]; "
@@ -62,7 +65,8 @@ def run_cli(args):
     )
     return _sp.run(
         [sys.executable, "-c", code],
-        capture_output=True, text=True,
+        capture_output=True,
+        text=True,
     )
 
 
@@ -71,8 +75,12 @@ def run_cli(args):
 # ═══════════════════════════════════════════════════════════════════════════
 section("1. check_data() / dpaad data validate")
 
-from dpa_adapt.data.loader import load_data
-from dpa_adapt.data.validate import check_data
+from dpa_adapt.data.loader import (
+    load_data,
+)
+from dpa_adapt.data.validate import (
+    check_data,
+)
 
 # 1a ── Python API: check_data() on training data ─────────────────────────
 print("\n--- 1a. Python API: check_data() on training data ---")
@@ -119,7 +127,9 @@ check("CLI output contains 'clean'", "clean" in result.stdout.lower())
 # ═══════════════════════════════════════════════════════════════════════════
 section("2. attach_labels() / CLI attach labels")
 
-from dpa_adapt.data.convert import attach_labels
+from dpa_adapt.data.convert import (
+    attach_labels,
+)
 
 # 2a ── Python API: attach_labels(string head) on single system ──────────
 print("\n--- 2a. Python API: attach_labels(string head) ---")
@@ -135,9 +145,11 @@ check("bandgap value matches", np.isclose(written[0], 13.74))
 # 2b ── Python API: attach_labels with dict head ─────────────────────────
 print("\n--- 2b. Python API: attach_labels(dict head) ---")
 sys1_path = str(TRAIN_DIR / "sys_0001")
-attach_labels(sys1_path,
-              head={"type": "property", "property_name": "my_prop", "task_dim": 1},
-              values=np.array([[5.0]]))
+attach_labels(
+    sys1_path,
+    head={"type": "property", "property_name": "my_prop", "task_dim": 1},
+    values=np.array([[5.0]]),
+)
 written = np.load(TRAIN_DIR / "sys_0001" / "set.000" / "my_prop.npy")
 check("dict-head 'my_prop.npy' written", written.shape == (1, 1))
 check("my_prop value matches", np.isclose(written[0, 0], 5.0))
@@ -161,6 +173,7 @@ except ValueError as e:
 print("\n--- 2e. CLI: dpaad data attach-labels ---")
 with tempfile.TemporaryDirectory() as tmp:
     import shutil
+
     # Create a fresh copy of one system
     src = str(TRAIN_DIR / "sys_0000")
     dst = os.path.join(tmp, "sys_test")
@@ -170,14 +183,26 @@ with tempfile.TemporaryDirectory() as tmp:
     label_path = os.path.join(tmp, "labels.npy")
     np.save(label_path, np.array([3.14]))
 
-    result = run_cli(["data", "attach-labels", "--data", dst,
-                      "--head", "my_label", "--values", label_path])
+    result = run_cli(
+        [
+            "data",
+            "attach-labels",
+            "--data",
+            dst,
+            "--head",
+            "my_label",
+            "--values",
+            label_path,
+        ]
+    )
     print(f"  stdout: {result.stdout.strip()}")
     if result.stderr.strip():
         print(f"  stderr: {result.stderr.strip()}")
     check("CLI attach-labels exit code 0", result.returncode == 0)
-    check("CLI attach-labels log confirms attachment",
-          "Labels attached" in result.stdout or "Labels attached" in result.stderr)
+    check(
+        "CLI attach-labels log confirms attachment",
+        "Labels attached" in result.stdout or "Labels attached" in result.stderr,
+    )
 
     # Verify the .npy was written to disk
     cli_written = np.load(os.path.join(dst, "set.000", "my_label.npy"))
@@ -187,6 +212,7 @@ with tempfile.TemporaryDirectory() as tmp:
 print("\n--- 2f. Python API: multi-system attach_labels ---")
 with tempfile.TemporaryDirectory() as tmp:
     import shutil
+
     parent = os.path.join(tmp, "npy")
     os.makedirs(parent, exist_ok=True)
     # Copy 3 systems into the parent dir
@@ -200,7 +226,9 @@ with tempfile.TemporaryDirectory() as tmp:
     attach_labels(parent, head="multi_label", values=labels)
 
     for i in range(3):
-        written = np.load(os.path.join(parent, f"sys_{i:04d}", "set.000", "multi_label.npy"))
+        written = np.load(
+            os.path.join(parent, f"sys_{i:04d}", "set.000", "multi_label.npy")
+        )
         check(f"multi sys_{i:04d}: value matches", np.isclose(written[0], float(i + 1)))
 
 # 2g ── Multi-system mismatch raises ValueError ──────────────────────────
@@ -213,11 +241,15 @@ with tempfile.TemporaryDirectory() as tmp:
         dst = os.path.join(parent, f"sys_{i:04d}")
         shutil.copytree(src, dst)
     try:
-        attach_labels(parent, head="bad", values=np.array([[1.0], [2.0]]))  # 2 values, 3 systems
+        attach_labels(
+            parent, head="bad", values=np.array([[1.0], [2.0]])
+        )  # 2 values, 3 systems
         check("ValueError raised for count mismatch", False)
     except ValueError as e:
-        check("ValueError raised for count mismatch",
-              "entries along the first axis" in str(e) or "3 system" in str(e))
+        check(
+            "ValueError raised for count mismatch",
+            "entries along the first axis" in str(e) or "3 system" in str(e),
+        )
         print(f"       Error: {e}")
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -225,8 +257,12 @@ with tempfile.TemporaryDirectory() as tmp:
 # ═══════════════════════════════════════════════════════════════════════════
 section('3. load_dataset(label_key="gap")')
 
-from dpa_adapt.data.dataset import load_dataset
-from dpa_adapt.data.errors import DPADataError
+from dpa_adapt.data.dataset import (
+    load_dataset,
+)
+from dpa_adapt.data.errors import (
+    DPADataError,
+)
 
 # Note: dpdata's deepmd/npy loader only auto-loads standard keys
 # (coord, box, energy, force, virial).  Custom labels like gap.npy
@@ -234,7 +270,7 @@ from dpa_adapt.data.errors import DPADataError
 # labelled dpdata objects directly to load_dataset().
 
 # 3a ── load_dataset with pre-attached labels ──────────────────────────────
-print('\n--- 3a. load_dataset with pre-attached labels ---')
+print("\n--- 3a. load_dataset with pre-attached labels ---")
 # Write gap labels to disk via path-based API
 for sys_dir in sorted(TRAIN_DIR.glob("sys_*")):
     gap_val = np.load(sys_dir / "set.000" / "gap.npy")
@@ -266,7 +302,7 @@ except DPADataError as e:
     print(f"       Error: {e}")
 
 # 3c ── load_dataset on test data (with pre-attached gap) ─────────────────
-print('\n--- 3c. load_dataset on test data ---')
+print("\n--- 3c. load_dataset on test data ---")
 for sys_dir in sorted(TEST_DIR.glob("sys_*")):
     gap_val = np.load(sys_dir / "set.000" / "gap.npy")
     attach_labels(str(sys_dir), head="gap", values=gap_val)
@@ -284,10 +320,13 @@ print("\n--- 3d. load_dataset: returned systems carry the label ---")
 # are dpdata.System, not LabeledSystem.  dpdata only auto-promotes to
 # LabeledSystem when standard keys (energy, force, virial) are present.
 import dpdata
+
 all_have_key = all("gap" in s.data for s in gap_systems)
 check("All returned systems have 'gap' key in data", all_have_key)
 # Also verify they are valid dpdata objects
-all_dpdata = all(isinstance(s, (dpdata.System, dpdata.LabeledSystem)) for s in gap_systems)
+all_dpdata = all(
+    isinstance(s, (dpdata.System, dpdata.LabeledSystem)) for s in gap_systems
+)
 check("All returned systems are dpdata objects", all_dpdata)
 
 # 3e ── load_dataset skips systems without the label ──────────────────────
@@ -316,11 +355,14 @@ section("4. extract_descriptors() / CLI extract-descriptors")
 # CLI wiring instead.
 try:
     import deepmd.lib  # noqa: F401
+
     _HAVE_DEEPMD_LIB = True
 except ImportError:
     _HAVE_DEEPMD_LIB = False
 
-from dpa_adapt.finetuner import extract_descriptors
+from dpa_adapt.finetuner import (
+    extract_descriptors,
+)
 
 subset_paths = [str(TRAIN_DIR / f"sys_{i:04d}") for i in range(5)]
 
@@ -345,8 +387,11 @@ if _HAVE_DEEPMD_LIB:
     # 4b ── pooling strategies ───────────────────────────────────────────
     print("\n--- 4b. Python API: pooling='sum' ---")
     desc_sum = extract_descriptors(
-        subset_paths, pretrained=PRETRAINED,
-        model_branch="Domains_Drug", pooling="sum", cache=False,
+        subset_paths,
+        pretrained=PRETRAINED,
+        model_branch="Domains_Drug",
+        pooling="sum",
+        cache=False,
     )
     print(f"  Output shape (sum): {desc_sum.shape}")
     check("sum pooling: 2D output", desc_sum.ndim == 2)
@@ -354,14 +399,19 @@ if _HAVE_DEEPMD_LIB:
 
     print("\n--- 4c. Python API: pooling='mean+std' ---")
     desc_ms = extract_descriptors(
-        subset_paths, pretrained=PRETRAINED,
-        model_branch="Domains_Drug", pooling="mean+std", cache=False,
+        subset_paths,
+        pretrained=PRETRAINED,
+        model_branch="Domains_Drug",
+        pooling="mean+std",
+        cache=False,
     )
     print(f"  Output shape (mean+std): {desc_ms.shape}")
     check("mean+std pooling: 2D output", desc_ms.ndim == 2)
     check("mean+std pooling: n_frames matches", desc_ms.shape[0] == 5)
-    check("mean+std feat_dim == 2 * mean feat_dim",
-          desc_ms.shape[1] == 2 * descriptors.shape[1])
+    check(
+        "mean+std feat_dim == 2 * mean feat_dim",
+        desc_ms.shape[1] == 2 * descriptors.shape[1],
+    )
 
     # 4d ── all 50 systems ───────────────────────────────────────────────
     print("\n--- 4d. Python API: extract_descriptors on all 50 systems ---")
@@ -370,8 +420,11 @@ if _HAVE_DEEPMD_LIB:
     print(f"  Input: {len(all_paths)} systems")
 
     desc_all = extract_descriptors(
-        all_paths, pretrained=PRETRAINED,
-        model_branch="Domains_Drug", pooling="mean", cache=False,
+        all_paths,
+        pretrained=PRETRAINED,
+        model_branch="Domains_Drug",
+        pooling="mean",
+        cache=False,
     )
     print(f"  Output shape: {desc_all.shape}")
     check("all 50: shape[0] == 50", desc_all.shape[0] == 50)
@@ -382,13 +435,19 @@ if _HAVE_DEEPMD_LIB:
     with tempfile.TemporaryDirectory() as tmp:
         output_npy = os.path.join(tmp, "descriptors.npy")
         cli_paths = [str(TRAIN_DIR / f"sys_{i:04d}") for i in range(3)]
-        result = run_cli([
-            "extract-descriptors", "--data"] + cli_paths + [
-            "--pretrained", PRETRAINED,
-            "--model-branch", "Domains_Drug",
-            "--output", output_npy,
-            "--no-cache",
-        ])
+        result = run_cli(
+            ["extract-descriptors", "--data"]
+            + cli_paths
+            + [
+                "--pretrained",
+                PRETRAINED,
+                "--model-branch",
+                "Domains_Drug",
+                "--output",
+                output_npy,
+                "--no-cache",
+            ]
+        )
         print(f"  stdout: {result.stdout.strip()[:200]}")
         if result.stderr.strip():
             print(f"  stderr: {result.stderr.strip()[:200]}")
@@ -398,14 +457,17 @@ if _HAVE_DEEPMD_LIB:
         print(f"  CLI output shape: {cli_desc.shape}")
         check("CLI output .npy shape[0] == 3", cli_desc.shape[0] == 3)
         check("CLI output .npy is 2D", cli_desc.ndim == 2)
-        check("CLI output feat_dim matches Python API",
-              cli_desc.shape[1] == descriptors.shape[1])
+        check(
+            "CLI output feat_dim matches Python API",
+            cli_desc.shape[1] == descriptors.shape[1],
+        )
 
 else:
     # ── smoke tests only (no deepmd C++ extensions) ─────────────────────
     print("\n  (deepmd C++ extensions not available — API smoke tests only)")
     print("\n--- 4a. extract_descriptors import + signature ---")
     import inspect
+
     sig = inspect.signature(extract_descriptors)
     params = list(sig.parameters.keys())
     print(f"  Signature: extract_descriptors({', '.join(params)})")
@@ -418,8 +480,11 @@ else:
     print("\n--- 4b. extract_descriptors raises clear error without deps ---")
     try:
         extract_descriptors(
-            subset_paths, pretrained=PRETRAINED,
-            model_branch="Domains_Drug", pooling="mean", cache=False,
+            subset_paths,
+            pretrained=PRETRAINED,
+            model_branch="Domains_Drug",
+            pooling="mean",
+            cache=False,
         )
         check("ImportError raised for missing deepmd.lib", False)
     except ModuleNotFoundError as e:
