@@ -7,7 +7,6 @@
       "H"
     ],
     "descriptor": {
-      "sel": 120,
       "rcut": 6.0,
       "channels": 32,
       "n_radial": 16,

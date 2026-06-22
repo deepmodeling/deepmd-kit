@@ -25,7 +25,12 @@ from typing import (
 import torch
 
 from deepmd.dpmodel.utils.neighbor_list import (
+    EdgeNeighborList,
     NeighborList,
+)
+from deepmd.pt_expt.utils.edge_schema import (
+    edge_schema_from_ij_shifts,
+    merge_frame_edge_schemas,
 )
 
 
@@ -54,7 +59,8 @@ class VesinNeighborList(NeighborList):
         box: Any,
         rcut: float,
         sel: list[int],
-    ) -> tuple[Any, Any, Any, Any]:
+        return_mode: str = "extended",
+    ) -> tuple[Any, Any, Any, Any] | EdgeNeighborList:
         """Build the extended system + candidate neighbor list with vesin.
 
         See :meth:`deepmd.dpmodel.utils.neighbor_list.NeighborList.build`.  The
@@ -80,6 +86,31 @@ class VesinNeighborList(NeighborList):
         coord_t = coord_t.reshape(nframes, nloc, 3)
         if box_t is not None:
             box_t = box_t.reshape(nframes, 3, 3)
+
+        if return_mode == "edges":
+            frame_edges = [
+                _build_single_edges(
+                    coord_t[ff],
+                    box_t[ff] if box_t is not None else None,
+                    atype_t[ff],
+                    rcut,
+                    sel,
+                )
+                for ff in range(nframes)
+            ]
+            schema = merge_frame_edge_schemas(frame_edges)
+            if is_numpy:
+                return EdgeNeighborList(
+                    coord=schema.coord.detach().cpu().numpy(),
+                    atype=schema.atype.cpu().numpy(),
+                    edge_index=schema.edge_index.cpu().numpy(),
+                    edge_vec=schema.edge_vec.detach().cpu().numpy(),
+                    edge_scatter_index=schema.edge_scatter_index.cpu().numpy(),
+                    edge_mask=schema.edge_mask.cpu().numpy(),
+                )
+            return schema
+        if return_mode != "extended":
+            raise ValueError(f"Unsupported neighbor-list return_mode: {return_mode!r}")
 
         frame_results = [
             _build_single(
@@ -230,3 +261,50 @@ def _build_single(
         )
 
     return extended_coord, extended_atype, nlist, mapping
+
+
+def _build_single_edges(
+    positions: torch.Tensor,
+    cell: torch.Tensor | None,
+    atype: torch.Tensor,
+    rcut: float,
+    sel: list[int],
+) -> EdgeNeighborList:
+    """Single-frame ``vesin`` output converted directly to edge vectors."""
+    import vesin.torch
+
+    device = positions.device
+    nsel = sum(sel)
+    nloc = positions.shape[0]
+    if nloc == 0:
+        return edge_schema_from_ij_shifts(
+            positions,
+            atype,
+            cell,
+            torch.zeros(0, dtype=torch.int64, device=device),
+            torch.zeros(0, dtype=torch.int64, device=device),
+            torch.zeros(0, 3, dtype=positions.dtype, device=device),
+            rcut,
+        )
+
+    periodic = cell is not None
+    box = (
+        cell if periodic else torch.zeros((3, 3), dtype=positions.dtype, device=device)
+    )
+    nl = vesin.torch.NeighborList(cutoff=rcut, full_list=True)
+    with torch.device(device):
+        ii, jj, ss = nl.compute(
+            points=positions.detach(),
+            box=box.detach(),
+            periodic=periodic,
+            quantities="ijS",
+        )
+    return edge_schema_from_ij_shifts(
+        positions=positions,
+        atype=atype,
+        cell=box if periodic else None,
+        ii=ii,
+        jj=jj,
+        shifts=ss,
+        rcut=rcut,
+    )

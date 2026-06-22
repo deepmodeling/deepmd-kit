@@ -151,6 +151,13 @@ void DeepPotPTExpt::init(const std::string& model,
       nnei += v.as_int();
     }
   }
+  if (metadata.obj_val.count("lower_input_kind")) {
+    const std::string lower_input_kind =
+        metadata["lower_input_kind"].as_string();
+    lower_input_is_edge_ = lower_input_kind == "edge_vec";
+  } else {
+    lower_input_is_edge_ = false;
+  }
 
   type_map.clear();
   for (const auto& v : metadata["type_map"].as_array()) {
@@ -246,6 +253,30 @@ std::vector<torch::Tensor> DeepPotPTExpt::run_model(
   // Only include fparam/aparam/charge_spin if the model was exported with them.
   // When they are None at export time, AOTInductor compiles with fewer inputs.
   std::vector<torch::Tensor> inputs = {coord, atype, nlist, mapping};
+  if (dfparam > 0) {
+    inputs.push_back(fparam);
+  }
+  if (daparam > 0) {
+    inputs.push_back(aparam);
+  }
+  if (dchgspin > 0) {
+    inputs.push_back(charge_spin);
+  }
+  return loader->run(inputs);
+}
+
+std::vector<torch::Tensor> DeepPotPTExpt::run_model_edges(
+    const torch::Tensor& coord,
+    const torch::Tensor& atype,
+    const torch::Tensor& edge_index,
+    const torch::Tensor& edge_vec,
+    const torch::Tensor& edge_scatter_index,
+    const torch::Tensor& edge_mask,
+    const torch::Tensor& fparam,
+    const torch::Tensor& aparam,
+    const torch::Tensor& charge_spin) {
+  std::vector<torch::Tensor> inputs = {
+      coord, atype, edge_index, edge_vec, edge_scatter_index, edge_mask};
   if (dfparam > 0) {
     inputs.push_back(fparam);
   }
@@ -428,14 +459,14 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   // LAMMPS sets ago=0 on every nlist rebuild (neighbor rebuild, re-partition,
   // atom exchange between subdomains), so `ago > 0` implies the cached
   // mapping and nlist tensors are still valid.  Rebuild only on ago==0.
+  std::vector<std::int64_t> mapping;
   if (ago == 0) {
     nlist_data.copy_from_nlist(lmp_list, nall - nghost);
     nlist_data.shuffle_exclude_empty(fwd_map);
-    nlist_data.padding();
 
     // Rebuild mapping tensor
     if (lmp_list.mapping) {
-      std::vector<std::int64_t> mapping(nall_real);
+      mapping.resize(nall_real);
       for (int ii = 0; ii < nall_real; ii++) {
         mapping[ii] = fwd_map[lmp_list.mapping[bkw_map[ii]]];
       }
@@ -453,7 +484,7 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       //     features via border_op and ignores this tensor for ghost
       //     gather — see deepmd/pt_expt/descriptor/
       //     repflows.py::_exchange_ghosts).
-      std::vector<std::int64_t> mapping(nall_real);
+      mapping.resize(nall_real);
       for (int ii = 0; ii < nall_real; ii++) {
         mapping[ii] = ii;
       }
@@ -463,9 +494,22 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
               .to(device);
     }
 
-    // Flatten raw nlist — the .pt2 model sorts by distance on-device.
-    firstneigh_tensor =
-        createNlistTensor(nlist_data.jlist, nnei).to(torch::kInt64).to(device);
+    if (lower_input_is_edge_) {
+      // Cache only the real skin topology.  The model-cutoff topology and
+      // model-input dummy edges are rebuilt on-device from current coordinates
+      // every step, so rcut-crossing skin atoms are handled without carrying
+      // out-of-cutoff edges into the exported graph.
+      const auto edge_tensors =
+          createEdgeTensors(nlist_data.jlist, dcoord, mapping, nloc, nall_real,
+                            device, /*with_geometry=*/false, &nlist_data.ilist);
+      edge_index_tensor = edge_tensors.edge_index;
+      edge_index_ext_tensor = edge_tensors.edge_index_ext;
+    } else {
+      nlist_data.padding();
+      firstneigh_tensor = createNlistTensor(nlist_data.jlist, nnei)
+                              .to(torch::kInt64)
+                              .to(device);
+    }
   }
 
   // Build fparam/aparam tensors (cast to float64 for the model)
@@ -558,6 +602,12 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   std::vector<int*> remapped_sendlist_ptrs;
   std::vector<int> remapped_sendnum, remapped_recvnum;
   if (use_with_comm) {
+    if (lower_input_is_edge_) {
+      throw deepmd::deepmd_exception(
+          "SeZM edge-schema .pt2 inference requires the regular single-rank "
+          "AOTInductor artifact. Multi-rank inference must use an artifact "
+          "whose lower input schema includes explicit communication tensors.");
+    }
     bool has_null_atoms = (nall_real < nall);
     std::vector<at::Tensor> comm_tensors;
     if (has_null_atoms) {
@@ -574,9 +624,20 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
         coord_Tensor, atype_Tensor, firstneigh_tensor, mapping_tensor,
         fparam_tensor, aparam_tensor, charge_spin_tensor, comm_tensors);
   } else {
-    flat_outputs =
-        run_model(coord_Tensor, atype_Tensor, firstneigh_tensor, mapping_tensor,
-                  fparam_tensor, aparam_tensor, charge_spin_tensor);
+    if (lower_input_is_edge_) {
+      const auto edge_tensors =
+          compactEdgeTensors(edge_index_tensor, edge_index_ext_tensor,
+                             coord_Tensor, static_cast<double>(rcut));
+      flat_outputs =
+          run_model_edges(coord_Tensor, atype_Tensor.slice(1, 0, nloc),
+                          edge_tensors.edge_index, edge_tensors.edge_vec,
+                          edge_tensors.edge_index_ext, edge_tensors.edge_mask,
+                          fparam_tensor, aparam_tensor, charge_spin_tensor);
+    } else {
+      flat_outputs = run_model(coord_Tensor, atype_Tensor, firstneigh_tensor,
+                               mapping_tensor, fparam_tensor, aparam_tensor,
+                               charge_spin_tensor);
+    }
   }
 
   // Map flat outputs to internal keys
@@ -790,14 +851,20 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       torch::from_blob(atype_64.data(), {1, nall}, int_options)
           .clone()
           .to(device);
-  // Flatten raw nlist — the .pt2 model sorts by distance on-device.
-  at::Tensor nlist_tensor =
-      createNlistTensor(nlist_raw, nnei).to(torch::kInt64).to(device);
   std::vector<std::int64_t> mapping_64(mapping_vec.begin(), mapping_vec.end());
   at::Tensor mapping_tensor =
       torch::from_blob(mapping_64.data(), {1, nall}, int_options)
           .clone()
           .to(device);
+  at::Tensor nlist_tensor;
+  EdgeTensorPack edge_tensors;
+  if (lower_input_is_edge_) {
+    edge_tensors = createEdgeTensors(nlist_raw, coord_cpy_d, mapping_64, nloc,
+                                     nall, device);
+  } else {
+    nlist_tensor =
+        createNlistTensor(nlist_raw, nnei).to(torch::kInt64).to(device);
+  }
 
   // Build fparam/aparam tensors (cast to float64 for the model)
   auto valuetype_options = std::is_same<VALUETYPE, float>::value
@@ -873,9 +940,18 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   }
 
   // 5. Run the .pt2 model
-  auto flat_outputs =
-      run_model(coord_Tensor, atype_Tensor, nlist_tensor, mapping_tensor,
-                fparam_tensor, aparam_tensor, charge_spin_tensor);
+  std::vector<torch::Tensor> flat_outputs;
+  if (lower_input_is_edge_) {
+    flat_outputs =
+        run_model_edges(coord_Tensor, atype_Tensor.slice(1, 0, nloc),
+                        edge_tensors.edge_index, edge_tensors.edge_vec,
+                        edge_tensors.edge_index_ext, edge_tensors.edge_mask,
+                        fparam_tensor, aparam_tensor, charge_spin_tensor);
+  } else {
+    flat_outputs =
+        run_model(coord_Tensor, atype_Tensor, nlist_tensor, mapping_tensor,
+                  fparam_tensor, aparam_tensor, charge_spin_tensor);
+  }
 
   // 6. Map flat outputs to internal keys
   std::map<std::string, torch::Tensor> output_map;
