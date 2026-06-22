@@ -647,6 +647,72 @@ void check_lmp_nlist(deepmd::DeepPot& dp,
 }
 
 template <typename ValueType>
+void check_lmp_nlist_skin_below_model_width(deepmd::DeepPot& dp,
+                                            const deepmd_test::DeepPotRef& ref,
+                                            const double tol,
+                                            const bool set_mapping = true) {
+  const int natoms = static_cast<int>(deepmd_test::deeppot_atype().size());
+  const std::vector<ValueType> coord(deepmd_test::deeppot_coord().begin(),
+                                     deepmd_test::deeppot_coord().end());
+  const std::vector<int> atype = deepmd_test::deeppot_atype();
+  const std::vector<ValueType> box(deepmd_test::deeppot_box().begin(),
+                                   deepmd_test::deeppot_box().end());
+  const float rc = static_cast<float>(dp.cutoff());
+  const int nloc = natoms;
+  std::vector<ValueType> coord_cpy;
+  std::vector<int> atype_cpy, mapping;
+  std::vector<std::vector<int>> nlist_wide;
+  _build_nlist<ValueType>(nlist_wide, coord_cpy, atype_cpy, mapping, coord,
+                          atype, box, rc * 2);
+
+  const double rc2 = static_cast<double>(rc) * static_cast<double>(rc);
+  bool has_skin_neighbor = false;
+  std::vector<std::vector<int>> nlist_skin(nlist_wide.size());
+  for (size_t ii = 0; ii < nlist_wide.size(); ++ii) {
+    bool added_skin_neighbor = false;
+    for (const int jj : nlist_wide[ii]) {
+      const double dx = static_cast<double>(coord_cpy[jj * 3]) -
+                        static_cast<double>(coord_cpy[ii * 3]);
+      const double dy = static_cast<double>(coord_cpy[jj * 3 + 1]) -
+                        static_cast<double>(coord_cpy[ii * 3 + 1]);
+      const double dz = static_cast<double>(coord_cpy[jj * 3 + 2]) -
+                        static_cast<double>(coord_cpy[ii * 3 + 2]);
+      const double rr = dx * dx + dy * dy + dz * dz;
+      if (rr <= rc2) {
+        nlist_skin[ii].push_back(jj);
+      } else if (!added_skin_neighbor) {
+        nlist_skin[ii].push_back(jj);
+        added_skin_neighbor = true;
+        has_skin_neighbor = true;
+      }
+    }
+  }
+  ASSERT_TRUE(has_skin_neighbor);
+
+  const int nall = static_cast<int>(coord_cpy.size() / 3);
+  std::vector<int> ilist(nloc), numneigh(nloc);
+  std::vector<int*> firstneigh(nloc);
+  deepmd::InputNlist inlist(nloc, ilist.data(), numneigh.data(),
+                            firstneigh.data());
+  convert_nlist(inlist, nlist_skin);
+  if (set_mapping) {
+    inlist.mapping = mapping.data();
+  }
+
+  for (int ago = 0; ago < 2; ++ago) {
+    double energy = 0.0;
+    std::vector<ValueType> force_all(nall * 3, 0.0);
+    std::vector<ValueType> virial(9, 0.0);
+    dp.compute(energy, force_all, virial, coord_cpy, atype_cpy, box,
+               nall - nloc, inlist, ago);
+
+    std::vector<ValueType> force;
+    _fold_back<ValueType>(force, force_all, mapping, nloc, nall, 3);
+    expect_reference(energy, force, virial, ref, tol);
+  }
+}
+
+template <typename ValueType>
 void check_lmp_nlist_atomic(deepmd::DeepPot& dp,
                             const deepmd_test::DeepPotRef& ref,
                             const double tol,
@@ -1243,6 +1309,22 @@ TEST_P(UniversalDeepPotTest, LmpNlistFloatCutoffTwice) {
   }
   check_lmp_nlist<float>(dp, *GetParam().ref, GetParam().float_tol, 2.0,
                          GetParam().supports_lmp_nlist_mapping);
+}
+
+TEST_P(UniversalDeepPotTest, LmpNlistSkinBelowModelWidthDouble) {
+  check_lmp_nlist_skin_below_model_width<double>(
+      dp, *GetParam().ref, GetParam().double_tol,
+      GetParam().supports_lmp_nlist_mapping);
+}
+
+TEST_P(UniversalDeepPotTest, LmpNlistSkinBelowModelWidthFloat) {
+  if (!GetParam().supports_float) {
+    GTEST_SKIP() << backend_name(GetParam().backend)
+                 << " does not provide float inference coverage.";
+  }
+  check_lmp_nlist_skin_below_model_width<float>(
+      dp, *GetParam().ref, GetParam().float_tol,
+      GetParam().supports_lmp_nlist_mapping);
 }
 
 TEST_P(UniversalDeepPotTest, LmpNlistTypeSelDouble) {

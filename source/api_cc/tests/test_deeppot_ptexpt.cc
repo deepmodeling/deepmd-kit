@@ -352,6 +352,73 @@ TYPED_TEST(TestInferDeepPotAPtExpt, cpu_lmp_nlist_2rc) {
   }
 }
 
+TYPED_TEST(TestInferDeepPotAPtExpt, cpu_lmp_nlist_skin_below_model_width) {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE>& coord = this->coord;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  std::vector<VALUETYPE>& expected_f = this->expected_f;
+  int& natoms = this->natoms;
+  double& expected_tot_e = this->expected_tot_e;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
+  deepmd::DeepPot& dp = this->dp;
+  float rc = dp.cutoff();
+  int nloc = coord.size() / 3;
+  std::vector<VALUETYPE> coord_cpy;
+  std::vector<int> atype_cpy, mapping;
+  std::vector<std::vector<int> > nlist_wide;
+  _build_nlist<VALUETYPE>(nlist_wide, coord_cpy, atype_cpy, mapping, coord,
+                          atype, box, rc * 2);
+
+  const double rc2 = static_cast<double>(rc) * static_cast<double>(rc);
+  bool has_skin_neighbor = false;
+  std::vector<std::vector<int> > nlist_skin(nlist_wide.size());
+  for (size_t ii = 0; ii < nlist_wide.size(); ++ii) {
+    bool added_skin_neighbor = false;
+    for (const int jj : nlist_wide[ii]) {
+      const double dx = static_cast<double>(coord_cpy[jj * 3]) -
+                        static_cast<double>(coord_cpy[ii * 3]);
+      const double dy = static_cast<double>(coord_cpy[jj * 3 + 1]) -
+                        static_cast<double>(coord_cpy[ii * 3 + 1]);
+      const double dz = static_cast<double>(coord_cpy[jj * 3 + 2]) -
+                        static_cast<double>(coord_cpy[ii * 3 + 2]);
+      const double rr = dx * dx + dy * dy + dz * dz;
+      if (rr <= rc2) {
+        nlist_skin[ii].push_back(jj);
+      } else if (!added_skin_neighbor) {
+        nlist_skin[ii].push_back(jj);
+        added_skin_neighbor = true;
+        has_skin_neighbor = true;
+      }
+    }
+  }
+  ASSERT_TRUE(has_skin_neighbor);
+
+  int nall = coord_cpy.size() / 3;
+  std::vector<int> ilist(nloc), numneigh(nloc);
+  std::vector<int*> firstneigh(nloc);
+  deepmd::InputNlist inlist(nloc, &ilist[0], &numneigh[0], &firstneigh[0]);
+  convert_nlist(inlist, nlist_skin);
+
+  double ener;
+  std::vector<VALUETYPE> force_(nall * 3, 0.0), virial(9, 0.0);
+  dp.compute(ener, force_, virial, coord_cpy, atype_cpy, box, nall - nloc,
+             inlist, 0);
+  std::vector<VALUETYPE> force;
+  _fold_back<VALUETYPE>(force, force_, mapping, nloc, nall, 3);
+
+  EXPECT_EQ(force.size(), natoms * 3);
+  EXPECT_EQ(virial.size(), 9);
+
+  EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
+  for (int ii = 0; ii < natoms * 3; ++ii) {
+    EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
+  }
+  for (int ii = 0; ii < 3 * 3; ++ii) {
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+  }
+}
+
 TYPED_TEST(TestInferDeepPotAPtExpt, cpu_lmp_nlist_oversized) {
   using VALUETYPE = TypeParam;
   std::vector<VALUETYPE>& coord = this->coord;

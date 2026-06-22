@@ -8,6 +8,9 @@
 #include <vector>
 
 #include "common.h"
+#ifdef BUILD_PYTORCH
+#include "commonPT.h"
+#endif
 #include "neighbor_list.h"
 
 namespace deepmd {
@@ -135,5 +138,66 @@ TEST(TestNeighborListData, RoundTripWithEmptyRows) {
   EXPECT_EQ(out.numneigh[2], 0);
   EXPECT_EQ(out.numneigh[3], 1);
 }
+
+#ifdef BUILD_PYTORCH
+TEST(TestEdgeTensorPack, CreateEdgeTensorsUsesRowCenters) {
+  const torch::Device device(torch::kCPU);
+  const std::vector<std::vector<int>> nlist = {{0}, {1}};
+  const std::vector<int> centers = {2, 0};
+  const std::vector<double> coord = {
+      0.0, 0.0, 0.0,  // atom 0
+      1.0, 0.0, 0.0,  // atom 1
+      2.0, 0.0, 0.0,  // atom 2
+  };
+  const std::vector<std::int64_t> mapping = {0, 1, 2};
+
+  const auto pack = createEdgeTensors(nlist, coord, mapping, 3, 3, device,
+                                      /*with_geometry=*/true, &centers);
+
+  ASSERT_EQ(pack.edge_index.size(1), 4);
+  EXPECT_EQ(pack.edge_index.select(0, 0).select(0, 0).item<int64_t>(), 0);
+  EXPECT_EQ(pack.edge_index.select(0, 1).select(0, 0).item<int64_t>(), 2);
+  EXPECT_EQ(pack.edge_index_ext.select(0, 1).select(0, 0).item<int64_t>(), 2);
+  EXPECT_DOUBLE_EQ(pack.edge_vec.select(0, 0).select(0, 0).item<double>(),
+                   -2.0);
+  EXPECT_EQ(pack.edge_index.select(0, 0).select(0, 1).item<int64_t>(), 1);
+  EXPECT_EQ(pack.edge_index.select(0, 1).select(0, 1).item<int64_t>(), 0);
+  EXPECT_DOUBLE_EQ(pack.edge_vec.select(0, 1).select(0, 0).item<double>(), 1.0);
+}
+
+TEST(TestEdgeTensorPack, CompactFiltersSkinTopologyAndAppendsDummies) {
+  const torch::Device device(torch::kCPU);
+  const std::vector<std::vector<int>> nlist = {{1, 2}, {0}};
+  const std::vector<double> coord = {
+      0.0, 0.0, 0.0,  // atom 0
+      0.5, 0.0, 0.0,  // atom 1, inside cutoff
+      2.0, 0.0, 0.0,  // atom 2, skin-only ghost
+  };
+  const std::vector<std::int64_t> mapping = {0, 1, 0};
+
+  const auto skin_topology =
+      createEdgeTensors(nlist, coord, mapping, 2, 3, device,
+                        /*with_geometry=*/false);
+  ASSERT_EQ(skin_topology.edge_index.size(1), 3);
+  ASSERT_EQ(skin_topology.edge_index_ext.size(1), 3);
+  EXPECT_FALSE(skin_topology.edge_vec.defined());
+  EXPECT_FALSE(skin_topology.edge_mask.defined());
+
+  const auto coord_tensor =
+      torch::tensor(coord, torch::TensorOptions().dtype(torch::kFloat64))
+          .view({1, 3, 3});
+  const auto compact =
+      compactEdgeTensors(skin_topology.edge_index, skin_topology.edge_index_ext,
+                         coord_tensor, /*rcut=*/1.0);
+
+  ASSERT_EQ(compact.edge_index.size(1), 4);
+  ASSERT_EQ(compact.edge_index_ext.size(1), 4);
+  ASSERT_EQ(compact.edge_vec.size(0), 4);
+  ASSERT_EQ(compact.edge_mask.size(0), 4);
+  EXPECT_EQ(compact.edge_mask.sum().item<int64_t>(), 2);
+  EXPECT_FALSE(compact.edge_mask.select(0, 2).item<bool>());
+  EXPECT_FALSE(compact.edge_mask.select(0, 3).item<bool>());
+}
+#endif
 
 }  // namespace deepmd

@@ -194,6 +194,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         node_wise_so3: bool = False,
         message_node_s2: bool = False,
         message_node_so3: bool = False,
+        so3_readout: str = "none",
         lebedev_quadrature: bool | list[bool] | None = True,
         activation_function: str = "silu",
         glu_activation: bool = True,
@@ -275,6 +276,9 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         self.node_wise_so3 = bool(node_wise_so3)
         self.message_node_s2 = bool(message_node_s2)
         self.message_node_so3 = bool(message_node_so3)
+        self.so3_readout = str(so3_readout).lower()
+        if self.so3_readout not in {"none", "glu", "mlp"}:
+            raise ValueError("`so3_readout` must be one of 'none', 'glu', or 'mlp'")
         if lebedev_quadrature is None:
             lebedev_quadrature = [True, True]
         elif isinstance(lebedev_quadrature, bool):
@@ -639,12 +643,20 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         self.blocks = blocks
 
         # === Final FFN for l=0 output mixing (fp32+) ===
+        # ``so3_readout="none"`` runs a degree-0 scalar FFN on the l=0 slice.
+        # ``"glu"``/``"mlp"`` run a full FFN at the last block's node degree whose
+        # SO(3) Wigner-D grid folds l>0 geometry into l=0; the value selects the
+        # quadratic grid product or the point-wise grid MLP.
+        readout_lmax = self.node_l_schedule[-1]
         self.output_ffn = EquivariantFFN(
-            lmax=0,
+            lmax=0 if self.so3_readout == "none" else readout_lmax,
             channels=self.channels,
             hidden_channels=self.out_ffn_neurons,
-            grid_mlp=False,
+            kmax=min(self.kmax, readout_lmax),
+            grid_mlp=self.so3_readout == "mlp",
+            grid_branch=0,
             s2_activation=False,
+            ffn_so3_grid=self.so3_readout != "none",
             activation_function=self.out_activation_function,
             glu_activation=self.out_glu_activation,
             mlp_bias=self.mlp_bias,
@@ -926,10 +938,24 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
             x = block(x, edge_cache, rad_feat_per_block[i])[0]
 
         # === Step 10. Final l=0 output mixing ===
-        x_scalar = xp.reshape(
-            x[:, 0:1, :, :], (n_nodes, 1, 1, self.channels)
-        )  # (N, 1, 1, C)
-        x_scalar = x_scalar + self.output_ffn(x_scalar)
+        # ``none`` feeds the l=0 slice only; ``glu``/``mlp`` feed the full
+        # (N, D, 1, C) node tensor so the SO(3) grid folds l>0 into l=0. The
+        # residual is added on the full coefficient tensor before extracting
+        # l=0 to mirror pt.
+        compute_prec = get_xp_precision(xp, self.compute_precision)
+        if self.so3_readout == "none":
+            ffn_in = xp.astype(
+                xp.reshape(x[:, 0:1, :, :], (n_nodes, 1, 1, self.channels)),
+                compute_prec,
+            )  # (N, 1, 1, C)
+        else:
+            # truncate to the final node degree (what output_ffn is built for);
+            # no-op in the normal path (blocks already shrank x), defensive vs
+            # any path that leaves x at the initial degree. Mirrors pt.
+            ffn_in = xp.astype(
+                x[:, : self.node_ebed_dims[-1], :, :], compute_prec
+            )  # (N, D, 1, C)
+        x_scalar = (ffn_in + self.output_ffn(ffn_in))[:, 0:1, :, :]
 
         # === Step 11. Reshape and return ===
         descriptor = xp.reshape(x_scalar, (nf, nloc, self.channels))
@@ -1231,6 +1257,7 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                 "node_wise_so3": self.node_wise_so3,
                 "message_node_s2": self.message_node_s2,
                 "message_node_so3": self.message_node_so3,
+                "so3_readout": self.so3_readout,
                 "lebedev_quadrature": self.lebedev_quadrature,
                 "activation_function": self.activation_function,
                 "glu_activation": self.glu_activation,

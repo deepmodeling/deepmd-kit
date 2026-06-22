@@ -6,6 +6,9 @@ import array_api_compat
 from deepmd.dpmodel.array_api import (
     Array,
 )
+from deepmd.dpmodel.utils.neighbor_list import (
+    EdgeNeighborList,
+)
 
 from .neighbor_list import (
     NeighborList,
@@ -33,7 +36,12 @@ class DefaultNeighborList(NeighborList):
         box: Array | None,
         rcut: float,
         sel: list[int],
-    ) -> tuple[Array, Array, Array, Array]:
+        return_mode: str = "extended",
+    ) -> tuple[Array, Array, Array, Array] | EdgeNeighborList:
+        if return_mode != "extended":
+            raise NotImplementedError(
+                "DefaultNeighborList only supports the extended-coordinate contract."
+            )
         xp = array_api_compat.array_namespace(coord, atype)
         nframes, nloc = atype.shape[:2]
         if box is not None:

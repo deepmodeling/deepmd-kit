@@ -5,12 +5,6 @@ Equivariant feed-forward layers for DPA4/SeZM.
 This module is the dpmodel port of ``deepmd.pt.model.descriptor.sezm_nn.ffn``.
 It defines the full SO(3)-equivariant feed-forward network used inside SeZM
 interaction blocks.
-
-Branches guarded with ``NotImplementedError`` (flags unused by the core DPA4
-config):
-
-- ``ffn_so3_grid=True`` — the pt path instantiates ``SO3GridNet``
-  (pt ffn.py:209), which is not ported to dpmodel.
 """
 
 from __future__ import (
@@ -40,6 +34,7 @@ from .activation import (
 )
 from .grid_net import (
     S2GridNet,
+    SO3GridNet,
 )
 from .projection import (
     resolve_s2_grid_resolution,
@@ -91,7 +86,7 @@ class EquivariantFFN(NativeOP):
     s2_activation
         If True, enable the S2 FFN grid path.
     ffn_so3_grid
-        If True, enable the SO3 Wigner-D FFN grid path (not ported).
+        If True, enable the SO3 Wigner-D FFN grid path.
     lebedev_quadrature
         If True, use Lebedev quadrature for the S2 projector in this FFN.
     activation_function
@@ -141,10 +136,6 @@ class EquivariantFFN(NativeOP):
         self.use_grid_branch = self.grid_branch > 0
         self.s2_activation = bool(s2_activation)
         self.ffn_so3_grid = bool(ffn_so3_grid)
-        if self.ffn_so3_grid:
-            raise NotImplementedError(
-                "ffn_so3_grid=True (SO3GridNet) is not ported to dpmodel"
-            )
         self.lebedev_quadrature = bool(lebedev_quadrature)
         self.s2_grid_method = "lebedev" if self.lebedev_quadrature else "e3nn"
         base_grid = resolve_s2_grid_resolution(
@@ -163,8 +154,7 @@ class EquivariantFFN(NativeOP):
         self.precision = precision
         self.compute_precision = _compute_precision(precision)
         self.trainable = bool(trainable)
-        # pt: grid_n_frames = 2 * kmax + 1 only when ffn_so3_grid (guarded above)
-        self.grid_n_frames = 1
+        self.grid_n_frames = 2 * self.kmax + 1 if self.ffn_so3_grid else 1
 
         # === Step 0. Split deterministic seeds at the module top-level ===
         seed_so3_in = child_seed(seed, 0)
@@ -199,22 +189,39 @@ class EquivariantFFN(NativeOP):
                 if self.use_grid_branch
                 else ("mlp" if self.use_grid_mlp else "glu")
             )
-            self.act: NativeOP = S2GridNet(
-                lmax=self.lmax,
-                channels=self.hidden_channels,
-                n_focus=1,
-                mode="self",
-                op_type=grid_op,
-                precision=self.compute_precision,
-                layout="ndfc",
-                grid_resolution_list=self.s2_grid_resolution,
-                coefficient_layout="packed",
-                grid_method=self.s2_grid_method,
-                grid_branches=max(1, self.grid_branch),
-                mlp_bias=self.mlp_bias,
-                trainable=self.trainable,
-                seed=seed_act,
-            )
+            self.act: NativeOP
+            if self.ffn_so3_grid:
+                self.act = SO3GridNet(
+                    lmax=self.lmax,
+                    kmax=self.kmax,
+                    channels=self.hidden_channels,
+                    n_focus=1,
+                    mode="self",
+                    op_type=grid_op,
+                    precision=self.compute_precision,
+                    layout="ndfc",
+                    grid_branches=max(1, self.grid_branch),
+                    mlp_bias=self.mlp_bias,
+                    trainable=self.trainable,
+                    seed=seed_act,
+                )
+            else:
+                self.act = S2GridNet(
+                    lmax=self.lmax,
+                    channels=self.hidden_channels,
+                    n_focus=1,
+                    mode="self",
+                    op_type=grid_op,
+                    precision=self.compute_precision,
+                    layout="ndfc",
+                    grid_resolution_list=self.s2_grid_resolution,
+                    coefficient_layout="packed",
+                    grid_method=self.s2_grid_method,
+                    grid_branches=max(1, self.grid_branch),
+                    mlp_bias=self.mlp_bias,
+                    trainable=self.trainable,
+                    seed=seed_act,
+                )
         else:
             self.act = GatedActivation(
                 lmax=self.lmax,

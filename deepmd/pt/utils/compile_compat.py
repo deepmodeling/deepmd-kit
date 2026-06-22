@@ -42,6 +42,7 @@ __all__ = [
     "get_task_buffer_values",
     "is_prime",
     "next_safe_prime",
+    "patch_inductor_force_int64_indexing",
     "patch_inductor_symbolic_divisibility",
     "rebuild_graph_module",
     "strip_saved_tensor_detach",
@@ -83,11 +84,45 @@ def apply_global_compile_patches() -> None:
 
     dynamo_config.optimize_ddp = False
 
+    # Force int64 tensor indexing in every compiled kernel.  Applies on all
+    # supported PyTorch versions and is independent of runtime shapes.
+    patch_inductor_force_int64_indexing()
+
     # The symbolic-divisibility regression exists only on PyTorch 2.12; the
     # 2.11 backend evaluates the same predicate correctly and must not be
     # patched.
     if Version(torch.__version__).release[:2] == (2, 12):
         patch_inductor_symbolic_divisibility()
+
+
+def patch_inductor_force_int64_indexing() -> None:
+    """Force Inductor to emit int64 tensor indexing in every compiled kernel.
+
+    Inductor selects the index dtype from static size hints. The compiled
+    ``core_compute`` graph is traced with the small placeholder shapes returned
+    by :func:`next_safe_prime`, from which Inductor infers that the
+    data-dependent edge and node axes fit in int32. At runtime those axes grow
+    large enough that the flattened index of a tensor such as ``(E, D, D, C)``
+    exceeds ``2**31`` and wraps to an out-of-range address, which surfaces
+    asynchronously as a CUDA illegal memory access. Forcing int64 indexing
+    removes this dependence on the trace-time size hints at the cost of a small
+    amount of additional address arithmetic. The patch is idempotent and
+    complements ``triton.max_tiles=1`` in :func:`build_inductor_compile_options`.
+    """
+    try:
+        from torch._inductor.codegen.simd import (
+            SIMDScheduling,
+        )
+    except Exception:
+        return
+
+    if getattr(SIMDScheduling, "_dp_force_int64_patched", False):
+        return
+
+    # ``can_use_32bit_indexing`` gates int32 selection; returning ``False``
+    # forces int64 indexing in every generated kernel.
+    SIMDScheduling.can_use_32bit_indexing = staticmethod(lambda numel, buffers: False)
+    SIMDScheduling._dp_force_int64_patched = True
 
 
 def check_compile_torch_version() -> None:
@@ -276,6 +311,13 @@ def build_inductor_compile_options() -> dict[str, Any]:
         # shapes on PyTorch 2.11 and earlier (pytorch/pytorch#174379, #178080,
         # #179494); the edge count is exactly that kind of shape.
         "triton.mix_order_reduction": False,
+        # Constrain every generated kernel to a 1D launch grid. The default
+        # 2D/3D tiling can place the data-dependent edge or node axis on the y
+        # or z launch dimension, whose limit is 65535; a larger axis then
+        # launches an out-of-range grid that surfaces as a CUDA illegal memory
+        # access. A 1D grid keeps that axis on the x dimension (limit 2**31-1).
+        # The option is shared by the training and evaluation graphs.
+        "triton.max_tiles": 1,
     }
     try:
         from torch._inductor import config as inductor_config

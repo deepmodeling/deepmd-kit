@@ -16,7 +16,14 @@ from deepmd.jax.common import (
 
 @flax_module
 class DescrptBlockRepflows(DescrptBlockRepflowsDP):
-    pass
+    # JAX/jax2tf export cannot represent the compact dynamic layout where
+    # boolean indexing creates runtime-sized ``n_edge``/``n_angle`` arrays.
+    # Use the fixed-capacity dynamic layout instead:
+    #   edges  = nf * nloc * e_sel
+    #   angles = nf * nloc * a_sel * a_sel
+    # Invalid slots are still masked by switch weights, so DPA-3 outputs match
+    # the compact dynamic implementation.
+    _use_static_dynamic_sel = True
 
 
 @flax_module
@@ -26,3 +33,6 @@ class RepFlowLayer(RepFlowLayerDP):
         "e_residual",
         "a_residual",
     }
+    # Keep the layer-level graph operations in the same fixed-capacity layout
+    # selected by the owning descriptor block.
+    _use_static_dynamic_sel = True

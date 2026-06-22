@@ -253,7 +253,11 @@ class DeepEval(DeepEvalBackend):
         self._has_spin = getattr(self.dp.model["Default"], "has_spin", False)
         if callable(self._has_spin):
             self._has_spin = self._has_spin()
-        self._has_hessian = self.model_def_script.get("hessian_mode", False)
+        selected_model_params = getattr(self, "input_param", self.model_def_script)
+        self._has_hessian = selected_model_params.get("hessian_mode", False)
+        self._uses_edge_schema = (
+            _is_sezm_model_params(selected_model_params) and not self._has_spin
+        )
         self._setup_nlist_backend(nlist_backend)
 
     def _setup_nlist_backend(self, nlist_backend: str) -> None:
@@ -743,34 +747,59 @@ class DeepEval(DeepEvalBackend):
     ) -> dict[str, torch.Tensor]:
         """Evaluate via the selected O(N) ``NeighborList`` strategy.
 
-        Builds the extended representation with ``self._nlist_builder`` (vesin or
-        nv), runs the model's ``forward_common_lower``, and maps the extended
-        outputs back to local atoms with ``communicate_extended_output``.
+        Uses the selected O(N) builder (vesin or nv).  Models that declare the
+        edge-vector contract consume it directly; other energy models keep the
+        historical extended-coordinate contract and fold extended outputs back
+        to local atoms.
         Returns a dict keyed by backend names, matching the normal ``model()``
-        output so the caller's extraction is unchanged.  ``requires_grad`` is set
-        on the extended coordinates internally, exactly as on the native path, so
-        forces/virials are produced identically.
+        output so the caller's extraction is unchanged.
         """
         inner = self.dp.model["Default"]
-        ext_coord, ext_atype, nlist, mapping = self._nlist_builder.build(
-            coord, atype, box, self.rcut, list(inner.get_sel())
-        )
-        model_lower = inner.forward_common_lower(
-            ext_coord,
-            ext_atype,
-            nlist,
-            mapping,
-            fparam=fparam,
-            aparam=aparam,
-            do_atomic_virial=do_atomic_virial,
-            charge_spin=charge_spin,
-        )
-        predict = communicate_extended_output(
-            model_lower,
-            inner.model_output_def(),
-            mapping,
-            do_atomic_virial=do_atomic_virial,
-        )
+        if self._uses_edge_schema:
+            edge_schema = self._nlist_builder.build(
+                coord,
+                atype,
+                box,
+                self.rcut,
+                list(inner.get_sel()),
+                return_mode="edges",
+            )
+            predict = inner.forward_common_lower(
+                edge_schema.coord,
+                edge_schema.atype,
+                edge_schema.edge_index,
+                edge_schema.edge_vec,
+                edge_schema.edge_scatter_index,
+                edge_schema.edge_mask,
+                fparam=fparam,
+                aparam=aparam,
+                charge_spin=charge_spin,
+                input_prec=coord.dtype,
+            )
+        else:
+            ext_coord, ext_atype, nlist, mapping = self._nlist_builder.build(
+                coord,
+                atype,
+                box,
+                self.rcut,
+                list(inner.get_sel()),
+            )
+            model_lower = inner.forward_common_lower(
+                ext_coord,
+                ext_atype,
+                nlist,
+                mapping,
+                fparam=fparam,
+                aparam=aparam,
+                do_atomic_virial=do_atomic_virial,
+                charge_spin=charge_spin,
+            )
+            predict = communicate_extended_output(
+                model_lower,
+                self.output_def,
+                mapping,
+                do_atomic_virial=do_atomic_virial,
+            )
         return {
             backend: predict[internal]
             for internal, backend in self._OUTDEF_DP2BACKEND.items()

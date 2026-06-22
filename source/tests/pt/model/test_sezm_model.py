@@ -565,8 +565,8 @@ class TestSeZMModelCompile(unittest.TestCase):
         del fp, ap
         if cc.ndim == 2:
             cc = cc.view(coord.shape[0], atype.shape[1], 3)
-        extended_coord, extended_atype, mapping, nlist = model.build_neighbor_list(
-            cc, atype, bb
+        extended_coord, extended_atype, nlist, mapping = (
+            model.build_extended_neighbor_list(cc, atype, bb)
         )
         atype_loc = extended_atype[:, : nlist.shape[1]]
         type_ebed = descriptor.type_embedding(atype_loc).reshape(
