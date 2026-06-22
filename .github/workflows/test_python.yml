@@ -26,6 +26,16 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python }}
+      - name: Ensure a working C++ toolchain (torch inductor needs it)
+        # Hosted-runner VMs occasionally boot with a broken gcc where the g++
+        # driver is present but cc1plus is missing, which makes torch inductor's
+        # C++ JIT compilation fail deep inside the tests with an opaque
+        # "g++: cannot execute 'cc1plus'" error. Reinstall the compiler and
+        # fail fast here with a clear message if it is still broken.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --reinstall build-essential
+          echo 'int main(){}' | g++ -x c++ - -o /tmp/cctest && echo "g++/cc1plus OK"
       - run: python -m pip install -U uv
       - run: |
           source/install/uv_with_retry.sh pip install --system openmpi --group pin_tensorflow_cpu --group pin_pytorch_cpu --torch-backend cpu
