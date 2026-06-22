@@ -29,6 +29,7 @@ from unittest import (
 
 import numpy as np
 import torch
+from packaging.version import parse as parse_version
 
 from deepmd.pt.entrypoints.freeze_pt2 import (
     _build_dynamic_shapes,
@@ -61,6 +62,15 @@ _REQUIRED_OUTPUT_KEYS = {
     "energy_derv_c",
     "energy_derv_c_redu",
 }
+_TORCH_VERSION = parse_version(torch.__version__)
+_SKIP_OFF_COMPILE_TORCH = (_TORCH_VERSION.major, _TORCH_VERSION.minor) not in {
+    (2, 11),
+    (2, 12),
+}
+_SKIP_OFF_COMPILE_TORCH_REASON = (
+    "SeZM's torch.compile/export path is only supported on torch 2.11.x and "
+    f"2.12.x; current torch is {torch.__version__}."
+)
 
 
 def _tiny_sezm_model_params() -> dict:
@@ -220,6 +230,7 @@ def _eager_forward(
     )
 
 
+@unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
 class TestSeZMExportPipeline(_ClearDefaultDeviceTestCase):
     """Bitwise trace / export / ``.pte`` round-trip parity (``rtol=1e-10``).
 
@@ -767,6 +778,7 @@ class TestSeZMFreezeGuards(_ClearDefaultDeviceTestCase):
             with self.assertRaises(ValueError):
                 freeze_sezm_to_pt2(str(ckpt_path), str(out))
 
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_freeze_accepts_multi_task_dpa4_head(self) -> None:
         """Multitask DPA4 checkpoints should export the selected branch."""
 
@@ -804,6 +816,7 @@ class TestSeZMFreezeGuards(_ClearDefaultDeviceTestCase):
 
         self.assertEqual(model_def["type"], "dpa4")
 
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_freeze_accepts_spin_checkpoint_metadata(self) -> None:
         """SeZM spin checkpoints should export a spin-compatible pt2 contract."""
 
