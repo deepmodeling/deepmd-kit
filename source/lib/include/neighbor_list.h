@@ -159,7 +159,9 @@ int build_nlist_cpu(InputNlist& nlist,
                     const int& nloc,
                     const int& nall,
                     const int& mem_size,
-                    const float& rcut);
+                    const float& rcut,
+                    const int& nframes = 1,
+                    const int* type = nullptr);
 
 void use_nei_info_cpu(int* nlist,
                       int* ntype,
@@ -224,7 +226,9 @@ int build_nlist_gpu(InputNlist& nlist,
                     const int& nloc,
                     const int& nall,
                     const int& mem_size,
-                    const float& rcut);
+                    const float& rcut,
+                    const int& nframes = 1,
+                    const int* type = NULL);
 
 /**
  * @brief Filter the fake atom type.

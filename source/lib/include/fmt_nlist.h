@@ -29,8 +29,25 @@ void format_nbor_list_gpu(int* nlist,
                           const int max_nbor_size,
                           const int nloc,
                           const int nall,
+                          const int nframes,
                           const float rcut,
                           const std::vector<int> sec);
+
+template <typename FPTYPE>
+inline void format_nbor_list_gpu(int* nlist,
+                                 const FPTYPE* coord,
+                                 const int* type,
+                                 const deepmd::InputNlist& gpu_inlist,
+                                 int* array_int,
+                                 uint_64* array_longlong,
+                                 const int max_nbor_size,
+                                 const int nloc,
+                                 const int nall,
+                                 const float rcut,
+                                 const std::vector<int> sec) {
+  format_nbor_list_gpu(nlist, coord, type, gpu_inlist, array_int,
+                       array_longlong, max_nbor_size, nloc, nall, 1, rcut, sec);
+}
 
 template <typename FPTYPE>
 void test_encoding_decoding_nbor_info_gpu(uint_64* key,
