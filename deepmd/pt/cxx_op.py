@@ -83,8 +83,8 @@ def load_library(module_name: str) -> bool:
                     f"incompatible and thus an error is raised when loading {module_name}. "
                     f"You need to install PyTorch {PT_VERSION}, or rebuild deepmd-kit "
                     f"against PyTorch {pt_py_version}.\nIf you are using a wheel from "
-                    "PyPI, you may consider to install deepmd-kit execuating "
-                    "`DP_ENABLE_PYTORCH=1 pip install deepmd-kit --no-binary deepmd-kit` "
+                    "PyPI, you may consider rebuilding deepmd-kit with "
+                    "`pip install deepmd-kit --no-binary deepmd-kit` "
                     "instead."
                 ) from e
             error_message = (
