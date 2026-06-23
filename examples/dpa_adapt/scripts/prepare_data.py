@@ -4,9 +4,9 @@
 # examples/dpa_adapt/data/. Only re-run if you need to regenerate from raw GDB9.
 """Download QM9 GDB9 and prepare deepmd/npy systems for the quickstart demo.
 
-Reads molecules 1-50 from the SDF, reads HOMO-LUMO gaps from the companion
-CSV file, stages a small 50-row dataset, converts it with ``dpa_adapt.convert``,
-and splits into 40 training and 10 test systems.
+Reads molecules 1-8 from the SDF, reads HOMO-LUMO gaps from the companion
+CSV file, stages a small 8-row dataset, converts it with ``dpa_adapt.convert``,
+and splits into 5 training and 3 test systems.
 
 Usage::
 
@@ -39,16 +39,16 @@ from dpa_adapt import (
 DEMO_DIR = Path(__file__).resolve().parent.parent
 RAW_DIR = DEMO_DIR / "raw"
 DATA_DIR = DEMO_DIR / "data"
-STAGED_DIR = RAW_DIR / "qm9_50"
+STAGED_DIR = RAW_DIR / "qm9_8"
 STAGED_MOL_DIR = STAGED_DIR / "mol"
-STAGED_CSV_PATH = STAGED_DIR / "qm9_50.csv"
+STAGED_CSV_PATH = STAGED_DIR / "qm9_8.csv"
 SDF_PATH = RAW_DIR / "gdb9.sdf"
 CSV_PATH = RAW_DIR / "gdb9.sdf.csv"
 TAR_PATH = RAW_DIR / "gdb9.tar.gz"
 TAR_URL = "https://deepchemdata.s3-us-west-1.amazonaws.com/datasets/gdb9.tar.gz"
 
-N_TRAIN = 40
-N_TEST = 10
+N_TRAIN = 5
+N_TEST = 3
 N_TOTAL = N_TRAIN + N_TEST
 BOX_LENGTH = 100.0  # Angstrom, cubic box for non-periodic systems
 TYPE_MAP = ["H", "C", "N", "O", "F"]
@@ -134,7 +134,7 @@ def _stage_qm9_subset(
     mol_blocks: list[str],
     gaps: np.ndarray,
 ) -> None:
-    """Write a 50-row CSV plus one single-molecule SDF per row."""
+    """Write an 8-row CSV plus one single-molecule SDF per row."""
     if STAGED_DIR.exists():
         shutil.rmtree(STAGED_DIR)
     STAGED_MOL_DIR.mkdir(parents=True)
@@ -185,7 +185,7 @@ def main() -> None:
     # 3. Read molecules from SDF ---------------------------------------------
     mol_blocks = _read_sdf_blocks(N_TOTAL)
 
-    # 4. Stage the 50-row raw subset -----------------------------------------
+    # 4. Stage the 8-row raw subset ------------------------------------------
     _stage_qm9_subset(mol_blocks, gaps)
 
     # 5. Convert to deepmd/npy via dpa_adapt.convert --------------------------
