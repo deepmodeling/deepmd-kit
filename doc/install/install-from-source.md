@@ -151,7 +151,7 @@ Note that TensorFlow may have specific requirements for the compiler version to 
 
 :::{tab-item} PyTorch {{ pytorch_icon }}
 
-You can set the environment variable `export DP_ENABLE_PYTORCH=1` to enable customized C++ OPs in the PyTorch backend.
+DeePMD-kit enables customized C++ OPs in the PyTorch backend by default. You can set the environment variable `export DP_ENABLE_PYTORCH=0` to disable them.
 Note that PyTorch may have specific requirements for the compiler version to support the C++ standard version and [`_GLIBCXX_USE_CXX11_ABI`](https://gcc.gnu.org/onlinedocs/libstdc++/manual/using_dual_abi.html) used by PyTorch.
 :::
 
@@ -196,9 +196,9 @@ The path to the ROCM toolkit directory. If `ROCM_ROOT` is not set, it will look 
 
 :::{envvar} DP_ENABLE_PYTORCH
 
-**Choices**: `0`, `1`; **Default**: `0`
+**Choices**: `0`, `1`; **Default**: `1`
 
-{{ pytorch_icon }} Enable customized C++ OPs for the PyTorch backend. PyTorch can still run without customized C++ OPs, but features will be limited.
+{{ pytorch_icon }} Enable customized C++ OPs for the PyTorch backend. Set this to `0` to disable customized C++ OPs. PyTorch can still run without customized C++ OPs, but features will be limited.
 :::
 
 :::{envvar} TENSORFLOW_ROOT

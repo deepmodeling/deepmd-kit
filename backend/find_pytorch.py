@@ -51,7 +51,7 @@ def find_pytorch() -> tuple[str | None, list[str]]:
     list of str
         TensorFlow requirement if not found. Empty if found.
     """
-    if os.environ.get("DP_ENABLE_PYTORCH", "0") == "0":
+    if os.environ.get("DP_ENABLE_PYTORCH", "1") == "0":
         return None, []
     requires = []
     pt_spec = None

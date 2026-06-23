@@ -104,7 +104,7 @@ def get_argument_from_env() -> tuple[str, list, list, dict, str, str]:
         cmake_args.append("-DENABLE_TENSORFLOW=OFF")
         tf_version = None
 
-    if os.environ.get("DP_ENABLE_PYTORCH", "0") == "1":
+    if os.environ.get("DP_ENABLE_PYTORCH", "1") == "1":
         pt_install_dir, _ = find_pytorch()
         pt_version = get_pt_version(pt_install_dir)
         cmake_args.extend(
