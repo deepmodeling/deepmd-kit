@@ -3171,7 +3171,7 @@ def standard_model_args() -> Argument:
 )
 def sezm_model_args() -> Argument:
     doc_descrpt = "Descriptor configuration for atomic environments. DPA4/SeZM uses the SeZM descriptor."
-    doc_fitting = "Fitting network configuration. DPA4/SeZM uses the `dpa4_ener` GLU energy fitting."
+    doc_fitting = "Fitting network configuration. DPA4/SeZM uses the `dpa4_ener` GLU energy fitting by default and also supports invariant `property` fitting."
     doc_model_branch_alias = (
         "List of aliases for this model branch. "
         "Multiple aliases can be defined, and any alias can reference this branch throughout the model usage. "
@@ -3234,7 +3234,7 @@ def sezm_model_args() -> Argument:
         "are saved with LoRA deltas folded into base weights, producing plain "
         "DPA4/SeZM checkpoints suitable for deployment."
     )
-    doc_model = "DPA4/SeZM model scaffold with fixed SeZM descriptor and fitting types."
+    doc_model = "DPA4/SeZM model scaffold with the SeZM descriptor and selectable energy or invariant-property fitting."
 
     ca = Argument(
         "dpa4",
@@ -3262,7 +3262,10 @@ def sezm_model_args() -> Argument:
                 [
                     Variant(
                         "type",
-                        [fitting_args_plugin.get_argument("dpa4_ener")],
+                        [
+                            fitting_args_plugin.get_argument("dpa4_ener"),
+                            fitting_args_plugin.get_argument("property"),
+                        ],
                         optional=True,
                         default_tag="dpa4_ener",
                         doc="The type of the fitting.",
@@ -4710,7 +4713,7 @@ def loss_tensor() -> list[Argument]:
 
 
 def loss_variant_type_args() -> Variant:
-    doc_loss = "The type of the loss. When the fitting type is `ener`, the loss type should be set to `ener`, `dens` (Only DPA4/SeZM supported), or left unset. When the fitting type is `dipole` or `polar`, the loss type should be set to `tensor`."
+    doc_loss = "The type of the loss. When the fitting type is `ener`, the loss type should be set to `ener`, `dens` (Only DPA4/SeZM supported), or left unset. When the fitting type is `property`, the loss type should be set to `property`. When the fitting type is `dipole` or `polar`, the loss type should be set to `tensor`."
 
     return Variant(
         "type",
@@ -4722,7 +4725,7 @@ def loss_variant_type_args() -> Variant:
 
 
 def loss_args() -> list[Argument]:
-    doc_loss = "The definition of loss function. The loss type should be set to `tensor`, `ener`, `dens` or left unset."
+    doc_loss = "The definition of loss function. The loss type should be set to `tensor`, `property`, `ener`, `dens` or left unset."
     ca = Argument(
         "loss", dict, [], [loss_variant_type_args()], optional=True, doc=doc_loss
     )

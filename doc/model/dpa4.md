@@ -9,10 +9,10 @@ Zone-bridging Model) architecture: an SO(3)-equivariant message-passing model
 for conservative interatomic potentials. The aliases `DPA4`, `SeZM`, and
 `sezm` all select the same implementation.
 
-`model.type: "dpa4"` is a convenience scaffold that fixes the SeZM descriptor
-and the `dpa4_ener` energy fitting network, so `descriptor.type` and
-`fitting_net.type` may be omitted. A new input then needs only the model type,
-`type_map`, and a few descriptor options.
+`model.type: "dpa4"` is a convenience scaffold that selects the SeZM descriptor
+and defaults to the `dpa4_ener` energy fitting network, so `descriptor.type` and
+`fitting_net.type` may be omitted for energy training. A new energy input then
+needs only the model type, `type_map`, and a few descriptor options.
 
 Reference: [DPA4 paper](https://arxiv.org/abs/2606.02419).
 
@@ -127,6 +127,33 @@ predicts energies and forces are obtained by autograd:
 ```
 
 See [training energy models](train-energy.md) for the general workflow.
+
+### Property training
+
+DPA4/SeZM can also train invariant structure properties by selecting the
+standard property fitting network. Set `fitting_net.type` to `property`, provide
+the property name used by the data file, and use the property loss:
+
+```json
+{
+  "model": {
+    "type": "dpa4",
+    "fitting_net": {
+      "type": "property",
+      "property_name": "band_prop",
+      "task_dim": 3,
+      "intensive": true
+    }
+  },
+  "loss": {
+    "type": "property"
+  }
+}
+```
+
+The property label should follow the usual DeePMD property-data convention, for
+example `band_prop.npy` when `property_name` is `band_prop`. See
+`examples/water/dpa4/input_property.json` for a complete input.
 
 ### Direct-force denoising (`dens`, experimental)
 

@@ -75,6 +75,9 @@ from .property_model import (
 from .sezm_model import (
     SeZMModel,
 )
+from .sezm_property_model import (
+    SeZMPropertyModel,
+)
 from .sezm_spin_model import (
     SeZMSpinModel,
 )
@@ -341,12 +344,27 @@ def get_sezm_model(model_params: dict) -> BaseModel:
     descriptor = BaseDescriptor(**model_params["descriptor"])
 
     fitting_net = copy.deepcopy(model_params["fitting_net"])
-    fitting_net.pop("type", None)
+    fitting_net.setdefault("type", "dpa4_ener")
     fitting_net["ntypes"] = descriptor.get_ntypes()
     fitting_net["type_map"] = copy.deepcopy(model_params["type_map"])
     fitting_net["mixed_types"] = descriptor.mixed_types()
     fitting_net["dim_descrpt"] = descriptor.get_dim_out()
-    fitting = SeZMEnergyFittingNet(**fitting_net)
+    if fitting_net["type"] in ("dpa4_ener", "sezm_ener"):
+        fitting = BaseFitting(**fitting_net)
+        modelcls = SeZMModel
+    elif fitting_net["type"] == "property":
+        if bridging_method != "NONE":
+            raise ValueError(
+                "DPA4/SeZM property fitting does not support analytical bridging "
+                "potentials; set `bridging_method` to `none`."
+            )
+        fitting = BaseFitting(**fitting_net)
+        modelcls = SeZMPropertyModel
+    else:
+        raise ValueError(
+            "DPA4/SeZM model supports `dpa4_ener`, `sezm_ener`, or `property` "
+            f"fitting, but got `{fitting_net['type']}`."
+        )
     atom_exclude_types = model_params.get("atom_exclude_types", [])
     preset_out_bias = model_params.get("preset_out_bias")
     preset_out_bias = _convert_preset_out_bias_to_array(
@@ -356,7 +374,7 @@ def get_sezm_model(model_params: dict) -> BaseModel:
     use_compile = bool(model_params.get("use_compile", False))
     enable_tf32 = bool(model_params.get("enable_tf32", True))
 
-    model = SeZMModel(
+    model = modelcls(
         descriptor=descriptor,
         fitting=fitting,
         type_map=model_params["type_map"],
@@ -416,6 +434,12 @@ def get_sezm_spin_model(model_params: dict) -> BaseModel:
     descriptor = BaseDescriptor(**model_params["descriptor"])
 
     fitting_net = copy.deepcopy(model_params["fitting_net"])
+    fitting_net_type = fitting_net.get("type", "dpa4_ener")
+    if fitting_net_type not in ("dpa4_ener", "sezm_ener"):
+        raise ValueError(
+            "Spin DPA4/SeZM currently supports only `dpa4_ener` or `sezm_ener` "
+            f"fitting, but got `{fitting_net_type}`."
+        )
     fitting_net.pop("type", None)
     fitting_net["ntypes"] = descriptor.get_ntypes()
     fitting_net["type_map"] = copy.deepcopy(model_params["type_map"])
@@ -461,7 +485,7 @@ def get_model(model_params: dict) -> Any:
             return get_standard_model(model_params)
     elif model_type == "linear_ener":
         return get_linear_model(model_params)
-    elif model_type in ("SeZM", "sezm", "dpa4"):
+    elif model_type in ("SeZM", "sezm", "DPA4", "dpa4"):
         if "spin" in model_params:
             return get_sezm_spin_model(model_params)
         return get_sezm_model(model_params)
@@ -480,6 +504,7 @@ __all__ = [
     "LinearEnergyModel",
     "PolarModel",
     "SeZMModel",
+    "SeZMPropertyModel",
     "SeZMSpinModel",
     "SpinEnergyModel",
     "SpinModel",
