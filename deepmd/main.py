@@ -492,6 +492,73 @@ def main_parser() -> argparse.ArgumentParser:
         help="Output directory for descriptor files. Descriptors will be saved as desc/(system_name).npy",
     )
     parser_eval_desc.add_argument(
+        "--dtype",
+        choices=["fp32", "fp64", "native"],
+        default="native",
+        type=str,
+        help="Output dtype for descriptors. `native` keeps the model output precision (default).",
+    )
+    parser_eval_desc.add_argument(
+        "--head",
+        "--model-branch",
+        default=None,
+        type=str,
+        help="(Supported backend: PyTorch) Task head (alias: model branch) to use if in multi-task mode.",
+    )
+
+    # * embedding script *************************************************************
+    parser_embedding = subparsers.add_parser(
+        "embed",
+        parents=[parser_log],
+        help="evaluate model embeddings (descriptor, atomic feature, structural feature)",
+        formatter_class=RawTextArgumentDefaultsHelpFormatter,
+        epilog=textwrap.dedent(
+            """\
+        examples:
+            dp embed -m model.ckpt.pt -s /path/to/system -o embedding.hdf5
+        """
+        ),
+    )
+    parser_embedding.add_argument(
+        "-m",
+        "--model",
+        default="model.ckpt.pt",
+        type=str,
+        help="(Supported backend: PyTorch) Energy model to import: a training "
+        "checkpoint (suffix .pt) or a frozen model (suffix .pth). SeZM/DPA4 "
+        "only supports the .pt checkpoint; the frozen .pt2 package is not supported.",
+    )
+    parser_embedding_subgroup = parser_embedding.add_mutually_exclusive_group()
+    parser_embedding_subgroup.add_argument(
+        "-s",
+        "--system",
+        default=".",
+        type=str,
+        help="The system dir. Recursively detect systems in this directory",
+    )
+    parser_embedding_subgroup.add_argument(
+        "-f",
+        "--datafile",
+        default=None,
+        type=str,
+        help="The path to the datafile, each line of which is a path to one data system.",
+    )
+    parser_embedding.add_argument(
+        "-o",
+        "--output",
+        default="embedding.hdf5",
+        type=str,
+        help="Output HDF5 file. Each system is stored as a group holding the "
+        "descriptor, atomic_feature, and structural_feature datasets.",
+    )
+    parser_embedding.add_argument(
+        "--dtype",
+        choices=["fp32", "fp64", "native"],
+        default="fp32",
+        type=str,
+        help="Output dtype for embeddings. `native` keeps the model output precision.",
+    )
+    parser_embedding.add_argument(
         "--head",
         "--model-branch",
         default=None,
@@ -1032,6 +1099,7 @@ def main(args: list[str] | None = None) -> None:
     if args.command in (
         "test",
         "eval-desc",
+        "embed",
         "doc-train-input",
         "model-devi",
         "neighbor-stat",

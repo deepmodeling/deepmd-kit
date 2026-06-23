@@ -552,6 +552,44 @@ pair_coeff * * O H
 The ordinary TorchScript freeze path is not used for DPA4/SeZM checkpoints.
 A small LAMMPS example is in `examples/water/dpa4/lmp/`.
 
+## Embedding extraction
+
+A trained DPA4/SeZM model can export learned representations for downstream
+analysis with `dp embed`. A single forward pass (no force or virial
+computation) produces three embeddings per system:
+
+- `descriptor`: the per-atom local-environment representation, with shape
+  (nframes, natoms, dim_descriptor).
+- `atomic_feature`: the per-atom activation after the last fitting hidden layer,
+  with shape (nframes, natoms, dim_hidden).
+- `structural_feature`: a whole-structure summary obtained by summing
+  `atomic_feature` over atoms, with shape (nframes, dim_hidden).
+
+A typical invocation operates on the PyTorch checkpoint (`.pt`):
+
+```bash
+dp embed -m model.ckpt.pt -s /path/to/system -o embedding.hdf5
+```
+
+The results are written to a single HDF5 file in which each system is a group
+holding the three float32 datasets above. They can be read back with `h5py`:
+
+```python
+import h5py
+
+with h5py.File("embedding.hdf5", "r") as f:
+    type_map = f.attrs["type_map"]
+    group = f[next(iter(f.keys()))]
+    descriptor = group["descriptor"][:]
+    atomic_feature = group["atomic_feature"][:]
+    structural_feature = group["structural_feature"][:]
+```
+
+This command is available for DPA4/SeZM energy models in the PyTorch backend and
+honors both `DP_COMPILE_INFER` and `DP_TRITON_INFER`. It operates on the training checkpoint (`.pt`); the
+frozen `.pt2` package is not supported. See
+[model embeddings](../inference/embedding.md) for the full description.
+
 ## Data format
 
 DPA4/SeZM uses the [standard DeePMD-kit data format](../data/system.md). Keep

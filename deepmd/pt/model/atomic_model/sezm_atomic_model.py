@@ -498,23 +498,6 @@ class SeZMAtomicModel(DPAtomicModel):
             return super().fitting_output_def()
         return active_fitting.output_def()
 
-    def set_eval_fitting_last_layer_hook(self, enable: bool) -> None:
-        """
-        Set the fitting-last-layer evaluation hook for the active fitting path.
-
-        Parameters
-        ----------
-        enable
-            Whether to enable the hook.
-        """
-        self.enable_eval_fitting_last_layer_hook = enable
-        active_fitting = self.get_active_fitting_net()
-        if active_fitting is not None and hasattr(
-            active_fitting, "set_return_middle_output"
-        ):
-            active_fitting.set_return_middle_output(enable)
-        self.eval_fitting_last_layer_list.clear()
-
     def change_type_map(
         self,
         type_map: list[str],

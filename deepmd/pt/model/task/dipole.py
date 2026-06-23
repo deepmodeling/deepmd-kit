@@ -187,22 +187,34 @@ class DipoleFittingNet(GeneralFitting):
         h2: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
+        return_atomic_feature: bool = False,
     ) -> dict[str, torch.Tensor]:
         nframes, nloc, _ = descriptor.shape
         assert gr is not None, "Must provide the rotation matrix for dipole fitting."
         # cast the input to internal precsion
         gr = gr.to(self.prec)
+        fit_ret = self._forward_common(
+            descriptor,
+            atype,
+            gr,
+            g2,
+            h2,
+            fparam,
+            aparam,
+            return_atomic_feature=return_atomic_feature,
+        )
         # (nframes, nloc, m1)
-        out = self._forward_common(descriptor, atype, gr, g2, h2, fparam, aparam)[
-            self.var_name
-        ]
+        out = fit_ret[self.var_name]
         # (nframes * nloc, 1, m1)
         out = out.view(-1, 1, self.embedding_width)
         # (nframes * nloc, m1, 3)
         gr = gr.view(nframes * nloc, self.embedding_width, 3)
         # (nframes, nloc, 3)
         out = torch.bmm(out, gr).squeeze(-2).view(nframes, nloc, 3)
-        return {self.var_name: out.to(env.GLOBAL_PT_FLOAT_PRECISION)}
+        result = {self.var_name: out.to(env.GLOBAL_PT_FLOAT_PRECISION)}
+        if return_atomic_feature:
+            result["atomic_feature"] = fit_ret["atomic_feature"]
+        return result
 
     # make jit happy with torch 2.0.0
     exclude_types: list[int]
