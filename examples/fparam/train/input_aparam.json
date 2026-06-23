@@ -28,6 +28,10 @@
       ],
       "resnet_dt": true,
       "numb_aparam": 1,
+      "use_aparam_as_mask": false,
+      "use_aparam_output_gate": true,
+      "aparam_gate_norm": 1.0,
+      "aparam_gate_clamp": true,
       "precision": "float64",
       "seed": 1
     }

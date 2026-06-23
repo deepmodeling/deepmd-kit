@@ -29,6 +29,10 @@ from .se_a import (
     DescrptBlockSeA,
     DescrptSeA,
 )
+from .se_a_vg import (
+    DescrptBlockSeAVg,
+    DescrptSeAVg,
+)
 from .se_atten_v2 import (
     DescrptSeAttenV2,
 )
@@ -51,6 +55,7 @@ __all__ = [
     "DescriptorBlock",
     "DescrptBlockRepformers",
     "DescrptBlockSeA",
+    "DescrptBlockSeAVg",
     "DescrptBlockSeAtten",
     "DescrptBlockSeTTebd",
     "DescrptDPA1",
@@ -58,6 +63,7 @@ __all__ = [
     "DescrptDPA3",
     "DescrptHybrid",
     "DescrptSeA",
+    "DescrptSeAVg",
     "DescrptSeAttenV2",
     "DescrptSeR",
     "DescrptSeT",

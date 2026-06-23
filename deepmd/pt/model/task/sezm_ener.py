@@ -691,7 +691,20 @@ class SeZMEnergyFittingNet(InvarFitting):
             assert self.default_fparam_tensor is not None
             fparam = torch.tile(self.default_fparam_tensor.unsqueeze(0), [nf, 1])
         fparam = fparam.to(self.prec) if fparam is not None else None
-        aparam = aparam.to(self.prec) if aparam is not None else None
+        aparam_raw: torch.Tensor | None = None
+        if aparam is not None:
+            aparam = aparam.to(self.prec)
+            if self.numb_aparam > 0:
+                if aparam.numel() % (nf * self.numb_aparam) != 0:
+                    raise ValueError(
+                        f"input aparam: cannot reshape {list(aparam.shape)} "
+                        f"into ({nf}, nloc, {self.numb_aparam})."
+                    )
+                aparam_raw = aparam.view([nf, -1, self.numb_aparam])
+        if self.use_aparam_output_gate and aparam_raw is None:
+            raise ValueError(
+                "aparam is required when use_aparam_output_gate is enabled"
+            )
 
         if self.remove_vaccum_contribution is not None:
             xx_zeros = torch.zeros_like(xx)
@@ -725,22 +738,16 @@ class SeZMEnergyFittingNet(InvarFitting):
                 xx_zeros = torch.cat([xx_zeros, fparam], dim=-1)
 
         if self.numb_aparam > 0 and not self.use_aparam_as_mask:
-            assert aparam is not None, "aparam should not be None"
+            assert aparam_raw is not None, "aparam should not be None"
             assert self.aparam_avg is not None
             assert self.aparam_inv_std is not None
-            if aparam.numel() % (nf * self.numb_aparam) != 0:
-                raise ValueError(
-                    f"input aparam: cannot reshape {list(aparam.shape)} "
-                    f"into ({nf}, nloc, {self.numb_aparam})."
-                )
-            aparam = aparam.view([nf, -1, self.numb_aparam])
-            nb, nloc, _ = aparam.shape
+            nb, nloc, _ = aparam_raw.shape
             t_aparam_avg = self._extend_a_avg_std(self.aparam_avg, nb, nloc)
             t_aparam_inv_std = self._extend_a_avg_std(self.aparam_inv_std, nb, nloc)
-            aparam = (aparam - t_aparam_avg) * t_aparam_inv_std
-            xx = torch.cat([xx, aparam], dim=-1)
+            aparam_embed = (aparam_raw - t_aparam_avg) * t_aparam_inv_std
+            xx = torch.cat([xx, aparam_embed], dim=-1)
             if xx_zeros is not None:
-                xx_zeros = torch.cat([xx_zeros, aparam], dim=-1)
+                xx_zeros = torch.cat([xx_zeros, aparam_embed], dim=-1)
 
         assert self.case_embd is not None
         outs = torch.zeros(

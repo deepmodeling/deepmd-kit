@@ -322,6 +322,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
         comm_dict: dict[str, torch.Tensor] | None = None,
         fparam: torch.Tensor | None = None,
         charge_spin: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor | None,
@@ -361,6 +362,7 @@ class DescrptSeA(BaseDescriptor, torch.nn.Module):
             The smooth switch function.
 
         """
+        del aparam
         # cast the input to internal precsion
         coord_ext = coord_ext.to(dtype=self.prec)
         g1, rot_mat, g2, h2, sw = self.sea.forward(
