@@ -78,6 +78,9 @@ from deepmd.pt_expt.utils.vesin_neighbor_list import (
     VesinNeighborList,
     is_vesin_torch_available,
 )
+from deepmd.utils.batch_size import (
+    RetrySignal,
+)
 from deepmd.utils.econf_embd import (
     sort_element_type,
 )
@@ -1029,7 +1032,6 @@ class DeepEval(DeepEvalBackend):
         atom_types: np.ndarray,
         fparam: np.ndarray | None = None,
         aparam: np.ndarray | None = None,
-        dtype: str = "native",
         **kwargs: Any,
     ) -> np.ndarray:
         """Evaluate descriptors by using this DP.
@@ -1038,6 +1040,8 @@ class DeepEval(DeepEvalBackend):
             Use :meth:`eval_embedding` instead, which returns the descriptor
             together with the atomic and structural features in a single
             forward pass. This method is a thin wrapper kept for compatibility.
+            For models frozen before ``forward_embedding`` existed, it falls
+            back to the descriptor hook baked into that TorchScript module.
 
         Parameters
         ----------
@@ -1062,21 +1066,31 @@ class DeepEval(DeepEvalBackend):
             - nframes x natoms x dim_aparam.
             - natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
             - dim_aparam. Then all frames and atoms are provided with the same aparam.
-        dtype
-            Output dtype: ``"fp32"``, ``"fp64"``, or ``"native"``.
 
         Returns
         -------
         descriptor
             Descriptors.
         """
+        model = self.dp.model["Default"]
+        if not hasattr(model, "forward_embedding"):
+            return self._eval_legacy_feature(
+                coords,
+                cells,
+                atom_types,
+                fparam,
+                aparam,
+                enable_hook=model.set_eval_descriptor_hook,
+                read_feature=model.eval_descriptor,
+                **kwargs,
+            )
         descriptor, _, _ = self.eval_embedding(
             coords,
             cells,
             atom_types,
             fparam=fparam,
             aparam=aparam,
-            dtype=dtype,
+            dtype="native",
             **kwargs,
         )
         return descriptor
@@ -1088,7 +1102,6 @@ class DeepEval(DeepEvalBackend):
         atom_types: np.ndarray,
         fparam: np.ndarray | None = None,
         aparam: np.ndarray | None = None,
-        dtype: str = "native",
         **kwargs: Any,
     ) -> np.ndarray:
         """Evaluate fitting before last layer by using this DP.
@@ -1096,7 +1109,9 @@ class DeepEval(DeepEvalBackend):
         .. deprecated::
             Use :meth:`eval_embedding` instead, which returns this activation as
             the ``atomic_feature`` output. This method is a thin wrapper kept
-            for compatibility.
+            for compatibility. For models frozen before ``forward_embedding``
+            existed, it falls back to the fitting-last-layer hook baked into
+            that TorchScript module.
 
         Parameters
         ----------
@@ -1121,24 +1136,78 @@ class DeepEval(DeepEvalBackend):
             - nframes x natoms x dim_aparam.
             - natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
             - dim_aparam. Then all frames and atoms are provided with the same aparam.
-        dtype
-            Output dtype: ``"fp32"``, ``"fp64"``, or ``"native"``.
 
         Returns
         -------
         fitting
             Fitting output before last layer.
         """
+        model = self.dp.model["Default"]
+        if not hasattr(model, "forward_embedding"):
+            return self._eval_legacy_feature(
+                coords,
+                cells,
+                atom_types,
+                fparam,
+                aparam,
+                enable_hook=model.set_eval_fitting_last_layer_hook,
+                read_feature=model.eval_fitting_last_layer,
+                **kwargs,
+            )
         _, atomic_feature, _ = self.eval_embedding(
             coords,
             cells,
             atom_types,
             fparam=fparam,
             aparam=aparam,
-            dtype=dtype,
+            dtype="native",
             **kwargs,
         )
         return atomic_feature
+
+    def _eval_legacy_feature(
+        self,
+        coords: np.ndarray,
+        cells: np.ndarray | None,
+        atom_types: np.ndarray,
+        fparam: np.ndarray | None,
+        aparam: np.ndarray | None,
+        *,
+        enable_hook: Callable[[bool], None],
+        read_feature: Callable[[], torch.Tensor],
+        **kwargs: Any,
+    ) -> np.ndarray:
+        """Extract a cached descriptor or fitting feature from a legacy frozen model.
+
+        Models frozen before ``forward_embedding`` expose these features only
+        through a hook that caches them during a forward pass. The retry loop
+        keeps the cache consistent when the auto batch size splits the forward
+        and hits an out-of-memory condition.
+        """
+        while True:
+            if self.auto_batch_size is not None:
+                self.auto_batch_size.set_oom_retry_mode(True)
+            enable_hook(True)
+            retry = False
+            try:
+                self.eval(
+                    coords,
+                    cells,
+                    atom_types,
+                    atomic=False,
+                    fparam=fparam,
+                    aparam=aparam,
+                    **kwargs,
+                )
+                feature = read_feature()
+            except RetrySignal:
+                retry = True
+            finally:
+                enable_hook(False)
+                if self.auto_batch_size is not None:
+                    self.auto_batch_size.set_oom_retry_mode(False)
+            if not retry:
+                return to_numpy_array(feature)
 
     def eval_embedding(
         self,
@@ -1160,8 +1229,8 @@ class DeepEval(DeepEvalBackend):
         masked atom-sum of the atomic feature, a whole-structure summary. For
         models with a single shared fitting network, projecting the structural
         feature through the fitting output layer reproduces the (bias-free)
-        total energy. All three embeddings are returned as float32, which is
-        ample for downstream analysis.
+        total energy. The output precision is selected by ``dtype`` and
+        defaults to float32.
 
         Parameters
         ----------

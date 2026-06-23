@@ -314,18 +314,57 @@ class TestEmbeddingDeepEvalAPI(unittest.TestCase):
             np.float64,
         )
 
-    def test_old_frozen_model_without_embedding_raises(self) -> None:
-        backend = object.__new__(PTDeepEval)
-        backend._has_spin = False
-        backend.dp = SimpleNamespace(model={"Default": object()})
+    def test_legacy_frozen_model_uses_baked_in_hook(self) -> None:
+        # Frozen ``.pth`` files predating ``forward_embedding`` still carry the
+        # descriptor / fitting hooks baked into the TorchScript module. The
+        # deprecated ``eval_descriptor`` / ``eval_fitting_last_layer`` must drive
+        # those hooks instead of raising, so existing artifacts keep working.
+        toggles: list[tuple[str, bool]] = []
+        with torch.device("cpu"):
+            desc = torch.arange(6, dtype=torch.float64).reshape(1, 2, 3)
+            fit = torch.arange(8, dtype=torch.float64).reshape(1, 2, 4)
 
-        with self.assertRaisesRegex(NotImplementedError, "re-freeze"):
-            PTDeepEval.eval_embedding(
-                backend,
-                self.coord_np,
-                self.cell_np,
-                self.atype_np,
-            )
+        class LegacyModel:
+            def set_eval_descriptor_hook(self, enable: bool) -> None:
+                toggles.append(("descriptor", enable))
+
+            def eval_descriptor(self) -> torch.Tensor:
+                return desc
+
+            def set_eval_fitting_last_layer_hook(self, enable: bool) -> None:
+                toggles.append(("fitting", enable))
+
+            def eval_fitting_last_layer(self) -> torch.Tensor:
+                return fit
+
+        backend = object.__new__(PTDeepEval)
+        backend.auto_batch_size = None
+        backend.dp = SimpleNamespace(model={"Default": LegacyModel()})
+        # The hook caches are populated by the (here mocked) forward pass.
+        backend.eval = lambda *args, **kwargs: None
+
+        np.testing.assert_array_equal(
+            PTDeepEval.eval_descriptor(
+                backend, self.coord_np, self.cell_np, self.atype_np
+            ),
+            desc.numpy(),
+        )
+        np.testing.assert_array_equal(
+            PTDeepEval.eval_fitting_last_layer(
+                backend, self.coord_np, self.cell_np, self.atype_np
+            ),
+            fit.numpy(),
+        )
+        # Each hook is enabled for the forward pass and disabled afterwards.
+        self.assertEqual(
+            toggles,
+            [
+                ("descriptor", True),
+                ("descriptor", False),
+                ("fitting", True),
+                ("fitting", False),
+            ],
+        )
 
 
 class TestEmbeddingEntrypoint(unittest.TestCase):

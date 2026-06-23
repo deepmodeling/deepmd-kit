@@ -917,10 +917,16 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         ------
         NotImplementedError
             If the model is not in the ``ener`` execution mode.
+        RuntimeError
+            If called in training mode; call ``model.eval()`` first.
         """
         if self.get_active_mode() != "ener":
             raise NotImplementedError(
                 "Embedding extraction is only supported in the SeZM `ener` mode."
+            )
+        if self.training:
+            raise RuntimeError(
+                "Embedding extraction requires eval mode; call model.eval() first."
             )
         with torch.no_grad():
             return self.forward_common(

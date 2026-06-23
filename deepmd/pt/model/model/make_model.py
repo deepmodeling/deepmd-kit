@@ -255,8 +255,18 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 ``descriptor`` with shape (nf, nloc, d), ``atomic_feature`` with
                 shape (nf, nloc, h), and ``structural_feature`` with shape
                 (nf, h), in the model's native precision. The DeepEval embedding
-                API casts these to float32 for output.
+                API casts these to the requested output dtype (float32 by
+                default).
+
+            Raises
+            ------
+            RuntimeError
+                If called in training mode; call ``model.eval()`` first.
             """
+            if self.training:
+                raise RuntimeError(
+                    "Embedding extraction requires eval mode; call model.eval() first."
+                )
             cc, bb, fp, ap, _ = self._input_type_cast(
                 coord, box=box, fparam=fparam, aparam=aparam
             )

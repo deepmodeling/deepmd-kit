@@ -434,6 +434,35 @@ class DeepEvalBackend(ABC):
         """
 
 
+def _cast_output_dtype(array: np.ndarray, dtype: str) -> np.ndarray:
+    """Cast a backend evaluation output to the requested output dtype.
+
+    The cast is performed in this backend-agnostic wrapper so every backend
+    shares identical ``--dtype`` behavior: the backend always returns its
+    native precision, and this high-level API decides the emitted dtype.
+
+    Parameters
+    ----------
+    array
+        The array returned by a backend evaluation.
+    dtype
+        Output dtype: ``"fp32"``, ``"fp64"``, or ``"native"``. ``"native"``
+        leaves the backend precision unchanged.
+
+    Returns
+    -------
+    np.ndarray
+        The array cast to the requested precision.
+    """
+    if dtype == "native":
+        return array
+    if dtype == "fp32":
+        return array.astype(np.float32)
+    if dtype == "fp64":
+        return array.astype(np.float64)
+    raise ValueError(f"Unknown dtype {dtype!r}; expected 'fp32', 'fp64', or 'native'.")
+
+
 class DeepEval(ABC):
     """High-level Deep Evaluator interface.
 
@@ -608,13 +637,10 @@ class DeepEval(ABC):
             nframes,
             natoms,
         ) = self._standard_input(coords, cells, atom_types, fparam, aparam, mixed_type)
-        eval_kwargs = {"fparam": fparam, "aparam": aparam, **kwargs}
-        if dtype != "native":
-            eval_kwargs["dtype"] = dtype
         descriptor = self.deep_eval.eval_descriptor(
-            coords, cells, atom_types, **eval_kwargs
+            coords, cells, atom_types, fparam=fparam, aparam=aparam, **kwargs
         )
-        return descriptor
+        return _cast_output_dtype(descriptor, dtype)
 
     def eval_fitting_last_layer(
         self,
@@ -676,13 +702,10 @@ class DeepEval(ABC):
             nframes,
             natoms,
         ) = self._standard_input(coords, cells, atom_types, fparam, aparam, mixed_type)
-        eval_kwargs = {"fparam": fparam, "aparam": aparam, **kwargs}
-        if dtype != "native":
-            eval_kwargs["dtype"] = dtype
         fitting = self.deep_eval.eval_fitting_last_layer(
-            coords, cells, atom_types, **eval_kwargs
+            coords, cells, atom_types, fparam=fparam, aparam=aparam, **kwargs
         )
-        return fitting
+        return _cast_output_dtype(fitting, dtype)
 
     def eval_embedding(
         self,
@@ -703,9 +726,8 @@ class DeepEval(ABC):
         fitting hidden layer; the structural feature is the masked atom-sum of
         the atomic feature, a whole-structure summary. For models with a single
         shared fitting network, projecting the structural feature through the
-        fitting output layer reproduces the (bias-free) total energy. All three
-        embeddings are returned as float32, which is ample for downstream
-        analysis.
+        fitting output layer reproduces the (bias-free) total energy. The output
+        precision is selected by ``dtype`` and defaults to float32.
 
         Parameters
         ----------
