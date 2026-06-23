@@ -35,21 +35,19 @@ class TestInferDeepSpinModeDeviPtExpt : public ::testing::Test {
   void SetUp() override {
     std::string model0_path = "../../tests/infer/deeppot_dpa_spin_md0.pt2";
     std::string model1_path = "../../tests/infer/deeppot_dpa_spin_md1.pt2";
-    {
-      std::ifstream f(model0_path);
-      if (!f.good()) {
-        GTEST_SKIP() << "Skipping: " << model0_path << " not found.";
-      }
-    }
-    {
-      std::ifstream f(model1_path);
-      if (!f.good()) {
-        GTEST_SKIP() << "Skipping: " << model1_path << " not found.";
-      }
-    }
 #if !defined(BUILD_PYTORCH) || !BUILD_PT_EXPT_SPIN
     GTEST_SKIP() << "Skip because PyTorch support is not enabled.";
 #endif
+    {
+      std::ifstream f(model0_path);
+      ASSERT_TRUE(f.good())
+          << "Model artifact is not available: " << model0_path;
+    }
+    {
+      std::ifstream f(model1_path);
+      ASSERT_TRUE(f.good())
+          << "Model artifact is not available: " << model1_path;
+    }
     dp0.init(model0_path);
     dp1.init(model1_path);
     dp_md.init({model0_path, model1_path});

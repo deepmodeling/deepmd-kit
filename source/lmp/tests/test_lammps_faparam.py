@@ -27,7 +27,7 @@ system_file = Path(__file__).parent.parent.parent / "tests"
 data_file = Path(__file__).parent / "data.lmp"
 md_file = Path(__file__).parent / "md.out"
 
-# from api_cc/tests/test_deeppot_a_fparam_aparam.cc
+# Same reference values as source/tests/infer/deeppot_universal_data.h.
 expected_ae = np.array(
     [
         -1.038271183039953804e-01,
