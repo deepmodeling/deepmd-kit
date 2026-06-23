@@ -330,6 +330,52 @@ std::vector<torch::Tensor> DeepPotPTExpt::run_model_with_comm(
   return with_comm_loader->run(inputs);
 }
 
+std::vector<torch::Tensor> DeepPotPTExpt::run_model_edges_with_comm(
+    const torch::Tensor& coord,
+    const torch::Tensor& atype,
+    const torch::Tensor& extended_atype,
+    const torch::Tensor& edge_index,
+    const torch::Tensor& edge_vec,
+    const torch::Tensor& edge_scatter_index,
+    const torch::Tensor& edge_mask,
+    const torch::Tensor& fparam,
+    const torch::Tensor& aparam,
+    const torch::Tensor& charge_spin,
+    const std::vector<at::Tensor>& comm_tensors) {
+  if (!with_comm_loader) {
+    throw deepmd::deepmd_exception(
+        "run_model_edges_with_comm called but the with-comm artifact is not "
+        "available. Either the .pt2 file has no with-comm artifact compiled "
+        "(programming error: the caller should check has_comm_artifact_ "
+        "before invoking this path), or the artifact was present in the "
+        ".pt2 metadata but failed to load at init time (see earlier stderr "
+        "log). Multi-rank LAMMPS requires a working with-comm artifact.");
+  }
+  if (comm_tensors.size() != 8) {
+    throw deepmd::deepmd_exception(
+        "run_model_edges_with_comm: comm_tensors must contain exactly 8 "
+        "tensors (send_list, send_proc, recv_proc, send_num, recv_num, "
+        "communicator, nlocal, nghost). Got " +
+        std::to_string(comm_tensors.size()) + ".");
+  }
+  std::vector<torch::Tensor> inputs = {coord,      atype,    extended_atype,
+                                       edge_index, edge_vec, edge_scatter_index,
+                                       edge_mask};
+  if (dfparam > 0) {
+    inputs.push_back(fparam);
+  }
+  if (daparam > 0) {
+    inputs.push_back(aparam);
+  }
+  if (dchgspin > 0) {
+    inputs.push_back(charge_spin);
+  }
+  for (const auto& t : comm_tensors) {
+    inputs.push_back(t);
+  }
+  return with_comm_loader->run(inputs);
+}
+
 void DeepPotPTExpt::extract_outputs(
     std::map<std::string, torch::Tensor>& output_map,
     const std::vector<torch::Tensor>& flat_outputs) {
@@ -499,9 +545,15 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       // model-input dummy edges are rebuilt on-device from current coordinates
       // every step, so rcut-crossing skin atoms are handled without carrying
       // out-of-cutoff edges into the exported graph.
-      const auto edge_tensors =
-          createEdgeTensors(nlist_data.jlist, dcoord, mapping, nloc, nall_real,
-                            device, /*with_geometry=*/false, &nlist_data.ilist);
+      //
+      // Multi-rank inference indexes the extended node set directly
+      // (``fold_to_local=false``): ghost neighbours stay as distinct nodes so
+      // their features can be exchanged across ranks via border_op, instead of
+      // being folded onto a local owner that this rank does not own.
+      const auto edge_tensors = createEdgeTensors(
+          nlist_data.jlist, dcoord, mapping, nloc, nall_real, device,
+          /*with_geometry=*/false, /*row_centers=*/&nlist_data.ilist,
+          /*fold_to_local=*/!use_with_comm);
       edge_index_tensor = edge_tensors.edge_index;
       edge_index_ext_tensor = edge_tensors.edge_index_ext;
     } else {
@@ -602,12 +654,6 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   std::vector<int*> remapped_sendlist_ptrs;
   std::vector<int> remapped_sendnum, remapped_recvnum;
   if (use_with_comm) {
-    if (lower_input_is_edge_) {
-      throw deepmd::deepmd_exception(
-          "SeZM edge-schema .pt2 inference requires the regular single-rank "
-          "AOTInductor artifact. Multi-rank inference must use an artifact "
-          "whose lower input schema includes explicit communication tensors.");
-    }
     bool has_null_atoms = (nall_real < nall);
     std::vector<at::Tensor> comm_tensors;
     if (has_null_atoms) {
@@ -620,9 +666,25 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
           lmp_list, lmp_list.sendlist, lmp_list.sendnum, lmp_list.recvnum, nloc,
           nghost_real);
     }
-    flat_outputs = run_model_with_comm(
-        coord_Tensor, atype_Tensor, firstneigh_tensor, mapping_tensor,
-        fparam_tensor, aparam_tensor, charge_spin_tensor, comm_tensors);
+    if (lower_input_is_edge_) {
+      // SeZM edge schema: edge_index already indexes the extended node set
+      // (fold_to_local=false above), so it doubles as the force-scatter index.
+      // Ghost node features are exchanged between blocks inside the with-comm
+      // graph via border_op; the local atom types feed fitting while the
+      // extended types embed ghost neighbours.
+      const auto edge_tensors =
+          compactEdgeTensors(edge_index_tensor, edge_index_ext_tensor,
+                             coord_Tensor, static_cast<double>(rcut));
+      flat_outputs = run_model_edges_with_comm(
+          coord_Tensor, atype_Tensor.slice(1, 0, nloc), atype_Tensor,
+          edge_tensors.edge_index, edge_tensors.edge_vec,
+          edge_tensors.edge_index_ext, edge_tensors.edge_mask, fparam_tensor,
+          aparam_tensor, charge_spin_tensor, comm_tensors);
+    } else {
+      flat_outputs = run_model_with_comm(
+          coord_Tensor, atype_Tensor, firstneigh_tensor, mapping_tensor,
+          fparam_tensor, aparam_tensor, charge_spin_tensor, comm_tensors);
+    }
   } else {
     if (lower_input_is_edge_) {
       const auto edge_tensors =

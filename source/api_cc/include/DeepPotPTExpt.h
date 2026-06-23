@@ -419,6 +419,30 @@ class DeepPotPTExpt : public DeepPotBackend {
       const std::vector<at::Tensor>& comm_tensors);
 
   /**
+   * @brief Run the with-comm edge (SeZM) ``.pt2`` artifact with comm tensors.
+   *
+   * The edge schema indexes the extended node set, so ``edge_index`` and
+   * ``edge_scatter_index`` coincide. ``atype`` carries owned atoms (fitting,
+   * energy read-out) while ``extended_atype`` embeds ghost neighbours.
+   *
+   * @param[in] comm_tensors 8 comm tensors in canonical positional order:
+   *            send_list, send_proc, recv_proc, send_num, recv_num,
+   *            communicator, nlocal, nghost.
+   */
+  std::vector<torch::Tensor> run_model_edges_with_comm(
+      const torch::Tensor& coord,
+      const torch::Tensor& atype,
+      const torch::Tensor& extended_atype,
+      const torch::Tensor& edge_index,
+      const torch::Tensor& edge_vec,
+      const torch::Tensor& edge_scatter_index,
+      const torch::Tensor& edge_mask,
+      const torch::Tensor& fparam,
+      const torch::Tensor& aparam,
+      const torch::Tensor& charge_spin,
+      const std::vector<at::Tensor>& comm_tensors);
+
+  /**
    * @brief Extract outputs from flat tensor list using output_keys.
    */
   void extract_outputs(std::map<std::string, torch::Tensor>& output_map,

@@ -33,12 +33,65 @@ from packaging.version import parse as parse_version
 
 from deepmd.pt.entrypoints.freeze_pt2 import (
     _build_dynamic_shapes,
+    _build_with_comm_dynamic_shapes,
     _collect_metadata,
+    _make_comm_sample_inputs,
     _make_sample_inputs,
     _resolve_nframes,
     freeze_sezm_to_pt2,
     is_sezm_checkpoint,
 )
+from deepmd.pt_expt.utils.comm import (
+    ensure_comm_registered,
+)
+
+_COMM_KEYS = (
+    "send_list",
+    "send_proc",
+    "recv_proc",
+    "send_num",
+    "recv_num",
+    "communicator",
+    "nlocal",
+    "nghost",
+)
+
+
+def _eager_parallel_forward(
+    model: torch.nn.Module,
+    comm_sample: tuple,
+) -> dict[str, torch.Tensor]:
+    """Reference parallel lower forward driven by the with-comm sample tensors."""
+    (
+        coord,
+        atype,
+        extended_atype,
+        edge_index,
+        edge_vec,
+        edge_scatter_index,
+        edge_mask,
+        fparam,
+        aparam,
+        charge_spin,
+    ) = comm_sample[:10]
+    comm_dict = dict(zip(_COMM_KEYS, comm_sample[10:18], strict=True))
+    eager_coord = coord.detach().clone().requires_grad_(True)
+    return model.forward_common_lower(
+        eager_coord,
+        atype,
+        edge_index,
+        edge_vec.detach(),
+        edge_scatter_index,
+        edge_mask,
+        fparam=fparam,
+        aparam=aparam,
+        comm_dict=comm_dict,
+        extended_atype=extended_atype,
+        charge_spin=charge_spin,
+        use_compile=False,
+    )
+
+
 from deepmd.pt.model.model import (
     get_model,
 )
@@ -399,6 +452,97 @@ class TestSeZMExportPipelineTritonInfer(TestSeZMExportPipeline):
         loaded_out = self.loaded(*self.sample_inputs)
         self._assert_dict_allclose(
             self.dense_out, loaded_out, context="triton .pte vs dense eager"
+        )
+
+
+class TestSeZMWithCommExportPipeline(_ClearDefaultDeviceTestCase):
+    """Trace / export / ``.pte`` parity for the parallel with-comm lower graph.
+
+    The with-comm artifact threads the eight ``border_op`` communication tensors
+    so cross-rank ghost exchange is captured as opaque external calls. A
+    single-process self-send plan reduces the exchange to an owner->ghost copy,
+    so the exported program must reproduce the eager parallel forward to fp64
+    round-off, on both the trace shape and a different owned-atom count.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        super().setUpClass()
+        try:
+            ensure_comm_registered()
+            cls.model = _build_tiny_sezm_model()
+            cls.sample_inputs = _make_comm_sample_inputs(cls.model, nloc=7, device=_CPU)
+            traced = cls.model.forward_common_lower_exportable_with_comm(
+                *cls.sample_inputs
+            )
+            exported = torch.export.export(
+                traced,
+                cls.sample_inputs,
+                dynamic_shapes=_build_with_comm_dynamic_shapes(cls.sample_inputs),
+                strict=False,
+                prefer_deferred_runtime_asserts_over_guards=True,
+            )
+            cls.traced = traced
+            cls._pte_tmp = tempfile.NamedTemporaryFile(suffix=".pte", delete=True)
+            torch.export.save(exported, cls._pte_tmp.name)
+            cls.loaded = torch.export.load(cls._pte_tmp.name).module()
+        except Exception:
+            super().tearDownClass()
+            raise
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        try:
+            for attr in ("loaded", "traced", "model", "sample_inputs"):
+                if hasattr(cls, attr):
+                    delattr(cls, attr)
+            if hasattr(cls, "_pte_tmp"):
+                cls._pte_tmp.close()
+                delattr(cls, "_pte_tmp")
+        finally:
+            super().tearDownClass()
+
+    def _assert_dict_allclose(
+        self,
+        ref: dict[str, torch.Tensor],
+        test_dict: dict[str, torch.Tensor] | object,
+        *,
+        context: str,
+    ) -> None:
+        test_pairs = (
+            list(test_dict.items())
+            if hasattr(test_dict, "items")
+            else list(zip(ref.keys(), test_dict, strict=True))
+        )
+        for key, test_val in test_pairs:
+            np.testing.assert_allclose(
+                ref[key].detach().cpu().numpy(),
+                test_val.detach().cpu().numpy(),
+                rtol=1e-10,
+                atol=1e-10,
+                err_msg=f"{context}: {key}",
+            )
+
+    def test_traced_matches_eager(self) -> None:
+        eager = _eager_parallel_forward(self.model, self.sample_inputs)
+        traced_out = self.traced(*self.sample_inputs)
+        self._assert_dict_allclose(
+            eager, traced_out, context="with-comm traced vs eager"
+        )
+
+    def test_loaded_pte_matches_eager(self) -> None:
+        eager = _eager_parallel_forward(self.model, self.sample_inputs)
+        loaded_out = self.loaded(*self.sample_inputs)
+        self._assert_dict_allclose(eager, loaded_out, context="with-comm .pte vs eager")
+
+    def test_loaded_pte_matches_eager_different_nloc(self) -> None:
+        # nloc=11 retargets the owned-atom symbol away from the trace value (7);
+        # nall/nedge follow from the geometry and nswap stays 1.
+        infer_inputs = _make_comm_sample_inputs(self.model, nloc=11, device=_CPU)
+        eager = _eager_parallel_forward(self.model, infer_inputs)
+        loaded_out = self.loaded(*infer_inputs)
+        self._assert_dict_allclose(
+            eager, loaded_out, context="with-comm .pte vs eager (infer shape)"
         )
 
 
@@ -837,6 +981,7 @@ class TestSeZMFreezeGuards(_ClearDefaultDeviceTestCase):
                 freeze_sezm_to_pt2(str(ckpt_path), str(out), device=_CPU)
 
             with zipfile.ZipFile(str(out), "r") as zf:
+                names = zf.namelist()
                 metadata = json.loads(
                     zf.read("model/extra/metadata.json").decode("utf-8")
                 )
@@ -851,6 +996,39 @@ class TestSeZMFreezeGuards(_ClearDefaultDeviceTestCase):
         self.assertEqual(metadata["ntypes_spin"], 1)
         self.assertIn("energy_derv_r_mag", metadata["output_keys"])
         self.assertIn("energy_derv_c_redu", metadata["output_keys"])
+        # Spin uses the nlist lower interface; the edge-based with-comm artifact
+        # does not apply, so multi-rank inference fails fast in C++.
+        self.assertFalse(metadata["has_comm_artifact"])
+        self.assertNotIn("model/extra/forward_lower_with_comm.pt2", names)
+
+    def test_freeze_embeds_with_comm_artifact(self) -> None:
+        """A plain SeZM checkpoint ships the nested multi-rank with-comm artifact."""
+
+        def fake_compile(_exported: torch.export.ExportedProgram, package_path: str):
+            with zipfile.ZipFile(package_path, "w") as zf:
+                zf.writestr("model/data.pkl", b"")
+
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = Path(tmp)
+            params = _tiny_sezm_model_params()
+            ckpt_path = _write_tiny_sezm_checkpoint(tmp_path, params)
+            out = tmp_path / "with_comm.pt2"
+
+            with mock.patch(
+                "torch._inductor.aoti_compile_and_package",
+                side_effect=fake_compile,
+            ):
+                freeze_sezm_to_pt2(str(ckpt_path), str(out), device=_CPU)
+
+            with zipfile.ZipFile(str(out), "r") as zf:
+                names = zf.namelist()
+                metadata = json.loads(
+                    zf.read("model/extra/metadata.json").decode("utf-8")
+                )
+
+        self.assertTrue(metadata["has_comm_artifact"])
+        self.assertTrue(metadata["has_message_passing"])
+        self.assertIn("model/extra/forward_lower_with_comm.pt2", names)
 
 
 if __name__ == "__main__":
