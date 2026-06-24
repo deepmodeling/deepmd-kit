@@ -184,9 +184,10 @@ class MFTConfigManager:
         )
         # Paper default 0.5/0.5; aux_prob (default 0.5) controls the split, the
         # downstream share is the complement. Legacy keeps downstream at 1.0.
-        if not 0.0 <= float(t.aux_prob) <= 1.0:
+        aux_prob = float(t.aux_prob)
+        if not 0.0 <= aux_prob <= 1.0:
             raise ValueError(f"aux_prob must be in [0, 1]; got {t.aux_prob!r}.")
-        downstream_prob = (1.0 - t.aux_prob) if is_property else 1.0
+        downstream_prob = (1.0 - aux_prob) if is_property else 1.0
 
         aux_systems = t.aux_data if isinstance(t.aux_data, list) else [t.aux_data]
         train_systems = (
@@ -199,7 +200,7 @@ class MFTConfigManager:
             )
 
         training = {
-            "model_prob": {t.aux_branch: t.aux_prob, downstream_key: downstream_prob},
+            "model_prob": {t.aux_branch: aux_prob, downstream_key: downstream_prob},
             "data_dict": {
                 t.aux_branch: {
                     "training_data": {"systems": aux_systems, "batch_size": aux_batch}

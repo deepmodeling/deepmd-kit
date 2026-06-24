@@ -308,6 +308,19 @@ def test_invalid_downstream_task_type_raises(monkeypatch):
         )
 
 
+@pytest.mark.parametrize("aux_prob", [-0.1, 1.2, "not-a-number"])
+def test_aux_prob_must_be_probability(aux_prob):
+    """Invalid MFT branch probabilities must fail at construction time."""
+    with pytest.raises(ValueError, match="aux_prob"):
+        MFTFineTuner(
+            pretrained="/does/not/exist.pt",
+            aux_branch="SPICE2",
+            downstream_task_type="property",
+            property_name="homo",
+            aux_prob=aux_prob,
+        )
+
+
 def test_property_task_stores_attrs(monkeypatch):
     """The MFTFineTuner exposes downstream_task_type / property_name /
     task_dim / intensive so MFTConfigManager can read them.
