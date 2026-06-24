@@ -39,10 +39,10 @@ class MFTFineTuner:
         Default: 'MP_traj_v024_alldata_mixu' (general materials coverage).
         Run `dp --pt show <checkpoint> model-branch` to list all options.
     aux_prob : float
-        Sampling weight for the aux branch. Positive real number; DeepMD-kit
-        normalizes it against DOWNSTREAM weight of 1.0. This is the primary
-        experimental variable for sensitivity analysis.
-        Example: aux_prob=0.5 → aux:downstream ≈ 1:2 sampling ratio.
+        Sampling probability for the aux branch. Must be in ``[0, 1]``; the
+        downstream branch uses the complementary probability ``1 - aux_prob``.
+        This is the primary experimental variable for sensitivity analysis.
+        Example: aux_prob=0.5 → aux:downstream = 1:1 sampling ratio.
     type_map : list[str], optional
         The global (shared) type map for MFT training. Both the aux and
         downstream branches share a single descriptor, which uses this
@@ -145,7 +145,13 @@ class MFTFineTuner:
             raise ValueError(
                 f"fparam_dim must be a non-negative int; got {fparam_dim!r}."
             )
-        if not 0.0 <= float(aux_prob) <= 1.0:
+        try:
+            aux_prob = float(aux_prob)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"aux_prob must be a number in [0, 1]; got {aux_prob!r}."
+            ) from exc
+        if not 0.0 <= aux_prob <= 1.0:
             raise ValueError(f"aux_prob must be in [0, 1]; got {aux_prob!r}.")
 
         self.type_map = type_map
