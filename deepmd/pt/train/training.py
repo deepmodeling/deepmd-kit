@@ -77,6 +77,7 @@ from deepmd.pt.train.utils import (
     clip_grad_norm_,
     latest_checkpoint_path,
     resolve_best_checkpoint_dir,
+    resolve_keep_ckpt_count,
     scoped_env_defaults,
 )
 from deepmd.pt.train.validation import (
@@ -216,6 +217,7 @@ class Trainer:
             self.save_dir.mkdir(parents=True, exist_ok=True)
         self.save_freq = training_params.get("save_freq", 1000)
         self.max_ckpt_keep = training_params.get("max_ckpt_keep", 5)
+        self.ckpt_keep_ratio = training_params.get("ckpt_keep_ratio")
         self.enable_ema = bool(training_params.get("enable_ema", False))
         self.ema_decay = float(training_params.get("ema_decay", 0.999))
         self.ema_ckpt_keep = int(training_params.get("ema_ckpt_keep", 3))
@@ -728,6 +730,24 @@ class Trainer:
                     training_data,
                     rank=self.rank,
                 )
+
+        # === Derive checkpoint retention from ckpt_keep_ratio ===
+        # num_steps is final here (including when derived from num_epoch), so the
+        # ratio can be converted into an absolute keep count once.
+        keep_ckpt_count = resolve_keep_ckpt_count(
+            self.ckpt_keep_ratio, self.num_steps, self.save_freq
+        )
+        if keep_ckpt_count is not None:
+            self.max_ckpt_keep = keep_ckpt_count
+            self.ema_ckpt_keep = keep_ckpt_count
+            log.info(
+                "Resolved checkpoint retention to %d from ckpt_keep_ratio=%s "
+                "(num_steps=%d, save_freq=%d).",
+                keep_ckpt_count,
+                self.ckpt_keep_ratio,
+                self.num_steps,
+                self.save_freq,
+            )
 
         # Learning rate
         self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)

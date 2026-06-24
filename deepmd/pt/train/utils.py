@@ -9,6 +9,9 @@ import os
 from contextlib import (
     contextmanager,
 )
+from math import (
+    ceil,
+)
 from pathlib import (
     Path,
 )
@@ -244,3 +247,38 @@ def resolve_best_checkpoint_dir(
     if save_best_dir:
         return Path(save_best_dir)
     return Path(save_ckpt).parent
+
+
+def resolve_keep_ckpt_count(
+    ckpt_keep_ratio: float | None, num_steps: int, save_freq: int
+) -> int | None:
+    """
+    Convert a checkpoint-retention ratio into a sliding-window keep count.
+
+    Periodic checkpoints are saved every ``save_freq`` steps, so a run of
+    ``num_steps`` produces about ``num_steps // save_freq`` of them. Keeping the
+    most recent ``ceil(ratio * total)`` of those is equivalent to retaining the
+    final ``ratio`` fraction of the run by step, without the caller computing
+    the count by hand.
+
+    Parameters
+    ----------
+    ckpt_keep_ratio : float or None
+        The fraction of the training run, by step, whose periodic checkpoints
+        are retained. ``None`` leaves the keep count unchanged.
+    num_steps : int
+        The total number of training steps, already resolved (including when
+        derived from ``numb_epoch``).
+    save_freq : int
+        The checkpoint saving frequency in steps.
+
+    Returns
+    -------
+    int or None
+        The number of most recent checkpoints to keep (at least one), or
+        ``None`` when ``ckpt_keep_ratio`` is not set.
+    """
+    if ckpt_keep_ratio is None:
+        return None
+    total_periodic_ckpts = max(1, num_steps // save_freq)
+    return max(1, ceil(ckpt_keep_ratio * total_periodic_ckpts))

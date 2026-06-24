@@ -104,6 +104,7 @@ Other keys in the {ref}`training <training>` section are explained below:
 - {ref}`disp_freq <training/disp_freq>` The frequency of printing learning curve. Set in the unit of training steps
 - {ref}`save_freq <training/save_freq>` The frequency of saving checkpoint.
 - {ref}`save_dir <training/save_dir>` The directory where periodic checkpoints are written (PyTorch backend). It is created recursively if missing, while the `model.ckpt.pt` symlinks and the `checkpoint` pointer file stay in the working directory. Defaults to the working directory.
+- {ref}`ckpt_keep_ratio <training/ckpt_keep_ratio>` An alternative to `max_ckpt_keep` (PyTorch backend) that keeps a sliding window of `ceil(ckpt_keep_ratio * numb_steps / save_freq)` most recent checkpoints, i.e. the final `ckpt_keep_ratio` fraction of the run by step. It overrides `max_ckpt_keep` (and `ema_ckpt_keep`) when set, and works the same whether the run length is given by `numb_steps` or `numb_epoch`.
 
 ## Options and environment variables
 

@@ -1181,6 +1181,28 @@ class TestEMATraining(unittest.TestCase):
         self._tmpdir.cleanup()
 
     @TRAINING_TEST_TIMEOUT
+    def test_ckpt_keep_ratio_overrides_keep_counts(self) -> None:
+        config = deepcopy(self.config)
+        config["training"]["ckpt_keep_ratio"] = 0.5
+        trainer = get_trainer(config)
+        # 4 periodic checkpoints; ceil(0.5 * 4) = 2 overrides both the regular
+        # and EMA keep counts.
+        self.assertEqual(trainer.max_ckpt_keep, 2)
+        self.assertEqual(trainer.ema_ckpt_keep, 2)
+        save_ckpt = trainer.save_ckpt
+        ema_save_ckpt = trainer.ema_save_ckpt
+        trainer.run()
+
+        self.assertEqual(
+            sorted(path.name for path in Path(".").glob(f"{save_ckpt}-*.pt")),
+            [f"{save_ckpt}-3.pt", f"{save_ckpt}-4.pt"],
+        )
+        self.assertEqual(
+            sorted(path.name for path in Path(".").glob(f"{ema_save_ckpt}-*.pt")),
+            [f"{ema_save_ckpt}-3.pt", f"{ema_save_ckpt}-4.pt"],
+        )
+
+    @TRAINING_TEST_TIMEOUT
     def test_save_dir_redirects_checkpoints_with_local_symlinks(self) -> None:
         config = deepcopy(self.config)
         config["training"]["save_dir"] = "ckpt"

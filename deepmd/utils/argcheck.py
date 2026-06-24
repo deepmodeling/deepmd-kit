@@ -4994,6 +4994,12 @@ def training_args(
         "The oldest checkpoints will be deleted once the number of checkpoints exceeds max_ckpt_keep. "
         "Defaults to 5."
     )
+    doc_ckpt_keep_ratio = (
+        "An alternative to `max_ckpt_keep` that sets the number of retained "
+        "checkpoints as a fraction in (0, 1) of the run: the most recent "
+        "`ceil(ckpt_keep_ratio * numb_steps / save_freq)` checkpoints are kept. "
+        "When set, it overrides `max_ckpt_keep` and `ema_ckpt_keep`."
+    )
     doc_enable_ema = (
         "Whether to maintain an exponential moving average (EMA) of model "
         "parameters during training and save periodic EMA checkpoints with an "
@@ -5129,6 +5135,15 @@ def training_args(
             "save_ckpt", str, optional=True, default="model.ckpt", doc=doc_save_ckpt
         ),
         Argument("max_ckpt_keep", int, optional=True, default=5, doc=doc_max_ckpt_keep),
+        Argument(
+            "ckpt_keep_ratio",
+            [float, None],
+            optional=True,
+            default=None,
+            doc=doc_only_pt_supported + doc_ckpt_keep_ratio,
+            extra_check=lambda x: x is None or 0.0 < x < 1.0,
+            extra_check_errmsg="must be a fraction in the open interval (0, 1)",
+        ),
         Argument(
             "enable_ema",
             bool,
