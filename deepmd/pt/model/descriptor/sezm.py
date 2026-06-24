@@ -64,9 +64,6 @@ from deepmd.pt.utils.exclude_mask import (
 from deepmd.pt.utils.update_sel import (
     UpdateSel,
 )
-from deepmd.pt_expt.utils.comm import (
-    ensure_comm_registered,
-)
 from deepmd.utils.version import (
     check_version_compatibility,
 )
@@ -1335,6 +1332,12 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             # mix frames into wrong forces, so it is rejected outright.
             if nf != 1:
                 raise ValueError("parallel `comm_dict` inference requires nf == 1")
+            # Imported lazily so plain pt inference never pulls the custom-op
+            # registration module onto its import path.
+            from deepmd.pt_expt.utils.comm import (
+                ensure_comm_registered,
+            )
+
             ensure_comm_registered()
         out_nloc = nloc if parallel else n_per_frame
         atype_flat = extended_atype.reshape(-1)  # (N,)
@@ -1968,7 +1971,10 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         return True
 
     def has_message_passing(self) -> bool:
-        return bool(len(self.blocks) > 0 and self.lmax > 0)
+        # SeZM resolves ghost neighbours through the atom-map fold (single
+        # domain) or border_op exchange (parallel) instead of reading them
+        # directly, so its lower path always needs message-passing handling.
+        return True
 
     def has_message_passing_across_ranks(self) -> bool:
         """Whether multi-rank inference needs cross-rank ghost-feature exchange.
@@ -1980,7 +1986,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         ghost owners, so the edge-based with-comm artifact is not exported for
         bridging models and multi-rank inference fails fast instead.
         """
-        return self.has_message_passing() and self.bridging_switch is None
+        return self.bridging_switch is None
 
     def need_sorted_nlist_for_lower(self) -> bool:
         return False

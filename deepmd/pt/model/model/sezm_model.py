@@ -508,9 +508,6 @@ from deepmd.pt.utils.nv_nlist import (
     NvNeighborList,
     is_nv_available,
 )
-from deepmd.pt_expt.utils.comm import (
-    ensure_comm_registered,
-)
 from deepmd.pt_expt.utils.edge_schema import (
     edge_schema_from_extended,
 )
@@ -1103,6 +1100,11 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             self.should_use_compile() if use_compile is None else use_compile
         )
         if comm_dict is not None:
+            if extended_atype is None:
+                raise ValueError(
+                    "`extended_atype` (nf, nall) is required when `comm_dict` "
+                    "is provided."
+                )
             should_compile = False
         charge_spin = self.convert_charge_spin(
             charge_spin,
@@ -2447,6 +2449,12 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             raise NotImplementedError(
                 "SeZM export supports only the conservative `ener` path."
             )
+        # Imported lazily so plain pt inference never pulls the custom-op
+        # registration module onto its import path.
+        from deepmd.pt_expt.utils.comm import (
+            ensure_comm_registered,
+        )
+
         ensure_comm_registered()
 
         model = self

@@ -358,11 +358,15 @@ class TestSeZMExportPipeline(_ClearDefaultDeviceTestCase):
         *,
         context: str,
     ) -> None:
-        test_pairs = (
-            list(test_dict.items())
-            if hasattr(test_dict, "items")
-            else list(zip(ref.keys(), test_dict, strict=True))
-        )
+        if hasattr(test_dict, "items"):
+            self.assertEqual(
+                set(test_dict.keys()),
+                set(ref.keys()),
+                msg=f"{context}: exported output keys do not match the reference",
+            )
+            test_pairs = list(test_dict.items())
+        else:
+            test_pairs = list(zip(ref.keys(), test_dict, strict=True))
         for key, test_val in test_pairs:
             self.assertIn(key, ref, msg=f"{context}: unexpected output key {key!r}")
             ref_val = ref[key]
@@ -509,11 +513,15 @@ class TestSeZMWithCommExportPipeline(_ClearDefaultDeviceTestCase):
         *,
         context: str,
     ) -> None:
-        test_pairs = (
-            list(test_dict.items())
-            if hasattr(test_dict, "items")
-            else list(zip(ref.keys(), test_dict, strict=True))
-        )
+        if hasattr(test_dict, "items"):
+            self.assertEqual(
+                set(test_dict.keys()),
+                set(ref.keys()),
+                msg=f"{context}: exported output keys do not match the reference",
+            )
+            test_pairs = list(test_dict.items())
+        else:
+            test_pairs = list(zip(ref.keys(), test_dict, strict=True))
         for key, test_val in test_pairs:
             np.testing.assert_allclose(
                 ref[key].detach().cpu().numpy(),
@@ -1001,6 +1009,7 @@ class TestSeZMFreezeGuards(_ClearDefaultDeviceTestCase):
         self.assertFalse(metadata["has_comm_artifact"])
         self.assertNotIn("model/extra/forward_lower_with_comm.pt2", names)
 
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_freeze_embeds_with_comm_artifact(self) -> None:
         """A plain SeZM checkpoint ships the nested multi-rank with-comm artifact."""
 
