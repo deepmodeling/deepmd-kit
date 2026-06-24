@@ -14,7 +14,7 @@ For a conceptual overview and the full API reference, see the user guide at
 - A DeePMD-kit installation with the PyTorch backend.
 - The optional `nvalchemi-toolkit` package (`pip install deepmd-kit[nvalchemi]`,
   or `pip install nvalchemi-toolkit`; see its documentation for the build matching
-  your CUDA version). A CUDA device is
+  your Python, platform, and CUDA environment). A CUDA device is
   recommended, since `nvalchemi`'s neighbour-list and integrator kernels are
   GPU-accelerated.
 - A trained DPA-4 / SeZM checkpoint (`.pt`, or a frozen `.pt2`). The examples

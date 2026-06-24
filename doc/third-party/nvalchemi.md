@@ -25,7 +25,8 @@ pip install deepmd-kit[nvalchemi]
 
 This pulls in the `nvalchemi-toolkit` package; equivalently, install it directly
 with `pip install nvalchemi-toolkit`. Refer to the `nvalchemi-toolkit`
-documentation for the build that matches your CUDA version.
+documentation for the build that matches your Python, platform, and CUDA
+environment.
 
 The DeePMD-kit adapter lives in `deepmd.pt.nvalchemi`; importing it without
 `nvalchemi-toolkit` present raises an actionable error.
