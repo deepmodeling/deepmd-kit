@@ -123,6 +123,118 @@ class _HeavyContract:
     ): ...  # placeholder for future Bohrium-only tests
 
 
+class _HookOwner:
+    def __init__(self):
+        self.flags = []
+        self.eval_descriptor_list = [object()]
+
+    def set_eval_descriptor_hook(self, enable):
+        self.flags.append(enable)
+
+    def eval_descriptor(self):
+        return None
+
+
+class _FakeWrapper:
+    def __init__(self, inner):
+        self.model = {"Default": inner}
+
+
+class TestDescriptorHookResolution:
+    def test_prefers_inner_model_hook(self):
+        from dpa_adapt._backend import (
+            _DescriptorExtraction,
+        )
+
+        inner = _HookOwner()
+        inner.atomic_model = object()
+
+        extractor = _DescriptorExtraction(_FakeWrapper(inner))
+        extractor._enable_hook()
+        extractor._disable_hook()
+
+        assert extractor._descriptor_hook_model is inner
+        assert inner.flags == [True, False]
+
+    def test_falls_back_to_atomic_model_hook(self):
+        from dpa_adapt._backend import (
+            _DescriptorExtraction,
+        )
+
+        atomic = _HookOwner()
+        inner = type("Inner", (), {"atomic_model": atomic})()
+
+        extractor = _DescriptorExtraction(_FakeWrapper(inner))
+        extractor._enable_hook()
+        extractor._clear_accumulator()
+        extractor._disable_hook()
+
+        assert extractor._descriptor_hook_model is atomic
+        assert atomic.flags == [True, False]
+        assert atomic.eval_descriptor_list == []
+
+
+class _FakeInnerWithEmbedding:
+    """Inner model with forward_embedding() but no hook API (e.g. DPA3)."""
+
+    def __init__(self, descriptor_tensor):
+        self._descriptor = descriptor_tensor
+        self.atomic_model = object()
+
+    def forward_embedding(self, coord, atype, box):
+        # Mirror the real forward_embedding contract: dict[str, torch.Tensor]
+        # with keys ``descriptor``, ``atomic_feature``, ``structural_feature``.
+        return {
+            "descriptor": self._descriptor,
+            "atomic_feature": None,
+            "structural_feature": None,
+        }
+
+
+class TestForwardEmbeddingFallback:
+    def test_enable_hook_is_noop_without_hook_model(self):
+        import sys
+        from unittest.mock import MagicMock
+
+        if isinstance(sys.modules.get("torch"), MagicMock):
+            pytest.skip("torch is mocked by another test")
+
+        from dpa_adapt._backend import _DescriptorExtraction
+        import torch
+
+        desc = torch.zeros(1, 2, 16, dtype=torch.float64)
+        inner = _FakeInnerWithEmbedding(desc)
+        extractor = _DescriptorExtraction(_FakeWrapper(inner))
+
+        assert extractor._descriptor_hook_model is None
+        extractor._enable_hook()
+        extractor._disable_hook()
+        extractor._clear_accumulator()
+
+    def test_run_forward_uses_forward_embedding(self):
+        import sys
+        from unittest.mock import MagicMock
+
+        if isinstance(sys.modules.get("torch"), MagicMock):
+            pytest.skip("torch is mocked by another test")
+
+        from dpa_adapt._backend import _DescriptorExtraction
+        import torch
+
+        desc = torch.ones(1, 2, 16, dtype=torch.float64)
+        inner = _FakeInnerWithEmbedding(desc)
+        extractor = _DescriptorExtraction(_FakeWrapper(inner))
+
+        coord = torch.zeros(1, 6, dtype=torch.float64, requires_grad=True)
+        atype = torch.tensor([[0, 1]], dtype=torch.long)
+        box = torch.eye(3, dtype=torch.float64).ravel().unsqueeze(0)
+
+        result = extractor._run_forward(coord, atype, box)
+
+        assert result.shape == (1, 2, 16)
+        assert not result.requires_grad
+
+
 class TestBackendContract:
     """Contract tests using real deepmd APIs (no mocks).
 

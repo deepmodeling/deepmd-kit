@@ -530,6 +530,8 @@ class DPATrainer:
 
         if self.fparam_dim > 0:
             self._validate_fparam(self.train_systems, self.fparam_dim)
+            if self.valid_systems is not None:
+                self._validate_fparam(self.valid_systems, self.fparam_dim)
 
         config = self._build_config()
         input_json = os.path.join(self.output_dir, "input.json")

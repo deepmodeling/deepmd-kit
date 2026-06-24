@@ -71,16 +71,34 @@ class TestCacheKey:
         s = _make_system(tmp_path, "s1")
         ckpt = tmp_path / "dummy.pt"
         ckpt.write_text("dummy")
-        k1 = _cache_key([s], str(ckpt), "mean")
-        k2 = _cache_key([s], str(ckpt), "mean")
+        k1 = _cache_key([s], str(ckpt), None, "mean")
+        k2 = _cache_key([s], str(ckpt), None, "mean")
         assert k1 == k2
 
     def test_different_pooling_different_key(self, tmp_path):
         s = _make_system(tmp_path, "s1")
         ckpt = tmp_path / "dummy.pt"
         ckpt.write_text("dummy")
-        k1 = _cache_key([s], str(ckpt), "mean")
-        k2 = _cache_key([s], str(ckpt), "mean+std")
+        k1 = _cache_key([s], str(ckpt), None, "mean")
+        k2 = _cache_key([s], str(ckpt), None, "mean+std")
+        assert k1 != k2
+
+    def test_different_branch_different_key(self, tmp_path):
+        s = _make_system(tmp_path, "s1")
+        ckpt = tmp_path / "dummy.pt"
+        ckpt.write_text("dummy")
+        k1 = _cache_key([s], str(ckpt), "Omat24", "mean")
+        k2 = _cache_key([s], str(ckpt), "Domains_Drug", "mean")
+        assert k1 != k2
+
+    def test_different_checkpoint_different_key(self, tmp_path):
+        s = _make_system(tmp_path, "s1")
+        ckpt1 = tmp_path / "dummy1.pt"
+        ckpt2 = tmp_path / "dummy2.pt"
+        ckpt1.write_text("dummy")
+        ckpt2.write_text("different")
+        k1 = _cache_key([s], str(ckpt1), None, "mean")
+        k2 = _cache_key([s], str(ckpt2), None, "mean")
         assert k1 != k2
 
 
@@ -95,23 +113,27 @@ class TestCacheDir:
 class TestPerSystemCachePath:
     def test_uses_hash_not_path(self, tmp_path):
         s = _make_system(tmp_path, "s1")
-        path = _per_system_cache_path(s)
+        ckpt = tmp_path / "dummy.pt"
+        ckpt.write_text("dummy")
+        path = _per_system_cache_path(s, str(ckpt))
         # Should be under the cache dir, not next to the original data
         assert "dpa_adapt" in str(path)
         assert path.suffix == ".npy"
 
 
 class TestEnsurePerSystemCache:
-    def _write_dummy_desc_cache(self, system, feat_dim=8, nframes=2):
-        cache_path = _per_system_cache_path(system)
+    def _write_dummy_desc_cache(self, system, pretrained, feat_dim=8, nframes=2):
+        cache_path = _per_system_cache_path(system, pretrained)
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         np.save(cache_path, np.zeros((nframes, feat_dim)))
 
     def test_all_cached_does_not_load_model(self, tmp_path, monkeypatch):
         s1 = _make_system(tmp_path, "sys1")
         s2 = _make_system(tmp_path, "sys2")
-        self._write_dummy_desc_cache(s1)
-        self._write_dummy_desc_cache(s2)
+        ckpt = tmp_path / "dummy.pt"
+        ckpt.write_text("dummy")
+        self._write_dummy_desc_cache(s1, str(ckpt))
+        self._write_dummy_desc_cache(s2, str(ckpt))
 
         called = []
 
@@ -128,7 +150,7 @@ class TestEnsurePerSystemCache:
         )
         ensure_per_system_cache(
             [s1, s2],
-            pretrained="/nonexistent/dummy.pt",
+            pretrained=str(ckpt),
             pooling="mean",
         )
         assert called == [], "DPAFineTuner was called but all systems were cached"
@@ -136,7 +158,9 @@ class TestEnsurePerSystemCache:
     def test_some_missing_loads_model(self, tmp_path, monkeypatch):
         s1 = _make_system(tmp_path, "sys1")
         s2 = _make_system(tmp_path, "sys2")
-        self._write_dummy_desc_cache(s1)
+        ckpt = tmp_path / "dummy.pt"
+        ckpt.write_text("dummy")
+        self._write_dummy_desc_cache(s1, str(ckpt))
 
         called = []
 
@@ -155,7 +179,7 @@ class TestEnsurePerSystemCache:
         )
         ensure_per_system_cache(
             [s1, s2],
-            pretrained="/nonexistent/dummy.pt",
+            pretrained=str(ckpt),
             pooling="mean",
         )
         assert len(called) == 1, (

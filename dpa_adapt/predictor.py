@@ -94,6 +94,7 @@ class DPAPredictor:
         self._model_branch = bundle.get("model_branch")
         self._pooling = bundle["pooling"]
         self._condition_manager = bundle.get("condition_manager")
+        self._fparam_dim = bundle.get("fparam_dim", 0)
         self.n_committee = n_committee
 
         # Detect estimator type from the final pipeline step.
@@ -118,6 +119,8 @@ class DPAPredictor:
             model_branch=self._model_branch,
             predictor="linear",
             pooling=self._pooling,
+            type_map=self._type_map,
+            fparam_dim=self._fparam_dim,
         )
 
     def fit(self, data, target_key=None, labels=None, fmt=None):
@@ -155,12 +158,16 @@ class DPAPredictor:
         features = self._extractor._extract_features(systems)
 
         if self._condition_manager is not None:
-            conditions = _read_fparam_from_systems(systems)
-            if conditions is None:
+            try:
+                conditions = _read_fparam_from_systems(
+                    systems,
+                    expected_dim=self._fparam_dim if self._fparam_dim else None,
+                )
+            except DPAConditionError as e:
                 raise DPAConditionError(
                     "This model was fit with fparam but set.*/fparam.npy "
-                    "was not found in the data."
-                )
+                    f"could not be read from the prediction data: {e}"
+                ) from e
             X_cond = self._condition_manager.transform(conditions)
             features = np.concatenate([features, X_cond], axis=1)
 
@@ -198,12 +205,10 @@ class DPAPredictor:
         features = self._extractor._extract_features(systems)
 
         if self._condition_manager is not None:
-            conditions = _read_fparam_from_systems(systems)
-            if conditions is None:
-                raise DPAConditionError(
-                    "This model was fit with fparam but set.*/fparam.npy "
-                    "was not found in the data."
-                )
+            conditions = _read_fparam_from_systems(
+                systems,
+                expected_dim=self._fparam_dim if self._fparam_dim else None,
+            )
             X_cond = self._condition_manager.transform(conditions)
             features = np.concatenate([features, X_cond], axis=1)
 

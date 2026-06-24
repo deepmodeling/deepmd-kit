@@ -7,6 +7,7 @@
 import logging
 import os
 import re
+import shutil
 import subprocess
 from pathlib import (
     Path,
@@ -117,6 +118,7 @@ def _load_labels(
 
 def _read_fparam_from_systems(
     systems: list[dpdata.System],
+    expected_dim: int | None = None,
 ) -> dict[str, np.ndarray] | None:
     """Auto-read fparam.npy from each system's ``set.*/`` directories.
 
@@ -124,21 +126,59 @@ def _read_fparam_from_systems(
     arrays of length ``n_frames_total``, suitable for passing as
     ``conditions=`` to :meth:`ConditionManager.fit_transform`.
 
-    Returns ``None`` when no system has a ``set.*/fparam.npy`` file.
+    Returns ``None`` when no system has a ``set.*/fparam.npy`` file and
+    *expected_dim* is not set. When *expected_dim* is set, every system must
+    provide fparams with exactly that width.
     """
     all_fparams = []
-    for system in systems:
+    for idx, system in enumerate(systems):
         source = _get_source(system)
         if source is None:
+            if expected_dim is not None:
+                raise DPAConditionError(
+                    "fparam_dim was requested, but system "
+                    f"{idx} has no source directory for set.*/fparam.npy."
+                )
             continue
-        fps = sorted(Path(source).glob("set.*/fparam.npy"))
+        source_path = Path(source)
+        set_dirs = sorted(source_path.glob("set.*"))
+        fps = [sd / "fparam.npy" for sd in set_dirs]
+        missing = [fp for fp in fps if not fp.is_file()]
+        if expected_dim is not None and missing:
+            raise DPAConditionError(
+                f"fparam_dim={expected_dim} but fparam.npy is missing under "
+                f"{source_path}: {[str(fp) for fp in missing]}"
+            )
+        fps = [fp for fp in fps if fp.is_file()]
         if not fps:
             continue
-        arrs = [np.load(str(fp)) for fp in fps]
+        arrs = []
+        for fp in fps:
+            arr = np.load(str(fp))
+            if arr.ndim != 2:
+                raise DPAConditionError(
+                    f"fparam.npy at {fp} has shape {arr.shape}; expected "
+                    "(n_frames, fparam_dim)."
+                )
+            if expected_dim is not None and arr.shape[1] != expected_dim:
+                raise DPAConditionError(
+                    f"fparam.npy at {fp} has shape {arr.shape}; expected "
+                    f"(n_frames, {expected_dim})."
+                )
+            arrs.append(arr)
         all_fparams.append(np.concatenate(arrs, axis=0))
     if not all_fparams:
+        if expected_dim is not None:
+            raise DPAConditionError(
+                f"fparam_dim={expected_dim} but no set.*/fparam.npy files "
+                "were found in the data."
+            )
         return None
     combined = np.concatenate(all_fparams, axis=0)  # (n_frames, fparam_dim)
+    if expected_dim is not None and combined.shape[1] != expected_dim:
+        raise DPAConditionError(
+            f"Combined fparam width is {combined.shape[1]}, expected {expected_dim}."
+        )
     return {f"fparam_{i}": combined[:, i] for i in range(combined.shape[1])}
 
 
@@ -715,6 +755,11 @@ class DPAFineTuner:
         self.downstream_batch_size = downstream_batch_size
 
         if strategy == "mft":
+            if not 0.0 <= float(aux_prob) <= 1.0:
+                raise ValueError(
+                    f"aux_prob must be in [0, 1] when strategy='mft'; "
+                    f"got {aux_prob!r}."
+                )
             if not isinstance(property_name, str) or not property_name.isidentifier():
                 raise ValueError(
                     "property_name is required when strategy='mft' and must be a "
@@ -756,16 +801,30 @@ class DPAFineTuner:
                 pooling=self.pooling,
                 seed=self.seed,
             )
-        # Sync state that external code may have set on DPAFineTuner directly.
-        self._sklearn._model = self._model
+        # Sync state that external code may have set on DPAFineTuner directly,
+        # without clobbering values loaded lazily by the pipeline.
+        if self._model is not None:
+            self._sklearn._model = self._model
+        elif self._sklearn._model is not None:
+            self._model = self._sklearn._model
         if self._device is not None:
             self._sklearn._device = self._device
-        self._sklearn._checkpoint_type_map = self._checkpoint_type_map
+        elif self._sklearn._device is not None:
+            self._device = self._sklearn._device
+        if self._checkpoint_type_map:
+            self._sklearn._checkpoint_type_map = self._checkpoint_type_map
+        elif self._sklearn._checkpoint_type_map:
+            self._checkpoint_type_map = list(self._sklearn._checkpoint_type_map)
         self._sklearn.type_map = self.type_map
         return self._sklearn
 
     def _load_descriptor_model(self):
-        return self._ensure_sklearn().load_descriptor_model()
+        p = self._ensure_sklearn()
+        model = p.load_descriptor_model()
+        self._model = model
+        self._device = p._device
+        self._checkpoint_type_map = list(p._checkpoint_type_map)
+        return model
 
     def _validate_type_map(self, user_type_map, systems):
         return self._ensure_sklearn().validate_type_map(user_type_map, systems)
@@ -786,7 +845,12 @@ class DPAFineTuner:
                 _cache_key,
             )
 
-            key = _cache_key(systems, self.pretrained, self.pooling)
+            key = _cache_key(
+                systems,
+                self.pretrained,
+                self.model_branch,
+                self.pooling,
+            )
             cache_path = _cache_dir() / f"{key}.npy"
             if cache_path.is_file():
                 return np.load(cache_path)
@@ -919,6 +983,49 @@ class DPAFineTuner:
         if not systems:
             raise DPADataError(f"No systems matched {data!r}.")
         return systems
+
+    def _freeze_training_checkpoint(self, output_path="frozen_model.pth") -> str:
+        """Freeze a single-task DeepMD checkpoint via ``dp --pt freeze``."""
+        ckpt = self._latest_training_checkpoint()
+        output_path = os.path.abspath(str(output_path))
+        output_dir = os.path.abspath(self.output_dir)
+        os.makedirs(output_dir, exist_ok=True)
+
+        freeze_name = os.path.basename(output_path)
+        produced = os.path.join(output_dir, freeze_name)
+        cmd = [
+            resolve_dp_command(),
+            "--pt",
+            "freeze",
+            "-c",
+            ".",
+            "-o",
+            freeze_name,
+        ]
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            cwd=output_dir,
+        )
+        if result.returncode != 0:
+            raise RuntimeError(
+                f"dp --pt freeze failed (return code {result.returncode}).\n"
+                f"cmd: {' '.join(cmd)}\n"
+                f"cwd: {output_dir}\n"
+                f"checkpoint: {ckpt}\n"
+                f"stdout:\n{result.stdout}\n"
+                f"stderr:\n{result.stderr}"
+            )
+        if not os.path.exists(produced):
+            raise RuntimeError(
+                f"dp --pt freeze reported success but {produced} was not "
+                f"created.\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+            )
+        if os.path.abspath(produced) != output_path:
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            shutil.copyfile(produced, output_path)
+        return output_path
 
     def _run_training_predict(self, data, fmt=None) -> DotDict:
         """Run ``dp --pt test`` and parse property predictions from detail files."""
@@ -1148,6 +1255,7 @@ class DPAFineTuner:
         p = self._ensure_sklearn()
 
         self.type_map = type_map or []
+        p.type_map = self.type_map
         self._target_key = target_key if target_key is not None else "property"
 
         systems = load_data(data, fmt=fmt)
@@ -1159,11 +1267,13 @@ class DPAFineTuner:
 
         self._condition_manager = None
         if self.fparam_dim > 0:
-            conditions = _read_fparam_from_systems(systems)
-            if conditions is not None:
-                self._condition_manager = ConditionManager()
-                X_cond = self._condition_manager.fit_transform(conditions)
-                features = np.concatenate([features, X_cond], axis=1)
+            conditions = _read_fparam_from_systems(
+                systems,
+                expected_dim=self.fparam_dim,
+            )
+            self._condition_manager = ConditionManager()
+            X_cond = self._condition_manager.fit_transform(conditions)
+            features = np.concatenate([features, X_cond], axis=1)
 
         if labels is not None:
             y = np.asarray(labels)
@@ -1240,12 +1350,16 @@ class DPAFineTuner:
         features = self._extract_features(systems)
 
         if self._condition_manager is not None:
-            conditions = _read_fparam_from_systems(systems)
-            if conditions is None:
+            try:
+                conditions = _read_fparam_from_systems(
+                    systems,
+                    expected_dim=self.fparam_dim if self.fparam_dim > 0 else None,
+                )
+            except DPAConditionError as e:
                 raise DPAConditionError(
                     "This model was fit with fparam but set.*/fparam.npy "
-                    "was not found in the test data."
-                )
+                    f"could not be read from the prediction data: {e}"
+                ) from e
             X_cond = self._condition_manager.transform(conditions)
             features = np.concatenate([features, X_cond], axis=1)
 
@@ -1286,7 +1400,10 @@ class DPAFineTuner:
                     "fmt is not supported for mft evaluate(); "
                     "provide deepmd/npy system directories."
                 )
-            result = self._ensure_mft().predict(data)
+            mft = self._ensure_mft()
+            if getattr(mft, "downstream_task_type", "property") == "ener":
+                return DotDict(mft.evaluate(data))
+            result = mft.predict(data)
             labels = result.labels
             predictions = result.predictions
             err = predictions - labels
@@ -1341,13 +1458,12 @@ class DPAFineTuner:
 
     def freeze(self, output_path="frozen_model.pth") -> str:
         """
-        Serialize the fitted model bundle to a single file via ``torch.save``.
+        Freeze or serialize the fitted model for inference.
 
-        The bundle contains the sklearn predictor object, the DPA checkpoint
-        path, and metadata needed to reconstruct predictions.
-
-        ``target_key`` is stored as-is (``str`` or ``list[str]``).  Loading a
-        bundle with a ``list`` target_key requires dpa_adapt >= 0.2.
+        ``frozen_sklearn`` writes a dpa_adapt bundle containing the sklearn
+        predictor and descriptor metadata. ``frozen_head`` / ``finetune`` use
+        ``dp --pt freeze`` on the latest training checkpoint. ``mft`` freezes
+        the downstream MFT head.
 
         Parameters
         ----------
@@ -1364,6 +1480,22 @@ class DPAFineTuner:
                 "freeze() was called before fit(). Train the model with fit() first."
             )
 
+        if self.strategy in {"frozen_head", "finetune"}:
+            return self._freeze_training_checkpoint(output_path)
+
+        if self.strategy == "mft":
+            frozen_path = self._ensure_mft()._freeze_ckpt()
+            output_path = os.path.abspath(str(output_path))
+            if os.path.abspath(frozen_path) != output_path:
+                os.makedirs(os.path.dirname(output_path), exist_ok=True)
+                shutil.copyfile(frozen_path, output_path)
+            return output_path
+
+        if self.predictor is None:
+            raise RuntimeError(
+                "freeze() expected a fitted sklearn predictor, but none was found."
+            )
+
         bundle = {
             "format_version": 1,
             "pretrained": self.pretrained,
@@ -1375,6 +1507,7 @@ class DPAFineTuner:
             "predictor_type": self._predictor_type,
             "pooling": self.pooling,
             "condition_manager": self._condition_manager,
+            "fparam_dim": self.fparam_dim,
         }
 
         output_path = str(output_path)

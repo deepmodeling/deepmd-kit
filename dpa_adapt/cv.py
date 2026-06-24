@@ -129,6 +129,9 @@ def _assemble_from_per_system_cache(
     selected_groups: set[str],
     label_key: str,
     granularity: str,
+    pretrained: str,
+    model_branch: str | None,
+    pooling: str,
 ) -> tuple[np.ndarray, np.ndarray]:
     """Build X, y for systems whose group is in *selected_groups*.
 
@@ -162,7 +165,12 @@ def _assemble_from_per_system_cache(
     for system, grp in zip(systems, groups):
         if grp not in selected_groups:
             continue
-        desc = get_per_system_descriptor(system)  # (n_frames, feat_dim)
+        desc = get_per_system_descriptor(
+            system,
+            pretrained=pretrained,
+            model_branch=model_branch,
+            pooling=pooling,
+        )  # (n_frames, feat_dim)
         lab = _load_system_labels(system, label_key)  # (n_frames, ...)
         if granularity == "composition":
             desc = desc.mean(axis=0, keepdims=True)
@@ -485,6 +493,9 @@ def cross_validate(
                 train_groups,
                 label_key,
                 granularity,
+                pretrained=model.pretrained,
+                model_branch=model.model_branch,
+                pooling=model.pooling,
             )
             Xva, yva = _assemble_from_per_system_cache(
                 systems,
@@ -492,6 +503,9 @@ def cross_validate(
                 val_groups,
                 label_key,
                 granularity,
+                pretrained=model.pretrained,
+                model_branch=model.model_branch,
+                pooling=model.pooling,
             )
             if Xtr.shape[0] == 0 or Xva.shape[0] == 0:
                 continue

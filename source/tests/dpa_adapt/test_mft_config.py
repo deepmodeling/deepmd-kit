@@ -129,9 +129,28 @@ def test_data_dict_has_training_data():
     assert "training_data" in dd["DOWNSTREAM"]
 
 
-def test_no_validation_data_in_training():
+def test_no_validation_data_when_absent():
     config = MFTConfigManager(FakeTuner()).build()
-    assert "validation_data" not in config["training"]
+    dd = config["training"]["data_dict"]
+    assert "validation_data" not in dd["DOWNSTREAM"]
+
+
+def test_validation_data_written_to_downstream_branch():
+    t = FakeTuner()
+    t.valid_data = ["/data/valid1", "/data/valid2"]
+    config = MFTConfigManager(t).build()
+    downstream = config["training"]["data_dict"]["DOWNSTREAM"]
+    assert downstream["validation_data"] == {
+        "systems": ["/data/valid1", "/data/valid2"],
+        "batch_size": "auto:32",
+    }
+
+
+def test_aux_prob_out_of_range_raises():
+    t = FakeTuner()
+    t.aux_prob = 1.5
+    with pytest.raises(ValueError, match="aux_prob"):
+        MFTConfigManager(t).build()
 
 
 def test_fitting_net_params_used():
