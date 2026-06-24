@@ -645,6 +645,7 @@ class SeZMEnergyFittingNet(InvarFitting):
         h2: torch.Tensor | None = None,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
+        return_atomic_feature: bool = False,
     ) -> dict[str, torch.Tensor]:
         """Run the SeZM fitting path with optional case FiLM."""
         if not self.case_film_embd:
@@ -656,8 +657,15 @@ class SeZMEnergyFittingNet(InvarFitting):
                 h2,
                 fparam,
                 aparam,
+                return_atomic_feature=return_atomic_feature,
             )
-        return self._forward_case_film(descriptor, atype, fparam, aparam)
+        return self._forward_case_film(
+            descriptor,
+            atype,
+            fparam,
+            aparam,
+            return_atomic_feature=return_atomic_feature,
+        )
 
     def _forward_case_film(
         self,
@@ -665,6 +673,7 @@ class SeZMEnergyFittingNet(InvarFitting):
         atype: torch.Tensor,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
+        return_atomic_feature: bool = False,
     ) -> dict[str, torch.Tensor]:
         """
         Forward path for SeZM case FiLM.
@@ -679,6 +688,9 @@ class SeZMEnergyFittingNet(InvarFitting):
             Frame parameters with shape (nf, numb_fparam).
         aparam
             Atomic parameters with shape (nf, nloc, numb_aparam).
+        return_atomic_feature
+            When True, also return the last hidden activation under the
+            ``atomic_feature`` key.
 
         Returns
         -------
@@ -752,8 +764,8 @@ class SeZMEnergyFittingNet(InvarFitting):
 
         fitting = self.filter_layers.networks[0]
         atom_property = fitting(xx, self.case_embd)
-        if self.eval_return_middle_output:
-            results["middle_output"] = fitting.call_until_last(xx, self.case_embd)
+        if return_atomic_feature:
+            results["atomic_feature"] = fitting.call_until_last(xx, self.case_embd)
         if xx_zeros is not None:
             atom_property -= fitting(xx_zeros, self.case_embd)
         outs = outs + atom_property + self.bias_atom_e[atype].to(self.prec)
