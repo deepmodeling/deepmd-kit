@@ -61,6 +61,43 @@ class GraphLayout:
     min_edges: int = 2
 
 
+def pad_and_guard_edges(
+    edge_index: Array,
+    edge_vec: Array,
+    capacity: int | None,
+    min_edges: int = 2,
+    pad_value: int = 0,
+) -> tuple[Array, Array, Array]:
+    """Append padding/guard edges as a contiguous suffix and build edge_mask.
+
+    Real edges (``edge_index``/``edge_vec``) stay at the front (compact layout).
+    - ``capacity is None`` (torch dynamic): append exactly ``min_edges`` masked
+      dummy edges so the edge axis has a known lower bound and shape-stable
+      guards for export.
+    - ``capacity`` set (jax static): pad to ``E_max = capacity``; raise on overflow.
+    Dummy edges point at node ``pad_value`` (in-range) with zero ``edge_vec``.
+    """
+    xp = array_api_compat.array_namespace(edge_index)
+    dev = array_api_compat.device(edge_index)
+    e_real = edge_index.shape[1]
+    if capacity is None:
+        target = e_real + min_edges
+    else:
+        if e_real > capacity:
+            raise ValueError(
+                f"edge overflow: {e_real} real edges > edge_capacity {capacity}"
+            )
+        target = capacity
+    n_pad = target - e_real
+    pad_idx = xp.full((2, n_pad), pad_value, dtype=edge_index.dtype, device=dev)
+    pad_vec = xp.zeros((n_pad, 3), dtype=edge_vec.dtype, device=dev)
+    ei = xp.concat([edge_index, pad_idx], axis=1)
+    ev = xp.concat([edge_vec, pad_vec], axis=0)
+    arange = xp.arange(target, dtype=edge_index.dtype, device=dev)
+    edge_mask = arange < e_real
+    return ei, ev, edge_mask
+
+
 def node_validity_mask(n_node: Array, n_total: int) -> Array:
     """Derive the (n_total,) real-vs-padding node mask from per-frame counts.
 
