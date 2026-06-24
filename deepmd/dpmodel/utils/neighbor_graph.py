@@ -16,6 +16,8 @@ from dataclasses import (
     dataclass,
 )
 
+import array_api_compat
+
 from deepmd.dpmodel.array_api import (
     Array,
 )
@@ -57,3 +59,16 @@ class GraphLayout:
     node_capacity: int | None = None
     frame_capacity: int | None = None
     min_edges: int = 2
+
+
+def node_validity_mask(n_node: Array, n_total: int) -> Array:
+    """Derive the (n_total,) real-vs-padding node mask from per-frame counts.
+
+    Compact-prefix layout: the first ``sum(n_node)`` nodes are real, the rest
+    are padding. jit-safe (no Python ``int`` cast on the traced sum).
+    """
+    xp = array_api_compat.array_namespace(n_node)
+    idx = xp.arange(
+        n_total, dtype=n_node.dtype, device=array_api_compat.device(n_node)
+    )
+    return idx < xp.sum(n_node)

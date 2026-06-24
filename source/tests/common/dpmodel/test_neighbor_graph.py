@@ -31,3 +31,22 @@ class TestNeighborGraphDataclass(unittest.TestCase):
         self.assertIsNone(lay.node_capacity)
         self.assertIsNone(lay.frame_capacity)
         self.assertEqual(lay.min_edges, 2)
+
+
+from deepmd.dpmodel.utils.neighbor_graph import (
+    node_validity_mask,
+)
+
+
+class TestNodeValidityMask(unittest.TestCase):
+    def test_no_padding_all_true(self) -> None:
+        n_node = np.array([2, 3], dtype=np.int64)  # sum = 5
+        mask = node_validity_mask(n_node, 5)
+        np.testing.assert_array_equal(mask, np.array([True] * 5))
+
+    def test_with_padding_prefix(self) -> None:
+        n_node = np.array([2, 3], dtype=np.int64)  # 5 real
+        mask = node_validity_mask(n_node, 8)  # N_max = 8 => 3 padding
+        np.testing.assert_array_equal(
+            mask, np.array([True] * 5 + [False] * 3)
+        )
