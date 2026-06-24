@@ -31,7 +31,9 @@ def edge_force_virial(
 ) -> tuple[Array, Array, Array]:
     """Returns (force (N,3), atom_virial (N,3,3), global_virial (3,3))."""
     xp = array_api_compat.array_namespace(g_e)
-    g = g_e * edge_mask[:, None]  # zero padding/guard contributions
+    # zero padding/guard contributions; cast mask to g's dtype (array-API pure,
+    # CLAUDE.md mask-multiply guideline — avoids bool*float under array_api_strict)
+    g = g_e * xp.astype(edge_mask[:, None], g_e.dtype)
     src = edge_index[0]
     dst = edge_index[1]
     # force
