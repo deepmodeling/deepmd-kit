@@ -757,8 +757,7 @@ class DPAFineTuner:
         if strategy == "mft":
             if not 0.0 <= float(aux_prob) <= 1.0:
                 raise ValueError(
-                    f"aux_prob must be in [0, 1] when strategy='mft'; "
-                    f"got {aux_prob!r}."
+                    f"aux_prob must be in [0, 1] when strategy='mft'; got {aux_prob!r}."
                 )
             if not isinstance(property_name, str) or not property_name.isidentifier():
                 raise ValueError(
