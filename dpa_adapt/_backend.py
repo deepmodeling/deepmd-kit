@@ -184,18 +184,21 @@ class _DescriptorExtraction:
                 model, "eval_descriptor"
             ):
                 return model
-        raise AttributeError(
-            "Loaded model does not expose descriptor hook methods "
-            "set_eval_descriptor_hook() and eval_descriptor()."
-        )
+        return None
 
     def _enable_hook(self) -> None:
+        if self._descriptor_hook_model is None:
+            return
         self._descriptor_hook_model.set_eval_descriptor_hook(True)
 
     def _disable_hook(self) -> None:
+        if self._descriptor_hook_model is None:
+            return
         self._descriptor_hook_model.set_eval_descriptor_hook(False)
 
     def _clear_accumulator(self) -> None:
+        if self._descriptor_hook_model is None:
+            return
         if hasattr(self._descriptor_hook_model, "eval_descriptor_list"):
             self._descriptor_hook_model.eval_descriptor_list.clear()
 
@@ -220,6 +223,14 @@ class _DescriptorExtraction:
             raise RuntimeError(
                 "forward_common requires coord to have requires_grad=True"
             )
+        if self._descriptor_hook_model is None:
+            if not hasattr(self._inner_model, "forward_embedding"):
+                raise AttributeError(
+                    "Loaded model exposes neither descriptor hook methods nor "
+                    "forward_embedding()."
+                )
+            descriptor, _, _ = self._inner_model.forward_embedding(coord, atype, box)
+            return descriptor.detach()
         self._clear_accumulator()
         self._inner_model.forward_common(coord, atype, box)
         return self._descriptor_hook_model.eval_descriptor().detach()
