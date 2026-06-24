@@ -6,24 +6,6 @@ All public names are lazily imported so that ``import dpa_adapt.data``
 dpdata, torch, or rdkit.
 """
 
-__all__ = [
-    "DPADataError",
-    "Issue",
-    "SmilesDataResult",
-    "attach_labels",
-    "check_data",
-    "convert",
-    "formula_to_npy",
-    "load_data",
-    "load_dataset",
-    "read_checkpoint_type_map",
-    "read_data_type_map_union",
-    "read_mol_coords",
-    "smiles_to_3d_coords",
-    "smiles_to_npy",
-    "validate_type_map_subset",
-]
-
 _LAZY = {
     "load_data": (".loader", "load_data"),
     "load_dataset": (".dataset", "load_dataset"),
@@ -43,6 +25,8 @@ _LAZY = {
     "predict_records_from_data": (".smiles", "predict_records_from_data"),
     "records_from_direct_data": (".smiles", "records_from_direct_data"),
 }
+
+__all__ = list(_LAZY)
 
 
 def __getattr__(name: str):
