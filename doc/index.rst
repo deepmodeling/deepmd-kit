@@ -43,8 +43,7 @@ DeePMD-kit is a package written in Python/C++, designed to minimize the effort r
    freeze/index
    test/index
    inference/index
-   dpa_adapt/README
-   dpa_adapt/input_formats
+   dpa_adapt/index
    cli
    third-party/index
    agent-skills

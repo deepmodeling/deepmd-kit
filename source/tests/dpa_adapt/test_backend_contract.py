@@ -194,13 +194,18 @@ class _FakeInnerWithEmbedding:
 class TestForwardEmbeddingFallback:
     def test_enable_hook_is_noop_without_hook_model(self):
         import sys
-        from unittest.mock import MagicMock
+        from unittest.mock import (
+            MagicMock,
+        )
 
         if isinstance(sys.modules.get("torch"), MagicMock):
             pytest.skip("torch is mocked by another test")
 
-        from dpa_adapt._backend import _DescriptorExtraction
         import torch
+
+        from dpa_adapt._backend import (
+            _DescriptorExtraction,
+        )
 
         desc = torch.zeros(1, 2, 16, dtype=torch.float64)
         inner = _FakeInnerWithEmbedding(desc)
@@ -213,13 +218,18 @@ class TestForwardEmbeddingFallback:
 
     def test_run_forward_uses_forward_embedding(self):
         import sys
-        from unittest.mock import MagicMock
+        from unittest.mock import (
+            MagicMock,
+        )
 
         if isinstance(sys.modules.get("torch"), MagicMock):
             pytest.skip("torch is mocked by another test")
 
-        from dpa_adapt._backend import _DescriptorExtraction
         import torch
+
+        from dpa_adapt._backend import (
+            _DescriptorExtraction,
+        )
 
         desc = torch.ones(1, 2, 16, dtype=torch.float64)
         inner = _FakeInnerWithEmbedding(desc)
@@ -267,6 +277,21 @@ class TestBackendContract:
         wrapper = build_model_from_config(_MINIMAL_DPA3_CONFIG)
         wrapper.eval()
         extractor = _DescriptorExtraction(wrapper)
+        missing_hook_api = [
+            name
+            for name in (
+                "set_eval_descriptor_hook",
+                "eval_descriptor",
+                "eval_descriptor_list",
+            )
+            if not hasattr(extractor._atomic_model, name)
+        ]
+        if missing_hook_api:
+            pytest.skip(
+                "deepmd descriptor-hook API is not available on "
+                f"{type(extractor._atomic_model).__name__}: "
+                f"{', '.join(missing_hook_api)}"
+            )
         extractor._enable_hook()
         try:
             yield extractor
@@ -360,6 +385,52 @@ class TestBackendContract:
 
 class TestBackendHelpers:
     """Unit-level checks for _backend utility functions."""
+
+    def test_resolve_dp_command_keeps_symlinked_venv_scripts(
+        self, tmp_path, monkeypatch
+    ):
+        import os
+        import sys
+        from pathlib import (
+            Path,
+        )
+
+        from dpa_adapt._backend import (
+            resolve_dp_command,
+        )
+
+        exe_name = "dp.exe" if os.name == "nt" else "dp"
+        python_name = "python.exe" if os.name == "nt" else "python"
+
+        real_bin = tmp_path / "real" / "bin"
+        venv_bin = tmp_path / "venv" / "bin"
+        real_bin.mkdir(parents=True)
+        venv_bin.mkdir(parents=True)
+
+        real_python = real_bin / python_name
+        real_python.write_text("")
+        symlink_python = venv_bin / python_name
+        symlink_python.write_text("")
+
+        wrong_dp = real_bin / exe_name
+        wrong_dp.write_text("")
+        expected_dp = venv_bin / exe_name
+        expected_dp.write_text("")
+
+        def _fake_resolve(self):
+            if self == symlink_python:
+                return real_python
+            return self
+
+        monkeypatch.setattr(Path, "resolve", _fake_resolve)
+        monkeypatch.setattr(sys, "executable", os.fspath(symlink_python))
+        monkeypatch.setattr(
+            "sysconfig.get_path",
+            lambda name: os.fspath(tmp_path / "other") if name == "scripts" else "",
+        )
+        monkeypatch.setattr("shutil.which", lambda name: None)
+
+        assert resolve_dp_command() == os.fspath(expected_dp)
 
     def test_get_torch_device_returns_device(self):
         import sys

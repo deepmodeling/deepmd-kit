@@ -9,25 +9,6 @@ a specific class or function.
 
 __version__ = "0.1.0"
 
-__all__ = [
-    "ConditionManager",
-    "DPAConditionError",
-    "DPAFineTuner",
-    "DPAPredictor",
-    "DPATrainer",
-    "MFTFineTuner",
-    "SmilesDataResult",
-    "attach_labels",
-    "check_data",
-    "convert",
-    "cross_validate",
-    "extract_descriptors",
-    "formula_to_npy",
-    "load_dataset",
-    "smiles_to_npy",
-    "train_test_split",
-]
-
 _LAZY = {
     "ConditionManager": (".conditions", "ConditionManager"),
     "DPAConditionError": (".conditions", "DPAConditionError"),
@@ -46,6 +27,8 @@ _LAZY = {
     "DPAPredictor": (".predictor", "DPAPredictor"),
     "DPATrainer": (".trainer", "DPATrainer"),
 }
+
+__all__ = list(_LAZY)
 
 
 def __getattr__(name: str) -> object:

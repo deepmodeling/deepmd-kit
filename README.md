@@ -24,7 +24,7 @@ For more information, check the [documentation](https://deepmd.readthedocs.io/).
 - **implements the Deep Potential series models**, which have been successfully applied to finite and extended systems, including organic molecules, metals, semiconductors, insulators, etc.
 - **implements MPI and GPU supports**, making it highly efficient for high-performance parallel and distributed computing.
 - **highly modularized**, easy to adapt to different descriptors for deep learning-based potential energy models.
-- **adapts pre-trained DPA models to downstream atomistic property prediction tasks with DPA-ADAPT**, a new Python API and CLI that supports frozen-descriptor scikit-learn heads, frozen property-head training, full end-to-end fine-tuning, and multi-task fine-tuning with an auxiliary force-field task. DPA-ADAPT trains on `deepmd/npy` systems and provides conversion pipelines for SMILES tables, formula tables with POSCAR templates, and structure or calculation files handled through dpdata. See the [DPA-ADAPT guide](doc/dpa_adapt/README.md) and supported [input formats](doc/dpa_adapt/input_formats.md).
+- **adapts pre-trained DPA models to downstream atomistic property prediction tasks with DPA-ADAPT**, a new Python API and CLI that supports frozen-descriptor scikit-learn heads, frozen property-head training, full end-to-end fine-tuning, and multi-task fine-tuning with an auxiliary force-field task. DPA-ADAPT trains on `deepmd/npy` systems and provides conversion pipelines for SMILES tables, formula tables with POSCAR templates, and structure or calculation files handled through dpdata. See the [DPA-ADAPT guide](doc/dpa_adapt/index.md) and supported [input formats](doc/dpa_adapt/input_formats.md).
 
 ### License and credits
 
@@ -104,7 +104,7 @@ The code is organized as follows:
 
 - `examples`: examples.
 - `deepmd`: DeePMD-kit python modules.
-- `dpa_adapt`: DPA-ADAPT package for adapting pre-trained DPA models; see the [guide](doc/dpa_adapt/README.md) and [input formats](doc/dpa_adapt/input_formats.md).
+- `dpa_adapt`: DPA-ADAPT package for adapting pre-trained DPA models; see the [guide](doc/dpa_adapt/index.md) and [input formats](doc/dpa_adapt/input_formats.md).
 - `source/lib`: source code of the core library.
 - `source/op`: Operator (OP) implementation.
 - `source/api_cc`: source code of DeePMD-kit C++ API.

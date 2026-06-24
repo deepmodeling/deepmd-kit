@@ -29,12 +29,19 @@ def resolve_dp_command() -> str:
     import os as _os
     import shutil as _shutil
     import sys as _sys
+    import sysconfig as _sysconfig
     from pathlib import Path as _Path
 
     exe_name = "dp.exe" if _os.name == "nt" else "dp"
-    candidate = _Path(_sys.executable).resolve().parent / exe_name
-    if candidate.is_file():
-        return _os.fspath(candidate)
+    scripts_dir = _sysconfig.get_path("scripts")
+    candidates = [
+        _Path(_sys.executable).parent / exe_name,
+    ]
+    if scripts_dir:
+        candidates.append(_Path(scripts_dir) / exe_name)
+    for candidate in candidates:
+        if candidate.is_file():
+            return _os.fspath(candidate)
 
     found = _shutil.which("dp")
     if found:
