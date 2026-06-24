@@ -11,9 +11,21 @@ def ensure_inductor_compiler():
 
     Honours the ``CXX`` environment variable (standard CMake / CI convention).
     Falls back to torch._inductor's built-in default if ``CXX`` is not set.
+    Also applies fast test-only AOTInductor settings for generated ``.pt2``
+    fixtures used by C/C++/LAMMPS tests.
     Also clears ``LD_PRELOAD`` so compiler subprocesses don't inherit the LSAN
     runtime, which causes false leak reports and non-zero exit codes in g++.
     """
+    source_dir = os.path.realpath(os.path.join(os.path.dirname(__file__), "..", ".."))
+    if source_dir not in sys.path:
+        sys.path.insert(0, source_dir)
+
+    from tests.pt_expt.aoti_config import (
+        apply_fast_aoti_compile_config,
+    )
+
+    apply_fast_aoti_compile_config()
+
     cxx = os.environ.get("CXX")
     if cxx:
         import torch._inductor.config as inductor_config
