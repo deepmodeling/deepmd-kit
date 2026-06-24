@@ -1,10 +1,21 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Builders that produce a :class:`NeighborGraph`.
 
-``neighbor_graph_from_extended`` converts the legacy extended quartet
-(extended_coord, nlist, mapping) into a ghost-free NeighborGraph;
-``build_neighbor_graph`` is the dpmodel default that reuses deepmd's tested
-``extend_input_and_build_neighbor_list`` and then calls the adapter.
+CONTRACT — these are the **legacy-compatible** builders: the graph they return
+carries exactly the neighbors of the dense nlist they are built from, i.e. it
+INHERITS that nlist's ``sel`` selection/truncation. They are the backward-compat
+adapter (and the test oracle), NOT the graph-native "all neighbors within
+``rcut``" builder. The complete-environment (carry-all, ``sel``-as-normalization)
+contract is provided by a SEPARATE builder (``from_ijs`` fed by ASE/vesin; see
+memory/spec_unified_edge_nlist.md decision #17). Keeping the two contracts in
+distinct functions avoids the footgun of a consumer assuming it sees all
+neighbors while a builder silently truncated them.
+
+- ``neighbor_graph_from_extended``: convert an existing extended quartet
+  (extended_coord, nlist, mapping) -> ghost-free graph (inherits the nlist's sel).
+- ``build_neighbor_graph``: reuse deepmd's tested
+  ``extend_input_and_build_neighbor_list`` (which TRUNCATES to ``sel``) then the
+  adapter -> legacy-compatible graph.
 """
 
 from __future__ import (
@@ -114,12 +125,19 @@ def build_neighbor_graph(
     mixed_types: bool = True,
     layout: GraphLayout | None = None,
 ) -> NeighborGraph:
-    """Build a NeighborGraph by reusing the tested dense nlist (dpmodel default).
+    """Build a LEGACY-COMPATIBLE NeighborGraph by reusing the tested dense nlist.
 
     Calls ``extend_input_and_build_neighbor_list`` (general-cell, tested) then
-    :func:`neighbor_graph_from_extended`. With ``sel`` large enough that no real
-    neighbor is truncated, the result is exactly the in-``rcut`` environment (the
-    ``sel``-as-normalization regime; see memory/spec_unified_edge_nlist.md).
+    :func:`neighbor_graph_from_extended`.
+
+    CONTRACT: the returned graph contains the neighbors selected by ``sel`` and
+    **inherits the legacy ``sel`` truncation** — it does NOT carry all neighbors
+    within ``rcut`` when ``sel`` binds. It coincides with the complete in-``rcut``
+    environment ONLY when ``sel`` is large enough that no real neighbor is dropped
+    (the ``sel``-as-normalization regime). For the carry-all graph-native contract
+    use the dedicated carry-all builder (``from_ijs`` via ASE/vesin), NOT this
+    function. See memory/spec_unified_edge_nlist.md (decision #17). This builder is
+    the backward-compat adapter and the test oracle.
     """
     from deepmd.dpmodel.utils.nlist import (
         extend_input_and_build_neighbor_list,
