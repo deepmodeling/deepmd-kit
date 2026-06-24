@@ -123,6 +123,57 @@ class _HeavyContract:
     ): ...  # placeholder for future Bohrium-only tests
 
 
+class _HookOwner:
+    def __init__(self):
+        self.flags = []
+        self.eval_descriptor_list = [object()]
+
+    def set_eval_descriptor_hook(self, enable):
+        self.flags.append(enable)
+
+    def eval_descriptor(self):
+        return None
+
+
+class _FakeWrapper:
+    def __init__(self, inner):
+        self.model = {"Default": inner}
+
+
+class TestDescriptorHookResolution:
+    def test_prefers_inner_model_hook(self):
+        from dpa_adapt._backend import (
+            _DescriptorExtraction,
+        )
+
+        inner = _HookOwner()
+        inner.atomic_model = object()
+
+        extractor = _DescriptorExtraction(_FakeWrapper(inner))
+        extractor._enable_hook()
+        extractor._disable_hook()
+
+        assert extractor._descriptor_hook_model is inner
+        assert inner.flags == [True, False]
+
+    def test_falls_back_to_atomic_model_hook(self):
+        from dpa_adapt._backend import (
+            _DescriptorExtraction,
+        )
+
+        atomic = _HookOwner()
+        inner = type("Inner", (), {"atomic_model": atomic})()
+
+        extractor = _DescriptorExtraction(_FakeWrapper(inner))
+        extractor._enable_hook()
+        extractor._clear_accumulator()
+        extractor._disable_hook()
+
+        assert extractor._descriptor_hook_model is atomic
+        assert atomic.flags == [True, False]
+        assert atomic.eval_descriptor_list == []
+
+
 class TestBackendContract:
     """Contract tests using real deepmd APIs (no mocks).
 

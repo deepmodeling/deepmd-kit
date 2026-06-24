@@ -145,6 +145,8 @@ class MFTFineTuner:
             raise ValueError(
                 f"fparam_dim must be a non-negative int; got {fparam_dim!r}."
             )
+        if not 0.0 <= float(aux_prob) <= 1.0:
+            raise ValueError(f"aux_prob must be in [0, 1]; got {aux_prob!r}.")
 
         self.type_map = type_map
         self.pretrained = resolve_pretrained_path(pretrained)
@@ -340,6 +342,8 @@ class MFTFineTuner:
             )
 
             DPATrainer._validate_fparam(train_data, self.fparam_dim)
+            if valid_data is not None:
+                DPATrainer._validate_fparam(valid_data, self.fparam_dim)
 
         import glob
 
@@ -367,11 +371,11 @@ class MFTFineTuner:
 
         cm = MFTConfigManager(self)
         config = cm.build()
-        input_json = os.path.join(self.output_dir, "mft_input.json")
+        input_json = os.path.abspath(os.path.join(self.output_dir, "mft_input.json"))
         cm.save(config, input_json)
         cmd = cm.build_cmd(input_json)
 
-        log_path = os.path.join(self.output_dir, "train.log")
+        log_path = os.path.abspath(os.path.join(self.output_dir, "train.log"))
         print("Running:", " ".join(cmd))
         print(f"Log: {log_path}")
 
@@ -382,7 +386,6 @@ class MFTFineTuner:
                 stderr=subprocess.STDOUT,
                 text=True,
                 bufsize=1,
-                cwd=self.output_dir,
             )
             for line in process.stdout:
                 print(line, end="")

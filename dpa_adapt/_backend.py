@@ -176,15 +176,28 @@ class _DescriptorExtraction:
         inner = wrapper.model["Default"]
         self._inner_model = inner
         self._atomic_model = inner.atomic_model
+        self._descriptor_hook_model = self._resolve_descriptor_hook_model()
+
+    def _resolve_descriptor_hook_model(self):
+        for model in (self._inner_model, self._atomic_model):
+            if hasattr(model, "set_eval_descriptor_hook") and hasattr(
+                model, "eval_descriptor"
+            ):
+                return model
+        raise AttributeError(
+            "Loaded model does not expose descriptor hook methods "
+            "set_eval_descriptor_hook() and eval_descriptor()."
+        )
 
     def _enable_hook(self) -> None:
-        self._atomic_model.set_eval_descriptor_hook(True)
+        self._descriptor_hook_model.set_eval_descriptor_hook(True)
 
     def _disable_hook(self) -> None:
-        self._atomic_model.set_eval_descriptor_hook(False)
+        self._descriptor_hook_model.set_eval_descriptor_hook(False)
 
     def _clear_accumulator(self) -> None:
-        self._atomic_model.eval_descriptor_list.clear()
+        if hasattr(self._descriptor_hook_model, "eval_descriptor_list"):
+            self._descriptor_hook_model.eval_descriptor_list.clear()
 
     def _run_forward(self, coord, atype, box):
         """Run ``forward_common`` and return per-atom descriptors (detached).
@@ -209,4 +222,4 @@ class _DescriptorExtraction:
             )
         self._clear_accumulator()
         self._inner_model.forward_common(coord, atype, box)
-        return self._atomic_model.eval_descriptor().detach()
+        return self._descriptor_hook_model.eval_descriptor().detach()

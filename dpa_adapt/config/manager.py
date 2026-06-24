@@ -184,12 +184,19 @@ class MFTConfigManager:
         )
         # Paper default 0.5/0.5; aux_prob (default 0.5) controls the split, the
         # downstream share is the complement. Legacy keeps downstream at 1.0.
+        if not 0.0 <= float(t.aux_prob) <= 1.0:
+            raise ValueError(f"aux_prob must be in [0, 1]; got {t.aux_prob!r}.")
         downstream_prob = (1.0 - t.aux_prob) if is_property else 1.0
 
         aux_systems = t.aux_data if isinstance(t.aux_data, list) else [t.aux_data]
         train_systems = (
             t.train_data if isinstance(t.train_data, list) else [t.train_data]
         )
+        valid_systems = None
+        if getattr(t, "valid_data", None) is not None:
+            valid_systems = (
+                t.valid_data if isinstance(t.valid_data, list) else [t.valid_data]
+            )
 
         training = {
             "model_prob": {t.aux_branch: t.aux_prob, downstream_key: downstream_prob},
@@ -209,6 +216,12 @@ class MFTConfigManager:
             "disp_freq": t.disp_freq,
             "seed": t.seed,
         }
+        if valid_systems is not None:
+            training["data_dict"][downstream_key]["validation_data"] = {
+                "systems": valid_systems,
+                "batch_size": downstream_batch,
+            }
+
         if is_property:
             # Paper qm9_gap: gradient clipping at 5.0.
             training["gradient_max_norm"] = 5.0

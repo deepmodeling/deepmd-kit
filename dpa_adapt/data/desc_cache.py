@@ -4,10 +4,10 @@
 # Transparent on-disk cache for extracted DPA descriptors.
 # Two-tier: (1) per-system cache keyed by lightweight content hash,
 # (2) bulk cache under ``~/.cache/dpa_adapt/desc_cache/`` keyed by
-# (aggregate data fingerprint, checkpoint mtime, pooling).
+# (aggregate data fingerprint, checkpoint identity, branch, pooling).
 #
 # Systems are ``dpdata.System`` objects; cache keys are computed from
-# data fingerprints and checkpoint mtimes.
+# data fingerprints and resolved checkpoint metadata.
 
 from __future__ import (
     annotations,
@@ -21,6 +21,10 @@ from pathlib import (
 )
 
 import numpy as np
+
+from dpa_adapt._backend import (
+    resolve_pretrained_path,
+)
 
 _LOG = logging.getLogger("dpa_adapt.data.desc_cache")
 
@@ -86,10 +90,22 @@ def _data_fingerprint(systems: list) -> str:
     return h.hexdigest()
 
 
-def _cache_key(systems: list, pretrained: str, pooling: str) -> str:
+def _checkpoint_fingerprint(pretrained: str) -> str:
+    resolved = Path(resolve_pretrained_path(pretrained)).resolve()
+    stat = resolved.stat()
+    payload = f"{resolved}|{stat.st_mtime_ns}|{stat.st_size}"
+    return hashlib.sha1(payload.encode()).hexdigest()[:16]
+
+
+def _cache_key(
+    systems: list,
+    pretrained: str,
+    model_branch: str | None,
+    pooling: str,
+) -> str:
     fp = _data_fingerprint(systems)
-    ckpt_mtime = os.path.getmtime(pretrained)
-    payload = f"{fp}|{pretrained}|{ckpt_mtime}|{pooling}"
+    ckpt_fp = _checkpoint_fingerprint(pretrained)
+    payload = f"{fp}|{ckpt_fp}|{model_branch or ''}|{pooling}"
     return hashlib.sha1(payload.encode()).hexdigest()[:16]
 
 
@@ -125,7 +141,7 @@ def load_or_extract(
     np.ndarray, shape ``(n_frames_total, feat_dim)``
     """
     if cache:
-        key = _cache_key(systems, pretrained, pooling)
+        key = _cache_key(systems, pretrained, model_branch, pooling)
         cache_path = _cache_dir() / f"{key}.npy"
         if cache_path.is_file():
             _LOG.info("Descriptor cache hit: %s", cache_path.name)
@@ -159,10 +175,18 @@ def load_or_extract(
 # ---------------------------------------------------------------------------
 
 
-def _per_system_cache_path(system) -> Path:
-    """Return the cache path for a single system's descriptors."""
-    fp = _system_fingerprint(system)
-    return _cache_dir() / f"{fp}.npy"
+def _per_system_cache_path(
+    system,
+    pretrained: str,
+    model_branch: str | None = None,
+    pooling: str = "mean",
+) -> Path:
+    """Return the cache path for one system under a descriptor identity."""
+    system_fp = _system_fingerprint(system)
+    ckpt_fp = _checkpoint_fingerprint(pretrained)
+    payload = f"{system_fp}|{ckpt_fp}|{model_branch or ''}|{pooling}"
+    fp = hashlib.sha1(payload.encode()).hexdigest()[:16]
+    return _cache_dir() / "per_system" / f"{fp}.npy"
 
 
 def ensure_per_system_cache(
@@ -178,7 +202,12 @@ def ensure_per_system_cache(
     """
     missing: list = []
     for system in systems:
-        if not _per_system_cache_path(system).is_file():
+        if not _per_system_cache_path(
+            system,
+            pretrained,
+            model_branch,
+            pooling,
+        ).is_file():
             missing.append(system)
 
     if not missing:
@@ -207,7 +236,7 @@ def ensure_per_system_cache(
     )
 
     for i, system in enumerate(missing):
-        cache_path = _per_system_cache_path(system)
+        cache_path = _per_system_cache_path(system, pretrained, model_branch, pooling)
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         desc = extractor._extract_features([system])
         np.save(cache_path, desc)
@@ -219,12 +248,17 @@ def ensure_per_system_cache(
     _LOG.info("Per-system cache ready (%d systems).", len(systems))
 
 
-def get_per_system_descriptor(system) -> np.ndarray:
-    """Read cached descriptors for a single system.
+def get_per_system_descriptor(
+    system,
+    pretrained: str,
+    model_branch: str | None = None,
+    pooling: str = "mean",
+) -> np.ndarray:
+    """Read cached descriptors for one system and descriptor identity.
 
     Raises ``FileNotFoundError`` if the cache file does not exist.
     """
-    cache_path = _per_system_cache_path(system)
+    cache_path = _per_system_cache_path(system, pretrained, model_branch, pooling)
     if not cache_path.is_file():
         raise FileNotFoundError(
             f"Per-system descriptor cache not found: {cache_path}\n"

@@ -398,3 +398,53 @@ class TestFitDescriptorCache:
             m2.fit(str(root), target_key="energy")
 
         assert call_count == 1, f"Expected 1 extraction call, got {call_count}"
+
+
+class TestFreezeStrategies:
+    def test_freeze_training_strategy_runs_dp_freeze(self, tmp_path, monkeypatch):
+        out_dir = tmp_path / "out"
+        out_dir.mkdir()
+        (out_dir / "model.ckpt-20.pt").write_bytes(b"ckpt")
+        target = tmp_path / "frozen_training.pth"
+
+        calls = []
+
+        def fake_run(cmd, *args, **kwargs):
+            calls.append((cmd, kwargs))
+            output_name = cmd[cmd.index("-o") + 1]
+            Path(kwargs["cwd"], output_name).write_bytes(b"frozen")
+
+            class R:
+                returncode = 0
+                stdout = ""
+                stderr = ""
+
+            return R()
+
+        monkeypatch.setattr("subprocess.run", fake_run)
+        m = DPAFineTuner(strategy="finetune", output_dir=str(out_dir))
+        m._fitted = True
+
+        assert m.freeze(str(target)) == str(target.resolve())
+        assert target.read_bytes() == b"frozen"
+        assert calls[0][0][1:3] == ["--pt", "freeze"]
+        assert calls[0][1]["cwd"] == str(out_dir.resolve())
+
+    def test_freeze_mft_strategy_copies_downstream_freeze(self, tmp_path):
+        src = tmp_path / "out" / "frozen_property.pth"
+        src.parent.mkdir()
+        src.write_bytes(b"mft")
+        target = tmp_path / "custom_mft.pth"
+
+        class FakeMFT:
+            downstream_task_type = "property"
+
+            def _freeze_ckpt(self):
+                return str(src)
+
+        m = DPAFineTuner(strategy="mft", property_name="gap")
+        m._fitted = True
+        m._mft = FakeMFT()
+
+        assert m.freeze(str(target)) == str(target.resolve())
+        assert target.read_bytes() == b"mft"
