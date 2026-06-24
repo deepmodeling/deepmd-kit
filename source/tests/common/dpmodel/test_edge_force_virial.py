@@ -75,6 +75,28 @@ class TestEdgeForceVirial(unittest.TestCase):
         # per-frame atom-virial closure across the empty frame: frame-2 nodes 3..7
         np.testing.assert_allclose(np.sum(av[3:8], axis=0), vir[2])
 
+    def test_all_edges_masked_gives_zero(self) -> None:
+        # ALL-EMPTY: nodes exist but there are ZERO real edges (isolated atoms, or
+        # rcut below all pair distances) -> only masked guard edges remain. Single-
+        # and multi-frame; every output must be exactly zero with correct shapes.
+        for n_node in (
+            np.array([3], dtype=np.int64),  # single frame
+            np.array([2, 3], dtype=np.int64),  # multi-frame
+        ):
+            nf = int(n_node.shape[0])
+            n = int(n_node.sum())
+            # two masked guard edges at pad node 0 with nonzero g (must be ignored)
+            edge_index = np.array([[0, 0], [0, 0]], dtype=np.int64)
+            edge_vec = np.array([[9.0, 9.0, 9.0], [9.0, 9.0, 9.0]])
+            edge_mask = np.array([False, False])
+            g = np.array([[7.0, 7.0, 7.0], [7.0, 7.0, 7.0]])
+            force, av, vir = edge_force_virial(
+                g, edge_vec, edge_index, edge_mask, n_node
+            )
+            np.testing.assert_allclose(force, np.zeros((n, 3)))
+            np.testing.assert_allclose(av, np.zeros((n, 3, 3)))
+            np.testing.assert_allclose(vir, np.zeros((nf, 3, 3)))
+
     def test_ragged_multiframe_with_edge_and_node_padding(self) -> None:
         # MOST GENERAL case: 2 frames with DIFFERENT node counts (3 and 5) AND
         # different edge counts (2 and 3), masked guard EDGES, and a padded NODE
