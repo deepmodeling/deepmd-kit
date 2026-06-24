@@ -18,7 +18,9 @@ from deepmd.dpmodel.utils.neighbor_graph import (
 )
 
 
-def _frame_edges(pos: np.ndarray, box: np.ndarray | None, rcut: float):
+def _frame_edges(
+    pos: np.ndarray, box: np.ndarray | None, rcut: float
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Return (src_j, dst_i, edge_vec) for one frame. src=neighbor, dst=center."""
     nloc = pos.shape[0]
     if box is None:
@@ -83,9 +85,7 @@ class NumpyNeighborList:
         dst_cat = np.concatenate(dst_all) if dst_all else np.zeros((0,), np.int64)
         edge_index = np.stack([src_cat, dst_cat], axis=0).astype(np.int64)  # (2, E)
         edge_vec = (
-            np.concatenate(vec_all, axis=0)
-            if vec_all
-            else np.zeros((0, 3), np.float64)
+            np.concatenate(vec_all, axis=0) if vec_all else np.zeros((0, 3), np.float64)
         )
         edge_index, edge_vec, edge_mask = pad_and_guard_edges(
             edge_index, edge_vec, layout.edge_capacity, layout.min_edges

@@ -15,12 +15,16 @@ from __future__ import (
 from dataclasses import (
     dataclass,
 )
+from typing import (
+    TYPE_CHECKING,
+)
 
 import array_api_compat
 
-from deepmd.dpmodel.array_api import (
-    Array,
-)
+if TYPE_CHECKING:
+    from deepmd.dpmodel.array_api import (
+        Array,
+    )
 
 
 @dataclass
@@ -105,7 +109,5 @@ def node_validity_mask(n_node: Array, n_total: int) -> Array:
     are padding. jit-safe (no Python ``int`` cast on the traced sum).
     """
     xp = array_api_compat.array_namespace(n_node)
-    idx = xp.arange(
-        n_total, dtype=n_node.dtype, device=array_api_compat.device(n_node)
-    )
+    idx = xp.arange(n_total, dtype=n_node.dtype, device=array_api_compat.device(n_node))
     return idx < xp.sum(n_node)

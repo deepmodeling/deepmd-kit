@@ -91,3 +91,20 @@ class TestPadAndGuardEdges(unittest.TestCase):
             pad_and_guard_edges(
                 self.edge_index, self.edge_vec, capacity=2, min_edges=2
             )
+
+
+class TestPublicExports(unittest.TestCase):
+    def test_importable_from_utils(self) -> None:
+        from deepmd.dpmodel.utils import (
+            GraphLayout,
+            NeighborGraph,
+            NumpyNeighborList,
+            edge_force_virial,
+            segment_sum,
+        )
+
+        self.assertTrue(callable(segment_sum))
+        self.assertTrue(callable(edge_force_virial))
+        self.assertIsNotNone(NeighborGraph)
+        self.assertIsNotNone(GraphLayout)
+        self.assertIsNotNone(NumpyNeighborList)

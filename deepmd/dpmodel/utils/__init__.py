@@ -2,6 +2,9 @@
 from .default_neighbor_list import (
     DefaultNeighborList,
 )
+from .edge_derivatives import (
+    edge_force_virial,
+)
 from .env_mat import (
     EnvMat,
 )
@@ -18,8 +21,17 @@ from .lmdb_data import (
     is_lmdb,
     make_neighbor_stat_data,
 )
+from .neighbor_graph import (
+    GraphLayout,
+    NeighborGraph,
+    node_validity_mask,
+    pad_and_guard_edges,
+)
 from .neighbor_list import (
     NeighborList,
+)
+from .numpy_neighbor_list import (
+    NumpyNeighborList,
 )
 from .network import (
     EmbeddingNet,
@@ -46,6 +58,10 @@ from .region import (
     phys2inter,
     to_face_distance,
 )
+from .segment import (
+    segment_mean,
+    segment_sum,
+)
 from .serialization import (
     load_dp_model,
     save_dp_model,
@@ -60,6 +76,7 @@ from .training_utils import (
 __all__ = [
     "AtomExcludeMask",
     "DefaultNeighborList",
+    "GraphLayout",
     "DistributedSameNlocBatchSampler",
     "EmbeddingNet",
     "EnvMat",
@@ -69,12 +86,15 @@ __all__ = [
     "LmdbTestDataNlocView",
     "NativeLayer",
     "NativeNet",
+    "NeighborGraph",
     "NeighborList",
     "NetworkCollection",
+    "NumpyNeighborList",
     "PairExcludeMask",
     "SameNlocBatchSampler",
     "aggregate",
     "build_multiple_neighbor_list",
+    "edge_force_virial",
     "build_neighbor_list",
     "compute_total_numb_batch",
     "extend_coord_with_ghosts",
@@ -88,11 +108,15 @@ __all__ = [
     "make_multilayer_network",
     "make_neighbor_stat_data",
     "nlist_distinguish_types",
+    "node_validity_mask",
     "normalize_coord",
+    "pad_and_guard_edges",
     "phys2inter",
     "resolve_model_prob",
     "resolve_model_prob_from_epochs",
     "save_dp_model",
+    "segment_mean",
+    "segment_sum",
     "to_face_distance",
     "traverse_model_dict",
 ]
