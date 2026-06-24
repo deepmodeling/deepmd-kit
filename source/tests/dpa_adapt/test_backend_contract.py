@@ -182,7 +182,13 @@ class _FakeInnerWithEmbedding:
         self.atomic_model = object()
 
     def forward_embedding(self, coord, atype, box):
-        return self._descriptor, None, None
+        # Mirror the real forward_embedding contract: dict[str, torch.Tensor]
+        # with keys ``descriptor``, ``atomic_feature``, ``structural_feature``.
+        return {
+            "descriptor": self._descriptor,
+            "atomic_feature": None,
+            "structural_feature": None,
+        }
 
 
 class TestForwardEmbeddingFallback:
