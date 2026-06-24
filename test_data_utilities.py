@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Test dpa_adapt data utilities with QM9 demo dataset (50 entries)."""
+"""Test dpa_adapt data utilities with QM9 demo dataset (8 entries)."""
 
 import os
 import sys
@@ -18,17 +18,20 @@ sys.path = _site_pkg + _other
 import numpy as np
 
 # ── paths ──────────────────────────────────────────────────────────────────
-DEMO_DIR = Path("/home/ziren/aisi-intern/deepmd-kit/examples/dpa_adapt/data")
+REPO_DIR = Path(__file__).resolve().parent
+DEMO_DIR = REPO_DIR / "examples" / "dpa_adapt" / "data"
 TRAIN_DIR = DEMO_DIR / "train"
 TEST_DIR = DEMO_DIR / "test"
 TRAIN_GLOB = str(TRAIN_DIR / "sys_*")
 TEST_GLOB = str(TEST_DIR / "sys_*")
-PRETRAINED = "/home/ziren/.cache/deepmd/pretrained/models/DPA-3.1-3M.pt"
+PRETRAINED = os.environ.get("DPA_ADAPT_PRETRAINED", "DPA-3.1-3M")
+N_TRAIN = 5
+N_TEST = 3
+N_TOTAL = N_TRAIN + N_TEST
 
 # check that demo data exists
 assert TRAIN_DIR.is_dir(), f"missing {TRAIN_DIR}"
 assert TEST_DIR.is_dir(), f"missing {TEST_DIR}"
-assert os.path.isfile(PRETRAINED), f"missing pretrained model: {PRETRAINED}"
 
 passed = 0
 failed = 0
@@ -86,7 +89,7 @@ from dpa_adapt.data.validate import (
 print("\n--- 1a. Python API: check_data() on training data ---")
 train_systems = load_data(TRAIN_GLOB)
 print(f"  Loaded {len(train_systems)} training systems")
-check("load_data() returns 40 training systems", len(train_systems) == 40)
+check("load_data() returns 5 training systems", len(train_systems) == N_TRAIN)
 
 issues = check_data(train_systems)
 n_err = sum(1 for i in issues if i.severity == "error")
@@ -98,22 +101,22 @@ check("check_data() on training data returns no errors", n_err == 0)
 print("\n--- 1b. Python API: check_data() on test data ---")
 test_systems = load_data(TEST_GLOB)
 print(f"  Loaded {len(test_systems)} test systems")
-check("load_data() returns 10 test systems", len(test_systems) == 10)
+check("load_data() returns 3 test systems", len(test_systems) == N_TEST)
 
 issues = check_data(test_systems)
 n_err = sum(1 for i in issues if i.severity == "error")
 print(f"  Issues: {len(issues)} ({n_err} errors)")
 check("check_data() on test data returns no errors", n_err == 0)
 
-# 1c ── Python API: check_data() on all 50 systems ─────────────────────────
-print("\n--- 1c. Python API: check_data() on all 50 systems ---")
+# 1c ── Python API: check_data() on all 8 systems ──────────────────────────
+print("\n--- 1c. Python API: check_data() on all 8 systems ---")
 all_systems = load_data([TRAIN_GLOB, TEST_GLOB])
 print(f"  Loaded {len(all_systems)} total systems")
-check("load_data() returns 50 total systems", len(all_systems) == 50)
+check("load_data() returns 8 total systems", len(all_systems) == N_TOTAL)
 
 issues = check_data(all_systems)
 n_err = sum(1 for i in issues if i.severity == "error")
-check("check_data() on all 50 systems returns no errors", n_err == 0)
+check("check_data() on all 8 systems returns no errors", n_err == 0)
 
 # 1d ── CLI: dpaad data validate ──────────────────────────────────────────
 print("\n--- 1d. CLI: dpaad data validate ---")
@@ -287,7 +290,10 @@ print(f"  Loaded {len(all_train)} systems")
 
 gap_systems = load_dataset(all_train, label_key="gap")
 print(f"  After filter: {len(gap_systems)} systems with 'gap' label")
-check("All 40 training systems have gap label after attach", len(gap_systems) == 40)
+check(
+    "All 5 training systems have gap label after attach",
+    len(gap_systems) == N_TRAIN,
+)
 
 all_have_gap = all("gap" in s.data for s in gap_systems)
 check("Every returned system has 'gap' in data", all_have_gap)
@@ -312,7 +318,7 @@ for sys_dir, system in zip(sorted(TEST_DIR.glob("sys_*")), all_test):
         system.data["gap"] = np.load(sys_dir / "set.000" / "gap.npy")
 gap_test = load_dataset(all_test, label_key="gap")
 print(f"  Found {len(gap_test)} test systems with 'gap' label")
-check("All 10 test systems have gap label", len(gap_test) == 10)
+check("All 3 test systems have gap label", len(gap_test) == N_TEST)
 
 # 3d ── load_dataset returns systems with the label key ───────────────────
 print("\n--- 3d. load_dataset: returned systems carry the label ---")
@@ -331,19 +337,19 @@ check("All returned systems are dpdata objects", all_dpdata)
 
 # 3e ── load_dataset skips systems without the label ──────────────────────
 print("\n--- 3e. load_dataset skips unlabelled systems ---")
-# Mix labelled and unlabelled: write gap labels to disk for first 5 only
-mixed_dirs = sorted(TRAIN_DIR.glob("sys_*"))[:10]
+# Mix labelled and unlabelled: inject gap labels into memory for first 5 only
+mixed_dirs = sorted(TRAIN_DIR.glob("sys_*")) + sorted(TEST_DIR.glob("sys_*"))
 for i, sys_dir in enumerate(mixed_dirs):
-    if i < 5:
+    if i < N_TRAIN:
         gap_val = np.load(sys_dir / "set.000" / "gap.npy")
         attach_labels(str(sys_dir), head="gap", values=gap_val)
 mixed = load_data([str(d) for d in mixed_dirs])
 for i, (sys_dir, system) in enumerate(zip(mixed_dirs, mixed)):
-    if i < 5 and "gap" not in system.data:
+    if i < N_TRAIN and "gap" not in system.data:
         system.data["gap"] = np.load(sys_dir / "set.000" / "gap.npy")
 result = load_dataset(mixed, label_key="gap")
-print(f"  Mixed: 10 total, {len(result)} with gap label")
-check("Only 5 of 10 mixed systems returned", len(result) == 5)
+print(f"  Mixed: {N_TOTAL} total, {len(result)} with gap label")
+check("Only 5 of 8 mixed systems returned", len(result) == N_TRAIN)
 
 # ═══════════════════════════════════════════════════════════════════════════
 # 4. extract_descriptors() / CLI extract-descriptors
@@ -413,8 +419,8 @@ if _HAVE_DEEPMD_LIB:
         desc_ms.shape[1] == 2 * descriptors.shape[1],
     )
 
-    # 4d ── all 50 systems ───────────────────────────────────────────────
-    print("\n--- 4d. Python API: extract_descriptors on all 50 systems ---")
+    # 4d ── all 8 systems ────────────────────────────────────────────────
+    print("\n--- 4d. Python API: extract_descriptors on all 8 systems ---")
     all_paths = sorted(TRAIN_DIR.glob("sys_*")) + sorted(TEST_DIR.glob("sys_*"))
     all_paths = [str(p) for p in all_paths]
     print(f"  Input: {len(all_paths)} systems")
@@ -427,8 +433,8 @@ if _HAVE_DEEPMD_LIB:
         cache=False,
     )
     print(f"  Output shape: {desc_all.shape}")
-    check("all 50: shape[0] == 50", desc_all.shape[0] == 50)
-    check("all 50: 2D output", desc_all.ndim == 2)
+    check("all 8: shape[0] == 8", desc_all.shape[0] == N_TOTAL)
+    check("all 8: 2D output", desc_all.ndim == 2)
 
     # 4e ── CLI ──────────────────────────────────────────────────────────
     print("\n--- 4e. CLI: dpaad extract-descriptors ---")

@@ -1,7 +1,7 @@
 # ADAPT example
 
 This directory contains a small ready-to-run example for `dpa_adapt`.
-The example uses 50 pre-processed QM9 molecules to fine-tune and evaluate a
+The example uses 8 pre-processed QM9 molecules to fine-tune and evaluate a
 DPA-based HOMO-LUMO gap predictor.
 
 The processed data is already included, so you can run the demo directly.
@@ -11,8 +11,8 @@ The processed data is already included, so you can run the demo directly.
 ```text
 examples/dpa_adapt/
 |-- data/                         # ready-to-use processed data
-|   |-- train/                    # 40 training systems in deepmd/npy format
-|   |-- test/                     # 10 test systems in deepmd/npy format
+|   |-- train/                    # 5 training systems in deepmd/npy format
+|   |-- test/                     # 3 test systems in deepmd/npy format
 |   |-- train_labels.npy
 |   `-- test_labels.npy
 |-- scripts/
@@ -59,8 +59,9 @@ test set.
 ## About the included data
 
 The `data/` directory already contains the processed example dataset. Each system
-is stored in `deepmd/npy` format and each `set.000/` directory contains a
-`gap.npy` label file. The label key used by the example is `gap`.
+is stored in `deepmd/npy` format. The included split has 5 training systems and
+3 test systems. Each `set.000/` directory contains a `gap.npy` label file. The
+label key used by the example is `gap`.
 
 In normal use, you do not need to run any data preparation step.
 
@@ -76,5 +77,5 @@ python scripts/prepare_data.py
 ```
 
 The script downloads `gdb9.tar.gz`, extracts the raw SDF and CSV files into
-`raw/`, converts the first 50 molecules to `deepmd/npy`, and writes HOMO-LUMO gap
+`raw/`, converts the first 8 molecules to `deepmd/npy`, and writes HOMO-LUMO gap
 labels as `gap.npy`.
