@@ -3,7 +3,7 @@ import unittest
 
 import numpy as np
 
-from deepmd.dpmodel.utils.segment import (
+from deepmd.dpmodel.utils.neighbor_graph import (
     segment_mean,
     segment_sum,
 )

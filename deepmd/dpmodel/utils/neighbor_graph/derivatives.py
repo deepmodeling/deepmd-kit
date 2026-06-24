@@ -17,7 +17,8 @@ import array_api_compat
 from deepmd.dpmodel.array_api import (
     Array,
 )
-from deepmd.dpmodel.utils.segment import (
+
+from .segment import (
     segment_sum,
 )
 

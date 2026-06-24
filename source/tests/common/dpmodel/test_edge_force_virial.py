@@ -3,7 +3,7 @@ import unittest
 
 import numpy as np
 
-from deepmd.dpmodel.utils.edge_derivatives import (
+from deepmd.dpmodel.utils.neighbor_graph import (
     edge_force_virial,
 )
 

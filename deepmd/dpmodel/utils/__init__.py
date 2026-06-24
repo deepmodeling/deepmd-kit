@@ -2,9 +2,6 @@
 from .default_neighbor_list import (
     DefaultNeighborList,
 )
-from .edge_derivatives import (
-    edge_force_virial,
-)
 from .env_mat import (
     EnvMat,
 )
@@ -25,9 +22,12 @@ from .neighbor_graph import (
     GraphLayout,
     NeighborGraph,
     build_neighbor_graph,
+    edge_force_virial,
     neighbor_graph_from_extended,
     node_validity_mask,
     pad_and_guard_edges,
+    segment_mean,
+    segment_sum,
 )
 from .neighbor_list import (
     NeighborList,
@@ -56,10 +56,6 @@ from .region import (
     normalize_coord,
     phys2inter,
     to_face_distance,
-)
-from .segment import (
-    segment_mean,
-    segment_sum,
 )
 from .serialization import (
     load_dp_model,
