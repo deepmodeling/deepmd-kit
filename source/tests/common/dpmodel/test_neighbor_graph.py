@@ -47,9 +47,7 @@ class TestNodeValidityMask(unittest.TestCase):
     def test_with_padding_prefix(self) -> None:
         n_node = np.array([2, 3], dtype=np.int64)  # 5 real
         mask = node_validity_mask(n_node, 8)  # N_max = 8 => 3 padding
-        np.testing.assert_array_equal(
-            mask, np.array([True] * 5 + [False] * 3)
-        )
+        np.testing.assert_array_equal(mask, np.array([True] * 5 + [False] * 3))
 
 
 from deepmd.dpmodel.utils.neighbor_graph import (
@@ -88,9 +86,7 @@ class TestPadAndGuardEdges(unittest.TestCase):
 
     def test_overflow_raises(self) -> None:
         with self.assertRaises(ValueError):
-            pad_and_guard_edges(
-                self.edge_index, self.edge_vec, capacity=2, min_edges=2
-            )
+            pad_and_guard_edges(self.edge_index, self.edge_vec, capacity=2, min_edges=2)
 
 
 class TestPublicExports(unittest.TestCase):

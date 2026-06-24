@@ -20,7 +20,10 @@ def brute_force_neighbor_sets(coord, box, rcut):
     else:
         h = np.min(np.abs(np.diag(box)))
         n = int(np.ceil(rcut / h))
-        shells = [np.array(s, dtype=np.int64) for s in itertools.product(range(-n, n + 1), repeat=3)]
+        shells = [
+            np.array(s, dtype=np.int64)
+            for s in itertools.product(range(-n, n + 1), repeat=3)
+        ]
     sets = [set() for _ in range(nloc)]
     for s in shells:
         sc = np.zeros(3) if box is None else s.astype(float) @ box

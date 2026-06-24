@@ -30,9 +30,6 @@ from .neighbor_graph import (
 from .neighbor_list import (
     NeighborList,
 )
-from .numpy_neighbor_list import (
-    NumpyNeighborList,
-)
 from .network import (
     EmbeddingNet,
     FittingNet,
@@ -51,6 +48,9 @@ from .nlist import (
     extend_coord_with_ghosts,
     get_multiple_nlist_key,
     nlist_distinguish_types,
+)
+from .numpy_neighbor_list import (
+    NumpyNeighborList,
 )
 from .region import (
     inter2phys,

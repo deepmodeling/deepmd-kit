@@ -51,12 +51,16 @@ class TestEdgeForceVirial(unittest.TestCase):
 
     def test_padding_edges_contribute_nothing(self) -> None:
         # append a masked guard edge pointing at node 0 with nonzero g (should be ignored)
-        ei = np.concatenate([self.edge_index, np.array([[0], [0]], dtype=np.int64)], axis=1)
+        ei = np.concatenate(
+            [self.edge_index, np.array([[0], [0]], dtype=np.int64)], axis=1
+        )
         ev = np.concatenate([self.edge_vec, np.array([[9.0, 9.0, 9.0]])], axis=0)
         em = np.array([True, True, False])
         g = np.concatenate([self.g, np.array([[7.0, 7.0, 7.0]])], axis=0)
         f1, a1, v1 = edge_force_virial(g, ev, ei, em, self.N)
-        f0, a0, v0 = edge_force_virial(self.g, self.edge_vec, self.edge_index, self.edge_mask, self.N)
+        f0, a0, v0 = edge_force_virial(
+            self.g, self.edge_vec, self.edge_index, self.edge_mask, self.N
+        )
         np.testing.assert_allclose(f1, f0)
         np.testing.assert_allclose(a1, a0)
         np.testing.assert_allclose(v1, v0)
