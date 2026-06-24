@@ -32,7 +32,6 @@ from pathlib import (
 
 import numpy as np
 import torch
-from ase.data import atomic_numbers as ASE_Z
 from nvalchemi.data import (
     AtomicData,
     Batch,
@@ -53,6 +52,9 @@ from nvalchemi.neighbors import (
     compute_neighbors,
 )
 
+from deepmd.pt.model.model.sezm_model import (
+    ELEMENT_TO_Z,
+)
 from deepmd.pt.nvalchemi import (
     DPA4Wrapper,
 )
@@ -74,7 +76,7 @@ def load_frame(
     box = np.load(set_dir / "box.npy")[frame].reshape(3, 3)
     type_index = np.loadtxt(data_dir / "type.raw", dtype=int).reshape(-1)
     type_map = (data_dir / "type_map.raw").read_text().split()
-    z = np.array([ASE_Z[type_map[t]] for t in type_index], dtype=np.int64)
+    z = np.array([ELEMENT_TO_Z[type_map[t]] for t in type_index], dtype=np.int64)
     return (
         torch.tensor(z, dtype=torch.long, device=device),
         torch.tensor(coord, dtype=dtype, device=device),

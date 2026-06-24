@@ -93,6 +93,7 @@ test = [
     "dpgui",
     # DPA-ADAPT tests import sklearn via dpa_adapt.cv at module load time.
     "scikit-learn",
+    'nvalchemi-toolkit; python_version >= "3.11" and python_version < "3.14" and platform_system == "Linux"',
     # to support Array API 2024.12
     'array-api-strict>=2.2;python_version>="3.9"',
 ]
@@ -131,7 +132,7 @@ ipi = [
     "ipi",
 ]
 nvalchemi = [
-    "nvalchemi-toolkit",
+    'nvalchemi-toolkit; python_version >= "3.11" and python_version < "3.14" and platform_system == "Linux"',
 ]
 gui = [
     "dpgui",

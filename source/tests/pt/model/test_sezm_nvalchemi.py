@@ -274,6 +274,45 @@ class TestSeZMNVAlchemiWrapper(_ClearDefaultDeviceTestCase):
             out["stress"].reshape(3, 3) * volume, ref["virial"], atol=1e-7, rtol=1e-6
         )
 
+    def test_stress_matches_strain_finite_difference(self) -> None:
+        """Nvalchemi stress follows its ``W / V`` convention.
+
+        This is intentionally non-circular: the finite difference uses only
+        wrapper energies under a small affine cell strain, not the native virial
+        output.  nvalchemi expects ``stress = W / V`` with
+        ``W = -dE/d(strain)``; this differs by sign from ASE's tensile-stress
+        convention.
+        """
+        coord, atype, box = self._system()
+        wrapper = DPA4Wrapper(self.model, compute_stress=True)
+
+        batch = Batch.from_data_list(
+            [self._data(coord, atype, box)], device=self.device
+        )
+        out = self._wrapper_batch_out(wrapper, batch)
+        volume = torch.det(box).abs()
+        virial_from_stress = out["stress"].reshape(3, 3) * volume
+
+        torch.manual_seed(0)
+        sym = torch.randn(3, 3, dtype=torch.float64, device=self.device)
+        strain = 1.0e-4 * (sym + sym.transpose(0, 1))
+        eye = torch.eye(3, dtype=torch.float64, device=self.device)
+
+        def wrapper_energy(sign: float) -> torch.Tensor:
+            transform = (eye + sign * strain).transpose(0, 1)
+            coord_d = coord @ transform
+            box_d = box @ transform
+            batch_d = Batch.from_data_list(
+                [self._data(coord_d, atype, box_d)], device=self.device
+            )
+            return self._wrapper_batch_out(wrapper, batch_d)["energy"].reshape(())
+
+        e_plus = wrapper_energy(1.0)
+        e_minus = wrapper_energy(-1.0)
+        lhs = (virial_from_stress * strain).sum()
+        rhs = -(e_plus - e_minus) / 2.0
+        torch.testing.assert_close(lhs, rhs, atol=1.0e-8, rtol=1.0e-4)
+
     def test_parity_nonperiodic(self) -> None:
         """Energy / forces match native forward for an open-boundary cluster."""
         coord, atype, _ = self._system()
