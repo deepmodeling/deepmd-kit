@@ -229,8 +229,8 @@ class _DescriptorExtraction:
                     "Loaded model exposes neither descriptor hook methods nor "
                     "forward_embedding()."
                 )
-            descriptor, _, _ = self._inner_model.forward_embedding(coord, atype, box)
-            return descriptor.detach()
+            result = self._inner_model.forward_embedding(coord, atype, box)
+            return result["descriptor"].detach()
         self._clear_accumulator()
         self._inner_model.forward_common(coord, atype, box)
         return self._descriptor_hook_model.eval_descriptor().detach()
