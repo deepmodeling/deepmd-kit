@@ -103,6 +103,7 @@ Other keys in the {ref}`training <training>` section are explained below:
 - {ref}`disp_file <training/disp_file>` The file for printing learning curve.
 - {ref}`disp_freq <training/disp_freq>` The frequency of printing learning curve. Set in the unit of training steps
 - {ref}`save_freq <training/save_freq>` The frequency of saving checkpoint.
+- {ref}`save_dir <training/save_dir>` The directory where periodic checkpoints are written (PyTorch backend). It is created recursively if missing, while the `model.ckpt.pt` symlinks and the `checkpoint` pointer file stay in the working directory. Defaults to the working directory.
 
 ## Options and environment variables
 

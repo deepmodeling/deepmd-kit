@@ -965,6 +965,27 @@ class TestFullValidation(unittest.TestCase):
         self.assertEqual(val_lines[1].split()[1], "2000.0")
 
     @patch("deepmd.pt.train.validation.FullValidator.evaluate_all_systems")
+    def test_full_validation_save_best_dir(self, mocked_eval) -> None:
+        mocked_eval.side_effect = [
+            {"mae_e_per_atom": 1.0},
+            {"mae_e_per_atom": 2.0},
+            {"mae_e_per_atom": 0.5},
+            {"mae_e_per_atom": 1.5},
+        ]
+        config = deepcopy(self.config)
+        config["validating"]["save_best_dir"] = "nested/best"
+        config["validating"]["max_best_ckpt"] = 1
+        trainer = get_trainer(config)
+        trainer.run()
+
+        best_dir = Path("nested/best")
+        self.assertTrue(best_dir.is_dir())
+        # The single best checkpoint (lowest E:MAE, at step 3) lands under
+        # save_best_dir, and none is left in the working directory.
+        self.assertTrue((best_dir / "best.ckpt-3.t-1.pt").is_file())
+        self.assertEqual(list(Path(".").glob("best.ckpt-*.pt")), [])
+
+    @patch("deepmd.pt.train.validation.FullValidator.evaluate_all_systems")
     def test_full_validation_runs_when_start_step_is_final_step(
         self, mocked_eval
     ) -> None:
@@ -1158,6 +1179,42 @@ class TestEMATraining(unittest.TestCase):
             module.NUM_WORKERS = num_workers
         os.chdir(self._cwd)
         self._tmpdir.cleanup()
+
+    @TRAINING_TEST_TIMEOUT
+    def test_save_dir_redirects_checkpoints_with_local_symlinks(self) -> None:
+        config = deepcopy(self.config)
+        config["training"]["save_dir"] = "ckpt"
+        trainer = get_trainer(config)
+        save_ckpt = trainer.save_ckpt
+        ema_save_ckpt = trainer.ema_save_ckpt
+        trainer.run()
+
+        save_dir = Path("ckpt")
+        # Periodic regular/EMA checkpoints honor their keep limits inside save_dir.
+        self.assertEqual(
+            sorted(path.name for path in save_dir.glob(f"{save_ckpt}-*.pt")),
+            [f"{save_ckpt}-2.pt", f"{save_ckpt}-3.pt", f"{save_ckpt}-4.pt"],
+        )
+        self.assertEqual(
+            sorted(path.name for path in save_dir.glob(f"{ema_save_ckpt}-*.pt")),
+            [f"{ema_save_ckpt}-3.pt", f"{ema_save_ckpt}-4.pt"],
+        )
+        self.assertEqual(trainer.latest_model, save_dir / f"{save_ckpt}-4.pt")
+
+        # Latest-checkpoint symlinks stay in the working directory and resolve
+        # into save_dir; no symlink is created inside save_dir.
+        for prefix in (save_ckpt, ema_save_ckpt):
+            link = Path(f"{prefix}.pt")
+            self.assertTrue(link.is_symlink())
+            self.assertEqual(link.resolve(), (save_dir / f"{prefix}-4.pt").resolve())
+        self.assertFalse((save_dir / f"{save_ckpt}.pt").exists())
+
+        # The checkpoint pointer file stays in the working directory and points
+        # at the real file under save_dir.
+        self.assertEqual(
+            Path(Path("checkpoint").read_text().strip()),
+            save_dir / f"{save_ckpt}-4.pt",
+        )
 
     @TRAINING_TEST_TIMEOUT
     def test_ema_checkpoint_rotation(self) -> None:

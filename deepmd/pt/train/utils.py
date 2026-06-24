@@ -9,8 +9,12 @@ import os
 from contextlib import (
     contextmanager,
 )
+from pathlib import (
+    Path,
+)
 from typing import (
     TYPE_CHECKING,
+    Any,
 )
 
 import torch
@@ -191,3 +195,52 @@ def scoped_env_defaults(defaults: dict[str, str]) -> Generator[None, None, None]
                 os.environ.pop(key, None)
             else:
                 os.environ[key] = value
+
+
+def latest_checkpoint_path(prefix: str, step_label: int, save_dir: Path | None) -> Path:
+    """
+    Resolve the on-disk path of a periodic checkpoint file.
+
+    Parameters
+    ----------
+    prefix : str
+        The checkpoint prefix, e.g. ``model.ckpt`` or its EMA counterpart.
+    step_label : int
+        The training step encoded into the filename.
+    save_dir : Path or None
+        The configured checkpoint directory. When ``None`` the file follows
+        ``prefix`` relative to the working directory.
+
+    Returns
+    -------
+    Path
+        ``save_dir/<prefix name>-<step>.pt`` when ``save_dir`` is set, otherwise
+        ``<prefix>-<step>.pt`` relative to the working directory.
+    """
+    directory = save_dir if save_dir is not None else Path(prefix).parent
+    return directory / f"{Path(prefix).name}-{step_label}.pt"
+
+
+def resolve_best_checkpoint_dir(
+    validating_params: dict[str, Any], save_ckpt: str
+) -> Path:
+    """
+    Resolve the directory for full-validation best checkpoints.
+
+    Parameters
+    ----------
+    validating_params : dict
+        The ``validating`` section of the training configuration.
+    save_ckpt : str
+        The regular checkpoint prefix from ``training.save_ckpt``.
+
+    Returns
+    -------
+    Path
+        ``validating.save_best_dir`` when set, otherwise the directory derived
+        from ``save_ckpt``.
+    """
+    save_best_dir = validating_params.get("save_best_dir")
+    if save_best_dir:
+        return Path(save_best_dir)
+    return Path(save_ckpt).parent
