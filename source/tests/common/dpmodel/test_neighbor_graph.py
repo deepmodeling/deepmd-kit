@@ -94,13 +94,15 @@ class TestPublicExports(unittest.TestCase):
         from deepmd.dpmodel.utils import (
             GraphLayout,
             NeighborGraph,
-            NumpyNeighborList,
+            build_neighbor_graph,
             edge_force_virial,
+            neighbor_graph_from_extended,
             segment_sum,
         )
 
         self.assertTrue(callable(segment_sum))
         self.assertTrue(callable(edge_force_virial))
+        self.assertTrue(callable(build_neighbor_graph))
+        self.assertTrue(callable(neighbor_graph_from_extended))
         self.assertIsNotNone(NeighborGraph)
         self.assertIsNotNone(GraphLayout)
-        self.assertIsNotNone(NumpyNeighborList)
