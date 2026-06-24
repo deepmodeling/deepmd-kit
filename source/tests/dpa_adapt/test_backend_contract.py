@@ -264,7 +264,9 @@ class TestBackendContract:
 class TestBackendHelpers:
     """Unit-level checks for _backend utility functions."""
 
-    def test_resolve_dp_command_keeps_symlinked_venv_scripts(self, tmp_path, monkeypatch):
+    def test_resolve_dp_command_keeps_symlinked_venv_scripts(
+        self, tmp_path, monkeypatch
+    ):
         import os
         import sys
         from pathlib import (

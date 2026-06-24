@@ -15,8 +15,9 @@ Installs `scikit-learn`, `dpdata`, `ase`, `rdkit`, and `e3nn` alongside DeePMD-k
 For a complete runnable example (QM9 HOMO–LUMO gap, ~5 min on CPU), see [`../../examples/dpa_adapt/`](../../examples/dpa_adapt/).
 
 ```{toctree}
-:maxdepth: 2
-
+---
+maxdepth: 2
+---
 input_formats
 ```
 
