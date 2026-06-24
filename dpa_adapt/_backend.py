@@ -115,7 +115,7 @@ def load_torch_file(path: str, map_location: str = "cpu") -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 
 
-def build_model_from_config(input_param: dict[str, Any]):
+def build_model_from_config(input_param: dict[str, Any]) -> Any:
     """Build a (non-JIT) DPA model from an input-parameter dict.
 
     Returns a ``ModelWrapper`` whose inner model is accessible as
@@ -172,13 +172,13 @@ class _DescriptorExtraction:
     batching, and tensor creation.
     """
 
-    def __init__(self, wrapper) -> None:
+    def __init__(self, wrapper: Any) -> None:
         inner = wrapper.model["Default"]
         self._inner_model = inner
         self._atomic_model = inner.atomic_model
         self._descriptor_hook_model = self._resolve_descriptor_hook_model()
 
-    def _resolve_descriptor_hook_model(self):
+    def _resolve_descriptor_hook_model(self) -> Any | None:
         for model in (self._inner_model, self._atomic_model):
             if hasattr(model, "set_eval_descriptor_hook") and hasattr(
                 model, "eval_descriptor"
@@ -202,7 +202,7 @@ class _DescriptorExtraction:
         if hasattr(self._descriptor_hook_model, "eval_descriptor_list"):
             self._descriptor_hook_model.eval_descriptor_list.clear()
 
-    def _run_forward(self, coord, atype, box):
+    def _run_forward(self, coord: Any, atype: Any, box: Any) -> Any:
         """Run ``forward_common`` and return per-atom descriptors (detached).
 
         Parameters
