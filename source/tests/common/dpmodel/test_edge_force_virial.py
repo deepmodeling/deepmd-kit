@@ -39,6 +39,42 @@ class TestEdgeForceVirial(unittest.TestCase):
         np.testing.assert_allclose(av[1], w0)  # src of e0 is node 1
         np.testing.assert_allclose(av[0], w1)  # src of e1 is node 0
 
+    def test_empty_frame_no_nodes_or_edges(self) -> None:
+        # 3 frames with the MIDDLE one EMPTY (0 nodes/edges): n_node=[3,0,5].
+        # frame 0 = {0,1,2}, frame 1 = EMPTY, frame 2 = {3,4,5,6,7}. Also a padded
+        # node axis (node_capacity 9 > sum 8). Verifies the zero-width-block frame
+        # assignment (searchsorted on duplicate cumsum boundaries [3,3,8] must skip
+        # the empty frame) and that the empty frame's virial is exactly zero.
+        n_node = np.array([3, 0, 5], dtype=np.int64)  # sum = 8
+        node_capacity = 9  # 1 padded node slot (8)
+        edge_index = np.array(
+            [
+                [1, 4, 6],  # src
+                [0, 3, 7],
+            ],  # dst  (frame 0: dst 0 ; frame 2: dst 3,7 ; frame 1: NONE)
+            dtype=np.int64,
+        )
+        edge_vec = np.array([[1.0, 0.0, 0.0], [0.0, 2.0, 0.0], [0.0, 0.0, 3.0]])
+        edge_mask = np.array([True, True, True])
+        g = np.array([[0.5, 0.0, 0.0], [0.0, 0.4, 0.0], [0.0, 0.0, 0.6]])
+        force, av, vir = edge_force_virial(
+            g, edge_vec, edge_index, edge_mask, n_node, node_capacity=node_capacity
+        )
+        self.assertEqual(vir.shape, (3, 3, 3))
+        self.assertEqual(force.shape, (9, 3))
+        # the empty middle frame contributes exactly zero
+        np.testing.assert_allclose(vir[1], 0.0)
+        w = [-np.einsum("k,j->kj", g[i], edge_vec[i]) for i in range(3)]
+        np.testing.assert_allclose(vir[0], w[0])  # frame 0: edge 0
+        np.testing.assert_allclose(
+            vir[2], w[1] + w[2]
+        )  # frame 2: edges 1,2 (node 3..7)
+        # padded node slot (8) is unreferenced -> zero
+        np.testing.assert_allclose(force[8], 0.0)
+        np.testing.assert_allclose(av[8], 0.0)
+        # per-frame atom-virial closure across the empty frame: frame-2 nodes 3..7
+        np.testing.assert_allclose(np.sum(av[3:8], axis=0), vir[2])
+
     def test_ragged_multiframe_with_edge_and_node_padding(self) -> None:
         # MOST GENERAL case: 2 frames with DIFFERENT node counts (3 and 5) AND
         # different edge counts (2 and 3), masked guard EDGES, and a padded NODE
