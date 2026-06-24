@@ -187,10 +187,13 @@ class _FakeInnerWithEmbedding:
 
 class TestForwardEmbeddingFallback:
     def test_enable_hook_is_noop_without_hook_model(self):
-        from dpa_adapt._backend import (
-            _DescriptorExtraction,
-        )
+        import sys
+        from unittest.mock import MagicMock
 
+        if isinstance(sys.modules.get("torch"), MagicMock):
+            pytest.skip("torch is mocked by another test")
+
+        from dpa_adapt._backend import _DescriptorExtraction
         import torch
 
         desc = torch.zeros(1, 2, 16, dtype=torch.float64)
@@ -203,10 +206,13 @@ class TestForwardEmbeddingFallback:
         extractor._clear_accumulator()
 
     def test_run_forward_uses_forward_embedding(self):
-        from dpa_adapt._backend import (
-            _DescriptorExtraction,
-        )
+        import sys
+        from unittest.mock import MagicMock
 
+        if isinstance(sys.modules.get("torch"), MagicMock):
+            pytest.skip("torch is mocked by another test")
+
+        from dpa_adapt._backend import _DescriptorExtraction
         import torch
 
         desc = torch.ones(1, 2, 16, dtype=torch.float64)
