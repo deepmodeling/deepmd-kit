@@ -125,9 +125,13 @@ def build_neighbor_graph(
         extend_input_and_build_neighbor_list,
     )
 
+    # ``extend_input_and_build_neighbor_list`` is annotated ``sel: list[int]``;
+    # normalize the integer form so the public ``int | list[int]`` contract is
+    # honored (the underlying ``build_neighbor_list`` accepts both).
+    sel_list = [sel] if isinstance(sel, int) else sel
     extended_coord, _extended_atype, mapping, nlist = (
         extend_input_and_build_neighbor_list(
-            coord, atype, rcut, sel, mixed_types=mixed_types, box=box
+            coord, atype, rcut, sel_list, mixed_types=mixed_types, box=box
         )
     )
     return neighbor_graph_from_extended(extended_coord, nlist, mapping, layout)

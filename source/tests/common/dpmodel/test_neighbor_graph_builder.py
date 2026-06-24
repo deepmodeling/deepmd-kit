@@ -109,6 +109,20 @@ class TestNeighborGraphBuilder(unittest.TestCase):
         self.assertTrue(np.all(ei[:, ei[1] < 4] < 4))
         self.assertTrue(np.all(ei[:, ei[1] >= 4] >= 4))
 
+    def test_int_sel_matches_list_sel(self) -> None:
+        # an integer ``sel`` (normalized to list form) must yield the same
+        # real-edge environment as the equivalent large list ``sel``.
+        nloc = self.coord.shape[1]
+        ng_int = build_neighbor_graph(
+            self.coord, self.atype, None, self.rcut, 64, mixed_types=True
+        )
+        ng_list = build_neighbor_graph(
+            self.coord, self.atype, None, self.rcut, self.sel, mixed_types=True
+        )
+        self.assertEqual(
+            graph_neighbor_sets(ng_int, nloc), graph_neighbor_sets(ng_list, nloc)
+        )
+
     def test_static_capacity_padding(self) -> None:
         ng = build_neighbor_graph(
             self.coord,
@@ -121,6 +135,14 @@ class TestNeighborGraphBuilder(unittest.TestCase):
         )
         self.assertEqual(ng.edge_index.shape[1], 64)
         self.assertEqual(ng.edge_vec.shape[0], 64)
+        # exactly the real edges are marked, padded compactly at the tail
+        n_real = sum(
+            len(s) for s in brute_force_neighbor_sets(self.coord[0], None, self.rcut)
+        )
+        self.assertEqual(int(ng.edge_mask.sum()), n_real)
+        self.assertTrue(bool(np.all(ng.edge_mask[:n_real])))
+        self.assertFalse(bool(np.any(ng.edge_mask[n_real:])))
+        # masked-out tail contributes no real edges
         self.assertTrue(np.all(ng.edge_vec[~ng.edge_mask] == 0.0))
 
 
