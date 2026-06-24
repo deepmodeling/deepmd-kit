@@ -51,9 +51,6 @@ from .nlist import (
     get_multiple_nlist_key,
     nlist_distinguish_types,
 )
-from .numpy_neighbor_list import (
-    NumpyNeighborList,
-)
 from .region import (
     inter2phys,
     normalize_coord,
