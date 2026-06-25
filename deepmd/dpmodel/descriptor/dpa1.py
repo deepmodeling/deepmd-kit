@@ -1275,7 +1275,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         Known limitations (NeighborGraph PR-A):
         - ``attn_layer == 0`` only (attention lands in PR-D);
         - ``tebd_input_mode == "concat"`` only (strip mode lands later);
-        - type exclusion (``exclude_types``) is not applied on the graph path.
+        - ``exclude_types`` is not yet supported and raises (lands in a later PR).
         """
         from deepmd.dpmodel.utils.neighbor_graph import (
             edge_env_mat,
@@ -1290,6 +1290,11 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         if self.tebd_input_mode not in ["concat"]:
             raise NotImplementedError(
                 "graph path supports tebd_input_mode='concat' only (NeighborGraph PR-A)"
+            )
+        if self.exclude_types:
+            raise NotImplementedError(
+                "graph path does not yet apply exclude_types (NeighborGraph PR-A); "
+                "type exclusion lands in a later PR"
             )
         if type_embedding is None:
             raise ValueError("type_embedding is required for the graph path")

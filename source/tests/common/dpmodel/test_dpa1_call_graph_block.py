@@ -89,6 +89,27 @@ class TestDpa1BlockCallGraph(unittest.TestCase):
         with self.assertRaises(NotImplementedError):
             dd.se_atten.call_graph(None, np.array([0], dtype=np.int64))
 
+    def test_exclude_types_raises(self) -> None:
+        # the graph path does not yet apply type exclusion; it must fail-fast
+        # rather than silently diverge from the dense path (which masks edges).
+        dd = DescrptDPA1(
+            rcut=4.0,
+            rcut_smth=0.5,
+            sel=[20],
+            ntypes=2,
+            attn_layer=0,
+            exclude_types=[(0, 1)],
+        )
+        ng = from_dense_quartet(
+            self.coord,
+            -np.ones((1, self.nloc, 1), dtype=np.int64),  # any graph; guard fires first
+            np.arange(self.nloc, dtype=np.int64)[None],
+        )
+        with self.assertRaises(NotImplementedError):
+            dd.se_atten.call_graph(
+                ng, self.atype.reshape(-1), type_embedding=dd.type_embedding.call()
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
