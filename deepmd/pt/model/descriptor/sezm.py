@@ -172,6 +172,24 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         If True, apply a random roll about the edge-aligned local ``+Z`` axis
         before building the Wigner-D blocks. The roll is sampled independently
         per edge and per forward call.
+    edge_cartesian
+        If True, every block whose message-passing degree is ``1`` or ``2``
+        replaces its per-edge SO(2) rotation-frame tensor product with the
+        equivalent global-frame Cartesian rank-2 tensor product, removing the two
+        per-edge Wigner-D rotations. Blocks with degree ``0`` or ``>= 3`` keep
+        the SO(2) path. When every block takes the Cartesian path the full
+        Wigner-D construction is skipped automatically, and the geometric initial
+        embedding falls back to the zonal coupling.
+    node_cartesian
+        Per-node global-frame Cartesian rank-2 tensor product on the aggregated
+        message, applied in every block whose message-passing degree is ``1`` or
+        ``2``. Configured by a ``"<mode>:<layers>"`` string where ``mode`` is
+        ``"default"`` (one-sided product) or ``"parity"`` (symmetrized product)
+        and ``layers`` is the stack depth; a bare integer ``N`` is shorthand for
+        ``"default:N"``, and ``"none"`` disables it. Orthogonal to
+        ``edge_cartesian``: either, both, or neither may be set. Unlike
+        ``edge_cartesian`` it does not affect the Wigner-D construction, since the
+        per-edge message path is left unchanged.
     lmax
         Maximum degree, only used when `l_schedule` is None.
     l_schedule
@@ -198,8 +216,12 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
     so2_norm
         If True, apply intermediate ReducedEquivariantRMSNorm between SO(2) mixing layers.
         When False (default), no normalization is applied between layers.
-    so2_layers
-        Number of SO(2) mixing layers per block.
+    mixing_layers
+        Number of learnable mixing layers in the per-edge message core of each
+        block (legacy alias: ``so2_layers``). ``0`` applies only the
+        edge-condition modulation: the rotation-free per-degree radial scaling on
+        the SO(2) path, or a single ``x @ T_e`` when ``edge_cartesian`` applies.
+        The per-node ``node_cartesian`` stack carries its own independent depth.
     so2_attn_res
         SO(2)-internal depth-wise attention residual mode inside each interaction
         block. Must be one of ``"none"``, ``"independent"``, or ``"dependent"``.
@@ -207,7 +229,9 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         Dynamic radial degree mixer mode inside SO(2) convolution. ``"none"``
         applies elementwise radial modulation, ``"degree"`` uses a
         channel-shared edge-conditioned cross-degree kernel, and
-        ``"degree_channel"`` uses a per-channel cross-degree kernel.
+        ``"degree_channel"`` uses a per-channel cross-degree kernel. Has no
+        effect on blocks taking the Cartesian path (``edge_cartesian`` with
+        degree 1 or 2), where the dynamic radial degree mixer is bypassed.
     radial_so2_rank
         Low-rank channel factorization rank for
         ``radial_so2_mode="degree_channel"``. ``0`` uses the full
@@ -402,6 +426,8 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         radial_mlp: list[int] | None = None,
         use_env_seed: bool = True,
         random_gamma: bool = True,
+        edge_cartesian: bool = False,
+        node_cartesian: str | int = "none",
         lmax: int = 3,
         l_schedule: list[int] | None = None,
         mmax: int | None = 1,
@@ -410,7 +436,8 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         extra_node_l: int = 0,
         n_blocks: int = 3,
         so2_norm: bool = False,
-        so2_layers: int = 4,
+        mixing_layers: int = 4,
+        so2_layers: int | None = None,
         so2_attn_res: str = "none",
         radial_so2_mode: str = "degree_channel",
         radial_so2_rank: int = 1,
@@ -570,6 +597,8 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         self.trainable = bool(trainable)
         self.seed = seed
         self.random_gamma = bool(random_gamma)
+        self.edge_cartesian = bool(edge_cartesian)
+        self.node_cartesian = str(node_cartesian)
         self.add_chg_spin_ebd = bool(add_chg_spin_ebd)
         if default_chg_spin is not None and len(default_chg_spin) != 2:
             raise ValueError("`default_chg_spin` must contain [charge, spin].")
@@ -640,7 +669,9 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         self.rad_sizes_per_block = [l + 1 for l in self.l_schedule]
 
         self.so2_norm = bool(so2_norm)
-        self.so2_layers = int(so2_layers)
+        # ``so2_layers`` is the legacy alias for ``mixing_layers``; when supplied
+        # it takes precedence so existing configs keep working.
+        self.mixing_layers = int(mixing_layers if so2_layers is None else so2_layers)
         self.so2_attn_res_mode = str(so2_attn_res).lower()
         if self.so2_attn_res_mode not in ATTN_RES_MODES:
             raise ValueError(
@@ -827,12 +858,21 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         # === C^3 cutoff envelope for edge weight ===
         self.edge_envelope = C3CutoffEnvelope(rcut=self.rcut, exponent=self.env_exp[1])
 
-        wigner_lmax = self.l_schedule[0]
-        # force fp32+
+        # === Edge-aligned Wigner-D calculator ===
+        # Cartesian blocks (degree 1 or 2) skip the SO(2) rotations, so the full
+        # per-edge Wigner-D blocks are built only when a block keeps the SO(2)
+        # path (tracked by ``_need_full_wigner``).
+        block_edge_cartesian = [
+            self.edge_cartesian and l_b in (1, 2) for l_b in self.l_schedule
+        ]
+        block_node_cartesian = [
+            self.node_cartesian if l_b in (1, 2) else "none" for l_b in self.l_schedule
+        ]
+        self._need_full_wigner = not all(block_edge_cartesian)
         self.wigner_calc = WignerDCalculator(
-            lmax=wigner_lmax,
+            lmax=self.l_schedule[0],
             eps=self.eps,
-            dtype=self.compute_dtype,
+            dtype=self.compute_dtype,  # force fp32+
         )
 
         self.use_gie = self.use_env_seed and self.node_l_schedule[0] > 0
@@ -875,10 +915,12 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                     n_focus=self.n_focus,
                     focus_dim=self.focus_dim,
                     so2_norm=self.so2_norm,
-                    so2_layers=self.so2_layers,
+                    mixing_layers=self.mixing_layers,
                     so2_attn_res=self.so2_attn_res_mode,
                     radial_so2_mode=self.radial_so2_mode,
                     radial_so2_rank=self.radial_so2_rank,
+                    edge_cartesian=block_edge_cartesian[block_idx],
+                    node_cartesian=block_node_cartesian[block_idx],
                     ffn_neurons=self.block_ffn_neurons,
                     node_wise_grid_mlp=self.node_wise_grid_mlp,
                     node_wise_grid_branch=self.node_wise_grid_branch,
@@ -1148,6 +1190,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 # the model is roll-equivariant, so inference fixes gamma.
                 random_gamma=self.random_gamma and self.training,
                 wigner_calc=self.wigner_calc,
+                build_wigner=self._need_full_wigner,
             )
 
         ebed_dim_0 = self.node_ebed_dims[0]  # (node_lmax+1)^2
@@ -1379,6 +1422,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 # the model is roll-equivariant, so inference fixes gamma.
                 random_gamma=self.random_gamma and self.training,
                 wigner_calc=self.wigner_calc,
+                build_wigner=self._need_full_wigner,
             )
 
         ebed_dim_0 = self.node_ebed_dims[0]  # (node_lmax+1)^2
@@ -1598,6 +1642,31 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         ).to(dtype=self.dtype)
         return x
 
+    def _edge_quaternion(self, edge_cache: EdgeFeatureCache) -> torch.Tensor:
+        """
+        Return the cached global->local edge quaternion, rebuilding if absent.
+
+        Parameters
+        ----------
+        edge_cache : EdgeFeatureCache
+            Per-edge cache. ``edge_quat`` is populated by the cache builder; the
+            fallback covers caches produced without it.
+
+        Returns
+        -------
+        torch.Tensor
+            Unit quaternions with shape (E, 4).
+        """
+        edge_quat = edge_cache.edge_quat
+        if edge_quat is None:
+            edge_len = safe_norm(edge_cache.edge_vec, self.eps)
+            edge_quat = build_edge_quaternion(
+                edge_cache.edge_vec,
+                edge_len=edge_len,
+                eps=self.eps,
+            )
+        return edge_quat
+
     def _build_gie_zonal_coupling(
         self,
         edge_cache: EdgeFeatureCache,
@@ -1608,9 +1677,15 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         Returns
         -------
         torch.Tensor or None
-            Coupling with shape ``(E, D_node - 1)`` when ``extra_node_l > 0``;
-            otherwise None, letting GIE gather from the MP Wigner-D cache.
+            Coupling with shape ``(E, D_node - 1)``. ``None`` is returned only
+            when the full Wigner-D blocks are present and ``extra_node_l == 0``,
+            in which case GIE gathers the coupling from the cache directly. When
+            the blocks are skipped (all-Cartesian model) the full coupling is
+            reconstructed from the edge quaternion via the m=0-only path.
         """
+        if edge_cache.Dt_full is None:
+            calc = self.gie_zonal_wigner_calc or self.wigner_calc
+            return calc.forward_zonal(self._edge_quaternion(edge_cache), lmin=1)
         if self.gie_zonal_wigner_calc is None:
             return None
         mp_row_count = self.ebed_dims[0] - 1
@@ -1621,16 +1696,8 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             mp_row_index,
             mp_m0_col_index,
         ]
-        edge_quat = edge_cache.edge_quat
-        if edge_quat is None:
-            edge_len = safe_norm(edge_cache.edge_vec, self.eps)
-            edge_quat = build_edge_quaternion(
-                edge_cache.edge_vec,
-                edge_len=edge_len,
-                eps=self.eps,
-            )
         extra_coupling = self.gie_zonal_wigner_calc.forward_zonal(
-            edge_quat,
+            self._edge_quaternion(edge_cache),
             lmin=self.lmax + 1,
         )
         return torch.cat([mp_coupling, extra_coupling], dim=1)
@@ -2160,8 +2227,10 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 "radial_mlp": self.radial_mlp,
                 "use_env_seed": self.use_env_seed,
                 "random_gamma": self.random_gamma,
+                "edge_cartesian": self.edge_cartesian,
+                "node_cartesian": self.node_cartesian,
                 "so2_norm": self.so2_norm,
-                "so2_layers": self.so2_layers,
+                "mixing_layers": self.mixing_layers,
                 "so2_attn_res": self.so2_attn_res_mode,
                 "radial_so2_mode": self.radial_so2_mode,
                 "radial_so2_rank": self.radial_so2_rank,

@@ -790,7 +790,7 @@ class SO2Convolution(NativeOP):
     1. `pre_focus_mix`: project node features `(N, D, C)` to the SO(2) hidden width.
     2. rotate global -> local reduced basis with cached `D_to_m`.
     3. radial modulation in reduced layout.
-    4. `so2_layers` stacked local mixers:
+    4. `mixing_layers` stacked local mixers:
        `inter_norm -> SO2Linear -> non_linearity -> residual`.
     5. rotate local -> global with cached `Dt_from_m`.
     6. edge aggregation (plain envelope masked sum or envelope-aware masked
@@ -815,7 +815,7 @@ class SO2Convolution(NativeOP):
         focus_dim: int = 0,
         focus_compete: bool = True,
         so2_norm: bool = False,
-        so2_layers: int = 4,
+        mixing_layers: int = 4,
         so2_attn_res: str = "none",
         layer_scale: bool = False,
         n_atten_head: int = 1,
@@ -836,6 +836,8 @@ class SO2Convolution(NativeOP):
         mlp_bias: bool = False,
         radial_so2_mode: str = "none",
         radial_so2_rank: int = 0,
+        edge_cartesian: bool = False,
+        node_cartesian: str = "none",
         eps: float = 1e-7,
         precision: str = DEFAULT_PRECISION,
         seed: int | list[int] | None = None,
@@ -864,9 +866,9 @@ class SO2Convolution(NativeOP):
         self.focus_softmax_tau = 1.0
         self.focus_label_smoothing = 0.02
         self.so2_norm = bool(so2_norm)
-        self.so2_layers = int(so2_layers)
-        if self.so2_layers < 1:
-            raise ValueError("`so2_layers` must be >= 1")
+        self.mixing_layers = int(mixing_layers)
+        if self.mixing_layers < 1:
+            raise ValueError("`mixing_layers` must be >= 1")
         self.so2_attn_res_mode = str(so2_attn_res).lower()
         if self.so2_attn_res_mode not in ATTN_RES_MODES:
             raise ValueError(
@@ -948,6 +950,14 @@ class SO2Convolution(NativeOP):
         self.radial_so2_rank = int(radial_so2_rank)
         if self.radial_so2_rank < 0:
             raise ValueError("`radial_so2_rank` must be non-negative")
+        self.edge_cartesian = bool(edge_cartesian)
+        if self.edge_cartesian:
+            raise NotImplementedError("edge_cartesian=True is not ported to dpmodel")
+        self.node_cartesian = str(node_cartesian)
+        if self.node_cartesian != "none":
+            raise NotImplementedError(
+                "node_cartesian != 'none' is not ported to dpmodel"
+            )
         self.eps = float(eps)
         self.ebed_dim_full = get_so3_dim_of_lmax(self.lmax)
         self.precision = precision
@@ -992,14 +1002,14 @@ class SO2Convolution(NativeOP):
                 seed=child_seed(seed_so2_stack, i),
                 trainable=trainable,
             )
-            for i in range(self.so2_layers)
+            for i in range(self.mixing_layers)
         ]
 
         # === Step 4. Intermediate norms (Optional) ===
         # pt appends nn.Identity() entries; dpmodel uses None for Identity.
         inter_norms: list[ReducedEquivariantRMSNorm | None] = []
         if self.so2_norm:
-            for _ in range(max(0, self.so2_layers - 1)):
+            for _ in range(max(0, self.mixing_layers - 1)):
                 inter_norms.append(
                     ReducedEquivariantRMSNorm(
                         lmax=self.lmax,
@@ -1012,7 +1022,7 @@ class SO2Convolution(NativeOP):
                     )
                 )
         else:
-            for _ in range(max(0, self.so2_layers - 1)):
+            for _ in range(max(0, self.mixing_layers - 1)):
                 inter_norms.append(None)
         inter_norms.append(None)
         self.so2_inter_norms = inter_norms
@@ -1020,7 +1030,7 @@ class SO2Convolution(NativeOP):
         # === Step 5. Intermediate non-linearity ===
         # pt appends nn.Identity() as the last entry; dpmodel uses None.
         non_linearities: list[GatedActivation | None] = []
-        for i in range(max(0, self.so2_layers - 1)):
+        for i in range(max(0, self.mixing_layers - 1)):
             non_linearities.append(
                 GatedActivation(
                     lmax=self.lmax,
@@ -1886,7 +1896,7 @@ class SO2Convolution(NativeOP):
                 "focus_dim": self.focus_dim,
                 "focus_compete": self.focus_compete,
                 "so2_norm": self.so2_norm,
-                "so2_layers": self.so2_layers,
+                "mixing_layers": self.mixing_layers,
                 "so2_attn_res": self.so2_attn_res_mode,
                 "layer_scale": self.layer_scale,
                 "n_atten_head": self.n_atten_head,
@@ -1907,6 +1917,8 @@ class SO2Convolution(NativeOP):
                 "mlp_bias": self.mlp_bias,
                 "radial_so2_mode": self.radial_so2_mode,
                 "radial_so2_rank": self.radial_so2_rank,
+                "edge_cartesian": self.edge_cartesian,
+                "node_cartesian": self.node_cartesian,
                 "eps": self.eps,
                 "precision": np.dtype(PRECISION_DICT[self.precision]).name,
                 "trainable": self.trainable,

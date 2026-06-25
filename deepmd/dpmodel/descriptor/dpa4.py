@@ -169,10 +169,12 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         extra_node_l: int = 0,
         n_blocks: int = 3,
         so2_norm: bool = False,
-        so2_layers: int = 4,
+        mixing_layers: int = 4,
         so2_attn_res: str = "none",
         radial_so2_mode: str = "degree_channel",
         radial_so2_rank: int = 1,
+        edge_cartesian: bool = False,
+        node_cartesian: str = "none",
         n_focus: int = 1,
         focus_dim: int = 0,
         n_atten_head: int = 1,
@@ -396,7 +398,9 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
         self.rad_sizes_per_block = [l + 1 for l in self.l_schedule]
 
         self.so2_norm = bool(so2_norm)
-        self.so2_layers = int(so2_layers)
+        self.mixing_layers = int(mixing_layers)
+        self.edge_cartesian = bool(edge_cartesian)
+        self.node_cartesian = str(node_cartesian)
         self.so2_attn_res_mode = str(so2_attn_res).lower()
         if self.so2_attn_res_mode not in ATTN_RES_MODES:
             raise ValueError(
@@ -597,10 +601,12 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                     n_focus=self.n_focus,
                     focus_dim=self.focus_dim,
                     so2_norm=self.so2_norm,
-                    so2_layers=self.so2_layers,
+                    mixing_layers=self.mixing_layers,
                     so2_attn_res=self.so2_attn_res_mode,
                     radial_so2_mode=self.radial_so2_mode,
                     radial_so2_rank=self.radial_so2_rank,
+                    edge_cartesian=self.edge_cartesian,
+                    node_cartesian=self.node_cartesian,
                     ffn_neurons=self.block_ffn_neurons,
                     node_wise_grid_mlp=self.node_wise_grid_mlp,
                     node_wise_grid_branch=self.node_wise_grid_branch,
@@ -1233,10 +1239,12 @@ class DescrptDPA4(NativeOP, BaseDescriptor):
                 "use_env_seed": self.use_env_seed,
                 "random_gamma": self.random_gamma,
                 "so2_norm": self.so2_norm,
-                "so2_layers": self.so2_layers,
+                "mixing_layers": self.mixing_layers,
                 "so2_attn_res": self.so2_attn_res_mode,
                 "radial_so2_mode": self.radial_so2_mode,
                 "radial_so2_rank": self.radial_so2_rank,
+                "edge_cartesian": self.edge_cartesian,
+                "node_cartesian": self.node_cartesian,
                 "n_focus": self.n_focus,
                 "focus_dim": self.focus_dim,
                 "ffn_neurons": self.ffn_neurons,

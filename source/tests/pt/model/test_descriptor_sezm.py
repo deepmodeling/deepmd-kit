@@ -10,16 +10,21 @@ from deepmd.pt.model.descriptor.sezm import (
 )
 from deepmd.pt.model.descriptor.sezm_nn import (
     DynamicRadialDegreeMixer,
+    EdgeCartesianTensorProduct,
     ForceEmbedding,
     InnerClamp,
+    NodeCartesianTensorProduct,
     SeZMDirectForceHead,
     SO2Linear,
     WignerDCalculator,
+    build_cartesian_basis,
+    build_edge_cartesian_tensors,
     build_edge_quaternion,
     build_gie_zonal_index,
     build_m_major_l_index,
     quaternion_multiply,
     quaternion_to_rotation_matrix,
+    safe_norm,
 )
 from deepmd.pt.model.model import (
     get_sezm_model,
@@ -154,6 +159,106 @@ class TestDescrptSeZM(_SeZMTestCase):
         self.assertIsNotNone(extended_coord.grad)
         self.assertTrue(torch.all(torch.isfinite(extended_coord.grad)))
         return model
+
+    def test_cartesian_config_wiring(self) -> None:
+        """Each Cartesian/mixing config builds the intended submodules.
+
+        Guards against silent fallback: a mis-wired flag would still run and stay
+        equivariant, so the structural assertions are the only safeguard that the
+        requested path is actually taken.
+        """
+        # edge_cartesian replaces the SO(2) core and elides the full Wigner-D.
+        edge_model = self._assert_forward_backward_smoke(
+            **_descriptor_kwargs(
+                l_schedule=[2, 1], edge_cartesian=True, channels=4, n_focus=2
+            )
+        )
+        self.assertFalse(edge_model._need_full_wigner)
+        for block in edge_model.blocks:
+            conv = block.so2_conv
+            self.assertTrue(conv.edge_cartesian)
+            self.assertTrue(hasattr(conv, "edge_cartesian_tp"))
+            self.assertFalse(hasattr(conv, "so2_linears"))
+
+        # node_cartesian adds a per-node product on top of the SO(2) core, leaving
+        # the per-edge message path (and the full Wigner-D) intact.
+        node_model = self._assert_forward_backward_smoke(
+            **_descriptor_kwargs(
+                l_schedule=[2, 1], node_cartesian="parity:2", channels=4, n_focus=2
+            )
+        )
+        self.assertTrue(node_model._need_full_wigner)
+        for block in node_model.blocks:
+            tp = block.so2_conv.node_cartesian_tp
+            self.assertIsNotNone(tp)
+            self.assertTrue(tp.symmetric)
+            self.assertEqual(tp.n_layers, 2)
+
+        # mixing_layers=0 without a degree mixer skips the edge-aligned frame.
+        radial_model = self._assert_forward_backward_smoke(
+            **_descriptor_kwargs(
+                l_schedule=[2, 1],
+                mixing_layers=0,
+                radial_so2_mode="none",
+                channels=4,
+                n_focus=2,
+            )
+        )
+        for block in radial_model.blocks:
+            conv = block.so2_conv
+            self.assertFalse(conv.needs_local_frame)
+            self.assertEqual(len(conv.so2_linears), 0)
+
+    def test_cartesian_rotation_invariance(self) -> None:
+        """Descriptor scalar output is rotation-invariant across Cartesian modes.
+
+        This end-to-end check covers every per-edge and per-node path introduced
+        by the Cartesian options, so it also guards the edge/node engine
+        equivariance within the full pipeline.
+        """
+        dtype = torch.float64
+        coord = torch.tensor(
+            [[0.0, 0.0, 0.0], [0.9, 0.2, 0.1], [0.1, 1.0, 0.3]],
+            dtype=dtype,
+            device=self.device,
+        ).view(1, -1, 3)
+        atype = torch.tensor([[0, 1, 1]], dtype=torch.int32, device=self.device)
+        nlist = torch.tensor(
+            [[[1, 2], [0, 2], [0, 1]]], dtype=torch.int64, device=self.device
+        )
+        rot = quaternion_to_rotation_matrix(
+            _random_quaternion(1, device=self.device, dtype=dtype)
+        )[0]
+        configs = {
+            "edge": {"edge_cartesian": True},
+            "node_default": {"node_cartesian": "default:1"},
+            "node_parity": {"node_cartesian": "parity:2"},
+            "edge_and_node": {"edge_cartesian": True, "node_cartesian": "parity:1"},
+            "mixing0_radial": {"mixing_layers": 0, "radial_so2_mode": "none"},
+            "mixing0_degree": {"mixing_layers": 0, "radial_so2_mode": "degree_channel"},
+        }
+        for name, override in configs.items():
+            with self.subTest(config=name):
+                model = DescrptSeZM(
+                    **_descriptor_kwargs(
+                        rcut=3.0,
+                        sel=[2, 2],
+                        l_schedule=[2, 2],
+                        channels=4,
+                        n_focus=2,
+                        n_atten_head=1,
+                        precision="float64",
+                        use_amp=False,
+                        random_gamma=False,
+                        **override,
+                    )
+                )
+                model.eval()
+                with torch.no_grad():
+                    desc, *_ = model(coord.reshape(1, -1), atype, nlist)
+                    coord_rot = (rot @ coord.reshape(-1, 3).T).T.reshape(1, -1)
+                    desc_rot, *_ = model(coord_rot, atype, nlist)
+                torch.testing.assert_close(desc, desc_rot, atol=1e-10, rtol=1e-10)
 
     def test_so3_readout_empty_edge_shrinking_schedule(self) -> None:
         """so3_readout glu/mlp must handle the empty-edge path.
@@ -498,6 +603,18 @@ class TestDescrptSeZM(_SeZMTestCase):
                 ffn_neurons=8,
                 radial_so2_mode="degree_channel",
                 radial_so2_rank=2,
+            ),
+            "cartesian": _descriptor_kwargs(
+                precision="float32",
+                l_schedule=[2, 1],
+                edge_cartesian=True,
+                channels=4,
+                n_focus=2,
+                focus_dim=0,
+                so2_layers=2,
+                n_radial=3,
+                radial_mlp=[6],
+                ffn_neurons=8,
             ),
         }
         dtype = PRECISION_DICT["float32"]
@@ -1106,6 +1223,146 @@ class TestSO2LinearEquivariance(_SeZMTestCase):
                 torch.testing.assert_close(lhs, rhs, atol=1e-5, rtol=1e-5)
 
 
+class TestCartesianTensorProduct(_SeZMTestCase):
+    """Test the Cartesian rank-2 tensor-product building blocks."""
+
+    def test_basis_intertwines_wigner(self) -> None:
+        """cart(D @ sh) == R cart(sh) R^T links Wigner-D to Cartesian rotation.
+
+        Guards the hand-written sign/ordering convention of
+        ``build_cartesian_basis``: the change of basis must intertwine the packed
+        Wigner-D rotation with the Cartesian conjugation ``X -> R X R^T``.
+        """
+        for lmax in (1, 2):
+            dim = (lmax + 1) ** 2
+            basis = build_cartesian_basis(lmax, dtype=torch.float64, device=self.device)
+            wigner = WignerDCalculator(lmax=lmax, dtype=torch.float64).to(self.device)
+            quat = _random_quaternion(6, device=self.device, dtype=torch.float64)
+            d_full, _ = wigner(quat)
+            rot = quaternion_to_rotation_matrix(quat)
+            sh = torch.randn(6, dim, dtype=torch.float64, device=self.device)
+            cart = torch.einsum("bd,dij->bij", sh, basis)
+            lhs = torch.einsum(
+                "bd,dij->bij", torch.einsum("bde,be->bd", d_full, sh), basis
+            )
+            rhs = rot @ cart @ rot.transpose(-1, -2)
+            torch.testing.assert_close(lhs, rhs, atol=1e-9, rtol=1e-9)
+
+    def test_edge_cartesian_matches_dense_reference(self) -> None:
+        """Channel-shared edge evaluation equals the naive per-channel ``Y @ T_e``.
+
+        Covers the ``mixing_layers > 0`` stack and the ``mixing_layers == 0``
+        single-modulation path; equivariance of the edge path is covered
+        end-to-end by ``test_cartesian_rotation_invariance``.
+        """
+        for lmax in (1, 2):
+            for n_layers in (0, 3):
+                dim = (lmax + 1) ** 2
+                n_focus, focus_dim, n_edge = 2, 4, 16
+                width = n_focus * focus_dim
+                engine = EdgeCartesianTensorProduct(
+                    lmax=lmax,
+                    focus_dim=focus_dim,
+                    n_focus=n_focus,
+                    n_layers=n_layers,
+                    activation_function="silu",
+                    mlp_bias=True,
+                    eps=1e-7,
+                    dtype=torch.float64,
+                    seed=7,
+                    trainable=True,
+                ).to(self.device)
+                x = torch.randn(
+                    n_edge, dim, width, dtype=torch.float64, device=self.device
+                )
+                edge_vec = torch.randn(
+                    n_edge, 3, dtype=torch.float64, device=self.device
+                )
+                rad = torch.randn(
+                    n_edge, lmax + 1, width, dtype=torch.float64, device=self.device
+                )
+                out = engine(x, edge_vec, rad)
+                ref = self._dense_cartesian_reference(engine, x, edge_vec, rad)
+                torch.testing.assert_close(out, ref, atol=1e-11, rtol=1e-11)
+
+    @staticmethod
+    def _dense_cartesian_reference(
+        engine: EdgeCartesianTensorProduct,
+        x: torch.Tensor,
+        edge_vec: torch.Tensor,
+        rad: torch.Tensor,
+    ) -> torch.Tensor:
+        """Reference Cartesian product via explicit per-channel ``Y @ T_e``."""
+        n_edge = x.shape[0]
+        f, cf = engine.n_focus, engine.focus_dim
+        basis = build_cartesian_basis(engine.lmax, dtype=x.dtype, device=x.device)
+        r_hat = edge_vec / safe_norm(edge_vec, engine.eps)
+        a0, s0 = build_edge_cartesian_tensors(r_hat)
+        eye = torch.eye(3, dtype=x.dtype, device=x.device) / math.sqrt(3.0)
+        a0 = a0 / math.sqrt(2.0)
+        f_iso = rad[:, 0, :].reshape(n_edge, f, cf, 1, 1)
+        f_aniso = rad[:, 1, :].reshape(n_edge, f, cf, 1, 1)
+        t_e = f_iso * eye + f_aniso * a0[:, None, None, :, :]
+        if engine.lmax == 2:
+            s0 = s0 / math.sqrt(2.0 / 3.0)
+            f_sym = rad[:, 2, :].reshape(n_edge, f, cf, 1, 1)
+            t_e = t_e + f_sym * s0[:, None, None, :, :]
+
+        def modulate(coeff: torch.Tensor) -> torch.Tensor:
+            cart = torch.einsum("edfc,dij->efcij", coeff, basis)
+            return torch.einsum("efcij,dij->edfc", torch.matmul(cart, t_e), basis)
+
+        h = x.reshape(n_edge, engine.ebed_dim, f, cf)
+        if engine.n_layers == 0:
+            # Single modulation ``x @ T_e`` with no learnable channel-mixing layer.
+            return modulate(h).reshape(n_edge, engine.ebed_dim, f * cf)
+        for linear, activation in zip(engine.linears, engine.activations, strict=True):
+            h = h + activation(modulate(linear(h)))
+        return h.reshape(n_edge, engine.ebed_dim, f * cf)
+
+    def test_node_engine_rotation_equivariance(self) -> None:
+        """NodeCartesianTensorProduct commutes with a global Wigner-D rotation."""
+        for lmax in (1, 2):
+            for symmetric in (False, True):
+                dim = (lmax + 1) ** 2
+                n_focus, focus_dim, n_node = 2, 4, 16
+                width = n_focus * focus_dim
+                engine = NodeCartesianTensorProduct(
+                    lmax=lmax,
+                    focus_dim=focus_dim,
+                    n_focus=n_focus,
+                    n_layers=3,
+                    symmetric=symmetric,
+                    activation_function="silu",
+                    mlp_bias=True,
+                    dtype=torch.float64,
+                    seed=7,
+                    trainable=True,
+                ).to(self.device)
+                message = torch.randn(
+                    n_node, dim, width, dtype=torch.float64, device=self.device
+                )
+                node = torch.randn(
+                    n_node, dim, width, dtype=torch.float64, device=self.device
+                )
+                wigner = WignerDCalculator(lmax=lmax, dtype=torch.float64).to(
+                    self.device
+                )
+                quat = _random_quaternion(1, device=self.device, dtype=torch.float64)
+                d_mat = wigner(quat)[0][0]  # (D, D), one shared global rotation
+                out = engine(message, node)
+                out_rot = engine(
+                    torch.einsum("ij,njc->nic", d_mat, message),
+                    torch.einsum("ij,njc->nic", d_mat, node),
+                )
+                torch.testing.assert_close(
+                    out_rot,
+                    torch.einsum("ij,njc->nic", d_mat, out),
+                    atol=1e-9,
+                    rtol=1e-9,
+                )
+
+
 class TestInnerClamp(_SeZMTestCase):
     """Test InnerClamp C3-continuous septic Hermite clamping."""
 
@@ -1274,6 +1531,7 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
         *,
         use_amp: bool,
         n_focus: int = 1,
+        edge_cartesian: bool = False,
         bridging_method: str = "none",
         bridging_r_inner: float = 0.8,
         bridging_r_outer: float = 1.2,
@@ -1293,7 +1551,8 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
                 "n_radial": 6,
                 "radial_mlp": [16],
                 "use_env_seed": True,
-                "l_schedule": [1, 0],
+                "edge_cartesian": edge_cartesian,
+                "l_schedule": [2, 1] if edge_cartesian else [1, 0],
                 "mmax": 1,
                 "so2_norm": False,
                 "so2_layers": 1,
@@ -1349,6 +1608,7 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
         *,
         use_amp: bool,
         n_focus: int = 1,
+        edge_cartesian: bool = False,
         bridging_method: str = "none",
         bridging_r_inner: float = 0.8,
         bridging_r_outer: float = 1.2,
@@ -1359,6 +1619,7 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
                 n_atten_head,
                 use_amp=use_amp,
                 n_focus=n_focus,
+                edge_cartesian=edge_cartesian,
                 bridging_method=bridging_method,
                 bridging_r_inner=bridging_r_inner,
                 bridging_r_outer=bridging_r_outer,
@@ -1492,12 +1753,14 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
         *,
         use_amp: bool,
         n_focus: int,
+        edge_cartesian: bool = False,
     ) -> None:
         """Check that the non-bridged near-cutoff probe keeps one smooth extremum."""
         model = self._build_random_weight_model(
             n_atten_head,
             use_amp=use_amp,
             n_focus=n_focus,
+            edge_cartesian=edge_cartesian,
         )
         displacements, energies = self._scan_total_energy_curve(
             model,
@@ -1535,6 +1798,18 @@ class TestDescriptorEnergyCurveSmoothness(_SeZMTestCase):
                             use_amp=use_amp,
                             n_focus=n_focus,
                         )
+
+    def test_cartesian_near_cutoff_energy_curve_is_smooth(self) -> None:
+        """The Cartesian path keeps a single smooth near-cutoff PES extremum."""
+        for n_atten_head in (0, 1):
+            for n_focus in (1, 2):
+                with self.subTest(n_atten_head=n_atten_head, n_focus=n_focus):
+                    self._assert_cutoff_near_energy_curve_is_smooth(
+                        n_atten_head,
+                        use_amp=False,
+                        n_focus=n_focus,
+                        edge_cartesian=True,
+                    )
 
     def _assert_bridging_force_consistent_across_switch(
         self,

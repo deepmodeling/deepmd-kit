@@ -228,7 +228,9 @@ class TestSeZMModelCompile(unittest.TestCase):
             for p in model.parameters():
                 p.copy_(torch.randn_like(p) * 0.1)
 
-    def _build_model_params(self, *, use_compile: bool) -> dict:
+    def _build_model_params(
+        self, *, use_compile: bool, edge_cartesian: bool = False
+    ) -> dict:
         return {
             "type": "SeZM",
             "type_map": ["A", "B"],
@@ -241,7 +243,8 @@ class TestSeZMModelCompile(unittest.TestCase):
                 "n_radial": 3,
                 "radial_mlp": [6],
                 "use_env_seed": True,
-                "l_schedule": [1, 0],
+                "edge_cartesian": edge_cartesian,
+                "l_schedule": [2, 1] if edge_cartesian else [1, 0],
                 "mmax": 1,
                 "so2_norm": False,
                 "so2_layers": 1,
@@ -865,6 +868,68 @@ class TestSeZMModelCompile(unittest.TestCase):
                 atol=grad_atol,
                 rtol=grad_rtol,
                 msg=f"force-grad mismatch at {name}",
+            )
+
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
+    def test_cartesian_forward_backward_matches_compile(self) -> None:
+        """The Cartesian path (Wigner-D skipped) matches eager and compiled runs."""
+        coord, atype, box, _, _, _ = self._make_tiny_frame()
+        model_dyn = get_sezm_model(
+            self._build_model_params(use_compile=False, edge_cartesian=True)
+        )
+        self._randomize_params(model_dyn)
+        model_cmp = get_sezm_model(
+            self._build_model_params(use_compile=True, edge_cartesian=True)
+        )
+        model_cmp.load_state_dict(model_dyn.state_dict())
+        model_dyn.train()
+        model_cmp.train()
+
+        # === Step 1. Forward output consistency ===
+        out_dyn = model_dyn(coord, atype, box=box)
+        out_cmp = model_cmp(coord, atype, box=box)
+        _assert_close_with_strict_warning(
+            out_dyn["energy"],
+            out_cmp["energy"],
+            atol=1.0e-6,
+            rtol=1.0e-6,
+            msg="cartesian energy mismatch on first compiled call",
+        )
+        _assert_close_with_strict_warning(
+            out_dyn["force"],
+            out_cmp["force"],
+            atol=1.0e-6,
+            rtol=1.0e-6,
+            msg="cartesian force mismatch on first compiled call",
+        )
+
+        # === Step 2. Energy-gradient consistency ===
+        model_dyn.zero_grad(set_to_none=True)
+        model_cmp.zero_grad(set_to_none=True)
+        out_dyn["energy"].sum().backward()
+        out_cmp["energy"].sum().backward()
+        grad_atol = 1.0e-5 if self.device == torch.device("cpu") else 2.0e-3
+        grad_rtol = 1.0e-5 if self.device == torch.device("cpu") else 3.0e-3
+        grads_dyn = {
+            name: (
+                torch.zeros_like(param) if param.grad is None else param.grad.detach()
+            )
+            for name, param in model_dyn.named_parameters()
+        }
+        grads_cmp = {
+            name: (
+                torch.zeros_like(param) if param.grad is None else param.grad.detach()
+            )
+            for name, param in model_cmp.named_parameters()
+        }
+        self.assertEqual(set(grads_dyn.keys()), set(grads_cmp.keys()))
+        for name in grads_dyn.keys():
+            _assert_close_with_strict_warning(
+                grads_dyn[name],
+                grads_cmp[name],
+                atol=grad_atol,
+                rtol=grad_rtol,
+                msg=f"cartesian energy-grad mismatch at {name}",
             )
 
     def _assert_multitask_compile_matches_eager(

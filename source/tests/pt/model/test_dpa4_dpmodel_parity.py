@@ -2220,7 +2220,7 @@ class TestSO2Parity:
             "focus_dim": 0,
             "focus_compete": True,
             "so2_norm": False,
-            "so2_layers": 2,
+            "mixing_layers": 2,
             "so2_attn_res": "none",
             "layer_scale": False,
             "n_atten_head": 1,
@@ -2263,9 +2263,9 @@ class TestSO2Parity:
         assert_parity(out_dp, out_pt)
 
     @pytest.mark.parametrize("masked", ["none", "slots"])  # padded-slot pattern
-    @pytest.mark.parametrize("so2_layers", [2, 4])  # SO(2) layer loop depth (core=4)
-    def test_so2_convolution(self, masked, so2_layers) -> None:
-        pt_mod, dp_mod, kwargs = self._build_conv_pair(so2_layers=so2_layers)
+    @pytest.mark.parametrize("mixing_layers", [2, 4])  # SO(2) layer loop depth (core=4)
+    def test_so2_convolution(self, masked, mixing_layers) -> None:
+        pt_mod, dp_mod, kwargs = self._build_conv_pair(mixing_layers=mixing_layers)
         self._assert_conv_parity(pt_mod, dp_mod, kwargs, masked=masked)
 
     def test_so2_convolution_all_masked_node(self) -> None:
@@ -2305,7 +2305,7 @@ class TestSO2Parity:
         self._assert_conv_parity(pt_mod, dp_mod, kwargs)
 
     def test_so2_convolution_so2_norm(self) -> None:
-        pt_mod, dp_mod, kwargs = self._build_conv_pair(so2_norm=True, so2_layers=3)
+        pt_mod, dp_mod, kwargs = self._build_conv_pair(so2_norm=True, mixing_layers=3)
         self._assert_conv_parity(pt_mod, dp_mod, kwargs)
 
     def test_so2_convolution_mlp_bias(self) -> None:
@@ -2396,8 +2396,8 @@ class TestSO2Parity:
 
         with pytest.raises(ValueError):  # head count must divide focus width
             DPSO2Conv(**self._conv_kwargs(n_atten_head=3), precision="float64")
-        with pytest.raises(ValueError):  # so2_layers must be >= 1
-            DPSO2Conv(**self._conv_kwargs(so2_layers=0), precision="float64")
+        with pytest.raises(ValueError):  # mixing_layers must be >= 1
+            DPSO2Conv(**self._conv_kwargs(mixing_layers=0), precision="float64")
         with pytest.raises(ValueError):  # n_focus must be >= 1
             DPSO2Conv(**self._conv_kwargs(n_focus=0), precision="float64")
         with pytest.raises(ValueError):  # unknown radial mode
