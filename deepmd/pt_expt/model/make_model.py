@@ -373,6 +373,26 @@ def make_model(
                 out["energy_derv_c"] = atom_virial.reshape(nf, nloc, 1, 9)
             return out
 
+        def _resolve_graph_method(
+            self, neighbor_graph_method: str | None
+        ) -> str | None:
+            """pt_expt default-flip (decision #17): ``None`` => carry-all graph for
+            graph-eligible mixed_types descriptors, else dense. Unlike dpmodel/jax,
+            pt_expt has the autograd ``forward_common_lower_graph`` that produces
+            force/virial on the graph, so the graph can be the DEFAULT here.
+            ``"legacy"`` forces dense; explicit ``"dense"``/``"ase"`` force the graph.
+            """
+            if neighbor_graph_method == "legacy":
+                return None
+            if neighbor_graph_method is not None:
+                return neighbor_graph_method
+            # Linear/ZBL atomic models have no single ``descriptor`` -> dense.
+            descriptor = getattr(self.atomic_model, "descriptor", None)
+            uses_graph_lower = getattr(descriptor, "uses_graph_lower", lambda: False)
+            if self.mixed_types() and uses_graph_lower():
+                return "dense"
+            return None
+
         def _call_common_graph(
             self,
             cc: torch.Tensor,

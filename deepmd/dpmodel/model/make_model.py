@@ -353,22 +353,19 @@ def make_model(
         ) -> str | None:
             """Resolve the neighbor-graph method.
 
-            ``None`` => AUTO: carry-all graph for graph-eligible mixed_types
-            descriptors (the decision-#17 default), else the legacy dense path.
-            ``"legacy"`` => force the dense path (opt-out). ``"dense"``/``"ase"``
-            => force the graph with that builder.
+            Base (dpmodel/jax): ``None`` => the dense path. These backends compute
+            force/virial ANALYTICALLY inside ``call_common`` (``energy_derv_r`` in
+            the output); the carry-all graph lower here is ENERGY-only, so it is
+            NOT used by default (it would drop force). ``"legacy"`` => dense;
+            explicit ``"dense"``/``"ase"`` => opt into the (energy-only) graph.
+
+            pt_expt OVERRIDES this so ``None`` defaults graph-eligible mixed_types
+            descriptors to the carry-all graph (decision #17) -- pt_expt has the
+            autograd ``forward_common_lower_graph`` that produces force/virial.
             """
             if neighbor_graph_method == "legacy":
                 return None
-            if neighbor_graph_method is not None:
-                return neighbor_graph_method
-            # Linear/ZBL atomic models have no single ``descriptor`` -> not graph
-            # eligible (AUTO falls back to the dense path).
-            descriptor = getattr(self.atomic_model, "descriptor", None)
-            uses_graph_lower = getattr(descriptor, "uses_graph_lower", lambda: False)
-            if self.mixed_types() and uses_graph_lower():
-                return "dense"
-            return None
+            return neighbor_graph_method
 
         def _call_common_graph(
             self,
