@@ -14,6 +14,9 @@ import logging
 from pathlib import (
     Path,
 )
+from typing import (
+    Any,
+)
 
 import numpy as np
 from sklearn.pipeline import (
@@ -36,7 +39,7 @@ _LOG = logging.getLogger("dpa_adapt.cv")
 # ---------------------------------------------------------------------------
 
 
-def _extract_formula(system) -> str:
+def _extract_formula(system: Any) -> str:
     """Extract the formula name from a system.
 
     Uses the source path stored during loading (``_dpa_source`` attribute).
@@ -100,7 +103,7 @@ def _build_fold_groups(
 # ---------------------------------------------------------------------------
 
 
-def _build_sklearn_head(predictor_type: str, seed: int = 42):
+def _build_sklearn_head(predictor_type: str, seed: int = 42) -> Any:
     """Map a predictor type string to an sklearn estimator.
 
     Delegates to ``dpa_adapt.utils.sklearn_heads.build_sklearn_head``.
@@ -117,7 +120,7 @@ def _build_sklearn_head(predictor_type: str, seed: int = 42):
 # ---------------------------------------------------------------------------
 
 
-def _load_system_labels(system, label_key: str) -> np.ndarray:
+def _load_system_labels(system: Any, label_key: str) -> np.ndarray:
     """Load labels for a single system, shape (n_frames, ...)."""
     resolved = _resolve_label_key(label_key)
     return np.asarray(system.data[resolved])
@@ -151,6 +154,14 @@ def _assemble_from_per_system_cache(
         Label key in system data (e.g. ``"energies"``).
     granularity : str
         ``"frame"`` or ``"composition"``.
+    pretrained : str
+        Path to the pretrained model checkpoint.
+    model_branch : str or None
+        Model branch name for descriptor extraction.
+    pooling : str
+        Pooling strategy for descriptor aggregation.
+    type_map : list[str] or tuple[str, ...] or None
+        Optional type map for the system.
 
     Returns
     -------
@@ -163,7 +174,7 @@ def _assemble_from_per_system_cache(
 
     X_list, y_list = [], []
 
-    for system, grp in zip(systems, groups):
+    for system, grp in zip(systems, groups, strict=True):
         if grp not in selected_groups:
             continue
         desc = get_per_system_descriptor(
@@ -194,13 +205,13 @@ def _assemble_from_per_system_cache(
 
 
 def train_test_split(
-    systems,
+    systems: list,
     manifest: str | None = None,
     group_by: str | list[str] | None = None,
     test_size: float = 0.1,
     valid_size: float = 0.1,
     seed: int = 42,
-):
+) -> tuple[list, list, list]:
     """Split systems into train / valid / test, leak-proof by group.
 
     Exactly one of *manifest* or *group_by* must be provided.
@@ -244,9 +255,9 @@ def train_test_split(
             train_formulas.update(f)
 
         grp = _formula_to_group(systems)
-        train = [s for s, g in zip(systems, grp) if g in train_formulas]
-        valid = [s for s, g in zip(systems, grp) if g in valid_formulas]
-        test = [s for s, g in zip(systems, grp) if g in test_formulas]
+        train = [s for s, g in zip(systems, grp, strict=True) if g in train_formulas]
+        valid = [s for s, g in zip(systems, grp, strict=True) if g in valid_formulas]
+        test = [s for s, g in zip(systems, grp, strict=True) if g in test_formulas]
         return train, valid, test
 
     # --- group_by ---
@@ -285,9 +296,9 @@ def train_test_split(
     valid_groups = set(shuffled[n_test : n_test + n_valid])
     train_groups = set(shuffled[n_test + n_valid :])
 
-    train = [s for s, g in zip(systems, groups) if g in train_groups]
-    valid = [s for s, g in zip(systems, groups) if g in valid_groups]
-    test = [s for s, g in zip(systems, groups) if g in test_groups]
+    train = [s for s, g in zip(systems, groups, strict=True) if g in train_groups]
+    valid = [s for s, g in zip(systems, groups, strict=True) if g in valid_groups]
+    test = [s for s, g in zip(systems, groups, strict=True) if g in test_groups]
 
     return train, valid, test
 
@@ -298,8 +309,8 @@ def train_test_split(
 
 
 def cross_validate(
-    model,
-    systems,
+    model: Any,
+    systems: list,
     label_key: str = "energy",
     cv: str | int = 5,
     group_by: str | list[str] | None = "formula",
@@ -316,7 +327,7 @@ def cross_validate(
     ``cv=5`` completes in seconds.
 
     Training paradigms (``frozen_head`` / ``finetune`` / ``mft``)
-    are expensive: each fold re-trains a full DeepMD model.  To prevent
+    are expensive: each fold re-trains a full DeePMD model.  To prevent
     accidental hour-long runs, *allow_expensive_cv* must be explicitly set
     to ``True`` for those strategies when *cv* is an integer >= 2.  Otherwise
     a ``ValueError`` is raised.  Non-blocking warnings about estimated runtime
@@ -601,4 +612,4 @@ def _estimate_runtime(strategy: str, n_splits: int) -> str:
         "finetune": "~10-30 min/run",
         "mft": "~20-60 min/run",
     }.get(strategy, "unknown")
-    return f"{n_splits} × {per_run}"
+    return f"{n_splits} x {per_run}"

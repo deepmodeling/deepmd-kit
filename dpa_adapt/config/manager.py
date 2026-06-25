@@ -1,5 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
+from typing import (
+    Any,
+)
 
 from dpa_adapt._backend import (
     resolve_dp_command,
@@ -21,7 +24,7 @@ _PROPERTY_FITTING_NET_BASE = {
 }
 
 
-def _build_property_fitting_net(t) -> dict:
+def _build_property_fitting_net(t: Any) -> dict:
     """Construct a property fitting_net dict from a tuner's property params.
     The property head is independent of the aux branch's ener fitting_net
     that came out of the ckpt — reusing the ener config silently introduces
@@ -67,7 +70,7 @@ _ENER_LOSS = {
 
 
 class MFTConfigManager:
-    def __init__(self, tuner):
+    def __init__(self, tuner: Any) -> None:
         self.t = tuner
 
     def build(self) -> dict:
