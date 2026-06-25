@@ -31,7 +31,7 @@ _LAZY = {
 __all__ = list(_LAZY)
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> object:
     if name in _LAZY:
         import importlib
 

@@ -116,6 +116,19 @@ def _load_labels(
     return np.column_stack(columns)
 
 
+def _set_nframes(set_dir: Path) -> int | None:
+    """Frame count of a deepmd/npy ``set.*`` directory.
+
+    Read from the ``coord.npy`` header (memory-mapped, so no array data is
+    loaded).  Returns ``None`` when the set has no ``coord.npy`` to count
+    against.
+    """
+    coord = set_dir / "coord.npy"
+    if not coord.is_file():
+        return None
+    return int(np.load(str(coord), mmap_mode="r").shape[0])
+
+
 def _read_fparam_from_systems(
     systems: list[dpdata.System],
     expected_dim: int | None = None,
@@ -149,11 +162,11 @@ def _read_fparam_from_systems(
                 f"fparam_dim={expected_dim} but fparam.npy is missing under "
                 f"{source_path}: {[str(fp) for fp in missing]}"
             )
-        fps = [fp for fp in fps if fp.is_file()]
-        if not fps:
+        present = [(sd, fp) for sd, fp in zip(set_dirs, fps) if fp.is_file()]
+        if not present:
             continue
         arrs = []
-        for fp in fps:
+        for set_dir, fp in present:
             arr = np.load(str(fp))
             if arr.ndim != 2:
                 raise DPAConditionError(
@@ -164,6 +177,13 @@ def _read_fparam_from_systems(
                 raise DPAConditionError(
                     f"fparam.npy at {fp} has shape {arr.shape}; expected "
                     f"(n_frames, {expected_dim})."
+                )
+            nframes_set = _set_nframes(set_dir)
+            if nframes_set is not None and arr.shape[0] != nframes_set:
+                raise DPAConditionError(
+                    f"fparam.npy at {fp} has {arr.shape[0]} rows, but set "
+                    f"{set_dir.name} has {nframes_set} frames; expected one "
+                    "fparam row per frame."
                 )
             arrs.append(arr)
         all_fparams.append(np.concatenate(arrs, axis=0))

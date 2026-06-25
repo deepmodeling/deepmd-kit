@@ -14,16 +14,22 @@ from __future__ import (
     annotations,
 )
 
+from typing import (
+    TYPE_CHECKING,
+)
+
 import argparse
 import json
 import logging
 import os
 import sys
-from collections.abc import (
-    Sequence,
-)
 
 import numpy as np
+
+if TYPE_CHECKING:
+    from collections.abc import (
+        Sequence,
+    )
 
 _LOG = logging.getLogger("dpa_adapt")
 
