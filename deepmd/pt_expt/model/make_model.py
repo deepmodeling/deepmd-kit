@@ -373,6 +373,54 @@ def make_model(
                 out["energy_derv_c"] = atom_virial.reshape(nf, nloc, 1, 9)
             return out
 
+        def _call_common_graph(
+            self,
+            cc: torch.Tensor,
+            atype: torch.Tensor,
+            bb: torch.Tensor | None,
+            fp: torch.Tensor | None,
+            ap: torch.Tensor | None,
+            method: str,
+            do_atomic_virial: bool = False,
+        ) -> dict[str, torch.Tensor]:
+            """Carry-all graph forward with autograd force/virial (pt_expt override).
+
+            Builds the carry-all :class:`NeighborGraph` in TORCH (the array-API
+            builder runs natively and yields a differentiable ``edge_vec``), then
+            routes through :meth:`forward_common_lower_graph` so force / virial /
+            (optional) atom-virial are produced via autograd.  The returned dict
+            uses the SAME internal key names as the legacy dense
+            :meth:`call_common` output (``energy``, ``energy_redu``,
+            ``energy_derv_r``, ``energy_derv_c_redu``, and ``energy_derv_c`` when
+            ``do_atomic_virial``).
+            """
+            from deepmd.dpmodel.utils.neighbor_graph import (
+                build_neighbor_graph,
+                build_neighbor_graph_ase,
+            )
+
+            rcut = self.get_rcut()
+            if method == "dense":
+                ng = build_neighbor_graph(cc, atype, bb, rcut)
+            elif method == "ase":
+                ng = build_neighbor_graph_ase(cc, atype, bb, rcut)
+            else:
+                raise ValueError(
+                    f"unknown neighbor_graph_method {method!r}; use 'dense' or 'ase'"
+                )
+            nf, nloc = atype.shape[:2]
+            atype_flat = atype.reshape(nf * nloc)
+            return self.forward_common_lower_graph(
+                atype_flat,
+                ng.n_node,
+                ng.edge_index,
+                ng.edge_vec,
+                ng.edge_mask,
+                do_atomic_virial=do_atomic_virial,
+                fparam=fp,
+                aparam=ap,
+            )
+
         def forward_common_atomic(
             self,
             extended_coord: torch.Tensor,

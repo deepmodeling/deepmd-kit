@@ -315,7 +315,8 @@ def make_model(
                 coord, box=box, fparam=fparam, aparam=aparam, charge_spin=charge_spin
             )
             del coord, box, fparam, aparam, charge_spin
-            if neighbor_graph_method is not None:
+            graph_method = self._resolve_graph_method(neighbor_graph_method)
+            if graph_method is not None:
                 # carry-all NeighborGraph energy forward (Option B / decision #17)
                 model_predict = self._call_common_graph(
                     cc,
@@ -323,7 +324,8 @@ def make_model(
                     bb,
                     fp,
                     ap,
-                    neighbor_graph_method,
+                    graph_method,
+                    do_atomic_virial,
                 )
             else:
                 # legacy dense-nlist path (builds the extended quartet)
@@ -346,6 +348,26 @@ def make_model(
             model_predict = self._output_type_cast(model_predict, input_prec)
             return model_predict
 
+        def _resolve_graph_method(
+            self, neighbor_graph_method: str | None
+        ) -> str | None:
+            """Resolve the neighbor-graph method.
+
+            ``None`` => AUTO: carry-all graph for graph-eligible mixed_types
+            descriptors (the decision-#17 default), else the legacy dense path.
+            ``"legacy"`` => force the dense path (opt-out). ``"dense"``/``"ase"``
+            => force the graph with that builder.
+            """
+            if neighbor_graph_method == "legacy":
+                return None
+            if neighbor_graph_method is not None:
+                return neighbor_graph_method
+            descriptor = self.atomic_model.descriptor
+            uses_graph_lower = getattr(descriptor, "uses_graph_lower", lambda: False)
+            if self.mixed_types() and uses_graph_lower():
+                return "dense"
+            return None
+
         def _call_common_graph(
             self,
             cc: Array,
@@ -354,6 +376,7 @@ def make_model(
             fp: Array | None,
             ap: Array | None,
             method: str,
+            do_atomic_virial: bool = False,
         ) -> dict[str, Array]:
             """Carry-all graph energy forward (opt-in, Option B).
 
