@@ -653,33 +653,74 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   std::vector<std::vector<int>> remapped_sendlist;
   std::vector<int*> remapped_sendlist_ptrs;
   std::vector<int> remapped_sendnum, remapped_recvnum;
+  // Empty-subdomain phantom padding (edge with-comm path only): a rank that
+  // owns zero local atoms would feed nloc==0 / nedge==0 into the with-comm
+  // artifact, which is traced with nloc_min=1 / nedge_min=2 and may be lowered
+  // by inductor under an even stricter nloc>=2 assumption -- so a 0-atom rank
+  // can SIGFPE or silently corrupt instead of throwing.  Mirror the spin
+  // phantom-atom workaround (DeepSpinPTExpt): run the graph with two phantom
+  // local atoms and two masked self-edges, then report the empty rank's true
+  // (zero) contribution.  ``comm_nlocal`` makes border_op write received ghost
+  // features past the phantom slots, so collective communication stays in
+  // lockstep with non-empty ranks.
+  int phantom_n = (lower_input_is_edge_ && nloc == 0) ? 2 : 0;
   if (use_with_comm) {
+    int comm_nlocal = (phantom_n > 0) ? phantom_n : nloc;
     bool has_null_atoms = (nall_real < nall);
     std::vector<at::Tensor> comm_tensors;
     if (has_null_atoms) {
       comm_tensors =
           deepmd::ptexpt::build_comm_tensors_positional_with_virtual_atoms(
-              lmp_list, fwd_map, nloc, nghost_real, remapped_sendlist,
+              lmp_list, fwd_map, comm_nlocal, nghost_real, remapped_sendlist,
               remapped_sendlist_ptrs, remapped_sendnum, remapped_recvnum);
     } else {
       comm_tensors = deepmd::ptexpt::build_comm_tensors_positional(
-          lmp_list, lmp_list.sendlist, lmp_list.sendnum, lmp_list.recvnum, nloc,
-          nghost_real);
+          lmp_list, lmp_list.sendlist, lmp_list.sendnum, lmp_list.recvnum,
+          comm_nlocal, nghost_real);
     }
     if (lower_input_is_edge_) {
-      // SeZM edge schema: edge_index already indexes the extended node set
-      // (fold_to_local=false above), so it doubles as the force-scatter index.
-      // Ghost node features are exchanged between blocks inside the with-comm
-      // graph via border_op; the local atom types feed fitting while the
-      // extended types embed ghost neighbours.
-      const auto edge_tensors =
-          compactEdgeTensors(edge_index_tensor, edge_index_ext_tensor,
-                             coord_Tensor, static_cast<double>(rcut));
-      flat_outputs = run_model_edges_with_comm(
-          coord_Tensor, atype_Tensor.slice(1, 0, nloc), atype_Tensor,
-          edge_tensors.edge_index, edge_tensors.edge_vec,
-          edge_tensors.edge_index_ext, edge_tensors.edge_mask, fparam_tensor,
-          aparam_tensor, charge_spin_tensor, comm_tensors);
+      if (phantom_n > 0) {
+        // Prepend ``phantom_n`` type-0 local atoms to the extended node set and
+        // supply two masked self-edges (edge_mask=false), so the graph runs at
+        // nloc>=2 / nedge>=2 with zero physical contribution.  Real ghost
+        // features still arrive via border_op at slots [phantom_n, nall); the
+        // phantom prefix is stripped from the outputs below.
+        const auto bool_option =
+            torch::TensorOptions().device(torch::kCPU).dtype(torch::kBool);
+        at::Tensor ph_coord = torch::cat(
+            {torch::zeros({1, phantom_n, 3}, options).to(device), coord_Tensor},
+            1);
+        at::Tensor ph_ext_atype = torch::cat(
+            {torch::zeros({1, phantom_n}, int_option).to(device), atype_Tensor},
+            1);
+        at::Tensor ph_loc_atype =
+            torch::zeros({1, phantom_n}, int_option).to(device);
+        at::Tensor ph_edge_index = torch::zeros({2, 2}, int_option).to(device);
+        at::Tensor ph_edge_vec = torch::zeros({2, 3}, options).to(device);
+        at::Tensor ph_edge_mask = torch::zeros({2}, bool_option).to(device);
+        at::Tensor ph_aparam =
+            (daparam > 0)
+                ? torch::zeros({1, phantom_n, daparam}, options).to(device)
+                : aparam_tensor;
+        flat_outputs = run_model_edges_with_comm(
+            ph_coord, ph_loc_atype, ph_ext_atype, ph_edge_index, ph_edge_vec,
+            ph_edge_index, ph_edge_mask, fparam_tensor, ph_aparam,
+            charge_spin_tensor, comm_tensors);
+      } else {
+        // SeZM edge schema: edge_index already indexes the extended node set
+        // (fold_to_local=false above), so it doubles as the force-scatter
+        // index.  Ghost node features are exchanged between blocks inside the
+        // with-comm graph via border_op; the local atom types feed fitting
+        // while the extended types embed ghost neighbours.
+        const auto edge_tensors =
+            compactEdgeTensors(edge_index_tensor, edge_index_ext_tensor,
+                               coord_Tensor, static_cast<double>(rcut));
+        flat_outputs = run_model_edges_with_comm(
+            coord_Tensor, atype_Tensor.slice(1, 0, nloc), atype_Tensor,
+            edge_tensors.edge_index, edge_tensors.edge_vec,
+            edge_tensors.edge_index_ext, edge_tensors.edge_mask, fparam_tensor,
+            aparam_tensor, charge_spin_tensor, comm_tensors);
+      }
     } else {
       flat_outputs = run_model_with_comm(
           coord_Tensor, atype_Tensor, firstneigh_tensor, mapping_tensor,
@@ -705,6 +746,25 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   // Map flat outputs to internal keys
   std::map<std::string, torch::Tensor> output_map;
   extract_outputs(output_map, flat_outputs);
+
+  if (phantom_n > 0) {
+    // Strip the phantom local prefix and zero the empty rank's energy.  The
+    // phantom atoms carry no edges, so their force / per-atom virial are
+    // already zero and the global virial reduces to zero; only the per-type
+    // bias in energy_redu must be cleared so it does not enter the MPI-reduced
+    // total. After stripping, the extended force / atom virial regain their
+    // original (nf, nall_real, ...) extent and the local atom energy becomes
+    // empty, matching the real rank's nloc == 0.
+    output_map["energy_redu"] = torch::zeros_like(output_map["energy_redu"]);
+    output_map["energy_derv_r"] =
+        output_map["energy_derv_r"].slice(1, phantom_n).contiguous();
+    if (atomic) {
+      output_map["energy"] =
+          output_map["energy"].slice(1, phantom_n).contiguous();
+      output_map["energy_derv_c"] =
+          output_map["energy_derv_c"].slice(1, phantom_n).contiguous();
+    }
+  }
 
   // Extract energy: energy_redu (nf, 1)
   torch::Tensor flat_energy_ =

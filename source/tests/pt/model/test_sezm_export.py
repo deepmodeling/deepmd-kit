@@ -459,6 +459,7 @@ class TestSeZMExportPipelineTritonInfer(TestSeZMExportPipeline):
         )
 
 
+@unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
 class TestSeZMWithCommExportPipeline(_ClearDefaultDeviceTestCase):
     """Trace / export / ``.pte`` parity for the parallel with-comm lower graph.
 
