@@ -83,6 +83,18 @@ class TestDpaAdaptHelpNoTorch:
                 "torch was loaded during dpa-adapt --help path!"
             )
 
+    def test_main_without_subcommand_prints_help(self, capsys):
+        from dpa_adapt.cli import (
+            main,
+        )
+
+        main([])
+        captured = capsys.readouterr()
+
+        assert "usage:" in captured.out
+        assert "subcommands" in captured.out
+        assert captured.err == ""
+
 
 class TestDpaDispatch:
     """Verify the dispatch table covers all registered verbs."""
@@ -132,6 +144,23 @@ class TestDpaDispatch:
         assert not extra_in_dispatch, (
             f"Data verbs in dispatch but not in parser: {extra_in_dispatch}"
         )
+
+
+class TestDpaFitArgumentNormalization:
+    """Verify fit list arguments normalize argparse ``nargs`` values."""
+
+    def test_maybe_split_list_accepts_string_sequences(self):
+        from dpa_adapt.cli import (
+            _maybe_split_list,
+        )
+
+        assert _maybe_split_list(["train_a", "train_b,train_c"]) == [
+            "train_a",
+            "train_b",
+            "train_c",
+        ]
+        assert _maybe_split_list("H,C, O") == ["H", "C", "O"]
+        assert _maybe_split_list(None) is None
 
 
 class TestInitAllExports:

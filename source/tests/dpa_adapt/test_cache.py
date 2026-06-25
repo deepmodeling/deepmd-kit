@@ -101,6 +101,14 @@ class TestCacheKey:
         k2 = _cache_key([s], str(ckpt2), None, "mean")
         assert k1 != k2
 
+    def test_different_type_map_different_key(self, tmp_path):
+        s = _make_system(tmp_path, "s1")
+        ckpt = tmp_path / "dummy.pt"
+        ckpt.write_text("dummy")
+        k1 = _cache_key([s], str(ckpt), None, "mean", type_map=("H", "O"))
+        k2 = _cache_key([s], str(ckpt), None, "mean", type_map=("O", "H"))
+        assert k1 != k2
+
 
 class TestCacheDir:
     def test_respects_xdg(self, monkeypatch, tmp_path):
@@ -119,6 +127,14 @@ class TestPerSystemCachePath:
         # Should be under the cache dir, not next to the original data
         assert "dpa_adapt" in str(path)
         assert path.suffix == ".npy"
+
+    def test_includes_type_map(self, tmp_path):
+        s = _make_system(tmp_path, "s1")
+        ckpt = tmp_path / "dummy.pt"
+        ckpt.write_text("dummy")
+        p1 = _per_system_cache_path(s, str(ckpt), type_map=("H", "O"))
+        p2 = _per_system_cache_path(s, str(ckpt), type_map=("O", "H"))
+        assert p1 != p2
 
 
 class TestEnsurePerSystemCache:

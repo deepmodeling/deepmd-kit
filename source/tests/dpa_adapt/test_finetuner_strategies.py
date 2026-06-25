@@ -448,3 +448,54 @@ class TestFreezeStrategies:
 
         assert m.freeze(str(target)) == str(target.resolve())
         assert target.read_bytes() == b"mft"
+
+
+def test_extract_features_detaches_grad_tensors_before_numpy(monkeypatch):
+    import numpy as np
+    import torch
+
+    import dpa_adapt.finetuner as finetuner_mod
+
+    class FakeExtractor:
+        def __init__(self, model):
+            self.model = model
+
+        def _enable_hook(self):
+            pass
+
+        def _disable_hook(self):
+            pass
+
+        def _run_forward(self, coord_t, atype_t, box_t):
+            return (coord_t * 2.0).reshape(coord_t.shape[0], atype_t.shape[1], 3)
+
+    class FakeSystem:
+        orig = "fake"
+        data = {"atom_names": ["H"]}
+
+    monkeypatch.setattr(finetuner_mod, "_DescriptorExtraction", FakeExtractor)
+    monkeypatch.setattr(
+        finetuner_mod,
+        "_load_npy_system",
+        lambda system: (
+            np.array([[[1.0, 2.0, 3.0]]]),
+            np.tile(np.eye(3).ravel(), (1, 1)),
+            np.array([0], dtype=np.int64),
+        ),
+    )
+
+    ft = finetuner_mod._FrozenSklearnPipeline(
+        pretrained="fake.pt",
+        model_branch=None,
+        predictor_type="linear",
+        pooling="mean",
+        seed=42,
+    )
+    ft._model = object()
+    ft._device = torch.device("cpu")
+    ft.type_map = ["H"]
+    ft._checkpoint_type_map = ["H"]
+
+    features = ft.extract_features([FakeSystem()])
+
+    np.testing.assert_allclose(features, np.array([[2.0, 4.0, 6.0]]))

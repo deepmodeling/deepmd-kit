@@ -97,15 +97,24 @@ def _checkpoint_fingerprint(pretrained: str) -> str:
     return hashlib.sha1(payload.encode()).hexdigest()[:16]
 
 
+def _type_map_payload(type_map: list[str] | tuple[str, ...] | None) -> str:
+    if not type_map:
+        return ""
+    return "\x1f".join(str(item) for item in type_map)
+
+
 def _cache_key(
     systems: list,
     pretrained: str,
     model_branch: str | None,
     pooling: str,
+    *,
+    type_map: list[str] | tuple[str, ...] | None = None,
 ) -> str:
     fp = _data_fingerprint(systems)
     ckpt_fp = _checkpoint_fingerprint(pretrained)
-    payload = f"{fp}|{ckpt_fp}|{model_branch or ''}|{pooling}"
+    tm = _type_map_payload(type_map)
+    payload = f"{fp}|{ckpt_fp}|{model_branch or ''}|{pooling}|{tm}"
     return hashlib.sha1(payload.encode()).hexdigest()[:16]
 
 
@@ -120,6 +129,7 @@ def load_or_extract(
     model_branch: str = None,
     pooling: str = "mean",
     cache: bool = True,
+    type_map: list[str] | tuple[str, ...] | None = None,
 ) -> np.ndarray:
     """Return descriptors for *systems*, using the cache when possible.
 
@@ -141,7 +151,13 @@ def load_or_extract(
     np.ndarray, shape ``(n_frames_total, feat_dim)``
     """
     if cache:
-        key = _cache_key(systems, pretrained, model_branch, pooling)
+        key = _cache_key(
+            systems,
+            pretrained,
+            model_branch,
+            pooling,
+            type_map=type_map,
+        )
         cache_path = _cache_dir() / f"{key}.npy"
         if cache_path.is_file():
             _LOG.info("Descriptor cache hit: %s", cache_path.name)
@@ -159,6 +175,7 @@ def load_or_extract(
         model_branch=model_branch,
         predictor="linear",
         pooling=pooling,
+        type_map=list(type_map) if type_map else None,
     )
     descriptors = extractor._extract_features(systems)
 
@@ -180,11 +197,13 @@ def _per_system_cache_path(
     pretrained: str,
     model_branch: str | None = None,
     pooling: str = "mean",
+    type_map: list[str] | tuple[str, ...] | None = None,
 ) -> Path:
     """Return the cache path for one system under a descriptor identity."""
     system_fp = _system_fingerprint(system)
     ckpt_fp = _checkpoint_fingerprint(pretrained)
-    payload = f"{system_fp}|{ckpt_fp}|{model_branch or ''}|{pooling}"
+    tm = _type_map_payload(type_map)
+    payload = f"{system_fp}|{ckpt_fp}|{model_branch or ''}|{pooling}|{tm}"
     fp = hashlib.sha1(payload.encode()).hexdigest()[:16]
     return _cache_dir() / "per_system" / f"{fp}.npy"
 
@@ -194,6 +213,7 @@ def ensure_per_system_cache(
     pretrained: str,
     model_branch: str = None,
     pooling: str = "mean",
+    type_map: list[str] | tuple[str, ...] | None = None,
 ) -> None:
     """Ensure every system has its descriptors cached to disk.
 
@@ -207,6 +227,7 @@ def ensure_per_system_cache(
             pretrained,
             model_branch,
             pooling,
+            type_map,
         ).is_file():
             missing.append(system)
 
@@ -233,10 +254,17 @@ def ensure_per_system_cache(
         model_branch=model_branch,
         predictor="linear",
         pooling=pooling,
+        type_map=list(type_map) if type_map else None,
     )
 
     for i, system in enumerate(missing):
-        cache_path = _per_system_cache_path(system, pretrained, model_branch, pooling)
+        cache_path = _per_system_cache_path(
+            system,
+            pretrained,
+            model_branch,
+            pooling,
+            type_map,
+        )
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         desc = extractor._extract_features([system])
         np.save(cache_path, desc)
@@ -253,12 +281,19 @@ def get_per_system_descriptor(
     pretrained: str,
     model_branch: str | None = None,
     pooling: str = "mean",
+    type_map: list[str] | tuple[str, ...] | None = None,
 ) -> np.ndarray:
     """Read cached descriptors for one system and descriptor identity.
 
     Raises ``FileNotFoundError`` if the cache file does not exist.
     """
-    cache_path = _per_system_cache_path(system, pretrained, model_branch, pooling)
+    cache_path = _per_system_cache_path(
+        system,
+        pretrained,
+        model_branch,
+        pooling,
+        type_map,
+    )
     if not cache_path.is_file():
         raise FileNotFoundError(
             f"Per-system descriptor cache not found: {cache_path}\n"
