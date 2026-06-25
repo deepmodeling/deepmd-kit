@@ -4,7 +4,9 @@ import unittest
 import numpy as np
 import pytest
 
-from deepmd.dpmodel.utils.neighbor_graph import neighbor_graph_from_ijs
+from deepmd.dpmodel.utils.neighbor_graph import (
+    neighbor_graph_from_ijs,
+)
 
 
 class TestFromIjs(unittest.TestCase):

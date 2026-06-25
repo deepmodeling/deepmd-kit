@@ -3,7 +3,9 @@ import unittest
 
 import numpy as np
 
-from deepmd.dpmodel.utils.env_mat import EnvMat
+from deepmd.dpmodel.utils.env_mat import (
+    EnvMat,
+)
 from deepmd.dpmodel.utils.neighbor_graph import (
     edge_env_mat,
     from_dense_quartet,
@@ -58,7 +60,9 @@ class TestEdgeEnvMat(unittest.TestCase):
         This property is what allows edge_env_mat to use (ntypes, 4) stats
         instead of (ntypes, nnei, 4) stats.
         """
-        from deepmd.dpmodel.descriptor import DescrptDPA1
+        from deepmd.dpmodel.descriptor import (
+            DescrptDPA1,
+        )
 
         rng = np.random.default_rng(42)
         nloc = 6

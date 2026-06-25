@@ -3,8 +3,12 @@ import unittest
 
 import torch
 
-from deepmd.pt.utils import env
-from deepmd.pt_expt.model.edge_transform_output import edge_energy_deriv
+from deepmd.pt.utils import (
+    env,
+)
+from deepmd.pt_expt.model.edge_transform_output import (
+    edge_energy_deriv,
+)
 
 
 class TestEdgeEnergyDeriv(unittest.TestCase):

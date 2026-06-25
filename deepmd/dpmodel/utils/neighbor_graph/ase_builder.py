@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     from deepmd.dpmodel.array_api import (
         Array,
     )
+
     from .graph import (
         GraphLayout,
         NeighborGraph,
