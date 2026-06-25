@@ -4,6 +4,7 @@ from collections.abc import (
     Callable,
 )
 from typing import (
+    Any,
     NoReturn,
     Optional,
     Union,
@@ -1239,6 +1240,107 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             xp.reshape(gr[..., 1:], (nf, nloc, self.filter_neuron[-1], 3)),
             xp.reshape(sw, (nf, nloc, nnei, 1)),
         )
+
+    def call_graph(
+        self,
+        graph: Any,
+        atype: Array,
+        type_embedding: Array | None = None,
+    ) -> Array:
+        """Graph-native forward (``attn_layer=0`` only).
+
+        Bit-exact analogue of :meth:`call` on the SAME neighbor list, with the
+        neighbor-axis reduction replaced by a ``segment_sum`` over edge centers
+        (``dst``). Geometry enters only through ``graph.edge_vec``.
+
+        Parameters
+        ----------
+        graph
+            A :class:`~deepmd.dpmodel.utils.neighbor_graph.NeighborGraph` whose
+            ``edge_index = [src, dst]`` (src = neighbor local owner, dst = center),
+            ``edge_vec = r_src - r_dst`` and ``edge_mask`` marks real edges.
+        atype
+            (N,) flat node atom types (``N = sum(graph.n_node)``).
+        type_embedding
+            (ntypes_with_padding, tebd_dim) type-embedding table.
+
+        Returns
+        -------
+        Array
+            (N, ng * axis_neuron) per-node descriptor, matching the first output
+            of :meth:`call` flattened over the (nf, nloc) axes.
+
+        Notes
+        -----
+        Known limitations (NeighborGraph PR-A):
+        - ``attn_layer == 0`` only (attention lands in PR-D);
+        - ``tebd_input_mode == "concat"`` only (strip mode lands later);
+        - type exclusion (``exclude_types``) is not applied on the graph path.
+        """
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            edge_env_mat,
+            segment_sum,
+        )
+
+        if self.attn_layer != 0:
+            raise NotImplementedError(
+                "graph path supports attn_layer=0 only (NeighborGraph PR-A); "
+                "attn_layer>0 lands in PR-D"
+            )
+        if self.tebd_input_mode not in ["concat"]:
+            raise NotImplementedError(
+                "graph path supports tebd_input_mode='concat' only (NeighborGraph PR-A)"
+            )
+        if type_embedding is None:
+            raise ValueError("type_embedding is required for the graph path")
+        xp = array_api_compat.array_namespace(graph.edge_vec)
+        dev = array_api_compat.device(graph.edge_vec)
+        n_total = int(xp.sum(graph.n_node))
+        src = graph.edge_index[0, :]
+        dst = graph.edge_index[1, :]
+        atype = xp.asarray(atype, device=dev)
+        center_type = xp.take(atype, dst, axis=0)  # (E,)
+        nei_type = xp.take(atype, src, axis=0)  # (E,)
+        # per-edge env-mat 4-vector, normalized by the center (dst) atom type.
+        # self.mean/self.stddev are slot-independent (ntypes, nnei, 4); slot 0 is
+        # the canonical per-type vector.
+        rr = edge_env_mat(
+            graph.edge_vec,
+            center_type,
+            self.mean[:, 0, :],
+            self.stddev[:, 0, :],
+            self.rcut,
+            self.rcut_smth,
+            protection=self.env_protection,
+        )  # (E, 4)
+        # radial channel
+        ss = rr[:, 0:1]  # (E, 1)
+        # neighbor / center type embeddings (concat mode); ghost type == owner type
+        # so gathering by the LOCAL owner (src) reproduces the dense neighbor tebd.
+        tebd = xp.asarray(type_embedding, device=dev)
+        atype_embd_nlist = xp.take(tebd, nei_type, axis=0)  # (E, tebd_dim)
+        if not self.type_one_side:
+            atype_embd_nnei = xp.take(tebd, center_type, axis=0)  # (E, tebd_dim)
+            ss = xp.concat([ss, atype_embd_nlist, atype_embd_nnei], axis=-1)
+        else:
+            ss = xp.concat([ss, atype_embd_nlist], axis=-1)
+        # embedding net (same weights as the dense path); applies on the last axis
+        gg = self.embeddings[0].call(ss)  # (E, ng)
+        # zero padding/guard edges BEFORE the segment sum
+        gg = gg * xp.astype(graph.edge_mask[:, None], gg.dtype)
+        # outer product (replaces the dense gg[:,:,:,None] * rr[:,:,None,:])
+        outer = gg[:, :, None] * rr[:, None, :]  # (E, ng, 4)
+        # neighbor-axis reduction -> segment_sum over centers; divide by nnei
+        gr = segment_sum(outer, dst, n_total) / self.nnei  # (N, ng, 4)
+        gr1 = gr[:, : self.axis_neuron, :]
+        # nf x nloc x (ng x ng1)
+        grrg = xp.sum(gr[:, :, None, :] * gr1[:, None, :, :], axis=3)  # (N, ng, ng1)
+        ng = self.neuron[-1]
+        grrg = xp.astype(
+            xp.reshape(grrg, (n_total, ng * self.axis_neuron)),
+            graph.edge_vec.dtype,
+        )
+        return grrg
 
     def has_message_passing(self) -> bool:
         """Returns whether the descriptor block has message passing."""
