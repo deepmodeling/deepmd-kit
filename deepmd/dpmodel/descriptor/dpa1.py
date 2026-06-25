@@ -418,6 +418,14 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         """Returns the number of se_atten attention layers."""
         return self.se_atten.attn_layer
 
+    def uses_graph_lower(self) -> bool:
+        """Returns whether this descriptor supports the graph-native lower.
+
+        The graph-native energy lower (``call_graph``) currently covers only
+        the non-attention (``attn_layer == 0``) factorizable path.
+        """
+        return self.se_atten.attn_layer == 0
+
     def share_params(
         self, base_class: "DescrptDPA1", shared_level: int, resume: bool = False
     ) -> NoReturn:

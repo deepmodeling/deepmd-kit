@@ -44,6 +44,8 @@ from deepmd.dpmodel.utils import (
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
     NeighborGraph,
+    build_neighbor_graph,
+    build_neighbor_graph_ase,
     segment_sum,
 )
 from deepmd.utils.path import (
@@ -263,6 +265,7 @@ def make_model(
             coord_corr_for_virial: Array | None = None,
             charge_spin: Array | None = None,
             neighbor_list: NeighborList | None = None,
+            neighbor_graph_method: str | None = None,
         ) -> dict[str, Array]:
             """Return model prediction.
 
@@ -289,6 +292,17 @@ def make_model(
                 default all-pairs builder; an alternative strategy (e.g. an O(N)
                 cell list) may be injected to speed up neighbor-list construction
                 without changing model outputs.
+            neighbor_graph_method
+                Opt-in CARRY-ALL graph energy forward (Option B). ``None``
+                (default) keeps the existing dense nlist path UNCHANGED. When
+                set to ``"dense"`` (in-tree all-pairs search) or ``"ase"``
+                (O(N) ASE cell list), the model builds a carry-all
+                :class:`NeighborGraph` and routes the ENERGY forward through
+                :meth:`call_lower_graph`. Requires a ``mixed_types`` descriptor
+                with a graph lower (dpa1 ``attn_layer == 0``). At non-binding
+                ``sel`` this matches the dense path exactly; at binding ``sel``
+                the carry-all graph keeps neighbors the dense path truncates, so
+                energy intentionally differs.
 
             Returns
             -------
@@ -301,6 +315,17 @@ def make_model(
                 coord, box=box, fparam=fparam, aparam=aparam, charge_spin=charge_spin
             )
             del coord, box, fparam, aparam, charge_spin
+            if neighbor_graph_method is not None:
+                model_predict = self._call_common_graph(
+                    cc,
+                    atype,
+                    bb,
+                    fp,
+                    ap,
+                    neighbor_graph_method,
+                )
+                model_predict = self._output_type_cast(model_predict, input_prec)
+                return model_predict
             model_predict = model_call_from_call_lower(
                 call_lower=self.call_common_lower,
                 rcut=self.get_rcut(),
@@ -318,6 +343,62 @@ def make_model(
                 neighbor_list=neighbor_list,
             )
             model_predict = self._output_type_cast(model_predict, input_prec)
+            return model_predict
+
+        def _call_common_graph(
+            self,
+            cc: Array,
+            atype: Array,
+            bb: Array | None,
+            fp: Array | None,
+            ap: Array | None,
+            method: str,
+        ) -> dict[str, Array]:
+            """Carry-all graph energy forward (opt-in, Option B).
+
+            Builds a carry-all :class:`NeighborGraph` from ``cc``/``atype``/``bb``
+            and routes the ENERGY forward through :meth:`call_lower_graph`. The
+            returned dict mirrors the dense ``call_common`` energy keys
+            (``atom_energy``, ``energy``, ``mask``). Input type-casting is done
+            by the caller; output type-casting is also applied by the caller.
+            """
+            descriptor = self.atomic_model.descriptor
+            uses_graph_lower = getattr(descriptor, "uses_graph_lower", lambda: False)
+            if not (self.mixed_types() and uses_graph_lower()):
+                raise NotImplementedError(
+                    "neighbor_graph_method requires a mixed_types descriptor "
+                    "with a graph lower (e.g. dpa1 attn_layer=0)"
+                )
+            if method == "dense":
+                ng = build_neighbor_graph(cc, atype, bb, self.get_rcut())
+            elif method == "ase":
+                ng = build_neighbor_graph_ase(cc, atype, bb, self.get_rcut())
+            else:
+                raise ValueError(
+                    f"unknown neighbor_graph_method {method!r}; use 'dense' or 'ase'"
+                )
+            xp = array_api_compat.array_namespace(atype)
+            dev = array_api_compat.device(atype)
+            nf, nloc = atype.shape[:2]
+            graph_ret = self.call_lower_graph(
+                atype=xp.reshape(atype, (nf * nloc,)),
+                n_node=ng.n_node,
+                edge_index=ng.edge_index,
+                edge_vec=ng.edge_vec,
+                edge_mask=ng.edge_mask,
+                fparam=fp,
+                aparam=ap,
+            )
+            # mirror the dense ``call_common`` energy keys: ``energy`` is the
+            # per-atom energy (nf, nloc, 1); ``energy_redu`` is the per-frame
+            # reduction (nf, 1); ``mask`` is the (nf, nloc) realness mask.
+            model_predict = {
+                "energy": xp.reshape(graph_ret["atom_energy"], (nf, nloc, 1)),
+                "energy_redu": graph_ret["energy"],
+                # carry-all graph: all local atoms are real -> all-ones int mask,
+                # matching the dense path (base_atomic_model: mask = int32 atom_mask).
+                "mask": xp.ones((nf, nloc), dtype=xp.int32, device=dev),
+            }
             return model_predict
 
         def call_common_lower(
