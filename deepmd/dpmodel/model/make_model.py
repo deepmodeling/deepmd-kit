@@ -489,9 +489,10 @@ def make_model(
             fitting_net = self.atomic_model.fitting_net
             # dpa1 call_graph requires the type-embedding table explicitly
             type_embedding = descriptor.type_embedding.call()
-            gg, rot_mat, g2, h2, _ = descriptor.call_graph(
+            gg, rot_mat = descriptor.call_graph(
                 graph, atype, type_embedding=type_embedding
             )
+            g2 = h2 = None
             # the fitting expects atype shaped (nf, nloc)
             atype_2d = xp.reshape(xp.asarray(atype, device=dev), (nf, nloc))
             fit_ret = fitting_net(

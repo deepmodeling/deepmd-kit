@@ -564,14 +564,28 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             graph = from_dense_quartet(coord_ext_3, nlist, mapping_g)
             # local atom types, flat (nf * nloc,)
             atype_local = xp.reshape(xp_take_first_n(atype_ext, 1, nloc), (nf * nloc,))
-            return self.call_graph(
+            grrg, rot_mat = self.call_graph(
                 graph,
                 atype_local,
                 type_embedding=self.type_embedding.call(),
-                nlist=nlist,
-                coord_ext=coord_ext,
-                atype_ext=atype_ext,
             )
+            # reconstruct the dense-shaped sw exactly the dense way (env_mat
+            # switch masked where nlist == -1; the graph path forbids
+            # exclude_types, so nlist_mask == nlist != -1, matching
+            # DescrptBlockSeAtten.call). This is a dense-layout artifact tied to
+            # neighbor slots, which the graph does not carry, so it lives here in
+            # the dense adapter (which has nlist/coord_ext available).
+            _, _, sw = self.se_atten.env_mat.call(
+                coord_ext,
+                atype_ext,
+                nlist,
+                self.se_atten.mean[...],
+                self.se_atten.stddev[...],
+            )
+            nlist_mask = (nlist != -1)[:, :, :, None]
+            sw = xp.where(nlist_mask, sw, xp.zeros_like(sw))
+            sw = xp.reshape(sw, (nf, nloc, nnei, 1))
+            return grrg, rot_mat, None, None, sw
         del mapping
         type_embedding = self.type_embedding.call()
         # nf x nall x tebd_dim
@@ -601,15 +615,17 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         graph: Any,
         atype: Array,
         type_embedding: Array | None = None,
-        nlist: Array | None = None,
-        coord_ext: Array | None = None,
-        atype_ext: Array | None = None,
-    ) -> tuple[Array, Array, None, None, Array | None]:
+    ) -> tuple[Array, Array]:
         """Descriptor-level graph-native forward (``attn_layer == 0``).
 
-        Wraps the block :meth:`DescrptBlockSeAtten.call_graph`, adds the
-        descriptor-level ``concat_output_tebd`` step, and reshapes the per-node
-        outputs back to the dense ABI shapes ``(nf, nloc, ...)``.
+        Wraps the private block kernel
+        :meth:`DescrptBlockSeAtten._call_graph`, adds the descriptor-level
+        ``concat_output_tebd`` step, and reshapes the per-node outputs back to
+        the dense ABI shapes ``(nf, nloc, ...)``.
+
+        This method is graph-native: it takes no dense quartet inputs and does
+        not produce the dense ``sw`` (that lives in the dense :meth:`call`
+        adapter, which has the ``nlist``/``coord_ext`` needed to build it).
 
         Parameters
         ----------
@@ -619,20 +635,17 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             (nf * nloc,) flat LOCAL atom types.
         type_embedding
             (ntypes_with_padding, tebd_dim) type-embedding table.
-        nlist, coord_ext, atype_ext
-            Original dense quartet inputs, used ONLY to reconstruct the dense
-            ``sw`` (nf, nloc, nnei, 1) exactly (a dense-layout artifact tied to
-            neighbor slots, which the graph does not carry). When ``nlist`` is
-            ``None`` the returned ``sw`` is ``None``.
 
         Returns
         -------
-        tuple
-            ``(grrg, rot_mat, None, None, sw)`` matching :meth:`call`.
+        grrg : Array
+            (nf, nloc, ng * axis_neuron [+ tebd_dim]) descriptor.
+        rot_mat : Array
+            (nf, nloc, ng, 3) equivariant single-particle representation.
         """
         xp = array_api_compat.array_namespace(graph.edge_vec)
         dev = array_api_compat.device(graph.edge_vec)
-        grrg_node, rot_mat_node = self.se_atten.call_graph(
+        grrg_node, rot_mat_node = self.se_atten._call_graph(
             graph, atype, type_embedding=type_embedding
         )
         nf = graph.n_node.shape[0]
@@ -648,24 +661,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             atype_embd = xp.take(tebd, atype_local, axis=0)  # (nf*nloc, tebd_dim)
             atype_embd = xp.reshape(atype_embd, (nf, nloc, self.tebd_dim))
             grrg = xp.concat([grrg, atype_embd], axis=-1)
-        # reconstruct the dense-shaped sw exactly the dense way (env_mat switch
-        # masked where nlist == -1; the graph path forbids exclude_types, so
-        # nlist_mask == nlist != -1, matching DescrptBlockSeAtten.call).
-        sw: Array | None = None
-        if nlist is not None:
-            nf_, nloc_, nnei = nlist.shape
-            # env_mat returns sw with shape (nf, nloc, nnei, 1)
-            _, _, sw = self.se_atten.env_mat.call(
-                coord_ext,
-                atype_ext,
-                nlist,
-                self.se_atten.mean[...],
-                self.se_atten.stddev[...],
-            )
-            nlist_mask = (nlist != -1)[:, :, :, None]
-            sw = xp.where(nlist_mask, sw, xp.zeros_like(sw))
-            sw = xp.reshape(sw, (nf_, nloc_, nnei, 1))
-        return grrg, rot_mat, None, None, sw
+        return grrg, rot_mat
 
     def serialize(self) -> dict:
         """Serialize the descriptor to dict."""
@@ -1340,7 +1336,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             xp.reshape(sw, (nf, nloc, nnei, 1)),
         )
 
-    def call_graph(
+    def _call_graph(
         self,
         graph: Any,
         atype: Array,

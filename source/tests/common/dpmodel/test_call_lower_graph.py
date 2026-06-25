@@ -56,6 +56,7 @@ class TestCallLowerGraph(unittest.TestCase):
         self.atype = np.array([[0, 1, 0, 1]], dtype=np.int64)
 
     def test_graph_lower_matches_dense_lower(self) -> None:
+        """Graph model lower energy/atom_energy match the dense lower on the same nlist."""
         model = self._make_model()
         (
             ext_coord,

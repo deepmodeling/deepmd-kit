@@ -10,9 +10,8 @@ step by hand (mirroring dpa1.py), because ``dd.call`` itself now routes through
 the graph for ``attn_layer == 0``.
 """
 
-import unittest
-
 import numpy as np
+import pytest
 
 from deepmd.dpmodel.descriptor.dpa1 import (
     DescrptDPA1,
@@ -22,7 +21,7 @@ from deepmd.dpmodel.utils.nlist import (
 )
 
 
-class TestDpa1DescriptorCallGraph(unittest.TestCase):
+class TestDpa1DescriptorCallGraph:
     def _make(self, sel):
         return DescrptDPA1(
             rcut=4.0,
@@ -34,7 +33,7 @@ class TestDpa1DescriptorCallGraph(unittest.TestCase):
             neuron=[6, 12],
         )
 
-    def setUp(self) -> None:
+    def setup_method(self) -> None:
         rng = np.random.default_rng(2)
         self.nloc = 4
         self.coord = rng.normal(size=(1, self.nloc, 3)) * 1.5
@@ -65,38 +64,34 @@ class TestDpa1DescriptorCallGraph(unittest.TestCase):
             )
         return grrg, rot_mat, None, None, sw
 
-    def test_descriptor_graph_equals_dense_full_tuple(self) -> None:
-        for sel in ([30], [4]):  # non-binding AND binding
-            with self.subTest(sel=sel):
-                dd = self._make(sel)
-                (
-                    ext_coord,
-                    ext_atype,
-                    mapping,
-                    nlist,
-                ) = extend_input_and_build_neighbor_list(
-                    self.coord,
-                    self.atype,
-                    dd.get_rcut(),
-                    dd.get_sel(),
-                    mixed_types=dd.mixed_types(),
-                    box=None,
-                )
-                # dense reference captured via the block (pre-swap behaviour)
-                ref = self._dense_reference(dd, ext_coord, ext_atype, nlist)
-                # the swapped public ABI: routes through the graph
-                out = dd.call(ext_coord, ext_atype, nlist, mapping=mapping)
-                self.assertEqual(len(out), 5)
-                # grrg
-                np.testing.assert_allclose(out[0], ref[0], rtol=1e-12, atol=1e-12)
-                # rot_mat
-                np.testing.assert_allclose(out[1], ref[1], rtol=1e-12, atol=1e-12)
-                # positions [2], [3] are always None for this descriptor
-                self.assertIsNone(out[2])
-                self.assertIsNone(out[3])
-                # sw
-                np.testing.assert_allclose(out[4], ref[4], rtol=1e-12, atol=1e-12)
-
-
-if __name__ == "__main__":
-    unittest.main()
+    @pytest.mark.parametrize("sel", [[30], [4]])  # non-binding AND binding
+    def test_descriptor_graph_equals_dense_full_tuple(self, sel) -> None:
+        """Graph-routed dd.call() returns the identical dense 5-tuple ABI."""
+        dd = self._make(sel)
+        (
+            ext_coord,
+            ext_atype,
+            mapping,
+            nlist,
+        ) = extend_input_and_build_neighbor_list(
+            self.coord,
+            self.atype,
+            dd.get_rcut(),
+            dd.get_sel(),
+            mixed_types=dd.mixed_types(),
+            box=None,
+        )
+        # dense reference captured via the block (pre-swap behaviour)
+        ref = self._dense_reference(dd, ext_coord, ext_atype, nlist)
+        # the swapped public ABI: routes through the graph
+        out = dd.call(ext_coord, ext_atype, nlist, mapping=mapping)
+        assert len(out) == 5
+        # grrg
+        np.testing.assert_allclose(out[0], ref[0], rtol=1e-12, atol=1e-12)
+        # rot_mat
+        np.testing.assert_allclose(out[1], ref[1], rtol=1e-12, atol=1e-12)
+        # positions [2], [3] are always None for this descriptor
+        assert out[2] is None
+        assert out[3] is None
+        # sw
+        np.testing.assert_allclose(out[4], ref[4], rtol=1e-12, atol=1e-12)
