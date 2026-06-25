@@ -125,18 +125,21 @@ class TestStatSamplingCoverage(unittest.TestCase):
     """Mixed-type statistics samples should cover all dataset types."""
 
     def test_append_missing_mixed_type_frame(self) -> None:
-        sys_stat = {
-            "coord": [torch.zeros((1, 6), dtype=torch.float32)],
-            "atype": [torch.tensor([[0, -1]], dtype=torch.int32)],
-            "box": [torch.eye(3, dtype=torch.float32).reshape(1, 9)],
-            "real_natoms_vec": [torch.tensor([[2, 2, 1, 0]], dtype=torch.int32)],
-        }
+        with torch.device("cpu"):
+            sys_stat = {
+                "coord": [torch.zeros((1, 6), dtype=torch.float32)],
+                "atype": [torch.tensor([[0, -1]], dtype=torch.int32)],
+                "box": [torch.eye(3, dtype=torch.float32).reshape(1, 9)],
+                "real_natoms_vec": [torch.tensor([[2, 2, 1, 0]], dtype=torch.int32)],
+            }
 
-        _append_missing_type_frames(sys_stat, _FakeMixedDataset())
+            _append_missing_type_frames(sys_stat, _FakeMixedDataset())
 
-        self.assertEqual(len(sys_stat["real_natoms_vec"]), 2)
-        sampled_counts = torch.cat(sys_stat["real_natoms_vec"], dim=0)[:, 2:].sum(dim=0)
-        self.assertTrue(torch.all(sampled_counts > 0))
+            self.assertEqual(len(sys_stat["real_natoms_vec"]), 2)
+            sampled_counts = torch.cat(sys_stat["real_natoms_vec"], dim=0)[:, 2:].sum(
+                dim=0
+            )
+            self.assertTrue(torch.all(sampled_counts > 0))
 
 
 class TestObservedTypeStatFile(unittest.TestCase):

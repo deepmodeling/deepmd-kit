@@ -104,16 +104,19 @@ def _append_missing_type_frames(
 
     used_frames: set[int] = set()
     while len(missing_types) > 0:
-        frame_idx = first_frame_for_type[int(missing_types[0])]
-        if frame_idx < 0 or frame_idx in used_frames:
+        frame_idx: int | None = None
+        for type_i in missing_types:
+            candidate = int(first_frame_for_type[int(type_i)])
+            if candidate >= 0 and candidate not in used_frames:
+                frame_idx = candidate
+                break
+        if frame_idx is None:
             break
         used_frames.add(frame_idx)
         extra_batch = data_system.get_single_frame(frame_idx, num_worker=1)
         extra_batch["natoms_vec"] = data.natoms_vec[sys_idx].astype(np.int32)
         extra_batch["default_mesh"] = data.default_mesh[sys_idx]
         for key, value in extra_batch.items():
-            if key == "natoms_vec":
-                value = value.astype(np.int32)
             if (
                 key not in {"natoms_vec", "default_mesh"}
                 and isinstance(value, np.ndarray)

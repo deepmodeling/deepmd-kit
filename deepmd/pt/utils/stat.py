@@ -145,13 +145,19 @@ def _append_missing_type_frames(sys_stat: dict[str, Any], dataset: Any) -> None:
 
     used_frames: set[int] = set()
     while len(missing_types) > 0:
-        frame_idx = first_frame_for_type[int(missing_types[0])]
-        if frame_idx < 0 or frame_idx in used_frames:
+        frame_idx: int | None = None
+        for type_i in missing_types:
+            candidate = int(first_frame_for_type[int(type_i)])
+            if candidate >= 0 and candidate not in used_frames:
+                frame_idx = candidate
+                break
+        if frame_idx is None:
             break
         used_frames.add(frame_idx)
         # Reuse the dataset and collate path so that augmented frames have
         # exactly the same tensor layout as ordinary DataLoader batches.
-        extra_batch = collate_batch([dataset[frame_idx]])
+        with torch.device("cpu"):
+            extra_batch = collate_batch([dataset[frame_idx]])
         _append_stat_data(sys_stat, extra_batch)
         sampled_counts += extra_batch["real_natoms_vec"][:, 2:].sum(dim=0)
         missing_types = np.flatnonzero(
