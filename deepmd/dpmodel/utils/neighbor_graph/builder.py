@@ -22,6 +22,11 @@ truncated:
 The dispatcher and the converters share the format-conversion code (a search
 backend = search + its converter as the final step); they are separate only on
 the question "did I get raw geometry, or an already-built list?".
+
+Both are fully vectorized over the frame axis (no Python frame loop): per-slot
+``(frame, center, neighbor)`` index grids are flattened, masked, and gathered in
+one shot, with cross-frame gathers done through ``frame * nall + idx`` flat
+indices.
 """
 
 from __future__ import (
@@ -85,38 +90,39 @@ def from_dense_quartet(
         layout = GraphLayout()
     xp = array_api_compat.array_namespace(extended_coord, nlist, mapping)
     dev = array_api_compat.device(extended_coord)
-    nf = nlist.shape[0]
-    nloc = nlist.shape[1]
-    nsel = nlist.shape[2]
-    n_node = xp.full((nf,), nloc, dtype=xp.int64, device=dev)
-    src_parts: list[Array] = []
-    dst_parts: list[Array] = []
-    vec_parts: list[Array] = []
-    center_full = xp.broadcast_to(
-        xp.reshape(xp.arange(nloc, dtype=xp.int64, device=dev), (nloc, 1)),
-        (nloc, nsel),
+    nf, nloc, nsel = nlist.shape
+    nall = extended_coord.shape[1]
+    # per-slot (nf, nloc, nsel) index grids, flattened frame-major
+    ff_grid = xp.broadcast_to(
+        xp.reshape(xp.arange(nf, dtype=xp.int64, device=dev), (nf, 1, 1)),
+        (nf, nloc, nsel),
     )
-    center_flat = xp.reshape(center_full, (nloc * nsel,))
-    for ff in range(nf):
-        nl_flat = xp.reshape(nlist[ff], (nloc * nsel,))
-        keep = xp.reshape(xp.nonzero(nl_flat >= 0)[0], (-1,))
-        j_ext = xp.take(nl_flat, keep, axis=0)  # extended neighbor indices
-        dst = xp.take(center_flat, keep, axis=0)  # local center indices
-        src = xp.take(mapping[ff], j_ext, axis=0)  # local owner of neighbor
-        vec = xp.take(extended_coord[ff], j_ext, axis=0) - xp.take(
-            extended_coord[ff], dst, axis=0
-        )
-        offset = ff * nloc
-        src_parts.append(src + offset)
-        dst_parts.append(dst + offset)
-        vec_parts.append(vec)
+    center_grid = xp.broadcast_to(
+        xp.reshape(xp.arange(nloc, dtype=xp.int64, device=dev), (1, nloc, 1)),
+        (nf, nloc, nsel),
+    )
+    ff_flat = xp.reshape(ff_grid, (-1,))
+    center_flat = xp.reshape(center_grid, (-1,))
+    nl_flat = xp.reshape(nlist, (-1,))
+    keep = xp.reshape(xp.nonzero(nl_flat >= 0)[0], (-1,))
+    ff_k = xp.take(ff_flat, keep, axis=0)
+    dst_local = xp.take(center_flat, keep, axis=0)  # center index in [0, nloc)
+    j_ext = xp.take(nl_flat, keep, axis=0)  # neighbor index in [0, nall)
+    # cross-frame gathers via flat (frame * nall + idx) indices; centers are the
+    # first nloc extended atoms (local atoms precede ghosts).
+    ec_flat = xp.reshape(extended_coord, (nf * nall, 3))
+    map_flat = xp.reshape(mapping, (nf * nall,))
+    g_nei = ff_k * nall + j_ext
+    g_cen = ff_k * nall + dst_local
+    src_local = xp.take(map_flat, g_nei, axis=0)  # local owner of the neighbor
+    edge_vec = xp.take(ec_flat, g_nei, axis=0) - xp.take(ec_flat, g_cen, axis=0)
     edge_index = xp.astype(
-        xp.stack([xp.concat(src_parts), xp.concat(dst_parts)], axis=0), xp.int64
+        xp.stack([ff_k * nloc + src_local, ff_k * nloc + dst_local], axis=0), xp.int64
     )
-    edge_vec = xp.concat(vec_parts, axis=0)
     edge_index, edge_vec, edge_mask = pad_and_guard_edges(
         edge_index, edge_vec, layout.edge_capacity, layout.min_edges
     )
+    n_node = xp.full((nf,), nloc, dtype=xp.int64, device=dev)
     return NeighborGraph(
         n_node=n_node,
         edge_index=edge_index,
@@ -144,10 +150,10 @@ def build_neighbor_graph(
     Implementation: reuse the tested periodic ghosting
     (:func:`~deepmd.dpmodel.utils.nlist.extend_coord_with_ghosts`) to materialise all
     periodic images within ``rcut``, then enumerate all center-neighbor pairs within
-    ``rcut`` UNCAPPED. This is an O(N^2) reference search (correctness oracle); the
-    O(N) ``vesin``/``ase`` backends arrive later behind a ``method`` key. Edges map
-    every neighbor to its LOCAL owner (``src = mapping[neighbor]``), so the graph is
-    ghost-free.
+    ``rcut`` UNCAPPED, vectorized over frames. This is an O(N^2) reference search
+    (correctness oracle); the O(N) ``vesin``/``ase`` backends arrive later behind a
+    ``method`` key. Edges map every neighbor to its LOCAL owner
+    (``src = mapping[neighbor]``), so the graph is ghost-free.
 
     Parameters
     ----------
@@ -186,58 +192,46 @@ def build_neighbor_graph(
     )
     extended_coord = xp.reshape(extended_coord, (nf, -1, 3))
     nall = extended_coord.shape[1]
-    n_node = xp.full((nf,), nloc, dtype=xp.int64, device=dev)
-    arange_nloc = xp.arange(nloc, dtype=xp.int64, device=dev)
-    arange_nall = xp.arange(nall, dtype=xp.int64, device=dev)
-    # (nloc, nall) static index grids reused per frame
-    ii_flat = xp.reshape(
-        xp.broadcast_to(arange_nloc[:, None], (nloc, nall)), (nloc * nall,)
+    # all center-neighbor displacements: (nf, nloc, nall, 3) = ext[j] - center[i]
+    centers = extended_coord[:, :nloc, :]
+    diff = extended_coord[:, None, :, :] - centers[:, :, None, :]
+    dist = xp.linalg.vector_norm(diff, axis=-1)  # (nf, nloc, nall)
+    # per-slot (nf, nloc, nall) index grids
+    ff_grid = xp.broadcast_to(
+        xp.reshape(xp.arange(nf, dtype=xp.int64, device=dev), (nf, 1, 1)),
+        (nf, nloc, nall),
     )
-    jj_flat = xp.reshape(
-        xp.broadcast_to(arange_nall[None, :], (nloc, nall)), (nloc * nall,)
+    i_grid = xp.broadcast_to(
+        xp.reshape(xp.arange(nloc, dtype=xp.int64, device=dev), (1, nloc, 1)),
+        (nf, nloc, nall),
     )
-    src_parts: list[Array] = []
-    dst_parts: list[Array] = []
-    vec_parts: list[Array] = []
-    for ff in range(nf):
-        ec = extended_coord[ff]  # (nall, 3)
-        centers = ec[:nloc, :]  # (nloc, 3)
-        diff = (
-            ec[None, :, :] - centers[:, None, :]
-        )  # (nloc, nall, 3) = ext[j]-center[i]
-        dist = xp.linalg.vector_norm(diff, axis=-1)  # (nloc, nall)
-        # keep neighbors within rcut, dropping: the self extended atom (i==j;
-        # a periodic IMAGE of i has j!=i and is kept), virtual neighbors, and
-        # virtual centers. Uncapped -- no sel truncation.
-        not_self = jj_flat != ii_flat  # (nloc*nall,)
-        vir_nei = xp.reshape(
-            xp.broadcast_to((extended_atype[ff] < 0)[None, :], (nloc, nall)),
-            (nloc * nall,),
-        )
-        vir_cen = xp.reshape(
-            xp.broadcast_to((atype[ff] < 0)[:, None], (nloc, nall)),
-            (nloc * nall,),
-        )
-        within = xp.reshape(dist <= rcut, (nloc * nall,))
-        keep_mask = (
-            within & not_self & xp.logical_not(vir_nei) & xp.logical_not(vir_cen)
-        )
-        keep = xp.reshape(xp.nonzero(keep_mask)[0], (-1,))
-        dst = xp.take(ii_flat, keep, axis=0)  # local center
-        j_ext = xp.take(jj_flat, keep, axis=0)  # extended neighbor index
-        src = xp.take(mapping[ff], j_ext, axis=0)  # local owner of neighbor
-        vec = xp.take(xp.reshape(diff, (nloc * nall, 3)), keep, axis=0)
-        offset = ff * nloc
-        src_parts.append(src + offset)
-        dst_parts.append(dst + offset)
-        vec_parts.append(vec)
+    j_grid = xp.broadcast_to(
+        xp.reshape(xp.arange(nall, dtype=xp.int64, device=dev), (1, 1, nall)),
+        (nf, nloc, nall),
+    )
+    # keep neighbors within rcut, dropping: the self extended atom (i==j; a periodic
+    # IMAGE of i has j!=i and is kept), virtual neighbors, and virtual centers.
+    not_self = j_grid != i_grid
+    vir_nei = xp.broadcast_to((extended_atype < 0)[:, None, :], (nf, nloc, nall))
+    vir_cen = xp.broadcast_to((atype < 0)[:, :, None], (nf, nloc, nall))
+    keep_mask = (
+        (dist <= rcut) & not_self & xp.logical_not(vir_nei) & xp.logical_not(vir_cen)
+    )
+    keep = xp.reshape(xp.nonzero(xp.reshape(keep_mask, (-1,)))[0], (-1,))
+    ff_k = xp.take(xp.reshape(ff_grid, (-1,)), keep, axis=0)
+    dst_local = xp.take(xp.reshape(i_grid, (-1,)), keep, axis=0)  # local center
+    j_ext = xp.take(xp.reshape(j_grid, (-1,)), keep, axis=0)  # extended neighbor
+    edge_vec = xp.take(xp.reshape(diff, (nf * nloc * nall, 3)), keep, axis=0)
+    # cross-frame neighbor-owner gather via flat (frame * nall + idx)
+    map_flat = xp.reshape(mapping, (nf * nall,))
+    src_local = xp.take(map_flat, ff_k * nall + j_ext, axis=0)
     edge_index = xp.astype(
-        xp.stack([xp.concat(src_parts), xp.concat(dst_parts)], axis=0), xp.int64
+        xp.stack([ff_k * nloc + src_local, ff_k * nloc + dst_local], axis=0), xp.int64
     )
-    edge_vec = xp.concat(vec_parts, axis=0)
     edge_index, edge_vec, edge_mask = pad_and_guard_edges(
         edge_index, edge_vec, layout.edge_capacity, layout.min_edges
     )
+    n_node = xp.full((nf,), nloc, dtype=xp.int64, device=dev)
     return NeighborGraph(
         n_node=n_node,
         edge_index=edge_index,
