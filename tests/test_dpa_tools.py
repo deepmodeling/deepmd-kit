@@ -16,7 +16,7 @@ import pytest
 
 
 def _write_fake_poscar(path: str) -> None:
-    """Write a minimal 2×2×1 NiO₂H₂ slab POSCAR (~12 atoms)."""
+    r"""Write a minimal 2x2x1 NiO2H2 slab POSCAR (~12 atoms)."""
     content = """Ni O H slab
 1.0
    5.0 0.0 0.0
@@ -52,7 +52,7 @@ def _write_formula_csv(path: str, *, with_header: bool = False) -> list[str]:
     lines = []
     if with_header:
         lines.append("formula,overpotential")
-    for f, v in zip(formulas, values):
+    for f, v in zip(formulas, values, strict=True):
         lines.append(f"{f},{v}")
     Path(path).write_text("\n".join(lines))
     return formulas
@@ -65,7 +65,7 @@ def _write_formula_csv(path: str, *, with_header: bool = False) -> list[str]:
 
 class TestFormulaCsvToNpy:
     def test_basic(self) -> None:
-        """3 formulas × 2 sets → 6 valid deepmd/npy systems."""
+        """3 formulas x 2 sets -> 6 valid deepmd/npy systems."""
         with tempfile.TemporaryDirectory() as tmp:
             poscar_path = os.path.join(tmp, "POSCAR")
             csv_path = os.path.join(tmp, "data.csv")

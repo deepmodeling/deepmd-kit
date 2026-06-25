@@ -28,7 +28,7 @@ def _write_system(
     natoms: int = 2,
     nframes: int = 3,
     label_key: str = "energy",
-    elements: list[str] = None,
+    elements: list[str] | None = None,
 ):
     """Create a deepmd/npy system dir, load it, return dpdata.System."""
     if elements is None:

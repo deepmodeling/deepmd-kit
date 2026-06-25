@@ -21,6 +21,7 @@ from __future__ import (
 )
 
 import csv
+import logging
 import shutil
 import tarfile
 import urllib.request
@@ -33,6 +34,8 @@ import numpy as np
 from dpa_adapt import (
     convert,
 )
+
+logger = logging.getLogger(__name__)
 
 # This script lives in examples/dpa_adapt/scripts/; resolve data and raw dirs
 # against examples/dpa_adapt/.
@@ -65,28 +68,30 @@ HARTREE_TO_EV = 27.211386245988
 def _download_and_extract(force: bool = False) -> None:
     """Download and extract gdb9.tar.gz if the data files don't already exist."""
     if SDF_PATH.exists() and CSV_PATH.exists() and not force:
-        print(f"SDF already present: {SDF_PATH}")
-        print(f"CSV already present: {CSV_PATH}")
+        logger.info("SDF already present: %s", SDF_PATH)
+        logger.info("CSV already present: %s", CSV_PATH)
         return
 
     RAW_DIR.mkdir(parents=True, exist_ok=True)
 
     if not TAR_PATH.exists() or force:
-        print(f"Downloading {TAR_URL} ...")
+        logger.info("Downloading %s ...", TAR_URL)
         urllib.request.urlretrieve(TAR_URL, TAR_PATH)
-        print(f"Downloaded -> {TAR_PATH}")
+        logger.info("Downloaded -> %s", TAR_PATH)
 
-    print("Extracting from tarball ...")
+    logger.info("Extracting from tarball ...")
     with tarfile.open(TAR_PATH, "r:gz") as tar:
         for member in tar.getmembers():
             name = Path(member.name).name
             if name in ("gdb9.sdf", "gdb9.sdf.csv"):
                 if not (RAW_DIR / name).exists() or force:
-                    print(
-                        f"  Extracting {name} ({member.size / 1024 / 1024:.1f} MB) ..."
+                    logger.info(
+                        "  Extracting %s (%s MB) ...",
+                        name,
+                        f"{member.size / 1024 / 1024:.1f}",
                     )
                     tar.extract(member, path=str(RAW_DIR))
-    print("Extraction complete.")
+    logger.info("Extraction complete.")
 
 
 def _load_gaps_from_csv(n: int) -> dict[int, float]:
@@ -118,12 +123,12 @@ def _read_sdf_blocks(n: int) -> list[str]:
 
     GDB9 molecules are separated by ``$$$$``.
     """
-    print(f"Reading {SDF_PATH} ...")
+    logger.info("Reading %s ...", SDF_PATH)
     raw_text = SDF_PATH.read_text(encoding="utf-8")
 
     blocks = raw_text.split("$$$$")
     blocks = [b.strip() for b in blocks if b.strip()]
-    print(f"Found {len(blocks)} molecules in SDF.")
+    logger.info("Found %s molecules in SDF.", len(blocks))
 
     if len(blocks) < n:
         raise RuntimeError(f"Expected at least {n} molecules, found {len(blocks)}")
@@ -142,7 +147,7 @@ def _stage_qm9_subset(
     with STAGED_CSV_PATH.open("w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=["mol_id", "gap"])
         writer.writeheader()
-        for i, (block, gap) in enumerate(zip(mol_blocks, gaps)):
+        for i, (block, gap) in enumerate(zip(mol_blocks, gaps, strict=True)):
             (STAGED_MOL_DIR / f"id{i}.sdf").write_text(
                 block.strip() + "\n$$$$\n",
                 encoding="utf-8",
@@ -167,9 +172,9 @@ def _collect_labels(system_dirs: list[str]) -> np.ndarray:
 
 
 def main() -> None:
-    print("=" * 60)
-    print("DPA Tools - Quickstart Data Preparation")
-    print("=" * 60)
+    logger.info("=" * 60)
+    logger.info("DPA Tools - Quickstart Data Preparation")
+    logger.info("=" * 60)
 
     # 1. Download & extract --------------------------------------------------
     _download_and_extract()
@@ -178,8 +183,11 @@ def main() -> None:
     all_gaps = _load_gaps_from_csv(N_TOTAL)
     gaps = np.array([all_gaps[i] for i in range(N_TOTAL)], dtype=np.float32)
 
-    print(
-        f"Gap stats (all {N_TOTAL}): mean={gaps.mean():.4f} eV, std={gaps.std():.4f} eV"
+    logger.info(
+        "Gap stats (all %d): mean=%.4f eV, std=%.4f eV",
+        N_TOTAL,
+        gaps.mean(),
+        gaps.std(),
     )
 
     # 3. Read molecules from SDF ---------------------------------------------
@@ -217,24 +225,28 @@ def main() -> None:
     test_labels = _collect_labels(test_systems)
     np.save(str(DATA_DIR / "train_labels.npy"), train_labels)
     np.save(str(DATA_DIR / "test_labels.npy"), test_labels)
-    print(
-        f"  train systems -> {DATA_DIR / 'train'} "
-        f"({len(train_systems)} dirs, {train_labels.shape[0]} samples)"
+    logger.info(
+        "  train systems -> %s (%s dirs, %s samples)",
+        DATA_DIR / "train",
+        len(train_systems),
+        train_labels.shape[0],
     )
-    print(
-        f"  test systems  -> {test_dir} "
-        f"({len(test_systems)} dirs, {test_labels.shape[0]} samples)"
+    logger.info(
+        "  test systems  -> %s (%s dirs, %s samples)",
+        test_dir,
+        len(test_systems),
+        test_labels.shape[0],
     )
 
     # 7. Summary --------------------------------------------------------------
-    print()
-    print("=" * 60)
-    print(f"n_train : {N_TRAIN}")
-    print(f"n_test  : {N_TEST}")
-    print(f"gap mean: {gaps.mean():.4f} eV")
-    print(f"gap std : {gaps.std():.4f} eV")
-    print("Done. Run one of the evaluation scripts next.")
-    print("=" * 60)
+    logger.info("")
+    logger.info("=" * 60)
+    logger.info("n_train : %s", N_TRAIN)
+    logger.info("n_test  : %s", N_TEST)
+    logger.info("gap mean: %.4f eV", gaps.mean())
+    logger.info("gap std : %.4f eV", gaps.std())
+    logger.info("Done. Run one of the evaluation scripts next.")
+    logger.info("=" * 60)
 
 
 if __name__ == "__main__":

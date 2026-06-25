@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import glob as _glob
+import logging
 import os
 import re
 import subprocess
@@ -15,6 +16,8 @@ from dpa_adapt._backend import (
 from dpa_adapt.utils.dotdict import (
     DotDict,
 )
+
+_LOG = logging.getLogger("dpa_adapt.mft")
 
 
 class MFTFineTuner:
@@ -104,29 +107,29 @@ class MFTFineTuner:
 
     def __init__(
         self,
-        pretrained,
-        aux_branch="MP_traj_v024_alldata_mixu",
-        aux_prob=0.5,
-        type_map=None,
-        fitting_net_params=None,
-        downstream_task_type="property",
-        property_name=None,
-        task_dim=1,
-        intensive=True,
-        learning_rate=1e-3,
-        stop_lr=1e-5,
-        decay_steps=None,  # None → auto: 1000 for property, 5000 for ener
-        warmup_steps=0,
-        max_steps=50000,
-        batch_size="auto:32",
-        aux_batch_size=None,
-        downstream_batch_size=None,
-        seed=42,
+        pretrained: str,
+        aux_branch: str = "MP_traj_v024_alldata_mixu",
+        aux_prob: float = 0.5,
+        type_map: list[str] | None = None,
+        fitting_net_params: dict | None = None,
+        downstream_task_type: str = "property",
+        property_name: str | None = None,
+        task_dim: int = 1,
+        intensive: bool = True,
+        learning_rate: float = 1e-3,
+        stop_lr: float = 1e-5,
+        decay_steps: int | None = None,  # None → auto: 1000 for property, 5000 for ener
+        warmup_steps: int = 0,
+        max_steps: int = 50000,
+        batch_size: str | int = "auto:32",
+        aux_batch_size: str | None = None,
+        downstream_batch_size: int | None = None,
+        seed: int = 42,
         fparam_dim: int = 0,
-        output_dir="./mft_output",
-        save_freq=10000,
-        disp_freq=1000,
-    ):
+        output_dir: str = "./mft_output",
+        save_freq: int = 10000,
+        disp_freq: int = 1000,
+    ) -> None:
         if downstream_task_type not in ("ener", "property"):
             raise ValueError(
                 f"downstream_task_type must be 'ener' or 'property'; "
@@ -194,7 +197,7 @@ class MFTFineTuner:
     # ------------------------------------------------------------------
 
     @property
-    def fitting_net_params(self):
+    def fitting_net_params(self) -> dict | None:
         if self._fitting_net_params is None and not self._fitting_net_params_resolved:
             self._fitting_net_params = self._read_fitting_net_from_ckpt(
                 self.pretrained, self.aux_branch
@@ -203,11 +206,11 @@ class MFTFineTuner:
         return self._fitting_net_params
 
     @fitting_net_params.setter
-    def fitting_net_params(self, value):
+    def fitting_net_params(self, value: dict | None) -> None:
         self._fitting_net_params = value
 
     @staticmethod
-    def _read_fitting_net_from_ckpt(pretrained, aux_branch):
+    def _read_fitting_net_from_ckpt(pretrained: str, aux_branch: str) -> dict:
         """
         Pull fitting_net config for ``aux_branch`` out of a DPA multi-task
         checkpoint. Raises ValueError listing available branches if
@@ -231,7 +234,9 @@ class MFTFineTuner:
             )
         return model_dict[aux_branch]["fitting_net"]
 
-    def _validate_and_resolve_type_map(self, train_data, aux_data):
+    def _validate_and_resolve_type_map(
+        self, train_data: str | list[str], aux_data: str | list[str]
+    ) -> None:
         """Validate and resolve the global type_map for MFT training.
 
         Always called by ``fit()`` — whether ``type_map`` is user-provided
@@ -317,7 +322,12 @@ class MFTFineTuner:
                 label=f"{label} data",
             )
 
-    def fit(self, train_data, aux_data, valid_data=None):
+    def fit(
+        self,
+        train_data: str | list[str],
+        aux_data: str | list[str],
+        valid_data: str | list[str] | None = None,
+    ) -> None:
         """
         Run MFT training.
 
@@ -359,10 +369,12 @@ class MFTFineTuner:
             for e_form_path in e_form_sets:
                 energy_path = os.path.join(os.path.dirname(e_form_path), "energy.npy")
                 if not os.path.exists(energy_path):
-                    print(
-                        f"WARNING: {e_form_path} exists but {energy_path} is missing. "
-                        f"DeepMD-kit expects energy.npy — create a symlink: "
-                        f"ln -sf e_form.npy {energy_path}"
+                    _LOG.warning(
+                        "%s exists but %s is missing. DeepMD-kit expects "
+                        "energy.npy — create a symlink: ln -sf e_form.npy %s",
+                        e_form_path,
+                        energy_path,
+                        energy_path,
                     )
 
         os.makedirs(self.output_dir, exist_ok=True)
@@ -382,8 +394,8 @@ class MFTFineTuner:
         cmd = cm.build_cmd(input_json)
 
         log_path = os.path.abspath(os.path.join(self.output_dir, "train.log"))
-        print("Running:", " ".join(cmd))
-        print(f"Log: {log_path}")
+        _LOG.info("Running: %s", " ".join(cmd))
+        _LOG.info("Log: %s", log_path)
 
         with open(log_path, "w") as log_f:
             process = subprocess.Popen(
@@ -394,7 +406,7 @@ class MFTFineTuner:
                 bufsize=1,
             )
             for line in process.stdout:
-                print(line, end="")
+                sys.stdout.write(line)
                 sys.stdout.flush()
                 log_f.write(line)
                 log_f.flush()
@@ -433,7 +445,7 @@ class MFTFineTuner:
     _N_SYSTEMS_RE = re.compile(r"number of systems\s*[:=]?\s*(\d+)", re.IGNORECASE)
 
     @property
-    def _downstream_head(self):
+    def _downstream_head(self) -> str:
         """Branch/head name of the downstream task. Paper property mode uses
         "property" (matching MFTConfigManager); legacy ener mode keeps
         "DOWNSTREAM".
@@ -444,7 +456,7 @@ class MFTFineTuner:
             else "DOWNSTREAM"
         )
 
-    def _freeze_ckpt(self):
+    def _freeze_ckpt(self) -> str:
         """
         Freeze ``model.ckpt-{max_steps}.pt`` to ``frozen_<head>.pth`` in
         ``output_dir`` (head = "property" or "DOWNSTREAM"). Skips if the frozen
@@ -500,7 +512,7 @@ class MFTFineTuner:
         return frozen_path
 
     @staticmethod
-    def _resolve_test_data(test_data):
+    def _resolve_test_data(test_data: str | list[str]) -> list[str]:
         """
         Normalize ``test_data`` (single path, glob string, or list of paths/
         globs) to a flat list of system directories.
@@ -531,7 +543,7 @@ class MFTFineTuner:
             raise RuntimeError(f"test_data {test_data!r} resolved to 0 systems.")
         return unique
 
-    def evaluate(self, test_data):
+    def evaluate(self, test_data: str | list[str]) -> dict:
         """
         Evaluate the downstream head of the MFT checkpoint via ``dp --pt test``.
 
@@ -543,7 +555,7 @@ class MFTFineTuner:
              list of system directories.
           3. Write the list to a datafile and call ``dp --pt test -m <pth>
              -f <datafile> -n 999999`` once. (Spawning one dp test per system
-             is unacceptably slow — ~9s/process × hundreds of systems.)
+             is unacceptably slow — ~9s/process x hundreds of systems.)
           4. Parse the LAST occurrence of MAE / RMSE from the combined
              stdout+stderr — this is the weighted average across all systems.
              For ener tasks the keywords are ``Energy MAE`` / ``Energy RMSE``
@@ -602,7 +614,7 @@ class MFTFineTuner:
 
         return self._parse_test_output(combined, n_resolved=len(systems))
 
-    def predict(self, test_data) -> DotDict:
+    def predict(self, test_data: str | list[str]) -> DotDict:
         """
         Predict property labels with the downstream MFT property head.
 

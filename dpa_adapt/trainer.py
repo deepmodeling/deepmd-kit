@@ -28,6 +28,9 @@ import logging
 import os
 import re
 import subprocess
+from typing import (
+    ClassVar,
+)
 
 from dpa_adapt._backend import (
     resolve_dp_command,
@@ -180,7 +183,7 @@ class DPATrainer:
         output_dir: str = "./dpa_output",
         save_freq: int = 10_000,
         disp_freq: int = 1_000,
-    ):
+    ) -> None:
         # ---- validation ----
         if train_systems is None:
             raise ValueError("train_systems is required (got None).")
@@ -286,7 +289,7 @@ class DPATrainer:
 
     # ----- glob expansion -----
     @staticmethod
-    def _expand_systems(spec, label: str) -> list:
+    def _expand_systems(spec: str | list[str], label: str) -> list:
         if isinstance(spec, str):
             patterns = [spec]
         else:
@@ -428,7 +431,7 @@ class DPATrainer:
         if not ckpts:
             return None, 0
 
-        def step_of(p):
+        def step_of(p: Path) -> int:
             return int(p.stem.split("-")[-1])
 
         latest = max(ckpts, key=step_of)
@@ -440,7 +443,7 @@ class DPATrainer:
 
     # ----- fparam validation -----
     @staticmethod
-    def _validate_fparam(systems_spec, fparam_dim: int) -> None:
+    def _validate_fparam(systems_spec: str | list[str], fparam_dim: int) -> None:
         """Check that every set.* directory contains fparam.npy with correct shape.
 
         Parameters
@@ -547,7 +550,7 @@ class DPATrainer:
 
         cmd = self._build_cmd(input_json)
         # fit() deliberately echoes the CLI so the user can rerun it manually.
-        print("Running:", " ".join(cmd))
+        _LOG.info("Running: %s", " ".join(cmd))
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
             raise RuntimeError(
@@ -680,7 +683,7 @@ class DPATrainer:
     _ENERGY_MAE_RE = re.compile(
         r"Energy\s+MAE\s+:\s*([0-9eE.+-]+)\s*\S+", re.IGNORECASE
     )
-    _N_FRAMES_PATTERNS = [
+    _N_FRAMES_PATTERNS: ClassVar[list] = [
         re.compile(r"number of test data\s*[:=]?\s*(\d+)", re.IGNORECASE),
         re.compile(r"#\s*of test data\s*[:=]?\s*(\d+)", re.IGNORECASE),
         re.compile(r"\bn_frames\b\s*[:=]?\s*(\d+)", re.IGNORECASE),

@@ -471,7 +471,9 @@ def test_extract_features_detaches_grad_tensors_before_numpy(monkeypatch):
 
     class FakeSystem:
         orig = "fake"
-        data = {"atom_names": ["H"]}
+
+        def __init__(self):
+            self.data = {"atom_names": ["H"]}
 
     monkeypatch.setattr(finetuner_mod, "_DescriptorExtraction", FakeExtractor)
     monkeypatch.setattr(

@@ -4,8 +4,12 @@
 # Single source of truth for building sklearn predictor heads.
 # Used by DPAFineTuner._fit_sklearn() and cv._build_sklearn_head().
 
+from typing import (
+    Any,
+)
 
-def build_sklearn_head(predictor_type: str, seed: int = 42, n_outputs: int = 1):
+
+def build_sklearn_head(predictor_type: str, seed: int = 42, n_outputs: int = 1) -> Any:
     """Build an sklearn estimator for the given predictor type.
 
     Parameters

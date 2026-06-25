@@ -76,3 +76,4 @@ system/
 *.expected
 examples/dpa_adapt/raw/
 dpa_output/
+dpa_adapt/dpa_adapt.egg-info/

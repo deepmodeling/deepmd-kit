@@ -25,7 +25,7 @@ def _write_system(
     natoms: int = 2,
     nframes: int = 3,
     label_key: str = "energy",
-    elements: list[str] = None,
+    elements: list[str] | None = None,
 ) -> Path:
     """Create a minimal deepmd/npy system directory. Returns its Path."""
     if elements is None:

@@ -17,10 +17,16 @@ import re
 from pathlib import (
     Path,
 )
+from typing import (
+    TYPE_CHECKING,
+)
 
 import numpy as np
 
-# Regex for one element–fraction pair in a formula string: "Ni0.65", "O2", "H1".
+if TYPE_CHECKING:
+    import ase
+
+# Regex for one element-fraction pair in a formula string: "Ni0.65", "O2", "H1".
 _ELEM_FRAC_RE = re.compile(r"([A-Z][a-z]?)(\d*\.?\d*)")
 
 
@@ -172,7 +178,7 @@ def random_doping(
     for elem, frac in fracs.items():
         if elem in ("O", "H"):
             continue  # fixed lattice — not part of substitution
-        n = int(round(frac * n_sites))
+        n = round(frac * n_sites)
         if n > 0:
             counts[elem] = n
 
@@ -180,7 +186,7 @@ def random_doping(
     if assigned > n_sites:
         # Scale down proportionally to fit available sites.
         scale = n_sites / assigned
-        counts = {e: max(1, int(round(c * scale))) for e, c in counts.items()}
+        counts = {e: max(1, round(c * scale)) for e, c in counts.items()}
         assigned = sum(counts.values())
 
     # Build the new symbol list for doping sites.
@@ -196,7 +202,7 @@ def random_doping(
     rng.shuffle(dopant_list)
 
     new_symbols = list(symbols)
-    for idx, new_elem in zip(indices, dopant_list):
+    for idx, new_elem in zip(indices, dopant_list, strict=False):
         new_symbols[idx] = new_elem
 
     doped = AseAtoms(
@@ -232,7 +238,7 @@ def formula_to_npy(
 
     For each CSV row, *sets* random doped structures are generated.  Each
     structure is written as a ``deepmd/npy`` system under
-    ``output_dir/sys_{i:04d}/`` (zero-padded index across all rows × sets).
+    ``output_dir/sys_{i:04d}/`` (zero-padded index across all rows x sets).
 
     Parameters
     ----------
@@ -352,7 +358,7 @@ def formula_to_npy(
                         raise ValueError(
                             f"Line {line_no} in {csv_path!r} has {len(fields)} "
                             "field(s), cannot read default columns 0 and 1."
-                        )
+                        ) from None
                     rows.append(
                         (
                             fields[0].strip(),

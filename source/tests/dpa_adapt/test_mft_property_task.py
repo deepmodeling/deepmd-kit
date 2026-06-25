@@ -14,6 +14,10 @@ from __future__ import (
     annotations,
 )
 
+from typing import (
+    ClassVar,
+)
+
 import pytest
 
 from dpa_adapt.config.manager import (
@@ -26,15 +30,19 @@ from dpa_adapt.mft import (
 
 class _FakePropertyTuner:
     """Tuner-shaped object configured for downstream_task_type='property'.
+
     Bypasses MFTFineTuner.__init__ so tests don't need a real ckpt.
     """
 
     pretrained = "/share/DPA-3.1-3M.pt"
     aux_branch = "SPICE2"
     aux_prob = 0.5
-    type_map = ["H", "C", "N", "O"]
+    type_map: ClassVar[list[str]] = ["H", "C", "N", "O"]
     # aux fitting_net pulled from ckpt — an ener config (the actual SPICE2 head)
-    fitting_net_params = {"type": "ener", "neuron": [240, 240, 240]}
+    fitting_net_params: ClassVar[dict[str, object]] = {
+        "type": "ener",
+        "neuron": [240, 240, 240],
+    }
     downstream_task_type = "property"
     property_name = "homo"
     task_dim = 1
@@ -53,16 +61,20 @@ class _FakePropertyTuner:
 
 
 class _FakeEnerTuner:
-    """Legacy back-compat tuner. NO downstream_task_type attr at all —
-    must still build a valid ener-mode config (mp_data sensitivity callers
-    construct tuners this way).
+    """Legacy back-compat tuner.
+
+    NO downstream_task_type attr at all — must still build a valid ener-mode
+    config (mp_data sensitivity callers construct tuners this way).
     """
 
     pretrained = "/share/DPA-3.1-3M.pt"
     aux_branch = "MP_traj_v024_alldata_mixu"
     aux_prob = 0.5
-    type_map = ["Cu", "O"]
-    fitting_net_params = {"type": "ener", "neuron": [240, 240, 240]}
+    type_map: ClassVar[list[str]] = ["Cu", "O"]
+    fitting_net_params: ClassVar[dict[str, object]] = {
+        "type": "ener",
+        "neuron": [240, 240, 240],
+    }
     learning_rate = 1e-3
     stop_lr = 1e-5
     max_steps = 1000
@@ -130,8 +142,9 @@ def test_property_task_no_force_pref_in_loss():
 
 
 def test_property_task_no_property_name_in_loss():
-    """Deepmd 3.1.3 strict-mode dargs rejects unknown keys inside
-    loss_property — property_name belongs on fitting_net, not loss.
+    """Deepmd 3.1.3 strict-mode dargs rejects unknown keys inside loss_property.
+
+    Property_name belongs on fitting_net, not loss.
     (Verified empirically; see manager.py _build_property_loss docstring.)
     """
     config = MFTConfigManager(_FakePropertyTuner()).build()

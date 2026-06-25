@@ -1,6 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 # dpa_adapt/predictor.py
 
+from typing import (
+    Any,
+)
+
 import numpy as np
 
 from dpa_adapt.conditions import (
@@ -14,7 +18,7 @@ from dpa_adapt.utils.dotdict import (
 )
 
 
-def _unwrap_multioutput(est):
+def _unwrap_multioutput(est: Any) -> Any:
     """If *est* is a ``MultiOutputRegressor``, return the wrapped estimator."""
     from sklearn.multioutput import (
         MultiOutputRegressor,
@@ -25,7 +29,7 @@ def _unwrap_multioutput(est):
     return est
 
 
-def _is_rf(est):
+def _is_rf(est: Any) -> bool:
     from sklearn.ensemble import (
         RandomForestRegressor,
     )
@@ -33,7 +37,7 @@ def _is_rf(est):
     return isinstance(_unwrap_multioutput(est), RandomForestRegressor)
 
 
-def _is_ridge(est):
+def _is_ridge(est: Any) -> bool:
     from sklearn.linear_model import (
         Ridge,
     )
@@ -41,7 +45,7 @@ def _is_ridge(est):
     return isinstance(_unwrap_multioutput(est), Ridge)
 
 
-def _is_mlp(est):
+def _is_mlp(est: Any) -> bool:
     from sklearn.neural_network import (
         MLPRegressor,
     )
@@ -62,7 +66,7 @@ class DPAPredictor:
         Default 1 uses the single estimator from the bundle unchanged.
     """
 
-    def __init__(self, model_path: str, n_committee: int = 1):
+    def __init__(self, model_path: str, n_committee: int = 1) -> None:
         from dpa_adapt._backend import (
             load_torch_file,
         )
@@ -123,7 +127,13 @@ class DPAPredictor:
             fparam_dim=self._fparam_dim,
         )
 
-    def fit(self, data, target_key=None, labels=None, fmt=None):
+    def fit(
+        self,
+        data: str | list[str],
+        target_key: str | list[str] | None = None,
+        labels: np.ndarray | None = None,
+        fmt: str | None = None,
+    ) -> None:
         """Train committee members for uncertainty estimation.
 
         Only valid when *n_committee* > 1.  Clones the frozen sklearn
@@ -192,7 +202,9 @@ class DPAPredictor:
         preds = preds.reshape(self.n_committee, -1, self._task_dim)
         self.uncertainty_threshold_ = float(np.percentile(np.std(preds, axis=0), 95))
 
-    def _extract_and_condition(self, data, fmt):
+    def _extract_and_condition(
+        self, data: str | list[str], fmt: str | None
+    ) -> np.ndarray:
         """Shared feature extraction + fparam auto-read."""
         from dpa_adapt.finetuner import (
             _read_fparam_from_systems,
@@ -214,7 +226,12 @@ class DPAPredictor:
 
         return features
 
-    def predict(self, data, fmt=None, return_uncertainty=False) -> DotDict:
+    def predict(
+        self,
+        data: str | list[str],
+        fmt: str | None = None,
+        return_uncertainty: bool = False,
+    ) -> DotDict:
         """
         Run inference on ``data``.
 
@@ -252,7 +269,7 @@ class DPAPredictor:
         predictions = np.asarray(raw).reshape(-1, self._task_dim)
         return DotDict({"predictions": predictions})
 
-    def _predict_with_uncertainty(self, features):
+    def _predict_with_uncertainty(self, features: np.ndarray) -> DotDict:
         """Per-estimator uncertainty dispatch."""
         if self._estimator_type == "rf":
             X_t = features
@@ -296,7 +313,7 @@ class DPAPredictor:
             f"with n_committee={self.n_committee}."
         )
 
-    def evaluate(self, data, fmt=None) -> DotDict:
+    def evaluate(self, data: str | list[str], fmt: str | None = None) -> DotDict:
         """
         Predict on ``data`` and compute evaluation metrics against stored labels.
 

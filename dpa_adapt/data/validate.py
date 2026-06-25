@@ -12,6 +12,7 @@ from __future__ import (
 )
 
 from typing import (
+    TYPE_CHECKING,
     Literal,
     NamedTuple,
 )
@@ -21,6 +22,9 @@ import numpy as np
 from dpa_adapt.data.errors import (
     DPADataError,
 )
+
+if TYPE_CHECKING:
+    import dpdata
 
 # Magnitude sanity thresholds — values past these are almost never real.
 _ENERGY_MAX_EV_PER_ATOM = 1000.0
@@ -41,7 +45,7 @@ class Issue(NamedTuple):
 
 
 def _check_system(
-    system,
+    system: dpdata.System,
     identifier: str,
     box_det_tol: float,
 ) -> list[Issue]:
@@ -163,7 +167,7 @@ def _check_system(
 
 
 def check_data(
-    data,
+    data: dpdata.System | list[dpdata.System],
     strict: bool = False,
     box_det_tol: float = _BOX_DET_TOLERANCE,
 ) -> list[Issue]:

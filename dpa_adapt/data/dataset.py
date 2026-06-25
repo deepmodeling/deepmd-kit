@@ -13,9 +13,6 @@ import logging
 from pathlib import (
     Path,
 )
-from typing import (
-    Union,
-)
 
 import dpdata
 
@@ -29,13 +26,13 @@ from dpa_adapt.data.loader import (
 
 _LOG = logging.getLogger("dpa_adapt.data.dataset")
 
-_DataInput = Union[
-    str,
-    Path,
-    dpdata.System,
-    dpdata.LabeledSystem,
-    list[str | Path | dpdata.System | dpdata.LabeledSystem],
-]
+_DataInput = (
+    str
+    | Path
+    | dpdata.System
+    | dpdata.LabeledSystem
+    | list[str | Path | dpdata.System | dpdata.LabeledSystem]
+)
 
 
 def load_dataset(

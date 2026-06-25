@@ -27,12 +27,12 @@ DUMMY_SYS = ["/data/sys"]
 
 
 def _trainer(pretrained, **overrides):
-    kwargs = dict(
-        pretrained=pretrained,
-        train_systems=DUMMY_SYS,
-        valid_systems=DUMMY_SYS,
-        type_map=TYPE_MAP,
-    )
+    kwargs = {
+        "pretrained": pretrained,
+        "train_systems": DUMMY_SYS,
+        "valid_systems": DUMMY_SYS,
+        "type_map": TYPE_MAP,
+    }
     kwargs.update(overrides)
     return DPATrainer(**kwargs)
 

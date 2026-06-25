@@ -29,9 +29,11 @@ def _make_system(tmp_path, name="sys", set_indices=(0,), n_atoms=2, n_frames=3):
     for idx in set_indices:
         sd = root / f"set.{idx:03d}"
         sd.mkdir()
-        np.save(sd / "coord.npy", np.random.rand(n_frames, n_atoms * 3))
+        rng_coord = np.random.default_rng()
+        rng_energy = np.random.default_rng()
+        np.save(sd / "coord.npy", rng_coord.random((n_frames, n_atoms * 3)))
         np.save(sd / "box.npy", np.tile(np.eye(3).ravel(), (n_frames, 1)))
-        np.save(sd / "energy.npy", np.random.rand(n_frames))
+        np.save(sd / "energy.npy", rng_energy.random((n_frames,)))
     return load_data(str(root))[0]
 
 
@@ -188,7 +190,7 @@ class TestKeyFromHead:
     def test_dict_unknown_type_raises_with_supported_list(self):
         with pytest.raises(ValueError, match="Unknown dict head type 'forces'"):
             _key_from_head({"type": "forces"})
-        with pytest.raises(ValueError, match="dos.*dipole|dipole.*dos"):
+        with pytest.raises(ValueError, match=r"dos.*dipole|dipole.*dos"):
             _key_from_head({"type": "unknown_xyz"})
 
     def test_dict_property_type_without_property_name_raises(self):
@@ -196,7 +198,7 @@ class TestKeyFromHead:
             _key_from_head({"type": "property", "task_dim": 1})
 
     def test_dict_missing_both_keys_raises(self):
-        with pytest.raises(ValueError, match="property_name.*type"):
+        with pytest.raises(ValueError, match=r"property_name.*type"):
             _key_from_head({"task_dim": 1})
 
     def test_non_str_non_dict_raises(self):
@@ -216,9 +218,11 @@ def _make_system_path(tmp_path, name="sys", set_indices=(0,), n_atoms=2, n_frame
     for idx in set_indices:
         sd = root / f"set.{idx:03d}"
         sd.mkdir()
-        np.save(sd / "coord.npy", np.random.rand(n_frames, n_atoms * 3))
+        rng_coord = np.random.default_rng()
+        rng_energy = np.random.default_rng()
+        np.save(sd / "coord.npy", rng_coord.random((n_frames, n_atoms * 3)))
         np.save(sd / "box.npy", np.tile(np.eye(3).ravel(), (n_frames, 1)))
-        np.save(sd / "energy.npy", np.random.rand(n_frames))
+        np.save(sd / "energy.npy", rng_energy.random((n_frames,)))
     return root
 
 
@@ -296,7 +300,7 @@ class TestAttachLabels:
     def test_coord_npy_missing_raises(self, tmp_path):
         sys_path = _make_system_path(tmp_path, name="sys", n_frames=3)
         (sys_path / "set.000" / "coord.npy").unlink()
-        with pytest.raises(ValueError, match="coord.npy not found"):
+        with pytest.raises(ValueError, match=r"coord\.npy not found"):
             attach_labels(sys_path, head="energy", values=np.array([1.0, 2.0, 3.0]))
 
     # ── multi-system ─────────────────────────────────────────────────────
@@ -327,7 +331,7 @@ class TestAttachLabels:
     def test_multi_system_no_subdirs_raises(self, tmp_path):
         empty = tmp_path / "empty"
         empty.mkdir()
-        with pytest.raises(ValueError, match="No set.* directories or system"):
+        with pytest.raises(ValueError, match=r"No set.* directories or system"):
             attach_labels(empty, head="energy", values=np.array([1.0]))
 
     def test_multi_system_hidden_dirs_ignored(self, tmp_path):

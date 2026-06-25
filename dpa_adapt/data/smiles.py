@@ -616,7 +616,9 @@ def smiles_to_npy(
             raise ValueError("Direct data requires atoms, coordinates, and target")
         records = [
             (list(s), np.asarray(c, dtype=np.float32), float(t), i)
-            for i, (s, c, t) in enumerate(zip(atoms, coordinates, targets))
+            for i, (s, c, t) in enumerate(
+                zip(atoms, coordinates, targets, strict=False)
+            )
         ]
         failed_rows, skipped_zero, skipped_overlap = [], 0, 0
 
@@ -713,7 +715,9 @@ def records_from_direct_data(
         raise ValueError("atoms, coordinates, and target must have the same length")
     records = []
     rows = []
-    for idx, (symbols, coords, target) in enumerate(zip(atoms, coordinates, targets)):
+    for idx, (symbols, coords, target) in enumerate(
+        zip(atoms, coordinates, targets, strict=False)
+    ):
         records.append(
             (list(symbols), np.asarray(coords, dtype=np.float32), float(target), idx)
         )
