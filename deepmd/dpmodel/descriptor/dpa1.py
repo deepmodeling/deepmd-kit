@@ -606,10 +606,28 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         )
         # local atom types, flat (nf * nloc,)
         atype_local = xp.reshape(xp_take_first_n(atype_ext, 1, nloc), (nf * nloc,))
+        # per-edge neighbor type from the ACTUAL extended types (not atype[src]),
+        # so the dense bridge stays byte-faithful to the dense path for any
+        # mapping. Matches from_dense_quartet(compact=False) edge ordering:
+        # row-major (frame, center, slot), neighbor flat index = ff * nall + j.
+        nl_flat = xp.reshape(nlist, (-1,))  # (E,) neighbor ext idx or -1
+        valid = nl_flat >= 0
+        j_safe = xp.where(valid, nl_flat, xp.zeros_like(nl_flat))  # clamp -1 -> 0
+        ff = xp.reshape(
+            xp.broadcast_to(
+                xp.reshape(xp.arange(nf, dtype=nl_flat.dtype, device=dev), (nf, 1, 1)),
+                (nf, nloc, nnei),
+            ),
+            (-1,),
+        )
+        nei_type = xp.take(
+            xp.reshape(atype_ext, (nf * nall,)), ff * nall + j_safe, axis=0
+        )  # (E,)
         grrg, rot_mat = self.call_graph(
             graph,
             atype_local,
             type_embedding=self.type_embedding.call(),
+            nei_type=nei_type,
         )
         # reconstruct the dense-shaped sw the dense way (env_mat switch masked
         # where nlist == -1; the graph path forbids exclude_types, so nlist_mask
@@ -667,6 +685,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         graph: Any,
         atype: Array,
         type_embedding: Array | None = None,
+        nei_type: Array | None = None,
     ) -> tuple[Array, Array]:
         """Descriptor-level graph-native forward (``attn_layer == 0``).
 
@@ -687,6 +706,10 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             (nf * nloc,) flat LOCAL atom types.
         type_embedding
             (ntypes_with_padding, tebd_dim) type-embedding table.
+        nei_type
+            (E,) per-edge neighbor type override; see
+            :meth:`DescrptBlockSeAtten._call_graph`. ``None`` derives it from
+            ``atype[src]`` (correct for every physical input).
 
         Returns
         -------
@@ -698,7 +721,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         xp = array_api_compat.array_namespace(graph.edge_vec)
         dev = array_api_compat.device(graph.edge_vec)
         grrg_node, rot_mat_node = self.se_atten._call_graph(
-            graph, atype, type_embedding=type_embedding
+            graph, atype, type_embedding=type_embedding, nei_type=nei_type
         )
         nf = graph.n_node.shape[0]
         # atype is the flat (nf*nloc,) node axis; derive nloc from the STATIC shape
@@ -1396,6 +1419,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         graph: Any,
         atype: Array,
         type_embedding: Array | None = None,
+        nei_type: Array | None = None,
     ) -> tuple[Array, Array]:
         """Graph-native forward (``attn_layer=0`` only).
 
@@ -1413,6 +1437,14 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             (N,) flat node atom types (``N = sum(graph.n_node)``).
         type_embedding
             (ntypes_with_padding, tebd_dim) type-embedding table.
+        nei_type
+            (E,) per-edge neighbor (src) type override. ``None`` (geometry-native
+            builders) gathers the type from the local owner ``atype[src]``, which
+            equals the neighbor's extended type for every physical input (a ghost
+            is a periodic image of its owner). The dense-quartet bridge supplies
+            the neighbor's ACTUAL extended type ``atype_ext[neighbor]`` so it stays
+            byte-faithful to the dense path even for an arbitrary external
+            ``mapping`` where ``atype[src] != atype_ext[neighbor]``.
 
         Returns
         -------
@@ -1460,7 +1492,12 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         dst = graph.edge_index[1, :]
         atype = xp.asarray(atype, device=dev)
         center_type = xp.take(atype, dst, axis=0)  # (E,)
-        nei_type = xp.take(atype, src, axis=0)  # (E,)
+        if nei_type is None:
+            # geometry-native: owner type == neighbor extended type (consistent
+            # mapping). The dense bridge overrides with atype_ext[neighbor].
+            nei_type = xp.take(atype, src, axis=0)  # (E,)
+        else:
+            nei_type = xp.asarray(nei_type, device=dev)
         # per-edge env-mat 4-vector, normalized by the center (dst) atom type.
         # self.mean/self.stddev are slot-independent (ntypes, nnei, 4); slot 0 is
         # the canonical per-type vector.
