@@ -611,29 +611,32 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             sw = xp.where(nlist_mask, sw, xp.zeros_like(sw))
             sw = xp.reshape(sw, (nf, nloc, nnei, 1))
             return grrg, rot_mat, None, None, sw
-        del mapping
-        type_embedding = self.type_embedding.call()
-        # nf x nall x tebd_dim
-        atype_embd_ext = xp.reshape(
-            xp.take(type_embedding, xp.reshape(atype_ext, (-1,)), axis=0),
-            (nf, nall, self.tebd_dim),
-        )
-        # nfnl x tebd_dim
-        atype_embd = xp_take_first_n(atype_embd_ext, 1, nloc)
-        grrg, g2, h2, rot_mat, sw = self.se_atten(
-            nlist,
-            coord_ext,
-            atype_ext,
-            atype_embd_ext,
-            mapping=None,
-            type_embedding=type_embedding,
-        )
-        # nf x nloc x (ng x ng1 + tebd_dim)
-        if self.concat_output_tebd:
-            grrg = xp.concat(
-                [grrg, xp.reshape(atype_embd, (nf, nloc, self.tebd_dim))], axis=-1
+        else:
+            # legacy dense body (attention, strip tebd, exclude_types, or the
+            # ghost case with no mapping) -- kept working unchanged.
+            del mapping
+            type_embedding = self.type_embedding.call()
+            # nf x nall x tebd_dim
+            atype_embd_ext = xp.reshape(
+                xp.take(type_embedding, xp.reshape(atype_ext, (-1,)), axis=0),
+                (nf, nall, self.tebd_dim),
             )
-        return grrg, rot_mat, None, None, sw
+            # nfnl x tebd_dim
+            atype_embd = xp_take_first_n(atype_embd_ext, 1, nloc)
+            grrg, g2, h2, rot_mat, sw = self.se_atten(
+                nlist,
+                coord_ext,
+                atype_ext,
+                atype_embd_ext,
+                mapping=None,
+                type_embedding=type_embedding,
+            )
+            # nf x nloc x (ng x ng1 + tebd_dim)
+            if self.concat_output_tebd:
+                grrg = xp.concat(
+                    [grrg, xp.reshape(atype_embd, (nf, nloc, self.tebd_dim))], axis=-1
+                )
+            return grrg, rot_mat, None, None, sw
 
     def call_graph(
         self,
