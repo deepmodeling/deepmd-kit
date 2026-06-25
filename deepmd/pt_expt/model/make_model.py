@@ -410,7 +410,7 @@ def make_model(
                 )
             nf, nloc = atype.shape[:2]
             atype_flat = atype.reshape(nf * nloc)
-            return self.forward_common_lower_graph(
+            model_predict = self.forward_common_lower_graph(
                 atype_flat,
                 ng.n_node,
                 ng.edge_index,
@@ -420,6 +420,12 @@ def make_model(
                 fparam=fp,
                 aparam=ap,
             )
+            # carry-all graph: every local atom is real -> all-ones mask, matching
+            # the dense ``call_common`` output (which carries a ``mask`` key).
+            model_predict["mask"] = torch.ones(
+                (nf, nloc), dtype=torch.int32, device=atype.device
+            )
+            return model_predict
 
         def forward_common_atomic(
             self,

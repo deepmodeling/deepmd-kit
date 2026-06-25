@@ -1,18 +1,18 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Opt-in carry-all graph energy forward via ``neighbor_graph_method`` (Option B).
+"""Carry-all graph energy forward via ``neighbor_graph_method`` (Option B).
 
-PR-A 5c: ``CM.call_common`` gains a ``neighbor_graph_method`` keyword that,
-when set, routes a dpa1(``attn_layer == 0``) ENERGY forward through the
-carry-all graph builder + ``call_lower_graph`` instead of the dense nlist path.
+``CM.call_common`` routes a graph-eligible dpa1(``attn_layer == 0``) ENERGY
+forward through the carry-all graph builder + ``call_lower_graph``. Per the
+default-flip (decision #17) this is now the DEFAULT for eligible models;
+``neighbor_graph_method="legacy"`` opts out to the truncating dense nlist path,
+and ``"dense"``/``"ase"`` force the carry-all graph with that builder.
 
 Option-B behavior (decision #17 / spec_unified_edge_nlist):
 
-* non-binding ``sel`` -- the carry-all graph and the dense path see the SAME
-  neighbors, so ``energy``/``atom_energy`` are EXACTLY equal;
-* binding ``sel`` -- the carry-all graph keeps neighbors the dense path
+* non-binding ``sel`` -- the carry-all graph and the legacy dense path see the
+  SAME neighbors, so ``energy``/``atom_energy`` are EXACTLY equal;
+* binding ``sel`` -- the carry-all graph keeps neighbors the legacy dense path
   truncates, so energy DIFFERS (intended).
-
-The DEFAULT (``neighbor_graph_method=None``) keeps the dense path unchanged.
 """
 
 import numpy as np
@@ -68,7 +68,7 @@ def test_energy_parity_non_binding_sel(method, periodic) -> None:
     # LARGE sel -> non-binding (no truncation)
     model = _make_model([200])
 
-    dense = model.call_common(coord, atype, box)
+    dense = model.call_common(coord, atype, box, neighbor_graph_method="legacy")
     graph = model.call_common(coord, atype, box, neighbor_graph_method=method)
 
     # dense energy keys: ``energy_redu`` (reduced, nf x 1) and ``energy``
@@ -103,7 +103,7 @@ def test_energy_parity_multiframe_periodic(method) -> None:
     # LARGE sel -> non-binding (no truncation)
     model = _make_model([200])
 
-    dense = model.call_common(coord, atype, box)
+    dense = model.call_common(coord, atype, box, neighbor_graph_method="legacy")
     graph = model.call_common(coord, atype, box, neighbor_graph_method=method)
 
     np.testing.assert_allclose(
@@ -129,7 +129,7 @@ def test_binding_sel_carries_more_than_dense() -> None:
     # binding sel -> dense path truncates to 4 neighbors per atom
     model = _make_model([4])
 
-    dense = model.call_common(coord, atype, box)
+    dense = model.call_common(coord, atype, box, neighbor_graph_method="legacy")
     graph = model.call_common(coord, atype, box, neighbor_graph_method="dense")
 
     assert not np.allclose(graph["energy_redu"], dense["energy_redu"])

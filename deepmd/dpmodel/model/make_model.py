@@ -362,7 +362,9 @@ def make_model(
                 return None
             if neighbor_graph_method is not None:
                 return neighbor_graph_method
-            descriptor = self.atomic_model.descriptor
+            # Linear/ZBL atomic models have no single ``descriptor`` -> not graph
+            # eligible (AUTO falls back to the dense path).
+            descriptor = getattr(self.atomic_model, "descriptor", None)
             uses_graph_lower = getattr(descriptor, "uses_graph_lower", lambda: False)
             if self.mixed_types() and uses_graph_lower():
                 return "dense"
@@ -386,7 +388,7 @@ def make_model(
             (``atom_energy``, ``energy``, ``mask``). Input type-casting is done
             by the caller; output type-casting is also applied by the caller.
             """
-            descriptor = self.atomic_model.descriptor
+            descriptor = getattr(self.atomic_model, "descriptor", None)
             uses_graph_lower = getattr(descriptor, "uses_graph_lower", lambda: False)
             if not (self.mixed_types() and uses_graph_lower()):
                 raise NotImplementedError(
