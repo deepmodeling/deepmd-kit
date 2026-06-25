@@ -37,6 +37,61 @@ log = logging.getLogger(__name__)
 DPLinearModel_ = make_model(LinearEnergyAtomicModel)
 
 
+def _get_linear_model_index(model_key: str) -> int:
+    if not model_key.startswith("model_"):
+        raise RuntimeError(f"Unknown linear model key {model_key}!")
+    return int(model_key.removeprefix("model_"))
+
+
+def normalize_linear_model_type_map(model_params: dict[str, Any]) -> None:
+    """Fill the linear model type_map from sub-models when needed."""
+    if "type_map" in model_params:
+        return
+    for idx, sub_model_params in enumerate(model_params["models"]):
+        if "type_map" not in sub_model_params:
+            raise ValueError(
+                f"Linear sub-model {idx} must define type_map when "
+                "linear_ener has no top-level type_map."
+            )
+    first_type_map = model_params["models"][0]["type_map"]
+    for idx, sub_model_params in enumerate(model_params["models"][1:], start=1):
+        if sub_model_params["type_map"] != first_type_map:
+            raise ValueError(
+                f"Linear sub-model {idx} type_map differs from sub-model 0. "
+                "All type_map values must be identical when linear_ener "
+                "has no top-level type_map."
+            )
+    model_params["type_map"] = deepcopy(first_type_map)
+
+
+def validate_linear_shared_descriptor_type_maps(
+    models: list[dict[str, Any]],
+    shared_links: dict[str, Any] | None,
+) -> None:
+    """Reject descriptor sharing across incompatible linear sub-model type maps."""
+    if not shared_links:
+        return
+    for shared_key, shared_item in shared_links.items():
+        descriptor_links = [
+            link for link in shared_item["links"] if "descriptor" in link["shared_type"]
+        ]
+        if len(descriptor_links) < 2:
+            continue
+        base_link = descriptor_links[0]
+        base_index = _get_linear_model_index(base_link["model_key"])
+        base_type_map = models[base_index]["type_map"]
+        for link_item in descriptor_links[1:]:
+            model_index = _get_linear_model_index(link_item["model_key"])
+            model_type_map = models[model_index]["type_map"]
+            if model_type_map != base_type_map:
+                raise ValueError(
+                    f"Linear sub-model {model_index} type_map {model_type_map} "
+                    f"is incompatible with sub-model {base_index} type_map "
+                    f"{base_type_map} for shared descriptor {shared_key!r}. "
+                    "Shared descriptor links require identical type_map values."
+                )
+
+
 @BaseModel.register("linear_ener")
 class LinearEnergyModel(DPLinearModel_):
     model_type = "linear_ener"
@@ -63,9 +118,7 @@ class LinearEnergyModel(DPLinearModel_):
         """
 
         def get_sub_model(model_key: str):  # noqa: ANN202
-            if not model_key.startswith("model_"):
-                raise RuntimeError(f"Unknown linear model key {model_key}!")
-            model_index = int(model_key.removeprefix("model_"))
+            model_index = _get_linear_model_index(model_key)
             return self.atomic_model.models[model_index]
 
         def get_descriptor_class(model_key: str, shared_type: str):  # noqa: ANN202
@@ -283,15 +336,16 @@ class LinearEnergyModel(DPLinearModel_):
             }
             if "type_map" in local_jdata_cpy:
                 shared_config["type_map"] = deepcopy(local_jdata_cpy["type_map"])
-            shared_config, _ = preprocess_shared_params(
+            shared_config, shared_links = preprocess_shared_params(
                 shared_config,
                 require_shared_type_map=False,
             )
             local_jdata_cpy["models"] = list(shared_config["model_dict"].values())
-            if "type_map" not in local_jdata_cpy:
-                local_jdata_cpy["type_map"] = deepcopy(
-                    local_jdata_cpy["models"][0]["type_map"]
-                )
+            normalize_linear_model_type_map(local_jdata_cpy)
+            validate_linear_shared_descriptor_type_maps(
+                local_jdata_cpy["models"],
+                shared_links,
+            )
         type_map = local_jdata_cpy["type_map"]
         min_nbor_dist = None
         for idx, sub_model in enumerate(local_jdata_cpy["models"]):

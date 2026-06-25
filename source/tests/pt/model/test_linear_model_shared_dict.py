@@ -353,3 +353,33 @@ class TestLinearEnergySharedDict(unittest.TestCase):
             "Linear sub-model 1 type_map differs from sub-model 0",
         ):
             get_model(config)
+
+    def test_shared_dict_rejects_inconsistent_type_map_with_top_level(
+        self,
+    ) -> None:
+        config = {
+            "type": "linear_ener",
+            "type_map": ["O", "H"],
+            "shared_dict": {
+                "shared_descriptor": self.make_dpa1_descriptor(seed=1),
+            },
+            "models": [
+                {
+                    "type_map": ["O", "H"],
+                    "descriptor": "shared_descriptor",
+                    "fitting_net": self.make_fitting_net(seed=1),
+                },
+                {
+                    "type_map": ["H", "O"],
+                    "descriptor": "shared_descriptor",
+                    "fitting_net": self.make_fitting_net(seed=2),
+                },
+            ],
+            "weights": "mean",
+        }
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "Linear sub-model 1 type_map .* shared descriptor 'shared_descriptor'",
+        ):
+            get_model(config)

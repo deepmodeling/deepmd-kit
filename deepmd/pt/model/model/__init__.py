@@ -47,6 +47,8 @@ from .dos_model import (
 )
 from .dp_linear_model import (
     LinearEnergyModel,
+    normalize_linear_model_type_map,
+    validate_linear_shared_descriptor_type_maps,
 )
 from .dp_model import (
     DPModelCommon,
@@ -174,22 +176,11 @@ def get_linear_model(model_params: dict) -> LinearEnergyModel:
             require_shared_type_map=False,
         )
         model_params["models"] = list(shared_config["model_dict"].values())
-        if "type_map" not in model_params:
-            for idx, sub_model_params in enumerate(model_params["models"]):
-                if "type_map" not in sub_model_params:
-                    raise ValueError(
-                        f"Linear sub-model {idx} must define type_map when "
-                        "linear_ener has no top-level type_map."
-                    )
-            first_type_map = model_params["models"][0]["type_map"]
-            for idx, sub_model_params in enumerate(model_params["models"][1:], start=1):
-                if sub_model_params["type_map"] != first_type_map:
-                    raise ValueError(
-                        f"Linear sub-model {idx} type_map differs from sub-model 0. "
-                        "All type_map values must be identical when linear_ener "
-                        "has no top-level type_map."
-                    )
-            model_params["type_map"] = copy.deepcopy(first_type_map)
+        normalize_linear_model_type_map(model_params)
+        validate_linear_shared_descriptor_type_maps(
+            model_params["models"],
+            shared_links,
+        )
 
     list_of_models = []
     for sub_model_params in model_params["models"]:
