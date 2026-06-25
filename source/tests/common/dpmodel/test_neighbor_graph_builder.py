@@ -177,11 +177,37 @@ class TestNeighborGraphBuilder(unittest.TestCase):
             )
 
     def test_virtual_atoms_excluded(self) -> None:
-        # a virtual atom (type < 0) is neither a center nor a neighbor.
-        atype = np.array([[0, 1, -1, 1]], dtype=np.int64)  # atom 2 virtual
+        # a virtual atom (type < 0) is excluded BOTH as a center (dst) and as a
+        # neighbor (src). atom 0 (origin) has in-range neighbors 1 (dist 1.0) and
+        # 2 (dist 2.3), so making it virtual actively exercises center-exclusion:
+        # without the virtual-center guard, edges 0<-1 and 0<-2 would appear.
+        atype = np.array([[-1, 1, 0, 1]], dtype=np.int64)  # atom 0 virtual
         ng = build_neighbor_graph(self.coord, atype, None, self.rcut)
         ei = ng.edge_index[:, ng.edge_mask]
-        self.assertFalse(bool(np.any(ei == 2)))  # node 2 never appears as src or dst
+        src, dst = ei[0], ei[1]
+        self.assertFalse(bool(np.any(dst == 0)))  # never a center (center exclusion)
+        self.assertFalse(bool(np.any(src == 0)))  # never a neighbor (neighbor excl.)
+        # the remaining real atoms still neighbor each other (we didn't nuke all edges)
+        self.assertGreater(int(ng.edge_mask.sum()), 0)
+
+    def test_min_edges_guard_pads_sparse_frame(self) -> None:
+        # a single isolated atom yields ZERO real edges; the dynamic (capacity=None)
+        # layout must still emit the min_edges=2 guard edges, all masked out.
+        coord = np.zeros((1, 1, 3), dtype=np.float64)
+        atype = np.array([[0]], dtype=np.int64)
+        ng = build_neighbor_graph(coord, atype, None, self.rcut)  # default layout
+        self.assertEqual(ng.edge_index.shape[1], 2)  # min_edges guard edges
+        self.assertEqual(int(ng.edge_mask.sum()), 0)  # none real
+        self.assertTrue(np.all(ng.edge_vec == 0.0))
+
+    def test_flat_coord_input_matches_rectangular(self) -> None:
+        # coord given flattened (nf, nloc*3) must match the (nf, nloc, 3) form.
+        coord_flat = self.coord.reshape(1, 4 * 3)
+        ng_flat = build_neighbor_graph(coord_flat, self.atype, None, self.rcut)
+        ng_rect = build_neighbor_graph(self.coord, self.atype, None, self.rcut)
+        self.assertEqual(
+            graph_neighbor_sets(ng_flat, 4), graph_neighbor_sets(ng_rect, 4)
+        )
 
     def test_static_capacity_padding(self) -> None:
         ng = build_neighbor_graph(
