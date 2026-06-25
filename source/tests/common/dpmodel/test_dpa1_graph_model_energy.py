@@ -81,6 +81,41 @@ def test_energy_parity_non_binding_sel(method, periodic) -> None:
     np.testing.assert_array_equal(graph["mask"], dense["mask"])
 
 
+@pytest.mark.parametrize("method", ["dense", "ase"])  # in-tree carry-all AND ase
+def test_energy_parity_multiframe_periodic(method) -> None:
+    """Multi-frame (nf=2) PERIODIC energy parity at non-binding sel.
+
+    Exercises the nf>1 graph reductions (``frame_id = repeat(arange(nf),
+    n_node)`` energy segment-sum and the ``frame * nloc`` node offsetting in
+    ``from_dense_quartet``) with DIFFERENT per-frame coordinates and a box.
+    At non-binding sel the carry-all graph and the dense path see the SAME
+    neighbors, so ``energy_redu``/``energy`` are EXACTLY equal per frame.
+    """
+    if method == "ase":
+        pytest.importorskip("ase")
+    rng = np.random.default_rng(3)
+    nf, nloc = 2, 6
+    # distinct coordinates per frame (not a broadcast of one frame)
+    coord = rng.normal(size=(nf, nloc, 3)) * 1.5
+    atype = np.array([[0, 1, 0, 1, 0, 1]] * nf, dtype=np.int64)
+    # large box so the cell is essentially non-periodic for rcut=4.0
+    box = np.tile(np.eye(3).reshape(1, 9) * 20.0, (nf, 1))
+    # LARGE sel -> non-binding (no truncation)
+    model = _make_model([200])
+
+    dense = model.call_common(coord, atype, box)
+    graph = model.call_common(coord, atype, box, neighbor_graph_method=method)
+
+    np.testing.assert_allclose(
+        graph["energy_redu"], dense["energy_redu"], rtol=1e-12, atol=1e-12
+    )
+    np.testing.assert_allclose(graph["energy"], dense["energy"], rtol=1e-12, atol=1e-12)
+    np.testing.assert_array_equal(graph["mask"], dense["mask"])
+    # the two frames must produce DIFFERENT energies (genuine nf>1 test, not a
+    # broadcast of one frame); they differ here by ~1e-5.
+    assert not np.array_equal(dense["energy_redu"][0], dense["energy_redu"][1])
+
+
 def test_binding_sel_carries_more_than_dense() -> None:
     """At binding sel the carry-all graph includes neighbors the dense path
     truncates, so energy DIFFERS (intended, decision #17 / Option B).

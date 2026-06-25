@@ -19,7 +19,7 @@ from deepmd.dpmodel.utils.nlist import (
 
 
 class TestDpa1BlockCallGraph:
-    def _make(self, sel):
+    def _make(self, sel, type_one_side=False):
         return DescrptDPA1(
             rcut=4.0,
             rcut_smth=0.5,
@@ -28,6 +28,7 @@ class TestDpa1BlockCallGraph:
             attn_layer=0,
             axis_neuron=2,
             neuron=[6, 12],
+            type_one_side=type_one_side,
         )
 
     def setup_method(self) -> None:
@@ -36,10 +37,16 @@ class TestDpa1BlockCallGraph:
         self.coord = rng.normal(size=(1, self.nloc, 3)) * 1.5
         self.atype = np.array([[0, 1, 0, 1]], dtype=np.int64)
 
+    @pytest.mark.parametrize("type_one_side", [False, True])  # tebd concat branch
     @pytest.mark.parametrize("sel", [[20], [3]])  # non-binding AND binding
-    def test_block_graph_equals_dense_any_sel(self, sel) -> None:
-        """Graph block output is bit-exact with the dense block on the same nlist."""
-        dd = self._make(sel)
+    def test_block_graph_equals_dense_any_sel(self, sel, type_one_side) -> None:
+        """Graph block output is bit-exact with the dense block on the same nlist.
+
+        ``type_one_side`` toggles the concat branch in the block: when True the
+        per-edge feature concatenates only the NEIGHBOR tebd (no center tebd),
+        so both the graph and dense paths must agree for either branch.
+        """
+        dd = self._make(sel, type_one_side=type_one_side)
         blk = dd.se_atten
         # build the dense nlist exactly as the descriptor would
         (
