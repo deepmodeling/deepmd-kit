@@ -7,6 +7,7 @@
 #include <memory>
 #include <mutex>
 #include <sstream>
+#include <utility>
 #include <vector>
 
 #include "DataModifier.h"
@@ -192,12 +193,35 @@ FunctionType load_typed_symbol(const std::shared_ptr<PluginHandle>& plugin,
       load_symbol(plugin->handle, plugin->path, symbol_name));
 }
 
-std::shared_ptr<PluginHandle> load_plugin(deepmd::DPBackend backend) {
+std::string plugin_cache_key(const std::vector<const char*>& required_symbols) {
+  std::ostringstream key;
+  for (const char* symbol_name : required_symbols) {
+    key << '\n' << symbol_name;
+  }
+  return key.str();
+}
+
+void validate_required_symbols(
+    void* handle,
+    const std::string& path,
+    const std::vector<const char*>& required_symbols) {
+  for (const char* symbol_name : required_symbols) {
+    load_symbol(handle, path, symbol_name);
+  }
+}
+
+std::shared_ptr<PluginHandle> load_plugin_with_symbols(
+    deepmd::DPBackend backend,
+    const std::vector<const char*>& required_symbols) {
   static std::mutex mutex;
-  static std::map<deepmd::DPBackend, std::shared_ptr<PluginHandle>> plugins;
+  static std::map<std::pair<deepmd::DPBackend, std::string>,
+                  std::shared_ptr<PluginHandle>>
+      plugins;
 
   std::lock_guard<std::mutex> lock(mutex);
-  const auto iter = plugins.find(backend);
+  const auto cache_key =
+      std::make_pair(backend, plugin_cache_key(required_symbols));
+  const auto iter = plugins.find(cache_key);
   if (iter != plugins.end()) {
     return iter->second;
   }
@@ -245,6 +269,7 @@ std::shared_ptr<PluginHandle> load_plugin(deepmd::DPBackend backend) {
           reinterpret_cast<deepmd::deepmd_free_backend_error_fn>(
               load_symbol(handle, candidate,
                           deepmd::DEEPMD_BACKEND_PLUGIN_FREE_ERROR_SYMBOL));
+      validate_required_symbols(handle, candidate, required_symbols);
     } catch (const std::exception& e) {
       errors << "\n  " << candidate << ": " << e.what();
       close_library(handle);
@@ -255,7 +280,7 @@ std::shared_ptr<PluginHandle> load_plugin(deepmd::DPBackend backend) {
       close_library(handle);
       continue;
     }
-    plugins[backend] = plugin;
+    plugins[cache_key] = plugin;
     return plugin;
   }
 
@@ -264,6 +289,10 @@ std::shared_ptr<PluginHandle> load_plugin(deepmd::DPBackend backend) {
       "). Set DP_BACKEND_PLUGIN_PATH or install the plugin next to "
       "libdeepmd_cc. Tried:" +
       errors.str());
+}
+
+std::shared_ptr<PluginHandle> load_plugin(deepmd::DPBackend backend) {
+  return load_plugin_with_symbols(backend, std::vector<const char*>());
 }
 
 }  // namespace
@@ -353,7 +382,9 @@ deepmd::create_deepspin_backend_from_plugin(DPBackend backend,
                                             const std::string& model,
                                             const int& gpu_rank,
                                             const std::string& file_content) {
-  std::shared_ptr<PluginHandle> plugin = load_plugin(backend);
+  std::shared_ptr<PluginHandle> plugin =
+      load_plugin_with_symbols(backend, {DEEPMD_DEEPSPIN_PLUGIN_CREATE_SYMBOL,
+                                         DEEPMD_DEEPSPIN_PLUGIN_DELETE_SYMBOL});
   deepmd_create_deepspin_backend_fn create_deepspin =
       load_typed_symbol<deepmd_create_deepspin_backend_fn>(
           plugin, DEEPMD_DEEPSPIN_PLUGIN_CREATE_SYMBOL);
@@ -389,7 +420,9 @@ deepmd::create_deeptensor_backend_from_plugin(DPBackend backend,
                                               const std::string& model,
                                               const int& gpu_rank,
                                               const std::string& name_scope) {
-  std::shared_ptr<PluginHandle> plugin = load_plugin(backend);
+  std::shared_ptr<PluginHandle> plugin = load_plugin_with_symbols(
+      backend, {DEEPMD_DEEPTENSOR_PLUGIN_CREATE_SYMBOL,
+                DEEPMD_DEEPTENSOR_PLUGIN_DELETE_SYMBOL});
   deepmd_create_deeptensor_backend_fn create_deeptensor =
       load_typed_symbol<deepmd_create_deeptensor_backend_fn>(
           plugin, DEEPMD_DEEPTENSOR_PLUGIN_CREATE_SYMBOL);
@@ -426,7 +459,9 @@ deepmd::create_dipole_charge_modifier_backend_from_plugin(
     const std::string& model,
     const int& gpu_rank,
     const std::string& name_scope) {
-  std::shared_ptr<PluginHandle> plugin = load_plugin(backend);
+  std::shared_ptr<PluginHandle> plugin = load_plugin_with_symbols(
+      backend, {DEEPMD_DIPOLE_CHARGE_MODIFIER_PLUGIN_CREATE_SYMBOL,
+                DEEPMD_DIPOLE_CHARGE_MODIFIER_PLUGIN_DELETE_SYMBOL});
   deepmd_create_dipole_charge_modifier_backend_fn create_modifier =
       load_typed_symbol<deepmd_create_dipole_charge_modifier_backend_fn>(
           plugin, DEEPMD_DIPOLE_CHARGE_MODIFIER_PLUGIN_CREATE_SYMBOL);
@@ -459,7 +494,8 @@ deepmd::create_dipole_charge_modifier_backend_from_plugin(
 
 void deepmd::convert_pbtxt_to_pb_from_plugin(const std::string& fn_pb_txt,
                                              const std::string& fn_pb) {
-  std::shared_ptr<PluginHandle> plugin = load_plugin(DPBackend::TensorFlow);
+  std::shared_ptr<PluginHandle> plugin = load_plugin_with_symbols(
+      DPBackend::TensorFlow, {DEEPMD_CONVERT_PBTXT_TO_PB_PLUGIN_SYMBOL});
   deepmd_convert_pbtxt_to_pb_fn convert_pbtxt_to_pb =
       load_typed_symbol<deepmd_convert_pbtxt_to_pb_fn>(
           plugin, DEEPMD_CONVERT_PBTXT_TO_PB_PLUGIN_SYMBOL);
