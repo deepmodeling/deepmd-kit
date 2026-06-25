@@ -9,6 +9,9 @@ segment-reduction toolkit), and ``derivatives`` (edge force/virial assembly).
 See memory/spec_unified_edge_nlist.md.
 """
 
+from .ase_builder import (
+    build_neighbor_graph_ase,
+)
 from .builder import (
     build_neighbor_graph,
     from_dense_quartet,
@@ -18,6 +21,9 @@ from .derivatives import (
 )
 from .env import (
     edge_env_mat,
+)
+from .from_ijs import (
+    neighbor_graph_from_ijs,
 )
 from .graph import (
     GraphLayout,
@@ -34,9 +40,11 @@ __all__ = [
     "GraphLayout",
     "NeighborGraph",
     "build_neighbor_graph",
+    "build_neighbor_graph_ase",
     "edge_env_mat",
     "edge_force_virial",
     "from_dense_quartet",
+    "neighbor_graph_from_ijs",
     "node_validity_mask",
     "pad_and_guard_edges",
     "segment_mean",
