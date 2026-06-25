@@ -108,6 +108,30 @@ class TestNeighborGraphBuilder(unittest.TestCase):
             brute_force_neighbor_sets(self.coord[0], box[0], self.rcut),
         )
 
+    def test_neighbor_only_across_periodic_boundary(self) -> None:
+        # DISCRIMINATING PBC case: a pair that is a neighbor ONLY across the
+        # boundary. atoms at x=0.5 and x=5.5 in a box of 6: direct distance 5.0 >
+        # rcut=4 (NOT a direct neighbor), but the minimum image is 1.0 < rcut.
+        # A build that ignored periodic images would find ZERO edges here.
+        box = np.eye(3, dtype=np.float64)[None] * 6.0
+        coord = np.array([[0.5, 0.0, 0.0], [5.5, 0.0, 0.0]], dtype=np.float64).reshape(
+            1, 2, 3
+        )
+        atype = np.array([[0, 0]], dtype=np.int64)
+        ng = build_neighbor_graph(coord, atype, box, self.rcut)
+        got = graph_neighbor_sets(ng, 2)  # per-center list of neighbor sets
+        # each atom's ONLY neighbor is the other's periodic image, at +-1.0
+        want = [{(1, (-1.0, 0.0, 0.0))}, {(0, (1.0, 0.0, 0.0))}]
+        self.assertEqual(got, want)
+        # the direct (non-image) separation of 5.0 must NOT appear as an edge
+        ev = ng.edge_vec[ng.edge_mask]
+        self.assertFalse(bool(np.any(np.linalg.norm(ev, axis=1) > 4.0)))
+        # independent brute-force oracle agrees on the cross-boundary environment
+        self.assertEqual(got, brute_force_neighbor_sets(coord[0], box[0], self.rcut))
+        # and WITHOUT the box the same atoms are NOT neighbors (direct 5.0 > rcut)
+        ng_free = build_neighbor_graph(coord, atype, None, self.rcut)
+        self.assertEqual(int(ng_free.edge_mask.sum()), 0)
+
     def test_edge_vec_within_rcut(self) -> None:
         ng = build_neighbor_graph(self.coord, self.atype, None, self.rcut)
         ev = ng.edge_vec[ng.edge_mask]
