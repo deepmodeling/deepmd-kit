@@ -594,9 +594,13 @@ def make_model(
                 xp.arange(nf, dtype=edge_index.dtype, device=dev),
                 xp.asarray(n_node, device=dev),
             )
+            ener_dtype = get_xp_precision(
+                xp, RESERVED_PRECISION_DICT[self.global_ener_float_precision]
+            )
             energy = segment_sum(
                 xp.reshape(
-                    atom_energy.astype(GLOBAL_ENER_FLOAT_PRECISION), (nf * nloc, 1)
+                    xp.astype(atom_energy, ener_dtype),
+                    (nf * nloc, 1),
                 ),
                 frame_id,
                 nf,

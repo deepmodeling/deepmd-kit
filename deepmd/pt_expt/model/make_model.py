@@ -24,6 +24,9 @@ from deepmd.pt_expt.common import (
     torch_module,
 )
 
+from .edge_transform_output import (
+    edge_energy_deriv,
+)
 from .transform_output import (
     fit_output_to_model_output,
 )
@@ -276,6 +279,99 @@ def make_model(
         ) -> dict[str, torch.Tensor]:
             """Forward common lower delegates to call_common_lower()."""
             return self.call_common_lower(*args, **kwargs)
+
+        def forward_common_lower_graph(
+            self,
+            atype: torch.Tensor,
+            n_node: torch.Tensor,
+            edge_index: torch.Tensor,
+            edge_vec: torch.Tensor,
+            edge_mask: torch.Tensor,
+            do_atomic_virial: bool = False,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
+        ) -> dict[str, torch.Tensor]:
+            """Graph-native lower with autograd force/virial (PR-A: dpa1 ``attn_layer==0``).
+
+            Runs the dpmodel ENERGY-only :meth:`call_lower_graph` with ``edge_vec``
+            as the autograd leaf, then assembles force / per-frame virial /
+            (optional) atom virial from a SINGLE backward pass via
+            :func:`edge_energy_deriv` (``g_e = dE/d(edge_vec)``, then the shared
+            full-to-``src`` scatter).
+
+            The returned dict uses the SAME internal key names as the legacy dense
+            :meth:`forward_common_lower` (``energy``, ``energy_redu``,
+            ``energy_derv_r``, ``energy_derv_c_redu``, and ``energy_derv_c`` when
+            ``do_atomic_virial``).  Unlike the dense lower (which returns EXTENDED
+            ``nall`` force/atom-virial), the graph is ghost-free, so force and
+            atom-virial here live on the ``nloc`` LOCAL atoms (ghost contributions
+            are already folded onto their local owner via ``src = mapping[neighbor]``).
+            They equal the dense lower's extended quantities once the latter are
+            folded onto local atoms via ``mapping`` (i.e. ``communicate_extended_output``).
+
+            Parameters
+            ----------
+            atype
+                (N,) flat LOCAL atom types, ``N == sum(n_node)``.
+            n_node
+                (nf,) per-frame local atom counts.
+            edge_index
+                (2, E) ``[src, dst]`` edge endpoints (flat local indices).
+            edge_vec
+                (E, 3) neighbor-minus-center edge vectors.
+            edge_mask
+                (E,) valid-edge mask.
+            do_atomic_virial
+                Whether to also return the per-atom virial ``energy_derv_c``.
+            fparam
+                Frame parameter, ``(nf, ndf)``.
+            aparam
+                Atomic parameter, ``(nf, nloc, nda)``.
+
+            Returns
+            -------
+            dict
+                ``energy`` (nf, nloc, 1), ``energy_redu`` (nf, 1),
+                ``energy_derv_r`` (nf, nloc, 1, 3),
+                ``energy_derv_c_redu`` (nf, 1, 9), and -- when
+                ``do_atomic_virial`` -- ``energy_derv_c`` (nf, nloc, 1, 9).
+            """
+            nf = int(n_node.shape[0])
+            nloc = int(n_node[0])
+            # make edge_vec the autograd leaf for the energy backward
+            edge_vec = edge_vec.detach().requires_grad_(True)
+            ret = self.call_lower_graph(
+                atype=atype,
+                n_node=n_node,
+                edge_index=edge_index,
+                edge_vec=edge_vec,
+                edge_mask=edge_mask,
+                fparam=fparam,
+                aparam=aparam,
+            )
+            atom_energy = ret["atom_energy"]  # (nf, nloc, 1)
+            energy = ret["energy"]  # (nf, 1)
+            force, atom_virial, virial = edge_energy_deriv(
+                energy,
+                edge_vec,
+                edge_index,
+                edge_mask,
+                n_node,
+                do_atomic_virial=do_atomic_virial,
+                create_graph=self.training,
+            )
+            out = {
+                "energy": atom_energy,
+                "energy_redu": energy,
+                # force (N, 3) -> (nf, nloc, 1, 3); virial (nf, 3, 3) -> (nf, 1, 9)
+                "energy_derv_r": force.reshape(nf, nloc, 1, 3),
+                "energy_derv_c_redu": virial.reshape(nf, 1, 9),
+            }
+            if do_atomic_virial:
+                assert atom_virial is not None
+                # atom_virial (N, 3, 3) -> (nf, nloc, 1, 9)
+                out["energy_derv_c"] = atom_virial.reshape(nf, nloc, 1, 9)
+            return out
 
         def forward_common_atomic(
             self,
