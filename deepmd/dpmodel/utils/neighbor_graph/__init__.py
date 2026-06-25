@@ -16,6 +16,9 @@ from .builder import (
 from .derivatives import (
     edge_force_virial,
 )
+from .env import (
+    edge_env_mat,
+)
 from .graph import (
     GraphLayout,
     NeighborGraph,
@@ -31,6 +34,7 @@ __all__ = [
     "GraphLayout",
     "NeighborGraph",
     "build_neighbor_graph",
+    "edge_env_mat",
     "edge_force_virial",
     "from_dense_quartet",
     "node_validity_mask",
