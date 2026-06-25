@@ -42,6 +42,10 @@ from deepmd.dpmodel.utils import (
     NeighborList,
     nlist_distinguish_types,
 )
+from deepmd.dpmodel.utils.neighbor_graph import (
+    NeighborGraph,
+    segment_sum,
+)
 from deepmd.utils.path import (
     DPPath,
 )
@@ -422,6 +426,99 @@ def make_model(
                 do_atomic_virial=do_atomic_virial,
                 mask=atomic_ret["mask"] if "mask" in atomic_ret else None,
             )
+
+        def call_lower_graph(
+            self,
+            atype: Array,
+            n_node: Array,
+            edge_index: Array,
+            edge_vec: Array,
+            edge_mask: Array,
+            n_local: Array | None = None,
+            fparam: Array | None = None,
+            aparam: Array | None = None,
+            comm_dict: dict | None = None,
+        ) -> dict[str, Array]:
+            """Graph-native ENERGY lower (PR-A: dpa1 ``attn_layer == 0``).
+
+            Energy-level only: returns the per-atom ``atom_energy`` and the
+            per-frame reduced ``energy``. Force/virial are produced by the
+            pt_expt autograd path (a later task). Must match the dense
+            :meth:`call_common_lower` energy and atom-energy on the SAME
+            neighbor list.
+
+            Parameters
+            ----------
+            atype
+                (N,) flat LOCAL atom types, ``N == sum(n_node)``.
+            n_node
+                (nf,) per-frame local atom counts.
+            edge_index
+                (2, E) ``[src, dst]`` edge endpoints (flat local indices).
+            edge_vec
+                (E, 3) neighbor-minus-center edge vectors.
+            edge_mask
+                (E,) boolean/0-1 valid-edge mask.
+            n_local
+                Per-rank local atom counts for multi-rank inference.
+                Ignored in PR-A (single-rank); accepted for ABI stability.
+            fparam
+                Frame parameter, ``(nf, ndf)``.
+            aparam
+                Atomic parameter, ``(nf, nloc, nda)``.
+            comm_dict
+                MPI communication metadata. Ignored in PR-A; accepted for
+                ABI stability.
+
+            Returns
+            -------
+            dict
+                ``{"atom_energy": (nf, nloc, 1), "energy": (nf, 1)}``.
+            """
+            xp = array_api_compat.array_namespace(edge_vec)
+            dev = array_api_compat.device(edge_vec)
+            graph = NeighborGraph(
+                n_node=n_node,
+                edge_index=edge_index,
+                edge_vec=edge_vec,
+                edge_mask=edge_mask,
+            )
+            nf = n_node.shape[0]
+            nloc = int(n_node[0])
+            descriptor = self.atomic_model.descriptor
+            fitting_net = self.atomic_model.fitting_net
+            # dpa1 call_graph requires the type-embedding table explicitly
+            type_embedding = descriptor.type_embedding.call()
+            gg, rot_mat, g2, h2, _ = descriptor.call_graph(
+                graph, atype, type_embedding=type_embedding
+            )
+            # the fitting expects atype shaped (nf, nloc)
+            atype_2d = xp.reshape(xp.asarray(atype, device=dev), (nf, nloc))
+            fit_ret = fitting_net(
+                gg,
+                atype_2d,
+                gr=rot_mat,
+                g2=g2,
+                h2=h2,
+                fparam=fparam,
+                aparam=aparam,
+            )
+            atom_energy = fit_ret["energy"]  # (nf, nloc, 1)
+            # per-frame reduction via segment_sum, mirroring the dense reduction
+            # (cast to energy precision before summing; see
+            # transform_output.fit_output_to_model_output).
+            frame_id = xp.repeat(
+                xp.arange(nf, dtype=edge_index.dtype, device=dev),
+                xp.asarray(n_node, device=dev),
+            )
+            energy = segment_sum(
+                xp.reshape(
+                    atom_energy.astype(GLOBAL_ENER_FLOAT_PRECISION), (nf * nloc, 1)
+                ),
+                frame_id,
+                nf,
+            )
+            return {"atom_energy": atom_energy, "energy": energy}
 
         call = call_common
         call_lower = call_common_lower
