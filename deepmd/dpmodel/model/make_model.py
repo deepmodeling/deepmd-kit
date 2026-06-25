@@ -316,6 +316,7 @@ def make_model(
             )
             del coord, box, fparam, aparam, charge_spin
             if neighbor_graph_method is not None:
+                # carry-all NeighborGraph energy forward (Option B / decision #17)
                 model_predict = self._call_common_graph(
                     cc,
                     atype,
@@ -324,24 +325,24 @@ def make_model(
                     ap,
                     neighbor_graph_method,
                 )
-                model_predict = self._output_type_cast(model_predict, input_prec)
-                return model_predict
-            model_predict = model_call_from_call_lower(
-                call_lower=self.call_common_lower,
-                rcut=self.get_rcut(),
-                sel=self.get_sel(),
-                mixed_types=self.mixed_types(),
-                model_output_def=self.model_output_def(),
-                coord=cc,
-                atype=atype,
-                box=bb,
-                fparam=fp,
-                aparam=ap,
-                do_atomic_virial=do_atomic_virial,
-                coord_corr_for_virial=coord_corr_for_virial,
-                charge_spin=cs,
-                neighbor_list=neighbor_list,
-            )
+            else:
+                # legacy dense-nlist path (builds the extended quartet)
+                model_predict = model_call_from_call_lower(
+                    call_lower=self.call_common_lower,
+                    rcut=self.get_rcut(),
+                    sel=self.get_sel(),
+                    mixed_types=self.mixed_types(),
+                    model_output_def=self.model_output_def(),
+                    coord=cc,
+                    atype=atype,
+                    box=bb,
+                    fparam=fp,
+                    aparam=ap,
+                    do_atomic_virial=do_atomic_virial,
+                    coord_corr_for_virial=coord_corr_for_virial,
+                    charge_spin=cs,
+                    neighbor_list=neighbor_list,
+                )
             model_predict = self._output_type_cast(model_predict, input_prec)
             return model_predict
 
