@@ -144,43 +144,47 @@ def from_dense_quartet(
             edge_vec=edge_vec,
             edge_mask=edge_mask,
         )
-    # per-slot (nf, nloc, nsel) index grids, flattened frame-major
-    ff_grid = xp.broadcast_to(
-        xp.reshape(xp.arange(nf, dtype=xp.int64, device=dev), (nf, 1, 1)),
-        (nf, nloc, nsel),
-    )
-    center_grid = xp.broadcast_to(
-        xp.reshape(xp.arange(nloc, dtype=xp.int64, device=dev), (1, nloc, 1)),
-        (nf, nloc, nsel),
-    )
-    ff_flat = xp.reshape(ff_grid, (-1,))
-    center_flat = xp.reshape(center_grid, (-1,))
-    nl_flat = xp.reshape(nlist, (-1,))
-    keep = xp.reshape(xp.nonzero(nl_flat >= 0)[0], (-1,))
-    ff_k = xp.take(ff_flat, keep, axis=0)
-    dst_local = xp.take(center_flat, keep, axis=0)  # center index in [0, nloc)
-    j_ext = xp.take(nl_flat, keep, axis=0)  # neighbor index in [0, nall)
-    # cross-frame gathers via flat (frame * nall + idx) indices; centers are the
-    # first nloc extended atoms (local atoms precede ghosts).
-    ec_flat = xp.reshape(extended_coord, (nf * nall, 3))
-    map_flat = xp.reshape(mapping, (nf * nall,))
-    g_nei = ff_k * nall + j_ext
-    g_cen = ff_k * nall + dst_local
-    src_local = xp.take(map_flat, g_nei, axis=0)  # local owner of the neighbor
-    edge_vec = xp.take(ec_flat, g_nei, axis=0) - xp.take(ec_flat, g_cen, axis=0)
-    edge_index = xp.astype(
-        xp.stack([ff_k * nloc + src_local, ff_k * nloc + dst_local], axis=0), xp.int64
-    )
-    edge_index, edge_vec, edge_mask = pad_and_guard_edges(
-        edge_index, edge_vec, layout.edge_capacity, layout.min_edges
-    )
-    n_node = xp.full((nf,), nloc, dtype=xp.int64, device=dev)
-    return NeighborGraph(
-        n_node=n_node,
-        edge_index=edge_index,
-        edge_vec=edge_vec,
-        edge_mask=edge_mask,
-    )
+    else:
+        # COMPACT: drop invalid slots via nonzero (dynamic shape -> eager only,
+        # NOT jit/export-traceable) then pad/guard.
+        # per-slot (nf, nloc, nsel) index grids, flattened frame-major
+        ff_grid = xp.broadcast_to(
+            xp.reshape(xp.arange(nf, dtype=xp.int64, device=dev), (nf, 1, 1)),
+            (nf, nloc, nsel),
+        )
+        center_grid = xp.broadcast_to(
+            xp.reshape(xp.arange(nloc, dtype=xp.int64, device=dev), (1, nloc, 1)),
+            (nf, nloc, nsel),
+        )
+        ff_flat = xp.reshape(ff_grid, (-1,))
+        center_flat = xp.reshape(center_grid, (-1,))
+        nl_flat = xp.reshape(nlist, (-1,))
+        keep = xp.reshape(xp.nonzero(nl_flat >= 0)[0], (-1,))
+        ff_k = xp.take(ff_flat, keep, axis=0)
+        dst_local = xp.take(center_flat, keep, axis=0)  # center index in [0, nloc)
+        j_ext = xp.take(nl_flat, keep, axis=0)  # neighbor index in [0, nall)
+        # cross-frame gathers via flat (frame * nall + idx) indices; centers are
+        # the first nloc extended atoms (local atoms precede ghosts).
+        ec_flat = xp.reshape(extended_coord, (nf * nall, 3))
+        map_flat = xp.reshape(mapping, (nf * nall,))
+        g_nei = ff_k * nall + j_ext
+        g_cen = ff_k * nall + dst_local
+        src_local = xp.take(map_flat, g_nei, axis=0)  # local owner of the neighbor
+        edge_vec = xp.take(ec_flat, g_nei, axis=0) - xp.take(ec_flat, g_cen, axis=0)
+        edge_index = xp.astype(
+            xp.stack([ff_k * nloc + src_local, ff_k * nloc + dst_local], axis=0),
+            xp.int64,
+        )
+        edge_index, edge_vec, edge_mask = pad_and_guard_edges(
+            edge_index, edge_vec, layout.edge_capacity, layout.min_edges
+        )
+        n_node = xp.full((nf,), nloc, dtype=xp.int64, device=dev)
+        return NeighborGraph(
+            n_node=n_node,
+            edge_index=edge_index,
+            edge_vec=edge_vec,
+            edge_mask=edge_mask,
+        )
 
 
 def build_neighbor_graph(
