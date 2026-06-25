@@ -15,9 +15,8 @@ identical to ``communicate_extended_output``).  Energy, reduced energy and the
 reduced (per-frame) virial are frame/local quantities and compare directly.
 """
 
-import unittest
-
 import numpy as np
+import pytest
 import torch
 
 from deepmd.dpmodel.utils.neighbor_graph import (
@@ -64,8 +63,8 @@ def _fold_extended_to_local(
     return out
 
 
-class TestDpa1GraphLower(unittest.TestCase):
-    def setUp(self) -> None:
+class TestDpa1GraphLower:
+    def setup_method(self) -> None:
         self.device = env.DEVICE
         self.natoms = 5
         self.rcut = 4.0
@@ -166,7 +165,9 @@ class TestDpa1GraphLower(unittest.TestCase):
         mapping_t = torch.tensor(mapping, dtype=torch.int64, device=self.device)
         return ext_coord, ext_atype, nlist_t, mapping_t
 
-    def test_force_virial_parity_vs_legacy(self) -> None:
+    @pytest.mark.parametrize("periodic", [True, False])  # PBC vs non-PBC
+    @pytest.mark.parametrize("do_av", [False, True])  # atom-virial off / on
+    def test_force_virial_parity_vs_legacy(self, periodic, do_av) -> None:
         """Graph lower energy/force/virial/atom_virial == legacy dense lower on
         the SAME neighbor set (regime-1 graph from from_dense_quartet).
         """
@@ -177,64 +178,47 @@ class TestDpa1GraphLower(unittest.TestCase):
             if self.device.type == "cpu"
             else {"rtol": 1e-10, "atol": 1e-10}
         )
-        for periodic in (True, False):
-            for do_av in (False, True):
-                with self.subTest(periodic=periodic, do_av=do_av):
-                    ext_coord, ext_atype, nlist, mapping = self._prepare_lower_inputs(
-                        periodic
-                    )
-                    nf = ext_coord.shape[0]
-                    nloc = self.natoms
+        ext_coord, ext_atype, nlist, mapping = self._prepare_lower_inputs(periodic)
+        nf = ext_coord.shape[0]
+        nloc = self.natoms
 
-                    legacy = model.forward_common_lower(
-                        ext_coord.clone().requires_grad_(True),
-                        ext_atype,
-                        nlist,
-                        mapping,
-                        do_atomic_virial=do_av,
-                    )
+        legacy = model.forward_common_lower(
+            ext_coord.clone().requires_grad_(True),
+            ext_atype,
+            nlist,
+            mapping,
+            do_atomic_virial=do_av,
+        )
 
-                    # build the regime-1 graph from the SAME extended quartet.
-                    # from_dense_quartet is array-API; feed torch tensors so the
-                    # returned edge_vec is already a torch tensor on env.DEVICE.
-                    ng = from_dense_quartet(ext_coord, nlist, mapping)
-                    atype_local = ext_atype[:, :nloc].reshape(nf * nloc)
-                    graph = model.forward_common_lower_graph(
-                        atype_local,
-                        ng.n_node,
-                        ng.edge_index,
-                        ng.edge_vec,
-                        ng.edge_mask,
-                        do_atomic_virial=do_av,
-                    )
+        # build the regime-1 graph from the SAME extended quartet.
+        # from_dense_quartet is array-API; feed torch tensors so the
+        # returned edge_vec is already a torch tensor on env.DEVICE.
+        ng = from_dense_quartet(ext_coord, nlist, mapping)
+        atype_local = ext_atype[:, :nloc].reshape(nf * nloc)
+        graph = model.forward_common_lower_graph(
+            atype_local,
+            ng.n_node,
+            ng.edge_index,
+            ng.edge_vec,
+            ng.edge_mask,
+            do_atomic_virial=do_av,
+        )
 
-                    # energy / reduced energy / reduced virial: direct compare
-                    torch.testing.assert_close(graph["energy"], legacy["energy"], **tol)
-                    torch.testing.assert_close(
-                        graph["energy_redu"], legacy["energy_redu"], **tol
-                    )
-                    torch.testing.assert_close(
-                        graph["energy_derv_c_redu"],
-                        legacy["energy_derv_c_redu"],
-                        **tol,
-                    )
+        # energy / reduced energy / reduced virial: direct compare
+        torch.testing.assert_close(graph["energy"], legacy["energy"], **tol)
+        torch.testing.assert_close(graph["energy_redu"], legacy["energy_redu"], **tol)
+        torch.testing.assert_close(
+            graph["energy_derv_c_redu"], legacy["energy_derv_c_redu"], **tol
+        )
 
-                    # force: fold legacy extended (nall) -> local (nloc)
-                    legacy_force_local = _fold_extended_to_local(
-                        legacy["energy_derv_r"], mapping, nloc
-                    )
-                    torch.testing.assert_close(
-                        graph["energy_derv_r"], legacy_force_local, **tol
-                    )
+        # force: fold legacy extended (nall) -> local (nloc)
+        legacy_force_local = _fold_extended_to_local(
+            legacy["energy_derv_r"], mapping, nloc
+        )
+        torch.testing.assert_close(graph["energy_derv_r"], legacy_force_local, **tol)
 
-                    if do_av:
-                        legacy_av_local = _fold_extended_to_local(
-                            legacy["energy_derv_c"], mapping, nloc
-                        )
-                        torch.testing.assert_close(
-                            graph["energy_derv_c"], legacy_av_local, **tol
-                        )
-
-
-if __name__ == "__main__":
-    unittest.main()
+        if do_av:
+            legacy_av_local = _fold_extended_to_local(
+                legacy["energy_derv_c"], mapping, nloc
+            )
+            torch.testing.assert_close(graph["energy_derv_c"], legacy_av_local, **tol)
