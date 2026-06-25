@@ -226,11 +226,14 @@ class TestSeZMSelfCommParity(unittest.TestCase):
         atol: float,
         *,
         descriptor_overrides: dict | None = None,
-        perturb: bool = False,
     ) -> None:
         model = _build_model(device, descriptor=descriptor_overrides or {})
-        if perturb:
-            _perturb_descriptor(model.atomic_model.descriptor)
+        # An untrained SeZM model is geometry-independent (identically zero
+        # forces), for which the parity comparison below holds vacuously for any
+        # ghost-exchange implementation. Perturbing the descriptor (see
+        # ``_perturb_descriptor``) restores non-zero, ghost-feature-dependent
+        # forces so the comparison is load-bearing.
+        _perturb_descriptor(model.atomic_model.descriptor)
         sysm = _build_extended_system(model, device)
         comm = _self_comm_dict(sysm["mapping"], sysm["nloc"], sysm["nall"])
 
@@ -257,19 +260,27 @@ class TestSeZMSelfCommParity(unittest.TestCase):
             extended_atype=sysm["extended_atype"],
         )
 
+        # Reject the degenerate zero-force regime so the parity assertion can
+        # never pass vacuously: the reference force field must dominate the
+        # comparison tolerance.
+        self.assertGreater(
+            ref["extended_force"].abs().max().item(),
+            atol * 1e3,
+            msg="reference forces are ~0; the parity check would be vacuous",
+        )
         for key in ("energy", "extended_force", "virial", "extended_virial"):
             torch.testing.assert_close(
                 par[key], ref[key], rtol=rtol, atol=atol, msg=f"mismatch in {key}"
             )
 
     def test_parity_cpu(self) -> None:
-        self._assert_parity(torch.device("cpu"), rtol=1e-8, atol=1e-9, perturb=True)
+        self._assert_parity(torch.device("cpu"), rtol=1e-8, atol=1e-9)
 
     @unittest.skipUnless(torch.cuda.is_available(), "CUDA required")
     def test_parity_cuda(self) -> None:
         # CUDA atomic scatter reorders accumulation, so the tolerance is looser
         # than the deterministic CPU path while still pinning correctness.
-        self._assert_parity(env.DEVICE, rtol=1e-6, atol=1e-7, perturb=True)
+        self._assert_parity(env.DEVICE, rtol=1e-6, atol=1e-7)
 
     def test_parity_full_attn_res_cpu(self) -> None:
         self._assert_parity(
@@ -277,7 +288,6 @@ class TestSeZMSelfCommParity(unittest.TestCase):
             rtol=1e-8,
             atol=1e-9,
             descriptor_overrides={"full_attn_res": "dependent", "so2_layers": 2},
-            perturb=True,
         )
 
     def test_parity_block_attn_res_cpu(self) -> None:
@@ -286,7 +296,6 @@ class TestSeZMSelfCommParity(unittest.TestCase):
             rtol=1e-8,
             atol=1e-9,
             descriptor_overrides={"block_attn_res": "dependent", "so2_layers": 2},
-            perturb=True,
         )
 
     def test_parity_no_env_seed_single_block_cpu(self) -> None:
@@ -299,7 +308,6 @@ class TestSeZMSelfCommParity(unittest.TestCase):
             rtol=1e-8,
             atol=1e-9,
             descriptor_overrides={"l_schedule": [1], "use_env_seed": False},
-            perturb=True,
         )
 
     def test_parity_no_env_seed_cpu(self) -> None:
@@ -310,7 +318,6 @@ class TestSeZMSelfCommParity(unittest.TestCase):
             rtol=1e-8,
             atol=1e-9,
             descriptor_overrides={"use_env_seed": False},
-            perturb=True,
         )
 
 

@@ -660,23 +660,58 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   // can SIGFPE or silently corrupt instead of throwing.  Mirror the spin
   // phantom-atom workaround (DeepSpinPTExpt): run the graph with two phantom
   // local atoms and two masked self-edges, then report the empty rank's true
-  // (zero) contribution.  ``comm_nlocal`` makes border_op write received ghost
-  // features past the phantom slots, so collective communication stays in
-  // lockstep with non-empty ranks.
-  int phantom_n = (lower_input_is_edge_ && nloc == 0) ? 2 : 0;
+  // (zero) contribution.  Setting the comm ``nlocal`` to ``phantom_n`` makes
+  // border_op write received ghost features past the phantom slots, so
+  // collective communication stays in lockstep with non-empty ranks.
+  // Gated on ``use_with_comm`` so the strip-back below never touches outputs
+  // that the regular (non-comm) path produced without phantom padding.
+  int phantom_n = (use_with_comm && lower_input_is_edge_ && nloc == 0) ? 2 : 0;
   if (use_with_comm) {
-    int comm_nlocal = (phantom_n > 0) ? phantom_n : nloc;
     bool has_null_atoms = (nall_real < nall);
     std::vector<at::Tensor> comm_tensors;
-    if (has_null_atoms) {
+    if (phantom_n > 0) {
+      // Empty rank: the phantom prefix shifts every node index by ``phantom_n``
+      // (received ghost features land at [phantom_n, nall)), so the forwarded
+      // send indices shift with it.  Build the send-list in the real-atom node
+      // space -- fwd_map remap when NULL-type atoms were filtered, raw LAMMPS
+      // indices otherwise -- then offset every entry by ``phantom_n``.  Without
+      // the offset border_op forwards the zeroed phantom slots instead of the
+      // relayed ghost features, corrupting neighbour ranks under subdomains
+      // small enough for an empty rank to relay (sendnum > 0).
+      if (has_null_atoms) {
+        deepmd::remap_comm_sendlist(remapped_sendlist, remapped_sendnum,
+                                    remapped_recvnum, lmp_list, fwd_map);
+      } else {
+        remapped_sendlist.resize(lmp_list.nswap);
+        remapped_sendnum.assign(lmp_list.sendnum,
+                                lmp_list.sendnum + lmp_list.nswap);
+        remapped_recvnum.assign(lmp_list.recvnum,
+                                lmp_list.recvnum + lmp_list.nswap);
+        for (int iswap = 0; iswap < lmp_list.nswap; ++iswap) {
+          remapped_sendlist[iswap].assign(
+              lmp_list.sendlist[iswap],
+              lmp_list.sendlist[iswap] + lmp_list.sendnum[iswap]);
+        }
+      }
+      remapped_sendlist_ptrs.resize(lmp_list.nswap);
+      for (int iswap = 0; iswap < lmp_list.nswap; ++iswap) {
+        for (int& idx : remapped_sendlist[iswap]) {
+          idx += phantom_n;
+        }
+        remapped_sendlist_ptrs[iswap] = remapped_sendlist[iswap].data();
+      }
+      comm_tensors = deepmd::ptexpt::build_comm_tensors_positional(
+          lmp_list, remapped_sendlist_ptrs.data(), remapped_sendnum.data(),
+          remapped_recvnum.data(), phantom_n, nghost_real);
+    } else if (has_null_atoms) {
       comm_tensors =
           deepmd::ptexpt::build_comm_tensors_positional_with_virtual_atoms(
-              lmp_list, fwd_map, comm_nlocal, nghost_real, remapped_sendlist,
+              lmp_list, fwd_map, nloc, nghost_real, remapped_sendlist,
               remapped_sendlist_ptrs, remapped_sendnum, remapped_recvnum);
     } else {
       comm_tensors = deepmd::ptexpt::build_comm_tensors_positional(
-          lmp_list, lmp_list.sendlist, lmp_list.sendnum, lmp_list.recvnum,
-          comm_nlocal, nghost_real);
+          lmp_list, lmp_list.sendlist, lmp_list.sendnum, lmp_list.recvnum, nloc,
+          nghost_real);
     }
     if (lower_input_is_edge_) {
       if (phantom_n > 0) {
