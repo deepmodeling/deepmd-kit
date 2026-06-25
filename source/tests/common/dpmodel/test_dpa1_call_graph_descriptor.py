@@ -1,0 +1,102 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
+"""Full 5-tuple ABI parity between the graph-routed ``DescrptDPA1.call``
+(attn_layer=0, which now goes ``from_dense_quartet -> call_graph``) and the
+legacy dense descriptor output captured BEFORE the swap, for binding AND
+non-binding ``sel``.
+
+The dense reference is reconstructed by calling the BLOCK directly
+(``dd.se_atten.call``) and applying the descriptor-level ``concat_output_tebd``
+step by hand (mirroring dpa1.py), because ``dd.call`` itself now routes through
+the graph for ``attn_layer == 0``.
+"""
+
+import unittest
+
+import numpy as np
+
+from deepmd.dpmodel.descriptor.dpa1 import (
+    DescrptDPA1,
+)
+from deepmd.dpmodel.utils.nlist import (
+    extend_input_and_build_neighbor_list,
+)
+
+
+class TestDpa1DescriptorCallGraph(unittest.TestCase):
+    def _make(self, sel):
+        return DescrptDPA1(
+            rcut=4.0,
+            rcut_smth=0.5,
+            sel=sel,
+            ntypes=2,
+            attn_layer=0,
+            axis_neuron=2,
+            neuron=[6, 12],
+        )
+
+    def setUp(self) -> None:
+        rng = np.random.default_rng(2)
+        self.nloc = 4
+        self.coord = rng.normal(size=(1, self.nloc, 3)) * 1.5
+        self.atype = np.array([[0, 1, 0, 1]], dtype=np.int64)
+
+    def _dense_reference(self, dd, ext_coord, ext_atype, nlist):
+        """Reconstruct the original dense descriptor 5-tuple (pre-swap)."""
+        tebd = dd.type_embedding.call()
+        nf, nall = ext_atype.shape
+        atype_embd_ext = np.reshape(
+            np.take(tebd, np.reshape(ext_atype, (-1,)), axis=0),
+            (nf, nall, dd.tebd_dim),
+        )
+        grrg, g2, h2, rot_mat, sw = dd.se_atten.call(
+            nlist,
+            ext_coord,
+            ext_atype,
+            atype_embd_ext=atype_embd_ext,
+            mapping=None,
+            type_embedding=tebd,
+        )
+        nloc = nlist.shape[1]
+        # descriptor-level concat_output_tebd (mirror dpa1.py)
+        atype_embd = atype_embd_ext[:, :nloc, :]
+        if dd.concat_output_tebd:
+            grrg = np.concatenate(
+                [grrg, np.reshape(atype_embd, (nf, nloc, dd.tebd_dim))], axis=-1
+            )
+        return grrg, rot_mat, None, None, sw
+
+    def test_descriptor_graph_equals_dense_full_tuple(self) -> None:
+        for sel in ([30], [4]):  # non-binding AND binding
+            with self.subTest(sel=sel):
+                dd = self._make(sel)
+                (
+                    ext_coord,
+                    ext_atype,
+                    mapping,
+                    nlist,
+                ) = extend_input_and_build_neighbor_list(
+                    self.coord,
+                    self.atype,
+                    dd.get_rcut(),
+                    dd.get_sel(),
+                    mixed_types=dd.mixed_types(),
+                    box=None,
+                )
+                # dense reference captured via the block (pre-swap behaviour)
+                ref = self._dense_reference(dd, ext_coord, ext_atype, nlist)
+                # the swapped public ABI: routes through the graph
+                out = dd.call(ext_coord, ext_atype, nlist, mapping=mapping)
+                self.assertEqual(len(out), 5)
+                # grrg
+                np.testing.assert_allclose(out[0], ref[0], rtol=1e-12, atol=1e-12)
+                # rot_mat
+                np.testing.assert_allclose(out[1], ref[1], rtol=1e-12, atol=1e-12)
+                # positions [2], [3] are always None for this descriptor
+                self.assertIsNone(out[2])
+                self.assertIsNone(out[3])
+                # sw
+                np.testing.assert_allclose(out[4], ref[4], rtol=1e-12, atol=1e-12)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -72,7 +72,7 @@ class TestDpa1BlockCallGraph(unittest.TestCase):
                     type_embedding=tebd,
                 )
                 ng = from_dense_quartet(ext_coord, nlist, mapping)
-                graph_g = blk.call_graph(
+                graph_g, _rot_mat = blk.call_graph(
                     ng,
                     np.reshape(ext_atype, (-1,)),
                     type_embedding=tebd,
