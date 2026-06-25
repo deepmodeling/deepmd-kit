@@ -252,16 +252,6 @@ class TestDescrptDPA1(TestCaseSingleFrameWithNlist):
             atol=atol,
         )
 
-    @pytest.mark.xfail(
-        reason=(
-            "graph forward fx-trace lands in PR-B: the attn_layer=0 graph path "
-            "has data-dependent ops that default (real-tensor) make_fx cannot "
-            "trace -- `int(xp.sum(graph.n_node))` (dpa1.py _call_graph) and "
-            "`xp.nonzero` in from_dense_quartet. PR-B exports via dynamic/symbolic "
-            "shapes. Eager forward+grad still runs correctly (asserted below)."
-        ),
-        strict=False,
-    )
     @pytest.mark.parametrize("prec", ["float64"])  # precision
     def test_make_fx_graph(self, prec) -> None:
         """make_fx (export-readiness) of the attn_layer=0 GRAPH forward.

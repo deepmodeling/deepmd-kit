@@ -580,7 +580,13 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
                 )
             else:
                 mapping_g = xp.reshape(mapping, (nf, nall))
-            graph = from_dense_quartet(coord_ext_3, nlist, mapping_g)
+            # shape-static converter (compact=False, layout=None) so this dense
+            # adapter is jit/export-traceable: no nonzero-compaction (data-dependent
+            # shape). Masked invalid edges contribute zero in call_graph's
+            # segment_sum, so the descriptor output is unchanged.
+            graph = from_dense_quartet(
+                coord_ext_3, nlist, mapping_g, layout=None, compact=False
+            )
             # local atom types, flat (nf * nloc,)
             atype_local = xp.reshape(xp_take_first_n(atype_ext, 1, nloc), (nf * nloc,))
             grrg, rot_mat = self.call_graph(
@@ -668,7 +674,10 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             graph, atype, type_embedding=type_embedding
         )
         nf = graph.n_node.shape[0]
-        nloc = int(graph.n_node[0])
+        # atype is the flat (nf*nloc,) node axis; derive nloc from the STATIC shape
+        # (n_node[i] == nloc for all frames by contract) so this adapter stays
+        # jit/export-traceable (no concretize of n_node).
+        nloc = atype.shape[0] // nf
         ng = self.se_atten.neuron[-1]
         axis = self.se_atten.axis_neuron
         grrg = xp.reshape(grrg_node, (nf, nloc, ng * axis))
@@ -1417,7 +1426,9 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             raise ValueError("type_embedding is required for the graph path")
         xp = array_api_compat.array_namespace(graph.edge_vec)
         dev = array_api_compat.device(graph.edge_vec)
-        n_total = int(xp.sum(graph.n_node))
+        # N == sum(graph.n_node) by contract (atype is (N,)); use the static shape
+        # value so the kernel stays jit/export-traceable (no concretize of n_node).
+        n_total = atype.shape[0]
         src = graph.edge_index[0, :]
         dst = graph.edge_index[1, :]
         atype = xp.asarray(atype, device=dev)

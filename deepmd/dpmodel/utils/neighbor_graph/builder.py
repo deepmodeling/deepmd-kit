@@ -56,6 +56,7 @@ def from_dense_quartet(
     nlist: Array,
     mapping: Array,
     layout: GraphLayout | None = None,
+    compact: bool = True,
 ) -> NeighborGraph:
     """Convert a legacy extended quartet into a ghost-free NeighborGraph (CONVERTER).
 
@@ -85,6 +86,15 @@ def from_dense_quartet(
         (nf, nall) extended -> local-owner index (local atoms map to themselves).
     layout
         edge-axis length policy; ``None`` => dynamic (torch) with ``min_edges`` guards.
+    compact
+        If True (default), COMPACT real edges with ``nonzero`` and pad/guard via
+        :func:`pad_and_guard_edges` -- the data-dependent output shape breaks
+        jax.jit / torch.export. If False, emit a SHAPE-STATIC graph: every nlist
+        slot becomes an edge (``E = nf * nloc * nsel``, a static shape), invalid
+        slots (``nlist == -1``) get ``edge_mask=False``, zero ``edge_vec`` and a
+        ``src`` pointing at the center (in-range, masked) -- so no ``nonzero`` is
+        used and the converter is jit/export-traceable. The masked edges contribute
+        zero in a downstream ``segment_sum``, so the descriptor output is unchanged.
     """
     if layout is None:
         layout = GraphLayout()
@@ -92,6 +102,48 @@ def from_dense_quartet(
     dev = array_api_compat.device(extended_coord)
     nf, nloc, nsel = nlist.shape
     nall = extended_coord.shape[1]
+    if not compact:
+        if layout.edge_capacity is not None:
+            raise NotImplementedError(
+                "shape-static from_dense_quartet pads to E=nf*nloc*nsel; "
+                "edge_capacity unsupported here"
+            )
+        # (E,) flat grids, E = nf*nloc*nsel, row-major (frame, center, slot)
+        ff = xp.reshape(
+            xp.broadcast_to(
+                xp.reshape(xp.arange(nf, dtype=xp.int64, device=dev), (nf, 1, 1)),
+                (nf, nloc, nsel),
+            ),
+            (-1,),
+        )
+        center = xp.reshape(
+            xp.broadcast_to(
+                xp.reshape(xp.arange(nloc, dtype=xp.int64, device=dev), (1, nloc, 1)),
+                (nf, nloc, nsel),
+            ),
+            (-1,),
+        )
+        nl = xp.reshape(nlist, (-1,))  # neighbor ext idx or -1
+        valid = nl >= 0  # (E,) bool <-- the mask
+        j_safe = xp.where(valid, nl, xp.zeros_like(nl))  # clamp -1 -> 0 (avoid OOB)
+        ec_flat = xp.reshape(extended_coord, (nf * nall, 3))
+        map_flat = xp.reshape(mapping, (nf * nall,))
+        g_nei = ff * nall + j_safe
+        g_cen = ff * nall + center
+        src_local = xp.take(map_flat, g_nei, axis=0)
+        edge_vec = xp.take(ec_flat, g_nei, axis=0) - xp.take(ec_flat, g_cen, axis=0)
+        edge_vec = edge_vec * xp.astype(valid[:, None], edge_vec.dtype)  # zero invalid
+        src = xp.where(valid, ff * nloc + src_local, ff * nloc + center)  # -> center
+        dst = ff * nloc + center
+        edge_index = xp.astype(xp.stack([src, dst], axis=0), xp.int64)
+        edge_mask = valid
+        n_node = xp.full((nf,), nloc, dtype=xp.int64, device=dev)
+        return NeighborGraph(
+            n_node=n_node,
+            edge_index=edge_index,
+            edge_vec=edge_vec,
+            edge_mask=edge_mask,
+        )
     # per-slot (nf, nloc, nsel) index grids, flattened frame-major
     ff_grid = xp.broadcast_to(
         xp.reshape(xp.arange(nf, dtype=xp.int64, device=dev), (nf, 1, 1)),
