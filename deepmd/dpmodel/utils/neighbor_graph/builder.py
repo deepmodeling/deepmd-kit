@@ -1,21 +1,27 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Builders that produce a :class:`NeighborGraph`.
+"""Builders/converters that produce a :class:`NeighborGraph`.
 
-CONTRACT — these are the **legacy-compatible** builders: the graph they return
-carries exactly the neighbors of the dense nlist they are built from, i.e. it
-INHERITS that nlist's ``sel`` selection/truncation. They are the backward-compat
-adapter (and the test oracle), NOT the graph-native "all neighbors within
-``rcut``" builder. The complete-environment (carry-all, ``sel``-as-normalization)
-contract is provided by a SEPARATE builder (``from_ijs`` fed by ASE/vesin; see
-memory/spec_unified_edge_nlist.md decision #17). Keeping the two contracts in
-distinct functions avoids the footgun of a consumer assuming it sees all
-neighbors while a builder silently truncated them.
+Two distinct groups (see memory/spec_unified_edge_nlist.md decision #17), kept
+separate so a consumer can never assume completeness while a function silently
+truncated:
 
-- ``neighbor_graph_from_extended``: convert an existing extended quartet
-  (extended_coord, nlist, mapping) -> ghost-free graph (inherits the nlist's sel).
-- ``build_neighbor_graph``: reuse deepmd's tested
-  ``extend_input_and_build_neighbor_list`` (which TRUNCATES to ``sel``) then the
-  adapter -> legacy-compatible graph.
+1. **Dispatcher (compute from raw geometry).** ``build_neighbor_graph`` takes
+   coordinates/box/types -- *no pre-existing list* -- and SEARCHES for neighbors,
+   returning a CARRY-ALL graph: every neighbor within ``rcut``. ``sel`` is
+   normalization-only (consumed downstream by the descriptor) and is NEVER a
+   cutoff here. This module ships the ``dense`` (all-pairs, O(N^2) reference)
+   search; O(N) ``vesin``/``ase`` backends land later behind a ``method`` key.
+
+2. **Converters (adapt an already-built list).** ``from_dense_quartet`` adapts an
+   existing extended quartet (extended_coord, nlist, mapping) into a graph. It
+   performs NO search and therefore INHERITS that quartet's ``sel`` truncation --
+   it is the backward-compat bridge to the legacy dense nlist (World 1) and the
+   test oracle, NOT a carry-all path. The ``(i,j,S)`` converter (``from_ijs``,
+   fed by ASE/vesin/LAMMPS) lands with the dispatcher's O(N) backends.
+
+The dispatcher and the converters share the format-conversion code (a search
+backend = search + its converter as the final step); they are separate only on
+the question "did I get raw geometry, or an already-built list?".
 """
 
 from __future__ import (
@@ -40,22 +46,25 @@ if TYPE_CHECKING:
     )
 
 
-def neighbor_graph_from_extended(
+def from_dense_quartet(
     extended_coord: Array,
     nlist: Array,
     mapping: Array,
     layout: GraphLayout | None = None,
 ) -> NeighborGraph:
-    """Convert the legacy extended quartet into a ghost-free NeighborGraph.
+    """Convert a legacy extended quartet into a ghost-free NeighborGraph (CONVERTER).
 
-    This is the dpmodel/array-API adapter that REUSES deepmd's existing, tested,
-    general-cell neighbor list (``build_neighbor_list`` / ``extend_coord_with_ghosts``)
-    instead of re-deriving neighbors. For each valid neighbor slot it emits one
-    edge with ``src = mapping[neighbor]`` (the neighbor's LOCAL owner -> ghost-free
-    index), ``dst = center`` (local), and ``edge_vec = extended_coord[neighbor] -
-    extended_coord[center]`` (the ghost coordinate already carries the periodic
-    shift). Invalid slots (``nlist == -1``) are dropped. Nodes are flattened with a
-    ``frame * nloc`` offset; the edge axis is padded/guarded via ``pad_and_guard_edges``.
+    This is a backward-compat CONVERTER (World 1 -> graph): it performs NO neighbor
+    search and INHERITS the ``sel`` truncation already baked into ``nlist``. Use it
+    only when a caller (an MD code, or the legacy dense path) already holds a
+    built quartet; for the carry-all graph use :func:`build_neighbor_graph`.
+
+    For each valid neighbor slot it emits one edge with ``src = mapping[neighbor]``
+    (the neighbor's LOCAL owner -> ghost-free index), ``dst = center`` (local), and
+    ``edge_vec = extended_coord[neighbor] - extended_coord[center]`` (the ghost
+    coordinate already carries the periodic shift). Invalid slots (``nlist == -1``)
+    are dropped. Nodes are flattened with a ``frame * nloc`` offset; the edge axis
+    is padded/guarded via ``pad_and_guard_edges``.
 
     Because every neighbor maps to a LOCAL owner, the resulting graph is ghost-free:
     forces scatter to local atoms (periodic images of the same atom sum to one owner
@@ -121,35 +130,117 @@ def build_neighbor_graph(
     atype: Array,
     box: Array | None,
     rcut: float,
-    sel: int | list[int],
-    mixed_types: bool = True,
     layout: GraphLayout | None = None,
 ) -> NeighborGraph:
-    """Build a LEGACY-COMPATIBLE NeighborGraph by reusing the tested dense nlist.
+    """Build a CARRY-ALL NeighborGraph DIRECTLY from coordinates (``dense`` search).
 
-    Calls ``extend_input_and_build_neighbor_list`` (general-cell, tested) then
-    :func:`neighbor_graph_from_extended`.
+    This is the dispatcher's reference ``dense`` backend: it SEARCHES for neighbors
+    from raw geometry and emits EVERY neighbor within ``rcut``. It is **sel-free** --
+    there is intentionally no ``sel`` parameter, because ``sel`` is normalization-only
+    (consumed by the descriptor downstream) and never a cutoff. It does NOT route
+    through the legacy dense nlist / :func:`from_dense_quartet`, so it carries no
+    ``sel`` truncation.
 
-    CONTRACT: the returned graph contains the neighbors selected by ``sel`` and
-    **inherits the legacy ``sel`` truncation** — it does NOT carry all neighbors
-    within ``rcut`` when ``sel`` binds. It coincides with the complete in-``rcut``
-    environment ONLY when ``sel`` is large enough that no real neighbor is dropped
-    (the ``sel``-as-normalization regime). For the carry-all graph-native contract
-    use the dedicated carry-all builder (``from_ijs`` via ASE/vesin), NOT this
-    function. See memory/spec_unified_edge_nlist.md (decision #17). This builder is
-    the backward-compat adapter and the test oracle.
+    Implementation: reuse the tested periodic ghosting
+    (:func:`~deepmd.dpmodel.utils.nlist.extend_coord_with_ghosts`) to materialise all
+    periodic images within ``rcut``, then enumerate all center-neighbor pairs within
+    ``rcut`` UNCAPPED. This is an O(N^2) reference search (correctness oracle); the
+    O(N) ``vesin``/``ase`` backends arrive later behind a ``method`` key. Edges map
+    every neighbor to its LOCAL owner (``src = mapping[neighbor]``), so the graph is
+    ghost-free.
+
+    Parameters
+    ----------
+    coord
+        (nf, nloc, 3) or (nf, nloc*3) local coordinates.
+    atype
+        (nf, nloc) local atom types; ``type < 0`` marks a virtual atom (excluded
+        as both a center and a neighbor).
+    box
+        (nf, 3, 3) or (nf, 9) simulation cell; ``None`` for non-periodic.
+    rcut
+        cutoff radius (neighbors kept where ``0 < |edge_vec| <= rcut``, matching the
+        legacy nlist convention so this coincides with :func:`from_dense_quartet`
+        at non-binding ``sel``).
+    layout
+        edge-axis length policy; ``None`` => dynamic (torch) with ``min_edges`` guards.
     """
     from deepmd.dpmodel.utils.nlist import (
-        extend_input_and_build_neighbor_list,
+        extend_coord_with_ghosts,
+    )
+    from deepmd.dpmodel.utils.region import (
+        normalize_coord,
     )
 
-    # ``extend_input_and_build_neighbor_list`` is annotated ``sel: list[int]``;
-    # normalize the integer form so the public ``int | list[int]`` contract is
-    # honored (the underlying ``build_neighbor_list`` accepts both).
-    sel_list = [sel] if isinstance(sel, int) else sel
-    extended_coord, _extended_atype, mapping, nlist = (
-        extend_input_and_build_neighbor_list(
-            coord, atype, rcut, sel_list, mixed_types=mixed_types, box=box
-        )
+    if layout is None:
+        layout = GraphLayout()
+    xp = array_api_compat.array_namespace(coord, atype)
+    dev = array_api_compat.device(coord)
+    nf, nloc = atype.shape[:2]
+    coord = xp.reshape(coord, (nf, nloc, 3))
+    if box is not None:
+        box = xp.reshape(box, (nf, 3, 3))
+        coord = normalize_coord(coord, box)
+    extended_coord, extended_atype, mapping = extend_coord_with_ghosts(
+        coord, atype, box, rcut
     )
-    return neighbor_graph_from_extended(extended_coord, nlist, mapping, layout)
+    extended_coord = xp.reshape(extended_coord, (nf, -1, 3))
+    nall = extended_coord.shape[1]
+    n_node = xp.full((nf,), nloc, dtype=xp.int64, device=dev)
+    arange_nloc = xp.arange(nloc, dtype=xp.int64, device=dev)
+    arange_nall = xp.arange(nall, dtype=xp.int64, device=dev)
+    # (nloc, nall) static index grids reused per frame
+    ii_flat = xp.reshape(
+        xp.broadcast_to(arange_nloc[:, None], (nloc, nall)), (nloc * nall,)
+    )
+    jj_flat = xp.reshape(
+        xp.broadcast_to(arange_nall[None, :], (nloc, nall)), (nloc * nall,)
+    )
+    src_parts: list[Array] = []
+    dst_parts: list[Array] = []
+    vec_parts: list[Array] = []
+    for ff in range(nf):
+        ec = extended_coord[ff]  # (nall, 3)
+        centers = ec[:nloc, :]  # (nloc, 3)
+        diff = (
+            ec[None, :, :] - centers[:, None, :]
+        )  # (nloc, nall, 3) = ext[j]-center[i]
+        dist = xp.linalg.vector_norm(diff, axis=-1)  # (nloc, nall)
+        # keep neighbors within rcut, dropping: the self extended atom (i==j;
+        # a periodic IMAGE of i has j!=i and is kept), virtual neighbors, and
+        # virtual centers. Uncapped -- no sel truncation.
+        not_self = jj_flat != ii_flat  # (nloc*nall,)
+        vir_nei = xp.reshape(
+            xp.broadcast_to((extended_atype[ff] < 0)[None, :], (nloc, nall)),
+            (nloc * nall,),
+        )
+        vir_cen = xp.reshape(
+            xp.broadcast_to((atype[ff] < 0)[:, None], (nloc, nall)),
+            (nloc * nall,),
+        )
+        within = xp.reshape(dist <= rcut, (nloc * nall,))
+        keep_mask = (
+            within & not_self & xp.logical_not(vir_nei) & xp.logical_not(vir_cen)
+        )
+        keep = xp.reshape(xp.nonzero(keep_mask)[0], (-1,))
+        dst = xp.take(ii_flat, keep, axis=0)  # local center
+        j_ext = xp.take(jj_flat, keep, axis=0)  # extended neighbor index
+        src = xp.take(mapping[ff], j_ext, axis=0)  # local owner of neighbor
+        vec = xp.take(xp.reshape(diff, (nloc * nall, 3)), keep, axis=0)
+        offset = ff * nloc
+        src_parts.append(src + offset)
+        dst_parts.append(dst + offset)
+        vec_parts.append(vec)
+    edge_index = xp.astype(
+        xp.stack([xp.concat(src_parts), xp.concat(dst_parts)], axis=0), xp.int64
+    )
+    edge_vec = xp.concat(vec_parts, axis=0)
+    edge_index, edge_vec, edge_mask = pad_and_guard_edges(
+        edge_index, edge_vec, layout.edge_capacity, layout.min_edges
+    )
+    return NeighborGraph(
+        n_node=n_node,
+        edge_index=edge_index,
+        edge_vec=edge_vec,
+        edge_mask=edge_mask,
+    )

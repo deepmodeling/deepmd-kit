@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Tests for the dpmodel default NeighborGraph builder.
+"""Tests for the dpmodel NeighborGraph builder/converter.
 
-``build_neighbor_graph`` reuses deepmd's tested extended neighbor list
-(``extend_input_and_build_neighbor_list``) and converts it to a NeighborGraph
-via ``neighbor_graph_from_extended``. We validate it against an INDEPENDENT
-brute-force all-pairs oracle defined locally in this test file (kept here, not
-in the library, because the production builder reuses the already-tested
-extended nlist).
+``build_neighbor_graph`` is the CARRY-ALL ``dense`` search backend: it builds a
+graph DIRECTLY from coordinates and keeps EVERY neighbor within ``rcut`` (no
+``sel`` truncation). We validate it against an INDEPENDENT brute-force all-pairs
+oracle defined locally in this test file.
+
+``from_dense_quartet`` is the backward-compat CONVERTER: it adapts an existing
+(``sel``-truncated) extended quartet and performs no search.
 """
 
 import itertools
@@ -17,7 +18,10 @@ import numpy as np
 from deepmd.dpmodel.utils.neighbor_graph import (
     GraphLayout,
     build_neighbor_graph,
-    neighbor_graph_from_extended,
+    from_dense_quartet,
+)
+from deepmd.dpmodel.utils.nlist import (
+    extend_input_and_build_neighbor_list,
 )
 
 
@@ -79,7 +83,6 @@ def graph_neighbor_sets_frame(ng, frame, nloc):
 class TestNeighborGraphBuilder(unittest.TestCase):
     def setUp(self) -> None:
         self.rcut = 4.0
-        self.sel = [50, 50]  # large -> no truncation (sel-as-normalization regime)
         # atom 2 at y=2.3 (not 2.0): avoids a degenerate pair sitting exactly at
         # rcut under PBC (box 6, image distance 6-2=4==rcut), where strict-< vs
         # <= cutoff conventions disagree. Real geometries never sit exactly at rcut.
@@ -90,9 +93,7 @@ class TestNeighborGraphBuilder(unittest.TestCase):
         self.atype = np.array([[0, 1, 0, 1]], dtype=np.int64)
 
     def test_nonperiodic_matches_brute_force(self) -> None:
-        ng = build_neighbor_graph(
-            self.coord, self.atype, None, self.rcut, self.sel, mixed_types=True
-        )
+        ng = build_neighbor_graph(self.coord, self.atype, None, self.rcut)
         np.testing.assert_array_equal(ng.n_node, np.array([4], dtype=np.int64))
         self.assertEqual(
             graph_neighbor_sets(ng, 4),
@@ -101,20 +102,35 @@ class TestNeighborGraphBuilder(unittest.TestCase):
 
     def test_periodic_matches_brute_force(self) -> None:
         box = np.eye(3, dtype=np.float64)[None] * 6.0
-        ng = build_neighbor_graph(
-            self.coord, self.atype, box, self.rcut, self.sel, mixed_types=True
-        )
+        ng = build_neighbor_graph(self.coord, self.atype, box, self.rcut)
         self.assertEqual(
             graph_neighbor_sets(ng, 4),
             brute_force_neighbor_sets(self.coord[0], box[0], self.rcut),
         )
 
     def test_edge_vec_within_rcut(self) -> None:
-        ng = build_neighbor_graph(
-            self.coord, self.atype, None, self.rcut, self.sel, mixed_types=True
-        )
+        ng = build_neighbor_graph(self.coord, self.atype, None, self.rcut)
         ev = ng.edge_vec[ng.edge_mask]
         self.assertTrue(np.all(np.linalg.norm(ev, axis=1) < self.rcut))
+
+    def test_carry_all_keeps_more_than_truncated_quartet(self) -> None:
+        # THE carry-all contract: with a binding ``sel``, the legacy quartet
+        # converter drops real neighbors, but the dense search keeps them all.
+        box = np.eye(3, dtype=np.float64)[None] * 6.0
+        # sel=1 per type -> heavily truncates under PBC (many images within rcut).
+        ext_coord, _ext_atype, mapping, nlist = extend_input_and_build_neighbor_list(
+            self.coord, self.atype, self.rcut, [1, 1], mixed_types=True, box=box
+        )
+        ng_trunc = from_dense_quartet(ext_coord, nlist, mapping)
+        ng_all = build_neighbor_graph(self.coord, self.atype, box, self.rcut)
+        n_trunc = int(ng_trunc.edge_mask.sum())
+        n_all = int(ng_all.edge_mask.sum())
+        n_oracle = sum(
+            len(s) for s in brute_force_neighbor_sets(self.coord[0], box[0], self.rcut)
+        )
+        # the truncated converter loses edges; the carry-all search recovers them all
+        self.assertLess(n_trunc, n_all)
+        self.assertEqual(n_all, n_oracle)
 
     def test_multiframe_per_frame_neighbor_sets(self) -> None:
         # TWO DIFFERENT frames -> different per-frame EDGE counts. (Node counts are
@@ -127,9 +143,7 @@ class TestNeighborGraphBuilder(unittest.TestCase):
         ).reshape(1, 4, 3)
         coord2 = np.concatenate([self.coord, coord_b], axis=0)  # (2,4,3), DIFFERENT
         atype2 = np.concatenate([self.atype, self.atype], axis=0)
-        ng = build_neighbor_graph(
-            coord2, atype2, None, self.rcut, self.sel, mixed_types=True
-        )
+        ng = build_neighbor_graph(coord2, atype2, None, self.rcut)
         np.testing.assert_array_equal(ng.n_node, np.array([4, 4], dtype=np.int64))
         # each frame's edges match THAT frame's own brute-force oracle
         self.assertEqual(
@@ -155,28 +169,19 @@ class TestNeighborGraphBuilder(unittest.TestCase):
         coord2 = np.concatenate([self.coord, self.coord + 0.3], axis=0)  # different
         atype2 = np.concatenate([self.atype, self.atype], axis=0)
         box2 = np.concatenate([box, box], axis=0)
-        ng = build_neighbor_graph(
-            coord2, atype2, box2, self.rcut, self.sel, mixed_types=True
-        )
+        ng = build_neighbor_graph(coord2, atype2, box2, self.rcut)
         for f in (0, 1):
             self.assertEqual(
                 graph_neighbor_sets_frame(ng, f, 4),
                 brute_force_neighbor_sets(coord2[f], box2[f], self.rcut),
             )
 
-    def test_int_sel_matches_list_sel(self) -> None:
-        # an integer ``sel`` (normalized to list form) must yield the same
-        # real-edge environment as the equivalent large list ``sel``.
-        nloc = self.coord.shape[1]
-        ng_int = build_neighbor_graph(
-            self.coord, self.atype, None, self.rcut, 64, mixed_types=True
-        )
-        ng_list = build_neighbor_graph(
-            self.coord, self.atype, None, self.rcut, self.sel, mixed_types=True
-        )
-        self.assertEqual(
-            graph_neighbor_sets(ng_int, nloc), graph_neighbor_sets(ng_list, nloc)
-        )
+    def test_virtual_atoms_excluded(self) -> None:
+        # a virtual atom (type < 0) is neither a center nor a neighbor.
+        atype = np.array([[0, 1, -1, 1]], dtype=np.int64)  # atom 2 virtual
+        ng = build_neighbor_graph(self.coord, atype, None, self.rcut)
+        ei = ng.edge_index[:, ng.edge_mask]
+        self.assertFalse(bool(np.any(ei == 2)))  # node 2 never appears as src or dst
 
     def test_static_capacity_padding(self) -> None:
         ng = build_neighbor_graph(
@@ -184,8 +189,6 @@ class TestNeighborGraphBuilder(unittest.TestCase):
             self.atype,
             None,
             self.rcut,
-            self.sel,
-            mixed_types=True,
             layout=GraphLayout(edge_capacity=64),
         )
         self.assertEqual(ng.edge_index.shape[1], 64)
@@ -201,13 +204,13 @@ class TestNeighborGraphBuilder(unittest.TestCase):
         self.assertTrue(np.all(ng.edge_vec[~ng.edge_mask] == 0.0))
 
 
-class TestNeighborGraphFromExtended(unittest.TestCase):
+class TestFromDenseQuartet(unittest.TestCase):
     def test_adapter_on_handmade_quartet(self) -> None:
         # 2 local atoms, no ghosts; each is the other's only neighbor.
         extended_coord = np.array([[[0.0, 0.0, 0.0], [1.0, 0.0, 0.0]]])  # (1,2,3)
         nlist = np.array([[[1, -1], [0, -1]]], dtype=np.int64)  # (1,2,2)
         mapping = np.array([[0, 1]], dtype=np.int64)  # (1,2) local->self
-        ng = neighbor_graph_from_extended(extended_coord, nlist, mapping)
+        ng = from_dense_quartet(extended_coord, nlist, mapping)
         ei = ng.edge_index[:, ng.edge_mask]
         ev = ng.edge_vec[ng.edge_mask]
         got = {
@@ -233,7 +236,7 @@ class TestNeighborGraphFromExtended(unittest.TestCase):
             [[[1, -1], [0, -1]], [[1, -1], [0, -1]]], dtype=np.int64
         )  # (2,2,2)
         mapping = np.array([[0, 1], [0, 1]], dtype=np.int64)
-        ng = neighbor_graph_from_extended(extended_coord, nlist, mapping)
+        ng = from_dense_quartet(extended_coord, nlist, mapping)
         np.testing.assert_array_equal(ng.n_node, np.array([2, 2], dtype=np.int64))
         ei = ng.edge_index[:, ng.edge_mask]
         ev = ng.edge_vec[ng.edge_mask]
@@ -251,10 +254,14 @@ class TestNeighborGraphFromExtended(unittest.TestCase):
         extended_coord = np.array([[[0.0, 0.0, 0.0], [3.0, 0.0, 0.0]]])  # (1,2,3)
         nlist = np.array([[[1, -1]]], dtype=np.int64)  # (1, nloc=1, nsel=2)
         mapping = np.array([[0, 0]], dtype=np.int64)  # ghost 1 -> owner 0
-        ng = neighbor_graph_from_extended(extended_coord, nlist, mapping)
+        ng = from_dense_quartet(extended_coord, nlist, mapping)
         ei = ng.edge_index[:, ng.edge_mask]
         ev = ng.edge_vec[ng.edge_mask]
         self.assertEqual(ei.shape[1], 1)
         # src = local owner of the ghost (0), dst = center (0); vec carries the shift
         self.assertEqual((int(ei[0, 0]), int(ei[1, 0])), (0, 0))
         np.testing.assert_allclose(ev[0], np.array([3.0, 0.0, 0.0]))
+
+
+if __name__ == "__main__":
+    unittest.main()

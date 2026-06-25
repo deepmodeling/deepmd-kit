@@ -96,13 +96,13 @@ class TestPublicExports(unittest.TestCase):
             NeighborGraph,
             build_neighbor_graph,
             edge_force_virial,
-            neighbor_graph_from_extended,
+            from_dense_quartet,
             segment_sum,
         )
 
         self.assertTrue(callable(segment_sum))
         self.assertTrue(callable(edge_force_virial))
         self.assertTrue(callable(build_neighbor_graph))
-        self.assertTrue(callable(neighbor_graph_from_extended))
+        self.assertTrue(callable(from_dense_quartet))
         self.assertIsNotNone(NeighborGraph)
         self.assertIsNotNone(GraphLayout)
