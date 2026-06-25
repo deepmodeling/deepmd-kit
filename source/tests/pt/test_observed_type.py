@@ -74,23 +74,31 @@ class TestCollectObservedTypes(unittest.TestCase):
 
 
 class _FakeTypePath:
+    """Fake path object that returns in-memory atom types."""
+
     def __init__(self, real_types: np.ndarray) -> None:
         self.real_types = real_types
 
     def load_numpy(self) -> np.ndarray:
+        """Return the stored atom-type array."""
         return self.real_types
 
 
 class _FakeSetDir:
+    """Fake set directory exposing ``real_atom_types.npy``."""
+
     def __init__(self, real_types: np.ndarray) -> None:
         self.real_types = real_types
 
     def __truediv__(self, name: str) -> _FakeTypePath:
+        """Return a fake path for the atom-type file."""
         assert name == "real_atom_types.npy"
         return _FakeTypePath(self.real_types)
 
 
 class _FakeMixedDataSystem:
+    """Minimal mixed-type data system for stat sampling tests."""
+
     mixed_type = True
     enforce_type_map = False
     natoms = 2
@@ -102,16 +110,20 @@ class _FakeMixedDataSystem:
         self.prefix_sum = [2]
 
     def get_ntypes(self) -> int:
+        """Return the number of real atom types."""
         return 2
 
 
 class _FakeMixedDataset:
+    """Minimal PyTorch dataset wrapper for mixed-type stat sampling."""
+
     data_system: _FakeMixedDataSystem
 
     def __init__(self) -> None:
         self.data_system = _FakeMixedDataSystem()
 
     def __getitem__(self, index: int) -> dict:
+        """Return the representative frame containing the missing type."""
         assert index == 1
         return {
             "coord": np.zeros((6,), dtype=np.float32),
@@ -125,6 +137,7 @@ class TestStatSamplingCoverage(unittest.TestCase):
     """Mixed-type statistics samples should cover all dataset types."""
 
     def test_append_missing_mixed_type_frame(self) -> None:
+        """Append a representative frame under an explicit CPU device."""
         with torch.device("cpu"):
             sys_stat = {
                 "coord": [torch.zeros((1, 6), dtype=torch.float32)],

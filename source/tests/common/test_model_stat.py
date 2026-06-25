@@ -11,23 +11,31 @@ from deepmd.utils.model_stat import (
 
 
 class _FakeTypePath:
+    """Fake path object that returns in-memory atom types."""
+
     def __init__(self, real_types: np.ndarray) -> None:
         self.real_types = real_types
 
     def load_numpy(self) -> np.ndarray:
+        """Return the stored atom-type array."""
         return self.real_types
 
 
 class _FakeSetDir:
+    """Fake set directory exposing ``real_atom_types.npy``."""
+
     def __init__(self, real_types: np.ndarray) -> None:
         self.real_types = real_types
 
     def __truediv__(self, name: str) -> _FakeTypePath:
+        """Return a fake path for the atom-type file."""
         assert name == "real_atom_types.npy"
         return _FakeTypePath(self.real_types)
 
 
 class _FakeMixedDataSystem:
+    """Minimal mixed-type data system for stat sampling tests."""
+
     mixed_type = True
     enforce_type_map = False
     natoms = 2
@@ -39,9 +47,11 @@ class _FakeMixedDataSystem:
         self.prefix_sum = [2]
 
     def get_ntypes(self) -> int:
+        """Return the number of real atom types."""
         return 2
 
     def get_single_frame(self, index: int, num_worker: int = 1) -> dict:
+        """Return the representative frame containing the missing type."""
         assert index == 1
         return {
             "coord": np.zeros((6,), dtype=np.float32),
@@ -55,6 +65,8 @@ class _FakeMixedDataSystem:
 
 
 class _FakeMixedData:
+    """Minimal multi-system data wrapper for ``make_stat_input``."""
+
     mixed_systems = False
     natoms_vec: list[np.ndarray]
     default_mesh: list[np.ndarray]
@@ -65,9 +77,11 @@ class _FakeMixedData:
         self.default_mesh = [np.array([], dtype=np.int32)]
 
     def get_nsystems(self) -> int:
+        """Return the number of systems."""
         return 1
 
     def get_batch(self, sys_idx: int | None = None) -> dict:
+        """Return the initially sampled batch that misses one type."""
         assert sys_idx == 0
         return {
             "coord": np.zeros((1, 6), dtype=np.float32),
@@ -86,6 +100,7 @@ class TestModelStatSamplingCoverage(unittest.TestCase):
     """Mixed-type make_stat_input should cover types beyond initial batches."""
 
     def test_make_stat_input_appends_missing_mixed_type_frame(self) -> None:
+        """Append a representative frame when the first batch misses a type."""
         sampled = make_stat_input(_FakeMixedData(), nbatches=1)
 
         self.assertEqual(len(sampled), 1)
