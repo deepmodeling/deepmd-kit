@@ -421,10 +421,17 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
     def uses_graph_lower(self) -> bool:
         """Returns whether this descriptor supports the graph-native lower.
 
-        The graph-native energy lower (``call_graph``) currently covers only
-        the non-attention (``attn_layer == 0``) factorizable path.
+        The graph-native energy lower (``call_graph``) currently covers only the
+        non-attention (``attn_layer == 0``) factorizable path with concat
+        type-embedding and no type exclusion. Any other config (attention,
+        ``tebd_input_mode == "strip"``, ``exclude_types``) falls back to the
+        legacy dense path, so those models keep working unchanged.
         """
-        return self.se_atten.attn_layer == 0
+        return (
+            self.se_atten.attn_layer == 0
+            and self.se_atten.tebd_input_mode == "concat"
+            and not self.se_atten.exclude_types
+        )
 
     def share_params(
         self, base_class: "DescrptDPA1", shared_level: int, resume: bool = False
@@ -552,10 +559,14 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         xp = array_api_compat.array_namespace(coord_ext, atype_ext, nlist)
         nf, nloc, nnei = nlist.shape
         nall = xp.reshape(coord_ext, (nf, -1)).shape[1] // 3
-        # attn_layer == 0 routes through the graph-native path; the dense call is
-        # a thin adapter (decision #14: graph = single math source). The full
-        # dense 5-tuple ABI is preserved exactly (see call_graph).
-        if self.se_atten.attn_layer == 0:
+        # graph-eligible configs route through the graph-native path; the dense
+        # call is a thin adapter (decision #14: graph = single math source) that
+        # preserves the dense 5-tuple ABI exactly (see call_graph). Ineligible
+        # configs (attention, strip tebd, exclude_types) and the ghost case with
+        # no mapping fall back to the legacy dense body below, so those models
+        # keep working unchanged. The graph needs `mapping` to fold ghosts to
+        # local owners; without it only the no-ghost case (nall == nloc) is valid.
+        if self.uses_graph_lower() and (mapping is not None or nall == nloc):
             from deepmd.dpmodel.utils.neighbor_graph import (
                 from_dense_quartet,
             )
