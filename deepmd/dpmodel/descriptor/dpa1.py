@@ -557,86 +557,110 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             The smooth switch function.
         """
         xp = array_api_compat.array_namespace(coord_ext, atype_ext, nlist)
+        nloc = nlist.shape[1]
+        nall = xp.reshape(coord_ext, (nlist.shape[0], -1)).shape[1] // 3
+        # graph-eligible configs route through the graph-native adapter (decision
+        # #14: graph = single math source, dense call = thin adapter). Ineligible
+        # configs (attention, strip tebd, exclude_types) and the ghost case with
+        # no mapping fall back to the legacy dense body. The graph needs `mapping`
+        # to fold ghosts to local owners; without it only nall == nloc is valid.
+        if self.uses_graph_lower() and (mapping is not None or nall == nloc):
+            return self._call_graph_adapter(coord_ext, atype_ext, nlist, mapping)
+        else:
+            return self._call_dense(coord_ext, atype_ext, nlist)
+
+    def _call_graph_adapter(
+        self,
+        coord_ext: Array,
+        atype_ext: Array,
+        nlist: Array,
+        mapping: Array | None,
+    ) -> Array:
+        """Regime-1 dense->graph adapter (the eligible ``call`` path).
+
+        Builds a NeighborGraph from the dense quartet with the SHAPE-STATIC
+        converter (``compact=False``, so this is jit/export-traceable -- no
+        ``nonzero``), runs :meth:`call_graph`, and reconstructs the dense-shaped
+        ``sw``. Preserves the dense 5-tuple ABI exactly; masked invalid edges
+        contribute zero in ``call_graph``'s ``segment_sum`` so the output is
+        identical to the legacy dense body.
+        """
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            from_dense_quartet,
+        )
+
+        xp = array_api_compat.array_namespace(coord_ext, atype_ext, nlist)
+        dev = array_api_compat.device(coord_ext)
         nf, nloc, nnei = nlist.shape
         nall = xp.reshape(coord_ext, (nf, -1)).shape[1] // 3
-        # graph-eligible configs route through the graph-native path; the dense
-        # call is a thin adapter (decision #14: graph = single math source) that
-        # preserves the dense 5-tuple ABI exactly (see call_graph). Ineligible
-        # configs (attention, strip tebd, exclude_types) and the ghost case with
-        # no mapping fall back to the legacy dense body below, so those models
-        # keep working unchanged. The graph needs `mapping` to fold ghosts to
-        # local owners; without it only the no-ghost case (nall == nloc) is valid.
-        if self.uses_graph_lower() and (mapping is not None or nall == nloc):
-            from deepmd.dpmodel.utils.neighbor_graph import (
-                from_dense_quartet,
+        coord_ext_3 = xp.reshape(coord_ext, (nf, nall, 3))
+        if mapping is None:
+            # default identity mapping (ext == loc, e.g. no-PBC nall == nloc)
+            mapping_g = xp.broadcast_to(
+                xp.arange(nall, dtype=xp.int64, device=dev)[None, :], (nf, nall)
             )
-
-            dev = array_api_compat.device(coord_ext)
-            coord_ext_3 = xp.reshape(coord_ext, (nf, nall, 3))
-            if mapping is None:
-                # default identity mapping (ext == loc, e.g. no-PBC nall == nloc)
-                mapping_g = xp.broadcast_to(
-                    xp.arange(nall, dtype=xp.int64, device=dev)[None, :], (nf, nall)
-                )
-            else:
-                mapping_g = xp.reshape(mapping, (nf, nall))
-            # shape-static converter (compact=False, layout=None) so this dense
-            # adapter is jit/export-traceable: no nonzero-compaction (data-dependent
-            # shape). Masked invalid edges contribute zero in call_graph's
-            # segment_sum, so the descriptor output is unchanged.
-            graph = from_dense_quartet(
-                coord_ext_3, nlist, mapping_g, layout=None, compact=False
-            )
-            # local atom types, flat (nf * nloc,)
-            atype_local = xp.reshape(xp_take_first_n(atype_ext, 1, nloc), (nf * nloc,))
-            grrg, rot_mat = self.call_graph(
-                graph,
-                atype_local,
-                type_embedding=self.type_embedding.call(),
-            )
-            # reconstruct the dense-shaped sw exactly the dense way (env_mat
-            # switch masked where nlist == -1; the graph path forbids
-            # exclude_types, so nlist_mask == nlist != -1, matching
-            # DescrptBlockSeAtten.call). This is a dense-layout artifact tied to
-            # neighbor slots, which the graph does not carry, so it lives here in
-            # the dense adapter (which has nlist/coord_ext available).
-            _, _, sw = self.se_atten.env_mat.call(
-                coord_ext,
-                atype_ext,
-                nlist,
-                self.se_atten.mean[...],
-                self.se_atten.stddev[...],
-            )
-            nlist_mask = (nlist != -1)[:, :, :, None]
-            sw = xp.where(nlist_mask, sw, xp.zeros_like(sw))
-            sw = xp.reshape(sw, (nf, nloc, nnei, 1))
-            return grrg, rot_mat, None, None, sw
         else:
-            # legacy dense body (attention, strip tebd, exclude_types, or the
-            # ghost case with no mapping) -- kept working unchanged.
-            del mapping
-            type_embedding = self.type_embedding.call()
-            # nf x nall x tebd_dim
-            atype_embd_ext = xp.reshape(
-                xp.take(type_embedding, xp.reshape(atype_ext, (-1,)), axis=0),
-                (nf, nall, self.tebd_dim),
+            mapping_g = xp.reshape(mapping, (nf, nall))
+        graph = from_dense_quartet(
+            coord_ext_3, nlist, mapping_g, layout=None, compact=False
+        )
+        # local atom types, flat (nf * nloc,)
+        atype_local = xp.reshape(xp_take_first_n(atype_ext, 1, nloc), (nf * nloc,))
+        grrg, rot_mat = self.call_graph(
+            graph,
+            atype_local,
+            type_embedding=self.type_embedding.call(),
+        )
+        # reconstruct the dense-shaped sw the dense way (env_mat switch masked
+        # where nlist == -1; the graph path forbids exclude_types, so nlist_mask
+        # == nlist != -1, matching DescrptBlockSeAtten.call). A dense-layout
+        # artifact tied to neighbor slots, which the graph does not carry.
+        _, _, sw = self.se_atten.env_mat.call(
+            coord_ext,
+            atype_ext,
+            nlist,
+            self.se_atten.mean[...],
+            self.se_atten.stddev[...],
+        )
+        nlist_mask = (nlist != -1)[:, :, :, None]
+        sw = xp.where(nlist_mask, sw, xp.zeros_like(sw))
+        sw = xp.reshape(sw, (nf, nloc, nnei, 1))
+        return grrg, rot_mat, None, None, sw
+
+    def _call_dense(
+        self,
+        coord_ext: Array,
+        atype_ext: Array,
+        nlist: Array,
+    ) -> Array:
+        """Legacy dense descriptor body (the ineligible ``call`` path: attention,
+        strip tebd, exclude_types, or the no-mapping ghost case).
+        """
+        xp = array_api_compat.array_namespace(coord_ext, atype_ext, nlist)
+        nf, nloc = nlist.shape[:2]
+        nall = xp.reshape(coord_ext, (nf, -1)).shape[1] // 3
+        type_embedding = self.type_embedding.call()
+        # nf x nall x tebd_dim
+        atype_embd_ext = xp.reshape(
+            xp.take(type_embedding, xp.reshape(atype_ext, (-1,)), axis=0),
+            (nf, nall, self.tebd_dim),
+        )
+        # nfnl x tebd_dim
+        atype_embd = xp_take_first_n(atype_embd_ext, 1, nloc)
+        grrg, g2, h2, rot_mat, sw = self.se_atten(
+            nlist,
+            coord_ext,
+            atype_ext,
+            atype_embd_ext,
+            mapping=None,
+            type_embedding=type_embedding,
+        )
+        # nf x nloc x (ng x ng1 + tebd_dim)
+        if self.concat_output_tebd:
+            grrg = xp.concat(
+                [grrg, xp.reshape(atype_embd, (nf, nloc, self.tebd_dim))], axis=-1
             )
-            # nfnl x tebd_dim
-            atype_embd = xp_take_first_n(atype_embd_ext, 1, nloc)
-            grrg, g2, h2, rot_mat, sw = self.se_atten(
-                nlist,
-                coord_ext,
-                atype_ext,
-                atype_embd_ext,
-                mapping=None,
-                type_embedding=type_embedding,
-            )
-            # nf x nloc x (ng x ng1 + tebd_dim)
-            if self.concat_output_tebd:
-                grrg = xp.concat(
-                    [grrg, xp.reshape(atype_embd, (nf, nloc, self.tebd_dim))], axis=-1
-                )
-            return grrg, rot_mat, None, None, sw
+        return grrg, rot_mat, None, None, sw
 
     def call_graph(
         self,
