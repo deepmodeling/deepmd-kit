@@ -374,6 +374,84 @@ class TestDPTestForceWeight(DPTest, unittest.TestCase):
         shutil.rmtree(self.system_dir)
 
 
+class TestDPTestStress(DPTest, unittest.TestCase):
+    """Verify the stress output of ``dp test`` (sigma = virial / volume, eV/Å^3)."""
+
+    def setUp(self) -> None:
+        self.detail_file = "test_dp_test_stress_detail"
+        input_json = str(Path(__file__).parent / "water/se_atten.json")
+        with open(input_json) as f:
+            self.config = json.load(f)
+        self.config["training"]["numb_steps"] = 1
+        self.config["training"]["save_freq"] = 1
+        self.system_dir = self._prepare_virial_system()
+        data_file = [self.system_dir]
+        self.config["training"]["training_data"]["systems"] = data_file
+        self.config["training"]["validation_data"]["systems"] = data_file
+        self.config["model"] = deepcopy(model_se_e2_a)
+        self.input_json = "test_dp_test_stress.json"
+        with open(self.input_json, "w") as fp:
+            json.dump(self.config, fp, indent=4)
+
+    def _prepare_virial_system(self) -> str:
+        src = Path(__file__).parent / "water/data/single"
+        tmp_dir = tempfile.mkdtemp()
+        shutil.copytree(src, tmp_dir, dirs_exist_ok=True)
+        set_dir = Path(tmp_dir) / "set.000"
+        nframes = np.load(set_dir / "box.npy").shape[0]
+        rng = np.random.default_rng(0)
+        np.save(set_dir / "virial.npy", rng.standard_normal((nframes, 9)))
+        return tmp_dir
+
+    def test_stress(self) -> None:
+        trainer = get_trainer(deepcopy(self.config))
+        with torch.device("cpu"):
+            trainer.get_data(is_train=False)
+        model = torch.jit.script(trainer.model)
+        tmp_model = tempfile.NamedTemporaryFile(delete=False, suffix=".pth")
+        torch.jit.save(model, tmp_model.name)
+        dp = DeepEval(tmp_model.name)
+        data = DeepmdData(
+            self.system_dir,
+            set_prefix="set",
+            shuffle_test=False,
+            type_map=dp.get_type_map(),
+            sort_atoms=False,
+        )
+        numb_test = 1
+        err = dp_test_ener(
+            dp,
+            data,
+            self.system_dir,
+            numb_test=numb_test,
+            detail_file=self.detail_file,
+            has_atom_ener=False,
+        )
+        os.unlink(tmp_model.name)
+
+        test_data = data.get_test()
+        box = test_data["box"][:numb_test].reshape(-1, 3, 3)
+        volume = np.abs(np.linalg.det(box)).reshape(-1, 1)
+
+        stress_out = np.loadtxt(self.detail_file + ".s.out", ndmin=2)
+        ref_s, pred_s = stress_out[:, 0:9], stress_out[:, 9:18]
+        virial_out = np.loadtxt(self.detail_file + ".v.out", ndmin=2)
+        ref_v, pred_v = virial_out[:, 0:9], virial_out[:, 9:18]
+
+        # stress detail is the virial detail divided by the cell volume (eV/Å^3)
+        np.testing.assert_almost_equal(ref_s, ref_v / volume)
+        np.testing.assert_almost_equal(pred_s, pred_v / volume)
+
+        # reported MAE/RMSE match the stress arrays (in eV/Å^3)
+        diff = pred_s - ref_s
+        np.testing.assert_allclose(err["mae_s"][0], np.mean(np.abs(diff)))
+        np.testing.assert_allclose(err["rmse_s"][0], np.sqrt(np.mean(diff * diff)))
+
+    def tearDown(self) -> None:
+        super().tearDown()
+        shutil.rmtree(self.system_dir)
+
+
 class TestDPTestPropertySeA(unittest.TestCase):
     def setUp(self) -> None:
         self.detail_file = "test_dp_test_property_detail"
