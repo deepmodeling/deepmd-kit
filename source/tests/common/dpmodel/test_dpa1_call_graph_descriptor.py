@@ -127,7 +127,8 @@ class TestDpa1DescriptorCallGraph:
         """An eligible (concat) attn_layer=0 descriptor called with mapping=None
         on a PERIODIC system (nall > nloc ghosts) must fall back to the dense
         body and match it (regression: the graph needs mapping for ghosts, the
-        identity-mapping default previously indexed out of range)."""
+        identity-mapping default previously indexed out of range).
+        """
         dd = self._make([30])
         box = np.eye(3, dtype=np.float64)[None] * 6.0
         ext_coord, ext_atype, mapping, nlist = extend_input_and_build_neighbor_list(
