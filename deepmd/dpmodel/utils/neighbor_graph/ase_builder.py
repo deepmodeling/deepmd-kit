@@ -16,6 +16,7 @@ from __future__ import (
 
 from typing import (
     TYPE_CHECKING,
+    Any,
 )
 
 import numpy as np
@@ -83,10 +84,17 @@ def build_neighbor_graph_ase(
             "install ase or use neighbor-graph method 'dense'."
         ) from e
 
-    coord_np = np.asarray(coord)
+    # The ASE topology search runs on the CPU in numpy; convert safely from a
+    # CUDA / grad-requiring torch tensor (the original coord/box are still
+    # passed to neighbor_graph_from_ijs below, which recomputes edge_vec
+    # differentiably on the native backend/device).
+    def _to_cpu_numpy(x: Any) -> np.ndarray:
+        return np.asarray(x.detach().cpu()) if hasattr(x, "detach") else np.asarray(x)
+
+    coord_np = _to_cpu_numpy(coord)
     nf, nloc = coord_np.shape[:2]
     coord_np = coord_np.reshape(nf, nloc, 3)
-    box_np = np.asarray(box).reshape(nf, 3, 3) if box is not None else None
+    box_np = _to_cpu_numpy(box).reshape(nf, 3, 3) if box is not None else None
     periodic = box is not None
 
     i_parts = []

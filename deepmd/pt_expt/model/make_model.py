@@ -341,11 +341,9 @@ def make_model(
                 ``<var>_derv_c_redu`` (nf, *shape, 9), and -- when
                 ``do_atomic_virial`` -- ``<var>_derv_c`` (nf, nloc, *shape, 9).
             """
-            nf = int(n_node.shape[0])
-            nloc = int(n_node[0])
             # make edge_vec the autograd leaf for the energy backward
             edge_vec = edge_vec.detach().requires_grad_(True)
-            fit_ret, _ = self._graph_descriptor_fitting(
+            fit_ret, _, atom_mask = self._graph_descriptor_fitting(
                 atype,
                 n_node,
                 edge_index,
@@ -354,9 +352,10 @@ def make_model(
                 fparam=fparam,
                 aparam=aparam,
             )
-            # carry-all graph: every local atom is real -> all-ones int mask.
-            mask = torch.ones((nf, nloc), dtype=torch.int32, device=edge_vec.device)
-            return fit_output_to_model_output_graph(
+            # int mask of real atoms (virtual atype<0 already zeroed in
+            # _graph_descriptor_fitting); matches the dense base_atomic_model.
+            mask = atom_mask.to(torch.int32)
+            model_predict = fit_output_to_model_output_graph(
                 fit_ret,
                 self.atomic_model.fitting_output_def(),
                 edge_vec,
@@ -367,6 +366,9 @@ def make_model(
                 create_graph=self.training,
                 mask=mask,
             )
+            # fit_output_to_model_output_graph does not add "mask"; set it here.
+            model_predict["mask"] = mask
+            return model_predict
 
         def _resolve_graph_method(
             self, neighbor_graph_method: str | None
@@ -435,11 +437,9 @@ def make_model(
                 fparam=fp,
                 aparam=ap,
             )
-            # carry-all graph: every local atom is real -> all-ones mask, matching
-            # the dense ``call_common`` output (which carries a ``mask`` key).
-            model_predict["mask"] = torch.ones(
-                (nf, nloc), dtype=torch.int32, device=atype.device
-            )
+            # forward_common_lower_graph already masks virtual atoms (atype<0)
+            # and carries the real int ``mask`` key, matching the dense
+            # ``call_common`` output.
             return model_predict
 
         def forward_common_atomic(

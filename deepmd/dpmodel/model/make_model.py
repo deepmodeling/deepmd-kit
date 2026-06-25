@@ -315,6 +315,10 @@ def make_model(
             )
             del coord, box, fparam, aparam, charge_spin
             graph_method = self._resolve_graph_method(neighbor_graph_method)
+            # the graph lower does not consume charge_spin yet -> keep those
+            # models on dense (a None check, so it stays jit/export-safe)
+            if cs is not None:
+                graph_method = None
             if graph_method is not None:
                 # carry-all NeighborGraph energy forward (Option B / decision #17)
                 model_predict = self._call_common_graph(
@@ -402,10 +406,11 @@ def make_model(
                     f"unknown neighbor_graph_method {method!r}; use 'dense' or 'ase'"
                 )
             xp = array_api_compat.array_namespace(atype)
-            dev = array_api_compat.device(atype)
             nf, nloc = atype.shape[:2]
             # OUTPUT-AGNOSTIC standard model dict (``<var>``, ``<var>_redu``,
-            # derivative name-holders ``None``), like the dense ``call_common``.
+            # derivative name-holders ``None``, plus int ``mask``), like the
+            # dense ``call_common``.  ``call_lower_graph`` masks virtual atoms
+            # (atype<0) and sets the real int mask.
             model_predict = self.call_lower_graph(
                 atype=xp.reshape(atype, (nf * nloc,)),
                 n_node=ng.n_node,
@@ -415,9 +420,6 @@ def make_model(
                 fparam=fp,
                 aparam=ap,
             )
-            # carry-all graph: all local atoms are real -> all-ones int mask,
-            # matching the dense path (base_atomic_model: mask = int32 atom_mask).
-            model_predict["mask"] = xp.ones((nf, nloc), dtype=xp.int32, device=dev)
             return model_predict
 
         def call_common_lower(
@@ -536,13 +538,22 @@ def make_model(
             edge_mask: Array,
             fparam: Array | None = None,
             aparam: Array | None = None,
-        ) -> tuple[dict[str, Array], Array]:
+        ) -> tuple[dict[str, Array], Array, Array]:
             """Run the graph descriptor + fitting forward.
 
             Returns the raw rectangular ``fit_ret`` (``(nf, nloc, *shape)`` per
-            fitting output) plus the descriptor output ``gg`` (used by callers as
-            the array-namespace carrier).  ``edge_vec`` is consumed as-is so that
-            callers can make it the autograd leaf (pt_expt) before invoking this.
+            fitting output), the descriptor output ``gg`` (used by callers as
+            the array-namespace carrier), and the ``(nf, nloc)`` boolean
+            ``atom_mask`` (True for real atoms, False for virtual ``atype<0``).
+            ``edge_vec`` is consumed as-is so that callers can make it the
+            autograd leaf (pt_expt) before invoking this.
+
+            Virtual atoms (``atype < 0``) are masked exactly like the dense
+            :meth:`base_atomic_model.forward_common_atomic`: the atype fed to
+            the descriptor/fitting is clamped to 0 (so ``take`` never sees a
+            negative index) and the per-atom ``fit_ret`` of masked atoms is
+            zeroed BEFORE any reduction, so virtual atoms contribute no
+            type-embedding/bias energy.
             """
             xp = array_api_compat.array_namespace(edge_vec)
             dev = array_api_compat.device(edge_vec)
@@ -556,24 +567,45 @@ def make_model(
             nloc = int(n_node[0])
             descriptor = self.atomic_model.descriptor
             fitting_net = self.atomic_model.fitting_net
+            atype = xp.asarray(atype, device=dev)
+            atype_2d = xp.reshape(atype, (nf, nloc))
+            # virtual-atom mask (True for real atoms); mirror the dense
+            # base_atomic_model.make_atom_mask (atype >= 0).
+            make_atom_mask = getattr(self.atomic_model, "make_atom_mask", None)
+            if make_atom_mask is not None:
+                atom_mask = make_atom_mask(atype_2d)
+            else:
+                atom_mask = atype_2d >= 0
+            # clamp negative (virtual) types to 0 so take(...) never indexes
+            # out of range; virtual atoms have no edges so this only touches
+            # their (subsequently zeroed) node entries.
+            zeros_atype = xp.zeros_like(atype)
+            atype_safe = xp.where(atype >= 0, atype, zeros_atype)
+            atype_2d_safe = xp.reshape(atype_safe, (nf, nloc))
             # dpa1 call_graph requires the type-embedding table explicitly
             type_embedding = descriptor.type_embedding.call()
             gg, rot_mat = descriptor.call_graph(
-                graph, atype, type_embedding=type_embedding
+                graph, atype_safe, type_embedding=type_embedding
             )
             g2 = h2 = None
-            # the fitting expects atype shaped (nf, nloc)
-            atype_2d = xp.reshape(xp.asarray(atype, device=dev), (nf, nloc))
             fit_ret = fitting_net(
                 gg,
-                atype_2d,
+                atype_2d_safe,
                 gr=rot_mat,
                 g2=g2,
                 h2=h2,
                 fparam=fparam,
                 aparam=aparam,
             )
-            return fit_ret, gg
+            # zero the per-atom output of masked (virtual) atoms BEFORE the
+            # reduction -- mirror base_atomic_model lines 315-320.
+            for kk in fit_ret.keys():
+                vv = fit_ret[kk]
+                out_shape = vv.shape
+                flat = xp.reshape(vv, (out_shape[0], out_shape[1], -1))
+                flat = xp.where(atom_mask[:, :, None], flat, xp.zeros_like(flat))
+                fit_ret[kk] = xp.reshape(flat, out_shape)
+            return fit_ret, gg, atom_mask
 
         def call_lower_graph(
             self,
@@ -631,10 +663,7 @@ def make_model(
                 :func:`fit_output_to_model_output`.
             """
             xp = array_api_compat.array_namespace(edge_vec)
-            dev = array_api_compat.device(edge_vec)
-            nf = n_node.shape[0]
-            nloc = int(n_node[0])
-            fit_ret, gg = self._graph_descriptor_fitting(
+            fit_ret, gg, atom_mask = self._graph_descriptor_fitting(
                 atype,
                 n_node,
                 edge_index,
@@ -643,15 +672,18 @@ def make_model(
                 fparam=fparam,
                 aparam=aparam,
             )
-            # carry-all graph: every local atom is real -> all-ones int mask.
-            mask = xp.ones((nf, nloc), dtype=xp.int32, device=dev)
-            return fit_output_to_model_output(
+            # int mask of real atoms (matches the dense base_atomic_model).
+            mask = xp.astype(atom_mask, xp.int32)
+            model_predict = fit_output_to_model_output(
                 fit_ret,
                 self.atomic_model.fitting_output_def(),
                 gg,
                 do_atomic_virial=False,
                 mask=mask,
             )
+            # fit_output_to_model_output does not add "mask"; set it here.
+            model_predict["mask"] = mask
+            return model_predict
 
         call = call_common
         call_lower = call_common_lower

@@ -116,6 +116,46 @@ def test_energy_parity_multiframe_periodic(method) -> None:
     assert not np.array_equal(dense["energy_redu"][0], dense["energy_redu"][1])
 
 
+def test_virtual_atom_masked() -> None:
+    """A virtual atom (``atype == -1``) must contribute ZERO energy and have a
+    ZERO mask in the carry-all graph path, matching the dense path exactly.
+
+    Regression for the leak where the graph path fed the raw (negative) atype
+    to the descriptor/fitting and stamped an all-ones mask, so virtual atoms
+    picked up a type-embedding + bias energy that the dense path masks out.
+
+    Uses the in-tree ``"dense"`` builder, which shares the EXACT same quartet
+    neighbor list as the ``"legacy"`` dense path, so the parity is bit-tight
+    (the ``"ase"`` builder has its own near-cutoff boundary quirks, covered by
+    the other tests).
+    """
+    method = "dense"
+    rng = np.random.default_rng(7)
+    nloc = 6
+    coord = rng.normal(size=(1, nloc, 3)) * 1.5
+    # one local virtual atom (atype == -1); the rest are real
+    atype = np.array([[0, 1, -1, 1, 0, 1]], dtype=np.int64)
+    box = None
+    # LARGE sel -> non-binding (no truncation) so dense == graph on real atoms
+    model = _make_model([200])
+
+    dense = model.call_common(coord, atype, box, neighbor_graph_method="legacy")
+    graph = model.call_common(coord, atype, box, neighbor_graph_method=method)
+
+    # graph energy (reduced + per-atom) must match the dense path exactly
+    np.testing.assert_allclose(
+        graph["energy_redu"], dense["energy_redu"], rtol=1e-12, atol=1e-12
+    )
+    np.testing.assert_allclose(graph["energy"], dense["energy"], rtol=1e-12, atol=1e-12)
+    # the virtual atom (index 2) contributes ZERO per-atom energy
+    np.testing.assert_allclose(graph["energy"][0, 2], 0.0, rtol=0, atol=0)
+    # mask must be 0 at the virtual atom and match the dense int mask
+    assert int(graph["mask"][0, 2]) == 0
+    np.testing.assert_array_equal(graph["mask"], dense["mask"])
+    expected_mask = np.array([[1, 1, 0, 1, 1, 1]], dtype=np.int32)
+    np.testing.assert_array_equal(graph["mask"], expected_mask)
+
+
 def test_binding_sel_carries_more_than_dense() -> None:
     """At binding sel the carry-all graph includes neighbors the dense path
     truncates, so energy DIFFERS (intended, decision #17 / Option B).

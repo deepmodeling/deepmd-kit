@@ -95,6 +95,7 @@ def neighbor_graph_from_ijs(
     r_j = xp.take(coord_flat, j_flat, axis=0)
     edge_vec = r_j - r_i
     if box is not None:
+        box = xp.asarray(box, device=dev)
         box = xp.reshape(box, (nf, 3, 3))
         box_per_edge = xp.take(box, nframe_id, axis=0)  # (E, 3, 3)
         S = xp.astype(xp.asarray(S, device=dev), box.dtype)

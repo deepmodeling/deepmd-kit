@@ -1472,6 +1472,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             self.rcut,
             self.rcut_smth,
             protection=self.env_protection,
+            edge_mask=graph.edge_mask,
         )  # (E, 4)
         # radial channel
         ss = rr[:, 0:1]  # (E, 1)

@@ -40,6 +40,7 @@ def edge_env_mat(
     rcut: float,
     rcut_smth: float,
     protection: float = 0.0,
+    edge_mask: Array | None = None,
 ) -> Array:
     """Compute the per-edge environment-matrix 4-vector.
 
@@ -64,6 +65,13 @@ def edge_env_mat(
     protection
         Small additive offset to avoid exact division-by-zero on
         atoms that are numerically at the same position (default 0).
+    edge_mask
+        (E,) boolean valid-edge mask. When provided, the length of INVALID
+        (padding) edges has 1 added to it before adding ``protection`` ---
+        matching the dense ``_make_env_mat`` (``length = length + ~mask``),
+        which guards padding by mask rather than by a length threshold.
+        When ``None``, fall back to the ``length < 1e-10`` zero-guard
+        (back-compat for callers without a mask).
 
     Returns
     -------
@@ -79,11 +87,17 @@ def edge_env_mat(
     # (E, 1) lengths; safe_for_vector_norm returns 0 for zero vectors
     length = safe_for_vector_norm(edge_vec, axis=-1, keepdims=True)
 
-    # Guard against exact zero to avoid 1/0 (happens on padding edges where
-    # edge_vec = 0).  Real edges always have length > 0.
-    safe_len = xp.where(length < 1e-10, xp.ones_like(length), length)
+    # Guard against 1/0 on padding edges.  When an edge_mask is provided,
+    # match the dense _make_env_mat exactly: add 1 to the length of INVALID
+    # (padding) edges by mask (not by a length threshold), so a real edge and
+    # a padding edge never share the same protection arithmetic.  Otherwise
+    # fall back to the length<1e-10 zero-guard (back-compat).
+    if edge_mask is not None:
+        length = length + xp.astype(xp.logical_not(edge_mask)[:, None], length.dtype)
+    else:
+        length = xp.where(length < 1e-10, xp.ones_like(length), length)
 
-    denom = safe_len + protection  # (E, 1)
+    denom = length + protection  # (E, 1)
     t0 = 1.0 / denom  # (E, 1)  — radial component
     t1 = edge_vec / (denom**2)  # (E, 3) — angular components
 
