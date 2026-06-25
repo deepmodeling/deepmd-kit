@@ -63,6 +63,59 @@ if TYPE_CHECKING:
     )
 
 
+def exchange_ghost_features(
+    x: torch.Tensor,
+    comm_dict: dict[str, torch.Tensor],
+) -> torch.Tensor:
+    """
+    Refresh ghost-node features from their owner ranks via MPI border exchange.
+
+    SeZM node features are SO(3) coefficients expressed in the shared global
+    frame, so a ghost atom and its owner carry identical features and the
+    per-row owner->ghost copy is exact and equivariance-preserving. The opaque
+    ``deepmd_export::border_op`` performs the exchange and carries a registered
+    backward (reverse communication of gradients), so a single
+    ``autograd.grad(energy, edge_vec)`` accumulates cross-rank force
+    contributions when every rank runs the exchange in lockstep.
+
+    This is applied to the SO(2) convolution input — the descriptor's only
+    cross-node operation — so ghost rows are correct exactly where message
+    passing reads them, regardless of how the (per-node) attention-residual
+    history that produced the input populated its ghost rows.
+
+    Parameters
+    ----------
+    x
+        Extended node features with shape (nall, D, 1, channels). Owned-atom rows
+        hold up-to-date values; ghost rows are overwritten by this call.
+    comm_dict
+        Border-exchange tensors ``send_list``, ``send_proc``, ``recv_proc``,
+        ``send_num``, ``recv_num``, ``communicator``, ``nlocal``, ``nghost``.
+
+    Returns
+    -------
+    torch.Tensor
+        Node features with ghost rows filled, same shape as ``x``.
+    """
+    n_nodes, ebed_dim, n_focus, channels = x.shape
+    # border_op exchanges whole rows by raw pointer arithmetic, so the buffer
+    # must be contiguous; a degree-truncated node tensor reshapes to a strided
+    # view that would otherwise corrupt the exchange.
+    g1 = x.reshape(n_nodes, ebed_dim * n_focus * channels).contiguous()
+    g1 = torch.ops.deepmd_export.border_op(
+        comm_dict["send_list"],
+        comm_dict["send_proc"],
+        comm_dict["recv_proc"],
+        comm_dict["send_num"],
+        comm_dict["recv_num"],
+        g1,
+        comm_dict["communicator"],
+        comm_dict["nlocal"],
+        comm_dict["nghost"],
+    )
+    return g1.reshape(n_nodes, ebed_dim, n_focus, channels)
+
+
 class SeZMInteractionBlock(nn.Module):
     """
     SeZM interaction block with SO(2) message passing and equivariant FFN stack.
@@ -586,6 +639,7 @@ class SeZMInteractionBlock(nn.Module):
         edge_cache: EdgeFeatureCache,
         radial_feat: torch.Tensor,
         unit_history: list[torch.Tensor] | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor | None,
@@ -606,6 +660,12 @@ class SeZMInteractionBlock(nn.Module):
             `full_attn_res != "none"`, it is interpreted as completed unit
             history. When `block_attn_res != "none"`, it is interpreted as
             completed block history.
+        comm_dict
+            Border-exchange tensors for parallel (LAMMPS multi-rank) inference.
+            When provided, the SO(2) convolution input has its ghost rows
+            refreshed from owner ranks; the depth-attention history may carry
+            stale ghost rows because the exchange happens at the convolution
+            input, after the (per-node) aggregation that consumes it.
 
         Returns
         -------
@@ -619,7 +679,7 @@ class SeZMInteractionBlock(nn.Module):
             - full AttnRes path returns `(block_output, None, so2_unit_output, ffn_unit_outputs)`
             - block AttnRes path returns `(block_output, block_summary, None, None)`
         """
-        return self._forward_impl(x, edge_cache, radial_feat, unit_history)
+        return self._forward_impl(x, edge_cache, radial_feat, unit_history, comm_dict)
 
     def _extract_l0_from_canonical(self, value: torch.Tensor) -> torch.Tensor:
         """
@@ -657,6 +717,7 @@ class SeZMInteractionBlock(nn.Module):
         x: torch.Tensor,
         edge_cache: EdgeFeatureCache,
         radial_feat: torch.Tensor,
+        comm_dict: dict[str, torch.Tensor] | None = None,
     ) -> torch.Tensor:
         """
         Run the SO(2) unit without an outer block-level residual shortcut.
@@ -669,12 +730,19 @@ class SeZMInteractionBlock(nn.Module):
             Edge cache.
         radial_feat
             Per-edge radial features with shape (E, lmax+1, C).
+        comm_dict
+            Border-exchange tensors for parallel inference. When provided, the
+            convolution input's ghost rows are refreshed from owner ranks
+            immediately before the only cross-node operation in the block, so
+            owned destinations gather up-to-date neighbour features.
 
         Returns
         -------
         torch.Tensor
             SO(2) unit output with shape `(N, D, 1, C)`.
         """
+        if comm_dict is not None:
+            x = exchange_ghost_features(x, comm_dict)
         if self._use_infer_activation_checkpoint(x, radial_feat):
             edge_cache_no_proj = edge_cache._replace(
                 D_to_m_cache=None,
@@ -759,6 +827,7 @@ class SeZMInteractionBlock(nn.Module):
         edge_cache: EdgeFeatureCache,
         radial_feat: torch.Tensor,
         unit_history: list[torch.Tensor] | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor | None,
@@ -778,6 +847,10 @@ class SeZMInteractionBlock(nn.Module):
             Per-edge radial features with shape (E, lmax+1, C).
         unit_history
             Unused in the residual-connected path.
+        comm_dict
+            Border-exchange tensors for parallel inference, forwarded to the
+            SO(2) unit. The owned-atom residual reads the original ``x``, which
+            is already correct on owned rows.
 
         Returns
         -------
@@ -785,7 +858,7 @@ class SeZMInteractionBlock(nn.Module):
             Tuple `(block_output, None, None, None)`.
         """
         with nvtx_range("so2_conv"):
-            so2_unit_output = self._run_so2_unit(x, edge_cache, radial_feat)
+            so2_unit_output = self._run_so2_unit(x, edge_cache, radial_feat, comm_dict)
             so2_state = x + so2_unit_output
 
         with nvtx_range("ffn"):
@@ -803,6 +876,7 @@ class SeZMInteractionBlock(nn.Module):
         edge_cache: EdgeFeatureCache,
         radial_feat: torch.Tensor,
         unit_history: list[torch.Tensor] | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor | None,
@@ -823,6 +897,11 @@ class SeZMInteractionBlock(nn.Module):
         unit_history
             Truncated history in canonical node layout. Each source has shape
             `(N, D, 1, C)`.
+        comm_dict
+            Border-exchange tensors for parallel inference, forwarded to the
+            SO(2) unit. The attention-residual aggregation is per-node, so the
+            ghost exchange at the convolution input restores ghost correctness
+            even when the history sources carry stale ghost rows.
 
         Returns
         -------
@@ -836,7 +915,9 @@ class SeZMInteractionBlock(nn.Module):
                     scalar_extractor=self._extract_l0_from_canonical,
                     current_x=x,
                 )
-            so2_unit_output = self._run_so2_unit(so2_input, edge_cache, radial_feat)
+            so2_unit_output = self._run_so2_unit(
+                so2_input, edge_cache, radial_feat, comm_dict
+            )
 
         with nvtx_range("ffn"):
             completed_units = [*unit_history, so2_unit_output]
@@ -863,6 +944,7 @@ class SeZMInteractionBlock(nn.Module):
         edge_cache: EdgeFeatureCache,
         radial_feat: torch.Tensor,
         unit_history: list[torch.Tensor] | None = None,
+        comm_dict: dict[str, torch.Tensor] | None = None,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor | None,
@@ -883,6 +965,11 @@ class SeZMInteractionBlock(nn.Module):
         unit_history
             Truncated block history in canonical node layout. Each source has shape
             `(N, D, 1, C)`.
+        comm_dict
+            Border-exchange tensors for parallel inference, forwarded to the
+            SO(2) unit. The attention-residual aggregation is per-node, so the
+            ghost exchange at the convolution input restores ghost correctness
+            even when the history sources carry stale ghost rows.
 
         Returns
         -------
@@ -896,7 +983,9 @@ class SeZMInteractionBlock(nn.Module):
                     scalar_extractor=self._extract_l0_from_canonical,
                     current_x=x,
                 )
-            so2_unit_output = self._run_so2_unit(so2_input, edge_cache, radial_feat)
+            so2_unit_output = self._run_so2_unit(
+                so2_input, edge_cache, radial_feat, comm_dict
+            )
 
         with nvtx_range("ffn"):
             partial_block = so2_unit_output
