@@ -179,7 +179,7 @@ def _cmd_cv(args: argparse.Namespace) -> int:
     )
 
     systems = load_dataset(args.data, label_key=args.label_key)
-    print(f"{len(systems)} systems")
+    _LOG.info("%s systems", len(systems))
 
     model = DPAFineTuner(
         pretrained=args.pretrained,
@@ -198,18 +198,24 @@ def _cmd_cv(args: argparse.Namespace) -> int:
         seed=args.seed,
     )
     a = result["aggregate"]
-    print(
-        f"R²  = {a.get('r2_mean', float('nan')):.4f} ± {a.get('r2_std', float('nan')):.4f}"
+    _LOG.info(
+        "R²  = %.4f ± %.4f",
+        a.get("r2_mean", float("nan")),
+        a.get("r2_std", float("nan")),
     )
-    print(
-        f"MAE = {a.get('mae_mean', float('nan')):.4f} ± {a.get('mae_std', float('nan')):.4f}"
+    _LOG.info(
+        "MAE = %.4f ± %.4f",
+        a.get("mae_mean", float("nan")),
+        a.get("mae_std", float("nan")),
     )
-    print(
-        f"RMSE= {a.get('rmse_mean', float('nan')):.4f} ± {a.get('rmse_std', float('nan')):.4f}"
+    _LOG.info(
+        "RMSE= %.4f ± %.4f",
+        a.get("rmse_mean", float("nan")),
+        a.get("rmse_std", float("nan")),
     )
-    print(f"n   = {result['n_independent']} independent groups")
+    _LOG.info("n   = %s independent groups", result["n_independent"])
     for w in result.get("warnings", []):
-        print(f"[!] {w}")
+        _LOG.warning("%s", w)
     return 0
 
 
@@ -226,7 +232,7 @@ def _cmd_extract_descriptors(args: argparse.Namespace) -> int:
         cache=not args.no_cache,
     )
     np.save(args.output, X)
-    print(f"Descriptors shape={X.shape} → {args.output}")
+    _LOG.info("Descriptors shape=%s → %s", X.shape, args.output)
     return 0
 
 
@@ -249,10 +255,10 @@ def _cmd_evaluate(args: argparse.Namespace) -> int:
 
     predictor = DPAPredictor(args.model)
     metrics = predictor.evaluate(args.data)
-    print(f"MAE  : {metrics.mae:.6f}")
-    print(f"RMSE : {metrics.rmse:.6f}")
-    print(f"R²   : {metrics.r2:.6f}")
-    print(f"N    : {metrics.predictions.shape[0]}")
+    _LOG.info("MAE  : %.6f", metrics.mae)
+    _LOG.info("RMSE : %.6f", metrics.rmse)
+    _LOG.info("R²   : %.6f", metrics.r2)
+    _LOG.info("N    : %s", metrics.predictions.shape[0])
     return 0
 
 
@@ -288,16 +294,16 @@ def _cmd_data_convert(args: argparse.Namespace) -> int:
         verbose=False,
     )
     if result["method"] == "smiles":
-        print(f"Train systems: {len(result['train_systems'])}")
-        print(f"Valid systems: {len(result['valid_systems'])}")
-        print(f"Type map     : {result['type_map']}")
-        print(f"Samples used : {result['samples_used']}")
-        print(f"Failed rows  : {len(result['failed_rows'])}")
-        print(f"Skipped zero : {result['skipped_zero']}")
-        print(f"Skipped overlap: {result['skipped_overlap']}")
+        _LOG.info("Train systems: %s", len(result["train_systems"]))
+        _LOG.info("Valid systems: %s", len(result["valid_systems"]))
+        _LOG.info("Type map     : %s", result["type_map"])
+        _LOG.info("Samples used : %s", result["samples_used"])
+        _LOG.info("Failed rows  : %s", len(result["failed_rows"]))
+        _LOG.info("Skipped zero : %s", result["skipped_zero"])
+        _LOG.info("Skipped overlap: %s", result["skipped_overlap"])
     elif result["method"] == "batch_dpdata":
-        print(f"Output dirs  : {len(result['output_dirs'])}")
-        print(f"Manifest     : {result['manifest']}")
+        _LOG.info("Output dirs  : %s", len(result["output_dirs"]))
+        _LOG.info("Manifest     : %s", result["manifest"])
     else:
         _LOG.info("Wrote deepmd/npy → %s", result["output_dir"])
     return 0
@@ -314,13 +320,15 @@ def _cmd_data_validate(args: argparse.Namespace) -> int:
     systems = load_data(args.data)
     issues = check_data(systems, strict=False)
     if not issues:
-        print(f"OK: {len(systems)} system(s) clean.")
+        _LOG.info("OK: %s system(s) clean.", len(systems))
         return 0
     n_err = sum(1 for i in issues if i.severity == "error")
     for i in issues:
-        tag = "ERROR" if i.severity == "error" else "warn"
-        print(f"[{tag}] {i.system}/{i.set_dir} :: {i.description}")
-    print(f"\n{len(issues)} issue(s): {n_err} error, {len(issues) - n_err} warning")
+        log = _LOG.error if i.severity == "error" else _LOG.warning
+        log("%s/%s :: %s", i.system, i.set_dir, i.description)
+    _LOG.info(
+        "%s issue(s): %s error, %s warning", len(issues), n_err, len(issues) - n_err
+    )
     return 1 if (n_err > 0 or (args.strict and issues)) else 0
 
 
@@ -717,17 +725,13 @@ def main(args: Sequence[str] | None = None) -> None:
         if parsed_args.command == "data":
             handler = _DATA_DISPATCH.get(parsed_args.data_command)
             if handler is None:
-                print(
-                    f"Unknown data command: {parsed_args.data_command}", file=sys.stderr
-                )
+                _LOG.error("Unknown data command: %s", parsed_args.data_command)
                 sys.exit(1)
             sys.exit(handler(parsed_args))
         else:
             handler = _DISPATCH.get(parsed_args.command)
             if handler is None:
-                print(
-                    f"Unknown dpa-adapt command: {parsed_args.command}", file=sys.stderr
-                )
+                _LOG.error("Unknown dpa-adapt command: %s", parsed_args.command)
                 sys.exit(1)
             sys.exit(handler(parsed_args))
     except Exception as exc:
@@ -737,6 +741,6 @@ def main(args: Sequence[str] | None = None) -> None:
         )
 
         if isinstance(exc, DPADataError):
-            print(f"error: {exc}", file=sys.stderr)
+            _LOG.error("%s", exc)
             sys.exit(1)
         raise
