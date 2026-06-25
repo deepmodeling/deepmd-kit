@@ -72,7 +72,10 @@ class TestCallLowerGraph(unittest.TestCase):
             box=None,
         )
 
-        dense = model.call_lower(ext_coord, ext_atype, nlist, mapping)
+        # dense ``call_common_lower`` returns the INTERNAL model_output_def keys
+        # (``energy`` per-atom, ``energy_redu`` reduced), matching the
+        # OUTPUT-AGNOSTIC graph lower.
+        dense = model.call_common_lower(ext_coord, ext_atype, nlist, mapping)
 
         ng = from_dense_quartet(ext_coord, nlist, mapping)
         nloc = nlist.shape[1]
@@ -84,12 +87,14 @@ class TestCallLowerGraph(unittest.TestCase):
             edge_mask=ng.edge_mask,
         )
 
+        # reduced per-frame energy
         np.testing.assert_allclose(
-            out["energy"], dense["energy"], rtol=1e-12, atol=1e-12
+            out["energy_redu"], dense["energy_redu"], rtol=1e-12, atol=1e-12
         )
+        # per-atom energy
         np.testing.assert_allclose(
-            out["atom_energy"].reshape(dense["atom_energy"].shape),
-            dense["atom_energy"],
+            out["energy"].reshape(dense["energy"].shape),
+            dense["energy"],
             rtol=1e-12,
             atol=1e-12,
         )

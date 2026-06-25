@@ -25,7 +25,7 @@ from deepmd.pt_expt.common import (
 )
 
 from .edge_transform_output import (
-    edge_energy_deriv,
+    fit_output_to_model_output_graph,
 )
 from .transform_output import (
     fit_output_to_model_output,
@@ -293,15 +293,19 @@ def make_model(
         ) -> dict[str, torch.Tensor]:
             """Graph-native lower with autograd force/virial (PR-A: dpa1 ``attn_layer==0``).
 
-            Runs the dpmodel ENERGY-only :meth:`call_lower_graph` with ``edge_vec``
-            as the autograd leaf, then assembles force / per-frame virial /
-            (optional) atom virial from a SINGLE backward pass via
-            :func:`edge_energy_deriv` (``g_e = dE/d(edge_vec)``, then the shared
-            full-to-``src`` scatter).
+            OUTPUT-AGNOSTIC: runs the graph descriptor + fitting forward with
+            ``edge_vec`` as the autograd leaf (via the inherited
+            :meth:`_graph_descriptor_fitting`), then routes the raw rectangular
+            ``fit_ret`` through :func:`fit_output_to_model_output_graph`, which
+            reduces EVERY reducible output and assembles force / per-frame virial
+            / (optional) atom-virial for every ``r_differentiable`` output from a
+            backward pass w.r.t. ``edge_vec`` (the shared full-to-``src`` scatter).
+            This makes any fitting (energy/dos/dipole/polar/property/...) flow
+            through the graph path with no change on the fitting side.
 
             The returned dict uses the SAME internal key names as the legacy dense
-            :meth:`forward_common_lower` (``energy``, ``energy_redu``,
-            ``energy_derv_r``, ``energy_derv_c_redu``, and ``energy_derv_c`` when
+            :meth:`forward_common_lower` (``<var>``, ``<var>_redu``,
+            ``<var>_derv_r``, ``<var>_derv_c_redu``, and ``<var>_derv_c`` when
             ``do_atomic_virial``).  Unlike the dense lower (which returns EXTENDED
             ``nall`` force/atom-virial), the graph is ghost-free, so force and
             atom-virial here live on the ``nloc`` LOCAL atoms (ghost contributions
@@ -322,7 +326,7 @@ def make_model(
             edge_mask
                 (E,) valid-edge mask.
             do_atomic_virial
-                Whether to also return the per-atom virial ``energy_derv_c``.
+                Whether to also return the per-atom virial ``<var>_derv_c``.
             fparam
                 Frame parameter, ``(nf, ndf)``.
             aparam
@@ -331,47 +335,38 @@ def make_model(
             Returns
             -------
             dict
-                ``energy`` (nf, nloc, 1), ``energy_redu`` (nf, 1),
-                ``energy_derv_r`` (nf, nloc, 1, 3),
-                ``energy_derv_c_redu`` (nf, 1, 9), and -- when
-                ``do_atomic_virial`` -- ``energy_derv_c`` (nf, nloc, 1, 9).
+                The standard model dict with ``<var>`` (nf, nloc, *shape),
+                ``<var>_redu`` (nf, *shape), and -- for ``r_differentiable``
+                outputs -- ``<var>_derv_r`` (nf, nloc, *shape, 3),
+                ``<var>_derv_c_redu`` (nf, *shape, 9), and -- when
+                ``do_atomic_virial`` -- ``<var>_derv_c`` (nf, nloc, *shape, 9).
             """
             nf = int(n_node.shape[0])
             nloc = int(n_node[0])
             # make edge_vec the autograd leaf for the energy backward
             edge_vec = edge_vec.detach().requires_grad_(True)
-            ret = self.call_lower_graph(
-                atype=atype,
-                n_node=n_node,
-                edge_index=edge_index,
-                edge_vec=edge_vec,
-                edge_mask=edge_mask,
+            fit_ret, _ = self._graph_descriptor_fitting(
+                atype,
+                n_node,
+                edge_index,
+                edge_vec,
+                edge_mask,
                 fparam=fparam,
                 aparam=aparam,
             )
-            atom_energy = ret["atom_energy"]  # (nf, nloc, 1)
-            energy = ret["energy"]  # (nf, 1)
-            force, atom_virial, virial = edge_energy_deriv(
-                energy,
+            # carry-all graph: every local atom is real -> all-ones int mask.
+            mask = torch.ones((nf, nloc), dtype=torch.int32, device=edge_vec.device)
+            return fit_output_to_model_output_graph(
+                fit_ret,
+                self.atomic_model.fitting_output_def(),
                 edge_vec,
                 edge_index,
                 edge_mask,
                 n_node,
                 do_atomic_virial=do_atomic_virial,
                 create_graph=self.training,
+                mask=mask,
             )
-            out = {
-                "energy": atom_energy,
-                "energy_redu": energy,
-                # force (N, 3) -> (nf, nloc, 1, 3); virial (nf, 3, 3) -> (nf, 1, 9)
-                "energy_derv_r": force.reshape(nf, nloc, 1, 3),
-                "energy_derv_c_redu": virial.reshape(nf, 1, 9),
-            }
-            if do_atomic_virial:
-                assert atom_virial is not None
-                # atom_virial (N, 3, 3) -> (nf, nloc, 1, 9)
-                out["energy_derv_c"] = atom_virial.reshape(nf, nloc, 1, 9)
-            return out
 
         def _resolve_graph_method(
             self, neighbor_graph_method: str | None

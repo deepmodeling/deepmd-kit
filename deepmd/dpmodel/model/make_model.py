@@ -46,7 +46,6 @@ from deepmd.dpmodel.utils.neighbor_graph import (
     NeighborGraph,
     build_neighbor_graph,
     build_neighbor_graph_ase,
-    segment_sum,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -377,13 +376,15 @@ def make_model(
             method: str,
             do_atomic_virial: bool = False,
         ) -> dict[str, Array]:
-            """Carry-all graph energy forward (opt-in, Option B).
+            """Carry-all graph forward (opt-in, Option B).
 
             Builds a carry-all :class:`NeighborGraph` from ``cc``/``atype``/``bb``
-            and routes the ENERGY forward through :meth:`call_lower_graph`. The
-            returned dict mirrors the dense ``call_common`` energy keys
-            (``atom_energy``, ``energy``, ``mask``). Input type-casting is done
-            by the caller; output type-casting is also applied by the caller.
+            and routes the forward through the OUTPUT-AGNOSTIC
+            :meth:`call_lower_graph`. The returned dict mirrors the dense
+            ``call_common`` keys (``<var>`` per-atom, ``<var>_redu`` reduced,
+            derivative name-holders ``None``, plus ``mask``). Input type-casting
+            is done by the caller; output type-casting is also applied by the
+            caller.
             """
             descriptor = getattr(self.atomic_model, "descriptor", None)
             uses_graph_lower = getattr(descriptor, "uses_graph_lower", lambda: False)
@@ -403,7 +404,9 @@ def make_model(
             xp = array_api_compat.array_namespace(atype)
             dev = array_api_compat.device(atype)
             nf, nloc = atype.shape[:2]
-            graph_ret = self.call_lower_graph(
+            # OUTPUT-AGNOSTIC standard model dict (``<var>``, ``<var>_redu``,
+            # derivative name-holders ``None``), like the dense ``call_common``.
+            model_predict = self.call_lower_graph(
                 atype=xp.reshape(atype, (nf * nloc,)),
                 n_node=ng.n_node,
                 edge_index=ng.edge_index,
@@ -412,16 +415,9 @@ def make_model(
                 fparam=fp,
                 aparam=ap,
             )
-            # mirror the dense ``call_common`` energy keys: ``energy`` is the
-            # per-atom energy (nf, nloc, 1); ``energy_redu`` is the per-frame
-            # reduction (nf, 1); ``mask`` is the (nf, nloc) realness mask.
-            model_predict = {
-                "energy": xp.reshape(graph_ret["atom_energy"], (nf, nloc, 1)),
-                "energy_redu": graph_ret["energy"],
-                # carry-all graph: all local atoms are real -> all-ones int mask,
-                # matching the dense path (base_atomic_model: mask = int32 atom_mask).
-                "mask": xp.ones((nf, nloc), dtype=xp.int32, device=dev),
-            }
+            # carry-all graph: all local atoms are real -> all-ones int mask,
+            # matching the dense path (base_atomic_model: mask = int32 atom_mask).
+            model_predict["mask"] = xp.ones((nf, nloc), dtype=xp.int32, device=dev)
             return model_predict
 
         def call_common_lower(
@@ -531,53 +527,22 @@ def make_model(
                 mask=atomic_ret["mask"] if "mask" in atomic_ret else None,
             )
 
-        def call_lower_graph(
+        def _graph_descriptor_fitting(
             self,
             atype: Array,
             n_node: Array,
             edge_index: Array,
             edge_vec: Array,
             edge_mask: Array,
-            n_local: Array | None = None,
             fparam: Array | None = None,
             aparam: Array | None = None,
-            comm_dict: dict | None = None,
-        ) -> dict[str, Array]:
-            """Graph-native ENERGY lower (PR-A: dpa1 ``attn_layer == 0``).
+        ) -> tuple[dict[str, Array], Array]:
+            """Run the graph descriptor + fitting forward.
 
-            Energy-level only: returns the per-atom ``atom_energy`` and the
-            per-frame reduced ``energy``. Force/virial are produced by the
-            pt_expt autograd path (a later task). Must match the dense
-            :meth:`call_common_lower` energy and atom-energy on the SAME
-            neighbor list.
-
-            Parameters
-            ----------
-            atype
-                (N,) flat LOCAL atom types, ``N == sum(n_node)``.
-            n_node
-                (nf,) per-frame local atom counts.
-            edge_index
-                (2, E) ``[src, dst]`` edge endpoints (flat local indices).
-            edge_vec
-                (E, 3) neighbor-minus-center edge vectors.
-            edge_mask
-                (E,) boolean/0-1 valid-edge mask.
-            n_local
-                Per-rank local atom counts for multi-rank inference.
-                Ignored in PR-A (single-rank); accepted for ABI stability.
-            fparam
-                Frame parameter, ``(nf, ndf)``.
-            aparam
-                Atomic parameter, ``(nf, nloc, nda)``.
-            comm_dict
-                MPI communication metadata. Ignored in PR-A; accepted for
-                ABI stability.
-
-            Returns
-            -------
-            dict
-                ``{"atom_energy": (nf, nloc, 1), "energy": (nf, 1)}``.
+            Returns the raw rectangular ``fit_ret`` (``(nf, nloc, *shape)`` per
+            fitting output) plus the descriptor output ``gg`` (used by callers as
+            the array-namespace carrier).  ``edge_vec`` is consumed as-is so that
+            callers can make it the autograd leaf (pt_expt) before invoking this.
             """
             xp = array_api_compat.array_namespace(edge_vec)
             dev = array_api_compat.device(edge_vec)
@@ -608,26 +573,85 @@ def make_model(
                 fparam=fparam,
                 aparam=aparam,
             )
-            atom_energy = fit_ret["energy"]  # (nf, nloc, 1)
-            # per-frame reduction via segment_sum, mirroring the dense reduction
-            # (cast to energy precision before summing; see
-            # transform_output.fit_output_to_model_output).
-            frame_id = xp.repeat(
-                xp.arange(nf, dtype=edge_index.dtype, device=dev),
-                xp.asarray(n_node, device=dev),
+            return fit_ret, gg
+
+        def call_lower_graph(
+            self,
+            atype: Array,
+            n_node: Array,
+            edge_index: Array,
+            edge_vec: Array,
+            edge_mask: Array,
+            n_local: Array | None = None,
+            fparam: Array | None = None,
+            aparam: Array | None = None,
+            comm_dict: dict | None = None,
+        ) -> dict[str, Array]:
+            """Graph-native lower (PR-A: dpa1 ``attn_layer == 0``).
+
+            OUTPUT-AGNOSTIC, like the dense
+            :func:`~deepmd.dpmodel.model.transform_output.fit_output_to_model_output`:
+            runs the graph descriptor + fitting forward to obtain the rectangular
+            ``fit_ret`` (``(nf, nloc, *shape)``), then reduces EVERY reducible
+            fitting output (``xp.sum``/``xp.mean`` over the atom axis, cast to
+            energy precision) and sets derivative name-holders to ``None``.  This
+            makes any fitting (energy/dos/dipole/polar/property/...) flow through
+            the graph path with no change on the fitting side.  Force/virial are
+            produced by the pt_expt autograd path.  Must match the dense
+            :meth:`call_common_lower` reduction on the SAME neighbor list.
+
+            Parameters
+            ----------
+            atype
+                (N,) flat LOCAL atom types, ``N == sum(n_node)``.
+            n_node
+                (nf,) per-frame local atom counts.
+            edge_index
+                (2, E) ``[src, dst]`` edge endpoints (flat local indices).
+            edge_vec
+                (E, 3) neighbor-minus-center edge vectors.
+            edge_mask
+                (E,) boolean/0-1 valid-edge mask.
+            n_local
+                Per-rank local atom counts for multi-rank inference.
+                Ignored in PR-A (single-rank); accepted for ABI stability.
+            fparam
+                Frame parameter, ``(nf, ndf)``.
+            aparam
+                Atomic parameter, ``(nf, nloc, nda)``.
+            comm_dict
+                MPI communication metadata. Ignored in PR-A; accepted for
+                ABI stability.
+
+            Returns
+            -------
+            dict
+                The standard model dict (``<var>`` per-atom, ``<var>_redu``
+                reduced, derivative name-holders ``None``), matching
+                :func:`fit_output_to_model_output`.
+            """
+            xp = array_api_compat.array_namespace(edge_vec)
+            dev = array_api_compat.device(edge_vec)
+            nf = n_node.shape[0]
+            nloc = int(n_node[0])
+            fit_ret, gg = self._graph_descriptor_fitting(
+                atype,
+                n_node,
+                edge_index,
+                edge_vec,
+                edge_mask,
+                fparam=fparam,
+                aparam=aparam,
             )
-            ener_dtype = get_xp_precision(
-                xp, RESERVED_PRECISION_DICT[self.global_ener_float_precision]
+            # carry-all graph: every local atom is real -> all-ones int mask.
+            mask = xp.ones((nf, nloc), dtype=xp.int32, device=dev)
+            return fit_output_to_model_output(
+                fit_ret,
+                self.atomic_model.fitting_output_def(),
+                gg,
+                do_atomic_virial=False,
+                mask=mask,
             )
-            energy = segment_sum(
-                xp.reshape(
-                    xp.astype(atom_energy, ener_dtype),
-                    (nf * nloc, 1),
-                ),
-                frame_id,
-                nf,
-            )
-            return {"atom_energy": atom_energy, "energy": energy}
 
         call = call_common
         call_lower = call_common_lower
