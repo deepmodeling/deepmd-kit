@@ -432,9 +432,9 @@ class TestAutoConvertFormula:
         assert captured["base_element"] is None
 
     def test_formula_fmt_verbose_prints_system_count(
-        self, tmp_path, monkeypatch, capsys
+        self, tmp_path, monkeypatch, caplog
     ):
-        """fmt="formula" with verbose=True prints system count."""
+        """fmt="formula" with verbose=True logs system count."""
         csv = tmp_path / "comps.csv"
         csv.write_text("Ni0.5Fe0.5O2,1.0\nGd0.5Fe0.5O2,2.0\n")
         poscar = tmp_path / "POSCAR"
@@ -452,10 +452,10 @@ class TestAutoConvertFormula:
             _fake_formula_to_npy,
         )
 
-        convert(str(csv), str(out), fmt="formula", poscar=str(poscar), verbose=True)
+        with caplog.at_level(logging.INFO, logger="dpa_adapt"):
+            convert(str(csv), str(out), fmt="formula", poscar=str(poscar), verbose=True)
 
-        captured = capsys.readouterr()
-        assert "2 systems" in captured.out
+        assert "2 systems" in caplog.text
 
 
 # ---------------------------------------------------------------------------

@@ -168,8 +168,8 @@ def convert(
             "skipped_overlap": result.skipped_overlap,
         }
         if verbose:
-            print(f"RDKit converted samples: {converted['samples_used']}")
-            print(f"RDKit failed rows     : {len(converted['failed_rows'])}")
+            _LOG.info("RDKit converted samples: %s", converted["samples_used"])
+            _LOG.info("RDKit failed rows     : %s", len(converted["failed_rows"]))
         return converted
 
     # --- explicit formula hint ---
@@ -190,7 +190,7 @@ def convert(
             seed=seed,
         )
         if verbose:
-            print(f"Formula conversion: {len(out)} systems written.")
+            _LOG.info("Formula conversion: %s systems written.", len(out))
         return {"method": "formula", "output_systems": out}
 
     # --- structure glob → batch dpdata ---
@@ -231,7 +231,7 @@ def _convert_dpdata(
     input_path: str,
     output_dir: str,
     fmt: str | None = None,
-    type_map: list[str] = None,
+    type_map: list[str] | None = None,
     validate: bool = True,
     strict: bool = False,
 ) -> str:
@@ -257,7 +257,7 @@ def _convert_one(
     input_path: str,
     output_dir: str,
     fmt: str | None = None,
-    type_map: list[str] = None,
+    type_map: list[str] | None = None,
     validate: bool = True,
     strict: bool = False,
 ) -> str:
@@ -330,7 +330,7 @@ def _batch_convert(
     glob_pattern: str,
     output_dir: str,
     fmt: str,
-    type_map: list[str] = None,
+    type_map: list[str] | None = None,
     validate: bool = True,
     strict: bool = False,
     recursive: bool = True,
@@ -461,8 +461,6 @@ def _key_from_head(head: str | dict) -> str:
     DeePMD-kit stores label ``key`` as ``set.*/key.npy``.  This function maps
     the same ``head`` vocabulary used by ``DPAFineTuner.fit()`` to that key.
 
-    Rules
-    -----
     - ``str``  → key is the string itself (``"energy"`` → ``energy.npy``)
     - ``dict`` with ``"property_name"``
       → key is ``head["property_name"]``
@@ -600,6 +598,7 @@ def attach_labels(
     data : str | Path
         Path to a single deepmd/npy system (contains ``set.*/`` subdirs) or
         a parent directory containing system subdirectories.
+
     head : str | dict
         Property head specification — same vocabulary as
         ``DPAFineTuner(head=...)``:
@@ -609,6 +608,7 @@ def attach_labels(
         - ``{"type": "property", "property_name": "bandgap", "task_dim": 1}``
           → writes ``set.*/bandgap.npy``
         - ``{"type": "dos", "numb_dos": 250}`` → writes ``set.*/dos.npy``
+
     values : np.ndarray
         For single-system: shape ``(n_frames,)`` or ``(n_frames, dim)``.
         For multi-system: shape ``(n_systems,)`` or ``(n_systems, dim)``;
@@ -680,5 +680,5 @@ def attach_labels(
             "of system subdirectories (sorted alphabetically)."
         )
 
-    for sys_dir, sub_vals in zip(sys_dirs, values_arr):
+    for sys_dir, sub_vals in zip(sys_dirs, values_arr, strict=True):
         _attach_single(sys_dir, head, sub_vals)

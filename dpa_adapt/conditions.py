@@ -18,7 +18,7 @@ class ConditionManager:
     normalized (n, d_total) array for downstream concatenation.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._scalers = None
         self._keys = None
 
