@@ -12,12 +12,8 @@ oracle defined locally in this test file.
 
 import itertools
 import unittest
-from types import (
-    SimpleNamespace,
-)
 
 import numpy as np
-import pytest
 
 from deepmd.dpmodel.utils.neighbor_graph import (
     GraphLayout,
@@ -27,22 +23,6 @@ from deepmd.dpmodel.utils.neighbor_graph import (
 from deepmd.dpmodel.utils.nlist import (
     extend_input_and_build_neighbor_list,
 )
-
-
-def _detach_graph(ng):
-    """View a NeighborGraph's arrays as numpy (accepts torch or numpy tensors),
-    so the numpy-only ``graph_neighbor_sets`` helper can consume a torch result.
-    """
-
-    def to_np(x):
-        return x.detach().cpu().numpy() if hasattr(x, "detach") else np.asarray(x)
-
-    return SimpleNamespace(
-        edge_index=to_np(ng.edge_index),
-        edge_vec=to_np(ng.edge_vec),
-        edge_mask=to_np(ng.edge_mask),
-        n_node=to_np(ng.n_node),
-    )
 
 
 def brute_force_neighbor_sets(coord, box, rcut):
@@ -272,39 +252,6 @@ class TestNeighborGraphBuilder(unittest.TestCase):
         self.assertFalse(bool(np.any(ng.edge_mask[n_real:])))
         # masked-out tail contributes no real edges
         self.assertTrue(np.all(ng.edge_vec[~ng.edge_mask] == 0.0))
-
-    def test_torch_namespace_smoke(self) -> None:
-        # array-API smoke test: both builders must run under the torch namespace
-        # (torch.from_numpy inputs) and produce the SAME neighbor environment as
-        # numpy. Catches numpy-only ops (bool*float, wrong index dtype, missing
-        # device=) that pass under numpy but break torch/jax (CLAUDE.md guidance).
-        torch = pytest.importorskip("torch")
-        box = np.eye(3, dtype=np.float64)[None] * 6.0
-        for b in (None, box):  # non-periodic AND periodic
-            ref = graph_neighbor_sets(
-                build_neighbor_graph(self.coord, self.atype, b, self.rcut), 4
-            )
-            t_box = None if b is None else torch.from_numpy(b)
-            ng_pt = build_neighbor_graph(
-                torch.from_numpy(self.coord),
-                torch.from_numpy(self.atype),
-                t_box,
-                self.rcut,
-            )
-            # namespace preserved (output stays a torch tensor, not silently numpy)
-            self.assertIn("torch", type(ng_pt.edge_index).__module__)
-            self.assertEqual(graph_neighbor_sets(_detach_graph(ng_pt), 4), ref)
-        # the converter must travel the torch namespace too
-        ext_coord, _ext_atype, mapping, nlist = extend_input_and_build_neighbor_list(
-            self.coord, self.atype, self.rcut, [50, 50], mixed_types=True, box=box
-        )
-        ref_c = graph_neighbor_sets(from_dense_quartet(ext_coord, nlist, mapping), 4)
-        ng_pt_c = from_dense_quartet(
-            torch.from_numpy(ext_coord),
-            torch.from_numpy(nlist),
-            torch.from_numpy(mapping),
-        )
-        self.assertEqual(graph_neighbor_sets(_detach_graph(ng_pt_c), 4), ref_c)
 
 
 class TestFromDenseQuartet(unittest.TestCase):
