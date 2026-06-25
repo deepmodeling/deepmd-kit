@@ -14,15 +14,14 @@ from __future__ import (
     annotations,
 )
 
-from typing import (
-    TYPE_CHECKING,
-)
-
 import argparse
 import json
 import logging
 import os
 import sys
+from typing import (
+    TYPE_CHECKING,
+)
 
 import numpy as np
 
