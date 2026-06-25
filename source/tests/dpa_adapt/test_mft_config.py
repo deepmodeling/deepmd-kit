@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from typing import (
+    ClassVar,
+)
+
 import pytest
 
 from dpa_adapt.config.manager import (
@@ -13,8 +17,11 @@ class FakeTuner:
     pretrained = "/share/DPA-3.1-3M.pt"
     aux_branch = "MP_traj_v024_alldata_mixu"
     aux_prob = 0.5
-    type_map = ["Cu", "O"]
-    fitting_net_params = {"type": "ener", "neuron": [240, 240, 240]}
+    type_map: ClassVar[list[str]] = ["Cu", "O"]
+    fitting_net_params: ClassVar[dict[str, object]] = {
+        "type": "ener",
+        "neuron": [240, 240, 240],
+    }
     downstream_task_type = "ener"
     learning_rate = 1e-3
     stop_lr = 1e-5

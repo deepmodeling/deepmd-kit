@@ -16,6 +16,9 @@ from __future__ import (
 )
 
 import json
+from typing import (
+    ClassVar,
+)
 from unittest.mock import (
     patch,
 )
@@ -71,12 +74,12 @@ def _patch_torch_load():
 
 def _trainer(pretrained, tmp_path, **overrides):
     sys_glob = _make_sys(tmp_path)
-    kwargs = dict(
-        pretrained=pretrained,
-        train_systems=sys_glob,
-        valid_systems=sys_glob,
-        type_map=TYPE_MAP,
-    )
+    kwargs = {
+        "pretrained": pretrained,
+        "train_systems": sys_glob,
+        "valid_systems": sys_glob,
+        "type_map": TYPE_MAP,
+    }
     kwargs.update(overrides)
     return DPATrainer(**kwargs)
 
@@ -190,8 +193,8 @@ class _PropertyTuner:
     pretrained = "/share/DPA-3.1-3M.pt"
     aux_branch = "SPICE2"
     aux_prob = 0.5
-    type_map = ["H", "C", "N", "O"]
-    fitting_net_params = {
+    type_map: ClassVar[list[str]] = ["H", "C", "N", "O"]
+    fitting_net_params: ClassVar[dict[str, object]] = {
         "type": "ener",
         "neuron": [240, 240, 240],
         "dim_case_embd": 31,
@@ -309,8 +312,11 @@ class _EnerTuner:
     pretrained = "/share/DPA-3.1-3M.pt"
     aux_branch = "MP_traj_v024_alldata_mixu"
     aux_prob = 0.5
-    type_map = ["Cu", "O"]
-    fitting_net_params = {"type": "ener", "neuron": [240, 240, 240]}
+    type_map: ClassVar[list[str]] = ["Cu", "O"]
+    fitting_net_params: ClassVar[dict[str, object]] = {
+        "type": "ener",
+        "neuron": [240, 240, 240],
+    }
     learning_rate = 1e-3
     stop_lr = 1e-5
     max_steps = 1000

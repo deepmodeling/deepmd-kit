@@ -305,7 +305,7 @@ def test_evaluate_parse_property_explicit():
 
 
 def test_evaluate_parse_property_format_explicit():
-    """Parser auto-detects PROPERTY output and matches the well-anchored regex.
+    r"""Parser auto-detects PROPERTY output and matches the well-anchored regex.
     Generic \brmse\b / \bmae\b fallback patterns were removed.
     """
     stdout = (

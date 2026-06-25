@@ -28,7 +28,7 @@ def _make_system(tmp_path, name="sys", natoms=2, nframes=3, elements=None):
     (root / "type_map.raw").write_text("\n".join(elements) + "\n")
     sd = root / "set.000"
     sd.mkdir(exist_ok=True)
-    np.save(sd / "coord.npy", np.random.rand(nframes, natoms * 3))
+    np.save(sd / "coord.npy", np.random.default_rng().random((nframes, natoms * 3)))
     np.save(sd / "box.npy", np.tile(np.eye(3).ravel(), (nframes, 1)))
     return load_data(str(root))[0]
 
@@ -154,10 +154,10 @@ class TestEnsurePerSystemCache:
         called = []
 
         class FakeFineTuner:
-            def __init__(inner_self, **kwargs):
+            def __init__(self, **kwargs):
                 called.append(True)
 
-            def _extract_features(inner_self, systems):
+            def _extract_features(self, systems):
                 return np.zeros((2, 8))
 
         monkeypatch.setattr(
@@ -181,10 +181,10 @@ class TestEnsurePerSystemCache:
         called = []
 
         class FakeFineTuner:
-            def __init__(inner_self, **kwargs):
+            def __init__(self, **kwargs):
                 called.append(True)
 
-            def _extract_features(inner_self, systems):
+            def _extract_features(self, systems):
                 return np.zeros((2, 8))
 
             _device = None

@@ -38,13 +38,13 @@ def _make_systems(tmp_path, prefix: str, n: int) -> str:
 
 def _make_dummy_trainer(fparam_dim=0, **kwargs):
     """Construct a DPATrainer with minimal valid args."""
-    defaults = dict(
-        pretrained=None,
-        train_systems="dummy_train",
-        valid_systems="dummy_valid",
-        type_map=DUMMY_TYPE_MAP,
-        fparam_dim=fparam_dim,
-    )
+    defaults = {
+        "pretrained": None,
+        "train_systems": "dummy_train",
+        "valid_systems": "dummy_valid",
+        "type_map": DUMMY_TYPE_MAP,
+        "fparam_dim": fparam_dim,
+    }
     defaults.update(kwargs)
     return DPATrainer(**defaults)
 

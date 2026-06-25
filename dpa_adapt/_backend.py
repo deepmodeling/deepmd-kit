@@ -186,7 +186,10 @@ class _DescriptorExtraction:
         self._descriptor_hook_model = self._resolve_descriptor_hook_model()
 
     def _resolve_descriptor_hook_model(self) -> Any | None:
-        for model in (self._inner_model, self._atomic_model):
+        # Prefer atomic_model — it owns eval_descriptor_list; dp_model
+        # delegates set_eval_descriptor_hook / eval_descriptor to it but
+        # lacks the list attribute, so _clear_accumulator was a no-op.
+        for model in (self._atomic_model, self._inner_model):
             if hasattr(model, "set_eval_descriptor_hook") and hasattr(
                 model, "eval_descriptor"
             ):

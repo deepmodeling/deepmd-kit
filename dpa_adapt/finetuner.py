@@ -12,6 +12,10 @@ import subprocess
 from pathlib import (
     Path,
 )
+from typing import (
+    Any,
+    ClassVar,
+)
 
 import dpdata
 import numpy as np
@@ -48,7 +52,7 @@ from dpa_adapt.utils.dotdict import (
 
 def _load_labels(
     systems: list[dpdata.System],
-    target_key,  # str | list[str] — union type omitted for runtime simplicity
+    target_key: str | list[str],
 ) -> np.ndarray:
     """Load and concatenate labels from dpdata systems.
 
@@ -94,7 +98,7 @@ def _load_labels(
             if source is not None:
                 set_dirs = sorted(Path(source).glob("set.*"))
                 available_npy = sorted(
-                    set(p.name for sd in set_dirs for p in sd.glob("*.npy"))
+                    {p.name for sd in set_dirs for p in sd.glob("*.npy")}
                 )
             else:
                 available_npy = []
@@ -162,7 +166,9 @@ def _read_fparam_from_systems(
                 f"fparam_dim={expected_dim} but fparam.npy is missing under "
                 f"{source_path}: {[str(fp) for fp in missing]}"
             )
-        present = [(sd, fp) for sd, fp in zip(set_dirs, fps) if fp.is_file()]
+        present = [
+            (sd, fp) for sd, fp in zip(set_dirs, fps, strict=False) if fp.is_file()
+        ]
         if not present:
             continue
         arrs = []
@@ -202,7 +208,7 @@ def _read_fparam_from_systems(
     return {f"fparam_{i}": combined[:, i] for i in range(combined.shape[1])}
 
 
-def _read_data_type_map(system) -> list[str]:
+def _read_data_type_map(system: dpdata.System) -> list[str]:
     """Read element symbols from a dpdata System's ``atom_names``.
 
     Returns an empty list when the names are dpdata's auto-generated
@@ -218,7 +224,9 @@ def _read_data_type_map(system) -> list[str]:
     return names
 
 
-def _load_npy_system(system: dpdata.System):
+def _load_npy_system(
+    system: dpdata.System,
+) -> tuple[np.ndarray, np.ndarray | None, np.ndarray]:
     """Extract (coords, boxes, atom_types) from a dpdata System.
 
     Adapts dpdata's native shapes to the format expected by
@@ -256,9 +264,9 @@ def _load_npy_system(system: dpdata.System):
 
 
 def extract_descriptors(
-    data,
+    data: str | list[str],
     pretrained: str,
-    model_branch: str = None,
+    model_branch: str | None = None,
     pooling: str = "mean",
     cache: bool = True,
 ) -> np.ndarray:
@@ -327,9 +335,16 @@ class _FrozenSklearnPipeline:
     code path from the training-paradigm and MFT dispatch logic.
     """
 
-    _VALID_POOLING = {"mean", "sum", "mean+std", "mean+std+max+min"}
+    _VALID_POOLING: ClassVar[set[str]] = {"mean", "sum", "mean+std", "mean+std+max+min"}
 
-    def __init__(self, pretrained, model_branch, predictor_type, pooling, seed):
+    def __init__(
+        self,
+        pretrained: str,
+        model_branch: str | None,
+        predictor_type: str,
+        pooling: str,
+        seed: int,
+    ) -> None:
         self.pretrained = pretrained
         self.model_branch = model_branch
         self._predictor_type = predictor_type
@@ -351,7 +366,7 @@ class _FrozenSklearnPipeline:
     # Descriptor model loading
     # ------------------------------------------------------------------
 
-    def load_descriptor_model(self):
+    def load_descriptor_model(self) -> Any:
         """Load the pretrained DPA checkpoint and return a (non-JIT) ModelWrapper.
 
         If *pretrained* is a built-in model name (e.g. ``"DPA-3.1-3M"``)
@@ -408,7 +423,9 @@ class _FrozenSklearnPipeline:
     # Type-map helpers
     # ------------------------------------------------------------------
 
-    def validate_type_map(self, user_type_map, systems):
+    def validate_type_map(
+        self, user_type_map: list[str], systems: list[dpdata.System]
+    ) -> None:
         """Raise DPADataError if any data element is not in the checkpoint type_map.
 
         The data type_map can be any subset of the checkpoint's type_map — order
@@ -421,11 +438,11 @@ class _FrozenSklearnPipeline:
 
         ckpt_set = set(ckpt)
 
-        def _check(candidate, source):
+        def _check(candidate: list[str], source: str) -> None:
             unsupported = [e for e in candidate if e not in ckpt_set]
             if unsupported:
                 ckpt_repr = (
-                    f"{ckpt[:3] + ['...'] + ckpt[-1:]} ({len(ckpt)} elements)"
+                    f"{[*ckpt[:3], '...', *ckpt[-1:]]} ({len(ckpt)} elements)"
                     if len(ckpt) > 8
                     else str(ckpt)
                 )
@@ -446,7 +463,9 @@ class _FrozenSklearnPipeline:
                 identifier = system.orig if hasattr(system, "orig") else "system"
                 _check(data_tm, f"atom_names of {identifier}")
 
-    def remap_atom_types(self, atom_types, system):
+    def remap_atom_types(
+        self, atom_types: np.ndarray, system: dpdata.System
+    ) -> np.ndarray:
         """Map local atom-type indices to checkpoint-global indices.
 
         ``atom_types`` are 0-based indices into the system's type_map.
@@ -500,7 +519,7 @@ class _FrozenSklearnPipeline:
     # so that patches on DPAFineTuner._extract_features are honoured)
     # ------------------------------------------------------------------
 
-    def extract_features(self, systems):
+    def extract_features(self, systems: list[dpdata.System]) -> np.ndarray:
         """Extract per-structure descriptor features by pooling over atoms.
 
         The pooling strategy is controlled by ``self.pooling``:
@@ -688,8 +707,8 @@ class DPAFineTuner:
         (MFT only) Batch size for the downstream head.
     """
 
-    _VALID_POOLING = {"mean", "sum", "mean+std", "mean+std+max+min"}
-    _VALID_STRATEGIES = {
+    _VALID_POOLING: ClassVar[set[str]] = {"mean", "sum", "mean+std", "mean+std+max+min"}
+    _VALID_STRATEGIES: ClassVar[set[str]] = {
         "frozen_sklearn",
         "frozen_head",
         "finetune",
@@ -698,38 +717,38 @@ class DPAFineTuner:
 
     def __init__(
         self,
-        pretrained="DPA-3.1-3M",
-        model_branch=None,
-        predictor="rf",
-        pooling="mean",
-        seed=42,
+        pretrained: str = "DPA-3.1-3M",
+        model_branch: str | None = None,
+        predictor: str = "rf",
+        pooling: str = "mean",
+        seed: int = 42,
         # ---- training paradigms ----
-        strategy="frozen_sklearn",
-        property_name="property",
-        task_dim=1,
-        intensive=True,
-        init_branch="SPICE2",
-        learning_rate=1e-3,
-        stop_lr=1e-5,
+        strategy: str = "frozen_sklearn",
+        property_name: str = "property",
+        task_dim: int = 1,
+        intensive: bool = True,
+        init_branch: str = "SPICE2",
+        learning_rate: float = 1e-3,
+        stop_lr: float = 1e-5,
         decay_steps: int
         | None = None,  # None → auto: 1000 for training, MFT auto-detect
         warmup_steps: int = 0,
-        max_steps=100_000,
-        batch_size="auto:512",
-        loss_function="mse",
+        max_steps: int = 100_000,
+        batch_size: str | int = "auto:512",
+        loss_function: str = "mse",
         fitting_net_params: dict | None = None,
         fparam_dim: int = 0,
-        output_dir="./dpa_output",
-        save_freq=10_000,
-        disp_freq=1_000,
+        output_dir: str = "./dpa_output",
+        save_freq: int = 10_000,
+        disp_freq: int = 1_000,
         # ---- mft-only ----
-        aux_branch="MP_traj_v024_alldata_mixu",
+        aux_branch: str = "MP_traj_v024_alldata_mixu",
         aux_prob: float = 0.5,
         type_map: list[str] | None = None,
         downstream_task_type: str = "property",
         aux_batch_size: str | None = None,
         downstream_batch_size: int | None = None,
-    ):
+    ) -> None:
         if pooling not in self._VALID_POOLING:
             raise ValueError(
                 f"pooling must be one of {sorted(self._VALID_POOLING)}, got {pooling!r}"
@@ -810,7 +829,7 @@ class DPAFineTuner:
     # pipeline on each call so that direct setters continue to work.
     # ------------------------------------------------------------------
 
-    def _ensure_sklearn(self):
+    def _ensure_sklearn(self) -> _FrozenSklearnPipeline:
         """Create the pipeline on first use if it doesn't exist yet."""
         if self._sklearn is None:
             self._sklearn = _FrozenSklearnPipeline(
@@ -837,7 +856,7 @@ class DPAFineTuner:
         self._sklearn.type_map = self.type_map
         return self._sklearn
 
-    def _load_descriptor_model(self):
+    def _load_descriptor_model(self) -> Any:
         p = self._ensure_sklearn()
         model = p.load_descriptor_model()
         self._model = model
@@ -845,13 +864,17 @@ class DPAFineTuner:
         self._checkpoint_type_map = list(p._checkpoint_type_map)
         return model
 
-    def _validate_type_map(self, user_type_map, systems):
+    def _validate_type_map(
+        self, user_type_map: list[str], systems: list[dpdata.System]
+    ) -> None:
         return self._ensure_sklearn().validate_type_map(user_type_map, systems)
 
-    def _remap_atom_types(self, atom_types, system):
+    def _remap_atom_types(
+        self, atom_types: np.ndarray, system: dpdata.System
+    ) -> np.ndarray:
         return self._ensure_sklearn().remap_atom_types(atom_types, system)
 
-    def _extract_features_cached(self, systems):
+    def _extract_features_cached(self, systems: list[dpdata.System]) -> np.ndarray:
         """Call ``_extract_features`` with descriptor-cache lookup.
 
         Kept on DPAFineTuner (not delegated) so that patches on
@@ -885,7 +908,7 @@ class DPAFineTuner:
             pass
         return features
 
-    def _extract_features(self, systems):
+    def _extract_features(self, systems: list[dpdata.System]) -> np.ndarray:
         return self._ensure_sklearn().extract_features(systems)
 
     # ------------------------------------------------------------------
@@ -902,7 +925,7 @@ class DPAFineTuner:
     # Type-map auto-inference (shared with MFTFineTuner via data/type_map.py)
     # -------------------------------------------------------------------
 
-    def _resolve_type_maps(self, train_data) -> list[str]:
+    def _resolve_type_maps(self, train_data: str | list[str]) -> list[str]:
         """Auto-infer the global type_map from the checkpoint and validate
         *train_data* element set is a subset.
 
@@ -941,7 +964,12 @@ class DPAFineTuner:
     # Training-paradigm fit (frozen_head / finetune)
     # -------------------------------------------------------------------
 
-    def _fit_training(self, train_data, valid_data, type_map):
+    def _fit_training(
+        self,
+        train_data: str | list[str],
+        valid_data: str | list[str] | None,
+        type_map: list[str],
+    ) -> str:
         """Delegate to DPATrainer for single-task ``dp --pt train``."""
         from dpa_adapt.trainer import (
             DPATrainer,
@@ -983,13 +1011,13 @@ class DPAFineTuner:
                 f"No model.ckpt-*.pt found in {self.output_dir}; call fit() first."
             )
 
-        def step_of(path):
+        def step_of(path: Path) -> int:
             return int(path.stem.split("-")[-1])
 
         return str(max(ckpts, key=step_of))
 
     @staticmethod
-    def _expand_system_specs(data) -> list[str]:
+    def _expand_system_specs(data: str | list[str]) -> list[str]:
         import glob
 
         patterns = [data] if isinstance(data, str) else list(data)
@@ -1004,7 +1032,7 @@ class DPAFineTuner:
             raise DPADataError(f"No systems matched {data!r}.")
         return systems
 
-    def _freeze_training_checkpoint(self, output_path="frozen_model.pth") -> str:
+    def _freeze_training_checkpoint(self, output_path: str = "frozen_model.pth") -> str:
         """Freeze a single-task DeepMD checkpoint via ``dp --pt freeze``."""
         ckpt = self._latest_training_checkpoint()
         output_path = os.path.abspath(str(output_path))
@@ -1047,7 +1075,9 @@ class DPAFineTuner:
             shutil.copyfile(produced, output_path)
         return output_path
 
-    def _run_training_predict(self, data, fmt=None) -> DotDict:
+    def _run_training_predict(
+        self, data: str | list[str], fmt: str | None = None
+    ) -> DotDict:
         """Run ``dp --pt test`` and parse property predictions from detail files."""
         from dpa_adapt.trainer import (
             DPATrainer,
@@ -1154,14 +1184,14 @@ class DPAFineTuner:
 
     def fit(
         self,
-        train_data,
-        valid_data=None,
-        type_map=None,
-        target_key=None,
-        labels=None,
-        fmt=None,
-        aux_data=None,
-    ):
+        train_data: str | list[str],
+        valid_data: str | list[str] | None = None,
+        type_map: list[str] | None = None,
+        target_key: str | list[str] | None = None,
+        labels: np.ndarray | None = None,
+        fmt: str | None = None,
+        aux_data: str | list[str] | None = None,
+    ) -> str | None:
         """Train the model.
 
         *frozen_sklearn* (default): extract descriptors, fit sklearn head.
@@ -1212,14 +1242,19 @@ class DPAFineTuner:
         self.type_map = type_map
         return self._fit_training(train_data, valid_data, type_map)
 
-    def _fit_mft(self, train_data, aux_data, valid_data=None):
+    def _fit_mft(
+        self,
+        train_data: str | list[str],
+        aux_data: str | list[str],
+        valid_data: str | list[str] | None = None,
+    ) -> str:
         """Delegate to MFTFineTuner for multi-task fine-tuning."""
         mft = self._ensure_mft()
         mft.fit(train_data=train_data, aux_data=aux_data, valid_data=valid_data)
         self._fitted = True
         return self.output_dir
 
-    def _ensure_mft(self):
+    def _ensure_mft(self) -> Any:
         """Create the MFT delegate on first use."""
         from dpa_adapt.mft import (
             MFTFineTuner,
@@ -1254,12 +1289,12 @@ class DPAFineTuner:
 
     def _fit_sklearn(
         self,
-        data,
-        type_map=None,
-        target_key=None,
-        labels=None,
-        fmt=None,
-    ):
+        data: str | list[str],
+        type_map: list[str] | None = None,
+        target_key: str | list[str] | None = None,
+        labels: np.ndarray | None = None,
+        fmt: str | None = None,
+    ) -> None:
         """Fit the frozen-sklearn pipeline (delegates to ``_FrozenSklearnPipeline``).
 
         Refactored: logic extracted to ``_FrozenSklearnPipeline``; this method
@@ -1331,7 +1366,7 @@ class DPAFineTuner:
         p._condition_manager = self._condition_manager
         p._fitted = True
 
-    def predict(self, data, fmt=None) -> DotDict:
+    def predict(self, data: str | list[str], fmt: str | None = None) -> DotDict:
         """
         Predict with the adapted model.
 
@@ -1387,7 +1422,7 @@ class DPAFineTuner:
         predictions = np.asarray(raw).reshape(-1, self._task_dim)
         return DotDict({"predictions": predictions})
 
-    def evaluate(self, data, fmt=None) -> DotDict:
+    def evaluate(self, data: str | list[str], fmt: str | None = None) -> DotDict:
         """
         Predict on ``data`` and compute evaluation metrics against stored labels.
 
@@ -1476,7 +1511,7 @@ class DPAFineTuner:
             }
         )
 
-    def freeze(self, output_path="frozen_model.pth") -> str:
+    def freeze(self, output_path: str = "frozen_model.pth") -> str:
         """
         Freeze or serialize the fitted model for inference.
 

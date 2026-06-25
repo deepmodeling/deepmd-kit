@@ -19,12 +19,18 @@ import os
 from pathlib import (
     Path,
 )
+from typing import (
+    TYPE_CHECKING,
+)
 
 import numpy as np
 
 from dpa_adapt._backend import (
     resolve_pretrained_path,
 )
+
+if TYPE_CHECKING:
+    import dpdata
 
 _LOG = logging.getLogger("dpa_adapt.data.desc_cache")
 
@@ -44,7 +50,7 @@ def _cache_dir() -> Path:
 # ---------------------------------------------------------------------------
 
 
-def _system_fingerprint(system) -> str:
+def _system_fingerprint(system: dpdata.System) -> str:
     """Return a short hex fingerprint for a dpdata System.
 
     Uses only metadata and a tiny sample of coordinate data so it is fast
@@ -126,7 +132,7 @@ def _cache_key(
 def load_or_extract(
     systems: list,
     pretrained: str,
-    model_branch: str = None,
+    model_branch: str | None = None,
     pooling: str = "mean",
     cache: bool = True,
     type_map: list[str] | tuple[str, ...] | None = None,
@@ -193,7 +199,7 @@ def load_or_extract(
 
 
 def _per_system_cache_path(
-    system,
+    system: dpdata.System,
     pretrained: str,
     model_branch: str | None = None,
     pooling: str = "mean",
@@ -211,7 +217,7 @@ def _per_system_cache_path(
 def ensure_per_system_cache(
     systems: list,
     pretrained: str,
-    model_branch: str = None,
+    model_branch: str | None = None,
     pooling: str = "mean",
     type_map: list[str] | tuple[str, ...] | None = None,
 ) -> None:
@@ -277,7 +283,7 @@ def ensure_per_system_cache(
 
 
 def get_per_system_descriptor(
-    system,
+    system: dpdata.System,
     pretrained: str,
     model_branch: str | None = None,
     pooling: str = "mean",

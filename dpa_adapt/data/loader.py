@@ -13,9 +13,6 @@ import glob as _glob
 from pathlib import (
     Path,
 )
-from typing import (
-    Union,
-)
 
 import dpdata
 
@@ -40,11 +37,11 @@ def _resolve_label_key(key: str) -> str:
 
 
 # Type alias covering every form the public API accepts.
-_SystemLike = Union[str, Path, dpdata.System, dpdata.LabeledSystem]
-_DataInput = Union[_SystemLike, list[_SystemLike]]
+_SystemLike = str | Path | dpdata.System | dpdata.LabeledSystem
+_DataInput = _SystemLike | list[_SystemLike]
 
 
-def _get_source(system) -> str | None:
+def _get_source(system: dpdata.System) -> str | None:
     """Return the source path stored on a system, or None."""
     return getattr(system, _SOURCE_ATTR, None)
 
