@@ -579,7 +579,7 @@ class _FrozenSklearnPipeline:
                     dim=-1,
                 )
             feat = torch.nan_to_num(feat, nan=0.0, posinf=0.0, neginf=0.0)
-            all_features.append(feat.cpu().numpy())
+            all_features.append(feat.detach().cpu().numpy())
 
         extractor._disable_hook()
         return np.concatenate(all_features, axis=0)
@@ -869,6 +869,7 @@ class DPAFineTuner:
                 self.pretrained,
                 self.model_branch,
                 self.pooling,
+                type_map=tuple(self.type_map or ()),
             )
             cache_path = _cache_dir() / f"{key}.npy"
             if cache_path.is_file():

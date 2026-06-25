@@ -80,11 +80,20 @@ def _set_log_handles(level: int, log_path: str | None = None) -> None:
         logger.addHandler(file_handler)
 
 
-def _maybe_split_list(val: str | None) -> list[str] | None:
-    """``"a,b,c"`` → ``["a","b","c"]``; ``None`` → ``None``."""
+def _maybe_split_list(val: str | Sequence[str] | None) -> list[str] | None:
+    """Normalize comma-separated strings or string sequences to a flat list."""
     if val is None:
         return None
-    return [x.strip() for x in val.split(",") if x.strip()]
+    if isinstance(val, str):
+        values = [val]
+    else:
+        values = val
+    return [
+        item
+        for value in values
+        for item in (part.strip() for part in value.split(","))
+        if item
+    ]
 
 
 class _RawTextArgDefaultsHelpFormatter(
@@ -103,7 +112,7 @@ def _cmd_fit(args: argparse.Namespace) -> int:
         DPAFineTuner,
     )
 
-    train = _maybe_split_list(args.train_data) or [args.train_data]
+    train = _maybe_split_list(args.train_data) or []
     valid = _maybe_split_list(args.valid_data) if args.valid_data else None
     type_map = _maybe_split_list(args.type_map)
 
@@ -146,9 +155,7 @@ def _cmd_fit(args: argparse.Namespace) -> int:
         downstream_batch_size=args.downstream_batch_size,
         fparam_dim=args.fparam_dim,
     )
-    aux_data = (
-        _maybe_split_list(args.aux_data) or [args.aux_data] if args.aux_data else None
-    )
+    aux_data = _maybe_split_list(args.aux_data) if args.aux_data else None
     model.fit(
         train_data=train,
         valid_data=valid,
@@ -698,13 +705,13 @@ def main(args: Sequence[str] | None = None) -> None:
     parser = get_parser()
     parsed_args = parser.parse_args(args)
 
-    # Set up logging
-    log_level = _get_ll(parsed_args.log_level)
-    _set_log_handles(log_level, parsed_args.log_path)
-
     if parsed_args.command is None:
         parser.print_help()
         return
+
+    # Set up logging after subcommand parsing; subcommands provide these options.
+    log_level = _get_ll(getattr(parsed_args, "log_level", "INFO"))
+    _set_log_handles(log_level, getattr(parsed_args, "log_path", None))
 
     try:
         if parsed_args.command == "data":
