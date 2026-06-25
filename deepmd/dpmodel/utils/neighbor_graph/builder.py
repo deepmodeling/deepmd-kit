@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Builders/converters that produce a :class:`NeighborGraph`.
 
-Two distinct groups (see memory/spec_unified_edge_nlist.md decision #17), kept
+Two distinct groups (see the design discussion wanghan-iapcm/deepmd-kit#4 decision #17), kept
 separate so a consumer can never assume completeness while a function silently
 truncated:
 

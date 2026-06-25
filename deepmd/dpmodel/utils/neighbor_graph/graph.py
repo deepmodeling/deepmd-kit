@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Backend-agnostic edge-graph neighbor-list contract (NeighborGraph) and its
-length policy (GraphLayout). See memory/spec_unified_edge_nlist.md.
+length policy (GraphLayout). See the design discussion wanghan-iapcm/deepmd-kit#4.
 
 Node validity (real vs padding) is NOT a stored field: it is derived as
 ``arange(N) < sum(n_node)`` because ``n_node`` already encodes the real-node

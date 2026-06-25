@@ -6,7 +6,7 @@ The unified edge/graph neighbor-list contract and its supporting machinery:
 + edge padding), ``builder`` (the carry-all ``build_neighbor_graph`` dispatcher +
 the ``from_dense_quartet`` legacy converter), ``segment`` (mask-aware
 segment-reduction toolkit), and ``derivatives`` (edge force/virial assembly).
-See memory/spec_unified_edge_nlist.md.
+See the design discussion wanghan-iapcm/deepmd-kit#4.
 """
 
 from .ase_builder import (
