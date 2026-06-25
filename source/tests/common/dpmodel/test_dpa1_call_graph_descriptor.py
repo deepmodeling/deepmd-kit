@@ -95,3 +95,50 @@ class TestDpa1DescriptorCallGraph:
         assert out[3] is None
         # sw
         np.testing.assert_allclose(out[4], ref[4], rtol=1e-12, atol=1e-12)
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"tebd_input_mode": "strip"},  # strip tebd: graph unsupported -> dense
+            {"exclude_types": [(0, 1)]},  # type exclusion: graph unsupported -> dense
+        ],
+    )
+    def test_ineligible_config_falls_back_to_dense(self, kwargs) -> None:
+        """attn_layer=0 configs the graph can't handle (strip tebd, exclude_types)
+        must report uses_graph_lower()=False and run the dense body without
+        raising (regression: Task-3 routing previously raised NotImplementedError).
+        """
+        dd = DescrptDPA1(
+            rcut=4.0, rcut_smth=0.5, sel=[30], ntypes=2, attn_layer=0, **kwargs
+        )
+        assert dd.uses_graph_lower() is False
+        ext_coord, ext_atype, mapping, nlist = extend_input_and_build_neighbor_list(
+            self.coord,
+            self.atype,
+            dd.get_rcut(),
+            dd.get_sel(),
+            mixed_types=dd.mixed_types(),
+            box=None,
+        )
+        out = dd.call(ext_coord, ext_atype, nlist, mapping=mapping)  # must not raise
+        assert len(out) == 5
+
+    def test_eligible_no_mapping_with_ghosts_falls_back(self) -> None:
+        """An eligible (concat) attn_layer=0 descriptor called with mapping=None
+        on a PERIODIC system (nall > nloc ghosts) must fall back to the dense
+        body and match it (regression: the graph needs mapping for ghosts, the
+        identity-mapping default previously indexed out of range)."""
+        dd = self._make([30])
+        box = np.eye(3, dtype=np.float64)[None] * 6.0
+        ext_coord, ext_atype, mapping, nlist = extend_input_and_build_neighbor_list(
+            self.coord,
+            self.atype,
+            dd.get_rcut(),
+            dd.get_sel(),
+            mixed_types=dd.mixed_types(),
+            box=box,
+        )
+        assert ext_atype.shape[1] > self.nloc  # ghosts present
+        ref = self._dense_reference(dd, ext_coord, ext_atype, nlist)
+        out = dd.call(ext_coord, ext_atype, nlist, mapping=None)  # must not IndexError
+        np.testing.assert_allclose(out[0], ref[0], rtol=1e-12, atol=1e-12)
