@@ -218,6 +218,36 @@ def test_forward_common_atomic_graph_flat_shape():
     assert out["mask"].shape == (5,)  # flat (N,)
 
 
+def test_graph_nloc1_unravel_shapes():
+    """Regression: when nloc==1, N==nf so per-frame _redu keys must NOT be
+    reshaped to (nf,1,*).  Before the fix, energy_redu came out (nf,1,1) instead
+    of (nf,1).  Checks both shapes and value parity against the dense (legacy) path.
+    """
+    nf = 2
+    rng = np.random.default_rng(42)
+    coord = rng.normal(size=(nf, 1, 3)) * 1.5
+    atype = np.zeros((nf, 1), dtype=np.int64)
+    box = np.tile(np.eye(3).reshape(1, 9) * 20.0, (nf, 1))
+    model = _ener_model([200])  # non-binding sel
+    g = model.call_common(coord, atype, box, neighbor_graph_method="dense")
+    d = model.call_common(coord, atype, box, neighbor_graph_method="legacy")
+    # shape assertions — the critical regression check
+    assert g["energy"].shape == (nf, 1, 1), f"energy shape {g['energy'].shape}"
+    assert g["energy_redu"].shape == (nf, 1), (
+        f"energy_redu shape {g['energy_redu'].shape}"
+    )
+    assert g["mask"].shape == (nf, 1), f"mask shape {g['mask'].shape}"
+    # value parity with the dense path
+    for k in ("energy", "energy_redu", "mask"):
+        np.testing.assert_allclose(
+            np.asarray(g[k]),
+            np.asarray(d[k]),
+            rtol=1e-12,
+            atol=1e-12,
+            err_msg=f"graph vs legacy mismatch for key '{k}'",
+        )
+
+
 def test_graph_matches_dense_with_out_bias():
     """The graph path applies apply_out_stat (per-type out-bias) identically
     to the dense path. With a non-zero bias, graph == dense at 1e-12, and the

@@ -427,7 +427,12 @@ def make_model(
             # (N=nf*nloc, *).  Unravel per-atom keys here at the boundary.
             for k in list(model_predict.keys()):
                 v = model_predict[k]
-                if v is not None and v.shape[:1] == (nf * nloc,):
+                # per-frame reduced keys (..._redu) keep their (nf, *) shape; only node-level (N,*) keys unravel — guards the nloc==1 case where N == nf.
+                if (
+                    v is not None
+                    and not k.endswith("_redu")
+                    and v.shape[:1] == (nf * nloc,)
+                ):
                     model_predict[k] = xp.reshape(v, (nf, nloc, *v.shape[1:]))
             return model_predict
 
