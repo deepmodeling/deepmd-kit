@@ -1,10 +1,12 @@
 {
-  "_comment": "DPA4/SeZM invariant-property training example for the water dataset.",
+  "_comment": "DPA4/SeZM invariant-property training example on the QM9 property subset in examples/property/data (band_prop holds HOMO/LUMO/band gap, task_dim=3, intensive).",
   "model": {
     "type": "DPA4",
     "type_map": [
-      "O",
-      "H"
+      "H",
+      "C",
+      "N",
+      "O"
     ],
     "descriptor": {
       "rcut": 6.0,
@@ -84,15 +86,14 @@
     "stat_file": "./dpa4.hdf5",
     "training_data": {
       "systems": [
-        "../data/data_0",
-        "../data/data_1",
-        "../data/data_2"
+        "../../property/data/data_0",
+        "../../property/data/data_1"
       ],
       "batch_size": 1
     },
     "validation_data": {
       "systems": [
-        "../data/data_3"
+        "../../property/data/data_2"
       ],
       "batch_size": 1,
       "numb_batch": 1

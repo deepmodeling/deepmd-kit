@@ -152,6 +152,21 @@ class SeZMPropertyModel(SeZMModel):
             conservative=False,
         )
 
+    def _inductor_compile_options(self) -> dict[str, Any]:
+        """Augment the shared Inductor options for the property compile path.
+
+        The non-conservative property backward graph triggers a TorchInductor
+        CPU codegen bug: a scalar ``where``/blendv is emitted as
+        ``decltype(scalar)::blendv(...)``, which the host C++ compiler rejects.
+        Forcing scalar CPU codegen (``cpp.simdlen = 0``) selects the path that
+        never emits the vectorized blendv. ``cpp.*`` options affect only the CPU
+        backend, so CUDA/Triton lowering -- the actual ``use_compile`` deployment
+        target -- is unchanged.
+        """
+        options = super()._inductor_compile_options()
+        options["cpp.simdlen"] = 0
+        return options
+
     def translated_output_def(self) -> dict[str, OutputVariableDef]:
         """Return public output definitions for property prediction."""
         out_def_data = self.model_output_def().get_data()

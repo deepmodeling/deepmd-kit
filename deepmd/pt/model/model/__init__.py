@@ -31,6 +31,7 @@ from deepmd.pt.model.task import (
 )
 from deepmd.pt.model.task.sezm_ener import (
     SeZMEnergyFittingNet,
+    _resolve_auto_neuron,
 )
 from deepmd.utils.spin import (
     Spin,
@@ -358,6 +359,16 @@ def get_sezm_model(model_params: dict) -> BaseModel:
                 "DPA4/SeZM property fitting does not support analytical bridging "
                 "potentials; set `bridging_method` to `none`."
             )
+        # Share the SeZM auto-width convention
+        fitting_net["neuron"] = _resolve_auto_neuron(
+            fitting_net.get("neuron"),
+            dim_descrpt=fitting_net["dim_descrpt"],
+            numb_fparam=fitting_net.get("numb_fparam", 0),
+            numb_aparam=fitting_net.get("numb_aparam", 0),
+            dim_case_embd=fitting_net.get("dim_case_embd", 0),
+            case_film_embd=fitting_net.get("case_film_embd", False),
+            use_aparam_as_mask=fitting_net.get("use_aparam_as_mask", False),
+        )
         fitting = BaseFitting(**fitting_net)
         modelcls = SeZMPropertyModel
     else:

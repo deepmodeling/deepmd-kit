@@ -151,9 +151,10 @@ the property name used by the data file, and use the property loss:
 }
 ```
 
-The property label should follow the usual DeePMD property-data convention, for
-example `band_prop.npy` when `property_name` is `band_prop`. See
-`examples/water/dpa4/input_property.json` for a complete input.
+The property label follows the usual DeePMD property-data convention: each
+system provides `band_prop.npy` when `property_name` is `band_prop`. See
+`examples/water/dpa4/input_property.json` for a complete input; it trains on the
+QM9 property subset shipped in `examples/property/data`.
 
 ### Direct-force denoising (`dens`, experimental)
 

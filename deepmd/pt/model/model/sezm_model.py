@@ -2109,8 +2109,9 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             traced = rebuild_graph_module(traced)
 
         # The conservative Inductor option set that keeps the dynamic edge
-        # graph lowerable is centralised in ``deepmd.pt.utils.compile_compat``.
-        compile_options = build_inductor_compile_options()
+        # graph lowerable is centralised in ``deepmd.pt.utils.compile_compat``;
+        # subclasses may augment it via ``_inductor_compile_options``.
+        compile_options = self._inductor_compile_options()
 
         # NOTE: Store the compiled callable inside the plain-``dict``
         # cache ``compiled_core_compute_cache``.  The dict itself was installed
@@ -2292,6 +2293,14 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         if self.training:
             return self.use_compile
         return bool(self._env_use_compile_infer)
+
+    def _inductor_compile_options(self) -> dict[str, Any]:
+        """Return the Inductor lowering options for this model's compiled core.
+
+        Subclasses may override this to augment the shared option set from
+        :func:`build_inductor_compile_options` with model-specific entries.
+        """
+        return build_inductor_compile_options()
 
     # =========================================================================
     # Export Utilities
