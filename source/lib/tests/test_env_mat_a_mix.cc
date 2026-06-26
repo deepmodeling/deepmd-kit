@@ -691,7 +691,11 @@ TEST_F(TestEnvMatAMix, prod_cpu_multiple_frames) {
   }
 
   std::vector<double> expected_multi(static_cast<size_t>(nframes) * nloc *
-                                     ndescrpt);
+                                     ndescrpt),
+      expected_deriv_multi(static_cast<size_t>(nframes) * nloc * ndescrpt * 3),
+      expected_rij_multi(static_cast<size_t>(nframes) * nloc * nnei * 3);
+  std::vector<int> expected_nlist_multi(static_cast<size_t>(nframes) * nloc *
+                                        nnei);
   for (int ff = 0; ff < nframes; ++ff) {
     std::vector<double> frame_em(static_cast<size_t>(nloc) * ndescrpt),
         frame_em_deriv(static_cast<size_t>(nloc) * ndescrpt * 3),
@@ -704,9 +708,18 @@ TEST_F(TestEnvMatAMix, prod_cpu_multiple_frames) {
         atype_multi.data() + static_cast<size_t>(ff) * nall, base_inlist,
         max_nbor_size, avg.data(), std.data(), nloc, nall, rc, rc_smth, sec_a,
         f_atype_multi.data() + static_cast<size_t>(ff) * nall);
-    std::copy(
-        frame_em.begin(), frame_em.end(),
-        expected_multi.begin() + static_cast<size_t>(ff) * nloc * ndescrpt);
+    const size_t em_offset = static_cast<size_t>(ff) * nloc * ndescrpt;
+    const size_t deriv_offset = em_offset * 3;
+    const size_t rij_offset = static_cast<size_t>(ff) * nloc * nnei * 3;
+    const size_t nlist_offset = static_cast<size_t>(ff) * nloc * nnei;
+    std::copy(frame_em.begin(), frame_em.end(),
+              expected_multi.begin() + em_offset);
+    std::copy(frame_em_deriv.begin(), frame_em_deriv.end(),
+              expected_deriv_multi.begin() + deriv_offset);
+    std::copy(frame_rij.begin(), frame_rij.end(),
+              expected_rij_multi.begin() + rij_offset);
+    std::copy(frame_nlist.begin(), frame_nlist.end(),
+              expected_nlist_multi.begin() + nlist_offset);
   }
 
   std::vector<double> em(static_cast<size_t>(nframes) * nloc * ndescrpt),
@@ -718,8 +731,17 @@ TEST_F(TestEnvMatAMix, prod_cpu_multiple_frames) {
       atype_multi.data(), inlist, max_nbor_size, avg.data(), std.data(), nloc,
       nall, nframes, rc, rc_smth, sec_a, f_atype_multi.data());
 
-  for (int ii = 0; ii < em.size(); ++ii) {
+  for (size_t ii = 0; ii < em.size(); ++ii) {
     EXPECT_LT(fabs(em[ii] - expected_multi[ii]), 1e-10);
+  }
+  for (size_t ii = 0; ii < em_deriv.size(); ++ii) {
+    EXPECT_LT(fabs(em_deriv[ii] - expected_deriv_multi[ii]), 1e-10);
+  }
+  for (size_t ii = 0; ii < rij.size(); ++ii) {
+    EXPECT_LT(fabs(rij[ii] - expected_rij_multi[ii]), 1e-10);
+  }
+  for (size_t ii = 0; ii < nlist.size(); ++ii) {
+    EXPECT_EQ(nlist[ii], expected_nlist_multi[ii]);
   }
 }
 
@@ -997,7 +1019,11 @@ TEST_F(TestEnvMatAMix, prod_gpu_multiple_frames) {
   }
 
   std::vector<double> expected_multi(static_cast<size_t>(nframes) * nloc *
-                                     ndescrpt);
+                                     ndescrpt),
+      expected_deriv_multi(static_cast<size_t>(nframes) * nloc * ndescrpt * 3),
+      expected_rij_multi(static_cast<size_t>(nframes) * nloc * nnei * 3);
+  std::vector<int> expected_nlist_multi(static_cast<size_t>(nframes) * nloc *
+                                        nnei);
   for (int ff = 0; ff < nframes; ++ff) {
     std::vector<double> frame_em(static_cast<size_t>(nloc) * ndescrpt),
         frame_em_deriv(static_cast<size_t>(nloc) * ndescrpt * 3),
@@ -1010,9 +1036,18 @@ TEST_F(TestEnvMatAMix, prod_gpu_multiple_frames) {
         atype_multi.data() + static_cast<size_t>(ff) * nall, base_inlist,
         max_nbor_size, avg.data(), std.data(), nloc, nall, rc, rc_smth, sec_a,
         f_atype_multi.data() + static_cast<size_t>(ff) * nall);
-    std::copy(
-        frame_em.begin(), frame_em.end(),
-        expected_multi.begin() + static_cast<size_t>(ff) * nloc * ndescrpt);
+    const size_t em_offset = static_cast<size_t>(ff) * nloc * ndescrpt;
+    const size_t deriv_offset = em_offset * 3;
+    const size_t rij_offset = static_cast<size_t>(ff) * nloc * nnei * 3;
+    const size_t nlist_offset = static_cast<size_t>(ff) * nloc * nnei;
+    std::copy(frame_em.begin(), frame_em.end(),
+              expected_multi.begin() + em_offset);
+    std::copy(frame_em_deriv.begin(), frame_em_deriv.end(),
+              expected_deriv_multi.begin() + deriv_offset);
+    std::copy(frame_rij.begin(), frame_rij.end(),
+              expected_rij_multi.begin() + rij_offset);
+    std::copy(frame_nlist.begin(), frame_nlist.end(),
+              expected_nlist_multi.begin() + nlist_offset);
   }
 
   std::vector<double> em(static_cast<size_t>(nframes) * nloc * ndescrpt, 0.0),
@@ -1052,6 +1087,9 @@ TEST_F(TestEnvMatAMix, prod_gpu_multiple_frames) {
       nall, nframes, rc, rc_smth, sec_a, f_atype_dev);
 
   deepmd::memcpy_device_to_host(em_dev, em);
+  deepmd::memcpy_device_to_host(em_deriv_dev, em_deriv);
+  deepmd::memcpy_device_to_host(rij_dev, rij);
+  deepmd::memcpy_device_to_host(nlist_dev, nlist);
   deepmd::delete_device_memory(em_dev);
   deepmd::delete_device_memory(em_deriv_dev);
   deepmd::delete_device_memory(rij_dev);
@@ -1066,10 +1104,23 @@ TEST_F(TestEnvMatAMix, prod_gpu_multiple_frames) {
   deepmd::delete_device_memory(memory_dev);
   deepmd::free_nlist_gpu_device(gpu_inlist);
 
-  for (int ii = 0; ii < em.size(); ++ii) {
-    EXPECT_LT(fabs(em[ii] - expected_multi[ii]), 1e-5)
+  for (size_t ii = 0; ii < em.size(); ++ii) {
+    EXPECT_LT(fabs(em[ii] - expected_multi[ii]), 1e-10)
         << "index " << ii << " em " << em[ii] << " expected "
         << expected_multi[ii];
+  }
+  for (size_t ii = 0; ii < em_deriv.size(); ++ii) {
+    EXPECT_LT(fabs(em_deriv[ii] - expected_deriv_multi[ii]), 1e-10)
+        << "index " << ii << " em_deriv " << em_deriv[ii] << " expected "
+        << expected_deriv_multi[ii];
+  }
+  for (size_t ii = 0; ii < rij.size(); ++ii) {
+    EXPECT_LT(fabs(rij[ii] - expected_rij_multi[ii]), 1e-10)
+        << "index " << ii << " rij " << rij[ii] << " expected "
+        << expected_rij_multi[ii];
+  }
+  for (size_t ii = 0; ii < nlist.size(); ++ii) {
+    EXPECT_EQ(nlist[ii], expected_nlist_multi[ii]) << "index " << ii;
   }
 }
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM

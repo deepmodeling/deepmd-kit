@@ -818,7 +818,11 @@ TEST_F(TestEnvMatA, prod_gpu_multiple_frames) {
   std::vector<double> avg(static_cast<size_t>(ntypes) * ndescrpt, 0);
   std::vector<double> std(static_cast<size_t>(ntypes) * ndescrpt, 1);
   std::vector<double> expected_multi(static_cast<size_t>(nframes) * nloc *
-                                     ndescrpt);
+                                     ndescrpt),
+      expected_deriv_multi(static_cast<size_t>(nframes) * nloc * ndescrpt * 3),
+      expected_rij_multi(static_cast<size_t>(nframes) * nloc * nnei * 3);
+  std::vector<int> expected_nlist_multi(static_cast<size_t>(nframes) * nloc *
+                                        nnei);
   for (int ff = 0; ff < nframes; ++ff) {
     std::vector<double> frame_em(static_cast<size_t>(nloc) * ndescrpt),
         frame_em_deriv(static_cast<size_t>(nloc) * ndescrpt * 3),
@@ -830,9 +834,18 @@ TEST_F(TestEnvMatA, prod_gpu_multiple_frames) {
         posi_multi.data() + static_cast<size_t>(ff) * nall * 3,
         atype_multi.data() + static_cast<size_t>(ff) * nall, base_inlist,
         max_nbor_size, avg.data(), std.data(), nloc, nall, rc, rc_smth, sec_a);
-    std::copy(
-        frame_em.begin(), frame_em.end(),
-        expected_multi.begin() + static_cast<size_t>(ff) * nloc * ndescrpt);
+    const size_t em_offset = static_cast<size_t>(ff) * nloc * ndescrpt;
+    const size_t deriv_offset = em_offset * 3;
+    const size_t rij_offset = static_cast<size_t>(ff) * nloc * nnei * 3;
+    const size_t nlist_offset = static_cast<size_t>(ff) * nloc * nnei;
+    std::copy(frame_em.begin(), frame_em.end(),
+              expected_multi.begin() + em_offset);
+    std::copy(frame_em_deriv.begin(), frame_em_deriv.end(),
+              expected_deriv_multi.begin() + deriv_offset);
+    std::copy(frame_rij.begin(), frame_rij.end(),
+              expected_rij_multi.begin() + rij_offset);
+    std::copy(frame_nlist.begin(), frame_nlist.end(),
+              expected_nlist_multi.begin() + nlist_offset);
   }
 
   double *em_dev = NULL, *em_deriv_dev = NULL, *rij_dev = NULL;
@@ -865,8 +878,12 @@ TEST_F(TestEnvMatA, prod_gpu_multiple_frames) {
                              array_longlong_dev, max_nbor_size, avg_dev,
                              std_dev, nloc, nall, nframes, rc, rc_smth, sec_a);
   deepmd::memcpy_device_to_host(em_dev, em);
+  deepmd::memcpy_device_to_host(em_deriv_dev, em_deriv);
+  deepmd::memcpy_device_to_host(rij_dev, rij);
+  deepmd::memcpy_device_to_host(nlist_dev, nlist);
   deepmd::delete_device_memory(em_dev);
   deepmd::delete_device_memory(em_deriv_dev);
+  deepmd::delete_device_memory(rij_dev);
   deepmd::delete_device_memory(nlist_dev);
   deepmd::delete_device_memory(posi_dev);
   deepmd::delete_device_memory(atype_dev);
@@ -877,16 +894,23 @@ TEST_F(TestEnvMatA, prod_gpu_multiple_frames) {
   deepmd::delete_device_memory(memory_dev);
   deepmd::free_nlist_gpu_device(gpu_inlist);
 
-  for (int ff = 0; ff < nframes; ++ff) {
-    for (int ii = 0; ii < nloc; ++ii) {
-      for (int jj = 0; jj < nnei; ++jj) {
-        for (int dd = 0; dd < 4; ++dd) {
-          const int_64 idx =
-              (static_cast<int_64>(ff) * nloc + ii) * nnei * 4 + jj * 4 + dd;
-          EXPECT_LT(fabs(em[idx] - expected_multi[idx]), 1e-5);
-        }
-      }
-    }
+  for (size_t ii = 0; ii < em.size(); ++ii) {
+    EXPECT_LT(fabs(em[ii] - expected_multi[ii]), 1e-10)
+        << "index " << ii << " em " << em[ii] << " expected "
+        << expected_multi[ii];
+  }
+  for (size_t ii = 0; ii < em_deriv.size(); ++ii) {
+    EXPECT_LT(fabs(em_deriv[ii] - expected_deriv_multi[ii]), 1e-10)
+        << "index " << ii << " em_deriv " << em_deriv[ii] << " expected "
+        << expected_deriv_multi[ii];
+  }
+  for (size_t ii = 0; ii < rij.size(); ++ii) {
+    EXPECT_LT(fabs(rij[ii] - expected_rij_multi[ii]), 1e-10)
+        << "index " << ii << " rij " << rij[ii] << " expected "
+        << expected_rij_multi[ii];
+  }
+  for (size_t ii = 0; ii < nlist.size(); ++ii) {
+    EXPECT_EQ(nlist[ii], expected_nlist_multi[ii]) << "index " << ii;
   }
 }
 
