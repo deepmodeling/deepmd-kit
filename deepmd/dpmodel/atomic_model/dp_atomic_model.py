@@ -261,43 +261,47 @@ class DPAtomicModel(BaseAtomicModel):
         fparam: Array | None = None,
         aparam: Array | None = None,
     ) -> dict[str, Array]:
-        """Graph analogue of :meth:`forward_atomic`.
+        """Graph analogue of :meth:`forward_atomic` on the flat node axis.
 
-        Runs the descriptor ``call_graph`` then the fitting net and returns the
-        raw fitting dict (no reduction or masking; the wrapper handles those).
-        Calls ``self.descriptor.type_embedding.call()`` internally and is therefore
-        valid only for graph-eligible descriptors (e.g. DPA1 with a type embedding);
-        the graph routing (``_resolve_graph_method`` / ``_call_common_graph``)
-        guarantees this via ``uses_graph_lower()==True``.
+        Runs the descriptor ``call_graph`` then the fitting ``call_graph`` PER NODE
+        and returns the raw fitting dict on the flat ``(N, *)`` axis (no reduction
+        or masking; the wrapper handles those). ``fparam`` is gathered to nodes by
+        ``frame_id`` so each node sees its frame's parameter.
 
         Parameters
         ----------
         graph
             neighbor graph for the local atoms (ghost-free)
         atype
-            flat local atom types. nf * nloc
+            flat local atom types. N
         fparam
             frame parameter. nf x ndf
         aparam
-            atomic parameter. nf x nloc x nda
+            atomic parameter. N x nda
 
         Returns
         -------
         result_dict
-            the result dict, defined by the `FittingOutputDef`.
+            the result dict on the flat node axis, defined by the `FittingOutputDef`.
 
         """
         import array_api_compat
 
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            frame_id_from_n_node,
+        )
+
         xp = array_api_compat.array_namespace(graph.edge_vec)
-        nf = graph.n_node.shape[0]
-        nloc = atype.shape[0] // nf
-        descriptor = self.descriptor
-        type_embedding = descriptor.type_embedding.call()
-        gg, rot_mat = descriptor.call_graph(graph, atype, type_embedding=type_embedding)
-        atype_2d = xp.reshape(atype, (nf, nloc))
-        return self.fitting_net(
-            gg, atype_2d, gr=rot_mat, g2=None, h2=None, fparam=fparam, aparam=aparam
+        type_embedding = self.descriptor.type_embedding.call()
+        gg, rot_mat = self.descriptor.call_graph(
+            graph, atype, type_embedding=type_embedding
+        )
+        fparam_node = None
+        if fparam is not None:
+            frame_id = frame_id_from_n_node(graph.n_node)
+            fparam_node = xp.take(fparam, frame_id, axis=0)  # (N, ndf)
+        return self.fitting_net.call_graph(
+            gg, atype, gr=rot_mat, g2=None, h2=None, fparam=fparam_node, aparam=aparam
         )
 
     def compute_or_load_stat(
