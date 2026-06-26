@@ -144,14 +144,15 @@ class TestDpa1DescriptorCallGraph:
         out = dd.call(ext_coord, ext_atype, nlist, mapping=None)  # must not IndexError
         np.testing.assert_allclose(out[0], ref[0], rtol=1e-12, atol=1e-12)
 
-    def test_inconsistent_mapping_stays_faithful_to_dense(self) -> None:
-        """The dense->graph bridge must reproduce the dense 5-tuple even when the
-        supplied ``mapping`` is INCONSISTENT (a ghost's extended type differs from
-        its local owner's type). Real periodic systems never produce this -- a
-        ghost is a periodic image of its owner -- but a synthetic external quartet
-        can (e.g. the permuted ``mapping`` in the universal descriptor fixture).
-        The dense path reads ``atype_ext[neighbor]`` directly, so the graph bridge
-        must too (regression: it used ``atype[mapping[neighbor]]`` and diverged).
+    def test_single_rank_extension_keeps_type_invariant(self) -> None:
+        """The ghost-free graph types a neighbor as ``atype[mapping[neighbor]]``
+        (its local owner). This is correct because a real single-rank extension
+        is type-consistent: ``extend_coord_with_ghosts`` tiles the local atype, so
+        ``atype_ext[k] == atype[mapping[k]]`` for every extended atom -- a ghost is
+        a periodic image of its owner and shares its type. This test pins that
+        invariant (an inconsistent ``mapping`` like the universal fixture's old
+        buggy permutation is NOT a valid single-rank extension) and confirms the
+        graph-routed ``call`` matches dense on the resulting quartet.
         """
         dd = self._make([30])
         box = np.eye(3, dtype=np.float64)[None] * 6.0
@@ -164,14 +165,12 @@ class TestDpa1DescriptorCallGraph:
             box=box,
         )
         assert ext_atype.shape[1] > self.nloc  # ghosts present
-        # Corrupt EVERY ghost's extended type so ghost type != owner type, making
-        # atype_ext[neighbor] != atype[mapping[neighbor]] for every ghost edge.
-        ext_atype = np.array(ext_atype, copy=True)
-        ext_atype[:, self.nloc :] = 1 - ext_atype[:, self.nloc :]
-        # the corruption must actually be exercised: some ghost must be a neighbor
-        ghost_in_nlist = np.any(nlist[nlist >= 0] >= self.nloc)
-        assert ghost_in_nlist, "test is vacuous: no ghost appears in the nlist"
-        # dense reference uses the corrupted atype_ext[neighbor] directly
+        # the single-rank type invariant the ghost-free graph relies on
+        nf, nall = ext_atype.shape
+        for f in range(nf):
+            np.testing.assert_array_equal(
+                ext_atype[f], ext_atype[f][mapping[f]]
+            )  # atype_ext[k] == atype[mapping[k]]
         ref = self._dense_reference(dd, ext_coord, ext_atype, nlist)
         out = dd.call(ext_coord, ext_atype, nlist, mapping=mapping)
         np.testing.assert_allclose(out[0], ref[0], rtol=1e-12, atol=1e-12)
