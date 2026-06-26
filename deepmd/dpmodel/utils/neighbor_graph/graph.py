@@ -102,6 +102,31 @@ def pad_and_guard_edges(
     return ei, ev, edge_mask
 
 
+def frame_id_from_n_node(n_node: Array) -> Array:
+    """Node->frame map for a flat node axis: ``repeat(arange(nf), n_node)``.
+
+    Implemented via ``searchsorted(cumulative_sum(n_node), arange(N), side="right")``
+    -- the same primitives used in ``edge_force_virial`` for per-frame virial.
+
+    Parameters
+    ----------
+    n_node
+        Per-frame node counts.  Shape ``(nf,)``.
+
+    Returns
+    -------
+    frame_id
+        Frame index of each flat node, compact-prefix frame-major.
+        Shape ``(N,)`` int64, where ``N = sum(n_node)``.
+    """
+    xp = array_api_compat.array_namespace(n_node)
+    dev = array_api_compat.device(n_node)
+    n_total = int(xp.sum(n_node))
+    idx = xp.arange(n_total, dtype=n_node.dtype, device=dev)
+    boundaries = xp.cumulative_sum(n_node)  # (nf,) upper bounds, exclusive
+    return xp.astype(xp.searchsorted(boundaries, idx, side="right"), xp.int64)
+
+
 def node_validity_mask(n_node: Array, n_total: int) -> Array:
     """Derive the (n_total,) real-vs-padding node mask from per-frame counts.
 

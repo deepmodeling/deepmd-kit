@@ -28,6 +28,7 @@ from .from_ijs import (
 from .graph import (
     GraphLayout,
     NeighborGraph,
+    frame_id_from_n_node,
     node_validity_mask,
     pad_and_guard_edges,
 )
@@ -43,6 +44,7 @@ __all__ = [
     "build_neighbor_graph_ase",
     "edge_env_mat",
     "edge_force_virial",
+    "frame_id_from_n_node",
     "from_dense_quartet",
     "neighbor_graph_from_ijs",
     "node_validity_mask",
