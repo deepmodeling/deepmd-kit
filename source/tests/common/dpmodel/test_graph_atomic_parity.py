@@ -146,18 +146,48 @@ def test_model_pair_exclude_types_graph_matches_dense():
         np.testing.assert_allclose(
             np.asarray(g[k]), np.asarray(d[k]), rtol=1e-12, atol=1e-12
         )
-    # non-vacuous: pair exclusion actually changed the energy vs no exclusion
-    # (different network weights for model0, but same geometry — just confirm
-    # pair exclusion is not a no-op on the dense path)
-    ds0 = DescrptDPA1(rcut=4.0, rcut_smth=0.5, sel=[200], ntypes=2, attn_layer=0)
-    ft0 = InvarFitting("energy", 2, ds0.get_dim_out(), 1, mixed_types=True)
-    model0 = EnergyModel(ds0, ft0, type_map=["a", "b"])
-    d0 = model0.call_common(coord, atype, box, neighbor_graph_method="legacy")
-    d_excl = model.call_common(coord, atype, box, neighbor_graph_method="legacy")
-    # The two models have different weights AND exclusion, so energies differ
+    # non-vacuous: toggle pair exclusion OFF on the SAME model (same weights),
+    # so any energy difference is due solely to the exclusion (not weights).
+    g_excl = model.call_common(coord, atype, box, neighbor_graph_method="dense")
+    model.atomic_model.reinit_pair_exclude([])  # clear pair exclusion
+    assert model.atomic_model.pair_excl is None
+    g_noexcl = model.call_common(coord, atype, box, neighbor_graph_method="dense")
     assert not np.allclose(
-        np.asarray(d_excl["energy_redu"]), np.asarray(d0["energy_redu"])
-    ), "pair exclusion + different weights must produce different total energy"
+        np.asarray(g_excl["energy_redu"]), np.asarray(g_noexcl["energy_redu"])
+    ), "pair exclusion must change the graph energy (same weights)"
+
+
+def test_graph_matches_dense_with_fparam():
+    """Frame parameter is gathered to nodes by frame_id in forward_atomic_graph
+    and fed to the fitting's call_graph; the graph path must match dense at 1e-12
+    with a non-zero fparam (exercises the frame_id gather + xp.take dispatch).
+    """
+    rng = np.random.default_rng(7)
+    nf, nloc, ndf = 2, 5, 3
+    coord = rng.normal(size=(nf, nloc, 3)) * 1.5
+    atype = np.tile(np.array([[0, 1, 0, 1, 0]], dtype=np.int64), (nf, 1))
+    box = np.tile(np.eye(3).reshape(1, 9) * 20.0, (nf, 1))
+    fparam = rng.normal(size=(nf, ndf))  # per-frame, differs across frames
+    ds = DescrptDPA1(rcut=4.0, rcut_smth=0.5, sel=[200], ntypes=2, attn_layer=0)
+    ft = InvarFitting(
+        "energy", 2, ds.get_dim_out(), 1, mixed_types=True, numb_fparam=ndf
+    )
+    model = EnergyModel(ds, ft, type_map=["a", "b"])
+    g = model.call_common(
+        coord, atype, box, fparam=fparam, neighbor_graph_method="dense"
+    )
+    d = model.call_common(
+        coord, atype, box, fparam=fparam, neighbor_graph_method="legacy"
+    )
+    for k in ("energy", "energy_redu"):
+        np.testing.assert_allclose(
+            np.asarray(g[k]), np.asarray(d[k]), rtol=1e-12, atol=1e-12
+        )
+    # non-vacuous: each frame's fparam differs, so a mis-gathered fparam (e.g.
+    # every node given frame 0's fparam) would make the two frames' energies equal.
+    assert not np.allclose(
+        np.asarray(g["energy_redu"][0]), np.asarray(g["energy_redu"][1])
+    )
 
 
 def test_graph_matches_dense_with_atom_exclude():

@@ -62,13 +62,8 @@ class DPPolarAtomicModel(DPAtomicModel):
                 )
 
                 eye = xp.eye(3, dtype=dtype, device=device)
-                if atype.ndim == 2:
-                    nframes, nloc = atype.shape
-                    eye = xp.tile(eye, (nframes, nloc, 1, 1))
-                else:
-                    # flat graph path: atype is (N,)
-                    N = atype.shape[0]
-                    eye = xp.tile(eye, (N, 1, 1))
+                # leading-dim-agnostic: (nf, nloc) dense or (N,) flat graph path
+                eye = xp.tile(eye, (*atype.shape, 1, 1))
                 # (..., 3, 3)
                 modified_bias = modified_bias[..., xp.newaxis] * eye
 
