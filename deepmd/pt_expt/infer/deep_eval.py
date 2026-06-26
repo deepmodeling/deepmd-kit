@@ -54,9 +54,41 @@ from deepmd.infer.deep_wfc import (
 from deepmd.pt.utils.auto_batch_size import (
     AutoBatchSize,
 )
+from deepmd.pt_expt.utils.edge_schema import (
+    edge_schema_from_extended,
+)
+from deepmd.pt_expt.utils.vesin_neighbor_list import (
+    VesinNeighborList,
+    is_vesin_torch_available,
+)
 
 if TYPE_CHECKING:
     import ase.neighborlist
+
+
+def _reshape_charge_spin(
+    charge_spin: np.ndarray, nframes: int, dim_chg_spin: int
+) -> np.ndarray:
+    charge_spin_arr = np.asarray(charge_spin)
+    try:
+        return charge_spin_arr.reshape(nframes, dim_chg_spin)
+    except ValueError as err:
+        raise ValueError(
+            f"charge_spin must be reshape-compatible with ({nframes}, {dim_chg_spin}), "
+            f"got shape {charge_spin_arr.shape}."
+        ) from err
+
+
+def _is_pt_backend_dpa4_params(model_params: dict[str, Any]) -> bool:
+    """Return whether a training checkpoint should be loaded by the pt backend."""
+    model_type = str(model_params.get("type", "")).lower()
+    if model_type in {"sezm", "dpa4", "sezm_spin"}:
+        return True
+    descriptor = model_params.get("descriptor")
+    if isinstance(descriptor, dict):
+        descriptor_type = str(descriptor.get("type", "")).lower()
+        return descriptor_type in {"sezm", "dpa4"}
+    return False
 
 
 class DeepEval(DeepEvalBackend):
@@ -90,6 +122,7 @@ class DeepEval(DeepEvalBackend):
         *args: Any,
         auto_batch_size: bool | int | AutoBatchSize = True,
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
+        nlist_backend: str = "auto",
         **kwargs: Any,
     ) -> None:
         self.output_def = output_def
@@ -110,6 +143,8 @@ class DeepEval(DeepEvalBackend):
                 "`.pt` (training checkpoint)."
             )
 
+        self._setup_nlist_backend(nlist_backend)
+
         if isinstance(auto_batch_size, bool):
             if auto_batch_size:
                 self.auto_batch_size = AutoBatchSize()
@@ -121,6 +156,50 @@ class DeepEval(DeepEvalBackend):
             self.auto_batch_size = auto_batch_size
         else:
             raise TypeError("auto_batch_size should be bool, int, or AutoBatchSize")
+
+    def _setup_nlist_backend(self, nlist_backend: str) -> None:
+        """Resolve the neighbor-list construction strategy from a user choice.
+
+        ``"native"`` uses the dense all-pairs builder; ``"vesin"`` forces the
+        O(N) ``vesin.torch`` cell list (raising if it is unavailable or the
+        model/inputs are unsupported); ``"auto"`` uses vesin when applicable and
+        silently falls back to the native builder otherwise.  Results are
+        unchanged either way -- only the neighbor-search cost differs.
+        """
+        if nlist_backend not in ("auto", "vesin", "native"):
+            raise ValueError(
+                f"Unknown nlist_backend '{nlist_backend}'; "
+                "expected 'auto', 'vesin', or 'native'."
+            )
+        is_spin = bool(getattr(self, "_is_spin", False))
+        ase_provided = self.neighbor_list is not None
+        # reason vesin cannot be used (None means it can)
+        unsupported = "spin models" if is_spin else None
+        if nlist_backend == "native":
+            self._use_vesin = False
+        elif nlist_backend == "vesin":
+            if not is_vesin_torch_available():
+                raise ImportError(
+                    "nlist_backend='vesin' was requested but 'vesin.torch' is "
+                    "not installed. Install it (`pip install vesin[torch]`) or "
+                    "use nlist_backend='native' (or 'auto')."
+                )
+            if unsupported is not None:
+                raise ValueError(
+                    f"nlist_backend='vesin' is not supported for {unsupported}; "
+                    "use nlist_backend='native' (or 'auto')."
+                )
+            if ase_provided:
+                raise ValueError(
+                    "nlist_backend='vesin' conflicts with an explicitly "
+                    "supplied ASE neighbor_list; pass only one."
+                )
+            self._use_vesin = True
+        else:  # auto: use vesin when possible, otherwise fall back silently
+            self._use_vesin = (
+                is_vesin_torch_available() and unsupported is None and not ase_provided
+            )
+        self._nlist_builder = VesinNeighborList() if self._use_vesin else None
 
     def _init_from_model_json(self, model_json_str: str) -> None:
         """Deserialize model.json and derive model API from the dpmodel instance."""
@@ -344,6 +423,13 @@ class DeepEval(DeepEvalBackend):
             state_dict = head_state
             model_params = head_params
 
+        if _is_pt_backend_dpa4_params(model_params):
+            raise ValueError(
+                "DPA4/SeZM `.pt` checkpoints belong to the regular `pt` backend. "
+                "Use the `pt` backend for eager checkpoint inference, or export "
+                "the checkpoint to `.pt2` / `.pte` before loading it with `pt_expt`."
+            )
+
         model = get_model(deepcopy(model_params)).to(DEVICE)
 
         # Strip the `_CompiledModel` wrapper that pt_expt training applies
@@ -355,9 +441,14 @@ class DeepEval(DeepEvalBackend):
         # eager inference).  Drop the latter and unwrap the former.
         cleaned: dict[str, Any] = {}
         compiled_marker = ".compiled_forward_lower."
+        # Per-task buffer copies registered on _CompiledModel (bias_atom_e,
+        # case_embd) — real values live on the original model's fitting net.
+        task_buf_marker = "._task_"
         wrapper_infix = ".original_model."
         for key, value in state_dict.items():
             if compiled_marker in key:
+                continue
+            if task_buf_marker in key:
                 continue
             if wrapper_infix in key:
                 key = key.replace(wrapper_infix, ".", 1)
@@ -406,14 +497,34 @@ class DeepEval(DeepEvalBackend):
         # `_collect_metadata` writes into metadata.json.
         self.metadata = {
             "type_map": model.get_type_map(),
+            "ntypes": model.get_descriptor().get_ntypes(),
             "rcut": model.get_rcut(),
             "sel": model.get_sel(),
             "dim_fparam": model.get_dim_fparam(),
             "dim_aparam": model.get_dim_aparam(),
+            "dim_chg_spin": model.get_dim_chg_spin()
+            if hasattr(model, "get_dim_chg_spin")
+            else 0,
             "mixed_types": model.mixed_types(),
             "has_default_fparam": model.has_default_fparam(),
             "default_fparam": model.get_default_fparam(),
+            "has_chg_spin_ebd": (
+                model.has_chg_spin_ebd()
+                if hasattr(model, "has_chg_spin_ebd")
+                else False
+            ),
+            "has_default_chg_spin": (
+                model.has_default_chg_spin()
+                if hasattr(model, "has_default_chg_spin")
+                else False
+            ),
+            "default_chg_spin": (
+                model.get_default_chg_spin()
+                if hasattr(model, "get_default_chg_spin")
+                else None
+            ),
             "is_spin": self._is_spin,
+            "lower_input_kind": "nlist",
         }
         if self._is_spin:
             self.metadata["ntypes_spin"] = model.spin.get_ntypes_spin()
@@ -435,6 +546,7 @@ class DeepEval(DeepEvalBackend):
                 mapping: torch.Tensor | None,
                 fparam: torch.Tensor | None,
                 aparam: torch.Tensor | None,
+                charge_spin: torch.Tensor | None = None,
             ) -> dict[str, torch.Tensor]:
                 ext_coord = ext_coord.detach().requires_grad_(True)
                 return model.forward_common_lower(
@@ -445,6 +557,7 @@ class DeepEval(DeepEvalBackend):
                     mapping,
                     fparam=fparam,
                     aparam=aparam,
+                    charge_spin=charge_spin,
                     do_atomic_virial=True,
                 )
 
@@ -458,6 +571,7 @@ class DeepEval(DeepEvalBackend):
                 mapping: torch.Tensor | None,
                 fparam: torch.Tensor | None,
                 aparam: torch.Tensor | None,
+                charge_spin: torch.Tensor | None = None,
             ) -> dict[str, torch.Tensor]:
                 ext_coord = ext_coord.detach().requires_grad_(True)
                 return model.forward_common_lower(
@@ -467,6 +581,7 @@ class DeepEval(DeepEvalBackend):
                     mapping,
                     fparam=fparam,
                     aparam=aparam,
+                    charge_spin=charge_spin,
                     do_atomic_virial=True,
                 )
 
@@ -478,7 +593,9 @@ class DeepEval(DeepEvalBackend):
 
     def get_ntypes(self) -> int:
         """Get the number of atom types of this model."""
-        return len(self._type_map)
+        if self._type_map:
+            return len(self._type_map)
+        return int(self.metadata.get("ntypes", 0))
 
     def get_type_map(self) -> list[str]:
         """Get the type map (element name of the atom types) of this model."""
@@ -495,6 +612,61 @@ class DeepEval(DeepEvalBackend):
         if self._dpmodel is not None:
             return self._dpmodel.get_dim_aparam()
         return int(self.metadata["dim_aparam"])
+
+    def has_chg_spin_ebd(self) -> bool:
+        """Check whether the model uses a dedicated charge_spin input."""
+        if self._dpmodel is not None and hasattr(self._dpmodel, "has_chg_spin_ebd"):
+            return bool(self._dpmodel.has_chg_spin_ebd())
+        return bool(self.metadata.get("has_chg_spin_ebd", self.get_dim_chg_spin() > 0))
+
+    def has_default_chg_spin(self) -> bool:
+        """Check whether the model has a default charge_spin fallback."""
+        if self._dpmodel is not None and hasattr(self._dpmodel, "has_default_chg_spin"):
+            return bool(self._dpmodel.has_default_chg_spin())
+        return bool(
+            self.metadata.get(
+                "has_default_chg_spin",
+                self.metadata.get("default_chg_spin") is not None,
+            )
+        )
+
+    def get_dim_chg_spin(self) -> int:
+        """Get the width of charge/spin condition inputs."""
+        if self._dpmodel is not None and hasattr(self._dpmodel, "get_dim_chg_spin"):
+            return self._dpmodel.get_dim_chg_spin()
+        return int(self.metadata.get("dim_chg_spin", 0))
+
+    def _make_charge_spin_input(
+        self, nframes: int, charge_spin: np.ndarray | None = None
+    ) -> torch.Tensor | None:
+        """Build the fixed charge/spin tensor used by exported SeZM models."""
+        from deepmd.pt_expt.utils.env import (
+            DEVICE,
+        )
+
+        dim_chg_spin = self.get_dim_chg_spin()
+        if dim_chg_spin == 0:
+            return None
+        if charge_spin is not None:
+            return torch.tensor(
+                _reshape_charge_spin(charge_spin, nframes, dim_chg_spin),
+                dtype=torch.float64,
+                device=DEVICE,
+            )
+        default_chg_spin = self.metadata.get("default_chg_spin")
+        if default_chg_spin is None:
+            raise ValueError(
+                "charge_spin is required for this model but was not provided, "
+                "and no default_chg_spin is stored in the model."
+            )
+        if hasattr(default_chg_spin, "cpu"):
+            default_chg_spin = default_chg_spin.cpu().numpy()
+        return (
+            torch.tensor(default_chg_spin, dtype=torch.float64, device=DEVICE)
+            .view(1, dim_chg_spin)
+            .expand(nframes, -1)
+            .contiguous()
+        )
 
     @property
     def model_type(self) -> type["DeepEvalWrapper"]:
@@ -568,6 +740,7 @@ class DeepEval(DeepEvalBackend):
         atomic: bool = False,
         fparam: np.ndarray | None = None,
         aparam: np.ndarray | None = None,
+        charge_spin: np.ndarray | None = None,
         **kwargs: Any,
     ) -> dict[str, np.ndarray]:
         """Evaluate the energy, force and virial by using this DP.
@@ -592,6 +765,13 @@ class DeepEval(DeepEvalBackend):
         aparam
             The atomic parameter.
             The array should be of size nframes x natoms x dim_aparam.
+        charge_spin
+            The charge and spin values for each frame.
+            The array should be reshape-compatible with nframes x 2, where the first
+            column is charge and the second column is spin. If the model has
+            add_chg_spin_ebd=True and no default_chg_spin is set, this parameter is
+            required. If default_chg_spin is configured, this parameter is optional
+            and will override the default.
         **kwargs
             Other parameters
 
@@ -623,11 +803,24 @@ class DeepEval(DeepEvalBackend):
         if spins is not None:
             spins = np.array(spins)
             out = self._eval_func(self._eval_model_spin, numb_test, natoms)(
-                coords, cells, atom_types, spins, fparam, aparam, request_defs
+                coords,
+                cells,
+                atom_types,
+                spins,
+                fparam,
+                aparam,
+                request_defs,
+                charge_spin,
             )
         else:
             out = self._eval_func(self._eval_model, numb_test, natoms)(
-                coords, cells, atom_types, fparam, aparam, request_defs
+                coords,
+                cells,
+                atom_types,
+                fparam,
+                aparam,
+                request_defs,
+                charge_spin,
             )
         return dict(
             zip(
@@ -711,6 +904,21 @@ class DeepEval(DeepEvalBackend):
         rcut = self._rcut
         sel = self._sel
         mixed_types = self._mixed_types
+
+        if self._nlist_builder is not None:
+            # O(N) cell-list strategy (e.g. vesin): builds the same extended
+            # representation.  Match the native builder's type handling
+            # (``distinguish_types=not mixed_types``) so consumers that bypass
+            # ``forward_common_lower``'s ``format_nlist`` -- e.g.
+            # ``eval_descriptor`` calling the descriptor directly -- receive the
+            # type-distinguished nlist a non-mixed-type descriptor expects.  The
+            # main eval path is unaffected (its ``format_nlist`` re-formats).
+            extended_coord, extended_atype, nlist, mapping = self._nlist_builder.build(
+                coords, atom_types, cells, rcut, sel
+            )
+            if not mixed_types:
+                nlist = nlist_distinguish_types(nlist, extended_atype, sel)
+            return extended_coord, extended_atype, nlist, mapping
 
         if cells is not None:
             box_input = cells.reshape(nframes, 3, 3)
@@ -910,21 +1118,44 @@ class DeepEval(DeepEvalBackend):
 
         return extended_coord, extended_atype, nlist, mapping
 
-    def _prepare_inputs(
+    @staticmethod
+    def _build_edge_inputs_from_nlist(
+        extended_coord: torch.Tensor,
+        extended_atype: torch.Tensor,
+        nlist: torch.Tensor,
+        mapping: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Convert a padded neighbor list into the compact-edge schema."""
+        nloc = nlist.shape[1]
+        schema = edge_schema_from_extended(
+            extended_coord,
+            extended_atype[:, :nloc],
+            nlist,
+            mapping,
+        )
+        return (
+            schema.edge_index,
+            schema.edge_vec,
+            schema.edge_scatter_index,
+            schema.edge_mask,
+        )
+
+    def _prepare_nlist_inputs(
         self,
         coords: np.ndarray,
         cells: np.ndarray | None,
         atom_types: np.ndarray,
         fparam: np.ndarray | None,
         aparam: np.ndarray | None,
+        charge_spin: np.ndarray | None = None,
     ) -> tuple:
-        """Prepare tensor inputs for model evaluation.
+        """Prepare the extended-coordinate and padded-neighbor-list inputs.
 
         Returns
         -------
         tuple
             (ext_coord_t, ext_atype_t, nlist_t, mapping_t,
-             fparam_t, aparam_t, nframes, natoms)
+             fparam_t, aparam_t, charge_spin_t, nframes, natoms)
         """
         nframes = coords.shape[0]
         if len(atom_types.shape) == 1:
@@ -1008,6 +1239,8 @@ class DeepEval(DeepEvalBackend):
         else:
             aparam_t = None
 
+        charge_spin_t = self._make_charge_spin_input(nframes, charge_spin)
+
         return (
             ext_coord_t,
             ext_atype_t,
@@ -1015,9 +1248,170 @@ class DeepEval(DeepEvalBackend):
             mapping_t,
             fparam_t,
             aparam_t,
+            charge_spin_t,
             nframes,
             natoms,
         )
+
+    def _prepare_inputs(
+        self,
+        coords: np.ndarray,
+        cells: np.ndarray | None,
+        atom_types: np.ndarray,
+        fparam: np.ndarray | None,
+        aparam: np.ndarray | None,
+        charge_spin: np.ndarray | None = None,
+    ) -> tuple[tuple[torch.Tensor | None, ...], torch.Tensor, int, int]:
+        """Prepare lower-interface inputs and the output fold-back mapping."""
+        if (
+            self.metadata.get("lower_input_kind") == "edge_vec"
+            and self._nlist_builder is not None
+            and self.neighbor_list is None
+        ):
+            from deepmd.pt_expt.utils.env import (
+                DEVICE,
+            )
+
+            nframes = coords.shape[0]
+            if len(atom_types.shape) == 1:
+                natoms = len(atom_types)
+                atom_types = np.tile(atom_types, nframes).reshape(nframes, -1)
+            else:
+                natoms = len(atom_types[0])
+            coord_t = torch.tensor(
+                coords.reshape(nframes, natoms, 3),
+                dtype=torch.float64,
+                device=DEVICE,
+            )
+            atype_t = torch.tensor(atom_types, dtype=torch.int64, device=DEVICE)
+            cells_t = (
+                torch.tensor(cells, dtype=torch.float64, device=DEVICE)
+                if cells is not None
+                else None
+            )
+            edge_schema = self._nlist_builder.build(
+                coord_t,
+                atype_t,
+                cells_t,
+                self._rcut,
+                self._sel,
+                return_mode="edges",
+            )
+            fparam_t, aparam_t = self._prepare_optional_lower_inputs(
+                fparam,
+                aparam,
+                nframes,
+                natoms,
+                DEVICE,
+            )
+            charge_spin_t = self._make_charge_spin_input(nframes, charge_spin)
+            model_inputs = (
+                edge_schema.coord,
+                edge_schema.atype,
+                edge_schema.edge_index,
+                edge_schema.edge_vec,
+                edge_schema.edge_scatter_index,
+                edge_schema.edge_mask,
+                fparam_t,
+                aparam_t,
+                charge_spin_t,
+            )
+            mapping_t = torch.arange(natoms, dtype=torch.int64, device=DEVICE).reshape(
+                1, natoms
+            )
+            mapping_t = mapping_t.expand(nframes, -1).contiguous()
+            return model_inputs, mapping_t, nframes, natoms
+
+        (
+            ext_coord_t,
+            ext_atype_t,
+            nlist_t,
+            mapping_t,
+            fparam_t,
+            aparam_t,
+            charge_spin_t,
+            nframes,
+            natoms,
+        ) = self._prepare_nlist_inputs(
+            coords, cells, atom_types, fparam, aparam, charge_spin
+        )
+        if self.metadata.get("lower_input_kind") == "edge_vec":
+            edge_index_t, edge_vec_t, edge_scatter_t, edge_mask_t = (
+                self._build_edge_inputs_from_nlist(
+                    ext_coord_t,
+                    ext_atype_t,
+                    nlist_t,
+                    mapping_t,
+                )
+            )
+            model_inputs = (
+                ext_coord_t,
+                ext_atype_t[:, :natoms],
+                edge_index_t,
+                edge_vec_t,
+                edge_scatter_t,
+                edge_mask_t,
+                fparam_t,
+                aparam_t,
+                charge_spin_t,
+            )
+        else:
+            model_inputs = (
+                ext_coord_t,
+                ext_atype_t,
+                nlist_t,
+                mapping_t,
+                fparam_t,
+                aparam_t,
+                charge_spin_t,
+            )
+        return model_inputs, mapping_t, nframes, natoms
+
+    def _prepare_optional_lower_inputs(
+        self,
+        fparam: np.ndarray | None,
+        aparam: np.ndarray | None,
+        nframes: int,
+        natoms: int,
+        device: torch.device,
+    ) -> tuple[torch.Tensor | None, torch.Tensor | None]:
+        """Prepare optional frame and atomic parameters for lower interfaces."""
+        if fparam is not None:
+            fparam_t = torch.tensor(
+                fparam.reshape(nframes, self.get_dim_fparam()),
+                dtype=torch.float64,
+                device=device,
+            )
+        elif self.get_dim_fparam() > 0:
+            default_fp = self.metadata.get("default_fparam")
+            if default_fp is None:
+                raise ValueError(
+                    f"fparam is required for this model (dim_fparam={self.get_dim_fparam()}) "
+                    "but was not provided, and no default_fparam is stored in the model."
+                )
+            fparam_t = (
+                torch.tensor(default_fp, dtype=torch.float64, device=device)
+                .unsqueeze(0)
+                .expand(nframes, -1)
+                .contiguous()
+            )
+        else:
+            fparam_t = None
+
+        if aparam is not None:
+            aparam_t = torch.tensor(
+                aparam.reshape(nframes, natoms, self.get_dim_aparam()),
+                dtype=torch.float64,
+                device=device,
+            )
+        elif self.get_dim_aparam() > 0:
+            raise ValueError(
+                f"aparam is required for this model (dim_aparam={self.get_dim_aparam()}) "
+                "but was not provided."
+            )
+        else:
+            aparam_t = None
+        return fparam_t, aparam_t
 
     def _eval_model(
         self,
@@ -1027,31 +1421,19 @@ class DeepEval(DeepEvalBackend):
         fparam: np.ndarray | None,
         aparam: np.ndarray | None,
         request_defs: list[OutputVariableDef],
+        charge_spin: np.ndarray | None = None,
     ) -> tuple[np.ndarray, ...]:
-        (
-            ext_coord_t,
-            ext_atype_t,
-            nlist_t,
-            mapping_t,
-            fparam_t,
-            aparam_t,
-            nframes,
-            natoms,
-        ) = self._prepare_inputs(coords, cells, atom_types, fparam, aparam)
-
-        # Call the model (forward_common_lower interface, internal keys)
+        model_inputs, mapping_t, nframes, natoms = self._prepare_inputs(
+            coords, cells, atom_types, fparam, aparam, charge_spin
+        )
         if self._is_pt2:
             # AOTInductor's __call__ unflattens output using stored out_spec,
             # returning a dict just like the .pte module.
             # It also filters non-tensor args automatically, matching the
             # export-time signature where None args were excluded.
-            model_ret = self._pt2_runner(
-                ext_coord_t, ext_atype_t, nlist_t, mapping_t, fparam_t, aparam_t
-            )
+            model_ret = self._pt2_runner(*model_inputs)
         else:
-            model_ret = self.exported_module(
-                ext_coord_t, ext_atype_t, nlist_t, mapping_t, fparam_t, aparam_t
-            )
+            model_ret = self.exported_module(*model_inputs)
 
         # Apply communicate_extended_output to map extended atoms → local atoms
         do_atomic_virial = any(
@@ -1093,6 +1475,7 @@ class DeepEval(DeepEvalBackend):
         fparam: np.ndarray | None,
         aparam: np.ndarray | None,
         request_defs: list[OutputVariableDef],
+        charge_spin: np.ndarray | None = None,
     ) -> tuple[np.ndarray, ...]:
         nframes = coords.shape[0]
         if len(atom_types.shape) == 1:
@@ -1182,27 +1565,23 @@ class DeepEval(DeepEvalBackend):
         else:
             aparam_t = None
 
-        # Call the model with spin (7 args)
+        charge_spin_t = self._make_charge_spin_input(nframes, charge_spin)
+
+        # Call the model with spin.
+        model_inputs = (
+            ext_coord_t,
+            ext_atype_t,
+            ext_spin_t,
+            nlist_t,
+            mapping_t,
+            fparam_t,
+            aparam_t,
+            charge_spin_t,
+        )
         if self._is_pt2:
-            model_ret = self._pt2_runner(
-                ext_coord_t,
-                ext_atype_t,
-                ext_spin_t,
-                nlist_t,
-                mapping_t,
-                fparam_t,
-                aparam_t,
-            )
+            model_ret = self._pt2_runner(*model_inputs)
         else:
-            model_ret = self.exported_module(
-                ext_coord_t,
-                ext_atype_t,
-                ext_spin_t,
-                nlist_t,
-                mapping_t,
-                fparam_t,
-                aparam_t,
-            )
+            model_ret = self.exported_module(*model_inputs)
 
         # Apply communicate_extended_output to map extended atoms → local atoms
         do_atomic_virial = any(
@@ -1357,6 +1736,7 @@ class DeepEval(DeepEvalBackend):
         atom_types: np.ndarray,
         fparam: np.ndarray | None = None,
         aparam: np.ndarray | None = None,
+        charge_spin: np.ndarray | None = None,
         **kwargs: Any,
     ) -> np.ndarray:
         """Evaluate descriptor.
@@ -1402,19 +1782,21 @@ class DeepEval(DeepEvalBackend):
             mapping_t,
             fparam_t,
             _aparam_t,
+            charge_spin_t,
             _nframes,
             _natoms,
-        ) = self._prepare_inputs(coords, cells, atom_types, fparam, aparam)
+        ) = self._prepare_nlist_inputs(
+            coords, cells, atom_types, fparam, aparam, charge_spin
+        )
         with torch.no_grad():
-            fparam_for_des = (
-                fparam_t if getattr(dp_am, "add_chg_spin_ebd", False) else None
-            )
             descriptor, *_ = dp_am.descriptor(
                 ext_coord_t,
                 ext_atype_t,
                 nlist_t,
                 mapping=mapping_t,
-                fparam=fparam_for_des,
+                charge_spin=charge_spin_t
+                if getattr(dp_am, "add_chg_spin_ebd", False)
+                else None,
             )
         return descriptor.detach().cpu().numpy()
 
@@ -1425,6 +1807,7 @@ class DeepEval(DeepEvalBackend):
         atom_types: np.ndarray,
         fparam: np.ndarray | None = None,
         aparam: np.ndarray | None = None,
+        charge_spin: np.ndarray | None = None,
         **kwargs: Any,
     ) -> np.ndarray:
         """Evaluate the last hidden layer of the fitting network.
@@ -1470,19 +1853,21 @@ class DeepEval(DeepEvalBackend):
             mapping_t,
             fparam_t,
             aparam_t,
+            charge_spin_t,
             _nframes,
             natoms,
-        ) = self._prepare_inputs(coords, cells, atom_types, fparam, aparam)
+        ) = self._prepare_nlist_inputs(
+            coords, cells, atom_types, fparam, aparam, charge_spin
+        )
         with torch.no_grad():
-            fparam_for_des = (
-                fparam_t if getattr(dp_am, "add_chg_spin_ebd", False) else None
-            )
             descriptor, rot_mat, g2, h2, _sw = dp_am.descriptor(
                 ext_coord_t,
                 ext_atype_t,
                 nlist_t,
                 mapping=mapping_t,
-                fparam=fparam_for_des,
+                charge_spin=charge_spin_t
+                if getattr(dp_am, "add_chg_spin_ebd", False)
+                else None,
             )
             atype = ext_atype_t[:, :natoms]
             fitting_net = dp_am.fitting_net

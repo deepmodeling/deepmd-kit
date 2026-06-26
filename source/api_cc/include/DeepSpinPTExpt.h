@@ -179,9 +179,11 @@ class DeepSpinPTExpt : public DeepSpinBackend {
   int ntypes_spin;
   int dfparam;
   int daparam;
+  int dim_chg_spin;
   bool aparam_nall;
   bool has_default_fparam_;
   std::vector<double> default_fparam_;
+  std::vector<double> default_chg_spin_;
   std::vector<bool> use_spin_;
   double rcut;
   int gpu_id;
@@ -196,6 +198,9 @@ class DeepSpinPTExpt : public DeepSpinBackend {
   std::unique_ptr<torch::inductor::AOTIModelPackageLoader> loader;
   // Optional with-comm artifact for multi-rank GNN spin inference.
   bool has_comm_artifact_ = false;
+  // Mirrors descriptor's has_message_passing(). See DeepPotPTExpt.h
+  // for the full rationale and gating role.
+  bool has_message_passing_ = false;
   std::unique_ptr<deepmd::ptexpt::TempFile> with_comm_tempfile_;
   std::unique_ptr<torch::inductor::AOTIModelPackageLoader> with_comm_loader;
 

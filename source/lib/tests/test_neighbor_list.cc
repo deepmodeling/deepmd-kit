@@ -229,4 +229,52 @@ TEST_F(TestNeighborList, gpu_lessmem) {
   deepmd::delete_device_memory(c_cpy_dev);
 }
 
+TEST(TestNeighborListStandalone, gpu_tail_segment_prefix_scan) {
+  const int nloc = 2;
+  const int nall = TPB + 68;
+  const int mem_size = nall;
+  const double rc = 1.0;
+
+  std::vector<double> coord(nall * 3, 0.0);
+  for (int ii = 0; ii < nall; ++ii) {
+    coord[ii * 3] = ii * 10.0;
+  }
+
+  int *nlist_data_dev = NULL, *jlist_dev = NULL, *ilist_dev = NULL,
+      *numneigh_dev = NULL;
+  int** firstneigh_dev = NULL;
+  std::vector<int*> temp_firstneigh(nloc);
+  double* coord_dev = NULL;
+
+  deepmd::malloc_device_memory(nlist_data_dev, 2 * nloc * mem_size);
+  deepmd::malloc_device_memory(jlist_dev, nloc * mem_size);
+  deepmd::malloc_device_memory(ilist_dev, nloc);
+  deepmd::malloc_device_memory(numneigh_dev, nloc);
+  for (int ii = 0; ii < nloc; ++ii) {
+    temp_firstneigh[ii] = jlist_dev + ii * mem_size;
+  }
+  deepmd::malloc_device_memory_sync(firstneigh_dev, temp_firstneigh);
+  deepmd::malloc_device_memory_sync(coord_dev, coord);
+  deepmd::InputNlist nlist_dev(nloc, ilist_dev, numneigh_dev, firstneigh_dev);
+
+  int max_list_size = -1;
+  int ret = deepmd::build_nlist_gpu(nlist_dev, &max_list_size, nlist_data_dev,
+                                    coord_dev, nloc, nall, mem_size, rc);
+
+  EXPECT_EQ(ret, 0);
+  EXPECT_EQ(max_list_size, 0);
+  std::vector<int> numneigh(nloc, -1);
+  deepmd::memcpy_device_to_host(numneigh_dev, numneigh.data(), nloc);
+  for (int ii = 0; ii < nloc; ++ii) {
+    EXPECT_EQ(numneigh[ii], 0);
+  }
+
+  deepmd::delete_device_memory(nlist_data_dev);
+  deepmd::delete_device_memory(jlist_dev);
+  deepmd::delete_device_memory(ilist_dev);
+  deepmd::delete_device_memory(numneigh_dev);
+  deepmd::delete_device_memory(firstneigh_dev);
+  deepmd::delete_device_memory(coord_dev);
+}
+
 #endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM

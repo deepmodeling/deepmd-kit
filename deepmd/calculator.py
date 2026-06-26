@@ -91,6 +91,7 @@ class DP(Calculator):
         type_dict: dict[str, int] | None = None,
         neighbor_list: Optional["NeighborList"] = None,
         head: str | None = None,
+        nlist_backend: str = "auto",
         **kwargs: Any,
     ) -> None:
         Calculator.__init__(self, label=label, **kwargs)
@@ -98,6 +99,7 @@ class DP(Calculator):
             str(Path(model).resolve()),
             neighbor_list=neighbor_list,
             head=head,
+            nlist_backend=nlist_backend,
         )
         if type_dict:
             self.type_dict = type_dict
@@ -137,8 +139,14 @@ class DP(Calculator):
 
         fparam = self.atoms.info.get("fparam", None)
         aparam = self.atoms.info.get("aparam", None)
+        charge_spin = self.atoms.info.get("charge_spin", None)
         e, f, v = self.dp.eval(
-            coords=coord, cells=cell, atom_types=atype, fparam=fparam, aparam=aparam
+            coords=coord,
+            cells=cell,
+            atom_types=atype,
+            fparam=fparam,
+            aparam=aparam,
+            charge_spin=charge_spin,
         )[:3]
         self.results["energy"] = e[0][0]
         # see https://gitlab.com/ase/ase/-/merge_requests/2485

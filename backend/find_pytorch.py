@@ -136,6 +136,19 @@ def get_pt_requirement(pt_version: str = "") -> dict:
             if pt_version != ""
             # https://github.com/pytorch/pytorch/commit/7e0c26d4d80d6602aed95cb680dfc09c9ce533bc
             else "torch>=2.1.0",
+            "e3nn>=0.5.9",
+            # O(N) cell-list neighbor list for fast Python/ASE inference; the
+            # torch bindings (vesin-torch) ship only as a PyPI extra, so keep it
+            # under the torch extra rather than the core deps (conda-forge has
+            # vesin but not vesin-torch).
+            "vesin[torch]",
+            # GPU O(N) cell-list neighbor list for large systems. Restricted to
+            # Python >= 3.11 (the package requires it while deepmd-kit still
+            # supports 3.10) and to Linux: it is a CUDA package, and its
+            # dependency warp-lang ships no macosx_x86_64 wheel, which otherwise
+            # makes the macOS x86_64 wheel build's dependency resolution
+            # unsatisfiable.
+            "nvalchemi-toolkit-ops>=0.3.1; python_version >= '3.11' and platform_system == 'Linux'",
             *mpi_requirement,
             *cibw_requirement,
         ],

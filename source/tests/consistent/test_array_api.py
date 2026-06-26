@@ -24,6 +24,10 @@ from .common import (
 if INSTALLED_PT:
     import torch
 
+    from deepmd.pt_expt.utils.env import (
+        DEVICE,
+    )
+
 if INSTALLED_JAX:
     from deepmd.jax.env import (
         jnp,
@@ -31,6 +35,20 @@ if INSTALLED_JAX:
 
 if INSTALLED_ARRAY_API_STRICT:
     import array_api_strict as xp
+
+
+class TestArrayConversion(unittest.TestCase):
+    @unittest.skipUnless(INSTALLED_PT, "PyTorch is not installed")
+    def test_torch_parameter_requires_grad(self) -> None:
+        param = torch.nn.Parameter(
+            torch.tensor([1.0, 2.0], dtype=torch.float64, device=DEVICE)
+        )
+        self.assertTrue(param.requires_grad)
+        np.testing.assert_allclose(
+            to_numpy_array(param), np.array([1.0, 2.0], dtype=np.float64)
+        )
+        self.assertTrue(param.requires_grad)
+        self.assertEqual(param.device, DEVICE)
 
 
 class TestXpScatterSumConsistent(unittest.TestCase):

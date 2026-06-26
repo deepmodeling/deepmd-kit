@@ -108,6 +108,7 @@ def test_spin_forward_common_lower_exportable_with_comm_traces() -> None:
     mapping = torch.zeros(1, nall, dtype=torch.int64)
     fparam = None
     aparam = None
+    charge_spin = None
 
     comm_inputs, _keepalive = _build_self_comm_inputs(nloc=nloc, nghost=nall - nloc)
 
@@ -125,6 +126,7 @@ def test_spin_forward_common_lower_exportable_with_comm_traces() -> None:
         mapping,
         fparam,
         aparam,
+        charge_spin,
         *comm_inputs,
         do_atomic_virial=True,
         tracing_mode="symbolic",
@@ -142,6 +144,7 @@ def test_spin_forward_common_lower_exportable_with_comm_traces() -> None:
         mapping,
         fparam,
         aparam,
+        charge_spin,
         *comm_inputs,
     )
     assert isinstance(out, dict)

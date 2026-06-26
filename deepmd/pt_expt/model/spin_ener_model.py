@@ -49,6 +49,7 @@ class SpinEnergyModel(SpinModel):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         model_ret = self.call_common(
             coord,
@@ -57,6 +58,7 @@ class SpinEnergyModel(SpinModel):
             box,
             fparam=fparam,
             aparam=aparam,
+            charge_spin=charge_spin,
             do_atomic_virial=do_atomic_virial,
         )
         model_predict = {}
@@ -82,6 +84,7 @@ class SpinEnergyModel(SpinModel):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         model_ret = self.call_common_lower(
             extended_coord,
@@ -91,6 +94,7 @@ class SpinEnergyModel(SpinModel):
             mapping=mapping,
             fparam=fparam,
             aparam=aparam,
+            charge_spin=charge_spin,
             do_atomic_virial=do_atomic_virial,
         )
         model_predict = {}
@@ -120,6 +124,7 @@ class SpinEnergyModel(SpinModel):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
         **make_fx_kwargs: Any,
     ) -> torch.nn.Module:
         """Trace ``forward_lower`` into an exportable module.
@@ -151,6 +156,7 @@ class SpinEnergyModel(SpinModel):
             mapping,
             fparam=fparam,
             aparam=aparam,
+            charge_spin=charge_spin,
             do_atomic_virial=do_atomic_virial,
             **make_fx_kwargs,
         )
@@ -168,6 +174,7 @@ class SpinEnergyModel(SpinModel):
             mapping: torch.Tensor | None,
             fparam: torch.Tensor | None,
             aparam: torch.Tensor | None,
+            charge_spin: torch.Tensor | None,
         ) -> dict[str, torch.Tensor]:
             model_ret = traced(
                 extended_coord,
@@ -177,6 +184,7 @@ class SpinEnergyModel(SpinModel):
                 mapping,
                 fparam,
                 aparam,
+                charge_spin,
             )
             model_predict: dict[str, torch.Tensor] = {}
             model_predict["atom_energy"] = model_ret["energy"]
@@ -203,4 +211,5 @@ class SpinEnergyModel(SpinModel):
             mapping,
             fparam,
             aparam,
+            charge_spin,
         )

@@ -36,6 +36,19 @@ from .make_model import (
 )
 
 
+def _lookup_type_values(values: torch.Tensor, atype: torch.Tensor) -> torch.Tensor:
+    """
+    Gather one scalar value per atom type.
+
+    ``values[atype]`` is semantically equivalent, but AOTInductor may lower
+    that advanced-indexing form to a CUDA ``index.Tensor`` shim even for a CPU
+    ``.pt2`` package. ``index_select`` keeps the exported spin graph device
+    stable while preserving the same lookup semantics.
+    """
+    flat_atype = atype.reshape(-1).to(dtype=torch.long)
+    return torch.index_select(values.to(atype.device), 0, flat_atype).view(atype.shape)
+
+
 class SpinModel(torch.nn.Module):
     """A spin model wrapper, with spin input preprocess and output split."""
 
@@ -70,9 +83,10 @@ class SpinModel(torch.nn.Module):
         spin = spin.reshape(nframes, nloc, 3)
         atype_spin = torch.concat([atype, atype + self.ntypes_real], dim=-1)
         # spin_dist = s_i * \mu_i
-        spin_dist = spin * (self.virtual_scale_mask.to(atype.device))[atype].reshape(
-            [nframes, nloc, 1]
-        )
+        spin_dist = spin * _lookup_type_values(
+            self.virtual_scale_mask,
+            atype,
+        ).reshape([nframes, nloc, 1])
         virtual_coord = coord + spin_dist
         coord_spin = torch.concat([coord, virtual_coord], dim=-2)
         # for spin virial corr
@@ -115,9 +129,10 @@ class SpinModel(torch.nn.Module):
         """
         nframes, nall = extended_coord.shape[:2]
         nloc = nlist.shape[1]
-        extended_spin_dist = extended_spin * (
-            self.virtual_scale_mask.to(extended_atype.device)
-        )[extended_atype].reshape([nframes, nall, 1])
+        extended_spin_dist = extended_spin * _lookup_type_values(
+            self.virtual_scale_mask,
+            extended_atype,
+        ).reshape([nframes, nall, 1])
         virtual_extended_coord = extended_coord + extended_spin_dist
         virtual_extended_atype = extended_atype + self.ntypes_real
         extended_coord_updated = concat_switch_virtual(
@@ -165,7 +180,9 @@ class SpinModel(torch.nn.Module):
             virtual_scale_mask = self.virtual_scale_mask.to(atype.device)
         else:
             virtual_scale_mask = self.spin_mask.to(atype.device)
-        atomic_mask = virtual_scale_mask[atype].reshape([nframes, nloc, 1])
+        atomic_mask = _lookup_type_values(virtual_scale_mask, atype).reshape(
+            [nframes, nloc, 1]
+        )
         out_real, out_mag = torch.split(out_tensor, [nloc, nloc], dim=1)
         if add_mag:
             out_real = out_real + out_mag
@@ -198,7 +215,10 @@ class SpinModel(torch.nn.Module):
             virtual_scale_mask = self.virtual_scale_mask.to(extended_atype.device)
         else:
             virtual_scale_mask = self.spin_mask.to(extended_atype.device)
-        atomic_mask = virtual_scale_mask[extended_atype].reshape([nframes, nall, 1])
+        atomic_mask = _lookup_type_values(
+            virtual_scale_mask,
+            extended_atype,
+        ).reshape([nframes, nall, 1])
         extended_out_real = torch.cat(
             [
                 extended_out_tensor[:, :nloc],
@@ -527,6 +547,7 @@ class SpinModel(torch.nn.Module):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         nframes, nloc = atype.shape
         coord_updated, atype_updated, coord_corr_for_virial = self.process_spin_input(
@@ -540,6 +561,7 @@ class SpinModel(torch.nn.Module):
             box,
             fparam=fparam,
             aparam=aparam,
+            charge_spin=charge_spin,
             do_atomic_virial=do_atomic_virial,
             coord_corr_for_virial=coord_corr_for_virial,
         )
@@ -581,6 +603,7 @@ class SpinModel(torch.nn.Module):
         do_atomic_virial: bool = False,
         comm_dict: dict[str, torch.Tensor] | None = None,
         extra_nlist_sort: bool = False,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         nframes, nloc = nlist.shape[:2]
         (
@@ -601,6 +624,7 @@ class SpinModel(torch.nn.Module):
             mapping=mapping_updated,
             fparam=fparam,
             aparam=aparam,
+            charge_spin=charge_spin,
             do_atomic_virial=do_atomic_virial,
             comm_dict=comm_dict,
             extra_nlist_sort=extra_nlist_sort,
@@ -696,6 +720,7 @@ class SpinEnergyModel(SpinModel):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         model_ret = self.forward_common(
             coord,
@@ -704,6 +729,7 @@ class SpinEnergyModel(SpinModel):
             box,
             fparam=fparam,
             aparam=aparam,
+            charge_spin=charge_spin,
             do_atomic_virial=do_atomic_virial,
         )
         model_predict = {}
@@ -731,6 +757,7 @@ class SpinEnergyModel(SpinModel):
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
         comm_dict: dict[str, torch.Tensor] | None = None,
+        charge_spin: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
         model_ret = self.forward_common_lower(
             extended_coord,
@@ -740,6 +767,7 @@ class SpinEnergyModel(SpinModel):
             mapping=mapping,
             fparam=fparam,
             aparam=aparam,
+            charge_spin=charge_spin,
             do_atomic_virial=do_atomic_virial,
             comm_dict=comm_dict,
             extra_nlist_sort=self.backbone_model.need_sorted_nlist_for_lower(),

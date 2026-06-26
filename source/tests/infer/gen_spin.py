@@ -125,7 +125,14 @@ def _build_dpa3_mpi_yaml(yaml_path: str) -> None:
             "precision": "float64",
             "seed": 1,
         },
-        "fitting_net": {"neuron": [5, 5, 5], "resnet_dt": True, "seed": 1},
+        # numb_aparam=1 exercises the aparam path of DeepSpinPTExpt, including
+        # the empty-subdomain phantom-atom aparam padding (PR #5485 review).
+        "fitting_net": {
+            "neuron": [5, 5, 5],
+            "resnet_dt": True,
+            "numb_aparam": 1,
+            "seed": 1,
+        },
         "spin": {"use_spin": [True, False], "virtual_scale": [0.3140, 0.0]},
     }
 
@@ -141,6 +148,75 @@ def _build_dpa3_mpi_yaml(yaml_path: str) -> None:
     }
 
     print(f"Building DPA3 spin dpmodel and saving to {yaml_path} ...")  # noqa: T201
+    save_dp_model(yaml_path, data)
+
+
+def _build_dpa3_single_yaml(yaml_path: str) -> None:
+    """Build a DPA3 spin model with ``use_loc_mapping=True`` — the
+    single-artifact GNN counterpart to ``_build_dpa3_mpi_yaml``.
+
+    ``use_loc_mapping=True`` keeps per-layer messaging local to each
+    rank, so no with-comm AOTI artifact is needed for single-rank
+    inference.  But the regular path still consumes ``mapping`` to
+    gather ghost features, so this fixture is the canonical test
+    case for the cells where the C++ ``DeepSpinPTExpt`` fail-fast
+    must fire (single-rank without atom-map, or multi-rank without
+    a with-comm artifact).
+    """
+    from deepmd.dpmodel.model.model import (
+        get_model,
+    )
+    from deepmd.dpmodel.utils.serialization import (
+        save_dp_model,
+    )
+
+    config = {
+        "type_map": ["Ni", "O"],
+        "descriptor": {
+            "type": "dpa3",
+            "repflow": {
+                "n_dim": 8,
+                "e_dim": 6,
+                "a_dim": 4,
+                "nlayers": 1,
+                "e_rcut": 4.0,
+                "e_rcut_smth": 0.5,
+                "e_sel": 8,
+                "a_rcut": 3.5,
+                "a_rcut_smth": 0.5,
+                "a_sel": 4,
+                "axis_neuron": 4,
+                "update_angle": False,
+            },
+            "use_loc_mapping": True,
+            "precision": "float64",
+            "seed": 1,
+        },
+        # numb_aparam=1 exercises the aparam path of DeepSpinPTExpt, including
+        # the empty-subdomain phantom-atom aparam padding (PR #5485 review).
+        "fitting_net": {
+            "neuron": [5, 5, 5],
+            "resnet_dt": True,
+            "numb_aparam": 1,
+            "seed": 1,
+        },
+        "spin": {"use_spin": [True, False], "virtual_scale": [0.3140, 0.0]},
+    }
+
+    model = get_model(copy.deepcopy(config))
+    model_dict = model.serialize()
+
+    data = {
+        "model": model_dict,
+        "model_def_script": config,
+        "backend": "dpmodel",
+        "software": "deepmd-kit",
+        "version": "3.0.0",
+    }
+
+    print(  # noqa: T201
+        f"Building single-artifact DPA3 spin dpmodel and saving to {yaml_path} ..."
+    )
     save_dp_model(yaml_path, data)
 
 
@@ -162,6 +238,12 @@ def main():
     yaml_dpa3_path = os.path.join(base_dir, "deeppot_dpa3_spin_mpi.yaml")
     pt2_dpa3_path = os.path.join(base_dir, "deeppot_dpa3_spin_mpi.pt2")
 
+    # Single-artifact GNN spin variant (DPA3 + use_loc_mapping=True).
+    # No with-comm artifact; needed by tests covering the spin fail-fast
+    # cells in test_lammps_spin_dpa3_pt2.py.
+    yaml_dpa3_single_path = os.path.join(base_dir, "deeppot_dpa3_spin.yaml")
+    pt2_dpa3_single_path = os.path.join(base_dir, "deeppot_dpa3_spin.pt2")
+
     # ---- 1. Build .yamls if they don't exist ----
     if not os.path.exists(yaml_path):
         _build_yaml(yaml_path)
@@ -172,6 +254,11 @@ def main():
         _build_dpa3_mpi_yaml(yaml_dpa3_path)
     else:
         print(f"Using existing {yaml_dpa3_path}")  # noqa: T201
+
+    if not os.path.exists(yaml_dpa3_single_path):
+        _build_dpa3_single_yaml(yaml_dpa3_single_path)
+    else:
+        print(f"Using existing {yaml_dpa3_single_path}")  # noqa: T201
 
     # ---- 2. Convert .yaml -> .pth and .yaml -> .pt2 ----
     # Import deepmd.pt to register the backend (needed for convert_backend)
@@ -184,6 +271,13 @@ def main():
 
     print(f"Converting to {pt2_path} ...")  # noqa: T201
     convert_backend(INPUT=yaml_path, OUTPUT=pt2_path, atomic_virial=True)
+
+    print(f"Converting to {pt2_dpa3_single_path} ...")  # noqa: T201
+    convert_backend(
+        INPUT=yaml_dpa3_single_path,
+        OUTPUT=pt2_dpa3_single_path,
+        atomic_virial=True,
+    )
 
     print(f"Converting to {pt2_dpa3_path} ...")  # noqa: T201
     convert_backend(INPUT=yaml_dpa3_path, OUTPUT=pt2_dpa3_path, atomic_virial=True)

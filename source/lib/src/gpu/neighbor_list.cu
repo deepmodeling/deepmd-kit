@@ -43,11 +43,14 @@ __global__ void parallel_prefix_scan(int* numneigh,
   // Initialize running total
   parallel_prefix_scan_op prefix_op(0);
 
-  // Have the block iterate over segments of items
-  for (int ii = threadIdx.x; ii < nall; ii += THREADS_PER_BLOCK) {
+  // Have the full block iterate over segments of items. BlockScan and
+  // __syncthreads are block-wide collectives, so every thread in the block
+  // must enter every iteration, including the partially-filled tail segment.
+  for (int base = 0; base < nall; base += THREADS_PER_BLOCK) {
+    int ii = base + threadIdx.x;
     int block_offset = blockIdx.x * mem_size;
     // Load a segment of consecutive items that are blocked across threads
-    int i_data = temp_nlist[block_offset + ii];
+    int i_data = ii < nall ? temp_nlist[block_offset + ii] : -1;
     int o_data = i_data == -1 ? 0 : 1;
 
     // Collectively compute the block-wide exclusive prefix sum
@@ -55,7 +58,7 @@ __global__ void parallel_prefix_scan(int* numneigh,
 
     __syncthreads();
     // Store scanned items to output segment
-    if (i_data != -1) {
+    if (ii < nall && i_data != -1) {
       nei_order[block_offset + ii] = o_data;
     }
     // Store numneigh into the output array

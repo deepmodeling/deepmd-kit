@@ -139,6 +139,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             aparam: torch.Tensor | None = None,
             do_atomic_virial: bool = False,
             coord_corr_for_virial: torch.Tensor | None = None,
+            charge_spin: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
             """Return model prediction.
 
@@ -204,6 +205,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 fparam=fp,
                 aparam=ap,
                 extended_coord_corr=extended_coord_corr,
+                charge_spin=charge_spin,
             )
             model_predict = communicate_extended_output(
                 model_predict_lower,
@@ -224,6 +226,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             fparam: torch.Tensor | None = None,
             aparam: torch.Tensor | None = None,
             do_atomic_virial: bool = False,
+            charge_spin: torch.Tensor | None = None,
             extended_atype: torch.Tensor | None = None,
             extended_batch: torch.Tensor | None = None,
             extended_image: torch.Tensor | None = None,
@@ -239,42 +242,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             edge_index: torch.Tensor | None = None,
             angle_index: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
-            """Forward pass for mixed-nloc batches with a precomputed flat graph.
-
-            This path consumes graph tensors prepared by the LMDB collate function
-            and keeps atom-wise values flattened across frames.
-
-            Parameters
-            ----------
-            coord
-                Flattened atomic coordinates with shape [total_atoms, 3].
-            atype
-                Flattened atomic types with shape [total_atoms].
-            batch
-                Atom-to-frame assignment with shape [total_atoms].
-            ptr
-                Frame boundaries with shape [nframes + 1].
-            box
-                Simulation boxes with shape [nframes, 9].
-            fparam
-                Frame parameters with shape [nframes, ndf].
-            aparam
-                Flattened atomic parameters with shape [total_atoms, nda].
-            do_atomic_virial
-                Whether to calculate atomic virial.
-
-            Returns
-            -------
-            model_predict : dict[str, torch.Tensor]
-                Model predictions with flat format:
-                - atomwise outputs: [total_atoms, ...]
-                - frame-wise outputs: [nframes, ...]
-
-            Notes
-            -----
-            The precomputed graph fields are required for this path; missing
-            fields are treated as a data pipeline error.
-            """
+            """Forward pass for mixed-nloc batches with a precomputed flat graph."""
             if do_atomic_virial:
                 raise NotImplementedError(
                     "Atomic virial is not implemented for flat mixed-batch forward."
@@ -282,7 +250,6 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             coord, box, fparam, aparam, input_prec = self._input_type_cast(
                 coord, box=box, fparam=fparam, aparam=aparam
             )
-            # Enable gradient tracking for coord and box if needed
             if self.do_grad_r("energy"):
                 coord = coord.clone().detach().requires_grad_(True)
             if self.do_grad_c("energy") and box is not None:
@@ -316,7 +283,6 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                     "Flat mixed-batch forward requires precomputed graph fields from "
                     "the LMDB collate_fn."
                 )
-            # Pass flat extended coordinates directly to the atomic model.
             assert extended_atype is not None
             assert extended_batch is not None
             assert mapping is not None
@@ -332,6 +298,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 do_atomic_virial=do_atomic_virial,
                 fparam=fparam,
                 aparam=aparam,
+                charge_spin=charge_spin,
                 extended_ptr=extended_ptr,
                 central_ext_index=central_ext_index,
                 nlist_ext=nlist_ext,
@@ -342,8 +309,6 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 edge_index=edge_index,
                 angle_index=angle_index,
             )
-
-            # Compute derivatives if needed
             if self.do_grad_r("energy") or self.do_grad_c("energy"):
                 model_predict_lower = self._compute_derivatives_flat(
                     model_predict_lower,
@@ -357,7 +322,6 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                     box,
                     do_atomic_virial,
                 )
-
             return self._output_type_cast(model_predict_lower, input_prec)
 
         def forward_common_lower_flat(
@@ -372,6 +336,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             do_atomic_virial: bool = False,
             fparam: torch.Tensor | None = None,
             aparam: torch.Tensor | None = None,
+            charge_spin: torch.Tensor | None = None,
             extended_ptr: torch.Tensor | None = None,
             central_ext_index: torch.Tensor | None = None,
             nlist_ext: torch.Tensor | None = None,
@@ -382,37 +347,6 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             edge_index: torch.Tensor | None = None,
             angle_index: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
-            """Lower interface for flat batch format.
-
-            Parameters
-            ----------
-            extended_coord : torch.Tensor
-                Extended coordinates [total_extended_atoms, 3].
-            extended_atype : torch.Tensor
-                Extended atom types [total_extended_atoms].
-            extended_batch : torch.Tensor
-                Frame assignment for extended atoms [total_extended_atoms].
-            nlist : torch.Tensor
-                Neighbor list [total_atoms, nnei].
-            mapping : torch.Tensor
-                Extended atom -> local flat index mapping [total_extended_atoms].
-            batch : torch.Tensor
-                Frame assignment for local atoms [total_atoms].
-            ptr : torch.Tensor
-                Frame boundaries [nframes + 1].
-            do_atomic_virial : bool
-                Whether to compute atomic virial.
-            fparam : torch.Tensor | None
-                Frame parameters [nframes, ndf].
-            aparam : torch.Tensor | None
-                Atomic parameters [total_atoms, nda].
-
-            Returns
-            -------
-            model_predict : dict[str, torch.Tensor]
-                Model predictions in flat format.
-            """
-            # The atomic model keeps atom-wise outputs in flat format.
             model_ret = self.atomic_model.forward_common_atomic_flat(
                 extended_coord,
                 extended_atype,
@@ -423,6 +357,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 ptr,
                 fparam=fparam,
                 aparam=aparam,
+                charge_spin=charge_spin,
                 extended_ptr=extended_ptr,
                 central_ext_index=central_ext_index,
                 nlist_ext=nlist_ext,
@@ -433,17 +368,14 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 edge_index=edge_index,
                 angle_index=angle_index,
             )
-
-            # Reduce atom-wise energy to frame-wise energy.
             nframes = ptr.numel() - 1
             if "energy" in model_ret:
-                energy_atomic = model_ret["energy"]  # [total_atoms, 1]
+                energy_atomic = model_ret["energy"]
                 energy_redu = energy_atomic.new_zeros(
                     (nframes, energy_atomic.shape[-1])
                 )
                 energy_redu.index_add_(0, batch, energy_atomic)
                 model_ret["energy_redu"] = energy_redu
-
             return model_ret
 
         def _compute_derivatives_flat(
@@ -459,76 +391,32 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             box: torch.Tensor | None,
             do_atomic_virial: bool,
         ) -> dict[str, torch.Tensor]:
-            """Compute force and virial derivatives for flat batch format.
-
-            Parameters
-            ----------
-            fit_ret : dict[str, torch.Tensor]
-                Fitting network output with "energy" key [total_atoms, 1].
-            extended_coord : torch.Tensor
-                Extended coordinates [total_extended_atoms, 3].
-            extended_atype : torch.Tensor
-                Extended atom types [total_extended_atoms].
-            extended_batch : torch.Tensor
-                Frame assignment for extended atoms [total_extended_atoms].
-            coord : torch.Tensor
-                Original coordinates [total_atoms, 3].
-            atype : torch.Tensor
-                Original atom types [total_atoms].
-            batch : torch.Tensor
-                Frame assignment for original atoms [total_atoms].
-            ptr : torch.Tensor
-                Frame boundaries [nframes + 1].
-            box : torch.Tensor | None
-                Simulation boxes [nframes, 9].
-            do_atomic_virial : bool
-                Whether to compute atomic virial.
-
-            Returns
-            -------
-            model_predict : dict[str, torch.Tensor]
-                Model predictions with derivatives in flat format.
-            """
-            # Force is the negative gradient of the total atomic energy.
             if self.do_grad_r("energy"):
-                energy_atomic = fit_ret["energy"]  # [total_atoms, 1]
-
+                energy_atomic = fit_ret["energy"]
                 energy_derv_r = torch.autograd.grad(
                     outputs=energy_atomic.sum(),
                     inputs=coord,
                     create_graph=True,
                     retain_graph=True,
-                )[0]  # [total_atoms, 3]
+                )[0]
+                fit_ret["energy_derv_r"] = -energy_derv_r.unsqueeze(-2)
+                fit_ret["dforce"] = -energy_derv_r
 
-                fit_ret["energy_derv_r"] = -energy_derv_r.unsqueeze(
-                    -2
-                )  # [total_atoms, 1, 3]
-                # Also provide dforce field for compatibility with EnergyModel.forward()
-                fit_ret["dforce"] = -energy_derv_r  # [total_atoms, 3]
-
-            # Compute virial: dE/dh
             if self.do_grad_c("energy"):
-                nframes = ptr.numel() - 1
-                energy_redu = fit_ret["energy_redu"]  # [nframes, 1]
-
+                energy_redu = fit_ret["energy_redu"]
                 if box is not None:
                     energy_derv_c_redu = torch.autograd.grad(
                         outputs=energy_redu.sum(),
                         inputs=box,
                         create_graph=True,
                         retain_graph=True,
-                    )[0]  # [nframes, 9]
-
-                    fit_ret["energy_derv_c_redu"] = energy_derv_c_redu.unsqueeze(
-                        1
-                    )  # [nframes, 1, 9]
-
+                    )[0]
+                    fit_ret["energy_derv_c_redu"] = energy_derv_c_redu.unsqueeze(1)
                     if do_atomic_virial:
                         raise NotImplementedError(
                             "Atomic virial is not implemented for flat mixed-batch "
                             "forward."
                         )
-
             return fit_ret
 
         def forward_common_flat(
@@ -539,39 +427,10 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             box: torch.Tensor | None = None,
             fparam: torch.Tensor | None = None,
             aparam: torch.Tensor | None = None,
+            charge_spin: torch.Tensor | None = None,
             do_atomic_virial: bool = False,
         ) -> dict[str, torch.Tensor]:
-            """Forward pass for flat mixed-nloc batch.
-
-            This method consumes the precomputed flat graph produced by LMDB
-            collation and returns the same output keys as the regular path.
-
-            Parameters
-            ----------
-            coord
-                Flattened atomic coordinates with shape [total_atoms, 3].
-            atype
-                Flattened atomic types with shape [total_atoms].
-            batch
-                Atom-to-frame assignment with shape [total_atoms].
-            ptr
-                Frame boundaries with shape [nframes + 1].
-            box
-                Simulation boxes with shape [nframes, 9].
-            fparam
-                Frame parameters with shape [nframes, ndf].
-            aparam
-                Flattened atomic parameters with shape [total_atoms, nda].
-            do_atomic_virial
-                Whether to calculate atomic virial.
-
-            Returns
-            -------
-            model_predict : dict[str, torch.Tensor]
-                Model predictions with flat format:
-                - atomwise outputs: [total_atoms, ...]
-                - frame-wise outputs: [nframes, ...]
-            """
+            """Forward pass for flat mixed-nloc batch."""
             if "batch" not in mixed_batch or "ptr" not in mixed_batch:
                 raise RuntimeError(
                     "Flat mixed-batch forward requires batch and ptr fields."
@@ -587,6 +446,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 fparam,
                 aparam,
                 do_atomic_virial,
+                charge_spin=charge_spin,
                 extended_atype=mixed_batch.get("extended_atype"),
                 extended_batch=mixed_batch.get("extended_batch"),
                 extended_image=mixed_batch.get("extended_image"),
@@ -602,6 +462,88 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 edge_index=mixed_batch.get("edge_index"),
                 angle_index=mixed_batch.get("angle_index"),
             )
+
+        @torch.jit.export
+        def forward_embedding(
+            self,
+            coord: torch.Tensor,
+            atype: torch.Tensor,
+            box: torch.Tensor | None = None,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
+            charge_spin: torch.Tensor | None = None,
+        ) -> dict[str, torch.Tensor]:
+            """Extract embeddings in a single forward, without force/virial autograd.
+
+            One descriptor and fitting forward yields the per-atom descriptor, the
+            per-atom last fitting hidden activation, and the per-structure pooled
+            feature (the masked atom-sum of the atomic feature).  The neighbor
+            list is built exactly as in `forward_common`, so the descriptor and
+            atomic feature match the energy forward.
+
+            Parameters
+            ----------
+            coord
+                Coordinates with shape (nf, nloc*3) or (nf, nloc, 3).
+            atype
+                Atom types with shape (nf, nloc).
+            box
+                Simulation box with shape (nf, 9), or None.
+            fparam
+                Frame parameters with shape (nf, ndf), or None.
+            aparam
+                Atomic parameters with shape (nf, nloc, nda), or None.
+            charge_spin
+                Frame-level charge and spin conditions with shape (nf, 2), or None.
+
+            Returns
+            -------
+            dict[str, torch.Tensor]
+                ``descriptor`` with shape (nf, nloc, d), ``atomic_feature`` with
+                shape (nf, nloc, h), and ``structural_feature`` with shape
+                (nf, h), in the model's native precision. The DeepEval embedding
+                API casts these to the requested output dtype (float32 by
+                default).
+
+            Raises
+            ------
+            RuntimeError
+                If called in training mode; call ``model.eval()`` first.
+            """
+            if self.training:
+                raise RuntimeError(
+                    "Embedding extraction requires eval mode; call model.eval() first."
+                )
+            cc, bb, fp, ap, _ = self._input_type_cast(
+                coord, box=box, fparam=fparam, aparam=aparam
+            )
+            del coord, box, fparam, aparam
+            (
+                extended_coord,
+                extended_atype,
+                mapping,
+                nlist,
+            ) = extend_input_and_build_neighbor_list(
+                cc,
+                atype,
+                self.get_rcut(),
+                self.get_sel(),
+                # types are distinguished by `format_nlist` below when needed
+                mixed_types=True,
+                box=bb,
+            )
+            extended_coord = extended_coord.view(extended_atype.shape[0], -1, 3)
+            nlist = self.format_nlist(extended_coord, extended_atype, nlist)
+            with torch.no_grad():
+                return self.atomic_model.forward_embedding(
+                    extended_coord,
+                    extended_atype,
+                    nlist,
+                    mapping=mapping,
+                    fparam=fp,
+                    aparam=ap,
+                    charge_spin=charge_spin,
+                )
 
         def get_out_bias(self) -> torch.Tensor:
             return self.atomic_model.get_out_bias()
@@ -648,6 +590,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             comm_dict: dict[str, torch.Tensor] | None = None,
             extra_nlist_sort: bool = False,
             extended_coord_corr: torch.Tensor | None = None,
+            charge_spin: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
             """Return model prediction. Lower interface that takes
             extended atomic coordinates and types, nlist, and mapping
@@ -692,19 +635,24 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 extended_coord, fparam=fparam, aparam=aparam
             )
             del extended_coord, fparam, aparam
+            force_coord = cc_ext
+            if self.atomic_model.do_grad_r() or self.atomic_model.do_grad_c():
+                if not force_coord.requires_grad:
+                    force_coord = force_coord.clone().requires_grad_(True)
             atomic_ret = self.atomic_model.forward_common_atomic(
-                cc_ext,
+                force_coord,
                 extended_atype,
                 nlist,
                 mapping=mapping,
                 fparam=fp,
                 aparam=ap,
                 comm_dict=comm_dict,
+                charge_spin=charge_spin,
             )
             model_predict = fit_output_to_model_output(
                 atomic_ret,
                 self.atomic_output_def(),
-                cc_ext,
+                force_coord,
                 do_atomic_virial=do_atomic_virial,
                 create_graph=self.training,
                 mask=atomic_ret["mask"] if "mask" in atomic_ret else None,
@@ -882,7 +830,26 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 nlist = torch.where(rr > rcut, -1, nlist)
                 nlist = nlist[..., :nnei]
             else:  # not extra_nlist_sort and n_nnei <= nnei:
-                pass  # great!
+                # No reordering is needed here (these descriptors reduce over
+                # neighbors order-independently), but we must still drop
+                # neighbors beyond rcut.  The C++/LAMMPS neighbor list is built
+                # with rcut+skin and is NOT rcut-filtered before forward_lower;
+                # without this, out-of-rcut neighbors leak into the descriptor
+                # whenever the per-atom neighbor count <= nnei (this branch),
+                # making the result order-dependent (see discussion #5438).
+                n_nf, n_nloc, n_nnei = nlist.shape
+                m_real_nei = nlist >= 0
+                coord0 = extended_coord[:, :n_nloc, :]
+                index = (
+                    torch.where(m_real_nei, nlist, 0)
+                    .view(n_nf, n_nloc * n_nnei, 1)
+                    .expand(-1, -1, 3)
+                )
+                coord1 = torch.gather(extended_coord, 1, index).view(
+                    n_nf, n_nloc, n_nnei, 3
+                )
+                rr = torch.linalg.norm(coord0[:, :, None, :] - coord1, dim=-1)
+                nlist = torch.where(m_real_nei & (rr > rcut), -1, nlist)
             assert nlist.shape[-1] == nnei
             return nlist
 
@@ -939,6 +906,26 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
 
         def get_default_fparam(self) -> torch.Tensor | None:
             return self.atomic_model.get_default_fparam()
+
+        @torch.jit.export
+        def has_chg_spin_ebd(self) -> bool:
+            """Check if the model has charge spin embedding."""
+            return self.atomic_model.has_chg_spin_ebd()
+
+        @torch.jit.export
+        def get_dim_chg_spin(self) -> int:
+            """Get the dimension of charge_spin input."""
+            return self.atomic_model.get_dim_chg_spin()
+
+        @torch.jit.export
+        def has_default_chg_spin(self) -> bool:
+            """Check if the model has default charge_spin values."""
+            return self.atomic_model.has_default_chg_spin()
+
+        @torch.jit.export
+        def get_default_chg_spin(self) -> torch.Tensor | None:
+            """Get the default charge_spin values."""
+            return self.atomic_model.get_default_chg_spin()
 
         @torch.jit.export
         def get_dim_aparam(self) -> int:
@@ -1059,6 +1046,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             fparam: torch.Tensor | None = None,
             aparam: torch.Tensor | None = None,
             do_atomic_virial: bool = False,
+            charge_spin: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
             # directly call the forward_common method when no specific transform rule
             return self.forward_common(
@@ -1068,6 +1056,7 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 fparam=fparam,
                 aparam=aparam,
                 do_atomic_virial=do_atomic_virial,
+                charge_spin=charge_spin,
             )
 
     return CM

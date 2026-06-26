@@ -8,6 +8,8 @@ Verifies that:
 4. Loss decreases over those steps
 """
 
+import copy
+import datetime
 import os
 import shutil
 import tempfile
@@ -18,6 +20,9 @@ from unittest.mock import (
 
 import torch
 
+from deepmd.loggers.training import (
+    format_training_message,
+)
 from deepmd.pt_expt.entrypoints.main import (
     get_trainer,
 )
@@ -119,6 +124,32 @@ _DESCRIPTOR_DPA3 = {
     "precision": "float64",
     "concat_output_tebd": False,
     "seed": 1,
+}
+
+
+# DPA4/SeZM uses a dedicated model type ("dpa4") with fixed descriptor and
+# fitting types, so it gets a full model config rather than only a descriptor
+# dict that can be swapped into ``_make_config``.
+_MODEL_DPA4 = {
+    "type": "dpa4",
+    "type_map": ["O", "H"],
+    "descriptor": {
+        "type": "dpa4",
+        "sel": 20,
+        "rcut": 4.0,
+        "channels": 16,
+        "n_radial": 8,
+        "lmax": 2,
+        "mmax": 1,
+        "n_blocks": 2,
+        "seed": 1,
+    },
+    "fitting_net": {
+        "type": "dpa4_ener",
+        "neuron": [0],
+        "seed": 1,
+    },
+    "data_stat_nbatch": 1,
 }
 
 
@@ -280,6 +311,15 @@ class TestTraining(unittest.TestCase):
         config = normalize(config)
         self._run_training(config)
 
+    def test_training_loop_dpa4(self) -> None:
+        """Run a few DPA4/SeZM training steps (model type "dpa4" dispatch)."""
+        config = _make_config(self.data_dir, numb_steps=5)
+        config["model"] = copy.deepcopy(_MODEL_DPA4)
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config)
+        self.assertEqual(config["model"]["type"], "dpa4")
+        self._run_training(config)
+
     def test_training_loop_compiled(self) -> None:
         """Run a few training steps with torch.compile enabled."""
         config = _make_config(self.data_dir, numb_steps=5)
@@ -297,6 +337,68 @@ class TestTraining(unittest.TestCase):
         config = update_deepmd_input(config, warning=False)
         config = normalize(config)
         self._run_training(config)
+
+
+class TestCompiledModelGetattr(unittest.TestCase):
+    """Unit tests for _CompiledModel attribute delegation.
+
+    These tests do not require example data or torch.compile — they use a
+    lightweight mock original_model to verify that __getattr__ correctly
+    forwards unknown attributes/methods to the wrapped original model.
+    Compilation is lazy, so no compiled_forward_lower is needed for construction.
+    """
+
+    def _make_compiled_model(self):
+        from deepmd.pt_expt.train.training import (
+            _CompiledModel,
+        )
+
+        class _FakeModel(torch.nn.Module):
+            def get_rcut(self):
+                return 3.0
+
+            def get_type_map(self):
+                return ["O", "H"]
+
+            @property
+            def atomic_model(self):
+                return self
+
+            def get_descriptor(self):
+                return self
+
+        return _CompiledModel(_FakeModel(), structure_key=(7,))
+
+    def test_delegates_method(self) -> None:
+        """Unknown method calls are forwarded to original_model."""
+        cm = self._make_compiled_model()
+        self.assertAlmostEqual(cm.get_rcut(), 3.0)
+
+    def test_delegates_method_returning_list(self) -> None:
+        """Methods returning non-scalar values are forwarded correctly."""
+        cm = self._make_compiled_model()
+        self.assertEqual(cm.get_type_map(), ["O", "H"])
+
+    def test_delegates_property(self) -> None:
+        """Property access is forwarded to original_model."""
+        cm = self._make_compiled_model()
+        self.assertIsNotNone(cm.atomic_model)
+
+    def test_own_attrs_not_delegated(self) -> None:
+        """Attributes owned by _CompiledModel itself are NOT delegated."""
+        cm = self._make_compiled_model()
+        # original_model is a registered submodule and must not fall through
+        # to delegation.  compiled_forward_lower is None before the first
+        # forward call (lazy compile) — accessing it must return None, not
+        # delegate to original_model.
+        self.assertIsInstance(cm.original_model, torch.nn.Module)
+        self.assertIsNone(cm.compiled_forward_lower)
+
+    def test_missing_attr_raises(self) -> None:
+        """Accessing an attribute missing from both wrapper and original raises."""
+        cm = self._make_compiled_model()
+        with self.assertRaises(AttributeError):
+            _ = cm.nonexistent_attribute_xyz
 
 
 class TestCompiledDynamicShapes(unittest.TestCase):
@@ -335,15 +437,21 @@ class TestCompiledDynamicShapes(unittest.TestCase):
                 # The wrapper.model should be a _CompiledModel
                 compiled_model = trainer.wrapper.model["Default"]
                 self.assertIsInstance(compiled_model, _CompiledModel)
+                # Lazy compile: compiled_forward_lower is None before any forward.
+                self.assertIsNone(compiled_model.compiled_forward_lower)
 
                 trainer.wrapper.train()
-                for _ in range(3):
+                for step in range(3):
                     trainer.optimizer.zero_grad(set_to_none=True)
                     inp, lab = trainer.get_data(is_train=True)
                     lr = trainer.scheduler.get_last_lr()[0]
                     _, loss, _ = trainer.wrapper(**inp, cur_lr=lr, label=lab)
                     loss.backward()
                     trainer.optimizer.step()
+
+                    # After first forward, compiled_forward_lower must be set.
+                    if step == 0:
+                        self.assertIsNotNone(compiled_model.compiled_forward_lower)
 
                     # Loss should be a finite scalar at every step
                     self.assertFalse(torch.isnan(loss))
@@ -574,6 +682,9 @@ class TestAdditionalDataRequirement(unittest.TestCase):
             def get_default_fparam(self) -> list[float]:
                 return [0.0, 1.0]
 
+            def has_chg_spin_ebd(self) -> bool:
+                return False
+
         reqs = get_additional_data_requirement(_M())
         self.assertEqual(len(reqs), 1)
         fparam_req = reqs[0]
@@ -604,6 +715,9 @@ class TestAdditionalDataRequirement(unittest.TestCase):
 
             def get_default_fparam(self) -> None:
                 return None
+
+            def has_chg_spin_ebd(self) -> bool:
+                return False
 
         reqs = get_additional_data_requirement(_M())
         self.assertEqual(len(reqs), 1)
@@ -705,6 +819,100 @@ class TestRestart(unittest.TestCase):
                 self.assertGreater(
                     len(lines), 0, "lcurve.out is empty after init_model"
                 )
+            finally:
+                os.chdir(old_cwd)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+    def test_restart_from_compiled_checkpoint(self) -> None:
+        """Train WITH compile enabled, restart from the compiled checkpoint.
+
+        Regression test for the state-dict key mismatch bug: save_checkpoint
+        previously saved _CompiledModel keys ("original_model.*"), which made
+        load_state_dict fail on restart because a fresh ModelWrapper expects
+        plain model keys ("model.Default.*").
+        """
+        from deepmd.pt_expt.train.training import (
+            _CompiledModel,
+        )
+
+        tmpdir = tempfile.mkdtemp(prefix="pt_expt_compiled_restart_")
+        try:
+            old_cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                # Phase 1: train 5 steps WITH compile enabled.
+                # Do NOT use _train_and_get_ckpt here — we need the trainer
+                # object to assert that compilation actually happened.
+                # Without this check the test is vacuous: if torch.compile
+                # silently falls back to eager the checkpoint keys are already
+                # plain and the bug path is never exercised.
+                config = _make_config(self.data_dir, numb_steps=5)
+                config["training"]["enable_compile"] = True
+                config = update_deepmd_input(config, warning=False)
+                config = normalize(config)
+                trainer1 = get_trainer(config)
+                self.assertIsInstance(
+                    trainer1.wrapper.model["Default"],
+                    _CompiledModel,
+                    "Phase-1 trainer did not produce a _CompiledModel; "
+                    "torch.compile may have silently fallen back to eager — "
+                    "the bug path is not exercised.",
+                )
+                trainer1.run()
+
+                ckpt_path = os.path.join(tmpdir, "model.ckpt.pt")
+                self.assertTrue(os.path.exists(ckpt_path), "Checkpoint not created")
+
+                # Primary assertion: the checkpoint must NOT contain
+                # "_CompiledModel wrapper" keys ("original_model.*").
+                raw = torch.load(ckpt_path, map_location="cpu", weights_only=True)
+                ckpt_keys = list(raw["model"].keys())
+                self.assertFalse(
+                    any("original_model" in k for k in ckpt_keys),
+                    f"Checkpoint has _CompiledModel wrapper keys — "
+                    f"save_checkpoint must unwrap before serialising: "
+                    f"{[k for k in ckpt_keys if 'original_model' in k]}",
+                )
+
+                # Secondary assertion: the saved state dict must load cleanly
+                # into a fresh *uncompiled* ModelWrapper (strict=False so we
+                # can distinguish unexpected vs missing keys clearly).
+                config_nc = _make_config(self.data_dir, numb_steps=10)
+                config_nc = update_deepmd_input(config_nc, warning=False)
+                config_nc = normalize(config_nc)
+                fresh = get_trainer(config_nc)
+                missing, unexpected = fresh._unwrapped.load_state_dict(
+                    raw["model"], strict=False
+                )
+                self.assertEqual(
+                    unexpected,
+                    [],
+                    f"Unexpected keys when loading compiled ckpt into plain "
+                    f"model (indicates _CompiledModel wrapper keys leaked): "
+                    f"{unexpected}",
+                )
+                self.assertEqual(
+                    missing,
+                    [],
+                    f"Missing keys when loading compiled ckpt into plain "
+                    f"model: {missing}",
+                )
+
+                # Phase 2: restart from the compiled checkpoint
+                config2 = _make_config(self.data_dir, numb_steps=10)
+                config2["training"]["enable_compile"] = True
+                config2 = update_deepmd_input(config2, warning=False)
+                config2 = normalize(config2)
+                trainer2 = get_trainer(config2, restart_model=ckpt_path)
+
+                self.assertEqual(trainer2.start_step, 5)
+                self.assertIsInstance(trainer2.wrapper.model["Default"], _CompiledModel)
+                trainer2.run()
+
+                with open(os.path.join(tmpdir, "lcurve.out")) as f:
+                    lines = [ln for ln in f.readlines() if not ln.startswith("#")]
+                self.assertGreater(len(lines), 0)
             finally:
                 os.chdir(old_cwd)
         finally:
@@ -1290,6 +1498,289 @@ class TestCompiledVaryingNatoms(unittest.TestCase):
         )
 
         self.assertIsInstance(trainer.wrapper.model["Default"], _CompiledModel)
+
+
+class TestCompiledSharedFittingDifferentDescriptor(unittest.TestCase):
+    """Regression test: shared fitting with different descriptors gets distinct compiled graphs.
+
+    Before the fix, ``_get_model_structure_key`` returned the id of the first
+    fitting-net child without including the descriptor.  Two tasks sharing a
+    fitting net but using different descriptors (different rcut / sel, which
+    bake different smooth-cutoff constants into the traced graph) received the
+    same structure key — task_2 silently reused task_1's compiled graph and
+    produced wrong predictions.
+
+    The fix includes ``id(descriptor)`` in the key so each task with a
+    distinct descriptor gets its own compiled graph.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        data_dir = os.path.join(EXAMPLE_DIR, "data")
+        if not os.path.isdir(data_dir):
+            raise unittest.SkipTest(f"Example data not found: {data_dir}")
+        cls.data_dir = data_dir
+
+    def _make_config(self, enable_compile: bool) -> tuple[dict, object]:
+        """Multi-task config: shared fitting_net, DIFFERENT descriptors per task."""
+        from deepmd.pt_expt.utils.multi_task import (
+            preprocess_shared_params,
+        )
+
+        data_dir_0 = os.path.join(self.data_dir, "data_0")
+        config = {
+            "model": {
+                "shared_dict": {
+                    "my_type_map": ["O", "H"],
+                    "my_fitting": {
+                        "neuron": [16, 16],
+                        "resnet_dt": True,
+                        "seed": 1,
+                        "dim_case_embd": 2,
+                        "precision": "float64",
+                    },
+                },
+                "model_dict": {
+                    "model_1": {
+                        "type_map": "my_type_map",
+                        "descriptor": {
+                            "type": "se_e2_a",
+                            "sel": [6, 12],
+                            "rcut_smth": 0.50,
+                            "rcut": 3.00,
+                            "neuron": [8, 16],
+                            "resnet_dt": False,
+                            "axis_neuron": 4,
+                            "type_one_side": True,
+                            "precision": "float64",
+                            "seed": 1,
+                        },
+                        "fitting_net": "my_fitting",
+                        "data_stat_nbatch": 1,
+                    },
+                    "model_2": {
+                        "type_map": "my_type_map",
+                        "descriptor": {
+                            "type": "se_e2_a",
+                            "sel": [4, 8],
+                            "rcut_smth": 0.30,
+                            "rcut": 2.50,
+                            "neuron": [8, 16],
+                            "resnet_dt": False,
+                            "axis_neuron": 4,
+                            "type_one_side": True,
+                            "precision": "float64",
+                            "seed": 2,
+                        },
+                        "fitting_net": "my_fitting",
+                        "data_stat_nbatch": 1,
+                    },
+                },
+            },
+            "learning_rate": {
+                "type": "exp",
+                "decay_steps": 500,
+                "start_lr": 0.001,
+                "stop_lr": 3.51e-8,
+            },
+            "loss_dict": {
+                "model_1": {
+                    "type": "ener",
+                    "start_pref_e": 0.02,
+                    "limit_pref_e": 1,
+                    "start_pref_f": 1000,
+                    "limit_pref_f": 1,
+                    "start_pref_v": 0,
+                    "limit_pref_v": 0,
+                },
+                "model_2": {
+                    "type": "ener",
+                    "start_pref_e": 0.02,
+                    "limit_pref_e": 1,
+                    "start_pref_f": 1000,
+                    "limit_pref_f": 1,
+                    "start_pref_v": 0,
+                    "limit_pref_v": 0,
+                },
+            },
+            "training": {
+                "model_prob": {"model_1": 0.5, "model_2": 0.5},
+                "data_dict": {
+                    "model_1": {
+                        "stat_file": "./stat_files/model_1",
+                        "training_data": {"systems": [data_dir_0], "batch_size": 1},
+                        "validation_data": {
+                            "systems": [data_dir_0],
+                            "batch_size": 1,
+                            "numb_btch": 1,
+                        },
+                    },
+                    "model_2": {
+                        "stat_file": "./stat_files/model_2",
+                        "training_data": {"systems": [data_dir_0], "batch_size": 1},
+                        "validation_data": {
+                            "systems": [data_dir_0],
+                            "batch_size": 1,
+                            "numb_btch": 1,
+                        },
+                    },
+                },
+                "numb_steps": 1,
+                "seed": 10,
+                "disp_file": "lcurve.out",
+                "disp_freq": 1,
+                "save_freq": 1,
+            },
+        }
+        if enable_compile:
+            config["training"]["enable_compile"] = True
+        config["model"], shared_links = preprocess_shared_params(config["model"])
+        config = update_deepmd_input(config, warning=False)
+        config = normalize(config, multi_task=True)
+        return config, shared_links
+
+    def test_compiled_matches_eager_per_task(self) -> None:
+        """Compiled output for each task must match its own eager output.
+
+        With different descriptors, tasks must get separate compiled graphs.
+        Before the fix, task_2 reused task_1's compiled graph (rcut=3.0 baked
+        in), yielding wrong predictions for task_2 (rcut=2.5).
+        """
+        from deepmd.pt_expt.train.training import (
+            _CompiledModel,
+            _get_model_structure_key,
+        )
+
+        tmpdir = tempfile.mkdtemp(prefix="pt_expt_diff_desc_")
+        try:
+            old_cwd = os.getcwd()
+            os.chdir(tmpdir)
+            try:
+                config_uc, shared_links_uc = self._make_config(enable_compile=False)
+                config_c, shared_links_c = self._make_config(enable_compile=True)
+
+                trainer_uc = get_trainer(config_uc, shared_links=shared_links_uc)
+                trainer_c = get_trainer(config_c, shared_links=shared_links_c)
+
+                for mk in ("model_1", "model_2"):
+                    self.assertIsInstance(
+                        trainer_c.wrapper.model[mk],
+                        _CompiledModel,
+                        f"{mk} was not compiled",
+                    )
+
+                # Different descriptors → different structure keys → separate graphs.
+                key_1 = _get_model_structure_key(
+                    trainer_c.wrapper.model["model_1"].original_model
+                )
+                key_2 = _get_model_structure_key(
+                    trainer_c.wrapper.model["model_2"].original_model
+                )
+                self.assertNotEqual(
+                    key_1,
+                    key_2,
+                    "Tasks with different descriptors must get different structure keys",
+                )
+
+                # Sync weights so compiled and uncompiled start from the same state.
+                for mk in ("model_1", "model_2"):
+                    trainer_c.wrapper.model[mk].original_model.load_state_dict(
+                        trainer_uc.wrapper.model[mk].state_dict()
+                    )
+
+                for mk in ("model_1", "model_2"):
+                    inp_dict, label_dict = trainer_uc.get_data(
+                        is_train=True, task_key=mk
+                    )
+                    cur_lr = trainer_uc.scheduler.get_last_lr()[0]
+
+                    pred_uc, loss_uc, _ = trainer_uc.wrapper(
+                        **inp_dict,
+                        cur_lr=cur_lr,
+                        label=label_dict,
+                        task_key=mk,
+                    )
+                    pred_c, loss_c, _ = trainer_c.wrapper(
+                        **inp_dict,
+                        cur_lr=cur_lr,
+                        label=label_dict,
+                        task_key=mk,
+                    )
+
+                    for key in ("atom_energy", "energy", "force"):
+                        torch.testing.assert_close(
+                            pred_c[key],
+                            pred_uc[key],
+                            atol=1e-10,
+                            rtol=1e-10,
+                            msg=f"{mk}/{key}: compiled vs eager mismatch",
+                        )
+                    torch.testing.assert_close(
+                        loss_c,
+                        loss_uc,
+                        atol=1e-10,
+                        rtol=1e-10,
+                        msg=f"{mk}/loss: compiled vs eager mismatch",
+                    )
+            finally:
+                os.chdir(old_cwd)
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+class TestFormatTrainingMessageStepTime(unittest.TestCase):
+    """The pt_expt trainer reports the average wall time per step over each
+    display interval by passing ``step_time`` to ``format_training_message``
+    (replacing the former standalone ``step=... step_time=...`` debug line).
+    These tests cover both branches of the optional ``step_time``/``eta``
+    arguments so the "avg = ... s/step" segment is rendered only when requested.
+    """
+
+    def test_without_step_time(self) -> None:
+        """``step_time=None`` (default) omits the step-time segment."""
+        msg = format_training_message(batch=100, wall_time=18.41)
+        self.assertEqual(msg, "Batch     100: total wall time = 18.41 s")
+        self.assertNotIn("s/step", msg)
+
+    def test_with_step_time(self) -> None:
+        """``step_time`` is rendered with 4 decimals after the wall time."""
+        msg = format_training_message(batch=100, wall_time=18.41, step_time=0.1841)
+        self.assertEqual(
+            msg,
+            "Batch     100: total wall time = 18.41 s, avg = 0.1841 s/step",
+        )
+
+    def test_step_time_zero_is_shown(self) -> None:
+        """A literal ``0.0`` step time is still shown (not treated as absent)."""
+        msg = format_training_message(batch=1, wall_time=0.5, step_time=0.0)
+        self.assertIn("avg = 0.0000 s/step", msg)
+
+    def test_with_step_time_and_eta(self) -> None:
+        """Step time appears before the eta segment."""
+        current_time = datetime.datetime(
+            2026, 6, 7, 5, 21, 29, tzinfo=datetime.timezone.utc
+        )
+        msg = format_training_message(
+            batch=100,
+            wall_time=18.41,
+            eta=100,
+            current_time=current_time,
+            step_time=0.1841,
+        )
+        self.assertIn("total wall time = 18.41 s, avg = 0.1841 s/step, eta = ", msg)
+        # ordering: wall time -> step time -> eta
+        self.assertLess(msg.index("s/step"), msg.index("eta ="))
+
+    def test_eta_without_step_time(self) -> None:
+        """Eta still works when no step time is supplied."""
+        current_time = datetime.datetime(
+            2026, 6, 7, 5, 21, 29, tzinfo=datetime.timezone.utc
+        )
+        msg = format_training_message(
+            batch=100, wall_time=18.41, eta=100, current_time=current_time
+        )
+        self.assertNotIn("s/step", msg)
+        self.assertIn("eta = ", msg)
 
 
 if __name__ == "__main__":

@@ -189,6 +189,7 @@ def _compute_model_predict(
         )
         fparam = system.get("fparam", None)
         aparam = system.get("aparam", None)
+        charge_spin = system.get("charge_spin", None)
 
         def model_forward_auto_batch_size(*args: Any, **kwargs: Any) -> Any:
             return auto_batch_size.execute_all(
@@ -200,7 +201,7 @@ def _compute_model_predict(
             )
 
         sample_predict = model_forward_auto_batch_size(
-            coord, atype, box, fparam=fparam, aparam=aparam
+            coord, atype, box, fparam=fparam, aparam=aparam, charge_spin=charge_spin
         )
         for kk in keys:
             model_predict[kk].append(

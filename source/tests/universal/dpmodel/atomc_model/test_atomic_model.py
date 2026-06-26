@@ -41,18 +41,18 @@ from ...common.cases.atomic_model.atomic_model import (
 )
 from ...dpmodel.descriptor.test_descriptor import (
     DescriptorParamDPA1,
-    DescriptorParamDPA1List,
+    DescriptorParamDPA1EnergyModelList,
     DescriptorParamDPA2,
-    DescriptorParamDPA2List,
+    DescriptorParamDPA2EnergyModelList,
     DescriptorParamHybrid,
     DescriptorParamHybridMixed,
     DescriptorParamHybridMixedTTebd,
     DescriptorParamSeA,
-    DescriptorParamSeAList,
+    DescriptorParamSeAEnergyModelList,
     DescriptorParamSeR,
-    DescriptorParamSeRList,
+    DescriptorParamSeREnergyModelList,
     DescriptorParamSeT,
-    DescriptorParamSeTList,
+    DescriptorParamSeTEnergyModelList,
 )
 from ...dpmodel.model.test_model import (
     skip_model_tests,
@@ -81,29 +81,64 @@ def make_sel_type_from_atom_exclude_types(type_map, atom_exclude_types):
     return sel_type.tolist()
 
 
+ENERGY_DESCRIPTOR_PARAMS = (
+    *[(param_func, DescrptSeA) for param_func in DescriptorParamSeAEnergyModelList],
+    *[(param_func, DescrptSeR) for param_func in DescriptorParamSeREnergyModelList],
+    *[(param_func, DescrptSeT) for param_func in DescriptorParamSeTEnergyModelList],
+    *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1EnergyModelList],
+    *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2EnergyModelList],
+    (DescriptorParamHybrid, DescrptHybrid),
+    (DescriptorParamHybridMixed, DescrptHybrid),
+    (DescriptorParamHybridMixedTTebd, DescrptHybrid),
+)
+
+DEFAULT_DESCRIPTOR_PARAMS = (
+    (DescriptorParamSeA, DescrptSeA),
+    (DescriptorParamSeR, DescrptSeR),
+    (DescriptorParamSeT, DescrptSeT),
+    (DescriptorParamDPA1, DescrptDPA1),
+    (DescriptorParamDPA2, DescrptDPA2),
+)
+
+DEFAULT_DESCRIPTOR_PARAMS_WITH_HYBRID = (
+    *DEFAULT_DESCRIPTOR_PARAMS,
+    (DescriptorParamHybrid, DescrptHybrid),
+    (DescriptorParamHybridMixed, DescrptHybrid),
+    (DescriptorParamHybridMixedTTebd, DescrptHybrid),
+)
+
+DEFAULT_VEC_DESCRIPTOR_PARAMS = (
+    (DescriptorParamSeA, DescrptSeA),
+    (DescriptorParamDPA1, DescrptDPA1),
+    (DescriptorParamDPA2, DescrptDPA2),
+)
+
+DEFAULT_VEC_DESCRIPTOR_PARAMS_WITH_HYBRID = (
+    *DEFAULT_VEC_DESCRIPTOR_PARAMS,
+    (DescriptorParamHybrid, DescrptHybrid),
+    (DescriptorParamHybridMixed, DescrptHybrid),
+)
+
+DEFAULT_DPA12_DESCRIPTOR_PARAMS = (
+    (DescriptorParamDPA1, DescrptDPA1),
+    (DescriptorParamDPA2, DescrptDPA2),
+)
+
+DEFAULT_DPA12_DESCRIPTOR_PARAMS_WITH_HYBRID = (
+    *DEFAULT_DPA12_DESCRIPTOR_PARAMS,
+    (DescriptorParamHybridMixed, DescrptHybrid),
+    (DescriptorParamHybridMixedTTebd, DescrptHybrid),
+)
+
+
 @parameterized(
     des_parameterized=(
-        (
-            *[(param_func, DescrptSeA) for param_func in DescriptorParamSeAList],
-            *[(param_func, DescrptSeR) for param_func in DescriptorParamSeRList],
-            *[(param_func, DescrptSeT) for param_func in DescriptorParamSeTList],
-            *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
-            *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
-            (DescriptorParamHybrid, DescrptHybrid),
-            (DescriptorParamHybridMixed, DescrptHybrid),
-            (DescriptorParamHybridMixedTTebd, DescrptHybrid),
-        ),  # descrpt_class_param & class
+        ENERGY_DESCRIPTOR_PARAMS,  # descrpt_class_param & class
         ((FittingParamEnergy, EnergyFittingNet),),  # fitting_class_param & class
         ([], [0]),  # atom_exclude_types
     ),
     fit_parameterized=(
-        (
-            (DescriptorParamSeA, DescrptSeA),
-            (DescriptorParamSeR, DescrptSeR),
-            (DescriptorParamSeT, DescrptSeT),
-            (DescriptorParamDPA1, DescrptDPA1),
-            (DescriptorParamDPA2, DescrptDPA2),
-        ),  # descrpt_class_param & class
+        DEFAULT_DESCRIPTOR_PARAMS,  # descrpt_class_param & class
         (
             *[(param_func, EnergyFittingNet) for param_func in FittingParamEnergyList],
         ),  # fitting_class_param & class
@@ -158,27 +193,12 @@ class TestEnergyAtomicModelDP(unittest.TestCase, EnerAtomicModelTest, DPTestCase
 
 @parameterized(
     des_parameterized=(
-        (
-            *[(param_func, DescrptSeA) for param_func in DescriptorParamSeAList],
-            *[(param_func, DescrptSeR) for param_func in DescriptorParamSeRList],
-            *[(param_func, DescrptSeT) for param_func in DescriptorParamSeTList],
-            *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
-            *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
-            (DescriptorParamHybrid, DescrptHybrid),
-            (DescriptorParamHybridMixed, DescrptHybrid),
-            (DescriptorParamHybridMixedTTebd, DescrptHybrid),
-        ),  # descrpt_class_param & class
+        DEFAULT_DESCRIPTOR_PARAMS_WITH_HYBRID,  # descrpt_class_param & class
         ((FittingParamDos, DOSFittingNet),),  # fitting_class_param & class
         ([], [0]),  # atom_exclude_types
     ),
     fit_parameterized=(
-        (
-            (DescriptorParamSeA, DescrptSeA),
-            (DescriptorParamSeR, DescrptSeR),
-            (DescriptorParamSeT, DescrptSeT),
-            (DescriptorParamDPA1, DescrptDPA1),
-            (DescriptorParamDPA2, DescrptDPA2),
-        ),  # descrpt_class_param & class
+        DEFAULT_DESCRIPTOR_PARAMS,  # descrpt_class_param & class
         (
             *[(param_func, DOSFittingNet) for param_func in FittingParamDosList],
         ),  # fitting_class_param & class
@@ -233,22 +253,12 @@ class TestDosAtomicModelDP(unittest.TestCase, DosAtomicModelTest, DPTestCase):
 
 @parameterized(
     des_parameterized=(
-        (
-            *[(param_func, DescrptSeA) for param_func in DescriptorParamSeAList],
-            *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
-            *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
-            (DescriptorParamHybrid, DescrptHybrid),
-            (DescriptorParamHybridMixed, DescrptHybrid),
-        ),  # descrpt_class_param & class
+        DEFAULT_VEC_DESCRIPTOR_PARAMS_WITH_HYBRID,  # descrpt_class_param & class
         ((FittingParamDipole, DipoleFitting),),  # fitting_class_param & class
         ([], [0]),  # atom_exclude_types
     ),
     fit_parameterized=(
-        (
-            (DescriptorParamSeA, DescrptSeA),
-            (DescriptorParamDPA1, DescrptDPA1),
-            (DescriptorParamDPA2, DescrptDPA2),
-        ),  # descrpt_class_param & class
+        DEFAULT_VEC_DESCRIPTOR_PARAMS,  # descrpt_class_param & class
         (
             *[(param_func, DipoleFitting) for param_func in FittingParamDipoleList],
         ),  # fitting_class_param & class
@@ -304,22 +314,12 @@ class TestDipoleAtomicModelDP(unittest.TestCase, DipoleAtomicModelTest, DPTestCa
 
 @parameterized(
     des_parameterized=(
-        (
-            *[(param_func, DescrptSeA) for param_func in DescriptorParamSeAList],
-            *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
-            *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
-            (DescriptorParamHybrid, DescrptHybrid),
-            (DescriptorParamHybridMixed, DescrptHybrid),
-        ),  # descrpt_class_param & class
+        DEFAULT_VEC_DESCRIPTOR_PARAMS_WITH_HYBRID,  # descrpt_class_param & class
         ((FittingParamPolar, PolarFitting),),  # fitting_class_param & class
         ([], [0]),  # atom_exclude_types
     ),
     fit_parameterized=(
-        (
-            (DescriptorParamSeA, DescrptSeA),
-            (DescriptorParamDPA1, DescrptDPA1),
-            (DescriptorParamDPA2, DescrptDPA2),
-        ),  # descrpt_class_param & class
+        DEFAULT_VEC_DESCRIPTOR_PARAMS,  # descrpt_class_param & class
         (
             *[(param_func, PolarFitting) for param_func in FittingParamPolarList],
         ),  # fitting_class_param & class
@@ -375,19 +375,11 @@ class TestPolarAtomicModelDP(unittest.TestCase, PolarAtomicModelTest, DPTestCase
 
 @parameterized(
     des_parameterized=(
-        (
-            *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
-            *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
-            (DescriptorParamHybridMixed, DescrptHybrid),
-            (DescriptorParamHybridMixedTTebd, DescrptHybrid),
-        ),  # descrpt_class_param & class
+        DEFAULT_DPA12_DESCRIPTOR_PARAMS_WITH_HYBRID,  # descrpt_class_param & class
         ((FittingParamEnergy, EnergyFittingNet),),  # fitting_class_param & class
     ),
     fit_parameterized=(
-        (
-            (DescriptorParamDPA1, DescrptDPA1),
-            (DescriptorParamDPA2, DescrptDPA2),
-        ),  # descrpt_class_param & class
+        DEFAULT_DPA12_DESCRIPTOR_PARAMS,  # descrpt_class_param & class
         (
             *[(param_func, EnergyFittingNet) for param_func in FittingParamEnergyList],
         ),  # fitting_class_param & class
@@ -449,9 +441,7 @@ class TestZBLAtomicModelDP(unittest.TestCase, ZBLAtomicModelTest, DPTestCase):
 @parameterized(
     des_parameterized=(
         (
-            *[(param_func, DescrptSeA) for param_func in DescriptorParamSeAList],
-            *[(param_func, DescrptDPA1) for param_func in DescriptorParamDPA1List],
-            *[(param_func, DescrptDPA2) for param_func in DescriptorParamDPA2List],
+            *DEFAULT_VEC_DESCRIPTOR_PARAMS,
             (DescriptorParamHybridMixed, DescrptHybrid),
             (DescriptorParamHybridMixedTTebd, DescrptHybrid),
         ),  # descrpt_class_param & class
@@ -459,11 +449,7 @@ class TestZBLAtomicModelDP(unittest.TestCase, ZBLAtomicModelTest, DPTestCase):
         ([], [0]),  # atom_exclude_types
     ),
     fit_parameterized=(
-        (
-            (DescriptorParamSeA, DescrptSeA),
-            (DescriptorParamDPA1, DescrptDPA1),
-            (DescriptorParamDPA2, DescrptDPA2),
-        ),  # descrpt_class_param & class
+        DEFAULT_VEC_DESCRIPTOR_PARAMS,  # descrpt_class_param & class
         (
             *[
                 (param_func, PropertyFittingNet)

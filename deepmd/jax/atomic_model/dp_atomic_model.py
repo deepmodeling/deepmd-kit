@@ -1,12 +1,8 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-from typing import (
-    Any,
-)
-
+import deepmd.jax.descriptor as _jax_descriptor  # noqa: F401
+import deepmd.jax.fitting.fitting as _jax_fitting  # noqa: F401
+import deepmd.jax.utils.exclude_mask as _jax_exclude_mask  # noqa: F401
 from deepmd.dpmodel.atomic_model.dp_atomic_model import DPAtomicModel as DPAtomicModelDP
-from deepmd.jax.atomic_model.base_atomic_model import (
-    base_atomic_model_set_attr,
-)
 from deepmd.jax.common import (
     flax_module,
 )
@@ -45,10 +41,6 @@ def make_jax_dp_atomic_model_from_dpmodel(
         base_fitting_cls = BaseFitting
         """The base fitting class."""
 
-        def __setattr__(self, name: str, value: Any) -> None:
-            value = base_atomic_model_set_attr(name, value)
-            return super().__setattr__(name, value)
-
         def forward_common_atomic(
             self,
             extended_coord: jnp.ndarray,
@@ -58,6 +50,7 @@ def make_jax_dp_atomic_model_from_dpmodel(
             fparam: jnp.ndarray | None = None,
             aparam: jnp.ndarray | None = None,
             comm_dict: dict | None = None,
+            charge_spin: jnp.ndarray | None = None,
         ) -> dict[str, jnp.ndarray]:
             del comm_dict  # JAX path has no MPI ghost exchange
             return super().forward_common_atomic(
@@ -67,6 +60,7 @@ def make_jax_dp_atomic_model_from_dpmodel(
                 mapping=mapping,
                 fparam=fparam,
                 aparam=aparam,
+                charge_spin=charge_spin,
             )
 
     return jax_atomic_model

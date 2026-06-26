@@ -22,6 +22,9 @@ from deepmd.dpmodel.utils.lmdb_data import (
     is_lmdb,
     make_neighbor_stat_data,
 )
+from deepmd.utils.data import (
+    DataRequirementItem,
+)
 
 # ============================================================
 # LMDB creation helpers
@@ -324,6 +327,26 @@ class TestLmdbDataReader(unittest.TestCase):
         self.assertEqual(result["force"].shape, (10, 18))
         self.assertEqual(result["find_energy"], 1.0)
         self.assertEqual(result["find_force"], 1.0)
+
+    def test_min_pair_dist_requirement_computed(self):
+        path = _create_grid_lmdb(f"{self._tmpdir.name}/grid_min_pair.lmdb", nframes=1)
+        reader = LmdbDataReader(path, ["TYPE"], batch_size=1)
+        reader.add_data_requirement(
+            [
+                DataRequirementItem(
+                    "min_pair_dist",
+                    ndof=1,
+                    atomic=False,
+                    must=False,
+                    high_prec=False,
+                )
+            ]
+        )
+
+        frame = reader[0]
+
+        self.assertEqual(frame["find_min_pair_dist"], np.float32(1.0))
+        np.testing.assert_allclose(frame["min_pair_dist"], np.array([1.0]))
 
 
 # ============================================================

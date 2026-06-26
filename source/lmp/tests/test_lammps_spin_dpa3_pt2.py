@@ -56,6 +56,12 @@ pb_file_mpi = (
     / "infer"
     / "deeppot_dpa3_spin_mpi.pt2"
 )
+# Single-artifact DPA3 spin fixture (use_loc_mapping=True; no with-comm
+# artifact).  Counterpart to ``pb_file_mpi`` for the spin fail-fast
+# cells where the C++ side has no fallback to border_op.
+pb_file_single = (
+    Path(__file__).parent.parent.parent / "tests" / "infer" / "deeppot_dpa3_spin.pt2"
+)
 data_file = Path(__file__).parent / "data_dpa3_spin_pt2.lmp"
 # Elongated-box fixture for the spin empty-subdomain MPI test: x is
 # extended to 30 A while atoms remain in x in [3, 13]. Combined with
@@ -140,6 +146,8 @@ def _run_mpi_subprocess(
     processors: str | None = None,
     data_path: Path | None = None,
     runner_args: list[str] | None = None,
+    pb_path: Path | None = None,
+    capture: bool = False,
 ) -> dict:
     """Run ``run_mpi_pair_deepmd_spin_dpa3_pt2.py`` under
     ``mpirun -n <nprocs>`` and return
@@ -152,6 +160,8 @@ def _run_mpi_subprocess(
     """
     if data_path is None:
         data_path = data_file
+    if pb_path is None:
+        pb_path = pb_file_mpi
     with tempfile.NamedTemporaryFile(mode="r", suffix=".out", delete=False) as f:
         out_path = f.name
     try:
@@ -162,7 +172,7 @@ def _run_mpi_subprocess(
             sys.executable,
             str(Path(__file__).parent / "run_mpi_pair_deepmd_spin_dpa3_pt2.py"),
             str(data_path.resolve()),
-            str(pb_file_mpi.resolve()),
+            str(pb_path.resolve()),
             out_path,
         ]
         if processors is not None:
@@ -173,6 +183,15 @@ def _run_mpi_subprocess(
             argv.extend(extra_args)
         if runner_args:
             argv.extend(runner_args)
+        if capture:
+            # Used by fail-fast tests: return raw subprocess info instead of
+            # parsing output (the subprocess is expected to exit non-zero).
+            proc = sp.run(argv, capture_output=True, text=True)
+            return {
+                "returncode": proc.returncode,
+                "stdout": proc.stdout,
+                "stderr": proc.stderr,
+            }
         sp.check_call(argv)
         with open(out_path) as fh:
             lines = fh.read().strip().splitlines()
@@ -244,6 +263,10 @@ def test_pair_deepmd_mpi_dpa3_spin_empty_subdomain() -> None:
     empty-rank guard for the spin path (the with-comm artifact still
     runs on rank 1 with nloc_real=0). Compares against same-archive
     mpi-1 reference.
+
+    The DPA3 spin fixture has ``numb_aparam=1`` and the runner supplies a
+    uniform aparam, so the empty rank also exercises the phantom-atom aparam
+    padding in ``DeepSpinPTExpt`` (PR #5485 review).
     """
     out_mpi = _run_mpi_subprocess(nprocs=2, data_path=data_file_empty_subdomain)
     out_ref = _run_mpi_subprocess(nprocs=1, data_path=data_file_empty_subdomain)
@@ -302,3 +325,159 @@ def test_pair_deepmd_mpi_dpa3_spin_null_type() -> None:
     # real Ni-O atoms).
     np.testing.assert_array_equal(out_mpi["forces"][4:], np.zeros((2, 3)))
     np.testing.assert_array_equal(out_mpi["force_mag"][4:], np.zeros((2, 3)))
+
+
+# ---------------------------------------------------------------------------
+# Four-cell coverage matrix for the spin path — mirrors the non-spin matrix
+# in ``test_lammps_dpa3_pt2.py``.  Verifies the fail-fast in
+# ``DeepSpinPTExpt::compute_inner`` against the silent-corruption bug.
+#
+#   Cell  use_loc_mapping  atom-map  nprocs  Outcome
+#   ----  ---------------  --------  ------  -------------------------------
+#   A     True             yes       1       succeeds (regular w/ map)
+#   B     True             no        1       fail-fast (single-rank msg)
+#   B-mr  True             any       >1      fail-fast (multi-rank msg)
+#   C     False            yes       1       succeeds (regular w/ map; nswap=0)
+#   D     False            no        1       fail-fast (single-rank msg)
+#   D-mr  False            no        >1      succeeds (with-comm; border_op)
+#
+# Cell C-mr is already covered by ``test_pair_deepmd_mpi_dpa3_spin`` above.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.skipif(
+    shutil.which("mpirun") is None, reason="MPI is not installed on this system"
+)
+@pytest.mark.skipif(
+    importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
+)
+def test_pair_deepspin_single_artifact_with_atom_map() -> None:
+    """Cell A (spin): use_loc_mapping=True, single-rank, atom-map yes
+    -> regular path with correct mapping, runs cleanly.
+    """
+    out = _run_mpi_subprocess(nprocs=1, pb_path=pb_file_single)
+    # No hardcoded reference here — we only assert the run completes
+    # and produces finite numbers.  Numerical correctness of the
+    # single-artifact spin GNN is validated by the eager-parity test
+    # in source/tests/pt_expt/model/.
+    assert np.isfinite(out["pe"])
+    assert np.all(np.isfinite(out["forces"]))
+    assert np.all(np.isfinite(out["force_mag"]))
+
+
+@pytest.mark.skipif(
+    shutil.which("mpirun") is None, reason="MPI is not installed on this system"
+)
+@pytest.mark.skipif(
+    importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
+)
+def test_pair_deepspin_no_atom_map_fails_fast() -> None:
+    """Cell B (spin): use_loc_mapping=True, single-rank, no atom-map
+    -> fail-fast with the single-rank message (no with-comm fallback).
+    """
+    out = _run_mpi_subprocess(
+        nprocs=1, pb_path=pb_file_single, runner_args=["--no-atom-map"], capture=True
+    )
+    assert out["returncode"] != 0, (
+        "Expected subprocess to fail-fast for single-rank spin GNN "
+        "without atom-map, but it exited 0."
+    )
+    combined = out["stdout"] + out["stderr"]
+    assert "atom_modify map yes" in combined, (
+        "Expected single-rank fail-fast message, got:\n" + combined[-500:]
+    )
+
+
+@pytest.mark.skipif(
+    shutil.which("mpirun") is None, reason="MPI is not installed on this system"
+)
+@pytest.mark.skipif(
+    importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
+)
+def test_pair_deepspin_mpi_no_with_comm_fails_fast() -> None:
+    """Cell B-mr (spin): use_loc_mapping=True (no with-comm artifact),
+    multi-rank -> fail-fast with the multi-rank message.  atom-map
+    setting is irrelevant: ``pair_deepspin`` never propagates atom-map
+    for multi-rank, and the new predicate fails-fast unconditionally
+    on atom_map_present when multi_rank && !has_comm_artifact.
+    """
+    out = _run_mpi_subprocess(nprocs=2, pb_path=pb_file_single, capture=True)
+    assert out["returncode"] != 0, (
+        "Expected subprocess to fail-fast for multi-rank spin GNN "
+        "without with-comm artifact, but it exited 0."
+    )
+    combined = out["stdout"] + out["stderr"]
+    assert "use_loc_mapping=False" in combined, (
+        "Expected multi-rank fail-fast message, got:\n" + combined[-500:]
+    )
+
+
+@pytest.mark.skipif(
+    shutil.which("mpirun") is None, reason="MPI is not installed on this system"
+)
+@pytest.mark.skipif(
+    importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
+)
+def test_pair_deepspin_with_comm_single_atom_map() -> None:
+    """Cell C (spin): use_loc_mapping=False (has with-comm artifact),
+    single-rank, atom-map yes -> regular path takes the artifact's
+    non-comm trace (nswap=0) and uses the LAMMPS atom-map.
+    """
+    out = _run_mpi_subprocess(nprocs=1, pb_path=pb_file_mpi)
+    assert np.isfinite(out["pe"])
+
+
+@pytest.mark.skipif(
+    shutil.which("mpirun") is None, reason="MPI is not installed on this system"
+)
+@pytest.mark.skipif(
+    importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
+)
+def test_pair_deepspin_with_comm_no_atom_map_fails_fast() -> None:
+    """Cell D (spin): use_loc_mapping=False (with-comm artifact),
+    single-rank, no atom-map -> fail-fast.  Even though with-comm is
+    available, single-rank LAMMPS has nswap=0, so border_op cannot
+    drive the per-layer ghost exchange; the regular path needs the
+    mapping but atom-map is absent.
+    """
+    out = _run_mpi_subprocess(
+        nprocs=1, pb_path=pb_file_mpi, runner_args=["--no-atom-map"], capture=True
+    )
+    assert out["returncode"] != 0, (
+        "Expected subprocess to fail-fast for single-rank spin GNN + "
+        "with-comm artifact + no atom-map, but it exited 0."
+    )
+    combined = out["stdout"] + out["stderr"]
+    assert "atom_modify map yes" in combined, (
+        "Expected single-rank fail-fast message, got:\n" + combined[-500:]
+    )
+
+
+@pytest.mark.skipif(
+    shutil.which("mpirun") is None, reason="MPI is not installed on this system"
+)
+@pytest.mark.skipif(
+    importlib.util.find_spec("mpi4py") is None, reason="mpi4py is not installed"
+)
+def test_pair_deepspin_mpi_no_atom_map() -> None:
+    """Cell D-mr (spin): use_loc_mapping=False (with-comm artifact),
+    multi-rank, no atom-map -> succeeds.  The with-comm path drives
+    ghost-feature exchange via ``deepmd_export::border_op`` and does
+    NOT consume the mapping tensor for ghost gather, so atom-map is
+    unnecessary.  Forces / force_mag must match the same-archive
+    atom-map-yes multi-rank baseline.
+    """
+    out_no_map = _run_mpi_subprocess(
+        nprocs=2, pb_path=pb_file_mpi, runner_args=["--no-atom-map"]
+    )
+    out_baseline = _run_mpi_subprocess(nprocs=2, pb_path=pb_file_mpi)
+    assert out_no_map["pe"] == pytest.approx(out_baseline["pe"], rel=1e-10, abs=1e-12)
+    np.testing.assert_allclose(
+        out_no_map["forces"], out_baseline["forces"], atol=1e-8, rtol=0
+    )
+    np.testing.assert_allclose(
+        out_no_map["force_mag"], out_baseline["force_mag"], atol=1e-8, rtol=0
+    )
+    np.testing.assert_allclose(
+        out_no_map["virials"], out_baseline["virials"], atol=1e-8, rtol=0
+    )

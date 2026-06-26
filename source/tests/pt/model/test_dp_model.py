@@ -114,6 +114,51 @@ class TestDPModel(unittest.TestCase, TestCaseSingleFrameWithoutNlist):
             atol=self.atol,
         )
 
+    def test_forward_lower_accepts_leaf_view_input(self) -> None:
+        ds = DescrptSeA(
+            self.rcut,
+            self.rcut_smth,
+            self.sel,
+        ).to(env.DEVICE)
+        ft = EnergyFittingNet(
+            self.nt,
+            ds.get_dim_out(),
+            mixed_types=ds.mixed_types(),
+        ).to(env.DEVICE)
+        type_map = ["foo", "bar"]
+        md0 = EnergyModel(ds, ft, type_map=type_map).to(env.DEVICE)
+
+        coord_ext, atype_ext, _ = extend_coord_with_ghosts(
+            to_torch_tensor(self.coord),
+            to_torch_tensor(self.atype),
+            to_torch_tensor(self.cell),
+            self.rcut,
+        )
+        nlist = build_neighbor_list(
+            coord_ext,
+            atype_ext,
+            self.nloc,
+            self.rcut,
+            self.sel,
+            distinguish_types=(not md0.mixed_types()),
+        )
+        coord_view = coord_ext.view(self.nf, -1, 3)
+
+        ret = md0.forward_lower(coord_view, atype_ext, nlist, do_atomic_virial=True)
+
+        self.assertFalse(coord_view.requires_grad)
+        self.assertIn("extended_force", ret)
+        self.assertIn("virial", ret)
+
+        coord_view_grad = coord_ext.view(self.nf, -1, 3).clone().requires_grad_(True)
+        ret = md0.forward_lower(
+            coord_view_grad, atype_ext, nlist, do_atomic_virial=True
+        )
+
+        self.assertTrue(coord_view_grad.requires_grad)
+        self.assertIn("extended_force", ret)
+        self.assertIn("virial", ret)
+
     def test_dp_consistency(self) -> None:
         nf, nloc = self.atype.shape
         nfp, nap = 2, 3

@@ -31,6 +31,9 @@ from deepmd.dpmodel.model.base_model import (
 from deepmd.dpmodel.output_def import (
     FittingOutputDef,
 )
+from deepmd.dpmodel.utils.neighbor_list import (
+    NeighborList,
+)
 
 from .dp_model import (
     DPModelCommon,
@@ -43,6 +46,8 @@ DPEnergyModel_ = make_model(DPEnergyAtomicModel, T_Bases=(NativeOP, BaseModel))
 
 
 @BaseModel.register("ener")
+@BaseModel.register("sezm_ener")
+@BaseModel.register("dpa4_ener")
 class EnergyModel(DPModelCommon, DPEnergyModel_):
     r"""Energy model that predicts total energy and derived quantities.
 
@@ -98,7 +103,24 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         aparam: Array | None = None,
         do_atomic_virial: bool = False,
         mixed_batch: Mapping[str, Array] | None = None,
+        charge_spin: Array | None = None,
+        neighbor_list: NeighborList | None = None,
     ) -> dict[str, Array]:
+        """Evaluate the energy model.
+
+        Most arguments share the meaning of :meth:`call_common`.
+
+        Parameters
+        ----------
+        neighbor_list
+            The neighbor-list construction strategy forwarded to
+            :meth:`call_common`.  ``None`` uses the default all-pairs builder
+            (:class:`~deepmd.dpmodel.utils.neighbor_list.NeighborList`
+            subclass :class:`~deepmd.dpmodel.utils.default_neighbor_list.DefaultNeighborList`),
+            reproducing the historical behavior; an alternative strategy may be
+            injected to accelerate neighbor-list construction without changing
+            the model outputs.
+        """
         if mixed_batch is not None:
             return self.call_flat(
                 coord=coord,
@@ -106,8 +128,10 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                 box=box,
                 fparam=fparam,
                 aparam=aparam,
+                charge_spin=charge_spin,
                 do_atomic_virial=do_atomic_virial,
                 mixed_batch=mixed_batch,
+                neighbor_list=neighbor_list,
             )
 
         model_ret = self.call_common(
@@ -116,7 +140,9 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             box,
             fparam=fparam,
             aparam=aparam,
+            charge_spin=charge_spin,
             do_atomic_virial=do_atomic_virial,
+            neighbor_list=neighbor_list,
         )
         model_predict = {}
         model_predict["atom_energy"] = model_ret["energy"]
@@ -141,7 +167,9 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         box: Array | None = None,
         fparam: Array | None = None,
         aparam: Array | None = None,
+        charge_spin: Array | None = None,
         do_atomic_virial: bool = False,
+        neighbor_list: NeighborList | None = None,
     ) -> dict[str, Array]:
         """Evaluate a flattened mixed-nloc batch with the dpmodel backend.
 
@@ -186,6 +214,11 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                 if aparam is not None
                 else None
             )
+            frame_charge_spin = (
+                charge_spin[frame_idx : frame_idx + 1]
+                if charge_spin is not None
+                else None
+            )
             frame_outputs.append(
                 self.call(
                     frame_coord,
@@ -193,7 +226,9 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
                     box=frame_box,
                     fparam=frame_fparam,
                     aparam=frame_aparam,
+                    charge_spin=frame_charge_spin,
                     do_atomic_virial=do_atomic_virial,
+                    neighbor_list=neighbor_list,
                 )
             )
 
@@ -239,6 +274,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         fparam: Array | None = None,
         aparam: Array | None = None,
         do_atomic_virial: bool = False,
+        charge_spin: Array | None = None,
     ) -> dict[str, Array]:
         model_ret = self.call_common_lower(
             extended_coord,
@@ -247,6 +283,7 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
             mapping,
             fparam=fparam,
             aparam=aparam,
+            charge_spin=charge_spin,
             do_atomic_virial=do_atomic_virial,
         )
         model_predict = {}

@@ -46,6 +46,9 @@ from deepmd.infer.deep_wfc import (
 from deepmd.pt.model.model import (
     get_model,
 )
+from deepmd.pt.model.model.transform_output import (
+    communicate_extended_output,
+)
 from deepmd.pt.model.network.network import (
     TypeEmbedNetConsistent,
 )
@@ -63,9 +66,20 @@ from deepmd.pt.utils.env import (
     GLOBAL_PT_FLOAT_PRECISION,
     RESERVED_PRECISION_DICT,
 )
+from deepmd.pt.utils.nv_nlist import (
+    NvNeighborList,
+    is_nv_available,
+)
 from deepmd.pt.utils.utils import (
     to_numpy_array,
     to_torch_tensor,
+)
+from deepmd.pt_expt.utils.vesin_neighbor_list import (
+    VesinNeighborList,
+    is_vesin_torch_available,
+)
+from deepmd.utils.batch_size import (
+    RetrySignal,
 )
 from deepmd.utils.econf_embd import (
     sort_element_type,
@@ -82,6 +96,24 @@ if TYPE_CHECKING:
     )
 
 log = logging.getLogger(__name__)
+
+
+_EMBEDDING_DTYPE_TO_TORCH = {
+    "fp32": torch.float32,
+    "fp64": torch.float64,
+}
+
+
+def _is_sezm_model_params(model_params: dict[str, Any]) -> bool:
+    """Return whether the params describe a SeZM / DPA4 model."""
+    model_type = str(model_params.get("type", "")).lower()
+    if model_type in {"sezm", "dpa4", "sezm_spin"}:
+        return True
+    descriptor = model_params.get("descriptor")
+    if isinstance(descriptor, dict):
+        descriptor_type = str(descriptor.get("type", "")).lower()
+        return descriptor_type in {"sezm", "dpa4"}
+    return False
 
 
 class DeepEval(DeepEvalBackend):
@@ -114,10 +146,14 @@ class DeepEval(DeepEvalBackend):
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
         head: str | int | None = None,
         no_jit: bool = False,
+        nlist_backend: str = "auto",
         **kwargs: Any,
     ) -> None:
         self.output_def = output_def
         self.model_path = model_file
+        self.neighbor_list = neighbor_list
+        # data modifier, populated only for frozen .pth models that carry one
+        self.modifier = None
         if str(self.model_path).endswith(".pt"):
             state_dict = torch.load(
                 model_file, map_location=env.DEVICE, weights_only=True
@@ -167,7 +203,8 @@ class DeepEval(DeepEvalBackend):
                         ] = state_dict[item].clone()
                 state_dict = state_dict_head
             model = get_model(self.input_param).to(DEVICE)
-            if not self.input_param.get("hessian_mode") and not no_jit:
+            disable_jit = no_jit or _is_sezm_model_params(self.input_param)
+            if not self.input_param.get("hessian_mode") and not disable_jit:
                 model = torch.jit.script(model)
             self.dp = ModelWrapper(model)
             missing, unexpected = self.dp.load_state_dict(state_dict, strict=False)
@@ -222,7 +259,104 @@ class DeepEval(DeepEvalBackend):
         self._has_spin = getattr(self.dp.model["Default"], "has_spin", False)
         if callable(self._has_spin):
             self._has_spin = self._has_spin()
-        self._has_hessian = self.model_def_script.get("hessian_mode", False)
+        selected_model_params = getattr(self, "input_param", self.model_def_script)
+        self._has_hessian = selected_model_params.get("hessian_mode", False)
+        self._uses_edge_schema = (
+            _is_sezm_model_params(selected_model_params) and not self._has_spin
+        )
+        self._setup_nlist_backend(nlist_backend)
+
+    def _setup_nlist_backend(self, nlist_backend: str) -> None:
+        """Resolve the neighbor-list construction strategy from a user choice.
+
+        ``"native"`` uses the dense all-pairs builder; ``"vesin"`` / ``"nv"``
+        force the O(N) ``vesin.torch`` / ``nvalchemiops`` cell list (raising if
+        unavailable or the model/inputs are unsupported); ``"auto"`` picks the
+        first available O(N) builder (vesin, then nv) and otherwise falls back to
+        the native builder.  Results are unchanged either way -- only the
+        neighbor-search cost differs.
+        """
+        inner = self.dp.model["Default"]
+        self_built = getattr(inner, "use_self_built_nlist", None)
+        if callable(self_built) and self_built():
+            # The model builds its own neighbor list and runs the native path;
+            # an external strategy would bypass it, so always use native.
+            log.info(
+                "Ignoring nlist_backend=%r: %s uses its own built-in neighbor list.",
+                nlist_backend,
+                type(inner).__name__,
+            )
+            self._nlist_builder = None
+            return
+        if nlist_backend not in ("auto", "vesin", "nv", "native"):
+            raise ValueError(
+                f"Unknown nlist_backend '{nlist_backend}'; "
+                "expected 'auto', 'vesin', 'nv', or 'native'."
+            )
+
+        # reason an external strategy cannot be used (None means it can)
+        unsupported = None
+        if self._has_spin:
+            unsupported = "spin models"
+        elif self._has_hessian:
+            unsupported = "hessian models"
+        elif self.modifier is not None:
+            # the strategy path runs forward_common_lower directly, bypassing
+            # ModelWrapper.forward (which applies the data modifier); fall back
+            # to the native path so the modifier is still applied.
+            unsupported = "models with a data modifier"
+        elif "energy" not in inner.model_output_type():
+            # _eval_lower_strategy reconstructs the backend output from the
+            # forward_common_lower / communicate keys via _OUTDEF_DP2BACKEND,
+            # which matches the model's own translation only for the energy
+            # model (e.g. the polar fitting key is "polarizability" but the
+            # backend output is "polar").  Restrict strategies to energy models
+            # and fall back to native for the other fitting types.
+            unsupported = "non-energy models"
+        ase_provided = self.neighbor_list is not None
+
+        builder = None
+        if nlist_backend in ("vesin", "nv"):
+            if unsupported is not None:
+                raise ValueError(
+                    f"nlist_backend='{nlist_backend}' is not supported for "
+                    f"{unsupported}; use nlist_backend='native' (or 'auto')."
+                )
+            if ase_provided:
+                raise ValueError(
+                    f"nlist_backend='{nlist_backend}' conflicts with an "
+                    "explicitly supplied ASE neighbor_list; pass only one."
+                )
+            if nlist_backend == "vesin":
+                if not is_vesin_torch_available():
+                    raise ImportError(
+                        "nlist_backend='vesin' was requested but 'vesin.torch' "
+                        "is not installed. Install it (`pip install "
+                        "vesin[torch]`) or use nlist_backend='native' (or 'auto')."
+                    )
+                builder = VesinNeighborList()
+            elif DEVICE.type != "cuda":
+                raise ValueError(
+                    "nlist_backend='nv' requires CUDA inference tensors; "
+                    f"current DEVICE is {DEVICE!s}. Use nlist_backend='native' "
+                    "(or 'auto') for CPU inference."
+                )
+            elif not is_nv_available():
+                raise ImportError(
+                    "nlist_backend='nv' was requested but 'nvalchemi-toolkit-ops'"
+                    " is not installed. Install it (`pip install "
+                    "nvalchemi-toolkit-ops`) or use nlist_backend='native' "
+                    "(or 'auto')."
+                )
+            else:
+                builder = NvNeighborList()
+        elif nlist_backend == "auto" and unsupported is None and not ase_provided:
+            # Pick the first available O(N) builder; nv is GPU-only.
+            if is_vesin_torch_available():
+                builder = VesinNeighborList()
+            elif is_nv_available() and DEVICE.type == "cuda":
+                builder = NvNeighborList()
+        self._nlist_builder = builder
 
     def get_rcut(self) -> float:
         """Get the cutoff radius of this model."""
@@ -250,6 +384,20 @@ class DeepEval(DeepEvalBackend):
             return self.dp.model["Default"].has_default_fparam()
         except AttributeError:
             # for compatibility with old models
+            return False
+
+    def has_chg_spin_ebd(self) -> bool:
+        """Check if the model has charge spin embedding."""
+        try:
+            return self.dp.model["Default"].has_chg_spin_ebd()
+        except AttributeError:
+            return False
+
+    def has_default_chg_spin(self) -> bool:
+        """Check if the model has default charge_spin values."""
+        try:
+            return self.dp.model["Default"].has_default_chg_spin()
+        except AttributeError:
             return False
 
     def get_intensive(self) -> bool:
@@ -344,6 +492,7 @@ class DeepEval(DeepEvalBackend):
         atomic: bool = False,
         fparam: np.ndarray | None = None,
         aparam: np.ndarray | None = None,
+        charge_spin: np.ndarray | None = None,
         **kwargs: Any,
     ) -> dict[str, np.ndarray]:
         """Evaluate the energy, force and virial by using this DP.
@@ -393,7 +542,7 @@ class DeepEval(DeepEvalBackend):
         request_defs = self._get_request_defs(atomic)
         if "spin" not in kwargs or kwargs["spin"] is None:
             out = self._eval_func(self._eval_model, numb_test, natoms)(
-                coords, cells, atom_types, fparam, aparam, request_defs
+                coords, cells, atom_types, fparam, aparam, request_defs, charge_spin
             )
         else:
             out = self._eval_func(self._eval_model_spin, numb_test, natoms)(
@@ -404,6 +553,7 @@ class DeepEval(DeepEvalBackend):
                 fparam,
                 aparam,
                 request_defs,
+                charge_spin,
             )
         return dict(
             zip(
@@ -505,6 +655,7 @@ class DeepEval(DeepEvalBackend):
         fparam: np.ndarray | None,
         aparam: np.ndarray | None,
         request_defs: list[OutputVariableDef],
+        charge_spin: np.ndarray | None,
     ) -> tuple[np.ndarray, ...]:
         model = self.dp.to(DEVICE)
         prec = NP_PRECISION_DICT[RESERVED_PRECISION_DICT[GLOBAL_PT_FLOAT_PRECISION]]
@@ -546,19 +697,35 @@ class DeepEval(DeepEvalBackend):
             )
         else:
             aparam_input = None
+        if charge_spin is not None:
+            charge_spin_input = to_torch_tensor(charge_spin.reshape(nframes, 2))
+        else:
+            charge_spin_input = None
         do_atomic_virial = any(
             x.category == OutputVariableCategory.DERV_C for x in request_defs
         )
-        batch_output = model(
-            coord_input,
-            type_input,
-            box=box_input,
-            do_atomic_virial=do_atomic_virial,
-            fparam=fparam_input,
-            aparam=aparam_input,
-        )
-        if isinstance(batch_output, tuple):
-            batch_output = batch_output[0]
+        if self._nlist_builder is not None:
+            batch_output = self._eval_lower_strategy(
+                coord_input,
+                type_input,
+                box_input,
+                fparam_input,
+                aparam_input,
+                charge_spin_input,
+                do_atomic_virial,
+            )
+        else:
+            batch_output = model(
+                coord_input,
+                type_input,
+                box=box_input,
+                do_atomic_virial=do_atomic_virial,
+                fparam=fparam_input,
+                aparam=aparam_input,
+                charge_spin=charge_spin_input,
+            )
+            if isinstance(batch_output, tuple):
+                batch_output = batch_output[0]
 
         results = []
         for odef in request_defs:
@@ -574,6 +741,77 @@ class DeepEval(DeepEvalBackend):
                 )  # this is kinda hacky
         return tuple(results)
 
+    def _eval_lower_strategy(
+        self,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        box: torch.Tensor | None,
+        fparam: torch.Tensor | None,
+        aparam: torch.Tensor | None,
+        charge_spin: torch.Tensor | None,
+        do_atomic_virial: bool,
+    ) -> dict[str, torch.Tensor]:
+        """Evaluate via the selected O(N) ``NeighborList`` strategy.
+
+        Uses the selected O(N) builder (vesin or nv).  Models that declare the
+        edge-vector contract consume it directly; other energy models keep the
+        historical extended-coordinate contract and fold extended outputs back
+        to local atoms.
+        Returns a dict keyed by backend names, matching the normal ``model()``
+        output so the caller's extraction is unchanged.
+        """
+        inner = self.dp.model["Default"]
+        if self._uses_edge_schema:
+            edge_schema = self._nlist_builder.build(
+                coord,
+                atype,
+                box,
+                self.rcut,
+                list(inner.get_sel()),
+                return_mode="edges",
+            )
+            predict = inner.forward_common_lower(
+                edge_schema.coord,
+                edge_schema.atype,
+                edge_schema.edge_index,
+                edge_schema.edge_vec,
+                edge_schema.edge_scatter_index,
+                edge_schema.edge_mask,
+                fparam=fparam,
+                aparam=aparam,
+                charge_spin=charge_spin,
+                input_prec=coord.dtype,
+            )
+        else:
+            ext_coord, ext_atype, nlist, mapping = self._nlist_builder.build(
+                coord,
+                atype,
+                box,
+                self.rcut,
+                list(inner.get_sel()),
+            )
+            model_lower = inner.forward_common_lower(
+                ext_coord,
+                ext_atype,
+                nlist,
+                mapping,
+                fparam=fparam,
+                aparam=aparam,
+                do_atomic_virial=do_atomic_virial,
+                charge_spin=charge_spin,
+            )
+            predict = communicate_extended_output(
+                model_lower,
+                self.output_def,
+                mapping,
+                do_atomic_virial=do_atomic_virial,
+            )
+        return {
+            backend: predict[internal]
+            for internal, backend in self._OUTDEF_DP2BACKEND.items()
+            if predict.get(internal) is not None
+        }
+
     def _eval_model_spin(
         self,
         coords: np.ndarray,
@@ -583,6 +821,7 @@ class DeepEval(DeepEvalBackend):
         fparam: np.ndarray | None,
         aparam: np.ndarray | None,
         request_defs: list[OutputVariableDef],
+        charge_spin: np.ndarray | None,
     ) -> tuple[np.ndarray, ...]:
         model = self.dp.to(DEVICE)
 
@@ -624,6 +863,10 @@ class DeepEval(DeepEvalBackend):
             )
         else:
             aparam_input = None
+        if charge_spin is not None:
+            charge_spin_input = to_torch_tensor(charge_spin.reshape(nframes, 2))
+        else:
+            charge_spin_input = None
 
         do_atomic_virial = any(
             x.category == OutputVariableCategory.DERV_C_REDU for x in request_defs
@@ -636,6 +879,7 @@ class DeepEval(DeepEvalBackend):
             do_atomic_virial=do_atomic_virial,
             fparam=fparam_input,
             aparam=aparam_input,
+            charge_spin=charge_spin_input,
         )
         if isinstance(batch_output, tuple):
             batch_output = batch_output[0]
@@ -709,7 +953,10 @@ class DeepEval(DeepEvalBackend):
         """
         out = []
         for mm in self.dp.model["Default"].modules():
-            if mm.original_name == TypeEmbedNetConsistent.__name__:
+            if (
+                getattr(mm, "original_name", type(mm).__name__)
+                == TypeEmbedNetConsistent.__name__
+            ):
                 out.append(mm(DEVICE))
         if not out:
             raise KeyError("The model has no type embedding networks.")
@@ -789,6 +1036,13 @@ class DeepEval(DeepEvalBackend):
     ) -> np.ndarray:
         """Evaluate descriptors by using this DP.
 
+        .. deprecated::
+            Use :meth:`eval_embedding` instead, which returns the descriptor
+            together with the atomic and structural features in a single
+            forward pass. This method is a thin wrapper kept for compatibility.
+            For models frozen before ``forward_embedding`` existed, it falls
+            back to the descriptor hook baked into that TorchScript module.
+
         Parameters
         ----------
         coords
@@ -819,19 +1073,27 @@ class DeepEval(DeepEvalBackend):
             Descriptors.
         """
         model = self.dp.model["Default"]
-        model.set_eval_descriptor_hook(True)
-        self.eval(
+        if not hasattr(model, "forward_embedding"):
+            return self._eval_legacy_feature(
+                coords,
+                cells,
+                atom_types,
+                fparam,
+                aparam,
+                enable_hook=model.set_eval_descriptor_hook,
+                read_feature=model.eval_descriptor,
+                **kwargs,
+            )
+        descriptor, _, _ = self.eval_embedding(
             coords,
             cells,
             atom_types,
-            atomic=False,
             fparam=fparam,
             aparam=aparam,
+            dtype="native",
             **kwargs,
         )
-        descriptor = model.eval_descriptor()
-        model.set_eval_descriptor_hook(False)
-        return to_numpy_array(descriptor)
+        return descriptor
 
     def eval_fitting_last_layer(
         self,
@@ -843,6 +1105,13 @@ class DeepEval(DeepEvalBackend):
         **kwargs: Any,
     ) -> np.ndarray:
         """Evaluate fitting before last layer by using this DP.
+
+        .. deprecated::
+            Use :meth:`eval_embedding` instead, which returns this activation as
+            the ``atomic_feature`` output. This method is a thin wrapper kept
+            for compatibility. For models frozen before ``forward_embedding``
+            existed, it falls back to the fitting-last-layer hook baked into
+            that TorchScript module.
 
         Parameters
         ----------
@@ -874,16 +1143,240 @@ class DeepEval(DeepEvalBackend):
             Fitting output before last layer.
         """
         model = self.dp.model["Default"]
-        model.set_eval_fitting_last_layer_hook(True)
-        self.eval(
+        if not hasattr(model, "forward_embedding"):
+            return self._eval_legacy_feature(
+                coords,
+                cells,
+                atom_types,
+                fparam,
+                aparam,
+                enable_hook=model.set_eval_fitting_last_layer_hook,
+                read_feature=model.eval_fitting_last_layer,
+                **kwargs,
+            )
+        _, atomic_feature, _ = self.eval_embedding(
             coords,
             cells,
             atom_types,
-            atomic=False,
             fparam=fparam,
             aparam=aparam,
+            dtype="native",
             **kwargs,
         )
-        fitting_net = model.eval_fitting_last_layer()
-        model.set_eval_fitting_last_layer_hook(False)
-        return to_numpy_array(fitting_net)
+        return atomic_feature
+
+    def _eval_legacy_feature(
+        self,
+        coords: np.ndarray,
+        cells: np.ndarray | None,
+        atom_types: np.ndarray,
+        fparam: np.ndarray | None,
+        aparam: np.ndarray | None,
+        *,
+        enable_hook: Callable[[bool], None],
+        read_feature: Callable[[], torch.Tensor],
+        **kwargs: Any,
+    ) -> np.ndarray:
+        """Extract a cached descriptor or fitting feature from a legacy frozen model.
+
+        Models frozen before ``forward_embedding`` expose these features only
+        through a hook that caches them during a forward pass. The retry loop
+        keeps the cache consistent when the auto batch size splits the forward
+        and hits an out-of-memory condition.
+        """
+        while True:
+            if self.auto_batch_size is not None:
+                self.auto_batch_size.set_oom_retry_mode(True)
+            enable_hook(True)
+            retry = False
+            try:
+                self.eval(
+                    coords,
+                    cells,
+                    atom_types,
+                    atomic=False,
+                    fparam=fparam,
+                    aparam=aparam,
+                    **kwargs,
+                )
+                feature = read_feature()
+            except RetrySignal:
+                retry = True
+            finally:
+                enable_hook(False)
+                if self.auto_batch_size is not None:
+                    self.auto_batch_size.set_oom_retry_mode(False)
+            if not retry:
+                return to_numpy_array(feature)
+
+    def eval_embedding(
+        self,
+        coords: np.ndarray,
+        cells: np.ndarray | None,
+        atom_types: np.ndarray,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+        charge_spin: np.ndarray | None = None,
+        dtype: str = "fp32",
+        **kwargs: Any,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Evaluate the descriptor, atomic feature, and structural feature.
+
+        A single forward pass produces all three embeddings without any
+        force or virial autograd. The descriptor is the per-atom
+        local-environment representation; the atomic feature is the activation
+        after the last fitting hidden layer; the structural feature is the
+        masked atom-sum of the atomic feature, a whole-structure summary. For
+        models with a single shared fitting network, projecting the structural
+        feature through the fitting output layer reproduces the (bias-free)
+        total energy. The output precision is selected by ``dtype`` and
+        defaults to float32.
+
+        Parameters
+        ----------
+        coords
+            The coordinates of atoms.
+            The array should be of size nframes x natoms x 3
+        cells
+            The cell of the region.
+            If None then non-PBC is assumed, otherwise using PBC.
+            The array should be of size nframes x 9
+        atom_types
+            The atom types
+            The list should contain natoms ints
+        fparam
+            The frame parameter.
+            The array can be of size :
+            - nframes x dim_fparam.
+            - dim_fparam. Then all frames are assumed to be provided with the same fparam.
+        aparam
+            The atomic parameter
+            The array can be of size :
+            - nframes x natoms x dim_aparam.
+            - natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
+            - dim_aparam. Then all frames and atoms are provided with the same aparam.
+        charge_spin
+            The frame-level charge and spin conditions.
+            The array should be of size nframes x 2
+        dtype
+            Output dtype: ``"fp32"``, ``"fp64"``, or ``"native"``.
+
+        Returns
+        -------
+        descriptor
+            The per-atom descriptor, of size nframes x natoms x dim_descriptor.
+        atomic_feature
+            The per-atom last hidden activation, of size
+            nframes x natoms x dim_hidden.
+        structural_feature
+            The per-structure pooled feature, of size nframes x dim_hidden.
+
+        Raises
+        ------
+        NotImplementedError
+            If the loaded model does not support embedding extraction.
+        """
+        if self._has_spin:
+            raise NotImplementedError(
+                "eval_embedding is not supported for spin models in the "
+                "PyTorch backend."
+            )
+        if dtype not in ("fp32", "fp64", "native"):
+            raise ValueError("dtype must be one of 'fp32', 'fp64', or 'native'.")
+        if not hasattr(self.dp.model["Default"], "forward_embedding"):
+            raise NotImplementedError(
+                "eval_embedding requires a model frozen with forward_embedding "
+                "support. Please re-freeze the model with a newer DeePMD-kit "
+                "version."
+            )
+        atom_types = np.array(atom_types, dtype=np.int32)
+        coords = np.array(coords)
+        if cells is not None:
+            cells = np.array(cells)
+        natoms, numb_test = self._get_natoms_and_nframes(
+            coords, atom_types, len(atom_types.shape) > 1
+        )
+        return self._eval_func(self._eval_embedding, numb_test, natoms)(
+            coords, cells, atom_types, fparam, aparam, charge_spin, dtype
+        )
+
+    def _eval_embedding(
+        self,
+        coords: np.ndarray,
+        cells: np.ndarray | None,
+        atom_types: np.ndarray,
+        fparam: np.ndarray | None,
+        aparam: np.ndarray | None,
+        charge_spin: np.ndarray | None,
+        dtype: str,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        self.dp.to(DEVICE)
+        # A data modifier augments physical outputs after the model forward in
+        # ModelWrapper. It does not define or transform descriptor/fitting
+        # features, so embeddings are intentionally taken from the neural model.
+        model = self.dp.model["Default"]
+        prec = NP_PRECISION_DICT[RESERVED_PRECISION_DICT[GLOBAL_PT_FLOAT_PRECISION]]
+
+        nframes = coords.shape[0]
+        if len(atom_types.shape) == 1:
+            natoms = len(atom_types)
+            atom_types = np.tile(atom_types, nframes).reshape(nframes, -1)
+        else:
+            natoms = len(atom_types[0])
+
+        coord_input = torch.tensor(
+            coords.reshape([nframes, natoms, 3]).astype(prec),
+            dtype=GLOBAL_PT_FLOAT_PRECISION,
+            device=DEVICE,
+        )
+        type_input = torch.tensor(
+            atom_types.astype(NP_PRECISION_DICT[RESERVED_PRECISION_DICT[torch.long]]),
+            dtype=torch.long,
+            device=DEVICE,
+        )
+        box_input = (
+            torch.tensor(
+                cells.reshape([nframes, 3, 3]).astype(prec),
+                dtype=GLOBAL_PT_FLOAT_PRECISION,
+                device=DEVICE,
+            )
+            if cells is not None
+            else None
+        )
+        fparam_input = (
+            to_torch_tensor(fparam.reshape(nframes, self.get_dim_fparam()))
+            if fparam is not None
+            else None
+        )
+        aparam_input = (
+            to_torch_tensor(aparam.reshape(nframes, natoms, self.get_dim_aparam()))
+            if aparam is not None
+            else None
+        )
+        charge_spin_input = (
+            to_torch_tensor(charge_spin.reshape(nframes, 2))
+            if charge_spin is not None
+            else None
+        )
+        out = model.forward_embedding(
+            coord_input,
+            type_input,
+            box=box_input,
+            fparam=fparam_input,
+            aparam=aparam_input,
+            charge_spin=charge_spin_input,
+        )
+
+        def cast_output(value: torch.Tensor) -> np.ndarray:
+            value = value.detach()
+            if dtype != "native":
+                value = value.to(_EMBEDDING_DTYPE_TO_TORCH[dtype])
+            return value.cpu().numpy()
+
+        # Single output-precision boundary: the model produces embeddings in its
+        # native precision, and this API chooses the emitted dtype.
+        return (
+            cast_output(out["descriptor"]),
+            cast_output(out["atomic_feature"]),
+            cast_output(out["structural_feature"]),
+        )

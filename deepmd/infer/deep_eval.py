@@ -166,6 +166,14 @@ class DeepEvalBackend(ABC):
         """Check if the model has default frame parameters."""
         return False
 
+    def has_chg_spin_ebd(self) -> bool:
+        """Check if the model has charge spin embedding."""
+        return False
+
+    def has_default_chg_spin(self) -> bool:
+        """Check if the model has default charge_spin values."""
+        return False
+
     @abstractmethod
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this DP."""
@@ -260,6 +268,59 @@ class DeepEvalBackend(ABC):
         -------
         fitting
             Fitting output before last layer.
+        """
+        raise NotImplementedError
+
+    def eval_embedding(
+        self,
+        coords: np.ndarray,
+        cells: np.ndarray | None,
+        atom_types: np.ndarray,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+        dtype: str = "fp32",
+        **kwargs: Any,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Evaluate the descriptor, atomic feature, and structural feature.
+
+        A single forward pass produces all three embeddings without force or
+        virial autograd.
+
+        Parameters
+        ----------
+        coords
+            The coordinates of atoms.
+            The array should be of size nframes x natoms x 3
+        cells
+            The cell of the region.
+            If None then non-PBC is assumed, otherwise using PBC.
+            The array should be of size nframes x 9
+        atom_types
+            The atom types
+            The list should contain natoms ints
+        fparam
+            The frame parameter.
+            The array can be of size :
+            - nframes x dim_fparam.
+            - dim_fparam. Then all frames are assumed to be provided with the same fparam.
+        aparam
+            The atomic parameter
+            The array can be of size :
+            - nframes x natoms x dim_aparam.
+            - natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
+            - dim_aparam. Then all frames and atoms are provided with the same aparam.
+        dtype
+            Output dtype: ``"fp32"``, ``"fp64"``, or ``"native"``.
+
+        Returns
+        -------
+        descriptor
+            The per-atom descriptor, of size nframes x natoms x dim_descriptor.
+        atomic_feature
+            The per-atom last hidden activation, of size
+            nframes x natoms x dim_hidden.
+        structural_feature
+            The per-structure pooled feature, of size nframes x dim_hidden.
         """
         raise NotImplementedError
 
@@ -373,6 +434,35 @@ class DeepEvalBackend(ABC):
         """
 
 
+def _cast_output_dtype(array: np.ndarray, dtype: str) -> np.ndarray:
+    """Cast a backend evaluation output to the requested output dtype.
+
+    The cast is performed in this backend-agnostic wrapper so every backend
+    shares identical ``--dtype`` behavior: the backend always returns its
+    native precision, and this high-level API decides the emitted dtype.
+
+    Parameters
+    ----------
+    array
+        The array returned by a backend evaluation.
+    dtype
+        Output dtype: ``"fp32"``, ``"fp64"``, or ``"native"``. ``"native"``
+        leaves the backend precision unchanged.
+
+    Returns
+    -------
+    np.ndarray
+        The array cast to the requested precision.
+    """
+    if dtype == "native":
+        return array
+    if dtype == "fp32":
+        return array.astype(np.float32)
+    if dtype == "fp64":
+        return array.astype(np.float64)
+    raise ValueError(f"Unknown dtype {dtype!r}; expected 'fp32', 'fp64', or 'native'.")
+
+
 class DeepEval(ABC):
     """High-level Deep Evaluator interface.
 
@@ -451,6 +541,14 @@ class DeepEval(ABC):
         """Check if the model has default frame parameters."""
         return self.deep_eval.has_default_fparam()
 
+    def has_chg_spin_ebd(self) -> bool:
+        """Check if the model has charge spin embedding."""
+        return self.deep_eval.has_chg_spin_ebd()
+
+    def has_default_chg_spin(self) -> bool:
+        """Check if the model has default charge_spin values."""
+        return self.deep_eval.has_default_chg_spin()
+
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this DP."""
         return self.deep_eval.get_dim_aparam()
@@ -487,6 +585,7 @@ class DeepEval(ABC):
         fparam: np.ndarray | None = None,
         aparam: np.ndarray | None = None,
         mixed_type: bool = False,
+        dtype: str = "native",
         **kwargs: Any,
     ) -> np.ndarray:
         """Evaluate descriptors by using this DP.
@@ -521,6 +620,8 @@ class DeepEval(ABC):
             Whether to perform the mixed_type mode.
             If True, the input data has the mixed_type format (see doc/model/train_se_atten.md),
             in which frames in a system may have different natoms_vec(s), with the same nloc.
+        dtype
+            Output dtype: ``"fp32"``, ``"fp64"``, or ``"native"``.
 
         Returns
         -------
@@ -537,14 +638,9 @@ class DeepEval(ABC):
             natoms,
         ) = self._standard_input(coords, cells, atom_types, fparam, aparam, mixed_type)
         descriptor = self.deep_eval.eval_descriptor(
-            coords,
-            cells,
-            atom_types,
-            fparam=fparam,
-            aparam=aparam,
-            **kwargs,
+            coords, cells, atom_types, fparam=fparam, aparam=aparam, **kwargs
         )
-        return descriptor
+        return _cast_output_dtype(descriptor, dtype)
 
     def eval_fitting_last_layer(
         self,
@@ -554,6 +650,7 @@ class DeepEval(ABC):
         fparam: np.ndarray | None = None,
         aparam: np.ndarray | None = None,
         mixed_type: bool = False,
+        dtype: str = "native",
         **kwargs: Any,
     ) -> np.ndarray:
         """Evaluate fitting before last layer by using this DP.
@@ -588,6 +685,8 @@ class DeepEval(ABC):
             Whether to perform the mixed_type mode.
             If True, the input data has the mixed_type format (see doc/model/train_se_atten.md),
             in which frames in a system may have different natoms_vec(s), with the same nloc.
+        dtype
+            Output dtype: ``"fp32"``, ``"fp64"``, or ``"native"``.
 
         Returns
         -------
@@ -604,14 +703,95 @@ class DeepEval(ABC):
             natoms,
         ) = self._standard_input(coords, cells, atom_types, fparam, aparam, mixed_type)
         fitting = self.deep_eval.eval_fitting_last_layer(
+            coords, cells, atom_types, fparam=fparam, aparam=aparam, **kwargs
+        )
+        return _cast_output_dtype(fitting, dtype)
+
+    def eval_embedding(
+        self,
+        coords: np.ndarray,
+        cells: np.ndarray | None,
+        atom_types: np.ndarray,
+        fparam: np.ndarray | None = None,
+        aparam: np.ndarray | None = None,
+        mixed_type: bool = False,
+        dtype: str = "fp32",
+        **kwargs: Any,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """Evaluate the descriptor, atomic feature, and structural feature.
+
+        A single forward pass produces all three embeddings without force or
+        virial autograd. The descriptor is the per-atom local-environment
+        representation; the atomic feature is the activation after the last
+        fitting hidden layer; the structural feature is the masked atom-sum of
+        the atomic feature, a whole-structure summary. For models with a single
+        shared fitting network, projecting the structural feature through the
+        fitting output layer reproduces the (bias-free) total energy. The output
+        precision is selected by ``dtype`` and defaults to float32.
+
+        Parameters
+        ----------
+        coords
+            The coordinates of atoms.
+            The array should be of size nframes x natoms x 3
+        cells
+            The cell of the region.
+            If None then non-PBC is assumed, otherwise using PBC.
+            The array should be of size nframes x 9
+        atom_types
+            The atom types
+            The list should contain natoms ints
+        fparam
+            The frame parameter.
+            The array can be of size :
+            - nframes x dim_fparam.
+            - dim_fparam. Then all frames are assumed to be provided with the same fparam.
+        aparam
+            The atomic parameter
+            The array can be of size :
+            - nframes x natoms x dim_aparam.
+            - natoms x dim_aparam. Then all frames are assumed to be provided with the same aparam.
+            - dim_aparam. Then all frames and atoms are provided with the same aparam.
+        mixed_type
+            Whether to perform the mixed_type mode.
+            If True, the input data has the mixed_type format (see doc/model/train_se_atten.md),
+            in which frames in a system may have different natoms_vec(s), with the same nloc.
+        dtype
+            Output dtype: ``"fp32"``, ``"fp64"``, or ``"native"``.
+
+        Returns
+        -------
+        descriptor
+            The per-atom descriptor, of size nframes x natoms x dim_descriptor.
+        atomic_feature
+            The per-atom last hidden activation, of size
+            nframes x natoms x dim_hidden.
+        structural_feature
+            The per-structure pooled feature, of size nframes x dim_hidden.
+
+        Raises
+        ------
+        NotImplementedError
+            If the loaded model does not support embedding extraction.
+        """
+        (
+            coords,
+            cells,
+            atom_types,
+            fparam,
+            aparam,
+            nframes,
+            natoms,
+        ) = self._standard_input(coords, cells, atom_types, fparam, aparam, mixed_type)
+        return self.deep_eval.eval_embedding(
             coords,
             cells,
             atom_types,
             fparam=fparam,
             aparam=aparam,
+            dtype=dtype,
             **kwargs,
         )
-        return fitting
 
     def eval_typeebd(self) -> np.ndarray:
         """Evaluate output of type embedding network by using this model.

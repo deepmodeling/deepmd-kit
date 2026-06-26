@@ -22,6 +22,9 @@ import lmdb
 import msgpack
 import numpy as np
 
+from deepmd.dpmodel.utils.dist_check import (
+    compute_min_pair_dist_single,
+)
 from deepmd.env import (
     GLOBAL_ENER_FLOAT_PRECISION,
     GLOBAL_NP_FLOAT_PRECISION,
@@ -594,6 +597,29 @@ class LmdbDataReader:
             frame["natoms"] = fallback
             frame["real_natoms_vec"] = fallback
 
+        if "min_pair_dist" in self._data_requirements and "min_pair_dist" not in frame:
+            box = frame.get("box")
+            if box is not None and np.allclose(box, 0.0):
+                box = None
+            req = self._data_requirements["min_pair_dist"]
+            min_pair_dist = float(
+                req.get("default", 0.0)
+                if isinstance(req, dict)
+                else getattr(req, "default", 0.0)
+            )
+            frame["find_min_pair_dist"] = np.float32(1.0)
+            frame["min_pair_dist"] = np.array(
+                [
+                    compute_min_pair_dist_single(
+                        frame["coord"],
+                        box,
+                        frame["atype"],
+                        stop_below=min_pair_dist,
+                    )
+                ],
+                dtype=self._resolve_dtype("min_pair_dist"),
+            )
+
         # Add find_* flags for all data keys present in the frame.
         # Core structural keys and metadata are excluded — only label-like
         # and auxiliary data keys get find_* flags.
@@ -664,8 +690,8 @@ class LmdbDataReader:
                         np.repeat(frame[req_key], repeat).reshape(-1).astype(req_dtype)
                     )
 
-        # Add find_* for fparam/aparam/spin if not already set
-        for extra_key in ["fparam", "aparam", "spin"]:
+        # Add find_* for fparam/aparam/spin/charge_spin if not already set
+        for extra_key in ["fparam", "aparam", "spin", "charge_spin"]:
             if f"find_{extra_key}" not in frame:
                 frame[f"find_{extra_key}"] = (
                     np.float32(1.0) if extra_key in frame else np.float32(0.0)
@@ -722,17 +748,19 @@ class LmdbDataReader:
     @property
     def index(self) -> list[int]:
         """Number of batches per system (single system)."""
-        if (
-            self.mixed_batch
-            and self._frame_nlocs
-            and (self._auto_rule is not None or self._max_rule is not None)
-        ):
-            return [len(_build_mixed_batches(self, shuffle=False))]
-        return [max(1, self.nframes // self.batch_size)]
+        return [self.total_batch]
 
     @property
     def total_batch(self) -> int:
-        return self.index[0]
+        if self.mixed_batch:
+            if self._auto_rule is not None or self._max_rule is not None:
+                return len(_build_mixed_batches(self, shuffle=False))
+            return math.ceil(self.nframes / self.batch_size) if self.nframes else 0
+        total = 0
+        for nloc, indices in self._nloc_groups.items():
+            bs = self.get_batch_size_for_nloc(nloc)
+            total += (len(indices) + bs - 1) // bs
+        return total
 
     @property
     def batch_sizes(self) -> list[int]:
@@ -1246,6 +1274,13 @@ class DistributedSameNlocBatchSampler:
         self._seed = seed if seed is not None else 0
         self._epoch = 0
         self._block_targets = block_targets
+        self._total_batches = len(
+            SameNlocBatchSampler(
+                self._reader,
+                shuffle=False,
+                block_targets=self._block_targets,
+            )
+        )
 
     def set_epoch(self, epoch: int) -> None:
         """Set epoch for deterministic cross-rank shuffling.
@@ -1281,11 +1316,11 @@ class DistributedSameNlocBatchSampler:
 
     def __len__(self) -> int:
         """Number of batches for this rank."""
-        total = 0
-        for nloc, indices in self._reader.nloc_groups.items():
-            bs = self._reader.get_batch_size_for_nloc(nloc)
-            total += (len(indices) + bs - 1) // bs
-        return math.ceil(total / self._world_size)
+        return max(
+            0,
+            (self._total_batches + self._world_size - 1 - self._rank)
+            // self._world_size,
+        )
 
     @property
     def rank(self) -> int:

@@ -118,11 +118,16 @@ def to_numpy_array(x: Optional["Array"]) -> np.ndarray | None:
     """
     if x is None:
         return None
+    # Since pytorch/pytorch@a97dcf9, torch.asarray(..., copy=True) preserves
+    # requires_grad from tensor inputs by default.  The DLPack fallback below
+    # cannot export tensors that require gradients, so explicitly detach only
+    # for NumPy serialization.
+    if array_api_compat.is_torch_array(x) and x.requires_grad:
+        x = x.detach()
     try:
         # asarray is not within Array API standard, so may fail
         return np.asarray(x)
     except (ValueError, AttributeError, TypeError, RuntimeError):
-        # RuntimeError: handles torch tensors with requires_grad=True
         xp = array_api_compat.array_namespace(x)
         # to fix BufferError: Cannot export readonly array since signalling readonly is unsupported by DLPack.
         # Move to CPU device to ensure numpy compatibility

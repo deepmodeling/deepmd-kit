@@ -20,6 +20,7 @@
 #include "neighbor_list.h"
 
 using deepmd::ptexpt::parse_json;
+using deepmd::ptexpt::read_default_chg_spin;
 using deepmd::ptexpt::read_zip_entry;
 
 using namespace deepmd;
@@ -96,9 +97,14 @@ void DeepSpinPTExpt::init(const std::string& model,
 
   auto metadata = parse_json(metadata_json);
   rcut = metadata["rcut"].as_double();
-  ntypes = static_cast<int>(metadata["type_map"].as_array().size());
+  ntypes = metadata.obj_val.count("ntypes")
+               ? metadata["ntypes"].as_int()
+               : static_cast<int>(metadata["type_map"].as_array().size());
   dfparam = metadata["dim_fparam"].as_int();
   daparam = metadata["dim_aparam"].as_int();
+  dim_chg_spin = metadata.obj_val.count("dim_chg_spin")
+                     ? metadata["dim_chg_spin"].as_int()
+                     : 0;
   aparam_nall = false;
 
   // Spin-specific metadata
@@ -137,6 +143,7 @@ void DeepSpinPTExpt::init(const std::string& model,
                 << std::endl;
     }
   }
+  default_chg_spin_ = read_default_chg_spin(metadata, dim_chg_spin);
 
   if (metadata.obj_val.count("do_atomic_virial")) {
     do_atomic_virial = metadata["do_atomic_virial"].as_bool();
@@ -179,6 +186,10 @@ void DeepSpinPTExpt::init(const std::string& model,
   // dropping the MPI exchange.
   has_comm_artifact_ = metadata.obj_val.count("has_comm_artifact") &&
                        metadata["has_comm_artifact"].as_bool();
+  // See DeepPotPTExpt::init for rationale.  Defaults to false for
+  // pre-PR archives so they retain their previous behaviour.
+  has_message_passing_ = metadata.obj_val.count("has_message_passing") &&
+                         metadata["has_message_passing"].as_bool();
   if (has_comm_artifact_) {
     try {
       with_comm_tempfile_ = std::make_unique<deepmd::ptexpt::TempFile>(
@@ -238,6 +249,13 @@ std::vector<torch::Tensor> DeepSpinPTExpt::run_model(
   if (daparam > 0) {
     inputs.push_back(aparam);
   }
+  if (dim_chg_spin > 0) {
+    auto charge_spin = torch::tensor(default_chg_spin_, coord.options())
+                           .view({1, dim_chg_spin})
+                           .expand({coord.size(0), dim_chg_spin})
+                           .contiguous();
+    inputs.push_back(charge_spin);
+  }
   return loader->run(inputs);
 }
 
@@ -270,6 +288,13 @@ std::vector<torch::Tensor> DeepSpinPTExpt::run_model_with_comm(
   }
   if (daparam > 0) {
     inputs.push_back(aparam);
+  }
+  if (dim_chg_spin > 0) {
+    auto charge_spin = torch::tensor(default_chg_spin_, coord.options())
+                           .view({1, dim_chg_spin})
+                           .expand({coord.size(0), dim_chg_spin})
+                           .contiguous();
+    inputs.push_back(charge_spin);
   }
   for (const auto& t : comm_tensors) {
     inputs.push_back(t);
@@ -346,12 +371,51 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
   int nloc = nall_real - nghost_real;
   int nframes = 1;
 
-  // Build spin tensor for real atoms using bkw_map
-  std::vector<VALUETYPE> dspin(static_cast<size_t>(nall_real) * 3);
-  for (int ii = 0; ii < nall_real; ++ii) {
+  // Phantom-atom padding for the empty-subdomain corner case
+  // (``nloc_real == 0``).  Multi-rank spin MD can land a rank with zero
+  // real local atoms when atoms migrate to other subdomains.  The
+  // with-comm AOTI artifact, traced with ``nloc_min=1`` and lowered by
+  // inductor with an even stricter ``nloc >= 2`` runtime-check
+  // (silently bypassed because ``AOTI_RUNTIME_CHECK_INPUTS`` is unset by
+  // default), then SIGFPEs at runtime with an "integer divide by zero"
+  // inside inductor-generated shape arithmetic that uses ``nloc`` as a
+  // divisor.  The failure is intermittent because inductor re-codegens
+  // across runs and only some compiles emit the offending divide.
+  //
+  // Fix: prepend two phantom atoms with no neighbours so the AOTI graph
+  // runs with ``nloc == 2``.  The phantoms have an empty nlist row and
+  // therefore contribute zero atomic energy / force / virial, preserving
+  // the physically-correct "this rank has no real atoms" semantics.
+  // ``nlocal`` in the comm tensors is set to ``2`` so border_op writes
+  // received ghost features past the phantom slots; outputs are stripped
+  // of the phantom prefix before being scattered back to LAMMPS atoms
+  // via ``select_map``.
+  const int phantom_n = (nloc_real == 0 && nall_real > 0) ? 2 : 0;
+  if (phantom_n > 0) {
+    dcoord.insert(dcoord.begin(), static_cast<size_t>(phantom_n) * 3,
+                  static_cast<VALUETYPE>(0));
+    datype.insert(datype.begin(), static_cast<size_t>(phantom_n), 0);
+    // Keep aparam_ aligned with the padded local atoms: the phantom atoms
+    // get zero-valued atomic-parameter rows so the aparam tensor built below
+    // (shape {1, nloc, daparam}) stays consistent with the padded ``nloc``.
+    // (aparam_nall is false here, so aparam_ is a per-local-atom buffer.)
+    if (daparam > 0) {
+      aparam_.insert(aparam_.begin(), static_cast<size_t>(phantom_n) * daparam,
+                     static_cast<VALUETYPE>(0));
+    }
+    nall_real += phantom_n;
+    nloc_real = phantom_n;
+    nloc = nall_real - nghost_real;
+  }
+
+  // Build spin tensor for real atoms using bkw_map (skip phantom prefix
+  // which keeps zero spin).
+  std::vector<VALUETYPE> dspin(static_cast<size_t>(nall_real) * 3,
+                               static_cast<VALUETYPE>(0));
+  for (int ii = phantom_n; ii < nall_real; ++ii) {
     for (int dd = 0; dd < 3; ++dd) {
       dspin[static_cast<size_t>(ii) * 3 + dd] =
-          spin[static_cast<size_t>(bkw_map[ii]) * 3 + dd];
+          spin[static_cast<size_t>(bkw_map[ii - phantom_n]) * 3 + dd];
     }
   }
 
@@ -372,6 +436,46 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
           .clone()
           .to(device);
 
+  // Dispatch decision: see DeepPotPTExpt.cc for the full rationale.
+  // Single-rank without atom-map cannot drive the regular path (no safe
+  // ghost→local mapping); multi-rank without a with-comm artifact cannot
+  // drive border_op (no inter-rank exchange tensor).  Both unsupported
+  // combinations fail-fast for every caller.
+  // ``nprocs > 1`` is the direct multi-rank predicate (LAMMPS pair
+  // styles set it by passing ``comm->nprocs`` to the ``InputNlist``
+  // constructor).  Earlier drafts used ``nswap > 0`` as a proxy, but
+  // atom_style spin emits nswap > 0 even in single-rank, so the proxy
+  // is unsound.
+  bool multi_rank = (lmp_list.nprocs > 1);
+  bool atom_map_present = (lmp_list.mapping != nullptr);
+  bool use_with_comm = has_comm_artifact_ && multi_rank;
+  // Decision matrix (see PR #5450 description):
+  //   non-GNN model (has_message_passing_ == false): regular path is
+  //                                                  always safe.
+  //   nghost == 0 (NoPbc, isolated cluster):         always safe.
+  //   GNN model, multi-rank:    requires has_comm_artifact_  (cell C-mr / D-mr)
+  //                             else fail-fast               (cell B-mr)
+  //   GNN model, single-rank:   requires atom_map_present    (cell A / C)
+  //                             else fail-fast               (cell B / D)
+  if (has_message_passing_ && nghost > 0) {
+    if (multi_rank && !has_comm_artifact_) {
+      throw deepmd::deepmd_exception(
+          "Multi-rank LAMMPS .pt2 inference requires the model to be "
+          "exported with `use_loc_mapping=False`, which compiles a "
+          "with-comm artifact for cross-rank ghost-feature exchange. "
+          "Re-export the model with use_loc_mapping=False and try again.");
+    }
+    if (!multi_rank && !atom_map_present) {
+      throw deepmd::deepmd_exception(
+          "Single-rank LAMMPS .pt2 inference requires `atom_modify map "
+          "yes` in the LAMMPS input (so InputNlist.mapping is populated "
+          "from the LAMMPS atom-map).  The model gathers ghost-atom "
+          "features via this mapping; without it the C++ side has no "
+          "safe way to resolve ghost indices to local owners.  C++ API "
+          "callers must set inlist.mapping explicitly before compute().");
+    }
+  }
+
   // LAMMPS sets ago=0 on every nlist rebuild, so ago>0 implies the cached
   // mapping and nlist tensors are still valid — see DeepPotPTExpt.cc for
   // the same rationale.
@@ -380,17 +484,36 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
     nlist_data.shuffle_exclude_empty(fwd_map);
     nlist_data.padding();
 
-    // Rebuild mapping tensor
+    // Rebuild mapping tensor.  Phantom slots (when phantom_n > 0) get
+    // identity entries — they index into their own row and never appear
+    // in any other atom's nlist (their nlist rows are all -1 below).
     if (lmp_list.mapping) {
       std::vector<std::int64_t> mapping(nall_real);
-      for (int ii = 0; ii < nall_real; ii++) {
-        mapping[ii] = fwd_map[lmp_list.mapping[bkw_map[ii]]];
+      for (int ii = 0; ii < phantom_n; ii++) {
+        mapping[ii] = ii;
+      }
+      for (int ii = phantom_n; ii < nall_real; ii++) {
+        // Defensive: this branch (lmp_list.mapping != nullptr) is single-rank
+        // only (set_mapping is gated on comm->nprocs==1 in pair_deepspin /
+        // pair_deepmd), while phantom_n>0 only occurs on a multi-rank empty
+        // subdomain, so the two cannot currently co-occur and the +phantom_n
+        // term is a no-op (phantom_n==0) on every reachable path.  It is kept
+        // so the mapping stays correct -- resolving fwd_map's pre-padding local
+        // index into the post-padding local index space -- if that invariant
+        // ever changes.
+        mapping[ii] =
+            fwd_map[lmp_list.mapping[bkw_map[ii - phantom_n]]] + phantom_n;
       }
       mapping_tensor =
           torch::from_blob(mapping.data(), {1, nall_real}, int_option)
               .clone()
               .to(device);
     } else {
+      // Identity fallback.  See DeepPotPTExpt::compute_inner for the
+      // invariant rationale: this branch is only reached when the
+      // model is non-message-passing, nghost==0, or use_with_comm is
+      // true (border_op fills ghosts); other configurations were
+      // rejected by the fail-fast above.
       std::vector<std::int64_t> mapping(nall_real);
       for (int ii = 0; ii < nall_real; ii++) {
         mapping[ii] = ii;
@@ -402,8 +525,16 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
     }
 
     // Flatten raw nlist — the .pt2 model sorts by distance on-device.
+    // Phantom rows (all -1) are prepended below so the AOTI graph sees
+    // nloc == phantom_n + nloc_real_orig instead of 0.
     firstneigh_tensor =
         createNlistTensor(nlist_data.jlist, nnei).to(torch::kInt64).to(device);
+    if (phantom_n > 0) {
+      auto phantom_rows = torch::full(
+          {1, phantom_n, nnei}, static_cast<std::int64_t>(-1),
+          torch::TensorOptions().dtype(torch::kInt64).device(device));
+      firstneigh_tensor = torch::cat({phantom_rows, firstneigh_tensor}, 1);
+    }
   }
 
   // Build fparam/aparam tensors
@@ -452,8 +583,10 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
   // _with_comm), so C++ supplies the same 8 comm tensors as the
   // non-spin path. ``nlocal``/``nghost`` carry the real-atom counts
   // (pre atom-doubling); the spin override halves them internally.
+  //
+  // ``use_with_comm`` was computed earlier alongside the fail-fast
+  // dispatch check.
   std::vector<torch::Tensor> flat_outputs;
-  bool use_with_comm = has_comm_artifact_ && lmp_list.nswap > 0;
   if (use_with_comm && !with_comm_loader) {
     throw deepmd::deepmd_exception(
         "Multi-rank LAMMPS requires the with-comm artifact, but it failed "
@@ -494,6 +627,23 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
   ener.assign(flat_energy_.data_ptr<ENERGYTYPE>(),
               flat_energy_.data_ptr<ENERGYTYPE>() + flat_energy_.numel());
 
+  // Zero the reduced energy on an empty rank.  Phantoms have constant
+  // atomic outputs (per-type bias + zero-neighbour MLP) that flow into
+  // ``energy_redu`` -- and on the spin path the SpinModel doubles atoms
+  // so the bias contribution appears for both real and spin phantom
+  // halves; subtracting only the real-half exposed by
+  // ``output_map["energy"]`` after the ``[:, :nloc]`` slice leaves the
+  // spin-half leaking into the MPI-reduced LAMMPS total.  The physical
+  // contribution of a rank with no real local atoms is zero by
+  // definition, so just clear ``ener`` directly.
+  //
+  // Forces, force_mag, and virial are unaffected because phantom atomic
+  // outputs are coord-independent (no neighbours) so their derivatives
+  // are zero -- no analogous correction is needed.
+  if (phantom_n > 0) {
+    std::fill(ener.begin(), ener.end(), static_cast<ENERGYTYPE>(0));
+  }
+
   // Extract force: energy_derv_r (nf, nall, 1, 3) -> (nf, nall, 3)
   torch::Tensor force_tensor =
       output_map["energy_derv_r"].squeeze(-2).view({-1}).to(floatType);
@@ -515,6 +665,17 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
   torch::Tensor cpu_virial_ = virial_tensor.to(torch::kCPU);
   virial.assign(cpu_virial_.data_ptr<VALUETYPE>(),
                 cpu_virial_.data_ptr<VALUETYPE>() + cpu_virial_.numel());
+
+  // Strip the phantom prefix (see phantom-atom padding comment near
+  // ``select_real_atoms_coord``) so the ``bkw_map`` lookup below sees
+  // only the real / ghost atoms it was built for.  The phantom slots
+  // carry zero forces because their nlist rows were all -1 — they
+  // produce no neighbour contributions, so dropping them is exact.
+  if (phantom_n > 0) {
+    dforce.erase(dforce.begin(), dforce.begin() + phantom_n * 3);
+    dforce_mag.erase(dforce_mag.begin(), dforce_mag.begin() + phantom_n * 3);
+    nall_real -= phantom_n;
+  }
 
   // bkw map: map force from real atoms back to full atom list
   force.resize(static_cast<size_t>(nframes) * fwd_map.size() * 3);
@@ -539,6 +700,16 @@ void DeepSpinPTExpt::compute(ENERGYVTYPE& ener,
     datom_virial.assign(
         cpu_atom_virial_.data_ptr<VALUETYPE>(),
         cpu_atom_virial_.data_ptr<VALUETYPE>() + cpu_atom_virial_.numel());
+
+    // Strip the phantom prefix from atomic outputs as well (see force
+    // block above).  Phantom slots carry zero atomic energy / virial
+    // because their nlist rows were all -1.
+    if (phantom_n > 0) {
+      datom_energy.erase(datom_energy.begin(),
+                         datom_energy.begin() + phantom_n);
+      datom_virial.erase(datom_virial.begin(),
+                         datom_virial.begin() + phantom_n * 9);
+    }
 
     atom_energy.resize(static_cast<size_t>(nframes) * fwd_map.size());
     atom_virial.resize(static_cast<size_t>(nframes) * fwd_map.size() * 9);
@@ -857,9 +1028,12 @@ template void DeepSpinPTExpt::compute<float, std::vector<ENERGYTYPE>>(
     const bool atomic);
 
 void DeepSpinPTExpt::get_type_map(std::string& type_map_str) {
+  type_map_str.clear();
   for (const auto& t : type_map) {
+    if (!type_map_str.empty()) {
+      type_map_str += " ";
+    }
     type_map_str += t;
-    type_map_str += " ";
   }
 }
 

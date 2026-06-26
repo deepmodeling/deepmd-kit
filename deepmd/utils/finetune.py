@@ -1,7 +1,196 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import logging
+from collections.abc import (
+    Mapping,
+)
+from copy import (
+    deepcopy,
+)
+from typing import (
+    Any,
+)
 
 log = logging.getLogger(__name__)
+
+_IGNORED_DESCRIPTOR_KEYS = frozenset({"trainable"})
+_MISSING = object()
+_MAX_DESCRIPTOR_CONFIG_DIFFS = 20
+_MAX_CONFIG_VALUE_LENGTH = 200
+
+
+def _infer_synthetic_type_count(descriptor: Mapping[str, Any]) -> int:
+    """Infer a safe type count for descriptor-only normalization.
+
+    The real model ``type_map`` is not available at every finetune warning call
+    site. Use descriptor fields that explicitly encode per-type lists to avoid
+    normalizing a 3+-type descriptor against the historical two-type stub. This
+    is still a best-effort normalization helper: intentional type-map changes
+    may still show up in type-count-dependent fields such as ``sel``.
+    """
+    type_count = 2
+    for key in ("sel", "sel_a", "sel_r"):
+        value = descriptor.get(key)
+        if isinstance(value, list) and all(isinstance(item, int) for item in value):
+            type_count = max(type_count, len(value))
+    exclude_types = descriptor.get("exclude_types")
+    if isinstance(exclude_types, list):
+        for pair in exclude_types:
+            if (
+                isinstance(pair, list)
+                and len(pair) == 2
+                and all(isinstance(item, int) for item in pair)
+            ):
+                type_count = max(type_count, pair[0] + 1, pair[1] + 1)
+    return type_count
+
+
+def _normalize_descriptor_for_compare(
+    descriptor: Mapping[str, Any],
+) -> Mapping[str, Any]:
+    """Normalize a descriptor config so implicit defaults do not warn."""
+    from deepmd.utils.argcheck import (
+        normalize,
+    )
+
+    config = {
+        "model": {
+            "descriptor": deepcopy(dict(descriptor)),
+            "fitting_net": {"neuron": [240, 240, 240]},
+            "type_map": [
+                f"Type{ii}" for ii in range(_infer_synthetic_type_count(descriptor))
+            ],
+        },
+        "training": {"training_data": {"systems": ["fake"]}, "numb_steps": 100},
+    }
+    return normalize(config, multi_task=False)["model"]["descriptor"]
+
+
+def _format_config_value(value: Any) -> str:
+    text = repr(value)
+    if len(text) > _MAX_CONFIG_VALUE_LENGTH:
+        text = text[: _MAX_CONFIG_VALUE_LENGTH - 3] + "..."
+    return text
+
+
+def _iter_descriptor_config_differences(
+    input_config: Any,
+    pretrained_config: Any,
+    prefix: str = "",
+) -> list[tuple[str, Any, Any]]:
+    differences: list[tuple[str, Any, Any]] = []
+    if isinstance(input_config, Mapping) and isinstance(pretrained_config, Mapping):
+        keys = sorted(set(input_config) | set(pretrained_config))
+        for key in keys:
+            if key in _IGNORED_DESCRIPTOR_KEYS:
+                continue
+            key_path = f"{prefix}.{key}" if prefix else str(key)
+            if key not in input_config:
+                differences.append((key_path, _MISSING, pretrained_config[key]))
+            elif key not in pretrained_config:
+                differences.append((key_path, input_config[key], _MISSING))
+            else:
+                differences.extend(
+                    _iter_descriptor_config_differences(
+                        input_config[key], pretrained_config[key], key_path
+                    )
+                )
+        return differences
+    if input_config != pretrained_config:
+        return [(prefix, input_config, pretrained_config)]
+    return differences
+
+
+def _descriptor_config_differences(
+    input_descriptor: Mapping[str, Any],
+    pretrained_descriptor: Mapping[str, Any],
+) -> list[tuple[str, Any, Any]]:
+    """Return meaningful descriptor differences, ignoring implicit defaults."""
+    input_descriptor_cmp: Mapping[str, Any] = input_descriptor
+    pretrained_descriptor_cmp: Mapping[str, Any] = pretrained_descriptor
+    try:
+        input_descriptor_cmp = _normalize_descriptor_for_compare(input_descriptor)
+        pretrained_descriptor_cmp = _normalize_descriptor_for_compare(
+            pretrained_descriptor
+        )
+    except Exception:
+        # Some in-flight or legacy descriptor schemas may not be normalizable with
+        # the minimal synthetic config above. If either side fails, compare raw
+        # descriptor against raw descriptor; mixing normalized and raw values would
+        # report implicit defaults as spurious differences.
+        input_descriptor_cmp = input_descriptor
+        pretrained_descriptor_cmp = pretrained_descriptor
+    return _iter_descriptor_config_differences(
+        input_descriptor_cmp, pretrained_descriptor_cmp
+    )
+
+
+def _format_descriptor_differences(
+    differences: list[tuple[str, Any, Any]],
+    *,
+    overwrite: bool,
+) -> str:
+    lines = []
+    shown = differences[:_MAX_DESCRIPTOR_CONFIG_DIFFS]
+    for key, input_value, pretrained_value in shown:
+        input_text = (
+            "(missing)"
+            if input_value is _MISSING
+            else _format_config_value(input_value)
+        )
+        pretrained_text = (
+            "(missing)"
+            if pretrained_value is _MISSING
+            else _format_config_value(pretrained_value)
+        )
+        if overwrite:
+            lines.append(f"  {key}: {input_text} -> {pretrained_text}")
+        else:
+            lines.append(f"  {key}: input={input_text}, pretrained={pretrained_text}")
+    remaining = len(differences) - len(shown)
+    if remaining > 0:
+        lines.append(f"  ... and {remaining} more difference(s)")
+    return "\n".join(lines)
+
+
+def warn_descriptor_config_differences(
+    input_descriptor: Mapping[str, Any],
+    pretrained_descriptor: Mapping[str, Any],
+    model_branch: str = "Default",
+) -> None:
+    """Warn when ``--use-pretrain-script`` overwrites descriptor config."""
+    differences = _descriptor_config_differences(
+        input_descriptor, pretrained_descriptor
+    )
+    if not differences:
+        return
+    log.warning(
+        "Descriptor configuration in input.json differs from pretrained model "
+        f"(branch '{model_branch}'). The input descriptor configuration will be "
+        "overwritten with the pretrained model's descriptor configuration "
+        "except for the trainable flag:\n"
+        + _format_descriptor_differences(differences, overwrite=True)
+    )
+
+
+def warn_configuration_mismatch_during_finetune(
+    input_descriptor: Mapping[str, Any],
+    pretrained_descriptor: Mapping[str, Any],
+    model_branch: str = "Default",
+) -> None:
+    """Warn when fine-tuning loads only compatible descriptor parameters."""
+    differences = _descriptor_config_differences(
+        input_descriptor, pretrained_descriptor
+    )
+    if not differences:
+        return
+    log.warning(
+        "Descriptor configuration mismatch detected between input.json and "
+        f"pretrained model (branch '{model_branch}'). Only descriptor parameters "
+        "that are compatible with the pretrained model can be reused; "
+        "incompatible parameters may be reinitialized, skipped, or rejected by "
+        "backend-specific loading:\n"
+        + _format_descriptor_differences(differences, overwrite=False)
+    )
 
 
 class FinetuneRuleItem:

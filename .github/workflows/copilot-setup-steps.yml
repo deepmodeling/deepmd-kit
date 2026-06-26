@@ -30,7 +30,7 @@ jobs:
     # If you do not check out your code, Copilot will do this for you.
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -52,7 +52,7 @@ jobs:
         run: uv pip install --group pin_tensorflow_cpu --group pin_pytorch_cpu --torch-backend cpu
 
       - name: Build Python package
-        run: uv pip install -e .[cpu,test]
+        run: uv pip install -e .[cpu,test,torch]
 
       - name: Install prek tools
         run: uv tool install prek

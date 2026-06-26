@@ -147,7 +147,8 @@ def main():
     )
 
     # ---- 4a. Write sidecar for fparam_aparam.pt2/.pth tests ----
-    # Consumers: test_deeppot_a_fparam_aparam_{pt,ptexpt,nframes_ptexpt}.cc
+    # Consumers: api_cc/api_c test_deeppot_universal.cc and
+    # api_cc test_deeppot_a_fparam_aparam_nframes_ptexpt.cc
     # Note: test_deeppot_ptexpt.cc also loads fparam_aparam.pt2 but only for
     # JSON-metadata checks; it does not consume these reference values.
     ref_path = os.path.join(base_dir, "fparam_aparam.expected")

@@ -181,6 +181,33 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
             to_numpy_array(ret0["energy"]), ret2["energy"], atol=0.001, rtol=0.001
         )
 
+    def test_forward_atomic_accepts_leaf_view_input(self) -> None:
+        args = [
+            to_torch_tensor(ii) for ii in [self.coord_ext, self.atype_ext, self.nlist]
+        ]
+        coord = args[0]
+        coord_view = coord.view(self.nf, self.nall, 3)
+        coord_view_before = coord_view.detach().clone()
+        self.assertTrue(coord.is_leaf)
+        self.assertTrue(coord_view._is_view())
+        args[0] = coord_view
+        ret = self.md0.forward_atomic(*args)
+
+        self.assertFalse(coord_view.requires_grad)
+        torch.testing.assert_close(coord_view, coord_view_before)
+        self.assertIn("energy", ret)
+
+    def test_forward_atomic_preserves_grad_enabled_input(self) -> None:
+        args = [
+            to_torch_tensor(ii) for ii in [self.coord_ext, self.atype_ext, self.nlist]
+        ]
+        args[0] = args[0].view(self.nf, self.nall, 3).clone().requires_grad_(True)
+        ret = self.md0.forward_atomic(*args)
+        ret["energy"].sum().backward()
+
+        self.assertTrue(args[0].requires_grad)
+        self.assertIsNotNone(args[0].grad)
+
     def test_jit(self) -> None:
         md1 = torch.jit.script(self.md1)
         # atomic model no more export methods
@@ -190,6 +217,22 @@ class TestIntegration(unittest.TestCase, TestCaseSingleFrameWithNlist):
         # atomic model no more export methods
         # self.assertEqual(md3.get_rcut(), self.rcut)
         # self.assertEqual(md3.get_type_map(), ["foo", "bar"])
+
+    def test_forward_embedding(self) -> None:
+        # The embedding of a DP+ZBL model is taken from its DP sub-model.
+        self.assertTrue(self.md0.has_embedding())
+        args = [
+            to_torch_tensor(ii) for ii in [self.coord_ext, self.atype_ext, self.nlist]
+        ]
+        emb = self.md0.forward_embedding(*args)
+        for key in ("descriptor", "atomic_feature", "structural_feature"):
+            self.assertIn(key, emb)
+        self.assertEqual(tuple(emb["descriptor"].shape[:2]), (self.nf, self.nloc))
+        self.assertEqual(tuple(emb["atomic_feature"].shape[:2]), (self.nf, self.nloc))
+        self.assertEqual(
+            tuple(emb["structural_feature"].shape),
+            (self.nf, emb["atomic_feature"].shape[2]),
+        )
 
 
 class TestRemmapMethod(unittest.TestCase):

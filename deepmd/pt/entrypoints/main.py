@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import argparse
-import copy
 import io
 import json
 import logging
@@ -99,6 +98,38 @@ from deepmd.utils.path import (
 from deepmd.utils.summary import SummaryPrinter as BaseSummaryPrinter
 
 log = logging.getLogger(__name__)
+
+
+def _update_changed_model_tensors(
+    target_state_dict: dict[str, Any],
+    source_state_dict: dict[str, Any],
+    key_prefix: str | None = None,
+) -> None:
+    """Copy changed tensors into an existing state dict without breaking aliases."""
+    for key, source_value in source_state_dict.items():
+        if key == "_extra_state":
+            continue
+        if key_prefix is not None and not key.startswith(key_prefix):
+            continue
+        if key not in target_state_dict:
+            target_state_dict[key] = (
+                source_value.detach().clone()
+                if torch.is_tensor(source_value)
+                else source_value
+            )
+            continue
+        target_value = target_state_dict[key]
+        if torch.is_tensor(target_value) and torch.is_tensor(source_value):
+            if (
+                target_value.shape == source_value.shape
+                and target_value.dtype == source_value.dtype
+            ):
+                if not torch.equal(target_value, source_value):
+                    target_value.copy_(source_value)
+            else:
+                target_state_dict[key] = source_value.detach().clone()
+        elif target_value != source_value:
+            target_state_dict[key] = source_value
 
 
 def get_trainer(
@@ -458,6 +489,26 @@ def freeze(
     output: str = "frozen_model.pth",
     head: str | None = None,
 ) -> None:
+    # DPA4 / SeZM checkpoints are routed to the AOTInductor .pt2 exporter
+    from deepmd.pt.entrypoints.freeze_pt2 import (
+        freeze_sezm_to_pt2,
+        is_sezm_checkpoint,
+    )
+
+    output_path = Path(output)
+    if is_sezm_checkpoint(model):
+        out_pt2 = str(output_path.with_suffix(".pt2"))
+        freeze_sezm_to_pt2(model, out_pt2, head=head)
+        log.info(
+            "Detected DPA4 / SeZM checkpoint '%s'; saved AOTInductor archive to %s",
+            model,
+            out_pt2,
+        )
+        return
+
+    # TorchScript frozen models use the .pth suffix by convention.
+    output = str(output_path.with_suffix(".pth"))
+
     tester = inference.Tester(model, head=head)
     model = tester.model
     model.eval()
@@ -496,7 +547,7 @@ def change_bias(
         old_state_dict = torch.load(
             input_file, map_location=env.DEVICE, weights_only=True
         )
-        model_state_dict = copy.deepcopy(old_state_dict.get("model", old_state_dict))
+        model_state_dict = old_state_dict.get("model", old_state_dict)
         model_params = model_state_dict["_extra_state"]["model_params"]
     elif input_file.endswith(".pth"):
         old_model = torch.jit.load(input_file, map_location=env.DEVICE)
@@ -529,7 +580,7 @@ def change_bias(
     model_to_change = model if not multi_task else model[model_branch]
     if input_file.endswith(".pt"):
         wrapper = ModelWrapper(model)
-        wrapper.load_state_dict(old_state_dict["model"])
+        wrapper.load_state_dict(model_state_dict)
     else:
         # for .pth
         model.load_state_dict(old_state_dict)
@@ -592,12 +643,12 @@ def change_bias(
             output if output is not None else input_file.replace(".pt", "_updated.pt")
         )
         wrapper = ModelWrapper(model)
-        if "model" in old_state_dict:
-            old_state_dict["model"] = wrapper.state_dict()
-            old_state_dict["model"]["_extra_state"] = model_state_dict["_extra_state"]
-        else:
-            old_state_dict = wrapper.state_dict()
-            old_state_dict["_extra_state"] = model_state_dict["_extra_state"]
+        key_prefix = f"model.{model_branch}." if multi_task else None
+        _update_changed_model_tensors(
+            model_state_dict,
+            wrapper.state_dict(),
+            key_prefix=key_prefix,
+        )
         torch.save(old_state_dict, output_path)
     else:
         # for .pth
@@ -648,7 +699,9 @@ def main(args: list[str] | argparse.Namespace | None = None) -> None:
             FLAGS.model = str(checkpoint_path.joinpath(latest_ckpt_file))
         else:
             FLAGS.model = FLAGS.checkpoint_folder
-        FLAGS.output = str(Path(FLAGS.output).with_suffix(".pth"))
+        # Output suffix is decided inside freeze(): SeZM checkpoints
+        # produce ``.pt2`` (AOTInductor), every other backend produces
+        # the legacy ``.pth`` (TorchScript).
         freeze(model=FLAGS.model, output=FLAGS.output, head=FLAGS.head)
     elif FLAGS.command == "change-bias":
         change_bias(

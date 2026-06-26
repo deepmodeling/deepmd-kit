@@ -155,12 +155,14 @@ def test_pt2_dual_artifact_for_gnn(tmp_path) -> None:
     # 3. Run both artifacts with nframes=1 (matches what the with-comm
     # artifact requires; LAMMPS always passes one frame anyway).
     sample = _make_sample_inputs(model, nframes=1, has_spin=False)
-    ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam = sample
+    ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin = sample
     nloc = nlist_t.shape[1]
     nall = ext_atype.shape[1]
     nghost = nall - nloc
 
-    out_regular = regular(ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam)
+    out_regular = regular(
+        ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin
+    )
 
     # 4. Build runtime comm tensors mirroring the mapping (single-rank
     # self-send: ghost slot ii receives node[mapping[ii]], identical to
@@ -181,6 +183,7 @@ def test_pt2_dual_artifact_for_gnn(tmp_path) -> None:
         mapping_t,
         fparam,
         aparam,
+        charge_spin,
         *comm_inputs,
     )
 
@@ -349,9 +352,11 @@ def test_pte_with_comm_dict_traces_and_loads(tmp_path) -> None:
     assert os.path.exists(pte_path)
     loaded = torch.export.load(pte_path)
     # Sanity: the loaded program has the expected number of inputs
-    # (6 base + 8 comm = 14).
+    # (7 base + 8 comm = 15): extended_coord, extended_atype, nlist,
+    # mapping, fparam, aparam, charge_spin (added in 0505_reformat_chg_spin)
+    # + the 8 comm tensors.
     spec = loaded.module().graph.find_nodes(op="placeholder")
-    assert len(spec) == 14, (
-        f"with-comm exported program must accept 14 positional inputs "
-        f"(6 base + 8 comm); got {len(spec)}"
+    assert len(spec) == 15, (
+        f"with-comm exported program must accept 15 positional inputs "
+        f"(7 base + 8 comm); got {len(spec)}"
     )

@@ -257,6 +257,29 @@ inline JsonValue parse_json(const std::string& s) {
   return parser.parse();
 }
 
+inline std::vector<double> read_default_chg_spin(const JsonValue& metadata,
+                                                 const int dim_chg_spin) {
+  std::vector<double> default_chg_spin;
+  if (dim_chg_spin <= 0) {
+    return default_chg_spin;
+  }
+  if (!metadata.obj_val.count("default_chg_spin")) {
+    throw deepmd::deepmd_exception(
+        "Model requires charge/spin conditions but default_chg_spin is "
+        "missing from metadata.");
+  }
+  for (const auto& v : metadata["default_chg_spin"].as_array()) {
+    default_chg_spin.push_back(v.as_double());
+  }
+  if (static_cast<int>(default_chg_spin.size()) != dim_chg_spin) {
+    throw deepmd::deepmd_exception("default_chg_spin length (" +
+                                   std::to_string(default_chg_spin.size()) +
+                                   ") does not match dim_chg_spin (" +
+                                   std::to_string(dim_chg_spin) + ").");
+  }
+  return default_chg_spin;
+}
+
 // ============================================================================
 // ZIP archive reader — reads a file from a ZIP archive.
 // ============================================================================
@@ -570,23 +593,36 @@ inline std::vector<at::Tensor> build_comm_tensors_positional(
   auto int64_option =
       torch::TensorOptions().device(torch::kCPU).dtype(torch::kInt64);
 
+  // The with-comm AOTInductor artifact is compiled assuming 16-byte-aligned
+  // inputs (the freeze-time sample comm tensors are torch-allocated). LAMMPS'
+  // raw send/recv arrays and the MPI handle carry only their natural element
+  // alignment, so wrapping them with ``from_blob`` would force AOTInductor to
+  // copy each input to an aligned buffer on every step (a per-step warning and
+  // copy). ``clone`` materialises them in torch-allocated aligned storage; the
+  // pointer values inside ``sendlist`` are copied verbatim and still address
+  // the live LAMMPS swap buffers. The clones are tiny (``nswap`` elements), so
+  // the one-time copy is negligible.
   at::Tensor sendlist_tensor =
-      torch::from_blob(static_cast<void*>(sendlist), {nswap}, int64_option);
+      torch::from_blob(static_cast<void*>(sendlist), {nswap}, int64_option)
+          .clone();
   at::Tensor sendproc_tensor =
-      torch::from_blob(lmp_list.sendproc, {nswap}, int32_option);
+      torch::from_blob(lmp_list.sendproc, {nswap}, int32_option).clone();
   at::Tensor recvproc_tensor =
-      torch::from_blob(lmp_list.recvproc, {nswap}, int32_option);
-  at::Tensor sendnum_tensor = torch::from_blob(sendnum, {nswap}, int32_option);
-  at::Tensor recvnum_tensor = torch::from_blob(recvnum, {nswap}, int32_option);
+      torch::from_blob(lmp_list.recvproc, {nswap}, int32_option).clone();
+  at::Tensor sendnum_tensor =
+      torch::from_blob(sendnum, {nswap}, int32_option).clone();
+  at::Tensor recvnum_tensor =
+      torch::from_blob(recvnum, {nswap}, int32_option).clone();
 
-  static std::int64_t null_communicator = 0;
+  std::int64_t null_communicator = 0;
   at::Tensor communicator_tensor;
   if (lmp_list.world == nullptr) {
     communicator_tensor =
-        torch::from_blob(&null_communicator, {1}, int64_option);
+        torch::from_blob(&null_communicator, {1}, int64_option).clone();
   } else {
     communicator_tensor =
-        torch::from_blob(const_cast<void*>(lmp_list.world), {1}, int64_option);
+        torch::from_blob(const_cast<void*>(lmp_list.world), {1}, int64_option)
+            .clone();
   }
 
   at::Tensor nlocal_tensor = torch::tensor(nlocal, int32_option);

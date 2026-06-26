@@ -355,9 +355,16 @@ def extend_coord_with_ghosts(
         shift_idx = xp.take(xyz, xp.argsort(xp.linalg.vector_norm(xyz, axis=1)), axis=0)
         ns, _ = shift_idx.shape
         nall = ns * nloc
-        # shift_vec = xp.einsum("sd,fdk->fsk", shift_idx, cell)
-        shift_vec = xp.tensordot(shift_idx, cell, axes=([1], [1]))
-        shift_vec = xp.permute_dims(shift_vec, (1, 0, 2))
+        if array_api_compat.is_jax_namespace(xp):
+            # Avoid JAX internal errors in tensordot.
+            shift_vec = xp.sum(
+                shift_idx[xp.newaxis, :, :, xp.newaxis] * cell[:, xp.newaxis, :, :],
+                axis=2,
+            )
+        else:
+            # shift_vec = xp.einsum("sd,fdk->fsk", shift_idx, cell)
+            shift_vec = xp.tensordot(shift_idx, cell, axes=([1], [1]))
+            shift_vec = xp.permute_dims(shift_vec, (1, 0, 2))
         extend_coord = coord[:, None, :, :] + shift_vec[:, :, None, :]
         extend_atype = xp.tile(atype[:, :, xp.newaxis], (1, ns, 1))
         extend_aidx = xp.tile(aidx[:, :, xp.newaxis], (1, ns, 1))

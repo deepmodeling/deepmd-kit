@@ -35,7 +35,7 @@ jobs:
             enable_pytorch: false
             enable_paddle: true
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: "3.11"
@@ -46,7 +46,10 @@ jobs:
         run: |
           source/install/uv_with_retry.sh pip install --system --group pin_tensorflow_cpu --group pin_pytorch_cpu --group pin_jax_cpu --torch-backend cpu
           export TENSORFLOW_ROOT=$(python -c 'import importlib.util,pathlib;print(pathlib.Path(importlib.util.find_spec("tensorflow").origin).parent)')
-          source/install/uv_with_retry.sh pip install --system -e .[cpu,test,lmp,jax] mpi4py mpich
+          export PYTORCH_ROOT=$(python -c 'import torch;print(torch.__path__[0])')
+          source/install/uv_with_retry.sh pip install --system -e .[cpu,test,lmp,jax,torch] mpi4py mpich
+        env:
+          DP_ENABLE_PYTORCH: 1
       - name: Convert models
         run: source/tests/infer/convert-models.sh
       # https://github.com/actions/runner-images/issues/9491
@@ -99,7 +102,7 @@ jobs:
           ENABLE_PADDLE: ${{ matrix.enable_paddle && '1' || '0' }}
         if: ${{ !matrix.check_memleak }}
       - name: Upload coverage to Codecov (non-blocking)
-        uses: codecov/codecov-action@v6
+        uses: codecov/codecov-action@v7
         continue-on-error: true
         with:
           use_oidc: true

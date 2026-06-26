@@ -359,6 +359,7 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         mapping: Array | None = None,
         fparam: Array | None = None,
         comm_dict: dict | None = None,
+        charge_spin: Array | None = None,
     ) -> tuple[Array, Array]:
         """Compute the descriptor.
 
@@ -378,8 +379,9 @@ class DescrptSeTTebd(NativeOP, BaseDescriptor):
         descriptor
             The descriptor. shape: nf x nloc x (ng x axis_neuron)
         gr
-            The rotationally equivariant and permutationally invariant single particle
-            representation. shape: nf x nloc x ng x 3
+            This descriptor returns None. se_e3_tebd contracts the three-body
+            angular information into a rotationally invariant descriptor and does
+            not expose a separate equivariant single-particle representation.
         g2
             The rotationally invariant pair-partical representation.
             this descriptor returns None

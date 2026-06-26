@@ -138,6 +138,7 @@ def make_base_atomic_model(
             mapping: t_tensor | None = None,
             fparam: t_tensor | None = None,
             aparam: t_tensor | None = None,
+            charge_spin: t_tensor | None = None,
         ) -> dict[str, t_tensor]:
             pass
 

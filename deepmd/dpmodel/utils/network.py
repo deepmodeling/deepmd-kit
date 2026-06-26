@@ -282,10 +282,12 @@ class NativeLayer(NativeOP):
             raise ValueError("w, b, and activation_function must be set")
         xp = array_api_compat.array_namespace(x)
         fn = get_activation_fn(self.activation_function)
+        device = array_api_compat.device(x)
+        w = xp.asarray(self.w[...], device=device)
         y = (
-            xp.matmul(x, self.w[...]) + self.b[...]
+            xp.matmul(x, w) + xp.asarray(self.b[...], device=device)
             if self.b is not None
-            else xp.matmul(x, self.w[...])
+            else xp.matmul(x, w)
         )
         if y.dtype != x.dtype:
             # workaround for bfloat16
@@ -293,7 +295,7 @@ class NativeLayer(NativeOP):
             y = xp.astype(y, x.dtype)
         y = fn(y)
         if self.idt is not None:
-            y = y * self.idt
+            y = y * xp.asarray(self.idt, device=array_api_compat.device(x))
         if self.resnet and self.w.shape[1] == self.w.shape[0]:
             y = y + x
         elif self.resnet and self.w.shape[1] == 2 * self.w.shape[0]:
@@ -1273,20 +1275,32 @@ def aggregate(  # noqa: ANN201
     output: [num_owner, feature_dim]
     """
     xp = array_api_compat.array_namespace(data, owners)
-    bin_count = xp_bincount(owners)
-    bin_count = xp.where(bin_count == 0, xp.ones_like(bin_count), bin_count)
-
     dev = array_api_compat.device(data)
-    if num_owner is not None and bin_count.shape[0] != num_owner:
-        difference = num_owner - bin_count.shape[0]
-        bin_count = xp.concat(
-            [bin_count, xp.ones(difference, dtype=bin_count.dtype, device=dev)]
-        )
+    if num_owner is None or average:
+        # Averaging needs the owner population:
+        #   avg[o] = sum_{r: owners[r] = o} data[r] / count[o].
+        # If num_owner is omitted, bincount also determines the output length.
+        bin_count = xp_bincount(owners)
+        bin_count = xp.where(bin_count == 0, xp.ones_like(bin_count), bin_count)
+        if num_owner is not None and bin_count.shape[0] != num_owner:
+            difference = num_owner - bin_count.shape[0]
+            bin_count = xp.concat(
+                [bin_count, xp.ones(difference, dtype=bin_count.dtype, device=dev)]
+            )
+        else:
+            num_owner = bin_count.shape[0]
+    else:
+        # Sum-reduction with a known owner count only needs:
+        #   out[o] = sum_{r: owners[r] = o} data[r].
+        # Skipping bincount here is mathematically identical and avoids JAX
+        # tracing failures where jnp.bincount requires concrete owner values.
+        bin_count = None
 
-    output = xp.zeros((bin_count.shape[0], data.shape[1]), dtype=data.dtype, device=dev)
+    output = xp.zeros((num_owner, data.shape[1]), dtype=data.dtype, device=dev)
     output = xp_add_at(output, owners, data)
 
     if average:
+        assert bin_count is not None
         output = xp.transpose(xp.transpose(output) / bin_count)
 
     return output

@@ -244,12 +244,18 @@ class TestDeepEvalEner(unittest.TestCase):
         exported_mod = exported.module()
 
         for nloc in [2, 5, 10]:
-            ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam = (
+            ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin = (
                 _make_sample_inputs(self.model, nloc=nloc)
             )
 
             pte_ret = exported_mod(
-                ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam
+                ext_coord,
+                ext_atype,
+                nlist_t,
+                mapping_t,
+                fparam,
+                aparam,
+                charge_spin,
             )
 
             ec = ext_coord.detach().requires_grad_(True)
@@ -261,6 +267,7 @@ class TestDeepEvalEner(unittest.TestCase):
                 fparam=fparam,
                 aparam=aparam,
                 do_atomic_virial=True,
+                charge_spin=charge_spin,
             )
 
             for key in ("energy", "energy_redu", "energy_derv_r", "energy_derv_c"):
@@ -296,8 +303,8 @@ class TestDeepEvalEner(unittest.TestCase):
 
         nnei = sum(self.sel)  # model's expected neighbor count
         nloc = 5
-        ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam = _make_sample_inputs(
-            self.model, nloc=nloc
+        ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin = (
+            _make_sample_inputs(self.model, nloc=nloc)
         )
 
         # Pad nlist with -1 columns, then shuffle column order so real
@@ -331,11 +338,18 @@ class TestDeepEvalEner(unittest.TestCase):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=True,
+            charge_spin=charge_spin,
         )
 
         # Exported model with same shuffled oversized nlist
         pte_ret = exported_mod(
-            ext_coord, ext_atype, nlist_shuffled, mapping_t, fparam, aparam
+            ext_coord,
+            ext_atype,
+            nlist_shuffled,
+            mapping_t,
+            fparam,
+            aparam,
+            charge_spin,
         )
 
         for key in ("energy", "energy_redu", "energy_derv_r", "energy_derv_c"):
@@ -362,6 +376,7 @@ class TestDeepEvalEner(unittest.TestCase):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=True,
+            charge_spin=charge_spin,
         )
         # The truncated result MUST differ from the correctly sorted result,
         # proving that naive truncation discards real neighbors.
@@ -382,7 +397,7 @@ class TestDeepEvalEner(unittest.TestCase):
         model2.eval()
 
         for nloc in [3, 7]:
-            ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam = (
+            ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin = (
                 _make_sample_inputs(self.model, nloc=nloc)
             )
             ec1 = ext_coord.detach().requires_grad_(True)
@@ -396,6 +411,7 @@ class TestDeepEvalEner(unittest.TestCase):
                 fparam=fparam,
                 aparam=aparam,
                 do_atomic_virial=True,
+                charge_spin=charge_spin,
             )
             ret2 = model2.forward_common_lower(
                 ec2,
@@ -405,6 +421,7 @@ class TestDeepEvalEner(unittest.TestCase):
                 fparam=fparam,
                 aparam=aparam,
                 do_atomic_virial=True,
+                charge_spin=charge_spin,
             )
 
             for key in ("energy", "energy_redu", "energy_derv_r", "energy_derv_c"):
@@ -943,8 +960,8 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
 
         nnei = sum(self.sel)  # model's expected neighbor count
         nloc = 5
-        ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam = _make_sample_inputs(
-            self.model, nloc=nloc
+        ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin = (
+            _make_sample_inputs(self.model, nloc=nloc)
         )
 
         # Pad nlist with -1 columns, then shuffle column order so real
@@ -977,10 +994,17 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=True,
+            charge_spin=charge_spin,
         )
 
         pte_ret = exported_mod(
-            ext_coord, ext_atype, nlist_shuffled, mapping_t, fparam, aparam
+            ext_coord,
+            ext_atype,
+            nlist_shuffled,
+            mapping_t,
+            fparam,
+            aparam,
+            charge_spin,
         )
 
         for key in ("energy", "energy_redu", "energy_derv_r", "energy_derv_c"):
@@ -1004,6 +1028,7 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
             fparam=fparam,
             aparam=aparam,
             do_atomic_virial=True,
+            charge_spin=charge_spin,
         )
         e_ref = ref_ret["energy_redu"].detach().cpu().numpy()
         e_trunc = trunc_ret["energy_redu"].detach().cpu().numpy()
@@ -1022,7 +1047,7 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
         model2.eval()
 
         for nloc in [3, 7]:
-            ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam = (
+            ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin = (
                 _make_sample_inputs(self.model, nloc=nloc)
             )
             ec1 = ext_coord.detach().requires_grad_(True)
@@ -1036,6 +1061,7 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
                 fparam=fparam,
                 aparam=aparam,
                 do_atomic_virial=True,
+                charge_spin=charge_spin,
             )
             ret2 = model2.forward_common_lower(
                 ec2,
@@ -1045,6 +1071,7 @@ class TestDeepEvalEnerPt2(unittest.TestCase):
                 fparam=fparam,
                 aparam=aparam,
                 do_atomic_virial=True,
+                charge_spin=charge_spin,
             )
 
             for key in ("energy", "energy_redu", "energy_derv_r", "energy_derv_c"):
@@ -2174,6 +2201,214 @@ class TestEvalDescriptorASE(unittest.TestCase):
 
         self.assertEqual(f_native.shape, f_ase.shape)
         np.testing.assert_allclose(f_native, f_ase, rtol=1e-10, atol=1e-10)
+
+
+class TestDeepEvalNlistBackend(unittest.TestCase):
+    """Dispatch + equivalence of the ``nlist_backend`` selection (.pte path).
+
+    The vesin O(N) neighbor-list strategy must, through the compiled
+    ``forward_common_lower``, give identical results to the dense native
+    builder; the dispatch must validate the choice and fall back / raise
+    according to ``auto`` / ``native`` / ``vesin``.
+    """
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.rcut = 4.0
+        cls.rcut_smth = 0.5
+        cls.sel = [12, 10]
+        cls.nt = 2
+        cls.type_map = ["foo", "bar"]
+        ds = DescrptSeA(cls.rcut, cls.rcut_smth, cls.sel)
+        ft = EnergyFittingNet(
+            cls.nt, ds.get_dim_out(), mixed_types=ds.mixed_types(), seed=GLOBAL_SEED
+        )
+        cls.model = EnergyModel(ds, ft, type_map=cls.type_map).to(torch.float64)
+        cls.model.eval()
+        cls.tmpfile = tempfile.NamedTemporaryFile(suffix=".pte", delete=False)
+        cls.tmpfile.close()
+        deserialize_to_file(
+            cls.tmpfile.name, {"model": cls.model.serialize()}, do_atomic_virial=True
+        )
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        os.unlink(cls.tmpfile.name)
+
+    def _vesin_available(self) -> bool:
+        from deepmd.pt_expt.utils.vesin_neighbor_list import (
+            is_vesin_torch_available,
+        )
+
+        return is_vesin_torch_available()
+
+    def test_default_is_auto(self) -> None:
+        dp = DeepPot(self.tmpfile.name)
+        self.assertEqual(dp.deep_eval._use_vesin, self._vesin_available())
+
+    def test_native_disables_vesin(self) -> None:
+        dp = DeepPot(self.tmpfile.name, nlist_backend="native")
+        self.assertFalse(dp.deep_eval._use_vesin)
+
+    def test_invalid_raises(self) -> None:
+        with self.assertRaises(ValueError):
+            DeepPot(self.tmpfile.name, nlist_backend="bogus")
+
+    def test_vesin_requested_but_unavailable_raises(self) -> None:
+        if self._vesin_available():
+            self.skipTest("vesin.torch is installed; cannot test the missing path")
+        with self.assertRaises(ImportError):
+            DeepPot(self.tmpfile.name, nlist_backend="vesin")
+
+    def test_vesin_matches_native(self) -> None:
+        if not self._vesin_available():
+            self.skipTest("vesin.torch is not installed")
+        rng = np.random.default_rng(GLOBAL_SEED + 21)
+        natoms = 6
+        coords = rng.random((1, natoms, 3)) * 8.0
+        atom_types = np.array([i % self.nt for i in range(natoms)], dtype=np.int32)
+        dp_native = DeepPot(self.tmpfile.name, nlist_backend="native")
+        dp_vesin = DeepPot(self.tmpfile.name, nlist_backend="vesin")
+        for cells in (np.eye(3).reshape(1, 9) * 10.0, None):  # PBC and non-PBC
+            ref = dp_native.eval(coords, cells, atom_types, atomic=True)
+            out = dp_vesin.eval(coords, cells, atom_types, atomic=True)
+            for a, b, name in zip(ref, out, ["e", "f", "v", "ae", "av"], strict=True):
+                np.testing.assert_allclose(
+                    a, b, rtol=1e-10, atol=1e-10, err_msg=f"vesin vs native: {name}"
+                )
+
+    def test_eval_descriptor_vesin_matches_native(self) -> None:
+        """eval_descriptor bypasses forward_common_lower's format_nlist, so the
+        vesin builder must apply the same type-distinguishing as the native
+        builder for a non-mixed-type model (regression for the eval_descriptor
+        mismatch).
+        """
+        if not self._vesin_available():
+            self.skipTest("vesin.torch is not installed")
+        rng = np.random.default_rng(GLOBAL_SEED + 31)
+        natoms = 6
+        coords = rng.random((1, natoms, 3)) * 8.0
+        atom_types = np.array([i % self.nt for i in range(natoms)], dtype=np.int32)
+        dp_native = DeepPot(self.tmpfile.name, nlist_backend="native")
+        dp_vesin = DeepPot(self.tmpfile.name, nlist_backend="vesin")
+        for cells in (np.eye(3).reshape(1, 9) * 10.0, None):  # PBC and non-PBC
+            d_native = dp_native.deep_eval.eval_descriptor(coords, cells, atom_types)
+            d_vesin = dp_vesin.deep_eval.eval_descriptor(coords, cells, atom_types)
+            np.testing.assert_allclose(d_native, d_vesin, rtol=1e-10, atol=1e-10)
+
+
+class TestDeepEvalEnerChgSpinPt2(unittest.TestCase):
+    """Test .pt2 inference with charge_spin (DPA3 with add_chg_spin_ebd=True)."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        import copy
+
+        from deepmd.dpmodel.model.model import get_model as dp_get_model
+
+        cls.nt = 2
+        cls.default_chg_spin = [0.5, 0.8]
+
+        config = {
+            "type_map": ["O", "H"],
+            "descriptor": {
+                "type": "dpa3",
+                "repflow": {
+                    "n_dim": 8,
+                    "e_dim": 5,
+                    "a_dim": 4,
+                    "nlayers": 2,
+                    "e_rcut": 6.0,
+                    "e_rcut_smth": 2.0,
+                    "e_sel": 30,
+                    "a_rcut": 4.0,
+                    "a_rcut_smth": 2.0,
+                    "a_sel": 20,
+                    "axis_neuron": 4,
+                    "update_angle": True,
+                    "update_style": "res_residual",
+                    "update_residual_init": "const",
+                    "smooth_edge_update": True,
+                },
+                "concat_output_tebd": True,
+                "precision": "float64",
+                "add_chg_spin_ebd": True,
+                "default_chg_spin": cls.default_chg_spin,
+                "seed": GLOBAL_SEED,
+            },
+            "fitting_net": {
+                "neuron": [5, 5, 5],
+                "resnet_dt": True,
+                "seed": GLOBAL_SEED,
+            },
+        }
+
+        model = dp_get_model(copy.deepcopy(config))
+        cls.model_data = {
+            "model": model.serialize(),
+            "model_def_script": config,
+            "backend": "dpmodel",
+            "software": "deepmd-kit",
+            "version": "3.0.0",
+        }
+
+        cls.tmpfile = tempfile.NamedTemporaryFile(suffix=".pt2", delete=False)
+        cls.tmpfile.close()
+        torch.set_default_device(None)
+        try:
+            deserialize_to_file(cls.tmpfile.name, cls.model_data, do_atomic_virial=True)
+        finally:
+            torch.set_default_device("cuda:9999999")
+
+        cls.dp = DeepPot(cls.tmpfile.name)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        import os
+
+        os.unlink(cls.tmpfile.name)
+
+    def test_dim_chg_spin(self) -> None:
+        self.assertEqual(self.dp.deep_eval.get_dim_chg_spin(), 2)
+
+    def test_charge_spin_takes_effect(self) -> None:
+        """Different charge_spin values must produce different outputs."""
+        rng = np.random.default_rng(GLOBAL_SEED)
+        natoms = 5
+        coords = rng.random((1, natoms, 3)) * 8.0
+        cells = np.eye(3).reshape(1, 9) * 10.0
+        atom_types = np.array([i % self.nt for i in range(natoms)], dtype=np.int32)
+
+        e0, f0, v0 = self.dp.eval(
+            coords, cells, atom_types, charge_spin=np.array([[0.0, 0.0]])
+        )
+        e1, f1, v1 = self.dp.eval(
+            coords, cells, atom_types, charge_spin=np.array([[1.0, 2.0]])
+        )
+
+        assert not np.allclose(e0, e1), (
+            "Changing charge_spin did not change output — charge_spin may be ignored"
+        )
+
+    def test_default_matches_explicit_default(self) -> None:
+        """Eval without charge_spin should use stored default and match explicit."""
+        rng = np.random.default_rng(GLOBAL_SEED)
+        natoms = 5
+        coords = rng.random((1, natoms, 3)) * 8.0
+        cells = np.eye(3).reshape(1, 9) * 10.0
+        atom_types = np.array([i % self.nt for i in range(natoms)], dtype=np.int32)
+
+        e_no, f_no, v_no = self.dp.eval(coords, cells, atom_types)
+        e_ex, f_ex, v_ex = self.dp.eval(
+            coords,
+            cells,
+            atom_types,
+            charge_spin=np.array([self.default_chg_spin]),
+        )
+
+        np.testing.assert_allclose(e_no, e_ex, atol=1e-10)
+        np.testing.assert_allclose(f_no, f_ex, atol=1e-10)
+        np.testing.assert_allclose(v_no, v_ex, atol=1e-10)
 
 
 if __name__ == "__main__":

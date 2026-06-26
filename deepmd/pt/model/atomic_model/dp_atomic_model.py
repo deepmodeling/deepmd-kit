@@ -69,44 +69,6 @@ class DPAtomicModel(BaseAtomicModel):
         self.add_chg_spin_ebd: bool = getattr(
             self.descriptor, "add_chg_spin_ebd", False
         )
-        self.enable_eval_descriptor_hook = False
-        self.enable_eval_fitting_last_layer_hook = False
-        self.eval_descriptor_list = []
-        self.eval_fitting_last_layer_list = []
-
-    eval_descriptor_list: list[torch.Tensor]
-    eval_fitting_last_layer_list: list[torch.Tensor]
-
-    def set_eval_descriptor_hook(self, enable: bool) -> None:
-        """Set the hook for evaluating descriptor and clear the cache for descriptor list."""
-        self.enable_eval_descriptor_hook = enable
-        # = [] does not work; See #4533
-        self.eval_descriptor_list.clear()
-
-    def eval_descriptor(self) -> torch.Tensor:
-        """Evaluate the descriptor."""
-        if not self.eval_descriptor_list:
-            raise RuntimeError(
-                "eval_descriptor_list is empty. "
-                "Call set_eval_descriptor_hook(True) and perform a forward pass first."
-            )
-        return torch.concat(self.eval_descriptor_list)
-
-    def set_eval_fitting_last_layer_hook(self, enable: bool) -> None:
-        """Set the hook for evaluating fitting last layer output and clear the cache for fitting last layer output list."""
-        self.enable_eval_fitting_last_layer_hook = enable
-        self.fitting_net.set_return_middle_output(enable)
-        # = [] does not work; See #4533
-        self.eval_fitting_last_layer_list.clear()
-
-    def eval_fitting_last_layer(self) -> torch.Tensor:
-        """Evaluate the fitting last layer output."""
-        if not self.eval_fitting_last_layer_list:
-            raise RuntimeError(
-                "eval_fitting_last_layer_list is empty. "
-                "Call set_eval_fitting_last_layer_hook(True) and perform a forward pass first."
-            )
-        return torch.concat(self.eval_fitting_last_layer_list)
 
     @torch.jit.export
     def fitting_output_def(self) -> FittingOutputDef:
@@ -244,6 +206,8 @@ class DPAtomicModel(BaseAtomicModel):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         comm_dict: dict[str, torch.Tensor] | None = None,
+        charge_spin: torch.Tensor | None = None,
+        return_atomic_feature: bool = False,
     ) -> dict[str, torch.Tensor]:
         """Return atomic prediction.
 
@@ -261,32 +225,36 @@ class DPAtomicModel(BaseAtomicModel):
             frame parameter. nf x ndf
         aparam
             atomic parameter. nf x nloc x nda
+        return_atomic_feature
+            When True, run the fitting net only up to its last hidden layer with
+            no force/virial autograd, and additionally return the raw per-atom
+            ``descriptor`` and the last hidden ``atomic_feature``. Used by the
+            embedding path.
 
         Returns
         -------
         result_dict
-            the result dict, defined by the `FittingOutputDef`.
+            the result dict, defined by the `FittingOutputDef`. When
+            ``return_atomic_feature`` is True, it also contains ``descriptor``
+            and ``atomic_feature``.
 
         """
         nframes, nloc, nnei = nlist.shape
         atype = extended_atype[:, :nloc]
-        if self.do_grad_r() or self.do_grad_c():
-            extended_coord.requires_grad_(True)
-
-        # Handle default fparam if fitting net supports it
+        # The embedding path produces no force and never allocates an autograd leaf.
         if (
-            hasattr(self.fitting_net, "get_dim_fparam")
-            and self.fitting_net.get_dim_fparam() > 0
-            and fparam is None
+            not return_atomic_feature
+            and (self.do_grad_r() or self.do_grad_c())
+            and not extended_coord.requires_grad
         ):
-            # use default fparam
-            default_fparam_tensor = self.fitting_net.get_default_fparam()
-            assert default_fparam_tensor is not None
-            fparam_input_for_des = torch.tile(
-                default_fparam_tensor.unsqueeze(0), [nframes, 1]
-            )
-        else:
-            fparam_input_for_des = fparam
+            extended_coord = extended_coord.clone().requires_grad_(True)
+
+        # Handle default chg_spin if descriptor supports it
+        if self.add_chg_spin_ebd and charge_spin is None:
+            default_cs_tensor = self.descriptor.get_default_chg_spin()
+            if default_cs_tensor is not None:
+                default_cs_tensor = default_cs_tensor.to(device=extended_coord.device)
+                charge_spin = torch.tile(default_cs_tensor.unsqueeze(0), [nframes, 1])
 
         descriptor, rot_mat, g2, h2, sw = self.descriptor(
             extended_coord,
@@ -294,12 +262,22 @@ class DPAtomicModel(BaseAtomicModel):
             nlist,
             mapping=mapping,
             comm_dict=comm_dict,
-            fparam=fparam_input_for_des if self.add_chg_spin_ebd else None,
+            charge_spin=charge_spin if self.add_chg_spin_ebd else None,
         )
         assert descriptor is not None
-        if self.enable_eval_descriptor_hook:
-            self.eval_descriptor_list.append(descriptor.detach())
-        # energy, force
+        if return_atomic_feature:
+            fit_ret = self.fitting_net(
+                descriptor,
+                atype,
+                gr=rot_mat,
+                g2=g2,
+                h2=h2,
+                fparam=fparam,
+                aparam=aparam,
+                return_atomic_feature=True,
+            )
+            fit_ret["descriptor"] = descriptor
+            return fit_ret
         fit_ret = self.fitting_net(
             descriptor,
             atype,
@@ -309,13 +287,6 @@ class DPAtomicModel(BaseAtomicModel):
             fparam=fparam,
             aparam=aparam,
         )
-        if self.enable_eval_fitting_last_layer_hook:
-            assert "middle_output" in fit_ret, (
-                "eval_fitting_last_layer not supported for this fitting net!"
-            )
-            self.eval_fitting_last_layer_list.append(
-                fit_ret.pop("middle_output").detach()
-            )
         return fit_ret
 
     def forward_common_atomic_flat(
@@ -329,6 +300,7 @@ class DPAtomicModel(BaseAtomicModel):
         ptr: torch.Tensor,
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
+        charge_spin: torch.Tensor | None = None,
         extended_ptr: torch.Tensor | None = None,
         central_ext_index: torch.Tensor | None = None,
         nlist_ext: torch.Tensor | None = None,
@@ -339,60 +311,19 @@ class DPAtomicModel(BaseAtomicModel):
         edge_index: torch.Tensor | None = None,
         angle_index: torch.Tensor | None = None,
     ) -> dict[str, torch.Tensor]:
-        """Forward pass with flat batch format.
-
-        Parameters
-        ----------
-        extended_coord : torch.Tensor
-            Extended coordinates [total_extended_atoms, 3].
-        extended_atype : torch.Tensor
-            Extended atom types [total_extended_atoms].
-        extended_batch : torch.Tensor
-            Frame assignment for extended atoms [total_extended_atoms].
-        nlist : torch.Tensor
-            Neighbor list [total_atoms, nnei].
-        mapping : torch.Tensor
-            Extended atom -> local flat index mapping [total_extended_atoms].
-        batch : torch.Tensor
-            Frame assignment for local atoms [total_atoms].
-        ptr : torch.Tensor
-            Frame boundaries [nframes + 1].
-        fparam : torch.Tensor | None
-            Frame parameters [nframes, ndf].
-        aparam : torch.Tensor | None
-            Atomic parameters [total_atoms, nda].
-        central_ext_index : torch.Tensor | None
-            Extended-atom indices corresponding to local atoms.
-        nlist_ext, a_nlist_ext : torch.Tensor | None
-            Edge and angle neighbor lists indexing concatenated extended atoms.
-        nlist_mask, a_nlist_mask : torch.Tensor | None
-            Valid-neighbor masks for flat edge and angle neighbor lists.
-        edge_index, angle_index : torch.Tensor | None
-            Dynamic graph indices produced by the flat graph preprocessor.
-
-        Returns
-        -------
-        result_dict : dict[str, torch.Tensor]
-            Model predictions in flat format.
-        """
+        """Forward pass with flat mixed-nloc batch format."""
         if self.do_grad_r() or self.do_grad_c():
             extended_coord.requires_grad_(True)
 
-        if (
-            hasattr(self.fitting_net, "get_dim_fparam")
-            and self.fitting_net.get_dim_fparam() > 0
-            and fparam is None
-        ):
-            default_fparam_tensor = self.fitting_net.get_default_fparam()
-            assert default_fparam_tensor is not None
-            fparam_input_for_des = torch.tile(
-                default_fparam_tensor.to(device=extended_coord.device).unsqueeze(0),
-                [ptr.numel() - 1, 1],
-            )
-        else:
-            fparam_input_for_des = fparam
+        nframes = ptr.numel() - 1
+        if self.add_chg_spin_ebd and charge_spin is None:
+            default_cs_tensor = self.descriptor.get_default_chg_spin()
+            if default_cs_tensor is not None:
+                charge_spin = torch.tile(
+                    default_cs_tensor.to(device=extended_coord.device).unsqueeze(0),
+                    [nframes, 1],
+                )
 
-        # Descriptor and fitting both consume the flat atom layout.
         descriptor_out = self.descriptor.forward_flat(
             extended_coord,
             extended_atype,
@@ -401,7 +332,8 @@ class DPAtomicModel(BaseAtomicModel):
             mapping,
             batch,
             ptr,
-            fparam=fparam_input_for_des if self.add_chg_spin_ebd else None,
+            fparam=fparam,
+            charge_spin=charge_spin if self.add_chg_spin_ebd else None,
             central_ext_index=central_ext_index,
             nlist_ext=nlist_ext,
             a_nlist=a_nlist,
@@ -426,9 +358,7 @@ class DPAtomicModel(BaseAtomicModel):
             )
 
             central_ext_index = get_central_ext_index(extended_batch, ptr)
-            atype = extended_atype[central_ext_index]
-        else:
-            atype = extended_atype[central_ext_index]
+        atype = extended_atype[central_ext_index]
 
         fit_ret = self.fitting_net.forward_flat(
             descriptor,
@@ -457,13 +387,89 @@ class DPAtomicModel(BaseAtomicModel):
             ).view(out_shape)
         fit_ret["mask"] = atom_mask
 
-        if self.enable_eval_fitting_last_layer_hook:
-            if "middle_output" in fit_ret:
-                self.eval_fitting_last_layer_list.append(
-                    fit_ret.pop("middle_output").detach()
-                )
+        if self.enable_eval_fitting_last_layer_hook and "middle_output" in fit_ret:
+            self.eval_fitting_last_layer_list.append(
+                fit_ret.pop("middle_output").detach()
+            )
 
         return fit_ret
+
+    def has_embedding(self) -> bool:
+        """A standard descriptor-fitting atomic model supports embeddings."""
+        return True
+
+    def forward_embedding(
+        self,
+        extended_coord: torch.Tensor,
+        extended_atype: torch.Tensor,
+        nlist: torch.Tensor,
+        mapping: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        charge_spin: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
+        """Extract embeddings, reusing the descriptor and fitting forward.
+
+        The neighbor/type masking mirrors `forward_common_atomic` so that the
+        descriptor matches the energy forward, and the heavy descriptor and
+        fitting work is delegated to `forward_atomic` with
+        ``return_atomic_feature=True``.
+
+        Parameters
+        ----------
+        extended_coord
+            Extended coordinates with shape (nf, nall, 3).
+        extended_atype
+            Extended atom types with shape (nf, nall).
+        nlist
+            Neighbor list with shape (nf, nloc, nnei).
+        mapping
+            Extended-to-local index map with shape (nf, nall), or None.
+        fparam
+            Frame parameters with shape (nf, dim_fparam), or None.
+        aparam
+            Atomic parameters with shape (nf, nloc, dim_aparam), or None.
+        charge_spin
+            Frame-level charge and spin conditions with shape (nf, 2), or None.
+
+        Returns
+        -------
+        dict[str, torch.Tensor]
+            ``descriptor`` with shape (nf, nloc, d), ``atomic_feature`` (the last
+            fitting hidden activation) with shape (nf, nloc, h), and
+            ``structural_feature`` (the masked atom-sum of ``atomic_feature``)
+            with shape (nf, h).
+        """
+        _, nloc, _ = nlist.shape
+        # Original local types drive the output mask; masked types feed the nets.
+        atype = extended_atype[:, :nloc]
+        if self.pair_excl is not None:
+            pair_mask = self.pair_excl(nlist, extended_atype)
+            nlist = torch.where(pair_mask == 1, nlist, -1)
+        ext_atom_mask = self.make_atom_mask(extended_atype)
+        fit_ret = self.forward_atomic(
+            extended_coord,
+            torch.where(ext_atom_mask, extended_atype, 0),
+            nlist,
+            mapping=mapping,
+            fparam=fparam,
+            aparam=aparam,
+            charge_spin=charge_spin,
+            return_atomic_feature=True,
+        )
+        atomic_feature = fit_ret["atomic_feature"]
+        # nf x nloc
+        atom_mask = ext_atom_mask[:, :nloc].to(torch.int32)
+        if self.atom_excl is not None:
+            atom_mask = atom_mask * self.atom_excl(atype)
+        structural_feature = (
+            atomic_feature * atom_mask[:, :, None].to(atomic_feature.dtype)
+        ).sum(dim=1)
+        return {
+            "descriptor": fit_ret["descriptor"],
+            "atomic_feature": atomic_feature,
+            "structural_feature": structural_feature,
+        }
 
     def compute_or_load_stat(
         self,
@@ -540,6 +546,32 @@ class DPAtomicModel(BaseAtomicModel):
 
     def get_default_fparam(self) -> torch.Tensor | None:
         return self.fitting_net.get_default_fparam()
+
+    @torch.jit.export
+    def has_chg_spin_ebd(self) -> bool:
+        """Check if the model has charge spin embedding."""
+        return self.add_chg_spin_ebd
+
+    @torch.jit.export
+    def get_dim_chg_spin(self) -> int:
+        """Get the dimension of charge_spin input."""
+        if self.add_chg_spin_ebd:
+            return self.descriptor.get_dim_chg_spin()
+        return 0
+
+    @torch.jit.export
+    def has_default_chg_spin(self) -> bool:
+        """Check if the model has default charge_spin values."""
+        if self.add_chg_spin_ebd:
+            return self.descriptor.has_default_chg_spin()
+        return False
+
+    @torch.jit.export
+    def get_default_chg_spin(self) -> torch.Tensor | None:
+        """Get the default charge_spin values as a tensor."""
+        if self.add_chg_spin_ebd and self.descriptor.has_default_chg_spin():
+            return self.descriptor.get_default_chg_spin()
+        return None
 
     def get_dim_aparam(self) -> int:
         """Get the number (dimension) of atomic parameters of this atomic model."""

@@ -3,6 +3,11 @@ import unittest
 from collections import (
     OrderedDict,
 )
+from typing import (
+    Any,
+)
+
+import numpy as np
 
 from deepmd.dpmodel.descriptor import (
     DescrptDPA1,
@@ -21,6 +26,9 @@ from deepmd.dpmodel.descriptor.dpa2 import (
 from deepmd.dpmodel.descriptor.dpa3 import (
     RepFlowArgs,
 )
+from deepmd.dpmodel.descriptor.repflows import (
+    DescrptBlockRepflows,
+)
 
 from ....consistent.common import (
     parameterize_func,
@@ -32,6 +40,9 @@ from ....seed import (
 from ....utils import (
     CI,
     TEST_DEVICE,
+)
+from ...common.cases.cases import (
+    TestCaseSingleFrameWithNlist,
 )
 from ...common.cases.descriptor.descriptor import (
     DescriptorTest,
@@ -489,6 +500,7 @@ def DescriptorParamDPA3(
     precision="float64",
     use_loc_mapping=True,
     add_chg_spin_ebd=False,
+    default_chg_spin=None,
 ):
     input_dict = {
         # kwargs for repformer
@@ -537,6 +549,7 @@ def DescriptorParamDPA3(
         "use_tebd_bias": False,
         "use_loc_mapping": use_loc_mapping,
         "add_chg_spin_ebd": add_chg_spin_ebd,
+        "default_chg_spin": default_chg_spin,
         "type_map": type_map,
         "seed": GLOBAL_SEED,
     }
@@ -563,12 +576,261 @@ DescriptorParamDPA3List = parameterize_func(
             "env_protection": (0.0, 1e-8),
             "precision": ("float64",),
             "use_loc_mapping": (True, False),
-            "add_chg_spin_ebd": (False, True),
         }
     ),
 )
+
+
 # to get name for the default function
 DescriptorParamDPA3 = DescriptorParamDPA3List[0]
+
+
+def _descriptor_param_variant(param_func, name: str, **fixed_kwargs: Any):
+    def wrapper(*args, **kwargs):
+        return param_func(*args, **{**kwargs, **fixed_kwargs})
+
+    wrapper.__name__ = name
+    wrapper.__qualname__ = name
+    return wrapper
+
+
+# Curated descriptor variants for model/atomic-model integration tests. The
+# descriptor tests above still cover the full parameter matrices; model-level
+# tests only need representative toggles to avoid a Cartesian-product blow-up.
+DescriptorParamSeAEnergyModelList = (
+    # Baseline coverage.
+    DescriptorParamSeA,
+    # Single-option descriptor toggles.
+    _descriptor_param_variant(
+        DescriptorParamSeA, "DescriptorParamSeA_resnet_dt", resnet_dt=True
+    ),
+    _descriptor_param_variant(
+        DescriptorParamSeA, "DescriptorParamSeA_type_two_sides", type_one_side=False
+    ),
+    _descriptor_param_variant(
+        DescriptorParamSeA, "DescriptorParamSeA_exclude_types", exclude_types=[[0, 1]]
+    ),
+    _descriptor_param_variant(
+        DescriptorParamSeA, "DescriptorParamSeA_env_protection", env_protection=1e-2
+    ),
+    # Mixed high-risk combination.
+    _descriptor_param_variant(
+        DescriptorParamSeA,
+        "DescriptorParamSeA_mixed_high_risk",
+        resnet_dt=True,
+        type_one_side=False,
+        exclude_types=[[0, 1]],
+        env_protection=1e-2,
+    ),
+)
+
+DescriptorParamSeREnergyModelList = (
+    # Baseline coverage.
+    DescriptorParamSeR,
+    # Single-option descriptor toggles.
+    _descriptor_param_variant(
+        DescriptorParamSeR, "DescriptorParamSeR_resnet_dt", resnet_dt=True
+    ),
+    _descriptor_param_variant(
+        DescriptorParamSeR, "DescriptorParamSeR_exclude_types", exclude_types=[[0, 1]]
+    ),
+    _descriptor_param_variant(
+        DescriptorParamSeR, "DescriptorParamSeR_env_protection", env_protection=1e-8
+    ),
+    # Mixed high-risk combination.
+    _descriptor_param_variant(
+        DescriptorParamSeR,
+        "DescriptorParamSeR_mixed_high_risk",
+        resnet_dt=True,
+        exclude_types=[[0, 1]],
+        env_protection=1e-8,
+    ),
+)
+
+DescriptorParamSeTEnergyModelList = (
+    # Baseline coverage.
+    DescriptorParamSeT,
+    # Single-option descriptor toggles.
+    _descriptor_param_variant(
+        DescriptorParamSeT, "DescriptorParamSeT_resnet_dt", resnet_dt=True
+    ),
+    _descriptor_param_variant(
+        DescriptorParamSeT, "DescriptorParamSeT_exclude_types", exclude_types=[[0, 1]]
+    ),
+    _descriptor_param_variant(
+        DescriptorParamSeT, "DescriptorParamSeT_env_protection", env_protection=1e-8
+    ),
+    # Mixed high-risk combination.
+    _descriptor_param_variant(
+        DescriptorParamSeT,
+        "DescriptorParamSeT_mixed_high_risk",
+        resnet_dt=True,
+        exclude_types=[[0, 1]],
+        env_protection=1e-8,
+    ),
+)
+
+DescriptorParamSeTTebdEnergyModelList = (
+    # Baseline coverage.
+    DescriptorParamSeTTebd,
+    # Single-option descriptor toggles.
+    _descriptor_param_variant(
+        DescriptorParamSeTTebd,
+        "DescriptorParamSeTTebd_strip",
+        tebd_input_mode="strip",
+    ),
+    _descriptor_param_variant(
+        DescriptorParamSeTTebd,
+        "DescriptorParamSeTTebd_exclude_types",
+        exclude_types=[[0, 1]],
+    ),
+    _descriptor_param_variant(
+        DescriptorParamSeTTebd, "DescriptorParamSeTTebd_no_smooth", smooth=False
+    ),
+    _descriptor_param_variant(
+        DescriptorParamSeTTebd,
+        "DescriptorParamSeTTebd_econf",
+        use_econf_tebd=True,
+    ),
+    # Mixed high-risk combination.
+    _descriptor_param_variant(
+        DescriptorParamSeTTebd,
+        "DescriptorParamSeTTebd_mixed_high_risk",
+        tebd_input_mode="strip",
+        exclude_types=[[0, 1]],
+        smooth=False,
+        use_econf_tebd=True,
+    ),
+)
+
+DescriptorParamDPA1EnergyModelList = (
+    # Baseline coverage.
+    DescriptorParamDPA1,
+    # Single-option descriptor toggles.
+    _descriptor_param_variant(
+        DescriptorParamDPA1, "DescriptorParamDPA1_strip", tebd_input_mode="strip"
+    ),
+    _descriptor_param_variant(
+        DescriptorParamDPA1, "DescriptorParamDPA1_with_attention", attn_layer=2
+    ),
+    _descriptor_param_variant(
+        DescriptorParamDPA1, "DescriptorParamDPA1_exclude_types", exclude_types=[[0, 1]]
+    ),
+    _descriptor_param_variant(
+        DescriptorParamDPA1, "DescriptorParamDPA1_temperature", temperature=1.0
+    ),
+    _descriptor_param_variant(
+        DescriptorParamDPA1,
+        "DescriptorParamDPA1_no_smooth_type_embedding",
+        smooth_type_embedding=False,
+    ),
+    _descriptor_param_variant(
+        DescriptorParamDPA1, "DescriptorParamDPA1_econf", use_econf_tebd=True
+    ),
+    # Mixed high-risk combination.
+    _descriptor_param_variant(
+        DescriptorParamDPA1,
+        "DescriptorParamDPA1_mixed_high_risk",
+        tebd_input_mode="strip",
+        attn_layer=2,
+        exclude_types=[[0, 1]],
+        temperature=1.0,
+        smooth_type_embedding=False,
+        use_econf_tebd=True,
+    ),
+)
+
+DescriptorParamDPA2EnergyModelList = (
+    # Baseline coverage.
+    DescriptorParamDPA2,
+    # Single-option descriptor toggles.
+    _descriptor_param_variant(
+        DescriptorParamDPA2,
+        "DescriptorParamDPA2_repinit_strip",
+        repinit_tebd_input_mode="strip",
+    ),
+    _descriptor_param_variant(
+        DescriptorParamDPA2,
+        "DescriptorParamDPA2_no_three_body",
+        repinit_use_three_body=False,
+    ),
+    _descriptor_param_variant(
+        DescriptorParamDPA2,
+        "DescriptorParamDPA2_residual_update",
+        repformer_update_style="res_residual",
+    ),
+    _descriptor_param_variant(
+        DescriptorParamDPA2, "DescriptorParamDPA2_no_smooth", smooth=False
+    ),
+    _descriptor_param_variant(
+        DescriptorParamDPA2, "DescriptorParamDPA2_exclude_types", exclude_types=[[0, 1]]
+    ),
+    _descriptor_param_variant(
+        DescriptorParamDPA2,
+        "DescriptorParamDPA2_no_repinit_tebd_out",
+        add_tebd_to_repinit_out=False,
+    ),
+    # Mixed high-risk combination.
+    _descriptor_param_variant(
+        DescriptorParamDPA2,
+        "DescriptorParamDPA2_mixed_high_risk",
+        repinit_tebd_input_mode="strip",
+        repinit_use_three_body=False,
+        repformer_update_style="res_residual",
+        smooth=False,
+        exclude_types=[[0, 1]],
+        add_tebd_to_repinit_out=False,
+    ),
+)
+
+DescriptorParamDPA3EnergyModelList = (
+    # Baseline coverage.
+    DescriptorParamDPA3,
+    # Single-option descriptor toggles.
+    _descriptor_param_variant(
+        DescriptorParamDPA3, "DescriptorParamDPA3_exclude_types", exclude_types=[[0, 1]]
+    ),
+    _descriptor_param_variant(
+        DescriptorParamDPA3, "DescriptorParamDPA3_no_optim_update", optim_update=False
+    ),
+    _descriptor_param_variant(
+        DescriptorParamDPA3,
+        "DescriptorParamDPA3_no_dist_edge_init",
+        edge_init_use_dist=False,
+    ),
+    _descriptor_param_variant(
+        DescriptorParamDPA3, "DescriptorParamDPA3_no_exp_switch", use_exp_switch=False
+    ),
+    _descriptor_param_variant(
+        DescriptorParamDPA3, "DescriptorParamDPA3_static_sel", use_dynamic_sel=False
+    ),
+    _descriptor_param_variant(
+        DescriptorParamDPA3, "DescriptorParamDPA3_env_protection", env_protection=1e-8
+    ),
+    _descriptor_param_variant(
+        DescriptorParamDPA3, "DescriptorParamDPA3_no_loc_mapping", use_loc_mapping=False
+    ),
+    _descriptor_param_variant(
+        DescriptorParamDPA3,
+        "DescriptorParamDPA3_default_chg_spin",
+        add_chg_spin_ebd=True,
+        default_chg_spin=[5.0, 1.0],
+    ),
+    # Mixed high-risk combination.
+    _descriptor_param_variant(
+        DescriptorParamDPA3,
+        "DescriptorParamDPA3_mixed_high_risk",
+        add_chg_spin_ebd=True,
+        default_chg_spin=[5.0, 1.0],
+        exclude_types=[[0, 1]],
+        optim_update=False,
+        edge_init_use_dist=False,
+        use_exp_switch=False,
+        use_dynamic_sel=False,
+        env_protection=1e-8,
+        use_loc_mapping=False,
+    ),
+)
 
 
 def DescriptorParamHybrid(ntypes, rcut, rcut_smth, sel, type_map, **kwargs):
@@ -642,3 +904,112 @@ class TestDescriptorDP(unittest.TestCase, DescriptorTest, DPTestCase):
             self.nt, self.rcut, self.rcut_smth, self.sel, ["O", "H"]
         )
         self.module = Descrpt(**self.input_dict)
+
+
+class TestDPA3StaticDynamicSelDP(unittest.TestCase, TestCaseSingleFrameWithNlist):
+    """Check that the internal static dynamic layout is value-equivalent."""
+
+    def setUp(self) -> None:
+        TestCaseSingleFrameWithNlist.setUp(self)
+
+    def _make_dpa3(
+        self,
+        use_static_dynamic_sel: bool,
+        *,
+        use_loc_mapping: bool,
+    ) -> DescrptDPA3:
+        # The switch is intentionally class-level and internal, so tests toggle
+        # it only around construction and then restore the previous backend mode.
+        old_use_static_dynamic_sel = DescrptBlockRepflows._use_static_dynamic_sel
+        DescrptBlockRepflows._use_static_dynamic_sel = use_static_dynamic_sel
+        try:
+            return DescrptDPA3(
+                **DescriptorParamDPA3(
+                    self.nt,
+                    self.rcut,
+                    self.rcut_smth,
+                    self.sel,
+                    ["O", "H"],
+                    smooth_edge_update=True,
+                    use_dynamic_sel=True,
+                    use_loc_mapping=use_loc_mapping,
+                )
+            )
+        finally:
+            DescrptBlockRepflows._use_static_dynamic_sel = old_use_static_dynamic_sel
+
+    def test_static_dynamic_sel_matches_packed_dynamic_sel(self) -> None:
+        for use_loc_mapping in (True, False):
+            packed = self._make_dpa3(
+                False,
+                use_loc_mapping=use_loc_mapping,
+            )
+            static = self._make_dpa3(
+                True,
+                use_loc_mapping=use_loc_mapping,
+            )
+
+            packed_out = packed(
+                self.coord_ext,
+                self.atype_ext,
+                self.nlist,
+                mapping=self.mapping,
+            )
+            static_out = static(
+                self.coord_ext,
+                self.atype_ext,
+                self.nlist,
+                mapping=self.mapping,
+            )
+
+            np.testing.assert_allclose(packed_out[0], static_out[0], atol=self.atol)
+            np.testing.assert_allclose(packed_out[1], static_out[1], atol=self.atol)
+
+            # Static dynamic selection keeps all edge slots.  Masking out padding
+            # should recover the compact dynamic edge/h2/sw tensors exactly:
+            #   compact_edges == static_edges[nlist != -1].
+            valid_edge_mask = np.reshape(self.nlist != -1, (-1,))
+            assert static_out[2].shape[0] == self.nf * self.nloc * sum(self.sel)
+            np.testing.assert_allclose(
+                packed_out[2], static_out[2][valid_edge_mask], atol=self.atol
+            )
+            np.testing.assert_allclose(
+                packed_out[3], static_out[3][valid_edge_mask], atol=self.atol
+            )
+            np.testing.assert_allclose(
+                packed_out[4], static_out[4][valid_edge_mask], atol=self.atol
+            )
+
+
+class TestHybridChgSpinDefaultDP(unittest.TestCase):
+    def _make_dpa3(self, default_chg_spin: list[float] | None) -> DescrptDPA3:
+        return DescrptDPA3(
+            **DescriptorParamDPA3(
+                2,
+                4.0,
+                0.5,
+                [6, 6],
+                ["O", "H"],
+                add_chg_spin_ebd=True,
+                default_chg_spin=default_chg_spin,
+            )
+        )
+
+    def test_shared_default_required_for_hybrid_default(self) -> None:
+        shared_default = DescrptHybrid(
+            list=[self._make_dpa3([5.0, 1.0]), self._make_dpa3([5.0, 1.0])]
+        )
+        self.assertTrue(shared_default.has_default_chg_spin())
+        self.assertEqual(shared_default.get_default_chg_spin(), [5.0, 1.0])
+
+        missing_default = DescrptHybrid(
+            list=[self._make_dpa3([5.0, 1.0]), self._make_dpa3(None)]
+        )
+        self.assertFalse(missing_default.has_default_chg_spin())
+        self.assertIsNone(missing_default.get_default_chg_spin())
+
+        mismatched_default = DescrptHybrid(
+            list=[self._make_dpa3([5.0, 1.0]), self._make_dpa3([6.0, 1.0])]
+        )
+        self.assertFalse(mismatched_default.has_default_chg_spin())
+        self.assertIsNone(mismatched_default.get_default_chg_spin())
