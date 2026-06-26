@@ -176,3 +176,25 @@ class TestDpa1DescriptorCallGraph:
         np.testing.assert_allclose(out[0], ref[0], rtol=1e-12, atol=1e-12)
         np.testing.assert_allclose(out[1], ref[1], rtol=1e-12, atol=1e-12)
         np.testing.assert_allclose(out[4], ref[4], rtol=1e-12, atol=1e-12)
+
+    def test_call_graph_returns_flat_node_axis(self) -> None:
+        """call_graph output lives on the flat (N,) node axis, not (nf, nloc)."""
+        from deepmd.dpmodel.utils.neighbor_graph import from_dense_quartet
+
+        dd = self._make([30])
+        ext_coord, ext_atype, mapping, nlist = extend_input_and_build_neighbor_list(
+            self.coord,
+            self.atype,
+            dd.get_rcut(),
+            dd.get_sel(),
+            mixed_types=dd.mixed_types(),
+            box=None,
+        )
+        graph = from_dense_quartet(ext_coord, nlist, mapping, compact=True)
+        atype_local = self.atype.reshape(-1)
+        grrg, rot_mat = dd.call_graph(
+            graph, atype_local, type_embedding=dd.type_embedding.call()
+        )
+        n = atype_local.shape[0]
+        assert grrg.shape[0] == n and grrg.ndim == 2
+        assert rot_mat.shape[0] == n and rot_mat.ndim == 3

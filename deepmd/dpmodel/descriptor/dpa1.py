@@ -606,11 +606,15 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         )
         # local atom types, flat (nf * nloc,)
         atype_local = xp.reshape(xp_take_first_n(atype_ext, 1, nloc), (nf * nloc,))
-        grrg, rot_mat = self.call_graph(
+        grrg_flat, rot_mat_flat = self.call_graph(
             graph,
             atype_local,
             type_embedding=self.type_embedding.call(),
         )
+        # call_graph returns flat (N, ...) node axis; reshape to (nf, nloc, ...)
+        # for the dense 5-tuple ABI -- this reshape is LOCAL to the adapter shim.
+        grrg = xp.reshape(grrg_flat, (nf, nloc, *grrg_flat.shape[1:]))
+        rot_mat = xp.reshape(rot_mat_flat, (nf, nloc, *rot_mat_flat.shape[1:]))
         # reconstruct the dense-shaped sw the dense way (env_mat switch masked
         # where nlist == -1; the graph path forbids exclude_types, so nlist_mask
         # == nlist != -1, matching DescrptBlockSeAtten.call). A dense-layout
@@ -672,8 +676,9 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
 
         Wraps the private block kernel
         :meth:`DescrptBlockSeAtten._call_graph`, adds the descriptor-level
-        ``concat_output_tebd`` step, and reshapes the per-node outputs back to
-        the dense ABI shapes ``(nf, nloc, ...)``.
+        ``concat_output_tebd`` step, and returns the outputs on the flat ``(N,
+        ...)`` node axis (ragged-native; no rectangular ``(nf, nloc)``
+        reshape).
 
         This method is graph-native: it takes no dense quartet inputs and does
         not produce the dense ``sw`` (that lives in the dense :meth:`call`
@@ -684,37 +689,28 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         graph
             A :class:`~deepmd.dpmodel.utils.neighbor_graph.NeighborGraph`.
         atype
-            (nf * nloc,) flat LOCAL atom types.
+            (N,) flat LOCAL atom types where ``N = sum(n_node)``.
         type_embedding
             (ntypes_with_padding, tebd_dim) type-embedding table.
 
         Returns
         -------
         grrg : Array
-            (nf, nloc, ng * axis_neuron [+ tebd_dim]) descriptor.
+            (N, ng * axis_neuron [+ tebd_dim]) descriptor, flat node axis.
         rot_mat : Array
-            (nf, nloc, ng, 3) equivariant single-particle representation.
+            (N, ng, 3) equivariant single-particle representation, flat node
+            axis.
         """
         xp = array_api_compat.array_namespace(graph.edge_vec)
         dev = array_api_compat.device(graph.edge_vec)
-        grrg_node, rot_mat_node = self.se_atten._call_graph(
+        grrg, rot_mat = self.se_atten._call_graph(
             graph, atype, type_embedding=type_embedding
         )
-        nf = graph.n_node.shape[0]
-        # atype is the flat (nf*nloc,) node axis; derive nloc from the STATIC shape
-        # (n_node[i] == nloc for all frames by contract) so this adapter stays
-        # jit/export-traceable (no concretize of n_node).
-        nloc = atype.shape[0] // nf
-        ng = self.se_atten.neuron[-1]
-        axis = self.se_atten.axis_neuron
-        grrg = xp.reshape(grrg_node, (nf, nloc, ng * axis))
-        rot_mat = xp.reshape(rot_mat_node, (nf, nloc, ng, 3))
-        # descriptor-level concat_output_tebd
+        # FLAT node axis (N, ...): no (nf, nloc) reshape -- ragged-native, spec.
         if self.concat_output_tebd:
             tebd = xp.asarray(type_embedding, device=dev)
             atype_local = xp.asarray(atype, device=dev)
-            atype_embd = xp.take(tebd, atype_local, axis=0)  # (nf*nloc, tebd_dim)
-            atype_embd = xp.reshape(atype_embd, (nf, nloc, self.tebd_dim))
+            atype_embd = xp.take(tebd, atype_local, axis=0)  # (N, tebd_dim)
             grrg = xp.concat([grrg, atype_embd], axis=-1)
         return grrg, rot_mat
 
