@@ -347,7 +347,6 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             the result dict on the flat node axis, defined by the `FittingOutputDef`.
 
         """
-
         xp = array_api_compat.array_namespace(graph.edge_vec)
         atype = xp.asarray(atype, device=array_api_compat.device(graph.edge_vec))
         atom_mask = self.make_atom_mask(atype)  # (N,) bool
