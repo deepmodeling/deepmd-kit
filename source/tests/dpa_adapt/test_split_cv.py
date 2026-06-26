@@ -255,9 +255,6 @@ class TestDeterministicCV:
     """Ensures cross_validate with frozen_sklearn + GroupKFold is deterministic."""
 
     def test_deterministic_folds_same_result_twice(self, tmp_path, monkeypatch):
-        formulas = [f"Comp{i}" for i in range(4)]
-        systems = _write_oer_tree(str(tmp_path), formulas, nsets=2, label_key="energy")
-
         raise pytest.skip("needs real DPA checkpoint to extract descriptors")
 
     def test_manifest_folds(self, tmp_path, monkeypatch):

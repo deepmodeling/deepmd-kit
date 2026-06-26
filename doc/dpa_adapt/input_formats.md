@@ -12,7 +12,7 @@ auto-detect the input type and route it to the correct pipeline:
 **formula table** → random doping from a POSCAR template,
 **structure files** → dpdata (auto-detect or explicit `--fmt`).
 
-## 1. SMILES Tables (CSV)
+## SMILES Tables (CSV)
 
 **Trigger:** file extension `.csv` **and** a SMILES column.
 By default, the converter reads `SMILES`/`smiles`; use `--smiles-col` for
@@ -46,7 +46,7 @@ dpaad data convert --input data.csv --output ./npy --fmt smiles \
     --split-seed 42 --conformer-seed 43
 ```
 
-## 2. Formula Tables (CSV/TXT + POSCAR Template)
+## Formula Tables (CSV/TXT + POSCAR Template)
 
 **Trigger:** `--fmt formula`. Reads a table of elemental composition formulas
 (e.g. `Ni0.65Gd0.15O2H1`) and a template POSCAR, then generates doped
@@ -91,7 +91,7 @@ dpa-adapt data convert --input compositions.txt --output ./npy --fmt formula \
     --poscar template.POSCAR --formula-col 0 --property-col 1
 ```
 
-## 3. Structure Files via dpdata
+## Structure Files via dpdata
 
 **Trigger:** inputs not routed to the SMILES or formula pipelines. This means
 `--fmt` is neither `smiles` nor `formula`; when `--fmt` is omitted, CSV inputs

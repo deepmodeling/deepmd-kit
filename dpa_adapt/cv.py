@@ -481,7 +481,7 @@ def cross_validate(
     # This reuses existing desc_mean.npy when present, extracts only missing
     # systems one-by-one.  Peak memory is one system's descriptors at a time.
     if is_cheap:
-        from dpa_adapt.data.desc_cache import (
+        from dpa_adapt.finetuner import (
             ensure_per_system_cache,
         )
 
