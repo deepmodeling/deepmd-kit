@@ -92,3 +92,29 @@ def test_pair_exclude_types_falls_back_to_dense():
     """Pair exclude_types is unsupported on the graph -> uses_graph_lower False."""
     m = _ener_model([30], exclude_types=[(0, 1)])
     assert m.atomic_model.descriptor.uses_graph_lower() is False
+
+
+def test_graph_matches_dense_with_out_bias():
+    """The graph path applies apply_out_stat (per-type out-bias) identically
+    to the dense path. With a non-zero bias, graph == dense at 1e-12, and the
+    bias actually shifts the graph energy (non-vacuous).
+    """
+    rng = np.random.default_rng(3)
+    nloc = 5
+    coord = rng.normal(size=(1, nloc, 3)) * 1.5
+    atype = np.array([[0, 1, 0, 1, 0]], dtype=np.int64)
+    box = np.eye(3).reshape(1, 9) * 20.0
+    model = _ener_model([200])
+    # energy BEFORE setting bias (zero out-bias), graph path
+    g_zero = model.call_common(coord, atype, box, neighbor_graph_method="dense")
+    # set a non-zero per-type energy out-bias
+    model.atomic_model.out_bias[0, :, 0] = np.array([0.3, -0.7])
+    g = model.call_common(coord, atype, box, neighbor_graph_method="dense")
+    d = model.call_common(coord, atype, box, neighbor_graph_method="legacy")
+    # graph applies out-stat exactly like dense
+    for k in ("energy", "energy_redu"):
+        np.testing.assert_allclose(
+            np.asarray(g[k]), np.asarray(d[k]), rtol=1e-12, atol=1e-12
+        )
+    # non-vacuous: the bias actually shifted the graph energy
+    assert not np.allclose(np.asarray(g["energy"]), np.asarray(g_zero["energy"]))
