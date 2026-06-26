@@ -1,13 +1,10 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import unittest
 from dataclasses import (
     dataclass,
 )
-from importlib.util import (
-    find_spec,
-)
 
 import numpy as np
+import pytest
 
 from deepmd.jax.env import (
     jax,
@@ -18,6 +15,7 @@ from deepmd.jax.jax_md import (
     energy_fn,
     force_fn,
     load_model,
+    neighbor_list,
 )
 
 
@@ -111,8 +109,51 @@ def test_dense_neighbor_uses_jax_md_displacement_convention():
     np.testing.assert_allclose(potential(coord, neighbor=neighbor), 0.04, atol=1e-12)
 
 
-@unittest.skipIf(find_spec("jax_md") is None, "jax-md is not installed")
+def test_dense_neighbor_rejects_scalar_metric():
+    potential = energy_fn(
+        EdgeModel(),
+        [0, 1],
+        displacement_fn=lambda ra, rb: jnp.linalg.norm(ra - rb),
+    )
+    coord = jnp.asarray(
+        [
+            [0.1, 0.0, 0.0],
+            [9.9, 0.0, 0.0],
+        ]
+    )
+    neighbor = DenseNeighbor(jnp.asarray([[1], [0]], dtype=jnp.int32))
+
+    with pytest.raises(ValueError, match="scalar metric"):
+        potential(coord, neighbor=neighbor)
+
+
+def test_neighbor_list_rejects_unsupported_format_and_scalar_metric():
+    pytest.importorskip("jax_md")
+    from jax_md import (
+        partition,
+        space,
+    )
+
+    displacement, _ = space.periodic(10.0)
+    with pytest.raises(ValueError, match="Only dense"):
+        neighbor_list(
+            EdgeModel(),
+            displacement,
+            10.0,
+            format=partition.NeighborListFormat.Sparse,
+        )
+
+    with pytest.raises(ValueError, match="scalar metric"):
+        as_jax_md(
+            EdgeModel(),
+            lambda ra, rb: jnp.linalg.norm(ra - rb),
+            10.0,
+            [0, 1],
+        )
+
+
 def test_actual_jax_md_neighbor_list():
+    pytest.importorskip("jax_md")
     from jax_md import (
         space,
     )

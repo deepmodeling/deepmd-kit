@@ -165,7 +165,10 @@ def neighbor_list(
         ) from exc
 
     jax_model = load_model(model)
-    kwargs.setdefault("format", partition.NeighborListFormat.Dense)
+    neighbor_format = kwargs.setdefault("format", partition.NeighborListFormat.Dense)
+    if neighbor_format != partition.NeighborListFormat.Dense:
+        raise ValueError("Only dense JAX-MD neighbor lists are supported.")
+    _validate_displacement_or_metric(displacement_or_metric)
     return partition.neighbor_list(
         displacement_or_metric,
         box,
@@ -194,6 +197,19 @@ def as_jax_md(
     )
     nlist_fn = neighbor_list(jax_model, displacement_or_metric, box, **kwargs)
     return nlist_fn, potential
+
+
+def _validate_displacement_or_metric(
+    displacement_or_metric: Callable[..., Array],
+) -> None:
+    """Reject scalar metrics where DeePMD needs vector displacements."""
+    coord = jnp.zeros((3,), dtype=jnp.float32)
+    displacement = jnp.asarray(displacement_or_metric(coord, coord))
+    if displacement.shape != coord.shape:
+        raise ValueError(
+            "Dense neighbor evaluation requires a displacement function returning "
+            "vectors with shape (..., 3); scalar metric functions are not supported."
+        )
 
 
 def _normalize_atom_types(model: Any, atom_types: Sequence[int | str] | Array) -> Array:
@@ -357,6 +373,11 @@ def _jax_md_neighbor_to_lower_inputs(
                 )
             )
         )(central_coord, neighbor_coord)
+        if displacement.shape != neighbor_coord.shape:
+            raise ValueError(
+                "Dense neighbor evaluation requires a displacement function returning "
+                "vectors with shape (..., 3); scalar metric functions are not supported."
+            )
         # JAX-MD displacement functions use the Ra - Rb convention.
         ghost_coord = central_coord - displacement
 
