@@ -2,6 +2,7 @@
 import unittest
 
 import numpy as np
+import pytest
 
 from deepmd.dpmodel.utils.env_mat import (
     EnvMat,
@@ -105,3 +106,62 @@ class TestEdgeEnvMat(unittest.TestCase):
                 atol=0,
                 err_msg=f"stddev slot {k} != slot 0",
             )
+
+
+# ── Protection parity (Task 6) ────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("protection", [0.0, 1e-2])  # env-mat protection offset
+def test_edge_env_mat_protection_parity(protection):
+    """edge_env_mat(protection=p, edge_mask=...) must match EnvMat(protection=p).call slice."""
+    rng = np.random.default_rng(7)
+    rcut, rcut_smth = 4.0, 0.5
+    nf, nloc, nnei = 1, 4, 6
+    nt = 2
+
+    ext_coord = rng.normal(size=(nf, nloc, 3)) * 1.5
+    atype = np.array([[0, 1, 0, 1]], dtype=np.int64)
+
+    # Build nlist with at most 3 valid neighbors per atom; slots 3-5 are padding (-1).
+    nlist = -np.ones((nf, nloc, nnei), dtype=np.int64)
+    for i in range(nloc):
+        ns = [j for j in range(nloc) if j != i][:nnei]
+        nlist[0, i, : len(ns)] = ns
+    mapping = np.arange(nloc, dtype=np.int64)[None]
+
+    davg = rng.normal(size=(nt, 4))
+    dstd = np.abs(rng.normal(size=(nt, 4))) + 0.5
+
+    # ── dense reference (EnvMat.call) ──────────────────────────────────────
+    davg_dense = np.broadcast_to(davg[:, None, :], (nt, nnei, 4)).copy()
+    dstd_dense = np.broadcast_to(dstd[:, None, :], (nt, nnei, 4)).copy()
+    dmat, _, _ = EnvMat(rcut, rcut_smth, protection=protection).call(
+        ext_coord, atype, nlist, davg_dense, dstd_dense
+    )
+
+    # ── graph path (edge_env_mat with edge_mask) ───────────────────────────
+    ng = from_dense_quartet(ext_coord, nlist, mapping)
+    center_type = atype.reshape(-1)[ng.edge_index[1]]
+    em = edge_env_mat(
+        ng.edge_vec,
+        center_type,
+        davg,
+        dstd,
+        rcut,
+        rcut_smth,
+        protection=protection,
+        edge_mask=ng.edge_mask,
+    )
+
+    # Compare valid edges only, matched to their dense (frame, dst, slot) position.
+    ei = ng.edge_index[:, ng.edge_mask]
+    for k in range(ei.shape[1]):
+        src, dst = int(ei[0, k]), int(ei[1, k])
+        slot = list(nlist[0, dst]).index(src)
+        np.testing.assert_allclose(
+            em[ng.edge_mask][k],
+            dmat[0, dst, slot],
+            rtol=1e-12,
+            atol=1e-12,
+            err_msg=f"protection={protection}, edge {k} (src={src}, dst={dst}, slot={slot})",
+        )
