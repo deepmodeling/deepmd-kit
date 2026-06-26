@@ -303,15 +303,25 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             comm_dict=comm_dict,
             charge_spin=charge_spin,
         )
-        ret_dict = self.apply_out_stat(ret_dict, atype)
-
-        # nf x nloc
         atom_mask = xp_take_first_n(ext_atom_mask, 1, nloc)
+        return self._finalize_atomic_ret(ret_dict, atom_mask, atype)
+
+    def _finalize_atomic_ret(
+        self, ret_dict: dict, atom_mask: Array, atype: Array
+    ) -> dict:
+        """Out-stat + atom-exclusion + virtual-atom zeroing + ``mask`` key.
+
+        Shared by the dense (:meth:`forward_common_atomic`) and graph
+        (:meth:`forward_common_atomic_graph`) wrappers. ``atom_mask`` is the
+        (nf, nloc) real-atom mask (from ``make_atom_mask``); ``atype`` is the
+        (nf, nloc) LOCAL atom types (used for out-stat and ``atom_excl``).
+        """
+        xp = array_api_compat.array_namespace(atype)
+        ret_dict = self.apply_out_stat(ret_dict, atype)
         if self.atom_excl is not None:
             atom_mask = xp.logical_and(
                 atom_mask, self.atom_excl.build_type_exclude_mask(atype)
             )
-
         for kk in ret_dict.keys():
             out_shape = ret_dict[kk].shape
             out_shape2 = math.prod(out_shape[2:])
@@ -319,7 +329,6 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             tmp_arr = xp.where(atom_mask[:, :, None], tmp_arr, xp.zeros_like(tmp_arr))
             ret_dict[kk] = xp.reshape(tmp_arr, out_shape)
         ret_dict["mask"] = xp.astype(atom_mask, xp.int32)
-
         return ret_dict
 
     def call(
