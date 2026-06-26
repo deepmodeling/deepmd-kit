@@ -14,18 +14,12 @@ from typing import (
     Any,
 )
 
-from deepmd.dpmodel.utils.serialization import (
-    load_dp_model,
-)
 from deepmd.jax.env import (
     jax,
     jnp,
 )
 from deepmd.jax.model.base_model import (
     BaseModel,
-)
-from deepmd.jax.model.hlo import (
-    HLO,
 )
 from deepmd.jax.utils.serialization import (
     serialize_from_file,
@@ -49,8 +43,12 @@ def load_model(model: str | Path | Any) -> Any:
         jax_model.model_def_script = json.dumps(data.get("model_def_script", {}))
         return jax_model
     if model_path.endswith(".hlo"):
-        return _load_hlo_model(model_path)
-    raise ValueError("JAX-MD interface supports .jax checkpoints and .hlo models.")
+        raise NotImplementedError(
+            "JAX-MD does not support .hlo models yet. The JAX-MD simulation "
+            "helpers require differentiating the energy function, while exported "
+            "StableHLO models do not expose a VJP to JAX. Use a .jax checkpoint."
+        )
+    raise ValueError("JAX-MD interface supports .jax checkpoints.")
 
 
 def energy_fn(
@@ -196,23 +194,6 @@ def as_jax_md(
     )
     nlist_fn = neighbor_list(jax_model, displacement_or_metric, box, **kwargs)
     return nlist_fn, potential
-
-
-def _load_hlo_model(model_file: str) -> HLO:
-    """Load a DeePMD HLO model into the JAX inference wrapper."""
-    model_data = load_dp_model(model_file)
-    return HLO(
-        stablehlo=model_data["@variables"]["stablehlo"].tobytes(),
-        stablehlo_atomic_virial=model_data["@variables"][
-            "stablehlo_atomic_virial"
-        ].tobytes(),
-        stablehlo_no_ghost=model_data["@variables"]["stablehlo_no_ghost"].tobytes(),
-        stablehlo_atomic_virial_no_ghost=model_data["@variables"][
-            "stablehlo_atomic_virial_no_ghost"
-        ].tobytes(),
-        model_def_script=json.dumps(model_data["model_def_script"]),
-        **model_data["constants"],
-    )
 
 
 def _normalize_atom_types(model: Any, atom_types: Sequence[int | str] | Array) -> Array:

@@ -17,6 +17,7 @@ from deepmd.jax.jax_md import (
     as_jax_md,
     energy_fn,
     force_fn,
+    load_model,
 )
 
 
@@ -86,6 +87,11 @@ def test_energy_and_force_fn():
     np.testing.assert_allclose(potential(coord), 15.25)
     np.testing.assert_allclose(force_fn(potential)(coord), -2.0 * coord)
     np.testing.assert_allclose(jax.jit(potential)(coord), 15.25)
+
+
+def test_hlo_model_raises_not_implemented():
+    with np.testing.assert_raises(NotImplementedError):
+        load_model("model.hlo")
 
 
 def test_dense_neighbor_uses_jax_md_displacement_convention():
