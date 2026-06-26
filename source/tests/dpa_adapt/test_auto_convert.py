@@ -5,13 +5,14 @@ from __future__ import (
     annotations,
 )
 
+from importlib.util import (
+    find_spec,
+)
 from pathlib import (
     Path,
 )
 
 import pytest
-
-from importlib.util import find_spec
 
 _HAS_RDKIT = find_spec("rdkit") is not None
 
