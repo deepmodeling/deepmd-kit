@@ -152,6 +152,8 @@ class TestStatFileConsistency(unittest.TestCase):
         tf_stat_dir: str,
         pt_stat_dir: str,
         selected_names: set[str] | None = None,
+        rtol: float = 1e-10,
+        atol: float = 1e-12,
     ) -> None:
         """Compare stat file directories between TensorFlow and PyTorch.
 
@@ -163,6 +165,10 @@ class TestStatFileConsistency(unittest.TestCase):
             PyTorch stat file directory
         selected_names : set[str], optional
             Basenames of stat files to compare. When omitted, compare every file.
+        rtol : float
+            Relative tolerance for numeric stat file comparisons.
+        atol : float
+            Absolute tolerance for numeric stat file comparisons.
         """
         tf_path = Path(tf_stat_dir)
         pt_path = Path(pt_stat_dir)
@@ -216,12 +222,11 @@ class TestStatFileConsistency(unittest.TestCase):
             )
 
             if np.issubdtype(tf_data.dtype, np.number):
-                # Values should be very close (allow for small numerical differences)
                 np.testing.assert_allclose(
                     tf_data,
                     pt_data,
-                    rtol=1e-4,
-                    atol=1e-6,
+                    rtol=rtol,
+                    atol=atol,
                     err_msg=f"Values differ in {filename}",
                 )
             else:
@@ -250,7 +255,7 @@ class TestStatFileConsistency(unittest.TestCase):
                 "pt", self.config_base, temp_dir, pt_stat_dir
             )
 
-            # Compare the generated stat files
+            # Compare the generated stat files with tight fp64 tolerances.
             self._compare_stat_directories(tf_stat_dir, pt_stat_dir)
 
     @unittest.skipUnless(
@@ -283,6 +288,9 @@ class TestStatFileConsistency(unittest.TestCase):
                 tf_stat_dir,
                 pt_stat_dir,
                 selected_names={"bias_atom_energy"},
+                # This regression check runs through the full TF/PT CLI paths.
+                rtol=1e-5,
+                atol=1e-6,
             )
 
 
