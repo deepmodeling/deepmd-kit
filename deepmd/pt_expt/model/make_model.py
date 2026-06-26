@@ -341,7 +341,9 @@ def make_model(
                 ``<var>_derv_c_redu`` (nf, *shape, 9), and -- when
                 ``do_atomic_virial`` -- ``<var>_derv_c`` (nf, nloc, *shape, 9).
             """
-            from deepmd.dpmodel.utils.neighbor_graph import NeighborGraph
+            from deepmd.dpmodel.utils.neighbor_graph import (
+                NeighborGraph,
+            )
 
             # make edge_vec the autograd leaf for the energy backward
             edge_vec = edge_vec.detach().requires_grad_(True)

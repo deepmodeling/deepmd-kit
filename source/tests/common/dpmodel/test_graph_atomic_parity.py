@@ -2,12 +2,24 @@
 import numpy as np
 import pytest
 
-from deepmd.dpmodel.atomic_model.dp_atomic_model import DPAtomicModel
-from deepmd.dpmodel.descriptor.dpa1 import DescrptDPA1
-from deepmd.dpmodel.fitting import InvarFitting
-from deepmd.dpmodel.model.ener_model import EnergyModel
-from deepmd.dpmodel.utils.neighbor_graph import from_dense_quartet
-from deepmd.dpmodel.utils.nlist import extend_input_and_build_neighbor_list
+from deepmd.dpmodel.atomic_model.dp_atomic_model import (
+    DPAtomicModel,
+)
+from deepmd.dpmodel.descriptor.dpa1 import (
+    DescrptDPA1,
+)
+from deepmd.dpmodel.fitting import (
+    InvarFitting,
+)
+from deepmd.dpmodel.model.ener_model import (
+    EnergyModel,
+)
+from deepmd.dpmodel.utils.neighbor_graph import (
+    from_dense_quartet,
+)
+from deepmd.dpmodel.utils.nlist import (
+    extend_input_and_build_neighbor_list,
+)
 
 
 def _atomic_model(sel=(30,), **kw):
