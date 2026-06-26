@@ -443,6 +443,7 @@ def make_model(
             # Unravel to rectangular ``(nf, nloc, *)`` at the public I/O boundary
             # so that callers receive the same shape as the dense ``call_common``.
             N = nf * nloc
+            # public call_common always passes rectangular (nf,nloc) coord/atype (N == nf*nloc), so this unravel always applies; ragged graphs reach call_lower_graph/forward_common_lower_graph directly (no unravel) and stay flat (N,*).
             for k in list(model_predict.keys()):
                 v = model_predict[k]
                 # per-frame reduced keys (..._redu) keep their (nf, *) shape; only node-level (N,*) keys unravel — guards the nloc==1 case where N == nf.
