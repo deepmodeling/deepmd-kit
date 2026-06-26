@@ -299,7 +299,13 @@ class DescrptSeAttenV2(DescrptDPA1):
         variables = compress["@variables"]
         self.type_embd_data = variables["type_embd_data"]
         self.geo_compress = compress.get("geo_compress", False)
+        self.tebd_compress = True
+        self.se_atten.type_embd_data = self.type_embd_data
+        self.se_atten.tebd_compress = True
+        self.se_atten.geo_compress = self.geo_compress
         if self.geo_compress:
             self.compress_data = variables["compress_data"]
             self.compress_info = variables["compress_info"]
+            self.se_atten.compress_data = self.compress_data
+            self.se_atten.compress_info = self.compress_info
         self.compress = True

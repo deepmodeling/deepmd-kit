@@ -585,6 +585,8 @@ def main_parser() -> argparse.ArgumentParser:
             dp compress
             dp --tf compress -i frozen_model.pb -o compressed_model.pb
             dp --pt compress -i frozen_model.pth -o compressed_model.pth
+            dp --dp compress -i frozen_model.dp -o compressed_model.dp
+            dp --jax compress -i frozen_model.hlo -o compressed_model.hlo
         """
         ),
     )
@@ -593,14 +595,14 @@ def main_parser() -> argparse.ArgumentParser:
         "--input",
         default="frozen_model",
         type=str,
-        help="The original frozen model, which will be compressed by the code. Filename (prefix) of the input model file. TensorFlow backend: suffix is .pb; PyTorch backend: suffix is .pth",
+        help="The original frozen model, which will be compressed by the code. Filename (prefix) of the input model file. TensorFlow backend: suffix is .pb; PyTorch backend: suffix is .pth; DPModel backend: suffix is .dp; JAX backend: suffix is .hlo or .jax",
     )
     parser_compress.add_argument(
         "-o",
         "--output",
         default="frozen_model_compressed",
         type=str,
-        help="The compressed model. Filename (prefix) of the output model file. TensorFlow backend: suffix is .pb; PyTorch backend: suffix is .pth",
+        help="The compressed model. Filename (prefix) of the output model file. TensorFlow backend: suffix is .pb; PyTorch backend: suffix is .pth; DPModel backend: suffix is .dp; JAX backend: suffix is .hlo or .jax",
     )
     parser_compress.add_argument(
         "-s",

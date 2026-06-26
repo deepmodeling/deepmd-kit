@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import math
+import warnings
 from collections.abc import (
     Callable,
 )
@@ -63,6 +64,9 @@ from deepmd.utils.finetune import (
 )
 from deepmd.utils.path import (
     DPPath,
+)
+from deepmd.utils.tabulate_math import (
+    DPTabulate,
 )
 from deepmd.utils.version import (
     check_version_compatibility,
@@ -345,6 +349,8 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         self.concat_output_tebd = concat_output_tebd
         self.trainable = trainable
         self.precision = precision
+        self.tebd_compress = False
+        self.geo_compress = False
         self.compress = False
 
     def get_rcut(self) -> float:
@@ -567,6 +573,89 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
             )
         return grrg, rot_mat, None, None, sw
 
+    def enable_compression(
+        self,
+        min_nbor_dist: float,
+        table_extrapolate: float = 5,
+        table_stride_1: float = 0.01,
+        table_stride_2: float = 0.1,
+        check_frequency: int = -1,
+    ) -> None:
+        """Enable descriptor compression.
+
+        For DPA-1, compression is available for stripped type embeddings. The
+        type embedding branch is always precomputed; the radial embedding table
+        is enabled only when there is no attention layer, matching the PT/TF
+        compression semantics.
+        """
+        if self.compress:
+            raise ValueError("Compression is already enabled.")
+        if self.se_atten.tebd_input_mode != "strip":
+            raise RuntimeError("Type embedding compression only works in strip mode")
+        if self.se_atten.resnet_dt:
+            raise RuntimeError(
+                "Model compression error: descriptor resnet_dt must be false!"
+            )
+        for tt in self.se_atten.exclude_types:
+            if (tt[0] not in range(self.se_atten.ntypes)) or (
+                tt[1] not in range(self.se_atten.ntypes)
+            ):
+                raise RuntimeError(
+                    "exclude types"
+                    + str(tt)
+                    + " must within the number of atomic types "
+                    + str(self.se_atten.ntypes)
+                    + "!"
+                )
+        if (
+            self.se_atten.ntypes * self.se_atten.ntypes
+            - len(self.se_atten.exclude_types)
+            == 0
+        ):
+            raise RuntimeError(
+                "Empty embedding-nets are not supported in model compression!"
+            )
+
+        self.se_atten.type_embedding_compression(self.type_embedding)
+        self.type_embd_data = self.se_atten.type_embd_data
+        self.tebd_compress = True
+        self.compress = True
+
+        if self.se_atten.attn_layer == 0:
+            table = DPTabulate(
+                self,
+                self.se_atten.neuron,
+                self.se_atten.type_one_side,
+                self.se_atten.exclude_types,
+                self.se_atten.activation_function,
+            )
+            table_config = [
+                table_extrapolate,
+                table_stride_1,
+                table_stride_2,
+                check_frequency,
+            ]
+            lower, upper = table.build(
+                min_nbor_dist, table_extrapolate, table_stride_1, table_stride_2
+            )
+            self.se_atten.enable_compression(
+                table.data,
+                table_config,
+                lower,
+                upper,
+            )
+            self.compress_data = self.se_atten.compress_data
+            self.compress_info = self.se_atten.compress_info
+            self.geo_compress = True
+        else:
+            self.geo_compress = False
+            warnings.warn(
+                "Attention layer is not 0, only type embedding is compressed. "
+                "Geometric part is not compressed.",
+                UserWarning,
+                stacklevel=2,
+            )
+
     def serialize(self) -> dict:
         """Serialize the descriptor to dict."""
         obj = self.se_atten
@@ -678,9 +767,15 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         variables = compress["@variables"]
         self.type_embd_data = variables["type_embd_data"]
         self.geo_compress = compress.get("geo_compress", False)
+        self.tebd_compress = True
+        self.se_atten.type_embd_data = self.type_embd_data
+        self.se_atten.tebd_compress = True
+        self.se_atten.geo_compress = self.geo_compress
         if self.geo_compress:
             self.compress_data = variables["compress_data"]
             self.compress_info = variables["compress_info"]
+            self.se_atten.compress_data = self.compress_data
+            self.se_atten.compress_info = self.compress_info
         self.compress = True
 
     @classmethod
@@ -919,6 +1014,12 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         self.mean = np.zeros(wanted_shape, dtype=PRECISION_DICT[self.precision])
         self.stddev = np.ones(wanted_shape, dtype=PRECISION_DICT[self.precision])
         self.orig_sel = self.sel
+        self.tebd_compress = False
+        self.geo_compress = False
+        self.is_sorted = len(self.exclude_types) == 0
+        self.compress_data = [np.zeros(0, dtype=PRECISION_DICT[self.precision])]
+        self.compress_info = [np.zeros(0, dtype=PRECISION_DICT[self.precision])]
+        self.type_embd_data = np.zeros(0, dtype=PRECISION_DICT[self.precision])
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
@@ -1057,6 +1158,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         exclude_types: list[tuple[int, int]] = [],
     ) -> None:
         self.exclude_types = exclude_types
+        self.is_sorted = len(self.exclude_types) == 0
         self.emask = PairExcludeMask(self.ntypes, exclude_types=exclude_types)
 
     def cal_g(
@@ -1081,6 +1183,132 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         # nfnl x nnei x ng
         gg = self.embeddings_strip[embedding_idx].call(ss)
         return gg
+
+    def enable_compression(
+        self,
+        table_data: dict[str, Array],
+        table_config: list[int | float],
+        lower: dict[str, int],
+        upper: dict[str, int],
+    ) -> None:
+        """Store tabulated geometric embedding-net data."""
+        net = "filter_net"
+        dtype = self.mean.dtype
+        self.compress_info = [
+            np.asarray(
+                [
+                    lower[net],
+                    upper[net],
+                    upper[net] * table_config[0],
+                    table_config[1],
+                    table_config[2],
+                    table_config[3],
+                ],
+                dtype=dtype,
+            )
+        ]
+        self.compress_data = [np.asarray(table_data[net], dtype=dtype)]
+        self.geo_compress = True
+
+    def type_embedding_compression(self, type_embedding_net: TypeEmbedNet) -> None:
+        """Precompute stripped type embedding network outputs."""
+        if self.tebd_input_mode != "strip":
+            raise RuntimeError("Type embedding compression only works in strip mode")
+        if self.embeddings_strip is None:
+            raise RuntimeError(
+                "embeddings_strip must be initialized for type embedding compression"
+            )
+
+        full_embd = type_embedding_net.call()
+        xp = array_api_compat.array_namespace(full_embd)
+        nt, t_dim = full_embd.shape
+        if self.type_one_side:
+            embd_tensor = self.embeddings_strip[0].call(full_embd)
+        else:
+            type_embedding_nei = xp.tile(
+                xp.reshape(full_embd, (1, nt, t_dim)), (nt, 1, 1)
+            )
+            type_embedding_center = xp.tile(
+                xp.reshape(full_embd, (nt, 1, t_dim)), (1, nt, 1)
+            )
+            two_side_type_embedding = xp.reshape(
+                xp.concat([type_embedding_nei, type_embedding_center], axis=-1),
+                (-1, t_dim * 2),
+            )
+            embd_tensor = self.embeddings_strip[0].call(two_side_type_embedding)
+        self.type_embd_data = embd_tensor
+        self.tebd_compress = True
+
+    def _tabulate_fusion_se_atten(
+        self,
+        table: Array,
+        table_info: Array,
+        em_x: Array,
+        em: Array,
+        two_embed: Array,
+        last_layer_size: int,
+    ) -> Array:
+        """Pure Array API implementation of tabulate_fusion_se_atten forward."""
+        xp = array_api_compat.array_namespace(em_x, em, two_embed)
+        device = array_api_compat.device(em)
+        table = xp.asarray(table[...], dtype=em.dtype, device=device)
+        table_info = xp.asarray(table_info[...], dtype=em.dtype, device=device)
+
+        nloc, nnei = em.shape[:2]
+        xx = xp.reshape(em_x, (nloc, nnei))
+        lower = table_info[0]
+        upper = table_info[1]
+        table_max = table_info[2]
+        stride0 = table_info[3]
+        stride1 = table_info[4]
+
+        zeros = xp.zeros(xx.shape, dtype=xp.int64, device=device)
+        nspline = table.shape[0]
+        last_idx = xp.full(xx.shape, nspline - 1, dtype=xp.int64, device=device)
+        first_stride = xp.astype(xp.floor((upper - lower) / stride0), xp.int64)
+        first_stride_value = xp.astype(first_stride, em.dtype)
+
+        first_idx = xp.astype(xp.floor((xx - lower) / stride0), xp.int64)
+        second_idx = first_stride + xp.astype(
+            xp.floor((xx - upper) / stride1), xp.int64
+        )
+        table_idx = xp.where(
+            xx < lower,
+            zeros,
+            xp.where(
+                xx < upper,
+                first_idx,
+                xp.where(xx < table_max, second_idx, last_idx),
+            ),
+        )
+        table_idx = xp.minimum(xp.maximum(table_idx, zeros), last_idx)
+
+        table_idx_value = xp.astype(table_idx, em.dtype)
+        dx_first = xx - (table_idx_value * stride0 + lower)
+        dx_second = xx - ((table_idx_value - first_stride_value) * stride1 + upper)
+        dx = xp.where(
+            (xx >= lower) & (xx < upper),
+            dx_first,
+            xp.where((xx >= upper) & (xx < table_max), dx_second, xp.zeros_like(xx)),
+        )
+
+        coeff = xp.take(table, xp.reshape(table_idx, (-1,)), axis=0)
+        coeff = xp.reshape(coeff, (nloc, nnei, last_layer_size, 6))
+        dx = xp.reshape(dx, (nloc, nnei, 1))
+        values = (
+            coeff[..., 0]
+            + (
+                coeff[..., 1]
+                + (
+                    coeff[..., 2]
+                    + (coeff[..., 3] + (coeff[..., 4] + coeff[..., 5] * dx) * dx) * dx
+                )
+                * dx
+            )
+            * dx
+        )
+        values = values * two_embed + values
+        return xp.sum(em[:, :, :, None] * values[:, :, None, :], axis=1)
 
     def call(
         self,
@@ -1131,6 +1359,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         rr = rr * xp.astype(exclude_mask[:, :, None], rr.dtype)
         # nfnl x nnei x 1
         ss = rr[..., 0:1]
+        geo_gr = None
         if self.tebd_input_mode in ["concat"]:
             # nfnl x tebd_dim
             atype_embd = xp.reshape(
@@ -1157,8 +1386,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
                 # nfnl x nnei x ng
             gg = self.cal_g(ss, 0)
         elif self.tebd_input_mode in ["strip"]:
-            # nfnl x nnei x ng
-            gg_s = self.cal_g(ss, 0)
+            ss_scalar = ss
             assert self.embeddings_strip is not None
             assert type_embedding is not None
             ntypes_with_padding = type_embedding.shape[0]
@@ -1168,7 +1396,14 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             # (nf x nl x nnei) x ng
             nei_type_index = xp.tile(xp.reshape(nei_type, (-1, 1)), (1, ng))
             if self.type_one_side:
-                tt_full = self.cal_g_strip(type_embedding, 0)
+                if self.tebd_compress:
+                    tt_full = xp.asarray(
+                        self.type_embd_data[...],
+                        dtype=rr.dtype,
+                        device=array_api_compat.device(rr),
+                    )
+                else:
+                    tt_full = self.cal_g_strip(type_embedding, 0)
                 # (nf x nl x nnei) x ng
                 gg_t = xp_take_along_axis(tt_full, nei_type_index, axis=0)
             else:
@@ -1183,46 +1418,70 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
                 idx = xp.tile(xp.reshape((idx_i + idx_j), (-1, 1)), (1, ng))
                 # Cast to int64 for PyTorch backend (take_along_dim requires Long indices)
                 idx = xp.astype(idx, xp.int64)
-                # (ntypes) * ntypes * nt
-                type_embedding_nei = xp.tile(
-                    xp.reshape(type_embedding, (1, ntypes_with_padding, nt)),
-                    (ntypes_with_padding, 1, 1),
-                )
-                # ntypes * (ntypes) * nt
-                type_embedding_center = xp.tile(
-                    xp.reshape(type_embedding, (ntypes_with_padding, 1, nt)),
-                    (1, ntypes_with_padding, 1),
-                )
-                # (ntypes * ntypes) * (nt+nt)
-                two_side_type_embedding = xp.reshape(
-                    xp.concat([type_embedding_nei, type_embedding_center], axis=-1),
-                    (-1, nt * 2),
-                )
-                tt_full = self.cal_g_strip(two_side_type_embedding, 0)
+                if self.tebd_compress:
+                    tt_full = xp.asarray(
+                        self.type_embd_data[...],
+                        dtype=rr.dtype,
+                        device=array_api_compat.device(rr),
+                    )
+                else:
+                    # (ntypes) * ntypes * nt
+                    type_embedding_nei = xp.tile(
+                        xp.reshape(type_embedding, (1, ntypes_with_padding, nt)),
+                        (ntypes_with_padding, 1, 1),
+                    )
+                    # ntypes * (ntypes) * nt
+                    type_embedding_center = xp.tile(
+                        xp.reshape(type_embedding, (ntypes_with_padding, 1, nt)),
+                        (1, ntypes_with_padding, 1),
+                    )
+                    # (ntypes * ntypes) * (nt+nt)
+                    two_side_type_embedding = xp.reshape(
+                        xp.concat([type_embedding_nei, type_embedding_center], axis=-1),
+                        (-1, nt * 2),
+                    )
+                    tt_full = self.cal_g_strip(two_side_type_embedding, 0)
                 # (nf x nl x nnei) x ng
                 gg_t = xp_take_along_axis(tt_full, idx, axis=0)
             # (nf x nl) x nnei x ng
             gg_t = xp.reshape(gg_t, (nf * nloc, nnei, ng))
             if self.smooth:
                 gg_t = gg_t * xp.reshape(sw, (-1, self.nnei, 1))
-            # nfnl x nnei x ng
-            gg = gg_s * gg_t + gg_s
+            if self.geo_compress:
+                geo_gr = self._tabulate_fusion_se_atten(
+                    self.compress_data[0],
+                    self.compress_info[0],
+                    ss_scalar,
+                    rr,
+                    gg_t,
+                    self.filter_neuron[-1],
+                )
+                gg = None
+            else:
+                # nfnl x nnei x ng
+                gg_s = self.cal_g(ss_scalar, 0)
+                gg = gg_s * gg_t + gg_s
         else:
             raise NotImplementedError
 
-        normed = safe_for_vector_norm(
-            xp.reshape(rr, (-1, nnei, 4))[:, :, 1:4], axis=-1, keepdims=True
-        )
-        input_r = xp.reshape(rr, (-1, nnei, 4))[:, :, 1:4] / xp.maximum(
-            normed,
-            xp.full_like(normed, 1e-12),
-        )
-        gg = self.dpa1_attention(
-            gg, nlist_mask, input_r=input_r, sw=sw
-        )  # shape is [nframes*nloc, self.neei, out_size]
-        # nfnl x ng x 4
-        # gr = xp.einsum("lni,lnj->lij", gg, rr)
-        gr = xp.sum(gg[:, :, :, None] * rr[:, :, None, :], axis=1)
+        if geo_gr is None:
+            normed = safe_for_vector_norm(
+                xp.reshape(rr, (-1, nnei, 4))[:, :, 1:4], axis=-1, keepdims=True
+            )
+            input_r = xp.reshape(rr, (-1, nnei, 4))[:, :, 1:4] / xp.maximum(
+                normed,
+                xp.full_like(normed, 1e-12),
+            )
+            gg = self.dpa1_attention(
+                gg, nlist_mask, input_r=input_r, sw=sw
+            )  # shape is [nframes*nloc, self.neei, out_size]
+            # nfnl x ng x 4
+            # gr = xp.einsum("lni,lnj->lij", gg, rr)
+            gr = xp.sum(gg[:, :, :, None] * rr[:, :, None, :], axis=1)
+            g2 = xp.reshape(gg, (nf, nloc, self.nnei, self.filter_neuron[-1]))
+        else:
+            gr = xp.permute_dims(geo_gr, (0, 2, 1))
+            g2 = None
         gr /= self.nnei
         gr1 = gr[:, : self.axis_neuron, :]
         # nfnl x ng x ng1
@@ -1234,7 +1493,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         )
         return (
             xp.reshape(grrg, (nf, nloc, self.filter_neuron[-1] * self.axis_neuron)),
-            xp.reshape(gg, (nf, nloc, self.nnei, self.filter_neuron[-1])),
+            g2,
             xp.reshape(dmatrix, (nf, nloc, self.nnei, 4))[..., 1:],
             xp.reshape(gr[..., 1:], (nf, nloc, self.filter_neuron[-1], 3)),
             xp.reshape(sw, (nf, nloc, nnei, 1)),
