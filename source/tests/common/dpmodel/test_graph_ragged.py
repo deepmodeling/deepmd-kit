@@ -6,10 +6,18 @@ per-frame reductions use segment_sum over frame_id. UNEQUAL per-frame node count
 
 import numpy as np
 
-from deepmd.dpmodel.descriptor.dpa1 import DescrptDPA1
-from deepmd.dpmodel.fitting import InvarFitting
-from deepmd.dpmodel.model.ener_model import EnergyModel
-from deepmd.dpmodel.utils.neighbor_graph import frame_id_from_n_node
+from deepmd.dpmodel.descriptor.dpa1 import (
+    DescrptDPA1,
+)
+from deepmd.dpmodel.fitting import (
+    InvarFitting,
+)
+from deepmd.dpmodel.model.ener_model import (
+    EnergyModel,
+)
+from deepmd.dpmodel.utils.neighbor_graph import (
+    frame_id_from_n_node,
+)
 
 
 def test_frame_id_ragged():
@@ -26,10 +34,18 @@ def test_forward_common_atomic_graph_ragged():
     """
     import numpy as np
 
-    from deepmd.dpmodel.atomic_model.dp_atomic_model import DPAtomicModel
-    from deepmd.dpmodel.descriptor.dpa1 import DescrptDPA1
-    from deepmd.dpmodel.fitting import InvarFitting
-    from deepmd.dpmodel.utils.neighbor_graph import NeighborGraph
+    from deepmd.dpmodel.atomic_model.dp_atomic_model import (
+        DPAtomicModel,
+    )
+    from deepmd.dpmodel.descriptor.dpa1 import (
+        DescrptDPA1,
+    )
+    from deepmd.dpmodel.fitting import (
+        InvarFitting,
+    )
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        NeighborGraph,
+    )
 
     ds = DescrptDPA1(rcut=4.0, rcut_smth=0.5, sel=[30], ntypes=2, attn_layer=0)
     ft = InvarFitting("energy", 2, ds.get_dim_out(), 1, mixed_types=True)
@@ -58,9 +74,15 @@ def test_call_lower_graph_ragged_energy_reduction():
     """Per-frame energy_redu = segment_sum of the frame's atom energies; ragged."""
     import numpy as np
 
-    from deepmd.dpmodel.descriptor.dpa1 import DescrptDPA1
-    from deepmd.dpmodel.fitting import InvarFitting
-    from deepmd.dpmodel.model.ener_model import EnergyModel
+    from deepmd.dpmodel.descriptor.dpa1 import (
+        DescrptDPA1,
+    )
+    from deepmd.dpmodel.fitting import (
+        InvarFitting,
+    )
+    from deepmd.dpmodel.model.ener_model import (
+        EnergyModel,
+    )
 
     ds = DescrptDPA1(rcut=4.0, rcut_smth=0.5, sel=[30], ntypes=2, attn_layer=0)
     ft = InvarFitting("energy", 2, ds.get_dim_out(), 1, mixed_types=True)

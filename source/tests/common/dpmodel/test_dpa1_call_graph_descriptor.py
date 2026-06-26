@@ -179,7 +179,9 @@ class TestDpa1DescriptorCallGraph:
 
     def test_call_graph_returns_flat_node_axis(self) -> None:
         """call_graph output lives on the flat (N,) node axis, not (nf, nloc)."""
-        from deepmd.dpmodel.utils.neighbor_graph import from_dense_quartet
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            from_dense_quartet,
+        )
 
         dd = self._make([30])
         ext_coord, ext_atype, mapping, nlist = extend_input_and_build_neighbor_list(

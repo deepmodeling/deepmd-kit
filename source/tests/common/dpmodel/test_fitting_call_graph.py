@@ -8,7 +8,9 @@ the dense net via the (N,1,nd) single-atom-frame workaround. fparam is node-leve
 import numpy as np
 import pytest
 
-from deepmd.dpmodel.fitting import InvarFitting
+from deepmd.dpmodel.fitting import (
+    InvarFitting,
+)
 
 
 @pytest.mark.parametrize("ndf", [0, 3])  # numb_fparam: no-fparam AND fparam
