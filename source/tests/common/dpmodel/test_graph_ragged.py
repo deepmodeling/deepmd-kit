@@ -49,3 +49,42 @@ def test_frame_id_rectangular():
     np.testing.assert_array_equal(
         fid, np.array([0, 0, 0, 0, 1, 1, 1, 1], dtype=fid.dtype)
     )
+
+
+def test_call_lower_graph_ragged_energy_reduction():
+    """Per-frame energy_redu = segment_sum of the frame's atom energies; ragged."""
+    import numpy as np
+
+    from deepmd.dpmodel.descriptor.dpa1 import DescrptDPA1
+    from deepmd.dpmodel.fitting import InvarFitting
+    from deepmd.dpmodel.model.ener_model import EnergyModel
+
+    ds = DescrptDPA1(rcut=4.0, rcut_smth=0.5, sel=[30], ntypes=2, attn_layer=0)
+    ft = InvarFitting("energy", 2, ds.get_dim_out(), 1, mixed_types=True)
+    m = EnergyModel(ds, ft, type_map=["a", "b"])
+    n_node = np.array([3, 2], dtype=np.int64)
+    atype = np.array([0, 1, 0, 1, 0], dtype=np.int64)
+    edge_index = np.array([[1, 0, 4], [0, 1, 3]], dtype=np.int64)
+    edge_vec = np.array([[1.0, 0, 0], [-1.0, 0, 0], [0.5, 0, 0]], dtype=np.float64)
+    edge_mask = np.array([True, True, True])
+    out = m.call_lower_graph(
+        atype=atype,
+        n_node=n_node,
+        edge_index=edge_index,
+        edge_vec=edge_vec,
+        edge_mask=edge_mask,
+    )
+    assert out["energy"].shape == (5, 1)  # flat node energy
+    assert out["energy_redu"].shape == (2, 1)  # per-FRAME reduced
+    np.testing.assert_allclose(
+        out["energy_redu"][0, 0],
+        out["energy"][0:3, 0].sum(),
+        rtol=1e-12,
+        atol=1e-12,
+    )
+    np.testing.assert_allclose(
+        out["energy_redu"][1, 0],
+        out["energy"][3:5, 0].sum(),
+        rtol=1e-12,
+        atol=1e-12,
+    )
