@@ -136,9 +136,9 @@ class DPATrainer:
     learning_rate, stop_lr : float
         Exp-decay LR endpoints.
     decay_steps : int
-        Steps between LR decays (deepmd-kit ``exp`` scheduler).  Default 1000.
+        Steps between LR decays (DeePMD-kit ``exp`` scheduler).  Default 1000.
     warmup_steps : int
-        Linear LR warmup steps (deepmd-kit native).  0 = disabled.
+        Linear LR warmup steps (DeePMD-kit native).  0 = disabled.
     max_steps : int
         Total training steps.
     batch_size : str or int

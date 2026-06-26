@@ -524,31 +524,31 @@ def smiles_to_npy(
 
     Parameters
     ----------
-    data :
+    data
         Path to a CSV file, or a dict with ``"dataset"`` key.
-    output_dir :
+    output_dir
         Root directory for ``train/`` and ``valid/`` subdirectories.
-    property_name :
+    property_name
         Name of the property label (stored as ``set.*/{property_name}.npy``).
-    property_col :
+    property_col
         CSV column containing the target value.
-    train_ratio :
+    train_ratio
         Fraction of samples used for training (remainder = validation).
-    mol_dir :
+    mol_dir
         Directory containing pre-generated structure files.  When omitted,
         SMILES are converted to 3D via RDKit.
-    mol_template :
+    mol_template
         Template for structure filenames, e.g. ``"id{row}.mol"``. Supported
         extensions are ``.mol``, ``.sdf``, ``.xyz``, and ``.pdb``.
-    smiles_col :
+    smiles_col
         CSV column containing SMILES strings.
-    overlap_tol :
+    overlap_tol
         Minimum inter-atomic distance (Å) below which a structure is rejected.
     split_seed : int, optional
         Random seed for train/valid splitting. Defaults to 42.
     conformer_seed : int, optional
         Random seed for RDKit 3D conformer generation. Defaults to 42.
-    overwrite :
+    overwrite
         If True, remove *output_dir* before writing.
 
     Returns

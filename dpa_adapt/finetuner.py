@@ -238,8 +238,8 @@ def _load_npy_system(
 
     Returns
     -------
-    coords     : np.ndarray, shape (n_frames, n_atoms*3)
-    boxes      : np.ndarray, shape (n_frames, 9), or None
+    coords : np.ndarray, shape (n_frames, n_atoms*3)
+    boxes : np.ndarray, shape (n_frames, 9), or None
     atom_types : np.ndarray, shape (n_atoms,)
     """
     d = system.data
@@ -663,7 +663,7 @@ class DPAFineTuner:
         Start and end points of the exponential learning-rate schedule
         (training paradigms).
     decay_steps : int or None
-        Steps between LR decays for the ``exp`` scheduler (deepmd-kit
+        Steps between LR decays for the ``exp`` scheduler (DeePMD-kit
         native).  ``None`` (default) auto-selects: 1000 for
         ``frozen_head``/``finetune``; 1000 for MFT property mode,
         5000 for MFT ener mode.

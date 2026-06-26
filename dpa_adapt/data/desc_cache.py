@@ -151,6 +151,8 @@ def load_or_extract(
         Pooling strategy.
     cache : bool
         If False the cache is bypassed entirely.
+    type_map : list[str] or tuple[str, ...], optional
+        Element symbols used to build the descriptor model and cache key.
 
     Returns
     -------

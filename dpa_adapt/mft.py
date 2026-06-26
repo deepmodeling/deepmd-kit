@@ -343,8 +343,10 @@ class MFTFineTuner:
 
             force.npy is optional (loss weight applies regardless; set to 0
             if absent).
+
         aux_data : str or list[str]
             Aux deepmd/npy directory. Must have energy.npy + force.npy.
+
         valid_data : str, optional
             Validation deepmd/npy directory.
         """
