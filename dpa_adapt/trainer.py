@@ -142,7 +142,7 @@ class DPATrainer:
     max_steps : int
         Total training steps.
     batch_size : str or int
-        DeepMD-kit batch_size spec (e.g. ``"auto:512"``).
+        DeePMD-kit batch_size spec (e.g. ``"auto:512"``).
     loss_function : str
         ``"mse"`` or ``"smooth_mae"``.
     seed : int
@@ -150,7 +150,7 @@ class DPATrainer:
     output_dir : str
         Directory for checkpoints, input.json, and manifests.
     save_freq, disp_freq : int
-        DeepMD-kit save/display intervals.
+        DeePMD-kit save/display intervals.
     """
 
     def __init__(
@@ -279,7 +279,7 @@ class DPATrainer:
         descriptor["activation_function"] = "silut:3.0"
         descriptor["repflow"]["fix_stat_std"] = 0.3
         # LP: freeze the descriptor by setting trainable=False on the descriptor
-        # block. DeepMD-kit 3.1.3 honors this field in the `--finetune` code path
+        # block. DeePMD-kit 3.1.3 honors this field in the `--finetune` code path
         # (verified by reading deepmd.pt.train.training; the descriptor's
         # `requires_grad_` is set from this flag at init). If a future deepmd-kit
         # version changes this, switch to passing `--freeze-descriptor` to the
@@ -345,7 +345,7 @@ class DPATrainer:
         return fn
 
     def _build_config(self) -> dict:
-        # Seed propagation in DeepMD-kit v3.1.3 (deepmd/utils/argcheck.py):
+        # Seed propagation in DeePMD-kit v3.1.3 (deepmd/utils/argcheck.py):
         #   - model.descriptor.seed   verified: descrpt_dpa3_args() L1428
         #   - model.fitting_net.seed  verified: fitting_property() L1966
         #   - training.seed           verified: training_args() L3856
@@ -633,7 +633,7 @@ class DPATrainer:
                 f"stdout:\n{result.stdout}\n"
                 f"stderr:\n{result.stderr}"
             )
-        # DeepMD-kit logs PROPERTY MAE/RMSE to stderr (Python logging default).
+        # DeePMD-kit logs PROPERTY MAE/RMSE to stderr (Python logging default).
         # Feed both streams to the parser.
         combined = result.stdout + "\n" + result.stderr
 
