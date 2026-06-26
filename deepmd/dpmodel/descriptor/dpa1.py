@@ -708,18 +708,33 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         if obj.tebd_input_mode in ["strip"]:
             data.update({"embeddings_strip": obj.embeddings_strip.serialize()})
         if self.compress:
+            type_embd_data = (
+                self.type_embd_data
+                if hasattr(self, "type_embd_data")
+                else obj.type_embd_data
+            )
             compress_dict: dict = {
                 "@variables": {
-                    "type_embd_data": to_numpy_array(self.type_embd_data),
+                    "type_embd_data": to_numpy_array(type_embd_data),
                 },
                 "geo_compress": self.geo_compress,
             }
             if self.geo_compress:
+                compress_data = (
+                    self.compress_data
+                    if hasattr(self, "compress_data")
+                    else obj.compress_data
+                )
+                compress_info = (
+                    self.compress_info
+                    if hasattr(self, "compress_info")
+                    else obj.compress_info
+                )
                 compress_dict["@variables"]["compress_data"] = [
-                    to_numpy_array(d) for d in self.compress_data
+                    to_numpy_array(d) for d in compress_data
                 ]
                 compress_dict["@variables"]["compress_info"] = [
-                    to_numpy_array(i) for i in self.compress_info
+                    to_numpy_array(i) for i in compress_info
                 ]
             data["compress"] = compress_dict
         return data

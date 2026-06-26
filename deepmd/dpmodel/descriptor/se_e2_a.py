@@ -533,6 +533,14 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         )
         return xp.sum(em[:, :, :, None] * values[:, :, None, :], axis=1)
 
+    def _add_to_slice(self, array: Array, start: int, end: int, value: Array) -> Array:
+        """Return ``array`` with ``value`` added to ``array[start:end]``."""
+        xp = array_api_compat.array_namespace(array, value)
+        return xp.concat(
+            [array[:start], array[start:end] + value, array[end:]],
+            axis=0,
+        )
+
     def reinit_exclude(
         self,
         exclude_types: list[tuple[int, int]] = [],
@@ -654,8 +662,11 @@ class DescrptSeA(NativeOP, BaseDescriptor):
                     tr = tr * xp.astype(mm[:, :, None], tr.dtype)
                     ss = tr[..., 0:1]
                     gg = self.cal_g(ss, (ti, tt))
-                    gr_s[s:e] = gr_s[s:e] + xp.sum(
-                        gg[:, :, :, None] * tr[:, :, None, :], axis=1
+                    gr_s = self._add_to_slice(
+                        gr_s,
+                        s,
+                        e,
+                        xp.sum(gg[:, :, :, None] * tr[:, :, None, :], axis=1),
                     )
             gr = xp.take(gr_s, unsort_idx, axis=0)
         gr = xp.reshape(gr, (nf, nloc, ng, 4))
@@ -735,12 +746,17 @@ class DescrptSeA(NativeOP, BaseDescriptor):
                     rr_i = rr_s[s:e, sec[tt] : sec[tt + 1], :]
                     rr_i = rr_i * xp.astype(mm[:, :, None], rr_i.dtype)
                     ss = rr_i[:, :, :1]
-                    gr_s[s:e] = gr_s[s:e] + self._tabulate_fusion_se_a(
-                        compress_data_ii,
-                        compress_info_ii,
-                        ss,
-                        rr_i,
-                        ng,
+                    gr_s = self._add_to_slice(
+                        gr_s,
+                        s,
+                        e,
+                        self._tabulate_fusion_se_a(
+                            compress_data_ii,
+                            compress_info_ii,
+                            ss,
+                            rr_i,
+                            ng,
+                        ),
                     )
             gr = xp.take(gr_s, unsort_idx, axis=0)
         return xp.permute_dims(gr, (0, 2, 1))

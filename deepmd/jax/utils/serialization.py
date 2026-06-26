@@ -34,6 +34,11 @@ def _state_sequence_to_numpy_list(state_value: Any) -> list[np.ndarray]:
     return [np.asarray(getattr(value, "value", value)) for value in values]
 
 
+def _state_value_to_numpy(state_value: Any) -> np.ndarray:
+    """Convert an Orbax-restored state value to a NumPy array."""
+    return np.asarray(getattr(state_value, "value", state_value))
+
+
 def _restore_compression_slots_from_state(obj: Any, state: Any) -> None:
     """Create compression variable slots before replacing an NNX state.
 
@@ -52,6 +57,27 @@ def _restore_compression_slots_from_state(obj: Any, state: Any) -> None:
         obj.compress_data = _state_sequence_to_numpy_list(state["compress_data"])
         obj.compress_info = _state_sequence_to_numpy_list(state["compress_info"])
         obj.compress = True
+        if hasattr(obj, "geo_compress"):
+            obj.geo_compress = True
+        if hasattr(obj, "se_atten"):
+            obj.se_atten.compress_data = obj.compress_data
+            obj.se_atten.compress_info = obj.compress_info
+            if hasattr(obj.se_atten, "geo_compress"):
+                obj.se_atten.geo_compress = True
+    if hasattr(obj, "compress") and "type_embd_data" in state:
+        obj.type_embd_data = _state_value_to_numpy(state["type_embd_data"])
+        obj.compress = True
+        obj.tebd_compress = True
+        if hasattr(obj, "geo_compress"):
+            obj.geo_compress = "compress_data" in state and "compress_info" in state
+        if hasattr(obj, "se_atten"):
+            obj.se_atten.type_embd_data = obj.type_embd_data
+            obj.se_atten.tebd_compress = True
+            if hasattr(obj.se_atten, "geo_compress"):
+                obj.se_atten.geo_compress = getattr(obj, "geo_compress", False)
+            if getattr(obj, "geo_compress", False):
+                obj.se_atten.compress_data = obj.compress_data
+                obj.se_atten.compress_info = obj.compress_info
     for name, child_state in state.items():
         if not isinstance(child_state, dict):
             continue
@@ -65,6 +91,15 @@ def _restore_compression_slots_from_state(obj: Any, state: Any) -> None:
                 continue
             child = getattr(obj, name)
         _restore_compression_slots_from_state(child, child_state)
+        if name == "se_atten" and hasattr(obj, "compress"):
+            if hasattr(child, "type_embd_data"):
+                obj.type_embd_data = child.type_embd_data
+                obj.tebd_compress = getattr(child, "tebd_compress", True)
+                obj.compress = True
+            if getattr(child, "geo_compress", False):
+                obj.geo_compress = True
+                obj.compress_data = child.compress_data
+                obj.compress_info = child.compress_info
 
 
 def _to_optional_float(value: Any) -> float | None:

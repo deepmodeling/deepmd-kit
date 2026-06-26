@@ -81,48 +81,83 @@ class TestJAXModelCompression(unittest.TestCase):
             },
         }
 
+    def _make_dpa1_model_data(self) -> dict:
+        return {
+            "type": "standard",
+            "type_map": ["O", "H"],
+            "descriptor": {
+                "type": "dpa1",
+                "rcut": 4.0,
+                "rcut_smth": 3.5,
+                "sel": 2,
+                "neuron": [4, 8],
+                "axis_neuron": 2,
+                "tebd_dim": 4,
+                "tebd_input_mode": "strip",
+                "resnet_dt": False,
+                "attn_layer": 0,
+                "precision": "float64",
+                "seed": 1234,
+            },
+            "fitting_net": {
+                "type": "ener",
+                "neuron": [8],
+                "resnet_dt": False,
+                "precision": "float64",
+                "seed": 5678,
+            },
+        }
+
     @unittest.skipUnless(INSTALLED_JAX, "JAX is not installed")
     def test_se_e2_a_enable_compression(self) -> None:
         coord = jnp.array(self.coord)
         atype = jnp.array(self.atype)
         nlist = jnp.array(self.nlist)
-        descriptor = DescrptSeA(
-            rcut=4.0,
-            rcut_smth=3.5,
-            sel=[1, 1],
-            neuron=[4, 8],
-            axis_neuron=2,
-            resnet_dt=False,
-            type_one_side=True,
-            precision="float64",
-            seed=1234,
-        )
-        expected = descriptor.call(coord, atype, nlist)
-
-        compressed = DescrptSeA.deserialize(copy.deepcopy(descriptor.serialize()))
-        compressed.enable_compression(1.0, 5, 0.001, 0.01, -1)
-        actual = compressed.call(coord, atype, nlist)
-
-        self.assertTrue(compressed.compress)
-        serialized = compressed.serialize()
-        self.assertEqual(serialized["@version"], 3)
-        self.assertIn("compress", serialized)
-        reloaded = DescrptSeA.deserialize(copy.deepcopy(serialized))
-        reloaded_actual = reloaded.call(coord, atype, nlist)
-
-        for expected_item, actual_item, reloaded_item in zip(
-            expected, actual, reloaded_actual, strict=True
-        ):
-            if expected_item is None:
-                self.assertIsNone(actual_item)
-                self.assertIsNone(reloaded_item)
-            else:
-                np.testing.assert_allclose(
-                    np.asarray(actual_item), np.asarray(expected_item), atol=1e-10
+        for type_one_side in (True, False):
+            with self.subTest(type_one_side=type_one_side):
+                descriptor = DescrptSeA(
+                    rcut=4.0,
+                    rcut_smth=3.5,
+                    sel=[1, 1],
+                    neuron=[4, 8],
+                    axis_neuron=2,
+                    resnet_dt=False,
+                    type_one_side=type_one_side,
+                    precision="float64",
+                    seed=1234,
                 )
-                np.testing.assert_allclose(
-                    np.asarray(reloaded_item), np.asarray(expected_item), atol=1e-10
+                expected = descriptor.call(coord, atype, nlist)
+
+                compressed = DescrptSeA.deserialize(
+                    copy.deepcopy(descriptor.serialize())
                 )
+                compressed.enable_compression(1.0, 5, 0.001, 0.01, -1)
+                actual = compressed.call(coord, atype, nlist)
+
+                self.assertTrue(compressed.compress)
+                serialized = compressed.serialize()
+                self.assertEqual(serialized["@version"], 3)
+                self.assertIn("compress", serialized)
+                reloaded = DescrptSeA.deserialize(copy.deepcopy(serialized))
+                reloaded_actual = reloaded.call(coord, atype, nlist)
+
+                for expected_item, actual_item, reloaded_item in zip(
+                    expected, actual, reloaded_actual, strict=True
+                ):
+                    if expected_item is None:
+                        self.assertIsNone(actual_item)
+                        self.assertIsNone(reloaded_item)
+                    else:
+                        np.testing.assert_allclose(
+                            np.asarray(actual_item),
+                            np.asarray(expected_item),
+                            atol=1e-10,
+                        )
+                        np.testing.assert_allclose(
+                            np.asarray(reloaded_item),
+                            np.asarray(expected_item),
+                            atol=1e-10,
+                        )
 
     @unittest.skipUnless(INSTALLED_JAX, "JAX is not installed")
     def test_se_e2_r_enable_compression(self) -> None:
@@ -214,46 +249,57 @@ class TestJAXModelCompression(unittest.TestCase):
 
     @unittest.skipUnless(INSTALLED_JAX, "JAX is not installed")
     def test_jax_compress_entrypoint(self) -> None:
-        model_data = self._make_model_data()
-        model = get_model(copy.deepcopy(model_data))
+        for name, model_data in (
+            ("se_e2_a", self._make_model_data()),
+            ("dpa1", self._make_dpa1_model_data()),
+        ):
+            with self.subTest(descriptor=name):
+                model = get_model(copy.deepcopy(model_data))
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            input_file = Path(tmpdir) / "model.hlo"
-            output_file = Path(tmpdir) / "model-compressed.jax"
-            save_dp_model(
-                str(input_file),
-                {
-                    "backend": "JAX",
-                    "jax_version": jax.__version__,
-                    "model": model.serialize(),
-                    "model_def_script": model_data,
-                    "@variables": {
-                        "stablehlo": np.void(b"stablehlo"),
-                    },
-                    "constants": {
-                        "min_nbor_dist": 1.0,
-                    },
-                },
-            )
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    input_file = Path(tmpdir) / f"model-{name}.hlo"
+                    output_file = Path(tmpdir) / f"model-{name}-compressed.jax"
+                    save_dp_model(
+                        str(input_file),
+                        {
+                            "backend": "JAX",
+                            "jax_version": jax.__version__,
+                            "model": model.serialize(),
+                            "model_def_script": model_data,
+                            "@variables": {
+                                "stablehlo": np.void(b"stablehlo"),
+                            },
+                            "constants": {
+                                "min_nbor_dist": 1.0,
+                            },
+                        },
+                    )
 
-            dp_main(
-                [
-                    "--jax",
-                    "compress",
-                    "-i",
-                    str(input_file),
-                    "-o",
-                    str(output_file),
-                    "-s",
-                    "0.01",
-                ]
-            )
+                    dp_main(
+                        [
+                            "--jax",
+                            "compress",
+                            "-i",
+                            str(input_file),
+                            "-o",
+                            str(output_file),
+                            "-s",
+                            "0.01",
+                        ]
+                    )
 
-            compressed = serialize_from_file(str(output_file))
-            descriptor = compressed["model"]["descriptor"]
-            self.assertEqual(descriptor["@version"], 3)
-            self.assertIn("compress", descriptor)
-            self.assertEqual(compressed["min_nbor_dist"], 1.0)
+                    compressed = serialize_from_file(str(output_file))
+                    descriptor = compressed["model"]["descriptor"]
+                    self.assertEqual(descriptor["@version"], 3)
+                    self.assertIn("compress", descriptor)
+                    self.assertEqual(compressed["min_nbor_dist"], 1.0)
+                    if name == "dpa1":
+                        compress = descriptor["compress"]
+                        self.assertTrue(compress["geo_compress"])
+                        variables = compress["@variables"]
+                        self.assertIn("type_embd_data", variables)
+                        self.assertIn("compress_data", variables)
+                        self.assertIn("compress_info", variables)
 
     @unittest.skipUnless(INSTALLED_JAX, "JAX is not installed")
     def test_jax_compress_entrypoint_can_write_hlo(self) -> None:
