@@ -267,6 +267,7 @@ class TestStatFileConsistency(unittest.TestCase):
         config["training"]["training_data"]["systems"] = [
             str(path) for path in self.unequal_frame_data_paths
         ]
+        config["training"]["training_data"]["batch_size"] = [1, 2]
 
         with tempfile.TemporaryDirectory() as temp_dir:
             tf_stat_dir = os.path.join(temp_dir, "tf_stat")
@@ -275,12 +276,10 @@ class TestStatFileConsistency(unittest.TestCase):
             # This case catches the per-system vs per-frame output-bias regression
             # distinction: the legacy TF path weighted each system equally, whereas
             # the shared stat implementation used by stat files weights frames
-            # consistently with the PyTorch backend. Descriptor input statistics are
-            # collected by backend-specific pipelines, so compare only the shared
-            # output-stat file that determines the restored energy bias. The
-            # backends may store different auxiliary standard deviations, but
-            # the shared stat file must agree on the bias consumed by TF/PT
-            # initialization and stat-file reloads.
+            # consistently with the PyTorch backend. The per-system batch sizes
+            # make TF and PT collect the same 80-frame and 160-frame samples.
+            # Compare only the shared output-stat file that determines the
+            # restored energy bias.
             self._run_training_with_stat_file("tf", config, temp_dir, tf_stat_dir)
             self._run_training_with_stat_file("pt", config, temp_dir, pt_stat_dir)
 
@@ -288,9 +287,6 @@ class TestStatFileConsistency(unittest.TestCase):
                 tf_stat_dir,
                 pt_stat_dir,
                 selected_names={"bias_atom_energy"},
-                # This regression check runs through the full TF/PT CLI paths.
-                rtol=1e-5,
-                atol=1e-6,
             )
 
 
