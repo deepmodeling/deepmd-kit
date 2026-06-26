@@ -28,3 +28,20 @@ def test_forward_atomic_graph_matches_dense():
     ng = from_dense_quartet(ext_coord, nlist, mapping)
     graph = am.forward_atomic_graph(ng, atype.reshape(-1))
     np.testing.assert_allclose(graph["energy"], dense["energy"], rtol=1e-12, atol=1e-12)
+
+
+def test_forward_common_atomic_graph_matches_dense():
+    rng = np.random.default_rng(1)
+    coord = rng.normal(size=(1, 5, 3)) * 1.5
+    atype = np.array([[0, 1, 0, 1, 0]], dtype=np.int64)
+    am = _atomic_model()
+    ext_coord, ext_atype, mapping, nlist = extend_input_and_build_neighbor_list(
+        coord, atype, 4.0, [30], mixed_types=True, box=None
+    )
+    dense = am.forward_common_atomic(ext_coord, ext_atype, nlist, mapping=mapping)
+    ng = from_dense_quartet(ext_coord, nlist, mapping)
+    graph = am.forward_common_atomic_graph(ng, atype.reshape(-1))
+    for k in ("energy", "mask"):
+        np.testing.assert_allclose(
+            np.asarray(graph[k]), np.asarray(dense[k]), rtol=1e-12, atol=1e-12
+        )

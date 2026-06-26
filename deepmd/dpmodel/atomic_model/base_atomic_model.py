@@ -5,8 +5,14 @@ from collections.abc import (
     Callable,
 )
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
+
+if TYPE_CHECKING:
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        NeighborGraph,
+    )
 
 import array_api_compat
 import numpy as np
@@ -305,6 +311,33 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         )
         atom_mask = xp_take_first_n(ext_atom_mask, 1, nloc)
         return self._finalize_atomic_ret(ret_dict, atom_mask, atype)
+
+    def forward_common_atomic_graph(
+        self,
+        graph: "NeighborGraph",
+        atype: Array,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
+    ) -> dict:
+        """Graph analogue of :meth:`forward_common_atomic`.
+
+        The graph is ghost-free
+        (atype is LOCAL), so masking/out-stat operate directly on the nloc atoms.
+        Reuses :meth:`_finalize_atomic_ret`, so virtual-atom masking, ``atom_excl``
+        and ``apply_out_stat`` match the dense path. (Pair ``exclude_types`` is not
+        supported on the graph path -- those models keep ``uses_graph_lower()==False``
+        and route to the dense path.)
+        """
+        xp = array_api_compat.array_namespace(graph.edge_vec)
+        nf = graph.n_node.shape[0]
+        nloc = atype.shape[0] // nf
+        atype_2d = xp.reshape(atype, (nf, nloc))
+        atom_mask = self.make_atom_mask(atype_2d)
+        atype_clamped = xp.where(atom_mask, atype_2d, xp.zeros_like(atype_2d))
+        ret_dict = self.forward_atomic_graph(
+            graph, xp.reshape(atype_clamped, (nf * nloc,)), fparam=fparam, aparam=aparam
+        )
+        return self._finalize_atomic_ret(ret_dict, atom_mask, atype_2d)
 
     def _finalize_atomic_ret(
         self, ret_dict: dict, atom_mask: Array, atype: Array
