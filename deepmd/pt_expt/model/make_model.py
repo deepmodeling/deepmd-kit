@@ -295,8 +295,8 @@ def make_model(
 
             OUTPUT-AGNOSTIC: runs the graph descriptor + fitting forward with
             ``edge_vec`` as the autograd leaf (via the inherited
-            :meth:`_graph_descriptor_fitting`), then routes the raw rectangular
-            ``fit_ret`` through :func:`fit_output_to_model_output_graph`, which
+            :meth:`forward_common_atomic_graph`), then routes the raw rectangular
+            ``atomic_ret`` through :func:`fit_output_to_model_output_graph`, which
             reduces EVERY reducible output and assembles force / per-frame virial
             / (optional) atom-virial for every ``r_differentiable`` output from a
             backward pass w.r.t. ``edge_vec`` (the shared full-to-``src`` scatter).
@@ -341,34 +341,33 @@ def make_model(
                 ``<var>_derv_c_redu`` (nf, *shape, 9), and -- when
                 ``do_atomic_virial`` -- ``<var>_derv_c`` (nf, nloc, *shape, 9).
             """
+            from deepmd.dpmodel.utils.neighbor_graph import NeighborGraph
+
             # make edge_vec the autograd leaf for the energy backward
             edge_vec = edge_vec.detach().requires_grad_(True)
-            fit_ret, _, atom_mask = self._graph_descriptor_fitting(
+            graph = NeighborGraph(
+                n_node=n_node,
+                edge_index=edge_index,
+                edge_vec=edge_vec,
+                edge_mask=edge_mask,
+            )
+            atomic_ret = self.atomic_model.forward_common_atomic_graph(
+                graph,
                 atype,
-                n_node,
-                edge_index,
-                edge_vec,
-                edge_mask,
                 fparam=fparam,
                 aparam=aparam,
             )
-            # int mask of real atoms (virtual atype<0 already zeroed in
-            # _graph_descriptor_fitting); matches the dense base_atomic_model.
-            mask = atom_mask.to(torch.int32)
-            model_predict = fit_output_to_model_output_graph(
-                fit_ret,
-                self.atomic_model.fitting_output_def(),
+            return fit_output_to_model_output_graph(
+                atomic_ret,
+                self.atomic_output_def(),
                 edge_vec,
                 edge_index,
                 edge_mask,
                 n_node,
                 do_atomic_virial=do_atomic_virial,
                 create_graph=self.training,
-                mask=mask,
+                mask=atomic_ret["mask"] if "mask" in atomic_ret else None,
             )
-            # fit_output_to_model_output_graph does not add "mask"; set it here.
-            model_predict["mask"] = mask
-            return model_predict
 
         def _resolve_graph_method(
             self, neighbor_graph_method: str | None
