@@ -791,12 +791,12 @@ def test_ener(
         rmse_v = shared_metrics.virial.rmse
         mae_va = shared_metrics.virial_per_atom.mae
         rmse_va = shared_metrics.virial_per_atom.rmse
-        # Stress sigma = virial / volume, in eV/Å^3.
+        # Stress sigma = -virial / volume, in eV/Å^3 (tensile-positive convention).
         volume = np.abs(np.linalg.det(box.reshape([numb_test, 3, 3]))).reshape(
             [numb_test, 1]
         )
-        prediction_stress = virial / volume
-        reference_stress = test_data["virial"][:numb_test] / volume
+        prediction_stress = -virial / volume
+        reference_stress = -test_data["virial"][:numb_test] / volume
         stress_metrics = compute_error_stat(prediction_stress, reference_stress)
         mae_s = stress_metrics.mae
         rmse_s = stress_metrics.rmse

@@ -51,13 +51,14 @@ class DPTest:
         input_dict["do_atomic_virial"] = True
         result = trainer.model(**input_dict)
         model = torch.jit.script(trainer.model)
-        tmp_model = tempfile.NamedTemporaryFile(delete=False, suffix=".pth")
-        torch.jit.save(model, tmp_model.name)
+        tmp_fd, tmp_model_path = tempfile.mkstemp(suffix=".pth")
+        os.close(tmp_fd)
+        torch.jit.save(model, tmp_model_path)
         val_sys = self.config["training"]["validation_data"]["systems"]
         if isinstance(val_sys, list):
             val_sys = val_sys[0]
         dp_test(
-            model=tmp_model.name,
+            model=tmp_model_path,
             system=None if use_input_json else val_sys,
             datafile=None,
             train_json=self.input_json if use_input_json and use_train else None,
@@ -69,7 +70,7 @@ class DPTest:
             detail_file=self.detail_file,
             atomic=False,
         )
-        os.unlink(tmp_model.name)
+        os.unlink(tmp_model_path)
         natom = input_dict["atype"].shape[1]
         pred_e = np.loadtxt(self.detail_file + ".e.out", ndmin=2)[0, 1]
         np.testing.assert_almost_equal(
@@ -198,10 +199,11 @@ class TestDPTestSeARglob(unittest.TestCase):
             input_dict, _, _ = trainer.get_data(is_train=False)
         input_dict.pop("spin", None)
         model = torch.jit.script(trainer.model)
-        tmp_model = tempfile.NamedTemporaryFile(delete=False, suffix=".pth")
-        torch.jit.save(model, tmp_model.name)
+        tmp_fd, tmp_model_path = tempfile.mkstemp(suffix=".pth")
+        os.close(tmp_fd)
+        torch.jit.save(model, tmp_model_path)
         dp_test(
-            model=tmp_model.name,
+            model=tmp_model_path,
             system=None,
             datafile=None,
             valid_json=self.input_json,
@@ -212,7 +214,7 @@ class TestDPTestSeARglob(unittest.TestCase):
             detail_file=self.detail_file,
             atomic=False,
         )
-        os.unlink(tmp_model.name)
+        os.unlink(tmp_model_path)
         self.assertTrue(os.path.exists(self.detail_file + ".e.out"))
 
     def tearDown(self) -> None:
@@ -253,10 +255,11 @@ class TestDPTestSeARglobTrain(unittest.TestCase):
             input_dict, _, _ = trainer.get_data(is_train=False)
         input_dict.pop("spin", None)
         model = torch.jit.script(trainer.model)
-        tmp_model = tempfile.NamedTemporaryFile(delete=False, suffix=".pth")
-        torch.jit.save(model, tmp_model.name)
+        tmp_fd, tmp_model_path = tempfile.mkstemp(suffix=".pth")
+        os.close(tmp_fd)
+        torch.jit.save(model, tmp_model_path)
         dp_test(
-            model=tmp_model.name,
+            model=tmp_model_path,
             system=None,
             datafile=None,
             train_json=self.input_json,
@@ -267,7 +270,7 @@ class TestDPTestSeARglobTrain(unittest.TestCase):
             detail_file=self.detail_file,
             atomic=False,
         )
-        os.unlink(tmp_model.name)
+        os.unlink(tmp_model_path)
         self.assertTrue(os.path.exists(self.detail_file + ".e.out"))
 
     def tearDown(self) -> None:
@@ -321,9 +324,10 @@ class TestDPTestForceWeight(DPTest, unittest.TestCase):
         with torch.device("cpu"):
             trainer.get_data(is_train=False)
         model = torch.jit.script(trainer.model)
-        tmp_model = tempfile.NamedTemporaryFile(delete=False, suffix=".pth")
-        torch.jit.save(model, tmp_model.name)
-        dp = DeepEval(tmp_model.name)
+        tmp_fd, tmp_model_path = tempfile.mkstemp(suffix=".pth")
+        os.close(tmp_fd)
+        torch.jit.save(model, tmp_model_path)
+        dp = DeepEval(tmp_model_path)
         data = DeepmdData(
             self.system_dir,
             set_prefix="set",
@@ -367,7 +371,7 @@ class TestDPTestForceWeight(DPTest, unittest.TestCase):
         np.testing.assert_allclose(err["rmse_f"][0], rmse_unweighted)
         np.testing.assert_allclose(err["mae_fw"][0], mae_weighted)
         np.testing.assert_allclose(err["rmse_fw"][0], rmse_weighted)
-        os.unlink(tmp_model.name)
+        os.unlink(tmp_model_path)
 
     def tearDown(self) -> None:
         super().tearDown()
@@ -408,9 +412,10 @@ class TestDPTestStress(DPTest, unittest.TestCase):
         with torch.device("cpu"):
             trainer.get_data(is_train=False)
         model = torch.jit.script(trainer.model)
-        tmp_model = tempfile.NamedTemporaryFile(delete=False, suffix=".pth")
-        torch.jit.save(model, tmp_model.name)
-        dp = DeepEval(tmp_model.name)
+        tmp_fd, tmp_model_path = tempfile.mkstemp(suffix=".pth")
+        os.close(tmp_fd)
+        torch.jit.save(model, tmp_model_path)
+        dp = DeepEval(tmp_model_path)
         data = DeepmdData(
             self.system_dir,
             set_prefix="set",
@@ -427,7 +432,7 @@ class TestDPTestStress(DPTest, unittest.TestCase):
             detail_file=self.detail_file,
             has_atom_ener=False,
         )
-        os.unlink(tmp_model.name)
+        os.unlink(tmp_model_path)
 
         test_data = data.get_test()
         box = test_data["box"][:numb_test].reshape(-1, 3, 3)
@@ -438,9 +443,9 @@ class TestDPTestStress(DPTest, unittest.TestCase):
         virial_out = np.loadtxt(self.detail_file + ".v.out", ndmin=2)
         ref_v, pred_v = virial_out[:, 0:9], virial_out[:, 9:18]
 
-        # stress detail is the virial detail divided by the cell volume (eV/Å^3)
-        np.testing.assert_almost_equal(ref_s, ref_v / volume)
-        np.testing.assert_almost_equal(pred_s, pred_v / volume)
+        # stress detail is the negative virial detail divided by the cell volume (eV/Å^3)
+        np.testing.assert_almost_equal(ref_s, -ref_v / volume)
+        np.testing.assert_almost_equal(pred_s, -pred_v / volume)
 
         # reported MAE/RMSE match the stress arrays (in eV/Å^3)
         diff = pred_s - ref_s
@@ -478,10 +483,11 @@ class TestDPTestPropertySeA(unittest.TestCase):
         input_dict.pop("spin", None)
         result = trainer.model(**input_dict)
         model = torch.jit.script(trainer.model)
-        tmp_model = tempfile.NamedTemporaryFile(delete=False, suffix=".pth")
-        torch.jit.save(model, tmp_model.name)
+        tmp_fd, tmp_model_path = tempfile.mkstemp(suffix=".pth")
+        os.close(tmp_fd)
+        torch.jit.save(model, tmp_model_path)
         dp_test(
-            model=tmp_model.name,
+            model=tmp_model_path,
             system=self.config["training"]["validation_data"]["systems"][0],
             datafile=None,
             set_prefix="set",
@@ -491,7 +497,7 @@ class TestDPTestPropertySeA(unittest.TestCase):
             detail_file=self.detail_file,
             atomic=True,
         )
-        os.unlink(tmp_model.name)
+        os.unlink(tmp_model_path)
         pred_property = np.loadtxt(self.detail_file + ".property.out.0")[:, 1]
         np.testing.assert_almost_equal(
             pred_property,

@@ -120,10 +120,10 @@ class TestDPTestEner(unittest.TestCase, TestDPTest):
         np.testing.assert_almost_equal(
             pred_v_peratom, pred_v / len(self.atype), decimal=default_places
         )
-        # stress = virial / volume, in eV/Å^3
+        # stress = -virial / volume, in eV/Å^3 (tensile-positive convention)
         pred_s = np.loadtxt(detail_file + ".s.out", ndmin=2)[:, 9:18]
         volume = np.abs(np.linalg.det(self.box.reshape(3, 3)))
-        np.testing.assert_almost_equal(pred_s, pred_v / volume, decimal=default_places)
+        np.testing.assert_almost_equal(pred_s, -pred_v / volume, decimal=default_places)
 
 
 class TestDPTestDipole(unittest.TestCase, TestDPTest):
