@@ -393,12 +393,10 @@ def make_model(
             """
             descriptor = getattr(self.atomic_model, "descriptor", None)
             uses_graph_lower = getattr(descriptor, "uses_graph_lower", lambda: False)
-            pair_excl = getattr(self.atomic_model, "pair_excl", None)
-            if not (self.mixed_types() and uses_graph_lower() and pair_excl is None):
+            if not (self.mixed_types() and uses_graph_lower()):
                 raise NotImplementedError(
                     "neighbor_graph_method requires a mixed_types descriptor with a "
-                    "graph lower (e.g. dpa1 attn_layer=0) and no model-level "
-                    "pair_exclude_types (pair exclusion is not supported on the graph path)"
+                    "graph lower (e.g. dpa1 attn_layer=0)"
                 )
             if method == "dense":
                 ng = build_neighbor_graph(cc, atype, bb, self.get_rcut())

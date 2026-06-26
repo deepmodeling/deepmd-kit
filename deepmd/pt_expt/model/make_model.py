@@ -386,8 +386,7 @@ def make_model(
             # Linear/ZBL atomic models have no single ``descriptor`` -> dense.
             descriptor = getattr(self.atomic_model, "descriptor", None)
             uses_graph_lower = getattr(descriptor, "uses_graph_lower", lambda: False)
-            pair_excl = getattr(self.atomic_model, "pair_excl", None)
-            if self.mixed_types() and uses_graph_lower() and pair_excl is None:
+            if self.mixed_types() and uses_graph_lower():
                 return "dense"
             return None
 

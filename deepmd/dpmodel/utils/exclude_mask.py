@@ -158,5 +158,37 @@ class PairExcludeMask:
         )
         return mask
 
+    def build_edge_exclude_mask(self, edge_index: Array, atype: Array) -> Array:
+        """Graph-native pair exclusion: per-edge keep mask (1 keep, 0 exclude).
+
+        Parameters
+        ----------
+        edge_index
+            (2, E) [src, dst]; src = neighbor, dst = center; into [0, N).
+        atype
+            (N,) flat local node types (clamped >= 0).
+
+        Returns
+        -------
+        mask
+            (E,) int. ``type_mask[atype[dst]*(ntypes+1) + atype[src]]``.
+
+        """
+        xp = array_api_compat.array_namespace(atype)
+        if len(self.exclude_types) == 0:
+            return xp.ones(
+                (edge_index.shape[1],),
+                dtype=xp.int32,
+                device=array_api_compat.device(atype),
+            )
+        src_t = xp.take(atype, edge_index[0, :], axis=0)
+        dst_t = xp.take(atype, edge_index[1, :], axis=0)
+        type_ij = dst_t * (self.ntypes + 1) + src_t
+        return xp.take(
+            xp.asarray(self.type_mask[...], device=array_api_compat.device(atype)),
+            type_ij,
+            axis=0,
+        )
+
     def __contains__(self, item: tuple[int, int]) -> bool:
         return item in self.exclude_types

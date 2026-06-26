@@ -323,9 +323,10 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         The node axis is flat ``(N,)`` (``N = sum(graph.n_node)``); masking and
         out-stat operate per node. Reuses :meth:`_finalize_atomic_ret`, so
         virtual-atom masking, ``atom_excl`` and ``apply_out_stat`` match the dense
-        path. Model-level ``pair_exclude_types`` is gated out of the graph path by
-        the model routing (``_resolve_graph_method`` / the ``_call_common_graph``
-        gate require ``pair_excl is None``); descriptor-level ``exclude_types`` is
+        path. Model-level ``pair_exclude_types`` is graph-native: when
+        ``self.pair_excl is not None``, an edge-keep mask is ANDed into
+        ``graph.edge_mask`` before the descriptor forward, so excluded type-pairs
+        contribute zero to the segment_sum. Descriptor-level ``exclude_types`` is
         gated by ``uses_graph_lower()==False``.
 
         Parameters
@@ -345,10 +346,20 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             the result dict on the flat node axis, defined by the `FittingOutputDef`.
 
         """
+        import dataclasses
+
         xp = array_api_compat.array_namespace(graph.edge_vec)
         atype = xp.asarray(atype, device=array_api_compat.device(graph.edge_vec))
         atom_mask = self.make_atom_mask(atype)  # (N,) bool
         atype_clamped = xp.where(atom_mask, atype, xp.zeros_like(atype))
+        if self.pair_excl is not None:
+            keep = self.pair_excl.build_edge_exclude_mask(
+                graph.edge_index, atype_clamped
+            )
+            graph = dataclasses.replace(
+                graph,
+                edge_mask=graph.edge_mask * xp.astype(keep, graph.edge_mask.dtype),
+            )
         ret_dict = self.forward_atomic_graph(
             graph, atype_clamped, fparam=fparam, aparam=aparam
         )
