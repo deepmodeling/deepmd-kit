@@ -662,28 +662,22 @@ def make_model(
                 reduced, derivative name-holders ``None``), matching
                 :func:`fit_output_to_model_output`.
             """
-            xp = array_api_compat.array_namespace(edge_vec)
-            fit_ret, gg, atom_mask = self._graph_descriptor_fitting(
-                atype,
-                n_node,
-                edge_index,
+            graph = NeighborGraph(
+                n_node=n_node,
+                edge_index=edge_index,
+                edge_vec=edge_vec,
+                edge_mask=edge_mask,
+            )
+            atomic_ret = self.atomic_model.forward_common_atomic_graph(
+                graph, atype, fparam=fparam, aparam=aparam
+            )
+            return fit_output_to_model_output(
+                atomic_ret,
+                self.atomic_output_def(),
                 edge_vec,
-                edge_mask,
-                fparam=fparam,
-                aparam=aparam,
-            )
-            # int mask of real atoms (matches the dense base_atomic_model).
-            mask = xp.astype(atom_mask, xp.int32)
-            model_predict = fit_output_to_model_output(
-                fit_ret,
-                self.atomic_model.fitting_output_def(),
-                gg,
                 do_atomic_virial=False,
-                mask=mask,
+                mask=atomic_ret["mask"] if "mask" in atomic_ret else None,
             )
-            # fit_output_to_model_output does not add "mask"; set it here.
-            model_predict["mask"] = mask
-            return model_predict
 
         call = call_common
         call_lower = call_common_lower
