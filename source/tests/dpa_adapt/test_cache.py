@@ -9,10 +9,12 @@ from dpa_adapt.data.desc_cache import (
     _data_fingerprint,
     _per_system_cache_path,
     _system_fingerprint,
-    ensure_per_system_cache,
 )
 from dpa_adapt.data.loader import (
     load_data,
+)
+from dpa_adapt.finetuner import (
+    ensure_per_system_cache,
 )
 
 
