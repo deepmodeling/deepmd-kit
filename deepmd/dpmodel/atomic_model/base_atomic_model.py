@@ -321,16 +321,31 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
     ) -> dict:
         """Graph analogue of :meth:`forward_common_atomic`.
 
-        The graph is ghost-free
-        (atype is LOCAL), so masking/out-stat operate directly on the nloc atoms.
-        Reuses :meth:`_finalize_atomic_ret`, so virtual-atom masking, ``atom_excl``
-        and ``apply_out_stat`` match the dense path.
-
-        Models with model-level ``pair_exclude_types`` are gated OUT of the graph
-        path by the model routing logic (``_resolve_graph_method`` in pt_expt and
-        ``_call_common_graph`` in dpmodel both require ``pair_excl is None``);
+        The graph is ghost-free (``atype`` is local), so masking and out-stat
+        operate directly on the ``nloc`` atoms. Reuses :meth:`_finalize_atomic_ret`,
+        so virtual-atom masking, ``atom_excl`` and ``apply_out_stat`` match the
+        dense path. Models with model-level ``pair_exclude_types`` are gated out of
+        the graph path by the model routing (``_resolve_graph_method`` in pt_expt
+        and ``_call_common_graph`` in dpmodel both require ``pair_excl is None``);
         descriptor-level ``exclude_types`` is gated by ``uses_graph_lower()==False``
         on the descriptor itself.
+
+        Parameters
+        ----------
+        graph
+            neighbor graph for the local atoms (ghost-free)
+        atype
+            flat local atom types. nf * nloc
+        fparam
+            frame parameter. nf x ndf
+        aparam
+            atomic parameter. nf x nloc x nda
+
+        Returns
+        -------
+        result_dict
+            the result dict, defined by the `FittingOutputDef`.
+
         """
         xp = array_api_compat.array_namespace(graph.edge_vec)
         nf = graph.n_node.shape[0]
@@ -346,12 +361,26 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
     def _finalize_atomic_ret(
         self, ret_dict: dict, atom_mask: Array, atype: Array
     ) -> dict:
-        """Out-stat + atom-exclusion + virtual-atom zeroing + ``mask`` key.
+        """Apply out-stat, atom exclusion and virtual-atom zeroing; set ``mask``.
 
         Shared by the dense (:meth:`forward_common_atomic`) and graph
-        (:meth:`forward_common_atomic_graph`) wrappers. ``atom_mask`` is the
-        (nf, nloc) real-atom mask (from ``make_atom_mask``); ``atype`` is the
-        (nf, nloc) LOCAL atom types (used for out-stat and ``atom_excl``).
+        (:meth:`forward_common_atomic_graph`) wrappers.
+
+        Parameters
+        ----------
+        ret_dict
+            the raw per-atom result dict from ``forward_atomic``
+        atom_mask
+            the real-atom mask, True for real and False for virtual atoms. nf x nloc
+        atype
+            the local atom types, used for out-stat and ``atom_excl``. nf x nloc
+
+        Returns
+        -------
+        result_dict
+            ``ret_dict`` with out-stat applied, virtual and excluded atoms zeroed,
+            and the integer ``mask`` key set.
+
         """
         xp = array_api_compat.array_namespace(atype)
         ret_dict = self.apply_out_stat(ret_dict, atype)

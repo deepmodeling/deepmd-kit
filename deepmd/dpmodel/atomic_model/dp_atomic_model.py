@@ -261,30 +261,31 @@ class DPAtomicModel(BaseAtomicModel):
         fparam: Array | None = None,
         aparam: Array | None = None,
     ) -> dict[str, Array]:
-        """Graph analogue of :meth:`forward_atomic`: descriptor ``call_graph`` ->
-        fitting. ``atype`` is flat LOCAL types (N,). Returns the raw fitting dict
-        (no reduction, no masking -- the wrapper handles those).
+        """Graph analogue of :meth:`forward_atomic`.
 
-        This method calls ``self.descriptor.type_embedding.call()`` internally and
-        is therefore valid only for graph-eligible descriptors (e.g. DPA1 with a
-        type embedding).  The graph routing (``_resolve_graph_method`` /
-        ``_call_common_graph``) guarantees this via ``uses_graph_lower()==True``.
+        Runs the descriptor ``call_graph`` then the fitting net and returns the
+        raw fitting dict (no reduction or masking; the wrapper handles those).
+        Calls ``self.descriptor.type_embedding.call()`` internally and is therefore
+        valid only for graph-eligible descriptors (e.g. DPA1 with a type embedding);
+        the graph routing (``_resolve_graph_method`` / ``_call_common_graph``)
+        guarantees this via ``uses_graph_lower()==True``.
 
         Parameters
         ----------
         graph
-            NeighborGraph for the local atoms (ghost-free).
+            neighbor graph for the local atoms (ghost-free)
         atype
-            Flat local atom types, shape (nf*nloc,).
+            flat local atom types. nf * nloc
         fparam
-            Frame parameters. nf x ndf
+            frame parameter. nf x ndf
         aparam
-            Atomic parameters. nf x nloc x nda
+            atomic parameter. nf x nloc x nda
 
         Returns
         -------
         result_dict
             the result dict, defined by the `FittingOutputDef`.
+
         """
         import array_api_compat
 
