@@ -5,18 +5,16 @@ from __future__ import (
     annotations,
 )
 
+from importlib.util import (
+    find_spec,
+)
 from pathlib import (
     Path,
 )
 
 import pytest
 
-try:
-    import rdkit  # noqa: F401
-
-    _HAS_RDKIT = True
-except ImportError:
-    _HAS_RDKIT = False
+_HAS_RDKIT = find_spec("rdkit") is not None
 
 from dpa_adapt.data.convert import (
     _is_smiles_input,

@@ -120,7 +120,8 @@ class _HeavyContract:
 
     def test_real_checkpoint_descriptor_shape(
         self,
-    ): ...  # placeholder for future Bohrium-only tests
+    ):  # placeholder for future Bohrium-only tests
+        pass
 
 
 class _HookOwner:

@@ -183,9 +183,6 @@ def test_list_input_aggregates_across_systems(tmp_path):
     from dpa_adapt.data.loader import (
         load_data,
     )
-    from tests.dpa_adapt.test_validate import (
-        _make_set_dir,
-    )
 
     _make_set_dir(s2_root / "set.000")
     s2 = load_data(str(s2_root))[0]

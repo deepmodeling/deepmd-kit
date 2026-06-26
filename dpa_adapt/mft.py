@@ -261,6 +261,9 @@ class MFTFineTuner:
         )
 
         # Read elements from both datasets.
+        # If data cannot be loaded (e.g. glob hasn't resolved yet, or the
+        # data directory does not exist), fall back to empty lists — the
+        # type_map will still be resolved from the checkpoint below.
         try:
             train_systems = load_data(train_data)
         except Exception:

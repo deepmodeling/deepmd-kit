@@ -362,9 +362,11 @@ def smiles_to_3d_coords(
         else:
             AllChem.UFFOptimizeMolecule(mol, maxIters=500)
     except Exception:
+        # MMFF optimization failed; fall back to UFF.
         try:
             AllChem.UFFOptimizeMolecule(mol, maxIters=500)
         except Exception:
+            # Even UFF failed — proceed with unoptimized conformer.
             pass
 
     conf = mol.GetConformer()

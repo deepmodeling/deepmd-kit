@@ -1022,6 +1022,7 @@ class DPAFineTuner:
         ``self._extract_features()`` call below.
         """
         try:
+            # Lazy import to avoid circular dependency: finetuner → desc_cache → finetuner.
             from dpa_adapt.data.desc_cache import (
                 _cache_dir,
                 _cache_key,
@@ -1038,6 +1039,8 @@ class DPAFineTuner:
             if cache_path.is_file():
                 return np.load(cache_path)
         except Exception:
+            # Cache read failed (e.g. corrupted file, permissions) —
+            # fall through and recompute features from scratch.
             pass
 
         features = self._extract_features(systems)
@@ -1045,6 +1048,8 @@ class DPAFineTuner:
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             np.save(cache_path, features)
         except Exception:
+            # Cache write is best-effort — silently skip on permission errors
+            # or disk-full conditions; the features are already in memory.
             pass
         return features
 

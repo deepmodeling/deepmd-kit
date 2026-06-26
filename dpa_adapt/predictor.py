@@ -194,6 +194,8 @@ class DPAPredictor:
             try:
                 est[-1].set_params(random_state=seed)
             except ValueError:
+                # Estimator does not support random_state (e.g. KNeighborsRegressor);
+                # training with the default clone is fine — no ensemble diversity needed.
                 pass
             est.fit(features, y_flat)
             self.estimators_.append(est)
