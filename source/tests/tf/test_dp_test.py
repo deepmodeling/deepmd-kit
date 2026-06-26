@@ -82,6 +82,10 @@ class TestDPTestEner(unittest.TestCase, TestDPTest):
         self.expected_e = self.result.atomic_energy
         self.expected_f = self.result.force
         self.expected_v = self.result.atomic_virial
+        # provide a virial label so that ``dp test`` also emits the stress detail
+        for set_dir in Path(self.test_data).glob("set.*"):
+            nframes = np.load(set_dir / "box.npy").shape[0]
+            np.save(set_dir / "virial.npy", np.zeros((nframes, 9)))
 
     def test_1frame(self) -> None:
         detail_file = "test_dp_test_ener_detail"
@@ -116,6 +120,10 @@ class TestDPTestEner(unittest.TestCase, TestDPTest):
         np.testing.assert_almost_equal(
             pred_v_peratom, pred_v / len(self.atype), decimal=default_places
         )
+        # stress = -virial / volume, in eV/Å^3 (tensile-positive convention)
+        pred_s = np.loadtxt(detail_file + ".s.out", ndmin=2)[:, 9:18]
+        volume = np.abs(np.linalg.det(self.box.reshape(3, 3)))
+        np.testing.assert_almost_equal(pred_s, -pred_v / volume, decimal=default_places)
 
 
 class TestDPTestDipole(unittest.TestCase, TestDPTest):
