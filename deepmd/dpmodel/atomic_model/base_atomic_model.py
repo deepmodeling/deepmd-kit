@@ -324,9 +324,13 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         The graph is ghost-free
         (atype is LOCAL), so masking/out-stat operate directly on the nloc atoms.
         Reuses :meth:`_finalize_atomic_ret`, so virtual-atom masking, ``atom_excl``
-        and ``apply_out_stat`` match the dense path. (Pair ``exclude_types`` is not
-        supported on the graph path -- those models keep ``uses_graph_lower()==False``
-        and route to the dense path.)
+        and ``apply_out_stat`` match the dense path.
+
+        Models with model-level ``pair_exclude_types`` are gated OUT of the graph
+        path by the model routing logic (``_resolve_graph_method`` in pt_expt and
+        ``_call_common_graph`` in dpmodel both require ``pair_excl is None``);
+        descriptor-level ``exclude_types`` is gated by ``uses_graph_lower()==False``
+        on the descriptor itself.
         """
         xp = array_api_compat.array_namespace(graph.edge_vec)
         nf = graph.n_node.shape[0]

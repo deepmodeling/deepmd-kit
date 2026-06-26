@@ -265,6 +265,11 @@ class DPAtomicModel(BaseAtomicModel):
         fitting. ``atype`` is flat LOCAL types (N,). Returns the raw fitting dict
         (no reduction, no masking -- the wrapper handles those).
 
+        This method calls ``self.descriptor.type_embedding.call()`` internally and
+        is therefore valid only for graph-eligible descriptors (e.g. DPA1 with a
+        type embedding).  The graph routing (``_resolve_graph_method`` /
+        ``_call_common_graph``) guarantees this via ``uses_graph_lower()==True``.
+
         Parameters
         ----------
         graph
