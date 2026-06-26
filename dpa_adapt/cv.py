@@ -458,8 +458,6 @@ def cross_validate(
             train_groups -= test_formulas
             if val_groups and train_groups:
                 fold_assignments.append((train_groups, val_groups))
-
-        n_splits = len(fold_assignments)
     else:
         # Deterministic GroupKFold: sort groups, split by index (no shuffle).
         # Reproducible given the same set of systems and groups.

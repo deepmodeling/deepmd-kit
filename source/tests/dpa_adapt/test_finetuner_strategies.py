@@ -454,7 +454,7 @@ def test_extract_features_detaches_grad_tensors_before_numpy(monkeypatch):
     import numpy as np
     import torch
 
-    import dpa_adapt.finetuner as finetuner_mod
+    from dpa_adapt import finetuner as finetuner_mod
 
     class FakeExtractor:
         def __init__(self, model):

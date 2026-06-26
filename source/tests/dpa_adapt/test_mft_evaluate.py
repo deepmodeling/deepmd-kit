@@ -404,7 +404,8 @@ def test_evaluate_accepts_single_path(tmp_path):
     cmd = captured["cmd"]
     f_idx = cmd.index("-f")
     datafile = cmd[f_idx + 1]
-    lines = [l for l in open(datafile).read().split("\n") if l.strip()]
+    with open(datafile) as f:
+        lines = [l for l in f.read().split("\n") if l.strip()]
     assert lines == [test_data]
     assert out["mae"] == pytest.approx(7.0e-03)
     assert out["n_systems"] == 1
@@ -444,7 +445,8 @@ def test_evaluate_accepts_list(tmp_path):
 
     cmd = captured["cmd"]
     datafile = cmd[cmd.index("-f") + 1]
-    lines = [l for l in open(datafile).read().split("\n") if l.strip()]
+    with open(datafile) as f:
+        lines = [l for l in f.read().split("\n") if l.strip()]
     assert lines == paths
     assert out["n_systems"] == 4
 
