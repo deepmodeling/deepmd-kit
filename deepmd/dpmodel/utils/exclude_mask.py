@@ -42,25 +42,24 @@ class AtomExcludeMask:
         Parameters
         ----------
         atype
-            The extended aotm types. shape: nf x natom
+            The atom types. shape: nf x natom (dense) or N (graph / flat)
 
         Returns
         -------
         mask
-            The type exclusion mask for atoms. shape: nf x natom
-            Element [ff,ii] being 0 if type(ii) is excluded,
-            otherwise being 1.
+            The type exclusion mask for atoms, same shape as ``atype``.
+            Element being 0 if the type is excluded, otherwise being 1.
 
         """
         xp = array_api_compat.array_namespace(atype)
-        nf, natom = atype.shape
+        lead = atype.shape  # (nf, natom) dense | (N,) graph
         return xp.reshape(
             xp.take(
                 xp.asarray(self.type_mask[...], device=array_api_compat.device(atype)),
                 xp.reshape(atype, (-1,)),
                 axis=0,
             ),
-            (nf, natom),
+            lead,
         )
 
 

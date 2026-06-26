@@ -359,8 +359,21 @@ def make_model(
                 fparam=fparam,
                 aparam=aparam,
             )
+            # ``forward_common_atomic_graph`` returns flat ``(N, *)`` output
+            # (N = sum(n_node)). Reshape to rectangular ``(nf, nloc, *)`` so
+            # that ``fit_output_to_model_output_graph`` can reduce over the
+            # atom axis and compute force/virial via autograd exactly as the
+            # dense path does.  This reshape is valid for rectangular frames
+            # (uniform nloc per frame); ragged support is deferred to PR-B.
+            nf = int(n_node.shape[0])
+            N = int(atype.shape[0])
+            nloc = N // nf
+            atomic_ret_rect = {
+                kk: vv.reshape(nf, nloc, *vv.shape[1:])
+                for kk, vv in atomic_ret.items()
+            }
             return fit_output_to_model_output_graph(
-                atomic_ret,
+                atomic_ret_rect,
                 self.atomic_output_def(),
                 edge_vec,
                 edge_index,
@@ -368,7 +381,7 @@ def make_model(
                 n_node,
                 do_atomic_virial=do_atomic_virial,
                 create_graph=self.training,
-                mask=atomic_ret["mask"] if "mask" in atomic_ret else None,
+                mask=atomic_ret_rect["mask"] if "mask" in atomic_ret_rect else None,
             )
 
         def _resolve_graph_method(

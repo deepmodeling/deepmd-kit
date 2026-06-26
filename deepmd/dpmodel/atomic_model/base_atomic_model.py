@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import functools
-import math
 from collections.abc import (
     Callable,
 )
@@ -319,61 +318,59 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         fparam: Array | None = None,
         aparam: Array | None = None,
     ) -> dict:
-        """Graph analogue of :meth:`forward_common_atomic`.
+        """Graph analogue of :meth:`forward_common_atomic` on the flat node axis.
 
-        The graph is ghost-free (``atype`` is local), so masking and out-stat
-        operate directly on the ``nloc`` atoms. Reuses :meth:`_finalize_atomic_ret`,
-        so virtual-atom masking, ``atom_excl`` and ``apply_out_stat`` match the
-        dense path. Models with model-level ``pair_exclude_types`` are gated out of
-        the graph path by the model routing (``_resolve_graph_method`` in pt_expt
-        and ``_call_common_graph`` in dpmodel both require ``pair_excl is None``);
-        descriptor-level ``exclude_types`` is gated by ``uses_graph_lower()==False``
-        on the descriptor itself.
+        The node axis is flat ``(N,)`` (``N = sum(graph.n_node)``); masking and
+        out-stat operate per node. Reuses :meth:`_finalize_atomic_ret`, so
+        virtual-atom masking, ``atom_excl`` and ``apply_out_stat`` match the dense
+        path. Model-level ``pair_exclude_types`` is gated out of the graph path by
+        the model routing (``_resolve_graph_method`` / the ``_call_common_graph``
+        gate require ``pair_excl is None``); descriptor-level ``exclude_types`` is
+        gated by ``uses_graph_lower()==False``.
 
         Parameters
         ----------
         graph
             neighbor graph for the local atoms (ghost-free)
         atype
-            flat local atom types. nf * nloc
+            flat local atom types. N
         fparam
             frame parameter. nf x ndf
         aparam
-            atomic parameter. nf x nloc x nda
+            atomic parameter. N x nda
 
         Returns
         -------
         result_dict
-            the result dict, defined by the `FittingOutputDef`.
+            the result dict on the flat node axis, defined by the `FittingOutputDef`.
 
         """
         xp = array_api_compat.array_namespace(graph.edge_vec)
-        nf = graph.n_node.shape[0]
-        nloc = atype.shape[0] // nf
-        atype_2d = xp.reshape(atype, (nf, nloc))
-        atom_mask = self.make_atom_mask(atype_2d)
-        atype_clamped = xp.where(atom_mask, atype_2d, xp.zeros_like(atype_2d))
+        atype = xp.asarray(atype, device=array_api_compat.device(graph.edge_vec))
+        atom_mask = self.make_atom_mask(atype)  # (N,) bool
+        atype_clamped = xp.where(atom_mask, atype, xp.zeros_like(atype))
         ret_dict = self.forward_atomic_graph(
-            graph, xp.reshape(atype_clamped, (nf * nloc,)), fparam=fparam, aparam=aparam
+            graph, atype_clamped, fparam=fparam, aparam=aparam
         )
-        return self._finalize_atomic_ret(ret_dict, atom_mask, atype_2d)
+        return self._finalize_atomic_ret(ret_dict, atom_mask, atype)
 
     def _finalize_atomic_ret(
         self, ret_dict: dict, atom_mask: Array, atype: Array
     ) -> dict:
         """Apply out-stat, atom exclusion and virtual-atom zeroing; set ``mask``.
 
-        Shared by the dense (:meth:`forward_common_atomic`) and graph
-        (:meth:`forward_common_atomic_graph`) wrappers.
+        Shared by the dense (:meth:`forward_common_atomic`, ``(nf, nloc)`` leading
+        dims) and graph (:meth:`forward_common_atomic_graph`, flat ``(N,)`` leading
+        dim) wrappers -- leading-dim-agnostic.
 
         Parameters
         ----------
         ret_dict
-            the raw per-atom result dict from ``forward_atomic``
+            the raw per-atom result dict from ``forward_atomic``/``forward_atomic_graph``
         atom_mask
-            the real-atom mask, True for real and False for virtual atoms. nf x nloc
+            the real-atom mask, True for real and False for virtual atoms. leading dims
         atype
-            the local atom types, used for out-stat and ``atom_excl``. nf x nloc
+            the local atom types, used for out-stat and ``atom_excl``. leading dims
 
         Returns
         -------
@@ -388,12 +385,12 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             atom_mask = xp.logical_and(
                 atom_mask, self.atom_excl.build_type_exclude_mask(atype)
             )
+        lead = atom_mask.shape  # (nf, nloc) dense | (N,) graph
         for kk in ret_dict.keys():
-            out_shape = ret_dict[kk].shape
-            out_shape2 = math.prod(out_shape[2:])
-            tmp_arr = ret_dict[kk].reshape([out_shape[0], out_shape[1], out_shape2])
-            tmp_arr = xp.where(atom_mask[:, :, None], tmp_arr, xp.zeros_like(tmp_arr))
-            ret_dict[kk] = xp.reshape(tmp_arr, out_shape)
+            out = ret_dict[kk]
+            flat = xp.reshape(out, (*lead, -1))
+            flat = xp.where(atom_mask[..., None], flat, xp.zeros_like(flat))
+            ret_dict[kk] = xp.reshape(flat, out.shape)
         ret_dict["mask"] = xp.astype(atom_mask, xp.int32)
         return ret_dict
 

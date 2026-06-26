@@ -595,12 +595,26 @@ def make_model(
             atomic_ret = self.atomic_model.forward_common_atomic_graph(
                 graph, atype, fparam=fparam, aparam=aparam
             )
+            # ``forward_common_atomic_graph`` returns flat ``(N, *)`` output
+            # (N = sum(n_node)). Reshape to rectangular ``(nf, nloc, *)`` so
+            # that ``fit_output_to_model_output`` can reduce over the atom axis
+            # (axis=-len(shap)-1) exactly as the dense path does.
+            # This reshape is valid for rectangular frames (uniform nloc per
+            # frame); ragged support is deferred to PR-B segment_sum reduction.
+            xp = array_api_compat.array_namespace(atype)
+            nf = n_node.shape[0]
+            N = atype.shape[0]
+            nloc = N // nf
+            atomic_ret_rect = {
+                kk: xp.reshape(vv, (nf, nloc, *vv.shape[1:]))
+                for kk, vv in atomic_ret.items()
+            }
             return fit_output_to_model_output(
-                atomic_ret,
+                atomic_ret_rect,
                 self.atomic_output_def(),
                 edge_vec,
                 do_atomic_virial=False,
-                mask=atomic_ret["mask"] if "mask" in atomic_ret else None,
+                mask=atomic_ret_rect["mask"] if "mask" in atomic_ret_rect else None,
             )
 
         call = call_common

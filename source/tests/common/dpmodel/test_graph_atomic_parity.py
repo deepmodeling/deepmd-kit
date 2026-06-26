@@ -75,10 +75,11 @@ def test_forward_common_atomic_graph_matches_dense():
     dense = am.forward_common_atomic(ext_coord, ext_atype, nlist, mapping=mapping)
     ng = from_dense_quartet(ext_coord, nlist, mapping)
     graph = am.forward_common_atomic_graph(ng, atype.reshape(-1))
+    # graph returns flat (N,*); reshape dense (nf,nloc,*) -> flat for comparison
     for k in ("energy", "mask"):
-        np.testing.assert_allclose(
-            np.asarray(graph[k]), np.asarray(dense[k]), rtol=1e-12, atol=1e-12
-        )
+        g_arr = np.asarray(graph[k])
+        d_arr = np.asarray(dense[k]).reshape(g_arr.shape)
+        np.testing.assert_allclose(g_arr, d_arr, rtol=1e-12, atol=1e-12)
 
 
 # ── Feature-flag parity matrix (Task 6) ──────────────────────────────────────
@@ -201,6 +202,20 @@ def test_graph_matches_dense_with_atom_exclude():
     assert np.all(g_mask[0, type0_indices] == 0), (
         "excluded type-0 atoms must have mask==0"
     )
+
+
+def test_forward_common_atomic_graph_flat_shape():
+    rng = np.random.default_rng(1)
+    coord = rng.normal(size=(1, 5, 3)) * 1.5
+    atype = np.array([[0, 1, 0, 1, 0]], dtype=np.int64)
+    am = _atomic_model()
+    ext_coord, ext_atype, mapping, nlist = extend_input_and_build_neighbor_list(
+        coord, atype, 4.0, [30], mixed_types=True, box=None
+    )
+    ng = from_dense_quartet(ext_coord, nlist, mapping)
+    out = am.forward_common_atomic_graph(ng, atype.reshape(-1))
+    assert out["energy"].shape == (5, 1)  # flat (N, 1)
+    assert out["mask"].shape == (5,)  # flat (N,)
 
 
 def test_graph_matches_dense_with_out_bias():
