@@ -4997,7 +4997,7 @@ def training_args(
     doc_ckpt_keep_ratio = (
         "An alternative to `max_ckpt_keep` that sets the number of retained "
         "checkpoints as a fraction in (0, 1) of the run: the most recent "
-        "`ceil(ckpt_keep_ratio * numb_steps / save_freq)` checkpoints are kept. "
+        "`ceil(ckpt_keep_ratio * ceil(numb_steps / save_freq))` checkpoints are kept. "
         "When set, it overrides `max_ckpt_keep` and `ema_ckpt_keep`."
     )
     doc_enable_ema = (
