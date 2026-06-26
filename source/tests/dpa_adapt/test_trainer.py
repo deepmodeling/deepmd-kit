@@ -525,7 +525,8 @@ def test_evaluate_writes_datafile_and_uses_f_flag(systems, tmp_path):
     f_idx = captured_cmd.index("-f")
     datafile = captured_cmd[f_idx + 1]
     assert os.path.isfile(datafile), f"datafile not written: {datafile}"
-    lines = [l for l in open(datafile).read().split("\n") if l.strip()]
+    with open(datafile) as f:
+        lines = [l for l in f.read().split("\n") if l.strip()]
     assert len(lines) == 5, f"Expected 5 systems in datafile, got {len(lines)}"
 
     assert out["mae"] == pytest.approx(0.01)

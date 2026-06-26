@@ -11,12 +11,9 @@ from pathlib import (
 
 import pytest
 
-try:
-    import rdkit  # noqa: F401
+from importlib.util import find_spec
 
-    _HAS_RDKIT = True
-except ImportError:
-    _HAS_RDKIT = False
+_HAS_RDKIT = find_spec("rdkit") is not None
 
 from dpa_adapt.data.convert import (
     _is_smiles_input,
