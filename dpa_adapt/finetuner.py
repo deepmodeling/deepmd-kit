@@ -65,7 +65,7 @@ def _load_labels(
     ``"energy"`` → ``"energies"`` for backward compatibility.
 
     When a resolved key is not present in ``system.data`` (dpdata only
-    loads standard DeepMD keys), this function falls back to reading
+    loads standard DeePMD keys), this function falls back to reading
     ``set.*/{key}.npy`` directly from the system source directory.
     """
     keys = [target_key] if isinstance(target_key, str) else list(target_key)
@@ -238,8 +238,8 @@ def _load_npy_system(
 
     Returns
     -------
-    coords     : np.ndarray, shape (n_frames, n_atoms*3)
-    boxes      : np.ndarray, shape (n_frames, 9), or None
+    coords : np.ndarray, shape (n_frames, n_atoms*3)
+    boxes : np.ndarray, shape (n_frames, 9), or None
     atom_types : np.ndarray, shape (n_atoms,)
     """
     d = system.data
@@ -663,7 +663,7 @@ class DPAFineTuner:
         Start and end points of the exponential learning-rate schedule
         (training paradigms).
     decay_steps : int or None
-        Steps between LR decays for the ``exp`` scheduler (deepmd-kit
+        Steps between LR decays for the ``exp`` scheduler (DeePMD-kit
         native).  ``None`` (default) auto-selects: 1000 for
         ``frozen_head``/``finetune``; 1000 for MFT property mode,
         5000 for MFT ener mode.
@@ -672,7 +672,7 @@ class DPAFineTuner:
     max_steps : int
         Total training steps (LP / FT / MFT).
     batch_size : str or int
-        DeepMD-kit batch-size spec (e.g. ``"auto:512"`` or 128).
+        DeePMD-kit batch-size spec (e.g. ``"auto:512"`` or 128).
     loss_function : str
         ``"mse"`` or ``"smooth_mae"`` (training paradigms).
     fitting_net_params : dict or None
@@ -1033,7 +1033,7 @@ class DPAFineTuner:
         return systems
 
     def _freeze_training_checkpoint(self, output_path: str = "frozen_model.pth") -> str:
-        """Freeze a single-task DeepMD checkpoint via ``dp --pt freeze``."""
+        """Freeze a single-task DeePMD checkpoint via ``dp --pt freeze``."""
         ckpt = self._latest_training_checkpoint()
         output_path = os.path.abspath(str(output_path))
         output_dir = os.path.abspath(self.output_dir)
@@ -1372,7 +1372,7 @@ class DPAFineTuner:
 
         ``frozen_sklearn`` extracts features and runs the fitted sklearn
         predictor. Training strategies run ``dp --pt test`` and parse the
-        property predictions from DeepMD's detail files.
+        property predictions from DeePMD's detail files.
 
         Parameters
         ----------

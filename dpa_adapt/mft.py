@@ -335,7 +335,7 @@ class MFTFineTuner:
         ----------
         train_data : str or list[str]
             Downstream deepmd/npy directory (or list of directories).
-            DeepMD-kit requires the standard label filename ``energy.npy``
+            DeePMD-kit requires the standard label filename ``energy.npy``
             under each ``set.*`` subdir. If the raw data uses a custom name
             like ``e_form.npy``, create a symlink before calling fit():
 
@@ -343,8 +343,10 @@ class MFTFineTuner:
 
             force.npy is optional (loss weight applies regardless; set to 0
             if absent).
+
         aux_data : str or list[str]
             Aux deepmd/npy directory. Must have energy.npy + force.npy.
+
         valid_data : str, optional
             Validation deepmd/npy directory.
         """
@@ -370,7 +372,7 @@ class MFTFineTuner:
                 energy_path = os.path.join(os.path.dirname(e_form_path), "energy.npy")
                 if not os.path.exists(energy_path):
                     _LOG.warning(
-                        "%s exists but %s is missing. DeepMD-kit expects "
+                        "%s exists but %s is missing. DeePMD-kit expects "
                         "energy.npy — create a symlink: ln -sf e_form.npy %s",
                         e_form_path,
                         energy_path,
@@ -578,7 +580,7 @@ class MFTFineTuner:
 
         Notes
         -----
-        The DeepMD-kit output labels the unit as ``eV`` regardless of the
+        The DeePMD-kit output labels the unit as ``eV`` regardless of the
         actual training units; callers using Hartree-trained checkpoints
         should treat the returned numbers as Hartree.
         """
