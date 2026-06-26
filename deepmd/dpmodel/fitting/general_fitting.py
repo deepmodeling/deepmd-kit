@@ -790,3 +790,51 @@ class GeneralFitting(NativeOP, BaseFitting):
         if self.eval_return_middle_output and len(self.neuron) > 0:
             results["middle_output"] = middle_outs
         return results
+
+    def call_graph(
+        self,
+        descriptor: Array,
+        atype: Array,
+        gr: Array | None = None,
+        g2: Array | None = None,
+        h2: Array | None = None,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
+    ) -> dict[str, Array]:
+        """Graph-native (flat node axis) fitting forward.
+
+        The node axis is flat ``(N,)``. This reuses the dense forward by treating
+        the node axis as ``nf'=N`` single-atom frames (``nloc'=1``) -- an internal,
+        encapsulated workaround, verified bit-identical to the dense call.
+
+        Parameters
+        ----------
+        descriptor
+            input descriptor. N x nd
+        atype
+            the atom type. N
+        gr
+            equivariant single-particle representation. N x ng x 3
+        fparam
+            NODE-level frame parameter (already gathered by frame_id). N x nfp
+        aparam
+            atomic parameter. N x nap
+
+        Returns
+        -------
+        result_dict
+            the fitting result on the flat node axis. each value N x *shape
+
+        """
+        import array_api_compat
+
+        xp = array_api_compat.array_namespace(descriptor, atype)
+        n, nd = descriptor.shape
+        d1 = xp.reshape(descriptor, (n, 1, nd))
+        a1 = xp.reshape(atype, (n, 1))
+        g1 = None if gr is None else xp.reshape(gr, (n, 1, gr.shape[-2], 3))
+        ap1 = None if aparam is None else xp.reshape(aparam, (n, 1, aparam.shape[-1]))
+        # fparam: dense API expects (nf, nfp); here nf'=N single-atom frames, so the
+        # node-level (N, nfp) IS the per-(pseudo)frame param -- tiled over nloc'=1.
+        ret = self.__call__(d1, a1, gr=g1, g2=g2, h2=h2, fparam=fparam, aparam=ap1)
+        return {kk: xp.reshape(vv, (n, *vv.shape[2:])) for kk, vv in ret.items()}
