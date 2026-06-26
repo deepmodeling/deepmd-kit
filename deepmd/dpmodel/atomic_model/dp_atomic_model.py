@@ -3,8 +3,14 @@ from collections.abc import (
     Callable,
 )
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
+
+if TYPE_CHECKING:
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        NeighborGraph,
+    )
 
 from deepmd.dpmodel.array_api import (
     Array,
@@ -247,6 +253,46 @@ class DPAtomicModel(BaseAtomicModel):
             aparam=aparam,
         )
         return ret
+
+    def forward_atomic_graph(
+        self,
+        graph: "NeighborGraph",
+        atype: Array,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
+    ) -> dict[str, Array]:
+        """Graph analogue of :meth:`forward_atomic`: descriptor ``call_graph`` ->
+        fitting. ``atype`` is flat LOCAL types (N,). Returns the raw fitting dict
+        (no reduction, no masking -- the wrapper handles those).
+
+        Parameters
+        ----------
+        graph
+            NeighborGraph for the local atoms (ghost-free).
+        atype
+            Flat local atom types, shape (nf*nloc,).
+        fparam
+            Frame parameters. nf x ndf
+        aparam
+            Atomic parameters. nf x nloc x nda
+
+        Returns
+        -------
+        result_dict
+            the result dict, defined by the `FittingOutputDef`.
+        """
+        import array_api_compat
+
+        xp = array_api_compat.array_namespace(graph.edge_vec)
+        nf = graph.n_node.shape[0]
+        nloc = atype.shape[0] // nf
+        descriptor = self.descriptor
+        type_embedding = descriptor.type_embedding.call()
+        gg, rot_mat = descriptor.call_graph(graph, atype, type_embedding=type_embedding)
+        atype_2d = xp.reshape(atype, (nf, nloc))
+        return self.fitting_net(
+            gg, atype_2d, gr=rot_mat, g2=None, h2=None, fparam=fparam, aparam=aparam
+        )
 
     def compute_or_load_stat(
         self,
