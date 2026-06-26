@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import dataclasses
+import math
 import functools
 from collections.abc import (
     Callable,
@@ -398,7 +399,10 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         lead = atom_mask.shape  # (nf, nloc) dense | (N,) graph
         for kk in ret_dict.keys():
             out = ret_dict[kk]
-            flat = xp.reshape(out, (*lead, -1))
+            # explicit trailing product (NOT -1): a zero-atom forward (nloc==0)
+            # has size 0, and numpy cannot infer -1 for a size-0 array.
+            trail = math.prod(out.shape[len(lead) :])
+            flat = xp.reshape(out, (*lead, trail))
             flat = xp.where(atom_mask[..., None], flat, xp.zeros_like(flat))
             ret_dict[kk] = xp.reshape(flat, out.shape)
         ret_dict["mask"] = xp.astype(atom_mask, xp.int32)
