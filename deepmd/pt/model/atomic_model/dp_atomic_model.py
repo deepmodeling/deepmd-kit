@@ -349,9 +349,6 @@ class DPAtomicModel(BaseAtomicModel):
         g2 = descriptor_out.get("g2")
         h2 = descriptor_out.get("h2")
 
-        if self.enable_eval_descriptor_hook:
-            self.eval_descriptor_list.append(descriptor.detach())
-
         if central_ext_index is None:
             from deepmd.pt.utils.nlist import (
                 get_central_ext_index,
@@ -386,11 +383,6 @@ class DPAtomicModel(BaseAtomicModel):
                 fit_ret[kk].reshape([out_shape[0], out_shape2]) * atom_mask[:, None]
             ).view(out_shape)
         fit_ret["mask"] = atom_mask
-
-        if self.enable_eval_fitting_last_layer_hook and "middle_output" in fit_ret:
-            self.eval_fitting_last_layer_list.append(
-                fit_ret.pop("middle_output").detach()
-            )
 
         return fit_ret
 
