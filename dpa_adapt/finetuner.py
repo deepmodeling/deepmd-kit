@@ -1410,7 +1410,11 @@ class DPAFineTuner:
                 pretrained=self.pretrained,
                 aux_branch=self.aux_branch,
                 aux_prob=self.aux_prob,
-                type_map=self.type_map,
+                # Preserve "omitted" (None) for MFT: __init__ normalizes an
+                # unset type_map to [] for the frozen-sklearn path, but MFT
+                # treats an empty list as user-provided and would skip
+                # checkpoint auto-detection. Pass None so MFT auto-detects.
+                type_map=self.type_map or None,
                 fitting_net_params=self.fitting_net_params,
                 downstream_task_type=self.downstream_task_type,
                 property_name=self.property_name,

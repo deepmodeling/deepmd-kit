@@ -494,12 +494,27 @@ class DPATrainer:
                         f"fparam.npy of shape (n_frames, {fparam_dim})."
                     )
                 shape = np.load(fpath).shape
+                if len(shape) != 2:
+                    raise DPADataError(
+                        f"fparam.npy at {fpath} has shape {shape}; expected a "
+                        f"2-D array (n_frames, {fparam_dim})."
+                    )
                 if shape[1] != fparam_dim:
                     raise DPADataError(
                         f"fparam.npy at {fpath} has shape {shape} "
                         f"but fparam_dim={fparam_dim}. "
                         f"Expected shape (n_frames, {fparam_dim})."
                     )
+                # Preflight: one fparam row per frame (coord.npy frame count).
+                coord_path = os.path.join(sd, "coord.npy")
+                if os.path.isfile(coord_path):
+                    n_frames = np.load(coord_path, mmap_mode="r").shape[0]
+                    if shape[0] != n_frames:
+                        raise DPADataError(
+                            f"fparam.npy at {fpath} has {shape[0]} rows but set "
+                            f"{sd} has {n_frames} frames (coord.npy); expected "
+                            f"one fparam row per frame."
+                        )
 
     # ----- fit -----
     def fit(self) -> str:

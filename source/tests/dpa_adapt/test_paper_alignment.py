@@ -429,6 +429,7 @@ _LEGACY_ENER_EXPECTED = {
         },
         "numb_steps": 1000,
         "save_freq": 500,
+        "save_ckpt": "/tmp/mft_ener/model.ckpt",
         "disp_freq": 100,
         "seed": 42,
     },
