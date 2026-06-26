@@ -7,10 +7,12 @@ from .exclude_mask import (
     PairExcludeMask,
 )
 from .lmdb_data import (
+    DistributedMixedBatchSampler,
     DistributedSameNlocBatchSampler,
     LmdbDataReader,
     LmdbTestData,
     LmdbTestDataNlocView,
+    MixedBatchSampler,
     SameNlocBatchSampler,
     is_lmdb,
     make_neighbor_stat_data,
@@ -53,6 +55,7 @@ from .training_utils import (
 
 __all__ = [
     "AtomExcludeMask",
+    "DistributedMixedBatchSampler",
     "DistributedSameNlocBatchSampler",
     "EmbeddingNet",
     "EnvMat",
@@ -60,6 +63,7 @@ __all__ = [
     "LmdbDataReader",
     "LmdbTestData",
     "LmdbTestDataNlocView",
+    "MixedBatchSampler",
     "NativeLayer",
     "NativeNet",
     "NetworkCollection",

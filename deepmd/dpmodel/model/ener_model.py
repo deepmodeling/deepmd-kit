@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+from collections.abc import (
+    Mapping,
+)
 from copy import (
     deepcopy,
 )
@@ -94,49 +97,17 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         fparam: Array | None = None,
         aparam: Array | None = None,
         do_atomic_virial: bool = False,
-        batch: Array | None = None,
-        ptr: Array | None = None,
-        extended_atype: Array | None = None,
-        extended_batch: Array | None = None,
-        extended_image: Array | None = None,
-        extended_ptr: Array | None = None,
-        mapping: Array | None = None,
-        central_ext_index: Array | None = None,
-        nlist: Array | None = None,
-        nlist_ext: Array | None = None,
-        a_nlist: Array | None = None,
-        a_nlist_ext: Array | None = None,
-        nlist_mask: Array | None = None,
-        a_nlist_mask: Array | None = None,
-        edge_index: Array | None = None,
-        angle_index: Array | None = None,
+        mixed_batch: Mapping[str, Array] | None = None,
     ) -> dict[str, Array]:
-        if batch is not None or ptr is not None:
-            if batch is None or ptr is None:
-                raise ValueError("Both batch and ptr are required for mixed batches.")
+        if mixed_batch is not None:
             return self.call_flat(
                 coord=coord,
                 atype=atype,
-                batch=batch,
-                ptr=ptr,
                 box=box,
                 fparam=fparam,
                 aparam=aparam,
                 do_atomic_virial=do_atomic_virial,
-                extended_atype=extended_atype,
-                extended_batch=extended_batch,
-                extended_image=extended_image,
-                extended_ptr=extended_ptr,
-                mapping=mapping,
-                central_ext_index=central_ext_index,
-                nlist=nlist,
-                nlist_ext=nlist_ext,
-                a_nlist=a_nlist,
-                a_nlist_ext=a_nlist_ext,
-                nlist_mask=nlist_mask,
-                a_nlist_mask=a_nlist_mask,
-                edge_index=edge_index,
-                angle_index=angle_index,
+                mixed_batch=mixed_batch,
             )
 
         model_ret = self.call_common(
@@ -166,26 +137,11 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         self,
         coord: Array,
         atype: Array,
-        batch: Array,
-        ptr: Array,
+        mixed_batch: Mapping[str, Array],
         box: Array | None = None,
         fparam: Array | None = None,
         aparam: Array | None = None,
         do_atomic_virial: bool = False,
-        extended_atype: Array | None = None,
-        extended_batch: Array | None = None,
-        extended_image: Array | None = None,
-        extended_ptr: Array | None = None,
-        mapping: Array | None = None,
-        central_ext_index: Array | None = None,
-        nlist: Array | None = None,
-        nlist_ext: Array | None = None,
-        a_nlist: Array | None = None,
-        a_nlist_ext: Array | None = None,
-        nlist_mask: Array | None = None,
-        a_nlist_mask: Array | None = None,
-        edge_index: Array | None = None,
-        angle_index: Array | None = None,
     ) -> dict[str, Array]:
         """Evaluate a flattened mixed-nloc batch with the dpmodel backend.
 
@@ -193,22 +149,10 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         segment described by ``ptr`` and merges the translated outputs back into
         the flat mixed-batch layout.
         """
-        del (
-            extended_atype,
-            extended_batch,
-            extended_image,
-            extended_ptr,
-            mapping,
-            central_ext_index,
-            nlist,
-            nlist_ext,
-            a_nlist,
-            a_nlist_ext,
-            nlist_mask,
-            a_nlist_mask,
-            edge_index,
-            angle_index,
-        )
+        batch = mixed_batch.get("batch")
+        ptr = mixed_batch.get("ptr")
+        if batch is None or ptr is None:
+            raise ValueError("mixed_batch must contain both batch and ptr.")
         if self._enable_hessian:
             raise NotImplementedError(
                 "Hessian is not implemented for dpmodel mixed-batch flat calls."

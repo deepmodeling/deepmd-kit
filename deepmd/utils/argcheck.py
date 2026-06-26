@@ -3764,8 +3764,9 @@ If MPI is used, the value should be considered as the batch size per task.'
         "Whether to enable LMDB mixed-batch training with different numbers of atoms "
         "per frame. When set to True, the PyTorch LMDB dataloader flattens atom-wise "
         "fields and precomputes graph indices in the collate function. In this mode, "
-        "`batch_size` is the number of frames/systems per batch rather than the total "
-        "atom count. "
+        "integer `batch_size` is the number of frames/systems per batch, while "
+        "`auto:N`, `max:N`, and `filter:N` use the total atom count of the mixed "
+        "batch as the budget. "
         "The alias `mix_batch` is accepted. Default is False."
     )
 
@@ -3861,8 +3862,9 @@ def validation_data_args() -> list[
         "Whether to enable LMDB mixed-batch validation with different numbers of atoms "
         "per frame. When set to True, the PyTorch LMDB dataloader flattens atom-wise "
         "fields and precomputes graph indices in the collate function. In this mode, "
-        "`batch_size` is the number of frames/systems per batch rather than the total "
-        "atom count. "
+        "integer `batch_size` is the number of frames/systems per batch, while "
+        "`auto:N`, `max:N`, and `filter:N` use the total atom count of the mixed "
+        "batch as the budget. "
         "The alias `mix_batch` is accepted. Default is False."
     )
 

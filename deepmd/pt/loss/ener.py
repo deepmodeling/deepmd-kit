@@ -240,11 +240,12 @@ class EnergyStdLoss(TaskLoss):
         # more_loss['test_keys'] = []  # showed when doing dp test
 
         # Detect mixed batch format
-        is_mixed_batch = "ptr" in input_dict and input_dict["ptr"] is not None
+        mixed_batch = input_dict.get("mixed_batch")
+        is_mixed_batch = mixed_batch is not None
 
         atom_norms = None
         if is_mixed_batch:
-            ptr = input_dict["ptr"]
+            ptr = mixed_batch["ptr"]
             natoms_per_frame = ptr[1:] - ptr[:-1]  # [nframes]
             atom_norms = 1.0 / natoms_per_frame.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION)
             atom_norm = None

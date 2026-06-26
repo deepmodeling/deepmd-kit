@@ -535,26 +535,11 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
             self,
             coord: torch.Tensor,
             atype: torch.Tensor,
-            batch: torch.Tensor,
-            ptr: torch.Tensor,
+            mixed_batch: dict[str, torch.Tensor],
             box: torch.Tensor | None = None,
             fparam: torch.Tensor | None = None,
             aparam: torch.Tensor | None = None,
             do_atomic_virial: bool = False,
-            extended_atype: torch.Tensor | None = None,
-            extended_batch: torch.Tensor | None = None,
-            extended_image: torch.Tensor | None = None,
-            extended_ptr: torch.Tensor | None = None,
-            mapping: torch.Tensor | None = None,
-            central_ext_index: torch.Tensor | None = None,
-            nlist: torch.Tensor | None = None,
-            nlist_ext: torch.Tensor | None = None,
-            a_nlist: torch.Tensor | None = None,
-            a_nlist_ext: torch.Tensor | None = None,
-            nlist_mask: torch.Tensor | None = None,
-            a_nlist_mask: torch.Tensor | None = None,
-            edge_index: torch.Tensor | None = None,
-            angle_index: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
             """Forward pass for flat mixed-nloc batch.
 
@@ -587,6 +572,12 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 - atomwise outputs: [total_atoms, ...]
                 - frame-wise outputs: [nframes, ...]
             """
+            if "batch" not in mixed_batch or "ptr" not in mixed_batch:
+                raise RuntimeError(
+                    "Flat mixed-batch forward requires batch and ptr fields."
+                )
+            batch = mixed_batch["batch"]
+            ptr = mixed_batch["ptr"]
             return self.forward_common_flat_native(
                 coord,
                 atype,
@@ -596,20 +587,20 @@ def make_model(T_AtomicModel: type[BaseAtomicModel]) -> type:
                 fparam,
                 aparam,
                 do_atomic_virial,
-                extended_atype=extended_atype,
-                extended_batch=extended_batch,
-                extended_image=extended_image,
-                extended_ptr=extended_ptr,
-                mapping=mapping,
-                central_ext_index=central_ext_index,
-                nlist=nlist,
-                nlist_ext=nlist_ext,
-                a_nlist=a_nlist,
-                a_nlist_ext=a_nlist_ext,
-                nlist_mask=nlist_mask,
-                a_nlist_mask=a_nlist_mask,
-                edge_index=edge_index,
-                angle_index=angle_index,
+                extended_atype=mixed_batch.get("extended_atype"),
+                extended_batch=mixed_batch.get("extended_batch"),
+                extended_image=mixed_batch.get("extended_image"),
+                extended_ptr=mixed_batch.get("extended_ptr"),
+                mapping=mixed_batch.get("mapping"),
+                central_ext_index=mixed_batch.get("central_ext_index"),
+                nlist=mixed_batch.get("nlist"),
+                nlist_ext=mixed_batch.get("nlist_ext"),
+                a_nlist=mixed_batch.get("a_nlist"),
+                a_nlist_ext=mixed_batch.get("a_nlist_ext"),
+                nlist_mask=mixed_batch.get("nlist_mask"),
+                a_nlist_mask=mixed_batch.get("a_nlist_mask"),
+                edge_index=mixed_batch.get("edge_index"),
+                angle_index=mixed_batch.get("angle_index"),
             )
 
         def get_out_bias(self) -> torch.Tensor:

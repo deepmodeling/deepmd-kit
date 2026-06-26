@@ -23,6 +23,7 @@ from torch.utils.data._utils.collate import (
 from deepmd.dpmodel.utils.lmdb_data import (
     LmdbDataReader,
     LmdbTestData,
+    MixedBatchSampler,
     SameNlocBatchSampler,
     collate_lmdb_frames,
     compute_block_targets,
@@ -194,14 +195,14 @@ def _collate_lmdb_batch(batch: list[FrameDict]) -> BatchDict:
 
 
 class _SameNlocBatchSamplerTorch(Sampler):
-    """Torch Sampler adapter around the framework-agnostic SameNlocBatchSampler.
+    """Torch Sampler adapter around framework-agnostic LMDB batch samplers.
 
     PyTorch DataLoader with batch_sampler expects a Sampler that yields
-    lists of indices. This wraps SameNlocBatchSampler (or
-    DistributedSameNlocBatchSampler) to satisfy that.
+    lists of indices. This wraps SameNlocBatchSampler, MixedBatchSampler, or
+    their distributed variants to satisfy that.
     """
 
-    def __init__(self, inner: SameNlocBatchSampler) -> None:
+    def __init__(self, inner: Any) -> None:
         self._inner = inner
 
     def __iter__(self) -> Iterator[list[int]]:
@@ -230,12 +231,16 @@ class LmdbDataset(Dataset):
 
         - ``int``: fixed batch size for every nloc group.
         - ``"auto"`` / ``"auto:N"``: ``ceil(N / nloc)`` per nloc group
-          (``N=32`` for bare ``"auto"``).
-        - ``"max:N"``: ``max(1, floor(N / nloc))`` per nloc group.
+          (``N=32`` for bare ``"auto"``). With ``mixed_batch=True``, mixed
+          batches accumulate frames until their total atom count reaches
+          ``N``.
+        - ``"max:N"``: ``max(1, floor(N / nloc))`` per nloc group. With
+          ``mixed_batch=True``, mixed batches accumulate frames while their
+          total atom count stays at or below ``N``.
         - ``"filter:N"``: same per-nloc formula as ``"max:N"`` and drops
           every frame whose ``nloc > N`` from the dataset.
     mixed_batch : bool
-        If True, allow different nloc in the same batch (future).
+        If True, allow different nloc in the same batch.
         If False (default), use SameNlocBatchSampler.
     """
 
@@ -272,11 +277,12 @@ class LmdbDataset(Dataset):
                 )
 
         if mixed_batch:
+            sampler = MixedBatchSampler(self._reader, shuffle=True)
+            self._batch_sampler = _SameNlocBatchSamplerTorch(sampler)
             with torch.device("cpu"):
                 self._inner_dataloader = DataLoader(
                     self,
-                    batch_size=self._reader.batch_size,
-                    shuffle=True,
+                    batch_sampler=self._batch_sampler,
                     num_workers=0,
                     collate_fn=_collate_lmdb_mixed_batch,
                 )

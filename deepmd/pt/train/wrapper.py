@@ -199,26 +199,24 @@ class ModelWrapper(torch.nn.Module):
 
         # Mixed-nloc LMDB batches carry a precomputed flat graph.
         if batch is not None and ptr is not None:
-            input_dict.update(
-                {
-                    "batch": batch,
-                    "ptr": ptr,
-                    "extended_atype": extended_atype,
-                    "extended_batch": extended_batch,
-                    "extended_image": extended_image,
-                    "extended_ptr": extended_ptr,
-                    "mapping": mapping,
-                    "central_ext_index": central_ext_index,
-                    "nlist": nlist,
-                    "nlist_ext": nlist_ext,
-                    "a_nlist": a_nlist,
-                    "a_nlist_ext": a_nlist_ext,
-                    "nlist_mask": nlist_mask,
-                    "a_nlist_mask": a_nlist_mask,
-                    "edge_index": edge_index,
-                    "angle_index": angle_index,
-                }
-            )
+            input_dict["mixed_batch"] = {
+                "batch": batch,
+                "ptr": ptr,
+                "extended_atype": extended_atype,
+                "extended_batch": extended_batch,
+                "extended_image": extended_image,
+                "extended_ptr": extended_ptr,
+                "mapping": mapping,
+                "central_ext_index": central_ext_index,
+                "nlist": nlist,
+                "nlist_ext": nlist_ext,
+                "a_nlist": a_nlist,
+                "a_nlist_ext": a_nlist_ext,
+                "nlist_mask": nlist_mask,
+                "a_nlist_mask": a_nlist_mask,
+                "edge_index": edge_index,
+                "angle_index": angle_index,
+            }
 
         has_spin = getattr(self.model[task_key], "has_spin", False)
         if callable(has_spin):

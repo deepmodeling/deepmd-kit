@@ -136,20 +136,22 @@ def test_dpmodel_dpa3_flat_call_matches_regular_per_frame_outputs() -> None:
         box=box,
         fparam=fparam,
         aparam=aparam,
-        batch=batch,
-        ptr=ptr,
-        extended_atype=atype,
-        extended_batch=batch,
-        extended_image=np.zeros_like(coord, dtype=np.int64),
-        extended_ptr=ptr,
-        mapping=np.arange(coord.shape[0], dtype=np.int64),
-        central_ext_index=np.arange(coord.shape[0], dtype=np.int64),
-        nlist=np.full((coord.shape[0], 0), -1, dtype=np.int64),
-        nlist_ext=np.full((coord.shape[0], 0), -1, dtype=np.int64),
-        a_nlist=np.full((coord.shape[0], 0), -1, dtype=np.int64),
-        a_nlist_ext=np.full((coord.shape[0], 0), -1, dtype=np.int64),
-        nlist_mask=np.zeros((coord.shape[0], 0), dtype=bool),
-        a_nlist_mask=np.zeros((coord.shape[0], 0), dtype=bool),
+        mixed_batch={
+            "batch": batch,
+            "ptr": ptr,
+            "extended_atype": atype,
+            "extended_batch": batch,
+            "extended_image": np.zeros_like(coord, dtype=np.int64),
+            "extended_ptr": ptr,
+            "mapping": np.arange(coord.shape[0], dtype=np.int64),
+            "central_ext_index": np.arange(coord.shape[0], dtype=np.int64),
+            "nlist": np.full((coord.shape[0], 0), -1, dtype=np.int64),
+            "nlist_ext": np.full((coord.shape[0], 0), -1, dtype=np.int64),
+            "a_nlist": np.full((coord.shape[0], 0), -1, dtype=np.int64),
+            "a_nlist_ext": np.full((coord.shape[0], 0), -1, dtype=np.int64),
+            "nlist_mask": np.zeros((coord.shape[0], 0), dtype=bool),
+            "a_nlist_mask": np.zeros((coord.shape[0], 0), dtype=bool),
+        },
     )
     regular = _regular_outputs(model, coord, atype, ptr, box, fparam, aparam)
 
@@ -171,8 +173,8 @@ def test_dpmodel_flat_call_requires_batch_and_ptr() -> None:
     model = _build_model()
     coord, atype, batch, _, box = _mixed_batch()
 
-    with pytest.raises(ValueError, match="Both batch and ptr"):
-        model.call(coord, atype, box=box, batch=batch)
+    with pytest.raises(ValueError, match="mixed_batch must contain both batch and ptr"):
+        model.call(coord, atype, box=box, mixed_batch={"batch": batch})
 
 
 def test_dpmodel_flat_call_validates_ptr() -> None:
@@ -184,8 +186,10 @@ def test_dpmodel_flat_call_validates_ptr() -> None:
             coord,
             atype,
             box=box,
-            batch=batch,
-            ptr=np.array([0, 2, 4], dtype=np.int64),
+            mixed_batch={
+                "batch": batch,
+                "ptr": np.array([0, 2, 4], dtype=np.int64),
+            },
         )
 
 
@@ -195,4 +199,4 @@ def test_dpmodel_flat_call_rejects_hessian() -> None:
     coord, atype, batch, ptr, box = _mixed_batch()
 
     with pytest.raises(NotImplementedError, match="Hessian"):
-        model.call(coord, atype, box=box, batch=batch, ptr=ptr)
+        model.call(coord, atype, box=box, mixed_batch={"batch": batch, "ptr": ptr})

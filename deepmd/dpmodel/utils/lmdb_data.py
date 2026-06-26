@@ -8,6 +8,7 @@ Backend-specific wrappers (PyTorch Dataset, JAX, etc.) import from here.
 import logging
 import math
 from collections.abc import (
+    Iterable,
     Iterator,
 )
 from pathlib import (
@@ -245,8 +246,9 @@ class LmdbDataReader:
       by nloc and yields same-nloc batches. Auto batch_size is computed
       per-nloc-group.
     - ``mixed_batch=True`` (new format): frames with different nloc can
-      coexist in one batch (requires padding + mask in collate_fn).
-      Currently raises ``NotImplementedError`` at collation time.
+      coexist in one batch. Atom-wise fields are flattened in the collate
+      function, and string batch-size rules are applied to the total number
+      of atoms in the mixed batch.
 
     Parameters
     ----------
@@ -261,13 +263,17 @@ class LmdbDataReader:
         - ``"auto"`` / ``"auto:N"``: ``ceil(N / nloc)`` per nloc group
           (``N=32`` for bare ``"auto"``). Acts as a *lower* bound —
           each batch has at least ``N`` atoms, but may exceed ``N``
-          by up to ``nloc - 1``.
+          by up to ``nloc - 1``. With ``mixed_batch=True``, frames are
+          accumulated until the total atom count first reaches or exceeds
+          ``N``.
         - ``"max:N"``: ``max(1, floor(N / nloc))`` per nloc group.
           Acts as an *upper* bound for groups with ``nloc <= N``
           (batch has at most ``N`` atoms). For groups with
           ``nloc > N`` the ``max(1, ...)`` floor kicks in: ``bsi=1``
           and a single-frame batch still carries ``nloc`` atoms,
-          which exceeds ``N``.
+          which exceeds ``N``. With ``mixed_batch=True``, frames are
+          accumulated while the mixed-batch total stays at or below ``N``;
+          an oversized single frame is kept as a one-frame batch.
         - ``"filter:N"``: same per-nloc formula as ``"max:N"`` **and**
           drops every frame whose ``nloc > N`` from the dataset. By
           construction every retained batch has at most ``N`` atoms.
@@ -319,14 +325,16 @@ class LmdbDataReader:
         # Safe because we use num_workers=0 in DataLoader.
         self._txn = self._env.begin()
 
-        # Scan per-frame nloc only when needed for same-nloc batching.
-        # For mixed_batch=True, skip the scan entirely (future: padding handles it).
+        # Scan per-frame nloc for same-nloc batching and for mixed-batch
+        # string rules (auto/max/filter), which use the mixed batch's total
+        # atom count as the budget.
         # ``orig_frame_nlocs`` / ``orig_frame_system_ids`` are indexed by the
         # *original* LMDB frame index. After a potential ``filter:N`` drop we
         # rebuild ``self._frame_nlocs`` / ``self._frame_system_ids`` so they
         # are parallel arrays over the *dataset* index space (0..len(self));
         # the dataset-to-original mapping lives in ``self._retained_keys``.
-        if not mixed_batch:
+        need_frame_nlocs = (not mixed_batch) or isinstance(batch_size, str)
+        if need_frame_nlocs:
             # Fast path: use pre-computed frame_nlocs from metadata if available.
             # Falls back to scanning each frame's atom_types shape (~10 us/frame).
             meta_nlocs = meta.get("frame_nlocs")
@@ -373,17 +381,6 @@ class LmdbDataReader:
                     "Expected int, 'auto', 'auto:N', 'max:N', or 'filter:N'."
                 )
 
-        # ``filter:N`` needs per-frame nloc to drop oversized frames; the
-        # ``mixed_batch=True`` fast path skips the nloc scan entirely, so the
-        # two options are incompatible. Fail fast rather than silently
-        # retaining every frame and breaking the documented contract.
-        if self._filter_rule is not None and mixed_batch:
-            raise ValueError(
-                "batch_size='filter:N' is incompatible with mixed_batch=True: "
-                "per-frame nloc is unavailable in the mixed-batch fast path. "
-                "Use mixed_batch=False, or switch to 'max:N' / a fixed int."
-            )
-
         # Determine which original-index frames survive the filter. Without
         # ``filter:N`` every frame is retained.
         if self._filter_rule is not None:
@@ -409,7 +406,7 @@ class LmdbDataReader:
         # space so that every downstream consumer (nloc_groups, system_groups,
         # SameNlocBatchSampler, _expand_indices_by_blocks) operates in a
         # single, self-consistent indexing scheme.
-        if not mixed_batch:
+        if orig_frame_nlocs:
             self._frame_nlocs = [orig_frame_nlocs[k] for k in retained_keys]
         else:
             self._frame_nlocs = []
@@ -725,6 +722,12 @@ class LmdbDataReader:
     @property
     def index(self) -> list[int]:
         """Number of batches per system (single system)."""
+        if (
+            self.mixed_batch
+            and self._frame_nlocs
+            and (self._auto_rule is not None or self._max_rule is not None)
+        ):
+            return [len(_build_mixed_batches(self, shuffle=False))]
         return [max(1, self.nframes // self.batch_size)]
 
     @property
@@ -1291,6 +1294,151 @@ class DistributedSameNlocBatchSampler:
     @property
     def world_size(self) -> int:
         return self._world_size
+
+
+def _build_mixed_batches(
+    reader: LmdbDataReader,
+    shuffle: bool,
+    rng: np.random.Generator | None = None,
+) -> list[list[int]]:
+    """Build mixed-nloc batches using frame order and atom-count budgets.
+
+    Fixed integer ``batch_size`` keeps the historical mixed-batch meaning:
+    number of frames per batch. String rules use the total number of atoms in
+    the mixed batch:
+
+    - ``auto:N`` closes a batch when the accumulated atom count first reaches
+      or exceeds ``N``.
+    - ``max:N`` closes before adding a frame that would exceed ``N``; a single
+      frame whose ``nloc > N`` is still emitted as a one-frame batch.
+    - ``filter:N`` reuses ``max:N`` after oversized frames have been removed by
+      :class:`LmdbDataReader`.
+    """
+    indices = list(range(len(reader)))
+    if shuffle:
+        if rng is None:
+            rng = np.random.default_rng()
+        rng.shuffle(indices)
+
+    return list(_iter_mixed_batches(reader, indices))
+
+
+def _iter_mixed_batches(
+    reader: LmdbDataReader,
+    indices: Iterable[int],
+) -> Iterator[list[int]]:
+    """Yield mixed-nloc batches from an ordered frame-index iterable."""
+    auto_rule = reader._auto_rule
+    max_rule = reader._max_rule
+    if auto_rule is None and max_rule is None:
+        bs = max(1, reader.batch_size)
+        current: list[int] = []
+        for idx in indices:
+            current.append(idx)
+            if len(current) >= bs:
+                yield current
+                current = []
+        if current:
+            yield current
+        return
+
+    if not reader.frame_nlocs:
+        raise ValueError(
+            "mixed-batch auto/max/filter batch_size requires per-frame nlocs."
+        )
+
+    current: list[int] = []
+    current_atoms = 0
+
+    if auto_rule is not None:
+        for idx in indices:
+            current.append(idx)
+            current_atoms += reader.frame_nlocs[idx]
+            if current_atoms >= auto_rule:
+                yield current
+                current = []
+                current_atoms = 0
+    else:
+        assert max_rule is not None
+        for idx in indices:
+            nloc = reader.frame_nlocs[idx]
+            if current and current_atoms + nloc > max_rule:
+                yield current
+                current = []
+                current_atoms = 0
+            current.append(idx)
+            current_atoms += nloc
+            if current_atoms >= max_rule:
+                yield current
+                current = []
+                current_atoms = 0
+
+    if current:
+        yield current
+
+
+class MixedBatchSampler:
+    """Sampler for mixed-nloc LMDB batches.
+
+    It yields lists of frame indices that may have different ``nloc`` values.
+    Integer ``batch_size`` is interpreted as a frame count; ``auto/max/filter``
+    string rules are interpreted as total atom-count budgets.
+    """
+
+    def __init__(
+        self,
+        reader: LmdbDataReader,
+        shuffle: bool = True,
+        seed: int | None = None,
+    ) -> None:
+        self._reader = reader
+        self._shuffle = shuffle
+        self._seed = seed
+
+    def __iter__(self) -> Iterator[list[int]]:
+        rng = np.random.default_rng(self._seed)
+        indices = list(range(len(self._reader)))
+        if self._shuffle:
+            rng.shuffle(indices)
+        yield from _iter_mixed_batches(self._reader, indices)
+
+    def __len__(self) -> int:
+        return len(_build_mixed_batches(self._reader, shuffle=False))
+
+
+class DistributedMixedBatchSampler:
+    """Distributed wrapper for mixed-nloc batch sampling."""
+
+    def __init__(
+        self,
+        reader: LmdbDataReader,
+        rank: int,
+        world_size: int,
+        shuffle: bool = True,
+        seed: int | None = None,
+    ) -> None:
+        self._reader = reader
+        self._rank = rank
+        self._world_size = world_size
+        self._shuffle = shuffle
+        self._seed = seed if seed is not None else 0
+        self._epoch = 0
+
+    def set_epoch(self, epoch: int) -> None:
+        self._epoch = epoch
+
+    def __iter__(self) -> Iterator[list[int]]:
+        rng = np.random.default_rng(self._seed + self._epoch)
+        indices = list(range(len(self._reader)))
+        if self._shuffle:
+            rng.shuffle(indices)
+        for batch_idx, batch in enumerate(_iter_mixed_batches(self._reader, indices)):
+            if batch_idx % self._world_size == self._rank:
+                yield batch
+
+    def __len__(self) -> int:
+        total = len(_build_mixed_batches(self._reader, shuffle=False))
+        return math.ceil(total / self._world_size)
 
 
 def make_neighbor_stat_data(

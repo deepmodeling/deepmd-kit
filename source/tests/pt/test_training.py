@@ -1131,12 +1131,12 @@ def _mixed_batch_dpa3_config(train_path: str, val_path: str) -> dict[str, Any]:
         "training": {
             "training_data": {
                 "systems": train_path,
-                "batch_size": 2,
+                "batch_size": "max:5",
                 "mixed_batch": True,
             },
             "validation_data": {
                 "systems": val_path,
-                "batch_size": 2,
+                "batch_size": "max:5",
                 "mixed_batch": True,
                 "numb_btch": 1,
             },

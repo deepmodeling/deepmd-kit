@@ -403,7 +403,11 @@ class TestEnerStdLossMixedBatch(unittest.TestCase):
 
         _, loss, _ = loss_obj(
             {
-                "ptr": torch.tensor([0, 10, 110], dtype=torch.long, device=env.DEVICE),
+                "mixed_batch": {
+                    "ptr": torch.tensor(
+                        [0, 10, 110], dtype=torch.long, device=env.DEVICE
+                    )
+                },
             },
             fake_model,
             {
@@ -447,7 +451,11 @@ class TestEnerStdLossMixedBatch(unittest.TestCase):
             "Generalized force loss is not supported with mixed_batch=True yet.",
         ):
             loss_obj(
-                {"ptr": torch.tensor([0, 2], dtype=torch.long, device=env.DEVICE)},
+                {
+                    "mixed_batch": {
+                        "ptr": torch.tensor([0, 2], dtype=torch.long, device=env.DEVICE)
+                    }
+                },
                 fake_model,
                 {
                     "force": torch.zeros(

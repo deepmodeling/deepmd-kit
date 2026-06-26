@@ -112,7 +112,12 @@ def test_dpa3_flat_forward_matches_regular_per_frame_energy_and_force() -> None:
     coord, atype, batch, ptr, box = _mixed_batch()
     graph = _flat_graph(coord, atype, batch, ptr, box)
 
-    flat = model(coord, atype, box=box, batch=batch, ptr=ptr, **graph)
+    flat = model(
+        coord,
+        atype,
+        box=box,
+        mixed_batch={"batch": batch, "ptr": ptr, **graph},
+    )
     regular = []
     for frame_idx in range(ptr.numel() - 1):
         start = int(ptr[frame_idx].item())
@@ -150,7 +155,7 @@ def test_dpa3_flat_forward_requires_precomputed_graph_fields() -> None:
     coord, atype, batch, ptr, box = _mixed_batch()
 
     with pytest.raises(RuntimeError, match="precomputed graph fields"):
-        model(coord, atype, box=box, batch=batch, ptr=ptr)
+        model(coord, atype, box=box, mixed_batch={"batch": batch, "ptr": ptr})
 
 
 def test_dpa3_flat_forward_rejects_atomic_virial() -> None:
@@ -163,8 +168,6 @@ def test_dpa3_flat_forward_rejects_atomic_virial() -> None:
             coord,
             atype,
             box=box,
-            batch=batch,
-            ptr=ptr,
             do_atomic_virial=True,
-            **graph,
+            mixed_batch={"batch": batch, "ptr": ptr, **graph},
         )

@@ -286,19 +286,9 @@ class Trainer:
                     _seed = 42
 
                 if _data.mixed_batch:
-                    from torch.utils.data import (
-                        RandomSampler,
-                        SequentialSampler,
+                    from deepmd.dpmodel.utils.lmdb_data import (
+                        MixedBatchSampler,
                     )
-
-                    if _shuffle:
-                        generator = torch.Generator()
-                        generator.manual_seed(_seed)
-                        _sampler = RandomSampler(
-                            _data, replacement=False, generator=generator
-                        )
-                    else:
-                        _sampler = SequentialSampler(_data)
 
                     model_for_graph = (
                         self.model[_task_key] if self.multi_task else self.model
@@ -317,10 +307,28 @@ class Trainer:
                         "mixed_types": descriptor.mixed_types(),
                     }
 
+                    if self.world_size > 1:
+                        from deepmd.dpmodel.utils.lmdb_data import (
+                            DistributedMixedBatchSampler,
+                        )
+
+                        _inner_sampler = DistributedMixedBatchSampler(
+                            _data._reader,
+                            rank=self.rank,
+                            world_size=self.world_size,
+                            shuffle=_shuffle,
+                            seed=_seed,
+                        )
+                    else:
+                        _inner_sampler = MixedBatchSampler(
+                            _data._reader,
+                            shuffle=_shuffle,
+                            seed=_seed,
+                        )
+                    _batch_sampler = _SameNlocBatchSamplerTorch(_inner_sampler)
                     _dataloader = DataLoader(
                         _data,
-                        batch_size=_data.batch_size,
-                        sampler=_sampler,
+                        batch_sampler=_batch_sampler,
                         num_workers=0,
                         collate_fn=make_lmdb_mixed_batch_collate(graph_config),
                         pin_memory=(DEVICE != "cpu"),
