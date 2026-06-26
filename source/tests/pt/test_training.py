@@ -2,6 +2,7 @@
 import functools
 import json
 import os
+import platform
 import shutil
 import signal
 import tempfile
@@ -933,6 +934,7 @@ class TestFullValidation(unittest.TestCase):
         os.chdir(self._cwd)
         self._tmpdir.cleanup()
 
+    @TRAINING_TEST_TIMEOUT
     @patch("deepmd.pt.train.validation.FullValidator.evaluate_all_systems")
     def test_full_validation_rotates_best_checkpoint(self, mocked_eval) -> None:
         mocked_eval.side_effect = [
@@ -964,6 +966,7 @@ class TestFullValidation(unittest.TestCase):
         self.assertEqual(val_lines[0].split()[1], "1000.0")
         self.assertEqual(val_lines[1].split()[1], "2000.0")
 
+    @TRAINING_TEST_TIMEOUT
     @patch("deepmd.pt.train.validation.FullValidator.evaluate_all_systems")
     def test_full_validation_save_best_dir(self, mocked_eval) -> None:
         mocked_eval.side_effect = [
@@ -985,6 +988,7 @@ class TestFullValidation(unittest.TestCase):
         self.assertTrue((best_dir / "best.ckpt-3.t-1.pt").is_file())
         self.assertEqual(list(Path(".").glob("best.ckpt-*.pt")), [])
 
+    @TRAINING_TEST_TIMEOUT
     @patch("deepmd.pt.train.validation.FullValidator.evaluate_all_systems")
     def test_full_validation_runs_when_start_step_is_final_step(
         self, mocked_eval
@@ -1223,12 +1227,19 @@ class TestEMATraining(unittest.TestCase):
         )
         self.assertEqual(trainer.latest_model, save_dir / f"{save_ckpt}-4.pt")
 
-        # Latest-checkpoint symlinks stay in the working directory and resolve
-        # into save_dir; no symlink is created inside save_dir.
+        # The latest-checkpoint alias stays in the working directory and points
+        # at the newest checkpoint under save_dir; none is created inside
+        # save_dir. symlink_prefix_files() copies on Windows, so the alias is a
+        # content copy there rather than a symlink.
         for prefix in (save_ckpt, ema_save_ckpt):
             link = Path(f"{prefix}.pt")
-            self.assertTrue(link.is_symlink())
-            self.assertEqual(link.resolve(), (save_dir / f"{prefix}-4.pt").resolve())
+            target = save_dir / f"{prefix}-4.pt"
+            self.assertTrue(link.exists())
+            if platform.system() == "Windows":
+                self.assertEqual(link.read_bytes(), target.read_bytes())
+            else:
+                self.assertTrue(link.is_symlink())
+                self.assertEqual(link.resolve(), target.resolve())
         self.assertFalse((save_dir / f"{save_ckpt}.pt").exists())
 
         # The checkpoint pointer file stays in the working directory and points

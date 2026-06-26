@@ -255,11 +255,12 @@ def resolve_keep_ckpt_count(
     """
     Convert a checkpoint-retention ratio into a sliding-window keep count.
 
-    Periodic checkpoints are saved every ``save_freq`` steps, so a run of
-    ``num_steps`` produces about ``num_steps // save_freq`` of them. Keeping the
-    most recent ``ceil(ratio * total)`` of those is equivalent to retaining the
-    final ``ratio`` fraction of the run by step, without the caller computing
-    the count by hand.
+    A checkpoint is written every ``save_freq`` steps and once more at the final
+    step, so a run of ``num_steps`` produces ``ceil(num_steps / save_freq)`` of
+    them in total (the terminal checkpoint is off-cadence when ``num_steps`` is
+    not a multiple of ``save_freq``). Keeping the most recent
+    ``ceil(ratio * total)`` is equivalent to retaining the final ``ratio``
+    fraction of the run by step, without the caller computing the count by hand.
 
     Parameters
     ----------
@@ -280,5 +281,5 @@ def resolve_keep_ckpt_count(
     """
     if ckpt_keep_ratio is None:
         return None
-    total_periodic_ckpts = max(1, num_steps // save_freq)
-    return max(1, ceil(ckpt_keep_ratio * total_periodic_ckpts))
+    total_ckpts = max(1, ceil(num_steps / save_freq))
+    return max(1, ceil(ckpt_keep_ratio * total_ckpts))
