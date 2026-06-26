@@ -392,6 +392,89 @@ class TestSeZMModelCompile(unittest.TestCase):
             name: param.detach().clone() for name, param in model.named_parameters()
         }
 
+    def _make_frame_with_natoms(
+        self, nloc: int, *, seed: int = 20240613
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Build a compact ``nloc``-atom frame with neighbours inside ``rcut``.
+
+        Atoms are placed in a tight cluster so the ``sel=[2, 2]`` neighbour list
+        is saturated and the edge count is comfortably larger than ``nloc``.
+        """
+        torch.manual_seed(seed + nloc)
+        coord = torch.rand(1, nloc, 3, device=self.device, dtype=torch.float32) * 2.5
+        atype = (
+            (torch.arange(nloc, device=self.device) % 2).view(1, nloc).to(torch.int32)
+        )
+        box = torch.tensor(
+            [[8.0, 0.0, 0.0, 0.0, 8.0, 0.0, 0.0, 0.0, 8.0]],
+            dtype=torch.float32,
+            device=self.device,
+        )
+        return coord, atype, box
+
+    def test_trace_pad_dim_trim_returns_contiguous(self) -> None:
+        """Trimmed trace inputs stay contiguous so strides mirror runtime layout.
+
+        A sliced (non-contiguous) trim leaks the pre-trim length into the tensor
+        stride; ``make_fx`` duck-shaping can then fuse that stale stride with the
+        edge-count symbol and corrupt the compiled shape guards.
+        """
+        from deepmd.pt.utils.compile_compat import (
+            trace_pad_dim,
+        )
+
+        base = torch.arange(5 * 13, device=self.device).view(5, 13)
+        trimmed = trace_pad_dim(base, 1, 7)
+        self.assertEqual(tuple(trimmed.shape), (5, 7))
+        self.assertTrue(trimmed.is_contiguous())
+        padded = trace_pad_dim(base, 1, 20)
+        self.assertEqual(tuple(padded.shape), (5, 20))
+        self.assertTrue(padded.is_contiguous())
+
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
+    def test_eval_compile_first_frame_nloc_matches_trace_edge_count(self) -> None:
+        """First eval frame with ``nloc`` equal to the trace edge count compiles.
+
+        The symbolic trace pads the edge axis to ``next_safe_prime`` (13 for the
+        two-type forbidden set ``{1, 2, 3, 9}`` -> primes 5/7/11/13) and trims
+        ``atype`` to ``trace_nloc`` (7). A first frame with ``nloc == 13`` leaves
+        the trimmed ``atype`` carrying ``stride(0) == 13``; previously that stale
+        stride was duck-shaped onto the edge-count symbol, so every edge tensor
+        was guarded against ``nloc`` and ``assert_size_stride`` failed once the
+        real edge count differed. Pins the contiguous-trace + eval-only
+        duck-shape-off fix.
+        """
+        nloc = 13  # == next_safe_prime edge count for the two-type forbidden set
+        coord, atype, box = self._make_frame_with_natoms(nloc)
+
+        model_dyn = get_sezm_model(self._build_model_params(use_compile=False))
+        self._randomize_params(model_dyn)
+        with mock.patch.dict(os.environ, {"DP_COMPILE_INFER": "1"}, clear=False):
+            model_cmp = get_sezm_model(self._build_model_params(use_compile=True))
+        model_cmp.load_state_dict(model_dyn.state_dict())
+        model_dyn.eval()
+        model_cmp.eval()
+
+        out_dyn = model_dyn(coord, atype, box=box)
+        # The compiled eval path must trace, lower and run without tripping
+        # ``assert_size_stride`` on the edge tensors.
+        out_cmp = model_cmp(coord, atype, box=box)
+        self.assertIn((False, False), model_cmp.compiled_core_compute_cache)
+        _assert_close_with_strict_warning(
+            out_dyn["energy"],
+            out_cmp["energy"],
+            atol=1.0e-6,
+            rtol=1.0e-6,
+            msg="eval energy mismatch when first-frame nloc == trace edge count",
+        )
+        _assert_close_with_strict_warning(
+            out_dyn["force"],
+            out_cmp["force"],
+            atol=1.0e-6,
+            rtol=1.0e-6,
+            msg="eval force mismatch when first-frame nloc == trace edge count",
+        )
+
     @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_compile_cache_slots_and_eval_shape_change(self) -> None:
         """Compile cache slots should coexist while eval handles batch-size growth."""
