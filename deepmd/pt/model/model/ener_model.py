@@ -72,8 +72,8 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         fparam: torch.Tensor | None = None,
         aparam: torch.Tensor | None = None,
         do_atomic_virial: bool = False,
-        mixed_batch: dict[str, torch.Tensor] | None = None,
         charge_spin: torch.Tensor | None = None,
+        mixed_batch: dict[str, torch.Tensor] | None = None,
     ) -> dict[str, torch.Tensor]:
         if not torch.jit.is_scripting() and mixed_batch is not None:
             model_ret = self.forward_common_flat(
