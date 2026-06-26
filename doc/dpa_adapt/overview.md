@@ -21,7 +21,7 @@ The strategy is the core choice. All four share the same pre-trained DPA backbon
 | Strategy         | Core Mechanism                                  | Target Data Size | Primary Use Case                                                              |
 | :--------------- | :---------------------------------------------- | :--------------- | :---------------------------------------------------------------------------- |
 | `frozen_sklearn` | Frozen backbone + scikit-learn regressor        | Small (\<1k)     | Ultra-fast benchmarking & prototyping                                         |
-| `frozen_head`    | Frozen backbone + DeepMD property fitting head  | Medium (1k–10k)  | Train only the property head while keeping the pretrained DPA backbone frozen |
+| `frozen_head`    | Frozen backbone + DeePMD property fitting head  | Medium (1k–10k)  | Train only the property head while keeping the pretrained DPA backbone frozen |
 | `finetune`       | End-to-end full parameter fine-tuning           | Large (>10k)     | Maximum accuracy on large datasets                                            |
 | `mft`            | Multi-task co-training (property + force field) | Small / low-data | Mitigating representation collapse                                            |
 

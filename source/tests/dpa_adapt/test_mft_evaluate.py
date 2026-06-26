@@ -69,7 +69,7 @@ def _make_finetuner(tmp_path, max_steps=100):
 
 
 # ---------------------------------------------------------------------------
-# Parser: real DeepMD-kit 3.1.3 output shape
+# Parser: real DeePMD-kit 3.1.3 output shape
 # ---------------------------------------------------------------------------
 
 
