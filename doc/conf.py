@@ -7,6 +7,10 @@
 
 # -- Path setup --------------------------------------------------------------
 
+from __future__ import (
+    annotations,
+)
+
 import datetime
 
 # If extensions (or modules to document with autodoc) are in another directory,
@@ -224,3 +228,54 @@ napoleon_numpy_docstring = False
 bibtex_bibfiles = ["../CITATIONS.bib"]
 
 remove_from_toctrees = ["autoapi/**/*", "API_CC/*", "api_c/*", "api_core/*"]
+
+
+# Auto-generated CLI reference pages (sphinx-argparse) nest a section per
+# subcommand and per argument group. Under the global ``:numbered:`` toctree
+# this explodes into unhelpful deep numbers (e.g. ``9.3.3.6.3.1.1.``). Cap the
+# section numbering at the given depth (number of dotted components); headings
+# deeper than that are left unnumbered. Only the listed pages are affected.
+from typing import (
+    TYPE_CHECKING,
+)
+
+from docutils import (
+    nodes,
+)
+
+if TYPE_CHECKING:
+    from sphinx.application import (
+        Sphinx,
+    )
+
+cli_secnumber_max_depth = {
+    "dpa_adapt/cli": 5,
+}
+
+
+def _cap_cli_secnumbers(app: Sphinx, doctree: nodes.document, docname: str) -> None:
+    """Drop section numbers below ``cli_secnumber_max_depth`` for CLI pages."""
+    max_depth = cli_secnumber_max_depth.get(docname)
+    if max_depth is None:
+        return
+    secnumbers = app.env.toc_secnumbers.get(docname)
+    if not secnumbers:
+        return
+    # The empty anchor "" holds the page chapter number (e.g. ``(9, 3)``).
+    # It must be dropped from the map, otherwise the writer falls back to it for
+    # the now-unnumbered deep sections; re-attach it to the page title instead.
+    page_number = secnumbers.get("")
+    app.env.toc_secnumbers[docname] = {
+        anchor: number
+        for anchor, number in secnumbers.items()
+        if anchor != "" and len(number) <= max_depth
+    }
+    if page_number:
+        for title in doctree.findall(nodes.title):
+            title["secnumber"] = page_number
+            break
+
+
+def setup(app: Sphinx) -> dict[str, bool]:
+    app.connect("doctree-resolved", _cap_cli_secnumbers)
+    return {"parallel_read_safe": True, "parallel_write_safe": True}
