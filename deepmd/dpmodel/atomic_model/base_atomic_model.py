@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import dataclasses
 import functools
 from collections.abc import (
     Callable,
@@ -346,7 +347,6 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             the result dict on the flat node axis, defined by the `FittingOutputDef`.
 
         """
-        import dataclasses
 
         xp = array_api_compat.array_namespace(graph.edge_vec)
         atype = xp.asarray(atype, device=array_api_compat.device(graph.edge_vec))
