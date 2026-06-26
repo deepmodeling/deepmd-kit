@@ -165,3 +165,60 @@ def test_edge_env_mat_protection_parity(protection):
             atol=1e-12,
             err_msg=f"protection={protection}, edge {k} (src={src}, dst={dst}, slot={slot})",
         )
+
+
+def test_protection_actually_changes_env_mat() -> None:
+    """Guard against vacuous pass: verify that changing protection parameter
+    actually modifies the edge_env_mat output. If this test fails (outputs are
+    identical for protection=0 and protection=1e-2), it means protection is
+    silently ignored and the parity test cannot validate the protection path.
+    """
+    rng = np.random.default_rng(7)
+    rcut, rcut_smth = 4.0, 0.5
+    nf, nloc, nnei = 1, 4, 6
+    nt = 2
+
+    ext_coord = rng.normal(size=(nf, nloc, 3)) * 1.5
+    atype = np.array([[0, 1, 0, 1]], dtype=np.int64)
+
+    # Build nlist with at most 3 valid neighbors per atom; slots 3-5 are padding (-1).
+    nlist = -np.ones((nf, nloc, nnei), dtype=np.int64)
+    for i in range(nloc):
+        ns = [j for j in range(nloc) if j != i][:nnei]
+        nlist[0, i, : len(ns)] = ns
+    mapping = np.arange(nloc, dtype=np.int64)[None]
+
+    davg = rng.normal(size=(nt, 4))
+    dstd = np.abs(rng.normal(size=(nt, 4))) + 0.5
+
+    # Build the graph once
+    ng = from_dense_quartet(ext_coord, nlist, mapping)
+    center_type = atype.reshape(-1)[ng.edge_index[1]]
+
+    # Evaluate edge_env_mat with two different protection values
+    em_p0 = edge_env_mat(
+        ng.edge_vec,
+        center_type,
+        davg,
+        dstd,
+        rcut,
+        rcut_smth,
+        protection=0.0,
+        edge_mask=ng.edge_mask,
+    )
+    em_p1 = edge_env_mat(
+        ng.edge_vec,
+        center_type,
+        davg,
+        dstd,
+        rcut,
+        rcut_smth,
+        protection=1e-2,
+        edge_mask=ng.edge_mask,
+    )
+
+    # Assert they differ: protection must affect the output
+    assert not np.allclose(em_p0, em_p1), (
+        "protection parameter has no effect on edge_env_mat output; "
+        "parity test cannot validate protection path"
+    )
