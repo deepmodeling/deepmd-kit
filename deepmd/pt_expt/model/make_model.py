@@ -295,23 +295,20 @@ def make_model(
 
             OUTPUT-AGNOSTIC: runs the graph descriptor + fitting forward with
             ``edge_vec`` as the autograd leaf (via the inherited
-            :meth:`forward_common_atomic_graph`), then routes the raw rectangular
+            :meth:`forward_common_atomic_graph`), then routes the raw flat
             ``atomic_ret`` through :func:`fit_output_to_model_output_graph`, which
-            reduces EVERY reducible output and assembles force / per-frame virial
-            / (optional) atom-virial for every ``r_differentiable`` output from a
-            backward pass w.r.t. ``edge_vec`` (the shared full-to-``src`` scatter).
-            This makes any fitting (energy/dos/dipole/polar/property/...) flow
-            through the graph path with no change on the fitting side.
+            reduces EVERY reducible output via ``segment_sum`` and assembles
+            force / per-frame virial / (optional) atom-virial for every
+            ``r_differentiable`` output from a backward pass w.r.t. ``edge_vec``
+            (the shared full-to-``src`` scatter).  This makes any fitting
+            (energy/dos/dipole/polar/property/...) flow through the graph path
+            with no change on the fitting side.
 
-            The returned dict uses the SAME internal key names as the legacy dense
-            :meth:`forward_common_lower` (``<var>``, ``<var>_redu``,
-            ``<var>_derv_r``, ``<var>_derv_c_redu``, and ``<var>_derv_c`` when
-            ``do_atomic_virial``).  Unlike the dense lower (which returns EXTENDED
-            ``nall`` force/atom-virial), the graph is ghost-free, so force and
-            atom-virial here live on the ``nloc`` LOCAL atoms (ghost contributions
-            are already folded onto their local owner via ``src = mapping[neighbor]``).
-            They equal the dense lower's extended quantities once the latter are
-            folded onto local atoms via ``mapping`` (i.e. ``communicate_extended_output``).
+            All per-atom outputs stay FLAT with leading dimension
+            ``N = sum(n_node)``; per-frame reductions have leading dimension
+            ``nf``.  Callers that need rectangular ``(nf, nloc, *)`` output
+            (e.g. :meth:`_call_common_graph` where ``atype`` is rectangular)
+            unravel at the public I/O boundary.
 
             Parameters
             ----------
@@ -335,11 +332,11 @@ def make_model(
             Returns
             -------
             dict
-                The standard model dict with ``<var>`` (nf, nloc, *shape),
-                ``<var>_redu`` (nf, *shape), and -- for ``r_differentiable``
-                outputs -- ``<var>_derv_r`` (nf, nloc, *shape, 3),
-                ``<var>_derv_c_redu`` (nf, *shape, 9), and -- when
-                ``do_atomic_virial`` -- ``<var>_derv_c`` (nf, nloc, *shape, 9).
+                Flat model dict: ``<var>`` (N, *shape), ``<var>_redu``
+                (nf, *shape), and -- for ``r_differentiable`` outputs --
+                ``<var>_derv_r`` (N, *shape, 3), ``<var>_derv_c_redu``
+                (nf, *shape, 9), and -- when ``do_atomic_virial`` --
+                ``<var>_derv_c`` (N, *shape, 9).
             """
             from deepmd.dpmodel.utils.neighbor_graph import (
                 NeighborGraph,
@@ -359,21 +356,10 @@ def make_model(
                 fparam=fparam,
                 aparam=aparam,
             )
-            # ``forward_common_atomic_graph`` returns flat ``(N, *)`` output
-            # (N = sum(n_node)). Reshape to rectangular ``(nf, nloc, *)`` so
-            # that ``fit_output_to_model_output_graph`` can reduce over the
-            # atom axis and compute force/virial via autograd exactly as the
-            # dense path does.  This reshape is valid for rectangular frames
-            # (uniform nloc per frame); ragged support is deferred to PR-B.
-            nf = int(n_node.shape[0])
-            N = int(atype.shape[0])
-            nloc = N // nf
-            atomic_ret_rect = {
-                kk: vv.reshape(nf, nloc, *vv.shape[1:])
-                for kk, vv in atomic_ret.items()
-            }
+            # ``forward_common_atomic_graph`` returns flat ``(N, *)`` output.
+            # Pass directly to the flat-N transform; no rectangular reshape needed.
             return fit_output_to_model_output_graph(
-                atomic_ret_rect,
+                atomic_ret,
                 self.atomic_output_def(),
                 edge_vec,
                 edge_index,
@@ -381,7 +367,7 @@ def make_model(
                 n_node,
                 do_atomic_virial=do_atomic_virial,
                 create_graph=self.training,
-                mask=atomic_ret_rect["mask"] if "mask" in atomic_ret_rect else None,
+                mask=atomic_ret["mask"] if "mask" in atomic_ret else None,
             )
 
         def _resolve_graph_method(
@@ -452,9 +438,15 @@ def make_model(
                 fparam=fp,
                 aparam=ap,
             )
-            # forward_common_lower_graph already masks virtual atoms (atype<0)
-            # and carries the real int ``mask`` key, matching the dense
-            # ``call_common`` output.
+            # ``forward_common_lower_graph`` returns flat ``(N, *)`` per-atom
+            # outputs (N = nf * nloc for a carry-all rectangular graph).
+            # Unravel to rectangular ``(nf, nloc, *)`` at the public I/O boundary
+            # so that callers receive the same shape as the dense ``call_common``.
+            N = nf * nloc
+            for k in list(model_predict.keys()):
+                v = model_predict[k]
+                if v is not None and v.shape[:1] == torch.Size([N]):
+                    model_predict[k] = v.reshape(nf, nloc, *v.shape[1:])
             return model_predict
 
         def forward_common_atomic(

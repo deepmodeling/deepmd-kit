@@ -204,21 +204,30 @@ class TestDpa1GraphLower:
             do_atomic_virial=do_av,
         )
 
-        # energy / reduced energy / reduced virial: direct compare
-        torch.testing.assert_close(graph["energy"], legacy["energy"], **tol)
+        # forward_common_lower_graph returns flat (N,*) per-atom outputs.
+        # Reshape to (nf, nloc, *) for comparison against the legacy dense lower.
+        N = nf * nloc
+
+        # per-atom energy: flat (N, 1) -> (nf, nloc, 1)
+        graph_energy = graph["energy"].reshape(nf, nloc, 1)
+        torch.testing.assert_close(graph_energy, legacy["energy"], **tol)
+
+        # reduced energy and virial: already per-frame (nf, *)
         torch.testing.assert_close(graph["energy_redu"], legacy["energy_redu"], **tol)
         torch.testing.assert_close(
             graph["energy_derv_c_redu"], legacy["energy_derv_c_redu"], **tol
         )
 
-        # force: fold legacy extended (nall) -> local (nloc)
+        # force: graph is flat (N, 1, 3); fold legacy extended (nall) -> local (nloc)
         legacy_force_local = _fold_extended_to_local(
             legacy["energy_derv_r"], mapping, nloc
         )
-        torch.testing.assert_close(graph["energy_derv_r"], legacy_force_local, **tol)
+        graph_force = graph["energy_derv_r"].reshape(nf, nloc, 1, 3)
+        torch.testing.assert_close(graph_force, legacy_force_local, **tol)
 
         if do_av:
             legacy_av_local = _fold_extended_to_local(
                 legacy["energy_derv_c"], mapping, nloc
             )
-            torch.testing.assert_close(graph["energy_derv_c"], legacy_av_local, **tol)
+            graph_av = graph["energy_derv_c"].reshape(nf, nloc, 1, 9)
+            torch.testing.assert_close(graph_av, legacy_av_local, **tol)

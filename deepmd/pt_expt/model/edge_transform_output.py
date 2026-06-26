@@ -14,6 +14,8 @@ from deepmd.dpmodel import (
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
     edge_force_virial,
+    frame_id_from_n_node,
+    segment_sum,
 )
 from deepmd.pt.utils import (
     env,
@@ -61,25 +63,26 @@ def fit_output_to_model_output_graph(
     """Graph analogue of the dense pt_expt ``fit_output_to_model_output``.
 
     OUTPUT-AGNOSTIC: reduces EVERY reducible fitting output (cast to energy
-    precision, summed/averaged over the atom axis) and, for every reducible +
-    ``r_differentiable`` output, assembles per-component force / virial /
-    (optional) atom-virial from :func:`edge_energy_deriv` (one ``grad`` w.r.t.
-    ``edge_vec`` per scalar component, then the shared full-to-``src`` scatter).
+    precision, summed/averaged per frame via ``segment_sum`` over ``frame_id``)
+    and, for every reducible + ``r_differentiable`` output, assembles
+    per-component force / virial / (optional) atom-virial from
+    :func:`edge_energy_deriv` (one ``grad`` w.r.t. ``edge_vec`` per scalar
+    component, then the shared full-to-``src`` scatter).
 
-    Mirrors the dense :func:`deepmd.pt_expt.model.transform_output.take_deriv`
-    output shapes -- ``<var>_derv_r`` is ``(nf, nloc, *shape, 3)``,
-    ``<var>_derv_c`` is ``(nf, nloc, *shape, 9)``, ``<var>_derv_c_redu`` is
-    ``(nf, *shape, 9)`` -- except the graph is ghost-free so the dense ``nall``
-    atom axis collapses to ``nloc`` LOCAL atoms.
+    All per-atom outputs stay FLAT with leading dimension ``N = sum(n_node)``:
+    ``<var>`` is ``(N, *shape)``, ``<var>_derv_r`` is ``(N, *shape, 3)``,
+    ``<var>_derv_c`` is ``(N, *shape, 9)``.  Per-frame reductions have leading
+    dimension ``nf``: ``<var>_redu`` is ``(nf, *shape)``,
+    ``<var>_derv_c_redu`` is ``(nf, *shape, 9)``.
 
     Parameters
     ----------
     fit_ret
-        Raw rectangular fitting output, ``(nf, nloc, *shape)`` per key.
+        Raw flat fitting output, ``(N, *shape)`` per key (``N = sum(n_node)``).
     fit_output_def
         The fitting output definition.
     edge_vec
-        (E, 3) edge vectors; MUST be the autograd leaf of ``fit_ret``.
+        (E, 3) edge vectors; MUST be the autograd leaf for ``fit_ret``.
     edge_index
         (2, E) ``[src, dst]`` edge endpoints (flat local indices).
     edge_mask
@@ -91,29 +94,32 @@ def fit_output_to_model_output_graph(
     create_graph
         Whether the backward retains a graph (training).
     mask
-        (nf, nloc) realness mask; used only for intensive-output reduction.
+        (N,) flat realness mask; used only for intensive-output reduction.
     """
     redu_prec = env.GLOBAL_PT_ENER_FLOAT_PRECISION
     nf = int(n_node.shape[0])
-    # N == sum(n_node) == nf * nloc here (rectangular carry-all graph).
-    nloc = int(fit_ret[next(iter(fit_ret))].shape[1])
+    N = int(n_node.sum())
+    frame_id = frame_id_from_n_node(n_node)  # (N,) int64 frame index per atom
     model_ret: dict[str, torch.Tensor] = dict(fit_ret.items())
     for kk, vv in fit_ret.items():
         vdef = fit_output_def[kk]
         shap = vdef.shape
-        atom_axis = -(len(shap) + 1)
         if not vdef.reducible:
             continue
         kk_redu = get_reduce_name(kk)
+        # segment_sum reduces axis 0 (the flat atom axis) per frame
+        vv_e = vv.to(redu_prec)  # (N, *shape)
+        redu = segment_sum(vv_e, frame_id, nf)  # (nf, *shape)
         if vdef.intensive:
             if mask is not None:
-                model_ret[kk_redu] = torch.sum(
-                    vv.to(redu_prec), dim=atom_axis
-                ) / torch.sum(mask, dim=-1, keepdim=True)
+                # real-atom count per frame: segment_sum of the mask
+                cnt = segment_sum(mask.to(redu_prec), frame_id, nf)  # (nf,)
+                # broadcast cnt to (nf, 1, ..., 1) to match redu shape
+                cnt = cnt.reshape(nf, *([1] * (redu.ndim - 1)))
             else:
-                model_ret[kk_redu] = torch.mean(vv.to(redu_prec), dim=atom_axis)
-        else:
-            model_ret[kk_redu] = torch.sum(vv.to(redu_prec), dim=atom_axis)
+                cnt = n_node.to(redu_prec).reshape(nf, *([1] * (redu.ndim - 1)))
+            redu = redu / cnt
+        model_ret[kk_redu] = redu
         if not vdef.r_differentiable:
             continue
         kk_derv_r, kk_derv_c = get_deriv_name(kk)
@@ -135,25 +141,23 @@ def fit_output_to_model_output_graph(
                 do_atomic_virial=(vdef.c_differentiable and do_atomic_virial),
                 create_graph=create_graph,
             )
-            # force (N, 3) -> (nf, nloc, 1, 3)
-            ff_list.append(force.reshape(nf, nloc, 1, 3))
+            # force (N, 3) -> (N, 1, 3)  [flat; caller unravels at I/O boundary]
+            ff_list.append(force.reshape(N, 1, 3))
             if vdef.c_differentiable:
                 # virial (nf, 3, 3) -> (nf, 1, 9)
                 vir_list.append(vir.reshape(nf, 1, 9))
                 if do_atomic_virial:
                     assert atom_vir is not None
-                    # atom_virial (N, 3, 3) -> (nf, nloc, 1, 9)
-                    av_list.append(atom_vir.reshape(nf, nloc, 1, 9))
-        # (nf, nloc, size, 3) -> (nf, nloc, *shape, 3)
-        model_ret[kk_derv_r] = torch.cat(ff_list, dim=-2).reshape([nf, nloc, *shap, 3])
+                    # atom_virial (N, 3, 3) -> (N, 1, 9)  [flat]
+                    av_list.append(atom_vir.reshape(N, 1, 9))
+        # (N, size, 3) -> (N, *shape, 3)
+        model_ret[kk_derv_r] = torch.cat(ff_list, dim=-2).reshape([N, *shap, 3])
         if vdef.c_differentiable:
             # (nf, size, 9) -> (nf, *shape, 9)
             model_ret[kk_derv_c + "_redu"] = torch.cat(vir_list, dim=-2).reshape(
                 [nf, *shap, 9]
             )
             if do_atomic_virial:
-                # (nf, nloc, size, 9) -> (nf, nloc, *shape, 9)
-                model_ret[kk_derv_c] = torch.cat(av_list, dim=-2).reshape(
-                    [nf, nloc, *shap, 9]
-                )
+                # (N, size, 9) -> (N, *shape, 9)
+                model_ret[kk_derv_c] = torch.cat(av_list, dim=-2).reshape([N, *shap, 9])
     return model_ret
