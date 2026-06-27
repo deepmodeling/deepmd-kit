@@ -61,9 +61,7 @@ class TestDescrptNep(unittest.TestCase, TestCaseSingleFrameWithNlist):
         dd0 = self._make()
         self._randomize(dd0)
         rd = dd0.call(self.coord_ext, self.atype_ext, self.nlist)[0]
-        np.testing.assert_allclose(
-            rd[0][self.perm[: self.nloc]], rd[1], atol=1e-12
-        )
+        np.testing.assert_allclose(rd[0][self.perm[: self.nloc]], rd[1], atol=1e-12)
 
     def test_rotation_translation_invariance(self) -> None:
         # The descriptor depends only on relative geometry, hence it is invariant

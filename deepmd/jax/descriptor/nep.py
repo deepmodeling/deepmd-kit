@@ -5,12 +5,8 @@ from typing import (
 )
 
 import deepmd.jax.utils.exclude_mask as _jax_exclude_mask  # noqa: F401
-from deepmd.dpmodel.descriptor.nep import (
-    DescrptNep as DescrptNepDP,
-)
-from deepmd.dpmodel.descriptor.nep import (
-    NepEmbeddingCoeff as NepEmbeddingCoeffDP,
-)
+from deepmd.dpmodel.descriptor.nep import DescrptNep as DescrptNepDP
+from deepmd.dpmodel.descriptor.nep import NepEmbeddingCoeff as NepEmbeddingCoeffDP
 from deepmd.jax.common import (
     ArrayAPIVariable,
     flax_module,
@@ -35,7 +31,9 @@ class NepEmbeddingCoeff(NepEmbeddingCoeffDP):
         if name == "coeff":
             value = to_jax_array(value)
             if value is not None:
-                value = ArrayAPIParam(value) if self.trainable else ArrayAPIVariable(value)
+                value = (
+                    ArrayAPIParam(value) if self.trainable else ArrayAPIVariable(value)
+                )
         return super().__setattr__(name, value)
 
 

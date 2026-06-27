@@ -5,9 +5,7 @@ from typing import (
 
 import torch
 
-from deepmd.dpmodel.descriptor.nep import (
-    NepEmbeddingCoeff as NepEmbeddingCoeffDP,
-)
+from deepmd.dpmodel.descriptor.nep import NepEmbeddingCoeff as NepEmbeddingCoeffDP
 from deepmd.pt_expt.common import (
     register_dpmodel_mapping,
     to_torch_array,

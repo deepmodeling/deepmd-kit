@@ -76,15 +76,20 @@ class TestDescrptNep(TestCaseSingleFrameWithNlist):
         dd1 = DescrptNep.deserialize(dd0.serialize())
         rd1, _, _, _, sw1 = dd1(*args)
         np.testing.assert_allclose(
-            rd0.detach().cpu().numpy(), rd1.detach().cpu().numpy(),
-            rtol=rtol, atol=atol, err_msg=err_msg,
+            rd0.detach().cpu().numpy(),
+            rd1.detach().cpu().numpy(),
+            rtol=rtol,
+            atol=atol,
+            err_msg=err_msg,
         )
 
         # permutation equivariance (frame 1 is a permutation of frame 0)
         np.testing.assert_allclose(
             rd0.detach().cpu().numpy()[0][self.perm[: self.nloc]],
             rd0.detach().cpu().numpy()[1],
-            rtol=rtol, atol=atol, err_msg=err_msg,
+            rtol=rtol,
+            atol=atol,
+            err_msg=err_msg,
         )
 
         # consistency with the dpmodel reference
@@ -129,12 +134,16 @@ class TestDescrptNep(TestCaseSingleFrameWithNlist):
         traced = make_fx(fn)(coord_ext, atype_ext, nlist)
         rd_traced, grad_traced = traced(coord_ext, atype_ext, nlist)
         np.testing.assert_allclose(
-            rd_eager.detach().cpu().numpy(), rd_traced.detach().cpu().numpy(),
-            rtol=rtol, atol=atol,
+            rd_eager.detach().cpu().numpy(),
+            rd_traced.detach().cpu().numpy(),
+            rtol=rtol,
+            atol=atol,
         )
         np.testing.assert_allclose(
-            grad_eager.detach().cpu().numpy(), grad_traced.detach().cpu().numpy(),
-            rtol=rtol, atol=atol,
+            grad_eager.detach().cpu().numpy(),
+            grad_traced.detach().cpu().numpy(),
+            rtol=rtol,
+            atol=atol,
         )
 
         # symbolic trace + export + .pte round-trip
@@ -168,7 +177,9 @@ class TestDescrptNep(TestCaseSingleFrameWithNlist):
         ).to(self.device)
         dim = dd0.get_dim_out()
         dd0.dstd = torch.tensor(
-            0.1 + np.abs(rng.normal(size=(dim,))), dtype=torch.float64, device=self.device
+            0.1 + np.abs(rng.normal(size=(dim,))),
+            dtype=torch.float64,
+            device=self.device,
         )
         dd1.share_params(dd0, shared_level=0)
         for key in dd0._modules:

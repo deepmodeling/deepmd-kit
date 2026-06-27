@@ -3,9 +3,7 @@ from typing import (
     Any,
 )
 
-from deepmd.dpmodel.descriptor.nep import (
-    DescrptNep as DescrptNepDP,
-)
+from deepmd.dpmodel.descriptor.nep import DescrptNep as DescrptNepDP
 from deepmd.pt_expt.common import (
     torch_module,
 )

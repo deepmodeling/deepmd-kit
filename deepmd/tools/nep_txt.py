@@ -25,16 +25,100 @@ log = logging.getLogger(__name__)
 # ``src/force/nep.cu`` (ELEMENTS). A nep.txt that names any other element, or more
 # than 94 columns, overruns GPUMD's fixed-size arrays at load time.
 GPUMD_ELEMENTS = (
-    "H", "He", "Li", "Be", "B", "C", "N", "O", "F", "Ne",
-    "Na", "Mg", "Al", "Si", "P", "S", "Cl", "Ar", "K", "Ca",
-    "Sc", "Ti", "V", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn",
-    "Ga", "Ge", "As", "Se", "Br", "Kr", "Rb", "Sr", "Y", "Zr",
-    "Nb", "Mo", "Tc", "Ru", "Rh", "Pd", "Ag", "Cd", "In", "Sn",
-    "Sb", "Te", "I", "Xe", "Cs", "Ba", "La", "Ce", "Pr", "Nd",
-    "Pm", "Sm", "Eu", "Gd", "Tb", "Dy", "Ho", "Er", "Tm", "Yb",
-    "Lu", "Hf", "Ta", "W", "Re", "Os", "Ir", "Pt", "Au", "Hg",
-    "Tl", "Pb", "Bi", "Po", "At", "Rn", "Fr", "Ra", "Ac", "Th",
-    "Pa", "U", "Np", "Pu",
+    "H",
+    "He",
+    "Li",
+    "Be",
+    "B",
+    "C",
+    "N",
+    "O",
+    "F",
+    "Ne",
+    "Na",
+    "Mg",
+    "Al",
+    "Si",
+    "P",
+    "S",
+    "Cl",
+    "Ar",
+    "K",
+    "Ca",
+    "Sc",
+    "Ti",
+    "V",
+    "Cr",
+    "Mn",
+    "Fe",
+    "Co",
+    "Ni",
+    "Cu",
+    "Zn",
+    "Ga",
+    "Ge",
+    "As",
+    "Se",
+    "Br",
+    "Kr",
+    "Rb",
+    "Sr",
+    "Y",
+    "Zr",
+    "Nb",
+    "Mo",
+    "Tc",
+    "Ru",
+    "Rh",
+    "Pd",
+    "Ag",
+    "Cd",
+    "In",
+    "Sn",
+    "Sb",
+    "Te",
+    "I",
+    "Xe",
+    "Cs",
+    "Ba",
+    "La",
+    "Ce",
+    "Pr",
+    "Nd",
+    "Pm",
+    "Sm",
+    "Eu",
+    "Gd",
+    "Tb",
+    "Dy",
+    "Ho",
+    "Er",
+    "Tm",
+    "Yb",
+    "Lu",
+    "Hf",
+    "Ta",
+    "W",
+    "Re",
+    "Os",
+    "Ir",
+    "Pt",
+    "Au",
+    "Hg",
+    "Tl",
+    "Pb",
+    "Bi",
+    "Po",
+    "At",
+    "Rn",
+    "Fr",
+    "Ra",
+    "Ac",
+    "Th",
+    "Pa",
+    "U",
+    "Np",
+    "Pu",
 )
 GPUMD_ELEMENT_SET = frozenset(GPUMD_ELEMENTS)
 
@@ -138,7 +222,9 @@ def serialize_to_nep_txt(
     # Slice the (nt, nt, n, k) coefficient tensors to the exported type pairs.
     sel_pairs = np.ix_(type_index, type_index)
     c_radial = np.asarray(descriptor["radial_coeff"]["@variables"]["coeff"])[sel_pairs]
-    c_angular = np.asarray(descriptor["angular_coeff"]["@variables"]["coeff"])[sel_pairs]
+    c_angular = np.asarray(descriptor["angular_coeff"]["@variables"]["coeff"])[
+        sel_pairs
+    ]
     davg = np.asarray(descriptor["@variables"]["davg"])
     dstd = np.asarray(descriptor["@variables"]["dstd"])
     if not np.allclose(davg, 0.0):
@@ -159,7 +245,9 @@ def serialize_to_nep_txt(
         w0 = np.asarray(hidden["w"])  # (dim, num_neurons)
         b0 = np.asarray(hidden["b"])  # (num_neurons,)
         w1 = np.asarray(output["w"])  # (num_neurons, 1)
-        b_out = 0.0 if output["b"] is None else float(np.asarray(output["b"]).ravel()[0])
+        b_out = (
+            0.0 if output["b"] is None else float(np.asarray(output["b"]).ravel()[0])
+        )
         baseline = b_out + float(bias_atom_e[t, 0]) + float(out_bias[0, t, 0])
         # GPUMD layout: w0[n][d], then b0, then w1, then the typewise bias.
         ann.extend(w0.T.reshape(-1).tolist())
