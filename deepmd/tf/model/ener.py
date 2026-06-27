@@ -5,6 +5,15 @@ from typing import (
 
 import numpy as np
 
+from deepmd.dpmodel.utils.batch import (
+    normalize_batch,
+)
+from deepmd.dpmodel.utils.stat import (
+    _restore_observed_type_from_file,
+    _save_observed_type_to_file,
+    collect_observed_types,
+    compute_output_stats,
+)
 from deepmd.tf.env import (
     MODEL_VERSION,
     global_cvt_2_ener_float,
@@ -23,6 +32,9 @@ from deepmd.tf.utils.spin import (
 from deepmd.tf.utils.type_embed import (
     TypeEmbedNet,
 )
+from deepmd.utils.path import (
+    DPPath,
+)
 
 from .model import (
     StandardModel,
@@ -31,6 +43,45 @@ from .model_stat import (
     make_stat_input,
     merge_sys_stat,
 )
+from .stat_file import (
+    add_type_map_to_stat_path,
+)
+
+
+def _pack_stat_batches(all_stat: dict) -> list[dict[str, Any]]:
+    """Pack TensorFlow statistics batches into backend-agnostic samples."""
+    first_key = next(iter(all_stat.keys()))
+    nsystems = len(all_stat[first_key])
+    sampled = []
+    for sys_idx in range(nsystems):
+        merged = {}
+        for key, values in all_stat.items():
+            sys_values = values[sys_idx]
+            if isinstance(sys_values[0], np.ndarray):
+                if sys_values[0].ndim >= 2:
+                    merged[key] = np.concatenate(sys_values, axis=0)
+                else:
+                    # 1-D arrays such as natoms_vec are per-system constants.
+                    merged[key] = sys_values[0]
+            else:
+                # Scalar flags such as find_*.
+                merged[key] = sys_values[0]
+        sampled.append(normalize_batch(merged))
+    return sampled
+
+
+def _save_observed_types_to_file(
+    stat_file_path: DPPath | None,
+    sampled: list[dict[str, Any]],
+    type_map: list[str] | None,
+) -> None:
+    """Save observed atom types using the backend-agnostic dpmodel helpers."""
+    if stat_file_path is None or type_map is None:
+        return
+    observed = _restore_observed_type_from_file(stat_file_path)
+    if observed is None:
+        observed = collect_observed_types(sampled, type_map)
+        _save_observed_type_to_file(stat_file_path, observed)
 
 
 @StandardModel.register("ener")
@@ -134,17 +185,29 @@ class EnerModel(StandardModel):
         """Get the number of atomic parameters."""
         return self.numb_aparam
 
-    def data_stat(self, data: DeepmdDataSystem) -> None:
+    def data_stat(
+        self, data: DeepmdDataSystem, stat_file_path: DPPath | None = None
+    ) -> None:
         all_stat = make_stat_input(data, self.data_stat_nbatch, merge_sys=False)
         m_all_stat = merge_sys_stat(all_stat)
+        stat_file_path = add_type_map_to_stat_path(stat_file_path, self.type_map)
         self._compute_input_stat(
-            m_all_stat, protection=self.data_stat_protect, mixed_type=data.mixed_type
+            m_all_stat,
+            protection=self.data_stat_protect,
+            mixed_type=data.mixed_type,
+            stat_file_path=stat_file_path,
         )
-        self._compute_output_stat(all_stat, mixed_type=data.mixed_type)
+        self._compute_output_stat(
+            all_stat, mixed_type=data.mixed_type, stat_file_path=stat_file_path
+        )
         # self.bias_atom_e = data.compute_energy_shift(self.rcond)
 
     def _compute_input_stat(
-        self, all_stat: dict, protection: float = 1e-2, mixed_type: bool = False
+        self,
+        all_stat: dict,
+        protection: float = 1e-2,
+        mixed_type: bool = False,
+        stat_file_path: DPPath | None = None,
     ) -> None:
         if mixed_type:
             self.descrpt.compute_input_stats(
@@ -156,6 +219,7 @@ class EnerModel(StandardModel):
                 all_stat,
                 mixed_type,
                 all_stat["real_natoms_vec"],
+                stat_file_path=stat_file_path,
             )
         else:
             self.descrpt.compute_input_stats(
@@ -165,14 +229,41 @@ class EnerModel(StandardModel):
                 all_stat["natoms_vec"],
                 all_stat["default_mesh"],
                 all_stat,
+                stat_file_path=stat_file_path,
             )
-        self.fitting.compute_input_stats(all_stat, protection=protection)
+        self.fitting.compute_input_stats(
+            all_stat, protection=protection, stat_file_path=stat_file_path
+        )
 
-    def _compute_output_stat(self, all_stat: dict, mixed_type: bool = False) -> None:
-        if mixed_type:
-            self.fitting.compute_output_stats(all_stat, mixed_type=mixed_type)
-        else:
-            self.fitting.compute_output_stats(all_stat)
+    def _compute_output_stat(
+        self,
+        all_stat: dict,
+        mixed_type: bool = False,
+        stat_file_path: DPPath | None = None,
+    ) -> None:
+        # Reuse the backend-agnostic dpmodel stat implementation instead of
+        # maintaining a TensorFlow copy of the same save/load/stat logic. This
+        # intentionally uses the dpmodel/PT per-frame energy-bias regression even
+        # when no stat file is provided, so TF computes the same initial bias it
+        # would later restore from a cross-backend stat file.
+        sampled = _pack_stat_batches(all_stat)
+        _save_observed_types_to_file(stat_file_path, sampled, self.type_map)
+        preset_bias = None
+        if len(self.fitting.atom_ener) > 0:
+            preset_bias = {"energy": self.fitting.atom_ener_v}
+        bias_out, _ = compute_output_stats(
+            sampled,
+            self.ntypes,
+            keys=["energy"],
+            stat_file_path=stat_file_path,
+            rcond=getattr(self.fitting, "rcond", None),
+            preset_bias=preset_bias,
+        )
+
+        if "energy" in bias_out:
+            # TensorFlow fitting code historically stores a 1-D bias vector,
+            # while stat files use the PyTorch-compatible (ntypes, 1) shape.
+            self.fitting.bias_atom_e = bias_out["energy"].ravel()
 
     def build(
         self,

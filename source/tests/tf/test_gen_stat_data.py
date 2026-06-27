@@ -11,6 +11,9 @@ from deepmd.tf.descriptor import (
 from deepmd.tf.fit import (
     EnerFitting,
 )
+from deepmd.tf.model import (
+    EnerModel,
+)
 from deepmd.tf.model.model_stat import (
     _make_all_stat_ref,
     make_stat_input,
@@ -155,3 +158,58 @@ class TestEnerShift(unittest.TestCase):
         tot0 = np.dot(data.compute_energy_shift(rcond=1), natoms)
         tot1 = np.dot(ener_shift1, natoms)
         np.testing.assert_almost_equal(tot0, tot1)
+
+    def test_model_output_stat_matches_fitting(self) -> None:
+        dp_random.seed(0)
+        data = DeepmdDataSystem(["system_0", "system_1"], 5, 10, 1.0)
+        data.add("energy", 1, must=True)
+        all_stat = make_stat_input(data, 6, merge_sys=False)
+        descrpt = DescrptSeA(
+            6.0, 5.8, [46, 92, 92], neuron=[25, 50, 100], axis_neuron=16
+        )
+        fitting = EnerFitting(
+            descrpt.get_ntypes(),
+            descrpt.get_dim_out(),
+            neuron=[240, 240, 240],
+            resnet_dt=True,
+        )
+        ener_shift = fitting._compute_output_stats(all_stat, rcond=fitting.rcond)
+
+        fitting = EnerFitting(
+            descrpt.get_ntypes(),
+            descrpt.get_dim_out(),
+            neuron=[240, 240, 240],
+            resnet_dt=True,
+        )
+        model = EnerModel(descrpt, fitting)
+        model._compute_output_stat(all_stat)
+        np.testing.assert_almost_equal(model.fitting.bias_atom_e, ener_shift)
+
+    def test_model_output_stat_assigned_matches_fitting(self) -> None:
+        dp_random.seed(0)
+        ae0 = dp_random.random()
+        data = DeepmdDataSystem(["system_0"], 5, 10, 1.0)
+        data.add("energy", 1, must=True)
+        all_stat = make_stat_input(data, 6, merge_sys=False)
+        descrpt = DescrptSeA(
+            6.0, 5.8, [46, 92, 92], neuron=[25, 50, 100], axis_neuron=16
+        )
+        fitting = EnerFitting(
+            descrpt.get_ntypes(),
+            descrpt.get_dim_out(),
+            neuron=[240, 240, 240],
+            resnet_dt=True,
+            atom_ener=[ae0, None, None],
+        )
+        ener_shift = fitting._compute_output_stats(all_stat, rcond=fitting.rcond)
+
+        fitting = EnerFitting(
+            descrpt.get_ntypes(),
+            descrpt.get_dim_out(),
+            neuron=[240, 240, 240],
+            resnet_dt=True,
+            atom_ener=[ae0, None, None],
+        )
+        model = EnerModel(descrpt, fitting)
+        model._compute_output_stat(all_stat)
+        np.testing.assert_almost_equal(model.fitting.bias_atom_e, ener_shift)
