@@ -364,6 +364,7 @@ class TestAutoConvertFormula:
         )
 
         assert result["method"] == "formula"
+        assert result["output_dir"] == str(out.resolve())
         assert result["output_systems"] == [fake_sys_dir]
 
     def test_formula_fmt_base_element_passed_through(self, tmp_path, monkeypatch):

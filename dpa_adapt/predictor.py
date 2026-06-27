@@ -53,6 +53,38 @@ def _is_mlp(est: Any) -> bool:
     return isinstance(est, MLPRegressor)
 
 
+def _rf_tree_predictions(est: Any, features: np.ndarray) -> np.ndarray:
+    """Return RF per-tree predictions with shape ``(n_trees, n_frames, dim)``."""
+    from sklearn.ensemble import (
+        RandomForestRegressor,
+    )
+    from sklearn.multioutput import (
+        MultiOutputRegressor,
+    )
+
+    if isinstance(est, MultiOutputRegressor):
+        per_output = []
+        for rf in est.estimators_:
+            if not isinstance(rf, RandomForestRegressor):
+                raise TypeError(
+                    "Expected MultiOutputRegressor(RandomForestRegressor), "
+                    f"got wrapped estimator {type(rf).__name__!r}."
+                )
+            per_output.append(
+                np.array([tree.predict(features) for tree in rf.estimators_])
+            )
+        return np.stack(per_output, axis=-1)
+
+    if isinstance(est, RandomForestRegressor):
+        tree_preds = np.array([tree.predict(features) for tree in est.estimators_])
+        return tree_preds.reshape(len(est.estimators_), -1, 1)
+
+    raise TypeError(
+        "RF uncertainty requires RandomForestRegressor or "
+        f"MultiOutputRegressor(RandomForestRegressor), got {type(est).__name__!r}."
+    )
+
+
 class DPAPredictor:
     """
     Read-only inference wrapper for a frozen DPA+sklearn bundle.
@@ -278,12 +310,8 @@ class DPAPredictor:
             for _, step in self._predictor.steps[:-1]:
                 X_t = step.transform(X_t)
             rf = self._predictor.steps[-1][1]
-            tree_preds = np.array([t.predict(X_t) for t in rf.estimators_])
-            tree_preds = tree_preds.reshape(
-                len(rf.estimators_),
-                -1,
-                self._task_dim,
-            )
+            tree_preds = _rf_tree_predictions(rf, X_t)
+            tree_preds = tree_preds.reshape(tree_preds.shape[0], -1, self._task_dim)
             return DotDict(
                 {
                     "predictions": np.mean(tree_preds, axis=0),

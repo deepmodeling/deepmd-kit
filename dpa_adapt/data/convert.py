@@ -191,7 +191,11 @@ def convert(
         )
         if verbose:
             _LOG.info("Formula conversion: %s systems written.", len(out))
-        return {"method": "formula", "output_systems": out}
+        return {
+            "method": "formula",
+            "output_dir": str(Path(output_dir).resolve()),
+            "output_systems": out,
+        }
 
     # --- structure glob → batch dpdata ---
     input_str = str(input_path)
@@ -681,4 +685,6 @@ def attach_labels(
         )
 
     for sys_dir, sub_vals in zip(sys_dirs, values_arr, strict=True):
+        if np.isscalar(sub_vals):
+            sub_vals = np.asarray([sub_vals])
         _attach_single(sys_dir, head, sub_vals)

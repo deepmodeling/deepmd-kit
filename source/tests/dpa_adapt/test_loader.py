@@ -316,6 +316,17 @@ class TestAttachLabels:
             written = np.load(parent / f"sys_{i:04d}" / "set.000" / "bandgap.npy")
             np.testing.assert_array_equal(written, values[i])
 
+    def test_multi_system_1d_values_written_as_one_frame_labels(self, tmp_path):
+        parent = tmp_path / "multi"
+        parent.mkdir()
+        for i in range(3):
+            _make_system_path(parent, name=f"sys_{i:04d}", n_frames=1)
+        values = np.array([1.0, 3.0, 5.0])
+        attach_labels(parent, head="bandgap", values=values)
+        for i in range(3):
+            written = np.load(parent / f"sys_{i:04d}" / "set.000" / "bandgap.npy")
+            np.testing.assert_array_equal(written, [values[i]])
+
     def test_multi_system_values_mismatch_raises(self, tmp_path):
         parent = tmp_path / "multi"
         parent.mkdir()

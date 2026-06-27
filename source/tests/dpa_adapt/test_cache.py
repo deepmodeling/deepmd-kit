@@ -67,6 +67,13 @@ class TestFingerprint:
         fp2 = _data_fingerprint([s2])
         assert fp1 != fp2
 
+    def test_system_order_changes_fp(self, tmp_path):
+        s1 = _make_system(tmp_path, "s1", nframes=3)
+        s2 = _make_system(tmp_path, "s2", nframes=5)
+        fp1 = _data_fingerprint([s1, s2])
+        fp2 = _data_fingerprint([s2, s1])
+        assert fp1 != fp2
+
 
 class TestCacheKey:
     def test_same_inputs_same_key(self, tmp_path):
@@ -109,6 +116,15 @@ class TestCacheKey:
         ckpt.write_text("dummy")
         k1 = _cache_key([s], str(ckpt), None, "mean", type_map=("H", "O"))
         k2 = _cache_key([s], str(ckpt), None, "mean", type_map=("O", "H"))
+        assert k1 != k2
+
+    def test_different_system_order_different_key(self, tmp_path):
+        s1 = _make_system(tmp_path, "s1", nframes=3)
+        s2 = _make_system(tmp_path, "s2", nframes=5)
+        ckpt = tmp_path / "dummy.pt"
+        ckpt.write_text("dummy")
+        k1 = _cache_key([s1, s2], str(ckpt), None, "mean")
+        k2 = _cache_key([s2, s1], str(ckpt), None, "mean")
         assert k1 != k2
 
 

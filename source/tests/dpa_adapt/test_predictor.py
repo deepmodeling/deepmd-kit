@@ -270,6 +270,55 @@ def _make_rf_bundle(tmp_path, n_frames=20):
     return path
 
 
+def _make_multioutput_rf_bundle(tmp_path, n_frames=20):
+    """Create a frozen bundle with MultiOutputRegressor(RandomForestRegressor)."""
+    from sklearn.ensemble import (
+        RandomForestRegressor,
+    )
+    from sklearn.multioutput import (
+        MultiOutputRegressor,
+    )
+    from sklearn.pipeline import (
+        make_pipeline,
+    )
+    from sklearn.preprocessing import (
+        StandardScaler,
+    )
+
+    pipeline = make_pipeline(
+        StandardScaler(),
+        MultiOutputRegressor(
+            RandomForestRegressor(
+                n_estimators=100,
+                random_state=42,
+            )
+        ),
+    )
+    rng = np.random.default_rng(0)
+    X = rng.random((n_frames, FEAT_DIM))
+    y = rng.random((n_frames, 2))
+    pipeline.fit(X, y)
+
+    from dpa_adapt._backend import (
+        load_torch_file,
+    )
+
+    bundle = {
+        "predictor": pipeline,
+        "target_key": ["homo", "lumo"],
+        "type_map": ["Cu", "O"],
+        "task_dim": 2,
+        "pretrained": "fake.pt",
+        "pooling": "mean",
+        "model_branch": None,
+        "condition_manager": None,
+    }
+    path = str(tmp_path / "multioutput_rf_model.pth")
+    _torch_for_test.save(bundle, path)
+    assert load_torch_file(path)["target_key"] == ["homo", "lumo"]
+    return path
+
+
 # ---------------------------------------------------------------------------
 # Committee tests
 # ---------------------------------------------------------------------------
@@ -403,6 +452,30 @@ class TestRfUncertainty:
         assert np.all(result.uncertainty >= 0)
         assert np.any(result.uncertainty > 0), (
             "RF tree-level std should be > 0 for some samples"
+        )
+
+    def test_multioutput_rf_uncertainty(self, tmp_path):
+        system = tmp_path / "sys"
+        system.mkdir()
+        _make_multi_npy_system(system, n_frames=20)
+        bundle_path = _make_multioutput_rf_bundle(tmp_path, n_frames=20)
+
+        with (
+            patch.object(
+                DPAFineTuner, "_load_descriptor_model", _mock_load_descriptor_model
+            ),
+            patch.object(DPAFineTuner, "_extract_features", _mock_extract_features),
+        ):
+            pred = DPAPredictor(bundle_path)
+            result = pred.predict(str(system), return_uncertainty=True)
+
+        assert hasattr(result, "predictions")
+        assert hasattr(result, "uncertainty")
+        assert result.predictions.shape == (20, 2)
+        assert result.uncertainty.shape == (20, 2)
+        assert np.all(result.uncertainty >= 0)
+        assert np.any(result.uncertainty > 0), (
+            "Multi-output RF tree-level std should be > 0 for some samples"
         )
 
 
