@@ -11,6 +11,9 @@ from deepmd.jax.descriptor.dpa3 import (
 from deepmd.jax.descriptor.hybrid import (
     DescrptHybrid,
 )
+from deepmd.jax.descriptor.nep import (
+    DescrptNep,
+)
 from deepmd.jax.descriptor.se_atten_v2 import (
     DescrptSeAttenV2,
 )
@@ -32,6 +35,7 @@ __all__ = [
     "DescrptDPA2",
     "DescrptDPA3",
     "DescrptHybrid",
+    "DescrptNep",
     "DescrptSeA",
     "DescrptSeAttenV2",
     "DescrptSeR",
