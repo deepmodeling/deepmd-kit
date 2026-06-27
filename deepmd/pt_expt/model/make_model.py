@@ -361,10 +361,7 @@ def make_model(
             return fit_output_to_model_output_graph(
                 atomic_ret,
                 self.atomic_output_def(),
-                edge_vec,
-                edge_index,
-                edge_mask,
-                n_node,
+                graph,
                 do_atomic_virial=do_atomic_virial,
                 create_graph=self.training,
                 mask=atomic_ret["mask"] if "mask" in atomic_ret else None,

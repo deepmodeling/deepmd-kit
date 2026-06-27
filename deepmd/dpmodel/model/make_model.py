@@ -51,10 +51,12 @@ from deepmd.utils.path import (
     DPPath,
 )
 
+from .edge_transform_output import (
+    fit_output_to_model_output_graph,
+)
 from .transform_output import (
     communicate_extended_output,
     fit_output_to_model_output,
-    fit_output_to_model_output_graph,
 )
 
 
@@ -614,7 +616,7 @@ def make_model(
             return fit_output_to_model_output_graph(
                 atomic_ret,
                 self.atomic_output_def(),
-                n_node,
+                graph,
                 mask=atomic_ret["mask"] if "mask" in atomic_ret else None,
             )
 

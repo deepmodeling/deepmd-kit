@@ -13,6 +13,7 @@ from deepmd.dpmodel import (
     get_reduce_name,
 )
 from deepmd.dpmodel.utils.neighbor_graph import (
+    NeighborGraph,
     edge_force_virial,
     frame_id_from_n_node,
     segment_sum,
@@ -52,10 +53,7 @@ def edge_energy_deriv(
 def fit_output_to_model_output_graph(
     fit_ret: dict[str, torch.Tensor],
     fit_output_def: FittingOutputDef,
-    edge_vec: torch.Tensor,
-    edge_index: torch.Tensor,
-    edge_mask: torch.Tensor,
-    n_node: torch.Tensor,
+    graph: NeighborGraph,
     do_atomic_virial: bool = False,
     create_graph: bool = True,
     mask: torch.Tensor | None = None,
@@ -81,14 +79,11 @@ def fit_output_to_model_output_graph(
         Raw flat fitting output, ``(N, *shape)`` per key (``N = sum(n_node)``).
     fit_output_def
         The fitting output definition.
-    edge_vec
-        (E, 3) edge vectors; MUST be the autograd leaf for ``fit_ret``.
-    edge_index
-        (2, E) ``[src, dst]`` edge endpoints (flat local indices).
-    edge_mask
-        (E,) valid-edge mask.
-    n_node
-        (nf,) per-frame local atom counts.
+    graph
+        the :class:`~deepmd.dpmodel.utils.neighbor_graph.NeighborGraph`. Its
+        ``edge_vec`` MUST be the autograd leaf for ``fit_ret`` (the force backward
+        differentiates the reduced energy w.r.t. it); ``edge_index``/``edge_mask``
+        define the scatter, ``n_node`` the node->frame map.
     do_atomic_virial
         Whether to also assemble the per-atom virial ``<var>_derv_c``.
     create_graph
@@ -96,6 +91,10 @@ def fit_output_to_model_output_graph(
     mask
         (N,) flat realness mask; used only for intensive-output reduction.
     """
+    edge_vec = graph.edge_vec
+    edge_index = graph.edge_index
+    edge_mask = graph.edge_mask
+    n_node = graph.n_node
     redu_prec = env.GLOBAL_PT_ENER_FLOAT_PRECISION
     nf = int(n_node.shape[0])
     N = int(n_node.sum())

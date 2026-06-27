@@ -66,52 +66,6 @@ def fit_output_to_model_output(
     return model_ret
 
 
-def fit_output_to_model_output_graph(
-    fit_ret: dict[str, Array],
-    fit_output_def: FittingOutputDef,
-    n_node: Array,
-    mask: Array | None = None,
-) -> dict[str, Array]:
-    """Flat-N analogue of :func:`fit_output_to_model_output`.
-
-    The atom axis is flat ``(N,)``; reducible outputs reduce per frame via
-    ``segment_sum`` over ``frame_id = repeat(arange(nf), n_node)`` (intensive ⇒
-    divide by the per-frame real-node count). Derivative name-holders are ``None``.
-    """
-    from deepmd.dpmodel.utils.neighbor_graph import (
-        frame_id_from_n_node,
-        segment_sum,
-    )
-
-    xp = array_api_compat.get_namespace(n_node)
-    nf = n_node.shape[0]
-    frame_id = frame_id_from_n_node(n_node)
-    model_ret = dict(fit_ret.items())
-    for kk, vv in fit_ret.items():
-        vdef = fit_output_def[kk]
-        if not vdef.reducible:
-            continue
-        kk_redu = get_reduce_name(kk)
-        vv_e = xp.astype(vv, GLOBAL_ENER_FLOAT_PRECISION)
-        redu = segment_sum(vv_e, frame_id, nf)  # (nf, *shape)
-        if vdef.intensive:
-            if mask is not None:
-                cnt = segment_sum(
-                    xp.astype(mask, GLOBAL_ENER_FLOAT_PRECISION), frame_id, nf
-                )
-            else:
-                cnt = xp.astype(n_node, GLOBAL_ENER_FLOAT_PRECISION)
-            redu = redu / xp.reshape(cnt, (nf, *([1] * (redu.ndim - 1))))
-        model_ret[kk_redu] = redu
-        if vdef.r_differentiable:
-            kk_derv_r, _ = get_deriv_name(kk)
-            model_ret[kk_derv_r] = None
-        if vdef.c_differentiable:
-            _, kk_derv_c = get_deriv_name(kk)
-            model_ret[kk_derv_c] = None
-    return model_ret
-
-
 def get_leading_dims(
     vv: Array,
     vdef: OutputVariableDef,

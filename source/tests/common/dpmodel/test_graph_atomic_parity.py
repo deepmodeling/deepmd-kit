@@ -152,8 +152,13 @@ def test_model_pair_exclude_types_graph_matches_dense():
     model.atomic_model.reinit_pair_exclude([])  # clear pair exclusion
     assert model.atomic_model.pair_excl is None
     g_noexcl = model.call_common(coord, atype, box, neighbor_graph_method="dense")
+    # tight tolerance: the excluded (0,1) pairs contribute a small but real
+    # amount; default rtol=1e-5 is too loose to register it.
     assert not np.allclose(
-        np.asarray(g_excl["energy_redu"]), np.asarray(g_noexcl["energy_redu"])
+        np.asarray(g_excl["energy_redu"]),
+        np.asarray(g_noexcl["energy_redu"]),
+        rtol=1e-9,
+        atol=1e-9,
     ), "pair exclusion must change the graph energy (same weights)"
 
 
