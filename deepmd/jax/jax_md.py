@@ -410,9 +410,8 @@ def _extract_energy(ret: Any) -> Array:
     """Extract a scalar total energy from a DeePMD model return value."""
     if isinstance(ret, tuple):
         ret = ret[0]
-    for key in ("energy", "energy_redu"):
-        if key in ret and ret[key] is not None:
-            return jnp.ravel(ret[key])[0]
+    if "energy" in ret and ret["energy"] is not None:
+        return jnp.ravel(ret["energy"])[0]
     raise KeyError("Model output does not contain an energy value.")
 
 
