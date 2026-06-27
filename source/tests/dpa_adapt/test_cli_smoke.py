@@ -162,6 +162,106 @@ class TestDpaFitArgumentNormalization:
         assert _maybe_split_list("H,C, O") == ["H", "C", "O"]
         assert _maybe_split_list(None) is None
 
+    def test_batch_size_parser_preserves_deepmd_specs(self):
+        from dpa_adapt.cli import (
+            _parse_batch_size,
+        )
+
+        assert _parse_batch_size("128") == 128
+        assert _parse_batch_size("auto:512") == "auto:512"
+
+    def test_fit_accepts_downstream_auto_batch_size(self):
+        from dpa_adapt.cli import (
+            get_parser,
+        )
+
+        args = get_parser().parse_args(
+            [
+                "fit",
+                "--train-data",
+                "train",
+                "--strategy",
+                "mft",
+                "--downstream-batch-size",
+                "auto:512",
+            ]
+        )
+
+        assert args.downstream_batch_size == "auto:512"
+
+    def test_fit_batch_size_numbers_parse_to_int(self):
+        from dpa_adapt.cli import (
+            get_parser,
+        )
+
+        args = get_parser().parse_args(
+            [
+                "fit",
+                "--train-data",
+                "train",
+                "--batch-size",
+                "64",
+                "--aux-batch-size",
+                "128",
+                "--downstream-batch-size",
+                "256",
+            ]
+        )
+
+        assert args.batch_size == 64
+        assert args.aux_batch_size == 128
+        assert args.downstream_batch_size == 256
+
+
+class TestDpaDataConvertDispatch:
+    """Verify data convert handles method-specific return payloads."""
+
+    def test_formula_result_exits_cleanly(self, monkeypatch, tmp_path):
+        from argparse import (
+            Namespace,
+        )
+
+        import dpa_adapt
+        from dpa_adapt.cli import (
+            _cmd_data_convert,
+        )
+
+        out = tmp_path / "npy"
+
+        def _fake_convert(**kwargs):
+            return {
+                "method": "formula",
+                "output_dir": str(out),
+                "output_systems": [str(out / "sys_0000")],
+            }
+
+        monkeypatch.setattr(dpa_adapt, "convert", _fake_convert)
+
+        args = Namespace(
+            input=str(tmp_path / "formula.csv"),
+            output=str(out),
+            fmt="formula",
+            type_map=None,
+            property_name=None,
+            property_col="energy",
+            train_ratio=0.9,
+            smiles_col="SMILES",
+            mol_dir=None,
+            mol_template="id{row}.mol",
+            split_seed=None,
+            conformer_seed=None,
+            poscar=str(tmp_path / "POSCAR"),
+            formula_col="formula",
+            base_element=None,
+            sets=1,
+            seed=42,
+            overwrite=False,
+            validate=True,
+            strict=False,
+        )
+
+        assert _cmd_data_convert(args) == 0
+
 
 class TestInitAllExports:
     """Verify __all__ covers the key public names."""

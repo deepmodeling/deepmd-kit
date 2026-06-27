@@ -92,6 +92,35 @@ def test_mft_delegate_preserves_omitted_type_map_as_none():
     assert ft._ensure_mft().type_map is None  # MFT delegate gets None
 
 
+def test_mft_fit_type_map_updates_delegate(monkeypatch):
+    """fit(..., type_map=...) must override the constructor MFT type_map."""
+    from dpa_adapt.finetuner import (
+        DPAFineTuner,
+    )
+
+    ft = DPAFineTuner(strategy="mft", property_name="homo", type_map=["Cu", "O"])
+    ft._ensure_mft()
+
+    captured = {}
+
+    def _fake_fit_mft(self, train_data, aux_data, valid_data=None):
+        captured["self_type_map"] = self.type_map
+        captured["delegate_type_map"] = self._mft.type_map
+        return self.output_dir
+
+    monkeypatch.setattr(DPAFineTuner, "_fit_mft", _fake_fit_mft)
+
+    result = ft.fit(
+        "train",
+        aux_data="aux",
+        type_map=["H", "C", "N", "O"],
+    )
+
+    assert result == ft.output_dir
+    assert captured["self_type_map"] == ["H", "C", "N", "O"]
+    assert captured["delegate_type_map"] == ["H", "C", "N", "O"]
+
+
 def test_aux_fitting_net_is_ener():
     config = MFTConfigManager(FakeTuner()).build()
     fn = config["model"]["model_dict"]["MP_traj_v024_alldata_mixu"]["fitting_net"]

@@ -89,8 +89,8 @@ def _system_fingerprint(system: dpdata.System) -> str:
 
 
 def _data_fingerprint(systems: list) -> str:
-    """Aggregate fingerprint for a list of systems (order-independent)."""
-    fps = sorted(_system_fingerprint(s) for s in systems)
+    """Aggregate fingerprint for a list of systems in request order."""
+    fps = [_system_fingerprint(s) for s in systems]
     h = hashlib.sha1()
     for fp in fps:
         h.update(fp.encode())
