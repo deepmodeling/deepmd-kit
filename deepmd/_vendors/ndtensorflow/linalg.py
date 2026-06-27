@@ -1,11 +1,18 @@
-from __future__ import annotations
+# SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
 
 import math
-from collections import namedtuple
+from collections import (
+    namedtuple,
+)
 
 import tensorflow as tf
 
-from ._array import Array
+from ._array import (
+    Array,
+)
 from ._namespace import (
     _is_complex,
     _moveaxis,
@@ -17,11 +24,11 @@ from ._namespace import (
     finfo,
     matmul,
     matrix_transpose,
+)
+from ._namespace import sum as xp_sum
+from ._namespace import (
     tensordot,
     vecdot,
-)
-from ._namespace import (
-    sum as xp_sum,
 )
 
 EighResult = namedtuple("EighResult", ["eigenvalues", "eigenvectors"])

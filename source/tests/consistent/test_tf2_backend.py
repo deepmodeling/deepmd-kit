@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-import unittest
 import sys
+import unittest
 from pathlib import (
     Path,
 )
@@ -23,8 +23,12 @@ from deepmd.dpmodel.model.model import get_model as get_dp_model
 from deepmd.env import (
     GLOBAL_NP_FLOAT_PRECISION,
 )
-from deepmd.tf2.common import unwrap_value
-from deepmd.tf2.make_model import model_call_from_call_lower
+from deepmd.tf2.common import (
+    unwrap_value,
+)
+from deepmd.tf2.make_model import (
+    model_call_from_call_lower,
+)
 from deepmd.tf2.model.model import get_model as get_tf2_model
 
 

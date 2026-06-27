@@ -1,13 +1,16 @@
-from __future__ import annotations
+# SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
 
 from builtins import bool as py_bool
-from typing import TypedDict
+from typing import (
+    TypedDict,
+)
 
 import tensorflow as tf
 
-from ._namespace import (
-    bool as bool_dtype,
-)
+from ._namespace import bool as bool_dtype
 from ._namespace import (
     complex64,
     complex128,

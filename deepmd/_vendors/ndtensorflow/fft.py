@@ -1,14 +1,30 @@
-from __future__ import annotations
+# SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
 
 import math
-from collections.abc import Sequence
-from contextlib import nullcontext
-from typing import Literal
+from collections.abc import (
+    Sequence,
+)
+from contextlib import (
+    nullcontext,
+)
+from typing import (
+    Literal,
+)
 
 import tensorflow as tf
 
-from ._array import Array
-from ._namespace import Device, DType, _moveaxis, _unwrap
+from ._array import (
+    Array,
+)
+from ._namespace import (
+    Device,
+    DType,
+    _moveaxis,
+    _unwrap,
+)
 
 _Norm = Literal["backward", "ortho", "forward"]
 

@@ -1,12 +1,24 @@
-from __future__ import annotations
+# SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
 
 import math
-from collections.abc import Callable, Iterator
-from enum import IntEnum
-from typing import Any
+from collections.abc import (
+    Callable,
+    Iterator,
+)
+from enum import (
+    IntEnum,
+)
+from typing import (
+    Any,
+)
 
 import tensorflow as tf
-from tensorflow.python.framework import composite_tensor_gradient
+from tensorflow.python.framework import (
+    composite_tensor_gradient,
+)
 
 
 class DLDeviceType(IntEnum):

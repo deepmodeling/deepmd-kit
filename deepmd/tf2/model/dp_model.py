@@ -10,16 +10,14 @@ from deepmd.tf2.atomic_model.dp_atomic_model import (
 )
 from deepmd.tf2.common import (
     tf2_module,
-    to_tf_tensor,
     to_tensorflow_array,
+    to_tf_tensor,
 )
 from deepmd.tf2.env import (
     jnp,
     stop_gradient,
 )
-from deepmd.tf2.format_nlist import (
-    format_nlist as tf2_format_nlist,
-)
+from deepmd.tf2.format_nlist import format_nlist as tf2_format_nlist
 from deepmd.tf2.model.base_model import (
     forward_common_atomic,
 )

@@ -1,4 +1,7 @@
-from __future__ import annotations
+# SPDX-License-Identifier: LGPL-3.0-or-later
+from __future__ import (
+    annotations,
+)
 
 import math
 from builtins import abs as py_abs
@@ -6,16 +9,27 @@ from builtins import all as py_all
 from builtins import any as py_any
 from builtins import bool as py_bool
 from builtins import max as py_max
-from collections import namedtuple
-from collections.abc import Sequence
-from contextlib import nullcontext
+from collections import (
+    namedtuple,
+)
+from collections.abc import (
+    Sequence,
+)
+from contextlib import (
+    nullcontext,
+)
 from functools import reduce as _reduce
 from functools import wraps as _wraps
-from typing import Any, Literal
+from typing import (
+    Any,
+    Literal,
+)
 
 import tensorflow as tf
 
-from ._array import Array
+from ._array import (
+    Array,
+)
 
 DType = tf.DType
 Device = str

@@ -12,11 +12,11 @@ from deepmd.dpmodel.fitting.property_fitting import (
 from ..common import (
     tf2_module,
 )
+from ..utils import exclude_mask as _tf2_exclude_mask  # noqa: F401
+from ..utils import network as _tf2_network  # noqa: F401
 from .base_fitting import (
     BaseFitting,
 )
-from ..utils import exclude_mask as _tf2_exclude_mask  # noqa: F401
-from ..utils import network as _tf2_network  # noqa: F401
 
 
 @BaseFitting.register("ener")

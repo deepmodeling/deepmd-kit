@@ -7,9 +7,7 @@ from typing import (
 
 import tensorflow as tf
 
-from deepmd._vendors import (
-    ndtensorflow as xp,
-)
+from deepmd._vendors import ndtensorflow as xp
 
 if not tf.executing_eagerly():
     raise RuntimeError(

@@ -17,9 +17,7 @@ from typing import (
 import numpy as np
 import tensorflow as tf
 
-from deepmd._vendors import (
-    ndtensorflow as xp,
-)
+from deepmd._vendors import ndtensorflow as xp
 from deepmd.dpmodel.common import (
     NativeOP,
 )

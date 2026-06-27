@@ -5,8 +5,8 @@ from typing import (
 )
 
 from deepmd.dpmodel.common import (
-    NativeOP,
     PRECISION_DICT,
+    NativeOP,
 )
 from deepmd.dpmodel.utils.network import EmbeddingNet as EmbeddingNetDP
 from deepmd.dpmodel.utils.network import FittingNet as FittingNetDP
@@ -22,10 +22,10 @@ from deepmd.dpmodel.utils.network import (
 )
 
 from ..common import (
-    to_tf_tensor,
-    tf2_module,
     register_dpmodel_mapping,
+    tf2_module,
     to_tensorflow_array,
+    to_tf_tensor,
 )
 
 
