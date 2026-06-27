@@ -558,7 +558,7 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       auto padded_nlist = createNlistTensor(nlist_data.jlist, nnei)
                               .to(torch::kInt64)
                               .to(device);
-      const auto edge_tensors = createEdgeTensorsGPU(
+      const auto edge_tensors = createEdgeTensorsDevice(
           padded_nlist, coord_Tensor, mapping_tensor,
           nloc, nall_real,
           /*fold_to_local=*/!use_with_comm);
@@ -1027,7 +1027,7 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
     // GPU path: build padded nlist tensor, then construct edge topology on GPU
     nlist_tensor =
         createNlistTensor(nlist_raw, nnei).to(torch::kInt64).to(device);
-    edge_tensors = createEdgeTensorsGPU(
+    edge_tensors = createEdgeTensorsDevice(
         nlist_tensor, coord_Tensor, mapping_tensor, nloc, nall,
         /*fold_to_local=*/true, /*with_geometry=*/true);
   } else {

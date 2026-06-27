@@ -343,7 +343,7 @@ inline EdgeTensorPack createEdgeTensors(
  *   When false, only topology (edge_index, edge_index_ext) is built —
  *   the caller uses compactEdgeTensors() every step for geometry.
  */
-inline EdgeTensorPack createEdgeTensorsGPU(
+inline EdgeTensorPack createEdgeTensorsDevice(
     const torch::Tensor& nlist_tensor,
     const torch::Tensor& coord,
     const torch::Tensor& mapping,
