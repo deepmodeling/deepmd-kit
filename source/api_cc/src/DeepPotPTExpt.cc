@@ -559,8 +559,7 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
                               .to(torch::kInt64)
                               .to(device);
       const auto edge_tensors = createEdgeTensorsDevice(
-          padded_nlist, coord_Tensor, mapping_tensor,
-          nloc, nall_real,
+          padded_nlist, coord_Tensor, mapping_tensor, nloc, nall_real,
           /*fold_to_local=*/!use_with_comm);
       edge_index_tensor = edge_tensors.edge_index;
       edge_index_ext_tensor = edge_tensors.edge_index_ext;

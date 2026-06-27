@@ -362,27 +362,28 @@ inline EdgeTensorPack createEdgeTensorsDevice(
 
   // dst_actual: center atom index for each edge slot
   auto dst_actual =
-      torch::floor_divide(
-          torch::arange(nloc * nnei, int_options),
-          nnei);
+      torch::floor_divide(torch::arange(nloc * nnei, int_options), nnei);
 
   // Valid edge mask: nlist >= 0 (not padding)
   auto valid = nlist_flat >= 0;
 
   // Safe neighbor index (replace -1 with 0 for safe gather)
-  auto neighbor_safe = torch::where(valid, nlist_flat, torch::zeros_like(nlist_flat));
+  auto neighbor_safe =
+      torch::where(valid, nlist_flat, torch::zeros_like(nlist_flat));
 
   // src_local: map extended neighbor to local owner via mapping
   // mapping is [1, nall], flatten to [nall]
   auto mapping_flat = mapping.reshape({-1});  // [nall]
-  auto src_local = mapping_flat.index_select(0, neighbor_safe);  // [nloc * nnei]
+  auto src_local =
+      mapping_flat.index_select(0, neighbor_safe);  // [nloc * nnei]
 
   // Compute edge vectors for distance filter
   auto coord_flat = coord.reshape({-1, 3});  // [nall, 3]
-  auto neighbor_coord = coord_flat.index_select(0, neighbor_safe);  // [nloc*nnei, 3]
+  auto neighbor_coord =
+      coord_flat.index_select(0, neighbor_safe);            // [nloc*nnei, 3]
   auto dst_coord = coord_flat.index_select(0, dst_actual);  // [nloc*nnei, 3]
-  auto edge_vec_all = neighbor_coord - dst_coord;  // [nloc*nnei, 3]
-  auto edge_len2 = (edge_vec_all * edge_vec_all).sum(1);  // [nloc*nnei]
+  auto edge_vec_all = neighbor_coord - dst_coord;           // [nloc*nnei, 3]
+  auto edge_len2 = (edge_vec_all * edge_vec_all).sum(1);    // [nloc*nnei]
 
   // src_actual for edge_index: folded (local) or extended
   torch::Tensor src_actual;
@@ -409,8 +410,7 @@ inline EdgeTensorPack createEdgeTensorsDevice(
   auto edge_index = torch::stack({src_selected, dst_selected}, 0);
 
   auto src_ext_selected = neighbor_safe.index_select(0, valid_idx);
-  auto edge_index_ext =
-      torch::stack({src_ext_selected, dst_selected}, 0);
+  auto edge_index_ext = torch::stack({src_ext_selected, dst_selected}, 0);
 
   EdgeTensorPack pack;
   pack.edge_index = edge_index;
@@ -421,17 +421,16 @@ inline EdgeTensorPack createEdgeTensorsDevice(
     auto valid_edge_vec = edge_vec_all.index_select(0, valid_idx);
     // Append 2 dummy edges (same convention as CPU version)
     auto dummy_index = torch::zeros({2, 2}, int_options);
-    auto dummy_vec =
-        torch::zeros({2, 3}, torch::TensorOptions()
-                                  .dtype(coord.scalar_type())
-                                  .device(device));
+    auto dummy_vec = torch::zeros(
+        {2, 3},
+        torch::TensorOptions().dtype(coord.scalar_type()).device(device));
     pack.edge_index = torch::cat({edge_index, dummy_index}, 1);
     pack.edge_index_ext = torch::cat({edge_index_ext, dummy_index}, 1);
     pack.edge_vec = torch::cat({valid_edge_vec, dummy_vec}, 0);
     // edge_mask: true for real edges, false for dummies
-    auto real_mask = torch::ones(
-        {valid_idx.size(0)},
-        torch::TensorOptions().dtype(torch::kBool).device(device));
+    auto real_mask =
+        torch::ones({valid_idx.size(0)},
+                    torch::TensorOptions().dtype(torch::kBool).device(device));
     auto dummy_mask = torch::zeros({2}, real_mask.options());
     pack.edge_mask = torch::cat({real_mask, dummy_mask}, 0);
   }
