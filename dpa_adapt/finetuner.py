@@ -1099,9 +1099,10 @@ class DPAFineTuner:
 
         try:
             elements = read_data_type_map_union(systems)
-            validate_type_map_subset(elements, tm, label="train data")
         except ValueError:
             pass  # no atom_names — deepmd uses raw atom indices
+        else:
+            validate_type_map_subset(elements, tm, label="train data")
 
         return tm
 
