@@ -34,6 +34,9 @@ from deepmd.infer.deep_polar import (
     DeepGlobalPolar,
     DeepPolar,
 )
+from deepmd.infer.deep_population import (
+    DeepPopulation,
+)
 from deepmd.infer.deep_pot import (
     DeepPot,
 )
@@ -428,6 +431,8 @@ class DeepEval(DeepEvalBackend):
             return DeepGlobalPolar
         elif "wfc" in model_output_type:
             return DeepWFC
+        elif "population" in model_output_type:
+            return DeepPopulation
         elif self.get_var_name() in model_output_type:
             return DeepProperty
         else:
