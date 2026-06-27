@@ -152,9 +152,10 @@ the property name used by the data file, and use the property loss:
 ```
 
 The property label follows the usual DeePMD property-data convention: each
-system provides `band_prop.npy` when `property_name` is `band_prop`. See
-`examples/water/dpa4/input_property.json` for a complete input; it trains on the
-QM9 property subset shipped in `examples/property/data`.
+system provides `band_prop.npy` when `property_name` is `band_prop`. Property
+fitting is not a water task, so the complete DPA4/SeZM property input lives with
+the property dataset: see `examples/property/train/input_dpa4.json`, which trains
+on the QM9 property subset in `examples/property/data`.
 
 ### Direct-force denoising (`dens`, experimental)
 
