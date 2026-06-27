@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
-"""Bit-exact parity between the graph-native ``DescrptBlockSeAtten._call_graph``
+"""Bit-exact parity between the graph-native ``DescrptBlockSeAtten.call_graph``
 (attn_layer=0) and the legacy dense ``DescrptBlockSeAtten.call`` on the SAME
 neighbor list, for binding AND non-binding ``sel``.
 """
@@ -78,7 +78,7 @@ class TestDpa1BlockCallGraph:
             type_embedding=tebd,
         )
         ng = from_dense_quartet(ext_coord, nlist, mapping)
-        graph_g, _rot_mat = blk._call_graph(
+        graph_g, _rot_mat = blk.call_graph(
             ng,
             np.reshape(ext_atype, (-1,)),
             type_embedding=tebd,
@@ -94,7 +94,7 @@ class TestDpa1BlockCallGraph:
         """The graph block kernel fail-fasts for attn_layer > 0 (unsupported)."""
         dd = DescrptDPA1(rcut=4.0, rcut_smth=0.5, sel=[20], ntypes=2, attn_layer=2)
         with pytest.raises(NotImplementedError):
-            dd.se_atten._call_graph(None, np.array([0], dtype=np.int64))
+            dd.se_atten.call_graph(None, np.array([0], dtype=np.int64))
 
     def test_exclude_types_raises(self) -> None:
         """The graph block kernel fail-fasts for exclude_types (not yet applied)."""
@@ -114,6 +114,6 @@ class TestDpa1BlockCallGraph:
             np.arange(self.nloc, dtype=np.int64)[None],
         )
         with pytest.raises(NotImplementedError):
-            dd.se_atten._call_graph(
+            dd.se_atten.call_graph(
                 ng, self.atype.reshape(-1), type_embedding=dd.type_embedding.call()
             )

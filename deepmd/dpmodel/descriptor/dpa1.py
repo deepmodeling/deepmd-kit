@@ -674,8 +674,8 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
     ) -> tuple[Array, Array]:
         """Descriptor-level graph-native forward (``attn_layer == 0``).
 
-        Wraps the private block kernel
-        :meth:`DescrptBlockSeAtten._call_graph`, adds the descriptor-level
+        Wraps the block kernel
+        :meth:`DescrptBlockSeAtten.call_graph`, adds the descriptor-level
         ``concat_output_tebd`` step, and returns the outputs on the flat ``(N,
         ...)`` node axis (ragged-native; no rectangular ``(nf, nloc)``
         reshape).
@@ -703,7 +703,7 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         """
         xp = array_api_compat.array_namespace(graph.edge_vec)
         dev = array_api_compat.device(graph.edge_vec)
-        grrg, rot_mat = self.se_atten._call_graph(
+        grrg, rot_mat = self.se_atten.call_graph(
             graph, atype, type_embedding=type_embedding
         )
         # FLAT node axis (N, ...): no (nf, nloc) reshape -- ragged-native, spec.
@@ -1387,7 +1387,7 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
             xp.reshape(sw, (nf, nloc, nnei, 1)),
         )
 
-    def _call_graph(
+    def call_graph(
         self,
         graph: Any,
         atype: Array,
