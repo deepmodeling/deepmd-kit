@@ -50,13 +50,14 @@ def _restore_compression_slots_from_state(obj: Any, state: Any) -> None:
     if not isinstance(state, dict):
         return
     if (
-        hasattr(obj, "compress")
+        (hasattr(obj, "compress") or hasattr(obj, "geo_compress"))
         and "compress_data" in state
         and "compress_info" in state
     ):
         obj.compress_data = _state_sequence_to_numpy_list(state["compress_data"])
         obj.compress_info = _state_sequence_to_numpy_list(state["compress_info"])
-        obj.compress = True
+        if hasattr(obj, "compress"):
+            obj.compress = True
         if hasattr(obj, "geo_compress"):
             obj.geo_compress = True
         if hasattr(obj, "se_atten"):
@@ -64,10 +65,14 @@ def _restore_compression_slots_from_state(obj: Any, state: Any) -> None:
             obj.se_atten.compress_info = obj.compress_info
             if hasattr(obj.se_atten, "geo_compress"):
                 obj.se_atten.geo_compress = True
-    if hasattr(obj, "compress") and "type_embd_data" in state:
+    if (
+        hasattr(obj, "compress") or hasattr(obj, "tebd_compress")
+    ) and "type_embd_data" in state:
         obj.type_embd_data = _state_value_to_numpy(state["type_embd_data"])
-        obj.compress = True
-        obj.tebd_compress = True
+        if hasattr(obj, "compress"):
+            obj.compress = True
+        if hasattr(obj, "tebd_compress"):
+            obj.tebd_compress = True
         if hasattr(obj, "geo_compress"):
             obj.geo_compress = "compress_data" in state and "compress_info" in state
         if hasattr(obj, "se_atten"):
@@ -92,8 +97,9 @@ def _restore_compression_slots_from_state(obj: Any, state: Any) -> None:
             child = getattr(obj, name)
         _restore_compression_slots_from_state(child, child_state)
         if name == "se_atten" and hasattr(obj, "compress"):
-            if hasattr(child, "type_embd_data"):
-                obj.type_embd_data = child.type_embd_data
+            child_type_embd_data = getattr(child, "type_embd_data", None)
+            if child_type_embd_data is not None:
+                obj.type_embd_data = child_type_embd_data
                 obj.tebd_compress = getattr(child, "tebd_compress", True)
                 obj.compress = True
             if getattr(child, "geo_compress", False):

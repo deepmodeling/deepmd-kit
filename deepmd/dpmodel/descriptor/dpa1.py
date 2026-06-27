@@ -1032,9 +1032,9 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         self.tebd_compress = False
         self.geo_compress = False
         self.is_sorted = len(self.exclude_types) == 0
-        self.compress_data = [np.zeros(0, dtype=PRECISION_DICT[self.precision])]
-        self.compress_info = [np.zeros(0, dtype=PRECISION_DICT[self.precision])]
-        self.type_embd_data = np.zeros(0, dtype=PRECISION_DICT[self.precision])
+        self.compress_data = None
+        self.compress_info = None
+        self.type_embd_data = None
 
     def get_rcut(self) -> float:
         """Returns the cut-off radius."""
