@@ -550,9 +550,17 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       // (``fold_to_local=false``): ghost neighbours stay as distinct nodes so
       // their features can be exchanged across ranks via border_op, instead of
       // being folded onto a local owner that this rank does not own.
-      const auto edge_tensors = createEdgeTensors(
-          nlist_data.jlist, dcoord, mapping, nloc, nall_real, device,
-          /*with_geometry=*/false, /*row_centers=*/&nlist_data.ilist,
+      //
+      // GPU path: convert jagged nlist to padded tensor, then build edge
+      // topology entirely on GPU using gather/nonzero — avoids the O(N*nnei)
+      // CPU loop in createEdgeTensors.
+      nlist_data.padding();
+      auto padded_nlist = createNlistTensor(nlist_data.jlist, nnei)
+                              .to(torch::kInt64)
+                              .to(device);
+      const auto edge_tensors = createEdgeTensorsGPU(
+          padded_nlist, coord_Tensor, mapping_tensor,
+          nloc, nall_real,
           /*fold_to_local=*/!use_with_comm);
       edge_index_tensor = edge_tensors.edge_index;
       edge_index_ext_tensor = edge_tensors.edge_index_ext;
@@ -1016,8 +1024,12 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   at::Tensor nlist_tensor;
   EdgeTensorPack edge_tensors;
   if (lower_input_is_edge_) {
-    edge_tensors = createEdgeTensors(nlist_raw, coord_cpy_d, mapping_64, nloc,
-                                     nall, device);
+    // GPU path: build padded nlist tensor, then construct edge topology on GPU
+    nlist_tensor =
+        createNlistTensor(nlist_raw, nnei).to(torch::kInt64).to(device);
+    edge_tensors = createEdgeTensorsGPU(
+        nlist_tensor, coord_Tensor, mapping_tensor, nloc, nall,
+        /*fold_to_local=*/true, /*with_geometry=*/true);
   } else {
     nlist_tensor =
         createNlistTensor(nlist_raw, nnei).to(torch::kInt64).to(device);

@@ -323,6 +323,122 @@ inline EdgeTensorPack createEdgeTensors(
 }
 
 /**
+ * @brief Build edge topology on GPU from a padded neighbor-list tensor.
+ *
+ * This is the GPU-accelerated equivalent of createEdgeTensors(): instead of
+ * iterating neighbor pairs in a CPU loop, it uses torch tensor ops (gather,
+ * scatter, nonzero) to construct edge_index and edge_index_ext entirely on the
+ * device where the input tensors reside.
+ *
+ * Produces only topology (no edge_vec/edge_mask) — the caller uses
+ * compactEdgeTensors() every step to recompute geometry from current coords.
+ *
+ * @param nlist_tensor Padded neighbor list [1, nloc, nnei] on device (int64).
+ * @param coord Coordinates [1, nall, 3] on device (float64).
+ * @param mapping Extended-to-local map [1, nall] on device (int64).
+ * @param nloc Number of local atoms.
+ * @param nall Number of extended atoms.
+ * @param fold_to_local Whether to fold ghost neighbors onto local owners.
+ * @param with_geometry Whether to also compute edge_vec and edge_mask.
+ *   When false, only topology (edge_index, edge_index_ext) is built —
+ *   the caller uses compactEdgeTensors() every step for geometry.
+ */
+inline EdgeTensorPack createEdgeTensorsGPU(
+    const torch::Tensor& nlist_tensor,
+    const torch::Tensor& coord,
+    const torch::Tensor& mapping,
+    const int nloc,
+    const int nall,
+    const bool fold_to_local = true,
+    const bool with_geometry = false) {
+  // nlist_tensor: [1, nloc, nnei], coord: [1, nall, 3], mapping: [1, nall]
+  const int nnei = nlist_tensor.size(2);
+  const auto device = coord.device();
+  const auto int_options =
+      torch::TensorOptions().dtype(torch::kInt64).device(device);
+
+  // Flatten nlist to [nloc * nnei]
+  auto nlist_flat = nlist_tensor.reshape({-1});  // [nloc * nnei]
+
+  // dst_actual: center atom index for each edge slot
+  auto dst_actual =
+      torch::floor_divide(
+          torch::arange(nloc * nnei, int_options),
+          nnei);
+
+  // Valid edge mask: nlist >= 0 (not padding)
+  auto valid = nlist_flat >= 0;
+
+  // Safe neighbor index (replace -1 with 0 for safe gather)
+  auto neighbor_safe = torch::where(valid, nlist_flat, torch::zeros_like(nlist_flat));
+
+  // src_local: map extended neighbor to local owner via mapping
+  // mapping is [1, nall], flatten to [nall]
+  auto mapping_flat = mapping.reshape({-1});  // [nall]
+  auto src_local = mapping_flat.index_select(0, neighbor_safe);  // [nloc * nnei]
+
+  // Compute edge vectors for distance filter
+  auto coord_flat = coord.reshape({-1, 3});  // [nall, 3]
+  auto neighbor_coord = coord_flat.index_select(0, neighbor_safe);  // [nloc*nnei, 3]
+  auto dst_coord = coord_flat.index_select(0, dst_actual);  // [nloc*nnei, 3]
+  auto edge_vec_all = neighbor_coord - dst_coord;  // [nloc*nnei, 3]
+  auto edge_len2 = (edge_vec_all * edge_vec_all).sum(1);  // [nloc*nnei]
+
+  // src_actual for edge_index: folded (local) or extended
+  torch::Tensor src_actual;
+  if (fold_to_local) {
+    src_actual = src_local;  // local owner index
+  } else {
+    src_actual = neighbor_safe;  // extended index
+  }
+
+  // Filter: valid & non-coincident.
+  // When fold_to_local=true (single-rank), also require src_local in [0, nloc)
+  // to drop ghost-only neighbors.  When fold_to_local=false (multi-rank
+  // with-comm), ghost neighbors must stay as distinct extended nodes, so
+  // skip the local-owner range check.
+  auto edge_keep = valid & (edge_len2 > 1e-10);
+  if (fold_to_local) {
+    edge_keep = edge_keep & (src_local >= 0) & (src_local < nloc);
+  }
+  auto valid_idx = torch::nonzero(edge_keep).reshape({-1});
+
+  // Build edge_index [2, E] and edge_index_ext [2, E]
+  auto src_selected = src_actual.index_select(0, valid_idx);
+  auto dst_selected = dst_actual.index_select(0, valid_idx);
+  auto edge_index = torch::stack({src_selected, dst_selected}, 0);
+
+  auto src_ext_selected = neighbor_safe.index_select(0, valid_idx);
+  auto edge_index_ext =
+      torch::stack({src_ext_selected, dst_selected}, 0);
+
+  EdgeTensorPack pack;
+  pack.edge_index = edge_index;
+  pack.edge_index_ext = edge_index_ext;
+
+  if (with_geometry) {
+    // edge_vec for valid edges
+    auto valid_edge_vec = edge_vec_all.index_select(0, valid_idx);
+    // Append 2 dummy edges (same convention as CPU version)
+    auto dummy_index = torch::zeros({2, 2}, int_options);
+    auto dummy_vec =
+        torch::zeros({2, 3}, torch::TensorOptions()
+                                  .dtype(coord.scalar_type())
+                                  .device(device));
+    pack.edge_index = torch::cat({edge_index, dummy_index}, 1);
+    pack.edge_index_ext = torch::cat({edge_index_ext, dummy_index}, 1);
+    pack.edge_vec = torch::cat({valid_edge_vec, dummy_vec}, 0);
+    // edge_mask: true for real edges, false for dummies
+    auto real_mask = torch::ones(
+        {valid_idx.size(0)},
+        torch::TensorOptions().dtype(torch::kBool).device(device));
+    auto dummy_mask = torch::zeros({2}, real_mask.options());
+    pack.edge_mask = torch::cat({real_mask, dummy_mask}, 0);
+  }
+  return pack;
+}
+
+/**
  * @brief Compact a cached LAMMPS skin topology to the current cutoff edge set.
  *
  * LAMMPS rebuilds neighbor topology only when its skin list is refreshed.  The
