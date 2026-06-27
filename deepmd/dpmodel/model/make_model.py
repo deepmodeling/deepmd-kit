@@ -544,7 +544,7 @@ def make_model(
                 mask=atomic_ret["mask"] if "mask" in atomic_ret else None,
             )
 
-        def call_lower_graph(
+        def forward_common_atomic_graph(
             self,
             atype: Array,
             n_node: Array,
@@ -556,18 +556,16 @@ def make_model(
             aparam: Array | None = None,
             comm_dict: dict | None = None,
         ) -> dict[str, Array]:
-            """Graph-native lower (PR-A: dpa1 ``attn_layer == 0``).
+            """Model-level graph forward (no type cast). Analogue of the dense
+            :meth:`forward_common_atomic`.
 
-            OUTPUT-AGNOSTIC, like the dense
-            :func:`~deepmd.dpmodel.model.transform_output.fit_output_to_model_output`:
-            runs the graph descriptor + fitting forward to obtain the rectangular
-            ``fit_ret`` (``(nf, nloc, *shape)``), then reduces EVERY reducible
-            fitting output (``xp.sum``/``xp.mean`` over the atom axis, cast to
-            energy precision) and sets derivative name-holders to ``None``.  This
-            makes any fitting (energy/dos/dipole/polar/property/...) flow through
-            the graph path with no change on the fitting side.  Force/virial are
-            produced by the pt_expt autograd path.  Must match the dense
-            :meth:`call_common_lower` reduction on the SAME neighbor list.
+            Builds a :class:`NeighborGraph` from the flat edge fields, runs the
+            atomic model's :meth:`forward_common_atomic_graph` (flat ``(N, *)``
+            per-node output), then the flat-N output transform (per-frame
+            ``segment_sum`` reduction; derivative name-holders ``None`` --
+            force/virial come from the pt_expt autograd lower). The
+            ``(nf, nloc)`` unravel for the public ABI happens in the caller
+            (:meth:`_call_common_graph`).
 
             Parameters
             ----------
@@ -582,22 +580,22 @@ def make_model(
             edge_mask
                 (E,) boolean/0-1 valid-edge mask.
             n_local
-                Per-rank local atom counts for multi-rank inference.
-                Ignored in PR-A (single-rank); accepted for ABI stability.
+                Per-rank local atom counts for multi-rank inference. Ignored in
+                PR-A (single-rank); accepted for ABI stability.
             fparam
                 Frame parameter, ``(nf, ndf)``.
             aparam
-                Atomic parameter, ``(nf, nloc, nda)``.
+                Atomic parameter, ``(N, nda)``.
             comm_dict
-                MPI communication metadata. Ignored in PR-A; accepted for
-                ABI stability.
+                MPI communication metadata. Ignored in PR-A; accepted for ABI
+                stability.
 
             Returns
             -------
             dict
-                The standard model dict (``<var>`` per-atom, ``<var>_redu``
+                The standard model dict (``<var>`` per-node, ``<var>_redu``
                 reduced, derivative name-holders ``None``), matching
-                :func:`fit_output_to_model_output`.
+                :func:`fit_output_to_model_output_graph`.
             """
             graph = NeighborGraph(
                 n_node=n_node,
@@ -608,17 +606,62 @@ def make_model(
             atomic_ret = self.atomic_model.forward_common_atomic_graph(
                 graph, atype, fparam=fparam, aparam=aparam
             )
-            # ``forward_common_atomic_graph`` returns flat ``(N, *)`` output
-            # (N = sum(n_node)). Reduce per-frame via segment_sum over
-            # frame_id — supports ragged frames without any nloc = N // nf
-            # reshape. The I/O boundary unravel to (nf, nloc, *) happens
-            # in ``_call_common_graph`` for the public ABI.
             return fit_output_to_model_output_graph(
                 atomic_ret,
                 self.atomic_output_def(),
                 graph,
                 mask=atomic_ret["mask"] if "mask" in atomic_ret else None,
             )
+
+        def call_common_lower_graph(
+            self,
+            atype: Array,
+            n_node: Array,
+            edge_index: Array,
+            edge_vec: Array,
+            edge_mask: Array,
+            n_local: Array | None = None,
+            fparam: Array | None = None,
+            aparam: Array | None = None,
+            comm_dict: dict | None = None,
+        ) -> dict[str, Array]:
+            """Graph-native PUBLIC lower (PR-A: dpa1 ``attn_layer == 0``).
+
+            The PRIMARY directly-callable graph interface (spec decision #14).
+            Casts inputs/outputs to/from the model precision exactly like the
+            dense :meth:`call_common_lower` (``edge_vec`` is the geometry, in
+            place of ``coord``), then runs :meth:`forward_common_atomic_graph`.
+            OUTPUT-AGNOSTIC: every fitting (energy/dos/dipole/polar/property/...)
+            flows through with no change on the fitting side; force/virial are
+            produced by the pt_expt autograd lower. Must match the dense
+            :meth:`call_common_lower` reduction on the SAME neighbor set.
+
+            Parameters mirror :meth:`forward_common_atomic_graph`.
+
+            Returns
+            -------
+            dict
+                The standard model dict in the INPUT precision.
+            """
+            edge_vec, _, fparam, aparam, _, input_prec = self._input_type_cast(
+                edge_vec, fparam=fparam, aparam=aparam
+            )
+            model_predict = self.forward_common_atomic_graph(
+                atype,
+                n_node,
+                edge_index,
+                edge_vec,
+                edge_mask,
+                n_local=n_local,
+                fparam=fparam,
+                aparam=aparam,
+                comm_dict=comm_dict,
+            )
+            model_predict = self._output_type_cast(model_predict, input_prec)
+            return model_predict
+
+        # backward-compat alias (mirrors ``call_lower = call_common_lower``)
+        call_lower_graph = call_common_lower_graph
 
         call = call_common
         call_lower = call_common_lower
