@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
+import os
 from typing import (
     Any,
 )
@@ -217,6 +218,12 @@ class MFTConfigManager:
             },
             "numb_steps": t.max_steps,
             "save_freq": t.save_freq,
+            # Pin the checkpoint prefix under output_dir (matching DPATrainer),
+            # so DeePMD writes model.ckpt-*.pt there regardless of the process
+            # cwd. Otherwise _freeze_ckpt()/evaluate()/predict() — which look
+            # under output_dir — cannot find the checkpoint after a successful
+            # fit() launched from another directory.
+            "save_ckpt": os.path.join(t.output_dir, "model.ckpt"),
             "disp_freq": t.disp_freq,
             "seed": t.seed,
         }

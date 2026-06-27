@@ -123,6 +123,29 @@ def test_validate_fparam_correct_passes(tmp_path):
     DPATrainer._validate_fparam([str(sys_dir)], fparam_dim=2)
 
 
+def test_validate_fparam_1d_raises_dpadataerror(tmp_path):
+    """A malformed 1-D fparam.npy raises DPADataError, not a bare IndexError."""
+    sys_dir = tmp_path / "system"
+    set_dir = sys_dir / "set.000"
+    set_dir.mkdir(parents=True)
+    np.save(str(set_dir / "fparam.npy"), np.zeros((5,)))  # 1-D, not (n, dim)
+
+    with pytest.raises(DPADataError, match="2-D"):
+        DPATrainer._validate_fparam([str(sys_dir)], fparam_dim=2)
+
+
+def test_validate_fparam_row_count_mismatch_raises(tmp_path):
+    """Row count must match the set's frame count (coord.npy)."""
+    sys_dir = tmp_path / "system"
+    set_dir = sys_dir / "set.000"
+    set_dir.mkdir(parents=True)
+    np.save(str(set_dir / "fparam.npy"), np.zeros((5, 2)))  # 5 rows
+    np.save(str(set_dir / "coord.npy"), np.zeros((4, 6)))  # 4 frames
+
+    with pytest.raises(DPADataError, match="rows but set"):
+        DPATrainer._validate_fparam([str(sys_dir)], fparam_dim=2)
+
+
 def test_validate_fparam_multiple_systems(tmp_path):
     """_validate_fparam checks all set.* dirs across multiple systems."""
     for i in range(2):

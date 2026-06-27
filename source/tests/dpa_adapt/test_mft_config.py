@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import os
 from typing import (
     ClassVar,
 )
@@ -66,6 +67,29 @@ def test_data_dict_paths():
     dd = config["training"]["data_dict"]
     assert dd["MP_traj_v024_alldata_mixu"]["training_data"]["systems"] == ["/data/aux"]
     assert dd["DOWNSTREAM"]["training_data"]["systems"] == ["/data/downstream"]
+
+
+def test_training_save_ckpt_under_output_dir():
+    """save_ckpt pins the checkpoint prefix under output_dir, so DeePMD writes
+    model.ckpt-*.pt where _freeze_ckpt()/evaluate()/predict() later look.
+    """
+    config = MFTConfigManager(FakeTuner()).build()
+    assert config["training"]["save_ckpt"] == os.path.join(
+        "/tmp/mft_test", "model.ckpt"
+    )
+
+
+def test_mft_delegate_preserves_omitted_type_map_as_none():
+    """DPAFineTuner(strategy='mft') without type_map must hand None (not []) to
+    the MFT delegate, so it auto-detects the type_map from the checkpoint.
+    """
+    from dpa_adapt.finetuner import (
+        DPAFineTuner,
+    )
+
+    ft = DPAFineTuner(strategy="mft", property_name="homo")
+    assert ft.type_map == []  # frozen-sklearn path keeps a concrete list
+    assert ft._ensure_mft().type_map is None  # MFT delegate gets None
 
 
 def test_aux_fitting_net_is_ener():

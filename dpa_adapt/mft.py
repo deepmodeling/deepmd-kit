@@ -273,8 +273,9 @@ class MFTFineTuner:
         except Exception:
             aux_systems = []
 
-        if self.type_map is None:
-            # Auto-detect from checkpoint — always a superset.
+        if not self.type_map:
+            # Not provided (None) or empty list — auto-detect from the
+            # checkpoint, which is always a superset.
             self.type_map = read_checkpoint_type_map(
                 self.pretrained,
                 branch=self.aux_branch,

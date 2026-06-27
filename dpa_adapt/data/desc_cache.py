@@ -18,7 +18,6 @@ from __future__ import (
 )
 
 import hashlib
-import logging
 import os
 from pathlib import (
     Path,
@@ -35,8 +34,6 @@ from dpa_adapt._backend import (
 
 if TYPE_CHECKING:
     import dpdata
-
-_LOG = logging.getLogger("dpa_adapt.data.desc_cache")
 
 
 # ---------------------------------------------------------------------------
