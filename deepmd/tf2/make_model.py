@@ -1,0 +1,113 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
+from collections.abc import (
+    Callable,
+)
+
+import tensorflow as tf
+import tensorflow.experimental.numpy as tnp
+
+from deepmd.dpmodel.output_def import (
+    ModelOutputDef,
+)
+from deepmd.tf2.nlist import (
+    build_neighbor_list,
+    extend_coord_with_ghosts,
+)
+from deepmd.tf2.region import (
+    normalize_coord,
+)
+from deepmd.tf2.transform_output import (
+    communicate_extended_output,
+)
+
+
+def model_call_from_call_lower(
+    *,  # enforce keyword-only arguments
+    call_lower: Callable[
+        [
+            tnp.ndarray,
+            tnp.ndarray,
+            tnp.ndarray,
+            tnp.ndarray,
+            tnp.ndarray,
+            bool,
+        ],
+        dict[str, tnp.ndarray],
+    ],
+    rcut: float,
+    sel: list[int],
+    mixed_types: bool,
+    model_output_def: ModelOutputDef,
+    coord: tnp.ndarray,
+    atype: tnp.ndarray,
+    box: tnp.ndarray,
+    fparam: tnp.ndarray,
+    aparam: tnp.ndarray,
+    do_atomic_virial: bool = False,
+) -> dict[str, tnp.ndarray]:
+    """Return model prediction from lower interface.
+
+    Parameters
+    ----------
+    coord
+        The coordinates of the atoms.
+        shape: nf x (nloc x 3)
+    atype
+        The type of atoms. shape: nf x nloc
+    box
+        The simulation box. shape: nf x 9
+    fparam
+        frame parameter. nf x ndf
+    aparam
+        atomic parameter. nf x nloc x nda
+    do_atomic_virial
+        If calculate the atomic virial.
+
+    Returns
+    -------
+    ret_dict
+        The result dict of type dict[str,tnp.ndarray].
+        The keys are defined by the `ModelOutputDef`.
+
+    """
+    atype_shape = tf.shape(atype)
+    nframes, nloc = atype_shape[0], atype_shape[1]
+    cc, bb, fp, ap = coord, box, fparam, aparam
+    del coord, box, fparam, aparam
+    coord_normalized = tf.cond(
+        tf.shape(bb)[-1] != 0,
+        lambda: normalize_coord(
+            tf.reshape(cc, (nframes, nloc, 3)),
+            tf.reshape(bb, (nframes, 3, 3)),
+        ),
+        lambda: cc,
+    )
+    extended_coord, extended_atype, mapping = extend_coord_with_ghosts(
+        coord_normalized, atype, bb, rcut
+    )
+    nlist = build_neighbor_list(
+        extended_coord,
+        extended_atype,
+        nloc,
+        rcut,
+        sel,
+        # types will be distinguished in the lower interface,
+        # so it doesn't need to be distinguished here
+        distinguish_types=False,
+    )
+    extended_coord = tf.reshape(extended_coord, (nframes, -1, 3))
+    model_predict_lower = call_lower(
+        extended_coord,
+        extended_atype,
+        nlist,
+        mapping,
+        fparam=fp,
+        aparam=ap,
+    )
+    model_predict = communicate_extended_output(
+        model_predict_lower,
+        model_output_def,
+        mapping,
+        do_atomic_virial=do_atomic_virial,
+    )
+    return model_predict

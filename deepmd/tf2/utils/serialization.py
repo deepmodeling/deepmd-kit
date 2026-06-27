@@ -1,0 +1,294 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
+import json
+from collections.abc import (
+    Callable,
+)
+
+import tensorflow as tf
+import tensorflow.experimental.numpy as tnp
+
+from deepmd.tf2.common import (
+    unwrap_value,
+)
+from deepmd.tf2.format_nlist import (
+    format_nlist,
+)
+from deepmd.tf2.make_model import (
+    model_call_from_call_lower,
+)
+from deepmd.tf2.model.base_model import (
+    BaseModel,
+)
+
+
+def deserialize_to_file(model_file: str, data: dict) -> None:
+    """Deserialize the dictionary to a TensorFlow SavedModel."""
+    if not model_file.endswith(".savedmodel"):
+        raise ValueError("TF2 backend only supports the .savedmodel extension")
+
+    # Import model registrations before deserializing the dpmodel payload.
+    import deepmd.tf2.model.model  # noqa: F401
+
+    model = BaseModel.deserialize(data["model"])
+    model_def_script = data["model_def_script"]
+
+    tf_model = tf.Module()
+
+    def call_lower_with_fixed_do_atomic_virial(
+        do_atomic_virial: bool,
+    ) -> Callable:
+        def call_lower(
+            coord: tnp.ndarray,
+            atype: tnp.ndarray,
+            nlist: tnp.ndarray,
+            mapping: tnp.ndarray,
+            fparam: tnp.ndarray,
+            aparam: tnp.ndarray,
+        ) -> dict[str, tnp.ndarray]:
+            return unwrap_value(
+                model.call_common_lower(
+                    coord,
+                    atype,
+                    nlist,
+                    mapping,
+                    fparam,
+                    aparam,
+                    do_atomic_virial=do_atomic_virial,
+                )
+            )
+
+        return call_lower
+
+    @tf.function(
+        autograph=False,
+        input_signature=[
+            tf.TensorSpec([None, None, 3], tf.float64),
+            tf.TensorSpec([None, None], tf.int32),
+            tf.TensorSpec([None, None, None], tf.int64),
+            tf.TensorSpec([None, None], tf.int64),
+            tf.TensorSpec([None, model.get_dim_fparam()], tf.float64),
+            tf.TensorSpec([None, None, model.get_dim_aparam()], tf.float64),
+        ],
+    )
+    def call_lower_without_atomic_virial(
+        coord: tnp.ndarray,
+        atype: tnp.ndarray,
+        nlist: tnp.ndarray,
+        mapping: tnp.ndarray,
+        fparam: tnp.ndarray,
+        aparam: tnp.ndarray,
+    ) -> dict[str, tnp.ndarray]:
+        nlist = format_nlist(coord, nlist, model.get_nnei(), model.get_rcut())
+        return call_lower_with_fixed_do_atomic_virial(False)(
+            coord, atype, nlist, mapping, fparam, aparam
+        )
+
+    tf_model.call_lower = call_lower_without_atomic_virial
+
+    @tf.function(
+        autograph=False,
+        input_signature=[
+            tf.TensorSpec([None, None, 3], tf.float64),
+            tf.TensorSpec([None, None], tf.int32),
+            tf.TensorSpec([None, None, None], tf.int64),
+            tf.TensorSpec([None, None], tf.int64),
+            tf.TensorSpec([None, model.get_dim_fparam()], tf.float64),
+            tf.TensorSpec([None, None, model.get_dim_aparam()], tf.float64),
+        ],
+    )
+    def call_lower_with_atomic_virial(
+        coord: tnp.ndarray,
+        atype: tnp.ndarray,
+        nlist: tnp.ndarray,
+        mapping: tnp.ndarray,
+        fparam: tnp.ndarray,
+        aparam: tnp.ndarray,
+    ) -> dict[str, tnp.ndarray]:
+        nlist = format_nlist(coord, nlist, model.get_nnei(), model.get_rcut())
+        return call_lower_with_fixed_do_atomic_virial(True)(
+            coord, atype, nlist, mapping, fparam, aparam
+        )
+
+    tf_model.call_lower_atomic_virial = call_lower_with_atomic_virial
+
+    def make_call_whether_do_atomic_virial(do_atomic_virial: bool) -> Callable:
+        call_lower = (
+            call_lower_with_atomic_virial
+            if do_atomic_virial
+            else call_lower_without_atomic_virial
+        )
+
+        def call(
+            coord: tnp.ndarray,
+            atype: tnp.ndarray,
+            box: tnp.ndarray,
+            fparam: tnp.ndarray,
+            aparam: tnp.ndarray,
+        ) -> dict[str, tnp.ndarray]:
+            return model_call_from_call_lower(
+                call_lower=call_lower,
+                rcut=model.get_rcut(),
+                sel=model.get_sel(),
+                mixed_types=model.mixed_types(),
+                model_output_def=model.model_output_def(),
+                coord=coord,
+                atype=atype,
+                box=box,
+                fparam=fparam,
+                aparam=aparam,
+                do_atomic_virial=do_atomic_virial,
+            )
+
+        return call
+
+    @tf.function(
+        autograph=True,
+        input_signature=[
+            tf.TensorSpec([None, None, 3], tf.float64),
+            tf.TensorSpec([None, None], tf.int32),
+            tf.TensorSpec([None, None, None], tf.float64),
+            tf.TensorSpec([None, model.get_dim_fparam()], tf.float64),
+            tf.TensorSpec([None, None, model.get_dim_aparam()], tf.float64),
+        ],
+    )
+    def call_with_atomic_virial(
+        coord: tnp.ndarray,
+        atype: tnp.ndarray,
+        box: tnp.ndarray,
+        fparam: tnp.ndarray,
+        aparam: tnp.ndarray,
+    ) -> dict[str, tnp.ndarray]:
+        return make_call_whether_do_atomic_virial(True)(
+            coord, atype, box, fparam, aparam
+        )
+
+    tf_model.call_atomic_virial = call_with_atomic_virial
+
+    @tf.function(
+        autograph=True,
+        input_signature=[
+            tf.TensorSpec([None, None, 3], tf.float64),
+            tf.TensorSpec([None, None], tf.int32),
+            tf.TensorSpec([None, None, None], tf.float64),
+            tf.TensorSpec([None, model.get_dim_fparam()], tf.float64),
+            tf.TensorSpec([None, None, model.get_dim_aparam()], tf.float64),
+        ],
+    )
+    def call_without_atomic_virial(
+        coord: tnp.ndarray,
+        atype: tnp.ndarray,
+        box: tnp.ndarray,
+        fparam: tnp.ndarray,
+        aparam: tnp.ndarray,
+    ) -> dict[str, tnp.ndarray]:
+        return make_call_whether_do_atomic_virial(False)(
+            coord, atype, box, fparam, aparam
+        )
+
+    tf_model.call = call_without_atomic_virial
+
+    @tf.function
+    def get_type_map() -> tf.Tensor:
+        return tf.constant(model.get_type_map(), dtype=tf.string)
+
+    tf_model.get_type_map = get_type_map
+
+    @tf.function
+    def get_rcut() -> tf.Tensor:
+        return tf.constant(model.get_rcut(), dtype=tf.double)
+
+    tf_model.get_rcut = get_rcut
+
+    @tf.function
+    def get_dim_fparam() -> tf.Tensor:
+        return tf.constant(model.get_dim_fparam(), dtype=tf.int64)
+
+    tf_model.get_dim_fparam = get_dim_fparam
+
+    @tf.function
+    def get_dim_aparam() -> tf.Tensor:
+        return tf.constant(model.get_dim_aparam(), dtype=tf.int64)
+
+    tf_model.get_dim_aparam = get_dim_aparam
+
+    @tf.function
+    def get_sel_type() -> tf.Tensor:
+        return tf.constant(model.get_sel_type(), dtype=tf.int64)
+
+    tf_model.get_sel_type = get_sel_type
+
+    @tf.function
+    def is_aparam_nall() -> tf.Tensor:
+        return tf.constant(model.is_aparam_nall(), dtype=tf.bool)
+
+    tf_model.is_aparam_nall = is_aparam_nall
+
+    @tf.function
+    def model_output_type() -> tf.Tensor:
+        return tf.constant(model.model_output_type(), dtype=tf.string)
+
+    tf_model.model_output_type = model_output_type
+
+    @tf.function
+    def mixed_types() -> tf.Tensor:
+        return tf.constant(model.mixed_types(), dtype=tf.bool)
+
+    tf_model.mixed_types = mixed_types
+
+    if model.get_min_nbor_dist() is not None:
+
+        @tf.function
+        def get_min_nbor_dist() -> tf.Tensor:
+            return tf.constant(model.get_min_nbor_dist(), dtype=tf.double)
+
+        tf_model.get_min_nbor_dist = get_min_nbor_dist
+
+    @tf.function
+    def get_sel() -> tf.Tensor:
+        return tf.constant(model.get_sel(), dtype=tf.int64)
+
+    tf_model.get_sel = get_sel
+
+    @tf.function
+    def get_model_def_script() -> tf.Tensor:
+        return tf.constant(
+            json.dumps(model_def_script, separators=(",", ":")), dtype=tf.string
+        )
+
+    tf_model.get_model_def_script = get_model_def_script
+
+    @tf.function
+    def has_message_passing() -> tf.Tensor:
+        return tf.constant(model.has_message_passing(), dtype=tf.bool)
+
+    tf_model.has_message_passing = has_message_passing
+
+    @tf.function
+    def has_default_fparam() -> tf.Tensor:
+        return tf.constant(model.has_default_fparam(), dtype=tf.bool)
+
+    tf_model.has_default_fparam = has_default_fparam
+
+    @tf.function
+    def get_default_fparam() -> tf.Tensor:
+        default_fparam = model.get_default_fparam()
+        if default_fparam is None:
+            return tf.constant([], dtype=tf.double)
+        return tf.constant(default_fparam, dtype=tf.double)
+
+    tf_model.get_default_fparam = get_default_fparam
+
+    tf.saved_model.save(
+        tf_model,
+        model_file,
+        options=tf.saved_model.SaveOptions(experimental_custom_gradients=True),
+    )
+
+
+def serialize_from_file(model_file: str) -> dict:
+    """Serialize a TF2 SavedModel to a dictionary.
+
+    SavedModel does not currently carry enough structured variable metadata to
+    round-trip back to the DeePMD dictionary format.
+    """
+    raise ValueError(f"TF2 backend cannot serialize {model_file!r} to a model dict")
