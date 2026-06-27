@@ -35,8 +35,33 @@ def edge_energy_deriv(
     """Return (force, atom_virial_or_None, virial) from a graph energy.
 
     g_e = dE/d(edge_vec) via one torch.autograd.grad, then the shared
-    edge_force_virial scatter. ``virial`` (per-frame) is always computed;
-    ``atom_virial`` is materialized only when do_atomic_virial=True.
+    edge_force_virial scatter.
+
+    Parameters
+    ----------
+    energy
+        the reduced per-frame energy to differentiate. ``(nf,)`` (or scalar).
+    edge_vec
+        (E, 3) per-edge displacement; the autograd leaf of ``energy``.
+    edge_index
+        (2, E) ``[src, dst]`` edge endpoints.
+    edge_mask
+        (E,) valid-edge mask.
+    n_node
+        (nf,) per-frame node counts.
+    do_atomic_virial
+        whether to materialize the per-atom virial (else ``None`` is returned).
+    create_graph
+        whether the backward retains a graph (training, for second-order grad).
+
+    Returns
+    -------
+    force
+        (N, 3) per-node force.
+    atom_virial
+        (N, 3, 3) per-node virial when ``do_atomic_virial`` else ``None``.
+    virial
+        (nf, 3, 3) per-frame virial (always computed).
     """
     (g_e,) = torch.autograd.grad(
         energy.sum() if energy.dim() else energy,
@@ -90,6 +115,16 @@ def fit_output_to_model_output_graph(
         Whether the backward retains a graph (training).
     mask
         (N,) flat realness mask; used only for intensive-output reduction.
+
+    Returns
+    -------
+    model_ret
+        ``fit_ret`` plus, for each reducible key, the per-frame reduction
+        ``<var>_redu`` ``(nf, *shape)`` and -- for ``r_differentiable`` keys --
+        the FLAT per-atom force ``<var>_derv_r`` ``(N, *shape, 3)``, the
+        per-frame virial ``<var>_derv_c_redu`` ``(nf, *shape, 9)``, and (when
+        ``do_atomic_virial``) the per-atom virial ``<var>_derv_c``
+        ``(N, *shape, 9)``.
     """
     edge_vec = graph.edge_vec
     edge_index = graph.edge_index

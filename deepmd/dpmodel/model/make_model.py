@@ -368,6 +368,18 @@ def make_model(
             pt_expt OVERRIDES this so ``None`` defaults graph-eligible mixed_types
             descriptors to the carry-all graph (decision #17) -- pt_expt has the
             autograd ``forward_common_lower_graph`` that produces force/virial.
+
+            Parameters
+            ----------
+            neighbor_graph_method
+                The user-requested method: ``None`` (default), ``"legacy"``
+                (force dense), or ``"dense"``/``"ase"`` (force the graph builder).
+
+            Returns
+            -------
+            method
+                The resolved method passed to :meth:`_call_common_graph`, or
+                ``None`` to take the dense path.
             """
             if neighbor_graph_method == "legacy":
                 return None
@@ -387,11 +399,32 @@ def make_model(
 
             Builds a carry-all :class:`NeighborGraph` from ``cc``/``atype``/``bb``
             and routes the forward through the OUTPUT-AGNOSTIC
-            :meth:`call_lower_graph`. The returned dict mirrors the dense
-            ``call_common`` keys (``<var>`` per-atom, ``<var>_redu`` reduced,
-            derivative name-holders ``None``, plus ``mask``). Input type-casting
-            is done by the caller; output type-casting is also applied by the
+            :meth:`call_lower_graph`. Input/output type-casting is done by the
             caller.
+
+            Parameters
+            ----------
+            cc
+                coordinates. nf x nloc x 3 (or nf x (nloc x 3))
+            atype
+                the atom types. nf x nloc
+            bb
+                the simulation cell. nf x 3 x 3, or ``None`` for non-periodic.
+            fp
+                the frame parameter. nf x ndf
+            ap
+                the atomic parameter. nf x nloc x nda
+            method
+                the carry-all builder, ``"dense"`` or ``"ase"``.
+            do_atomic_virial
+                whether to calculate the atomic virial.
+
+            Returns
+            -------
+            model_predict
+                the standard model dict mirroring the dense ``call_common`` keys
+                (``<var>`` per-atom, ``<var>_redu`` reduced, derivative
+                name-holders ``None``, plus the int ``mask``).
             """
             descriptor = getattr(self.atomic_model, "descriptor", None)
             uses_graph_lower = getattr(descriptor, "uses_graph_lower", lambda: False)
@@ -636,7 +669,28 @@ def make_model(
             produced by the pt_expt autograd lower. Must match the dense
             :meth:`call_common_lower` reduction on the SAME neighbor set.
 
-            Parameters mirror :meth:`forward_common_atomic_graph`.
+            Parameters
+            ----------
+            atype
+                (N,) flat LOCAL atom types, ``N == sum(n_node)``.
+            n_node
+                (nf,) per-frame local atom counts.
+            edge_index
+                (2, E) ``[src, dst]`` edge endpoints (flat local indices).
+            edge_vec
+                (E, 3) neighbor-minus-center edge vectors.
+            edge_mask
+                (E,) boolean/0-1 valid-edge mask.
+            n_local
+                Per-rank local atom counts for multi-rank inference. Ignored in
+                PR-A (single-rank); accepted for ABI stability.
+            fparam
+                Frame parameter, ``(nf, ndf)``.
+            aparam
+                Atomic parameter, ``(N, nda)``.
+            comm_dict
+                MPI communication metadata. Ignored in PR-A; accepted for ABI
+                stability.
 
             Returns
             -------

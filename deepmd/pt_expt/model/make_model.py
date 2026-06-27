@@ -375,6 +375,18 @@ def make_model(
             pt_expt has the autograd ``forward_common_lower_graph`` that produces
             force/virial on the graph, so the graph can be the DEFAULT here.
             ``"legacy"`` forces dense; explicit ``"dense"``/``"ase"`` force the graph.
+
+            Parameters
+            ----------
+            neighbor_graph_method
+                The user-requested method: ``None`` (default-flip), ``"legacy"``
+                (force dense), or ``"dense"``/``"ase"`` (force the graph builder).
+
+            Returns
+            -------
+            method
+                The resolved method passed to :meth:`_call_common_graph`, or
+                ``None`` to take the dense path.
             """
             if neighbor_graph_method == "legacy":
                 return None
@@ -402,11 +414,32 @@ def make_model(
             Builds the carry-all :class:`NeighborGraph` in TORCH (the array-API
             builder runs natively and yields a differentiable ``edge_vec``), then
             routes through :meth:`forward_common_lower_graph` so force / virial /
-            (optional) atom-virial are produced via autograd.  The returned dict
-            uses the SAME internal key names as the legacy dense
-            :meth:`call_common` output (``energy``, ``energy_redu``,
-            ``energy_derv_r``, ``energy_derv_c_redu``, and ``energy_derv_c`` when
-            ``do_atomic_virial``).
+            (optional) atom-virial are produced via autograd.
+
+            Parameters
+            ----------
+            cc
+                coordinates. nf x nloc x 3 (or nf x (nloc x 3))
+            atype
+                the atom types. nf x nloc
+            bb
+                the simulation cell. nf x 3 x 3, or ``None`` for non-periodic.
+            fp
+                the frame parameter. nf x ndf
+            ap
+                the atomic parameter. nf x nloc x nda
+            method
+                the carry-all builder, ``"dense"`` or ``"ase"``.
+            do_atomic_virial
+                whether to calculate the atomic virial.
+
+            Returns
+            -------
+            model_predict
+                the standard model dict using the SAME internal key names as the
+                legacy dense :meth:`call_common` output (``energy``,
+                ``energy_redu``, ``energy_derv_r``, ``energy_derv_c_redu``, and
+                ``energy_derv_c`` when ``do_atomic_virial``).
             """
             from deepmd.dpmodel.utils.neighbor_graph import (
                 build_neighbor_graph,

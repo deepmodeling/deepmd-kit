@@ -584,6 +584,32 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         ``sw``. Preserves the dense 5-tuple ABI exactly; masked invalid edges
         contribute zero in ``call_graph``'s ``segment_sum`` so the output is
         identical to the legacy dense body.
+
+        Parameters
+        ----------
+        coord_ext
+            The extended coordinates of atoms. shape: nf x (nall x 3)
+        atype_ext
+            The extended atom types. shape: nf x nall
+        nlist
+            The neighbor list. shape: nf x nloc x nnei
+        mapping
+            The index mapping from extended to local region. shape: nf x nall.
+            ``None`` is allowed only when nall == nloc (identity mapping).
+
+        Returns
+        -------
+        descriptor
+            The descriptor. shape: nf x nloc x (ng x axis_neuron)
+        gr
+            The rotationally equivariant single-particle representation.
+            shape: nf x nloc x ng x 3
+        g2
+            ``None`` for this descriptor.
+        h2
+            ``None`` for this descriptor.
+        sw
+            The smooth switch function. shape: nf x nloc x nnei x 1
         """
         from deepmd.dpmodel.utils.neighbor_graph import (
             from_dense_quartet,
@@ -639,6 +665,29 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
     ) -> Array:
         """Legacy dense descriptor body (the ineligible ``call`` path: attention,
         strip tebd, exclude_types, or the no-mapping ghost case).
+
+        Parameters
+        ----------
+        coord_ext
+            The extended coordinates of atoms. shape: nf x (nall x 3)
+        atype_ext
+            The extended atom types. shape: nf x nall
+        nlist
+            The neighbor list. shape: nf x nloc x nnei
+
+        Returns
+        -------
+        descriptor
+            The descriptor. shape: nf x nloc x (ng x axis_neuron)
+        gr
+            The rotationally equivariant single-particle representation.
+            shape: nf x nloc x ng x 3
+        g2
+            ``None`` for this descriptor.
+        h2
+            ``None`` for this descriptor.
+        sw
+            The smooth switch function. shape: nf x nloc x nnei x 1
         """
         xp = array_api_compat.array_namespace(coord_ext, atype_ext, nlist)
         nf, nloc = nlist.shape[:2]

@@ -66,6 +66,13 @@ def build_neighbor_graph_ase(
     layout
         edge-axis length policy; ``None`` => dynamic (torch) with ``min_edges`` guards.
 
+    Returns
+    -------
+    graph
+        The carry-all :class:`NeighborGraph` over the LOCAL atoms
+        (``n_node = nloc`` per frame), with ``edge_vec`` recomputed
+        differentiably from ``coord``/``box``.
+
     Raises
     ------
     ImportError

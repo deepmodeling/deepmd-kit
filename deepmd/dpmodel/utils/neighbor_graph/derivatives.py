@@ -49,6 +49,15 @@ def edge_force_virial(
 
     Parameters
     ----------
+    g_e
+        (E, 3) per-edge gradient ``dE/d(edge_vec)``.
+    edge_vec
+        (E, 3) per-edge displacement ``r_src - r_dst``; padding edges are zero.
+    edge_index
+        (2, E) ``[src, dst]`` node endpoints of each edge.
+    edge_mask
+        (E,) boolean valid-edge mask; padding/guard edges (``False``) are zeroed
+        before any scatter.
     n_node
         (nf,) per-frame REAL node counts. Real nodes occupy the compact prefix
         ``[0, sum(n_node))`` frame-major; ``nf = n_node.shape[0]``.

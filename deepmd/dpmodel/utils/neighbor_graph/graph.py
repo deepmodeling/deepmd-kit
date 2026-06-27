@@ -75,11 +75,32 @@ def pad_and_guard_edges(
     """Append padding/guard edges as a contiguous suffix and build edge_mask.
 
     Real edges (``edge_index``/``edge_vec``) stay at the front (compact layout).
-    - ``capacity is None`` (torch dynamic): append exactly ``min_edges`` masked
-      dummy edges so the edge axis has a known lower bound and shape-stable
-      guards for export.
-    - ``capacity`` set (jax static): pad to ``E_max = capacity``; raise on overflow.
     Dummy edges point at node ``pad_value`` (in-range) with zero ``edge_vec``.
+
+    Parameters
+    ----------
+    edge_index
+        (2, E_real) ``[src, dst]`` node endpoints of the real edges.
+    edge_vec
+        (E_real, 3) per-edge displacement of the real edges.
+    capacity
+        Target edge-axis length ``E_max``. ``None`` (torch dynamic) appends
+        exactly ``min_edges`` masked dummy edges so the axis has a known lower
+        bound and shape-stable guards for export; an int (jax static) pads to
+        ``E_max = capacity`` and raises ``ValueError`` on overflow.
+    min_edges
+        Number of dummy edges appended when ``capacity is None``.
+    pad_value
+        Node index the dummy edges point at (must be in range).
+
+    Returns
+    -------
+    edge_index
+        (2, target) padded edge endpoints.
+    edge_vec
+        (target, 3) padded edge displacements (dummy rows zero).
+    edge_mask
+        (target,) boolean mask, ``True`` for the real-edge prefix.
     """
     xp = array_api_compat.array_namespace(edge_index)
     dev = array_api_compat.device(edge_index)
@@ -132,6 +153,18 @@ def node_validity_mask(n_node: Array, n_total: int) -> Array:
 
     Compact-prefix layout: the first ``sum(n_node)`` nodes are real, the rest
     are padding. jit-safe (no Python ``int`` cast on the traced sum).
+
+    Parameters
+    ----------
+    n_node
+        (nf,) per-frame REAL node counts.
+    n_total
+        Size of the (possibly padded) flat node axis ``N``.
+
+    Returns
+    -------
+    mask
+        (n_total,) boolean mask, ``True`` for the real-node compact prefix.
     """
     xp = array_api_compat.array_namespace(n_node)
     idx = xp.arange(n_total, dtype=n_node.dtype, device=array_api_compat.device(n_node))

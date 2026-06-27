@@ -815,6 +815,12 @@ class GeneralFitting(NativeOP, BaseFitting):
             the atom type. N
         gr
             equivariant single-particle representation. N x ng x 3
+        g2
+            the rotationally invariant pair-partical representation.
+            unused by this fitting; passed through to the dense call.
+        h2
+            the rotationally equivariant pair-partical representation.
+            unused by this fitting; passed through to the dense call.
         fparam
             NODE-level frame parameter (already gathered by frame_id). N x nfp
         aparam

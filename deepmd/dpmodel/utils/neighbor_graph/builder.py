@@ -95,6 +95,13 @@ def from_dense_quartet(
         ``src`` pointing at the center (in-range, masked) -- so no ``nonzero`` is
         used and the converter is jit/export-traceable. The masked edges contribute
         zero in a downstream ``segment_sum``, so the descriptor output is unchanged.
+
+    Returns
+    -------
+    graph
+        The :class:`NeighborGraph` over the LOCAL atoms (``n_node = nloc`` per
+        frame): ``edge_index`` ``[src, dst]`` in local indices, ``edge_vec`` the
+        neighbor-minus-center displacement, and ``edge_mask`` flagging real edges.
     """
     if layout is None:
         layout = GraphLayout()
