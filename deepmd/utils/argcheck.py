@@ -2658,6 +2658,44 @@ def fitting_dos() -> list[Argument]:
     ]
 
 
+@fitting_args_plugin.register("population", doc=doc_only_pt_supported)
+def fitting_population() -> list[Argument]:
+    """Return the argument list for the population fitting network."""
+    return [
+        Argument("numb_fparam", int, optional=True, default=0),
+        Argument("numb_aparam", int, optional=True, default=0),
+        Argument(
+            "dim_case_embd",
+            int,
+            optional=True,
+            default=0,
+            doc=doc_only_pt_supported,
+        ),
+        Argument(
+            "neuron",
+            list[int],
+            optional=True,
+            default=[128, 128, 128],
+            alias=["n_neuron"],
+        ),
+        Argument(
+            "activation_function",
+            str,
+            optional=True,
+            default="tanh",
+        ),
+        Argument("resnet_dt", bool, optional=True, default=True),
+        Argument("precision", str, optional=True, default="default"),
+        Argument("seed", [int, None], optional=True),
+        Argument(
+            "trainable",
+            [list[bool], bool],
+            optional=True,
+            default=True,
+        ),
+    ]
+
+
 @fitting_args_plugin.register("property", doc=doc_only_pt_supported)
 def fitting_property() -> list[Argument]:
     doc_numb_fparam = "The dimension of the frame parameter. If set to >0, file `fparam.npy` should be included to provided the input fparams."
@@ -4646,6 +4684,107 @@ def loss_dos() -> list[Argument]:
             optional=True,
             default=0.00,
             doc=doc_limit_pref_acdf,
+        ),
+    ]
+
+
+@loss_args_plugin.register("population")
+def loss_population() -> list[Argument]:
+    """Return the argument list for the population loss function."""
+    doc_loss_func = "The loss function to minimize, such as 'mae','smooth_mae'."
+    doc_metric = "The metric for display. This list can include 'smooth_mae', 'mae', 'mse' and 'rmse'."
+    doc_beta = "The 'beta' parameter in 'smooth_mae' loss."
+    return [
+        Argument(
+            "start_pref_spin",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc="The prefactor of the loss at the start of the training.",
+        ),
+        Argument(
+            "limit_pref_spin",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc="The prefactor of the loss at the limit of the training.",
+        ),
+        Argument(
+            "start_pref_spin_total",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc="The prefactor of the loss at the start of the training.",
+        ),
+        Argument(
+            "limit_pref_spin_total",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc="The prefactor of the loss at the limit of the training.",
+        ),
+        Argument(
+            "start_pref_pop",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc="The prefactor of the loss at the start of the training.",
+        ),
+        Argument(
+            "limit_pref_pop",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc="The prefactor of the loss at the limit of the training.",
+        ),
+        Argument(
+            "start_pref_pop_alpha_total",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc="The prefactor of the loss at the start of the training.",
+        ),
+        Argument(
+            "limit_pref_pop_alpha_total",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc="The prefactor of the loss at the limit of the training.",
+        ),
+        Argument(
+            "start_pref_pop_beta_total",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc="The prefactor of the loss at the start of the training.",
+        ),
+        Argument(
+            "limit_pref_pop_beta_total",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc="The prefactor of the loss at the limit of the training.",
+        ),
+        Argument(
+            "loss_func",
+            str,
+            optional=True,
+            default="smooth_mae",
+            doc=doc_loss_func,
+        ),
+        Argument(
+            "metric",
+            list,
+            optional=True,
+            default=["mae"],
+            doc=doc_metric,
+        ),
+        Argument(
+            "beta",
+            [float, int],
+            optional=True,
+            default=1.00,
+            doc=doc_beta,
         ),
     ]
 

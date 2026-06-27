@@ -69,6 +69,9 @@ from .model import (
 from .polar_model import (
     PolarModel,
 )
+from .population_model import (
+    PopulationModel,
+)
 from .property_model import (
     PropertyModel,
 )
@@ -284,6 +287,8 @@ def get_standard_model(model_params: dict) -> BaseModel:
         modelcls = EnergyModel
     elif fitting_net_type == "property":
         modelcls = PropertyModel
+    elif fitting_net_type == "population":
+        modelcls = PopulationModel
     else:
         raise RuntimeError(f"Unknown fitting type: {fitting_net_type}")
 
@@ -479,6 +484,7 @@ __all__ = [
     "FrozenModel",
     "LinearEnergyModel",
     "PolarModel",
+    "PopulationModel",
     "SeZMModel",
     "SeZMSpinModel",
     "SpinEnergyModel",
