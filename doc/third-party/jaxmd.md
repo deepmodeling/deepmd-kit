@@ -81,7 +81,6 @@ LAMMPS example, see `examples/water/jax_md`.
 `deepmd.jax.jax_md.load_model` accepts:
 
 - a DeePMD JAX checkpoint path ending in `.jax`,
-- a DeePMD HLO model path ending in `.hlo`,
 - an already constructed JAX DeePMD model object.
 
 The `atom_types` argument may be an integer array of DeePMD type indexes. It
