@@ -36,14 +36,17 @@ class ProdForceSeAMaskOp : public OpKernel {
     const Tensor& nlist_tensor = context->input(3);
 
     // set size of the sample
-    OP_REQUIRES(context, (net_deriv_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of net deriv should be 2"));
-    OP_REQUIRES(context, (in_deriv_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of input deriv should be 2"));
-    OP_REQUIRES(context, (mask_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of mask matrix should be 2"));
+    OP_REQUIRES(
+        context, (net_deriv_tensor.shape().dims() == 2),
+        deepmd::tf_compat::InvalidArgument("Dim of net deriv should be 2"));
+    OP_REQUIRES(
+        context, (in_deriv_tensor.shape().dims() == 2),
+        deepmd::tf_compat::InvalidArgument("Dim of input deriv should be 2"));
+    OP_REQUIRES(
+        context, (mask_tensor.shape().dims() == 2),
+        deepmd::tf_compat::InvalidArgument("Dim of mask matrix should be 2"));
     OP_REQUIRES(context, (nlist_tensor.shape().dims() == 2),
-                errors::InvalidArgument("Dim of nlist should be 2"));
+                deepmd::tf_compat::InvalidArgument("Dim of nlist should be 2"));
 
     int nframes = net_deriv_tensor.shape().dim_size(0);
     int nloc = total_atom_num;
@@ -52,14 +55,17 @@ class ProdForceSeAMaskOp : public OpKernel {
     int nnei = nloc > 0 ? nlist_tensor.shape().dim_size(1) / nloc : 0;
 
     // check the sizes
-    OP_REQUIRES(context, (nframes == in_deriv_tensor.shape().dim_size(0)),
-                errors::InvalidArgument("number of samples should match"));
-    OP_REQUIRES(context, (nframes == nlist_tensor.shape().dim_size(0)),
-                errors::InvalidArgument("number of samples should match"));
+    OP_REQUIRES(
+        context, (nframes == in_deriv_tensor.shape().dim_size(0)),
+        deepmd::tf_compat::InvalidArgument("number of samples should match"));
+    OP_REQUIRES(
+        context, (nframes == nlist_tensor.shape().dim_size(0)),
+        deepmd::tf_compat::InvalidArgument("number of samples should match"));
     OP_REQUIRES(context,
                 (static_cast<int64_t>(nloc) * ndescrpt * 3 ==
                  in_deriv_tensor.shape().dim_size(1)),
-                errors::InvalidArgument("number of descriptors should match"));
+                deepmd::tf_compat::InvalidArgument(
+                    "number of descriptors should match"));
 
     // Create an output tensor
     TensorShape force_shape;
