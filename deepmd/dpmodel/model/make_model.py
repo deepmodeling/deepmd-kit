@@ -290,20 +290,33 @@ def make_model(
                 The coordinates correction for virial.
                 shape: nf x (nloc x 3)
             neighbor_list
-                The neighbor-list construction strategy.  ``None`` uses the
-                default all-pairs builder; an alternative strategy (e.g. an O(N)
-                cell list) may be injected to speed up neighbor-list construction
-                without changing model outputs.
+                Neighbor-list construction strategy for the DENSE-nlist path
+                only.  ``None`` uses the default all-pairs builder; an
+                alternative strategy (e.g. an O(N) cell list) may be injected to
+                speed up nlist construction without changing model outputs.  It
+                is consumed by the dense lower; supplying it forces the dense
+                route (see below) and it is rejected together with an explicit
+                ``neighbor_graph_method``.
             neighbor_graph_method
-                Opt-in CARRY-ALL graph energy forward (Option B). ``None``
-                (default) keeps the existing dense nlist path UNCHANGED. When
-                set to ``"dense"`` (in-tree all-pairs search) or ``"ase"``
-                (O(N) ASE cell list), the model builds a carry-all
-                :class:`NeighborGraph` and routes the ENERGY forward through
-                :meth:`call_lower_graph`. Requires a ``mixed_types`` descriptor
-                with a graph lower (dpa1 ``attn_layer == 0``). At non-binding
-                ``sel`` this matches the dense path exactly; at binding ``sel``
-                the carry-all graph keeps neighbors the dense path truncates, so
+                Selects the lower the model routes through.  The option strings
+                refer to the neighbor-GRAPH builder, NOT the legacy dense nlist:
+
+                - ``None`` -- default.  dpmodel/jax keep the dense nlist path;
+                  pt_expt default-flips graph-eligible mixed_types descriptors to
+                  the carry-all graph (decision #17).
+                - ``"legacy"`` -- force the dense nlist path (opt out of the
+                  default-flip).
+                - ``"dense"`` -- build a carry-all :class:`NeighborGraph` with the
+                  in-tree O(N^2) ALL-PAIRS search (this is NOT the dense nlist
+                  lower; "dense" = the all-pairs graph builder).
+                - ``"ase"`` -- build the carry-all graph with the O(N) ASE cell
+                  list.
+
+                The graph routes (``"dense"``/``"ase"``, and the pt_expt
+                default-flip) require a ``mixed_types`` descriptor with a graph
+                lower (dpa1 ``attn_layer == 0``).  At non-binding ``sel`` the
+                graph matches the dense path exactly; at binding ``sel`` the
+                carry-all graph keeps neighbors the dense path truncates, so the
                 energy intentionally differs.
 
             Returns
@@ -318,6 +331,18 @@ def make_model(
             )
             del coord, box, fparam, aparam, charge_spin
             graph_method = self._resolve_graph_method(neighbor_graph_method)
+            # ``neighbor_list`` is a DENSE-nlist strategy; the graph path cannot
+            # consume it. Reject an explicit graph+nlist combination, and
+            # otherwise honor the supplied nlist by taking the dense route
+            # (don't let the pt_expt default-flip silently ignore it).
+            if neighbor_list is not None:
+                if neighbor_graph_method not in (None, "legacy"):
+                    raise ValueError(
+                        "neighbor_list is a dense-nlist strategy and cannot be "
+                        f"combined with neighbor_graph_method={neighbor_graph_method!r}; "
+                        "pass one or the other"
+                    )
+                graph_method = None
             # the graph lower does not consume charge_spin yet -> keep those
             # models on dense (a None check, so it stays jit/export-safe)
             if cs is not None:
@@ -588,6 +613,7 @@ def make_model(
             fparam: Array | None = None,
             aparam: Array | None = None,
             comm_dict: dict | None = None,
+            charge_spin: Array | None = None,
         ) -> dict[str, Array]:
             """Model-level graph forward (no type cast). Analogue of the dense
             :meth:`forward_common_atomic`.
@@ -622,6 +648,9 @@ def make_model(
             comm_dict
                 MPI communication metadata. Ignored in PR-A; accepted for ABI
                 stability.
+            charge_spin
+                charge/spin conditioning. Ignored in PR-A; accepted for ABI
+                stability with charge/spin-conditioned descriptors.
 
             Returns
             -------
@@ -637,7 +666,7 @@ def make_model(
                 edge_mask=edge_mask,
             )
             atomic_ret = self.atomic_model.forward_common_atomic_graph(
-                graph, atype, fparam=fparam, aparam=aparam
+                graph, atype, fparam=fparam, aparam=aparam, charge_spin=charge_spin
             )
             return fit_output_to_model_output_graph(
                 atomic_ret,
@@ -657,6 +686,7 @@ def make_model(
             fparam: Array | None = None,
             aparam: Array | None = None,
             comm_dict: dict | None = None,
+            charge_spin: Array | None = None,
         ) -> dict[str, Array]:
             """Graph-native PUBLIC lower (PR-A: dpa1 ``attn_layer == 0``).
 
@@ -691,14 +721,17 @@ def make_model(
             comm_dict
                 MPI communication metadata. Ignored in PR-A; accepted for ABI
                 stability.
+            charge_spin
+                charge/spin conditioning. Ignored in PR-A; accepted for ABI
+                stability with charge/spin-conditioned descriptors.
 
             Returns
             -------
             dict
                 The standard model dict in the INPUT precision.
             """
-            edge_vec, _, fparam, aparam, _, input_prec = self._input_type_cast(
-                edge_vec, fparam=fparam, aparam=aparam
+            edge_vec, _, fparam, aparam, cs, input_prec = self._input_type_cast(
+                edge_vec, fparam=fparam, aparam=aparam, charge_spin=charge_spin
             )
             model_predict = self.forward_common_atomic_graph(
                 atype,
@@ -710,6 +743,7 @@ def make_model(
                 fparam=fparam,
                 aparam=aparam,
                 comm_dict=comm_dict,
+                charge_spin=cs,
             )
             model_predict = self._output_type_cast(model_predict, input_prec)
             return model_predict

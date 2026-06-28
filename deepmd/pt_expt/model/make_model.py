@@ -290,6 +290,7 @@ def make_model(
             do_atomic_virial: bool = False,
             fparam: torch.Tensor | None = None,
             aparam: torch.Tensor | None = None,
+            charge_spin: torch.Tensor | None = None,
         ) -> dict[str, torch.Tensor]:
             """Graph-native lower with autograd force/virial (PR-A: dpa1 ``attn_layer==0``).
 
@@ -328,6 +329,9 @@ def make_model(
                 Frame parameter, ``(nf, ndf)``.
             aparam
                 Atomic parameter, ``(nf, nloc, nda)``.
+            charge_spin
+                charge/spin conditioning. Ignored in PR-A; accepted for ABI
+                stability with charge/spin-conditioned descriptors.
 
             Returns
             -------
@@ -355,6 +359,7 @@ def make_model(
                 atype,
                 fparam=fparam,
                 aparam=aparam,
+                charge_spin=charge_spin,
             )
             # ``forward_common_atomic_graph`` returns flat ``(N, *)`` output.
             # Pass directly to the flat-N transform; no rectangular reshape needed.

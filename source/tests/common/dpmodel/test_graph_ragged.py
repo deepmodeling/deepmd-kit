@@ -27,6 +27,24 @@ def test_frame_id_ragged():
     )
 
 
+def test_frame_id_static_n_total():
+    """A static ``n_total`` (jax/export trace-friendly path) matches the default
+    ``int(sum(n_node))`` path exactly when ``n_total == sum(n_node)``; a PADDED
+    ``n_total`` assigns the padding tail to the last frame.
+    """
+    n_node = np.array([3, 5, 2], dtype=np.int64)  # sum = 10
+    # exact n_total reproduces the default (None) path
+    np.testing.assert_array_equal(
+        frame_id_from_n_node(n_node, n_total=10),
+        frame_id_from_n_node(n_node),
+    )
+    # padded n_total -> padding nodes [10, 12) map to the last frame (nf-1 == 2)
+    np.testing.assert_array_equal(
+        frame_id_from_n_node(n_node, n_total=12),
+        np.array([0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2], dtype=np.int64),
+    )
+
+
 def test_forward_common_atomic_graph_ragged():
     """Two frames with DIFFERENT node counts (3 and 2) share one flat node axis.
 

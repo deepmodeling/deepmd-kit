@@ -63,7 +63,10 @@ def from_dense_quartet(
     This is a backward-compat CONVERTER (World 1 -> graph): it performs NO neighbor
     search and INHERITS the ``sel`` truncation already baked into ``nlist``. Use it
     only when a caller (an MD code, or the legacy dense path) already holds a
-    built quartet; for the carry-all graph use :func:`build_neighbor_graph`.
+    built quartet. In contrast, the carry-all graph builders search from RAW
+    coordinates and apply NO ``sel`` truncation: :func:`build_neighbor_graph`
+    (the ``neighbor_graph_method="dense"`` all-pairs route) and
+    :func:`build_neighbor_graph_ase` (the ``"ase"`` O(N) cell-list route).
 
     For each valid neighbor slot it emits one edge with ``src = mapping[neighbor]``
     (the neighbor's LOCAL owner -> ghost-free index), ``dst = center`` (local), and

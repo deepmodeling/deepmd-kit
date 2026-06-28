@@ -173,3 +173,52 @@ def test_binding_sel_carries_more_than_dense() -> None:
     graph = model.call_common(coord, atype, box, neighbor_graph_method="dense")
 
     assert not np.allclose(graph["energy_redu"], dense["energy_redu"])
+
+
+def test_neighbor_list_conflicts_with_graph_method() -> None:
+    """An explicit ``neighbor_list`` (a dense-nlist strategy) cannot be combined
+    with an explicit graph ``neighbor_graph_method``; passing both raises.
+    """
+    from deepmd.dpmodel.utils.default_neighbor_list import (
+        DefaultNeighborList,
+    )
+
+    rng = np.random.default_rng(2)
+    nloc = 6
+    coord = rng.normal(size=(1, nloc, 3)) * 1.5
+    atype = np.array([[0, 1, 0, 1, 0, 1]], dtype=np.int64)
+    model = _make_model([200])
+
+    with pytest.raises(ValueError, match="cannot be combined"):
+        model.call_common(
+            coord,
+            atype,
+            None,
+            neighbor_list=DefaultNeighborList(),
+            neighbor_graph_method="dense",
+        )
+
+
+def test_neighbor_list_takes_dense_route() -> None:
+    """Supplying ``neighbor_list`` (without an explicit graph method) takes the
+    dense route -- it is NOT silently ignored by the graph path. With the
+    default builder the result matches the legacy dense path exactly.
+    """
+    from deepmd.dpmodel.utils.default_neighbor_list import (
+        DefaultNeighborList,
+    )
+
+    rng = np.random.default_rng(3)
+    nloc = 6
+    coord = rng.normal(size=(1, nloc, 3)) * 1.5
+    atype = np.array([[0, 1, 0, 1, 0, 1]], dtype=np.int64)
+    box = np.eye(3).reshape(1, 9) * 20.0
+    model = _make_model([200])
+
+    legacy = model.call_common(coord, atype, box, neighbor_graph_method="legacy")
+    with_nlist = model.call_common(
+        coord, atype, box, neighbor_list=DefaultNeighborList()
+    )
+    np.testing.assert_allclose(
+        with_nlist["energy_redu"], legacy["energy_redu"], rtol=1e-12, atol=1e-12
+    )

@@ -319,6 +319,7 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
         atype: Array,
         fparam: Array | None = None,
         aparam: Array | None = None,
+        charge_spin: Array | None = None,
     ) -> dict:
         """Graph analogue of :meth:`forward_common_atomic` on the flat node axis.
 
@@ -341,6 +342,9 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             frame parameter. nf x ndf
         aparam
             atomic parameter. N x nda
+        charge_spin
+            charge/spin conditioning. Unused by the dpa1 graph path; accepted so
+            the interface stays stable for charge/spin-conditioned descriptors.
 
         Returns
         -------
@@ -361,7 +365,11 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
                 edge_mask=graph.edge_mask * xp.astype(keep, graph.edge_mask.dtype),
             )
         ret_dict = self.forward_atomic_graph(
-            graph, atype_clamped, fparam=fparam, aparam=aparam
+            graph,
+            atype_clamped,
+            fparam=fparam,
+            aparam=aparam,
+            charge_spin=charge_spin,
         )
         return self._finalize_atomic_ret(ret_dict, atom_mask, atype)
 

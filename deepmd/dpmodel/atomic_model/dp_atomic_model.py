@@ -260,6 +260,7 @@ class DPAtomicModel(BaseAtomicModel):
         atype: Array,
         fparam: Array | None = None,
         aparam: Array | None = None,
+        charge_spin: Array | None = None,
     ) -> dict[str, Array]:
         """Graph analogue of :meth:`forward_atomic` on the flat node axis.
 
@@ -278,6 +279,9 @@ class DPAtomicModel(BaseAtomicModel):
             frame parameter. nf x ndf
         aparam
             atomic parameter. N x nda
+        charge_spin
+            charge/spin conditioning. Unused by the dpa1 graph path; accepted so
+            the interface stays stable for charge/spin-conditioned descriptors.
 
         Returns
         -------

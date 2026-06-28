@@ -123,7 +123,7 @@ def pad_and_guard_edges(
     return ei, ev, edge_mask
 
 
-def frame_id_from_n_node(n_node: Array) -> Array:
+def frame_id_from_n_node(n_node: Array, n_total: int | None = None) -> Array:
     """Node->frame map for a flat node axis: ``repeat(arange(nf), n_node)``.
 
     Implemented via ``searchsorted(cumulative_sum(n_node), arange(N), side="right")``
@@ -133,19 +133,33 @@ def frame_id_from_n_node(n_node: Array) -> Array:
     ----------
     n_node
         Per-frame node counts.  Shape ``(nf,)``.
+    n_total
+        Size of the (possibly padded) flat node axis ``N``.  ``None`` (the
+        numpy/eager default) falls back to ``int(sum(n_node))``; pass a STATIC
+        value to keep the function trace-friendly under jax.jit / export, where
+        ``int()`` on the traced sum is not allowed (mirrors
+        :func:`node_validity_mask`).  Padding nodes ``[sum(n_node), n_total)``
+        are CLAMPED to the last frame (``nf - 1``) so a downstream
+        ``segment_sum(..., num_segments=nf)`` stays in range; they carry no real
+        edge, so this assignment is unused downstream.
 
     Returns
     -------
     frame_id
         Frame index of each flat node, compact-prefix frame-major.
-        Shape ``(N,)`` int64, where ``N = sum(n_node)``.
+        Shape ``(n_total,)`` int64 (``n_total = sum(n_node)`` when not padded).
     """
     xp = array_api_compat.array_namespace(n_node)
     dev = array_api_compat.device(n_node)
-    n_total = int(xp.sum(n_node))
+    if n_total is None:
+        n_total = int(xp.sum(n_node))
+    nf = n_node.shape[0]
     idx = xp.arange(n_total, dtype=n_node.dtype, device=dev)
     boundaries = xp.cumulative_sum(n_node)  # (nf,) upper bounds, exclusive
-    return xp.astype(xp.searchsorted(boundaries, idx, side="right"), xp.int64)
+    frame_id = xp.astype(xp.searchsorted(boundaries, idx, side="right"), xp.int64)
+    # padding nodes (idx >= sum(n_node)) land at frame ``nf`` (OOB); clamp them to
+    # the last real frame so the per-frame scatter never indexes out of range.
+    return xp.minimum(frame_id, xp.asarray(nf - 1, dtype=xp.int64, device=dev))
 
 
 def node_validity_mask(n_node: Array, n_total: int) -> Array:
