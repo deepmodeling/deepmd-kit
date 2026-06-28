@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include <cassert>
+#include <cmath>
 #include <iostream>
 #include <vector>
 /*
@@ -16,6 +17,30 @@
     xx:         indicate the inputs value;
     table_idx:  indicate the location of table info of input value xx;
 */
+template <typename FPTYPE>
+inline int locate_high_tail_xx(const FPTYPE& lower,
+                               const FPTYPE& upper,
+                               const FPTYPE& max,
+                               const FPTYPE& stride0,
+                               const FPTYPE& stride1) {
+  const FPTYPE boundary_xx = std::nextafter(max, lower);
+  const int first_stride = int((upper - lower) / stride0);
+  return first_stride + int((boundary_xx - upper) / stride1);
+}
+
+template <typename FPTYPE>
+inline int locate_high_tail_xx_se_t(const FPTYPE& lower,
+                                    const FPTYPE& upper,
+                                    const FPTYPE& min,
+                                    const FPTYPE& max,
+                                    const FPTYPE& stride0,
+                                    const FPTYPE& stride1) {
+  const FPTYPE boundary_xx = std::nextafter(max, min);
+  const int first_stride =
+      int((lower - min) / stride1) + int((upper - lower) / stride0);
+  return first_stride + int((boundary_xx - upper) / stride1);
+}
+
 template <typename FPTYPE>
 inline void locate_xx(const FPTYPE& lower,
                       const FPTYPE& upper,
@@ -40,7 +65,7 @@ inline void locate_xx(const FPTYPE& lower,
     xx -= ((table_idx - first_stride) * stride1 + upper);
   } else {
     int first_stride = int((upper - lower) / stride0);
-    table_idx = first_stride + (int)((max - upper) / stride1) - 1;
+    table_idx = locate_high_tail_xx(lower, upper, max, stride0, stride1);
     xx = max - ((table_idx - first_stride) * stride1 + upper);
     extrapolate_delta = orig_xx - max;
   }
@@ -77,7 +102,8 @@ inline void locate_xx_se_t(const FPTYPE& lower,
   } else {
     int first_stride =
         int((lower - min) / stride1) + int((upper - lower) / stride0);
-    table_idx = first_stride + (int)((max - upper) / stride1) - 1;
+    table_idx =
+        locate_high_tail_xx_se_t(lower, upper, min, max, stride0, stride1);
     xx = max - ((table_idx - first_stride) * stride1 + upper);
     extrapolate_delta = orig_xx - max;
   }

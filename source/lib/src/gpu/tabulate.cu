@@ -1,3 +1,5 @@
+#include <math.h>
+
 #include "device.h"
 #include "tabulate.h"
 
@@ -48,6 +50,46 @@ __device__ void GpuSyncThreads() {
 }
 
 template <typename FPTYPE>
+__forceinline__ __device__ FPTYPE nextafter_device(const FPTYPE& from,
+                                                   const FPTYPE& to);
+
+template <>
+__forceinline__ __device__ float nextafter_device<float>(const float& from,
+                                                         const float& to) {
+  return nextafterf(from, to);
+}
+
+template <>
+__forceinline__ __device__ double nextafter_device<double>(const double& from,
+                                                           const double& to) {
+  return nextafter(from, to);
+}
+
+template <typename FPTYPE>
+__forceinline__ __device__ int locate_high_tail_xx(const FPTYPE& lower,
+                                                   const FPTYPE& upper,
+                                                   const FPTYPE& max,
+                                                   const FPTYPE& stride0,
+                                                   const FPTYPE& stride1) {
+  const FPTYPE boundary_xx = nextafter_device(max, lower);
+  const int first_stride = int((upper - lower) / stride0);
+  return first_stride + int((boundary_xx - upper) / stride1);
+}
+
+template <typename FPTYPE>
+__forceinline__ __device__ int locate_high_tail_xx_se_t(const FPTYPE& lower,
+                                                        const FPTYPE& upper,
+                                                        const FPTYPE& min,
+                                                        const FPTYPE& max,
+                                                        const FPTYPE& stride0,
+                                                        const FPTYPE& stride1) {
+  const FPTYPE boundary_xx = nextafter_device(max, min);
+  const int first_stride =
+      int((lower - min) / stride1) + int((upper - lower) / stride0);
+  return first_stride + int((boundary_xx - upper) / stride1);
+}
+
+template <typename FPTYPE>
 __forceinline__ __device__ void locate_xx_se_a(FPTYPE& xx,
                                                int& table_idx,
                                                const FPTYPE& lower,
@@ -71,7 +113,7 @@ __forceinline__ __device__ void locate_xx_se_a(FPTYPE& xx,
     xx -= ((table_idx - first_stride) * stride1 + upper);
   } else {
     int first_stride = int((upper - lower) / stride0);
-    table_idx = first_stride + (int)((max - upper) / stride1) - 1;
+    table_idx = locate_high_tail_xx(lower, upper, max, stride0, stride1);
     xx = max - ((table_idx - first_stride) * stride1 + upper);
     extrapolate_delta = orig_xx - max;
   }
@@ -108,7 +150,8 @@ __forceinline__ __device__ void locate_xx_se_t(FPTYPE& xx,
   } else {
     int first_stride =
         int((lower - min) / stride1) + int((upper - lower) / stride0);
-    table_idx = first_stride + (int)((max - upper) / stride1) - 1;
+    table_idx =
+        locate_high_tail_xx_se_t(lower, upper, min, max, stride0, stride1);
     xx = max - ((table_idx - first_stride) * stride1 + upper);
     extrapolate_delta = orig_xx - max;
   }
@@ -146,7 +189,8 @@ __forceinline__ __device__ void locate_xx_se_t_tebd(FPTYPE& xx,
   } else {
     int first_stride =
         int((lower - min) / stride1) + int((upper - lower) / stride0);
-    table_idx = first_stride + (int)((max - upper) / stride1) - 1;
+    table_idx =
+        locate_high_tail_xx_se_t(lower, upper, min, max, stride0, stride1);
     xx = max - ((table_idx - first_stride) * stride1 + upper);
     extrapolate_delta = orig_xx - max;
   }
@@ -176,7 +220,7 @@ __forceinline__ __device__ void locate_xx_se_r(FPTYPE& xx,
     xx -= ((table_idx - first_stride) * stride1 + upper);
   } else {
     int first_stride = int((upper - lower) / stride0);
-    table_idx = first_stride + (int)((max - upper) / stride1) - 1;
+    table_idx = locate_high_tail_xx(lower, upper, max, stride0, stride1);
     xx = max - ((table_idx - first_stride) * stride1 + upper);
     extrapolate_delta = orig_xx - max;
   }
