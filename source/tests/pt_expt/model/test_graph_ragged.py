@@ -142,3 +142,33 @@ class TestGraphRagged:
         assert ret["energy_derv_c_redu"].shape[0] == nf
         assert torch.isfinite(ret["energy_derv_c"]).all()
         assert torch.isfinite(ret["energy_derv_c_redu"]).all()
+
+    def test_invariant_to_charge_spin(self) -> None:
+        """dpa1 does NOT consume charge_spin (``get_dim_chg_spin() == 0``);
+        forward_common_lower_graph accepts it only for ABI stability with
+        charge/spin descriptors (dpa3/dpa4, PR-G), so energy / force / virial /
+        atom-virial must be INVARIANT to it.
+        """
+        assert self.model.get_descriptor().get_dim_chg_spin() == 0  # dpa1
+        args = (
+            self.atype,
+            self.n_node,
+            self.edge_index,
+            self.edge_vec,
+            self.edge_mask,
+        )
+        base = self.model.forward_common_lower_graph(*args, do_atomic_virial=True)
+        nf = int(self.n_node.shape[0])
+        # arbitrary non-None charge/spin -> must NOT change any dpa1 graph output
+        cs = torch.tensor(
+            [[1.0, 2.0]] * nf, dtype=torch.float64, device=self.device
+        )
+        with_cs = self.model.forward_common_lower_graph(
+            *args, do_atomic_virial=True, charge_spin=cs
+        )
+        assert set(base) == set(with_cs)
+        for k, v in base.items():
+            if v is None:
+                assert with_cs[k] is None
+            else:
+                torch.testing.assert_close(with_cs[k], v, rtol=1e-12, atol=1e-12)

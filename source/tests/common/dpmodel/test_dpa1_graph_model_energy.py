@@ -222,3 +222,48 @@ def test_neighbor_list_takes_dense_route() -> None:
     np.testing.assert_allclose(
         with_nlist["energy_redu"], legacy["energy_redu"], rtol=1e-12, atol=1e-12
     )
+
+
+def test_graph_lower_invariant_to_charge_spin() -> None:
+    """dpa1 does NOT consume charge_spin (``get_dim_chg_spin() == 0``); the dense
+    atomic model passes ``None`` to the dpa1 descriptor regardless. The graph
+    lower accepts ``charge_spin`` only for ABI stability with charge/spin
+    descriptors (dpa3/dpa4, PR-G), so its output must be INVARIANT to it.
+
+    Combined with the graph==dense parity at non-binding sel
+    (:func:`test_energy_parity_non_binding_sel`), this gives the full claim:
+    ``graph(charge_spin) == graph(None) == dense``.
+    """
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        build_neighbor_graph,
+    )
+
+    rng = np.random.default_rng(4)
+    nloc = 6
+    coord = rng.normal(size=(1, nloc, 3)) * 1.5
+    atype = np.array([[0, 1, 0, 1, 0, 1]], dtype=np.int64)
+    box = np.eye(3).reshape(1, 9) * 20.0
+    model = _make_model([200])
+    assert model.get_descriptor().get_dim_chg_spin() == 0  # dpa1: no chg/spin
+
+    ng = build_neighbor_graph(coord, atype, box, model.get_rcut())
+    atype_flat = atype.reshape(-1)
+    base = model.call_common_lower_graph(
+        atype_flat, ng.n_node, ng.edge_index, ng.edge_vec, ng.edge_mask
+    )
+    # arbitrary non-None charge/spin -> must NOT change the dpa1 graph output
+    cs = np.array([[1.0, 2.0]], dtype=coord.dtype)
+    with_cs = model.call_common_lower_graph(
+        atype_flat,
+        ng.n_node,
+        ng.edge_index,
+        ng.edge_vec,
+        ng.edge_mask,
+        charge_spin=cs,
+    )
+    assert set(base) == set(with_cs)
+    for k, v in base.items():
+        if v is None:
+            assert with_cs[k] is None
+        else:
+            np.testing.assert_array_equal(with_cs[k], v)
