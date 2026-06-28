@@ -118,7 +118,7 @@ inline std::vector<ModelCase> model_cases() {
        /*supports_float=*/true,
        /*supports_nframes=*/false,
        /*supports_lmp_nlist_mapping=*/true},
-      {"jax_savedmodel", Backend::JAX,
+      {"tf2_savedmodel", Backend::JAX,
        "../../tests/infer/deeppot_sea.savedmodel",
        /*convert_pbtxt=*/false, &sea_deeppot_ref(), nullptr, 1e-10, 1e-4,
        /*supports_float=*/true,

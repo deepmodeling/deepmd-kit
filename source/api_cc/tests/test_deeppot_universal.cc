@@ -77,7 +77,7 @@ std::vector<VariantDeepPotCase> variant_deeppot_cases() {
            /*supports_no_pbc_atomic=*/false,
            /*supports_no_pbc_lmp_nlist=*/false,
            /*supports_no_pbc_lmp_nlist_atomic=*/false},
-          {"dpa_jax_savedmodel",
+          {"dpa_tf2_savedmodel",
            Backend::JAX,
            "../../tests/infer/deeppot_dpa.savedmodel",
            /*convert_pbtxt=*/false,
