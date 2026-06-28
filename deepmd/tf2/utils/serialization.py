@@ -1,11 +1,17 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import json
+import os
 from collections.abc import (
     Callable,
 )
+from typing import (
+    Any,
+)
 
+import numpy as np
 import tensorflow as tf
 
+from deepmd._vendors import ndtensorflow as xp
 from deepmd.tf2.common import (
     unwrap_value,
 )
@@ -20,15 +26,247 @@ from deepmd.tf2.utils._dpmodel import (
 )
 
 
-def deserialize_to_file(model_file: str, data: dict) -> None:
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").lower() in {"1", "true", "yes", "on"}
+
+
+def _default_jit_compile() -> bool:
+    return _env_flag("DP_JIT")
+
+
+class _ExportConstantArray:
+    """Array-like export constant that traces as ``tf.constant``."""
+
+    __array_priority__ = 2
+
+    def __init__(self, value: Any) -> None:
+        self._value = np.asarray(value)
+
+    @property
+    def dtype(self) -> tf.DType:
+        return tf.as_dtype(self._value.dtype)
+
+    @property
+    def shape(self) -> tuple[int, ...]:
+        return self._value.shape
+
+    @property
+    def ndim(self) -> int:
+        return self._value.ndim
+
+    @property
+    def size(self) -> int:
+        return self._value.size
+
+    @property
+    def T(self) -> Any:
+        return self._array().T
+
+    @property
+    def mT(self) -> Any:
+        return self._array().mT
+
+    def _array(self) -> Any:
+        return xp.asarray(tf.constant(self._value))
+
+    def __array_namespace__(self, /, *, api_version: str | None = None) -> Any:
+        del api_version
+        return xp
+
+    def __array__(self, dtype: Any | None = None) -> np.ndarray:
+        return self._value.astype(dtype) if dtype is not None else self._value
+
+    def __tf_tensor__(
+        self,
+        dtype: tf.DType | None = None,
+        name: str | None = None,
+    ) -> tf.Tensor:
+        return tf.constant(self._value, dtype=dtype, name=name)
+
+    def __getitem__(self, key: Any, /) -> Any:
+        return self._array()[key]
+
+    def __len__(self) -> int:
+        return len(self._value)
+
+    def __iter__(self) -> Any:
+        return iter(self._array())
+
+    def __bool__(self, /) -> bool:
+        return bool(self._value.item())
+
+    def __complex__(self, /) -> complex:
+        return complex(self._value.item())
+
+    def __float__(self, /) -> float:
+        return float(self._value.item())
+
+    def __index__(self, /) -> int:
+        return int(self._value.item())
+
+    def __int__(self, /) -> int:
+        return int(self._value.item())
+
+    def __repr__(self) -> str:
+        return f"_ExportConstantArray({self._value!r})"
+
+    def astype(
+        self,
+        dtype: tf.DType,
+        /,
+        *,
+        copy: bool = True,
+        device: str | None = None,
+    ) -> Any:
+        return self._array().astype(dtype, copy=copy, device=device)
+
+    def reshape(self, *shape: Any, copy: bool | None = None) -> Any:
+        return self._array().reshape(*shape, copy=copy)
+
+    def ravel(self) -> Any:
+        return self._array().ravel()
+
+    def squeeze(self, axis: int | tuple[int, ...] | None = None) -> Any:
+        return self._array().squeeze(axis=axis)
+
+    def to_device(
+        self,
+        device: str,
+        /,
+        *,
+        stream: int | Any | None = None,
+    ) -> Any:
+        return self._array().to_device(device, stream=stream)
+
+    def unwrap(self) -> tf.Tensor:
+        return tf.constant(self._value)
+
+
+def _export_binary_forward(name: str) -> Callable[[Any, Any], Any]:
+    def method(self: _ExportConstantArray, other: Any, /) -> Any:
+        return getattr(xp, name)(self._array(), other)
+
+    return method
+
+
+def _export_binary_reflected(name: str) -> Callable[[Any, Any], Any]:
+    def method(self: _ExportConstantArray, other: Any, /) -> Any:
+        return getattr(xp, name)(other, self._array())
+
+    return method
+
+
+def _export_unary(name: str) -> Callable[[Any], Any]:
+    def method(self: _ExportConstantArray) -> Any:
+        return getattr(xp, name)(self._array())
+
+    return method
+
+
+_ExportConstantArray.__add__ = _export_binary_forward("add")  # type: ignore[attr-defined]
+_ExportConstantArray.__radd__ = _export_binary_reflected("add")  # type: ignore[attr-defined]
+_ExportConstantArray.__and__ = _export_binary_forward("bitwise_and")  # type: ignore[attr-defined]
+_ExportConstantArray.__rand__ = _export_binary_reflected("bitwise_and")  # type: ignore[attr-defined]
+_ExportConstantArray.__floordiv__ = _export_binary_forward("floor_divide")  # type: ignore[attr-defined]
+_ExportConstantArray.__rfloordiv__ = _export_binary_reflected("floor_divide")  # type: ignore[attr-defined]
+_ExportConstantArray.__ge__ = _export_binary_forward("greater_equal")  # type: ignore[attr-defined]
+_ExportConstantArray.__le__ = _export_binary_reflected("greater_equal")  # type: ignore[attr-defined]
+_ExportConstantArray.__gt__ = _export_binary_forward("greater")  # type: ignore[attr-defined]
+_ExportConstantArray.__lt__ = _export_binary_reflected("greater")  # type: ignore[attr-defined]
+_ExportConstantArray.__lshift__ = _export_binary_forward("bitwise_left_shift")  # type: ignore[attr-defined]
+_ExportConstantArray.__rlshift__ = _export_binary_reflected("bitwise_left_shift")  # type: ignore[attr-defined]
+_ExportConstantArray.__matmul__ = _export_binary_forward("matmul")  # type: ignore[attr-defined]
+_ExportConstantArray.__rmatmul__ = _export_binary_reflected("matmul")  # type: ignore[attr-defined]
+_ExportConstantArray.__mod__ = _export_binary_forward("remainder")  # type: ignore[attr-defined]
+_ExportConstantArray.__rmod__ = _export_binary_reflected("remainder")  # type: ignore[attr-defined]
+_ExportConstantArray.__mul__ = _export_binary_forward("multiply")  # type: ignore[attr-defined]
+_ExportConstantArray.__rmul__ = _export_binary_reflected("multiply")  # type: ignore[attr-defined]
+_ExportConstantArray.__or__ = _export_binary_forward("bitwise_or")  # type: ignore[attr-defined]
+_ExportConstantArray.__ror__ = _export_binary_reflected("bitwise_or")  # type: ignore[attr-defined]
+_ExportConstantArray.__pow__ = _export_binary_forward("pow")  # type: ignore[attr-defined]
+_ExportConstantArray.__rpow__ = _export_binary_reflected("pow")  # type: ignore[attr-defined]
+_ExportConstantArray.__rshift__ = _export_binary_forward("bitwise_right_shift")  # type: ignore[attr-defined]
+_ExportConstantArray.__rrshift__ = _export_binary_reflected("bitwise_right_shift")  # type: ignore[attr-defined]
+_ExportConstantArray.__sub__ = _export_binary_forward("subtract")  # type: ignore[attr-defined]
+_ExportConstantArray.__rsub__ = _export_binary_reflected("subtract")  # type: ignore[attr-defined]
+_ExportConstantArray.__truediv__ = _export_binary_forward("divide")  # type: ignore[attr-defined]
+_ExportConstantArray.__rtruediv__ = _export_binary_reflected("divide")  # type: ignore[attr-defined]
+_ExportConstantArray.__xor__ = _export_binary_forward("bitwise_xor")  # type: ignore[attr-defined]
+_ExportConstantArray.__rxor__ = _export_binary_reflected("bitwise_xor")  # type: ignore[attr-defined]
+_ExportConstantArray.__eq__ = _export_binary_forward("equal")  # type: ignore[attr-defined]
+_ExportConstantArray.__ne__ = _export_binary_forward("not_equal")  # type: ignore[attr-defined]
+_ExportConstantArray.__abs__ = _export_unary("abs")  # type: ignore[attr-defined]
+_ExportConstantArray.__invert__ = _export_unary("bitwise_invert")  # type: ignore[attr-defined]
+_ExportConstantArray.__neg__ = _export_unary("negative")  # type: ignore[attr-defined]
+_ExportConstantArray.__pos__ = _export_unary("positive")  # type: ignore[attr-defined]
+
+
+def _as_export_constant(value: Any) -> _ExportConstantArray:
+    if isinstance(value, xp.Array):
+        value = value.unwrap()
+    if isinstance(value, tf.Variable):
+        value = value.numpy()
+    if isinstance(value, tf.Tensor):
+        value = value.numpy()
+    return _ExportConstantArray(value)
+
+
+def _freeze_tf2_constants_for_export(value: Any, seen: set[int]) -> Any:
+    """Freeze TensorFlow state inside deepmd objects to export constants."""
+    if isinstance(value, (xp.Array, tf.Variable, tf.Tensor)):
+        return _as_export_constant(value)
+    if isinstance(value, list):
+        for ii, item in enumerate(value):
+            value[ii] = _freeze_tf2_constants_for_export(item, seen)
+        return value
+    if isinstance(value, dict):
+        for kk, item in list(value.items()):
+            value[kk] = _freeze_tf2_constants_for_export(item, seen)
+        return value
+    if isinstance(value, tuple):
+        return tuple(_freeze_tf2_constants_for_export(item, seen) for item in value)
+    if not hasattr(value, "__dict__"):
+        return value
+    if not type(value).__module__.startswith("deepmd."):
+        return value
+
+    oid = id(value)
+    if oid in seen:
+        return value
+    seen.add(oid)
+    for name, item in list(value.__dict__.items()):
+        frozen = _freeze_tf2_constants_for_export(item, seen)
+        if frozen is not item:
+            object.__setattr__(value, name, frozen)
+    return value
+
+
+def _freeze_tf2_variables_for_export(model: tf.Module) -> None:
+    """Freeze TF2 trainable state to constants for C++ SavedModel inference."""
+    _freeze_tf2_constants_for_export(model, set())
+
+
+def deserialize_to_file(
+    model_file: str, data: dict, *, jit_compile: bool | None = None
+) -> None:
     """Deserialize the dictionary to a TensorFlow SavedModel."""
-    if not model_file.endswith(".savedmodel"):
-        raise ValueError("TF2 backend only supports the .savedmodel extension")
+    if not model_file.endswith(".savedmodeltf"):
+        raise ValueError("TF2 backend only supports the .savedmodeltf extension")
+    return deserialize_to_savedmodel(model_file, data, jit_compile=jit_compile)
+
+
+def deserialize_to_savedmodel(
+    model_file: str, data: dict, *, jit_compile: bool | None = None
+) -> None:
+    """Deserialize the dictionary to a TensorFlow SavedModel directory."""
+    if jit_compile is None:
+        jit_compile = _default_jit_compile()
 
     # Import model registrations before deserializing the dpmodel payload.
     import deepmd.tf2.model.model  # noqa: F401
 
     model = BaseModel.deserialize(data["model"])
+    _freeze_tf2_variables_for_export(model)
     model_def_script = data["model_def_script"]
 
     tf_model = tf.Module()
@@ -60,6 +298,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
 
     @tf.function(
         autograph=True,
+        jit_compile=jit_compile,
         input_signature=[
             tf.TensorSpec([None, None, 3], tf.float64),
             tf.TensorSpec([None, None], tf.int32),
@@ -86,6 +325,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
 
     @tf.function(
         autograph=True,
+        jit_compile=jit_compile,
         input_signature=[
             tf.TensorSpec([None, None, 3], tf.float64),
             tf.TensorSpec([None, None], tf.int32),

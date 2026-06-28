@@ -176,8 +176,8 @@ class DeepEval(DeepEvalBackend):
         neighbor_list: Optional["ase.neighborlist.NewPrimitiveNeighborList"] = None,
         **kwargs: Any,
     ) -> None:
-        if not model_file.endswith(".savedmodel"):
-            raise ValueError("TF2 backend only supports .savedmodel files")
+        if not model_file.endswith(".savedmodeltf"):
+            raise ValueError("TF2 backend only supports .savedmodeltf files")
         self.output_def = output_def
         self.model_path = model_file
         self.dp = TF2SavedModelWrapper(model_file)

@@ -249,17 +249,29 @@ T = TypeVar("T")
 
 
 def tf2_module(module: type[T]) -> type[T]:
-    """Add tf2 conversion to a dpmodel subclass."""
-    original_setattr = module.__setattr__
+    """Wrap a dpmodel subclass as a TensorFlow ``tf.Module``."""
 
-    @wraps(original_setattr)
-    def __setattr__(self: Any, name: str, value: Any) -> None:
-        value = tf2_setattr(self, name, value)
-        return original_setattr(self, name, value)
+    @wraps(module, updated=())
+    class TF2Module(module, tf.Module):  # type: ignore[misc, valid-type]
+        def __init__(self, *args: Any, **kwargs: Any) -> None:
+            tf.Module.__init__(self)
+            super().__init__(*args, **kwargs)
+            for name in list(self.__dict__):
+                value = self.__dict__[name]
+                if isinstance(value, list):
+                    converted = _try_convert_list(
+                        value,
+                        keep_converting=name
+                        in getattr(self, "_tf2_data_list_attrs", ()),
+                    )
+                    if converted is not value:
+                        setattr(self, name, converted)
 
-    module.__setattr__ = __setattr__  # type: ignore[method-assign]
+        def __setattr__(self, name: str, value: Any) -> None:
+            value = tf2_setattr(self, name, value)
+            return super().__setattr__(name, value)
 
-    if hasattr(module, "deserialize"):
+    if hasattr(TF2Module, "deserialize"):
         for base in module.__bases__:
             if base in (object, NativeOP):
                 continue
@@ -269,9 +281,9 @@ def tf2_module(module: type[T]) -> type[T]:
                 and base not in _DPMODEL_TO_TF2
             ):
 
-                def _converter(v: Any, _cls: type[Any] = module) -> Any:
+                def _converter(v: Any, _cls: type[Any] = TF2Module) -> Any:
                     return _cls.deserialize(v.serialize())
 
                 _DPMODEL_TO_TF2[base] = _converter
 
-    return module
+    return TF2Module

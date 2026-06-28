@@ -4,6 +4,8 @@ from typing import (
     ClassVar,
 )
 
+import tensorflow as tf
+
 from deepmd.dpmodel.common import (
     PRECISION_DICT,
     NativeOP,
@@ -29,14 +31,62 @@ from ..common import (
 )
 
 
-@tf2_module
-class NativeLayer(NativeLayerDP):
-    _tf2_skip_auto_convert_attrs: ClassVar[set[str]] = {"w", "b", "idt"}
+class NativeLayer(NativeLayerDP, tf.Module):
+    _tf2_variable_attrs: ClassVar[set[str]] = {"w", "b", "idt"}
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        tf.Module.__init__(self)
+        NativeLayerDP.__init__(self, *args, **kwargs)
+
+    @staticmethod
+    def _tf2_variable_storage_name(name: str) -> str:
+        return f"_tf2_{name}_variable"
+
+    def _get_tf2_variable(self, name: str) -> tf.Variable | None:
+        return getattr(self, self._tf2_variable_storage_name(name), None)
+
+    def _get_tf2_variable_array(self, name: str) -> Any | None:
+        variable = self._get_tf2_variable(name)
+        return None if variable is None else to_tensorflow_array(variable)
+
+    def _set_tf2_variable(self, name: str, value: Any) -> None:
+        storage_name = self._tf2_variable_storage_name(name)
+        if value is None:
+            tf.Module.__setattr__(self, storage_name, None)
+            return
+        tensor = to_tf_tensor(value)
+        variable = tf.Variable(
+            tensor,
+            trainable=bool(getattr(self, "trainable", True)),
+            name=name,
+        )
+        tf.Module.__setattr__(self, storage_name, variable)
+
+    def _refresh_tf2_variable_trainability(self) -> None:
+        for name in self._tf2_variable_attrs:
+            variable = self._get_tf2_variable(name)
+            if variable is not None and variable.trainable != self.trainable:
+                self._set_tf2_variable(name, variable.read_value())
+
+    @property
+    def w(self) -> Any | None:
+        return self._get_tf2_variable_array("w")
+
+    @property
+    def b(self) -> Any | None:
+        return self._get_tf2_variable_array("b")
+
+    @property
+    def idt(self) -> Any | None:
+        return self._get_tf2_variable_array("idt")
 
     def __setattr__(self, name: str, value: Any) -> None:
-        if name in {"w", "b", "idt"}:
-            value = to_tensorflow_array(value)
-        return super().__setattr__(name, value)
+        if name in self._tf2_variable_attrs:
+            self._set_tf2_variable(name, value)
+            return
+        tf.Module.__setattr__(self, name, value)
+        if name == "trainable":
+            self._refresh_tf2_variable_trainability()
 
     def check_type_consistency(self) -> None:
         precision = self.precision

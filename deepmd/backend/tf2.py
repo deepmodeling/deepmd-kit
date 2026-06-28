@@ -34,11 +34,11 @@ class TensorFlow2Backend(Backend):
 
     name = "TensorFlow2"
     features: ClassVar[Backend.Feature] = Backend.Feature.DEEP_EVAL | Backend.Feature.IO
-    suffixes: ClassVar[list[str]] = [".savedmodel"]
+    suffixes: ClassVar[list[str]] = [".savedmodeltf"]
 
     @classmethod
     def match_filename(cls, filename: str) -> int:
-        return 2 if str(filename).lower().endswith(".savedmodel") else 0
+        return 2 if str(filename).lower().endswith(".savedmodeltf") else 0
 
     def is_available(self) -> bool:
         return find_spec("tensorflow") is not None

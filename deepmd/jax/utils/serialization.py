@@ -139,7 +139,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         save_dp_model(filename=model_file, model_dict=data)
     elif model_file.endswith(".savedmodel"):
         from deepmd.tf2.utils.serialization import (
-            deserialize_to_file as deserialize_to_savedmodel,
+            deserialize_to_savedmodel,
         )
 
         return deserialize_to_savedmodel(model_file, data)
