@@ -360,7 +360,6 @@ class LoRASO2(SO2Linear):
 
     def _build_so2_weight(self, xp: Any, device: Any) -> Array:
         """Assemble the block-diagonal weight with LoRA delta folded in."""
-        in_total = self.reduced_dim * self.in_channels
         out_total = self.reduced_dim * self.out_channels
         num_in_m0 = (self.lmax + 1) * self.in_channels
         num_out_m0 = (self.lmax + 1) * self.out_channels
@@ -500,6 +499,17 @@ _UNFREEZE_LEAF_NAMES: frozenset[str] = frozenset(
         "adamw_focus_compete_w",
         "adamw_pseudo_query",
         "focus_compete_bias",
+        # LoRA adapter deltas: pt makes them trainable ``nn.Parameter`` at
+        # construction, but the dpmodel tracks trainability per module, so the
+        # owning ``LoRASO3``/``LoRASO2`` must be marked trainable here for its
+        # low-rank delta to receive gradients (the frozen base is restored by
+        # the backend, e.g. pt_expt ``_LORA_FROZEN_BASE``).
+        "A_by_l",
+        "B_by_l",
+        "A_m0",
+        "B_m0",
+        "A_m",
+        "B_m",
     }
 )
 

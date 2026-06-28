@@ -19,6 +19,10 @@ from typing import (
 
 import array_api_compat
 
+from deepmd.dpmodel.array_api import (
+    xp_add_at,
+    xp_maximum_at,
+)
 from deepmd.dpmodel.utils.network import (
     softplus_t,
 )
@@ -27,6 +31,7 @@ from deepmd.dpmodel.utils.network import (
 def segment_envelope_gated_softmax(
     logits: Any,
     edge_env: Any,
+    dst: Any,
     n_nodes: int,
     z_bias_raw: Any,
     eps: float,
@@ -42,9 +47,15 @@ def segment_envelope_gated_softmax(
         Attention logits with shape (E, F, H).
     edge_env
         Cutoff envelope weights with shape (E, 1) or (E,).
+    dst
+        Destination node indices with shape (E,). The group max and the
+        denominator sum are scattered over these indices, which makes the
+        normalization layout-agnostic: it is correct both for the padded
+        ``call`` (where ``dst == repeat(arange(n_nodes), nnei)``) and for the
+        sparse ``call_with_edges`` (arbitrary ``dst`` order and per-node
+        degree).
     n_nodes
-        Number of nodes. In the padded layout the destination of edge slot
-        ``(i, j)`` is implicitly node ``i``, so ``E = n_nodes * nnei``.
+        Number of nodes.
     z_bias_raw
         Unconstrained denominator bias with shape (F, H).
         Softplus is applied to keep the bias strictly positive.
@@ -75,8 +86,8 @@ def segment_envelope_gated_softmax(
     n_edge, n_focus, n_head = logits.shape
     n_channel = n_focus * n_head
     eps_f = float(eps)
-    nnei = n_edge // n_nodes
     device = array_api_compat.device(logits)
+    dst = xp.astype(dst, xp.int64)
 
     # === Step 1. Flatten (F, H) and build the effective per-edge weight ===
     logits_2d = xp.reshape(logits, (n_edge, n_channel))
@@ -111,14 +122,16 @@ def segment_envelope_gated_softmax(
     )
 
     # === Step 2. Destination-wise max for stable exponentials ===
-    # Destination-wise amax (pt ``scatter_reduce``) over the padded ``nnei`` axis.
-    group_max = xp.max(
-        xp.reshape(logits_for_max, (n_nodes, nnei, n_channel)), axis=1
+    # Destination segment max over ``dst`` (pt ``scatter_reduce`` amax). The
+    # scatter is layout-agnostic and the maximum is order-independent, so the
+    # padded ``call`` stays bit-exact while the sparse ``call_with_edges`` is
+    # handled by the same code path.
+    group_max = xp_maximum_at(
+        xp.full((n_nodes, n_channel), float("-inf"), dtype=logits.dtype, device=device),
+        dst,
+        logits_for_max,
     )  # (N, n_channel)
-    edge_max = xp.reshape(
-        xp.broadcast_to(group_max[:, None, :], (n_nodes, nnei, n_channel)),
-        (n_edge, n_channel),
-    )
+    edge_max = xp.take(group_max, dst, axis=0)
     zeros_en = xp.zeros((n_edge, n_channel), dtype=logits.dtype, device=device)
     zeros_nn = xp.zeros((n_nodes, n_channel), dtype=logits.dtype, device=device)
     edge_max = xp.where(xp.isfinite(edge_max), edge_max, zeros_en)
@@ -129,16 +142,15 @@ def segment_envelope_gated_softmax(
     edge_weighted_exp = edge_weight_sq[:, None] * exp_shifted
 
     # === Step 4. Destination-wise normalization with positive denominator bias ===
-    # Destination-wise sum (pt ``scatter_add``) over the padded ``nnei`` axis;
-    # invalid slots already carry zero weight.
-    denom_sum = xp.sum(
-        xp.reshape(edge_weighted_exp, (n_nodes, nnei, n_channel)), axis=1
+    # Destination segment sum over ``dst`` (pt ``scatter_add``); invalid slots
+    # already carry zero weight. Layout-agnostic like the group max above.
+    denom_sum = xp_add_at(
+        xp.zeros((n_nodes, n_channel), dtype=logits.dtype, device=device),
+        dst,
+        edge_weighted_exp,
     )  # (N, n_channel)
     denom = denom_sum + zeta * xp.exp(-group_max_safe)
 
-    denom_edge = xp.reshape(
-        xp.broadcast_to(denom[:, None, :], (n_nodes, nnei, n_channel)),
-        (n_edge, n_channel),
-    )
+    denom_edge = xp.take(denom, dst, axis=0)
     alpha = edge_weighted_exp / (denom_edge + eps_f)
     return xp.reshape(alpha, (n_edge, n_focus, n_head))

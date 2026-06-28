@@ -28,6 +28,7 @@ from deepmd.dpmodel import (
     NativeOP,
 )
 from deepmd.dpmodel.array_api import (
+    xp_add_at,
     xp_asarray_nodetach,
 )
 from deepmd.dpmodel.common import (
@@ -255,7 +256,6 @@ class GeometricInitialEmbedding(NativeOP):
                 (n_nodes, self.ebed_dim, self.channels), dtype=dtype, device=device
             )  # (N, D, C)
         n_edge = edge_cache.dst.shape[0]
-        nnei = n_edge // n_nodes
 
         # === Step 2. Gather all m=0 columns (l >= 1) in one shot ===
         # Advanced indexing pairs one packed non-scalar row with the zonal m=0 column
@@ -297,21 +297,27 @@ class GeometricInitialEmbedding(NativeOP):
             )
 
         # === Step 5. Scatter to nodes and normalize ===
-        # The index_add_ over dst becomes a masked sum over the nnei axis of the
-        # padded (N, nnei, ...) layout; the writeback out[:, non_scalar_row_index,
-        # :] targets the contiguous rows 1..D-1, so it is a concat that leaves the
-        # l=0 row at its zero initialization.
+        # Destination scatter-add over ``edge_cache.dst`` (pt ``index_add_``),
+        # applied after the validity masking below. This reduction is
+        # layout-agnostic: it is correct both for the padded ``call`` (row-major
+        # ``dst`` makes the accumulation order identical to a sum over the
+        # ``nnei`` axis, hence bit-exact) and for the sparse ``call_with_edges``
+        # (arbitrary ``dst`` order and per-node degree). The l=0 row is left at
+        # its zero initialization by concatenating it below the contiguous
+        # non-scalar rows 1..D-1.
         edge_mask = edge_cache.edge_mask
         if edge_mask is not None:
             non_scalar_message = non_scalar_message * xp.astype(
                 xp.reshape(edge_mask, (n_edge, 1, 1)), non_scalar_message.dtype
             )
-        non_scalar_out = xp.sum(
-            xp.reshape(
-                non_scalar_message,
-                (-1, nnei, self.ebed_dim - 1, self.channels),
+        non_scalar_out = xp_add_at(
+            xp.zeros(
+                (n_nodes, self.ebed_dim - 1, self.channels),
+                dtype=non_scalar_message.dtype,
+                device=device,
             ),
-            axis=1,
+            edge_cache.dst,
+            non_scalar_message,
         )  # (N, D-1, C)
         out = xp.concat(
             [
@@ -541,7 +547,6 @@ class EnvironmentInitialEmbedding(NativeOP):
         edge_rbf = edge_cache.edge_rbf  # (E, n_radial)
         edge_env = edge_cache.edge_env  # (E, 1)
         n_edge = dst.shape[0]
-        nnei = n_edge // n_nodes
 
         # === Step 1. Construct r_tilde = [s, s*r_hat] ===
         # s = edge_env * (1/r), r_hat = edge_vec / r
@@ -578,16 +583,24 @@ class EnvironmentInitialEmbedding(NativeOP):
             outer_flat = outer_flat * xp.astype(
                 xp.reshape(src_gate, (n_edge, 1)), outer_flat.dtype
             )
-        # The index_add_ over dst becomes a masked sum over the nnei axis of the
-        # padded (N, nnei, ...) layout.
+        # Destination scatter-add over ``dst`` (pt ``index_add_``), applied after
+        # the validity masking below. Layout-agnostic: correct for the padded
+        # ``call`` (row-major ``dst`` keeps the accumulation order identical to a
+        # sum over the ``nnei`` axis, hence bit-exact) and for the sparse
+        # ``call_with_edges`` (arbitrary ``dst`` order and per-node degree).
         edge_mask = edge_cache.edge_mask
         if edge_mask is not None:
             outer_flat = outer_flat * xp.astype(
                 xp.reshape(edge_mask, (n_edge, 1)), outer_flat.dtype
             )
-        env_agg = xp.sum(
-            xp.reshape(outer_flat, (-1, nnei, 4 * self.embed_dim)),
-            axis=1,
+        env_agg = xp_add_at(
+            xp.zeros(
+                (n_nodes, 4 * self.embed_dim),
+                dtype=outer_flat.dtype,
+                device=array_api_compat.device(outer_flat),
+            ),
+            dst,
+            outer_flat,
         )  # (N, 4*embed_dim)
         env_agg = xp.reshape(env_agg, (n_nodes, 4, self.embed_dim))  # (N, 4, embed_dim)
 

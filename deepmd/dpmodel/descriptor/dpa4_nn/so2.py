@@ -1636,6 +1636,7 @@ class SO2Convolution(NativeOP):
             attn_alpha = segment_envelope_gated_softmax(
                 logits=attn_logits,
                 edge_env=xp.astype(edge_cache.edge_env, compute_dtype),
+                dst=dst,
                 n_nodes=n_node,
                 z_bias_raw=xp_asarray_nodetach(
                     xp, self.adamw_attn_z_bias_raw[...], device=device

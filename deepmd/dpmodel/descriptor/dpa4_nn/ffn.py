@@ -175,7 +175,6 @@ class EquivariantFFN(NativeOP):
 
         # === First SO3Linear for channel mixing ===
         self.use_grid_net = self.s2_activation or self.ffn_so3_grid
-        linear1_out_channels = self.hidden_channels
         if self.use_grid_net:
             linear1_out_channels = 2 * self.grid_n_frames * self.hidden_channels
         else:

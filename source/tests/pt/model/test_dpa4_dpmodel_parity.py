@@ -2177,6 +2177,7 @@ class TestSO2Parity:
         alpha_dp = dp_softmax(
             logits=logits,
             edge_env=dp_cache.edge_env,
+            dst=dp_cache.dst,
             n_nodes=nloc,
             z_bias_raw=z_bias_raw,
             eps=1e-7,
@@ -2203,20 +2204,29 @@ class TestSO2Parity:
         np.testing.assert_array_equal(alpha_dp[~valid], 0.0)
         assert np.all(np.isfinite(alpha_dp))
 
-    def test_segment_softmax_errors(self) -> None:
+    def test_segment_softmax_arbitrary_degree(self) -> None:
+        # The destination scatter is layout-agnostic: E need not be a multiple
+        # of n_nodes and dst may carry an arbitrary (non-row-major) order with a
+        # non-uniform per-node degree (here node 2 has three edges, node 0 two,
+        # node 1 two). The reduction must still produce a finite, correctly
+        # shaped result.
         from deepmd.dpmodel.descriptor.dpa4_nn.attention import (
             segment_envelope_gated_softmax as dp_softmax,
         )
 
         rng = np.random.default_rng(2062)
-        with pytest.raises(ValueError):  # E not a multiple of n_nodes
-            dp_softmax(
-                logits=rng.normal(size=(7, 1, 1)),
-                edge_env=rng.uniform(size=(7, 1)),
-                n_nodes=3,
-                z_bias_raw=np.zeros((1, 1)),
-                eps=1e-7,
-            )
+        dst = np.array([2, 0, 0, 1, 2, 2, 1], dtype=np.int64)  # n_nodes=3, E=7
+        alpha = dp_softmax(
+            logits=rng.normal(size=(7, 1, 1)),
+            edge_env=rng.uniform(size=(7, 1)),
+            dst=dst,
+            n_nodes=3,
+            z_bias_raw=np.zeros((1, 1)),
+            eps=1e-7,
+        )
+        alpha = np.asarray(alpha)
+        assert alpha.shape == (7, 1, 1)
+        assert np.all(np.isfinite(alpha))
 
     # ---------- SO2Convolution ----------
     def _conv_kwargs(self, **overrides):
@@ -2597,13 +2607,6 @@ class TestEmbeddingParity:
 
         with pytest.raises(ValueError):  # wrong class tag
             DPGIE.deserialize({"@class": "NotGIE", "@version": 1})
-        dp_mod = DPGIE(lmax=2, channels=4, precision="float64")
-        rng = np.random.default_rng(2074)
-        _, dp_cache, radial, _, _, _ = _build_so2_edge_data(
-            rng, nloc=self.nloc, nnei=self.nnei, lmax=2, channels=4
-        )
-        with pytest.raises(ValueError):  # E not a multiple of N
-            dp_mod.call(n_nodes=3, edge_cache=dp_cache, radial_feat=radial[:, 1:, :])
 
     # ---------- EnvironmentInitialEmbedding ----------
     n_radial = 5
@@ -2716,19 +2719,6 @@ class TestEmbeddingParity:
             DPEnv(**self._env_kwargs(axis_dim=12), precision="float64")
         with pytest.raises(ValueError):  # wrong class tag
             DPEnv.deserialize({"@class": "NotEnv", "@version": 1})
-        dp_mod = DPEnv(**self._env_kwargs(), precision="float64", seed=2)
-        rng = np.random.default_rng(2078)
-        _, dp_cache, _, _, _, _ = _build_so2_edge_data(
-            rng,
-            nloc=self.nloc,
-            nnei=self.nnei,
-            lmax=1,
-            channels=4,
-            n_radial=self.n_radial,
-        )
-        atype = rng.integers(0, self.ntypes, size=(self.nloc,))
-        with pytest.raises(ValueError):  # E not a multiple of N
-            dp_mod.call(edge_cache=dp_cache, atype_flat=atype, n_nodes=3)
 
 
 def _build_real_edge_inputs(

@@ -25,11 +25,6 @@ from deepmd.pt_expt.utils.update_sel import (
     UpdateSel,
 )
 
-# Registers the dpmodel -> pt_expt converters for the interaction block
-# (activation checkpointing) and the SO(2) modules (opt-in Triton kernels), so
-# the auto-wrapped descriptor tree picks up those subclasses.
-from . import dpa4_nn  # noqa: F401
-
 
 @torch_module
 class WignerDCalculator(WignerDCalculatorDP):
