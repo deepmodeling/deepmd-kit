@@ -21,6 +21,7 @@ from ..common import (
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
     INSTALLED_TF,
+    INSTALLED_TF2,
     CommonTest,
     parameterized,
 )
@@ -46,6 +47,13 @@ if INSTALLED_TF:
     from deepmd.tf.fit.ener import EnerFitting as EnerFittingTF
 else:
     EnerFittingTF = object
+if INSTALLED_TF2:
+    from deepmd.tf2.common import (
+        to_tensorflow_array,
+    )
+    from deepmd.tf2.fitting.fitting import EnergyFittingNet as EnerFittingTF2
+else:
+    EnerFittingTF2 = None
 if INSTALLED_PD:
     import paddle
 
@@ -160,6 +168,24 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
         return not INSTALLED_TF or default_fparam is not None
 
     @property
+    def skip_tf2(self) -> bool:
+        (
+            resnet_dt,
+            precision,
+            mixed_types,
+            (numb_fparam, default_fparam),
+            (numb_aparam, use_aparam_as_mask),
+            atom_ener,
+        ) = self.param
+        return (
+            not INSTALLED_TF2
+            or precision == "bfloat16"
+            or default_fparam is not None
+            or use_aparam_as_mask
+            or atom_ener != []
+        )
+
+    @property
     def skip_pt_expt(self) -> bool:
         (
             resnet_dt,
@@ -173,6 +199,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
         return CommonTest.skip_pt_expt or precision == "bfloat16"
 
     tf_class = EnerFittingTF
+    tf2_class = EnerFittingTF2
     dp_class = EnerFittingDP
     pt_class = EnerFittingPT
     pt_expt_class = EnerFittingPTExpt
@@ -303,6 +330,26 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             fparam=self.fparam if (numb_fparam and default_fparam is None) else None,
             aparam=self.aparam if numb_aparam else None,
         )["energy"]
+
+    def eval_tf2(self, tf2_obj: Any) -> Any:
+        (
+            resnet_dt,
+            precision,
+            mixed_types,
+            (numb_fparam, default_fparam),
+            (numb_aparam, use_aparam_as_mask),
+            atom_ener,
+        ) = self.param
+        return to_numpy_array(
+            tf2_obj(
+                to_tensorflow_array(self.inputs),
+                to_tensorflow_array(self.atype.reshape(1, -1)),
+                fparam=to_tensorflow_array(self.fparam)
+                if (numb_fparam and default_fparam is None)
+                else None,
+                aparam=to_tensorflow_array(self.aparam) if numb_aparam else None,
+            )["energy"]
+        )
 
     def eval_jax(self, jax_obj: Any) -> Any:
         (

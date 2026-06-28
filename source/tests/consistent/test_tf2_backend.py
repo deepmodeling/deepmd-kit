@@ -38,6 +38,8 @@ def test_tf2_consistent_backend_subprocess() -> None:
             "pytest",
             "-q",
             "source/tests/consistent/model/test_ener.py",
+            "source/tests/consistent/descriptor/test_se_e2_a.py",
+            "source/tests/consistent/fitting/test_ener.py",
             "-k",
             "tf2",
         ],
@@ -45,7 +47,7 @@ def test_tf2_consistent_backend_subprocess() -> None:
         env=env,
         text=True,
         capture_output=True,
-        timeout=120,
+        timeout=240,
         check=False,
     )
     if result.returncode != 0:
