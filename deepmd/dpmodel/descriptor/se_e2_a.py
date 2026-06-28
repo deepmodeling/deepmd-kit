@@ -510,10 +510,22 @@ class DescrptSeA(NativeOP, BaseDescriptor):
         table_idx_value = xp.astype(table_idx, em.dtype)
         dx_first = xx - (table_idx_value * stride0 + lower)
         dx_second = xx - ((table_idx_value - first_stride_value) * stride1 + upper)
+        dx_high = table_max - (
+            (xp.astype(last_idx, em.dtype) - first_stride_value) * stride1 + upper
+        )
         dx = xp.where(
-            (xx >= lower) & (xx < upper),
-            dx_first,
-            xp.where((xx >= upper) & (xx < table_max), dx_second, xp.zeros_like(xx)),
+            xx < lower,
+            xp.zeros_like(xx),
+            xp.where(
+                xx < upper,
+                dx_first,
+                xp.where(xx < table_max, dx_second, dx_high),
+            ),
+        )
+        extrapolate_delta = xp.where(
+            xx < lower,
+            xx - lower,
+            xp.where(xx >= table_max, xx - table_max, xp.zeros_like(xx)),
         )
 
         coeff = xp.take(table, xp.reshape(table_idx, (-1,)), axis=0)
@@ -531,6 +543,20 @@ class DescrptSeA(NativeOP, BaseDescriptor):
             )
             * dx
         )
+        values_grad = (
+            coeff[..., 1]
+            + (
+                2 * coeff[..., 2]
+                + (
+                    3 * coeff[..., 3]
+                    + (4 * coeff[..., 4] + 5 * coeff[..., 5] * dx) * dx
+                )
+                * dx
+            )
+            * dx
+        )
+        extrapolate_delta = xp.reshape(extrapolate_delta, (nloc, nnei, 1))
+        values = values + values_grad * extrapolate_delta
         return xp.sum(em[:, :, :, None] * values[:, :, None, :], axis=1)
 
     def _add_to_slice(self, array: Array, start: int, end: int, value: Array) -> Array:

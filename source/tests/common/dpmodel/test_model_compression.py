@@ -63,6 +63,179 @@ class TestDPModelCompression(unittest.TestCase):
             seed=1234,
         )
 
+    @staticmethod
+    def _poly5(coeff: np.ndarray, xx: np.ndarray | float) -> np.ndarray:
+        return (
+            coeff[..., 0]
+            + (
+                coeff[..., 1]
+                + (
+                    coeff[..., 2]
+                    + (coeff[..., 3] + (coeff[..., 4] + coeff[..., 5] * xx) * xx) * xx
+                )
+                * xx
+            )
+            * xx
+        )
+
+    @staticmethod
+    def _poly5_grad(coeff: np.ndarray, xx: np.ndarray | float) -> np.ndarray:
+        return (
+            coeff[..., 1]
+            + (
+                2 * coeff[..., 2]
+                + (
+                    3 * coeff[..., 3]
+                    + (4 * coeff[..., 4] + 5 * coeff[..., 5] * xx) * xx
+                )
+                * xx
+            )
+            * xx
+        )
+
+    def _make_c1_tabulation_case(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        table_info = np.array([1.0, 3.0, 5.0, 1.0, 1.0, -1.0], dtype=np.float64)
+        coeff = np.array(
+            [
+                [
+                    [1.0, 0.5, 0.25, -0.10, 0.03, 0.02],
+                    [2.0, -0.4, 0.20, 0.05, -0.02, 0.01],
+                ],
+                [
+                    [3.0, -0.2, 0.40, 0.15, -0.03, 0.02],
+                    [4.0, 0.3, -0.10, 0.07, 0.04, -0.01],
+                ],
+                [
+                    [5.0, 0.7, -0.20, 0.12, 0.01, -0.04],
+                    [6.0, -0.6, 0.30, -0.05, 0.02, 0.03],
+                ],
+                [
+                    [7.0, 1.1, -0.35, 0.25, 0.08, -0.02],
+                    [8.0, -0.9, 0.45, -0.15, 0.06, 0.01],
+                ],
+            ],
+            dtype=np.float64,
+        )
+        xx = np.array([[0.5, 1.0, 1.5, 3.25, 5.0, 5.5]], dtype=np.float64)
+        expected = self._expected_c1_tabulation(coeff, table_info, xx[0])
+        table = np.reshape(coeff, (coeff.shape[0], -1))
+        return table, coeff, table_info, xx, expected
+
+    def _expected_c1_tabulation(
+        self,
+        coeff: np.ndarray,
+        table_info: np.ndarray,
+        xx: np.ndarray,
+    ) -> np.ndarray:
+        lower, upper, table_max, stride0, stride1 = table_info[:5]
+        first_stride = int(np.floor((upper - lower) / stride0))
+        values = []
+        for value in xx:
+            delta = 0.0
+            if value < lower:
+                table_idx = 0
+                dx = 0.0
+                delta = value - lower
+            elif value < upper:
+                table_idx = int(np.floor((value - lower) / stride0))
+                dx = value - (table_idx * stride0 + lower)
+            elif value < table_max:
+                table_idx = first_stride + int(np.floor((value - upper) / stride1))
+                dx = value - ((table_idx - first_stride) * stride1 + upper)
+            else:
+                table_idx = coeff.shape[0] - 1
+                dx = table_max - ((table_idx - first_stride) * stride1 + upper)
+                delta = value - table_max
+            values.append(
+                self._poly5(coeff[table_idx], dx)
+                + self._poly5_grad(coeff[table_idx], dx) * delta
+            )
+        return np.asarray(values, dtype=np.float64)
+
+    def test_tabulate_fusion_se_r_c1_extrapolates_outside_table(self) -> None:
+        table, coeff, table_info, xx, expected = self._make_c1_tabulation_case()
+        descriptor = DescrptSeR(
+            rcut=4.0,
+            rcut_smth=3.5,
+            sel=[1, 1],
+            neuron=[4, 2],
+            resnet_dt=False,
+            precision="float64",
+            seed=1234,
+        )
+
+        actual = descriptor._tabulate_fusion_se_r(
+            table,
+            table_info,
+            xx[:, :, None],
+            expected.shape[-1],
+        )
+
+        np.testing.assert_allclose(actual[0], expected, atol=1e-12)
+        np.testing.assert_allclose(
+            actual[0, 1] - actual[0, 0],
+            0.5 * self._poly5_grad(coeff[0], 0.0),
+            atol=1e-12,
+        )
+        np.testing.assert_allclose(
+            actual[0, 5] - actual[0, 4],
+            0.5 * self._poly5_grad(coeff[-1], 1.0),
+            atol=1e-12,
+        )
+
+    def test_tabulate_fusion_se_a_c1_extrapolates_outside_table(self) -> None:
+        table, _, table_info, xx, expected = self._make_c1_tabulation_case()
+        descriptor = self._make_descriptor()
+        em = np.zeros((1, xx.shape[1], 4), dtype=np.float64)
+        em[:, :, 0] = 1.0
+        expected_out = np.zeros((1, 4, expected.shape[-1]), dtype=np.float64)
+        expected_out[:, 0, :] = np.sum(expected, axis=0)
+
+        actual = descriptor._tabulate_fusion_se_a(
+            table,
+            table_info,
+            xx[:, :, None],
+            em,
+            expected.shape[-1],
+        )
+
+        np.testing.assert_allclose(actual, expected_out, atol=1e-12)
+
+    def test_tabulate_fusion_se_atten_c1_extrapolates_outside_table(self) -> None:
+        table, _, table_info, xx, expected = self._make_c1_tabulation_case()
+        descriptor = DescrptDPA1(
+            rcut=4.0,
+            rcut_smth=3.5,
+            sel=2,
+            ntypes=2,
+            neuron=[4, 2],
+            axis_neuron=2,
+            tebd_dim=4,
+            tebd_input_mode="strip",
+            resnet_dt=False,
+            attn_layer=0,
+            precision="float64",
+            seed=1234,
+        )
+        em = np.zeros((1, xx.shape[1], 4), dtype=np.float64)
+        em[:, :, 0] = 1.0
+        two_embed = np.full_like(expected[None, :, :], 0.5)
+        expected_out = np.zeros((1, 4, expected.shape[-1]), dtype=np.float64)
+        expected_out[:, 0, :] = np.sum(expected * (1.0 + two_embed[0]), axis=0)
+
+        actual = descriptor.se_atten._tabulate_fusion_se_atten(
+            table,
+            table_info,
+            xx[:, :, None],
+            em,
+            two_embed,
+            expected.shape[-1],
+        )
+
+        np.testing.assert_allclose(actual, expected_out, atol=1e-12)
+
     def test_se_e2_a_enable_compression(self) -> None:
         for type_one_side, exclude_types in (
             (True, []),
