@@ -5122,10 +5122,25 @@ def training_args(
     doc_disp_freq = "The frequency of printing learning curve."
     doc_save_freq = "The frequency of saving check point."
     doc_save_ckpt = "The path prefix of saving check point files."
+    doc_save_dir = (
+        "The directory in which periodic checkpoint files are written, "
+        "including the regular checkpoints (the `save_ckpt` prefix) and, when "
+        "EMA is enabled, the EMA checkpoints. It is created recursively if it "
+        "does not exist. The latest-checkpoint symlinks (such as "
+        "`model.ckpt.pt`) and the `checkpoint` pointer file remain in the "
+        "working directory and reference the files in this directory. If not "
+        "set, checkpoints are written to the working directory."
+    )
     doc_max_ckpt_keep = (
         "The maximum number of checkpoints to keep. "
         "The oldest checkpoints will be deleted once the number of checkpoints exceeds max_ckpt_keep. "
         "Defaults to 5."
+    )
+    doc_ckpt_keep_ratio = (
+        "An alternative to `max_ckpt_keep` that sets the number of retained "
+        "checkpoints as a fraction in (0, 1) of the run: the most recent "
+        "`ceil(ckpt_keep_ratio * ceil(numb_steps / save_freq))` checkpoints are kept. "
+        "When set, it overrides `max_ckpt_keep` and `ema_ckpt_keep`."
     )
     doc_enable_ema = (
         "Whether to maintain an exponential moving average (EMA) of model "
@@ -5250,9 +5265,25 @@ def training_args(
         Argument("disp_freq", int, optional=True, default=1000, doc=doc_disp_freq),
         Argument("save_freq", int, optional=True, default=1000, doc=doc_save_freq),
         Argument(
+            "save_dir",
+            [str, None],
+            optional=True,
+            default=None,
+            doc=doc_only_pt_supported + doc_save_dir,
+        ),
+        Argument(
             "save_ckpt", str, optional=True, default="model.ckpt", doc=doc_save_ckpt
         ),
         Argument("max_ckpt_keep", int, optional=True, default=5, doc=doc_max_ckpt_keep),
+        Argument(
+            "ckpt_keep_ratio",
+            [float, None],
+            optional=True,
+            default=None,
+            doc=doc_only_pt_supported + doc_ckpt_keep_ratio,
+            extra_check=lambda x: x is None or 0.0 < x < 1.0,
+            extra_check_errmsg="must be a fraction in the open interval (0, 1)",
+        ),
         Argument(
             "enable_ema",
             bool,
@@ -5475,6 +5506,14 @@ def validating_args() -> Argument:
         "The frequency, in training steps, of running the full validation pass."
     )
     doc_save_best = "Whether to save an extra checkpoint when the selected full validation metric reaches a new best value."
+    doc_save_best_dir = (
+        "The directory in which the best checkpoints selected by full "
+        "validation are written (the `best.ckpt` prefix, and the "
+        "`best_ema.ckpt` prefix when EMA full validation is enabled). It is "
+        "created recursively if it does not exist. If not set, the best "
+        "checkpoints are written to the directory determined by "
+        "`training.save_ckpt`."
+    )
     doc_ema_full_validation = (
         "Whether to additionally run the same full validation flow on the "
         "EMA-smoothed model when `validating.full_validation=true`. This reuses "
@@ -5551,6 +5590,13 @@ def validating_args() -> Argument:
             optional=True,
             default=True,
             doc=doc_only_pt_supported + doc_save_best,
+        ),
+        Argument(
+            "save_best_dir",
+            [str, None],
+            optional=True,
+            default=None,
+            doc=doc_only_pt_supported + doc_save_best_dir,
         ),
         Argument(
             "max_best_ckpt",
