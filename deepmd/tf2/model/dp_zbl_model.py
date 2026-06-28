@@ -7,8 +7,8 @@ from deepmd.tf2.common import (
     tf2_module,
 )
 from deepmd.tf2.env import (
-    jnp,
     stop_gradient,
+    xp,
 )
 from deepmd.tf2.model.base_model import (
     BaseModel,
@@ -21,17 +21,17 @@ from deepmd.tf2.model.base_model import (
 class DPZBLModel(DPZBLModelDP):
     def forward_common_atomic(
         self,
-        extended_coord: jnp.ndarray,
-        extended_atype: jnp.ndarray,
-        nlist: jnp.ndarray,
-        mapping: jnp.ndarray | None = None,
-        fparam: jnp.ndarray | None = None,
-        aparam: jnp.ndarray | None = None,
+        extended_coord: xp.ndarray,
+        extended_atype: xp.ndarray,
+        nlist: xp.ndarray,
+        mapping: xp.ndarray | None = None,
+        fparam: xp.ndarray | None = None,
+        aparam: xp.ndarray | None = None,
         do_atomic_virial: bool = False,
-        extended_coord_corr: jnp.ndarray | None = None,
+        extended_coord_corr: xp.ndarray | None = None,
         comm_dict: dict | None = None,
-        charge_spin: jnp.ndarray | None = None,
-    ) -> dict[str, jnp.ndarray]:
+        charge_spin: xp.ndarray | None = None,
+    ) -> dict[str, xp.ndarray]:
         del comm_dict  # tf2 path has no MPI ghost exchange
         return forward_common_atomic(
             self,
@@ -48,11 +48,11 @@ class DPZBLModel(DPZBLModelDP):
 
     def format_nlist(
         self,
-        extended_coord: jnp.ndarray,
-        extended_atype: jnp.ndarray,
-        nlist: jnp.ndarray,
+        extended_coord: xp.ndarray,
+        extended_atype: xp.ndarray,
+        nlist: xp.ndarray,
         extra_nlist_sort: bool = False,
-    ) -> jnp.ndarray:
+    ) -> xp.ndarray:
         return DPZBLModelDP.format_nlist(
             self,
             stop_gradient(extended_coord),

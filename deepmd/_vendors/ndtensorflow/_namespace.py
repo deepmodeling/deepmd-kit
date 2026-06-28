@@ -303,6 +303,14 @@ def _shape_arg_for_tf(shape: int | Sequence[Any] | tf.Tensor) -> Any:
     return shape
 
 
+def _shape_product(shape: Sequence[int | tf.Tensor]) -> int | tf.Tensor:
+    if not shape:
+        return 1
+    if py_all(isinstance(dim, int) for dim in shape):
+        return math.prod(shape)
+    return tf.reduce_prod(_shape_arg_tensor(shape))
+
+
 def _dtype_of(x: Array | tf.Tensor | DType | complex) -> DType:
     if isinstance(x, tf.DType):
         return x
@@ -1741,25 +1749,29 @@ def tensordot(
     if len(axes1) != len(axes2):
         raise ValueError("tensordot axes must have the same length")
     for axis1, axis2 in zip(axes1, axes2, strict=True):
-        if x1.shape[axis1] != x2.shape[axis2]:
+        if _known_unequal(x1.shape[axis1], x2.shape[axis2]):
             raise ValueError("tensordot contraction dimensions must match")
 
+    x1_shape = _shape_tuple(x1)
+    x2_shape = _shape_tuple(x2)
     x1_outer = tuple(axis for axis in range(x1.shape.rank) if axis not in axes1)
     x2_outer = tuple(axis for axis in range(x2.shape.rank) if axis not in axes2)
     x1_perm = x1_outer + axes1
     x2_perm = axes2 + x2_outer
     x1_t = tf.transpose(x1, x1_perm) if x1_perm else x1
     x2_t = tf.transpose(x2, x2_perm) if x2_perm else x2
-    x1_outer_shape = tuple(x1.shape[axis] for axis in x1_outer)
-    x2_outer_shape = tuple(x2.shape[axis] for axis in x2_outer)
-    contract_shape = tuple(x1.shape[axis] for axis in axes1)
-    outer1 = math.prod(x1_outer_shape) if x1_outer_shape else 1
-    outer2 = math.prod(x2_outer_shape) if x2_outer_shape else 1
-    contract = math.prod(contract_shape) if contract_shape else 1
-    x1_m = tf.reshape(x1_t, (outer1, contract))
-    x2_m = tf.reshape(x2_t, (contract, outer2))
+    x1_outer_shape = tuple(x1_shape[axis] for axis in x1_outer)
+    x2_outer_shape = tuple(x2_shape[axis] for axis in x2_outer)
+    contract_shape = tuple(x1_shape[axis] for axis in axes1)
+    outer1 = _shape_product(x1_outer_shape)
+    outer2 = _shape_product(x2_outer_shape)
+    contract = _shape_product(contract_shape)
+    x1_m = tf.reshape(x1_t, _shape_arg_for_tf((outer1, contract)))
+    x2_m = tf.reshape(x2_t, _shape_arg_for_tf((contract, outer2)))
     out = matmul(Array._from_tensor(x1_m), Array._from_tensor(x2_m)).unwrap()
-    return Array._from_tensor(tf.reshape(out, x1_outer_shape + x2_outer_shape))
+    return Array._from_tensor(
+        tf.reshape(out, _shape_arg_for_tf(x1_outer_shape + x2_outer_shape))
+    )
 
 
 def vecdot(x1: Array, x2: Array, /, *, axis: int = -1) -> Array:

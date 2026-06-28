@@ -13,8 +13,8 @@ from deepmd.tf2.common import (
     wrap_tensor,
 )
 from deepmd.tf2.env import (
-    jnp,
     tf,
+    xp,
 )
 
 BaseModel = make_base_model()
@@ -22,17 +22,17 @@ BaseModel = make_base_model()
 
 def forward_common_atomic(
     self: "BaseModel",
-    extended_coord: jnp.ndarray,
-    extended_atype: jnp.ndarray,
-    nlist: jnp.ndarray,
-    mapping: jnp.ndarray | None = None,
-    fparam: jnp.ndarray | None = None,
-    aparam: jnp.ndarray | None = None,
+    extended_coord: xp.ndarray,
+    extended_atype: xp.ndarray,
+    nlist: xp.ndarray,
+    mapping: xp.ndarray | None = None,
+    fparam: xp.ndarray | None = None,
+    aparam: xp.ndarray | None = None,
     do_atomic_virial: bool = False,
-    extended_coord_corr: jnp.ndarray | None = None,
+    extended_coord_corr: xp.ndarray | None = None,
     comm_dict: dict | None = None,
-    charge_spin: jnp.ndarray | None = None,
-) -> dict[str, jnp.ndarray]:
+    charge_spin: xp.ndarray | None = None,
+) -> dict[str, xp.ndarray]:
     del comm_dict  # tf2 path has no MPI ghost exchange
 
     coord_tensor = to_tf_tensor(extended_coord)
@@ -60,13 +60,13 @@ def forward_common_atomic(
         if vdef.intensive:
             mask = atomic_ret["mask"] if "mask" in atomic_ret else None
             if mask is not None:
-                model_predict[kk_redu] = jnp.sum(vv, axis=atom_axis) / jnp.sum(
+                model_predict[kk_redu] = xp.sum(vv, axis=atom_axis) / xp.sum(
                     mask, axis=-1, keepdims=True
                 )
             else:
-                model_predict[kk_redu] = jnp.mean(vv, axis=atom_axis)
+                model_predict[kk_redu] = xp.mean(vv, axis=atom_axis)
         else:
-            model_predict[kk_redu] = jnp.sum(vv, axis=atom_axis)
+            model_predict[kk_redu] = xp.sum(vv, axis=atom_axis)
 
         kk_derv_r, kk_derv_c = get_deriv_name(kk)
         if vdef.r_differentiable:
@@ -81,7 +81,7 @@ def forward_common_atomic(
                     aparam=aparam,
                     charge_spin=charge_spin,
                 )
-                reduced_output = jnp.sum(grad_atomic_ret[kk], axis=atom_axis)
+                reduced_output = xp.sum(grad_atomic_ret[kk], axis=atom_axis)
                 reduced_output_tensor = to_tf_tensor(reduced_output)
                 assert reduced_output_tensor is not None
             ff_tensor = -tape.batch_jacobian(reduced_output_tensor, coord_tensor)
@@ -89,7 +89,7 @@ def forward_common_atomic(
 
             # extended_force: [nf, nall, *def, 3]
             def_ndim = len(vdef.shape)
-            model_predict[kk_derv_r] = jnp.transpose(
+            model_predict[kk_derv_r] = xp.transpose(
                 ff, [0, def_ndim + 1, *range(1, def_ndim + 1), def_ndim + 2]
             )
             if vdef.r_hessian:
@@ -99,9 +99,9 @@ def forward_common_atomic(
         if vdef.c_differentiable:
             assert vdef.r_differentiable
             # avr: [nf, *def, nall, 3, 3]
-            avr = jnp.einsum("f...ai,faj->f...aij", ff, extended_coord)
+            avr = xp.einsum("f...ai,faj->f...aij", ff, extended_coord)
             if extended_coord_corr is not None:
-                avr = avr + jnp.einsum("f...ai,faj->f...aij", ff, extended_coord_corr)
+                avr = avr + xp.einsum("f...ai,faj->f...aij", ff, extended_coord_corr)
             if do_atomic_virial:
                 with tf.GradientTape() as virial_tape:
                     virial_tape.watch(coord_tensor)
@@ -143,12 +143,12 @@ def forward_common_atomic(
                     ],
                 )
                 avr = avr + wrap_tensor(virial_corr)
-            avr = jnp.reshape(avr, [*ff.shape[:-1], 9])
+            avr = xp.reshape(avr, [*ff.shape[:-1], 9])
             # extended_virial: [nf, nall, *def, 9]
-            extended_virial = jnp.transpose(
+            extended_virial = xp.transpose(
                 avr, [0, def_ndim + 1, *range(1, def_ndim + 1), def_ndim + 2]
             )
             model_predict[kk_derv_c] = extended_virial
             # [nf, *def, 9]
-            model_predict[kk_derv_c + "_redu"] = jnp.sum(extended_virial, axis=1)
+            model_predict[kk_derv_c + "_redu"] = xp.sum(extended_virial, axis=1)
     return model_predict

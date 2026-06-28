@@ -17,8 +17,6 @@ import numpy as np
 
 from deepmd.dpmodel.array_api import (
     Array,
-    xp_take_along_axis,
-    xp_take_first_n,
 )
 from deepmd.dpmodel.atomic_model.base_atomic_model import (
     BaseAtomicModel,
@@ -40,6 +38,7 @@ from deepmd.dpmodel.output_def import (
 from deepmd.dpmodel.utils import (
     DefaultNeighborList,
     NeighborList,
+    format_nlist,
     nlist_distinguish_types,
 )
 from deepmd.utils.path import (
@@ -611,72 +610,13 @@ def make_model(
             nnei: int,
             extra_nlist_sort: bool = False,
         ) -> Array:
-            xp = array_api_compat.array_namespace(extended_coord, nlist)
-            n_nf, n_nloc, n_nnei = nlist.shape
-            extended_coord = extended_coord.reshape([n_nf, -1, 3])
-            rcut = self.get_rcut()
-
-            if n_nnei < nnei:
-                # make a copy before revise
-                ret = xp.concat(
-                    [
-                        nlist,
-                        -1
-                        * xp.ones(
-                            [n_nf, n_nloc, nnei - n_nnei],
-                            dtype=nlist.dtype,
-                            device=array_api_compat.device(nlist),
-                        ),
-                    ],
-                    axis=-1,
-                )
-
-            # Order matters for torch.export: Python evaluates `or` left-to-right
-            # with short-circuit.  When `extra_nlist_sort=True` (Python bool) is
-            # on the left, the right-hand `n_nnei > nnei` is not evaluated, so no
-            # symbolic guard is registered on the dynamic `n_nnei` dimension.
-            # Swapping the operands would force the SymInt comparison to run and
-            # emit an `_assert_scalar` node in the exported graph.
-            if extra_nlist_sort or n_nnei > nnei:
-                n_nf, n_nloc, n_nnei = nlist.shape
-                # make a copy before revise
-                m_real_nei = nlist >= 0
-                ret = xp.where(m_real_nei, nlist, 0)
-                coord0 = xp_take_first_n(extended_coord, 1, n_nloc)
-                index = xp.tile(ret.reshape(n_nf, n_nloc * n_nnei, 1), (1, 1, 3))
-                coord1 = xp_take_along_axis(extended_coord, index, axis=1)
-                coord1 = coord1.reshape(n_nf, n_nloc, n_nnei, 3)
-                rr = xp.linalg.norm(coord0[:, :, None, :] - coord1, axis=-1)
-                rr = xp.where(m_real_nei, rr, float("inf"))
-                rr, ret_mapping = xp.sort(rr, axis=-1), xp.argsort(rr, axis=-1)
-                ret = xp_take_along_axis(ret, ret_mapping, axis=2)
-                ret = xp.where(rr > rcut, -1, ret)
-                ret = ret[..., :nnei]
-            else:
-                # not extra_nlist_sort and n_nnei <= nnei: no reordering is
-                # needed (these descriptors reduce over neighbors order-
-                # independently), but we must still drop neighbors beyond rcut.
-                # The C++/LAMMPS neighbor list is built with rcut+skin and is
-                # NOT rcut-filtered before forward_lower; without this, out-of-
-                # rcut neighbors leak into the descriptor whenever the per-atom
-                # neighbor count <= nnei (this branch), making the result
-                # order-dependent (see discussion #5438).
-                if n_nnei == nnei:
-                    ret = nlist
-                # else (n_nnei < nnei): `ret` is already padded to nnei above.
-                n_nf, n_nloc, n_pad = ret.shape
-                m_real_nei = ret >= 0
-                coord0 = xp_take_first_n(extended_coord, 1, n_nloc)
-                index = xp.tile(
-                    xp.where(m_real_nei, ret, 0).reshape(n_nf, n_nloc * n_pad, 1),
-                    (1, 1, 3),
-                )
-                coord1 = xp_take_along_axis(extended_coord, index, axis=1)
-                coord1 = coord1.reshape(n_nf, n_nloc, n_pad, 3)
-                rr = xp.linalg.norm(coord0[:, :, None, :] - coord1, axis=-1)
-                ret = xp.where(m_real_nei & (rr > rcut), -1, ret)
-            assert ret.shape[-1] == nnei
-            return ret
+            return format_nlist(
+                extended_coord,
+                nlist,
+                nnei,
+                self.get_rcut(),
+                extra_nlist_sort=extra_nlist_sort,
+            )
 
         def do_grad_r(
             self,

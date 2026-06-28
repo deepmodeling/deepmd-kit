@@ -61,6 +61,17 @@ def wrap_tensor(tensor: Any | None) -> Any | None:
     return xp.asarray(tensor)
 
 
+def wrap_value(value: Any) -> Any:
+    """Recursively wrap TensorFlow tensors as ndtensorflow Arrays."""
+    if isinstance(value, dict):
+        return {kk: wrap_value(vv) for kk, vv in value.items()}
+    if isinstance(value, tuple):
+        return tuple(wrap_value(vv) for vv in value)
+    if isinstance(value, list):
+        return [wrap_value(vv) for vv in value]
+    return wrap_tensor(value)
+
+
 def unwrap_value(value: Any) -> Any:
     """Recursively unwrap ndtensorflow Arrays for TensorFlow SavedModel returns."""
     if isinstance(value, xp.Array):

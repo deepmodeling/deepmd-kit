@@ -5,19 +5,18 @@ from collections.abc import (
 )
 
 import tensorflow as tf
-import tensorflow.experimental.numpy as tnp
 
 from deepmd.tf2.common import (
     unwrap_value,
-)
-from deepmd.tf2.format_nlist import (
-    format_nlist,
 )
 from deepmd.tf2.make_model import (
     model_call_from_call_lower,
 )
 from deepmd.tf2.model.base_model import (
     BaseModel,
+)
+from deepmd.tf2.utils._dpmodel import (
+    format_nlist,
 )
 
 
@@ -38,13 +37,13 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         do_atomic_virial: bool,
     ) -> Callable:
         def call_lower(
-            coord: tnp.ndarray,
-            atype: tnp.ndarray,
-            nlist: tnp.ndarray,
-            mapping: tnp.ndarray,
-            fparam: tnp.ndarray,
-            aparam: tnp.ndarray,
-        ) -> dict[str, tnp.ndarray]:
+            coord: tf.Tensor,
+            atype: tf.Tensor,
+            nlist: tf.Tensor,
+            mapping: tf.Tensor,
+            fparam: tf.Tensor,
+            aparam: tf.Tensor,
+        ) -> dict[str, tf.Tensor]:
             return unwrap_value(
                 model.call_common_lower(
                     coord,
@@ -60,7 +59,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         return call_lower
 
     @tf.function(
-        autograph=False,
+        autograph=True,
         input_signature=[
             tf.TensorSpec([None, None, 3], tf.float64),
             tf.TensorSpec([None, None], tf.int32),
@@ -71,13 +70,13 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         ],
     )
     def call_lower_without_atomic_virial(
-        coord: tnp.ndarray,
-        atype: tnp.ndarray,
-        nlist: tnp.ndarray,
-        mapping: tnp.ndarray,
-        fparam: tnp.ndarray,
-        aparam: tnp.ndarray,
-    ) -> dict[str, tnp.ndarray]:
+        coord: tf.Tensor,
+        atype: tf.Tensor,
+        nlist: tf.Tensor,
+        mapping: tf.Tensor,
+        fparam: tf.Tensor,
+        aparam: tf.Tensor,
+    ) -> dict[str, tf.Tensor]:
         nlist = format_nlist(coord, nlist, model.get_nnei(), model.get_rcut())
         return call_lower_with_fixed_do_atomic_virial(False)(
             coord, atype, nlist, mapping, fparam, aparam
@@ -86,7 +85,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
     tf_model.call_lower = call_lower_without_atomic_virial
 
     @tf.function(
-        autograph=False,
+        autograph=True,
         input_signature=[
             tf.TensorSpec([None, None, 3], tf.float64),
             tf.TensorSpec([None, None], tf.int32),
@@ -97,13 +96,13 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         ],
     )
     def call_lower_with_atomic_virial(
-        coord: tnp.ndarray,
-        atype: tnp.ndarray,
-        nlist: tnp.ndarray,
-        mapping: tnp.ndarray,
-        fparam: tnp.ndarray,
-        aparam: tnp.ndarray,
-    ) -> dict[str, tnp.ndarray]:
+        coord: tf.Tensor,
+        atype: tf.Tensor,
+        nlist: tf.Tensor,
+        mapping: tf.Tensor,
+        fparam: tf.Tensor,
+        aparam: tf.Tensor,
+    ) -> dict[str, tf.Tensor]:
         nlist = format_nlist(coord, nlist, model.get_nnei(), model.get_rcut())
         return call_lower_with_fixed_do_atomic_virial(True)(
             coord, atype, nlist, mapping, fparam, aparam
@@ -119,24 +118,26 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         )
 
         def call(
-            coord: tnp.ndarray,
-            atype: tnp.ndarray,
-            box: tnp.ndarray,
-            fparam: tnp.ndarray,
-            aparam: tnp.ndarray,
-        ) -> dict[str, tnp.ndarray]:
-            return model_call_from_call_lower(
-                call_lower=call_lower,
-                rcut=model.get_rcut(),
-                sel=model.get_sel(),
-                mixed_types=model.mixed_types(),
-                model_output_def=model.model_output_def(),
-                coord=coord,
-                atype=atype,
-                box=box,
-                fparam=fparam,
-                aparam=aparam,
-                do_atomic_virial=do_atomic_virial,
+            coord: tf.Tensor,
+            atype: tf.Tensor,
+            box: tf.Tensor,
+            fparam: tf.Tensor,
+            aparam: tf.Tensor,
+        ) -> dict[str, tf.Tensor]:
+            return unwrap_value(
+                model_call_from_call_lower(
+                    call_lower=call_lower,
+                    rcut=model.get_rcut(),
+                    sel=model.get_sel(),
+                    mixed_types=model.mixed_types(),
+                    model_output_def=model.model_output_def(),
+                    coord=coord,
+                    atype=atype,
+                    box=box,
+                    fparam=fparam,
+                    aparam=aparam,
+                    do_atomic_virial=do_atomic_virial,
+                )
             )
 
         return call
@@ -152,12 +153,12 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         ],
     )
     def call_with_atomic_virial(
-        coord: tnp.ndarray,
-        atype: tnp.ndarray,
-        box: tnp.ndarray,
-        fparam: tnp.ndarray,
-        aparam: tnp.ndarray,
-    ) -> dict[str, tnp.ndarray]:
+        coord: tf.Tensor,
+        atype: tf.Tensor,
+        box: tf.Tensor,
+        fparam: tf.Tensor,
+        aparam: tf.Tensor,
+    ) -> dict[str, tf.Tensor]:
         return make_call_whether_do_atomic_virial(True)(
             coord, atype, box, fparam, aparam
         )
@@ -175,12 +176,12 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         ],
     )
     def call_without_atomic_virial(
-        coord: tnp.ndarray,
-        atype: tnp.ndarray,
-        box: tnp.ndarray,
-        fparam: tnp.ndarray,
-        aparam: tnp.ndarray,
-    ) -> dict[str, tnp.ndarray]:
+        coord: tf.Tensor,
+        atype: tf.Tensor,
+        box: tf.Tensor,
+        fparam: tf.Tensor,
+        aparam: tf.Tensor,
+    ) -> dict[str, tf.Tensor]:
         return make_call_whether_do_atomic_virial(False)(
             coord, atype, box, fparam, aparam
         )

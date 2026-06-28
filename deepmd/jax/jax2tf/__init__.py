@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import tensorflow as tf
-import tensorflow.experimental.numpy as tnp
 
 if not tf.executing_eagerly():
     # TF disallow temporary eager execution
@@ -11,5 +10,3 @@ if not tf.executing_eagerly():
         "If you are converting a model between different backends, "
         "consider converting to the `.dp` format first."
     )
-
-tnp.experimental_enable_numpy_behavior()

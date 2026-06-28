@@ -17,7 +17,6 @@ if not tf.executing_eagerly():
 
 Array = xp.Array
 xp.ndarray = xp.Array
-jnp = xp
 
 
 def stop_gradient(value: Any) -> Any:
@@ -27,4 +26,4 @@ def stop_gradient(value: Any) -> Any:
     return xp.asarray(tf.stop_gradient(value))
 
 
-__all__ = ["Array", "jnp", "stop_gradient", "tf", "xp"]
+__all__ = ["Array", "stop_gradient", "tf", "xp"]

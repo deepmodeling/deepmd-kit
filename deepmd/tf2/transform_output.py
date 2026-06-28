@@ -1,6 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import tensorflow as tf
-import tensorflow.experimental.numpy as tnp
 
 from deepmd.dpmodel.output_def import (
     ModelOutputDef,
@@ -11,9 +10,9 @@ from deepmd.dpmodel.output_def import (
 
 
 def get_leading_dims(
-    vv: tnp.ndarray,
+    vv: tf.Tensor,
     vdef: OutputVariableDef,
-) -> tnp.ndarray:
+) -> tf.Tensor:
     """Get the dimensions of nf x nloc.
 
     Parameters
@@ -33,11 +32,11 @@ def get_leading_dims(
 
 
 def communicate_extended_output(
-    model_ret: dict[str, tnp.ndarray],
+    model_ret: dict[str, tf.Tensor],
     model_output_def: ModelOutputDef,
-    mapping: tnp.ndarray,  # nf x nloc
+    mapping: tf.Tensor,  # nf x nloc
     do_atomic_virial: bool = False,
-) -> dict[str, tnp.ndarray]:
+) -> dict[str, tf.Tensor]:
     """Transform the output of the model network defined on
     local and ghost (extended) atoms to local atoms.
 
@@ -113,7 +112,9 @@ def communicate_extended_output(
                             [tf.shape(virial)[:2], list(vdef.shape), [9]], axis=0
                         ),
                     )
-                    new_ret[kk_derv_c + "_redu"] = tnp.sum(new_ret[kk_derv_c], axis=1)
+                    new_ret[kk_derv_c + "_redu"] = tf.reduce_sum(
+                        new_ret[kk_derv_c], axis=1
+                    )
                 else:
                     new_ret[kk_derv_c] = None
                     new_ret[kk_derv_c + "_redu"] = None

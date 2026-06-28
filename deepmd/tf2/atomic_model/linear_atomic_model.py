@@ -13,8 +13,8 @@ from deepmd.tf2.common import (
     tf2_module,
 )
 from deepmd.tf2.env import (
-    jnp,
     stop_gradient,
+    xp,
 )
 
 
@@ -29,15 +29,15 @@ class DPZBLLinearEnergyAtomicModel(DPZBLLinearEnergyAtomicModelDP):
 
     def forward_common_atomic(
         self,
-        extended_coord: jnp.ndarray,
-        extended_atype: jnp.ndarray,
-        nlist: jnp.ndarray,
-        mapping: jnp.ndarray | None = None,
-        fparam: jnp.ndarray | None = None,
-        aparam: jnp.ndarray | None = None,
+        extended_coord: xp.ndarray,
+        extended_atype: xp.ndarray,
+        nlist: xp.ndarray,
+        mapping: xp.ndarray | None = None,
+        fparam: xp.ndarray | None = None,
+        aparam: xp.ndarray | None = None,
         comm_dict: dict | None = None,
-        charge_spin: jnp.ndarray | None = None,
-    ) -> dict[str, jnp.ndarray]:
+        charge_spin: xp.ndarray | None = None,
+    ) -> dict[str, xp.ndarray]:
         del comm_dict  # tf2 path has no MPI ghost exchange
         return super().forward_common_atomic(
             extended_coord,

@@ -57,11 +57,18 @@ def outer(x1: Array, x2: Array, /) -> Array:
 
 def cross(x1: Array, x2: Array, /, *, axis: int = -1) -> Array:
     x1_, x2_ = _promote_two(x1, x2)
-    if x1_.shape[axis] != 3 or x2_.shape[axis] != 3:
+    if (x1_.shape[axis] is not None and x1_.shape[axis] != 3) or (
+        x2_.shape[axis] is not None and x2_.shape[axis] != 3
+    ):
         raise ValueError("cross product axis must have size 3")
     x1_ = _moveaxis(x1_, axis, -1)
     x2_ = _moveaxis(x2_, axis, -1)
     shape = tf.broadcast_static_shape(x1_.shape, x2_.shape)
+    shape = (
+        tf.broadcast_dynamic_shape(tf.shape(x1_), tf.shape(x2_))
+        if not shape.is_fully_defined()
+        else shape
+    )
     x1_, x2_ = tf.broadcast_to(x1_, shape), tf.broadcast_to(x2_, shape)
     return _wrap(_moveaxis(tf.linalg.cross(x1_, x2_), -1, axis))
 

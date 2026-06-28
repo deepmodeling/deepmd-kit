@@ -3,7 +3,7 @@ from deepmd.dpmodel.fitting.make_base_fitting import (
     make_base_fitting,
 )
 from deepmd.tf2.env import (
-    jnp,
+    xp,
 )
 
-BaseFitting = make_base_fitting(jnp.ndarray)
+BaseFitting = make_base_fitting(xp.ndarray)

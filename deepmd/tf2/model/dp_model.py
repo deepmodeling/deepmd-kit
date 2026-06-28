@@ -11,18 +11,13 @@ from deepmd.tf2.atomic_model.dp_atomic_model import (
 from deepmd.tf2.common import (
     tf2_module,
     to_tensorflow_array,
-    to_tf_tensor,
 )
 from deepmd.tf2.env import (
-    jnp,
     stop_gradient,
+    xp,
 )
-from deepmd.tf2.format_nlist import format_nlist as tf2_format_nlist
 from deepmd.tf2.model.base_model import (
     forward_common_atomic,
-)
-from deepmd.tf2.nlist import (
-    nlist_distinguish_types,
 )
 
 
@@ -48,16 +43,16 @@ def make_tf2_dp_model_from_dpmodel(
     class tf2_model(dpmodel_model):
         def call_common(
             self,
-            coord: jnp.ndarray,
-            atype: jnp.ndarray,
-            box: jnp.ndarray | None = None,
-            fparam: jnp.ndarray | None = None,
-            aparam: jnp.ndarray | None = None,
+            coord: xp.ndarray,
+            atype: xp.ndarray,
+            box: xp.ndarray | None = None,
+            fparam: xp.ndarray | None = None,
+            aparam: xp.ndarray | None = None,
             do_atomic_virial: bool = False,
-            coord_corr_for_virial: jnp.ndarray | None = None,
-            charge_spin: jnp.ndarray | None = None,
+            coord_corr_for_virial: xp.ndarray | None = None,
+            charge_spin: xp.ndarray | None = None,
             neighbor_list: NeighborList | None = None,
-        ) -> dict[str, jnp.ndarray]:
+        ) -> dict[str, xp.ndarray]:
             return super().call_common(
                 to_tensorflow_array(coord),
                 to_tensorflow_array(atype),
@@ -72,17 +67,17 @@ def make_tf2_dp_model_from_dpmodel(
 
         def call_common_lower(
             self,
-            extended_coord: jnp.ndarray,
-            extended_atype: jnp.ndarray,
-            nlist: jnp.ndarray,
-            mapping: jnp.ndarray | None = None,
-            fparam: jnp.ndarray | None = None,
-            aparam: jnp.ndarray | None = None,
+            extended_coord: xp.ndarray,
+            extended_atype: xp.ndarray,
+            nlist: xp.ndarray,
+            mapping: xp.ndarray | None = None,
+            fparam: xp.ndarray | None = None,
+            aparam: xp.ndarray | None = None,
             do_atomic_virial: bool = False,
-            extended_coord_corr: jnp.ndarray | None = None,
+            extended_coord_corr: xp.ndarray | None = None,
             comm_dict: dict | None = None,
-            charge_spin: jnp.ndarray | None = None,
-        ) -> dict[str, jnp.ndarray]:
+            charge_spin: xp.ndarray | None = None,
+        ) -> dict[str, xp.ndarray]:
             return super().call_common_lower(
                 to_tensorflow_array(extended_coord),
                 to_tensorflow_array(extended_atype),
@@ -98,17 +93,17 @@ def make_tf2_dp_model_from_dpmodel(
 
         def forward_common_atomic(
             self,
-            extended_coord: jnp.ndarray,
-            extended_atype: jnp.ndarray,
-            nlist: jnp.ndarray,
-            mapping: jnp.ndarray | None = None,
-            fparam: jnp.ndarray | None = None,
-            aparam: jnp.ndarray | None = None,
+            extended_coord: xp.ndarray,
+            extended_atype: xp.ndarray,
+            nlist: xp.ndarray,
+            mapping: xp.ndarray | None = None,
+            fparam: xp.ndarray | None = None,
+            aparam: xp.ndarray | None = None,
             do_atomic_virial: bool = False,
-            extended_coord_corr: jnp.ndarray | None = None,
+            extended_coord_corr: xp.ndarray | None = None,
             comm_dict: dict | None = None,
-            charge_spin: jnp.ndarray | None = None,
-        ) -> dict[str, jnp.ndarray]:
+            charge_spin: xp.ndarray | None = None,
+        ) -> dict[str, xp.ndarray]:
             del comm_dict  # tf2 path has no MPI ghost exchange
             return forward_common_atomic(
                 self,
@@ -125,24 +120,17 @@ def make_tf2_dp_model_from_dpmodel(
 
         def format_nlist(
             self,
-            extended_coord: jnp.ndarray,
-            extended_atype: jnp.ndarray,
-            nlist: jnp.ndarray,
+            extended_coord: xp.ndarray,
+            extended_atype: xp.ndarray,
+            nlist: xp.ndarray,
             extra_nlist_sort: bool = False,
-        ) -> jnp.ndarray:
-            del extra_nlist_sort
-            ret = tf2_format_nlist(
-                to_tf_tensor(stop_gradient(extended_coord)),
-                to_tf_tensor(nlist),
-                sum(self.get_sel()),
-                self.get_rcut(),
+        ) -> xp.ndarray:
+            return dpmodel_model.format_nlist(
+                self,
+                stop_gradient(extended_coord),
+                extended_atype,
+                nlist,
+                extra_nlist_sort=extra_nlist_sort,
             )
-            if not self.mixed_types():
-                ret = nlist_distinguish_types(
-                    ret,
-                    to_tf_tensor(extended_atype),
-                    self.get_sel(),
-                )
-            return to_tensorflow_array(ret)
 
     return tf2_model

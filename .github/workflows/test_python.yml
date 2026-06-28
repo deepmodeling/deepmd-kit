@@ -66,10 +66,7 @@ jobs:
         run: |
           pytest --cov=deepmd --cov-append source/tests/consistent/io/test_io.py source/jax2tf_tests
           pytest --cov=deepmd --cov-append \
-            source/tests/consistent/test_array_api.py \
-            source/tests/consistent/model \
-            source/tests/consistent/descriptor \
-            source/tests/consistent/fitting \
+            source/tests/consistent \
             -k tf2
         env:
           NUM_WORKERS: 0
