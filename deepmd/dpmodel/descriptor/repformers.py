@@ -79,6 +79,21 @@ def xp_transpose_01342(x: Array) -> Array:
     return x
 
 
+def _statically_compatible_shape(
+    actual: tuple,
+    expected: tuple,
+) -> bool:
+    if len(actual) != len(expected):
+        return False
+    static_int = (int, np.integer)
+    return all(
+        not isinstance(actual_dim, static_int)
+        or not isinstance(expected_dim, static_int)
+        or actual_dim == expected_dim
+        for actual_dim, expected_dim in zip(actual, expected, strict=True)
+    )
+
+
 @DescriptorBlock.register("se_repformer")
 @DescriptorBlock.register("se_uni")
 class DescrptBlockRepformers(NativeOP, DescriptorBlock):
@@ -536,7 +551,7 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
         sw = xp.where(nlist_mask, sw, xp.zeros_like(sw))
         # nf x nloc x tebd_dim
         atype_embd = xp_take_first_n(atype_embd_ext, 1, nloc)
-        assert list(atype_embd.shape) == [nf, nloc, self.g1_dim]
+        assert _statically_compatible_shape(atype_embd.shape, (nf, nloc, self.g1_dim))
 
         g1 = self.act(atype_embd)
         # nf x nloc x nnei x 1,  nf x nloc x nnei x 3
@@ -1827,8 +1842,8 @@ class RepformerLayer(NativeOP):
         nf, nloc, nnei, _ = g2.shape
         # g1, _ = xp.split(g1_ext, [nloc], axis=1)
         g1 = xp_take_first_n(g1_ext, 1, nloc)
-        assert (nf, nloc) == g1.shape[:2]
-        assert (nf, nloc, nnei) == h2.shape[:3]
+        assert _statically_compatible_shape(g1.shape[:2], (nf, nloc))
+        assert _statically_compatible_shape(h2.shape[:3], (nf, nloc, nnei))
 
         g2_update: list[Array] = [g2]
         h2_update: list[Array] = [h2]
