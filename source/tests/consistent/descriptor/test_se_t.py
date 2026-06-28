@@ -17,6 +17,7 @@ from ..common import (
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
     INSTALLED_TF,
+    INSTALLED_TF2,
     CommonTest,
     parameterized,
 )
@@ -37,6 +38,10 @@ if INSTALLED_TF:
     from deepmd.tf.descriptor.se_t import DescrptSeT as DescrptSeTTF
 else:
     DescrptSeTTF = None
+if INSTALLED_TF2:
+    from deepmd.tf2.descriptor.se_t import DescrptSeT as DescrptSeTTF2
+else:
+    DescrptSeTTF2 = None
 if INSTALLED_JAX:
     from deepmd.jax.descriptor.se_t import DescrptSeT as DescrptSeTJAX
 else:
@@ -120,8 +125,10 @@ class TestSeT(CommonTest, DescriptorTest, unittest.TestCase):
 
     skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
     skip_jax = not INSTALLED_JAX
+    skip_tf2 = not INSTALLED_TF2
 
     tf_class = DescrptSeTTF
+    tf2_class = DescrptSeTTF2
     dp_class = DescrptSeTDP
     pt_class = DescrptSeTPT
     pt_expt_class = DescrptSeTPTExpt
@@ -204,6 +211,15 @@ class TestSeT(CommonTest, DescriptorTest, unittest.TestCase):
     def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
         return self.eval_pt_expt_descriptor(
             pt_expt_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
+    def eval_tf2(self, tf2_obj: Any) -> Any:
+        return self.eval_tf2_descriptor(
+            tf2_obj,
             self.natoms,
             self.coords,
             self.atype,

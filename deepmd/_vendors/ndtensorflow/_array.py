@@ -255,13 +255,7 @@ class Array(tf.experimental.ExtensionType):
         value_tensor = _value_to_tensor(value, dtype=self.dtype)
 
         if isinstance(key, tf.Tensor) and key.dtype == tf.bool:
-            self._replace_tensor(
-                tf.where(
-                    key,
-                    tf.broadcast_to(value_tensor, tf.shape(self._tensor)),
-                    self._tensor,
-                )
-            )
+            self._replace_tensor(_boolean_setitem(self._tensor, key, value_tensor))
             return
 
         variable = tf.Variable(self._tensor)
@@ -440,6 +434,44 @@ def _value_to_tensor(value: Any, dtype: tf.DType) -> tf.Tensor:
     if isinstance(value, Array):
         return tf.cast(value.unwrap(), dtype)
     return tf.convert_to_tensor(value, dtype=dtype)
+
+
+def _boolean_setitem(
+    tensor: tf.Tensor,
+    key: tf.Tensor,
+    value: tf.Tensor,
+) -> tf.Tensor:
+    rank = key.shape.rank
+    if rank is None:
+        raise IndexError("boolean index rank must be statically known")
+    if rank == 0:
+        return tf.where(key, tf.broadcast_to(value, tf.shape(tensor)), tensor)
+    tensor_rank = tensor.shape.rank
+    if tensor_rank is None:
+        raise IndexError("indexed array rank must be statically known")
+    if rank > tensor_rank:
+        raise IndexError("boolean index shape is incompatible with indexed array")
+    tensor_shape = tensor.shape.as_list()
+    key_shape = key.shape.as_list()
+    if any(
+        tensor_dim is not None and key_dim is not None and tensor_dim != key_dim
+        for tensor_dim, key_dim in zip(tensor_shape, key_shape)
+    ):
+        raise IndexError("boolean index shape is incompatible with indexed array")
+
+    shape_assert = tf.debugging.assert_equal(
+        tf.shape(key),
+        tf.shape(tensor)[:rank],
+        message="boolean index shape is incompatible with indexed array",
+    )
+    with tf.control_dependencies([shape_assert]):
+        indices = tf.where(key)
+        updates_shape = tf.concat(
+            [[tf.shape(indices)[0]], tf.shape(tensor)[rank:]],
+            axis=0,
+        )
+        updates = tf.broadcast_to(value, updates_shape)
+        return tf.tensor_scatter_nd_update(tensor, indices, updates)
 
 
 def _binary_forward(name: str) -> Callable[[Array, Any], Array]:

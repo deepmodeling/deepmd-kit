@@ -520,7 +520,10 @@ class TestEnerStat(CommonTest, FittingTest, unittest.TestCase):
     def skip_pd(self) -> bool:
         return not INSTALLED_PD
 
+    skip_tf2 = not INSTALLED_TF2
+
     tf_class = EnerFittingTF
+    tf2_class = EnerFittingTF2
     dp_class = EnerFittingDP
     pt_class = EnerFittingPT
     pt_expt_class = EnerFittingPTExpt
@@ -707,6 +710,38 @@ class TestEnerStat(CommonTest, FittingTest, unittest.TestCase):
             fparam=self.fparam,
             aparam=self.aparam,
         )["energy"]
+
+    def eval_tf2(self, tf2_obj: Any) -> Any:
+        (
+            resnet_dt,
+            precision,
+            mixed_types,
+            (numb_fparam, default_fparam),
+            (numb_aparam, use_aparam_as_mask),
+            atom_ener,
+        ) = self.param
+        tf2_stat_data = [
+            {
+                "fparam": to_tensorflow_array(d["fparam"]),
+                "aparam": to_tensorflow_array(d["aparam"]),
+                "find_fparam": d["find_fparam"],
+                "find_aparam": d["find_aparam"],
+            }
+            for d in self.stat_data
+        ]
+        tf2_obj.compute_input_stats(tf2_stat_data, protection=1e-2)
+        return to_numpy_array(
+            tf2_obj(
+                to_tensorflow_array(self.inputs),
+                to_tensorflow_array(self.atype.reshape(1, -1)),
+                fparam=to_tensorflow_array(self.fparam)
+                if self.fparam is not None
+                else None,
+                aparam=to_tensorflow_array(self.aparam)
+                if self.aparam is not None
+                else None,
+            )["energy"]
+        )
 
     def eval_jax(self, jax_obj: Any) -> Any:
         (
