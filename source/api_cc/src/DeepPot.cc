@@ -564,6 +564,40 @@ template void DeepPot::compute_mixed_type<float>(
     const std::vector<float>& aparam,
     const std::vector<double>& charge_spin);
 
+void DeepPot::compute_edges_gpu(double* d_atom_energy,
+                                double* d_force,
+                                double* d_atom_virial,
+                                const double* d_coord,
+                                const int* d_atype,
+                                const int* d_edge_index,
+                                const double* d_edge_vec,
+                                const int nloc,
+                                const int nedge) {
+#if defined(BUILD_PYTORCH) && BUILD_PT_EXPT
+  deepmd::DeepPotPTExpt* expt = dynamic_cast<deepmd::DeepPotPTExpt*>(dp.get());
+  if (expt == nullptr) {
+    throw deepmd::deepmd_exception(
+        "compute_edges_gpu is only available for the PyTorch Exportable (.pt2) "
+        "backend.");
+  }
+  expt->compute_edges_gpu(d_atom_energy, d_force, d_atom_virial, d_coord,
+                          d_atype, d_edge_index, d_edge_vec, nloc, nedge);
+#else
+  (void)d_atom_energy;
+  (void)d_force;
+  (void)d_atom_virial;
+  (void)d_coord;
+  (void)d_atype;
+  (void)d_edge_index;
+  (void)d_edge_vec;
+  (void)nloc;
+  (void)nedge;
+  throw deepmd::deepmd_exception(
+      "compute_edges_gpu requires the PyTorch Exportable backend, which is not "
+      "built.");
+#endif
+}
+
 int DeepPot::dim_chg_spin() const { return dp->dim_chg_spin(); }
 
 DeepPotModelDevi::DeepPotModelDevi() {

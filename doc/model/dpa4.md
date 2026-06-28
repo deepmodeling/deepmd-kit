@@ -298,6 +298,7 @@ equivalent input-file option used during training validation:
 | -------------------- | --------------------------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `DP_COMPILE_INFER`   | `validating.compiled_infer` | off           | Use the compile path for evaluation/inference. Same `torch==2.11` / CUDA ≥ 12.6 requirements as `model.use_compile`.                                                                                                              |
 | `DP_TF32_INFER`      | `validating.tf32_infer`     | `0` (highest) | float32 matmul precision for inference: `0` highest, `1` high, `2` medium. Higher values improve throughput but make the potential energy surface less smooth.                                                                    |
+| `DP_AMP_INFER`       | `validating.amp_infer`      | off           | bf16 autocast inside the descriptor interaction blocks for inference when `descriptor.use_amp=true`. Usually keeps aggregate MAE similar but can make the potential energy surface less smooth.                                   |
 | `DP_TRITON_INFER`    | —                           | off           | Fused block-diagonal Triton kernels for the SO(2) Wigner-D rotation (CUDA eval only). Lower latency and peak memory, numerically equivalent to the dense path with full float32 accumulation. Compatible with `DP_COMPILE_INFER`. |
 
 Accepted boolean values are `1`/`true`/`yes`/`on` and `0`/`false`/`no`/`off`.
@@ -306,17 +307,19 @@ written in the input; they are read when the model is constructed and changing
 them afterward has no effect.
 
 For molecular dynamics and other workflows sensitive to the smoothness of the
-potential energy surface, keep `DP_TF32_INFER=0`. `DP_TRITON_INFER=1` retains
-full float32 accumulation regardless of `DP_TF32_INFER` and is therefore safe
-for those workflows.
+potential energy surface, keep `DP_TF32_INFER=0` and `DP_AMP_INFER=0`.
+`DP_AMP_INFER` can coexist with `DP_TF32_INFER`, but bf16 autocast dominates
+the eligible operations it covers, so TF32 usually adds little extra throughput
+there. `DP_TRITON_INFER=1` retains full float32 accumulation regardless of the
+precision policy and is therefore safe for those workflows.
 
 :::{important}
 Set these variables **before** running `dp --pt freeze`. The exported `.pt2` is
-an AOTInductor artifact, so the SO(2) rotation branch (`DP_TRITON_INFER`) and
-the matmul precision (`DP_TF32_INFER`) are captured into the graph at export
-time and are **not** re-evaluated when the `.pt2` is later loaded by ASE or
-LAMMPS. A frozen `.pt2` runs a forward-only package, so training-time
-memory-saving switches do not apply to it.
+an AOTInductor artifact, so the SO(2) rotation branch (`DP_TRITON_INFER`), the
+matmul precision (`DP_TF32_INFER`), and inference AMP (`DP_AMP_INFER`) are
+captured into the graph at export time and are **not** re-evaluated when the
+`.pt2` is later loaded by ASE or LAMMPS. A frozen `.pt2` runs a forward-only
+package, so training-time memory-saving switches do not apply to it.
 :::
 
 ### Hardware selection

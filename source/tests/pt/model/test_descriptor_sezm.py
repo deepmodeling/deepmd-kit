@@ -1,7 +1,14 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 import itertools
 import math
+import os
 import unittest
+from contextlib import (
+    nullcontext,
+)
+from unittest import (
+    mock,
+)
 
 import torch
 
@@ -159,6 +166,37 @@ class TestDescrptSeZM(_SeZMTestCase):
         self.assertIsNotNone(extended_coord.grad)
         self.assertTrue(torch.all(torch.isfinite(extended_coord.grad)))
         return model
+
+    def test_amp_infer_env_controls_eval_autocast(self) -> None:
+        """Inference AMP is sampled from env and still gated by ``use_amp``."""
+        with mock.patch.dict(os.environ, {"DP_AMP_INFER": "1"}, clear=False):
+            enabled_model = DescrptSeZM(**_descriptor_kwargs(use_amp=True))
+            disabled_model = DescrptSeZM(**_descriptor_kwargs(use_amp=False))
+
+        enabled_model.eval()
+        disabled_model.eval()
+
+        with mock.patch("torch.autocast", return_value=nullcontext()) as autocast_mock:
+            with enabled_model._compute_mode_ctx(torch.device("cuda")):
+                pass
+        autocast_mock.assert_called_once_with(
+            device_type="cuda",
+            dtype=torch.bfloat16,
+            enabled=True,
+        )
+
+        with mock.patch("torch.autocast", return_value=nullcontext()) as autocast_mock:
+            with disabled_model._compute_mode_ctx(torch.device("cuda")):
+                pass
+        autocast_mock.assert_not_called()
+
+        with mock.patch.dict(os.environ, {"DP_AMP_INFER": "0"}, clear=False):
+            default_model = DescrptSeZM(**_descriptor_kwargs(use_amp=True))
+        default_model.eval()
+        with mock.patch("torch.autocast", return_value=nullcontext()) as autocast_mock:
+            with default_model._compute_mode_ctx(torch.device("cuda")):
+                pass
+        autocast_mock.assert_not_called()
 
     def test_cartesian_config_wiring(self) -> None:
         """Each Cartesian/mixing config builds the intended submodules.

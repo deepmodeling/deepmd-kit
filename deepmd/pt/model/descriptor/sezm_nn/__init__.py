@@ -119,6 +119,7 @@ from .utils import (
     nvtx_range,
     safe_norm,
     safe_numpy_to_tensor,
+    use_amp_infer,
 )
 from .wignerd import (
     WignerDCalculator,
@@ -214,4 +215,5 @@ __all__ = [
     "segment_envelope_gated_softmax",
     "so3_packed_index",
     "strip_lora_from_extra_state",
+    "use_amp_infer",
 ]

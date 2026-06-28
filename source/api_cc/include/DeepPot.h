@@ -664,6 +664,36 @@ class DeepPot : public DeepBaseModel {
       const std::vector<double>& charge_spin = std::vector<double>());
   /** @} */
 
+  /**
+   * @brief Fully device-resident edge inference for single-domain SeZM/DPA4.
+   *
+   * Forwards to the PyTorch Exportable (.pt2) backend's GPU edge path; raising
+   * if the active backend is not ``DeepPotPTExpt``.  All pointers reference GPU
+   * memory on the model's device.  See
+   * ``DeepPotPTExpt::compute_edges_gpu`` for the edge contract.  This signature
+   * is intentionally torch-free so MD-engine call sites need no PyTorch
+   * headers.
+   *
+   * @param[out] d_atom_energy Per-atom energy, GPU [nloc].
+   * @param[out] d_force Per-atom force, GPU [nloc * 3] row-major.
+   * @param[out] d_atom_virial Per-atom virial, GPU [nloc * 9] row-major.
+   * @param[in] d_coord Local coordinates, GPU [nloc * 3] row-major.
+   * @param[in] d_atype Local atom types, GPU [nloc].
+   * @param[in] d_edge_index Local edge graph, GPU [2 * nedge].
+   * @param[in] d_edge_vec Minimum-image bond vectors, GPU [nedge * 3].
+   * @param[in] nloc Number of local atoms.
+   * @param[in] nedge Number of physical edges.
+   */
+  void compute_edges_gpu(double* d_atom_energy,
+                         double* d_force,
+                         double* d_atom_virial,
+                         const double* d_coord,
+                         const int* d_atype,
+                         const int* d_edge_index,
+                         const double* d_edge_vec,
+                         const int nloc,
+                         const int nedge);
+
   int dim_chg_spin() const;
 
  protected:

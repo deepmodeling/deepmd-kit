@@ -100,6 +100,7 @@ from .sezm_nn import (
     nvtx_range,
     safe_norm,
     safe_numpy_to_tensor,
+    use_amp_infer,
 )
 
 if TYPE_CHECKING:
@@ -370,7 +371,8 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         FFN always keeps this user-provided value.
     use_amp
         If True, use automatic mixed precision (AMP) with bfloat16 on CUDA
-        during training. This can improve speed and reduce memory usage.
+        during training. In eval/inference, AMP is opt-in through
+        ``DP_AMP_INFER``. This can improve speed and reduce memory usage.
         Enabling this option is recommended on GPUs with native bfloat16 support.
         Disable it on GPUs without native bfloat16 support to avoid runtime
         errors or additional conversion overhead.
@@ -593,7 +595,8 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         self.compute_dtype = get_promoted_dtype(self.dtype)
         self.mlp_bias = bool(mlp_bias)
         self.layer_scale = bool(layer_scale)
-        self.use_amp = bool(use_amp)  # and self.training
+        self.use_amp = bool(use_amp)
+        self.use_amp_infer = use_amp_infer()
         self.trainable = bool(trainable)
         self.seed = seed
         self.random_gamma = bool(random_gamma)
@@ -1964,21 +1967,28 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
 
         Notes
         -----
-        - When `use_amp=True` and the model is in training mode, enables
-          torch.autocast with bfloat16 on CUDA. This can improve speed and
-          reduce memory usage on GPUs with native bfloat16 support.
+        - When `use_amp=True`, enables torch.autocast with bfloat16 on CUDA
+          during training. Eval/inference enables the same autocast region only
+          when ``DP_AMP_INFER`` was truthy at construction time.
+          This can improve speed and reduce memory usage on GPUs with native
+          bfloat16 support.
           Disable AMP on GPUs without native bfloat16 support to avoid runtime
           errors or additional conversion overhead.
         - Only affects autocast-eligible operations.
-        - Does nothing during inference (`self.training=False`), on non-CUDA
-          devices, or when `use_amp=False`.
+        - Does nothing during inference (`self.training=False`) unless
+          ``DP_AMP_INFER`` is enabled, on non-CUDA devices, or when
+          `use_amp=False`.
 
         Yields
         ------
         None
             Runs the wrapped region under the configured AMP setting.
         """
-        if not self.use_amp or device.type != "cuda" or not self.training:
+        if (
+            not self.use_amp
+            or device.type != "cuda"
+            or (not self.training and not self.use_amp_infer)
+        ):
             yield
             return
 

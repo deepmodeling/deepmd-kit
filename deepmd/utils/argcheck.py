@@ -5616,6 +5616,15 @@ def validating_args() -> Argument:
         "precedence over this option. This does not affect training forwards, "
         "which are controlled by `model.enable_tf32`."
     )
+    doc_amp_infer = (
+        "Whether to enable bf16 automatic mixed precision for eval-time forwards "
+        "(including regular validation and full validation). When `true`, this "
+        "flag is translated into `DP_AMP_INFER=1` at trainer startup before any "
+        "model is constructed. A manually exported `DP_AMP_INFER` takes "
+        "precedence over this option. This only affects SeZM/DPA4 descriptors "
+        "with `descriptor.use_amp=true`; training AMP remains controlled by "
+        "`descriptor.use_amp`."
+    )
     args = [
         Argument(
             "full_validation",
@@ -5704,6 +5713,13 @@ def validating_args() -> Argument:
             optional=True,
             default=False,
             doc=doc_only_pt_supported + doc_tf32_infer,
+        ),
+        Argument(
+            "amp_infer",
+            bool,
+            optional=True,
+            default=False,
+            doc=doc_only_pt_supported + doc_amp_infer,
         ),
     ]
     return Argument(

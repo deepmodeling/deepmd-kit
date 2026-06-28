@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 
 ATTN_RES_MODES = ("none", "independent", "dependent")
 
-_TRITON_INFER_TRUE = ("1", "true", "yes", "on")
+_INFER_TRUE = ("1", "true", "yes", "on")
 
 
 def use_triton_infer() -> bool:
@@ -51,7 +51,23 @@ def use_triton_infer() -> bool:
     bool
         ``True`` when ``DP_TRITON_INFER`` is set to a truthy value.
     """
-    return os.environ.get("DP_TRITON_INFER", "0").strip().lower() in _TRITON_INFER_TRUE
+    return os.environ.get("DP_TRITON_INFER", "0").strip().lower() in _INFER_TRUE
+
+
+def use_amp_infer() -> bool:
+    """Return whether bf16 autocast is enabled for inference.
+
+    The flag is controlled by the ``DP_AMP_INFER`` environment variable and is
+    read at module construction time. It only affects inference when the
+    descriptor's ``use_amp`` option is also enabled; training follows
+    ``use_amp`` regardless of this environment variable.
+
+    Returns
+    -------
+    bool
+        ``True`` when ``DP_AMP_INFER`` is set to a truthy value.
+    """
+    return os.environ.get("DP_AMP_INFER", "0").strip().lower() in _INFER_TRUE
 
 
 def init_trunc_normal_fan_in_out(

@@ -450,6 +450,15 @@ class TestValidationHelpers(unittest.TestCase):
 
 
 class TestValidationArgcheck(unittest.TestCase):
+    def test_normalize_accepts_amp_infer(self) -> None:
+        config = _make_single_task_config()
+        normalized = normalize(config)
+        self.assertFalse(normalized["validating"]["amp_infer"])
+
+        config["validating"]["amp_infer"] = True
+        normalized = normalize(config)
+        self.assertTrue(normalized["validating"]["amp_infer"])
+
     def test_normalize_rejects_missing_validation_data(self) -> None:
         config = _make_single_task_config()
         del config["training"]["validation_data"]

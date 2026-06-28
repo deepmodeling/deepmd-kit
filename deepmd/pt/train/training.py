@@ -195,6 +195,8 @@ class Trainer:
             infer_env_defaults["DP_COMPILE_INFER"] = "1"
         if bool(validating_params.get("tf32_infer", False)):
             infer_env_defaults["DP_TF32_INFER"] = "1"
+        if bool(validating_params.get("amp_infer", False)):
+            infer_env_defaults["DP_AMP_INFER"] = "1"
         self.multi_task = "model_dict" in model_params
         self.finetune_links = finetune_links
         self.finetune_update_stat = False
