@@ -20,6 +20,9 @@ from deepmd.dpmodel.descriptor.se_r import (
 from deepmd.dpmodel.entrypoints.compress import (
     enable_compression,
 )
+from deepmd.dpmodel.model.base_model import (
+    BaseModel,
+)
 from deepmd.dpmodel.model.model import (
     get_model,
 )
@@ -173,15 +176,17 @@ class TestDPModelCompression(unittest.TestCase):
             expected.shape[-1],
         )
 
-        np.testing.assert_allclose(actual[0], expected, atol=1e-12)
+        np.testing.assert_allclose(actual[0], expected, rtol=0.0, atol=1e-12)
         np.testing.assert_allclose(
             actual[0, 1] - actual[0, 0],
             0.5 * self._poly5_grad(coeff[0], 0.0),
+            rtol=0.0,
             atol=1e-12,
         )
         np.testing.assert_allclose(
             actual[0, 5] - actual[0, 4],
             0.5 * self._poly5_grad(coeff[-1], 1.0),
+            rtol=0.0,
             atol=1e-12,
         )
 
@@ -201,7 +206,7 @@ class TestDPModelCompression(unittest.TestCase):
             expected.shape[-1],
         )
 
-        np.testing.assert_allclose(actual, expected_out, atol=1e-12)
+        np.testing.assert_allclose(actual, expected_out, rtol=0.0, atol=1e-12)
 
     def test_tabulate_fusion_se_atten_c1_extrapolates_outside_table(self) -> None:
         table, _, table_info, xx, expected = self._make_c1_tabulation_case()
@@ -234,7 +239,7 @@ class TestDPModelCompression(unittest.TestCase):
             expected.shape[-1],
         )
 
-        np.testing.assert_allclose(actual, expected_out, atol=1e-12)
+        np.testing.assert_allclose(actual, expected_out, rtol=0.0, atol=1e-12)
 
     def test_se_e2_a_enable_compression(self) -> None:
         for type_one_side, exclude_types in (
@@ -268,10 +273,10 @@ class TestDPModelCompression(unittest.TestCase):
                         self.assertIsNone(reloaded_item)
                     else:
                         np.testing.assert_allclose(
-                            actual_item, expected_item, atol=1e-10
+                            actual_item, expected_item, rtol=0.0, atol=1e-10
                         )
                         np.testing.assert_allclose(
-                            reloaded_item, expected_item, atol=1e-10
+                            reloaded_item, expected_item, rtol=0.0, atol=1e-10
                         )
 
     def test_se_e2_r_enable_compression(self) -> None:
@@ -304,8 +309,12 @@ class TestDPModelCompression(unittest.TestCase):
                 self.assertIsNone(actual_item)
                 self.assertIsNone(reloaded_item)
             else:
-                np.testing.assert_allclose(actual_item, expected_item, atol=1e-10)
-                np.testing.assert_allclose(reloaded_item, expected_item, atol=1e-10)
+                np.testing.assert_allclose(
+                    actual_item, expected_item, rtol=0.0, atol=1e-10
+                )
+                np.testing.assert_allclose(
+                    reloaded_item, expected_item, rtol=0.0, atol=1e-10
+                )
 
     def test_se_atten_enable_compression(self) -> None:
         descriptor = DescrptDPA1(
@@ -343,8 +352,12 @@ class TestDPModelCompression(unittest.TestCase):
                 self.assertIsNone(actual_item)
                 self.assertIsNone(reloaded_item)
             else:
-                np.testing.assert_allclose(actual_item, expected_item, atol=1e-10)
-                np.testing.assert_allclose(reloaded_item, expected_item, atol=1e-10)
+                np.testing.assert_allclose(
+                    actual_item, expected_item, rtol=0.0, atol=1e-10
+                )
+                np.testing.assert_allclose(
+                    reloaded_item, expected_item, rtol=0.0, atol=1e-10
+                )
 
     def test_dpmodel_compress_entrypoint(self) -> None:
         model_data = {
@@ -372,6 +385,7 @@ class TestDPModelCompression(unittest.TestCase):
         }
         model = get_model(model_data)
         model.min_nbor_dist = 1.0
+        expected_output = model.call(self.coord, self.atype)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             input_file = Path(tmpdir) / "model.dp"
@@ -398,6 +412,14 @@ class TestDPModelCompression(unittest.TestCase):
             self.assertEqual(descriptor["@version"], 3)
             self.assertIn("compress", descriptor)
             self.assertEqual(compressed["min_nbor_dist"], 1.0)
+
+            reloaded_model = BaseModel.deserialize(copy.deepcopy(compressed["model"]))
+            actual_output = reloaded_model.call(self.coord, self.atype)
+            self.assertEqual(actual_output.keys(), expected_output.keys())
+            for key, expected_value in expected_output.items():
+                np.testing.assert_allclose(
+                    actual_output[key], expected_value, rtol=0.0, atol=1e-10
+                )
 
 
 if __name__ == "__main__":
