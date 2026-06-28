@@ -2,16 +2,22 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Local training utilities for the JAX backend."""
 
+import functools
 import logging
 import os
 import platform
 import shutil
-import time
+from collections.abc import (
+    Mapping,
+)
+from copy import (
+    deepcopy,
+)
 from pathlib import (
     Path,
 )
 from typing import (
-    TextIO,
+    Any,
 )
 
 import numpy as np
@@ -27,6 +33,15 @@ from deepmd.dpmodel.loss.ener import (
 from deepmd.dpmodel.model.transform_output import (
     communicate_extended_output,
 )
+from deepmd.dpmodel.train import (
+    DEFAULT_TASK_KEY,
+    AbstractTrainer,
+    RankContext,
+    TrainerConfig,
+    TrainingTask,
+    TrainingTaskCollection,
+    TrainStepResult,
+)
 from deepmd.dpmodel.utils.learning_rate import (
     LearningRateExp,
 )
@@ -37,8 +52,12 @@ from deepmd.dpmodel.utils.nlist import (
 from deepmd.dpmodel.utils.region import (
     normalize_coord,
 )
+from deepmd.dpmodel.utils.training_utils import (
+    resolve_model_prob,
+)
 from deepmd.jax.env import (
     flax_version,
+    jax,
     jnp,
     nnx,
 )
@@ -51,15 +70,14 @@ from deepmd.jax.model.model import (
 from deepmd.jax.utils.serialization import (
     serialize_from_file,
 )
-from deepmd.loggers.training import (
-    format_training_message,
-    format_training_message_per_task,
-)
 from deepmd.utils.data import (
     DataRequirementItem,
 )
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
+)
+from deepmd.utils.finetune import (
+    warn_configuration_mismatch_during_finetune,
 )
 from deepmd.utils.model_stat import (
     make_stat_input,
@@ -68,7 +86,7 @@ from deepmd.utils.model_stat import (
 log = logging.getLogger(__name__)
 
 
-class DPTrainer:
+class DPTrainer(AbstractTrainer):
     """Train JAX DeePMD models on local devices."""
 
     def __init__(
@@ -76,52 +94,88 @@ class DPTrainer:
         jdata: dict,
         init_model: str | None = None,
         restart: str | None = None,
+        finetune_model: str | None = None,
+        finetune_links: dict[str, Any] | None = None,
     ) -> None:
         """Initialize the trainer from input data and optional checkpoints."""
+        if finetune_model is not None and (
+            init_model is not None or restart is not None
+        ):
+            raise ValueError(
+                "finetune_model cannot be combined with init_model or restart."
+            )
         self.init_model = init_model
         self.restart = restart
-        self.model_def_script = jdata["model"]
-        self.start_step = 0
-        if self.init_model is not None:
-            model_dict = serialize_from_file(self.init_model)
-            self.model = BaseModel.deserialize(model_dict["model"])
-        elif self.restart is not None:
-            model_dict = serialize_from_file(self.restart)
-            self.model = BaseModel.deserialize(model_dict["model"])
-            self.start_step = model_dict.get("model_def_script", {}).get(
-                "current_step",
-                model_dict.get("@variables", {}).get("current_step", 0),
-            )
-        else:
-            # from scratch
-            self.model = get_model(jdata["model"])
+        self.finetune_model = finetune_model
+        self.finetune_links = finetune_links
+        self.restart_training = restart is not None
         self.training_param = jdata["training"]
         self.num_steps = self.training_param["numb_steps"]
+        self.start_step = 0
 
-        def get_lr_and_coef(lr_param: dict) -> LearningRateExp:
-            lr_type = lr_param.get("type", "exp")
-            if lr_type == "exp":
-                lr = LearningRateExp(
-                    **lr_param,
-                    num_steps=self.num_steps,
+        self.model_def_script = jdata["model"]
+        self.multi_task = "model_dict" in self.model_def_script
+        self.model_keys = (
+            list(self.model_def_script["model_dict"])
+            if self.multi_task
+            else [DEFAULT_TASK_KEY]
+        )
+        self.model_params_by_task = self._model_params_by_task(self.model_def_script)
+
+        if init_model is not None or restart is not None:
+            checkpoint_path = init_model if init_model is not None else restart
+            assert checkpoint_path is not None
+            checkpoint_data = serialize_from_file(checkpoint_path)
+            checkpoint_multi_task = "model_dict" in checkpoint_data["model_def_script"]
+            if checkpoint_multi_task != self.multi_task:
+                raise ValueError(
+                    "JAX init/restart checkpoint task layout does not match input config."
                 )
-            else:
-                raise RuntimeError("unknown learning_rate type " + lr_type)
-            return lr
+            checkpoint_keys = list(
+                checkpoint_data["model_def_script"].get(
+                    "model_dict", {DEFAULT_TASK_KEY: None}
+                )
+            )
+            if checkpoint_keys != self.model_keys:
+                raise ValueError(
+                    "JAX init/restart checkpoint task keys do not match input config."
+                )
+            self.models = self._deserialize_models(checkpoint_data)
+            self.model_def_script = checkpoint_data["model_def_script"]
+            self.model_params_by_task = self._model_params_by_task(
+                self.model_def_script
+            )
+            if restart is not None:
+                self.start_step = int(
+                    checkpoint_data.get("model_def_script", {}).get(
+                        "current_step",
+                        checkpoint_data.get("@variables", {}).get("current_step", 0),
+                    )
+                )
+        else:
+            self.models = {
+                model_key: get_model(deepcopy(self.model_params_by_task[model_key]))
+                for model_key in self.model_keys
+            }
+        self.model = self.models if self.multi_task else self.models[DEFAULT_TASK_KEY]
 
         learning_rate_param = jdata["learning_rate"]
-        self.lr = get_lr_and_coef(learning_rate_param)
-        loss_param = jdata.get("loss", {})
-        loss_param["starter_learning_rate"] = learning_rate_param["start_lr"]
+        self.lr = self._get_lr_and_coef(learning_rate_param)
+        self.losses = self._build_losses(jdata, learning_rate_param)
+        self.loss = self.losses if self.multi_task else self.losses[DEFAULT_TASK_KEY]
+        self.data_requirements_by_task = {
+            model_key: list(self.losses[model_key].label_requirement)
+            for model_key in self.model_keys
+        }
 
-        loss_type = loss_param.get("type", "ener")
-        if loss_type == "ener":
-            self.loss = EnergyLoss.get_loss(loss_param)
-        else:
-            raise RuntimeError("unknown loss type " + loss_type)
+        self.valid_numb_batch_by_task = self._valid_numb_batch_by_task()
+        self.valid_numb_batch = (
+            self.valid_numb_batch_by_task
+            if self.multi_task
+            else self.valid_numb_batch_by_task[DEFAULT_TASK_KEY]
+        )
 
-        # training
-        tr_data = jdata["training"]
+        tr_data = self.training_param
         self.disp_file = tr_data.get("disp_file", "lcurve.out")
         self.disp_freq = tr_data.get("disp_freq", 1000)
         self.save_freq = tr_data.get("save_freq", 1000)
@@ -139,49 +193,315 @@ class DPTrainer:
         self.change_bias_after_training = tr_data.get(
             "change_bias_after_training", False
         )
-        self.numb_fparam = self.model.get_dim_fparam()
+        self.numb_fparam = (
+            {key: model.get_dim_fparam() for key, model in self.models.items()}
+            if self.multi_task
+            else self.models[DEFAULT_TASK_KEY].get_dim_fparam()
+        )
 
-        if tr_data.get("validation_data", None) is not None:
-            self.valid_numb_batch = max(
-                tr_data["validation_data"].get("numb_btch", 1),
-                1,
-            )
-        else:
-            self.valid_numb_batch = 1
-
-        # if init the graph with the frozen model
         self.frz_model = None
         self.ckpt_meta = None
         self.model_type = None
+        self.optimizers: dict[str, nnx.Optimizer] = {}
+        self.optimizer: nnx.Optimizer | None = None
+        self._train_step_impls: dict[str, Any] = {}
+        self._loss_fn_more_loss: dict[str, Any] = {}
+        self._sample_funcs: dict[str, Any] = {}
+        self.model_prob: np.ndarray | None = None
+
+        super().__init__(
+            TrainerConfig.from_training_params(
+                tr_data,
+                num_steps=self.num_steps,
+                start_step=self.start_step,
+                restart_training=self.restart is not None,
+            ),
+            rank_context=RankContext(
+                rank=int(jax.process_index()),
+                world_size=int(jax.process_count()),
+            ),
+        )
+
+    @staticmethod
+    def _model_params_by_task(
+        model_params: dict[str, Any],
+    ) -> dict[str, dict[str, Any]]:
+        if "model_dict" in model_params:
+            return {
+                model_key: model_params["model_dict"][model_key]
+                for model_key in model_params["model_dict"]
+            }
+        return {DEFAULT_TASK_KEY: model_params}
+
+    @staticmethod
+    def _deserialize_models(model_data: dict[str, Any]) -> dict[str, BaseModel]:
+        if "model_dict" in model_data["model_def_script"]:
+            return {
+                model_key: BaseModel.deserialize(
+                    model_data["model"]["model_dict"][model_key]
+                )
+                for model_key in model_data["model_def_script"]["model_dict"]
+            }
+        return {DEFAULT_TASK_KEY: BaseModel.deserialize(model_data["model"])}
+
+    def _get_lr_and_coef(self, lr_param: dict[str, Any]) -> LearningRateExp:
+        lr_type = lr_param.get("type", "exp")
+        if lr_type == "exp":
+            return LearningRateExp(**lr_param, num_steps=self.num_steps)
+        raise RuntimeError("unknown learning_rate type " + lr_type)
+
+    def _build_losses(
+        self,
+        jdata: dict[str, Any],
+        learning_rate_param: dict[str, Any],
+    ) -> dict[str, EnergyLoss]:
+        losses: dict[str, EnergyLoss] = {}
+        for model_key in self.model_keys:
+            loss_param = deepcopy(
+                jdata["loss_dict"][model_key]
+                if self.multi_task
+                else jdata.get("loss", {})
+            )
+            loss_param["starter_learning_rate"] = learning_rate_param["start_lr"]
+            loss_type = loss_param.get("type", "ener")
+            if loss_type != "ener":
+                raise RuntimeError("unknown loss type " + loss_type)
+            losses[model_key] = EnergyLoss.get_loss(loss_param)
+        return losses
+
+    def _valid_numb_batch_by_task(self) -> dict[str, int]:
+        result: dict[str, int] = {}
+        for model_key in self.model_keys:
+            if self.multi_task:
+                valid_params = (
+                    self.training_param["data_dict"][model_key].get(
+                        "validation_data", {}
+                    )
+                    or {}
+                )
+            else:
+                valid_params = self.training_param.get("validation_data", {}) or {}
+            result[model_key] = max(int(valid_params.get("numb_btch", 1)), 1)
+        return result
 
     @property
     def data_requirements(self) -> list[DataRequirementItem]:
-        """Labels required by the configured loss."""
-        return self.loss.label_requirement
+        """Labels required by the configured loss for single-task callers."""
+        return self.data_requirements_by_task[DEFAULT_TASK_KEY]
+
+    def set_min_nbor_dist(
+        self,
+        min_nbor_dist: float | Mapping[str, float | None] | None,
+    ) -> None:
+        """Attach neighbor-stat minimum distances to task models."""
+        if min_nbor_dist is None:
+            return
+        if isinstance(min_nbor_dist, Mapping):
+            for model_key, value in min_nbor_dist.items():
+                if value is not None and model_key in self.models:
+                    self.models[model_key].min_nbor_dist = value
+            return
+        self.models[DEFAULT_TASK_KEY].min_nbor_dist = min_nbor_dist
 
     def train(
-        self, train_data: DeepmdDataSystem, valid_data: DeepmdDataSystem | None = None
+        self,
+        train_data: DeepmdDataSystem | Mapping[str, DeepmdDataSystem],
+        valid_data: DeepmdDataSystem
+        | Mapping[str, DeepmdDataSystem | None]
+        | None = None,
     ) -> None:
         """Run the training loop with optional validation data."""
-        model = self.model
-        tx = optax.adam(
-            learning_rate=lambda step: self.lr.value(self.start_step + step),
+        train_data_by_task = self._normalize_data_map(train_data)
+        valid_data_by_task = self._normalize_data_map(valid_data, optional=True)
+        self._setup_training(train_data_by_task, valid_data_by_task)
+        tasks = TrainingTaskCollection(
+            [
+                TrainingTask(
+                    key=model_key,
+                    training_data=train_data_by_task[model_key],
+                    validation_data=valid_data_by_task[model_key],
+                    valid_numb_batch=self.valid_numb_batch_by_task[model_key],
+                    data_requirements=self.data_requirements_by_task[model_key],
+                )
+                for model_key in self.model_keys
+            ],
+            probabilities=self.model_prob,
         )
-        optimizer = nnx.Optimizer(model, tx, wrt=nnx.Param)
+        self.run(tasks)
 
-        # data stat
+    def _normalize_data_map(
+        self,
+        data: Any,
+        *,
+        optional: bool = False,
+    ) -> dict[str, Any]:
+        if isinstance(data, Mapping):
+            return {model_key: data.get(model_key) for model_key in self.model_keys}
+        if optional and data is None:
+            return dict.fromkeys(self.model_keys)
+        return {DEFAULT_TASK_KEY: data}
+
+    def _setup_training(
+        self,
+        train_data_by_task: Mapping[str, DeepmdDataSystem],
+        valid_data_by_task: Mapping[str, DeepmdDataSystem | None],
+    ) -> None:
+        """Initialize statistics, fine-tuning, optimizers, and JIT functions."""
+        for model_key in self.model_keys:
+            train_data_by_task[model_key].add_data_requirements(
+                self.data_requirements_by_task[model_key]
+            )
+            if valid_data_by_task[model_key] is not None:
+                valid_data_by_task[model_key].add_data_requirements(
+                    self.data_requirements_by_task[model_key]
+                )
+
+        if self.multi_task:
+            self.model_prob = resolve_model_prob(
+                self.model_keys,
+                self.training_param.get("model_prob"),
+                dict(train_data_by_task),
+            )
+
+        for model_key in self.model_keys:
+            self._sample_funcs[model_key] = self._make_sample_func(
+                train_data_by_task[model_key],
+                self.model_params_by_task[model_key].get("data_stat_nbatch", 10),
+            )
+
         if self.init_model is None and self.restart is None:
-            data_stat_nbatch = self.model_def_script.get("data_stat_nbatch", 10)
+            for model_key in self.model_keys:
+                finetune_has_new_type = (
+                    self.finetune_model is not None
+                    and self.finetune_links is not None
+                    and model_key in self.finetune_links
+                    and self.finetune_links[model_key].get_has_new_type()
+                )
+                if self.finetune_model is None or finetune_has_new_type:
+                    self.models[model_key].atomic_model.compute_or_load_stat(
+                        self._sample_funcs[model_key]
+                    )
+
+        if self.finetune_model is not None:
+            self._apply_finetune()
+
+        for model_key in self.model_keys:
+            tx = optax.adam(
+                learning_rate=lambda step: self.lr.value(self.start_step + step),
+            )
+            self.optimizers[model_key] = nnx.Optimizer(
+                self.models[model_key], tx, wrt=nnx.Param
+            )
+            (
+                self._train_step_impls[model_key],
+                self._loss_fn_more_loss[model_key],
+            ) = self._make_step_functions(self.losses[model_key])
+        self.optimizer = (
+            self.optimizers[DEFAULT_TASK_KEY] if not self.multi_task else None
+        )
+        self.model = self.models if self.multi_task else self.models[DEFAULT_TASK_KEY]
+
+    @staticmethod
+    def _make_sample_func(
+        train_data: DeepmdDataSystem,
+        data_stat_nbatch: int,
+    ) -> Any:
+        @functools.lru_cache
+        def sample() -> list[dict[str, Any]]:
             stat_data = make_stat_input(train_data, data_stat_nbatch)
-            stat_data_jax = [
+            return [
                 {
-                    kk: jnp.asarray(vv) if isinstance(vv, np.ndarray) else vv
-                    for kk, vv in single_data.items()
+                    key: jnp.asarray(value) if isinstance(value, np.ndarray) else value
+                    for key, value in single_data.items()
                 }
                 for single_data in stat_data
             ]
-            model.atomic_model.compute_or_load_stat(lambda: stat_data_jax)
 
+        return sample
+
+    def _apply_finetune(self) -> None:
+        if self.finetune_model is None or self.finetune_links is None:
+            return
+        pretrained_data = serialize_from_file(self.finetune_model)
+        pretrained_params = pretrained_data["model_def_script"]
+        pretrained_models = self._deserialize_models(pretrained_data)
+        for model_key in self.model_keys:
+            finetune_rule = self.finetune_links[model_key]
+            source_key = finetune_rule.get_model_branch()
+            if source_key not in pretrained_models:
+                raise ValueError(
+                    f"Pretrained model branch {source_key!r} is not available."
+                )
+            source_model = pretrained_models[source_key]
+            if finetune_rule.get_finetune_tmap() != source_model.get_type_map():
+                model_with_new_type_stat = (
+                    self.models[model_key] if finetune_rule.get_has_new_type() else None
+                )
+                source_model.change_type_map(
+                    finetune_rule.get_finetune_tmap(),
+                    model_with_new_type_stat=model_with_new_type_stat,
+                )
+            self._warn_finetune_config_mismatch(
+                model_key, source_key, pretrained_params
+            )
+            self.models[model_key] = self._copy_finetune_state(
+                self.models[model_key],
+                source_model,
+                random_fitting=finetune_rule.get_random_fitting(),
+            )
+            if finetune_rule.get_resuming():
+                log.info("Model branch %s will resume training.", model_key)
+                continue
+            bias_mode = (
+                "change-by-statistic"
+                if not finetune_rule.get_random_fitting()
+                else "set-by-statistic"
+            )
+            self.models[model_key].change_out_bias(
+                self._sample_funcs[model_key],
+                bias_adjust_mode=bias_mode,
+            )
+
+    def _warn_finetune_config_mismatch(
+        self,
+        model_key: str,
+        source_key: str,
+        pretrained_params: dict[str, Any],
+    ) -> None:
+        input_model_params = self.model_params_by_task[model_key]
+        branch_pretrained_params = (
+            pretrained_params["model_dict"][source_key]
+            if "model_dict" in pretrained_params
+            else pretrained_params
+        )
+        if (
+            "descriptor" in input_model_params
+            and "descriptor" in branch_pretrained_params
+        ):
+            warn_configuration_mismatch_during_finetune(
+                input_model_params["descriptor"],
+                branch_pretrained_params["descriptor"],
+                source_key,
+            )
+
+    @staticmethod
+    def _copy_finetune_state(
+        target_model: BaseModel,
+        source_model: BaseModel,
+        *,
+        random_fitting: bool,
+    ) -> BaseModel:
+        graphdef, target_state = nnx.split(target_model)
+        _, source_state = nnx.split(source_model)
+        copied = _copy_matching_state_tree(
+            target_state.to_pure_dict(),
+            source_state.to_pure_dict(),
+            random_fitting=random_fitting,
+        )
+        target_state.replace_by_pure_dict(copied)
+        return nnx.merge(graphdef, target_state)
+
+    def _make_step_functions(self, loss_obj: EnergyLoss) -> tuple[Any, Any]:
         def loss_fn(
             model: BaseModel,
             lr: float,
@@ -193,25 +513,10 @@ class DPTrainer:
             fp: jnp.ndarray | None,
             ap: jnp.ndarray | None,
         ) -> jnp.ndarray:
-            model_dict_lower = model.call_common_lower(
-                extended_coord,
-                extended_atype,
-                nlist,
-                mapping,
-                fp,
-                ap,
+            model_dict = _evaluate_model_dict(
+                model, extended_coord, extended_atype, nlist, mapping, fp, ap
             )
-            model_dict = communicate_extended_output(
-                model_dict_lower,
-                model.model_output_def(),
-                mapping,
-                do_atomic_virial=False,
-            )
-            model_dict["atom_energy"] = model_dict["energy"]
-            model_dict["energy"] = model_dict["energy_redu"]
-            model_dict["force"] = model_dict["energy_derv_r"].squeeze(-2)
-            model_dict["virial"] = model_dict["energy_derv_c_redu"].squeeze(-2)
-            loss, more_loss = self.loss(
+            loss, _ = loss_obj(
                 learning_rate=lr,
                 natoms=label_dict["type"].shape[1],
                 model_dict=model_dict,
@@ -231,25 +536,10 @@ class DPTrainer:
             fp: jnp.ndarray | None,
             ap: jnp.ndarray | None,
         ) -> dict[str, jnp.ndarray]:
-            model_dict_lower = model.call_common_lower(
-                extended_coord,
-                extended_atype,
-                nlist,
-                mapping,
-                fp,
-                ap,
+            model_dict = _evaluate_model_dict(
+                model, extended_coord, extended_atype, nlist, mapping, fp, ap
             )
-            model_dict = communicate_extended_output(
-                model_dict_lower,
-                model.model_output_def(),
-                mapping,
-                do_atomic_virial=False,
-            )
-            model_dict["atom_energy"] = model_dict["energy"]
-            model_dict["energy"] = model_dict["energy_redu"]
-            model_dict["force"] = model_dict["energy_derv_r"].squeeze(-2)
-            model_dict["virial"] = model_dict["energy_derv_c_redu"].squeeze(-2)
-            loss, more_loss = self.loss(
+            _, more_loss = loss_obj(
                 learning_rate=lr,
                 natoms=label_dict["type"].shape[1],
                 model_dict=model_dict,
@@ -286,123 +576,145 @@ class DPTrainer:
             else:
                 optimizer.update(grads)
 
-        start_time = time.time()
-        disp_path = Path(self.disp_file)
-        disp_mode = "a" if self.start_step > 0 and disp_path.exists() else "w"
-        with open(disp_path, disp_mode) as disp_file_fp:
-            for step in range(self.start_step, self.num_steps):
-                batch_data = train_data.get_batch()
-                # numpy to jax
-                jax_data = convert_numpy_data_to_jax_data(batch_data)
-                extended_coord, extended_atype, nlist, mapping, fp, ap = prepare_input(
-                    rcut=model.get_rcut(),
-                    sel=model.get_sel(),
-                    coord=jax_data["coord"],
-                    atype=jax_data["type"],
-                    box=jax_data["box"] if jax_data["find_box"] else None,
-                    fparam=jax_data.get("fparam", None),
-                    aparam=jax_data.get("aparam", None),
-                )
-                train_step(
-                    model,
-                    optimizer,
-                    self.lr.value(step),
-                    jax_data,
-                    extended_coord,
-                    extended_atype,
-                    nlist,
-                    mapping,
-                    fp,
-                    ap,
-                )
-                if self.display_in_training and (
-                    step == 0 or (step + 1) % self.disp_freq == 0
-                ):
-                    wall_time = time.time() - start_time
-                    log.info(
-                        format_training_message(
-                            batch=step + 1,
-                            wall_time=wall_time,
-                        )
-                    )
-                    more_loss = loss_fn_more_loss(
-                        model,
-                        self.lr.value(step),
-                        jax_data,
-                        extended_coord,
-                        extended_atype,
-                        nlist,
-                        mapping,
-                        fp,
-                        ap,
-                    )
-                    if valid_data is not None:
-                        valid_more_loss_list = []
-                        for _ in range(self.valid_numb_batch):
-                            valid_batch_data = valid_data.get_batch()
-                            jax_valid_data = convert_numpy_data_to_jax_data(
-                                valid_batch_data
-                            )
-                            extended_coord, extended_atype, nlist, mapping, fp, ap = (
-                                prepare_input(
-                                    rcut=model.get_rcut(),
-                                    sel=model.get_sel(),
-                                    coord=jax_valid_data["coord"],
-                                    atype=jax_valid_data["type"],
-                                    box=jax_valid_data["box"]
-                                    if jax_valid_data["find_box"]
-                                    else None,
-                                    fparam=jax_valid_data.get("fparam", None),
-                                    aparam=jax_valid_data.get("aparam", None),
-                                )
-                            )
-                            valid_more_loss_list.append(
-                                loss_fn_more_loss(
-                                    model,
-                                    self.lr.value(step),
-                                    jax_valid_data,
-                                    extended_coord,
-                                    extended_atype,
-                                    nlist,
-                                    mapping,
-                                    fp,
-                                    ap,
-                                )
-                            )
-                        valid_more_loss = {
-                            key: sum(loss[key] for loss in valid_more_loss_list)
-                            / len(valid_more_loss_list)
-                            for key in valid_more_loss_list[0]
-                        }
-                    else:
-                        valid_more_loss = None
-                    if disp_file_fp.tell() == 0:
-                        self.print_header(
-                            disp_file_fp,
-                            train_results=more_loss,
-                            valid_results=valid_more_loss,
-                        )
-                    self.print_on_training(
-                        disp_file_fp,
-                        train_results=more_loss,
-                        valid_results=valid_more_loss,
-                        cur_batch=step + 1,
-                        cur_lr=self.lr.value(step),
-                    )
-                    start_time = time.time()
-                if (step + 1) % self.save_freq == 0:
-                    self._save_checkpoint(model, step + 1)
-        if self.num_steps > self.start_step and self.num_steps % self.save_freq != 0:
-            self._save_checkpoint(model, self.num_steps)
+        return train_step, loss_fn_more_loss
 
-    def _save_checkpoint(self, model: BaseModel, step: int) -> None:
+    def select_task(self, tasks: TrainingTaskCollection) -> TrainingTask:
+        """Select a task using DeePMD's seeded random helper."""
+        if len(tasks) == 1:
+            return tasks[tasks.keys[0]]
+        from deepmd.utils import random as dp_random
+
+        model_index = dp_random.choice(
+            np.arange(len(tasks), dtype=np.int_),
+            p=tasks.probabilities,
+        )
+        return tasks[tasks.keys[int(model_index)]]
+
+    def train_step(self, task: TrainingTask, step: int) -> TrainStepResult:
+        """Run one JAX optimizer step."""
+        task_key = task.key
+        if task_key not in self.optimizers or task_key not in self._train_step_impls:
+            raise RuntimeError("JAX trainer has not been initialized.")
+        prepared = self._prepare_batch(task.training_data.get_batch(), task_key)
+        self._train_step_impls[task_key](
+            self.models[task_key],
+            self.optimizers[task_key],
+            self.lr.value(step),
+            *prepared,
+        )
+        return TrainStepResult(task_key=task_key, step=step, payload=prepared)
+
+    def evaluate_training(
+        self,
+        task: TrainingTask,
+        step: int,
+        step_result: TrainStepResult | None,
+    ) -> dict[str, float]:
+        """Evaluate training loss terms for display."""
+        prepared = (
+            step_result.payload
+            if step_result is not None and step_result.task_key == task.key
+            else self._prepare_batch(task.training_data.get_batch(), task.key)
+        )
+        return self._evaluate_prepared_batch(task.key, step, prepared)
+
+    def evaluate_validation(
+        self,
+        task: TrainingTask,
+        step: int,
+        step_result: TrainStepResult | None,
+    ) -> dict[str, float] | None:
+        """Evaluate validation loss terms for display."""
+        if task.validation_data is None:
+            return None
+        valid_more_loss_list = [
+            self._evaluate_prepared_batch(
+                task.key,
+                step,
+                self._prepare_batch(task.validation_data.get_batch(), task.key),
+            )
+            for _ in range(task.valid_numb_batch)
+        ]
+        return {
+            key: sum(loss[key] for loss in valid_more_loss_list)
+            / len(valid_more_loss_list)
+            for key in valid_more_loss_list[0]
+        }
+
+    def learning_rate(self, step: int) -> float:
+        """Return the configured learning rate for a zero-based step."""
+        return float(self.lr.value(step))
+
+    def save_checkpoint(self, step: int) -> None:
+        """Persist a JAX checkpoint for a one-based step."""
+        self._save_checkpoint(step)
+
+    def _prepare_batch(
+        self,
+        batch_data: dict[str, np.ndarray | np.floating],
+        task_key: str,
+    ) -> tuple[
+        dict[str, jnp.ndarray | bool],
+        jnp.ndarray,
+        jnp.ndarray,
+        jnp.ndarray,
+        jnp.ndarray | None,
+        jnp.ndarray | None,
+        jnp.ndarray | None,
+    ]:
+        """Convert one data-system batch into JAX model inputs."""
+        model = self.models[task_key]
+        jax_data = convert_numpy_data_to_jax_data(batch_data)
+        extended_coord, extended_atype, nlist, mapping, fp, ap = prepare_input(
+            rcut=model.get_rcut(),
+            sel=model.get_sel(),
+            coord=jax_data["coord"],
+            atype=jax_data["type"],
+            box=jax_data["box"] if jax_data["find_box"] else None,
+            fparam=jax_data.get("fparam", None),
+            aparam=jax_data.get("aparam", None),
+        )
+        return jax_data, extended_coord, extended_atype, nlist, mapping, fp, ap
+
+    def _evaluate_prepared_batch(
+        self,
+        task_key: str,
+        step: int,
+        prepared: tuple[
+            dict[str, jnp.ndarray | bool],
+            jnp.ndarray,
+            jnp.ndarray,
+            jnp.ndarray,
+            jnp.ndarray | None,
+            jnp.ndarray | None,
+            jnp.ndarray | None,
+        ],
+    ) -> dict[str, float]:
+        if task_key not in self._loss_fn_more_loss:
+            raise RuntimeError("JAX trainer has not been initialized.")
+        more_loss = self._loss_fn_more_loss[task_key](
+            self.models[task_key],
+            self.lr.value(step),
+            *prepared,
+        )
+        return {key: float(value) for key, value in more_loss.items()}
+
+    def _save_checkpoint(self, step: int) -> None:
         """Save a JAX checkpoint and update the stable checkpoint pointer."""
-        _, state = nnx.split(model)
+        if self.multi_task:
+            state = {
+                "models": {
+                    model_key: nnx.split(model)[1].to_pure_dict()
+                    for model_key, model in self.models.items()
+                }
+            }
+        else:
+            _, single_state = nnx.split(self.models[DEFAULT_TASK_KEY])
+            state = single_state.to_pure_dict()
         ckpt_path = Path(f"{self.save_ckpt}-{step}.jax")
         if ckpt_path.is_dir():
-            # remove old checkpoint if it exists
             shutil.rmtree(ckpt_path)
-        model_def_script_cpy = self.model_def_script.copy()
+        model_def_script_cpy = deepcopy(self.model_def_script)
         model_def_script_cpy["current_step"] = step
         with ocp.Checkpointer(
             ocp.CompositeCheckpointHandler("state", "model_def_script")
@@ -410,7 +722,7 @@ class DPTrainer:
             checkpointer.save(
                 ckpt_path.absolute(),
                 ocp.args.Composite(
-                    state=ocp.args.StandardSave(state.to_pure_dict()),
+                    state=ocp.args.StandardSave(state),
                     model_def_script=ocp.args.JsonSave(model_def_script_cpy),
                 ),
             )
@@ -436,68 +748,76 @@ class DPTrainer:
         for _, path in sorted(checkpoints)[: -self.max_ckpt_keep]:
             shutil.rmtree(path)
 
-    @staticmethod
-    def print_on_training(
-        fp: TextIO,
-        train_results: dict[str, float],
-        valid_results: dict[str, float] | None,
-        cur_batch: int,
-        cur_lr: float,
-    ) -> None:
-        """Append one training/validation loss row to the learning-curve file."""
-        print_str = ""
-        print_str += f"{cur_batch:7d}"
-        if valid_results is not None:
-            prop_fmt = "   %11.2e %11.2e"
-            for k in valid_results.keys():
-                # assert k in train_results.keys()
-                print_str += prop_fmt % (valid_results[k], train_results[k])
-        else:
-            prop_fmt = "   %11.2e"
-            for k in train_results.keys():
-                print_str += prop_fmt % (train_results[k])
-        print_str += f"   {cur_lr:8.1e}\n"
-        log.info(
-            format_training_message_per_task(
-                batch=cur_batch,
-                task_name="trn",
-                rmse=train_results,
-                learning_rate=cur_lr,
-            )
-        )
-        if valid_results is not None:
-            log.info(
-                format_training_message_per_task(
-                    batch=cur_batch,
-                    task_name="val",
-                    rmse=valid_results,
-                    learning_rate=None,
-                )
-            )
-        fp.write(print_str)
-        fp.flush()
 
-    @staticmethod
-    def print_header(
-        fp: TextIO,
-        train_results: dict[str, float],
-        valid_results: dict[str, float] | None,
-    ) -> None:
-        """Write the learning-curve header for the configured loss terms."""
-        print_str = ""
-        print_str += "# {:5s}".format("step")
-        if valid_results is not None:
-            prop_fmt = "   %11s %11s"
-            for k in train_results.keys():
-                print_str += prop_fmt % (k + "_val", k + "_trn")
-        else:
-            prop_fmt = "   %11s"
-            for k in train_results.keys():
-                print_str += prop_fmt % (k + "_trn")
-        print_str += "   {:8s}\n".format("lr")
-        print_str += "# If there is no available reference data, rmse_*_{val,trn} will print nan\n"
-        fp.write(print_str)
-        fp.flush()
+def _evaluate_model_dict(
+    model: BaseModel,
+    extended_coord: jnp.ndarray,
+    extended_atype: jnp.ndarray,
+    nlist: jnp.ndarray,
+    mapping: jnp.ndarray | None,
+    fp: jnp.ndarray | None,
+    ap: jnp.ndarray | None,
+) -> dict[str, jnp.ndarray]:
+    model_dict_lower = model.call_common_lower(
+        extended_coord,
+        extended_atype,
+        nlist,
+        mapping,
+        fp,
+        ap,
+    )
+    model_dict = communicate_extended_output(
+        model_dict_lower,
+        model.model_output_def(),
+        mapping,
+        do_atomic_virial=False,
+    )
+    model_dict["atom_energy"] = model_dict["energy"]
+    model_dict["energy"] = model_dict["energy_redu"]
+    model_dict["force"] = model_dict["energy_derv_r"].squeeze(-2)
+    model_dict["virial"] = model_dict["energy_derv_c_redu"].squeeze(-2)
+    return model_dict
+
+
+def _copy_matching_state_tree(
+    target: Any,
+    source: Any,
+    *,
+    random_fitting: bool,
+    path: tuple[Any, ...] = (),
+) -> Any:
+    if isinstance(target, dict):
+        if not isinstance(source, dict):
+            return target
+        return {
+            key: _copy_matching_state_tree(
+                value,
+                source.get(key),
+                random_fitting=random_fitting,
+                path=(*path, key),
+            )
+            for key, value in target.items()
+        }
+    if source is None:
+        return target
+    if random_fitting and not any("descriptor" in str(part) for part in path):
+        return target
+    if _same_state_leaf(target, source):
+        return source
+    return target
+
+
+def _same_state_leaf(target: Any, source: Any) -> bool:
+    target_shape = getattr(target, "shape", None)
+    source_shape = getattr(source, "shape", None)
+    target_dtype = getattr(target, "dtype", None)
+    source_dtype = getattr(source, "dtype", None)
+    return (
+        target_shape is not None
+        and source_shape is not None
+        and target_shape == source_shape
+        and target_dtype == source_dtype
+    )
 
 
 def _link_checkpoint(source: Path, target: Path) -> None:

@@ -6,9 +6,9 @@ pt backend's ``DpLoaderSet`` + ``DataLoader``.  NumPy batches are
 converted to torch tensors at the boundary.
 """
 
-import datetime
 import functools
 import logging
+import os
 import time
 from copy import (
     deepcopy,
@@ -27,16 +27,21 @@ import torch.distributed as dist
 from deepmd.dpmodel.common import (
     to_numpy_array,
 )
+from deepmd.dpmodel.train import (
+    DEFAULT_TASK_KEY,
+    AbstractTrainer,
+    RankContext,
+    TrainerConfig,
+    TrainingTask,
+    TrainingTaskCollection,
+    TrainStepResult,
+)
 from deepmd.dpmodel.utils.batch import (
     normalize_batch,
     split_batch,
 )
 from deepmd.dpmodel.utils.learning_rate import (
     LearningRateExp,
-)
-from deepmd.loggers.training import (
-    format_training_message,
-    format_training_message_per_task,
 )
 from deepmd.pt.utils.compile_compat import next_safe_prime as _next_safe_prime
 from deepmd.pt.utils.compile_compat import rebuild_graph_module as _rebuild_graph_module
@@ -267,6 +272,26 @@ def get_additional_data_requirement(_model: Any) -> list[DataRequirementItem]:
             )
         )
     return additional_data_requirement
+
+
+def _as_task_map(
+    value: Any,
+    *,
+    multi_task: bool,
+    model_keys: list[str],
+) -> dict[str, Any]:
+    """Return a task-keyed mapping, wrapping single-task values as Default."""
+    if multi_task:
+        return {model_key: value[model_key] for model_key in model_keys}
+    return {DEFAULT_TASK_KEY: value}
+
+
+def _replace_latest_checkpoint_link(latest: Path, ckpt_path: Path) -> None:
+    """Point latest to ckpt_path using a target relative to latest's directory."""
+    if latest.is_symlink() or latest.exists():
+        latest.unlink()
+    latest.parent.mkdir(parents=True, exist_ok=True)
+    latest.symlink_to(os.path.relpath(ckpt_path, latest.parent))
 
 
 # ---------------------------------------------------------------------------
@@ -757,7 +782,7 @@ class _CompiledModel(torch.nn.Module):
 # ---------------------------------------------------------------------------
 
 
-class Trainer:
+class Trainer(AbstractTrainer):
     """Training driver for the pt_expt backend.
 
     Uses ``DeepmdDataSystem`` for data loading (numpy batches converted
@@ -807,12 +832,35 @@ class Trainer:
         model_params = config["model"]
         training_params = config["training"]
 
-        # Multi-task detection
+        # Task normalization --------------------------------------------------
         self.multi_task = "model_dict" in model_params
         self.model_keys = (
-            list(model_params["model_dict"]) if self.multi_task else ["Default"]
+            list(model_params["model_dict"]) if self.multi_task else [DEFAULT_TASK_KEY]
         )
         self.num_model = len(self.model_keys)
+        self.model_params_by_task = (
+            {
+                model_key: model_params["model_dict"][model_key]
+                for model_key in self.model_keys
+            }
+            if self.multi_task
+            else {DEFAULT_TASK_KEY: model_params}
+        )
+        self.training_data_by_task = _as_task_map(
+            training_data,
+            multi_task=self.multi_task,
+            model_keys=self.model_keys,
+        )
+        self.validation_data_by_task = _as_task_map(
+            validation_data,
+            multi_task=self.multi_task,
+            model_keys=self.model_keys,
+        )
+        self.stat_file_path_by_task = _as_task_map(
+            stat_file_path,
+            multi_task=self.multi_task,
+            model_keys=self.model_keys,
+        )
 
         # Distributed training detection
         self.is_distributed = dist.is_available() and dist.is_initialized()
@@ -825,127 +873,110 @@ class Trainer:
         self.disp_freq = training_params.get("disp_freq", 1000)
         self.save_ckpt = training_params.get("save_ckpt", "model.ckpt")
         self.save_freq = training_params.get("save_freq", 1000)
+        self.max_ckpt_keep = int(training_params.get("max_ckpt_keep", 5))
         self.display_in_training = training_params.get("disp_training", True)
         self.timing_in_training = training_params.get("time_training", True)
-        self.lcurve_should_print_header = True
 
         # Model ---------------------------------------------------------------
-        if not self.multi_task:
-            self.model = get_model(deepcopy(model_params)).to(DEVICE)
-        else:
-            self.model = {}
-            do_case_embd, case_embd_index = _get_case_embd_config(model_params)
-            for model_key in self.model_keys:
-                self.model[model_key] = get_model(
-                    deepcopy(model_params["model_dict"][model_key])
-                ).to(DEVICE)
-                if do_case_embd and not resuming:
-                    self.model[model_key].set_case_embd(case_embd_index[model_key])
+        self.models: dict[str, torch.nn.Module] = {}
+        do_case_embd, case_embd_index = (
+            _get_case_embd_config(model_params) if self.multi_task else (False, {})
+        )
+        for model_key in self.model_keys:
+            self.models[model_key] = get_model(
+                deepcopy(self.model_params_by_task[model_key])
+            ).to(DEVICE)
+            if do_case_embd and not resuming:
+                self.models[model_key].set_case_embd(case_embd_index[model_key])
+        self.model = self.models if self.multi_task else self.models[DEFAULT_TASK_KEY]
 
         # Loss ----------------------------------------------------------------
-        if not self.multi_task:
-            self.loss = get_loss(
-                config.get("loss", {}),
-                config["learning_rate"]["start_lr"],
-                len(model_params["type_map"]),
-                self.model,
+        self.losses: dict[str, EnergyLoss] = {}
+        for model_key in self.model_keys:
+            loss_param = (
+                config["loss_dict"][model_key]
+                if self.multi_task
+                else config.get("loss", {})
             )
-        else:
-            self.loss = {}
-            for model_key in self.model_keys:
-                loss_param = config["loss_dict"][model_key]
-                lr_param = config["learning_rate"]["start_lr"]
-                ntypes = len(model_params["model_dict"][model_key]["type_map"])
-                self.loss[model_key] = get_loss(
-                    loss_param, lr_param, ntypes, self.model[model_key]
-                )
+            self.losses[model_key] = get_loss(
+                deepcopy(loss_param),
+                config["learning_rate"]["start_lr"],
+                len(self.model_params_by_task[model_key]["type_map"]),
+                self.models[model_key],
+            )
+        self.loss = self.losses if self.multi_task else self.losses[DEFAULT_TASK_KEY]
 
         # Data requirements ---------------------------------------------------
-        if not self.multi_task:
-            data_requirement = self.loss.label_requirement
-            data_requirement += get_additional_data_requirement(self.model)
-            training_data.add_data_requirements(data_requirement)
-            if validation_data is not None:
-                validation_data.add_data_requirements(data_requirement)
-
-            self.training_data = training_data
-            self.validation_data = validation_data
-            self.valid_numb_batch = training_params.get("validation_data", {}).get(
-                "numb_btch", 1
+        self.valid_numb_batch_by_task: dict[str, int] = {}
+        for model_key in self.model_keys:
+            data_requirement = list(self.losses[model_key].label_requirement)
+            data_requirement += get_additional_data_requirement(self.models[model_key])
+            self.training_data_by_task[model_key].add_data_requirements(
+                data_requirement
             )
-        else:
-            self.training_data = {}
-            self.validation_data = {}
-            self.valid_numb_batch = {}
-            for model_key in self.model_keys:
-                data_requirement = self.loss[model_key].label_requirement
-                data_requirement += get_additional_data_requirement(
-                    self.model[model_key]
+            if self.validation_data_by_task[model_key] is not None:
+                self.validation_data_by_task[model_key].add_data_requirements(
+                    data_requirement
                 )
-                training_data[model_key].add_data_requirements(data_requirement)
-                if validation_data[model_key] is not None:
-                    validation_data[model_key].add_data_requirements(data_requirement)
-                self.training_data[model_key] = training_data[model_key]
-                self.validation_data[model_key] = validation_data[model_key]
-                self.valid_numb_batch[model_key] = (
-                    training_params["data_dict"][model_key]
-                    .get("validation_data", {})
-                    .get("numb_btch", 1)
+            if self.multi_task:
+                valid_params = (
+                    training_params["data_dict"][model_key].get("validation_data", {})
+                    or {}
                 )
+            else:
+                valid_params = training_params.get("validation_data", {}) or {}
+            self.valid_numb_batch_by_task[model_key] = max(
+                int(valid_params.get("numb_btch", 1)),
+                1,
+            )
+        self.training_data = (
+            self.training_data_by_task
+            if self.multi_task
+            else self.training_data_by_task[DEFAULT_TASK_KEY]
+        )
+        self.validation_data = (
+            self.validation_data_by_task
+            if self.multi_task
+            else self.validation_data_by_task[DEFAULT_TASK_KEY]
+        )
+        self.valid_numb_batch = (
+            self.valid_numb_batch_by_task
+            if self.multi_task
+            else self.valid_numb_batch_by_task[DEFAULT_TASK_KEY]
+        )
 
         # Statistics ----------------------------------------------------------
-        if not self.multi_task:
-            data_stat_nbatch = model_params.get("data_stat_nbatch", 10)
+        self._finetune_update_stat = False
+        self._sample_funcs: dict[str, Any] = {}
+        for model_key in self.model_keys:
+            _nbatch = self.model_params_by_task[model_key].get("data_stat_nbatch", 10)
+            _data = self.training_data_by_task[model_key]
+            _stat_path = self.stat_file_path_by_task[model_key]
 
             @functools.lru_cache
-            def get_sample() -> list[dict[str, np.ndarray]]:
-                return make_stat_input(training_data, data_stat_nbatch)
+            def _make_sample(
+                _d: DeepmdDataSystem = _data, _n: int = _nbatch
+            ) -> list[dict[str, np.ndarray]]:
+                return make_stat_input(_d, _n)
 
-            finetune_has_new_type = (
+            self._sample_funcs[model_key] = _make_sample
+
+            _finetune_has_new_type = (
                 finetune_model is not None
                 and finetune_links is not None
-                and finetune_links["Default"].get_has_new_type()
+                and model_key in finetune_links
+                and finetune_links[model_key].get_has_new_type()
             )
-            if (not resuming or finetune_has_new_type) and self.rank == 0:
-                self.model.compute_or_load_stat(
-                    sampled_func=get_sample,
-                    stat_file_path=stat_file_path,
+            if _finetune_has_new_type:
+                self._finetune_update_stat = True
+            if (not resuming or _finetune_has_new_type) and self.rank == 0:
+                self.models[model_key].compute_or_load_stat(
+                    sampled_func=_make_sample,
+                    stat_file_path=_stat_path,
                 )
-            if self.is_distributed:
-                self._broadcast_model_stat(self.model)
-        else:
-            self._finetune_update_stat = False
-            self._sample_funcs: dict[str, Any] = {}
+        if self.is_distributed:
             for model_key in self.model_keys:
-                _nbatch = model_params["model_dict"][model_key].get(
-                    "data_stat_nbatch", 10
-                )
-                _data = training_data[model_key]
-                _stat_path = stat_file_path[model_key] if stat_file_path else None
-
-                def _make_sample(
-                    _d: DeepmdDataSystem = _data, _n: int = _nbatch
-                ) -> list[dict[str, np.ndarray]]:
-                    return make_stat_input(_d, _n)
-
-                self._sample_funcs[model_key] = _make_sample
-
-                _finetune_has_new_type = (
-                    finetune_model is not None
-                    and finetune_links is not None
-                    and model_key in finetune_links
-                    and finetune_links[model_key].get_has_new_type()
-                )
-                if _finetune_has_new_type:
-                    self._finetune_update_stat = True
-                if (not resuming or _finetune_has_new_type) and self.rank == 0:
-                    self.model[model_key].compute_or_load_stat(
-                        sampled_func=_make_sample,
-                        stat_file_path=_stat_path,
-                    )
-            if self.is_distributed:
-                for model_key in self.model_keys:
-                    self._broadcast_model_stat(self.model[model_key])
+                self._broadcast_model_stat(self.models[model_key])
 
         # Model probability (multi-task) --------------------------------------
         if self.multi_task:
@@ -956,7 +987,7 @@ class Trainer:
             self.model_prob = resolve_model_prob(
                 self.model_keys,
                 training_params.get("model_prob"),
-                training_data,
+                self.training_data_by_task,
             )
         else:
             self.model_prob = None
@@ -1180,39 +1211,29 @@ class Trainer:
                 self._unwrapped.load_state_dict(new_state)
 
                 # Per-branch bias adjustment (rank 0 only, then broadcast)
-                if not self.multi_task:
-                    finetune_rule = finetune_links["Default"]
+                for model_key in self.model_keys:
+                    finetune_rule = finetune_links[model_key]
+                    if finetune_rule.get_resuming():
+                        log.info(f"Model branch {model_key} will resume training.")
+                        continue
+                    if self.multi_task:
+                        log.info(f"Model branch {model_key} will be fine-tuned.")
                     bias_mode = (
                         "change-by-statistic"
                         if not finetune_rule.get_random_fitting()
                         else "set-by-statistic"
                     )
                     if self.rank == 0:
-                        self.model = model_change_out_bias(
-                            self.model, get_sample, _bias_adjust_mode=bias_mode
+                        self.models[model_key] = model_change_out_bias(
+                            self.models[model_key],
+                            self._sample_funcs[model_key],
+                            _bias_adjust_mode=bias_mode,
                         )
                     if self.is_distributed:
-                        self._broadcast_model_stat(self.model)
-                else:
-                    for model_key in self.model_keys:
-                        finetune_rule = finetune_links[model_key]
-                        if finetune_rule.get_resuming():
-                            log.info(f"Model branch {model_key} will resume training.")
-                            continue
-                        log.info(f"Model branch {model_key} will be fine-tuned.")
-                        bias_mode = (
-                            "change-by-statistic"
-                            if not finetune_rule.get_random_fitting()
-                            else "set-by-statistic"
-                        )
-                        if self.rank == 0:
-                            self.model[model_key] = model_change_out_bias(
-                                self.model[model_key],
-                                self._sample_funcs[model_key],
-                                _bias_adjust_mode=bias_mode,
-                            )
-                        if self.is_distributed:
-                            self._broadcast_model_stat(self.model[model_key])
+                        self._broadcast_model_stat(self.models[model_key])
+                self.model = (
+                    self.models if self.multi_task else self.models[DEFAULT_TASK_KEY]
+                )
             else:
                 # --- Normal resume (init_model / restart) --------------------
                 self._unwrapped.load_state_dict(state_dict)
@@ -1244,6 +1265,17 @@ class Trainer:
             compile_opts = training_params.get("compile_options", {})
             log.info("Compiling model with torch.compile (%s)", compile_opts)
             self._compile_model(compile_opts)
+
+        self.training_tasks = self._make_training_tasks()
+        super().__init__(
+            TrainerConfig.from_training_params(
+                training_params,
+                num_steps=self.num_steps,
+                start_step=self.start_step,
+                restart_training=self.restart_training,
+            ),
+            rank_context=RankContext(rank=self.rank, world_size=self.world_size),
+        )
 
     # ------------------------------------------------------------------
     # torch.compile helpers
@@ -1394,14 +1426,12 @@ class Trainer:
         -------
         input_dict, label_dict
         """
-        if not self.multi_task:
-            data_sys = self.training_data if is_train else self.validation_data
-        else:
-            data_sys = (
-                self.training_data[task_key]
-                if is_train
-                else self.validation_data[task_key]
-            )
+        task_key = task_key if self.multi_task else DEFAULT_TASK_KEY
+        data_sys = (
+            self.training_data_by_task[task_key]
+            if is_train
+            else self.validation_data_by_task[task_key]
+        )
         if data_sys is None:
             return {}, {}
 
@@ -1485,14 +1515,30 @@ class Trainer:
         finally:
             for task_key, compiled in compiled_backup.items():
                 wrapper.model[task_key] = compiled
-        ckpt_path = f"{self.save_ckpt}-{step}.pt"
+        ckpt_path = Path(f"{self.save_ckpt}-{step}.pt")
+        ckpt_path.parent.mkdir(parents=True, exist_ok=True)
         torch.save(state, ckpt_path)
-        # symlink latest
         latest = Path(f"{self.save_ckpt}.pt")
-        if latest.is_symlink() or latest.exists():
-            latest.unlink()
-        latest.symlink_to(ckpt_path)
+        _replace_latest_checkpoint_link(latest, ckpt_path)
+        self._cleanup_old_checkpoints()
         log.info(f"Saved checkpoint to {ckpt_path}")
+
+    def _cleanup_old_checkpoints(self) -> None:
+        """Remove old step checkpoint files beyond the retention limit."""
+        if self.max_ckpt_keep <= 0:
+            return
+        ckpt_prefix_path = Path(self.save_ckpt)
+        ckpt_parent = ckpt_prefix_path.parent
+        ckpt_prefix = ckpt_prefix_path.name
+        checkpoints: list[tuple[int, Path]] = []
+        for path in ckpt_parent.glob(f"{ckpt_prefix}-*.pt"):
+            if path.is_dir() or path.is_symlink():
+                continue
+            step_text = path.name.removeprefix(f"{ckpt_prefix}-").removesuffix(".pt")
+            if step_text.isdigit():
+                checkpoints.append((int(step_text), path))
+        for _, path in sorted(checkpoints)[: -self.max_ckpt_keep]:
+            path.unlink(missing_ok=True)
 
     # ------------------------------------------------------------------
     # Training loop
@@ -1508,321 +1554,173 @@ class Trainer:
         self.optimizer.step()
         self.scheduler.step()
 
+    def _make_training_tasks(self) -> TrainingTaskCollection:
+        """Build the backend-independent task collection."""
+        return TrainingTaskCollection(
+            [
+                TrainingTask(
+                    key=model_key,
+                    training_data=self.training_data_by_task[model_key],
+                    validation_data=self.validation_data_by_task[model_key],
+                    valid_numb_batch=self.valid_numb_batch_by_task[model_key],
+                )
+                for model_key in self.model_keys
+            ],
+            probabilities=self.model_prob,
+        )
+
     def run(self) -> None:
+        """Run pt_expt training through the backend-independent trainer loop."""
+        log.info("Start to train %d steps.", self.num_steps)
+        wall_start = time.time()
+        super().run(self.training_tasks)
+        log.info("Training finished. Total wall time: %.2fs", time.time() - wall_start)
+
+    def select_task(self, tasks: TrainingTaskCollection) -> TrainingTask:
+        """Select a task using DeePMD's seeded random helper."""
+        if not tasks.is_multitask:
+            return tasks[tasks.keys[0]]
         from deepmd.utils import random as dp_random
 
-        fout = (
-            open(
-                self.disp_file,
-                mode="w" if not self.restart_training else "a",
-                buffering=1,
-            )
-            if self.rank == 0
-            else None
+        model_index = dp_random.choice(
+            np.arange(len(tasks), dtype=np.int_),
+            p=tasks.probabilities,
         )
-        log.info("Start to train %d steps.", self.num_steps)
+        return tasks[tasks.keys[int(model_index)]]
 
+    def on_train_begin(self, tasks: TrainingTaskCollection) -> None:
+        """Switch the wrapper to training mode."""
         self.wrapper.train()
-        wall_start = time.time()
-        last_log_time = wall_start
-        last_log_step = self.start_step
 
-        for step_id in range(self.start_step, self.num_steps):
-            cur_lr = float(self.lr_schedule.value(step_id))
-
-            # --- task selection (multi-task) ---
-            task_key = "Default"
-            if self.multi_task:
-                model_index = dp_random.choice(
-                    np.arange(self.num_model, dtype=np.int_),
-                    p=self.model_prob,
-                )
-                task_key = self.model_keys[model_index]
-
-            # --- forward / backward ---
-            self.optimizer.zero_grad(set_to_none=True)
-            input_dict, label_dict = self.get_data(is_train=True, task_key=task_key)
-
-            cur_lr_sched = self.scheduler.get_last_lr()[0]
-            _model_pred, loss, more_loss = self.wrapper(
-                **input_dict,
-                cur_lr=cur_lr_sched,
-                label=label_dict,
-                task_key=task_key if self.multi_task else None,
+    def collect_display_results(
+        self,
+        tasks: TrainingTaskCollection,
+        *,
+        active_task: TrainingTask,
+        step: int,
+        step_result: TrainStepResult,
+    ) -> tuple[dict[str, Any], dict[str, Any] | None]:
+        """Collect display metrics in eval mode, then resume training mode."""
+        self.wrapper.eval()
+        self._display_cur_lr_sched = step_result.payload["cur_lr_sched"]
+        try:
+            return super().collect_display_results(
+                tasks,
+                active_task=active_task,
+                step=step,
+                step_result=step_result,
             )
-            loss.backward()
+        finally:
+            self._display_cur_lr_sched = None
+            self.wrapper.train()
 
-            if self.gradient_max_norm > 0.0:
-                torch.nn.utils.clip_grad_norm_(
-                    self.wrapper.parameters(), self.gradient_max_norm
-                )
+    def train_step(self, task: TrainingTask, step: int) -> TrainStepResult:
+        """Run one pt_expt optimizer step."""
+        task_key = task.key
+        self.optimizer.zero_grad(set_to_none=True)
+        input_dict, label_dict = self.get_data(is_train=True, task_key=task_key)
 
-            self._optimizer_step()
+        cur_lr_sched = self.scheduler.get_last_lr()[0]
+        _model_pred, loss, more_loss = self.wrapper(
+            **input_dict,
+            cur_lr=cur_lr_sched,
+            label=label_dict,
+            task_key=task_key,
+        )
+        loss.backward()
 
-            # --- display ---
-            display_step_id = step_id + 1
-            if self.display_in_training and (
-                display_step_id % self.disp_freq == 0 or display_step_id == 1
-            ):
-                self.wrapper.eval()
+        if self.gradient_max_norm > 0.0:
+            torch.nn.utils.clip_grad_norm_(
+                self.wrapper.parameters(), self.gradient_max_norm
+            )
 
-                if self.rank == 0:
+        self._optimizer_step()
+        return TrainStepResult(
+            task_key=task_key,
+            step=step,
+            payload={
+                "loss": loss,
+                "more_loss": more_loss,
+                "cur_lr_sched": cur_lr_sched,
+            },
+        )
 
-                    def _to_float(v: Any) -> float:
-                        return v.detach().item() if torch.is_tensor(v) else float(v)
+    def evaluate_training(
+        self,
+        task: TrainingTask,
+        step: int,
+        step_result: TrainStepResult | None,
+    ) -> dict[str, float]:
+        """Evaluate training loss terms for one task."""
+        if step_result is not None and step_result.task_key == task.key:
+            return self._more_loss_to_float(step_result.payload["more_loss"])
 
-                    if not self.multi_task:
-                        train_results = {
-                            k: _to_float(v)
-                            for k, v in more_loss.items()
-                            if "l2_" not in k
-                        }
+        self.optimizer.zero_grad()
+        input_dict, label_dict = self.get_data(is_train=True, task_key=task.key)
+        _, _loss, more_loss = self._unwrapped(
+            **input_dict,
+            cur_lr=self._get_display_cur_lr_sched(),
+            label=label_dict,
+            task_key=task.key,
+        )
+        return self._more_loss_to_float(more_loss)
 
-                        # validation
-                        valid_results: dict[str, Any] = {}
-                        if self.validation_data is not None:
-                            sum_natoms = 0
-                            for _ii in range(self.valid_numb_batch):
-                                val_input, val_label = self.get_data(is_train=False)
-                                if not val_input:
-                                    break
-                                _, _vloss, _vmore = self._unwrapped(
-                                    **val_input,
-                                    cur_lr=cur_lr_sched,
-                                    label=val_label,
-                                )
-                                natoms = int(val_input["atype"].shape[-1])
-                                sum_natoms += natoms
-                                for k, v in _vmore.items():
-                                    if "l2_" not in k:
-                                        valid_results[k] = (
-                                            valid_results.get(k, 0.0)
-                                            + _to_float(v) * natoms
-                                        )
-                            if sum_natoms > 0:
-                                valid_results = {
-                                    k: v / sum_natoms for k, v in valid_results.items()
-                                }
-                    else:
-                        # Multi-task: compute loss for ALL tasks
-                        train_results = {_key: {} for _key in self.model_keys}
-                        valid_results = {_key: {} for _key in self.model_keys}
+    def evaluate_validation(
+        self,
+        task: TrainingTask,
+        step: int,
+        step_result: TrainStepResult | None,
+    ) -> dict[str, float] | None:
+        """Evaluate validation loss terms for one task."""
+        if task.validation_data is None:
+            return None
 
-                        # current task already has loss
-                        train_results[task_key] = {
-                            k: _to_float(v)
-                            for k, v in more_loss.items()
-                            if "l2_" not in k
-                        }
-
-                        # compute loss for other tasks
-                        for _key in self.model_keys:
-                            if _key != task_key:
-                                self.optimizer.zero_grad()
-                                _inp, _lab = self.get_data(is_train=True, task_key=_key)
-                                _, _loss, _more = self._unwrapped(
-                                    **_inp,
-                                    cur_lr=cur_lr_sched,
-                                    label=_lab,
-                                    task_key=_key,
-                                )
-                                train_results[_key] = {
-                                    k: _to_float(v)
-                                    for k, v in _more.items()
-                                    if "l2_" not in k
-                                }
-
-                            # validation for each task
-                            _vdata = self.validation_data[_key]
-                            if _vdata is not None:
-                                _sum_natoms = 0
-                                _vres: dict[str, Any] = {}
-                                for _ii in range(self.valid_numb_batch[_key]):
-                                    _vi, _vl = self.get_data(
-                                        is_train=False, task_key=_key
-                                    )
-                                    if not _vi:
-                                        break
-                                    _, _vloss, _vmore = self._unwrapped(
-                                        **_vi,
-                                        cur_lr=cur_lr_sched,
-                                        label=_vl,
-                                        task_key=_key,
-                                    )
-                                    natoms = int(_vi["atype"].shape[-1])
-                                    _sum_natoms += natoms
-                                    for k, v in _vmore.items():
-                                        if "l2_" not in k:
-                                            _vres[k] = (
-                                                _vres.get(k, 0.0)
-                                                + _to_float(v) * natoms
-                                            )
-                                if _sum_natoms > 0:
-                                    _vres = {
-                                        k: v / _sum_natoms for k, v in _vres.items()
-                                    }
-                                valid_results[_key] = _vres
-                    # wall-clock time
-                    current_time = time.time()
-                    wall_elapsed = current_time - wall_start
-                    interval_wall_time = current_time - last_log_time
-                    # average wall time per step over the interval since the
-                    # last log (number of steps counted exactly once across
-                    # intervals via last_log_step)
-                    interval_steps = max(1, display_step_id - last_log_step)
-                    step_time = interval_wall_time / interval_steps
-                    last_log_time = current_time
-                    last_log_step = display_step_id
-                    if self.timing_in_training:
-                        steps_completed_since_restart = max(
-                            1,
-                            display_step_id - self.start_step,
-                        )
-                        eta = int(
-                            (self.num_steps - display_step_id)
-                            / steps_completed_since_restart
-                            * wall_elapsed
-                        )
-                        log.info(
-                            format_training_message(
-                                batch=display_step_id,
-                                wall_time=interval_wall_time,
-                                eta=eta,
-                                current_time=datetime.datetime.fromtimestamp(
-                                    current_time,
-                                    tz=datetime.timezone.utc,
-                                ).astimezone(),
-                                step_time=step_time,
-                            )
-                        )
-                    else:
-                        log.info(
-                            format_training_message(
-                                batch=display_step_id,
-                                wall_time=interval_wall_time,
-                            )
-                        )
-
-                    # log
-                    if not self.multi_task:
-                        log.info(
-                            format_training_message_per_task(
-                                batch=display_step_id,
-                                task_name="trn",
-                                rmse=train_results,
-                                learning_rate=cur_lr,
-                            )
-                        )
-                        if valid_results:
-                            log.info(
-                                format_training_message_per_task(
-                                    batch=display_step_id,
-                                    task_name="val",
-                                    rmse=valid_results,
-                                    learning_rate=None,
-                                )
-                            )
-                    else:
-                        for _key in self.model_keys:
-                            log.info(
-                                format_training_message_per_task(
-                                    batch=display_step_id,
-                                    task_name=_key + "_trn",
-                                    rmse=train_results[_key],
-                                    learning_rate=cur_lr,
-                                )
-                            )
-                            if valid_results[_key]:
-                                log.info(
-                                    format_training_message_per_task(
-                                        batch=display_step_id,
-                                        task_name=_key + "_val",
-                                        rmse=valid_results[_key],
-                                        learning_rate=None,
-                                    )
-                                )
-
-                    # lcurve file
-                    if self.lcurve_should_print_header:
-                        self.print_header(fout, train_results, valid_results)
-                        self.lcurve_should_print_header = False
-                    self.print_on_training(
-                        fout, display_step_id, cur_lr, train_results, valid_results
+        valid_results: dict[str, float] = {}
+        sum_natoms = 0
+        for _ii in range(task.valid_numb_batch):
+            val_input, val_label = self.get_data(is_train=False, task_key=task.key)
+            if not val_input:
+                break
+            _, _vloss, vmore = self._unwrapped(
+                **val_input,
+                cur_lr=self._get_display_cur_lr_sched(),
+                label=val_label,
+                task_key=task.key,
+            )
+            natoms = int(val_input["atype"].shape[-1])
+            sum_natoms += natoms
+            for key, value in vmore.items():
+                if "l2_" not in key:
+                    valid_results[key] = (
+                        valid_results.get(key, 0.0) + self._to_float(value) * natoms
                     )
+        if sum_natoms > 0:
+            valid_results = {
+                key: value / sum_natoms for key, value in valid_results.items()
+            }
+        return valid_results
 
-                self.wrapper.train()
+    def learning_rate(self, step: int) -> float:
+        """Return the configured learning rate for a zero-based step."""
+        return float(self.lr_schedule.value(step))
 
-            # --- checkpoint ---
-            if display_step_id % self.save_freq == 0 and self.rank == 0:
-                self.save_checkpoint(display_step_id)
+    @staticmethod
+    def _to_float(value: Any) -> float:
+        return value.detach().item() if torch.is_tensor(value) else float(value)
 
-        # final save
-        if self.rank == 0:
-            self.save_checkpoint(self.num_steps)
-        wall_total = time.time() - wall_start
-        if fout is not None:
-            fout.close()
-        log.info("Training finished. Total wall time: %.2fs", wall_total)
+    def _get_display_cur_lr_sched(self) -> float:
+        cur_lr_sched = getattr(self, "_display_cur_lr_sched", None)
+        if cur_lr_sched is None:
+            cur_lr_sched = self.scheduler.get_last_lr()[0]
+        return cur_lr_sched
 
-    # ------------------------------------------------------------------
-    # Printing helpers
-    # ------------------------------------------------------------------
-
-    def print_header(
-        self,
-        fout: Any,
-        train_results: dict[str, Any],
-        valid_results: dict[str, Any],
-    ) -> None:
-        header = "# {:5s}".format("step")
-        if not self.multi_task:
-            train_keys = sorted(train_results.keys())
-            if valid_results:
-                for k in train_keys:
-                    header += f"   {k + '_val':>11s} {k + '_trn':>11s}"
-            else:
-                for k in train_keys:
-                    header += f"   {k + '_trn':>11s}"
-        else:
-            for model_key in self.model_keys:
-                if valid_results[model_key]:
-                    for k in sorted(train_results[model_key].keys()):
-                        header += f"   {k + '_val_' + model_key:>11s} {k + '_trn_' + model_key:>11s}"
-                else:
-                    for k in sorted(train_results[model_key].keys()):
-                        header += f"   {k + '_trn_' + model_key:>11s}"
-        header += "   {:8s}\n".format("lr")
-        fout.write(header)
-        fout.flush()
-
-    def print_on_training(
-        self,
-        fout: Any,
-        step_id: int,
-        cur_lr: float,
-        train_results: dict,
-        valid_results: dict,
-    ) -> None:
-        line = f"{step_id:7d}"
-        if not self.multi_task:
-            train_keys = sorted(train_results.keys())
-            if valid_results:
-                for k in train_keys:
-                    line += f"   {valid_results.get(k, float('nan')):11.2e} {train_results[k]:11.2e}"
-            else:
-                for k in train_keys:
-                    line += f"   {train_results[k]:11.2e}"
-        else:
-            for model_key in self.model_keys:
-                if valid_results[model_key]:
-                    for k in sorted(valid_results[model_key].keys()):
-                        line += f"   {valid_results[model_key][k]:11.2e} {train_results[model_key][k]:11.2e}"
-                else:
-                    for k in sorted(train_results[model_key].keys()):
-                        line += f"   {train_results[model_key][k]:11.2e}"
-        line += f"   {cur_lr:8.1e}\n"
-        fout.write(line)
-        fout.flush()
+    @classmethod
+    def _more_loss_to_float(cls, more_loss: dict[str, Any]) -> dict[str, float]:
+        return {
+            key: cls._to_float(value)
+            for key, value in more_loss.items()
+            if "l2_" not in key
+        }
 
 
 def model_change_out_bias(

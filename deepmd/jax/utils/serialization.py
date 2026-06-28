@@ -22,6 +22,31 @@ from deepmd.jax.model.model import (
 )
 
 
+def _convert_str_to_int_key(item: dict) -> None:
+    """Convert Orbax-restored numeric index keys from strings back to ints."""
+    for key, value in item.copy().items():
+        if isinstance(value, dict):
+            _convert_str_to_int_key(value)
+        if isinstance(key, str) and key.isdigit():
+            item[int(key)] = item.pop(key)
+
+
+def _normalize_restored_state_keys(
+    state: dict,
+    model_def_script: dict,
+) -> None:
+    """Normalize restored state keys while preserving multi-task branch names."""
+    if "model_dict" in model_def_script:
+        state_by_model = state.get("models", state)
+        for model_key in model_def_script["model_dict"]:
+            if model_key in state_by_model and isinstance(
+                state_by_model[model_key], dict
+            ):
+                _convert_str_to_int_key(state_by_model[model_key])
+        return
+    _convert_str_to_int_key(state)
+
+
 def deserialize_to_file(model_file: str, data: dict) -> None:
     """Deserialize the dictionary to a model file.
 
@@ -33,16 +58,29 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         The dictionary to be deserialized.
     """
     if model_file.endswith(".jax"):
-        model = BaseModel.deserialize(data["model"])
         model_def_script = data["model_def_script"]
-        _, state = nnx.split(model)
+        if "model_dict" in model_def_script:
+            models = {
+                model_key: BaseModel.deserialize(data["model"]["model_dict"][model_key])
+                for model_key in model_def_script["model_dict"]
+            }
+            state = {
+                "models": {
+                    model_key: nnx.split(model)[1].to_pure_dict()
+                    for model_key, model in models.items()
+                }
+            }
+        else:
+            model = BaseModel.deserialize(data["model"])
+            _, state = nnx.split(model)
+            state = state.to_pure_dict()
         with ocp.Checkpointer(
             ocp.CompositeCheckpointHandler("state", "model_def_script")
         ) as checkpointer:
             checkpointer.save(
                 Path(model_file).absolute(),
                 ocp.args.Composite(
-                    state=ocp.args.StandardSave(state.to_pure_dict()),
+                    state=ocp.args.StandardSave(state),
                     model_def_script=ocp.args.JsonSave(model_def_script),
                 ),
             )
@@ -172,23 +210,23 @@ def serialize_from_file(model_file: str) -> dict:
                 ),
             )
         state = data.state
-
-        # convert str "1" to int 1 key
-        def convert_str_to_int_key(item: dict) -> None:
-            for key, value in item.copy().items():
-                if isinstance(value, dict):
-                    convert_str_to_int_key(value)
-                if key.isdigit():
-                    item[int(key)] = item.pop(key)
-
-        convert_str_to_int_key(state)
-
         model_def_script = data.model_def_script
-        abstract_model = get_model(model_def_script)
-        graphdef, abstract_state = nnx.split(abstract_model)
-        abstract_state.replace_by_pure_dict(state)
-        model = nnx.merge(graphdef, abstract_state)
-        model_dict = model.serialize()
+        _normalize_restored_state_keys(state, model_def_script)
+        if "model_dict" in model_def_script:
+            state_by_model = state.get("models", state)
+            model_dict = {"model_dict": {}}
+            for model_key, model_params in model_def_script["model_dict"].items():
+                abstract_model = get_model(model_params)
+                graphdef, abstract_state = nnx.split(abstract_model)
+                abstract_state.replace_by_pure_dict(state_by_model[model_key])
+                model = nnx.merge(graphdef, abstract_state)
+                model_dict["model_dict"][model_key] = model.serialize()
+        else:
+            abstract_model = get_model(model_def_script)
+            graphdef, abstract_state = nnx.split(abstract_model)
+            abstract_state.replace_by_pure_dict(state)
+            model = nnx.merge(graphdef, abstract_state)
+            model_dict = model.serialize()
         data = {
             "backend": "JAX",
             "jax_version": jax.__version__,
