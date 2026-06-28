@@ -37,10 +37,11 @@ from deepmd.backend.tensorflow import (
 
 from ..utils import (
     CI,
+    DP_TEST_TF2_ONLY,
     TEST_DEVICE,
 )
 
-RUN_TF2_BACKEND_TESTS = os.environ.get("DEEPMD_TEST_TF2") == "1"
+RUN_TF2_BACKEND_TESTS = os.environ.get("DEEPMD_TEST_TF2") == "1" or DP_TEST_TF2_ONLY
 
 INSTALLED_TF = (
     not RUN_TF2_BACKEND_TESTS and Backend.get_backend("tensorflow")().is_available()
