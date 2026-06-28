@@ -79,7 +79,7 @@ class TestPaddleDeepEvalSerialize(unittest.TestCase):
         PaddleDeepEvalBackend = _load_deep_eval_backend(
             "deepmd.pd.infer.deep_eval", "Paddle"
         )
-        backend = PaddleDeepEvalBackend.__new__(PaddleDeepEvalBackend)
+        backend = object.__new__(PaddleDeepEvalBackend)
         backend.model_path = "frozen_model.json"
         backend.dp = object()
 
@@ -96,7 +96,7 @@ class TestPyTorchDeepEvalSerialize(unittest.TestCase):
         PyTorchDeepEvalBackend = _load_deep_eval_backend(
             "deepmd.pt.infer.deep_eval", "PyTorch"
         )
-        backend = PyTorchDeepEvalBackend.__new__(PyTorchDeepEvalBackend)
+        backend = object.__new__(PyTorchDeepEvalBackend)
         backend.model_path = "frozen_model.pth"
         backend.dp = Mock()
         backend.dp.model = {"Default": object()}
@@ -114,9 +114,7 @@ class TestPyTorchExportableDeepEvalSerialize(unittest.TestCase):
         PyTorchExportableDeepEvalBackend = _load_deep_eval_backend(
             "deepmd.pt_expt.infer.deep_eval", "PyTorch exportable"
         )
-        backend = PyTorchExportableDeepEvalBackend.__new__(
-            PyTorchExportableDeepEvalBackend
-        )
+        backend = object.__new__(PyTorchExportableDeepEvalBackend)
         backend.model_path = "frozen_model.pt"
 
         with patch(
@@ -134,7 +132,7 @@ class TestJAXDeepEvalSerialize(unittest.TestCase):
         JAXDeepEvalBackend = _load_deep_eval_backend(
             "deepmd.jax.infer.deep_eval", "JAX"
         )
-        backend = JAXDeepEvalBackend.__new__(JAXDeepEvalBackend)
+        backend = object.__new__(JAXDeepEvalBackend)
         backend.model_path = "frozen_model.savedmodel"
         backend.get_model_def_script = Mock(return_value={"type_map": ["O", "H"]})
 

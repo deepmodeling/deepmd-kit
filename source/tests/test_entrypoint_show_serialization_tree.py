@@ -40,8 +40,8 @@ class TestShowSerializationTree(unittest.TestCase):
             ) as mock_deserialize,
             patch("deepmd.entrypoints.show.log.info") as mock_log_info,
         ):
-            initial_model = mock_deep_eval.return_value
-            branch_a_model = mock_deep_eval.return_value
+            initial_model = Mock()
+            branch_a_model = Mock()
             branch_b_model = Mock()
             mock_deep_eval.side_effect = [initial_model, branch_a_model, branch_b_model]
 
@@ -55,12 +55,13 @@ class TestShowSerializationTree(unittest.TestCase):
 
             show(INPUT="mock-multitask.pte", ATTRIBUTES=["serialization-tree"])
 
-            mock_deep_eval.assert_has_calls(
+            self.assertEqual(
+                mock_deep_eval.call_args_list,
                 [
                     call("mock-multitask.pte", head=0),
                     call("mock-multitask.pte", head="branch_a"),
                     call("mock-multitask.pte", head="branch_b"),
-                ]
+                ],
             )
             mock_deserialize.assert_has_calls(
                 [call({"@class": "BranchA"}), call({"@class": "BranchB"})]
