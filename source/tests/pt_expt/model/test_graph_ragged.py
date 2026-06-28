@@ -160,9 +160,7 @@ class TestGraphRagged:
         base = self.model.forward_common_lower_graph(*args, do_atomic_virial=True)
         nf = int(self.n_node.shape[0])
         # arbitrary non-None charge/spin -> must NOT change any dpa1 graph output
-        cs = torch.tensor(
-            [[1.0, 2.0]] * nf, dtype=torch.float64, device=self.device
-        )
+        cs = torch.tensor([[1.0, 2.0]] * nf, dtype=torch.float64, device=self.device)
         with_cs = self.model.forward_common_lower_graph(
             *args, do_atomic_virial=True, charge_spin=cs
         )
