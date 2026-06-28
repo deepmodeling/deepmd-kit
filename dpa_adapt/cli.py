@@ -96,6 +96,17 @@ def _maybe_split_list(val: str | Sequence[str] | None) -> list[str] | None:
     ]
 
 
+def _parse_batch_size(val: str) -> str | int:
+    """Parse DeePMD batch-size specs, preserving strings like ``auto:512``."""
+    text = val.strip()
+    if not text:
+        raise argparse.ArgumentTypeError("batch size must not be empty")
+    try:
+        return int(text)
+    except ValueError:
+        return text
+
+
 class _RawTextArgDefaultsHelpFormatter(
     argparse.RawTextHelpFormatter, argparse.ArgumentDefaultsHelpFormatter
 ):
@@ -304,6 +315,9 @@ def _cmd_data_convert(args: argparse.Namespace) -> int:
     elif result["method"] == "batch_dpdata":
         _LOG.info("Output dirs  : %s", len(result["output_dirs"]))
         _LOG.info("Manifest     : %s", result["manifest"])
+    elif result["method"] == "formula":
+        _LOG.info("Output systems: %s", len(result["output_systems"]))
+        _LOG.info("Wrote deepmd/npy → %s", result["output_dir"])
     else:
         _LOG.info("Wrote deepmd/npy → %s", result["output_dir"])
     return 0
@@ -485,7 +499,7 @@ def get_parser() -> argparse.ArgumentParser:
     parser_fit.add_argument("--max-steps", type=int, default=100_000)
     parser_fit.add_argument("--learning-rate", type=float, default=1e-3)
     parser_fit.add_argument("--stop-lr", type=float, default=1e-5)
-    parser_fit.add_argument("--batch-size", default="auto:512")
+    parser_fit.add_argument("--batch-size", type=_parse_batch_size, default="auto:512")
     parser_fit.add_argument("--seed", type=int, default=42)
     parser_fit.add_argument("--output-dir", default="./dpa_output")
     parser_fit.add_argument("--save-freq", type=int, default=10_000)
@@ -523,11 +537,14 @@ def get_parser() -> argparse.ArgumentParser:
         help="(mft) Downstream head type.",
     )
     parser_fit.add_argument(
-        "--aux-batch-size", default=None, help="(mft) Batch size for aux branch."
+        "--aux-batch-size",
+        type=_parse_batch_size,
+        default=None,
+        help="(mft) Batch size for aux branch.",
     )
     parser_fit.add_argument(
         "--downstream-batch-size",
-        type=int,
+        type=_parse_batch_size,
         default=None,
         help="(mft) Batch size for downstream.",
     )

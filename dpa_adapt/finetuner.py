@@ -841,10 +841,10 @@ class DPAFineTuner:
         Auto-detected from the checkpoint if not provided.
     downstream_task_type : str
         (MFT only) Task type of the downstream head (``"property"`` etc.).
-    aux_batch_size : str or None
+    aux_batch_size : str or int or None
         (MFT only) Batch-size spec for the auxiliary head.
-    downstream_batch_size : int or None
-        (MFT only) Batch size for the downstream head.
+    downstream_batch_size : str or int or None
+        (MFT only) Batch-size spec for the downstream head.
     """
 
     _VALID_POOLING: ClassVar[set[str]] = {"mean", "sum", "mean+std", "mean+std+max+min"}
@@ -886,8 +886,8 @@ class DPAFineTuner:
         aux_prob: float = 0.5,
         type_map: list[str] | None = None,
         downstream_task_type: str = "property",
-        aux_batch_size: str | None = None,
-        downstream_batch_size: int | None = None,
+        aux_batch_size: str | int | None = None,
+        downstream_batch_size: str | int | None = None,
     ) -> None:
         if pooling not in self._VALID_POOLING:
             raise ValueError(
@@ -1041,7 +1041,7 @@ class DPAFineTuner:
         except Exception:
             # Cache read failed (e.g. corrupted file, permissions) —
             # fall through and recompute features from scratch.
-            pass
+            _LOG.debug("Descriptor cache read failed, recomputing.", exc_info=True)
 
         features = self._extract_features(systems)
         try:
@@ -1050,7 +1050,7 @@ class DPAFineTuner:
         except Exception:
             # Cache write is best-effort — silently skip on permission errors
             # or disk-full conditions; the features are already in memory.
-            pass
+            _LOG.debug("Descriptor cache write failed.", exc_info=True)
         return features
 
     def _extract_features(self, systems: list[dpdata.System]) -> np.ndarray:
@@ -1099,9 +1099,10 @@ class DPAFineTuner:
 
         try:
             elements = read_data_type_map_union(systems)
-            validate_type_map_subset(elements, tm, label="train data")
         except ValueError:
             pass  # no atom_names — deepmd uses raw atom indices
+        else:
+            validate_type_map_subset(elements, tm, label="train data")
 
         return tm
 
@@ -1372,6 +1373,10 @@ class DPAFineTuner:
                     "strategy='mft' requires aux_data. "
                     "Provide auxiliary system directories for the force-field head."
                 )
+            if type_map is not None:
+                self.type_map = type_map
+                if self._mft is not None:
+                    self._mft.type_map = type_map
             return self._fit_mft(train_data, aux_data, valid_data)
 
         # ---- single-task training paradigms ----
@@ -1719,6 +1724,5 @@ class DPAFineTuner:
         import torch
 
         torch.save(bundle, output_path)
-        _LOG = logging.getLogger("dpa_adapt")
         _LOG.info("Frozen model saved to: %s", output_path)
         return output_path
