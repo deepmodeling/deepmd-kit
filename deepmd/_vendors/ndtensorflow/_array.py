@@ -218,20 +218,36 @@ class Array(tf.experimental.ExtensionType):
     def __getitem__(self, key: Any, /) -> Array:
         key = _normalize_index_key(key)
         if isinstance(key, tf.Tensor) and key.dtype == tf.bool:
-            if key.shape.rank > self.ndim or not all(
-                key_dim in (x_dim, 0) for x_dim, key_dim in zip(self.shape, key.shape)
+            rank = key.shape.rank
+            if rank is None:
+                raise IndexError("boolean index rank must be statically known")
+            if rank > self.ndim:
+                raise IndexError(
+                    "boolean index shape is incompatible with indexed array"
+                )
+            if rank == 0:
+                tensor = tf.expand_dims(self._tensor, 0)
+                mask = tf.reshape(key, (1,))
+                return type(self)._from_tensor(tf.boolean_mask(tensor, mask))
+            tensor_shape = self._tensor.shape.as_list()
+            key_shape = key.shape.as_list()
+            if any(
+                tensor_dim is not None and key_dim is not None and tensor_dim != key_dim
+                for tensor_dim, key_dim in zip(
+                    tensor_shape[:rank], key_shape, strict=True
+                )
             ):
                 raise IndexError(
                     "boolean index shape is incompatible with indexed array"
                 )
-            if key.shape.rank == 0:
-                tensor = tf.expand_dims(self._tensor, 0)
-                mask = tf.reshape(key, (1,))
-                return type(self)._from_tensor(tf.boolean_mask(tensor, mask))
-            if any(dim == 0 for dim in key.shape):
-                shape = (0,) + self.shape[key.shape.rank :]
-                return type(self)._from_tensor(tf.zeros(shape, dtype=self.dtype))
-            return type(self)._from_tensor(tf.boolean_mask(self._tensor, key))
+
+            shape_assert = tf.debugging.assert_equal(
+                tf.shape(key),
+                tf.shape(self._tensor)[:rank],
+                message="boolean index shape is incompatible with indexed array",
+            )
+            with tf.control_dependencies([shape_assert]):
+                return type(self)._from_tensor(tf.boolean_mask(self._tensor, key))
         if (
             isinstance(key, tf.Tensor)
             and _is_integer_index_tensor(key)

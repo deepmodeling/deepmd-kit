@@ -503,6 +503,7 @@ def deserialize_to_savedmodel(
         return tf.constant(model.has_message_passing(), dtype=tf.bool)
 
     tf_model.has_message_passing = has_message_passing
+    tf_model.do_message_passing = has_message_passing
 
     @tf.function
     def has_default_fparam() -> tf.Tensor:

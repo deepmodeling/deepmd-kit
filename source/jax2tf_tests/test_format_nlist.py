@@ -89,3 +89,31 @@ class TestFormatNlist(tf.test.TestCase):
         nlist = format_nlist(self.ecoord, nlist, sum(self.nsel), self.rcut)
         # we only need to ensure the result is correct, no need to check the order
         self.assertAllEqual(tnp.sort(nlist, axis=-1), tnp.sort(self.nlist, axis=-1))
+
+    def test_format_nlist_dynamic_nnei_graph(self) -> None:
+        @tf.function(
+            input_signature=[
+                tf.TensorSpec([None, None, 3], tf.float64),
+                tf.TensorSpec([None, None, None], tf.int64),
+            ]
+        )
+        def graph_format_nlist(
+            extended_coord: tf.Tensor, nlist: tf.Tensor
+        ) -> tf.Tensor:
+            return format_nlist(extended_coord, nlist, 3, 1.01)
+
+        extended_coord = tf.constant(
+            [[[0.0, 0.0, 0.0], [0.5, 0.0, 0.0], [1.5, 0.0, 0.0], [3.0, 0.0, 0.0]]],
+            dtype=tf.float64,
+        )
+        expected = tf.constant([[[1, -1, -1], [0, 2, -1]]], dtype=tf.int64)
+
+        for nlist in [
+            [[[1, 2], [0, 2]]],
+            [[[1, 2, -1], [0, 2, 3]]],
+            [[[2, 1, 3, -1], [3, 2, 0, -1]]],
+        ]:
+            self.assertAllEqual(
+                graph_format_nlist(extended_coord, tf.constant(nlist, tf.int64)),
+                expected,
+            )
