@@ -76,6 +76,9 @@ from deepmd.pt.train.ema import (
 from deepmd.pt.train.utils import (
     NonFiniteGradGuard,
     clip_grad_norm_,
+    latest_checkpoint_path,
+    resolve_best_checkpoint_dir,
+    resolve_keep_ckpt_count,
     scoped_env_defaults,
 )
 from deepmd.pt.train.validation import (
@@ -212,8 +215,13 @@ class Trainer:
         self.disp_freq = training_params.get("disp_freq", 1000)
         self.disp_avg = training_params.get("disp_avg", False)
         self.save_ckpt = training_params.get("save_ckpt", "model.ckpt")
+        save_dir = training_params.get("save_dir")
+        self.save_dir = Path(save_dir) if save_dir else None
+        if self.save_dir is not None and self.rank == 0:
+            self.save_dir.mkdir(parents=True, exist_ok=True)
         self.save_freq = training_params.get("save_freq", 1000)
         self.max_ckpt_keep = training_params.get("max_ckpt_keep", 5)
+        self.ckpt_keep_ratio = training_params.get("ckpt_keep_ratio")
         self.enable_ema = bool(training_params.get("enable_ema", False))
         self.ema_decay = float(training_params.get("ema_decay", 0.999))
         self.ema_ckpt_keep = int(training_params.get("ema_ckpt_keep", 3))
@@ -727,6 +735,24 @@ class Trainer:
                     rank=self.rank,
                 )
 
+        # === Derive checkpoint retention from ckpt_keep_ratio ===
+        # num_steps is final here (including when derived from num_epoch), so the
+        # ratio can be converted into an absolute keep count once.
+        keep_ckpt_count = resolve_keep_ckpt_count(
+            self.ckpt_keep_ratio, self.num_steps, self.save_freq
+        )
+        if keep_ckpt_count is not None:
+            self.max_ckpt_keep = keep_ckpt_count
+            self.ema_ckpt_keep = keep_ckpt_count
+            log.info(
+                "Resolved checkpoint retention to %d from ckpt_keep_ratio=%s "
+                "(num_steps=%d, save_freq=%d).",
+                keep_ckpt_count,
+                self.ckpt_keep_ratio,
+                self.num_steps,
+                self.save_freq,
+            )
+
         # Learning rate
         self.gradient_max_norm = training_params.get("gradient_max_norm", 0.0)
         self.nonfinite_grad_guard = NonFiniteGradGuard()
@@ -1194,7 +1220,9 @@ class Trainer:
             rank=self.rank,
             zero_stage=self.zero_stage,
             restart_training=self.restart_training,
-            checkpoint_dir=Path(self.save_ckpt).parent,
+            checkpoint_dir=resolve_best_checkpoint_dir(
+                validating_params, self.save_ckpt
+            ),
         )
 
     def _create_ema_full_validator(
@@ -1228,7 +1256,9 @@ class Trainer:
             rank=self.rank,
             zero_stage=self.zero_stage,
             restart_training=self.restart_training,
-            checkpoint_dir=Path(self.save_ckpt).parent,
+            checkpoint_dir=resolve_best_checkpoint_dir(
+                validating_params, self.save_ckpt
+            ),
             full_val_file=get_ema_validation_log_path(
                 validating_params.get("full_val_file", "val.log")
             ),
@@ -1817,21 +1847,25 @@ class Trainer:
                 self.zero_stage > 0 or self.rank == 0 or dist.get_rank() == 0
             ):
                 # Handle the case if rank 0 aborted and re-assigned
-                self.latest_model = Path(self.save_ckpt + f"-{display_step_id}.pt")
+                self.latest_model = latest_checkpoint_path(
+                    self.save_ckpt, display_step_id, self.save_dir
+                )
                 self.save_model(self.latest_model, lr=cur_lr, step=_step_id)
                 if self.rank == 0 or dist.get_rank() == 0:
                     log.info(f"Saved model to {self.latest_model}")
-                    symlink_prefix_files(self.latest_model.stem, self.save_ckpt)
+                    symlink_prefix_files(
+                        str(self.latest_model.with_suffix("")), self.save_ckpt
+                    )
                     with open("checkpoint", "w") as f:
                         f.write(str(self.latest_model))
                 if self.model_ema is not None:
-                    self.latest_ema_model = Path(
-                        self.ema_save_ckpt + f"-{display_step_id}.pt"
+                    self.latest_ema_model = latest_checkpoint_path(
+                        self.ema_save_ckpt, display_step_id, self.save_dir
                     )
                     self.save_ema_model(self.latest_ema_model, lr=cur_lr, step=_step_id)
                     if self.rank == 0 or dist.get_rank() == 0:
                         symlink_prefix_files(
-                            self.latest_ema_model.stem,
+                            str(self.latest_ema_model.with_suffix("")),
                             self.ema_save_ckpt,
                         )
 
@@ -1910,30 +1944,36 @@ class Trainer:
                         self.get_sample_func[model_key],
                         _bias_adjust_mode="change-by-statistic",
                     )
-            self.latest_model = Path(self.save_ckpt + f"-{self.num_steps}.pt")
+            self.latest_model = latest_checkpoint_path(
+                self.save_ckpt, self.num_steps, self.save_dir
+            )
             cur_lr = self.lr_schedule.value(self.num_steps - 1)
             self.save_model(self.latest_model, lr=cur_lr, step=self.num_steps - 1)
             log.info(f"Saved model to {self.latest_model}")
-            symlink_prefix_files(self.latest_model.stem, self.save_ckpt)
+            symlink_prefix_files(str(self.latest_model.with_suffix("")), self.save_ckpt)
             with open("checkpoint", "w") as f:
                 f.write(str(self.latest_model))
             if self.model_ema is not None:
-                self.latest_ema_model = Path(
-                    self.ema_save_ckpt + f"-{self.num_steps}.pt"
+                self.latest_ema_model = latest_checkpoint_path(
+                    self.ema_save_ckpt, self.num_steps, self.save_dir
                 )
                 self.save_ema_model(
                     self.latest_ema_model,
                     lr=cur_lr,
                     step=self.num_steps - 1,
                 )
-                symlink_prefix_files(self.latest_ema_model.stem, self.ema_save_ckpt)
+                symlink_prefix_files(
+                    str(self.latest_ema_model.with_suffix("")), self.ema_save_ckpt
+                )
 
         if self.num_steps == 0 and self.zero_stage > 0:
             # ZeRO-1 / FSDP: all ranks participate in save_model (collective op)
-            self.latest_model = Path(self.save_ckpt + "-0.pt")
+            self.latest_model = latest_checkpoint_path(self.save_ckpt, 0, self.save_dir)
             self.save_model(self.latest_model, lr=0, step=0)
             if self.model_ema is not None:
-                self.latest_ema_model = Path(self.ema_save_ckpt + "-0.pt")
+                self.latest_ema_model = latest_checkpoint_path(
+                    self.ema_save_ckpt, 0, self.save_dir
+                )
                 self.save_ema_model(self.latest_ema_model, lr=0, step=0)
 
         if (
@@ -1942,17 +1982,25 @@ class Trainer:
             if self.num_steps == 0:
                 if self.zero_stage == 0:
                     # When num_steps is 0, the checkpoint is never saved in the loop
-                    self.latest_model = Path(self.save_ckpt + "-0.pt")
+                    self.latest_model = latest_checkpoint_path(
+                        self.save_ckpt, 0, self.save_dir
+                    )
                     self.save_model(self.latest_model, lr=0, step=0)
                     if self.model_ema is not None:
-                        self.latest_ema_model = Path(self.ema_save_ckpt + "-0.pt")
+                        self.latest_ema_model = latest_checkpoint_path(
+                            self.ema_save_ckpt, 0, self.save_dir
+                        )
                         self.save_ema_model(self.latest_ema_model, lr=0, step=0)
                 log.info(f"Saved model to {self.latest_model}")
-                symlink_prefix_files(self.latest_model.stem, self.save_ckpt)
+                symlink_prefix_files(
+                    str(self.latest_model.with_suffix("")), self.save_ckpt
+                )
                 with open("checkpoint", "w") as f:
                     f.write(str(self.latest_model))
                 if self.model_ema is not None:
-                    symlink_prefix_files(self.latest_ema_model.stem, self.ema_save_ckpt)
+                    symlink_prefix_files(
+                        str(self.latest_ema_model.with_suffix("")), self.ema_save_ckpt
+                    )
 
             if self.timing_in_training and self.timed_steps:
                 msg = f"average training time: {self.total_train_time / self.timed_steps:.4f} s/batch"
