@@ -102,10 +102,47 @@ def forward_common_atomic(
             avr = jnp.einsum("f...ai,faj->f...aij", ff, extended_coord)
             if extended_coord_corr is not None:
                 avr = avr + jnp.einsum("f...ai,faj->f...aij", ff, extended_coord_corr)
-            # The JAX backend adds an extra per-atom correction for
-            # do_atomic_virial=True.  This tf2 path keeps the conservative
-            # virial term; the correction can be added with training-gradient
-            # support later.
+            if do_atomic_virial:
+                with tf.GradientTape() as virial_tape:
+                    virial_tape.watch(coord_tensor)
+                    virial_atomic_ret = self.atomic_model.forward_common_atomic(
+                        wrap_tensor(coord_tensor),
+                        extended_atype,
+                        nlist,
+                        mapping=mapping,
+                        fparam=fparam,
+                        aparam=aparam,
+                        charge_spin=charge_spin,
+                    )
+                    virial_atomic_tensor = to_tf_tensor(virial_atomic_ret[kk])
+                    assert virial_atomic_tensor is not None
+                    nloc = tf.shape(nlist)[1]
+                    loc_coord = tf.stop_gradient(coord_tensor[:, :nloc, :])
+                    loc_coord = tf.reshape(
+                        loc_coord,
+                        [
+                            tf.shape(loc_coord)[0],
+                            tf.shape(loc_coord)[1],
+                            *([1] * def_ndim),
+                            3,
+                        ],
+                    )
+                    corr_output = tf.reduce_sum(
+                        virial_atomic_tensor[..., tf.newaxis] * loc_coord,
+                        axis=1,
+                    )
+                virial_corr = virial_tape.batch_jacobian(corr_output, coord_tensor)
+                virial_corr = tf.transpose(
+                    virial_corr,
+                    [
+                        0,
+                        *range(1, def_ndim + 1),
+                        def_ndim + 2,
+                        def_ndim + 3,
+                        def_ndim + 1,
+                    ],
+                )
+                avr = avr + wrap_tensor(virial_corr)
             avr = jnp.reshape(avr, [*ff.shape[:-1], 9])
             # extended_virial: [nf, nall, *def, 9]
             extended_virial = jnp.transpose(

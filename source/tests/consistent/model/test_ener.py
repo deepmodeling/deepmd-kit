@@ -315,6 +315,7 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
             self.RefBackend.PT,
             self.RefBackend.PT_EXPT,
             self.RefBackend.JAX,
+            self.RefBackend.TF2,
             self.RefBackend.PD,
         }:
             return (
@@ -323,14 +324,6 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
                 ret["force"].ravel(),
                 ret["virial"].ravel(),
                 ret["atom_virial"].ravel(),
-            )
-        elif backend is self.RefBackend.TF2:
-            return (
-                ret["energy"].ravel(),
-                ret["atom_energy"].ravel(),
-                ret["force"].ravel(),
-                ret["virial"].ravel(),
-                SKIP_FLAG,
             )
         raise ValueError(f"Unknown backend: {backend}")
 
@@ -590,6 +583,7 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
         elif backend in {
             self.RefBackend.PT,
             self.RefBackend.JAX,
+            self.RefBackend.TF2,
             self.RefBackend.PD,
         }:
             return (
@@ -598,14 +592,6 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
                 ret["extended_force"].ravel(),
                 ret["virial"].ravel(),
                 ret["extended_virial"].ravel(),
-            )
-        elif backend is self.RefBackend.TF2:
-            return (
-                ret["energy"].ravel(),
-                ret["atom_energy"].ravel(),
-                ret["extended_force"].ravel(),
-                ret["virial"].ravel(),
-                SKIP_FLAG,
             )
         raise ValueError(f"Unknown backend: {backend}")
 
