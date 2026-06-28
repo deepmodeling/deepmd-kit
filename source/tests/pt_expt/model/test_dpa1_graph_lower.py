@@ -204,9 +204,8 @@ class TestDpa1GraphLower:
             do_atomic_virial=do_av,
         )
 
-        # forward_common_lower_graph returns flat (N,*) per-atom outputs.
-        # Reshape to (nf, nloc, *) for comparison against the legacy dense lower.
-        N = nf * nloc
+        # forward_common_lower_graph returns flat (N = nf * nloc, *) per-atom
+        # outputs. Reshape to (nf, nloc, *) to compare against the dense lower.
 
         # per-atom energy: flat (N, 1) -> (nf, nloc, 1)
         graph_energy = graph["energy"].reshape(nf, nloc, 1)
