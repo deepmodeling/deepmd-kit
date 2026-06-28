@@ -2,9 +2,11 @@
 """
 Equivariant feed-forward layers for DPA4/SeZM.
 
-This module is the dpmodel port of ``deepmd.pt.model.descriptor.sezm_nn.ffn``.
-It defines the full SO(3)-equivariant feed-forward network used inside SeZM
-interaction blocks.
+This module defines the full SO(3)-equivariant feed-forward network used
+inside SeZM interaction blocks and the descriptor output head.
+
+This module is the dpmodel (array-API) port of
+``deepmd.pt.model.descriptor.sezm_nn.ffn``.
 """
 
 from __future__ import (
@@ -39,11 +41,11 @@ from .grid_net import (
 from .projection import (
     resolve_s2_grid_resolution,
 )
-from .so2 import (
-    _compute_precision,
-)
 from .so3 import (
     SO3Linear,
+)
+from .utils import (
+    get_promoted_dtype,
 )
 
 
@@ -57,13 +59,22 @@ class EquivariantFFN(NativeOP):
     Default structure (glu_activation=True):
         SO3 linear (in -> 2*hidden) -> split -> GatedActivation(val, gate) -> SO3 linear (hidden -> out)
 
-    Optional grid-FFN structure (s2_activation=True):
-        SO3 linear (in -> 2*hidden)
-        -> project packed SO(3) coefficients to the S2 grid
-        -> grid GLU or scalar-routed polynomial branch on hidden features
+    Optional grid-FFN structure (s2_activation=True or ffn_so3_grid=True):
+        SO3 linear (in -> hidden)
+        -> project packed SO(3) coefficients to the S2 or SO3 grid
+        -> grid GLU, polynomial MLP, or scalar-routed attention on hidden features
         -> project grid features back to packed SO(3) coefficients
         -> add scalar LinearSwiGLU branch to l=0
         -> SO3 linear (hidden -> out)
+
+    GatedActivation serves as the unified "activation" for equivariant networks,
+    analogous to SiLU in standard MLPs, but respecting SO(3) equivariance:
+    - l=0: Uses the specified activation function (or GLU variant when glu_activation=True)
+    - l>0: sigmoid gate from l=0 scalar features
+
+    When glu_activation=True, the first linear outputs 2*hidden_channels, then splits into
+    value and gate branches. This transforms activations like silu->swiglu, gelu->geglu.
+    The split approach is more efficient than two separate linear layers.
 
     Parameters
     ----------
@@ -76,13 +87,14 @@ class EquivariantFFN(NativeOP):
     kmax
         Maximum Wigner-D frame order (|k|) used by the SO3 Wigner-D FFN grid.
     grid_mlp
-        If True, select the polynomial grid MLP operation (``op_type='mlp'``)
-        when the block-internal FFN grid path is enabled. ``grid_branch`` takes
-        precedence when positive.
+        If True, select the polynomial grid MLP operation when the
+        block-internal FFN grid path is enabled.
     grid_branch
         Number of scalar-routed polynomial product branches used when the
         block-internal FFN grid path is enabled. ``0`` disables this branch
         mixer. Positive values take precedence over ``grid_mlp``.
+    precision
+        Parameter precision.
     s2_activation
         If True, enable the S2 FFN grid path.
     ffn_so3_grid
@@ -95,9 +107,8 @@ class EquivariantFFN(NativeOP):
         If True, use GLU-style gating (e.g., silu -> swiglu, gelu -> geglu).
     mlp_bias
         Whether to use bias in SO3Linear (l=0 bias), GatedActivation
-        (gate linear bias).
-    precision
-        Parameter precision.
+        (gate linear bias), and the scalar point-wise projection when
+        ``grid_mlp=True``.
     trainable
         Whether parameters are trainable.
     seed
@@ -152,8 +163,9 @@ class EquivariantFFN(NativeOP):
         self.glu_activation = bool(glu_activation)
         self.mlp_bias = bool(mlp_bias)
         self.precision = precision
-        self.compute_precision = _compute_precision(precision)
-        self.trainable = bool(trainable)
+        self.compute_precision = np.dtype(
+            get_promoted_dtype(PRECISION_DICT[precision])
+        ).name
         self.grid_n_frames = 2 * self.kmax + 1 if self.ffn_so3_grid else 1
 
         # === Step 0. Split deterministic seeds at the module top-level ===
@@ -163,6 +175,7 @@ class EquivariantFFN(NativeOP):
 
         # === First SO3Linear for channel mixing ===
         self.use_grid_net = self.s2_activation or self.ffn_so3_grid
+        linear1_out_channels = self.hidden_channels
         if self.use_grid_net:
             linear1_out_channels = 2 * self.grid_n_frames * self.hidden_channels
         else:
@@ -178,7 +191,7 @@ class EquivariantFFN(NativeOP):
             n_focus=1,
             precision=self.precision,
             mlp_bias=self.mlp_bias,
-            trainable=self.trainable,
+            trainable=trainable,
             seed=seed_so3_in,
         )
 
@@ -189,7 +202,6 @@ class EquivariantFFN(NativeOP):
                 if self.use_grid_branch
                 else ("mlp" if self.use_grid_mlp else "glu")
             )
-            self.act: NativeOP
             if self.ffn_so3_grid:
                 self.act = SO3GridNet(
                     lmax=self.lmax,
@@ -202,7 +214,7 @@ class EquivariantFFN(NativeOP):
                     layout="ndfc",
                     grid_branches=max(1, self.grid_branch),
                     mlp_bias=self.mlp_bias,
-                    trainable=self.trainable,
+                    trainable=trainable,
                     seed=seed_act,
                 )
             else:
@@ -219,7 +231,7 @@ class EquivariantFFN(NativeOP):
                     grid_method=self.s2_grid_method,
                     grid_branches=max(1, self.grid_branch),
                     mlp_bias=self.mlp_bias,
-                    trainable=self.trainable,
+                    trainable=trainable,
                     seed=seed_act,
                 )
         else:
@@ -227,10 +239,10 @@ class EquivariantFFN(NativeOP):
                 lmax=self.lmax,
                 channels=self.hidden_channels,
                 precision=self.compute_precision,
-                activation_function=self.activation_function,
+                activation_function=activation_function,
                 mlp_bias=self.mlp_bias,
                 layout="ndfc",
-                trainable=self.trainable,
+                trainable=trainable,
                 seed=seed_act,
             )
 
@@ -243,10 +255,12 @@ class EquivariantFFN(NativeOP):
             n_focus=1,
             precision=self.precision,
             mlp_bias=self.mlp_bias,
-            trainable=self.trainable,
+            trainable=trainable,
             seed=seed_so3_out,
             init_std=0.0,
         )
+
+        self.trainable = bool(trainable)
 
     def call(self, x: Any) -> Any:
         """
@@ -268,9 +282,9 @@ class EquivariantFFN(NativeOP):
             x = self.act(x)
         elif self.glu_activation:
             # Split into value and gate branches along channel dimension
-            # (pt uses x.chunk(2, dim=-1); slicing is array-API portable)
-            x_val = x[..., : self.hidden_channels]
-            x_gate = x[..., self.hidden_channels :]
+            nc = (x.shape[-1] + 1) // 2
+            x_val = x[..., :nc]
+            x_gate = x[..., nc:]
             # Pass gate to GatedActivation for GLU-style gating
             x = self.act(x_val, gate=x_gate)
         else:
@@ -299,29 +313,21 @@ class EquivariantFFN(NativeOP):
 
     def _load_variables(self, variables: dict[str, Any]) -> None:
         """Load variables keyed by the pt ``state_dict`` key names."""
-        variables = dict(variables)
         for attr, sub in self._sub_modules():
-            full = f"{attr}."
-            sv = {
-                key[len(full) :]: value
+            prefix = f"{attr}."
+            sub_variables = {
+                key[len(prefix) :]: value
                 for key, value in variables.items()
-                if key.startswith(full)
+                if key.startswith(prefix)
             }
-            for key in list(variables):
-                if key.startswith(full):
-                    del variables[key]
-            if not sv:
-                raise KeyError(f"Missing variables with prefix: {full}")
-            # rebuild the sub-module through its own (shape-checking)
-            # deserialize, reusing its serialized config
+            # Rebuild each sub-module via its own deserialize, reusing the freshly
+            # serialized config and injecting the loaded @variables.
             data = sub.serialize()
-            data["@variables"] = sv
+            data["@variables"] = sub_variables
             setattr(self, attr, type(sub).deserialize(data))
-        if variables:
-            raise KeyError(f"Unknown variables: {sorted(variables)}")
 
     def serialize(self) -> dict[str, Any]:
-        """Serialize the EquivariantFFN to a dict (pt-compatible format)."""
+        """Serialize the EquivariantFFN to a dict."""
         return {
             "@class": "EquivariantFFN",
             "@version": 1,

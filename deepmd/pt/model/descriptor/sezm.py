@@ -1013,11 +1013,11 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         for p in self.parameters():
             p.requires_grad = self.trainable
 
-        # Pre-allocate empty tensor for interface compatibility (torch.compile + DDP)
+        # Pre-allocate empty tensor for interface compatibility (torch.compile + DDP).
         self.register_buffer(
             "_empty_tensor",
             torch.empty(0, device=env.DEVICE, dtype=env.GLOBAL_PT_FLOAT_PRECISION),
-            persistent=True,
+            persistent=False,
         )
 
         # === Statistics buffers (interface compatibility) ===

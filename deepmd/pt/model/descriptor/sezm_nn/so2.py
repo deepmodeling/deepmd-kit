@@ -2080,13 +2080,13 @@ class SO2Convolution(nn.Module):
             device=self.device,
             dtype=self.dtype,
         )
-        self.register_buffer("coeff_index_m", coeff_index_m, persistent=True)
-        self.register_buffer("degree_index_m", degree_index_m, persistent=True)
+        self.register_buffer("coeff_index_m", coeff_index_m, persistent=False)
+        self.register_buffer("degree_index_m", degree_index_m, persistent=False)
         # Packed (l, m) -> l index, used by the rotation-free radial message to
         # broadcast each degree's radial weight over its orders.
         self.register_buffer("degree_index_full", degree_index_full, persistent=False)
         self.register_buffer(
-            "rotate_inv_rescale_full", rotate_inv_rescale_full, persistent=True
+            "rotate_inv_rescale_full", rotate_inv_rescale_full, persistent=False
         )
         self.reduced_dim = int(coeff_index_m.numel())
 

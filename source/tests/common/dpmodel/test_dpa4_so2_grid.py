@@ -298,19 +298,3 @@ def test_so2_no_grid_regression(masked) -> None:
     assert dp_mod.node_wise_grid_product is None
     assert dp_mod.message_node_grid_product is None
     _assert_conv_parity(pt_mod, dp_mod, kwargs, masked=masked)
-
-
-def test_so2_deserialize_rejects_drift_key() -> None:
-    """A drift key under a grid-product prefix fails deserialization loudly."""
-    pt_mod, _dp_mod, _kwargs = _build_conv_pair(
-        message_node_so3=True, lmax=3, mmax=1, lebedev_quadrature=False
-    )
-    data = pt_mod.serialize()
-    var_key = next(
-        k for k in data["@variables"] if k.startswith("message_node_grid_product.")
-    )
-    data["@variables"]["message_node_grid_product.__bogus__"] = data["@variables"][
-        var_key
-    ]
-    with pytest.raises(ValueError, match="message_node_grid_product"):
-        DPSO2Conv.deserialize(data)

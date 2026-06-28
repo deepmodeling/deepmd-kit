@@ -92,10 +92,17 @@ class TestDescrptDPA4:
         assert dd.need_sorted_nlist_for_lower() is False
         assert dd.get_env_protection() == dd.eps
 
-    def test_has_message_passing_false(self) -> None:
-        # scalar-only model: lmax=0 carries no directional messages
-        dd = make_descriptor(lmax=0, mmax=0, kmax=0, n_blocks=1)
-        assert dd.has_message_passing() is False
+    def test_message_passing_semantics(self) -> None:
+        # SeZM always resolves ghost neighbours on the lower path, so it always
+        # reports message passing; cross-rank ghost exchange is needed only when
+        # zone bridging is disabled (a BridgingSwitch cannot be reproduced by a
+        # single rank for ghost owners).
+        dd = make_descriptor()
+        assert dd.has_message_passing() is True
+        assert dd.has_message_passing_across_ranks() is True
+        dd_bridge = make_descriptor(inner_clamp_r_inner=0.5, inner_clamp_r_outer=1.0)
+        assert dd_bridge.has_message_passing() is True
+        assert dd_bridge.has_message_passing_across_ranks() is False
 
     def test_serialize_roundtrip_exact(self) -> None:
         dd = make_descriptor()
@@ -149,51 +156,39 @@ class TestDescrptDPA4:
         np.testing.assert_allclose(out2, out, rtol=1e-12, atol=1e-14)
 
     @pytest.mark.parametrize(
-        "flag,value",
+        "overrides",
         [
-            # guarded at the descriptor level
-            ("lebedev_quadrature", False),  # tensor-product S2 grid
-            ("lebedev_quadrature", [False, True]),  # tensor-product S2 grid (so2)
-            ("lebedev_quadrature", [True, False]),  # tensor-product S2 grid (ffn)
-            ("add_chg_spin_ebd", True),  # ChargeSpinEmbedding
-            ("inner_clamp_r_inner", 0.5),  # zone bridging
-            ("inner_clamp_r_outer", 1.0),  # zone bridging
-            # delegated to the owning submodules
-            ("layer_scale", True),  # block LayerScale
-            ("full_attn_res", "independent"),  # DepthAttnRes
-            ("block_attn_res", "dependent"),  # DepthAttnRes
-            ("so2_attn_res", "independent"),  # SO(2) DepthAttnRes
-            ("s2_activation", [True, True]),  # so2-side S2 activation
-            ("atten_f_mix", True),  # SO(2) attention focus mix
-            ("atten_v_proj", True),  # SO(2) attention value projection
-            ("atten_o_proj", True),  # SO(2) attention output projection
+            # Charge/spin condition embedding; default_chg_spin lets forward run
+            # without an explicit charge_spin input.
+            pytest.param(
+                {"add_chg_spin_ebd": True, "default_chg_spin": [0.5, -0.5]},
+                id="add_chg_spin_ebd",
+            ),
+            pytest.param({"so2_attn_res": "independent"}, id="so2_attn_res"),
+            pytest.param({"full_attn_res": "dependent"}, id="full_attn_res"),
+            pytest.param({"layer_scale": True}, id="layer_scale"),
+            pytest.param(
+                {"lebedev_quadrature": [False, False]}, id="lebedev_quadrature_off"
+            ),
+            pytest.param({"atten_v_proj": True}, id="atten_v_proj"),
+            pytest.param({"node_wise_so3": True}, id="node_wise_so3"),
+            pytest.param({"message_node_so3": True}, id="message_node_so3"),
+            pytest.param({"ffn_so3_grid": True}, id="ffn_so3_grid"),
         ],
     )
-    def test_not_implemented_guards(self, flag, value) -> None:
-        with pytest.raises(NotImplementedError):
-            make_descriptor(**{flag: value})
-
-    @pytest.mark.parametrize(
-        "flag,value",
-        [
-            ("lebedev_quadrature", True),  # supported branch of every guard
-            ("add_chg_spin_ebd", False),
-            ("inner_clamp_r_inner", None),
-            ("layer_scale", False),
-            ("full_attn_res", "none"),
-            ("s2_activation", [False, True]),
-            ("node_wise_s2", False),
-            ("node_wise_so3", True),  # SO(2) edge-local SO(3) cross-grid product
-            ("message_node_so3", True),  # SO(2) post-agg SO(3) cross-grid product
-            ("ffn_so3_grid", False),  # SO(3) Wigner-D FFN grid off
-            ("ffn_so3_grid", True),  # SO(3) Wigner-D FFN grid on (now wired)
-            ("use_amp", True),  # pt-runtime-only switch: accepted and ignored
-            ("use_amp", False),
-        ],
-    )
-    def test_supported_branches_construct(self, flag, value) -> None:
-        dd = make_descriptor(**{flag: value})
-        assert isinstance(dd, DescrptDPA4)
+    def test_supported_feature_roundtrip(self, overrides) -> None:
+        # Each flag enables a feature the migration now implements. Verify the
+        # key steps: forward is finite with the right shape, and the descriptor
+        # survives a serialize -> deserialize round-trip bit-exactly.
+        dd = make_descriptor(**overrides)
+        coord, atype, nlist = make_inputs()
+        nf, nloc = atype.shape
+        out1 = np.asarray(dd.call(coord.reshape(nf, -1), atype, nlist)[0])
+        assert out1.shape == (nf, nloc, dd.get_dim_out())
+        assert np.isfinite(out1).all()
+        dd2 = DescrptDPA4.deserialize(dd.serialize())
+        out2 = np.asarray(dd2.call(coord.reshape(nf, -1), atype, nlist)[0])
+        np.testing.assert_array_equal(out1, out2)
 
     def test_value_errors(self) -> None:
         with pytest.raises(ValueError):  # kmax must be <= lmax

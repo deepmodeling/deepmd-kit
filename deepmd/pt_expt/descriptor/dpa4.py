@@ -7,6 +7,10 @@ import torch
 
 from deepmd.dpmodel.descriptor.dpa4 import DescrptDPA4 as DescrptDPA4DP
 from deepmd.dpmodel.descriptor.dpa4_nn.activation import SwiGLU as SwiGLUDP
+from deepmd.dpmodel.descriptor.dpa4_nn.grid_net import GridProduct as GridProductDP
+from deepmd.dpmodel.descriptor.dpa4_nn.radial import (
+    C3CutoffEnvelope as C3CutoffEnvelopeDP,
+)
 from deepmd.dpmodel.descriptor.dpa4_nn.wignerd import (
     WignerDCalculator as WignerDCalculatorDP,
 )
@@ -20,6 +24,11 @@ from deepmd.pt_expt.descriptor.base_descriptor import (
 from deepmd.pt_expt.utils.update_sel import (
     UpdateSel,
 )
+
+# Registers the dpmodel -> pt_expt converters for the interaction block
+# (activation checkpointing) and the SO(2) modules (opt-in Triton kernels), so
+# the auto-wrapped descriptor tree picks up those subclasses.
+from . import dpa4_nn  # noqa: F401
 
 
 @torch_module
@@ -44,6 +53,33 @@ class SwiGLU(SwiGLUDP):
 
 # SwiGLU is parameter-free (no serialize); rebuild fresh.
 register_dpmodel_mapping(SwiGLUDP, lambda v: SwiGLU())
+
+
+@torch_module
+class C3CutoffEnvelope(C3CutoffEnvelopeDP):
+    def forward(self, *args: Any, **kwargs: Any) -> Any:
+        return self.call(*args, **kwargs)
+
+
+# C3CutoffEnvelope carries only scalar configuration (cutoff radius and
+# polynomial exponent) and holds no trainable arrays, so it implements no
+# serialize()/deserialize() that the generic auto-wrap path relies on; rebuild
+# it directly from the stored constructor arguments (``p`` is the exponent).
+register_dpmodel_mapping(
+    C3CutoffEnvelopeDP,
+    lambda v: C3CutoffEnvelope(v.rcut, v.p, precision=v.precision),
+)
+
+
+@torch_module
+class GridProduct(GridProductDP):
+    def forward(self, *args: Any, **kwargs: Any) -> Any:
+        return self.call(*args, **kwargs)
+
+
+# GridProduct is a parameter-free quadratic grid product with no constructor
+# arguments and no serialize()/deserialize(); rebuild a fresh instance.
+register_dpmodel_mapping(GridProductDP, lambda v: GridProduct())
 
 
 # ---------------------------------------------------------------------------
@@ -86,6 +122,12 @@ _TRAINABLE_ATTRS: dict[str, tuple[str, ...]] = {
     ),
     # dpa4_nn.embedding
     "SeZMTypeEmbedding": ("adam_type_embedding",),
+    # dpa4_nn.attn_res
+    "DepthAttnRes": ("adamw_pseudo_query",),
+    # dpa4_nn.grid_net (residual_scale is None when disabled; _promote_trainable
+    # skips the missing buffer, so listing both concrete subclasses is safe)
+    "S2GridNet": ("residual_scale",),
+    "SO3GridNet": ("residual_scale",),
     # descriptor-level FiLM strengths
     "DescrptDPA4": ("film_scale_strength_log", "film_shift_strength_log"),
 }
@@ -146,6 +188,25 @@ class DescrptDPA4(DescrptDPA4DP):
 
     def forward(self, *args: Any, **kwargs: Any) -> Any:
         return self.call(*args, **kwargs)
+
+    def _forward_blocks(self, x: torch.Tensor, *args: Any, **kwargs: Any) -> Any:
+        """Run the interaction blocks under the pt_expt AMP policy.
+
+        This is the torch (pt_expt) implementation of the descriptor's
+        ``use_amp`` switch, mirroring the reference pt ``_compute_mode_ctx``:
+        bfloat16 autocast wraps only the interaction-block region, while the
+        geometry, edge cache, radial, env-seed, GIE and output FFN stages stay
+        in fp32 (or higher). The dpmodel base stores ``use_amp`` only as a
+        config flag and never autocasts (array-API has no autocast), so the
+        real automatic mixed precision lives here. ``x`` is the node-feature
+        tensor entering the blocks; its device equals the working device, so
+        autocast engages only when ``self.use_amp`` is set, the module is in
+        training mode, and the inputs live on a CUDA device.
+        """
+        if self.use_amp and self.training and x.device.type == "cuda":
+            with torch.autocast(device_type="cuda", dtype=torch.bfloat16, enabled=True):
+                return super()._forward_blocks(x, *args, **kwargs)
+        return super()._forward_blocks(x, *args, **kwargs)
 
     def share_params(
         self,

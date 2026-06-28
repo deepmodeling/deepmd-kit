@@ -2,31 +2,11 @@
 """
 SO(2)-equivariant message-passing layers for DPA4/SeZM.
 
-This module is the dpmodel port of ``deepmd.pt.model.descriptor.sezm_nn.so2``.
-It defines the reduced-layout SO(2) linear operator, the edge-conditioned
-radial degree mixer, and the edge convolution used inside SeZM interaction
-blocks.
+This module defines the reduced-layout SO(2) linear operator and the
+edge convolution used inside SeZM interaction blocks.
 
-Padded-edge adaptation
-----------------------
-The pt ``SO2Convolution`` consumes a flat *sparse* edge list and aggregates
-per destination node with ``index_add_``. The dpmodel port uses the padded,
-frame-explicit edge layout documented in ``edge_cache.EdgeCache``
-(``E = nf * nloc * nnei`` with invalid slots marked by ``edge_mask == 0``),
-so every destination aggregation becomes a masked sum over the ``nnei`` axis
-and the destination-wise softmax becomes a masked softmax over ``nnei``
-(see ``attention.segment_envelope_gated_softmax``). Per-edge math (the
-SO(2) linear application, the Wigner rotations via the ``D_to_m``
-projections, and the radial modulation) is identical to pt, just evaluated
-over the padded edge axis.
-
-Branches guarded with ``NotImplementedError`` (flags unused by the core DPA4
-config): ``so2_attn_res != "none"``, ``layer_scale``, ``s2_activation``,
-``atten_f_mix``, ``atten_v_proj``, ``atten_o_proj``.
-
-The cross-mode SO(3)/S2 grid products (``node_wise_s2``/``node_wise_so3`` and
-``message_node_s2``/``message_node_so3``) are ported and wired into the
-convolution, mirroring the pt ``SO2Convolution`` forward placement.
+This module is the dpmodel (array-API) port of
+``deepmd.pt.model.descriptor.sezm_nn.so2``.
 """
 
 from __future__ import (
@@ -48,11 +28,16 @@ from deepmd.dpmodel import (
     NativeOP,
 )
 from deepmd.dpmodel.array_api import (
+    xp_add_at,
     xp_asarray_nodetach,
     xp_sigmoid,
 )
 from deepmd.dpmodel.common import (
+    get_xp_precision,
     to_numpy_array,
+)
+from deepmd.dpmodel.utils.network import (
+    Identity,
 )
 from deepmd.dpmodel.utils.seed import (
     child_seed,
@@ -66,6 +51,13 @@ from .activation import (
 )
 from .attention import (
     segment_envelope_gated_softmax,
+)
+from .attn_res import (
+    DepthAttnRes,
+)
+from .cartesian import (
+    EdgeCartesianTensorProduct,
+    NodeCartesianTensorProduct,
 )
 from .grid_net import (
     S2GridNet,
@@ -94,44 +86,18 @@ from .so3 import (
 )
 from .utils import (
     ATTN_RES_MODES,
+    get_promoted_dtype,
     init_trunc_normal_fan_in_out,
 )
 
 if TYPE_CHECKING:
+    from deepmd.dpmodel.array_api import (
+        Array,
+    )
+
     from .edge_cache import (
         EdgeCache,
     )
-
-
-def _compute_precision(precision: str) -> str:
-    """Promote fp16/bf16 to fp32 (dpmodel analog of pt ``get_promoted_dtype``)."""
-    name = np.dtype(PRECISION_DICT[precision.lower()]).name
-    if "float16" in name:  # matches float16 and bfloat16
-        return "float32"
-    return precision
-
-
-def _check_shape_assign(obj: Any, attr: str, value: Any, dtype: Any, key: str) -> None:
-    """Assign ``value`` (cast to ``dtype``) to ``obj.attr`` with a shape check."""
-    expected = getattr(obj, attr)
-    arr = np.asarray(value, dtype=dtype)
-    if arr.shape != expected.shape:
-        raise ValueError(
-            f"{key} shape {arr.shape} does not match the expected shape "
-            f"{expected.shape}"
-        )
-    setattr(obj, attr, arr)
-
-
-def _check_index_table(expected: np.ndarray, value: Any, key: str) -> None:
-    """Validate that a serialized integer index table matches the rebuilt one."""
-    arr = np.asarray(value, dtype=np.int64)
-    # ``expected`` is a rebuilt buffer that may be a (possibly CUDA) torch
-    # tensor in the pt_expt backend; ``np.asarray`` raises on CUDA tensors and
-    # ``np.array_equal`` would silently swallow that into ``False``. Convert via
-    # ``to_numpy_array`` (dlpack-through-CPU fallback) before comparing.
-    if not np.array_equal(arr.reshape(-1), to_numpy_array(expected).reshape(-1)):
-        raise ValueError(f"{key} does not match the table derived from the config")
 
 
 class SO2Linear(NativeOP):
@@ -145,15 +111,16 @@ class SO2Linear(NativeOP):
         [  m=0: l=0..lmax  |  m=1: (l,-1) then (l,+1)  |  ...  |  m=mmax: ... ]
          |___ lmax+1 ____|   |_______ 2*(lmax) ________|
 
-    Each |m| group is contiguous, enabling per-group block matmuls.
+    Each |m| group is contiguous, enabling a single block-diagonal matmul.
 
     Block-diagonal weight structure
     -------------------------------
-    The conceptual full weight matrix is block-diagonal over |m| groups::
+    The full weight matrix W has shape ``(F, D_m_trunc*Cout, D_m_trunc*Cin)``
+    and is block-diagonal over |m| groups::
 
         W = diag[W_m0, B_m1, B_m2, ..., B_mmax]
 
-    - ``W_m0``: unconstrained ``(num_l*Cin, num_l*Cout)`` block for m=0.
+    - ``W_m0``: unconstrained ``(num_l*Cout, num_l*Cin)`` block for m=0.
       Cross-l mixing is allowed since m=0 coefficients are real scalars.
 
     - ``B_m`` (|m|>0): SO(2)-constrained 2x2 block coupling (-m, +m) pairs::
@@ -163,12 +130,12 @@ class SO2Linear(NativeOP):
 
       This structure is the real-valued form of complex multiplication
       ``(u + iv)(a + ib) = (ua - vb) + i(va + ub)``, which guarantees
-      SO(2) equivariance.
+      SO(2) equivariance: rotating the input by angle phi around z
+      rotates the output by the same angle.
 
-    Unlike pt (which assembles the dense block-diagonal matrix and applies a
-    single ``einsum``), the dpmodel forward contracts the diagonal blocks
-    directly with slicing + matmul + concat, which is array-API friendly and
-    numerically equivalent (the off-block entries are exact zeros).
+    The weight is assembled once per forward (training) or cached (eval)
+    by ``_build_so2_weight()``, then applied via a single batched matmul
+    over all focus streams: ``einsum("efi,foi->efo")``.
 
     Parameters
     ----------
@@ -182,7 +149,7 @@ class SO2Linear(NativeOP):
         Number of output channels per (l, m) coefficient.
     n_focus
         Number of independent focus streams. Each stream has its own
-        weight matrices.
+        weight matrices; the batched matmul vectorizes over all streams.
     precision
         Parameter precision.
     mlp_bias
@@ -203,8 +170,8 @@ class SO2Linear(NativeOP):
         n_focus: int = 1,
         precision: str = DEFAULT_PRECISION,
         mlp_bias: bool = False,
-        seed: int | list[int] | None = None,
-        trainable: bool = True,
+        seed: int | list[int] | None,
+        trainable: bool,
     ) -> None:
         self.lmax = int(lmax)
         self.mmax = int(self.lmax if mmax is None else mmax)
@@ -217,7 +184,6 @@ class SO2Linear(NativeOP):
         self.n_focus = int(n_focus)
         self.precision = precision
         self.mlp_bias = bool(mlp_bias)
-        self.trainable = bool(trainable)
         prec = PRECISION_DICT[self.precision.lower()]
 
         # === Step 1. Build m-major coefficient layout ===
@@ -243,12 +209,10 @@ class SO2Linear(NativeOP):
             num_l = self.lmax - m + 1
             neg_start = offset
             pos_start = offset + num_l
-            neg_indices_list.append(
-                np.arange(neg_start, neg_start + num_l, dtype=np.int64)
-            )
-            pos_indices_list.append(
-                np.arange(pos_start, pos_start + num_l, dtype=np.int64)
-            )
+            neg_idx = np.arange(neg_start, neg_start + num_l, dtype=np.int64)
+            pos_idx = np.arange(pos_start, pos_start + num_l, dtype=np.int64)
+            neg_indices_list.append(neg_idx)
+            pos_indices_list.append(pos_idx)
             m_ranges.append((neg_start, pos_start, num_l))
             offset += 2 * num_l
 
@@ -257,10 +221,11 @@ class SO2Linear(NativeOP):
         if len(pos_indices_list) > 0:
             self.pos_indices = np.concatenate(pos_indices_list)
             self.neg_indices = np.concatenate(neg_indices_list)
+            self._m_ranges = m_ranges
         else:
             self.pos_indices = np.empty(0, dtype=np.int64)
             self.neg_indices = np.empty(0, dtype=np.int64)
-        self._m_ranges = m_ranges
+            self._m_ranges = []
 
         # === Step 2. Learnable weight parameters ===
         # weight_m0: folded (num_l*Cin, F*num_l*Cout) storage — (in, out) convention.
@@ -275,19 +240,19 @@ class SO2Linear(NativeOP):
             init_trunc_normal_fan_in_out(
                 weight_m0_view[:, focus_idx, :], child_seed(seed, 1000 + focus_idx)
             )
-        self.weight_m0 = weight_m0
+        self.weight_m0 = weight_m0.astype(prec)
         if self.mlp_bias:
             self.bias0: np.ndarray | None = np.zeros(
-                (self.n_focus * self.out_channels,), dtype=prec
+                self.n_focus * self.out_channels, dtype=prec
             )
         else:
             self.bias0 = None
 
-        # weight_m[i]: folded (num_l*Cin, F*2*num_l*Cout) storage — (in, out)
-        #   convention. Runtime view: (num_l*Cin, F, 2*num_l*Cout).
+        # weight_m[i]: folded (num_l*Cin, F*2*num_l*Cout) storage — (in, out) convention.
+        #   Runtime view: (num_l*Cin, F, 2*num_l*Cout).
         #   The factor of 2 comes from storing W_u and W_v concatenated along the
-        #   output axis. Scaling by 1/sqrt(2) compensates for the doubled
-        #   parameter count.
+        #   output axis. _build_so2_weight() splits them and fills the 2x2 block.
+        #   Scaling by 1/sqrt(2) compensates for the doubled parameter count.
         self.weight_m: list[np.ndarray] = []
         for m in range(1, self.mmax + 1):
             num_l = self.lmax - m + 1
@@ -302,13 +267,16 @@ class SO2Linear(NativeOP):
                 )
             # Apply scaling for SO(2) equivariance
             weight *= 1.0 / math.sqrt(2.0)
-            self.weight_m.append(weight)
+            self.weight_m.append(weight.astype(prec))
 
-        # === Step 3. Precompute flattened slice ranges for the block matmuls ===
+        self.trainable = bool(trainable)
+
+        # === Step 3. Precompute flattened slice ranges for _build_so2_weight ===
         # Each |m|>0 group occupies two sub-blocks (neg, pos) in the flattened
-        # coefficient*channel axis.
-        # Tuple layout: (neg_i0, neg_i1, pos_i0, pos_i1,   <- input ranges
-        #                neg_o0, neg_o1, pos_o0, pos_o1)   <- output ranges
+        # weight matrix. Pre-computing the row/col ranges avoids repeated
+        # arithmetic in the hot path.
+        # Tuple layout: (neg_i0, neg_i1, pos_i0, pos_i1,   <- input row ranges
+        #                neg_o0, neg_o1, pos_o0, pos_o1)   <- output col ranges
         self._m0_in = (self.lmax + 1) * self.in_channels
         self._m0_out = (self.lmax + 1) * self.out_channels
         self._block_slices: list[tuple[int, int, int, int, int, int, int, int]] = []
@@ -328,20 +296,12 @@ class SO2Linear(NativeOP):
                 )
             )
 
-    @staticmethod
-    def _focus_matmul(xp: Any, x: Any, w: Any) -> Any:
-        """Per-focus matmul: einsum("efi,fio->efo") via broadcast batched matmul.
+        # The assembled SO(2) weight is block-diagonal over |m| groups; the
+        # forward contracts only the diagonal blocks (see _block_diagonal_matmul).
+        # Each |m| group occupies a contiguous (in, out) block on the diagonal.
+        self._block_diag_slices = self._build_block_diag_slices()
 
-        Parameters
-        ----------
-        x
-            Input with shape (E, F, in_blk).
-        w
-            Weight with shape (F, in_blk, out_blk).
-        """
-        return xp.matmul(x[:, :, None, :], w[None, ...])[..., 0, :]
-
-    def call(self, x: Any) -> Any:
+    def call(self, x: Array) -> Array:
         """
         Parameters
         ----------
@@ -352,27 +312,98 @@ class SO2Linear(NativeOP):
         Returns
         -------
         Array
-            Output with shape (E, F, D_m_trunc, Cout).
+            Output with shape (E, F, D_m_trunc, Cout), where Cout is output channels.
         """
         xp = array_api_compat.array_namespace(x)
+        device = array_api_compat.device(x)
         # === Step 1. Flatten coefficient + channel axes for matmul ===
         # (E, F, D_m, Cin) -> (E, F, D_m*Cin)
         n_edge = x.shape[0]
         in_dim_total = self.reduced_dim * self.in_channels
         x_flat = xp.reshape(x, (n_edge, self.n_focus, in_dim_total))
 
-        # === Step 2. Contract the diagonal |m| blocks ===
-        # m=0 block: unconstrained (num_l*Cin, num_l*Cout) per focus.
-        num_m0 = self.lmax + 1
-        device = array_api_compat.device(x)
+        # === Step 2. Get block-diagonal weight ===
+        weight = self._build_so2_weight(xp, device)
+
+        # === Step 3. Block-diagonal matmul over focus streams + reshape back ===
+        out_flat = self._block_diagonal_matmul(x_flat, weight)
+        out = xp.reshape(
+            out_flat, (n_edge, self.n_focus, self.reduced_dim, self.out_channels)
+        )
+
+        # === Step 4. Bias on l=0 scalar index ===
+        if self.mlp_bias:
+            bias0 = xp.reshape(
+                xp_asarray_nodetach(xp, self.bias0[...], device=device),
+                (self.n_focus, self.out_channels),
+            )
+            out = xp.concat(
+                [out[:, :, :1, :] + bias0[None, :, None, :], out[:, :, 1:, :]], axis=2
+            )
+        return out
+
+    def _build_block_diag_slices(self) -> list[tuple[int, int, int, int]]:
+        """Return the ``(in_start, in_end, out_start, out_end)`` diagonal blocks.
+
+        One entry per ``|m|`` group in m-major order: ``m = 0`` spans
+        ``lmax + 1`` coefficients and each ``|m| > 0`` spans ``2 * (lmax - m + 1)``
+        coefficients (negative and positive orders).
+        """
+        group_sizes = [self.lmax + 1] + [
+            2 * (self.lmax - m + 1) for m in range(1, self.mmax + 1)
+        ]
+        slices: list[tuple[int, int, int, int]] = []
+        in_off = out_off = 0
+        for num in group_sizes:
+            in_width = num * self.in_channels
+            out_width = num * self.out_channels
+            slices.append((in_off, in_off + in_width, out_off, out_off + out_width))
+            in_off += in_width
+            out_off += out_width
+        return slices
+
+    def _build_so2_weight(self, xp: Any, device: Any) -> Array:
+        """
+        Assemble the per-focus block-diagonal SO(2) weight matrix.
+
+        The flattened weight has shape ``(D_m*Cin, F, D_m*Cout)`` (in, out)
+        where both axes follow the same m-major coefficient ordering.
+        Off-diagonal blocks (cross-|m|) are zero, enforcing SO(2) equivariance.
+
+        Returns
+        -------
+        Array
+            Weight with shape (D_m*Cin, F, D_m*Cout).
+        """
+        in_total = self.reduced_dim * self.in_channels
+        out_total = self.reduced_dim * self.out_channels
+        num_in_m0 = (self.lmax + 1) * self.in_channels
+        num_out_m0 = (self.lmax + 1) * self.out_channels
         weight_m0 = xp.reshape(
             xp_asarray_nodetach(xp, self.weight_m0[...], device=device),
-            (num_m0 * self.in_channels, self.n_focus, num_m0 * self.out_channels),
+            (num_in_m0, self.n_focus, num_out_m0),
         )
-        weight_m0 = xp.permute_dims(weight_m0, (1, 0, 2))  # (F, in, out)
-        out_blocks = [self._focus_matmul(xp, x_flat[:, :, : self._m0_in], weight_m0)]
 
-        # |m|>0 blocks: real-valued complex multiplication on (-m, +m) pairs.
+        # m=0 block: (Cin_blk, F, Cout_blk) — (in, out) convention. The m=0 input
+        # rows carry the m=0 output block followed by zero pads spanning the
+        # |m|>0 output columns.
+        row_blocks = [
+            xp.concat(
+                [
+                    weight_m0,
+                    xp.zeros(
+                        (self._m0_in, self.n_focus, out_total - self._m0_out),
+                        dtype=weight_m0.dtype,
+                        device=device,
+                    ),
+                ],
+                axis=2,
+            )
+        ]
+
+        # |m|>0 blocks: fill the 2x2 SO(2) coupling structure.
+        # For each |m|, the learnable param w has shape (in_blk, F, 2*out_blk)
+        # which is split into W_u and W_v along the output axis.
         for m_idx, w in enumerate(self.weight_m):
             ni0, ni1, pi0, pi1, no0, no1, po0, po1 = self._block_slices[m_idx]
             ib = ni1 - ni0  # in_block size
@@ -381,39 +412,61 @@ class SO2Linear(NativeOP):
                 xp_asarray_nodetach(xp, w[...], device=device),
                 (ib, self.n_focus, 2 * ob),
             )
-            w = xp.permute_dims(w, (1, 0, 2))  # (F, in_blk, 2*out_blk)
-            w_u = w[:, :, :ob]  # (F, in_blk, out_blk)
-            w_v = w[:, :, ob:]  # (F, in_blk, out_blk)
-            x_neg = x_flat[:, :, ni0:ni1]
-            x_pos = x_flat[:, :, pi0:pi1]
-            # 2x2 coupling: neg_out = x_neg @ W_u - x_pos @ W_v
-            #               pos_out = x_neg @ W_v + x_pos @ W_u
-            out_blocks.append(
-                self._focus_matmul(xp, x_neg, w_u) - self._focus_matmul(xp, x_pos, w_v)
+            w_u = w[:, :, :ob]  # (in_blk, F, out_blk)
+            w_v = w[:, :, ob:]  # (in_blk, F, out_blk)
+            # Fill the 2x2 coupling:
+            #   Row = input (neg/pos), Col = output (neg/pos).
+            #   [ W_u^T, -W_v^T ]^T  =>  row=neg_in: W_u to neg_out, W_v to pos_out
+            #   [ W_v^T,  W_u^T ]^T  =>  row=pos_in: -W_v to neg_out, W_u to pos_out
+            # neg_out and pos_out are contiguous (no1 == po0); each input row band
+            # is built by concatenating [left pad, two coupling sub-blocks, right pad].
+            left_pad = xp.zeros((ib, self.n_focus, no0), dtype=w.dtype, device=device)
+            right_pad = xp.zeros(
+                (ib, self.n_focus, out_total - po1), dtype=w.dtype, device=device
             )
-            out_blocks.append(
-                self._focus_matmul(xp, x_neg, w_v) + self._focus_matmul(xp, x_pos, w_u)
+            neg_row = xp.concat([left_pad, w_u, w_v, right_pad], axis=2)
+            pos_row = xp.concat([left_pad, -w_v, w_u, right_pad], axis=2)
+            row_blocks.append(neg_row)  # neg_in -> [neg_out, pos_out]
+            row_blocks.append(pos_row)  # pos_in -> [neg_out, pos_out]
+        return xp.concat(row_blocks, axis=0)
+
+    def _block_diagonal_matmul(self, x_flat: Array, weight: Array) -> Array:
+        """Contract only the diagonal ``|m|`` blocks of the assembled weight.
+
+        ``weight`` is block-diagonal over ``|m|`` (cross-``|m|`` blocks are
+        exactly zero), so concatenating the per-group matmuls reproduces the
+        dense ``einsum`` over the full ``(D_m*Cin, D_m*Cout)`` matrix while
+        skipping the structural zeros. The result is fp32-equivalent to the
+        dense path up to the matmul reduction order.
+
+        Parameters
+        ----------
+        x_flat : Array
+            Flattened input with shape ``(E, F, D_m*Cin)``.
+        weight : Array
+            Assembled block-diagonal weight with shape ``(D_m*Cin, F, D_m*Cout)``.
+
+        Returns
+        -------
+        Array
+            Flattened output with shape ``(E, F, D_m*Cout)``.
+        """
+        xp = array_api_compat.array_namespace(x_flat)
+        blocks = [
+            # einsum("efi,ifo->efo"): a per-focus matmul batched over the focus
+            # axis, contracting the input coefficient/channel index i.
+            xp.permute_dims(
+                xp.matmul(
+                    xp.permute_dims(x_flat[:, :, in0:in1], (1, 0, 2)),
+                    xp.permute_dims(weight[in0:in1, :, out0:out1], (1, 0, 2)),
+                ),
+                (1, 0, 2),
             )
+            for in0, in1, out0, out1 in self._block_diag_slices
+        ]
+        return xp.concat(blocks, axis=-1)
 
-        out_flat = (
-            xp.concat(out_blocks, axis=-1) if len(out_blocks) > 1 else out_blocks[0]
-        )
-        out = xp.reshape(
-            out_flat, (n_edge, self.n_focus, self.reduced_dim, self.out_channels)
-        )
-
-        # === Step 3. Bias on l=0 scalar index ===
-        if self.mlp_bias:
-            bias0 = xp.reshape(
-                xp_asarray_nodetach(xp, self.bias0[...], device=device),
-                (self.n_focus, self.out_channels),
-            )
-            out0 = out[:, :, :1, :] + bias0[None, :, None, :]
-            out = xp.concat([out0, out[:, :, 1:, :]], axis=2)
-        return out
-
-    def _variables(self) -> dict[str, np.ndarray]:
-        """Variables keyed by the pt ``state_dict`` key names."""
+    def serialize(self) -> dict[str, Any]:
         variables = {
             "m0_idx": to_numpy_array(self.m0_idx),
             "pos_indices": to_numpy_array(self.pos_indices),
@@ -422,40 +475,8 @@ class SO2Linear(NativeOP):
         }
         if self.mlp_bias:
             variables["bias0"] = to_numpy_array(self.bias0)
-        for m_idx, w in enumerate(self.weight_m):
-            variables[f"weight_m.{m_idx}"] = to_numpy_array(w)
-        return variables
-
-    def _load_variables(self, variables: dict[str, Any]) -> None:
-        """Load variables keyed by the pt ``state_dict`` key names."""
-        prec = PRECISION_DICT[self.precision.lower()]
-        _check_index_table(self.m0_idx, variables["m0_idx"], "m0_idx")
-        _check_index_table(self.pos_indices, variables["pos_indices"], "pos_indices")
-        _check_index_table(self.neg_indices, variables["neg_indices"], "neg_indices")
-        _check_shape_assign(
-            self, "weight_m0", variables["weight_m0"], prec, "weight_m0"
-        )
-        if self.mlp_bias:
-            self.bias0 = np.asarray(variables["bias0"], dtype=prec).reshape(
-                self.bias0.shape
-            )
-        # Rebuild the list and assign the whole attribute (rather than
-        # item-assignment) so that pt_expt, which converts the list to a
-        # torch ParameterList, can re-convert the new value cleanly.
-        new_weight_m = []
-        for m_idx in range(len(self.weight_m)):
-            key = f"weight_m.{m_idx}"
-            value = np.asarray(variables[key], dtype=prec)
-            if value.shape != tuple(self.weight_m[m_idx].shape):
-                raise ValueError(
-                    f"{key} shape {value.shape} does not match the expected "
-                    f"shape {tuple(self.weight_m[m_idx].shape)}"
-                )
-            new_weight_m.append(value)
-        self.weight_m = new_weight_m
-
-    def serialize(self) -> dict[str, Any]:
-        """Serialize the SO2Linear to a dict (pt-compatible format)."""
+        for i, w in enumerate(self.weight_m):
+            variables[f"weight_m.{i}"] = to_numpy_array(w)
         return {
             "@class": "SO2Linear",
             "@version": 1,
@@ -470,12 +491,11 @@ class SO2Linear(NativeOP):
                 "trainable": self.trainable,
                 "seed": None,
             },
-            "@variables": self._variables(),
+            "@variables": variables,
         }
 
     @classmethod
     def deserialize(cls, data: dict[str, Any]) -> SO2Linear:
-        """Deserialize an SO2Linear from a dict."""
         data = data.copy()
         data_cls = data.pop("@class")
         if data_cls != "SO2Linear":
@@ -484,18 +504,18 @@ class SO2Linear(NativeOP):
         check_version_compatibility(version, 1, 1)
         config = data.pop("config")
         variables = data.pop("@variables")
-        obj = cls(
-            lmax=int(config["lmax"]),
-            mmax=int(config["mmax"]),
-            in_channels=int(config["in_channels"]),
-            out_channels=int(config["out_channels"]),
-            n_focus=int(config["n_focus"]),
-            precision=str(config["precision"]),
-            mlp_bias=bool(config["mlp_bias"]),
-            trainable=bool(config["trainable"]),
-            seed=config.get("seed"),
-        )
-        obj._load_variables(variables)
+        obj = cls(**config)
+        prec = PRECISION_DICT[obj.precision.lower()]
+        obj.m0_idx = np.asarray(variables["m0_idx"], dtype=np.int64)
+        obj.pos_indices = np.asarray(variables["pos_indices"], dtype=np.int64)
+        obj.neg_indices = np.asarray(variables["neg_indices"], dtype=np.int64)
+        obj.weight_m0 = np.asarray(variables["weight_m0"], dtype=prec)
+        if obj.mlp_bias:
+            obj.bias0 = np.asarray(variables["bias0"], dtype=prec)
+        obj.weight_m = [
+            np.asarray(variables[f"weight_m.{i}"], dtype=prec)
+            for i in range(len(obj.weight_m))
+        ]
         return obj
 
 
@@ -513,10 +533,6 @@ class DynamicRadialDegreeMixer(NativeOP):
 
     `mode="degree"` shares W across channels. `mode="degree_channel"` gives each
     channel its own W, optionally with a low-rank channel factorization.
-
-    The pt ``index_copy_`` scatter of the compact kernel into the dense
-    ``(D_m, D_m)`` layout is replaced by a precomputed gather index + mask
-    (functionally identical, array-API friendly).
     """
 
     def __init__(
@@ -528,8 +544,8 @@ class DynamicRadialDegreeMixer(NativeOP):
         mode: str,
         rank: int = 0,
         precision: str = DEFAULT_PRECISION,
-        seed: int | list[int] | None = None,
-        trainable: bool = True,
+        seed: int | list[int] | None,
+        trainable: bool,
     ) -> None:
         self.lmax = int(lmax)
         self.mmax = int(self.lmax if mmax is None else mmax)
@@ -547,7 +563,6 @@ class DynamicRadialDegreeMixer(NativeOP):
         if self.rank < 0:
             raise ValueError("`rank` must be non-negative")
         self.precision = precision
-        self.trainable = bool(trainable)
         prec = PRECISION_DICT[self.precision.lower()]
 
         # m-major reduced layout: m=0 block followed by (-m, +m) blocks.
@@ -567,29 +582,19 @@ class DynamicRadialDegreeMixer(NativeOP):
 
         weight = np.empty((self.input_dim, self.proj_out_dim), dtype=prec)
         init_trunc_normal_fan_in_out(weight, child_seed(seed, 0))
-        self.weight = weight
+        self.weight = weight.astype(prec)
 
         if self.mode == "degree_channel" and self.rank > 0:
             channel_basis = np.empty((self.rank, self.channels), dtype=prec)
             init_trunc_normal_fan_in_out(channel_basis, child_seed(seed, 1))
-            self.channel_basis: np.ndarray | None = channel_basis
+            self.channel_basis: np.ndarray | None = channel_basis.astype(prec)
         else:
             self.channel_basis = None
 
         compact_idx, dense_idx = self._build_dense_scatter_indices()
         self.kernel_compact_index = compact_idx
         self.kernel_dense_index = dense_idx
-        # Gather-form of pt's index_copy_ scatter:
-        #   dense[:, dense_idx[j]] = compact[:, compact_idx[j]]
-        # becomes
-        #   dense = take(compact, gather_index, axis=1) * scatter_mask
-        dense_size = self.reduced_dim * self.reduced_dim
-        gather_index = np.zeros(dense_size, dtype=np.int64)
-        scatter_mask = np.zeros(dense_size, dtype=prec)
-        gather_index[dense_idx] = compact_idx
-        scatter_mask[dense_idx] = 1.0
-        self._dense_gather_index = gather_index
-        self._dense_scatter_mask = scatter_mask
+        self.trainable = bool(trainable)
 
     def _build_dense_scatter_indices(self) -> tuple[np.ndarray, np.ndarray]:
         compact_indices: list[int] = []
@@ -602,7 +607,7 @@ class DynamicRadialDegreeMixer(NativeOP):
                 for l_out in range(num_l):
                     compact_indices.append(compact_offset + l_in * num_l + l_out)
                     # Store dense kernels in matmul layout (out, in) so forward
-                    # can use a batched matmul without transposing.
+                    # can call bmm/einsum without transposing the degree matrix.
                     dense_indices.append(
                         (start_out + l_out) * reduced_dim + start_in + l_in
                     )
@@ -625,33 +630,85 @@ class DynamicRadialDegreeMixer(NativeOP):
             offset += 2 * num_l
 
         return (
-            np.asarray(compact_indices, dtype=np.int64),
-            np.asarray(dense_indices, dtype=np.int64),
+            np.array(compact_indices, dtype=np.int64),
+            np.array(dense_indices, dtype=np.int64),
         )
 
-    def _project_radial(self, xp: Any, radial_feat: Any) -> Any:
+    def _project_radial(self, radial_feat: Array) -> Array:
+        xp = array_api_compat.array_namespace(radial_feat)
+        device = array_api_compat.device(radial_feat)
         radial_m0 = xp.reshape(
             radial_feat[:, : self.lmax + 1, :],
             (radial_feat.shape[0], self.input_dim),
         )
-        weight = xp_asarray_nodetach(
-            xp, self.weight[...], device=array_api_compat.device(radial_feat)
-        )
+        weight = xp_asarray_nodetach(xp, self.weight[...], device=device)
         return xp.matmul(radial_m0, weight)
 
-    def _scatter_dense(self, xp: Any, compact: Any, device: Any) -> Any:
-        """Scatter the compact per-block kernel into the dense (D_m*D_m, ...) layout."""
-        gather_index = xp_asarray_nodetach(xp, self._dense_gather_index, device=device)
-        scatter_mask = xp.astype(
-            xp_asarray_nodetach(xp, self._dense_scatter_mask, device=device),
-            compact.dtype,
+    def _scatter_degree_kernel(self, compact: Array) -> Array:
+        xp = array_api_compat.array_namespace(compact)
+        device = array_api_compat.device(compact)
+        n_edge = compact.shape[0]
+        compact_index = xp_asarray_nodetach(
+            xp, self.kernel_compact_index[...], device=device
         )
-        dense = xp.take(compact, gather_index, axis=1)
-        if compact.ndim == 2:
-            return dense * scatter_mask[None, :]
-        return dense * scatter_mask[None, :, None]
+        dense_index = xp_asarray_nodetach(
+            xp, self.kernel_dense_index[...], device=device
+        )
+        source = xp.take(compact, compact_index, axis=1)
+        dense = xp.zeros(
+            (self.reduced_dim * self.reduced_dim, n_edge),
+            dtype=compact.dtype,
+            device=device,
+        )
+        dense = xp_add_at(dense, dense_index, xp.permute_dims(source, (1, 0)))
+        dense = xp.permute_dims(dense, (1, 0))
+        return xp.reshape(dense, (n_edge, self.reduced_dim, self.reduced_dim))
 
-    def call(self, x_local: Any, radial_feat: Any) -> Any:
+    def _scatter_rank_kernel(self, compact: Array) -> Array:
+        xp = array_api_compat.array_namespace(compact)
+        device = array_api_compat.device(compact)
+        n_edge = compact.shape[0]
+        compact_index = xp_asarray_nodetach(
+            xp, self.kernel_compact_index[...], device=device
+        )
+        dense_index = xp_asarray_nodetach(
+            xp, self.kernel_dense_index[...], device=device
+        )
+        source = xp.take(compact, compact_index, axis=1)
+        dense = xp.zeros(
+            (self.reduced_dim * self.reduced_dim, n_edge, self.rank),
+            dtype=compact.dtype,
+            device=device,
+        )
+        dense = xp_add_at(dense, dense_index, xp.permute_dims(source, (1, 0, 2)))
+        dense = xp.permute_dims(dense, (1, 0, 2))
+        return xp.reshape(
+            dense, (n_edge, self.reduced_dim, self.reduced_dim, self.rank)
+        )
+
+    def _scatter_channel_kernel(self, compact: Array) -> Array:
+        xp = array_api_compat.array_namespace(compact)
+        device = array_api_compat.device(compact)
+        n_edge = compact.shape[0]
+        compact_index = xp_asarray_nodetach(
+            xp, self.kernel_compact_index[...], device=device
+        )
+        dense_index = xp_asarray_nodetach(
+            xp, self.kernel_dense_index[...], device=device
+        )
+        source = xp.take(compact, compact_index, axis=1)
+        dense = xp.zeros(
+            (self.reduced_dim * self.reduced_dim, n_edge, self.channels),
+            dtype=compact.dtype,
+            device=device,
+        )
+        dense = xp_add_at(dense, dense_index, xp.permute_dims(source, (1, 0, 2)))
+        dense = xp.permute_dims(dense, (1, 0, 2))
+        return xp.reshape(
+            dense, (n_edge, self.reduced_dim, self.reduced_dim, self.channels)
+        )
+
+    def call(self, x_local: Array, radial_feat: Array) -> Array:
         """
         Parameters
         ----------
@@ -660,84 +717,75 @@ class DynamicRadialDegreeMixer(NativeOP):
         radial_feat
             Invariant radial/type features with shape (E, D_m, C_wide).
         """
+        xp = array_api_compat.array_namespace(x_local)
         if x_local.shape != radial_feat.shape:
             raise ValueError("`x_local` and `radial_feat` must have the same shape")
         if x_local.shape[1] != self.reduced_dim or x_local.shape[2] != self.channels:
             raise ValueError("Input shape is incompatible with this mixer")
 
-        xp = array_api_compat.array_namespace(x_local)
-        device = array_api_compat.device(x_local)
-        n_edge = x_local.shape[0]
-        kernel_flat = self._project_radial(xp, radial_feat)
+        kernel_flat = self._project_radial(radial_feat)
         if self.mode == "degree":
-            kernel = xp.reshape(
-                self._scatter_dense(xp, kernel_flat, device),
-                (n_edge, self.reduced_dim, self.reduced_dim),
-            )
+            kernel = self._scatter_degree_kernel(kernel_flat)
             return xp.matmul(kernel, x_local)
 
         if self.rank > 0:
             compact = xp.reshape(
-                kernel_flat, (n_edge, self.degree_kernel_size, self.rank)
+                kernel_flat, (x_local.shape[0], self.degree_kernel_size, self.rank)
             )
-            kernel = xp.reshape(
-                self._scatter_dense(xp, compact, device),
-                (n_edge, self.reduced_dim, self.reduced_dim, self.rank),
-            )
-            # einsum "eoir,eic->eorc" as a broadcast batched matmul:
-            # (E, o, r, i) @ (E, 1, i, c) -> (E, o, r, c)
-            kernel = xp.permute_dims(kernel, (0, 1, 3, 2))
-            mixed = xp.matmul(kernel, x_local[:, None, :, :])
-            channel_basis = xp.reshape(
-                xp_asarray_nodetach(xp, self.channel_basis[...], device=device),
-                (1, 1, self.rank, self.channels),
-            )
-            return xp.sum(mixed * channel_basis, axis=2)
+            return self._mix_rank_compact(compact, x_local)
 
         compact = xp.reshape(
-            kernel_flat, (n_edge, self.degree_kernel_size, self.channels)
+            kernel_flat, (x_local.shape[0], self.degree_kernel_size, self.channels)
         )
-        kernel = xp.reshape(
-            self._scatter_dense(xp, compact, device),
-            (n_edge, self.reduced_dim, self.reduced_dim, self.channels),
-        )
-        # einsum "eoic,eic->eoc"
+        kernel = self._scatter_channel_kernel(compact)
+        # einsum("eoic,eic->eoc"): contract l_in i per channel c (no channel mix).
         return xp.sum(kernel * x_local[:, None, :, :], axis=2)
 
-    def _variables(self) -> dict[str, np.ndarray]:
-        """Variables keyed by the pt ``state_dict`` key names."""
-        variables = {"weight": to_numpy_array(self.weight)}
-        if self.channel_basis is not None:
-            variables["channel_basis"] = to_numpy_array(self.channel_basis)
-        variables["kernel_compact_index"] = to_numpy_array(self.kernel_compact_index)
-        variables["kernel_dense_index"] = to_numpy_array(self.kernel_dense_index)
-        return variables
+    def _mix_rank_compact(self, compact: Array, x_local: Array) -> Array:
+        """
+        Mix the reduced features by the low-rank dynamic degree kernel.
 
-    def _load_variables(self, variables: dict[str, Any]) -> None:
-        """Load variables keyed by the pt ``state_dict`` key names."""
-        prec = PRECISION_DICT[self.precision.lower()]
-        _check_index_table(
-            self.kernel_compact_index,
-            variables["kernel_compact_index"],
-            "kernel_compact_index",
+        Parameters
+        ----------
+        compact : Array
+            Projected per-edge degree kernels with shape
+            (E, degree_kernel_size, R).
+        x_local : Array
+            Edge-local reduced features with shape (E, D_m, C).
+
+        Returns
+        -------
+        Array
+            Mixed features with shape (E, D_m, C).
+        """
+        xp = array_api_compat.array_namespace(compact)
+        device = array_api_compat.device(compact)
+        kernel = self._scatter_rank_kernel(compact)
+        # einsum("eoir,eic->eorc"): contract l_in i, batched over (l_out, rank)
+        # via a single matmul, then weight the rank channels by channel_basis.
+        kernel_or = xp.reshape(
+            xp.permute_dims(kernel, (0, 1, 3, 2)),
+            (x_local.shape[0], self.reduced_dim * self.rank, self.reduced_dim),
         )
-        _check_index_table(
-            self.kernel_dense_index,
-            variables["kernel_dense_index"],
-            "kernel_dense_index",
+        mixed = xp.matmul(kernel_or, x_local)
+        mixed = xp.reshape(
+            mixed,
+            (x_local.shape[0], self.reduced_dim, self.rank, self.channels),
         )
-        _check_shape_assign(self, "weight", variables["weight"], prec, "weight")
-        if self.channel_basis is not None:
-            _check_shape_assign(
-                self, "channel_basis", variables["channel_basis"], prec, "channel_basis"
-            )
+        channel_basis = xp.reshape(
+            xp_asarray_nodetach(xp, self.channel_basis[...], device=device),
+            (1, 1, self.rank, self.channels),
+        )
+        return xp.sum(mixed * channel_basis, axis=2)
 
     def serialize(self) -> dict[str, Any]:
-        """Serialize the DynamicRadialDegreeMixer to a dict.
-
-        The pt class has no ``serialize()``; the ``@variables`` keys here
-        match the pt ``state_dict`` key names.
-        """
+        variables = {
+            "weight": to_numpy_array(self.weight),
+            "kernel_compact_index": to_numpy_array(self.kernel_compact_index),
+            "kernel_dense_index": to_numpy_array(self.kernel_dense_index),
+        }
+        if self.channel_basis is not None:
+            variables["channel_basis"] = to_numpy_array(self.channel_basis)
         return {
             "@class": "DynamicRadialDegreeMixer",
             "@version": 1,
@@ -751,12 +799,11 @@ class DynamicRadialDegreeMixer(NativeOP):
                 "trainable": self.trainable,
                 "seed": None,
             },
-            "@variables": self._variables(),
+            "@variables": variables,
         }
 
     @classmethod
     def deserialize(cls, data: dict[str, Any]) -> DynamicRadialDegreeMixer:
-        """Deserialize a DynamicRadialDegreeMixer from a dict."""
         data = data.copy()
         data_cls = data.pop("@class")
         if data_cls != "DynamicRadialDegreeMixer":
@@ -765,18 +812,65 @@ class DynamicRadialDegreeMixer(NativeOP):
         check_version_compatibility(version, 1, 1)
         config = data.pop("config")
         variables = data.pop("@variables")
-        obj = cls(
-            lmax=int(config["lmax"]),
-            mmax=int(config["mmax"]),
-            channels=int(config["channels"]),
-            mode=str(config["mode"]),
-            rank=int(config["rank"]),
-            precision=str(config["precision"]),
-            trainable=bool(config["trainable"]),
-            seed=config.get("seed"),
+        obj = cls(**config)
+        prec = PRECISION_DICT[obj.precision.lower()]
+        obj.weight = np.asarray(variables["weight"], dtype=prec)
+        obj.kernel_compact_index = np.asarray(
+            variables["kernel_compact_index"], dtype=np.int64
         )
-        obj._load_variables(variables)
+        obj.kernel_dense_index = np.asarray(
+            variables["kernel_dense_index"], dtype=np.int64
+        )
+        if obj.channel_basis is not None:
+            obj.channel_basis = np.asarray(variables["channel_basis"], dtype=prec)
         return obj
+
+
+def _parse_node_cartesian(spec: str) -> tuple[bool, bool, int]:
+    """
+    Parse the ``node_cartesian`` configuration string.
+
+    Grammar: ``"<mode>:<layers>"`` where ``mode`` is ``"default"`` (the one-sided
+    product ``Y N``) or ``"parity"`` (the symmetrized product ``Y N + N Y``), and
+    ``layers`` is a non-negative integer. A bare mode defaults to one layer; a
+    bare integer uses the default mode. ``"none"``, an empty string, or any zero
+    layer count disables the per-node product.
+
+    Parameters
+    ----------
+    spec : str
+        The configuration string.
+
+    Returns
+    -------
+    tuple[bool, bool, int]
+        ``(enabled, symmetric, n_layers)``.
+
+    Raises
+    ------
+    ValueError
+        If the mode is not ``"default"`` or ``"parity"``, or the layer count is
+        negative.
+    """
+    text = str(spec).strip().lower()
+    if text in ("", "none"):
+        return False, False, 0
+    if ":" in text:
+        mode, _, num = text.partition(":")
+        mode = mode.strip() or "default"
+        layers = int(num.strip())
+    elif text.isdigit():
+        mode, layers = "default", int(text)
+    else:
+        mode, layers = text, 1
+    if mode not in ("default", "parity"):
+        raise ValueError(
+            "`node_cartesian` mode must be 'default' or 'parity', got "
+            f"'{mode}' (expected '<mode>:<layers>', 'none', or a layer count)"
+        )
+    if layers < 0:
+        raise ValueError("`node_cartesian` layer count must be non-negative")
+    return layers > 0, mode == "parity", layers
 
 
 class SO2Convolution(NativeOP):
@@ -791,17 +885,139 @@ class SO2Convolution(NativeOP):
     2. rotate global -> local reduced basis with cached `D_to_m`.
     3. radial modulation in reduced layout.
     4. `mixing_layers` stacked local mixers:
-       `inter_norm -> SO2Linear -> non_linearity -> residual`.
+       `inter_norm -> SO2Linear -> non_linearity -> residual(+LayerScale)`.
     5. rotate local -> global with cached `Dt_from_m`.
-    6. edge aggregation (plain envelope masked sum or envelope-aware masked
-       softmax attention with output-side head gate); see the module
-       docstring for the padded-edge adaptation.
+    6. edge aggregation (plain envelope scatter or envelope-aware grouped
+       softmax attention with exact envelope-gated competition and
+       output-side head gate).
     7. `post_focus_mix`: project aggregated hidden messages back to `(N, D, C)`.
 
-    See the pt ``SO2Convolution`` docstring for the full parameter
-    documentation; this port keeps the same constructor parameters with
-    ``dtype`` replaced by ``precision``. Flags unused by the core DPA4 config
-    raise ``NotImplementedError`` (listed in the module docstring).
+    Equivariance is preserved because both `pre_focus_mix` and `post_focus_mix`
+    only mix the channel axis for each `(l, m)` coefficient and never mix
+    coefficient indices across `(l, m)`.
+
+    Parameters
+    ----------
+    lmax
+        Maximum degree.
+    mmax
+        Maximum SO(2) order (|m|). If None, defaults to lmax.
+    kmax
+        Maximum Wigner-D frame order (|k|) used by SO(3) grid branches.
+    channels
+        Number of channels per (l, m) coefficient.
+    n_focus
+        Number of focus streams inside the SO(2) branch.
+    focus_dim
+        Hidden width per focus stream inside SO(2).
+        ``focus_dim=0`` means using ``channels``.
+    focus_compete
+        If True, apply cross-focus softmax competition in SO(2) local layout.
+        Competition logits are constructed only from l=0 scalar channels and the
+        resulting invariant weights are broadcast to all (l, m) components.
+    so2_norm
+        If True, apply intermediate ReducedEquivariantRMSNorm as pre-norm before
+        each SO(2) mixing layer. The last SO(2) layer always uses Identity.
+    mixing_layers
+        Number of learnable mixing layers in the per-edge message core (SO2Linear
+        layers for the SO(2) path, or refinement layers for ``edge_cartesian``).
+        ``0`` applies only the edge-condition modulation: the rotation-free
+        per-degree radial scaling for the SO(2) path, or a single ``x @ T_e`` for
+        ``edge_cartesian``.
+    so2_attn_res
+        Depth-wise attention residual mode across the internal SO(2) layer
+        history. Must be one of ``"none"``, ``"independent"``, or
+        ``"dependent"``. The same scalar weights are broadcast to the full
+        reduced equivariant tensor.
+    layer_scale
+        If True, apply per-layer learnable LayerScale (per-focus-channel,
+        init 1e-3) on each SO(2) residual branch.
+    n_atten_head
+        Number of attention heads used during aggregation.
+        - 0: plain envelope-weighted scatter-sum.
+        - >0: envelope-gated grouped softmax attention with output-side head
+          gates. Attention uses ``w**2 * exp(logit)`` in the numerator and
+          ``zeta + sum(w**2 * exp(logit))`` in the denominator.
+    atten_f_mix
+        If True, merge the internal focus streams into one attention stream
+        after rotate-back. Attention heads then split the full hidden width
+        ``n_focus * focus_dim`` instead of each focus stream independently.
+    atten_v_proj
+        If True, apply an explicit degree-aware value projection before
+        attention aggregation.
+    atten_o_proj
+        If True, apply an explicit degree-aware output projection after the
+        output-side attention gate.
+    s2_activation
+        If True, replace each intermediate reduced-layout gate with S2-grid
+        SwiGLU. Intermediate ``SO2Linear`` layers then output ``2 * focus_dim``
+        channels before the activation folds them back to ``focus_dim``.
+    node_wise_grid_mlp
+        If True, select the polynomial grid MLP operation for the node-wise
+        source-destination grid product.
+    node_wise_grid_branch
+        Number of scalar-routed polynomial product branches for the node-wise
+        grid product. ``0`` disables branch mixing; positive values take
+        precedence over ``node_wise_grid_mlp``.
+    message_node_grid_mlp
+        If True, select the polynomial grid MLP operation for the message-node
+        grid product.
+    message_node_grid_branch
+        Number of scalar-routed polynomial product branches for the
+        message-node grid product. ``0`` disables branch mixing; positive
+        values take precedence over ``message_node_grid_mlp``.
+    node_wise_s2
+        If True, add an edge-local S2 product branch between radial-fused source
+        features and destination features in the same edge frame.
+    node_wise_so3
+        If True, use the corresponding edge-local SO(3) Wigner-D grid branch.
+    message_node_s2
+        If True, add a packed-layout S2 product branch between the aggregated
+        hidden message and the destination node features before ``post_focus_mix``.
+    message_node_so3
+        If True, use the corresponding post-aggregation SO(3) Wigner-D grid
+        branch.
+    lebedev_quadrature
+        If True, use Lebedev quadrature for the S2 projector.
+    activation_function
+        Activation function for the gated activation path when
+        ``s2_activation=False``.
+    mlp_bias
+        Whether to use bias in SO2Linear (l=0 bias) and GatedActivation
+        (gate linear bias).
+    radial_so2_mode
+        Dynamic radial degree mixer mode. ``"none"`` applies elementwise
+        radial modulation, ``"degree"`` applies a channel-shared dynamic
+        cross-degree kernel, and ``"degree_channel"`` applies a
+        per-channel dynamic cross-degree kernel.
+    radial_so2_rank
+        Low-rank channel factorization rank for ``radial_so2_mode="degree_channel"``.
+        ``0`` uses the full per-channel dynamic degree kernel.
+    edge_cartesian
+        If True, replace the rotate-to-local / ``SO2Linear`` stack / rotate-back
+        core with the per-edge global-frame Cartesian rank-2 tensor product.
+        Requires ``lmax`` in ``{1, 2}`` and is incompatible with the S2/SO(3)
+        grid product branches. The dynamic radial degree mixer is bypassed
+        because the radial edge condition is carried by the Cartesian edge tensor
+        instead.
+    node_cartesian
+        Per-node global-frame Cartesian rank-2 tensor product applied to the
+        aggregated message, coupling it with the destination node feature after
+        the optional message-node grid product and before ``post_focus_mix``. The
+        Cartesian analog of the message-node grid product. Configured by a string
+        ``"<mode>:<layers>"`` where ``mode`` is ``"default"`` (one-sided product)
+        or ``"parity"`` (symmetrized product), and ``layers`` is the stack depth;
+        a bare integer ``N`` is shorthand for ``"default:N"``, and ``"none"`` (or
+        ``0``) disables it. Requires ``lmax`` in ``{1, 2}`` and is orthogonal to
+        ``edge_cartesian``.
+    eps
+        Small epsilon for normalization modules.
+    precision
+        Parameter precision.
+    seed
+        Random seed for weight initialization.
+    trainable
+        Whether parameters are trainable.
     """
 
     def __init__(
@@ -837,11 +1053,11 @@ class SO2Convolution(NativeOP):
         radial_so2_mode: str = "none",
         radial_so2_rank: int = 0,
         edge_cartesian: bool = False,
-        node_cartesian: str = "none",
+        node_cartesian: str | int = "none",
         eps: float = 1e-7,
         precision: str = DEFAULT_PRECISION,
-        seed: int | list[int] | None = None,
-        trainable: bool = True,
+        seed: int | list[int] | None,
+        trainable: bool,
     ) -> None:
         self.lmax = int(lmax)
         self.mmax = int(self.lmax if mmax is None else mmax)
@@ -867,37 +1083,20 @@ class SO2Convolution(NativeOP):
         self.focus_label_smoothing = 0.02
         self.so2_norm = bool(so2_norm)
         self.mixing_layers = int(mixing_layers)
-        if self.mixing_layers < 1:
-            raise ValueError("`mixing_layers` must be >= 1")
+        if self.mixing_layers < 0:
+            raise ValueError("`mixing_layers` must be >= 0")
         self.so2_attn_res_mode = str(so2_attn_res).lower()
         if self.so2_attn_res_mode not in ATTN_RES_MODES:
             raise ValueError(
                 "`so2_attn_res` must be one of 'none', 'independent', or 'dependent'"
             )
-        if self.so2_attn_res_mode != "none":
-            raise NotImplementedError(
-                "so2_attn_res != 'none' (DepthAttnRes) is not ported to dpmodel"
-            )
+        self.use_so2_attn_res = self.so2_attn_res_mode != "none"
         self.layer_scale = bool(layer_scale)
-        if self.layer_scale:
-            raise NotImplementedError("layer_scale=True is not ported to dpmodel")
         self.n_atten_head = int(n_atten_head)
-        if self.n_atten_head < 0:
-            raise ValueError("`n_atten_head` must be non-negative")
         self.atten_f_mix = bool(atten_f_mix)
-        if self.atten_f_mix:
-            raise NotImplementedError("atten_f_mix=True is not ported to dpmodel")
         self.use_atten_v_proj = bool(atten_v_proj)
-        if self.use_atten_v_proj:
-            raise NotImplementedError("atten_v_proj=True is not ported to dpmodel")
         self.use_atten_o_proj = bool(atten_o_proj)
-        if self.use_atten_o_proj:
-            raise NotImplementedError("atten_o_proj=True is not ported to dpmodel")
         self.s2_activation = bool(s2_activation)
-        if self.s2_activation:
-            raise NotImplementedError(
-                "s2_activation=True (so2_s2_activation) is not ported to dpmodel"
-            )
         self.node_wise_grid_mlp = bool(node_wise_grid_mlp)
         self.node_wise_grid_branch = int(node_wise_grid_branch)
         self.message_node_grid_mlp = bool(message_node_grid_mlp)
@@ -920,17 +1119,22 @@ class SO2Convolution(NativeOP):
             self.lmax,
             method=self.s2_grid_method,
         )
-        # Mirror pt: the e3nn product-grid branch squares the max resolution.
-        # dpmodel only ports the Lebedev backend (the e3nn S2GridNet raises),
-        # so this just preserves the config-recorded resolution for parity.
         self.s2_full_grid_resolution = (
             [max(base_full_grid_resolution), max(base_full_grid_resolution)]
             if self.s2_grid_method == "e3nn"
             else base_full_grid_resolution
         )
         self.activation_function = str(activation_function)
-        self.attn_n_focus = self.n_focus
-        self.attn_focus_dim = self.so2_focus_dim
+        if self.n_atten_head < 0:
+            raise ValueError("`n_atten_head` must be non-negative")
+        self.attn_n_focus = (
+            1 if self.atten_f_mix and self.n_atten_head > 0 else self.n_focus
+        )
+        self.attn_focus_dim = (
+            self.hidden_channels
+            if self.atten_f_mix and self.n_atten_head > 0
+            else self.so2_focus_dim
+        )
         if self.n_atten_head > 0 and self.attn_focus_dim % self.n_atten_head != 0:
             raise ValueError(
                 "`n_atten_head` must divide the attention width "
@@ -951,112 +1155,96 @@ class SO2Convolution(NativeOP):
         if self.radial_so2_rank < 0:
             raise ValueError("`radial_so2_rank` must be non-negative")
         self.edge_cartesian = bool(edge_cartesian)
-        if self.edge_cartesian:
-            raise NotImplementedError("edge_cartesian=True is not ported to dpmodel")
         self.node_cartesian = str(node_cartesian)
-        if self.node_cartesian != "none":
-            raise NotImplementedError(
-                "node_cartesian != 'none' is not ported to dpmodel"
-            )
+        (
+            self._node_cartesian_enabled,
+            self._node_cartesian_symmetric,
+            self._node_cartesian_layers,
+        ) = _parse_node_cartesian(self.node_cartesian)
+        if self.edge_cartesian:
+            if self.lmax not in (1, 2):
+                raise ValueError("`edge_cartesian` requires lmax in {1, 2}")
+            if (
+                self.node_wise_s2
+                or self.node_wise_so3
+                or self.message_node_s2
+                or self.message_node_so3
+            ):
+                raise ValueError(
+                    "`edge_cartesian` is incompatible with the S2/SO(3) grid "
+                    "product branches"
+                )
+        if self._node_cartesian_enabled and self.lmax not in (1, 2):
+            raise ValueError("`node_cartesian` requires lmax in {1, 2}")
         self.eps = float(eps)
         self.ebed_dim_full = get_so3_dim_of_lmax(self.lmax)
         self.precision = precision
-        self.compute_precision = _compute_precision(precision)
-        self.trainable = bool(trainable)
-        prec = PRECISION_DICT[self.precision.lower()]
+        self.compute_precision = np.dtype(
+            get_promoted_dtype(PRECISION_DICT[precision])
+        ).name
 
-        # === Step 1. Precompute coefficient indices for m-major reduced layout ===
-        self.coeff_index_m = build_m_major_index(self.lmax, self.mmax)
-        self.degree_index_m = build_m_major_l_index(self.lmax, self.mmax)
-        degree_index_full = map_degree_idx(self.lmax)
-        self.rotate_inv_rescale_full = build_rotate_inv_rescale(
-            self.lmax,
-            self.mmax,
-            degree_index_full,
-            dtype=prec,
-        )
-        self.reduced_dim = int(self.coeff_index_m.shape[0])
-
-        # === Step 2. Split deterministic seeds at the module top-level ===
+        # === Step 1. Split deterministic seeds at the module top-level ===
         seed_so2_stack = child_seed(seed, 0)
         seed_non_linearities = child_seed(seed, 1)
         seed_so3_pre = child_seed(seed, 2)
         seed_so3_post = child_seed(seed, 3)
         seed_gate = child_seed(seed, 4)
+        seed_depth_attn = child_seed(seed, 5)
         seed_radial_hidden = child_seed(seed, 6)
         seed_radial_degree = child_seed(seed, 7)
         seed_node_wise_s2 = child_seed(seed, 8)
         seed_message_node_s2 = child_seed(seed, 9)
+        seed_node_cartesian = child_seed(seed, 10)
 
-        # === Step 3. Multiple SO2Linear layers ===
-        # (s2_activation is guarded above, so out_channels == so2_focus_dim.)
-        self.so2_linears = [
-            SO2Linear(
+        # === Step 2. Edge mixing core: SO(2) rotation stack or Cartesian product ===
+        if self.edge_cartesian:
+            self.edge_cartesian_tp = EdgeCartesianTensorProduct(
                 lmax=self.lmax,
-                mmax=self.mmax,
-                in_channels=self.so2_focus_dim,
-                out_channels=self.so2_focus_dim,
+                focus_dim=self.so2_focus_dim,
                 n_focus=self.n_focus,
-                precision=self.precision,
+                n_layers=self.mixing_layers,
+                activation_function=self.activation_function,
                 mlp_bias=self.mlp_bias,
-                seed=child_seed(seed_so2_stack, i),
+                eps=self.eps,
+                precision=self.precision,
+                seed=seed_so2_stack,
                 trainable=trainable,
             )
-            for i in range(self.mixing_layers)
-        ]
-
-        # === Step 4. Intermediate norms (Optional) ===
-        # pt appends nn.Identity() entries; dpmodel uses None for Identity.
-        inter_norms: list[ReducedEquivariantRMSNorm | None] = []
-        if self.so2_norm:
-            for _ in range(max(0, self.mixing_layers - 1)):
-                inter_norms.append(
-                    ReducedEquivariantRMSNorm(
-                        lmax=self.lmax,
-                        mmax=self.mmax,
-                        channels=self.so2_focus_dim,
-                        degree_index_m=self.degree_index_m,
-                        n_focus=self.n_focus,
-                        precision=self.compute_precision,
-                        trainable=trainable,
-                    )
-                )
         else:
-            for _ in range(max(0, self.mixing_layers - 1)):
-                inter_norms.append(None)
-        inter_norms.append(None)
-        self.so2_inter_norms = inter_norms
-
-        # === Step 5. Intermediate non-linearity ===
-        # pt appends nn.Identity() as the last entry; dpmodel uses None.
-        non_linearities: list[GatedActivation | None] = []
-        for i in range(max(0, self.mixing_layers - 1)):
-            non_linearities.append(
-                GatedActivation(
-                    lmax=self.lmax,
-                    mmax=self.mmax,
-                    channels=self.so2_focus_dim,
-                    n_focus=self.n_focus,
-                    precision=self.compute_precision,
-                    activation_function=self.activation_function,
-                    mlp_bias=self.mlp_bias,
-                    layout="nfdc",
-                    trainable=trainable,
-                    seed=child_seed(seed_non_linearities, i),
-                )
+            self._build_so2_mixing(
+                seed_so2_stack=seed_so2_stack,
+                seed_non_linearities=seed_non_linearities,
+                seed_depth_attn=seed_depth_attn,
+                trainable=trainable,
             )
-        non_linearities.append(None)
-        self.non_linearities = non_linearities
+
+        # === Step 2b. Optional per-node Cartesian mixing on the aggregated message ===
+        self.node_cartesian_tp: NodeCartesianTensorProduct | None = None
+        if self._node_cartesian_enabled:
+            self.node_cartesian_tp = NodeCartesianTensorProduct(
+                lmax=self.lmax,
+                focus_dim=self.so2_focus_dim,
+                n_focus=self.n_focus,
+                n_layers=self._node_cartesian_layers,
+                symmetric=self._node_cartesian_symmetric,
+                activation_function=self.activation_function,
+                mlp_bias=self.mlp_bias,
+                precision=self.precision,
+                seed=seed_node_cartesian,
+                trainable=trainable,
+            )
 
         # === Step 7. Optional attention projections (n_atten_head > 0) ===
         self.attn_qk_norm: ScalarRMSNorm | None = None
         self.attn_q_proj: FocusLinear | None = None
         self.attn_k_proj: FocusLinear | None = None
+        self.attn_focus_mix: SO3Linear | None = None
+        self.attn_v_proj: SO3Linear | None = None
+        self.attn_o_proj: SO3Linear | None = None
         self.adamw_attn_logit_w: np.ndarray | None = None
         self.adamw_attn_z_bias_raw: np.ndarray | None = None
         self.attn_output_gate_norm: ScalarRMSNorm | None = None
         self.adamw_attn_gate_w: np.ndarray | None = None
-        cprec = PRECISION_DICT[self.compute_precision.lower()]
         if self.n_atten_head > 0:
             self.attn_qk_norm = ScalarRMSNorm(
                 channels=self.attn_focus_dim,
@@ -1083,15 +1271,53 @@ class SO2Convolution(NativeOP):
                 seed=child_seed(seed_gate, 1),
                 trainable=trainable,
             )
-            rng = np.random.default_rng(child_seed(seed_gate, 2))
-            self.adamw_attn_logit_w = rng.normal(
-                0.0,
-                0.01,
-                size=(self.attn_focus_dim, self.attn_n_focus, self.n_atten_head),
-            ).astype(cprec)
+            if self.atten_f_mix:
+                self.attn_focus_mix = SO3Linear(
+                    lmax=self.lmax,
+                    in_channels=self.hidden_channels,
+                    out_channels=self.hidden_channels,
+                    n_focus=1,
+                    precision=self.compute_precision,
+                    mlp_bias=False,
+                    seed=child_seed(seed_gate, 19),
+                    trainable=trainable,
+                )
+            if self.use_atten_v_proj:
+                self.attn_v_proj = SO3Linear(
+                    lmax=self.lmax,
+                    in_channels=self.attn_focus_dim,
+                    out_channels=self.attn_focus_dim,
+                    n_focus=self.attn_n_focus,
+                    precision=self.compute_precision,
+                    mlp_bias=False,
+                    seed=child_seed(seed_gate, 20),
+                    trainable=trainable,
+                )
+            if self.use_atten_o_proj:
+                self.attn_o_proj = SO3Linear(
+                    lmax=self.lmax,
+                    in_channels=self.attn_focus_dim,
+                    out_channels=self.attn_focus_dim,
+                    n_focus=self.attn_n_focus,
+                    precision=self.compute_precision,
+                    mlp_bias=False,
+                    seed=child_seed(seed_gate, 21),
+                    trainable=trainable,
+                )
+            self.adamw_attn_logit_w = (
+                np.random.default_rng(child_seed(seed_gate, 2))
+                .normal(
+                    0.0,
+                    0.01,
+                    size=(self.attn_focus_dim, self.attn_n_focus, self.n_atten_head),
+                )
+                .astype(PRECISION_DICT[self.compute_precision])
+            )
             # softplus(0.5413) ~= 1.0 provides balanced initial competition.
             self.adamw_attn_z_bias_raw = np.full(
-                (self.attn_n_focus, self.n_atten_head), 0.5413, dtype=cprec
+                (self.attn_n_focus, self.n_atten_head),
+                0.5413,
+                dtype=PRECISION_DICT[self.compute_precision],
             )
             self.attn_output_gate_norm = ScalarRMSNorm(
                 channels=self.attn_focus_dim,
@@ -1100,12 +1326,15 @@ class SO2Convolution(NativeOP):
                 precision=self.compute_precision,
                 trainable=trainable,
             )
-            rng = np.random.default_rng(child_seed(seed_gate, 3))
-            self.adamw_attn_gate_w = rng.normal(
-                0.0,
-                0.01,
-                size=(self.attn_focus_dim, self.attn_n_focus, self.n_atten_head),
-            ).astype(cprec)
+            self.adamw_attn_gate_w = (
+                np.random.default_rng(child_seed(seed_gate, 3))
+                .normal(
+                    0.0,
+                    0.01,
+                    size=(self.attn_focus_dim, self.attn_n_focus, self.n_atten_head),
+                )
+                .astype(PRECISION_DICT[self.compute_precision])
+            )
 
         # === Step 7.5. Optional cross-focus competition ===
         self.focus_compete_norm: ScalarRMSNorm | None = None
@@ -1119,12 +1348,20 @@ class SO2Convolution(NativeOP):
                 precision=self.compute_precision,
                 trainable=trainable,
             )
-            rng = np.random.default_rng(child_seed(seed_gate, 4))
-            self.adamw_focus_compete_w = rng.normal(
-                0.0, 0.01, size=(self.so2_focus_dim, self.n_focus)
-            ).astype(cprec)
+            self.adamw_focus_compete_w = (
+                np.random.default_rng(child_seed(seed_gate, 4))
+                .normal(
+                    0.0,
+                    0.01,
+                    size=(self.so2_focus_dim, self.n_focus),
+                )
+                .astype(PRECISION_DICT[self.compute_precision])
+            )
             if self.mlp_bias:
-                self.focus_compete_bias = np.zeros((self.n_focus,), dtype=cprec)
+                self.focus_compete_bias = np.zeros(
+                    self.n_focus,
+                    dtype=PRECISION_DICT[self.compute_precision],
+                )
 
         # === Step 8. Optional radial hidden projection ===
         self.radial_hidden_proj: ChannelLinear | None = None
@@ -1138,7 +1375,7 @@ class SO2Convolution(NativeOP):
                 trainable=trainable,
             )
         self.radial_degree_mixer: DynamicRadialDegreeMixer | None = None
-        if self.radial_so2_mode != "none":
+        if not self.edge_cartesian and self.radial_so2_mode != "none":
             self.radial_degree_mixer = DynamicRadialDegreeMixer(
                 lmax=self.lmax,
                 mmax=self.mmax,
@@ -1149,11 +1386,6 @@ class SO2Convolution(NativeOP):
                 seed=seed_radial_degree,
                 trainable=trainable,
             )
-
-        # === Step 8.5. Optional cross-mode grid products ===
-        # ``op_type`` selection mirrors pt: ``branch`` (count > 0) takes
-        # precedence over ``mlp``, else ``glu``. When both ``*_s2`` and
-        # ``*_so3`` are set the SO(3) branch wins (per the argcheck doc).
         node_wise_op = (
             "branch"
             if self.node_wise_grid_branch > 0
@@ -1251,7 +1483,7 @@ class SO2Convolution(NativeOP):
             in_channels=self.channels,
             out_channels=self.hidden_channels,
             n_focus=1,
-            precision=self.precision,
+            precision=precision,
             mlp_bias=self.mlp_bias,
             trainable=trainable,
             seed=seed_so3_pre,
@@ -1263,30 +1495,35 @@ class SO2Convolution(NativeOP):
             in_channels=self.hidden_channels,
             out_channels=self.channels,
             n_focus=1,
-            precision=self.precision,
+            precision=precision,
             mlp_bias=self.mlp_bias,
             trainable=trainable,
             seed=seed_so3_post,
             init_std=0.0,
         )
 
+        # === Step 11. Edge-frame requirement for the SO(2) message ===
+        self.needs_local_frame = (not self.edge_cartesian) and (
+            self.mixing_layers > 0
+            or self.radial_so2_mode != "none"
+            or self.node_wise_grid_product is not None
+        )
+        self.trainable = bool(trainable)
+
     def call(
         self,
-        x: Any,
+        x: Array,
         edge_cache: EdgeCache,
-        radial_feat: Any,
-    ) -> Any:
+        radial_feat: Array,
+    ) -> Array:
         """
         Parameters
         ----------
         x
             Node features with shape (N, D, C), where D=(lmax+1)^2 is the
-            SO(3) coefficient dimension and N = nf * nloc is the local node
-            axis.
+            SO(3) coefficient dimension.
         edge_cache
-            Precomputed edge cache in the padded-edge layout
-            (``E = N * nnei``; see ``edge_cache.EdgeCache``). Must be
-            compatible with this block's lmax.
+            Precomputed edge cache. Must be compatible with this block's lmax.
         radial_feat
             Per-edge radial features with shape (E, lmax+1, C), already fused
             with edge type features.
@@ -1300,31 +1537,491 @@ class SO2Convolution(NativeOP):
         device = array_api_compat.device(x)
         src, dst = edge_cache.src, edge_cache.dst
         n_node = x.shape[0]
-        # Keep ``n_edge``/``n_node`` symbolic (no ``int()``): they are the
-        # products ``nf*nloc*nnei`` / ``nf*nloc``. Casting to a Python int
-        # specializes them to the trace-time sample shape (breaking
-        # torch.export with a dynamic ``nloc`` dim); the ``Mod`` check stays
-        # statically known and the ``(n_node, nnei, ...)`` reshape below
-        # recovers the layout symbolically.
         n_edge = src.shape[0]
-        if n_node <= 0 or n_edge % n_node != 0:
-            raise ValueError(
-                "padded-edge layout requires E to be a multiple of N; "
-                f"got E={n_edge}, N={n_node}"
-            )
-        nnei = n_edge // n_node
-        # Validity mask for the padded-edge layout (1 on real edges).
-        edge_mask = edge_cache.edge_mask
-        if edge_mask is not None:
-            mask_f = xp.astype(xp.reshape(edge_mask, (n_edge,)), x.dtype)
-        else:
-            mask_f = xp.ones((n_edge,), dtype=x.dtype, device=device)
 
         # === Step 1. Pre-focus channel mixing on full width ===
         # (N, D, C_wide), C_wide = F * Cf
         x = self.pre_focus_mix(x[:, :, None, :])[:, :, 0, :]
 
-        # === Step 2. Rotate to edge-aligned local frame ===
+        # === Step 2. Edge message: Cartesian product, SO(2) mixing, or the
+        # rotation-free radial message when no local-frame operation is needed ===
+        if self.edge_cartesian:
+            x_message, rad_feat = self.cartesian_message(x, edge_cache, radial_feat)
+        elif self.needs_local_frame:
+            x_message, rad_feat = self.so2_message(x, edge_cache, radial_feat)
+        else:
+            x_message, rad_feat = self.radial_message(x, edge_cache, radial_feat)
+
+        # === Step 3. Optional focus mixing for the attention stream ===
+        if self.attn_focus_mix is not None:
+            x_message = self.attn_focus_mix(x_message[:, :, None, :])[:, :, 0, :]
+
+        # === Step 4. Aggregate with optional head-wise gating ===
+        # Source Freeze Propagation Gate: broadcast the per-edge scalar
+        # eta[src] to the edge message before destination aggregation.
+        # ``edge_src_gate`` is ``None`` outside bridging mode, in which
+        # case this branch disappears and the baseline / attention paths
+        # run unchanged.
+        edge_src_gate = edge_cache.edge_src_gate
+        if self.n_atten_head == 0:
+            # Baseline path: fused envelope-weighted scatter add -> degree norm.
+            # Folding edge_src_gate into the scalar envelope keeps the
+            # op count unchanged.
+            edge_weight = edge_cache.edge_env  # (E, 1)
+            if edge_src_gate is not None:
+                edge_weight = edge_weight * xp.astype(edge_src_gate, edge_weight.dtype)
+            x_message = x_message * edge_weight[..., None]
+            out = xp.zeros(
+                x.shape,
+                dtype=get_xp_precision(xp, self.compute_precision),
+                device=device,
+            )
+            out = xp_add_at(
+                out,
+                dst,
+                xp.astype(x_message, get_xp_precision(xp, self.compute_precision)),
+            )
+            out = out * xp.astype(
+                edge_cache.inv_sqrt_deg, get_xp_precision(xp, self.compute_precision)
+            )
+            out = xp.astype(out, get_xp_precision(xp, self.precision))  # (N, D, C_wide)
+        else:
+            # === Step 4.1. Build attention logits from scalar channels ===
+            compute_dtype = get_xp_precision(xp, self.compute_precision)
+            x_l0_node = xp.reshape(
+                x[:, 0, :], (n_node, self.attn_n_focus, self.attn_focus_dim)
+            )  # (N, Fa, Ca)
+            qk_input = self.attn_qk_norm(xp.astype(x_l0_node, compute_dtype))
+            q_node = self.attn_q_proj(qk_input)  # (N, Fa, Ca)
+            k_node = self.attn_k_proj(qk_input)  # (N, Fa, Ca)
+            q_edge = xp.reshape(
+                xp.take(q_node, dst, axis=0),
+                (n_edge, self.attn_n_focus, self.n_atten_head, self.head_dim),
+            )  # (E, Fa, H, Ch), Ca = H * Ch
+            k_edge = xp.reshape(
+                xp.take(k_node, src, axis=0),
+                (n_edge, self.attn_n_focus, self.n_atten_head, self.head_dim),
+            )  # (E, Fa, H, Ch)
+            radial_l0 = xp.reshape(
+                rad_feat[:, 0, :], (n_edge, self.attn_n_focus, self.attn_focus_dim)
+            )  # (E, Fa, Ca)
+            # "efi,ifo->efo": per-focus contraction over the input channel,
+            # expressed as a batched matmul over the focus axis.
+            radial_bias = xp.permute_dims(
+                xp.matmul(
+                    xp.permute_dims(xp.astype(radial_l0, compute_dtype), (1, 0, 2)),
+                    xp.permute_dims(
+                        xp_asarray_nodetach(
+                            xp, self.adamw_attn_logit_w[...], device=device
+                        ),
+                        (1, 0, 2),
+                    ),
+                ),
+                (1, 0, 2),
+            )  # (E, F, H)
+            attn_logits: Array = xp.sum(q_edge * k_edge, axis=-1) * (
+                self.head_dim**-0.5
+            )
+            attn_logits = attn_logits + radial_bias
+
+            # === Step 4.2. Destination-wise stable envelope-gated softmax ===
+            # ``src_weight=edge_src_gate`` folds SFPG into both the
+            # numerator and the denominator of the softmax. A muted
+            # source (``eta_src = 0``) therefore drops out of the
+            # destination's attention normalization entirely, which
+            # is required for the attention path to honor the
+            # frozen-zone invariance: a post-multiplication on
+            # ``attn_alpha`` alone would still leave the muted
+            # source leaking through the shared denominator.
+            attn_alpha = segment_envelope_gated_softmax(
+                logits=attn_logits,
+                edge_env=xp.astype(edge_cache.edge_env, compute_dtype),
+                n_nodes=n_node,
+                z_bias_raw=xp_asarray_nodetach(
+                    xp, self.adamw_attn_z_bias_raw[...], device=device
+                ),
+                eps=self.eps,
+                src_weight=(
+                    None
+                    if edge_src_gate is None
+                    else xp.astype(edge_src_gate, compute_dtype)
+                ),
+                edge_mask=edge_cache.edge_mask,
+            )  # (E, F, H)
+
+            # === Step 4.3. Value projection and head-wise aggregation ===
+            value_focus = xp.astype(
+                xp.reshape(
+                    x_message,
+                    (
+                        n_edge,
+                        self.ebed_dim_full,
+                        self.attn_n_focus,
+                        self.attn_focus_dim,
+                    ),
+                ),
+                compute_dtype,
+            )  # (E, D, Fa, Ca)
+            if self.attn_v_proj is not None:
+                value_focus = self.attn_v_proj(value_focus)
+            value_heads = xp.reshape(
+                value_focus,
+                (
+                    n_edge,
+                    self.ebed_dim_full,
+                    self.attn_n_focus,
+                    self.n_atten_head,
+                    self.head_dim,
+                ),
+            )  # (E, D, Fa, H, Ch)
+            weighted_value = value_heads * xp.reshape(
+                attn_alpha, (n_edge, 1, self.attn_n_focus, self.n_atten_head, 1)
+            )
+            out_heads = xp.zeros(
+                (
+                    n_node,
+                    self.ebed_dim_full,
+                    self.attn_n_focus,
+                    self.n_atten_head,
+                    self.head_dim,
+                ),
+                dtype=compute_dtype,
+                device=device,
+            )  # (N, D, Fa, H, Ch)
+            out_heads = xp_add_at(out_heads, dst, weighted_value)
+
+            # === Step 4.4. Output-side head gate ===
+            # "nfi,ifo->nfo": per-focus contraction over the input channel,
+            # expressed as a batched matmul over the focus axis.
+            attn_output_gate = xp_sigmoid(
+                xp.permute_dims(
+                    xp.matmul(
+                        xp.permute_dims(
+                            self.attn_output_gate_norm(
+                                xp.astype(x_l0_node, compute_dtype)
+                            ),
+                            (1, 0, 2),
+                        ),
+                        xp.permute_dims(
+                            xp_asarray_nodetach(
+                                xp, self.adamw_attn_gate_w[...], device=device
+                            ),
+                            (1, 0, 2),
+                        ),
+                    ),
+                    (1, 0, 2),
+                )
+            )  # (N, F, H)
+            out_heads = out_heads * xp.reshape(
+                attn_output_gate, (n_node, 1, self.attn_n_focus, self.n_atten_head, 1)
+            )  # (N, D, Fa, H, Ch)
+
+            # === Step 4.5. Output projection and merge heads ===
+            out_focus = xp.reshape(
+                out_heads,
+                (
+                    n_node,
+                    self.ebed_dim_full,
+                    self.attn_n_focus,
+                    self.attn_focus_dim,
+                ),
+            )  # (N, D, Fa, Ca)
+            if self.attn_o_proj is not None:
+                out_focus = self.attn_o_proj(out_focus)
+            out = xp.astype(
+                xp.reshape(
+                    out_focus, (n_node, self.ebed_dim_full, self.hidden_channels)
+                ),
+                get_xp_precision(xp, self.precision),
+            )  # (N, D, C_wide)
+
+        # === Step 5. Optional message-node grid product ===
+        if self.message_node_grid_product is not None:
+            out = out + self.message_node_grid_product(out, x)
+
+        # === Step 6. Optional per-node Cartesian tensor-product mixing ===
+        # Couples the aggregated message with the destination node feature ``x``,
+        # the Cartesian analog of the message-node grid product.
+        if self.node_cartesian_tp is not None:
+            out = self.node_cartesian_tp(out, x)
+
+        # === Step 7. Final channel mixing ===
+        out = self.post_focus_mix(out[:, :, None, :])[:, :, 0, :]
+        return out  # (N, D, C)
+
+    def radial_message(
+        self,
+        x: Array,
+        edge_cache: EdgeCache,
+        radial_feat: Array,
+    ) -> tuple[Array, Array]:
+        """
+        Build edge messages by rotation-free per-degree radial scaling.
+
+        Used when no local-frame operation is required (``mixing_layers == 0``,
+        ``radial_so2_mode == "none"``, and no node-wise grid product). Per-degree
+        scalar radial scaling commutes with rotation, so the edge-aligned frame
+        is unnecessary and the message reduces to a source gather, an elementwise
+        per-degree scale, and the optional cross-focus competition.
+
+        Parameters
+        ----------
+        x : Array
+            Node features with shape (N, D, C_wide) after pre-focus mixing.
+        edge_cache : EdgeCache
+            Precomputed edge cache.
+        radial_feat : Array
+            Per-edge radial features with shape (E, lmax+1, C).
+
+        Returns
+        -------
+        tuple[Array, Array]
+            ``(x_message, rad_feat)`` with shapes (E, D, C_wide) and
+            (E, lmax+1, C_wide). The ``l=0`` slice of ``rad_feat`` is consumed by
+            the attention aggregation.
+        """
+        xp = array_api_compat.array_namespace(x)
+        device = array_api_compat.device(x)
+        src = edge_cache.src
+        n_edge = src.shape[0]
+
+        rad_feat = radial_feat  # (E, lmax+1, C)
+        if self.radial_hidden_proj is not None:
+            rad_feat = self.radial_hidden_proj(rad_feat)  # (E, lmax+1, C_wide)
+
+        # Broadcast each degree's radial weight over its 2l+1 orders and scale the
+        # gathered source feature in the global frame.
+        x_src = xp.take(x, src, axis=0)  # (E, D, C_wide)
+        rad_packed = xp.take(
+            rad_feat,
+            xp_asarray_nodetach(xp, self.degree_index_full[...], device=device),
+            axis=1,
+        )  # (E, D, C_wide)
+        x_message = x_src * rad_packed
+
+        # === Cross-focus softmax competition ===
+        # Gate on the radial-fused source l=0 scalar, matching the SO(2) path.
+        if self.focus_compete and self.n_focus > 1:
+            focus_gate_src = xp.reshape(
+                x_src[:, 0, :] * rad_feat[:, 0, :],
+                (n_edge, self.n_focus, self.so2_focus_dim),
+            )  # (E, F, Cf)
+            alpha = self._focus_alpha(focus_gate_src)
+            x_message = xp.reshape(
+                xp.reshape(
+                    x_message,
+                    (n_edge, self.ebed_dim_full, self.n_focus, self.so2_focus_dim),
+                )
+                * xp.astype(alpha, x_message.dtype)[:, None, :, None],
+                (n_edge, self.ebed_dim_full, self.hidden_channels),
+            )
+        return x_message, rad_feat
+
+    def so2_message(
+        self,
+        x: Array,
+        edge_cache: EdgeCache,
+        radial_feat: Array,
+    ) -> tuple[Array, Array]:
+        """
+        Build edge messages by rotate-to-local, SO(2) mixing, and rotate-back.
+
+        Parameters
+        ----------
+        x : Array
+            Node features with shape (N, D, C_wide) after pre-focus mixing.
+        edge_cache : EdgeCache
+            Precomputed edge cache.
+        radial_feat : Array
+            Per-edge radial features with shape (E, lmax+1, C).
+
+        Returns
+        -------
+        tuple[Array, Array]
+            ``(x_message, rad_feat)`` with shapes (E, D, C_wide) and
+            (E, D_m, C_wide). The ``l=0`` slice of ``rad_feat`` is consumed by
+            the attention aggregation.
+        """
+        xp = array_api_compat.array_namespace(x)
+        device = array_api_compat.device(x)
+        src = edge_cache.src
+        n_edge = src.shape[0]
+
+        # === Step 1. Rotate to edge-aligned local frame ===
+        x_local, x_dst_local = self._rotate_to_local(x, edge_cache)
+
+        # === Step 2. Select radial/type features for reduced layout ===
+        rad_feat = xp.take(
+            radial_feat,
+            xp_asarray_nodetach(xp, self.degree_index_m[...], device=device),
+            axis=1,
+        )  # (E, D_m, C)
+        if self.radial_hidden_proj is not None:
+            rad_feat = self.radial_hidden_proj(rad_feat)
+        if self.radial_degree_mixer is None:
+            x_local = x_local * rad_feat
+        else:
+            x_local = self.radial_degree_mixer(x_local, rad_feat)
+        if self.node_wise_grid_product is not None:
+            x_local = x_local + self.node_wise_grid_product(
+                x_local,
+                x_dst_local,
+            )
+        rad_feat_l0_focus = xp.reshape(
+            rad_feat[:, 0, :], (n_edge, self.n_focus, self.so2_focus_dim)
+        )  # (E, F, Cf)
+
+        # === Step 3. Convert to SO(2) internal focus layout ===
+        focus_gate_src: Array | None = None
+        x_local = xp.permute_dims(
+            xp.reshape(
+                x_local, (n_edge, self.reduced_dim, self.n_focus, self.so2_focus_dim)
+            ),
+            (0, 2, 1, 3),
+        )  # (E, F, D_m, Cf), strided
+        if self.focus_compete and self.n_focus > 1:
+            focus_gate_src = x_local[:, :, 0, :]
+
+        # === Step 4. Multi-layer SO(2) mixing (pre-norm + residual) ===
+
+        def so2_l0_extractor(v: Array) -> Array:
+            """Extract scalar features from SO(2) reduced layout."""
+            return xp.reshape(v[:, :, 0, :], (v.shape[0], self.hidden_channels))
+
+        def apply_bias_correction(
+            x_local: Array,
+            so2_linear: SO2Linear,
+            layer_idx: int,
+        ) -> Array:
+            if layer_idx != 0 or so2_linear.bias0 is None:
+                return x_local
+            bias0 = xp.reshape(
+                xp_asarray_nodetach(xp, so2_linear.bias0[...], device=device),
+                (self.n_focus, so2_linear.out_channels),
+            )[None, ...]
+            if so2_linear.out_channels == self.so2_focus_dim:
+                radial_factor = rad_feat_l0_focus
+            elif so2_linear.out_channels == 2 * self.so2_focus_dim:
+                radial_factor = xp.concat(
+                    [rad_feat_l0_focus, rad_feat_l0_focus], axis=-1
+                )
+            else:
+                raise RuntimeError(
+                    "Unexpected SO2Linear output width in bias correction"
+                )
+            bias_correction = bias0 * (
+                radial_factor * xp.reshape(edge_cache.edge_env, (-1, 1, 1)) - 1.0
+            )
+            x_local = xp.concat(
+                [
+                    x_local[:, :, :1, :] + bias_correction[:, :, None, :],
+                    x_local[:, :, 1:, :],
+                ],
+                axis=2,
+            )
+            return x_local
+
+        if self.use_so2_attn_res:
+            so2_depth_sources = [x_local]
+            for layer_idx, (so2_linear, inter_norm, non_linear) in enumerate(
+                zip(
+                    self.so2_linears,
+                    self.so2_inter_norms,
+                    self.non_linearities,
+                    strict=True,
+                )
+            ):
+                x_local: Array = self.so2_layer_attn_res[layer_idx](
+                    sources=so2_depth_sources,
+                    scalar_extractor=so2_l0_extractor,
+                    current_x=x_local,
+                )
+                residual = x_local
+                x_local = inter_norm(x_local)
+                x_local = so2_linear(x_local)
+                x_local = apply_bias_correction(x_local, so2_linear, layer_idx)
+
+                x_local = non_linear(x_local)
+
+                if self.layer_scale:
+                    scale: Array = xp.reshape(
+                        xp_asarray_nodetach(
+                            xp,
+                            self.adam_so2_layer_scales[layer_idx][...],
+                            device=device,
+                        ),
+                        (1, self.n_focus, 1, self.so2_focus_dim),
+                    )
+                    x_local = residual + scale * x_local
+                else:
+                    x_local = residual + x_local
+                so2_depth_sources.append(x_local - residual)
+        else:
+            for layer_idx, (so2_linear, inter_norm, non_linear) in enumerate(
+                zip(
+                    self.so2_linears,
+                    self.so2_inter_norms,
+                    self.non_linearities,
+                    strict=True,
+                )
+            ):
+                residual = x_local
+                x_local = inter_norm(x_local)
+                x_local = so2_linear(x_local)
+                x_local = apply_bias_correction(x_local, so2_linear, layer_idx)
+
+                x_local = non_linear(x_local)
+
+                if self.layer_scale:
+                    scale = xp.reshape(
+                        xp_asarray_nodetach(
+                            xp,
+                            self.adam_so2_layer_scales[layer_idx][...],
+                            device=device,
+                        ),
+                        (1, self.n_focus, 1, self.so2_focus_dim),
+                    )
+                    x_local = residual + scale * x_local
+                else:
+                    x_local = residual + x_local
+
+        # === Step 5. Cross-focus softmax competition ===
+        if self.focus_compete and self.n_focus > 1:
+            alpha = self._focus_alpha(focus_gate_src)
+            x_local = x_local * xp.astype(alpha, x_local.dtype)[..., None, None]
+
+        # === Step 6. Rotate back to global frame ===
+        x_message = self._rotate_back(x_local, edge_cache, n_edge)
+        # Reduced layouts keep only 2*mmax+1 orders for l>mmax. Applying the
+        # inverse-rotation degree rescale after the global lift restores the
+        # full-basis amplitude expected by the block output contract.
+        x_message = x_message * xp.reshape(
+            xp_asarray_nodetach(xp, self.rotate_inv_rescale_full[...], device=device),
+            (1, -1, 1),
+        )
+        return x_message, rad_feat
+
+    def _rotate_to_local(
+        self, x: Array, edge_cache: EdgeCache
+    ) -> tuple[Array, Array | None]:
+        """
+        Rotate node features into the edge-aligned reduced local frame.
+
+        Parameters
+        ----------
+        x : Array
+            Node features with shape (N, D, C_wide) after pre-focus mixing.
+        edge_cache : EdgeCache
+            Precomputed edge cache.
+
+        Returns
+        -------
+        tuple[Array, Array | None]
+            ``(x_local, x_dst_local)`` with shapes (E, D_m, C_wide). The
+            destination-node projection is built only for the node-wise grid
+            product and is ``None`` otherwise.
+        """
+        xp = array_api_compat.array_namespace(x)
         D_full = edge_cache.D_full
         D_m_prime = project_D_to_m(
             D_full=D_full,
@@ -1334,120 +2031,35 @@ class SO2Convolution(NativeOP):
             key_lmax=self.lmax,
             key_mmax=self.mmax,
         )
-        src_idx = xp.astype(xp.reshape(src, (n_edge,)), xp.int64)
-        x_src = xp.take(x, src_idx, axis=0)  # (E, D, C_wide)
+        x_src = xp.take(x, edge_cache.src, axis=0)  # (E, D, C_wide)
         x_local = xp.matmul(D_m_prime, x_src)  # (E, D_m, C_wide)
-        # pt rotates the *destination* node into the same edge frame for the
-        # node-wise cross-mode grid product (raw, before radial modulation).
-        x_dst_local: Any = None
+        x_dst_local: Array | None = None
         if self.node_wise_grid_product is not None:
-            dst_idx_nw = xp.astype(xp.reshape(dst, (n_edge,)), xp.int64)
-            x_dst = xp.take(x, dst_idx_nw, axis=0)  # (E, D, C_wide)
+            x_dst = xp.take(x, edge_cache.dst, axis=0)  # (E, D, C_wide)
             x_dst_local = xp.matmul(D_m_prime, x_dst)  # (E, D_m, C_wide)
+        return x_local, x_dst_local
 
-        # === Step 3. Select radial/type features for reduced layout ===
-        degree_index_m = xp_asarray_nodetach(xp, self.degree_index_m, device=device)
-        rad_feat = xp.take(radial_feat, degree_index_m, axis=1)  # (E, D_m, C)
-        if self.radial_hidden_proj is not None:
-            rad_feat = self.radial_hidden_proj(rad_feat)
-        if self.radial_degree_mixer is None:
-            x_local = x_local * rad_feat
-        else:
-            x_local = self.radial_degree_mixer(x_local, rad_feat)
-        # pt Step 3: edge-local cross-mode grid product between the
-        # radial-fused source (query) and the raw destination (context),
-        # added as a residual in the reduced m-major layout (E, D_m, C_wide).
-        if self.node_wise_grid_product is not None:
-            x_local = x_local + self.node_wise_grid_product(x_local, x_dst_local)
-        rad_feat_l0_focus = xp.reshape(
-            rad_feat[:, 0, :], (n_edge, self.n_focus, self.so2_focus_dim)
-        )  # (E, F, Cf)
+    def _rotate_back(self, x_local: Array, edge_cache: EdgeCache, n_edge: int) -> Array:
+        """
+        Rotate the SO(2) focus-layout features back to the global frame.
 
-        # === Step 4. Convert to SO(2) internal focus layout ===
-        focus_gate_src: Any = None
-        x_local = xp.permute_dims(
-            xp.reshape(
-                x_local, (n_edge, self.reduced_dim, self.n_focus, self.so2_focus_dim)
-            ),
-            (0, 2, 1, 3),
-        )  # (E, F, D_m, Cf)
-        if self.focus_compete and self.n_focus > 1:
-            focus_gate_src = x_local[:, :, 0, :]
+        Parameters
+        ----------
+        x_local : Array
+            Local features with shape (E, F, D_m, Cf) in the SO(2) focus layout
+            produced by the SO(2) mixing layers.
+        edge_cache : EdgeCache
+            Precomputed edge cache.
+        n_edge : int
+            Number of edges E.
 
-        # === Step 5. Multi-layer SO(2) mixing (pre-norm + residual) ===
-        def apply_bias_correction(
-            x_local: Any,
-            so2_linear: SO2Linear,
-            layer_idx: int,
-        ) -> Any:
-            if layer_idx != 0 or so2_linear.bias0 is None:
-                return x_local
-            bias0 = xp.reshape(
-                xp_asarray_nodetach(xp, so2_linear.bias0[...], device=device),
-                (1, self.n_focus, so2_linear.out_channels),
-            )
-            if so2_linear.out_channels == self.so2_focus_dim:
-                radial_factor = rad_feat_l0_focus
-            else:
-                raise RuntimeError(
-                    "Unexpected SO2Linear output width in bias correction"
-                )
-            edge_env = xp.reshape(
-                xp.astype(edge_cache.edge_env, x_local.dtype), (n_edge, 1, 1)
-            )
-            bias_correction = bias0 * (radial_factor * edge_env - 1.0)
-            x0 = x_local[:, :, :1, :] + bias_correction[:, :, None, :]
-            return xp.concat([x0, x_local[:, :, 1:, :]], axis=2)
-
-        for layer_idx, (so2_linear, inter_norm, non_linear) in enumerate(
-            zip(
-                self.so2_linears,
-                self.so2_inter_norms,
-                self.non_linearities,
-                strict=True,
-            )
-        ):
-            residual = x_local
-            if inter_norm is not None:
-                x_local = inter_norm(x_local)
-            x_local = so2_linear(x_local)
-            x_local = apply_bias_correction(x_local, so2_linear, layer_idx)
-
-            if non_linear is not None:
-                x_local = non_linear(x_local)
-
-            x_local = residual + x_local
-
-        # === Step 6. Cross-focus softmax competition ===
-        if self.focus_compete and self.n_focus > 1:
-            compete_w = xp_asarray_nodetach(
-                xp, self.adamw_focus_compete_w[...], device=device
-            )
-            gate_in = xp.astype(focus_gate_src, compete_w.dtype)
-            gate_normed = self.focus_compete_norm(gate_in)  # (E, F, Cf)
-            # einsum "efi,if->ef"
-            focus_logits = xp.sum(
-                gate_normed * xp.permute_dims(compete_w, (1, 0))[None, ...],
-                axis=-1,
-            )
-            if self.mlp_bias:
-                focus_logits = (
-                    focus_logits
-                    + xp_asarray_nodetach(
-                        xp, self.focus_compete_bias[...], device=device
-                    )[None, :]
-                )
-            focus_logits = focus_logits / self.focus_softmax_tau
-            logits_max = xp.max(focus_logits, axis=1, keepdims=True)
-            exp_logits = xp.exp(focus_logits - logits_max)
-            alpha = exp_logits / xp.sum(exp_logits, axis=1, keepdims=True)
-            alpha = xp.astype(alpha, x_local.dtype)
-            alpha = alpha * (1.0 - self.focus_label_smoothing) + (
-                self.focus_label_smoothing / float(self.n_focus)
-            )
-            x_local = x_local * alpha[:, :, None, None]
-
-        # === Step 7. Rotate back to global frame ===
+        Returns
+        -------
+        Array
+            Global-frame message with shape (E, D, C_wide), before the
+            inverse-rotation degree rescale.
+        """
+        xp = array_api_compat.array_namespace(x_local)
         Dt_full = edge_cache.Dt_full
         # Restore reduced global layout (E, D_m, C_wide) for inverse rotation.
         x_local = xp.reshape(
@@ -1462,428 +2074,394 @@ class SO2Convolution(NativeOP):
             key_lmax=self.lmax,
             key_mmax=self.mmax,
         )
-        x_message = xp.matmul(Dt_from_m, x_local)  # (E, D, C_wide)
-        # Reduced layouts keep only 2*mmax+1 orders for l>mmax. Applying the
-        # inverse-rotation degree rescale after the global lift restores the
-        # full-basis amplitude expected by the block output contract.
-        rescale = xp.astype(
-            xp_asarray_nodetach(xp, self.rotate_inv_rescale_full, device=device),
-            x_message.dtype,
-        )
-        x_message = x_message * xp.reshape(rescale, (1, -1, 1))
+        return xp.matmul(Dt_from_m, x_local)  # (E, D, C_wide)
 
-        # === Step 8. Aggregate with optional head-wise gating ===
-        # Source Freeze Propagation Gate: broadcast the per-edge scalar
-        # eta[src] to the edge message before destination aggregation.
-        edge_src_gate = edge_cache.edge_src_gate
-        if self.n_atten_head == 0:
-            # Baseline path: envelope-weighted masked sum -> degree norm.
-            edge_weight = xp.astype(edge_cache.edge_env, x_message.dtype)  # (E, 1)
-            edge_weight = xp.reshape(edge_weight, (n_edge, 1))
-            if edge_src_gate is not None:
-                edge_weight = edge_weight * xp.astype(
-                    xp.reshape(edge_src_gate, (n_edge, 1)), edge_weight.dtype
-                )
-            x_message = x_message * edge_weight[:, :, None]
-            # pt: out.index_add_(0, dst, x_message) — padded-edge masked sum
-            # over the nnei axis (dst is slot-implicit).
-            x_message = x_message * mask_f[:, None, None]
-            out = xp.sum(
+    def cartesian_message(
+        self,
+        x: Array,
+        edge_cache: EdgeCache,
+        radial_feat: Array,
+    ) -> tuple[Array, Array]:
+        """
+        Build edge messages via the global-frame Cartesian rank-2 tensor product.
+
+        Parameters
+        ----------
+        x : Array
+            Node features with shape (N, D, C_wide) after pre-focus mixing.
+        edge_cache : EdgeCache
+            Precomputed edge cache.
+        radial_feat : Array
+            Per-edge radial features with shape (E, lmax+1, C).
+
+        Returns
+        -------
+        tuple[Array, Array]
+            ``(x_message, rad_feat)`` with shapes (E, D, C_wide) and
+            (E, lmax+1, C_wide). The ``l=0`` slice of ``rad_feat`` is consumed by
+            the attention aggregation.
+        """
+        xp = array_api_compat.array_namespace(x)
+        src = edge_cache.src
+        n_edge = src.shape[0]
+
+        # === Step 1. Per-degree radial weights projected to the hidden width ===
+        rad_feat = radial_feat  # (E, lmax+1, C)
+        if self.radial_hidden_proj is not None:
+            rad_feat = self.radial_hidden_proj(rad_feat)  # (E, lmax+1, C_wide)
+
+        # === Step 2. Global-frame Cartesian tensor product ===
+        x_src = xp.take(x, src, axis=0)  # (E, D, C_wide)
+        x_message = self.edge_cartesian_tp(
+            x_src, edge_cache.edge_vec, rad_feat
+        )  # (E, D, C_wide)
+
+        # === Step 3. Cross-focus softmax competition ===
+        # Gate on the radial-fused source l=0 scalar, matching the SO(2) path,
+        # whose competition reads the pre-mixing input (its l=0 equals the
+        # rotation-invariant source l=0 times the l=0 radial weight).
+        if self.focus_compete and self.n_focus > 1:
+            focus_gate_src = xp.reshape(
+                x_src[:, 0, :] * rad_feat[:, 0, :],
+                (n_edge, self.n_focus, self.so2_focus_dim),
+            )  # (E, F, Cf)
+            alpha = self._focus_alpha(focus_gate_src)
+            x_message = xp.reshape(
                 xp.reshape(
                     x_message,
-                    (n_node, nnei, self.ebed_dim_full, self.hidden_channels),
-                ),
-                axis=1,
-            )
-            inv_sqrt_deg = xp.astype(edge_cache.inv_sqrt_deg, out.dtype)
-            out = out * inv_sqrt_deg  # (N, D, C_wide)
-        else:
-            # === Step 8.1. Build attention logits from scalar channels ===
-            qk_w = xp_asarray_nodetach(xp, self.attn_q_proj.weight[...], device=device)
-            x_l0_node = xp.reshape(
-                x[:, 0, :], (n_node, self.attn_n_focus, self.attn_focus_dim)
-            )  # (N, Fa, Ca)
-            x_l0_node = xp.astype(x_l0_node, qk_w.dtype)
-            qk_input = self.attn_qk_norm(x_l0_node)
-            q_node = self.attn_q_proj(qk_input)  # (N, Fa, Ca)
-            k_node = self.attn_k_proj(qk_input)  # (N, Fa, Ca)
-            dst_idx = xp.astype(xp.reshape(dst, (n_edge,)), xp.int64)
-            q_edge = xp.reshape(
-                xp.take(q_node, dst_idx, axis=0),
-                (n_edge, self.attn_n_focus, self.n_atten_head, self.head_dim),
-            )  # (E, Fa, H, Ch), Ca = H * Ch
-            k_edge = xp.reshape(
-                xp.take(k_node, src_idx, axis=0),
-                (n_edge, self.attn_n_focus, self.n_atten_head, self.head_dim),
-            )  # (E, Fa, H, Ch)
-            radial_l0 = xp.reshape(
-                rad_feat[:, 0, :], (n_edge, self.attn_n_focus, self.attn_focus_dim)
-            )  # (E, Fa, Ca)
-            radial_l0 = xp.astype(radial_l0, qk_w.dtype)
-            # einsum "efi,ifo->efo" as a broadcast batched matmul.
-            logit_w = xp.permute_dims(
-                xp_asarray_nodetach(xp, self.adamw_attn_logit_w[...], device=device),
-                (1, 0, 2),
-            )  # (Fa, Ca, H)
-            radial_bias = xp.matmul(radial_l0[:, :, None, :], logit_w[None, ...])[
-                ..., 0, :
-            ]  # (E, Fa, H)
-            attn_logits = xp.sum(q_edge * k_edge, axis=-1) * (self.head_dim**-0.5)
-            attn_logits = attn_logits + radial_bias
-
-            # === Step 8.2. Destination-wise stable envelope-gated softmax ===
-            # pt: scatter-based segment softmax keyed by dst — padded-edge
-            # masked softmax over the nnei axis. ``src_weight=edge_src_gate``
-            # folds SFPG into both the numerator and the denominator so a
-            # muted source drops out of the normalization entirely.
-            attn_alpha = segment_envelope_gated_softmax(
-                logits=attn_logits,
-                edge_env=xp.astype(edge_cache.edge_env, attn_logits.dtype),
-                n_nodes=n_node,
-                z_bias_raw=xp_asarray_nodetach(
-                    xp, self.adamw_attn_z_bias_raw, device=device
-                ),
-                eps=self.eps,
-                src_weight=(
-                    None
-                    if edge_src_gate is None
-                    else xp.astype(edge_src_gate, attn_logits.dtype)
-                ),
-                edge_mask=mask_f,
-            )  # (E, F, H)
-
-            # === Step 8.3. Value projection and head-wise aggregation ===
-            value_heads = xp.reshape(
-                xp.astype(x_message, qk_w.dtype),
-                (
-                    n_edge,
-                    self.ebed_dim_full,
-                    self.attn_n_focus,
-                    self.n_atten_head,
-                    self.head_dim,
-                ),
-            )  # (E, D, Fa, H, Ch)
-            weighted_value = value_heads * xp.reshape(
-                attn_alpha, (n_edge, 1, self.attn_n_focus, self.n_atten_head, 1)
-            )
-            # pt: out_heads.index_add_(0, dst, weighted_value) — padded-edge
-            # masked sum over the nnei axis (dst is slot-implicit).
-            weighted_value = (
-                weighted_value
-                * xp.astype(mask_f, weighted_value.dtype)[:, None, None, None, None]
-            )
-            out_heads = xp.sum(
-                xp.reshape(
-                    weighted_value,
-                    (
-                        n_node,
-                        nnei,
-                        self.ebed_dim_full,
-                        self.attn_n_focus,
-                        self.n_atten_head,
-                        self.head_dim,
-                    ),
-                ),
-                axis=1,
-            )  # (N, D, Fa, H, Ch)
-
-            # === Step 8.4. Output-side head gate ===
-            gate_w = xp.permute_dims(
-                xp_asarray_nodetach(xp, self.adamw_attn_gate_w[...], device=device),
-                (1, 0, 2),
-            )  # (Fa, Ca, H)
-            gate_in = self.attn_output_gate_norm(x_l0_node)
-            attn_output_gate = xp_sigmoid(
-                xp.matmul(gate_in[:, :, None, :], gate_w[None, ...])[..., 0, :]
-            )  # (N, F, H)
-            out_heads = out_heads * xp.reshape(
-                attn_output_gate,
-                (n_node, 1, self.attn_n_focus, self.n_atten_head, 1),
-            )  # (N, D, Fa, H, Ch)
-
-            # === Step 8.5. Merge heads ===
-            out = xp.astype(
-                xp.reshape(
-                    out_heads, (n_node, self.ebed_dim_full, self.hidden_channels)
-                ),
-                x.dtype,
-            )  # (N, D, C_wide)
-
-        # === Step 9. Optional message-node grid product ===
-        # pt: post-aggregation packed-layout cross-mode product between the
-        # aggregated message (query) and the pre-focus-mixed node features
-        # (context), added as a residual before the final channel mixing.
-        if self.message_node_grid_product is not None:
-            out = out + self.message_node_grid_product(out, x)
-
-        # === Step 10. Final channel mixing ===
-        out = self.post_focus_mix(out[:, :, None, :])[:, :, 0, :]
-        return out  # (N, D, C)
-
-    def _variables(self) -> dict[str, np.ndarray]:
-        """Variables keyed by the pt ``state_dict`` key names."""
-        variables: dict[str, np.ndarray] = {}
-        for i, so2_linear in enumerate(self.so2_linears):
-            for key, value in so2_linear._variables().items():
-                variables[f"so2_linears.{i}.{key}"] = value
-        for i, inter_norm in enumerate(self.so2_inter_norms):
-            if inter_norm is not None:
-                for key, value in inter_norm.serialize()["@variables"].items():
-                    variables[f"so2_inter_norms.{i}.{key}"] = value
-        for i, non_linear in enumerate(self.non_linearities):
-            if non_linear is not None:
-                for key, value in non_linear.serialize()["@variables"].items():
-                    variables[f"non_linearities.{i}.{key}"] = value
-        if self.n_atten_head > 0:
-            variables["adamw_attn_logit_w"] = to_numpy_array(self.adamw_attn_logit_w)
-            variables["adamw_attn_z_bias_raw"] = to_numpy_array(
-                self.adamw_attn_z_bias_raw
-            )
-            variables["adamw_attn_gate_w"] = to_numpy_array(self.adamw_attn_gate_w)
-            variables["attn_qk_norm.adam_scale"] = to_numpy_array(
-                self.attn_qk_norm.adam_scale
-            )
-            variables["attn_q_proj.weight"] = to_numpy_array(self.attn_q_proj.weight)
-            variables["attn_k_proj.weight"] = to_numpy_array(self.attn_k_proj.weight)
-            variables["attn_output_gate_norm.adam_scale"] = to_numpy_array(
-                self.attn_output_gate_norm.adam_scale
-            )
-        if self.focus_compete_norm is not None:
-            variables["adamw_focus_compete_w"] = to_numpy_array(
-                self.adamw_focus_compete_w
-            )
-            variables["focus_compete_norm.adam_scale"] = to_numpy_array(
-                self.focus_compete_norm.adam_scale
-            )
-            if self.mlp_bias:
-                variables["focus_compete_bias"] = to_numpy_array(
-                    self.focus_compete_bias
+                    (n_edge, self.ebed_dim_full, self.n_focus, self.so2_focus_dim),
                 )
-        if self.radial_hidden_proj is not None:
-            variables["radial_hidden_proj.weight"] = to_numpy_array(
-                self.radial_hidden_proj.weight
+                * xp.astype(alpha, x_message.dtype)[:, None, :, None],
+                (n_edge, self.ebed_dim_full, self.hidden_channels),
             )
-        if self.radial_degree_mixer is not None:
-            for key, value in self.radial_degree_mixer._variables().items():
-                variables[f"radial_degree_mixer.{key}"] = value
-        # Cross-mode grid products: nest each net's @variables under the pt
-        # state_dict attribute name so ``deserialize(pt.serialize())`` matches.
-        for name, grid in (
-            ("node_wise_grid_product", self.node_wise_grid_product),
-            ("message_node_grid_product", self.message_node_grid_product),
-        ):
-            if grid is not None:
-                for key, value in grid.serialize()["@variables"].items():
-                    variables[f"{name}.{key}"] = value
-        for name, mix in (
-            ("pre_focus_mix", self.pre_focus_mix),
-            ("post_focus_mix", self.post_focus_mix),
-        ):
-            for key, value in mix.serialize()["@variables"].items():
-                variables[f"{name}.{key}"] = value
-        variables["coeff_index_m"] = to_numpy_array(self.coeff_index_m)
-        variables["degree_index_m"] = to_numpy_array(self.degree_index_m)
-        variables["rotate_inv_rescale_full"] = to_numpy_array(
-            self.rotate_inv_rescale_full
+        return x_message, rad_feat
+
+    def _focus_alpha(self, focus_gate_src: Array) -> Array:
+        """
+        Compute per-focus softmax competition weights from l=0 scalars.
+
+        Parameters
+        ----------
+        focus_gate_src : Array
+            Per-edge l=0 scalar features with shape (E, F, Cf).
+
+        Returns
+        -------
+        Array
+            Label-smoothed competition weights with shape (E, F), in the compute
+            dtype.
+        """
+        xp = array_api_compat.array_namespace(focus_gate_src)
+        device = array_api_compat.device(focus_gate_src)
+        focus_logits = xp.sum(
+            self.focus_compete_norm(
+                xp.astype(focus_gate_src, get_xp_precision(xp, self.compute_precision))
+            )
+            * xp.permute_dims(
+                xp_asarray_nodetach(xp, self.adamw_focus_compete_w[...], device=device),
+                (1, 0),
+            )[None, :, :],
+            axis=2,
         )
+        if self.mlp_bias:
+            focus_logits = (
+                focus_logits
+                + xp_asarray_nodetach(xp, self.focus_compete_bias[...], device=device)[
+                    None, :
+                ]
+            )
+        focus_logits = focus_logits / self.focus_softmax_tau
+        alpha = xp.exp(focus_logits - xp.max(focus_logits, axis=1, keepdims=True))
+        alpha = alpha / xp.sum(alpha, axis=1, keepdims=True)
+        return alpha * (1.0 - self.focus_label_smoothing) + (
+            self.focus_label_smoothing / float(self.n_focus)
+        )
+
+    def _build_so2_mixing(
+        self,
+        *,
+        seed_so2_stack: int | list[int] | None,
+        seed_non_linearities: int | list[int] | None,
+        seed_depth_attn: int | list[int] | None,
+        trainable: bool,
+    ) -> None:
+        """
+        Build the SO(2) rotation-frame mixing stack.
+
+        Populates the m-major reduced-layout buffers, the multi-layer
+        ``SO2Linear`` stack, its intermediate norms and nonlinearities, the
+        optional depth-wise attention residuals, and the optional per-layer
+        LayerScale. These are the SO(2)-only tensors; they are skipped entirely
+        when ``edge_cartesian`` is True.
+
+        Parameters
+        ----------
+        seed_so2_stack : int | list[int] | None
+            Seed for the ``SO2Linear`` layers.
+        seed_non_linearities : int | list[int] | None
+            Seed for the intermediate nonlinearities.
+        seed_depth_attn : int | list[int] | None
+            Seed for the depth-wise attention residuals.
+        trainable : bool
+            Whether parameters are trainable.
+        """
+        # === Step 1. Precompute coefficient indices for m-major reduced layout ===
+        coeff_index_m = build_m_major_index(self.lmax, self.mmax)
+        degree_index_m = build_m_major_l_index(self.lmax, self.mmax)
+        degree_index_full = map_degree_idx(self.lmax)
+        rotate_inv_rescale_full = build_rotate_inv_rescale(
+            lmax=self.lmax,
+            mmax=self.mmax,
+            degree_index=degree_index_full,
+        )
+        self.coeff_index_m = coeff_index_m
+        self.degree_index_m = degree_index_m
+        # Packed (l, m) -> l index, used by the rotation-free radial message to
+        # broadcast each degree's radial weight over its orders.
+        self.degree_index_full = degree_index_full
+        self.rotate_inv_rescale_full = rotate_inv_rescale_full
+        self.reduced_dim = int(coeff_index_m.size)
+
+        # === Step 3. Multiple SO2Linear layers ===
+        self.so2_linears = [
+            SO2Linear(
+                lmax=self.lmax,
+                mmax=self.mmax,
+                in_channels=self.so2_focus_dim,
+                out_channels=(
+                    2 * self.so2_focus_dim
+                    if self.s2_activation and i < self.mixing_layers - 1
+                    else self.so2_focus_dim
+                ),
+                n_focus=self.n_focus,
+                precision=self.precision,
+                mlp_bias=self.mlp_bias,
+                seed=child_seed(seed_so2_stack, i),
+                trainable=trainable,
+            )
+            for i in range(self.mixing_layers)
+        ]
+
+        # === Step 4. Intermediate norms (the last layer always uses Identity) ===
+        inter_norms: list[NativeOP] = []
+        for i in range(self.mixing_layers):
+            if self.so2_norm and i < self.mixing_layers - 1:
+                inter_norms.append(
+                    ReducedEquivariantRMSNorm(
+                        lmax=self.lmax,
+                        mmax=self.mmax,
+                        channels=self.so2_focus_dim,
+                        degree_index_m=self.degree_index_m,
+                        n_focus=self.n_focus,
+                        precision=self.compute_precision,
+                        trainable=trainable,
+                    )
+                )
+            else:
+                inter_norms.append(Identity())
+        self.so2_inter_norms = inter_norms
+
+        # === Step 5. Intermediate non-linearity (the last layer stays linear) ===
+        non_linearities: list[NativeOP] = []
+        for i in range(self.mixing_layers):
+            if i >= self.mixing_layers - 1:
+                non_linearities.append(Identity())
+            elif self.s2_activation:
+                non_linearities.append(
+                    S2GridNet(
+                        lmax=self.lmax,
+                        mmax=self.mmax,
+                        channels=self.so2_focus_dim,
+                        n_focus=self.n_focus,
+                        mode="self",
+                        op_type="glu",
+                        precision=self.compute_precision,
+                        layout="nfdc",
+                        grid_resolution_list=self.s2_grid_resolution,
+                        coefficient_layout="m_major",
+                        grid_method=self.s2_grid_method,
+                        mlp_bias=self.mlp_bias,
+                        trainable=trainable,
+                        seed=child_seed(seed_non_linearities, i),
+                    )
+                )
+            else:
+                non_linearities.append(
+                    GatedActivation(
+                        lmax=self.lmax,
+                        mmax=self.mmax,
+                        channels=self.so2_focus_dim,
+                        n_focus=self.n_focus,
+                        precision=self.compute_precision,
+                        activation_function=self.activation_function,
+                        mlp_bias=self.mlp_bias,
+                        layout="nfdc",
+                        trainable=trainable,
+                        seed=child_seed(seed_non_linearities, i),
+                    )
+                )
+        self.non_linearities = non_linearities
+
+        # === Step 6. Optional depth-wise attention residuals across SO(2) layers ===
+        if self.use_so2_attn_res:
+            self.so2_layer_attn_res: list[DepthAttnRes] | None = [
+                DepthAttnRes(
+                    channels=self.hidden_channels,
+                    input_dependent=self.so2_attn_res_mode == "dependent",
+                    eps=self.eps,
+                    bias=self.mlp_bias,
+                    precision=self.compute_precision,
+                    trainable=trainable,
+                    seed=child_seed(seed_depth_attn, i),
+                )
+                for i in range(self.mixing_layers)
+            ]
+        else:
+            self.so2_layer_attn_res = None
+
+        # === Step 7. Optional per-layer LayerScale for SO(2) residual branches ===
+        if self.layer_scale:
+            self.adam_so2_layer_scales = [
+                np.ones(
+                    (self.n_focus, self.so2_focus_dim),
+                    dtype=PRECISION_DICT[self.precision.lower()],
+                )
+                * 1e-3
+                for _ in range(self.mixing_layers)
+            ]
+        else:
+            self.adam_so2_layer_scales = None
+
+    def _sub_modules(self) -> list[tuple[str, NativeOP]]:
+        """Single equivariant sub-modules keyed by their pt ``state_dict`` prefixes."""
+        modules: list[tuple[str, NativeOP]] = []
+        if self.edge_cartesian:
+            modules.append(("edge_cartesian_tp", self.edge_cartesian_tp))
+        if self.node_cartesian_tp is not None:
+            modules.append(("node_cartesian_tp", self.node_cartesian_tp))
+        if self.attn_qk_norm is not None:
+            modules.append(("attn_qk_norm", self.attn_qk_norm))
+            modules.append(("attn_q_proj", self.attn_q_proj))
+            modules.append(("attn_k_proj", self.attn_k_proj))
+            if self.attn_focus_mix is not None:
+                modules.append(("attn_focus_mix", self.attn_focus_mix))
+            if self.attn_v_proj is not None:
+                modules.append(("attn_v_proj", self.attn_v_proj))
+            if self.attn_o_proj is not None:
+                modules.append(("attn_o_proj", self.attn_o_proj))
+            modules.append(("attn_output_gate_norm", self.attn_output_gate_norm))
+        if self.focus_compete_norm is not None:
+            modules.append(("focus_compete_norm", self.focus_compete_norm))
+        if self.radial_hidden_proj is not None:
+            modules.append(("radial_hidden_proj", self.radial_hidden_proj))
+        if self.radial_degree_mixer is not None:
+            modules.append(("radial_degree_mixer", self.radial_degree_mixer))
+        if self.node_wise_grid_product is not None:
+            modules.append(("node_wise_grid_product", self.node_wise_grid_product))
+        if self.message_node_grid_product is not None:
+            modules.append(
+                ("message_node_grid_product", self.message_node_grid_product)
+            )
+        modules.append(("pre_focus_mix", self.pre_focus_mix))
+        modules.append(("post_focus_mix", self.post_focus_mix))
+        return modules
+
+    def _variables(self) -> dict[str, Any]:
+        """Variables keyed by the pt ``state_dict`` key names."""
+        variables: dict[str, Any] = {}
+        # === Single equivariant sub-modules ===
+        for prefix, sub in self._sub_modules():
+            for key, value in sub.serialize().get("@variables", {}).items():
+                variables[f"{prefix}.{key}"] = value
+        # === SO(2) mixing stack (absent under the Cartesian edge core) ===
+        if not self.edge_cartesian:
+            for attr in (
+                "so2_linears",
+                "so2_inter_norms",
+                "non_linearities",
+                "so2_layer_attn_res",
+            ):
+                sub_list = getattr(self, attr)
+                if sub_list is None:
+                    continue
+                for i, sub in enumerate(sub_list):
+                    for key, value in sub.serialize().get("@variables", {}).items():
+                        variables[f"{attr}.{i}.{key}"] = value
+            if self.adam_so2_layer_scales is not None:
+                for i, value in enumerate(self.adam_so2_layer_scales):
+                    variables[f"adam_so2_layer_scales.{i}"] = to_numpy_array(value)
+        # === Raw attention and cross-focus competition parameters ===
+        for name in (
+            "adamw_attn_logit_w",
+            "adamw_attn_z_bias_raw",
+            "adamw_attn_gate_w",
+            "adamw_focus_compete_w",
+            "focus_compete_bias",
+        ):
+            value = getattr(self, name)
+            if value is not None:
+                variables[name] = to_numpy_array(value)
         return variables
 
     def _load_variables(self, variables: dict[str, Any]) -> None:
         """Load variables keyed by the pt ``state_dict`` key names."""
-        variables = dict(variables)
+        compute_prec = PRECISION_DICT[self.compute_precision]
         prec = PRECISION_DICT[self.precision.lower()]
-        cprec = PRECISION_DICT[self.compute_precision.lower()]
-
-        def pop(key: str) -> Any:
-            try:
-                return variables.pop(key)
-            except KeyError:
-                raise KeyError(f"Missing variable: {key}") from None
-
-        def sub_vars(prefix: str) -> dict[str, Any]:
-            full = f"{prefix}."
-            out = {
-                key[len(full) :]: value
+        # === Single equivariant sub-modules ===
+        for attr, sub in self._sub_modules():
+            prefix = f"{attr}."
+            sub_variables = {
+                key[len(prefix) :]: value
                 for key, value in variables.items()
-                if key.startswith(full)
+                if key.startswith(prefix)
             }
-            for key in list(variables):
-                if key.startswith(full):
-                    del variables[key]
-            if not out:
-                raise KeyError(f"Missing variables with prefix: {full}")
-            return out
-
-        # Top-level index buffers: validate against the config-derived tables.
-        _check_index_table(self.coeff_index_m, pop("coeff_index_m"), "coeff_index_m")
-        _check_index_table(self.degree_index_m, pop("degree_index_m"), "degree_index_m")
-        _check_shape_assign(
-            self,
-            "rotate_inv_rescale_full",
-            pop("rotate_inv_rescale_full"),
-            prec,
-            "rotate_inv_rescale_full",
-        )
-
-        for i, so2_linear in enumerate(self.so2_linears):
-            so2_linear._load_variables(sub_vars(f"so2_linears.{i}"))
-        for i, inter_norm in enumerate(self.so2_inter_norms):
-            if inter_norm is not None:
-                sv = sub_vars(f"so2_inter_norms.{i}")
-                _check_index_table(
-                    inter_norm.degree_index_m,
-                    sv["degree_index_m"],
-                    f"so2_inter_norms.{i}.degree_index_m",
-                )
-                for name in ("balance_weight", "adam_scale", "bias0"):
-                    _check_shape_assign(
-                        inter_norm,
-                        name,
-                        sv[name],
-                        cprec,
-                        f"so2_inter_norms.{i}.{name}",
-                    )
-        for i, non_linear in enumerate(self.non_linearities):
-            if non_linear is not None:
-                sv = sub_vars(f"non_linearities.{i}")
-                _check_index_table(
-                    non_linear.expand_index,
-                    sv["expand_index"],
-                    f"non_linearities.{i}.expand_index",
-                )
-                _check_shape_assign(
-                    non_linear.gate_linear,
-                    "weight",
-                    sv["gate_linear.weight"],
-                    cprec,
-                    f"non_linearities.{i}.gate_linear.weight",
-                )
-                if self.mlp_bias:
-                    _check_shape_assign(
-                        non_linear.gate_linear,
-                        "bias",
-                        sv["gate_linear.bias"],
-                        cprec,
-                        f"non_linearities.{i}.gate_linear.bias",
-                    )
-        if self.n_atten_head > 0:
-            for name in (
-                "adamw_attn_logit_w",
-                "adamw_attn_z_bias_raw",
-                "adamw_attn_gate_w",
+            data = sub.serialize()
+            data["@variables"] = sub_variables
+            setattr(self, attr, type(sub).deserialize(data))
+        # === SO(2) mixing stack (absent under the Cartesian edge core) ===
+        if not self.edge_cartesian:
+            for attr in (
+                "so2_linears",
+                "so2_inter_norms",
+                "non_linearities",
+                "so2_layer_attn_res",
             ):
-                _check_shape_assign(self, name, pop(name), cprec, name)
-            _check_shape_assign(
-                self.attn_qk_norm,
-                "adam_scale",
-                pop("attn_qk_norm.adam_scale"),
-                cprec,
-                "attn_qk_norm.adam_scale",
-            )
-            _check_shape_assign(
-                self.attn_q_proj,
-                "weight",
-                pop("attn_q_proj.weight"),
-                cprec,
-                "attn_q_proj.weight",
-            )
-            _check_shape_assign(
-                self.attn_k_proj,
-                "weight",
-                pop("attn_k_proj.weight"),
-                cprec,
-                "attn_k_proj.weight",
-            )
-            _check_shape_assign(
-                self.attn_output_gate_norm,
-                "adam_scale",
-                pop("attn_output_gate_norm.adam_scale"),
-                cprec,
-                "attn_output_gate_norm.adam_scale",
-            )
-        if self.focus_compete_norm is not None:
-            _check_shape_assign(
-                self,
-                "adamw_focus_compete_w",
-                pop("adamw_focus_compete_w"),
-                cprec,
-                "adamw_focus_compete_w",
-            )
-            _check_shape_assign(
-                self.focus_compete_norm,
-                "adam_scale",
-                pop("focus_compete_norm.adam_scale"),
-                cprec,
-                "focus_compete_norm.adam_scale",
-            )
-            if self.mlp_bias:
-                _check_shape_assign(
-                    self,
-                    "focus_compete_bias",
-                    pop("focus_compete_bias"),
-                    cprec,
-                    "focus_compete_bias",
-                )
-        if self.radial_hidden_proj is not None:
-            _check_shape_assign(
-                self.radial_hidden_proj,
-                "weight",
-                pop("radial_hidden_proj.weight"),
-                prec,
-                "radial_hidden_proj.weight",
-            )
-        if self.radial_degree_mixer is not None:
-            self.radial_degree_mixer._load_variables(sub_vars("radial_degree_mixer"))
-
-        # Grid products have no ``_load_variables``; reuse their config (from a
-        # fresh ``serialize()``) plus the loaded @variables and re-deserialize
-        # in place. This exercises the full grid-net serialize round-trip.
-        def _grid_product_vars(prefix: str, template: dict) -> dict:
-            # Reject schema drift: the loaded @variables keys must exactly match
-            # the fresh template's, so an unexpected ``<prefix>.*`` key fails the
-            # conversion loudly instead of being silently dropped.
-            loaded = sub_vars(prefix)
-            expected = set(template["@variables"])
-            if set(loaded) != expected:
-                raise ValueError(
-                    f"{prefix} @variables keys {sorted(loaded)} do not match "
-                    f"the expected keys {sorted(expected)}"
-                )
-            return loaded
-
-        if self.node_wise_grid_product is not None:
-            template = self.node_wise_grid_product.serialize()
-            template["@variables"] = _grid_product_vars(
-                "node_wise_grid_product", template
-            )
-            self.node_wise_grid_product = type(self.node_wise_grid_product).deserialize(
-                template
-            )
-        if self.message_node_grid_product is not None:
-            template = self.message_node_grid_product.serialize()
-            template["@variables"] = _grid_product_vars(
-                "message_node_grid_product", template
-            )
-            self.message_node_grid_product = type(
-                self.message_node_grid_product
-            ).deserialize(template)
-        for name, mix in (
-            ("pre_focus_mix", self.pre_focus_mix),
-            ("post_focus_mix", self.post_focus_mix),
+                sub_list = getattr(self, attr)
+                if sub_list is None:
+                    continue
+                for i, sub in enumerate(sub_list):
+                    prefix = f"{attr}.{i}."
+                    sub_variables = {
+                        key[len(prefix) :]: value
+                        for key, value in variables.items()
+                        if key.startswith(prefix)
+                    }
+                    data = sub.serialize()
+                    data["@variables"] = sub_variables
+                    sub_list[i] = type(sub).deserialize(data)
+            if self.adam_so2_layer_scales is not None:
+                # Rebuild the per-layer scales locally and assign the list once.
+                # Under pt_expt ``adam_so2_layer_scales`` is a ParameterList whose
+                # elements reject direct numpy assignment; reassigning the whole
+                # list lets the backend rebuild the container cleanly while the
+                # numeric values stay identical.
+                self.adam_so2_layer_scales = [
+                    np.asarray(variables[f"adam_so2_layer_scales.{i}"], dtype=prec)
+                    for i in range(len(self.adam_so2_layer_scales))
+                ]
+        # === Raw attention and cross-focus competition parameters ===
+        for name in (
+            "adamw_attn_logit_w",
+            "adamw_attn_z_bias_raw",
+            "adamw_attn_gate_w",
+            "adamw_focus_compete_w",
+            "focus_compete_bias",
         ):
-            sv = sub_vars(name)
-            _check_index_table(
-                mix.expand_index, sv["expand_index"], f"{name}.expand_index"
-            )
-            _check_shape_assign(mix, "weight", sv["weight"], prec, f"{name}.weight")
-            if self.mlp_bias:
-                _check_shape_assign(mix, "bias", sv["bias"], prec, f"{name}.bias")
-
-        if variables:
-            raise KeyError(f"Unknown variables: {sorted(variables)}")
+            if name in variables:
+                setattr(self, name, np.asarray(variables[name], dtype=compute_prec))
 
     def serialize(self) -> dict[str, Any]:
-        """Serialize the SO2Convolution to a dict (pt-compatible format)."""
+        """Serialize the SO2Convolution to a dict."""
         return {
             "@class": "SO2Convolution",
             "@version": 1,

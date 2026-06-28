@@ -181,6 +181,7 @@ def test_masked_edge_noop() -> None:
     nf, nloc = atype.shape
     coord_ext = coord.reshape(nf, -1)
     out = np.asarray(dd.call(coord_ext, atype, nlist)[0])
+    assert np.abs(out).max() > 1e-6
 
     pad = -np.ones((nf, nloc, 1), dtype=nlist.dtype)
     nlist2 = np.concatenate([nlist, pad], axis=-1)
