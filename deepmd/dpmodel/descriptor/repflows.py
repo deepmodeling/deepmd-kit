@@ -555,7 +555,13 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
                 "`mapping` is required when use_loc_mapping=False unless "
                 "`_exchange_ghosts` is overridden for parallel comm handling."
             )
-        return xp_take_along_axis(node_ebd, mapping_tiled, axis=1)
+        xp = array_api_compat.array_namespace(node_ebd, mapping_tiled)
+        mapping_mask = mapping_tiled >= 0
+        mapping_tiled = xp.where(
+            mapping_mask, mapping_tiled, xp.zeros_like(mapping_tiled)
+        )
+        node_ebd_ext = xp_take_along_axis(node_ebd, mapping_tiled, axis=1)
+        return xp.where(mapping_mask, node_ebd_ext, xp.zeros_like(node_ebd_ext))
 
     def call(
         self,

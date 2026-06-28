@@ -1651,8 +1651,12 @@ def take(x: Array, indices: Array, /, *, axis: int | None = None) -> Array:
     axis = _normalize_axis(axis, tensor.shape.rank)
     indices_ = tf.cast(_unwrap(indices), tf.int64)
     dim = tensor.shape[axis]
-    if dim is not None:
-        indices_ = tf.where(indices_ < 0, indices_ + tf.cast(dim, tf.int64), indices_)
+    dim = (
+        tf.shape(tensor, out_type=tf.int64)[axis]
+        if dim is None
+        else tf.cast(dim, tf.int64)
+    )
+    indices_ = tf.where(indices_ < 0, indices_ + dim, indices_)
     return Array._from_tensor(tf.gather(tensor, indices_, axis=axis))
 
 
@@ -1661,8 +1665,12 @@ def take_along_axis(x: Array, indices: Array, /, *, axis: int = -1) -> Array:
     indices_ = tf.cast(_unwrap(indices), tf.int64)
     axis = _normalize_axis(axis, tensor.shape.rank)
     dim = tensor.shape[axis]
-    if dim is not None:
-        indices_ = tf.where(indices_ < 0, indices_ + tf.cast(dim, tf.int64), indices_)
+    dim = (
+        tf.shape(tensor, out_type=tf.int64)[axis]
+        if dim is None
+        else tf.cast(dim, tf.int64)
+    )
+    indices_ = tf.where(indices_ < 0, indices_ + dim, indices_)
     out_shape = tf.shape(indices_)
     tensor_shape = _shape_tuple(tensor)
     coords = []

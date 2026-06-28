@@ -64,16 +64,21 @@ jobs:
           FLAGS_use_stride_compute_kernel: 0
       - name: Test TF2 eager mode
         run: |
-          pytest --cov=deepmd --cov-append source/tests/consistent/io/test_io.py source/jax2tf_tests
+          pytest --cov=deepmd --cov-append \
+            source/tests/consistent/io/test_io.py \
+            source/jax2tf_tests \
+            --splits 12 \
+            --group ${{ matrix.group }}
           pytest --cov=deepmd --cov-append \
             source/tests/consistent \
-            -k tf2
+            -k tf2 \
+            --splits 12 \
+            --group ${{ matrix.group }}
         env:
           NUM_WORKERS: 0
           DP_TEST_TF2_ONLY: 1
           DP_DTYPE_PROMOTION_STRICT: 1
           DP_CI_IMPORT_PADDLE_BEFORE_TF: 1
-        if: matrix.group == 1
       - run: mv .test_durations .test_durations_${{ matrix.group }}
       - name: Upload partial durations
         uses: actions/upload-artifact@v7

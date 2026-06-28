@@ -68,17 +68,10 @@ class NativeLayer(NativeLayerDP, tf.Module):
             if variable is not None and variable.trainable != self.trainable:
                 self._set_tf2_variable(name, variable.read_value())
 
-    @property
-    def w(self) -> Any | None:
-        return self._get_tf2_variable_array("w")
-
-    @property
-    def b(self) -> Any | None:
-        return self._get_tf2_variable_array("b")
-
-    @property
-    def idt(self) -> Any | None:
-        return self._get_tf2_variable_array("idt")
+    def __getattribute__(self, name: str) -> Any:
+        if name in {"w", "b", "idt"}:
+            return object.__getattribute__(self, "_get_tf2_variable_array")(name)
+        return super().__getattribute__(name)
 
     def __setattr__(self, name: str, value: Any) -> None:
         if name in self._tf2_variable_attrs:

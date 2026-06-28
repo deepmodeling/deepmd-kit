@@ -519,7 +519,13 @@ class DescrptBlockRepformers(NativeOP, DescriptorBlock):
                 "implementation; pass a valid mapping or override the method "
                 "for parallel comm handling."
             )
-        return xp_take_along_axis(g1, mapping_tiled, axis=1)
+        xp = array_api_compat.array_namespace(g1, mapping_tiled)
+        mapping_mask = mapping_tiled >= 0
+        mapping_tiled = xp.where(
+            mapping_mask, mapping_tiled, xp.zeros_like(mapping_tiled)
+        )
+        g1_ext = xp_take_along_axis(g1, mapping_tiled, axis=1)
+        return xp.where(mapping_mask, g1_ext, xp.zeros_like(g1_ext))
 
     def call(
         self,
