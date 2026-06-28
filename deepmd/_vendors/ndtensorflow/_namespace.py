@@ -698,7 +698,7 @@ def arange(
         stop_ = tf.cast(_to_tensor(stop), dtype)
         step_ = tf.cast(_to_tensor(step), dtype)
         with _device_context(device):
-            return Array._from_tensor(tf.range(start_, stop_, step_))
+            return Array._from_tensor(tf.range(start_, stop_, step_, dtype=dtype))
     with _device_context(device):
         if step > 0 and stop <= start or step < 0 and stop >= start:
             if dtype is None:
@@ -710,7 +710,7 @@ def arange(
             return Array._from_tensor(tf.zeros((0,), dtype=dtype))
         if dtype is None:
             if py_all(isinstance(i, int) for i in (start, stop, step)):
-                return Array._from_tensor(tf.range(start, stop, step))
+                return Array._from_tensor(tf.range(start, stop, step, dtype=tf.int32))
             return Array._from_tensor(
                 tf.cast(tf.range(start, stop, step, dtype=tf.float64), tf.float32)
             )
@@ -767,8 +767,8 @@ def eye(
             return Array._from_tensor(
                 tf.zeros((n_rows, n_cols), dtype=dtype or tf.float32)
             )
-        rows = tf.range(n_rows)[:, newaxis]
-        cols = tf.range(n_cols)[newaxis, :]
+        rows = tf.range(n_rows, dtype=tf.int32)[:, newaxis]
+        cols = tf.range(n_cols, dtype=tf.int32)[newaxis, :]
         return Array._from_tensor(tf.cast(cols - rows == k, dtype or tf.float32))
 
 
@@ -824,6 +824,7 @@ def linspace(
         )
         start_ = tf.convert_to_tensor(start, dtype=work_dtype)
         stop_ = tf.convert_to_tensor(stop, dtype=work_dtype)
+        # pylint: disable-next=no-explicit-dtype
         out = tf.linspace(start_, stop_, num if endpoint else num + 1)
         if not endpoint:
             out = out[:-1]
@@ -886,8 +887,8 @@ def zeros_like(
 
 def tril(x: Array, /, *, k: int = 0) -> Array:
     tensor = _unwrap(x)
-    rows = tf.range(tensor.shape[-2])[:, newaxis]
-    cols = tf.range(tensor.shape[-1])[newaxis, :]
+    rows = tf.range(tensor.shape[-2], dtype=tf.int32)[:, newaxis]
+    cols = tf.range(tensor.shape[-1], dtype=tf.int32)[newaxis, :]
     return Array._from_tensor(
         tf.where(cols - rows <= k, tensor, tf.zeros((), dtype=tensor.dtype))
     )
@@ -895,8 +896,8 @@ def tril(x: Array, /, *, k: int = 0) -> Array:
 
 def triu(x: Array, /, *, k: int = 0) -> Array:
     tensor = _unwrap(x)
-    rows = tf.range(tensor.shape[-2])[:, newaxis]
-    cols = tf.range(tensor.shape[-1])[newaxis, :]
+    rows = tf.range(tensor.shape[-2], dtype=tf.int32)[:, newaxis]
+    cols = tf.range(tensor.shape[-1], dtype=tf.int32)[newaxis, :]
     return Array._from_tensor(
         tf.where(cols - rows >= k, tensor, tf.zeros((), dtype=tensor.dtype))
     )
