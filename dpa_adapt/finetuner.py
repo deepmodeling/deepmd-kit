@@ -1041,7 +1041,7 @@ class DPAFineTuner:
         except Exception:
             # Cache read failed (e.g. corrupted file, permissions) —
             # fall through and recompute features from scratch.
-            _LOG.debug("Descriptor cache read failed, recomputing.", exc_info=True)
+            pass
 
         features = self._extract_features(systems)
         try:
@@ -1050,7 +1050,7 @@ class DPAFineTuner:
         except Exception:
             # Cache write is best-effort — silently skip on permission errors
             # or disk-full conditions; the features are already in memory.
-            _LOG.debug("Descriptor cache write failed.", exc_info=True)
+            pass
         return features
 
     def _extract_features(self, systems: list[dpdata.System]) -> np.ndarray:
@@ -1099,10 +1099,9 @@ class DPAFineTuner:
 
         try:
             elements = read_data_type_map_union(systems)
+            validate_type_map_subset(elements, tm, label="train data")
         except ValueError:
             pass  # no atom_names — deepmd uses raw atom indices
-        else:
-            validate_type_map_subset(elements, tm, label="train data")
 
         return tm
 
@@ -1724,5 +1723,6 @@ class DPAFineTuner:
         import torch
 
         torch.save(bundle, output_path)
+        _LOG = logging.getLogger("dpa_adapt")
         _LOG.info("Frozen model saved to: %s", output_path)
         return output_path
