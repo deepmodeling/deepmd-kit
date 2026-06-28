@@ -1951,7 +1951,9 @@ def tile(x: Array, repetitions: tuple[int, ...], /) -> Array:
             if rep == 0:
                 shape = list(_shape_tuple(out))
                 shape[axis] = 0
-                return Array._from_tensor(tf.zeros(_shape_arg_for_tf(shape), dtype=out.dtype))
+                return Array._from_tensor(
+                    tf.zeros(_shape_arg_for_tf(shape), dtype=out.dtype)
+                )
             if rep != 1:
                 out = tf.concat([out] * rep, axis=axis)
         return Array._from_tensor(out)
