@@ -1945,6 +1945,16 @@ def tile(x: Array, repetitions: tuple[int, ...], /) -> Array:
         tensor = tf.reshape(
             tensor, (1,) * (len(repetitions) - tensor.shape.rank) + _shape_tuple(tensor)
         )
+    if py_all(isinstance(rep, int) for rep in repetitions):
+        out = tensor
+        for axis, rep in enumerate(repetitions):
+            if rep == 0:
+                shape = list(_shape_tuple(out))
+                shape[axis] = 0
+                return Array._from_tensor(tf.zeros(_shape_arg_for_tf(shape), dtype=out.dtype))
+            if rep != 1:
+                out = tf.concat([out] * rep, axis=axis)
+        return Array._from_tensor(out)
     return Array._from_tensor(tf.tile(tensor, _shape_arg_tensor(repetitions)))
 
 

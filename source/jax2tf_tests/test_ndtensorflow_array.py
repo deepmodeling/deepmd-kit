@@ -28,3 +28,15 @@ def test_dynamic_boolean_mask_indexing() -> None:
             ]
         ),
     )
+
+
+def test_empty_boolean_mask_indexing() -> None:
+    out = xp.asarray(tf.constant([False]))[xp.asarray(tf.constant([], dtype=tf.bool))]
+
+    np.testing.assert_equal(out.unwrap().numpy(), np.array([], dtype=bool))
+
+
+def test_tile_uint16() -> None:
+    out = xp.tile(xp.asarray(tf.constant(0, dtype=tf.uint16)), (2,))
+
+    np.testing.assert_equal(out.unwrap().numpy(), np.array([0, 0], dtype=np.uint16))

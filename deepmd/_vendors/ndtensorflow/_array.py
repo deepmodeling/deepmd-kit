@@ -231,6 +231,12 @@ class Array(tf.experimental.ExtensionType):
                 return type(self)._from_tensor(tf.boolean_mask(tensor, mask))
             tensor_shape = self._tensor.shape.as_list()
             key_shape = key.shape.as_list()
+            if any(key_dim == 0 for key_dim in key_shape):
+                shape = tf.concat(
+                    [tf.constant([0], dtype=tf.int32), tf.shape(self._tensor)[rank:]],
+                    axis=0,
+                )
+                return type(self)._from_tensor(tf.zeros(shape, dtype=self.dtype))
             if any(
                 tensor_dim is not None and key_dim is not None and tensor_dim != key_dim
                 for tensor_dim, key_dim in zip(
