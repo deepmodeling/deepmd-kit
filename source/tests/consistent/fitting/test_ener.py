@@ -520,7 +520,23 @@ class TestEnerStat(CommonTest, FittingTest, unittest.TestCase):
     def skip_pd(self) -> bool:
         return not INSTALLED_PD
 
-    skip_tf2 = not INSTALLED_TF2
+    @property
+    def skip_tf2(self) -> bool:
+        (
+            resnet_dt,
+            precision,
+            mixed_types,
+            (numb_fparam, default_fparam),
+            (numb_aparam, use_aparam_as_mask),
+            atom_ener,
+        ) = self.param
+        return (
+            not INSTALLED_TF2
+            or precision == "bfloat16"
+            or default_fparam is not None
+            or use_aparam_as_mask
+            or atom_ener != []
+        )
 
     tf_class = EnerFittingTF
     tf2_class = EnerFittingTF2

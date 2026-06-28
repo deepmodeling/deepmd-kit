@@ -455,7 +455,7 @@ def _boolean_setitem(
     key_shape = key.shape.as_list()
     if any(
         tensor_dim is not None and key_dim is not None and tensor_dim != key_dim
-        for tensor_dim, key_dim in zip(tensor_shape, key_shape)
+        for tensor_dim, key_dim in zip(tensor_shape[:rank], key_shape, strict=True)
     ):
         raise IndexError("boolean index shape is incompatible with indexed array")
 

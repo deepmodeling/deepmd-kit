@@ -31,6 +31,29 @@ def test_tf2_consistent_backend_subprocess() -> None:
         [str(REPO_ROOT), env["PYTHONPATH"]] if "PYTHONPATH" in env else [str(REPO_ROOT)]
     )
     env.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
+    backend_result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "from deepmd.backend.tensorflow import Backend; "
+                "raise SystemExit(0 if Backend.get_backend('tf2')().is_available() "
+                "else 1)"
+            ),
+        ],
+        cwd=REPO_ROOT,
+        env=env,
+        text=True,
+        capture_output=True,
+        timeout=60,
+        check=False,
+    )
+    if backend_result.returncode != 0:
+        pytest.fail(
+            "TF2 backend is not registered or available under DEEPMD_TEST_TF2=1\n"
+            f"stdout:\n{backend_result.stdout}\n"
+            f"stderr:\n{backend_result.stderr}"
+        )
     result = subprocess.run(
         [
             sys.executable,
@@ -38,7 +61,7 @@ def test_tf2_consistent_backend_subprocess() -> None:
             "pytest",
             "-q",
             "source/tests/consistent/test_array_api.py",
-            "source/tests/consistent/model/test_ener.py",
+            "source/tests/consistent/model",
             "source/tests/consistent/descriptor",
             "source/tests/consistent/fitting",
             "-k",
@@ -54,6 +77,12 @@ def test_tf2_consistent_backend_subprocess() -> None:
     if result.returncode != 0:
         pytest.fail(
             "TF2 consistent subprocess failed\n"
+            f"stdout:\n{result.stdout}\n"
+            f"stderr:\n{result.stderr}"
+        )
+    if "passed" not in result.stdout:
+        pytest.fail(
+            "TF2 consistent subprocess did not execute any passing TF2 tests\n"
             f"stdout:\n{result.stdout}\n"
             f"stderr:\n{result.stderr}"
         )
