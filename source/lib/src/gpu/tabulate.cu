@@ -54,10 +54,14 @@ __forceinline__ __device__ void locate_xx_se_a(FPTYPE& xx,
                                                const FPTYPE& upper,
                                                const FPTYPE& max,
                                                const FPTYPE& stride0,
-                                               const FPTYPE& stride1) {
+                                               const FPTYPE& stride1,
+                                               FPTYPE& extrapolate_delta) {
+  const FPTYPE orig_xx = xx;
+  extrapolate_delta = (FPTYPE)0.;
   if (xx < lower) {
     table_idx = 0;
     xx = (FPTYPE)0.;
+    extrapolate_delta = orig_xx - lower;
   } else if (xx < upper) {
     table_idx = (int)((xx - lower) / stride0);
     xx -= (table_idx * stride0 + lower);
@@ -66,9 +70,10 @@ __forceinline__ __device__ void locate_xx_se_a(FPTYPE& xx,
     table_idx = first_stride + (int)((xx - upper) / stride1);
     xx -= ((table_idx - first_stride) * stride1 + upper);
   } else {
-    table_idx =
-        int((upper - lower) / stride0) + (int)((max - upper) / stride1) - 1;
-    xx = (FPTYPE)0.;
+    int first_stride = int((upper - lower) / stride0);
+    table_idx = first_stride + (int)((max - upper) / stride1) - 1;
+    xx = max - ((table_idx - first_stride) * stride1 + upper);
+    extrapolate_delta = orig_xx - max;
   }
 }
 
@@ -80,10 +85,14 @@ __forceinline__ __device__ void locate_xx_se_t(FPTYPE& xx,
                                                const FPTYPE& min,
                                                const FPTYPE& max,
                                                const FPTYPE& stride0,
-                                               const FPTYPE& stride1) {
+                                               const FPTYPE& stride1,
+                                               FPTYPE& extrapolate_delta) {
+  const FPTYPE orig_xx = xx;
+  extrapolate_delta = (FPTYPE)0.;
   if (xx < min) {
     table_idx = 0;
     xx = (FPTYPE)0.;
+    extrapolate_delta = orig_xx - min;
   } else if (xx < lower) {
     table_idx = (int)((xx - min) / stride1);
     xx -= (table_idx * stride1 + min);
@@ -97,9 +106,11 @@ __forceinline__ __device__ void locate_xx_se_t(FPTYPE& xx,
     table_idx = first_stride + (int)((xx - upper) / stride1);
     xx -= ((table_idx - first_stride) * stride1 + upper);
   } else {
-    table_idx = int((lower - min) / stride1) + int((upper - lower) / stride0) +
-                (int)((max - upper) / stride1) - 1;
-    xx = (FPTYPE)0.;
+    int first_stride =
+        int((lower - min) / stride1) + int((upper - lower) / stride0);
+    table_idx = first_stride + (int)((max - upper) / stride1) - 1;
+    xx = max - ((table_idx - first_stride) * stride1 + upper);
+    extrapolate_delta = orig_xx - max;
   }
 }
 
@@ -112,10 +123,14 @@ __forceinline__ __device__ void locate_xx_se_t_tebd(FPTYPE& xx,
                                                     const FPTYPE& min,
                                                     const FPTYPE& max,
                                                     const FPTYPE& stride0,
-                                                    const FPTYPE& stride1) {
+                                                    const FPTYPE& stride1,
+                                                    FPTYPE& extrapolate_delta) {
+  const FPTYPE orig_xx = xx;
+  extrapolate_delta = (FPTYPE)0.;
   if (xx < min) {
     table_idx = 0;
     xx = (FPTYPE)0.;
+    extrapolate_delta = orig_xx - min;
   } else if (xx < lower) {
     table_idx = (int)((xx - min) / stride1);
     xx -= (table_idx * stride1 + min);
@@ -129,9 +144,11 @@ __forceinline__ __device__ void locate_xx_se_t_tebd(FPTYPE& xx,
     table_idx = first_stride + (int)((xx - upper) / stride1);
     xx -= ((table_idx - first_stride) * stride1 + upper);
   } else {
-    table_idx = int((lower - min) / stride1) + int((upper - lower) / stride0) +
-                (int)((max - upper) / stride1) - 1;
-    xx = (FPTYPE)0.;
+    int first_stride =
+        int((lower - min) / stride1) + int((upper - lower) / stride0);
+    table_idx = first_stride + (int)((max - upper) / stride1) - 1;
+    xx = max - ((table_idx - first_stride) * stride1 + upper);
+    extrapolate_delta = orig_xx - max;
   }
 }
 
@@ -142,10 +159,14 @@ __forceinline__ __device__ void locate_xx_se_r(FPTYPE& xx,
                                                const FPTYPE& upper,
                                                const FPTYPE& max,
                                                const FPTYPE& stride0,
-                                               const FPTYPE& stride1) {
+                                               const FPTYPE& stride1,
+                                               FPTYPE& extrapolate_delta) {
+  const FPTYPE orig_xx = xx;
+  extrapolate_delta = (FPTYPE)0.;
   if (xx < lower) {
     table_idx = 0;
     xx = (FPTYPE)0.;
+    extrapolate_delta = orig_xx - lower;
   } else if (xx < upper) {
     table_idx = (int)((xx - lower) / stride0);
     xx -= (table_idx * stride0 + lower);
@@ -154,9 +175,10 @@ __forceinline__ __device__ void locate_xx_se_r(FPTYPE& xx,
     table_idx = first_stride + (int)((xx - upper) / stride1);
     xx -= ((table_idx - first_stride) * stride1 + upper);
   } else {
-    table_idx =
-        int((upper - lower) / stride0) + (int)((max - upper) / stride1) - 1;
-    xx = (FPTYPE)0.;
+    int first_stride = int((upper - lower) / stride0);
+    table_idx = first_stride + (int)((max - upper) / stride1) - 1;
+    xx = max - ((table_idx - first_stride) * stride1 + upper);
+    extrapolate_delta = orig_xx - max;
   }
 }
 
@@ -173,6 +195,32 @@ __forceinline__ __device__ void load_polynomial_params(
   var[3] = table[table_idx * last_layer_size * 6 + idx * 6 + 3];
   var[4] = table[table_idx * last_layer_size * 6 + idx * 6 + 4];
   var[5] = table[table_idx * last_layer_size * 6 + idx * 6 + 5];
+}
+
+template <typename FPTYPE>
+__forceinline__ __device__ FPTYPE polynomial5(const FPTYPE var[6],
+                                              const FPTYPE& xx) {
+  return var[0] +
+         (var[1] +
+          (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) *
+             xx;
+}
+
+template <typename FPTYPE>
+__forceinline__ __device__ FPTYPE polynomial5_grad(const FPTYPE var[6],
+                                                   const FPTYPE& xx) {
+  return var[1] + ((FPTYPE)2. * var[2] +
+                   ((FPTYPE)3. * var[3] +
+                    ((FPTYPE)4. * var[4] + (FPTYPE)5. * var[5] * xx) * xx) *
+                       xx) *
+                      xx;
+}
+
+template <typename FPTYPE>
+__forceinline__ __device__ FPTYPE extrapolated_polynomial5(
+    const FPTYPE var[6], const FPTYPE& xx, const FPTYPE& extrapolate_delta) {
+  const FPTYPE grad = polynomial5_grad(var, xx);
+  return polynomial5(var, xx) + grad * extrapolate_delta;
 }
 
 template <typename FPTYPE>
@@ -239,15 +287,14 @@ __global__ void tabulate_fusion_se_a_fifth_order_polynomial(
       breakpoint = ii;
     }
     int table_idx = 0;
-    locate_xx_se_a(xx, table_idx, lower, upper, max, stride0, stride1);
+    FPTYPE extrapolate_delta = (FPTYPE)0.;
+    locate_xx_se_a(xx, table_idx, lower, upper, max, stride0, stride1,
+                   extrapolate_delta);
     if (table_idx != mark_table_idx) {
       load_polynomial_params(var, table, table_idx, thread_idx,
                              last_layer_size);
     }
-    FPTYPE res =
-        var[0] +
-        (var[1] + (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) *
-            xx;
+    FPTYPE res = extrapolated_polynomial5(var, xx, extrapolate_delta);
     if (enable_se_atten) {
       FPTYPE t = two_embed[block_idx * nnei * last_layer_size +
                            ii * last_layer_size + thread_idx];
@@ -334,16 +381,15 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
                             em[block_idx * nnei * MTILE + ii * 4 + 3]};
     FPTYPE Csub = (FPTYPE)0.;
     FPTYPE sum[MTILE] = {(FPTYPE)0.};
-    locate_xx_se_a(xx, table_idx, lower, upper, max, stride0, stride1);
+    FPTYPE extrapolate_delta = (FPTYPE)0.;
+    locate_xx_se_a(xx, table_idx, lower, upper, max, stride0, stride1,
+                   extrapolate_delta);
 
     FPTYPE var[6];
     for (int jj = lane_idx; jj < last_layer_size; jj += WARP_SIZE) {
       load_polynomial_params(var, table, table_idx, jj, last_layer_size);
-      FPTYPE res =
-          var[0] +
-          (var[1] +
-           (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) *
-              xx;
+      FPTYPE res_grad = polynomial5_grad(var, xx);
+      FPTYPE res = polynomial5(var, xx) + res_grad * extrapolate_delta;
       FPTYPE oldres = res;
       FPTYPE t;
       if (enable_se_atten) {
@@ -360,14 +406,8 @@ __global__ void tabulate_fusion_se_a_grad_fifth_order_polynomial(
       res += reg_em[1] * iteratorA[1 * last_layer_size + jj];
       res += reg_em[2] * iteratorA[2 * last_layer_size + jj];
       res += reg_em[3] * iteratorA[3 * last_layer_size + jj];
-      Csub +=
-          (nnei - breakpoint) *
-          (var[1] + ((FPTYPE)2. * var[2] +
-                     ((FPTYPE)3. * var[3] +
-                      ((FPTYPE)4. * var[4] + (FPTYPE)5. * var[5] * xx) * xx) *
-                         xx) *
-                        xx) *
-          (enable_se_atten ? res * t + res : res);
+      Csub += (nnei - breakpoint) * res_grad *
+              (enable_se_atten ? res * t + res : res);
       if (enable_se_atten) {
         // from ii to ii + (nnei - breakpoint)
         for (int ii2 = ii; ii2 < ii + nnei - breakpoint; ii2++) {
@@ -436,22 +476,16 @@ __global__ void tabulate_fusion_se_a_grad_grad_fifth_order_polynomial(
       breakpoint = ii;
     }
     int table_idx = 0;
-    locate_xx_se_a(xx, table_idx, lower, upper, max, stride0, stride1);
+    FPTYPE extrapolate_delta = (FPTYPE)0.;
+    locate_xx_se_a(xx, table_idx, lower, upper, max, stride0, stride1,
+                   extrapolate_delta);
     if (table_idx != mark_table_idx) {
       load_polynomial_params(var, table, table_idx, thread_idx,
                              last_layer_size);
     }
 
-    FPTYPE res =
-        var[0] +
-        (var[1] + (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) *
-            xx;
-    FPTYPE res_grad =
-        var[1] + ((FPTYPE)2. * var[2] +
-                  ((FPTYPE)3. * var[3] +
-                   ((FPTYPE)4. * var[4] + (FPTYPE)5. * var[5] * xx) * xx) *
-                      xx) *
-                     xx;
+    FPTYPE res_grad = polynomial5_grad(var, xx);
+    FPTYPE res = polynomial5(var, xx) + res_grad * extrapolate_delta;
     FPTYPE two_grad = 0.;
     if (enable_se_atten) {
       FPTYPE t = two_embed[block_idx * nnei * last_layer_size +
@@ -527,16 +561,14 @@ __global__ void tabulate_fusion_se_t_fifth_order_polynomial(
       FPTYPE xx = em_x[block_idx * nnei_i * nnei_j + ii * nnei_j + jj];
       FPTYPE tmp = xx;
       int table_idx = 0;
-      locate_xx_se_t(xx, table_idx, lower, upper, -max, max, stride0, stride1);
+      FPTYPE extrapolate_delta = (FPTYPE)0.;
+      locate_xx_se_t(xx, table_idx, lower, upper, -max, max, stride0, stride1,
+                     extrapolate_delta);
       if (table_idx != mark_table_idx) {
         load_polynomial_params(var, table, table_idx, thread_idx,
                                last_layer_size);
       }
-      FPTYPE res =
-          var[0] +
-          (var[1] +
-           (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) *
-              xx;
+      FPTYPE res = extrapolated_polynomial5(var, xx, extrapolate_delta);
 
       sum += tmp * res;
       mark_table_idx = table_idx;
@@ -577,26 +609,19 @@ __global__ void tabulate_fusion_se_t_grad_fifth_order_polynomial(
       FPTYPE xx = em_x[block_idx * nnei_i * nnei_j + ii * nnei_j + jj];
       FPTYPE tmp = xx;
       int table_idx = 0;
-      locate_xx_se_t(xx, table_idx, lower, upper, -max, max, stride0, stride1);
+      FPTYPE extrapolate_delta = (FPTYPE)0.;
+      locate_xx_se_t(xx, table_idx, lower, upper, -max, max, stride0, stride1,
+                     extrapolate_delta);
       FPTYPE sum = (FPTYPE)0.;
       FPTYPE Csub = (FPTYPE)0.;
       for (int kk = lane_idx; kk < last_layer_size; kk += WARP_SIZE) {
         FPTYPE var[6];
         load_polynomial_params(var, table, table_idx, kk, last_layer_size);
-        FPTYPE res =
-            var[0] +
-            (var[1] +
-             (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) *
-                xx;
+        FPTYPE res_grad = polynomial5_grad(var, xx);
+        FPTYPE res = polynomial5(var, xx) + res_grad * extrapolate_delta;
 
         sum += iteratorA[kk] * res;
-        Csub +=
-            iteratorA[kk] * tmp *
-            (var[1] + ((FPTYPE)2. * var[2] +
-                       ((FPTYPE)3. * var[3] +
-                        ((FPTYPE)4. * var[4] + (FPTYPE)5. * var[5] * xx) * xx) *
-                           xx) *
-                          xx);
+        Csub += iteratorA[kk] * tmp * res_grad;
       }
       GpuSyncThreads();
       warp_reduce(sum);
@@ -640,20 +665,15 @@ __global__ void tabulate_fusion_se_t_grad_grad_fifth_order_polynomial(
       FPTYPE var[6];
 
       int table_idx = 0;
-      locate_xx_se_t(xx, table_idx, lower, upper, -max, max, stride0, stride1);
+      FPTYPE extrapolate_delta = (FPTYPE)0.;
+      locate_xx_se_t(xx, table_idx, lower, upper, -max, max, stride0, stride1,
+                     extrapolate_delta);
       if (table_idx != mark_table_idx) {
         load_polynomial_params(var, table, table_idx, thread_idx,
                                last_layer_size);
       }
-      FPTYPE res =
-          var[0] +
-          (var[1] +
-           (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) *
-              xx;
-      FPTYPE res_grad =
-          var[1] + (2 * var[2] +
-                    (3 * var[3] + (4 * var[4] + 5 * var[5] * xx) * xx) * xx) *
-                       xx;
+      FPTYPE res_grad = polynomial5_grad(var, xx);
+      FPTYPE res = polynomial5(var, xx) + res_grad * extrapolate_delta;
 
       sum += (tmp * res_grad * dz_xx + dz_em * res);
       mark_table_idx = table_idx;
@@ -695,19 +715,16 @@ __global__ void tabulate_fusion_se_t_tebd_fifth_order_polynomial(
 
     // Determine the table index based on the value of xx.
     int table_idx = 0;
+    FPTYPE extrapolate_delta = (FPTYPE)0.;
     locate_xx_se_t_tebd(xx, table_idx, lower, upper, -max, max, stride0,
-                        stride1);
+                        stride1, extrapolate_delta);
 
     // Serially loop through the 'last_layer_size' dimension to calculate all
     // features.
     for (int idx = 0; idx < last_layer_size; idx++) {
       FPTYPE var[6];
       load_polynomial_params(var, table, table_idx, idx, last_layer_size);
-      FPTYPE res =
-          var[0] +
-          (var[1] +
-           (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) *
-              xx;
+      FPTYPE res = extrapolated_polynomial5(var, xx, extrapolate_delta);
       // Calculate the unique 1D output index for the 4D tensor (block_idx, ii,
       // jj, idx).
       const int_64 out_idx =
@@ -750,8 +767,9 @@ __global__ void tabulate_fusion_se_t_tebd_grad_fifth_order_polynomial(
     // Determine the table index based on the value of xx.
     FPTYPE xx = em_x[i];
     int table_idx = 0;
+    FPTYPE extrapolate_delta = (FPTYPE)0.;
     locate_xx_se_t_tebd(xx, table_idx, lower, upper, -max, max, stride0,
-                        stride1);
+                        stride1, extrapolate_delta);
 
     // Accumulate the gradient contributions from all features.
     FPTYPE grad_sum = 0.0;
@@ -760,12 +778,7 @@ __global__ void tabulate_fusion_se_t_tebd_grad_fifth_order_polynomial(
       load_polynomial_params(var, table, table_idx, idx, last_layer_size);
 
       // Calculate the derivative of the polynomial with respect to xx.
-      FPTYPE dres_dxx =
-          var[1] + ((FPTYPE)2. * var[2] +
-                    ((FPTYPE)3. * var[3] +
-                     ((FPTYPE)4. * var[4] + (FPTYPE)5. * var[5] * xx) * xx) *
-                        xx) *
-                       xx;
+      FPTYPE dres_dxx = polynomial5_grad(var, xx);
 
       // Read the incoming gradient from the previous layer.
       const int_64 dy_idx =
@@ -819,8 +832,9 @@ __global__ void tabulate_fusion_se_t_tebd_grad_grad_fifth_order_polynomial(
 
     // Determine the table index based on the value of xx.
     int table_idx = 0;
+    FPTYPE extrapolate_delta = (FPTYPE)0.;
     locate_xx_se_t_tebd(xx, table_idx, lower, upper, -max, max, stride0,
-                        stride1);
+                        stride1, extrapolate_delta);
 
     // Serially loop through the 'last_layer_size' dimension.
     for (int idx = 0; idx < last_layer_size; idx++) {
@@ -828,12 +842,7 @@ __global__ void tabulate_fusion_se_t_tebd_grad_grad_fifth_order_polynomial(
       load_polynomial_params(var, table, table_idx, idx, last_layer_size);
 
       // Calculate the derivative of the polynomial with respect to xx.
-      FPTYPE dres_dxx =
-          var[1] + ((FPTYPE)2. * var[2] +
-                    ((FPTYPE)3. * var[3] +
-                     ((FPTYPE)4. * var[4] + (FPTYPE)5. * var[5] * xx) * xx) *
-                        xx) *
-                       xx;
+      FPTYPE dres_dxx = polynomial5_grad(var, xx);
 
       // Apply the chain rule: dz/dy_idx = (dz/dxx) * (dxx/dy_idx)
       // which simplifies to dz_dy_dem_x_val * dres_dxx
@@ -870,16 +879,15 @@ __global__ void tabulate_fusion_se_r_fifth_order_polynomial(
   for (int ii = 0; ii < nnei; ii++) {
     FPTYPE xx = em[block_idx * nnei + ii];
     int table_idx = 0;
-    locate_xx_se_r(xx, table_idx, lower, upper, max, stride0, stride1);
+    FPTYPE extrapolate_delta = (FPTYPE)0.;
+    locate_xx_se_r(xx, table_idx, lower, upper, max, stride0, stride1,
+                   extrapolate_delta);
     if (table_idx != mark_table_idx) {
       load_polynomial_params(var, table, table_idx, thread_idx,
                              last_layer_size);
     }
     out[block_idx * nnei * last_layer_size + ii * last_layer_size +
-        thread_idx] =
-        var[0] +
-        (var[1] + (var[2] + (var[3] + (var[4] + var[5] * xx) * xx) * xx) * xx) *
-            xx;
+        thread_idx] = extrapolated_polynomial5(var, xx, extrapolate_delta);
     mark_table_idx = table_idx;
   }
 }
@@ -907,17 +915,15 @@ __global__ void tabulate_fusion_se_r_grad_fifth_order_polynomial(
 
     int table_idx = 0;
     FPTYPE Csub = (FPTYPE)0.;
-    locate_xx_se_r(xx, table_idx, lower, upper, max, stride0, stride1);
+    FPTYPE extrapolate_delta = (FPTYPE)0.;
+    locate_xx_se_r(xx, table_idx, lower, upper, max, stride0, stride1,
+                   extrapolate_delta);
 
     FPTYPE var[6];
     for (int jj = lane_idx; jj < last_layer_size; jj += WARP_SIZE) {
       load_polynomial_params(var, table, table_idx, jj, last_layer_size);
       Csub +=
-          (var[1] + ((FPTYPE)2. * var[2] +
-                     ((FPTYPE)3. * var[3] +
-                      ((FPTYPE)4. * var[4] + (FPTYPE)5. * var[5] * xx) * xx) *
-                         xx) *
-                        xx) *
+          polynomial5_grad(var, xx) *
           dy[block_idx * nnei * last_layer_size + ii * last_layer_size + jj];
     }
     GpuSyncThreads();
@@ -954,17 +960,14 @@ __global__ void tabulate_fusion_se_r_grad_grad_fifth_order_polynomial(
   for (int ii = 0; ii < nnei; ii++) {
     FPTYPE xx = em[block_idx * nnei + ii];
     int table_idx = 0;
-    locate_xx_se_r(xx, table_idx, lower, upper, max, stride0, stride1);
+    FPTYPE extrapolate_delta = (FPTYPE)0.;
+    locate_xx_se_r(xx, table_idx, lower, upper, max, stride0, stride1,
+                   extrapolate_delta);
     if (table_idx != mark_table_idx) {
       load_polynomial_params(var, table, table_idx, thread_idx,
                              last_layer_size);
     }
-    FPTYPE res_grad =
-        var[1] + ((FPTYPE)2. * var[2] +
-                  ((FPTYPE)3. * var[3] +
-                   ((FPTYPE)4. * var[4] + (FPTYPE)5. * var[5] * xx) * xx) *
-                      xx) *
-                     xx;
+    FPTYPE res_grad = polynomial5_grad(var, xx);
     mark_table_idx = table_idx;
     dz_dy[block_idx * nnei * last_layer_size + ii * last_layer_size +
           thread_idx] = dz_dy_dem[block_idx * nnei + ii] * res_grad;
