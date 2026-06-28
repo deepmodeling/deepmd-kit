@@ -64,12 +64,26 @@ jobs:
           FLAGS_use_stride_compute_kernel: 0
       - name: Test TF2 eager mode
         run: |
-          pytest --cov=deepmd --cov-append \
+          run_pytest_allow_no_tests() {
+            set +e
+            pytest "$@"
+            local status=$?
+            set -e
+            if [ "$status" -eq 5 ]; then
+              # pytest-split may leave an individual shard with no selected
+              # tests after path/-k filtering. Other shards still cover the
+              # selected tests, so do not fail the whole matrix for exit 5.
+              return 0
+            fi
+            return "$status"
+          }
+
+          run_pytest_allow_no_tests --cov=deepmd --cov-append \
             source/tests/consistent/io/test_io.py \
             source/jax2tf_tests \
             --splits 12 \
             --group ${{ matrix.group }}
-          pytest --cov=deepmd --cov-append \
+          run_pytest_allow_no_tests --cov=deepmd --cov-append \
             source/tests/consistent \
             -k tf2 \
             --splits 12 \
