@@ -13,6 +13,7 @@
 #include <numeric>
 #include <ostream>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 #include "common.h"
@@ -46,6 +47,34 @@ inline void find_function(TF_Function*& found_func,
     }
   }
   found_func = NULL;
+}
+
+inline bool function_def_contains(TF_Function* func,
+                                  const std::string& needle,
+                                  TF_Status* status) {
+  TF_Buffer* func_def = TF_NewBuffer();
+  TF_FunctionToFunctionDef(func, func_def, status);
+  if (TF_GetCode(status) != TF_OK) {
+    std::string msg = TF_Message(status);
+    TF_DeleteBuffer(func_def);
+    throw deepmd::deepmd_exception("TensorFlow C API Error: " + msg);
+  }
+  const char* data = static_cast<const char*>(func_def->data);
+  const bool found =
+      data != NULL &&
+      std::string(data, func_def->length).find(needle) != std::string::npos;
+  TF_DeleteBuffer(func_def);
+  return found;
+}
+
+inline bool contains_xla_call_module(const std::vector<TF_Function*>& funcs,
+                                     TF_Status* status) {
+  for (TF_Function* func : funcs) {
+    if (function_def_contains(func, "XlaCallModule", status)) {
+      return true;
+    }
+  }
+  return false;
 }
 
 inline TF_DataType get_data_tensor_type(const std::vector<double>& data) {
@@ -278,6 +307,7 @@ void deepmd::DeepPotJAX::init(const std::string& model,
   TF_Function** funcs = func_vector.data();
   TF_GraphGetFunctions(graph, funcs, nfuncs, status);
   check_status(status);
+  has_xla_call_module_ = contains_xla_call_module(func_vector, status);
 
   ctx_opts = TFE_NewContextOptions();
   TFE_ContextOptionsSetConfig(ctx_opts, config.data(), config.size(), status);
@@ -542,16 +572,21 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
   std::vector<double> fparam_double(fparam.begin(), fparam.end());
   std::vector<double> aparam_double(aparam.begin(), aparam.end());
 
-  if (padding_for_nloc != nloc_real) {
-    padding_to_nall = nall_real * PADDING_FACTOR;
-    padding_for_nloc = nloc_real;
+  int nall_model = nall_real;
+  if (has_xla_call_module_) {
+    if (padding_for_nloc != nloc_real) {
+      padding_to_nall = nall_real * PADDING_FACTOR;
+      padding_for_nloc = nloc_real;
+    }
+    while (padding_to_nall < nall_real) {
+      padding_to_nall *= PADDING_FACTOR;
+    }
+    nall_model = padding_to_nall;
   }
-  while (padding_to_nall < nall_real) {
-    padding_to_nall *= PADDING_FACTOR;
-  }
-  // do padding
-  coord_double.resize(nframes * padding_to_nall * 3, 0.0);
-  atype.resize(nframes * padding_to_nall, -1);
+  // Padding is only useful for XLA-compiled call modules; eager TF graphs can
+  // use the exact atom count.
+  coord_double.resize(static_cast<size_t>(nframes) * nall_model * 3, 0.0);
+  atype.resize(static_cast<size_t>(nframes) * nall_model, -1);
 
   TFE_Op* op;
   if (atomic) {
@@ -564,11 +599,11 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
   std::vector<TFE_TensorHandle*> input_list(6);
   std::vector<TF_Tensor*> data_tensor(6);
   // coord
-  std::vector<int64_t> coord_shape = {nframes, padding_to_nall, 3};
+  std::vector<int64_t> coord_shape = {nframes, nall_model, 3};
   input_list[0] =
       add_input(op, coord_double, coord_shape, data_tensor[0], status);
   // atype
-  std::vector<int64_t> atype_shape = {nframes, padding_to_nall};
+  std::vector<int64_t> atype_shape = {nframes, nall_model};
   input_list[1] = add_input(op, atype, atype_shape, data_tensor[1], status);
   // nlist
   if (ago == 0) {
@@ -595,8 +630,8 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
   }
   input_list[2] = add_input(op, nlist, nlist_shape, data_tensor[2], status);
   // mapping; for now, set it to -1, assume it is not used
-  std::vector<int64_t> mapping_shape = {nframes, padding_to_nall};
-  std::vector<int64_t> mapping(nframes * padding_to_nall, -1);
+  std::vector<int64_t> mapping_shape = {nframes, nall_model};
+  std::vector<int64_t> mapping(static_cast<size_t>(nframes) * nall_model, -1);
   // pass mapping if it is given in the neighbor list
   if (lmp_list.mapping) {
     // assume nframes is 1
