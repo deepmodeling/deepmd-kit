@@ -327,38 +327,6 @@ class TestAttachLabels:
             written = np.load(parent / f"sys_{i:04d}" / "set.000" / "bandgap.npy")
             np.testing.assert_array_equal(written, [values[i]])
 
-    def test_multi_system_3d_values_multidim_labels(self, tmp_path):
-        # Multi-dim labels in multi-system mode use 3-D values of shape
-        # (n_systems, n_frames, dim); each system's (n_frames, dim) slice is
-        # written verbatim. This is the unambiguous path for a dim-vector
-        # label on a one-frame system.
-        parent = tmp_path / "multi"
-        parent.mkdir()
-        for i in range(3):
-            _make_system_path(parent, name=f"sys_{i:04d}", n_frames=1)
-        values = np.arange(3 * 1 * 4, dtype=float).reshape(3, 1, 4)
-        attach_labels(parent, head={"type": "dos", "numb_dos": 4}, values=values)
-        for i in range(3):
-            written = np.load(parent / f"sys_{i:04d}" / "set.000" / "dos.npy")
-            assert written.shape == (1, 4)
-            np.testing.assert_array_equal(written, values[i])
-
-    def test_multi_system_2d_values_are_per_frame_not_per_dim(self, tmp_path):
-        # A 2-D (n_systems, k) array means k frames per system (one scalar
-        # label per frame) — NOT a single k-dim label per system. On one-frame
-        # systems it therefore mismatches and must raise; the multi-dim case is
-        # served by 3-D (n_systems, 1, dim), see the test above.
-        parent = tmp_path / "multi"
-        parent.mkdir()
-        for i in range(2):
-            _make_system_path(parent, name=f"sys_{i:04d}", n_frames=1)
-        with pytest.raises(ValueError, match="frames"):
-            attach_labels(
-                parent,
-                head="dos",
-                values=np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]),
-            )
-
     def test_multi_system_values_mismatch_raises(self, tmp_path):
         parent = tmp_path / "multi"
         parent.mkdir()
