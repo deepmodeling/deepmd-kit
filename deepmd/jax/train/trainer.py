@@ -117,6 +117,8 @@ class DPTrainer:
         loss_type = loss_param.get("type", "ener")
         if loss_type == "ener":
             self.loss = EnergyLoss.get_loss(loss_param)
+            if getattr(self.loss, "has_h", False):
+                self.model.enable_hessian()
         else:
             raise RuntimeError("unknown loss type " + loss_type)
 
@@ -211,6 +213,8 @@ class DPTrainer:
             model_dict["energy"] = model_dict["energy_redu"]
             model_dict["force"] = model_dict["energy_derv_r"].squeeze(-2)
             model_dict["virial"] = model_dict["energy_derv_c_redu"].squeeze(-2)
+            if model_dict.get("energy_derv_r_derv_r") is not None:
+                model_dict["hessian"] = model_dict["energy_derv_r_derv_r"].squeeze(-3)
             loss, more_loss = self.loss(
                 learning_rate=lr,
                 natoms=label_dict["type"].shape[1],
@@ -249,6 +253,8 @@ class DPTrainer:
             model_dict["energy"] = model_dict["energy_redu"]
             model_dict["force"] = model_dict["energy_derv_r"].squeeze(-2)
             model_dict["virial"] = model_dict["energy_derv_c_redu"].squeeze(-2)
+            if model_dict.get("energy_derv_r_derv_r") is not None:
+                model_dict["hessian"] = model_dict["energy_derv_r_derv_r"].squeeze(-3)
             loss, more_loss = self.loss(
                 learning_rate=lr,
                 natoms=label_dict["type"].shape[1],
