@@ -153,13 +153,18 @@ def frame_id_from_n_node(n_node: Array, n_total: int | None = None) -> Array:
     dev = array_api_compat.device(n_node)
     if n_total is None:
         n_total = int(xp.sum(n_node))
-    nf = n_node.shape[0]
     idx = xp.arange(n_total, dtype=n_node.dtype, device=dev)
     boundaries = xp.cumulative_sum(n_node)  # (nf,) upper bounds, exclusive
     frame_id = xp.astype(xp.searchsorted(boundaries, idx, side="right"), xp.int64)
     # padding nodes (idx >= sum(n_node)) land at frame ``nf`` (OOB); clamp them to
     # the last real frame so the per-frame scatter never indexes out of range.
-    return xp.minimum(frame_id, xp.asarray(nf - 1, dtype=xp.int64, device=dev))
+    # Derive ``nf - 1`` as a RUNTIME 0-d tensor (sum of ones over the frame axis)
+    # rather than ``xp.asarray(n_node.shape[0] - 1)``: under symbolic make_fx /
+    # torch.export, ``shape[0]`` is a SymInt and materializing it into a constant
+    # tensor SPECIALIZES the frame axis -- baking the trace-time frame count into
+    # every downstream per-frame reduction and breaking dynamic-``nf`` inference.
+    last_frame = xp.sum(xp.ones_like(n_node)) - 1  # 0-d int == nf - 1
+    return xp.minimum(frame_id, xp.astype(last_frame, xp.int64))
 
 
 def node_validity_mask(n_node: Array, n_total: int) -> Array:

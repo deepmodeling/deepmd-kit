@@ -80,9 +80,13 @@ def edge_force_virial(
         frame via the frame of their ``dst`` node.
     """
     xp = array_api_compat.array_namespace(g_e)
-    # node-axis size; when a static ``node_capacity`` is supplied (the jax/export
-    # path) short-circuit so we never call int() on the traced ``sum(n_node)``.
-    n_out = int(node_capacity) if node_capacity is not None else int(xp.sum(n_node))
+    # node-axis size; when a ``node_capacity`` is supplied (the jax/export path)
+    # use it AS-IS so we never call int() on the traced ``sum(n_node)`` -- and,
+    # crucially, never on ``node_capacity`` itself: under symbolic make_fx /
+    # torch.export it is a SymInt (``atype.shape[0]``); ``int(SymInt)`` would
+    # SPECIALIZE the node axis to the trace-time sample size, baking a constant
+    # ``N`` into the scatter and breaking dynamic-``N`` inference.
+    n_out = node_capacity if node_capacity is not None else int(xp.sum(n_node))
     nf = n_node.shape[0]
     # zero padding/guard contributions; cast mask to g's dtype (array-API pure,
     # CLAUDE.md mask-multiply guideline — avoids bool*float under array_api_strict)

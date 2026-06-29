@@ -136,7 +136,11 @@ def fit_output_to_model_output_graph(
     edge_mask = graph.edge_mask
     n_node = graph.n_node
     redu_prec = env.GLOBAL_PT_ENER_FLOAT_PRECISION
-    nf = int(n_node.shape[0])
+    # Keep ``nf`` as a (possibly symbolic) shape value: under symbolic make_fx /
+    # torch.export ``n_node`` dim-0 is the dynamic frame axis, and ``int()`` on a
+    # SymInt SPECIALIZES it -- baking the trace-time frame count into every
+    # per-frame reduction (energy_redu / virial) and breaking multi-frame infer.
+    nf = n_node.shape[0]
     # Derive N from the fitting output's leading shape rather than int(n_node.sum()).
     # shape attributes are always static Python ints (or SymInts in symbolic-mode
     # tracing) and are trace-safe; reading a tensor VALUE via int() is not.
