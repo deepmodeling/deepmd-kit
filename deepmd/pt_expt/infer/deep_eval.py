@@ -1652,15 +1652,15 @@ class DeepEval(DeepEvalBackend):
         """Evaluate a graph-form ``.pt2`` (``lower_input_kind == "graph"``).
 
         Builds a carry-all :class:`~deepmd.dpmodel.utils.neighbor_graph.NeighborGraph`
-        from the eval system, padded to the static ``edge_capacity`` baked into
-        the AOTI artifact, and feeds the positional schema
+        from the eval system at its exact (tight) edge count and feeds the
+        positional schema
         ``(atype, n_node, edge_index, edge_vec, edge_mask, fparam, aparam,
-        charge_spin)`` to the exported forward.  The forward returns the LOCAL
-        public keys directly, so results are reshaped without
-        ``communicate_extended_output``.
+        charge_spin)`` to the exported forward.  The AOTI artifact's edge axis
+        is DYNAMIC (B2.0), so no ``edge_capacity`` padding is needed.  The
+        forward returns the LOCAL public keys directly, so results are reshaped
+        without ``communicate_extended_output``.
         """
         from deepmd.dpmodel.utils.neighbor_graph import (
-            GraphLayout,
             build_neighbor_graph,
         )
         from deepmd.pt_expt.utils.env import (
@@ -1676,13 +1676,13 @@ class DeepEval(DeepEvalBackend):
 
         coord_input = coords.reshape(nframes, natoms, 3)
         box_input = cells.reshape(nframes, 9) if cells is not None else None
-        edge_capacity = int(self.metadata["edge_capacity"])
+        # Dynamic edge axis (B2.0): build the carry-all graph at its exact edge
+        # count (no static padding); the AOTI artifact accepts any E.
         graph = build_neighbor_graph(
             coord_input,
             atom_types,
             box_input,
             self._rcut,
-            layout=GraphLayout(edge_capacity=edge_capacity),
         )
 
         atype_t = torch.tensor(

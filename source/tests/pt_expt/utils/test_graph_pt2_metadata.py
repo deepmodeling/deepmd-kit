@@ -89,10 +89,9 @@ def test_graph_pt2_has_lower_input_kind_graph(dpa1_dpmodel_data) -> None:
         )
         meta = _read_metadata(p)
     assert meta["lower_input_kind"] == "graph"
-    # the static edge axis is baked into the AOTI artifact; E_max must be
-    # persisted so the C++ conversion hub (PR-B B2) pads runtime edges to it.
-    # E_max = ceil(1.25 * nloc_sample(7) * nnei(sum(sel)=30)) = 263.
-    assert meta["edge_capacity"] == 263
+    # B2.0: the edge axis is DYNAMIC (Dim("nedge", min=2)); there is no static
+    # capacity baked into the AOTI artifact, so no ``edge_capacity`` is persisted.
+    assert "edge_capacity" not in meta
 
 
 def test_dense_pt2_has_lower_input_kind_nlist(dpa1_dpmodel_data) -> None:

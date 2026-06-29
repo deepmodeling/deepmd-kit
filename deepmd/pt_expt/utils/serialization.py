@@ -422,10 +422,13 @@ def _build_graph_dynamic_shapes(
 ) -> tuple:
     """Build dynamic-shape specifications for the graph-form forward_lower export.
 
-    ``nframes`` (the ``n_node`` axis) and ``N`` (the flat node axis) are
-    dynamic dims; the edge axis ``E`` is STATIC (decision #16: the masked
-    ``edge_capacity`` path), expressed by leaving the edge dims unmarked
-    (``None``) so torch.export specialises them to the sample value.
+    ``nframes`` (the ``n_node`` axis), ``N`` (the flat node axis) AND the edge
+    axis ``E`` are all dynamic dims (B2.0: the dynamic edge axis replaces the
+    static ``edge_capacity`` of B1).  ``E`` is marked ``Dim("nedge", min=2)`` so
+    the AOTI artifact accepts any system size with no capacity ceiling — the
+    ``min=2`` lower bound mirrors the dense path's ``Dim("nnei", min=...)`` (a
+    dynamic, SIGFPE-tamed axis) and matches the carry-all builder's
+    ``min_edges=2`` guard (every dynamic graph carries >=2 edges).
 
     Parameters
     ----------
@@ -438,12 +441,13 @@ def _build_graph_dynamic_shapes(
     charge_spin = sample_inputs[7]
     nframes_dim = torch.export.Dim("nframes", min=1)
     n_node_total_dim = torch.export.Dim("n_node_total", min=1)
+    nedge_dim = torch.export.Dim("nedge", min=2)
     return (
         {0: n_node_total_dim},  # atype: (N,)
         {0: nframes_dim},  # n_node: (nf,)
-        None,  # edge_index: (2, E) — E static
-        None,  # edge_vec: (E, 3) — E static
-        None,  # edge_mask: (E,) — E static
+        {1: nedge_dim},  # edge_index: (2, E) — E dynamic
+        {0: nedge_dim},  # edge_vec: (E, 3) — E dynamic
+        {0: nedge_dim},  # edge_mask: (E,) — E dynamic
         {0: nframes_dim} if fparam is not None else None,  # fparam: (nf, ndf)
         {0: nframes_dim} if aparam is not None else None,  # aparam: (nf, nloc, nda)
         {0: nframes_dim} if charge_spin is not None else None,  # charge_spin
@@ -777,8 +781,9 @@ def deserialize_to_file(
         (``extended_coord``/``extended_atype``/``nlist``/``mapping``);
         ``"graph"`` traces the NeighborGraph schema
         (``atype``/``n_node``/``edge_index``/``edge_vec``/``edge_mask``) with a
-        static edge axis ``E = ceil(1.25 * nloc * nnei)``.  The selected schema
-        is recorded as ``lower_input_kind`` in ``metadata.json``.
+        DYNAMIC edge axis ``E`` (``Dim("nedge", min=2)``), so the artifact
+        accepts any system size.  The selected schema is recorded as
+        ``lower_input_kind`` in ``metadata.json``.
     """
     if model_file.endswith(".pt2"):
         _deserialize_to_file_pt2(
@@ -824,7 +829,7 @@ def _trace_and_export(
     lower_kind
         ``"nlist"`` (default) traces the dense quartet forward; ``"graph"``
         traces ``forward_lower_graph_exportable`` over the NeighborGraph schema
-        with a static edge axis. Recorded as ``lower_input_kind`` in metadata.
+        with a dynamic edge axis. Recorded as ``lower_input_kind`` in metadata.
 
     Returns
     -------
@@ -866,8 +871,8 @@ def _trace_and_export(
 
     # 2b. Graph-form export branch (NeighborGraph schema). The graph path is
     # LOCAL-only (no ghosts), single-rank, energy-model only in PR-A/PR-B; it
-    # traces ``forward_lower_graph_exportable`` with a STATIC edge axis. The
-    # dense (nlist) path below is left byte-unchanged.
+    # traces ``forward_lower_graph_exportable`` with a DYNAMIC edge axis (B2.0).
+    # The dense (nlist) path below is left byte-unchanged.
     if lower_kind == "graph":
         import math
 
@@ -887,17 +892,20 @@ def _trace_and_export(
                 "requires an energy model"
             )
 
-        # Static export edge capacity E_max = ceil(1.25 * nloc * nnei)
-        # (decision #12 headroom). nloc is the sample-system local-atom count.
+        # The edge axis is DYNAMIC (B2.0): the AOTI artifact accepts any edge
+        # count, so there is no capacity to bake. The trace sample is built at a
+        # concrete, padded edge size only to keep the trace tensors distinct
+        # from the other dynamic dims (nframes=2, N=14) under torch.export's
+        # duck-sizing; the value itself does NOT constrain runtime.
         nloc_sample = 7
         nnei = sum(model.get_sel())
-        e_max = math.ceil(1.25 * nloc_sample * nnei)
+        e_sample = math.ceil(1.25 * nloc_sample * nnei)
 
         _orig_device = _env.DEVICE
         _env.DEVICE = torch.device("cpu")
         try:
             sample_inputs = _make_graph_sample_inputs(
-                model, e_max=e_max, nframes=2, nloc=nloc_sample
+                model, e_max=e_sample, nframes=2, nloc=nloc_sample
             )
         finally:
             _env.DEVICE = _orig_device
@@ -948,6 +956,16 @@ def _trace_and_export(
             prefer_deferred_runtime_asserts_over_guards=True,
         )
 
+        # Neutralise shape-guard assertion nodes on the dynamic edge axis.
+        # ``prefer_deferred_runtime_asserts_over_guards=True`` converts the
+        # symbolic-shape guards discovered while tracing into deferred
+        # ``aten._assert_scalar`` nodes; on the dynamic ``E`` axis these are the
+        # SIGFPE-prone ``nloc_min``-family checks (CLAUDE.md AOTI pitfalls) that
+        # the dense spin path already strips. Replacing each condition with
+        # ``True`` (not erasing the node) keeps the graph well-formed while
+        # letting the AOTI artifact generalise across edge counts.
+        _strip_shape_assertions(exported.graph_module)
+
         if target_device.type != "cpu":
             from torch.export.passes import (
                 move_to_device_pass,
@@ -956,11 +974,10 @@ def _trace_and_export(
             exported = move_to_device_pass(exported, target_device)
 
         metadata["do_atomic_virial"] = do_atomic_virial
-        # The edge axis is specialized STATIC: torch.export bakes E to exactly
-        # e_max, so the AOTI forward only accepts edge tensors of this length.
-        # Persist it so the C++ conversion hub (PR-B Phase B2) pads/masks runtime
-        # edges to precisely this value instead of re-deriving the constant.
-        metadata["edge_capacity"] = e_max
+        # The edge axis is DYNAMIC (B2.0): the AOTI forward accepts any edge
+        # count, so there is no ``edge_capacity`` to persist. The C++ / Python
+        # conversion hub builds the carry-all graph at its exact (tight) edge
+        # count and feeds it straight through.
 
         json_source = model_json_override if model_json_override is not None else data
         data_for_json = deepcopy(json_source)
