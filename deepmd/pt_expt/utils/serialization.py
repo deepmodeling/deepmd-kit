@@ -310,6 +310,147 @@ def _make_sample_inputs(
     return ext_coord, ext_atype, nlist_t, mapping_t, fparam, aparam, charge_spin
 
 
+def _make_graph_sample_inputs(
+    model: torch.nn.Module,
+    e_max: int,
+    nframes: int = 2,
+    nloc: int = 7,
+) -> tuple[torch.Tensor | None, ...]:
+    """Create sample inputs for tracing ``forward_lower_graph``.
+
+    Builds a small random system, runs the carry-all
+    :func:`~deepmd.dpmodel.utils.neighbor_graph.build_neighbor_graph` with a
+    STATIC ``GraphLayout(edge_capacity=e_max)`` (decision #16: the masked
+    static edge axis), and returns tensors in the positional order expected by
+    :meth:`forward_lower_graph_exportable`:
+    ``(atype, n_node, edge_index, edge_vec, edge_mask, fparam, aparam,
+    charge_spin)``.
+
+    Parameters
+    ----------
+    model : torch.nn.Module
+        The pt_expt energy model (must expose ``get_rcut``/``get_type_map``/...).
+    e_max : int
+        Static edge capacity ``E`` to pad the edge axis to.
+    nframes : int
+        Number of frames in the sample system.
+    nloc : int
+        Number of local atoms per frame (``N == nframes * nloc``).
+    """
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        GraphLayout,
+        build_neighbor_graph,
+    )
+
+    import deepmd.pt_expt.utils.env as _env
+
+    rcut = model.get_rcut()
+    ntypes = len(model.get_type_map())
+    dim_fparam = model.get_dim_fparam()
+    dim_aparam = model.get_dim_aparam()
+
+    # Box large enough to avoid PBC degeneracy; mirrors _make_sample_inputs.
+    box_size = rcut * 3.0
+    box = np.eye(3, dtype=np.float64) * box_size
+    box_np = box.reshape(1, 9)
+
+    rng = np.random.default_rng(42)
+    coord_np = rng.random((nframes, nloc, 3), dtype=np.float64) * box_size * 0.5
+    coord_np += box_size * 0.25  # center in box
+
+    atype_np = np.zeros((nframes, nloc), dtype=np.int64)
+    for i in range(nloc):
+        atype_np[:, i] = i % ntypes
+
+    graph = build_neighbor_graph(
+        coord_np,
+        atype_np,
+        np.tile(box_np, (nframes, 1)),
+        rcut,
+        layout=GraphLayout(edge_capacity=e_max),
+    )
+
+    atype_t = torch.tensor(atype_np.reshape(-1), dtype=torch.int64, device=_env.DEVICE)
+    n_node_t = torch.tensor(
+        np.asarray(graph.n_node), dtype=torch.int64, device=_env.DEVICE
+    )
+    edge_index_t = torch.tensor(
+        np.asarray(graph.edge_index), dtype=torch.int64, device=_env.DEVICE
+    )
+    edge_vec_t = torch.tensor(
+        np.asarray(graph.edge_vec), dtype=torch.float64, device=_env.DEVICE
+    )
+    edge_mask_t = torch.tensor(
+        np.asarray(graph.edge_mask), dtype=torch.bool, device=_env.DEVICE
+    )
+
+    if dim_fparam > 0:
+        fparam = torch.zeros(
+            nframes, dim_fparam, dtype=torch.float64, device=_env.DEVICE
+        )
+    else:
+        fparam = None
+
+    if dim_aparam > 0:
+        aparam = torch.zeros(
+            nframes, nloc, dim_aparam, dtype=torch.float64, device=_env.DEVICE
+        )
+    else:
+        aparam = None
+
+    dim_chg_spin = model.get_dim_chg_spin() if hasattr(model, "get_dim_chg_spin") else 0
+    if dim_chg_spin > 0:
+        charge_spin = torch.zeros(
+            nframes, dim_chg_spin, dtype=torch.float64, device=_env.DEVICE
+        )
+    else:
+        charge_spin = None
+
+    return (
+        atype_t,
+        n_node_t,
+        edge_index_t,
+        edge_vec_t,
+        edge_mask_t,
+        fparam,
+        aparam,
+        charge_spin,
+    )
+
+
+def _build_graph_dynamic_shapes(
+    *sample_inputs: torch.Tensor | None,
+) -> tuple:
+    """Build dynamic-shape specifications for the graph-form forward_lower export.
+
+    ``nframes`` (the ``n_node`` axis) and ``N`` (the flat node axis) are
+    dynamic dims; the edge axis ``E`` is STATIC (decision #16: the masked
+    ``edge_capacity`` path), expressed by leaving the edge dims unmarked
+    (``None``) so torch.export specialises them to the sample value.
+
+    Parameters
+    ----------
+    *sample_inputs : torch.Tensor | None
+        ``(atype, n_node, edge_index, edge_vec, edge_mask, fparam, aparam,
+        charge_spin)`` — 8 entries matching ``forward_lower_graph_exportable``.
+    """
+    fparam = sample_inputs[5]
+    aparam = sample_inputs[6]
+    charge_spin = sample_inputs[7]
+    nframes_dim = torch.export.Dim("nframes", min=1)
+    n_node_total_dim = torch.export.Dim("n_node_total", min=1)
+    return (
+        {0: n_node_total_dim},  # atype: (N,)
+        {0: nframes_dim},  # n_node: (nf,)
+        None,  # edge_index: (2, E) — E static
+        None,  # edge_vec: (E, 3) — E static
+        None,  # edge_mask: (E,) — E static
+        {0: nframes_dim} if fparam is not None else None,  # fparam: (nf, ndf)
+        {0: nframes_dim} if aparam is not None else None,  # aparam: (nf, nloc, nda)
+        {0: nframes_dim} if charge_spin is not None else None,  # charge_spin
+    )
+
+
 def _build_dynamic_shapes(
     *sample_inputs: torch.Tensor | None,
     has_spin: bool = False,
@@ -416,7 +557,9 @@ def _build_dynamic_shapes(
     return (*base, None, None, None, None, None, None, None, None)
 
 
-def _collect_metadata(model: torch.nn.Module, is_spin: bool = False) -> dict:
+def _collect_metadata(
+    model: torch.nn.Module, is_spin: bool = False, lower_kind: str = "nlist"
+) -> dict:
     """Collect metadata from the model for C++ inference.
 
     This metadata is stored as ``metadata.json`` in both .pt2 and .pte archives.
@@ -528,6 +671,12 @@ def _collect_metadata(model: torch.nn.Module, is_spin: bool = False) -> dict:
         if result is not None:
             break
     meta["has_message_passing"] = result if result is not None else False
+
+    # Which input schema the compiled AOTI forward consumes:
+    #   "nlist" → dense quartet (extended_coord, extended_atype, nlist, mapping)
+    #   "graph" → NeighborGraph (atype, n_node, edge_index, edge_vec, edge_mask)
+    # The C++ loader branches on this to build the matching inputs.
+    meta["lower_input_kind"] = "graph" if lower_kind == "graph" else "nlist"
     return meta
 
 
@@ -599,6 +748,7 @@ def deserialize_to_file(
     data: dict,
     model_json_override: dict | None = None,
     do_atomic_virial: bool = False,
+    lower_kind: str = "nlist",
 ) -> None:
     """Deserialize a dictionary to a .pte or .pt2 model file.
 
@@ -622,14 +772,22 @@ def deserialize_to_file(
     do_atomic_virial : bool
         If True, export with per-atom virial correction (3 extra backward
         passes, ~2.5x slower).  Default False for best performance.
+    lower_kind : str
+        Which lower-forward schema the compiled AOTI graph consumes:
+        ``"nlist"`` (default) traces the dense quartet
+        (``extended_coord``/``extended_atype``/``nlist``/``mapping``);
+        ``"graph"`` traces the NeighborGraph schema
+        (``atype``/``n_node``/``edge_index``/``edge_vec``/``edge_mask``) with a
+        static edge axis ``E = ceil(1.25 * nloc * nnei)``.  The selected schema
+        is recorded as ``lower_input_kind`` in ``metadata.json``.
     """
     if model_file.endswith(".pt2"):
         _deserialize_to_file_pt2(
-            model_file, data, model_json_override, do_atomic_virial
+            model_file, data, model_json_override, do_atomic_virial, lower_kind
         )
     else:
         _deserialize_to_file_pte(
-            model_file, data, model_json_override, do_atomic_virial
+            model_file, data, model_json_override, do_atomic_virial, lower_kind
         )
 
 
@@ -638,6 +796,7 @@ def _trace_and_export(
     model_json_override: dict | None = None,
     with_comm_dict: bool = False,
     do_atomic_virial: bool = False,
+    lower_kind: str = "nlist",
 ) -> tuple:
     """Common logic: build model, trace, export.
 
@@ -663,6 +822,10 @@ def _trace_and_export(
         If True, the traced graph computes per-atom virial (extra
         autograd.grad backward passes); off by default to keep .pt2
         inference fast. Mirrors PR #5407 in upstream master.
+    lower_kind
+        ``"nlist"`` (default) traces the dense quartet forward; ``"graph"``
+        traces ``forward_lower_graph_exportable`` over the NeighborGraph schema
+        with a static edge axis. Recorded as ``lower_input_kind`` in metadata.
 
     Returns
     -------
@@ -700,7 +863,106 @@ def _trace_and_export(
     model.eval()
 
     # 2. Collect metadata
-    metadata = _collect_metadata(model, is_spin=is_spin)
+    metadata = _collect_metadata(model, is_spin=is_spin, lower_kind=lower_kind)
+
+    # 2b. Graph-form export branch (NeighborGraph schema). The graph path is
+    # LOCAL-only (no ghosts), single-rank, energy-model only in PR-A/PR-B; it
+    # traces ``forward_lower_graph_exportable`` with a STATIC edge axis. The
+    # dense (nlist) path below is left byte-unchanged.
+    if lower_kind == "graph":
+        import math
+
+        if is_spin:
+            raise NotImplementedError(
+                "graph-form .pt2 export is not supported for spin models"
+            )
+        if with_comm_dict:
+            raise NotImplementedError(
+                "graph-form .pt2 export does not support the with-comm artifact "
+                "(multi-rank graph message passing is a later PR)"
+            )
+        if not hasattr(model, "forward_lower_graph_exportable"):
+            raise NotImplementedError(
+                f"model {type(model).__name__} has no "
+                "forward_lower_graph_exportable; graph-form .pt2 export "
+                "requires an energy model"
+            )
+
+        # Static export edge capacity E_max = ceil(1.25 * nloc * nnei)
+        # (decision #12 headroom). nloc is the sample-system local-atom count.
+        nloc_sample = 7
+        nnei = sum(model.get_sel())
+        e_max = math.ceil(1.25 * nloc_sample * nnei)
+
+        _orig_device = _env.DEVICE
+        _env.DEVICE = torch.device("cpu")
+        try:
+            sample_inputs = _make_graph_sample_inputs(
+                model, e_max=e_max, nframes=2, nloc=nloc_sample
+            )
+        finally:
+            _env.DEVICE = _orig_device
+
+        (
+            atype_g,
+            n_node_g,
+            edge_index_g,
+            edge_vec_g,
+            edge_mask_g,
+            fparam_g,
+            aparam_g,
+            charge_spin_g,
+        ) = sample_inputs
+
+        # Trace via make_fx on CPU (decomposes autograd.grad into aten ops).
+        traced = model.forward_lower_graph_exportable(
+            atype_g,
+            n_node_g,
+            edge_index_g,
+            edge_vec_g,
+            edge_mask_g,
+            fparam=fparam_g,
+            aparam=aparam_g,
+            do_atomic_virial=do_atomic_virial,
+            charge_spin=charge_spin_g,
+            tracing_mode="symbolic",
+            _allow_non_fake_inputs=True,
+        )
+        sample_out = traced(
+            atype_g,
+            n_node_g,
+            edge_index_g,
+            edge_vec_g,
+            edge_mask_g,
+            fparam_g,
+            aparam_g,
+            charge_spin_g,
+        )
+        output_keys = list(sample_out.keys())
+
+        dynamic_shapes = _build_graph_dynamic_shapes(*sample_inputs)
+        exported = torch.export.export(
+            traced,
+            sample_inputs,
+            dynamic_shapes=dynamic_shapes,
+            strict=False,
+            prefer_deferred_runtime_asserts_over_guards=True,
+        )
+
+        if target_device.type != "cpu":
+            from torch.export.passes import (
+                move_to_device_pass,
+            )
+
+            exported = move_to_device_pass(exported, target_device)
+
+        metadata["do_atomic_virial"] = do_atomic_virial
+
+        json_source = model_json_override if model_json_override is not None else data
+        data_for_json = deepcopy(json_source)
+        data_for_json = _numpy_to_json_serializable(data_for_json)
+
+        return exported, metadata, data_for_json, output_keys
 
     # 3. Create sample inputs on CPU for tracing
     # torch.export's duck-sizing unifies dimensions with the same sample value,
@@ -917,10 +1179,14 @@ def _deserialize_to_file_pte(
     data: dict,
     model_json_override: dict | None = None,
     do_atomic_virial: bool = False,
+    lower_kind: str = "nlist",
 ) -> None:
     """Deserialize a dictionary to a .pte model file."""
     exported, metadata, data_for_json, output_keys = _trace_and_export(
-        data, model_json_override, do_atomic_virial=do_atomic_virial
+        data,
+        model_json_override,
+        do_atomic_virial=do_atomic_virial,
+        lower_kind=lower_kind,
     )
 
     model_def_script = data.get("model_def_script") or {}
@@ -939,6 +1205,7 @@ def _deserialize_to_file_pt2(
     data: dict,
     model_json_override: dict | None = None,
     do_atomic_virial: bool = False,
+    lower_kind: str = "nlist",
 ) -> None:
     """Deserialize a dictionary to a .pt2 model file (AOTInductor).
 
@@ -976,7 +1243,10 @@ def _deserialize_to_file_pt2(
 
     # First artifact: regular (no comm). Always produced.
     exported, metadata, data_for_json, output_keys = _trace_and_export(
-        data, model_json_override, do_atomic_virial=do_atomic_virial
+        data,
+        model_json_override,
+        do_atomic_virial=do_atomic_virial,
+        lower_kind=lower_kind,
     )
     metadata["output_keys"] = output_keys
 
