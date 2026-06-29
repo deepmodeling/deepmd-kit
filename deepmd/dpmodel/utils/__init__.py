@@ -65,6 +65,9 @@ from .serialization import (
     save_dp_model,
     traverse_model_dict,
 )
+from .tabulate import (
+    tabulate_fusion,
+)
 from .training_utils import (
     compute_total_numb_batch,
     resolve_model_prob,
@@ -119,6 +122,7 @@ __all__ = [
     "save_dp_model",
     "segment_mean",
     "segment_sum",
+    "tabulate_fusion",
     "to_face_distance",
     "traverse_model_dict",
 ]
