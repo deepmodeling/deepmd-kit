@@ -40,27 +40,32 @@ PT2_EXTRA_PREFIX = "model/extra/"
 
 
 def _strip_shape_assertions(graph_module: torch.nn.Module) -> None:
-    """Neutralise shape-guard assertion nodes in a spin model's exported graph.
+    """Neutralise deferred shape-guard assertion nodes in an exported graph.
 
-    ``torch.export`` inserts ``aten._assert_scalar`` nodes for symbolic shape
-    relationships discovered during tracing.  For the spin model, the atom-
-    doubling logic creates slice patterns that depend on ``(nall - nloc)``,
-    producing guards like ``Ne(nall, nloc)``.  These guards are spurious: the
-    model computes correct results even when ``nall == nloc`` (NoPBC, no ghost
-    atoms).
+    ``torch.export`` (with ``prefer_deferred_runtime_asserts_over_guards=True``)
+    inserts ``aten._assert_scalar`` nodes for symbolic-shape relationships
+    discovered during tracing.  The assertion messages use opaque symbolic names
+    (e.g. ``Ne(s22, s96)``), so filtering by message content is not reliable; we
+    replace each assertion's condition with ``True`` rather than erasing the node
+    (erasing can disturb the FX graph and yield NaN gradients on some torch
+    versions).
 
-    This function is **only called for spin models** (guarded by ``if is_spin``
-    in ``_trace_and_export``).  The assertion messages use opaque symbolic
-    variable names (e.g. ``Ne(s22, s96)``) rather than human-readable names,
-    so filtering by message content is not reliable.  Since
-    ``prefer_deferred_runtime_asserts_over_guards=True`` converts all shape
-    guards into these deferred assertions, and the only shape relationships in
-    the spin model involve nall/nloc, neutralising all of them is safe in this
-    context.
+    Called from TWO export paths in ``_trace_and_export``:
 
-    We replace each assertion's condition with ``True`` rather than erasing the
-    node; erasing nodes can disturb the FX graph structure and produce NaN
-    gradients on some Python/torch versions.
+    * **spin (dense) models** — atom-doubling slice patterns depend on
+      ``(nall - nloc)``, producing spurious guards like ``Ne(nall, nloc)``; the
+      model is correct even when ``nall == nloc`` (NoPBC, no ghosts).
+    * **graph models** — the DYNAMIC edge axis (``Dim("nedge")``) produces guards
+      of the ``nloc_min``/SIGFPE family on the edge count ``E``.  These are the
+      shape-specialization guards the static-``edge_capacity`` path was designed
+      to avoid; neutralising them is what makes one artifact eval any edge count.
+
+    **Safety:** in both contexts every input is constructed well-formed by the
+    builder (spin: valid atom doubling; graph: ``build_neighbor_graph`` /
+    ``buildGraphTensors`` always emit ``E >= min_edges == 2`` with in-range,
+    masked edges), so the neutralised guards would never legitimately fire.  The
+    only cost is that a MALFORMED runtime tensor no longer throws cleanly — the
+    documented AOTI trade-off (CLAUDE.md), accepted identically on both paths.
     """
     graph = graph_module.graph
     for node in list(graph.nodes):
