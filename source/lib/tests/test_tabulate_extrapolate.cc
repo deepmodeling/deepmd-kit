@@ -549,6 +549,226 @@ double se_t_tebd_grad_gpu(const double xx) {
   deepmd::delete_device_memory(dy_dev);
   return dy_dem_x[0];
 }
+
+double se_a_grad_projection_gpu(const double xx,
+                                const std::vector<double>& dy) {
+  std::vector<double> dy_dem_x(1);
+  std::vector<double> dy_dem(4);
+  std::vector<double> table = kTable;
+  std::vector<double> em_x = {xx};
+  std::vector<double> em = {1.0, -0.25, 0.5, -0.75};
+  std::vector<double> dy_host = dy;
+  const std::vector<double> dz_dy_dem_x = {0.6};
+  const std::vector<double> dz_dy_dem = {0.2, -0.3, 0.4, -0.5};
+  double *dy_dem_x_dev = nullptr, *dy_dem_dev = nullptr, *table_dev = nullptr,
+         *em_x_dev = nullptr, *em_dev = nullptr, *dy_dev = nullptr;
+  deepmd::malloc_device_memory_sync(dy_dem_x_dev, dy_dem_x);
+  deepmd::malloc_device_memory_sync(dy_dem_dev, dy_dem);
+  deepmd::malloc_device_memory_sync(table_dev, table);
+  deepmd::malloc_device_memory_sync(em_x_dev, em_x);
+  deepmd::malloc_device_memory_sync(em_dev, em);
+  deepmd::malloc_device_memory_sync(dy_dev, dy_host);
+  deepmd::tabulate_fusion_se_a_grad_gpu<double>(
+      dy_dem_x_dev, dy_dem_dev, nullptr, table_dev, kTableInfo.data(),
+      em_x_dev, em_dev, nullptr, dy_dev, 1, 1, kLastLayerSize);
+  deepmd::memcpy_device_to_host(dy_dem_x_dev, dy_dem_x);
+  deepmd::memcpy_device_to_host(dy_dem_dev, dy_dem);
+  deepmd::delete_device_memory(dy_dem_x_dev);
+  deepmd::delete_device_memory(dy_dem_dev);
+  deepmd::delete_device_memory(table_dev);
+  deepmd::delete_device_memory(em_x_dev);
+  deepmd::delete_device_memory(em_dev);
+  deepmd::delete_device_memory(dy_dev);
+  return dot_vector(dy_dem_x, dz_dy_dem_x) + dot_vector(dy_dem, dz_dy_dem);
+}
+
+std::vector<double> se_a_grad_grad_dy_gpu(const double xx) {
+  std::vector<double> dz_dy(4 * kLastLayerSize);
+  std::vector<double> table = kTable;
+  std::vector<double> em_x = {xx};
+  std::vector<double> em = {1.0, -0.25, 0.5, -0.75};
+  std::vector<double> dz_dy_dem_x = {0.6};
+  std::vector<double> dz_dy_dem = {0.2, -0.3, 0.4, -0.5};
+  double *dz_dy_dev = nullptr, *table_dev = nullptr, *em_x_dev = nullptr,
+         *em_dev = nullptr, *dz_dy_dem_x_dev = nullptr,
+         *dz_dy_dem_dev = nullptr;
+  deepmd::malloc_device_memory_sync(dz_dy_dev, dz_dy);
+  deepmd::malloc_device_memory_sync(table_dev, table);
+  deepmd::malloc_device_memory_sync(em_x_dev, em_x);
+  deepmd::malloc_device_memory_sync(em_dev, em);
+  deepmd::malloc_device_memory_sync(dz_dy_dem_x_dev, dz_dy_dem_x);
+  deepmd::malloc_device_memory_sync(dz_dy_dem_dev, dz_dy_dem);
+  deepmd::tabulate_fusion_se_a_grad_grad_gpu<double>(
+      dz_dy_dev, table_dev, kTableInfo.data(), em_x_dev, em_dev, nullptr,
+      dz_dy_dem_x_dev, dz_dy_dem_dev, nullptr, 1, 1, kLastLayerSize);
+  deepmd::memcpy_device_to_host(dz_dy_dev, dz_dy);
+  deepmd::delete_device_memory(dz_dy_dev);
+  deepmd::delete_device_memory(table_dev);
+  deepmd::delete_device_memory(em_x_dev);
+  deepmd::delete_device_memory(em_dev);
+  deepmd::delete_device_memory(dz_dy_dem_x_dev);
+  deepmd::delete_device_memory(dz_dy_dem_dev);
+  return dz_dy;
+}
+
+double se_r_grad_projection_gpu(const double xx,
+                                const std::vector<double>& dy) {
+  std::vector<double> dy_dem(1);
+  std::vector<double> table = kTable;
+  std::vector<double> em = {xx};
+  std::vector<double> dy_host = dy;
+  const std::vector<double> dz_dy_dem = {0.6};
+  double *dy_dem_dev = nullptr, *table_dev = nullptr, *em_dev = nullptr,
+         *dy_dev = nullptr;
+  deepmd::malloc_device_memory_sync(dy_dem_dev, dy_dem);
+  deepmd::malloc_device_memory_sync(table_dev, table);
+  deepmd::malloc_device_memory_sync(em_dev, em);
+  deepmd::malloc_device_memory_sync(dy_dev, dy_host);
+  deepmd::tabulate_fusion_se_r_grad_gpu<double>(dy_dem_dev, table_dev,
+                                                kTableInfo.data(), em_dev,
+                                                dy_dev, 1, 1, kLastLayerSize);
+  deepmd::memcpy_device_to_host(dy_dem_dev, dy_dem);
+  deepmd::delete_device_memory(dy_dem_dev);
+  deepmd::delete_device_memory(table_dev);
+  deepmd::delete_device_memory(em_dev);
+  deepmd::delete_device_memory(dy_dev);
+  return dot_vector(dy_dem, dz_dy_dem);
+}
+
+std::vector<double> se_r_grad_grad_dy_gpu(const double xx) {
+  std::vector<double> dz_dy(1);
+  std::vector<double> table = kTable;
+  std::vector<double> em = {xx};
+  std::vector<double> dz_dy_dem = {0.6};
+  double *dz_dy_dev = nullptr, *table_dev = nullptr, *em_dev = nullptr,
+         *dz_dy_dem_dev = nullptr;
+  deepmd::malloc_device_memory_sync(dz_dy_dev, dz_dy);
+  deepmd::malloc_device_memory_sync(table_dev, table);
+  deepmd::malloc_device_memory_sync(em_dev, em);
+  deepmd::malloc_device_memory_sync(dz_dy_dem_dev, dz_dy_dem);
+  deepmd::tabulate_fusion_se_r_grad_grad_gpu<double>(
+      dz_dy_dev, table_dev, kTableInfo.data(), em_dev, dz_dy_dem_dev, 1, 1,
+      kLastLayerSize);
+  deepmd::memcpy_device_to_host(dz_dy_dev, dz_dy);
+  deepmd::delete_device_memory(dz_dy_dev);
+  deepmd::delete_device_memory(table_dev);
+  deepmd::delete_device_memory(em_dev);
+  deepmd::delete_device_memory(dz_dy_dem_dev);
+  return dz_dy;
+}
+
+double se_t_grad_projection_gpu(const double xx,
+                                const std::vector<double>& dy) {
+  std::vector<double> dy_dem_x(1);
+  std::vector<double> dy_dem(1);
+  std::vector<double> table = kTable;
+  std::vector<double> em_x = {xx};
+  std::vector<double> em = {xx};
+  std::vector<double> dy_host = dy;
+  const std::vector<double> dz_dy_dem_x = {0.6};
+  const std::vector<double> dz_dy_dem = {-0.4};
+  double *dy_dem_x_dev = nullptr, *dy_dem_dev = nullptr, *table_dev = nullptr,
+         *em_x_dev = nullptr, *em_dev = nullptr, *dy_dev = nullptr;
+  deepmd::malloc_device_memory_sync(dy_dem_x_dev, dy_dem_x);
+  deepmd::malloc_device_memory_sync(dy_dem_dev, dy_dem);
+  deepmd::malloc_device_memory_sync(table_dev, table);
+  deepmd::malloc_device_memory_sync(em_x_dev, em_x);
+  deepmd::malloc_device_memory_sync(em_dev, em);
+  deepmd::malloc_device_memory_sync(dy_dev, dy_host);
+  deepmd::tabulate_fusion_se_t_grad_gpu<double>(
+      dy_dem_x_dev, dy_dem_dev, table_dev, kTableInfo.data(), em_x_dev, em_dev,
+      dy_dev, 1, 1, 1, kLastLayerSize);
+  deepmd::memcpy_device_to_host(dy_dem_x_dev, dy_dem_x);
+  deepmd::memcpy_device_to_host(dy_dem_dev, dy_dem);
+  deepmd::delete_device_memory(dy_dem_x_dev);
+  deepmd::delete_device_memory(dy_dem_dev);
+  deepmd::delete_device_memory(table_dev);
+  deepmd::delete_device_memory(em_x_dev);
+  deepmd::delete_device_memory(em_dev);
+  deepmd::delete_device_memory(dy_dev);
+  return dot_vector(dy_dem_x, dz_dy_dem_x) + dot_vector(dy_dem, dz_dy_dem);
+}
+
+std::vector<double> se_t_grad_grad_dy_gpu(const double xx) {
+  std::vector<double> dz_dy(1);
+  std::vector<double> table = kTable;
+  std::vector<double> em_x = {xx};
+  std::vector<double> em = {xx};
+  std::vector<double> dz_dy_dem_x = {0.6};
+  std::vector<double> dz_dy_dem = {-0.4};
+  double *dz_dy_dev = nullptr, *table_dev = nullptr, *em_x_dev = nullptr,
+         *em_dev = nullptr, *dz_dy_dem_x_dev = nullptr,
+         *dz_dy_dem_dev = nullptr;
+  deepmd::malloc_device_memory_sync(dz_dy_dev, dz_dy);
+  deepmd::malloc_device_memory_sync(table_dev, table);
+  deepmd::malloc_device_memory_sync(em_x_dev, em_x);
+  deepmd::malloc_device_memory_sync(em_dev, em);
+  deepmd::malloc_device_memory_sync(dz_dy_dem_x_dev, dz_dy_dem_x);
+  deepmd::malloc_device_memory_sync(dz_dy_dem_dev, dz_dy_dem);
+  deepmd::tabulate_fusion_se_t_grad_grad_gpu<double>(
+      dz_dy_dev, table_dev, kTableInfo.data(), em_x_dev, em_dev,
+      dz_dy_dem_x_dev, dz_dy_dem_dev, 1, 1, 1, kLastLayerSize);
+  deepmd::memcpy_device_to_host(dz_dy_dev, dz_dy);
+  deepmd::delete_device_memory(dz_dy_dev);
+  deepmd::delete_device_memory(table_dev);
+  deepmd::delete_device_memory(em_x_dev);
+  deepmd::delete_device_memory(em_dev);
+  deepmd::delete_device_memory(dz_dy_dem_x_dev);
+  deepmd::delete_device_memory(dz_dy_dem_dev);
+  return dz_dy;
+}
+
+double se_t_tebd_grad_projection_gpu(const double xx,
+                                     const std::vector<double>& dy) {
+  std::vector<double> dy_dem_x(1);
+  std::vector<double> table = kTable;
+  std::vector<double> em_x = {xx};
+  std::vector<double> em = {xx};
+  std::vector<double> dy_host = dy;
+  const std::vector<double> dz_dy_dem_x = {0.6};
+  double *dy_dem_x_dev = nullptr, *table_dev = nullptr, *em_x_dev = nullptr,
+         *em_dev = nullptr, *dy_dev = nullptr;
+  deepmd::malloc_device_memory_sync(dy_dem_x_dev, dy_dem_x);
+  deepmd::malloc_device_memory_sync(table_dev, table);
+  deepmd::malloc_device_memory_sync(em_x_dev, em_x);
+  deepmd::malloc_device_memory_sync(em_dev, em);
+  deepmd::malloc_device_memory_sync(dy_dev, dy_host);
+  deepmd::tabulate_fusion_se_t_tebd_grad_gpu<double>(
+      dy_dem_x_dev, table_dev, kTableInfo.data(), em_x_dev, em_dev, dy_dev, 1,
+      1, 1, kLastLayerSize);
+  deepmd::memcpy_device_to_host(dy_dem_x_dev, dy_dem_x);
+  deepmd::delete_device_memory(dy_dem_x_dev);
+  deepmd::delete_device_memory(table_dev);
+  deepmd::delete_device_memory(em_x_dev);
+  deepmd::delete_device_memory(em_dev);
+  deepmd::delete_device_memory(dy_dev);
+  return dot_vector(dy_dem_x, dz_dy_dem_x);
+}
+
+std::vector<double> se_t_tebd_grad_grad_dy_gpu(const double xx) {
+  std::vector<double> dz_dy(1);
+  std::vector<double> table = kTable;
+  std::vector<double> em_x = {xx};
+  std::vector<double> em = {xx};
+  std::vector<double> dz_dy_dem_x = {0.6};
+  double *dz_dy_dev = nullptr, *table_dev = nullptr, *em_x_dev = nullptr,
+         *em_dev = nullptr, *dz_dy_dem_x_dev = nullptr;
+  deepmd::malloc_device_memory_sync(dz_dy_dev, dz_dy);
+  deepmd::malloc_device_memory_sync(table_dev, table);
+  deepmd::malloc_device_memory_sync(em_x_dev, em_x);
+  deepmd::malloc_device_memory_sync(em_dev, em);
+  deepmd::malloc_device_memory_sync(dz_dy_dem_x_dev, dz_dy_dem_x);
+  deepmd::tabulate_fusion_se_t_tebd_grad_grad_gpu<double>(
+      dz_dy_dev, table_dev, kTableInfo.data(), em_x_dev, em_dev,
+      dz_dy_dem_x_dev, 1, 1, 1, kLastLayerSize);
+  deepmd::memcpy_device_to_host(dz_dy_dev, dz_dy);
+  deepmd::delete_device_memory(dz_dy_dev);
+  deepmd::delete_device_memory(table_dev);
+  deepmd::delete_device_memory(em_x_dev);
+  deepmd::delete_device_memory(em_dev);
+  deepmd::delete_device_memory(dz_dy_dem_x_dev);
+  return dz_dy;
+}
 #endif
 
 double central_diff(double (*fn)(double), const double xx) {
@@ -719,5 +939,24 @@ TEST(TabulateExtrapolate, SeTTebdGpuUsesC1LinearTails) {
                   locate_se_t(kMax));
   expect_linear_tail(se_t_tebd_value_gpu, se_t_tebd_grad_gpu, kMax + 0.25,
                      locate_se_t(kMax + 0.25));
+}
+
+TEST(TabulateExtrapolate, GpuGradGradKernelsMatchDyFiniteDifferenceInTails) {
+  for (const double xx : {kLower - 0.25, kMax + 0.25}) {
+    expect_grad_grad_matches_dy_finite_diff(se_a_grad_grad_dy_gpu,
+                                            se_a_grad_projection_gpu, xx,
+                                            {0.1, -0.2, 0.3, -0.4});
+    expect_grad_grad_matches_dy_finite_diff(se_r_grad_grad_dy_gpu,
+                                            se_r_grad_projection_gpu, xx,
+                                            {0.1});
+  }
+  for (const double xx : {kMin - 0.25, kMax + 0.25}) {
+    expect_grad_grad_matches_dy_finite_diff(se_t_grad_grad_dy_gpu,
+                                            se_t_grad_projection_gpu, xx,
+                                            {0.1});
+    expect_grad_grad_matches_dy_finite_diff(se_t_tebd_grad_grad_dy_gpu,
+                                            se_t_tebd_grad_projection_gpu, xx,
+                                            {0.1});
+  }
 }
 #endif
