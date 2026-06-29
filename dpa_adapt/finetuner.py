@@ -9,6 +9,7 @@ import os
 import re
 import shutil
 import subprocess
+import warnings
 from pathlib import (
     Path,
 )
@@ -499,6 +500,7 @@ class _FrozenSklearnPipeline:
         self._task_dim = 1
         self._target_key = None
         self._condition_manager = None
+        self._grouped_fit = False
         self._fitted = False
         self.type_map = []
 
@@ -959,6 +961,7 @@ class DPAFineTuner:
         self._device = None  # set when model is first loaded
         self._checkpoint_type_map = []  # set by _load_descriptor_model
         self._condition_manager = None
+        self._grouped_fit = False
 
     # ------------------------------------------------------------------
     # Frozen-sklearn pipeline helpers (thin delegators)
@@ -1363,6 +1366,22 @@ class DPAFineTuner:
             (mft only) Auxiliary training system directories.  Required when
             ``strategy='mft'``; must be absent otherwise.
         """
+        from dpa_adapt.data.grouped_dataset import (
+            has_grouped_markers,
+        )
+
+        if has_grouped_markers(train_data):
+            if labels is not None:
+                raise ValueError("labels is not supported for grouped input.")
+            if self.strategy != "frozen_sklearn":
+                warnings.warn(
+                    "Grouped input is fit at the descriptor level because deep "
+                    "training is launched through dp --pt train subprocesses.",
+                    RuntimeWarning,
+                    stacklevel=2,
+                )
+            return self._fit_grouped(train_data, type_map, target_key, fmt)
+
         if self.strategy == "frozen_sklearn":
             return self._fit_sklearn(train_data, type_map, target_key, labels, fmt)
 
@@ -1390,6 +1409,65 @@ class DPAFineTuner:
 
         self.type_map = type_map
         return self._fit_training(train_data, valid_data, type_map)
+
+    def _fit_grouped(
+        self,
+        data: str | list[str],
+        type_map: list[str] | None = None,
+        target_key: str | list[str] | None = None,
+        fmt: str | None = None,
+    ) -> None:
+        if isinstance(target_key, list):
+            raise ValueError("Grouped input supports one target key.")
+        target = target_key or "property"
+
+        from sklearn.pipeline import (
+            make_pipeline,
+        )
+        from sklearn.preprocessing import (
+            StandardScaler,
+        )
+
+        from dpa_adapt.data.grouped_dataset import (
+            GroupedDataset,
+        )
+        from dpa_adapt.utils.sklearn_heads import (
+            build_sklearn_head,
+        )
+
+        self.type_map = type_map or []
+        dataset = GroupedDataset(
+            data,
+            pretrained=self.pretrained,
+            model_branch=self.model_branch,
+            type_map=self.type_map,
+            target_key=target,
+            fmt=fmt,
+        )
+        features = dataset.get_embeddings()
+        y = dataset.get_labels()
+        self._target_key = target
+        self._task_dim = 1 if y.ndim == 1 else y.shape[-1]
+        y_flat = y.ravel() if self._task_dim == 1 else y
+
+        head = build_sklearn_head(
+            self._predictor_type,
+            seed=self.seed,
+            n_outputs=self._task_dim,
+        )
+        self.predictor = make_pipeline(StandardScaler(), head)
+        self.predictor.fit(features, y_flat)
+        self._condition_manager = None
+        self._grouped_fit = True
+        self._fitted = True
+
+        p = self._ensure_sklearn()
+        p.predictor = self.predictor
+        p.type_map = self.type_map
+        p._target_key = self._target_key
+        p._task_dim = self._task_dim
+        p._condition_manager = self._condition_manager
+        p._fitted = True
 
     def _fit_mft(
         self,
@@ -1539,9 +1617,9 @@ class DPAFineTuner:
         DotDict
             ``predictions`` : np.ndarray, shape (n_frames, task_dim)
         """
-        if self.strategy in {"frozen_head", "finetune"}:
+        if self.strategy in {"frozen_head", "finetune"} and not self._grouped_fit:
             return self._run_training_predict(data, fmt=fmt)
-        if self.strategy == "mft":
+        if self.strategy == "mft" and not self._grouped_fit:
             if fmt is not None:
                 raise ValueError(
                     "fmt is not supported for mft predict(); "
@@ -1554,8 +1632,24 @@ class DPAFineTuner:
                 "predict() was called before fit(). Train the model with fit() first."
             )
 
-        systems = load_data(data, fmt=fmt)
-        features = self._extract_features(systems)
+        from dpa_adapt.data.grouped_dataset import (
+            GroupedDataset,
+            has_grouped_markers,
+        )
+
+        if self._grouped_fit and has_grouped_markers(data):
+            dataset = GroupedDataset(
+                data,
+                pretrained=self.pretrained,
+                model_branch=self.model_branch,
+                type_map=self.type_map,
+                target_key=self._target_key or self.property_name,
+                fmt=fmt,
+            )
+            features = dataset.get_embeddings()
+        else:
+            systems = load_data(data, fmt=fmt)
+            features = self._extract_features(systems)
 
         if self._condition_manager is not None:
             try:
@@ -1593,7 +1687,7 @@ class DPAFineTuner:
             predictions   : np.ndarray, shape (n_frames, task_dim)
             labels        : np.ndarray, shape (n_frames, task_dim)
         """
-        if self.strategy in {"frozen_head", "finetune"}:
+        if self.strategy in {"frozen_head", "finetune"} and not self._grouped_fit:
             result = self._run_training_predict(data, fmt=fmt)
             labels = result.labels
             predictions = result.predictions
@@ -1602,7 +1696,7 @@ class DPAFineTuner:
             ss_tot = np.sum((labels - labels.mean()) ** 2)
             result["r2"] = float(1.0 - ss_res / ss_tot) if ss_tot > 0 else float("nan")
             return result
-        if self.strategy == "mft":
+        if self.strategy == "mft" and not self._grouped_fit:
             if fmt is not None:
                 raise ValueError(
                     "fmt is not supported for mft evaluate(); "
@@ -1623,9 +1717,25 @@ class DPAFineTuner:
         result = self.predict(data, fmt=fmt)
         predictions = result.predictions
 
-        systems = load_data(data, fmt=fmt)
-        labels = _load_labels(systems, self._target_key)
-        labels = labels.reshape(predictions.shape)
+        from dpa_adapt.data.grouped_dataset import (
+            GroupedDataset,
+            has_grouped_markers,
+        )
+
+        if self._grouped_fit and has_grouped_markers(data):
+            dataset = GroupedDataset(
+                data,
+                pretrained=self.pretrained,
+                model_branch=self.model_branch,
+                type_map=self.type_map,
+                target_key=self._target_key or "property",
+                fmt=fmt,
+            )
+            labels = dataset.get_labels().reshape(predictions.shape)
+        else:
+            systems = load_data(data, fmt=fmt)
+            labels = _load_labels(systems, self._target_key)
+            labels = labels.reshape(predictions.shape)
 
         if predictions.shape != labels.shape:
             raise DPADataError(
@@ -1688,10 +1798,10 @@ class DPAFineTuner:
                 "freeze() was called before fit(). Train the model with fit() first."
             )
 
-        if self.strategy in {"frozen_head", "finetune"}:
+        if self.strategy in {"frozen_head", "finetune"} and not self._grouped_fit:
             return self._freeze_training_checkpoint(output_path)
 
-        if self.strategy == "mft":
+        if self.strategy == "mft" and not self._grouped_fit:
             frozen_path = self._ensure_mft()._freeze_ckpt()
             output_path = os.path.abspath(str(output_path))
             if os.path.abspath(frozen_path) != output_path:
