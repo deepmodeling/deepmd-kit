@@ -205,47 +205,56 @@ class TestJAXModelCompression(unittest.TestCase):
         coord = jnp.array(self.coord)
         atype = jnp.array(self.atype)
         nlist = jnp.array(self.nlist)
-        descriptor = DescrptDPA1(
-            rcut=4.0,
-            rcut_smth=3.5,
-            sel=2,
-            ntypes=2,
-            neuron=[4, 8],
-            axis_neuron=2,
-            tebd_dim=4,
-            tebd_input_mode="strip",
-            resnet_dt=False,
-            attn_layer=0,
-            precision="float64",
-            seed=1234,
-        )
-        expected = descriptor.call(coord, atype, nlist)
-
-        compressed = DescrptDPA1.deserialize(copy.deepcopy(descriptor.serialize()))
-        compressed.enable_compression(1.0, 5, 0.001, 0.01, -1)
-        actual = compressed.call(coord, atype, nlist)
-
-        self.assertTrue(compressed.compress)
-        self.assertTrue(compressed.geo_compress)
-        serialized = compressed.serialize()
-        self.assertEqual(serialized["@version"], 3)
-        self.assertIn("compress", serialized)
-        reloaded = DescrptDPA1.deserialize(copy.deepcopy(serialized))
-        reloaded_actual = reloaded.call(coord, atype, nlist)
-
-        for expected_item, actual_item, reloaded_item in zip(
-            expected, actual, reloaded_actual, strict=True
-        ):
-            if expected_item is None:
-                self.assertIsNone(actual_item)
-                self.assertIsNone(reloaded_item)
-            else:
-                np.testing.assert_allclose(
-                    np.asarray(actual_item), np.asarray(expected_item), atol=1e-10
+        for type_one_side in (True, False):
+            with self.subTest(type_one_side=type_one_side):
+                descriptor = DescrptDPA1(
+                    rcut=4.0,
+                    rcut_smth=3.5,
+                    sel=2,
+                    ntypes=2,
+                    neuron=[4, 8],
+                    axis_neuron=2,
+                    tebd_dim=4,
+                    tebd_input_mode="strip",
+                    resnet_dt=False,
+                    attn_layer=0,
+                    type_one_side=type_one_side,
+                    precision="float64",
+                    seed=1234,
                 )
-                np.testing.assert_allclose(
-                    np.asarray(reloaded_item), np.asarray(expected_item), atol=1e-10
+                expected = descriptor.call(coord, atype, nlist)
+
+                compressed = DescrptDPA1.deserialize(
+                    copy.deepcopy(descriptor.serialize())
                 )
+                compressed.enable_compression(1.0, 5, 0.001, 0.01, -1)
+                actual = compressed.call(coord, atype, nlist)
+
+                self.assertTrue(compressed.compress)
+                self.assertTrue(compressed.geo_compress)
+                serialized = compressed.serialize()
+                self.assertEqual(serialized["@version"], 3)
+                self.assertIn("compress", serialized)
+                reloaded = DescrptDPA1.deserialize(copy.deepcopy(serialized))
+                reloaded_actual = reloaded.call(coord, atype, nlist)
+
+                for expected_item, actual_item, reloaded_item in zip(
+                    expected, actual, reloaded_actual, strict=True
+                ):
+                    if expected_item is None:
+                        self.assertIsNone(actual_item)
+                        self.assertIsNone(reloaded_item)
+                    else:
+                        np.testing.assert_allclose(
+                            np.asarray(actual_item),
+                            np.asarray(expected_item),
+                            atol=1e-10,
+                        )
+                        np.testing.assert_allclose(
+                            np.asarray(reloaded_item),
+                            np.asarray(expected_item),
+                            atol=1e-10,
+                        )
 
     @unittest.skipUnless(INSTALLED_JAX, "JAX is not installed")
     def test_jax_compress_entrypoint(self) -> None:
