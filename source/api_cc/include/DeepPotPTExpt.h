@@ -310,10 +310,10 @@ class DeepPotPTExpt : public DeepPotBackend {
   bool lower_input_is_edge_ = false;
   bool lower_input_is_graph_ = false;
   NeighborListData nlist_data;
-  at::Tensor mapping_tensor;              // cached mapping tensor (LAMMPS path)
-  std::vector<std::int64_t> mapping_;    // cached mapping vector (LAMMPS path)
-  at::Tensor firstneigh_tensor;          // cached nlist tensor (LAMMPS path)
-  at::Tensor edge_index_tensor;      // cached local edge graph (LAMMPS path)
+  at::Tensor mapping_tensor;           // cached mapping tensor (LAMMPS path)
+  std::vector<std::int64_t> mapping_;  // cached mapping vector (LAMMPS path)
+  at::Tensor firstneigh_tensor;        // cached nlist tensor (LAMMPS path)
+  at::Tensor edge_index_tensor;        // cached local edge graph (LAMMPS path)
   at::Tensor edge_index_ext_tensor;  // cached extended edge graph (LAMMPS path)
   std::unique_ptr<torch::inductor::AOTIModelPackageLoader> loader;
   // Optional second AOTInductor artifact for the multi-rank GNN code

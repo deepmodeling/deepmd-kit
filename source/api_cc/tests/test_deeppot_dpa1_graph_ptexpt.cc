@@ -28,7 +28,8 @@ namespace {
 constexpr const char* kGraphModel = "../../tests/infer/deeppot_dpa1_graph.pt2";
 constexpr const char* kNlistRefModel =
     "../../tests/infer/deeppot_dpa1_graph_nlist_ref.pt2";
-constexpr const char* kRefPath = "../../tests/infer/deeppot_dpa1_graph.expected";
+constexpr const char* kRefPath =
+    "../../tests/infer/deeppot_dpa1_graph.expected";
 }  // namespace
 
 template <class VALUETYPE>

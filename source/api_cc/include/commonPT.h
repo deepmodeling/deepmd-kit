@@ -426,8 +426,7 @@ inline GraphTensorPack buildGraphTensors(
   //    inputs, so build the coord tensor as float64 to match the edge path.
   std::vector<double> coord_d(coord.begin(), coord.end());
   at::Tensor coord_tensor =
-      torch::from_blob(coord_d.data(),
-                       {static_cast<std::int64_t>(nall), 3},
+      torch::from_blob(coord_d.data(), {static_cast<std::int64_t>(nall), 3},
                        torch::TensorOptions().dtype(torch::kFloat64))
           .clone()
           .to(device);
@@ -454,8 +453,8 @@ inline GraphTensorPack buildGraphTensors(
  * @brief Remap NeighborGraph (graph-schema) public outputs onto the dense
  *        internal-key layout the rest of ``compute`` consumes.
  *
- * The graph forward (``forward_lower_graph_exportable``) is LOCAL-only and emits
- * flat-N PUBLIC keys:
+ * The graph forward (``forward_lower_graph_exportable``) is LOCAL-only and
+ * emits flat-N PUBLIC keys:
  *   - ``atom_energy`` (N, 1)      per-atom energy        (N == nloc)
  *   - ``energy``      (nf, 1)     reduced total energy
  *   - ``force``       (N, 3)      per-atom force (ghosts already folded onto
