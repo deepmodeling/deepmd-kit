@@ -477,6 +477,25 @@ def _trace_and_compile(
         *task_buf_vals_trace,
     )
 
+    return (
+        _finalize_compiled_lower(traced_lower, model, was_training, compile_opts),
+        task_buf_order,
+    )
+
+
+def _finalize_compiled_lower(
+    traced_lower: "torch.fx.GraphModule",
+    model: torch.nn.Module,
+    was_training: bool,
+    compile_opts: dict[str, Any] | None,
+    extra_options: dict[str, Any] | None = None,
+) -> torch.nn.Module:
+    """Shared post-``make_fx`` tail: strip detach, rebuild, inductor-compile.
+
+    Used by both the dense :func:`_trace_and_compile` and the graph
+    :func:`_trace_and_compile_graph` so the second-order-gradient handling
+    (detach removal) and inductor options stay identical on both paths.
+    """
     # make_fx inserts aten.detach.default for saved tensors used in the
     # decomposed autograd.grad backward ops.  These detach nodes break
     # second-order gradient flow (d(force)/d(params) for force training).
@@ -503,6 +522,8 @@ def _trace_and_compile(
         # pytorch/pytorch#174379, #178080, #179494 under
         # data-dependent symbolic shapes.
     }
+    if extra_options:
+        inductor_options.update(extra_options)
     if compile_opts:
         inductor_options.update(compile_opts)
 
@@ -511,7 +532,356 @@ def _trace_and_compile(
         backend="inductor",
         dynamic=True,
         options=inductor_options,
-    ), task_buf_order
+    )
+
+
+def _model_uses_graph_lower(model: torch.nn.Module) -> bool:
+    """Whether ``model``'s eager default-flip routes through the GRAPH lower.
+
+    Mirrors the predicate in
+    :meth:`~deepmd.pt_expt.model.make_model.make_model.<locals>.CM._resolve_graph_method`
+    for ``neighbor_graph_method is None`` (the training default): a model is
+    graph-eligible iff it is ``mixed_types`` AND its single descriptor reports
+    ``uses_graph_lower() == True`` (currently only dpa1 ``attn_layer == 0``).
+
+    When True the compiled lower must be the GRAPH ``forward_common_lower_graph``
+    so the compiled path matches eager training (which already default-flips to
+    the carry-all graph forward); when False the dense ``forward_lower`` is
+    compiled (se_e2_a / dpa2 / dpa3 / linear / zbl).
+    """
+    if not hasattr(model, "mixed_types"):
+        return False
+    try:
+        if not model.mixed_types():
+            return False
+    except (AttributeError, NotImplementedError):
+        return False
+    # Linear / ZBL atomic models have no single ``descriptor`` -> dense.
+    descriptor = getattr(getattr(model, "atomic_model", None), "descriptor", None)
+    uses_graph = getattr(descriptor, "uses_graph_lower", None)
+    if uses_graph is None:
+        return False
+    try:
+        return bool(uses_graph())
+    except (AttributeError, NotImplementedError):
+        return False
+
+
+def _trace_and_compile_graph(
+    model: torch.nn.Module,
+    fparam: torch.Tensor | None,
+    aparam: torch.Tensor | None,
+    charge_spin: torch.Tensor | None,
+    compile_opts: dict[str, Any] | None = None,
+    task_buffers: dict[str, torch.Tensor] | None = None,
+) -> tuple[torch.nn.Module, tuple[str, ...]]:
+    """Symbolic-trace ``forward_common_lower_graph`` and inductor-compile it.
+
+    The GRAPH analogue of :func:`_trace_and_compile`.  Builds a small synthetic
+    NeighborGraph with prime-controlled ``nf`` / ``N`` / ``E`` axes (so make_fx's
+    duck-shape unification keeps the three dynamic dims as distinct symbols),
+    traces ``model.forward_common_lower_graph`` with ``edge_vec`` as the autograd
+    leaf, and translates the internal fitting keys to the public energy-model
+    keys (``atom_energy`` / ``energy`` / ``force`` / ``virial``).  The compiled
+    callable accepts the positional graph tensors plus the promoted task buffers
+    and returns those public keys on the FLAT node axis (``N == sum(n_node)``);
+    the caller (:meth:`_CompiledModel.forward`) unravels them to ``(nf, nloc, *)``.
+
+    Parameters
+    ----------
+    model
+        The (uncompiled) graph-eligible energy model.
+    fparam, aparam, charge_spin
+        Representative optional inputs (or ``None``) so the traced branch
+        matches what :meth:`_CompiledModel.forward` passes at run time.
+    compile_opts
+        User-supplied inductor options (merged over the built-in defaults).
+    task_buffers
+        Per-task buffers promoted to FX placeholders (see
+        :func:`_detect_task_buffers`).
+    """
+    import math
+
+    from torch._decomp import (
+        get_decompositions,
+    )
+    from torch.fx.experimental.proxy_tensor import (
+        make_fx,
+    )
+
+    from deepmd.pt_expt.model.ener_model import (
+        _translate_energy_keys,
+    )
+
+    was_training = model.training
+    # Trace in train mode so create_graph=True is captured inside the graph
+    # force backward (forward_common_lower_graph passes create_graph=self.training).
+    model.train()
+
+    task_buf_order: tuple[str, ...] = tuple(task_buffers.keys()) if task_buffers else ()
+    task_buf_vals_trace: tuple[torch.Tensor, ...] = (
+        tuple(task_buffers[k] for k in task_buf_order) if task_buffers else ()
+    )
+
+    _fitting: torch.nn.Module | None = None
+    _atomic_model: torch.nn.Module | None = None
+    if task_buf_order:
+        try:
+            _fitting = model.get_fitting_net()
+        except AttributeError:
+            pass
+        try:
+            _atomic_model = model.atomic_model
+        except AttributeError:
+            pass
+
+    do_grad_r = model.do_grad_r("energy")
+    do_grad_c = model.do_grad_c("energy")
+
+    # ------------------------------------------------------------------
+    # Build the trace-time NeighborGraph with prime-distinct nf / N / E.
+    #
+    # make_fx (tracing_mode="symbolic") unifies dimension symbols that share a
+    # concrete value (duck-shape merging).  The three dynamic axes of the graph
+    # lower must stay distinct symbols, otherwise the per-frame segment_sum
+    # (N -> nf) and the per-edge scatter (E -> N) bake in a false equality:
+    #   * nf  = n_node.shape[0]      (per-frame reductions)
+    #   * N   = atype.shape[0]       (flat node axis = sum(n_node))
+    #   * E   = edge_vec.shape[0]    (edge axis)
+    # They are chosen as collision-free primes vs every parameter/buffer dim.
+    # ------------------------------------------------------------------
+    _forbidden: set[int] = {
+        int(_d)
+        for _src in (model.parameters(), model.buffers())
+        for _p in _src
+        for _d in _p.shape
+        if _d > 1
+    }
+    try:
+        _dim_fp = model.get_dim_fparam()
+        if _dim_fp > 1:
+            _forbidden.add(_dim_fp)
+    except Exception:
+        pass
+    try:
+        _dim_ap = model.get_dim_aparam()
+        if _dim_ap > 1:
+            _forbidden.add(_dim_ap)
+    except Exception:
+        pass
+    if charge_spin is not None and charge_spin.shape[-1] > 1:
+        _forbidden.add(int(charge_spin.shape[-1]))
+    for _tbv in task_buf_vals_trace:
+        for _d in _tbv.shape:
+            if _d > 1:
+                _forbidden.add(int(_d))
+
+    trace_nf = _next_safe_prime(5, _forbidden)
+    # nloc such that N = trace_nf * nloc is collision-free (and != trace_nf).
+    nloc_trace = 7
+    while (trace_nf * nloc_trace) in (_forbidden | {trace_nf}):
+        nloc_trace += 1
+    trace_N = trace_nf * nloc_trace
+    # Static edge capacity, prime-padded to stay distinct from nf and N.
+    nnei = sum(model.get_sel())
+    e_max_base = max(math.ceil(1.25 * nloc_trace * nnei), 7)
+    e_max = _next_safe_prime(e_max_base, _forbidden | {trace_nf, trace_N})
+
+    sample = _make_graph_trace_inputs(
+        model,
+        e_max=e_max,
+        nframes=trace_nf,
+        nloc=nloc_trace,
+        want_fparam=fparam is not None,
+        want_aparam=aparam is not None,
+        want_charge_spin=charge_spin is not None,
+    )
+    (
+        s_atype,
+        s_n_node,
+        s_edge_index,
+        s_edge_vec,
+        s_edge_mask,
+        s_fparam,
+        s_aparam,
+        s_charge_spin,
+    ) = sample
+
+    def fn(
+        atype: torch.Tensor,
+        n_node: torch.Tensor,
+        edge_index: torch.Tensor,
+        edge_vec: torch.Tensor,
+        edge_mask: torch.Tensor,
+        fparam: torch.Tensor | None,
+        aparam: torch.Tensor | None,
+        charge_spin: torch.Tensor | None,
+        *task_buf_vals: torch.Tensor,
+    ) -> dict[str, torch.Tensor]:
+        # Patch task-specific buffers with the proxy tensors so make_fx records
+        # them as FX placeholders (mirrors the dense ``_trace_and_compile``).
+        originals: dict[str, torch.Tensor | None] = {}
+        if task_buf_order:
+            for name, val in zip(task_buf_order, task_buf_vals, strict=True):
+                if name.startswith(_AM_PREFIX):
+                    actual = name[len(_AM_PREFIX) :]
+                    if _atomic_model is not None:
+                        originals[name] = _atomic_model._buffers.get(actual)
+                        _atomic_model._buffers[actual] = val
+                else:
+                    if _fitting is not None:
+                        originals[name] = _fitting._buffers.get(name)
+                        _fitting._buffers[name] = val
+        try:
+            # forward_common_lower_graph makes edge_vec the autograd leaf
+            # internally, so no outer detach/requires_grad_ here.
+            model_ret = model.forward_common_lower_graph(
+                atype,
+                n_node,
+                edge_index,
+                edge_vec,
+                edge_mask,
+                do_atomic_virial=False,
+                fparam=fparam,
+                aparam=aparam,
+                charge_spin=charge_spin,
+            )
+            return _translate_energy_keys(
+                model_ret,
+                do_grad_r=do_grad_r,
+                do_grad_c=do_grad_c,
+                do_atomic_virial=False,
+                local=True,
+            )
+        finally:
+            for name, orig in originals.items():
+                if name.startswith(_AM_PREFIX):
+                    actual = name[len(_AM_PREFIX) :]
+                    if _atomic_model is not None:
+                        _atomic_model._buffers[actual] = orig
+                else:
+                    if _fitting is not None:
+                        _fitting._buffers[name] = orig
+
+    decomp_table = get_decompositions([torch.ops.aten.silu_backward.default])
+
+    traced_lower = make_fx(
+        fn,
+        tracing_mode="symbolic",
+        _allow_non_fake_inputs=True,
+        decomposition_table=decomp_table,
+    )(
+        s_atype,
+        s_n_node,
+        s_edge_index,
+        s_edge_vec,
+        s_edge_mask,
+        s_fparam,
+        s_aparam,
+        s_charge_spin,
+        *task_buf_vals_trace,
+    )
+
+    # The per-frame virial reduction scatters E edges into the (nf, 3, 3) virial
+    # via an atomic_add; inductor's CPU vectorizer asserts on that scatter's
+    # scalar index (``index.is_vec``).  Disable CPU SIMD for the graph lower so
+    # the scatter is emitted scalar — numerically this only removes a
+    # reduction-order source, keeping eager==compiled within fp64 tolerance.
+    return (
+        _finalize_compiled_lower(
+            traced_lower,
+            model,
+            was_training,
+            compile_opts,
+            extra_options={"cpp.simdlen": 0},
+        ),
+        task_buf_order,
+    )
+
+
+def _make_graph_trace_inputs(
+    model: torch.nn.Module,
+    e_max: int,
+    nframes: int,
+    nloc: int,
+    *,
+    want_fparam: bool,
+    want_aparam: bool,
+    want_charge_spin: bool,
+) -> tuple[torch.Tensor | None, ...]:
+    """Build a synthetic carry-all NeighborGraph for the graph-compile trace.
+
+    Returns positional tensors in the order
+    ``(atype, n_node, edge_index, edge_vec, edge_mask, fparam, aparam,
+    charge_spin)`` matching ``forward_common_lower_graph``.  The edge axis is
+    padded to the STATIC ``e_max`` (masked) so its concrete value is a chosen
+    prime; ``fparam`` / ``aparam`` / ``charge_spin`` are emitted only when the
+    model+data path actually carries them (``want_*``), so the traced branch
+    matches the run-time call.
+    """
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        GraphLayout,
+        build_neighbor_graph,
+    )
+
+    rcut = model.get_rcut()
+    ntypes = len(model.get_type_map())
+    dim_fparam = model.get_dim_fparam()
+    dim_aparam = model.get_dim_aparam()
+
+    box_size = rcut * 3.0
+    box_np = (np.eye(3, dtype=np.float64) * box_size).reshape(1, 9)
+    rng = np.random.default_rng(42)
+    coord_np = rng.random((nframes, nloc, 3)) * box_size * 0.5 + box_size * 0.25
+    atype_np = np.zeros((nframes, nloc), dtype=np.int64)
+    for i in range(nloc):
+        atype_np[:, i] = i % ntypes
+
+    coord_t = torch.tensor(coord_np, dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE)
+    atype_t = torch.tensor(atype_np, dtype=torch.int64, device=DEVICE)
+    box_t = torch.tensor(
+        np.tile(box_np, (nframes, 1)), dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
+    )
+
+    graph = build_neighbor_graph(
+        coord_t, atype_t, box_t, rcut, layout=GraphLayout(edge_capacity=e_max)
+    )
+
+    s_atype = atype_t.reshape(-1)
+    s_n_node = graph.n_node
+    s_edge_index = graph.edge_index
+    s_edge_vec = graph.edge_vec
+    s_edge_mask = graph.edge_mask
+
+    s_fparam = (
+        torch.zeros(nframes, dim_fparam, dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE)
+        if (want_fparam and dim_fparam > 0)
+        else None
+    )
+    s_aparam = (
+        torch.zeros(
+            nframes, nloc, dim_aparam, dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE
+        )
+        if (want_aparam and dim_aparam > 0)
+        else None
+    )
+    dim_cs = model.get_dim_chg_spin() if hasattr(model, "get_dim_chg_spin") else 0
+    s_charge_spin = (
+        torch.zeros(nframes, dim_cs, dtype=GLOBAL_PT_FLOAT_PRECISION, device=DEVICE)
+        if (want_charge_spin and dim_cs > 0)
+        else None
+    )
+
+    return (
+        s_atype,
+        s_n_node,
+        s_edge_index,
+        s_edge_vec,
+        s_edge_mask,
+        s_fparam,
+        s_aparam,
+        s_charge_spin,
+    )
 
 
 class _CompiledModel(torch.nn.Module):
@@ -546,6 +916,9 @@ class _CompiledModel(torch.nn.Module):
         self._compiled_by_structure: dict = (
             compiled_by_structure if compiled_by_structure is not None else {}
         )
+        # Resolved on the first forward: whether to compile the GRAPH lower
+        # (graph-eligible mixed_types descriptors) or the dense forward_lower.
+        self._graph_eligible: bool | None = None
 
     def __getattr__(self, name: str) -> Any:
         # Delegate unknown lookups to original_model so that callers such as
@@ -579,6 +952,18 @@ class _CompiledModel(torch.nn.Module):
 
         nframes, nloc = atype.shape[:2]
         rcut = self.original_model.get_rcut()
+
+        # Graph-eligible models (dpa1 attn_layer==0) default-flip to the carry-all
+        # GRAPH forward in eager training; the compiled lower must be the GRAPH
+        # lower too, otherwise the eager (graph) and compiled (dense) backward
+        # gradients diverge at fp64 accumulation and the optimizer amplifies it.
+        if self._graph_eligible is None:
+            self._graph_eligible = _model_uses_graph_lower(self.original_model)
+        if self._graph_eligible:
+            return self._forward_graph(
+                coord, atype, box, fparam, aparam, charge_spin, nframes, nloc, rcut
+            )
+
         sel = self.original_model.get_sel()
 
         # coord extension + nlist (data-dependent, run in eager)
@@ -749,6 +1134,152 @@ class _CompiledModel(torch.nn.Module):
             out["atom_virial"] = result["atom_virial"]
         if "mask" in result:
             out["mask"] = result["mask"]
+        return out
+
+    def _forward_graph(
+        self,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        box: torch.Tensor | None,
+        fparam: torch.Tensor | None,
+        aparam: torch.Tensor | None,
+        charge_spin: torch.Tensor | None,
+        nframes: int,
+        nloc: int,
+        rcut: float,
+    ) -> dict[str, torch.Tensor]:
+        """Carry-all GRAPH forward -> compiled ``forward_common_lower_graph``.
+
+        Builds the carry-all NeighborGraph eagerly (the SAME builder the eager
+        uncompiled default-flip uses, so the graph tensors are bit-identical),
+        then calls the compiled graph lower.  The graph force is per-LOCAL-node
+        ``(N, 3)`` with ``N == nframes * nloc`` for a single-rank carry-all graph,
+        so no extended->local scatter is needed; only the flat ``(N, *)`` node
+        keys are unravelled to ``(nf, nloc, *)`` at the I/O boundary.
+        """
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            build_neighbor_graph,
+        )
+
+        _model = self.original_model
+
+        coord_3d = coord.detach().reshape(nframes, nloc, 3)
+        box_flat = box.detach().reshape(nframes, 9) if box is not None else None
+
+        # Mirror the optional-input defaulting of the dense path / eager
+        # call_common: a model configured with fparam / charge_spin substitutes
+        # its default when the data omits it, so the compiled (frozen) branch
+        # always sees a tensor.
+        _dim_fparam = (
+            _model.get_dim_fparam() if hasattr(_model, "get_dim_fparam") else 0
+        )
+        if fparam is None and _dim_fparam > 0:
+            _default_fparam = _model.get_default_fparam()
+            if _default_fparam is not None:
+                fparam = (
+                    torch.as_tensor(
+                        _default_fparam, dtype=coord_3d.dtype, device=coord_3d.device
+                    )
+                    .reshape(1, _dim_fparam)
+                    .expand(nframes, -1)
+                )
+        _dim_cs = (
+            _model.get_dim_chg_spin() if hasattr(_model, "get_dim_chg_spin") else 0
+        )
+        if charge_spin is None and _dim_cs > 0:
+            _default_cs = _model.get_default_chg_spin()
+            if _default_cs is not None:
+                charge_spin = (
+                    torch.as_tensor(
+                        _default_cs, dtype=coord_3d.dtype, device=coord_3d.device
+                    )
+                    .reshape(1, _dim_cs)
+                    .expand(nframes, -1)
+                )
+
+        # Carry-all graph (dynamic E, no edge_capacity) — identical to the eager
+        # uncompiled ``_call_common_graph`` builder so the two paths match.
+        ng = build_neighbor_graph(coord_3d, atype, box_flat, rcut)
+        atype_flat = atype.reshape(nframes * nloc)
+
+        # Lazy compile of the GRAPH lower (cached per structure key).
+        if self.compiled_forward_lower is None:
+            if self._structure_key in self._compiled_by_structure:
+                compiled_lower, buf_order = self._compiled_by_structure[
+                    self._structure_key
+                ]
+                log.info("Reusing compiled graph lower (shared structure, lazy).")
+            else:
+                log.info(
+                    "Lazy compile (graph lower): tracing on first forward call "
+                    "(structure_key=%s).",
+                    self._structure_key,
+                )
+                compiled_lower, buf_order = _trace_and_compile_graph(
+                    _model,
+                    fparam,
+                    aparam,
+                    charge_spin,
+                    task_buffers=self._task_buffers,
+                    compile_opts=self._compile_opts,
+                )
+                self._compiled_by_structure[self._structure_key] = (
+                    compiled_lower,
+                    buf_order,
+                )
+            self.compiled_forward_lower = compiled_lower
+            self._task_buf_order = buf_order
+            self._task_buffers = None
+
+        # Feed a detached, grad-enabled edge_vec leaf: the traced graph's internal
+        # ``edge_vec.detach()`` is stripped by ``_strip_saved_tensor_detach`` (as
+        # for the dense ext_coord leaf), so the force backward roots at this input.
+        edge_vec = ng.edge_vec.detach().requires_grad_(True)
+
+        if self._task_buf_order:
+            try:
+                _fitting = _model.get_fitting_net()
+                _am = getattr(_model, "atomic_model", None)
+                _vals: list[torch.Tensor] = []
+                for _name in self._task_buf_order:
+                    if _name.startswith(_AM_PREFIX):
+                        _actual = _name[len(_AM_PREFIX) :]
+                        _vals.append(_am._buffers[_actual])
+                    else:
+                        _vals.append(getattr(_fitting, _name))
+                task_buf_vals: tuple = tuple(_vals)
+            except AttributeError as exc:
+                raise RuntimeError(
+                    f"Compiled graph expects task buffers {self._task_buf_order!r} "
+                    "but they could not be retrieved from the model. "
+                    "This is a bug in the compile path."
+                ) from exc
+        else:
+            task_buf_vals = ()
+
+        result = self.compiled_forward_lower(
+            atype_flat,
+            ng.n_node,
+            ng.edge_index,
+            edge_vec,
+            ng.edge_mask,
+            fparam,
+            aparam,
+            charge_spin,
+            *task_buf_vals,
+        )
+
+        # The compiled graph lower emits PUBLIC keys on the FLAT node axis
+        # (``atom_energy`` / ``force`` are (N, *); ``energy`` / ``virial`` are
+        # (nf, *)).  Unravel the node-level keys to rectangular (nf, nloc, *) so
+        # callers receive the same shapes as the dense path.
+        N = nframes * nloc
+        out: dict[str, torch.Tensor] = {}
+        for key, val in result.items():
+            if val is not None and val.shape[:1] == torch.Size([N]) and N != nframes:
+                out[key] = val.reshape(nframes, nloc, *val.shape[1:])
+            else:
+                out[key] = val
         return out
 
 
