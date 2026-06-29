@@ -247,3 +247,106 @@ class EnergyModel(DPModelCommon, DPEnergyModel_):
         return make_fx(fn, **make_fx_kwargs)(
             extended_coord, extended_atype, nlist, mapping, fparam, aparam, charge_spin
         )
+
+    def forward_lower_graph_exportable(
+        self,
+        atype: torch.Tensor,
+        n_node: torch.Tensor,
+        edge_index: torch.Tensor,
+        edge_vec: torch.Tensor,
+        edge_mask: torch.Tensor,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+        do_atomic_virial: bool = False,
+        charge_spin: torch.Tensor | None = None,
+        **make_fx_kwargs: Any,
+    ) -> torch.nn.Module:
+        """Trace ``forward_common_lower_graph`` into an exportable module with
+        public output keys.
+
+        Delegates to ``forward_common_lower_graph_exportable`` for tracing,
+        then translates the internal keys to the ``forward_lower`` convention.
+
+        Parameters
+        ----------
+        atype
+            (N,) flat local atom types, ``N == sum(n_node)``.
+        n_node
+            (nf,) per-frame local atom counts.
+        edge_index
+            (2, E) ``[src, dst]`` edge endpoints (flat local indices).
+        edge_vec
+            (E, 3) neighbor-minus-center edge vectors (sample for tracing).
+        edge_mask
+            (E,) valid-edge mask (sample for tracing).
+        fparam, aparam, do_atomic_virial, charge_spin
+            As in ``forward_lower``.
+        **make_fx_kwargs
+            Extra keyword arguments forwarded to ``make_fx``
+            (e.g. ``tracing_mode="symbolic"``).
+
+        Returns
+        -------
+        torch.nn.Module
+            A traced module whose ``forward`` accepts
+            ``(atype, n_node, edge_index, edge_vec, edge_mask,
+            fparam, aparam, charge_spin)`` and returns a dict with the
+            public keys: ``atom_energy``, ``energy``, ``force``,
+            ``virial``, ``atom_virial``.
+        """
+        traced = self.forward_common_lower_graph_exportable(
+            atype,
+            n_node,
+            edge_index,
+            edge_vec,
+            edge_mask,
+            fparam=fparam,
+            aparam=aparam,
+            charge_spin=charge_spin,
+            do_atomic_virial=do_atomic_virial,
+            **make_fx_kwargs,
+        )
+
+        # Translate internal keys to public convention.
+        # Capture model config at trace time via closures.
+        do_grad_r = self.do_grad_r("energy")
+        do_grad_c = self.do_grad_c("energy")
+
+        def fn(
+            atype: torch.Tensor,
+            n_node: torch.Tensor,
+            edge_index: torch.Tensor,
+            edge_vec: torch.Tensor,
+            edge_mask: torch.Tensor,
+            fparam: torch.Tensor | None,
+            aparam: torch.Tensor | None,
+            charge_spin: torch.Tensor | None,
+        ) -> dict[str, torch.Tensor]:
+            model_ret = traced(
+                atype,
+                n_node,
+                edge_index,
+                edge_vec,
+                edge_mask,
+                fparam,
+                aparam,
+                charge_spin,
+            )
+            model_predict: dict[str, torch.Tensor] = {}
+            model_predict["atom_energy"] = model_ret["energy"]
+            model_predict["energy"] = model_ret["energy_redu"]
+            if do_grad_r:
+                model_predict["force"] = model_ret["energy_derv_r"].squeeze(-2)
+            if do_grad_c:
+                model_predict["virial"] = model_ret["energy_derv_c_redu"].squeeze(-2)
+                if do_atomic_virial:
+                    model_predict["atom_virial"] = model_ret["energy_derv_c"].squeeze(
+                        -2
+                    )
+            if "mask" in model_ret:
+                model_predict["mask"] = model_ret["mask"]
+            return model_predict
+
+        return make_fx(fn, **make_fx_kwargs)(
+            atype, n_node, edge_index, edge_vec, edge_mask, fparam, aparam, charge_spin
+        )
