@@ -30,7 +30,7 @@ from ..common import (
     INSTALLED_TF,
     SKIP_FLAG,
     CommonTest,
-    parameterized,
+    parameterized_cases,
 )
 from .common import (
     ModelTest,
@@ -74,16 +74,28 @@ else:
     EnergyModelJAX = None
 
 
-@parameterized(
-    (
-        [],
-        [[0, 1]],
-    ),
-    (
-        [],
-        [1],
-    ),
+MODEL_EXCLUSION_CURATED_CASES = (
+    ([], []),
+    ([], [1]),
+    ([[0, 1]], []),
+    ([[0, 1]], [1]),
 )
+
+MODEL_STAT_CURATED_CASES = (
+    (([], []), False),
+    (([], []), True),
+    (([[0, 1]], [1]), False),
+    (([[0, 1]], [1]), True),
+)
+
+ENER_CHG_SPIN_EBD_FPARAM_CURATED_CASES = (
+    ("no_chg_spin",),
+    ("explicit_chg_spin",),
+    ("default_chg_spin",),
+)
+
+
+@parameterized_cases(*MODEL_EXCLUSION_CURATED_CASES)
 class TestEner(CommonTest, ModelTest, unittest.TestCase):
     @property
     def data(self) -> dict:
@@ -302,16 +314,7 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
         raise ValueError(f"Unknown backend: {backend}")
 
 
-@parameterized(
-    (
-        [],
-        [[0, 1]],
-    ),
-    (
-        [],
-        [1],
-    ),
-)
+@parameterized_cases(*MODEL_EXCLUSION_CURATED_CASES)
 class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
     @property
     def data(self) -> dict:
@@ -1669,10 +1672,7 @@ class TestEnerModelAPIs(unittest.TestCase):
         self.assertEqual(dp_observed, ["O"])
 
 
-@parameterized(
-    (([], []), ([[0, 1]], [1])),  # (pair_exclude_types, atom_exclude_types)
-    (False, True),  # fparam_in_data
-)
+@parameterized_cases(*MODEL_STAT_CURATED_CASES)
 @unittest.skipUnless(INSTALLED_PT and INSTALLED_PT_EXPT, "PT and PT_EXPT are required")
 class TestEnerComputeOrLoadStat(unittest.TestCase):
     """Test that compute_or_load_stat produces identical statistics on dp, pt, and pt_expt.
@@ -2015,9 +2015,7 @@ class TestEnerComputeOrLoadStat(unittest.TestCase):
             compare_variables_recursive(dp_ser_loaded, pe_ser_loaded)
 
 
-@parameterized(
-    ("no_chg_spin", "explicit_chg_spin", "default_chg_spin"),  # cs_mode
-)
+@parameterized_cases(*ENER_CHG_SPIN_EBD_FPARAM_CURATED_CASES)
 @unittest.skipUnless(INSTALLED_PT and INSTALLED_PT_EXPT, "PT and PT_EXPT are required")
 class TestEnerChgSpinEbdFparam(unittest.TestCase):
     """Test dp/pt/pt_expt model forward consistency for add_chg_spin_ebd with three modes.

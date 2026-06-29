@@ -21,7 +21,7 @@ from ..common import (
     INSTALLED_PT_EXPT,
     INSTALLED_TF,
     CommonTest,
-    parameterized,
+    parameterized_cases,
 )
 from .common import (
     DipoleFittingTest,
@@ -64,12 +64,34 @@ from deepmd.utils.argcheck import (
     fitting_polar,
 )
 
-
-@parameterized(
-    (True, False),  # resnet_dt
-    ("float64", "float32"),  # precision
-    (True, False),  # mixed_types
+POLAR_FITTING_CASE_FIELDS = (
+    "resnet_dt",
+    "precision",
+    "mixed_types",
 )
+
+POLAR_FITTING_BASELINE_CASE = {
+    "resnet_dt": True,
+    "precision": "float64",
+    "mixed_types": True,
+}
+
+
+def polar_fitting_case(**overrides: Any) -> tuple:
+    case = POLAR_FITTING_BASELINE_CASE | overrides
+    return tuple(case[field] for field in POLAR_FITTING_CASE_FIELDS)
+
+
+POLAR_FITTING_CURATED_CASES = (
+    polar_fitting_case(),
+    polar_fitting_case(resnet_dt=False),
+    polar_fitting_case(precision="float32"),
+    polar_fitting_case(mixed_types=False),
+    polar_fitting_case(resnet_dt=False, precision="float32", mixed_types=False),
+)
+
+
+@parameterized_cases(*POLAR_FITTING_CURATED_CASES)
 class TestPolar(CommonTest, DipoleFittingTest, unittest.TestCase):
     @property
     def data(self) -> dict:

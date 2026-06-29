@@ -20,7 +20,7 @@ from ..common import (
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
     CommonTest,
-    parameterized,
+    parameterized_cases,
 )
 from .common import (
     LossTest,
@@ -44,9 +44,16 @@ if INSTALLED_ARRAY_API_STRICT:
     import array_api_strict
 
 
-@parameterized(
-    ("smooth_mae", "mae", "mse", "rmse", "mape"),  # loss_func
+PROPERTY_LOSS_CURATED_CASES = (
+    ("smooth_mae",),
+    ("mae",),
+    ("mse",),
+    ("rmse",),
+    ("mape",),
 )
+
+
+@parameterized_cases(*PROPERTY_LOSS_CURATED_CASES)
 class TestProperty(CommonTest, LossTest, unittest.TestCase):
     @property
     def data(self) -> dict:

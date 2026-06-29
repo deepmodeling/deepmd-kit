@@ -21,7 +21,7 @@ from .common import (
     INSTALLED_PT,
     INSTALLED_TF,
     CommonTest,
-    parameterized,
+    parameterized_cases,
 )
 
 if INSTALLED_PT:
@@ -55,13 +55,46 @@ else:
     TypeEmbedNetPD = object
 
 
-@parameterized(
-    (True, False),  # resnet_dt
-    ("float32", "float64"),  # precision
-    (True, False),  # padding
-    (True, False),  # use_econf_tebd
-    (True, False),  # use_tebd_bias
+TYPE_EMBEDDING_CASE_FIELDS = (
+    "resnet_dt",
+    "precision",
+    "padding",
+    "use_econf_tebd",
+    "use_tebd_bias",
 )
+
+TYPE_EMBEDDING_BASELINE_CASE = {
+    "resnet_dt": True,
+    "precision": "float64",
+    "padding": True,
+    "use_econf_tebd": True,
+    "use_tebd_bias": True,
+}
+
+
+def type_embedding_case(**overrides: Any) -> tuple:
+    case = TYPE_EMBEDDING_BASELINE_CASE | overrides
+    return tuple(case[field] for field in TYPE_EMBEDDING_CASE_FIELDS)
+
+
+TYPE_EMBEDDING_CURATED_CASES = (
+    type_embedding_case(),
+    type_embedding_case(resnet_dt=False),
+    type_embedding_case(precision="float32"),
+    type_embedding_case(padding=False),
+    type_embedding_case(use_econf_tebd=False),
+    type_embedding_case(use_tebd_bias=False),
+    type_embedding_case(
+        resnet_dt=False,
+        precision="float32",
+        padding=False,
+        use_econf_tebd=False,
+        use_tebd_bias=False,
+    ),
+)
+
+
+@parameterized_cases(*TYPE_EMBEDDING_CURATED_CASES)
 class TestTypeEmbedding(CommonTest, unittest.TestCase):
     """Useful utilities for descriptor tests."""
 

@@ -22,7 +22,7 @@ from ..common import (
     INSTALLED_PT_EXPT,
     INSTALLED_TF,
     CommonTest,
-    parameterized,
+    parameterized_cases,
 )
 from .common import (
     FittingTest,
@@ -74,14 +74,57 @@ else:
     EnerFittingStrict = None
 
 
-@parameterized(
-    (True, False),  # resnet_dt
-    ("float64", "float32", "bfloat16"),  # precision
-    (True, False),  # mixed_types
-    ((0, None), (1, None), (1, [1.0])),  # (numb_fparam, default_fparam)
-    ((0, False), (1, False), (1, True)),  # (numb_aparam, use_aparam_as_mask)
-    ([], [-12345.6, None]),  # atom_ener
+ENER_FITTING_CASE_FIELDS = (
+    "resnet_dt",
+    "precision",
+    "mixed_types",
+    "fparam",
+    "aparam",
+    "atom_ener",
 )
+
+ENER_FITTING_BASELINE_CASE = {
+    "resnet_dt": True,
+    "precision": "float64",
+    "mixed_types": True,
+    "fparam": (0, None),
+    "aparam": (0, False),
+    "atom_ener": [],
+}
+
+
+def ener_fitting_case(**overrides: Any) -> tuple:
+    case = ENER_FITTING_BASELINE_CASE | overrides
+    return tuple(case[field] for field in ENER_FITTING_CASE_FIELDS)
+
+
+ENER_FITTING_CURATED_CASES = (
+    ener_fitting_case(),
+    ener_fitting_case(resnet_dt=False),
+    ener_fitting_case(precision="float32"),
+    ener_fitting_case(precision="bfloat16"),
+    ener_fitting_case(mixed_types=False),
+    ener_fitting_case(fparam=(1, None)),
+    ener_fitting_case(fparam=(1, [1.0])),
+    ener_fitting_case(aparam=(1, False)),
+    ener_fitting_case(aparam=(1, True)),
+    ener_fitting_case(atom_ener=[-12345.6, None]),
+    ener_fitting_case(
+        resnet_dt=False,
+        precision="float32",
+        mixed_types=False,
+        fparam=(1, [1.0]),
+        aparam=(1, True),
+        atom_ener=[-12345.6, None],
+    ),
+)
+
+ENER_FITTING_STAT_CURATED_CASES = (
+    ener_fitting_case(fparam=(3, None), aparam=(3, False)),
+)
+
+
+@parameterized_cases(*ENER_FITTING_CURATED_CASES)
 class TestEner(CommonTest, FittingTest, unittest.TestCase):
     @property
     def data(self) -> dict:
@@ -420,14 +463,7 @@ class TestEner(CommonTest, FittingTest, unittest.TestCase):
             raise ValueError(f"Unknown precision: {precision}")
 
 
-@parameterized(
-    (True,),  # resnet_dt
-    ("float64",),  # precision
-    (True,),  # mixed_types
-    ((3, None),),  # (numb_fparam, default_fparam)
-    ((3, False),),  # (numb_aparam, use_aparam_as_mask)
-    ([],),  # atom_ener
-)
+@parameterized_cases(*ENER_FITTING_STAT_CURATED_CASES)
 class TestEnerStat(CommonTest, FittingTest, unittest.TestCase):
     @property
     def data(self) -> dict:

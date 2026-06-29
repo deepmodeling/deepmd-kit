@@ -20,7 +20,7 @@ from ..common import (
     INSTALLED_TF,
     SKIP_FLAG,
     CommonTest,
-    parameterized,
+    parameterized_cases,
 )
 from .common import (
     ModelTest,
@@ -55,11 +55,13 @@ else:
     EnergyModelJAX = None
 
 
-@parameterized(
-    ("strip", "concat"),  # tebd_input_mode
-    # strip + smooth is inconsistent
-    (False,),  # smooth
+DPA1_ENER_CURATED_CASES = (
+    ("strip", False),
+    ("concat", False),
 )
+
+
+@parameterized_cases(*DPA1_ENER_CURATED_CASES)
 class TestDPA1Ener(CommonTest, ModelTest, unittest.TestCase):
     @property
     def data(self) -> dict:

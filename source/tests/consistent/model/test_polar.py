@@ -28,7 +28,7 @@ from ..common import (
     INSTALLED_PT_EXPT,
     INSTALLED_TF,
     CommonTest,
-    parameterized,
+    parameterized_cases,
 )
 from .common import (
     ModelTest,
@@ -1218,10 +1218,15 @@ class TestPolarModelAPIs(unittest.TestCase):
         self.assertEqual(dp_observed, ["O"])
 
 
-@parameterized(
-    (([], []), ([[0, 1]], [1])),  # (pair_exclude_types, atom_exclude_types)
-    (False, True),  # fparam_in_data
+MODEL_STAT_CURATED_CASES = (
+    (([], []), False),
+    (([], []), True),
+    (([[0, 1]], [1]), False),
+    (([[0, 1]], [1]), True),
 )
+
+
+@parameterized_cases(*MODEL_STAT_CURATED_CASES)
 @unittest.skipUnless(INSTALLED_PT and INSTALLED_PT_EXPT, "PT and PT_EXPT are required")
 class TestPolarComputeOrLoadStat(unittest.TestCase):
     """Test that compute_or_load_stat produces identical statistics on dp, pt, and pt_expt.

@@ -21,7 +21,7 @@ from ..common import (
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
     CommonTest,
-    parameterized,
+    parameterized_cases,
 )
 from .common import (
     DescriptorAPITest,
@@ -63,26 +63,77 @@ from deepmd.utils.argcheck import (
     descrpt_se_atten_args,
 )
 
-
-@parameterized(
-    (4,),  # tebd_dim
-    (True,),  # resnet_dt
-    (True, False),  # type_one_side
-    (20,),  # attn
-    (0, 2),  # attn_layer
-    (True, False),  # attn_dotr
-    ([], [[0, 1]]),  # excluded_types
-    (0.0,),  # env_protection
-    (True, False),  # set_davg_zero
-    (1.0,),  # scaling_factor
-    (True, False),  # normalize
-    (None, 1.0),  # temperature
-    (1e-5,),  # ln_eps
-    (True,),  # concat_output_tebd
-    ("float64",),  # precision
-    (True, False),  # use_econf_tebd
-    (False,),  # use_tebd_bias
+SE_ATTEN_V2_CASE_FIELDS = (
+    "tebd_dim",
+    "resnet_dt",
+    "type_one_side",
+    "attn",
+    "attn_layer",
+    "attn_dotr",
+    "excluded_types",
+    "env_protection",
+    "set_davg_zero",
+    "scaling_factor",
+    "normalize",
+    "temperature",
+    "ln_eps",
+    "concat_output_tebd",
+    "precision",
+    "use_econf_tebd",
+    "use_tebd_bias",
 )
+
+SE_ATTEN_V2_BASELINE_CASE = {
+    "tebd_dim": 4,
+    "resnet_dt": True,
+    "type_one_side": True,
+    "attn": 20,
+    "attn_layer": 2,
+    "attn_dotr": True,
+    "excluded_types": [],
+    "env_protection": 0.0,
+    "set_davg_zero": True,
+    "scaling_factor": 1.0,
+    "normalize": True,
+    "temperature": None,
+    "ln_eps": 1e-5,
+    "concat_output_tebd": True,
+    "precision": "float64",
+    "use_econf_tebd": True,
+    "use_tebd_bias": False,
+}
+
+
+def se_atten_v2_case(**overrides: Any) -> tuple:
+    case = SE_ATTEN_V2_BASELINE_CASE | overrides
+    return tuple(case[field] for field in SE_ATTEN_V2_CASE_FIELDS)
+
+
+SE_ATTEN_V2_CURATED_CASES = (
+    se_atten_v2_case(),
+    se_atten_v2_case(type_one_side=False),
+    se_atten_v2_case(attn_layer=0, attn_dotr=False, normalize=False),
+    se_atten_v2_case(attn_dotr=False),
+    se_atten_v2_case(excluded_types=[[0, 1]]),
+    se_atten_v2_case(set_davg_zero=False),
+    se_atten_v2_case(normalize=False),
+    se_atten_v2_case(temperature=1.0),
+    se_atten_v2_case(use_econf_tebd=False),
+    se_atten_v2_case(
+        type_one_side=False,
+        attn_dotr=False,
+        excluded_types=[[0, 1]],
+        set_davg_zero=False,
+        normalize=False,
+        temperature=1.0,
+        use_econf_tebd=False,
+    ),
+)
+
+SE_ATTEN_V2_DESCRIPTOR_API_CURATED_CASES = SE_ATTEN_V2_CURATED_CASES
+
+
+@parameterized_cases(*SE_ATTEN_V2_CURATED_CASES)
 class TestSeAttenV2(CommonTest, DescriptorTest, unittest.TestCase):
     @property
     def data(self) -> dict:
@@ -497,25 +548,7 @@ class TestSeAttenV2(CommonTest, DescriptorTest, unittest.TestCase):
             raise ValueError(f"Unknown precision: {precision}")
 
 
-@parameterized(
-    (4,),  # tebd_dim
-    (True,),  # resnet_dt
-    (True, False),  # type_one_side
-    (20,),  # attn
-    (0, 2),  # attn_layer
-    (True, False),  # attn_dotr
-    ([], [[0, 1]]),  # excluded_types
-    (0.0,),  # env_protection
-    (True, False),  # set_davg_zero
-    (1.0,),  # scaling_factor
-    (True, False),  # normalize
-    (None, 1.0),  # temperature
-    (1e-5,),  # ln_eps
-    (True,),  # concat_output_tebd
-    ("float64",),  # precision
-    (True, False),  # use_econf_tebd
-    (False,),  # use_tebd_bias
-)
+@parameterized_cases(*SE_ATTEN_V2_DESCRIPTOR_API_CURATED_CASES)
 class TestSeAttenV2DescriptorAPI(DescriptorAPITest, unittest.TestCase):
     """Test consistency of BaseDescriptor API methods across backends."""
 
