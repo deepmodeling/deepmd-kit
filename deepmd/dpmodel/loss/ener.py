@@ -71,6 +71,10 @@ class EnergyLoss(Loss):
         The prefactor of generalized force loss at the end of the training.
     numb_generalized_coord : int
         The dimension of generalized coordinates.
+    start_pref_h : float
+        The prefactor of Hessian loss at the start of the training.
+    limit_pref_h : float
+        The prefactor of Hessian loss at the end of the training.
     use_default_pf : bool
         If true, use default atom_pref of 1.0 for all atoms when atom_pref data is not provided.
         This allows using the prefactor force loss (pf) without requiring atom_pref.npy files.
@@ -123,6 +127,8 @@ class EnergyLoss(Loss):
         start_pref_gf: float = 0.0,
         limit_pref_gf: float = 0.0,
         numb_generalized_coord: int = 0,
+        start_pref_h: float = 0.0,
+        limit_pref_h: float = 0.0,
         use_huber: bool = False,
         huber_delta: float | list[float] = 0.01,
         loss_func: str = "mse",
@@ -155,12 +161,15 @@ class EnergyLoss(Loss):
         self.start_pref_gf = start_pref_gf
         self.limit_pref_gf = limit_pref_gf
         self.numb_generalized_coord = numb_generalized_coord
+        self.start_pref_h = start_pref_h
+        self.limit_pref_h = limit_pref_h
         self.has_e = self.start_pref_e != 0.0 or self.limit_pref_e != 0.0
         self.has_f = self.start_pref_f != 0.0 or self.limit_pref_f != 0.0
         self.has_v = self.start_pref_v != 0.0 or self.limit_pref_v != 0.0
         self.has_ae = self.start_pref_ae != 0.0 or self.limit_pref_ae != 0.0
         self.has_pf = self.start_pref_pf != 0.0 or self.limit_pref_pf != 0.0
         self.has_gf = self.start_pref_gf != 0.0 or self.limit_pref_gf != 0.0
+        self.has_h = self.start_pref_h != 0.0 or self.limit_pref_h != 0.0
         if self.has_gf and self.numb_generalized_coord < 1:
             raise RuntimeError(
                 "When generalized force loss is used, the dimension of generalized coordinates should be larger than 0"
@@ -270,6 +279,7 @@ class EnergyLoss(Loss):
         pref_pf = find_atom_pref * (
             self.limit_pref_pf + (self.start_pref_pf - self.limit_pref_pf) * lr_ratio
         )
+        pref_h = self.limit_pref_h + (self.start_pref_h - self.limit_pref_h) * lr_ratio
 
         loss = 0
         more_loss = {}
@@ -457,6 +467,23 @@ class EnergyLoss(Loss):
             more_loss["rmse_gf"] = self.display_if_exist(
                 xp.sqrt(l2_gen_force_loss), find_drdq
             )
+        hessian = model_dict.get(
+            "hessian", model_dict.get("energy_derv_r_derv_r", None)
+        )
+        if self.has_h and hessian is not None and "hessian" in label_dict:
+            find_hessian = label_dict.get("find_hessian", 0.0)
+            diff_h = xp.reshape(label_dict["hessian"], (-1,)) - xp.reshape(
+                hessian,
+                (-1,),
+            )
+            l2_hessian_loss = xp.mean(xp.square(diff_h))
+            loss += pref_h * find_hessian * l2_hessian_loss
+            more_loss["rmse_h"] = self.display_if_exist(
+                xp.sqrt(l2_hessian_loss), find_hessian
+            )
+            if mae:
+                mae_h = xp.mean(xp.abs(diff_h))
+                more_loss["mae_h"] = self.display_if_exist(mae_h, find_hessian)
 
         self.l2_l = loss
         more_loss["rmse"] = xp.sqrt(loss)
@@ -535,6 +562,16 @@ class EnergyLoss(Loss):
                     default=1.0,
                 )
             )
+        if self.has_h:
+            label_requirement.append(
+                DataRequirementItem(
+                    "hessian",
+                    ndof=1,
+                    atomic=True,
+                    must=False,
+                    high_prec=False,
+                )
+            )
         return label_requirement
 
     def serialize(self) -> dict:
@@ -564,6 +601,8 @@ class EnergyLoss(Loss):
             "start_pref_gf": self.start_pref_gf,
             "limit_pref_gf": self.limit_pref_gf,
             "numb_generalized_coord": self.numb_generalized_coord,
+            "start_pref_h": self.start_pref_h,
+            "limit_pref_h": self.limit_pref_h,
             "use_huber": self.use_huber,
             "huber_delta": self.huber_delta,
             "loss_func": self.loss_func,
