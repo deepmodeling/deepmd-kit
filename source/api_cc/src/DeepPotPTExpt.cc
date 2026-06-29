@@ -541,19 +541,19 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   // LAMMPS sets ago=0 on every nlist rebuild (neighbor rebuild, re-partition,
   // atom exchange between subdomains), so `ago > 0` implies the cached
   // mapping and nlist tensors are still valid.  Rebuild only on ago==0.
-  std::vector<std::int64_t> mapping;
   if (ago == 0) {
     nlist_data.copy_from_nlist(lmp_list, nall - nghost);
     nlist_data.shuffle_exclude_empty(fwd_map);
 
-    // Rebuild mapping tensor
+    // Rebuild mapping vector and tensor (cached as members; graph branch reads
+    // mapping_ on every step, not just ago==0, so the vector must persist).
     if (lmp_list.mapping) {
-      mapping.resize(nall_real);
+      mapping_.resize(nall_real);
       for (int ii = 0; ii < nall_real; ii++) {
-        mapping[ii] = fwd_map[lmp_list.mapping[bkw_map[ii]]];
+        mapping_[ii] = fwd_map[lmp_list.mapping[bkw_map[ii]]];
       }
       mapping_tensor =
-          torch::from_blob(mapping.data(), {1, nall_real}, int_option)
+          torch::from_blob(mapping_.data(), {1, nall_real}, int_option)
               .clone()
               .to(device);
     } else {
@@ -566,12 +566,12 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       //     features via border_op and ignores this tensor for ghost
       //     gather — see deepmd/pt_expt/descriptor/
       //     repflows.py::_exchange_ghosts).
-      mapping.resize(nall_real);
+      mapping_.resize(nall_real);
       for (int ii = 0; ii < nall_real; ii++) {
-        mapping[ii] = ii;
+        mapping_[ii] = ii;
       }
       mapping_tensor =
-          torch::from_blob(mapping.data(), {1, nall_real}, int_option)
+          torch::from_blob(mapping_.data(), {1, nall_real}, int_option)
               .clone()
               .to(device);
     }
@@ -587,7 +587,7 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       // their features can be exchanged across ranks via border_op, instead of
       // being folded onto a local owner that this rank does not own.
       const auto edge_tensors = createEdgeTensors(
-          nlist_data.jlist, dcoord, mapping, nloc, nall_real, device,
+          nlist_data.jlist, dcoord, mapping_, nloc, nall_real, device,
           /*with_geometry=*/false, /*row_centers=*/&nlist_data.ilist,
           /*fold_to_local=*/!use_with_comm);
       edge_index_tensor = edge_tensors.edge_index;
@@ -817,7 +817,7 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       // edge_vec, edge_mask) from the host nlist (node types from the extended
       // types, folded local edge graph) and run the graph artifact.
       const auto graph_tensors = buildGraphTensors(
-          nlist_data.jlist, dcoord, datype, mapping, nloc, nall_real,
+          nlist_data.jlist, dcoord, datype, mapping_, nloc, nall_real,
           static_cast<double>(rcut), device, &nlist_data.ilist);
       flat_outputs = run_model_graph(
           graph_tensors.atype, graph_tensors.n_node, graph_tensors.edge_index,
