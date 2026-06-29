@@ -306,6 +306,7 @@ class DeepEval(DeepEvalBackend):
                     OutputVariableCategory.REDU,
                     OutputVariableCategory.DERV_R,
                     OutputVariableCategory.DERV_C_REDU,
+                    OutputVariableCategory.DERV_R_DERV_R,
                 )
             ]
 
@@ -457,6 +458,10 @@ class DeepEval(DeepEvalBackend):
     def get_model_def_script(self) -> dict:
         """Get model definition script."""
         return json.loads(self.dp.get_model_def_script())
+
+    def get_has_hessian(self) -> bool:
+        """Check if the model has Hessian output."""
+        return self.get_model_def_script().get("hessian_mode", False)
 
     def get_model(self) -> Any:
         """Get the JAX model as BaseModel.

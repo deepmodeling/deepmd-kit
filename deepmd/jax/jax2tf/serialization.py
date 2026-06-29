@@ -29,16 +29,22 @@ from deepmd.jax.model.base_model import (
     BaseModel,
 )
 from deepmd.jax.utils.serialization import (
+    _prepare_hessian_model_def_script,
     _set_model_min_nbor_dist_from_data,
 )
 
 
-def deserialize_to_file(model_file: str, data: dict) -> None:
+def deserialize_to_file(model_file: str, data: dict, hessian: bool = False) -> None:
     """Deserialize the dictionary to a JAX/jax2tf SavedModel."""
     if model_file.endswith(".savedmodel"):
         model = BaseModel.deserialize(data["model"])
         _set_model_min_nbor_dist_from_data(model, data)
-        model_def_script = data["model_def_script"]
+        model_def_script, hessian = _prepare_hessian_model_def_script(
+            data["model_def_script"],
+            hessian,
+        )
+        if hessian:
+            model.enable_hessian()
         call_lower = model.call_common_lower
 
         tf_model = tf.Module()

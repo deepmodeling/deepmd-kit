@@ -185,7 +185,19 @@ def _check_compressed_hlo_exportable(data: dict) -> None:
         )
 
 
-def deserialize_to_file(model_file: str, data: dict) -> None:
+def _prepare_hessian_model_def_script(
+    model_def_script: dict,
+    hessian: bool,
+) -> tuple[dict, bool]:
+    """Return a copied model definition and whether Hessian should be enabled."""
+    model_def_script = model_def_script.copy()
+    hessian = hessian or model_def_script.get("hessian_mode", False)
+    if hessian:
+        model_def_script["hessian_mode"] = True
+    return model_def_script, hessian
+
+
+def deserialize_to_file(model_file: str, data: dict, hessian: bool = False) -> None:
     """Deserialize the dictionary to a model file.
 
     Parameters
@@ -194,9 +206,14 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         The model file to be saved.
     data : dict
         The dictionary to be deserialized.
+    hessian : bool, default=False
+        Whether to include the Hessian in the model outputs.
     """
     if model_file.endswith(".jax"):
-        model_def_script = data["model_def_script"].copy()
+        model_def_script, hessian = _prepare_hessian_model_def_script(
+            data["model_def_script"],
+            hessian,
+        )
         min_nbor_dist = _to_optional_float(data.get("min_nbor_dist"))
         if min_nbor_dist is None:
             min_nbor_dist = _to_optional_float(
@@ -209,6 +226,9 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
                 model_key: BaseModel.deserialize(data["model"]["model_dict"][model_key])
                 for model_key in model_def_script["model_dict"]
             }
+            if hessian:
+                for model in models.values():
+                    model.enable_hessian()
             state = {
                 "models": {
                     model_key: nnx.split(model)[1].to_pure_dict()
@@ -217,6 +237,8 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             }
         else:
             model = BaseModel.deserialize(data["model"])
+            if hessian:
+                model.enable_hessian()
             _, state = nnx.split(model)
             state = state.to_pure_dict()
         with ocp.Checkpointer(
@@ -233,7 +255,12 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         _check_compressed_hlo_exportable(data)
         model = BaseModel.deserialize(data["model"])
         _set_model_min_nbor_dist_from_data(model, data)
-        model_def_script = data["model_def_script"]
+        model_def_script, hessian = _prepare_hessian_model_def_script(
+            data["model_def_script"],
+            hessian,
+        )
+        if hessian:
+            model.enable_hessian()
         call_lower = model.call_common_lower
 
         nf, nloc, nghost = jax_export.symbolic_shape("nf, nloc, nghost")
@@ -298,6 +325,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         serialized_atomic_virial_no_ghost = exported_atomic_virial_no_ghost.serialize()
 
         data = data.copy()
+        data["model_def_script"] = model_def_script
         data.setdefault("@variables", {})
         data["@variables"]["stablehlo"] = np.void(serialized)
         data["@variables"]["stablehlo_atomic_virial"] = np.void(
@@ -331,7 +359,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             deserialize_to_file as deserialize_to_savedmodel,
         )
 
-        return deserialize_to_savedmodel(model_file, data)
+        return deserialize_to_savedmodel(model_file, data, hessian=hessian)
     else:
         raise ValueError("Unsupported file extension")
 
