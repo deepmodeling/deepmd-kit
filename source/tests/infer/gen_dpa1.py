@@ -19,7 +19,6 @@ Reference sidecar files (.expected) consumed by C++ gtests are also written:
 import copy
 import os
 import sys
-import tempfile
 
 import numpy as np
 
@@ -235,25 +234,28 @@ def main():
     # (dense-quartet forward), NOT the graph .pt2.  This ensures the C++ gtest
     # (B2.5) independently validates the graph AOTI path against a known-good
     # nlist evaluation.
-    print("Exporting reference nlist .pt2 (independent ground truth) ...")  # noqa: T201
-    with tempfile.TemporaryDirectory() as _tmp:
-        nlist_ref_pt2 = os.path.join(_tmp, "dpa1_graph_nlist_ref.pt2")
-        pt_expt_deserialize_to_file(
-            nlist_ref_pt2,
-            copy.deepcopy(data_g),
-            do_atomic_virial=True,
-            lower_kind="nlist",  # independent: dense nlist, NOT graph
-        )
-        dp_nlist_ref = DeepPot(nlist_ref_pt2)
+    #
+    # The nlist .pt2 is also PERSISTED (deeppot_dpa1_graph_nlist_ref.pt2): the
+    # C++ gtest loads it alongside the graph .pt2 to cross-check graph≈dense at
+    # 1e-9 on arbitrary system sizes (dynamic-edge-axis cases) without baking a
+    # second reference block into the .expected sidecar.  Same weights as the
+    # graph model, so at non-binding sel the two paths must agree.
+    nlist_ref_pt2 = os.path.join(base_dir, "deeppot_dpa1_graph_nlist_ref.pt2")
+    print(f"Exporting reference nlist .pt2 to {nlist_ref_pt2} ...")  # noqa: T201
+    pt_expt_deserialize_to_file(
+        nlist_ref_pt2,
+        copy.deepcopy(data_g),
+        do_atomic_virial=True,
+        lower_kind="nlist",  # independent: dense nlist, NOT graph
+    )
+    dp_nlist_ref = DeepPot(nlist_ref_pt2)
 
-        # PBC reference from nlist path
-        e_r1, f_r1, v_r1, ae_r1, av_r1 = dp_nlist_ref.eval(
-            coord, box, atype, atomic=True
-        )
-        # NoPBC reference from nlist path
-        e_rnp, f_rnp, v_rnp, ae_rnp, av_rnp = dp_nlist_ref.eval(
-            coord, None, atype, atomic=True
-        )
+    # PBC reference from nlist path
+    e_r1, f_r1, v_r1, ae_r1, av_r1 = dp_nlist_ref.eval(coord, box, atype, atomic=True)
+    # NoPBC reference from nlist path
+    e_rnp, f_rnp, v_rnp, ae_rnp, av_rnp = dp_nlist_ref.eval(
+        coord, None, atype, atomic=True
+    )
 
     print(f"Nlist ref PBC energy: {e_r1[0, 0]:.18e}")  # noqa: T201
     print(f"Nlist ref NoPBC energy: {e_rnp[0, 0]:.18e}")  # noqa: T201

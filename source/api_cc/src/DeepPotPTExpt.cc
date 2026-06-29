@@ -834,6 +834,15 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   std::map<std::string, torch::Tensor> output_map;
   extract_outputs(output_map, flat_outputs);
 
+  if (lower_input_is_graph_) {
+    // The graph forward emits LOCAL public keys (atom_energy/energy/force/
+    // virial/atom_virial); rewrite them into the dense internal-key layout the
+    // downstream extraction/fold-back expects.  nloc == N (graph node count);
+    // pad the per-atom force/virial up to nall_real with zero ghost rows.
+    deepmd::remap_graph_outputs_to_dense_keys(output_map, nloc, nall_real,
+                                              atomic);
+  }
+
   if (phantom_n > 0) {
     // Strip the phantom local prefix and zero the empty rank's energy.  The
     // phantom atoms carry no edges, so their force / per-atom virial are
@@ -1177,6 +1186,14 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   // 6. Map flat outputs to internal keys
   std::map<std::string, torch::Tensor> output_map;
   extract_outputs(output_map, flat_outputs);
+
+  if (lower_input_is_graph_) {
+    // The graph forward emits LOCAL public keys; rewrite them into the dense
+    // internal-key layout used below.  nloc == N (graph node count); pad the
+    // per-atom force/virial up to the extended nall with zero ghost rows so the
+    // fold-back is a no-op on ghosts.
+    deepmd::remap_graph_outputs_to_dense_keys(output_map, nloc, nall, atomic);
+  }
 
   // 7. Extract energy
   torch::Tensor flat_energy_ =

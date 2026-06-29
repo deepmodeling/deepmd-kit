@@ -6,6 +6,8 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <map>
+#include <string>
 #include <type_traits>
 #include <vector>
 
@@ -446,6 +448,68 @@ inline GraphTensorPack buildGraphTensors(
                    .clone()
                    .to(device);
   return pack;
+}
+
+/**
+ * @brief Remap NeighborGraph (graph-schema) public outputs onto the dense
+ *        internal-key layout the rest of ``compute`` consumes.
+ *
+ * The graph forward (``forward_lower_graph_exportable``) is LOCAL-only and emits
+ * flat-N PUBLIC keys:
+ *   - ``atom_energy`` (N, 1)      per-atom energy        (N == nloc)
+ *   - ``energy``      (nf, 1)     reduced total energy
+ *   - ``force``       (N, 3)      per-atom force (ghosts already folded onto
+ *                                 their local owners via ``edge_index``)
+ *   - ``virial``      (nf, 9)     reduced total virial
+ *   - ``atom_virial`` (N, 9)      per-atom (full-to-src) virial
+ *
+ * The downstream extraction in ``DeepPotPTExpt::compute`` was written for the
+ * dense forward's internal keys with their extra dims:
+ *   ``energy_redu`` (nf,1), ``energy_derv_c_redu`` (nf,1,9),
+ *   ``energy_derv_r`` (nf,nall,1,3), ``energy`` (nf,nloc,1),
+ *   ``energy_derv_c`` (nf,nall,1,9).
+ *
+ * This helper rewrites the public keys into those internal keys (single frame,
+ * nf == 1).  The per-atom force / atom-virial are LOCAL (nloc rows); they are
+ * zero-padded up to the extended length ``nall`` so the existing fold-back
+ * (``fold_back`` / ``select_map``) is a no-op on the ghost rows — the local
+ * rows already carry the folded ghost contributions, so zero ghosts avoid
+ * double counting (and keep LAMMPS reverse-comm correct).
+ *
+ * @param[in,out] output_map Output tensor map (public keys in, internal keys
+ *   added).
+ * @param[in] nloc Number of local atoms (== N, the graph node count).
+ * @param[in] nall Extended atom count to pad the per-atom outputs up to.
+ * @param[in] atomic Whether atomic energy / virial were requested.
+ */
+inline void remap_graph_outputs_to_dense_keys(
+    std::map<std::string, torch::Tensor>& output_map,
+    const std::int64_t nloc,
+    const std::int64_t nall,
+    const bool atomic) {
+  using torch::indexing::Slice;
+  const std::int64_t nf = 1;
+  const auto& energy_pub = output_map.at("energy");  // (nf, 1)
+  const auto& force_pub = output_map.at("force");    // (N, 3), N == nloc
+  const auto& virial_pub = output_map.at("virial");  // (nf, 9)
+
+  output_map["energy_redu"] = energy_pub.reshape({nf, 1});
+  output_map["energy_derv_c_redu"] = virial_pub.reshape({nf, 1, 9});
+
+  // Local force -> (nf, nall, 1, 3) with zero ghost rows.
+  auto force_full = torch::zeros({nf, nall, 1, 3}, force_pub.options());
+  force_full.index_put_({0, Slice(0, nloc), 0}, force_pub);
+  output_map["energy_derv_r"] = force_full;
+
+  if (atomic) {
+    const auto& atom_energy_pub = output_map.at("atom_energy");  // (N, 1)
+    const auto& atom_virial_pub = output_map.at("atom_virial");  // (N, 9)
+    output_map["energy"] = atom_energy_pub.reshape({nf, nloc, 1});
+    auto atom_virial_full =
+        torch::zeros({nf, nall, 1, 9}, atom_virial_pub.options());
+    atom_virial_full.index_put_({0, Slice(0, nloc), 0}, atom_virial_pub);
+    output_map["energy_derv_c"] = atom_virial_full;
+  }
 }
 
 }  // namespace deepmd
