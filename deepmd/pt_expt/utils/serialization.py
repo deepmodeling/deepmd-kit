@@ -957,6 +957,11 @@ def _trace_and_export(
             exported = move_to_device_pass(exported, target_device)
 
         metadata["do_atomic_virial"] = do_atomic_virial
+        # The edge axis is specialized STATIC: torch.export bakes E to exactly
+        # e_max, so the AOTI forward only accepts edge tensors of this length.
+        # Persist it so the C++ conversion hub (PR-B Phase B2) pads/masks runtime
+        # edges to precisely this value instead of re-deriving the constant.
+        metadata["edge_capacity"] = e_max
 
         json_source = model_json_override if model_json_override is not None else data
         data_for_json = deepcopy(json_source)
