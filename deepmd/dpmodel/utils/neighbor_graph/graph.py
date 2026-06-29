@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Backend-agnostic edge-graph neighbor-list contract (NeighborGraph) and its
-length policy (GraphLayout). See memory/spec_unified_edge_nlist.md.
+length policy (GraphLayout). See the design discussion wanghan-iapcm/deepmd-kit#4.
 
 Node validity (real vs padding) is NOT a stored field: it is derived as
 ``arange(N) < sum(n_node)`` because ``n_node`` already encodes the real-node
@@ -75,11 +75,32 @@ def pad_and_guard_edges(
     """Append padding/guard edges as a contiguous suffix and build edge_mask.
 
     Real edges (``edge_index``/``edge_vec``) stay at the front (compact layout).
-    - ``capacity is None`` (torch dynamic): append exactly ``min_edges`` masked
-      dummy edges so the edge axis has a known lower bound and shape-stable
-      guards for export.
-    - ``capacity`` set (jax static): pad to ``E_max = capacity``; raise on overflow.
     Dummy edges point at node ``pad_value`` (in-range) with zero ``edge_vec``.
+
+    Parameters
+    ----------
+    edge_index
+        (2, E_real) ``[src, dst]`` node endpoints of the real edges.
+    edge_vec
+        (E_real, 3) per-edge displacement of the real edges.
+    capacity
+        Target edge-axis length ``E_max``. ``None`` (torch dynamic) appends
+        exactly ``min_edges`` masked dummy edges so the axis has a known lower
+        bound and shape-stable guards for export; an int (jax static) pads to
+        ``E_max = capacity`` and raises ``ValueError`` on overflow.
+    min_edges
+        Number of dummy edges appended when ``capacity is None``.
+    pad_value
+        Node index the dummy edges point at (must be in range).
+
+    Returns
+    -------
+    edge_index
+        (2, target) padded edge endpoints.
+    edge_vec
+        (target, 3) padded edge displacements (dummy rows zero).
+    edge_mask
+        (target,) boolean mask, ``True`` for the real-edge prefix.
     """
     xp = array_api_compat.array_namespace(edge_index)
     dev = array_api_compat.device(edge_index)
@@ -102,11 +123,62 @@ def pad_and_guard_edges(
     return ei, ev, edge_mask
 
 
+def frame_id_from_n_node(n_node: Array, n_total: int | None = None) -> Array:
+    """Node->frame map for a flat node axis: ``repeat(arange(nf), n_node)``.
+
+    Implemented via ``searchsorted(cumulative_sum(n_node), arange(N), side="right")``
+    -- the same primitives used in ``edge_force_virial`` for per-frame virial.
+
+    Parameters
+    ----------
+    n_node
+        Per-frame node counts.  Shape ``(nf,)``.
+    n_total
+        Size of the (possibly padded) flat node axis ``N``.  ``None`` (the
+        numpy/eager default) falls back to ``int(sum(n_node))``; pass a STATIC
+        value to keep the function trace-friendly under jax.jit / export, where
+        ``int()`` on the traced sum is not allowed (mirrors
+        :func:`node_validity_mask`).  Padding nodes ``[sum(n_node), n_total)``
+        are CLAMPED to the last frame (``nf - 1``) so a downstream
+        ``segment_sum(..., num_segments=nf)`` stays in range; they carry no real
+        edge, so this assignment is unused downstream.
+
+    Returns
+    -------
+    frame_id
+        Frame index of each flat node, compact-prefix frame-major.
+        Shape ``(n_total,)`` int64 (``n_total = sum(n_node)`` when not padded).
+    """
+    xp = array_api_compat.array_namespace(n_node)
+    dev = array_api_compat.device(n_node)
+    if n_total is None:
+        n_total = int(xp.sum(n_node))
+    nf = n_node.shape[0]
+    idx = xp.arange(n_total, dtype=n_node.dtype, device=dev)
+    boundaries = xp.cumulative_sum(n_node)  # (nf,) upper bounds, exclusive
+    frame_id = xp.astype(xp.searchsorted(boundaries, idx, side="right"), xp.int64)
+    # padding nodes (idx >= sum(n_node)) land at frame ``nf`` (OOB); clamp them to
+    # the last real frame so the per-frame scatter never indexes out of range.
+    return xp.minimum(frame_id, xp.asarray(nf - 1, dtype=xp.int64, device=dev))
+
+
 def node_validity_mask(n_node: Array, n_total: int) -> Array:
     """Derive the (n_total,) real-vs-padding node mask from per-frame counts.
 
     Compact-prefix layout: the first ``sum(n_node)`` nodes are real, the rest
     are padding. jit-safe (no Python ``int`` cast on the traced sum).
+
+    Parameters
+    ----------
+    n_node
+        (nf,) per-frame REAL node counts.
+    n_total
+        Size of the (possibly padded) flat node axis ``N``.
+
+    Returns
+    -------
+    mask
+        (n_total,) boolean mask, ``True`` for the real-node compact prefix.
     """
     xp = array_api_compat.array_namespace(n_node)
     idx = xp.arange(n_total, dtype=n_node.dtype, device=array_api_compat.device(n_node))

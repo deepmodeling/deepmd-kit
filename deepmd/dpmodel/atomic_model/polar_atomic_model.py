@@ -46,7 +46,6 @@ class DPPolarAtomicModel(DPAtomicModel):
         out_bias, out_std = self._fetch_out_stat(self.bias_keys)
 
         if self.fitting_net.shift_diag:
-            nframes, nloc = atype.shape
             dtype = out_bias[self.bias_keys[0]].dtype
             device = array_api_compat.device(out_bias[self.bias_keys[0]])
             for kk in self.bias_keys:
@@ -57,16 +56,17 @@ class DPPolarAtomicModel(DPAtomicModel):
                 )
                 modified_bias = temp[atype]
 
-                # (nframes, nloc, 1)
+                # (..., 1)  -- (nframes, nloc, 1) or (N, 1)
                 modified_bias = (
                     modified_bias[..., xp.newaxis] * (self.fitting_net.scale[atype])
                 )
 
                 eye = xp.eye(3, dtype=dtype, device=device)
-                eye = xp.tile(eye, (nframes, nloc, 1, 1))
-                # (nframes, nloc, 3, 3)
+                # leading-dim-agnostic: (nf, nloc) dense or (N,) flat graph path
+                eye = xp.tile(eye, (*atype.shape, 1, 1))
+                # (..., 3, 3)
                 modified_bias = modified_bias[..., xp.newaxis] * eye
 
-                # nf x nloc x odims, out_bias: ntypes x odims
+                # nf x nloc x odims (rect) or N x odims (flat), out_bias: ntypes x odims
                 ret[kk] = ret[kk] + modified_bias
         return ret
