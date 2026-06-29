@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Graph-lower export: forward_common_lower_graph_exportable traces + torch.export."""
 
+import pytest
 import torch
 from deepmd.pt.utils import env
 from deepmd.pt_expt.descriptor.dpa1 import DescrptDPA1
@@ -72,3 +73,49 @@ def test_graph_exportable_traces():
     # traced returns a tuple/dict; compare energy_redu
     te = traced["energy_redu"] if isinstance(traced, dict) else traced[1]
     torch.testing.assert_close(te, eager["energy_redu"], rtol=1e-10, atol=1e-10)
+
+
+@pytest.mark.parametrize("do_atomic_virial", [False, True])  # both branches of the bool
+def test_forward_lower_graph_exportable_public_keys(do_atomic_virial):
+    """EnergyModel.forward_lower_graph_exportable: traces the public-key path and
+    reproduces eager energy/force; atom_virial present iff do_atomic_virial.
+    """
+    model = _model().eval()
+    atype, n_node, ei, ev, em = _graph_inputs(model)
+    gm = model.forward_lower_graph_exportable(
+        atype,
+        n_node,
+        ei,
+        ev,
+        em,
+        do_atomic_virial=do_atomic_virial,
+        tracing_mode="symbolic",
+        _allow_non_fake_inputs=True,
+    )
+    assert isinstance(gm, torch.nn.Module)
+    out = gm(atype, n_node, ei, ev, em, None, None, None)
+
+    # public key set (graph path is local-only: force/atom_virial, NOT extended_*)
+    assert "atom_energy" in out and "energy" in out and "force" in out
+    assert "virial" in out
+    assert "extended_force" not in out and "extended_virial" not in out
+    # atom_virial appears ONLY when do_atomic_virial=True
+    assert ("atom_virial" in out) == do_atomic_virial
+
+    # values match the eager graph lower
+    eager = model.forward_common_lower_graph(
+        atype, n_node, ei, ev, em, do_atomic_virial=do_atomic_virial
+    )
+    torch.testing.assert_close(
+        out["energy"], eager["energy_redu"], rtol=1e-10, atol=1e-10
+    )
+    torch.testing.assert_close(
+        out["force"], eager["energy_derv_r"].squeeze(-2), rtol=1e-10, atol=1e-10
+    )
+    if do_atomic_virial:
+        torch.testing.assert_close(
+            out["atom_virial"],
+            eager["energy_derv_c"].squeeze(-2),
+            rtol=1e-10,
+            atol=1e-10,
+        )

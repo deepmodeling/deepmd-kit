@@ -684,12 +684,14 @@ def make_model(
                 aparam: torch.Tensor | None,
                 charge_spin: torch.Tensor | None,
             ) -> dict[str, torch.Tensor]:
-                ev = edge_vec.detach().requires_grad_(True)
+                # forward_common_lower_graph creates the autograd leaf from
+                # edge_vec internally, so no outer detach/requires_grad_ here
+                # (it would only add spurious ops to the traced graph).
                 return model.forward_common_lower_graph(
                     atype,
                     n_node,
                     edge_index,
-                    ev,
+                    edge_vec,
                     edge_mask,
                     do_atomic_virial=do_atomic_virial,
                     fparam=fparam,
