@@ -487,6 +487,7 @@ from deepmd.pt.model.model.model import (
 )
 from deepmd.pt.model.model.transform_output import (
     edge_energy_deriv,
+    fit_output_to_model_output,
 )
 from deepmd.pt.utils import (
     env,
@@ -1363,6 +1364,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         extended_atype: torch.Tensor | None = None,
         extended_coord_corr: torch.Tensor | None = None,
         embedding_only: bool = False,
+        conservative: bool = True,
     ) -> dict[str, torch.Tensor]:
         """
         Compute SeZM lower outputs from the unified edge-vector schema.
@@ -1406,6 +1408,11 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         embedding_only
             When ``True``, return only the embedding outputs and skip the
             force/virial autograd entirely.
+        conservative
+            Whether to run the conservative energy derivative path. Energy
+            fitting keeps this enabled. Non-conservative property fitting
+            disables it, so fitting outputs are reduced by their output
+            definition without constructing edge-force gradients.
 
         Returns
         -------
@@ -1428,8 +1435,9 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         # This keeps coordinate gathering and shift application outside the
         # differentiated region while preserving conservative forces through the
         # scatter indices below.  The embedding path produces no force, so it
-        # keeps ``edge_vec`` detached and never allocates an autograd leaf.
-        if not embedding_only:
+        # keeps ``edge_vec`` detached and never allocates an autograd leaf. The
+        # same forward-only treatment is used by non-conservative property heads.
+        if conservative and not embedding_only:
             edge_vec = edge_vec.detach().requires_grad_(True)
 
         # === Step 2. Descriptor forward ===
@@ -1502,10 +1510,20 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             ).view(out_shape)
         fit_ret["mask"] = atom_mask
 
+        if not conservative:
+            return fit_output_to_model_output(
+                fit_ret,
+                self.atomic_output_def(),
+                coord,
+                create_graph=False,
+                mask=fit_ret["mask"],
+                extended_coord_corr=extended_coord_corr,
+            )
+
         # === Step 5. Inject analytical pair potential (edge form) ===
         # ZBL is evaluated from ``edge_vec`` (the autograd leaf) so its force
         # and virial flow through the same edge backward as the learned energy.
-        if self.inter_potential is not None:
+        if self.inter_potential is not None and "energy" in fit_ret:
             fit_ret["energy"] = fit_ret["energy"] + self.inter_potential(
                 edge_vec=edge_vec,
                 edge_index=edge_index,
@@ -2091,8 +2109,9 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             traced = rebuild_graph_module(traced)
 
         # The conservative Inductor option set that keeps the dynamic edge
-        # graph lowerable is centralised in ``deepmd.pt.utils.compile_compat``.
-        compile_options = build_inductor_compile_options()
+        # graph lowerable is centralised in ``deepmd.pt.utils.compile_compat``;
+        # subclasses may augment it via ``_inductor_compile_options``.
+        compile_options = self._inductor_compile_options()
 
         # NOTE: Store the compiled callable inside the plain-``dict``
         # cache ``compiled_core_compute_cache``.  The dict itself was installed
@@ -2274,6 +2293,14 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         if self.training:
             return self.use_compile
         return bool(self._env_use_compile_infer)
+
+    def _inductor_compile_options(self) -> dict[str, Any]:
+        """Return the Inductor lowering options for this model's compiled core.
+
+        Subclasses may override this to augment the shared option set from
+        :func:`build_inductor_compile_options` with model-specific entries.
+        """
+        return build_inductor_compile_options()
 
     # =========================================================================
     # Export Utilities

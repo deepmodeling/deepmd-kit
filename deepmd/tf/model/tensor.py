@@ -20,6 +20,9 @@ from deepmd.tf.utils.type_embed import (
 from deepmd.utils.data_system import (
     DeepmdDataSystem,
 )
+from deepmd.utils.path import (
+    DPPath,
+)
 
 from .model import (
     StandardModel,
@@ -27,6 +30,9 @@ from .model import (
 from .model_stat import (
     make_stat_input,
     merge_sys_stat,
+)
+from .stat_file import (
+    add_type_map_to_stat_path,
 )
 
 
@@ -90,13 +96,25 @@ class TensorModel(StandardModel):
     def get_out_size(self) -> int:
         return self.fitting.get_out_size()
 
-    def data_stat(self, data: DeepmdDataSystem) -> None:
+    def data_stat(
+        self, data: DeepmdDataSystem, stat_file_path: DPPath | None = None
+    ) -> None:
         all_stat = make_stat_input(data, self.data_stat_nbatch, merge_sys=False)
         m_all_stat = merge_sys_stat(all_stat)
-        self._compute_input_stat(m_all_stat, protection=self.data_stat_protect)
+        stat_file_path = add_type_map_to_stat_path(stat_file_path, self.type_map)
+        self._compute_input_stat(
+            m_all_stat,
+            protection=self.data_stat_protect,
+            stat_file_path=stat_file_path,
+        )
         self._compute_output_stat(m_all_stat)
 
-    def _compute_input_stat(self, all_stat: dict, protection: float = 1e-2) -> None:
+    def _compute_input_stat(
+        self,
+        all_stat: dict,
+        protection: float = 1e-2,
+        stat_file_path: DPPath | None = None,
+    ) -> None:
         self.descrpt.compute_input_stats(
             all_stat["coord"],
             all_stat["box"],
@@ -104,6 +122,7 @@ class TensorModel(StandardModel):
             all_stat["natoms_vec"],
             all_stat["default_mesh"],
             all_stat,
+            stat_file_path=stat_file_path,
         )
         if hasattr(self.fitting, "compute_input_stats"):
             self.fitting.compute_input_stats(all_stat, protection=protection)

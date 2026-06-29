@@ -56,7 +56,7 @@ class TestJAXModelCompression(unittest.TestCase):
         self.atype = np.array([[0, 0, 1, 1]], dtype=np.int32)
         self.nlist = np.array([[[1, 2], [0, 2], [0, 3], [0, 2]]], dtype=np.int64)
 
-    def _make_model_data(self) -> dict:
+    def _make_model_data(self, type_one_side: bool = True) -> dict:
         return {
             "type": "standard",
             "type_map": ["O", "H"],
@@ -68,7 +68,7 @@ class TestJAXModelCompression(unittest.TestCase):
                 "neuron": [4, 8],
                 "axis_neuron": 2,
                 "resnet_dt": False,
-                "type_one_side": True,
+                "type_one_side": type_one_side,
                 "precision": "float64",
                 "seed": 1234,
             },
@@ -81,7 +81,30 @@ class TestJAXModelCompression(unittest.TestCase):
             },
         }
 
-    def _make_dpa1_model_data(self) -> dict:
+    def _make_se_r_model_data(self) -> dict:
+        return {
+            "type": "standard",
+            "type_map": ["O", "H"],
+            "descriptor": {
+                "type": "se_e2_r",
+                "rcut": 4.0,
+                "rcut_smth": 3.5,
+                "sel": [1, 1],
+                "neuron": [4, 8],
+                "resnet_dt": False,
+                "precision": "float64",
+                "seed": 1234,
+            },
+            "fitting_net": {
+                "type": "ener",
+                "neuron": [8],
+                "resnet_dt": False,
+                "precision": "float64",
+                "seed": 5678,
+            },
+        }
+
+    def _make_dpa1_model_data(self, type_one_side: bool = False) -> dict:
         return {
             "type": "standard",
             "type_map": ["O", "H"],
@@ -96,6 +119,7 @@ class TestJAXModelCompression(unittest.TestCase):
                 "tebd_input_mode": "strip",
                 "resnet_dt": False,
                 "attn_layer": 0,
+                "type_one_side": type_one_side,
                 "precision": "float64",
                 "seed": 1234,
             },
@@ -312,48 +336,99 @@ class TestJAXModelCompression(unittest.TestCase):
 
     @unittest.skipUnless(INSTALLED_JAX, "JAX is not installed")
     def test_jax_compress_entrypoint_can_write_hlo(self) -> None:
-        model_data = self._make_model_data()
-        model = get_model(copy.deepcopy(model_data))
+        for name, model_data in (
+            ("se_e2_a", self._make_model_data(type_one_side=True)),
+            ("se_e2_r", self._make_se_r_model_data()),
+            ("dpa1", self._make_dpa1_model_data(type_one_side=True)),
+        ):
+            with self.subTest(descriptor=name):
+                model = get_model(copy.deepcopy(model_data))
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            input_file = Path(tmpdir) / "model.hlo"
-            output_file = Path(tmpdir) / "model-compressed.hlo"
-            save_dp_model(
-                str(input_file),
-                {
-                    "backend": "JAX",
-                    "jax_version": jax.__version__,
-                    "model": model.serialize(),
-                    "model_def_script": model_data,
-                    "@variables": {
-                        "stablehlo": np.void(b"stablehlo"),
-                    },
-                    "constants": {
-                        "min_nbor_dist": 1.0,
-                    },
-                },
-            )
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    input_file = Path(tmpdir) / f"model-{name}.hlo"
+                    output_file = Path(tmpdir) / f"model-{name}-compressed.hlo"
+                    save_dp_model(
+                        str(input_file),
+                        {
+                            "backend": "JAX",
+                            "jax_version": jax.__version__,
+                            "model": model.serialize(),
+                            "model_def_script": model_data,
+                            "@variables": {
+                                "stablehlo": np.void(b"stablehlo"),
+                            },
+                            "constants": {
+                                "min_nbor_dist": 1.0,
+                            },
+                        },
+                    )
 
-            dp_main(
-                [
-                    "--jax",
-                    "compress",
-                    "-i",
-                    str(input_file),
-                    "-o",
-                    str(output_file),
-                    "-s",
-                    "0.01",
-                ]
-            )
+                    dp_main(
+                        [
+                            "--jax",
+                            "compress",
+                            "-i",
+                            str(input_file),
+                            "-o",
+                            str(output_file),
+                            "-s",
+                            "0.01",
+                        ]
+                    )
 
-            compressed = load_dp_model(str(output_file))
-            descriptor = compressed["model"]["descriptor"]
-            self.assertEqual(descriptor["@version"], 3)
-            self.assertIn("compress", descriptor)
-            self.assertEqual(compressed["constants"]["min_nbor_dist"], 1.0)
-            self.assertIn("stablehlo", compressed["@variables"])
-            self.assertIn("stablehlo_no_ghost", compressed["@variables"])
+                    compressed = load_dp_model(str(output_file))
+                    descriptor = compressed["model"]["descriptor"]
+                    self.assertEqual(descriptor["@version"], 3)
+                    self.assertIn("compress", descriptor)
+                    self.assertEqual(compressed["constants"]["min_nbor_dist"], 1.0)
+                    self.assertIn("stablehlo", compressed["@variables"])
+                    self.assertIn("stablehlo_no_ghost", compressed["@variables"])
+
+    @unittest.skipUnless(INSTALLED_JAX, "JAX is not installed")
+    def test_jax_compress_entrypoint_rejects_type_two_side_hlo(self) -> None:
+        for name, model_data in (
+            ("se_e2_a", self._make_model_data(type_one_side=False)),
+            ("dpa1", self._make_dpa1_model_data(type_one_side=False)),
+        ):
+            with self.subTest(descriptor=name):
+                model = get_model(copy.deepcopy(model_data))
+
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    input_file = Path(tmpdir) / f"model-{name}.hlo"
+                    output_file = Path(tmpdir) / f"model-{name}-compressed.hlo"
+                    save_dp_model(
+                        str(input_file),
+                        {
+                            "backend": "JAX",
+                            "jax_version": jax.__version__,
+                            "model": model.serialize(),
+                            "model_def_script": model_data,
+                            "@variables": {
+                                "stablehlo": np.void(b"stablehlo"),
+                            },
+                            "constants": {
+                                "min_nbor_dist": 1.0,
+                            },
+                        },
+                    )
+
+                    with self.assertRaisesRegex(
+                        ValueError,
+                        "Compressed JAX HLO export does not support "
+                        "type_one_side=False",
+                    ):
+                        dp_main(
+                            [
+                                "--jax",
+                                "compress",
+                                "-i",
+                                str(input_file),
+                                "-o",
+                                str(output_file),
+                                "-s",
+                                "0.01",
+                            ]
+                        )
 
 
 if __name__ == "__main__":

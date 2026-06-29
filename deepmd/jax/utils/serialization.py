@@ -126,6 +126,40 @@ def _set_model_min_nbor_dist_from_data(model: BaseModel, data: dict) -> None:
         model.min_nbor_dist = min_nbor_dist
 
 
+def _find_compressed_type_two_side_descriptors(data: Any) -> list[str]:
+    """Find compressed descriptors whose JAX HLO path is not exportable."""
+    if not isinstance(data, dict):
+        return []
+    matches = []
+    descriptor_type = data.get("type")
+    if (
+        descriptor_type in {"se_e2_a", "se_a", "dpa1", "se_atten"}
+        and "compress" in data
+        and data.get("type_one_side") is False
+    ):
+        matches.append(descriptor_type)
+    for value in data.values():
+        if isinstance(value, dict):
+            matches.extend(_find_compressed_type_two_side_descriptors(value))
+        elif isinstance(value, list):
+            for item in value:
+                matches.extend(_find_compressed_type_two_side_descriptors(item))
+    return matches
+
+
+def _check_compressed_hlo_exportable(data: dict) -> None:
+    """Reject compressed descriptors that cannot be traced to StableHLO."""
+    descriptor_types = _find_compressed_type_two_side_descriptors(data.get("model", {}))
+    if descriptor_types:
+        names = ", ".join(sorted(set(descriptor_types)))
+        raise ValueError(
+            "Compressed JAX HLO export does not support type_one_side=False for "
+            f"{names} descriptors because the compressed path uses data-dependent "
+            "type slices that cannot be traced. Use type_one_side=True for HLO "
+            "export, or write a .jax checkpoint instead."
+        )
+
+
 def deserialize_to_file(model_file: str, data: dict) -> None:
     """Deserialize the dictionary to a model file.
 
@@ -158,6 +192,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
                 ),
             )
     elif model_file.endswith(".hlo"):
+        _check_compressed_hlo_exportable(data)
         model = BaseModel.deserialize(data["model"])
         _set_model_min_nbor_dist_from_data(model, data)
         model_def_script = data["model_def_script"]

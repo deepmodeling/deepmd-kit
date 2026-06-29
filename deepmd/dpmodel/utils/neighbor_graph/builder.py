@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 """Builders/converters that produce a :class:`NeighborGraph`.
 
-Two distinct groups (see memory/spec_unified_edge_nlist.md decision #17), kept
+Two distinct groups (see the design discussion wanghan-iapcm/deepmd-kit#4 decision #17), kept
 separate so a consumer can never assume completeness while a function silently
 truncated:
 
@@ -56,13 +56,17 @@ def from_dense_quartet(
     nlist: Array,
     mapping: Array,
     layout: GraphLayout | None = None,
+    compact: bool = True,
 ) -> NeighborGraph:
     """Convert a legacy extended quartet into a ghost-free NeighborGraph (CONVERTER).
 
     This is a backward-compat CONVERTER (World 1 -> graph): it performs NO neighbor
     search and INHERITS the ``sel`` truncation already baked into ``nlist``. Use it
     only when a caller (an MD code, or the legacy dense path) already holds a
-    built quartet; for the carry-all graph use :func:`build_neighbor_graph`.
+    built quartet. In contrast, the carry-all graph builders search from RAW
+    coordinates and apply NO ``sel`` truncation: :func:`build_neighbor_graph`
+    (the ``neighbor_graph_method="dense"`` all-pairs route) and
+    :func:`build_neighbor_graph_ase` (the ``"ase"`` O(N) cell-list route).
 
     For each valid neighbor slot it emits one edge with ``src = mapping[neighbor]``
     (the neighbor's LOCAL owner -> ghost-free index), ``dst = center`` (local), and
@@ -85,6 +89,22 @@ def from_dense_quartet(
         (nf, nall) extended -> local-owner index (local atoms map to themselves).
     layout
         edge-axis length policy; ``None`` => dynamic (torch) with ``min_edges`` guards.
+    compact
+        If True (default), COMPACT real edges with ``nonzero`` and pad/guard via
+        :func:`pad_and_guard_edges` -- the data-dependent output shape breaks
+        jax.jit / torch.export. If False, emit a SHAPE-STATIC graph: every nlist
+        slot becomes an edge (``E = nf * nloc * nsel``, a static shape), invalid
+        slots (``nlist == -1``) get ``edge_mask=False``, zero ``edge_vec`` and a
+        ``src`` pointing at the center (in-range, masked) -- so no ``nonzero`` is
+        used and the converter is jit/export-traceable. The masked edges contribute
+        zero in a downstream ``segment_sum``, so the descriptor output is unchanged.
+
+    Returns
+    -------
+    graph
+        The :class:`NeighborGraph` over the LOCAL atoms (``n_node = nloc`` per
+        frame): ``edge_index`` ``[src, dst]`` in local indices, ``edge_vec`` the
+        neighbor-minus-center displacement, and ``edge_mask`` flagging real edges.
     """
     if layout is None:
         layout = GraphLayout()
@@ -92,43 +112,89 @@ def from_dense_quartet(
     dev = array_api_compat.device(extended_coord)
     nf, nloc, nsel = nlist.shape
     nall = extended_coord.shape[1]
-    # per-slot (nf, nloc, nsel) index grids, flattened frame-major
-    ff_grid = xp.broadcast_to(
-        xp.reshape(xp.arange(nf, dtype=xp.int64, device=dev), (nf, 1, 1)),
-        (nf, nloc, nsel),
-    )
-    center_grid = xp.broadcast_to(
-        xp.reshape(xp.arange(nloc, dtype=xp.int64, device=dev), (1, nloc, 1)),
-        (nf, nloc, nsel),
-    )
-    ff_flat = xp.reshape(ff_grid, (-1,))
-    center_flat = xp.reshape(center_grid, (-1,))
-    nl_flat = xp.reshape(nlist, (-1,))
-    keep = xp.reshape(xp.nonzero(nl_flat >= 0)[0], (-1,))
-    ff_k = xp.take(ff_flat, keep, axis=0)
-    dst_local = xp.take(center_flat, keep, axis=0)  # center index in [0, nloc)
-    j_ext = xp.take(nl_flat, keep, axis=0)  # neighbor index in [0, nall)
-    # cross-frame gathers via flat (frame * nall + idx) indices; centers are the
-    # first nloc extended atoms (local atoms precede ghosts).
-    ec_flat = xp.reshape(extended_coord, (nf * nall, 3))
-    map_flat = xp.reshape(mapping, (nf * nall,))
-    g_nei = ff_k * nall + j_ext
-    g_cen = ff_k * nall + dst_local
-    src_local = xp.take(map_flat, g_nei, axis=0)  # local owner of the neighbor
-    edge_vec = xp.take(ec_flat, g_nei, axis=0) - xp.take(ec_flat, g_cen, axis=0)
-    edge_index = xp.astype(
-        xp.stack([ff_k * nloc + src_local, ff_k * nloc + dst_local], axis=0), xp.int64
-    )
-    edge_index, edge_vec, edge_mask = pad_and_guard_edges(
-        edge_index, edge_vec, layout.edge_capacity, layout.min_edges
-    )
-    n_node = xp.full((nf,), nloc, dtype=xp.int64, device=dev)
-    return NeighborGraph(
-        n_node=n_node,
-        edge_index=edge_index,
-        edge_vec=edge_vec,
-        edge_mask=edge_mask,
-    )
+    if not compact:
+        if layout.edge_capacity is not None:
+            raise NotImplementedError(
+                "shape-static from_dense_quartet pads to E=nf*nloc*nsel; "
+                "edge_capacity unsupported here"
+            )
+        # (E,) flat grids, E = nf*nloc*nsel, row-major (frame, center, slot)
+        ff = xp.reshape(
+            xp.broadcast_to(
+                xp.reshape(xp.arange(nf, dtype=xp.int64, device=dev), (nf, 1, 1)),
+                (nf, nloc, nsel),
+            ),
+            (-1,),
+        )
+        center = xp.reshape(
+            xp.broadcast_to(
+                xp.reshape(xp.arange(nloc, dtype=xp.int64, device=dev), (1, nloc, 1)),
+                (nf, nloc, nsel),
+            ),
+            (-1,),
+        )
+        nl = xp.reshape(nlist, (-1,))  # neighbor ext idx or -1
+        valid = nl >= 0  # (E,) bool <-- the mask
+        j_safe = xp.where(valid, nl, xp.zeros_like(nl))  # clamp -1 -> 0 (avoid OOB)
+        ec_flat = xp.reshape(extended_coord, (nf * nall, 3))
+        map_flat = xp.reshape(mapping, (nf * nall,))
+        g_nei = ff * nall + j_safe
+        g_cen = ff * nall + center
+        src_local = xp.take(map_flat, g_nei, axis=0)
+        edge_vec = xp.take(ec_flat, g_nei, axis=0) - xp.take(ec_flat, g_cen, axis=0)
+        edge_vec = edge_vec * xp.astype(valid[:, None], edge_vec.dtype)  # zero invalid
+        src = xp.where(valid, ff * nloc + src_local, ff * nloc + center)  # -> center
+        dst = ff * nloc + center
+        edge_index = xp.astype(xp.stack([src, dst], axis=0), xp.int64)
+        edge_mask = valid
+        n_node = xp.full((nf,), nloc, dtype=xp.int64, device=dev)
+        return NeighborGraph(
+            n_node=n_node,
+            edge_index=edge_index,
+            edge_vec=edge_vec,
+            edge_mask=edge_mask,
+        )
+    else:
+        # COMPACT: drop invalid slots via nonzero (dynamic shape -> eager only,
+        # NOT jit/export-traceable) then pad/guard.
+        # per-slot (nf, nloc, nsel) index grids, flattened frame-major
+        ff_grid = xp.broadcast_to(
+            xp.reshape(xp.arange(nf, dtype=xp.int64, device=dev), (nf, 1, 1)),
+            (nf, nloc, nsel),
+        )
+        center_grid = xp.broadcast_to(
+            xp.reshape(xp.arange(nloc, dtype=xp.int64, device=dev), (1, nloc, 1)),
+            (nf, nloc, nsel),
+        )
+        ff_flat = xp.reshape(ff_grid, (-1,))
+        center_flat = xp.reshape(center_grid, (-1,))
+        nl_flat = xp.reshape(nlist, (-1,))
+        keep = xp.reshape(xp.nonzero(nl_flat >= 0)[0], (-1,))
+        ff_k = xp.take(ff_flat, keep, axis=0)
+        dst_local = xp.take(center_flat, keep, axis=0)  # center index in [0, nloc)
+        j_ext = xp.take(nl_flat, keep, axis=0)  # neighbor index in [0, nall)
+        # cross-frame gathers via flat (frame * nall + idx) indices; centers are
+        # the first nloc extended atoms (local atoms precede ghosts).
+        ec_flat = xp.reshape(extended_coord, (nf * nall, 3))
+        map_flat = xp.reshape(mapping, (nf * nall,))
+        g_nei = ff_k * nall + j_ext
+        g_cen = ff_k * nall + dst_local
+        src_local = xp.take(map_flat, g_nei, axis=0)  # local owner of the neighbor
+        edge_vec = xp.take(ec_flat, g_nei, axis=0) - xp.take(ec_flat, g_cen, axis=0)
+        edge_index = xp.astype(
+            xp.stack([ff_k * nloc + src_local, ff_k * nloc + dst_local], axis=0),
+            xp.int64,
+        )
+        edge_index, edge_vec, edge_mask = pad_and_guard_edges(
+            edge_index, edge_vec, layout.edge_capacity, layout.min_edges
+        )
+        n_node = xp.full((nf,), nloc, dtype=xp.int64, device=dev)
+        return NeighborGraph(
+            n_node=n_node,
+            edge_index=edge_index,
+            edge_vec=edge_vec,
+            edge_mask=edge_mask,
+        )
 
 
 def build_neighbor_graph(
