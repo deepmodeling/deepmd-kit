@@ -3,12 +3,26 @@
 
 import pytest
 import torch
-from deepmd.pt.utils import env
-from deepmd.pt_expt.descriptor.dpa1 import DescrptDPA1
-from deepmd.pt_expt.fitting import InvarFitting
-from deepmd.pt_expt.model import EnergyModel
-from deepmd.dpmodel.utils.neighbor_graph import build_neighbor_graph
-from ...seed import GLOBAL_SEED
+
+from deepmd.dpmodel.utils.neighbor_graph import (
+    build_neighbor_graph,
+)
+from deepmd.pt.utils import (
+    env,
+)
+from deepmd.pt_expt.descriptor.dpa1 import (
+    DescrptDPA1,
+)
+from deepmd.pt_expt.fitting import (
+    InvarFitting,
+)
+from deepmd.pt_expt.model import (
+    EnergyModel,
+)
+
+from ...seed import (
+    GLOBAL_SEED,
+)
 
 _RCUT, _NT = 4.0, 2
 

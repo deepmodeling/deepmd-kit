@@ -337,12 +337,11 @@ def _make_graph_sample_inputs(
     nloc : int
         Number of local atoms per frame (``N == nframes * nloc``).
     """
+    import deepmd.pt_expt.utils.env as _env
     from deepmd.dpmodel.utils.neighbor_graph import (
         GraphLayout,
         build_neighbor_graph,
     )
-
-    import deepmd.pt_expt.utils.env as _env
 
     rcut = model.get_rcut()
     ntypes = len(model.get_type_map())
