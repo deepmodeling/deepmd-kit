@@ -26,6 +26,21 @@ class TestCompressEntrypoint(unittest.TestCase):
         with patch.object(compress, "ENABLE_CUSTOMIZED_OP", True):
             compress.assert_customized_op_available_for_compression()
 
+    def test_enable_compression_checks_customized_op_before_loading_model(self) -> None:
+        # Exercise the public entrypoint, not just the helper, so a future
+        # refactor cannot accidentally remove the early guard while leaving the
+        # helper's isolated tests green.  The load mock also proves the error is
+        # raised before touching the input model file.
+        with patch.object(compress, "ENABLE_CUSTOMIZED_OP", False):
+            with patch.object(compress.torch.jit, "load") as jit_load:
+                with self.assertRaisesRegex(
+                    RuntimeError,
+                    "libdeepmd_op_pt.*`dp --pt compress`",
+                ):
+                    compress.enable_compression("input.pt", "output.pt")
+
+        jit_load.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()
