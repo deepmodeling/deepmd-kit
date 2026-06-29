@@ -19,6 +19,7 @@ from ..common import (
     INSTALLED_JAX,
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
+    INSTALLED_TF2,
     CommonTest,
     parameterized,
 )
@@ -63,8 +64,10 @@ class TestTensor(CommonTest, LossTest, unittest.TestCase):
     skip_jax = not INSTALLED_JAX
     skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
     skip_pd = True
+    skip_tf2 = not INSTALLED_TF2
 
     dp_class = TensorLossDP
+    tf2_class = TensorLossDP
     pt_class = TensorLossPT
     pt_expt_class = TensorLossPTExpt
     jax_class = TensorLossDP
@@ -167,6 +170,9 @@ class TestTensor(CommonTest, LossTest, unittest.TestCase):
         loss = to_numpy_array(loss)
         more_loss = {kk: to_numpy_array(vv) for kk, vv in more_loss.items()}
         return loss, more_loss
+
+    def eval_tf2(self, tf2_obj: Any) -> Any:
+        return self.eval_tf2_loss(tf2_obj, self.predict, self.label)
 
     def extract_ret(self, ret: Any, backend) -> dict[str, np.ndarray]:
         loss = ret[0]

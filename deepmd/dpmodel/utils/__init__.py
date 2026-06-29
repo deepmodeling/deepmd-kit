@@ -51,6 +51,7 @@ from .nlist import (
     build_multiple_neighbor_list,
     build_neighbor_list,
     extend_coord_with_ghosts,
+    format_nlist,
     get_multiple_nlist_key,
     nlist_distinguish_types,
 )
@@ -101,6 +102,7 @@ __all__ = [
     "edge_env_mat",
     "edge_force_virial",
     "extend_coord_with_ghosts",
+    "format_nlist",
     "from_dense_quartet",
     "get_graph_index",
     "get_multiple_nlist_key",
