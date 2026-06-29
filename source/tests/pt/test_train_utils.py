@@ -6,6 +6,7 @@ import torch
 from deepmd.pt.train.utils import (
     NonFiniteGradGuard,
     clip_grad_norm_,
+    resolve_keep_ckpt_count,
 )
 
 
@@ -109,6 +110,23 @@ class TestNonFiniteGradGuard(unittest.TestCase):
         # The flag is cleared on inspection, so a later finite interval is clean.
         guard.update(torch.tensor(1.0, device="cpu"))
         guard.raise_if_nonfinite(self._named(1.0))
+
+
+class TestResolveKeepCkptCount(unittest.TestCase):
+    def test_none_ratio_leaves_count_unchanged(self) -> None:
+        self.assertIsNone(resolve_keep_ckpt_count(None, 1000, 10))
+
+    def test_ratio_maps_to_recent_window_count(self) -> None:
+        # 1000 / 10 = 100 periodic checkpoints; 40% keeps the most recent 40.
+        self.assertEqual(resolve_keep_ckpt_count(0.4, 1000, 10), 40)
+
+    def test_ratio_rounds_up(self) -> None:
+        # 4 periodic checkpoints; ceil(0.4 * 4) = ceil(1.6) = 2.
+        self.assertEqual(resolve_keep_ckpt_count(0.4, 4, 1), 2)
+
+    def test_keeps_at_least_one(self) -> None:
+        # save_freq larger than num_steps yields a single (final) checkpoint.
+        self.assertEqual(resolve_keep_ckpt_count(0.4, 5, 100), 1)
 
 
 if __name__ == "__main__":

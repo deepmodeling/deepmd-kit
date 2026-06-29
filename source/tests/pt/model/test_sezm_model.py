@@ -19,6 +19,7 @@ from packaging.version import parse as parse_version
 from deepmd.pt.loss import (
     DeNSLoss,
     EnergyStdLoss,
+    PropertyLoss,
 )
 from deepmd.pt.model.descriptor.sezm_nn import (
     GatedActivation,
@@ -37,6 +38,9 @@ from deepmd.pt.model.model import (
 from deepmd.pt.model.model.sezm_model import (
     InterPotential,
     SeZMModel,
+)
+from deepmd.pt.model.model.sezm_property_model import (
+    SeZMPropertyModel,
 )
 from deepmd.pt.train.training import (
     prepare_model_for_loss,
@@ -934,6 +938,168 @@ class TestSeZMModelCompile(unittest.TestCase):
     def test_multitask_compile_matches_eager(self) -> None:
         """Legacy case embedding concatenation should match through compile."""
         self._assert_multitask_compile_matches_eager(case_film_embd=False)
+
+
+class TestSeZMModelProperty(unittest.TestCase):
+    """Test DPA4/SeZM invariant property fitting."""
+
+    def setUp(self) -> None:
+        self.device = env.DEVICE
+        torch.manual_seed(2024)
+
+    @staticmethod
+    def _randomize_params(model: torch.nn.Module, seed: int = 1234) -> None:
+        """Fill all trainable tensors with deterministic small values."""
+        torch.manual_seed(seed)
+        with torch.no_grad():
+            for param in model.parameters():
+                param.copy_(torch.randn_like(param) * 0.1)
+
+    def _build_model_params(self, *, use_compile: bool, intensive: bool) -> dict:
+        return {
+            "type": "SeZM",
+            "type_map": ["A", "B"],
+            "descriptor": {
+                "type": "SeZM",
+                "sel": [2, 2],
+                "rcut": 3.0,
+                "channels": 4,
+                "n_focus": 1,
+                "n_radial": 3,
+                "radial_mlp": [6],
+                "use_env_seed": True,
+                "l_schedule": [1, 0],
+                "mmax": 1,
+                "so2_norm": False,
+                "so2_layers": 1,
+                "n_atten_head": 1,
+                "sandwich_norm": [True, False, True, False],
+                "ffn_neurons": 8,
+                "ffn_blocks": 1,
+                "s2_activation": [False, True],
+                "mlp_bias": False,
+                "layer_scale": False,
+                "use_amp": False,
+                "activation_function": "silu",
+                "glu_activation": True,
+                "precision": "float32",
+                "seed": 7,
+            },
+            "fitting_net": {
+                "type": "property",
+                "property_name": "foo",
+                "task_dim": 3,
+                "intensive": intensive,
+                "neuron": [8],
+                "activation_function": "tanh",
+                "resnet_dt": True,
+                "precision": "float32",
+                "seed": 7,
+            },
+            "use_compile": use_compile,
+        }
+
+    def _make_tiny_frame(
+        self,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        generator = torch.Generator(device=self.device).manual_seed(2025)
+        box = 5.0 * torch.eye(
+            3, dtype=env.GLOBAL_PT_FLOAT_PRECISION, device=self.device
+        )
+        coord = (
+            torch.rand(
+                [1, 5, 3],
+                dtype=env.GLOBAL_PT_FLOAT_PRECISION,
+                device=self.device,
+                generator=generator,
+            )
+            @ box
+        )
+        atype = torch.tensor([[0, 0, 1, 1, 0]], dtype=torch.long, device=self.device)
+        return coord, atype, box.reshape(1, 9)
+
+    def test_forward_shapes_and_reduction(self) -> None:
+        """Property outputs should use public property keys and reductions."""
+        for intensive in (False, True):
+            model = get_sezm_model(
+                self._build_model_params(use_compile=False, intensive=intensive)
+            ).to(self.device)
+            self.assertIsInstance(model, SeZMPropertyModel)
+            self.assertEqual(model.get_var_name(), "foo")
+            self.assertEqual(model.get_task_dim(), 3)
+            self.assertEqual(model.get_intensive(), intensive)
+
+            coord, atype, box = self._make_tiny_frame()
+            ret = model(coord, atype, box=box)
+            self.assertEqual(ret["atom_foo"].shape, (1, 5, 3))
+            self.assertEqual(ret["foo"].shape, (1, 3))
+            self.assertEqual(ret["mask"].shape, (1, 5))
+            self.assertNotIn("force", ret)
+            self.assertNotIn("virial", ret)
+            if intensive:
+                expected = ret["atom_foo"].mean(dim=1)
+            else:
+                expected = ret["atom_foo"].sum(dim=1)
+            torch.testing.assert_close(ret["foo"], expected)
+
+    def test_property_loss_and_serialization(self) -> None:
+        """PropertyLoss metadata and model serialization should round-trip."""
+        from deepmd.pt.model.model.model import (
+            BaseModel,
+        )
+
+        model = get_sezm_model(
+            self._build_model_params(use_compile=False, intensive=True)
+        ).to(self.device)
+        loss = PropertyLoss(
+            task_dim=model.get_task_dim(),
+            var_name=model.get_var_name(),
+            intensive=model.get_intensive(),
+        )
+        self.assertEqual(loss.var_name, "foo")
+
+        data = model.serialize()
+        self.assertEqual(data["type"], "SeZMProperty")
+        model2 = BaseModel.deserialize(data).to(self.device)
+        self.assertIsInstance(model2, SeZMPropertyModel)
+
+        coord, atype, box = self._make_tiny_frame()
+        ret = model2(coord, atype, box=box)
+        self.assertEqual(ret["foo"].shape, (1, 3))
+
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
+    def test_compile_matches_eager_and_backpropagates(self) -> None:
+        """Compiled property forward should match eager and keep gradients."""
+        eager = get_sezm_model(
+            self._build_model_params(use_compile=False, intensive=False)
+        ).to(self.device)
+        compiled = get_sezm_model(
+            self._build_model_params(use_compile=True, intensive=False)
+        ).to(self.device)
+        self._randomize_params(eager)
+        compiled.load_state_dict(eager.state_dict())
+        eager.train()
+        compiled.train()
+
+        coord, atype, box = self._make_tiny_frame()
+        ret_eager = eager(coord, atype, box=box)
+        ret_compiled = compiled(coord, atype, box=box)
+        _assert_close_with_strict_warning(
+            ret_compiled["foo"],
+            ret_eager["foo"],
+            atol=1.0e-5,
+            rtol=1.0e-5,
+            msg="compiled property mismatch",
+        )
+        self.assertIn((True, False), compiled.compiled_core_compute_cache)
+
+        loss = ret_compiled["foo"].sum()
+        loss.backward()
+        grad_found = any(
+            param.grad is not None and torch.count_nonzero(param.grad).item() > 0
+            for param in compiled.parameters()
+        )
+        self.assertTrue(grad_found)
 
 
 class TestInterPotential(unittest.TestCase):

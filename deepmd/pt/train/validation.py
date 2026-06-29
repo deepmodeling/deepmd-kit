@@ -273,6 +273,7 @@ class FullValidator:
         self.topk_records = self._load_topk_records()
         self._sync_state_store()
         if self.rank == 0:
+            self.checkpoint_dir.mkdir(parents=True, exist_ok=True)
             self._initialize_best_checkpoints(restart_training=restart_training)
 
         # Lazily-populated full test snapshot for LMDB validation. Mixed-nloc

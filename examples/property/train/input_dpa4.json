@@ -1,10 +1,12 @@
 {
-  "_comment": "Baseline DPA4/SeZM energy-training example for the water dataset.",
+  "_comment": "DPA4/SeZM invariant-property training example on the QM9 property subset in ../data (band_prop holds HOMO/LUMO/band gap, task_dim=3, intensive).",
   "model": {
     "type": "DPA4",
     "type_map": [
-      "O",
-      "H"
+      "H",
+      "C",
+      "N",
+      "O"
     ],
     "descriptor": {
       "rcut": 6.0,
@@ -46,6 +48,10 @@
       "seed": 42
     },
     "fitting_net": {
+      "type": "property",
+      "property_name": "band_prop",
+      "task_dim": 3,
+      "intensive": true,
       "neuron": [
         0
       ],
@@ -65,15 +71,12 @@
     "decay_type": "cosine"
   },
   "loss": {
-    "type": "ener",
-    "loss_func": "mae",
-    "f_use_norm": true,
-    "start_pref_e": 20,
-    "limit_pref_e": 20,
-    "start_pref_f": 20,
-    "limit_pref_f": 20,
-    "start_pref_v": 5,
-    "limit_pref_v": 5
+    "type": "property",
+    "metric": [
+      "mae"
+    ],
+    "loss_func": "smooth_mae",
+    "beta": 1.0
   },
   "optimizer": {
     "type": "HybridMuon",
@@ -84,14 +87,13 @@
     "training_data": {
       "systems": [
         "../data/data_0",
-        "../data/data_1",
-        "../data/data_2"
+        "../data/data_1"
       ],
       "batch_size": 1
     },
     "validation_data": {
       "systems": [
-        "../data/data_3"
+        "../data/data_2"
       ],
       "batch_size": 1,
       "numb_batch": 1
@@ -99,7 +101,6 @@
     "numb_steps": 2000000,
     "gradient_max_norm": 5.0,
     "save_freq": 2000,
-    "save_dir": "ckpt",
     "max_ckpt_keep": 3,
     "enable_ema": true,
     "ema_decay": 0.999,
@@ -120,7 +121,6 @@
   },
   "validating": {
     "compiled_infer": false,
-    "tf32_infer": false,
-    "save_best_dir": "ckpt_best"
+    "tf32_infer": false
   }
 }
