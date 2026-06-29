@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import json
 from typing import (
     Any,
 )
@@ -29,6 +30,14 @@ OUTPUT_DEFS = {
         reducible=True,
         r_differentiable=True,
         c_differentiable=True,
+    ),
+    "energy_hessian": OutputVariableDef(
+        "energy",
+        shape=[1],
+        reducible=True,
+        r_differentiable=True,
+        c_differentiable=True,
+        r_hessian=True,
     ),
     "mask": OutputVariableDef(
         "mask",
@@ -171,7 +180,17 @@ class HLO(BaseModel):
 
     def model_output_def(self) -> ModelOutputDef:
         return ModelOutputDef(
-            FittingOutputDef([OUTPUT_DEFS[tt] for tt in self.model_output_type()])
+            FittingOutputDef(
+                [
+                    OUTPUT_DEFS[
+                        f"{tt}_hessian"
+                        if tt == "energy"
+                        and json.loads(self.model_def_script).get("hessian_mode", False)
+                        else tt
+                    ]
+                    for tt in self.model_output_type()
+                ]
+            )
         )
 
     def call_lower(
