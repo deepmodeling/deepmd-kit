@@ -155,8 +155,10 @@ void DeepPotPTExpt::init(const std::string& model,
     const std::string lower_input_kind =
         metadata["lower_input_kind"].as_string();
     lower_input_is_edge_ = lower_input_kind == "edge_vec";
+    lower_input_is_graph_ = lower_input_kind == "graph";
   } else {
     lower_input_is_edge_ = false;
+    lower_input_is_graph_ = false;
   }
 
   type_map.clear();
@@ -277,6 +279,31 @@ std::vector<torch::Tensor> DeepPotPTExpt::run_model_edges(
     const torch::Tensor& charge_spin) {
   std::vector<torch::Tensor> inputs = {
       coord, atype, edge_index, edge_vec, edge_scatter_index, edge_mask};
+  if (dfparam > 0) {
+    inputs.push_back(fparam);
+  }
+  if (daparam > 0) {
+    inputs.push_back(aparam);
+  }
+  if (dchgspin > 0) {
+    inputs.push_back(charge_spin);
+  }
+  return loader->run(inputs);
+}
+
+std::vector<torch::Tensor> DeepPotPTExpt::run_model_graph(
+    const torch::Tensor& atype,
+    const torch::Tensor& n_node,
+    const torch::Tensor& edge_index,
+    const torch::Tensor& edge_vec,
+    const torch::Tensor& edge_mask,
+    const torch::Tensor& fparam,
+    const torch::Tensor& aparam,
+    const torch::Tensor& charge_spin) {
+  // NeighborGraph ABI: (atype, n_node, edge_index, edge_vec, edge_mask,
+  // [fparam], [aparam], [charge_spin]).  No coord, no edge_scatter_index.
+  std::vector<torch::Tensor> inputs = {atype, n_node, edge_index, edge_vec,
+                                       edge_mask};
   if (dfparam > 0) {
     inputs.push_back(fparam);
   }
@@ -475,6 +502,15 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   bool multi_rank = (lmp_list.nprocs > 1);
   bool atom_map_present = (lmp_list.mapping != nullptr);
   bool use_with_comm = has_comm_artifact_ && multi_rank;
+  // The NeighborGraph schema only has a single-rank artifact so far; the
+  // multi-rank (with-comm) graph path is PR-B3.  Fail fast before building
+  // any tensors so callers get a clear message instead of a wrong answer.
+  if (lower_input_is_graph_ && multi_rank) {
+    throw deepmd::deepmd_exception(
+        "Multi-rank graph (NeighborGraph) .pt2 inference is not yet "
+        "supported (PR-B3). Run single-rank, or use a dense/edge .pt2 for "
+        "multi-rank LAMMPS.");
+  }
   // Decision matrix (see PR #5450 description):
   //   non-GNN model (has_message_passing_ == false): regular path is
   //                                                  always safe.
@@ -556,6 +592,11 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
           /*fold_to_local=*/!use_with_comm);
       edge_index_tensor = edge_tensors.edge_index;
       edge_index_ext_tensor = edge_tensors.edge_index_ext;
+    } else if (lower_input_is_graph_) {
+      // Graph schema rebuilds the edge topology on-device every step inside
+      // buildGraphTensors (from the raw, unpadded nlist_data.jlist +
+      // nlist_data.ilist centers), so nothing is cached here and the nlist is
+      // left unpadded (createEdgeTensors handles ragged rows and skips -1).
     } else {
       nlist_data.padding();
       firstneigh_tensor = createNlistTensor(nlist_data.jlist, nnei)
@@ -771,6 +812,17 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
                           edge_tensors.edge_index, edge_tensors.edge_vec,
                           edge_tensors.edge_index_ext, edge_tensors.edge_mask,
                           fparam_tensor, aparam_tensor, charge_spin_tensor);
+    } else if (lower_input_is_graph_) {
+      // Single-rank NeighborGraph schema: build (atype, n_node, edge_index,
+      // edge_vec, edge_mask) from the host nlist (node types from the extended
+      // types, folded local edge graph) and run the graph artifact.
+      const auto graph_tensors = buildGraphTensors(
+          nlist_data.jlist, dcoord, datype, mapping, nloc, nall_real,
+          static_cast<double>(rcut), device, &nlist_data.ilist);
+      flat_outputs = run_model_graph(
+          graph_tensors.atype, graph_tensors.n_node, graph_tensors.edge_index,
+          graph_tensors.edge_vec, graph_tensors.edge_mask, fparam_tensor,
+          aparam_tensor, charge_spin_tensor);
     } else {
       flat_outputs = run_model(coord_Tensor, atype_Tensor, firstneigh_tensor,
                                mapping_tensor, fparam_tensor, aparam_tensor,
@@ -1015,9 +1067,16 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
           .to(device);
   at::Tensor nlist_tensor;
   EdgeTensorPack edge_tensors;
+  GraphTensorPack graph_tensors;
   if (lower_input_is_edge_) {
     edge_tensors = createEdgeTensors(nlist_raw, coord_cpy_d, mapping_64, nloc,
                                      nall, device);
+  } else if (lower_input_is_graph_) {
+    // Standalone (no nlist) graph schema: build_nlist already cut at rcut and
+    // keys row i to center i, so no row_centers remapping is needed.
+    graph_tensors =
+        buildGraphTensors(nlist_raw, coord_cpy_d, atype_cpy, mapping_64, nloc,
+                          nall, static_cast<double>(rcut), device);
   } else {
     nlist_tensor =
         createNlistTensor(nlist_raw, nnei).to(torch::kInt64).to(device);
@@ -1104,6 +1163,11 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
                         edge_tensors.edge_index, edge_tensors.edge_vec,
                         edge_tensors.edge_index_ext, edge_tensors.edge_mask,
                         fparam_tensor, aparam_tensor, charge_spin_tensor);
+  } else if (lower_input_is_graph_) {
+    flat_outputs = run_model_graph(
+        graph_tensors.atype, graph_tensors.n_node, graph_tensors.edge_index,
+        graph_tensors.edge_vec, graph_tensors.edge_mask, fparam_tensor,
+        aparam_tensor, charge_spin_tensor);
   } else {
     flat_outputs =
         run_model(coord_Tensor, atype_Tensor, nlist_tensor, mapping_tensor,

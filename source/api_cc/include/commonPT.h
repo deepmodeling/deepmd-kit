@@ -364,6 +364,90 @@ inline EdgeTensorPack compactEdgeTensors(const torch::Tensor& edge_index,
   return pack;
 }
 
+struct GraphTensorPack {
+  torch::Tensor atype;
+  torch::Tensor n_node;
+  torch::Tensor edge_index;
+  torch::Tensor edge_vec;
+  torch::Tensor edge_mask;
+};
+
+/**
+ * @brief Build NeighborGraph input tensors from a host neighbor list
+ *        (single-rank, dynamic edge axis).
+ *
+ * Mirrors the edge schema but drops ``coord``/``edge_scatter_index`` and adds
+ * ``n_node``.  Edge construction is delegated to the existing
+ * ``createEdgeTensors``/``compactEdgeTensors`` helpers (same rcut filter,
+ * variable edge count and two masked dummy edges that keep the dynamic edge
+ * dimension non-empty); the wrapper then (a) drops the extended scatter index,
+ * (b) emits ``n_node = [nloc]`` for the single frame, and (c) sets the node
+ * types from the local slice of ``atype_ext``.
+ *
+ * @param nlist Neighbor-list rows (local idx into the extended set).
+ * @param coord Extended coordinates shaped as nall x 3.
+ * @param atype_ext Extended atom types, length nall.  Node types are taken from
+ *   the extended types (NOT ``atype[mapping]``); for single-rank ghost-free
+ *   this is just ``atype_ext[0:nloc]``, while multi-rank (B3) passes the halo
+ *   types directly.
+ * @param mapping Extended-to-local atom map, length nall.
+ * @param nloc Number of local atoms.
+ * @param nall Number of extended atoms.
+ * @param rcut Model cutoff (edges with ``rr > rcut**2`` are dropped).
+ * @param device Target device for the returned tensors.
+ * @param row_centers Optional center atom index for each neighbor-list row
+ *   (LAMMPS compacts away empty rows); ``nullptr`` means row i is center i.
+ */
+template <typename VALUETYPE>
+inline GraphTensorPack buildGraphTensors(
+    const std::vector<std::vector<int>>& nlist,
+    const std::vector<VALUETYPE>& coord,
+    const std::vector<int>& atype_ext,
+    const std::vector<std::int64_t>& mapping,
+    const int nloc,
+    const int nall,
+    const double rcut,
+    const torch::Device& device,
+    const std::vector<int>* row_centers = nullptr) {
+  auto int_options = torch::TensorOptions().dtype(torch::kInt64);
+
+  // 1. Cached-style topology only (no geometry): edge_index folds ghost
+  //    neighbours onto their local owners (fold_to_local=true), edge_index_ext
+  //    keeps extended indices for the on-device geometry recompute.
+  const EdgeTensorPack topo =
+      createEdgeTensors(nlist, coord, mapping, nloc, nall, device,
+                        /*with_geometry=*/false, row_centers,
+                        /*fold_to_local=*/true);
+
+  // 2. Recompute geometry from the current coords on-device, filter by rcut and
+  //    append the two masked dummy edges.  The model is compiled for float64
+  //    inputs, so build the coord tensor as float64 to match the edge path.
+  std::vector<double> coord_d(coord.begin(), coord.end());
+  at::Tensor coord_tensor =
+      torch::from_blob(coord_d.data(),
+                       {static_cast<std::int64_t>(nall), 3},
+                       torch::TensorOptions().dtype(torch::kFloat64))
+          .clone()
+          .to(device);
+  const EdgeTensorPack edges = compactEdgeTensors(
+      topo.edge_index, topo.edge_index_ext, coord_tensor, rcut);
+
+  GraphTensorPack pack;
+  pack.edge_index = edges.edge_index;  // local-folded (2, E)
+  pack.edge_vec = edges.edge_vec;      // (E, 3) neighbour - center
+  pack.edge_mask = edges.edge_mask;    // (E,) bool
+  pack.n_node =
+      torch::full({1}, static_cast<std::int64_t>(nloc), int_options).to(device);
+  // Node types from the local slice of the extended types.
+  std::vector<std::int64_t> atype_loc(atype_ext.begin(),
+                                      atype_ext.begin() + nloc);
+  pack.atype = torch::from_blob(atype_loc.data(),
+                                {static_cast<std::int64_t>(nloc)}, int_options)
+                   .clone()
+                   .to(device);
+  return pack;
+}
+
 }  // namespace deepmd
 
 #endif  // BUILD_PYTORCH
