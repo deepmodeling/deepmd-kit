@@ -569,8 +569,8 @@ double se_a_grad_projection_gpu(const double xx,
   deepmd::malloc_device_memory_sync(em_dev, em);
   deepmd::malloc_device_memory_sync(dy_dev, dy_host);
   deepmd::tabulate_fusion_se_a_grad_gpu<double>(
-      dy_dem_x_dev, dy_dem_dev, nullptr, table_dev, kTableInfo.data(),
-      em_x_dev, em_dev, nullptr, dy_dev, 1, 1, kLastLayerSize);
+      dy_dem_x_dev, dy_dem_dev, nullptr, table_dev, kTableInfo.data(), em_x_dev,
+      em_dev, nullptr, dy_dev, 1, 1, kLastLayerSize);
   deepmd::memcpy_device_to_host(dy_dem_x_dev, dy_dem_x);
   deepmd::memcpy_device_to_host(dy_dem_dev, dy_dem);
   deepmd::delete_device_memory(dy_dem_x_dev);
@@ -946,17 +946,14 @@ TEST(TabulateExtrapolate, GpuGradGradKernelsMatchDyFiniteDifferenceInTails) {
     expect_grad_grad_matches_dy_finite_diff(se_a_grad_grad_dy_gpu,
                                             se_a_grad_projection_gpu, xx,
                                             {0.1, -0.2, 0.3, -0.4});
-    expect_grad_grad_matches_dy_finite_diff(se_r_grad_grad_dy_gpu,
-                                            se_r_grad_projection_gpu, xx,
-                                            {0.1});
+    expect_grad_grad_matches_dy_finite_diff(
+        se_r_grad_grad_dy_gpu, se_r_grad_projection_gpu, xx, {0.1});
   }
   for (const double xx : {kMin - 0.25, kMax + 0.25}) {
-    expect_grad_grad_matches_dy_finite_diff(se_t_grad_grad_dy_gpu,
-                                            se_t_grad_projection_gpu, xx,
-                                            {0.1});
-    expect_grad_grad_matches_dy_finite_diff(se_t_tebd_grad_grad_dy_gpu,
-                                            se_t_tebd_grad_projection_gpu, xx,
-                                            {0.1});
+    expect_grad_grad_matches_dy_finite_diff(
+        se_t_grad_grad_dy_gpu, se_t_grad_projection_gpu, xx, {0.1});
+    expect_grad_grad_matches_dy_finite_diff(
+        se_t_tebd_grad_grad_dy_gpu, se_t_tebd_grad_projection_gpu, xx, {0.1});
   }
 }
 #endif
