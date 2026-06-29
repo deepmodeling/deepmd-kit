@@ -18,6 +18,7 @@ constexpr double kStride1 = 1.0;
 constexpr int kLastLayerSize = 1;
 constexpr double kFiniteDiffStep = 1e-6;
 constexpr double kTolerance = 1e-10;
+constexpr double kTwoEmbed = 0.75;
 
 const std::vector<double> kTableInfo = {kLower,   kUpper,   kMax,
                                         kStride0, kStride1, -1.0};
@@ -160,6 +161,42 @@ double se_a_grad(const double xx) {
   return dy_dem_x[0];
 }
 
+double se_a_value_with_two_embed(const double xx) {
+  std::vector<double> out(4 * kLastLayerSize);
+  const std::vector<double> em_x = {xx};
+  const std::vector<double> em = {1.0, 0.0, 0.0, 0.0};
+  const std::vector<double> two_embed = {kTwoEmbed};
+  deepmd::tabulate_fusion_se_a_cpu<double>(
+      out.data(), kTable.data(), kTableInfo.data(), em_x.data(), em.data(),
+      two_embed.data(), 1, 1, kLastLayerSize);
+  return out[0];
+}
+
+void se_a_grad_with_two_embed(const double xx,
+                              double& dy_dem_x,
+                              double& dy_dtwo) {
+  std::vector<double> dy_dem_x_vec(1);
+  std::vector<double> dy_dem(4);
+  std::vector<double> dy_dtwo_vec(1);
+  const std::vector<double> em_x = {xx};
+  const std::vector<double> em = {1.0, 0.0, 0.0, 0.0};
+  const std::vector<double> two_embed = {kTwoEmbed};
+  const std::vector<double> dy = {1.0, 0.0, 0.0, 0.0};
+  deepmd::tabulate_fusion_se_a_grad_cpu<double>(
+      dy_dem_x_vec.data(), dy_dem.data(), dy_dtwo_vec.data(), kTable.data(),
+      kTableInfo.data(), em_x.data(), em.data(), two_embed.data(), dy.data(), 1,
+      1, kLastLayerSize);
+  dy_dem_x = dy_dem_x_vec[0];
+  dy_dtwo = dy_dtwo_vec[0];
+}
+
+double se_a_dem_x_grad_with_two_embed(const double xx) {
+  double dy_dem_x = 0.0;
+  double dy_dtwo = 0.0;
+  se_a_grad_with_two_embed(xx, dy_dem_x, dy_dtwo);
+  return dy_dem_x;
+}
+
 double se_r_value(const double xx, const std::vector<double>& table_info) {
   std::vector<double> out(1);
   const std::vector<double> em = {xx};
@@ -224,6 +261,112 @@ double se_t_tebd_grad(const double xx) {
       dy_dem_x.data(), kTable.data(), kTableInfo.data(), em_x.data(), em.data(),
       dy.data(), 1, 1, 1, kLastLayerSize);
   return dy_dem_x[0];
+}
+
+double dot_vector(const std::vector<double>& lhs,
+                  const std::vector<double>& rhs) {
+  double value = 0.0;
+  for (std::size_t ii = 0; ii < lhs.size(); ++ii) {
+    value += lhs[ii] * rhs[ii];
+  }
+  return value;
+}
+
+double se_a_grad_projection(const double xx, const std::vector<double>& dy) {
+  std::vector<double> dy_dem_x(1);
+  std::vector<double> dy_dem(4);
+  std::vector<double> dy_dtwo(1);
+  const std::vector<double> em_x = {xx};
+  const std::vector<double> em = {1.0, -0.25, 0.5, -0.75};
+  const std::vector<double> dz_dy_dem_x = {0.6};
+  const std::vector<double> dz_dy_dem = {0.2, -0.3, 0.4, -0.5};
+  deepmd::tabulate_fusion_se_a_grad_cpu<double>(
+      dy_dem_x.data(), dy_dem.data(), dy_dtwo.data(), kTable.data(),
+      kTableInfo.data(), em_x.data(), em.data(), nullptr, dy.data(), 1, 1,
+      kLastLayerSize);
+  return dot_vector(dy_dem_x, dz_dy_dem_x) + dot_vector(dy_dem, dz_dy_dem);
+}
+
+std::vector<double> se_a_grad_grad_dy(const double xx) {
+  std::vector<double> dz_dy(4 * kLastLayerSize);
+  const std::vector<double> em_x = {xx};
+  const std::vector<double> em = {1.0, -0.25, 0.5, -0.75};
+  const std::vector<double> dz_dy_dem_x = {0.6};
+  const std::vector<double> dz_dy_dem = {0.2, -0.3, 0.4, -0.5};
+  const std::vector<double> dz_dy_dtwo(1);
+  deepmd::tabulate_fusion_se_a_grad_grad_cpu<double>(
+      dz_dy.data(), kTable.data(), kTableInfo.data(), em_x.data(), em.data(),
+      nullptr, dz_dy_dem_x.data(), dz_dy_dem.data(), dz_dy_dtwo.data(), 1, 1,
+      kLastLayerSize);
+  return dz_dy;
+}
+
+double se_r_grad_projection(const double xx, const std::vector<double>& dy) {
+  std::vector<double> dy_dem(1);
+  const std::vector<double> em = {xx};
+  const std::vector<double> dz_dy_dem = {0.6};
+  deepmd::tabulate_fusion_se_r_grad_cpu(dy_dem.data(), kTable.data(),
+                                        kTableInfo.data(), em.data(), dy.data(),
+                                        1, 1, kLastLayerSize);
+  return dot_vector(dy_dem, dz_dy_dem);
+}
+
+std::vector<double> se_r_grad_grad_dy(const double xx) {
+  std::vector<double> dz_dy(1);
+  const std::vector<double> em = {xx};
+  const std::vector<double> dz_dy_dem = {0.6};
+  deepmd::tabulate_fusion_se_r_grad_grad_cpu(
+      dz_dy.data(), kTable.data(), kTableInfo.data(), em.data(),
+      dz_dy_dem.data(), 1, 1, kLastLayerSize);
+  return dz_dy;
+}
+
+double se_t_grad_projection(const double xx, const std::vector<double>& dy) {
+  std::vector<double> dy_dem_x(1);
+  std::vector<double> dy_dem(1);
+  const std::vector<double> em_x = {xx};
+  const std::vector<double> em = {xx};
+  const std::vector<double> dz_dy_dem_x = {0.6};
+  const std::vector<double> dz_dy_dem = {-0.4};
+  deepmd::tabulate_fusion_se_t_grad_cpu(
+      dy_dem_x.data(), dy_dem.data(), kTable.data(), kTableInfo.data(),
+      em_x.data(), em.data(), dy.data(), 1, 1, 1, kLastLayerSize);
+  return dot_vector(dy_dem_x, dz_dy_dem_x) + dot_vector(dy_dem, dz_dy_dem);
+}
+
+std::vector<double> se_t_grad_grad_dy(const double xx) {
+  std::vector<double> dz_dy(1);
+  const std::vector<double> em_x = {xx};
+  const std::vector<double> em = {xx};
+  const std::vector<double> dz_dy_dem_x = {0.6};
+  const std::vector<double> dz_dy_dem = {-0.4};
+  deepmd::tabulate_fusion_se_t_grad_grad_cpu(
+      dz_dy.data(), kTable.data(), kTableInfo.data(), em_x.data(), em.data(),
+      dz_dy_dem_x.data(), dz_dy_dem.data(), 1, 1, 1, kLastLayerSize);
+  return dz_dy;
+}
+
+double se_t_tebd_grad_projection(const double xx,
+                                 const std::vector<double>& dy) {
+  std::vector<double> dy_dem_x(1);
+  const std::vector<double> em_x = {xx};
+  const std::vector<double> em = {xx};
+  const std::vector<double> dz_dy_dem_x = {0.6};
+  deepmd::tabulate_fusion_se_t_tebd_grad_cpu(
+      dy_dem_x.data(), kTable.data(), kTableInfo.data(), em_x.data(), em.data(),
+      dy.data(), 1, 1, 1, kLastLayerSize);
+  return dot_vector(dy_dem_x, dz_dy_dem_x);
+}
+
+std::vector<double> se_t_tebd_grad_grad_dy(const double xx) {
+  std::vector<double> dz_dy(1);
+  const std::vector<double> em_x = {xx};
+  const std::vector<double> em = {xx};
+  const std::vector<double> dz_dy_dem_x = {0.6};
+  deepmd::tabulate_fusion_se_t_tebd_grad_grad_cpu(
+      dz_dy.data(), kTable.data(), kTableInfo.data(), em_x.data(), em.data(),
+      dz_dy_dem_x.data(), 1, 1, 1, kLastLayerSize);
+  return dz_dy;
 }
 
 #if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
@@ -451,6 +594,27 @@ void expect_se_t_lookup_tail(double (*value_fn)(double),
   EXPECT_NEAR(central_diff(value_fn, xx), dy_dem_x + dy_dem, 1e-5);
 }
 
+using GradGradFn = std::vector<double> (*)(double);
+using ProjectionFn = double (*)(double, const std::vector<double>&);
+
+void expect_grad_grad_matches_dy_finite_diff(GradGradFn grad_grad_fn,
+                                             ProjectionFn projection_fn,
+                                             const double xx,
+                                             std::vector<double> dy) {
+  const std::vector<double> actual = grad_grad_fn(xx);
+  ASSERT_EQ(actual.size(), dy.size());
+  for (std::size_t ii = 0; ii < dy.size(); ++ii) {
+    std::vector<double> dy_plus = dy;
+    std::vector<double> dy_minus = dy;
+    dy_plus[ii] += kFiniteDiffStep;
+    dy_minus[ii] -= kFiniteDiffStep;
+    const double reference =
+        (projection_fn(xx, dy_plus) - projection_fn(xx, dy_minus)) /
+        (2.0 * kFiniteDiffStep);
+    EXPECT_NEAR(actual[ii], reference, 1e-8);
+  }
+}
+
 }  // namespace
 
 TEST(TabulateExtrapolate, SeAUsesC1LinearTails) {
@@ -459,6 +623,22 @@ TEST(TabulateExtrapolate, SeAUsesC1LinearTails) {
   expect_boundary(se_a_value, se_a_grad, kMax, locate_se_a_or_r(kMax));
   expect_linear_tail(se_a_value, se_a_grad, kMax + 0.25,
                      locate_se_a_or_r(kMax + 0.25));
+}
+
+TEST(TabulateExtrapolate, SeAWithTwoEmbedUsesC1LinearTail) {
+  const double xx = kMax + 0.25;
+  const LocatedXx located = locate_se_a_or_r(xx);
+  double dy_dem_x = 0.0;
+  double dy_dtwo = 0.0;
+  se_a_grad_with_two_embed(xx, dy_dem_x, dy_dtwo);
+  EXPECT_NEAR(se_a_value_with_two_embed(xx),
+              (1.0 + kTwoEmbed) * expected_table_value(located), kTolerance);
+  EXPECT_NEAR(dy_dem_x, (1.0 + kTwoEmbed) * expected_table_grad(located),
+              kTolerance);
+  EXPECT_NEAR(dy_dtwo, expected_table_value(located), kTolerance);
+  EXPECT_NEAR(central_diff(se_a_value_with_two_embed, xx), dy_dem_x, 1e-8);
+  EXPECT_NEAR(grad_central_diff(se_a_dem_x_grad_with_two_embed, xx), 0.0,
+              1e-10);
 }
 
 TEST(TabulateExtrapolate, SeRUsesC1LinearTails) {
@@ -477,6 +657,21 @@ TEST(TabulateExtrapolate, SeROffGridMaxUsesBoundarySegment) {
                 expected_table_value(located), kTolerance);
     EXPECT_NEAR(se_r_grad(xx, kOffGridTableInfo), expected_table_grad(located),
                 kTolerance);
+  }
+}
+
+TEST(TabulateExtrapolate, GradGradKernelsMatchDyFiniteDifferenceInTails) {
+  for (const double xx : {kLower - 0.25, kMax + 0.25}) {
+    expect_grad_grad_matches_dy_finite_diff(
+        se_a_grad_grad_dy, se_a_grad_projection, xx, {0.1, -0.2, 0.3, -0.4});
+    expect_grad_grad_matches_dy_finite_diff(se_r_grad_grad_dy,
+                                            se_r_grad_projection, xx, {0.1});
+  }
+  for (const double xx : {kMin - 0.25, kMax + 0.25}) {
+    expect_grad_grad_matches_dy_finite_diff(se_t_grad_grad_dy,
+                                            se_t_grad_projection, xx, {0.1});
+    expect_grad_grad_matches_dy_finite_diff(
+        se_t_tebd_grad_grad_dy, se_t_tebd_grad_projection, xx, {0.1});
   }
 }
 
