@@ -237,7 +237,39 @@ def format_nlist(
     rcut: float,
     extra_nlist_sort: bool = False,
 ) -> Array:
-    """Format a neighbor list with the shared Array API implementation."""
+    """Format a neighbor list to a fixed neighbor count.
+
+    If the input neighbor axis is shorter than ``nnei``, pad it with ``-1``.
+    If the input neighbor axis is longer than ``nnei``, sort neighbors by
+    distance, mask neighbors outside ``rcut`` with ``-1``, and truncate to
+    ``nnei`` entries. Otherwise, preserve the input order and mask neighbors
+    outside ``rcut`` with ``-1``. When ``extra_nlist_sort`` is true, use the
+    sort-and-truncate path even when the input neighbor axis is not longer than
+    ``nnei``.
+
+    Parameters
+    ----------
+    extended_coord : Array
+        Extended coordinates of shape ``[nf, nall, 3]`` or
+        ``[nf, nall * 3]``.
+    nlist : Array
+        Neighbor list of shape ``[nf, nloc, n_nnei]``. Invalid neighbor
+        entries are marked with ``-1``.
+    nnei : int
+        Target number of selected neighbors.
+    rcut : float
+        Cutoff radius. Neighbors farther than ``rcut`` are marked with ``-1``.
+    extra_nlist_sort : bool, optional
+        Whether to force distance sorting and truncation even when the input
+        neighbor axis is not larger than ``nnei``. This is needed by models
+        whose lower-level forward path requires a sorted neighbor list.
+
+    Returns
+    -------
+    Array
+        Formatted neighbor list of shape ``[nf, nloc, nnei]``. Missing or
+        out-of-cutoff neighbors are marked with ``-1``.
+    """
     xp = array_api_compat.array_namespace(extended_coord, nlist)
     n_nf, n_nloc, n_nnei = nlist.shape
     extended_coord = extended_coord.reshape([n_nf, -1, 3])
