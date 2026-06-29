@@ -11,9 +11,11 @@ Creates two DPA1 models from dpmodel configs:
 Both are serialized and exported to their respective formats from the same weights.
 Reference sidecar files (.expected) consumed by C++ gtests are also written:
   - deeppot_dpa1.expected   — from the nlist .pt2 eval (existing)
-  - deeppot_dpa1_graph.expected — from a direct dpmodel eval (independent ground
-      truth, NOT from the graph .pt2); the graph .pt2 is sanity-checked against
-      this reference at ≤1e-6.
+  - deeppot_dpa1_graph.expected — from an independent NLIST .pt2 eval (NOT the
+      graph .pt2; dpmodel se_atten has no analytical force, so the dense nlist
+      path is the independent ground truth). At non-binding sel the graph and
+      nlist paths see the same neighbor set, so the graph .pt2 is sanity-checked
+      against this reference at ≤1e-5.
 """
 
 import copy
