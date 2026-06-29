@@ -2020,7 +2020,7 @@ class TestEnerComputeOrLoadStat(unittest.TestCase):
 )
 @unittest.skipUnless(INSTALLED_PT and INSTALLED_PT_EXPT, "PT and PT_EXPT are required")
 class TestEnerChgSpinEbdFparam(unittest.TestCase):
-    """Test dp/pt/pt_expt model forward consistency for add_chg_spin_ebd with three modes.
+    """Test dp/pt/pt_expt/pd model forward consistency for add_chg_spin_ebd with three modes.
 
     - no_chg_spin: add_chg_spin_ebd=False (baseline)
     - explicit_chg_spin: add_chg_spin_ebd=True, charge_spin provided
@@ -2075,6 +2075,8 @@ class TestEnerChgSpinEbdFparam(unittest.TestCase):
         serialized = self.dp_model.serialize()
         self.pt_model = EnergyModelPT.deserialize(serialized)
         self.pt_expt_model = EnergyModelPTExpt.deserialize(serialized)
+        if INSTALLED_PD:
+            self.pd_model = EnergyModelPD.deserialize(serialized)
 
         self.coords = np.array(
             [
@@ -2152,3 +2154,22 @@ class TestEnerChgSpinEbdFparam(unittest.TestCase):
                 atol=1e-10,
                 err_msg=f"dp vs pt_expt mismatch in {key} (mode={self.cs_mode})",
             )
+        if INSTALLED_PD:
+            pd_ret = {
+                kk: paddle_to_numpy(vv)
+                for kk, vv in self.pd_model(
+                    numpy_to_paddle(self.coords),
+                    numpy_to_paddle(self.atype),
+                    box=numpy_to_paddle(self.box),
+                    charge_spin=numpy_to_paddle(self.charge_spin_np),
+                    do_atomic_virial=True,
+                ).items()
+            }
+            for key in ("energy", "atom_energy"):
+                np.testing.assert_allclose(
+                    dp_ret[key],
+                    pd_ret[key],
+                    rtol=1e-10,
+                    atol=1e-10,
+                    err_msg=f"dp vs pd mismatch in {key} (mode={self.cs_mode})",
+                )

@@ -269,13 +269,20 @@ class DescriptorTest:
             pd_obj.get_sel(),
             distinguish_types=(not mixed_types),
         )
+        charge_spin_pd = (
+            paddle.to_tensor(charge_spin).to(PD_DEVICE)
+            if charge_spin is not None
+            else None
+        )
+        kwargs = {"nlist": nlist, "mapping": mapping}
+        if charge_spin_pd is not None:
+            kwargs["charge_spin"] = charge_spin_pd
         return [
             x.detach().cpu().numpy() if paddle.is_tensor(x) else x
             for x in pd_obj(
                 ext_coords,
                 ext_atype,
-                nlist=nlist,
-                mapping=mapping,
+                **kwargs,
             )
         ]
 

@@ -66,7 +66,7 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
             [1, 2],  # n_multi_edge_message
             ["float64"],  # precision
             [False],  # use_econf_tebd
-            [False],  # add_chg_spin_ebd (PD backend does not support charge_spin)
+            [True, False],  # add_chg_spin_ebd
         ):
             dtype = PRECISION_DICT[prec]
             rtol, atol = get_tols(prec)
@@ -111,21 +111,21 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
             dd0.repflows.mean = paddle.to_tensor(davg, dtype=dtype, place=env.DEVICE)
             dd0.repflows.stddev = paddle.to_tensor(dstd, dtype=dtype, place=env.DEVICE)
 
-            # Prepare fparam if needed
-            fparam = None
-            fparam_np = None
+            # Prepare charge_spin if needed
+            charge_spin = None
+            charge_spin_np = None
             if add_chg_spin:
-                fparam = paddle.to_tensor(
+                charge_spin = paddle.to_tensor(
                     [[5, 1]], dtype=dtype, place=env.DEVICE
-                ).expand(nf, -1)
-                fparam_np = np.array([[5, 1]], dtype=np.float64).repeat(nf, axis=0)
+                ).expand([nf, -1])
+                charge_spin_np = np.array([[5, 1]], dtype=np.float64).repeat(nf, axis=0)
 
             rd0, _, _, _, _ = dd0(
                 paddle.to_tensor(self.coord_ext, dtype=dtype, place=env.DEVICE),
                 paddle.to_tensor(self.atype_ext, dtype=paddle.int64, place=env.DEVICE),
                 paddle.to_tensor(self.nlist, dtype=paddle.int64, place=env.DEVICE),
                 paddle.to_tensor(self.mapping, dtype=paddle.int64, place=env.DEVICE),
-                fparam=fparam,
+                charge_spin=charge_spin,
             )
             # serialization
             dd1 = DescrptDPA3.deserialize(dd0.serialize())
@@ -134,7 +134,7 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 paddle.to_tensor(self.atype_ext, dtype=paddle.int64, place=env.DEVICE),
                 paddle.to_tensor(self.nlist, dtype=paddle.int64, place=env.DEVICE),
                 paddle.to_tensor(self.mapping, dtype=paddle.int64, place=env.DEVICE),
-                fparam=fparam,
+                charge_spin=charge_spin,
             )
             np.testing.assert_allclose(
                 rd0.numpy(),
@@ -149,7 +149,7 @@ class TestDescrptDPA3(unittest.TestCase, TestCaseSingleFrameWithNlist):
                 self.atype_ext,
                 self.nlist,
                 self.mapping,
-                fparam=fparam_np,
+                charge_spin=charge_spin_np,
             )
             np.testing.assert_allclose(
                 rd0.numpy(),

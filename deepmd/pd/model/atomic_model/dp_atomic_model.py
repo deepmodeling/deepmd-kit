@@ -298,6 +298,7 @@ class DPAtomicModel(BaseAtomicModel):
         fparam: paddle.Tensor | None = None,
         aparam: paddle.Tensor | None = None,
         comm_dict: dict[str, paddle.Tensor] | None = None,
+        charge_spin: paddle.Tensor | None = None,
     ) -> dict[str, paddle.Tensor]:
         """Return atomic prediction.
 
@@ -315,6 +316,8 @@ class DPAtomicModel(BaseAtomicModel):
             frame parameter. nf x ndf
         aparam
             atomic parameter. nf x nloc x nda
+        charge_spin
+            charge and spin parameters. nf x 2
 
         Returns
         -------
@@ -326,13 +329,21 @@ class DPAtomicModel(BaseAtomicModel):
         atype = extended_atype[:, :nloc]
         if self.do_grad_r() or self.do_grad_c():
             extended_coord.stop_gradient = False
+
+        # Handle default chg_spin if descriptor supports it
+        if self.add_chg_spin_ebd and charge_spin is None:
+            default_cs_tensor = self.descriptor.get_default_chg_spin()
+            if default_cs_tensor is not None:
+                default_cs_tensor = default_cs_tensor.to(extended_coord.place)
+                charge_spin = paddle.tile(default_cs_tensor.unsqueeze(0), [nframes, 1])
+
         descriptor, rot_mat, g2, h2, sw = self.descriptor(
             extended_coord,
             extended_atype,
             nlist,
             mapping=mapping,
             comm_dict=comm_dict,
-            fparam=fparam if self.add_chg_spin_ebd else None,
+            charge_spin=charge_spin if self.add_chg_spin_ebd else None,
         )
         assert descriptor is not None
         if self.enable_eval_descriptor_hook:
@@ -466,3 +477,25 @@ class DPAtomicModel(BaseAtomicModel):
         If False, the shape is (nframes, nloc, ndim).
         """
         return False
+
+    def has_chg_spin_ebd(self) -> bool:
+        """Check if the model has charge spin embedding."""
+        return self.add_chg_spin_ebd
+
+    def get_dim_chg_spin(self) -> int:
+        """Get the dimension of charge_spin input."""
+        if self.add_chg_spin_ebd:
+            return self.descriptor.get_dim_chg_spin()
+        return 0
+
+    def has_default_chg_spin(self) -> bool:
+        """Check if the model has default charge_spin values."""
+        if self.add_chg_spin_ebd:
+            return self.descriptor.has_default_chg_spin()
+        return False
+
+    def get_default_chg_spin(self) -> paddle.Tensor | None:
+        """Get the default charge_spin values as a tensor."""
+        if self.add_chg_spin_ebd and self.descriptor.has_default_chg_spin():
+            return self.descriptor.get_default_chg_spin()
+        return None
