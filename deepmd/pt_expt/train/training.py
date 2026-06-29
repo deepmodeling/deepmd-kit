@@ -548,6 +548,11 @@ def _model_uses_graph_lower(model: torch.nn.Module) -> bool:
     so the compiled path matches eager training (which already default-flips to
     the carry-all graph forward); when False the dense ``forward_lower`` is
     compiled (se_e2_a / dpa2 / dpa3 / linear / zbl).
+
+    ASSUMPTION: training uses the default ``neighbor_graph_method`` (None). If a
+    user-facing ``"legacy"`` opt-out is ever plumbed into the trainer, this gate
+    must also honor it (else eager would run dense while the compiled path runs
+    the graph lower, re-introducing the eager!=compiled divergence this fixes).
     """
     if not hasattr(model, "mixed_types"):
         return False
@@ -1276,6 +1281,12 @@ class _CompiledModel(torch.nn.Module):
         N = nframes * nloc
         out: dict[str, torch.Tensor] = {}
         for key, val in result.items():
+            # ``N != nframes`` distinguishes node-level keys (lead dim N) from
+            # frame-level keys (lead dim nf) by shape. DEGENERATE: when nloc==1,
+            # N == nframes, so node-level keys are NOT unravelled and stay
+            # (nf, *) instead of (nf, 1, *). Harmless for the varying-natoms
+            # trainer (nloc >> 1); a single-atom-per-frame system would need an
+            # explicit per-key category check instead of the shape heuristic.
             if val is not None and val.shape[:1] == torch.Size([N]) and N != nframes:
                 out[key] = val.reshape(nframes, nloc, *val.shape[1:])
             else:
