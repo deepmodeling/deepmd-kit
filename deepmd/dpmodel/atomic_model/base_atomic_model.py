@@ -1,12 +1,19 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
+import dataclasses
 import functools
 import math
 from collections.abc import (
     Callable,
 )
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
+
+if TYPE_CHECKING:
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        NeighborGraph,
+    )
 
 import array_api_compat
 import numpy as np
@@ -303,23 +310,110 @@ class BaseAtomicModel(BaseAtomicModel_, NativeOP):
             comm_dict=comm_dict,
             charge_spin=charge_spin,
         )
-        ret_dict = self.apply_out_stat(ret_dict, atype)
-
-        # nf x nloc
         atom_mask = xp_take_first_n(ext_atom_mask, 1, nloc)
+        return self._finalize_atomic_ret(ret_dict, atom_mask, atype)
+
+    def forward_common_atomic_graph(
+        self,
+        graph: "NeighborGraph",
+        atype: Array,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
+        charge_spin: Array | None = None,
+    ) -> dict:
+        """Graph analogue of :meth:`forward_common_atomic` on the flat node axis.
+
+        The node axis is flat ``(N,)`` (``N = sum(graph.n_node)``); masking and
+        out-stat operate per node. Reuses :meth:`_finalize_atomic_ret`, so
+        virtual-atom masking, ``atom_excl`` and ``apply_out_stat`` match the dense
+        path. Model-level ``pair_exclude_types`` is graph-native: when
+        ``self.pair_excl is not None``, an edge-keep mask is ANDed into
+        ``graph.edge_mask`` before the descriptor forward, so excluded type-pairs
+        contribute zero to the segment_sum. Descriptor-level ``exclude_types`` is
+        gated by ``uses_graph_lower()==False``.
+
+        Parameters
+        ----------
+        graph
+            neighbor graph for the local atoms (ghost-free)
+        atype
+            flat local atom types. N
+        fparam
+            frame parameter. nf x ndf
+        aparam
+            atomic parameter. N x nda
+        charge_spin
+            charge/spin conditioning. Unused by the dpa1 graph path; accepted so
+            the interface stays stable for charge/spin-conditioned descriptors.
+
+        Returns
+        -------
+        result_dict
+            the result dict on the flat node axis, defined by the `FittingOutputDef`.
+
+        """
+        xp = array_api_compat.array_namespace(graph.edge_vec)
+        atype = xp.asarray(atype, device=array_api_compat.device(graph.edge_vec))
+        atom_mask = self.make_atom_mask(atype)  # (N,) bool
+        atype_clamped = xp.where(atom_mask, atype, xp.zeros_like(atype))
+        if self.pair_excl is not None:
+            keep = self.pair_excl.build_edge_exclude_mask(
+                graph.edge_index, atype_clamped
+            )
+            graph = dataclasses.replace(
+                graph,
+                edge_mask=graph.edge_mask * xp.astype(keep, graph.edge_mask.dtype),
+            )
+        ret_dict = self.forward_atomic_graph(
+            graph,
+            atype_clamped,
+            fparam=fparam,
+            aparam=aparam,
+            charge_spin=charge_spin,
+        )
+        return self._finalize_atomic_ret(ret_dict, atom_mask, atype)
+
+    def _finalize_atomic_ret(
+        self, ret_dict: dict, atom_mask: Array, atype: Array
+    ) -> dict:
+        """Apply out-stat, atom exclusion and virtual-atom zeroing; set ``mask``.
+
+        Shared by the dense (:meth:`forward_common_atomic`, ``(nf, nloc)`` leading
+        dims) and graph (:meth:`forward_common_atomic_graph`, flat ``(N,)`` leading
+        dim) wrappers -- leading-dim-agnostic.
+
+        Parameters
+        ----------
+        ret_dict
+            the raw per-atom result dict from ``forward_atomic``/``forward_atomic_graph``
+        atom_mask
+            the real-atom mask, True for real and False for virtual atoms. leading dims
+        atype
+            the local atom types, used for out-stat and ``atom_excl``. leading dims
+
+        Returns
+        -------
+        result_dict
+            ``ret_dict`` with out-stat applied, virtual and excluded atoms zeroed,
+            and the integer ``mask`` key set.
+
+        """
+        xp = array_api_compat.array_namespace(atype)
+        ret_dict = self.apply_out_stat(ret_dict, atype)
         if self.atom_excl is not None:
             atom_mask = xp.logical_and(
                 atom_mask, self.atom_excl.build_type_exclude_mask(atype)
             )
-
+        lead = atom_mask.shape  # (nf, nloc) dense | (N,) graph
         for kk in ret_dict.keys():
-            out_shape = ret_dict[kk].shape
-            out_shape2 = math.prod(out_shape[2:])
-            tmp_arr = ret_dict[kk].reshape([out_shape[0], out_shape[1], out_shape2])
-            tmp_arr = xp.where(atom_mask[:, :, None], tmp_arr, xp.zeros_like(tmp_arr))
-            ret_dict[kk] = xp.reshape(tmp_arr, out_shape)
+            out = ret_dict[kk]
+            # explicit trailing product (NOT -1): a zero-atom forward (nloc==0)
+            # has size 0, and numpy cannot infer -1 for a size-0 array.
+            trail = math.prod(out.shape[len(lead) :])
+            flat = xp.reshape(out, (*lead, trail))
+            flat = xp.where(atom_mask[..., None], flat, xp.zeros_like(flat))
+            ret_dict[kk] = xp.reshape(flat, out.shape)
         ret_dict["mask"] = xp.astype(atom_mask, xp.int32)
-
         return ret_dict
 
     def call(

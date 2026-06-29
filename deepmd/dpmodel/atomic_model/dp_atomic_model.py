@@ -3,8 +3,14 @@ from collections.abc import (
     Callable,
 )
 from typing import (
+    TYPE_CHECKING,
     Any,
 )
+
+if TYPE_CHECKING:
+    from deepmd.dpmodel.utils.neighbor_graph import (
+        NeighborGraph,
+    )
 
 from deepmd.dpmodel.array_api import (
     Array,
@@ -247,6 +253,60 @@ class DPAtomicModel(BaseAtomicModel):
             aparam=aparam,
         )
         return ret
+
+    def forward_atomic_graph(
+        self,
+        graph: "NeighborGraph",
+        atype: Array,
+        fparam: Array | None = None,
+        aparam: Array | None = None,
+        charge_spin: Array | None = None,
+    ) -> dict[str, Array]:
+        """Graph analogue of :meth:`forward_atomic` on the flat node axis.
+
+        Runs the descriptor ``call_graph`` then the fitting ``call_graph`` PER NODE
+        and returns the raw fitting dict on the flat ``(N, *)`` axis (no reduction
+        or masking; the wrapper handles those). ``fparam`` is gathered to nodes by
+        ``frame_id`` so each node sees its frame's parameter.
+
+        Parameters
+        ----------
+        graph
+            neighbor graph for the local atoms (ghost-free)
+        atype
+            flat local atom types. N
+        fparam
+            frame parameter. nf x ndf
+        aparam
+            atomic parameter. N x nda
+        charge_spin
+            charge/spin conditioning. Unused by the dpa1 graph path; accepted so
+            the interface stays stable for charge/spin-conditioned descriptors.
+
+        Returns
+        -------
+        result_dict
+            the result dict on the flat node axis, defined by the `FittingOutputDef`.
+
+        """
+        import array_api_compat
+
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            frame_id_from_n_node,
+        )
+
+        xp = array_api_compat.array_namespace(graph.edge_vec)
+        type_embedding = self.descriptor.type_embedding.call()
+        gg, rot_mat = self.descriptor.call_graph(
+            graph, atype, type_embedding=type_embedding
+        )
+        fparam_node = None
+        if fparam is not None:
+            frame_id = frame_id_from_n_node(graph.n_node)
+            fparam_node = xp.take(fparam, frame_id, axis=0)  # (N, ndf)
+        return self.fitting_net.call_graph(
+            gg, atype, gr=rot_mat, g2=None, h2=None, fparam=fparam_node, aparam=aparam
+        )
 
     def compute_or_load_stat(
         self,
