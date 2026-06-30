@@ -12,6 +12,27 @@ comparisons as Python ``if`` statements during SavedModel tracing.
 import tensorflow as tf
 
 
+def _mask_out_of_cutoff(
+    extended_coord: tf.Tensor,
+    nlist: tf.Tensor,
+    rcut: float,
+) -> tf.Tensor:
+    nlist_shape = tf.shape(nlist)
+    n_nf, n_nloc, n_nsel = nlist_shape[0], nlist_shape[1], nlist_shape[2]
+    m_real_nei = nlist >= 0
+    real_nlist = tf.where(m_real_nei, nlist, tf.zeros_like(nlist))
+    coord0 = extended_coord[:, :n_nloc, :]
+    index = tf.reshape(real_nlist, [n_nf, n_nloc * n_nsel])
+    coord1 = tf.gather(extended_coord, index, batch_dims=1)
+    coord1 = tf.reshape(coord1, [n_nf, n_nloc, n_nsel, 3])
+    rr2 = tf.reduce_sum(tf.square(coord0[:, :, None, :] - coord1), axis=-1)
+    return tf.where(
+        tf.logical_and(m_real_nei, rr2 > tf.cast(rcut * rcut, rr2.dtype)),
+        tf.fill(tf.shape(nlist), tf.cast(-1, nlist.dtype)),
+        nlist,
+    )
+
+
 @tf.function(autograph=True)
 def format_nlist(
     extended_coord: tf.Tensor,
@@ -37,6 +58,7 @@ def format_nlist(
             ],
             axis=-1,
         )
+        ret = _mask_out_of_cutoff(extended_coord, ret, rcut)
     elif n_nsel > nsel:
         m_real_nei = nlist >= 0
         ret = tf.where(m_real_nei, nlist, tf.zeros_like(nlist))
@@ -60,7 +82,7 @@ def format_nlist(
         )
         ret = ret[..., :nsel]
     else:
-        ret = nlist
+        ret = _mask_out_of_cutoff(extended_coord, nlist, rcut)
     # Reshape anyway; this tells XLA the shape without dynamic shape.
     ret = tf.reshape(ret, [n_nf, n_nloc, nsel])
     return ret
