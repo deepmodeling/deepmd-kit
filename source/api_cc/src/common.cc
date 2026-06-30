@@ -1465,6 +1465,10 @@ void deepmd::print_summary(const std::string& pre) {
 }
 
 deepmd::DPBackend deepmd::get_backend(const std::string& model) {
+  auto has_suffix = [](const std::string& value, const std::string& suffix) {
+    return value.length() >= suffix.length() &&
+           value.substr(value.length() - suffix.length()) == suffix;
+  };
   if (model.length() >= 4 && model.substr(model.length() - 4) == ".pth") {
     return deepmd::DPBackend::PyTorch;
   } else if (model.length() >= 4 &&
@@ -1472,8 +1476,8 @@ deepmd::DPBackend deepmd::get_backend(const std::string& model) {
     return deepmd::DPBackend::PyTorchExportable;
   } else if (model.length() >= 3 && model.substr(model.length() - 3) == ".pb") {
     return deepmd::DPBackend::TensorFlow;
-  } else if (model.length() >= 11 &&
-             model.substr(model.length() - 11) == ".savedmodel") {
+  } else if (has_suffix(model, ".savedmodel") ||
+             has_suffix(model, ".savedmodeltf")) {
     return deepmd::DPBackend::JAX;
   } else if ((model.length() >= 5 &&
               model.substr(model.length() - 5) == ".json") ||
