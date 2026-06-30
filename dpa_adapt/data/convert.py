@@ -2,7 +2,7 @@
 """Format-agnostic data conversion.
 
 Public entry point: ``convert()`` — sniffs the input and routes to the
-appropriate pipeline: SMILES tables, formula tables, single structure files,
+appropriate pipeline: SMILES tables, single structure files,
 or globbed batches of structure files.
 """
 
@@ -106,22 +106,12 @@ def convert(
     mol_template: str = "id{row}.mol",
     split_seed: int | None = None,
     conformer_seed: int | None = None,
-    seed: int = 42,
-    poscar: str | None = None,
-    formula_col: str = "formula",
-    base_element: str | None = None,
-    sets: int = 1,
     overwrite: bool = False,
     validate: bool = True,
     strict: bool = False,
     verbose: bool = True,
 ) -> dict:
     """Convert any supported input to ``deepmd/npy``, auto-detecting the format.
-
-    *If ``fmt="formula"``* the call delegates to
-    :func:`~dpa_adapt.data.formula.formula_to_npy`, which reads a
-    CSV of elemental composition formulas + property values, and generates
-    doped structures from a template POSCAR via random substitution.
 
     *If the input is a CSV / Excel file with SMILES columns* the call
     delegates to :func:`~dpa_adapt.data.smiles.smiles_to_npy`, which
@@ -171,31 +161,6 @@ def convert(
             _LOG.info("RDKit converted samples: %s", converted["samples_used"])
             _LOG.info("RDKit failed rows     : %s", len(converted["failed_rows"]))
         return converted
-
-    # --- explicit formula hint ---
-    if fmt == "formula":
-        from .formula import (
-            formula_to_npy,
-        )
-
-        out = formula_to_npy(
-            csv_path=input_path,
-            output_dir=output_dir,
-            poscar=poscar,
-            formula_col=formula_col,
-            property_col=property_col,
-            property_name=property_name,
-            base_element=base_element,
-            sets=sets,
-            seed=seed,
-        )
-        if verbose:
-            _LOG.info("Formula conversion: %s systems written.", len(out))
-        return {
-            "method": "formula",
-            "output_dir": str(Path(output_dir).resolve()),
-            "output_systems": out,
-        }
 
     # --- structure glob → batch dpdata ---
     input_str = str(input_path)

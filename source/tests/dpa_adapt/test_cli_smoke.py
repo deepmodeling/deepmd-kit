@@ -213,56 +213,6 @@ class TestDpaFitArgumentNormalization:
         assert args.downstream_batch_size == 256
 
 
-class TestDpaDataConvertDispatch:
-    """Verify data convert handles method-specific return payloads."""
-
-    def test_formula_result_exits_cleanly(self, monkeypatch, tmp_path):
-        from argparse import (
-            Namespace,
-        )
-
-        import dpa_adapt
-        from dpa_adapt.cli import (
-            _cmd_data_convert,
-        )
-
-        out = tmp_path / "npy"
-
-        def _fake_convert(**kwargs):
-            return {
-                "method": "formula",
-                "output_dir": str(out),
-                "output_systems": [str(out / "sys_0000")],
-            }
-
-        monkeypatch.setattr(dpa_adapt, "convert", _fake_convert)
-
-        args = Namespace(
-            input=str(tmp_path / "formula.csv"),
-            output=str(out),
-            fmt="formula",
-            type_map=None,
-            property_name=None,
-            property_col="energy",
-            train_ratio=0.9,
-            smiles_col="SMILES",
-            mol_dir=None,
-            mol_template="id{row}.mol",
-            split_seed=None,
-            conformer_seed=None,
-            poscar=str(tmp_path / "POSCAR"),
-            formula_col="formula",
-            base_element=None,
-            sets=1,
-            seed=42,
-            overwrite=False,
-            validate=True,
-            strict=False,
-        )
-
-        assert _cmd_data_convert(args) == 0
-
-
 class TestInitAllExports:
     """Verify __all__ covers the key public names."""
 
