@@ -91,15 +91,19 @@ def edge_force_virial(
     # zero padding/guard contributions; cast mask to g's dtype (array-API pure,
     # CLAUDE.md mask-multiply guideline — avoids bool*float under array_api_strict)
     g = g_e * xp.astype(edge_mask[:, None], g_e.dtype)
-    # Clamp scatter indices into the valid node range ``[0, n_out)``. Padding/guard
-    # edges (``edge_mask == 0``) carry ``g == 0`` above, so ``w_edge == 0`` and a
-    # clamped out-of-range index scatters ZERO -- numerically harmless. This keeps
-    # the scatter address in-bounds for the CUDA-compiled kernel: under dynamic-edge
-    # ``torch.export`` a padding index can reach the ``index_add`` BEFORE the mask
-    # zeroes its value, tripping ``tl.device_assert(idx < ks0)`` (a hard device-side
-    # assert on CUDA; benign on CPU, which does not bounds-check the address).
-    src = xp.clip(edge_index[0], 0, n_out - 1)
-    dst = xp.clip(edge_index[1], 0, n_out - 1)
+    # Wrap node indices into ``[0, n_out)`` so every scatter address is in-bounds.
+    # Real edges already have index < n_out (modulo is a no-op). Out-of-range
+    # indices CAN appear in the CUDA-compiled kernel: under dynamic-edge
+    # ``torch.export`` the scatter bound ``ks0 == n_out`` binds to a SMALLER
+    # symbol than the live node count at AOTI runtime, so a valid index trips
+    # ``tl.device_assert(idx < ks0)`` (a hard device-side assert on CUDA; benign
+    # on CPU, which does not bounds-check the address). Such edges carry ~zero
+    # ``w_edge`` (masked ``g`` + tiny ``g_e``), so wrapping them to another node
+    # is numerically harmless. Modulo is pure arithmetic => torch.export-safe,
+    # unlike ``xp.clip`` (SymInt bound breaks array_api_compat) and unlike a
+    # mask-multiply (misses ``edge_mask == 1`` out-of-range indices).
+    src = edge_index[0] % n_out
+    dst = edge_index[1] % n_out
     # force (output sized to the node axis, incl. any padding tail)
     force = segment_sum(g, dst, n_out) - segment_sum(g, src, n_out)
     # per-edge virial w_e[k, j] = -g_e[k] * edge_vec[j]  (broadcast, no einsum)
@@ -112,9 +116,8 @@ def edge_force_virial(
     boundaries = xp.cumulative_sum(n_node)  # (nf,) per-frame node upper bounds
     edge_frame = xp.astype(
         xp.searchsorted(boundaries, dst, side="right"), xp.int64
-    )  # (E,) in [0, nf)
-    # searchsorted(side="right") can return ``nf`` for an out-of-range ``dst``
-    # (padding/garbage); clamp into ``[0, nf)`` for the same CUDA-bounds reason.
-    edge_frame = xp.clip(edge_frame, 0, nf - 1)
+    )  # (E,) in [0, nf]
+    # wrap into [0, nf) for the same CUDA-bounds reason (export-safe modulo)
+    edge_frame = edge_frame % nf
     virial = segment_sum(w_edge, edge_frame, nf)  # (nf, 3, 3)
     return force, atom_virial, virial
