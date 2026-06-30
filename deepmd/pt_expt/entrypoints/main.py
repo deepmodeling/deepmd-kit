@@ -104,13 +104,31 @@ def _get_neighbor_stat_data(
     ``make_neighbor_stat_data``; falls back to the legacy ``get_data`` for
     npy/HDF5 directories.
     """
-    lmdb_path = _detect_lmdb_path(dataset_params.get("systems"))
+    lmdb_path = (
+        None
+        if dataset_params.get("format", None) is not None
+        else _detect_lmdb_path(dataset_params.get("systems"))
+    )
     if lmdb_path is not None:
         from deepmd.dpmodel.utils.lmdb_data import (
             make_neighbor_stat_data,
         )
 
         return make_neighbor_stat_data(lmdb_path, type_map)
+    systems = process_systems(
+        dataset_params["systems"],
+        patterns=dataset_params.get("rglob_patterns", None),
+        fmt=dataset_params.get("format", None),
+        out_fmt=dataset_params.get(
+            "out_format", dataset_params.get("output_format", None)
+        ),
+    )
+    if len(systems) == 1 and is_lmdb(systems[0]):
+        from deepmd.dpmodel.utils.lmdb_data import (
+            make_neighbor_stat_data,
+        )
+
+        return make_neighbor_stat_data(systems[0], type_map)
     return get_data(dataset_params, 0, type_map, None)
 
 
@@ -126,7 +144,11 @@ def _build_data_system(
     :class:`DeepmdDataSystem` path with system expansion.
     """
     systems_raw = dataset_params["systems"]
-    lmdb_path = _detect_lmdb_path(systems_raw)
+    lmdb_path = (
+        None
+        if dataset_params.get("format", None) is not None
+        else _detect_lmdb_path(systems_raw)
+    )
     if lmdb_path is not None:
         return LmdbDataSystem(
             lmdb_path=lmdb_path,
@@ -138,7 +160,19 @@ def _build_data_system(
     systems = process_systems(
         systems_raw,
         patterns=dataset_params.get("rglob_patterns", None),
+        fmt=dataset_params.get("format", None),
+        out_fmt=dataset_params.get(
+            "out_format", dataset_params.get("output_format", None)
+        ),
     )
+    if len(systems) == 1 and is_lmdb(systems[0]):
+        return LmdbDataSystem(
+            lmdb_path=systems[0],
+            type_map=type_map,
+            batch_size=dataset_params["batch_size"],
+            auto_prob_style=dataset_params.get("auto_prob"),
+            seed=seed,
+        )
     return DeepmdDataSystem(
         systems=systems,
         batch_size=dataset_params["batch_size"],
