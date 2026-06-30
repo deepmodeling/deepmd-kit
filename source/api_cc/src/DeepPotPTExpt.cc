@@ -69,7 +69,7 @@ void DeepPotPTExpt::init(const std::string& model,
   // before the AOTI module loads.  Without this, multi-rank GNN .pt2
   // archives fail at pair_style time with
   // ``Could not find schema for deepmd_export::border_op``.
-  deepmd::load_op_library();
+  deepmd::load_op_library(deepmd::DPBackend::PyTorchExportable);
 
   if (!file_content.empty()) {
     throw deepmd::deepmd_exception(
