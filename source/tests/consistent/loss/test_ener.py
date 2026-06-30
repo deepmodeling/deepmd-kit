@@ -21,6 +21,7 @@ from ..common import (
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
     INSTALLED_TF,
+    INSTALLED_TF2,
     CommonTest,
     parameterized,
 )
@@ -128,8 +129,10 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
     skip_pt_expt = not INSTALLED_PT_EXPT
     skip_jax = not INSTALLED_JAX
     skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
+    skip_tf2 = not INSTALLED_TF2
 
     tf_class = EnerLossTF
+    tf2_class = EnerLossDP
     dp_class = EnerLossDP
     pt_class = EnerLossPT
     pt_expt_class = EnerLossPTExpt
@@ -333,6 +336,14 @@ class TestEner(CommonTest, LossTest, unittest.TestCase):
         more_loss = {kk: to_numpy_array(vv) for kk, vv in more_loss.items()}
         return loss, more_loss
 
+    def eval_tf2(self, tf2_obj: Any) -> Any:
+        return self.eval_tf2_loss(
+            tf2_obj,
+            self.predict_dpmodel_style,
+            self.label,
+            mae=self.mae,
+        )
+
     def extract_ret(self, ret: Any, backend) -> dict[str, np.ndarray]:
         loss = ret[0]
         result = {"loss": np.atleast_1d(np.asarray(loss, dtype=np.float64))}
@@ -386,8 +397,10 @@ class TestEnerGF(CommonTest, LossTest, unittest.TestCase):
     skip_jax = not INSTALLED_JAX
     skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
     skip_pd = not INSTALLED_PD
+    skip_tf2 = not INSTALLED_TF2
 
     tf_class = EnerLossTF
+    tf2_class = EnerLossDP
     dp_class = EnerLossDP
     pt_class = EnerLossPT
     pt_expt_class = EnerLossPTExpt
@@ -567,6 +580,14 @@ class TestEnerGF(CommonTest, LossTest, unittest.TestCase):
         loss = to_numpy_array(loss)
         more_loss = {kk: to_numpy_array(vv) for kk, vv in more_loss.items()}
         return loss, more_loss
+
+    def eval_tf2(self, tf2_obj: Any) -> Any:
+        return self.eval_tf2_loss(
+            tf2_obj,
+            self.predict_dpmodel_style,
+            self.label,
+            mae=True,
+        )
 
     def extract_ret(self, ret: Any, backend) -> dict[str, np.ndarray]:
         loss = ret[0]

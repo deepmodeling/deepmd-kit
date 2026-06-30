@@ -146,6 +146,7 @@ class IOTest:
         for backend_name, suffix_idx in (
             # unfortunately, jax2tf cannot work with tf v1 behaviors
             ("jax", 2) if DP_TEST_TF2_ONLY else ("tensorflow", 0),
+            ("tf2", 0) if DP_TEST_TF2_ONLY else (None, None),
             ("pytorch", 0),
             ("dpmodel", 0),
             ("jax", 0) if DP_TEST_TF2_ONLY else (None, None),

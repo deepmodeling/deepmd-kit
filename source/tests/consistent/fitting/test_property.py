@@ -24,6 +24,7 @@ from ..common import (
     INSTALLED_JAX,
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
+    INSTALLED_TF2,
     CommonTest,
     parameterized,
 )
@@ -62,6 +63,13 @@ else:
     PropertyFittingStrict = object
 
 PropertyFittingTF = object
+if INSTALLED_TF2:
+    from deepmd.tf2.common import (
+        to_tensorflow_array,
+    )
+    from deepmd.tf2.fitting.fitting import PropertyFittingNet as PropertyFittingTF2
+else:
+    PropertyFittingTF2 = object
 
 
 @parameterized(
@@ -117,12 +125,14 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
 
     skip_jax = not INSTALLED_JAX
     skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
+    skip_tf2 = not INSTALLED_TF2
 
     @property
     def skip_pt_expt(self) -> bool:
         return CommonTest.skip_pt_expt
 
     tf_class = PropertyFittingTF
+    tf2_class = PropertyFittingTF2
     dp_class = PropertyFittingDP
     pt_class = PropertyFittingPT
     pt_expt_class = PropertyFittingPTExpt
@@ -249,6 +259,25 @@ class TestProperty(CommonTest, FittingTest, unittest.TestCase):
             fparam=self.fparam if numb_fparam else None,
             aparam=self.aparam if numb_aparam else None,
         )[dp_obj.var_name]
+
+    def eval_tf2(self, tf2_obj: Any) -> Any:
+        (
+            resnet_dt,
+            precision,
+            mixed_types,
+            numb_fparam,
+            numb_aparam,
+            task_dim,
+            intensive,
+        ) = self.param
+        return to_numpy_array(
+            tf2_obj(
+                to_tensorflow_array(self.inputs),
+                to_tensorflow_array(self.atype.reshape(1, -1)),
+                fparam=to_tensorflow_array(self.fparam) if numb_fparam else None,
+                aparam=to_tensorflow_array(self.aparam) if numb_aparam else None,
+            )[tf2_obj.var_name]
+        )
 
     def eval_jax(self, jax_obj: Any) -> Any:
         (
