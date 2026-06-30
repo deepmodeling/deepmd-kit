@@ -64,8 +64,10 @@ void DeepSpinPTExpt::init(const std::string& model,
     return;
   }
 
+  preselect_torch_device(gpu_rank, gpu_id, gpu_enabled);
+
   // Load libdeepmd_op_pt.so so deepmd_export::* schemas are visible
-  // to torch's dispatcher before the AOTI module loads.  See
+  // to torch's dispatcher before the AOTI module loads. See
   // DeepPotPTExpt::init for the full rationale.
   deepmd::load_op_library();
 
@@ -75,18 +77,11 @@ void DeepSpinPTExpt::init(const std::string& model,
         "Please provide a file path instead.");
   }
 
-  int gpu_num = torch::cuda::device_count();
-  gpu_id = (gpu_num > 0) ? (gpu_rank % gpu_num) : 0;
-  gpu_enabled = torch::cuda::is_available();
-
   std::string device_str;
   if (!gpu_enabled) {
     device_str = "cpu";
     std::cout << "load model from: " << model << " to cpu" << std::endl;
   } else {
-#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-    DPErrcheck(DPSetDevice(gpu_id));
-#endif
     device_str = "cuda:" + std::to_string(gpu_id);
     std::cout << "load model from: " << model << " to gpu " << gpu_id
               << std::endl;

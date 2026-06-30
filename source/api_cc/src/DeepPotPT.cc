@@ -53,18 +53,13 @@ void DeepPotPT::init(const std::string& model,
               << std::endl;
     return;
   }
+  preselect_torch_device(gpu_rank, gpu_id, gpu_enabled);
   deepmd::load_op_library();
-  int gpu_num = torch::cuda::device_count();
-  gpu_id = (gpu_num > 0) ? (gpu_rank % gpu_num) : 0;
-  gpu_enabled = torch::cuda::is_available();
   torch::Device device(torch::kCUDA, gpu_id);
   if (!gpu_enabled) {
     device = torch::Device(torch::kCPU);
     std::cout << "load model from: " << model << " to cpu " << std::endl;
   } else {
-#if GOOGLE_CUDA || TENSORFLOW_USE_ROCM
-    DPErrcheck(DPSetDevice(gpu_id));
-#endif  // GOOGLE_CUDA || TENSORFLOW_USE_ROCM
     std::cout << "load model from: " << model << " to gpu " << gpu_id
               << std::endl;
   }
