@@ -1525,10 +1525,10 @@ class TestPolarComputeOrLoadStat(unittest.TestCase):
         )
 
     def test_load_stat_from_file(self) -> None:
+        import tempfile
         from copy import (
             deepcopy,
         )
-        import tempfile
         from pathlib import (
             Path,
         )
