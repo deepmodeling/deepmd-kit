@@ -58,6 +58,9 @@ from .ener_model import (
 from .frozen import (
     FrozenModel,
 )
+from .group_property_model import (
+    GroupPropertyModel,
+)
 from .make_hessian_model import (
     make_hessian_model,
 )
@@ -291,6 +294,8 @@ def get_standard_model(model_params: dict) -> BaseModel:
         modelcls = EnergyModel
     elif fitting_net_type == "property":
         modelcls = PropertyModel
+    elif fitting_net_type == "group_property":
+        modelcls = GroupPropertyModel
     elif fitting_net_type == "population":
         modelcls = PopulationModel
     else:

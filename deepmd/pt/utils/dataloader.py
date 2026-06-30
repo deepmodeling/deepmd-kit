@@ -16,6 +16,7 @@ import torch.multiprocessing
 from torch.utils.data import (
     DataLoader,
     Dataset,
+    Sampler,
     WeightedRandomSampler,
 )
 from torch.utils.data._utils.collate import (
@@ -34,6 +35,11 @@ from deepmd.pt.utils import (
 )
 from deepmd.pt.utils.dataset import (
     DeepmdDataSetForLoader,
+)
+from deepmd.pt.utils.grouped import (
+    grouped_frame_batches,
+    has_group_requirement,
+    load_group_ids_for_system,
 )
 from deepmd.pt.utils.utils import (
     mix_entropy,
@@ -162,23 +168,52 @@ class DpLoaderSet(Dataset):
         else:
             self.batch_sizes = batch_size * np.ones(len(systems), dtype=int)
         assert len(self.systems) == len(self.batch_sizes)
+        self._group_complete_batches = False
+        self._shuffle = shuffle
+        self._seed = seed
+        self._build_dataloaders()
+
+    def _build_dataloaders(self) -> None:
+        """Build per-system dataloaders."""
+        self.sampler_list = []
+        self.dataloaders = []
+        self.index = []
+        self.total_batch = 0
         for system, batch_size in zip(self.systems, self.batch_sizes):
             if dist.is_available() and dist.is_initialized():
                 system_sampler = DistributedSampler(system)
                 self.sampler_list.append(system_sampler)
             else:
                 system_sampler = None
-            system_dataloader = DataLoader(
-                dataset=system,
-                batch_size=int(batch_size),
-                num_workers=0,  # Should be 0 to avoid too many threads forked
-                sampler=system_sampler,
-                collate_fn=collate_batch,
-                shuffle=(
-                    not (dist.is_available() and dist.is_initialized())
-                )  # distributed sampler will do the shuffling by default
-                and shuffle,
-            )
+            batch_sampler = None
+            if self._group_complete_batches and system_sampler is None:
+                group_ids = load_group_ids_for_system(system.system)
+                if group_ids is not None:
+                    batch_sampler = GroupCompleteBatchSampler(
+                        group_ids,
+                        max_frames=int(batch_size),
+                        shuffle=self._shuffle,
+                        seed=self._seed,
+                    )
+            if batch_sampler is None:
+                system_dataloader = DataLoader(
+                    dataset=system,
+                    batch_size=int(batch_size),
+                    num_workers=0,  # Should be 0 to avoid too many threads forked
+                    sampler=system_sampler,
+                    collate_fn=collate_batch,
+                    shuffle=(
+                        not (dist.is_available() and dist.is_initialized())
+                    )  # distributed sampler will do the shuffling by default
+                    and self._shuffle,
+                )
+            else:
+                system_dataloader = DataLoader(
+                    dataset=system,
+                    batch_sampler=batch_sampler,
+                    num_workers=0,
+                    collate_fn=collate_batch,
+                )
             self.dataloaders.append(system_dataloader)
             self.index.append(len(system_dataloader))
             self.total_batch += len(system_dataloader)
@@ -216,6 +251,9 @@ class DpLoaderSet(Dataset):
         """Add data requirement for each system in multiple systems."""
         for system in self.systems:
             system.add_data_requirement(data_requirement)
+        if has_group_requirement(data_requirement) and not dist.is_initialized():
+            self._group_complete_batches = True
+            self._build_dataloaders()
 
     def print_summary(
         self,
@@ -261,6 +299,43 @@ def collate_batch(batch: list[dict[str, Any]]) -> dict[str, Any]:
                     [torch.as_tensor(d[key]) for d in batch]
                 )
     return result
+
+
+class GroupCompleteBatchSampler(Sampler[list[int]]):
+    """Yield frame batches that never split a group inside one system."""
+
+    def __init__(
+        self,
+        group_ids: np.ndarray,
+        max_frames: int,
+        shuffle: bool = True,
+        seed: int | None = None,
+    ) -> None:
+        self.group_ids = np.asarray(group_ids, dtype=np.int64)
+        self.max_frames = max(int(max_frames), 1)
+        self.shuffle = shuffle
+        self.seed = seed
+        self._epoch = 0
+        self._batches = self._make_batches()
+
+    def _make_batches(self) -> list[list[int]]:
+        rng = np.random.default_rng(
+            None if self.seed is None else self.seed + self._epoch
+        )
+        return grouped_frame_batches(
+            self.group_ids,
+            self.max_frames,
+            shuffle=self.shuffle,
+            rng=rng,
+        )
+
+    def __iter__(self):
+        self._batches = self._make_batches()
+        self._epoch += 1
+        yield from self._batches
+
+    def __len__(self) -> int:
+        return len(self._batches)
 
 
 def get_weighted_sampler(

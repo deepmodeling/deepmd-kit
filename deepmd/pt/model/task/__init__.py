@@ -18,6 +18,9 @@ from .ener import (
 from .fitting import (
     Fitting,
 )
+from .group_property import (
+    GroupPropertyFittingNet,
+)
 from .polarizability import (
     PolarFittingNet,
 )
@@ -42,6 +45,7 @@ __all__ = [
     "EnergyFittingNet",
     "EnergyFittingNetDirect",
     "Fitting",
+    "GroupPropertyFittingNet",
     "PolarFittingNet",
     "PopulationFittingNet",
     "PropertyFittingNet",

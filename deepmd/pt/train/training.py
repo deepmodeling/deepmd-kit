@@ -45,6 +45,7 @@ from deepmd.pt.loss import (
     EnergySpinLoss,
     EnergyStdLoss,
     PopulationLoss,
+    GroupPropertyLoss,
     PropertyLoss,
     TaskLoss,
     TensorLoss,
@@ -2534,6 +2535,12 @@ def get_loss(
         loss_params["var_name"] = var_name
         loss_params["intensive"] = intensive
         return PropertyLoss(**loss_params)
+    elif loss_type == "group_property":
+        task_dim = _model.get_task_dim()
+        var_name = _model.get_var_name()
+        loss_params["task_dim"] = task_dim
+        loss_params["var_name"] = var_name
+        return GroupPropertyLoss(**loss_params)
     elif loss_type == "population":
         loss_params["starter_learning_rate"] = start_lr
         return PopulationLoss(**loss_params)

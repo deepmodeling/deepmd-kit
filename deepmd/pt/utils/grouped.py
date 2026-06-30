@@ -1,0 +1,142 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
+"""Utilities for grouped frame-level property training."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+
+from deepmd.utils.data import (
+    DataRequirementItem,
+)
+
+GROUP_ID_KEY = "group_id"
+GROUP_WEIGHT_KEY = "weight"
+POOL_MASK_KEY = "pool_mask"
+
+
+def group_data_requirements() -> list[DataRequirementItem]:
+    """Return the auxiliary data fields consumed by ``group_property``."""
+    return [
+        DataRequirementItem(
+            GROUP_ID_KEY,
+            ndof=1,
+            atomic=False,
+            must=False,
+            high_prec=False,
+            default=0.0,
+            dtype=np.int64,
+        ),
+        DataRequirementItem(
+            GROUP_WEIGHT_KEY,
+            ndof=1,
+            atomic=False,
+            must=False,
+            high_prec=True,
+            default=1.0,
+        ),
+        DataRequirementItem(
+            POOL_MASK_KEY,
+            ndof=1,
+            atomic=True,
+            must=False,
+            high_prec=True,
+            default=1.0,
+            output_natoms_for_type_sel=True,
+        ),
+    ]
+
+
+def has_group_requirement(data_requirement: list[DataRequirementItem]) -> bool:
+    """Return True when a data requirement asks for grouped auxiliaries."""
+    keys = {item["key"] for item in data_requirement}
+    return GROUP_ID_KEY in keys and GROUP_WEIGHT_KEY in keys and POOL_MASK_KEY in keys
+
+
+def normalize_group_id_tensor(group_id: Any, nframes: int) -> Any:
+    """Normalize collated group ids to shape ``(nframes,)``."""
+    group_id = group_id.reshape(nframes, -1)
+    if group_id.shape[1] != 1:
+        raise ValueError(
+            f"{GROUP_ID_KEY} must have one value per frame; got shape {group_id.shape}."
+        )
+    return group_id[:, 0].long()
+
+
+def normalize_weight_tensor(weight: Any, nframes: int) -> Any:
+    """Normalize collated group weights to shape ``(nframes,)``."""
+    weight = weight.reshape(nframes, -1)
+    if weight.shape[1] != 1:
+        raise ValueError(
+            f"{GROUP_WEIGHT_KEY} must have one value per frame; got shape {weight.shape}."
+        )
+    return weight[:, 0]
+
+
+def normalize_pool_mask_tensor(pool_mask: Any, nframes: int, natoms: int) -> Any:
+    """Normalize collated pool masks to shape ``(nframes, natoms)``."""
+    pool_mask = pool_mask.reshape(nframes, natoms, -1)
+    if pool_mask.shape[2] != 1:
+        raise ValueError(
+            f"{POOL_MASK_KEY} must have one value per atom; got shape {pool_mask.shape}."
+        )
+    return pool_mask[:, :, 0]
+
+
+def load_group_ids_for_system(system: str | Path) -> np.ndarray | None:
+    """Load frame-level group ids from a DeepMD system, if present.
+
+    The returned ids follow DeepMD frame order across sorted ``set.*``
+    directories.  Missing data returns ``None`` so callers can fall back to
+    ordinary frame batching.
+    """
+    system_path = Path(system)
+    set_dirs = sorted(system_path.glob("set.*"))
+    if not set_dirs:
+        return None
+
+    chunks: list[np.ndarray] = []
+    for set_dir in set_dirs:
+        path = set_dir / f"{GROUP_ID_KEY}.npy"
+        if not path.is_file():
+            return None
+        arr = np.asarray(np.load(str(path))).reshape(-1)
+        chunks.append(arr.astype(np.int64, copy=False))
+    return np.concatenate(chunks) if chunks else None
+
+
+def grouped_frame_batches(
+    group_ids: np.ndarray,
+    max_frames: int,
+    shuffle: bool = True,
+    rng: np.random.Generator | None = None,
+) -> list[list[int]]:
+    """Pack complete groups into batches without splitting a group."""
+    if group_ids.ndim != 1:
+        raise ValueError(f"{GROUP_ID_KEY} must be 1D; got shape {group_ids.shape}.")
+    groups: dict[int, list[int]] = {}
+    for frame_idx, group_id in enumerate(group_ids.astype(np.int64, copy=False)):
+        groups.setdefault(int(group_id), []).append(frame_idx)
+
+    group_items = list(groups.values())
+    if shuffle:
+        rng = rng or np.random.default_rng()
+        order = rng.permutation(len(group_items))
+        group_items = [group_items[int(ii)] for ii in order]
+
+    batches: list[list[int]] = []
+    current: list[int] = []
+    limit = max(int(max_frames), 1)
+    for indices in group_items:
+        if current and len(current) + len(indices) > limit:
+            batches.append(current)
+            current = []
+        current.extend(indices)
+        if len(current) >= limit:
+            batches.append(current)
+            current = []
+    if current:
+        batches.append(current)
+    return batches
