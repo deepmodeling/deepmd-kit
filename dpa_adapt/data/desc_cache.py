@@ -51,7 +51,7 @@ def _cache_dir() -> Path:
 # ---------------------------------------------------------------------------
 
 
-def _hash_array(h: "hashlib._Hash", arr: np.ndarray) -> None:
+def _hash_array(h: hashlib._Hash, arr: np.ndarray) -> None:
     """Fold an array's shape, dtype, and full byte content into *h*.
 
     The contiguous buffer is fed to :meth:`hashlib._Hash.update` directly via
