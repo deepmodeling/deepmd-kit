@@ -1,6 +1,7 @@
 # SPDX-License-Identifier: LGPL-3.0-or-later
 # Import to register converters
 from . import (  # noqa: F401
+    nep_coeff,
     repflows,
     repformers,
     se_t_tebd_block,
@@ -22,6 +23,9 @@ from .dpa4 import (
 )
 from .hybrid import (
     DescrptHybrid,
+)
+from .nep import (
+    DescrptNep,
 )
 from .se_atten_v2 import (
     DescrptSeAttenV2,
@@ -46,6 +50,7 @@ __all__ = [
     "DescrptDPA3",
     "DescrptDPA4",
     "DescrptHybrid",
+    "DescrptNep",
     "DescrptSeA",
     "DescrptSeAttenV2",
     "DescrptSeR",

@@ -12,6 +12,7 @@ Model
    dpa2
    dpa3
    dpa4
+   nep
    train-hybrid
    sel
    train-energy

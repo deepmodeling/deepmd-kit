@@ -1014,6 +1014,61 @@ def descrpt_se_t_args() -> list[Argument]:
 
 
 @descrpt_args_plugin.register(
+    "nep", doc="The NEP (neuroevolution potential) descriptor."
+)
+def descrpt_nep_args() -> list[Argument]:
+    doc_sel = 'This parameter sets the number of selected neighbors for each type of atom within `rcut_radial`. It can be:\n\n\
+    - `list[int]`. The length of the list should be the same as the number of atom types in the system. `sel[i]` gives the selected number of type-i neighbors. `sel[i]` is recommended to be larger than the maximally possible number of type-i neighbors in the cut-off radius.\n\n\
+    - `str`. Can be "auto:factor" or "auto". "factor" is a float number larger than 1. This option will automatically determine the `sel`.'
+    doc_rcut_radial = "The cut-off radius of the radial descriptor."
+    doc_rcut_angular = (
+        "The cut-off radius of the angular descriptor. Must not exceed `rcut_radial`."
+    )
+    doc_n_max_radial = (
+        "Maximum radial expansion index; the radial dimension is `n_max_radial + 1`."
+    )
+    doc_n_max_angular = "Maximum angular expansion index; the angular radial dimension is `n_max_angular + 1`."
+    doc_basis_size_radial = "Maximum radial Chebyshev index; the radial basis size is `basis_size_radial + 1`."
+    doc_basis_size_angular = "Maximum angular Chebyshev index; the angular basis size is `basis_size_angular + 1`."
+    doc_l_max = "Maximum angular order L of the 3-body invariants."
+    doc_l_max_4body = "Set to 2 to include the 4-body invariant, or 0 to disable it."
+    doc_l_max_5body = "Set to 1 to include the 5-body invariant, or 0 to disable it. Requires `l_max_4body` to be 2."
+    doc_precision = f"The precision of the expansion coefficients, supported options are {list_to_doc(PRECISION_DICT.keys())} Defaults to float32 to match GPUMD; GPUMD inference of an exported nep.txt is always single precision."
+    doc_trainable = "Whether the expansion coefficients are trainable."
+    doc_seed = "Random seed for parameter initialization."
+
+    return [
+        Argument("sel", [list[int], str], optional=True, default="auto", doc=doc_sel),
+        Argument("rcut_radial", float, optional=True, default=8.0, doc=doc_rcut_radial),
+        Argument(
+            "rcut_angular", float, optional=True, default=4.0, doc=doc_rcut_angular
+        ),
+        Argument("n_max_radial", int, optional=True, default=6, doc=doc_n_max_radial),
+        Argument("n_max_angular", int, optional=True, default=6, doc=doc_n_max_angular),
+        Argument(
+            "basis_size_radial",
+            int,
+            optional=True,
+            default=6,
+            doc=doc_basis_size_radial,
+        ),
+        Argument(
+            "basis_size_angular",
+            int,
+            optional=True,
+            default=6,
+            doc=doc_basis_size_angular,
+        ),
+        Argument("l_max", int, optional=True, default=4, doc=doc_l_max),
+        Argument("l_max_4body", int, optional=True, default=2, doc=doc_l_max_4body),
+        Argument("l_max_5body", int, optional=True, default=0, doc=doc_l_max_5body),
+        Argument("precision", str, optional=True, default="float32", doc=doc_precision),
+        Argument("trainable", bool, optional=True, default=True, doc=doc_trainable),
+        Argument("seed", [int, None], optional=True, doc=doc_seed),
+    ]
+
+
+@descrpt_args_plugin.register(
     "se_a_tpe", alias=["se_a_ebd"], doc=doc_only_tf_supported + doc_se_a_tpe
 )
 def descrpt_se_a_tpe_args() -> list[Argument]:

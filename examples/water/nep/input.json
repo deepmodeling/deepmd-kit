@@ -1,0 +1,79 @@
+{
+  "_comment": "NEP (neuroevolution potential) descriptor + per-element energy fitting. Trains with the pt-expt or jax backend.",
+  "model": {
+    "type_map": [
+      "O",
+      "H"
+    ],
+    "descriptor": {
+      "type": "nep",
+      "sel": [
+        80,
+        160
+      ],
+      "rcut_radial": 8.00,
+      "rcut_angular": 4.00,
+      "n_max_radial": 6,
+      "n_max_angular": 6,
+      "basis_size_radial": 6,
+      "basis_size_angular": 6,
+      "l_max": 4,
+      "l_max_4body": 2,
+      "l_max_5body": 0,
+      "seed": 1,
+      "_comment": " that's all"
+    },
+    "fitting_net": {
+      "neuron": [
+        30
+      ],
+      "activation_function": "tanh",
+      "resnet_dt": false,
+      "seed": 1,
+      "_comment": " that's all"
+    },
+    "data_stat_nbatch": 20,
+    "_comment": " that's all"
+  },
+  "learning_rate": {
+    "type": "exp",
+    "decay_steps": 5000,
+    "start_lr": 0.001,
+    "stop_lr": 3.51e-8,
+    "_comment": "that's all"
+  },
+  "loss": {
+    "type": "ener",
+    "start_pref_e": 0.02,
+    "limit_pref_e": 1,
+    "start_pref_f": 1000,
+    "limit_pref_f": 1,
+    "_comment": " that's all"
+  },
+  "training": {
+    "stat_file": "./nep.hdf5",
+    "training_data": {
+      "systems": [
+        "../data/data_0",
+        "../data/data_1",
+        "../data/data_2"
+      ],
+      "batch_size": 1,
+      "_comment": "that's all"
+    },
+    "validation_data": {
+      "systems": [
+        "../data/data_3"
+      ],
+      "batch_size": 1,
+      "numb_btch": 3,
+      "_comment": "that's all"
+    },
+    "numb_steps": 1000,
+    "seed": 10,
+    "disp_file": "lcurve.out",
+    "disp_freq": 100,
+    "save_freq": 10000,
+    "_comment": "that's all"
+  }
+}
