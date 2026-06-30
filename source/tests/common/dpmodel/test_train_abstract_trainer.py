@@ -161,6 +161,34 @@ def test_abstract_trainer_drives_single_task_loop(tmp_path: Path) -> None:
     assert "rmse_val" in lcurve.read_text()
 
 
+def test_non_chief_rank_skips_user_visible_outputs(tmp_path: Path) -> None:
+    lcurve = tmp_path / "lcurve.out"
+    trainer = DummyTrainer(
+        TrainerConfig(
+            num_steps=3,
+            disp_file=str(lcurve),
+            disp_freq=1,
+            save_freq=1,
+            timing_in_training=False,
+        ),
+        rank_context=RankContext(rank=1, world_size=2),
+    )
+    tasks = TrainingTaskCollection.single(
+        DummyData([1.0, 2.0, 3.0]),
+        DummyData([10.0]),
+    )
+
+    trainer.run(tasks)
+
+    assert trainer.steps == [
+        ("Default", 0, 1.0),
+        ("Default", 1, 2.0),
+        ("Default", 2, 3.0),
+    ]
+    assert trainer.checkpoints == []
+    assert not lcurve.exists()
+
+
 def test_abstract_trainer_tears_down_when_lcurve_open_fails(tmp_path: Path) -> None:
     events: list[str] = []
 

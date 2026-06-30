@@ -386,8 +386,9 @@ class DPTrainer(AbstractTrainer):
             self._apply_finetune()
 
         for model_key in self.model_keys:
-            tx = optax.adam(
-                learning_rate=lambda step: self.lr.value(self.start_step + step),
+            tx = optax.chain(
+                optax.scale_by_adam(),
+                _scale_by_global_learning_rate(),
             )
             self.optimizers[model_key] = nnx.Optimizer(
                 self.models[model_key], tx, wrt=nnx.Param
@@ -572,9 +573,9 @@ class DPTrainer(AbstractTrainer):
                 ap,
             )
             if Version(flax_version) >= Version("0.11.0"):
-                optimizer.update(model, grads)
+                optimizer.update(model, grads, learning_rate=lr)
             else:
-                optimizer.update(grads)
+                _legacy_optimizer_update(optimizer, grads, lr)
 
         return train_step, loss_fn_more_loss
 
@@ -777,6 +778,44 @@ def _evaluate_model_dict(
     model_dict["force"] = model_dict["energy_derv_r"].squeeze(-2)
     model_dict["virial"] = model_dict["energy_derv_c_redu"].squeeze(-2)
     return model_dict
+
+
+def _scale_by_global_learning_rate() -> optax.GradientTransformationExtraArgs:
+    """Scale optimizer updates by the learning rate from the global step."""
+
+    def update_fn(
+        updates: Any,
+        state: optax.EmptyState,
+        params: Any = None,
+        **kwargs: Any,
+    ) -> tuple[Any, optax.EmptyState]:
+        del params
+        learning_rate = kwargs["learning_rate"]
+        updates = jax.tree.map(lambda update: -learning_rate * update, updates)
+        return updates, state
+
+    return optax.GradientTransformationExtraArgs(optax.init_empty_state, update_fn)
+
+
+def _legacy_optimizer_update(optimizer: Any, grads: Any, lr: float) -> None:
+    """Run an NNX optimizer update with extra args on Flax before 0.11."""
+    from flax.nnx.training.optimizer import (
+        _opt_state_variables_to_state,
+        _update_opt_state,
+    )
+
+    params = nnx.state(optimizer.model, optimizer.wrt)
+    opt_state = _opt_state_variables_to_state(optimizer.opt_state)
+    updates, new_opt_state = optimizer.tx.update(
+        grads,
+        opt_state,
+        params,
+        learning_rate=lr,
+    )
+    new_params = optax.apply_updates(params, updates)
+    optimizer.step.value += 1
+    nnx.update(optimizer.model, new_params)
+    _update_opt_state(optimizer.opt_state, new_opt_state)
 
 
 def _copy_matching_state_tree(

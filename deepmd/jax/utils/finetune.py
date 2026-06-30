@@ -20,8 +20,6 @@ from deepmd.utils.finetune import (
 
 def _load_model_params(finetune_model: str) -> dict[str, Any]:
     """Extract model params from a JAX checkpoint."""
-    if not finetune_model.endswith(".jax"):
-        raise ValueError("JAX fine-tuning currently supports .jax checkpoints only.")
     return serialize_from_file(finetune_model)["model_def_script"]
 
 

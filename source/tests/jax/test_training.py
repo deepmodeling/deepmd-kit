@@ -19,9 +19,13 @@ from unittest.mock import (
 )
 
 import numpy as np
+import optax
 
 from deepmd.dpmodel.train import (
     TrainEntrypointOptions,
+)
+from deepmd.jax.env import (
+    jnp,
 )
 from deepmd.jax.entrypoints.freeze import (
     freeze,
@@ -35,6 +39,10 @@ from deepmd.jax.entrypoints.train import (
 )
 from deepmd.jax.train.trainer import (
     _copy_matching_state_tree,
+    _scale_by_global_learning_rate,
+)
+from deepmd.jax.utils.finetune import (
+    _load_model_params,
 )
 from deepmd.jax.utils.serialization import (
     _normalize_restored_state_keys,
@@ -91,6 +99,42 @@ def _lcurve_steps(path: Path) -> set[int]:
         if match:
             steps.add(int(match.group(1)))
     return steps
+
+
+def test_jax_optimizer_scales_updates_with_explicit_global_lr() -> None:
+    """The optimizer LR comes from the loop step, not the per-task optax count."""
+    tx = optax.chain(optax.scale_by_adam(), _scale_by_global_learning_rate())
+    params = {"w": jnp.asarray(1.0)}
+    grads = {"w": jnp.asarray(1.0)}
+    state = tx.init(params)
+
+    updates, state = tx.update(
+        grads,
+        state,
+        params,
+        learning_rate=jnp.asarray(0.2),
+    )
+    np.testing.assert_allclose(np.asarray(updates["w"]), -0.2, rtol=1e-5)
+
+    updates, _ = tx.update(
+        grads,
+        state,
+        params,
+        learning_rate=jnp.asarray(0.05),
+    )
+    np.testing.assert_allclose(np.asarray(updates["w"]), -0.05, rtol=1e-5)
+
+
+@patch("deepmd.jax.utils.finetune.serialize_from_file")
+def test_jax_finetune_load_model_params_accepts_loader_paths(
+    serialize_from_file,
+) -> None:
+    """Fine-tuning accepts every checkpoint path handled by serialize_from_file."""
+    model_params = {"type_map": ["O"], "descriptor": {}, "fitting_net": {}}
+    serialize_from_file.return_value = {"model_def_script": model_params}
+
+    assert _load_model_params("checkpoint") == model_params
+    serialize_from_file.assert_called_once_with("checkpoint")
 
 
 class TestJAXTraining(unittest.TestCase):
