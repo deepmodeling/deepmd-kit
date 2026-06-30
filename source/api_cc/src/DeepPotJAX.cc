@@ -9,6 +9,7 @@
 #include <array>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <iostream>
 #include <numeric>
 #include <ostream>
@@ -49,9 +50,224 @@ inline void find_function(TF_Function*& found_func,
   found_func = NULL;
 }
 
-inline bool function_def_contains(TF_Function* func,
-                                  const std::string& needle,
-                                  TF_Status* status) {
+inline bool operation_attr_bool_true(TF_Operation* oper,
+                                     const char* attr_name) {
+  TF_Status* attr_status = TF_NewStatus();
+  unsigned char value = 0;
+  TF_OperationGetAttrBool(oper, attr_name, &value, attr_status);
+  const bool result = TF_GetCode(attr_status) == TF_OK && value != 0;
+  TF_DeleteStatus(attr_status);
+  return result;
+}
+
+inline bool read_proto_varint(const char*& ptr,
+                              const char* end,
+                              uint64_t& value) {
+  value = 0;
+  int shift = 0;
+  while (ptr < end && shift <= 63) {
+    const uint64_t byte = static_cast<unsigned char>(*ptr++);
+    value |= (byte & 0x7f) << shift;
+    if ((byte & 0x80) == 0) {
+      return true;
+    }
+    shift += 7;
+  }
+  return false;
+}
+
+inline bool read_proto_bytes(const char*& ptr,
+                             const char* end,
+                             const char*& payload,
+                             size_t& payload_size) {
+  uint64_t size = 0;
+  if (!read_proto_varint(ptr, end, size) ||
+      size > static_cast<uint64_t>(end - ptr)) {
+    return false;
+  }
+  payload = ptr;
+  payload_size = static_cast<size_t>(size);
+  ptr += payload_size;
+  return true;
+}
+
+inline bool skip_proto_field(const int wire_type,
+                             const char*& ptr,
+                             const char* end) {
+  uint64_t ignored = 0;
+  const char* payload = NULL;
+  size_t payload_size = 0;
+  switch (wire_type) {
+    case 0:
+      return read_proto_varint(ptr, end, ignored);
+    case 1:
+      if (end - ptr < 8) {
+        return false;
+      }
+      ptr += 8;
+      return true;
+    case 2:
+      return read_proto_bytes(ptr, end, payload, payload_size);
+    case 5:
+      if (end - ptr < 4) {
+        return false;
+      }
+      ptr += 4;
+      return true;
+    default:
+      return false;
+  }
+}
+
+inline bool proto_bytes_equal(const char* payload,
+                              const size_t payload_size,
+                              const std::string& expected) {
+  return payload_size == expected.size() &&
+         std::memcmp(payload, expected.data(), payload_size) == 0;
+}
+
+inline bool attr_value_bool_true(const char* data, const size_t size) {
+  const char* ptr = data;
+  const char* end = data + size;
+  while (ptr < end) {
+    uint64_t tag = 0;
+    if (!read_proto_varint(ptr, end, tag)) {
+      return false;
+    }
+    const int field_number = static_cast<int>(tag >> 3);
+    const int wire_type = static_cast<int>(tag & 0x7);
+    // AttrValue.b = 5, encoded as a varint bool.
+    if (field_number == 5 && wire_type == 0) {
+      uint64_t value = 0;
+      return read_proto_varint(ptr, end, value) && value != 0;
+    }
+    if (!skip_proto_field(wire_type, ptr, end)) {
+      return false;
+    }
+  }
+  return false;
+}
+
+inline bool function_attr_bool_true(TF_Function* func, const char* attr_name) {
+  TF_Status* attr_status = TF_NewStatus();
+  TF_Buffer* attr_value = TF_NewBuffer();
+  TF_FunctionGetAttrValueProto(func, attr_name, attr_value, attr_status);
+  const bool result =
+      TF_GetCode(attr_status) == TF_OK && attr_value->data != NULL &&
+      attr_value_bool_true(static_cast<const char*>(attr_value->data),
+                           attr_value->length);
+  TF_DeleteBuffer(attr_value);
+  TF_DeleteStatus(attr_status);
+  return result;
+}
+
+inline bool attr_entry_is_xla_must_compile_true(const char* data,
+                                                const size_t size) {
+  const char* ptr = data;
+  const char* end = data + size;
+  bool key_matches = false;
+  bool value_is_true = false;
+  while (ptr < end) {
+    uint64_t tag = 0;
+    if (!read_proto_varint(ptr, end, tag)) {
+      return false;
+    }
+    const int field_number = static_cast<int>(tag >> 3);
+    const int wire_type = static_cast<int>(tag & 0x7);
+    if (wire_type == 2 && (field_number == 1 || field_number == 2)) {
+      const char* payload = NULL;
+      size_t payload_size = 0;
+      if (!read_proto_bytes(ptr, end, payload, payload_size)) {
+        return false;
+      }
+      if (field_number == 1) {
+        key_matches =
+            proto_bytes_equal(payload, payload_size, "_XlaMustCompile");
+      } else if (field_number == 2) {
+        value_is_true = attr_value_bool_true(payload, payload_size);
+      }
+    } else if (!skip_proto_field(wire_type, ptr, end)) {
+      return false;
+    }
+  }
+  return key_matches && value_is_true;
+}
+
+inline bool node_def_uses_xla(const char* data, const size_t size) {
+  const char* ptr = data;
+  const char* end = data + size;
+  while (ptr < end) {
+    uint64_t tag = 0;
+    if (!read_proto_varint(ptr, end, tag)) {
+      return false;
+    }
+    const int field_number = static_cast<int>(tag >> 3);
+    const int wire_type = static_cast<int>(tag & 0x7);
+    if (wire_type == 2 && (field_number == 2 || field_number == 5)) {
+      const char* payload = NULL;
+      size_t payload_size = 0;
+      if (!read_proto_bytes(ptr, end, payload, payload_size)) {
+        return false;
+      }
+      // NodeDef.op = 2. This identifies jax2tf native serialization.
+      if (field_number == 2 &&
+          proto_bytes_equal(payload, payload_size, "XlaCallModule")) {
+        return true;
+      }
+      // NodeDef.attr = 5. This catches PartitionedCall nodes marked by
+      // tf.function(jit_compile=True).
+      if (field_number == 5 &&
+          attr_entry_is_xla_must_compile_true(payload, payload_size)) {
+        return true;
+      }
+    } else if (!skip_proto_field(wire_type, ptr, end)) {
+      return false;
+    }
+  }
+  return false;
+}
+
+inline bool function_def_uses_xla(const char* data, const size_t size) {
+  // TensorFlow's C API exposes TF_Function bodies only as serialized
+  // FunctionDef protos. Use a minimal wire-format reader over the stable
+  // FunctionDef/NodeDef/AttrValue field numbers instead of a raw byte
+  // substring, and avoid depending on TensorFlow C++ protobuf headers.
+  const char* ptr = data;
+  const char* end = data + size;
+  while (ptr < end) {
+    uint64_t tag = 0;
+    if (!read_proto_varint(ptr, end, tag)) {
+      return false;
+    }
+    const int field_number = static_cast<int>(tag >> 3);
+    const int wire_type = static_cast<int>(tag & 0x7);
+    if (wire_type == 2 && (field_number == 3 || field_number == 5)) {
+      const char* payload = NULL;
+      size_t payload_size = 0;
+      if (!read_proto_bytes(ptr, end, payload, payload_size)) {
+        return false;
+      }
+      // FunctionDef.node_def = 3.
+      if (field_number == 3 && node_def_uses_xla(payload, payload_size)) {
+        return true;
+      }
+      // FunctionDef.attr = 5. This catches concrete functions marked by
+      // tf.function(jit_compile=True).
+      if (field_number == 5 &&
+          attr_entry_is_xla_must_compile_true(payload, payload_size)) {
+        return true;
+      }
+    } else if (!skip_proto_field(wire_type, ptr, end)) {
+      return false;
+    }
+  }
+  return false;
+}
+
+inline bool function_uses_xla(TF_Function* func, TF_Status* status) {
+  if (function_attr_bool_true(func, "_XlaMustCompile")) {
+    return true;
+  }
   TF_Buffer* func_def = TF_NewBuffer();
   TF_FunctionToFunctionDef(func, func_def, status);
   if (TF_GetCode(status) != TF_OK) {
@@ -59,18 +275,34 @@ inline bool function_def_contains(TF_Function* func,
     TF_DeleteBuffer(func_def);
     throw deepmd::deepmd_exception("TensorFlow C API Error: " + msg);
   }
-  const char* data = static_cast<const char*>(func_def->data);
-  const bool found =
-      data != NULL &&
-      std::string(data, func_def->length).find(needle) != std::string::npos;
+  const bool uses_xla =
+      func_def->data != NULL &&
+      function_def_uses_xla(static_cast<const char*>(func_def->data),
+                            func_def->length);
   TF_DeleteBuffer(func_def);
-  return found;
+  return uses_xla;
 }
 
-inline bool contains_xla_call_module(const std::vector<TF_Function*>& funcs,
-                                     TF_Status* status) {
+inline bool graph_uses_xla_compilation(TF_Graph* graph) {
+  size_t pos = 0;
+  while (TF_Operation* oper = TF_GraphNextOperation(graph, &pos)) {
+    const char* op_type = TF_OperationOpType(oper);
+    if ((op_type != NULL && std::strcmp(op_type, "XlaCallModule") == 0) ||
+        operation_attr_bool_true(oper, "_XlaMustCompile")) {
+      return true;
+    }
+  }
+  return false;
+}
+
+inline bool uses_xla_compilation(TF_Graph* graph,
+                                 const std::vector<TF_Function*>& funcs,
+                                 TF_Status* status) {
+  if (graph_uses_xla_compilation(graph)) {
+    return true;
+  }
   for (TF_Function* func : funcs) {
-    if (function_def_contains(func, "XlaCallModule", status)) {
+    if (function_uses_xla(func, status)) {
       return true;
     }
   }
@@ -307,7 +539,7 @@ void deepmd::DeepPotJAX::init(const std::string& model,
   TF_Function** funcs = func_vector.data();
   TF_GraphGetFunctions(graph, funcs, nfuncs, status);
   check_status(status);
-  has_xla_call_module_ = contains_xla_call_module(func_vector, status);
+  uses_xla_compilation_ = uses_xla_compilation(graph, func_vector, status);
 
   ctx_opts = TFE_NewContextOptions();
   TFE_ContextOptionsSetConfig(ctx_opts, config.data(), config.size(), status);
@@ -573,7 +805,7 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
   std::vector<double> aparam_double(aparam.begin(), aparam.end());
 
   int nall_model = nall_real;
-  if (has_xla_call_module_) {
+  if (uses_xla_compilation_) {
     if (padding_for_nloc != nloc_real) {
       padding_to_nall = nall_real * PADDING_FACTOR;
       padding_for_nloc = nloc_real;
@@ -583,8 +815,8 @@ void deepmd::DeepPotJAX::compute(std::vector<ENERGYTYPE>& ener,
     }
     nall_model = padding_to_nall;
   }
-  // Padding is only useful for XLA-compiled call modules; eager TF graphs can
-  // use the exact atom count.
+  // Padding is only useful for XLA-compiled functions; eager TF graphs can use
+  // the exact atom count without shape recompilation churn.
   coord_double.resize(static_cast<size_t>(nframes) * nall_model * 3, 0.0);
   atype.resize(static_cast<size_t>(nframes) * nall_model, -1);
 

@@ -201,8 +201,9 @@ class DeepPotJAX : public DeepPotBackend {
   bool do_message_passing;
   // has default fparam
   bool has_default_fparam_;
-  // whether the SavedModel contains an XLA call module
-  bool has_xla_call_module_ = false;
+  // whether SavedModel execution goes through XLA and benefits from shape
+  // padding; true for JAX/jax2tf XlaCallModule and TF2 jit_compile exports
+  bool uses_xla_compilation_ = false;
   // padding to nall
   int padding_to_nall = 0;
   // padding for nloc
