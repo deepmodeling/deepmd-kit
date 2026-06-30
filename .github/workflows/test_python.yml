@@ -63,12 +63,36 @@ jobs:
           DP_CI_IMPORT_PADDLE_BEFORE_TF: 1
           FLAGS_use_stride_compute_kernel: 0
       - name: Test TF2 eager mode
-        run: pytest --cov=deepmd --cov-append source/tests/consistent/io/test_io.py source/jax2tf_tests
+        run: |
+          run_pytest_allow_no_tests() {
+            set +e
+            pytest "$@"
+            local status=$?
+            set -e
+            if [ "$status" -eq 5 ]; then
+              # pytest-split may leave an individual shard with no selected
+              # tests after path/-k filtering. Other shards still cover the
+              # selected tests, so do not fail the whole matrix for exit 5.
+              return 0
+            fi
+            return "$status"
+          }
+
+          run_pytest_allow_no_tests --cov=deepmd --cov-append \
+            source/tests/consistent/io/test_io.py \
+            source/jax2tf_tests \
+            --splits 12 \
+            --group ${{ matrix.group }}
+          run_pytest_allow_no_tests --cov=deepmd --cov-append \
+            source/tests/consistent \
+            -k tf2 \
+            --splits 12 \
+            --group ${{ matrix.group }}
         env:
           NUM_WORKERS: 0
           DP_TEST_TF2_ONLY: 1
           DP_DTYPE_PROMOTION_STRICT: 1
-        if: matrix.group == 1
+          DP_CI_IMPORT_PADDLE_BEFORE_TF: 1
       - run: mv .test_durations .test_durations_${{ matrix.group }}
       - name: Upload partial durations
         uses: actions/upload-artifact@v7

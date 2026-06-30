@@ -37,10 +37,22 @@ from deepmd.backend.tensorflow import (
 
 from ..utils import (
     CI,
+    DP_TEST_TF2_ONLY,
     TEST_DEVICE,
 )
 
-INSTALLED_TF = Backend.get_backend("tensorflow")().is_available()
+RUN_TF2_BACKEND_TESTS = os.environ.get("DEEPMD_TEST_TF2") == "1" or DP_TEST_TF2_ONLY
+
+INSTALLED_TF = (
+    not RUN_TF2_BACKEND_TESTS and Backend.get_backend("tensorflow")().is_available()
+)
+try:
+    _TF2_BACKEND = Backend.get_backend("tf2")
+except (KeyError, RuntimeError):
+    _TF2_BACKEND = None
+INSTALLED_TF2 = (
+    RUN_TF2_BACKEND_TESTS and _TF2_BACKEND is not None and _TF2_BACKEND().is_available()
+)
 INSTALLED_PT = Backend.get_backend("pytorch")().is_available()
 try:
     _PT_EXPT_BACKEND = Backend.get_backend("pytorch-exportable")
@@ -51,7 +63,11 @@ INSTALLED_JAX = Backend.get_backend("jax")().is_available()
 INSTALLED_PD = Backend.get_backend("paddle")().is_available()
 INSTALLED_ARRAY_API_STRICT = find_spec("array_api_strict") is not None
 
-if os.environ.get("CI") and not (INSTALLED_TF and INSTALLED_PT and INSTALLED_PD):
+if (
+    os.environ.get("CI")
+    and not RUN_TF2_BACKEND_TESTS
+    and not (INSTALLED_TF and INSTALLED_PT and INSTALLED_PD)
+):
     raise ImportError("TensorFlow, PyTorch or Paddle should be tested in the CI")
 
 
@@ -75,6 +91,8 @@ __all__ = [
     "INSTALLED_PT",
     "INSTALLED_PT_EXPT",
     "INSTALLED_TF",
+    "INSTALLED_TF2",
+    "RUN_TF2_BACKEND_TESTS",
     "CommonTest",
     "parameterize_func",
     "parameterized",
@@ -91,6 +109,8 @@ class CommonTest(ABC):
     """Additional data that will not be checked."""
     tf_class: ClassVar[type | None]
     """TensorFlow model class."""
+    tf2_class: ClassVar[type | None] = None
+    """TensorFlow 2 model class."""
     dp_class: ClassVar[type | None]
     """Native DP model class."""
     pt_class: ClassVar[type | None]
@@ -108,6 +128,8 @@ class CommonTest(ABC):
     """Whether to skip the native DP model."""
     skip_tf: ClassVar[bool] = not INSTALLED_TF
     """Whether to skip the TensorFlow model."""
+    skip_tf2: ClassVar[bool] = not INSTALLED_TF2
+    """Whether to skip the TensorFlow 2 model."""
     skip_pt: ClassVar[bool] = not INSTALLED_PT
     """Whether to skip the PyTorch model."""
     skip_pt_expt: ClassVar[bool] = not INSTALLED_PT_EXPT
@@ -199,6 +221,16 @@ class CommonTest(ABC):
         """
         raise NotImplementedError("Not implemented")
 
+    def eval_tf2(self, tf2_obj: Any) -> Any:
+        """Evaluate the return value of TensorFlow 2.
+
+        Parameters
+        ----------
+        tf2_obj : Any
+            The object of TensorFlow 2
+        """
+        raise NotImplementedError("Not implemented")
+
     def eval_jax(self, jax_obj: Any) -> Any:
         """Evaluate the return value of JAX.
 
@@ -239,6 +271,7 @@ class CommonTest(ABC):
         PD = 5
         JAX = 6
         ARRAY_API_STRICT = 7
+        TF2 = 8
 
     @abstractmethod
     def extract_ret(
@@ -341,6 +374,11 @@ class CommonTest(ABC):
         data = obj.serialize()
         return ret, data
 
+    def get_tf2_ret_serialization_from_cls(self, obj):
+        ret = self.eval_tf2(obj)
+        data = obj.serialize()
+        return ret, data
+
     def get_jax_ret_serialization_from_cls(self, obj):
         ret = self.eval_jax(obj)
         data = obj.serialize()
@@ -375,6 +413,8 @@ class CommonTest(ABC):
             return self.RefBackend.PD
         if not self.skip_array_api_strict:
             return self.RefBackend.ARRAY_API_STRICT
+        if not self.skip_tf2 and self.tf2_class is not None:
+            return self.RefBackend.TF2
         raise ValueError("No available reference")
 
     def get_reference_ret_serialization(self, ref: RefBackend):
@@ -402,6 +442,11 @@ class CommonTest(ABC):
         if ref == self.RefBackend.ARRAY_API_STRICT:
             obj = self.init_backend_cls(self.array_api_strict_class)
             return self.get_array_api_strict_ret_serialization_from_cls(obj)
+        if ref == self.RefBackend.TF2:
+            if self.tf2_class is None:
+                raise ValueError("TF2 class is not set")
+            obj = self.init_backend_cls(self.tf2_class)
+            return self.get_tf2_ret_serialization_from_cls(obj)
         raise ValueError("No available reference")
 
     def test_tf_consistent_with_ref(self) -> None:
@@ -557,6 +602,45 @@ class CommonTest(ABC):
                 assert rr1.dtype == rr2.dtype, f"{rr1.dtype} != {rr2.dtype}"
             else:
                 self.assertEqual(rr1, rr2)
+
+    @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
+    def test_tf2_consistent_with_ref(self) -> None:
+        """Test whether TF2 and reference are consistent."""
+        if self.skip_tf2 or self.tf2_class is None:
+            self.skipTest("Unsupported backend")
+        ref_backend = self.get_reference_backend()
+        if ref_backend == self.RefBackend.TF2:
+            self.skipTest("Reference is self")
+        ret1, data1 = self.get_reference_ret_serialization(ref_backend)
+        ret1 = self.extract_ret(ret1, ref_backend)
+        obj = self.tf2_class.deserialize(data1)
+        ret2 = self.eval_tf2(obj)
+        ret2 = self.extract_ret(ret2, self.RefBackend.TF2)
+        data2 = obj.serialize()
+        if obj.__class__.__name__.startswith(("Polar", "Dipole", "DOS")):
+            common_keys = set(data1.keys()) & set(data2.keys())
+            data1 = {k: data1[k] for k in common_keys}
+            data2 = {k: data2[k] for k in common_keys}
+        # drop @variables since they are not equal across backends
+        data1.pop("@variables", None)
+        data2.pop("@variables", None)
+        np.testing.assert_equal(data1, data2)
+        self._compare_ret(ret1, ret2)
+
+    @unittest.skipIf(TEST_DEVICE != "cpu" and CI, "Only test on CPU.")
+    def test_tf2_self_consistent(self) -> None:
+        """Test whether TF2 is self consistent."""
+        if self.skip_tf2 or self.tf2_class is None:
+            self.skipTest("Unsupported backend")
+        obj1 = self.init_backend_cls(self.tf2_class)
+        ret1, data1 = self.get_tf2_ret_serialization_from_cls(obj1)
+        obj2 = self.tf2_class.deserialize(data1)
+        ret2, data2 = self.get_tf2_ret_serialization_from_cls(obj2)
+        np.testing.assert_equal(data1, data2)
+        self._compare_ret(
+            self.extract_ret(ret1, self.RefBackend.TF2),
+            self.extract_ret(ret2, self.RefBackend.TF2),
+        )
 
     def test_jax_consistent_with_ref(self) -> None:
         """Test whether JAX and reference are consistent."""

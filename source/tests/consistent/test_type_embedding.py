@@ -20,6 +20,7 @@ from .common import (
     INSTALLED_PD,
     INSTALLED_PT,
     INSTALLED_TF,
+    INSTALLED_TF2,
     CommonTest,
     parameterized,
 )
@@ -53,6 +54,10 @@ if INSTALLED_PD:
     from deepmd.pd.utils.env import DEVICE as PD_DEVICE
 else:
     TypeEmbedNetPD = object
+if INSTALLED_TF2:
+    from deepmd.tf2.utils.type_embed import TypeEmbedNet as TypeEmbedNetTF2
+else:
+    TypeEmbedNetTF2 = None
 
 
 @parameterized(
@@ -84,6 +89,7 @@ class TestTypeEmbedding(CommonTest, unittest.TestCase):
         }
 
     tf_class = TypeEmbedNetTF
+    tf2_class = TypeEmbedNetTF2
     dp_class = TypeEmbedNetDP
     pt_class = TypeEmbedNetPT
     jax_class = TypeEmbedNetJAX
@@ -92,6 +98,7 @@ class TestTypeEmbedding(CommonTest, unittest.TestCase):
     args = type_embedding_args()
     skip_jax = not INSTALLED_JAX
     skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
+    skip_tf2 = not INSTALLED_TF2
 
     @property
     def additional_data(self) -> dict:
@@ -147,6 +154,13 @@ class TestTypeEmbedding(CommonTest, unittest.TestCase):
 
     def eval_array_api_strict(self, array_api_strict_obj: Any) -> Any:
         out = array_api_strict_obj()
+        return [
+            to_numpy_array(x) if hasattr(x, "__array_namespace__") else x
+            for x in (out,)
+        ]
+
+    def eval_tf2(self, tf2_obj: Any) -> Any:
+        out = tf2_obj()
         return [
             to_numpy_array(x) if hasattr(x, "__array_namespace__") else x
             for x in (out,)
