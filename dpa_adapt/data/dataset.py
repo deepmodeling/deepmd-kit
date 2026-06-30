@@ -55,7 +55,7 @@ def load_dataset(
         *every* candidate was skipped, in which case a ``DPADataError``
         is raised (fail-fast for training workflows).
     """
-    from dpa_adapt.data.loader import _get_source
+    from dpa_adapt.data.loader import _find_label_npys, _get_source
 
     systems = load_data(data)
 
@@ -71,26 +71,16 @@ def load_dataset(
             validated.append(system)
             continue
 
-        # Fallback: check set.*/{key}.npy directly (same logic as
-        # _load_labels() in finetuner.py).  Custom labels such as
-        # "homo.npy", "bandgap.npy" under set.*/ are not generally
-        # loaded into dpdata.System.data, so this direct check prevents
-        # valid datasets from being incorrectly skipped.
+        # Fallback: custom labels such as "homo.npy"/"bandgap.npy" under set.*/
+        # are not generally loaded into dpdata.System.data, so check for the
+        # label file directly (shared discovery with _load_labels()).
         source = _get_source(system)
-        if source is not None:
-            source_path = Path(source)
-            set_dirs = sorted(source_path.glob("set.*"))
-            for sd in set_dirs:
-                if (sd / f"{resolved_key}.npy").exists():
-                    validated.append(system)
-                    break
-            else:
-                # None of the set.* dirs had the label file.
-                identifier = getattr(system, "_dpa_source", f"system[{i}]")
-                skipped.append(f"{identifier} (missing {resolved_key!r})")
-        else:
-            identifier = getattr(system, "_dpa_source", f"system[{i}]")
-            skipped.append(f"{identifier} (missing {resolved_key!r})")
+        if source is not None and _find_label_npys(source, resolved_key):
+            validated.append(system)
+            continue
+
+        identifier = getattr(system, "_dpa_source", f"system[{i}]")
+        skipped.append(f"{identifier} (missing {resolved_key!r})")
 
     if skipped:
         _LOG.warning(

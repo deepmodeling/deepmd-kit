@@ -36,6 +36,9 @@ from dpa_adapt._backend import (
     resolve_dp_command,
     resolve_pretrained_path,
 )
+from dpa_adapt._validation import (
+    validate_fparam_dim,
+)
 
 _LOG = logging.getLogger("dpa_adapt.trainer")
 
@@ -219,10 +222,7 @@ class DPATrainer:
             raise ValueError(
                 f"loss_function must be one of {_VALID_LOSSES}; got {loss_function!r}."
             )
-        if not isinstance(fparam_dim, int) or fparam_dim < 0:
-            raise ValueError(
-                f"fparam_dim must be a non-negative int; got {fparam_dim!r}."
-            )
+        validate_fparam_dim(fparam_dim)
 
         self.pretrained = pretrained
         self.init_branch = init_branch

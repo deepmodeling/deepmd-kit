@@ -46,6 +46,22 @@ def _get_source(system: dpdata.System) -> str | None:
     return getattr(system, _SOURCE_ATTR, None)
 
 
+def _find_label_npys(source: str | Path, key: str) -> list[Path]:
+    """Return existing ``set.*/{key}.npy`` paths under *source*, sorted by set.
+
+    Custom labels (e.g. ``homo.npy``, ``bandgap.npy``) are not loaded into
+    ``dpdata.System.data``.  This is the shared label-discovery used by both
+    ``dataset.load_dataset`` (existence check) and ``finetuner._load_labels``
+    (loading), so the two stay in sync.
+    """
+    source_path = Path(source)
+    return [
+        npy
+        for set_dir in sorted(source_path.glob("set.*"))
+        if (npy := set_dir / f"{key}.npy").exists()
+    ]
+
+
 def load_data(
     data: _DataInput,
     fmt: str | None = None,

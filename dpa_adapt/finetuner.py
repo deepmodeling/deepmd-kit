@@ -24,9 +24,16 @@ from dpa_adapt._backend import (
     resolve_model_branch,
     resolve_pretrained_path,
 )
+from dpa_adapt._validation import validate_fparam_dim
 from dpa_adapt.conditions import ConditionManager, DPAConditionError
 from dpa_adapt.data.errors import DPADataError
-from dpa_adapt.data.loader import _get_source, _resolve_label_key, load_data
+from dpa_adapt.data.loader import (
+    _find_label_npys,
+    _get_source,
+    _resolve_label_key,
+    load_data,
+)
+from dpa_adapt.data.type_map import _is_placeholder_type_map
 from dpa_adapt.utils.dotdict import DotDict
 
 _LOG = logging.getLogger("dpa_adapt")
@@ -65,18 +72,14 @@ def _load_labels(
                 all_labels.append(np.asarray(system.data[resolved]))
                 continue
 
-            # Fallback: load set.*/key.npy directly from the system directory.
+            # Fallback: load set.*/{key}.npy directly from the system directory.
             source = _get_source(system)
             if source is not None:
-                source_path = Path(source)
-                set_dirs = sorted(source_path.glob("set.*"))
-                npy_labels = []
-                for sd in set_dirs:
-                    npy_path = sd / f"{resolved}.npy"
-                    if npy_path.exists():
-                        npy_labels.append(np.load(npy_path))
-                if npy_labels:
-                    all_labels.append(np.concatenate(npy_labels, axis=0))
+                npy_paths = _find_label_npys(source, resolved)
+                if npy_paths:
+                    all_labels.append(
+                        np.concatenate([np.load(p) for p in npy_paths], axis=0)
+                    )
                     continue
 
             # Neither dpdata nor direct .npy found — build a clear error.
@@ -202,10 +205,7 @@ def _read_data_type_map(system: dpdata.System) -> list[str]:
     data had no ``type_map.raw``).
     """
     names = list(system.data.get("atom_names", []))
-    if not names:
-        return []
-    # dpdata generates "Type_0", "Type_1", ... when no type_map.raw was present.
-    if all(n.startswith("Type_") for n in names):
+    if not names or _is_placeholder_type_map(names):
         return []
     return names
 
@@ -877,10 +877,7 @@ class DPAFineTuner:
                 f"strategy must be one of {sorted(self._VALID_STRATEGIES)}; "
                 f"got {strategy!r}"
             )
-        if not isinstance(fparam_dim, int) or fparam_dim < 0:
-            raise ValueError(
-                f"fparam_dim must be a non-negative int; got {fparam_dim!r}."
-            )
+        validate_fparam_dim(fparam_dim)
 
         self.strategy = strategy
 
