@@ -421,13 +421,13 @@ def _trace_and_compile(
         if _dim_fp > 1:
             _forbidden.add(_dim_fp)
     except Exception:
-        pass
+        pass  # best-effort: dim_fparam unavailable -> nothing to forbid
     try:
         _dim_ap = model.get_dim_aparam()
         if _dim_ap > 1:
             _forbidden.add(_dim_ap)
     except Exception:
-        pass
+        pass  # best-effort: dim_aparam unavailable -> nothing to forbid
     if charge_spin is not None:
         _dim_cs = int(charge_spin.shape[1])
         if _dim_cs > 1:
@@ -634,11 +634,11 @@ def _trace_and_compile_graph(
         try:
             _fitting = model.get_fitting_net()
         except AttributeError:
-            pass
+            pass  # optional accessor; a model without a fitting net keeps None
         try:
             _atomic_model = model.atomic_model
         except AttributeError:
-            pass
+            pass  # optional attribute; a model without an atomic model keeps None
 
     do_grad_r = model.do_grad_r("energy")
     do_grad_c = model.do_grad_c("energy")
@@ -667,13 +667,13 @@ def _trace_and_compile_graph(
         if _dim_fp > 1:
             _forbidden.add(_dim_fp)
     except Exception:
-        pass
+        pass  # best-effort: dim_fparam unavailable -> nothing to forbid
     try:
         _dim_ap = model.get_dim_aparam()
         if _dim_ap > 1:
             _forbidden.add(_dim_ap)
     except Exception:
-        pass
+        pass  # best-effort: dim_aparam unavailable -> nothing to forbid
     if charge_spin is not None and charge_spin.shape[-1] > 1:
         _forbidden.add(int(charge_spin.shape[-1]))
     for _tbv in task_buf_vals_trace:
@@ -1279,15 +1279,20 @@ class _CompiledModel(torch.nn.Module):
         # (nf, *)).  Unravel the node-level keys to rectangular (nf, nloc, *) so
         # callers receive the same shapes as the dense path.
         N = nframes * nloc
+        # Node-level (per-atom, lead dim N) public keys emitted by the graph
+        # lower; the remaining keys are frame-level (lead dim nf) and must NOT
+        # be unravelled. Keying on the NAME rather than the ``N != nframes``
+        # shape heuristic keeps the single-atom case (nloc == 1, where
+        # N == nframes) correct -- node-level outputs still reshape to
+        # (nf, 1, *) instead of staying (nf, *).
+        node_level_keys = {"atom_energy", "force", "atom_virial", "mask"}
         out: dict[str, torch.Tensor] = {}
         for key, val in result.items():
-            # ``N != nframes`` distinguishes node-level keys (lead dim N) from
-            # frame-level keys (lead dim nf) by shape. DEGENERATE: when nloc==1,
-            # N == nframes, so node-level keys are NOT unravelled and stay
-            # (nf, *) instead of (nf, 1, *). Harmless for the varying-natoms
-            # trainer (nloc >> 1); a single-atom-per-frame system would need an
-            # explicit per-key category check instead of the shape heuristic.
-            if val is not None and val.shape[:1] == torch.Size([N]) and N != nframes:
+            if (
+                key in node_level_keys
+                and val is not None
+                and val.shape[:1] == torch.Size([N])
+            ):
                 out[key] = val.reshape(nframes, nloc, *val.shape[1:])
             else:
                 out[key] = val

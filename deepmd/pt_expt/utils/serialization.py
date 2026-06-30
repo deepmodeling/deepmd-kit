@@ -447,6 +447,7 @@ def _build_graph_dynamic_shapes(
     nframes_dim = torch.export.Dim("nframes", min=1)
     n_node_total_dim = torch.export.Dim("n_node_total", min=1)
     nedge_dim = torch.export.Dim("nedge", min=2)
+    nloc_dim = torch.export.Dim("nloc", min=1)
     return (
         {0: n_node_total_dim},  # atype: (N,)
         {0: nframes_dim},  # n_node: (nf,)
@@ -454,7 +455,10 @@ def _build_graph_dynamic_shapes(
         {0: nedge_dim},  # edge_vec: (E, 3) — E dynamic
         {0: nedge_dim},  # edge_mask: (E,) — E dynamic
         {0: nframes_dim} if fparam is not None else None,  # fparam: (nf, ndf)
-        {0: nframes_dim} if aparam is not None else None,  # aparam: (nf, nloc, nda)
+        # aparam: (nf, nloc, nda) — both the frame AND atom axes are dynamic,
+        # matching the dense ``_build_dynamic_shapes`` (otherwise a dim_aparam>0
+        # graph export specializes nloc to the sample size and breaks at runtime).
+        {0: nframes_dim, 1: nloc_dim} if aparam is not None else None,  # aparam
         {0: nframes_dim} if charge_spin is not None else None,  # charge_spin
     )
 

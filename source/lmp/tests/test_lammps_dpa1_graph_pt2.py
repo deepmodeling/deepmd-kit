@@ -73,6 +73,12 @@ try:
 except FileNotFoundError:
     expected_e = expected_f = expected_v = None
 
+# Gate the reference-comparison tests on the generated ``.expected`` fixture so
+# they skip cleanly (rather than failing with a ``TypeError`` on ``None``) when
+# gen_dpa1.py has not run (e.g. PyTorch not built). The MPI multi-rank tests
+# compare against a single-rank run of the same archive and do not need it.
+_HAS_REF = expected_e is not None
+
 box = np.array([0, 13, 0, 13, 0, 13, 0, 0, 0])
 coord = np.array(
     [
@@ -129,6 +135,7 @@ def lammps():
     lmp.close()
 
 
+@pytest.mark.skipif(not _HAS_REF, reason="gen_dpa1.py .expected fixture not generated")
 def test_pair_deepmd(lammps) -> None:
     """Single-rank serial run (``atom_modify map yes``): the graph .pt2
     folds ghosts onto local owners (``fold_to_local=True``) and must match
@@ -145,6 +152,7 @@ def test_pair_deepmd(lammps) -> None:
     lammps.run(1)
 
 
+@pytest.mark.skipif(not _HAS_REF, reason="gen_dpa1.py .expected fixture not generated")
 def test_pair_deepmd_virial(lammps) -> None:
     """Single-rank per-atom virial via ``centroid/stress/atom``."""
     lammps.pair_style(f"deepmd {pb_file.resolve()}")
@@ -297,7 +305,12 @@ def test_pair_deepmd_mpi_dpa1_graph_empty_subdomain() -> None:
     zero contribution from the empty rank — compared against a same-archive
     single-rank reference of the same fixture.
     """
-    out_mpi = _run_mpi_subprocess(nprocs=2, data_path=data_file_empty_subdomain)
+    # Force ``processors 2 1 1`` so the split is along x at 15 and rank 1 is
+    # genuinely empty -- otherwise LAMMPS may auto-pick a grid where neither
+    # rank is empty and the branch under test is not exercised.
+    out_mpi = _run_mpi_subprocess(
+        nprocs=2, data_path=data_file_empty_subdomain, processors="2 1 1"
+    )
     out_ref = _run_mpi_subprocess(nprocs=1, data_path=data_file_empty_subdomain)
     np.testing.assert_allclose(out_mpi["forces"], out_ref["forces"], atol=1e-8, rtol=0)
     np.testing.assert_allclose(
