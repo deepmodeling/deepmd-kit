@@ -51,6 +51,7 @@ from .nlist import (
     build_multiple_neighbor_list,
     build_neighbor_list,
     extend_coord_with_ghosts,
+    format_nlist,
     get_multiple_nlist_key,
     nlist_distinguish_types,
 )
@@ -64,6 +65,9 @@ from .serialization import (
     load_dp_model,
     save_dp_model,
     traverse_model_dict,
+)
+from .tabulate import (
+    tabulate_fusion,
 )
 from .training_utils import (
     compute_total_numb_batch,
@@ -98,6 +102,7 @@ __all__ = [
     "edge_env_mat",
     "edge_force_virial",
     "extend_coord_with_ghosts",
+    "format_nlist",
     "from_dense_quartet",
     "get_graph_index",
     "get_multiple_nlist_key",
@@ -119,6 +124,7 @@ __all__ = [
     "save_dp_model",
     "segment_mean",
     "segment_sum",
+    "tabulate_fusion",
     "to_face_distance",
     "traverse_model_dict",
 ]

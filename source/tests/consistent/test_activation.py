@@ -21,6 +21,7 @@ from .common import (
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
     INSTALLED_TF,
+    INSTALLED_TF2,
     parameterized_cases,
 )
 
@@ -99,6 +100,16 @@ class TestActivationFunctionConsistent(unittest.TestCase):
         test = get_activation_fn_dp(self.activation)(input)
         self.assertTrue(isinstance(test, jnp.ndarray))
         np.testing.assert_allclose(self.ref, np.from_dlpack(test), atol=1e-10)
+
+    @unittest.skipUnless(INSTALLED_TF2, "TensorFlow 2 is not installed")
+    def test_tf2_consistent_with_ref(self) -> None:
+        from deepmd.tf2.common import (
+            to_tensorflow_array,
+        )
+
+        input = to_tensorflow_array(self.random_input)
+        test = get_activation_fn_dp(self.activation)(input)
+        np.testing.assert_allclose(self.ref, to_numpy_array(test), atol=1e-7)
 
     @unittest.skipUnless(INSTALLED_PD, "Paddle is not installed")
     def test_pd_consistent_with_ref(self):

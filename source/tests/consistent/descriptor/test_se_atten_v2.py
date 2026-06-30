@@ -20,6 +20,7 @@ from ..common import (
     INSTALLED_PD,
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
+    INSTALLED_TF2,
     CommonTest,
     parameterized_cases,
 )
@@ -59,6 +60,12 @@ if INSTALLED_PD:
 else:
     DescrptSeAttenV2PD = None
 DescrptSeAttenV2TF = None
+if INSTALLED_TF2:
+    from deepmd.tf2.descriptor.se_atten_v2 import (
+        DescrptSeAttenV2 as DescrptSeAttenV2TF2,
+    )
+else:
+    DescrptSeAttenV2TF2 = None
 from deepmd.utils.argcheck import (
     descrpt_se_atten_args,
 )
@@ -373,7 +380,36 @@ class TestSeAttenV2(CommonTest, DescriptorTest, unittest.TestCase):
             temperature,
         )
 
+    @property
+    def skip_tf2(self) -> bool:
+        (
+            tebd_dim,
+            resnet_dt,
+            type_one_side,
+            attn,
+            attn_layer,
+            attn_dotr,
+            excluded_types,
+            env_protection,
+            set_davg_zero,
+            scaling_factor,
+            normalize,
+            temperature,
+            ln_eps,
+            concat_output_tebd,
+            precision,
+            use_econf_tebd,
+            use_tebd_bias,
+        ) = self.param
+        return not INSTALLED_TF2 or self.is_meaningless_zero_attention_layer_tests(
+            attn_layer,
+            attn_dotr,
+            normalize,
+            temperature,
+        )
+
     tf_class = DescrptSeAttenV2TF
+    tf2_class = DescrptSeAttenV2TF2
     dp_class = DescrptSeAttenV2DP
     pt_class = DescrptSeAttenV2PT
     pt_expt_class = DescrptSeAttenV2PTExpt
@@ -469,6 +505,16 @@ class TestSeAttenV2(CommonTest, DescriptorTest, unittest.TestCase):
     def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
         return self.eval_pt_expt_descriptor(
             pt_expt_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+            mixed_types=True,
+        )
+
+    def eval_tf2(self, tf2_obj: Any) -> Any:
+        return self.eval_tf2_descriptor(
+            tf2_obj,
             self.natoms,
             self.coords,
             self.atype,

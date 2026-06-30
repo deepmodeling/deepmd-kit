@@ -27,6 +27,7 @@ from ..common import (
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
     INSTALLED_TF,
+    INSTALLED_TF2,
     CommonTest,
     parameterized_cases,
 )
@@ -46,6 +47,11 @@ if INSTALLED_TF:
     from deepmd.tf.model.tensor import DipoleModel as DipoleModelTF
 else:
     DipoleModelTF = None
+if INSTALLED_TF2:
+    from deepmd.tf2.model.dipole_model import DipoleModel as DipoleModelTF2
+    from deepmd.tf2.model.model import get_model as get_model_tf2
+else:
+    DipoleModelTF2 = None
 if INSTALLED_JAX:
     from deepmd.jax.model.dipole_model import DipoleModel as DipoleModelJAX
     from deepmd.jax.model.model import get_model as get_model_jax
@@ -89,6 +95,7 @@ class TestDipole(CommonTest, ModelTest, unittest.TestCase):
         }
 
     tf_class = DipoleModelTF
+    tf2_class = DipoleModelTF2
     dp_class = DipoleModelDP
     pt_class = DipoleModelPT
     pt_expt_class = DipoleModelPTExpt
@@ -115,6 +122,8 @@ class TestDipole(CommonTest, ModelTest, unittest.TestCase):
     def skip_tf(self):
         return not INSTALLED_TF
 
+    skip_tf2 = not INSTALLED_TF2
+
     @property
     def skip_jax(self) -> bool:
         return not INSTALLED_JAX
@@ -131,6 +140,8 @@ class TestDipole(CommonTest, ModelTest, unittest.TestCase):
         elif cls is DipoleModelPTExpt:
             dp_model = get_model_dp(data)
             return DipoleModelPTExpt.deserialize(dp_model.serialize())
+        elif cls is DipoleModelTF2:
+            return get_model_tf2(data)
         elif cls is DipoleModelJAX:
             return get_model_jax(data)
         return cls(**data, **self.additional_data)
@@ -212,6 +223,15 @@ class TestDipole(CommonTest, ModelTest, unittest.TestCase):
             self.box,
         )
 
+    def eval_tf2(self, tf2_obj: Any) -> Any:
+        return self.eval_tf2_model(
+            tf2_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
     def eval_jax(self, jax_obj: Any) -> Any:
         return self.eval_jax_model(
             jax_obj,
@@ -232,6 +252,7 @@ class TestDipole(CommonTest, ModelTest, unittest.TestCase):
             self.RefBackend.DP,
             self.RefBackend.PT,
             self.RefBackend.PT_EXPT,
+            self.RefBackend.TF2,
             self.RefBackend.JAX,
         }:
             return (

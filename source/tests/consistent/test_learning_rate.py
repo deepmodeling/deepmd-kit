@@ -18,6 +18,7 @@ from .common import (
     INSTALLED_ARRAY_API_STRICT,
     INSTALLED_JAX,
     INSTALLED_PT,
+    INSTALLED_TF2,
     parameterized_cases,
 )
 
@@ -146,3 +147,15 @@ class TestLearningRateConsistent(unittest.TestCase):
         self.compare_test_with_ref(jnp.array(self.step))
         if self.warmup_step is not None:
             self.compare_test_with_warmup_ref(jnp.array(self.warmup_step))
+
+    @unittest.skipUnless(INSTALLED_TF2, "TensorFlow 2 is not installed")
+    def test_tf2_consistent_with_ref(self) -> None:
+        from deepmd.tf2.common import (
+            to_tensorflow_array,
+        )
+
+        self.compare_test_with_ref(to_tensorflow_array(np.asarray(self.step)))
+        if self.warmup_step is not None:
+            self.compare_test_with_warmup_ref(
+                to_tensorflow_array(np.asarray(self.warmup_step))
+            )

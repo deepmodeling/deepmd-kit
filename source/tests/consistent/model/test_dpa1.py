@@ -58,6 +58,7 @@ else:
 DPA1_ENER_CURATED_CASES = (
     ("strip", False),
     ("concat", False),
+    ("concat", True),
 )
 
 

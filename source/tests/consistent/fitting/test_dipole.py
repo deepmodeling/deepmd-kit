@@ -20,6 +20,7 @@ from ..common import (
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
     INSTALLED_TF,
+    INSTALLED_TF2,
     CommonTest,
     parameterized_cases,
 )
@@ -45,6 +46,13 @@ if INSTALLED_TF:
     from deepmd.tf.fit.dipole import DipoleFittingSeA as DipoleFittingTF
 else:
     DipoleFittingTF = object
+if INSTALLED_TF2:
+    from deepmd.tf2.common import (
+        to_tensorflow_array,
+    )
+    from deepmd.tf2.fitting.fitting import DipoleFittingNet as DipoleFittingTF2
+else:
+    DipoleFittingTF2 = object
 if INSTALLED_JAX:
     from deepmd.jax.env import (
         jnp,
@@ -151,6 +159,7 @@ class TestDipole(CommonTest, DipoleFittingTest, unittest.TestCase):
         return CommonTest.skip_pt
 
     tf_class = DipoleFittingTF
+    tf2_class = DipoleFittingTF2
     dp_class = DipoleFittingDP
     pt_class = DipoleFittingPT
     pt_expt_class = DipoleFittingPTExpt
@@ -159,6 +168,7 @@ class TestDipole(CommonTest, DipoleFittingTest, unittest.TestCase):
     args = fitting_dipole()
     skip_jax = not INSTALLED_JAX
     skip_array_api_strict = not INSTALLED_ARRAY_API_STRICT
+    skip_tf2 = not INSTALLED_TF2
 
     @property
     def skip_pt_expt(self) -> bool:
@@ -251,6 +261,16 @@ class TestDipole(CommonTest, DipoleFittingTest, unittest.TestCase):
             self.gr,
             None,
         )["dipole"]
+
+    def eval_tf2(self, tf2_obj: Any) -> Any:
+        return to_numpy_array(
+            tf2_obj(
+                to_tensorflow_array(self.inputs),
+                to_tensorflow_array(self.atype.reshape(1, -1)),
+                to_tensorflow_array(self.gr),
+                None,
+            )["dipole"]
+        )
 
     def eval_jax(self, jax_obj: Any) -> Any:
         return np.asarray(

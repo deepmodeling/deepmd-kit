@@ -28,6 +28,7 @@ from ..common import (
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
     INSTALLED_TF,
+    INSTALLED_TF2,
     SKIP_FLAG,
     CommonTest,
     parameterized_cases,
@@ -48,6 +49,11 @@ if INSTALLED_TF:
     from deepmd.tf.model.ener import EnerModel as EnergyModelTF
 else:
     EnergyModelTF = None
+if INSTALLED_TF2:
+    from deepmd.tf2.model.ener_model import EnergyModel as EnergyModelTF2
+    from deepmd.tf2.model.model import get_model as get_model_tf2
+else:
+    EnergyModelTF2 = None
 if INSTALLED_PD:
     from deepmd.pd.model.model import get_model as get_model_pd
     from deepmd.pd.model.model.ener_model import EnergyModel as EnergyModelPD
@@ -131,6 +137,7 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
         }
 
     tf_class = EnergyModelTF
+    tf2_class = EnergyModelTF2
     dp_class = EnergyModelDP
     pt_class = EnergyModelPT
     pd_class = EnergyModelPD
@@ -165,6 +172,13 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
         )
 
     @property
+    def skip_tf2(self) -> bool:
+        return not INSTALLED_TF2 or (
+            self.data["pair_exclude_types"] != []
+            or self.data["atom_exclude_types"] != []
+        )
+
+    @property
     def skip_jax(self) -> bool:
         return not INSTALLED_JAX
 
@@ -180,6 +194,8 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
         elif cls is EnergyModelPTExpt:
             dp_model = get_model_dp(data)
             return EnergyModelPTExpt.deserialize(dp_model.serialize())
+        elif cls is EnergyModelTF2:
+            return get_model_tf2(data)
         elif cls is EnergyModelJAX:
             return get_model_jax(data)
         elif cls is EnergyModelPD:
@@ -262,6 +278,15 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
             self.box,
         )
 
+    def eval_tf2(self, tf2_obj: Any) -> Any:
+        return self.eval_tf2_model(
+            tf2_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
     def eval_jax(self, jax_obj: Any) -> Any:
         return self.eval_jax_model(
             jax_obj,
@@ -302,6 +327,7 @@ class TestEner(CommonTest, ModelTest, unittest.TestCase):
             self.RefBackend.PT,
             self.RefBackend.PT_EXPT,
             self.RefBackend.JAX,
+            self.RefBackend.TF2,
             self.RefBackend.PD,
         }:
             return (
@@ -350,6 +376,7 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
         }
 
     tf_class = EnergyModelTF
+    tf2_class = EnergyModelTF2
     dp_class = EnergyModelDP
     pt_class = EnergyModelPT
     pt_expt_class = EnergyModelPTExpt
@@ -380,6 +407,13 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
         return True
 
     @property
+    def skip_tf2(self) -> bool:
+        return not INSTALLED_TF2 or (
+            self.data["pair_exclude_types"] != []
+            or self.data["atom_exclude_types"] != []
+        )
+
+    @property
     def skip_jax(self) -> bool:
         return not INSTALLED_JAX
 
@@ -393,6 +427,8 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
         elif cls is EnergyModelPTExpt:
             dp_model = get_model_dp(data)
             return EnergyModelPTExpt.deserialize(dp_model.serialize())
+        elif cls is EnergyModelTF2:
+            return get_model_tf2(data)
         elif cls is EnergyModelJAX:
             return get_model_jax(data)
         elif cls is EnergyModelPD:
@@ -493,6 +529,18 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
             ).items()
         }
 
+    def eval_tf2(self, tf2_obj: Any) -> Any:
+        return {
+            kk: to_numpy_array(vv)
+            for kk, vv in tf2_obj.call_lower(
+                self.extended_coord,
+                self.extended_atype,
+                self.nlist,
+                self.mapping,
+                do_atomic_virial=True,
+            ).items()
+        }
+
     def eval_jax(self, jax_obj: Any) -> Any:
         return {
             kk: to_numpy_array(vv)
@@ -538,6 +586,7 @@ class TestEnerLower(CommonTest, ModelTest, unittest.TestCase):
         elif backend in {
             self.RefBackend.PT,
             self.RefBackend.JAX,
+            self.RefBackend.TF2,
             self.RefBackend.PD,
         }:
             return (

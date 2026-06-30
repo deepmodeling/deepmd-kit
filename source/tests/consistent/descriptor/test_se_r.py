@@ -17,6 +17,7 @@ from ..common import (
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
     INSTALLED_TF,
+    INSTALLED_TF2,
     CommonTest,
     parameterized_cases,
 )
@@ -37,6 +38,10 @@ if INSTALLED_TF:
     from deepmd.tf.descriptor.se_r import DescrptSeR as DescrptSeRTF
 else:
     DescrptSeRTF = None
+if INSTALLED_TF2:
+    from deepmd.tf2.descriptor.se_e2_r import DescrptSeR as DescrptSeRTF2
+else:
+    DescrptSeRTF2 = None
 from deepmd.utils.argcheck import (
     descrpt_se_r_args,
 )
@@ -162,7 +167,18 @@ class TestSeR(CommonTest, DescriptorTest, unittest.TestCase):
         ) = self.param
         return not type_one_side or not INSTALLED_ARRAY_API_STRICT
 
+    @property
+    def skip_tf2(self) -> bool:
+        (
+            resnet_dt,
+            type_one_side,
+            excluded_types,
+            precision,
+        ) = self.param
+        return not type_one_side or not INSTALLED_TF2
+
     tf_class = DescrptSeRTF
+    tf2_class = DescrptSeRTF2
     dp_class = DescrptSeRDP
     pt_class = DescrptSeRPT
     pt_expt_class = DescrptSeRPTExpt
@@ -235,6 +251,15 @@ class TestSeR(CommonTest, DescriptorTest, unittest.TestCase):
     def eval_pt_expt(self, pt_expt_obj: Any) -> Any:
         return self.eval_pt_expt_descriptor(
             pt_expt_obj,
+            self.natoms,
+            self.coords,
+            self.atype,
+            self.box,
+        )
+
+    def eval_tf2(self, tf2_obj: Any) -> Any:
+        return self.eval_tf2_descriptor(
+            tf2_obj,
             self.natoms,
             self.coords,
             self.atype,

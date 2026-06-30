@@ -133,6 +133,37 @@ def xp_scatter_sum(input: Array, dim: int, index: Array, src: Array) -> Array:
 
     # Generic array_api implementation (works for JAX, NumPy, array-api-strict, etc.)
     xp = array_api_compat.array_namespace(input)
+    if getattr(xp, "__name__", "") == "deepmd._vendors.ndtensorflow":
+        import tensorflow as tf
+
+        input_tensor = input.unwrap()
+        index_tensor = tf.cast(index.unwrap(), tf.int64)
+        src_tensor = src.unwrap()
+        rank = input_tensor.shape.rank
+        if rank is None:
+            raise ValueError("xp_scatter_sum requires a statically known rank")
+        dim = dim + rank if dim < 0 else dim
+        src_shape = tf.shape(src_tensor, out_type=tf.int64)
+        coords = []
+        for axis in range(rank):
+            if axis == dim:
+                coord = index_tensor
+            else:
+                view_shape = [1] * rank
+                view_shape[axis] = src_shape[axis]
+                coord = tf.broadcast_to(
+                    tf.reshape(tf.range(src_shape[axis], dtype=tf.int64), view_shape),
+                    src_shape,
+                )
+            coords.append(coord)
+        scatter_indices = tf.reshape(tf.stack(coords, axis=-1), (-1, rank))
+        scatter_updates = tf.reshape(src_tensor, (-1,))
+        scattered = tf.scatter_nd(
+            scatter_indices,
+            scatter_updates,
+            tf.shape(input_tensor, out_type=tf.int64),
+        )
+        return xp.asarray(input_tensor + scattered)
 
     # Create flat index array matching input shape
     idx = xp.arange(input.size, dtype=xp.int64, device=array_api_compat.device(input))
