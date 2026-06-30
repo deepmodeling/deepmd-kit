@@ -132,6 +132,7 @@ class SeZMPropertyModel(SeZMModel):
         comm_dict: dict[str, torch.Tensor] | None = None,
         extended_atype: torch.Tensor | None = None,
         extended_coord_corr: torch.Tensor | None = None,
+        spin: torch.Tensor | None = None,
         embedding_only: bool = False,
     ) -> dict[str, torch.Tensor]:
         """Compute property outputs through the SeZM forward-only graph."""
@@ -148,6 +149,7 @@ class SeZMPropertyModel(SeZMModel):
             comm_dict=comm_dict,
             extended_atype=extended_atype,
             extended_coord_corr=extended_coord_corr,
+            spin=spin,
             embedding_only=embedding_only,
             conservative=False,
         )

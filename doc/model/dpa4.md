@@ -79,8 +79,10 @@ unnecessary and not recommended (see [Hardware selection](#hardware-selection)).
 descriptors. On the conservative **energy** path it is only an initial
 neighbor-search capacity that grows on demand, so it never truncates the
 neighbor list and you do not need to size it to the true maximum neighbor count.
-Only the denoising (`dens`) and spin paths cap the list at `sum(sel)`. You can
-also set `sel` to `auto` or `auto:factor` to size it from the training data.
+The native spin scheme shares this energy path, so it grows on demand too; only
+the denoising (`dens`) path and the `deepspin` spin scheme cap the list at
+`sum(sel)`. You can also set `sel` to `auto` or `auto:factor` to size it from
+the training data.
 :::
 
 ### Main options
@@ -174,8 +176,77 @@ default training path. See `examples/water/dpa4/input_dens.json` for an example.
 
 ### Spin
 
-DPA4/SeZM supports the DeePMD-kit spin convention. Keep the model type and add
-the standard `model.spin` block:
+DPA4/SeZM supports the DeePMD-kit spin convention through the standard
+`model.spin` block. Two schemes are available, selected by `model.spin.scheme`:
+
+- `native` — the per-atom spin vector enters the descriptor as an
+  equivariant feature, and the magnetic force is the spin gradient of the
+  energy. No virtual atoms are introduced, so the neighbor list and type map
+  keep their real-system sizes.
+- `deepspin` (default) — the classical DeepSpin representation, in which each
+  magnetic atom is paired with a virtual atom displaced along its spin. It is
+  the default, so a `model.spin` block without an explicit `scheme` reproduces
+  the classical behaviour shared with every non-SeZM spin model.
+
+Both schemes train against the conservative `ener_spin` loss, share the same
+`spin` / `force_mag` data convention, and are not combined with the `dens` mode.
+Because the dataset and loss are identical, switching `scheme` does not require
+any change to the data or the loss block. Complete inputs are in
+`examples/spin/dpa4/`: `input.json` for the native scheme and
+`input-deepspin.json` for the deepspin scheme. See
+[training spin energy models](train-energy-spin.md) for the general workflow.
+
+`use_spin` accepts a per-type boolean list or, to avoid enumerating a large
+`type_map`, the list of magnetic species as type indices or element symbols
+(e.g. `"use_spin": ["Fe"]`), expanded against `type_map`. For the native scheme,
+`model.spin.allow_missing_label` additionally admits training systems that lack a
+`spin` data file by filling their spin with zeros; since a zero spin reduces the
+native descriptor to its spin-free form, a model can be trained on a mixture of
+spin-labelled and spin-free systems, or pretrained on spin-free data and
+fine-tuned on spin-labelled data without changing its type map or parameters.
+
+#### Native scheme
+
+```json
+{
+  "model": {
+    "type": "dpa4",
+    "type_map": [
+      "Ni",
+      "O"
+    ],
+    "spin": {
+      "use_spin": [
+        true,
+        false
+      ],
+      "scheme": "native"
+    },
+    "descriptor": {
+      "rcut": 6.0
+    }
+  }
+}
+```
+
+`use_spin` marks which atom types carry spin. Both the conservative force and
+the magnetic force come from a single energy gradient:
+
+```math
+\mathbf{F}_i = -\frac{\partial E}{\partial \mathbf{r}_i},
+\qquad
+\mathbf{F}^{\mathrm{mag}}_i = -\frac{\partial E}{\partial \mathbf{s}_i},
+```
+
+where $\mathbf{s}_i$ is the input spin vector. The model does not rescale the
+spin internally, so $\mathbf{s}_i$ keeps the dataset's `spin` convention and the
+magnetic force is reported in the matching units of `force_mag` -- there is no
+`virtual_scale` factor in this scheme. The magnetic force is reported on the
+magnetic atom types only, matching the `force_mag` label. The native scheme
+relies on the descriptor's angular degrees to represent the spin direction, so
+it requires `lmax >= 1` (the default).
+
+#### DeepSpin virtual-atom scheme (default)
 
 ```json
 {
@@ -192,7 +263,8 @@ the standard `model.spin` block:
       ],
       "virtual_scale": [
         0.314
-      ]
+      ],
+      "scheme": "deepspin"
     },
     "descriptor": {
       "sel": 120,
@@ -202,9 +274,10 @@ the standard `model.spin` block:
 }
 ```
 
-The spin path uses the conservative `ener_spin` loss and is not combined with
-the `dens` mode. See [training spin energy models](train-energy-spin.md) and
-`examples/water/dpa4/input-spin.json`.
+The `deepspin` scheme augments each magnetic atom with a virtual atom at
+`coord + spin * virtual_scale`, which doubles the internal neighbor capacity and
+type map. `virtual_scale` is required by this scheme and ignored by the native
+scheme.
 
 ### Multi-task / shared fitting
 

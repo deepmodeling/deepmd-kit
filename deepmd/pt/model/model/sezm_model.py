@@ -645,6 +645,7 @@ def _sezm_structure_key(model: SeZMModel) -> tuple[Any, ...]:
         bool(descriptor.use_gie),
         bool(descriptor.random_gamma),
         descriptor.charge_spin_embedding is not None,
+        descriptor.spin_embedding is not None,
         descriptor.inner_clamp is not None,
         descriptor.bridging_switch is not None,
         descriptor.inner_clamp_r_inner,
@@ -951,6 +952,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         force_input: Float[Tensor, "nf nloc 3"] | None = None,
         noise_mask: torch.Tensor | None = None,
         charge_spin: torch.Tensor | None = None,
+        spin: torch.Tensor | None = None,
         embedding_only: bool = False,
     ) -> dict[str, torch.Tensor]:
         """
@@ -997,6 +999,10 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 nf, nloc = atype.shape[:2]
                 if cc.ndim == 2:
                     cc = cc.view(nf, nloc, 3)
+                if spin is not None:
+                    spin = spin.to(device=cc.device, dtype=cc.dtype).reshape(
+                        nf, nloc, 3
+                    )
 
             # === Step 2. Build geometry schema ===
             with nvtx_range("SeZM/build_neighbor_list"):
@@ -1034,6 +1040,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 fparam=fp,
                 aparam=ap,
                 charge_spin=charge_spin,
+                spin=spin,
                 input_prec=input_prec,
                 embedding_only=embedding_only,
             )
@@ -1052,6 +1059,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         extended_atype: torch.Tensor | None = None,
         extended_coord_corr: torch.Tensor | None = None,
         charge_spin: torch.Tensor | None = None,
+        spin: torch.Tensor | None = None,
         input_prec: torch.dtype | None = None,
         use_compile: bool | None = None,
         embedding_only: bool = False,
@@ -1096,6 +1104,8 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             )
             if extended_coord_corr.ndim == 2:
                 extended_coord_corr = extended_coord_corr.reshape(atype.shape[0], -1, 3)
+        if spin is not None:
+            spin = spin.to(device=coord.device, dtype=coord.dtype)
         nf = atype.shape[0]
         should_compile = (
             self.should_use_compile() if use_compile is None else use_compile
@@ -1157,6 +1167,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                             ap,
                             charge_spin,
                             extended_coord_corr=extended_coord_corr,
+                            spin=spin,
                         )
                     compiled_core_compute = self.compiled_core_compute_cache[cache_key]
                     task_buf_order = self._task_buf_order_cache[cache_key]
@@ -1164,7 +1175,21 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 task_buf_vals = get_task_buffer_values(self, task_buf_order)
                 grad_ctx: Any = nullcontext() if self.training else torch.no_grad()
                 with nvtx_range("SeZM/core_compute"), grad_ctx:
-                    if extended_coord_corr is None:
+                    if spin is not None:
+                        model_predict = compiled_core_compute(
+                            coord,
+                            atype,
+                            edge_index,
+                            edge_vec,
+                            edge_scatter_index,
+                            edge_mask,
+                            fp,
+                            ap,
+                            charge_spin,
+                            spin,
+                            *task_buf_vals,
+                        )
+                    elif extended_coord_corr is None:
                         model_predict = compiled_core_compute(
                             coord,
                             atype,
@@ -1220,6 +1245,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                         comm_dict=comm_dict,
                         extended_atype=extended_atype,
                         extended_coord_corr=extended_coord_corr,
+                        spin=spin,
                         embedding_only=embedding_only,
                     )
         return self._output_type_cast(model_predict, input_prec)
@@ -1363,6 +1389,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         comm_dict: dict[str, torch.Tensor] | None = None,
         extended_atype: torch.Tensor | None = None,
         extended_coord_corr: torch.Tensor | None = None,
+        spin: torch.Tensor | None = None,
         embedding_only: bool = False,
         conservative: bool = True,
     ) -> dict[str, torch.Tensor]:
@@ -1405,6 +1432,11 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         extended_coord_corr
             Coordinates correction for virial with shape ``(nf, nscatter, 3)`` or
             ``None``.
+        spin
+            Optional per-atom spin vectors with shape ``(nf, nloc, 3)`` for the
+            native spin scheme. When provided on the conservative path, the
+            spin tensor becomes a second autograd leaf so the magnetic force
+            ``-dE/dspin`` is produced by the same backward as the force/virial.
         embedding_only
             When ``True``, return only the embedding outputs and skip the
             force/virial autograd entirely.
@@ -1440,6 +1472,12 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         if conservative and not embedding_only:
             edge_vec = edge_vec.detach().requires_grad_(True)
 
+        # Native spin: the per-atom spin is a second autograd leaf, so the
+        # magnetic force -dE/dspin is produced by the same backward that
+        # scatters the edge gradient into force/virial.
+        if spin is not None and conservative and not embedding_only:
+            spin = spin.detach().requires_grad_(True)
+
         # === Step 2. Descriptor forward ===
         # ``extended_atype`` spans the extended region on the parallel path and
         # reduces to ``atype`` (owned atoms) on the single-domain path; the
@@ -1455,6 +1493,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
                 edge_vec=edge_vec,
                 edge_mask=edge_mask,
                 charge_spin=charge_spin,
+                spin=spin,
                 comm_dict=comm_dict,
                 nloc=nloc,
             )
@@ -1545,18 +1584,21 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         energy_redu = torch.sum(
             energy_atom.to(env.GLOBAL_PT_ENER_FLOAT_PRECISION), dim=1
         )
-        energy_derv_r, energy_derv_c, energy_derv_c_redu = edge_energy_deriv(
-            energy_redu,
-            edge_vec,
-            edge_scatter_index[0],
-            edge_scatter_index[1],
-            edge_mask,
-            nf,
-            nscatter,
-            create_graph=self.training,
-            extended_coord_corr=extended_coord_corr,
+        energy_derv_r, energy_derv_c, energy_derv_c_redu, energy_derv_r_mag = (
+            edge_energy_deriv(
+                energy_redu,
+                edge_vec,
+                edge_scatter_index[0],
+                edge_scatter_index[1],
+                edge_mask,
+                nf,
+                nscatter,
+                create_graph=self.training,
+                extended_coord_corr=extended_coord_corr,
+                spin_leaf=spin,
+            )
         )
-        return {
+        model_ret = {
             "energy": energy_atom,
             "energy_redu": energy_redu,
             "energy_derv_r": energy_derv_r,
@@ -1564,6 +1606,9 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             "energy_derv_c_redu": energy_derv_c_redu,
             "mask": fit_ret["mask"],
         }
+        if energy_derv_r_mag is not None:
+            model_ret["energy_derv_r_mag"] = energy_derv_r_mag
+        return model_ret
 
     def core_compute_dens(
         self,
@@ -1669,7 +1714,6 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             dim=-1,
         )
 
-    @torch.jit.export
     def forward_lower(
         self,
         coord: Float[Tensor, "nf nscatter_x3"] | Float[Tensor, "nf nscatter 3"],
@@ -1800,6 +1844,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         ap: torch.Tensor,
         charge_spin: torch.Tensor,
         extended_coord_corr: torch.Tensor | None = None,
+        spin: torch.Tensor | None = None,
         embedding_only: bool = False,
     ) -> None:
         """Trace ``core_compute()`` with ``make_fx`` and cache the compiled callable.
@@ -1923,7 +1968,45 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         # into _buffers so downstream code (apply_out_stat, fitting_net.forward)
         # reads the proxies and the ops are recorded in the FX graph. The
         # finally block restores original state unconditionally.
-        if extended_coord_corr is None:
+        if spin is not None:
+
+            def compute_fn(  # type: ignore[misc]
+                coord: torch.Tensor,
+                atype: torch.Tensor,
+                edge_index: torch.Tensor,
+                edge_vec: torch.Tensor,
+                edge_scatter_index: torch.Tensor,
+                edge_mask: torch.Tensor,
+                fp: torch.Tensor,
+                ap: torch.Tensor,
+                charge_spin: torch.Tensor,
+                spin: torch.Tensor,
+                *task_buf_vals: torch.Tensor,
+            ) -> dict[str, torch.Tensor]:
+                # NOTE: Native spin adds the per-atom spin as a second autograd
+                # endpoint inside ``core_compute``; ``make_fx`` unfolds the same
+                # single ``autograd.grad(energy, [edge_vec, spin])`` it already
+                # captures for the edge-vector force, so the magnetic force is
+                # produced by the compiled graph with no extra backward.
+                _saved = _patch_task_bufs(task_buf_vals)
+                try:
+                    return self.core_compute(
+                        _prepare_coord_for_trace(coord),
+                        atype,
+                        edge_index,
+                        edge_vec,
+                        edge_scatter_index,
+                        edge_mask,
+                        fparam=fp,
+                        aparam=ap,
+                        charge_spin=charge_spin,
+                        spin=spin,
+                        embedding_only=embedding_only,
+                    )
+                finally:
+                    _restore_task_bufs(_saved)
+
+        elif extended_coord_corr is None:
 
             def compute_fn(
                 coord: torch.Tensor,
@@ -2056,7 +2139,11 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             ap_for_trace,
             charge_spin_for_trace,
         ]
-        if extended_coord_corr is not None:
+        if spin is not None:
+            spin_for_trace = trace_pad_dim(spin[:1], 0, trace_nf)
+            spin_for_trace = trace_pad_dim(spin_for_trace, 1, trace_nloc)
+            trace_args.append(spin_for_trace)
+        elif extended_coord_corr is not None:
             corr_for_trace = trace_pad_dim(extended_coord_corr[:1], 0, trace_nf)
             corr_for_trace = trace_pad_dim(corr_for_trace, 1, trace_nscatter)
             trace_args.append(corr_for_trace)
@@ -2322,7 +2409,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
     # Export Utilities
     # =========================================================================
 
-    def _trace_lower_exportable(
+    def trace_lower_exportable(
         self,
         fn: Any,
         *sample_inputs: torch.Tensor | None,
@@ -2452,7 +2539,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             charge_spin,
         )
 
-        return self._trace_lower_exportable(
+        return self.trace_lower_exportable(
             fn,
             *trace_inputs,
         )
@@ -2579,7 +2666,7 @@ class SeZMModel(DPModelCommon, SeZMModel_):
             nlocal,
             nghost,
         )
-        return self._trace_lower_exportable(fn, *trace_inputs)
+        return self.trace_lower_exportable(fn, *trace_inputs)
 
     # =========================================================================
     # Neighbor List Construction
@@ -2938,13 +3025,29 @@ class SeZMModel(DPModelCommon, SeZMModel_):
         Cross-rank ghost-feature exchange is well-defined only for the
         conservative non-bridging path: analytical ZBL bridging and its Source
         Freeze Propagation gate fold each node's full outgoing-edge set, which a
-        single rank cannot observe for ghost owners. Spin models use the nlist
-        lower interface and are gated separately by the freeze entry point.
+        single rank cannot observe for ghost owners. The native spin scheme
+        reuses the edge_vec interface and therefore participates; only the
+        deepspin (virtual-atom) scheme uses the nlist interface and is excluded
+        by the freeze entry point's edge_vec gate.
         """
         if self.inter_potential is not None:
             return False
         descriptor = self.atomic_model.descriptor
         return bool(descriptor.has_message_passing_across_ranks())
+
+    def export_lower_input_kind(self) -> str:
+        """Return the ABI consumed by the exported ``.pt2`` lower graph.
+
+        ``"edge_vec"`` means the graph receives the compact edge schema
+        (``coord``, ``atype``, ``edge_index``, ``edge_vec``,
+        ``edge_scatter_index``, ``edge_mask``) and the neighbor topology is
+        built on the C++ side, matching :class:`DeepPotPTExpt`. The native
+        spin scheme reuses this ABI with one extra per-local-atom spin input;
+        only the deepspin (virtual-atom) scheme overrides it to ``"nlist"``
+        because it expands virtual atoms inside the graph from the extended
+        neighbor list.
+        """
+        return "edge_vec"
 
     # =========================================================================
     # Mode Management

@@ -216,7 +216,8 @@ def edge_energy_deriv(
     nall: int,
     create_graph: bool,
     extended_coord_corr: torch.Tensor | None = None,
-) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    spin_leaf: torch.Tensor | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor | None]:
     """Assemble extended force, virial and atomic virial from edge gradients.
 
     The energy depends on coordinates only through the per-edge displacement
@@ -261,6 +262,11 @@ def edge_energy_deriv(
     extended_coord_corr
         Optional spin virtual-displacement correction with shape
         ``(nf, nall, 3)``; adds ``force (x) coord_corr`` per extended atom.
+    spin_leaf
+        Optional per-atom spin leaf with shape ``(nf, nloc, 3)`` for the native
+        spin scheme. When provided, the energy is also differentiated with
+        respect to it in the same backward, so the magnetic force shares the
+        first-derivative graph used by the force-loss second backward.
 
     Returns
     -------
@@ -271,14 +277,19 @@ def edge_energy_deriv(
         symmetrically between the two endpoints of each edge.
     energy_derv_c_redu
         Reduced global virial with shape ``(nf, 1, 9)``.
+    energy_derv_r_mag
+        Magnetic force ``-dE/dspin`` with shape ``(nf, nloc, 1, 3)`` when
+        ``spin_leaf`` is provided, otherwise ``None``.
     """
-    (g,) = torch.autograd.grad(
+    grad_inputs = [edge_vec] if spin_leaf is None else [edge_vec, spin_leaf]
+    grads = torch.autograd.grad(
         [energy_redu],
-        [edge_vec],
+        grad_inputs,
         grad_outputs=[torch.ones_like(energy_redu)],
         create_graph=create_graph,
         retain_graph=True,
     )
+    g = grads[0]
     # Padded edges carry no energy contribution, so their gradient is zero;
     # mask defensively before the scatter.
     g = torch.where(edge_mask.unsqueeze(-1), g, torch.zeros_like(g))
@@ -311,7 +322,14 @@ def edge_energy_deriv(
     energy_derv_r = extended_force.unsqueeze(-2)
     energy_derv_c = extended_virial.unsqueeze(-2)
     energy_derv_c_redu = energy_derv_c.to(env.GLOBAL_PT_ENER_FLOAT_PRECISION).sum(dim=1)
-    return energy_derv_r, energy_derv_c, energy_derv_c_redu
+
+    # Magnetic force is the negative spin gradient, matching the dataset
+    # ``force_mag = -dE/dspin`` convention (the virtual-atom scheme reaches the
+    # same quantity through ``F_virtual * virtual_scale``).
+    energy_derv_r_mag: torch.Tensor | None = None
+    if spin_leaf is not None:
+        energy_derv_r_mag = (-grads[1]).unsqueeze(-2)
+    return energy_derv_r, energy_derv_c, energy_derv_c_redu, energy_derv_r_mag
 
 
 def communicate_extended_output(

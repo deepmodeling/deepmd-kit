@@ -23,6 +23,75 @@ from deepmd.utils.version import (
 )
 
 
+def _masked_force_mag_tensors(
+    label: dict[str, torch.Tensor],
+    model_pred: dict[str, torch.Tensor],
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """Collect magnetic-force labels and predictions on spin-active atoms.
+
+    Parameters
+    ----------
+    label : dict[str, torch.Tensor]
+        Batch labels containing ``force_mag``.
+    model_pred : dict[str, torch.Tensor]
+        Model outputs containing ``force_mag`` and ``mask_mag``.
+
+    Returns
+    -------
+    label_fm : torch.Tensor
+        Reference magnetic forces with shape ``(n_mag, 3)``.
+    pred_fm : torch.Tensor
+        Predicted magnetic forces with shape ``(n_mag, 3)``.
+    mag_counts : torch.Tensor
+        Number of spin-active atoms in each frame, with shape ``(nframes,)``.
+    """
+    atomic_mask = model_pred["mask_mag"].expand(-1, -1, 3)
+    label_fm = label["force_mag"][atomic_mask].reshape(-1, 3)
+    pred_fm = model_pred["force_mag"][atomic_mask].reshape(-1, 3)
+    mag_counts = model_pred["mask_mag"].sum(dim=(1, 2)).to(torch.int64)
+    return label_fm, pred_fm, mag_counts
+
+
+def _mean_within_segments(
+    values: torch.Tensor,
+    segment_lengths: torch.Tensor,
+) -> torch.Tensor:
+    """Reduce ``values`` to a per-segment mean over contiguous frame blocks.
+
+    Parameters
+    ----------
+    values : torch.Tensor
+        Values laid out in frame order, with shape ``(n_values,)``.
+    segment_lengths : torch.Tensor
+        Length of each segment, with shape ``(n_segments,)``.
+
+    Returns
+    -------
+    torch.Tensor
+        Per-segment means with shape ``(n_segments,)``. Empty segments return
+        zero so frame-weighted reductions remain finite.
+    """
+    nsegments = segment_lengths.shape[0]
+    if values.numel() == 0:
+        return torch.zeros(
+            nsegments,
+            dtype=values.dtype,
+            device=values.device,
+        )
+
+    segment_ids = torch.repeat_interleave(
+        torch.arange(nsegments, device=values.device, dtype=torch.long),
+        segment_lengths,
+    )
+    totals = torch.zeros(nsegments, dtype=values.dtype, device=values.device)
+    totals.scatter_add_(0, segment_ids, values)
+
+    means = torch.zeros(nsegments, dtype=values.dtype, device=values.device)
+    nonempty = segment_lengths > 0
+    means[nonempty] = totals[nonempty] / segment_lengths[nonempty].to(values.dtype)
+    return means
+
+
 class EnergySpinLoss(TaskLoss):
     def __init__(
         self,
@@ -254,14 +323,9 @@ class EnergySpinLoss(TaskLoss):
         if self.has_fm and "force_mag" in model_pred and "force_mag" in label:
             find_force_m = label.get("find_force_mag", 0.0)
             pref_fm = pref_fm * find_force_m
-            nframes = model_pred["force_mag"].shape[0]
-            atomic_mask = model_pred["mask_mag"].expand([-1, -1, 3])
-            label_force_mag = label["force_mag"][atomic_mask].view(nframes, -1, 3)
-            model_pred_force_mag = model_pred["force_mag"][atomic_mask].view(
-                nframes, -1, 3
-            )
+            label_fm, pred_fm, mag_counts = _masked_force_mag_tensors(label, model_pred)
             if self.loss_func == "mse":
-                diff_fm = label_force_mag - model_pred_force_mag
+                diff_fm = label_fm - pred_fm
                 l2_force_mag_loss = torch.mean(torch.square(diff_fm))
                 if not self.inference:
                     more_loss["l2_force_m_loss"] = self.display_if_exist(
@@ -284,13 +348,11 @@ class EnergySpinLoss(TaskLoss):
                         mae_fm.detach(), find_force_m
                     )
             elif self.loss_func == "mae":
-                l1_force_mag_loss = F.l1_loss(
-                    label_force_mag, model_pred_force_mag, reduction="none"
-                )
+                per_atom_l1 = F.l1_loss(label_fm, pred_fm, reduction="none").sum(-1)
                 more_loss["mae_fm"] = self.display_if_exist(
-                    l1_force_mag_loss.mean().detach(), find_force_m
+                    per_atom_l1.mean().detach(), find_force_m
                 )
-                l1_force_mag_loss = l1_force_mag_loss.sum(-1).mean(-1).sum()
+                l1_force_mag_loss = _mean_within_segments(per_atom_l1, mag_counts).sum()
                 loss += (pref_fm * torch.nan_to_num(l1_force_mag_loss)).to(
                     GLOBAL_PT_FLOAT_PRECISION
                 )

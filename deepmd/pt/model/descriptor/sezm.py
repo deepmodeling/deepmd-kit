@@ -87,6 +87,7 @@ from .sezm_nn import (
     ScalarRMSNorm,
     SeZMInteractionBlock,
     SeZMTypeEmbedding,
+    SpinEmbedding,
     WignerDCalculator,
     build_edge_cache,
     build_edge_cache_from_edges,
@@ -492,6 +493,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         inner_clamp_r_outer: float | None = None,
         add_chg_spin_ebd: bool = False,
         default_chg_spin: list[float] | None = None,
+        use_spin: list[bool] | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__()
@@ -625,6 +627,12 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             None if default_chg_spin is None else [float(x) for x in default_chg_spin]
         )
 
+        # === Native per-atom spin embedding ===
+        # The spin vector enters the descriptor as an l=0 magnitude scalar plus
+        # an l=1 direction feature (see ``SpinEmbedding``). Providing per-type
+        # ``use_spin`` flags enables the native spin embedding.
+        self.use_spin = None if use_spin is None else [bool(x) for x in use_spin]
+
         # === Zone bridging: InnerClamp + Source Freeze Propagation Gate ===
         # Both the geometry clamp (``InnerClamp``) and the message-passing
         # switch (``BridgingSwitch``) are activated together on the same
@@ -675,6 +683,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         seed_full_attn = child_seed(self.seed, 5)
         seed_block_attn = child_seed(self.seed, 6)
         seed_charge_spin = child_seed(self.seed, 7)
+        seed_spin_embedding = child_seed(self.seed, 8)
 
         # === L/M schedules ===
         self._init_lm_schedules(lmax, n_blocks, l_schedule, mmax, m_schedule)
@@ -790,6 +799,30 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         else:
             self.charge_spin_embedding = None
 
+        if self.use_spin is not None:
+            if self.node_init_lmax < 1:
+                raise ValueError(
+                    "`use_spin` requires a node degree >= 1 "
+                    "(lmax + extra_node_l) to host the l=1 spin feature."
+                )
+            self.spin_embedding: SpinEmbedding | None = SpinEmbedding(
+                ntypes=self.ntypes,
+                channels=self.channels,
+                use_spin=self.use_spin,
+                activation_function=self.activation_function,
+                dtype=self.compute_dtype,  # force fp32+
+                seed=seed_spin_embedding,
+                trainable=self.trainable,
+            )
+            # Packed rows hosting the l=1 spin coefficients (m = -1, 0, +1).
+            self.register_buffer(
+                "_spin_l1_rows",
+                torch.arange(1, 4, dtype=torch.long, device=self.device),
+                persistent=False,
+            )
+        else:
+            self.spin_embedding = None
+
         # === Env FiLM embedding (optional) ===
         if self.use_env_seed:
             self.env_seed_embedding: EnvironmentInitialEmbedding | None = (
@@ -804,6 +837,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                     mlp_bias=self.mlp_bias,
                     activation_function=self.activation_function,
                     eps=self.eps,
+                    use_spin=self.use_spin,
                     dtype=self.compute_dtype,  # force fp32+
                     trainable=self.trainable,
                     seed=seed_env_seed,
@@ -1069,6 +1103,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         fparam: torch.Tensor | None = None,
         force_embedding: torch.Tensor | None = None,
         charge_spin: torch.Tensor | None = None,
+        spin: torch.Tensor | None = None,
     ) -> tuple[
         torch.Tensor,
         torch.Tensor,
@@ -1147,6 +1182,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 edge_mask=edge_mask,
                 force_embedding=force_embedding,
                 charge_spin=charge_spin,
+                spin=spin,
             )
             return (
                 descriptor,
@@ -1187,6 +1223,14 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                     charge_spin,
                     nf=nf,
                     nloc=nloc,
+                )
+
+            # Native spin: condition the l=0 type features on the spin magnitude
+            # and hold the l=1 direction coefficients for the backbone seed.
+            spin_vec = None
+            if self.spin_embedding is not None and spin is not None:
+                type_ebed, spin_vec = self._apply_spin_embedding(
+                    type_ebed, spin, atype_loc.reshape(-1), n_nodes=n_nodes
                 )
 
         # === Step 4. Build edge cache once (geometry + RBF + Wigner-D) ===
@@ -1238,10 +1282,16 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         with nvtx_range("env_film"):
             if self.use_env_seed and edge_cache.src.numel() > 0:
                 atype_flat = atype_loc.reshape(-1)  # (N,)
+                spin_flat = (
+                    spin.reshape(n_nodes, 3)
+                    if (self.spin_embedding is not None and spin is not None)
+                    else None
+                )
                 film = self.env_seed_embedding(
                     edge_cache=edge_cache,
                     atype_flat=atype_flat,
                     n_nodes=n_nodes,
+                    spin=spin_flat,
                 )  # (N, 2*C)
                 scale_logits = film[:, : self.channels]  # (N, C)
                 shift_logits = film[:, self.channels :]  # (N, C)
@@ -1257,19 +1307,35 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         x = type_ebed.new_zeros(n_nodes, ebed_dim_0, 1, self.channels)  # (N, D, 1, C)
         x[:, 0, 0, :] = x0_out
 
-        # === Step 8. Geometric Initial Embedding (fp32+) ===
+        # === Step 8. Geometric Initial Embedding (+ neighbor spin l=1) ===
         with nvtx_range("gie"):
             if self.use_gie and radial_feat is not None:
                 # GIE only needs l>=1, slice radial_feat[:, 1:, :]
                 zonal_coupling = self._build_gie_zonal_coupling(edge_cache)
+                spin_l1_message = (
+                    self.spin_embedding.edge_l1(
+                        spin.reshape(n_nodes, 3),
+                        atype_loc.reshape(-1),
+                        edge_cache,
+                    )
+                    if (self.spin_embedding is not None and spin is not None)
+                    else None
+                )
                 x = x + self.gie(
                     n_nodes=n_nodes,
                     edge_cache=edge_cache,
                     radial_feat=radial_feat[:, 1:, :],
                     zonal_coupling=zonal_coupling,
+                    spin_l1_message=spin_l1_message,
                 ).unsqueeze(2)
 
-        # === Step 9. Fuse edge type features into radial features (fp32+) ===
+        # === Step 9. Add the on-site native spin l=1 to the backbone ===
+        # The neighbor-spin l=1 is aggregated inside GIE (degree-normalized like
+        # the geometry); the atom's own spin direction is added here, un-normalized.
+        if spin_vec is not None:
+            x = x.index_add(1, self._spin_l1_rows, spin_vec.unsqueeze(2))
+
+        # === Step 10. Fuse edge type features into radial features (fp32+) ===
         with nvtx_range("radial_fuse"):
             if radial_feat is not None:
                 radial_feat = radial_feat + rearrange(
@@ -1282,7 +1348,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
             else:
                 rad_feat_per_block = []
 
-        # === Step 10. Convert to self.dtype and run blocks ===
+        # === Step 11. Convert to self.dtype and run blocks ===
         # The block stage is skipped entirely when there are no interaction
         # blocks (zero-block descriptor) or no valid edges, sparing the working
         # edge-cache dtype cast that only the blocks consume.
@@ -1295,11 +1361,11 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 with self._compute_mode_ctx(extended_coord.device):
                     x = self._forward_blocks(x, edge_cache, rad_feat_per_block)
 
-        # === Step 11. Final l=0 output mixing ===
+        # === Step 12. Final l=0 output mixing ===
         with nvtx_range("output_ffn"):
             x_scalar = self._apply_readout(x, n_nodes)
 
-        # === Step 12. Reshape to (nf, nloc, channels) and return ===
+        # === Step 13. Reshape to (nf, nloc, channels) and return ===
         descriptor = rearrange(
             x_scalar, "(nf nloc) 1 1 C -> nf nloc C", nf=nf, nloc=nloc
         )  # (nf, nloc, C)
@@ -1321,6 +1387,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         edge_mask: torch.Tensor,
         force_embedding: torch.Tensor | None = None,
         charge_spin: torch.Tensor | None = None,
+        spin: torch.Tensor | None = None,
         comm_dict: dict[str, torch.Tensor] | None = None,
         nloc: int | None = None,
     ) -> tuple[torch.Tensor, torch.Tensor]:
@@ -1410,6 +1477,14 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 )
             n_nodes = type_ebed.shape[0]
 
+            # Native spin: condition the l=0 type features on the spin magnitude
+            # and hold the l=1 direction coefficients for the backbone seed.
+            spin_vec = None
+            if self.spin_embedding is not None and spin is not None:
+                type_ebed, spin_vec = self._apply_spin_embedding(
+                    type_ebed, spin, atype_flat, n_nodes=n_nodes
+                )
+
         # === Step 3. Build edge cache once (sparse edges) ===
         with nvtx_range("build_edge_cache"):
             edge_cache = build_edge_cache_from_edges(
@@ -1454,10 +1529,16 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         # === Step 5. Env FiLM conditioning (optional, fp32+) ===
         with nvtx_range("env_film"):
             if self.use_env_seed:
+                spin_flat = (
+                    spin.reshape(n_nodes, 3)
+                    if (self.spin_embedding is not None and spin is not None)
+                    else None
+                )
                 film = self.env_seed_embedding(
                     edge_cache=edge_cache,
                     atype_flat=atype_flat,
                     n_nodes=n_nodes,
+                    spin=spin_flat,
                 )  # (N, 2*C)
                 scale_logits = film[:, : self.channels]  # (N, C)
                 shift_logits = film[:, self.channels :]  # (N, C)
@@ -1473,18 +1554,32 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         x = type_ebed.new_zeros(n_nodes, ebed_dim_0, 1, self.channels)  # (N, D, 1, C)
         x[:, 0, 0, :] = x0_out
 
-        # === Step 7. Geometric Initial Embedding (fp32+) ===
+        # === Step 7. Geometric Initial Embedding (+ neighbor spin l=1) ===
         with nvtx_range("gie"):
             if self.use_gie:
                 zonal_coupling = self._build_gie_zonal_coupling(edge_cache)
+                spin_l1_message = (
+                    self.spin_embedding.edge_l1(
+                        spin.reshape(n_nodes, 3), atype_flat, edge_cache
+                    )
+                    if (self.spin_embedding is not None and spin is not None)
+                    else None
+                )
                 x = x + self.gie(
                     n_nodes=n_nodes,
                     edge_cache=edge_cache,
                     radial_feat=radial_feat[:, 1:, :],
                     zonal_coupling=zonal_coupling,
+                    spin_l1_message=spin_l1_message,
                 ).unsqueeze(2)
 
-        # === Step 8. Fuse edge type features into radial features (fp32+) ===
+        # === Step 8. Add the on-site native spin l=1 to the backbone ===
+        # The neighbor-spin l=1 is aggregated inside GIE; the
+        # atom's own spin direction is added here, un-normalized.
+        if spin_vec is not None:
+            x = x.index_add(1, self._spin_l1_rows, spin_vec.unsqueeze(2))
+
+        # === Step 9. Fuse edge type features into radial features (fp32+) ===
         with nvtx_range("radial_fuse"):
             radial_feat = radial_feat.to(dtype=self.dtype)
             radial_feat = radial_feat + rearrange(
@@ -1494,7 +1589,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 radial_feat[:, :rad_len, :] for rad_len in self.rad_sizes_per_block
             ]
 
-        # === Step 9. Convert to self.dtype and run blocks ===
+        # === Step 10. Convert to self.dtype and run blocks ===
         # The block stage is skipped entirely for the zero-block descriptor,
         # sparing the working edge-cache dtype cast that only the blocks consume.
         with nvtx_range("blocks"):
@@ -1508,7 +1603,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                         x, edge_cache, rad_feat_per_block, comm_dict=comm_dict
                     )
 
-        # === Step 10. Keep the owned-atom rows for the read-out ===
+        # === Step 11. Keep the owned-atom rows for the read-out ===
         # ``n_out_nodes`` is the owned-node count in the flattened layout
         # (``nf * nloc``). Single-domain: ``out_nloc == n_per_frame``, so this
         # equals the whole node set and the slice is a no-op. Parallel
@@ -1517,11 +1612,11 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         n_out_nodes = nf * out_nloc
         x = x[:n_out_nodes]
 
-        # === Step 11. Final l=0 output mixing ===
+        # === Step 12. Final l=0 output mixing ===
         with nvtx_range("output_ffn"):
             x_scalar = self._apply_readout(x, n_out_nodes)
 
-        # === Step 12. Reshape to (nf, nloc, channels) and return ===
+        # === Step 13. Reshape to (nf, nloc, channels) and return ===
         descriptor = x_scalar.reshape(nf, out_nloc, self.channels)  # (nf, nloc, C)
         return descriptor.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION), x.contiguous()
 
@@ -1771,6 +1866,44 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
         condition = self.charge_spin_embedding(charge_spin.to(dtype=type_ebed.dtype))
         condition = condition[:, None, :].expand(nf, nloc, self.channels)
         return type_ebed + condition.reshape_as(type_ebed)
+
+    def _apply_spin_embedding(
+        self,
+        type_ebed: torch.Tensor,
+        spin: torch.Tensor,
+        atype_flat: torch.Tensor,
+        *,
+        n_nodes: int,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """
+        Inject the per-atom spin embedding into the node features.
+
+        The l=0 magnitude scalar is added to the flattened type embedding so it
+        propagates into the scalar backbone, the per-edge type features, and
+        every block's radial features (exactly like the type embedding). The l=1
+        direction coefficients are returned for the caller to add to the
+        equivariant backbone after the geometric initial embedding.
+
+        Parameters
+        ----------
+        type_ebed
+            Flattened type embedding with shape (N, channels).
+        spin
+            Per-atom spin vectors with shape (nf, nloc, 3) or (N, 3).
+        atype_flat
+            Flattened local atom types with shape (N,).
+        n_nodes
+            Number of local nodes ``N = nf * nloc``.
+
+        Returns
+        -------
+        tuple[torch.Tensor, torch.Tensor]
+            The l=0-conditioned type embedding with shape (N, channels) and the
+            packed l=1 direction coefficients with shape (N, 3, channels).
+        """
+        scalar, vector = self.spin_embedding(spin.reshape(n_nodes, 3), atype_flat)
+        type_ebed = type_ebed + scalar.to(dtype=type_ebed.dtype)
+        return type_ebed, vector
 
     def _edge_type_keep_mask(
         self,
@@ -2348,6 +2481,7 @@ class DescrptSeZM(BaseDescriptor, nn.Module):
                 "inner_clamp_r_outer": self.inner_clamp_r_outer,
                 "add_chg_spin_ebd": self.add_chg_spin_ebd,
                 "default_chg_spin": self.default_chg_spin,
+                "use_spin": self.use_spin,
             },
             "@variables": {key: np_safe(value) for key, value in state.items()},
             "env_mat": DPEnvMat(self.rcut, self.rcut, self.eps).serialize(),

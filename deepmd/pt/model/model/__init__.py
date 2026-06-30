@@ -84,6 +84,9 @@ from .property_model import (
 from .sezm_model import (
     SeZMModel,
 )
+from .sezm_native_spin_model import (
+    SeZMNativeSpinModel,
+)
 from .sezm_property_model import (
     SeZMPropertyModel,
 )
@@ -124,17 +127,43 @@ def _get_standard_model_components(model_params: dict, ntypes: int) -> tuple:
 
 
 def _normalize_spin_use_spin(model_params: dict) -> None:
-    """Normalize spin.use_spin from type indices to per-type booleans."""
-    if not model_params["spin"]["use_spin"] or isinstance(
-        model_params["spin"]["use_spin"][0], int
-    ):
-        use_spin = np.full(len(model_params["type_map"]), False, dtype=bool)
-        use_spin[model_params["spin"]["use_spin"]] = True
-        model_params["spin"]["use_spin"] = use_spin.tolist()
+    """Normalize ``spin.use_spin`` to a per-type boolean list.
+
+    Three equivalent forms are accepted: a per-type boolean list, a list of
+    magnetic type indices, or a list of magnetic element symbols. The index and
+    symbol forms are expanded against ``type_map``, so a large type map only needs
+    its magnetic species named.
+
+    Raises
+    ------
+    ValueError
+        If a symbol in ``use_spin`` is absent from ``type_map``.
+    """
+    use_spin = model_params["spin"]["use_spin"]
+    if use_spin and isinstance(use_spin[0], str):
+        type_index = {name: idx for idx, name in enumerate(model_params["type_map"])}
+        unknown = [name for name in use_spin if name not in type_index]
+        if unknown:
+            raise ValueError(
+                f"spin.use_spin references element(s) {unknown} absent from type_map."
+            )
+        use_spin = [type_index[name] for name in use_spin]
+    # ``bool`` is a subclass of ``int``; an already-boolean list is left untouched
+    # while an index list is scattered into a per-type mask.
+    if not use_spin or not isinstance(use_spin[0], bool):
+        mask = np.full(len(model_params["type_map"]), False, dtype=bool)
+        mask[use_spin] = True
+        model_params["spin"]["use_spin"] = mask.tolist()
 
 
 def get_spin_model(model_params: dict) -> SpinModel:
     model_params = copy.deepcopy(model_params)
+    if model_params["spin"].get("allow_missing_label", False):
+        raise ValueError(
+            "spin.allow_missing_label is supported only by the SeZM/DPA4 spin model "
+            "(model.type='dpa4'/'sezm'), where a zero spin reduces the descriptor to "
+            "its spin-free form; the virtual-atom expansion here has no such limit."
+        )
     _normalize_spin_use_spin(model_params)
     # include virtual spin and placeholder types
     model_params["type_map"] += [item + "_spin" for item in model_params["type_map"]]
@@ -444,6 +473,107 @@ def get_sezm_model(model_params: dict) -> BaseModel:
 
 
 def get_sezm_spin_model(model_params: dict) -> BaseModel:
+    """Dispatch a DPA4/SeZM spin model by ``model.spin.scheme``.
+
+    ``deepspin`` selects the classical virtual-atom representation; ``native``
+    injects the spin into the descriptor as an equivariant feature. A missing
+    ``scheme`` falls back to ``deepspin``.
+    """
+    scheme = str(model_params.get("spin", {}).get("scheme", "deepspin")).lower()
+    if scheme == "native":
+        return _get_sezm_native_spin_model(model_params)
+    if scheme == "deepspin":
+        return _get_sezm_virtual_spin_model(model_params)
+    raise ValueError(
+        f"Unknown spin scheme '{scheme}' for DPA4/SeZM; use 'native' or 'deepspin'."
+    )
+
+
+def _get_sezm_native_spin_model(model_params: dict) -> BaseModel:
+    """Build the native (virtual-atom-free) spin DPA4/SeZM model.
+
+    The spin vector enters the descriptor as an equivariant feature, so the
+    type map, neighbor selection and type count stay at the real-system sizes;
+    only the descriptor gains the spin-embedding branch.
+    """
+    model_params_old = model_params
+    model_params = copy.deepcopy(model_params)
+    model_params.setdefault("descriptor", {})
+    model_params.setdefault("fitting_net", {})
+    model_params["descriptor"].setdefault("type", "dpa4")
+    _normalize_spin_use_spin(model_params)
+
+    use_spin = [bool(flag) for flag in model_params["spin"]["use_spin"]]
+    # ``virtual_scale`` is a virtual-atom geometric device; the native scheme
+    # only needs ``use_spin`` for masking, so default it when absent.
+    spin = Spin(
+        use_spin=use_spin,
+        virtual_scale=model_params["spin"].get("virtual_scale", 1.0),
+        allow_missing_label=model_params["spin"].get("allow_missing_label", False),
+    )
+
+    ntypes = len(model_params["type_map"])
+    model_params["descriptor"]["ntypes"] = ntypes
+    model_params["descriptor"]["type_map"] = copy.deepcopy(model_params["type_map"])
+    model_params["descriptor"]["use_spin"] = use_spin
+
+    pair_exclude_types = model_params.get("pair_exclude_types", [])
+    model_params["pair_exclude_types"] = pair_exclude_types
+    if pair_exclude_types:
+        model_params["descriptor"]["exclude_types"] = copy.deepcopy(pair_exclude_types)
+
+    # === Bridging parameters (no virtual atoms, so ZBL needs no masking) ===
+    bridging_method = str(model_params.get("bridging_method", "none")).upper()
+    bridging_r_inner = float(model_params.get("bridging_r_inner", 0.5))
+    bridging_r_outer = float(model_params.get("bridging_r_outer", 0.8))
+    if bridging_method != "NONE":
+        model_params["descriptor"]["inner_clamp_r_inner"] = bridging_r_inner
+        model_params["descriptor"]["inner_clamp_r_outer"] = bridging_r_outer
+
+    descriptor = BaseDescriptor(**model_params["descriptor"])
+
+    fitting_net = copy.deepcopy(model_params["fitting_net"])
+    fitting_net_type = fitting_net.get("type", "dpa4_ener")
+    if fitting_net_type not in ("dpa4_ener", "sezm_ener"):
+        raise ValueError(
+            "Native spin DPA4/SeZM currently supports only `dpa4_ener` or "
+            f"`sezm_ener` fitting, but got `{fitting_net_type}`."
+        )
+    fitting_net.pop("type", None)
+    fitting_net["ntypes"] = descriptor.get_ntypes()
+    fitting_net["type_map"] = copy.deepcopy(model_params["type_map"])
+    fitting_net["mixed_types"] = descriptor.mixed_types()
+    fitting_net["dim_descrpt"] = descriptor.get_dim_out()
+    fitting = SeZMEnergyFittingNet(**fitting_net)
+
+    preset_out_bias = model_params.get("preset_out_bias")
+    preset_out_bias = _convert_preset_out_bias_to_array(
+        preset_out_bias, model_params["type_map"]
+    )
+    data_stat_protect = model_params.get("data_stat_protect", 1e-2)
+    use_compile = bool(model_params.get("use_compile", False))
+    enable_tf32 = bool(model_params.get("enable_tf32", True))
+
+    model = SeZMNativeSpinModel(
+        descriptor=descriptor,
+        fitting=fitting,
+        type_map=model_params["type_map"],
+        atom_exclude_types=model_params.get("atom_exclude_types", []),
+        pair_exclude_types=pair_exclude_types,
+        preset_out_bias=preset_out_bias,
+        data_stat_protect=data_stat_protect,
+        use_compile=use_compile,
+        enable_tf32=enable_tf32,
+        bridging_method=bridging_method,
+        bridging_r_inner=bridging_r_inner,
+        bridging_r_outer=bridging_r_outer,
+        spin=spin,
+    )
+    model.model_def_script = json.dumps(model_params_old)
+    return model
+
+
+def _get_sezm_virtual_spin_model(model_params: dict) -> BaseModel:
     model_params_old = model_params
     model_params = copy.deepcopy(model_params)
     model_params.setdefault("descriptor", {})
@@ -458,6 +588,7 @@ def get_sezm_spin_model(model_params: dict) -> BaseModel:
     spin = Spin(
         use_spin=model_params["spin"]["use_spin"],
         virtual_scale=model_params["spin"]["virtual_scale"],
+        allow_missing_label=model_params["spin"].get("allow_missing_label", False),
     )
     model_params["type_map"] += [item + "_spin" for item in model_params["type_map"]]
     pair_exclude_types = spin.get_pair_exclude_types(
@@ -556,6 +687,7 @@ __all__ = [
     "PolarModel",
     "PopulationModel",
     "SeZMModel",
+    "SeZMNativeSpinModel",
     "SeZMPropertyModel",
     "SeZMSpinModel",
     "SpinEnergyModel",

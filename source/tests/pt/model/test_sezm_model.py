@@ -18,6 +18,7 @@ from packaging.version import parse as parse_version
 
 from deepmd.pt.loss import (
     DeNSLoss,
+    EnergySpinLoss,
     EnergyStdLoss,
     PropertyLoss,
 )
@@ -33,11 +34,15 @@ from deepmd.pt.model.descriptor.sezm_nn import (
     build_merged_state_dict,
 )
 from deepmd.pt.model.model import (
+    get_model,
     get_sezm_model,
 )
 from deepmd.pt.model.model.sezm_model import (
     InterPotential,
     SeZMModel,
+)
+from deepmd.pt.model.model.sezm_native_spin_model import (
+    SeZMNativeSpinModel,
 )
 from deepmd.pt.model.model.sezm_property_model import (
     SeZMPropertyModel,
@@ -47,6 +52,12 @@ from deepmd.pt.train.training import (
 )
 from deepmd.pt.utils import (
     env,
+)
+from deepmd.pt.utils.nlist import (
+    extend_input_and_build_neighbor_list,
+)
+from deepmd.pt_expt.utils.edge_schema import (
+    edge_schema_from_extended,
 )
 from deepmd.utils.path import (
     DPPath,
@@ -1542,6 +1553,381 @@ class TestSeZMEdgeForceScatter(unittest.TestCase):
                 rtol=1.0e-6,
                 msg=f"atom_virial sum != global virial ({bridging_method})",
             )
+
+
+class TestSeZMNativeSpinModel(unittest.TestCase):
+    """Validate the native (virtual-atom-free) spin SeZM model.
+
+    The spin vector enters the descriptor as an equivariant feature, so the
+    magnetic force is the negative spin gradient of the energy. float64
+    finite-difference checks pin ``force_mag = -dE/dspin`` and the conservative
+    ``force = -dE/dx``; a joint rotation of geometry and spin confirms SO(3)
+    equivariance of energy, force and magnetic force.
+    """
+
+    def setUp(self) -> None:
+        self.device = env.DEVICE
+
+    def _build_model(self, *, use_compile: bool = False) -> SeZMNativeSpinModel:
+        """Build a tiny float64 native-spin model with randomized parameters."""
+        params = {
+            "type": "dpa4",
+            "type_map": ["Ni", "O"],
+            "spin": {"use_spin": [True, False], "scheme": "native"},
+            "descriptor": {
+                "type": "dpa4",
+                "sel": [12, 12],
+                "rcut": 3.0,
+                "channels": 4,
+                "n_focus": 1,
+                "n_radial": 3,
+                "radial_mlp": [6],
+                "use_env_seed": True,
+                "random_gamma": False,
+                "l_schedule": [1, 0],
+                "mmax": 1,
+                "ffn_neurons": 8,
+                "ffn_blocks": 1,
+                "mlp_bias": False,
+                "layer_scale": False,
+                "use_amp": False,
+                "activation_function": "silu",
+                "precision": "float64",
+                "seed": 7,
+            },
+            "fitting_net": {
+                "neuron": [8],
+                "activation_function": "silu",
+                "precision": "float64",
+                "seed": 7,
+            },
+            "use_compile": use_compile,
+        }
+        model = get_model(params)
+        # Perturb away from the near-identity initialization so the spin
+        # embedding measurably shapes the output.
+        torch.manual_seed(1234)
+        with torch.no_grad():
+            for p in model.parameters():
+                p.copy_(torch.randn_like(p) * 0.1)
+        model.eval()
+        return model
+
+    def _frame(
+        self,
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Periodic frame; only Ni (type 0) atoms carry spin."""
+        coord = torch.tensor(
+            [
+                [
+                    [0.10, 0.05, 0.00],
+                    [1.05, 0.30, 0.10],
+                    [0.20, 1.40, 0.35],
+                    [1.60, 1.15, 0.20],
+                    [2.20, 0.10, 1.05],
+                ]
+            ],
+            dtype=torch.float64,
+            device=self.device,
+        )
+        atype = torch.tensor([[0, 1, 0, 1, 0]], dtype=torch.int64, device=self.device)
+        spin = torch.zeros(1, 5, 3, dtype=torch.float64, device=self.device)
+        is_mag = atype[0] == 0
+        torch.manual_seed(99)
+        spin[0, is_mag] = torch.randn(
+            int(is_mag.sum()), 3, dtype=torch.float64, device=self.device
+        )
+        box = torch.tensor(
+            [[6.0, 0.0, 0.0, 0.0, 6.0, 0.0, 0.0, 0.0, 6.0]],
+            dtype=torch.float64,
+            device=self.device,
+        )
+        return coord, atype, spin, box
+
+    @staticmethod
+    def _proper_rotation(device: torch.device) -> torch.Tensor:
+        """A deterministic proper rotation matrix (det = +1)."""
+        torch.manual_seed(0)
+        q, _ = torch.linalg.qr(torch.randn(3, 3, dtype=torch.float64, device=device))
+        if torch.det(q) < 0:
+            q[:, 0] = -q[:, 0]
+        return q
+
+    def test_finite_difference_forces(self) -> None:
+        """Force = -dE/dx and force_mag = -dE/dspin to finite-difference accuracy.
+
+        The same frame validates both endpoints of the single backward, and the
+        per-type spin gate (non-magnetic atoms carry exactly zero magnetic force).
+        """
+        model = self._build_model()
+        coord, atype, spin, box = self._frame()
+        out = model(coord, atype, spin, box=box)
+        force, force_mag = out["force"], out["force_mag"]
+
+        def energy(c: torch.Tensor, s: torch.Tensor) -> torch.Tensor:
+            return model(c, atype, s, box=box)["energy"].squeeze()
+
+        eps = 1.0e-5
+        nloc = coord.shape[1]
+        fd_force = torch.zeros_like(force)
+        fd_mag = torch.zeros_like(force_mag)
+        for a in range(nloc):
+            for d in range(3):
+                cp, cm = coord.clone(), coord.clone()
+                cp[0, a, d] += eps
+                cm[0, a, d] -= eps
+                fd_force[0, a, d] = -(energy(cp, spin) - energy(cm, spin)) / (2 * eps)
+                sp, sm = spin.clone(), spin.clone()
+                sp[0, a, d] += eps
+                sm[0, a, d] -= eps
+                fd_mag[0, a, d] = -(energy(coord, sp) - energy(coord, sm)) / (2 * eps)
+        torch.testing.assert_close(
+            force, fd_force, atol=1.0e-6, rtol=1.0e-4, msg="force != -dE/dx"
+        )
+        torch.testing.assert_close(
+            fd_mag, force_mag, atol=1.0e-6, rtol=1.0e-4, msg="force_mag != -dE/dspin"
+        )
+
+        torch.testing.assert_close(out["mask_mag"], (atype == 0).reshape(1, -1, 1))
+        self.assertEqual(force_mag[0, atype[0] == 1].abs().max().item(), 0.0)
+
+    def test_joint_rotation_equivariance(self) -> None:
+        """Energy is invariant and force / force_mag rotate under joint rotation."""
+        model = self._build_model()
+        coord, atype, spin, box = self._frame()
+        out = model(coord, atype, spin, box=box)
+
+        rot = self._proper_rotation(self.device)
+        coord_r = torch.einsum("ij,nkj->nki", rot, coord)
+        spin_r = torch.einsum("ij,nkj->nki", rot, spin)
+        box_r = (box.view(1, 3, 3) @ rot.transpose(0, 1)).reshape(1, 9)
+        out_r = model(coord_r, atype, spin_r, box=box_r)
+
+        torch.testing.assert_close(out_r["energy"], out["energy"], atol=1e-9, rtol=1e-7)
+        torch.testing.assert_close(
+            out_r["force"],
+            torch.einsum("ij,nkj->nki", rot, out["force"]),
+            atol=1e-8,
+            rtol=1e-6,
+        )
+        torch.testing.assert_close(
+            out_r["force_mag"],
+            torch.einsum("ij,nkj->nki", rot, out["force_mag"]),
+            atol=1e-8,
+            rtol=1e-6,
+        )
+
+    def test_export_matches_forward(self) -> None:
+        """The traced ``.pt2`` export reduces to the public forward.
+
+        The native scheme reuses the energy edge ABI plus the owned-atom spins,
+        so the C++ backend builds the edge schema exactly as for a non-spin
+        model. ``make_fx`` unfolds the single ``autograd.grad(energy, [edge_vec,
+        spin])``; the extended conservative force and the zero-padded magnetic
+        force reduce the LAMMPS way (``communicate_extended_output``) back to the
+        per-local-atom public force, while ``mask_mag`` is per-local-atom.
+        """
+        model = self._build_model()
+        coord, atype, spin, box = self._frame()
+        nloc = coord.shape[1]
+        out = model(coord, atype, spin, box=box)
+        ext_coord, ext_atype, ext_spin, nlist, mapping = self._extended_spin_inputs(
+            model, coord, atype, spin, box
+        )
+        # Guard the probe: the frame must carry ghosts (nall > nloc) so the
+        # magnetic-force path through ghost-image neighbours is actually
+        # exercised; otherwise the reduction would be trivial.
+        self.assertGreater(ext_coord.shape[1], nloc)
+
+        edge = edge_schema_from_extended(ext_coord, ext_atype, nlist, mapping)
+        edge_inputs = (
+            edge.coord,
+            edge.atype,
+            edge.edge_index,
+            edge.edge_vec,
+            edge.edge_scatter_index,
+            edge.edge_mask,
+            ext_spin[:, :nloc],
+            None,
+            None,
+            None,
+        )
+        traced = model.forward_common_lower_exportable(*edge_inputs)
+        model_ret = traced(*edge_inputs)
+
+        torch.testing.assert_close(model_ret["energy_redu"], out["energy"])
+        torch.testing.assert_close(
+            self._reduce_extended(
+                model_ret["energy_derv_r"].squeeze(-2), mapping, nloc
+            ),
+            out["force"],
+            atol=1e-9,
+            rtol=1e-7,
+        )
+        torch.testing.assert_close(
+            self._reduce_extended(
+                model_ret["energy_derv_r_mag"].squeeze(-2), mapping, nloc
+            ),
+            out["force_mag"],
+            atol=1e-9,
+            rtol=1e-7,
+        )
+        torch.testing.assert_close(model_ret["mask_mag"], out["mask_mag"])
+
+    def test_serialization_roundtrip(self) -> None:
+        """Serialized native-spin model restores identical predictions."""
+        model = self._build_model()
+        coord, atype, spin, box = self._frame()
+        out = model(coord, atype, spin, box=box)
+
+        restored = SeZMNativeSpinModel.deserialize(model.serialize())
+        restored.eval()
+        self.assertTrue(restored.has_spin())
+        self.assertEqual(restored.get_type_map(), ["Ni", "O"])
+        out2 = restored(coord, atype, spin, box=box)
+        for key in ["energy", "force", "force_mag"]:
+            torch.testing.assert_close(
+                out2[key], out[key], atol=1e-10, rtol=1e-8, msg=f"{key} mismatch"
+            )
+
+    def test_ener_spin_loss_smoke(self) -> None:
+        """The standard ``ener_spin`` loss runs unchanged on the native model."""
+        model = self._build_model()
+        coord, atype, spin, box = self._frame()
+        nloc = coord.shape[1]
+        loss_fn = EnergySpinLoss(
+            starter_learning_rate=1.0e-3,
+            start_pref_e=1.0,
+            limit_pref_e=1.0,
+            start_pref_fr=1.0,
+            limit_pref_fr=1.0,
+            start_pref_fm=1.0,
+            limit_pref_fm=1.0,
+        )
+        input_dict = {"coord": coord, "atype": atype, "spin": spin, "box": box}
+        label = {
+            "energy": torch.zeros(1, 1, dtype=torch.float64, device=self.device),
+            "force": torch.zeros(1, nloc, 3, dtype=torch.float64, device=self.device),
+            "force_mag": torch.zeros(
+                1, nloc, 3, dtype=torch.float64, device=self.device
+            ),
+            "find_energy": 1.0,
+            "find_force": 1.0,
+            "find_force_mag": 1.0,
+        }
+        _, loss, more = loss_fn(
+            input_dict, model, label, natoms=nloc, learning_rate=1.0e-3
+        )
+        self.assertTrue(torch.isfinite(loss))
+        self.assertIn("rmse_fm", more)
+
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
+    def test_compile_matches_eager(self) -> None:
+        """The compiled native-spin path matches eager force and magnetic force."""
+        coord, atype, spin, box = self._frame()
+        model_eager = self._build_model(use_compile=False)
+        model_cmp = self._build_model(use_compile=True)
+        model_cmp.load_state_dict(model_eager.state_dict())
+        model_eager.train()
+        model_cmp.train()
+
+        out_e = model_eager(coord, atype, spin, box=box)
+        out_c = model_cmp(coord, atype, spin, box=box)
+        self.assertIn((True, False), model_cmp.compiled_core_compute_cache)
+        for key in ["energy", "force", "force_mag"]:
+            _assert_close_with_strict_warning(
+                out_c[key],
+                out_e[key],
+                atol=1.0e-6,
+                rtol=1.0e-6,
+                msg=f"native-spin compile mismatch on {key}",
+            )
+
+    @staticmethod
+    def _extended_spin_inputs(
+        model: SeZMNativeSpinModel,
+        coord: torch.Tensor,
+        atype: torch.Tensor,
+        spin: torch.Tensor,
+        box: torch.Tensor,
+    ) -> tuple[torch.Tensor, ...]:
+        """Build the 5-tuple lower inputs ``(ext_coord, ext_atype, ext_spin, nlist, mapping)``."""
+        extended_coord, extended_atype, mapping, nlist = (
+            extend_input_and_build_neighbor_list(
+                coord,
+                atype,
+                model.get_rcut(),
+                model.get_sel(),
+                mixed_types=model.mixed_types(),
+                box=box,
+            )
+        )
+        extended_spin = torch.gather(spin, 1, mapping.unsqueeze(-1).expand(-1, -1, 3))
+        return extended_coord, extended_atype, extended_spin, nlist, mapping
+
+    @staticmethod
+    def _reduce_extended(
+        extended: torch.Tensor, mapping: torch.Tensor, nloc: int
+    ) -> torch.Tensor:
+        """Scatter-sum an extended ``(nf, nall, 3)`` tensor onto local owners."""
+        reduced = torch.zeros(
+            extended.shape[0], nloc, 3, dtype=extended.dtype, device=extended.device
+        )
+        return reduced.scatter_reduce(
+            1, mapping.unsqueeze(-1).expand(-1, -1, 3), extended, reduce="sum"
+        )
+
+    def test_allow_missing_label_relaxes_spin_data_requirement(self) -> None:
+        """``allow_missing_label`` relaxes the spin data requirement to optional with a
+        zero default, and the flag is excluded from serialization.
+
+        ``use_spin`` is given as an element symbol here, so the test also covers the
+        symbol form being expanded against ``type_map`` into a per-type boolean list.
+        """
+        from deepmd.pt.train.training import (
+            get_additional_data_requirement,
+        )
+
+        def build(allow_missing_label: bool | None) -> SeZMNativeSpinModel:
+            params = {
+                "type": "dpa4",
+                "type_map": ["Ni", "O"],
+                # Element-symbol use_spin: expanded against type_map to [True, False].
+                "spin": {"use_spin": ["Ni"], "scheme": "native"},
+                "descriptor": {
+                    "type": "dpa4",
+                    "sel": [2, 2],
+                    "rcut": 3.0,
+                    "channels": 4,
+                    "n_radial": 3,
+                    "l_schedule": [1, 0],
+                    "mmax": 1,
+                    "use_env_seed": False,
+                    "random_gamma": False,
+                    "precision": "float64",
+                },
+                "fitting_net": {"neuron": [4], "precision": "float64", "seed": 1},
+            }
+            if allow_missing_label is not None:
+                params["spin"]["allow_missing_label"] = allow_missing_label
+            return get_model(params)
+
+        for allow_missing_label, expected_must in (
+            (None, True),
+            (False, True),
+            (True, False),
+        ):
+            model = build(allow_missing_label)
+            # The symbol ``["Ni"]`` expands to the per-type mask over ``["Ni", "O"]``.
+            self.assertEqual(model.spin.use_spin.tolist(), [True, False])
+            self.assertEqual(model.spin.allow_missing_label, bool(allow_missing_label))
+            spin_req = {
+                item.key: item for item in get_additional_data_requirement(model)
+            }["spin"]
+            self.assertEqual(spin_req.must, expected_must)
+            self.assertEqual(spin_req.default, 0.0)
+
+        self.assertNotIn("allow_missing_label", build(True).spin.serialize())
 
 
 class TestSeZMModelBridging(unittest.TestCase):

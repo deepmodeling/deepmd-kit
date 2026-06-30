@@ -861,6 +861,27 @@ void PairDeepSpin::coeff(int narg, char** arg) {
     }
   }
   if (narg <= 2) {
+    // A bare `pair_coeff * *` maps LAMMPS atom types onto the model's first
+    // ntypes elements by position, which is only unambiguous when the model
+    // type_map has exactly ntypes entries. A larger type_map (e.g. a
+    // periodic-table pretrained or fine-tuned model) would silently mislabel
+    // the species, so the elements must be named explicitly.
+    std::string type_map_str;
+    deep_spin.get_type_map(type_map_str);
+    std::istringstream iss(type_map_str);
+    std::string type_name;
+    int model_ntypes = 0;
+    while (iss >> type_name) {
+      ++model_ntypes;
+    }
+    if (model_ntypes > n) {
+      error->all(FLERR, "pair_coeff * * is ambiguous: the model defines " +
+                            std::to_string(model_ntypes) +
+                            " element types but the system has " +
+                            std::to_string(n) +
+                            " atom types; list the elements explicitly, e.g. "
+                            "pair_coeff * * Fe C.");
+    }
     type_idx_map.resize(n);
     for (int ii = 0; ii < n; ++ii) {
       type_idx_map[ii] = ii;
