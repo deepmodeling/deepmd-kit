@@ -551,13 +551,14 @@ inline void remap_graph_outputs_to_dense_keys(
  * is non-MP).
  *
  * Key differences from the single-rank helper:
- *   - ``energy_redu`` = sum of the LOCAL atom energies (``atom_energy[0:nloc]``)
- *     ONLY.  The public ``energy`` key reduces over all ``N == nall`` nodes,
- *     which would double-count the bias energy of ghost nodes that belong to
- *     other ranks (ghost nodes have no center edges, so they carry a bias-only
- *     energy and zero force/virial gradient — harmless for force/virial but
- *     wrong for the owned energy).
- *   - ``energy_derv_r`` / ``energy_derv_c`` keep all ``nall`` rows (no padding).
+ *   - ``energy_redu`` = sum of the LOCAL atom energies
+ * (``atom_energy[0:nloc]``) ONLY.  The public ``energy`` key reduces over all
+ * ``N == nall`` nodes, which would double-count the bias energy of ghost nodes
+ * that belong to other ranks (ghost nodes have no center edges, so they carry a
+ * bias-only energy and zero force/virial gradient — harmless for force/virial
+ * but wrong for the owned energy).
+ *   - ``energy_derv_r`` / ``energy_derv_c`` keep all ``nall`` rows (no
+ * padding).
  *
  * @param[in,out] output_map Output tensor map (public keys in, internal keys
  *   added).

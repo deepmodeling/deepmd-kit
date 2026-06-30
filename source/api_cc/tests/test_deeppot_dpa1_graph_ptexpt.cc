@@ -243,8 +243,9 @@ TYPED_TEST(TestInferDpa1GraphPtExpt, lammps_nlist_ago) {
 // Case 5: exercise the DeepPot::compute ATOMIC overload on the graph .pt2.
 // This is the first test to reach the ``if (atomic)`` branch inside
 // remap_graph_outputs_to_dense_keys (the atom_energy/atom_virial remapping).
-// The per-atom reference values are already loaded from deeppot_dpa1_graph.expected
-// into this->expected_e and this->expected_v by SetUp().
+// The per-atom reference values are already loaded from
+// deeppot_dpa1_graph.expected into this->expected_e and this->expected_v by
+// SetUp().
 TYPED_TEST(TestInferDpa1GraphPtExpt, cpu_build_nlist_atomic) {
   using VALUETYPE = TypeParam;
   std::vector<VALUETYPE>& coord = this->coord;
@@ -261,7 +262,8 @@ TYPED_TEST(TestInferDpa1GraphPtExpt, cpu_build_nlist_atomic) {
   double ener;
   std::vector<VALUETYPE> force, virial, atom_energy, atom_virial;
   // Standalone atomic overload: DeepPot builds its own nlist (graph branch),
-  // then returns per-atom energy + atom-virial alongside total energy/force/virial.
+  // then returns per-atom energy + atom-virial alongside total
+  // energy/force/virial.
   dp.compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box);
 
   EXPECT_EQ(force.size(), static_cast<size_t>(natoms * 3));
