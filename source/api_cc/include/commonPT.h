@@ -399,6 +399,14 @@ struct GraphTensorPack {
  * @param device Target device for the returned tensors.
  * @param row_centers Optional center atom index for each neighbor-list row
  *   (LAMMPS compacts away empty rows); ``nullptr`` means row i is center i.
+ * @param fold_to_local Whether ghost neighbours are folded onto their local
+ *   owners (single-rank, ``N == nloc``, ``n_node = [nloc]``, node types from
+ *   ``atype_ext[0:nloc]``) or kept as distinct extended nodes (multi-rank,
+ *   ``N == nall``, ``n_node = [nall]``, node types from the full ``atype_ext``
+ *   including the real halo types — the #5583 invariant).  In the multi-rank
+ *   case ``edge_index`` indexes the extended atoms directly, so ghost reaction
+ *   forces land on the ghost rows and are folded to their owners by LAMMPS
+ *   reverse-comm (no with-comm artifact / no border_op — dpa1 is non-MP).
  */
 template <typename VALUETYPE>
 inline GraphTensorPack buildGraphTensors(
@@ -410,16 +418,18 @@ inline GraphTensorPack buildGraphTensors(
     const int nall,
     const double rcut,
     const torch::Device& device,
-    const std::vector<int>* row_centers = nullptr) {
+    const std::vector<int>* row_centers = nullptr,
+    const bool fold_to_local = true) {
   auto int_options = torch::TensorOptions().dtype(torch::kInt64);
 
-  // 1. Cached-style topology only (no geometry): edge_index folds ghost
-  //    neighbours onto their local owners (fold_to_local=true), edge_index_ext
-  //    keeps extended indices for the on-device geometry recompute.
+  // 1. Cached-style topology only (no geometry): when fold_to_local=true,
+  //    edge_index folds ghost neighbours onto their local owners (single-rank);
+  //    when false, edge_index indexes the extended atoms directly (multi-rank).
+  //    edge_index_ext always keeps extended indices for the on-device geometry
+  //    recompute.
   const EdgeTensorPack topo =
       createEdgeTensors(nlist, coord, mapping, nloc, nall, device,
-                        /*with_geometry=*/false, row_centers,
-                        /*fold_to_local=*/true);
+                        /*with_geometry=*/false, row_centers, fold_to_local);
 
   // 2. Recompute geometry from the current coords on-device, filter by rcut and
   //    append the two masked dummy edges.  The model is compiled for float64
@@ -434,16 +444,19 @@ inline GraphTensorPack buildGraphTensors(
       topo.edge_index, topo.edge_index_ext, coord_tensor, rcut);
 
   GraphTensorPack pack;
-  pack.edge_index = edges.edge_index;  // local-folded (2, E)
+  pack.edge_index = edges.edge_index;  // (2, E): local-folded or extended
   pack.edge_vec = edges.edge_vec;      // (E, 3) neighbour - center
   pack.edge_mask = edges.edge_mask;    // (E,) bool
-  pack.n_node =
-      torch::full({1}, static_cast<std::int64_t>(nloc), int_options).to(device);
-  // Node types from the local slice of the extended types.
-  std::vector<std::int64_t> atype_loc(atype_ext.begin(),
-                                      atype_ext.begin() + nloc);
-  pack.atype = torch::from_blob(atype_loc.data(),
-                                {static_cast<std::int64_t>(nloc)}, int_options)
+  // Single-rank: N == nloc (ghosts folded onto owners).  Multi-rank: N == nall
+  // (ghosts are distinct nodes whose features come from their real halo types).
+  const std::int64_t n_node_count = fold_to_local ? nloc : nall;
+  pack.n_node = torch::full({1}, n_node_count, int_options).to(device);
+  // Node types from the extended types (NOT atype[mapping]): the local slice
+  // for single-rank, the full extended set (incl. real halo types) for
+  // multi-rank.
+  std::vector<std::int64_t> atype_nodes(atype_ext.begin(),
+                                        atype_ext.begin() + n_node_count);
+  pack.atype = torch::from_blob(atype_nodes.data(), {n_node_count}, int_options)
                    .clone()
                    .to(device);
   return pack;
@@ -522,6 +535,60 @@ inline void remap_graph_outputs_to_dense_keys(
         torch::zeros({nf, nall, 1, 9}, atom_virial_pub.options());
     atom_virial_full.index_put_({0, Slice(0, nloc), 0}, atom_virial_pub);
     output_map["energy_derv_c"] = atom_virial_full;
+  }
+}
+
+/**
+ * @brief Remap NeighborGraph public outputs onto the dense internal-key layout
+ *        for the MULTI-RANK (extended-region) non-message-passing path.
+ *
+ * Built with ``fold_to_local=false``, the graph has ``N == nall`` nodes: ghost
+ * (halo) atoms are distinct nodes, so the per-node ``force`` is already the
+ * EXTENDED force (one row per extended atom).  Ghost reaction forces stay on
+ * their ghost rows and are folded back to their owning rank by LAMMPS
+ * reverse-comm — exactly as the dense path returns its extended force.  No
+ * zero-padding (unlike the single-rank helper) and no with-comm artifact (dpa1
+ * is non-MP).
+ *
+ * Key differences from the single-rank helper:
+ *   - ``energy_redu`` = sum of the LOCAL atom energies (``atom_energy[0:nloc]``)
+ *     ONLY.  The public ``energy`` key reduces over all ``N == nall`` nodes,
+ *     which would double-count the bias energy of ghost nodes that belong to
+ *     other ranks (ghost nodes have no center edges, so they carry a bias-only
+ *     energy and zero force/virial gradient — harmless for force/virial but
+ *     wrong for the owned energy).
+ *   - ``energy_derv_r`` / ``energy_derv_c`` keep all ``nall`` rows (no padding).
+ *
+ * @param[in,out] output_map Output tensor map (public keys in, internal keys
+ *   added).
+ * @param[in] nloc Number of local atoms (owned by this rank).
+ * @param[in] nall Extended atom count (== N, the graph node count).
+ * @param[in] atomic Whether atomic energy / virial were requested.
+ */
+inline void remap_graph_outputs_to_dense_keys_extended(
+    std::map<std::string, torch::Tensor>& output_map,
+    const std::int64_t nloc,
+    const std::int64_t nall,
+    const bool atomic) {
+  using torch::indexing::Slice;
+  const std::int64_t nf = 1;
+  const auto& atom_energy_pub = output_map.at("atom_energy");  // (N==nall, 1)
+  const auto& force_pub = output_map.at("force");    // (N==nall, 3) extended
+  const auto& virial_pub = output_map.at("virial");  // (nf, 9)
+
+  // Owned energy = sum over LOCAL atoms only; ghost nodes carry bias-only
+  // energy belonging to other ranks.
+  output_map["energy_redu"] =
+      atom_energy_pub.index({Slice(0, nloc)}).sum().reshape({nf, 1});
+  output_map["energy_derv_c_redu"] = virial_pub.reshape({nf, 1, 9});
+  // Extended force: ghost rows stay distinct for LAMMPS reverse-comm fold-back.
+  output_map["energy_derv_r"] = force_pub.reshape({nf, nall, 1, 3});
+
+  if (atomic) {
+    const auto& atom_virial_pub = output_map.at("atom_virial");  // (N==nall, 9)
+    output_map["energy"] =
+        atom_energy_pub.index({Slice(0, nloc)}).reshape({nf, nloc, 1});
+    output_map["energy_derv_c"] = atom_virial_pub.reshape({nf, nall, 1, 9});
   }
 }
 

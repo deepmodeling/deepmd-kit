@@ -502,14 +502,23 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   bool multi_rank = (lmp_list.nprocs > 1);
   bool atom_map_present = (lmp_list.mapping != nullptr);
   bool use_with_comm = has_comm_artifact_ && multi_rank;
-  // The NeighborGraph schema only has a single-rank artifact so far; the
-  // multi-rank (with-comm) graph path is PR-B3.  Fail fast before building
-  // any tensors so callers get a clear message instead of a wrong answer.
-  if (lower_input_is_graph_ && multi_rank) {
+  // NeighborGraph multi-rank dispatch:
+  //   - NON-message-passing (dpa1, se_e2_a, ...): the SAME single-rank graph
+  //     .pt2 runs on the EXTENDED region (fold_to_local=false; ghosts are
+  //     distinct nodes whose features come from their real halo types).  No
+  //     with-comm artifact / no border_op is needed; ghost reaction forces are
+  //     folded to their owners by LAMMPS reverse-comm.  Handled below.
+  //   - message-passing graph (DPA2/DPA3, PR-G): would need a with-comm graph
+  //     artifact for cross-rank ghost-feature exchange — not yet supported.
+  //     Fail fast before building any tensors so callers get a clear message
+  //     instead of a wrong answer.
+  if (lower_input_is_graph_ && multi_rank && has_message_passing_) {
     throw deepmd::deepmd_exception(
-        "Multi-rank graph (NeighborGraph) .pt2 inference is not yet "
-        "supported (PR-B3). Run single-rank, or use a dense/edge .pt2 for "
-        "multi-rank LAMMPS.");
+        "Multi-rank message-passing graph (NeighborGraph) .pt2 inference is "
+        "not yet supported (PR-G). Non-message-passing graph models (e.g. "
+        "dpa1) run multi-rank on the extended-region single-rank artifact; "
+        "for message-passing models run single-rank, or use a dense/edge "
+        ".pt2 for multi-rank LAMMPS.");
   }
   // Decision matrix (see PR #5450 description):
   //   non-GNN model (has_message_passing_ == false): regular path is
@@ -813,12 +822,16 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
                           edge_tensors.edge_index_ext, edge_tensors.edge_mask,
                           fparam_tensor, aparam_tensor, charge_spin_tensor);
     } else if (lower_input_is_graph_) {
-      // Single-rank NeighborGraph schema: build (atype, n_node, edge_index,
-      // edge_vec, edge_mask) from the host nlist (node types from the extended
-      // types, folded local edge graph) and run the graph artifact.
+      // NeighborGraph schema: build (atype, n_node, edge_index, edge_vec,
+      // edge_mask) from the host nlist and run the (single-rank) graph
+      // artifact.  Single-rank folds ghosts onto local owners (N == nloc);
+      // multi-rank (non-MP only — the fail-fast above blocks MP graph
+      // multi-rank) keeps the extended region (N == nall_real, node types from
+      // the real halo types) so LAMMPS reverse-comm folds ghost forces back.
       const auto graph_tensors = buildGraphTensors(
           nlist_data.jlist, dcoord, datype, mapping_, nloc, nall_real,
-          static_cast<double>(rcut), device, &nlist_data.ilist);
+          static_cast<double>(rcut), device, &nlist_data.ilist,
+          /*fold_to_local=*/!multi_rank);
       flat_outputs = run_model_graph(
           graph_tensors.atype, graph_tensors.n_node, graph_tensors.edge_index,
           graph_tensors.edge_vec, graph_tensors.edge_mask, fparam_tensor,
@@ -835,14 +848,21 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
   extract_outputs(output_map, flat_outputs);
 
   if (lower_input_is_graph_) {
-    // The graph forward emits LOCAL public keys (atom_energy/energy/force/
+    // The graph forward emits flat-N PUBLIC keys (atom_energy/energy/force/
     // virial/atom_virial); rewrite them into the dense internal-key layout the
-    // downstream extraction/fold-back expects.  nloc == N (graph node count);
-    // pad the per-atom force/virial up to nall_real with zero ghost rows.
-    // single_rank=true: the multi-rank fail-fast at line ~508 guarantees we
-    // never reach here on a multi-rank graph call.
-    deepmd::remap_graph_outputs_to_dense_keys(output_map, nloc, nall_real,
-                                              atomic, /*single_rank=*/true);
+    // downstream extraction/fold-back expects.
+    if (multi_rank) {
+      // Extended region (N == nall_real): force is already per-extended-atom,
+      // owned energy = sum over local atom energies, no zero-padding.  Ghost
+      // forces fold back via LAMMPS reverse-comm (no with-comm artifact).
+      deepmd::remap_graph_outputs_to_dense_keys_extended(output_map, nloc,
+                                                         nall_real, atomic);
+    } else {
+      // Single-rank (N == nloc): ghosts folded onto owners; pad the per-atom
+      // force/virial up to nall_real with zero ghost rows.
+      deepmd::remap_graph_outputs_to_dense_keys(output_map, nloc, nall_real,
+                                                atomic, /*single_rank=*/true);
+    }
   }
 
   if (phantom_n > 0) {
