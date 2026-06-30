@@ -558,9 +558,17 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
       auto padded_nlist = createNlistTensor(nlist_data.jlist, nnei)
                               .to(torch::kInt64)
                               .to(device);
+      auto ilist_tensor = torch::from_blob(
+          nlist_data.ilist.data(),
+          {static_cast<std::int64_t>(nlist_data.ilist.size())},
+          torch::TensorOptions().dtype(torch::kInt32))
+          .to(torch::kInt64)
+          .to(device);
       const auto edge_tensors = createEdgeTensorsDevice(
           padded_nlist, coord_Tensor, mapping_tensor, nloc, nall_real,
-          /*fold_to_local=*/!use_with_comm);
+          /*fold_to_local=*/!use_with_comm,
+          /*with_geometry=*/false,
+          /*row_centers=*/ilist_tensor);
       edge_index_tensor = edge_tensors.edge_index;
       edge_index_ext_tensor = edge_tensors.edge_index_ext;
     } else {

@@ -342,6 +342,10 @@ inline EdgeTensorPack createEdgeTensors(
  * @param with_geometry Whether to also compute edge_vec and edge_mask.
  *   When false, only topology (edge_index, edge_index_ext) is built —
  *   the caller uses compactEdgeTensors() every step for geometry.
+ * @param row_centers Optional 1-D tensor [nrow] mapping nlist row index to
+ *   the actual center atom index.  Required when the padded nlist rows have
+ *   been compacted (e.g. after shuffle_exclude_empty in LAMMPS).  When empty,
+ *   row i is assumed to be centered on atom i.
  */
 inline EdgeTensorPack createEdgeTensorsDevice(
     const torch::Tensor& nlist_tensor,
@@ -350,19 +354,28 @@ inline EdgeTensorPack createEdgeTensorsDevice(
     const int nloc,
     const int nall,
     const bool fold_to_local = true,
-    const bool with_geometry = false) {
-  // nlist_tensor: [1, nloc, nnei], coord: [1, nall, 3], mapping: [1, nall]
+    const bool with_geometry = false,
+    const torch::Tensor& row_centers = {}) {
   const int nnei = nlist_tensor.size(2);
+  const int nrow = nlist_tensor.size(1);
   const auto device = coord.device();
   const auto int_options =
       torch::TensorOptions().dtype(torch::kInt64).device(device);
 
-  // Flatten nlist to [nloc * nnei]
-  auto nlist_flat = nlist_tensor.reshape({-1});  // [nloc * nnei]
+  auto nlist_flat = nlist_tensor.reshape({-1});
 
-  // dst_actual: center atom index for each edge slot
-  auto dst_actual =
-      torch::floor_divide(torch::arange(nloc * nnei, int_options), nnei);
+  // dst_actual: center atom for each edge slot.  When row_centers is
+  // provided, map compacted row index to actual center atom index.
+  torch::Tensor dst_actual;
+  if (row_centers.defined() && row_centers.numel() > 0) {
+    auto row_idx =
+        torch::floor_divide(torch::arange(nrow * nnei, int_options), nnei);
+    dst_actual =
+        row_centers.to(device).to(torch::kInt64).index_select(0, row_idx);
+  } else {
+    dst_actual =
+        torch::floor_divide(torch::arange(nrow * nnei, int_options), nnei);
+  }
 
   // Valid edge mask: nlist >= 0 (not padding)
   auto valid = nlist_flat >= 0;
