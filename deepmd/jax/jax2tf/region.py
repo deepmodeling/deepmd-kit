@@ -46,7 +46,7 @@ def to_face_distance(
 
 
 def b_to_face_distance(cell: tf.Tensor) -> tf.Tensor:
-    volume = tf.linalg.det(cell)
+    volume = tf.abs(tf.linalg.det(cell))
     c_yz = tf.linalg.cross(cell[:, 1, ...], cell[:, 2, ...])
     h2yz = volume / tf.linalg.norm(c_yz, axis=-1)
     c_zx = tf.linalg.cross(cell[:, 2, ...], cell[:, 0, ...])

@@ -28,12 +28,16 @@ from deepmd.jax.jax2tf.make_model import (
 from deepmd.jax.model.base_model import (
     BaseModel,
 )
+from deepmd.jax.utils.serialization import (
+    _set_model_min_nbor_dist_from_data,
+)
 
 
 def deserialize_to_file(model_file: str, data: dict) -> None:
     """Deserialize the dictionary to a JAX/jax2tf SavedModel."""
     if model_file.endswith(".savedmodel"):
         model = BaseModel.deserialize(data["model"])
+        _set_model_min_nbor_dist_from_data(model, data)
         model_def_script = data["model_def_script"]
         call_lower = model.call_common_lower
 
@@ -297,6 +301,7 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
             return tf.constant(model.has_message_passing(), dtype=tf.bool)
 
         tf_model.has_message_passing = has_message_passing
+        tf_model.do_message_passing = has_message_passing
 
         @tf.function
         def has_default_fparam() -> tf.Tensor:
