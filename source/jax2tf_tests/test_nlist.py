@@ -96,6 +96,35 @@ class TestNeighList(tf.test.TestCase):
                 tf.sort(tf.split(self.ref_nlist, self.nsel, axis=-1)[ii], axis=-1),
             )
 
+    def test_build_pad(self) -> None:
+        coord = tf.constant([[[0.0, 0.0, 0.0], [0.5, 0.0, 0.0]]], dtype=DTYPE)
+        atype = tf.constant([[0, 0]], dtype=tf.int32)
+
+        nlist = build_neighbor_list(
+            coord,
+            atype,
+            nloc=2,
+            rcut=1.0,
+            sel=3,
+            distinguish_types=False,
+        )
+
+        expected = tf.constant([[[1, -1, -1], [0, -1, -1]]], dtype=tf.int64)
+        self.assertAllEqual(nlist, expected)
+
+    def test_extend_coord_empty_cell(self) -> None:
+        coord = tf.constant([[[0.0, 0.0, 0.0], [0.5, 0.0, 0.0]]], dtype=DTYPE)
+        atype = tf.constant([[1, 0]], dtype=tf.int32)
+        empty_cell = tf.zeros([1, 0], dtype=DTYPE)
+
+        ecoord, eatype, mapping = extend_coord_with_ghosts(
+            coord, atype, empty_cell, self.rcut
+        )
+
+        self.assertAllClose(ecoord, tf.reshape(coord, [1, 6]))
+        self.assertAllEqual(eatype, atype)
+        self.assertAllEqual(mapping, tf.constant([[0, 1]], dtype=tf.int64))
+
     def test_extend_coord(self) -> None:
         ecoord, eatype, mapping = extend_coord_with_ghosts(
             self.coord, self.atype, self.cell, self.rcut

@@ -5,6 +5,8 @@ import tensorflow as tf
 
 from deepmd.jax.jax2tf.region import (
     inter2phys,
+    normalize_coord,
+    phys2inter,
     to_face_distance,
 )
 
@@ -31,6 +33,26 @@ class TestRegion(tf.test.TestCase):
                 self.assertAllClose(
                     phys[ii, jj], expected_phys, rtol=self.prec, atol=self.prec
                 )
+
+    def test_phys_to_inter(self) -> None:
+        rng = tf.random.Generator.from_seed(GLOBAL_SEED)
+        inter = rng.normal(shape=[4, 5, 3, 3], dtype=DTYPE)
+        phys = inter2phys(inter, self.cell)
+        actual_inter = phys2inter(phys, self.cell)
+        self.assertAllClose(actual_inter, inter, rtol=self.prec, atol=self.prec)
+
+    def test_normalize_coord(self) -> None:
+        inter = tf.constant(
+            [[[[1.2, -0.3, 0.5], [0.25, 1.75, -1.25], [-0.5, 0.5, 2.0]]]],
+            dtype=DTYPE,
+        )
+        cell = self.cell[:1, :1]
+        coord = inter2phys(inter, cell)
+        expected = inter2phys(tf.math.floormod(inter, tf.constant(1.0, DTYPE)), cell)
+
+        actual = normalize_coord(coord, cell)
+
+        self.assertAllClose(actual, expected, rtol=self.prec, atol=self.prec)
 
     def test_to_face_dist(self) -> None:
         cell0 = self.cell[0][0]
