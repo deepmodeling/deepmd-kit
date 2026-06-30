@@ -322,6 +322,112 @@ class TestDescrptSeZM(_SeZMTestCase):
                 self.assertEqual(desc.shape, (1, 2, 4))
                 self.assertTrue(torch.all(torch.isfinite(desc)))
 
+    def test_zero_block_descriptor(self) -> None:
+        """``n_blocks=0`` builds the interaction-free descriptor end to end.
+
+        Covers the schedule collapse (empty schedules, backbone degrees falling
+        back to ``lmax`` plus ``extra_node_l``, no blocks), both forward entry
+        points, the conservative-force path, and serialization. The
+        coordinate-carrying paths (FiLM, GIE, read-out) are zero-initialized, so
+        a parameter perturbation activates them before the force check;
+        ``so3_readout`` glu/mlp fold the GIE ``l>0`` geometry into the scalar,
+        while ``none`` keeps only the env-seed scalar.
+        """
+        dtype = torch.float32
+        coord, atype, nlist = _tiny_two_atom_system(self.device, dtype=dtype)
+        atol, rtol = _forward_tols(dtype)
+        for readout, extra in (("mlp", 0), ("glu", 0), ("none", 0), ("mlp", 1)):
+            with self.subTest(so3_readout=readout, extra_node_l=extra):
+                model = DescrptSeZM(
+                    **_descriptor_kwargs(
+                        l_schedule=None,
+                        n_blocks=0,
+                        lmax=2,
+                        mmax=1,
+                        kmax=1,
+                        extra_node_l=extra,
+                        use_env_seed=True,
+                        so3_readout=readout,
+                    )
+                )
+                # Empty schedules; backbone degrees collapse onto lmax(+extra).
+                self.assertEqual(model.n_blocks, 0)
+                self.assertEqual(model.l_schedule, [])
+                self.assertEqual(model.m_schedule, [])
+                self.assertEqual(len(model.blocks), 0)
+                self.assertEqual(model.node_init_lmax, 2 + extra)
+                self.assertEqual(model.node_readout_lmax, 2 + extra)
+                self.assertTrue(model.use_gie)
+
+                # Activate the zero-initialized geometry paths so the force check
+                # exercises genuine coordinate dependence rather than the
+                # all-zero gradient seen at initialization.
+                torch.manual_seed(0)
+                with torch.no_grad():
+                    for param in model.parameters():
+                        param.add_(torch.randn_like(param) * 0.2)
+
+                extended_coord = coord.reshape(1, -1).detach().requires_grad_(True)
+                desc, *_ = model(extended_coord, atype, nlist)
+                self.assertEqual(desc.shape, (1, 2, 4))
+                self.assertTrue(torch.all(torch.isfinite(desc)))
+                desc.sum().backward()
+                self.assertTrue(torch.all(torch.isfinite(extended_coord.grad)))
+                self.assertGreater(extended_coord.grad.abs().max().item(), 0.0)
+
+                # Serialization restores the empty schedule and reproduces output.
+                data = model.serialize()
+                self.assertEqual(data["config"]["n_blocks"], 0)
+                self.assertEqual(data["config"]["l_schedule"], [])
+                restored = DescrptSeZM.deserialize(data)
+                desc2, *_ = restored(coord.reshape(1, -1), atype, nlist)
+                torch.testing.assert_close(desc.detach(), desc2, atol=atol, rtol=rtol)
+
+                # Sparse-edge entry point: the latent keeps the initial degree
+                # ``(node_init_lmax + 1) ** 2`` since no pyramid shrinks it.
+                flat = coord.reshape(-1, 3)
+                edge_index = torch.tensor(
+                    [[1, 0], [0, 1]], dtype=torch.long, device=self.device
+                )
+                edge_vec = flat[edge_index[0]] - flat[edge_index[1]]
+                edge_mask = torch.ones(2, dtype=torch.bool, device=self.device)
+                desc_e, latent = model.forward_with_edges(
+                    extended_coord=coord.reshape(1, -1),
+                    extended_atype=atype,
+                    edge_index=edge_index,
+                    edge_vec=edge_vec,
+                    edge_mask=edge_mask,
+                )
+                self.assertEqual(desc_e.shape, (1, 2, 4))
+                self.assertEqual(latent.shape, (2, (2 + extra + 1) ** 2, 1, 4))
+
+    def test_zero_block_without_env_seed_is_geometry_free(self) -> None:
+        """Without env-seed the zero-block descriptor loses all geometry.
+
+        With no blocks, no env FiLM, and no GIE, the scalar output depends only
+        on the type embedding and is independent of the coordinates. This
+        documents that ``use_env_seed=True`` is required for a meaningful
+        zero-block descriptor, since the single ``use_env_seed`` switch gates the
+        only geometry source (GIE).
+        """
+        coord, atype, nlist = _tiny_two_atom_system(self.device, dtype=torch.float32)
+        model = DescrptSeZM(
+            **_descriptor_kwargs(
+                l_schedule=None,
+                n_blocks=0,
+                lmax=2,
+                use_env_seed=False,
+                so3_readout="mlp",
+            )
+        )
+        self.assertFalse(model.use_gie)
+        extended_coord = coord.reshape(1, -1).detach().requires_grad_(True)
+        desc, *_ = model(extended_coord, atype, nlist)
+        self.assertTrue(torch.all(torch.isfinite(desc)))
+        # The descriptor does not depend on coordinates, so there is no force path.
+        (grad,) = torch.autograd.grad(desc.sum(), extended_coord, allow_unused=True)
+        self.assertIsNone(grad)
+
     def test_forward_with_descriptor_variants(self) -> None:
         """Test forward/backward smoke paths for compact descriptor variants."""
         cases = {

@@ -431,7 +431,15 @@ def descrpt_se_zm_args() -> list[Argument]:
         "block `i` uses node degree `l_schedule[i] + extra_node_l`, while SO(2) "
         "message passing still uses `l_schedule[i]`."
     )
-    doc_n_blocks = "Number of blocks (only used when `l_schedule` is None)."
+    doc_n_blocks = (
+        "Number of interaction blocks (only used when `l_schedule` is None). "
+        "`0` disables the interaction blocks and builds the zero-block "
+        "descriptor: type embedding, optional env FiLM and geometric initial "
+        "embedding, then the final SO(3) read-out. The backbone degree is taken "
+        "from `lmax` (plus `extra_node_l`); geometry then enters only through "
+        "the geometric initial embedding, so `use_env_seed=True` with "
+        "`lmax + extra_node_l > 0` is required for a non-trivial descriptor."
+    )
     doc_block_attn_res = (
         "Descriptor-level block attention residual mode over block history "
         "`[x0, b1, b2, ...]`, where each block summary is the sum of the SO(2) "
@@ -588,6 +596,12 @@ def descrpt_se_zm_args() -> list[Argument]:
         "product (`glu`) or the polynomial point-wise grid MLP (`mlp`). The "
         "read-out degree equals the node degree of the last interaction block; "
         "the Wigner-D frame order follows `kmax`."
+    )
+    doc_readout_layers = (
+        "Number of stacked equivariant residual read-out FFNs (default 1). Each "
+        "layer is an `x + FFN(x)` residual block sharing the read-out degree; "
+        "intermediate layers keep the full SO(3) tensor so high-degree geometry "
+        "keeps folding into l=0, and only the final layer slices the l=0 channel."
     )
     doc_lebedev_quadrature = (
         "Either one boolean applied to both S2 branches, or two booleans "
@@ -946,6 +960,15 @@ def descrpt_se_zm_args() -> list[Argument]:
             extra_check=lambda x: x in ("none", "glu", "mlp"),
             extra_check_errmsg="must be one of 'none', 'glu', or 'mlp'",
             doc=doc_only_pt_supported + doc_so3_readout,
+        ),
+        Argument(
+            "readout_layers",
+            int,
+            optional=True,
+            default=1,
+            extra_check=lambda x: x >= 1,
+            extra_check_errmsg="must be >= 1",
+            doc=doc_only_pt_supported + doc_readout_layers,
         ),
         Argument(
             "lebedev_quadrature",
