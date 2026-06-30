@@ -129,6 +129,11 @@ class TestDPA1Ener(CommonTest, ModelTest, unittest.TestCase):
         raise ValueError("No available reference")
 
     @property
+    def skip_tf(self) -> bool:
+        _, smooth_type_embedding = self.param
+        return CommonTest.skip_tf or smooth_type_embedding
+
+    @property
     def skip_jax(self) -> bool:
         return not INSTALLED_JAX
 
