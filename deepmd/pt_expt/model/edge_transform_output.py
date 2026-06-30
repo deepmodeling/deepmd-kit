@@ -29,9 +29,10 @@ def edge_energy_deriv(
     edge_index: torch.Tensor,
     edge_mask: torch.Tensor,
     n_node: torch.Tensor,
+    node_capacity: int | None = None,
+    *,
     do_atomic_virial: bool = False,
     create_graph: bool = False,
-    node_capacity: int | None = None,
 ) -> tuple[torch.Tensor, torch.Tensor | None, torch.Tensor]:
     """Return (force, atom_virial_or_None, virial) from a graph energy.
 
@@ -50,14 +51,14 @@ def edge_energy_deriv(
         (E,) valid-edge mask.
     n_node
         (nf,) per-frame node counts.
-    do_atomic_virial
-        whether to materialize the per-atom virial (else ``None`` is returned).
-    create_graph
-        whether the backward retains a graph (training, for second-order grad).
     node_capacity
         Static node-axis size ``N``.  ``None`` (eager default) falls back to
         ``int(n_node.sum())``.  Pass a static value (e.g. ``atype.shape[0]``)
         to keep this function trace-safe under ``make_fx``/``torch.export``.
+    do_atomic_virial
+        whether to materialize the per-atom virial (else ``None`` is returned).
+    create_graph
+        whether the backward retains a graph (training, for second-order grad).
 
     Returns
     -------
@@ -186,9 +187,9 @@ def fit_output_to_model_output_graph(
                 edge_index,
                 edge_mask,
                 n_node,
+                node_capacity=N,
                 do_atomic_virial=(vdef.c_differentiable and do_atomic_virial),
                 create_graph=create_graph,
-                node_capacity=N,
             )
             # force (N, 3) -> (N, 1, 3)  [flat; caller unravels at I/O boundary]
             ff_list.append(force.reshape(N, 1, 3))
