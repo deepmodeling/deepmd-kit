@@ -27,8 +27,8 @@ class TestNeighList(tf.test.TestCase):
         [self.cell, self.icoord, self.atype] = [
             tnp.expand_dims(ii, 0) for ii in [self.cell, self.icoord, self.atype]
         ]
-        self.coord = inter2phys(self.icoord, self.cell).reshape([-1, self.nloc * 3])
-        self.cell = self.cell.reshape([-1, 9])
+        self.coord = tf.reshape(inter2phys(self.icoord, self.cell), [-1, self.nloc * 3])
+        self.cell = tf.reshape(self.cell, [-1, 9])
         [self.cell, self.coord, self.atype] = [
             tnp.tile(ii, [self.nf, 1]) for ii in [self.cell, self.coord, self.atype]
         ]
@@ -57,7 +57,7 @@ class TestNeighList(tf.test.TestCase):
         )
         self.assertAllClose(nlist[0], nlist[1])
         nlist_mask = nlist[0] == -1
-        nlist_loc = mapping[0][nlist[0]]
+        nlist_loc = tf.gather(mapping[0], tf.where(nlist_mask, 0, nlist[0]))
         nlist_loc = tnp.where(nlist_mask, tnp.full_like(nlist_loc, -1), nlist_loc)
         self.assertAllClose(
             tnp.sort(nlist_loc, axis=-1),
@@ -78,7 +78,7 @@ class TestNeighList(tf.test.TestCase):
         )
         self.assertAllClose(nlist[0], nlist[1])
         nlist_mask = nlist[0] == -1
-        nlist_loc = mapping[0][nlist[0]]
+        nlist_loc = tf.gather(mapping[0], tf.where(nlist_mask, 0, nlist[0]))
         nlist_loc = tnp.where(nlist_mask, tnp.full_like(nlist_loc, -1), nlist_loc)
         for ii in range(2):
             self.assertAllClose(
@@ -100,16 +100,16 @@ class TestNeighList(tf.test.TestCase):
         )
         # check the shift vectors are aligned with grid
         shift_vec = (
-            ecoord.reshape([-1, self.ns, self.nloc, 3])
-            - self.coord.reshape([-1, self.nloc, 3])[:, None, :, :]
+            tf.reshape(ecoord, [-1, self.ns, self.nloc, 3])
+            - tf.reshape(self.coord, [-1, self.nloc, 3])[:, None, :, :]
         )
-        shift_vec = shift_vec.reshape([-1, self.nall, 3])
+        shift_vec = tf.reshape(shift_vec, [-1, self.nall, 3])
         # hack!!! assumes identical cell across frames
         shift_vec = tnp.matmul(
-            shift_vec, tf.linalg.inv(self.cell.reshape([self.nf, 3, 3])[0])
+            shift_vec, tf.linalg.inv(tf.reshape(self.cell, [self.nf, 3, 3])[0])
         )
         # nf x nall x 3
-        shift_vec = tnp.round(shift_vec)
+        shift_vec = tf.round(shift_vec)
         # check: identical shift vecs
         self.assertAllClose(shift_vec[0], shift_vec[1], rtol=self.prec, atol=self.prec)
         # check: shift idx aligned with grid

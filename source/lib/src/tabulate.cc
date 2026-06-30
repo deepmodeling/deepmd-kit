@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include <cassert>
+#include <cmath>
 #include <iostream>
 #include <vector>
 /*
@@ -17,16 +18,44 @@
     table_idx:  indicate the location of table info of input value xx;
 */
 template <typename FPTYPE>
+inline int locate_high_tail_xx(const FPTYPE& lower,
+                               const FPTYPE& upper,
+                               const FPTYPE& max,
+                               const FPTYPE& stride0,
+                               const FPTYPE& stride1) {
+  const FPTYPE boundary_xx = std::nextafter(max, lower);
+  const int first_stride = int((upper - lower) / stride0);
+  return first_stride + int((boundary_xx - upper) / stride1);
+}
+
+template <typename FPTYPE>
+inline int locate_high_tail_xx_se_t(const FPTYPE& lower,
+                                    const FPTYPE& upper,
+                                    const FPTYPE& min,
+                                    const FPTYPE& max,
+                                    const FPTYPE& stride0,
+                                    const FPTYPE& stride1) {
+  const FPTYPE boundary_xx = std::nextafter(max, min);
+  const int first_stride =
+      int((lower - min) / stride1) + int((upper - lower) / stride0);
+  return first_stride + int((boundary_xx - upper) / stride1);
+}
+
+template <typename FPTYPE>
 inline void locate_xx(const FPTYPE& lower,
                       const FPTYPE& upper,
                       const FPTYPE& max,
                       const FPTYPE& stride0,
                       const FPTYPE& stride1,
                       FPTYPE& xx,
-                      int& table_idx) {
+                      int& table_idx,
+                      FPTYPE& extrapolate_delta) {
+  const FPTYPE orig_xx = xx;
+  extrapolate_delta = (FPTYPE)0.;
   if (xx < lower) {
     table_idx = 0;
     xx = (FPTYPE)0.;
+    extrapolate_delta = orig_xx - lower;
   } else if (xx < upper) {
     table_idx = (int)((xx - lower) / stride0);
     xx -= (table_idx * stride0 + lower);
@@ -35,9 +64,10 @@ inline void locate_xx(const FPTYPE& lower,
     table_idx = first_stride + (int)((xx - upper) / stride1);
     xx -= ((table_idx - first_stride) * stride1 + upper);
   } else {
-    table_idx =
-        int((upper - lower) / stride0) + (int)((max - upper) / stride1) - 1;
-    xx = (FPTYPE)0.;
+    int first_stride = int((upper - lower) / stride0);
+    table_idx = locate_high_tail_xx(lower, upper, max, stride0, stride1);
+    xx = max - ((table_idx - first_stride) * stride1 + upper);
+    extrapolate_delta = orig_xx - max;
   }
 }
 
@@ -49,10 +79,14 @@ inline void locate_xx_se_t(const FPTYPE& lower,
                            const FPTYPE& stride0,
                            const FPTYPE& stride1,
                            FPTYPE& xx,
-                           int& table_idx) {
+                           int& table_idx,
+                           FPTYPE& extrapolate_delta) {
+  const FPTYPE orig_xx = xx;
+  extrapolate_delta = (FPTYPE)0.;
   if (xx < min) {
     table_idx = 0;
     xx = (FPTYPE)0.;
+    extrapolate_delta = orig_xx - min;
   } else if (xx < lower) {
     table_idx = (int)((xx - min) / stride1);
     xx -= (table_idx * stride1 + min);
@@ -66,15 +100,56 @@ inline void locate_xx_se_t(const FPTYPE& lower,
     table_idx = first_stride + (int)((xx - upper) / stride1);
     xx -= ((table_idx - first_stride) * stride1 + upper);
   } else {
-    table_idx = int((lower - min) / stride1) + int((upper - lower) / stride0) +
-                (int)((max - upper) / stride1) - 1;
-    xx = (FPTYPE)0.;
+    int first_stride =
+        int((lower - min) / stride1) + int((upper - lower) / stride0);
+    table_idx =
+        locate_high_tail_xx_se_t(lower, upper, min, max, stride0, stride1);
+    xx = max - ((table_idx - first_stride) * stride1 + upper);
+    extrapolate_delta = orig_xx - max;
   }
 }
 
 template <typename FPTYPE>
 inline FPTYPE dot(FPTYPE a[4], FPTYPE b[4]) {
   return a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
+}
+
+template <typename FPTYPE>
+inline FPTYPE polynomial5(const FPTYPE& a0,
+                          const FPTYPE& a1,
+                          const FPTYPE& a2,
+                          const FPTYPE& a3,
+                          const FPTYPE& a4,
+                          const FPTYPE& a5,
+                          const FPTYPE& xx) {
+  return a0 + (a1 + (a2 + (a3 + (a4 + a5 * xx) * xx) * xx) * xx) * xx;
+}
+
+template <typename FPTYPE>
+inline FPTYPE polynomial5_grad(const FPTYPE& a1,
+                               const FPTYPE& a2,
+                               const FPTYPE& a3,
+                               const FPTYPE& a4,
+                               const FPTYPE& a5,
+                               const FPTYPE& xx) {
+  return a1 +
+         ((FPTYPE)2. * a2 +
+          ((FPTYPE)3. * a3 + ((FPTYPE)4. * a4 + (FPTYPE)5. * a5 * xx) * xx) *
+              xx) *
+             xx;
+}
+
+template <typename FPTYPE>
+inline FPTYPE extrapolated_polynomial5(const FPTYPE& a0,
+                                       const FPTYPE& a1,
+                                       const FPTYPE& a2,
+                                       const FPTYPE& a3,
+                                       const FPTYPE& a4,
+                                       const FPTYPE& a5,
+                                       const FPTYPE& xx,
+                                       const FPTYPE& extrapolate_delta) {
+  const FPTYPE grad = polynomial5_grad(a1, a2, a3, a4, a5, xx);
+  return polynomial5(a0, a1, a2, a3, a4, a5, xx) + grad * extrapolate_delta;
 }
 
 template <typename FPTYPE>
@@ -112,7 +187,9 @@ void deepmd::tabulate_fusion_se_a_cpu(FPTYPE* out,
         unloop = true;
       }
       int table_idx = 0;
-      locate_xx(lower, upper, _max, stride0, stride1, xx, table_idx);
+      FPTYPE extrapolate_delta = (FPTYPE)0.;
+      locate_xx(lower, upper, _max, stride0, stride1, xx, table_idx,
+                extrapolate_delta);
       for (int kk = 0; kk < last_layer_size; kk++) {
         FPTYPE a0 = table[table_idx * last_layer_size * 6 + 6 * kk + 0];
         FPTYPE a1 = table[table_idx * last_layer_size * 6 + 6 * kk + 1];
@@ -120,8 +197,8 @@ void deepmd::tabulate_fusion_se_a_cpu(FPTYPE* out,
         FPTYPE a3 = table[table_idx * last_layer_size * 6 + 6 * kk + 3];
         FPTYPE a4 = table[table_idx * last_layer_size * 6 + 6 * kk + 4];
         FPTYPE a5 = table[table_idx * last_layer_size * 6 + 6 * kk + 5];
-        FPTYPE var =
-            a0 + (a1 + (a2 + (a3 + (a4 + a5 * xx) * xx) * xx) * xx) * xx;
+        FPTYPE var = extrapolated_polynomial5(a0, a1, a2, a3, a4, a5, xx,
+                                              extrapolate_delta);
         if (enable_se_atten) {
           FPTYPE t = two_embed[ii * nnei * last_layer_size +
                                jj * last_layer_size + kk];
@@ -199,7 +276,9 @@ void deepmd::tabulate_fusion_se_a_grad_cpu(FPTYPE* dy_dem_x,
         unloop = true;
       }
       int table_idx = 0;
-      locate_xx(lower, upper, _max, stride0, stride1, xx, table_idx);
+      FPTYPE extrapolate_delta = (FPTYPE)0.;
+      locate_xx(lower, upper, _max, stride0, stride1, xx, table_idx,
+                extrapolate_delta);
       FPTYPE grad = (FPTYPE)0.0;
       for (int kk = 0; kk < last_layer_size; kk++) {
         rr[0] = dy[ii * last_layer_size * 4 + 0 * last_layer_size + kk];
@@ -212,10 +291,9 @@ void deepmd::tabulate_fusion_se_a_grad_cpu(FPTYPE* dy_dem_x,
         FPTYPE a3 = table[table_idx * last_layer_size * 6 + 6 * kk + 3];
         FPTYPE a4 = table[table_idx * last_layer_size * 6 + 6 * kk + 4];
         FPTYPE a5 = table[table_idx * last_layer_size * 6 + 6 * kk + 5];
+        FPTYPE g = polynomial5_grad(a1, a2, a3, a4, a5, xx);
         FPTYPE res =
-            a0 + (a1 + (a2 + (a3 + (a4 + a5 * xx) * xx) * xx) * xx) * xx;
-        FPTYPE g =
-            (a1 + (2 * a2 + (3 * a3 + (4 * a4 + 5 * a5 * xx) * xx) * xx) * xx);
+            polynomial5(a0, a1, a2, a3, a4, a5, xx) + g * extrapolate_delta;
         FPTYPE resold = res;
         if (enable_se_atten) {
           FPTYPE t = two_embed[ii * nnei * last_layer_size +
@@ -302,7 +380,9 @@ void deepmd::tabulate_fusion_se_a_grad_grad_cpu(FPTYPE* dz_dy,
         unloop = true;
       }
       int table_idx = 0;
-      locate_xx(lower, upper, _max, stride0, stride1, xx, table_idx);
+      FPTYPE extrapolate_delta = (FPTYPE)0.;
+      locate_xx(lower, upper, _max, stride0, stride1, xx, table_idx,
+                extrapolate_delta);
       for (int kk = 0; kk < last_layer_size; kk++) {
         FPTYPE a0 = table[table_idx * last_layer_size * 6 + 6 * kk + 0];
         FPTYPE a1 = table[table_idx * last_layer_size * 6 + 6 * kk + 1];
@@ -310,14 +390,9 @@ void deepmd::tabulate_fusion_se_a_grad_grad_cpu(FPTYPE* dz_dy,
         FPTYPE a3 = table[table_idx * last_layer_size * 6 + 6 * kk + 3];
         FPTYPE a4 = table[table_idx * last_layer_size * 6 + 6 * kk + 4];
         FPTYPE a5 = table[table_idx * last_layer_size * 6 + 6 * kk + 5];
-        FPTYPE var =
-            a0 + (a1 + (a2 + (a3 + (a4 + a5 * xx) * xx) * xx) * xx) * xx;
-        FPTYPE var_grad =
-            a1 +
-            ((FPTYPE)2. * a2 +
-             ((FPTYPE)3. * a3 + ((FPTYPE)4. * a4 + (FPTYPE)5. * a5 * xx) * xx) *
-                 xx) *
-                xx;
+        FPTYPE var_grad = polynomial5_grad(a1, a2, a3, a4, a5, xx);
+        FPTYPE var = polynomial5(a0, a1, a2, a3, a4, a5, xx) +
+                     var_grad * extrapolate_delta;
         FPTYPE two_grad = 0.;
         if (enable_se_atten) {
           FPTYPE t = two_embed[ii * nnei * last_layer_size +
@@ -408,8 +483,9 @@ void deepmd::tabulate_fusion_se_t_cpu(FPTYPE* out,
         FPTYPE xx = em_x[ii * nnei_i * nnei_j + jj * nnei_j + kk];
         FPTYPE ll = xx;
         int table_idx = 0;
+        FPTYPE extrapolate_delta = (FPTYPE)0.;
         locate_xx_se_t(lower, upper, -_max, _max, stride0, stride1, xx,
-                       table_idx);
+                       table_idx, extrapolate_delta);
         for (int mm = 0; mm < last_layer_size; mm++) {
           FPTYPE a0 = table[table_idx * last_layer_size * 6 + 6 * mm + 0];
           FPTYPE a1 = table[table_idx * last_layer_size * 6 + 6 * mm + 1];
@@ -417,8 +493,8 @@ void deepmd::tabulate_fusion_se_t_cpu(FPTYPE* out,
           FPTYPE a3 = table[table_idx * last_layer_size * 6 + 6 * mm + 3];
           FPTYPE a4 = table[table_idx * last_layer_size * 6 + 6 * mm + 4];
           FPTYPE a5 = table[table_idx * last_layer_size * 6 + 6 * mm + 5];
-          FPTYPE var =
-              a0 + (a1 + (a2 + (a3 + (a4 + a5 * xx) * xx) * xx) * xx) * xx;
+          FPTYPE var = extrapolated_polynomial5(a0, a1, a2, a3, a4, a5, xx,
+                                                extrapolate_delta);
           out[ii * last_layer_size + mm] += var * ll;
         }
       }
@@ -457,8 +533,9 @@ void deepmd::tabulate_fusion_se_t_grad_cpu(FPTYPE* dy_dem_x,
         FPTYPE xx = em_x[ii * nnei_i * nnei_j + jj * nnei_j + kk];
         ll = xx;
         int table_idx = 0;
+        FPTYPE extrapolate_delta = (FPTYPE)0.;
         locate_xx_se_t(lower, upper, -_max, _max, stride0, stride1, xx,
-                       table_idx);
+                       table_idx, extrapolate_delta);
         FPTYPE grad = (FPTYPE)0.0;
         for (int mm = 0; mm < last_layer_size; mm++) {
           rr = dy[ii * last_layer_size + mm];
@@ -468,15 +545,11 @@ void deepmd::tabulate_fusion_se_t_grad_cpu(FPTYPE* dy_dem_x,
           FPTYPE a3 = table[table_idx * last_layer_size * 6 + 6 * mm + 3];
           FPTYPE a4 = table[table_idx * last_layer_size * 6 + 6 * mm + 4];
           FPTYPE a5 = table[table_idx * last_layer_size * 6 + 6 * mm + 5];
-          FPTYPE res =
-              a0 + (a1 + (a2 + (a3 + (a4 + a5 * xx) * xx) * xx) * xx) * xx;
+          FPTYPE res_grad = polynomial5_grad(a1, a2, a3, a4, a5, xx);
+          FPTYPE res = polynomial5(a0, a1, a2, a3, a4, a5, xx) +
+                       res_grad * extrapolate_delta;
 
-          grad += (a1 + ((FPTYPE)2. * a2 +
-                         ((FPTYPE)3. * a3 +
-                          ((FPTYPE)4. * a4 + (FPTYPE)5. * a5 * xx) * xx) *
-                             xx) *
-                            xx) *
-                  ll * rr;
+          grad += res_grad * ll * rr;
           dy_dem[ii * nnei_i * nnei_j + jj * nnei_j + kk] += res * rr;
         }
         dy_dem_x[ii * nnei_i * nnei_j + jj * nnei_j + kk] = grad;
@@ -515,8 +588,9 @@ void deepmd::tabulate_fusion_se_t_grad_grad_cpu(FPTYPE* dz_dy,
         FPTYPE dz_xx = dz_dy_dem_x[ii * nnei_i * nnei_j + jj * nnei_j + kk];
 
         int table_idx = 0;
+        FPTYPE extrapolate_delta = (FPTYPE)0.;
         locate_xx_se_t(lower, upper, -_max, _max, stride0, stride1, xx,
-                       table_idx);
+                       table_idx, extrapolate_delta);
         for (int mm = 0; mm < last_layer_size; mm++) {
           FPTYPE a0 = table[table_idx * last_layer_size * 6 + 6 * mm + 0];
           FPTYPE a1 = table[table_idx * last_layer_size * 6 + 6 * mm + 1];
@@ -524,14 +598,9 @@ void deepmd::tabulate_fusion_se_t_grad_grad_cpu(FPTYPE* dz_dy,
           FPTYPE a3 = table[table_idx * last_layer_size * 6 + 6 * mm + 3];
           FPTYPE a4 = table[table_idx * last_layer_size * 6 + 6 * mm + 4];
           FPTYPE a5 = table[table_idx * last_layer_size * 6 + 6 * mm + 5];
-          FPTYPE var =
-              a0 + (a1 + (a2 + (a3 + (a4 + a5 * xx) * xx) * xx) * xx) * xx;
-          FPTYPE var_grad =
-              a1 + ((FPTYPE)2. * a2 +
-                    ((FPTYPE)3. * a3 +
-                     ((FPTYPE)4. * a4 + (FPTYPE)5. * a5 * xx) * xx) *
-                        xx) *
-                       xx;
+          FPTYPE var_grad = polynomial5_grad(a1, a2, a3, a4, a5, xx);
+          FPTYPE var = polynomial5(a0, a1, a2, a3, a4, a5, xx) +
+                       var_grad * extrapolate_delta;
 
           dz_dy[ii * last_layer_size + mm] +=
               var * dz_em + dz_xx * var_grad * tmp;
@@ -564,8 +633,9 @@ void deepmd::tabulate_fusion_se_t_tebd_cpu(FPTYPE* out,
       for (int kk = 0; kk < nnei_j; kk++) {
         FPTYPE xx = em_x[ii * nnei_i * nnei_j + jj * nnei_j + kk];
         int table_idx = 0;
+        FPTYPE extrapolate_delta = (FPTYPE)0.;
         locate_xx_se_t(lower, upper, -_max, _max, stride0, stride1, xx,
-                       table_idx);
+                       table_idx, extrapolate_delta);
 
         // For SE_TEBD, we preserve the full nt_i x nt_j x ng structure
         // instead of reducing it like SE_T does
@@ -577,8 +647,8 @@ void deepmd::tabulate_fusion_se_t_tebd_cpu(FPTYPE* out,
           FPTYPE a4 = table[table_idx * last_layer_size * 6 + 6 * mm + 4];
           FPTYPE a5 = table[table_idx * last_layer_size * 6 + 6 * mm + 5];
 
-          FPTYPE res = a0 + a1 * xx + a2 * xx * xx + a3 * xx * xx * xx +
-                       a4 * xx * xx * xx * xx + a5 * xx * xx * xx * xx * xx;
+          FPTYPE res = extrapolated_polynomial5(a0, a1, a2, a3, a4, a5, xx,
+                                                extrapolate_delta);
 
           // Store result preserving the nt_i x nt_j structure
           out[ii * nnei_i * nnei_j * last_layer_size +
@@ -613,8 +683,9 @@ void deepmd::tabulate_fusion_se_t_tebd_grad_cpu(FPTYPE* dy_dem_x,
       for (int kk = 0; kk < nnei_j; kk++) {
         FPTYPE xx = em_x[ii * nnei_i * nnei_j + jj * nnei_j + kk];
         int table_idx = 0;
+        FPTYPE extrapolate_delta = (FPTYPE)0.;
         locate_xx_se_t(lower, upper, -_max, _max, stride0, stride1, xx,
-                       table_idx);
+                       table_idx, extrapolate_delta);
 
         FPTYPE grad_sum = 0.0;
         for (int mm = 0; mm < last_layer_size; mm++) {
@@ -624,9 +695,7 @@ void deepmd::tabulate_fusion_se_t_tebd_grad_cpu(FPTYPE* dy_dem_x,
           FPTYPE a4 = table[table_idx * last_layer_size * 6 + 6 * mm + 4];
           FPTYPE a5 = table[table_idx * last_layer_size * 6 + 6 * mm + 5];
 
-          FPTYPE dres_dxx = a1 + 2.0 * a2 * xx + 3.0 * a3 * xx * xx +
-                            4.0 * a4 * xx * xx * xx +
-                            5.0 * a5 * xx * xx * xx * xx;
+          FPTYPE dres_dxx = polynomial5_grad(a1, a2, a3, a4, a5, xx);
 
           FPTYPE dy_val =
               dy[ii * nnei_i * nnei_j * last_layer_size +
@@ -665,8 +734,9 @@ void deepmd::tabulate_fusion_se_t_tebd_grad_grad_cpu(
       for (int kk = 0; kk < nnei_j; kk++) {
         FPTYPE xx = em_x[ii * nnei_i * nnei_j + jj * nnei_j + kk];
         int table_idx = 0;
+        FPTYPE extrapolate_delta = (FPTYPE)0.;
         locate_xx_se_t(lower, upper, -_max, _max, stride0, stride1, xx,
-                       table_idx);
+                       table_idx, extrapolate_delta);
 
         FPTYPE dz_dy_dem_x_val =
             dz_dy_dem_x[ii * nnei_i * nnei_j + jj * nnei_j + kk];
@@ -678,9 +748,7 @@ void deepmd::tabulate_fusion_se_t_tebd_grad_grad_cpu(
           FPTYPE a4 = table[table_idx * last_layer_size * 6 + 6 * mm + 4];
           FPTYPE a5 = table[table_idx * last_layer_size * 6 + 6 * mm + 5];
 
-          FPTYPE dres_dxx = a1 + 2.0 * a2 * xx + 3.0 * a3 * xx * xx +
-                            4.0 * a4 * xx * xx * xx +
-                            5.0 * a5 * xx * xx * xx * xx;
+          FPTYPE dres_dxx = polynomial5_grad(a1, a2, a3, a4, a5, xx);
 
           dz_dy[ii * nnei_i * nnei_j * last_layer_size +
                 jj * nnei_j * last_layer_size + kk * last_layer_size + mm] =
@@ -712,7 +780,9 @@ void deepmd::tabulate_fusion_se_r_cpu(FPTYPE* out,
     for (int jj = 0; jj < nnei; jj++) {
       FPTYPE xx = em[ii * nnei + jj];
       int table_idx = 0;
-      locate_xx(lower, upper, _max, stride0, stride1, xx, table_idx);
+      FPTYPE extrapolate_delta = (FPTYPE)0.;
+      locate_xx(lower, upper, _max, stride0, stride1, xx, table_idx,
+                extrapolate_delta);
       for (int kk = 0; kk < last_layer_size; kk++) {
         FPTYPE a0 = table[table_idx * last_layer_size * 6 + 6 * kk + 0];
         FPTYPE a1 = table[table_idx * last_layer_size * 6 + 6 * kk + 1];
@@ -721,7 +791,8 @@ void deepmd::tabulate_fusion_se_r_cpu(FPTYPE* out,
         FPTYPE a4 = table[table_idx * last_layer_size * 6 + 6 * kk + 4];
         FPTYPE a5 = table[table_idx * last_layer_size * 6 + 6 * kk + 5];
         out[ii * last_layer_size * nnei + jj * last_layer_size + kk] =
-            a0 + (a1 + (a2 + (a3 + (a4 + a5 * xx) * xx) * xx) * xx) * xx;
+            extrapolated_polynomial5(a0, a1, a2, a3, a4, a5, xx,
+                                     extrapolate_delta);
       }
     }
   }
@@ -750,7 +821,9 @@ void deepmd::tabulate_fusion_se_r_grad_cpu(FPTYPE* dy_dem,
       // construct the dy/dx
       FPTYPE xx = em[ii * nnei + jj];
       int table_idx = 0;
-      locate_xx(lower, upper, _max, stride0, stride1, xx, table_idx);
+      FPTYPE extrapolate_delta = (FPTYPE)0.;
+      locate_xx(lower, upper, _max, stride0, stride1, xx, table_idx,
+                extrapolate_delta);
       FPTYPE grad = (FPTYPE)0.0;
       for (int kk = 0; kk < last_layer_size; kk++) {
         FPTYPE a0 = table[table_idx * last_layer_size * 6 + 6 * kk + 0];
@@ -759,11 +832,7 @@ void deepmd::tabulate_fusion_se_r_grad_cpu(FPTYPE* dy_dem,
         FPTYPE a3 = table[table_idx * last_layer_size * 6 + 6 * kk + 3];
         FPTYPE a4 = table[table_idx * last_layer_size * 6 + 6 * kk + 4];
         FPTYPE a5 = table[table_idx * last_layer_size * 6 + 6 * kk + 5];
-        grad += (a1 + ((FPTYPE)2. * a2 +
-                       ((FPTYPE)3. * a3 +
-                        ((FPTYPE)4. * a4 + (FPTYPE)5. * a5 * xx) * xx) *
-                           xx) *
-                          xx) *
+        grad += polynomial5_grad(a1, a2, a3, a4, a5, xx) *
                 dy[ii * last_layer_size * nnei + jj * last_layer_size + kk];
       }
       dy_dem[ii * nnei + jj] = grad;
@@ -793,7 +862,9 @@ void deepmd::tabulate_fusion_se_r_grad_grad_cpu(FPTYPE* dz_dy,
     for (int jj = 0; jj < nnei; jj++) {
       FPTYPE xx = em[ii * nnei + jj];
       int table_idx = 0;
-      locate_xx(lower, upper, _max, stride0, stride1, xx, table_idx);
+      FPTYPE extrapolate_delta = (FPTYPE)0.;
+      locate_xx(lower, upper, _max, stride0, stride1, xx, table_idx,
+                extrapolate_delta);
       for (int kk = 0; kk < last_layer_size; kk++) {
         FPTYPE a0 = table[table_idx * last_layer_size * 6 + 6 * kk + 0];
         FPTYPE a1 = table[table_idx * last_layer_size * 6 + 6 * kk + 1];
@@ -801,12 +872,7 @@ void deepmd::tabulate_fusion_se_r_grad_grad_cpu(FPTYPE* dz_dy,
         FPTYPE a3 = table[table_idx * last_layer_size * 6 + 6 * kk + 3];
         FPTYPE a4 = table[table_idx * last_layer_size * 6 + 6 * kk + 4];
         FPTYPE a5 = table[table_idx * last_layer_size * 6 + 6 * kk + 5];
-        FPTYPE var_grad =
-            a1 +
-            ((FPTYPE)2. * a2 +
-             ((FPTYPE)3. * a3 + ((FPTYPE)4. * a4 + (FPTYPE)5. * a5 * xx) * xx) *
-                 xx) *
-                xx;
+        FPTYPE var_grad = polynomial5_grad(a1, a2, a3, a4, a5, xx);
         dz_dy[ii * last_layer_size * nnei + jj * last_layer_size + kk] =
             dz_dy_dem[ii * nnei + jj] * var_grad;
       }

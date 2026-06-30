@@ -55,6 +55,7 @@ from .repformers import (
     _cal_grrg,
     _cal_hg,
     _make_nei_g1,
+    _statically_compatible_shape,
     get_residual,
     symmetrization_op,
 )
@@ -554,7 +555,13 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
                 "`mapping` is required when use_loc_mapping=False unless "
                 "`_exchange_ghosts` is overridden for parallel comm handling."
             )
-        return xp_take_along_axis(node_ebd, mapping_tiled, axis=1)
+        xp = array_api_compat.array_namespace(node_ebd, mapping_tiled)
+        mapping_mask = mapping_tiled >= 0
+        mapping_tiled = xp.where(
+            mapping_mask, mapping_tiled, xp.zeros_like(mapping_tiled)
+        )
+        node_ebd_ext = xp_take_along_axis(node_ebd, mapping_tiled, axis=1)
+        return xp.where(mapping_mask, node_ebd_ext, xp.zeros_like(node_ebd_ext))
 
     def call(
         self,
@@ -615,7 +622,9 @@ class DescrptBlockRepflows(NativeOP, DescriptorBlock):
         # get node embedding
         # nb x nloc x tebd_dim
         atype_embd = xp_take_first_n(atype_embd_ext, 1, nloc)
-        assert list(atype_embd.shape) == [nframes, nloc, self.n_dim]
+        assert _statically_compatible_shape(
+            atype_embd.shape, (nframes, nloc, self.n_dim)
+        )
 
         node_ebd = self.act(atype_embd)
 
@@ -1622,11 +1631,11 @@ class RepFlowLayer(NativeOP):
             else 0
         )
         node_ebd = xp_take_first_n(node_ebd_ext, 1, nloc)
-        assert (nb, nloc) == node_ebd.shape[:2]
+        assert _statically_compatible_shape(node_ebd.shape[:2], (nb, nloc))
         if not self.use_dynamic_sel:
-            assert (nb, nloc, nnei) == h2.shape[:3]
+            assert _statically_compatible_shape(h2.shape[:3], (nb, nloc, nnei))
         else:
-            assert (n_edge, 3) == h2.shape
+            assert _statically_compatible_shape(h2.shape, (n_edge, 3))
         del a_nlist  # may be used in the future
 
         n2e_index, n_ext2e_index = edge_index[0, :], edge_index[1, :]

@@ -22,8 +22,11 @@ from .neighbor_graph import (
     GraphLayout,
     NeighborGraph,
     build_neighbor_graph,
+    build_neighbor_graph_ase,
+    edge_env_mat,
     edge_force_virial,
     from_dense_quartet,
+    neighbor_graph_from_ijs,
     node_validity_mask,
     pad_and_guard_edges,
     segment_mean,
@@ -48,6 +51,7 @@ from .nlist import (
     build_multiple_neighbor_list,
     build_neighbor_list,
     extend_coord_with_ghosts,
+    format_nlist,
     get_multiple_nlist_key,
     nlist_distinguish_types,
 )
@@ -61,6 +65,9 @@ from .serialization import (
     load_dp_model,
     save_dp_model,
     traverse_model_dict,
+)
+from .tabulate import (
+    tabulate_fusion,
 )
 from .training_utils import (
     compute_total_numb_batch,
@@ -89,10 +96,13 @@ __all__ = [
     "aggregate",
     "build_multiple_neighbor_list",
     "build_neighbor_graph",
+    "build_neighbor_graph_ase",
     "build_neighbor_list",
     "compute_total_numb_batch",
+    "edge_env_mat",
     "edge_force_virial",
     "extend_coord_with_ghosts",
+    "format_nlist",
     "from_dense_quartet",
     "get_graph_index",
     "get_multiple_nlist_key",
@@ -103,6 +113,7 @@ __all__ = [
     "make_fitting_network",
     "make_multilayer_network",
     "make_neighbor_stat_data",
+    "neighbor_graph_from_ijs",
     "nlist_distinguish_types",
     "node_validity_mask",
     "normalize_coord",
@@ -113,6 +124,7 @@ __all__ = [
     "save_dp_model",
     "segment_mean",
     "segment_sum",
+    "tabulate_fusion",
     "to_face_distance",
     "traverse_model_dict",
 ]

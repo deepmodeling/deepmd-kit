@@ -2,6 +2,9 @@
 from pathlib import (
     Path,
 )
+from typing import (
+    Any,
+)
 
 import numpy as np
 import orbax.checkpoint as ocp
@@ -22,6 +25,141 @@ from deepmd.jax.model.model import (
 )
 
 
+def _state_sequence_to_numpy_list(state_value: Any) -> list[np.ndarray]:
+    """Convert an Orbax-restored list/dict sequence to NumPy arrays."""
+    if isinstance(state_value, dict):
+        values = [state_value[key] for key in sorted(state_value)]
+    else:
+        values = state_value
+    return [np.asarray(getattr(value, "value", value)) for value in values]
+
+
+def _state_value_to_numpy(state_value: Any) -> np.ndarray:
+    """Convert an Orbax-restored state value to a NumPy array."""
+    return np.asarray(getattr(state_value, "value", state_value))
+
+
+def _restore_compression_slots_from_state(obj: Any, state: Any) -> None:
+    """Create compression variable slots before replacing an NNX state.
+
+    A compressed ``.jax`` checkpoint stores tabulation arrays in the NNX state,
+    while ``model_def_script`` still describes the original uncompressed model.
+    Build the corresponding descriptor attributes first so Flax can match the
+    restored state keys.
+    """
+    if not isinstance(state, dict):
+        return
+    if (
+        (hasattr(obj, "compress") or hasattr(obj, "geo_compress"))
+        and "compress_data" in state
+        and "compress_info" in state
+    ):
+        obj.compress_data = _state_sequence_to_numpy_list(state["compress_data"])
+        obj.compress_info = _state_sequence_to_numpy_list(state["compress_info"])
+        if hasattr(obj, "compress"):
+            obj.compress = True
+        if hasattr(obj, "geo_compress"):
+            obj.geo_compress = True
+        if hasattr(obj, "se_atten"):
+            obj.se_atten.compress_data = obj.compress_data
+            obj.se_atten.compress_info = obj.compress_info
+            if hasattr(obj.se_atten, "geo_compress"):
+                obj.se_atten.geo_compress = True
+    if (
+        hasattr(obj, "compress") or hasattr(obj, "tebd_compress")
+    ) and "type_embd_data" in state:
+        obj.type_embd_data = _state_value_to_numpy(state["type_embd_data"])
+        if hasattr(obj, "compress"):
+            obj.compress = True
+        if hasattr(obj, "tebd_compress"):
+            obj.tebd_compress = True
+        if hasattr(obj, "geo_compress"):
+            obj.geo_compress = "compress_data" in state and "compress_info" in state
+        if hasattr(obj, "se_atten"):
+            obj.se_atten.type_embd_data = obj.type_embd_data
+            obj.se_atten.tebd_compress = True
+            if hasattr(obj.se_atten, "geo_compress"):
+                obj.se_atten.geo_compress = getattr(obj, "geo_compress", False)
+            if getattr(obj, "geo_compress", False):
+                obj.se_atten.compress_data = obj.compress_data
+                obj.se_atten.compress_info = obj.compress_info
+    for name, child_state in state.items():
+        if not isinstance(child_state, dict):
+            continue
+        if isinstance(name, int):
+            try:
+                child = obj[name]
+            except (IndexError, KeyError, TypeError):
+                continue
+        else:
+            if not hasattr(obj, name):
+                continue
+            child = getattr(obj, name)
+        _restore_compression_slots_from_state(child, child_state)
+        if name == "se_atten" and hasattr(obj, "compress"):
+            child_type_embd_data = getattr(child, "type_embd_data", None)
+            if child_type_embd_data is not None:
+                obj.type_embd_data = child_type_embd_data
+                obj.tebd_compress = getattr(child, "tebd_compress", True)
+                obj.compress = True
+            if getattr(child, "geo_compress", False):
+                obj.geo_compress = True
+                obj.compress_data = child.compress_data
+                obj.compress_info = child.compress_info
+
+
+def _to_optional_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    return float(np.asarray(getattr(value, "value", value)))
+
+
+def _set_model_min_nbor_dist_from_data(model: BaseModel, data: dict) -> None:
+    if model.get_min_nbor_dist() is not None:
+        return
+    min_nbor_dist = _to_optional_float(data.get("min_nbor_dist"))
+    if min_nbor_dist is None:
+        min_nbor_dist = _to_optional_float(
+            data.get("constants", {}).get("min_nbor_dist")
+        )
+    if min_nbor_dist is not None:
+        model.min_nbor_dist = min_nbor_dist
+
+
+def _find_compressed_type_two_side_descriptors(data: Any) -> list[str]:
+    """Find compressed descriptors whose JAX HLO path is not exportable."""
+    if not isinstance(data, dict):
+        return []
+    matches = []
+    descriptor_type = data.get("type")
+    if (
+        descriptor_type in {"se_e2_a", "se_a", "dpa1", "se_atten"}
+        and "compress" in data
+        and data.get("type_one_side") is False
+    ):
+        matches.append(descriptor_type)
+    for value in data.values():
+        if isinstance(value, dict):
+            matches.extend(_find_compressed_type_two_side_descriptors(value))
+        elif isinstance(value, list):
+            for item in value:
+                matches.extend(_find_compressed_type_two_side_descriptors(item))
+    return matches
+
+
+def _check_compressed_hlo_exportable(data: dict) -> None:
+    """Reject compressed descriptors that cannot be traced to StableHLO."""
+    descriptor_types = _find_compressed_type_two_side_descriptors(data.get("model", {}))
+    if descriptor_types:
+        names = ", ".join(sorted(set(descriptor_types)))
+        raise ValueError(
+            "Compressed JAX HLO export does not support type_one_side=False for "
+            f"{names} descriptors because the compressed path uses data-dependent "
+            "type slices that cannot be traced. Use type_one_side=True for HLO "
+            "export, or write a .jax checkpoint instead."
+        )
+
+
 def deserialize_to_file(model_file: str, data: dict) -> None:
     """Deserialize the dictionary to a model file.
 
@@ -34,7 +172,14 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
     """
     if model_file.endswith(".jax"):
         model = BaseModel.deserialize(data["model"])
-        model_def_script = data["model_def_script"]
+        model_def_script = data["model_def_script"].copy()
+        min_nbor_dist = _to_optional_float(data.get("min_nbor_dist"))
+        if min_nbor_dist is None:
+            min_nbor_dist = _to_optional_float(
+                data.get("constants", {}).get("min_nbor_dist")
+            )
+        if min_nbor_dist is not None:
+            model_def_script["_min_nbor_dist"] = min_nbor_dist
         _, state = nnx.split(model)
         with ocp.Checkpointer(
             ocp.CompositeCheckpointHandler("state", "model_def_script")
@@ -47,7 +192,9 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
                 ),
             )
     elif model_file.endswith(".hlo"):
+        _check_compressed_hlo_exportable(data)
         model = BaseModel.deserialize(data["model"])
+        _set_model_min_nbor_dist_from_data(model, data)
         model_def_script = data["model_def_script"]
         call_lower = model.call_common_lower
 
@@ -138,8 +285,8 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         }
         save_dp_model(filename=model_file, model_dict=data)
     elif model_file.endswith(".savedmodel"):
-        from deepmd.jax.jax2tf.serialization import (
-            deserialize_to_file as deserialize_to_savedmodel,
+        from deepmd.tf2.utils.serialization import (
+            deserialize_to_savedmodel,
         )
 
         return deserialize_to_savedmodel(model_file, data)
@@ -185,10 +332,14 @@ def serialize_from_file(model_file: str) -> dict:
 
         model_def_script = data.model_def_script
         abstract_model = get_model(model_def_script)
+        _restore_compression_slots_from_state(abstract_model, state)
         graphdef, abstract_state = nnx.split(abstract_model)
         abstract_state.replace_by_pure_dict(state)
         model = nnx.merge(graphdef, abstract_state)
         model_dict = model.serialize()
+        min_nbor_dist = _to_optional_float(model.get_min_nbor_dist())
+        if min_nbor_dist is None:
+            min_nbor_dist = _to_optional_float(model_def_script.get("_min_nbor_dist"))
         data = {
             "backend": "JAX",
             "jax_version": jax.__version__,
@@ -196,6 +347,8 @@ def serialize_from_file(model_file: str) -> dict:
             "model_def_script": model_def_script,
             "@variables": {},
         }
+        if min_nbor_dist is not None:
+            data["min_nbor_dist"] = min_nbor_dist
         return data
     elif model_file.endswith(".hlo"):
         data = load_dp_model(model_file)
