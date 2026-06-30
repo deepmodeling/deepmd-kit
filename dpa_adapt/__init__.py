@@ -18,7 +18,6 @@ _LAZY = {
     "attach_labels": (".data", "attach_labels"),
     "check_data": (".data", "check_data"),
     "convert": (".data", "convert"),
-    "formula_to_npy": (".data", "formula_to_npy"),
     "load_dataset": (".data", "load_dataset"),
     "smiles_to_npy": (".data", "smiles_to_npy"),
     "DPAFineTuner": (".finetuner", "DPAFineTuner"),

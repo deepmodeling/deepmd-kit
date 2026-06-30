@@ -191,8 +191,6 @@ DPA-ADAPT trains on `deepmd/npy` data. Use `dpa-adapt data convert` (or the Pyth
 - **SMILES CSV**: a `.csv` file with a `SMILES`/`smiles` column. RDKit generates 3D
   conformers, or existing `.mol`/`.sdf`/`.xyz`/`.pdb` files can be supplied with
   `mol_dir`.
-- **Formula CSV + POSCAR template**: pass `fmt="formula"` and `poscar=...` to create
-  doped structures by random substitution on the host-element sublattice.
 - **Structure files / trajectories**: POSCAR, OUTCAR, `*.xyz`, `vasprun.xml`, ABACUS,
   CP2K, Gaussian, LAMMPS, ASE, `deepmd/raw`, `deepmd/npy`, LMDB, and other dpdata
   formats. Omit `fmt` when dpdata can infer it; set `fmt` explicitly for ambiguous
@@ -229,21 +227,6 @@ convert(
     mol_dir="./mol_files",
     mol_template="id{row}.sdf",
 )
-
-# Composition formula CSV + template POSCAR → random atomic substitution → deepmd/npy.
-# CSV: header required; defaults are formula_col="formula" and property_col="Property".
-# e.g.  formula,Property
-#       Ni0.65Gd0.15Fe0.10Co0.05Yb0.05O2H1,291.9
-convert(
-    "compositions.csv",
-    "./npy",
-    fmt="formula",
-    poscar="template.POSCAR",
-    formula_col="formula",
-    property_col="bandgap",
-    sets=3,  # random doped structures per composition row (default: 1)
-    seed=42,
-)
 ```
 
 CLI equivalents:
@@ -252,10 +235,6 @@ CLI equivalents:
 # SMILES table
 dpa-adapt data convert --input molecules.csv --output ./npy \
     --fmt smiles --smiles-col SMILES --property-col HOMO --train-ratio 0.9
-
-# Formula table + POSCAR template
-dpa-adapt data convert --input compositions.csv --output ./npy --fmt formula \
-    --poscar template.POSCAR --formula-col formula --property-col bandgap --sets 3
 
 # Structure file or glob of calculation outputs
 dpa-adapt data convert --input POSCAR --output ./npy
@@ -363,7 +342,6 @@ from dpa_adapt import (
     train_test_split,  # formula-grouped splitting
     convert,  # format-sniffing data conversion
     smiles_to_npy,  # CSV+SMILES → deepmd/npy
-    formula_to_npy,  # composition formula CSV + POSCAR → deepmd/npy
     check_data,  # data sanity checks
     attach_labels,  # inject label arrays
     load_dataset,  # label-filtered data loading
@@ -390,7 +368,7 @@ X = extract_descriptors(
 | `dpa-adapt evaluate` / `dpaad evaluate`                       | Evaluate against stored labels                                      |
 | `dpa-adapt extract-descriptors` / `dpaad extract-descriptors` | Extract pooled DPA descriptors to `.npy`                            |
 | `dpa-adapt cv` / `dpaad cv`                                   | Cross-validate                                                      |
-| `dpa-adapt data convert` / `dpaad data convert`               | Convert structure / CSV / formula → `deepmd/npy`                    |
+| `dpa-adapt data convert` / `dpaad data convert`               | Convert structure / CSV → `deepmd/npy`                              |
 | `dpa-adapt data validate` / `dpaad data validate`             | Sanity-check `deepmd/npy` directories                               |
 | `dpa-adapt data attach-labels` / `dpaad data attach-labels`   | Inject `.npy` label arrays                                          |
 
@@ -402,10 +380,6 @@ dpa-adapt data convert --input POSCAR --output ./npy
 # SMILES CSV: --property-col names the input target column and output label name.
 dpaad data convert --input data.csv --output ./npy --fmt smiles \
     --property-col homo
-
-# Formula CSV + POSCAR template
-dpa-adapt data convert --input comps.csv --output ./npy --fmt formula \
-    --poscar template.POSCAR --formula-col formula --property-col bandgap --sets 3
 
 # Fine-tune
 dpa-adapt fit --train-data ./npy/train --pretrained DPA-3.1-3M \

@@ -14,7 +14,6 @@ _LAZY = {
     "validate_type_map_subset": (".type_map", "validate_type_map_subset"),
     "convert": (".convert", "convert"),
     "attach_labels": (".convert", "attach_labels"),
-    "formula_to_npy": (".formula", "formula_to_npy"),
     "check_data": (".validate", "check_data"),
     "Issue": (".validate", "Issue"),
     "DPADataError": (".errors", "DPADataError"),

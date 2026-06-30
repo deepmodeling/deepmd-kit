@@ -294,11 +294,6 @@ def _cmd_data_convert(args: argparse.Namespace) -> int:
         mol_template=args.mol_template,
         split_seed=args.split_seed,
         conformer_seed=args.conformer_seed,
-        poscar=args.poscar,
-        formula_col=args.formula_col,
-        base_element=args.base_element,
-        sets=args.sets,
-        seed=args.seed,
         overwrite=args.overwrite,
         validate=args.validate,
         strict=args.strict,
@@ -315,9 +310,6 @@ def _cmd_data_convert(args: argparse.Namespace) -> int:
     elif result["method"] == "batch_dpdata":
         _LOG.info("Output dirs  : %s", len(result["output_dirs"]))
         _LOG.info("Manifest     : %s", result["manifest"])
-    elif result["method"] == "formula":
-        _LOG.info("Output systems: %s", len(result["output_systems"]))
-        _LOG.info("Wrote deepmd/npy → %s", result["output_dir"])
     else:
         _LOG.info("Wrote deepmd/npy → %s", result["output_dir"])
     return 0
@@ -631,8 +623,7 @@ def get_parser() -> argparse.ArgumentParser:
         "--fmt",
         default=None,
         help="Format hint (auto-detected if omitted). "
-        "Use 'smiles' for CSV+SMILES, 'formula' for "
-        "CSV+POSCAR composition formulas, otherwise "
+        "Use 'smiles' for CSV+SMILES, otherwise "
         "dpdata format string (vasp/poscar, vasp/outcar, …).",
     )
     parser_data_convert.add_argument("--type-map", default=None)
@@ -661,33 +652,6 @@ def get_parser() -> argparse.ArgumentParser:
         type=int,
         default=None,
         help="Random seed for RDKit conformer generation (SMILES input).",
-    )
-    parser_data_convert.add_argument(
-        "--poscar", default=None, help="Template POSCAR for fmt=formula."
-    )
-    parser_data_convert.add_argument(
-        "--base-element",
-        default=None,
-        help="Sublattice element to substitute "
-        "(fmt=formula). Auto-inferred if omitted.",
-    )
-    parser_data_convert.add_argument(
-        "--formula-col",
-        default="formula",
-        help="Column index or name for the formula (fmt=formula, default: formula).",
-    )
-    parser_data_convert.add_argument(
-        "--sets",
-        type=int,
-        default=1,
-        help="Random structures per formula (fmt=formula, default: 1).",
-    )
-    parser_data_convert.add_argument(
-        "--seed",
-        type=int,
-        default=42,
-        help="Random seed for selecting substituted host-atom sites "
-        "(fmt=formula, default: 42).",
     )
     parser_data_convert.add_argument("--overwrite", action="store_true")
 
