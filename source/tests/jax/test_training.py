@@ -24,9 +24,6 @@ import optax
 from deepmd.dpmodel.train import (
     TrainEntrypointOptions,
 )
-from deepmd.jax.env import (
-    jnp,
-)
 from deepmd.jax.entrypoints.freeze import (
     freeze,
 )
@@ -36,6 +33,9 @@ from deepmd.jax.entrypoints.main import (
 from deepmd.jax.entrypoints.train import (
     JAXTrainEntrypoint,
     update_sel,
+)
+from deepmd.jax.env import (
+    jnp,
 )
 from deepmd.jax.train.trainer import (
     _copy_matching_state_tree,
