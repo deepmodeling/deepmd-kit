@@ -91,6 +91,7 @@ test = [
     "pytest-split",
     "pytest-timeout",
     "dpgui",
+    'nvalchemi-toolkit; python_version >= "3.11" and python_version < "3.14" and platform_system == "Linux"',
     # to support Array API 2024.12
     'array-api-strict>=2.2;python_version>="3.9"',
 ]
@@ -119,6 +120,9 @@ lmp = [
 ]
 ipi = [
     "ipi",
+]
+nvalchemi = [
+    'nvalchemi-toolkit; python_version >= "3.11" and python_version < "3.14" and platform_system == "Linux"',
 ]
 gui = [
     "dpgui",
@@ -466,6 +470,8 @@ runtime-evaluated-base-classes = ["torch.nn.Module"]
 "**/tests/**/test_*.py" = ["ANN"]
 "**/tests/**/*_test.py" = ["ANN"]
 "**/*.ipynb" = ["T20"]  # printing in a nb file is expected
+# Example / demo scripts are run directly: top-level imports and prints are fine.
+"examples/**/*.py" = ["T20", "TID253"]
 
 [tool.pytest.ini_options]
 markers = "run"
