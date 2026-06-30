@@ -285,8 +285,12 @@ def deserialize_to_file(model_file: str, data: dict) -> None:
         }
         save_dp_model(filename=model_file, model_dict=data)
     elif model_file.endswith(".savedmodel"):
-        from deepmd.tf2.utils.serialization import (
-            deserialize_to_savedmodel,
+        # Keep the historical JAX/JAX2TF meaning of ".savedmodel": this
+        # exporter must lower the JAX model through jax2tf and preserve
+        # XlaCallModule ops in the SavedModel. The TF2 eager SavedModel
+        # exporter owns the ".savedmodeltf" suffix.
+        from deepmd.jax.jax2tf.serialization import (
+            deserialize_to_file as deserialize_to_savedmodel,
         )
 
         return deserialize_to_savedmodel(model_file, data)
