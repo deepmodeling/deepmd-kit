@@ -227,9 +227,9 @@ class GroupPropertyModel(DPModelCommon, BaseModel):
         return {
             self.get_var_name(): prediction,
             "group_id": group_order,
+            "frame_group_id": group_id,
             "group_inverse": inverse,
             "frame_embedding": frame_embedding,
-            GROUP_ID_KEY: group_id,
             GROUP_WEIGHT_KEY: weight,
             POOL_MASK_KEY: pool_mask,
         }

@@ -37,7 +37,7 @@ def _write_system(
     np.save(set_dir / "energy.npy", np.full((n_frames,), label, dtype=float))
     np.save(set_dir / "property.npy", np.full((n_frames,), label, dtype=float))
     if group_id is not None:
-        np.save(set_dir / "category.npy", np.full((n_atoms,), group_id, dtype=np.int64))
+        np.save(set_dir / "group_id.npy", np.full((n_frames,), group_id, dtype=np.int64))
     if weight is not None:
         np.save(set_dir / "weight.npy", np.asarray(weight, dtype=float))
     return sys_dir

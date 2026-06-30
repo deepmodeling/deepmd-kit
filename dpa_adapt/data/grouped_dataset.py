@@ -56,7 +56,7 @@ class GroupedDataset:
             if source is None:
                 raise DPADataError(
                     "Grouped input must come from deepmd/npy directories so "
-                    "set.*/category.npy and set.*/weight.npy can be read."
+                    "set.*/group_id.npy and set.*/weight.npy can be read."
                 )
             source_path = Path(source)
             system_frames = _read_system_group_rows(source_path, self.target_key)
@@ -92,7 +92,7 @@ class GroupedDataset:
 
 
 def has_grouped_markers(data: object) -> bool:
-    """Return True when any resolved system directory has category.npy."""
+    """Return True when any resolved system directory has group_id.npy."""
     return any(_system_has_marker(path) for path in _candidate_paths(data))
 
 
@@ -157,7 +157,7 @@ def _is_system_dir(path: Path) -> bool:
 
 def _system_has_marker(path: Path) -> bool:
     return any(
-        set_dir.joinpath("category.npy").is_file()
+        set_dir.joinpath("group_id.npy").is_file()
         for set_dir in sorted(path.glob("set.*"))
     )
 
@@ -181,52 +181,36 @@ def _read_system_group_rows(
     if not set_dirs:
         raise DPADataError(f"No set.* directories found in {source_path}.")
 
-    system_group_id: int | None = None
     for set_dir in set_dirs:
-        category_path = set_dir / "category.npy"
+        group_id_path = set_dir / "group_id.npy"
         weight_path = set_dir / "weight.npy"
         label_path = set_dir / f"{target_key}.npy"
         missing = [
             str(p)
-            for p in (category_path, weight_path, label_path)
+            for p in (group_id_path, weight_path, label_path)
             if not p.is_file()
         ]
         if missing:
             raise DPADataError(f"Grouped input is missing required files: {missing}.")
 
-        category = np.asarray(np.load(str(category_path)))
-        if category.ndim != 1:
-            raise DPADataError(
-                f"{category_path} has shape {category.shape}; expected (n_atoms,)."
-            )
-        unique = np.unique(category.astype(np.int64, copy=False))
-        if unique.size != 1:
-            raise DPADataError(
-                f"{category_path} contains {unique.size} ids; expected one id "
-                "per system."
-            )
-        group_id = int(unique[0])
-        if system_group_id is None:
-            system_group_id = group_id
-        elif group_id != system_group_id:
-            raise DPADataError(
-                f"{source_path} uses multiple group ids across set.* directories; "
-                "expected one id per system."
-            )
-
-        weight = np.asarray(np.load(str(weight_path)), dtype=float)
-        if weight.ndim != 1:
-            raise DPADataError(
-                f"{weight_path} has shape {weight.shape}; expected (n_frames,)."
-            )
+        group_ids = np.asarray(np.load(str(group_id_path)), dtype=np.int64).reshape(-1)
+        weight = np.asarray(np.load(str(weight_path)), dtype=float).reshape(-1)
         labels = np.asarray(np.load(str(label_path)))
-        if labels.shape[0] != weight.shape[0]:
+        n_frames = labels.shape[0]
+        if group_ids.shape != (n_frames,):
             raise DPADataError(
-                f"{label_path} has {labels.shape[0]} rows but {weight_path} has "
-                f"{weight.shape[0]}."
+                f"{group_id_path} has shape {group_ids.shape}; expected ({n_frames},)."
             )
-        for frame_idx in range(weight.shape[0]):
+        if weight.shape != (n_frames,):
+            raise DPADataError(
+                f"{weight_path} has shape {weight.shape}; expected ({n_frames},)."
+            )
+        for frame_idx in range(n_frames):
             rows.append(
-                (group_id, float(weight[frame_idx]), np.asarray(labels[frame_idx]))
+                (
+                    int(group_ids[frame_idx]),
+                    float(weight[frame_idx]),
+                    np.asarray(labels[frame_idx]),
+                )
             )
     return rows

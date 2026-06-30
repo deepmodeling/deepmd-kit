@@ -170,6 +170,7 @@ class DPATrainer:
         # ---- model overrides ----
         fitting_net_params: dict | None = None,
         fparam_dim: int = 0,
+        loss_type: str = "property",
         # ---- training ----
         learning_rate: float = 1e-3,
         stop_lr: float = 1e-5,
@@ -235,6 +236,7 @@ class DPATrainer:
         self.type_map = type_map
         self.fitting_net_params = fitting_net_params
         self.fparam_dim = fparam_dim
+        self.loss_type = loss_type
         self.learning_rate = learning_rate
         self.stop_lr = stop_lr
         self.decay_steps = decay_steps
@@ -368,7 +370,7 @@ class DPATrainer:
                 "fitting_net": fitting_net,
             },
             "loss": {
-                "type": "property",
+                "type": self.loss_type,
                 "loss_func": self.loss_function,
                 "metric": ["mae", "rmse"],
             },

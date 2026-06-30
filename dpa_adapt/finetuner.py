@@ -1117,6 +1117,8 @@ class DPAFineTuner:
         train_data: str | list[str],
         valid_data: str | list[str] | None,
         type_map: list[str],
+        *,
+        grouped: bool = False,
     ) -> str:
         """Delegate to DPATrainer for single-task ``dp --pt train``."""
         from dpa_adapt.trainer import (
@@ -1124,6 +1126,11 @@ class DPAFineTuner:
         )
 
         freeze = self.strategy == "frozen_head"
+        fitting_net_params = dict(self.fitting_net_params or {})
+        loss_type = "property"
+        if grouped:
+            fitting_net_params["type"] = "group_property"
+            loss_type = "group_property"
         trainer = DPATrainer(
             pretrained=self.pretrained,
             init_branch=self.init_branch,
@@ -1134,7 +1141,8 @@ class DPAFineTuner:
             train_systems=train_data,
             valid_systems=valid_data,
             type_map=type_map,
-            fitting_net_params=self.fitting_net_params,
+            fitting_net_params=fitting_net_params,
+            loss_type=loss_type,
             learning_rate=self.learning_rate,
             stop_lr=self.stop_lr,
             decay_steps=self.decay_steps if self.decay_steps is not None else 1000,
@@ -1370,17 +1378,12 @@ class DPAFineTuner:
             has_grouped_markers,
         )
 
-        if has_grouped_markers(train_data):
+        grouped_input = has_grouped_markers(train_data)
+        if grouped_input:
             if labels is not None:
                 raise ValueError("labels is not supported for grouped input.")
-            if self.strategy != "frozen_sklearn":
-                warnings.warn(
-                    "Grouped input is fit at the descriptor level because deep "
-                    "training is launched through dp --pt train subprocesses.",
-                    RuntimeWarning,
-                    stacklevel=2,
-                )
-            return self._fit_grouped(train_data, type_map, target_key, fmt)
+            if self.strategy == "frozen_sklearn":
+                return self._fit_grouped(train_data, type_map, target_key, fmt)
 
         if self.strategy == "frozen_sklearn":
             return self._fit_sklearn(train_data, type_map, target_key, labels, fmt)
@@ -1408,7 +1411,9 @@ class DPAFineTuner:
             type_map = self._resolve_type_maps(train_data)
 
         self.type_map = type_map
-        return self._fit_training(train_data, valid_data, type_map)
+        return self._fit_training(
+            train_data, valid_data, type_map, grouped=grouped_input
+        )
 
     def _fit_grouped(
         self,

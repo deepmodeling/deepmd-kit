@@ -1,0 +1,50 @@
+# SPDX-License-Identifier: LGPL-3.0-or-later
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from unittest.mock import patch
+
+import numpy as np
+
+from dpa_adapt.finetuner import DPAFineTuner
+from source.tests.dpa_adapt.test_finetuner_strategies import (
+    _FULL_TYPE_MAP,
+    _fake_ckpt_sd,
+    _make_system_dirs,
+    _mock_dp_train,
+)
+
+
+def test_grouped_training_strategy_uses_group_property_config(monkeypatch, tmp_path):
+    import torch
+
+    monkeypatch.setattr(torch, "load", lambda *a, **kw: _fake_ckpt_sd())
+    ckpt = tmp_path / "fake.pt"
+    ckpt.write_bytes(b"")
+    out_dir = tmp_path / "out"
+    systems = _make_system_dirs(tmp_path, formulas=("GroupedTrain",), n=2)
+    valid_systems = _make_system_dirs(tmp_path, formulas=("GroupedValid",), n=1)
+    for sid, sysdir in enumerate(systems + valid_systems):
+        set_dir = Path(sysdir) / "set.000"
+        np.save(set_dir / "group_id.npy", np.array([sid, sid], dtype=np.int64))
+        np.save(set_dir / "weight.npy", np.array([0.5, 0.5], dtype=float))
+        np.save(set_dir / "pool_mask.npy", np.ones((2, 2), dtype=float))
+
+    model = DPAFineTuner(
+        pretrained=str(ckpt),
+        strategy="finetune",
+        property_name="overpotential",
+        max_steps=20,
+        output_dir=str(out_dir),
+    )
+    with patch("subprocess.run", side_effect=_mock_dp_train(str(out_dir))):
+        result = model.fit(train_data=systems, valid_data=valid_systems)
+
+    assert result is not None
+    cfg = json.loads((out_dir / "input.json").read_text())
+    assert cfg["model"]["type_map"] == _FULL_TYPE_MAP
+    assert cfg["model"]["fitting_net"]["type"] == "group_property"
+    assert cfg["model"]["fitting_net"]["property_name"] == "overpotential"
+    assert cfg["loss"]["type"] == "group_property"
