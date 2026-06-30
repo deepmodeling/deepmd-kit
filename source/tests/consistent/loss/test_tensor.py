@@ -21,7 +21,7 @@ from ..common import (
     INSTALLED_PT_EXPT,
     INSTALLED_TF2,
     CommonTest,
-    parameterized,
+    parameterized_cases,
 )
 from .common import (
     LossTest,
@@ -45,10 +45,14 @@ if INSTALLED_ARRAY_API_STRICT:
     import array_api_strict
 
 
-@parameterized(
-    (1.0, 0.0),  # pref
-    (1.0, 0.0),  # pref_atomic
+TENSOR_LOSS_CURATED_CASES = (
+    (1.0, 1.0),
+    (1.0, 0.0),
+    (0.0, 1.0),
 )
+
+
+@parameterized_cases(*TENSOR_LOSS_CURATED_CASES)
 class TestTensor(CommonTest, LossTest, unittest.TestCase):
     @property
     def data(self) -> dict:

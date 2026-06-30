@@ -18,7 +18,7 @@ from ..common import (
     INSTALLED_PT,
     INSTALLED_PT_EXPT,
     CommonTest,
-    parameterized,
+    parameterized_cases,
 )
 from .common import (
     FittingTest,
@@ -45,10 +45,15 @@ else:
 SeZMEnerFittingTF = None
 
 
-@parameterized(
-    ("float64", "float32"),  # precision
-    ([0], [16, 16]),  # neuron ([0] = auto-width placeholder)
+DPA4_ENER_FITTING_CURATED_CASES = (
+    ("float64", [0]),
+    ("float64", [16, 16]),
+    ("float32", [0]),
+    ("float32", [16, 16]),
 )
+
+
+@parameterized_cases(*DPA4_ENER_FITTING_CURATED_CASES)
 class TestDPA4Ener(CommonTest, FittingTest, unittest.TestCase):
     @property
     def data(self) -> dict:
