@@ -387,6 +387,7 @@ def freeze(
     model: str,
     output: str = "frozen_model.pte",
     head: str | None = None,
+    lower_kind: str = "nlist",
 ) -> None:
     """Freeze a pt_expt checkpoint into a .pte exported model.
 
@@ -398,6 +399,13 @@ def freeze(
         Path for the output .pte file.
     head : str or None
         Head to freeze in multi-task mode.
+    lower_kind : str
+        Lower-level export form: ``"nlist"`` (default, dense neighbor-list lower)
+        or ``"graph"`` (NeighborGraph edge-list lower). ``"graph"`` is only valid
+        for graph-eligible models (``mixed_types`` and ``uses_graph_lower``,
+        currently dpa1 with ``attn_layer == 0``) and selects the C++ graph
+        inference path; the per-atom virial is enabled for it (near-free in the
+        graph path: one extra scatter off the shared single backward).
     """
     import torch
 
@@ -458,12 +466,34 @@ def freeze(
         single_model_params = model_params
 
     m.eval()
+
+    # The graph lower is opt-in and only valid for graph-eligible models (dpa1
+    # attn_layer==0 today). Fail fast with a clear message rather than emitting a
+    # broken .pt2. Enable the per-atom virial for the graph form -- it is
+    # near-free there (one extra scatter off the single shared backward).
+    do_atomic_virial = False
+    if lower_kind == "graph":
+        from deepmd.pt_expt.train.training import (
+            _model_uses_graph_lower,
+        )
+
+        if not _model_uses_graph_lower(m):
+            raise ValueError(
+                "lower_kind='graph' requires a graph-eligible model "
+                "(mixed_types and a descriptor exposing uses_graph_lower()==True, "
+                "currently dpa1 with attn_layer==0). Use lower_kind='nlist' for "
+                "this model."
+            )
+        do_atomic_virial = True
+
     model_dict_serialized = m.serialize()
     deserialize_to_file(
         output,
         {"model": model_dict_serialized, "model_def_script": single_model_params},
+        do_atomic_virial=do_atomic_virial,
+        lower_kind=lower_kind,
     )
-    log.info("Saved frozen model to %s", output)
+    log.info("Saved frozen model to %s (lower_kind=%s)", output, lower_kind)
 
 
 def change_bias(
@@ -703,7 +733,12 @@ def main(args: list[str] | argparse.Namespace | None = None) -> None:
             FLAGS.model = str(model_path)
         if not FLAGS.output.endswith((".pte", ".pt2")):
             FLAGS.output = str(Path(FLAGS.output).with_suffix(".pte"))
-        freeze(model=FLAGS.model, output=FLAGS.output, head=FLAGS.head)
+        freeze(
+            model=FLAGS.model,
+            output=FLAGS.output,
+            head=FLAGS.head,
+            lower_kind=getattr(FLAGS, "lower_kind", "nlist"),
+        )
     elif FLAGS.command == "change-bias":
         change_bias(
             input_file=FLAGS.INPUT,
