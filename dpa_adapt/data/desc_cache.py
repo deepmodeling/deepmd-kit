@@ -47,44 +47,46 @@ def _cache_dir() -> Path:
 
 
 # ---------------------------------------------------------------------------
-# lightweight system fingerprint (O(1) on array size, O(n) on atom count)
+# system fingerprint (O(n) over the full descriptor-relevant arrays)
 # ---------------------------------------------------------------------------
 
 
-def _system_fingerprint(system: dpdata.System) -> str:
-    """Return a short hex fingerprint for a dpdata System.
+def _hash_array(h: "hashlib._Hash", arr: np.ndarray) -> None:
+    """Fold an array's shape, dtype, and full byte content into *h*.
 
-    Uses only metadata and a tiny sample of coordinate data so it is fast
-    even for large (10⁵+ frame) systems.  Collisions are possible in
-    principle but vanishingly unlikely in practice given the combination of
-    shape, dtype, atom_types, and first/last bytes.
+    The contiguous buffer is fed to :meth:`hashlib._Hash.update` directly via
+    the buffer protocol, so no large intermediate ``bytes`` copy is made.
+    """
+    arr = np.ascontiguousarray(arr)
+    h.update(str(arr.shape).encode())
+    h.update(str(arr.dtype).encode())
+    h.update(arr)
+
+
+def _system_fingerprint(system: dpdata.System) -> str:
+    """Return a hex fingerprint for a dpdata System.
+
+    Hashes the *full* contents of the descriptor-relevant arrays — ``coords``,
+    ``cells`` and ``atom_types`` — together with ``atom_names``.  Sampling
+    only the first/last few entries (as an earlier version did) let any change
+    in the middle of a long trajectory keep the same key, so the cache could
+    return descriptors extracted from a different structure.  Hashing every
+    element costs O(total array size), but that is negligible next to the
+    descriptor extraction the cache guards, and it makes the key collision-safe
+    for changed systems.
     """
     d = system.data
-    coords = np.asarray(d["coords"])
-    atom_types = np.asarray(d["atom_types"])
 
     h = hashlib.sha1()
-    # structural identity
-    h.update(str(coords.shape).encode())
-    h.update(str(coords.dtype).encode())
-    h.update(atom_types.tobytes())
+    # atom-type identity
+    _hash_array(h, np.asarray(d["atom_types"]))
     # atom_names (if present)
     names = d.get("atom_names", [])
     h.update("|".join(str(n) for n in names).encode())
-    # first / last 64 bytes of coords (captures actual content without
-    # hashing the entire array)
-    if coords.size > 0:
-        flat = coords.ravel()
-        h.update(flat[: min(64, len(flat))].tobytes())
-        h.update(flat[-min(64, len(flat)) :].tobytes())
-    # same for cells, if present
+    # full geometry
+    _hash_array(h, np.asarray(d["coords"]))
     if "cells" in d:
-        cells = np.asarray(d["cells"])
-        h.update(str(cells.shape).encode())
-        if cells.size > 0:
-            fc = cells.ravel()
-            h.update(fc[: min(64, len(fc))].tobytes())
-            h.update(fc[-min(64, len(fc)) :].tobytes())
+        _hash_array(h, np.asarray(d["cells"]))
     return h.hexdigest()[:16]
 
 

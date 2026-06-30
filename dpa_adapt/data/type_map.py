@@ -95,6 +95,13 @@ def read_data_type_map_union(systems: list) -> list[str]:
     elems: set[str] = set()
     for sys in systems:
         names = sys.data.get("atom_names", [])
+        # dpdata generates "Type_0", "Type_1", ... when no type_map.raw was
+        # present.  Treat an all-placeholder type map as "no real atom_names"
+        # so that callers allow raw atom indices instead of rejecting valid
+        # data as unsupported elements (consistent with _read_data_type_map
+        # in finetuner.py).
+        if names and all(str(n).startswith("Type_") for n in names):
+            continue
         for name in names:
             if name:
                 elems.add(str(name))

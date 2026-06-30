@@ -898,6 +898,10 @@ class DPAFineTuner:
                 f"strategy must be one of {sorted(self._VALID_STRATEGIES)}; "
                 f"got {strategy!r}"
             )
+        if not isinstance(fparam_dim, int) or fparam_dim < 0:
+            raise ValueError(
+                f"fparam_dim must be a non-negative int; got {fparam_dim!r}."
+            )
 
         self.strategy = strategy
 
@@ -1099,9 +1103,10 @@ class DPAFineTuner:
 
         try:
             elements = read_data_type_map_union(systems)
-            validate_type_map_subset(elements, tm, label="train data")
         except ValueError:
             pass  # no atom_names — deepmd uses raw atom indices
+        else:
+            validate_type_map_subset(elements, tm, label="train data")
 
         return tm
 

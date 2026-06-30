@@ -64,6 +64,10 @@ def load_dataset(
         *every* candidate was skipped, in which case a ``DPADataError``
         is raised (fail-fast for training workflows).
     """
+    from dpa_adapt.data.loader import (
+        _get_source,
+    )
+
     systems = load_data(data)
 
     resolved_key = _resolve_label_key(label_key)
@@ -76,6 +80,25 @@ def load_dataset(
         # ``data`` dict; label_key (after alias resolution) presence is the litmus test.
         if resolved_key in system.data:
             validated.append(system)
+            continue
+
+        # Fallback: check set.*/{key}.npy directly (same logic as
+        # _load_labels() in finetuner.py).  Custom labels such as
+        # "homo.npy", "bandgap.npy" under set.*/ are not generally
+        # loaded into dpdata.System.data, so this direct check prevents
+        # valid datasets from being incorrectly skipped.
+        source = _get_source(system)
+        if source is not None:
+            source_path = Path(source)
+            set_dirs = sorted(source_path.glob("set.*"))
+            for sd in set_dirs:
+                if (sd / f"{resolved_key}.npy").exists():
+                    validated.append(system)
+                    break
+            else:
+                # None of the set.* dirs had the label file.
+                identifier = getattr(system, "_dpa_source", f"system[{i}]")
+                skipped.append(f"{identifier} (missing {resolved_key!r})")
         else:
             identifier = getattr(system, "_dpa_source", f"system[{i}]")
             skipped.append(f"{identifier} (missing {resolved_key!r})")
