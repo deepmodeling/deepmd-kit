@@ -203,5 +203,121 @@ class InvarFitting(GeneralFitting):
             result["atomic_feature"] = out["atomic_feature"]
         return result
 
+    def forward_flat(
+        self,
+        descriptor: torch.Tensor,
+        atype: torch.Tensor,
+        batch: torch.Tensor,
+        ptr: torch.Tensor,
+        gr: torch.Tensor | None = None,
+        g2: torch.Tensor | None = None,
+        h2: torch.Tensor | None = None,
+        fparam: torch.Tensor | None = None,
+        aparam: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
+        """Forward pass with flat batch format.
+
+        Parameters
+        ----------
+        descriptor : torch.Tensor
+            Descriptor [total_atoms, descriptor_dim].
+        atype : torch.Tensor
+            Atom types [total_atoms].
+        batch : torch.Tensor
+            Frame assignment [total_atoms].
+        ptr : torch.Tensor
+            Frame boundaries [nframes + 1].
+        gr : torch.Tensor | None
+            Rotation matrix [total_atoms, e_dim, 3].
+        g2 : torch.Tensor | None
+            Edge embedding.
+        h2 : torch.Tensor | None
+            Pair representation.
+        fparam : torch.Tensor | None
+            Frame parameters [nframes, ndf].
+        aparam : torch.Tensor | None
+            Atomic parameters [total_atoms, nda].
+
+        Returns
+        -------
+        result : dict[str, torch.Tensor]
+            Model predictions in flat atom format. Atom-wise outputs are
+            flattened back to ``[total_atoms, ...]`` after the regular fitting
+            network runs on a padded dense batch.
+        """
+        device = descriptor.device
+        batch = batch.to(device=device, dtype=torch.long)
+        ptr = ptr.to(device=device, dtype=torch.long)
+        atype = atype.to(device=device)
+
+        nframes = ptr.numel() - 1
+        total_atoms = descriptor.shape[0]
+        atom_counts = ptr[1:] - ptr[:-1]
+        max_nloc = int(atom_counts.max().item())
+        flat_index = torch.arange(total_atoms, dtype=torch.long, device=device)
+        local_index = flat_index - ptr[batch]
+
+        descriptor_batch = torch.zeros(
+            (nframes, max_nloc, descriptor.shape[1]),
+            dtype=descriptor.dtype,
+            device=device,
+        )
+        atype_batch = torch.full(
+            (nframes, max_nloc),
+            -1,
+            dtype=atype.dtype,
+            device=device,
+        )
+        gr_batch = None
+        if gr is not None:
+            gr_batch = torch.zeros(
+                (nframes, max_nloc, *gr.shape[1:]),
+                dtype=gr.dtype,
+                device=device,
+            )
+        aparam_batch = None
+        if aparam is not None:
+            aparam_batch = torch.zeros(
+                (nframes, max_nloc, *aparam.shape[1:]),
+                dtype=aparam.dtype,
+                device=device,
+            )
+
+        descriptor_batch[batch, local_index] = descriptor
+        atype_batch[batch, local_index] = atype
+        if gr is not None:
+            assert gr_batch is not None
+            gr_batch[batch, local_index] = gr
+        if aparam is not None:
+            assert aparam_batch is not None
+            aparam_batch[batch, local_index] = aparam
+
+        result_batch = self.forward(
+            descriptor_batch,
+            atype_batch,
+            gr=gr_batch,
+            g2=g2,
+            h2=h2,
+            fparam=fparam,
+            aparam=aparam_batch,
+        )
+
+        valid_atom_mask = torch.arange(
+            max_nloc, dtype=torch.long, device=device
+        ).unsqueeze(0) < atom_counts.unsqueeze(1)
+        result_flat: dict[str, torch.Tensor] = {}
+        for key, value in result_batch.items():
+            if (
+                isinstance(value, torch.Tensor)
+                and value.dim() >= 2
+                and value.shape[0] == nframes
+                and value.shape[1] == max_nloc
+            ):
+                result_flat[key] = value[valid_atom_mask]
+            else:
+                result_flat[key] = value
+
+        return result_flat
+
     # make jit happy with torch 2.0.0
     exclude_types: list[int]

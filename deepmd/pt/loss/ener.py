@@ -238,11 +238,39 @@ class EnergyStdLoss(TaskLoss):
         more_loss = {}
         # more_loss['log_keys'] = []  # showed when validation on the fly
         # more_loss['test_keys'] = []  # showed when doing dp test
-        atom_norm = 1.0 / natoms
-        # Normalization exponent controls loss scaling with system size:
-        # - norm_exp=2 (intensive_ener_virial=True): loss uses 1/N² scaling, making it independent of system size
-        # - norm_exp=1 (intensive_ener_virial=False, legacy): loss uses 1/N scaling, which varies with system size
+
+        # Detect mixed batch format
+        mixed_batch = input_dict.get("mixed_batch")
+        is_mixed_batch = mixed_batch is not None
+
+        atom_norms = None
+        if is_mixed_batch:
+            ptr = mixed_batch["ptr"]
+            natoms_per_frame = ptr[1:] - ptr[:-1]  # [nframes]
+            atom_norms = 1.0 / natoms_per_frame.to(dtype=env.GLOBAL_PT_FLOAT_PRECISION)
+            atom_norm = None
+        else:
+            atom_norm = 1.0 / natoms
         norm_exp = 2 if self.intensive_ener_virial else 1
+
+        def get_frame_norm(value: torch.Tensor) -> torch.Tensor:
+            assert atom_norms is not None
+            return atom_norms.to(device=value.device, dtype=value.dtype).view(
+                [-1] + [1] * (value.dim() - 1)
+            )
+
+        def weighted_mean(value: torch.Tensor, power: int = 1) -> torch.Tensor:
+            if atom_norms is None:
+                assert atom_norm is not None
+                return value.mean() * (atom_norm**power)
+            return (value * get_frame_norm(value) ** power).mean()
+
+        def normalized_rmse(diff: torch.Tensor) -> torch.Tensor:
+            if atom_norms is None:
+                assert atom_norm is not None
+                return torch.mean(torch.square(diff)).sqrt() * atom_norm
+            return torch.mean(torch.square(diff * get_frame_norm(diff))).sqrt()
+
         if self.has_e and "energy" in model_pred and "energy" in label:
             energy_pred = model_pred["energy"]
             energy_label = label["energy"]
@@ -261,35 +289,37 @@ class EnergyStdLoss(TaskLoss):
                 energy_pred = torch.sum(atom_ener_coeff * atom_ener_pred, dim=1)
             find_energy = label.get("find_energy", 0.0)
             pref_e = pref_e * find_energy
+            diff_e = energy_pred - energy_label
             if self.loss_func == "mse":
-                l2_ener_loss = torch.mean(torch.square(energy_pred - energy_label))
+                square_ener_diff = torch.square(diff_e)
+                l2_ener_loss = torch.mean(square_ener_diff)
                 if not self.inference:
                     more_loss["l2_ener_loss"] = self.display_if_exist(
                         l2_ener_loss.detach(), find_energy
                     )
                 if not self.use_huber:
-                    loss += atom_norm**norm_exp * (pref_e * l2_ener_loss)
+                    loss += pref_e * weighted_mean(square_ener_diff, norm_exp)
                 else:
+                    energy_norm = (
+                        atom_norm if atom_norms is None else get_frame_norm(energy_pred)
+                    )
                     l_huber_loss = custom_huber_loss(
-                        atom_norm * energy_pred,
-                        atom_norm * energy_label,
+                        energy_norm * energy_pred,
+                        energy_norm * energy_label,
                         delta=self._huber_delta_energy,
                     )
                     loss += pref_e * l_huber_loss
-                rmse_e = l2_ener_loss.sqrt() * atom_norm
+                rmse_e = normalized_rmse(diff_e)
                 more_loss["rmse_e"] = self.display_if_exist(
                     rmse_e.detach(), find_energy
                 )
                 # more_loss['log_keys'].append('rmse_e')
             elif self.loss_func == "mae":
-                l1_ener_loss = F.l1_loss(
-                    energy_pred.reshape(-1),
-                    energy_label.reshape(-1),
-                    reduction="mean",
-                )
-                loss += atom_norm * (pref_e * l1_ener_loss)
+                abs_ener_diff = torch.abs(diff_e)
+                mae_e = weighted_mean(abs_ener_diff)
+                loss += pref_e * mae_e
                 more_loss["mae_e"] = self.display_if_exist(
-                    l1_ener_loss.detach() * atom_norm,
+                    mae_e.detach(),
                     find_energy,
                 )
                 # more_loss['log_keys'].append('rmse_e')
@@ -298,9 +328,9 @@ class EnergyStdLoss(TaskLoss):
                     f"Loss type {self.loss_func} is not implemented for energy loss."
                 )
             if mae:
-                mae_e = torch.mean(torch.abs(energy_pred - energy_label)) * atom_norm
+                mae_e = weighted_mean(torch.abs(diff_e))
                 more_loss["mae_e"] = self.display_if_exist(mae_e.detach(), find_energy)
-                mae_e_all = torch.mean(torch.abs(energy_pred - energy_label))
+                mae_e_all = torch.mean(torch.abs(diff_e))
                 more_loss["mae_e_all"] = self.display_if_exist(
                     mae_e_all.detach(), find_energy
                 )
@@ -417,6 +447,10 @@ class EnergyStdLoss(TaskLoss):
                     )
 
             if self.has_gf and "drdq" in label:
+                if is_mixed_batch:
+                    raise NotImplementedError(
+                        "Generalized force loss is not supported with mixed_batch=True yet."
+                    )
                 drdq = label["drdq"]
                 find_drdq = label.get("find_drdq", 0.0)
                 pref_gf = pref_gf * find_drdq
@@ -446,33 +480,36 @@ class EnergyStdLoss(TaskLoss):
             pref_v = pref_v * find_virial
             diff_v = label["virial"] - model_pred["virial"].reshape(-1, 9)
             if self.loss_func == "mse":
-                l2_virial_loss = torch.mean(torch.square(diff_v))
+                square_virial_diff = torch.square(diff_v)
+                l2_virial_loss = torch.mean(square_virial_diff)
                 if not self.inference:
                     more_loss["l2_virial_loss"] = self.display_if_exist(
                         l2_virial_loss.detach(), find_virial
                     )
                 if not self.use_huber:
-                    loss += atom_norm**norm_exp * (pref_v * l2_virial_loss)
+                    loss += pref_v * weighted_mean(square_virial_diff, norm_exp)
                 else:
+                    virial = model_pred["virial"].reshape(-1, 9)
+                    virial_label = label["virial"].reshape(-1, 9)
+                    virial_norm = (
+                        atom_norm if atom_norms is None else get_frame_norm(virial)
+                    )
                     l_huber_loss = custom_huber_loss(
-                        atom_norm * model_pred["virial"].reshape(-1),
-                        atom_norm * label["virial"].reshape(-1),
+                        (virial_norm * virial).reshape(-1),
+                        (virial_norm * virial_label).reshape(-1),
                         delta=self._huber_delta_virial,
                     )
                     loss += pref_v * l_huber_loss
-                rmse_v = l2_virial_loss.sqrt() * atom_norm
+                rmse_v = normalized_rmse(diff_v)
                 more_loss["rmse_v"] = self.display_if_exist(
                     rmse_v.detach(), find_virial
                 )
             elif self.loss_func == "mae":
-                l1_virial_loss = F.l1_loss(
-                    label["virial"].reshape(-1),
-                    model_pred["virial"].reshape(-1),
-                    reduction="mean",
-                )
-                loss += atom_norm * (pref_v * l1_virial_loss)
+                abs_virial_diff = torch.abs(diff_v)
+                mae_v = weighted_mean(abs_virial_diff)
+                loss += pref_v * mae_v
                 more_loss["mae_v"] = self.display_if_exist(
-                    l1_virial_loss.detach() * atom_norm,
+                    mae_v.detach(),
                     find_virial,
                 )
             else:
@@ -480,7 +517,7 @@ class EnergyStdLoss(TaskLoss):
                     f"Loss type {self.loss_func} is not implemented for virial loss."
                 )
             if mae:
-                mae_v = torch.mean(torch.abs(diff_v)) * atom_norm
+                mae_v = weighted_mean(torch.abs(diff_v))
                 more_loss["mae_v"] = self.display_if_exist(mae_v.detach(), find_virial)
 
         if self.has_ae and "atom_energy" in model_pred and "atom_ener" in label:

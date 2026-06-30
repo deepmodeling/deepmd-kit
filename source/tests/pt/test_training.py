@@ -26,6 +26,8 @@ from unittest.mock import (
     patch,
 )
 
+import lmdb
+import msgpack
 import numpy as np
 import torch
 
@@ -1061,6 +1063,180 @@ class TestFullValidation(unittest.TestCase):
         config = update_deepmd_input(config, warning=False)
         with self.assertRaisesRegex(ValueError, "multi-task"):
             normalize(config, multi_task=True)
+
+
+def _encode_lmdb_array(arr: np.ndarray) -> dict[str, Any]:
+    arr = np.asarray(arr)
+    return {
+        "nd": None,
+        "type": str(arr.dtype),
+        "kind": "",
+        "shape": list(arr.shape),
+        "data": arr.tobytes(),
+    }
+
+
+def _make_mixed_lmdb_frame(natoms: int, seed: int) -> dict[str, Any]:
+    rng = np.random.RandomState(seed)
+    n_type0 = max(1, natoms // 2)
+    n_type1 = natoms - n_type0
+    atype = np.array([0] * n_type0 + [1] * n_type1, dtype=np.int64)
+    return {
+        "atom_numbs": [n_type0, n_type1],
+        "atom_names": ["O", "H"],
+        "atom_types": _encode_lmdb_array(atype),
+        "orig": _encode_lmdb_array(np.zeros(3, dtype=np.float64)),
+        "cells": _encode_lmdb_array(np.eye(3, dtype=np.float64) * 10.0),
+        "coords": _encode_lmdb_array((rng.rand(natoms, 3) * 2.0).astype(np.float64)),
+        "energies": _encode_lmdb_array(np.array(rng.randn(), dtype=np.float64)),
+        "forces": _encode_lmdb_array(rng.randn(natoms, 3).astype(np.float64)),
+    }
+
+
+def _create_mixed_batch_lmdb(path: str, frame_specs: list[tuple[int, int]]) -> None:
+    env = lmdb.open(path, map_size=10 * 1024 * 1024)
+    frame_fmt = "012d"
+    frame_nlocs = []
+    with env.begin(write=True) as txn:
+        frame_idx = 0
+        for natoms, count in frame_specs:
+            for _ in range(count):
+                txn.put(
+                    format(frame_idx, frame_fmt).encode(),
+                    msgpack.packb(
+                        _make_mixed_lmdb_frame(natoms, frame_idx), use_bin_type=True
+                    ),
+                )
+                frame_nlocs.append(natoms)
+                frame_idx += 1
+        txn.put(
+            b"__metadata__",
+            msgpack.packb(
+                {
+                    "nframes": len(frame_nlocs),
+                    "frame_idx_fmt": frame_fmt,
+                    "system_info": {"natoms": [2, 2], "formula": "mixed"},
+                    "frame_nlocs": frame_nlocs,
+                    "type_map": ["O", "H"],
+                },
+                use_bin_type=True,
+            ),
+        )
+    env.close()
+
+
+def _mixed_batch_dpa3_config(train_path: str, val_path: str) -> dict[str, Any]:
+    return {
+        "model": {
+            "type_map": ["O", "H"],
+            "descriptor": {
+                "type": "dpa3",
+                "repflow": {
+                    "n_dim": 8,
+                    "e_dim": 4,
+                    "a_dim": 4,
+                    "nlayers": 1,
+                    "e_rcut": 1.5,
+                    "e_rcut_smth": 0.2,
+                    "e_sel": 4,
+                    "a_rcut": 1.0,
+                    "a_rcut_smth": 0.1,
+                    "a_sel": 3,
+                    "axis_neuron": 2,
+                    "update_angle": True,
+                    "update_style": "res_residual",
+                    "update_residual_init": "const",
+                    "a_compress_rate": 0,
+                    "n_multi_edge_message": 1,
+                    "smooth_edge_update": True,
+                },
+                "precision": "float64",
+                "activation_function": "silu",
+                "concat_output_tebd": False,
+            },
+            "fitting_net": {
+                "neuron": [8],
+                "precision": "float64",
+                "seed": 1,
+            },
+            "data_stat_nbatch": 1,
+        },
+        "learning_rate": {
+            "type": "exp",
+            "decay_steps": 10,
+            "start_lr": 1e-3,
+            "stop_lr": 1e-8,
+        },
+        "loss": {
+            "type": "ener",
+            "start_pref_e": 0.02,
+            "limit_pref_e": 1,
+            "start_pref_f": 10,
+            "limit_pref_f": 1,
+            "start_pref_v": 0,
+            "limit_pref_v": 0,
+        },
+        "optimizer": {
+            "type": "Adam",
+            "adam_beta1": 0.9,
+            "adam_beta2": 0.999,
+            "weight_decay": 0.0,
+        },
+        "training": {
+            "training_data": {
+                "systems": train_path,
+                "batch_size": "max:5",
+                "mixed_batch": True,
+            },
+            "validation_data": {
+                "systems": val_path,
+                "batch_size": "max:5",
+                "mixed_batch": True,
+                "numb_btch": 1,
+            },
+            "numb_steps": 1,
+            "seed": 10,
+            "shuffle": False,
+            "disp_file": "lcurve.out",
+            "disp_freq": 1,
+            "save_freq": 1,
+            "save_ckpt": "model.ckpt",
+            "disp_training": False,
+        },
+    }
+
+
+class TestMixedBatchLmdbTraining(unittest.TestCase):
+    def setUp(self) -> None:
+        self._cwd = os.getcwd()
+        self._tmpdir = tempfile.TemporaryDirectory()
+        os.chdir(self._tmpdir.name)
+
+    def tearDown(self) -> None:
+        os.chdir(self._cwd)
+        self._tmpdir.cleanup()
+
+    @TRAINING_TEST_TIMEOUT
+    def test_mixed_batch_dpa3_lmdb_training_smoke(self) -> None:
+        tmpdir = Path(self._tmpdir.name)
+        train_path = str(tmpdir / "train.lmdb")
+        val_path = str(tmpdir / "val.lmdb")
+        _create_mixed_batch_lmdb(train_path, [(2, 2), (3, 2)])
+        _create_mixed_batch_lmdb(val_path, [(2, 1), (3, 1)])
+
+        trainer = get_trainer(_mixed_batch_dpa3_config(train_path, val_path))
+        input_dict, _, _ = trainer.get_data(is_train=True)
+
+        self.assertIn("ptr", input_dict)
+        self.assertIn("batch", input_dict)
+        self.assertIn("nlist_ext", input_dict)
+        self.assertIn("angle_index", input_dict)
+        self.assertEqual(input_dict["ptr"].shape[0], 3)
+
+        trainer.run()
+
+        self.assertTrue(Path("model.ckpt-1.pt").exists())
+        self.assertTrue(Path("model.ckpt.pt").exists())
 
 
 class TestMultiTaskUtils(unittest.TestCase):

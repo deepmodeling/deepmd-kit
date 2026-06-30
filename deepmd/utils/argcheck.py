@@ -4912,6 +4912,16 @@ If MPI is used, the value should be considered as the batch size per task.'
         "systems. To avoid the overhead, consider pre-cleaning the dataset instead."
     )
 
+    doc_mixed_batch = (
+        "Whether to enable LMDB mixed-batch training with different numbers of atoms "
+        "per frame. When set to True, the PyTorch LMDB dataloader flattens atom-wise "
+        "fields and precomputes graph indices in the collate function. In this mode, "
+        "integer `batch_size` is the number of frames/systems per batch, while "
+        "`auto:N`, `max:N`, and `filter:N` use the total atom count of the mixed "
+        "batch as the budget. "
+        "The alias `mix_batch` is accepted. Default is False."
+    )
+
     args = [
         Argument(
             "systems", [list[str], str], optional=False, default=".", doc=doc_systems
@@ -4947,6 +4957,14 @@ If MPI is used, the value should be considered as the batch size per task.'
             default=None,
             doc=doc_sys_probs,
             alias=["sys_weights"],
+        ),
+        Argument(
+            "mixed_batch",
+            bool,
+            optional=True,
+            default=False,
+            alias=["mix_batch"],
+            doc=doc_mixed_batch + doc_only_pt_supported,
         ),
         Argument(
             "min_pair_dist",
@@ -4995,6 +5013,15 @@ def validation_data_args() -> list[
 - "prob_sys_size;stt_idx:end_idx:weight;stt_idx:end_idx:weight;..." : the list of systems is divided into blocks. A block is specified by `stt_idx:end_idx:weight`, where `stt_idx` is the starting index of the system, `end_idx` is then ending (not including) index of the system, the probabilities of the systems in this block sums up to `weight`, and the relatively probabilities within this block is proportional to the number of batches in the system.'
     doc_sys_probs = "A list of float if specified. Should be of the same length as `systems`, specifying the probability of each system."
     doc_numb_btch = "An integer that specifies the number of batches to be sampled for each validation period."
+    doc_mixed_batch = (
+        "Whether to enable LMDB mixed-batch validation with different numbers of atoms "
+        "per frame. When set to True, the PyTorch LMDB dataloader flattens atom-wise "
+        "fields and precomputes graph indices in the collate function. In this mode, "
+        "integer `batch_size` is the number of frames/systems per batch, while "
+        "`auto:N`, `max:N`, and `filter:N` use the total atom count of the mixed "
+        "batch as the budget. "
+        "The alias `mix_batch` is accepted. Default is False."
+    )
 
     args = [
         Argument(
@@ -5041,6 +5068,14 @@ def validation_data_args() -> list[
             alias=[
                 "numb_batch",
             ],
+        ),
+        Argument(
+            "mixed_batch",
+            bool,
+            optional=True,
+            default=False,
+            alias=["mix_batch"],
+            doc=doc_mixed_batch + doc_only_pt_supported,
         ),
     ]
 

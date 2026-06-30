@@ -15,6 +15,7 @@ from deepmd.dpmodel.utils.lmdb_data import (
     LmdbDataReader,
     LmdbTestData,
     LmdbTestDataNlocView,
+    MixedBatchSampler,
     SameNlocBatchSampler,
     _expand_indices_by_blocks,
     compute_block_targets,
@@ -960,21 +961,76 @@ class TestMaxFilterBatchSize(unittest.TestCase):
                 LmdbDataReader(self._uniform_path, self._type_map, batch_size=spec)
             self.assertIn("positive", str(ctx.exception))
 
-    def test_filter_with_mixed_batch_rejected(self):
-        """``filter:N`` + ``mixed_batch=True`` must fail loudly.
+    def test_filter_with_mixed_batch_drops_large_frames(self):
+        """``filter:N`` + ``mixed_batch=True`` drops oversized frames."""
+        reader = LmdbDataReader(
+            self._mixed_path,
+            self._type_map,
+            batch_size="filter:10",
+            mixed_batch=True,
+        )
+        self.assertEqual(len(reader), 8)
+        self.assertEqual(reader.frame_nlocs, [6, 6, 6, 6, 9, 9, 9, 9])
+        self.assertEqual(reader._retained_keys, [0, 1, 2, 3, 4, 5, 6, 7])
 
-        The mixed-batch fast path skips the per-frame nloc scan, so
-        filter:N cannot honour its documented ``nloc > N`` drop.
-        """
-        with self.assertRaises(ValueError) as ctx:
-            LmdbDataReader(
-                self._mixed_path,
-                self._type_map,
-                batch_size="filter:10",
-                mixed_batch=True,
-            )
-        self.assertIn("filter", str(ctx.exception))
-        self.assertIn("mixed_batch", str(ctx.exception))
+    def test_mixed_batch_sampler_auto_stops_after_reaching_budget(self):
+        """``auto:N`` closes the mixed batch once total atoms reaches N."""
+        reader = LmdbDataReader(
+            self._mixed_path,
+            self._type_map,
+            batch_size="auto:20",
+            mixed_batch=True,
+        )
+        batches = list(MixedBatchSampler(reader, shuffle=False))
+        self.assertEqual(batches, [[0, 1, 2, 3], [4, 5, 6], [7, 8], [9]])
+        self.assertEqual(
+            [[reader.frame_nlocs[idx] for idx in batch] for batch in batches],
+            [[6, 6, 6, 6], [9, 9, 9], [9, 12], [12]],
+        )
+
+    def test_mixed_batch_sampler_max_respects_budget_when_possible(self):
+        """``max:N`` closes before the next frame would exceed N."""
+        reader = LmdbDataReader(
+            self._mixed_path,
+            self._type_map,
+            batch_size="max:20",
+            mixed_batch=True,
+        )
+        batches = list(MixedBatchSampler(reader, shuffle=False))
+        self.assertEqual(batches, [[0, 1, 2], [3, 4], [5, 6], [7], [8], [9]])
+        for batch in batches:
+            total_atoms = sum(reader.frame_nlocs[idx] for idx in batch)
+            self.assertLessEqual(total_atoms, 20)
+
+    def test_mixed_batch_sampler_max_keeps_oversized_single_frame(self):
+        """``max:N`` keeps a single oversized frame instead of dropping it."""
+        reader = LmdbDataReader(
+            self._mixed_path,
+            self._type_map,
+            batch_size="max:10",
+            mixed_batch=True,
+        )
+        batches = list(MixedBatchSampler(reader, shuffle=False))
+        self.assertEqual(batches, [[0], [1], [2], [3], [4], [5], [6], [7], [8], [9]])
+        oversized = [
+            batch
+            for batch in batches
+            if sum(reader.frame_nlocs[idx] for idx in batch) > 10
+        ]
+        self.assertEqual(oversized, [[8], [9]])
+
+    def test_mixed_batch_sampler_filter_respects_budget(self):
+        """``filter:N`` removes oversized frames then applies max-style packing."""
+        reader = LmdbDataReader(
+            self._mixed_path,
+            self._type_map,
+            batch_size="filter:10",
+            mixed_batch=True,
+        )
+        batches = list(MixedBatchSampler(reader, shuffle=False))
+        self.assertEqual(batches, [[0], [1], [2], [3], [4], [5], [6], [7]])
+        for batch in batches:
+            self.assertLessEqual(sum(reader.frame_nlocs[idx] for idx in batch), 10)
 
     def test_auto_prob_with_filter_still_works(self):
         """compute_block_targets + sampler survive a fully-dropped block."""
