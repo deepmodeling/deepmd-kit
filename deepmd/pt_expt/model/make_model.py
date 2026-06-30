@@ -370,6 +370,11 @@ def make_model(
                 do_atomic_virial=do_atomic_virial,
                 create_graph=self.training,
                 mask=atomic_ret["mask"] if "mask" in atomic_ret else None,
+                # Bound the per-node scatter by the INPUT node axis (the symbol
+                # ``edge_index`` indexes into), not the re-derived fitting-output
+                # shape -- avoids a CUDA out-of-bounds device-assert under
+                # dynamic-edge torch.export. See fit_output_to_model_output_graph.
+                node_capacity=atype.shape[0],
             )
 
         def _resolve_graph_method(

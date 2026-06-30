@@ -88,6 +88,7 @@ def fit_output_to_model_output_graph(
     do_atomic_virial: bool = False,
     create_graph: bool = True,
     mask: torch.Tensor | None = None,
+    node_capacity: int | None = None,
 ) -> dict[str, torch.Tensor]:
     """Graph analogue of the dense pt_expt ``fit_output_to_model_output``.
 
@@ -121,6 +122,15 @@ def fit_output_to_model_output_graph(
         Whether the backward retains a graph (training).
     mask
         (N,) flat realness mask; used only for intensive-output reduction.
+    node_capacity
+        Authoritative node-axis size ``N`` = the scatter bound for the
+        per-node force/atom-virial assembly. Pass the INPUT ``atype.shape[0]``
+        (the pristine node-axis symbol that ``edge_index`` indexes into by
+        construction); ``None`` falls back to the descriptor/fitting output's
+        ``fit_ret.shape[0]`` (value-equal). This makes the scatter bound the
+        input node axis rather than a re-derived shape -- hardening; the actual
+        CUDA out-of-bounds device-assert is prevented by the index clamp in
+        :func:`~deepmd.dpmodel.utils.neighbor_graph.derivatives.edge_force_virial`.
 
     Returns
     -------
@@ -145,7 +155,11 @@ def fit_output_to_model_output_graph(
     # Derive N from the fitting output's leading shape rather than int(n_node.sum()).
     # shape attributes are always static Python ints (or SymInts in symbolic-mode
     # tracing) and are trace-safe; reading a tensor VALUE via int() is not.
-    N = next(iter(fit_ret.values())).shape[0]
+    N = (
+        node_capacity
+        if node_capacity is not None
+        else next(iter(fit_ret.values())).shape[0]
+    )
     frame_id = frame_id_from_n_node(
         n_node, n_total=N
     )  # (N,) int64 frame index per atom

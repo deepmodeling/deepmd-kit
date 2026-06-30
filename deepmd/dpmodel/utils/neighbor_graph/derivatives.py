@@ -91,8 +91,15 @@ def edge_force_virial(
     # zero padding/guard contributions; cast mask to g's dtype (array-API pure,
     # CLAUDE.md mask-multiply guideline — avoids bool*float under array_api_strict)
     g = g_e * xp.astype(edge_mask[:, None], g_e.dtype)
-    src = edge_index[0]
-    dst = edge_index[1]
+    # Clamp scatter indices into the valid node range ``[0, n_out)``. Padding/guard
+    # edges (``edge_mask == 0``) carry ``g == 0`` above, so ``w_edge == 0`` and a
+    # clamped out-of-range index scatters ZERO -- numerically harmless. This keeps
+    # the scatter address in-bounds for the CUDA-compiled kernel: under dynamic-edge
+    # ``torch.export`` a padding index can reach the ``index_add`` BEFORE the mask
+    # zeroes its value, tripping ``tl.device_assert(idx < ks0)`` (a hard device-side
+    # assert on CUDA; benign on CPU, which does not bounds-check the address).
+    src = xp.clip(edge_index[0], 0, n_out - 1)
+    dst = xp.clip(edge_index[1], 0, n_out - 1)
     # force (output sized to the node axis, incl. any padding tail)
     force = segment_sum(g, dst, n_out) - segment_sum(g, src, n_out)
     # per-edge virial w_e[k, j] = -g_e[k] * edge_vec[j]  (broadcast, no einsum)
@@ -106,5 +113,8 @@ def edge_force_virial(
     edge_frame = xp.astype(
         xp.searchsorted(boundaries, dst, side="right"), xp.int64
     )  # (E,) in [0, nf)
+    # searchsorted(side="right") can return ``nf`` for an out-of-range ``dst``
+    # (padding/garbage); clamp into ``[0, nf)`` for the same CUDA-bounds reason.
+    edge_frame = xp.clip(edge_frame, 0, nf - 1)
     virial = segment_sum(w_edge, edge_frame, nf)  # (nf, 3, 3)
     return force, atom_virial, virial
