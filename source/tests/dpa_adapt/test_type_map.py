@@ -9,9 +9,16 @@ from unittest.mock import (
 import numpy as np
 import pytest
 
-_mock_torch = MagicMock()
-_mock_torch.Tensor = type("Tensor", (), {})
-sys.modules.setdefault("torch", _mock_torch)
+# Only stub torch when it is genuinely absent.  Injecting a MagicMock into
+# sys.modules unconditionally leaks into other test modules during a full
+# pytest run (the stub wins the import race and stays session-wide), breaking
+# tests that do real tensor math.  Same guard as test_predictor.py.
+try:
+    import torch  # noqa: F401
+except Exception:
+    _mock_torch = MagicMock()
+    _mock_torch.Tensor = type("Tensor", (), {})
+    sys.modules.setdefault("torch", _mock_torch)
 
 from dpa_adapt.data.errors import (
     DPADataError,
