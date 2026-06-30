@@ -475,17 +475,31 @@ inline GraphTensorPack buildGraphTensors(
  * rows already carry the folded ghost contributions, so zero ghosts avoid
  * double counting (and keep LAMMPS reverse-comm correct).
  *
+ * **Single-rank only.**  Multi-rank inference (B3.2) must NOT call this
+ * function: ghost/halo forces are real cross-rank contributions that must be
+ * returned as-is and folded back via reverse-comm rather than being zeroed.
+ * Calling this function on a multi-rank result would silently zero those forces
+ * and produce wrong energetics. Pass ``single_rank = false`` to get an
+ * explicit exception instead of silent corruption.
+ *
  * @param[in,out] output_map Output tensor map (public keys in, internal keys
  *   added).
  * @param[in] nloc Number of local atoms (== N, the graph node count).
  * @param[in] nall Extended atom count to pad the per-atom outputs up to.
  * @param[in] atomic Whether atomic energy / virial were requested.
+ * @param[in] single_rank Must be true; throws deepmd_exception if false.
  */
 inline void remap_graph_outputs_to_dense_keys(
     std::map<std::string, torch::Tensor>& output_map,
     const std::int64_t nloc,
     const std::int64_t nall,
-    const bool atomic) {
+    const bool atomic,
+    const bool single_rank = true) {
+  if (!single_rank) {
+    throw deepmd::deepmd_exception(
+        "remap_graph_outputs_to_dense_keys is single-rank-only; multi-rank "
+        "uses the extended-region reverse-comm fold (PR-B3.2)");
+  }
   using torch::indexing::Slice;
   const std::int64_t nf = 1;
   const auto& energy_pub = output_map.at("energy");  // (nf, 1)

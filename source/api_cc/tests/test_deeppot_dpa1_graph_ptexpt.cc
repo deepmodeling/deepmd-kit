@@ -240,6 +240,50 @@ TYPED_TEST(TestInferDpa1GraphPtExpt, lammps_nlist_ago) {
   }
 }
 
+// Case 5: exercise the DeepPot::compute ATOMIC overload on the graph .pt2.
+// This is the first test to reach the ``if (atomic)`` branch inside
+// remap_graph_outputs_to_dense_keys (the atom_energy/atom_virial remapping).
+// The per-atom reference values are already loaded from deeppot_dpa1_graph.expected
+// into this->expected_e and this->expected_v by SetUp().
+TYPED_TEST(TestInferDpa1GraphPtExpt, cpu_build_nlist_atomic) {
+  using VALUETYPE = TypeParam;
+  std::vector<VALUETYPE>& coord = this->coord;
+  std::vector<int>& atype = this->atype;
+  std::vector<VALUETYPE>& box = this->box;
+  std::vector<VALUETYPE>& expected_e = this->expected_e;
+  std::vector<VALUETYPE>& expected_f = this->expected_f;
+  std::vector<VALUETYPE>& expected_v = this->expected_v;
+  int& natoms = this->natoms;
+  double& expected_tot_e = this->expected_tot_e;
+  std::vector<VALUETYPE>& expected_tot_v = this->expected_tot_v;
+  deepmd::DeepPot& dp = this->dp;
+
+  double ener;
+  std::vector<VALUETYPE> force, virial, atom_energy, atom_virial;
+  // Standalone atomic overload: DeepPot builds its own nlist (graph branch),
+  // then returns per-atom energy + atom-virial alongside total energy/force/virial.
+  dp.compute(ener, force, virial, atom_energy, atom_virial, coord, atype, box);
+
+  EXPECT_EQ(force.size(), static_cast<size_t>(natoms * 3));
+  EXPECT_EQ(virial.size(), 9u);
+  EXPECT_EQ(atom_energy.size(), static_cast<size_t>(natoms));
+  EXPECT_EQ(atom_virial.size(), static_cast<size_t>(natoms * 9));
+
+  EXPECT_LT(fabs(ener - expected_tot_e), EPSILON);
+  for (int ii = 0; ii < natoms * 3; ++ii) {
+    EXPECT_LT(fabs(force[ii] - expected_f[ii]), EPSILON);
+  }
+  for (int ii = 0; ii < 9; ++ii) {
+    EXPECT_LT(fabs(virial[ii] - expected_tot_v[ii]), EPSILON);
+  }
+  for (int ii = 0; ii < natoms; ++ii) {
+    EXPECT_LT(fabs(atom_energy[ii] - expected_e[ii]), EPSILON);
+  }
+  for (int ii = 0; ii < natoms * 9; ++ii) {
+    EXPECT_LT(fabs(atom_virial[ii] - expected_v[ii]), EPSILON);
+  }
+}
+
 // Case 4: a tiny system with no in-cutoff neighbors — only the two masked
 // dummy edges survive (nedge_min=2 guard / SIGFPE-edge family).  The graph
 // must run cleanly, produce finite, interaction-free output (zero force/virial)

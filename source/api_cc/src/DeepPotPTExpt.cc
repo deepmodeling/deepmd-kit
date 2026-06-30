@@ -839,8 +839,10 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
     // virial/atom_virial); rewrite them into the dense internal-key layout the
     // downstream extraction/fold-back expects.  nloc == N (graph node count);
     // pad the per-atom force/virial up to nall_real with zero ghost rows.
+    // single_rank=true: the multi-rank fail-fast at line ~508 guarantees we
+    // never reach here on a multi-rank graph call.
     deepmd::remap_graph_outputs_to_dense_keys(output_map, nloc, nall_real,
-                                              atomic);
+                                              atomic, /*single_rank=*/true);
   }
 
   if (phantom_n > 0) {
@@ -1192,7 +1194,10 @@ void DeepPotPTExpt::compute(ENERGYVTYPE& ener,
     // internal-key layout used below.  nloc == N (graph node count); pad the
     // per-atom force/virial up to the extended nall with zero ghost rows so the
     // fold-back is a no-op on ghosts.
-    deepmd::remap_graph_outputs_to_dense_keys(output_map, nloc, nall, atomic);
+    // single_rank=true: the standalone (build_nlist) path is always
+    // single-rank; there is no comm_dict / cross-rank ghost exchange here.
+    deepmd::remap_graph_outputs_to_dense_keys(output_map, nloc, nall, atomic,
+                                              /*single_rank=*/true);
   }
 
   // 7. Extract energy
