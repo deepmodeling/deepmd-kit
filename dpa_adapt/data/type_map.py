@@ -4,9 +4,7 @@
 # Automatic type_map resolution: read from checkpoint, union from data,
 # validate subsets.  Users should never need to touch ``_extra_state``.
 
-from __future__ import (
-    annotations,
-)
+from __future__ import annotations
 
 
 def read_checkpoint_type_map(
@@ -32,10 +30,7 @@ def read_checkpoint_type_map(
     list[str]
         Element symbols.
     """
-    from dpa_adapt._backend import (
-        load_torch_file,
-        resolve_pretrained_path,
-    )
+    from dpa_adapt._backend import load_torch_file, resolve_pretrained_path
 
     pretrained = resolve_pretrained_path(pretrained)
     sd = load_torch_file(pretrained)

@@ -9,13 +9,8 @@ import os
 import re
 import shutil
 import subprocess
-from pathlib import (
-    Path,
-)
-from typing import (
-    Any,
-    ClassVar,
-)
+from pathlib import Path
+from typing import Any, ClassVar
 
 import dpdata
 import numpy as np
@@ -29,21 +24,10 @@ from dpa_adapt._backend import (
     resolve_model_branch,
     resolve_pretrained_path,
 )
-from dpa_adapt.conditions import (
-    ConditionManager,
-    DPAConditionError,
-)
-from dpa_adapt.data.errors import (
-    DPADataError,
-)
-from dpa_adapt.data.loader import (
-    _get_source,
-    _resolve_label_key,
-    load_data,
-)
-from dpa_adapt.utils.dotdict import (
-    DotDict,
-)
+from dpa_adapt.conditions import ConditionManager, DPAConditionError
+from dpa_adapt.data.errors import DPADataError
+from dpa_adapt.data.loader import _get_source, _resolve_label_key, load_data
+from dpa_adapt.utils.dotdict import DotDict
 
 _LOG = logging.getLogger("dpa_adapt")
 
@@ -296,10 +280,7 @@ def load_or_extract(
     -------
     np.ndarray, shape ``(n_frames_total, feat_dim)``
     """
-    from dpa_adapt.data.desc_cache import (
-        _cache_dir,
-        _cache_key,
-    )
+    from dpa_adapt.data.desc_cache import _cache_dir, _cache_key
 
     if cache:
         key = _cache_key(
@@ -346,9 +327,7 @@ def ensure_per_system_cache(
     Existing cache files are reused as-is.  Missing ones are extracted one
     system at a time for low peak memory.
     """
-    from dpa_adapt.data.desc_cache import (
-        _per_system_cache_path,
-    )
+    from dpa_adapt.data.desc_cache import _per_system_cache_path
 
     missing: list = []
     for system in systems:
@@ -1027,10 +1006,7 @@ class DPAFineTuner:
         """
         try:
             # Lazy import to avoid circular dependency: finetuner → desc_cache → finetuner.
-            from dpa_adapt.data.desc_cache import (
-                _cache_dir,
-                _cache_key,
-            )
+            from dpa_adapt.data.desc_cache import _cache_dir, _cache_key
 
             key = _cache_key(
                 systems,
@@ -1121,9 +1097,7 @@ class DPAFineTuner:
         type_map: list[str],
     ) -> str:
         """Delegate to DPATrainer for single-task ``dp --pt train``."""
-        from dpa_adapt.trainer import (
-            DPATrainer,
-        )
+        from dpa_adapt.trainer import DPATrainer
 
         freeze = self.strategy == "frozen_head"
         trainer = DPATrainer(
@@ -1229,9 +1203,7 @@ class DPAFineTuner:
         self, data: str | list[str], fmt: str | None = None
     ) -> DotDict:
         """Run ``dp --pt test`` and parse property predictions from detail files."""
-        from dpa_adapt.trainer import (
-            DPATrainer,
-        )
+        from dpa_adapt.trainer import DPATrainer
 
         if fmt is not None:
             raise ValueError(
@@ -1410,9 +1382,7 @@ class DPAFineTuner:
 
     def _ensure_mft(self) -> Any:
         """Create the MFT delegate on first use."""
-        from dpa_adapt.mft import (
-            MFTFineTuner,
-        )
+        from dpa_adapt.mft import MFTFineTuner
 
         if self._mft is None:
             self._mft = MFTFineTuner(
@@ -1496,16 +1466,10 @@ class DPAFineTuner:
         self._task_dim = 1 if y.ndim == 1 else y.shape[-1]
         y_flat = y.ravel() if self._task_dim == 1 else y
 
-        from sklearn.pipeline import (
-            make_pipeline,
-        )
-        from sklearn.preprocessing import (
-            StandardScaler,
-        )
+        from sklearn.pipeline import make_pipeline
+        from sklearn.preprocessing import StandardScaler
 
-        from dpa_adapt.utils.sklearn_heads import (
-            build_sklearn_head,
-        )
+        from dpa_adapt.utils.sklearn_heads import build_sklearn_head
 
         head = build_sklearn_head(
             self._predictor_type,

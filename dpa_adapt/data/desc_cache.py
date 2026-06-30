@@ -13,24 +13,16 @@
 # ``dpa_adapt.finetuner`` to avoid an import cycle (those functions need
 # ``DPAFineTuner``, while ``finetuner`` imports cache helpers from here).
 
-from __future__ import (
-    annotations,
-)
+from __future__ import annotations
 
 import hashlib
 import os
-from pathlib import (
-    Path,
-)
-from typing import (
-    TYPE_CHECKING,
-)
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
-from dpa_adapt._backend import (
-    resolve_pretrained_path,
-)
+from dpa_adapt._backend import resolve_pretrained_path
 
 if TYPE_CHECKING:
     import dpdata

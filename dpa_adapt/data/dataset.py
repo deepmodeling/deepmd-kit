@@ -5,24 +5,15 @@
 # Thin layer on top of load_data() that additionally verifies every
 # system carries the requested label key (e.g. "energy", "homo").
 
-from __future__ import (
-    annotations,
-)
+from __future__ import annotations
 
 import logging
-from pathlib import (
-    Path,
-)
+from pathlib import Path
 
 import dpdata
 
-from dpa_adapt.data.errors import (
-    DPADataError,
-)
-from dpa_adapt.data.loader import (
-    _resolve_label_key,
-    load_data,
-)
+from dpa_adapt.data.errors import DPADataError
+from dpa_adapt.data.loader import _resolve_label_key, load_data
 
 _LOG = logging.getLogger("dpa_adapt.data.dataset")
 
@@ -64,9 +55,7 @@ def load_dataset(
         *every* candidate was skipped, in which case a ``DPADataError``
         is raised (fail-fast for training workflows).
     """
-    from dpa_adapt.data.loader import (
-        _get_source,
-    )
+    from dpa_adapt.data.loader import _get_source
 
     systems = load_data(data)
 
