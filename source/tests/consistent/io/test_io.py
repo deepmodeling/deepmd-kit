@@ -160,8 +160,8 @@ class IOTest:
             self.save_data_to_model(model_file, reference_data)
             deep_eval = DeepEval(model_file)
             self.assertIsInstance(deep_eval.get_model_def_script(), dict)
-            if not model_file.endswith(".savedmodel"):
-                # JAX SavedModel stores an executable graph, not a lossless model dict.
+            if not model_file.endswith((".savedmodel", ".savedmodeltf")):
+                # SavedModel formats store an executable graph, not a lossless model dict.
                 serialized_data = self.get_data_from_model(model_file)
                 np.testing.assert_equal(deep_eval.serialize(), serialized_data["model"])
             if deep_eval.get_dim_fparam() > 0:
