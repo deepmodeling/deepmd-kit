@@ -133,6 +133,43 @@ class TestDPFreezePtExpt(unittest.TestCase):
         expected = os.path.join(self.tmpdir, "frozen_default_suffix.pte")
         self.assertTrue(os.path.exists(expected))
 
+    def test_freeze_output_suffix_by_lower_kind(self) -> None:
+        """main() defaults a suffix-less output to .pt2 for --lower-kind graph
+        and .pte for nlist, while preserving an explicit .pte/.pt2 (iProzd
+        review). freeze() is mocked so the suffix logic is checked without the
+        AOTInductor compile cost.
+        """
+        from unittest import mock
+
+        cases = [
+            ("graph", "out_g", None, ".pt2"),  # graph, no suffix -> .pt2
+            ("nlist", "out_n", None, ".pte"),  # nlist, no suffix -> .pte
+            ("graph", "out_g_explicit", ".pte", ".pte"),  # explicit .pte kept
+            ("nlist", "out_n_explicit", ".pt2", ".pt2"),  # explicit .pt2 kept
+        ]
+        for lower_kind, stem, explicit, expected_suffix in cases:
+            with self.subTest(lower_kind=lower_kind, explicit=explicit):
+                name = stem + (explicit or "")
+                captured: dict = {}
+
+                def _fake_freeze(model, output, head=None, lower_kind="nlist", **kw):
+                    captured["output"] = output
+                    captured["lower_kind"] = lower_kind
+
+                flags = argparse.Namespace(
+                    command="freeze",
+                    checkpoint_folder=self.ckpt_file,
+                    output=os.path.join(self.tmpdir, name),
+                    head=None,
+                    lower_kind=lower_kind,
+                    log_level=2,
+                    log_path=None,
+                )
+                with mock.patch("deepmd.pt_expt.entrypoints.main.freeze", _fake_freeze):
+                    main(flags)
+                self.assertTrue(captured["output"].endswith(expected_suffix))
+                self.assertEqual(captured["lower_kind"], lower_kind)
+
     def test_freeze_graph_rejects_ineligible(self) -> None:
         """``--lower-kind graph`` on a non-graph-eligible model (se_e2_a,
         mixed_types=False) fails fast rather than emitting a broken .pt2.

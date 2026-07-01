@@ -731,13 +731,18 @@ def main(args: list[str] | argparse.Namespace | None = None) -> None:
                     f"Checkpoint path '{model_path}' does not exist."
                 )
             FLAGS.model = str(model_path)
+        _lower_kind = getattr(FLAGS, "lower_kind", "nlist")
         if not FLAGS.output.endswith((".pte", ".pt2")):
-            FLAGS.output = str(Path(FLAGS.output).with_suffix(".pte"))
+            # Default suffix: .pt2 for the graph export (an AOTI .pt2 archive is
+            # what the C++ graph path consumes), .pte otherwise. Explicit user
+            # .pte / .pt2 suffixes are preserved for both.
+            _default_suffix = ".pt2" if _lower_kind == "graph" else ".pte"
+            FLAGS.output = str(Path(FLAGS.output).with_suffix(_default_suffix))
         freeze(
             model=FLAGS.model,
             output=FLAGS.output,
             head=FLAGS.head,
-            lower_kind=getattr(FLAGS, "lower_kind", "nlist"),
+            lower_kind=_lower_kind,
         )
     elif FLAGS.command == "change-bias":
         change_bias(
