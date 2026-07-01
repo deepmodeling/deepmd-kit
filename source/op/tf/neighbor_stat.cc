@@ -155,8 +155,16 @@ class NeighborStatOp : public OpKernel {
 
       int* idx_mapping = NULL;
       int *ilist = NULL, *numneigh = NULL;
-      int** firstneigh = NULL;
-      deepmd::malloc_device_memory(firstneigh, nloc);
+      struct FirstneighGuard {
+        int** ptr = NULL;
+        ~FirstneighGuard() {
+          if (ptr != NULL) {
+            deepmd::delete_device_memory(ptr);
+          }
+        }
+      } firstneigh_guard;
+      deepmd::malloc_device_memory(firstneigh_guard.ptr, nloc);
+      int** firstneigh = firstneigh_guard.ptr;
       int* jlist = NULL;
       FPTYPE* coord_cpy;
       int* type_cpy;
@@ -165,12 +173,14 @@ class NeighborStatOp : public OpKernel {
       deepmd::InputNlist gpu_inlist;
       int* nbor_list_dev = NULL;
       // prepare coord and nlist
-      _prepare_coord_nlist_gpu<FPTYPE>(
-          context, &tensor_list[0], &coord, coord_cpy, &type, type_cpy,
-          idx_mapping, gpu_inlist, ilist, numneigh, firstneigh, jlist,
-          nbor_list_dev, frame_nall, mem_cpy, mem_nnei, max_nbor_size_nlist,
-          box, mesh_tensor.flat<int>().data(), mesh_tensor_size, nloc, nei_mode,
-          rcut, max_cpy_trial, max_nnei_trial);
+      OP_REQUIRES_OK(
+          context,
+          _prepare_coord_nlist_gpu<FPTYPE>(
+              context, &tensor_list[0], &coord, coord_cpy, &type, type_cpy,
+              idx_mapping, gpu_inlist, ilist, numneigh, firstneigh, jlist,
+              nbor_list_dev, frame_nall, mem_cpy, mem_nnei, max_nbor_size_nlist,
+              box, mesh_tensor.flat<int>().data(), mesh_tensor_size, nloc,
+              nei_mode, rcut, max_cpy_trial, max_nnei_trial));
 
       TensorShape min_nbor_dist_shape;
       min_nbor_dist_shape.AddDim(static_cast<int64_t>(nloc) * mem_nnei);
@@ -183,7 +193,6 @@ class NeighborStatOp : public OpKernel {
       deepmd::neighbor_stat_gpu<FPTYPE>(coord, type, nloc, gpu_inlist,
                                         max_nbor_size, min_nbor_dist, ntypes,
                                         mem_nnei);
-      deepmd::delete_device_memory(firstneigh);
 #endif
     } else {
       for (int ii = 0;
