@@ -1499,6 +1499,40 @@ class SO2Convolution(nn.Module):
             or self.node_wise_grid_product is not None
         )
 
+        # === Step 12. Optional fused flash-attention aggregation kernel ===
+        # Folds the entire ``n_atten_head > 0`` value aggregation -- block-diagonal
+        # rotate-back, inverse-rotation rescale, envelope-gated softmax weighting,
+        # and the destination scatter -- into a single destination-segmented
+        # Triton kernel, removing the transient ``x_message`` and weighted-value
+        # edge tensors and the ``index_add`` round trip. It shares the
+        # ``DP_TRITON_INFER`` gate with the other SeZM inference kernels and only
+        # engages for the supported ``mmax == 1`` attention layout without the
+        # optional focus-mix / value / output projections (the deployed DPA4
+        # configuration); the op itself dispatches to an eager reference off the
+        # CUDA fp32 path. The output-side head gate stays a cheap node-level
+        # elementwise applied after the kernel.
+        self.use_flash_atten = (
+            self.use_triton_infer
+            and self.n_atten_head > 0
+            and self.mmax == 1
+            and self.needs_local_frame
+            and not self.edge_cartesian
+            and not self.atten_f_mix
+            and self.attn_v_proj is None
+            and self.attn_o_proj is None
+            and self.attn_focus_mix is None
+        )
+        self._flash_atten_fn = None
+        self._build_row_ptr_fn = None
+        if self.use_flash_atten:
+            from .triton.flash_atten import (
+                build_row_ptr,
+                flash_atten_aggregate,
+            )
+
+            self._flash_atten_fn = flash_atten_aggregate
+            self._build_row_ptr_fn = build_row_ptr
+
     def forward(
         self,
         x: torch.Tensor,
@@ -1533,7 +1567,17 @@ class SO2Convolution(nn.Module):
 
         # === Step 2. Edge message: Cartesian product, SO(2) mixing, or the
         # rotation-free radial message when no local-frame operation is needed ===
-        if self.edge_cartesian:
+        # In the fused flash-attention path the SO(2) message returns the
+        # pre-rotate-back per-focus local features; the rotate-back is folded into
+        # the aggregation kernel (Step 4).
+        run_flash = self.use_flash_atten and not self.training
+        x_local_flash: torch.Tensor | None = None
+        x_message: torch.Tensor | None = None
+        if run_flash:
+            x_local_flash, rad_feat = self.so2_message(
+                x, edge_cache, radial_feat, return_local=True
+            )
+        elif self.edge_cartesian:
             x_message, rad_feat = self.cartesian_message(x, edge_cache, radial_feat)
         elif self.needs_local_frame:
             x_message, rad_feat = self.so2_message(x, edge_cache, radial_feat)
@@ -1617,60 +1661,109 @@ class SO2Convolution(nn.Module):
                     ),
                 )  # (E, F, H)
 
-                # === Step 4.3. Value projection and head-wise aggregation ===
-                value_focus = x_message.reshape(
-                    n_edge,
-                    self.ebed_dim_full,
-                    self.attn_n_focus,
-                    self.attn_focus_dim,
-                ).to(dtype=compute_dtype)  # (E, D, Fa, Ca)
-                if self.attn_v_proj is not None:
-                    value_focus = self.attn_v_proj(value_focus)
-                value_heads = value_focus.reshape(
-                    n_edge,
-                    self.ebed_dim_full,
-                    self.attn_n_focus,
-                    self.n_atten_head,
-                    self.head_dim,
-                )  # (E, D, Fa, H, Ch)
-                weighted_value = value_heads * attn_alpha.reshape(
-                    n_edge, 1, self.attn_n_focus, self.n_atten_head, 1
-                )
-                out_heads = torch.zeros(
-                    n_node,
-                    self.ebed_dim_full,
-                    self.attn_n_focus,
-                    self.n_atten_head,
-                    self.head_dim,
-                    device=x.device,
-                    dtype=compute_dtype,
-                )  # (N, D, Fa, H, Ch)
-                out_heads.index_add_(0, dst, weighted_value)
+                if run_flash:
+                    # === Step 4.3f. Fused rotate-back + envelope-softmax-weighted
+                    # segment scatter. One destination-segmented Triton kernel
+                    # folds the block-diagonal rotate-back, the inverse-rotation
+                    # rescale, the per-edge ``attn_alpha`` weighting, and the
+                    # destination reduction into a single atomic-free pass,
+                    # returning the ungated aggregate ``(N, D, C_wide)``. The
+                    # transient rotate-back message and weighted value tensors are
+                    # never materialized.
+                    row_ptr = self._build_row_ptr_fn(dst, n_node)
+                    pre_gate = self._flash_atten_fn(
+                        x_local_flash,
+                        edge_cache.Dt_full,
+                        self.rotate_inv_rescale_full,
+                        attn_alpha,
+                        row_ptr,
+                        dst,
+                        self.lmax,
+                        self.n_atten_head,
+                    )  # (N, D, C_wide)
 
-                # === Step 4.4. Output-side head gate ===
-                attn_output_gate = torch.sigmoid(
-                    torch.einsum(
-                        "nfi,ifo->nfo",
-                        self.attn_output_gate_norm(x_l0_node.to(dtype=compute_dtype)),
-                        self.adamw_attn_gate_w,
+                    # === Step 4.4f. Output-side head gate (cheap node-level) ===
+                    attn_output_gate = torch.sigmoid(
+                        torch.einsum(
+                            "nfi,ifo->nfo",
+                            self.attn_output_gate_norm(
+                                x_l0_node.to(dtype=compute_dtype)
+                            ),
+                            self.adamw_attn_gate_w,
+                        )
+                    )  # (N, Fa, H)
+                    # Broadcast the per-(focus, head) gate over the head channels
+                    # to the packed hidden width ``c = f * Cf + h * head_dim + ch``.
+                    gate_full = (
+                        attn_output_gate.reshape(
+                            n_node, self.attn_n_focus, self.n_atten_head, 1
+                        )
+                        .expand(
+                            n_node,
+                            self.attn_n_focus,
+                            self.n_atten_head,
+                            self.head_dim,
+                        )
+                        .reshape(n_node, self.hidden_channels)
+                    )  # (N, C_wide)
+                    out = (pre_gate * gate_full.unsqueeze(1)).to(dtype=self.dtype)
+                else:
+                    # === Step 4.3. Value projection and head-wise aggregation ===
+                    value_focus = x_message.reshape(
+                        n_edge,
+                        self.ebed_dim_full,
+                        self.attn_n_focus,
+                        self.attn_focus_dim,
+                    ).to(dtype=compute_dtype)  # (E, D, Fa, Ca)
+                    if self.attn_v_proj is not None:
+                        value_focus = self.attn_v_proj(value_focus)
+                    value_heads = value_focus.reshape(
+                        n_edge,
+                        self.ebed_dim_full,
+                        self.attn_n_focus,
+                        self.n_atten_head,
+                        self.head_dim,
+                    )  # (E, D, Fa, H, Ch)
+                    weighted_value = value_heads * attn_alpha.reshape(
+                        n_edge, 1, self.attn_n_focus, self.n_atten_head, 1
                     )
-                )  # (N, F, H)
-                out_heads = out_heads * attn_output_gate.reshape(
-                    n_node, 1, self.attn_n_focus, self.n_atten_head, 1
-                )  # (N, D, Fa, H, Ch)
+                    out_heads = torch.zeros(
+                        n_node,
+                        self.ebed_dim_full,
+                        self.attn_n_focus,
+                        self.n_atten_head,
+                        self.head_dim,
+                        device=x.device,
+                        dtype=compute_dtype,
+                    )  # (N, D, Fa, H, Ch)
+                    out_heads.index_add_(0, dst, weighted_value)
 
-                # === Step 4.5. Output projection and merge heads ===
-                out_focus = out_heads.reshape(
-                    n_node,
-                    self.ebed_dim_full,
-                    self.attn_n_focus,
-                    self.attn_focus_dim,
-                )  # (N, D, Fa, Ca)
-                if self.attn_o_proj is not None:
-                    out_focus = self.attn_o_proj(out_focus)
-                out = out_focus.reshape(
-                    n_node, self.ebed_dim_full, self.hidden_channels
-                ).to(dtype=self.dtype)  # (N, D, C_wide)
+                    # === Step 4.4. Output-side head gate ===
+                    attn_output_gate = torch.sigmoid(
+                        torch.einsum(
+                            "nfi,ifo->nfo",
+                            self.attn_output_gate_norm(
+                                x_l0_node.to(dtype=compute_dtype)
+                            ),
+                            self.adamw_attn_gate_w,
+                        )
+                    )  # (N, F, H)
+                    out_heads = out_heads * attn_output_gate.reshape(
+                        n_node, 1, self.attn_n_focus, self.n_atten_head, 1
+                    )  # (N, D, Fa, H, Ch)
+
+                    # === Step 4.5. Output projection and merge heads ===
+                    out_focus = out_heads.reshape(
+                        n_node,
+                        self.ebed_dim_full,
+                        self.attn_n_focus,
+                        self.attn_focus_dim,
+                    )  # (N, D, Fa, Ca)
+                    if self.attn_o_proj is not None:
+                        out_focus = self.attn_o_proj(out_focus)
+                    out = out_focus.reshape(
+                        n_node, self.ebed_dim_full, self.hidden_channels
+                    ).to(dtype=self.dtype)  # (N, D, C_wide)
 
         # === Step 5. Optional message-node grid product ===
         if self.message_node_grid_product is not None:
@@ -1753,6 +1846,7 @@ class SO2Convolution(nn.Module):
         x: torch.Tensor,
         edge_cache: EdgeFeatureCache,
         radial_feat: torch.Tensor,
+        return_local: bool = False,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Build edge messages by rotate-to-local, SO(2) mixing, and rotate-back.
@@ -1765,13 +1859,20 @@ class SO2Convolution(nn.Module):
             Precomputed edge cache.
         radial_feat : torch.Tensor
             Per-edge radial features with shape (E, lmax+1, C).
+        return_local : bool
+            If True, return the pre-rotate-back per-focus local features
+            ``(E, F, D_m, Cf)`` instead of the rotated-back message. Used by the
+            fused flash-attention aggregation, which folds the rotate-back into
+            its own kernel.
 
         Returns
         -------
         tuple[torch.Tensor, torch.Tensor]
             ``(x_message, rad_feat)`` with shapes (E, D, C_wide) and
-            (E, D_m, C_wide). The ``l=0`` slice of ``rad_feat`` is consumed by
-            the attention aggregation.
+            (E, D_m, C_wide) by default, or ``(x_local, rad_feat)`` with
+            ``x_local`` of shape (E, F, D_m, Cf) when ``return_local`` is True.
+            The ``l=0`` slice of ``rad_feat`` is consumed by the attention
+            aggregation.
         """
         src, dst = edge_cache.src, edge_cache.dst
         n_edge = src.numel()
@@ -1923,6 +2024,12 @@ class SO2Convolution(nn.Module):
             x_local = x_local * alpha.to(dtype=x_local.dtype).unsqueeze(-1).unsqueeze(
                 -1
             )
+
+        # The fused flash-attention aggregation consumes the per-focus
+        # ``(E, F, D_m, Cf)`` local layout directly and performs the rotate-back
+        # inside its kernel, so return before the standalone rotate-back.
+        if return_local:
+            return x_local, rad_feat
 
         # === Step 6. Rotate back to global frame ===
         with nvtx_range("SO2Conv/rotate_back"):
