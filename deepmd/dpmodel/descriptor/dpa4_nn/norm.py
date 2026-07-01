@@ -2,14 +2,11 @@
 """
 Normalization layers for the DPA4/SeZM descriptor.
 
-This module is the dpmodel port of ``deepmd.pt.model.descriptor.sezm_nn.norm``.
-All four pt norm classes are ported: ``RMSNorm`` (used by ``radial.RadialMLP``),
-``EquivariantRMSNorm`` (used by ``block``), ``ReducedEquivariantRMSNorm`` and
-``ScalarRMSNorm`` (used by ``so2``).
+This module defines the packed-layout, reduced-layout, generic, and scalar
+RMS normalization layers used throughout SeZM.
 
-Serialization contract: the ``@variables`` keys of each class match the
-``state_dict`` key names of its pt counterpart, so pt ``serialize()`` output
-deserializes directly into the dpmodel classes (and vice versa).
+This module is the dpmodel (array-API) port of
+``deepmd.pt.model.descriptor.sezm_nn.norm``.
 """
 
 from __future__ import (
@@ -32,6 +29,7 @@ from deepmd.dpmodel.array_api import (
     xp_asarray_nodetach,
 )
 from deepmd.dpmodel.common import (
+    get_xp_precision,
     to_numpy_array,
 )
 from deepmd.utils.version import (
@@ -48,20 +46,20 @@ class RMSNorm(NativeOP):
     Generic RMSNorm on tensors with shape `(..., C)`.
 
     This is the plain channel-wise RMS normalization used for non-equivariant
-    branches whose last axis stores feature channels. A learnable affine scale
-    is applied on the channel axis only, while all leading axes are treated as
-    batch dimensions.
+    branches whose last axis stores feature channels. A learnable affine scale is
+    applied on the channel axis only, while all leading axes are treated as batch
+    dimensions.
 
     Parameters
     ----------
-    channels : int
+    channels
         Feature dimension of the last axis.
-    eps : float
+    eps
         Small epsilon for numerical stability.
-    precision : str
-        Parameter and computation precision. Caller should pass a compute
-        precision (fp32+) for numerical stability.
-    trainable : bool
+    precision
+        Parameter and computation precision. Caller should pass compute precision
+        (fp32+) for numerical stability.
+    trainable
         Whether parameters are trainable.
     """
 
@@ -74,20 +72,19 @@ class RMSNorm(NativeOP):
         trainable: bool = True,
     ) -> None:
         self.channels = int(channels)
-        self.eps = float(eps)
         self.precision = precision
+        self.eps = float(eps)
         self.trainable = bool(trainable)
         prec = PRECISION_DICT[self.precision.lower()]
+
         # adam_ prefix routes this to Adam (no weight decay) in HybridMuon.
         self.adam_scale = np.ones((self.channels,), dtype=prec)
 
     def call(self, x: Any) -> Any:
         """
-        Apply RMS normalization.
-
         Parameters
         ----------
-        x : Array
+        x
             Input array with shape `(..., C)`.
 
         Returns
@@ -96,20 +93,18 @@ class RMSNorm(NativeOP):
             Normalized array with shape `(..., C)`, same dtype as input.
         """
         xp = array_api_compat.array_namespace(x)
-        scale = xp_asarray_nodetach(
-            xp, self.adam_scale[...], device=array_api_compat.device(x)
-        )
+        device = array_api_compat.device(x)
         in_dtype = x.dtype
-        if in_dtype != scale.dtype:
-            x = xp.astype(x, scale.dtype)
+        x = xp.astype(x, get_xp_precision(xp, self.precision))
         inv_rms = 1.0 / xp.sqrt(xp.mean(x * x, axis=-1, keepdims=True) + self.eps)
-        out = x * inv_rms * scale
-        if out.dtype != in_dtype:
-            out = xp.astype(out, in_dtype)
-        return out
+        scale = xp.reshape(
+            xp_asarray_nodetach(xp, self.adam_scale[...], device=device),
+            (1,) * (x.ndim - 1) + (self.channels,),
+        )
+        x = x * inv_rms * scale
+        return xp.astype(x, in_dtype)
 
     def serialize(self) -> dict[str, Any]:
-        """Serialize the RMSNorm to a dict."""
         return {
             "@class": "RMSNorm",
             "@version": 1,
@@ -124,7 +119,6 @@ class RMSNorm(NativeOP):
 
     @classmethod
     def deserialize(cls, data: dict[str, Any]) -> RMSNorm:
-        """Deserialize an RMSNorm from a dict."""
         data = data.copy()
         data_cls = data.pop("@class")
         if data_cls != "RMSNorm":
@@ -133,20 +127,9 @@ class RMSNorm(NativeOP):
         check_version_compatibility(version, 1, 1)
         config = data.pop("config")
         variables = data.pop("@variables")
-        obj = cls(
-            channels=int(config["channels"]),
-            eps=float(config["eps"]),
-            precision=str(config["precision"]),
-            trainable=bool(config["trainable"]),
-        )
+        obj = cls(**config)
         prec = PRECISION_DICT[obj.precision.lower()]
-        adam_scale = np.asarray(variables["adam_scale"], dtype=prec).reshape(-1)
-        if adam_scale.shape != obj.adam_scale.shape:
-            raise ValueError(
-                f"adam_scale shape {adam_scale.shape} does not match "
-                f"channels {obj.channels}"
-            )
-        obj.adam_scale = adam_scale
+        obj.adam_scale = np.asarray(variables["adam_scale"], dtype=prec)
         return obj
 
 
@@ -165,18 +148,19 @@ class EquivariantRMSNorm(NativeOP):
 
     Parameters
     ----------
-    lmax : int
+    lmax
         Maximum spherical harmonic degree.
-    channels : int
+    channels
         Channels per `(l, m)` coefficient in each focus stream.
-    n_focus : int
+    n_focus
         Number of focus streams. Affine parameters are independent per focus.
-    eps : float
+    eps
         Small epsilon for numerical stability.
-    precision : str
-        Parameter and computation precision. Caller should pass a compute
-        precision (fp32+) for numerical stability.
-    trainable : bool
+    precision
+        Parameter and computation precision. Caller should pass compute precision
+        (fp32+) for numerical stability and handle input/output conversion at
+        boundaries.
+    trainable
         Whether parameters are trainable.
     """
 
@@ -193,14 +177,14 @@ class EquivariantRMSNorm(NativeOP):
         self.lmax = int(lmax)
         self.channels = int(channels)
         self.n_focus = int(n_focus)
-        self.eps = float(eps)
         self.precision = precision
+        self.eps = float(eps)
         self.trainable = bool(trainable)
         prec = PRECISION_DICT[self.precision.lower()]
 
         # === Step 1. Learnable Parameters ===
         # Store affine scales in degree-major layout (L, F, C). This matches the
-        # packed output layout after degree expansion.
+        # packed output layout after degree expansion
         # adam_ prefix routes this to Adam (no weight decay) in HybridMuon.
         self.adam_scale = np.ones(
             (self.lmax + 1, self.n_focus, self.channels), dtype=prec
@@ -213,8 +197,10 @@ class EquivariantRMSNorm(NativeOP):
 
         # Pre-fuse degree balancing and channel averaging into a single weight:
         #   w_d = 1 / ((2l+1) * (lmax+1) * C)
-        # so that the shared RMS statistic is a single weighted sum without
-        # allocating an intermediate (N, D, F, C) buffer beyond x^2 itself.
+        # so that
+        #   mean_variance = sum(x^2 * balance_weight, axis=(1, 3))
+        # directly computes the shared RMS statistic without allocating an
+        # intermediate (N, D, F, C) buffer beyond x^2 itself.
         weights_list = []
         scale = 1.0 / ((self.lmax + 1) * self.channels)
         for l in range(self.lmax + 1):
@@ -224,11 +210,9 @@ class EquivariantRMSNorm(NativeOP):
 
     def call(self, x: Any) -> Any:
         """
-        Apply degree-balanced equivariant RMS normalization.
-
         Parameters
         ----------
-        x : Array
+        x
             Features with shape `(N, D, F, C)` where `D = (lmax + 1)^2`.
 
         Returns
@@ -238,14 +222,8 @@ class EquivariantRMSNorm(NativeOP):
         """
         xp = array_api_compat.array_namespace(x)
         device = array_api_compat.device(x)
-        scale = xp_asarray_nodetach(xp, self.adam_scale[...], device=device)
-        bias = xp_asarray_nodetach(xp, self.bias[...], device=device)
-        balance_weight = xp_asarray_nodetach(
-            xp, self.balance_weight, device=array_api_compat.device(x)
-        )
         in_dtype = x.dtype
-        if in_dtype != scale.dtype:
-            x = xp.astype(x, scale.dtype)
+        x = xp.astype(x, get_xp_precision(xp, self.precision))
         x0 = x[:, :1, :, :]  # (N, 1, F, C)
         xt = x[:, 1:, :, :]  # (N, D-1, F, C)
 
@@ -253,6 +231,7 @@ class EquivariantRMSNorm(NativeOP):
         x0 = x0 - xp.mean(x0, axis=-1, keepdims=True)
 
         # === Step 2. Compute a shared degree-balanced RMS ===
+        balance_weight = xp_asarray_nodetach(xp, self.balance_weight, device=device)
         mean_variance = xp.sum(x0 * x0, axis=(1, 3)) * balance_weight[0]
         if self.lmax > 0:
             mean_variance = mean_variance + xp.sum(
@@ -266,26 +245,26 @@ class EquivariantRMSNorm(NativeOP):
             xt = xt * inv_rms
 
         # === Step 3. Apply per-degree affine parameters ===
-        expand_index = xp_asarray_nodetach(
-            xp, self.expand_index, device=array_api_compat.device(x)
-        )
-        expanded_scale = xp.take(scale, expand_index, axis=0)
+        adam_scale = xp_asarray_nodetach(xp, self.adam_scale[...], device=device)
+        expand_index = xp_asarray_nodetach(xp, self.expand_index, device=device)
+        expanded_scale = xp.take(adam_scale, expand_index, axis=0)
         expanded_scale = expanded_scale[None, ...]  # (1, D, F, C)
         x0 = x0 * expanded_scale[:, :1, :, :]
         if self.lmax > 0:
             xt = xt * expanded_scale[:, 1:, :, :]
 
         # === Step 4. Add scalar bias and restore layout ===
-        bias0 = xp.reshape(bias, (1, 1, self.n_focus, -1))  # (1, 1, F, C)
+        bias0 = xp.reshape(
+            xp_asarray_nodetach(xp, self.bias[...], device=device),
+            (1, 1, self.n_focus, -1),
+        )  # (1, 1, F, C)
         x0 = x0 + bias0
 
         out = x0 if self.lmax == 0 else xp.concat([x0, xt], axis=1)
-        if out.dtype != in_dtype:
-            out = xp.astype(out, in_dtype)
+        out = xp.astype(out, in_dtype)
         return out
 
     def serialize(self) -> dict[str, Any]:
-        """Serialize the EquivariantRMSNorm to a dict."""
         return {
             "@class": "EquivariantRMSNorm",
             "@version": 1,
@@ -307,7 +286,6 @@ class EquivariantRMSNorm(NativeOP):
 
     @classmethod
     def deserialize(cls, data: dict[str, Any]) -> EquivariantRMSNorm:
-        """Deserialize an EquivariantRMSNorm from a dict."""
         data = data.copy()
         data_cls = data.pop("@class")
         if data_cls != "EquivariantRMSNorm":
@@ -316,26 +294,12 @@ class EquivariantRMSNorm(NativeOP):
         check_version_compatibility(version, 1, 1)
         config = data.pop("config")
         variables = data.pop("@variables")
-        obj = cls(
-            lmax=int(config["lmax"]),
-            channels=int(config["channels"]),
-            n_focus=int(config["n_focus"]),
-            eps=float(config["eps"]),
-            precision=str(config["precision"]),
-            trainable=bool(config["trainable"]),
-        )
+        obj = cls(**config)
         prec = PRECISION_DICT[obj.precision.lower()]
-        expand_index = np.asarray(variables["expand_index"], dtype=np.int64)
-        if not np.array_equal(expand_index, to_numpy_array(obj.expand_index)):
-            raise ValueError("expand_index does not match the lmax-derived table")
-        for name in ("adam_scale", "bias", "balance_weight"):
-            value = np.asarray(variables[name], dtype=prec)
-            if value.shape != getattr(obj, name).shape:
-                raise ValueError(
-                    f"{name} shape {value.shape} does not match "
-                    f"the expected shape {getattr(obj, name).shape}"
-                )
-            setattr(obj, name, value)
+        obj.adam_scale = np.asarray(variables["adam_scale"], dtype=prec)
+        obj.bias = np.asarray(variables["bias"], dtype=prec)
+        obj.expand_index = np.asarray(variables["expand_index"], dtype=np.int64)
+        obj.balance_weight = np.asarray(variables["balance_weight"], dtype=prec)
         return obj
 
 
@@ -355,23 +319,23 @@ class ReducedEquivariantRMSNorm(NativeOP):
 
     Parameters
     ----------
-    lmax : int
+    lmax
         Maximum spherical harmonic degree.
-    mmax : int
+    mmax
         Maximum order kept in the truncated layout.
-    channels : int
+    channels
         Number of channels per retained coefficient.
-    degree_index_m : np.ndarray
+    degree_index_m
         Degree index per coefficient in m-major truncated layout, with shape
         `(D_m_trunc,)`.
-    n_focus : int
+    n_focus
         Number of focus streams.
-    eps : float
+    eps
         Epsilon for numerical stability.
-    precision : str
-        Parameter and computation precision. Caller should pass a compute
-        precision (fp32+) for numerical stability.
-    trainable : bool
+    precision
+        Parameter and computation precision. Caller should pass compute precision
+        (fp32+) for numerical stability.
+    trainable
         Whether parameters are trainable.
     """
 
@@ -389,10 +353,6 @@ class ReducedEquivariantRMSNorm(NativeOP):
     ) -> None:
         self.lmax = int(lmax)
         self.mmax = int(mmax)
-        if self.mmax < 0:
-            raise ValueError("`mmax` must be non-negative")
-        if self.mmax > self.lmax:
-            raise ValueError("`mmax` must be <= `lmax`")
         self.channels = int(channels)
         self.n_focus = int(n_focus)
         self.eps = float(eps)
@@ -427,11 +387,9 @@ class ReducedEquivariantRMSNorm(NativeOP):
 
     def call(self, x: Any) -> Any:
         """
-        Apply degree-balanced reduced-layout RMS normalization.
-
         Parameters
         ----------
-        x : Array
+        x
             Input array with shape (E, F, D_m_trunc, C).
 
         Returns
@@ -442,15 +400,8 @@ class ReducedEquivariantRMSNorm(NativeOP):
         """
         xp = array_api_compat.array_namespace(x)
         device = array_api_compat.device(x)
-        scale = xp_asarray_nodetach(xp, self.adam_scale[...], device=device)
-        bias0_w = xp_asarray_nodetach(xp, self.bias0[...], device=device)
-        balance_weight = xp_asarray_nodetach(
-            xp, self.balance_weight, device=array_api_compat.device(x)
-        )
         in_dtype = x.dtype
-        if in_dtype != scale.dtype:
-            x = xp.astype(x, scale.dtype)
-        has_xt = self.degree_index_m.size > 1
+        x = xp.astype(x, get_xp_precision(xp, self.precision))
         x0 = x[:, :, :1, :]  # (E, F, 1, C)
         xt = x[:, :, 1:, :]  # (E, F, D_m_trunc-1, C)
 
@@ -458,8 +409,9 @@ class ReducedEquivariantRMSNorm(NativeOP):
         x0 = x0 - xp.mean(x0, axis=-1, keepdims=True)
 
         # === Step 2. Compute a shared degree-balanced RMS ===
+        balance_weight = xp_asarray_nodetach(xp, self.balance_weight, device=device)
         mean_variance = xp.sum(x0 * x0, axis=(2, 3)) * balance_weight[0]
-        if has_xt:
+        if self.degree_index_m.size > 1:
             mean_variance = mean_variance + xp.sum(
                 (xt * xt) * balance_weight[1:][None, None, :, None], axis=(2, 3)
             )
@@ -467,30 +419,30 @@ class ReducedEquivariantRMSNorm(NativeOP):
         inv_rms = inv_rms[:, :, None, None]  # (E, F, 1, 1)
 
         x0 = x0 * inv_rms
-        if has_xt:
+        if self.degree_index_m.size > 1:
             xt = xt * inv_rms
 
         # === Step 3. Apply per-degree affine parameters ===
-        degree_index_m = xp_asarray_nodetach(
-            xp, self.degree_index_m, device=array_api_compat.device(x)
-        )
-        expanded_scale = xp.take(scale, degree_index_m, axis=1)
+        adam_scale = xp_asarray_nodetach(xp, self.adam_scale[...], device=device)
+        degree_index_m = xp_asarray_nodetach(xp, self.degree_index_m, device=device)
+        expanded_scale = xp.take(adam_scale, degree_index_m, axis=1)
         expanded_scale = expanded_scale[None, ...]  # (1, F, D_m_trunc, C)
         x0 = x0 * expanded_scale[:, :, :1, :]
-        if has_xt:
+        if self.degree_index_m.size > 1:
             xt = xt * expanded_scale[:, :, 1:, :]
 
         # === Step 4. Add scalar bias and restore layout ===
-        bias0 = xp.reshape(bias0_w, (1, self.n_focus, 1, -1))  # (1, F, 1, C)
+        bias0 = xp.reshape(
+            xp_asarray_nodetach(xp, self.bias0[...], device=device),
+            (1, self.n_focus, 1, -1),
+        )  # (1, F, 1, C)
         x0 = x0 + bias0
 
-        out = xp.concat([x0, xt], axis=2) if has_xt else x0
-        if out.dtype != in_dtype:
-            out = xp.astype(out, in_dtype)
+        out = x0 if self.degree_index_m.size == 1 else xp.concat([x0, xt], axis=2)
+        out = xp.astype(out, in_dtype)
         return out
 
     def serialize(self) -> dict[str, Any]:
-        """Serialize the ReducedEquivariantRMSNorm to a dict."""
         return {
             "@class": "ReducedEquivariantRMSNorm",
             "@version": 1,
@@ -514,7 +466,6 @@ class ReducedEquivariantRMSNorm(NativeOP):
 
     @classmethod
     def deserialize(cls, data: dict[str, Any]) -> ReducedEquivariantRMSNorm:
-        """Deserialize a ReducedEquivariantRMSNorm from a dict."""
         data = data.copy()
         data_cls = data.pop("@class")
         if data_cls != "ReducedEquivariantRMSNorm":
@@ -523,28 +474,12 @@ class ReducedEquivariantRMSNorm(NativeOP):
         check_version_compatibility(version, 1, 1)
         config = data.pop("config")
         variables = data.pop("@variables")
-        obj = cls(
-            lmax=int(config["lmax"]),
-            mmax=int(config["mmax"]),
-            channels=int(config["channels"]),
-            degree_index_m=np.asarray(config["degree_index_m"], dtype=np.int64),
-            n_focus=int(config["n_focus"]),
-            eps=float(config["eps"]),
-            precision=str(config["precision"]),
-            trainable=bool(config["trainable"]),
-        )
+        obj = cls(**config)
         prec = PRECISION_DICT[obj.precision.lower()]
-        degree_index_m = np.asarray(variables["degree_index_m"], dtype=np.int64)
-        if not np.array_equal(degree_index_m, to_numpy_array(obj.degree_index_m)):
-            raise ValueError("degree_index_m variable does not match the config")
-        for name in ("balance_weight", "adam_scale", "bias0"):
-            value = np.asarray(variables[name], dtype=prec)
-            if value.shape != getattr(obj, name).shape:
-                raise ValueError(
-                    f"{name} shape {value.shape} does not match "
-                    f"the expected shape {getattr(obj, name).shape}"
-                )
-            setattr(obj, name, value)
+        obj.degree_index_m = np.asarray(variables["degree_index_m"], dtype=np.int64)
+        obj.balance_weight = np.asarray(variables["balance_weight"], dtype=prec)
+        obj.adam_scale = np.asarray(variables["adam_scale"], dtype=prec)
+        obj.bias0 = np.asarray(variables["bias0"], dtype=prec)
         return obj
 
 
@@ -559,16 +494,16 @@ class ScalarRMSNorm(NativeOP):
 
     Parameters
     ----------
-    channels : int
+    channels
         Feature dimension of the last axis.
-    n_focus : int
+    n_focus
         Number of focus streams.
-    eps : float
+    eps
         Small epsilon for numerical stability.
-    precision : str
-        Parameter and computation precision. Caller should pass a compute
-        precision (fp32+) for numerical stability.
-    trainable : bool
+    precision
+        Parameter and computation precision. Caller should pass compute precision
+        (fp32+) for numerical stability.
+    trainable
         Whether parameters are trainable.
     """
 
@@ -583,20 +518,19 @@ class ScalarRMSNorm(NativeOP):
     ) -> None:
         self.channels = int(channels)
         self.n_focus = int(n_focus)
-        self.eps = float(eps)
         self.precision = precision
+        self.eps = float(eps)
         self.trainable = bool(trainable)
         prec = PRECISION_DICT[self.precision.lower()]
+
         # adam_ prefix routes this to Adam (no weight decay) in HybridMuon.
         self.adam_scale = np.ones((self.n_focus, self.channels), dtype=prec)
 
     def call(self, x: Any) -> Any:
         """
-        Apply per-focus RMS normalization.
-
         Parameters
         ----------
-        x : Array
+        x
             Input array with shape (B, F, C) or (B, C) when `n_focus=1`.
 
         Returns
@@ -605,25 +539,22 @@ class ScalarRMSNorm(NativeOP):
             Normalized array with the same shape as input and same dtype.
         """
         xp = array_api_compat.array_namespace(x)
-        scale = xp_asarray_nodetach(
-            xp, self.adam_scale[...], device=array_api_compat.device(x)
-        )
+        device = array_api_compat.device(x)
         in_dtype = x.dtype
-        if in_dtype != scale.dtype:
-            x = xp.astype(x, scale.dtype)
+        x = xp.astype(x, get_xp_precision(xp, self.precision))
+
+        if x.ndim == 2:
+            inv_rms = 1.0 / xp.sqrt(xp.mean(x * x, axis=-1, keepdims=True) + self.eps)
+            x = x * inv_rms
+            x = x * xp_asarray_nodetach(xp, self.adam_scale[...], device=device)[0]
+            return xp.astype(x, in_dtype)
 
         inv_rms = 1.0 / xp.sqrt(xp.mean(x * x, axis=-1, keepdims=True) + self.eps)
         x = x * inv_rms
-        if x.ndim == 2:
-            x = x * scale[0, :]
-        else:
-            x = x * scale[None, ...]
-        if x.dtype != in_dtype:
-            x = xp.astype(x, in_dtype)
-        return x
+        x = x * xp_asarray_nodetach(xp, self.adam_scale[...], device=device)[None, ...]
+        return xp.astype(x, in_dtype)
 
     def serialize(self) -> dict[str, Any]:
-        """Serialize the ScalarRMSNorm to a dict."""
         return {
             "@class": "ScalarRMSNorm",
             "@version": 1,
@@ -639,7 +570,6 @@ class ScalarRMSNorm(NativeOP):
 
     @classmethod
     def deserialize(cls, data: dict[str, Any]) -> ScalarRMSNorm:
-        """Deserialize a ScalarRMSNorm from a dict."""
         data = data.copy()
         data_cls = data.pop("@class")
         if data_cls != "ScalarRMSNorm":
@@ -648,15 +578,7 @@ class ScalarRMSNorm(NativeOP):
         check_version_compatibility(version, 1, 1)
         config = data.pop("config")
         variables = data.pop("@variables")
-        obj = cls(
-            channels=int(config["channels"]),
-            n_focus=int(config["n_focus"]),
-            eps=float(config["eps"]),
-            precision=str(config["precision"]),
-            trainable=bool(config["trainable"]),
-        )
+        obj = cls(**config)
         prec = PRECISION_DICT[obj.precision.lower()]
-        adam_scale = np.asarray(variables["adam_scale"], dtype=prec)
-        adam_scale = adam_scale.reshape(obj.adam_scale.shape)
-        obj.adam_scale = adam_scale
+        obj.adam_scale = np.asarray(variables["adam_scale"], dtype=prec)
         return obj

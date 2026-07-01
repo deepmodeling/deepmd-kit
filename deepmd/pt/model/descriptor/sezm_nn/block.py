@@ -154,8 +154,9 @@ class SeZMInteractionBlock(nn.Module):
     so2_norm
         If True, apply intermediate ReducedEquivariantRMSNorm between SO(2) mixing layers.
         When False (default), no normalization is applied between layers.
-    so2_layers
-        Number of SO(2) mixing layers.
+    mixing_layers
+        Number of learnable mixing layers in the per-edge message core. ``0``
+        applies only the edge-condition modulation.
     so2_attn_res
         Depth-wise attention residual mode across the internal SO(2) layer
         history. Must be one of ``"none"``, ``"independent"``, or
@@ -169,6 +170,16 @@ class SeZMInteractionBlock(nn.Module):
         Low-rank channel factorization rank for
         ``radial_so2_mode="degree_channel"``. ``0`` uses the full
         per-channel dynamic degree kernel.
+    edge_cartesian
+        If True, replace the per-edge SO(2) rotation-frame tensor product inside
+        ``SO2Convolution`` with the global-frame Cartesian rank-2 tensor
+        product. Requires ``lmax`` in ``{1, 2}``.
+    node_cartesian
+        Per-node global-frame Cartesian rank-2 tensor product on the aggregated
+        message inside ``SO2Convolution``, configured by a ``"<mode>:<layers>"``
+        string (``mode`` is ``"default"`` or ``"parity"``); a bare integer ``N``
+        is shorthand for ``"default:N"``, and ``"none"`` disables it. Requires
+        ``lmax`` in ``{1, 2}`` and is orthogonal to ``edge_cartesian``.
     n_atten_head
         Number of attention heads when aggregating messages in SO(2) convolution.
         0 means no attention is used; >0 enables envelope-gated grouped softmax
@@ -289,10 +300,12 @@ class SeZMInteractionBlock(nn.Module):
         focus_dim: int = 0,
         focus_compete: bool = True,
         so2_norm: bool = False,
-        so2_layers: int = 4,
+        mixing_layers: int = 4,
         so2_attn_res: str = "none",
         radial_so2_mode: str = "none",
         radial_so2_rank: int = 0,
+        edge_cartesian: bool = False,
+        node_cartesian: str | int = "none",
         n_atten_head: int = 1,
         atten_f_mix: bool = False,
         atten_v_proj: bool = False,
@@ -354,7 +367,7 @@ class SeZMInteractionBlock(nn.Module):
             raise ValueError("`focus_dim` must be >= 0")
         self.focus_compete = bool(focus_compete)
         self.so2_norm = bool(so2_norm)
-        self.so2_layers = int(so2_layers)
+        self.mixing_layers = int(mixing_layers)
         self.so2_attn_res_mode = str(so2_attn_res).lower()
         if self.so2_attn_res_mode not in ATTN_RES_MODES:
             raise ValueError(
@@ -362,6 +375,8 @@ class SeZMInteractionBlock(nn.Module):
             )
         self.radial_so2_mode = str(radial_so2_mode).lower()
         self.radial_so2_rank = int(radial_so2_rank)
+        self.edge_cartesian = bool(edge_cartesian)
+        self.node_cartesian = str(node_cartesian)
         self.n_atten_head = int(n_atten_head)
         self.atten_f_mix = bool(atten_f_mix)
         self.use_atten_v_proj = bool(atten_v_proj)
@@ -463,10 +478,12 @@ class SeZMInteractionBlock(nn.Module):
             focus_dim=self.focus_dim,
             focus_compete=self.focus_compete,
             so2_norm=self.so2_norm,
-            so2_layers=self.so2_layers,
+            mixing_layers=self.mixing_layers,
             so2_attn_res=self.so2_attn_res_mode,
             radial_so2_mode=self.radial_so2_mode,
             radial_so2_rank=self.radial_so2_rank,
+            edge_cartesian=self.edge_cartesian,
+            node_cartesian=self.node_cartesian,
             layer_scale=self.layer_scale,
             n_atten_head=n_atten_head,
             atten_f_mix=self.atten_f_mix,
@@ -1021,10 +1038,12 @@ class SeZMInteractionBlock(nn.Module):
                 "focus_dim": self.focus_dim,
                 "focus_compete": self.focus_compete,
                 "so2_norm": self.so2_norm,
-                "so2_layers": self.so2_layers,
+                "mixing_layers": self.mixing_layers,
                 "so2_attn_res": self.so2_attn_res_mode,
                 "radial_so2_mode": self.radial_so2_mode,
                 "radial_so2_rank": self.radial_so2_rank,
+                "edge_cartesian": self.edge_cartesian,
+                "node_cartesian": self.node_cartesian,
                 "n_atten_head": self.n_atten_head,
                 "atten_f_mix": self.atten_f_mix,
                 "atten_v_proj": self.use_atten_v_proj,

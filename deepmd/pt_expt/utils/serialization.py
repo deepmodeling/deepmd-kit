@@ -985,6 +985,17 @@ def _deserialize_to_file_pt2(
     # descriptors (DPA1, DPA2). Setting threshold=0 prevents fusion and
     # avoids the NaN. Only applied on CUDA; CPU compilation is unaffected.
     #
+    # ``assert_indirect_indexing`` (default True) makes inductor emit an
+    # ``AOTI_TORCH_CHECK`` bounds assertion for every indirect (data-dependent)
+    # index. In the CPU-vectorised codegen for DPA4/SeZM's per-node
+    # gather/scatter (the descriptor broadcasts a per-node value across its
+    # edges), inductor mis-hoists that assertion ABOVE the declaration of the
+    # index temporary, emitting C++ that references an undeclared ``tmpN`` and
+    # fails to compile ("use of undeclared identifier"). The asserted indices
+    # are loop counters that are in-bounds by construction, so the check is
+    # redundant; disabling it removes the broken assertion while leaving
+    # vectorisation (and therefore inference throughput) untouched.
+    #
     # NOTE: ``torch._inductor.config`` is a process-wide singleton. The
     # save/restore pattern here is NOT thread-safe — concurrent AOTInductor
     # compilations from multiple threads would race on this global. Callers
@@ -996,12 +1007,15 @@ def _deserialize_to_file_pt2(
 
     is_cuda = _env.DEVICE.type == "cuda"
     saved_threshold = _inductor_config.realize_opcount_threshold
+    saved_assert_indexing = _inductor_config.assert_indirect_indexing
     if is_cuda:
         _inductor_config.realize_opcount_threshold = 0
+    _inductor_config.assert_indirect_indexing = False
     try:
         aoti_compile_and_package(exported, package_path=model_file)
     finally:
         _inductor_config.realize_opcount_threshold = saved_threshold
+        _inductor_config.assert_indirect_indexing = saved_assert_indexing
 
     # Second artifact: with-comm. Only for descriptors whose message
     # passing extends across rank boundaries. The flag was computed
@@ -1020,12 +1034,15 @@ def _deserialize_to_file_pt2(
         with tempfile.TemporaryDirectory() as td:
             wc_path = os.path.join(td, "forward_lower_with_comm.pt2")
             saved_threshold = _inductor_config.realize_opcount_threshold
+            saved_assert_indexing = _inductor_config.assert_indirect_indexing
             if is_cuda:
                 _inductor_config.realize_opcount_threshold = 0
+            _inductor_config.assert_indirect_indexing = False
             try:
                 aoti_compile_and_package(exported_wc, package_path=wc_path)
             finally:
                 _inductor_config.realize_opcount_threshold = saved_threshold
+                _inductor_config.assert_indirect_indexing = saved_assert_indexing
             with open(wc_path, "rb") as f:
                 with_comm_bytes = f.read()
         # The output keys are identical between the two artifacts (same

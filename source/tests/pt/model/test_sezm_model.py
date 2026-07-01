@@ -228,7 +228,9 @@ class TestSeZMModelCompile(unittest.TestCase):
             for p in model.parameters():
                 p.copy_(torch.randn_like(p) * 0.1)
 
-    def _build_model_params(self, *, use_compile: bool) -> dict:
+    def _build_model_params(
+        self, *, use_compile: bool, edge_cartesian: bool = False
+    ) -> dict:
         return {
             "type": "SeZM",
             "type_map": ["A", "B"],
@@ -241,7 +243,8 @@ class TestSeZMModelCompile(unittest.TestCase):
                 "n_radial": 3,
                 "radial_mlp": [6],
                 "use_env_seed": True,
-                "l_schedule": [1, 0],
+                "edge_cartesian": edge_cartesian,
+                "l_schedule": [2, 1] if edge_cartesian else [1, 0],
                 "mmax": 1,
                 "so2_norm": False,
                 "so2_layers": 1,
@@ -391,6 +394,89 @@ class TestSeZMModelCompile(unittest.TestCase):
         return {
             name: param.detach().clone() for name, param in model.named_parameters()
         }
+
+    def _make_frame_with_natoms(
+        self, nloc: int, *, seed: int = 20240613
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """Build a compact ``nloc``-atom frame with neighbours inside ``rcut``.
+
+        Atoms are placed in a tight cluster so the ``sel=[2, 2]`` neighbour list
+        is saturated and the edge count is comfortably larger than ``nloc``.
+        """
+        torch.manual_seed(seed + nloc)
+        coord = torch.rand(1, nloc, 3, device=self.device, dtype=torch.float32) * 2.5
+        atype = (
+            (torch.arange(nloc, device=self.device) % 2).view(1, nloc).to(torch.int32)
+        )
+        box = torch.tensor(
+            [[8.0, 0.0, 0.0, 0.0, 8.0, 0.0, 0.0, 0.0, 8.0]],
+            dtype=torch.float32,
+            device=self.device,
+        )
+        return coord, atype, box
+
+    def test_trace_pad_dim_trim_returns_contiguous(self) -> None:
+        """Trimmed trace inputs stay contiguous so strides mirror runtime layout.
+
+        A sliced (non-contiguous) trim leaks the pre-trim length into the tensor
+        stride; ``make_fx`` duck-shaping can then fuse that stale stride with the
+        edge-count symbol and corrupt the compiled shape guards.
+        """
+        from deepmd.pt.utils.compile_compat import (
+            trace_pad_dim,
+        )
+
+        base = torch.arange(5 * 13, device=self.device).view(5, 13)
+        trimmed = trace_pad_dim(base, 1, 7)
+        self.assertEqual(tuple(trimmed.shape), (5, 7))
+        self.assertTrue(trimmed.is_contiguous())
+        padded = trace_pad_dim(base, 1, 20)
+        self.assertEqual(tuple(padded.shape), (5, 20))
+        self.assertTrue(padded.is_contiguous())
+
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
+    def test_eval_compile_first_frame_nloc_matches_trace_edge_count(self) -> None:
+        """First eval frame with ``nloc`` equal to the trace edge count compiles.
+
+        The symbolic trace pads the edge axis to ``next_safe_prime`` (13 for the
+        two-type forbidden set ``{1, 2, 3, 9}`` -> primes 5/7/11/13) and trims
+        ``atype`` to ``trace_nloc`` (7). A first frame with ``nloc == 13`` leaves
+        the trimmed ``atype`` carrying ``stride(0) == 13``; previously that stale
+        stride was duck-shaped onto the edge-count symbol, so every edge tensor
+        was guarded against ``nloc`` and ``assert_size_stride`` failed once the
+        real edge count differed. Pins the contiguous-trace + eval-only
+        duck-shape-off fix.
+        """
+        nloc = 13  # == next_safe_prime edge count for the two-type forbidden set
+        coord, atype, box = self._make_frame_with_natoms(nloc)
+
+        model_dyn = get_sezm_model(self._build_model_params(use_compile=False))
+        self._randomize_params(model_dyn)
+        with mock.patch.dict(os.environ, {"DP_COMPILE_INFER": "1"}, clear=False):
+            model_cmp = get_sezm_model(self._build_model_params(use_compile=True))
+        model_cmp.load_state_dict(model_dyn.state_dict())
+        model_dyn.eval()
+        model_cmp.eval()
+
+        out_dyn = model_dyn(coord, atype, box=box)
+        # The compiled eval path must trace, lower and run without tripping
+        # ``assert_size_stride`` on the edge tensors.
+        out_cmp = model_cmp(coord, atype, box=box)
+        self.assertIn((False, False), model_cmp.compiled_core_compute_cache)
+        _assert_close_with_strict_warning(
+            out_dyn["energy"],
+            out_cmp["energy"],
+            atol=1.0e-6,
+            rtol=1.0e-6,
+            msg="eval energy mismatch when first-frame nloc == trace edge count",
+        )
+        _assert_close_with_strict_warning(
+            out_dyn["force"],
+            out_cmp["force"],
+            atol=1.0e-6,
+            rtol=1.0e-6,
+            msg="eval force mismatch when first-frame nloc == trace edge count",
+        )
 
     @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
     def test_compile_cache_slots_and_eval_shape_change(self) -> None:
@@ -782,6 +868,68 @@ class TestSeZMModelCompile(unittest.TestCase):
                 atol=grad_atol,
                 rtol=grad_rtol,
                 msg=f"force-grad mismatch at {name}",
+            )
+
+    @unittest.skipIf(_SKIP_OFF_COMPILE_TORCH, _SKIP_OFF_COMPILE_TORCH_REASON)
+    def test_cartesian_forward_backward_matches_compile(self) -> None:
+        """The Cartesian path (Wigner-D skipped) matches eager and compiled runs."""
+        coord, atype, box, _, _, _ = self._make_tiny_frame()
+        model_dyn = get_sezm_model(
+            self._build_model_params(use_compile=False, edge_cartesian=True)
+        )
+        self._randomize_params(model_dyn)
+        model_cmp = get_sezm_model(
+            self._build_model_params(use_compile=True, edge_cartesian=True)
+        )
+        model_cmp.load_state_dict(model_dyn.state_dict())
+        model_dyn.train()
+        model_cmp.train()
+
+        # === Step 1. Forward output consistency ===
+        out_dyn = model_dyn(coord, atype, box=box)
+        out_cmp = model_cmp(coord, atype, box=box)
+        _assert_close_with_strict_warning(
+            out_dyn["energy"],
+            out_cmp["energy"],
+            atol=1.0e-6,
+            rtol=1.0e-6,
+            msg="cartesian energy mismatch on first compiled call",
+        )
+        _assert_close_with_strict_warning(
+            out_dyn["force"],
+            out_cmp["force"],
+            atol=1.0e-6,
+            rtol=1.0e-6,
+            msg="cartesian force mismatch on first compiled call",
+        )
+
+        # === Step 2. Energy-gradient consistency ===
+        model_dyn.zero_grad(set_to_none=True)
+        model_cmp.zero_grad(set_to_none=True)
+        out_dyn["energy"].sum().backward()
+        out_cmp["energy"].sum().backward()
+        grad_atol = 1.0e-5 if self.device == torch.device("cpu") else 2.0e-3
+        grad_rtol = 1.0e-5 if self.device == torch.device("cpu") else 3.0e-3
+        grads_dyn = {
+            name: (
+                torch.zeros_like(param) if param.grad is None else param.grad.detach()
+            )
+            for name, param in model_dyn.named_parameters()
+        }
+        grads_cmp = {
+            name: (
+                torch.zeros_like(param) if param.grad is None else param.grad.detach()
+            )
+            for name, param in model_cmp.named_parameters()
+        }
+        self.assertEqual(set(grads_dyn.keys()), set(grads_cmp.keys()))
+        for name in grads_dyn.keys():
+            _assert_close_with_strict_warning(
+                grads_dyn[name],
+                grads_cmp[name],
+                atol=grad_atol,
+                rtol=grad_rtol,
+                msg=f"cartesian energy-grad mismatch at {name}",
             )
 
     def _assert_multitask_compile_matches_eager(

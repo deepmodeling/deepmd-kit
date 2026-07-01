@@ -179,8 +179,19 @@ def trace_pad_dim(t: torch.Tensor, dim: int, target: int) -> torch.Tensor:
     index-bearing tensors (``nlist`` neighbor indices, ``mapping``
     extended-to-local indices) because the duplicated row reuses the
     previously-valid row's values.  Trimming likewise never invalidates
-    indices.  Only shapes flow downstream during ``make_fx`` tracing,
-    so the exact replicated/trimmed values do not affect the FX graph.
+    indices.
+
+    The result is always contiguous, which matters as much as its shape.
+    Trimming a non-leading dimension by slicing returns a view whose stride
+    still encodes the *pre-trim* length; ``make_fx`` symbolic tracing records
+    that stale stride as a free symbol, and duck-shaping then unifies it with
+    any size symbol that happens to share the same trace-time value -- e.g. the
+    trimmed ``atype`` stride (= the frame's ``nloc``) colliding with the edge
+    count when both equal a ``next_safe_prime`` value. The compiled graph would
+    then guard unrelated axes against one another and fail ``assert_size_stride``
+    at runtime. Materializing a contiguous copy keeps the trace inputs' memory
+    layout identical to the contiguous runtime inputs, so strides never carry a
+    stale length into the symbol pool.
     """
     cur = int(t.shape[dim])
     if cur == target:
@@ -188,7 +199,7 @@ def trace_pad_dim(t: torch.Tensor, dim: int, target: int) -> torch.Tensor:
     if cur > target:
         sl: list[slice] = [slice(None)] * t.ndim
         sl[dim] = slice(None, target)
-        return t[tuple(sl)]
+        return t[tuple(sl)].contiguous()
     sl = [slice(None)] * t.ndim
     sl[dim] = slice(-1, None)
     last = t[tuple(sl)]
