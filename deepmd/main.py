@@ -350,6 +350,16 @@ def main_parser() -> argparse.ArgumentParser:
         type=str,
         help="(Supported backend: PyTorch) Task head (alias: model branch) to freeze if in multi-task mode.",
     )
+    parser_frz.add_argument(
+        "--lower-kind",
+        default="nlist",
+        type=str,
+        choices=["nlist", "graph"],
+        help="(Supported backend: PyTorch Exportable) Lower-level export form of the "
+        "frozen .pt2: 'nlist' (default, dense neighbor-list lower) or 'graph' "
+        "(NeighborGraph edge-list lower; only for graph-eligible models, currently "
+        "dpa1 with attn_layer=0). 'graph' selects the C++ graph inference path.",
+    )
 
     # * test script ********************************************************************
     parser_tst = subparsers.add_parser(

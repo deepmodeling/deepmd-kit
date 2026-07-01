@@ -1352,9 +1352,7 @@ class TestCompiledVaryingNatoms(unittest.TestCase):
         config = normalize(config)
         return config
 
-    def _check_varying_natoms(
-        self, descriptor: dict | None = None, force_legacy_descriptor: bool = False
-    ) -> None:
+    def _check_varying_natoms(self, descriptor: dict | None = None) -> None:
         """Per-step compiled-vs-uncompiled comparison for the given descriptor.
 
         The loss config has ``start_pref_f=1000`` and ``start_pref_v=1.0``,
@@ -1370,17 +1368,10 @@ class TestCompiledVaryingNatoms(unittest.TestCase):
         cannot meet that on float64 the descriptor has a real numerical
         problem (see the DPA1 limitation note where this happened).
 
-        ``force_legacy_descriptor`` makes a graph-eligible descriptor (dpa1
-        ``attn_layer==0``) take the legacy *dense* (env-mat) path on BOTH the
-        compiled and uncompiled sides, so this stays a true compile-correctness
-        check (same computation, compiled vs eager).  The pt_expt eager default
-        for such a descriptor is the carry-all GRAPH forward while the compiled
-        ``forward_lower`` is the sel-capped DENSE forward; those are two
-        *different* force computations whose parameter gradients agree only to
-        fp64 accumulation (~1e-12), which the optimizer then amplifies into a
-        diverging training trajectory.  Making the compiled GRAPH lower (so
-        eager==compiled) is tracked for PR-B; until then this test exercises the
-        dense path it actually compiles.
+        Graph-eligible descriptors (dpa1 ``attn_layer==0``) compile the GRAPH
+        lower (``forward_common_lower_graph``) so the compiled path matches the
+        eager carry-all graph default-flip; non-eligible descriptors
+        (se_e2_a / dpa2 / dpa3) compile the dense ``forward_lower``.
         """
         from deepmd.pt_expt.train.training import (
             _CompiledModel,
@@ -1399,16 +1390,6 @@ class TestCompiledVaryingNatoms(unittest.TestCase):
                 trainer_c = get_trainer(self._make_varying_config(True, descriptor))
                 compiled_model = trainer_c.wrapper.model["Default"]
                 self.assertIsInstance(compiled_model, _CompiledModel)
-
-                if force_legacy_descriptor:
-                    # Pin BOTH sides to the legacy dense (env-mat) path so the
-                    # uncompiled reference matches the dense ``forward_lower``
-                    # that gets compiled (must happen before the first forward,
-                    # i.e. before the lazy compile trace).  See the docstring /
-                    # PR-B note: the graph forward vs dense forward differ in the
-                    # backward at fp64 precision, which the optimizer amplifies.
-                    for _m in (trainer_uc.model, compiled_model.original_model):
-                        _m.get_descriptor().uses_graph_lower = lambda: False
 
                 # Sync weights so predictions can be compared exactly
                 compiled_model.original_model.load_state_dict(
@@ -1482,25 +1463,20 @@ class TestCompiledVaryingNatoms(unittest.TestCase):
         self._check_varying_natoms(_DESCRIPTOR_DPA3)
 
     def test_compiled_matches_uncompiled_varying_natoms_dpa1_no_attn(self) -> None:
-        """DPA1 (attn_layer=0): compiled vs uncompiled match (dense path).
+        """DPA1 (attn_layer=0): compiled vs uncompiled match (GRAPH lower).
 
-        ``force_legacy_descriptor=True`` pins both sides to the legacy dense
-        (env-mat) forward -- the path the compiled ``forward_lower`` actually
-        uses.  The pt_expt eager default for dpa1(attn_layer=0) is the carry-all
-        GRAPH forward, a *different* force computation from the compiled dense
-        forward; their backward gradients agree only to fp64 accumulation, which
-        the optimizer amplifies, so comparing graph-vs-dense through training is
-        ill-posed.  Making the compiled path the GRAPH lower (eager==compiled)
-        is tracked for PR-B (graph .pt2/export).
+        The pt_expt eager default for dpa1(attn_layer=0) is the carry-all GRAPH
+        forward, and the compiled path now compiles the matching GRAPH lower
+        (``forward_common_lower_graph``) -- so eager==compiled and the
+        multi-step varying-natoms trajectory (predictions + per-parameter grads
+        + loss) agrees to the strict ``atol=rtol=1e-10`` tolerance.
 
         DPA1 with attention layers is intentionally not covered: the
         compiled se_atten path is hardware-sensitive on multi-threaded
         CPUs (parallel reduction order diverges from eager above the
         1e-10 tolerance).  ``_compile_model`` warns the user instead.
         """
-        self._check_varying_natoms(
-            _DESCRIPTOR_DPA1_NO_ATTN, force_legacy_descriptor=True
-        )
+        self._check_varying_natoms(_DESCRIPTOR_DPA1_NO_ATTN)
 
     def test_compile_warns_dpa1_with_attention(self) -> None:
         """DPA1 (attn_layer>0) under compile must emit a warning.

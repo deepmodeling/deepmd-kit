@@ -764,9 +764,13 @@ class DescrptDPA1(NativeOP, BaseDescriptor):
         )
         # FLAT node axis (N, ...): no (nf, nloc) reshape -- ragged-native, spec.
         if self.concat_output_tebd:
-            tebd = xp.asarray(type_embedding, device=dev)
+            # Use type_embedding directly (mirrors the dense path's
+            # ``xp.take(type_embedding, ...)``): ``xp.asarray(..., device=dev)``
+            # DETACHES under torch, silently severing the type-embedding weight
+            # gradient so the tebd net never trains; type_embedding already lives
+            # on the model device, so the device cast was redundant anyway.
             atype_local = xp.asarray(atype, device=dev)
-            atype_embd = xp.take(tebd, atype_local, axis=0)  # (N, tebd_dim)
+            atype_embd = xp.take(type_embedding, atype_local, axis=0)  # (N, tebd_dim)
             grrg = xp.concat([grrg, atype_embd], axis=-1)
         return grrg, rot_mat
 
@@ -1748,7 +1752,10 @@ class DescrptBlockSeAtten(NativeOP, DescriptorBlock):
         ss = rr[:, 0:1]  # (E, 1)
         # neighbor / center type embeddings (concat mode); ghost type == owner type
         # so gathering by the LOCAL owner (src) reproduces the dense neighbor tebd.
-        tebd = xp.asarray(type_embedding, device=dev)
+        # NB: do NOT wrap in ``xp.asarray(..., device=dev)`` -- that DETACHES under
+        # torch and severs the type-embedding weight gradient (the tebd net would
+        # never train); type_embedding already lives on the model device.
+        tebd = type_embedding
         atype_embd_nlist = xp.take(tebd, nei_type, axis=0)  # (E, tebd_dim)
         if not self.type_one_side:
             atype_embd_nnei = xp.take(tebd, center_type, axis=0)  # (E, tebd_dim)

@@ -80,15 +80,42 @@ def edge_force_virial(
         frame via the frame of their ``dst`` node.
     """
     xp = array_api_compat.array_namespace(g_e)
-    # node-axis size; when a static ``node_capacity`` is supplied (the jax/export
-    # path) short-circuit so we never call int() on the traced ``sum(n_node)``.
-    n_out = int(node_capacity) if node_capacity is not None else int(xp.sum(n_node))
+    # node-axis size; when a ``node_capacity`` is supplied (the jax/export path)
+    # use it AS-IS so we never call int() on the traced ``sum(n_node)`` -- and,
+    # crucially, never on ``node_capacity`` itself: under symbolic make_fx /
+    # torch.export it is a SymInt (``atype.shape[0]``); ``int(SymInt)`` would
+    # SPECIALIZE the node axis to the trace-time sample size, baking a constant
+    # ``N`` into the scatter and breaking dynamic-``N`` inference.
+    n_out = node_capacity if node_capacity is not None else int(xp.sum(n_node))
     nf = n_node.shape[0]
     # zero padding/guard contributions; cast mask to g's dtype (array-API pure,
     # CLAUDE.md mask-multiply guideline — avoids bool*float under array_api_strict)
     g = g_e * xp.astype(edge_mask[:, None], g_e.dtype)
-    src = edge_index[0]
-    dst = edge_index[1]
+    # Wrap node indices into ``[0, n_out)`` so every scatter address is provably
+    # in-bounds. For a well-formed graph every real edge already has
+    # ``index < n_out`` (== ``atype.shape[0]``), so this modulo is the IDENTITY on
+    # real edges (pinned by test_modulo_clamp_leaves_real_edges_unchanged) -- a
+    # correctness-preserving guard, not a value fixup.
+    #
+    # Why it is needed (root cause, GPU-confirmed): under the dynamic-edge graph
+    # ``torch.export`` path the node count is traced as several equal-but-distinct
+    # symbols (``atype.shape[0]``, ``fit_ret.shape[0]``, ...), tied only by
+    # ``aten._assert_scalar(Eq(...))`` nodes. ``_strip_shape_assertions``
+    # (pt_expt/utils/serialization.py) neutralises ALL such asserts so export can
+    # trace -- which also drops those node-count equalities, so inductor can no
+    # longer prove the scatter index and its bound ``ks0 == n_out`` share a symbol
+    # and emits ``tl.device_assert(idx < ks0)`` (fatal on CUDA; unchecked on CPU,
+    # which is why all CPU dev/CI was green). ``% n_out`` discharges that guard
+    # unconditionally. This is the PERMANENT fix: the upstream alternative --
+    # making the SHARED, spin-export-critical ``_strip_shape_assertions``
+    # selective -- risks re-triggering the torch.export bugs it exists to bypass
+    # and the spin ``.pt2`` path, so it is deliberately NOT taken.
+    #
+    # Pure arithmetic => torch.export-safe, unlike ``xp.clip`` (SymInt bound
+    # breaks array_api_compat's clip) and unlike a mask-multiply (which misses the
+    # ``edge_mask == 1`` indices the stripped guard mis-bounds).
+    src = edge_index[0] % n_out
+    dst = edge_index[1] % n_out
     # force (output sized to the node axis, incl. any padding tail)
     force = segment_sum(g, dst, n_out) - segment_sum(g, src, n_out)
     # per-edge virial w_e[k, j] = -g_e[k] * edge_vec[j]  (broadcast, no einsum)
@@ -101,6 +128,8 @@ def edge_force_virial(
     boundaries = xp.cumulative_sum(n_node)  # (nf,) per-frame node upper bounds
     edge_frame = xp.astype(
         xp.searchsorted(boundaries, dst, side="right"), xp.int64
-    )  # (E,) in [0, nf)
+    )  # (E,) in [0, nf]
+    # wrap into [0, nf) for the same CUDA-bounds reason (export-safe modulo)
+    edge_frame = edge_frame % nf
     virial = segment_sum(w_edge, edge_frame, nf)  # (nf, 3, 3)
     return force, atom_virial, virial

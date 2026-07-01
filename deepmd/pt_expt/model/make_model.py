@@ -370,6 +370,11 @@ def make_model(
                 do_atomic_virial=do_atomic_virial,
                 create_graph=self.training,
                 mask=atomic_ret["mask"] if "mask" in atomic_ret else None,
+                # Bound the per-node scatter by the INPUT node axis (the symbol
+                # ``edge_index`` indexes into), not the re-derived fitting-output
+                # shape -- avoids a CUDA out-of-bounds device-assert under
+                # dynamic-edge torch.export. See fit_output_to_model_output_graph.
+                node_capacity=atype.shape[0],
             )
 
         def _resolve_graph_method(
@@ -629,6 +634,86 @@ def make_model(
             finally:
                 model.need_sorted_nlist_for_lower = _orig_need_sort
             return traced
+
+        def forward_common_lower_graph_exportable(
+            self,
+            atype: torch.Tensor,
+            n_node: torch.Tensor,
+            edge_index: torch.Tensor,
+            edge_vec: torch.Tensor,
+            edge_mask: torch.Tensor,
+            fparam: torch.Tensor | None = None,
+            aparam: torch.Tensor | None = None,
+            do_atomic_virial: bool = False,
+            charge_spin: torch.Tensor | None = None,
+            **make_fx_kwargs: Any,
+        ) -> torch.nn.Module:
+            """make_fx trace of ``forward_common_lower_graph`` with ``edge_vec``
+            as the autograd leaf — the export target for graph-form .pt2 archives.
+
+            Parameters
+            ----------
+            atype
+                (N,) flat local atom types, ``N == sum(n_node)``.
+            n_node
+                (nf,) per-frame local atom counts.
+            edge_index
+                (2, E) ``[src, dst]`` edge endpoints (flat local indices).
+            edge_vec
+                (E, 3) neighbor-minus-center edge vectors (sample for tracing).
+            edge_mask
+                (E,) valid-edge mask (sample for tracing).
+            fparam, aparam, do_atomic_virial, charge_spin
+                As in ``forward_common_lower_graph``.
+            **make_fx_kwargs
+                Extra keyword arguments forwarded to ``make_fx``
+                (e.g. ``tracing_mode="symbolic"``).
+
+            Returns
+            -------
+            torch.nn.Module
+                A traced module whose ``forward`` accepts
+                ``(atype, n_node, edge_index, edge_vec, edge_mask,
+                fparam, aparam, charge_spin)`` and returns a dict with the
+                same internal keys as ``forward_common_lower_graph``.
+            """
+            model = self
+
+            def fn(
+                atype: torch.Tensor,
+                n_node: torch.Tensor,
+                edge_index: torch.Tensor,
+                edge_vec: torch.Tensor,
+                edge_mask: torch.Tensor,
+                fparam: torch.Tensor | None,
+                aparam: torch.Tensor | None,
+                charge_spin: torch.Tensor | None,
+            ) -> dict[str, torch.Tensor]:
+                # forward_common_lower_graph creates the autograd leaf from
+                # edge_vec internally, so no outer detach/requires_grad_ here
+                # (it would only add spurious ops to the traced graph).
+                return model.forward_common_lower_graph(
+                    atype,
+                    n_node,
+                    edge_index,
+                    edge_vec,
+                    edge_mask,
+                    do_atomic_virial=do_atomic_virial,
+                    fparam=fparam,
+                    aparam=aparam,
+                    charge_spin=charge_spin,
+                )
+
+            return make_fx(fn, **make_fx_kwargs)(
+                atype,
+                n_node,
+                edge_index,
+                edge_vec,
+                edge_mask,
+                fparam,
+                aparam,
+                charge_spin,
+            )
 
         def forward_common_lower_exportable_with_comm(
             self,

@@ -66,6 +66,20 @@ if TYPE_CHECKING:
     import ase.neighborlist
 
 
+# Public output keys emitted by the graph-form AOTI forward
+# (``forward_lower_graph_exportable``) keyed by the output-variable category that
+# ``request_defs`` carries.  The graph path is LOCAL-only (``N == sum(n_node)``
+# nodes, no ghosts), so its outputs are already at local-atom resolution -- no
+# ``communicate_extended_output`` fold-back is needed.
+_GRAPH_CATEGORY_TO_KEY = {
+    OutputVariableCategory.OUT: "atom_energy",
+    OutputVariableCategory.REDU: "energy",
+    OutputVariableCategory.DERV_R: "force",
+    OutputVariableCategory.DERV_C_REDU: "virial",
+    OutputVariableCategory.DERV_C: "atom_virial",
+}
+
+
 def _reshape_charge_spin(
     charge_spin: np.ndarray, nframes: int, dim_chg_spin: int
 ) -> np.ndarray:
@@ -1423,6 +1437,10 @@ class DeepEval(DeepEvalBackend):
         request_defs: list[OutputVariableDef],
         charge_spin: np.ndarray | None = None,
     ) -> tuple[np.ndarray, ...]:
+        if self.metadata.get("lower_input_kind") == "graph":
+            return self._eval_model_graph(
+                coords, cells, atom_types, fparam, aparam, request_defs, charge_spin
+            )
         model_inputs, mapping_t, nframes, natoms = self._prepare_inputs(
             coords, cells, atom_types, fparam, aparam, charge_spin
         )
@@ -1616,6 +1634,101 @@ class DeepEval(DeepEvalBackend):
                 results.append(out)
             else:
                 shape = self._get_output_shape(odef, nframes, natoms)
+                results.append(
+                    np.full(np.abs(shape), np.nan, dtype=GLOBAL_NP_FLOAT_PRECISION)
+                )
+        return tuple(results)
+
+    def _eval_model_graph(
+        self,
+        coords: np.ndarray,
+        cells: np.ndarray | None,
+        atom_types: np.ndarray,
+        fparam: np.ndarray | None,
+        aparam: np.ndarray | None,
+        request_defs: list[OutputVariableDef],
+        charge_spin: np.ndarray | None = None,
+    ) -> tuple[np.ndarray, ...]:
+        """Evaluate a graph-form ``.pt2`` (``lower_input_kind == "graph"``).
+
+        Builds a carry-all :class:`~deepmd.dpmodel.utils.neighbor_graph.NeighborGraph`
+        from the eval system at its exact (tight) edge count and feeds the
+        positional schema
+        ``(atype, n_node, edge_index, edge_vec, edge_mask, fparam, aparam,
+        charge_spin)`` to the exported forward.  The AOTI artifact's edge axis
+        is DYNAMIC (B2.0), so no ``edge_capacity`` padding is needed.  The
+        forward returns the LOCAL public keys directly, so results are reshaped
+        without ``communicate_extended_output``.
+        """
+        from deepmd.dpmodel.utils.neighbor_graph import (
+            build_neighbor_graph,
+        )
+        from deepmd.pt_expt.utils.env import (
+            DEVICE,
+        )
+
+        nframes = coords.shape[0]
+        if len(atom_types.shape) == 1:
+            natoms = len(atom_types)
+            atom_types = np.tile(atom_types, nframes).reshape(nframes, -1)
+        else:
+            natoms = len(atom_types[0])
+
+        coord_input = coords.reshape(nframes, natoms, 3)
+        box_input = cells.reshape(nframes, 9) if cells is not None else None
+        # Dynamic edge axis (B2.0): build the carry-all graph at its exact edge
+        # count (no static padding); the AOTI artifact accepts any E.
+        graph = build_neighbor_graph(
+            coord_input,
+            atom_types,
+            box_input,
+            self._rcut,
+        )
+
+        atype_t = torch.tensor(
+            np.asarray(atom_types).reshape(-1), dtype=torch.int64, device=DEVICE
+        )
+        n_node_t = torch.tensor(
+            np.asarray(graph.n_node), dtype=torch.int64, device=DEVICE
+        )
+        edge_index_t = torch.tensor(
+            np.asarray(graph.edge_index), dtype=torch.int64, device=DEVICE
+        )
+        edge_vec_t = torch.tensor(
+            np.asarray(graph.edge_vec), dtype=torch.float64, device=DEVICE
+        )
+        edge_mask_t = torch.tensor(
+            np.asarray(graph.edge_mask), dtype=torch.bool, device=DEVICE
+        )
+
+        fparam_t, aparam_t = self._prepare_optional_lower_inputs(
+            fparam, aparam, nframes, natoms, DEVICE
+        )
+        charge_spin_t = self._make_charge_spin_input(nframes, charge_spin)
+
+        model_inputs = (
+            atype_t,
+            n_node_t,
+            edge_index_t,
+            edge_vec_t,
+            edge_mask_t,
+            fparam_t,
+            aparam_t,
+            charge_spin_t,
+        )
+        if self._is_pt2:
+            model_ret = self._pt2_runner(*model_inputs)
+        else:
+            model_ret = self.exported_module(*model_inputs)
+
+        results = []
+        for odef in request_defs:
+            shape = self._get_output_shape(odef, nframes, natoms)
+            gkey = _GRAPH_CATEGORY_TO_KEY.get(odef.category)
+            val = model_ret.get(gkey) if gkey is not None else None
+            if val is not None:
+                results.append(val.detach().cpu().numpy().reshape(shape))
+            else:
                 results.append(
                     np.full(np.abs(shape), np.nan, dtype=GLOBAL_NP_FLOAT_PRECISION)
                 )
