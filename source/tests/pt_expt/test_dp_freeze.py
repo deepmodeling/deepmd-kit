@@ -139,7 +139,9 @@ class TestDPFreezePtExpt(unittest.TestCase):
         review). freeze() is mocked so the suffix logic is checked without the
         AOTInductor compile cost.
         """
-        from unittest import mock
+        from unittest import (
+            mock,
+        )
 
         cases = [
             ("graph", "out_g", None, ".pt2"),  # graph, no suffix -> .pt2
