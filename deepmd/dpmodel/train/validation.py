@@ -500,17 +500,22 @@ class FullValidatorBase(ABC):
         for checkpoint_path in self._list_best_checkpoints():
             self._remove_checkpoint_path(checkpoint_path)
 
-    @staticmethod
     def _raise_if_error(
+        self,
         error_message: str | None,
         local_exception: Exception | None = None,
     ) -> None:
         """Raise a full-validation error if one occurred."""
-        if error_message is None:
+        propagated_error = self.propagate_error(error_message)
+        if propagated_error is None:
             return
         if local_exception is not None:
-            raise RuntimeError(error_message) from local_exception
-        raise RuntimeError(error_message)
+            raise RuntimeError(propagated_error) from local_exception
+        raise RuntimeError(propagated_error)
+
+    def propagate_error(self, error_message: str | None) -> str | None:
+        """Propagate a rank-0 full-validation error to backend peers if needed."""
+        return error_message
 
     def _log_result(self, result: FullValidationResult | None) -> None:
         """Log and persist full validation results on rank 0."""

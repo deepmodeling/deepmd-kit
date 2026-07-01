@@ -17,6 +17,7 @@ from deepmd.dpmodel.train.validation import (
     FullValidatorBase,
 )
 from deepmd.jax.env import (
+    jax,
     jnp,
 )
 from deepmd.jax.utils.auto_batch_size import (
@@ -76,6 +77,22 @@ class JAXFullValidator(FullValidatorBase):
             for _, metric_key in LOG_COLUMN_ORDER
             if metric_key in aggregated
         }
+
+    def propagate_error(self, error_message: str | None) -> str | None:
+        """Broadcast rank-0 full-validation failures to all JAX processes."""
+        if jax.process_count() <= 1:
+            return error_message
+        from jax.experimental import (
+            multihost_utils,
+        )
+
+        has_error = multihost_utils.broadcast_one_to_all(
+            np.asarray(error_message is not None, dtype=np.bool_),
+            is_source=self.rank == 0,
+        )
+        if not bool(np.asarray(has_error).item()):
+            return None
+        return error_message or "Full validation failed on rank 0; see rank-0 logs."
 
     def _iter_validation_data_systems(self) -> Any:
         """Yield DeepmdData-like validation systems."""

@@ -231,6 +231,9 @@ class TrainingTaskCollection:
             missing = [key for key in self._keys if key not in probabilities]
             if missing:
                 raise ValueError(f"Missing task probabilities for {missing}.")
+            unknown = [key for key in probabilities if key not in self._tasks]
+            if unknown:
+                raise ValueError(f"Unknown task probabilities for {unknown}.")
             prob = np.asarray(
                 [probabilities[key] for key in self._keys], dtype=np.float64
             )

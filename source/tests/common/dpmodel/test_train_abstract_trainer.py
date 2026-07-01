@@ -121,6 +121,17 @@ def test_task_collection_rejects_duplicate_sequence_keys() -> None:
         )
 
 
+def test_task_collection_rejects_unknown_probability_keys() -> None:
+    with pytest.raises(ValueError, match="Unknown task probabilities"):
+        TrainingTaskCollection(
+            [
+                TrainingTask("task_a", DummyData([1.0])),
+                TrainingTask("task_b", DummyData([2.0])),
+            ],
+            probabilities={"task_a": 1.0, "task_b": 1.0, "stale": 1.0},
+        )
+
+
 def test_learning_curve_row_uses_training_metric_order() -> None:
     row = LearningCurveWriter().format_row(
         step=1,

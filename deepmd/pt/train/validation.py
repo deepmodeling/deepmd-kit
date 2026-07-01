@@ -488,10 +488,15 @@ class FullValidator:
                 "Full validation could not resolve the LMDB path from "
                 f"{type(lmdb_dataset)!r}."
             )
+        if type_map is None:
+            raise TypeError(
+                "Full validation could not resolve the LMDB type_map from "
+                f"{type(lmdb_dataset)!r}."
+            )
 
         self._lmdb_test_data = LmdbTestData(
             lmdb_path,
-            type_map=list(type_map or []),
+            type_map=list(type_map),
             shuffle_test=False,
         )
         if data_requirements:

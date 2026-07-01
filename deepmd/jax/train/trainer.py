@@ -904,7 +904,9 @@ def _scale_by_global_learning_rate() -> optax.GradientTransformationExtraArgs:
     ) -> tuple[Any, optax.EmptyState]:
         del params
         learning_rate = kwargs["learning_rate"]
-        updates = jax.tree.map(lambda update: -learning_rate * update, updates)
+        updates = jax.tree_util.tree_map(
+            lambda update: -learning_rate * update, updates
+        )
         return updates, state
 
     return optax.GradientTransformationExtraArgs(optax.init_empty_state, update_fn)

@@ -54,6 +54,10 @@ class _DummyModel(torch.nn.Module):
         return 0
 
 
+class _LmdbDatasetWithoutTypeMap:
+    lmdb_path = "missing-type-map.lmdb"
+
+
 def _make_lmdb_frame(natoms: int, seed: int) -> dict:
     """Create one synthetic LMDB frame for full-validation tests."""
     rng = np.random.RandomState(seed)
@@ -420,6 +424,29 @@ class TestValidationHelpers(unittest.TestCase):
         self.assertEqual(evaluate_system.call_count, 3)
         self.assertAlmostEqual(metrics["mae_e_per_atom"], 8.4)
         self.assertAlmostEqual(metrics["rmse_e_per_atom"], np.sqrt(75.6))
+
+    def test_full_validator_lmdb_snapshot_requires_type_map(self) -> None:
+        validator = FullValidator(
+            validating_params={
+                "full_validation": True,
+                "validation_freq": 1,
+                "save_best": False,
+                "max_best_ckpt": 1,
+                "validation_metric": "E:MAE",
+                "full_val_file": "val.log",
+                "full_val_start": 0.0,
+            },
+            validation_data=_DummyValidationData(),
+            model=_DummyModel(),
+            state_store={},
+            num_steps=10,
+            rank=0,
+            zero_stage=0,
+            restart_training=False,
+        )
+
+        with self.assertRaisesRegex(TypeError, "LMDB type_map"):
+            validator._get_lmdb_test_data_snapshot(_LmdbDatasetWithoutTypeMap())
 
 
 class TestValidationArgcheck(unittest.TestCase):

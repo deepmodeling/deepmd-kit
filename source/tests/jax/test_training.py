@@ -262,6 +262,47 @@ def test_jax_full_validator_saves_directory_best_checkpoint(tmp_path: Path) -> N
     assert "1000.0" in (tmp_path / "val.log").read_text()
 
 
+def test_jax_full_validator_broadcasts_rank_zero_errors(tmp_path: Path) -> None:
+    """JAX full validation synchronizes rank-0 failures to peer processes."""
+    from deepmd.jax.train.validation import (
+        JAXFullValidator,
+    )
+
+    validator = JAXFullValidator(
+        validating_params={
+            "full_validation": True,
+            "validation_freq": 1,
+            "save_best": False,
+            "max_best_ckpt": 1,
+            "validation_metric": "E:MAE",
+            "full_val_file": str(tmp_path / "val.log"),
+            "full_val_start": 0.0,
+        },
+        validation_data=SimpleNamespace(),
+        model=SimpleNamespace(),
+        state_store={},
+        num_steps=2,
+        rank=1,
+        restart_training=False,
+        checkpoint_dir=tmp_path,
+    )
+
+    with (
+        patch("deepmd.jax.train.validation.jax.process_count", return_value=2),
+        patch(
+            "jax.experimental.multihost_utils.broadcast_one_to_all",
+            return_value=np.asarray(True),
+        ) as broadcast_one_to_all,
+    ):
+        assert (
+            validator.propagate_error(None)
+            == "Full validation failed on rank 0; see rank-0 logs."
+        )
+
+    broadcast_one_to_all.assert_called_once()
+    assert broadcast_one_to_all.call_args.kwargs["is_source"] is False
+
+
 def test_jax_full_validation_hook_uses_display_step() -> None:
     """JAX full-validation checkpoints carry one-based display steps."""
     calls: list[dict] = []
