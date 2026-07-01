@@ -5,7 +5,9 @@
 # (DPATrainer, MFTFineTuner, DPAFineTuner) so the same checks are not
 # copy-pasted across constructors.
 
-from __future__ import annotations
+from __future__ import (
+    annotations,
+)
 
 
 def validate_fparam_dim(fparam_dim: int) -> None:
