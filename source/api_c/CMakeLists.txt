@@ -31,11 +31,21 @@ endif(BUILD_PY_IF)
 
 if(PACKAGE_C)
   message(STATUS "Packaging C API library")
+  get_property(DEEPMD_BACKEND_PLUGIN_TARGETS GLOBAL
+               PROPERTY DEEPMD_BACKEND_PLUGIN_TARGETS)
+  set(PACKAGE_C_RUNTIME_LIBRARIES "$<TARGET_FILE:${libname}>"
+                                  "$<TARGET_FILE:${LIB_DEEPMD_OP}>")
+  foreach(_target ${DEEPMD_BACKEND_PLUGIN_TARGETS})
+    list(APPEND PACKAGE_C_RUNTIME_LIBRARIES "$<TARGET_FILE:${_target}>")
+  endforeach()
+  string(REPLACE ";" " " PACKAGE_C_RUNTIME_LIBRARIES_CODE
+                 "${PACKAGE_C_RUNTIME_LIBRARIES}")
   # follow pypa/auditwheel convention
+  install(CODE "set(_dp_runtime_libraries ${PACKAGE_C_RUNTIME_LIBRARIES_CODE})")
   install(
     CODE [[
     file(GET_RUNTIME_DEPENDENCIES
-      LIBRARIES $<TARGET_FILE:deepmd_c> $<TARGET_FILE:deepmd_op>
+      LIBRARIES ${_dp_runtime_libraries}
       RESOLVED_DEPENDENCIES_VAR _r_deps
       PRE_EXCLUDE_REGEXES "libgcc_s\\.so.*"
                           "libstdc\\+\\+\\.so.*"
@@ -59,6 +69,9 @@ if(PACKAGE_C)
   install(TARGETS ${libname} DESTINATION ${CMAKE_BINARY_DIR}/libdeepmd_c/lib)
   install(TARGETS ${LIB_DEEPMD_OP}
           DESTINATION ${CMAKE_BINARY_DIR}/libdeepmd_c/lib)
+  foreach(_target ${DEEPMD_BACKEND_PLUGIN_TARGETS})
+    install(TARGETS ${_target} DESTINATION ${CMAKE_BINARY_DIR}/libdeepmd_c/lib)
+  endforeach()
 
   set(cmake_files_install_dir
       "${CMAKE_BINARY_DIR}/libdeepmd_c/lib/cmake/${CMAKE_PROJECT_NAME}")
