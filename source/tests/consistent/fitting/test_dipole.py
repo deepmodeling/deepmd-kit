@@ -22,7 +22,7 @@ from ..common import (
     INSTALLED_TF,
     INSTALLED_TF2,
     CommonTest,
-    parameterized,
+    parameterized_cases,
 )
 from .common import (
     DipoleFittingTest,
@@ -72,13 +72,42 @@ from deepmd.utils.argcheck import (
     fitting_dipole,
 )
 
-
-@parameterized(
-    (True, False),  # resnet_dt
-    ("float64", "float32"),  # precision
-    (True, False),  # mixed_types
-    (None, [0]),  # sel_type
+DIPOLE_FITTING_CASE_FIELDS = (
+    "resnet_dt",
+    "precision",
+    "mixed_types",
+    "sel_type",
 )
+
+DIPOLE_FITTING_BASELINE_CASE = {
+    "resnet_dt": True,
+    "precision": "float64",
+    "mixed_types": True,
+    "sel_type": None,
+}
+
+
+def dipole_fitting_case(**overrides: Any) -> tuple:
+    case = DIPOLE_FITTING_BASELINE_CASE | overrides
+    return tuple(case[field] for field in DIPOLE_FITTING_CASE_FIELDS)
+
+
+DIPOLE_FITTING_CURATED_CASES = (
+    dipole_fitting_case(),
+    dipole_fitting_case(resnet_dt=False),
+    dipole_fitting_case(precision="float32"),
+    dipole_fitting_case(mixed_types=False),
+    dipole_fitting_case(sel_type=[0]),
+    dipole_fitting_case(
+        resnet_dt=False,
+        precision="float32",
+        mixed_types=False,
+        sel_type=[0],
+    ),
+)
+
+
+@parameterized_cases(*DIPOLE_FITTING_CURATED_CASES)
 class TestDipole(CommonTest, DipoleFittingTest, unittest.TestCase):
     @property
     def data(self) -> dict:

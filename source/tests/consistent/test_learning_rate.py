@@ -19,7 +19,7 @@ from .common import (
     INSTALLED_JAX,
     INSTALLED_PT,
     INSTALLED_TF2,
-    parameterized,
+    parameterized_cases,
 )
 
 if INSTALLED_PT:
@@ -35,7 +35,7 @@ if INSTALLED_ARRAY_API_STRICT:
     import array_api_strict as xp
 
 
-@parameterized(
+LEARNING_RATE_CURATED_CASES = (
     (
         {
             "type": "exp",
@@ -45,6 +45,8 @@ if INSTALLED_ARRAY_API_STRICT:
             "num_steps": 1000000,
             "warmup_steps": 10000,
         },
+    ),
+    (
         {
             "type": "cosine",
             "start_lr": 1e-3,
@@ -52,6 +54,8 @@ if INSTALLED_ARRAY_API_STRICT:
             "num_steps": 1000000,
             "warmup_steps": 10000,
         },
+    ),
+    (
         {
             "type": "wsd",
             "start_lr": 1e-3,
@@ -60,6 +64,8 @@ if INSTALLED_ARRAY_API_STRICT:
             "warmup_steps": 10000,
             "decay_phase_ratio": 0.1,
         },
+    ),
+    (
         {
             "type": "wsd",
             "start_lr": 1e-3,
@@ -69,6 +75,8 @@ if INSTALLED_ARRAY_API_STRICT:
             "decay_phase_ratio": 0.1,
             "decay_type": "cosine",
         },
+    ),
+    (
         {
             "type": "wsd",
             "start_lr": 1e-3,
@@ -80,6 +88,9 @@ if INSTALLED_ARRAY_API_STRICT:
         },
     ),
 )
+
+
+@parameterized_cases(*LEARNING_RATE_CURATED_CASES)
 class TestLearningRateConsistent(unittest.TestCase):
     """Test learning rate consistency across different array backends."""
 

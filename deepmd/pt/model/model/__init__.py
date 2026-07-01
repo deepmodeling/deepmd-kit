@@ -33,6 +33,9 @@ from deepmd.pt.model.task.sezm_ener import (
     SeZMEnergyFittingNet,
     _resolve_auto_neuron,
 )
+from deepmd.pt.utils.multi_task import (
+    preprocess_shared_params,
+)
 from deepmd.utils.spin import (
     Spin,
 )
@@ -45,6 +48,8 @@ from .dos_model import (
 )
 from .dp_linear_model import (
     LinearEnergyModel,
+    normalize_linear_model_type_map,
+    validate_linear_shared_descriptor_type_maps,
 )
 from .dp_model import (
     DPModelCommon,
@@ -162,19 +167,45 @@ def get_spin_model(model_params: dict) -> SpinModel:
 def get_linear_model(model_params: dict) -> LinearEnergyModel:
     model_params = copy.deepcopy(model_params)
     weights = model_params.get("weights", "mean")
+    shared_links = None
+    if "shared_dict" in model_params:
+        shared_config = {
+            "model_dict": {
+                f"model_{idx}": sub_model
+                for idx, sub_model in enumerate(model_params["models"])
+            },
+            "shared_dict": model_params.get("shared_dict", {}),
+        }
+        if "type_map" in model_params:
+            shared_config["type_map"] = copy.deepcopy(model_params["type_map"])
+        shared_config, shared_links = preprocess_shared_params(
+            shared_config,
+            require_shared_type_map=False,
+        )
+        model_params["models"] = list(shared_config["model_dict"].values())
+        normalize_linear_model_type_map(model_params)
+        validate_linear_shared_descriptor_type_maps(
+            model_params["models"],
+            shared_links,
+        )
+
     list_of_models = []
-    ntypes = len(model_params["type_map"])
     for sub_model_params in model_params["models"]:
         if "type_map" not in sub_model_params:
             sub_model_params["type_map"] = model_params["type_map"]
         if "descriptor" in sub_model_params:
             # descriptor
-            sub_model_params["descriptor"]["ntypes"] = ntypes
+            sub_ntypes = len(sub_model_params["type_map"])
+            sub_model_params["descriptor"]["ntypes"] = sub_ntypes
             descriptor, fitting, _ = _get_standard_model_components(
-                sub_model_params, ntypes
+                sub_model_params, sub_ntypes
             )
             list_of_models.append(
-                DPAtomicModel(descriptor, fitting, type_map=model_params["type_map"])
+                DPAtomicModel(
+                    descriptor,
+                    fitting,
+                    type_map=copy.deepcopy(sub_model_params["type_map"]),
+                )
             )
 
         else:  # must be pairtab
@@ -186,19 +217,23 @@ def get_linear_model(model_params: dict) -> LinearEnergyModel:
                     sub_model_params["tab_file"],
                     sub_model_params["rcut"],
                     sub_model_params["sel"],
-                    type_map=model_params["type_map"],
+                    type_map=copy.deepcopy(sub_model_params["type_map"]),
                 )
             )
 
     atom_exclude_types = model_params.get("atom_exclude_types", [])
     pair_exclude_types = model_params.get("pair_exclude_types", [])
-    return LinearEnergyModel(
+    model = LinearEnergyModel(
         models=list_of_models,
         type_map=model_params["type_map"],
         weights=weights,
         atom_exclude_types=atom_exclude_types,
         pair_exclude_types=pair_exclude_types,
     )
+    model.shared_links = shared_links
+    if shared_links:
+        model.share_params(shared_links, resume=True)
+    return model
 
 
 def get_zbl_model(model_params: dict) -> DPZBLModel:

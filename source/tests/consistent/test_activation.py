@@ -22,7 +22,7 @@ from .common import (
     INSTALLED_PT_EXPT,
     INSTALLED_TF,
     INSTALLED_TF2,
-    parameterized,
+    parameterized_cases,
 )
 
 if INSTALLED_PT:
@@ -55,9 +55,10 @@ if INSTALLED_PD:
     )
 
 
-@parameterized(
-    tuple([x.capitalize() for x in VALID_ACTIVATION]),
-)
+ACTIVATION_FUNCTION_CURATED_CASES = tuple((x.capitalize(),) for x in VALID_ACTIVATION)
+
+
+@parameterized_cases(*ACTIVATION_FUNCTION_CURATED_CASES)
 class TestActivationFunctionConsistent(unittest.TestCase):
     def setUp(self) -> None:
         (self.activation,) = self.param
@@ -128,14 +129,15 @@ class TestActivationFunctionConsistent(unittest.TestCase):
             np.testing.assert_allclose(self.ref, test, atol=1e-10)
 
 
-@parameterized(
-    (
-        "silut",  # default threshold 3.0
-        "silut:3.0",  # explicit threshold 3.0
-        "silut:10.0",  # large threshold
-        "custom_silu:5.0",  # alias
-    ),
+SILUT_VARIANT_CURATED_CASES = (
+    ("silut",),  # default threshold 3.0
+    ("silut:3.0",),  # explicit threshold 3.0
+    ("silut:10.0",),  # large threshold
+    ("custom_silu:5.0",),  # alias
 )
+
+
+@parameterized_cases(*SILUT_VARIANT_CURATED_CASES)
 class TestSilutVariantsConsistent(unittest.TestCase):
     """Cross-backend consistency for silut with different thresholds."""
 

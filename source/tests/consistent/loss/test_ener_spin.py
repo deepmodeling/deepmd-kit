@@ -21,7 +21,7 @@ from ..common import (
     INSTALLED_PT_EXPT,
     INSTALLED_TF2,
     CommonTest,
-    parameterized,
+    parameterized_cases,
 )
 from .common import (
     LossTest,
@@ -45,11 +45,16 @@ if INSTALLED_ARRAY_API_STRICT:
     import array_api_strict
 
 
-@parameterized(
-    ("mse", "mae"),  # loss_func
-    (False, True),  # mae (dp test extra MAE metrics)
-    (False, True),  # intensive_ener_virial
+ENER_SPIN_LOSS_CURATED_CASES = (
+    ("mse", False, False),
+    ("mae", False, False),
+    ("mse", True, False),
+    ("mse", False, True),
+    ("mae", False, True),
 )
+
+
+@parameterized_cases(*ENER_SPIN_LOSS_CURATED_CASES)
 class TestEnerSpin(CommonTest, LossTest, unittest.TestCase):
     @property
     def data(self) -> dict:
